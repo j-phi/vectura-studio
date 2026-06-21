@@ -1,0 +1,607 @@
+/**
+ * Web font catalog + outline loader for the Text algorithm.
+ *
+ * The built-in stroke font (window.Vectura.StrokeFont) ships five monoline
+ * typefaces. This module unlocks the full public web-font catalog as an optional
+ * source: the user can pick any one of ~2000 families and the Text algorithm
+ * traces its glyph *outlines* into pen-ready polylines (an outline font is two
+ * contours per stroke, not a single pass — honest to what the typeface is).
+ *
+ * Nothing here runs at load time. Everything is lazy and degrades silently when
+ * the network, the DOM, or the parser are unavailable (headless tests, offline):
+ *
+ *   1. loadCatalog()  — fetch the family list once (CORS-friendly metadata API),
+ *      cache it in memory + localStorage so reopening the picker is instant.
+ *   2. ensureFont(id) — on first use of a family, lazy-load the outline parser,
+ *      fetch that family's TTF, parse it, and register a FontFace so the picker
+ *      can preview the real letterforms. Cached thereafter.
+ *   3. layout(text, …) — turn a parsed family + string into positioned polylines
+ *      in the same { paths, width, height } shape StrokeFont.layout returns, so
+ *      the Text algorithm can swap sources without caring which kind it is.
+ *
+ * Coordinate space matches StrokeFont: millimetres, y increasing DOWNWARD, the
+ * first line's cap-top near the origin. The parser already emits baseline-relative
+ * y-down paths, so glyphs drop straight in.
+ */
+(() => {
+  const Vectura = (window.Vectura = window.Vectura || {});
+
+  // ── Endpoints ───────────────────────────────────────────────────────────────
+  // Catalog: a CORS-enabled metadata mirror of the public font library. Each entry
+  // gives the slug we need for the file URL plus the family name and category.
+  const CATALOG_URL = 'https://api.fontsource.org/v1/fonts';
+  // Font files: the same mirror serves every family as a plain TTF (CORS-enabled,
+  // parseable directly — no brotli/woff2 decode needed). Pattern is
+  // <slug>@latest/<subset>-<weight>-<style>.ttf.
+  const FILE_BASE = 'https://cdn.jsdelivr.net/fontsource/fonts';
+  // Outline parser (vendored UMD); only injected when a family is first traced.
+  const PARSER_SRC = './src/vendor/opentype.min.js';
+
+  const CACHE_KEY = 'vectura.webfont.catalog.v1';
+  const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days — names change rarely.
+  const KEY_PREFIX = 'google:'; // p.font = 'google:<slug>' selects a web family.
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let families = []; // [{ id, family, category, weights, subsets, defSubset }]
+  let catalogStatus = 'idle'; // idle | loading | ready | error
+  let catalogError = '';
+  let catalogPromise = null;
+  let libPromise = null;
+
+  const fontStore = (Vectura.WEBFONT_GLYPHS = Vectura.WEBFONT_GLYPHS || {}); // slug → parsed font
+  const fontState = {}; // slug → 'idle' | 'loading' | 'ready' | 'error'
+  const fontPromise = {}; // slug → in-flight ensureFont promise
+  let regenHook = null; // called after an async load lands, to re-render
+
+  const isBrowser = () => typeof document !== 'undefined' && !!document;
+  const canFetch = () => typeof fetch === 'function';
+
+  // ── Catalog ───────────────────────────────────────────────────────────────
+  const readCache = () => {
+    try {
+      if (typeof localStorage === 'undefined') return null;
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.families) || !parsed.savedAt) return null;
+      if (Date.now() - parsed.savedAt > CACHE_TTL) return null;
+      return parsed.families;
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const writeCache = (list) => {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), families: list }));
+    } catch (_) {
+      /* private mode / quota — caching is best-effort */
+    }
+  };
+
+  // Normalise one raw catalog record into the slim shape the picker needs. Only
+  // families that ship a Latin subset (what the stroke text is authored in) and a
+  // usable weight are kept, so every listed family can actually be traced.
+  const normalizeEntry = (raw) => {
+    if (!raw || !raw.id || !raw.family) return null;
+    const subsets = Array.isArray(raw.subsets) ? raw.subsets : [];
+    const defSubset = raw.defSubset || (subsets.includes('latin') ? 'latin' : subsets[0]);
+    if (!defSubset) return null;
+    const weights = Array.isArray(raw.weights) && raw.weights.length ? raw.weights.slice() : [400];
+    return {
+      id: String(raw.id),
+      family: String(raw.family),
+      category: String(raw.category || 'other'),
+      weights,
+      subsets,
+      defSubset,
+    };
+  };
+
+  const loadCatalog = () => {
+    if (catalogStatus === 'ready') return Promise.resolve(families);
+    if (catalogPromise) return catalogPromise;
+
+    const cached = readCache();
+    if (cached && cached.length) {
+      families = cached;
+      catalogStatus = 'ready';
+      return Promise.resolve(families);
+    }
+
+    if (!canFetch()) {
+      catalogStatus = 'error';
+      catalogError = 'Web fonts need a network connection.';
+      return Promise.resolve([]);
+    }
+
+    catalogStatus = 'loading';
+    catalogError = '';
+    catalogPromise = fetch(CATALOG_URL)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Catalog request failed (${res.status}).`);
+        return res.json();
+      })
+      .then((list) => {
+        const arr = Array.isArray(list) ? list : [];
+        families = arr
+          .filter((e) => !e.type || e.type === 'google')
+          .map(normalizeEntry)
+          .filter(Boolean)
+          .sort((a, b) => a.family.localeCompare(b.family));
+        if (!families.length) throw new Error('Catalog was empty.');
+        catalogStatus = 'ready';
+        writeCache(families);
+        return families;
+      })
+      .catch((err) => {
+        catalogStatus = 'error';
+        catalogError = (err && err.message) || 'Web fonts are unavailable.';
+        families = [];
+        return [];
+      })
+      .finally(() => {
+        catalogPromise = null;
+      });
+    return catalogPromise;
+  };
+
+  const getFamilies = () => families;
+  const findFamily = (id) => families.find((f) => f.id === id) || null;
+  const getCatalogStatus = () => ({ status: catalogStatus, errorMessage: catalogError });
+
+  // ── File URL ──────────────────────────────────────────────────────────────
+  // Pick the weight closest to Regular (400) the family actually ships, so a
+  // display face with only 700 still resolves to a real file.
+  const pickWeight = (weights) => {
+    if (!Array.isArray(weights) || !weights.length) return 400;
+    return weights.reduce((best, w) => (Math.abs(w - 400) < Math.abs(best - 400) ? w : best), weights[0]);
+  };
+
+  const fileUrl = (entry, opts = {}) => {
+    const weight = opts.weight || pickWeight(entry.weights);
+    const subset = opts.subset || entry.defSubset || 'latin';
+    const style = opts.style || 'normal';
+    return `${FILE_BASE}/${entry.id}@latest/${subset}-${weight}-${style}.ttf`;
+  };
+
+  // ── Outline parser (lazy) ───────────────────────────────────────────────────
+  const ensureLib = () => {
+    if (typeof window !== 'undefined' && window.opentype) return Promise.resolve(window.opentype);
+    if (libPromise) return libPromise;
+    if (!isBrowser()) return Promise.reject(new Error('No DOM for the outline parser.'));
+    libPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-vectura-opentype]');
+      const onReady = () => (window.opentype ? resolve(window.opentype) : reject(new Error('Parser failed to load.')));
+      if (existing) {
+        if (window.opentype) return resolve(window.opentype);
+        existing.addEventListener('load', onReady);
+        existing.addEventListener('error', () => reject(new Error('Parser failed to load.')));
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = PARSER_SRC;
+      script.async = true;
+      script.setAttribute('data-vectura-opentype', '');
+      script.addEventListener('load', onReady);
+      script.addEventListener('error', () => reject(new Error('Parser failed to load.')));
+      document.head.appendChild(script);
+    }).catch((err) => {
+      libPromise = null;
+      throw err;
+    });
+    return libPromise;
+  };
+
+  // Register a FontFace so the picker can preview the family in its own letters.
+  // Best-effort and DOM-only; the trace path never depends on it.
+  const registerPreviewFace = (entry, url) => {
+    try {
+      if (typeof FontFace !== 'function' || !document.fonts) return;
+      const face = new FontFace(`Vectura WF ${entry.family}`, `url(${url})`);
+      face.load().then((loaded) => document.fonts.add(loaded)).catch(() => {});
+    } catch (_) {
+      /* preview is optional */
+    }
+  };
+
+  const getFontStatus = (id) => fontState[id] || 'idle';
+  const getParsed = (id) => fontStore[id] || null;
+
+  // Load + parse one family's outlines. Idempotent; the regen hook fires once the
+  // outlines land so a layer that asked for the font (a fresh selection, or a
+  // reloaded project) re-renders itself with the real letterforms.
+  const ensureFont = (id) => {
+    if (fontStore[id]) return Promise.resolve(fontStore[id]);
+    if (fontPromise[id]) return fontPromise[id];
+
+    fontState[id] = 'loading';
+    fontPromise[id] = loadCatalog()
+      .then(() => {
+        const entry = findFamily(id);
+        if (!entry) throw new Error(`Unknown font "${id}".`);
+        if (!canFetch()) throw new Error('Web fonts need a network connection.');
+        const url = fileUrl(entry);
+        return Promise.all([ensureLib(), fetch(url).then((res) => {
+          if (!res.ok) throw new Error(`Font request failed (${res.status}).`);
+          return res.arrayBuffer();
+        })]).then(([opentype, buffer]) => {
+          const font = opentype.parse(buffer);
+          fontStore[id] = font;
+          fontState[id] = 'ready';
+          registerPreviewFace(entry, url);
+          if (typeof regenHook === 'function') {
+            try { regenHook(id); } catch (_) { /* host re-render is best-effort */ }
+          }
+          return font;
+        });
+      })
+      .catch((err) => {
+        fontState[id] = 'error';
+        throw err;
+      })
+      .finally(() => {
+        fontPromise[id] = null;
+      });
+    return fontPromise[id];
+  };
+
+  // ── Outline flattening ──────────────────────────────────────────────────────
+  // Walk a parsed glyph's draw commands into closed polylines, sampling quadratic
+  // and cubic segments by recursive de Casteljau subdivision until each chord is
+  // within `tolerance` of the true curve. Sharp corners (M/L joints) are preserved
+  // exactly; only the curved spans gain points. Pure and dependency-free so it can
+  // be unit-tested directly.
+  const flattenCommands = (commands, tolerance = 0.05) => {
+    const polylines = [];
+    const tolSq = Math.max(1e-9, tolerance * tolerance);
+    let sub = null;
+    let startX = 0;
+    let startY = 0;
+    let cx = 0;
+    let cy = 0;
+
+    const finish = () => {
+      if (sub && sub.length >= 2) polylines.push(sub);
+      sub = null;
+    };
+
+    const cubic = (p0x, p0y, c1x, c1y, c2x, c2y, p1x, p1y, depth) => {
+      const dx = p1x - p0x;
+      const dy = p1y - p0y;
+      const chordSq = dx * dx + dy * dy;
+      if (depth >= 12 || chordSq < tolSq) {
+        sub.push({ x: p1x, y: p1y });
+        return;
+      }
+      const d1 = (c1x - p0x) * dy - (c1y - p0y) * dx;
+      const d2 = (c2x - p0x) * dy - (c2y - p0y) * dx;
+      const thresh = tolSq * chordSq;
+      if (d1 * d1 <= thresh && d2 * d2 <= thresh) {
+        sub.push({ x: p1x, y: p1y });
+        return;
+      }
+      const m01x = (p0x + c1x) * 0.5, m01y = (p0y + c1y) * 0.5;
+      const m12x = (c1x + c2x) * 0.5, m12y = (c1y + c2y) * 0.5;
+      const m23x = (c2x + p1x) * 0.5, m23y = (c2y + p1y) * 0.5;
+      const a012x = (m01x + m12x) * 0.5, a012y = (m01y + m12y) * 0.5;
+      const a123x = (m12x + m23x) * 0.5, a123y = (m12y + m23y) * 0.5;
+      const midx = (a012x + a123x) * 0.5, midy = (a012y + a123y) * 0.5;
+      cubic(p0x, p0y, m01x, m01y, a012x, a012y, midx, midy, depth + 1);
+      cubic(midx, midy, a123x, a123y, m23x, m23y, p1x, p1y, depth + 1);
+    };
+
+    for (const cmd of commands) {
+      if (cmd.type === 'M') {
+        finish();
+        sub = [{ x: cmd.x, y: cmd.y }];
+        startX = cx = cmd.x;
+        startY = cy = cmd.y;
+      } else if (cmd.type === 'L') {
+        if (!sub) sub = [{ x: cx, y: cy }];
+        sub.push({ x: cmd.x, y: cmd.y });
+        cx = cmd.x; cy = cmd.y;
+      } else if (cmd.type === 'Q') {
+        if (!sub) sub = [{ x: cx, y: cy }];
+        // Promote the quadratic to its equivalent cubic, then reuse the sampler.
+        const c1x = cx + (2 / 3) * (cmd.x1 - cx);
+        const c1y = cy + (2 / 3) * (cmd.y1 - cy);
+        const c2x = cmd.x + (2 / 3) * (cmd.x1 - cmd.x);
+        const c2y = cmd.y + (2 / 3) * (cmd.y1 - cmd.y);
+        cubic(cx, cy, c1x, c1y, c2x, c2y, cmd.x, cmd.y, 0);
+        cx = cmd.x; cy = cmd.y;
+      } else if (cmd.type === 'C') {
+        if (!sub) sub = [{ x: cx, y: cy }];
+        cubic(cx, cy, cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y, 0);
+        cx = cmd.x; cy = cmd.y;
+      } else if (cmd.type === 'Z') {
+        if (sub) {
+          sub.push({ x: startX, y: startY });
+          cx = startX; cy = startY;
+        }
+        finish();
+      }
+    }
+    finish();
+    return polylines;
+  };
+
+  // ── Outline → bezier anchors ─────────────────────────────────────────────────
+  const ANCHOR_EPS = 1e-4;
+
+  // Convert a parsed glyph's draw commands into the engine's bezier `anchors`
+  // representation: one array of {x, y, in, out} anchors per contour, where `in`
+  // / `out` are ABSOLUTE cubic control points (null for a straight join). The
+  // renderer (tracePath) and SVG export (pathToSvg) consume this directly to emit
+  // native cubic `C` curves instead of flattened polylines. Quadratics are
+  // promoted to cubics (matching flattenCommands). Every glyph contour is closed,
+  // so the segment back to the start is implied by `meta.closed`; the duplicate
+  // closing point that coincides with the start anchor is merged in (its `in`
+  // handle preserved) rather than emitted twice. Pure + dependency-free.
+  const commandsToAnchors = (commands) => {
+    const contours = [];
+    let cur = null;
+    let prevX = 0;
+    let prevY = 0;
+
+    const ensure = () => {
+      if (!cur) cur = [{ x: prevX, y: prevY, in: null, out: null }];
+    };
+    const finishContour = () => {
+      if (cur && cur.length >= 2) {
+        const first = cur[0];
+        const last = cur[cur.length - 1];
+        if (Math.abs(last.x - first.x) < ANCHOR_EPS && Math.abs(last.y - first.y) < ANCHOR_EPS) {
+          if (last.in) first.in = last.in;
+          cur.pop();
+        }
+      }
+      if (cur && cur.length >= 2) contours.push(cur);
+      cur = null;
+    };
+
+    for (const cmd of commands) {
+      if (cmd.type === 'M') {
+        finishContour();
+        cur = [{ x: cmd.x, y: cmd.y, in: null, out: null }];
+        prevX = cmd.x; prevY = cmd.y;
+      } else if (cmd.type === 'L') {
+        ensure();
+        cur.push({ x: cmd.x, y: cmd.y, in: null, out: null });
+        prevX = cmd.x; prevY = cmd.y;
+      } else if (cmd.type === 'C') {
+        ensure();
+        cur[cur.length - 1].out = { x: cmd.x1, y: cmd.y1 };
+        cur.push({ x: cmd.x, y: cmd.y, in: { x: cmd.x2, y: cmd.y2 }, out: null });
+        prevX = cmd.x; prevY = cmd.y;
+      } else if (cmd.type === 'Q') {
+        ensure();
+        const c1x = prevX + (2 / 3) * (cmd.x1 - prevX);
+        const c1y = prevY + (2 / 3) * (cmd.y1 - prevY);
+        const c2x = cmd.x + (2 / 3) * (cmd.x1 - cmd.x);
+        const c2y = cmd.y + (2 / 3) * (cmd.y1 - cmd.y);
+        cur[cur.length - 1].out = { x: c1x, y: c1y };
+        cur.push({ x: cmd.x, y: cmd.y, in: { x: c2x, y: c2y }, out: null });
+        prevX = cmd.x; prevY = cmd.y;
+      } else if (cmd.type === 'Z') {
+        finishContour();
+      }
+    }
+    finishContour();
+    return contours;
+  };
+
+  // Nudge near-cardinal bezier handles onto exact horizontal/vertical tangents.
+  // High-quality outlines place on-curve points at extrema with axis-aligned
+  // handles; real fonts mostly already do, so this is a light, distortion-free
+  // cleanup — it only snaps a handle already within `tolDeg` of 0/90/180/270° to
+  // that axis (handle length preserved). Aggressiveness scales with `smoothing`.
+  const optimizeAnchorsCardinal = (anchors, opt = {}) => {
+    if (!Array.isArray(anchors) || anchors.length < 2) return anchors;
+    const smoothing = Math.max(0, Number(opt.smoothing) || 0);
+    const tol = (Math.min(20, 4 + smoothing * 2) * Math.PI) / 180;
+    const quarter = Math.PI / 2;
+    const snap = (anchor, key) => {
+      const h = anchor[key];
+      if (!h) return;
+      const dx = h.x - anchor.x;
+      const dy = h.y - anchor.y;
+      const len = Math.hypot(dx, dy);
+      if (len < ANCHOR_EPS) return;
+      const ang = Math.atan2(dy, dx);
+      const cardinal = Math.round(ang / quarter) * quarter;
+      if (Math.abs(ang - cardinal) <= tol) {
+        anchor[key] = { x: anchor.x + Math.cos(cardinal) * len, y: anchor.y + Math.sin(cardinal) * len };
+      }
+    };
+    anchors.forEach((a) => { snap(a, 'in'); snap(a, 'out'); });
+    return anchors;
+  };
+
+  // ── Layout ──────────────────────────────────────────────────────────────────
+  // Cap height in font units → the reference the user's "Size" maps to, matching
+  // StrokeFont (whose CAP unit maps to size). Falls back to a typical 0.7em.
+  const capHeightEm = (font) => {
+    const os2 = font.tables && font.tables.os2;
+    if (os2 && os2.sCapHeight) return os2.sCapHeight / font.unitsPerEm;
+    if (font.ascender) return (font.ascender * 0.72) / font.unitsPerEm;
+    return 0.7;
+  };
+
+  /**
+   * Lay text out into positioned outline polylines.
+   *
+   * @param {string} text  supports '\n' line breaks.
+   * @param {object} opt   { id, size, tracking, lineHeight, align }
+   *   size       cap height in mm (default 14, matching StrokeFont)
+   *   tracking   extra letter spacing in mm (default 0)
+   *   lineHeight line advance as a multiple of size (default 1.4)
+   *   align      'left' | 'center' | 'right' (default 'left')
+   * @returns {{ paths: Array<Array<{x,y}>>, width, height }} mm, y-down.
+   */
+  const layout = (text, opt = {}) => {
+    const font = getParsed(opt.id);
+    if (!font) return { paths: [], width: 0, height: 0 };
+
+    const size = Math.max(0.1, Number(opt.size) || 14);
+    const emSize = size / capHeightEm(font); // mm per em so cap-height maps to size
+    const fu = emSize / font.unitsPerEm; // font units → mm
+    const tracking = Number(opt.tracking) || 0;
+    const lineHeight = (Number(opt.lineHeight) || 1.4) * size;
+    const align = opt.align === 'center' || opt.align === 'right' ? opt.align : 'left';
+    const wantBezier = opt.bezier === true;
+    const smoothing = Math.max(0, Number(opt.smoothing) || 0);
+    // Flatten in the laid-out mm space; tolerance scales with size so curve
+    // smoothness stays constant regardless of the chosen size or later fit scale.
+    // Higher `smoothing` tightens the tolerance → more points → a visibly smoother
+    // flattened outline. smoothing 0 reproduces the historical default exactly.
+    const tolerance = Math.max(1e-4, (emSize * 0.004) / (1 + smoothing));
+
+    const rawLines = String(text == null ? '' : text).split('\n');
+
+    const lineGlyphs = rawLines.map((line) => font.stringToGlyphs(line));
+    const lineWidth = (glyphs) => {
+      let w = 0;
+      glyphs.forEach((g, i) => {
+        w += (g.advanceWidth || 0) * fu;
+        if (i < glyphs.length - 1) {
+          w += (font.getKerningValue(g, glyphs[i + 1]) || 0) * fu + tracking;
+        }
+      });
+      return Math.max(0, w);
+    };
+    const widths = lineGlyphs.map(lineWidth);
+    const maxW = widths.reduce((m, w) => Math.max(m, w), 0);
+
+    const paths = [];
+    // When bezier output is requested, `anchors` runs parallel to `paths`: each
+    // entry is the contour's {x,y,in,out} anchor array (or null if it couldn't be
+    // paired 1:1 with its flattened polyline — the algorithm then renders that
+    // contour as a verbatim polyline). The polylines are always produced so the
+    // bounding box, fit-to-frame, and fill regions stay exact.
+    const anchors = wantBezier ? [] : null;
+    lineGlyphs.forEach((glyphs, li) => {
+      const offset = align === 'center' ? (maxW - widths[li]) / 2
+        : align === 'right' ? (maxW - widths[li]) : 0;
+      let penX = offset;
+      const baselineY = li * lineHeight + size; // cap-top of line 0 sits near y=0
+      glyphs.forEach((g, i) => {
+        if (typeof g.getPath === 'function' && (g.advanceWidth || g.path)) {
+          const gp = g.getPath(penX, baselineY, emSize, undefined, font);
+          if (gp && gp.commands && gp.commands.length) {
+            const polylines = flattenCommands(gp.commands, tolerance);
+            const contours = wantBezier ? commandsToAnchors(gp.commands) : null;
+            const aligned = wantBezier && contours && contours.length === polylines.length;
+            for (let ci = 0; ci < polylines.length; ci++) {
+              const poly = polylines[ci];
+              if (poly.length < 2) continue;
+              paths.push(poly);
+              if (wantBezier) {
+                anchors.push(aligned ? optimizeAnchorsCardinal(contours[ci], { smoothing }) : null);
+              }
+            }
+          }
+        }
+        let adv = (g.advanceWidth || 0) * fu;
+        if (i < glyphs.length - 1) adv += (font.getKerningValue(g, glyphs[i + 1]) || 0) * fu + tracking;
+        penX += adv;
+      });
+    });
+
+    const height = (rawLines.length - 1) * lineHeight + size * 1.35;
+    return wantBezier ? { paths, anchors, width: maxW, height } : { paths, width: maxW, height };
+  };
+
+  // ── Vendored (offline) families ───────────────────────────────────────────
+  // Register a font family whose TTF is shipped locally in the repo, so the
+  // DEFAULT Text layer can render real outlines in the browser with no network.
+  // BROWSER-ONLY and SILENT-FAIL by design: in node/jsdom there is no usable
+  // document/fetch and no opentype global, so this no-ops and getParsed stays
+  // null → the Text algorithm falls back to the built-in stroke font (which is
+  // what keeps the headless test baselines deterministic and unchanged).
+  //
+  // Idempotent: skips when the family is already parsed or in flight. Also seeds
+  // a catalog entry so findFamily(id) resolves for the picker even before the
+  // network catalog lands. Everything is wrapped so it can never throw at boot.
+  const registerVendored = (id, family, url) => {
+    try {
+      if (!id || !url) return Promise.resolve(null);
+      if (fontStore[id]) return Promise.resolve(fontStore[id]);
+      if (fontPromise[id]) return fontPromise[id];
+      if (!isBrowser() || !canFetch()) return Promise.resolve(null);
+
+      // Seed a minimal catalog entry so the family is selectable/resolvable.
+      if (!findFamily(id)) {
+        families.push({
+          id: String(id),
+          family: String(family || id),
+          category: 'sans-serif',
+          weights: [400],
+          subsets: ['latin'],
+          defSubset: 'latin',
+        });
+      }
+      const entry = findFamily(id);
+
+      fontState[id] = 'loading';
+      fontPromise[id] = Promise.all([
+        ensureLib(),
+        fetch(url).then((res) => {
+          if (!res.ok) throw new Error(`Vendored font request failed (${res.status}).`);
+          return res.arrayBuffer();
+        }),
+      ])
+        .then(([opentype, buffer]) => {
+          const font = opentype.parse(buffer);
+          fontStore[id] = font;
+          fontState[id] = 'ready';
+          if (entry) registerPreviewFace(entry, url);
+          if (typeof regenHook === 'function') {
+            try { regenHook(id); } catch (_) { /* host re-render is best-effort */ }
+          }
+          return font;
+        })
+        .catch(() => {
+          // Silent fail: leave the family unparsed so text falls back to sans.
+          fontState[id] = 'error';
+          return null;
+        })
+        .finally(() => {
+          fontPromise[id] = null;
+        });
+      return fontPromise[id];
+    } catch (_) {
+      return Promise.resolve(null);
+    }
+  };
+
+  // ── Key helpers ─────────────────────────────────────────────────────────────
+  const isWebFontKey = (key) => typeof key === 'string' && key.startsWith(KEY_PREFIX);
+  const keyToId = (key) => (isWebFontKey(key) ? key.slice(KEY_PREFIX.length) : '');
+  const idToKey = (id) => KEY_PREFIX + id;
+
+  Vectura.GoogleFonts = {
+    KEY_PREFIX,
+    CATALOG_URL,
+    FILE_BASE,
+    isWebFontKey,
+    keyToId,
+    idToKey,
+    loadCatalog,
+    getFamilies,
+    findFamily,
+    getCatalogStatus,
+    fileUrl,
+    pickWeight,
+    ensureFont,
+    registerVendored,
+    getFontStatus,
+    getParsed,
+    flattenCommands,
+    commandsToAnchors,
+    optimizeAnchorsCardinal,
+    layout,
+    setRegenHook: (fn) => { regenHook = typeof fn === 'function' ? fn : null; },
+  };
+})();

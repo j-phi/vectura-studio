@@ -1,0 +1,354 @@
+/*
+ * Web-font source for the Text algorithm (RGR coverage).
+ *
+ * window.Vectura.GoogleFonts unlocks the public web-font catalog as an optional
+ * Text source: any family's glyph *outlines* are traced into pen-ready polylines.
+ * The network-bound pieces (catalog fetch, TTF load, parse) are exercised in the
+ * browser; these tests pin the pure, offline contract:
+ *   - the `google:<slug>` key scheme the Text algorithm branches on
+ *   - file-URL + weight resolution
+ *   - bezier→polyline flattening (sharp corners preserved, curves subdivided)
+ *   - layout() positioning/alignment against a synthetic parsed font
+ *   - the Text algorithm's swap-to-outline / fall-back-to-stroke branch
+ */
+const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+
+describe('GoogleFonts web-font source', () => {
+  let runtime;
+  let V;
+  let GF;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    GF = V.GoogleFonts;
+  });
+
+  afterAll(() => runtime.cleanup());
+
+  // A synthetic opentype-shaped font: every glyph is a unit square outline so the
+  // layout math is exactly predictable. capHeight 700/1000 em → cap maps to size.
+  const makeFont = () => ({
+    unitsPerEm: 1000,
+    tables: { os2: { sCapHeight: 700 } },
+    getKerningValue: () => 0,
+    stringToGlyphs: (s) => Array.from(String(s)).map(() => ({
+      advanceWidth: 500,
+      getPath: (x, y, em) => ({
+        commands: [
+          { type: 'M', x, y: y - em * 0.5 },
+          { type: 'L', x: x + em * 0.4, y: y - em * 0.5 },
+          { type: 'L', x: x + em * 0.4, y },
+          { type: 'L', x, y },
+          { type: 'Z' },
+        ],
+      }),
+    })),
+  });
+
+  test('key scheme round-trips and is distinct from built-in ids', () => {
+    expect(GF.isWebFontKey('google:roboto')).toBe(true);
+    expect(GF.isWebFontKey('sans')).toBe(false);
+    expect(GF.isWebFontKey('')).toBe(false);
+    expect(GF.keyToId('google:open-sans')).toBe('open-sans');
+    expect(GF.idToKey('open-sans')).toBe('google:open-sans');
+    expect(GF.keyToId(GF.idToKey('lobster'))).toBe('lobster');
+  });
+
+  test('weight resolution prefers the family weight nearest Regular (400)', () => {
+    expect(GF.pickWeight([400, 700])).toBe(400);
+    expect(GF.pickWeight([300, 700])).toBe(300); // 300 is closer to 400 than 700
+    expect(GF.pickWeight([700])).toBe(700);
+    expect(GF.pickWeight([])).toBe(400);
+  });
+
+  test('file URL targets the CORS TTF mirror with the resolved subset/weight', () => {
+    const url = GF.fileUrl({ id: 'open-sans', weights: [400, 700], defSubset: 'latin' });
+    expect(url).toBe('https://cdn.jsdelivr.net/fontsource/fonts/open-sans@latest/latin-400-normal.ttf');
+    const url2 = GF.fileUrl({ id: 'noto-sans-jp', weights: [700], defSubset: 'japanese' });
+    expect(url2).toBe('https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-jp@latest/japanese-700-normal.ttf');
+  });
+
+  test('flattenCommands keeps straight corners exact and closes on Z', () => {
+    const poly = GF.flattenCommands([
+      { type: 'M', x: 0, y: 0 },
+      { type: 'L', x: 10, y: 0 },
+      { type: 'L', x: 10, y: 10 },
+      { type: 'Z' },
+    ]);
+    expect(poly.length).toBe(1);
+    // 3 declared vertices + the closing return to the start, no interpolation.
+    expect(poly[0]).toEqual([
+      { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 0 },
+    ]);
+  });
+
+  test('flattenCommands subdivides curves and honours the tolerance', () => {
+    const cmds = [
+      { type: 'M', x: 0, y: 0 },
+      { type: 'C', x1: 0, y1: 40, x2: 40, y2: 40, x: 40, y: 0 },
+    ];
+    const coarse = GF.flattenCommands(cmds, 5);
+    const fine = GF.flattenCommands(cmds, 0.05);
+    expect(coarse[0].length).toBeGreaterThan(2);
+    expect(fine[0].length).toBeGreaterThan(coarse[0].length);
+    // Endpoints are exact regardless of subdivision depth.
+    expect(fine[0][0]).toEqual({ x: 0, y: 0 });
+    expect(fine[0][fine[0].length - 1]).toEqual({ x: 40, y: 0 });
+  });
+
+  test('flattenCommands emits one polyline per contour (M starts a new subpath)', () => {
+    const poly = GF.flattenCommands([
+      { type: 'M', x: 0, y: 0 }, { type: 'L', x: 5, y: 0 }, { type: 'L', x: 5, y: 5 }, { type: 'Z' },
+      { type: 'M', x: 10, y: 0 }, { type: 'L', x: 15, y: 0 }, { type: 'L', x: 15, y: 5 }, { type: 'Z' },
+    ]);
+    expect(poly.length).toBe(2);
+  });
+
+  describe('layout()', () => {
+    const ID = '__test-font__';
+    beforeEach(() => { V.WEBFONT_GLYPHS[ID] = makeFont(); });
+    afterEach(() => { delete V.WEBFONT_GLYPHS[ID]; });
+
+    test('returns nothing when the family is not yet parsed', () => {
+      const out = GF.layout('AB', { id: 'not-loaded', size: 14 });
+      expect(out.paths).toEqual([]);
+      expect(out.width).toBe(0);
+    });
+
+    test('produces one outline contour per glyph with proportional advance', () => {
+      const out = GF.layout('AB', { id: ID, size: 14, align: 'left' });
+      expect(out.paths.length).toBe(2); // one square contour each
+      // advance per glyph = 500fu × (size/cap)/em = 14/1.4 = 10mm → width 20mm.
+      expect(out.width).toBeCloseTo(20, 5);
+      out.paths.forEach((p) => expect(p.length).toBeGreaterThanOrEqual(2));
+    });
+
+    test('centre alignment indents the shorter line by half the slack', () => {
+      const out = GF.layout('A\nAB', { id: ID, size: 14, align: 'center' });
+      // Line 0 ('A', 10mm) inside a 20mm block → 5mm left indent. Its single glyph
+      // is the first contour emitted, so paths[0] is line 0.
+      const minX = Math.min(...out.paths[0].map((pt) => pt.x));
+      expect(minX).toBeCloseTo(5, 4);
+    });
+  });
+
+  describe('commandsToAnchors (outline → bezier anchors)', () => {
+    test('a straight closed contour yields one handle-free anchor per corner', () => {
+      const contours = GF.commandsToAnchors([
+        { type: 'M', x: 0, y: 0 },
+        { type: 'L', x: 10, y: 0 },
+        { type: 'L', x: 10, y: 10 },
+        { type: 'L', x: 0, y: 0 }, // explicit return to start
+        { type: 'Z' },
+      ]);
+      expect(contours.length).toBe(1);
+      // The closing point coincides with the start, so it is merged away.
+      expect(contours[0].length).toBe(3);
+      contours[0].forEach((a) => { expect(a.in).toBeNull(); expect(a.out).toBeNull(); });
+    });
+
+    test('cubic commands wire out-handle on the from-anchor and in-handle on the to-anchor', () => {
+      const [c] = GF.commandsToAnchors([
+        { type: 'M', x: 0, y: 0 },
+        { type: 'C', x1: 0, y1: 5, x2: 5, y2: 5, x: 5, y: 0 },
+        { type: 'C', x1: 5, y1: -5, x2: 0, y2: -5, x: 0, y: 0 }, // closes back to start
+        { type: 'Z' },
+      ]);
+      expect(c.length).toBe(2);
+      expect(c[0].out).toEqual({ x: 0, y: 5 });   // first cubic's c1
+      expect(c[1].in).toEqual({ x: 5, y: 5 });    // first cubic's c2
+      expect(c[1].out).toEqual({ x: 5, y: -5 });  // closing cubic's c1
+      expect(c[0].in).toEqual({ x: 0, y: -5 });   // closing cubic's c2 merged onto start
+    });
+
+    test('quadratics are promoted to cubics with the 2/3 control rule', () => {
+      const [c] = GF.commandsToAnchors([
+        { type: 'M', x: 0, y: 0 },
+        { type: 'Q', x1: 10, y1: 10, x: 20, y: 0 },
+      ]);
+      expect(c.length).toBe(2);
+      expect(c[0].out.x).toBeCloseTo(20 / 3, 6);
+      expect(c[0].out.y).toBeCloseTo(20 / 3, 6);
+      expect(c[1].in.x).toBeCloseTo(20 - 20 / 3, 6);
+      expect(c[1].in.y).toBeCloseTo(20 / 3, 6);
+    });
+  });
+
+  describe('optimizeAnchorsCardinal', () => {
+    test('snaps a near-horizontal handle to exactly horizontal, preserving length', () => {
+      const anchors = [
+        { x: 0, y: 0, in: null, out: { x: 10, y: 0.3 } }, // ~1.7° off horizontal
+        { x: 20, y: 0, in: null, out: null },
+      ];
+      GF.optimizeAnchorsCardinal(anchors, { smoothing: 0 });
+      expect(anchors[0].out.y).toBeCloseTo(0, 6);
+      expect(Math.hypot(anchors[0].out.x, anchors[0].out.y)).toBeCloseTo(Math.hypot(10, 0.3), 6);
+    });
+
+    test('leaves a clearly diagonal handle untouched', () => {
+      const anchors = [
+        { x: 0, y: 0, in: null, out: { x: 10, y: 10 } }, // 45°
+        { x: 20, y: 0, in: null, out: null },
+      ];
+      GF.optimizeAnchorsCardinal(anchors, { smoothing: 0 });
+      expect(anchors[0].out).toEqual({ x: 10, y: 10 });
+    });
+  });
+
+  describe('smoothing → flatten tolerance', () => {
+    const ID = '__curve-font__';
+    const curveFont = () => ({
+      unitsPerEm: 1000,
+      tables: { os2: { sCapHeight: 700 } },
+      getKerningValue: () => 0,
+      stringToGlyphs: (s) => Array.from(String(s)).map(() => ({
+        advanceWidth: 500,
+        getPath: (x, y, em) => ({
+          commands: [
+            { type: 'M', x, y: y - em * 0.5 },
+            { type: 'C', x1: x + em * 0.3, y1: y - em * 0.5, x2: x + em * 0.3, y2: y, x, y },
+            { type: 'Z' },
+          ],
+        }),
+      })),
+    });
+    beforeEach(() => { V.WEBFONT_GLYPHS[ID] = curveFont(); });
+    afterEach(() => { delete V.WEBFONT_GLYPHS[ID]; });
+
+    test('higher smoothing subdivides curves more finely (more points)', () => {
+      const coarse = GF.layout('O', { id: ID, size: 40, smoothing: 0 });
+      const fine = GF.layout('O', { id: ID, size: 40, smoothing: 6 });
+      expect(fine.paths[0].length).toBeGreaterThan(coarse.paths[0].length);
+    });
+
+    test('bezier mode returns anchors parallel to paths with real handles', () => {
+      const out = GF.layout('O', { id: ID, size: 40, bezier: true });
+      expect(Array.isArray(out.anchors)).toBe(true);
+      expect(out.anchors.length).toBe(out.paths.length);
+      const withHandles = out.anchors.filter(Boolean).some((c) => c.some((a) => a.in || a.out));
+      expect(withHandles).toBe(true);
+    });
+  });
+
+  describe('Text algorithm web-font branch', () => {
+    const bounds = { width: 400, height: 300, m: 20, dW: 360, dH: 260 };
+    const gen = (extra) => V.AlgorithmRegistry.text.generate(
+      { ...V.ALGO_DEFAULTS.text, ...extra },
+      new V.SeededRNG(1),
+      new V.SimpleNoise(1),
+      bounds,
+    );
+
+    // The Text algorithm reads the parse cache (Vectura.WEBFONT_GLYPHS) through the
+    // module's own getParsed, so a parsed family is simulated by seeding the store;
+    // the async loader is stubbed so no test ever touches the network.
+    const PARSED_ID = '__parsed-web__';
+    let savedEnsure;
+    let savedStatus;
+    beforeEach(() => { savedEnsure = GF.ensureFont; savedStatus = GF.getFontStatus; });
+    afterEach(() => {
+      GF.ensureFont = savedEnsure;
+      GF.getFontStatus = savedStatus;
+      delete V.WEBFONT_GLYPHS[PARSED_ID];
+    });
+
+    test('traces glyph outlines when the chosen web family is parsed', () => {
+      V.WEBFONT_GLYPHS[PARSED_ID] = makeFont();
+      const paths = gen({ font: `google:${PARSED_ID}`, text: 'AB', fitToFrame: false, fontSize: 40 });
+      expect(paths.length).toBeGreaterThan(0);
+      paths.forEach((p) => expect(p.length).toBeGreaterThanOrEqual(2));
+      // Outlines are pre-flattened — they must not be re-smoothed by the engine.
+      expect(paths.every((p) => p.meta && p.meta.straight === true)).toBe(true);
+    });
+
+    test('falls back to the stroke font and kicks off the load while unparsed', () => {
+      let requested = null;
+      GF.getFontStatus = () => 'idle';
+      GF.ensureFont = (id) => { requested = id; return Promise.resolve(); };
+      const paths = gen({ font: 'google:lobster', text: 'AB', fitToFrame: false, fontSize: 40 });
+      expect(paths.length).toBeGreaterThan(0); // stroke placeholder renders meanwhile
+      expect(requested).toBe('lobster');
+    });
+
+    test('does not re-request a family that is already loading', () => {
+      let calls = 0;
+      GF.getFontStatus = () => 'loading';
+      GF.ensureFont = () => { calls += 1; return Promise.resolve(); };
+      gen({ font: 'google:lobster', text: 'AB' });
+      expect(calls).toBe(0);
+    });
+  });
+
+  describe('Text outline features (bezier / fill / thickening / plot order)', () => {
+    const bounds = { width: 400, height: 300, m: 20, dW: 360, dH: 260 };
+    const PARSED = '__outline-feat__';
+    const gen = (extra) => V.AlgorithmRegistry.text.generate(
+      { ...V.ALGO_DEFAULTS.text, ...extra },
+      new V.SeededRNG(1),
+      new V.SimpleNoise(1),
+      bounds,
+    );
+    // A glyph whose outline is a single cubic-bearing closed contour.
+    const curveFont = () => ({
+      unitsPerEm: 1000, tables: { os2: { sCapHeight: 700 } }, getKerningValue: () => 0,
+      stringToGlyphs: (s) => Array.from(String(s)).map(() => ({
+        advanceWidth: 500,
+        getPath: (x, y, em) => ({ commands: [
+          { type: 'M', x, y: y - em * 0.5 },
+          { type: 'C', x1: x + em * 0.3, y1: y - em * 0.5, x2: x + em * 0.3, y2: y, x, y },
+          { type: 'Z' },
+        ] }),
+      })),
+    });
+    afterEach(() => { delete V.WEBFONT_GLYPHS[PARSED]; });
+
+    test('bezierOutline attaches native cubic anchors to the stroke paths', () => {
+      V.WEBFONT_GLYPHS[PARSED] = curveFont();
+      const paths = gen({ font: `google:${PARSED}`, text: 'O', fitToFrame: false, fontSize: 40, bezierOutline: true });
+      const curved = paths.filter((p) => p.meta && p.meta.anchors);
+      expect(curved.length).toBeGreaterThan(0);
+      curved.forEach((p) => {
+        expect(p.meta.straight).toBe(false);
+        expect(p.meta.forceCurves).toBe(true);
+        expect(p.meta.closed).toBe(true);
+        expect(p.meta.anchors.some((a) => a.in || a.out)).toBe(true);
+      });
+    });
+
+    test('bezierOutline is suppressed under jitter (no clean curve to keep)', () => {
+      V.WEBFONT_GLYPHS[PARSED] = curveFont();
+      const paths = gen({ font: `google:${PARSED}`, text: 'O', fitToFrame: false, fontSize: 40, bezierOutline: true, jitter: 2 });
+      expect(paths.every((p) => !(p.meta && p.meta.anchors))).toBe(true);
+    });
+
+    test('fillEnabled hatches the glyph interior with tagged fill paths', () => {
+      V.WEBFONT_GLYPHS[PARSED] = makeFont();
+      const plain = gen({ font: `google:${PARSED}`, text: 'A', fitToFrame: false, fontSize: 40 });
+      const filled = gen({ font: `google:${PARSED}`, text: 'A', fitToFrame: false, fontSize: 40, fillEnabled: true, fillType: 'hatch', fillDensity: 6 });
+      expect(filled.length).toBeGreaterThan(plain.length);
+      expect(filled.some((p) => p.meta && p.meta.textFill)).toBe(true);
+    });
+
+    test('outlineStroke:false yields fill-only output (no stroke contours)', () => {
+      V.WEBFONT_GLYPHS[PARSED] = makeFont();
+      const out = gen({ font: `google:${PARSED}`, text: 'A', fitToFrame: false, fontSize: 40, fillEnabled: true, fillType: 'hatch', fillDensity: 6, outlineStroke: false });
+      expect(out.length).toBeGreaterThan(0);
+      expect(out.every((p) => p.meta && p.meta.textFill)).toBe(true);
+    });
+
+    test('outlineThickness > 1 expands each contour into parallel passes', () => {
+      V.WEBFONT_GLYPHS[PARSED] = makeFont();
+      const thin = gen({ font: `google:${PARSED}`, text: 'A', fitToFrame: false, fontSize: 40 });
+      const thick = gen({ font: `google:${PARSED}`, text: 'A', fitToFrame: false, fontSize: 40, outlineThickness: 3, thickeningMode: 'parallel' });
+      expect(thick.length).toBe(thin.length * 3);
+    });
+
+    test('plotOrder leftToRight sorts paths by ascending min-x', () => {
+      V.WEBFONT_GLYPHS[PARSED] = makeFont();
+      const sorted = gen({ font: `google:${PARSED}`, text: 'AB', fitToFrame: false, fontSize: 40, plotOrder: 'leftToRight' });
+      const minX = sorted.map((p) => Math.min(...p.map((pt) => pt.x)));
+      for (let i = 1; i < minX.length; i++) expect(minX[i]).toBeGreaterThanOrEqual(minX[i - 1]);
+    });
+  });
+});

@@ -637,6 +637,79 @@
     return finalizeFlattened(out, path, closed);
   };
 
+  // ── Stroke thickening ───────────────────────────────────────────────────────
+  // Thicken single-stroke paths by drawing `width` parallel passes offset along
+  // each point's local normal. This is the shared engine behind the "Thickening
+  // Mode" control (Parallel / Sinusoidal / Snake) used by multiple algorithms —
+  // a pen-plotter way to fake a heavier stroke without true outline fills.
+  //
+  //   parallel    — N evenly spaced offset copies.
+  //   sinusoidal  — each copy's offset is modulated by a sine wave along the path
+  //                 so the bundle breathes in and out (looser, hand-drawn feel).
+  //   snake       — the N copies are stitched end-to-end into one boustrophedon
+  //                 polyline (every other pass reversed) so the pen never lifts.
+  //
+  // Per-point normals (not a single fixed perpendicular) keep curved strokes —
+  // e.g. glyph outlines — thickening cleanly around bends. `width <= 1` is a
+  // no-op that returns the input untouched. When `rng` is supplied, exactly one
+  // value is consumed per processed path (matching the historical harmonograph
+  // stream) so callers stay deterministic.
+  const thickenPaths = (paths, opts = {}) => {
+    const width = Math.max(1, Math.round(opts.width ?? opts.widthMultiplier ?? 1));
+    if (width <= 1 || !Array.isArray(paths)) return paths;
+    const spacing = Number.isFinite(opts.spacing) ? opts.spacing : 0.35;
+    const mode = opts.mode === 'sinusoidal' || opts.mode === 'snake' ? opts.mode : 'parallel';
+    const rng = opts.rng && typeof opts.rng.nextFloat === 'function' ? opts.rng : null;
+
+    const half = (width - 1) / 2;
+    const offsets = [];
+    for (let i = 0; i < width; i++) offsets.push((i - half) * spacing);
+
+    const thickened = [];
+    paths.forEach((path) => {
+      if (!Array.isArray(path) || path.length < 2) return;
+      const normals = path.map((pt, i) => {
+        const prev = path[i - 1] || pt;
+        const next = path[i + 1] || pt;
+        const dx = next.x - prev.x;
+        const dy = next.y - prev.y;
+        const mag = Math.hypot(dx, dy) || 1;
+        return { x: -dy / mag, y: dx / mag };
+      });
+      const phase = rng ? rng.nextFloat() * Math.PI * 2 : 0;
+      const waveFreq = 2 + width * 0.4;
+      const waveAmp = spacing * 0.6;
+      const offsetPaths = offsets.map((offset, idx) =>
+        path.map((pt, i) => {
+          let off = offset;
+          if (mode === 'sinusoidal') {
+            const t = path.length > 1 ? i / (path.length - 1) : 0;
+            off += Math.sin(t * Math.PI * 2 * waveFreq + phase + idx) * waveAmp;
+          }
+          const n = normals[i] || { x: 0, y: 0 };
+          const out = { x: pt.x + n.x * off, y: pt.y + n.y * off };
+          if (pt.meta) out.meta = pt.meta;
+          return out;
+        })
+      );
+      if (mode === 'snake' && offsetPaths.length > 1) {
+        const snake = [];
+        offsetPaths.forEach((p, idx) => {
+          if (idx % 2 === 0) snake.push(...p);
+          else snake.push(...p.slice().reverse());
+        });
+        if (path.meta) snake.meta = path.meta;
+        thickened.push(snake);
+      } else {
+        offsetPaths.forEach((p) => {
+          if (path.meta) p.meta = path.meta;
+          thickened.push(p);
+        });
+      }
+    });
+    return thickened.length ? thickened : paths;
+  };
+
   const api = {
     stripCurveMeta,
     smoothPath,
@@ -655,6 +728,7 @@
     segmentCircleIntersections,
     splitPathByShape,
     flattenSmoothedPath,
+    thickenPaths,
   };
 
   if (typeof window !== 'undefined') {

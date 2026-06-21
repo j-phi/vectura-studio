@@ -51,8 +51,10 @@
 
   const POLYHEDRON_SIDE_COUNT_SOLIDS = ['flatPolygon', 'prism', 'antiprism', 'bipyramid'];
   const POLYHEDRON_DEPTH_SOLIDS = ['prism', 'antiprism', 'bipyramid'];
+  const POLYHEDRON_FREQUENCY_SOLIDS = ['geodesic', 'goldberg'];
   const polyhedronUsesSideCount = (p = {}) => POLYHEDRON_SIDE_COUNT_SOLIDS.includes(p.solidType);
   const polyhedronUsesDepth = (p = {}) => POLYHEDRON_DEPTH_SOLIDS.includes(p.solidType);
+  const polyhedronUsesFrequency = (p = {}) => POLYHEDRON_FREQUENCY_SOLIDS.includes(p.solidType);
 
   const PETAL_PROFILE_OPTIONS = [
     { value: 'oval', label: 'Oval' },
@@ -1529,8 +1531,10 @@
       {
         id: 'font',
         label: 'Font',
-        type: 'select',
-        options: [
+        type: 'fontPicker',
+        // Built-in single-stroke faces; the picker adds a Google Fonts tab that
+        // traces any web family's glyph outlines into pen paths.
+        builtins: [
           { value: 'sans', label: 'Vectura Sans' },
           { value: 'italic', label: 'Vectura Italic' },
           { value: 'condensed', label: 'Condensed' },
@@ -1556,6 +1560,50 @@
       { id: 'offsetX', label: 'Offset X', type: 'range', min: -200, max: 200, step: 1 },
       { id: 'offsetY', label: 'Offset Y', type: 'range', min: -200, max: 200, step: 1 },
       { id: 'jitter', label: 'Hand Jitter', type: 'range', min: 0, max: 3, step: 0.05 },
+      // ── Outline ──────────────────────────────────────────────────────────
+      { type: 'section', label: 'Outline' },
+      { id: 'outlineStroke', label: 'Stroke Outline', type: 'checkbox', infoKey: 'text.outlineStroke' },
+      { id: 'outlineThickness', label: 'Outline Weight', type: 'range', min: 1, max: 6, step: 1, showIf: (p) => p.outlineStroke !== false, infoKey: 'text.outlineThickness' },
+      {
+        id: 'thickeningMode',
+        label: 'Thickening Mode',
+        type: 'select',
+        options: [
+          { value: 'parallel', label: 'Parallel' },
+          { value: 'sinusoidal', label: 'Sinusoidal' },
+          { value: 'snake', label: 'Snake' },
+        ],
+        showIf: (p) => p.outlineStroke !== false && (p.outlineThickness ?? 1) > 1,
+        infoKey: 'text.thickeningMode',
+      },
+      // Native glyph beziers + smoothness only apply to traced web-font outlines.
+      { id: 'bezierOutline', label: 'Bezier Curves', type: 'checkbox', showIf: (p) => !!(window.Vectura.GoogleFonts && window.Vectura.GoogleFonts.isWebFontKey(p.font)), infoKey: 'text.bezierOutline' },
+      { id: 'smoothing', label: 'Smoothness', type: 'range', min: 0, max: 6, step: 0.5, showIf: (p) => !!(window.Vectura.GoogleFonts && window.Vectura.GoogleFonts.isWebFontKey(p.font)), infoKey: 'text.smoothing' },
+      {
+        id: 'plotOrder',
+        label: 'Plot Order',
+        type: 'select',
+        options: [
+          { value: 'leftToRight', label: 'Left → Right' },
+          { value: 'natural', label: 'Natural' },
+        ],
+        infoKey: 'text.plotOrder',
+      },
+      // ── Fill (web outline faces only — built-in stroke faces have no interior) ─
+      { type: 'section', label: 'Fill' },
+      { id: 'fillEnabled', label: 'Enable Fill', type: 'checkbox', showIf: (p) => !!(window.Vectura.GoogleFonts && window.Vectura.GoogleFonts.isWebFontKey(p.font)), infoKey: 'text.fillEnabled' },
+      ...(window.Vectura.FillPanel?.buildFillControlDefs({
+        typeParam: 'fillType',
+        densityParam: 'fillDensity',
+        angleParam: 'fillAngle',
+        amplitudeParam: 'fillAmplitude',
+        paddingParam: 'fillPadding',
+        dotSizeParam: 'fillDotSize',
+        shiftXParam: 'fillShiftX',
+        shiftYParam: 'fillShiftY',
+        showIfBase: (p) => p.fillEnabled === true && !!(window.Vectura.GoogleFonts && window.Vectura.GoogleFonts.isWebFontKey(p.font)),
+        descKeyPrefix: 'fill',
+      }) || []),
     ],
     grid: [
       { id: 'rows', label: 'Rows', type: 'range', min: 2, max: 60, step: 1, infoKey: 'grid.rows' },
@@ -2111,13 +2159,17 @@
         { value: 'tetrahedron', label: 'Tetrahedron' },
         { value: 'cube', label: 'Cube' },
         { value: 'octahedron', label: 'Octahedron' },
+        { value: 'dodecahedron', label: 'Dodecahedron' },
         { value: 'icosahedron', label: 'Icosahedron' },
+        { value: 'geodesic', label: 'Geodesic' },
+        { value: 'goldberg', label: 'Goldberg' },
         { value: 'buckyball', label: 'Buckyball' },
         { value: 'importedMesh', label: 'STL Mesh…' },
       ],
     },
     { id: 'stlImport', type: 'stlImport', showIf: (p) => p.solidType === 'importedMesh' },
     { id: 'sideCount', label: 'Sides', type: 'range', min: 3, max: 180, step: 1, showIf: polyhedronUsesSideCount, livePreview: true },
+    { id: 'frequency', label: 'Frequency', type: 'range', min: 1, max: 6, step: 1, showIf: polyhedronUsesFrequency, livePreview: true },
     { id: 'radius', label: 'Radius', type: 'range', min: 20, max: 130, step: 1, displayUnit: 'mm', livePreview: true },
     { id: 'depth', label: 'Depth', type: 'range', min: 0, max: 180, step: 1, displayUnit: 'mm', showIf: polyhedronUsesDepth, livePreview: true },
     { type: 'section', label: 'Visibility' },

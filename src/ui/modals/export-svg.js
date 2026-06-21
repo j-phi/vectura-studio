@@ -1036,7 +1036,7 @@
     if (btnAnimated) btnAnimated.onclick = () => this.exportAnimatedSVG();
   }
 
-  function openExportModal() {
+  function openExportModal(opts = {}) {
     const { getEl, SETTINGS, clamp, getContrastTextColor, openColorPickerAnchoredTo } =
       requireDeps('openExportModal');
     const controls = getEl('optimization-controls');
@@ -1155,7 +1155,12 @@
       previewMode: SETTINGS.optimizationPreview === 'replace' ? 'replace' : 'overlay',
       overlayColor: SETTINGS.optimizationOverlayColor || '#38bdf8',
       overlayWidth: Math.max(0.05, SETTINGS.optimizationOverlayWidth ?? 0.2),
-      lineSortSecondaryColor: null,
+      // Seed the end colour from the shared overlay setting so the Export legend
+      // matches the main-canvas legend on open. Empty → null = auto-complement.
+      lineSortSecondaryColor: (SETTINGS.optimizationOverlaySecondaryColor || '').trim() || null,
+      // Optional deep-link: open directly on a given settings tab (e.g. the
+      // Draw-Order gear opens on 'linesort'). Honored by decorateExportControlsPanel.
+      activeSection: opts && opts.section ? opts.section : undefined,
     };
 
     const onWheel = (e) => {
@@ -1246,12 +1251,14 @@
       legendStartColorInput.oninput = (e) => {
         if (!this.exportModalState) return;
         this.exportModalState.overlayColor = e.target.value;
+        SETTINGS.optimizationOverlayColor = e.target.value;
         syncLegendPill(legendStartColorBtn, e.target.value);
         this.renderExportPreview();
       };
       legendStartColorInput.onchange = (e) => {
         if (!this.exportModalState) return;
         this.exportModalState.overlayColor = e.target.value;
+        SETTINGS.optimizationOverlayColor = e.target.value;
         syncLegendPill(legendStartColorBtn, e.target.value);
         if (this.exportModalState?.isOpen) this.renderExportPreview();
       };
@@ -1261,12 +1268,14 @@
       legendEndColorInput.oninput = (e) => {
         if (!this.exportModalState) return;
         this.exportModalState.lineSortSecondaryColor = e.target.value;
+        SETTINGS.optimizationOverlaySecondaryColor = e.target.value;
         syncLegendPill(legendEndColorBtn, e.target.value);
         this.renderExportPreview();
       };
       legendEndColorInput.onchange = (e) => {
         if (!this.exportModalState) return;
         this.exportModalState.lineSortSecondaryColor = e.target.value;
+        SETTINGS.optimizationOverlaySecondaryColor = e.target.value;
         syncLegendPill(legendEndColorBtn, e.target.value);
         if (this.exportModalState?.isOpen) this.renderExportPreview();
       };
@@ -1410,7 +1419,7 @@
     optimizeTargetsForCurrentScope,
     installOn(proto) {
       proto.bindExportButton = function() { return bindExportButton.call(this); };
-      proto.openExportModal = function() { return openExportModal.call(this); };
+      proto.openExportModal = function(opts) { return openExportModal.call(this, opts); };
       proto.fitExportPreview = function() { return fitExportPreview.call(this); };
       proto.resizeExportPreviewCanvas = function() { return resizeExportPreviewCanvas.call(this); };
       proto.renderExportPreview = function() { return renderExportPreview.call(this); };

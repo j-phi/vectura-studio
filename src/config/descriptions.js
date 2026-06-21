@@ -27,7 +27,7 @@
     grid:
       'A rectilinear mesh deformed by a stacked Noise Rack field. Supports warping vertices or displacing rows/cols for glitch effects.',
     text:
-      'Sets a string in a built-in single-stroke font and fits it to the frame as pen-ready line art. Supports multi-line text, alignment, tracking, absolute or frame-fit sizing, and an optional hand-drawn jitter.',
+      'Sets a string in a built-in single-stroke font — or any Google Font, traced as glyph outlines — and fits it to the frame as pen-ready line art. Supports multi-line text, alignment, tracking, absolute or frame-fit sizing, and an optional hand-drawn jitter.',
     halftone:
       'Screens a picture into a rotatable grid of dots — circle, a parametric polygon (any side count), star, gear, flower, cross or heart — whose size grows with local darkness, for a plotter-ready halftone. Dot rotation can ramp across the screen along a 360° direction dial by an amount and easing curve; plus Jitter, Aspect and an optional interior Fill (hatch, spiral, dots…). Shape tone with brightness, contrast and gamma; with no image it screens a built-in sphere.',
     imageWeave:

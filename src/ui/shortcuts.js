@@ -680,10 +680,11 @@
 
     // Gear → export settings: the draw-order readout (distance | lines | time)
     // is driven by the same optimization/pen settings the export modal owns, so
-    // the gear opens that modal for the user to tune them.
+    // the gear opens that modal — deep-linked to the Line Sort tab, since that is
+    // what governs draw order — for the user to tune them.
     document.getElementById('draw-order-settings')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.openExportModal?.();
+      this.openExportModal?.({ section: 'linesort' });
     });
 
     // Legend gear → inline Start Color / End Color / Line Thickness dialogue, mirroring

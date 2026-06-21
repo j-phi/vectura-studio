@@ -98,12 +98,6 @@
     return proxy;
   };
 
-  // Cleanup for the currently-open native picker session. The proxy input is a
-  // shared singleton, so re-opening (e.g. clicking the end-colour swatch while
-  // the start-colour panel is still up) must tear down the prior session first
-  // to avoid stacking listeners that double-apply onto the wrong target.
-  let activeColorPickerCleanup = null;
-
   const openColorPickerAnchoredTo = (colorInput, triggerEl, { title = 'Color', uiInstance = null } = {}) => {
     if (!colorInput || !triggerEl) return;
 
@@ -125,9 +119,14 @@
       return;
     }
 
-    // Tear down any still-open native picker session before starting a new one
-    // (the proxy input is a singleton shared across every anchored swatch).
-    if (activeColorPickerCleanup) activeColorPickerCleanup();
+    // Replace the proxy node entirely on every open. The native colour picker
+    // (macOS NSColorPanel especially) is a persistent shared surface that does
+    // not emit focus/blur to the page, so there is no reliable signal to tear a
+    // prior session down. Recreating the node drops every stale listener with
+    // the old node and forces the picker to re-bind, so each open is independent
+    // and reliable, and sequential picks never cross-apply onto a prior target.
+    const stale = document.getElementById('anchored-color-proxy-input');
+    if (stale) stale.remove();
 
     const rect = triggerEl.getBoundingClientRect();
     const proxyInput = getAnchoredColorProxyInput();
@@ -144,40 +143,17 @@
     proxyInput.style.top = `${top}px`;
     proxyInput.style.transform = `translate(-50%, ${placeAbove ? '-100%' : '0'})`;
 
-    let done = false;
-
     const syncToSource = (evtName) => {
       colorInput.value = proxyInput.value;
       colorInput.dispatchEvent(new Event(evtName, { bubbles: true }));
     };
 
-    const cleanup = () => {
-      if (done) return;
-      done = true;
-      if (activeColorPickerCleanup === cleanup) activeColorPickerCleanup = null;
-      proxyInput.removeEventListener('input', handleInput);
-      proxyInput.removeEventListener('change', handleChange);
-      proxyInput.removeEventListener('blur', cleanup);
-      window.removeEventListener('focus', cleanup);
-      proxyInput.style.left = '-9999px';
-      proxyInput.style.top = '-9999px';
-      proxyInput.style.transform = 'none';
-    };
-    activeColorPickerCleanup = cleanup;
-
     // Keep applying EVERY selection. The macOS system colour panel (and other
     // persistent native pickers) stays open across multiple picks and fires one
-    // `change` per selection — tearing down on the first `change` would freeze
-    // the colour after a single pick. Instead we keep listening until the picker
-    // is dismissed: the window regains focus (`focus`), the proxy blurs, or a
-    // new anchored picker opens (force-cleanup above).
-    const handleInput = () => syncToSource('input');
-    const handleChange = () => syncToSource('change');
-
-    proxyInput.addEventListener('input', handleInput);
-    proxyInput.addEventListener('change', handleChange);
-    proxyInput.addEventListener('blur', cleanup, { once: true });
-    window.addEventListener('focus', cleanup, { once: true });
+    // `input`/`change` per selection — so we just forward each one. There is no
+    // teardown to schedule: the next open replaces this node (see above).
+    proxyInput.addEventListener('input', () => syncToSource('input'));
+    proxyInput.addEventListener('change', () => syncToSource('change'));
 
     // Call showPicker() synchronously — wrapping in rAF breaks the user-gesture
     // chain that mobile browsers require to open the native color picker.

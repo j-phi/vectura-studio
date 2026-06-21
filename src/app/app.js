@@ -88,6 +88,32 @@
       this.renderer = new Renderer('main-canvas', this.engine);
       this.renderer.app = this;
       this.ui = new UI(this);
+      // Web fonts (Text algorithm) parse their outlines asynchronously; re-render
+      // the affected layer when one lands so it swaps from the stroke-font
+      // placeholder to the real letterforms (covers both a fresh pick and a
+      // reloaded project that references a not-yet-cached family).
+      if (window.Vectura?.GoogleFonts?.setRegenHook) {
+        const WebFonts = window.Vectura.GoogleFonts;
+        WebFonts.setRegenHook((id) => {
+          const key = WebFonts.idToKey(id);
+          const layers = (this.engine && this.engine.layers) || [];
+          let touched = false;
+          layers.forEach((layer) => {
+            if (layer && layer.type === 'text' && layer.params && layer.params.font === key) {
+              this.engine.generate(layer.id);
+              touched = true;
+            }
+          });
+          if (touched) {
+            this.render();
+            this.ui?.updateFormula?.();
+          }
+        });
+        // Vendor one OFL family (Inter) locally so the default Text layer can
+        // render real outlines offline in the browser. Best-effort + silent-fail:
+        // a no-op in node/jsdom, where text falls back to the stroke font 'sans'.
+        WebFonts.registerVendored?.('inter', 'Inter', './src/vendor/inter-400.ttf');
+      }
       this.applyTheme(SETTINGS.uiTheme, {
         persist: false,
         syncPen1: false,

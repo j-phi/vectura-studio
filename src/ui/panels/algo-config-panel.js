@@ -1196,6 +1196,242 @@
         target.appendChild(wrapper);
         return;
       }
+      if (def.type === 'fontPicker') {
+        // Built-in stroke faces plus the full web-font catalog, behind two tabs.
+        // The web list is fetched lazily on first open; selecting a web family
+        // kicks off its outline load (the layer re-renders when it lands).
+        const Web = window.Vectura?.GoogleFonts;
+        const builtins = def.builtins || [];
+        const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+        const MAX_BROWSE = 80;    // unfiltered web list is capped — search to go deeper
+        const MAX_RESULTS = 1000; // ceiling on a filtered web list (search reaches deep)
+        const Stroke = window.Vectura?.StrokeFont;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mb-4';
+
+        const keyLabel = (key) => {
+          if (Web && Web.isWebFontKey(key)) {
+            const e = Web.findFamily(Web.keyToId(key));
+            return e ? e.family : Web.keyToId(key);
+          }
+          const b = builtins.find((o) => o.value === key);
+          return b ? b.label : key;
+        };
+
+        let activeTab = (Web && Web.isWebFontKey(layer.params.font)) ? 'google' : 'builtin';
+        let query = '';
+
+        const choose = (value) => {
+          if (value === layer.params.font) return;
+          if (this.app.pushHistory) this.app.pushHistory();
+          layer.params.font = value;
+          this.storeLayerParams(layer);
+          const isWeb = Web && Web.isWebFontKey(value);
+          const needsLoad = isWeb && !Web.getParsed(Web.keyToId(value));
+          if (isWeb) Web.ensureFont(Web.keyToId(value)).catch(() => {});
+          // When the newly chosen web family isn't parsed yet, keep the glyphs that
+          // are currently on the canvas and let the async-load regen hook swap
+          // straight to the real outlines once they land — regenerating now would
+          // flash the built-in stroke fallback in between. Parsed web families and
+          // built-in faces are available immediately, so those swap right away.
+          if (!needsLoad) this.app.regen();
+          this.buildControls();
+          this.updateFormula();
+        };
+
+        // Header: label + the active family name.
+        const head = document.createElement('div');
+        head.className = 'flex justify-between mb-1';
+        head.innerHTML = `
+          <div class="flex items-center gap-2">
+            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
+            ${infoBtn}
+          </div>
+          <span class="text-xs text-vectura-accent font-mono truncate max-w-[55%] text-right" data-font-current></span>`;
+        head.querySelector('[data-font-current]').textContent = keyLabel(layer.params.font);
+        wrapper.appendChild(head);
+
+        // Persistent body shell — only the list re-renders on search so the input
+        // keeps focus while typing.
+        const tabBar = document.createElement('div');
+        tabBar.className = 'flex gap-0 mb-2 border-b border-vectura-border';
+        const search = document.createElement('input');
+        search.type = 'search';
+        search.placeholder = 'Search fonts…';
+        search.className = 'w-full bg-vectura-bg border border-vectura-border p-2 text-xs mb-2 focus:outline-none focus:border-vectura-accent';
+        const listEl = document.createElement('div');
+        listEl.className = 'grid grid-cols-1 gap-1 max-h-56 overflow-y-auto p-1 bg-vectura-bg border border-vectura-border';
+
+        // Build a tiny inline SVG sample of a built-in stroke face, drawn from the
+        // face's own polylines. Best-effort: returns null if StrokeFont is missing
+        // or layout fails (jsdom/offline never throws here).
+        const builtinSampleSvg = (fontId, sample) => {
+          if (!Stroke || typeof Stroke.layout !== 'function') return null;
+          try {
+            const res = Stroke.layout(sample || 'Abc', { font: fontId, size: 14 });
+            const paths = (res && res.paths) || [];
+            if (!paths.length) return null;
+            const w = Math.max(1, res.width || 1);
+            const h = Math.max(1, res.height || 1);
+            const ns = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(ns, 'svg');
+            // Pad slightly so descenders/strokes aren't clipped.
+            svg.setAttribute('viewBox', `-1 -2 ${w + 2} ${h + 4}`);
+            svg.setAttribute('height', '16');
+            svg.setAttribute('preserveAspectRatio', 'xMinYMid meet');
+            svg.setAttribute('fill', 'none');
+            svg.style.maxWidth = '100%';
+            svg.style.display = 'block';
+            paths.forEach((pts) => {
+              const pl = document.createElementNS(ns, 'polyline');
+              pl.setAttribute('points', pts.map((p) => `${p.x},${p.y}`).join(' '));
+              pl.setAttribute('stroke', 'currentColor');
+              pl.setAttribute('stroke-width', '1');
+              pl.setAttribute('stroke-linecap', 'round');
+              pl.setAttribute('stroke-linejoin', 'round');
+              svg.appendChild(pl);
+            });
+            return svg;
+          } catch (_) {
+            return null;
+          }
+        };
+
+        // Lazily render a Google family's NAME in its own typeface. We trigger the
+        // preview FontFace load only for items that become visible, and apply the
+        // family once it resolves (if the button is still mounted). Degrades
+        // silently offline/headless — never throws.
+        const triggerWebPreview = (btn, id, family) => {
+          if (!Web || !btn || !id || !family) return;
+          try {
+            const apply = () => {
+              if (!btn.isConnected) return;
+              btn.style.fontFamily = `'Vectura WF ${family}', sans-serif`;
+            };
+            const p = Web.ensureFont(id);
+            if (p && typeof p.then === 'function') p.then(apply).catch(() => {});
+          } catch (_) { /* no-op offline/headless */ }
+        };
+
+        // One shared observer for the visible Google items; recreated per render.
+        let webObserver = null;
+        const observeWebPreview = (btn, id, family) => {
+          if (!Web) return;
+          try {
+            if (typeof IntersectionObserver === 'function') {
+              if (!webObserver) {
+                webObserver = new IntersectionObserver((entries, obs) => {
+                  entries.forEach((e) => {
+                    if (!e.isIntersecting) return;
+                    obs.unobserve(e.target);
+                    triggerWebPreview(e.target, e.target._wfId, e.target._wfFamily);
+                  });
+                });
+              }
+              btn._wfId = id;
+              btn._wfFamily = family;
+              webObserver.observe(btn);
+            } else {
+              // No IntersectionObserver (jsdom): just trigger for the shown slice.
+              triggerWebPreview(btn, id, family);
+            }
+          } catch (_) { /* no-op */ }
+        };
+
+        const itemBtn = (value, label, opts = {}) => {
+          const isSel = layer.params.font === value;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.dataset.value = value;
+          btn.className = `text-left text-[11px] px-2 py-1 border truncate transition-colors ${
+            isSel ? 'border-vectura-accent text-vectura-accent bg-vectura-border' : 'border-transparent text-vectura-muted hover:text-vectura-text hover:bg-vectura-border'
+          }`;
+          btn.title = label;
+          if (opts.svgSample) {
+            // Built-in face: name plus an inline stroke sample beneath it.
+            const name = document.createElement('div');
+            name.className = 'truncate';
+            name.textContent = label;
+            btn.appendChild(name);
+            const sample = builtinSampleSvg(opts.fontId, opts.sampleText);
+            if (sample) {
+              const cont = document.createElement('div');
+              cont.className = 'mt-0.5 opacity-80';
+              cont.appendChild(sample);
+              btn.appendChild(cont);
+            }
+          } else {
+            btn.textContent = label;
+            if (opts.webId) observeWebPreview(btn, opts.webId, label);
+          }
+          btn.onclick = () => choose(value);
+          return btn;
+        };
+
+        const note = (msg) => {
+          const p = document.createElement('div');
+          p.className = 'text-[10px] text-vectura-muted py-2 px-1 text-center';
+          p.textContent = msg;
+          return p;
+        };
+
+        const renderList = () => {
+          // Drop any previous observer so stale, off-screen buttons stop firing.
+          if (webObserver) { try { webObserver.disconnect(); } catch (_) {} webObserver = null; }
+          listEl.replaceChildren();
+          if (activeTab === 'builtin') {
+            const q = query.trim().toLowerCase();
+            const rows = builtins.filter((o) => !q || o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q));
+            if (!rows.length) { listEl.appendChild(note('No built-in fonts match.')); return; }
+            rows.forEach((o) => listEl.appendChild(
+              itemBtn(o.value, o.label, { svgSample: true, fontId: o.value, sampleText: o.sample || 'Abcdef' })
+            ));
+            return;
+          }
+          // Google Fonts tab.
+          if (!Web) { listEl.appendChild(note('Web fonts are unavailable.')); return; }
+          const st = Web.getCatalogStatus();
+          if (st.status === 'idle') Web.loadCatalog().then(renderList).catch(renderList);
+          if (st.status !== 'ready') {
+            listEl.appendChild(note(
+              st.status === 'loading' || st.status === 'idle' ? 'Loading web fonts…' : (st.errorMessage || 'Web fonts are unavailable.')
+            ));
+            return;
+          }
+          const q = query.trim().toLowerCase();
+          const all = Web.getFamilies();
+          const matched = q ? all.filter((f) => f.family.toLowerCase().includes(q)) : all;
+          const shown = q ? matched.slice(0, MAX_RESULTS) : matched.slice(0, MAX_BROWSE);
+          shown.forEach((f) => listEl.appendChild(itemBtn(Web.idToKey(f.id), f.family, { webId: f.id })));
+          if (!matched.length) {
+            listEl.appendChild(note(q ? `No web fonts match “${query.trim()}”. Try another spelling.` : 'No web fonts available.'));
+          } else if (shown.length < matched.length) {
+            listEl.appendChild(note(`Showing ${shown.length} of ${matched.length}.${q ? '' : ' Search to reach the full catalog.'}`));
+          }
+        };
+
+        const renderTabs = () => {
+          tabBar.replaceChildren();
+          [['builtin', 'Built-in'], ['google', 'Google Fonts']].forEach(([id, label]) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = `text-[10px] px-2 py-1 border-b-2 transition-colors ${
+              activeTab === id ? 'border-vectura-accent text-vectura-accent' : 'border-transparent text-vectura-muted hover:text-vectura-text'
+            }`;
+            b.textContent = label;
+            b.onclick = () => { activeTab = id; query = ''; search.value = ''; renderTabs(); renderList(); };
+            tabBar.appendChild(b);
+          });
+        };
+
+        search.addEventListener('input', () => { query = search.value; renderList(); });
+        renderTabs();
+        wrapper.append(tabBar, search, listEl);
+        renderList();
+        target.appendChild(wrapper);
+        return;
+      }
       if (def.type === 'patternDesignerInline') {
         const wrapper = document.createElement('div');
         wrapper.className = 'pattern-designer-inline-wrap mt-3';

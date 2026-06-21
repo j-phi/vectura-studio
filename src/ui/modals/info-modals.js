@@ -1677,6 +1677,34 @@
       title: 'Shift Y',
       description: 'Shifts the fill pattern origin vertically, creating a phase offset.',
     },
+    'text.outlineStroke': {
+      title: 'Stroke Outline',
+      description: 'Draws the glyph outline itself. Turn it off (with Fill on) for fill-only typography.',
+    },
+    'text.outlineThickness': {
+      title: 'Outline Weight',
+      description: 'Thickens the outline by drawing parallel offset passes. 1 = a single pen line.',
+    },
+    'text.thickeningMode': {
+      title: 'Thickening Mode',
+      description: 'How the heavier outline passes are built — parallel offsets, a sinusoidal ribbon, or one continuous snake stroke.',
+    },
+    'text.bezierOutline': {
+      title: 'Bezier Curves',
+      description: "Emits the web font's native cubic curves (handles nudged toward horizontal/vertical) instead of flattened polylines, for the smoothest plotted letterforms. Web outline fonts only.",
+    },
+    'text.smoothing': {
+      title: 'Smoothness',
+      description: 'How finely curved outlines are sampled — higher adds points for a smoother flattened curve. Web outline fonts only.',
+    },
+    'text.plotOrder': {
+      title: 'Plot Order',
+      description: 'Order the paths are drawn. Left → Right advances the pen across the line with minimal travel; Natural keeps layout/fill order.',
+    },
+    'text.fillEnabled': {
+      title: 'Enable Fill',
+      description: 'Fills glyph interiors with a pattern (hatch, dots, spiral…). Web outline fonts only — holes in O, A, e, B are carved out automatically.',
+    },
     'rainfall.widthMultiplier': {
       title: 'Rain Width',
       description: 'Duplicates traces to simulate thicker rainfall.',

@@ -33,6 +33,49 @@ describe('Geometry helpers', () => {
     expect(original.length).toBe(3);
   });
 
+  describe('thickenPaths (shared stroke-thickening engine)', () => {
+    const horiz = () => [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }];
+
+    test('width <= 1 is a no-op that returns the input untouched', () => {
+      const paths = [horiz()];
+      expect(geometry.thickenPaths(paths, { width: 1, mode: 'parallel' })).toBe(paths);
+      expect(geometry.thickenPaths(paths, {})).toBe(paths);
+    });
+
+    test('parallel mode emits one offset pass per width unit', () => {
+      const out = geometry.thickenPaths([horiz()], { width: 3, mode: 'parallel', spacing: 1 });
+      expect(out.length).toBe(3);
+      // A horizontal stroke offsets along ±y; centre pass stays on the axis.
+      const ys = out.map((p) => p[0].y).sort((a, b) => a - b);
+      expect(ys).toEqual([-1, 0, 1]);
+      out.forEach((p) => expect(p.length).toBe(3));
+    });
+
+    test('snake mode stitches the passes into a single boustrophedon polyline', () => {
+      const out = geometry.thickenPaths([horiz()], { width: 3, mode: 'snake', spacing: 1 });
+      expect(out.length).toBe(1);
+      expect(out[0].length).toBe(9); // 3 passes × 3 points, joined end-to-end
+      // The 2nd pass is reversed, so its first emitted point starts at x=20.
+      expect(out[0][3].x).toBe(20);
+    });
+
+    test('sinusoidal mode consumes one rng draw per path and stays deterministic', () => {
+      let calls = 0;
+      const rng = { nextFloat: () => { calls += 1; return 0.5; } };
+      const a = geometry.thickenPaths([horiz()], { width: 2, mode: 'sinusoidal', rng });
+      expect(calls).toBe(1);
+      const b = geometry.thickenPaths([horiz()], { width: 2, mode: 'sinusoidal', rng: { nextFloat: () => 0.5 } });
+      expect(a).toEqual(b);
+    });
+
+    test('per-point meta is propagated onto every thickened pass', () => {
+      const path = horiz();
+      path.meta = { algorithm: 'text' };
+      const out = geometry.thickenPaths([path], { width: 2, mode: 'parallel' });
+      out.forEach((p) => expect(p.meta).toEqual({ algorithm: 'text' }));
+    });
+  });
+
   test('simplifyPath handles edge cases', () => {
     const path = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }];
 

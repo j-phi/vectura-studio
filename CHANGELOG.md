@@ -4,6 +4,57 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.9 - 2026-06-21
+
+### Added
+- **Text typography overhaul — the Font experience is now first-class.** A pass over the Text algorithm
+  brings its stroke and fill controls up to parity with the rest of the app:
+  - **Google Fonts is the default, offline.** The default Text layer now ships on a vendored **Inter**
+    face (`src/vendor/inter-400.ttf`, OFL-1.1) registered at boot, so a real web typeface renders with no
+    network. Headless/offline environments fall back to the built-in `sans` stroke font, so presets and
+    visual baselines stay byte-identical.
+  - **In-font previews + better search.** The Google Fonts list renders each family's name in its own
+    typeface (lazily, as rows scroll into view); the Built-in tab renders a tiny inline stroke sample of
+    each face. Search now works on both tabs and the result ceiling was raised from 240 to 1000.
+  - **Bezier outlines (opt-in) with a Smoothness control.** A new *Bezier Curves* toggle emits a web
+    font's native cubic curves — `C` commands in the exported SVG, with handles nudged toward
+    0/90/180/270° at extrema — instead of flattened polylines. A *Smoothness* slider controls how finely
+    curved outlines are sampled when flattened. Both default off / neutral, so existing output is
+    unchanged. (Built-in stroke faces are monoline and unaffected.)
+  - **Stroke emphasis.** New *Outline Weight* (1–6) and *Thickening Mode* (Parallel / Sinusoidal / Snake)
+    controls thicken the glyph outline via parallel offset passes — the same engine Harmonograph and
+    Rainfall use, now extracted to the shared `GeometryUtils.thickenPaths`. *Stroke Outline* can be turned
+    off entirely for fill-only typography.
+  - **Pattern fills on glyph interiors.** A new *Enable Fill* toggle plus the full shared fill control
+    group (every fill type — hatch, crosshatch, dots, contour, spiral, voronoi, maze, weave, …, with their
+    spacing/angle/per-type parameters) fills letter interiors. Holes in O, A, e, B are carved out
+    automatically by the engine's even-odd region rule. Web outline faces only.
+  - **Left-to-right plot order.** A new *Plot Order* control (default *Left → Right*) sorts the output so
+    the pen advances across the line with minimal travel; *Natural* keeps layout/fill order. The default
+    is a stable sort, so already-ordered single-line text stays byte-identical.
+
+### Fixed
+- **No more built-in-font flash when switching web fonts.** Selecting a Google family that wasn't parsed
+  yet briefly rendered the built-in `sans` stroke placeholder before swapping to the real outlines. The
+  canvas regen is now deferred until the outline lands, so the layer goes straight from the previously
+  displayed font to the new one. Parsed/built-in faces still swap immediately.
+
+## 1.2.8 - 2026-06-21
+
+### Added
+- **The Text algorithm can now use any Google Font, not just the five built-in stroke faces.** The Font
+  control became a two-tab picker: *Built-in* still lists the single-stroke faces (Vectura Sans, Italic,
+  Condensed, Wide, Backslant), and a new *Google Fonts* tab exposes the full public web-font catalog
+  (~2000 families) with a search box. Pick a family and the algorithm traces its glyph **outlines** into
+  pen-ready polylines — an outline face draws as its contours (two passes per stroke), which the fill and
+  optimization systems then handle like any other geometry. Selection is stored as `google:<slug>` so it
+  round-trips through `.vectura` files. Loading is fully lazy and degrades silently offline: the catalog
+  is fetched once (and cached locally) the first time the Google tab is opened, each family's outlines are
+  fetched + parsed on first use, and while a family is still loading the layer renders with the built-in
+  stroke font and swaps to the real letterforms the moment its outlines arrive (the same way picture
+  layers decode). The default Text layer is unchanged — it still ships on the built-in `sans` face, so
+  existing presets and baselines are byte-identical.
+
 ## 1.2.7 - 2026-06-21
 
 ### Added

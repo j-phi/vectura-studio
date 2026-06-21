@@ -177,43 +177,16 @@
           }
         };
 
-        const applyThickening = (paths) => {
-          if (widthMultiplier <= 1) return paths;
-          const spacing = 0.35;
-          const offsets = [];
-          const half = (widthMultiplier - 1) / 2;
-          for (let i = 0; i < widthMultiplier; i++) {
-            offsets.push((i - half) * spacing);
-          }
-          const thickened = [];
-          paths.forEach((path) => {
-            if (!Array.isArray(path) || path.length < 2) return;
-            const normals = path.map((pt, i) => {
-              const prev = path[i - 1] || pt;
-              const next = path[i + 1] || pt;
-              const dx = next.x - prev.x;
-              const dy = next.y - prev.y;
-              const mag = Math.hypot(dx, dy) || 1;
-              return { x: -dy / mag, y: dx / mag };
-            });
-            const phase = rng.nextFloat() * Math.PI * 2;
-            const waveFreq = 2 + widthMultiplier * 0.4;
-            const waveAmp = spacing * 0.6;
-            const offsetPaths = offsets.map((offset, idx) =>
-              path.map((pt, i) => {
-                let off = offset;
-                if (thickeningMode === 'sinusoidal') {
-                  const t = path.length > 1 ? i / (path.length - 1) : 0;
-                  off += Math.sin(t * Math.PI * 2 * waveFreq + phase + idx) * waveAmp;
-                }
-                const n = normals[i] || { x: 0, y: 0 };
-                return { x: pt.x + n.x * off, y: pt.y + n.y * off };
-              })
-            );
-            offsetPaths.forEach((op) => thickened.push(op));
+        // Heavier strokes are faked by parallel offset passes — the shared
+        // GeometryUtils.thickenPaths engine (also used by the Text algorithm).
+        // spacing 0.35 and one rng draw per path preserve the historical output.
+        const applyThickening = (paths) =>
+          Vectura.GeometryUtils.thickenPaths(paths, {
+            width: widthMultiplier,
+            mode: thickeningMode,
+            spacing: 0.35,
+            rng,
           });
-          return thickened.length ? thickened : paths;
-        };
 
         const renderMode = p.renderMode || 'line';
         const basePaths = applyThickening([path]);

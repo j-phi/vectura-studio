@@ -177,11 +177,85 @@
     }, radius);
   };
 
+  // Generic polyhedral dual: one dual vertex per source face (its centroid
+  // projected onto the unit sphere), one dual face per source vertex (the ring
+  // of surrounding face-centroids ordered around that vertex). Turns a
+  // triangulated sphere into its hexagon/pentagon Goldberg companion, and the
+  // icosahedron into the dodecahedron.
+  const dualMesh = (mesh, radius) => {
+    const orientedFaces = mesh.faces.map((face) => orientFace(face, mesh.vertices));
+    const dualVertices = orientedFaces.map((face) => normalize(average3(face.map((idx) => mesh.vertices[idx]))));
+    const facesByVertex = Array.from({ length: mesh.vertices.length }, () => []);
+    orientedFaces.forEach((face, faceIndex) => face.forEach((vertexIndex) => facesByVertex[vertexIndex].push(faceIndex)));
+    const faces = [];
+    for (let vertexIndex = 0; vertexIndex < mesh.vertices.length; vertexIndex++) {
+      const touching = facesByVertex[vertexIndex];
+      if (touching.length < 3) continue;
+      const origin = normalize(mesh.vertices[vertexIndex]);
+      const reference = Math.abs(origin.z) < 0.9 ? v(0, 0, 1) : v(0, 1, 0);
+      const basisX = normalize(cross(reference, origin));
+      const basisY = normalize(cross(origin, basisX));
+      const ordered = touching.slice().sort((left, right) => {
+        const leftVector = normalize(projectToTangent(sub(dualVertices[left], origin), origin));
+        const rightVector = normalize(projectToTangent(sub(dualVertices[right], origin), origin));
+        const leftAngle = Math.atan2(dot(leftVector, basisY), dot(leftVector, basisX));
+        const rightAngle = Math.atan2(dot(rightVector, basisY), dot(rightVector, basisX));
+        return leftAngle - rightAngle;
+      });
+      faces.push(ordered);
+    }
+    return scaleMeshToRadius({ vertices: dualVertices, faces: faces.map((face) => orientFace(face, dualVertices)) }, radius);
+  };
+
+  const createDodecahedronMesh = (radius) => dualMesh(createIcosahedronMesh(1), radius);
+
+  // Class-I geodesic sphere: subdivide every icosahedron face into a frequency×
+  // frequency triangular grid and re-project each new vertex onto the sphere.
+  // Vertices shared across faces are welded by quantized position so edges and
+  // the dual stay watertight. frequency 1 reproduces the icosahedron.
+  const createGeodesicMesh = (radius, frequency) => {
+    const nu = Math.max(1, Math.round(finite(frequency, 1)));
+    const base = createIcosahedronMesh(1);
+    const orientedFaces = base.faces.map((face) => orientFace(face, base.vertices));
+    const vertices = [];
+    const indexByKey = new Map();
+    const addVertex = (pt) => {
+      const unit = normalize(pt);
+      const key = `${Math.round(unit.x * 1e5)}:${Math.round(unit.y * 1e5)}:${Math.round(unit.z * 1e5)}`;
+      if (indexByKey.has(key)) return indexByKey.get(key);
+      const index = vertices.length;
+      vertices.push(mul(unit, radius));
+      indexByKey.set(key, index);
+      return index;
+    };
+    const faces = [];
+    orientedFaces.forEach(([ia, ib, ic]) => {
+      const A = base.vertices[ia];
+      const edgeB = sub(base.vertices[ib], A);
+      const edgeC = sub(base.vertices[ic], A);
+      const grid = [];
+      for (let i = 0; i <= nu; i++) {
+        grid[i] = [];
+        for (let j = 0; j <= nu - i; j++) {
+          grid[i][j] = addVertex(add(A, add(mul(edgeB, i / nu), mul(edgeC, j / nu))));
+        }
+      }
+      for (let i = 0; i < nu; i++) {
+        for (let j = 0; j < nu - i; j++) {
+          faces.push([grid[i][j], grid[i + 1][j], grid[i][j + 1]]);
+          if (j < nu - i - 1) faces.push([grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]]);
+        }
+      }
+    });
+    return withBounds({ vertices, faces: faces.map((face) => orientFace(face, vertices)) });
+  };
+
   const createSolidMesh = (p) => {
     const type = p.solidType || 'buckyball';
     const radius = Math.max(1, finite(p.radius, 76));
     const sides = Math.max(3, Math.round(clamp(finite(p.sideCount, 5), 3, 180)));
     const depth = Math.max(0.1, finite(p.depth, 94));
+    const frequency = Math.max(1, Math.round(clamp(finite(p.frequency, 2), 1, 6)));
     if (type === 'importedMesh') {
       const mesh = p.importedMesh;
       if (!mesh || !Array.isArray(mesh.vertices) || !mesh.vertices.length || !Array.isArray(mesh.faces)) {
@@ -203,8 +277,12 @@
       for (let i = 0; i < sides; i++) {
         const n = (i + 1) % sides;
         if (type === 'antiprism') {
-          faces.push([i, sides + i, n]);
-          faces.push([n, sides + i, sides + n]);
+          // Top ring is offset by +π/sides, so each top vertex sits between
+          // bottom_i and bottom_{i+1}. Pair it with those two nearest bottom
+          // vertices to get the uniform isosceles zig-zag band of a true
+          // antiprism (the previous pairing spanned 1.5 steps and skewed it).
+          faces.push([i, sides + i, sides + n]);
+          faces.push([i, sides + n, n]);
         } else {
           faces.push([i, n, sides + n, sides + i]);
         }
@@ -247,8 +325,17 @@
         faces: [[0, 2, 4], [4, 2, 1], [1, 2, 5], [5, 2, 0], [4, 3, 0], [1, 3, 4], [5, 3, 1], [0, 3, 5]],
       });
     }
+    if (type === 'dodecahedron') {
+      return createDodecahedronMesh(radius);
+    }
     if (type === 'icosahedron') {
       return createIcosahedronMesh(radius);
+    }
+    if (type === 'geodesic') {
+      return createGeodesicMesh(radius, frequency);
+    }
+    if (type === 'goldberg') {
+      return dualMesh(createGeodesicMesh(1, frequency), radius);
     }
     return createTruncatedIcosahedronMesh(radius);
   };
