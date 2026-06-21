@@ -1405,6 +1405,18 @@
 [data-ui-skin] .draw-order-overlay-toggle.is-on:hover {
   background: var(--ui-border);
 }
+/* Start / End anchors under the bar, so the gradient direction (print order) reads
+   clearly: Start at the left edge of the track, End at the right. */
+[data-ui-skin] .draw-order-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ui-muted);
+}
 /* Plot estimate readout: distance | lines | time, pipe-separated, small + muted. */
 [data-ui-skin] .draw-order-stats {
   display: flex;

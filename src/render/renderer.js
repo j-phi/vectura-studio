@@ -1035,17 +1035,12 @@
     }
 
     updateOptimizationOverlayLegend(show, startColor = '', endColor = '') {
+      // The on-canvas legend has been retired in favour of the Draw-Order bar, which now
+      // carries the start→end gradient (and whose palette button owns the colour
+      // controls). Keep the legend element permanently hidden, but still resolve and
+      // propagate the colours so the Draw-Order bar + eye stay in lock-step every render.
       const legend = document.getElementById('optimization-overlay-legend');
-      if (legend) {
-        legend.classList.toggle('hidden', !show);
-        if (show) {
-          const gradientEl = document.getElementById('optimization-overlay-legend-gradient');
-          if (gradientEl) gradientEl.style.background = `linear-gradient(90deg, ${startColor} 0%, ${endColor} 100%)`;
-        }
-      }
-      // Keep the Draw-Order subpanel eye toggle in lock-step with the overlay every
-      // render (the legend only appears for the gradient case, but the eye reflects the
-      // overlay being on at all and carries the same start→end print-order gradient).
+      if (legend) legend.classList.add('hidden');
       this.updateDrawOrderOverlayToggle(startColor, endColor);
     }
 

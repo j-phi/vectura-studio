@@ -196,12 +196,15 @@ describe('UI bootstrap – line sort overlay', () => {
     app.render();
 
     const legend = document.getElementById('optimization-overlay-legend');
-    const gradient = document.getElementById('optimization-overlay-legend-gradient');
+    const slider = document.getElementById('draw-order-input');
 
     expect(left.optimizedPaths?.[0]?.meta?.lineSortOrder).toBe(0);
     expect(right.optimizedPaths?.[0]?.meta?.lineSortOrder).toBe(1);
-    expect(legend?.classList.contains('hidden')).toBe(false);
-    expect(gradient?.style.background || '').toContain('linear-gradient');
+    // The on-canvas legend is retired — it stays hidden. The Draw-Order bar now
+    // carries the start→end print-order gradient via its CSS vars instead.
+    expect(legend?.classList.contains('hidden')).toBe(true);
+    expect(slider?.style.getPropertyValue('--draw-order-start')).toBeTruthy();
+    expect(slider?.style.getPropertyValue('--draw-order-end')).toBeTruthy();
   });
 });
 

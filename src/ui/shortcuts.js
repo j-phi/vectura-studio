@@ -687,9 +687,10 @@
       this.openExportModal?.({ section: 'linesort' });
     });
 
-    // Legend gear → inline Start Color / End Color / Line Thickness dialogue, mirroring
-    // the export menu's legend gear, but editing the live canvas overlay settings.
-    const overlayGear = document.getElementById('optimization-overlay-legend-settings');
+    // Draw-Order palette button → inline Start Color / End Color / Line Thickness dialogue,
+    // mirroring the export menu's legend gear, but editing the live canvas overlay settings.
+    // (Relocated from the retired on-canvas legend gear to the Draw-Order panel.)
+    const overlayGear = document.getElementById('draw-order-color-settings');
     const overlayPanel = document.getElementById('optimization-overlay-legend-settings-panel');
     const overlayStartBtn = document.getElementById('overlay-legend-start-color');
     const overlayStartInput = document.getElementById('overlay-legend-start-color-input');

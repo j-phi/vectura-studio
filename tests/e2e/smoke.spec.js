@@ -717,15 +717,19 @@ test.describe('Vectura smoke interactions', () => {
         targetIds: Array.from(app.ui.getOptimizationTargetIds()),
         rendererTargetIds: Array.from(app.renderer.getOptimizationTargetIds()),
         legendVisible: !document.getElementById('optimization-overlay-legend')?.classList.contains('hidden'),
-        legendGradient: document.getElementById('optimization-overlay-legend-gradient')?.style.background || '',
+        sliderStart: document.getElementById('draw-order-input')?.style.getPropertyValue('--draw-order-start') || '',
+        sliderEnd: document.getElementById('draw-order-input')?.style.getPropertyValue('--draw-order-end') || '',
       };
     });
 
     expect(result.orders).toEqual([0, 1]);
     expect(result.targetIds).toEqual(['linesort-left', 'linesort-right']);
     expect(result.rendererTargetIds).toEqual(['linesort-left', 'linesort-right']);
-    expect(result.legendVisible).toBe(true);
-    expect(result.legendGradient).toContain('linear-gradient');
+    // The on-canvas legend is retired (stays hidden); the Draw-Order bar carries the
+    // start→end print-order gradient via its CSS vars.
+    expect(result.legendVisible).toBe(false);
+    expect(result.sliderStart).toBeTruthy();
+    expect(result.sliderEnd).toBeTruthy();
     expect(pageErrors).toEqual([]);
   });
 

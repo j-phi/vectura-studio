@@ -34,7 +34,9 @@ describe('Overlay legend start/end colour independence', () => {
   });
 
   function openPanel() {
-    const gear = document.getElementById('optimization-overlay-legend-settings');
+    // The colour dialogue now opens from the Draw-Order panel's palette button
+    // (relocated from the retired on-canvas legend gear).
+    const gear = document.getElementById('draw-order-color-settings');
     const panel = document.getElementById('optimization-overlay-legend-settings-panel');
     if (panel.classList.contains('hidden')) gear.click();
   }
