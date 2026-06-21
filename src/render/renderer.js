@@ -1054,16 +1054,27 @@
     // fall back to the overlay colour (and its complement) so they track the Settings
     // overlay colour even when no per-layer secondary colour is set.
     updateDrawOrderOverlayToggle(startColor = '', endColor = '') {
+      // Resolve the start→end print-order colour pair the overlay legend uses:
+      // explicit args win, else overlay colour → secondary override/complement.
+      const baseRgb = this.hexToRgb(SETTINGS.optimizationOverlayColor || '#38bdf8');
+      const override = (SETTINGS.optimizationOverlaySecondaryColor || '').trim();
+      const start = startColor || this.rgbToCss(baseRgb, 1);
+      const end = endColor || this.rgbToCss(override ? this.hexToRgb(override) : this.getComplementRgb(baseRgb), 1);
+
+      // Paint the always-visible Draw-Order slider bar with that same start→end
+      // gradient so the bar itself is identical to the legend.
+      const slider = document.getElementById('draw-order-input');
+      if (slider) {
+        slider.style.setProperty('--draw-order-start', start);
+        slider.style.setProperty('--draw-order-end', end);
+      }
+
       const eye = document.getElementById('draw-order-overlay-toggle');
       if (!eye) return;
       const on = SETTINGS.lineSortOverlayVisible === true;
       eye.classList.toggle('is-on', on);
       eye.setAttribute('aria-pressed', on ? 'true' : 'false');
       if (!on) return;
-      const baseRgb = this.hexToRgb(SETTINGS.optimizationOverlayColor || '#38bdf8');
-      const override = (SETTINGS.optimizationOverlaySecondaryColor || '').trim();
-      const start = startColor || this.rgbToCss(baseRgb, 1);
-      const end = endColor || this.rgbToCss(override ? this.hexToRgb(override) : this.getComplementRgb(baseRgb), 1);
       const s = document.getElementById('draw-order-eye-grad-start');
       const e = document.getElementById('draw-order-eye-grad-end');
       if (s) s.setAttribute('stop-color', start);

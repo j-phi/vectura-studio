@@ -1435,9 +1435,12 @@
   outline: none;
   cursor: pointer;
   --draw-order-fill: 100%;
+  /* The filled portion carries the same start→end print-order gradient as the
+     line-sort overlay legend, so the bar reads identically to it. JS updates the
+     two stops via --draw-order-start / --draw-order-end. */
   background:
     linear-gradient(90deg,
-      #22d3ee 0%, #6366f1 35%, #a855f7 60%, #ec4899 82%, #f59e0b 100%)
+      var(--draw-order-start, #38bdf8) 0%, var(--draw-order-end, #f59e0b) 100%)
       no-repeat,
     var(--ui-border);
   background-size: var(--draw-order-fill) 100%, 100% 100%;
