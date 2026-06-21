@@ -987,6 +987,32 @@
       };
     }
 
+    // Parse a hex (#rgb/#rrggbb) OR an rgb()/rgba() string into {r,g,b}. The Draw-Order
+    // stops can arrive as either form (hex from per-layer overlay colours, rgba() from
+    // the renderer's own legend pass), so the halo needs to handle both.
+    parseCssColor(str) {
+      if (typeof str !== 'string') return { r: 56, g: 189, b: 248 };
+      const m = str.trim().match(/rgba?\(([^)]+)\)/i);
+      if (m) {
+        const p = m[1].split(',').map((v) => parseFloat(v));
+        return { r: Math.round(p[0]) || 0, g: Math.round(p[1]) || 0, b: Math.round(p[2]) || 0 };
+      }
+      return this.hexToRgb(str);
+    }
+
+    // Tint the slider thumb's ring/glow with the gradient colour at the current stop,
+    // so the handle reads as the colour of the line being plotted right now.
+    refreshDrawOrderHalo() {
+      const slider = document.getElementById('draw-order-input');
+      if (!slider) return;
+      const start = this._drawOrderStartRgb || { r: 56, g: 189, b: 248 };
+      const end = this._drawOrderEndRgb || { r: 245, g: 158, b: 11 };
+      const fillRaw = slider.style.getPropertyValue('--draw-order-fill');
+      const frac = fillRaw ? Math.max(0, Math.min(1, parseFloat(fillRaw) / 100)) : 1;
+      const halo = this.mixRgb(start, end, frac);
+      slider.style.setProperty('--draw-order-halo', this.rgbToCss(halo, 1));
+    }
+
     mixRgb(a, b, t) {
       const clampT = Math.max(0, Math.min(1, t));
       return {
@@ -1063,6 +1089,11 @@
         slider.style.setProperty('--draw-order-start', start);
         slider.style.setProperty('--draw-order-end', end);
       }
+      // Remember the stops as parsed RGB so the thumb halo can sample the gradient
+      // colour at whatever fraction the handle is currently parked on.
+      this._drawOrderStartRgb = this.parseCssColor(start);
+      this._drawOrderEndRgb = this.parseCssColor(end);
+      this.refreshDrawOrderHalo();
 
       const eye = document.getElementById('draw-order-overlay-toggle');
       if (!eye) return;

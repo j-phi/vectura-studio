@@ -663,6 +663,8 @@
         const valEl = document.getElementById('draw-order-value');
         if (valEl) valEl.textContent = `${Math.round(pct)}%`;
         drawOrderInput.style.setProperty('--draw-order-fill', `${pct}%`);
+        // Recolour the thumb halo to the gradient colour under the handle as it drags.
+        this.app.renderer?.refreshDrawOrderHalo?.();
         this.app.render();
       };
       drawOrderInput.addEventListener('input', (e) => applyDrawOrder(e.target.value));
