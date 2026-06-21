@@ -146,23 +146,22 @@ describe('Raster-Plane — Image base layer controls', () => {
   // NO NOISE_IMAGES raster — the controls used to be silently inert there. These
   // pin that the materialized-relief path makes every control actually work.
 
-  const variance = (r) => {
-    const vals = [];
-    for (let i = 0; i < r.data.length; i += 4) vals.push(r.data[i]);
-    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-    return vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
-  };
   // Built-in relief base (no imageId), the real default a fresh layer uses.
   const renderRelief = (noises) =>
     V.RasterPlaneSource.renderPreviewRaster({ seed: 5, noises }, 28, 28);
 
-  test('Field Weight works on the default built-in relief source (was inert)', () => {
-    const plain = renderRelief([imageSourceLayer()]); // default → raw relief
-    const flat = renderRelief([imageSourceLayer({ amplitude: 0 })]); // Field Weight 0 → flat
-    const loud = renderRelief([imageSourceLayer({ amplitude: 2 })]); // exaggerated relief
-    expect(rasterEq(plain, flat)).toBe(false);
-    expect(variance(flat)).toBeLessThan(variance(plain)); // flatter
-    expect(variance(loud)).toBeGreaterThan(variance(flat)); // louder
+  test('Field Weight does NOT reshape the [0,1] preview heightfield (it scales 3D relief)', () => {
+    // Field Weight (the Image base layer amplitude) now scales the 3D relief
+    // amplitude — exactly like the top-level Amplitude control — instead of
+    // contrast-stretching the normalized heightfield (which saturated the surface
+    // to a binary mask when dialed up). The preview mirrors the [0,1] heightfield
+    // the sampler produces, so amplitude leaves it untouched. The dial-up relief
+    // behavior is covered in raster-plane-surface.test.js.
+    const plain = renderRelief([imageSourceLayer()]);
+    const flat = renderRelief([imageSourceLayer({ amplitude: 0 })]);
+    const loud = renderRelief([imageSourceLayer({ amplitude: 8 })]);
+    expect(rasterEq(plain, flat)).toBe(true);
+    expect(rasterEq(plain, loud)).toBe(true);
   });
 
   test('Noise Scale (zoom) reshapes the built-in relief base', () => {

@@ -138,6 +138,28 @@ describe('Raster-Plane — hidden-line removal & occlusion bias', () => {
     expect(tiny.length).toBe(0); // no detached silhouette ticks
   });
 
+  test('Lines as Planes, See-Through OFF: the frontmost curtain draws its side risers (solid wall, not bare lines)', () => {
+    // Regression for "we lost the sides of the planes": the fringe fix above also
+    // stopped drawing EVERY side riser, collapsing the relief to a stack of floating
+    // top lines + one floor contour with no plane sides. The nearest curtain is
+    // processed first against an empty horizon, so it can draw its FULL closed wall
+    // outline (top ridgeline + right riser + floor + left riser) whole — no clipping,
+    // hence no fringe — while farther curtains stay riser-free. Proof the sides are
+    // back: a closed drawn path (first point == last) that spans a real fraction of
+    // the top→floor height. An open top/floor profile satisfies neither.
+    const paths = relief({ rotate: -45, tilt: 60, baseHeight: 2, seeThrough: false, depthBias: 0.5 });
+    let ymin = Infinity, ymax = -Infinity;
+    for (const p of paths) for (const pt of p) { if (pt.y < ymin) ymin = pt.y; if (pt.y > ymax) ymax = pt.y; }
+    const spanY = ymax - ymin;
+    const closedWall = paths.find((p) => Array.isArray(p) && p.length >= 4
+      && Math.hypot(p[0].x - p[p.length - 1].x, p[0].y - p[p.length - 1].y) < 1e-6);
+    expect(closedWall).toBeTruthy(); // a curtain drawn as a closed loop → it has sides
+    let lo = Infinity, hi = -Infinity;
+    for (const pt of closedWall) { if (pt.y < lo) lo = pt.y; if (pt.y > hi) hi = pt.y; }
+    expect(hi - lo).toBeGreaterThan(spanY * 0.3); // the wall spans top → floor, not a flat sliver
+    expect(closedWall.meta && closedWall.meta.frontWall).toBe(true);
+  });
+
   // ---- 3. Occlusion Bias control ----------------------------------------------
 
   test('Occlusion Bias: raising it monotonically recovers occluded lines', () => {

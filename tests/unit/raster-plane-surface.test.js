@@ -57,6 +57,33 @@ describe('Raster-Plane — surface controls', () => {
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 
+  test('Image base Field Weight scales the 3D relief amplitude (dial-up, no binary saturation)', () => {
+    // The Image base layer's Field Weight (its `amplitude`) folds into the relief
+    // amplitude, so dialing it up raises the surface. The old contrast-stretch
+    // saturated the [0,1] heightfield to a binary mask, capping the swing at the
+    // base amplitude — so fw16 would have plateaued near fw4. Here it keeps
+    // climbing roughly linearly: that gap is the red→green proof.
+    const withWeight = (w) => gen({ noises: [{ enabled: true, type: 'imageSource', amplitude: w }] });
+    // (Projected y-range also carries a constant footprint offset, so it climbs
+    // sub-linearly in Field Weight; the point is it keeps climbing rather than
+    // plateauing — pre-fix, amplitude was fixed regardless of Field Weight, so
+    // fw16 would have matched fw4.)
+    const fw1 = yRange(withWeight(1));
+    const fw4 = yRange(withWeight(4));
+    const fw16 = yRange(withWeight(16));
+    expect(fw1).toBeGreaterThan(0);
+    expect(fw4).toBeGreaterThan(fw1 + 1);
+    expect(fw16).toBeGreaterThan(fw4 * 1.25);
+  });
+
+  test('Field Weight 1 (default) leaves relief identical to no Image base layer', () => {
+    // Field Weight 1 is the identity multiplier — the base entry must not perturb
+    // the surface a bare params set produces.
+    const withBase = gen({ noises: [{ enabled: true, type: 'imageSource', amplitude: 1 }] });
+    const withoutBase = gen({ noises: [] });
+    expect(JSON.stringify(withBase)).toBe(JSON.stringify(withoutBase));
+  });
+
   test('Map Blur smooths the topography height field', () => {
     const sharp = gen({ mode: 'topography', columns: 16, sampleDetail: 48, contourSmoothing: 0, mapBlur: 0 });
     const blurred = gen({ mode: 'topography', columns: 16, sampleDetail: 48, contourSmoothing: 0, mapBlur: 80 });

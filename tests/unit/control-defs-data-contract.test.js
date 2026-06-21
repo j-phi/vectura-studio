@@ -131,16 +131,16 @@ describe('control-defs-data compile gate (Meridian Unit 1.5)', () => {
     expect(Array.isArray(cloned.options)).toBe(true);
   });
 
-  it('Field Weight caps at max 4 across every noise stack', () => {
+  it('Field Weight caps at max 4 across the contrast-stretch noise stacks', () => {
     // Field Weight (the per-layer amplitude control) is labelled identically and
-    // shares a -2..4 range across every noise stack that exposes it. raster-plane
-    // inherits topo's def, so it must track too.
+    // shares a -2..4 range across the stacks where it contrast-stretches a [0,1]
+    // field. Raster-plane is the deliberate exception (covered below): its base
+    // Field Weight scales the 3D relief amplitude, so it gets a far wider range.
     const stacks = {
       TOPO_NOISE_DEFS: ControlDefsData.TOPO_NOISE_DEFS,
       FLOWFIELD_NOISE_DEFS: ControlDefsData.FLOWFIELD_NOISE_DEFS,
       GRID_NOISE_DEFS: ControlDefsData.GRID_NOISE_DEFS,
       PHYLLA_NOISE_DEFS: ControlDefsData.PHYLLA_NOISE_DEFS,
-      RASTER_PLANE_NOISE_DEFS: ControlDefsData.RASTER_PLANE_NOISE_DEFS,
     };
     for (const [name, defs] of Object.entries(stacks)) {
       const fw = defs.find((d) => d.label === 'Field Weight');
@@ -148,6 +148,16 @@ describe('control-defs-data compile gate (Meridian Unit 1.5)', () => {
       expect(fw.max, `${name} Field Weight max`).toBe(4);
       expect(fw.min, `${name} Field Weight min`).toBe(-2);
     }
+  });
+
+  it('Raster-Plane Field Weight gets a wide relief-amplitude range (dial-up exception)', () => {
+    // The raster-plane base Field Weight scales the whole 3D relief amplitude
+    // (see baseReliefWeight in raster-plane.js) rather than contrast-stretching a
+    // normalized field, so it intentionally exceeds the shared -2..4 cap.
+    const fw = ControlDefsData.RASTER_PLANE_NOISE_DEFS.find((d) => d.label === 'Field Weight');
+    expect(fw).toBeTruthy();
+    expect(fw.max).toBe(25);
+    expect(fw.min).toBe(-10);
   });
 
   it('publishes the Petalis registry tables and factories', () => {

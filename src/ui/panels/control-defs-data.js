@@ -917,6 +917,10 @@
   // sliders are unaffected.
   const RASTER_PLANE_NOISE_DEFS = TOPO_NOISE_DEFS.map((def) => {
     if (def.key === 'type') return cloneNoiseDef(def, { options: [...WAVE_NOISE_OPTIONS, { value: 'imageSource', label: 'Image (Base)' }] });
+    // Field Weight on the Image base layer scales the whole relief amplitude
+    // (see baseReliefWeight in raster-plane.js), so it wants a far wider ceiling
+    // than topo's contrast-stretch range — dial it up for towering relief.
+    if (def.key === 'amplitude') return cloneNoiseDef(def, { min: -10, max: 25, step: 0.1 });
     if (def.key === 'zoom') return cloneNoiseDef(def, { min: 0.0001, max: 20, step: 0.001 });
     if (def.key === 'freq') return cloneNoiseDef(def, { min: 0.001, step: 0.01 });
     return def;

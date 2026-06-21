@@ -3613,6 +3613,12 @@
             if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'vertical') {
               layer.params.lineOffset = 135;
             }
+            // Raster-Plane Bars read best as a watertight solid relief: switching
+            // into Bars seeds See-Through OFF so the box faces occlude instead of
+            // drawing every hidden back edge (mirrors the Lines-as-Planes cascade).
+            if (layer.type === 'rasterPlane' && def.id === 'mode' && next === 'bars') {
+              layer.params.seeThrough = false;
+            }
             if (layer.type === 'topoform' && def.id === 'sourceMode' && next === 'capsule') {
               const sx = layer.params.primitiveScaleX ?? 65;
               const sy = layer.params.primitiveScaleY ?? 65;

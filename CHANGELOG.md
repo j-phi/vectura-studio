@@ -4,6 +4,20 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.10 - 2026-06-21
+
+### Changed
+- **Raster-Plane base noise "Field Weight" now dials up real relief.** The Image (Base) layer's
+  Field Weight used to contrast-stretch the `[0,1]` heightfield, which saturated the surface to a
+  flat-topped binary mask once pushed past ~2. It now scales the **3D relief amplitude** directly
+  (folded into `surfaceSample`/`surfaceNormal` via `baseReliefWeight`), so turning it up genuinely
+  raises the relief while preserving the height gradient — and its range widened from `-2..4` to
+  `-10..25` so you can crank it. Because the amplitude is now a 3D scale (like the top-level
+  *Amplitude* control), it no longer reshapes the 2D source/height preview.
+- **Raster-Plane Bars default to See-Through OFF.** Switching the Mode to *Bars* now seeds
+  See-Through OFF so the boxes read as a watertight solid relief instead of drawing every hidden
+  back edge (mirrors the Lines-as-Planes relief cascade). Other modes are untouched.
+
 ## 1.2.9 - 2026-06-21
 
 ### Added

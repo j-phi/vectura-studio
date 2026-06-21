@@ -554,6 +554,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.10
+- **Raster-Plane base noise now dials up real relief.** The Image (Base) layer's **Field Weight** used to flatten the surface into a binary mask when you turned it up; it now scales the actual 3D relief height, so cranking it raises towering relief while keeping the smooth gradient — and its range widened so you can push it much further. **Bars** mode now defaults to **See-Through OFF**, rendering as a watertight solid relief instead of a hollow wireframe.
+
 ### 1.2.9
 - **Text typography overhaul.** The Font experience is now first-class. The default Text layer ships on a vendored **Inter** face that renders offline (headless/offline falls back to the built-in `sans` stroke font, so baselines are unchanged). The picker previews each Google family **in its own typeface** and each built-in face as an inline stroke sample, with search on both tabs; switching fonts no longer flashes the built-in placeholder before the real outlines arrive. New outline options: an opt-in **Bezier Curves** toggle that exports native cubic curves (handles nudged to 0/90/180/270°) with a **Smoothness** control; **stroke emphasis** via *Outline Weight* + *Thickening Mode* (Parallel/Sinusoidal/Snake, shared with Harmonograph/Rainfall); **pattern fills** of glyph interiors using the full shared fill engine (every fill type, holes carved automatically) for fill-only or filled-and-outlined type; and a **Plot Order** control that defaults to drawing left-to-right.
 

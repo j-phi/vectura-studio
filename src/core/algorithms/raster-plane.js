@@ -188,7 +188,6 @@
       (layer.microFreq ?? 0) > 0 ||
       (layer.imageWidth ?? 1) !== 1 ||
       (layer.imageHeight ?? 1) !== 1 ||
-      (layer.amplitude ?? 1) !== 1 ||
       (layer.zoom ?? 1) !== 1 ||
       (layer.freq ?? 1) !== 1 ||
       (layer.angle ?? 0) !== 0 ||
@@ -215,7 +214,6 @@
     // beyond [0,1] instead of clamping the edge pixels.
     const sampler = NoiseRack.createImageLumaSampler({ ...layer, tileMode: 'grid' }, baseImg);
     if (!sampler) return null;
-    const fieldWeight = layer.amplitude ?? 1;
     const noiseStyle = layer.noiseStyle || 'linear';
     const noiseThreshold = clamp(layer.noiseThreshold ?? 0, 0, 1);
     const microFreq = Math.max(0, layer.microFreq ?? 0);
@@ -248,9 +246,10 @@
         const wave = Math.sin((u + v) * (microFreq / 2) * Math.PI * 2);
         h = clamp(h + wave * 0.25, 0, 1);
       }
-      // Field Weight scales relief intensity around mid-height: 1 = as-sampled,
-      // 0 = flat, >1 exaggerates, <0 inverts the relief.
-      h = 0.5 + (h - 0.5) * fieldWeight;
+      // Field Weight no longer reshapes the [0,1] heightfield here — it scales the
+      // 3D relief amplitude directly (see baseReliefWeight / reliefAmp), so the
+      // base luma stays faithful and dialing Field Weight up adds height instead
+      // of saturating the surface to a binary mask.
       return clamp(h, 0, 1);
     };
   };
@@ -292,8 +291,21 @@
 
   const viewAngles = (p) => ({ yaw: finite(p.rotate, -45), pitch: finite(p.tilt, 60), roll: 0 });
 
+  // The base "Image" layer's Field Weight (its `amplitude`) scales the ENTIRE
+  // relief amplitude. It used to contrast-stretch the [0,1] heightfield inside
+  // createBaseImageLuma, which saturated to a binary (flat-topped) surface once
+  // dialed past ~2. Folding it into the 3D amplitude instead means dialing Field
+  // Weight up genuinely raises the relief while preserving the height gradient —
+  // and it can be pushed far higher. Returns 1 when there is no Image base layer.
+  const baseReliefWeight = (p) => {
+    const layer = (Array.isArray(p.noises) ? p.noises : [])
+      .find((n) => n && n.enabled !== false && n.type === 'imageSource');
+    return layer ? finite(layer.amplitude, 1) : 1;
+  };
+  const reliefAmp = (p) => finite(p.amplitude, 10) * baseReliefWeight(p);
+
   const surfaceSample = (x, y, h, p, bounds) => {
-    const amp = finite(p.amplitude, 10);
+    const amp = reliefAmp(p);
     const centered = { x, y: (h - 0.5) * amp, z: y };
     const rotated = rotatePoint(centered, viewAngles(p));
     return {
@@ -311,7 +323,7 @@
     const hR = sampler(u + d, v);
     const hT = sampler(u, v - d);
     const hB = sampler(u, v + d);
-    const amp = finite(p.amplitude, 10);
+    const amp = reliefAmp(p);
     const dx = ((hR - hL) * amp) / Math.max(1e-6, rect.width * d * 2);
     const dz = ((hB - hT) * amp) / Math.max(1e-6, rect.height * d * 2);
     return normalize({ x: -dx, y: 1, z: -dz });
@@ -535,30 +547,26 @@
     // floor profile) — drawn AND used as the occlusion band, so the extrusion reads
     // as a solid front face with the back rows hidden behind it.
     const mkMeta = (s) => ({ algorithm: 'rasterPlane', straight: true, mode: 'lines', reliefPlane: planes, row: s.row });
-    // The nearest segment's floor IS the block's front-bottom contour (nothing
-    // occludes it, so it draws clean); every farther floor is occluder-only.
+    // The nearest segment is the block's front wall: nothing occludes it, so it draws
+    // its full closed outline (top + sides + floor). Every farther floor is occluder-only.
     const maxDepth = segments.reduce((m, s) => Math.max(m, finite(meanDepth(s.top), 0)), -Infinity);
     const rows = segments.flatMap((s) => {
       const topPts = s.top.map((t) => ({ x: t.point.x, y: t.point.y }));
       const depth = finite(meanDepth(s.top), 0);
       if (planes && s.base && s.base.length === s.top.length) {
-        // Emit the curtain as TWO open profiles — the top ridgeline and the floor
-        // contour — instead of one closed top→floor→top loop. Rasterised as
-        // occluders the pair still fills the full opaque band per column (the top
-        // sets each column's upper edge, the floor its lower edge), so farther rows
-        // are hidden behind nearer curtains exactly as before. But the near-vertical
-        // SIDE RISERS that used to close the loop are no longer drawn: those — plus
-        // the floor's own silhouette-edge ends — produced a fringe of tiny
-        // disconnected segments along the left/right silhouette (each curtain's edge
-        // pokes ~one column past the nearer row at the silhouette and, with its
-        // middle occluded, survives only as a detached tip). Interior floor contours
-        // are therefore occluder-only (draw:false); the frontmost floor stays drawn
-        // so the block keeps its clean front-bottom edge.
+        // EVERY curtain is a solid wall: draw its full CLOSED outline — top ridgeline +
+        // right riser + floor + left riser — as one path, drawn AND used as an occluder.
+        // Processed near→far, each closed row draws (step 1) against the accumulated
+        // horizon of the nearer rows BEFORE adding itself (step 2), so a wall's sides
+        // and bottom show wherever no nearer wall covers them and are hidden where one
+        // does — exactly "every plane has a side and bottom, occluded only when another
+        // plane blocks it." Interior risers are fully covered by the adjacent nearer
+        // wall, so what survives is the front wall + the outer silhouette ramps + the
+        // visible crests — not a staircase of detached ½-column tips (see the
+        // silhouette-extend margin in occludeRowsFloatingHorizon that blocks that leak).
         const floorPts = s.base.map((b) => ({ x: b.point.x, y: b.point.y }));
-        return [
-          { pts: topPts, depth, occludes: true, meta: mkMeta(s) },
-          { pts: floorPts, depth, occludes: true, draw: depth >= maxDepth, meta: mkMeta(s) },
-        ];
+        const wall = topPts.concat(floorPts.slice().reverse(), [topPts[0]]);
+        return [{ pts: wall, depth, occludes: true, meta: { ...mkMeta(s), frontWall: depth >= maxDepth } }];
       }
       return [{ pts: topPts, depth, occludes: true, meta: mkMeta(s) }];
     });
