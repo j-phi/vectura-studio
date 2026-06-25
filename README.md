@@ -554,6 +554,10 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.15
+- **Contour fill now fills every letter.** Counter-less letters (V, E, C, T, …) used to come out nearly blank under a Contour fill because the ring spacing was sized to the whole letter rather than the stroke; thin strokes now carry several concentric rings while thicker shapes are unchanged.
+- **Type fills are watertight on connected scripts too.** Building on 1.2.14, cursive faces whose letters join (Pacifico, Dancing Script, Great Vibes, …) now fill their counters cleanly. Text fills use the **nonzero winding** rule that glyph outlines are designed for, so overlapping joined strokes merge into solid ink while the holes inside letters stay empty — with no change to any other typeface or fill. Verified across 11 typefaces (5 connected scripts) × 15 fills × 4 words × 3 densities with zero counter bleed.
+
 ### 1.2.14
 - **Type fills are watertight across every fill type.** Filling text used to be inconsistent — dots filled the holes (counters) inside R/A/O, contour drew only the first letter, and scribble left whole letters empty. Every fill type (dots, contour, scribble, halftone, voronoi, weave, and the rest) now carves letter counters correctly, fills every letter, and behaves identically to hatch and wave. Hairline-walled letters on high-contrast and script faces (Playfair, Lobster) fill cleanly instead of vanishing. Verified across 8 typefaces × 15 fills × 4 words × 3 densities with zero counter bleed.
 

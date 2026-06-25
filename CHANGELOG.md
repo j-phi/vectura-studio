@@ -4,6 +4,32 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.15 - 2026-06-25
+
+### Fixed
+- **Contour fill now fills every letter, not just the ones with counters.** On a word like "VECTURA"
+  the counter-less letters (V, E, C, T, U) came out nearly blank while R/A were dense — the solid
+  contour step was sized to the whole letter (`√(area/π)/density`), which is far coarser than a glyph
+  stroke is wide, so the first inset overshot the stroke centreline and it collapsed after a single
+  ring. The solid step is now capped to the stroke thickness whenever the density step would yield
+  fewer than ~2 rings, so thin strokes carry several concentric rings; thicker shapes (and every
+  non-glyph contour fill) keep the density-driven spacing unchanged. Verified on uniform (Oswald,
+  Roboto) and high-contrast (Playfair) faces — every letter fills.
+- **Type fills are now watertight on connected-script faces too (Pacifico, Dancing Script, Great
+  Vibes, …).** v1.2.14 made every fill counter-tight for typefaces whose glyph contours don't
+  overlap; on connected scripts, where adjacent letter *outers* physically overlap, the even-odd
+  rule read the stroke join as a hole and the depth classifier mis-read an overlapped outer as a
+  counter — so per-shell fills bled into letter counters. Text now fills with the **nonzero
+  winding** rule (which is what glyph outlines are authored for): overlapping same-wound outers
+  union while opposite-wound counters still carve, and shells are classified by "is the band just
+  inside this loop ink" (immune to the overlap miscount). The rule is gated to text via a
+  `windingRule` flag, and for non-overlapping glyphs nonzero is mathematically identical to
+  even-odd — so every other typeface, every other fill consumer (paint bucket, pattern designer,
+  …), and the whole even-odd test suite are byte-for-byte unchanged. Verified across 11 typefaces
+  (5 connected scripts) × 15 fills × 4 words × 3 densities = 1,980 combinations with **zero**
+  counter bleed; closes PRH-012. (Remaining halftone/maze coverage gaps at extreme density are the
+  separate PRH-013.)
+
 ## 1.2.14 - 2026-06-21
 
 ### Fixed

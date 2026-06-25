@@ -107,6 +107,11 @@
         if (regions.length) {
           const rec = PB.buildFillRecord({ polygon: regions[0], innerPolygon: null, loopId: 'text', isDocBounds: false }, p);
           rec.regions = regions;
+          // Glyph outlines are authored for the NONZERO fill rule (outer and
+          // counter wound oppositely). Nonzero unions overlapping connected-script
+          // glyphs while still carving counters; for non-overlapping faces it is
+          // identical to even-odd, so this only changes scripts like Pacifico.
+          rec.windingRule = 'nonzero';
           delete rec.region;
           delete rec.innerRegion;
           let fills = [];

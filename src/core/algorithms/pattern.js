@@ -1006,10 +1006,71 @@
     return [];
   };
 
+  // Composite fill rule. Text sets NONZERO winding (fonts are authored for it) so
+  // overlapping connected-script glyphs UNION while opposite-wound counters still
+  // carve; every other consumer keeps EVEN-ODD. For non-overlapping loops the two
+  // rules are identical, so non-script text and all non-text fills are byte-for-
+  // byte unchanged. The flag is module-scoped and saved/restored around each
+  // generatePatternFillPaths call (synchronous; the only re-entrancy is the
+  // single-region re-dispatch, which the save/restore handles).
+  let _compositeNonzero = false;
+
+  // Winding number of (x, y) over a directed loop: +1 per upward edge crossing of
+  // the +x ray, −1 per downward. Summed across loops for the composite winding.
+  const _loopWinding = (loop, x, y) => {
+    let w = 0;
+    const n = loop.length;
+    for (let i = 0; i < n; i++) {
+      const a = loop[i], b = loop[(i + 1) % n];
+      if (a.y <= y) {
+        if (b.y > y && ((b.x - a.x) * (y - a.y) - (x - a.x) * (b.y - a.y)) > 0) w++;
+      } else if (b.y <= y && ((b.x - a.x) * (y - a.y) - (x - a.x) * (b.y - a.y)) < 0) {
+        w--;
+      }
+    }
+    return w;
+  };
+  const compositeWinding = (regions, x, y) => {
+    let w = 0;
+    for (const r of regions) w += _loopWinding(r, x, y);
+    return w;
+  };
+
   const compositeContainsPoint = (regions = [], x, y) =>
-    regions.reduce((inside, region) => (polyContainsPoint(region, x, y) ? !inside : inside), false);
+    _compositeNonzero
+      ? compositeWinding(regions, x, y) !== 0
+      : regions.reduce((inside, region) => (polyContainsPoint(region, x, y) ? !inside : inside), false);
 
   const scanLineClipComposite = (regions = [], y) => {
+    if (_compositeNonzero) {
+      // Nonzero scanline: accumulate SIGNED crossings left-to-right and emit every
+      // interval whose running winding ≠ 0. Overlapping same-wound glyphs union
+      // (winding 2) instead of cancelling to an even-odd gap at the stroke join.
+      const xings = [];
+      regions.forEach((poly) => {
+        const n = poly.length;
+        for (let i = 0; i < n; i += 1) {
+          const a = poly[i];
+          const b = poly[(i + 1) % n];
+          if ((a.y < y) !== (b.y < y)) {
+            xings.push([a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y), b.y > a.y ? 1 : -1]);
+          }
+        }
+      });
+      xings.sort((p, q) => p[0] - q[0]);
+      const pairs = [];
+      let w = 0;
+      for (let i = 0; i + 1 < xings.length; i += 1) {
+        w += xings[i][1];
+        if (w !== 0 && xings[i + 1][0] - xings[i][0] > 1e-6) {
+          // Merge with the previous span when contiguous (winding stayed ≠ 0).
+          const last = pairs[pairs.length - 1];
+          if (last && xings[i][0] - last[1] <= 1e-6) last[1] = xings[i + 1][0];
+          else pairs.push([xings[i][0], xings[i + 1][0]]);
+        }
+      }
+      return pairs;
+    }
     const xs = [];
     regions.forEach((poly) => {
       const n = poly.length;
@@ -1114,7 +1175,7 @@
   //   depth          — # of OTHER valid loops containing this loop (−1 degenerate)
   //   groups         — one per even-depth (solid) loop; .all = [outer, ...holes]
   //   valid          — the cleaned ink set for compositeContainsPoint
-  const classifyRegionTopology = (regions = []) => {
+  const classifyRegionTopology = (regions = [], nonzero = false) => {
     const meta = regions.map((loop, i) => {
       const ip = interiorPointOf(loop, i);
       // np = near-edge probe used for nesting: lives in the loop's own solid
@@ -1125,6 +1186,36 @@
     });
     const valid = meta.filter((m) => !m.degenerate);
     const validLoops = valid.map((m) => m.loop);
+
+    if (nonzero) {
+      // NONZERO classification — robust to overlapping glyph outers (connected
+      // scripts). A loop is a SOLID SHELL iff the band just inside its own
+      // boundary is ink under nonzero winding; otherwise it bounds a counter
+      // hole. This is immune to the even-odd depth miscount where an outer that
+      // a neighbour outer overlaps is wrongly read as a hole and its letter left
+      // empty. Each hole is owned by the smallest-area shell that contains it.
+      for (const m of valid) m.shell = compositeWinding(validLoops, m.np.x, m.np.y) !== 0;
+      const groups = [];
+      for (const m of valid) {
+        if (m.shell) groups.push({ outer: m.loop, outerIndex: m.index, holes: [], all: [m.loop] });
+      }
+      for (const m of valid) {
+        if (m.shell) continue;
+        let owner = null, ownerArea = Infinity;
+        for (const g of groups) {
+          const ga = Math.abs(polyArea(g.outer));
+          if (ga < ownerArea && polyContainsPoint(g.outer, m.np.x, m.np.y)) { owner = g; ownerArea = ga; }
+        }
+        if (owner) { owner.holes.push(m.loop); owner.all.push(m.loop); }
+      }
+      return {
+        interiorPoints: meta.map((m) => m.ip),
+        depth: meta.map((m) => (m.degenerate ? -1 : (m.shell ? 0 : 1))),
+        groups,
+        valid: validLoops,
+      };
+    }
+
     for (const m of valid) {
       m.depth = 0; m.parent = -1;
       let parentArea = Infinity;
@@ -2425,15 +2516,24 @@
       return result;
     }
 
-    // ── Solid shape (no counters) or outset — original concentric inset ───────
+    // ── Solid shape (no counters) or outset — concentric inset ───────────────
     const result = [];
     let current = poly.slice();
+    // A glyph stroke is THIN: its width (≈ 2·area/perimeter) is often smaller than
+    // a density-derived step (√(area/π)/density sized to the whole letter), so the
+    // first inset overshoots the centreline and the stroke collapses after ZERO
+    // rings — every counter-less letter (V, E, C, T, L, …) renders nearly empty.
+    // Cap the step so any shape too thin for ≥2 rings at the density step gets a
+    // finer step (~2.5 rings across the stroke); thicker shapes keep the density
+    // step unchanged, so circles/squares and all non-glyph fills are identical.
+    const inrad = _loopPerim(poly) > 1e-6 ? Math.abs(polyArea(poly)) / _loopPerim(poly) : step0;
+    const solidStep = (sign > 0 && inrad / step0 < 2) ? Math.max(0.05, inrad / 2.5) : step0;
     // minInradius: half a step keeps the last ring geometrically clean; centerPadding
     // shifts the cutoff outward to leave a deliberate empty zone at centre.
     // inradius = 2·area/perimeter (exact for circles and regular polygons).
-    const minInradius = Math.max(step0 * 0.5, centerPadding);
+    const minInradius = Math.max(solidStep * 0.5, centerPadding);
     for (let iter = 0; iter < 500; iter++) {
-      const step = _contourStepNoise(iter, step0, stepVariance) * sign;
+      const step = _contourStepNoise(iter, solidStep, stepVariance) * sign;
       // Guard against centre artifacts: stop before the polygon is too small
       // for a clean inset step (inradius = 2·area/perimeter).
       if (sign > 0) {
@@ -4279,7 +4379,7 @@
   ]);
 
   // Dispatch to the right fill type → array of paths in tile-local SVG coords
-  const generatePatternFillPaths = (fill) => {
+  const _runPatternFill = (fill) => {
     const regions = getFillRegions(fill);
     const {
       fillType = 'hatch',
@@ -4391,7 +4491,7 @@
     // touched. If pruning collapses the ink set to ≤1 loop, re-dispatch the
     // single-region path on the lone surviving loop so degenerate composite
     // input stays safe.
-    const topo = classifyRegionTopology(effectiveRegions);
+    const topo = classifyRegionTopology(effectiveRegions, _compositeNonzero);
     if (topo.valid.length <= 1) {
       if (!topo.valid.length) return [];
       return generatePatternFillPaths({ ...fill, regions: [topo.valid[0]], region: topo.valid[0], padding: 0 });
@@ -4440,6 +4540,20 @@
       case 'spirograph':  return _spirographFillComposite(topo, density, spiroRatioA, spiroRatioB, spiroPhase, spiroTurns, spiroDeformation);
       case 'weave':       return _weaveFillComposite(topo, density, weavePattern, weaveStrandWidth, weaveGap, weaveAngle, weaveOver, weaveUnder);
       default:            return hatchLinesComposite(effectiveRegions, density, 0 + angle, shiftX, shiftY);
+    }
+  };
+
+  // Select the composite fill rule for this call from fill.windingRule ('nonzero'
+  // for text, so connected-script glyph overlaps union and counters still carve;
+  // even-odd for everything else). Saved/restored so the single-region
+  // re-dispatch and any future nesting can't leak the flag across calls.
+  const generatePatternFillPaths = (fill) => {
+    const prev = _compositeNonzero;
+    _compositeNonzero = (fill && fill.windingRule === 'nonzero');
+    try {
+      return _runPatternFill(fill);
+    } finally {
+      _compositeNonzero = prev;
     }
   };
 

@@ -37,6 +37,22 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- **v1.2.15 — Contour fills every letter + Type fills watertight on connected scripts (PRH-012).** Two
+  fixes. (1) Contour's solid-shape branch sized its inset step to the whole letter (`√(area/π)/density`),
+  far coarser than a glyph stroke is wide, so counter-less letters (V/E/C/T/U) collapsed after one ring
+  and looked blank while R/A were dense — reported on a "VECTURA" contour fill. The solid step is now
+  capped to the stroke thickness when the density step would give <2 rings; thick shapes and non-glyph
+  contours are unchanged. (2) Connected-script faces (Pacifico, Dancing Script, Great Vibes) physically
+  overlap adjacent glyph outers, which even-odd read as holes (counter bleed) and whose depth classifier
+  left overlapped letters empty. Text now fills with the **nonzero winding** rule (gated via a
+  `windingRule` flag): `compositeContainsPoint`/`scanLineClipComposite` accumulate signed winding and
+  `classifyRegionTopology` classifies shells by "inner band is ink". For non-overlapping glyphs nonzero ≡
+  even-odd, so non-script faces and every non-text consumer (paint bucket, pattern designer) are
+  byte-identical. Verified across 11 typefaces (5 scripts) × 15 fills × 4 words × 3 densities = 1,980
+  combos, 0 counter bleed; +14 regression tests; full unit/integration/visual/perf green. NOTE: real-app
+  verification (via the actual `text.generate` algorithm path + visual renders) caught a contour defect
+  that v1.2.14's isolated `_generatePatternFillPaths` tests missed — always verify text fills through the
+  real algorithm path, not just the fill engine. Remaining: PRH-013 (halftone/maze extreme-density gaps).
 - **v1.2.14 — Type fills made watertight & consistent across all fill types.** Text feeds every glyph
   contour (outer shells + counter holes) into the pattern-fill engine's composite branch; a dozen fills
   (dots/stipple/grid, contour, scribble, halftone, voronoi, truchet, maze, lsystem, spirograph, weave,

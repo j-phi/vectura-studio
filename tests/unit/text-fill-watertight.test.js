@@ -350,6 +350,29 @@ describe('Type fill watertightness (composite even-odd contract)', () => {
   // step: insetting only the outer skips the wall straight into the counter and
   // every ring is clipped away → the whole letter renders EMPTY. The annulus
   // contour must offset the counter outward too, capping the step to the wall.
+  // A counter-LESS glyph stroke (V, E, C, T, L, the stem of most letters) is a
+  // thin SOLID shape. Its width is far smaller than the density-derived step sized
+  // to the whole letter, so the first inset overshoots the centreline and the
+  // stroke collapses after ZERO rings — only the single-ring fallback fires and
+  // the letter looks empty (reported on a "VECTURA" contour fill). The solid step
+  // must be capped to the stroke thickness so it carries several rings.
+  describe('CONTOUR regression — thin solid stroke fills with multiple rings', () => {
+    const rect = (x, y, w, h) => ([{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }, { x, y }]);
+    for (const [w, h] of [[70, 5], [50, 4], [60, 10]]) {
+      it(`solid ${w}×${h}mm stroke gets ≥3 contour rings (not 1)`, () => {
+        const r = rect(0, 0, w, h);
+        const paths = gen({ regions: [r], region: r, fillType: 'contour', density: 4 });
+        expect(paths.length).toBeGreaterThanOrEqual(3);
+      });
+    }
+    it('thick shape still scales rings with density (cap does not engage)', () => {
+      const r = rect(0, 0, 60, 60);
+      const d4 = gen({ regions: [r], region: r, fillType: 'contour', density: 4 }).length;
+      const d8 = gen({ regions: [r], region: r, fillType: 'contour', density: 8 }).length;
+      expect(d8).toBeGreaterThan(d4); // density, not the thin-stroke cap, governs
+    });
+  });
+
   describe('CONTOUR regression — hairline-walled annulus is never left empty', () => {
     // Outer 80mm square, counter 74mm square → a 3mm wall all around.
     const thinWall = () => {
@@ -417,6 +440,103 @@ describe('Type fill watertightness (composite even-odd contract)', () => {
         expect(leaks).toBe(0);
       });
     }
+  });
+
+  // ── NONZERO winding (connected scripts) ───────────────────────────────────
+  // Glyph outlines are authored for the nonzero rule (outer +, counter −). Script
+  // faces (Pacifico, Dancing Script, …) physically OVERLAP adjacent glyph outers,
+  // which even-odd reads as a hole at the join and whose depth-classifier mis-reads
+  // an overlapped outer as a counter (leaving its letter empty / bleeding fill into
+  // real counters). Text passes `windingRule:'nonzero'`: overlapping same-wound
+  // outers UNION, opposite-wound counters still carve. For NON-overlapping loops
+  // nonzero ≡ even-odd, so non-script text and all other fills are unchanged.
+  describe('NONZERO winding — overlapping glyph outers union, counters still carve', () => {
+    const rel = runtime; // alias for clarity
+    const _cls = () => runtime.window.Vectura.AlgorithmRegistry._classifyRegionTopology;
+    // directed loops: square() is positive-area (an outer); squareCW() is its
+    // reverse (negative-area, a counter).
+    const squareCW = (x, y, s) => square(x, y, s).slice().reverse();
+    // nonzero ink: winding number over all loops ≠ 0.
+    const windNZ = (loop, x, y) => {
+      let w = 0;
+      for (let i = 0; i < loop.length; i++) {
+        const a = loop[i], b = loop[(i + 1) % loop.length];
+        if (a.y <= y) { if (b.y > y && ((b.x - a.x) * (y - a.y) - (x - a.x) * (b.y - a.y)) > 0) w++; }
+        else if (b.y <= y && ((b.x - a.x) * (y - a.y) - (x - a.x) * (b.y - a.y)) < 0) w--;
+      }
+      return w;
+    };
+    const inkNZ = (regions, x, y) => regions.reduce((w, r) => w + windNZ(r, x, y), 0) !== 0;
+    // distance to the nearest edge across all loops — a real leak must be a hole
+    // point AWAY from every boundary (a fill endpoint landing exactly on a convex
+    // outline corner reads as non-ink on all sides but is not a counter leak).
+    const distEdge = (regions, x, y) => {
+      let md = Infinity;
+      for (const r of regions) for (let i = 0; i < r.length; i++) {
+        const a = r[i], b = r[(i + 1) % r.length];
+        const dx = b.x - a.x, dy = b.y - a.y, L2 = (dx * dx + dy * dy) || 1e-9;
+        let t = ((x - a.x) * dx + (y - a.y) * dy) / L2; t = Math.max(0, Math.min(1, t));
+        md = Math.min(md, Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy)));
+      }
+      return md;
+    };
+
+    // Glyph 1: outer 80mm square + a 40mm counter (CW). Glyph 2: outer overlapping
+    // glyph 1 on the right (a connected-script join). All three loops in one set.
+    const scriptFixture = () => {
+      const a = square(0, 0, 80);
+      const counterA = squareCW(20, 20, 40);
+      const b = square(55, 0, 60);            // overlaps A in x[55,80]
+      const regions = [a, counterA, b];
+      return { regions, counter: { x: 40, y: 40 }, join: { x: 67, y: 30 }, solids: [{ x: 8, y: 40 }, { x: 110, y: 30 }] };
+    };
+
+    it('fixture integrity: counter is a nonzero hole, the join is nonzero ink', () => {
+      const { regions, counter, join, solids } = scriptFixture();
+      expect(inkNZ(regions, counter.x, counter.y)).toBe(false); // winding 0
+      expect(inkNZ(regions, join.x, join.y)).toBe(true);        // winding 2 (both outers)
+      for (const s of solids) expect(inkNZ(regions, s.x, s.y)).toBe(true);
+    });
+
+    it('classification: both overlapping outers are shells, counter is a hole', () => {
+      const { regions } = scriptFixture();
+      const topo = _cls()(regions, true); // nonzero classification
+      expect(topo.groups.length).toBe(2); // A and B both kept as solid shells
+      const totalHoles = topo.groups.reduce((n, g) => n + g.holes.length, 0);
+      expect(totalHoles).toBe(1);         // counterA owned by exactly one shell
+    });
+
+    for (const fillType of ['contour', 'scribble', 'dots', 'voronoi', 'maze', 'weave', 'hatch']) {
+      it(`${fillType}: nonzero — 0 counter leak, both letters + the join filled`, () => {
+        const { regions, solids } = scriptFixture();
+        const paths = gen({
+          regions, region: regions[0], fillType, windingRule: 'nonzero', density: 6,
+          dotSize: 1, scribbleSeed: 3, scribbleCoverage: 2, mazeCellSize: 6, voronoiSeeds: 40,
+          weaveStrandWidth: 1.5, angle: 0,
+        });
+        const pts = densePoints(paths);
+        expect(pts.length).toBeGreaterThan(0);
+        // no emitted point sits in the nonzero hole (the counter).
+        let leaks = 0;
+        for (const pt of pts) {
+          if (!inkNZ(regions, pt.x, pt.y) && distEdge(regions, pt.x, pt.y) > 0.6) leaks++;
+        }
+        expect(leaks).toBe(0);
+        // both disjoint solid lobes carry fill (overlapped letter is not empty).
+        for (const s of solids) {
+          expect(pts.some((pt) => Math.hypot(pt.x - s.x, pt.y - s.y) < 22)).toBe(true);
+        }
+      });
+    }
+
+    it('even-odd unchanged: nonzero ≡ even-odd output for NON-overlapping glyphs', () => {
+      // two disjoint (non-overlapping) glyphs with counters — the two rules must
+      // produce byte-identical hatch geometry.
+      const regions = [square(0, 0, 60), squareCW(15, 15, 30), square(90, 0, 60), squareCW(105, 15, 30)];
+      const ev = gen({ regions, region: regions[0], fillType: 'hatch', density: 5, angle: 30 });
+      const nz = gen({ regions, region: regions[0], fillType: 'hatch', density: 5, angle: 30, windingRule: 'nonzero' });
+      expect(JSON.stringify(nz)).toBe(JSON.stringify(ev));
+    });
   });
 
   describe('REGRESSION GUARD — hatch & wave already watertight, must stay green', () => {
