@@ -287,7 +287,12 @@
           faces.push([i, n, sides + n, sides + i]);
         }
       }
-      return withBounds({ vertices, faces });
+      // The prism's hand-built side quads wind INWARD ([i, n, bottom_n, bottom_i]
+      // traverses clockwise as seen from outside), so their normals point at the
+      // axis and 'Faces → Front' culls the faces you should see — leaving gaps.
+      // orientFace re-winds every face outward (a no-op for the antiprism, whose
+      // zig-zag band is already correct).
+      return withBounds({ vertices, faces: faces.map((face) => orientFace(face, vertices)) });
     }
     if (type === 'bipyramid') {
       const ring = regularRing(sides, radius, 0);

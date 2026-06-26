@@ -230,6 +230,39 @@ describe('Vectura geometry algorithms', () => {
     expect(opaque.some((path) => path.meta?.hiddenLine)).toBe(false);
   });
 
+  test('polyhedron prism side faces wind outward (no gaps in Faces → Front)', () => {
+    // The prism's hand-built side quads wound INWARD, so 'front' surface mode
+    // inverted the front/back test: the camera-facing sides were culled and the
+    // far ones drawn instead — the reported gaps. Under perspective a far side
+    // projects SMALLER than a near one, so the farthest side face must NOT survive
+    // 'front' culling. With the inward winding it leaks in and min(front) collapses
+    // to min(all); with outward winding the far face is gone and min(front) is
+    // clearly larger.
+    const persp = { solidType: 'prism', sideCount: 6, faceBands: 0, showEdges: false, showVertices: false, projection: 'perspective', cameraDistance: 120, focalLength: 160 };
+    // Side quads close to 5 points; the hexagonal caps close to 7 — filter to
+    // sides. 'all' mode keeps every side (back ones flagged hiddenLine but still
+    // present, so we see the true far-face size); 'front' mode only pushes the
+    // faces that survive culling, so no hiddenLine filter is needed.
+    const sideDiagonals = (paths) => paths
+      .filter((path) => path.meta?.face !== undefined && path.length === 5)
+      .map((path) => {
+        const xs = path.map((pt) => pt.x);
+        const ys = path.map((pt) => pt.y);
+        return Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+      });
+    const allSides = sideDiagonals(generate('polyhedron', { ...persp, surfaceMode: 'all' }));
+    const frontSides = sideDiagonals(generate('polyhedron', { ...persp, surfaceMode: 'front' }));
+    expect(allSides.length, 'all-mode should render every side quad').toBe(6);
+    expect(frontSides.length, 'front-mode should render the near side quads').toBeGreaterThan(0);
+    // The farthest (smallest) side face must be culled in 'front' mode; an inward
+    // normal flips it to front-facing and it survives, dragging min(front) down to
+    // min(all).
+    expect(
+      Math.min(...frontSides),
+      'the far side quad must be culled by Faces → Front (inward winding leaks it back in)',
+    ).toBeGreaterThan(Math.min(...allSides) * 1.05);
+  });
+
   test('polyhedron buckyball uses pentagon/hexagon topology', () => {
     const vertexOnly = generate('polyhedron', {
       solidType: 'buckyball',

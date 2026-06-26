@@ -37,6 +37,12 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- **v1.2.19 — Prism Faces → Front gaps fixed.** The prism's hand-built side quads wound inward, so the
+  `surfaceMode: 'front'` front/back test was inverted (near sides culled, far sides drawn) — visible holes.
+  Routed the prism/antiprism side faces through the shared `orientFace` pass (`src/core/algorithms/polyhedron.js`),
+  re-winding outward; no-op for the already-correct antiprism. RGR: a perspective front-cull regression test
+  (the far side face must not survive `Faces → Front`), proven red against the inward winding. Suite green
+  (unit 2126 / integration 652 / visual 24 — no baseline shift).
 - **v1.2.17 — Polyhedron swept-profile family (Cone / Frustum / Cupola / Star Prism) + concave-normal fix.**
   Extended the existing `sideCount`/`depth` sweep family in `createSolidMesh` (`src/core/algorithms/polyhedron.js`)
   with four solids: `cone` (faceted pyramid), `frustum` (truncated pyramid, new `taper` param), `cupola`

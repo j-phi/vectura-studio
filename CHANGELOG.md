@@ -4,6 +4,16 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.19 - 2026-06-26
+
+### Fixed
+- **Prism no longer shows gaps in Faces → Front.** The prism's side quads were hand-wound clockwise as
+  seen from outside, so their face normals pointed at the axis (inward). With *Faces → Front* selected,
+  the front/back test was inverted: the camera-facing sides were culled and the far sides drawn in their
+  place, leaving holes in the solid. The side faces now run through the same `orientFace` pass the rest
+  of the solids use, which re-winds every face outward (a no-op for the antiprism, whose band was already
+  correct). Caps and all other solids are unchanged.
+
 ## 1.2.18 - 2026-06-26
 
 ### Fixed

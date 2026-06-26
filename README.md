@@ -554,6 +554,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.19
+- **Prism renders cleanly in Faces → Front.** The prism's side faces were wound inward, so selecting *Faces → Front* culled the near sides and drew the far ones — leaving gaps. The sides are now wound outward like every other solid; antiprism, caps, and other solids are unchanged.
+
 ### 1.2.17
 - **Polyhedron gains four swept-profile solids — Cone, Frustum, Cupola, and Star Prism.** They extend the existing side-count sweep family (flat polygon, prism, antiprism, bipyramid): Cone is a faceted pyramid, Frustum a truncated pyramid with a new **Taper** control, Cupola lifts a 2n-gon base to an n-gon top, and Star Prism extrudes a star profile with a new **Star Inset** control. Also fixes concave-face shading — `faceNormal` now uses Newell's method, so the Star Prism caps (and any concave face) get a correct outward normal instead of an inverted one. Existing solids are byte-for-byte unchanged.
 
