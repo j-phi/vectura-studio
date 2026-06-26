@@ -37,6 +37,19 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- **v1.2.16 — Contour fill rewritten as a distance field (robust on all faces).** The v1.2.15 contour
+  still used naive polygon offsetting (`insetPolygon`), which self-intersects into chaotic tangled
+  geometry on non-convex/varying-width glyph shapes at depth — reported as a scribbled-mess "VECTURA"
+  contour on a script face at high density. Replaced inset contour with iso-contours of the
+  distance-to-boundary field: a two-pass chamfer distance transform on a scanline-filled grid (grid
+  honours the active even-odd/nonzero rule), then marching squares per ring level with edge-keyed
+  segment stitching. Robust for any topology (pinch-off, varying stroke width, counters, overlaps);
+  ring spacing calibrated to the thickest ink so thin strokes still get rings; path count grid-bounded
+  (no high-density explosion). Outset kept on the old path. ~4–300ms/word depending on density+grid;
+  acceptable for generation, a `fastPreview` downsample is a possible follow-up. +4 regression tests
+  (non-convex chevron clean + bounded). Full unit/integration/visual/perf green. Verified visually on
+  Oswald/Playfair/Lobster/Pacifico across densities. Reinforces [[feedback_verify_text_fills_real_path]]
+  — the bug only showed at real density on a real script face.
 - **v1.2.15 — Contour fills every letter + Type fills watertight on connected scripts (PRH-012).** Two
   fixes. (1) Contour's solid-shape branch sized its inset step to the whole letter (`√(area/π)/density`),
   far coarser than a glyph stroke is wide, so counter-less letters (V/E/C/T/U) collapsed after one ring

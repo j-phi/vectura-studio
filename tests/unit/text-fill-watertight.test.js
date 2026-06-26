@@ -373,6 +373,37 @@ describe('Type fill watertightness (composite even-odd contract)', () => {
     });
   });
 
+  // Naive polygon offsetting (insetPolygon) self-intersects into garbage on
+  // NON-CONVEX shapes at depth — reported as a chaotic "VECTURA" contour on a
+  // script face. The distance-field contour produces clean iso-rings for any
+  // shape: every emitted path is finite, has ≥2 points, and the path count stays
+  // bounded (grid-limited) instead of exploding with density.
+  describe('CONTOUR regression — non-convex shape fills cleanly, stays bounded', () => {
+    // A thin "V" chevron: a non-convex closed band that classic offsetting mangles.
+    const chevron = () => ([
+      { x: 0, y: 0 }, { x: 8, y: 0 }, { x: 30, y: 44 }, { x: 52, y: 0 }, { x: 60, y: 0 },
+      { x: 34, y: 52 }, { x: 26, y: 52 }, { x: 0, y: 0 },
+    ]);
+
+    it('non-convex chevron gets ≥2 clean rings (all finite, length ≥2)', () => {
+      const r = chevron();
+      const paths = gen({ regions: [r], region: r, fillType: 'contour', density: 6 });
+      expect(paths.length).toBeGreaterThanOrEqual(2);
+      for (const p of paths) {
+        expect(p.length).toBeGreaterThanOrEqual(2);
+        for (const pt of p) { expect(Number.isFinite(pt.x)).toBe(true); expect(Number.isFinite(pt.y)).toBe(true); }
+      }
+    });
+
+    it('high density stays bounded (no self-intersection explosion)', () => {
+      const r = chevron();
+      const hi = gen({ regions: [r], region: r, fillType: 'contour', density: 40 });
+      // bounded by grid resolution, not the runaway loops naive offsetting produced
+      expect(hi.length).toBeLessThan(2000);
+      expect(hi.length).toBeGreaterThan(0);
+    });
+  });
+
   describe('CONTOUR regression — hairline-walled annulus is never left empty', () => {
     // Outer 80mm square, counter 74mm square → a 3mm wall all around.
     const thinWall = () => {

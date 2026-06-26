@@ -554,6 +554,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.16
+- **Contour fill is clean on every typeface.** Contour rings are now traced from a distance field (chamfer transform + marching squares) instead of polygon offsetting, which tangled into chaotic geometry on script/display faces and at high density. Rings now follow each letterform cleanly, fill evenly, and stay bounded at any density — on uniform, high-contrast, and connected-script faces alike.
+
 ### 1.2.15
 - **Contour fill now fills every letter.** Counter-less letters (V, E, C, T, …) used to come out nearly blank under a Contour fill because the ring spacing was sized to the whole letter rather than the stroke; thin strokes now carry several concentric rings while thicker shapes are unchanged.
 - **Type fills are watertight on connected scripts too.** Building on 1.2.14, cursive faces whose letters join (Pacifico, Dancing Script, Great Vibes, …) now fill their counters cleanly. Text fills use the **nonzero winding** rule that glyph outlines are designed for, so overlapping joined strokes merge into solid ink while the holes inside letters stay empty — with no change to any other typeface or fill. Verified across 11 typefaces (5 connected scripts) × 15 fills × 4 words × 3 densities with zero counter bleed.

@@ -2462,6 +2462,161 @@
     return s;
   };
 
+  // ── Distance-field contour ──────────────────────────────────────────────────
+  // Naive polygon offsetting (insetPolygon: move each vertex along its angle
+  // bisector) self-intersects into garbage when a glyph pinches off or its stroke
+  // width varies — exactly what happens on script / display faces at depth. Iso-
+  // contours of the distance-to-boundary field are robust for ANY topology: they
+  // follow pinch-offs, split into multiple loops where a shape narrows, and never
+  // self-cross. The grid is filled through scanLineClipComposite, so it honours
+  // the active fill rule (nonzero for text, even-odd otherwise) — counters and
+  // overlaps are handled by the same predicate as every other fill.
+
+  // Marching squares: extract iso-lines of `field` (node-centred values) at
+  // `level`, returned as stitched polylines in world space.
+  const _marchingSquares = (field, nx, ny, ox, oy, cs, level) => {
+    // Each iso-crossing lies on a unique grid edge shared by ≤2 cells; key by
+    // edge id so segments from neighbouring cells connect into continuous loops.
+    const nodeX = (i) => ox + (i + 0.5) * cs;
+    const nodeY = (j) => oy + (j + 0.5) * cs;
+    const adj = new Map();   // edgeId -> [edgeId, ...] (≤2 neighbours)
+    const pos = new Map();   // edgeId -> {x,y}
+    const hKey = (i, j) => `h${i},${j}`; // crossing on the horizontal edge node(i,j)-node(i+1,j)
+    const vKey = (i, j) => `v${i},${j}`; // crossing on the vertical edge node(i,j)-node(i,j+1)
+    const hPt = (i, j, a, b) => { const t = (level - a) / (b - a || 1e-9); return { x: nodeX(i) + t * cs, y: nodeY(j) }; };
+    const vPt = (i, j, a, b) => { const t = (level - a) / (b - a || 1e-9); return { x: nodeX(i), y: nodeY(j) + t * cs }; };
+    const link = (k1, p1, k2, p2) => {
+      if (!pos.has(k1)) pos.set(k1, p1);
+      if (!pos.has(k2)) pos.set(k2, p2);
+      if (!adj.has(k1)) adj.set(k1, []);
+      if (!adj.has(k2)) adj.set(k2, []);
+      adj.get(k1).push(k2); adj.get(k2).push(k1);
+    };
+    for (let j = 0; j < ny - 1; j++) {
+      for (let i = 0; i < nx - 1; i++) {
+        const tl = field[j * nx + i], tr = field[j * nx + i + 1];
+        const bl = field[(j + 1) * nx + i], br = field[(j + 1) * nx + i + 1];
+        let c = 0;
+        if (tl >= level) c |= 1;
+        if (tr >= level) c |= 2;
+        if (br >= level) c |= 4;
+        if (bl >= level) c |= 8;
+        if (c === 0 || c === 15) continue;
+        const top = () => [hKey(i, j), hPt(i, j, tl, tr)];
+        const bot = () => [hKey(i, j + 1), hPt(i, j + 1, bl, br)];
+        const lft = () => [vKey(i, j), vPt(i, j, tl, bl)];
+        const rgt = () => [vKey(i + 1, j), vPt(i + 1, j, tr, br)];
+        const seg = (e1, e2) => link(e1[0], e1[1], e2[0], e2[1]);
+        switch (c) {
+          case 1: case 14: seg(lft(), top()); break;
+          case 2: case 13: seg(top(), rgt()); break;
+          case 3: case 12: seg(lft(), rgt()); break;
+          case 4: case 11: seg(rgt(), bot()); break;
+          case 6: case 9:  seg(top(), bot()); break;
+          case 7: case 8:  seg(lft(), bot()); break;
+          case 5: seg(lft(), top()); seg(rgt(), bot()); break;   // saddle
+          case 10: seg(top(), rgt()); seg(lft(), bot()); break;  // saddle
+          default: break;
+        }
+      }
+    }
+    // Walk the adjacency graph into polylines (loops and open chains).
+    const out = [];
+    const used = new Set();
+    const walk = (start) => {
+      const chain = [];
+      let cur = start, prev = null;
+      while (cur && !used.has(cur)) {
+        used.add(cur);
+        chain.push(pos.get(cur));
+        const ns = adj.get(cur) || [];
+        let next = null;
+        for (const n of ns) { if (n !== prev && !used.has(n)) { next = n; break; } }
+        prev = cur; cur = next;
+      }
+      if (chain.length >= 2) out.push(chain);
+    };
+    // Prefer starting at endpoints (degree 1) so open chains are whole; then loops.
+    for (const [k, ns] of adj) if (ns.length === 1 && !used.has(k)) walk(k);
+    for (const k of adj.keys()) if (!used.has(k)) walk(k);
+    return out;
+  };
+
+  const _contourFieldFill = (regions, density, simplify = 0, centerPadding = 0, stepVariance = 0) => {
+    const valid = regions.filter((r) => Array.isArray(r) && r.length >= 3);
+    if (!valid.length) return [];
+    const b = compositeBounds(valid);
+    const W = Math.max(1e-3, b.maxX - b.minX), H = Math.max(1e-3, b.maxY - b.minY);
+    // Cell size from the bounding box (NOT the ring spacing — spacing is derived
+    // from the field below): fine enough to resolve thin strokes, capped for perf.
+    const MAXC = 820;
+    const cs = Math.max(0.08, Math.max(W, H) / MAXC);
+    const nx = Math.max(3, Math.ceil(W / cs) + 3), ny = Math.max(3, Math.ceil(H / cs) + 3);
+    if (nx * ny > 1300000) return [];
+    const ox = b.minX - cs, oy = b.minY - cs;
+    // Inside grid via scanline (honours the active fill rule through scanLine-
+    // ClipComposite — nonzero spans for text, even-odd otherwise).
+    const inside = new Uint8Array(nx * ny);
+    for (let j = 0; j < ny; j++) {
+      const y = oy + (j + 0.5) * cs;
+      for (const [x0, x1] of scanLineClipComposite(valid, y)) {
+        const i0 = Math.max(0, Math.floor((x0 - ox) / cs - 0.5));
+        const i1 = Math.min(nx - 1, Math.ceil((x1 - ox) / cs - 0.5));
+        for (let i = i0; i <= i1; i++) {
+          const x = ox + (i + 0.5) * cs;
+          if (x >= x0 - 1e-9 && x <= x1 + 1e-9) inside[j * nx + i] = 1;
+        }
+      }
+    }
+    // Two-pass chamfer distance transform (distance to nearest OUTSIDE cell).
+    const INF = 1e9, D1 = 1, D2 = Math.SQRT2;
+    const dist = new Float32Array(nx * ny);
+    for (let k = 0; k < dist.length; k++) dist[k] = inside[k] ? INF : 0;
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const k = j * nx + i; if (!inside[k]) continue;
+      let m = dist[k];
+      if (i > 0) m = Math.min(m, dist[k - 1] + D1);
+      if (j > 0) m = Math.min(m, dist[k - nx] + D1);
+      if (i > 0 && j > 0) m = Math.min(m, dist[k - nx - 1] + D2);
+      if (i < nx - 1 && j > 0) m = Math.min(m, dist[k - nx + 1] + D2);
+      dist[k] = m;
+    }
+    for (let j = ny - 1; j >= 0; j--) for (let i = nx - 1; i >= 0; i--) {
+      const k = j * nx + i; if (!inside[k]) continue;
+      let m = dist[k];
+      if (i < nx - 1) m = Math.min(m, dist[k + 1] + D1);
+      if (j < ny - 1) m = Math.min(m, dist[k + nx] + D1);
+      if (i < nx - 1 && j < ny - 1) m = Math.min(m, dist[k + nx + 1] + D2);
+      if (i > 0 && j < ny - 1) m = Math.min(m, dist[k + nx - 1] + D2);
+      dist[k] = m;
+    }
+    let maxD = 0;
+    for (let k = 0; k < dist.length; k++) { dist[k] *= cs; if (dist[k] < INF && dist[k] > maxD) maxD = dist[k]; }
+    if (maxD <= 0) return [];
+    // Ring spacing (mm): density ≈ rings across the THICKEST ink (maxD), so a thin
+    // wall / stroke still gets several rings while a fat stem gets `density`. A
+    // single global spacing keeps the look even across a word; floor at 2 cells so
+    // the grid can resolve it. (Old √(area/π)/density sized rings to the bounding
+    // loop, which skipped past thin walls entirely.)
+    const spacing = Math.max(cs * 2, maxD / Math.max(0.5, density));
+    // Iso-contours at every ring spacing. centerPadding leaves a clear core by
+    // dropping the innermost levels.
+    const result = [];
+    const cap = centerPadding > 0 ? Math.max(0, maxD - centerPadding) : maxD + spacing;
+    // stepVariance jitters the gap between successive rings (per-level noise);
+    // at 0 the spacing is uniform.
+    let L = 0;
+    for (let iter = 0; iter < 4000; iter++) {
+      L += Math.max(spacing * 0.25, _contourStepNoise(iter, spacing, stepVariance));
+      if (L > cap + 1e-6) break;
+      for (let ring of _marchingSquares(dist, nx, ny, ox, oy, cs, L)) {
+        if (simplify > 0) ring = _douglasPeucker(ring, simplify);
+        if (ring.length >= 2) result.push(ring);
+      }
+    }
+    return result;
+  };
+
   const contourLines = (poly, density, direction = 'inset', stepVariance = 0, simplify = 0, centerPadding = 0, clipRegions = null, ownGroup = null) => {
     const sign = direction === 'outset' ? -1 : 1;
     const shapeRadius = Math.sqrt(Math.abs(polyArea(poly)) / Math.PI);
@@ -4455,7 +4610,9 @@
           ? expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
           : dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength, dotRotation, penWidth);
         case 'stipple':     return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
-        case 'contour':     return contourLines(region, density, contourDirection, contourStepVariance, contourSimplify, contourCenterPadding);
+        case 'contour':     return contourDirection === 'outset'
+          ? contourLines(region, density, contourDirection, contourStepVariance, contourSimplify, contourCenterPadding)
+          : _contourFieldFill([region], density, contourSimplify, contourCenterPadding, contourStepVariance);
         case 'spiral': {
           // Slider "Density" is intuitive when higher = denser. Internally
           // the Archimedean ring spacing is the *inverse* (smaller spacing
@@ -4515,7 +4672,9 @@
         ? expandDotsToSpirals(dotsFillComposite(topo, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
         : dotsFillComposite(topo, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength, dotRotation, penWidth);
       case 'stipple':     return expandDotsToSpirals(dotsFillComposite(topo, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
-      case 'contour':     return contourLinesComposite(topo, density, contourDirection, contourStepVariance, contourSimplify, contourCenterPadding);
+      case 'contour':     return contourDirection === 'outset'
+        ? contourLinesComposite(topo, density, contourDirection, contourStepVariance, contourSimplify, contourCenterPadding)
+        : _contourFieldFill(effectiveRegions, density, contourSimplify, contourCenterPadding, contourStepVariance);
       case 'spiral': {
         const spacing = density > 0 ? 1 / density : 1;
         return spiralFillComposite(regions, effectiveRegions, spacing, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
