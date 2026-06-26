@@ -4,6 +4,16 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.18 - 2026-06-26
+
+### Fixed
+- **Outset Contour fill is now clean too.** v1.2.16 moved the *inset* contour onto the distance-field
+  engine but left **outset** on the old `insetPolygon` offsetting, which tangled into self-intersecting
+  halo rings that collided between letters. Outset now traces iso-contours of the *outside* distance
+  field — clean rings that expand outward and merge smoothly around the silhouette, bounded so they
+  don't flood the canvas. Both contour directions now share the one robust engine; the dead
+  `insetPolygon`-based contour path is removed entirely.
+
 ## 1.2.17 - 2026-06-25
 
 ### Added

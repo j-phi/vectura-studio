@@ -402,6 +402,35 @@ describe('Type fill watertightness (composite even-odd contract)', () => {
       expect(hi.length).toBeLessThan(2000);
       expect(hi.length).toBeGreaterThan(0);
     });
+
+    // OUTSET must also go through the distance field (was left on the old
+    // insetPolygon path, producing tangled self-intersecting halo rings that
+    // collide between letters). Iso-contours of the OUTSIDE distance field give a
+    // clean halo expanding outward.
+    it('outset rings expand OUTSIDE the shape, clean and bounded', () => {
+      const r = square(40, 40, 40); // spans 40..80
+      const paths = gen({ regions: [r], region: r, fillType: 'contour', density: 6, contourDirection: 'outset' });
+      expect(paths.length).toBeGreaterThan(0);
+      expect(paths.length).toBeLessThan(600); // bounded halo, not a canvas flood
+      let outside = 0, total = 0;
+      for (const p of paths) {
+        expect(p.length).toBeGreaterThanOrEqual(2);
+        for (const pt of p) {
+          total++;
+          expect(Number.isFinite(pt.x)).toBe(true);
+          if (!inPoly(r, pt.x, pt.y)) outside++;
+        }
+      }
+      expect(outside / total).toBeGreaterThan(0.8); // the halo lives outside the ink
+    });
+
+    it('inset still fills INSIDE the shape (direction routing intact)', () => {
+      const r = square(40, 40, 40);
+      const paths = gen({ regions: [r], region: r, fillType: 'contour', density: 6, contourDirection: 'inset' });
+      let inside = 0, total = 0;
+      for (const p of paths) for (const pt of p) { total++; if (inPoly(r, pt.x, pt.y)) inside++; }
+      expect(inside / total).toBeGreaterThan(0.8);
+    });
   });
 
   describe('CONTOUR regression — hairline-walled annulus is never left empty', () => {

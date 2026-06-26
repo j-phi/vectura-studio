@@ -2443,25 +2443,6 @@
     return density * (1 + variance * (r - 0.5));
   };
 
-  // Concentric inset (or outset) rings of the polygon boundary.
-  //
-  // density = approximate number of rings from boundary to geometric center;
-  // step is auto-calibrated as √(area/π)/density so the ring count is
-  // shape-independent (a circle and a rectangle at density=10 both yield ~10
-  // rings). Higher density → tighter spacing → more rings.
-  //
-  // centerPadding (mm): rings stop when the remaining polygon's inscribed
-  // radius drops below this value, leaving a clear centre zone. 0 = fill all
-  // the way to centre.
-  const _loopPerim = (loop) => {
-    let s = 0;
-    for (let i = 0; i < loop.length; i++) {
-      const a = loop[i], b = loop[(i + 1) % loop.length];
-      s += Math.hypot(b.x - a.x, b.y - a.y);
-    }
-    return s;
-  };
-
   // ── Distance-field contour ──────────────────────────────────────────────────
   // Naive polygon offsetting (insetPolygon: move each vertex along its angle
   // bisector) self-intersects into garbage when a glyph pinches off or its stroke
@@ -2542,18 +2523,29 @@
     return out;
   };
 
-  const _contourFieldFill = (regions, density, simplify = 0, centerPadding = 0, stepVariance = 0) => {
+  const _contourFieldFill = (regions, density, direction = 'inset', simplify = 0, centerPadding = 0, stepVariance = 0) => {
     const valid = regions.filter((r) => Array.isArray(r) && r.length >= 3);
     if (!valid.length) return [];
+    const outset = direction === 'outset';
     const b = compositeBounds(valid);
     const W = Math.max(1e-3, b.maxX - b.minX), H = Math.max(1e-3, b.maxY - b.minY);
-    // Cell size from the bounding box (NOT the ring spacing — spacing is derived
-    // from the field below): fine enough to resolve thin strokes, capped for perf.
     const MAXC = 820;
-    const cs = Math.max(0.08, Math.max(W, H) / MAXC);
-    const nx = Math.max(3, Math.ceil(W / cs) + 3), ny = Math.max(3, Math.ceil(H / cs) + 3);
-    if (nx * ny > 1300000) return [];
-    const ox = b.minX - cs, oy = b.minY - cs;
+    const maxDim = Math.max(W, H);
+    // OUTSET rings expand OUTWARD as a clean halo — spacing scales to the letter
+    // radius (not the hairline stroke) so the echo spreads visibly, and the count
+    // is bounded so it doesn't flood the canvas. The grid is PADDED to hold the
+    // halo, and the cell size is derived from the PADDED extent so the grid stays
+    // ~MAXC cells regardless of pad (a fixed-cs floor would blow the cell budget
+    // for small shapes and silently return nothing).
+    const repR = Math.sqrt(Math.max(...valid.map((r) => Math.abs(polyArea(r)))) / Math.PI);
+    const outRings = Math.max(3, Math.min(16, Math.round(density) || 4));
+    const roughCs = Math.max(0.08, maxDim / MAXC);
+    const outSpacing = Math.max(roughCs * 2, repR / Math.max(0.5, density));
+    const pad = outset ? (outRings + 1) * outSpacing : roughCs;
+    const cs = Math.max(0.08, (maxDim + 2 * pad) / MAXC);
+    const ox = b.minX - pad, oy = b.minY - pad;
+    const nx = Math.max(3, Math.ceil((W + 2 * pad) / cs) + 1), ny = Math.max(3, Math.ceil((H + 2 * pad) / cs) + 1);
+    if (nx * ny > 1600000) return [];
     // Inside grid via scanline (honours the active fill rule through scanLine-
     // ClipComposite — nonzero spans for text, even-odd otherwise).
     const inside = new Uint8Array(nx * ny);
@@ -2568,12 +2560,13 @@
         }
       }
     }
-    // Two-pass chamfer distance transform (distance to nearest OUTSIDE cell).
+    // Two-pass chamfer distance transform. INSET: distance INTO the ink (seed =
+    // outside cells). OUTSET: distance OUTWARD from the ink (seed = inside cells).
     const INF = 1e9, D1 = 1, D2 = Math.SQRT2;
     const dist = new Float32Array(nx * ny);
-    for (let k = 0; k < dist.length; k++) dist[k] = inside[k] ? INF : 0;
+    for (let k = 0; k < dist.length; k++) dist[k] = (outset ? inside[k] : !inside[k]) ? 0 : INF;
     for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-      const k = j * nx + i; if (!inside[k]) continue;
+      const k = j * nx + i; if (dist[k] === 0) continue;
       let m = dist[k];
       if (i > 0) m = Math.min(m, dist[k - 1] + D1);
       if (j > 0) m = Math.min(m, dist[k - nx] + D1);
@@ -2582,7 +2575,7 @@
       dist[k] = m;
     }
     for (let j = ny - 1; j >= 0; j--) for (let i = nx - 1; i >= 0; i--) {
-      const k = j * nx + i; if (!inside[k]) continue;
+      const k = j * nx + i; if (dist[k] === 0) continue;
       let m = dist[k];
       if (i < nx - 1) m = Math.min(m, dist[k + 1] + D1);
       if (j < ny - 1) m = Math.min(m, dist[k + nx] + D1);
@@ -2593,16 +2586,13 @@
     let maxD = 0;
     for (let k = 0; k < dist.length; k++) { dist[k] *= cs; if (dist[k] < INF && dist[k] > maxD) maxD = dist[k]; }
     if (maxD <= 0) return [];
-    // Ring spacing (mm): density ≈ rings across the THICKEST ink (maxD), so a thin
-    // wall / stroke still gets several rings while a fat stem gets `density`. A
-    // single global spacing keeps the look even across a word; floor at 2 cells so
-    // the grid can resolve it. (Old √(area/π)/density sized rings to the bounding
-    // loop, which skipped past thin walls entirely.)
-    const spacing = Math.max(cs * 2, maxD / Math.max(0.5, density));
-    // Iso-contours at every ring spacing. centerPadding leaves a clear core by
-    // dropping the innermost levels.
+    // INSET spacing ≈ rings across the THICKEST ink (maxD) so a thin wall / stroke
+    // still gets several rings while a fat stem gets `density`; floored at 2 cells.
+    const spacing = outset ? outSpacing : Math.max(cs * 2, maxD / Math.max(0.5, density));
     const result = [];
-    const cap = centerPadding > 0 ? Math.max(0, maxD - centerPadding) : maxD + spacing;
+    const cap = outset
+      ? outRings * spacing
+      : (centerPadding > 0 ? Math.max(0, maxD - centerPadding) : maxD + spacing);
     // stepVariance jitters the gap between successive rings (per-level noise);
     // at 0 the spacing is uniform.
     let L = 0;
@@ -2615,136 +2605,6 @@
       }
     }
     return result;
-  };
-
-  const contourLines = (poly, density, direction = 'inset', stepVariance = 0, simplify = 0, centerPadding = 0, clipRegions = null, ownGroup = null) => {
-    const sign = direction === 'outset' ? -1 : 1;
-    const shapeRadius = Math.sqrt(Math.abs(polyArea(poly)) / Math.PI);
-    const step0 = Math.max(0.01, shapeRadius / Math.max(0.01, density));
-    // When clipRegions carries counter holes (≥2 loops) the ring is carved by the
-    // even-odd predicate so the glyph's own counters punch through; with the
-    // default [poly] the clip branch is never taken and output is unchanged.
-    const clip = (clipRegions && clipRegions.length > 1) ? clipRegions : null;
-    // Annulus HOLES come from this glyph's own group (ownGroup) — never from the
-    // wider clip set, which may include neighbouring glyphs whose contours are not
-    // this glyph's counters. The ink GATE is still the full clip set (consistency).
-    const holeSrc = (ownGroup && ownGroup.length) ? ownGroup : (clip || [poly]);
-    const holes = holeSrc.filter((r) => r !== poly);
-
-    // ── Annular contour ──────────────────────────────────────────────────────
-    // A glyph with counters (R, A, O, B, 8) is a ring-shaped WALL, not a solid
-    // disc. Insetting ONLY the outer by a glyph-sized step skips straight past a
-    // thin wall (high-contrast serif / script faces) into the counter, where
-    // every ring is clipped away → the whole letter renders EMPTY. Offset the
-    // outer inward AND each counter outward, clip both to the even-odd wall, and
-    // cap the step to the wall thickness so even a hairline bowl gets a ring.
-    if (holes.length && sign > 0) {
-      const inkArea = Math.max(0, Math.abs(polyArea(poly)) - holes.reduce((s, h) => s + Math.abs(polyArea(h)), 0));
-      const inkPerim = _loopPerim(poly) + holes.reduce((s, h) => s + _loopPerim(h), 0);
-      const wall = inkPerim > 1e-6 ? 2 * inkArea / inkPerim : step0;   // ≈ mean wall thickness
-      const baseStep = Math.max(0.05, Math.min(step0, wall * 0.7));    // ≥1 ring fits any wall
-      const result = [];
-      let off = 0;
-      let emptyStreak = 0;
-      for (let iter = 1; iter <= 500; iter++) {
-        off += Math.max(0.02, _contourStepNoise(iter, baseStep, stepVariance));
-        const rings = [];
-        const inner = insetPolygon(poly, off);                        // outer → inward
-        if (inner && inner.length >= 3) rings.push(inner);
-        for (const h of holes) {
-          const grown = insetPolygon(h, -off);                        // counter → outward, into the wall
-          if (grown && grown.length >= 3) rings.push(grown);
-        }
-        if (!rings.length) break;                                     // every boundary collapsed
-        let emitted = 0;
-        for (const ring of rings) {
-          const closed = [...ring, ring[0]];
-          for (let seg of clipPolylineToComposite(closed, clip)) {
-            if (simplify > 0) seg = _douglasPeucker(seg, simplify);
-            if (seg.length >= 2) { result.push(seg); emitted++; }
-          }
-        }
-        // Rings march toward the wall's medial line from both sides; once they all
-        // overshoot the ink they stop emitting. Two dry iterations end the march.
-        if (emitted === 0) { if (++emptyStreak >= 2) break; } else emptyStreak = 0;
-      }
-      return result;
-    }
-
-    // ── Solid shape (no counters) or outset — concentric inset ───────────────
-    const result = [];
-    let current = poly.slice();
-    // A glyph stroke is THIN: its width (≈ 2·area/perimeter) is often smaller than
-    // a density-derived step (√(area/π)/density sized to the whole letter), so the
-    // first inset overshoots the centreline and the stroke collapses after ZERO
-    // rings — every counter-less letter (V, E, C, T, L, …) renders nearly empty.
-    // Cap the step so any shape too thin for ≥2 rings at the density step gets a
-    // finer step (~2.5 rings across the stroke); thicker shapes keep the density
-    // step unchanged, so circles/squares and all non-glyph fills are identical.
-    const inrad = _loopPerim(poly) > 1e-6 ? Math.abs(polyArea(poly)) / _loopPerim(poly) : step0;
-    const solidStep = (sign > 0 && inrad / step0 < 2) ? Math.max(0.05, inrad / 2.5) : step0;
-    // minInradius: half a step keeps the last ring geometrically clean; centerPadding
-    // shifts the cutoff outward to leave a deliberate empty zone at centre.
-    // inradius = 2·area/perimeter (exact for circles and regular polygons).
-    const minInradius = Math.max(solidStep * 0.5, centerPadding);
-    for (let iter = 0; iter < 500; iter++) {
-      const step = _contourStepNoise(iter, solidStep, stepVariance) * sign;
-      // Guard against centre artifacts: stop before the polygon is too small
-      // for a clean inset step (inradius = 2·area/perimeter).
-      if (sign > 0) {
-        const area = Math.abs(polyArea(current));
-        const perim = _loopPerim(current);
-        if (perim < 1e-6 || 2 * area / perim < minInradius) break;
-      }
-      current = insetPolygon(current, step);
-      if (!current || current.length < 3) break;
-      // outset has no natural inner-area termination; cap rings at 8 for outset
-      if (sign < 0 && iter >= 8) break;
-      const closed = [...current, current[0]];
-      if (clip) {
-        for (let seg of clipPolylineToComposite(closed, clip)) {
-          if (simplify > 0) seg = _douglasPeucker(seg, simplify);
-          if (seg.length >= 2) result.push(seg);
-        }
-      } else {
-        let ring = closed;
-        if (simplify > 0) ring = _douglasPeucker(ring, simplify);
-        result.push(ring);
-      }
-    }
-    // Thin solid shell (e.g. a script flourish): too narrow for the inradius-gated
-    // march, which breaks before the first inset. Emit one centreline-hugging ring
-    // so the shell is never left empty. Only fires when nothing was produced, so
-    // every existing non-empty contour output is byte-identical.
-    if (!result.length && sign > 0 && Math.abs(polyArea(poly)) > AREA_EPS) {
-      const inr = _loopPerim(poly) > 1e-6 ? 2 * Math.abs(polyArea(poly)) / _loopPerim(poly) : 0;
-      let ring = insetPolygon(poly, Math.max(0.02, inr * 0.5));
-      if (!ring || ring.length < 3) ring = poly.slice();
-      let closed = [...ring, ring[0]];
-      if (clip) {
-        for (let seg of clipPolylineToComposite(closed, clip)) {
-          if (simplify > 0) seg = _douglasPeucker(seg, simplify);
-          if (seg.length >= 2) result.push(seg);
-        }
-      } else {
-        if (simplify > 0) closed = _douglasPeucker(closed, simplify);
-        result.push(closed);
-      }
-    }
-    return result;
-  };
-
-  // Contour for multi-region: contour each solid shell independently, carving
-  // its own counter holes via the even-odd predicate (g.all). Disjoint glyphs
-  // each form their own group so every letter renders.
-  const contourLinesComposite = (topo, density, direction = 'inset', stepVariance = 0, simplify = 0, centerPadding = 0) => {
-    const out = [];
-    const groupBounds = topo.groups.map((g) => loopBounds(g.outer));
-    topo.groups.forEach((g, gi) => {
-      const clip = groupCoherentClip(topo.groups, groupBounds, gi);
-      out.push(...contourLines(g.outer, density, direction, stepVariance, simplify, centerPadding, clip, g.all));
-    });
-    return out;
   };
 
   // See spiralFillComposite — boundsRegion anchors, clipRegion trims.
@@ -4610,9 +4470,7 @@
           ? expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
           : dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength, dotRotation, penWidth);
         case 'stipple':     return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
-        case 'contour':     return contourDirection === 'outset'
-          ? contourLines(region, density, contourDirection, contourStepVariance, contourSimplify, contourCenterPadding)
-          : _contourFieldFill([region], density, contourSimplify, contourCenterPadding, contourStepVariance);
+        case 'contour':     return _contourFieldFill([region], density, contourDirection, contourSimplify, contourCenterPadding, contourStepVariance);
         case 'spiral': {
           // Slider "Density" is intuitive when higher = denser. Internally
           // the Archimedean ring spacing is the *inverse* (smaller spacing
@@ -4672,9 +4530,7 @@
         ? expandDotsToSpirals(dotsFillComposite(topo, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
         : dotsFillComposite(topo, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength, dotRotation, penWidth);
       case 'stipple':     return expandDotsToSpirals(dotsFillComposite(topo, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
-      case 'contour':     return contourDirection === 'outset'
-        ? contourLinesComposite(topo, density, contourDirection, contourStepVariance, contourSimplify, contourCenterPadding)
-        : _contourFieldFill(effectiveRegions, density, contourSimplify, contourCenterPadding, contourStepVariance);
+      case 'contour':     return _contourFieldFill(effectiveRegions, density, contourDirection, contourSimplify, contourCenterPadding, contourStepVariance);
       case 'spiral': {
         const spacing = density > 0 ? 1 / density : 1;
         return spiralFillComposite(regions, effectiveRegions, spacing, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
