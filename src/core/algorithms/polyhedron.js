@@ -302,6 +302,90 @@
       }
       return withBounds({ vertices, faces });
     }
+    if (type === 'cone') {
+      // Faceted pyramid: an n-gon base ring with a single apex. As `sides`
+      // climbs it converges on a smooth cone. Sweep family — sideCount + depth.
+      const ring = regularRing(sides, radius, -depth / 2);
+      const vertices = ring.concat([v(0, 0, depth / 2)]);
+      const apex = sides;
+      const faces = [Array.from({ length: sides }, (_, i) => i)];
+      for (let i = 0; i < sides; i++) faces.push([apex, i, (i + 1) % sides]);
+      return withBounds({ vertices, faces: faces.map((face) => orientFace(face, vertices)) });
+    }
+    if (type === 'frustum') {
+      // Truncated pyramid: bottom n-gon (radius) + aligned top n-gon scaled by
+      // `taper`, joined by side quads. taper→1 approaches a prism, taper→0 a cone.
+      const taper = clamp(finite(p.taper, 55) / 100, 0.01, 1);
+      const bottom = regularRing(sides, radius, -depth / 2);
+      const top = regularRing(sides, radius * taper, depth / 2);
+      const vertices = bottom.concat(top);
+      const faces = [
+        Array.from({ length: sides }, (_, i) => i),
+        Array.from({ length: sides }, (_, i) => sides + i),
+      ];
+      for (let i = 0; i < sides; i++) {
+        const n = (i + 1) % sides;
+        faces.push([i, n, sides + n, sides + i]);
+      }
+      return withBounds({ vertices, faces: faces.map((face) => orientFace(face, vertices)) });
+    }
+    if (type === 'cupola') {
+      // Generalized cupola: a 2n-gon base lifted to an n-gon top (scaled by
+      // `taper`) through an alternating band of triangles and squares. Each top
+      // vertex sits over a base-edge midpoint, so every top edge gets a square to
+      // the two base vertices beneath it and every top vertex gets a triangle to
+      // the base vertex between squares. (Exact Johnson closure only at n=3,4,5;
+      // for plotter art the generalized band reads cleanly at any n.)
+      const taper = clamp(finite(p.taper, 55) / 100, 0.05, 0.98);
+      const baseN = sides * 2;
+      const bottom = regularRing(baseN, radius, -depth / 2, -Math.PI / 2);
+      const top = regularRing(sides, radius * taper, depth / 2, -Math.PI / 2 + Math.PI / baseN);
+      const vertices = bottom.concat(top);
+      const faces = [
+        Array.from({ length: baseN }, (_, i) => i),
+        Array.from({ length: sides }, (_, i) => baseN + i),
+      ];
+      for (let i = 0; i < sides; i++) {
+        const ti = baseN + i;
+        const tNext = baseN + ((i + 1) % sides);
+        const b0 = (2 * i) % baseN;
+        const b1 = (2 * i + 1) % baseN;
+        const b2 = (2 * i + 2) % baseN;
+        faces.push([b0, b1, ti]);
+        faces.push([b1, b2, tNext, ti]);
+      }
+      return withBounds({ vertices, faces: faces.map((face) => orientFace(face, vertices)) });
+    }
+    if (type === 'starPrism') {
+      // Star-polygon profile (sides points alternating between `radius` and
+      // `radius * starRatio`) extruded to `depth`. Lower starRatio = pointier star.
+      const ratio = clamp(finite(p.starRatio, 45) / 100, 0.05, 0.95);
+      const makeStar = (z) => {
+        const out = [];
+        for (let i = 0; i < sides * 2; i++) {
+          const a = -Math.PI / 2 + (i / (sides * 2)) * TAU;
+          const rr = i % 2 === 0 ? radius : radius * ratio;
+          out.push(v(Math.cos(a) * rr, Math.sin(a) * rr, z));
+        }
+        return out;
+      };
+      const m = sides * 2;
+      const top = makeStar(depth / 2);
+      const bottom = makeStar(-depth / 2);
+      const vertices = top.concat(bottom);
+      const faces = [
+        Array.from({ length: m }, (_, i) => i),
+        Array.from({ length: m }, (_, i) => m + i),
+      ];
+      for (let i = 0; i < m; i++) {
+        const n = (i + 1) % m;
+        faces.push([i, n, m + n, m + i]);
+      }
+      // orientFace now resolves the concave star caps correctly because faceNormal
+      // uses Newell's method (geometry3d.js) — the true area normal, not a
+      // first-three-points sample that the caps' concavity would flip.
+      return withBounds({ vertices, faces: faces.map((face) => orientFace(face, vertices)) });
+    }
     if (type === 'tetrahedron') {
       const a = radius / Math.sqrt(3);
       return withBounds({

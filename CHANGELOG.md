@@ -4,6 +4,27 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.17 - 2026-06-25
+
+### Added
+- **Polyhedron sweep family — Cone, Frustum, Cupola, and Star Prism.** Four new solids that ride the
+  existing `sideCount`/`depth` axis, extending the profile-and-sweep idea already behind Flat Polygon /
+  Prism / Antiprism / Bipyramid. **Cone** is a faceted pyramid (an n-gon base to a single apex);
+  **Frustum** a truncated pyramid with a new **Taper** control (top width %, 1 % approaches a cone,
+  100 % a prism); **Cupola** lifts a 2n-gon base to an n-gon top through an alternating triangle/quad
+  band (also Taper-driven); **Star Prism** extrudes a star-polygon profile with a new **Star Inset**
+  control (inner-radius %). All four are watertight and outward-wound, and Taper/Star Inset only appear
+  for the solids that use them.
+
+### Fixed
+- **Concave faces now get a correct surface normal.** `faceNormal` computed the normal from a single
+  cross product of the first three vertices, which is wrong for concave polygons (the Star Prism caps),
+  where those three samples wind opposite to the polygon and flip the normal inward — culling the
+  star's front-facing cap and mis-shading it. It now uses **Newell's method** (the true area-weighted
+  normal). Convex and triangular faces are unaffected (Newell points the same way there and every
+  consumer normalizes), so all existing solids and the 3D algorithms that share the helper render
+  byte-for-byte identically.
+
 ## 1.2.16 - 2026-06-25
 
 ### Fixed

@@ -220,7 +220,7 @@ Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom
 | **SVG Distort** | Import an SVG path and warp it through field-based distortion controls; integrates with the shared optimization pipeline for plotter-ready output |
 | **Spirograph** | Roulette curves rolling primitive gear shapes around a main primitive, with inside/outside/combined paths |
 | **Spiralizer** | Lines or marker styles (dots, filled points, plusses, crosses, squares, triangles, dashes) coiled around sphere/cone/cylinder/ellipsoid/torus/capsule and a twistable helix shape (2+ twists add DNA base-pair rungs). Markers scatter at mm spacing with a thickness selector, hollow glyphs take a universal fill (spiral, hatch, …), plus front-only or see-through projection, full-shape silhouette outlining, curve smoothing, and orthographic or perspective view |
-| **Polyhedron** | Platonic/Archimedean solids **or imported STL meshes** — face bands, edges, and vertex rings with front-face culling, dashed hidden lines, extrude/explode/twist effects, and orthographic or perspective projection |
+| **Polyhedron** | Platonic/Archimedean solids, a **swept-profile family** (flat polygon, prism, antiprism, bipyramid, cone, frustum, cupola, star prism — all driven by a side count, with taper/star-inset where it applies), **or imported STL meshes** — face bands, edges, and vertex rings with front-face culling, dashed hidden lines, extrude/explode/twist effects, and orthographic or perspective projection |
 | **Topoform** | Primitive 3D meshes (sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot) **or imported STL meshes**, rendered as projected wireframes or depth-plane topographic contours — with detail up to 100 on every primitive, bezier contour smoothing, dashed hidden lines, an optional Scene Lighting pass, and orthographic/perspective view |
 | **Raster-Plane** | A height source (built-in relief, preloaded noise, imported image, or hand-painted canvas) projected as line relief, deformed mesh, raster topography, or extruded bars — Bars take a **Bar Sides** count (3–8) that interlocks gap-free as triangles / squares / hexagons (other counts inscribe a regular polygon in each cell), a **Bar Rotate** dial to orient the footprints, and a **Corner Radius** that fillets the bar footprints into rounded columns. Plus a **Surface Noise** rack stack where each layer's own Blend Mode + Field Weight emboss the surface live, a **Base Height** lift for "Lines as Planes" curtains, clean hidden-line removal on opaque bars, and orthographic or perspective view |
 
@@ -553,6 +553,9 @@ CI lives in `.github/workflows/test.yml`:
 ---
 
 ## Release Notes
+
+### 1.2.17
+- **Polyhedron gains four swept-profile solids — Cone, Frustum, Cupola, and Star Prism.** They extend the existing side-count sweep family (flat polygon, prism, antiprism, bipyramid): Cone is a faceted pyramid, Frustum a truncated pyramid with a new **Taper** control, Cupola lifts a 2n-gon base to an n-gon top, and Star Prism extrudes a star profile with a new **Star Inset** control. Also fixes concave-face shading — `faceNormal` now uses Newell's method, so the Star Prism caps (and any concave face) get a correct outward normal instead of an inverted one. Existing solids are byte-for-byte unchanged.
 
 ### 1.2.16
 - **Contour fill is clean on every typeface.** Contour rings are now traced from a distance field (chamfer transform + marching squares) instead of polygon offsetting, which tangled into chaotic geometry on script/display faces and at high density. Rings now follow each letterform cleanly, fill evenly, and stay bounded at any density — on uniform, high-contrast, and connected-script faces alike.

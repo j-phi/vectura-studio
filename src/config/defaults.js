@@ -1859,6 +1859,8 @@
       meshName: '',
       sideCount: 5,
       frequency: 2,
+      taper: 55,
+      starRatio: 45,
       radius: 76,
       depth: 94,
       surfaceMode: 'front',

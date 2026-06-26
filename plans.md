@@ -37,7 +37,17 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
-- **v1.2.16 — Contour fill rewritten as a distance field (robust on all faces).** The v1.2.15 contour
+- **v1.2.17 — Polyhedron swept-profile family (Cone / Frustum / Cupola / Star Prism) + concave-normal fix.**
+  Extended the existing `sideCount`/`depth` sweep family in `createSolidMesh` (`src/core/algorithms/polyhedron.js`)
+  with four solids: `cone` (faceted pyramid), `frustum` (truncated pyramid, new `taper` param), `cupola`
+  (2n-gon base → n-gon top, alternating triangle/quad band, `taper`-driven), and `starPrism` (extruded
+  star profile, new `starRatio` param). New `taper`/`starRatio` controls gated by `polyhedronUsesTaper`/
+  `polyhedronUsesStarRatio` in `controls-registry.js`; defaults added. Root-caused and fixed a latent
+  concave-face bug found during adversarial review: `faceNormal` (`geometry3d.js`) used a first-three-points
+  cross product that flips inward on concave polygons (the star caps), inverting the render-time front/back
+  flag and Lambert shading — replaced with Newell's method (convex/triangular faces unchanged, all baselines
+  hold). RGR: topology-scaling + winding-survival + a concave-cap regression test (proven red against the old
+  normal); full suite green (unit 2125 / integration 652 / visual 24).
   still used naive polygon offsetting (`insetPolygon`), which self-intersects into chaotic tangled
   geometry on non-convex/varying-width glyph shapes at depth — reported as a scribbled-mess "VECTURA"
   contour on a script face at high density. Replaced inset contour with iso-contours of the

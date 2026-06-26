@@ -49,12 +49,16 @@
       : []),
   ];
 
-  const POLYHEDRON_SIDE_COUNT_SOLIDS = ['flatPolygon', 'prism', 'antiprism', 'bipyramid'];
-  const POLYHEDRON_DEPTH_SOLIDS = ['prism', 'antiprism', 'bipyramid'];
+  const POLYHEDRON_SIDE_COUNT_SOLIDS = ['flatPolygon', 'prism', 'antiprism', 'bipyramid', 'cone', 'frustum', 'cupola', 'starPrism'];
+  const POLYHEDRON_DEPTH_SOLIDS = ['prism', 'antiprism', 'bipyramid', 'cone', 'frustum', 'cupola', 'starPrism'];
   const POLYHEDRON_FREQUENCY_SOLIDS = ['geodesic', 'goldberg'];
+  const POLYHEDRON_TAPER_SOLIDS = ['frustum', 'cupola'];
+  const POLYHEDRON_STAR_RATIO_SOLIDS = ['starPrism'];
   const polyhedronUsesSideCount = (p = {}) => POLYHEDRON_SIDE_COUNT_SOLIDS.includes(p.solidType);
   const polyhedronUsesDepth = (p = {}) => POLYHEDRON_DEPTH_SOLIDS.includes(p.solidType);
   const polyhedronUsesFrequency = (p = {}) => POLYHEDRON_FREQUENCY_SOLIDS.includes(p.solidType);
+  const polyhedronUsesTaper = (p = {}) => POLYHEDRON_TAPER_SOLIDS.includes(p.solidType);
+  const polyhedronUsesStarRatio = (p = {}) => POLYHEDRON_STAR_RATIO_SOLIDS.includes(p.solidType);
 
   const PETAL_PROFILE_OPTIONS = [
     { value: 'oval', label: 'Oval' },
@@ -2156,6 +2160,10 @@
         { value: 'prism', label: 'Prism' },
         { value: 'antiprism', label: 'Antiprism' },
         { value: 'bipyramid', label: 'Bipyramid' },
+        { value: 'cone', label: 'Cone' },
+        { value: 'frustum', label: 'Frustum' },
+        { value: 'cupola', label: 'Cupola' },
+        { value: 'starPrism', label: 'Star Prism' },
         { value: 'tetrahedron', label: 'Tetrahedron' },
         { value: 'cube', label: 'Cube' },
         { value: 'octahedron', label: 'Octahedron' },
@@ -2172,6 +2180,8 @@
     { id: 'frequency', label: 'Frequency', type: 'range', min: 1, max: 6, step: 1, showIf: polyhedronUsesFrequency, livePreview: true },
     { id: 'radius', label: 'Radius', type: 'range', min: 20, max: 130, step: 1, displayUnit: 'mm', livePreview: true },
     { id: 'depth', label: 'Depth', type: 'range', min: 0, max: 180, step: 1, displayUnit: 'mm', showIf: polyhedronUsesDepth, livePreview: true },
+    { id: 'taper', label: 'Taper', type: 'range', min: 1, max: 100, step: 1, displayUnit: '%', showIf: polyhedronUsesTaper, livePreview: true },
+    { id: 'starRatio', label: 'Star Inset', type: 'range', min: 5, max: 95, step: 1, displayUnit: '%', showIf: polyhedronUsesStarRatio, livePreview: true },
     { type: 'section', label: 'Visibility' },
     {
       id: 'surfaceMode',

@@ -194,9 +194,25 @@
     return path;
   };
 
+  // Newell's method: the true area-weighted normal, summed over every edge. Unlike
+  // a single cross product of the first three vertices, this stays correct for
+  // CONCAVE planar faces (e.g. the star-prism caps), where the first three samples
+  // can wind opposite to the polygon and flip the normal. For triangles and convex
+  // faces it points the same direction as the first-three normal, and every
+  // consumer normalizes the result — so existing solids are unaffected.
   const faceNormal = (vertices) => {
     if (!Array.isArray(vertices) || vertices.length < 3) return v(0, 0, 1);
-    return normalize(cross(sub(vertices[1], vertices[0]), sub(vertices[2], vertices[0])));
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    for (let i = 0; i < vertices.length; i++) {
+      const current = vertices[i];
+      const next = vertices[(i + 1) % vertices.length];
+      nx += (current.y - next.y) * (current.z + next.z);
+      ny += (current.z - next.z) * (current.x + next.x);
+      nz += (current.x - next.x) * (current.y + next.y);
+    }
+    return normalize(v(nx, ny, nz));
   };
 
   const edgeKey = (a, b) => (a < b ? `${a}:${b}` : `${b}:${a}`);

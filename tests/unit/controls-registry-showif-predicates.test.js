@@ -119,6 +119,35 @@ describe('controls-registry compile gate', () => {
     expect(pointFill.options.map((option) => option.label)).toEqual(['Outline Only', 'Hide Interior']);
   });
 
+  it('polyhedron sweep additions gate sideCount/depth/taper/starRatio correctly', () => {
+    const defs = CONTROL_DEFS.polyhedron;
+    const sideCount = defs.find((def) => def.id === 'sideCount');
+    const depth = defs.find((def) => def.id === 'depth');
+    const taper = defs.find((def) => def.id === 'taper');
+    const starRatio = defs.find((def) => def.id === 'starRatio');
+    const solidType = defs.find((def) => def.id === 'solidType');
+
+    // New sweep solids are exposed in the dropdown.
+    const values = solidType.options.map((option) => option.value);
+    ['cone', 'frustum', 'cupola', 'starPrism'].forEach((value) => {
+      expect(values, `${value} should be selectable`).toContain(value);
+    });
+
+    // All four ride the sideCount + depth axis.
+    ['cone', 'frustum', 'cupola', 'starPrism'].forEach((value) => {
+      expect(sideCount.showIf({ solidType: value }), `${value} uses sideCount`).toBe(true);
+      expect(depth.showIf({ solidType: value }), `${value} uses depth`).toBe(true);
+    });
+
+    // Taper is frustum/cupola only; starRatio is starPrism only.
+    expect(taper.showIf({ solidType: 'frustum' })).toBe(true);
+    expect(taper.showIf({ solidType: 'cupola' })).toBe(true);
+    expect(taper.showIf({ solidType: 'cone' })).toBe(false);
+    expect(taper.showIf({ solidType: 'starPrism' })).toBe(false);
+    expect(starRatio.showIf({ solidType: 'starPrism' })).toBe(true);
+    expect(starRatio.showIf({ solidType: 'frustum' })).toBe(false);
+  });
+
   it('petalisDesigner controls are derived from petalis without designer-removed ids/labels/types', () => {
     expect(Array.isArray(CONTROL_DEFS.petalisDesigner)).toBe(true);
     const petalisDesignerIds = new Set(

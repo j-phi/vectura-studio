@@ -175,6 +175,10 @@ describe('Vectura geometry algorithms', () => {
       'prism',
       'antiprism',
       'bipyramid',
+      'cone',
+      'frustum',
+      'cupola',
+      'starPrism',
       'tetrahedron',
       'cube',
       'octahedron',
@@ -183,6 +187,37 @@ describe('Vectura geometry algorithms', () => {
     ].forEach((solidType) => {
       expect(finitePaths(generate('polyhedron', { solidType, sideCount: 6, faceBands: 1 }))).toBe(true);
     });
+
+    // Sweep-family additions render front faces (each produces face linework) and
+    // scale their topology with sideCount — a deeper RGR guard than finite-only.
+    ['cone', 'frustum', 'cupola', 'starPrism'].forEach((solidType) => {
+      const lo = generate('polyhedron', { solidType, sideCount: 4, surfaceMode: 'all', showEdges: false, showVertices: false });
+      const hi = generate('polyhedron', { solidType, sideCount: 10, surfaceMode: 'all', showEdges: false, showVertices: false });
+      expect(lo.length, `${solidType} should emit face paths`).toBeGreaterThan(0);
+      expect(hi.length, `${solidType} should add faces as sideCount grows`).toBeGreaterThan(lo.length);
+    });
+
+    // Winding guard (orientFace contract): in 'front' + 'opaque' mode only
+    // correctly OUTWARD-wound faces survive — an inward-wound mesh reads entirely
+    // back-facing and is culled to nothing. The count test above is winding-
+    // agnostic (every face is emitted in 'all' mode); this assertion is not.
+    ['cone', 'frustum', 'cupola', 'starPrism'].forEach((solidType) => {
+      const front = generate('polyhedron', { solidType, sideCount: 8, surfaceMode: 'front', faceOpacityMode: 'opaque', showEdges: false, showVertices: false });
+      expect(front.some((path) => path.meta?.face !== undefined), `${solidType} should keep outward-wound front faces`).toBe(true);
+    });
+
+    // Regression (concave caps): the star cap is CONCAVE, so faceNormal must use
+    // Newell's method, not a first-three-points sample — the latter winds
+    // outer→inner→outer opposite to the polygon and flips the cap's normal inward,
+    // inverting the render-time front/back flag so the front-facing cap is wrongly
+    // culled. At the default view the top cap is front-facing, so its outline
+    // (>= 2*sides points after closePath) must survive 'front' culling.
+    const sides = 6;
+    const starFront = generate('polyhedron', {
+      solidType: 'starPrism', sideCount: sides, surfaceMode: 'front', showFaces: true, faceBands: 0, showEdges: false, showVertices: false,
+    });
+    const capOutlines = starFront.filter((path) => !path.meta?.hidden && path.length >= sides * 2);
+    expect(capOutlines.length, 'front-facing star cap must not be culled by an inward normal').toBeGreaterThan(0);
 
     const edgesOnly = generate('polyhedron', { showFaces: false, showEdges: true, showVertices: false });
     const verticesOnly = generate('polyhedron', { showFaces: false, showEdges: false, showVertices: true });
