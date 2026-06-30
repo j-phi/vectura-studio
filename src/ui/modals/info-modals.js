@@ -1677,6 +1677,14 @@
       title: 'Shift Y',
       description: 'Shifts the fill pattern origin vertically, creating a phase offset.',
     },
+    'fill.contourBezier': {
+      title: 'Bezier Curves',
+      description: 'Smooths contour rings into native cubic curves, removing the grid stairsteps for clean plotted lines. Turn off for raw polylines.',
+    },
+    'fill.contourSmoothing': {
+      title: 'Smoothness',
+      description: 'How strongly the bezier-smoothed contour rings round off — higher is smoother. Only applies when Bezier Curves is on.',
+    },
     'text.outlineStroke': {
       title: 'Stroke Outline',
       description: 'Draws the glyph outline itself. Turn it off (with Fill on) for fill-only typography.',
@@ -1688,6 +1696,10 @@
     'text.thickeningMode': {
       title: 'Thickening Mode',
       description: 'How the heavier outline passes are built — parallel offsets, a sinusoidal ribbon, or one continuous snake stroke.',
+    },
+    'text.mergeOverlaps': {
+      title: 'Merge Overlaps',
+      description: 'Welds overlapping glyph outlines into one clean contour so tight pairs (RA, AV) and connected scripts never draw crossing lines through each other; counters (O, A, e holes) are preserved. Flattens to straight outlines, so it supersedes Bezier Curves. Web outline fonts only.',
     },
     'text.bezierOutline': {
       title: 'Bezier Curves',

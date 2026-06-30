@@ -37,6 +37,27 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- **v1.2.21 — Bespoke Text panel (synthesis port).** Replaced the generic Text control list with a tabbed
+  Type/Layout/Stroke/Fill panel + live opentype-traced specimen (the specimen is the editable text field).
+  Ported from `design-explorations/text-panel-synthesis.html` via parallel implement→adversarial-review→judge
+  teams. New modules `src/ui/ui-text-panel.js` + `src/ui/ui-text-specimen.js`, mounted through an early-return
+  hook in `algo-config-panel.js`; CSS appended to `components.css` (`vtp-` namespace, token-driven). Added a
+  large set of additive `ALGO_DEFAULTS.text` params (V/H scale, kerning, baseline shift, per-char rotation,
+  caps/super/sub/underline/strike, indents, paragraph spacing, justification, font weight, fill inset/offset),
+  consumed by `text.js` and the `google-fonts.js`/`stroke-font.js` layout engines (now returning glyph `meta`).
+  Follow-ups: OpenType features beyond `liga` need a richer shaper than the vendored opentype build; hyphenation
+  needs a wrap-width plumbed from the frame; specimen preview ignores a few typography params (cosmetic).
+  **Decision:** the panel's per-layer **Plot Order** control (+ pen animation) was removed — the global
+  **Line Sort** optimization (`defaults.js` linesort step, default `nearest`) governs final plot order and the
+  draw-order scrub renders the optimized geometry, so a per-text plot-order hint was overridden/dead. `text.js`
+  still honors the `plotOrder` param (kept for the algorithm + serialization); only the redundant UI was dropped.
+- **v1.2.20 — Bezier smoothing for Contour fills.** Distance-field contour rings carried grid stairsteps.
+  Added a fill **Bezier Curves** toggle + **Smoothness** slider (`fillContourBezier` / `fillContourSmoothing`):
+  `_contourFieldFill` decimates each ring to ~grid scale and rebuilds it via `GeometryUtils.rebuildShapeAnchors`
+  as a native cubic (short handles, so no counter bulge); `text.js` preserves the curve meta on fill paths.
+  Both the fill and outline `bezierOutline` defaults flipped on. Shared with the paint-bucket contour fill
+  (off by default there, no regression). RGR: contour-bezier on/off coverage through `text.generate` in
+  `tests/unit/google-fonts.test.js`.
 - **v1.2.19 — Prism Faces → Front gaps fixed.** The prism's hand-built side quads wound inward, so the
   `surfaceMode: 'front'` front/back test was inverted (near sides culled, far sides drawn) — visible holes.
   Routed the prism/antiprism side faces through the shared `orientFace` pass (`src/core/algorithms/polyhedron.js`),

@@ -454,6 +454,19 @@
       return;
     }
 
+    // Bespoke tabbed Text panel (synthesis design). Replaces the generic
+    // control list for text layers — same early-return escape hatch the
+    // Mirror/Morph modifier panels use. Inert until ui-text-panel.js loads.
+    if (
+      layer.type === 'text' &&
+      window.Vectura.UI.TextPanel &&
+      typeof window.Vectura.UI.TextPanel.build === 'function'
+    ) {
+      window.Vectura.UI.TextPanel.build(this, layer, container);
+      restoreLeftPanelScroll();
+      return;
+    }
+
     if (isGroup) {
       const msg = document.createElement('p');
       msg.className = 'text-xs text-vectura-muted mb-4';

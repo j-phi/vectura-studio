@@ -2523,7 +2523,7 @@
     return out;
   };
 
-  const _contourFieldFill = (regions, density, direction = 'inset', simplify = 0, centerPadding = 0, stepVariance = 0) => {
+  const _contourFieldFill = (regions, density, direction = 'inset', simplify = 0, centerPadding = 0, stepVariance = 0, bezier = false, bezierSmoothing = 0) => {
     const valid = regions.filter((r) => Array.isArray(r) && r.length >= 3);
     if (!valid.length) return [];
     const outset = direction === 'outset';
@@ -2593,6 +2593,51 @@
     const cap = outset
       ? outRings * spacing
       : (centerPadding > 0 ? Math.max(0, maxD - centerPadding) : maxD + spacing);
+    // Bezier smoothing: marching-squares rings are quantized to the grid, so they
+    // carry sub-cell stairsteps. When enabled, each ring is decimated to ~grid
+    // scale (removing the quantization jaggies) and corners are rounded with cubic
+    // handles. CRITICAL: handle length is CLAMPED to a third of the SHORTER adjacent
+    // segment. Plain Catmull-Rom sizes the handle from the (next−prev) chord, which
+    // balloons into self-intersecting loops where decimation left one neighbour far
+    // and the other near — the curve must stay in a tube around the polygon so it
+    // only rounds corners and can never bulge across into a counter.
+    const wantBezier = !!bezier;
+    const bezTol = Math.max(simplify || 0, cs * 1.2);
+    // Bezier ON must always curve — like the outline toggle, it can't be a no-op
+    // when the Smoothness slider sits at 0. Floor the tension so ON yields a clean
+    // default round; the slider then tunes the corner radius up to the clamp.
+    const tension = bezierSmoothing > 0 ? Math.min(1, bezierSmoothing) : 0.6;
+    const smoothRing = (ring) => {
+      if (!wantBezier || ring.length < 4) return ring;
+      const f = ring[0], l = ring[ring.length - 1];
+      const closed = Math.hypot(f.x - l.x, f.y - l.y) <= cs * 1.5;
+      let pts = _douglasPeucker(ring, bezTol);
+      if (closed && pts.length > 3
+        && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1e-6) {
+        pts = pts.slice(0, -1); // drop the duplicated close so the wrap doesn't double a node
+      }
+      const n = pts.length;
+      if (n < 3) return ring;
+      const anchors = pts.map((pt) => ({ x: pt.x, y: pt.y, in: null, out: null }));
+      for (let i = 0; i < n; i++) {
+        if (!closed && (i === 0 || i === n - 1)) continue; // open ends stay un-handled
+        const prev = pts[(i - 1 + n) % n];
+        const next = pts[(i + 1) % n];
+        const curr = pts[i];
+        let hx = ((next.x - prev.x) * tension) / 6;
+        let hy = ((next.y - prev.y) * tension) / 6;
+        const dPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+        const dNext = Math.hypot(curr.x - next.x, curr.y - next.y);
+        const capLen = Math.min(dPrev, dNext) / 3;
+        const hlen = Math.hypot(hx, hy);
+        if (hlen > capLen && hlen > 1e-9) { const s = capLen / hlen; hx *= s; hy *= s; }
+        anchors[i].out = { x: curr.x + hx, y: curr.y + hy };
+        anchors[i].in = { x: curr.x - hx, y: curr.y - hy };
+      }
+      const out = pts.map((pt) => ({ x: pt.x, y: pt.y }));
+      out.meta = { straight: false, closed, forceCurves: true, anchors };
+      return out;
+    };
     // stepVariance jitters the gap between successive rings (per-level noise);
     // at 0 the spacing is uniform.
     let L = 0;
@@ -2601,7 +2646,7 @@
       if (L > cap + 1e-6) break;
       for (let ring of _marchingSquares(dist, nx, ny, ox, oy, cs, L)) {
         if (simplify > 0) ring = _douglasPeucker(ring, simplify);
-        if (ring.length >= 2) result.push(ring);
+        if (ring.length >= 2) result.push(smoothRing(ring));
       }
     }
     return result;
@@ -4409,6 +4454,7 @@
       spiralTurns = 0, spiralTightness = 0, spiralDirection = 'cw',
       radialSkip = 0,
       contourDirection = 'inset', contourStepVariance = 0, contourSimplify = 0, contourCenterPadding = 0,
+      contourBezier = false, contourSmoothing = 0,
       // B1 Flow Field
       flowFieldType = 'perlin', flowNoiseScale = 6.0, flowSeed = 1, flowTraceLen = 60, flowSeparation = 2.5,
       // B2 Voronoi
@@ -4470,7 +4516,7 @@
           ? expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
           : dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength, dotRotation, penWidth);
         case 'stipple':     return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
-        case 'contour':     return _contourFieldFill([region], density, contourDirection, contourSimplify, contourCenterPadding, contourStepVariance);
+        case 'contour':     return _contourFieldFill([region], density, contourDirection, contourSimplify, contourCenterPadding, contourStepVariance, contourBezier, contourSmoothing);
         case 'spiral': {
           // Slider "Density" is intuitive when higher = denser. Internally
           // the Archimedean ring spacing is the *inverse* (smaller spacing
@@ -4530,7 +4576,7 @@
         ? expandDotsToSpirals(dotsFillComposite(topo, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
         : dotsFillComposite(topo, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength, dotRotation, penWidth);
       case 'stipple':     return expandDotsToSpirals(dotsFillComposite(topo, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
-      case 'contour':     return _contourFieldFill(effectiveRegions, density, contourDirection, contourSimplify, contourCenterPadding, contourStepVariance);
+      case 'contour':     return _contourFieldFill(effectiveRegions, density, contourDirection, contourSimplify, contourCenterPadding, contourStepVariance, contourBezier, contourSmoothing);
       case 'spiral': {
         const spacing = density > 0 ? 1 / density : 1;
         return spiralFillComposite(regions, effectiveRegions, spacing, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);

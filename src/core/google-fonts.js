@@ -429,88 +429,325 @@
     return 0.7;
   };
 
+  // Synthesis constants — mirror StrokeFont so smallCaps / super- / sub-script
+  // read the same regardless of source.
+  const SMALL_CAPS_SCALE = 0.78;
+  const SUPSUB_SCALE = 0.62;
+  const SUP_DY = -0.42; // fraction of size (cap height); y-up is negative
+  const SUB_DY = 0.18;
+
+  // ── Weighted faces ──────────────────────────────────────────────────────────
+  // fontWeight maps a label to a numeric OS/2 weight; a weighted face is parsed
+  // and cached under a composite key so layout() can swap to it when present. The
+  // base ensureFont() always loads the family's nearest-Regular file, so a heavier
+  // face only appears once the host explicitly requests it via loadWeight().
+  const WEIGHT_BY_LABEL = { Regular: 400, Medium: 500, Semibold: 600, Bold: 700 };
+  const weightNum = (label) => WEIGHT_BY_LABEL[label] || (Number(label) || 400);
+  const weightKey = (id, weight) => `${id}::w${weight}`;
+
+  const loadWeight = (id, label) => {
+    const weight = weightNum(label);
+    const key = weightKey(id, weight);
+    if (fontStore[key]) return Promise.resolve(fontStore[key]);
+    if (fontPromise[key]) return fontPromise[key];
+    fontState[key] = 'loading';
+    fontPromise[key] = loadCatalog()
+      .then(() => {
+        const entry = findFamily(id);
+        if (!entry) throw new Error(`Unknown font "${id}".`);
+        if (!canFetch()) throw new Error('Web fonts need a network connection.');
+        // Snap the requested weight to the nearest the family actually ships.
+        const avail = Array.isArray(entry.weights) && entry.weights.length ? entry.weights : [400];
+        const snapped = avail.reduce((b, w) => (Math.abs(w - weight) < Math.abs(b - weight) ? w : b), avail[0]);
+        const url = fileUrl(entry, { weight: snapped });
+        return Promise.all([ensureLib(), fetch(url).then((res) => {
+          if (!res.ok) throw new Error(`Font request failed (${res.status}).`);
+          return res.arrayBuffer();
+        })]).then(([opentype, buffer]) => {
+          const font = opentype.parse(buffer);
+          fontStore[key] = font;
+          fontState[key] = 'ready';
+          if (typeof regenHook === 'function') {
+            try { regenHook(id); } catch (_) { /* host re-render is best-effort */ }
+          }
+          return font;
+        });
+      })
+      .catch((err) => { fontState[key] = 'error'; throw err; })
+      .finally(() => { fontPromise[key] = null; });
+    return fontPromise[key];
+  };
+
+  // Build the opentype.js render-options feature map from the OT opts. IMPORTANT —
+  // the vendored opentype.min.js (v1) only ever invokes lookupFeature({tag:'liga'})
+  // for Latin word ranges (the Bidi shaper is hardcoded), so `liga` (standard
+  // ligatures) is the ONLY GSUB feature it can actually apply to Latin text. Every
+  // other tag below is registered honestly but is inert in this build; we pass them
+  // so a future/heavier opentype build would shape them, and so the call never
+  // misrepresents intent. `rlig` defaults on to match opentype's defaultRenderOptions.
+  const buildFeatureMap = (opt) => {
+    const has = (k) => Object.prototype.hasOwnProperty.call(opt, k);
+    if (!has('otLigatures') && !has('otContextual') && !has('otDiscretionary') &&
+        !has('otSwash') && !has('otStylistic') && !has('otFractions') &&
+        !has('otFigures') && !has('otPosition')) {
+      return null; // no OT opts set → use opentype's defaults (back-compat)
+    }
+    const map = { liga: opt.otLigatures !== false, rlig: true };
+    if (opt.otContextual) map.calt = true;
+    if (opt.otDiscretionary) map.dlig = true;
+    if (opt.otSwash) map.swsh = true;
+    if (opt.otStylistic) map.salt = true;
+    if (opt.otFractions) map.frac = true;
+    if (opt.otFigures === 'tabular') map.tnum = true;
+    else if (opt.otFigures === 'oldstyle') map.onum = true;
+    if (opt.otPosition === 'super') map.sups = true;
+    else if (opt.otPosition === 'sub') map.subs = true;
+    return map;
+  };
+
+  // Shape a line into glyphs, honouring the OT feature map where opentype supports
+  // it. Never throws: a parser that rejects the options falls back to plain shaping.
+  const shapeLine = (font, line, featureMap) => {
+    if (featureMap) {
+      try { return font.stringToGlyphs(line, { kerning: true, features: featureMap }); }
+      catch (_) { /* fall through to default shaping */ }
+    }
+    return font.stringToGlyphs(line);
+  };
+
+  // Minimal dependency-free soft-wrap (mirrors StrokeFont.softWrap). Greedy,
+  // language-agnostic; hyphenates an over-wide word at an arbitrary mid character.
+  const softWrap = (lines, maxMM, advOf) => {
+    if (!(maxMM > 0)) return lines;
+    const spaceAdv = advOf(' ');
+    const out = [];
+    for (const line of lines) {
+      if (line.trim().length === 0) { out.push(line); continue; }
+      const words = line.split(/(\s+)/).filter((w) => w.length && w.trim().length);
+      let cur = '', curW = 0;
+      const wordW = (w) => Array.from(w).reduce((s, ch) => s + advOf(ch), 0);
+      const flush = () => { if (cur.length) { out.push(cur); cur = ''; curW = 0; } };
+      for (let w of words) {
+        let ww = wordW(w);
+        while (ww > maxMM && Array.from(w).length > 1) {
+          flush();
+          const chars = Array.from(w);
+          let piece = '', pieceW = 0, k = 0;
+          for (; k < chars.length - 1; k++) {
+            const aw = advOf(chars[k]);
+            if (pieceW + aw + advOf('-') > maxMM && piece.length) break;
+            piece += chars[k]; pieceW += aw;
+          }
+          out.push(piece + '-');
+          w = chars.slice(k).join(''); ww = wordW(w);
+        }
+        const add = (cur.length ? spaceAdv : 0) + ww;
+        if (curW + add > maxMM && cur.length) { flush(); cur = w; curW = ww; }
+        else { cur = cur.length ? cur + ' ' + w : w; curW += add; }
+      }
+      flush();
+    }
+    return out;
+  };
+
   /**
    * Lay text out into positioned outline polylines.
    *
    * @param {string} text  supports '\n' line breaks.
-   * @param {object} opt   { id, size, tracking, lineHeight, align }
+   * @param {object} opt   base: { id, size, tracking, lineHeight, align, bezier, smoothing }
    *   size       cap height in mm (default 14, matching StrokeFont)
    *   tracking   extra letter spacing in mm (default 0)
    *   lineHeight line advance as a multiple of size (default 1.4)
-   *   align      'left' | 'center' | 'right' (default 'left')
-   * @returns {{ paths: Array<Array<{x,y}>>, width, height }} mm, y-down.
+   *   align      'left'|'center'|'right'|'justify-left'|'justify-center'|
+   *              'justify-right'|'justify-all' (default 'left')
+   *
+   *   New optional opts (each a no-op at its default → historical output unchanged):
+   *     fontWeight  swaps to a parsed weighted face (loadWeight) when present, else
+   *                 falls back to the base face.
+   *     vScale/hScale  percent (100 = unchanged); scale the flattened contour coords
+   *                    about the glyph baseline origin. hScale also scales advance.
+   *     kerning     extra advance per glyph, in mm.
+   *     baselineShift  mm; raises the whole block.
+   *     indentLeft/indentRight/indentFirst  mm; per-line / paragraph-head indents.
+   *     spaceBefore/spaceAfter  mm; vertical gap before/after each paragraph.
+   *     smallCaps/superscript/subscript  synthesized per-glyph (scale + reposition;
+   *                 smallCaps shapes the uppercased character). These render as
+   *                 polylines (no native bezier anchors) and shape per-character, so
+   *                 ligatures/kerning within those runs are intentionally dropped.
+   *     ot*         OpenType opts — applied via opentype.js where supported. In the
+   *                 vendored build only `liga` (standard ligatures, toggled by
+   *                 otLigatures) is actually shaped for Latin; all other features are
+   *                 silently inert (see buildFeatureMap).
+   *     hyphenate + wrapWidth  soft-wrap; only engages when hyphenate===true AND a
+   *                 wrapWidth (mm column) is supplied. Without wrapWidth it is a
+   *                 no-op. The break heuristic is greedy and dictionary-free.
+   * @returns {{ paths, meta, width, height, anchors? }} mm, y-down. `meta` runs
+   *   parallel to `paths`: { glyphIndex, charIndex, lineIndex, baselineY, x0, x1 }.
    */
   const layout = (text, opt = {}) => {
-    const font = getParsed(opt.id);
-    if (!font) return { paths: [], width: 0, height: 0 };
+    let font = getParsed(opt.id);
+    // fontWeight: prefer a parsed weighted face if the host has loaded one.
+    if (font && opt.fontWeight && weightNum(opt.fontWeight) !== 400) {
+      const wf = getParsed(weightKey(opt.id, weightNum(opt.fontWeight)));
+      if (wf) font = wf;
+    }
+    if (!font) return { paths: [], meta: [], width: 0, height: 0 };
 
+    const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
     const size = Math.max(0.1, Number(opt.size) || 14);
     const emSize = size / capHeightEm(font); // mm per em so cap-height maps to size
     const fu = emSize / font.unitsPerEm; // font units → mm
     const tracking = Number(opt.tracking) || 0;
+    const kerning = num(opt.kerning, 0); // mm, added to every advance
     const lineHeight = (Number(opt.lineHeight) || 1.4) * size;
-    const align = opt.align === 'center' || opt.align === 'right' ? opt.align : 'left';
-    const wantBezier = opt.bezier === true;
+    const vScale = num(opt.vScale, 100) / 100;
+    const hScale = num(opt.hScale, 100) / 100;
+    const baselineShift = num(opt.baselineShift, 0); // mm
+    const indentLeft = num(opt.indentLeft, 0);
+    const indentRight = num(opt.indentRight, 0);
+    const indentFirst = num(opt.indentFirst, 0);
+    const spaceBefore = num(opt.spaceBefore, 0);
+    const spaceAfter = num(opt.spaceAfter, 0);
+    const wrapWidth = num(opt.wrapWidth, 0);
+    const smallCaps = opt.smallCaps === true;
+    const superscript = opt.superscript === true;
+    const subscript = opt.subscript === true;
+    const synth = smallCaps || superscript || subscript;
+
+    const rawAlign = opt.align || 'left';
+    const justify = typeof rawAlign === 'string' && rawAlign.indexOf('justify') === 0;
+    const justifySuffix = justify ? (rawAlign.slice('justify-'.length) || 'left') : '';
+    const baseAlign = justify
+      ? (justifySuffix === 'all' ? 'left' : justifySuffix)
+      : (rawAlign === 'center' || rawAlign === 'right' ? rawAlign : 'left');
+
+    const wantBezier = opt.bezier === true && !synth;
     const smoothing = Math.max(0, Number(opt.smoothing) || 0);
-    // Flatten in the laid-out mm space; tolerance scales with size so curve
-    // smoothness stays constant regardless of the chosen size or later fit scale.
-    // Higher `smoothing` tightens the tolerance → more points → a visibly smoother
-    // flattened outline. smoothing 0 reproduces the historical default exactly.
     const tolerance = Math.max(1e-4, (emSize * 0.004) / (1 + smoothing));
+    const featureMap = buildFeatureMap(opt);
 
-    const rawLines = String(text == null ? '' : text).split('\n');
-
-    const lineGlyphs = rawLines.map((line) => font.stringToGlyphs(line));
-    const lineWidth = (glyphs) => {
-      let w = 0;
-      glyphs.forEach((g, i) => {
-        w += (g.advanceWidth || 0) * fu;
-        if (i < glyphs.length - 1) {
-          w += (font.getKerningValue(g, glyphs[i + 1]) || 0) * fu + tracking;
-        }
-      });
-      return Math.max(0, w);
+    // Per-glyph synthesis scale/offset (smallCaps shapes the uppercased char).
+    const charScale = () => {
+      let cs = 1, dy = 0;
+      if (superscript) { cs = SUPSUB_SCALE; dy = SUP_DY * size; }
+      else if (subscript) { cs = SUPSUB_SCALE; dy = SUB_DY * size; }
+      return { cs, dy };
     };
-    const widths = lineGlyphs.map(lineWidth);
+
+    let rawLines = String(text == null ? '' : text).split('\n');
+    if (opt.hyphenate === true && wrapWidth > 0) {
+      // Advance estimate per char for wrapping (font kerning ignored — fast path).
+      const advOf = (ch) => {
+        const gs = font.stringToGlyphs(ch);
+        const g = gs[0];
+        const sc = synth ? charScale().cs : 1;
+        return ((g && g.advanceWidth) || 0) * fu * hScale * sc + tracking + kerning;
+      };
+      rawLines = softWrap(rawLines, wrapWidth - indentLeft - indentRight, advOf);
+    }
+
+    // Build per-line glyph cells with measured advances. The default (non-synth)
+    // path shapes the whole line so font kerning + ligatures stay intact.
+    const lineCells = rawLines.map((line) => {
+      if (synth) {
+        // Per-character shaping with synthesis scale (uppercase for smallCaps).
+        return Array.from(line).map((ch, ci) => {
+          const drawCh = smallCaps && ch >= 'a' && ch <= 'z' ? ch.toUpperCase() : ch;
+          const isSmall = smallCaps && ch >= 'a' && ch <= 'z';
+          const { cs, dy } = charScale();
+          const sc = cs * (isSmall ? SMALL_CAPS_SCALE : 1);
+          const gs = font.stringToGlyphs(drawCh);
+          const g = gs[0] || null;
+          const adv = ((g && g.advanceWidth) || 0) * fu * hScale * sc + tracking + kerning;
+          return { g, sc, dy, charIndex: ci, isSpace: ch === ' ', adv };
+        });
+      }
+      const glyphs = shapeLine(font, line, featureMap);
+      return glyphs.map((g, i) => {
+        let adv = (g.advanceWidth || 0) * fu * hScale;
+        if (i < glyphs.length - 1) adv += (font.getKerningValue(g, glyphs[i + 1]) || 0) * fu;
+        adv += tracking + kerning;
+        const u = g.unicode != null ? g.unicode : (g.unicodes && g.unicodes[0]);
+        return { g, sc: 1, dy: 0, charIndex: i, isSpace: u === 32, adv };
+      });
+    });
+    const lineWidth = (cells) => Math.max(0, cells.reduce((w, c) => w + c.adv, 0) - tracking);
+    const widths = lineCells.map(lineWidth);
     const maxW = widths.reduce((m, w) => Math.max(m, w), 0);
 
+    const blank = rawLines.map((l) => l.trim().length === 0);
+    const firstOfPara = rawLines.map((_, i) => !blank[i] && (i === 0 || blank[i - 1]));
+    const lastOfPara = rawLines.map((_, i) => !blank[i] && (i === rawLines.length - 1 || blank[i + 1]));
+    const colWidth = wrapWidth > 0 ? wrapWidth : (maxW + indentLeft + indentRight);
+
     const paths = [];
-    // When bezier output is requested, `anchors` runs parallel to `paths`: each
-    // entry is the contour's {x,y,in,out} anchor array (or null if it couldn't be
-    // paired 1:1 with its flattened polyline — the algorithm then renders that
-    // contour as a verbatim polyline). The polylines are always produced so the
-    // bounding box, fit-to-frame, and fill regions stay exact.
+    const meta = [];
     const anchors = wantBezier ? [] : null;
-    lineGlyphs.forEach((glyphs, li) => {
-      const offset = align === 'center' ? (maxW - widths[li]) / 2
-        : align === 'right' ? (maxW - widths[li]) : 0;
-      let penX = offset;
+    let penY = 0;
+    rawLines.forEach((line, li) => {
+      if (firstOfPara[li]) penY += spaceBefore;
+      const cells = lineCells[li];
+      const lineW = widths[li];
+      const avail = colWidth - indentLeft - indentRight - (firstOfPara[li] ? indentFirst : 0);
+      const slack = Math.max(0, avail - lineW);
+      const gaps = cells.filter((c) => c.isSpace).length;
+      const doJustify = justify && gaps > 0 && slack > 1e-6 &&
+        (justifySuffix === 'all' || !lastOfPara[li]);
+      const perGap = doJustify ? slack / gaps : 0;
+      const alignOffset = doJustify ? 0
+        : baseAlign === 'center' ? slack / 2
+        : baseAlign === 'right' ? slack : 0;
+
+      let penX = indentLeft + (firstOfPara[li] ? indentFirst : 0) + alignOffset;
       const baselineY = li * lineHeight + size; // cap-top of line 0 sits near y=0
-      glyphs.forEach((g, i) => {
-        if (typeof g.getPath === 'function' && (g.advanceWidth || g.path)) {
+      cells.forEach((cell) => {
+        const { g, sc, dy } = cell;
+        const x0 = penX;
+        if (g && typeof g.getPath === 'function' && (g.advanceWidth || g.path)) {
           const gp = g.getPath(penX, baselineY, emSize, undefined, font);
           if (gp && gp.commands && gp.commands.length) {
             const polylines = flattenCommands(gp.commands, tolerance);
             const contours = wantBezier ? commandsToAnchors(gp.commands) : null;
             const aligned = wantBezier && contours && contours.length === polylines.length;
+            // Transform a point about the glyph baseline origin (penX, baselineY):
+            // scale, then raise the whole block by baselineShift.
+            const tx = (px, py) => ({
+              x: penX + (px - penX) * hScale * sc,
+              y: baselineY + (py - baselineY) * vScale * sc + dy - baselineShift,
+            });
             for (let ci = 0; ci < polylines.length; ci++) {
-              const poly = polylines[ci];
+              const poly = polylines[ci].map((pt) => tx(pt.x, pt.y));
               if (poly.length < 2) continue;
               paths.push(poly);
+              meta.push({
+                glyphIndex: cell.charIndex,
+                charIndex: cell.charIndex,
+                lineIndex: li,
+                baselineY: baselineY - baselineShift,
+                x0,
+                x1: penX + cell.adv,
+              });
               if (wantBezier) {
-                anchors.push(aligned ? optimizeAnchorsCardinal(contours[ci], { smoothing }) : null);
+                const a = aligned ? optimizeAnchorsCardinal(contours[ci], { smoothing }) : null;
+                anchors.push(a ? a.map((an) => ({
+                  ...tx(an.x, an.y),
+                  in: an.in ? tx(an.in.x, an.in.y) : null,
+                  out: an.out ? tx(an.out.x, an.out.y) : null,
+                })) : null);
               }
             }
           }
         }
-        let adv = (g.advanceWidth || 0) * fu;
-        if (i < glyphs.length - 1) adv += (font.getKerningValue(g, glyphs[i + 1]) || 0) * fu + tracking;
-        penX += adv;
+        penX += cell.adv + (cell.isSpace ? perGap : 0);
       });
+      penY += lineHeight;
+      if (lastOfPara[li]) penY += spaceAfter;
     });
 
-    const height = (rawLines.length - 1) * lineHeight + size * 1.35;
-    return wantBezier ? { paths, anchors, width: maxW, height } : { paths, width: maxW, height };
+    const height = Math.max(0, penY - lineHeight) + size * 1.35;
+    const out = { paths, meta, width: colWidth, height };
+    if (wantBezier) out.anchors = anchors;
+    return out;
   };
 
   // ── Vendored (offline) families ───────────────────────────────────────────
@@ -595,6 +832,7 @@
     fileUrl,
     pickWeight,
     ensureFont,
+    loadWeight,
     registerVendored,
     getFontStatus,
     getParsed,

@@ -3030,26 +3030,6 @@
         : (Array.isArray(path) && path.length
           ? { start: path[0], end: path[path.length - 1] }
           : { start: { x: 0, y: 0 }, end: { x: 0, y: 0 } }));
-      // Reveal a polyline up to a given arc length, interpolating the segment the
-      // cutoff lands inside.
-      const sliceByDistance = (pts, dist) => {
-        if (!Array.isArray(pts) || pts.length <= 1) return pts;
-        if (dist <= 0) return [pts[0]];
-        const out = [pts[0]];
-        let acc = 0;
-        for (let i = 1; i < pts.length; i++) {
-          const a = pts[i - 1]; const b = pts[i];
-          const seg = Math.hypot(b.x - a.x, b.y - a.y);
-          if (acc + seg >= dist) {
-            const t = seg > 0 ? (dist - acc) / seg : 0;
-            out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-            return out;
-          }
-          out.push(b);
-          acc += seg;
-        }
-        return out;
-      };
       // While the reveal is engaged, draw the OPTIMIZED (export) geometry for
       // every optimization target — that is what the plotter actually lays down,
       // and it carries the lineSortOrder the print order depends on. Outside the
@@ -3106,10 +3086,7 @@
         if (info.penDownTime > 0 && drawnTime < info.penDownTime
           && Array.isArray(path) && !(path.meta && path.meta.kind === 'circle')) {
           const revealLen = info.length * (drawnTime / info.penDownTime);
-          const sliced = sliceByDistance(path, revealLen);
-          if (!Array.isArray(sliced) || sliced.length < 2) return null;
-          if (path.meta) sliced.meta = path.meta;
-          return sliced;
+          return Renderer.sliceRevealPath(path, revealLen);
         }
         return path;
       };
@@ -8446,6 +8423,49 @@
     const total = cursor;
     const frac = Number.isFinite(o.drawProgress) ? o.drawProgress : 1;
     return { info, total, threshold: total * frac };
+  };
+
+  // Truncate a path's polyline to `revealLen` arc length for the draw-order
+  // reveal, interpolating the segment the cutoff lands inside. Returns the
+  // truncated point array (carrying a COPY of the source meta), or null when the
+  // slice would be too short to draw.
+  //
+  // The copied meta has its native-cubic handles stripped (anchors +
+  // forceCurves): those describe the FULL contour and would render complete via
+  // bezierCurveTo in tracePath, so a curved glyph (text Bézier outline, morph
+  // ring) would pop in whole the instant the pen reaches it while the straight
+  // glyphs beside it reveal progressively. Tracing the truncated flattened
+  // polyline instead keeps every path — curved or straight — revealing in
+  // lock-step. The source meta is left untouched so the un-revealed geometry
+  // still renders as native cubics.
+  Renderer.sliceRevealPath = function sliceRevealPath(path, revealLen) {
+    if (!Array.isArray(path) || path.length <= 1) return path;
+    const sliced = [path[0]];
+    if (revealLen > 0) {
+      let acc = 0;
+      for (let i = 1; i < path.length; i++) {
+        const a = path[i - 1]; const b = path[i];
+        const seg = Math.hypot(b.x - a.x, b.y - a.y);
+        if (acc + seg >= revealLen) {
+          const t = seg > 0 ? (revealLen - acc) / seg : 0;
+          sliced.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+          acc = -1;
+          break;
+        }
+        sliced.push(b);
+        acc += seg;
+      }
+      // Cutoff never reached (revealLen ≥ full length): the whole polyline draws.
+      if (acc >= 0) return path;
+    }
+    if (sliced.length < 2) return null;
+    if (path.meta) {
+      const meta = { ...path.meta };
+      delete meta.anchors;
+      delete meta.forceCurves;
+      sliced.meta = meta;
+    }
+    return sliced;
   };
 
   const Vectura = (window.Vectura = window.Vectura || {});

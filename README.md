@@ -554,6 +554,12 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.21
+- **Redesigned Text panel.** The Text layer gains a dedicated tabbed panel — **Type / Layout / Stroke / Fill** — with a live specimen preview that *is* the editable text field (type straight into the preview). New typographic controls: vertical/horizontal scale, manual kerning, baseline shift, per-character rotation, all-caps and small-caps/superscript/subscript, underline & strikethrough, indents and paragraph spacing, justification, font weight, and fill inset/offset placement — backed by a rich font picker over the full Google Fonts catalog. (OpenType features beyond standard ligatures, and hyphenation, are surfaced but not yet active — they need a richer font shaper / a wrap width.)
+
+### 1.2.20
+- **Contour fills smooth into bezier curves.** Contour rings are extracted from a grid distance field, so they carried sub-cell stairsteps on every plotted letter. A new **Bezier Curves** toggle + **Smoothness** slider in the Fill panel rebuilds each ring as a native cubic curve (decimated to grid scale first, so it can't bulge into a counter). Both the fill and outline **Bezier Curves** now default on for the smoothest letterforms.
+
 ### 1.2.19
 - **Prism renders cleanly in Faces → Front.** The prism's side faces were wound inward, so selecting *Faces → Front* culled the near sides and drew the far ones — leaving gaps. The sides are now wound outward like every other solid; antiprism, caps, and other solids are unchanged.
 

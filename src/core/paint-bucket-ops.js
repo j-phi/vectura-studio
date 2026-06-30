@@ -512,6 +512,8 @@
     contourStepVariance: fillParams.fillContourStepVariance ?? 0,
     contourSimplify: fillParams.fillContourSimplify ?? 0.05,
     contourCenterPadding: fillParams.fillContourCenterPadding ?? 0,
+    contourBezier: fillParams.fillContourBezier ?? false,
+    contourSmoothing: fillParams.fillContourSmoothing ?? 0.6,
     // B3 Truchet
     truchetTileSet: fillParams.fillTruchetTileSet ?? 'quarter-arcs',
     truchetTileSize: fillParams.fillTruchetTileSize ?? 6,

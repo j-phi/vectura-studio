@@ -1580,9 +1580,16 @@
         showIf: (p) => p.outlineStroke !== false && (p.outlineThickness ?? 1) > 1,
         infoKey: 'text.thickeningMode',
       },
-      // Native glyph beziers + smoothness only apply to traced web-font outlines.
-      { id: 'bezierOutline', label: 'Bezier Curves', type: 'checkbox', showIf: (p) => !!(window.Vectura.GoogleFonts && window.Vectura.GoogleFonts.isWebFontKey(p.font)), infoKey: 'text.bezierOutline' },
-      { id: 'smoothing', label: 'Smoothness', type: 'range', min: 0, max: 6, step: 0.5, showIf: (p) => !!(window.Vectura.GoogleFonts && window.Vectura.GoogleFonts.isWebFontKey(p.font)), infoKey: 'text.smoothing' },
+      // Merge Overlaps welds kerned/overlapping glyph contours into clean
+      // non-crossing outlines (web faces only — single-stroke faces have no
+      // closed contours to union). It flattens to straight polygons, so it
+      // supersedes the native-bezier outline; the Bezier/Smoothness controls
+      // below only surface when merge is off.
+      { id: 'mergeOverlaps', label: 'Merge Overlaps', type: 'checkbox', showIf: (p) => !!(window.Vectura.GoogleFonts && window.Vectura.GoogleFonts.isWebFontKey(p.font)), infoKey: 'text.mergeOverlaps' },
+      // Native glyph beziers + smoothness only apply to traced web-font outlines,
+      // and only when merge is off (a merged outline is straight polygons).
+      { id: 'bezierOutline', label: 'Bezier Curves', type: 'checkbox', showIf: (p) => p.mergeOverlaps === false && !!(window.Vectura.GoogleFonts && window.Vectura.GoogleFonts.isWebFontKey(p.font)), infoKey: 'text.bezierOutline' },
+      { id: 'smoothing', label: 'Smoothness', type: 'range', min: 0, max: 6, step: 0.5, showIf: (p) => p.mergeOverlaps === false && !!(window.Vectura.GoogleFonts && window.Vectura.GoogleFonts.isWebFontKey(p.font)), infoKey: 'text.smoothing' },
       {
         id: 'plotOrder',
         label: 'Plot Order',

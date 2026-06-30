@@ -119,6 +119,40 @@
     return clips.length ? difference(subject, clips) : subject;
   };
 
+  // Orientation-robust nonzero union of a flat ring set. Classifies each ring as
+  // a SHELL or a HOLE by containment-depth parity (even depth = shell, odd = hole)
+  // instead of by signed area, so it is correct regardless of whether the source
+  // wound its outer contours clockwise (TrueType) or counter-clockwise (CFF) — the
+  // sign-based ringsToNonZeroMultiPolygon above assumes CCW shells and inverts on
+  // CFF faces. Overlapping shells merge into one boundary; nested counters carve.
+  // Used to weld glyph outlines so kerned pairs and connected scripts never draw
+  // crossing contour lines.
+  const nonZeroUnionByContainment = (rings = []) => {
+    if (!polygonClipping?.union) return [];
+    const closed = (rings || [])
+      .map((ring) => normalizeRing((ring || []).map((pt) => ({ x: pt.x, y: pt.y }))))
+      .filter((ring) => ring.length >= 4);
+    if (!closed.length) return [];
+    // Depth = how many OTHER rings enclose this ring's first vertex.
+    const depth = closed.map((ring, i) => {
+      const p = ring[0];
+      let d = 0;
+      for (let j = 0; j < closed.length; j += 1) {
+        if (j !== i && pointInRing(p, closed[j])) d += 1;
+      }
+      return d;
+    });
+    const shells = [];
+    const holes = [];
+    closed.forEach((ring, i) => {
+      (depth[i] % 2 === 0 ? shells : holes).push([[ring]]);
+    });
+    if (!shells.length) return [];
+    const subject = union(...shells);
+    if (!subject.length || !holes.length) return subject;
+    return difference(subject, union(...holes));
+  };
+
   const offsetMultiPolygon = (multiPolygon = [], dx = 0, dy = 0) =>
     (multiPolygon || []).map((polygon) =>
       (polygon || []).map((ring) =>
@@ -166,6 +200,7 @@
     ringToMultiPolygon,
     ringsToEvenOddMultiPolygon,
     ringsToNonZeroMultiPolygon,
+    nonZeroUnionByContainment,
     offsetMultiPolygon,
     rectToMultiPolygon,
     multiPolygonToPaths,

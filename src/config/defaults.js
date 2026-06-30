@@ -1346,8 +1346,13 @@
       simplify: 0,
       curves: false,
       // Outline rendering: native glyph beziers (web faces only) + plot order.
-      bezierOutline: false,
+      bezierOutline: true,
       plotOrder: 'leftToRight',
+      // Merge Overlaps welds kerned/overlapping glyph contours (RA, AV, connected
+      // scripts) into clean non-crossing outlines. On by default; it welds ONLY the
+      // glyphs whose ink genuinely overlaps, so every non-touching glyph keeps its
+      // native bezier outline — merge and full curve accuracy coexist by default.
+      mergeOverlaps: true,
       // Stroke emphasis — heavier outlines via parallel offset passes (shared
       // GeometryUtils.thickenPaths engine, also used by Harmonograph/Rainfall).
       outlineStroke: true,
@@ -1386,6 +1391,8 @@
       fillContourStepVariance: 0,
       fillContourSimplify: 0.05,
       fillContourCenterPadding: 0,
+      fillContourBezier: true,
+      fillContourSmoothing: 0.6,
       fillFlowFieldType: 'perlin',
       fillFlowNoiseScale: 6.0,
       fillFlowSeed: 1,
@@ -1435,6 +1442,54 @@
       fillWeaveAngle: 0,
       fillWeaveOver: 1,
       fillWeaveUnder: 1,
+      // ── Synthesis-panel typography ───────────────────────────────
+      // Weight of the active face. Web faces map Regular/Medium/Semibold/Bold
+      // → 400/500/600/800; built-in single-stroke faces ignore weight.
+      fontWeight: 'Regular',
+      // Affine glyph scaling as a percentage of natural size (100 = unscaled).
+      vScale: 100,
+      hScale: 100,
+      // Manual global kern added to (web) or between (built-in) every glyph,
+      // in font-relative units. Distinct from `tracking` (absolute mm spacing).
+      kerning: 0,
+      // Vertical baseline shift in mm (positive raises the whole block).
+      baselineShift: 0,
+      // Per-character rotation in degrees (deterministic; seeded like jitter).
+      charRotation: 0,
+      // Case / position transforms. Applied via the face's OpenType feature
+      // when present, otherwise synthesized (scale + reposition).
+      allCaps: false,
+      smallCaps: false,
+      superscript: false,
+      subscript: false,
+      underline: false,
+      strikethrough: false,
+      // ── Synthesis-panel paragraph ────────────────────────────────
+      // Indents + paragraph spacing in mm; hyphenation aids frame-fit wraps.
+      indentLeft: 0,
+      indentRight: 0,
+      indentFirst: 0,
+      spaceBefore: 0,
+      spaceAfter: 0,
+      hyphenate: false,
+      // OpenType features — honoured when the web face's GSUB/GPOS tables
+      // expose them; silently ignored on faces (or built-ins) that don't.
+      otLigatures: true,
+      otContextual: false,
+      otDiscretionary: false,
+      otSwash: false,
+      otStylistic: false,
+      otFractions: false,
+      otFigures: 'default', // default | tabular | oldstyle
+      otPosition: 'default', // default | super | sub
+      // ── Synthesis-panel fill placement ───────────────────────────
+      // Inset erodes the fill region inward from the glyph edge (mm); offset
+      // translates the fill window across the glyph as a fraction of the glyph
+      // block extent (-1..1) while the outline stays put.
+      fillInsetEnabled: false,
+      fillInset: 1.5,
+      fillOffsetX: 0,
+      fillOffsetY: 0,
     },
     grid: {
       preset: 'grid-default',

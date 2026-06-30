@@ -464,6 +464,43 @@ describe('Type fill watertightness (composite even-odd contract)', () => {
     }
   });
 
+  // ── CONTOUR bezier smoothing — rounds corners WITHOUT overshoot ────────────
+  // Plain Catmull-Rom on a decimated ring balloons into self-intersecting loops
+  // that escape the shape (reported as "wild" smoothing). Handles are clamped to a
+  // third of the shorter adjacent segment, so the flattened curve must stay inside
+  // the shape's own bounds — it may only round corners, never loop outward.
+  describe('CONTOUR bezier smoothing — corners round, curve never overshoots', () => {
+    let GU;
+    beforeAll(() => { GU = runtime.window.Vectura.GeometryUtils; });
+    const square2 = (x, y, s) => square(x, y, s);
+
+    it('emits cubic anchors when contourBezier is on', () => {
+      const r = square2(0, 0, 80);
+      const paths = gen({ regions: [r], region: r, fillType: 'contour', density: 6, contourBezier: true, contourSmoothing: 0.6 });
+      expect(paths.length).toBeGreaterThan(0);
+      const curved = paths.filter((p) => p.meta && p.meta.anchors && p.meta.anchors.some((a) => a.in || a.out));
+      expect(curved.length).toBeGreaterThan(0);
+    });
+
+    for (const smoothing of [0.6, 1]) {
+      it(`smoothing ${smoothing}: flattened rings stay within the shape (no wild loops)`, () => {
+        const r = square2(0, 0, 80); // inset rings live well inside [0,80]
+        const paths = gen({ regions: [r], region: r, fillType: 'contour', density: 6, contourBezier: true, contourSmoothing: smoothing });
+        expect(paths.length).toBeGreaterThan(0);
+        const M = 3; // mm margin — a true round stays put; an overshoot loop blows past this
+        for (const p of paths) {
+          const flat = GU.flattenSmoothedPath(p, 0.25);
+          for (const pt of flat) {
+            expect(pt.x).toBeGreaterThan(-M);
+            expect(pt.x).toBeLessThan(80 + M);
+            expect(pt.y).toBeGreaterThan(-M);
+            expect(pt.y).toBeLessThan(80 + M);
+          }
+        }
+      });
+    }
+  });
+
   // ── Cross-glyph clip soundness (per-shell fills) ──────────────────────────
   // A per-shell fill must clip against the even-odd ink of OVERLAPPING NEIGHBOUR
   // glyphs, not just its own counters. The bug: a neighbour's wide outer overlaps

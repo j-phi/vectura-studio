@@ -4,6 +4,45 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.21 - 2026-06-30
+
+### Added
+- **Bespoke Text panel (synthesis design).** The Text layer now has a dedicated tabbed panel
+  (Type / Layout / Stroke / Fill) with a live, opentype-traced **specimen** preview that doubles as the
+  editable text field — there is no separate text input. It mounts via the same early-return hook the
+  Mirror/Morph modifier panels use (`algo-config-panel.js` → `Vectura.UI.TextPanel.build`), is fully
+  `vtp-`-namespaced against existing skin tokens (renders correctly on every skin), and drives each control
+  through the standard history/regen commit path (one undo step per scrub gesture). New modules:
+  `src/ui/ui-text-panel.js` (shell, tabs, scrub fields, font-picker popover backed by the real Google Fonts
+  catalog, idempotent lifecycle) and `src/ui/ui-text-specimen.js` (guide / outline-node / fill-line overlays).
+- **New typographic controls for the Text algorithm.** Vertical/horizontal scale, manual kerning, baseline
+  shift, per-character rotation, all-caps plus synthesized small-caps / superscript / subscript, underline &
+  strikethrough, left/right/first-line indents, paragraph space-before/after, paragraph justification
+  (`justify-left|center|right|all`), font weight (Regular/Medium/Semibold/Bold), and fill **inset** + fill
+  **offset** placement. All land as additive `ALGO_DEFAULTS.text` params, so existing `.vectura` files,
+  undo/redo, and serialization are unchanged. The font layout engines (`google-fonts.js`, `stroke-font.js`)
+  now accept these as optional opts and return an index-aligned glyph `meta` array consumed by `text.js`.
+
+### Known limitations
+- **OpenType features** (contextual alternates, discretionary ligatures, swash, stylistic sets, fractions,
+  oldstyle/tabular figures, super/sub position) are surfaced in the panel and plumbed through the layout
+  engine, but the vendored `opentype.min.js` only actually shapes **standard ligatures** (`liga`) for Latin
+  text — the others are accepted and currently inert until a richer shaper is vendored.
+- **Hyphenation** has a dependency-free soft-wrap implementation, but it only engages when a wrap width is
+  supplied; the current fit-to-frame layout does not provide one, so the toggle is presently a no-op.
+
+## 1.2.20 - 2026-06-26
+
+### Added
+- **Bezier smoothing for Contour fills (Type).** Contour rings are extracted from a grid distance
+  field, so they carried sub-cell *stairsteps* that were visible on every plotted letter. The Fill panel
+  now has a **Bezier Curves** toggle plus a **Smoothness** slider (alongside the contour controls): when
+  on, each ring is decimated to grid scale and rebuilt as a native cubic curve, so the pen draws a clean
+  line instead of jaggies. Handles stay short relative to the ring spacing, so a smoothed ring can't bulge
+  across into a counter. Both the new fill **Bezier Curves** and the outline **Bezier Curves** now default
+  **on** for the smoothest letterforms out of the box. The toggle is shared by the paint-bucket contour
+  fill too (defaults off there, so existing fills are unchanged).
+
 ## 1.2.19 - 2026-06-26
 
 ### Fixed

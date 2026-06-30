@@ -1481,6 +1481,21 @@
       list.classList.toggle('lvl-list-multi', (renderer.selectedLayerIds?.size ?? 0) > 1);
       _lvlBuildStatusBar();
 
+      // Draw-Order bar is useless on a blank canvas — there is no plot order
+      // to reveal until at least one path is actually drawn. Gate on rendered
+      // geometry (not mere layer count) so an empty layer/group keeps it hidden.
+      const drawOrderBar = document.getElementById('draw-order-bar');
+      if (drawOrderBar) {
+        const hasGeometry = allLayers.some((layer) => {
+          if (!layer || layer.visible === false) return false;
+          const paths = engine.getRenderablePaths
+            ? engine.getRenderablePaths(layer)
+            : (layer.displayPaths || layer.paths || []);
+          return Array.isArray(paths) && paths.length > 0;
+        });
+        drawOrderBar.classList.toggle('hidden', !hasGeometry);
+      }
+
       // Phase 4: empty-state illustration when there are no layers.
       // Uses the LegacyLite EmptyState primitive composed via UI.EmptyStates.
       if (allLayers.length === 0) {

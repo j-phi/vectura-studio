@@ -255,10 +255,11 @@ describe('GoogleFonts web-font source', () => {
 
     test('traces glyph outlines when the chosen web family is parsed', () => {
       V.WEBFONT_GLYPHS[PARSED_ID] = makeFont();
-      const paths = gen({ font: `google:${PARSED_ID}`, text: 'AB', fitToFrame: false, fontSize: 40 });
+      // bezierOutline off → flattened polyline passthrough (the bezier-on branch is
+      // covered separately); outlines must not be re-smoothed by the engine.
+      const paths = gen({ font: `google:${PARSED_ID}`, text: 'AB', fitToFrame: false, fontSize: 40, bezierOutline: false });
       expect(paths.length).toBeGreaterThan(0);
       paths.forEach((p) => expect(p.length).toBeGreaterThanOrEqual(2));
-      // Outlines are pre-flattened — they must not be re-smoothed by the engine.
       expect(paths.every((p) => p.meta && p.meta.straight === true)).toBe(true);
     });
 
@@ -305,7 +306,9 @@ describe('GoogleFonts web-font source', () => {
 
     test('bezierOutline attaches native cubic anchors to the stroke paths', () => {
       V.WEBFONT_GLYPHS[PARSED] = curveFont();
-      const paths = gen({ font: `google:${PARSED}`, text: 'O', fitToFrame: false, fontSize: 40, bezierOutline: true });
+      // mergeOverlaps flattens to straight polygons, so the bezier path is only
+      // reachable with merge off.
+      const paths = gen({ font: `google:${PARSED}`, text: 'O', fitToFrame: false, fontSize: 40, bezierOutline: true, mergeOverlaps: false });
       const curved = paths.filter((p) => p.meta && p.meta.anchors);
       expect(curved.length).toBeGreaterThan(0);
       curved.forEach((p) => {
@@ -318,7 +321,7 @@ describe('GoogleFonts web-font source', () => {
 
     test('bezierOutline is suppressed under jitter (no clean curve to keep)', () => {
       V.WEBFONT_GLYPHS[PARSED] = curveFont();
-      const paths = gen({ font: `google:${PARSED}`, text: 'O', fitToFrame: false, fontSize: 40, bezierOutline: true, jitter: 2 });
+      const paths = gen({ font: `google:${PARSED}`, text: 'O', fitToFrame: false, fontSize: 40, bezierOutline: true, jitter: 2, mergeOverlaps: false });
       expect(paths.every((p) => !(p.meta && p.meta.anchors))).toBe(true);
     });
 
@@ -328,6 +331,39 @@ describe('GoogleFonts web-font source', () => {
       const filled = gen({ font: `google:${PARSED}`, text: 'A', fitToFrame: false, fontSize: 40, fillEnabled: true, fillType: 'hatch', fillDensity: 6 });
       expect(filled.length).toBeGreaterThan(plain.length);
       expect(filled.some((p) => p.meta && p.meta.textFill)).toBe(true);
+    });
+
+    test('contour fill smooths to bezier curves when fillContourBezier is on', () => {
+      V.WEBFONT_GLYPHS[PARSED] = makeFont();
+      const filled = gen({
+        font: `google:${PARSED}`, text: 'A', fitToFrame: false, fontSize: 40,
+        fillEnabled: true, fillType: 'contour', fillDensity: 6,
+        fillContourBezier: true, fillContourSmoothing: 0.6,
+      });
+      const rings = filled.filter((p) => p.meta && p.meta.textFill);
+      expect(rings.length).toBeGreaterThan(0);
+      // At least one ring carries native cubic handles so the plotter draws a
+      // smooth curve instead of grid-quantized stairsteps.
+      const curved = rings.filter((p) => p.meta.anchors);
+      expect(curved.length).toBeGreaterThan(0);
+      curved.forEach((p) => {
+        expect(p.meta.straight).toBe(false);
+        expect(p.meta.forceCurves).toBe(true);
+        expect(p.meta.anchors.some((a) => a.in || a.out)).toBe(true);
+      });
+    });
+
+    test('contour fill stays straight polylines when fillContourBezier is off', () => {
+      V.WEBFONT_GLYPHS[PARSED] = makeFont();
+      const filled = gen({
+        font: `google:${PARSED}`, text: 'A', fitToFrame: false, fontSize: 40,
+        fillEnabled: true, fillType: 'contour', fillDensity: 6,
+        fillContourBezier: false,
+      });
+      const rings = filled.filter((p) => p.meta && p.meta.textFill);
+      expect(rings.length).toBeGreaterThan(0);
+      expect(rings.every((p) => p.meta.straight === true)).toBe(true);
+      expect(rings.every((p) => !p.meta.anchors)).toBe(true);
     });
 
     test('outlineStroke:false yields fill-only output (no stroke contours)', () => {
@@ -349,6 +385,183 @@ describe('GoogleFonts web-font source', () => {
       const sorted = gen({ font: `google:${PARSED}`, text: 'AB', fitToFrame: false, fontSize: 40, plotOrder: 'leftToRight' });
       const minX = sorted.map((p) => Math.min(...p.map((pt) => pt.x)));
       for (let i = 1; i < minX.length; i++) expect(minX[i]).toBeGreaterThanOrEqual(minX[i - 1]);
+    });
+  });
+
+  describe('Merge Overlaps (outline welding)', () => {
+    const bounds = { width: 400, height: 300, m: 20, dW: 360, dH: 260 };
+    const MERGE = '__merge-overlap__';
+    const gen = (extra) => V.AlgorithmRegistry.text.generate(
+      { ...V.ALGO_DEFAULTS.text, ...extra },
+      new V.SeededRNG(1),
+      new V.SimpleNoise(1),
+      bounds,
+    );
+    afterEach(() => { delete V.WEBFONT_GLYPHS[MERGE]; });
+
+    // Each glyph is a 0.7em right triangle but only advances 0.25em, so adjacent
+    // glyphs ink-overlap — the worst case of a tight kern pair (RA, AV…). A
+    // triangle (rather than an axis-aligned square) guarantees the overlapping
+    // edges cross PROPERLY, which the crossing detector below relies on.
+    const overlapFont = () => ({
+      unitsPerEm: 1000, tables: { os2: { sCapHeight: 700 } }, getKerningValue: () => 0,
+      stringToGlyphs: (s) => Array.from(String(s)).map(() => ({
+        advanceWidth: 250,
+        getPath: (x, y, em) => ({ commands: [
+          { type: 'M', x, y },
+          { type: 'L', x: x + em * 0.7, y },
+          { type: 'L', x, y: y - em * 0.7 },
+          { type: 'Z' },
+        ] }),
+      })),
+    });
+
+    // A glyph whose outline is a single cubic-bearing closed contour, confined to
+    // the left of its advance so a standalone instance touches no neighbour.
+    const curveFont = () => ({
+      unitsPerEm: 1000, tables: { os2: { sCapHeight: 700 } }, getKerningValue: () => 0,
+      stringToGlyphs: (s) => Array.from(String(s)).map(() => ({
+        advanceWidth: 500,
+        getPath: (x, y, em) => ({ commands: [
+          { type: 'M', x, y: y - em * 0.5 },
+          { type: 'C', x1: x + em * 0.3, y1: y - em * 0.5, x2: x + em * 0.3, y2: y, x, y },
+          { type: 'Z' },
+        ] }),
+      })),
+    });
+
+    // Two glyph shapes keyed by char: 'I' is a narrow cubic contour pinned to the
+    // left of its advance (touches no neighbour); every other char is a wide
+    // triangle that ink-overlaps its neighbours. Lets one string mix glyphs that
+    // must weld with glyphs that must keep their native curve.
+    const mixedFont = () => ({
+      unitsPerEm: 1000, tables: { os2: { sCapHeight: 700 } }, getKerningValue: () => 0,
+      stringToGlyphs: (s) => Array.from(String(s)).map((ch) => (ch === 'I'
+        ? { advanceWidth: 250, getPath: (x, y, em) => ({ commands: [
+            { type: 'M', x, y: y - em * 0.5 },
+            { type: 'C', x1: x + em * 0.12, y1: y - em * 0.5, x2: x + em * 0.12, y2: y, x, y },
+            { type: 'Z' },
+          ] }) }
+        : { advanceWidth: 250, getPath: (x, y, em) => ({ commands: [
+            { type: 'M', x, y },
+            { type: 'L', x: x + em * 0.7, y },
+            { type: 'L', x, y: y - em * 0.7 },
+            { type: 'Z' },
+          ] }) })),
+    });
+
+    // One glyph = outer square + an inner counter wound the SAME direction (so a
+    // signed-area classifier would mis-handle it); a correct nonzero union by
+    // containment must still carve the hole.
+    const holedFont = () => ({
+      unitsPerEm: 1000, tables: { os2: { sCapHeight: 700 } }, getKerningValue: () => 0,
+      stringToGlyphs: (s) => Array.from(String(s)).map(() => ({
+        advanceWidth: 800,
+        getPath: (x, y, em) => ({ commands: [
+          { type: 'M', x, y: y - em * 0.7 },
+          { type: 'L', x: x + em * 0.7, y: y - em * 0.7 },
+          { type: 'L', x: x + em * 0.7, y },
+          { type: 'L', x, y },
+          { type: 'Z' },
+          { type: 'M', x: x + em * 0.2, y: y - em * 0.5 },
+          { type: 'L', x: x + em * 0.45, y: y - em * 0.5 },
+          { type: 'L', x: x + em * 0.45, y: y - em * 0.2 },
+          { type: 'L', x: x + em * 0.2, y: y - em * 0.2 },
+          { type: 'Z' },
+        ] }),
+      })),
+    });
+
+    // Proper segment crossing (shared endpoints / collinear touches don't count).
+    const cross = (a, b, c, d) => {
+      const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+      const s1 = o(a, b, c); const s2 = o(a, b, d); const s3 = o(c, d, a); const s4 = o(c, d, b);
+      return s1 !== s2 && s3 !== s4 && s1 !== 0 && s2 !== 0 && s3 !== 0 && s4 !== 0;
+    };
+    const anyCrossingBetweenRings = (rings) => {
+      for (let i = 0; i < rings.length; i += 1) {
+        for (let j = i + 1; j < rings.length; j += 1) {
+          const A = rings[i]; const B = rings[j];
+          for (let a = 1; a < A.length; a += 1) {
+            for (let b = 1; b < B.length; b += 1) {
+              if (cross(A[a - 1], A[a], B[b - 1], B[b])) return true;
+            }
+          }
+        }
+      }
+      return false;
+    };
+
+    test('RED proof: un-merged overlapping glyphs draw crossing contour lines', () => {
+      V.WEBFONT_GLYPHS[MERGE] = overlapFont();
+      const raw = gen({ font: `google:${MERGE}`, text: 'HH', fitToFrame: false, fontSize: 40, mergeOverlaps: false });
+      expect(raw.length).toBe(2); // one closed contour per glyph
+      expect(anyCrossingBetweenRings(raw)).toBe(true);
+    });
+
+    test('merge welds overlapping glyphs into a single non-crossing outline', () => {
+      V.WEBFONT_GLYPHS[MERGE] = overlapFont();
+      const welded = gen({ font: `google:${MERGE}`, text: 'HH', fitToFrame: false, fontSize: 40 });
+      // The two overlapping squares union into one boundary loop…
+      expect(welded.length).toBe(1);
+      // …and nothing crosses anything anymore.
+      expect(anyCrossingBetweenRings(welded)).toBe(false);
+      expect(welded.every((p) => p.meta && p.meta.straight === true && !p.meta.anchors)).toBe(true);
+    });
+
+    test('merge preserves counters (hole survives, is not flooded)', () => {
+      V.WEBFONT_GLYPHS[MERGE] = holedFont();
+      const welded = gen({ font: `google:${MERGE}`, text: 'O', fitToFrame: false, fontSize: 40 });
+      // Outer boundary + carved counter = two rings; a flooded hole would be one.
+      expect(welded.length).toBe(2);
+    });
+
+    test('merge keeps native bezier outlines for non-overlapping glyphs (default)', () => {
+      V.WEBFONT_GLYPHS[MERGE] = curveFont();
+      // A standalone curved glyph touches nothing, so the default (merge on) must
+      // preserve its native cubic outline rather than flatten it to a polygon —
+      // merge overlaps and full bezier accuracy coexist by default.
+      const def = gen({ font: `google:${MERGE}`, text: 'O', fitToFrame: false, fontSize: 40, bezierOutline: true });
+      const curved = def.filter((p) => p.meta && p.meta.anchors);
+      expect(curved.length).toBeGreaterThan(0);
+      curved.forEach((p) => {
+        expect(p.meta.straight).toBe(false);
+        expect(p.meta.forceCurves).toBe(true);
+        expect(p.meta.anchors.some((a) => a.in || a.out)).toBe(true);
+      });
+    });
+
+    test('merge welds only the overlapping glyphs and keeps the rest as beziers', () => {
+      V.WEBFONT_GLYPHS[MERGE] = mixedFont();
+      // "IXX": the narrow curved I touches nothing; the two wide X triangles ink-
+      // overlap each other. Default merge must weld the XX pair into one flattened
+      // boundary while leaving I as a native cubic outline (selective merge).
+      const out = gen({ font: `google:${MERGE}`, text: 'IXX', fitToFrame: false, fontSize: 40 });
+      const curved = out.filter((p) => p.meta && p.meta.anchors);
+      const flat = out.filter((p) => p.meta && p.meta.straight === true && !p.meta.anchors);
+      // the I survived as a native curve…
+      expect(curved.length).toBeGreaterThan(0);
+      expect(curved.every((p) => p.meta.forceCurves === true)).toBe(true);
+      // …and the X pair welded into flattened ring(s) that no longer cross.
+      expect(flat.length).toBeGreaterThan(0);
+      expect(anyCrossingBetweenRings(flat)).toBe(false);
+    });
+
+    test('bezierOutline off + merge keeps non-overlapping glyphs as plain polylines', () => {
+      V.WEBFONT_GLYPHS[MERGE] = curveFont();
+      const out = gen({ font: `google:${MERGE}`, text: 'O', fitToFrame: false, fontSize: 40, bezierOutline: false });
+      expect(out.length).toBeGreaterThan(0);
+      expect(out.every((p) => p.meta && p.meta.straight === true && !p.meta.anchors)).toBe(true);
+    });
+
+    test('nonZeroUnionByContainment welds overlaps and carves holes (orientation-robust)', () => {
+      const FB = V.FillBoolean;
+      const sq = (x, y, s) => [{ x, y }, { x: x + s, y }, { x: x + s, y: y + s }, { x, y: y + s }];
+      // Two overlapping shells → one polygon; a same-wound inner square (kept
+      // clear of the dissolved seam at x=10) → a carved hole.
+      const mp = FB.nonZeroUnionByContainment([sq(0, 0, 12), sq(8, 0, 12), sq(2, 2, 3)]);
+      expect(mp.length).toBe(1); // single merged polygon
+      expect(mp[0].length).toBe(2); // exterior ring + one carved hole
     });
   });
 });

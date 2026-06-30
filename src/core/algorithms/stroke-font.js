@@ -161,6 +161,13 @@
   FONTS.forEach((f) => { FONT_BY_ID[f.id] = f; });
   const resolveFont = (id) => FONT_BY_ID[id] || FONTS[0];
 
+  // Synthesis constants (fractions of CAP / scale factors), shared with the web
+  // outline path so smallCaps / super- / sub-script look consistent across sources.
+  const SMALL_CAPS_SCALE = 0.78; // cap glyph reduced toward x-height
+  const SUPSUB_SCALE = 0.62;     // super/subscript size relative to full cap
+  const SUP_DY = -0.42;          // raise (fraction of CAP, y-up is negative)
+  const SUB_DY = 0.18;           // lower (fraction of CAP)
+
   /**
    * Lay text out into positioned polylines.
    *
@@ -169,55 +176,203 @@
    *   size        cap height in mm (default 14)
    *   tracking    extra letter spacing in mm (default 0)
    *   lineHeight  line advance as a multiple of size (default 1.4)
-   *   align       'left' | 'center' | 'right' (default 'left')
-   * @returns {{ paths: Array<Array<{x,y}>>, width, height }} in mm, origin top-left.
+   *   align       'left' | 'center' | 'right' | 'justify-left' |
+   *               'justify-center' | 'justify-right' | 'justify-all' (default 'left')
+   *
+   *   New optional opts (each a no-op at its default → historical output unchanged):
+   *     fontWeight  ignored by the built-in face (single weight).
+   *     vScale/hScale  percent (100 = unchanged); scale glyph geometry about the
+   *                    glyph baseline origin. hScale also scales the advance.
+   *     kerning     extra advance added to EVERY glyph, in FONT UNITS.
+   *     baselineShift  mm; raises the whole block (y up).
+   *     indentLeft/indentRight/indentFirst  mm; per-line / paragraph-head indents.
+   *     spaceBefore/spaceAfter  mm; vertical gap before/after each paragraph.
+   *     smallCaps   render lowercase as the (reduced) uppercase letterform.
+   *     superscript/subscript  shrink + raise / lower each glyph.
+   *     ot*         OpenType opts — IGNORED by the built-in monoline face.
+   *     hyphenate + wrapWidth  soft-wrap (see GoogleFonts.layout note); the built-in
+   *                 face honours wrapWidth-gated wrapping with a simple heuristic.
+   * @returns {{ paths, meta, width, height }} mm, origin top-left. `meta` runs
+   *   parallel to `paths`: { glyphIndex, charIndex, lineIndex, baselineY, x0, x1 }.
    */
   const layout = (text, opt = {}) => {
     const size = Math.max(0.1, Number(opt.size) || 14);
     const scale = size / CAP;
+    const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
     const tracking = (Number(opt.tracking) || 0) / scale; // back to font units
+    const kerning = num(opt.kerning, 0); // font units, per the layout contract
     const lineHeight = (Number(opt.lineHeight) || 1.4) * CAP;
-    const align = opt.align || 'left';
+    const vScale = num(opt.vScale, 100) / 100;
+    const hScale = num(opt.hScale, 100) / 100;
+    const baselineShift = num(opt.baselineShift, 0); // mm
+    const smallCaps = opt.smallCaps === true;
+    const superscript = opt.superscript === true;
+    const subscript = opt.subscript === true;
+    // mm indents/spacing → font units (internal math is font units, scaled at end)
+    const indentLeft = num(opt.indentLeft, 0) / scale;
+    const indentRight = num(opt.indentRight, 0) / scale;
+    const indentFirst = num(opt.indentFirst, 0) / scale;
+    const spaceBefore = num(opt.spaceBefore, 0) / scale;
+    const spaceAfter = num(opt.spaceAfter, 0) / scale;
+    const wrapWidthFU = num(opt.wrapWidth, 0) > 0 ? num(opt.wrapWidth, 0) / scale : 0;
+
+    const rawAlign = opt.align || 'left';
+    const justify = typeof rawAlign === 'string' && rawAlign.indexOf('justify') === 0;
+    const justifySuffix = justify ? (rawAlign.slice('justify-'.length) || 'left') : '';
+    const baseAlign = justify
+      ? (justifySuffix === 'all' ? 'left' : justifySuffix)
+      : (rawAlign === 'center' || rawAlign === 'right' ? rawAlign : 'left');
+
     const font = resolveFont(opt.font);
     const sx = font.scaleX || 1;
     const shear = font.shear || 0;
-    const advance = (g) => g.w * sx; // x-scaled advance keeps spacing proportional
-    const rawLines = String(text == null ? '' : text).split('\n');
 
-    // Measure each line's advance (font units) for alignment.
-    const lineWidth = (line) => {
-      let w = 0;
-      for (const ch of line) {
-        const g = glyph(ch) || G[' '];
-        w += advance(g) + tracking;
+    // Per-character resolution: pick the drawn glyph plus its synthesis transform
+    // (x/y scale about the baseline origin, vertical offset in font units).
+    const resolveChar = (ch) => {
+      let g = glyph(ch) || G[' '];
+      let cScaleX = 1, cScaleY = 1, cDY = 0;
+      if (smallCaps && ch >= 'a' && ch <= 'z') {
+        const up = glyph(ch.toUpperCase());
+        if (up) { g = up; cScaleX = SMALL_CAPS_SCALE; cScaleY = SMALL_CAPS_SCALE; }
       }
-      return Math.max(0, w - tracking);
+      if (superscript) { cScaleX *= SUPSUB_SCALE; cScaleY *= SUPSUB_SCALE; cDY += SUP_DY * CAP; }
+      else if (subscript) { cScaleX *= SUPSUB_SCALE; cScaleY *= SUPSUB_SCALE; cDY += SUB_DY * CAP; }
+      return { g, cScaleX, cScaleY, cDY, isSpace: ch === ' ' };
     };
-    const widths = rawLines.map(lineWidth);
+
+    // Tokenise the input into lines, applying wrapWidth-gated hyphenation/soft-wrap.
+    let rawLines = String(text == null ? '' : text).split('\n');
+    if (opt.hyphenate === true && wrapWidthFU > 0) {
+      rawLines = softWrap(rawLines, wrapWidthFU - indentLeft - indentRight, (ch) => {
+        const r = resolveChar(ch);
+        return r.g.w * sx * hScale * r.cScaleX + tracking + kerning;
+      });
+    }
+
+    // A char's laid-out advance (font units).
+    const charAdvance = (r) => r.g.w * sx * hScale * r.cScaleX + tracking + kerning;
+    const lineCells = rawLines.map((line) => Array.from(line).map((ch) => {
+      const r = resolveChar(ch);
+      return { ch, r, adv: charAdvance(r) };
+    }));
+    const lineWidth = (cells) => Math.max(0, cells.reduce((w, c) => w + c.adv, 0) - tracking);
+    const widths = lineCells.map(lineWidth);
     const maxW = widths.reduce((m, w) => Math.max(m, w), 0);
 
+    // Paragraph membership (split on blank lines) for indentFirst + spacing.
+    const blank = rawLines.map((l) => l.trim().length === 0);
+    const firstOfPara = rawLines.map((_, i) => !blank[i] && (i === 0 || blank[i - 1]));
+    const lastOfPara = rawLines.map((_, i) => !blank[i] && (i === rawLines.length - 1 || blank[i + 1]));
+
+    const colWidth = wrapWidthFU > 0 ? wrapWidthFU : (maxW + indentLeft + indentRight);
+
     const paths = [];
+    const meta = [];
+    let penY = 0;
     rawLines.forEach((line, li) => {
-      const offset = align === 'center' ? (maxW - widths[li]) / 2
-        : align === 'right' ? (maxW - widths[li]) : 0;
-      let penX = offset;
-      const penY = li * lineHeight;
-      for (const ch of line) {
-        const g = glyph(ch) || G[' '];
+      if (firstOfPara[li]) penY += spaceBefore;
+      const cells = lineCells[li];
+      const lineW = widths[li];
+      const avail = colWidth - indentLeft - indentRight - (firstOfPara[li] ? indentFirst : 0);
+      const slack = Math.max(0, avail - lineW);
+
+      // Justify: distribute slack across inter-word gaps unless this is the final
+      // line of the paragraph (kept ragged) — except 'justify-all' which fills it.
+      const gaps = cells.filter((c) => c.r.isSpace).length;
+      const doJustify = justify && gaps > 0 && slack > 1e-6 &&
+        (justifySuffix === 'all' || !lastOfPara[li]);
+      const perGap = doJustify ? slack / gaps : 0;
+
+      // Non-justified slack handling: left 0, center half, right full.
+      const alignOffset = doJustify ? 0
+        : baseAlign === 'center' ? slack / 2
+        : baseAlign === 'right' ? slack : 0;
+
+      let penX = indentLeft + (firstOfPara[li] ? indentFirst : 0) + alignOffset;
+      cells.forEach((cell, ci) => {
+        const { g, cScaleX, cScaleY, cDY } = cell.r;
+        const x0 = penX * scale;
+        let drewMeta = false;
         g.s.forEach((stroke) => {
-          // x-scale, then shear about the baseline (italic leans the cap line right).
-          const path = stroke.map(([x, y]) => ({
-            x: (penX + x * sx + shear * (CAP - y)) * scale,
-            y: (penY + y) * scale,
-          }));
-          if (path.length >= 2) paths.push(path);
+          const path = stroke.map(([x, y]) => {
+            const yRel = (y - CAP) * vScale * cScaleY;
+            const yfu = CAP + yRel + cDY;
+            const xLocal = x * sx * hScale * cScaleX;
+            const shearOff = shear * (CAP - yfu);
+            return {
+              x: (penX + xLocal + shearOff) * scale,
+              y: (penY + yfu) * scale - baselineShift,
+            };
+          });
+          if (path.length >= 2) {
+            paths.push(path);
+            meta.push({
+              glyphIndex: ci,
+              charIndex: ci,
+              lineIndex: li,
+              baselineY: (penY + CAP) * scale - baselineShift,
+              x0,
+              x1: (penX + cell.adv) * scale,
+            });
+            drewMeta = true;
+          }
         });
-        penX += advance(g) + tracking;
-      }
+        void drewMeta;
+        penX += cell.adv + (cell.r.isSpace ? perGap : 0);
+      });
+
+      penY += lineHeight;
+      if (lastOfPara[li]) penY += spaceAfter;
     });
 
-    const height = (rawLines.length - 1) * lineHeight + DESCENT;
-    return { paths, width: maxW * scale, height: height * scale };
+    const height = penY - lineHeight + DESCENT;
+    return { paths, meta, width: colWidth * scale, height: height * scale };
+  };
+
+  // Minimal dependency-free soft-wrap. Splits each input line into words on spaces
+  // and re-flows so each output line's measured advance stays within `maxFU` (font
+  // units). When a single word is itself wider than the column it is broken on a
+  // simple character-count heuristic with a hyphen. LIMITATIONS: this is a greedy,
+  // language-agnostic break — it has no dictionary, no Knuth-Plass, and inserts a
+  // hyphen at an arbitrary mid-word character rather than a true syllable boundary.
+  const softWrap = (lines, maxFU, advOf) => {
+    if (!(maxFU > 0)) return lines;
+    const spaceAdv = advOf(' ');
+    const out = [];
+    for (const line of lines) {
+      if (line.trim().length === 0) { out.push(line); continue; }
+      const words = line.split(/(\s+)/).filter((w) => w.length && w.trim().length);
+      let cur = '';
+      let curW = 0;
+      const wordW = (w) => Array.from(w).reduce((s, ch) => s + advOf(ch), 0);
+      const flush = () => { if (cur.length) { out.push(cur); cur = ''; curW = 0; } };
+      for (let w of words) {
+        let ww = wordW(w);
+        // Word longer than the column: hard-break it with a hyphen.
+        while (ww > maxFU && Array.from(w).length > 1) {
+          flush();
+          let piece = '';
+          let pieceW = 0;
+          const chars = Array.from(w);
+          let k = 0;
+          for (; k < chars.length - 1; k++) {
+            const aw = advOf(chars[k]);
+            if (pieceW + aw + advOf('-') > maxFU && piece.length) break;
+            piece += chars[k];
+            pieceW += aw;
+          }
+          out.push(piece + '-');
+          w = chars.slice(k).join('');
+          ww = wordW(w);
+        }
+        const add = (cur.length ? spaceAdv : 0) + ww;
+        if (curW + add > maxFU && cur.length) { flush(); cur = w; curW = ww; }
+        else { cur = cur.length ? cur + ' ' + w : w; curW += add; }
+      }
+      flush();
+    }
+    return out;
   };
 
   Vectura.StrokeFont = {
