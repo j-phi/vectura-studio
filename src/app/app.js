@@ -103,6 +103,9 @@
           requestDraw: () => { this.renderer?.draw?.(); },
           // Empty-canvas click → new point-type text layer at the world point.
           createTextLayerAt: (wx, wy) => this._createPointTextLayerAt(wx, wy),
+          // Empty-canvas click-DRAG → new area-type text layer sized to the drag
+          // rectangle (Illustrator-style). Text word-wraps inside the frame.
+          createAreaTextLayerAt: (x0, y0, x1, y1) => this._createAreaTextLayerAt(x0, y0, x1, y1),
           // Panel specimen is suppressed during a session; rebuild on end so it
           // re-syncs to the final text without two editors fighting params.text.
           refreshPanel: () => { this.ui?.buildControls?.(); },
@@ -1133,6 +1136,47 @@
         jitter: 0,
         posX: wx - b.width / 2,
         posY: wy - b.height / 2,
+      });
+      this.engine.generate(id);
+      this.renderer?.selectLayer?.(layer);
+      this.ui?.renderLayers?.();
+      this.ui?.buildControls?.();
+      return layer;
+    }
+
+    // Create an AREA-type text layer sized to a Type-tool click-drag rectangle
+    // (world coords). The frame word-wraps typed text; point size stays constant
+    // (fitToFrame off). Positions the layer so the frame's top-left lands at the
+    // drag rect's top-left: for an empty (ink-less) area box the block is centred
+    // on the frame, so world frame-TL = docCentre + posX − frame/2, hence posX =
+    // left − docW/2 + frameW/2 (docCentre = margin + displayW/2 = docW/2). Uses the
+    // built-in stroke font so on-canvas editing is immediately mutable (canMutate).
+    _createAreaTextLayerAt(x0, y0, x1, y1) {
+      this.pushHistory();
+      this._textCreateHistoryLen = this.history.length;
+      const id = this.engine.addLayer('text');
+      const layer = this.engine.layers.find((l) => l.id === id);
+      if (!layer) return null;
+      const b = this.engine.getBounds();
+      const SF = window.Vectura && window.Vectura.StrokeFont;
+      const builtinFont = (SF && SF.styles && SF.styles[0] && SF.styles[0].id) || 'sans';
+      const left = Math.min(x0, x1);
+      const top = Math.min(y0, y1);
+      const frameWidth = Math.abs(x1 - x0);
+      const frameHeight = Math.abs(y1 - y0);
+      Object.assign(layer.params, {
+        text: '',
+        font: builtinFont,
+        textMode: 'area',
+        frameWidth,
+        frameHeight,
+        fitToFrame: false,
+        align: 'left',
+        jitter: 0,
+        offsetX: 0,
+        offsetY: 0,
+        posX: left - b.width / 2 + frameWidth / 2,
+        posY: top - b.height / 2 + frameHeight / 2,
       });
       this.engine.generate(id);
       this.renderer?.selectLayer?.(layer);

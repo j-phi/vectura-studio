@@ -456,6 +456,8 @@
       // Type-tool multi-click (word/paragraph) timing + active press-drag state.
       this._typeLastClick = null;
       this._typeDrag = null;
+      // Type-tool empty-canvas click-vs-drag creation (point vs area frame).
+      this._areaCreate = null;
       this.shapeDraft = null;
       this.shapeDraftSides = 6;
       this.shapeCornerDrag = null;
@@ -3866,6 +3868,8 @@
       // selection handles, so it tracks pan/zoom and the layer transform for free
       // (its segment is derived from world-space layer.glyphs). The selection
       // highlight draws first so the caret rides above it.
+      this.drawTextFrame();
+      this.drawAreaCreatePreview();
       this.drawTextSelection();
       this.drawTextCaret();
       this.ctx.restore();
@@ -3914,9 +3918,58 @@
           this._typeDrag = { startX: sX, startY: sY, layerId: hit.id, dragging: false };
         }
       } else {
-        const created = te.beginNewAt(world.x, world.y);
-        if (created) this.selectLayer(created);
+        // Empty canvas: DEFER creation until release so we can distinguish a plain
+        // click (→ POINT type) from a click-drag (→ AREA type frame). Arm an
+        // area-create gesture; move() grows the live frame, up() commits point vs
+        // area by the drag distance. (This is distinct from `_typeDrag`, which is a
+        // range-select drag WITHIN an existing session.)
+        this._areaCreate = {
+          startX: sX, startY: sY,
+          x0: world.x, y0: world.y,
+          curX: world.x, curY: world.y,
+          dragging: false,
+        };
       }
+      this.draw();
+    }
+
+    // Live Type-tool area-create drag on empty canvas: grow the frame rectangle
+    // and flag `dragging` once the pointer passes the drag threshold. The frame +
+    // W/H readout are drawn by drawAreaCreatePreview() in the overlay pass.
+    handleAreaCreateDrag(world, e) {
+      const ac = this._areaCreate;
+      if (!ac) return;
+      const te = this.app && this.app.textEdit;
+      const sX = e && e.clientX != null ? e.clientX : 0;
+      const sY = e && e.clientY != null ? e.clientY : 0;
+      ac.curX = world.x;
+      ac.curY = world.y;
+      if (!ac.dragging && te && te.exceedsDragThreshold(ac.startX, ac.startY, sX, sY)) {
+        ac.dragging = true;
+      }
+      this.draw();
+    }
+
+    // Release of a Type-tool empty-canvas gesture: a drag beyond the threshold that
+    // spans a usable rectangle creates AREA type; anything smaller falls back to
+    // POINT type at the press point (so a 0-size or accidental micro-drag never
+    // makes a degenerate frame).
+    finishAreaCreate() {
+      const te = this.app && this.app.textEdit;
+      const ac = this._areaCreate;
+      this._areaCreate = null;
+      if (!te || !ac) return;
+      const w = Math.abs(ac.curX - ac.x0);
+      const h = Math.abs(ac.curY - ac.y0);
+      // Minimum usable frame (world mm) — below this a drag reads as a click.
+      const MIN_FRAME = 4;
+      let created = null;
+      if (ac.dragging && w >= MIN_FRAME && h >= MIN_FRAME) {
+        created = te.beginNewAtArea(ac.x0, ac.y0, ac.curX, ac.curY);
+      } else {
+        created = te.beginNewAt(ac.x0, ac.y0);
+      }
+      if (created) this.selectLayer(created);
       this.draw();
     }
 
@@ -3991,6 +4044,78 @@
         this.ctx.closePath();
         this.ctx.fill();
       }
+      this.ctx.restore();
+    }
+
+    // Draw the AREA-type frame rectangle (thin outline) for the layer currently
+    // being edited OR the selected area layer. Point type draws no frame. The ctx
+    // is already in world space (the overlay pass), so the engine-transformed
+    // world corners (layer.textFrame) draw directly.
+    //
+    // TODO(area-type, deferred): frame RESIZE-reflow. Add drag handles on the four
+    // corners/edges of layer.textFrame here (mirror drawShapeCornerHandles); on
+    // drag, write params.frameWidth/frameHeight (local mm = handle delta / scale)
+    // and regenerate so the text re-wraps live. Also deferred: an overset red "+"
+    // indicator when laid height exceeds frameHeight (+ threading), and a
+    // point↔area conversion widget. Web-font area editing stays gated in
+    // TextEditController.canMutate.
+    drawTextFrame() {
+      const layer = this._areaFrameLayer();
+      if (!layer) return;
+      const f = layer.textFrame;
+      this.ctx.save();
+      this.ctx.strokeStyle = getThemeToken('--render-selection-handle-stroke', '#60a5fa');
+      this.ctx.lineWidth = Math.max(0.3, 1 / this.scale);
+      this.ctx.beginPath();
+      this.ctx.moveTo(f[0].x, f[0].y);
+      for (let i = 1; i < f.length; i += 1) this.ctx.lineTo(f[i].x, f[i].y);
+      this.ctx.closePath();
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+
+    // The area-type layer whose frame should be drawn: the actively edited text
+    // layer takes precedence, else a single selected area layer.
+    _areaFrameLayer() {
+      const te = this.app && this.app.textEdit;
+      const active = te && te.getActiveLayer && te.getActiveLayer();
+      const isArea = (l) => l && l.type === 'text' && l.params && l.params.textMode === 'area'
+        && Array.isArray(l.textFrame) && l.textFrame.length === 4;
+      if (isArea(active)) return active;
+      const sel = this.getSelectedLayer ? this.getSelectedLayer() : null;
+      return isArea(sel) ? sel : null;
+    }
+
+    // Live preview during a Type-tool area-frame creation drag: the frame rectangle
+    // plus a W/H readout (document units) near the cursor. Only draws once the drag
+    // passes the threshold (a plain click stays a point-type creation).
+    drawAreaCreatePreview() {
+      const ac = this._areaCreate;
+      if (!ac || !ac.dragging) return;
+      const x = Math.min(ac.x0, ac.curX);
+      const y = Math.min(ac.y0, ac.curY);
+      const w = Math.abs(ac.curX - ac.x0);
+      const h = Math.abs(ac.curY - ac.y0);
+      this.ctx.save();
+      this.ctx.strokeStyle = getThemeToken('--render-selection-handle-stroke', '#60a5fa');
+      this.ctx.lineWidth = Math.max(0.3, 1 / this.scale);
+      this.ctx.setLineDash([4 / this.scale, 3 / this.scale]);
+      this.ctx.strokeRect(x, y, w, h);
+      this.ctx.setLineDash([]);
+      // W/H readout near the cursor. Font/offsets are divided by scale so the text
+      // stays a constant on-screen size regardless of zoom.
+      const label = `${w.toFixed(1)} × ${h.toFixed(1)}`;
+      const fontPx = 12 / this.scale;
+      const pad = 4 / this.scale;
+      this.ctx.font = `${fontPx}px sans-serif`;
+      this.ctx.textBaseline = 'top';
+      const tw = this.ctx.measureText(label).width;
+      const bx = ac.curX + pad;
+      const by = ac.curY + pad;
+      this.ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      this.ctx.fillRect(bx, by, tw + pad * 2, fontPx + pad * 2);
+      this.ctx.fillStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
+      this.ctx.fillText(label, bx + pad, by + pad);
       this.ctx.restore();
     }
 
@@ -4818,6 +4943,14 @@
         this.handleTypeToolDrag(world, e);
         return;
       }
+      // Type-tool area-frame creation drag on empty canvas (distinct from the
+      // within-session range-select `_typeDrag` above).
+      if (this.activeTool === 'type' && this._areaCreate && (e.buttons === undefined || (e.buttons & 1))) {
+        const rect = this.canvas.getBoundingClientRect();
+        const world = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+        this.handleAreaCreateDrag(world, e);
+        return;
+      }
       if (this.activeTool === 'fill' || this.activeTool === 'fill-erase') {
         const rect = this.canvas.getBoundingClientRect();
         // `move` is wired to the window, so it fires even after the cursor
@@ -5296,6 +5429,14 @@
 
     up(e = {}) {
       if (!this.ready || !this.canvas) return;
+      // Commit a Type-tool empty-canvas creation gesture: drag → area frame,
+      // click → point type. Runs before other up() handling and consumes the event.
+      if (this.activeTool === 'type' && this._areaCreate) {
+        this.finishAreaCreate();
+        this.removeTouchPointer(e);
+        this.activePointerId = null;
+        return;
+      }
       // End any active Type-tool press-drag (the selection is already applied).
       this._typeDrag = null;
       this.lastPourLoopId = null;

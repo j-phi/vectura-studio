@@ -320,13 +320,27 @@
       return { g, cScaleX, cScaleY, cDY, isSpace: ch === ' ' };
     };
 
-    // Tokenise the input into lines, applying wrapWidth-gated hyphenation/soft-wrap.
+    // A char's laid-out advance in FONT UNITS (used by wrap measurement + below).
+    const advFU = (ch) => {
+      const r = resolveChar(ch);
+      return r.g.w * sx * hScale * r.cScaleX + tracking + kerning;
+    };
+
+    // Tokenise the input into lines. Two wrap modes are mutually exclusive:
+    //   • AREA type (areaWrap): word-level wrap at the frame width with EXACT raw
+    //     sourceIndex tracking (no synthetic hyphen), so on-canvas editing indexes
+    //     the raw string correctly across every wrap boundary. `areaStart[i]` is
+    //     the raw-string index of the first character rendered on visual line i.
+    //   • legacy soft-wrap (hyphenate + wrapWidth): greedy break with a mid-word
+    //     hyphen; reflow breaks the raw→cell mapping, so it stays non-editable.
     let rawLines = String(text == null ? '' : text).split('\n');
-    if (opt.hyphenate === true && wrapWidthFU > 0) {
-      rawLines = softWrap(rawLines, wrapWidthFU - indentLeft - indentRight, (ch) => {
-        const r = resolveChar(ch);
-        return r.g.w * sx * hScale * r.cScaleX + tracking + kerning;
-      });
+    let areaStart = null;
+    if (opt.areaWrap === true && wrapWidthFU > 0) {
+      const wrapped = areaWrap(String(text == null ? '' : text), wrapWidthFU - indentLeft - indentRight, advFU);
+      rawLines = wrapped.lines;
+      areaStart = wrapped.starts;
+    } else if (opt.hyphenate === true && wrapWidthFU > 0) {
+      rawLines = softWrap(rawLines, wrapWidthFU - indentLeft - indentRight, advFU);
     }
 
     // A char's laid-out advance (font units).
@@ -349,11 +363,17 @@
     // Per-character cell source offsets (M1 seam). `cells` runs dense over the
     // RAW input string (one entry per char incl. spaces / zero-stroke glyphs);
     // sourceIndex accounts for the '\n' between lines (a newline consumes an
-    // index but produces no cell). NOTE: when hyphenate+wrapWidth reflows lines,
-    // rawLines no longer maps 1:1 to the source string, so sourceIndex degrades
-    // to the post-wrap layout offset — hit-testing is a soft-wrap edge case.
+    // index but produces no cell). For AREA type (areaStart present) the exact
+    // raw-string index of each visual line's first char is used, so `sourceIndex`
+    // stays exact across every soft-wrap boundary (a wrapped line is a contiguous
+    // slice of the source with only the single break space dropped). NOTE: when
+    // the legacy hyphenate+wrapWidth soft-wrap reflows lines, rawLines no longer
+    // maps 1:1 to the source string, so sourceIndex degrades to the post-wrap
+    // layout offset — hit-testing is a soft-wrap edge case (area type is exact).
     const lineStart = [];
-    {
+    if (areaStart) {
+      for (let i = 0; i < lineCells.length; i++) lineStart[i] = areaStart[i] || 0;
+    } else {
       let accIdx = 0;
       for (let i = 0; i < lineCells.length; i++) {
         lineStart[i] = accIdx;
@@ -479,6 +499,53 @@
       flush();
     }
     return out;
+  };
+
+  // Area-type word-wrap with EXACT raw sourceIndex tracking. Greedy line-fill by
+  // word: a soft break happens at the last space that fits, and that ONE space is
+  // consumed (dropped from both lines) so each visual line is a CONTIGUOUS slice
+  // of the source — the property that keeps `lineStart[li] + ci` an exact raw
+  // index. A hard '\n' ends the line and is consumed (+1). A single word wider
+  // than the column has no break candidate, so it OVERFLOWS the column width
+  // (documented choice) rather than inserting a synthetic hyphen char (which is
+  // absent from the source and would desync sourceIndex). Returns
+  //   { lines: string[], starts: number[] }  where starts[i] is the raw
+  // code-point index of lines[i]'s first character.
+  const areaWrap = (text, maxFU, advOf) => {
+    const chars = Array.from(String(text == null ? '' : text));
+    const n = chars.length;
+    const lines = [];
+    const starts = [];
+    let lineStart = 0;   // code-point index of the current line's first char
+    let i = 0;
+    let width = 0;       // measured advance of the current line so far
+    let lastSpace = -1;  // code-point index of the most recent space on the line
+    const emit = (endExclusive) => {
+      lines.push(chars.slice(lineStart, endExclusive).join(''));
+      starts.push(lineStart);
+    };
+    while (i < n) {
+      const ch = chars[i];
+      if (ch === '\n') {           // hard break: end the line, consume the newline
+        emit(i);
+        lineStart = i + 1; i = i + 1; width = 0; lastSpace = -1;
+        continue;
+      }
+      const adv = advOf(ch);
+      if (width + adv > maxFU && i > lineStart && lastSpace > lineStart) {
+        // Overflow with a break candidate: wrap at the last space, consume it, and
+        // re-flow everything after it onto the next line.
+        emit(lastSpace);
+        lineStart = lastSpace + 1; i = lineStart; width = 0; lastSpace = -1;
+        continue;
+      }
+      // No break candidate (single long word) → let it overflow; keep advancing.
+      if (ch === ' ' || ch === '\t') lastSpace = i;
+      width += adv;
+      i += 1;
+    }
+    emit(n); // final (possibly empty) line
+    return { lines, starts };
   };
 
   Vectura.StrokeFont = {

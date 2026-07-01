@@ -112,6 +112,22 @@
     }
 
     /**
+     * Create a new AREA-type text layer for a Type-tool click-drag rectangle and
+     * begin editing it. Mirrors beginNewAt (point type) but routes through the
+     * host's createAreaTextLayerAt hook with the drag rect corners; the resulting
+     * layer word-wraps typed text inside the frame.
+     */
+    beginNewAtArea(x0, y0, x1, y1) {
+      if (typeof this.host.createAreaTextLayerAt !== 'function') return null;
+      const layer = this.host.createAreaTextLayerAt(x0, y0, x1, y1);
+      if (!layer || layer.type !== 'text') return null;
+      if (!this.begin(layer, 0)) return null;
+      // Tag as created-this-session so an empty session end discards it (M6).
+      this._createdLayer = layer;
+      return layer;
+    }
+
+    /**
      * End the session: clear `_edit`, stop blink, detach keys. The panel
      * specimen is SUPPRESSED during a session (to avoid two editors fighting
      * over `params.text`); `refreshPanel` is called here so it re-syncs to the
@@ -205,6 +221,14 @@
     _emptyBoxCaretSegment() {
       const layer = this.layer;
       const p = (layer && layer.params) || {};
+      // Area box: anchor the first-line caret at the frame's world top-left corner
+      // (the engine-transformed sidecar), descending one cap-height to the
+      // baseline. This is where the first glyph will land in a wrapped frame.
+      if (p.textMode === 'area' && Array.isArray(layer.textFrame) && layer.textFrame.length === 4) {
+        const tl = layer.textFrame[0];
+        const size = Math.max(1, Number(p.fontSize) || 40);
+        return { x0: tl.x, y0: tl.y, x1: tl.x, y1: tl.y + size };
+      }
       const origin = (layer && layer.origin) || { x: 0, y: 0 };
       const posX = Number(p.posX) || 0;
       const posY = Number(p.posY) || 0;
@@ -339,8 +363,15 @@
       const p = (layer && layer.params) || {};
       const GF = Vectura.GoogleFonts;
       const isWeb = !!(GF && GF.isWebFontKey && GF.isWebFontKey(p.font));
+      // Web (shaped) faces may ligate → sourceIndex degrades. Blocked in every
+      // mode (area type on web fonts is out of scope / deferred).
+      if (isWeb) return false;
+      // AREA type on a built-in stroke face uses exact-sourceIndex word-wrap (no
+      // synthetic hyphen), so wrapped editing is safe — allow it.
+      if (p.textMode === 'area') return true;
+      // Point type: only the legacy hyphenate soft-wrap reflows the offset.
       const softWrap = p.hyphenate === true && Number(p.wrapWidth) > 0;
-      return !(isWeb || softWrap);
+      return !softWrap;
     }
 
     // ── Editing — mutations ────────────────────────────────────────────────

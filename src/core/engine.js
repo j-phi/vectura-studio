@@ -1255,6 +1255,10 @@
       // display-space quads. Carried through the SAME transform() as the paths so
       // they land in WORLD space; recomputed every generate(), never serialized.
       const glyphsSidecar = Array.isArray(rawPaths.glyphs) ? rawPaths.glyphs : null;
+      // Area-type frame (text algorithm sidecar): four corner points in display
+      // space, carried through the SAME transform() as the paths so the rectangle
+      // lands in WORLD space. Recomputed every generate(), never serialized.
+      const frameSidecar = Array.isArray(rawPaths.textFrame) ? rawPaths.textFrame : null;
       // For shape layers the rebuild already baked smoothing/simplify into anchors;
       // zero the render-time pass so we don't double-apply on the resampled polyline.
       const isShape = usesManualSourceGeometry(layer);
@@ -1493,6 +1497,7 @@
       layer.helperPaths = helperTransformed;
       layer.maskPolygons = transformedMaskPolygons;
       layer.glyphs = transformedGlyphs;
+      layer.textFrame = frameSidecar ? frameSidecar.map((pt) => transform(pt)) : null;
       this.computeAllDisplayGeometry();
     }
 

@@ -60,4 +60,30 @@ describe('Type tool on-canvas layer creation (BUG 2a)', () => {
       app.textEdit.end();
     }
   });
+
+  test('typing pushes text RIGHT of the insertion point — earlier glyphs never move left', () => {
+    // Left-aligned point text created by the Type tool must grow rightward from
+    // the click: the empty-box caret marks where the first glyph's left edge lands,
+    // and that edge stays put as more characters are appended.
+    const clickX = 140;
+    const layer = app.textEdit.beginNewAt(clickX, 100);
+    try {
+      // Empty box: the caret marks the pen origin (the initial flashing bar).
+      const emptyCaret = app.textEdit.getCaretSegment();
+      expect(emptyCaret).toBeTruthy();
+      const caretX = emptyCaret.x0;
+
+      app.textEdit.insertText('A');
+      const leftAfterA = layer.glyphs[0].quad[0].x;
+      // The first glyph's left edge lands exactly where the empty caret was.
+      expect(leftAfterA).toBeCloseTo(caretX, 3);
+
+      app.textEdit.insertText('long the way');
+      const leftAfterMore = layer.glyphs[0].quad[0].x;
+      // Appending more text does NOT drag the first glyph left.
+      expect(leftAfterMore).toBeCloseTo(leftAfterA, 3);
+    } finally {
+      app.textEdit.end();
+    }
+  });
 });

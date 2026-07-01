@@ -1333,6 +1333,13 @@
       preset: 'text-default',
       text: 'Vectura',
       font: 'google:inter',
+      // Type-layout mode (Illustrator-style). 'point' = classic auto-sized box
+      // (default; all historical layers/files behave as before). 'area' = a fixed
+      // frame the text word-wraps inside; frameWidth/frameHeight (mm, local space)
+      // define the frame and only carry meaning in area mode.
+      textMode: 'point',
+      frameWidth: 0,
+      frameHeight: 0,
       fontSize: 40,
       tracking: 0,
       lineHeight: 1.4,

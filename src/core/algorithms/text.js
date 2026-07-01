@@ -156,8 +156,16 @@
       const Font = Vectura.StrokeFont;
       if (!Font) return [];
       const raw = p.text == null ? '' : String(p.text);
-      // An all-empty string yields nothing to plot.
-      if (!raw.replace(/\n/g, '').trim()) return [];
+      // Area type (Illustrator-style): text word-wraps inside a fixed frame. The
+      // frame (mm, local space) drives the layout wrap width and is emitted as a
+      // sidecar so the renderer can draw it — even for an EMPTY box (so a freshly
+      // dragged area frame is visible with just a caret). Point type is unchanged.
+      const frameW = Math.max(0, finite(p.frameWidth, 0));
+      const frameH = Math.max(0, finite(p.frameHeight, 0));
+      const isArea = p.textMode === 'area' && frameW > 0;
+      // An all-empty string yields nothing to plot — except an area box, which
+      // still emits its frame + (empty) glyph sidecar.
+      if (!isArea && !raw.replace(/\n/g, '').trim()) return [];
       // allCaps uppercases the whole string before layout (independent of the
       // synthesized smallCaps option, which lowercases-as-small-uppercase).
       const str = p.allCaps === true ? raw.toUpperCase() : raw;
@@ -223,32 +231,81 @@
           laid = Font.layout(str, { size, tracking, lineHeight, align, font: 'sans', ...synOpts });
         }
       } else {
-        laid = Font.layout(str, { size, tracking, lineHeight, align, font: p.font || 'sans', ...synOpts });
+        laid = Font.layout(str, {
+          size, tracking, lineHeight, align, font: p.font || 'sans',
+          // Area type drives the wrap width from the frame; areaWrap keeps
+          // sourceIndex exact (word-level break, no synthetic hyphen).
+          wrapWidth: isArea ? frameW : 0, areaWrap: isArea,
+          ...synOpts,
+        });
       }
       const paths = laid.paths;
       const laidAnchors = isOutline && wantBezier ? laid.anchors : null;
-      if (!paths.length) return [];
+      // Empty area boxes have no paths but must still emit their frame + glyph
+      // sidecars, so only bail early for non-area layers.
+      if (!paths.length && !isArea) return [];
 
-      // True bounding box of the rendered strokes (mm).
-      let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
-      for (const path of paths) {
-        for (const pt of path) {
-          if (pt.x < minX) minX = pt.x;
-          if (pt.x > maxX) maxX = pt.x;
-          if (pt.y < minY) minY = pt.y;
-          if (pt.y > maxY) maxY = pt.y;
+      // Block reference box (mm). Point type centres on the rendered-stroke bbox
+      // so it re-centres as text changes. AREA type instead anchors to the FIXED
+      // frame (centred on the frame rect, top-left at layout 0,0), so the text
+      // stays top-left-anchored in the frame regardless of how much is typed — and
+      // an empty box (no strokes) still has a well-defined placement.
+      let blockW; let blockH; let blockCx; let blockCy;
+      if (isArea) {
+        blockW = Math.max(1e-3, frameW);
+        blockH = Math.max(1e-3, frameH);
+        blockCx = frameW / 2;
+        blockCy = frameH / 2;
+      } else {
+        let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+        for (const path of paths) {
+          for (const pt of path) {
+            if (pt.x < minX) minX = pt.x;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y;
+            if (pt.y > maxY) maxY = pt.y;
+          }
+        }
+        blockW = Math.max(1e-3, maxX - minX);
+        blockH = Math.max(1e-3, maxY - minY);
+        blockCy = (minY + maxY) / 2;
+        blockCx = (minX + maxX) / 2;
+        // Absolute-size point text anchors on its ALIGNMENT edge (Illustrator-
+        // style): the on-canvas Type tool creates layers with align:'left',
+        // fitToFrame:false, so pinning the block's LEFT edge to the display
+        // reference keeps that edge fixed as text is typed — the string grows
+        // rightward and never shoves earlier glyphs left. Right/justify-right pin
+        // the RIGHT edge (grows leftward). Fit-to-frame text stays CENTRED (it is
+        // scaled to fill the frame, so re-centring is the intended behaviour), as
+        // does the historical centre default. Vertical anchor stays centred so a
+        // single line matches the empty-box caret's vertical midpoint.
+        //
+        // The edge is taken from the LAYOUT CELL box (pen advance), not the ink
+        // bbox: cell.x0 of the first slot is the pen origin — exactly where the
+        // empty-box caret sits — so the caret and first glyph stay continuous, and
+        // the anchor is immune to per-glyph side bearings (a changing first/last
+        // character would drift an ink-bbox anchor). Falls back to the ink centre
+        // when a face emits no cells (headless monoline).
+        const anchorLeft = align === 'left' || align === 'justify-left';
+        const anchorRight = align === 'right' || align === 'justify-right';
+        const cellsForAnchor = Array.isArray(laid.cells) ? laid.cells : [];
+        if (p.fitToFrame === false && (anchorLeft || anchorRight) && cellsForAnchor.length) {
+          let edge = anchorLeft ? Infinity : -Infinity;
+          for (const c of cellsForAnchor) {
+            if (anchorLeft) { if (c.x0 < edge) edge = c.x0; }
+            else if (c.x1 > edge) edge = c.x1;
+          }
+          if (Number.isFinite(edge)) blockCx = edge;
         }
       }
-      const blockW = Math.max(1e-3, maxX - minX);
-      const blockH = Math.max(1e-3, maxY - minY);
-      const blockCx = (minX + maxX) / 2;
-      const blockCy = (minY + maxY) / 2;
 
       const { m, dW, dH } = bounds;
       // Fit-to-frame scales the whole block to the display area (the fontSize
       // slider then only sets relative proportions); absolute mode keeps mm size.
+      // Area type is ALWAYS absolute (constant point size — the frame wraps, it
+      // does not rescale the glyphs).
       let scale = 1;
-      if (p.fitToFrame !== false) {
+      if (!isArea && p.fitToFrame !== false) {
         const fillR = clamp(finite(p.fillRatio, 0.9), 0.1, 1);
         scale = (Math.min(dW / blockW, dH / blockH) || 1) * fillR;
       }
@@ -407,10 +464,12 @@
         // display contour (index-aligned with laidAnchors) when a glyph has none.
         const fillRegions = [];
         const fillKeys = [];
+        let anyCoarse = false;
         contours.forEach((c, ci) => {
           if (!c || c.length < 3) return;
           const a = laidAnchors ? laidAnchors[ci] : null;
           const fine = (a && a.length >= 2) ? flattenAnchorsForFill(a, ci) : null;
+          if (!fine) anyCoarse = true;
           // The coarse fallback shares the outline's contour array — copy it so the
           // winding canonicalization below can't reorder the drawn outline.
           fillRegions.push(fine || c.slice());
@@ -429,10 +488,18 @@
           if (!arr) { arr = []; byGlyph.set(fillKeys[i], arr); }
           arr.push(r);
         });
-        // eps = 2× the flatten tolerance: enough to absorb a thin-wall counter
-        // vertex sitting just outside the shell's inward-bowed chords, far less
-        // than any real overlapping sibling pokes out.
-        byGlyph.forEach((group) => canonicalizeFillWinding(group, FILL_FLATTEN_TOL * 2));
+        // Winding-canonicalization eps must absorb a thin-wall counter vertex that
+        // sits just outside its shell's inward-bowed chords. The bound is 2× the
+        // chord sagitta, which equals the flatten tolerance of whichever geometry
+        // the fill used: FILL_FLATTEN_TOL (display) for the anchor path, but the
+        // COARSE fallback is flattened in layout space at laid.flattenTol, whose
+        // DISPLAY sagitta = flattenTol·scale GROWS with size — so a large glyph
+        // rendered without bézier anchors (bezierOutline off / jitter / small-caps)
+        // needs a bigger eps or its counters would flood. Real overlapping siblings
+        // poke out by far more than this, so the sibling fix is preserved.
+        const coarseSag = anyCoarse ? (finite(laid.flattenTol, 0) * scale) : 0;
+        const winEps = 2 * Math.max(FILL_FLATTEN_TOL, coarseSag);
+        byGlyph.forEach((group) => canonicalizeFillWinding(group, winEps));
         if (fillRegions.length) {
           const insetOn = p.fillInsetEnabled === true;
           // Fill Offset is a literal mm translation of the fill WINDOW: slide the
@@ -974,12 +1041,27 @@
         });
       }
 
-      if (!out.length) return [];
+      // Area frame outline (mm, layout space → display space via txPt): a thin
+      // rectangle [0,0]–[frameW,frameH] carried as a sidecar so the engine
+      // transforms it to world space alongside the glyphs and the renderer can
+      // draw it. Emitted for every area box, including an empty one.
+      const textFrame = isArea
+        ? [
+            { x: 0, y: 0 },
+            { x: frameW, y: 0 },
+            { x: frameW, y: frameH },
+            { x: 0, y: frameH },
+          ].map((c) => txPt(c))
+        : null;
 
-      // The editor glyph cells ride as a sidecar on the returned array (mirrors
-      // out.helpers / out.maskPolygons elsewhere). The plot-order resort below
-      // builds a fresh array, so re-attach the sidecar to whatever is returned.
-      const attachGlyphs = (arr) => { arr.glyphs = glyphs; return arr; };
+      // The editor glyph cells + area frame ride as sidecars on the returned array
+      // (mirrors out.helpers / out.maskPolygons elsewhere). The plot-order resort
+      // below builds a fresh array, so re-attach the sidecars to whatever returns.
+      const attachGlyphs = (arr) => { arr.glyphs = glyphs; if (textFrame) arr.textFrame = textFrame; return arr; };
+
+      // An empty area box (frame + caret, no ink) still returns its sidecars so the
+      // frame draws; every other empty result plots nothing.
+      if (!out.length) return isArea ? attachGlyphs(out) : [];
 
       // ── Plot order ────────────────────────────────────────────────────────
       // Default to drawing left-to-right so the pen advances across the line with
