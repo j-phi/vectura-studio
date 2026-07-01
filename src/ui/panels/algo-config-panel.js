@@ -154,398 +154,14 @@
       this._imageSourcePopoutEl.remove();
       this._imageSourcePopoutEl = null;
     }
-    const paintBucketSection = getEl('left-section-paint-bucket', { silent: true });
-    const paintBucketActive = this.activeTool === 'fill' || this.activeTool === 'fill-erase';
-    if (paintBucketActive) {
-      this._showWelcomePanel(false);
-      const algoSec = getEl('left-section-algorithm', { silent: true });
-      const algoConfSec = getEl('left-section-algorithm-configuration', { silent: true });
-      const multiSel = getEl('left-section-multi-selection', { silent: true });
-      const multiInfo = getEl('left-section-multi-info', { silent: true });
-      const multiXform = getEl('left-section-multi-transform', { silent: true });
-      const multiPf = getEl('left-section-multi-pathfinder', { silent: true });
-      if (algoSec) algoSec.style.display = 'none';
-      if (algoConfSec) algoConfSec.style.display = 'none';
-      if (multiSel) multiSel.style.display = 'none';
-      if (multiInfo) multiInfo.style.display = 'none';
-      if (multiXform) multiXform.style.display = 'none';
-      if (multiPf) multiPf.style.display = 'none';
-      if (paintBucketSection) {
-        // CSS-10: drop the initial-state `.is-hidden` utility class before
-        // letting inline style govern visibility (the class is `!important`).
-        paintBucketSection.classList.remove('is-hidden');
-        paintBucketSection.style.display = '';
-      }
-      this.app?.ui?.refreshPaintBucketPanel?.();
-      restoreLeftPanelScroll();
-      return;
-    }
-    if (paintBucketSection) paintBucketSection.style.display = 'none';
-    if (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
-      this._showWelcomePanel(false);
-      const algoSec = getEl('left-section-algorithm', { silent: true });
-      const algoConfSec = getEl('left-section-algorithm-configuration', { silent: true });
-      if (algoSec) algoSec.style.display = 'none';
-      if (algoConfSec) algoConfSec.style.display = 'none';
-      this._buildPatternFillPanel(container);
-      restoreLeftPanelScroll();
-      return;
-    }
-
-    // Multi-selection: show four sibling subpanels (Multiple Selection / Transform
-    // / Align / Pathfinder), each rendered as a top-level .left-panel-section so
-    // each picks up the accent-bar treatment. The transform/seed inputs are
-    // relocated into the Transform subpanel; the description goes in the
-    // Multiple-Selection subpanel. Single-selection restoration moves the
-    // transform section back to its home inside #left-section-algorithm-body.
-    const multiSelectedLayers = (this.app.renderer?.getSelectedLayers?.() || []);
-    const isMultiSelection = multiSelectedLayers.length > 1;
-    const algoBodyEl = getEl('left-section-algorithm-body', { silent: true });
-    const moduleLabelEl = getEl('primary-module-label', { silent: true });
-    const moduleLabelWrap = moduleLabelEl?.parentElement || null;
-    const moduleTriggerEl = getEl('generator-module-trigger', { silent: true });
-    const algoAboutEl = getEl('algo-about', { silent: true });
-    const seedControlsEl = getEl('seed-controls', { silent: true });
-    const transformSectionEl = getEl('algorithm-transform-section', { silent: true });
-    const algoSectionEl = getEl('left-section-algorithm', { silent: true });
-    const algoConfigSectionEl = getEl('left-section-algorithm-configuration', { silent: true });
-    const primaryTitleEl = getEl('left-section-primary-title', { silent: true });
-    const multiInfoSection = getEl('left-section-multi-info', { silent: true });
-    const multiInfoBody = getEl('left-section-multi-info-body', { silent: true });
-    const multiTransformSection = getEl('left-section-multi-transform', { silent: true });
-    const multiTransformBody = getEl('left-section-multi-transform-body', { silent: true });
-    const multiPathfinderSection = getEl('left-section-multi-pathfinder', { silent: true });
-    const existingMultiNotice = document.querySelector('[data-multi-selection-notice]');
-    if (existingMultiNotice) existingMultiNotice.remove();
-
-    const multiSelSection = getEl('left-section-multi-selection', { silent: true });
-    if (isMultiSelection) {
-      this._showWelcomePanel(false);
-      if (algoSectionEl) algoSectionEl.style.display = 'none';
-      if (algoConfigSectionEl) algoConfigSectionEl.style.display = 'none';
-      // CSS-10: each of these four sections begins life with `.is-hidden`
-      // (display:none !important). Strip the class on first reveal so the
-      // subsequent inline style.display='' actually unhides them.
-      if (multiSelSection) { multiSelSection.classList.remove('is-hidden'); multiSelSection.style.display = ''; }
-      if (multiInfoSection) { multiInfoSection.classList.remove('is-hidden'); multiInfoSection.style.display = ''; }
-      if (multiTransformSection) { multiTransformSection.classList.remove('is-hidden'); multiTransformSection.style.display = ''; }
-      if (multiPathfinderSection) { multiPathfinderSection.classList.remove('is-hidden'); multiPathfinderSection.style.display = ''; }
-      if (primaryTitleEl) primaryTitleEl.textContent = 'Algorithm';
-      if (moduleLabelWrap) moduleLabelWrap.style.display = '';
-      if (moduleTriggerEl) moduleTriggerEl.style.display = '';
-      if (algoAboutEl) algoAboutEl.style.display = '';
-      if (seedControlsEl) seedControlsEl.style.display = 'none';
-
-      // Relocate the Transform section into the multi-Transform subpanel body
-      // (its single-selection home is back inside #left-section-algorithm-body).
-      if (transformSectionEl && multiTransformBody && transformSectionEl.parentElement !== multiTransformBody) {
-        multiTransformBody.appendChild(transformSectionEl);
-      }
-      if (transformSectionEl) {
-        transformSectionEl.style.display = '';
-        // Force the Transform's inner global-section body open — the outer
-        // .left-panel-section header now drives collapse for the whole subpanel.
-        transformSectionEl.classList.remove('collapsed');
-        const innerHeader = getEl('algorithm-transform-header', { silent: true });
-        if (innerHeader) innerHeader.style.display = 'none';
-        const innerBody = getEl('algorithm-transform-body', { silent: true });
-        if (innerBody) {
-          // CSS-10: strip initial `.is-hidden` class before unhiding.
-          innerBody.classList.remove('is-hidden');
-          innerBody.style.display = '';
-        }
-      }
-
-      const notice = document.createElement('p');
-      notice.dataset.multiSelectionNotice = 'true';
-      notice.className = 'text-xs text-vectura-muted leading-relaxed';
-      notice.textContent = `${multiSelectedLayers.length} layers selected. Select a single layer to edit its parameters. Transform changes below apply to all selected layers.`;
-      if (multiInfoBody) {
-        multiInfoBody.innerHTML = '';
-        multiInfoBody.appendChild(notice);
-      }
-      this.app?.ui?.refreshAlignPanel?.();
-      this.app?.ui?.refreshPathfinderPanel?.();
-
-      const sharedValue = (getter) => {
-        let v = null;
-        for (let i = 0; i < multiSelectedLayers.length; i++) {
-          const cur = getter(multiSelectedLayers[i]);
-          if (i === 0) v = cur;
-          else if (cur !== v) return null;
-        }
-        return v;
-      };
-      const formatPosShared = (v) => (v == null ? '' : (typeof this.formatDocumentNumber === 'function'
-        ? this.formatDocumentNumber(v, { trimTrailingZeros: true })
-        : v));
-      const posXEl = getEl('inp-pos-x');
-      const posYEl = getEl('inp-pos-y');
-      const scaleXEl = getEl('inp-scale-x');
-      const scaleYEl = getEl('inp-scale-y');
-      const rotEl = getEl('inp-rotation');
-      const applyShared = (el, value, formatter) => {
-        if (!el) return;
-        el.value = value == null ? '' : (formatter ? formatter(value) : value);
-        el.placeholder = value == null ? 'Multiple' : '';
-      };
-      applyShared(posXEl, sharedValue((l) => l.params?.posX ?? null), formatPosShared);
-      applyShared(posYEl, sharedValue((l) => l.params?.posY ?? null), formatPosShared);
-      applyShared(scaleXEl, sharedValue((l) => l.params?.scaleX ?? null));
-      applyShared(scaleYEl, sharedValue((l) => l.params?.scaleY ?? null));
-      applyShared(rotEl, sharedValue((l) => l.params?.rotation ?? null));
-
-      restoreLeftPanelScroll();
-      return;
-    }
-
-    // Single-selection: restore any chrome a prior multi-selection pass hid.
-    if (algoSectionEl) algoSectionEl.style.display = '';
-    if (multiSelSection) multiSelSection.style.display = 'none';
-    if (multiInfoSection) multiInfoSection.style.display = 'none';
-    if (multiTransformSection) multiTransformSection.style.display = 'none';
-    if (multiPathfinderSection) multiPathfinderSection.style.display = 'none';
-    if (primaryTitleEl) primaryTitleEl.textContent = 'Algorithm';
-    if (moduleLabelWrap) moduleLabelWrap.style.display = '';
-    if (moduleTriggerEl) moduleTriggerEl.style.display = '';
-    if (algoAboutEl) algoAboutEl.style.display = '';
-    if (seedControlsEl) seedControlsEl.style.display = '';
-    // Return the Transform section to its single-selection home (last child of
-    // #left-section-algorithm-body) and restore its inner header so the nested
-    // global-section collapse works again.
-    if (transformSectionEl && algoBodyEl && transformSectionEl.parentElement !== algoBodyEl) {
-      algoBodyEl.appendChild(transformSectionEl);
-    }
-    const innerXformHeader = getEl('algorithm-transform-header', { silent: true });
-    if (innerXformHeader) innerXformHeader.style.display = '';
-    ['inp-pos-x', 'inp-pos-y', 'inp-scale-x', 'inp-scale-y', 'inp-rotation'].forEach((id) => {
-      const el = getEl(id, { silent: true });
-      if (el && el.placeholder) el.placeholder = '';
-    });
-    const layer = this.app.engine.getActiveLayer();
-    if (!layer) {
-      this._showWelcomePanel(true);
-      restoreLeftPanelScroll();
-      return;
-    }
-    this._showWelcomePanel(false);
-    this.ensurePatternLayerSelection(layer);
-
-    const moduleSelect = getEl('generator-module');
-    const seed = getEl('inp-seed');
-    const posX = getEl('inp-pos-x');
-    const posY = getEl('inp-pos-y');
-    const scaleX = getEl('inp-scale-x');
-    const scaleY = getEl('inp-scale-y');
-    const rotation = getEl('inp-rotation');
-    const isGroup = Boolean(layer.isGroup);
-    const isModifier = this.isModifierLayer(layer);
-    const isStatic = Boolean(isGroup || isModifier);
-    const algoSection = getEl('left-section-algorithm', { silent: true });
-    const algoConfigSection = getEl('left-section-algorithm-configuration', { silent: true });
-    const hideAlgoPanels = isGroup && !isModifier;
-    if (algoSection) algoSection.style.display = hideAlgoPanels ? 'none' : '';
-    if (algoConfigSection) algoConfigSection.style.display = hideAlgoPanels ? 'none' : '';
-    if (hideAlgoPanels) {
-      // Pathfinder compound: reveal the Pathfinder panel (lives in the
-      // multi-selection section) so the user can change op type or expand.
-      if (layer.type === 'compound' && multiSelSection) {
-        // CSS-10: strip the initial `.is-hidden` utility before unhiding.
-        multiSelSection.classList.remove('is-hidden');
-        multiSelSection.style.display = '';
-        if (primaryTitleEl) primaryTitleEl.textContent = 'Pathfinder';
-        this.app?.ui?.refreshAlignPanel?.();
-        this.app?.ui?.refreshPathfinderPanel?.();
-      }
-      restoreLeftPanelScroll();
-      return;
-    }
-    this.updatePrimaryPanelMode(layer);
-    if (algoSection) {
-      const _SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
-      if (!_SETTINGS.uiSections) _SETTINGS.uiSections = this.getLeftSectionDefaults();
-      const _algoBody = algoSection.querySelector('.left-panel-section-body');
-      const _algoHdr = algoSection.querySelector('.left-panel-section-header');
-      if (isModifier) {
-        const secs = _SETTINGS.uiSections;
-        const modCollapsed = Object.prototype.hasOwnProperty.call(secs, 'modifierSection')
-          ? secs.modifierSection !== false
-          : true;
-        algoSection.classList.toggle('collapsed', modCollapsed);
-        if (_algoBody) _algoBody.style.display = modCollapsed ? 'none' : '';
-        if (_algoHdr) {
-          _algoHdr.setAttribute('aria-expanded', modCollapsed ? 'false' : 'true');
-          _algoHdr.onclick = () => {
-            const next = !algoSection.classList.contains('collapsed');
-            _SETTINGS.uiSections.modifierSection = next;
-            algoSection.classList.toggle('collapsed', next);
-            if (_algoBody) _algoBody.style.display = next ? 'none' : '';
-            _algoHdr.setAttribute('aria-expanded', next ? 'false' : 'true');
-            this.app.persistPreferencesDebounced?.();
-          };
-        }
-      } else if (_algoHdr) {
-        _algoHdr.onclick = () => {
-          this.setLeftSectionCollapsed('algorithm', !algoSection.classList.contains('collapsed'));
-        };
-      }
-    }
-    this.syncPrimaryModuleDropdown(layer);
-    if (moduleSelect) {
-      if (!isModifier) {
-        Array.from(moduleSelect.options).forEach((opt) => {
-          if (opt.dataset.temp === 'true') opt.remove();
-        });
-        const hasOption = Array.from(moduleSelect.options).some((opt) => opt.value === layer.type);
-        if (!hasOption) {
-          const opt = document.createElement('option');
-          opt.value = layer.type;
-          opt.dataset.temp = 'true';
-          opt.innerText = ALGO_DEFAULTS?.[layer.type]?.label || layer.type;
-          moduleSelect.appendChild(opt);
-        }
-        moduleSelect.value = layer.type;
-        moduleSelect.disabled = isStatic;
-        moduleSelect.classList.toggle('opacity-60', isStatic);
-        this._syncModuleDisplay();
-      }
-    }
-    if (seed) seed.value = layer.params.seed;
-    const formatPos = (v) => (typeof this.formatDocumentNumber === 'function'
-      ? this.formatDocumentNumber(v, { trimTrailingZeros: true })
-      : v);
-    if (posX) posX.value = formatPos(layer.params.posX);
-    if (posY) posY.value = formatPos(layer.params.posY);
-    if (scaleX) scaleX.value = layer.params.scaleX;
-    if (scaleY) scaleY.value = layer.params.scaleY;
-    if (rotation) rotation.value = layer.params.rotation;
-    if (!isModifier) this.toggleSeedControls(layer.type);
-
-    const desc = getEl('algo-desc');
-    if (desc) {
-      desc.innerText = isModifier
-        ? MODIFIER_DESCRIPTIONS?.[this.getModifierState(layer)?.type || 'mirror'] || 'No description available.'
-        : DESCRIPTIONS[layer.type] || 'No description available.';
-    }
-    if (moduleSelect) {
-      const algoLabel = moduleSelect.parentElement?.querySelector('.control-label');
-      if (algoLabel && !algoLabel.querySelector('.info-btn')) {
-        this.attachInfoButton(algoLabel, 'global.algorithm');
-      }
-    }
-
-    const algoDefs = isModifier ? [] : this.controls[layer.type] || [];
-    const commonDefs = COMMON_CONTROLS;
-    const hasConditionalDefs = algoDefs.some((def) => typeof def.showIf === 'function');
-    const hasNoiseConditional = WAVE_NOISE_DEFS.some((def) => typeof def.showIf === 'function');
-    if (!isModifier && !algoDefs.length && !commonDefs.length) {
-      restoreLeftPanelScroll();
-      return;
-    }
-
-    if (isModifier) {
-      const modType = this.getModifierState(layer)?.type;
-      if (modType === 'morph' && window.Vectura.UI.MorphPanel) {
-        window.Vectura.UI.MorphPanel.build(this, layer, container);
-      } else {
-        window.Vectura.UI.MirrorPanel.build(this, layer, container);
-      }
-      restoreLeftPanelScroll();
-      return;
-    }
-
-    // Bespoke tabbed Text panel (synthesis design). Replaces the generic
-    // control list for text layers — same early-return escape hatch the
-    // Mirror/Morph modifier panels use. Inert until ui-text-panel.js loads.
-    if (
-      layer.type === 'text' &&
-      window.Vectura.UI.TextPanel &&
-      typeof window.Vectura.UI.TextPanel.build === 'function'
-    ) {
-      window.Vectura.UI.TextPanel.build(this, layer, container);
-      restoreLeftPanelScroll();
-      return;
-    }
-
-    if (isGroup) {
-      const msg = document.createElement('p');
-      msg.className = 'text-xs text-vectura-muted mb-4';
-      msg.textContent = 'Select a sublayer to edit its parameters.';
-      container.appendChild(msg);
-    } else {
-      this.storeLayerParams(layer);
-    }
-
-    const resetWrap = document.createElement('div');
-    resetWrap.className = 'mb-4 grid grid-cols-2 gap-2';
-    const resetBtn = document.createElement('button');
-    resetBtn.type = 'button';
-    resetBtn.className =
-      'w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-accent transition-colors';
-    resetBtn.textContent = 'Reset to Defaults';
-    resetBtn.onclick = () => {
-      if (this.app.pushHistory) this.app.pushHistory();
-      const transform = this.getDefaultTransformForType(layer.type, layer.params);
-      if (!layer.paramStates) layer.paramStates = {};
-      delete layer.paramStates[layer.type];
-      const base = ALGO_DEFAULTS[layer.type] ? clone(ALGO_DEFAULTS[layer.type]) : {};
-      layer.params = { ...base, ...transform };
-      this.storeLayerParams(layer);
-      this.buildControls();
-      this.app.regen();
-      this.updateFormula();
-    };
-    const randomBtn = document.createElement('button');
-    randomBtn.type = 'button';
-    randomBtn.id = 'btn-randomize-params';
-    randomBtn.className = 'w-full text-xs border px-2 py-2';
-    randomBtn.textContent = 'Randomize';
-    randomBtn.onclick = (e) => {
-      const l = this.app.engine.getActiveLayer();
-      if (!l) return;
-      const rect = randomBtn.getBoundingClientRect();
-      const x = e.clientX || (rect.left + rect.width / 2);
-      const y = e.clientY || (rect.top + rect.height / 2);
-      fireRandSparks(x, y);
-      if (this.app.pushHistory) this.app.pushHistory();
-      this.randomizeLayerParams(l);
-      this.storeLayerParams(l);
-      this.app.regen();
-      this.recenterLayerIfNeeded(l);
-      this.app.render();
-      this.buildControls();
-      this.updateFormula();
-    };
-    resetWrap.appendChild(resetBtn);
-    resetWrap.appendChild(randomBtn);
-    if (!isGroup) container.appendChild(resetWrap);
-
-    const getDefaultValue = (def) => {
-      const defaults = (ALGO_DEFAULTS && ALGO_DEFAULTS[layer.type]) || {};
-      if (def.type === 'rangeDual') {
-        if (
-          Object.prototype.hasOwnProperty.call(defaults, def.minKey) &&
-          Object.prototype.hasOwnProperty.call(defaults, def.maxKey)
-        ) {
-          return { min: defaults[def.minKey], max: defaults[def.maxKey] };
-        }
-        return null;
-      }
-      if (def.id && Object.prototype.hasOwnProperty.call(defaults, def.id)) {
-        return defaults[def.id];
-      }
-      if (def.default !== undefined) return def.default;
-      return null;
-    };
-
-    // The 3D algorithms (spiralizer, polyhedron, topoform, rasterPlane) bake
-    // the Curves toggle into their geometry at GENERATE time — their paths are
-    // stamped `meta.straight` / `meta.forceCurves`, which override the renderer's
-    // draw-time curve smoothing — so toggling Curves must regenerate, not just
-    // re-render, or it has no visible effect.
-    const curvesBakedAtGenerate = (lyr) =>
-      !!(ALGO_DEFAULTS && lyr && ALGO_DEFAULTS[lyr.type] && ALGO_DEFAULTS[lyr.type].is3d);
-
+    // --- Export optimization panel (hoisted) ---------------------------------
+    // These helpers + renderOptimizationPanel are defined here, above the
+    // layer-type early returns below, so the export modal's optimization panel
+    // still renders when the active layer bails out early (Text/Mirror panels,
+    // groups, multi-selection, paint tools). Without this a Text-only document
+    // opened an empty Export settings pane. renderExportOptimizationIfOpen() is
+    // invoked on every early-return path while the modal is open, and once more
+    // at the normal end of buildControls(). See src/ui/modals/export-svg.js.
     const valueEditorMap = new WeakMap();
     const collectValueChips = () =>
       Array.from(container.querySelectorAll('.value-chip')).filter((chip) => chip.offsetParent !== null);
@@ -695,6 +311,1356 @@
       };
     };
 
+    const syncSliderFill = (slider) => {
+      const mn = parseFloat(slider.min) || 0;
+      const mx = parseFloat(slider.max) || 100;
+      const pct = ((parseFloat(slider.value) - mn) / (mx - mn)) * 100;
+      slider.style.setProperty('--fill', pct.toFixed(1) + '%');
+      const wrap = slider.closest('.sld-fx-wrap');
+      if (wrap) wrap.style.setProperty('--fill', pct.toFixed(1) + '%');
+    };
+    const triggerSliderMotion = (slider) => {
+      const m = window.Vectura?.UI?.motion;
+      if (!m) return;
+      const wrap = slider.closest('.sld-fx-wrap');
+      if (wrap && m.triggerSliderPulse) m.triggerSliderPulse(wrap);
+      if (m.triggerThumbRelease) m.triggerThumbRelease(slider);
+    };
+
+    const renderOptimizationPanel = (target) => {
+      if (!target) return;
+      const panel = document.createElement('div');
+      panel.className = 'optimization-panel';
+      panel.innerHTML = '';
+
+      const getTargets = () => {
+        return this.getOptimizationTargets();
+      };
+
+      const normalizeConfig = (config) => {
+        if (!config) return null;
+        if (!Array.isArray(config.steps)) config.steps = [];
+        const defaults = SETTINGS.optimizationDefaults || { bypassAll: false, steps: [] };
+        const defaultSteps = Array.isArray(defaults.steps) ? defaults.steps : [];
+        const defaultMap = new Map(defaultSteps.map((step) => [step.id, step]));
+        config.steps = config.steps.map((step) => ({
+          ...(defaultMap.get(step.id) || {}),
+          ...step,
+        }));
+        defaultSteps.forEach((step) => {
+          if (!config.steps.some((s) => s.id === step.id)) {
+            config.steps.push(clone(step));
+          }
+        });
+        if (config.bypassAll === undefined) config.bypassAll = defaults.bypassAll ?? false;
+        return config;
+      };
+
+      const getStepDefaults = (id) => {
+        const defaults = SETTINGS.optimizationDefaults || { steps: [] };
+        return (defaults.steps || []).find((step) => step.id === id) || {};
+      };
+
+      const isDocumentLengthControl = (def) => def?.displayUnit === 'mm' || /\(mm\)/.test(def?.label || '');
+      const getOptimizationLabel = (label = '') => label.replace(/\(mm\)/g, `(${this.getDocumentUnitLabel()})`);
+      const getOptimizationDisplayConfig = (def) => {
+        if (!isDocumentLengthControl(def)) return getDisplayConfig(def);
+        const config = this.getDocumentLengthConfig({
+          minMm: def.min,
+          maxMm: def.max,
+          stepMm: def.step,
+          precision: def.displayPrecision,
+        });
+        return {
+          min: config.min,
+          max: config.max,
+          step: config.step,
+          unit: config.unitLabel,
+          precision: config.precision,
+        };
+      };
+      const toOptimizationDisplayValue = (def, value) => {
+        if (isDocumentLengthControl(def)) return mmToDocumentUnits(value, this.getDocumentUnits());
+        return toDisplayValue(def, value);
+      };
+      const fromOptimizationDisplayValue = (def, value) => {
+        if (isDocumentLengthControl(def)) return documentUnitsToMm(value, this.getDocumentUnits());
+        return fromDisplayValue(def, value);
+      };
+      const toOptimizationEditorDef = (def) => {
+        if (!isDocumentLengthControl(def)) return def;
+        const display = getOptimizationDisplayConfig(def);
+        return {
+          ...def,
+          displayMin: display.min,
+          displayMax: display.max,
+          displayStep: display.step,
+          displayUnit: display.unit,
+          displayPrecision: display.precision,
+        };
+      };
+
+      const targets = getTargets();
+      const config = targets.length ? normalizeConfig(this.app.engine.ensureLayerOptimization(targets[0])) : null;
+
+      const updateStats = () => {
+        const scopedTargets = getTargets();
+        if (!config || !scopedTargets.length) return;
+        this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true });
+        const before = this.app.engine.computeStats(scopedTargets, { useOptimized: false, includePlotterOptimize: false });
+        const after = this.app.engine.computeStats(scopedTargets, { useOptimized: true, includePlotterOptimize: true });
+        const beforeEl = panel.querySelector('[data-opt-stat="before"]');
+        const afterEl = panel.querySelector('[data-opt-stat="after"]');
+        const formatStats = (stats) =>
+          `Lines ${stats.lines || 0} • Points ${stats.points || 0} • ${stats.distance} • ${stats.time}`;
+        if (beforeEl) beforeEl.textContent = formatStats(before);
+        if (afterEl) afterEl.textContent = formatStats(after);
+      };
+
+      const rerenderOptimizationPreview = () => {
+        const scopedTargets = getTargets();
+        if (!scopedTargets.length) return;
+        this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true });
+        this.app.render();
+        updateStats();
+        if (this.exportModalState?.isOpen) this.renderExportPreview();
+      };
+
+      const applyOptimization = (mutator) => {
+        const scopedTargets = getTargets();
+        if (!scopedTargets.length) return;
+        const scope = SETTINGS.optimizationScope || 'all';
+        const baseConfig = normalizeConfig(this.app.engine.ensureLayerOptimization(scopedTargets[0]));
+        if (mutator) mutator(baseConfig);
+        if (scope !== 'active') {
+          const snapshot = clone(baseConfig);
+          scopedTargets.forEach((layer, idx) => {
+            if (idx === 0) return;
+            layer.optimization = clone(snapshot);
+          });
+          this.app.optimizeLayers(scopedTargets, { config: snapshot, includePlotterOptimize: true });
+        } else {
+          this.app.optimizeLayers(scopedTargets, { config: baseConfig, includePlotterOptimize: true });
+        }
+        this.app.render();
+        updateStats();
+        if (this.exportModalState?.isOpen) this.renderExportPreview();
+      };
+
+      const buildRow = (label, controlEl) => {
+        const row = document.createElement('div');
+        row.className = 'optimization-row';
+        const lab = document.createElement('label');
+        lab.className = 'control-label mb-0';
+        lab.textContent = label;
+        row.appendChild(lab);
+        row.appendChild(controlEl);
+        return row;
+      };
+
+      const scopeSelect = document.createElement('select');
+      scopeSelect.className = 'w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent';
+      scopeSelect.innerHTML = `
+        <option value="active">Active Layer</option>
+        <option value="selected">Selected Layers</option>
+        <option value="all">All Layers</option>
+      `;
+      scopeSelect.value = SETTINGS.optimizationScope || 'all';
+      scopeSelect.onchange = (e) => {
+        SETTINGS.optimizationScope = e.target.value;
+        this.buildControls();
+        this.app.render();
+        if (this.exportModalState?.isOpen) this.renderExportPreview();
+      };
+      panel.appendChild(buildRow('Scope', scopeSelect));
+
+      if ((SETTINGS.optimizationScope || 'all') === 'selected') {
+        const selectedLayers = (this.app.renderer?.getSelectedLayers?.() || []).filter((l) => l && !l.isGroup);
+        const infoEl = document.createElement('div');
+        infoEl.className = 'text-xs px-1 pb-1';
+        if (!selectedLayers.length) {
+          infoEl.classList.add('text-amber-400');
+          infoEl.textContent = 'No layers selected — exporting all layers';
+        } else {
+          infoEl.classList.add('text-vectura-muted');
+          const names = selectedLayers.map((l) => l.name || l.id);
+          const shown = names.slice(0, 3).join(', ');
+          const extra = names.length > 3 ? ` and ${names.length - 3} more` : '';
+          infoEl.textContent = `${selectedLayers.length} selected: ${shown}${extra}`;
+        }
+        panel.appendChild(infoEl);
+      }
+
+      const previewSelect = document.createElement('select');
+      previewSelect.className = 'w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent';
+      previewSelect.innerHTML = `
+        <option value="off">Off</option>
+        <option value="replace">Replace</option>
+        <option value="overlay">Overlay</option>
+      `;
+      previewSelect.value = SETTINGS.lineSortOverlayVisible
+        ? 'overlay'
+        : ((SETTINGS.optimizationPreview || 'off') === 'replace' ? 'replace' : 'off');
+      previewSelect.onchange = (e) => {
+        const mode = e.target.value;
+        // The canvas line-sort overlay is its own (non-persisted) flag so it stays off
+        // by default and is only shown via the eye toggle / this select; 'replace' still
+        // rides optimizationPreview (it swaps the drawn geometry for the optimized paths).
+        SETTINGS.lineSortOverlayVisible = mode === 'overlay';
+        SETTINGS.optimizationPreview = mode === 'replace' ? 'replace' : 'off';
+        this.buildControls();
+        this.app.render();
+        if (this.exportModalState?.isOpen) this.renderExportPreview();
+      };
+      panel.appendChild(buildRow('Preview', previewSelect));
+
+      const exportToggle = document.createElement('input');
+      exportToggle.type = 'checkbox';
+      exportToggle.checked = Boolean(SETTINGS.optimizationExport);
+      exportToggle.onchange = (e) => {
+        const next = Boolean(e.target.checked);
+        SETTINGS.optimizationExport = next;
+        // Master switch: turning Export Optimized off bypasses every step so
+        // the per-step toggles in the sidebar visually deactivate too. Turning
+        // it back on lifts the bypass; per-step `enabled` flags retain their
+        // user-set values.
+        applyOptimization((cfg) => {
+          cfg.bypassAll = !next;
+          cfg.steps = (cfg.steps || []).map((step) => ({ ...step, bypass: !next }));
+        });
+        this.buildControls();
+      };
+      panel.appendChild(buildRow('Export Optimized', exportToggle));
+
+      const getHexComplement = (hex) => {
+        const raw = `${hex || ''}`.trim().replace('#', '');
+        const normalized =
+          raw.length === 3
+            ? raw
+                .split('')
+                .map((c) => `${c}${c}`)
+                .join('')
+            : raw;
+        if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return '#c74307';
+        const r = 255 - parseInt(normalized.slice(0, 2), 16);
+        const g = 255 - parseInt(normalized.slice(2, 4), 16);
+        const b = 255 - parseInt(normalized.slice(4, 6), 16);
+        const toHex = (v) => v.toString(16).padStart(2, '0');
+        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+      };
+
+      const overlayStyleControls = document.createElement('div');
+      overlayStyleControls.className = 'color-thickness-control';
+      const overlayColorPreview = document.createElement('button');
+      overlayColorPreview.type = 'button';
+      overlayColorPreview.className = 'value-chip text-xs text-vectura-accent font-mono color-thickness-pill';
+      overlayColorPreview.textContent = `${(SETTINGS.optimizationOverlayColor || '#38bdf8').toUpperCase()}`;
+      overlayColorPreview.style.background = SETTINGS.optimizationOverlayColor || '#38bdf8';
+      overlayColorPreview.style.color = getContrastTextColor(SETTINGS.optimizationOverlayColor || '#38bdf8');
+      const overlayColorInput = document.createElement('input');
+      overlayColorInput.type = 'color';
+      overlayColorInput.value = SETTINGS.optimizationOverlayColor || '#38bdf8';
+      overlayColorInput.className = 'hidden';
+
+      const overlaySizeControls = document.createElement('div');
+      overlaySizeControls.className = 'color-thickness-size';
+      const overlayWidthConfig = this.getDocumentLengthConfig({ minMm: 0.05, maxMm: 1, stepMm: 0.05 });
+      const overlayWidth = document.createElement('input');
+      overlayWidth.type = 'range';
+      overlayWidth.min = `${overlayWidthConfig.min}`;
+      overlayWidth.max = `${overlayWidthConfig.max}`;
+      overlayWidth.step = `${overlayWidthConfig.step}`;
+      overlayWidth.value = this.formatDocumentNumber(SETTINGS.optimizationOverlayWidth ?? 0.2, { precision: overlayWidthConfig.precision });
+      const overlayWidthInput = document.createElement('input');
+      overlayWidthInput.type = 'number';
+      overlayWidthInput.min = `${overlayWidthConfig.min}`;
+      overlayWidthInput.max = `${overlayWidthConfig.max}`;
+      overlayWidthInput.step = `${overlayWidthConfig.step}`;
+      overlayWidthInput.value = this.formatDocumentNumber(SETTINGS.optimizationOverlayWidth ?? 0.2, { precision: overlayWidthConfig.precision });
+      overlayWidthInput.className =
+        'w-14 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none';
+      const overlayMm = document.createElement('span');
+      overlayMm.className = 'text-[10px] text-vectura-muted';
+      overlayMm.textContent = overlayWidthConfig.unitLabel;
+      overlaySizeControls.appendChild(overlayWidth);
+      overlaySizeControls.appendChild(overlayWidthInput);
+      overlaySizeControls.appendChild(overlayMm);
+
+      const overlayResetBtn = document.createElement('button');
+      overlayResetBtn.type = 'button';
+      overlayResetBtn.className = 'text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted';
+      overlayResetBtn.textContent = 'Reset';
+
+      const applyOverlayStyle = (opts = {}) => {
+        const { color, width, commit = false } = opts;
+        if (commit && this.app.pushHistory) this.app.pushHistory();
+        if (typeof color === 'string' && color) {
+          SETTINGS.optimizationOverlayColor = color;
+          overlayColorPreview.textContent = color.toUpperCase();
+          overlayColorPreview.style.background = color;
+          overlayColorPreview.style.color = getContrastTextColor(color);
+        }
+        if (width !== undefined) {
+          const next = Math.max(0.05, Math.min(1, this.parseDocumentNumber(width, { fallbackMm: SETTINGS.optimizationOverlayWidth ?? 0.2 })));
+          SETTINGS.optimizationOverlayWidth = Number.isFinite(next) ? next : 0.2;
+          const displayWidth = this.formatDocumentNumber(SETTINGS.optimizationOverlayWidth, { precision: overlayWidthConfig.precision });
+          overlayWidth.value = displayWidth;
+          overlayWidthInput.value = displayWidth;
+        }
+        rerenderOptimizationPreview();
+      };
+
+      overlayColorPreview.onclick = () => openColorPickerAnchoredTo(overlayColorInput, overlayColorPreview, { title: 'Overlay Color', uiInstance: this });
+      overlayColorInput.oninput = (e) => applyOverlayStyle({ color: e.target.value });
+      overlayColorInput.onchange = (e) => applyOverlayStyle({ color: e.target.value, commit: true });
+      overlayWidth.oninput = (e) => applyOverlayStyle({ width: e.target.value });
+      overlayWidth.onchange = (e) => applyOverlayStyle({ width: e.target.value, commit: true });
+      overlayWidthInput.oninput = (e) => applyOverlayStyle({ width: e.target.value });
+      overlayWidthInput.onchange = (e) => applyOverlayStyle({ width: e.target.value, commit: true });
+      overlayResetBtn.onclick = () => {
+        applyOverlayStyle({ color: '#38bdf8', width: 0.2, commit: true });
+      };
+
+      const overlayColorField = document.createElement('div');
+      overlayColorField.className = 'style-field';
+      const overlayColorLabel = document.createElement('span');
+      overlayColorLabel.className = 'style-field-label';
+      overlayColorLabel.textContent = 'Line Color';
+      overlayColorField.appendChild(overlayColorLabel);
+      overlayColorField.appendChild(overlayColorPreview);
+      overlayColorField.appendChild(overlayColorInput);
+
+      const overlayThicknessField = document.createElement('div');
+      overlayThicknessField.className = 'style-field';
+      const overlayThicknessLabel = document.createElement('span');
+      overlayThicknessLabel.className = 'style-field-label';
+      overlayThicknessLabel.textContent = 'Line Thickness';
+      overlayThicknessField.appendChild(overlayThicknessLabel);
+      overlayThicknessField.appendChild(overlaySizeControls);
+
+      const overlayResetField = document.createElement('div');
+      overlayResetField.className = 'style-field';
+      const overlayResetLabel = document.createElement('span');
+      overlayResetLabel.className = 'style-field-label';
+      overlayResetLabel.textContent = 'Reset';
+      overlayResetField.appendChild(overlayResetLabel);
+      overlayResetField.appendChild(overlayResetBtn);
+
+      overlayStyleControls.appendChild(overlayColorField);
+      overlayStyleControls.appendChild(overlayThicknessField);
+      overlayStyleControls.appendChild(overlayResetField);
+      const overlayStyleRow = buildRow('Overlay Style', overlayStyleControls);
+      if (!SETTINGS.lineSortOverlayVisible) overlayStyleRow.classList.add('hidden');
+      panel.appendChild(overlayStyleRow);
+
+      const resetBtn = document.createElement('button');
+      resetBtn.type = 'button';
+      resetBtn.className = 'opt-reset';
+      resetBtn.textContent = 'Reset Optimizations';
+      resetBtn.onclick = () => {
+        const defaults = SETTINGS.optimizationDefaults ? clone(SETTINGS.optimizationDefaults) : { bypassAll: false, steps: [] };
+        applyOptimization((cfg) => {
+          cfg.bypassAll = defaults.bypassAll ?? false;
+          cfg.steps = clone(defaults.steps || []);
+        });
+        this.buildControls();
+      };
+      const resetRow = document.createElement('div');
+      resetRow.className = 'optimization-actions';
+      resetRow.appendChild(resetBtn);
+      panel.appendChild(resetRow);
+
+      const stats = document.createElement('div');
+      stats.className = 'optimization-stats';
+      stats.innerHTML = `
+        <div class="optimization-stat-row">
+          <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Before</span>
+          <span class="text-[10px] text-vectura-accent" data-opt-stat="before">Lines 0 • Points 0 • 0m • 0:00</span>
+        </div>
+        <div class="optimization-stat-row">
+          <span class="text-[10px] uppercase tracking-widest text-vectura-muted">After</span>
+          <span class="text-[10px] text-vectura-accent" data-opt-stat="after">Lines 0 • Points 0 • 0m • 0:00</span>
+        </div>
+      `;
+      panel.appendChild(stats);
+
+      if (!config) {
+        target.appendChild(panel);
+        return;
+      }
+
+      const list = document.createElement('div');
+      list.className = 'optimization-list';
+
+      const buildExportSettingsCard = () => {
+        const card = document.createElement('div');
+        card.className = 'optimization-card';
+        card.innerHTML = `
+          <div class="optimization-card-header">
+            <div class="optimization-card-title">
+              <span>Export Settings</span>
+            </div>
+          </div>
+        `;
+        const controlsWrap = document.createElement('div');
+        controlsWrap.className = 'optimization-controls';
+
+        const precisionValue = Math.max(0, Math.min(6, parseInt(SETTINGS.precision, 10) || 3));
+        const precisionControl = document.createElement('div');
+        precisionControl.className = 'optimization-control';
+        precisionControl.innerHTML = `
+          <div class="flex items-center gap-2 mb-1">
+            <label class="control-label mb-0">Precision</label>
+          </div>
+          <div class="slider-row">
+            <div class="sld-fx-wrap">
+              <input type="range" min="0" max="6" step="1" value="${precisionValue}" class="ctrl-slider">
+            </div>
+            <button type="button" class="value-chip">${precisionValue}</button>
+          </div>
+        `;
+        const precisionRange = precisionControl.querySelector('input[type="range"]');
+        const precisionChip = precisionControl.querySelector('.value-chip');
+        if (precisionRange) syncSliderFill(precisionRange);
+        const applyPrecision = (raw, options = {}) => {
+          const { commit = false } = options;
+          if (commit && this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(0, Math.min(6, parseInt(raw, 10) || 3));
+          SETTINGS.precision = next;
+          if (precisionRange) {
+            precisionRange.value = `${next}`;
+            syncSliderFill(precisionRange);
+          }
+          if (precisionChip) precisionChip.textContent = `${next}`;
+          updateStats();
+          if (this.exportModalState?.isOpen) this.renderExportPreview();
+        };
+        if (precisionRange) {
+          precisionRange.oninput = (e) => applyPrecision(e.target.value);
+          precisionRange.onchange = (e) => applyPrecision(e.target.value, { commit: true });
+        }
+        controlsWrap.appendChild(precisionControl);
+
+        const strokeOverrideOn = SETTINGS.strokeWidthOverride === true;
+        const strokeOverrideControl = document.createElement('div');
+        strokeOverrideControl.className = 'optimization-control';
+        strokeOverrideControl.innerHTML = `
+          <div class="flex justify-between mb-1">
+            <label class="control-label mb-0">Export Stroke Override</label>
+            <span class="text-xs text-vectura-accent font-mono">${strokeOverrideOn ? 'ON' : 'OFF'}</span>
+          </div>
+          <label class="sw-toggle" role="switch" aria-checked="${strokeOverrideOn ? 'true' : 'false'}">
+            <input type="checkbox" ${strokeOverrideOn ? 'checked' : ''} />
+            <span class="sw-track"></span>
+            <span class="sw-thumb"></span>
+          </label>
+        `;
+        const strokeOverrideToggle = strokeOverrideControl.querySelector('input');
+        const strokeOverrideState = strokeOverrideControl.querySelector('span');
+        const strokeOverrideSwitch = strokeOverrideControl.querySelector('.sw-toggle');
+
+        const strokeConfig = this.getDocumentLengthConfig({ minMm: 0, maxMm: 5, stepMm: 0.05 });
+        const strokeValueDisplay = this.formatDocumentNumber(SETTINGS.strokeWidth ?? 0.3, { precision: strokeConfig.precision });
+        const strokeControl = document.createElement('div');
+        strokeControl.className = 'optimization-control';
+        strokeControl.innerHTML = `
+          <div class="flex items-center gap-2 mb-1">
+            <label class="control-label mb-0">Stroke (${strokeConfig.unitLabel})</label>
+          </div>
+          <div class="slider-row">
+            <div class="sld-fx-wrap">
+              <input type="range" min="${strokeConfig.min}" max="${strokeConfig.max}" step="${strokeConfig.step}" value="${strokeValueDisplay}" class="ctrl-slider">
+            </div>
+            <button type="button" class="value-chip">${strokeValueDisplay}${strokeConfig.unitLabel}</button>
+          </div>
+        `;
+        const strokeRange = strokeControl.querySelector('input[type="range"]');
+        const strokeChip = strokeControl.querySelector('.value-chip');
+        if (strokeRange) syncSliderFill(strokeRange);
+        const setStrokeSliderVisible = (visible) => {
+          strokeControl.hidden = !visible;
+          if (strokeRange) strokeRange.disabled = !visible;
+        };
+        setStrokeSliderVisible(strokeOverrideOn);
+        const applyStroke = (raw, options = {}) => {
+          const { commit = false } = options;
+          if (commit && this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(0, this.parseDocumentNumber(raw, { fallbackMm: SETTINGS.strokeWidth ?? 0.3 }));
+          SETTINGS.strokeWidth = Number.isFinite(next) ? next : 0.3;
+          this.app.engine.layers.forEach((layer) => {
+            layer.strokeWidth = SETTINGS.strokeWidth;
+          });
+          const display = this.formatDocumentNumber(SETTINGS.strokeWidth, { precision: strokeConfig.precision });
+          if (strokeRange) {
+            strokeRange.value = display;
+            syncSliderFill(strokeRange);
+          }
+          if (strokeChip) strokeChip.textContent = `${display}${strokeConfig.unitLabel}`;
+          this.app.render();
+          updateStats();
+          if (this.exportModalState?.isOpen) this.renderExportPreview();
+        };
+        if (strokeRange) {
+          strokeRange.oninput = (e) => applyStroke(e.target.value);
+          strokeRange.onchange = (e) => applyStroke(e.target.value, { commit: true });
+        }
+        if (strokeOverrideToggle) {
+          strokeOverrideToggle.onchange = (e) => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            const enabled = Boolean(e.target.checked);
+            SETTINGS.strokeWidthOverride = enabled;
+            if (strokeOverrideState) strokeOverrideState.textContent = enabled ? 'ON' : 'OFF';
+            if (strokeOverrideSwitch) strokeOverrideSwitch.setAttribute('aria-checked', enabled ? 'true' : 'false');
+            setStrokeSliderVisible(enabled);
+            this.app.persistPreferencesDebounced?.();
+            this.app.render();
+            updateStats();
+            if (this.exportModalState?.isOpen) this.renderExportPreview();
+          };
+        }
+        controlsWrap.appendChild(strokeOverrideControl);
+        controlsWrap.appendChild(strokeControl);
+
+        const hiddenGeometryControl = document.createElement('div');
+        hiddenGeometryControl.className = 'optimization-control';
+        hiddenGeometryControl.innerHTML = `
+          <div class="flex justify-between mb-1">
+            <label class="control-label mb-0">Remove Hidden Geometry</label>
+            <span class="text-xs text-vectura-accent font-mono">${SETTINGS.removeHiddenGeometry !== false ? 'ON' : 'OFF'}</span>
+          </div>
+          <label class="sw-toggle" role="switch" aria-checked="${SETTINGS.removeHiddenGeometry !== false ? 'true' : 'false'}">
+            <input type="checkbox" ${SETTINGS.removeHiddenGeometry !== false ? 'checked' : ''} />
+            <span class="sw-track"></span>
+            <span class="sw-thumb"></span>
+          </label>
+        `;
+        const hiddenGeometryToggle = hiddenGeometryControl.querySelector('input');
+        const hiddenGeometryState = hiddenGeometryControl.querySelector('span');
+        if (hiddenGeometryToggle && hiddenGeometryState) {
+          hiddenGeometryToggle.onchange = (e) => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            SETTINGS.removeHiddenGeometry = Boolean(e.target.checked);
+            hiddenGeometryState.textContent = SETTINGS.removeHiddenGeometry ? 'ON' : 'OFF';
+            this.app.persistPreferencesDebounced?.();
+            if (this.exportModalState?.isOpen) this.renderExportPreview();
+          };
+        }
+        controlsWrap.appendChild(hiddenGeometryControl);
+
+        const toggleControl = document.createElement('div');
+        toggleControl.className = 'optimization-control';
+        toggleControl.innerHTML = `
+          <div class="flex justify-between mb-1">
+            <label class="control-label mb-0">Plotter Optimization</label>
+            <span class="text-xs text-vectura-accent font-mono">${SETTINGS.plotterOptimize > 0 ? 'ON' : 'OFF'}</span>
+          </div>
+          <label class="sw-toggle" role="switch" aria-checked="${SETTINGS.plotterOptimize > 0 ? 'true' : 'false'}">
+            <input type="checkbox" />
+            <span class="sw-track"></span>
+            <span class="sw-thumb"></span>
+          </label>
+        `;
+        const plotterToggle = toggleControl.querySelector('input');
+        const toggleState = toggleControl.querySelector('span');
+        const toleranceControl = document.createElement('div');
+        toleranceControl.className = 'optimization-control';
+        const currentTolerance = Math.max(0.01, Math.min(1, SETTINGS.plotterOptimize || 0.1));
+        const toleranceConfig = this.getDocumentLengthConfig({ minMm: 0.01, maxMm: 1, stepMm: 0.01 });
+        const toleranceDisplay = this.formatDocumentNumber(currentTolerance, { precision: toleranceConfig.precision });
+        toleranceControl.innerHTML = `
+          <div class="flex items-center gap-2 mb-1">
+            <label class="control-label mb-0">Optimization Tolerance (${toleranceConfig.unitLabel})</label>
+          </div>
+          <div class="slider-row">
+            <div class="sld-fx-wrap">
+              <input type="range" min="${toleranceConfig.min}" max="${toleranceConfig.max}" step="${toleranceConfig.step}" value="${toleranceDisplay}" class="ctrl-slider">
+            </div>
+            <button type="button" class="value-chip">${toleranceDisplay}${toleranceConfig.unitLabel}</button>
+          </div>
+        `;
+        const tolRange = toleranceControl.querySelector('input[type="range"]');
+        if (tolRange) syncSliderFill(tolRange);
+        const tolNumber = toleranceControl.querySelector('input[type="number"]');
+        const tolValue = toleranceControl.querySelector('.value-chip');
+        const setToleranceVisible = (visible) => {
+          toleranceControl.hidden = !visible;
+          if (tolRange) tolRange.disabled = !visible;
+          if (tolNumber) tolNumber.disabled = !visible;
+        };
+        const clampTolerance = (raw) => {
+          const next = this.parseDocumentNumber(raw, { fallbackMm: 0.1 });
+          if (!Number.isFinite(next)) return 0.1;
+          return Math.max(0.01, Math.min(1, next));
+        };
+        const applyTolerance = (raw, options = {}) => {
+          const { commit = false } = options;
+          if (commit && this.app.pushHistory) this.app.pushHistory();
+          const next = clampTolerance(raw);
+          const displayValue = this.formatDocumentNumber(next, { precision: toleranceConfig.precision });
+          if (tolRange) {
+            tolRange.value = displayValue;
+            syncSliderFill(tolRange);
+          }
+          if (tolNumber) tolNumber.value = displayValue;
+          if (tolValue) tolValue.textContent = `${displayValue}${toleranceConfig.unitLabel}`;
+          SETTINGS.plotterOptimize = plotterToggle?.checked ? next : 0;
+          if (toggleState) toggleState.textContent = SETTINGS.plotterOptimize > 0 ? 'ON' : 'OFF';
+          rerenderOptimizationPreview();
+        };
+        if (plotterToggle) {
+          plotterToggle.checked = SETTINGS.plotterOptimize > 0;
+          setToleranceVisible(plotterToggle.checked);
+          plotterToggle.onchange = (e) => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            const enabled = Boolean(e.target.checked);
+            setToleranceVisible(enabled);
+            const rawTol = tolNumber?.value || tolRange?.value || 0.1;
+            const clamped = clampTolerance(rawTol);
+            SETTINGS.plotterOptimize = enabled ? clamped : 0;
+            if (toggleState) toggleState.textContent = enabled ? 'ON' : 'OFF';
+            rerenderOptimizationPreview();
+          };
+        }
+        if (tolRange) {
+          tolRange.oninput = (e) => applyTolerance(e.target.value);
+          tolRange.onchange = (e) => applyTolerance(e.target.value, { commit: true });
+        }
+        if (tolNumber) {
+          tolNumber.oninput = (e) => applyTolerance(e.target.value);
+          tolNumber.onchange = (e) => applyTolerance(e.target.value, { commit: true });
+        }
+        controlsWrap.appendChild(toggleControl);
+        controlsWrap.appendChild(toleranceControl);
+
+        card.appendChild(controlsWrap);
+        return card;
+      };
+
+      const formatOptValue = (def, value) => {
+        const { precision, unit } = getOptimizationDisplayConfig(def);
+        const factor = Math.pow(10, precision);
+        const displayValue = toOptimizationDisplayValue(def, value ?? 0);
+        const rounded = Math.round(displayValue * factor) / factor;
+        return `${rounded}${unit}`;
+      };
+
+      const buildRangeControl = (stepConfig, def) => {
+        const control = document.createElement('div');
+        control.className = 'optimization-control';
+        const value = stepConfig[def.key] ?? getStepDefaults(stepConfig.id)[def.key] ?? def.min ?? 0;
+        if (stepConfig[def.key] === undefined) stepConfig[def.key] = value;
+        const { min, max, step } = getOptimizationDisplayConfig(def);
+        const displayValue = toOptimizationDisplayValue(def, value);
+        const editorDef = toOptimizationEditorDef(def);
+        control.innerHTML = `
+          <div class="flex items-center gap-2 mb-1">
+            <label class="control-label mb-0">${getOptimizationLabel(def.label)}</label>
+          </div>
+          <div class="slider-row">
+            <div class="sld-fx-wrap">
+              <input type="range" min="${min}" max="${max}" step="${step}" value="${displayValue}" class="ctrl-slider">
+            </div>
+            <button type="button" class="value-chip">${formatOptValue(def, value)}</button>
+          </div>
+          <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
+        `;
+        const input = control.querySelector('input[type="range"]');
+        const valueBtn = control.querySelector('.value-chip');
+        const valueInput = control.querySelector('.value-input');
+        if (input) syncSliderFill(input);
+        if (input && valueBtn) {
+          input.oninput = (e) => {
+            syncSliderFill(e.target);
+            const next = fromOptimizationDisplayValue(def, parseFloat(e.target.value));
+            valueBtn.textContent = formatOptValue(def, next);
+            applyOptimization((cfg) => {
+              const step = cfg.steps.find((s) => s.id === stepConfig.id);
+              if (step) step[def.key] = next;
+            });
+          };
+          input.onchange = (e) => { triggerSliderMotion(e.target); };
+          input.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            const defaults = getStepDefaults(stepConfig.id);
+            if (defaults[def.key] === undefined) return;
+            const next = defaults[def.key];
+            input.value = toOptimizationDisplayValue(def, next);
+            syncSliderFill(input);
+            valueBtn.textContent = formatOptValue(def, next);
+            applyOptimization((cfg) => {
+              const step = cfg.steps.find((s) => s.id === stepConfig.id);
+              if (step) step[def.key] = next;
+            });
+          });
+          attachValueEditor({
+            def: editorDef,
+            valueEl: valueBtn,
+            inputEl: valueInput,
+            getValue: () => stepConfig[def.key],
+            setValue: (displayVal, opts) => {
+              input.value = displayVal;
+              syncSliderFill(input);
+              applyOptimization((cfg) => {
+                const step = cfg.steps.find((s) => s.id === stepConfig.id);
+                if (step) step[def.key] = fromOptimizationDisplayValue(def, displayVal);
+              });
+            },
+          });
+        }
+        return control;
+      };
+
+      const buildSelectControl = (stepConfig, def) => {
+        const control = document.createElement('div');
+        control.className = 'optimization-control';
+        let value = stepConfig[def.key];
+        if ((value === undefined || value === null) && def.options?.length) {
+          value = def.options[0].value;
+          stepConfig[def.key] = value;
+        }
+        const optionsHtml = (def.options || [])
+          .map((opt) => `<option value="${opt.value}" ${value === opt.value ? 'selected' : ''}>${opt.label}</option>`)
+          .join('');
+        const currentLabel = def.options.find((opt) => opt.value === value)?.label || value;
+        control.innerHTML = `
+          <div class="flex justify-between mb-1">
+            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
+            <span class="text-xs text-vectura-accent font-mono">${currentLabel}</span>
+          </div>
+          <select class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent">
+            ${optionsHtml}
+          </select>
+        `;
+        const input = control.querySelector('select');
+        const span = control.querySelector('span');
+        if (input && span) {
+          input.onchange = (e) => {
+            const next = e.target.value;
+            applyOptimization((cfg) => {
+              const step = cfg.steps.find((s) => s.id === stepConfig.id);
+              if (step) step[def.key] = next;
+            });
+            span.textContent = def.options.find((opt) => opt.value === next)?.label || next;
+          };
+          input.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            const defaults = getStepDefaults(stepConfig.id);
+            const next = defaults[def.key] ?? def.options?.[0]?.value;
+            if (next === undefined) return;
+            applyOptimization((cfg) => {
+              const step = cfg.steps.find((s) => s.id === stepConfig.id);
+              if (step) step[def.key] = next;
+            });
+            input.value = next;
+            span.textContent = def.options.find((opt) => opt.value === next)?.label || next;
+          });
+        }
+        return control;
+      };
+
+      const buildCheckboxControl = (stepConfig, def) => {
+        const control = document.createElement('div');
+        control.className = 'optimization-control';
+        const checked = Boolean(stepConfig[def.key]);
+        control.innerHTML = `
+          <div class="flex justify-between mb-1">
+            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
+            <span class="text-xs text-vectura-accent font-mono">${checked ? 'ON' : 'OFF'}</span>
+          </div>
+          <label class="sw-toggle" role="switch" aria-checked="${checked ? 'true' : 'false'}">
+            <input type="checkbox" ${checked ? 'checked' : ''} />
+            <span class="sw-track"></span>
+            <span class="sw-thumb"></span>
+          </label>
+        `;
+        const input = control.querySelector('input');
+        const span = control.querySelector('span');
+        if (input && span) {
+          input.onchange = (e) => {
+            const next = Boolean(e.target.checked);
+            span.textContent = next ? 'ON' : 'OFF';
+            applyOptimization((cfg) => {
+              const step = cfg.steps.find((s) => s.id === stepConfig.id);
+              if (step) step[def.key] = next;
+            });
+          };
+          input.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            const defaults = getStepDefaults(stepConfig.id);
+            if (defaults[def.key] === undefined) return;
+            const next = Boolean(defaults[def.key]);
+            input.checked = next;
+            span.textContent = next ? 'ON' : 'OFF';
+            applyOptimization((cfg) => {
+              const step = cfg.steps.find((s) => s.id === stepConfig.id);
+              if (step) step[def.key] = next;
+            });
+          });
+        }
+        return control;
+      };
+
+      const bindReorderGrip = (grip, card, stepId) => {
+        if (!grip) return;
+        grip.onmousedown = (e) => {
+          e.preventDefault();
+          const dragEl = card;
+          dragEl.classList.add('dragging');
+          const indicator = document.createElement('div');
+          indicator.className = 'optimization-drop-indicator';
+          list.insertBefore(indicator, dragEl.nextSibling);
+          const currentOrder = config.steps.map((step) => step.id);
+          const startIndex = currentOrder.indexOf(stepId);
+          const onMove = (ev) => {
+            const y = ev.clientY;
+            const items = Array.from(list.querySelectorAll('.optimization-card')).filter((item) => item !== dragEl);
+            let inserted = false;
+            for (const item of items) {
+              const rect = item.getBoundingClientRect();
+              if (y < rect.top + rect.height / 2) {
+                list.insertBefore(indicator, item);
+                inserted = true;
+                break;
+              }
+            }
+            if (!inserted) list.appendChild(indicator);
+          };
+          const onUp = () => {
+            dragEl.classList.remove('dragging');
+            const siblings = Array.from(list.children);
+            const indicatorIndex = siblings.indexOf(indicator);
+            const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('optimization-card'));
+            const newIndex = before.length;
+            indicator.remove();
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            if (newIndex === startIndex || newIndex < 0) return;
+            applyOptimization((cfg) => {
+              const order = cfg.steps.map((step) => step.id).filter((id) => id !== stepId);
+              const targetIndex = Math.max(0, Math.min(order.length, newIndex));
+              order.splice(targetIndex, 0, stepId);
+              const map = new Map(cfg.steps.map((step) => [step.id, step]));
+              cfg.steps = order.map((id) => map.get(id)).filter(Boolean);
+            });
+            this.buildControls();
+          };
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup', onUp);
+        };
+      };
+
+      list.appendChild(buildExportSettingsCard());
+
+      OPTIMIZATION_STEPS.forEach((def) => {
+        const stepConfig = config.steps.find((step) => step.id === def.id) || { id: def.id, enabled: false, bypass: false };
+        if (!config.steps.find((step) => step.id === def.id)) config.steps.push(stepConfig);
+        const card = document.createElement('div');
+        card.className = 'optimization-card';
+        card.dataset.stepId = def.id;
+        const header = document.createElement('div');
+        header.className = 'optimization-card-header';
+        header.innerHTML = `
+          <div class="optimization-card-title">
+            <button class="optimization-grip" type="button" aria-label="Reorder optimization">
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+            </button>
+            <span>${getDisplayLabel(def)}</span>
+          </div>
+          <div class="optimization-card-actions">
+            <label class="opt-toggle">
+              <label class="sw-toggle" role="switch" aria-checked="${stepConfig.enabled ? 'true' : 'false'}">
+                <input type="checkbox" ${stepConfig.enabled ? 'checked' : ''} />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
+              </label>
+              Apply
+            </label>
+            <label class="opt-toggle">
+              <label class="sw-toggle" role="switch" aria-checked="${stepConfig.bypass ? 'true' : 'false'}">
+                <input type="checkbox" ${stepConfig.bypass ? 'checked' : ''} />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
+              </label>
+              Bypass
+            </label>
+          </div>
+        `;
+        const grip = header.querySelector('.optimization-grip');
+        bindReorderGrip(grip, card, def.id);
+        const [applyToggle, bypassStepToggle] = header.querySelectorAll('input[type="checkbox"]');
+        if (applyToggle) {
+          applyToggle.onchange = (e) => {
+            const next = Boolean(e.target.checked);
+            // Enabling line sort lights up the print-order overlay ONLY inside
+            // the export modal (where the gradient preview lives). On the main
+            // canvas we no longer force the overlay on — the Draw Order slider is
+            // the canonical print-order preview there, so an auto-overlay just
+            // adds a confusing second visualization the user didn't ask for.
+            if (def.id === 'linesort' && next && this.exportModalState?.isOpen) {
+              if ((this.exportModalState.previewMode || 'off') === 'off') {
+                this.exportModalState.previewMode = 'overlay';
+                const previewSelect = this.exportModalState.root?.querySelector('#export-preview-mode');
+                if (previewSelect) previewSelect.value = 'overlay';
+              }
+              SETTINGS.optimizationPreview = this.exportModalState.previewMode;
+            }
+            applyOptimization((cfg) => {
+              const step = cfg.steps.find((s) => s.id === def.id);
+              if (step) step.enabled = next;
+            });
+            this.buildControls();
+          };
+        }
+        if (bypassStepToggle) {
+          bypassStepToggle.onchange = (e) => {
+            const next = Boolean(e.target.checked);
+            applyOptimization((cfg) => {
+              const step = cfg.steps.find((s) => s.id === def.id);
+              if (step) step.bypass = next;
+              cfg.bypassAll = (cfg.steps || []).every((s) => Boolean(s.bypass));
+            });
+            this.buildControls();
+          };
+        }
+        card.appendChild(header);
+
+        const controlsWrap = document.createElement('div');
+        controlsWrap.className = 'optimization-controls';
+        const isDisabled = !stepConfig.enabled || config.bypassAll;
+        if (isDisabled) controlsWrap.classList.add('is-disabled');
+        (def.controls || []).forEach((cDef) => {
+          let control = null;
+          if (cDef.type === 'select') control = buildSelectControl(stepConfig, cDef);
+          else if (cDef.type === 'checkbox') control = buildCheckboxControl(stepConfig, cDef);
+          else control = buildRangeControl(stepConfig, cDef);
+          if (control) {
+            const inputs = control.querySelectorAll('input, select, button');
+            inputs.forEach((input) => {
+              if (input.type === 'button') return;
+              input.disabled = isDisabled;
+            });
+            controlsWrap.appendChild(control);
+          }
+        });
+        card.appendChild(controlsWrap);
+        list.appendChild(card);
+      });
+
+      panel.appendChild(list);
+      target.appendChild(panel);
+      updateStats();
+    };
+
+    const renderExportOptimizationIfOpen = () => {
+      if (!this.exportModalState?.isOpen) return;
+      const optimizationTarget = getEl('optimization-controls');
+      if (!optimizationTarget) return;
+      optimizationTarget.innerHTML = '';
+      renderOptimizationPanel(optimizationTarget);
+    };
+
+    const paintBucketSection = getEl('left-section-paint-bucket', { silent: true });
+    const paintBucketActive = this.activeTool === 'fill' || this.activeTool === 'fill-erase';
+    if (paintBucketActive) {
+      this._showWelcomePanel(false);
+      const algoSec = getEl('left-section-algorithm', { silent: true });
+      const algoConfSec = getEl('left-section-algorithm-configuration', { silent: true });
+      const multiSel = getEl('left-section-multi-selection', { silent: true });
+      const multiInfo = getEl('left-section-multi-info', { silent: true });
+      const multiXform = getEl('left-section-multi-transform', { silent: true });
+      const multiPf = getEl('left-section-multi-pathfinder', { silent: true });
+      if (algoSec) algoSec.style.display = 'none';
+      if (algoConfSec) algoConfSec.style.display = 'none';
+      if (multiSel) multiSel.style.display = 'none';
+      if (multiInfo) multiInfo.style.display = 'none';
+      if (multiXform) multiXform.style.display = 'none';
+      if (multiPf) multiPf.style.display = 'none';
+      if (paintBucketSection) {
+        // CSS-10: drop the initial-state `.is-hidden` utility class before
+        // letting inline style govern visibility (the class is `!important`).
+        paintBucketSection.classList.remove('is-hidden');
+        paintBucketSection.style.display = '';
+      }
+      this.app?.ui?.refreshPaintBucketPanel?.();
+      renderExportOptimizationIfOpen();
+      restoreLeftPanelScroll();
+      return;
+    }
+    if (paintBucketSection) paintBucketSection.style.display = 'none';
+    if (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
+      this._showWelcomePanel(false);
+      const algoSec = getEl('left-section-algorithm', { silent: true });
+      const algoConfSec = getEl('left-section-algorithm-configuration', { silent: true });
+      if (algoSec) algoSec.style.display = 'none';
+      if (algoConfSec) algoConfSec.style.display = 'none';
+      this._buildPatternFillPanel(container);
+      renderExportOptimizationIfOpen();
+      restoreLeftPanelScroll();
+      return;
+    }
+
+    // Multi-selection: show four sibling subpanels (Multiple Selection / Transform
+    // / Align / Pathfinder), each rendered as a top-level .left-panel-section so
+    // each picks up the accent-bar treatment. The transform/seed inputs are
+    // relocated into the Transform subpanel; the description goes in the
+    // Multiple-Selection subpanel. Single-selection restoration moves the
+    // transform section back to its home inside #left-section-algorithm-body.
+    const multiSelectedLayers = (this.app.renderer?.getSelectedLayers?.() || []);
+    const isMultiSelection = multiSelectedLayers.length > 1;
+    const algoBodyEl = getEl('left-section-algorithm-body', { silent: true });
+    const moduleLabelEl = getEl('primary-module-label', { silent: true });
+    const moduleLabelWrap = moduleLabelEl?.parentElement || null;
+    const moduleTriggerEl = getEl('generator-module-trigger', { silent: true });
+    const algoAboutEl = getEl('algo-about', { silent: true });
+    const seedControlsEl = getEl('seed-controls', { silent: true });
+    const transformSectionEl = getEl('algorithm-transform-section', { silent: true });
+    const algoSectionEl = getEl('left-section-algorithm', { silent: true });
+    const algoConfigSectionEl = getEl('left-section-algorithm-configuration', { silent: true });
+    const primaryTitleEl = getEl('left-section-primary-title', { silent: true });
+    const multiInfoSection = getEl('left-section-multi-info', { silent: true });
+    const multiInfoBody = getEl('left-section-multi-info-body', { silent: true });
+    const multiTransformSection = getEl('left-section-multi-transform', { silent: true });
+    const multiTransformBody = getEl('left-section-multi-transform-body', { silent: true });
+    const multiPathfinderSection = getEl('left-section-multi-pathfinder', { silent: true });
+    const existingMultiNotice = document.querySelector('[data-multi-selection-notice]');
+    if (existingMultiNotice) existingMultiNotice.remove();
+
+    const multiSelSection = getEl('left-section-multi-selection', { silent: true });
+    if (isMultiSelection) {
+      this._showWelcomePanel(false);
+      if (algoSectionEl) algoSectionEl.style.display = 'none';
+      if (algoConfigSectionEl) algoConfigSectionEl.style.display = 'none';
+      // CSS-10: each of these four sections begins life with `.is-hidden`
+      // (display:none !important). Strip the class on first reveal so the
+      // subsequent inline style.display='' actually unhides them.
+      if (multiSelSection) { multiSelSection.classList.remove('is-hidden'); multiSelSection.style.display = ''; }
+      if (multiInfoSection) { multiInfoSection.classList.remove('is-hidden'); multiInfoSection.style.display = ''; }
+      if (multiTransformSection) { multiTransformSection.classList.remove('is-hidden'); multiTransformSection.style.display = ''; }
+      if (multiPathfinderSection) { multiPathfinderSection.classList.remove('is-hidden'); multiPathfinderSection.style.display = ''; }
+      if (primaryTitleEl) primaryTitleEl.textContent = 'Algorithm';
+      if (moduleLabelWrap) moduleLabelWrap.style.display = '';
+      if (moduleTriggerEl) moduleTriggerEl.style.display = '';
+      if (algoAboutEl) algoAboutEl.style.display = '';
+      if (seedControlsEl) seedControlsEl.style.display = 'none';
+
+      // Relocate the Transform section into the multi-Transform subpanel body
+      // (its single-selection home is back inside #left-section-algorithm-body).
+      if (transformSectionEl && multiTransformBody && transformSectionEl.parentElement !== multiTransformBody) {
+        multiTransformBody.appendChild(transformSectionEl);
+      }
+      if (transformSectionEl) {
+        transformSectionEl.style.display = '';
+        // Force the Transform's inner global-section body open — the outer
+        // .left-panel-section header now drives collapse for the whole subpanel.
+        transformSectionEl.classList.remove('collapsed');
+        const innerHeader = getEl('algorithm-transform-header', { silent: true });
+        if (innerHeader) innerHeader.style.display = 'none';
+        const innerBody = getEl('algorithm-transform-body', { silent: true });
+        if (innerBody) {
+          // CSS-10: strip initial `.is-hidden` class before unhiding.
+          innerBody.classList.remove('is-hidden');
+          innerBody.style.display = '';
+        }
+      }
+
+      const notice = document.createElement('p');
+      notice.dataset.multiSelectionNotice = 'true';
+      notice.className = 'text-xs text-vectura-muted leading-relaxed';
+      notice.textContent = `${multiSelectedLayers.length} layers selected. Select a single layer to edit its parameters. Transform changes below apply to all selected layers.`;
+      if (multiInfoBody) {
+        multiInfoBody.innerHTML = '';
+        multiInfoBody.appendChild(notice);
+      }
+      this.app?.ui?.refreshAlignPanel?.();
+      this.app?.ui?.refreshPathfinderPanel?.();
+
+      const sharedValue = (getter) => {
+        let v = null;
+        for (let i = 0; i < multiSelectedLayers.length; i++) {
+          const cur = getter(multiSelectedLayers[i]);
+          if (i === 0) v = cur;
+          else if (cur !== v) return null;
+        }
+        return v;
+      };
+      const formatPosShared = (v) => (v == null ? '' : (typeof this.formatDocumentNumber === 'function'
+        ? this.formatDocumentNumber(v, { trimTrailingZeros: true })
+        : v));
+      const posXEl = getEl('inp-pos-x');
+      const posYEl = getEl('inp-pos-y');
+      const scaleXEl = getEl('inp-scale-x');
+      const scaleYEl = getEl('inp-scale-y');
+      const rotEl = getEl('inp-rotation');
+      const applyShared = (el, value, formatter) => {
+        if (!el) return;
+        el.value = value == null ? '' : (formatter ? formatter(value) : value);
+        el.placeholder = value == null ? 'Multiple' : '';
+      };
+      applyShared(posXEl, sharedValue((l) => l.params?.posX ?? null), formatPosShared);
+      applyShared(posYEl, sharedValue((l) => l.params?.posY ?? null), formatPosShared);
+      applyShared(scaleXEl, sharedValue((l) => l.params?.scaleX ?? null));
+      applyShared(scaleYEl, sharedValue((l) => l.params?.scaleY ?? null));
+      applyShared(rotEl, sharedValue((l) => l.params?.rotation ?? null));
+
+      renderExportOptimizationIfOpen();
+      restoreLeftPanelScroll();
+      return;
+    }
+
+    // Single-selection: restore any chrome a prior multi-selection pass hid.
+    if (algoSectionEl) algoSectionEl.style.display = '';
+    if (multiSelSection) multiSelSection.style.display = 'none';
+    if (multiInfoSection) multiInfoSection.style.display = 'none';
+    if (multiTransformSection) multiTransformSection.style.display = 'none';
+    if (multiPathfinderSection) multiPathfinderSection.style.display = 'none';
+    if (primaryTitleEl) primaryTitleEl.textContent = 'Algorithm';
+    if (moduleLabelWrap) moduleLabelWrap.style.display = '';
+    if (moduleTriggerEl) moduleTriggerEl.style.display = '';
+    if (algoAboutEl) algoAboutEl.style.display = '';
+    if (seedControlsEl) seedControlsEl.style.display = '';
+    // Return the Transform section to its single-selection home (last child of
+    // #left-section-algorithm-body) and restore its inner header so the nested
+    // global-section collapse works again.
+    if (transformSectionEl && algoBodyEl && transformSectionEl.parentElement !== algoBodyEl) {
+      algoBodyEl.appendChild(transformSectionEl);
+    }
+    const innerXformHeader = getEl('algorithm-transform-header', { silent: true });
+    if (innerXformHeader) innerXformHeader.style.display = '';
+    ['inp-pos-x', 'inp-pos-y', 'inp-scale-x', 'inp-scale-y', 'inp-rotation'].forEach((id) => {
+      const el = getEl(id, { silent: true });
+      if (el && el.placeholder) el.placeholder = '';
+    });
+    const layer = this.app.engine.getActiveLayer();
+    if (!layer) {
+      this._showWelcomePanel(true);
+      restoreLeftPanelScroll();
+      return;
+    }
+    this._showWelcomePanel(false);
+    this.ensurePatternLayerSelection(layer);
+
+    const moduleSelect = getEl('generator-module');
+    const seed = getEl('inp-seed');
+    const posX = getEl('inp-pos-x');
+    const posY = getEl('inp-pos-y');
+    const scaleX = getEl('inp-scale-x');
+    const scaleY = getEl('inp-scale-y');
+    const rotation = getEl('inp-rotation');
+    const isGroup = Boolean(layer.isGroup);
+    const isModifier = this.isModifierLayer(layer);
+    const isStatic = Boolean(isGroup || isModifier);
+    const algoSection = getEl('left-section-algorithm', { silent: true });
+    const algoConfigSection = getEl('left-section-algorithm-configuration', { silent: true });
+    const hideAlgoPanels = isGroup && !isModifier;
+    if (algoSection) algoSection.style.display = hideAlgoPanels ? 'none' : '';
+    if (algoConfigSection) algoConfigSection.style.display = hideAlgoPanels ? 'none' : '';
+    if (hideAlgoPanels) {
+      // Pathfinder compound: reveal the Pathfinder panel (lives in the
+      // multi-selection section) so the user can change op type or expand.
+      if (layer.type === 'compound' && multiSelSection) {
+        // CSS-10: strip the initial `.is-hidden` utility before unhiding.
+        multiSelSection.classList.remove('is-hidden');
+        multiSelSection.style.display = '';
+        if (primaryTitleEl) primaryTitleEl.textContent = 'Pathfinder';
+        this.app?.ui?.refreshAlignPanel?.();
+        this.app?.ui?.refreshPathfinderPanel?.();
+      }
+      renderExportOptimizationIfOpen();
+      restoreLeftPanelScroll();
+      return;
+    }
+    this.updatePrimaryPanelMode(layer);
+    if (algoSection) {
+      const _SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
+      if (!_SETTINGS.uiSections) _SETTINGS.uiSections = this.getLeftSectionDefaults();
+      const _algoBody = algoSection.querySelector('.left-panel-section-body');
+      const _algoHdr = algoSection.querySelector('.left-panel-section-header');
+      if (isModifier) {
+        const secs = _SETTINGS.uiSections;
+        const modCollapsed = Object.prototype.hasOwnProperty.call(secs, 'modifierSection')
+          ? secs.modifierSection !== false
+          : true;
+        algoSection.classList.toggle('collapsed', modCollapsed);
+        if (_algoBody) _algoBody.style.display = modCollapsed ? 'none' : '';
+        if (_algoHdr) {
+          _algoHdr.setAttribute('aria-expanded', modCollapsed ? 'false' : 'true');
+          _algoHdr.onclick = () => {
+            const next = !algoSection.classList.contains('collapsed');
+            _SETTINGS.uiSections.modifierSection = next;
+            algoSection.classList.toggle('collapsed', next);
+            if (_algoBody) _algoBody.style.display = next ? 'none' : '';
+            _algoHdr.setAttribute('aria-expanded', next ? 'false' : 'true');
+            this.app.persistPreferencesDebounced?.();
+          };
+        }
+      } else if (_algoHdr) {
+        _algoHdr.onclick = () => {
+          this.setLeftSectionCollapsed('algorithm', !algoSection.classList.contains('collapsed'));
+        };
+      }
+    }
+    this.syncPrimaryModuleDropdown(layer);
+    if (moduleSelect) {
+      if (!isModifier) {
+        Array.from(moduleSelect.options).forEach((opt) => {
+          if (opt.dataset.temp === 'true') opt.remove();
+        });
+        const hasOption = Array.from(moduleSelect.options).some((opt) => opt.value === layer.type);
+        if (!hasOption) {
+          const opt = document.createElement('option');
+          opt.value = layer.type;
+          opt.dataset.temp = 'true';
+          opt.innerText = ALGO_DEFAULTS?.[layer.type]?.label || layer.type;
+          moduleSelect.appendChild(opt);
+        }
+        moduleSelect.value = layer.type;
+        moduleSelect.disabled = isStatic;
+        moduleSelect.classList.toggle('opacity-60', isStatic);
+        this._syncModuleDisplay();
+      }
+    }
+    if (seed) seed.value = layer.params.seed;
+    const formatPos = (v) => (typeof this.formatDocumentNumber === 'function'
+      ? this.formatDocumentNumber(v, { trimTrailingZeros: true })
+      : v);
+    if (posX) posX.value = formatPos(layer.params.posX);
+    if (posY) posY.value = formatPos(layer.params.posY);
+    if (scaleX) scaleX.value = layer.params.scaleX;
+    if (scaleY) scaleY.value = layer.params.scaleY;
+    if (rotation) rotation.value = layer.params.rotation;
+    if (!isModifier) this.toggleSeedControls(layer.type);
+
+    const desc = getEl('algo-desc');
+    if (desc) {
+      desc.innerText = isModifier
+        ? MODIFIER_DESCRIPTIONS?.[this.getModifierState(layer)?.type || 'mirror'] || 'No description available.'
+        : DESCRIPTIONS[layer.type] || 'No description available.';
+    }
+    if (moduleSelect) {
+      const algoLabel = moduleSelect.parentElement?.querySelector('.control-label');
+      if (algoLabel && !algoLabel.querySelector('.info-btn')) {
+        this.attachInfoButton(algoLabel, 'global.algorithm');
+      }
+    }
+
+    const algoDefs = isModifier ? [] : this.controls[layer.type] || [];
+    const commonDefs = COMMON_CONTROLS;
+    const hasConditionalDefs = algoDefs.some((def) => typeof def.showIf === 'function');
+    const hasNoiseConditional = WAVE_NOISE_DEFS.some((def) => typeof def.showIf === 'function');
+    if (!isModifier && !algoDefs.length && !commonDefs.length) {
+      renderExportOptimizationIfOpen();
+      restoreLeftPanelScroll();
+      return;
+    }
+
+    if (isModifier) {
+      const modType = this.getModifierState(layer)?.type;
+      if (modType === 'morph' && window.Vectura.UI.MorphPanel) {
+        window.Vectura.UI.MorphPanel.build(this, layer, container);
+      } else {
+        window.Vectura.UI.MirrorPanel.build(this, layer, container);
+      }
+      renderExportOptimizationIfOpen();
+      restoreLeftPanelScroll();
+      return;
+    }
+
+    // Bespoke tabbed Text panel (synthesis design). Replaces the generic
+    // control list for text layers — same early-return escape hatch the
+    // Mirror/Morph modifier panels use. Inert until ui-text-panel.js loads.
+    if (
+      layer.type === 'text' &&
+      window.Vectura.UI.TextPanel &&
+      typeof window.Vectura.UI.TextPanel.build === 'function'
+    ) {
+      window.Vectura.UI.TextPanel.build(this, layer, container);
+      renderExportOptimizationIfOpen();
+      restoreLeftPanelScroll();
+      return;
+    }
+
+    if (isGroup) {
+      const msg = document.createElement('p');
+      msg.className = 'text-xs text-vectura-muted mb-4';
+      msg.textContent = 'Select a sublayer to edit its parameters.';
+      container.appendChild(msg);
+    } else {
+      this.storeLayerParams(layer);
+    }
+
+    const resetWrap = document.createElement('div');
+    resetWrap.className = 'mb-4 grid grid-cols-2 gap-2';
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className =
+      'w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-accent transition-colors';
+    resetBtn.textContent = 'Reset to Defaults';
+    resetBtn.onclick = () => {
+      if (this.app.pushHistory) this.app.pushHistory();
+      const transform = this.getDefaultTransformForType(layer.type, layer.params);
+      if (!layer.paramStates) layer.paramStates = {};
+      delete layer.paramStates[layer.type];
+      const base = ALGO_DEFAULTS[layer.type] ? clone(ALGO_DEFAULTS[layer.type]) : {};
+      layer.params = { ...base, ...transform };
+      this.storeLayerParams(layer);
+      this.buildControls();
+      this.app.regen();
+      this.updateFormula();
+    };
+    const randomBtn = document.createElement('button');
+    randomBtn.type = 'button';
+    randomBtn.id = 'btn-randomize-params';
+    randomBtn.className = 'w-full text-xs border px-2 py-2';
+    randomBtn.textContent = 'Randomize';
+    randomBtn.onclick = (e) => {
+      const l = this.app.engine.getActiveLayer();
+      if (!l) return;
+      const rect = randomBtn.getBoundingClientRect();
+      const x = e.clientX || (rect.left + rect.width / 2);
+      const y = e.clientY || (rect.top + rect.height / 2);
+      fireRandSparks(x, y);
+      if (this.app.pushHistory) this.app.pushHistory();
+      this.randomizeLayerParams(l);
+      this.storeLayerParams(l);
+      this.app.regen();
+      this.recenterLayerIfNeeded(l);
+      this.app.render();
+      this.buildControls();
+      this.updateFormula();
+    };
+    resetWrap.appendChild(resetBtn);
+    resetWrap.appendChild(randomBtn);
+    if (!isGroup) container.appendChild(resetWrap);
+
+    const getDefaultValue = (def) => {
+      const defaults = (ALGO_DEFAULTS && ALGO_DEFAULTS[layer.type]) || {};
+      if (def.type === 'rangeDual') {
+        if (
+          Object.prototype.hasOwnProperty.call(defaults, def.minKey) &&
+          Object.prototype.hasOwnProperty.call(defaults, def.maxKey)
+        ) {
+          return { min: defaults[def.minKey], max: defaults[def.maxKey] };
+        }
+        return null;
+      }
+      if (def.id && Object.prototype.hasOwnProperty.call(defaults, def.id)) {
+        return defaults[def.id];
+      }
+      if (def.default !== undefined) return def.default;
+      return null;
+    };
+
+    // The 3D algorithms (spiralizer, polyhedron, topoform, rasterPlane) bake
+    // the Curves toggle into their geometry at GENERATE time — their paths are
+    // stamped `meta.straight` / `meta.forceCurves`, which override the renderer's
+    // draw-time curve smoothing — so toggling Curves must regenerate, not just
+    // re-render, or it has no visible effect.
+    const curvesBakedAtGenerate = (lyr) =>
+      !!(ALGO_DEFAULTS && lyr && ALGO_DEFAULTS[lyr.type] && ALGO_DEFAULTS[lyr.type].is3d);
+
+
     const globalSection = document.createElement('div');
     globalSection.className = 'global-section';
     globalSection.classList.toggle('collapsed', this.globalSectionCollapsed);
@@ -825,21 +1791,6 @@
       if (hasNoiseConditional) this.buildControls();
     };
 
-    const syncSliderFill = (slider) => {
-      const mn = parseFloat(slider.min) || 0;
-      const mx = parseFloat(slider.max) || 100;
-      const pct = ((parseFloat(slider.value) - mn) / (mx - mn)) * 100;
-      slider.style.setProperty('--fill', pct.toFixed(1) + '%');
-      const wrap = slider.closest('.sld-fx-wrap');
-      if (wrap) wrap.style.setProperty('--fill', pct.toFixed(1) + '%');
-    };
-    const triggerSliderMotion = (slider) => {
-      const m = window.Vectura?.UI?.motion;
-      if (!m) return;
-      const wrap = slider.closest('.sld-fx-wrap');
-      if (wrap && m.triggerSliderPulse) m.triggerSliderPulse(wrap);
-      if (m.triggerThumbRelease) m.triggerThumbRelease(slider);
-    };
 
     // Generic preset apply path — every algorithm with a preset library routes
     // through this (the gallery mounts for any non-empty library). A preset
@@ -4001,931 +4952,6 @@
       inlineTarget.appendChild(div);
     };
 
-    const renderOptimizationPanel = (target) => {
-      if (!target) return;
-      const panel = document.createElement('div');
-      panel.className = 'optimization-panel';
-      panel.innerHTML = '';
-
-      const getTargets = () => {
-        return this.getOptimizationTargets();
-      };
-
-      const normalizeConfig = (config) => {
-        if (!config) return null;
-        if (!Array.isArray(config.steps)) config.steps = [];
-        const defaults = SETTINGS.optimizationDefaults || { bypassAll: false, steps: [] };
-        const defaultSteps = Array.isArray(defaults.steps) ? defaults.steps : [];
-        const defaultMap = new Map(defaultSteps.map((step) => [step.id, step]));
-        config.steps = config.steps.map((step) => ({
-          ...(defaultMap.get(step.id) || {}),
-          ...step,
-        }));
-        defaultSteps.forEach((step) => {
-          if (!config.steps.some((s) => s.id === step.id)) {
-            config.steps.push(clone(step));
-          }
-        });
-        if (config.bypassAll === undefined) config.bypassAll = defaults.bypassAll ?? false;
-        return config;
-      };
-
-      const getStepDefaults = (id) => {
-        const defaults = SETTINGS.optimizationDefaults || { steps: [] };
-        return (defaults.steps || []).find((step) => step.id === id) || {};
-      };
-
-      const isDocumentLengthControl = (def) => def?.displayUnit === 'mm' || /\(mm\)/.test(def?.label || '');
-      const getOptimizationLabel = (label = '') => label.replace(/\(mm\)/g, `(${this.getDocumentUnitLabel()})`);
-      const getOptimizationDisplayConfig = (def) => {
-        if (!isDocumentLengthControl(def)) return getDisplayConfig(def);
-        const config = this.getDocumentLengthConfig({
-          minMm: def.min,
-          maxMm: def.max,
-          stepMm: def.step,
-          precision: def.displayPrecision,
-        });
-        return {
-          min: config.min,
-          max: config.max,
-          step: config.step,
-          unit: config.unitLabel,
-          precision: config.precision,
-        };
-      };
-      const toOptimizationDisplayValue = (def, value) => {
-        if (isDocumentLengthControl(def)) return mmToDocumentUnits(value, this.getDocumentUnits());
-        return toDisplayValue(def, value);
-      };
-      const fromOptimizationDisplayValue = (def, value) => {
-        if (isDocumentLengthControl(def)) return documentUnitsToMm(value, this.getDocumentUnits());
-        return fromDisplayValue(def, value);
-      };
-      const toOptimizationEditorDef = (def) => {
-        if (!isDocumentLengthControl(def)) return def;
-        const display = getOptimizationDisplayConfig(def);
-        return {
-          ...def,
-          displayMin: display.min,
-          displayMax: display.max,
-          displayStep: display.step,
-          displayUnit: display.unit,
-          displayPrecision: display.precision,
-        };
-      };
-
-      const targets = getTargets();
-      const config = targets.length ? normalizeConfig(this.app.engine.ensureLayerOptimization(targets[0])) : null;
-
-      const updateStats = () => {
-        const scopedTargets = getTargets();
-        if (!config || !scopedTargets.length) return;
-        this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true });
-        const before = this.app.engine.computeStats(scopedTargets, { useOptimized: false, includePlotterOptimize: false });
-        const after = this.app.engine.computeStats(scopedTargets, { useOptimized: true, includePlotterOptimize: true });
-        const beforeEl = panel.querySelector('[data-opt-stat="before"]');
-        const afterEl = panel.querySelector('[data-opt-stat="after"]');
-        const formatStats = (stats) =>
-          `Lines ${stats.lines || 0} • Points ${stats.points || 0} • ${stats.distance} • ${stats.time}`;
-        if (beforeEl) beforeEl.textContent = formatStats(before);
-        if (afterEl) afterEl.textContent = formatStats(after);
-      };
-
-      const rerenderOptimizationPreview = () => {
-        const scopedTargets = getTargets();
-        if (!scopedTargets.length) return;
-        this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true });
-        this.app.render();
-        updateStats();
-        if (this.exportModalState?.isOpen) this.renderExportPreview();
-      };
-
-      const applyOptimization = (mutator) => {
-        const scopedTargets = getTargets();
-        if (!scopedTargets.length) return;
-        const scope = SETTINGS.optimizationScope || 'all';
-        const baseConfig = normalizeConfig(this.app.engine.ensureLayerOptimization(scopedTargets[0]));
-        if (mutator) mutator(baseConfig);
-        if (scope !== 'active') {
-          const snapshot = clone(baseConfig);
-          scopedTargets.forEach((layer, idx) => {
-            if (idx === 0) return;
-            layer.optimization = clone(snapshot);
-          });
-          this.app.optimizeLayers(scopedTargets, { config: snapshot, includePlotterOptimize: true });
-        } else {
-          this.app.optimizeLayers(scopedTargets, { config: baseConfig, includePlotterOptimize: true });
-        }
-        this.app.render();
-        updateStats();
-        if (this.exportModalState?.isOpen) this.renderExportPreview();
-      };
-
-      const buildRow = (label, controlEl) => {
-        const row = document.createElement('div');
-        row.className = 'optimization-row';
-        const lab = document.createElement('label');
-        lab.className = 'control-label mb-0';
-        lab.textContent = label;
-        row.appendChild(lab);
-        row.appendChild(controlEl);
-        return row;
-      };
-
-      const scopeSelect = document.createElement('select');
-      scopeSelect.className = 'w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent';
-      scopeSelect.innerHTML = `
-        <option value="active">Active Layer</option>
-        <option value="selected">Selected Layers</option>
-        <option value="all">All Layers</option>
-      `;
-      scopeSelect.value = SETTINGS.optimizationScope || 'all';
-      scopeSelect.onchange = (e) => {
-        SETTINGS.optimizationScope = e.target.value;
-        this.buildControls();
-        this.app.render();
-        if (this.exportModalState?.isOpen) this.renderExportPreview();
-      };
-      panel.appendChild(buildRow('Scope', scopeSelect));
-
-      if ((SETTINGS.optimizationScope || 'all') === 'selected') {
-        const selectedLayers = (this.app.renderer?.getSelectedLayers?.() || []).filter((l) => l && !l.isGroup);
-        const infoEl = document.createElement('div');
-        infoEl.className = 'text-xs px-1 pb-1';
-        if (!selectedLayers.length) {
-          infoEl.classList.add('text-amber-400');
-          infoEl.textContent = 'No layers selected — exporting all layers';
-        } else {
-          infoEl.classList.add('text-vectura-muted');
-          const names = selectedLayers.map((l) => l.name || l.id);
-          const shown = names.slice(0, 3).join(', ');
-          const extra = names.length > 3 ? ` and ${names.length - 3} more` : '';
-          infoEl.textContent = `${selectedLayers.length} selected: ${shown}${extra}`;
-        }
-        panel.appendChild(infoEl);
-      }
-
-      const previewSelect = document.createElement('select');
-      previewSelect.className = 'w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent';
-      previewSelect.innerHTML = `
-        <option value="off">Off</option>
-        <option value="replace">Replace</option>
-        <option value="overlay">Overlay</option>
-      `;
-      previewSelect.value = SETTINGS.lineSortOverlayVisible
-        ? 'overlay'
-        : ((SETTINGS.optimizationPreview || 'off') === 'replace' ? 'replace' : 'off');
-      previewSelect.onchange = (e) => {
-        const mode = e.target.value;
-        // The canvas line-sort overlay is its own (non-persisted) flag so it stays off
-        // by default and is only shown via the eye toggle / this select; 'replace' still
-        // rides optimizationPreview (it swaps the drawn geometry for the optimized paths).
-        SETTINGS.lineSortOverlayVisible = mode === 'overlay';
-        SETTINGS.optimizationPreview = mode === 'replace' ? 'replace' : 'off';
-        this.buildControls();
-        this.app.render();
-        if (this.exportModalState?.isOpen) this.renderExportPreview();
-      };
-      panel.appendChild(buildRow('Preview', previewSelect));
-
-      const exportToggle = document.createElement('input');
-      exportToggle.type = 'checkbox';
-      exportToggle.checked = Boolean(SETTINGS.optimizationExport);
-      exportToggle.onchange = (e) => {
-        const next = Boolean(e.target.checked);
-        SETTINGS.optimizationExport = next;
-        // Master switch: turning Export Optimized off bypasses every step so
-        // the per-step toggles in the sidebar visually deactivate too. Turning
-        // it back on lifts the bypass; per-step `enabled` flags retain their
-        // user-set values.
-        applyOptimization((cfg) => {
-          cfg.bypassAll = !next;
-          cfg.steps = (cfg.steps || []).map((step) => ({ ...step, bypass: !next }));
-        });
-        this.buildControls();
-      };
-      panel.appendChild(buildRow('Export Optimized', exportToggle));
-
-      const getHexComplement = (hex) => {
-        const raw = `${hex || ''}`.trim().replace('#', '');
-        const normalized =
-          raw.length === 3
-            ? raw
-                .split('')
-                .map((c) => `${c}${c}`)
-                .join('')
-            : raw;
-        if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return '#c74307';
-        const r = 255 - parseInt(normalized.slice(0, 2), 16);
-        const g = 255 - parseInt(normalized.slice(2, 4), 16);
-        const b = 255 - parseInt(normalized.slice(4, 6), 16);
-        const toHex = (v) => v.toString(16).padStart(2, '0');
-        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-      };
-
-      const overlayStyleControls = document.createElement('div');
-      overlayStyleControls.className = 'color-thickness-control';
-      const overlayColorPreview = document.createElement('button');
-      overlayColorPreview.type = 'button';
-      overlayColorPreview.className = 'value-chip text-xs text-vectura-accent font-mono color-thickness-pill';
-      overlayColorPreview.textContent = `${(SETTINGS.optimizationOverlayColor || '#38bdf8').toUpperCase()}`;
-      overlayColorPreview.style.background = SETTINGS.optimizationOverlayColor || '#38bdf8';
-      overlayColorPreview.style.color = getContrastTextColor(SETTINGS.optimizationOverlayColor || '#38bdf8');
-      const overlayColorInput = document.createElement('input');
-      overlayColorInput.type = 'color';
-      overlayColorInput.value = SETTINGS.optimizationOverlayColor || '#38bdf8';
-      overlayColorInput.className = 'hidden';
-
-      const overlaySizeControls = document.createElement('div');
-      overlaySizeControls.className = 'color-thickness-size';
-      const overlayWidthConfig = this.getDocumentLengthConfig({ minMm: 0.05, maxMm: 1, stepMm: 0.05 });
-      const overlayWidth = document.createElement('input');
-      overlayWidth.type = 'range';
-      overlayWidth.min = `${overlayWidthConfig.min}`;
-      overlayWidth.max = `${overlayWidthConfig.max}`;
-      overlayWidth.step = `${overlayWidthConfig.step}`;
-      overlayWidth.value = this.formatDocumentNumber(SETTINGS.optimizationOverlayWidth ?? 0.2, { precision: overlayWidthConfig.precision });
-      const overlayWidthInput = document.createElement('input');
-      overlayWidthInput.type = 'number';
-      overlayWidthInput.min = `${overlayWidthConfig.min}`;
-      overlayWidthInput.max = `${overlayWidthConfig.max}`;
-      overlayWidthInput.step = `${overlayWidthConfig.step}`;
-      overlayWidthInput.value = this.formatDocumentNumber(SETTINGS.optimizationOverlayWidth ?? 0.2, { precision: overlayWidthConfig.precision });
-      overlayWidthInput.className =
-        'w-14 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none';
-      const overlayMm = document.createElement('span');
-      overlayMm.className = 'text-[10px] text-vectura-muted';
-      overlayMm.textContent = overlayWidthConfig.unitLabel;
-      overlaySizeControls.appendChild(overlayWidth);
-      overlaySizeControls.appendChild(overlayWidthInput);
-      overlaySizeControls.appendChild(overlayMm);
-
-      const overlayResetBtn = document.createElement('button');
-      overlayResetBtn.type = 'button';
-      overlayResetBtn.className = 'text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted';
-      overlayResetBtn.textContent = 'Reset';
-
-      const applyOverlayStyle = (opts = {}) => {
-        const { color, width, commit = false } = opts;
-        if (commit && this.app.pushHistory) this.app.pushHistory();
-        if (typeof color === 'string' && color) {
-          SETTINGS.optimizationOverlayColor = color;
-          overlayColorPreview.textContent = color.toUpperCase();
-          overlayColorPreview.style.background = color;
-          overlayColorPreview.style.color = getContrastTextColor(color);
-        }
-        if (width !== undefined) {
-          const next = Math.max(0.05, Math.min(1, this.parseDocumentNumber(width, { fallbackMm: SETTINGS.optimizationOverlayWidth ?? 0.2 })));
-          SETTINGS.optimizationOverlayWidth = Number.isFinite(next) ? next : 0.2;
-          const displayWidth = this.formatDocumentNumber(SETTINGS.optimizationOverlayWidth, { precision: overlayWidthConfig.precision });
-          overlayWidth.value = displayWidth;
-          overlayWidthInput.value = displayWidth;
-        }
-        rerenderOptimizationPreview();
-      };
-
-      overlayColorPreview.onclick = () => openColorPickerAnchoredTo(overlayColorInput, overlayColorPreview, { title: 'Overlay Color', uiInstance: this });
-      overlayColorInput.oninput = (e) => applyOverlayStyle({ color: e.target.value });
-      overlayColorInput.onchange = (e) => applyOverlayStyle({ color: e.target.value, commit: true });
-      overlayWidth.oninput = (e) => applyOverlayStyle({ width: e.target.value });
-      overlayWidth.onchange = (e) => applyOverlayStyle({ width: e.target.value, commit: true });
-      overlayWidthInput.oninput = (e) => applyOverlayStyle({ width: e.target.value });
-      overlayWidthInput.onchange = (e) => applyOverlayStyle({ width: e.target.value, commit: true });
-      overlayResetBtn.onclick = () => {
-        applyOverlayStyle({ color: '#38bdf8', width: 0.2, commit: true });
-      };
-
-      const overlayColorField = document.createElement('div');
-      overlayColorField.className = 'style-field';
-      const overlayColorLabel = document.createElement('span');
-      overlayColorLabel.className = 'style-field-label';
-      overlayColorLabel.textContent = 'Line Color';
-      overlayColorField.appendChild(overlayColorLabel);
-      overlayColorField.appendChild(overlayColorPreview);
-      overlayColorField.appendChild(overlayColorInput);
-
-      const overlayThicknessField = document.createElement('div');
-      overlayThicknessField.className = 'style-field';
-      const overlayThicknessLabel = document.createElement('span');
-      overlayThicknessLabel.className = 'style-field-label';
-      overlayThicknessLabel.textContent = 'Line Thickness';
-      overlayThicknessField.appendChild(overlayThicknessLabel);
-      overlayThicknessField.appendChild(overlaySizeControls);
-
-      const overlayResetField = document.createElement('div');
-      overlayResetField.className = 'style-field';
-      const overlayResetLabel = document.createElement('span');
-      overlayResetLabel.className = 'style-field-label';
-      overlayResetLabel.textContent = 'Reset';
-      overlayResetField.appendChild(overlayResetLabel);
-      overlayResetField.appendChild(overlayResetBtn);
-
-      overlayStyleControls.appendChild(overlayColorField);
-      overlayStyleControls.appendChild(overlayThicknessField);
-      overlayStyleControls.appendChild(overlayResetField);
-      const overlayStyleRow = buildRow('Overlay Style', overlayStyleControls);
-      if (!SETTINGS.lineSortOverlayVisible) overlayStyleRow.classList.add('hidden');
-      panel.appendChild(overlayStyleRow);
-
-      const resetBtn = document.createElement('button');
-      resetBtn.type = 'button';
-      resetBtn.className = 'opt-reset';
-      resetBtn.textContent = 'Reset Optimizations';
-      resetBtn.onclick = () => {
-        const defaults = SETTINGS.optimizationDefaults ? clone(SETTINGS.optimizationDefaults) : { bypassAll: false, steps: [] };
-        applyOptimization((cfg) => {
-          cfg.bypassAll = defaults.bypassAll ?? false;
-          cfg.steps = clone(defaults.steps || []);
-        });
-        this.buildControls();
-      };
-      const resetRow = document.createElement('div');
-      resetRow.className = 'optimization-actions';
-      resetRow.appendChild(resetBtn);
-      panel.appendChild(resetRow);
-
-      const stats = document.createElement('div');
-      stats.className = 'optimization-stats';
-      stats.innerHTML = `
-        <div class="optimization-stat-row">
-          <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Before</span>
-          <span class="text-[10px] text-vectura-accent" data-opt-stat="before">Lines 0 • Points 0 • 0m • 0:00</span>
-        </div>
-        <div class="optimization-stat-row">
-          <span class="text-[10px] uppercase tracking-widest text-vectura-muted">After</span>
-          <span class="text-[10px] text-vectura-accent" data-opt-stat="after">Lines 0 • Points 0 • 0m • 0:00</span>
-        </div>
-      `;
-      panel.appendChild(stats);
-
-      if (!config) {
-        target.appendChild(panel);
-        return;
-      }
-
-      const list = document.createElement('div');
-      list.className = 'optimization-list';
-
-      const buildExportSettingsCard = () => {
-        const card = document.createElement('div');
-        card.className = 'optimization-card';
-        card.innerHTML = `
-          <div class="optimization-card-header">
-            <div class="optimization-card-title">
-              <span>Export Settings</span>
-            </div>
-          </div>
-        `;
-        const controlsWrap = document.createElement('div');
-        controlsWrap.className = 'optimization-controls';
-
-        const precisionValue = Math.max(0, Math.min(6, parseInt(SETTINGS.precision, 10) || 3));
-        const precisionControl = document.createElement('div');
-        precisionControl.className = 'optimization-control';
-        precisionControl.innerHTML = `
-          <div class="flex items-center gap-2 mb-1">
-            <label class="control-label mb-0">Precision</label>
-          </div>
-          <div class="slider-row">
-            <div class="sld-fx-wrap">
-              <input type="range" min="0" max="6" step="1" value="${precisionValue}" class="ctrl-slider">
-            </div>
-            <button type="button" class="value-chip">${precisionValue}</button>
-          </div>
-        `;
-        const precisionRange = precisionControl.querySelector('input[type="range"]');
-        const precisionChip = precisionControl.querySelector('.value-chip');
-        if (precisionRange) syncSliderFill(precisionRange);
-        const applyPrecision = (raw, options = {}) => {
-          const { commit = false } = options;
-          if (commit && this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0, Math.min(6, parseInt(raw, 10) || 3));
-          SETTINGS.precision = next;
-          if (precisionRange) {
-            precisionRange.value = `${next}`;
-            syncSliderFill(precisionRange);
-          }
-          if (precisionChip) precisionChip.textContent = `${next}`;
-          updateStats();
-          if (this.exportModalState?.isOpen) this.renderExportPreview();
-        };
-        if (precisionRange) {
-          precisionRange.oninput = (e) => applyPrecision(e.target.value);
-          precisionRange.onchange = (e) => applyPrecision(e.target.value, { commit: true });
-        }
-        controlsWrap.appendChild(precisionControl);
-
-        const strokeOverrideOn = SETTINGS.strokeWidthOverride === true;
-        const strokeOverrideControl = document.createElement('div');
-        strokeOverrideControl.className = 'optimization-control';
-        strokeOverrideControl.innerHTML = `
-          <div class="flex justify-between mb-1">
-            <label class="control-label mb-0">Export Stroke Override</label>
-            <span class="text-xs text-vectura-accent font-mono">${strokeOverrideOn ? 'ON' : 'OFF'}</span>
-          </div>
-          <label class="sw-toggle" role="switch" aria-checked="${strokeOverrideOn ? 'true' : 'false'}">
-            <input type="checkbox" ${strokeOverrideOn ? 'checked' : ''} />
-            <span class="sw-track"></span>
-            <span class="sw-thumb"></span>
-          </label>
-        `;
-        const strokeOverrideToggle = strokeOverrideControl.querySelector('input');
-        const strokeOverrideState = strokeOverrideControl.querySelector('span');
-        const strokeOverrideSwitch = strokeOverrideControl.querySelector('.sw-toggle');
-
-        const strokeConfig = this.getDocumentLengthConfig({ minMm: 0, maxMm: 5, stepMm: 0.05 });
-        const strokeValueDisplay = this.formatDocumentNumber(SETTINGS.strokeWidth ?? 0.3, { precision: strokeConfig.precision });
-        const strokeControl = document.createElement('div');
-        strokeControl.className = 'optimization-control';
-        strokeControl.innerHTML = `
-          <div class="flex items-center gap-2 mb-1">
-            <label class="control-label mb-0">Stroke (${strokeConfig.unitLabel})</label>
-          </div>
-          <div class="slider-row">
-            <div class="sld-fx-wrap">
-              <input type="range" min="${strokeConfig.min}" max="${strokeConfig.max}" step="${strokeConfig.step}" value="${strokeValueDisplay}" class="ctrl-slider">
-            </div>
-            <button type="button" class="value-chip">${strokeValueDisplay}${strokeConfig.unitLabel}</button>
-          </div>
-        `;
-        const strokeRange = strokeControl.querySelector('input[type="range"]');
-        const strokeChip = strokeControl.querySelector('.value-chip');
-        if (strokeRange) syncSliderFill(strokeRange);
-        const setStrokeSliderVisible = (visible) => {
-          strokeControl.hidden = !visible;
-          if (strokeRange) strokeRange.disabled = !visible;
-        };
-        setStrokeSliderVisible(strokeOverrideOn);
-        const applyStroke = (raw, options = {}) => {
-          const { commit = false } = options;
-          if (commit && this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0, this.parseDocumentNumber(raw, { fallbackMm: SETTINGS.strokeWidth ?? 0.3 }));
-          SETTINGS.strokeWidth = Number.isFinite(next) ? next : 0.3;
-          this.app.engine.layers.forEach((layer) => {
-            layer.strokeWidth = SETTINGS.strokeWidth;
-          });
-          const display = this.formatDocumentNumber(SETTINGS.strokeWidth, { precision: strokeConfig.precision });
-          if (strokeRange) {
-            strokeRange.value = display;
-            syncSliderFill(strokeRange);
-          }
-          if (strokeChip) strokeChip.textContent = `${display}${strokeConfig.unitLabel}`;
-          this.app.render();
-          updateStats();
-          if (this.exportModalState?.isOpen) this.renderExportPreview();
-        };
-        if (strokeRange) {
-          strokeRange.oninput = (e) => applyStroke(e.target.value);
-          strokeRange.onchange = (e) => applyStroke(e.target.value, { commit: true });
-        }
-        if (strokeOverrideToggle) {
-          strokeOverrideToggle.onchange = (e) => {
-            if (this.app.pushHistory) this.app.pushHistory();
-            const enabled = Boolean(e.target.checked);
-            SETTINGS.strokeWidthOverride = enabled;
-            if (strokeOverrideState) strokeOverrideState.textContent = enabled ? 'ON' : 'OFF';
-            if (strokeOverrideSwitch) strokeOverrideSwitch.setAttribute('aria-checked', enabled ? 'true' : 'false');
-            setStrokeSliderVisible(enabled);
-            this.app.persistPreferencesDebounced?.();
-            this.app.render();
-            updateStats();
-            if (this.exportModalState?.isOpen) this.renderExportPreview();
-          };
-        }
-        controlsWrap.appendChild(strokeOverrideControl);
-        controlsWrap.appendChild(strokeControl);
-
-        const hiddenGeometryControl = document.createElement('div');
-        hiddenGeometryControl.className = 'optimization-control';
-        hiddenGeometryControl.innerHTML = `
-          <div class="flex justify-between mb-1">
-            <label class="control-label mb-0">Remove Hidden Geometry</label>
-            <span class="text-xs text-vectura-accent font-mono">${SETTINGS.removeHiddenGeometry !== false ? 'ON' : 'OFF'}</span>
-          </div>
-          <label class="sw-toggle" role="switch" aria-checked="${SETTINGS.removeHiddenGeometry !== false ? 'true' : 'false'}">
-            <input type="checkbox" ${SETTINGS.removeHiddenGeometry !== false ? 'checked' : ''} />
-            <span class="sw-track"></span>
-            <span class="sw-thumb"></span>
-          </label>
-        `;
-        const hiddenGeometryToggle = hiddenGeometryControl.querySelector('input');
-        const hiddenGeometryState = hiddenGeometryControl.querySelector('span');
-        if (hiddenGeometryToggle && hiddenGeometryState) {
-          hiddenGeometryToggle.onchange = (e) => {
-            if (this.app.pushHistory) this.app.pushHistory();
-            SETTINGS.removeHiddenGeometry = Boolean(e.target.checked);
-            hiddenGeometryState.textContent = SETTINGS.removeHiddenGeometry ? 'ON' : 'OFF';
-            this.app.persistPreferencesDebounced?.();
-            if (this.exportModalState?.isOpen) this.renderExportPreview();
-          };
-        }
-        controlsWrap.appendChild(hiddenGeometryControl);
-
-        const toggleControl = document.createElement('div');
-        toggleControl.className = 'optimization-control';
-        toggleControl.innerHTML = `
-          <div class="flex justify-between mb-1">
-            <label class="control-label mb-0">Plotter Optimization</label>
-            <span class="text-xs text-vectura-accent font-mono">${SETTINGS.plotterOptimize > 0 ? 'ON' : 'OFF'}</span>
-          </div>
-          <label class="sw-toggle" role="switch" aria-checked="${SETTINGS.plotterOptimize > 0 ? 'true' : 'false'}">
-            <input type="checkbox" />
-            <span class="sw-track"></span>
-            <span class="sw-thumb"></span>
-          </label>
-        `;
-        const plotterToggle = toggleControl.querySelector('input');
-        const toggleState = toggleControl.querySelector('span');
-        const toleranceControl = document.createElement('div');
-        toleranceControl.className = 'optimization-control';
-        const currentTolerance = Math.max(0.01, Math.min(1, SETTINGS.plotterOptimize || 0.1));
-        const toleranceConfig = this.getDocumentLengthConfig({ minMm: 0.01, maxMm: 1, stepMm: 0.01 });
-        const toleranceDisplay = this.formatDocumentNumber(currentTolerance, { precision: toleranceConfig.precision });
-        toleranceControl.innerHTML = `
-          <div class="flex items-center gap-2 mb-1">
-            <label class="control-label mb-0">Optimization Tolerance (${toleranceConfig.unitLabel})</label>
-          </div>
-          <div class="slider-row">
-            <div class="sld-fx-wrap">
-              <input type="range" min="${toleranceConfig.min}" max="${toleranceConfig.max}" step="${toleranceConfig.step}" value="${toleranceDisplay}" class="ctrl-slider">
-            </div>
-            <button type="button" class="value-chip">${toleranceDisplay}${toleranceConfig.unitLabel}</button>
-          </div>
-        `;
-        const tolRange = toleranceControl.querySelector('input[type="range"]');
-        if (tolRange) syncSliderFill(tolRange);
-        const tolNumber = toleranceControl.querySelector('input[type="number"]');
-        const tolValue = toleranceControl.querySelector('.value-chip');
-        const setToleranceVisible = (visible) => {
-          toleranceControl.hidden = !visible;
-          if (tolRange) tolRange.disabled = !visible;
-          if (tolNumber) tolNumber.disabled = !visible;
-        };
-        const clampTolerance = (raw) => {
-          const next = this.parseDocumentNumber(raw, { fallbackMm: 0.1 });
-          if (!Number.isFinite(next)) return 0.1;
-          return Math.max(0.01, Math.min(1, next));
-        };
-        const applyTolerance = (raw, options = {}) => {
-          const { commit = false } = options;
-          if (commit && this.app.pushHistory) this.app.pushHistory();
-          const next = clampTolerance(raw);
-          const displayValue = this.formatDocumentNumber(next, { precision: toleranceConfig.precision });
-          if (tolRange) {
-            tolRange.value = displayValue;
-            syncSliderFill(tolRange);
-          }
-          if (tolNumber) tolNumber.value = displayValue;
-          if (tolValue) tolValue.textContent = `${displayValue}${toleranceConfig.unitLabel}`;
-          SETTINGS.plotterOptimize = plotterToggle?.checked ? next : 0;
-          if (toggleState) toggleState.textContent = SETTINGS.plotterOptimize > 0 ? 'ON' : 'OFF';
-          rerenderOptimizationPreview();
-        };
-        if (plotterToggle) {
-          plotterToggle.checked = SETTINGS.plotterOptimize > 0;
-          setToleranceVisible(plotterToggle.checked);
-          plotterToggle.onchange = (e) => {
-            if (this.app.pushHistory) this.app.pushHistory();
-            const enabled = Boolean(e.target.checked);
-            setToleranceVisible(enabled);
-            const rawTol = tolNumber?.value || tolRange?.value || 0.1;
-            const clamped = clampTolerance(rawTol);
-            SETTINGS.plotterOptimize = enabled ? clamped : 0;
-            if (toggleState) toggleState.textContent = enabled ? 'ON' : 'OFF';
-            rerenderOptimizationPreview();
-          };
-        }
-        if (tolRange) {
-          tolRange.oninput = (e) => applyTolerance(e.target.value);
-          tolRange.onchange = (e) => applyTolerance(e.target.value, { commit: true });
-        }
-        if (tolNumber) {
-          tolNumber.oninput = (e) => applyTolerance(e.target.value);
-          tolNumber.onchange = (e) => applyTolerance(e.target.value, { commit: true });
-        }
-        controlsWrap.appendChild(toggleControl);
-        controlsWrap.appendChild(toleranceControl);
-
-        card.appendChild(controlsWrap);
-        return card;
-      };
-
-      const formatOptValue = (def, value) => {
-        const { precision, unit } = getOptimizationDisplayConfig(def);
-        const factor = Math.pow(10, precision);
-        const displayValue = toOptimizationDisplayValue(def, value ?? 0);
-        const rounded = Math.round(displayValue * factor) / factor;
-        return `${rounded}${unit}`;
-      };
-
-      const buildRangeControl = (stepConfig, def) => {
-        const control = document.createElement('div');
-        control.className = 'optimization-control';
-        const value = stepConfig[def.key] ?? getStepDefaults(stepConfig.id)[def.key] ?? def.min ?? 0;
-        if (stepConfig[def.key] === undefined) stepConfig[def.key] = value;
-        const { min, max, step } = getOptimizationDisplayConfig(def);
-        const displayValue = toOptimizationDisplayValue(def, value);
-        const editorDef = toOptimizationEditorDef(def);
-        control.innerHTML = `
-          <div class="flex items-center gap-2 mb-1">
-            <label class="control-label mb-0">${getOptimizationLabel(def.label)}</label>
-          </div>
-          <div class="slider-row">
-            <div class="sld-fx-wrap">
-              <input type="range" min="${min}" max="${max}" step="${step}" value="${displayValue}" class="ctrl-slider">
-            </div>
-            <button type="button" class="value-chip">${formatOptValue(def, value)}</button>
-          </div>
-          <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
-        `;
-        const input = control.querySelector('input[type="range"]');
-        const valueBtn = control.querySelector('.value-chip');
-        const valueInput = control.querySelector('.value-input');
-        if (input) syncSliderFill(input);
-        if (input && valueBtn) {
-          input.oninput = (e) => {
-            syncSliderFill(e.target);
-            const next = fromOptimizationDisplayValue(def, parseFloat(e.target.value));
-            valueBtn.textContent = formatOptValue(def, next);
-            applyOptimization((cfg) => {
-              const step = cfg.steps.find((s) => s.id === stepConfig.id);
-              if (step) step[def.key] = next;
-            });
-          };
-          input.onchange = (e) => { triggerSliderMotion(e.target); };
-          input.addEventListener('dblclick', (e) => {
-            e.preventDefault();
-            const defaults = getStepDefaults(stepConfig.id);
-            if (defaults[def.key] === undefined) return;
-            const next = defaults[def.key];
-            input.value = toOptimizationDisplayValue(def, next);
-            syncSliderFill(input);
-            valueBtn.textContent = formatOptValue(def, next);
-            applyOptimization((cfg) => {
-              const step = cfg.steps.find((s) => s.id === stepConfig.id);
-              if (step) step[def.key] = next;
-            });
-          });
-          attachValueEditor({
-            def: editorDef,
-            valueEl: valueBtn,
-            inputEl: valueInput,
-            getValue: () => stepConfig[def.key],
-            setValue: (displayVal, opts) => {
-              input.value = displayVal;
-              syncSliderFill(input);
-              applyOptimization((cfg) => {
-                const step = cfg.steps.find((s) => s.id === stepConfig.id);
-                if (step) step[def.key] = fromOptimizationDisplayValue(def, displayVal);
-              });
-            },
-          });
-        }
-        return control;
-      };
-
-      const buildSelectControl = (stepConfig, def) => {
-        const control = document.createElement('div');
-        control.className = 'optimization-control';
-        let value = stepConfig[def.key];
-        if ((value === undefined || value === null) && def.options?.length) {
-          value = def.options[0].value;
-          stepConfig[def.key] = value;
-        }
-        const optionsHtml = (def.options || [])
-          .map((opt) => `<option value="${opt.value}" ${value === opt.value ? 'selected' : ''}>${opt.label}</option>`)
-          .join('');
-        const currentLabel = def.options.find((opt) => opt.value === value)?.label || value;
-        control.innerHTML = `
-          <div class="flex justify-between mb-1">
-            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
-            <span class="text-xs text-vectura-accent font-mono">${currentLabel}</span>
-          </div>
-          <select class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent">
-            ${optionsHtml}
-          </select>
-        `;
-        const input = control.querySelector('select');
-        const span = control.querySelector('span');
-        if (input && span) {
-          input.onchange = (e) => {
-            const next = e.target.value;
-            applyOptimization((cfg) => {
-              const step = cfg.steps.find((s) => s.id === stepConfig.id);
-              if (step) step[def.key] = next;
-            });
-            span.textContent = def.options.find((opt) => opt.value === next)?.label || next;
-          };
-          input.addEventListener('dblclick', (e) => {
-            e.preventDefault();
-            const defaults = getStepDefaults(stepConfig.id);
-            const next = defaults[def.key] ?? def.options?.[0]?.value;
-            if (next === undefined) return;
-            applyOptimization((cfg) => {
-              const step = cfg.steps.find((s) => s.id === stepConfig.id);
-              if (step) step[def.key] = next;
-            });
-            input.value = next;
-            span.textContent = def.options.find((opt) => opt.value === next)?.label || next;
-          });
-        }
-        return control;
-      };
-
-      const buildCheckboxControl = (stepConfig, def) => {
-        const control = document.createElement('div');
-        control.className = 'optimization-control';
-        const checked = Boolean(stepConfig[def.key]);
-        control.innerHTML = `
-          <div class="flex justify-between mb-1">
-            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
-            <span class="text-xs text-vectura-accent font-mono">${checked ? 'ON' : 'OFF'}</span>
-          </div>
-          <label class="sw-toggle" role="switch" aria-checked="${checked ? 'true' : 'false'}">
-            <input type="checkbox" ${checked ? 'checked' : ''} />
-            <span class="sw-track"></span>
-            <span class="sw-thumb"></span>
-          </label>
-        `;
-        const input = control.querySelector('input');
-        const span = control.querySelector('span');
-        if (input && span) {
-          input.onchange = (e) => {
-            const next = Boolean(e.target.checked);
-            span.textContent = next ? 'ON' : 'OFF';
-            applyOptimization((cfg) => {
-              const step = cfg.steps.find((s) => s.id === stepConfig.id);
-              if (step) step[def.key] = next;
-            });
-          };
-          input.addEventListener('dblclick', (e) => {
-            e.preventDefault();
-            const defaults = getStepDefaults(stepConfig.id);
-            if (defaults[def.key] === undefined) return;
-            const next = Boolean(defaults[def.key]);
-            input.checked = next;
-            span.textContent = next ? 'ON' : 'OFF';
-            applyOptimization((cfg) => {
-              const step = cfg.steps.find((s) => s.id === stepConfig.id);
-              if (step) step[def.key] = next;
-            });
-          });
-        }
-        return control;
-      };
-
-      const bindReorderGrip = (grip, card, stepId) => {
-        if (!grip) return;
-        grip.onmousedown = (e) => {
-          e.preventDefault();
-          const dragEl = card;
-          dragEl.classList.add('dragging');
-          const indicator = document.createElement('div');
-          indicator.className = 'optimization-drop-indicator';
-          list.insertBefore(indicator, dragEl.nextSibling);
-          const currentOrder = config.steps.map((step) => step.id);
-          const startIndex = currentOrder.indexOf(stepId);
-          const onMove = (ev) => {
-            const y = ev.clientY;
-            const items = Array.from(list.querySelectorAll('.optimization-card')).filter((item) => item !== dragEl);
-            let inserted = false;
-            for (const item of items) {
-              const rect = item.getBoundingClientRect();
-              if (y < rect.top + rect.height / 2) {
-                list.insertBefore(indicator, item);
-                inserted = true;
-                break;
-              }
-            }
-            if (!inserted) list.appendChild(indicator);
-          };
-          const onUp = () => {
-            dragEl.classList.remove('dragging');
-            const siblings = Array.from(list.children);
-            const indicatorIndex = siblings.indexOf(indicator);
-            const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('optimization-card'));
-            const newIndex = before.length;
-            indicator.remove();
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-            if (newIndex === startIndex || newIndex < 0) return;
-            applyOptimization((cfg) => {
-              const order = cfg.steps.map((step) => step.id).filter((id) => id !== stepId);
-              const targetIndex = Math.max(0, Math.min(order.length, newIndex));
-              order.splice(targetIndex, 0, stepId);
-              const map = new Map(cfg.steps.map((step) => [step.id, step]));
-              cfg.steps = order.map((id) => map.get(id)).filter(Boolean);
-            });
-            this.buildControls();
-          };
-          window.addEventListener('mousemove', onMove);
-          window.addEventListener('mouseup', onUp);
-        };
-      };
-
-      list.appendChild(buildExportSettingsCard());
-
-      OPTIMIZATION_STEPS.forEach((def) => {
-        const stepConfig = config.steps.find((step) => step.id === def.id) || { id: def.id, enabled: false, bypass: false };
-        if (!config.steps.find((step) => step.id === def.id)) config.steps.push(stepConfig);
-        const card = document.createElement('div');
-        card.className = 'optimization-card';
-        card.dataset.stepId = def.id;
-        const header = document.createElement('div');
-        header.className = 'optimization-card-header';
-        header.innerHTML = `
-          <div class="optimization-card-title">
-            <button class="optimization-grip" type="button" aria-label="Reorder optimization">
-              <span class="dot"></span><span class="dot"></span>
-              <span class="dot"></span><span class="dot"></span>
-              <span class="dot"></span><span class="dot"></span>
-            </button>
-            <span>${getDisplayLabel(def)}</span>
-          </div>
-          <div class="optimization-card-actions">
-            <label class="opt-toggle">
-              <label class="sw-toggle" role="switch" aria-checked="${stepConfig.enabled ? 'true' : 'false'}">
-                <input type="checkbox" ${stepConfig.enabled ? 'checked' : ''} />
-                <span class="sw-track"></span>
-                <span class="sw-thumb"></span>
-              </label>
-              Apply
-            </label>
-            <label class="opt-toggle">
-              <label class="sw-toggle" role="switch" aria-checked="${stepConfig.bypass ? 'true' : 'false'}">
-                <input type="checkbox" ${stepConfig.bypass ? 'checked' : ''} />
-                <span class="sw-track"></span>
-                <span class="sw-thumb"></span>
-              </label>
-              Bypass
-            </label>
-          </div>
-        `;
-        const grip = header.querySelector('.optimization-grip');
-        bindReorderGrip(grip, card, def.id);
-        const [applyToggle, bypassStepToggle] = header.querySelectorAll('input[type="checkbox"]');
-        if (applyToggle) {
-          applyToggle.onchange = (e) => {
-            const next = Boolean(e.target.checked);
-            // Enabling line sort lights up the print-order overlay ONLY inside
-            // the export modal (where the gradient preview lives). On the main
-            // canvas we no longer force the overlay on — the Draw Order slider is
-            // the canonical print-order preview there, so an auto-overlay just
-            // adds a confusing second visualization the user didn't ask for.
-            if (def.id === 'linesort' && next && this.exportModalState?.isOpen) {
-              if ((this.exportModalState.previewMode || 'off') === 'off') {
-                this.exportModalState.previewMode = 'overlay';
-                const previewSelect = this.exportModalState.root?.querySelector('#export-preview-mode');
-                if (previewSelect) previewSelect.value = 'overlay';
-              }
-              SETTINGS.optimizationPreview = this.exportModalState.previewMode;
-            }
-            applyOptimization((cfg) => {
-              const step = cfg.steps.find((s) => s.id === def.id);
-              if (step) step.enabled = next;
-            });
-            this.buildControls();
-          };
-        }
-        if (bypassStepToggle) {
-          bypassStepToggle.onchange = (e) => {
-            const next = Boolean(e.target.checked);
-            applyOptimization((cfg) => {
-              const step = cfg.steps.find((s) => s.id === def.id);
-              if (step) step.bypass = next;
-              cfg.bypassAll = (cfg.steps || []).every((s) => Boolean(s.bypass));
-            });
-            this.buildControls();
-          };
-        }
-        card.appendChild(header);
-
-        const controlsWrap = document.createElement('div');
-        controlsWrap.className = 'optimization-controls';
-        const isDisabled = !stepConfig.enabled || config.bypassAll;
-        if (isDisabled) controlsWrap.classList.add('is-disabled');
-        (def.controls || []).forEach((cDef) => {
-          let control = null;
-          if (cDef.type === 'select') control = buildSelectControl(stepConfig, cDef);
-          else if (cDef.type === 'checkbox') control = buildCheckboxControl(stepConfig, cDef);
-          else control = buildRangeControl(stepConfig, cDef);
-          if (control) {
-            const inputs = control.querySelectorAll('input, select, button');
-            inputs.forEach((input) => {
-              if (input.type === 'button') return;
-              input.disabled = isDisabled;
-            });
-            controlsWrap.appendChild(control);
-          }
-        });
-        card.appendChild(controlsWrap);
-        list.appendChild(card);
-      });
-
-      panel.appendChild(list);
-      target.appendChild(panel);
-      updateStats();
-    };
 
     if (!isGroup) {
       let groupTarget = null;
@@ -4994,11 +5020,7 @@
         renderDef(def, commonSectionBody || globalBody);
       }
     }
-    const optimizationTarget = getEl('optimization-controls');
-    if (optimizationTarget && this.exportModalState?.isOpen) {
-      optimizationTarget.innerHTML = '';
-      renderOptimizationPanel(optimizationTarget);
-    }
+    renderExportOptimizationIfOpen();
     restoreLeftPanelScroll();
     if (this.exportModalState?.isOpen) {
       this.decorateExportControlsPanel();

@@ -429,6 +429,19 @@
     return 0.7;
   };
 
+  // x-height in em — the optical-midpoint reference for a strikethrough rule.
+  // Falls back to a typical 0.72 of cap height when the OS/2 metric is absent.
+  const xHeightEm = (font) => {
+    const os2 = font.tables && font.tables.os2;
+    if (os2 && os2.sxHeight) return os2.sxHeight / font.unitsPerEm;
+    return capHeightEm(font) * 0.72;
+  };
+  // x-height as a fraction of cap height (cap height is what "size" maps to).
+  const xHeightFrac = (font) => {
+    const cap = capHeightEm(font);
+    return cap > 0 ? xHeightEm(font) / cap : 0.5;
+  };
+
   // Synthesis constants — mirror StrokeFont so smallCaps / super- / sub-script
   // read the same regardless of source.
   const SMALL_CAPS_SCALE = 0.78;
@@ -581,8 +594,10 @@
    *     hyphenate + wrapWidth  soft-wrap; only engages when hyphenate===true AND a
    *                 wrapWidth (mm column) is supplied. Without wrapWidth it is a
    *                 no-op. The break heuristic is greedy and dictionary-free.
-   * @returns {{ paths, meta, width, height, anchors? }} mm, y-down. `meta` runs
-   *   parallel to `paths`: { glyphIndex, charIndex, lineIndex, baselineY, x0, x1 }.
+   * @returns {{ paths, meta, width, height, cells, anchors? }} mm, y-down. `meta`
+   *   runs parallel to `paths`: { glyphIndex, charIndex, lineIndex, baselineY,
+   *   x0, x1 }. `cells` is dense over the source string (one per char incl.
+   *   spaces): { sourceIndex, lineIndex, x0, x1, baselineY, advance, isSpace }.
    */
   const layout = (text, opt = {}) => {
     let font = getParsed(opt.id);
@@ -591,7 +606,7 @@
       const wf = getParsed(weightKey(opt.id, weightNum(opt.fontWeight)));
       if (wf) font = wf;
     }
-    if (!font) return { paths: [], meta: [], width: 0, height: 0 };
+    if (!font) return { paths: [], meta: [], width: 0, height: 0, cells: [] };
 
     const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
     const size = Math.max(0.1, Number(opt.size) || 14);
@@ -680,8 +695,23 @@
     const lastOfPara = rawLines.map((_, i) => !blank[i] && (i === rawLines.length - 1 || blank[i + 1]));
     const colWidth = wrapWidth > 0 ? wrapWidth : (maxW + indentLeft + indentRight);
 
+    // Per-character cell source offsets (M1 seam). `cells` runs dense over the
+    // RAW input string; sourceIndex accounts for the '\n' between lines. NOTE:
+    // ligature shaping can fold multiple source chars into one glyph cell, so on
+    // ligated runs sourceIndex is the per-line glyph index rather than a precise
+    // source offset — exact for 1:1 (non-ligated) text, which is the common case.
+    const lineStart = [];
+    {
+      let accIdx = 0;
+      for (let i = 0; i < lineCells.length; i++) {
+        lineStart[i] = accIdx;
+        accIdx += lineCells[i].length + 1; // +1 for the consumed newline
+      }
+    }
+
     const paths = [];
     const meta = [];
+    const cellOut = [];
     const anchors = wantBezier ? [] : null;
     let penY = 0;
     rawLines.forEach((line, li) => {
@@ -700,7 +730,7 @@
 
       let penX = indentLeft + (firstOfPara[li] ? indentFirst : 0) + alignOffset;
       const baselineY = li * lineHeight + size; // cap-top of line 0 sits near y=0
-      cells.forEach((cell) => {
+      cells.forEach((cell, ci) => {
         const { g, sc, dy } = cell;
         const x0 = penX;
         if (g && typeof g.getPath === 'function' && (g.advanceWidth || g.path)) {
@@ -738,14 +768,24 @@
             }
           }
         }
-        penX += cell.adv + (cell.isSpace ? perGap : 0);
+        const eff = cell.adv + (cell.isSpace ? perGap : 0);
+        cellOut.push({
+          sourceIndex: lineStart[li] + ci,
+          lineIndex: li,
+          x0,
+          x1: penX + eff,
+          baselineY: baselineY - baselineShift,
+          advance: eff,
+          isSpace: cell.isSpace === true,
+        });
+        penX += eff;
       });
       penY += lineHeight;
       if (lastOfPara[li]) penY += spaceAfter;
     });
 
     const height = Math.max(0, penY - lineHeight) + size * 1.35;
-    const out = { paths, meta, width: colWidth, height };
+    const out = { paths, meta, width: colWidth, height, cells: cellOut, xHeightFrac: xHeightFrac(font) };
     if (wantBezier) out.anchors = anchors;
     return out;
   };

@@ -331,21 +331,70 @@
     });
     return d;
   }
-  function ringsBBox(rings) {
-    let x0 = Infinity;
-    let y0 = Infinity;
-    let x1 = -Infinity;
-    let y1 = -Infinity;
-    rings.forEach((r) => {
-      for (let i = 0; i < r.length; i++) {
-        const p = r[i];
-        if (p.x < x0) x0 = p.x;
-        if (p.x > x1) x1 = p.x;
-        if (p.y < y0) y0 = p.y;
-        if (p.y > y1) y1 = p.y;
-      }
+  // Open-polyline path data (no Z) — for the single-stroke built-in font, whose
+  // glyphs are pen passes, not closed rings.
+  function polysToD(polys) {
+    let d = '';
+    polys.forEach((r) => {
+      if (!r || r.length < 2) return;
+      d += 'M' + f1(r[0].x) + ' ' + f1(r[0].y);
+      for (let i = 1; i < r.length; i++) d += 'L' + f1(r[i].x) + ' ' + f1(r[i].y);
     });
-    return isFinite(x0) ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : { x: 0, y: 0, w: 0, h: 0 };
+    return d;
+  }
+
+  // Lay the built-in Vectura monoline face out with the REAL engine font, then fit
+  // the block into the stage box exactly as the main canvas fits it into the
+  // document frame (uniform scale + centre, fillRatio). The result is the same
+  // letterforms in the same place as the plot — not a CSS stand-in. Synthesis opts
+  // (vScale/hScale/tracking/kerning/baselineShift/smallCaps/super·subscript) are
+  // baked into the geometry, mirroring the engine, so the SVG carries no extra
+  // transform. Returns stage-space polylines, or null for web faces / no font.
+  function strokeFontPolys(p, W, H) {
+    const SF = Vectura.StrokeFont;
+    if (!SF || typeof SF.layout !== 'function' || isWeb(p.font)) return null;
+    let txt = p.text || ' ';
+    if (p.allCaps) txt = txt.toUpperCase();
+    let laid;
+    try {
+      laid = SF.layout(txt, {
+        size: 14,
+        tracking: num(p.tracking, 0),
+        lineHeight: num(p.lineHeight, 1.4),
+        align: p.align || 'center',
+        font: p.font || 'sans',
+        vScale: num(p.vScale, 100),
+        hScale: num(p.hScale, 100),
+        kerning: num(p.kerning, 0),
+        baselineShift: num(p.baselineShift, 0),
+        smallCaps: !!p.smallCaps,
+        superscript: !!p.superscript,
+        subscript: !!p.subscript,
+      });
+    } catch (_) {
+      return null;
+    }
+    const paths = laid && laid.paths;
+    if (!paths || !paths.length) return null;
+    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+    for (const pa of paths) for (const pt of pa) {
+      if (pt.x < minX) minX = pt.x;
+      if (pt.x > maxX) maxX = pt.x;
+      if (pt.y < minY) minY = pt.y;
+      if (pt.y > maxY) maxY = pt.y;
+    }
+    const bw = Math.max(1e-3, maxX - minX);
+    const bh = Math.max(1e-3, maxY - minY);
+    const cxB = (minX + maxX) / 2;
+    const cyB = (minY + maxY) / 2;
+    const pad = 10;
+    const availW = Math.max(8, W - 2 * pad);
+    const availH = Math.max(8, H - 2 * pad);
+    const fillR = clamp(num(p.fillRatio, 0.9), 0.1, 1);
+    const scale = Math.min(availW / bw, availH / bh) * fillR;
+    const cx = W / 2;
+    const cy = H / 2;
+    return paths.map((pa) => pa.map((pt) => ({ x: cx + (pt.x - cxB) * scale, y: cy + (pt.y - cyB) * scale })));
   }
 
   // ── fill toolpath geometry (hatch / cross / stripe / spiral / dots) ──────────
@@ -657,9 +706,9 @@
       if (specText) fillSvg.style.transform = specText.style.transform;
 
       const reveal = !!(view && view.showFillLines);
-      const d = clamp(num(p.fillDensity, 14), 1, 40);
+      const d = clamp(num(p.fillDensity, 14), 1, 100);
       const strokeW = reveal ? 1.05 : 1.7;
-      const spacing = strokeW + (1 - (d - 1) / 39) * 15;
+      const spacing = strokeW + (1 - (d - 1) / 99) * 15;
       const geo = buildFillGeometry(p.fillType || 'hatch', W, H, spacing, num(p.fillAngle, 45));
 
       const maskId = 'vtpfm' + fcSeq++;
@@ -670,9 +719,10 @@
       const rings = glyphRings(p, p.font, px, W, H);
       if (rings) {
         const sc = mmToPx(px, !!p.fitToFrame, num(p.fontSize, 38));
-        const bb = ringsBBox(rings);
-        const offX = num(p.fillOffsetX, 0) * bb.w;
-        const offY = num(p.fillOffsetY, 0) * bb.h;
+        // fillOffsetX/Y are literal mm (was a -1..1 fraction of the glyph bbox);
+        // convert to px with the same mm→px factor the inset erode uses below.
+        const offX = num(p.fillOffsetX, 0) * sc;
+        const offY = num(p.fillOffsetY, 0) * sc;
         const dPath = ringsToDOff(rings, offX, offY);
         const erode =
           p.fillInsetEnabled && num(p.fillInset, 0) > 0
@@ -974,6 +1024,28 @@
         outlineSvg.innerHTML = body;
         specStroke(false, p); // the traced contour IS the specimen; hide CSS stroke
         return;
+      }
+
+      // BUILT-IN MONOLINE FACE — draw the REAL Vectura stroke-font geometry so the
+      // specimen matches the plotted output exactly (it used to substitute the UI
+      // sans, which never aligned with the canvas). The baked polylines carry no
+      // CSS transform, so clear the inherited one. Editing / jitter still fall
+      // through to the CSS stand-in below (it owns the caret + wobble).
+      if (p.outlineStroke && !editing && num(p.jitter, 0) <= 0.05) {
+        const polys = strokeFontPolys(p, W, H);
+        if (polys && polys.length) {
+          if (specText) outlineSvg.style.transform = 'none';
+          // Reflect the built-in monoline weight: heavier Styles thicken the pen
+          // (the canvas draws extra parallel passes; the preview fattens the stroke).
+          const wp = (Vectura.StrokeFont && Vectura.StrokeFont.weightPasses)
+            ? Vectura.StrokeFont.weightPasses(p.fontWeight) : 0;
+          const sw = Math.min(0.7 + (num(p.outlineThickness, 1) - 1) * 0.13 + wp * 0.42, 14);
+          outlineSvg.innerHTML =
+            '<path d="' + polysToD(polys) + '" fill="none" stroke="#f1f1f1" stroke-width="' +
+            f1(sw) + '" stroke-linejoin="round" stroke-linecap="round"/>';
+          specStroke(false, p); // the traced strokes ARE the specimen; hide CSS text
+          return;
+        }
       }
 
       // FALLBACK — built-ins / filled / loading / jitter: keep the CSS stroke; only

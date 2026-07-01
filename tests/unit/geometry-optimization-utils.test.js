@@ -76,6 +76,128 @@ describe('Geometry helpers', () => {
     });
   });
 
+  describe('miterOffsetClosedRing (corner-faithful parallel offset)', () => {
+    const square = [
+      { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 },
+    ];
+    const area = (pts) => {
+      let s = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i]; const b = pts[(i + 1) % pts.length];
+        s += a.x * b.y - b.x * a.y;
+      }
+      return Math.abs(s) / 2;
+    };
+
+    test('positive delta expands the ring, negative contracts it', () => {
+      const out = geometry.miterOffsetClosedRing(square, 2);
+      const inn = geometry.miterOffsetClosedRing(square, -2);
+      expect(area(out)).toBeGreaterThan(area(square) + 1);
+      expect(area(inn)).toBeLessThan(area(square) - 1);
+    });
+
+    test('sharp 90° corners stay sharp (miter), not rounded', () => {
+      const out = geometry.miterOffsetClosedRing(square, 2);
+      // A miter offset of a square is a bigger square: 4 distinct corners at the
+      // exact miter points (±2 beyond each side), NOT an arc of many points.
+      const uniq = out.slice(0, -1); // drop closing dup
+      expect(uniq.length).toBe(4);
+      const corners = uniq.map((p) => [Math.round(p.x), Math.round(p.y)]).sort();
+      expect(corners).toEqual([[-2, -2], [-2, 12], [12, -2], [12, 12]].sort());
+    });
+
+    test('offset edges stay parallel at exactly the offset distance', () => {
+      const out = geometry.miterOffsetClosedRing(square, 3).slice(0, -1);
+      const xs = out.map((p) => p.x);
+      const ys = out.map((p) => p.y);
+      expect(Math.min(...xs)).toBeCloseTo(-3, 6);
+      expect(Math.max(...xs)).toBeCloseTo(13, 6);
+      expect(Math.min(...ys)).toBeCloseTo(-3, 6);
+      expect(Math.max(...ys)).toBeCloseTo(13, 6);
+    });
+
+    test('degenerate input returns null (caller falls back)', () => {
+      expect(geometry.miterOffsetClosedRing([{ x: 0, y: 0 }, { x: 1, y: 0 }], 1)).toBeNull();
+      expect(geometry.miterOffsetClosedRing(null, 1)).toBeNull();
+      expect(geometry.miterOffsetClosedRing(square, NaN)).toBeNull();
+    });
+
+    // A needle-acute spike triangle: apex angle ~11° (miterScale ~10 ≫ limit 6).
+    const spike = [
+      { x: 0, y: 0 }, { x: 100, y: 10 }, { x: 0, y: 20 },
+    ];
+
+    test('round mode caps a needle-acute convex corner with a concentric arc at radius=delta', () => {
+      const out = geometry.miterOffsetClosedRing(spike, 5, { miterLimit: 6, round: true });
+      expect(out).not.toBeNull();
+      // The apex (100,10) is the acute corner; with round the offset there is an arc
+      // of points all at radius 5 from the apex (never a long miter spike).
+      const near = out.filter((p) => Math.hypot(p.x - 100, p.y - 10) <= 5 + 1e-6 && p.x > 60);
+      expect(near.length).toBeGreaterThan(2); // sampled arc, not one spike point
+      for (const p of near) expect(Math.hypot(p.x - 100, p.y - 10)).toBeCloseTo(5, 4);
+    });
+
+    test('consecutive round passes stay one offset-step apart at the acute apex', () => {
+      const a = geometry.miterOffsetClosedRing(spike, 4, { miterLimit: 6, round: true });
+      const b = geometry.miterOffsetClosedRing(spike, 5, { miterLimit: 6, round: true });
+      const maxX = (pts) => Math.max(...pts.map((p) => p.x));
+      // Arc caps sit at radius delta from the apex → the tip advances by exactly the
+      // step (5-4=1) along +x, so passes abut instead of fanning into a stairstep.
+      expect(maxX(b) - maxX(a)).toBeCloseTo(1, 3);
+    });
+
+    test('round mode leaves ordinary ~90° corners a single sharp miter (not rounded)', () => {
+      const out = geometry.miterOffsetClosedRing(square, 2, { miterLimit: 6, round: true }).slice(0, -1);
+      expect(out.length).toBe(4); // still 4 sharp miter corners, no arc sampling
+    });
+
+    test('round omitted is byte-identical to the legacy bevel', () => {
+      const legacy = geometry.miterOffsetClosedRing(spike, 5, { miterLimit: 6 });
+      const explicit = geometry.miterOffsetClosedRing(spike, 5, { miterLimit: 6, round: false });
+      expect(explicit).toEqual(legacy);
+      // Legacy bevels the acute apex into exactly two edge-offset points (no arc).
+      const near = legacy.filter((p) => p.x > 60);
+      expect(near.length).toBe(2);
+    });
+  });
+
+  describe('flattenAnchorRing (faithful cubic-anchor flatten)', () => {
+    test('a straight segment (no handles) keeps its corner vertex exactly', () => {
+      // Triangle of straight edges — no handles anywhere → corners preserved, no
+      // extra interpolation points (each edge stays a single chord).
+      const anchors = [
+        { x: 0, y: 0, in: null, out: null },
+        { x: 10, y: 0, in: null, out: null },
+        { x: 5, y: 8, in: null, out: null },
+      ];
+      const out = geometry.flattenAnchorRing(anchors, 0.1);
+      expect(out).not.toBeNull();
+      // 3 corners + closing dup, no midpoint rounding.
+      expect(out.length).toBe(4);
+      expect(out[0]).toEqual({ x: 0, y: 0 });
+      expect(out[3]).toEqual({ x: 0, y: 0 });
+    });
+
+    test('a curved segment subdivides while endpoints (corners) are exact', () => {
+      const anchors = [
+        { x: 0, y: 0, in: null, out: { x: 0, y: 20 } },
+        { x: 20, y: 20, in: { x: 0, y: 20 }, out: null },
+      ];
+      const out = geometry.flattenAnchorRing(anchors, 0.05);
+      expect(out.length).toBeGreaterThan(4); // subdivided
+      expect(out[0]).toEqual({ x: 0, y: 0 });
+    });
+  });
+
+  describe('strokeRingsToBand (boolean stroke→band)', () => {
+    test('returns [] when no polygon-clipping engine is available', () => {
+      // The direct require harness has no window.Vectura.FillBoolean, so the
+      // helper degrades gracefully and the caller falls back to thickenPaths.
+      const ring = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }, { x: 0, y: 0 }];
+      expect(geometry.strokeRingsToBand([ring], 2)).toEqual([]);
+    });
+  });
+
   test('simplifyPath handles edge cases', () => {
     const path = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }];
 

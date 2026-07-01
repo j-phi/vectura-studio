@@ -43,6 +43,12 @@
       this.displayStats = null;
       this.displayMaskActive = false;
       this.maskPolygons = null;
+      // Editor glyph cells (M1 seam): WORLD-space quads recomputed every
+      // generate() for text layers ([] otherwise). Transient — NOT serialized.
+      this.glyphs = [];
+      // On-canvas text edit session (index-only; set by M2). Transient — NOT
+      // serialized (exportState enumerates fields explicitly, so this stays local).
+      this._edit = null;
       this.sourcePaths = null;
       this.helperPaths = null;
       this.displayHelperPaths = null;

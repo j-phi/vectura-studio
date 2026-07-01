@@ -145,6 +145,32 @@ describe('TextSpecimen renderer', () => {
     c.destroy();
   });
 
+  test('built-in face draws the REAL stroke-font geometry (faithful, not a CSS stand-in)', () => {
+    const refs = makeRefs();
+    const c = V.UI.TextSpecimen.create(refs);
+    // Non-editing, no jitter, outline on → the specimen must trace the actual
+    // Vectura monoline glyphs so it matches the plotted output. Before this was
+    // wired, a built-in face left the outline overlay empty and showed the UI sans.
+    c.render(builtinLayer({ text: 'VECTURA' }), { guides: 'frame' });
+    expect(refs.outlineSvg.innerHTML).toContain('<path');
+    expect(refs.outlineSvg.innerHTML).toContain('stroke="#f1f1f1"');
+    // The curved skeleton (arcs + splines) emits many line segments per glyph.
+    expect((refs.outlineSvg.innerHTML.match(/L/g) || []).length).toBeGreaterThan(40);
+    // …and the CSS specimen text stand-in is hidden (the strokes ARE the specimen).
+    expect(parseFloat(refs.specText.style.webkitTextStrokeWidth)).toBe(0);
+    c.destroy();
+  });
+
+  test('built-in specimen under jitter falls back to the CSS stand-in (caret-safe)', () => {
+    const refs = makeRefs();
+    const c = V.UI.TextSpecimen.create(refs);
+    c.render(builtinLayer({ jitter: 2, text: 'ABC' }), { guides: 'none', editing: false });
+    // Jitter is owned by the CSS spans, so the faithful stroke trace is suppressed.
+    expect(refs.outlineSvg.innerHTML).toBe('');
+    expect(refs.specText.querySelectorAll('span').length).toBe(3);
+    c.destroy();
+  });
+
   test('web face traces glyph contours into the outline overlay without throwing', () => {
     const refs = makeRefs();
     const c = V.UI.TextSpecimen.create(refs);

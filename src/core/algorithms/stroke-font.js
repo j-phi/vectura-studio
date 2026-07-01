@@ -17,9 +17,23 @@
 
   const CAP = 14; // cap-height in font units (the layout scale reference)
   const DESCENT = 19;
+  const XHEIGHT_TOP = 6; // lowercase x-height top (baseline = CAP)
+  // x-height as a fraction of cap height — the optical-midpoint reference a
+  // strikethrough rule rides on (shared with the web outline face).
+  const X_HEIGHT_FRAC = (CAP - XHEIGHT_TOP) / CAP;
 
-  // Sample an elliptical arc into a polyline (y-down space). a0/a1 in radians.
-  const arc = (cx, cy, rx, ry, a0, a1, steps = 14) => {
+  // ── Construction toolkit (y-down font-unit space) ───────────────────────────
+  // Reference lines: cap/ascender top = 0 · x-height top = XHEIGHT_TOP · baseline
+  // = 14 · descender bottom = 19. The font is an original geometric "architect's
+  // draft" skeleton — tall x-height, open apertures, true-circle bowls and
+  // Catmull-Rom curves rather than faceted polylines — drawn in a single pen pass
+  // so it stays plotter-native.
+  const PI = Math.PI;
+  const TAU = PI * 2;
+
+  // Sample an elliptical arc into a polyline. a0/a1 in radians; a0>a1 sweeps the
+  // other way (the divisor keeps the step pitch even in either direction).
+  const arc = (cx, cy, rx, ry, a0, a1, steps = 16) => {
     const pts = [];
     for (let i = 0; i <= steps; i++) {
       const a = a0 + ((a1 - a0) * i) / steps;
@@ -27,8 +41,38 @@
     }
     return pts;
   };
-  const ellipse = (cx, cy, rx, ry, steps = 18) => arc(cx, cy, rx, ry, 0, Math.PI * 2, steps);
-  const TAU = Math.PI * 2;
+  // Closed ellipse, started at 12 o'clock so round glyphs open/close cleanly.
+  const ellipse = (cx, cy, rx, ry, steps = 22) => arc(cx, cy, rx, ry, -PI / 2, PI * 1.5, steps);
+
+  // Right-bulging bowl anchored on a stem at x0: a half-ellipse from (x0,yTop)
+  // out to (xMax, mid) and back to (x0,yBot). Builds B/D/P/R bowls off the stem.
+  const rbowl = (x0, yTop, yBot, xMax, steps = 12) =>
+    arc(x0, (yTop + yBot) / 2, xMax - x0, (yBot - yTop) / 2, -PI / 2, PI / 2, steps);
+
+  // Catmull-Rom → dense polyline through the anchor points (endpoints clamped for
+  // an open curve). This is how the S-curve and humanist letters get smooth,
+  // original contours without hand-authored per-glyph trig.
+  const spline = (anchors, stepsPer = 6, closed = false) => {
+    const P = anchors.map((p) => ({ x: p[0], y: p[1] }));
+    const n = P.length;
+    if (n < 3) return anchors.map((p) => [p[0], p[1]]);
+    const at = (i) => P[closed ? ((i % n) + n) % n : Math.max(0, Math.min(n - 1, i))];
+    const out = [];
+    const segs = closed ? n : n - 1;
+    for (let i = 0; i < segs; i++) {
+      const p0 = at(i - 1); const p1 = at(i); const p2 = at(i + 1); const p3 = at(i + 2);
+      for (let s = 0; s < stepsPer; s++) {
+        const t = s / stepsPer; const t2 = t * t; const t3 = t2 * t;
+        const cr = (a, b, c, d) =>
+          0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+        out.push([cr(p0.x, p1.x, p2.x, p3.x), cr(p0.y, p1.y, p2.y, p3.y)]);
+      }
+    }
+    if (!closed) out.push([P[n - 1].x, P[n - 1].y]);
+    return out;
+  };
+  // Concatenate point arrays into one stroke (joins a curve to a straight leg).
+  const join = (...parts) => [].concat(...parts);
 
   // Glyph table: char → { w, s:[ stroke, … ] }, stroke = [ [x,y], … ].
   const G = {};
@@ -36,93 +80,113 @@
 
   def(' ', 7, []);
 
-  // ── Uppercase ───────────────────────────────────────────────────────────────
-  def('A', 12, [[[1, 14], [6, 0], [11, 14]], [[3, 9], [9, 9]]]);
+  // ── Uppercase (cap 0 → 14) ───────────────────────────────────────────────────
+  def('A', 12, [[[1.5, 14], [6, 0], [10.5, 14]], [[3.4, 8.7], [8.6, 8.7]]]);
   def('B', 11, [
     [[2, 0], [2, 14]],
-    [[2, 0], [7, 0], [10, 2.5], [7, 7], [2, 7]],
-    [[2, 7], [8, 7], [11, 10.5], [8, 14], [2, 14]],
+    join([[2, 0]], rbowl(6.1, 0, 7, 9.6, 9), [[2, 7]]),
+    join([[2, 7]], rbowl(6.3, 7, 14, 10.4, 9), [[2, 14]]),
   ]);
-  def('C', 11, [[[10, 3], [7, 0], [3, 2], [1, 7], [3, 12], [7, 14], [10, 11]]]);
-  def('D', 11, [[[2, 0], [2, 14]], [[2, 0], [6, 0], [10, 4], [10, 10], [6, 14], [2, 14]]]);
-  def('E', 10, [[[9, 0], [2, 0], [2, 14], [9, 14]], [[2, 7], [7, 7]]]);
-  def('F', 10, [[[9, 0], [2, 0], [2, 14]], [[2, 7], [7, 7]]]);
-  def('G', 11, [[[10, 3], [7, 0], [3, 2], [1, 7], [3, 12], [7, 14], [10, 11], [10, 8], [7, 8]]]);
+  def('C', 11, [arc(6, 7, 5, 7, 0.2 * PI, 1.8 * PI, 22)]);
+  def('D', 11.5, [[[2, 0], [2, 14]], arc(2, 7, 8.6, 7, -PI / 2, PI / 2, 18)]);
+  def('E', 10, [[[9.3, 0], [2, 0], [2, 14], [9.3, 14]], [[2, 7], [7.6, 7]]]);
+  def('F', 9.8, [[[9.3, 0], [2, 0], [2, 14]], [[2, 7], [7.6, 7]]]);
+  def('G', 11.5, [
+    arc(6, 7, 5, 7, 0.2 * PI, 1.8 * PI, 22),
+    [[10.05, 11.1], [10.05, 7.6], [7.1, 7.6]],
+  ]);
   def('H', 11, [[[2, 0], [2, 14]], [[9, 0], [9, 14]], [[2, 7], [9, 7]]]);
   def('I', 4, [[[0, 0], [4, 0]], [[2, 0], [2, 14]], [[0, 14], [4, 14]]]);
-  def('J', 9, [[[8, 0], [8, 11], [6, 14], [3, 14], [1, 11]]]);
-  def('K', 11, [[[2, 0], [2, 14]], [[9, 0], [2, 8]], [[4, 6], [10, 14]]]);
-  def('L', 9, [[[2, 0], [2, 14], [9, 14]]]);
-  def('M', 13, [[[2, 14], [2, 0], [6.5, 8], [11, 0], [11, 14]]]);
+  def('J', 8.5, [join([[8, 0], [8, 10.8]], arc(5, 10.8, 3, 3.4, 0, PI, 9))]);
+  def('K', 11, [[[2, 0], [2, 14]], [[9.2, 0], [2, 8]], [[4.3, 6.4], [9.7, 14]]]);
+  def('L', 9, [[[2, 0], [2, 14], [8.8, 14]]]);
+  def('M', 13, [[[2, 14], [2, 0], [6.5, 9], [11, 0], [11, 14]]]);
   def('N', 12, [[[2, 14], [2, 0], [10, 14], [10, 0]]]);
-  def('O', 12, [arc(6, 7, 5, 7, -Math.PI / 2, Math.PI * 1.5, 18)]);
-  def('P', 11, [[[2, 0], [2, 14]], [[2, 0], [7, 0], [10, 3], [7, 7], [2, 7]]]);
-  def('Q', 12, [arc(6, 7, 5, 7, -Math.PI / 2, Math.PI * 1.5, 18), [[7, 10], [12, 16]]]);
-  def('R', 11, [[[2, 0], [2, 14]], [[2, 0], [7, 0], [10, 3], [7, 7], [2, 7]], [[6, 7], [10, 14]]]);
-  def('S', 10, [[[9, 3], [6, 0], [3, 1], [2, 4], [4, 6], [7, 8], [9, 10], [8, 13], [5, 14], [2, 12]]]);
+  def('O', 12.5, [ellipse(6.25, 7, 5.2, 7.1, 26)]);
+  def('P', 11, [[[2, 0], [2, 14]], join([[2, 0]], rbowl(6.2, 0, 7.6, 10.2, 9), [[2, 7.6]])]);
+  def('Q', 12.5, [ellipse(6.25, 7, 5.2, 7.1, 26), [[7.6, 9.6], [11.6, 14.8]]]);
+  def('R', 11, [
+    [[2, 0], [2, 14]],
+    join([[2, 0]], rbowl(6.2, 0, 7.4, 10, 9), [[2, 7.4]]),
+    [[6, 7.4], [10.2, 14]],
+  ]);
+  def('S', 10.5, [spline([[9.2, 2.9], [8, 0.9], [5, 0.4], [2.5, 1.9], [2.4, 4.4], [4.8, 5.9], [7.3, 7.4], [9, 9.2], [8.7, 12], [5.9, 14], [2.9, 13.5], [1.5, 11.4]], 5)]);
   def('T', 10, [[[1, 0], [9, 0]], [[5, 0], [5, 14]]]);
-  def('U', 11, [[[2, 0], [2, 10], [3.5, 13], [6, 14], [8.5, 13], [10, 10], [10, 0]]]);
+  def('U', 11.5, [join([[2, 0]], arc(6, 9, 4, 5, PI, 0, 16), [[10, 0]])]);
   def('V', 12, [[[1, 0], [6, 14], [11, 0]]]);
   def('W', 16, [[[1, 0], [4, 14], [8, 4], [12, 14], [15, 0]]]);
   def('X', 11, [[[2, 0], [10, 14]], [[10, 0], [2, 14]]]);
-  def('Y', 11, [[[2, 0], [6, 7], [10, 0]], [[6, 7], [6, 14]]]);
+  def('Y', 11, [[[2, 0], [6, 7.5], [10, 0]], [[6, 7.5], [6, 14]]]);
   def('Z', 10, [[[2, 0], [9, 0], [2, 14], [9, 14]]]);
 
-  // ── Lowercase ─────────────────────────────────────────────────────────────
-  def('a', 10, [[[8, 8], [5, 6], [2, 8], [2, 12], [5, 14], [8, 12]], [[8, 6], [8, 14]]]);
-  def('b', 10, [[[2, 0], [2, 14]], [[2, 8], [5, 6], [8, 8], [8, 12], [5, 14], [2, 12]]]);
-  def('c', 9, [[[8, 8], [5, 6], [2, 9], [2, 11], [5, 14], [8, 12]]]);
-  def('d', 10, [[[8, 0], [8, 14]], [[8, 8], [5, 6], [2, 8], [2, 12], [5, 14], [8, 12]]]);
-  def('e', 9, [[[2, 11], [8, 11], [7.5, 8], [5, 6], [2, 9], [2, 12], [5, 14], [8, 12.5]]]);
-  def('f', 7, [[[6, 1], [4, 0], [3, 2], [3, 14]], [[1, 6], [5, 6]]]);
-  def('g', 10, [[[8, 8], [5, 6], [2, 8], [2, 12], [5, 14], [8, 12]], [[8, 6], [8, 16], [5, 19], [2, 18]]]);
-  def('h', 10, [[[2, 0], [2, 14]], [[2, 8], [5, 6], [8, 8], [8, 14]]]);
-  def('i', 4, [[[2, 3], [2, 4]], [[2, 6], [2, 14]]]);
-  def('j', 6, [[[4, 3], [4, 4]], [[4, 6], [4, 16], [3, 18.5], [1, 18]]]);
-  def('k', 9, [[[2, 0], [2, 14]], [[7, 6], [2, 10]], [[4, 9], [8, 14]]]);
-  def('l', 4, [[[2, 0], [2, 12], [3, 14]]]);
-  def('m', 14, [[[2, 6], [2, 14]], [[2, 8], [4, 6], [6, 8], [6, 14]], [[6, 8], [9, 6], [11, 8], [11, 14]]]);
-  def('n', 10, [[[2, 6], [2, 14]], [[2, 8], [5, 6], [8, 8], [8, 14]]]);
-  def('o', 10, [arc(5, 10, 3.3, 4, -Math.PI / 2, Math.PI * 1.5, 16)]);
-  def('p', 10, [[[2, 6], [2, 19]], [[2, 8], [5, 6], [8, 8], [8, 12], [5, 14], [2, 12]]]);
-  def('q', 10, [[[8, 6], [8, 19]], [[8, 8], [5, 6], [2, 8], [2, 12], [5, 14], [8, 12]]]);
-  def('r', 7, [[[2, 6], [2, 14]], [[2, 8], [4, 6], [6, 6.5]]]);
-  def('s', 8, [[[7, 7], [4, 6], [2, 8], [4, 10], [6, 11], [5, 13.5], [2, 13]]]);
-  def('t', 6, [[[3, 2], [3, 12], [5, 14]], [[1, 6], [5, 6]]]);
-  def('u', 10, [[[2, 6], [2, 12], [4, 14], [7, 14], [8, 12]], [[8, 6], [8, 14]]]);
+  // ── Lowercase (x-height top 6 → baseline 14) ────────────────────────────────
+  def('a', 10, [
+    [[8.2, 6], [8.2, 13], [9.5, 14.2]],
+    spline([[8.2, 9.2], [6, 7.8], [3.4, 8.2], [2.2, 10.4], [2.4, 12.7], [4.4, 14.2], [6.8, 13.6], [8.2, 11.6]], 5),
+  ]);
+  def('b', 10, [[[2, 0], [2, 14]], ellipse(5.4, 10, 3.6, 4, 20)]);
+  def('c', 9, [arc(5.2, 10, 3.5, 4.1, 0.22 * PI, 1.78 * PI, 18)]);
+  def('d', 10, [[[8, 0], [8, 14]], ellipse(4.6, 10, 3.6, 4, 20)]);
+  def('e', 9, [spline([[2.1, 10.2], [8, 10.2], [7.6, 7.6], [5, 6], [2.4, 7.6], [2, 10.1], [2.6, 12.5], [5.2, 14.2], [8, 12.8]], 5)]);
+  def('f', 7, [[[6.2, 1.4], [4.6, 0.2], [3.2, 1.7], [3.2, 14]], [[1.2, 6.6], [5.7, 6.6]]]);
+  def('g', 10, [
+    ellipse(5.2, 10, 3.4, 4, 18),
+    join([[8.6, 6], [8.6, 15.8]], spline([[8.6, 15.8], [7.6, 18.5], [4.8, 19], [2.6, 17.6]], 4)),
+  ]);
+  def('h', 10, [[[2, 0], [2, 14]], join(spline([[2, 8.2], [3.6, 6.4], [6, 6.2], [7.8, 7.9], [8, 10]], 5), [[8, 14]])]);
+  def('i', 4, [[[2, 2.4], [2, 3.6]], [[2, 6], [2, 14]]]);
+  def('j', 5, [[[3.4, 2.4], [3.4, 3.6]], join([[3.4, 6], [3.4, 16]], spline([[3.4, 16], [2.8, 18.4], [1, 18.6], [0, 17.4]], 4))]);
+  def('k', 9, [[[2, 0], [2, 14]], [[7.4, 6], [2, 10.4]], [[4, 8.8], [8, 14]]]);
+  def('l', 4, [[[2, 0], [2, 12.2], [3.4, 14]]]);
+  def('m', 14, [
+    [[2, 6], [2, 14]],
+    join(spline([[2, 8.2], [3.2, 6.4], [4.9, 6.2], [6.3, 7.8], [6.5, 10]], 4), [[6.5, 14]]),
+    join(spline([[6.5, 8.2], [7.7, 6.4], [9.5, 6.2], [10.9, 7.8], [11.1, 10]], 4), [[11.1, 14]]),
+  ]);
+  def('n', 10, [[[2, 6], [2, 14]], join(spline([[2, 8.2], [3.6, 6.4], [6, 6.2], [7.8, 7.9], [8, 10]], 5), [[8, 14]])]);
+  def('o', 10, [ellipse(5.2, 10, 3.5, 4.1, 20)]);
+  def('p', 10, [[[2, 6], [2, 19]], ellipse(5.4, 10, 3.6, 4, 20)]);
+  def('q', 10, [[[8, 6], [8, 19]], ellipse(4.6, 10, 3.6, 4, 20)]);
+  def('r', 7, [[[2, 6], [2, 14]], spline([[2, 8.2], [3.6, 6.3], [6, 6.1]], 4)]);
+  def('s', 8, [spline([[7, 7.4], [5.6, 6], [3, 6.2], [2.2, 7.9], [3.8, 9.1], [6, 9.9], [6.6, 11.6], [5.4, 13.5], [2.8, 13.7], [1.4, 12.2]], 5)]);
+  def('t', 6, [[[3.2, 1.8], [3.2, 12], [5.2, 14]], [[1.2, 6.6], [5.6, 6.6]]]);
+  def('u', 10, [join([[2, 6], [2, 11]], arc(5, 11, 3, 3, PI, 0, 12)), [[8, 6], [8, 14]]]);
   def('v', 9, [[[2, 6], [5, 14], [8, 6]]]);
   def('w', 13, [[[2, 6], [4, 14], [6.5, 8], [9, 14], [11, 6]]]);
   def('x', 9, [[[2, 6], [8, 14]], [[8, 6], [2, 14]]]);
-  def('y', 9, [[[2, 6], [5, 14]], [[8, 6], [5, 14], [2, 19]]]);
+  def('y', 9, [[[2, 6], [5, 13.4]], [[8, 6], [5, 13.4], [2.4, 19]]]);
   def('z', 8, [[[2, 6], [7, 6], [2, 14], [7, 14]]]);
 
-  // ── Digits ──────────────────────────────────────────────────────────────────
-  def('0', 10, [arc(5, 7, 4, 7, -Math.PI / 2, Math.PI * 1.5, 16), [[3, 11], [7, 3]]]);
-  def('1', 8, [[[2, 2], [5, 0], [5, 14]], [[2, 14], [8, 14]]]);
-  def('2', 10, [[[2, 3], [5, 0], [8, 2], [8, 5], [2, 14], [9, 14]]]);
-  def('3', 10, [[[2, 2], [5, 0], [8, 2], [6, 7], [8, 10], [5, 14], [2, 12]]]);
-  def('4', 10, [[[7, 0], [1, 10], [9, 10]], [[7, 4], [7, 14]]]);
-  def('5', 10, [[[8, 0], [3, 0], [2, 6], [5, 5], [8, 8], [7, 13], [4, 14], [1, 12]]]);
-  def('6', 10, [[[8, 2], [5, 0], [2, 5], [2, 11], [5, 14], [8, 11], [6, 7], [2, 8]]]);
+  // ── Digits (0 → 14) ──────────────────────────────────────────────────────────
+  def('0', 10, [ellipse(5, 7, 4, 7, 22), [[3, 11], [7, 3]]]);
+  def('1', 8, [[[2.4, 2.4], [5, 0.6], [5, 14]], [[2, 14], [8, 14]]]);
+  def('2', 10, [
+    spline([[2.2, 3], [3.6, 0.6], [6.6, 0.6], [8.4, 2.8], [7.6, 5.4], [4.6, 8.2], [2, 11], [2, 13.8]], 5),
+    [[2, 13.8], [9, 13.8]],
+  ]);
+  def('3', 10, [spline([[2.2, 2.6], [4.2, 0.6], [7, 1], [8.2, 3.4], [6, 6.6], [8.4, 8.2], [8.6, 11], [6.4, 13.6], [3.2, 13.8], [1.6, 11.8]], 5)]);
+  def('4', 10, [[[7, 0], [1.2, 10], [9, 10]], [[7, 4], [7, 14]]]);
+  def('5', 10, [join([[8, 0.6], [3, 0.6], [2.4, 6]], spline([[2.4, 6], [5, 4.8], [7.8, 6.4], [8, 9.6], [6.4, 13.4], [3.4, 14], [1.4, 12.2]], 5))]);
+  def('6', 10, [spline([[8, 2.2], [5.6, 0.4], [3, 2.2], [2, 6.6], [2.1, 10.8], [4.2, 13.8], [6.8, 13.4], [8, 11], [7.2, 8.4], [4.6, 7.2], [2.4, 8.6]], 5)]);
   def('7', 10, [[[2, 0], [9, 0], [4, 14]]]);
-  def('8', 10, [arc(5, 4, 3.2, 3.6, -Math.PI / 2, Math.PI * 1.5, 14), arc(5, 11, 3.8, 3.4, -Math.PI / 2, Math.PI * 1.5, 14)]);
-  def('9', 10, [[[2, 12], [5, 14], [8, 9], [8, 3], [5, 0], [2, 3], [4, 7], [8, 6]]]);
+  def('8', 10, [ellipse(5, 4, 3, 3.4, 16), ellipse(5, 10.6, 3.7, 3.4, 16)]);
+  def('9', 10, [spline([[2, 11.8], [4.4, 13.6], [7, 11.8], [8, 7.4], [7.9, 3.2], [5.8, 0.4], [3.2, 0.8], [2, 3.4], [2.8, 5.8], [5.4, 7], [7.6, 5.4]], 5)]);
 
   // ── Punctuation ───────────────────────────────────────────────────────────
   def('.', 5, [[[2, 13], [2, 14]]]);
-  def(',', 5, [[[3, 13], [2, 16.5]]]);
-  def(':', 5, [[[2, 7], [2, 8]], [[2, 13], [2, 14]]]);
-  def(';', 5, [[[3, 7], [3, 8]], [[3, 13], [2, 16.5]]]);
+  def(',', 5, [[[2.6, 13], [2, 16.5]]]);
+  def(':', 5, [[[2, 7.5], [2, 8.5]], [[2, 13], [2, 14]]]);
+  def(';', 5, [[[2.6, 7.5], [2.6, 8.5]], [[2.6, 13], [2, 16.5]]]);
   def('!', 4, [[[2, 0], [2, 9]], [[2, 13], [2, 14]]]);
-  def('?', 9, [[[2, 3], [5, 0], [8, 3], [5, 7], [5, 9]], [[5, 13], [5, 14]]]);
+  def('?', 9, [join(spline([[2, 3], [3.4, 0.6], [6.4, 0.6], [7.6, 3], [5.6, 5.4], [4.6, 7], [4.6, 9]], 4)), [[4.6, 13], [4.6, 14]]]);
   def("'", 4, [[[2, 0], [2, 4]]]);
   def('"', 6, [[[2, 0], [2, 4]], [[4, 0], [4, 4]]]);
   def('`', 5, [[[2, 0], [4, 3]]]);
-  def('-', 9, [[[2, 7], [7, 7]]]);
-  def('–', 10, [[[1, 7], [9, 7]]]);
+  def('-', 9, [[[2, 7.5], [7, 7.5]]]);
+  def('–', 10, [[[1, 7.5], [9, 7.5]]]);
   def('_', 10, [[[1, 15], [9, 15]]]);
-  def('(', 6, [[[5, 0], [2, 4], [2, 10], [5, 14]]]);
-  def(')', 6, [[[1, 0], [4, 4], [4, 10], [1, 14]]]);
+  def('(', 6, [arc(6, 7, 4.4, 7.6, 0.7 * PI, 1.3 * PI, 12)]);
+  def(')', 6, [arc(0, 7, 4.4, 7.6, 1.7 * PI, 2.3 * PI, 12)]);
   def('[', 6, [[[5, 0], [2, 0], [2, 14], [5, 14]]]);
   def(']', 6, [[[1, 0], [4, 0], [4, 14], [1, 14]]]);
   def('{', 7, [[[5, 0], [3, 1], [3, 6], [1, 7], [3, 8], [3, 13], [5, 14]]]);
@@ -130,29 +194,27 @@
   def('/', 9, [[[2, 14], [7, 0]]]);
   def('\\', 9, [[[2, 0], [7, 14]]]);
   def('|', 4, [[[2, 0], [2, 16]]]);
-  def('+', 9, [[[4, 4], [4, 11]], [[1, 7.5], [8, 7.5]]]);
-  def('=', 9, [[[2, 5], [8, 5]], [[2, 9], [8, 9]]]);
+  def('+', 9, [[[4.5, 4], [4.5, 11]], [[1, 7.5], [8, 7.5]]]);
+  def('=', 9, [[[2, 5.5], [8, 5.5]], [[2, 9.5], [8, 9.5]]]);
   def('*', 8, [[[4, 1], [4, 7]], [[1, 2.5], [7, 5.5]], [[7, 2.5], [1, 5.5]]]);
   def('<', 9, [[[7, 3], [2, 7.5], [7, 12]]]);
   def('>', 9, [[[2, 3], [7, 7.5], [2, 12]]]);
   def('#', 10, [[[4, 1], [2, 14]], [[8, 1], [6, 14]], [[1, 5], [9, 5]], [[1, 10], [9, 10]]]);
   def('%', 12, [ellipse(3, 3, 2, 2.5, 12), ellipse(9, 11, 2, 2.5, 12), [[10, 1], [2, 14]]]);
-  def('&', 12, [[[10, 14], [4, 4], [3, 2], [5, 0], [7, 2], [5, 5], [2, 9], [3, 13], [6, 14], [9, 10]]]);
-  def('@', 14, [arc(6, 8, 2.6, 2.6, 0, TAU, 12), [[8.6, 8], [8.6, 11], [11, 10]], arc(7, 8, 6, 6, -0.3, TAU * 0.78, 16)]);
+  def('&', 12, [spline([[10.4, 14], [6.6, 9.6], [4, 6.6], [3.4, 3.6], [5, 1], [7.2, 2], [6.6, 4.8], [3.6, 7.4], [2.4, 10.4], [4, 13.4], [7, 14], [9.4, 11.2], [10.6, 9.4]], 4)]);
+  def('@', 14, [arc(6, 8, 2.6, 2.6, 0, TAU, 14), [[8.6, 8], [8.6, 11], [11, 10]], arc(7, 8, 6, 6, -0.3, TAU * 0.78, 18)]);
   def('°', 7, [ellipse(3, 2.5, 2, 2.5, 12)]);
 
   const glyph = (ch) => G[ch] || null;
 
-  // ── Font styles ─────────────────────────────────────────────────────────────
-  // The base glyph set is one monoline "Sans". Distinct typefaces are derived from
-  // it by cheap, honest affine transforms — an x-scale (advance + glyph width) and a
-  // shear about the baseline (italic / backslant). Single-line "weight" is the pen,
-  // not the geometry, so we vary proportion and slant rather than stroke count.
-  // Each entry: { id, label, scaleX, shear }. Drop-in authored glyph maps can be
-  // added later by giving an entry its own `glyphs` table.
+  // ── One family, many styles ─────────────────────────────────────────────────
+  // Vectura is a SINGLE typeface. Its slant/width "styles" are derived from the one
+  // monoline skeleton by cheap, honest affine transforms — an x-scale (advance +
+  // glyph width) and a shear about the baseline (italic / backslant). Each entry:
+  // { id, label, scaleX, shear }. `id` is the value carried in layer.params.font.
   const FONTS = [
-    { id: 'sans', label: 'Vectura Sans', scaleX: 1, shear: 0 },
-    { id: 'italic', label: 'Vectura Italic', scaleX: 1, shear: 0.22 },
+    { id: 'sans', label: 'Regular', scaleX: 1, shear: 0 },
+    { id: 'italic', label: 'Italic', scaleX: 1, shear: 0.22 },
     { id: 'condensed', label: 'Condensed', scaleX: 0.72, shear: 0 },
     { id: 'wide', label: 'Wide', scaleX: 1.32, shear: 0 },
     { id: 'oblique', label: 'Backslant', scaleX: 1, shear: -0.18 },
@@ -160,6 +222,21 @@
   const FONT_BY_ID = {};
   FONTS.forEach((f) => { FONT_BY_ID[f.id] = f; });
   const resolveFont = (id) => FONT_BY_ID[id] || FONTS[0];
+  const FAMILY = { id: 'vectura', label: 'Vectura' };
+
+  // Single-stroke "weight" is the PEN, not the skeleton: a heavier weight is drawn
+  // as extra parallel pen passes wrapped around each stroke (text.js feeds this into
+  // GeometryUtils.thickenPaths). weightPasses() returns how many EXTRA passes a
+  // weight adds on top of the base outline weight, so Bold visibly fattens.
+  const WEIGHTS = [
+    { id: 'Regular', label: 'Regular', passes: 0 },
+    { id: 'Medium', label: 'Medium', passes: 2 },
+    { id: 'Semibold', label: 'Semibold', passes: 4 },
+    { id: 'Bold', label: 'Bold', passes: 7 },
+  ];
+  const WEIGHT_BY_ID = {};
+  WEIGHTS.forEach((w) => { WEIGHT_BY_ID[w.id] = w; });
+  const weightPasses = (label) => (WEIGHT_BY_ID[label] ? WEIGHT_BY_ID[label].passes : 0);
 
   // Synthesis constants (fractions of CAP / scale factors), shared with the web
   // outline path so smallCaps / super- / sub-script look consistent across sources.
@@ -192,8 +269,10 @@
    *     ot*         OpenType opts — IGNORED by the built-in monoline face.
    *     hyphenate + wrapWidth  soft-wrap (see GoogleFonts.layout note); the built-in
    *                 face honours wrapWidth-gated wrapping with a simple heuristic.
-   * @returns {{ paths, meta, width, height }} mm, origin top-left. `meta` runs
-   *   parallel to `paths`: { glyphIndex, charIndex, lineIndex, baselineY, x0, x1 }.
+   * @returns {{ paths, meta, width, height, cells }} mm, origin top-left. `meta`
+   *   runs parallel to `paths`: { glyphIndex, charIndex, lineIndex, baselineY,
+   *   x0, x1 }. `cells` is dense over the source string (one per char incl.
+   *   spaces): { sourceIndex, lineIndex, x0, x1, baselineY, advance, isSpace }.
    */
   const layout = (text, opt = {}) => {
     const size = Math.max(0.1, Number(opt.size) || 14);
@@ -267,8 +346,24 @@
 
     const colWidth = wrapWidthFU > 0 ? wrapWidthFU : (maxW + indentLeft + indentRight);
 
+    // Per-character cell source offsets (M1 seam). `cells` runs dense over the
+    // RAW input string (one entry per char incl. spaces / zero-stroke glyphs);
+    // sourceIndex accounts for the '\n' between lines (a newline consumes an
+    // index but produces no cell). NOTE: when hyphenate+wrapWidth reflows lines,
+    // rawLines no longer maps 1:1 to the source string, so sourceIndex degrades
+    // to the post-wrap layout offset — hit-testing is a soft-wrap edge case.
+    const lineStart = [];
+    {
+      let accIdx = 0;
+      for (let i = 0; i < lineCells.length; i++) {
+        lineStart[i] = accIdx;
+        accIdx += lineCells[i].length + 1; // +1 for the consumed newline
+      }
+    }
+
     const paths = [];
     const meta = [];
+    const cellOut = [];
     let penY = 0;
     rawLines.forEach((line, li) => {
       if (firstOfPara[li]) penY += spaceBefore;
@@ -319,7 +414,18 @@
           }
         });
         void drewMeta;
-        penX += cell.adv + (cell.r.isSpace ? perGap : 0);
+        // Effective advance includes the justify perGap so cells tile contiguously.
+        const eff = cell.adv + (cell.r.isSpace ? perGap : 0);
+        cellOut.push({
+          sourceIndex: lineStart[li] + ci,
+          lineIndex: li,
+          x0,
+          x1: (penX + eff) * scale,
+          baselineY: (penY + CAP) * scale - baselineShift,
+          advance: eff * scale,
+          isSpace: cell.r.isSpace === true,
+        });
+        penX += eff;
       });
 
       penY += lineHeight;
@@ -327,7 +433,7 @@
     });
 
     const height = penY - lineHeight + DESCENT;
-    return { paths, meta, width: colWidth * scale, height: height * scale };
+    return { paths, meta, width: colWidth * scale, height: height * scale, cells: cellOut, xHeightFrac: X_HEIGHT_FRAC };
   };
 
   // Minimal dependency-free soft-wrap. Splits each input line into words on spaces
@@ -378,8 +484,16 @@
   Vectura.StrokeFont = {
     CAP,
     DESCENT,
+    xHeightFrac: X_HEIGHT_FRAC,
     glyph,
     has: (ch) => Object.prototype.hasOwnProperty.call(G, ch),
+    // One family with selectable styles (slant/width) and weights (pen passes).
+    family: FAMILY,
+    styles: FONTS.map((f) => ({ id: f.id, label: f.label })),
+    weights: WEIGHTS.map((w) => ({ id: w.id, label: w.label })),
+    weightPasses,
+    isStyle: (id) => Object.prototype.hasOwnProperty.call(FONT_BY_ID, id),
+    // Back-compat alias: callers that listed "fonts" still get the style list.
     fonts: FONTS.map((f) => ({ id: f.id, label: f.label })),
     layout,
   };

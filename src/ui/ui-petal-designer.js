@@ -873,6 +873,11 @@
           ariaLabel: 'Direct Selection Tool (A)',
           icon: I.direct(),
         },
+        type: {
+          label: 'Type (T)',
+          ariaLabel: 'Type Tool (T)',
+          icon: I.type(),
+        },
         shape: {
           label: 'Shape (M)',
           ariaLabel: 'Shape Tool (M)',
@@ -1058,6 +1063,7 @@
         'select',
         'direct',
         'lasso',
+        'type',
         { type: 'group', tool: 'shape', subtools: ['shape-rect', 'shape-oval', 'shape-line', 'shape-polygon'], submenuAttrs: 'data-menu="shape" aria-label="Shape subtools"' },
         'algo-draw',
         'hand',

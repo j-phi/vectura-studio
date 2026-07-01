@@ -11016,8 +11016,13 @@ body.vtp-is-scrubbing * { cursor: ew-resize !important; user-select: none !impor
 .vtp-glyph-btn:hover { background: var(--ui-ctrl-hov); color: var(--ui-text); border-color: var(--ui-border-hi); }
 .vtp-glyph-btn:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px; }
 .vtp-glyph-btn.active { background: var(--ui-accent-2); border-color: var(--ui-accent); color: var(--ui-accent); }
-.vtp-glyph-btn .vtp-sm { font-size: 7px; vertical-align: super; }
-.vtp-glyph-btn .vtp-sb { font-size: 7px; vertical-align: sub; }
+/* Multi-part style-button glyphs: an inline-block wrapper restores inline flow
+   inside the flex button so vertical-align lifts/drops the super/subscript and
+   keeps the small-cap on the baseline. */
+.vtp-glyph-btn .vtp-gl { display: inline-block; line-height: 1; white-space: nowrap; }
+.vtp-glyph-btn .vtp-smc { font-size: 0.72em; vertical-align: baseline; margin-left: 0.5px; }
+.vtp-glyph-btn .vtp-sup { font-size: 0.66em; vertical-align: super; margin-left: 0.5px; }
+.vtp-glyph-btn .vtp-sub { font-size: 0.66em; vertical-align: sub; margin-left: 0.5px; }
 
 /* align 7-row */
 .vtp-align7 { display: flex; gap: 3px; }
@@ -11084,6 +11089,21 @@ body.vtp-is-scrubbing * { cursor: ew-resize !important; user-select: none !impor
 }
 .vtp-xypad.off .vtp-xypad-knob { background: var(--ui-muted); box-shadow: 0 0 0 1px var(--ui-border); }
 .vtp-xypad-read { text-align: center; font-family: var(--font-mono); font-size: 9px; color: var(--ui-muted); margin-top: 5px; }
+
+/* Fill-offset pad + vertical max-offset slider, laid out side by side. */
+.vtp-xypad-row { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 3px; }
+.vtp-xypad-row .vtp-xypad { margin: 0; }
+.vtp-xypad-max { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; height: 86px; }
+.vtp-vslider-vert {
+  -webkit-appearance: slider-vertical; appearance: slider-vertical;
+  writing-mode: vertical-lr; direction: rtl;
+  flex: 1 1 auto; width: 4px; min-height: 0; height: auto; align-self: stretch;
+}
+.vtp-xypad-max .vtp-vchip { min-width: 0; text-align: center; }
+.vtp-xypad-max-unit { font-family: var(--font-mono); font-size: 8px; color: var(--ui-muted); letter-spacing: .04em; }
+
+/* Fill angle radial dial mount — centre the reusable AngleDial component. */
+.vtp-angle-mount { display: flex; justify-content: center; margin-top: 3px; }
 
 .vtp-hr { height: 1px; background: var(--ui-border); margin: 13px -12px; }
 .vtp-info-i { width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--ui-border-hi); color: var(--ui-muted); font-size: 8px; display: inline-flex; align-items: center; justify-content: center; cursor: help; font-style: italic; font-family: var(--font-mono); }
@@ -11169,6 +11189,9 @@ body.vtp-is-scrubbing * { cursor: ew-resize !important; user-select: none !impor
 .vtp-fp-opt:hover, .vtp-fp-opt.active { background: var(--ui-ctrl-hov); }
 .vtp-fp-opt.sel { background: var(--ui-accent-2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ui-accent) 35%, transparent); }
 .vtp-fp-opt .vtp-fp-opt-name { flex: 1; font-size: 16px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Built-in single-stroke faces preview as inline SVG drawn from the actual
+   StrokeFont outline (not a CSS font), so the menu matches the plotted glyphs. */
+.vtp-fp-opt-svg { display: block; height: 15px; width: auto; max-width: 100%; }
 .vtp-fp-opt .vtp-fp-tag { font-size: 8px; color: var(--ui-muted); text-transform: uppercase; letter-spacing: .4px; flex: none; font-family: var(--font-mono); }
 .vtp-fp-star { flex: none; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border: none; background: none; cursor: pointer; color: var(--ui-border-hi); padding: 0; border-radius: 4px; }
 .vtp-fp-star:hover { color: var(--ui-accent); background: var(--ui-ctrl); }

@@ -8,12 +8,13 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  * src/ui/panels/algo-config-panel.js mounts window.Vectura.UI.TextPanel instead.
  * The font picker is now the bespoke `.vtp-fontpick-trigger` + a body-level
  * `.vtp-fp-pop` popover backed by the real catalog (Vectura.GoogleFonts) plus
- * the five built-in stroke faces (Vectura.StrokeFont).
+ * the single built-in Vectura family (Vectura.StrokeFont) — its slant/width
+ * variants are *styles* offered by the Style select, not separate fonts.
  *
  * This boots the full app, selects a Text layer, builds its controls, and pins:
  *  - the bespoke panel + font picker mount,
- *  - the built-in stroke faces are reachable in the popover,
- *  - selecting a built-in face updates the layer font,
+ *  - the Vectura family is reachable in the popover; styles live in the Style select,
+ *  - selecting the family + a style updates the layer font,
  *  - the web catalog degrades gracefully offline (jsdom) rather than throwing.
  */
 describe('Text font picker control (bespoke panel)', () => {
@@ -60,20 +61,51 @@ describe('Text font picker control (bespoke panel)', () => {
     expect(doc.querySelectorAll('.vtp-fp-pop').length).toBe(1);
   });
 
-  test('the popover lists the five built-in stroke faces', () => {
+  test('the popover lists the single Vectura family; styles live in the Style select', () => {
     openPicker();
     const values = options().map((o) => o.dataset.value);
-    ['sans', 'italic', 'condensed', 'wide', 'oblique'].forEach((v) => expect(values).toContain(v));
+    expect(values).toContain('vectura');
+    // The slant/width variants are no longer separate fonts in the picker…
+    ['italic', 'condensed', 'wide', 'oblique'].forEach((v) => expect(values).not.toContain(v));
+    // …they are the options of the Style (variant) select instead.
+    const variant = doc.querySelector('[data-ref="variantSelect"]');
+    expect(variant).toBeTruthy();
+    const styleVals = Array.from(variant.options).map((o) => o.value);
+    ['sans', 'italic', 'condensed', 'wide', 'oblique'].forEach((v) => expect(styleVals).toContain(v));
   });
 
-  test('selecting a built-in face updates the layer font', () => {
+  test('built-in stroke faces preview from the real StrokeFont outline, not generic UI text', () => {
     openPicker();
-    const wide = options().find((o) => o.dataset.value === 'wide');
-    expect(wide).toBeTruthy();
-    wide.click();
-    expect(activeLayer().params.font).toBe('wide');
+    const vectura = options().find((o) => o.dataset.value === 'vectura');
+    expect(vectura).toBeTruthy();
+    const nm = vectura.querySelector('.vtp-fp-opt-name');
+    expect(nm).toBeTruthy();
+    // The built-in single-stroke family has no CSS @font-face, so its preview is
+    // an inline SVG drawn from actual StrokeFont geometry (a <path> of real
+    // move/line data) rather than a plain text label in the generic UI font.
+    const svg = nm.querySelector('svg.vtp-fp-opt-svg');
+    expect(svg).toBeTruthy();
+    const d = svg.querySelector('path').getAttribute('d');
+    expect(d).toMatch(/^M-?[\d.]/);
+    expect(d.length).toBeGreaterThan(20);
+    // Accessible name is preserved for screen readers.
+    expect(nm.getAttribute('aria-label')).toBe('Vectura');
+  });
+
+  test('selecting the Vectura family sets a built-in style; the Style select switches variant', () => {
+    openPicker();
+    const vectura = options().find((o) => o.dataset.value === 'vectura');
+    expect(vectura).toBeTruthy();
+    vectura.click();
+    // The family marker resolves to a concrete style (Regular) from a web start.
+    expect(activeLayer().params.font).toBe('sans');
     // Switching to a stroke face greys the Fill tab (no enclosed interior).
     expect(doc.querySelector('.vtp-tab[data-tab="fill"]').classList.contains('disabled')).toBe(true);
+    // The Style select drives the slant/width variant.
+    const variant = doc.querySelector('[data-ref="variantSelect"]');
+    variant.value = 'wide';
+    variant.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(activeLayer().params.font).toBe('wide');
   });
 
   test('the picker degrades gracefully when the web catalog is unavailable offline', () => {
@@ -84,7 +116,7 @@ describe('Text font picker control (bespoke panel)', () => {
     // Built-in faces are always reachable; the Google section shows a status hint
     // (the network catalog can't load under jsdom) instead of throwing.
     const values = options().map((o) => o.dataset.value);
-    expect(values).toContain('sans');
+    expect(values).toContain('vectura');
     expect(popover().querySelector('.vtp-fp-empty')).toBeTruthy();
   });
 });

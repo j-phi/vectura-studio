@@ -191,6 +191,139 @@ describe('Text panel (vtp-)', () => {
     expect(regen).not.toHaveBeenCalled();
   });
 
+  const styleBtn = (container, style) => container.querySelector(`.vtp-glyph-btn[data-style="${style}"]`);
+
+  test('superscript and subscript are mutually exclusive (turning one on clears the other)', () => {
+    const { container, layer } = mount({ subscript: true });
+    const sup = styleBtn(container, 'super');
+    const sub = styleBtn(container, 'sub');
+    expect(sub.classList.contains('active')).toBe(true);
+    fire(sup, 'click');
+    expect(layer.params.superscript).toBe(true);
+    expect(layer.params.subscript).toBe(false);
+    expect(sup.classList.contains('active')).toBe(true);
+    expect(sub.classList.contains('active')).toBe(false);
+  });
+
+  test('all caps and small caps are mutually exclusive (turning one on clears the other)', () => {
+    const { container, layer } = mount({ smallCaps: true });
+    const caps = styleBtn(container, 'caps');
+    const sm = styleBtn(container, 'smcaps');
+    expect(sm.classList.contains('active')).toBe(true);
+    fire(caps, 'click');
+    expect(layer.params.allCaps).toBe(true);
+    expect(layer.params.smallCaps).toBe(false);
+    expect(caps.classList.contains('active')).toBe(true);
+    expect(sm.classList.contains('active')).toBe(false);
+  });
+
+  test('strikethrough toggle reveals height / weight / thicken-mode / line-style controls', () => {
+    const { container, layer } = mount();
+    const reveal = container.querySelector('[data-ref="strikeReveal"]');
+    expect(reveal.classList.contains('open')).toBe(false);
+    fire(styleBtn(container, 'strike'), 'click');
+    expect(layer.params.strikethrough).toBe(true);
+    expect(reveal.classList.contains('open')).toBe(true);
+    expect(container.querySelector('.vtp-scrub[data-field="strikeOff"]')).toBeTruthy();
+    expect(container.querySelector('.vtp-scrub[data-field="stWeight"]')).toBeTruthy();
+    expect(container.querySelector('[data-ref="stThickenMode"]')).toBeTruthy();
+    expect(container.querySelector('[data-ref="stStyle"]')).toBeTruthy();
+  });
+
+  test('underline toggle reveals weight / thicken-mode / style / break controls; the break toggle nests its padding', () => {
+    const { container, layer } = mount();
+    const reveal = container.querySelector('[data-ref="underlineReveal"]');
+    expect(reveal.classList.contains('open')).toBe(false);
+    fire(styleBtn(container, 'under'), 'click');
+    expect(layer.params.underline).toBe(true);
+    expect(reveal.classList.contains('open')).toBe(true);
+    expect(container.querySelector('.vtp-scrub[data-field="ulWeight"]')).toBeTruthy();
+    expect(container.querySelector('[data-ref="ulThickenMode"]')).toBeTruthy();
+    expect(container.querySelector('[data-ref="ulStyle"]')).toBeTruthy();
+    const breakReveal = container.querySelector('[data-ref="ulBreakReveal"]');
+    expect(breakReveal.classList.contains('open')).toBe(false);
+    fire(container.querySelector('[data-ref="ulBreakToggle"]'), 'click');
+    expect(layer.params.underlineBreak).toBe(true);
+    expect(breakReveal.classList.contains('open')).toBe(true);
+  });
+
+  test('decoration style / thicken-mode selects write their params', () => {
+    const { container, layer } = mount({ underline: true, strikethrough: true });
+    const ulStyle = container.querySelector('[data-ref="ulStyle"]');
+    ulStyle.value = 'dash-dot'; fire(ulStyle, 'change');
+    expect(layer.params.underlineStyle).toBe('dash-dot');
+    const ulMode = container.querySelector('[data-ref="ulThickenMode"]');
+    ulMode.value = 'hatch'; fire(ulMode, 'change');
+    expect(layer.params.underlineThickenMode).toBe('hatch');
+    const stMode = container.querySelector('[data-ref="stThickenMode"]');
+    stMode.value = 'snake'; fire(stMode, 'change');
+    expect(layer.params.strikethroughThickenMode).toBe('snake');
+  });
+
+  test('style-button icons read clearly: small-cap on baseline, super/subscript marks', () => {
+    const { container } = mount();
+    const sm = styleBtn(container, 'smcaps');
+    const sup = styleBtn(container, 'super');
+    const sub = styleBtn(container, 'sub');
+    expect(sm.querySelector('.vtp-smc')).toBeTruthy();
+    expect(sup.querySelector('.vtp-sup')).toBeTruthy();
+    expect(sub.querySelector('.vtp-sub')).toBeTruthy();
+    // The old hovering-superscript span is gone from the small-caps button.
+    expect(sm.querySelector('.vtp-sm')).toBeNull();
+  });
+
+  test('fill density defaults to 21 (slider + chip reflect it)', () => {
+    const { container, layer } = mount({ font: 'google:inter', fillEnabled: true });
+    expect(layer.params.fillDensity).toBe(21);
+    const dens = container.querySelector('[data-ref="densSlider"]');
+    expect(dens.value).toBe('21');
+    expect(container.querySelector('[data-ref="densChip"]').textContent).toBe('21');
+  });
+
+  test('fill angle is a radial dial (not a linear scrub) and commits fillAngle', () => {
+    const { container, layer, pushHistory, regen } = mount({ font: 'google:inter', fillEnabled: true, fillAngle: 0 });
+    // The old linear scrub is gone.
+    expect(container.querySelector('.vtp-scrub[data-field="fillAngle"]')).toBeNull();
+    const mnt = container.querySelector('[data-ref="fillAngleMount"]');
+    expect(mnt).toBeTruthy();
+    expect(mnt.querySelector('svg.angle-dial')).toBeTruthy();
+    const input = mnt.querySelector('input.angle-inp');
+    expect(input).toBeTruthy();
+    // Typing an angle + blur commits it through the host pattern once.
+    input.value = '45';
+    fire(input, 'blur');
+    expect(layer.params.fillAngle).toBe(45);
+    expect(pushHistory).toHaveBeenCalledTimes(1);
+    expect(regen).toHaveBeenCalledTimes(1);
+  });
+
+  test('max fill-offset slider (1–1000mm, default 20) re-clamps the offset to its radius', () => {
+    const { container, layer, regen } = mount({
+      font: 'google:inter', fillEnabled: true, fillOffsetX: 18, fillOffsetY: 0, fillOffsetMax: 20,
+    });
+    const slider = container.querySelector('[data-ref="fillOffsetMaxSlider"]');
+    expect(slider).toBeTruthy();
+    expect(slider.min).toBe('1');
+    expect(slider.max).toBe('1000');
+    expect(slider.value).toBe('20');
+    // Shrinking the max below the current offset clamps the offset down to it;
+    // the pad edge now maps to the new max on both axes (knob rides the rim).
+    slider.value = '10';
+    fire(slider, 'input');
+    expect(layer.params.fillOffsetMax).toBe(10);
+    expect(layer.params.fillOffsetX).toBeCloseTo(10, 5);
+    const knob = container.querySelector('[data-ref="fillOffsetKnob"]');
+    expect(knob.style.left).toBe('100%');
+    // Growing the max leaves the offset in mm but pulls the knob toward centre.
+    slider.value = '40';
+    fire(slider, 'input');
+    expect(layer.params.fillOffsetMax).toBe(40);
+    expect(layer.params.fillOffsetX).toBeCloseTo(10, 5);
+    expect(knob.style.left).toBe('62.5%'); // 50 + (10/40)*50
+    fire(slider, 'change');
+    expect(regen).toHaveBeenCalled();
+  });
+
   test('rebuild flushes a pending debounced specimen edit (no silent text loss)', () => {
     const { container, layer, pushHistory } = mount();
     const spec = container.querySelector('.vtp-spec-text');

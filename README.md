@@ -554,6 +554,10 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.22
+- **Text underline & strikethrough, refined.** Strikethrough now sits at each typeface's **optical midpoint** (the centre of the x-height) instead of a fixed line that read too low. Selecting a decoration reveals its own controls — both underline and strikethrough get a position offset, a pen **Weight**, a **Thicken Mode** (Parallel / Sinusoidal / Snake / Hatch / Cross-Hatch), and a **Line Style** (Solid / Dashed / Dotted / Dash-Dot / Long Dash / Dense Dots). Underline also has **Descender Breaks** with a **Break Padding** slider that opens a gap *centred on each letter tail* (g, j, p, q, y…). All Caps ↔ Small Caps and Superscript ↔ Subscript are now mutually exclusive, the Small Caps / Superscript / Subscript button icons read clearly, and a new Text layer starts as `Vectura`.
+- **Plots now follow reading order by default.** The default **Line Sort** plot order changed to **As drawn**, so art plots in the order it was authored — a word plots left-to-right instead of hopping between height bands. The old travel-minimizing sorts (Nearest / Greedy, with horizontal / vertical / radial banding) are still available in the export **Line Sort** card. Also fixes the Export SVG **"Line Sort Print Order"** gear opening an **empty settings pane** when a Text layer was the active (or only) layer.
+
 ### 1.2.21
 - **Redesigned Text panel.** The Text layer gains a dedicated tabbed panel — **Type / Layout / Stroke / Fill** — with a live specimen preview that *is* the editable text field (type straight into the preview). New typographic controls: vertical/horizontal scale, manual kerning, baseline shift, per-character rotation, all-caps and small-caps/superscript/subscript, underline & strikethrough, indents and paragraph spacing, justification, font weight, and fill inset/offset placement — backed by a rich font picker over the full Google Fonts catalog. (OpenType features beyond standard ligatures, and hyphenation, are surfaced but not yet active — they need a richer font shaper / a wrap width.)
 

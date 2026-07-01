@@ -453,6 +453,9 @@
       this.penSnapToOrigin = false;
       this.groupEditMode = null;
       this._selectLastClick = null;
+      // Type-tool multi-click (word/paragraph) timing + active press-drag state.
+      this._typeLastClick = null;
+      this._typeDrag = null;
       this.shapeDraft = null;
       this.shapeDraftSides = 6;
       this.shapeCornerDrag = null;
@@ -649,6 +652,9 @@
       if (tool !== 'lasso') {
         this.isLassoSelecting = false;
         this.lassoPath = null;
+      }
+      if (tool !== 'type' && this.app && this.app.textEdit && this.app.textEdit.isActive()) {
+        this.app.textEdit.end();
       }
       this.activeTool = tool;
       // Entering direct-select while a morph end is isolated: the active child's
@@ -927,6 +933,10 @@
       }
       if (tool === 'algo-draw') {
         return { cursor: 'crosshair', mode: 'algo-draw' };
+      }
+      if (tool === 'type') {
+        // I-beam for both contexts (over-text = edit, empty = create).
+        return { cursor: 'text', mode: 'type' };
       }
       if (tool === 'scissor') {
         return { cursor: 'crosshair', mode: 'scissor' };
@@ -3056,7 +3066,7 @@
               penKey: l.penId || 'default',
               layerSeq,
               pathIndex,
-              length: pathLen(path),
+              length: Renderer.revealPathLength(path),
               start: ends.start,
               end: ends.end,
               lineSortOrder: path && path.meta ? path.meta.lineSortOrder : undefined,
@@ -3852,8 +3862,136 @@
       if (this.shapeDraft) this.drawShapePreview();
       if (this.isScissor && this.scissorStart && this.scissorEnd) this.drawScissorPreview();
       if (this.lightSource) this.drawLightSource();
+      // Type-tool caret rides the same world-transformed overlay pass as the
+      // selection handles, so it tracks pan/zoom and the layer transform for free
+      // (its segment is derived from world-space layer.glyphs). The selection
+      // highlight draws first so the caret rides above it.
+      this.drawTextSelection();
+      this.drawTextCaret();
       this.ctx.restore();
       if (!showOptimizedOverlay || this.exportModalOpen) this.updateOptimizationOverlayLegend(false);
+    }
+
+    // ── Type tool ────────────────────────────────────────────────────────────
+    // Dispatch a Type-tool click: edit the text layer under the cursor, else
+    // create a new point-type text layer there. The TextEditController owns all
+    // caret / selection math and the jitter / mutation gates.
+    //
+    // Multi-click granularity (M4): a 2nd click within 400ms and 8px selects the
+    // WORD; a 3rd selects the PARAGRAPH. Shift-click EXTENDS the selection. A
+    // plain single click arms a press-drag whose range is applied in move().
+    handleTypeToolDown(world, e) {
+      const te = this.app && this.app.textEdit;
+      if (!te) return;
+      const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      const sX = e && e.clientX != null ? e.clientX : 0;
+      const sY = e && e.clientY != null ? e.clientY : 0;
+      const prev = this._typeLastClick;
+      const isMulti = prev && (now - prev.time) < 400 && Math.hypot(sX - prev.x, sY - prev.y) < 8;
+      const count = isMulti ? Math.min((prev.count || 1) + 1, 3) : 1;
+      this._typeLastClick = { time: now, x: sX, y: sY, count };
+      this._typeDrag = null;
+
+      const hit = this.findLayerAtPoint(world);
+      if (hit && hit.type === 'text') {
+        this.selectLayer(hit);
+        // Granularity / extend gestures require an existing session on THIS layer
+        // (the sequence's first click began it). Otherwise place a fresh caret and
+        // arm a press-drag; re-placing avoids tearing down an active same-layer
+        // session (which could discard an empty just-created layer).
+        const active = te.getActiveLayer && te.getActiveLayer();
+        const sameSession = !!(active && active.id === hit.id);
+        if (count >= 3 && sameSession) {
+          te.selectParagraphAtWorld?.(world.x, world.y);
+        } else if (count === 2 && sameSession) {
+          te.selectWordAtWorld?.(world.x, world.y);
+        } else if (e && e.shiftKey && sameSession) {
+          te.extendSelectionToWorld?.(world.x, world.y);
+        } else {
+          te.placeCaretAtWorld(hit, world.x, world.y);
+          // Arm a press-drag: move() extends the selection once the pointer
+          // travels past the screen-space threshold.
+          this._typeDrag = { startX: sX, startY: sY, layerId: hit.id, dragging: false };
+        }
+      } else {
+        const created = te.beginNewAt(world.x, world.y);
+        if (created) this.selectLayer(created);
+      }
+      this.draw();
+    }
+
+    // Live Type-tool press-drag: extend the selection to the cursor once the
+    // drag distance passes the controller's screen threshold. (Pointer plumbing
+    // is exercised by e2e.)
+    handleTypeToolDrag(world, e) {
+      const te = this.app && this.app.textEdit;
+      const drag = this._typeDrag;
+      if (!te || !drag || !te.isActive || !te.isActive()) return;
+      const sX = e && e.clientX != null ? e.clientX : 0;
+      const sY = e && e.clientY != null ? e.clientY : 0;
+      if (!drag.dragging && !te.exceedsDragThreshold(drag.startX, drag.startY, sX, sY)) return;
+      drag.dragging = true;
+      te.updateSelectionDragToWorld?.(world.x, world.y);
+      this.draw();
+    }
+
+    // M5: enter Type editing from a Selection / Direct-Selection double-click on a
+    // text layer. Switches the active tool to Type (keeping the toolbar in sync
+    // via ui.setActiveTool) and places the caret at the clicked boundary. The
+    // tool switches whenever the hit is a text layer; the return value reports
+    // whether an edit SESSION actually began (false when the jitter gate blocks
+    // it, even though the tool still switched — Illustrator-style).
+    _beginTextEditFromHit(hitLayer, world) {
+      const te = this.app && this.app.textEdit;
+      if (!te || !hitLayer || hitLayer.type !== 'text') return false;
+      const setActiveTool = this.app && this.app.ui && this.app.ui.setActiveTool;
+      if (typeof setActiveTool === 'function') setActiveTool.call(this.app.ui, 'type');
+      else this.setTool('type');
+      this.selectLayer(hitLayer);
+      return te.placeCaretAtWorld(hitLayer, world.x, world.y);
+    }
+
+    // Draw the blinking insertion caret for an active edit session. The ctx is
+    // already in world space (translate+scale applied) in the overlay pass. The
+    // caret is hidden while a non-empty range is highlighted (Illustrator-style).
+    drawTextCaret() {
+      const te = this.app && this.app.textEdit;
+      if (!te || !te.isActive() || !te.getCaretVisible()) return;
+      if (te.hasSelection && te.hasSelection()) return;
+      const seg = te.getCaretSegment();
+      if (!seg) return;
+      this.ctx.save();
+      this.ctx.strokeStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
+      this.ctx.lineWidth = Math.max(0.4, 1.4 / this.scale);
+      this.ctx.lineCap = 'butt';
+      this.ctx.beginPath();
+      this.ctx.moveTo(seg.x0, seg.y0);
+      this.ctx.lineTo(seg.x1, seg.y1);
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+
+    // Draw the selection highlight (M4): fill each selected cell's world-space
+    // quad. Rides the same world-transformed overlay pass as the caret, so it
+    // tracks pan/zoom and the layer transform for free. Only ever draws during an
+    // active edit session with a non-empty range — baselines never trigger it.
+    drawTextSelection() {
+      const te = this.app && this.app.textEdit;
+      if (!te || !te.isActive() || !te.hasSelection || !te.hasSelection()) return;
+      const quads = te.getSelectionQuads ? te.getSelectionQuads() : [];
+      if (!quads.length) return;
+      this.ctx.save();
+      this.ctx.fillStyle = getThemeToken('--render-selection-fill', 'rgba(96, 165, 250, 0.35)');
+      for (const q of quads) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(q[0].x, q[0].y);
+        this.ctx.lineTo(q[1].x, q[1].y);
+        this.ctx.lineTo(q[2].x, q[2].y);
+        this.ctx.lineTo(q[3].x, q[3].y);
+        this.ctx.closePath();
+        this.ctx.fill();
+      }
+      this.ctx.restore();
     }
 
     _drawGridLayer(w, h, spacing, style, color, opacity, lineWidth) {
@@ -4162,6 +4300,16 @@
 
       this.lightSourceSelected = false;
 
+      // ── Type tool ──────────────────────────────────────────────────────────
+      // Single click: over a text layer → place caret + edit; over empty canvas
+      // → create a new point-type text layer and edit it. All caret math lives in
+      // the TextEditController (it reads world-space layer.glyphs only).
+      if (this.activeTool === 'type') {
+        this.handleTypeToolDown(world, e);
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+
       if (this.activeTool === 'select' && this.getActiveModifierLayer()) {
         const hitGuide = this.hitModifierGuide(world);
         if (hitGuide) {
@@ -4446,6 +4594,24 @@
         const topLayer =
           this.activeTool === 'direct' ? this.findLayerAtPointPrecise(world) : this.findLayerAtPoint(world);
 
+        // M5: double-clicking a text layer with the Selection OR Direct-Selection
+        // tool enters Type editing (switches tool + places the caret). The direct
+        // tool doesn't run the select branch below, so maintain its own dbl-click
+        // timing here; the select branch keeps its own `_selectLastClick`.
+        if ((this.activeTool === 'select' || this.activeTool === 'direct') && this.app && this.app.textEdit) {
+          const nowT = performance.now();
+          const prevT = this._selectLastClick;
+          const sXT = e.clientX ?? 0;
+          const sYT = e.clientY ?? 0;
+          const isDblText = !!(prevT && (nowT - prevT.time) < 400 && Math.hypot(sXT - prevT.x, sYT - prevT.y) < 8);
+          if (this.activeTool === 'direct') this._selectLastClick = { time: nowT, x: sXT, y: sYT };
+          if (isDblText && topLayer && topLayer.type === 'text') {
+            this._beginTextEditFromHit(topLayer, world);
+            if (e.cancelable) e.preventDefault();
+            return;
+          }
+        }
+
         // Group-aware selection: group move and sublayer edit mode
         let _groupHandled = false;
         if (this.activeTool === 'select') {
@@ -4644,6 +4810,14 @@
 
     move(e) {
       if (!this.ready) return;
+      // Type-tool press-drag → live selection (M4). Only while the primary button
+      // is held and a drag was armed on down().
+      if (this.activeTool === 'type' && this._typeDrag && (e.buttons === undefined || (e.buttons & 1))) {
+        const rect = this.canvas.getBoundingClientRect();
+        const world = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+        this.handleTypeToolDrag(world, e);
+        return;
+      }
       if (this.activeTool === 'fill' || this.activeTool === 'fill-erase') {
         const rect = this.canvas.getBoundingClientRect();
         // `move` is wired to the window, so it fires even after the cursor
@@ -5122,6 +5296,8 @@
 
     up(e = {}) {
       if (!this.ready || !this.canvas) return;
+      // End any active Type-tool press-drag (the selection is already applied).
+      this._typeDrag = null;
       this.lastPourLoopId = null;
       this.removeTouchPointer(e);
       const clearActivePointer = () => {
@@ -8229,6 +8405,12 @@
         this.setCanvasCursor('crosshair');
         return;
       }
+      if (this.activeTool === 'type') {
+        // I-beam for both contexts (over-text = edit, empty = create). Without
+        // this branch a real hover falls through to the crosshair default.
+        this.setCanvasCursor('text', 'type');
+        return;
+      }
       if (this.activeTool === 'fill' || this.activeTool === 'fill-erase' ||
           this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
         return;
@@ -8425,26 +8607,36 @@
     return { info, total, threshold: total * frac };
   };
 
-  // Truncate a path's polyline to `revealLen` arc length for the draw-order
-  // reveal, interpolating the segment the cutoff lands inside. Returns the
-  // truncated point array (carrying a COPY of the source meta), or null when the
-  // slice would be too short to draw.
+  // Truncate a path to `revealLen` arc length for the draw-order reveal,
+  // interpolating the segment the cutoff lands inside. Returns the truncated
+  // point array (carrying a COPY of the source meta), or null when the slice
+  // would be too short to draw.
   //
-  // The copied meta has its native-cubic handles stripped (anchors +
-  // forceCurves): those describe the FULL contour and would render complete via
-  // bezierCurveTo in tracePath, so a curved glyph (text Bézier outline, morph
-  // ring) would pop in whole the instant the pen reaches it while the straight
-  // glyphs beside it reveal progressively. Tracing the truncated flattened
-  // polyline instead keeps every path — curved or straight — revealing in
-  // lock-step. The source meta is left untouched so the un-revealed geometry
-  // still renders as native cubics.
+  // Native-cubic outlines (text glyphs, morph rings) store their TRUE curve in
+  // meta.anchors; the point array is only a sparse chord cache. Slicing that
+  // cache produced a visibly FACETED in-progress tip that did not match the
+  // smooth displayed curve. So when the path carries real bezier handles we
+  // first densely flatten it into the exact polyline tracePath would render via
+  // bezierCurveTo (GeometryUtils.flattenSmoothedPath), then truncate THAT dense
+  // polyline. finalizeFlattened tags the result meta.straight and drops its
+  // anchors/forceCurves, so the tip still reveals progressively as a truncated
+  // polyline — a curved glyph can NOT pop in whole. Plain polylines (no handles)
+  // slice exactly as before. The source path is never mutated.
   Renderer.sliceRevealPath = function sliceRevealPath(path, revealLen) {
     if (!Array.isArray(path) || path.length <= 1) return path;
-    const sliced = [path[0]];
+    const flatten = window.Vectura?.GeometryUtils?.flattenSmoothedPath;
+    const anchors = path.meta?.anchors;
+    const hasHandles = Array.isArray(anchors) && anchors.length >= 2
+      && anchors.some((a) => a && (a.in || a.out));
+    const src = (flatten && hasHandles && path.meta?.kind !== 'circle' && !path.meta?.straight)
+      ? flatten(path)
+      : path;
+    if (!Array.isArray(src) || src.length <= 1) return src;
+    const sliced = [src[0]];
     if (revealLen > 0) {
       let acc = 0;
-      for (let i = 1; i < path.length; i++) {
-        const a = path[i - 1]; const b = path[i];
+      for (let i = 1; i < src.length; i++) {
+        const a = src[i - 1]; const b = src[i];
         const seg = Math.hypot(b.x - a.x, b.y - a.y);
         if (acc + seg >= revealLen) {
           const t = seg > 0 ? (revealLen - acc) / seg : 0;
@@ -8456,16 +8648,38 @@
         acc += seg;
       }
       // Cutoff never reached (revealLen ≥ full length): the whole polyline draws.
-      if (acc >= 0) return path;
+      if (acc >= 0) return src;
     }
     if (sliced.length < 2) return null;
-    if (path.meta) {
-      const meta = { ...path.meta };
+    if (src.meta) {
+      const meta = { ...src.meta };
       delete meta.anchors;
       delete meta.forceCurves;
       sliced.meta = meta;
     }
     return sliced;
+  };
+
+  // Arc length used to PACE the draw-order reveal. Native-cubic outlines (text
+  // glyphs, morph rings) are truncated along their DENSE flattened arc in
+  // sliceRevealPath; that arc is slightly longer than the sparse chord cache that
+  // OptimizationUtils.pathLength measures. Pacing the pen-reach window against the
+  // SAME dense arc keeps the reveal cutoff aligned with the arc the in-progress
+  // tip is sliced along — otherwise the final few percent of a curved glyph
+  // "pops" in at the fully-drawn transition. Plain polylines / circles / already
+  // -flattened paths fall through to the plain chord length.
+  Renderer.revealPathLength = function revealPathLength(path) {
+    const PU = window.Vectura?.OptimizationUtils;
+    const chordLen = PU?.pathLength ? PU.pathLength(path) : 0;
+    const flatten = window.Vectura?.GeometryUtils?.flattenSmoothedPath;
+    const anchors = path && path.meta ? path.meta.anchors : null;
+    const hasHandles = Array.isArray(anchors) && anchors.length >= 2
+      && anchors.some((a) => a && (a.in || a.out));
+    if (flatten && hasHandles && path.meta.kind !== 'circle' && !path.meta.straight) {
+      const flat = flatten(path);
+      return PU?.pathLength ? PU.pathLength(flat) : chordLen;
+    }
+    return chordLen;
   };
 
   const Vectura = (window.Vectura = window.Vectura || {});

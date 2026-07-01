@@ -4,6 +4,65 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.22 - 2026-06-30
+
+### Changed
+- **New built-in typeface — Vectura "architect's draft".** The single-stroke font (`stroke-font.js`) was
+  redrawn from scratch as an original geometric monoline alphabet: tall x-height, open apertures, and **true
+  curves** — round bowls are sampled circular arcs and the S-curve / humanist letters (S, a, e, s, g, 2, 3,
+  5, 6, 9, &, ?, parens…) are built from a Catmull-Rom spline helper rather than the old faceted polylines.
+  It stays a one-pen-pass plotter-native skeleton (no fills, no doubled outlines) and keeps the same metrics
+  and layout/serialization contract, so existing `.vectura` files are unchanged.
+- **The Text specimen now shows the REAL font.** For built-in faces the panel specimen used to substitute the
+  UI sans (Space Grotesk), so it never matched what was plotted. It now traces the actual `StrokeFont`
+  geometry into the stage — fit-to-frame and centred exactly like the canvas — so the preview and the
+  rendered/plotted output use the same letterforms and align (`ui-text-specimen.js`).
+- **Vectura is one font, with Styles + Weights.** The five slant/width variants are no longer separate fonts
+  in the picker — it now lists a single **Vectura** family, and Italic / Condensed / Wide / Backslant move
+  into a **Style** select. A separate **Weight** select (Regular / Medium / Semibold / Bold) finally works for
+  the built-in monoline font: heavier weights **wrap extra parallel pen passes around every stroke**
+  (`StrokeFont.weightPasses` → `text.js` → `GeometryUtils.thickenPaths`), so **Bold** genuinely fattens each
+  letter on the plot and the specimen preview thickens to match. `p.font` (style id) and `p.fontWeight`
+  serialization are unchanged — only the panel presentation and the built-in weight behaviour changed.
+- **Text decoration controls overhauled.** Strikethrough now rides each typeface's **optical midpoint**
+  (the centre of the x-height, computed per face from its metrics) instead of a fixed fraction that sat too
+  low — both `stroke-font.js` and `google-fonts.js` now expose an `xHeightFrac` the algorithm reads. The Type
+  tab gains reveal panels (shown only while the decoration is selected). Underline **and** strikethrough each
+  now offer a position offset (**Strike Height** / **Underline Position**), a pen **Weight**, a **Thicken
+  Mode** (Parallel / Sinusoidal / Snake offset passes, or a **Hatch** / **Cross-Hatch** ribbon), and a
+  **Line Style** (Solid / Dashed / Dotted / Dash-Dot / Long Dash / Dense Dots, via `meta.strokeDash` like
+  other algorithms). Underline additionally has a **Descender Breaks** toggle + **Break Padding** slider —
+  leaving a padded gap in the rule wherever a glyph's tail (g, j, p, q, y…) dips through it.
+- **Descender break gap is symmetric.** The gap is centred on each glyph's actual below-underline ink
+  (computed crossing-aware, following where the tail meets the rule) with equal padding on both sides —
+  previously it straddled the glyph advance cell, so left-leaning tails like *y* sat off-centre in the gap.
+- **Mutually-exclusive character styles.** All Caps ↔ Small Caps and Superscript ↔ Subscript can no longer
+  both be active — turning one on clears its partner in the panel, and the algorithm guards the same pairing
+  for legacy/serialized files.
+- **Clearer style-button icons.** The Small Caps icon is now a small capital seated on the baseline (was a
+  hovering lowercase *r*), and Superscript / Subscript read as **x²** / **x₂**.
+- **Default Text is sentence-cased** — the Text layer now starts as `Vectura` rather than `VECTURA`.
+
+All new params land as additive `ALGO_DEFAULTS.text` defaults, so existing `.vectura` files, undo/redo, and
+serialization are unchanged (every decoration is off / zero-offset by default).
+
+### Changed
+- **Default plot order is now reading-order ("as drawn").** The Line Sort optimization step defaulted to
+  `method: 'nearest'` with `vertical` banding, which grouped strokes into height bands and swept top-to-bottom
+  — so a horizontal word (e.g. "Vectura") plotted in a jumpy order that hopped between letters instead of
+  reading left-to-right. It now defaults to `method: 'asdrawn'`, preserving each algorithm's authored
+  generation order (reading order for text). Travel-optimizing sorts (`nearest` / `greedy`, with horizontal /
+  vertical / radial banding) remain one selection away in the export **Line Sort** card (`src/config/defaults.js`).
+
+### Fixed
+- **Export SVG "Line Sort Print Order" gear no longer opens an empty settings pane.** With a Text layer active
+  — and especially when a Text layer was the only layer in the document — `buildControls()` returned early
+  through the bespoke Text-panel path before it reached the code that renders the export optimization panel, so
+  the Export modal's settings pane came up blank (the "promote a non-text fallback layer" recovery had nothing
+  to promote to). The optimization-panel render is now hoisted above the layer-type early returns and fires on
+  every early-return path while the modal is open, so the panel populates for Text / group / modifier /
+  multi-selection / paint-tool states too (`src/ui/panels/algo-config-panel.js`).
+
 ## 1.2.21 - 2026-06-30
 
 ### Added

@@ -47,6 +47,7 @@
   --render-guide-faint: rgba(24, 24, 27, 0.45);
   --render-selection-handle-fill: #ffffff;
   --render-selection-handle-stroke: #18181b;
+  --render-selection-fill: rgba(37, 99, 235, 0.28);
   --render-cursor-stroke: #18181b;
   --render-marquee-stroke: rgba(71, 85, 105, 0.55);
   --render-marquee-fill: rgba(71, 85, 105, 0.10);

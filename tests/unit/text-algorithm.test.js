@@ -59,6 +59,27 @@ describe('Text algorithm + stroke font', () => {
     expect(paths.every((p) => p.meta && p.meta.straight === true)).toBe(true);
   });
 
+  test('Vectura is one family with selectable styles + weights', () => {
+    const font = V.StrokeFont;
+    expect(font.family && font.family.id).toBe('vectura');
+    const styleIds = font.styles.map((s) => s.id);
+    // The slant/width variants are styles of the one family, not separate fonts.
+    ['sans', 'italic', 'condensed', 'wide', 'oblique'].forEach((id) => expect(styleIds).toContain(id));
+    expect(font.weights.map((w) => w.label)).toEqual(['Regular', 'Medium', 'Semibold', 'Bold']);
+    // Heavier weights add pen passes; Regular adds none.
+    expect(font.weightPasses('Regular')).toBe(0);
+    expect(font.weightPasses('Bold')).toBeGreaterThan(font.weightPasses('Semibold'));
+    expect(font.weightPasses('Semibold')).toBeGreaterThan(font.weightPasses('Medium'));
+  });
+
+  test('built-in Bold weight wraps extra pen passes per stroke (thicker than Regular)', () => {
+    const base = { text: 'VECTURA', font: 'wide', fitToFrame: true, outlineStroke: true, outlineThickness: 1 };
+    const reg = gen({ ...base, fontWeight: 'Regular' });
+    const bold = gen({ ...base, fontWeight: 'Bold' });
+    // Each stroke is re-drawn as several parallel offset passes → many more paths.
+    expect(bold.length).toBeGreaterThan(reg.length * 3);
+  });
+
   test('empty / whitespace text yields nothing to plot', () => {
     expect(gen({ text: '' }).length).toBe(0);
     expect(gen({ text: '   \n  ' }).length).toBe(0);
@@ -89,5 +110,53 @@ describe('Text algorithm + stroke font', () => {
     const a = gen({ text: 'Hello', jitter: 1.5 });
     const b = gen({ text: 'Hello', jitter: 1.5 });
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  describe('Curves convert corners to bezier handles scaled by Smoothing', () => {
+    const hasHandles = (p) =>
+      Array.isArray(p.meta && p.meta.anchors)
+      && p.meta.anchors.some((a) => a && (a.in || a.out));
+
+    test('curves ON + smoothing 0 is a no-op (sharp polylines, no handles)', () => {
+      const off = gen({ text: 'VECTURA', curves: false });
+      const on0 = gen({ text: 'VECTURA', curves: true, smoothing: 0 });
+      // Smoothing 0 = zero-width handles = identical geometry to Curves OFF.
+      expect(on0.every((p) => p.meta && p.meta.straight === true)).toBe(true);
+      expect(on0.some(hasHandles)).toBe(false);
+      // Same point geometry as the curves-off render.
+      expect(on0.map((p) => p.length)).toEqual(off.map((p) => p.length));
+    });
+
+    test('curves ON + smoothing 1 widens handles into real bezier curves', () => {
+      const on1 = gen({ text: 'VECTURA', curves: true, smoothing: 1 });
+      // At least the multi-corner glyph strokes now carry cubic handles.
+      const curved = on1.filter(hasHandles);
+      expect(curved.length).toBeGreaterThan(0);
+      curved.forEach((p) => {
+        expect(p.meta.straight).toBe(false);
+        expect(p.meta.forceCurves).toBe(true);
+      });
+    });
+
+    test('larger smoothing produces wider handles than smaller smoothing', () => {
+      const reach = (paths) => {
+        let sum = 0;
+        let count = 0;
+        for (const p of paths) {
+          const anchors = p.meta && p.meta.anchors;
+          if (!Array.isArray(anchors)) continue;
+          for (const a of anchors) {
+            if (a && a.out) {
+              sum += Math.hypot(a.out.x - a.x, a.out.y - a.y);
+              count += 1;
+            }
+          }
+        }
+        return count ? sum / count : 0;
+      };
+      const small = reach(gen({ text: 'VECTURA', curves: true, smoothing: 0.3 }));
+      const large = reach(gen({ text: 'VECTURA', curves: true, smoothing: 1 }));
+      expect(large).toBeGreaterThan(small);
+    });
   });
 });

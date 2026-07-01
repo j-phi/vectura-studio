@@ -373,11 +373,30 @@ describe('GoogleFonts web-font source', () => {
       expect(out.every((p) => p.meta && p.meta.textFill)).toBe(true);
     });
 
-    test('outlineThickness > 1 expands each contour into parallel passes', () => {
+    test('outlineThickness > 1 adds concentric outward offset passes to the outline', () => {
       V.WEBFONT_GLYPHS[PARSED] = makeFont();
       const thin = gen({ font: `google:${PARSED}`, text: 'A', fitToFrame: false, fontSize: 40 });
-      const thick = gen({ font: `google:${PARSED}`, text: 'A', fitToFrame: false, fontSize: 40, outlineThickness: 3, thickeningMode: 'parallel' });
-      expect(thick.length).toBe(thin.length * 3);
+      const thick = gen({ font: `google:${PARSED}`, text: 'A', fitToFrame: false, fontSize: 40, outlineThickness: 6, thickeningMode: 'parallel' });
+      // The base outline is still drawn; heavier weight ADDS concentric copies, so
+      // there are strictly more paths than at weight 1.
+      expect(thick.length).toBeGreaterThan(thin.length);
+      // Each concentric pass is a closed offset ring (the widening outline).
+      const isClosed = (p) => p.length >= 4
+        && Math.hypot(p[0].x - p[p.length - 1].x, p[0].y - p[p.length - 1].y) < 1e-6;
+      expect(thick.filter(isClosed).length).toBeGreaterThan(thin.filter(isClosed).length);
+      // Offsets grow the glyph OUTWARD: the thick output reaches beyond the thin bbox.
+      const bbox = (paths) => {
+        let minX = Infinity, maxX = -Infinity;
+        paths.forEach((p) => p.forEach((pt) => { if (pt.x < minX) minX = pt.x; if (pt.x > maxX) maxX = pt.x; }));
+        return { minX, maxX };
+      };
+      const a = bbox(thin); const b = bbox(thick);
+      expect(b.maxX).toBeGreaterThan(a.maxX - 1e-6);
+      expect(b.minX).toBeLessThan(a.minX + 1e-6);
+      // Every coordinate is finite (no fold/offset blow-up).
+      for (const p of thick) for (const pt of p) {
+        expect(Number.isFinite(pt.x) && Number.isFinite(pt.y)).toBe(true);
+      }
     });
 
     test('plotOrder leftToRight sorts paths by ascending min-x', () => {

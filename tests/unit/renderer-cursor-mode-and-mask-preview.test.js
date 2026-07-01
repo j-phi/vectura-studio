@@ -125,4 +125,24 @@ describe('Renderer cursor mode + mask preview', () => {
     r.startMaskPreviewForSelection([layer]);
     expect(captured).toBe(layer);
   });
+
+  // BUG 1: a real pointer hover over the canvas calls updateHoverCursor, which had
+  // no 'type' branch and fell through to the crosshair default — so the Type tool
+  // showed a plus/crosshair instead of the I-beam text cursor.
+  test('updateHoverCursor keeps the I-beam (text) cursor for the type tool', () => {
+    const r = makeBareRenderer();
+    r.canvas = { style: {}, dataset: {}, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+    r.activeTool = 'type';
+    r._modState = { alt: false, meta: false };
+    // Stubs only reached by the (buggy) fall-through; the fixed 'type' branch
+    // returns before any of these run.
+    r.screenToWorld = () => ({ x: 0, y: 0 });
+    r.hitLightSource = () => false;
+    r.getSelectedLayers = () => [];
+
+    r.updateHoverCursor({ clientX: 10, clientY: 10 });
+
+    expect(r.canvas.style.cursor).toBe('text');
+    expect(r.canvas.dataset.cursorMode).toBe('type');
+  });
 });

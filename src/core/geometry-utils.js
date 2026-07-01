@@ -710,6 +710,337 @@
     return thickened.length ? thickened : paths;
   };
 
+  // Thicken an OPEN single-stroke polyline into `width` UNIFORM-width parallel
+  // passes. Unlike thickenPaths — which offsets every vertex along its averaged
+  // tangent normal at magnitude 1 and therefore PINCHES at a sharp corner (a V
+  // apex, an A, a W): there the bisector normal points down the miter but the
+  // unit-length offset falls short, so the band's width perpendicular to each arm
+  // collapses toward the vertex — this offsets each vertex along the true MITER
+  // vector M = (n1 + n2) / (1 + n1·n2), whose length 1/cos(phi/2) exactly
+  // compensates the corner so every pass stays at a constant perpendicular
+  // distance from BOTH adjacent edges. The result is a bundle of distinct pen
+  // strokes (single-stroke plotter DNA preserved — no fill) at uniform weight.
+  // Past `miterLimit` the join CLAMPS its length so a needle-acute apex bevels
+  // flat instead of spiking to infinity (real glyph apexes stay full-width; see
+  // the limit note below). Endpoints use
+  // the single adjacent edge normal (butt cap). `width <= 1` is a no-op. Point
+  // count is identical across passes (every pass mirrors the skeleton's vertices),
+  // and no rng is consumed — deterministic.
+  const thickenPathsUniform = (paths, opts = {}) => {
+    const width = Math.max(1, Math.round(opts.width ?? opts.widthMultiplier ?? 1));
+    if (width <= 1 || !Array.isArray(paths)) return paths;
+    const spacing = Number.isFinite(opts.spacing) ? opts.spacing : 0.35;
+    // Generous miter limit: real glyph apexes (V, A, W, k, 4 — miter ratio ~4)
+    // must keep full width to their sharp point, so we only clamp truly needle
+    // spikes. A near-180° reversal is already caught by the `denom` guard below.
+    const miterLimit = Number.isFinite(opts.miterLimit) && opts.miterLimit > 1 ? opts.miterLimit : 10;
+    const half = (width - 1) / 2;
+    const offsets = [];
+    for (let i = 0; i < width; i++) offsets.push((i - half) * spacing);
+
+    const out = [];
+    paths.forEach((path) => {
+      if (!Array.isArray(path) || path.length < 2) return;
+      const n = path.length;
+      // Unit normal of each segment i → i+1 (n-1 of them).
+      const segN = [];
+      for (let i = 0; i < n - 1; i++) {
+        const dx = path[i + 1].x - path[i].x;
+        const dy = path[i + 1].y - path[i].y;
+        const mag = Math.hypot(dx, dy) || 1;
+        segN.push({ x: -dy / mag, y: dx / mag });
+      }
+      // Per-vertex offset vector `m` such that a point offset by o·m sits at
+      // perpendicular distance o from the adjacent edge(s).
+      const mv = path.map((pt, i) => {
+        const a = segN[i - 1]; // incoming edge normal (undefined at the start)
+        const b = segN[i];     // outgoing edge normal (undefined at the end)
+        if (!a) return { x: b.x, y: b.y };
+        if (!b) return { x: a.x, y: a.y };
+        const dot = a.x * b.x + a.y * b.y; // cos(phi) between the edge normals
+        const denom = 1 + dot;             // 2 cos²(phi/2) → 0 at a 180° reversal
+        if (denom < 1e-6) return { x: a.x, y: a.y }; // near-reversal → butt, no spike
+        let mx = (a.x + b.x) / denom;
+        let my = (a.y + b.y) / denom;      // |m| = 1/cos(phi/2)
+        const len = Math.hypot(mx, my);
+        if (len > miterLimit) { mx = (mx / len) * miterLimit; my = (my / len) * miterLimit; }
+        return { x: mx, y: my };
+      });
+      offsets.forEach((o) => {
+        const copy = path.map((pt, i) => {
+          const m = mv[i];
+          const q = { x: pt.x + m.x * o, y: pt.y + m.y * o };
+          if (pt.meta) q.meta = pt.meta;
+          return q;
+        });
+        if (path.meta) copy.meta = path.meta;
+        out.push(copy);
+      });
+    });
+    return out.length ? out : paths;
+  };
+
+  // ── Stroke → clean filled band ───────────────────────────────────────────────
+  // Stroke a set of contour polylines into ONE watertight filled band of total
+  // pen width `width`, then dissolve every fold, self-overlap, and junction with a
+  // boolean union. Method = Minkowski sum of each edge with a disk of radius
+  // width/2: every segment becomes a width-wide quad and every vertex a small
+  // round-join disk; the union of all of them is the swept area.
+  //
+  // This is the robust replacement for thickenPaths when the *outline itself*
+  // must stay faithful. thickenPaths draws N independent parallel offset copies,
+  // which (a) fold over themselves wherever the offset exceeds a curve's radius,
+  // and (b) tear apart at junctions (a glyph's t-crossbar, a +) because each
+  // contour is offset in isolation. The union here cannot fold (overlapping ink
+  // merges) and cannot break (touching strokes weld into one boundary).
+  //
+  // Returns a FillBoolean multipolygon ([[ [ [x,y]… ]… ]… ]) — pass it through
+  // FillBoolean.multiPolygonToPaths for closed boundary rings (e.g. the text
+  // outline unions this with the glyph region to get each concentric widening
+  // pass). Returns [] when polygon-clipping is unavailable (headless without the
+  // vendor lib) or the input is degenerate, so callers can fall back to thickenPaths.
+  const strokeRingsToBand = (rings, width, opts = {}) => {
+    const FB = opts.boolean
+      || (typeof window !== 'undefined' && window.Vectura && window.Vectura.FillBoolean)
+      || null;
+    if (!FB || typeof FB.union !== 'function' || !Array.isArray(rings)) return [];
+    const halfW = Math.max(0, (Number(width) || 0) / 2);
+    if (halfW <= 1e-6) return [];
+    const joinSides = Math.max(4, Math.round(opts.joinSides || 8));
+    const TAU = Math.PI * 2;
+    // Pre-build the unit join disk; scale+translate per vertex.
+    const disk = [];
+    for (let k = 0; k < joinSides; k += 1) {
+      const t = (k / joinSides) * TAU;
+      disk.push([Math.cos(t) * halfW, Math.sin(t) * halfW]);
+    }
+    // Union per contour first (small unions), then union the contour bands — keeps
+    // each polygon-clipping pass bounded instead of one giant N-poly sweep.
+    const bands = [];
+    for (const ring of rings) {
+      if (!Array.isArray(ring) || ring.length < 2) continue;
+      const geoms = [];
+      for (let i = 0; i < ring.length - 1; i += 1) {
+        const a = ring[i];
+        const b = ring[i + 1];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const mag = Math.hypot(dx, dy);
+        if (mag < 1e-9) continue;
+        const nx = (-dy / mag) * halfW;
+        const ny = (dx / mag) * halfW;
+        geoms.push([[[
+          [a.x + nx, a.y + ny],
+          [b.x + nx, b.y + ny],
+          [b.x - nx, b.y - ny],
+          [a.x - nx, a.y - ny],
+        ]]]);
+      }
+      for (let i = 0; i < ring.length; i += 1) {
+        const c = ring[i];
+        geoms.push([[disk.map(([dxp, dyp]) => [c.x + dxp, c.y + dyp])]]);
+      }
+      if (!geoms.length) continue;
+      const band = FB.union(...geoms);
+      if (band && band.length) bands.push(band);
+    }
+    if (!bands.length) return [];
+    if (bands.length === 1) return bands[0];
+    return FB.union(...bands);
+  };
+
+  // ── Faithful flatten of a closed cubic-anchor ring ────────────────────────────
+  // Flatten a closed ring of DISPLAY-space anchors into a dense polyline that is
+  // FAITHFUL to the letterform: a straight segment (both handles null) stays a
+  // single line so its corner vertex is preserved EXACTLY (no midpoint-quadratic
+  // rounding), and a curved segment is adaptively subdivided until each chord
+  // deviates by less than `tol`. The vertex shared by two segments is always a real
+  // point, so sharp corners (V apex, t crossbar, cut terminals, L/E/T/H stems) stay
+  // razor-sharp while curves read smooth. This is the base the concentric outline
+  // widening miter-offsets. `anchors` are {x,y,in:{x,y}|null,out:{x,y}|null};
+  // returns {x,y}[] (closing point appended) or null on degenerate input.
+  const flattenAnchorRing = (anchors, tol) => {
+    if (!Array.isArray(anchors) || anchors.length < 2) return null;
+    const tolAbs = Math.max(1e-4, Number(tol) || 0.08);
+    const tolSq = tolAbs * tolAbs;
+    const a0 = anchors[0];
+    if (!a0 || !Number.isFinite(a0.x) || !Number.isFinite(a0.y)) return null;
+    const pts = [{ x: a0.x, y: a0.y }];
+    const cubic = (p0, c1, c2, p1, depth) => {
+      const dx = p1.x - p0.x;
+      const dy = p1.y - p0.y;
+      const chordSq = dx * dx + dy * dy;
+      if (depth >= 18 || chordSq < tolSq) { pts.push({ x: p1.x, y: p1.y }); return; }
+      const d1 = (c1.x - p0.x) * dy - (c1.y - p0.y) * dx;
+      const d2 = (c2.x - p0.x) * dy - (c2.y - p0.y) * dx;
+      if (d1 * d1 <= tolSq * chordSq && d2 * d2 <= tolSq * chordSq) { pts.push({ x: p1.x, y: p1.y }); return; }
+      const m01x = (p0.x + c1.x) * 0.5, m01y = (p0.y + c1.y) * 0.5;
+      const m12x = (c1.x + c2.x) * 0.5, m12y = (c1.y + c2.y) * 0.5;
+      const m23x = (c2.x + p1.x) * 0.5, m23y = (c2.y + p1.y) * 0.5;
+      const a012x = (m01x + m12x) * 0.5, a012y = (m01y + m12y) * 0.5;
+      const a123x = (m12x + m23x) * 0.5, a123y = (m12y + m23y) * 0.5;
+      const midx = (a012x + a123x) * 0.5, midy = (a012y + a123y) * 0.5;
+      cubic(p0, { x: m01x, y: m01y }, { x: a012x, y: a012y }, { x: midx, y: midy }, depth + 1);
+      cubic({ x: midx, y: midy }, { x: a123x, y: a123y }, { x: m23x, y: m23y }, p1, depth + 1);
+    };
+    const n = anchors.length;
+    for (let i = 0; i < n; i += 1) {
+      const A = anchors[i];
+      const B = anchors[(i + 1) % n];
+      if (!A || !B || !Number.isFinite(A.x) || !Number.isFinite(A.y) || !Number.isFinite(B.x) || !Number.isFinite(B.y)) return null;
+      const hasO = A.out && Number.isFinite(A.out.x) && Number.isFinite(A.out.y);
+      const hasI = B.in && Number.isFinite(B.in.x) && Number.isFinite(B.in.y);
+      if (hasO || hasI) {
+        cubic({ x: A.x, y: A.y }, hasO ? { x: A.out.x, y: A.out.y } : { x: A.x, y: A.y },
+          hasI ? { x: B.in.x, y: B.in.y } : { x: B.x, y: B.y }, { x: B.x, y: B.y }, 0);
+      } else {
+        pts.push({ x: B.x, y: B.y }); // straight segment -> corner preserved exactly
+      }
+    }
+    return pts.length >= 4 ? pts : null; // last == first (closing dup)
+  };
+
+  // ── True miter offset of a closed ring — with optional ROUND acute joins ──────
+  // Offset a closed ring by a SIGNED distance along a real MITER join (the exact
+  // intersection of the two adjacent offset edge-lines), so sharp corners stay sharp
+  // (miter) and the offset keeps the source shape, just moved by |delta|. delta > 0
+  // EXPANDS the ring's own enclosed interior; delta < 0 SHRINKS it, regardless of
+  // source winding (the interior side is found numerically from the shoelace sign, so
+  // CFF/CCW and TrueType/CW contours behave identically). The miter length ratio
+  // 1/cos(phi/2) grows without bound as a corner nears a 180 deg reversal, so past
+  // `miterLimit` the corner is resolved as:
+  //   • opts.round !== true  → BEVEL (flat, two edge points). LEGACY behaviour,
+  //     BYTE-IDENTICAL to before for every existing caller and unit test.
+  //   • opts.round === true  → on the GAP side only (the convex-in-offset side, where
+  //     the two offset edges diverge and leave a wedge) emit a ROUND arc of radius
+  //     |delta| about the vertex, sampled to `arcTol`; on the OVERLAP (concave) side
+  //     keep the bevel and let the caller's boolean union dissolve the crossing.
+  // Because every concentric widening pass offsets the SAME base ring independently,
+  // pass k's arc (radius k*penW) and pass k+1's arc (radius (k+1)*penW) are concentric
+  // about the identical vertex → exactly penW apart radially → pen-width strokes abut
+  // with no gap / stairstep / spike at a needle-acute feature (the 'u' spur), while
+  // corners within the limit stay MITER-sharp and are never rounded. On a densely-
+  // flattened curve the tiny near-collinear miters reconstruct a smooth offset.
+  // `points` is {x,y}[] (closing dup tolerated); returns {x,y}[] (closing dup
+  // appended) or null when degenerate. Deterministic; no globals, no Math.random.
+  const miterOffsetClosedRing = (points, delta, opts = {}) => {
+    if (!Array.isArray(points) || points.length < 3 || !Number.isFinite(delta)) return null;
+    const miterLimit = Number.isFinite(opts.miterLimit) && opts.miterLimit > 1 ? opts.miterLimit : 16;
+    const round = opts.round === true;
+    const arcTol = Number.isFinite(opts.arcTol) && opts.arcTol > 0 ? opts.arcTol : 0.08;
+    // Dedupe consecutive coincident points and drop a closing duplicate.
+    const v = [];
+    for (const p of points) {
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+      const last = v[v.length - 1];
+      if (last && Math.abs(last.x - p.x) < 1e-9 && Math.abs(last.y - p.y) < 1e-9) continue;
+      v.push({ x: p.x, y: p.y });
+    }
+    if (v.length >= 2) {
+      const f = v[0];
+      const l = v[v.length - 1];
+      if (Math.abs(f.x - l.x) < 1e-9 && Math.abs(f.y - l.y) < 1e-9) v.pop();
+    }
+    const n = v.length;
+    if (n < 3) return null;
+    // Shoelace sign orients the outward normal (dy,-dx) to always point AWAY from
+    // the ring's own interior, so delta>0 grows that interior for any winding.
+    let area2 = 0;
+    for (let i = 0; i < n; i += 1) {
+      const a = v[i];
+      const b = v[(i + 1) % n];
+      area2 += a.x * b.y - b.x * a.y;
+    }
+    if (Math.abs(area2) < 1e-12) return null;
+    const s = area2 > 0 ? 1 : -1;
+    const en = new Array(n); // outward unit normal of edge i (v[i]->v[i+1])
+    for (let i = 0; i < n; i += 1) {
+      const a = v[i];
+      const b = v[(i + 1) % n];
+      let dx = b.x - a.x;
+      let dy = b.y - a.y;
+      const mag = Math.hypot(dx, dy);
+      if (mag < 1e-12) { en[i] = null; continue; }
+      dx /= mag; dy /= mag;
+      en[i] = { x: s * dy, y: -s * dx };
+    }
+    const outPts = [];
+    // Sample the minor arc of the offset circle (radius |delta|, centre cx,cy) from
+    // the offset direction nStart, sweeping the signed exterior angle extSigned. The
+    // endpoints land EXACTLY on the two edge-offset points (v+nPrev*delta,
+    // v+nCurr*delta), so the arc splices seamlessly into the flanking straight offset
+    // edges — no gap. Sampled to arcTol so it never facets; capped for perf. Every
+    // point sits at radius |delta| from the vertex → concentric across passes.
+    const pushArc = (cx, cy, nStart, extSigned) => {
+      const arcLen = Math.abs(extSigned) * Math.abs(delta);
+      let steps = Math.ceil(arcLen / arcTol);
+      if (!Number.isFinite(steps) || steps < 1) steps = 1;
+      if (steps > 64) steps = 64;
+      for (let j = 0; j <= steps; j += 1) {
+        const th = extSigned * (j / steps);
+        const ct = Math.cos(th);
+        const st = Math.sin(th);
+        const dx = nStart.x * ct - nStart.y * st;
+        const dy = nStart.x * st + nStart.y * ct;
+        const px = cx + dx * delta;
+        const py = cy + dy * delta;
+        if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+        outPts.push({ x: px, y: py });
+      }
+    };
+    for (let i = 0; i < n; i += 1) {
+      let nPrev = en[(i - 1 + n) % n];
+      let nCurr = en[i];
+      if (!nPrev && !nCurr) continue;
+      if (!nPrev) nPrev = nCurr;
+      if (!nCurr) nCurr = nPrev;
+      let bx = nPrev.x + nCurr.x;
+      let by = nPrev.y + nCurr.y;
+      const bmag = Math.hypot(bx, by);
+      if (bmag < 1e-9) {
+        // ~180 deg reversal (degenerate zero-width needle tip): no finite miter and
+        // no well-defined sweep side — step straight out (bounded, never spikes). A
+        // real (nonzero-width) needle has finite angle and takes the arc branch below.
+        outPts.push({ x: v[i].x + nCurr.x * delta, y: v[i].y + nCurr.y * delta });
+        continue;
+      }
+      bx /= bmag; by /= bmag;
+      const cos = bx * nCurr.x + by * nCurr.y; // = cos(phi/2), in (0,1]
+      const miterScale = 1 / Math.max(1e-6, cos); // exact offset length ratio
+      if (miterScale <= miterLimit) {
+        // Within limit → sharp miter. Real letter corners (stems, ~90 deg, a ~30 deg
+        // V apex) land here and stay razor-sharp regardless of round mode.
+        const px = v[i].x + bx * delta * miterScale;
+        const py = v[i].y + by * delta * miterScale;
+        if (!Number.isFinite(px) || !Number.isFinite(py)) return null;
+        outPts.push({ x: px, y: py });
+      } else if (round) {
+        // Genuinely needle-acute. Round ONLY on the gap (convex-in-offset) side so
+        // consecutive passes are concentric arcs that abut; on the overlap (concave)
+        // side keep the bevel — the caller's boolean union dissolves the crossing, so
+        // nothing needles INTO the letter interior.
+        const cross = nPrev.x * nCurr.y - nPrev.y * nCurr.x;
+        const gapSide = (delta * s * cross) > 0;
+        if (gapSide && Math.abs(cross) > 1e-9) {
+          const dot = Math.max(-1, Math.min(1, nPrev.x * nCurr.x + nPrev.y * nCurr.y));
+          const ext = Math.acos(dot);         // exterior angle in [0, PI]
+          const signRot = cross > 0 ? 1 : -1;  // short-way rotation nPrev → nCurr
+          pushArc(v[i].x, v[i].y, nPrev, signRot * ext);
+        } else {
+          outPts.push({ x: v[i].x + nPrev.x * delta, y: v[i].y + nPrev.y * delta });
+          outPts.push({ x: v[i].x + nCurr.x * delta, y: v[i].y + nCurr.y * delta });
+        }
+      } else {
+        // Legacy bevel (default when round is not requested) — byte-identical.
+        outPts.push({ x: v[i].x + nPrev.x * delta, y: v[i].y + nPrev.y * delta });
+        outPts.push({ x: v[i].x + nCurr.x * delta, y: v[i].y + nCurr.y * delta });
+      }
+    }
+    if (outPts.length < 3) return null;
+    outPts.push({ x: outPts[0].x, y: outPts[0].y }); // close the ring
+    return outPts;
+  };
+
   const api = {
     stripCurveMeta,
     smoothPath,
@@ -729,6 +1060,10 @@
     splitPathByShape,
     flattenSmoothedPath,
     thickenPaths,
+    thickenPathsUniform,
+    strokeRingsToBand,
+    flattenAnchorRing,
+    miterOffsetClosedRing,
   };
 
   if (typeof window !== 'undefined') {

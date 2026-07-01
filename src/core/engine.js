@@ -234,6 +234,17 @@
       this._layerCounter = 0;
       this.profileKey = SETTINGS.paperSize || 'a4';
       this.currentProfile = this.resolveProfile();
+      this.onLayerRemoved = null;
+    }
+
+    // Announce every removed layer id to the host (e.g. the on-canvas text
+    // editor tears down its session if the edited layer is gone). Fired for the
+    // full removal set — target AND cascade descendants — never just the top id.
+    _announceRemoval(ids) {
+      if (typeof this.onLayerRemoved !== 'function') return;
+      for (const rid of ids) {
+        try { this.onLayerRemoved(rid); } catch (_) { /* host hook must not block removal */ }
+      }
     }
 
     addLayer(type = 'wavetable') {
@@ -717,6 +728,7 @@
         });
         const remainingLayers = this.layers.filter((layer) => layer.id !== id);
         this.layers = remainingLayers;
+        this._announceRemoval([id]);
         if (this.activeLayerId === id) {
           this.activeLayerId = pickNextActiveId(remainingLayers, targetIndex, preservedChildren.map((child) => child.id));
         } else if (!remainingLayers.some((layer) => layer.id === this.activeLayerId)) {
@@ -732,6 +744,7 @@
         });
         const remainingLayers = this.layers.filter((layer) => layer.id !== id);
         this.layers = remainingLayers;
+        this._announceRemoval([id]);
         if (this.activeLayerId === id) {
           this.activeLayerId = pickNextActiveId(remainingLayers, targetIndex, preservedChildren.map((c) => c.id));
         } else if (!remainingLayers.some((layer) => layer.id === this.activeLayerId)) {
@@ -758,6 +771,7 @@
       }
       const remainingLayers = this.layers.filter((l) => !removeIds.has(l.id));
       this.layers = remainingLayers;
+      this._announceRemoval(removeIds);
       if (removeIds.has(this.activeLayerId)) {
         this.activeLayerId = pickNextActiveId(remainingLayers, targetIndex);
       }
@@ -810,6 +824,7 @@
       }
       if (!removeSet.size) return false;
       this.layers = this.layers.filter((layer) => !removeSet.has(layer.id));
+      this._announceRemoval(removeSet);
       if (this.activeLayerId && removeSet.has(this.activeLayerId)) {
         this.activeLayerId = null;
       }
@@ -1236,6 +1251,10 @@
       }
       const helperPaths = rawPaths.helpers ? clonePaths(rawPaths.helpers) : null;
       const maskPolygons = rawPaths.maskPolygons ? clonePaths(rawPaths.maskPolygons) : null;
+      // Editor glyph cells (M1 seam): text algorithm sidecar of layout cells as
+      // display-space quads. Carried through the SAME transform() as the paths so
+      // they land in WORLD space; recomputed every generate(), never serialized.
+      const glyphsSidecar = Array.isArray(rawPaths.glyphs) ? rawPaths.glyphs : null;
       // For shape layers the rebuild already baked smoothing/simplify into anchors;
       // zero the render-time pass so we don't double-apply on the resampled polyline.
       const isShape = usesManualSourceGeometry(layer);
@@ -1444,6 +1463,14 @@
             return transformedPolygon;
           })
         : [];
+      const transformedGlyphs = glyphsSidecar
+        ? glyphsSidecar.map((g) => ({
+            sourceIndex: g.sourceIndex,
+            lineIndex: g.lineIndex,
+            isSpace: g.isSpace === true,
+            quad: Array.isArray(g.quad) ? g.quad.map((pt) => transform(pt)) : [],
+          }))
+        : [];
       const rawCounts = countPathPoints(transformed);
       let finalPaths = transformed;
       if (simplify > 0) {
@@ -1465,6 +1492,7 @@
       layer.paths = finalPaths;
       layer.helperPaths = helperTransformed;
       layer.maskPolygons = transformedMaskPolygons;
+      layer.glyphs = transformedGlyphs;
       this.computeAllDisplayGeometry();
     }
 
@@ -1528,6 +1556,16 @@
         return paths.map((path) => {
           if (!Array.isArray(path)) return path;
           if (path.meta && path.meta.kind === 'circle') return path;
+          // Native-cubic outlines (text glyphs, morph rings, curve shapes) carry
+          // the TRUE curve in meta.anchors; the point array is only a flattened
+          // cache. Visvalingam / Douglas–Peucker both call stripCurveMeta, which
+          // drops those handles — degrading a mathematically-smooth curve to a
+          // faceted polyline that the draw-order overlay (and the base reveal)
+          // then trace as lineTo segments. Keep such paths intact so their
+          // anchors survive into optimizedPaths; the handle list is already the
+          // compact representation.
+          if (path.meta && Array.isArray(path.meta.anchors)
+            && path.meta.anchors.some((a) => a && (a.in || a.out))) return path;
           const closed = isClosedPath(path);
           const next = useCurves ? simplifyPathVisvalingam(path, tol) : simplifyPath(path, tol);
           return closePathIfNeeded(next, closed);

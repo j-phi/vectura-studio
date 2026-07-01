@@ -37,6 +37,23 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- **v1.2.22 — Export plot-order fixes.** (1) The Export SVG "Line Sort Print Order" gear opened an empty
+  settings pane when a Text layer was active (the bespoke Text-panel early return in `buildControls()` skipped
+  the optimization-panel render, and the modal's fallback-layer recovery had nothing to promote in a Text-only
+  doc). Hoisted the optimization render above the layer-type early returns and fire it on every early-return
+  path while the export modal is open (`src/ui/panels/algo-config-panel.js`). (2) Changed the default Line Sort
+  `method` from `nearest`+`vertical` to `asdrawn` so plots follow authored/reading order (left-to-right for
+  text) instead of jumping between height bands (`src/config/defaults.js`). RGR:
+  `export-text-layer-optimization.test.js` + a default-config case in `engine-workflow.test.js`.
+- **v1.2.22 — Text decoration polish.** Strikethrough now rides the typeface's optical midpoint (x-height
+  centre, from a new `xHeightFrac` exposed by `stroke-font.js` + `google-fonts.js`). Underline **and**
+  strikethrough each gain a position offset, pen weight, a thickening mechanism (parallel / sinusoidal / snake
+  offset passes + hatch / cross-hatch ribbon), and a 6-way line style (`meta.strokeDash`). Underline also has
+  descender tail breaks whose padded gap is centred on each glyph's crossing-aware below-underline ink (equal
+  padding both sides — fixed the off-centre `y` gap). All Caps↔Small Caps and Superscript↔Subscript are
+  mutually exclusive (panel + algorithm guard), the Small Caps / Super / Subscript icons read clearly, and the
+  default Text is sentence-cased (`Vectura`). Reveal panels show each decoration's controls only while it's
+  selected. RGR coverage in `text-synthesis-features.test.js` + `text-panel.test.js`.
 - **v1.2.21 — Bespoke Text panel (synthesis port).** Replaced the generic Text control list with a tabbed
   Type/Layout/Stroke/Fill panel + live opentype-traced specimen (the specimen is the editable text field).
   Ported from `design-explorations/text-panel-synthesis.html` via parallel implement→adversarial-review→judge

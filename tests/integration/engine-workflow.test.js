@@ -299,6 +299,42 @@ describe('Engine integration workflows', () => {
     expect(layer.optimizedPaths.map((p) => p.meta?.lineSortOrder)).toEqual([0, 1, 2, 3]);
   });
 
+  test('default optimization config preserves generation order (line sort defaults to "as drawn")', () => {
+    const { VectorEngine, Layer, SETTINGS } = runtime.window.Vectura;
+
+    // The shipped default plot order is reading-order, not travel-banded: the
+    // linesort step defaults to method "asdrawn" so a horizontal word like
+    // "Vectura" plots left-to-right in the order it was authored, rather than
+    // hopping between height bands. Lock both the config value and its effect.
+    const lineSortDefault = SETTINGS.optimizationDefaults.steps.find((s) => s.id === 'linesort');
+    expect(lineSortDefault.method).toBe('asdrawn');
+
+    const engine = new VectorEngine();
+    engine.layers = [];
+    const layer = new Layer('line-sort-default', 'shape', 'Default Order');
+    layer.params.curves = false;
+    // Generation order is deliberately NOT travel-optimal in x.
+    layer.sourcePaths = [
+      [{ x: 0, y: 0 }, { x: 0, y: 10 }],
+      [{ x: 30, y: 0 }, { x: 30, y: 10 }],
+      [{ x: 10, y: 0 }, { x: 10, y: 10 }],
+      [{ x: 20, y: 0 }, { x: 20, y: 10 }],
+    ];
+    engine.layers.push(layer);
+    engine.generate(layer.id);
+    engine.computeAllDisplayGeometry();
+
+    // Run with the SHIPPED default config (deep-cloned), not an explicit one.
+    engine.optimizeLayers([layer], {
+      config: JSON.parse(JSON.stringify(SETTINGS.optimizationDefaults)),
+    });
+
+    // Authored order is preserved (no travel-minimizing reorder)…
+    expect(centroidAxisOrder(layer.optimizedPaths, 'x')).toEqual([0, 30, 10, 20]);
+    // …and the print-order overlay still tracks that authored order.
+    expect(layer.optimizedPaths.map((p) => p.meta?.lineSortOrder)).toEqual([0, 1, 2, 3]);
+  });
+
   test('nearest line sort with direction none keeps unconstrained nearest-neighbor traversal', () => {
     const { VectorEngine, Layer } = runtime.window.Vectura;
     const engine = new VectorEngine();

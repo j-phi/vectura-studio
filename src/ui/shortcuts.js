@@ -199,6 +199,11 @@
           this.setActiveTool?.('direct');
           return;
         }
+        if (key === 't') {
+          e.preventDefault();
+          this.setActiveTool?.('type');
+          return;
+        }
         if (key === 'm') {
           e.preventDefault();
           this.setActiveTool?.('shape-rect');

@@ -61,7 +61,6 @@
     weight: '<svg viewBox="0 0 24 24"><path d="M4 8h16M4 12h16M4 16h16" stroke-width="2"/></svg>',
     smooth: '<svg viewBox="0 0 24 24"><path d="M3 18C8 18 8 6 13 6s5 12 8 12"/></svg>',
     simplify: '<svg viewBox="0 0 24 24"><path d="M4 18L9 9l4 5 3-6 4 10" stroke-width="1.4"/></svg>',
-    fillAngle: '<svg viewBox="0 0 24 24"><path d="M4 20L20 4M4 20h7"/><path d="M4 20a10 10 0 0 1 7-7"/></svg>',
     fillInset: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><rect x="7.5" y="7.5" width="9" height="9" rx="1"/></svg>',
     up: '<svg viewBox="0 0 10 10"><path d="M2 7L5 3L8 7" stroke="currentColor" fill="none" stroke-width="1.4"/></svg>',
     down: '<svg viewBox="0 0 10 10"><path d="M2 3L5 7L8 3" stroke="currentColor" fill="none" stroke-width="1.4"/></svg>',
@@ -93,8 +92,12 @@
     smoothness: { param: 'smoothing', min: 0, max: 1, step: 0.05, dec: 2, perpx: 0.005, label: 'Smoothness', hint: '↔ drag · 0–1', icon: I.smooth },
     smoothing:  { param: 'smoothing', min: 0, max: 1, step: 0.05, dec: 2, perpx: 0.005, label: 'Smoothing', hint: '↔ drag · 0–1', icon: I.smooth },
     simplify:   { param: 'simplify', min: 0, max: 1, step: 0.05, dec: 2, perpx: 0.005, label: 'Simplify', hint: '↔ drag · 0–1', icon: I.simplify },
-    fillAngle:  { param: 'fillAngle', min: 0, max: 180, step: 1, dec: 0, perpx: 0.7, label: 'Angle', hint: '↔ drag · Shift ×10', unit: '°', icon: I.fillAngle },
     fillInset:  { param: 'fillInset', min: 0.2, max: 8, step: 0.1, dec: 1, perpx: 0.03, label: 'Distance', hint: '↔', unit: 'mm', icon: I.fillInset },
+    strikeOff:  { param: 'strikethroughOffset', min: -20, max: 20, step: 0.5, dec: 1, perpx: 0.1, label: 'Strike Height', hint: '↕ drag · + raises', unit: 'mm', icon: I.baseline },
+    stWeight:   { param: 'strikethroughThickness', min: 1, max: 40, step: 1, dec: 0, perpx: 0.3, label: 'Strike Weight', hint: '↔ drag · pen passes', unit: 'px', icon: I.weight, steppers: true },
+    ulOff:      { param: 'underlineOffset', min: -20, max: 20, step: 0.5, dec: 1, perpx: 0.1, label: 'Underline Position', hint: '↕ drag · + lowers', unit: 'mm', icon: I.baseline },
+    ulWeight:   { param: 'underlineThickness', min: 1, max: 40, step: 1, dec: 0, perpx: 0.3, label: 'Underline Weight', hint: '↔ drag · pen passes', unit: 'px', icon: I.weight, steppers: true },
+    ulBreakGap: { param: 'underlineBreakGap', min: 0, max: 8, step: 0.25, dec: 2, perpx: 0.03, label: 'Break Padding', hint: '↔ drag', unit: 'mm', icon: I.tracking },
   };
 
   const ALIGN_MAP = {
@@ -147,10 +150,17 @@
     const keyToId = (v) => (GF.keyToId ? GF.keyToId(v) : String(v || '').replace(/^google:/, ''));
     const idToKey = (id) => (GF.idToKey ? GF.idToKey(id) : `google:${id}`);
 
-    const builtinFonts = (Vectura.StrokeFont && Vectura.StrokeFont.fonts) || [{ id: 'sans', label: 'Vectura Sans' }];
-    const builtinValues = builtinFonts.map((b) => b.id);
-    const strokeLabel = {};
-    builtinFonts.forEach((b) => { strokeLabel[b.id] = b.label; });
+    // Vectura is ONE family. Its slant/width variants are *styles* (chosen in the
+    // Style select), not separate fonts — so the picker lists a single Vectura row.
+    const SF = Vectura.StrokeFont || {};
+    const builtinFamily = SF.family || { id: 'vectura', label: 'Vectura' };
+    const builtinStyles = (SF.styles && SF.styles.length ? SF.styles : null) || [{ id: 'sans', label: 'Regular' }];
+    const styleIds = builtinStyles.map((s) => s.id);
+    const isBuiltinId = (v) => v === builtinFamily.id || styleIds.indexOf(v) >= 0;
+    const styleLabelOf = (v) => { const s = builtinStyles.find((x) => x.id === v); return s ? s.label : builtinStyles[0].label; };
+    const builtinValues = [builtinFamily.id];
+    const strokeLabel = { [builtinFamily.id]: builtinFamily.label };
+    builtinStyles.forEach((s) => { strokeLabel[s.id] = builtinFamily.label; });
 
     let families = (typeof GF.getFamilies === 'function' && GF.getFamilies()) || [];
     let idMap = {};
@@ -158,6 +168,9 @@
 
     const listeners = [];
     const listen = (t, e, f, o) => { if (!t) return; t.addEventListener(e, f, o); listeners.push([t, e, f, o]); };
+    // Standalone widget instances (each owns listeners outside `listeners`) torn
+    // down explicitly in destroy() — e.g. the fill-angle radial dial.
+    const dials = [];
 
     const viewPrefs = {
       guides: lsGet(LS.guides, 'frame'),
@@ -229,6 +242,38 @@
       return 'inherit';
     };
     const faceCat = (v) => { if (isWeb(v)) { const f = idMap[keyToId(v)]; return catLabel(f && f.category); } return 'Stroke'; };
+    // Web faces have a real loaded @font-face so their preview name renders in the
+    // face itself (faceCss). The built-in Vectura family is generated geometry with
+    // NO CSS representation, so its previews used to fall back to the generic UI
+    // font — misrepresenting the single-stroke letterforms. Draw the face name from
+    // the actual StrokeFont outline instead, so the menu preview matches the plotted
+    // glyphs. Returns an inline <svg> string, or '' when unavailable (→ CSS text).
+    const strokePreviewSvg = (v, label) => {
+      if (!SF.layout) return '';
+      const styleId = (v === builtinFamily.id) ? styleIds[0] : (SF.isStyle && SF.isStyle(v) ? v : styleIds[0]);
+      let lay = null;
+      try { lay = SF.layout(String(label || faceName(v)), { font: styleId, size: 100 }); } catch (_) { lay = null; }
+      const paths = lay && lay.paths;
+      if (!Array.isArray(paths) || !paths.length) return '';
+      let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+      let d = '';
+      for (const stroke of paths) {
+        if (!Array.isArray(stroke) || stroke.length < 2) continue;
+        for (let i = 0; i < stroke.length; i += 1) {
+          const pt = stroke[i];
+          if (pt.x < minX) minX = pt.x; if (pt.x > maxX) maxX = pt.x;
+          if (pt.y < minY) minY = pt.y; if (pt.y > maxY) maxY = pt.y;
+          d += `${i === 0 ? 'M' : 'L'}${pt.x.toFixed(2)} ${pt.y.toFixed(2)}`;
+        }
+      }
+      if (!d || !Number.isFinite(minX) || maxX <= minX || maxY <= minY) return '';
+      const w = maxX - minX; const h = maxY - minY;
+      // Height matches the option-name line; width follows the glyph aspect ratio.
+      const H = 15; const W = Math.max(1, Math.round(H * (w / h)));
+      return `<svg class="vtp-fp-opt-svg" width="${W}" height="${H}" viewBox="${minX.toFixed(2)} ${minY.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)}" `
+        + `role="img" aria-label="${faceName(v)}" fill="none" stroke="currentColor" stroke-width="4" `
+        + `stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"><path d="${d}"/></svg>`;
+    };
     const ensureWeb = (v) => {
       if (isWeb(v) && GF.ensureFont) {
         GF.ensureFont(keyToId(v)).then(() => { syncFontTrigger(); renderSpec(); }).catch(() => {});
@@ -237,7 +282,10 @@
 
     function updateCaption() {
       const p = layer.params; const web = isWeb(p.font); const filled = p.fillEnabled && web;
-      const fe = ref('specFace'); if (fe) fe.textContent = `${faceName(p.font)} · ${p.fontWeight || 'Regular'}`;
+      const fe = ref('specFace');
+      if (fe) fe.textContent = web
+        ? `${faceName(p.font)} · ${p.fontWeight || 'Regular'}`
+        : `Vectura ${styleLabelOf(p.font)} · ${p.fontWeight || 'Regular'}`;
       const de = ref('specDim');
       if (de) {
         const nLines = String(p.text || '').split('\n').length;
@@ -396,8 +444,12 @@
     makeScrub(ref('slot-smoothness'), 'smoothness');
     makeScrub(ref('slot-smoothing'), 'smoothing');
     makeScrub(ref('slot-simplify'), 'simplify');
-    makeScrub(ref('slot-fillAngle'), 'fillAngle');
     makeScrub(ref('slot-fillInset'), 'fillInset');
+    makeScrub(ref('slot-strikeOff'), 'strikeOff');
+    makeScrub(ref('slot-stWeight'), 'stWeight');
+    makeScrub(ref('slot-ulOff'), 'ulOff');
+    makeScrub(ref('slot-ulWeight'), 'ulWeight');
+    makeScrub(ref('slot-ulBreakGap'), 'ulBreakGap');
 
     // ── reveals ──────────────────────────────────────────────────────────
     const updateFitSwap = () => {
@@ -413,6 +465,13 @@
     const updateMergeReveal = () => { ref('bezierSmoothBlock').style.display = layer.params.mergeOverlaps ? 'none' : 'block'; };
     const updateFillReveal = () => { ref('fillReveal').classList.toggle('open', !!layer.params.fillEnabled && isWeb(layer.params.font)); };
     const updateFillInsetReveal = () => { ref('fillInsetReveal').classList.toggle('open', !!layer.params.fillInsetEnabled); };
+    // Strikethrough / underline option panels reveal only while their decoration
+    // is selected; the descender-break padding nests inside the underline panel.
+    const updateDecorReveal = () => {
+      const sr = ref('strikeReveal'); if (sr) sr.classList.toggle('open', !!layer.params.strikethrough);
+      const ur = ref('underlineReveal'); if (ur) ur.classList.toggle('open', !!layer.params.underline);
+      const br = ref('ulBreakReveal'); if (br) br.classList.toggle('open', !!layer.params.underline && !!layer.params.underlineBreak);
+    };
 
     // ── toggles ──────────────────────────────────────────────────────────
     const bindToggle = (name, key, after) => {
@@ -457,16 +516,42 @@
     }));
 
     // ── caps / style glyph buttons ─────────────────────────────────────────
-    qa('.vtp-glyph-btn[data-style]').forEach((b) => {
+    // Mutually-exclusive pairs: All Caps ↔ Small Caps and Superscript ↔
+    // Subscript. Turning one on clears its partner (button + param) so the two
+    // can never both be active.
+    const STYLE_EXCL = { allCaps: 'smallCaps', smallCaps: 'allCaps', superscript: 'subscript', subscript: 'superscript' };
+    const styleBtns = qa('.vtp-glyph-btn[data-style]');
+    const styleBtnFor = (paramKey) => styleBtns.find((x) => STYLE_MAP[x.dataset.style] === paramKey);
+    const setStyleBtn = (btn, on) => { if (!btn) return; btn.classList.toggle('active', on); btn.setAttribute('aria-pressed', on ? 'true' : 'false'); };
+    styleBtns.forEach((b) => {
       const key = STYLE_MAP[b.dataset.style];
-      const act = !!layer.params[key];
-      b.classList.toggle('active', act); b.setAttribute('aria-pressed', act ? 'true' : 'false');
+      setStyleBtn(b, !!layer.params[key]);
       listen(b, 'click', () => {
         const nv = !b.classList.contains('active');
-        b.classList.toggle('active', nv); b.setAttribute('aria-pressed', nv ? 'true' : 'false');
-        setParam(key, nv);
+        pushHist();
+        setStyleBtn(b, nv);
+        layer.params[key] = nv;
+        if (nv && STYLE_EXCL[key]) {
+          const other = STYLE_EXCL[key];
+          if (layer.params[other]) { layer.params[other] = false; setStyleBtn(styleBtnFor(other), false); }
+        }
+        updateDecorReveal();
+        flush();
       });
     });
+
+    // ── decoration line style / thickening selects + descender breaks ───────
+    const bindSelect = (name, key, fallback) => {
+      const el = ref(name);
+      if (!el) return;
+      el.value = layer.params[key] || fallback;
+      listen(el, 'change', (e) => setParam(key, e.target.value));
+    };
+    bindSelect('stThickenMode', 'strikethroughThickenMode', 'parallel');
+    bindSelect('stStyle', 'strikethroughStyle', 'solid');
+    bindSelect('ulThickenMode', 'underlineThickenMode', 'parallel');
+    bindSelect('ulStyle', 'underlineStyle', 'solid');
+    bindToggle('ulBreakToggle', 'underlineBreak', updateDecorReveal);
 
     // ── OpenType buttons + selects ─────────────────────────────────────────
     qa('.vtp-ot-btn').forEach((b) => {
@@ -493,14 +578,26 @@
       listen(hyph, 'keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } });
     }
 
-    // ── style (fontWeight) select ─────────────────────────────────────────
+    // ── style (slant/width variant) select — Vectura family only ──────────────
+    const variantSel = ref('variantSelect');
+    if (variantSel) {
+      listen(variantSel, 'change', (e) => {
+        pushHist(); layer.params.font = e.target.value; flush();
+        syncFontTrigger(); refresh(); renderSpec();
+      });
+    }
+
+    // ── weight (fontWeight) select ────────────────────────────────────────────
+    // Web faces load a real weighted outline; the built-in monoline font thickens
+    // by wrapping extra parallel pen passes per stroke (text.js + the specimen).
     const styleSel = ref('styleSelect');
     if (styleSel) {
       styleSel.value = layer.params.fontWeight || 'Regular';
       listen(styleSel, 'change', (e) => {
         const label = e.target.value;
         setParam('fontWeight', label);
-        if (isWeb(layer.params.font) && GF.loadWeight) GF.loadWeight(keyToId(layer.params.font), label).then(() => renderSpec()).catch(() => {});
+        if (isWeb(layer.params.font)) { if (GF.loadWeight) GF.loadWeight(keyToId(layer.params.font), label).then(() => renderSpec()).catch(() => {}); }
+        else renderSpec();
       });
     }
 
@@ -518,24 +615,32 @@
 
     // ── fill offset XY pad ────────────────────────────────────────────────
     const pad = ref('fillOffsetPad'); const knob = ref('fillOffsetKnob'); const padRead = ref('fillOffsetRead');
+    const maxSlider = ref('fillOffsetMaxSlider'); const maxChip = ref('fillOffsetMaxChip');
     if (pad) {
+      // Pad edge = ±padMax() millimetres (user-set via the vertical slider beside
+      // the pad, 1–1000mm). fillOffsetX/Y are stored (and shown) in true mm so the
+      // fill window translates by real millimetres, matching the inset unit.
+      const padMax = () => { const v = +layer.params.fillOffsetMax; return isFinite(v) && v > 0 ? clamp(v, 1, 1000) : (DEF.fillOffsetMax != null ? DEF.fillOffsetMax : 20); };
       const padRefresh = () => {
+        const M = padMax();
         const x = layer.params.fillOffsetX || 0; const y = layer.params.fillOffsetY || 0;
-        knob.style.left = `${50 + x * 50}%`; knob.style.top = `${50 + y * 50}%`;
+        knob.style.left = `${50 + (x / M) * 50}%`; knob.style.top = `${50 + (y / M) * 50}%`;
         const c = !x && !y;
         pad.classList.toggle('off', c);
-        pad.setAttribute('aria-valuetext', c ? 'centred' : `${x.toFixed(2)} by ${y.toFixed(2)}`);
-        if (padRead) padRead.textContent = c ? 'centred' : `${x.toFixed(2)}, ${y.toFixed(2)}`;
+        pad.setAttribute('aria-valuetext', c ? 'centred' : `${x.toFixed(1)} by ${y.toFixed(1)} millimetres`);
+        if (padRead) padRead.textContent = c ? 'centred' : `${x.toFixed(1)}, ${y.toFixed(1)} mm`;
       };
-      const padApply = (nx, ny, render) => {
-        let ax = nx; let ay = ny; const mag = Math.hypot(ax, ay);
-        if (mag > 1) { ax /= mag; ay /= mag; }
-        layer.params.fillOffsetX = Math.round(ax * 1000) / 1000;
-        layer.params.fillOffsetY = Math.round(ay * 1000) / 1000;
+      // Inputs arrive in mm; clamp the offset vector to the padMax() radius.
+      const padApply = (mx, my, render) => {
+        const M = padMax();
+        let ax = mx; let ay = my; const mag = Math.hypot(ax, ay);
+        if (mag > M) { ax = (ax / mag) * M; ay = (ay / mag) * M; }
+        layer.params.fillOffsetX = Math.round(ax * 100) / 100;
+        layer.params.fillOffsetY = Math.round(ay * 100) / 100;
         padRefresh();
         if (render) renderSpec();
       };
-      const fromPoint = (cx, cy) => { const r = pad.getBoundingClientRect(); padApply(((cx - r.left) / r.width - 0.5) * 2, ((cy - r.top) / r.height - 0.5) * 2, true); };
+      const fromPoint = (cx, cy) => { const M = padMax(); const r = pad.getBoundingClientRect(); padApply(((cx - r.left) / r.width - 0.5) * 2 * M, ((cy - r.top) / r.height - 0.5) * 2 * M, true); };
       listen(pad, 'pointerdown', (e) => {
         e.preventDefault(); pushHist();
         try { pad.setPointerCapture(e.pointerId); } catch (_) { /* */ }
@@ -546,7 +651,7 @@
       });
       listen(pad, 'dblclick', () => { pushHist(); padApply(0, 0, false); flush(); });
       listen(pad, 'keydown', (e) => {
-        const s = e.shiftKey ? 0.2 : 0.05; const x = layer.params.fillOffsetX || 0; const y = layer.params.fillOffsetY || 0; let hit = true;
+        const s = e.shiftKey ? 2 : 0.5; const x = layer.params.fillOffsetX || 0; const y = layer.params.fillOffsetY || 0; let hit = true;
         if (e.key === 'ArrowLeft') { pushHist(); padApply(x - s, y, false); flush(); }
         else if (e.key === 'ArrowRight') { pushHist(); padApply(x + s, y, false); flush(); }
         else if (e.key === 'ArrowUp') { pushHist(); padApply(x, y - s, false); flush(); }
@@ -554,7 +659,41 @@
         else hit = false;
         if (hit) e.preventDefault();
       });
+      // Vertical slider sets the pad's max offset. Changing it re-clamps the
+      // current offset to the new radius and repositions the knob so the pad edge
+      // always maps to fillOffsetMax on both X and Y.
+      if (maxSlider) {
+        const syncMaxUI = () => { const M = padMax(); maxSlider.value = M; if (maxChip) maxChip.textContent = String(Math.round(M)); };
+        syncMaxUI();
+        listen(maxSlider, 'pointerdown', () => pushHist());
+        listen(maxSlider, 'input', (e) => {
+          layer.params.fillOffsetMax = clamp(+e.target.value || 1, 1, 1000);
+          if (maxChip) maxChip.textContent = String(Math.round(layer.params.fillOffsetMax));
+          padApply(layer.params.fillOffsetX || 0, layer.params.fillOffsetY || 0, true);
+        });
+        listen(maxSlider, 'change', () => flush());
+        listen(maxSlider, 'dblclick', (e) => {
+          e.preventDefault(); pushHist();
+          layer.params.fillOffsetMax = (DEF.fillOffsetMax != null ? DEF.fillOffsetMax : 20);
+          syncMaxUI();
+          padApply(layer.params.fillOffsetX || 0, layer.params.fillOffsetY || 0, false);
+          flush();
+        });
+      }
       padRefresh();
+    }
+
+    // ── fill angle radial selector ─────────────────────────────────────────
+    const angleMount = ref('fillAngleMount');
+    if (angleMount && Vectura.UI && typeof Vectura.UI.AngleDial === 'function') {
+      let angleHist = false;
+      const angleDial = Vectura.UI.AngleDial(angleMount, {
+        value: layer.params.fillAngle || 0,
+        ariaLabel: 'Fill angle',
+        onChange: (v) => { if (!angleHist) { pushHist(); angleHist = true; } layer.params.fillAngle = Math.round(v); renderSpec(); },
+        onCommit: (v) => { layer.params.fillAngle = Math.round(v); flush(); angleHist = false; },
+      });
+      dials.push(angleDial);
     }
 
     // ── tabs ──────────────────────────────────────────────────────────────
@@ -630,13 +769,15 @@
 
     const passTag = (v) => { if (!activeTags.length) return true; if (!isWeb(v)) return false; const f = idMap[keyToId(v)]; return f ? activeTags.indexOf(f.category) >= 0 : false; };
     const passSearch = (v, query) => { if (!query) return true; return faceName(v).toLowerCase().indexOf(query) >= 0 || faceCat(v).toLowerCase().indexOf(query) >= 0; };
-    const nameKnown = (v) => (isWeb(v) ? true : builtinValues.indexOf(v) >= 0);
+    const nameKnown = (v) => (isWeb(v) ? true : isBuiltinId(v));
 
     function syncFontTrigger() {
       if (!fpName) return;
-      fpName.textContent = faceName(layer.params.font);
-      fpName.style.fontFamily = faceCss(layer.params.font);
-      if (fpTagMini) fpTagMini.textContent = faceCat(layer.params.font);
+      const v = layer.params.font;
+      const svg = isWeb(v) ? '' : strokePreviewSvg(v);
+      if (svg) { fpName.innerHTML = svg; fpName.style.fontFamily = ''; fpName.setAttribute('aria-label', faceName(v)); }
+      else { fpName.innerHTML = ''; fpName.removeAttribute('aria-label'); fpName.textContent = faceName(v); fpName.style.fontFamily = faceCss(v); }
+      if (fpTagMini) fpTagMini.textContent = faceCat(v);
     }
     function makeOption(v) {
       const row = document.createElement('div');
@@ -648,7 +789,10 @@
       star.setAttribute('aria-label', `${fav ? 'Unfavorite ' : 'Favorite '}${faceName(v)}`);
       star.innerHTML = `<svg viewBox="0 0 24 24" fill="${fav ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.6"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.9 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"/></svg>`;
       listen(star, 'click', (ev) => { ev.stopPropagation(); const i = favs.indexOf(v); if (i >= 0) favs.splice(i, 1); else favs.push(v); lsSet(LS.favs, favs); rebuildList(); });
-      const nm = document.createElement('span'); nm.className = 'vtp-fp-opt-name'; nm.textContent = faceName(v); nm.style.fontFamily = faceCss(v);
+      const nm = document.createElement('span'); nm.className = 'vtp-fp-opt-name';
+      const nmSvg = isWeb(v) ? '' : strokePreviewSvg(v);
+      if (nmSvg) { nm.innerHTML = nmSvg; nm.setAttribute('aria-label', faceName(v)); }
+      else { nm.textContent = faceName(v); nm.style.fontFamily = faceCss(v); }
       const tg = document.createElement('span'); tg.className = 'vtp-fp-tag'; tg.textContent = faceCat(v);
       row.appendChild(star); row.appendChild(nm); row.appendChild(tg);
       listen(row, 'click', () => chooseFace(v));
@@ -714,9 +858,13 @@
     function chooseFace(v) {
       recent = [v].concat(recent.filter((x) => x !== v)).slice(0, 8); lsSet(LS.recent, recent);
       closePop();
-      pushHist(); layer.params.font = v; flush();
-      ensureWeb(v);
-      if (isWeb(v) && GF.loadWeight) GF.loadWeight(keyToId(v), layer.params.fontWeight).then(() => renderSpec()).catch(() => {});
+      // The Vectura row is a family marker — keep the current style if already on a
+      // Vectura style, else fall to the first (Regular). Web keys pass through.
+      let target = v;
+      if (v === builtinFamily.id) target = isBuiltinId(layer.params.font) && layer.params.font !== builtinFamily.id ? layer.params.font : styleIds[0];
+      pushHist(); layer.params.font = target; flush();
+      ensureWeb(target);
+      if (isWeb(target) && GF.loadWeight) GF.loadWeight(keyToId(target), layer.params.fontWeight).then(() => renderSpec()).catch(() => {});
       syncFontTrigger();
       refresh();
       renderSpec();
@@ -759,8 +907,19 @@
       const note = ref('otLockNote'); if (note) note.style.display = web ? 'none' : 'inline';
       qa('.vtp-ot-btn').forEach((b, i) => { const lock = (!web && i > 1); b.classList.toggle('locked', lock); b.setAttribute('aria-disabled', lock ? 'true' : 'false'); });
       updateFillReveal();
+      syncFaceControls();
       syncFontTrigger();
       updateCaption();
+    }
+
+    // Style (variant) select is Vectura-only; Weight applies to both. Keep both
+    // selects in sync with the live params and hide the variant picker for web.
+    function syncFaceControls() {
+      const p = layer.params; const web = isWeb(p.font);
+      const vf = ref('variantField'); if (vf) vf.style.display = web ? 'none' : '';
+      const vs = ref('variantSelect');
+      if (vs && !web) vs.value = (isBuiltinId(p.font) && p.font !== builtinFamily.id) ? p.font : styleIds[0];
+      const ws = ref('styleSelect'); if (ws) ws.value = p.fontWeight || 'Regular';
     }
 
     // ── init ──────────────────────────────────────────────────────────────
@@ -768,6 +927,7 @@
     updateThickReveal();
     updateMergeReveal();
     updateFillInsetReveal();
+    updateDecorReveal();
     refresh();
     ensureWeb(layer.params.font);
     renderSpec();
@@ -779,6 +939,8 @@
       // Flush a pending debounced specimen edit before tearing down — otherwise
       // the most recent keystrokes (within the 400ms window, pre-blur) are lost.
       if (textTimer) { try { commitText(); } catch (_) { /* */ } textTimer = null; }
+      dials.forEach((d) => { try { if (d && d.destroy) d.destroy(); } catch (_) { /* */ } });
+      dials.length = 0;
       listeners.forEach(([t, e, f, o]) => { try { t.removeEventListener(e, f, o); } catch (_) { /* */ } });
       listeners.length = 0;
       try { document.body.classList.remove('vtp-is-scrubbing'); } catch (_) { /* */ }
@@ -799,6 +961,9 @@
       fill: '<path d="M5 4h14v16H5z"/><path d="M5 9h14M5 14h14"/>',
     };
     const alignBtn = (token, title, inner) => `<button type="button" class="vtp-glyph-btn" data-align="${token}" title="${title}" aria-pressed="false" aria-label="${title}"><svg viewBox="0 0 24 18">${inner}</svg></button>`;
+    // Shared decoration option lists (underline + strikethrough).
+    const THICKEN_OPTS = '<option value="parallel">Parallel</option><option value="sinusoidal">Sinusoidal</option><option value="snake">Snake</option><option value="hatch">Hatch</option><option value="cross">Cross-Hatch</option>';
+    const STYLE_OPTS = '<option value="solid">Solid</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option><option value="dash-dot">Dash-Dot</option><option value="long-dash">Long Dash</option><option value="dense-dot">Dense Dots</option>';
     return `
   <div class="vtp-titlebar"><span class="vtp-dot"></span><h1>Text</h1><span class="vtp-sub">Synthesis</span></div>
 
@@ -871,8 +1036,15 @@
         </button>
       </div>
 
-      <div class="vtp-field-block">
+      <div class="vtp-field-block" data-ref="variantField">
         <div class="vtp-field-cap"><label>Style</label></div>
+        <select class="vtp-vselect" data-ref="variantSelect">
+          <option value="sans">Regular</option><option value="italic">Italic</option><option value="condensed">Condensed</option><option value="wide">Wide</option><option value="oblique">Backslant</option>
+        </select>
+      </div>
+
+      <div class="vtp-field-block">
+        <div class="vtp-field-cap"><label>Weight</label></div>
         <select class="vtp-vselect" data-ref="styleSelect">
           <option value="Regular">Regular</option><option value="Medium">Medium</option><option value="Semibold">Semibold</option><option value="Bold">Bold</option>
         </select>
@@ -895,11 +1067,50 @@
       <div class="vtp-grp-label">Style</div>
       <div class="vtp-glyph-row" role="group" aria-label="Character style toggles">
         <button type="button" class="vtp-glyph-btn" data-style="caps" title="All Caps" aria-pressed="false" aria-label="All Caps">TT</button>
-        <button type="button" class="vtp-glyph-btn" data-style="smcaps" title="Small Caps" aria-pressed="false" aria-label="Small Caps">T<span class="vtp-sm">r</span></button>
-        <button type="button" class="vtp-glyph-btn" data-style="super" title="Superscript" aria-pressed="false" aria-label="Superscript">T<span class="vtp-sm">1</span></button>
-        <button type="button" class="vtp-glyph-btn" data-style="sub" title="Subscript" aria-pressed="false" aria-label="Subscript">T<span class="vtp-sb">1</span></button>
+        <button type="button" class="vtp-glyph-btn" data-style="smcaps" title="Small Caps" aria-pressed="false" aria-label="Small Caps"><span class="vtp-gl">T<span class="vtp-smc">T</span></span></button>
+        <button type="button" class="vtp-glyph-btn" data-style="super" title="Superscript" aria-pressed="false" aria-label="Superscript"><span class="vtp-gl">x<span class="vtp-sup">2</span></span></button>
+        <button type="button" class="vtp-glyph-btn" data-style="sub" title="Subscript" aria-pressed="false" aria-label="Subscript"><span class="vtp-gl">x<span class="vtp-sub">2</span></span></button>
         <button type="button" class="vtp-glyph-btn" data-style="under" title="Underline" style="text-decoration:underline;" aria-pressed="false" aria-label="Underline">T</button>
         <button type="button" class="vtp-glyph-btn" data-style="strike" title="Strikethrough" style="text-decoration:line-through;" aria-pressed="false" aria-label="Strikethrough">T</button>
+      </div>
+
+      <div class="vtp-reveal" data-ref="strikeReveal">
+        <div class="vtp-reveal-inner">
+          <div class="vtp-field-block" data-ref="slot-strikeOff" style="margin-top:8px;"></div>
+          <div class="vtp-field-block" data-ref="slot-stWeight" style="margin-top:7px;"></div>
+          <div class="vtp-field-block" style="margin-top:9px;">
+            <div class="vtp-field-cap"><label>Thicken Mode</label></div>
+            <select class="vtp-vselect" data-ref="stThickenMode">${THICKEN_OPTS}</select>
+          </div>
+          <div class="vtp-field-block" style="margin-top:9px;">
+            <div class="vtp-field-cap"><label>Line Style</label></div>
+            <select class="vtp-vselect" data-ref="stStyle">${STYLE_OPTS}</select>
+          </div>
+        </div>
+      </div>
+
+      <div class="vtp-reveal" data-ref="underlineReveal">
+        <div class="vtp-reveal-inner">
+          <div class="vtp-field-block" data-ref="slot-ulOff" style="margin-top:8px;"></div>
+          <div class="vtp-field-block" data-ref="slot-ulWeight" style="margin-top:7px;"></div>
+          <div class="vtp-field-block" style="margin-top:9px;">
+            <div class="vtp-field-cap"><label>Thicken Mode</label></div>
+            <select class="vtp-vselect" data-ref="ulThickenMode">${THICKEN_OPTS}</select>
+          </div>
+          <div class="vtp-field-block" style="margin-top:9px;">
+            <div class="vtp-field-cap"><label>Line Style</label></div>
+            <select class="vtp-vselect" data-ref="ulStyle">${STYLE_OPTS}</select>
+          </div>
+          <div class="vtp-row-toggle" style="margin-top:9px;">
+            <span class="vtp-rt-label">Descender Breaks</span><span class="vtp-rt-sub">gap around letter tails</span>
+            <button type="button" class="vtp-sw-toggle" data-ref="ulBreakToggle" role="switch" aria-checked="false"><span class="vtp-knob"></span></button>
+          </div>
+          <div class="vtp-reveal" data-ref="ulBreakReveal">
+            <div class="vtp-reveal-inner">
+              <div class="vtp-field-block" data-ref="slot-ulBreakGap" style="margin-top:7px;"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1024,17 +1235,27 @@
             <div class="vtp-field-block">
               <div class="vtp-field-cap"><label>Density</label></div>
               <div class="vtp-vslider-wrap">
-                <input type="range" class="vtp-vslider" data-ref="densSlider" min="1" max="40" value="14" aria-label="Fill density">
-                <span class="vtp-vchip vtp-mono" data-ref="densChip">14</span>
+                <input type="range" class="vtp-vslider" data-ref="densSlider" min="1" max="100" value="21" aria-label="Fill density">
+                <span class="vtp-vchip vtp-mono" data-ref="densChip">21</span>
               </div>
             </div>
-            <div class="vtp-field-block" data-ref="slot-fillAngle"></div>
+            <div class="vtp-field-block" style="margin-top:11px;">
+              <div class="vtp-field-cap"><label>Angle <span class="vtp-drag-hint">↻ drag</span></label></div>
+              <div class="vtp-angle-mount" data-ref="fillAngleMount"></div>
+            </div>
             <div class="vtp-field-block" style="margin-top:11px;">
               <div class="vtp-field-cap"><label>Fill Offset <span class="vtp-drag-hint">drag · dbl-click resets</span></label></div>
-              <div class="vtp-xypad" data-ref="fillOffsetPad" role="slider" aria-label="Fill offset" aria-valuetext="centred" tabindex="0">
-                <div class="vtp-xypad-cross"></div>
-                <div class="vtp-xypad-rim"></div>
-                <div class="vtp-xypad-knob" data-ref="fillOffsetKnob"></div>
+              <div class="vtp-xypad-row">
+                <div class="vtp-xypad" data-ref="fillOffsetPad" role="slider" aria-label="Fill offset" aria-valuetext="centred" tabindex="0">
+                  <div class="vtp-xypad-cross"></div>
+                  <div class="vtp-xypad-rim"></div>
+                  <div class="vtp-xypad-knob" data-ref="fillOffsetKnob"></div>
+                </div>
+                <div class="vtp-xypad-max" title="Maximum fill offset — the pad edge maps to this distance">
+                  <input type="range" class="vtp-vslider vtp-vslider-vert" data-ref="fillOffsetMaxSlider" min="1" max="1000" step="1" value="20" orient="vertical" aria-label="Maximum fill offset in millimetres">
+                  <span class="vtp-vchip vtp-mono" data-ref="fillOffsetMaxChip">20</span>
+                  <span class="vtp-xypad-max-unit">mm</span>
+                </div>
               </div>
               <div class="vtp-xypad-read" data-ref="fillOffsetRead">centred</div>
             </div>

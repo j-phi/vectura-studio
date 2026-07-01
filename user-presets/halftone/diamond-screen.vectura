@@ -1,7 +1,52 @@
 {
-  "type": "vectura", "version": null, "name": "Diamond Screen",
-  "meta": { "presetId": "halftone-diamond-screen", "group": "Geometric", "system": "halftone", "savedAt": 0 },
-  "layers": [ { "type": "halftone", "params": {
-    "dotSpacing": 5, "maxDotSize": 5.4, "minDotSize": 0.4, "dotThreshold": 4, "gridAngle": 45, "dotShape": "polygon", "dotSides": 4, "brightness": 0, "contrast": 18, "gamma": 1.1, "invert": false
-  } } ]
+  "type": "vectura",
+  "name": "Diamond Screen",
+  "meta": {
+    "presetId": "halftone-diamond-screen",
+    "group": "Geometric",
+    "system": "halftone",
+    "savedAt": 1782858080697
+  },
+  "layers": [
+    {
+      "type": "halftone",
+      "params": {
+        "label": "Dotscreen",
+        "is3d": false,
+        "category": "Image",
+        "preset": "halftone-diamond-screen",
+        "imageSourceKind": "builtin",
+        "imageSrc": "",
+        "imageId": "",
+        "imageName": "",
+        "dotSpacing": 5.8,
+        "maxDotSize": 4.3,
+        "minDotSize": 0.2,
+        "dotThreshold": 4,
+        "gridAngle": 0,
+        "dotGrid": "square",
+        "dotShape": "polygon",
+        "dotSides": 4,
+        "dotPoints": 5,
+        "dotPetals": 5,
+        "dotTeeth": 8,
+        "dotAspect": 1,
+        "dotJitter": 0,
+        "dotSpin": 0,
+        "dotSpinAmount": 0,
+        "dotSpinCurve": "linear",
+        "dotSpinDir": 0,
+        "smartEdges": false,
+        "maxDots": 14000,
+        "brightness": 0,
+        "contrast": 18,
+        "gamma": 1.1,
+        "invert": false,
+        "smoothing": 0,
+        "simplify": 0,
+        "curves": false,
+        "markerFill": "none"
+      }
+    }
+  ]
 }

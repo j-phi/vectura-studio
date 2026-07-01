@@ -68,10 +68,28 @@
     return path;
   };
 
+  // Reversing a native-cubic outline (text glyph, morph ring) must reverse its
+  // anchor list AND swap each anchor's in/out handles — the incoming handle of a
+  // reversed vertex is the old outgoing handle. Without this, tracePath would
+  // redraw the OLD curve from stale handles at the new vertex order (drawing a
+  // different, un-reversed contour). Plain polylines (no anchors) just reverse
+  // the point array. The source path is never mutated.
   const reversePath = (path) => {
     if (!Array.isArray(path)) return path;
     const next = path.slice().reverse();
-    if (path.meta) next.meta = path.meta;
+    if (path.meta) {
+      const meta = { ...path.meta };
+      if (Array.isArray(path.meta.anchors)) {
+        meta.anchors = path.meta.anchors.slice().reverse().map((a) => (
+          a ? {
+            ...a,
+            in: a.out ? { x: a.out.x, y: a.out.y } : null,
+            out: a.in ? { x: a.in.x, y: a.in.y } : null,
+          } : a
+        ));
+      }
+      next.meta = meta;
+    }
     return next;
   };
 
@@ -88,7 +106,28 @@
     }
     if (!Array.isArray(path)) return path;
     const next = path.map((pt) => ({ x: pt.x + dx, y: pt.y + dy }));
-    if (path.meta) next.meta = path.meta;
+    if (path.meta) {
+      // Multipass offset copies are INDEPENDENT physical passes. Native-cubic
+      // outlines (text glyphs, morph rings) draw from meta.anchors, so the handles
+      // must be translated alongside the point array — otherwise the offset copy
+      // renders its smooth outline back at the UN-offset base position (collapsing
+      // onto pass 1 in the draw-order overlay, the base reveal during a scrub, and
+      // SVG export). Also gives each pass its own meta object rather than sharing
+      // the base pass's by reference.
+      const meta = { ...path.meta };
+      if (Array.isArray(path.meta.anchors)) {
+        meta.anchors = path.meta.anchors.map((a) => (
+          a ? {
+            ...a,
+            x: a.x + dx,
+            y: a.y + dy,
+            in: a.in ? { x: a.in.x + dx, y: a.in.y + dy } : a.in,
+            out: a.out ? { x: a.out.x + dx, y: a.out.y + dy } : a.out,
+          } : a
+        ));
+      }
+      next.meta = meta;
+    }
     return next;
   };
 

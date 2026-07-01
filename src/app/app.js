@@ -88,6 +88,53 @@
       this.renderer = new Renderer('main-canvas', this.engine);
       this.renderer.app = this;
       this.ui = new UI(this);
+      // On-canvas Type-tool editing (M2/M3). The controller owns the transient
+      // edit session and reads caret math from world-space layer.glyphs only; the
+      // host wires regen/undo/redraw/layer-creation/panel-sync into the app.
+      if (window.Vectura?.TextEditController) {
+        this.textEdit = new window.Vectura.TextEditController({
+          // Re-run layout for the edited layer (fresh world-space glyphs). Layout
+          // is synchronous per keystroke; only the async font parse is debounced
+          // (handled by GoogleFonts' own cache), never the layout itself.
+          regen: (layer) => { if (layer) this.engine.generate(layer.id); },
+          // Coalesce a contiguous typing run into one undo step (controller pushes
+          // once per run, before the first mutation).
+          pushHistory: () => this.pushHistory(),
+          requestDraw: () => { this.renderer?.draw?.(); },
+          // Empty-canvas click → new point-type text layer at the world point.
+          createTextLayerAt: (wx, wy) => this._createPointTextLayerAt(wx, wy),
+          // Panel specimen is suppressed during a session; rebuild on end so it
+          // re-syncs to the final text without two editors fighting params.text.
+          refreshPanel: () => { this.ui?.buildControls?.(); },
+          // Commit / cancel (Cmd/Ctrl+Enter, Esc) returns to the Selection tool
+          // via the toolbar API so the button state stays in sync.
+          setTool: (tool) => { this.ui?.setActiveTool?.(tool); },
+          // Empty-object cleanup (M6): a text layer created this session that
+          // never received real text is discarded when the session ends. When the
+          // creation's history push wasn't followed by an edit push, unwind it so
+          // undo/redo has no dangling entry for a layer that never existed.
+          discardCreatedLayer: (layer, opts = {}) => {
+            if (!layer) return;
+            this.engine.removeLayer(layer.id);
+            // Pop the creation snapshot only if it is still the stack top (no
+            // unrelated push interleaved); otherwise leave history untouched so
+            // we never unwind the wrong entry.
+            if (opts.unwindHistory && this.history.length
+              && this.history.length === this._textCreateHistoryLen) {
+              this.history.pop();
+            }
+            this._textCreateHistoryLen = null;
+            this.renderer?.setSelection?.([], null);
+            this.ui?.renderLayers?.();
+            this.ui?.buildControls?.();
+            this.renderer?.draw?.();
+          },
+        });
+        // End the session if the layer being edited is removed (context menu,
+        // layers panel, or a fall-through delete) — prevents an orphaned caret,
+        // leaked blink interval, and keystrokes mutating a dead layer.
+        this.engine.onLayerRemoved = (id) => { this.textEdit?.notifyLayerRemoved?.(id); };
+      }
       // Web fonts (Text algorithm) parse their outlines asynchronously; re-render
       // the affected layer when one lands so it swaps from the stroke-font
       // placeholder to the real letterforms (covers both a fresh pick and a
@@ -752,6 +799,9 @@
 
     applyState(state) {
       if (!state) return;
+      // Undo/redo/open rebuild every Layer object via importState; end any active
+      // edit session first so the controller can't keep an orphaned layer ref.
+      this.textEdit?.notifyDocumentReplaced?.();
       const s = state.settings || {};
       SETTINGS.margin = s.margin ?? SETTINGS.margin;
       SETTINGS.speedDown = s.speedDown ?? SETTINGS.speedDown;
@@ -1052,6 +1102,45 @@
     // before mutating params, then call regen(); they MUST continue to work
     // with no behavior change. So the default stays `pushHistory: false` and
     // user-initiated callers explicitly opt in with `regen({ pushHistory: true })`.
+    // Create an empty point-type text layer centred on a world point, ready for
+    // the Type tool to begin an edit session. Returns the new layer (or null).
+    // posX/posY are derived from the document centre so the layout block (which
+    // the text algorithm centres in the frame) lands under the click.
+    _createPointTextLayerAt(wx, wy) {
+      this.pushHistory();
+      // Tag the depth of this creation snapshot so empty-object cleanup can pop
+      // EXACTLY this entry and only if it is still the stack top — never a later
+      // unrelated push that interleaved during the edit session.
+      this._textCreateHistoryLen = this.history.length;
+      const id = this.engine.addLayer('text');
+      const layer = this.engine.layers.find((l) => l.id === id);
+      if (!layer) return null;
+      const b = this.engine.getBounds();
+      // On-canvas Type-tool layers must be immediately editable: the global
+      // ALGO_DEFAULTS.text.font is a web font ('google:inter') for which the
+      // edit controller's mutation gate (canMutate) returns false — so typing
+      // would insert nothing. Force the built-in Vectura stroke font (the id the
+      // panel's font picker assigns for the non-Google family, styleIds[0]) so
+      // insert/delete work the instant the box is created. This does NOT change
+      // the global default used by panel-created layers.
+      const SF = window.Vectura && window.Vectura.StrokeFont;
+      const builtinFont = (SF && SF.styles && SF.styles[0] && SF.styles[0].id) || 'sans';
+      Object.assign(layer.params, {
+        text: '',
+        font: builtinFont,
+        fitToFrame: false,
+        align: 'left',
+        jitter: 0,
+        posX: wx - b.width / 2,
+        posY: wy - b.height / 2,
+      });
+      this.engine.generate(id);
+      this.renderer?.selectLayer?.(layer);
+      this.ui?.renderLayers?.();
+      this.ui?.buildControls?.();
+      return layer;
+    }
+
     regen(options = {}) {
       const pushHistory = options && options.pushHistory === true;
       if (pushHistory) this.pushHistory();

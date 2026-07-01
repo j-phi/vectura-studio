@@ -34,12 +34,23 @@ describe('Renderer.sliceRevealPath — draw-order truncation of curved paths', (
     return pts;
   };
 
-  it('truncates by arc length, interpolating the cutoff segment', () => {
+  const arcLength = (arr) => {
+    let s = 0;
+    for (let i = 1; i < arr.length; i++) s += Math.hypot(arr[i].x - arr[i - 1].x, arr[i].y - arr[i - 1].y);
+    return s;
+  };
+
+  it('truncates by arc length along the densely-flattened curve', () => {
     const sliced = sliceRevealPath(curvyPath(), 3.5);
     expect(sliced).not.toBeNull();
-    // points 0..3 kept, plus the interpolated cutoff at x=3.5
-    expect(sliced[sliced.length - 1].x).toBeCloseTo(3.5);
-    expect(sliced.length).toBe(5);
+    // A path carrying real bezier handles is first densely flattened into the
+    // exact polyline tracePath would render (so the cyan draw-order tip matches
+    // the smooth displayed curve — no faceting), THEN truncated by arc length.
+    // The returned slice therefore measures ~3.5 units of the SMOOTH curve, not
+    // of the raw chord cache, and is a dense polyline tagged straight.
+    expect(arcLength(sliced)).toBeCloseTo(3.5, 2);
+    expect(sliced.length).toBeGreaterThanOrEqual(2);
+    expect(sliced.meta.straight).toBe(true);
   });
 
   it('drops native-cubic handles (anchors + forceCurves) on the truncated slice', () => {

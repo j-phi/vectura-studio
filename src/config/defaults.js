@@ -1331,7 +1331,7 @@
       is3d: false,
       category: 'Typography',
       preset: 'text-default',
-      text: 'VECTURA',
+      text: 'Vectura',
       font: 'google:inter',
       fontSize: 40,
       tracking: 0,
@@ -1362,7 +1362,7 @@
       // shared fill engine; every fill type/parameter mirrors the paint bucket.
       fillEnabled: false,
       fillType: 'hatch',
-      fillDensity: 4,
+      fillDensity: 21,
       fillAngle: 0,
       fillAmplitude: 1.0,
       fillWaveSmoothing: 1.0,
@@ -1464,6 +1464,26 @@
       subscript: false,
       underline: false,
       strikethrough: false,
+      // ── Underline / strikethrough decoration ─────────────────────
+      // Strikethrough sits at the typeface's optical midpoint (x-height
+      // centre) by default; the offset nudges it (mm, positive raises).
+      // It shares the same pen weight, thickening mechanism, and line
+      // style controls as the underline.
+      strikethroughOffset: 0,
+      strikethroughThickness: 1,
+      // parallel | sinusoidal | snake | hatch | cross
+      strikethroughThickenMode: 'parallel',
+      // solid | dashed | dotted | dash-dot | long-dash | dense-dot
+      strikethroughStyle: 'solid',
+      // Underline position offset (mm, positive lowers the rule), pen
+      // weight, thickening mechanism, line style, and descender tail
+      // breaks (gap, mm, centred on each glyph's below-underline ink).
+      underlineOffset: 0,
+      underlineThickness: 1,
+      underlineThickenMode: 'parallel', // parallel | sinusoidal | snake | hatch | cross
+      underlineStyle: 'solid', // solid | dashed | dotted | dash-dot | long-dash | dense-dot
+      underlineBreak: false,
+      underlineBreakGap: 1.5,
       // ── Synthesis-panel paragraph ────────────────────────────────
       // Indents + paragraph spacing in mm; hyphenation aids frame-fit wraps.
       indentLeft: 0,
@@ -1490,6 +1510,9 @@
       fillInset: 1.5,
       fillOffsetX: 0,
       fillOffsetY: 0,
+      // Radius (mm) the fill-offset pad edge maps to — user-set via the vertical
+      // slider beside the XY pad (1–1000mm). Both X and Y clamp to this bound.
+      fillOffsetMax: 20,
     },
     grid: {
       preset: 'grid-default',
@@ -2237,7 +2260,7 @@
       bypassAll: false,
       steps: [
         { id: 'linesimplify', enabled: true, bypass: false, tolerance: 0.2, mode: 'curve' },
-        { id: 'linesort', enabled: true, bypass: false, method: 'nearest', direction: 'vertical', grouping: 'combined' },
+        { id: 'linesort', enabled: true, bypass: false, method: 'asdrawn', direction: 'none', grouping: 'combined' },
         { id: 'filter', enabled: false, bypass: false, minLength: 0, maxLength: 800, removeTiny: true },
         { id: 'multipass', enabled: false, bypass: false, passes: 2, offset: 0.2, jitter: 0, seed: 0 },
       ],
