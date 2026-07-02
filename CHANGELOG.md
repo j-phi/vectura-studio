@@ -4,6 +4,68 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.33 - 2026-07-02
+
+### Fixed
+- **Banded bold: in-app hollow bands, silhouette bumps, and bare spines.** In-app review showed heavy built-in
+  weights rendering hollow and lumpy; four root causes fixed, each verified by true pen-coverage sampling
+  (a–z sweep; 20/26 glyphs 0.00% uncovered, worst residual 0.4 mm only at needle-acute junction-pocket tips)
+  and re-inspection in the running app:
+  - **Erosion pass loss** — one polygon-clipping failure on a dense curvy boundary silently truncated every
+    deeper concentric pass (a ~0.9 mm white ring inside the band). `insetMultiPolygon` now escalates through
+    RDP-simplified cut boundaries, and text.js retries each depth single-shot from the clean base band before
+    concluding collapse.
+  - **Silhouette bumps** — `joinSkipAngle`'s skipped join disks left un-swept needle wedges reaching the band
+    edge; a round-capped pen drew each as a nub on the letterform. Sweep quads now extend longitudinally to
+    cover the skipped corner wedge.
+  - **Bare spine** — junction pockets deeper than the uniform half-width fooled the coverage bookkeeping into
+    skipping the closing pass, leaving the bowl's medial strip uncovered. Coverage is now tracked from the
+    deepest UNIFORM-reliable pass, with an exact closing contour at (bandW−penW)/2; skeleton strokes are the
+    last-resort fallback only (they slash across junction-pocket rings).
+  - **Real pen width** — the engine's generate() bounds never carried `penWidth`, silently pinning every
+    in-app band to the 0.35 mm fallback. The layer's assigned pen (or the first pen) now flows into bounds,
+    and a committed pen-width change regenerates text layers instead of only repainting.
+- **Test hardening.** The scanline "gapless" check had a blind spot (a missing pass read as a counter
+  crossing); replaced with true pen-coverage sampling over the reconstructed band region, plus an engine-level
+  penWidth-in-bounds regression. Two stale path-count assertions updated to ink-based metrics (the stitched
+  snake changed the path-count contract, not the ink contract).
+
+## 1.2.32 - 2026-07-02
+
+### Changed
+- **Type fills now offer the exact same controls as the Paint Bucket tool.** The Text panel's Fill tab used to
+  hand-roll a five-option subset (Hatch / Spiral / Dots / Stripe / Cross-Hatch) with a single density slider. It
+  now renders the **same variant grid and per-variant parameters the paint bucket exposes** — all twelve fill
+  types (Hatch, Wave, Dots, Contour, Spiral, Radial, Polygonal, Truchet, Maze, Stripes, Weave, plus None) with
+  their full parameter sets (amplitude, dot shape/pattern/size/rotation/jitter, line count, sides, poly tiling,
+  wave smoothing/frequency, spiral tightness/direction, radial skip, contour direction/variance/simplify/center
+  padding, and the Truchet/Maze/Stripes/Weave controls). Every fill type and parameter matches the bucket because
+  both surfaces now render from **one shared module**, `Vectura.UI.FillControlSurface`
+  (`src/ui/fill-control-surface.js`), rather than duplicating the control logic. The engine path was already
+  shared (`text.js → PaintBucketOps.buildFillRecord → AlgorithmRegistry._generatePatternFillPaths`); this closes
+  the UI gap so the same knobs drive the same fill code.
+- The text-specific main **Angle** dial (0°-up convention — see the −90° note in `text.js`), the **Fill Offset**
+  pad, and the **Inset** control stay as bespoke Text-panel controls (excluded from the shared surface) because
+  they own placement roles the paint bucket handles via padding/shift. The shared surface's own per-variant
+  angles (stripe, weave, poly, dot rotation) come through unchanged and match the bucket.
+
+### Internal
+- Extracted the variant grid + per-variant control rendering out of `src/ui/panels/paint-bucket-panel.js` into
+  the shared `Vectura.UI.FillControlSurface.mount({ gridEl, controlsEl, params, typeKey, exclude, idPrefix,
+  onEdit, onChange })`. The paint bucket panel now mounts the surface (`onChange → persistAndRedraw`) and keeps
+  only its surrounding chrome (scope, pens, sensitivity, status chip, expand) and the fill-record ↔ params
+  mapping; the Text panel mounts it with `typeKey: 'fillType'` and a namespaced id prefix so both can coexist.
+
+## 1.2.31 - 2026-07-02
+
+### Changed
+- **Google Fonts picker is ordered by popularity.** The web-font catalogue now sorts by real Google Fonts usage
+  (Roboto, Open Sans, Lato, Montserrat, Oswald, … first) with an alphabetical tail for everything else, applied
+  to both the cached and the freshly-fetched catalogue (`src/core/google-fonts.js`). The **Built-in single-stroke**
+  section moves below Google Fonts in the font picker so web faces lead.
+- **Text layer hidden from the generic Add-Layer flow.** The `text` layer type is marked `hidden` in
+  `ALGO_DEFAULTS`; the on-canvas Type tool remains its entry point.
+
 ## 1.2.30 - 2026-07-02
 
 ### Changed

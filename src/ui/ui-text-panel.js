@@ -614,16 +614,32 @@
       });
     }
 
-    // ── fill type select + density slider ─────────────────────────────────
-    const fillTypeSel = ref('fillType');
-    if (fillTypeSel) { fillTypeSel.value = layer.params.fillType; listen(fillTypeSel, 'change', (e) => setParam('fillType', e.target.value)); }
-    const dens = ref('densSlider'); const densChip = ref('densChip');
-    if (dens) {
-      dens.value = layer.params.fillDensity; if (densChip) densChip.textContent = dens.value;
-      listen(dens, 'pointerdown', () => pushHist());
-      listen(dens, 'input', (e) => { layer.params.fillDensity = +e.target.value; if (densChip) densChip.textContent = e.target.value; renderSpec(); });
-      listen(dens, 'change', () => flush());
-      listen(dens, 'dblclick', (e) => { e.preventDefault(); pushHist(); layer.params.fillDensity = DEF.fillDensity != null ? DEF.fillDensity : 4; dens.value = layer.params.fillDensity; if (densChip) densChip.textContent = dens.value; flush(); });
+    // ── fill type + per-variant controls (shared surface) ─────────────────
+    // The variant grid + its parameter sliders come from the SAME module the
+    // paint bucket tool uses (Vectura.UI.FillControlSurface), so Type fills
+    // offer the exact same fill types and parameters. The engine path was
+    // already shared (text.js → PaintBucketOps.buildFillRecord →
+    // _generatePatternFillPaths); this closes the UI gap.
+    //
+    // Excluded here: fillAngle (text keeps its own 0°-up AngleDial below — see
+    // the −90° note in text.js), and fillPadding/fillShiftX/fillShiftY (text's
+    // Inset + Offset-pad controls own those roles). onEdit snapshots history
+    // once per interaction; onChange previews live (renderSpec) then commits
+    // (flush) on release, matching the old density slider's behaviour.
+    const fillGridEl = ref('fillVariantGrid');
+    const fillControlsEl = ref('fillControls');
+    if (fillGridEl && fillControlsEl && Vectura.UI && Vectura.UI.FillControlSurface) {
+      Vectura.UI.FillControlSurface.mount({
+        gridEl: fillGridEl,
+        controlsEl: fillControlsEl,
+        params: layer.params,
+        typeKey: 'fillType',
+        idPrefix: 'txtfill',
+        exclude: ['fillAngle', 'fillPadding', 'fillShiftX', 'fillShiftY'],
+        noneHint: 'Pick a fill type to fill glyph interiors.',
+        onEdit: () => pushHist(),
+        onChange: (committed) => { if (committed) flush(); else renderSpec(); },
+      });
     }
 
     // ── fill offset XY pad ────────────────────────────────────────────────
@@ -832,7 +848,6 @@
       if (favVals.length) { addSection('★ Favorites'); addOptions(favVals); }
       const recentVals = recent.filter((v) => nameKnown(v) && favVals.indexOf(v) < 0);
       if (recentVals.length) { addSection('Recent'); addOptions(recentVals); }
-      addSection('Built-in single-stroke'); addOptions(builtinValues);
       addSection('Google Fonts');
       if (families.length) {
         addOptions(families.slice(0, POPULAR_N).map((f) => idToKey(f.id)));
@@ -840,6 +855,7 @@
       } else {
         addHint('Web font catalog unavailable — built-in faces only.');
       }
+      addSection('Built-in single-stroke'); addOptions(builtinValues);
     }
     function moveActive(dir) {
       const rows = Array.from(fpList.querySelectorAll('.vtp-fp-opt'));
@@ -1240,19 +1256,12 @@
           <div class="vtp-reveal-inner">
             <div class="vtp-field-block" style="margin-top:9px;">
               <div class="vtp-field-cap"><label>Fill Type</label></div>
-              <select class="vtp-vselect" data-ref="fillType">
-                <option value="hatch">Hatch</option><option value="spiral">Spiral</option>
-                <option value="dots">Dots</option><option value="stripe">Stripe</option>
-                <option value="cross">Cross-Hatch</option>
-              </select>
+              <div class="paint-bucket-variant-grid" data-ref="fillVariantGrid" role="radiogroup" aria-label="Fill type"></div>
             </div>
-            <div class="vtp-field-block">
-              <div class="vtp-field-cap"><label>Density</label></div>
-              <div class="vtp-vslider-wrap">
-                <input type="range" class="vtp-vslider" data-ref="densSlider" min="1" max="100" value="21" aria-label="Fill density">
-                <span class="vtp-vchip vtp-mono" data-ref="densChip">21</span>
-              </div>
-            </div>
+            <!-- Per-variant controls (density, amplitude, dots, spiral, contour,
+                 truchet, maze, stripes, weave …) rendered by the shared
+                 Vectura.UI.FillControlSurface — identical to the paint bucket. -->
+            <div class="vtp-fill-controls" data-ref="fillControls"></div>
             <div class="vtp-field-block" style="margin-top:11px;">
               <div class="vtp-field-cap"><label>Angle <span class="vtp-drag-hint">↻ drag</span></label></div>
               <div class="vtp-angle-mount" data-ref="fillAngleMount"></div>

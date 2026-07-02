@@ -41,6 +41,25 @@
   const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days — names change rarely.
   const KEY_PREFIX = 'google:'; // p.font = 'google:<slug>' selects a web family.
 
+  // Fontsource slugs in descending order of universal popularity (Google Fonts usage analytics).
+  // Fonts not listed fall after these in alphabetical order.
+  const POPULARITY_RANK = [
+    'roboto', 'open-sans', 'lato', 'montserrat', 'oswald', 'source-sans-3',
+    'poppins', 'inter', 'raleway', 'nunito', 'merriweather', 'pt-sans',
+    'playfair-display', 'ubuntu', 'rubik', 'work-sans', 'mukta', 'noto-sans',
+    'lora', 'cabin', 'josefin-sans', 'fira-sans', 'barlow', 'nunito-sans',
+    'dancing-script', 'mulish', 'manrope', 'dm-sans', 'heebo', 'quicksand',
+    'libre-baskerville', 'inconsolata', 'arimo', 'bitter', 'oxygen', 'lobster',
+    'dosis', 'titillium-web', 'crimson-text', 'exo-2', 'pt-serif', 'teko',
+    'noto-serif', 'karla', 'varela-round', 'arvo', 'exo', 'ibm-plex-sans',
+    'anton', 'libre-franklin', 'be-vietnam-pro', 'jost', 'outfit', 'figtree',
+    'hanken-grotesk', 'plus-jakarta-sans', 'space-grotesk', 'sora', 'urbanist',
+    'lexend', 'public-sans', 'dm-serif-display', 'cormorant-garamond',
+    'eb-garamond', 'source-serif-4', 'spectral', 'zilla-slab', 'rokkitt',
+    'bricolage-grotesque', 'instrument-sans', 'instrument-serif', 'geist',
+    'domine', 'frank-ruhl-libre', 'volkhov', 'neuton', 'gloock',
+  ];
+
   // ── State ─────────────────────────────────────────────────────────────────
   let families = []; // [{ id, family, category, weights, subsets, defSubset }]
   let catalogStatus = 'idle'; // idle | loading | ready | error
@@ -105,7 +124,14 @@
 
     const cached = readCache();
     if (cached && cached.length) {
-      families = cached;
+      families = cached.slice().sort((a, b) => {
+        const ai = POPULARITY_RANK.indexOf(a.id);
+        const bi = POPULARITY_RANK.indexOf(b.id);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        return a.family.localeCompare(b.family);
+      });
       catalogStatus = 'ready';
       return Promise.resolve(families);
     }
@@ -129,7 +155,14 @@
           .filter((e) => !e.type || e.type === 'google')
           .map(normalizeEntry)
           .filter(Boolean)
-          .sort((a, b) => a.family.localeCompare(b.family));
+          .sort((a, b) => {
+            const ai = POPULARITY_RANK.indexOf(a.id);
+            const bi = POPULARITY_RANK.indexOf(b.id);
+            if (ai !== -1 && bi !== -1) return ai - bi;
+            if (ai !== -1) return -1;
+            if (bi !== -1) return 1;
+            return a.family.localeCompare(b.family);
+          });
         if (!families.length) throw new Error('Catalog was empty.');
         catalogStatus = 'ready';
         writeCache(families);
