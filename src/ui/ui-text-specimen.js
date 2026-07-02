@@ -350,10 +350,12 @@
   // (vScale/hScale/tracking/kerning/baselineShift/smallCaps/super·subscript) are
   // baked into the geometry, mirroring the engine, so the SVG carries no extra
   // transform. Returns stage-space polylines, or null for web faces / no font.
-  function strokeFontPolys(p, W, H) {
+  function strokeFontPolys(p, W, H, txtOverride) {
     const SF = Vectura.StrokeFont;
     if (!SF || typeof SF.layout !== 'function' || isWeb(p.font)) return null;
-    let txt = p.text || ' ';
+    // txtOverride lets the editing path feed the live contenteditable text (params
+    // .text is debounced, so it would lag the caret without this).
+    let txt = typeof txtOverride === 'string' && txtOverride.length ? txtOverride : p.text || ' ';
     if (p.allCaps) txt = txt.toUpperCase();
     let laid;
     try {
@@ -970,18 +972,31 @@
       outlineSvg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
       if (specText) outlineSvg.style.transform = specText.style.transform;
 
-      let txt = p.text || ' ';
+      const editing = !!(view && view.editing);
+      // While editing, params.text is committed on a debounce, so read the live
+      // contenteditable content instead — keeps the traced geometry in lock-step
+      // with what the user is typing (mirrors ui-text-panel's readSpec: innerText,
+      // nbsp→space, no trailing newline).
+      let txt;
+      if (editing && specText) {
+        const raw = specText.innerText;
+        txt = ((raw && raw.length ? raw : specText.textContent) || '').replace(/ /g, ' ').replace(/\n$/, '');
+      } else {
+        txt = p.text || ' ';
+      }
+      if (!txt) txt = ' ';
       if (p.allCaps) txt = txt.toUpperCase();
       const filled = !!p.fillEnabled && isWeb(p.font);
       const hollow = !!p.outlineStroke && !filled;
-      const editing = !!(view && view.editing);
       const showNodes = !!(view && view.showOutlines);
 
       // FAITHFUL — the real renderer's geometry. Trace the glyph outlines, weld
       // overlaps when Merge Overlaps is on, stroke thin centrelines. Falls back to
-      // the CSS stroke for built-ins, while a TTF downloads, when filled, or under
-      // jitter (CSS owns the wobble + caret).
-      const faithful = (hollow || filled) && !editing && num(p.jitter, 0) <= 0.05 && isWeb(p.font);
+      // the CSS stroke while a TTF downloads, when filled, or under jitter (CSS
+      // owns the wobble). Editing stays faithful — the trace tracks the live text
+      // so clicking to edit never swaps the specimen to the UI sans; the caret
+      // rides the transparent contenteditable underneath.
+      const faithful = (hollow || filled) && num(p.jitter, 0) <= 0.05 && isWeb(p.font);
       const face = faithful ? parsedFace(p.font, p.fontWeight) : null;
 
       if (face) {
@@ -1033,10 +1048,11 @@
       // BUILT-IN MONOLINE FACE — draw the REAL Vectura stroke-font geometry so the
       // specimen matches the plotted output exactly (it used to substitute the UI
       // sans, which never aligned with the canvas). The baked polylines carry no
-      // CSS transform, so clear the inherited one. Editing / jitter still fall
-      // through to the CSS stand-in below (it owns the caret + wobble).
-      if (p.outlineStroke && !editing && num(p.jitter, 0) <= 0.05) {
-        const polys = strokeFontPolys(p, W, H);
+      // CSS transform, so clear the inherited one. Editing stays faithful (the
+      // trace tracks the live text, caret rides the transparent field); only jitter
+      // falls through to the CSS stand-in below (it owns the wobble).
+      if (p.outlineStroke && num(p.jitter, 0) <= 0.05) {
+        const polys = strokeFontPolys(p, W, H, txt);
         if (polys && polys.length) {
           if (specText) outlineSvg.style.transform = 'none';
           // Reflect the built-in monoline weight: heavier Styles thicken the pen

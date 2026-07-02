@@ -267,6 +267,35 @@ describe('TextSpecimen renderer', () => {
     c.destroy();
   });
 
+  test('editing (no jitter) keeps the REAL traced geometry visible — no font swap', () => {
+    // Regression: focusing the specimen to edit used to clear the traced glyph
+    // geometry and reveal the CSS stand-in (a completely different UI sans for
+    // built-in stroke faces). While editing without jitter, the faithful trace
+    // must stay drawn, sourced from the live contenteditable text.
+    const refs = makeRefs();
+    const c = V.UI.TextSpecimen.create(refs);
+
+    // web face: live edit text lives on the element, params.text lags (debounced)
+    refs.specText.textContent = 'AB';
+    c.render(webLayer({ text: 'stale' }), { guides: 'none', editing: true });
+    expect(refs.outlineSvg.innerHTML).toContain('<path');
+    expect(refs.outlineSvg.innerHTML).toContain('stroke="#f1f1f1"');
+    // the CSS text stand-in stays hidden (the trace IS the specimen)
+    expect(parseFloat(refs.specText.style.webkitTextStrokeWidth)).toBe(0);
+
+    // built-in stroke face: same — real monoline geometry, not the UI sans
+    const refs2 = makeRefs();
+    const c2 = V.UI.TextSpecimen.create(refs2);
+    refs2.specText.textContent = 'VECTURA';
+    c2.render(builtinLayer({ text: 'stale' }), { guides: 'none', editing: true });
+    expect(refs2.outlineSvg.innerHTML).toContain('<path');
+    expect(refs2.outlineSvg.innerHTML).toContain('stroke="#f1f1f1"');
+    expect(parseFloat(refs2.specText.style.webkitTextStrokeWidth)).toBe(0);
+
+    c.destroy();
+    c2.destroy();
+  });
+
   test('jitter (non-editing) splits the specimen into per-letter transformed spans', () => {
     const refs = makeRefs();
     const c = V.UI.TextSpecimen.create(refs);
