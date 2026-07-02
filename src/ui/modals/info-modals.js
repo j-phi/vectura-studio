@@ -1697,6 +1697,10 @@
       title: 'Thickening Mode',
       description: 'How the heavier outline passes are built — parallel offsets, a sinusoidal ribbon, or one continuous snake stroke.',
     },
+    'text.inkOverlap': {
+      title: 'Ink Overlap',
+      description: 'How much adjacent pen passes of a heavier built-in weight overlap, as a percent of the pen width. The bold band is drawn as one concentric snaking stroke spaced at penWidth × (1 − overlap): 0% = passes just touch (fastest, risks hairline gaps if the pen skips), higher = denser ink. Built-in face, Parallel mode only.',
+    },
     'text.mergeOverlaps': {
       title: 'Merge Overlaps',
       description: 'Welds overlapping glyph outlines into one clean contour so tight pairs (RA, AV) and connected scripts never draw crossing lines through each other; counters (O, A, e holes) are preserved. Flattens to straight outlines, so it supersedes Bezier Curves. Web outline fonts only.',

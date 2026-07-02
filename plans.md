@@ -37,6 +37,17 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- **v1.2.27 — Built-in bold → banded concentric snake fill.** Replaced the built-in face's parallel-pass heavy
+  weights (crossing lattices at junctions, splayed terminals) with a region-first model: per-glyph
+  `strokeRingsToBand(thickness·penW)` → incremental morphological erosion (`GeometryUtils.insetMultiPolygon`,
+  boundary-Minkowski subtraction — inward miter offsets self-cross near collapse and were rejected) at spacing
+  `penW·(1 − inkOverlap)` (new `inkOverlap` param, default 15 %) → rings stitched into continuous snakes
+  (`stitchConcentricRings`, segment-projection grafts) → skeleton medial pass when the deepest *reliable* ring
+  leaves the spine bare (the deepest ring near bandW/2 pinches off locally and cannot be trusted for coverage).
+  Per-glyph translation-normalized memo cache makes typing re-renders ~free. polygon-clipping hardening:
+  `diskPhase`, `joinSkipAngle`, 1 µm coordinate snap + inset nudge-retry (fixed crashes and a 3 s sweep-line
+  pathology). Legacy engine kept for sinusoidal/snake styles and headless. Covered by
+  `tests/unit/geometry-band-fill.test.js` + `tests/integration/text-weight-band.test.js`.
 - **v1.2.26 — Built-in text weight optics + fill-angle fix.** Built-in Vectura weights (extra parallel pen
   passes) are now metered by one pure source, `StrokeFont.weightMetrics(passes, capMM, penW)`:
   **F-03** widens the per-glyph advance (`extraTrackingMM = passes·penW·0.6`) so heavier stems don't merge, and

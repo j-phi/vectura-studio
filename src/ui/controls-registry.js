@@ -1580,6 +1580,22 @@
         showIf: (p) => p.outlineStroke !== false && (p.outlineThickness ?? 1) > 1,
         infoKey: 'text.thickeningMode',
       },
+      // Ink Overlap drives the banded bold's pass spacing — penW·(1−overlap) —
+      // so heavier built-in weights plot gapless with the physical pen. Only the
+      // monoline face's parallel (clean-bold) engine reads it.
+      {
+        id: 'inkOverlap',
+        label: 'Ink Overlap %',
+        type: 'range',
+        min: 0,
+        max: 60,
+        step: 5,
+        showIf: (p) => p.outlineStroke !== false
+          && !(window.Vectura.GoogleFonts && window.Vectura.GoogleFonts.isWebFontKey(p.font))
+          && (p.thickeningMode ?? 'parallel') === 'parallel'
+          && ((p.outlineThickness ?? 1) > 1 || (p.fontWeight ?? 'Regular') !== 'Regular'),
+        infoKey: 'text.inkOverlap',
+      },
       // Merge Overlaps welds kerned/overlapping glyph contours into clean
       // non-crossing outlines (web faces only — single-stroke faces have no
       // closed contours to union). It flattens to straight polygons, so it

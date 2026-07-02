@@ -14,6 +14,16 @@
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const finite = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
+  // Banded-bold result cache. The concentric erosion fill costs tens of ms per
+  // glyph, but its output is a PURE function of the glyph's stroke geometry
+  // (translation-normalized), the pass count and the pen/spacing — so repeated
+  // letters, and every re-render while typing, hit this instead of recomputing.
+  // Values store chains in bbox-origin space; hits translate them back. Cleared
+  // wholesale when it grows past the cap (jittered text never caches — see call
+  // site). Deterministic: keys are geometry, values are pure derivations.
+  const BAND_FILL_CACHE = new Map();
+  const BAND_FILL_CACHE_MAX = 512;
+
   // Proper segment crossing (shared endpoints / collinear touches excluded) — the
   // signal that two glyph outlines genuinely cross, used to decide whether a pair
   // of glyphs must be welded by the merge-overlaps union.
@@ -692,21 +702,201 @@
         const canConcentric = thickness > 1 && isOutline && FB && typeof FB.union === 'function'
           && typeof FB.multiPolygonToPaths === 'function' && typeof FB.nonZeroUnionByContainment === 'function'
           && GU && typeof GU.miterOffsetClosedRing === 'function';
-        const useLegacyThicken = thickness > 1 && !canConcentric && GU && GU.thickenPaths;
+        // Sinusoidal / snake are deliberately hand-drawn / boustrophedon styles —
+        // they keep the per-point offset engine (and its rng-driven wave phase).
+        // Parallel (the default) is the "clean bold" intent.
+        const styleMode = p.thickeningMode === 'sinusoidal' || p.thickeningMode === 'snake';
+        // ── Built-in heavy weight = banded concentric snake fill ──────────────
+        // The monoline face's old bold drew N INDEPENDENT parallel offset copies
+        // of every stroke, so wherever two strokes meet (a t crossbar, the e bar/
+        // bowl junction) the two bundles simply crossed — a lattice of doubled ink
+        // — and open terminals splayed into an uncapped fan. The clean model is
+        // region-first: sweep the glyph's strokes into ONE boolean band of total
+        // width thickness·penW (strokeRingsToBand — junctions weld, terminals get
+        // round caps), then fill that band with concentric inward passes and
+        // stitch them into a single snaking pen path. Pass spacing is tied to the
+        // pen: penW·(1 − inkOverlap), so adjacent passes overlap by exactly the
+        // requested ink fraction and the plot is gapless at the physical pen width.
+        const canBand = thickness > 1 && !isOutline && !styleMode && FB
+          && typeof FB.union === 'function' && typeof FB.difference === 'function'
+          && GU && typeof GU.strokeRingsToBand === 'function'
+          && typeof GU.insetMultiPolygon === 'function'
+          && typeof GU.stitchConcentricRings === 'function';
+        const useLegacyThicken = thickness > 1 && !canBand && !canConcentric && GU && GU.thickenPaths;
 
-        if (useLegacyThicken) {
+        if (canBand) {
+          const inkOverlap = clamp(finite(p.inkOverlap, 15), 0, 60) / 100;
+          const passSpacing = penW * (1 - inkOverlap);
+          const bandW = thickness * penW;
+          // Near collapse the erosion boolean can spit sub-pen-dot crumbs — drop
+          // anything smaller than one pen footprint.
+          const MIN_AREA = penW * penW;
+          // polygon-clipping output rings are dense with micro/collinear vertices;
+          // every erosion pass sweeps a disk along every boundary vertex, so ring
+          // point count is THE cost driver. RDP at 5% of a pen width (an order of
+          // magnitude under the ink-overlap slack) collapses them harmlessly.
+          const SIMP_TOL = penW * 0.05;
+          // Emergency complexity valve: past RING_CAP vertices the tolerance
+          // escalates (at most twice — escalating further would open visible
+          // gaps between passes, since inter-pass coverage slack is only
+          // penW·inkOverlap). Normal glyphs never hit this; it exists so one
+          // pathological ring can't stall the whole render.
+          const RING_CAP = 400;
+          const simplifyRing = (pts) => {
+            if (!GU.simplifyPath || pts.length < 8) return pts;
+            let tol = SIMP_TOL;
+            let s = GU.simplifyPath(pts, tol);
+            for (let e = 0; e < 2 && s.length > RING_CAP; e += 1) {
+              tol *= 2;
+              s = GU.simplifyPath(pts, tol);
+            }
+            return (s && s.length >= 4) ? s : pts;
+          };
+          const simplifyMp = (mp) => mp.map((poly) => poly.map((ring) => {
+            const pts = ring.map((q) => (Array.isArray(q) ? { x: q[0], y: q[1] } : { x: q.x, y: q.y }));
+            return simplifyRing(pts).map((q) => [q.x, q.y]);
+          }));
+          // Legacy engine as the per-glyph escape hatch (degenerate band, boolean
+          // failure) so a glyph never silently loses its weight.
+          const legacyHeavy = (strokes) => {
+            const stroked = strokes.map((s) => {
+              const seg = s.slice();
+              seg.meta = { algorithm: 'text', straight: true };
+              return seg;
+            });
+            const heavy = GU.thickenPathsUniform
+              ? GU.thickenPathsUniform(stroked, { width: thickness, spacing: penW })
+              : GU.thickenPaths(stroked, { width: thickness, spacing: penW });
+            for (const seg of heavy) out.push(seg);
+          };
+          // Band per GLYPH (gid groups a glyph's strokes) — junction welding is an
+          // intra-glyph concern for the monoline face, and small per-glyph unions
+          // keep every polygon-clipping call bounded.
+          const groups = new Map();
+          strokeItems.forEach((it, i) => {
+            const key = it.gid != null ? it.gid : ('p' + i);
+            let arr = groups.get(key);
+            if (!arr) { arr = []; groups.set(key, arr); }
+            if (it.pts && it.pts.length >= 2) arr.push(it.pts);
+          });
+          groups.forEach((strokes) => {
+            if (!strokes.length) return;
+            // Cache hit: identical glyph geometry (translation removed, µm-
+            // quantized) under the same pen/weight/spacing reuses the computed
+            // fill wholesale. Jittered text is per-point randomized, so it would
+            // only pollute the cache — skip it.
+            let mnx = Infinity;
+            let mny = Infinity;
+            for (const s of strokes) {
+              for (const q of s) {
+                if (q.x < mnx) mnx = q.x;
+                if (q.y < mny) mny = q.y;
+              }
+            }
+            const emitChains = (chains, emitSkeleton) => {
+              for (const chain of chains) {
+                if (!Array.isArray(chain) || chain.length < 2) continue;
+                chain.meta = { algorithm: 'text', straight: true };
+                out.push(chain);
+              }
+              // Medial remainder: when the deepest surviving ring still leaves
+              // more than a kiss of spine uncovered (pass spacing can overshoot
+              // the collapse depth), run the original skeleton — for a uniform
+              // stroke it IS the medial axis, so the closing pass lands dead
+              // centre, invisible inside the band.
+              if (emitSkeleton) {
+                for (const s of strokes) {
+                  const seg = s.map((q) => ({ x: q.x, y: q.y }));
+                  seg.meta = { algorithm: 'text', straight: true };
+                  out.push(seg);
+                }
+              }
+            };
+            const cacheKey = jitter === 0
+              ? thickness + '|' + penW + '|' + passSpacing + '|'
+                + strokes.map((s) => s.map((q) => (q.x - mnx).toFixed(2) + ',' + (q.y - mny).toFixed(2)).join(';')).join('|')
+              : null;
+            if (cacheKey) {
+              const hit = BAND_FILL_CACHE.get(cacheKey);
+              if (hit) {
+                emitChains(hit.chains.map((c) => c.map((q) => ({ x: q.x + mnx, y: q.y + mny }))), hit.emitSkeleton);
+                return;
+              }
+            }
+            let band = null;
+            try { band = GU.strokeRingsToBand(strokes, bandW, { boolean: FB }); }
+            catch (_) { band = null; }
+            if (!band || !band.length) { legacyHeavy(strokes); return; }
+            band = simplifyMp(band);
+            // Concentric passes: the OUTER pass centreline sits penW/2 inside the
+            // band edge (the pen's own radius), so the drawn ink edge lands
+            // exactly on the intended letterform boundary; each deeper pass steps
+            // in by the overlap-adjusted spacing. Erosion is INCREMENTAL — pass k
+            // erodes pass k−1's region by one spacing, exact by the morphological
+            // identity erode(R, a+b) = erode(erode(R, a), b). (Chaining is safe
+            // here because each step is a subtraction of a well-formed thin
+            // Minkowski band, unlike the chained miter DILATION unions that
+            // crashed polygon-clipping — and thin cuts with small join disks are
+            // an order of magnitude cheaper than one deep cut.) The loop runs
+            // until the region is consumed — junction cores are deeper than the
+            // uniform bandW/2, and their extra rings are exactly what inks them
+            // without doubling.
+            const passes = [];
+            let lastInset = 0;
+            let region = band;
+            for (let k = 0; k < 64; k += 1) {
+              const step = k === 0 ? penW / 2 : passSpacing;
+              let mp = [];
+              try { mp = GU.insetMultiPolygon(region, step, { boolean: FB, minArea: MIN_AREA }); }
+              catch (_) { mp = []; }
+              if (!mp || !mp.length) break;
+              // Simplify each pass's rings once: they are both the emitted pen
+              // path AND the next erosion's boundary (keeps every cut cheap).
+              region = simplifyMp(mp);
+              const rings = [];
+              for (const poly of region) {
+                for (const ring of poly) {
+                  if (!Array.isArray(ring) || ring.length < 4) continue;
+                  rings.push(ring.map((q) => ({ x: q[0], y: q[1] })));
+                }
+              }
+              if (!rings.length) break;
+              passes.push(rings);
+              lastInset = penW / 2 + k * passSpacing;
+            }
+            if (!passes.length) { legacyHeavy(strokes); return; }
+            // One continuous snake per band region: graft each ring onto the
+            // nearest chain end (join tolerance ~ one pass spacing — the hop stays
+            // buried in ink, never streaking across a counter).
+            const chains = GU.stitchConcentricRings(passes, Math.max(penW, passSpacing * 2))
+              .filter((c) => Array.isArray(c) && c.length >= 2);
+            // Skeleton = guaranteed medial pass. A pass whose inset sits within
+            // one spacing of the collapse depth (bandW/2) is UNRELIABLE — near
+            // collapse its sliver ring pinches off locally and leaves the spine
+            // bare between the flanking passes — so coverage is judged from the
+            // deepest RELIABLE pass. For a uniform stroke the skeleton IS the
+            // medial axis, so the closing pass lands dead centre.
+            const reliableInset = lastInset <= bandW / 2 - passSpacing ? lastInset : lastInset - passSpacing;
+            const emitSkeleton = bandW / 2 - (reliableInset + penW / 2) > penW * 0.05;
+            if (cacheKey) {
+              if (BAND_FILL_CACHE.size >= BAND_FILL_CACHE_MAX) BAND_FILL_CACHE.clear();
+              BAND_FILL_CACHE.set(cacheKey, {
+                chains: chains.map((c) => c.map((q) => ({ x: q.x - mnx, y: q.y - mny }))),
+                emitSkeleton,
+              });
+            }
+            emitChains(chains, emitSkeleton);
+          });
+        } else if (useLegacyThicken) {
           const stroked = strokeItems.map((it) => {
             const seg = it.pts.slice();
             seg.meta = { algorithm: 'text', straight: true };
             return seg;
           });
-          // Parallel (the default) is the "clean bold" intent — thicken with
-          // MITER joins so the weight stays UNIFORM through sharp corners (a V
-          // apex, A, W) instead of pinching thin at the vertex, while keeping the
-          // single-stroke identity (distinct pen passes, no fill). Sinusoidal /
-          // snake are deliberately hand-drawn / boustrophedon styles, so they keep
-          // the per-point offset engine (and its rng-driven wave phase).
-          const styleMode = p.thickeningMode === 'sinusoidal' || p.thickeningMode === 'snake';
+          // Thicken with MITER joins so the weight stays UNIFORM through sharp
+          // corners (a V apex, A, W) instead of pinching thin at the vertex,
+          // while keeping the single-stroke identity (distinct pen passes, no
+          // fill).
           const heavy = (!styleMode && GU.thickenPathsUniform)
             ? GU.thickenPathsUniform(stroked, { width: thickness, spacing: penW })
             : GU.thickenPaths(stroked, {

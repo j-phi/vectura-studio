@@ -1365,6 +1365,10 @@
       outlineStroke: true,
       outlineThickness: 1,
       thickeningMode: 'parallel',
+      // Banded bold (built-in face): concentric pass spacing = penW·(1−inkOverlap)
+      // so adjacent pen passes overlap by this fraction of the pen width — gapless
+      // ink without doubled strokes. Percent, 0–60.
+      inkOverlap: 15,
       // Pattern fill of glyph interiors (web outline faces only) — reuses the
       // shared fill engine; every fill type/parameter mirrors the paint bucket.
       fillEnabled: false,

@@ -4,6 +4,34 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.27 - 2026-07-02
+
+### Changed
+- **Built-in bold is now a banded concentric snake fill — no more crossing passes.** Heavier built-in Vectura
+  weights (and `outlineThickness > 1` on the built-in face) no longer draw N independent parallel offset copies
+  of every stroke — the model that crossed doubled-ink lattices at junctions (a t crossbar, the e bar/bowl) and
+  splayed uncapped terminals. Each glyph's strokes are now swept into **one boolean band** of total width
+  `thickness · penW` (`GeometryUtils.strokeRingsToBand` — junctions weld, terminals get round caps), the band is
+  filled with **concentric erosion passes** (`GeometryUtils.insetMultiPolygon`, true morphological erosion:
+  subtract a Minkowski band swept along the boundary — robust where inward miter offsets self-cross), and the
+  rings are stitched into a **continuous snaking pen path** (`GeometryUtils.stitchConcentricRings`, segment-
+  projection grafts). A final skeleton pass runs the medial spine whenever the deepest reliable ring leaves it
+  uncovered. Zero pass crossings, gapless coverage at the physical pen width, and the drawn ink edge lands
+  exactly on the intended letterform boundary. Per-glyph results are memoized (translation-normalized), so
+  repeated letters and every re-render while typing are effectively free; sinusoidal/snake thickening styles and
+  headless (no polygon-clipping) environments keep the legacy parallel-pass engine.
+- **New `inkOverlap` text parameter (0–60 %, default 15).** Concentric pass spacing is tied to the pen:
+  `penW · (1 − inkOverlap)`. 0 % means passes just touch (fastest, least ink); higher values overdraw for denser
+  ink coverage. Exposed as an **Ink Overlap** scrub in the Text panel's Stroke tab (built-in face, Parallel mode)
+  and in the generic algorithm controls.
+
+### Fixed
+- **polygon-clipping robustness.** `strokeRingsToBand` gains `diskPhase` (rotates join-disk sampling off
+  degenerate quad-corner alignments that crashed the vendor sweep line) and `joinSkipAngle` (skips join disks at
+  near-collinear vertices — sub-micron notch, order-of-magnitude fewer union polygons); `insetMultiPolygon`
+  snaps coordinates to a 1 µm grid and retries with a sub-percent inset nudge, which eliminated observed
+  multi-second sweep-line pathologies. All defaults preserve historical output byte-for-byte.
+
 ## 1.2.26 - 2026-07-01
 
 ### Changed

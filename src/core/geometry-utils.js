@@ -808,12 +808,24 @@
     if (halfW <= 1e-6) return [];
     const joinSides = Math.max(4, Math.round(opts.joinSides || 8));
     const TAU = Math.PI * 2;
-    // Pre-build the unit join disk; scale+translate per vertex.
+    // Pre-build the unit join disk; scale+translate per vertex. `diskPhase`
+    // (fraction of one side, default 0 = historical output) rotates the disk
+    // sampling so its vertices don't land EXACTLY on the edge quads' corners —
+    // that coincidence is a degenerate input that can crash polygon-clipping's
+    // sweep line (\"Unable to find segment in SweepLine tree\").
+    const phase = Number.isFinite(opts.diskPhase) ? opts.diskPhase : 0;
     const disk = [];
     for (let k = 0; k < joinSides; k += 1) {
-      const t = (k / joinSides) * TAU;
+      const t = ((k + phase) / joinSides) * TAU;
       disk.push([Math.cos(t) * halfW, Math.sin(t) * halfW]);
     }
+    // `joinSkipAngle` (radians, default 0 = historical: disk every vertex) skips
+    // the join disk at NEAR-COLLINEAR interior vertices: the uncovered notch
+    // between two adjacent quads is only halfW·(1−cos(θ/2)) deep — sub-micron for
+    // a densely flattened curve — while each skipped disk removes a whole polygon
+    // from the union sweep. This is what makes erosion of a curved band boundary
+    // (hundreds of gentle vertices, a handful of real corners) affordable.
+    const skipJoinCos = opts.joinSkipAngle > 0 ? Math.cos(opts.joinSkipAngle) : 2;
     // Union per contour first (small unions), then union the contour bands — keeps
     // each polygon-clipping pass bounded instead of one giant N-poly sweep.
     const bands = [];
@@ -838,6 +850,15 @@
       }
       for (let i = 0; i < ring.length; i += 1) {
         const c = ring[i];
+        if (skipJoinCos <= 1 && i > 0 && i < ring.length - 1) {
+          const a = ring[i - 1];
+          const b = ring[i + 1];
+          const ux = c.x - a.x; const uy = c.y - a.y;
+          const wx = b.x - c.x; const wy = b.y - c.y;
+          const um = Math.hypot(ux, uy); const wm = Math.hypot(wx, wy);
+          if (um > 1e-9 && wm > 1e-9
+            && (ux * wx + uy * wy) / (um * wm) >= skipJoinCos) continue;
+        }
         geoms.push([[disk.map(([dxp, dyp]) => [c.x + dxp, c.y + dyp])]]);
       }
       if (!geoms.length) continue;
@@ -1041,6 +1062,162 @@
     return outPts;
   };
 
+  // ── Erode a filled region by a fixed inset ────────────────────────────────────
+  // Shrink a FillBoolean multipolygon ([[ [ [x,y]… ]… ]… ]; ring 0 = shell, rest =
+  // holes) inward by `inset` via TRUE morphological erosion: sweep a disk of
+  // radius `inset` along every boundary ring (the same Minkowski quad+disk build
+  // as strokeRingsToBand — always-valid boolean input) and subtract that swept
+  // band from the region. Exactly the points at distance > inset from the
+  // boundary survive. This is deliberately NOT an inward miter offset of each
+  // ring: eroding a boolean-produced band boundary at offsets comparable to its
+  // local feature size makes the offset curve self-cross wildly (swallowtails at
+  // every near-collapse neck), and the nonzero resolution of that snarl fabricates
+  // phantom lobes far past the true collapse depth. The subtraction is immune —
+  // where the region is thinner than 2·inset the cut simply consumes it, and the
+  // erosion naturally splits/vanishes at the right depth. Chaining IS sound here
+  // (erode(R, a+b) === erode(erode(R, a), b) — subtraction of a valid thin band,
+  // not the miter-dilation unions that crash polygon-clipping), and incremental
+  // small steps are much cheaper than one deep cut. `opts.minArea` drops
+  // micro-sliver polygons below that area (near-collapse boolean crumbs). Returns
+  // a normalized multipolygon, or [] when empty / the boolean lib is unavailable.
+  const insetMultiPolygon = (multiPolygon, inset, opts = {}) => {
+    const FB = opts.boolean
+      || (typeof window !== 'undefined' && window.Vectura && window.Vectura.FillBoolean)
+      || null;
+    if (!FB || typeof FB.union !== 'function' || typeof FB.difference !== 'function') return [];
+    if (!Array.isArray(multiPolygon) || !Number.isFinite(inset) || inset <= 0) return [];
+    // Snap to a 1e-6 grid: polygon-clipping's sweep line degrades from ms to
+    // SECONDS on near-degenerate float configurations (nearly-coincident event
+    // points); snapping input coordinates collapses those events. A micron at mm
+    // scale is far below any pen. The snapped rings drive BOTH the cut build and
+    // the subtraction subject, so subject and clip agree exactly.
+    const snap = (v) => Math.round(v * 1e6) / 1e6;
+    const snappedMp = [];
+    const boundaryRings = [];
+    for (const polygon of multiPolygon) {
+      if (!Array.isArray(polygon)) continue;
+      const outPoly = [];
+      for (const ring of polygon) {
+        const pts = [];
+        for (const q of ring || []) {
+          if (Array.isArray(q)) pts.push({ x: snap(q[0]), y: snap(q[1]) });
+          else if (q && Number.isFinite(q.x)) pts.push({ x: snap(q.x), y: snap(q.y) });
+        }
+        if (pts.length < 3) continue;
+        // Ensure the sweep closes the loop (strokeRingsToBand walks segments
+        // i → i+1 only, so an un-duplicated closing edge would leave a gap).
+        const f = pts[0];
+        const l = pts[pts.length - 1];
+        if (Math.abs(f.x - l.x) > 1e-9 || Math.abs(f.y - l.y) > 1e-9) pts.push({ x: f.x, y: f.y });
+        boundaryRings.push(pts);
+        outPoly.push(pts.map((q) => [q.x, q.y]));
+      }
+      if (outPoly.length) snappedMp.push(outPoly);
+    }
+    if (!boundaryRings.length) return [];
+    const joinSides = Math.max(4, Math.round(opts.joinSides || 8));
+    // polygon-clipping can still crash on unlucky exactly-coincident sweep
+    // events; a sub-percent inset nudge (invisible at pen scale) shifts every
+    // event off the degeneracy, so retry before declaring the region gone. A
+    // GENUINELY empty erosion (region thinner than 2·inset) returns [] from the
+    // first successful attempt and is never retried.
+    const attempts = [[inset, 0.5], [inset * 1.0037, 0.29], [inset * 0.9961, 0.71]];
+    const joinSkipAngle = Number.isFinite(opts.joinSkipAngle) ? opts.joinSkipAngle : 0.35;
+    let region = null;
+    for (const [ins, phase] of attempts) {
+      try {
+        const cut = strokeRingsToBand(boundaryRings, ins * 2, { boolean: FB, joinSides, diskPhase: phase, joinSkipAngle });
+        region = (cut && cut.length) ? (FB.difference(snappedMp, cut) || []) : [];
+        break;
+      } catch (_) { region = null; }
+    }
+    if (!region || !region.length) return [];
+    const minArea = Number.isFinite(opts.minArea) && opts.minArea > 0 ? opts.minArea : 0;
+    if (!minArea) return region;
+    const kept = region.filter((polygon) => {
+      const shell = polygon && polygon[0];
+      if (!Array.isArray(shell) || shell.length < 4) return false;
+      let s = 0;
+      for (let i = 0, n = shell.length; i < n; i += 1) {
+        const a = shell[i];
+        const b = shell[(i + 1) % n];
+        s += a[0] * b[1] - b[0] * a[1];
+      }
+      return Math.abs(s * 0.5) >= minArea;
+    });
+    return kept;
+  };
+
+  // ── Stitch concentric pass rings into continuous snakes ──────────────────────
+  // Turn per-pass ring sets (passes[k] = the closed {x,y}[] rings of concentric
+  // pass k, outermost first) into a handful of CONTINUOUS polylines: each ring is
+  // grafted onto the chain whose free end is nearest, rotated to start at its
+  // closest vertex, so the pen spirals inward pass after pass instead of lifting
+  // between passes. A ring farther than `joinTol` from every chain end (a region
+  // that split during erosion, or the far side of an annulus) starts its own
+  // chain. Connectors are at most joinTol long — chosen by callers to be about
+  // one pass spacing, so the hop is always buried inside already-inked band and
+  // never streaks across open counters. Returns the chains in outer→inner
+  // drawing order (plotter-friendly). Deterministic, pure.
+  const stitchConcentricRings = (passes, joinTol) => {
+    const tol = Number.isFinite(joinTol) && joinTol > 0 ? joinTol : 1;
+    const tolSq = tol * tol;
+    const chains = [];
+    const openRing = (ring) => {
+      const pts = ring.slice();
+      if (pts.length >= 2) {
+        const f = pts[0];
+        const l = pts[pts.length - 1];
+        if (Math.abs(f.x - l.x) < 1e-9 && Math.abs(f.y - l.y) < 1e-9) pts.pop();
+      }
+      return pts;
+    };
+    for (const rings of passes || []) {
+      for (const ring of rings || []) {
+        if (!Array.isArray(ring) || ring.length < 3) continue;
+        const pts = openRing(ring);
+        if (pts.length < 3) continue;
+        // Nearest chain end → nearest point ON the ring (segment projection, not
+        // just vertices — a band ring's facets are far longer than one pass
+        // spacing, so a vertex-only test would miss grafts that are geometrically
+        // a hair apart).
+        let best = null;
+        for (const chain of chains) {
+          const end = chain[chain.length - 1];
+          for (let i = 0; i < pts.length; i += 1) {
+            const a = pts[i];
+            const b = pts[(i + 1) % pts.length];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const l2 = dx * dx + dy * dy;
+            let t = l2 > 0 ? ((end.x - a.x) * dx + (end.y - a.y) * dy) / l2 : 0;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            const px = a.x + t * dx;
+            const py = a.y + t * dy;
+            const ex = end.x - px;
+            const ey = end.y - py;
+            const d2 = ex * ex + ey * ey;
+            if (d2 <= tolSq && (!best || d2 < best.d2)) best = { chain, i, t, x: px, y: py, d2 };
+          }
+        }
+        // Traverse the full loop from the graft point and close it, so the ring
+        // is drawn whole and the chain's free end sits ready for the next pass.
+        const loop = [];
+        const entry = best && best.t > 1e-9 && best.t < 1 - 1e-9 ? { x: best.x, y: best.y } : null;
+        const startIdx = best ? (entry || best.t >= 0.5 ? best.i + 1 : best.i) : 0;
+        if (entry) loop.push(entry);
+        for (let k = 0; k < pts.length; k += 1) {
+          const q = pts[((startIdx + k) % pts.length)];
+          loop.push({ x: q.x, y: q.y });
+        }
+        loop.push({ x: loop[0].x, y: loop[0].y }); // close the ring
+        if (best) best.chain.push(...loop);
+        else chains.push(loop);
+      }
+    }
+    return chains;
+  };
+
   const api = {
     stripCurveMeta,
     smoothPath,
@@ -1064,6 +1241,8 @@
     strokeRingsToBand,
     flattenAnchorRing,
     miterOffsetClosedRing,
+    insetMultiPolygon,
+    stitchConcentricRings,
   };
 
   if (typeof window !== 'undefined') {

@@ -87,6 +87,7 @@
     spBefore:  { param: 'spaceBefore', min: 0, max: 60, step: 1, dec: 0, perpx: 0.4, label: 'Space Before', hint: '↔', unit: 'mm', icon: I.spBefore },
     spAfter:   { param: 'spaceAfter', min: 0, max: 60, step: 1, dec: 0, perpx: 0.4, label: 'Space After', hint: '↔', unit: 'mm', icon: I.spAfter },
     weight:    { param: 'outlineThickness', min: 1, max: 100, step: 1, dec: 0, perpx: 0.4, label: 'Outline Weight', hint: '↔ drag · 1–100 · thickens specimen', unit: 'px', icon: I.weight, steppers: true },
+    inkOverlap: { param: 'inkOverlap', min: 0, max: 60, step: 5, dec: 0, perpx: 0.4, label: 'Ink Overlap', hint: '↔ drag · pass overlap · % of pen width', unit: '%', icon: I.weight, steppers: true },
     // Bezier-block "Smoothness" and the common "Smoothing" both drive the single
     // `smoothing` param (kept in sync); the bezier block is web-only + hides on merge.
     smoothness: { param: 'smoothing', min: 0, max: 1, step: 0.05, dec: 2, perpx: 0.005, label: 'Smoothness', hint: '↔ drag · 0–1', icon: I.smooth },
@@ -441,6 +442,7 @@
     makeScrub(ref('spacingGrid'), 'spBefore');
     makeScrub(ref('spacingGrid'), 'spAfter');
     makeScrub(ref('slot-weight'), 'weight');
+    makeScrub(ref('slot-inkOverlap'), 'inkOverlap');
     makeScrub(ref('slot-smoothness'), 'smoothness');
     makeScrub(ref('slot-smoothing'), 'smoothing');
     makeScrub(ref('slot-simplify'), 'simplify');
@@ -459,8 +461,18 @@
       ref('fitSub').textContent = on ? 'ratio mode' : 'absolute mode';
     };
     const updateThickReveal = () => {
-      ref('thickReveal').classList.toggle('open', !!layer.params.outlineStroke && layer.params.outlineThickness > 1);
+      // A heavier BUILT-IN style (Medium/Semibold/Bold) is also a thickened
+      // stroke, so it reveals the thickening options even at Outline Weight 1.
+      const builtinHeavy = !isWeb(layer.params.font) && (layer.params.fontWeight || 'Regular') !== 'Regular';
+      const heavy = layer.params.outlineThickness > 1 || builtinHeavy;
+      ref('thickReveal').classList.toggle('open', !!layer.params.outlineStroke && heavy);
       ref('outlineBody').style.display = layer.params.outlineStroke ? 'block' : 'none';
+      // Ink Overlap only drives the built-in banded bold's PARALLEL engine.
+      const io = ref('slot-inkOverlap');
+      if (io) {
+        const mode = layer.params.thickeningMode || 'parallel';
+        io.style.display = (!isWeb(layer.params.font) && mode === 'parallel') ? 'block' : 'none';
+      }
     };
     const updateMergeReveal = () => { ref('bezierSmoothBlock').style.display = layer.params.mergeOverlaps ? 'none' : 'block'; };
     const updateFillReveal = () => { ref('fillReveal').classList.toggle('open', !!layer.params.fillEnabled && isWeb(layer.params.font)); };
@@ -504,7 +516,7 @@
         if (after) after();
       }));
     };
-    bindSeg('thickSeg', 'thickeningMode', { parallel: 'parallel', sinusoidal: 'sinusoidal', snake: 'snake' });
+    bindSeg('thickSeg', 'thickeningMode', { parallel: 'parallel', sinusoidal: 'sinusoidal', snake: 'snake' }, updateThickReveal);
 
     // ── align row ──────────────────────────────────────────────────────────
     const abtns = qa('[data-ref="align7"] .vtp-glyph-btn');
@@ -596,6 +608,7 @@
       listen(styleSel, 'change', (e) => {
         const label = e.target.value;
         setParam('fontWeight', label);
+        updateThickReveal();
         if (isWeb(layer.params.font)) { if (GF.loadWeight) GF.loadWeight(keyToId(layer.params.font), label).then(() => renderSpec()).catch(() => {}); }
         else renderSpec();
       });
@@ -1181,6 +1194,7 @@
               <button type="button" data-seg="sinusoidal" aria-pressed="false"><span class="vtp-hint"><svg viewBox="0 0 26 8"><path d="M1 4q3-4 6 0t6 0 6 0 6 0"/></svg></span>Sine</button>
               <button type="button" data-seg="snake" aria-pressed="false"><span class="vtp-hint"><svg viewBox="0 0 26 8"><path d="M1 4c3 0 3-2 6-2s3 4 6 4 3-2 6-2 6 0 6 0"/></svg></span>Snake</button>
             </div>
+            <div class="vtp-field-block" data-ref="slot-inkOverlap" style="margin-top:8px;"></div>
           </div>
         </div>
 
