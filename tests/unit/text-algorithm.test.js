@@ -55,8 +55,35 @@ describe('Text algorithm + stroke font', () => {
     const paths = gen({ text: 'AV', fitToFrame: false, fontSize: 40 });
     expect(paths.length).toBeGreaterThan(0);
     paths.forEach((p) => expect(p.length).toBeGreaterThanOrEqual(2));
-    // Letterforms stay faithful (no curve smoothing) unless Curves is on.
+    // A/V are all-straight glyphs — no curve strokes, so they stay faithful.
     expect(paths.every((p) => p.meta && p.meta.straight === true)).toBe(true);
+  });
+
+  test('built-in stroke-font curve strokes render as native béziers, not faceted chords', () => {
+    // Regression: bowls/arcs/splines (e.g. the 'o' ellipse) are stored as dense
+    // sampled polylines. They must be emitted as native cubic béziers (forceCurves
+    // + real handles) so they read as true curves at any size — independent of the
+    // layer Curves toggle. Before the fix they were straight chords (visible facets).
+    const paths = gen({ text: 'o', font: 'sans', fitToFrame: false, fontSize: 40, curves: false, smoothing: 0 });
+    expect(paths.length).toBeGreaterThan(0);
+    const curved = paths.filter((pth) => pth.meta && pth.meta.straight === false);
+    expect(curved.length).toBeGreaterThan(0);
+    curved.forEach((pth) => {
+      expect(pth.meta.forceCurves).toBe(true);
+      expect(Array.isArray(pth.meta.anchors)).toBe(true);
+      // At least one anchor carries a real bezier handle (else the renderer would
+      // fall back to drawing straight segments).
+      expect(pth.meta.anchors.some((a) => a && (a.in || a.out))).toBe(true);
+    });
+  });
+
+  test('built-in stroke-font straight strokes stay crisp polylines with curve glyphs present', () => {
+    // 'A' and 'V' carry only straight strokes; even though curve glyphs now
+    // bezierize by default, the pointed apex/stem strokes must NOT be smoothed
+    // (sharp corners preserved). Guards against blanket-smoothing regressions.
+    const paths = gen({ text: 'AV', font: 'sans', fitToFrame: false, fontSize: 40, curves: false, smoothing: 0 });
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.every((pth) => pth.meta && pth.meta.straight === true)).toBe(true);
   });
 
   test('Vectura is one family with selectable styles + weights', () => {
@@ -117,14 +144,17 @@ describe('Text algorithm + stroke font', () => {
       Array.isArray(p.meta && p.meta.anchors)
       && p.meta.anchors.some((a) => a && (a.in || a.out));
 
-    test('curves ON + smoothing 0 is a no-op (sharp polylines, no handles)', () => {
-      const off = gen({ text: 'VECTURA', curves: false });
+    test('curves ON + smoothing 0 is a no-op vs Curves OFF (toggle adds nothing)', () => {
+      const off = gen({ text: 'VECTURA', curves: false, smoothing: 0 });
       const on0 = gen({ text: 'VECTURA', curves: true, smoothing: 0 });
-      // Smoothing 0 = zero-width handles = identical geometry to Curves OFF.
-      expect(on0.every((p) => p.meta && p.meta.straight === true)).toBe(true);
-      expect(on0.some(hasHandles)).toBe(false);
-      // Same point geometry as the curves-off render.
-      expect(on0.map((p) => p.length)).toEqual(off.map((p) => p.length));
+      // The Curves toggle at Smoothing 0 changes NO geometry: built-in font curve
+      // strokes (the C/R/U bowls & arcs) already bezierize by default, and the
+      // straight stem/serif/diagonal strokes stay sharp regardless of the toggle.
+      expect(JSON.stringify(on0)).toBe(JSON.stringify(off));
+      // The straight strokes remain faithful polylines with no bezier handles.
+      const straight = on0.filter((p) => p.meta && p.meta.straight === true);
+      expect(straight.length).toBeGreaterThan(0);
+      expect(straight.some(hasHandles)).toBe(false);
     });
 
     test('curves ON + smoothing 1 widens handles into real bezier curves', () => {

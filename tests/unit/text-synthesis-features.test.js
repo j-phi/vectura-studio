@@ -61,8 +61,14 @@ describe('Text synthesis features (Unit B — text.js)', () => {
     });
     expect(a.length).toBeGreaterThan(0);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
-    // Default Text is single-stroke polylines (no fill, no curves).
-    expect(a.every((p) => p.meta && p.meta.straight === true)).toBe(true);
+    // Default Text is single-stroke polylines (no fill). The O bowl is a designed
+    // curve so it renders as native béziers, while the V/A straight strokes stay
+    // faithful sharp polylines.
+    const straight = a.filter((p) => p.meta && p.meta.straight === true);
+    const curved = a.filter((p) => p.meta && p.meta.straight === false);
+    expect(straight.length).toBeGreaterThan(0);
+    expect(curved.length).toBeGreaterThan(0);
+    expect(curved.every((p) => p.meta.forceCurves === true)).toBe(true);
   });
 
   // ── allCaps ────────────────────────────────────────────────────────────────
