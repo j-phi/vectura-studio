@@ -554,6 +554,19 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.26
+- **Bolder built-in text stays legible.** Heavier weights of the built-in Vectura font draw as extra pen passes; those passes now **widen each letter's advance** so stems don't merge, and their thickness is **optically clamped by size** so small text keeps open counters while large caps still get the full weight. One pure metric source (`StrokeFont.weightMetrics`) drives both.
+- **Fill Angle dial now matches the plot.** The text Fill Angle dial drew hatch lines *perpendicular* to the needle — a "/" pick rendered "\". The canvas fill and the panel specimen now both draw parallel to the dial. Also fixes a winding-epsilon glitch on glyphs that fall back to coarse contours.
+
+### 1.2.25
+- **Convert text between Point and Area type in one click.** A conversion dot at the right edge of a selected text layer toggles the mode — a **hollow ring** for point type, a **filled dot** for area type. Point→area frames the text at its current size (it stays put, now wrapping); area→point unwraps.
+
+### 1.2.24
+- **Area Type frames resize and reflow.** Dragging a corner handle on an area text layer resizes its **frame** and re-wraps the text live at constant point size (it no longer scales the glyphs). When text overflows the frame, a red **"+"** out-port appears at the bottom-right, just like Illustrator. Undo restores the prior frame.
+
+### 1.2.23
+- **Area Type — draw a text box on the canvas.** With the Type tool, a plain click still makes point type; now a **click-drag** creates an Area Type frame the size of the drag, and text typed into it **word-wraps** at the frame width at constant point size. Wrapped area text is fully editable (caret, selection, insert, delete) and round-trips through save/load.
+
 ### 1.2.22
 - **Text underline & strikethrough, refined.** Strikethrough now sits at each typeface's **optical midpoint** (the centre of the x-height) instead of a fixed line that read too low. Selecting a decoration reveals its own controls — both underline and strikethrough get a position offset, a pen **Weight**, a **Thicken Mode** (Parallel / Sinusoidal / Snake / Hatch / Cross-Hatch), and a **Line Style** (Solid / Dashed / Dotted / Dash-Dot / Long Dash / Dense Dots). Underline also has **Descender Breaks** with a **Break Padding** slider that opens a gap *centred on each letter tail* (g, j, p, q, y…). All Caps ↔ Small Caps and Superscript ↔ Subscript are now mutually exclusive, the Small Caps / Superscript / Subscript button icons read clearly, and a new Text layer starts as `Vectura`.
 - **Plots now follow reading order by default.** The default **Line Sort** plot order changed to **As drawn**, so art plots in the order it was authored — a word plots left-to-right instead of hopping between height bands. The old travel-minimizing sorts (Nearest / Greedy, with horizontal / vertical / radial banding) are still available in the export **Line Sort** card. Also fixes the Export SVG **"Line Sort Print Order"** gear opening an **empty settings pane** when a Text layer was the active (or only) layer.

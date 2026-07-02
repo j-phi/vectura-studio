@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Vectura stroke-font specimen</title>
+  <style>
+    body { margin: 0; background: #0d1014; color: #cfe6ff; font: 12px/1.4 ui-monospace, monospace; padding: 18px; }
+    h2 { font-size: 12px; color: #6f8aa6; font-weight: 600; margin: 18px 0 4px; letter-spacing: .08em; text-transform: uppercase; }
+    .row { background: #11151b; border: 1px solid #1c232c; border-radius: 6px; margin: 6px 0; padding: 6px 10px; }
+    .lbl { color: #4e7aa0; width: 80px; display: inline-block; }
+    svg { vertical-align: middle; }
+    path { fill: none; stroke: #eef4fb; stroke-width: 0.9; stroke-linecap: round; stroke-linejoin: round; }
+    .base { stroke: rgba(78,158,225,.25); stroke-width: 0.5; }
+  </style>
+</head>
+<body>
+  <h1 style="font-size:14px">Vectura — architect's draft (real StrokeFont geometry)</h1>
+  <div id="out"></div>
+  <script src="../src/core/algorithms/stroke-font.js"></script>
+  <script>
+    const SF = window.Vectura.StrokeFont;
+    const out = document.getElementById('out');
+    const PXMM = 5;          // px per font-unit
+    const PAD = 6;
+
+    function strokeRow(label, text, font) {
+      const laid = SF.layout(text, { size: 14, font: font || 'sans', align: 'left' });
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      laid.paths.forEach(p => p.forEach(pt => {
+        if (pt.x < minX) minX = pt.x; if (pt.x > maxX) maxX = pt.x;
+        if (pt.y < minY) minY = pt.y; if (pt.y > maxY) maxY = pt.y;
+      }));
+      if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 1; maxY = 1; }
+      // include baseline + ascender/descender band for context
+      minY = Math.min(minY, 0); maxY = Math.max(maxY, 19);
+      const w = (maxX - minX) + 2 * PAD, h = (maxY - minY) + 2 * PAD;
+      const tx = (v) => (v - minX + PAD) * PXMM;
+      const ty = (v) => (v - minY + PAD) * PXMM;
+      let d = '';
+      laid.paths.forEach(p => {
+        d += 'M' + p.map(pt => tx(pt.x).toFixed(1) + ' ' + ty(pt.y).toFixed(1)).join(' L');
+      });
+      const bl = ty(14);
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = '<span class="lbl">' + label + '</span>' +
+        '<svg width="' + (w * PXMM) + '" height="' + (h * PXMM) + '">' +
+        '<line class="base" x1="0" y1="' + bl + '" x2="' + (w * PXMM) + '" y2="' + bl + '"/>' +
+        '<path d="' + d + '"/></svg>';
+      out.appendChild(row);
+    }
+
+    function heading(t) { const h = document.createElement('h2'); h.textContent = t; out.appendChild(h); }
+
+    heading('Headline — VECTURA across faces');
+    SF.fonts.forEach(f => strokeRow(f.label, 'VECTURA', f.id));
+
+    heading('Uppercase');
+    strokeRow('A–M', 'ABCDEFGHIJKLM');
+    strokeRow('N–Z', 'NOPQRSTUVWXYZ');
+
+    heading('Lowercase');
+    strokeRow('a–m', 'abcdefghijklm');
+    strokeRow('n–z', 'nopqrstuvwxyz');
+
+    heading('Digits & punctuation');
+    strokeRow('0–9', '0123456789');
+    strokeRow('punct', '.,:;!?\'"-_()[]{}/&@#%+=<>');
+
+    heading('Specimens');
+    strokeRow('pangram', 'The quick brown fox jumps');
+    strokeRow('mixed', 'Section A-3 · Scale 1:50 · Rev.2');
+    strokeRow('caps', 'PLAN ELEVATION SECTION');
+    strokeRow('lc', 'drawing reference grid');
+  </script>
+</body>
+</html>

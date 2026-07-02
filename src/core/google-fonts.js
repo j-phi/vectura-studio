@@ -787,6 +787,10 @@
     const height = Math.max(0, penY - lineHeight) + size * 1.35;
     const out = { paths, meta, width: colWidth, height, cells: cellOut, xHeightFrac: xHeightFrac(font) };
     if (wantBezier) out.anchors = anchors;
+    // The layout-space chord tolerance used to flatten the coarse `paths`. The Type
+    // algorithm scales it to display units to size its winding-canonicalization
+    // epsilon when a glyph falls back to these coarse contours (no bézier anchors).
+    out.flattenTol = tolerance;
     return out;
   };
 

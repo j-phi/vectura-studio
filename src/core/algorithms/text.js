@@ -172,6 +172,19 @@
 
       const size = clamp(finite(p.fontSize, 40), 1, 1000);
       const tracking = finite(p.tracking, 0);
+      // Built-in monoline "weight" is drawn as extra parallel pen passes. Those
+      // passes both (F-03) spread ink sideways — so the advance must widen to keep
+      // stems from merging — and (F-04) must be optically clamped at small cap
+      // sizes so counters don't clog. StrokeFont.weightMetrics is the single pure
+      // source for both numbers; penW is the plotter pen width (mm).
+      const penW = Math.max(1e-3, finite(bounds && bounds.penWidth, 0.35));
+      const builtinPasses = Font.weightPasses ? Font.weightPasses(p.fontWeight) : 0;
+      const wMetrics = Font.weightMetrics
+        ? Font.weightMetrics(builtinPasses, size, penW)
+        : { clampedThickness: 1 + builtinPasses, extraTrackingMM: 0 };
+      // F-03: widen advance for heavier built-in weights (web faces carry real
+      // weighted outlines, so they keep the plain tracking).
+      const builtinTracking = tracking + wMetrics.extraTrackingMM;
       const lineHeight = clamp(finite(p.lineHeight, 1.4), 0.5, 5);
       // 'left'/'right' explicit; the four justify variants pass straight through;
       // anything else (including the historical default) stays 'center'.
@@ -228,11 +241,11 @@
           isOutline = true;
         } else {
           if (Web.getFontStatus(id) === 'idle') Web.ensureFont(id).catch(() => {});
-          laid = Font.layout(str, { size, tracking, lineHeight, align, font: 'sans', ...synOpts });
+          laid = Font.layout(str, { size, tracking: builtinTracking, lineHeight, align, font: 'sans', ...synOpts });
         }
       } else {
         laid = Font.layout(str, {
-          size, tracking, lineHeight, align, font: p.font || 'sans',
+          size, tracking: builtinTracking, lineHeight, align, font: p.font || 'sans',
           // Area type drives the wrap width from the frame; areaWrap keeps
           // sourceIndex exact (word-level break, no synthetic hyphen).
           wrapWidth: isArea ? frameW : 0, areaWrap: isArea,
@@ -519,7 +532,14 @@
           // region by the engine (outer shrinks, counters grow), so counters stay
           // carved.
           const userInset = insetOn ? Math.max(0, finite(p.fillInset, 1.5)) : 0;
-          const fillParams = Object.assign({}, p, { fillPadding: Math.max(userInset, FILL_FLATTEN_TOL) });
+          // Fill Angle is authored on the AngleDial (0° up, clockwise-positive:
+          // needle direction = (sin d, -cos d)). The shared pattern-fill engine
+          // measures its hatch angle from the +x axis (line direction
+          // (cos a, sin a)), so a raw dial value draws lines PERPENDICULAR to the
+          // needle (a "/" pick renders "\"). Subtract 90° so the hatch runs
+          // parallel to what the dial shows.
+          const dialAngle = finite(p.fillAngle, 0) - 90;
+          const fillParams = Object.assign({}, p, { fillAngle: dialAngle, fillPadding: Math.max(userInset, FILL_FLATTEN_TOL) });
           const rec = PB.buildFillRecord({ polygon: placed[0], innerPolygon: null, loopId: 'text', isDocBounds: false }, fillParams);
           rec.regions = placed;
           // Glyph outlines are authored for the NONZERO fill rule (outer and
@@ -565,7 +585,14 @@
         // Bold) wraps extra parallel pen passes around every stroke via thickenPaths.
         // Web faces carry real weighted outlines, so they add no passes here.
         const weightPasses = (!isOutline && Font.weightPasses) ? Font.weightPasses(p.fontWeight) : 0;
-        const thickness = Math.max(1, Math.round(finite(p.outlineThickness, 1)) + weightPasses);
+        // F-04: clamp the pen-pass contribution by optical size so small text keeps
+        // open counters (StrokeFont.weightMetrics.clampedThickness == 1 + passes at
+        // large caps, fewer as the cap size shrinks). Any user outlineThickness > 1
+        // is preserved additively.
+        const clampedPass = Font.weightMetrics
+          ? Font.weightMetrics(weightPasses, size, penW).clampedThickness
+          : 1 + weightPasses;
+        const thickness = Math.max(1, Math.round(finite(p.outlineThickness, 1)) - 1 + clampedPass);
 
         // ── Merge Overlaps ──────────────────────────────────────────────────
         // Weld kerned pairs (RA, AV, LT…) and connected scripts so they never draw
@@ -662,7 +689,6 @@
         // rounded), curves stay smooth, and it mirrors the letterform exactly. See
         // the concentric block below for the full method. The legacy parallel-pass
         // thicken stays as the monoline / headless fallback.
-        const penW = Math.max(1e-3, finite(bounds && bounds.penWidth, 0.35));
         const canConcentric = thickness > 1 && isOutline && FB && typeof FB.union === 'function'
           && typeof FB.multiPolygonToPaths === 'function' && typeof FB.nonZeroUnionByContainment === 'function'
           && GU && typeof GU.miterOffsetClosedRing === 'function';

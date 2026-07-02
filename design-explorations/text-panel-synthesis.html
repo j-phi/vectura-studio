@@ -1,0 +1,2453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vectura · Text Panel (Synthesis · Final)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;600;800&family=Pacifico&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ui-bg:#1b1b1b; --ui-panel:#252525; --ui-panel-alt:#1e1e1e;
+    --ui-border:#363636; --ui-border-hi:#484848;
+    --ui-text:#e0e0e0; --ui-text-2:#a8a8a8; --ui-muted:#909097; --ui-formula:#b0b0b0;
+    --ui-accent:#4e9ee1; --ui-accent-2:rgba(78,158,225,.12); --slider-start:#80c4f0; --ui-danger:#e05252;
+    --ui-ctrl:#2c2c2c; --ui-ctrl-hov:#343434; --ui-on-accent:#fff;
+    --radius-sm:4px; --radius-md:8px; --radius-lg:12px; --row-height:30px;
+    --sh-sm:0 1px 2px rgba(0,0,0,.4);
+    --sh-md:0 3px 10px rgba(0,0,0,.45);
+    --sh-pane:0 8px 30px rgba(0,0,0,.5);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;}
+  body{
+    background:radial-gradient(900px 600px at 50% -10%, #222 0%, var(--ui-bg) 60%);
+    color:var(--ui-text);
+    font-family:'Space Grotesk',system-ui,sans-serif;
+    font-size:12px; line-height:1.4;
+    display:flex; justify-content:center; align-items:flex-start;
+    padding:34px 16px 80px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;}
+  /* global guard against text selection / cursor flicker while scrubbing */
+  body.is-scrubbing{cursor:ew-resize!important;}
+  body.is-scrubbing *{cursor:ew-resize!important;user-select:none!important;-webkit-user-select:none!important;}
+
+  /* ---------- panel shell ---------- */
+  .panel{
+    width:290px; background:var(--ui-panel);
+    border:1px solid var(--ui-border); border-radius:var(--radius-lg);
+    box-shadow:var(--sh-pane); overflow:hidden;
+  }
+  .panel-titlebar{
+    display:flex; align-items:center; gap:8px;
+    padding:11px 12px 10px; border-bottom:1px solid var(--ui-border);
+    background:linear-gradient(180deg,#2a2a2a,var(--ui-panel));
+  }
+  .panel-titlebar .dot{width:7px;height:7px;border-radius:50%;background:var(--ui-accent);box-shadow:0 0 7px var(--ui-accent);}
+  .panel-titlebar h1{font-size:13px;font-weight:700;margin:0;letter-spacing:.2px;}
+  .panel-titlebar .sub{margin-left:auto;font-size:10px;color:var(--ui-muted);}
+
+  /* ---------- specimen (R2) — also the editable text field ---------- */
+  .specimen{border-bottom:1px solid var(--ui-border);background:linear-gradient(180deg,#141414,#181818);}
+  .spec-head{
+    display:flex;align-items:center;gap:6px;padding:5px 10px;
+    font-size:10px;color:var(--ui-text-2);
+  }
+  .spec-head-btn{
+    flex:0 0 auto;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;
+    font-family:inherit;font-size:10px;color:var(--ui-text-2);background:none;border:none;padding:0;text-align:left;
+  }
+  .spec-head-btn:hover{color:var(--ui-text);}
+  .spec-head-btn:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px;border-radius:var(--radius-sm);}
+  .spec-head .chev{transition:transform .22s cubic-bezier(.22,1,.36,1);font-size:9px;color:var(--ui-muted);}
+  .specimen.collapsed .chev{transform:rotate(-90deg);}
+  .spec-head .lbl{font-weight:600;letter-spacing:.4px;text-transform:uppercase;}
+  .spec-pill-head{margin-left:auto;}
+  @media (prefers-reduced-motion: reduce){
+    *{transition-duration:.01ms!important;}
+  }
+  .spec-body{display:grid;grid-template-rows:1fr;transition:grid-template-rows .24s cubic-bezier(.22,1,.36,1);}
+  .specimen.collapsed .spec-body{grid-template-rows:0fr;}
+  .spec-inner{overflow:hidden;min-height:0;}
+  .spec-stage{
+    height:78px;display:flex;align-items:center;justify-content:center;overflow:hidden;
+    padding:6px 10px;position:relative;
+    background:
+      linear-gradient(0deg,rgba(78,158,225,.05),transparent),
+      repeating-linear-gradient(0deg,transparent,transparent 13px,rgba(255,255,255,.02) 13px,rgba(255,255,255,.02) 14px);
+  }
+  .guide-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:0;}
+  #specText{
+    color:#f1f1f1;white-space:pre;text-align:center;line-height:1;position:relative;z-index:1;
+    font-family:'Inter',sans-serif;font-weight:600;font-size:34px;
+    transition:letter-spacing .08s,font-size .08s,transform .12s,-webkit-text-stroke-width .12s;
+    cursor:text;outline:none;caret-color:var(--ui-accent);
+  }
+  #specText:focus{outline:1px solid rgba(78,158,225,.45);outline-offset:6px;border-radius:2px;}
+  .spec-cap{
+    display:flex;align-items:center;gap:8px;padding:4px 10px 6px;
+    font-size:9px;color:var(--ui-muted);border-top:1px solid #222;
+  }
+  .spec-cap .face{color:var(--ui-text-2);font-weight:600;}
+  .spec-cap .dim{margin-left:auto;}
+  .guide-pick{
+    height:18px;background:var(--ui-ctrl);color:var(--ui-text-2);
+    border:1px solid var(--ui-border);border-radius:var(--radius-sm);
+    font-family:inherit;font-size:9px;font-weight:600;letter-spacing:.2px;
+    padding:0 17px 0 7px;appearance:none;cursor:pointer;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5L5 6.5L8 3.5' stroke='%23909097' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat:no-repeat;background-position:right 5px center;transition:.13s;
+  }
+  .guide-pick:hover{color:var(--ui-text);border-color:var(--ui-border-hi);}
+  .guide-pick:focus{outline:none;border-color:var(--ui-accent);box-shadow:0 0 0 2px var(--ui-accent-2);}
+
+  /* ---------- context strip (R1a) ---------- */
+  .ctx-strip{
+    display:flex;align-items:center;gap:7px;padding:6px 10px;
+    border-bottom:1px solid var(--ui-border);background:var(--ui-panel-alt);font-size:10px;
+  }
+  .ctx-strip .ctx-face{color:var(--ui-text-2);}
+  .ctx-strip .ctx-face b{color:var(--ui-text);font-weight:600;}
+  .chip{
+    margin-left:auto;display:inline-flex;align-items:center;gap:5px;
+    padding:2px 8px;border-radius:999px;font-size:9px;font-weight:600;letter-spacing:.3px;
+    border:1px solid var(--ui-border-hi);
+  }
+  .chip .pip{width:6px;height:6px;border-radius:50%;}
+  .chip.outline{background:rgba(78,158,225,.10);color:var(--ui-accent);border-color:rgba(78,158,225,.4);}
+  .chip.outline .pip{background:var(--ui-accent);box-shadow:0 0 5px var(--ui-accent);}
+  .chip.stroke{background:rgba(224,82,82,.10);color:#f0a0a0;border-color:rgba(224,82,82,.4);}
+  .chip.stroke .pip{background:var(--ui-danger);box-shadow:0 0 5px var(--ui-danger);}
+
+  /* ---------- tab bar (R1) ---------- */
+  .tabbar{display:flex;gap:3px;padding:7px 8px;background:var(--ui-panel);border-bottom:1px solid var(--ui-border);}
+  .tab{
+    flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+    padding:6px 2px 5px;border-radius:var(--radius-sm);cursor:pointer;
+    color:var(--ui-muted);background:transparent;border:1px solid transparent;
+    font-size:10px;font-weight:600;transition:.13s;position:relative;
+    font-family:inherit;
+  }
+  .tab svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;}
+  .tab:hover{color:var(--ui-text-2);background:var(--ui-ctrl);}
+  .tab:focus-visible{outline:2px solid var(--ui-accent);outline-offset:1px;}
+  .tab.active{color:var(--ui-on-accent);background:var(--ui-accent);box-shadow:0 2px 8px rgba(78,158,225,.35);}
+  .tab.disabled{opacity:.42;cursor:not-allowed;}
+
+  /* ---------- tab body ---------- */
+  .tab-body{padding:11px 12px 14px;min-height:120px;}
+  .tab-heading{
+    display:flex;align-items:center;gap:7px;margin:-2px 0 11px;
+    font-size:11px;font-weight:600;color:var(--ui-text);
+  }
+  .tab-heading svg{width:14px;height:14px;stroke:var(--ui-accent);fill:none;stroke-width:1.6;}
+  .tab-heading .h-sub{margin-left:auto;font-size:9px;color:var(--ui-muted);font-weight:400;}
+  .page{display:none;}
+  .page.active{display:block;animation:fade .18s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+  /* ---------- generic rows ---------- */
+  .grp-label{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--ui-muted);margin:13px 0 7px;display:flex;align-items:center;gap:6px;}
+  .grp-label::before{content:"";width:3px;height:11px;border-radius:2px;background:var(--ui-accent);opacity:.55;}
+  .grp-label:first-child{margin-top:0;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+  /* Grid/flex items default to min-width:auto, which refuses to shrink below their
+     content's intrinsic width and pushes the right column off the panel. Allow the
+     1fr tracks and the scrub fields inside them to shrink so everything wraps. */
+  .grid2>*{min-width:0;}
+  .field-block{margin-bottom:7px;}
+
+  /* combo / select */
+  .vselect{
+    width:100%;height:30px;background:var(--ui-ctrl);color:var(--ui-text);
+    border:1px solid var(--ui-border);border-radius:var(--radius-sm);
+    padding:0 28px 0 9px;font-family:'Space Grotesk';font-size:11px;
+    appearance:none;cursor:pointer;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5L5 6.5L8 3.5' stroke='%23909097' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat:no-repeat;background-position:right 9px center;
+    transition:.14s;
+  }
+  .vselect:focus{outline:none;border-color:var(--ui-accent);box-shadow:0 0 0 3px var(--ui-accent-2);}
+  .field-cap{font-size:9px;color:var(--ui-muted);margin:0 0 4px 1px;display:flex;align-items:center;gap:5px;}
+
+  /* ---------- SCRUBBY numeric field (R4) ---------- */
+  .scrub{
+    display:flex;align-items:stretch;height:30px;min-width:0;background:var(--ui-ctrl);
+    border:1px solid var(--ui-border);border-radius:var(--radius-sm);overflow:hidden;
+    transition:border-color .14s,box-shadow .14s;
+  }
+  .scrub:focus-within{border-color:var(--ui-accent);box-shadow:0 0 0 3px var(--ui-accent-2);}
+  .scrub.scrubbing{border-color:var(--slider-start);box-shadow:0 0 0 3px rgba(128,196,240,.18);}
+  .scrub.disabled{opacity:.45;pointer-events:none;}
+  .scrub-handle{
+    display:flex;align-items:center;gap:4px;padding:0 6px 0 7px;
+    cursor:ew-resize;user-select:none;-webkit-user-select:none;touch-action:none;
+    border-right:1px solid var(--ui-border);
+    background:var(--ui-panel-alt);position:relative;
+  }
+  .scrub-handle:hover{background:var(--ui-ctrl-hov);}
+  .scrub-handle .gicon{width:15px;height:15px;display:flex;align-items:center;justify-content:center;color:var(--ui-text-2);pointer-events:none;}
+  .scrub-handle .gicon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.5;}
+  .scrub-handle .gicon .ftxt{font-size:9px;font-weight:700;font-family:'JetBrains Mono';letter-spacing:-.5px;}
+  .scrub-steppers{display:flex;flex-direction:column;width:14px;border-right:1px solid var(--ui-border);background:var(--ui-panel-alt);}
+  .scrub-steppers button{
+    flex:1;border:none;background:transparent;color:var(--ui-muted);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;padding:0;line-height:0;
+  }
+  .scrub-steppers button:hover{color:var(--ui-accent);background:var(--ui-ctrl-hov);}
+  .scrub-steppers button:focus-visible{outline:2px solid var(--ui-accent);outline-offset:-2px;}
+  .scrub-steppers button:first-child{border-bottom:1px solid var(--ui-border);}
+  .scrub-steppers svg{width:8px;height:8px;}
+  .scrub input{
+    flex:1;min-width:0;border:none;background:transparent;color:var(--ui-text);
+    font-family:'JetBrains Mono';font-size:11px;text-align:right;padding:0 4px 0 7px;
+    font-variant-numeric:tabular-nums;
+  }
+  .scrub input:focus{outline:none;}
+  .scrub .unit{display:flex;align-items:center;padding:0 7px 0 0;color:var(--ui-muted);font-size:9px;font-family:'JetBrains Mono';}
+  .scrub-preset{
+    border:none;border-left:1px solid var(--ui-border);background:var(--ui-panel-alt);
+    color:var(--ui-muted);cursor:pointer;width:18px;display:flex;align-items:center;justify-content:center;
+  }
+  .scrub-preset:hover{color:var(--ui-accent);background:var(--ui-ctrl-hov);}
+  .scrub-preset:focus-visible{outline:2px solid var(--ui-accent);outline-offset:-2px;}
+  .scrub-preset svg{width:9px;height:9px;}
+  .scrub-name{font-size:9px;color:var(--ui-muted);margin:0 0 4px 1px;cursor:ew-resize;user-select:none;-webkit-user-select:none;touch-action:none;display:inline-flex;align-items:center;gap:4px;}
+  .scrub-name:hover{color:var(--ui-text-2);}
+  .scrub-name .drag-hint{opacity:.5;font-size:8px;}
+
+  /* ---------- toggle (R-FUNCTIONAL) ---------- */
+  .row-toggle{display:flex;align-items:center;gap:8px;min-height:var(--row-height);padding:2px 0;}
+  .row-toggle .rt-label{font-size:11px;color:var(--ui-text);}
+  .row-toggle .rt-sub{font-size:9px;color:var(--ui-muted);}
+  .sw-toggle{
+    margin-left:auto;width:30px;height:16px;border-radius:999px;background:var(--ui-ctrl);
+    border:1px solid var(--ui-border);position:relative;cursor:pointer;flex:none;transition:.16s;padding:0;
+  }
+  .sw-toggle:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px;}
+  .sw-toggle .knob{position:absolute;top:1px;left:1px;width:12px;height:12px;border-radius:50%;background:#fff;transition:transform .16s cubic-bezier(.22,1,.36,1);box-shadow:var(--sh-sm);}
+  .sw-toggle.on{background:var(--ui-accent);border-color:var(--ui-accent);}
+  .sw-toggle.on .knob{transform:translateX(14px);}
+
+  /* ---------- segmented (R3,R6,align) ---------- */
+  .seg-ctrl{display:flex;background:var(--ui-ctrl);border:1px solid var(--ui-border);border-radius:var(--radius-sm);overflow:hidden;}
+  .seg-ctrl button{
+    flex:1;border:none;background:transparent;color:var(--ui-text-2);cursor:pointer;
+    padding:6px 4px;font-family:'Space Grotesk';font-size:10px;font-weight:600;
+    display:flex;align-items:center;justify-content:center;gap:4px;transition:.12s;border-right:1px solid var(--ui-border);
+  }
+  .seg-ctrl button:last-child{border-right:none;}
+  .seg-ctrl button svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.6;}
+  .seg-ctrl button:hover{background:var(--ui-ctrl-hov);color:var(--ui-text);}
+  .seg-ctrl button:focus-visible{outline:2px solid var(--ui-accent);outline-offset:-2px;}
+  .seg-ctrl button.active{background:var(--ui-accent);color:#fff;}
+
+  /* style button row (caps etc) */
+  .glyph-row{display:flex;gap:4px;flex-wrap:wrap;}
+  .glyph-btn{
+    width:30px;height:28px;border-radius:var(--radius-sm);border:1px solid var(--ui-border);
+    background:var(--ui-ctrl);color:var(--ui-text-2);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;font-size:11px;transition:.12s;position:relative;
+    font-family:inherit;
+  }
+  .glyph-btn:hover{background:var(--ui-ctrl-hov);color:var(--ui-text);border-color:var(--ui-border-hi);}
+  .glyph-btn:focus-visible{outline:2px solid var(--ui-accent);outline-offset:1px;}
+  .glyph-btn.active{background:var(--ui-accent-2);border-color:var(--ui-accent);color:var(--ui-accent);}
+  .glyph-btn .sm{font-size:7px;vertical-align:super;}
+  .glyph-btn .sb{font-size:7px;vertical-align:sub;}
+
+  /* align 7-row */
+  .align7{display:flex;gap:3px;}
+  .align7 .glyph-btn{flex:1;width:auto;}
+  .align7 svg{width:15px;height:13px;stroke:currentColor;fill:none;stroke-width:1.5;}
+
+  /* ---------- reveal animation ---------- */
+  .reveal{display:grid;grid-template-rows:0fr;transition:grid-template-rows .22s cubic-bezier(.22,1,.36,1),opacity .2s;opacity:0;}
+  .reveal.open{grid-template-rows:1fr;opacity:1;}
+  .reveal>.reveal-inner{overflow:hidden;min-height:0;}
+  .reveal.open>.reveal-inner{padding-top:2px;}
+
+  /* ---------- disabled / reason banner ---------- */
+  .reason{
+    display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border-radius:var(--radius-sm);
+    background:rgba(224,82,82,.08);border:1px solid rgba(224,82,82,.28);font-size:10px;color:#e7b3b3;line-height:1.45;
+  }
+  .reason svg{width:14px;height:14px;flex:none;stroke:var(--ui-danger);fill:none;stroke-width:1.7;margin-top:1px;}
+  .reason b{color:#f0c4c4;}
+  .disabled-area{opacity:.4;pointer-events:none;filter:grayscale(.3);margin-top:10px;}
+
+  /* plot-order pen affordance (R3) */
+  .pen-track{
+    margin-top:8px;height:30px;border-radius:var(--radius-sm);border:1px solid var(--ui-border);
+    background:var(--ui-panel-alt);position:relative;overflow:hidden;
+    background-image:repeating-linear-gradient(90deg,transparent,transparent 17px,rgba(255,255,255,.04) 17px,rgba(255,255,255,.04) 18px);
+  }
+  .pen-track .glyphs{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-around;padding:0 12px;color:var(--ui-border-hi);font-family:'JetBrains Mono';font-size:13px;font-weight:600;letter-spacing:2px;}
+  .pen{position:absolute;top:-2px;left:8px;width:14px;height:14px;color:var(--ui-accent);transition:none;filter:drop-shadow(0 0 4px rgba(78,158,225,.6));}
+  .pen svg{width:14px;height:14px;}
+  .pen-trail{position:absolute;top:50%;left:8px;height:2px;background:linear-gradient(90deg,transparent,var(--slider-start));border-radius:2px;transform:translateY(-50%);width:0;opacity:.7;}
+  .explainer{display:flex;gap:6px;align-items:center;margin-top:7px;font-size:9px;color:var(--ui-text-2);line-height:1.4;}
+  .explainer svg{width:12px;height:12px;flex:none;stroke:var(--ui-accent);fill:none;stroke-width:1.6;}
+
+  /* thickening mode visual hints */
+  .thick-seg button{flex-direction:column;gap:3px;padding:6px 2px;font-size:9px;}
+  .thick-seg button .hint{width:26px;height:8px;}
+  .thick-seg button .hint svg{width:26px;height:8px;stroke:currentColor;fill:none;stroke-width:1.3;}
+
+  /* opentype feature buttons */
+  .ot-row{display:flex;flex-wrap:wrap;gap:4px;}
+  .ot-btn{
+    padding:4px 8px;border-radius:var(--radius-sm);border:1px solid var(--ui-border);
+    background:var(--ui-ctrl);color:var(--ui-text-2);font-size:9px;cursor:pointer;transition:.12s;font-weight:600;
+    font-family:inherit;
+  }
+  .ot-btn:hover{background:var(--ui-ctrl-hov);color:var(--ui-text);}
+  .ot-btn:focus-visible{outline:2px solid var(--ui-accent);outline-offset:1px;}
+  .ot-btn.active{background:var(--ui-accent-2);border-color:var(--ui-accent);color:var(--ui-accent);}
+  .ot-btn.locked{opacity:.4;cursor:not-allowed;}
+
+  .checkrow{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--ui-text-2);cursor:pointer;margin-top:9px;user-select:none;}
+  .checkrow:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px;border-radius:var(--radius-sm);}
+  .vcheck{width:15px;height:15px;border-radius:3px;border:1px solid var(--ui-border);background:var(--ui-ctrl);display:flex;align-items:center;justify-content:center;flex:none;transition:.12s;}
+  .vcheck svg{width:9px;height:9px;stroke:#fff;fill:none;stroke-width:2;opacity:0;transition:.12s;}
+  .checkrow.on .vcheck{background:var(--ui-accent);border-color:var(--ui-accent);}
+  .checkrow.on .vcheck svg{opacity:1;}
+
+  /* ---------- circular XY pad (fill offset) ---------- */
+  .xypad{position:relative;width:86px;height:86px;border-radius:50%;
+    background:var(--ui-ctrl);border:1px solid var(--ui-border);
+    margin:3px auto 0;cursor:crosshair;touch-action:none;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.02);}
+  .xypad:hover{border-color:var(--ui-border-hi);}
+  .xypad:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px;}
+  .xypad-cross::before,.xypad-cross::after{content:"";position:absolute;background:var(--ui-border);}
+  .xypad-cross::before{left:50%;top:9%;bottom:9%;width:1px;transform:translateX(-.5px);}
+  .xypad-cross::after{top:50%;left:9%;right:9%;height:1px;transform:translateY(-.5px);}
+  .xypad-rim{position:absolute;inset:12px;border-radius:50%;border:1px dashed rgba(255,255,255,.07);}
+  .xypad-knob{position:absolute;width:11px;height:11px;border-radius:50%;
+    background:var(--ui-accent);border:2px solid var(--ui-panel);
+    left:50%;top:50%;transform:translate(-50%,-50%);
+    box-shadow:0 0 0 1px var(--ui-accent),0 1px 3px rgba(0,0,0,.5);pointer-events:none;transition:box-shadow .12s;}
+  .xypad.off .xypad-knob{background:var(--ui-muted);box-shadow:0 0 0 1px var(--ui-border);}
+  .xypad-read{text-align:center;font-family:'JetBrains Mono';font-size:9px;color:var(--ui-muted);margin-top:5px;}
+
+  .hr{height:1px;background:var(--ui-border);margin:13px -12px;}
+  .info-i{width:13px;height:13px;border-radius:50%;border:1px solid var(--ui-border-hi);color:var(--ui-muted);font-size:8px;display:inline-flex;align-items:center;justify-content:center;cursor:help;font-style:italic;font-family:'JetBrains Mono';}
+
+  /* slider for fill density etc */
+  .vslider-wrap{display:flex;align-items:center;gap:9px;height:var(--row-height);}
+  .vslider{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:var(--ui-border);outline:none;}
+  .vslider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--ui-accent);border:2.5px solid var(--ui-panel);cursor:pointer;transition:transform .12s;box-shadow:0 0 0 0 var(--ui-accent-2);}
+  .vslider::-webkit-slider-thumb:hover{transform:scale(1.18);box-shadow:0 0 0 4px var(--ui-accent-2);}
+  .vslider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--ui-accent);border:2.5px solid var(--ui-panel);cursor:pointer;}
+  .vslider:focus-visible{box-shadow:0 0 0 3px var(--ui-accent-2);}
+  .vchip{font-family:'JetBrains Mono';font-size:10px;color:var(--ui-accent);min-width:34px;text-align:right;}
+
+  /* ---------- fill-line preview overlay (real hatch/dots clipped to glyphs) ---------- */
+  .fill-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;transform-origin:center;z-index:2;}
+  .outline-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;transform-origin:center;z-index:3;}
+  /* preview tool pills (top-right of the specimen stage) */
+  .spec-tools{position:absolute;top:7px;right:13px;z-index:5;display:flex;flex-direction:column;gap:5px;align-items:flex-end;}
+  .spec-pill{
+    display:inline-flex;align-items:center;gap:5px;
+    padding:3px 8px 3px 7px;border-radius:999px;font-family:inherit;font-size:9px;font-weight:600;
+    background:rgba(18,18,18,.72);border:1px solid var(--ui-border-hi);color:var(--ui-text-2);
+    cursor:pointer;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);transition:.13s;letter-spacing:.2px;
+  }
+  .spec-pill:hover{color:var(--ui-text);border-color:var(--ui-accent);}
+  .spec-pill:focus-visible{outline:2px solid var(--ui-accent);outline-offset:1px;}
+  .spec-pill.on{color:var(--ui-accent);border-color:rgba(78,158,225,.55);background:rgba(78,158,225,.14);}
+  .spec-pill .dotp{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 5px currentColor;}
+  /* the fill-lines pill only appears when fill is active */
+  .fill-toggle{display:none;}
+  .fill-toggle.show{display:inline-flex;}
+  .fill-legend{
+    position:absolute;left:13px;bottom:7px;z-index:4;display:none;align-items:center;gap:9px;
+    font-family:'JetBrains Mono';font-size:8px;color:var(--ui-muted);letter-spacing:.2px;pointer-events:none;
+    background:rgba(18,18,18,.55);padding:2px 7px;border-radius:999px;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+  }
+  .fill-legend.show{display:flex;}
+  .fill-legend i{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:3px;vertical-align:middle;}
+
+  .foot{margin-top:13px;font-size:8px;color:#555;text-align:center;letter-spacing:.3px;}
+  .page-note{text-align:center;color:#555;font-size:10px;margin-top:14px;font-family:'JetBrains Mono';}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0;}
+
+  /* ---------- font picker (names rendered in their own face) ---------- */
+  .fontpick-trigger{
+    width:100%;height:30px;display:flex;align-items:center;gap:8px;
+    background:var(--ui-ctrl);color:var(--ui-text);
+    border:1px solid var(--ui-border);border-radius:var(--radius-sm);
+    padding:0 9px;cursor:pointer;font-family:inherit;font-size:14px;text-align:left;transition:.14s;
+  }
+  .fontpick-trigger:hover{background:var(--ui-ctrl-hov);}
+  .fontpick-trigger[aria-expanded="true"],.fontpick-trigger:focus-visible{outline:none;border-color:var(--ui-accent);box-shadow:0 0 0 3px var(--ui-accent-2);}
+  .fontpick-trigger .fp-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1;}
+  .fontpick-trigger .fp-tagmini{font-size:8px;color:var(--ui-muted);text-transform:uppercase;letter-spacing:.4px;flex:none;font-family:'JetBrains Mono';}
+  .fontpick-trigger .fp-chev{width:10px;height:10px;color:var(--ui-muted);flex:none;}
+
+  .fp-pop{
+    position:fixed;z-index:9999;width:300px;background:var(--ui-panel);
+    border:1px solid var(--ui-border-hi);border-radius:var(--radius-md);box-shadow:var(--sh-pane);
+    display:flex;flex-direction:column;overflow:hidden;
+    opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity .14s,transform .14s;
+  }
+  .fp-pop.open{opacity:1;transform:none;pointer-events:auto;}
+  .fp-search{display:flex;align-items:center;gap:7px;padding:8px;border-bottom:1px solid var(--ui-border);background:var(--ui-panel-alt);}
+  .fp-search svg{width:13px;height:13px;stroke:var(--ui-muted);fill:none;stroke-width:1.7;flex:none;}
+  .fp-search input{
+    flex:1;border:1px solid var(--ui-border);background:var(--ui-ctrl);color:var(--ui-text);
+    font-family:'Space Grotesk';font-size:11px;padding:6px 8px;border-radius:var(--radius-sm);
+  }
+  .fp-search input:focus{outline:none;border-color:var(--ui-accent);box-shadow:0 0 0 3px var(--ui-accent-2);}
+  .fp-tags{display:flex;flex-wrap:wrap;gap:5px;padding:8px;border-bottom:1px solid var(--ui-border);background:var(--ui-panel-alt);}
+  .fp-chip{
+    font-family:inherit;font-size:9px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;
+    padding:4px 9px;border-radius:999px;border:1px solid var(--ui-border-hi);
+    background:var(--ui-ctrl);color:var(--ui-text-2);cursor:pointer;transition:.12s;
+  }
+  .fp-chip:hover{color:var(--ui-text);border-color:var(--ui-accent);}
+  .fp-chip:focus-visible{outline:2px solid var(--ui-accent);outline-offset:1px;}
+  .fp-chip.on{background:var(--ui-accent);border-color:var(--ui-accent);color:#fff;}
+  .fp-list{overflow-y:auto;max-height:280px;padding:4px;scrollbar-width:thin;}
+  .fp-sec{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--ui-muted);padding:9px 8px 4px;display:flex;align-items:center;gap:5px;}
+  .fp-sec::before{content:"";width:3px;height:9px;border-radius:2px;background:var(--ui-accent);opacity:.5;}
+  .fp-opt{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:var(--radius-sm);cursor:pointer;color:var(--ui-text);}
+  .fp-opt:hover,.fp-opt.active{background:var(--ui-ctrl-hov);}
+  .fp-opt.sel{background:var(--ui-accent-2);box-shadow:inset 0 0 0 1px rgba(78,158,225,.35);}
+  .fp-opt .fp-opt-name{flex:1;font-size:16px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .fp-opt .fp-tag{font-size:8px;color:var(--ui-muted);text-transform:uppercase;letter-spacing:.4px;flex:none;font-family:'JetBrains Mono';}
+  .fp-star{flex:none;width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:none;background:none;cursor:pointer;color:var(--ui-border-hi);padding:0;border-radius:4px;}
+  .fp-star:hover{color:var(--ui-accent);background:var(--ui-ctrl);}
+  .fp-star.on{color:#e6b450;}
+  .fp-star svg{width:14px;height:14px;}
+  .fp-load{display:flex;align-items:center;gap:8px;padding:9px;margin:6px 4px;border-radius:var(--radius-sm);background:var(--ui-accent-2);color:var(--ui-accent);font-size:11px;cursor:pointer;border:1px dashed rgba(78,158,225,.4);}
+  .fp-load:hover{background:rgba(78,158,225,.18);}
+  .fp-load svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7;flex:none;}
+  .fp-load b{font-weight:600;color:var(--ui-text);}
+  .fp-empty{padding:16px 10px;text-align:center;color:var(--ui-muted);font-size:10px;line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="panel" id="panel" role="region" aria-label="Vectura Text layer settings">
+
+  <div class="panel-titlebar">
+    <span class="dot"></span>
+    <h1>Text</h1>
+    <span class="sub">Synthesis · Final</span>
+  </div>
+
+  <!-- R2: specimen, persists above tabs — the editable specimen IS the text field -->
+  <!-- (the standalone Text input was removed: #specText is the single source of truth) -->
+  <div class="specimen" id="specimen">
+    <div class="spec-head" id="specHead">
+      <button type="button" class="spec-head-btn" id="specToggle" aria-expanded="true" aria-controls="specBody">
+        <span class="chev" aria-hidden="true">▼</span>
+        <span class="lbl">Specimen</span>
+      </button>
+      <button type="button" class="spec-pill spec-pill-head" id="outlineViewToggle" aria-pressed="false" title="Reveal glyph outlines — on-curve nodes and Bézier handles">
+        <span id="outlineViewToggleTxt">Show Outlines</span>
+      </button>
+    </div>
+    <div class="spec-body" id="specBody">
+      <div class="spec-inner">
+        <div class="spec-stage">
+          <svg class="guide-svg" id="guideSvg" aria-hidden="true"></svg>
+          <div id="specText" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Specimen text — click to edit" title="Click to edit">VECTURA</div>
+          <svg class="fill-svg" id="fillSvg" aria-hidden="true"></svg>
+          <svg class="outline-svg" id="outlineSvg" aria-hidden="true"></svg>
+          <div class="spec-tools">
+            <button type="button" class="spec-pill fill-toggle" id="fillLineToggle" aria-pressed="false" title="Reveal fill toolpaths and overlaps">
+              <span class="dotp"></span><span id="fillLineToggleTxt">Show fill lines</span>
+            </button>
+          </div>
+          <div class="fill-legend" id="fillLegend">
+            <span><i style="background:#4f93d6"></i>single pass</span>
+            <span><i style="background:#dff0ff;box-shadow:0 0 6px #bfe6ff"></i>re-covered · overlap</span>
+          </div>
+        </div>
+        <div class="spec-cap">
+          <span class="face" id="specFace">Inter · Regular</span>
+          <span class="dim mono" id="specDim">34pt · 1ln</span>
+          <select class="guide-pick" id="guidePick" aria-label="Specimen guide overlay">
+            <option value="frame">Frame</option>
+            <option value="center">Frame + center</option>
+            <option value="baseline">Baseline</option>
+            <option value="ruled">Cap + baseline</option>
+            <option value="hand">Handwriting guides</option>
+            <option value="dots">Dot grid</option>
+            <option value="none">No frame</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- R1a: persistent context strip -->
+  <div class="ctx-strip" aria-live="polite">
+    <span class="ctx-face">Face: <b id="ctxFace">Inter</b></span>
+    <span class="chip outline" id="ctxChip"><span class="pip"></span><span id="ctxChipTxt">Outline face</span></span>
+  </div>
+
+  <!-- R1: fixed tabs -->
+  <div class="tabbar" id="tabbar" role="tablist" aria-label="Text settings sections">
+    <button type="button" class="tab active" data-tab="type" role="tab" aria-selected="true" aria-controls="page-type" id="tabbtn-type">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M12 6v13M8 19h8"/></svg>Type
+    </button>
+    <button type="button" class="tab" data-tab="layout" role="tab" aria-selected="false" aria-controls="page-layout" id="tabbtn-layout">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 10h11M4 14h16M4 18h9"/></svg>Layout
+    </button>
+    <button type="button" class="tab" data-tab="stroke" role="tab" aria-selected="false" aria-controls="page-stroke" id="tabbtn-stroke">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17c4-9 14-9 18 0"/><circle cx="3" cy="17" r="1.4"/><circle cx="21" cy="17" r="1.4"/></svg>Stroke
+    </button>
+    <button type="button" class="tab" data-tab="fill" id="tabFill" role="tab" aria-selected="false" aria-controls="page-fill">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5z"/><path d="M5 9h14M5 14h14"/></svg>Fill
+    </button>
+  </div>
+
+  <div class="tab-body">
+
+    <!-- ============ TYPE ============ -->
+    <section class="page active" data-page="type" id="page-type" role="tabpanel" aria-labelledby="tabbtn-type">
+      <div class="tab-heading">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M12 6v13M8 19h8"/></svg>
+        Type — Character
+        <span class="h-sub">face · size · metrics</span>
+      </div>
+
+      <div class="field-block">
+        <div class="field-cap"><label id="fpLabel">Font source &amp; face</label></div>
+        <button type="button" class="fontpick-trigger" id="fpTrigger" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="fpLabel">
+          <span class="fp-name" id="fpName">Inter</span>
+          <span class="fp-tagmini" id="fpTagMini"></span>
+          <svg class="fp-chev" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+
+      <div class="field-block">
+        <div class="field-cap"><label for="styleSelect">Style</label></div>
+        <select class="vselect" id="styleSelect">
+          <option>Regular</option><option>Medium</option><option>Semibold</option><option>Bold</option>
+        </select>
+      </div>
+
+      <!-- fit / size swap -->
+      <div class="grp-label">Size &amp; Fit</div>
+      <div class="row-toggle">
+        <span class="rt-label" id="fitLbl">Fit to Frame</span>
+        <span class="rt-sub" id="fitSub">absolute mode</span>
+        <button type="button" class="sw-toggle" id="fitToggle" data-state="0" role="switch" aria-checked="false" aria-labelledby="fitLbl"><span class="knob"></span></button>
+      </div>
+
+      <div id="fitView" style="display:none;">
+        <div class="scrub-name" data-scrub="fill">Frame Fill <span class="drag-hint">↔ drag</span></div>
+        <div class="scrub" data-field="fill" data-min="0.3" data-max="1" data-step="0.01" data-dec="2" data-perpx="0.005">
+          <div class="scrub-handle" tabindex="0" role="slider" aria-label="Frame Fill" aria-valuemin="0.3" aria-valuemax="1"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 8h8v8H8z"/></svg></span></div>
+          <input type="text" inputmode="decimal" value="0.85" aria-label="Frame Fill value">
+          <span class="unit">×</span>
+        </div>
+      </div>
+
+      <div id="sizeView">
+        <div class="scrub-name" data-scrub="size">Size <span class="drag-hint">↔ drag</span></div>
+        <div class="scrub" data-field="size" data-min="4" data-max="160" data-step="1" data-dec="0" data-perpx="0.5">
+          <div class="scrub-handle" tabindex="0" role="slider" aria-label="Size" aria-valuemin="4" aria-valuemax="160"><span class="gicon"><span class="ftxt">TT</span></span></div>
+          <div class="scrub-steppers"><button type="button" data-dir="1" aria-label="Increase size"><svg viewBox="0 0 10 10"><path d="M2 7L5 3L8 7" stroke="currentColor" fill="none" stroke-width="1.4"/></svg></button><button type="button" data-dir="-1" aria-label="Decrease size"><svg viewBox="0 0 10 10"><path d="M2 3L5 7L8 3" stroke="currentColor" fill="none" stroke-width="1.4"/></svg></button></div>
+          <input type="text" inputmode="numeric" value="38" aria-label="Size value">
+          <span class="unit">mm</span>
+          <button type="button" class="scrub-preset" title="size presets" aria-label="Size presets"><svg viewBox="0 0 10 10"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" fill="none" stroke-width="1.4"/></svg></button>
+        </div>
+      </div>
+
+      <!-- metrics grid -->
+      <div class="grp-label">Metrics</div>
+      <div class="grid2">
+        <div>
+          <div class="scrub-name" data-scrub="leading">Leading <span class="drag-hint">↔</span></div>
+          <div class="scrub" data-field="leading" data-min="0.8" data-max="3" data-step="0.05" data-dec="2" data-perpx="0.01">
+            <div class="scrub-handle" tabindex="0" role="slider" aria-label="Leading" aria-valuemin="0.8" aria-valuemax="3"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M7 4v16M11 7l-4-3-4 3M11 17l-4 3-4-3M15 7h6M15 12h6M15 17h6"/></svg></span></div>
+            <input type="text" inputmode="decimal" value="1.15" aria-label="Leading value">
+          </div>
+        </div>
+        <div>
+          <div class="scrub-name" data-scrub="tracking">Tracking <span class="drag-hint">↔</span></div>
+          <div class="scrub" data-field="tracking" data-min="-4" data-max="24" data-step="0.5" data-dec="1" data-perpx="0.12">
+            <div class="scrub-handle" tabindex="0" role="slider" aria-label="Tracking" aria-valuemin="-4" aria-valuemax="24"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M3 6v12M21 6v12M8 12h2M14 12h2"/><path d="M6 9l-2 3 2 3M18 9l2 3-2 3"/></svg></span></div>
+            <input type="text" inputmode="decimal" value="0" aria-label="Tracking value">
+          </div>
+        </div>
+        <div>
+          <div class="scrub-name" data-scrub="vscale">V-Scale <span class="drag-hint">↔</span></div>
+          <div class="scrub" data-field="vscale" data-min="50" data-max="200" data-step="1" data-dec="0" data-perpx="0.6">
+            <div class="scrub-handle" tabindex="0" role="slider" aria-label="Vertical scale" aria-valuemin="50" aria-valuemax="200"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M12 3v18M9 6l3-3 3 3M9 18l3 3 3-3"/></svg></span></div>
+            <input type="text" inputmode="numeric" value="100" aria-label="Vertical scale value"><span class="unit">%</span>
+          </div>
+        </div>
+        <div>
+          <div class="scrub-name" data-scrub="hscale">H-Scale <span class="drag-hint">↔</span></div>
+          <div class="scrub" data-field="hscale" data-min="50" data-max="200" data-step="1" data-dec="0" data-perpx="0.6">
+            <div class="scrub-handle" tabindex="0" role="slider" aria-label="Horizontal scale" aria-valuemin="50" aria-valuemax="200"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M3 12h18M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg></span></div>
+            <input type="text" inputmode="numeric" value="100" aria-label="Horizontal scale value"><span class="unit">%</span>
+          </div>
+        </div>
+        <div>
+          <div class="scrub-name" data-scrub="kerning">Kerning <span class="drag-hint">↔</span></div>
+          <div class="scrub" data-field="kerning" data-min="-50" data-max="200" data-step="1" data-dec="0" data-perpx="1">
+            <div class="scrub-handle" tabindex="0" role="slider" aria-label="Kerning" aria-valuemin="-50" aria-valuemax="200"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M4 6l4 12M4 18l4-12M20 6v12M16 18l4-12"/></svg></span></div>
+            <input type="text" inputmode="numeric" value="0" aria-label="Kerning value">
+          </div>
+        </div>
+        <div>
+          <div class="scrub-name" data-scrub="baseline">Baseline <span class="drag-hint">↔</span></div>
+          <div class="scrub" data-field="baseline" data-min="-20" data-max="20" data-step="0.5" data-dec="1" data-perpx="0.1">
+            <div class="scrub-handle" tabindex="0" role="slider" aria-label="Baseline shift" aria-valuemin="-20" aria-valuemax="20"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M4 18h16M7 14V6M5 8l2-2 2 2M13 14h6"/></svg></span></div>
+            <input type="text" inputmode="decimal" value="0" aria-label="Baseline value"><span class="unit">mm</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="field-block" style="margin-top:7px;">
+        <div class="scrub-name" data-scrub="rotation">Character Rotation <span class="drag-hint">↔ drag · Shift = ×10</span></div>
+        <div class="scrub" data-field="rotation" data-min="-180" data-max="180" data-step="1" data-dec="0" data-perpx="0.8">
+          <div class="scrub-handle" tabindex="0" role="slider" aria-label="Character rotation" aria-valuemin="-180" aria-valuemax="180"><span class="gicon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l4 2"/></svg></span></div>
+          <div class="scrub-steppers"><button type="button" data-dir="1" aria-label="Increase rotation"><svg viewBox="0 0 10 10"><path d="M2 7L5 3L8 7" stroke="currentColor" fill="none" stroke-width="1.4"/></svg></button><button type="button" data-dir="-1" aria-label="Decrease rotation"><svg viewBox="0 0 10 10"><path d="M2 3L5 7L8 3" stroke="currentColor" fill="none" stroke-width="1.4"/></svg></button></div>
+          <input type="text" inputmode="numeric" value="0" aria-label="Rotation value"><span class="unit">°</span>
+        </div>
+      </div>
+
+      <!-- jitter -->
+      <div class="field-block" style="margin-top:7px;">
+        <div class="scrub-name" data-scrub="jitter">Character Jitter <span class="drag-hint">↔ drag</span></div>
+        <div class="scrub" data-field="jitter" data-min="0" data-max="3" data-step="0.1" data-dec="1" data-perpx="0.012">
+          <div class="scrub-handle" tabindex="0" role="slider" aria-label="Character jitter" aria-valuemin="0" aria-valuemax="3"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M3 14c2-4 3 4 5 0s3 4 5 0 3 4 5 0 3 4 3 4"/></svg></span></div>
+          <input type="text" inputmode="decimal" value="0.0" aria-label="Character jitter value">
+        </div>
+      </div>
+
+      <!-- caps style row -->
+      <div class="grp-label">Style</div>
+      <div class="glyph-row" role="group" aria-label="Character style toggles">
+        <button type="button" class="glyph-btn" data-style="caps" title="All Caps" aria-pressed="false" aria-label="All Caps">TT</button>
+        <button type="button" class="glyph-btn" data-style="smcaps" title="Small Caps" aria-pressed="false" aria-label="Small Caps">T<span class="sm">r</span></button>
+        <button type="button" class="glyph-btn" data-style="super" title="Superscript" aria-pressed="false" aria-label="Superscript">T<span class="sm">1</span></button>
+        <button type="button" class="glyph-btn" data-style="sub" title="Subscript" aria-pressed="false" aria-label="Subscript">T<span class="sb">1</span></button>
+        <button type="button" class="glyph-btn" data-style="under" title="Underline" style="text-decoration:underline;" aria-pressed="false" aria-label="Underline">T</button>
+        <button type="button" class="glyph-btn" data-style="strike" title="Strikethrough" style="text-decoration:line-through;" aria-pressed="false" aria-label="Strikethrough">T</button>
+      </div>
+    </section>
+
+    <!-- ============ LAYOUT ============ -->
+    <section class="page" data-page="layout" id="page-layout" role="tabpanel" aria-labelledby="tabbtn-layout" hidden>
+      <div class="tab-heading">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 10h11M4 14h16M4 18h9"/></svg>
+        Layout — Paragraph
+        <span class="h-sub">align · spacing · OpenType</span>
+      </div>
+
+      <div class="grp-label">Alignment</div>
+      <div class="align7" id="align7" role="group" aria-label="Paragraph alignment">
+        <button type="button" class="glyph-btn active" data-align="left" title="Left" aria-pressed="true" aria-label="Align left"><svg viewBox="0 0 24 18"><path d="M3 3h18M3 9h12M3 15h16"/></svg></button>
+        <button type="button" class="glyph-btn" data-align="center" title="Center" aria-pressed="false" aria-label="Align center"><svg viewBox="0 0 24 18"><path d="M3 3h18M7 9h10M5 15h14"/></svg></button>
+        <button type="button" class="glyph-btn" data-align="right" title="Right" aria-pressed="false" aria-label="Align right"><svg viewBox="0 0 24 18"><path d="M3 3h18M9 9h12M5 15h16"/></svg></button>
+        <button type="button" class="glyph-btn" data-align="jleft" title="Justify last left" aria-pressed="false" aria-label="Justify, last line left"><svg viewBox="0 0 24 18"><path d="M3 3h18M3 9h18M3 15h11"/></svg></button>
+        <button type="button" class="glyph-btn" data-align="jcenter" title="Justify last center" aria-pressed="false" aria-label="Justify, last line center"><svg viewBox="0 0 24 18"><path d="M3 3h18M3 9h18M7 15h10"/></svg></button>
+        <button type="button" class="glyph-btn" data-align="jright" title="Justify last right" aria-pressed="false" aria-label="Justify, last line right"><svg viewBox="0 0 24 18"><path d="M3 3h18M3 9h18M10 15h11"/></svg></button>
+        <button type="button" class="glyph-btn" data-align="jall" title="Justify all" aria-pressed="false" aria-label="Justify all"><svg viewBox="0 0 24 18"><path d="M3 3h18M3 9h18M3 15h18"/></svg></button>
+      </div>
+
+      <div class="grp-label">Offsets</div>
+      <div class="grid2">
+        <div>
+          <div class="scrub-name" data-scrub="offsetX">Offset X <span class="drag-hint">↔</span></div>
+          <div class="scrub" data-field="offsetX" data-min="-200" data-max="200" data-step="1" data-dec="0" data-perpx="1">
+            <div class="scrub-handle" tabindex="0" role="slider" aria-label="Offset X" aria-valuemin="-200" aria-valuemax="200"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M3 12h18M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg></span></div>
+            <input type="text" inputmode="numeric" value="0" aria-label="Offset X value"><span class="unit">mm</span>
+          </div>
+        </div>
+        <div>
+          <div class="scrub-name" data-scrub="offsetY">Offset Y <span class="drag-hint">↔</span></div>
+          <div class="scrub" data-field="offsetY" data-min="-200" data-max="200" data-step="1" data-dec="0" data-perpx="1">
+            <div class="scrub-handle" tabindex="0" role="slider" aria-label="Offset Y" aria-valuemin="-200" aria-valuemax="200"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M12 3v18M9 6l3-3 3 3M9 18l3 3 3-3"/></svg></span></div>
+            <input type="text" inputmode="numeric" value="0" aria-label="Offset Y value"><span class="unit">mm</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="grp-label">Indents <span class="info-i" title="Illustrator-convention controls — affect paragraph block geometry">i</span></div>
+      <div class="grid2">
+        <div>
+          <div class="scrub-name" data-scrub="indL">Left Indent <span class="drag-hint">↔</span></div>
+          <div class="scrub" data-field="indL" data-min="0" data-max="100" data-step="1" data-dec="0" data-perpx="0.5">
+            <div class="scrub-handle" tabindex="0" role="slider" aria-label="Left indent" aria-valuemin="0" aria-valuemax="100"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M6 4v16M10 8l4 4-4 4M14 12h6"/></svg></span></div>
+            <input type="text" inputmode="numeric" value="0" aria-label="Left indent value"><span class="unit">mm</span>
+          </div>
+        </div>
+        <div>
+          <div class="scrub-name" data-scrub="indR">Right Indent <span class="drag-hint">↔</span></div>
+          <div class="scrub" data-field="indR" data-min="0" data-max="100" data-step="1" data-dec="0" data-perpx="0.5">
+            <div class="scrub-handle" tabindex="0" role="slider" aria-label="Right indent" aria-valuemin="0" aria-valuemax="100"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M18 4v16M14 8l-4 4 4 4M10 12H4"/></svg></span></div>
+            <input type="text" inputmode="numeric" value="0" aria-label="Right indent value"><span class="unit">mm</span>
+          </div>
+        </div>
+      </div>
+      <div class="field-block" style="margin-top:7px;">
+        <div class="scrub-name" data-scrub="indFirst">First-Line Indent <span class="drag-hint">↔</span></div>
+        <div class="scrub" data-field="indFirst" data-min="0" data-max="100" data-step="1" data-dec="0" data-perpx="0.5">
+          <div class="scrub-handle" tabindex="0" role="slider" aria-label="First-line indent" aria-valuemin="0" aria-valuemax="100"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M10 6l4 3-4 3M4 6h4M4 12h16M4 18h16"/></svg></span></div>
+          <input type="text" inputmode="numeric" value="0" aria-label="First-line indent value"><span class="unit">mm</span>
+        </div>
+      </div>
+
+      <div class="grp-label">Spacing</div>
+      <div class="grid2">
+        <div>
+          <div class="scrub-name" data-scrub="spBefore">Space Before <span class="drag-hint">↔</span></div>
+          <div class="scrub" data-field="spBefore" data-min="0" data-max="60" data-step="1" data-dec="0" data-perpx="0.4">
+            <div class="scrub-handle" tabindex="0" role="slider" aria-label="Space before" aria-valuemin="0" aria-valuemax="60"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M12 3v6M9 6l3-3 3 3M5 13h14M5 17h14"/></svg></span></div>
+            <input type="text" inputmode="numeric" value="0" aria-label="Space before value"><span class="unit">mm</span>
+          </div>
+        </div>
+        <div>
+          <div class="scrub-name" data-scrub="spAfter">Space After <span class="drag-hint">↔</span></div>
+          <div class="scrub" data-field="spAfter" data-min="0" data-max="60" data-step="1" data-dec="0" data-perpx="0.4">
+            <div class="scrub-handle" tabindex="0" role="slider" aria-label="Space after" aria-valuemin="0" aria-valuemax="60"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M5 7h14M5 11h14M12 21v-6M9 18l3 3 3-3"/></svg></span></div>
+            <input type="text" inputmode="numeric" value="0" aria-label="Space after value"><span class="unit">mm</span>
+          </div>
+        </div>
+      </div>
+
+      <button type="button" class="checkrow" id="hyphRow" role="checkbox" aria-checked="false"><span class="vcheck"><svg viewBox="0 0 10 10"><path d="M2 5l2 2 4-4"/></svg></span>Hyphenate</button>
+
+      <div class="hr"></div>
+      <div class="grp-label">OpenType <span id="otLockNote" style="display:none;font-weight:400;text-transform:none;letter-spacing:0;color:var(--ui-danger);">· limited on built-in face</span></div>
+      <div class="grid2" style="margin-bottom:9px;">
+        <div>
+          <div class="field-cap"><label for="otFigures">Figures</label></div>
+          <select class="vselect" id="otFigures" style="font-size:10px;padding-right:24px;"><option>Default Figure</option><option>Tabular Lining</option><option>Oldstyle</option></select>
+        </div>
+        <div>
+          <div class="field-cap"><label for="otPosition">Position</label></div>
+          <select class="vselect" id="otPosition" style="font-size:10px;padding-right:24px;"><option>Default</option><option>Superscript</option><option>Subscript</option></select>
+        </div>
+      </div>
+      <div class="ot-row" id="otRow" role="group" aria-label="OpenType features">
+        <button type="button" class="ot-btn active" data-ot title="Standard Ligatures" aria-pressed="true">fi Ligatures</button>
+        <button type="button" class="ot-btn" data-ot title="Contextual Alternates" aria-pressed="false">Contextual</button>
+        <button type="button" class="ot-btn" data-ot title="Discretionary" aria-pressed="false">st Disc.</button>
+        <button type="button" class="ot-btn" data-ot title="Swash" aria-pressed="false">Swash</button>
+        <button type="button" class="ot-btn" data-ot title="Stylistic" aria-pressed="false">Stylistic</button>
+        <button type="button" class="ot-btn" data-ot title="Fractions" aria-pressed="false">½ Fractions</button>
+      </div>
+    </section>
+
+    <!-- ============ STROKE ============ -->
+    <section class="page" data-page="stroke" id="page-stroke" role="tabpanel" aria-labelledby="tabbtn-stroke" hidden>
+      <div class="tab-heading">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17c4-9 14-9 18 0"/></svg>
+        Stroke — Outline
+        <span class="h-sub">weight · curves · plot</span>
+      </div>
+
+      <div class="row-toggle">
+        <span class="rt-label" id="outlineLbl">Outline Stroke</span>
+        <span class="rt-sub">draw glyph contours</span>
+        <button type="button" class="sw-toggle on" id="outlineToggle" data-state="1" role="switch" aria-checked="true" aria-labelledby="outlineLbl"><span class="knob"></span></button>
+      </div>
+
+      <div id="outlineBody">
+        <div class="field-block" style="margin-top:9px;">
+          <div class="scrub-name" data-scrub="weight">Outline Weight <span class="drag-hint">↔ drag · 1–100 · thickens specimen</span></div>
+          <div class="scrub" data-field="weight" data-min="1" data-max="100" data-step="1" data-dec="0" data-perpx="0.4">
+            <div class="scrub-handle" tabindex="0" role="slider" aria-label="Outline weight" aria-valuemin="1" aria-valuemax="100"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M4 8h16M4 12h16M4 16h16" stroke-width="2"/></svg></span></div>
+            <div class="scrub-steppers"><button type="button" data-dir="1" aria-label="Increase weight"><svg viewBox="0 0 10 10"><path d="M2 7L5 3L8 7" stroke="currentColor" fill="none" stroke-width="1.4"/></svg></button><button type="button" data-dir="-1" aria-label="Decrease weight"><svg viewBox="0 0 10 10"><path d="M2 3L5 7L8 3" stroke="currentColor" fill="none" stroke-width="1.4"/></svg></button></div>
+            <input type="text" inputmode="numeric" value="1" aria-label="Outline weight value"><span class="unit">px</span>
+          </div>
+        </div>
+
+        <!-- R6: thickening reveal -->
+        <div class="reveal" id="thickReveal">
+          <div class="reveal-inner">
+            <div class="field-cap" style="margin-top:6px;">Thickening Mode</div>
+            <div class="seg-ctrl thick-seg" id="thickSeg" role="group" aria-label="Thickening mode">
+              <button type="button" class="active" data-thick="parallel" aria-pressed="true">
+                <span class="hint"><svg viewBox="0 0 26 8"><path d="M1 2h24M1 6h24"/></svg></span>Parallel
+              </button>
+              <button type="button" data-thick="sinusoidal" aria-pressed="false">
+                <span class="hint"><svg viewBox="0 0 26 8"><path d="M1 4q3-4 6 0t6 0 6 0 6 0"/></svg></span>Sine
+              </button>
+              <button type="button" data-thick="snake" aria-pressed="false">
+                <span class="hint"><svg viewBox="0 0 26 8"><path d="M1 4c3 0 3-2 6-2s3 4 6 4 3-2 6-2 6 0 6 0"/></svg></span>Snake
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Google-only: merge overlaps + bezier + smoothness -->
+        <div id="googleOnlyStroke">
+          <!-- Merge Overlaps welds kerned/overlapping glyph contours into clean
+               non-crossing outlines. On by default; flattens to straight polygons,
+               so it supersedes Bézier (the Bézier/Smoothness block hides below). -->
+          <div class="row-toggle" style="margin-top:9px;">
+            <span class="rt-label" id="mergeLbl">Merge Overlaps</span>
+            <span class="rt-sub">weld crossing contours</span>
+            <button type="button" class="sw-toggle on" id="mergeToggle" data-state="1" role="switch" aria-checked="true" aria-labelledby="mergeLbl"><span class="knob"></span></button>
+          </div>
+          <div id="bezierSmoothBlock">
+            <div class="row-toggle" style="margin-top:9px;">
+              <span class="rt-label" id="bezierLbl">Bézier Outline</span>
+              <span class="rt-sub">true curve contours</span>
+              <button type="button" class="sw-toggle on" id="bezierToggle" data-state="1" role="switch" aria-checked="true" aria-labelledby="bezierLbl"><span class="knob"></span></button>
+            </div>
+            <div class="field-block" style="margin-top:7px;">
+              <div class="scrub-name" data-scrub="smoothness">Smoothness <span class="drag-hint">↔ drag · 0–6</span></div>
+              <div class="scrub" data-field="smoothness" data-min="0" data-max="6" data-step="1" data-dec="0" data-perpx="0.03">
+                <div class="scrub-handle" tabindex="0" role="slider" aria-label="Smoothness" aria-valuemin="0" aria-valuemax="6"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M3 18C8 18 8 6 13 6s5 12 8 12"/></svg></span></div>
+                <input type="text" inputmode="numeric" value="3" aria-label="Smoothness value">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- R3: plot order + pen explainer -->
+        <div class="grp-label">Plot Order</div>
+        <div class="seg-ctrl" id="plotSeg" role="group" aria-label="Plot order">
+          <button type="button" class="active" data-plot="ltr" aria-pressed="true">
+            <svg viewBox="0 0 24 24"><path d="M4 12h14M14 8l4 4-4 4"/></svg>Left → Right
+          </button>
+          <button type="button" data-plot="natural" aria-pressed="false">
+            <svg viewBox="0 0 24 24"><path d="M5 16c3-8 6 4 9-2s4 0 5 0"/></svg>Natural
+          </button>
+        </div>
+        <div class="pen-track" id="penTrack" aria-hidden="true">
+          <div class="pen-trail" id="penTrail"></div>
+          <div class="glyphs">V E C T U R A</div>
+          <div class="pen" id="pen"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M3 21l3-1L20 6l-2-2L4 18z"/><path d="M16 4l4 4" stroke="currentColor" stroke-width="2"/></svg></div>
+        </div>
+        <div class="explainer" id="penExplain">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16v-4M12 8h.01"/><circle cx="12" cy="12" r="9"/></svg>
+          <span>The pen draws left → right so it travels the least.</span>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+      <div class="grp-label">Common · Curves &amp; Simplify</div>
+      <div class="row-toggle">
+        <span class="rt-label" id="curvesLbl">Curves</span>
+        <span class="rt-sub">smooth polylines</span>
+        <button type="button" class="sw-toggle on" id="curvesToggle" data-state="1" role="switch" aria-checked="true" aria-labelledby="curvesLbl"><span class="knob"></span></button>
+      </div>
+      <div class="field-block" style="margin-top:8px;">
+        <div class="scrub-name" data-scrub="smoothing">Smoothing <span class="drag-hint">↔ drag · 0–1</span></div>
+        <div class="scrub" data-field="smoothing" data-min="0" data-max="1" data-step="0.05" data-dec="2" data-perpx="0.005">
+          <div class="scrub-handle" tabindex="0" role="slider" aria-label="Smoothing" aria-valuemin="0" aria-valuemax="1"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M3 18C8 18 8 6 13 6s5 12 8 12"/></svg></span></div>
+          <input type="text" inputmode="decimal" value="0.30" aria-label="Smoothing value">
+        </div>
+      </div>
+      <div class="field-block" style="margin-top:7px;">
+        <div class="scrub-name" data-scrub="simplify">Simplify <span class="drag-hint">↔ drag · 0–1</span></div>
+        <div class="scrub" data-field="simplify" data-min="0" data-max="1" data-step="0.05" data-dec="2" data-perpx="0.005">
+          <div class="scrub-handle" tabindex="0" role="slider" aria-label="Simplify" aria-valuemin="0" aria-valuemax="1"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M4 18L9 9l4 5 3-6 4 10" stroke-width="1.4"/></svg></span></div>
+          <input type="text" inputmode="decimal" value="0.15" aria-label="Simplify value">
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FILL ============ -->
+    <section class="page" data-page="fill" id="page-fill" role="tabpanel" aria-labelledby="tabbtn-fill" hidden>
+      <div class="tab-heading">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5z"/><path d="M5 9h14M5 14h14"/></svg>
+        Fill — Interior
+        <span class="h-sub">hatch · spiral · dots</span>
+      </div>
+
+      <!-- self-disable reason for stroke faces -->
+      <div class="reason" id="fillReason" style="display:none;" role="status">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+        <span><b>Fill unavailable.</b> Single-stroke faces draw one centreline path — they have no enclosed interior to fill. Switch to a <b>Google outline face</b> to enable fills.</span>
+      </div>
+
+      <div id="fillEnabledArea">
+        <div class="row-toggle">
+          <span class="rt-label" id="fillLbl">Fill Enabled</span>
+          <span class="rt-sub">fill glyph interiors</span>
+          <button type="button" class="sw-toggle" id="fillToggle" data-state="0" role="switch" aria-checked="false" aria-labelledby="fillLbl"><span class="knob"></span></button>
+        </div>
+
+        <div class="reveal" id="fillReveal">
+          <div class="reveal-inner">
+            <div class="field-block" style="margin-top:9px;">
+              <div class="field-cap"><label for="fillType">Fill Type</label></div>
+              <select class="vselect" id="fillType">
+                <option value="hatch">Hatch</option><option value="spiral">Spiral</option>
+                <option value="dots">Dots</option><option value="stripe">Stripe</option>
+                <option value="cross">Cross-Hatch</option>
+              </select>
+            </div>
+            <div class="field-block">
+              <div class="field-cap"><label for="densSlider">Density</label></div>
+              <div class="vslider-wrap">
+                <input type="range" class="vslider" id="densSlider" min="1" max="40" value="14" aria-label="Fill density">
+                <span class="vchip mono" id="densChip">14</span>
+              </div>
+            </div>
+            <div class="field-block">
+              <div class="scrub-name" data-scrub="fillAngle">Angle <span class="drag-hint">↔ drag · Shift ×10</span></div>
+              <div class="scrub" data-field="fillAngle" data-min="0" data-max="180" data-step="1" data-dec="0" data-perpx="0.7">
+                <div class="scrub-handle" tabindex="0" role="slider" aria-label="Fill angle" aria-valuemin="0" aria-valuemax="180"><span class="gicon"><svg viewBox="0 0 24 24"><path d="M4 20L20 4M4 20h7"/><path d="M4 20a10 10 0 0 1 7-7"/></svg></span></div>
+                <input type="text" inputmode="numeric" value="45" aria-label="Fill angle value"><span class="unit">°</span>
+              </div>
+            </div>
+            <div class="field-block" id="fillOffsetBlock" style="margin-top:11px;">
+              <div class="field-cap"><label for="fillOffsetPad">Fill Offset <span class="drag-hint">drag · dbl-click resets</span></label></div>
+              <div class="xypad" id="fillOffsetPad" role="slider" aria-label="Fill offset" aria-valuetext="centred" tabindex="0">
+                <div class="xypad-cross"></div>
+                <div class="xypad-rim"></div>
+                <div class="xypad-knob" id="fillOffsetKnob"></div>
+              </div>
+              <div class="xypad-read" id="fillOffsetRead">0.0, 0.0 mm</div>
+            </div>
+            <div class="row-toggle" id="fillInsetRow" style="margin-top:11px;">
+              <span class="rt-label" id="fillInsetLbl">Inset fill from edge</span>
+              <span class="rt-sub">pull fill in from the outline</span>
+              <button type="button" class="sw-toggle" id="fillInsetToggle" data-state="0" role="switch" aria-checked="false" aria-labelledby="fillInsetLbl"><span class="knob"></span></button>
+            </div>
+            <div class="reveal" id="fillInsetReveal">
+              <div class="reveal-inner">
+                <div class="field-block">
+                  <div class="scrub-name" data-scrub="fillInset">Distance <span class="drag-hint">↔</span></div>
+                  <div class="scrub" data-field="fillInset" data-min="0.2" data-max="8" data-step="0.1" data-dec="1" data-perpx="0.03">
+                    <div class="scrub-handle" tabindex="0" role="slider" aria-label="Inset distance" aria-valuemin="0.2" aria-valuemax="8"><span class="gicon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><rect x="7.5" y="7.5" width="9" height="9" rx="1"/></svg></span></div>
+                    <input type="text" inputmode="decimal" value="1.5" aria-label="Inset distance value"><span class="unit">mm</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /tab-body -->
+  <div class="foot">VECTURA STUDIO · TEXT · MERIDIAN BLUE</div>
+</div>
+<div class="page-note">Drag any field icon or label · double-click resets to default · ▲▼ steppers · ↑↓ arrows · Shift = coarse</div>
+
+<!-- generated static snapshot of the full Google Fonts catalog (window.VECTURA_GFONTS) -->
+<script src="text-panel-fonts.js"></script>
+<!-- Vendored geometry libs (shared with the real app): opentype traces real glyph
+     outlines so the specimen draws clean centreline contours instead of a
+     -webkit-text-stroke that self-overlaps at concave junctions; polygon-clipping
+     welds overlapping contours for the Merge Overlaps preview. -->
+<script src="../src/vendor/opentype.min.js"></script>
+<script src="../src/vendor/polygon-clipping.umd.js"></script>
+<script>
+(function(){
+  "use strict";
+  var $=function(s,r){return (r||document).querySelector(s);};
+  var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));};
+  function clamp(v,a,b){return Math.min(b,Math.max(a,v));}
+
+  /* ---------- central model ---------- */
+  var M={
+    text:"VECTURA",
+    face:"google:inter", style:"Regular",
+    fitToFrame:false, fill:0.85, size:38,
+    leading:1.15, tracking:0, vscale:100, hscale:100, kerning:0, baseline:0,
+    rotation:0, jitter:0.0,
+    align:"left", offsetX:0, offsetY:0,
+    indL:0, indR:0, indFirst:0, spBefore:0, spAfter:0,
+    outline:true, weight:1, thick:"parallel", merge:true, bezier:true, smoothness:3,
+    plot:"ltr", curves:true, smoothing:0.30, simplify:0.15,
+    fillEnabled:false, fillType:"hatch", density:14, fillAngle:45,
+    fillInsetOn:false, fillInset:1.5, fillOffX:0, fillOffY:0,
+    caps:false,
+    guides:"frame", outlineView:false
+  };
+  var FACE_NAMES={
+    "builtin:sans":"Vectura Sans","builtin:italic":"Vectura Italic",
+    "builtin:condensed":"Vectura Condensed","builtin:wide":"Vectura Wide",
+    "builtin:backslant":"Vectura Backslant",
+    "google:inter":"Inter","google:pacifico":"Pacifico","google:spacegrotesk":"Space Grotesk"
+  };
+  var FACE_CSS={
+    "google:inter":"'Inter',sans-serif","google:pacifico":"'Pacifico',cursive",
+    "google:spacegrotesk":"'Space Grotesk',sans-serif"
+  };
+  function isGoogle(f){return f.indexOf("google:")===0;}
+
+  /* ===================================================================
+     FONT CATALOG — built-in single-stroke faces + top-100 Google Fonts,
+     extensible with any arbitrary Google Font the user searches for.
+     FACE_NAMES / FACE_CSS double as the registry the rest of the app reads.
+     =================================================================== */
+  var BUILTIN_FACES=["builtin:sans","builtin:italic","builtin:condensed","builtin:wide","builtin:backslant"];
+  BUILTIN_FACES.forEach(function(v){ if(!FACE_CSS[v]) FACE_CSS[v]="'Space Grotesk',system-ui,sans-serif"; });
+
+  // [name, category]  s=sans f=serif d=display m=mono h=handwriting
+  // Inline list is the FALLBACK; the full ~1.9k-family catalog loads from the
+  // generated text-panel-fonts.js (window.VECTURA_GFONTS), popularity-ordered.
+  var GOOGLE_FALLBACK=[
+    ["Inter","s"],["Roboto","s"],["Open Sans","s"],["Lato","s"],["Montserrat","s"],
+    ["Poppins","s"],["Source Sans 3","s"],["Raleway","s"],["Nunito","s"],["Nunito Sans","s"],
+    ["Ubuntu","s"],["Roboto Condensed","s"],["Oswald","s"],["Work Sans","s"],["Rubik","s"],
+    ["Mukta","s"],["Quicksand","s"],["Karla","s"],["Barlow","s"],["Mulish","s"],
+    ["Josefin Sans","s"],["DM Sans","s"],["Manrope","s"],["Fira Sans","s"],["Cabin","s"],
+    ["Heebo","s"],["Titillium Web","s"],["Dosis","s"],["Hind","s"],["Libre Franklin","s"],
+    ["Comfortaa","s"],["Space Grotesk","s"],["IBM Plex Sans","s"],["Archivo","s"],["Archivo Narrow","s"],
+    ["Exo 2","s"],["Saira","s"],["Asap","s"],["Catamaran","s"],["Signika","s"],
+    ["Maven Pro","s"],["Questrial","s"],["Varela Round","s"],["Yanone Kaffeesatz","s"],["Noto Sans","s"],
+    ["PT Sans","s"],["Merriweather","f"],["Playfair Display","f"],["Lora","f"],["PT Serif","f"],
+    ["Bitter","f"],["Arvo","f"],["Crimson Text","f"],["EB Garamond","f"],["Cormorant Garamond","f"],
+    ["IBM Plex Serif","f"],["Domine","f"],["Vollkorn","f"],["Zilla Slab","f"],["Frank Ruhl Libre","f"],
+    ["Noto Serif","f"],["Alegreya","f"],["Cardo","f"],["Spectral","f"],["Bodoni Moda","f"],
+    ["Tinos","f"],["Newsreader","f"],["Fraunces","f"],["Bree Serif","f"],["Prata","f"],
+    ["Marcellus","f"],["Cinzel","f"],["Philosopher","f"],["Anton","d"],["Bebas Neue","d"],
+    ["Abril Fatface","d"],["Righteous","d"],["Pathway Gothic One","d"],["Acme","d"],["Teko","d"],
+    ["Roboto Mono","m"],["Space Mono","m"],["JetBrains Mono","m"],["IBM Plex Mono","m"],["Source Code Pro","m"],
+    ["Inconsolata","m"],["Fira Code","m"],["Pacifico","h"],["Dancing Script","h"],["Caveat","h"],
+    ["Shadows Into Light","h"],["Indie Flower","h"],["Lobster","h"],["Permanent Marker","h"],["Satisfy","h"],
+    ["Great Vibes","h"],["Sacramento","h"],["Courgette","h"],["Kaushan Script","h"],["Patrick Hand","h"]
+  ];
+  var GOOGLE_TOP=(window.VECTURA_GFONTS && window.VECTURA_GFONTS.length) ? window.VECTURA_GFONTS : GOOGLE_FALLBACK;
+  var CAT_NAME={s:"Sans",f:"Serif",d:"Display",m:"Mono",h:"Script"};
+  function gFallback(c){return c==="f"?"serif":c==="m"?"monospace":c==="h"?"cursive":"sans-serif";}
+  function gSlug(name){return "google:"+name.toLowerCase().replace(/[^a-z0-9]/g,"");}
+  var FACE_CAT={};
+  var FACE_TAGS={};   // value -> array of filter tags (style + features)
+  var CAT_TAG={s:"sans",f:"serif",d:"display",m:"mono",h:"handwriting"};
+  // extras chars from the generated index -> filter tags
+  var EX_TAG={b:"slab",v:"variable",w:"width",i:"italic",c:"color"};
+  function buildTags(cat,ex){
+    var t=[CAT_TAG[cat]||"sans"];
+    (ex||"").split("").forEach(function(ch){ if(EX_TAG[ch]) t.push(EX_TAG[ch]); });
+    return t;
+  }
+  function registerGoogle(name,cat,ex){
+    var v=gSlug(name);
+    FACE_NAMES[v]=name;
+    FACE_CSS[v]="'"+name+"',"+gFallback(cat);
+    FACE_CAT[v]=cat||"s";
+    FACE_TAGS[v]=buildTags(cat||"s",ex);
+    return v;
+  }
+  var TOP_VALUES=GOOGLE_TOP.map(function(t){return registerGoogle(t[0],t[1],t[2]);});
+  BUILTIN_FACES.forEach(function(v){ FACE_TAGS[v]=["stroke"]; });
+
+  // filter chips shown atop the picker. style facet = OR; feature facet = AND.
+  var FP_CHIPS=[
+    {tag:"sans",label:"Sans",facet:"style"},
+    {tag:"serif",label:"Serif",facet:"style"},
+    {tag:"slab",label:"Slab",facet:"style"},
+    {tag:"display",label:"Display",facet:"style"},
+    {tag:"handwriting",label:"Script",facet:"style"},
+    {tag:"mono",label:"Mono",facet:"style",title:"Monospace / code-friendly"},
+    {tag:"variable",label:"Variable",facet:"feat",title:"Variable font (has axes)"},
+    {tag:"width",label:"Width",facet:"feat",title:"Variable width axis"},
+    {tag:"italic",label:"Italic",facet:"feat"},
+    {tag:"color",label:"Color",facet:"feat"}
+  ];
+  var FP_STYLE_TAGS={}, FP_FEAT_TAGS={};
+  FP_CHIPS.forEach(function(c){ (c.facet==="style"?FP_STYLE_TAGS:FP_FEAT_TAGS)[c.tag]=1; });
+
+  /* ===================================================================
+     R4 — SCRUBBY DRAG (the signature interaction)
+     Hardened: live shiftKey mid-drag, NaN guards, single shared finish(),
+     pointer events on the captured element, body-level cursor/selection
+     lock that can never get stuck (pointercancel + lostpointercapture +
+     blur safety net). Value previews UNSNAPPED during drag, snaps on output.
+     =================================================================== */
+  function readField(scrub){
+    return {
+      min:parseFloat(scrub.dataset.min), max:parseFloat(scrub.dataset.max),
+      step:parseFloat(scrub.dataset.step), dec:parseInt(scrub.dataset.dec,10),
+      perpx:parseFloat(scrub.dataset.perpx), name:scrub.dataset.field,
+      input:$('input',scrub), handle:$('.scrub-handle',scrub)
+    };
+  }
+  function fmt(v,dec){ return v.toFixed(dec); }
+  function num(v,fallback){ var n=parseFloat(v); return isFinite(n)?n:fallback; }
+
+  /* setFieldValue: clamp the raw value, snap the DISPLAYED value to the step grid. */
+  function setFieldValue(scrub, rawV, opts){
+    var f=readField(scrub);
+    rawV=clamp(num(rawV, M[f.name]||0), f.min, f.max);
+    var snapped=Math.round(rawV/f.step)*f.step;
+    snapped=clamp(snapped,f.min,f.max);
+    snapped=parseFloat(snapped.toFixed(6)); // kill FP drift (e.g. 0.30000000004)
+    f.input.value=fmt(snapped,f.dec);
+    if(f.handle) f.handle.setAttribute('aria-valuenow', String(snapped));
+    M[f.name]=snapped;
+    if(!opts||!opts.silent) onModelChange(f.name);
+  }
+
+  function attachScrub(scrub){
+    var f=readField(scrub);
+    var handle=f.handle;
+    var nameEl=document.querySelector('.scrub-name[data-scrub="'+f.name+'"]');
+
+    // capture the factory default once (HTML input value before any interaction)
+    var defaultVal=num(f.input.value, M[f.name]||0);
+    function resetToDefault(e){ if(e) e.preventDefault(); setFieldValue(scrub, defaultVal); }
+    // double-click anywhere on the drag affordances (icon handle / name label) resets
+    if(handle) handle.addEventListener('dblclick', resetToDefault);
+    if(nameEl) nameEl.addEventListener('dblclick', resetToDefault);
+
+    function beginDrag(e, originEl){
+      if(e.button!==undefined && e.button!==0) return;     // primary button only
+      if(scrub.classList.contains('disabled')) return;
+      // never start a scrub from a stepper / preset / input
+      if(e.target.closest && e.target.closest('.scrub-steppers, .scrub-preset, input')) return;
+      e.preventDefault();
+
+      var startX=e.clientX;
+      var startVal=num(f.input.value, M[f.name]||0);
+      var pid=e.pointerId;
+
+      scrub.classList.add('scrubbing');
+      document.body.classList.add('is-scrubbing');
+      try{ originEl.setPointerCapture(pid); }catch(_){}
+
+      function move(ev){
+        var dx=ev.clientX-startX;
+        var coarse=ev.shiftKey?10:1;                       // read shift LIVE each move
+        setFieldValue(scrub, startVal + dx*f.perpx*coarse);
+      }
+      function finish(){
+        if(!scrub.classList.contains('scrubbing')) return; // idempotent
+        scrub.classList.remove('scrubbing');
+        document.body.classList.remove('is-scrubbing');
+        try{ originEl.releasePointerCapture(pid); }catch(_){}
+        originEl.removeEventListener('pointermove',move);
+        originEl.removeEventListener('pointerup',finish);
+        originEl.removeEventListener('pointercancel',finish);
+        originEl.removeEventListener('lostpointercapture',finish);
+        window.removeEventListener('blur',finish);
+      }
+      originEl.addEventListener('pointermove',move);
+      originEl.addEventListener('pointerup',finish);
+      originEl.addEventListener('pointercancel',finish);
+      originEl.addEventListener('lostpointercapture',finish);
+      window.addEventListener('blur',finish);              // OS/context-menu safety net
+    }
+
+    if(handle) handle.addEventListener('pointerdown',function(e){beginDrag(e,handle);});
+    if(nameEl) nameEl.addEventListener('pointerdown',function(e){beginDrag(e,nameEl);});
+
+    // keyboard scrub on the focusable handle (role=slider)
+    if(handle){
+      handle.addEventListener('keydown',function(e){
+        var coarse=e.shiftKey?10:1;
+        if(e.key==='ArrowUp'||e.key==='ArrowRight'){e.preventDefault();setFieldValue(scrub,num(f.input.value,M[f.name])+f.step*coarse);}
+        else if(e.key==='ArrowDown'||e.key==='ArrowLeft'){e.preventDefault();setFieldValue(scrub,num(f.input.value,M[f.name])-f.step*coarse);}
+        else if(e.key==='Home'){e.preventDefault();setFieldValue(scrub,f.min);}
+        else if(e.key==='End'){e.preventDefault();setFieldValue(scrub,f.max);}
+      });
+    }
+
+    // direct typing
+    f.input.addEventListener('change',function(){
+      setFieldValue(scrub, num(f.input.value, M[f.name]));
+    });
+    f.input.addEventListener('keydown',function(e){
+      var coarse=e.shiftKey?10:1;
+      if(e.key==='Enter'){e.preventDefault();setFieldValue(scrub,num(f.input.value,M[f.name]));f.input.blur();}
+      else if(e.key==='ArrowUp'){e.preventDefault();setFieldValue(scrub,num(f.input.value,M[f.name])+f.step*coarse);}
+      else if(e.key==='ArrowDown'){e.preventDefault();setFieldValue(scrub,num(f.input.value,M[f.name])-f.step*coarse);}
+    });
+
+    // steppers (siblings of the handle — no drag collision)
+    $$('.scrub-steppers button',scrub).forEach(function(b){
+      b.addEventListener('pointerdown',function(e){ e.stopPropagation(); });
+      b.addEventListener('click',function(e){
+        e.stopPropagation();
+        var dir=parseInt(b.dataset.dir,10)||0;
+        var coarse=e.shiftKey?10:1;
+        setFieldValue(scrub, num(f.input.value,M[f.name]) + dir*f.step*coarse);
+      });
+    });
+
+    // preset chevron — cycles a couple of sensible presets (demo)
+    var presetBtn=$('.scrub-preset',scrub);
+    if(presetBtn){
+      var presets=[f.min,(f.min+f.max)/2,f.max], pi=0;
+      presetBtn.addEventListener('click',function(e){
+        e.stopPropagation();
+        pi=(pi+1)%presets.length;
+        setFieldValue(scrub,presets[pi]);
+      });
+    }
+  }
+  $$('.scrub').forEach(attachScrub);
+
+  /* ===================================================================
+     R1 — TABS
+     =================================================================== */
+  function selectTab(id){
+    $$('.tab').forEach(function(t){
+      var on=t.dataset.tab===id;
+      t.classList.toggle('active',on);
+      t.setAttribute('aria-selected', on?'true':'false');
+    });
+    $$('.page').forEach(function(p){
+      var on=p.dataset.page===id;
+      p.classList.toggle('active',on);
+      if(on){p.removeAttribute('hidden');} else {p.setAttribute('hidden','');}
+    });
+    activePage=id;
+    if(id==='stroke') resetPen();
+  }
+  $$('.tab').forEach(function(tab){
+    tab.addEventListener('click',function(){
+      if(tab.classList.contains('disabled')) return;
+      selectTab(tab.dataset.tab);
+    });
+  });
+
+  /* ===================================================================
+     R2 — SPECIMEN collapse + live update
+     =================================================================== */
+  var SPEC_KEY='vectura_spec_collapsed';
+  var specimen=$('#specimen');
+  var specToggle=$('#specToggle');
+  function applySpecState(){
+    var c=false;
+    try{ c=localStorage.getItem(SPEC_KEY)==='1'; }catch(_){}
+    specimen.classList.toggle('collapsed',c);
+    specToggle.setAttribute('aria-expanded', c?'false':'true');
+  }
+  applySpecState();
+  specToggle.addEventListener('click',function(){
+    specimen.classList.toggle('collapsed');
+    var collapsed=specimen.classList.contains('collapsed');
+    specToggle.setAttribute('aria-expanded', collapsed?'false':'true');
+    try{ localStorage.setItem(SPEC_KEY, collapsed?'1':'0'); }catch(_){}
+  });
+
+  /* Deterministic 0..1 pseudo-random keyed by an integer — so each letter's
+     jitter offset is stable across re-renders (no flicker when other params
+     change) but varies per character, mirroring the engine's seeded rng. */
+  function jrand(i){ var x=Math.sin(i*12.9898+4.1414)*43758.5453; return x-Math.floor(x); }
+
+  /* Render the specimen string. When jitter is on, wrap each non-space glyph
+     in an inline-block span nudged by a static random (dx,dy) offset and a
+     small random rotation — the honest analog of the engine's per-contour-
+     point wobble (text.js: wobble()), which roughens each glyph rather than
+     sliding the whole block. Three deterministic random streams per char
+     (offset-x, offset-y, rotation); all scale with the jitter amount, so the
+     effect stays subtle near 0 and grows toward the max. */
+  function setSpecText(st,txt,jitter){
+    st.textContent='';
+    if(jitter<=0.05){ st.textContent=txt; return; }
+    var K=1.8;   // px of offset per unit of jitter (range 0–3)
+    var RD=2.2;  // deg of rotation per unit of jitter
+    for(var i=0;i<txt.length;i++){
+      var ch=txt[i];
+      if(ch==='\n'||ch===' '){ st.appendChild(document.createTextNode(ch)); continue; }
+      var dx =(jrand(3*i)  -0.5)*2*jitter*K;
+      var dy =(jrand(3*i+1)-0.5)*2*jitter*K;
+      var rot=(jrand(3*i+2)-0.5)*2*jitter*RD;
+      var sp=document.createElement('span');
+      sp.textContent=ch;
+      sp.style.display='inline-block';
+      sp.style.transform='translate('+dx.toFixed(2)+'px,'+dy.toFixed(2)+'px) rotate('+rot.toFixed(2)+'deg)';
+      st.appendChild(sp);
+    }
+  }
+
+  /* ===================================================================
+     FAITHFUL OUTLINE SPECIMEN — trace real glyph outlines (opentype), weld
+     overlapping contours (polygon-clipping), and draw thin centreline strokes
+     as SVG. This is what the real renderer does, so the hollow preview shows
+     clean letterforms with no -webkit-text-stroke self-overlap at junctions.
+     Falls back to the CSS text-stroke when a face isn't traceable (built-ins),
+     the font hasn't downloaded yet, or jitter is on (CSS owns the wobble).
+     =================================================================== */
+  var OTF=(function(){
+    var cache={}, pend={};
+    // fontsource id = family name lowercased, spaces → hyphens (matches the real
+    // GoogleFonts CORS mirror).
+    function urlFor(name,w){ return 'https://cdn.jsdelivr.net/fontsource/fonts/'+name.toLowerCase().replace(/\s+/g,'-')+'@latest/latin-'+w+'-normal.ttf'; }
+    function load(name,w){
+      var key=name+'@'+w;
+      if(cache[key]!==undefined) return Promise.resolve(cache[key]);
+      if(pend[key]) return pend[key];
+      if(!window.opentype){ cache[key]=null; return Promise.resolve(null); }
+      var get=function(weight){ return fetch(urlFor(name,weight)).then(function(r){ if(!r.ok) throw 0; return r.arrayBuffer(); }); };
+      pend[key]=get(w).catch(function(){ return get(400); })
+        .then(function(buf){ var f=window.opentype.parse(buf); cache[key]=f; return f; })
+        .catch(function(){ cache[key]=null; return null; });
+      return pend[key];
+    }
+    return { load:load, get:function(name,w){ return cache[name+'@'+w]; } };
+  })();
+
+  // opentype command list → flattened polylines (one per closed contour).
+  function flattenCmds(cmds){
+    var out=[], cur=null, sx=0,sy=0,cx=0,cy=0;
+    function P(x,y){ cur.push({x:x,y:y}); }
+    function cube(c1x,c1y,c2x,c2y,ex,ey){ var n=14,x0=cx,y0=cy; for(var i=1;i<=n;i++){var t=i/n,m=1-t; P(m*m*m*x0+3*m*m*t*c1x+3*m*t*t*c2x+t*t*t*ex, m*m*m*y0+3*m*m*t*c1y+3*m*t*t*c2y+t*t*t*ey);} }
+    function quad(cpx,cpy,ex,ey){ var n=10,x0=cx,y0=cy; for(var i=1;i<=n;i++){var t=i/n,m=1-t; P(m*m*x0+2*m*t*cpx+t*t*ex, m*m*y0+2*m*t*cpy+t*t*ey);} }
+    cmds.forEach(function(c){
+      if(c.type==='M'){ if(cur&&cur.length>1) out.push(cur); cur=[]; sx=cx=c.x; sy=cy=c.y; P(c.x,c.y); }
+      else if(c.type==='L'){ P(c.x,c.y); cx=c.x; cy=c.y; }
+      else if(c.type==='C'){ cube(c.x1,c.y1,c.x2,c.y2,c.x,c.y); cx=c.x; cy=c.y; }
+      else if(c.type==='Q'){ quad(c.x1,c.y1,c.x,c.y); cx=c.x; cy=c.y; }
+      else if(c.type==='Z'){ if(cur){ P(sx,sy); } cx=sx; cy=sy; }
+    });
+    if(cur&&cur.length>1) out.push(cur);
+    return out;
+  }
+
+  // Lay the string out in stage-pixel space, mirroring the CSS specimen metrics
+  // (font-size px == em, kerning + tracking, centred block, fillSvg baseline) so
+  // the traced outline lands exactly where the CSS text used to.
+  function traceContours(font,text,px,trackingPx,leading,align,W,H){
+    var fu=px/font.unitsPerEm;
+    var lines=String(text).split('\n');
+    var lineGlyphs=lines.map(function(ln){ return font.stringToGlyphs(ln); });
+    function lineW(gs){ var w=0; for(var i=0;i<gs.length;i++){ w+=(gs[i].advanceWidth||0)*fu; if(i<gs.length-1) w+=(font.getKerningValue(gs[i],gs[i+1])||0)*fu+trackingPx; } return Math.max(0,w); }
+    var widths=lineGlyphs.map(lineW);
+    var maxW=widths.reduce(function(m,w){return Math.max(m,w);},0);
+    var lineH=px*leading, totalH=lineH*lines.length;
+    var baseline0=(H-totalH)/2+(lineH-px)/2+px*0.80;   // == renderFillLines baseline
+    var blockLeft=W/2-maxW/2;
+    var contours=[], nodes=[];
+    lineGlyphs.forEach(function(gs,li){
+      var lw=widths[li];
+      var penX = align==='left' ? blockLeft : align==='right' ? (blockLeft+maxW-lw) : (W/2-lw/2);
+      var by=baseline0+li*lineH;
+      gs.forEach(function(g,i){
+        if(typeof g.getPath==='function' && (g.advanceWidth||g.path)){
+          var gp=g.getPath(penX,by,px);
+          if(gp&&gp.commands&&gp.commands.length){
+            flattenCmds(gp.commands).forEach(function(c){ if(c.length>=2) contours.push(c); });
+            collectNodes(gp.commands, nodes);
+          }
+        }
+        var adv=(g.advanceWidth||0)*fu;
+        if(i<gs.length-1) adv+=(font.getKerningValue(g,gs[i+1])||0)*fu+trackingPx;
+        penX+=adv;
+      });
+    });
+    return { contours:contours, nodes:nodes };
+  }
+
+  // Real on-curve nodes + their incoming/outgoing Bézier handles, read straight
+  // from the positioned glyph commands (not bbox extrema). 'out' hangs off the
+  // point a curve leaves; 'in' off the point it arrives at.
+  function collectNodes(cmds, nodes){
+    var prev=null, start=null;
+    function atStart(c){ return start && Math.abs(c.x-start.x)<0.4 && Math.abs(c.y-start.y)<0.4; }
+    cmds.forEach(function(c){
+      if(c.type==='M'){ start={x:c.x,y:c.y,in:null,out:null}; nodes.push(start); prev=start; }
+      else if(c.type==='L'){
+        // a segment that lands back on the contour start just closes it — don't
+        // emit a second coincident anchor.
+        if(atStart(c)){ prev=start; }
+        else { var n2={x:c.x,y:c.y,in:null,out:null}; nodes.push(n2); prev=n2; }
+      }
+      else if(c.type==='C'){
+        if(prev) prev.out={x:c.x1,y:c.y1};
+        if(atStart(c)){ start.in={x:c.x2,y:c.y2}; prev=start; }
+        else { var n3={x:c.x,y:c.y,in:{x:c.x2,y:c.y2},out:null}; nodes.push(n3); prev=n3; }
+      }
+      else if(c.type==='Q'){
+        if(prev) prev.out={x:c.x1,y:c.y1};
+        if(atStart(c)){ start.in={x:c.x1,y:c.y1}; prev=start; }
+        else { var n4={x:c.x,y:c.y,in:{x:c.x1,y:c.y1},out:null}; nodes.push(n4); prev=n4; }
+      }
+      else if(c.type==='Z'){ prev=start; }
+    });
+  }
+
+  // Orientation-robust nonzero union (depth-parity shells/holes) — same contract
+  // as the real FillBoolean.nonZeroUnionByContainment. Returns rings of {x,y}.
+  function weldContours(contours){
+    var pc=window.polygonClipping;
+    if(!pc||!pc.union) return null;
+    function close(r){ var a=[]; for(var i=0;i<r.length;i++) a.push([r[i].x,r[i].y]); if(a.length<3) return null; var f=a[0],l=a[a.length-1]; if(Math.hypot(f[0]-l[0],f[1]-l[1])>1e-6) a.push([f[0],f[1]]); return a.length>=4?a:null; }
+    function inRing(p,ring){ var x=p[0],y=p[1],inside=false; for(var i=0,j=ring.length-1;i<ring.length;j=i++){var xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1]; if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi)) inside=!inside;} return inside; }
+    var rings=contours.map(close).filter(Boolean);
+    if(!rings.length) return null;
+    var depth=rings.map(function(r,i){ var p=r[0],d=0; for(var j=0;j<rings.length;j++){ if(j!==i&&inRing(p,rings[j])) d++; } return d; });
+    var shells=[],holes=[];
+    rings.forEach(function(r,i){ (depth[i]%2===0?shells:holes).push([[r]]); });
+    if(!shells.length) return null;
+    var res;
+    try{
+      var subj=pc.union.apply(pc,shells);
+      res = holes.length ? pc.difference(subj, pc.union.apply(pc,holes)) : subj;
+    }catch(_){ return null; }
+    var out=[];
+    (res||[]).forEach(function(poly){ (poly||[]).forEach(function(ring){ var pts=ring.map(function(p){return {x:p[0],y:p[1]};}); if(pts.length>=2) out.push(pts); }); });
+    return out.length?out:null;
+  }
+
+  function ringsToD(rings){
+    var d='';
+    rings.forEach(function(r){ if(r.length<2) return; d+='M'+f1(r[0].x)+' '+f1(r[0].y); for(var i=1;i<r.length;i++) d+='L'+f1(r[i].x)+' '+f1(r[i].y); d+='Z'; });
+    return d;
+  }
+  function ringsToDOff(rings,dx,dy){
+    var d='';
+    rings.forEach(function(r){ if(r.length<2) return; d+='M'+f1(r[0].x+dx)+' '+f1(r[0].y+dy); for(var i=1;i<r.length;i++) d+='L'+f1(r[i].x+dx)+' '+f1(r[i].y+dy); d+='Z'; });
+    return d;
+  }
+  function ringsBBox(rings){
+    var x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+    rings.forEach(function(r){ for(var i=0;i<r.length;i++){ var p=r[i]; if(p.x<x0)x0=p.x; if(p.x>x1)x1=p.x; if(p.y<y0)y0=p.y; if(p.y>y1)y1=p.y; } });
+    return isFinite(x0) ? {x:x0,y:y0,w:x1-x0,h:y1-y0} : {x:0,y:0,w:0,h:0};
+  }
+  // Trace + weld the live glyph contours into stage-space rings, SHARED by the
+  // fill clip and the outline view so both use identical geometry — this is why
+  // the fill no longer drifts off the silhouette or bleeds into R/A counters.
+  // Returns null for built-in faces / while a TTF downloads (kicks a re-render).
+  function glyphRings(px, W, H){
+    if(!(isGoogle(M.face) && window.opentype)) return null;
+    var owt={Regular:400,Medium:500,Semibold:600,Bold:800}[M.style]||400;
+    var font=OTF.get(FACE_NAMES[M.face], owt);
+    if(!font){ OTF.load(FACE_NAMES[M.face], owt).then(function(f){ if(f) renderSpecimen({skipText:true}); }); return null; }
+    var txt=M.text||' '; if(M.caps) txt=txt.toUpperCase();
+    var laid=traceContours(font, txt, px, M.tracking*0.9, M.leading, M.align, W, H);
+    var rings=laid.contours;
+    if(M.merge){ var w=weldContours(laid.contours); if(w&&w.length) rings=w; }
+    return (rings && rings.length) ? rings : null;
+  }
+  // px-per-mm for the live preview (1 em == M.size mm in absolute mode).
+  function mmToPx(px){ return px / (M.fitToFrame ? 38 : Math.max(M.size,1)); }
+
+  function renderSpecimen(opts){
+    opts=opts||{};
+    var st=$('#specText');
+    var raw=M.text;
+    var txt=(raw && raw.length) ? raw : ' ';
+    var lines=txt.split('\n');
+    var nLines=lines.length;
+    // Caps is a visual-only transform so the editable text stays as-typed
+    // (innerText ignores text-transform, so reads back the true case).
+    st.style.textTransform = M.caps ? 'uppercase' : 'none';
+    // While the specimen is being edited directly, leave its text/caret alone
+    // (skipText) and never apply jitter spans — those would scramble the caret.
+    // Jitter re-applies on blur via a full render.
+    var editing = (document.activeElement===st);
+    if(!opts.skipText) setSpecText(st, txt, editing ? 0 : M.jitter);
+
+    st.style.fontFamily = isGoogle(M.face) ? FACE_CSS[M.face] : "'Space Grotesk',sans-serif";
+
+    var px = M.fitToFrame ? (16 + M.fill*34) : clamp(M.size*0.9, 10, 58);
+    st.style.fontSize=px.toFixed(1)+'px';
+
+    var wMap={Regular:400,Medium:500,Semibold:600,Bold:800};
+    st.style.fontWeight=wMap[M.style]||600;
+
+    // Fill drives the glyph interior; Outline drives the contour stroke.
+    //  fill on            → solid interior
+    //  fill off, outline  → hollow (transparent interior + visible contour)
+    //  both off           → faint ghost so the layer is still locatable
+    var filled = M.fillEnabled && isGoogle(M.face);
+    var strokeW = M.outline ? Math.min(0.7 + (M.weight-1)*0.13, 14) : 0;
+    // When fill is on, the glyph interior is painted by real fill lines in the
+    // SVG overlay (see renderFillLines) — NOT a flat CSS colour — so density,
+    // type, angle + gap are actually visible. The text element itself stays
+    // transparent and only contributes its contour stroke when Outline is on.
+    // Merge Overlaps welds crossing contours: a CSS -webkit-text-stroke preview
+    // can't do polygon boolean ops, so drop kerning + ligatures so negative-kern
+    // pairs (RA, AV, LT…) stop tucking together. The FAITHFUL welded outline (real
+    // opentype trace + union) lives behind the Outlines toggle (renderOutlineView).
+    var hollow = M.outline && !filled;
+    var weld = hollow && M.merge;
+    st.style.color = (filled || M.outline) ? 'transparent' : 'rgba(241,241,241,.14)';
+    st.style.webkitTextStrokeWidth = strokeW.toFixed(2)+'px';
+    st.style.webkitTextStrokeColor = '#f1f1f1';
+    st.style.fontKerning = weld ? 'none' : 'normal';
+    st.style.fontFeatureSettings = weld ? '"kern" 0, "liga" 0, "calt" 0' : 'normal';
+
+    st.style.letterSpacing=(M.tracking*0.9)+'px';
+    st.style.lineHeight=M.leading;
+
+    var tf='scale('+(M.hscale/100)+','+(M.vscale/100)+') rotate('+(M.rotation*0.15)+'deg) translate('+(M.offsetX*0.06)+'px,'+(-M.baseline*0.4 - M.offsetY*0.06)+'px)';
+    if(M.face==='builtin:backslant') tf+=' skewX(12deg)';
+    st.style.transform=tf;
+
+    st.style.textAlign=({left:'left',center:'center',right:'right'}[M.align])||'center';
+    st.style.fontStyle = (M.face==='builtin:italic')?'italic':'normal';
+    st.style.textShadow = 'none';
+
+    // caption
+    $('#specFace').textContent = (FACE_NAMES[M.face]||M.face)+' · '+M.style;
+    var dimVal = M.fitToFrame ? (M.fill.toFixed(2)+'× fill') : (M.size+'mm');
+    var wTag = M.outline ? (' · w'+M.weight) : '';
+    var fTag = filled ? ' · fill' : '';
+    $('#specDim').textContent = dimVal+' · '+nLines+'ln · tr'+M.tracking+wTag+fTag;
+
+    renderFillLines(filled, px);
+    renderGuides(px);
+    renderOutlineView(px);
+  }
+
+  /* ===================================================================
+     FILL LINE PREVIEW — generate the real toolpath geometry (hatch / cross /
+     stripe / spiral / dots), clip it to the live glyph outlines, and draw it
+     into the SVG overlay. Density drives the line spacing so low density shows
+     gaps and high density covers solid; a reveal toggle recolours the paths and
+     uses additive (screen) blending so any space the pen re-covers glows hot.
+     =================================================================== */
+  var fillLinesShown = false;   // reveal-toolpaths toggle state
+  var fcSeq = 0;                // unique clipPath id per render
+  var lastFillExtentMm = {x:0, y:0};   // glyph block extent (mm) — drives offset readout
+
+  function xmlEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function f1(n){ return (Math.round(n*10)/10); }
+
+  // parallel lines at `angleDeg`, `spacing` px apart, covering the whole WxH box
+  function hatchLines(W,H,spacing,angleDeg){
+    var out=[], th=angleDeg*Math.PI/180;
+    var dx=Math.cos(th), dy=Math.sin(th);   // line direction
+    var nx=-dy, ny=dx;                       // normal (offset axis)
+    var min=Infinity,max=-Infinity;
+    [[0,0],[W,0],[0,H],[W,H]].forEach(function(c){ var p=c[0]*nx+c[1]*ny; if(p<min)min=p; if(p>max)max=p; });
+    var L=Math.sqrt(W*W+H*H);
+    for(var t=Math.floor(min/spacing)*spacing; t<=max; t+=spacing){
+      var bx=nx*t, by=ny*t;
+      out.push({type:'line',x1:bx-dx*L,y1:by-dy*L,x2:bx+dx*L,y2:by+dy*L});
+    }
+    return out;
+  }
+  function spiralPath(W,H,spacing){
+    var cx=W/2, cy=H/2, b=spacing/(2*Math.PI);
+    var maxR=Math.sqrt(W*W+H*H)/2, d='M'+f1(cx)+' '+f1(cy);
+    for(var a=0.15; b*a<=maxR; a+=0.18){
+      var r=b*a;
+      d+=' L'+f1(cx+r*Math.cos(a))+' '+f1(cy+r*Math.sin(a));
+    }
+    return [{type:'path',d:d}];
+  }
+  function dotGrid(W,H,spacing){
+    var out=[], r=Math.max(0.7, spacing*0.34);
+    for(var y=spacing*0.5; y<H+spacing; y+=spacing)
+      for(var x=spacing*0.5; x<W+spacing; x+=spacing)
+        out.push({type:'circle',cx:x,cy:y,r:r});
+    return out;
+  }
+  function buildFillGeometry(type,W,H,spacing,angle){
+    switch(type){
+      case 'cross':  return hatchLines(W,H,spacing,angle).concat(hatchLines(W,H,spacing,angle+90));
+      case 'stripe': return hatchLines(W,H,spacing,0);
+      case 'spiral': return spiralPath(W,H,spacing);
+      case 'dots':   return dotGrid(W,H,spacing);
+      default:       return hatchLines(W,H,spacing,angle);   // hatch
+    }
+  }
+  function fillEl(seg,color,w){
+    if(seg.type==='line')   return '<line x1="'+f1(seg.x1)+'" y1="'+f1(seg.y1)+'" x2="'+f1(seg.x2)+'" y2="'+f1(seg.y2)+'" stroke="'+color+'" stroke-width="'+w+'" stroke-linecap="round"/>';
+    if(seg.type==='path')   return '<path d="'+seg.d+'" fill="none" stroke="'+color+'" stroke-width="'+w+'" stroke-linecap="round" stroke-linejoin="round"/>';
+    if(seg.type==='circle') return '<circle cx="'+f1(seg.cx)+'" cy="'+f1(seg.cy)+'" r="'+f1(seg.r)+'" fill="'+color+'"/>';
+    return '';
+  }
+
+  function renderFillLines(filled, px){
+    var svg=$('#fillSvg');
+    var toggleBtn=$('#fillLineToggle'), legend=$('#fillLegend');
+    toggleBtn.classList.toggle('show', !!filled);
+    if(!filled){ svg.innerHTML=''; legend.classList.remove('show'); return; }
+    legend.classList.toggle('show', fillLinesShown);
+
+    var stage=svg.parentNode;
+    var W=stage.clientWidth, H=stage.clientHeight;
+    if(!W||!H){ svg.innerHTML=''; return; }
+    svg.setAttribute('viewBox','0 0 '+W+' '+H);
+    // mirror the glyph transform so lines track scale/rotate/offset
+    svg.style.transform=$('#specText').style.transform;
+
+    px=px||parseFloat($('#specText').style.fontSize)||34;
+
+    // density 1..40  →  line-centre spacing.  At max density spacing collapses to
+    // ~one stroke width (solid); at min density it opens to a wide visible gap.
+    var d=clamp(M.density,1,40);
+    var strokeW=fillLinesShown?1.05:1.7;
+    var spacing=strokeW + (1-(d-1)/39)*15;
+    var geo=buildFillGeometry(M.fillType,W,H,spacing,M.fillAngle);
+
+    var maskId='fm'+(fcSeq++);
+    var regionDef, regionRef, guide='';
+
+    // Prefer the REAL traced glyph rings: clip the fill to exactly the outline
+    // geometry (counters honoured via fill-rule:evenodd) so it can't drift off
+    // the silhouette or bleed into R/A counters. Inset erodes the region inward
+    // with a boundary stroke; offset translates the fill window across the glyph
+    // (the outline stays put) so at the rim the fill clears the letters entirely.
+    var rings=glyphRings(px,W,H);
+    if(rings){
+      var sc=mmToPx(px);
+      var bb=ringsBBox(rings);
+      lastFillExtentMm={ x: sc>0 ? bb.w/sc : 0, y: sc>0 ? bb.h/sc : 0 };
+      var offX=(M.fillOffX||0)*bb.w, offY=(M.fillOffY||0)*bb.h;
+      var dPath=ringsToDOff(rings,offX,offY);
+      var erode = (M.fillInsetOn && M.fillInset>0)
+        ? '<path d="'+dPath+'" fill="none" stroke="#000" stroke-width="'+f1(2*M.fillInset*sc)+'" stroke-linejoin="round" stroke-linecap="round"/>'
+        : '';
+      regionDef='<mask id="'+maskId+'" maskUnits="userSpaceOnUse" x="0" y="0" width="'+W+'" height="'+H+'">'+
+                  '<path d="'+dPath+'" fill="#fff" fill-rule="evenodd"/>'+erode+
+                '</mask>';
+      regionRef=' mask="url(#'+maskId+')"';
+      updateFillOffsetReadout();
+      if(fillLinesShown) guide='<path d="'+ringsToD(rings)+'" fill="none" stroke="rgba(255,255,255,.20)" stroke-width="0.8" stroke-linejoin="round"/>';
+    } else {
+      // built-in / still-loading fallback: clip to an SVG <text> (legacy path).
+      var txt=(M.text||' '); if(M.caps) txt=txt.toUpperCase();
+      var lines=txt.split('\n');
+      var fam=(isGoogle(M.face)?FACE_CSS[M.face]:"'Space Grotesk',sans-serif").replace(/"/g,"'");
+      var fw={Regular:400,Medium:500,Semibold:600,Bold:800}[M.style]||600;
+      var lineH=px*M.leading, totalH=lineH*lines.length;
+      var baseline0=(H-totalH)/2 + (lineH-px)/2 + px*0.80;
+      var tspans='';
+      for(var i=0;i<lines.length;i++){ tspans+='<tspan x="'+f1(W/2)+'" y="'+f1(baseline0+i*lineH)+'">'+xmlEsc(lines[i]||' ')+'</tspan>'; }
+      var tAttr='text-anchor="middle" font-family="'+fam+'" font-size="'+f1(px)+'" font-weight="'+fw+'" letter-spacing="'+(M.tracking*0.9)+'px"';
+      regionDef='<clipPath id="'+maskId+'"><text '+tAttr+'>'+tspans+'</text></clipPath>';
+      regionRef=' clip-path="url(#'+maskId+')"';
+      if(fillLinesShown) guide='<text '+tAttr+' fill="none" stroke="rgba(255,255,255,.20)" stroke-width="0.8">'+tspans+'</text>';
+    }
+
+    var color = fillLinesShown ? 'rgba(86,150,222,.5)' : '#f1f1f1';
+    var blend = fillLinesShown ? ' style="mix-blend-mode:screen"' : '';
+    var body='<g'+regionRef+blend+'>'+
+               geo.map(function(s){ return fillEl(s,color,strokeW); }).join('')+
+             '</g>'+guide;
+    svg.innerHTML='<defs>'+regionDef+'</defs>'+body;
+  }
+
+  // mm readout for the Fill Offset pad, resolved from the live glyph extent.
+  function updateFillOffsetReadout(){
+    var ro=$('#fillOffsetRead'); if(!ro) return;
+    ro.textContent=( (M.fillOffX||0)*lastFillExtentMm.x ).toFixed(1)+', '+
+                   ( (M.fillOffY||0)*lastFillExtentMm.y ).toFixed(1)+' mm';
+  }
+
+  /* ===================================================================
+     GUIDE OVERLAY — drawing aids that live in the specimen window. These are
+     visual helpers only (frame, baseline, ruled lines, handwriting guides,
+     dot grid) and say nothing about whether the glyph fits the real canvas —
+     the specimen frame is decorative, not the document boundary.
+     The horizontal guides track the live text block so cap/x-height/baseline
+     rules sit on the actual letterforms.
+     =================================================================== */
+  // baseline of line `i` for a vertically-centred block of `n` lines (mirrors
+  // the math renderFillLines uses so every overlay agrees on where text sits).
+  function specBaselines(px, n, H){
+    var lineH=px*M.leading, totalH=lineH*n, top=(H-totalH)/2;
+    var out=[];
+    for(var i=0;i<n;i++) out.push(top + i*lineH + (lineH-px)/2 + px*0.80);
+    return out;
+  }
+  // Baseline-relative offsets (stage px) for the guide rules: cap / x-height /
+  // ascender above the baseline, descender below. Resolved from the REAL font so
+  // the rules hug the actual letterforms: opentype metrics first (same font the
+  // outline view traces), then a canvas-measureText fallback, then fixed ratios
+  // while a face is still downloading. Kicks an OTF.load + re-render so the rules
+  // snap onto a Google face once its TTF arrives (mirrors renderOutlineView).
+  function specFontMetrics(px){
+    var wMap={Regular:400,Medium:500,Semibold:600,Bold:800};
+    var fin=function(v){ return typeof v==='number' && isFinite(v) && v>0; };
+    var owt=wMap[M.style]||400;
+    var font=(isGoogle(M.face) && window.opentype) ? OTF.get(FACE_NAMES[M.face], owt) : null;
+
+    // lazy measureText metrics — shared by the opentype per-metric fallbacks
+    var mt=null;
+    function meas(){
+      if(mt) return mt;
+      var fam=(isGoogle(M.face)?FACE_CSS[M.face]:"'Space Grotesk',sans-serif").replace(/"/g,"'");
+      var ctx=measureCtx(px, fam, wMap[M.style]||600);
+      var H=ctx.measureText('H'), x=ctx.measureText('x');
+      mt={ cap:H.actualBoundingBoxAscent, x:x.actualBoundingBoxAscent,
+           asc:H.fontBoundingBoxAscent, desc:H.fontBoundingBoxDescent };
+      return mt;
+    }
+
+    if(font){
+      var fu=px/font.unitsPerEm, os2=font.tables && font.tables.os2;
+      var asc=font.ascender*fu, desc=-font.descender*fu;
+      var cap=(os2 && fin(os2.sCapHeight)) ? os2.sCapHeight*fu : meas().cap;
+      var xh =(os2 && fin(os2.sxHeight))   ? os2.sxHeight*fu   : meas().x;
+      if(fin(asc) && fin(desc) && fin(cap) && fin(xh)) return {cap:cap, x:xh, asc:asc, desc:desc};
+    } else if(isGoogle(M.face) && window.opentype){
+      // TTF not cached yet — fetch, then re-render so the rules upgrade to (1)
+      OTF.load(FACE_NAMES[M.face], owt).then(function(f){
+        if(f && (M.guides==='ruled' || M.guides==='hand')) renderGuides();
+      });
+    }
+
+    var m=meas();
+    if(fin(m.cap) && fin(m.x) && fin(m.asc) && fin(m.desc)) return m;
+
+    return {cap:px*0.72, x:px*0.50, asc:px*0.95, desc:px*0.22};   // loading fallback
+  }
+  function renderGuides(px){
+    var svg=$('#guideSvg'); if(!svg) return;
+    var stage=svg.parentNode, W=stage.clientWidth, H=stage.clientHeight;
+    if(!W||!H){ svg.innerHTML=''; return; }
+    svg.setAttribute('viewBox','0 0 '+W+' '+H);
+    var g=M.guides, parts=[];
+    if(g==='none'){ svg.innerHTML=''; return; }
+
+    var ax=12, ay=9;                                    // frame inset
+    var accent='rgba(78,158,225,.30)';
+    var mid='rgba(78,158,225,.40)';
+    var faint='rgba(255,255,255,.11)';
+    px=px||parseFloat($('#specText').style.fontSize)||34;
+    var lines=(M.text||' ').split('\n');
+    var bls=specBaselines(px, lines.length, H);
+
+    function frame(){ parts.push('<rect x="'+ax+'" y="'+ay+'" width="'+f1(W-2*ax)+'" height="'+f1(H-2*ay)+'" rx="3" fill="none" stroke="'+accent+'" stroke-width="1" stroke-dasharray="4 3"/>'); }
+    function hline(y,color,dash){ parts.push('<line x1="'+ax+'" y1="'+f1(y)+'" x2="'+f1(W-ax)+'" y2="'+f1(y)+'" stroke="'+color+'" stroke-width="1"'+(dash?' stroke-dasharray="'+dash+'"':'')+'/>'); }
+
+    switch(g){
+      case 'frame':
+        frame(); break;
+      case 'center':
+        frame();
+        parts.push('<line x1="'+f1(W/2)+'" y1="'+ay+'" x2="'+f1(W/2)+'" y2="'+f1(H-ay)+'" stroke="'+faint+'" stroke-width="1" stroke-dasharray="3 4"/>');
+        parts.push('<line x1="'+ax+'" y1="'+f1(H/2)+'" x2="'+f1(W-ax)+'" y2="'+f1(H/2)+'" stroke="'+faint+'" stroke-width="1" stroke-dasharray="3 4"/>');
+        break;
+      case 'baseline':
+        bls.forEach(function(b){ hline(b, accent, ''); });
+        break;
+      case 'ruled': {
+        var fmR=specFontMetrics(px);
+        bls.forEach(function(b){ hline(b-fmR.cap, faint, '4 3'); hline(b, accent, ''); });
+        break;
+      }
+      case 'hand': {
+        var fmH=specFontMetrics(px);
+        bls.forEach(function(b){
+          hline(b-fmH.asc,  faint, '4 4');   // ascender
+          hline(b-fmH.cap,  faint, '2 3');   // cap height
+          hline(b-fmH.x,    mid,   '6 4');   // x-height / midline
+          hline(b,          accent,'');      // baseline (solid)
+          hline(b+fmH.desc, faint, '4 4');   // descender
+        });
+        break;
+      }
+      case 'dots':
+        var sp=12, dp=[];
+        for(var y=ay+sp/2; y<H-ay+0.5; y+=sp)
+          for(var x=ax+sp/2; x<W-ax+0.5; x+=sp)
+            dp.push('<circle cx="'+f1(x)+'" cy="'+f1(y)+'" r="0.9" fill="'+faint+'"/>');
+        parts.push(dp.join(''));
+        break;
+    }
+    svg.innerHTML=parts.join('');
+  }
+
+  /* ===================================================================
+     OUTLINE / NODE VIEW — a vector-editor style overlay. Strokes the real
+     glyph contour (SVG <text> fill:none stroke) and marks the on-curve
+     extrema nodes + Bézier handles. Node positions come from the browser's
+     own per-glyph ink metrics (canvas measureText actualBoundingBox*), so the
+     anchors land on each letter's true top / bottom / left / right extrema —
+     exactly where on-curve points and horizontal/vertical tangents live.
+     This is a preview approximation (the production editor reads true font
+     outline points); the contour itself is the real letterform.
+     =================================================================== */
+  var _measCanvas=null;
+  function measureCtx(px,fam,fw){
+    _measCanvas=_measCanvas||document.createElement('canvas');
+    var c=_measCanvas.getContext('2d');
+    c.font=fw+' '+px+'px '+fam;
+    return c;
+  }
+  function anchorSq(x,y){ var s=1.9; return '<rect x="'+f1(x-s)+'" y="'+f1(y-s)+'" width="'+(2*s)+'" height="'+(2*s)+'" fill="#101418" stroke="#cfe6ff" stroke-width="0.9"/>'; }
+  function handle(x,y,hx,hy){
+    return '<line x1="'+f1(x)+'" y1="'+f1(y)+'" x2="'+f1(hx)+'" y2="'+f1(hy)+'" stroke="rgba(120,180,235,.6)" stroke-width="0.7"/>'+
+           '<circle cx="'+f1(hx)+'" cy="'+f1(hy)+'" r="1.3" fill="#7fd4ff"/>';
+  }
+  // Show or hide the CSS hollow specimen stroke. In the faithful Outlines view the
+  // traced (kerned, real-geometry) path IS the specimen, so the CSS text — which
+  // the weld hack renders UNKERNED, hence wider — is hidden; otherwise the two
+  // disagree on advance width and drift apart as the size grows. Restored
+  // everywhere else.
+  function specStroke(show){
+    var s=$('#specText');
+    var sw=(show && M.outline) ? Math.min(0.7+(M.weight-1)*0.13,14) : 0;
+    s.style.webkitTextStrokeWidth=sw.toFixed(2)+'px';
+  }
+
+  function renderOutlineView(px){
+    var svg=$('#outlineSvg'); if(!svg) return;
+    var btn=$('#outlineViewToggle'); if(btn) btn.classList.toggle('on', !!M.outlineView);
+    var stage=svg.parentNode, W=stage.clientWidth, H=stage.clientHeight;
+    if(!W||!H){ svg.innerHTML=''; specStroke(true); return; }
+    px=px||parseFloat($('#specText').style.fontSize)||34;
+    svg.setAttribute('viewBox','0 0 '+W+' '+H);
+    svg.style.transform=$('#specText').style.transform;   // track scale/rotate/offset
+
+    var txt=M.text||' '; if(M.caps) txt=txt.toUpperCase();
+    var owt={Regular:400,Medium:500,Semibold:600,Bold:800}[M.style]||400;
+    var filled  = M.fillEnabled && isGoogle(M.face);
+    var hollow  = M.outline && !filled;
+    var editing = (document.activeElement===$('#specText'));
+
+    // FAITHFUL — the real renderer's geometry. Trace the glyph outlines (opentype),
+    // weld overlaps when Merge Overlaps is on, and stroke thin centrelines: clean
+    // junctions, NO -webkit-text-stroke self-overlap in R/A. This is the DEFAULT
+    // specimen for Google outline faces (it replaces the CSS stroke), NOT gated by
+    // the Outlines toggle — the toggle only LAYERS real on/off-curve nodes + Bézier
+    // handles on top. Falls back to the CSS stroke for built-ins, while the TTF
+    // downloads, when filled, or under jitter (CSS owns the hand-wobble + caret).
+    // Trace the real contours for hollow OR filled Google faces: when fill is on
+    // the outline must come from the SAME rings the fill clip uses (renderFillLines)
+    // or the CSS stroke would drift off the fill. The contour stroke itself is only
+    // drawn when Outline is enabled; nodes still layer on via the Outlines toggle.
+    var faithful = (hollow || filled) && !editing && M.jitter<=0.05 && isGoogle(M.face) && window.opentype;
+    var font = faithful ? OTF.get(FACE_NAMES[M.face], owt) : null;
+    if(faithful && !font){
+      OTF.load(FACE_NAMES[M.face], owt).then(function(f){ if(f) renderOutlineView(px); });
+    }
+
+    if(font){
+      var laid=traceContours(font, txt, px, M.tracking*0.9, M.leading, M.align, W, H);
+      var rings=laid.contours;
+      if(M.merge){ var welded=weldContours(laid.contours); if(welded&&welded.length) rings=welded; }
+      var sw=Math.min(0.7+(M.weight-1)*0.13,14);   // match the specimen outline weight
+      // contour stroke only when Outline is on; when fill is on but outline off,
+      // the glyph shows fill alone (nodes may still layer via the Outlines toggle).
+      var body = M.outline ? '<path d="'+ringsToD(rings)+'" fill="none" stroke="#f1f1f1" stroke-width="'+f1(sw)+'" stroke-linejoin="round" stroke-linecap="round"/>' : '';
+      if(M.outlineView){   // inspection layer — real nodes + Bézier handles
+        var hLines='', anchors='';
+        laid.nodes.forEach(function(n){
+          if(n.in)  hLines+=handle(n.x,n.y,n.in.x,n.in.y);
+          if(n.out) hLines+=handle(n.x,n.y,n.out.x,n.out.y);
+          anchors+=anchorSq(n.x,n.y);
+        });
+        body+=hLines+anchors;
+      }
+      svg.innerHTML=body;
+      specStroke(false);   // the traced contour IS the specimen; hide the CSS stroke
+      return;
+    }
+
+    // FALLBACK — built-ins / filled / loading / jitter: the CSS specimen is the
+    // reference, so keep its stroke. Only overlay anything when the Outlines toggle
+    // is on, and only an SVG-text contour (no fabricated bbox handles).
+    specStroke(true);
+    if(!M.outlineView){ svg.innerHTML=''; return; }
+    var fam=(isGoogle(M.face)?FACE_CSS[M.face]:"'Space Grotesk',sans-serif").replace(/"/g,"'");
+    var fw={Regular:400,Medium:500,Semibold:600,Bold:800}[M.style]||600;
+    var lines=txt.split('\n');
+    var bls=specBaselines(px, lines.length, H);
+    var tAttr='text-anchor="middle" font-family="'+fam+'" font-size="'+f1(px)+'" font-weight="'+fw+'" letter-spacing="'+(M.tracking*0.9)+'px"';
+    var tspans='';
+    for(var li=0; li<lines.length; li++){
+      tspans+='<tspan x="'+f1(W/2)+'" y="'+f1(bls[li])+'">'+xmlEsc(lines[li]||' ')+'</tspan>';
+    }
+    svg.innerHTML='<text '+tAttr+' fill="none" stroke="rgba(120,180,235,.9)" stroke-width="0.9">'+tspans+'</text>';
+  }
+
+  /* Jitter is now a static per-letter spatial offset (see setSpecText) that
+     mirrors the engine's per-point wobble — no animation loop needed. */
+  var activePage='type';
+
+  /* ===================================================================
+     CONTEXT STRIP + CONDITIONAL LOGIC (R1a, R7)
+     =================================================================== */
+  function updateContext(){
+    var g=isGoogle(M.face);
+    $('#ctxFace').textContent=FACE_NAMES[M.face]||M.face;
+    var chip=$('#ctxChip'), chipTxt=$('#ctxChipTxt');
+    if(g){ chip.className='chip outline'; chipTxt.textContent='Outline face'; }
+    else { chip.className='chip stroke'; chipTxt.textContent='Stroke face'; }
+
+    // FILL tab gating
+    var fillTab=$('#tabFill');
+    fillTab.classList.toggle('disabled', !g);
+    fillTab.setAttribute('aria-disabled', g?'false':'true');
+    $('#fillReason').style.display = g ? 'none':'flex';
+    $('#fillEnabledArea').classList.toggle('disabled-area', !g);
+
+    // bounce off the Fill tab if it is the active surface and now disabled
+    if(!g && activePage==='fill'){ selectTab('type'); }
+
+    // Google-only stroke controls
+    $('#googleOnlyStroke').style.display = g ? 'block':'none';
+
+    // OpenType lock note + greying for built-in faces
+    $('#otLockNote').style.display = g ? 'none':'inline';
+    $$('#otRow .ot-btn').forEach(function(b,i){
+      var lock = (!g && i>1);
+      b.classList.toggle('locked', lock);
+      b.setAttribute('aria-disabled', lock?'true':'false');
+    });
+  }
+
+  function updateFitSwap(){
+    $('#fitView').style.display = M.fitToFrame ? 'block':'none';
+    $('#sizeView').style.display = M.fitToFrame ? 'none':'block';
+    $('#fitSub').textContent = M.fitToFrame ? 'ratio mode':'absolute mode';
+  }
+  function updateThickReveal(){
+    $('#thickReveal').classList.toggle('open', M.outline && M.weight>1);
+    $('#outlineBody').style.display = M.outline ? 'block':'none';
+  }
+  function updateMergeReveal(){
+    // Merge wins: a welded outline is straight polygons, so the Bézier/Smoothness
+    // controls only surface when merge is off (mirrors the production showIf).
+    $('#bezierSmoothBlock').style.display = M.merge ? 'none':'block';
+  }
+  function updateFillReveal(){
+    $('#fillReveal').classList.toggle('open', M.fillEnabled && isGoogle(M.face));
+  }
+  function updateFillInsetReveal(){
+    $('#fillInsetReveal').classList.toggle('open', M.fillInsetOn);
+  }
+
+  /* ---------- toggles ---------- */
+  function bindToggle(id, key, after){
+    var el=$('#'+id);
+    function flip(){
+      var on=el.dataset.state==='1'; on=!on;
+      el.dataset.state=on?'1':'0';
+      el.classList.toggle('on',on);
+      el.setAttribute('aria-checked', on?'true':'false');
+      M[key]=on;
+      if(after)after();
+      onModelChange(key);
+    }
+    el.addEventListener('click',flip);
+    el.addEventListener('keydown',function(e){
+      if(e.key===' '||e.key==='Enter'){e.preventDefault();flip();}
+    });
+  }
+  bindToggle('fitToggle','fitToFrame',updateFitSwap);
+  bindToggle('outlineToggle','outline',updateThickReveal);
+  bindToggle('mergeToggle','merge',updateMergeReveal);
+  bindToggle('bezierToggle','bezier');
+  bindToggle('curvesToggle','curves');
+  bindToggle('fillToggle','fillEnabled',updateFillReveal);
+  bindToggle('fillInsetToggle','fillInsetOn',updateFillInsetReveal);
+
+  /* ---------- fill offset XY pad (circular) ---------- */
+  (function(){
+    var pad=$('#fillOffsetPad'), knob=$('#fillOffsetKnob');
+    if(!pad) return;
+    function refresh(){
+      knob.style.left=(50 + (M.fillOffX||0)*50)+'%';
+      knob.style.top =(50 + (M.fillOffY||0)*50)+'%';
+      var centred = !M.fillOffX && !M.fillOffY;
+      pad.classList.toggle('off', centred);
+      pad.setAttribute('aria-valuetext', centred ? 'centred'
+        : ((M.fillOffX*lastFillExtentMm.x).toFixed(1)+' by '+(M.fillOffY*lastFillExtentMm.y).toFixed(1)+' mm'));
+      updateFillOffsetReadout();
+    }
+    function apply(nx,ny){
+      var mag=Math.hypot(nx,ny);
+      if(mag>1){ nx/=mag; ny/=mag; }          // clamp the knob inside the circle
+      M.fillOffX=Math.round(nx*1000)/1000;
+      M.fillOffY=Math.round(ny*1000)/1000;
+      refresh();
+      renderSpecimen({skipText:true});
+    }
+    function fromPoint(cx,cy){
+      var r=pad.getBoundingClientRect();
+      apply(((cx-r.left)/r.width-0.5)*2, ((cy-r.top)/r.height-0.5)*2);
+    }
+    pad.addEventListener('pointerdown',function(e){
+      e.preventDefault();
+      try{ pad.setPointerCapture(e.pointerId); }catch(_){}
+      fromPoint(e.clientX,e.clientY);
+      function mv(ev){ fromPoint(ev.clientX,ev.clientY); }
+      function up(){ pad.removeEventListener('pointermove',mv); pad.removeEventListener('pointerup',up); pad.removeEventListener('pointercancel',up); }
+      pad.addEventListener('pointermove',mv);
+      pad.addEventListener('pointerup',up);
+      pad.addEventListener('pointercancel',up);
+    });
+    pad.addEventListener('dblclick',function(){ apply(0,0); });
+    pad.addEventListener('keydown',function(e){
+      var s=e.shiftKey?0.2:0.05, hit=true;
+      if(e.key==='ArrowLeft') apply(M.fillOffX-s, M.fillOffY);
+      else if(e.key==='ArrowRight') apply(M.fillOffX+s, M.fillOffY);
+      else if(e.key==='ArrowUp') apply(M.fillOffX, M.fillOffY-s);
+      else if(e.key==='ArrowDown') apply(M.fillOffX, M.fillOffY+s);
+      else hit=false;
+      if(hit) e.preventDefault();
+    });
+    refresh();
+    window.__fillPadRefresh=refresh;
+  })();
+
+  /* ===================================================================
+     FONT PICKER — custom dropdown, each name rendered in its own face,
+     lazy font loading, search-any-Google-Font, persistent favorites /
+     recents / user-added fonts (localStorage).
+     =================================================================== */
+  var FP={
+    favs:lsGet('vectura_font_favs',[]),
+    recent:lsGet('vectura_font_recent',[]),
+    custom:lsGet('vectura_font_custom',[])   // array of font names
+  };
+  function lsGet(k,def){try{var v=JSON.parse(localStorage.getItem(k));return v?v:def;}catch(_){return def;}}
+  function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(_){}}
+
+  // register any previously user-added fonts so they reappear this session
+  var CUSTOM_VALUES=[];
+  FP.custom.forEach(function(n){ CUSTOM_VALUES.push(registerGoogle(n,"s")); });
+
+  // fonts already present in the document <head> never need re-injection
+  var fontLoaded={Inter:1,"Space Grotesk":1,"JetBrains Mono":1,Pacifico:1};
+  function loadFont(value){
+    if(!isGoogle(value)) return;
+    var name=FACE_NAMES[value];
+    if(!name||fontLoaded[name]) return;
+    fontLoaded[name]=1;
+    var l=document.createElement('link');
+    l.rel='stylesheet';
+    l.href='https://fonts.googleapis.com/css2?family='+name.replace(/ /g,'+')+'&display=swap';
+    document.head.appendChild(l);
+  }
+
+  // build the popover shell once, appended to <body> to escape panel overflow
+  var pop=document.createElement('div');
+  pop.className='fp-pop'; pop.setAttribute('role','listbox'); pop.setAttribute('aria-label','Font face');
+  pop.innerHTML=
+    '<div class="fp-search">'+
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>'+
+      '<input type="text" id="fpSearch" placeholder="Search name or tag (serif, mono, variable…)" spellcheck="false" autocomplete="off" aria-label="Search fonts">'+
+    '</div>'+
+    '<div class="fp-tags" id="fpTags" role="group" aria-label="Filter fonts by tag"></div>'+
+    '<div class="fp-list" id="fpList"></div>';
+  document.body.appendChild(pop);
+  var trigger=$('#fpTrigger'), fpName=$('#fpName'), fpTagMini=$('#fpTagMini');
+  var fpSearch=$('#fpSearch',pop), fpList=$('#fpList',pop), fpTags=$('#fpTags',pop);
+
+  // ---- tag filter chips ----
+  var activeTags=[];
+  FP_CHIPS.forEach(function(c){
+    var b=document.createElement('button');
+    b.type='button'; b.className='fp-chip'; b.dataset.tag=c.tag; b.textContent=c.label;
+    b.setAttribute('aria-pressed','false');
+    if(c.title) b.title=c.title;
+    b.addEventListener('click',function(){
+      var i=activeTags.indexOf(c.tag), on=i<0;
+      if(on) activeTags.push(c.tag); else activeTags.splice(i,1);
+      b.classList.toggle('on',on);
+      b.setAttribute('aria-pressed', on?'true':'false');
+      rebuild();
+    });
+    fpTags.appendChild(b);
+  });
+  function clearTags(){
+    activeTags=[];
+    $$('.fp-chip',fpTags).forEach(function(b){ b.classList.remove('on'); b.setAttribute('aria-pressed','false'); });
+  }
+  function passTags(value){
+    if(!activeTags.length) return true;
+    var tags=FACE_TAGS[value]||[];
+    var styleSel=activeTags.filter(function(t){return FP_STYLE_TAGS[t];});
+    var featSel=activeTags.filter(function(t){return FP_FEAT_TAGS[t];});
+    var styleOk=!styleSel.length || styleSel.some(function(t){return tags.indexOf(t)>=0;});
+    var featOk=featSel.every(function(t){return tags.indexOf(t)>=0;});
+    return styleOk && featOk;
+  }
+
+  // lazily load each font as its row scrolls into view
+  var io=null;
+  try{
+    io=new IntersectionObserver(function(es){
+      es.forEach(function(en){ if(en.isIntersecting){ loadFont(en.target.dataset.value); io.unobserve(en.target); } });
+    },{root:fpList,rootMargin:'120px'});
+  }catch(_){}
+
+  function tagFor(value){
+    if(BUILTIN_FACES.indexOf(value)>=0) return 'stroke';
+    return CAT_NAME[FACE_CAT[value]]||'';
+  }
+  function makeOption(value){
+    var row=document.createElement('div');
+    row.className='fp-opt'+(value===M.face?' sel':'');
+    row.dataset.value=value;
+    row.setAttribute('role','option');
+    row.setAttribute('aria-selected', value===M.face?'true':'false');
+
+    var fav=FP.favs.indexOf(value)>=0;
+    var star=document.createElement('button');
+    star.type='button'; star.className='fp-star'+(fav?' on':'');
+    star.title=fav?'Unfavorite':'Favorite';
+    star.setAttribute('aria-label', (fav?'Unfavorite ':'Favorite ')+FACE_NAMES[value]);
+    star.innerHTML='<svg viewBox="0 0 24 24" fill="'+(fav?'currentColor':'none')+'" stroke="currentColor" stroke-width="1.6"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.9 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"/></svg>';
+    star.addEventListener('click',function(ev){
+      ev.stopPropagation();
+      var i=FP.favs.indexOf(value);
+      if(i>=0) FP.favs.splice(i,1); else FP.favs.push(value);
+      lsSet('vectura_font_favs',FP.favs);
+      rebuild();
+    });
+
+    var nm=document.createElement('span');
+    nm.className='fp-opt-name'; nm.textContent=FACE_NAMES[value];
+    nm.style.fontFamily=FACE_CSS[value];
+
+    var tg=document.createElement('span');
+    tg.className='fp-tag'; tg.textContent=tagFor(value);
+
+    row.appendChild(star); row.appendChild(nm); row.appendChild(tg);
+    row.addEventListener('click',function(){ chooseFace(value); });
+
+    if(isGoogle(value)){ if(io) io.observe(row); else loadFont(value); }
+    return row;
+  }
+  function addSection(title){
+    var h=document.createElement('div'); h.className='fp-sec'; h.textContent=title; fpList.appendChild(h);
+  }
+  function addOptions(values){
+    values.forEach(function(v){ fpList.appendChild(makeOption(v)); });
+  }
+  function addHint(text){
+    var h=document.createElement('div'); h.className='fp-empty'; h.textContent=text; fpList.appendChild(h);
+  }
+
+  var POPULAR_N=60;   // how many of the popularity-ordered catalog show by default
+  var MATCH_CAP=200;  // cap rendered search matches so the DOM stays bounded
+
+  function rebuild(){
+    var q=(fpSearch.value||'').trim().toLowerCase();
+    var tagsActive=activeTags.length>0;
+    fpList.innerHTML='';
+
+    if(q || tagsActive){
+      var all=BUILTIN_FACES.concat(TOP_VALUES).concat(CUSTOM_VALUES);
+      var seen={}, hits=[];
+      all.forEach(function(v){
+        if(seen[v]) return;
+        var nameOk = !q || FACE_NAMES[v].toLowerCase().indexOf(q)>=0
+                     || (FACE_TAGS[v]||[]).some(function(t){return t.indexOf(q)>=0;});
+        if(nameOk && passTags(v)){ seen[v]=1; hits.push(v); }
+      });
+      if(hits.length){
+        addOptions(hits.slice(0,MATCH_CAP));
+        if(hits.length>MATCH_CAP) addHint('+ '+(hits.length-MATCH_CAP)+' more — refine your search');
+      } else {
+        addHint(tagsActive ? 'No fonts match these filters.' : 'No matches in the catalog.');
+      }
+
+      // offer to pull any Google Font by typed name (only when searching by name)
+      if(q){
+        var exact=all.some(function(v){ return FACE_NAMES[v].toLowerCase()===q; });
+        if(!exact){
+          var typed=fpSearch.value.trim().replace(/\s+/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});
+          var load=document.createElement('div');
+          load.className='fp-load';
+          load.innerHTML='<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Load <b>'+typed+'</b> from Google Fonts</span>';
+          load.addEventListener('click',function(){ addCustomFont(typed); });
+          fpList.appendChild(load);
+        }
+      }
+      return;
+    }
+
+    var favVals=FP.favs.filter(function(v){ return FACE_NAMES[v]; });
+    if(favVals.length){ addSection('★ Favorites'); addOptions(favVals); }
+
+    var recentVals=FP.recent.filter(function(v){ return FACE_NAMES[v] && favVals.indexOf(v)<0; });
+    if(recentVals.length){ addSection('Recent'); addOptions(recentVals); }
+
+    addSection('Built-in single-stroke');
+    addOptions(BUILTIN_FACES);
+
+    if(CUSTOM_VALUES.length){ addSection('Your added fonts'); addOptions(CUSTOM_VALUES.slice().reverse()); }
+
+    addSection('Google Fonts · Popular');
+    addOptions(TOP_VALUES.slice(0,POPULAR_N));
+    if(TOP_VALUES.length>POPULAR_N){
+      addHint('Search to reach all '+TOP_VALUES.length.toLocaleString()+' Google Fonts…');
+    }
+  }
+
+  function addCustomFont(name){
+    name=(name||'').trim();
+    if(!name) return;
+    var v=gSlug(name);
+    if(CUSTOM_VALUES.indexOf(v)<0 && TOP_VALUES.indexOf(v)<0 && BUILTIN_FACES.indexOf(v)<0){
+      registerGoogle(name,'s');
+      CUSTOM_VALUES.push(v);
+      FP.custom.push(name);
+      lsSet('vectura_font_custom',FP.custom);
+    }
+    loadFont(v);
+    chooseFace(v);
+  }
+
+  function syncTrigger(){
+    fpName.textContent=FACE_NAMES[M.face]||M.face;
+    fpName.style.fontFamily=FACE_CSS[M.face]||'inherit';
+    fpTagMini.textContent=tagFor(M.face);
+  }
+  function chooseFace(value){
+    M.face=value;
+    loadFont(value);
+    FP.recent=[value].concat(FP.recent.filter(function(v){ return v!==value; })).slice(0,8);
+    lsSet('vectura_font_recent',FP.recent);
+    syncTrigger();
+    closePop();
+    onModelChange('face');
+  }
+
+  /* ---------- open / close / position ---------- */
+  var popOpen=false;
+  function positionPop(){
+    var r=trigger.getBoundingClientRect();
+    var w=Math.max(r.width,260);
+    pop.style.width=w+'px';
+    pop.style.left=Math.min(r.left, window.innerWidth-w-8)+'px';
+    var below=window.innerHeight-r.bottom;
+    if(below<240 && r.top>below){
+      pop.style.top=''; pop.style.bottom=(window.innerHeight-r.top+6)+'px';
+    }else{
+      pop.style.bottom=''; pop.style.top=(r.bottom+6)+'px';
+    }
+  }
+  function openPop(){
+    if(popOpen) return; popOpen=true;
+    fpSearch.value='';
+    clearTags();
+    rebuild();
+    positionPop();
+    pop.classList.add('open');
+    trigger.setAttribute('aria-expanded','true');
+    loadFont(M.face);
+    // eager-load favorites + recents so their names render immediately
+    FP.favs.concat(FP.recent).forEach(loadFont);
+    setTimeout(function(){ fpSearch.focus(); },20);
+  }
+  function closePop(){
+    if(!popOpen) return; popOpen=false;
+    pop.classList.remove('open');
+    trigger.setAttribute('aria-expanded','false');
+  }
+  trigger.addEventListener('click',function(){ popOpen?closePop():openPop(); });
+  fpSearch.addEventListener('input',rebuild);
+
+  // keyboard navigation across visible rows
+  function activeRows(){ return $$('.fp-opt',fpList); }
+  function moveActive(dir){
+    var rows=activeRows(); if(!rows.length) return;
+    var idx=rows.findIndex(function(r){ return r.classList.contains('active'); });
+    rows.forEach(function(r){ r.classList.remove('active'); });
+    idx=(idx+dir+rows.length)%rows.length;
+    rows[idx].classList.add('active');
+    rows[idx].scrollIntoView({block:'nearest'});
+  }
+  fpSearch.addEventListener('keydown',function(e){
+    if(e.key==='ArrowDown'){ e.preventDefault(); moveActive(1); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); moveActive(-1); }
+    else if(e.key==='Enter'){
+      e.preventDefault();
+      var a=$('.fp-opt.active',fpList);
+      if(a){ chooseFace(a.dataset.value); }
+      else {
+        var ld=$('.fp-load',fpList); if(ld) ld.click();
+        else { var first=$('.fp-opt',fpList); if(first) chooseFace(first.dataset.value); }
+      }
+    }
+    else if(e.key==='Escape'){ e.preventDefault(); closePop(); trigger.focus(); }
+  });
+  document.addEventListener('pointerdown',function(e){
+    if(popOpen && !pop.contains(e.target) && !trigger.contains(e.target)) closePop();
+  });
+  window.addEventListener('scroll',function(){ if(popOpen) positionPop(); },true);
+  window.addEventListener('resize',function(){ if(popOpen) positionPop(); });
+
+  syncTrigger();
+
+  /* ---------- selects ---------- */
+  $('#styleSelect').addEventListener('change',function(e){ M.style=e.target.value; onModelChange('style'); });
+  $('#fillType').addEventListener('change',function(e){ M.fillType=e.target.value; renderSpecimen({skipText:true}); });
+
+  /* ---------- specimen guide picker (frame / baseline / handwriting / dots) ---------- */
+  (function(){
+    var sel=$('#guidePick');
+    sel.value=M.guides;
+    sel.addEventListener('change',function(e){ M.guides=e.target.value; renderGuides(); });
+  })();
+
+  /* ---------- outline / node-view toggle (lives on the specimen preview) ---------- */
+  (function(){
+    var btn=$('#outlineViewToggle');
+    btn.addEventListener('click',function(){
+      M.outlineView=!M.outlineView;
+      btn.classList.toggle('on',M.outlineView);
+      btn.setAttribute('aria-pressed', M.outlineView?'true':'false');
+      $('#outlineViewToggleTxt').textContent = M.outlineView ? 'Hide Outlines' : 'Show Outlines';
+      renderSpecimen({skipText:true});
+    });
+  })();
+
+  /* ---------- reveal-fill-lines toggle (lives on the specimen preview) ---------- */
+  (function(){
+    var btn=$('#fillLineToggle');
+    btn.addEventListener('click',function(){
+      fillLinesShown=!fillLinesShown;
+      btn.classList.toggle('on',fillLinesShown);
+      btn.setAttribute('aria-pressed', fillLinesShown?'true':'false');
+      $('#fillLineToggleTxt').textContent = fillLinesShown ? 'Hide fill lines' : 'Show fill lines';
+      renderSpecimen({skipText:true});
+    });
+  })();
+
+  /* ---------- align row ---------- */
+  $$('#align7 .glyph-btn').forEach(function(b){
+    b.addEventListener('click',function(){
+      $$('#align7 .glyph-btn').forEach(function(x){x.classList.remove('active');x.setAttribute('aria-pressed','false');});
+      b.classList.add('active'); b.setAttribute('aria-pressed','true');
+      var a=b.dataset.align;
+      M.align = (a==='left'||a==='center'||a==='right')?a:'left';
+      onModelChange('align');
+    });
+  });
+
+  /* ---------- caps / style buttons ---------- */
+  $$('.glyph-btn[data-style]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var on=!b.classList.contains('active');
+      b.classList.toggle('active',on);
+      b.setAttribute('aria-pressed', on?'true':'false');
+      if(b.dataset.style==='caps'){ M.caps=on; onModelChange('caps'); }
+    });
+  });
+
+  /* ---------- segmented: thickening, plot ---------- */
+  $$('#thickSeg button').forEach(function(b){
+    b.addEventListener('click',function(){
+      $$('#thickSeg button').forEach(function(x){x.classList.remove('active');x.setAttribute('aria-pressed','false');});
+      b.classList.add('active'); b.setAttribute('aria-pressed','true'); M.thick=b.dataset.thick;
+    });
+  });
+  $$('#plotSeg button').forEach(function(b){
+    b.addEventListener('click',function(){
+      $$('#plotSeg button').forEach(function(x){x.classList.remove('active');x.setAttribute('aria-pressed','false');});
+      b.classList.add('active'); b.setAttribute('aria-pressed','true'); M.plot=b.dataset.plot;
+      $('#penExplain').querySelector('span').textContent =
+        M.plot==='ltr' ? 'The pen draws left → right so it travels the least.'
+                       : 'Natural order follows the glyph contours — prettier strokes, more pen travel.';
+      resetPen();
+    });
+  });
+
+  /* ---------- OpenType toggles ---------- */
+  $$('#otRow .ot-btn').forEach(function(b){
+    b.addEventListener('click',function(){
+      if(b.classList.contains('locked'))return;
+      var on=!b.classList.contains('active');
+      b.classList.toggle('active',on);
+      b.setAttribute('aria-pressed', on?'true':'false');
+    });
+  });
+
+  /* ---------- checkboxes (role=checkbox buttons) ---------- */
+  $$('.checkrow').forEach(function(r){
+    function toggle(){
+      var on=!r.classList.contains('on');
+      r.classList.toggle('on',on);
+      r.setAttribute('aria-checked', on?'true':'false');
+    }
+    r.addEventListener('click',toggle);
+    r.addEventListener('keydown',function(e){ if(e.key===' '||e.key==='Enter'){e.preventDefault();toggle();} });
+  });
+
+  /* ---------- fill density slider ---------- */
+  (function(){
+    var dens=$('#densSlider');
+    var densDefault=dens.value;   // factory default captured before interaction
+    function applyDens(v){ dens.value=v; M.density=+v; $('#densChip').textContent=v; renderSpecimen({skipText:true}); }
+    dens.addEventListener('input',function(e){ applyDens(e.target.value); });
+    // double-click the slider to reset to default
+    dens.addEventListener('dblclick',function(e){ e.preventDefault(); applyDens(densDefault); });
+  })();
+
+  /* ===================================================================
+     R3 — PEN TRAVEL ANIMATION (rAF, pauses when hidden, restarts on resize)
+     =================================================================== */
+  var penRAF=null;
+  function stopPen(){ if(penRAF){cancelAnimationFrame(penRAF);penRAF=null;} }
+  function resetPen(){
+    stopPen();
+    var track=$('#penTrack'), pen=$('#pen'), trail=$('#penTrail');
+    if(!track || !track.offsetWidth) return;
+    var t0=performance.now();
+    var natural=(M.plot==='natural');
+    function step(now){
+      var w=track.clientWidth-16;                // recompute each frame (resize-safe)
+      var dur=2200;
+      var p=((now-t0)%dur)/dur;
+      var x = natural ? (p + 0.12*Math.sin(p*Math.PI*5))*w : p*w;
+      x=clamp(x,0,w);
+      pen.style.left=(8+x)+'px';
+      pen.style.top = natural ? (2 + 6*Math.sin(p*Math.PI*6))+'px' : '-2px';
+      trail.style.width=x+'px';
+      penRAF=requestAnimationFrame(step);
+    }
+    penRAF=requestAnimationFrame(step);
+  }
+  document.addEventListener('visibilitychange',function(){
+    if(document.hidden){ stopPen(); }
+    else if(activePage==='stroke'){ resetPen(); }
+  });
+  window.addEventListener('resize',function(){ if(activePage==='stroke') resetPen(); });
+
+  /* ===================================================================
+     inline-editable specimen — the single text source
+     ----------------------------------------------------------------
+     The standalone Text input was removed; the specimen IS the text field.
+     Typing directly in it writes back to M.text (the single source of
+     truth). innerText is used (not textContent) so contenteditable line
+     breaks read back as real "\n".
+     =================================================================== */
+  var sp=$('#specText');
+  function readSpec(){ return sp.innerText.replace(/\u00a0/g,' ').replace(/\n$/,''); }
+  function caretToEnd(el){
+    var r=document.createRange(); r.selectNodeContents(el); r.collapse(false);
+    var s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+  sp.addEventListener('focus',function(){
+    // Drop jitter spans to a clean plain-text surface for editing.
+    if(M.jitter>0.05){ setSpecText(sp, M.text || ' ', 0); caretToEnd(sp); }
+    // The faithful trace hides the CSS text; re-render so editing restores a
+    // visible caret/text surface (renderOutlineView sees editing=true → CSS shown).
+    renderSpecimen({skipText:true});
+  });
+  sp.addEventListener('input',function(){
+    M.text = readSpec();
+    renderSpecimen({skipText:true}); // refresh caption/styles, keep caret + text
+  });
+  sp.addEventListener('blur',function(){
+    M.text = readSpec();
+    renderSpecimen(); // full render re-applies jitter
+  });
+  // Enter inserts a newline rather than submitting anything; let the browser
+  // handle it, but normalize on the next tick so the model stays in sync.
+  sp.addEventListener('keyup',function(e){ if(e.key==='Enter'){ M.text=readSpec(); } });
+
+  /* ===================================================================
+     central change dispatcher
+     =================================================================== */
+  function onModelChange(key){
+    if(key==='face'){ updateContext(); updateThickReveal(); updateFillReveal(); }
+    if(key==='fitToFrame'){ updateFitSwap(); }
+    if(key==='weight'||key==='outline'){ updateThickReveal(); }
+    if(key==='fillEnabled'){ updateFillReveal(); }
+    renderSpecimen();
+  }
+
+  /* ---------- init ---------- */
+  updateContext();
+  updateFitSwap();
+  updateThickReveal();
+  updateMergeReveal();
+  updateFillReveal();
+  updateFillInsetReveal();
+  renderSpecimen();
+  requestAnimationFrame(function(){ if(activePage==='stroke') resetPen(); });
+})();
+</script>
+</body>
+</html>

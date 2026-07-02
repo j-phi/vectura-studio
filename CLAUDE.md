@@ -16,7 +16,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Before staging, run `git status` and explicitly list files to be included; never `git add -A` if there is unrelated WIP
 - If unrelated WIP files are present, stop and ask the user before proceeding
-- Always commit AND push in the same step unless told otherwise; do not refuse to push to main if the user has confirmed it is safe
+- Stage + commit when work is ready, then **stop**: print the commit hash + one-line summary. Do **not** `git push` until the user explicitly says to ("push" / "ship it"). The same applies to opening PRs, merging, and tagging/releases — those are publishing operations that require explicit approval.
+
+## Concurrent Development & Working-Tree Safety
+
+Simultaneous development paths (parallel agents, multiple worktrees, the user editing `main` while agents run) have repeatedly collided — the worst case wiped uncommitted work when a `git reset` hit a tree holding two independent efforts at once. These rules are non-negotiable and are backed by a PreToolUse guard hook in `.claude/settings.json`.
+
+**Checkpoint discipline**
+
+- One active workstream per worktree. Before starting a *second, unrelated* effort in a worktree that already has uncommitted changes, checkpoint first — commit it to a branch, or `git stash push -m "<slug>"` and pin it (`git tag recover-<slug> $(git stash create)`) so it survives a reset. **Never layer a new effort's edits on top of another effort's uncommitted edits in the same tracked files.**
+- Never let the main worktree accumulate uncommitted changes spanning more than one concern. If `git status` shows unrelated prior-effort WIP, commit/stash it or ask the user before making new edits.
+
+**Destructive git ops — checkpoint + explicit approval required**
+
+- Never run `git reset` (any mode), `git checkout -- <tracked>` / `git restore`, `git clean`, `git stash drop|clear`, `git rebase`, or `git push --force` while the tree is dirty, unless you have (a) created a recovery point (`git tag recover-<slug> $(git stash create)` or a WIP commit) **and** (b) the user explicitly named/approved that operation. Treat the safety classifier's block on unnamed `reset --hard` as a hard rule, not a hurdle to route around.
+- Before any reset/rebase/merge/checkout, run `git status` + `git stash list` in the *current* worktree — never act on the session-start snapshot (it goes stale).
+
+**Parallel agents & worktrees**
+
+- Parallel implementers edit **disjoint file sets** in **isolated worktrees** — never two implementers in one worktree, and never in the main worktree while the user may be editing it. Confirm disjointness in the scout phase; if a collision is found mid-work, stop and re-partition rather than both committing the shared file.
+- Sync a worktree branch to main via rebase/merge — **never `git reset --hard main`**. Get approval.
+- Treat `graphify-out/*` as generated: in any conflict take either side and regenerate; disable the graphify post-checkout/pre-commit hooks during a rebase.
+
+**Recovery-first**
+
+- If work seems lost, check `git reflog`, `git stash list`, and `git fsck --lost-found` before redoing it; pin recovered work as a tag immediately.
+- Untracked files surviving an op do **not** mean tracked edits survived — verify tracked files explicitly.
 
 ## CSS & Layout Rules
 

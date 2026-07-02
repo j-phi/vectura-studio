@@ -12,6 +12,7 @@ graphify-out/.graphify_cached.json
 graphify-out/.graphify_old.json
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+.claude/active-sessions/
 /mockups/
 /screenshots/
 /tmp-screens/

@@ -288,6 +288,31 @@ describe('Text synthesis features (Unit B — text.js)', () => {
       expect(zero.x - base.x).toBeCloseTo(0, 6);
       expect(zero.y - base.y).toBeCloseTo(0, 6);
     });
+
+    // Hatch lines must run PARALLEL to the AngleDial needle. The dial convention
+    // (components/angle-dial.js) is: 0° points up, positive rotates clockwise, so
+    // the needle's screen-space direction is (sin d, -cos d). The bug drew the
+    // fill perpendicular to that — a "/" (40°) selection rendered as "\".
+    // Verified per dial value: cross-product of the segment direction with the
+    // needle must be ≈0 (parallel), not ≈±1 (perpendicular).
+    test.each([0, 40, 90, 135])('hatch fill lines follow the dial needle at %i°', (d) => {
+      const rad = (d * Math.PI) / 180;
+      const needle = { x: Math.sin(rad), y: -Math.cos(rad) };
+      const segs = fillsOf(fillGen({ fillAngle: d, fillDensity: 6 }))
+        .filter((s) => s.length >= 2);
+      expect(segs.length).toBeGreaterThan(0);
+      let checked = 0;
+      for (const s of segs) {
+        const dx = s[s.length - 1].x - s[0].x;
+        const dy = s[s.length - 1].y - s[0].y;
+        const len = Math.hypot(dx, dy);
+        if (len < 1) continue; // skip degenerate corner clips
+        const cross = (dx / len) * needle.y - (dy / len) * needle.x;
+        expect(Math.abs(cross)).toBeLessThan(0.05);
+        checked++;
+      }
+      expect(checked).toBeGreaterThan(0);
+    });
   });
 
   // ── fill clips to the bézier outline, not the coarse contour ────────────────
@@ -394,8 +419,11 @@ describe('Text synthesis features (Unit B — text.js)', () => {
 
     test('bézier-outline fill differs from the coarse contour fill and reaches nearer the true edge', () => {
       V.WEBFONT_GLYPHS[ID] = makeFont(false);
-      const coarse = fillsOf(gen2({ bezierOutline: false, outlineStroke: false }));
-      const fine = fillsOf(gen2({ bezierOutline: true, jitter: 0, outlineStroke: false }));
+      // fillAngle 90° = horizontal scanlines (the dial-relative remap in text.js
+      // subtracts 90° so 0° draws vertical, parallel to the up-pointing needle).
+      // This test's geometry only needs a consistent hatch orientation.
+      const coarse = fillsOf(gen2({ fillAngle: 90, bezierOutline: false, outlineStroke: false }));
+      const fine = fillsOf(gen2({ fillAngle: 90, bezierOutline: true, jitter: 0, outlineStroke: false }));
       expect(coarse.length).toBeGreaterThan(0);
       expect(fine.length).toBeGreaterThan(0);
       // Before the fix both paths clipped to the same coarse contour → identical.
@@ -465,7 +493,9 @@ describe('Text synthesis features (Unit B — text.js)', () => {
       const out = gen({
         text: 'OO', font: 'google:' + ID, fitToFrame: false, fontSize: 40,
         tracking: -34, mergeOverlaps: false,
-        fillEnabled: true, fillType: 'hatch', fillDensity: 12, fillAngle: 0,
+        // fillAngle 90° = horizontal scanlines (dial-relative remap subtracts 90°);
+        // the two disks weld side-by-side so a horizontal line spans the lens.
+        fillEnabled: true, fillType: 'hatch', fillDensity: 12, fillAngle: 90,
         bezierOutline: true, jitter: 0, outlineStroke: true,
       });
       const rings = outlineRings(out);
@@ -598,6 +628,52 @@ describe('Text synthesis features (Unit B — text.js)', () => {
       // Carved: the hairline ring can't hold fill → empty. Flooded (strict eps 0):
       // dozens of hatch lines across the disc body.
       expect(fills.length).toBeLessThanOrEqual(2);
+    });
+
+    // The COARSE fill path (no bézier anchors: bezierOutline off, jitter, or
+    // small-caps) is flattened at a tolerance that GROWS with size, so its chord
+    // sagitta can exceed a fixed 0.16mm eps at large sizes — a genuine counter then
+    // mis-flips and floods. The eps must scale to laid.flattenTol·scale. Big glyph,
+    // moderately thin wall, straight-edged (misaligned) counter, coarse path.
+    test('a thin counter on the coarse path does not flood at large size', () => {
+      const polyCmds = (cx, cy, r, sides, dir) => {
+        const c = [];
+        for (let i = 0; i <= sides; i += 1) {
+          const t = (dir === 'cw' ? -1 : 1) * ((2 * Math.PI * i) / sides) + 0.13;
+          c.push({ type: i === 0 ? 'M' : 'L', x: cx + r * Math.cos(t), y: cy + r * Math.sin(t) });
+        }
+        c.push({ type: 'Z' });
+        return c;
+      };
+      const RO2 = 0.34; const RI2 = 0.339; // wall ~0.43mm at fontSize 300 (≪ coarse sagitta ~1.7mm)
+      V.WEBFONT_GLYPHS[ID] = {
+        unitsPerEm: 1000, tables: { os2: { sCapHeight: 700 } }, getKerningValue: () => 0,
+        stringToGlyphs: (s) => Array.from(String(s)).map((ch) => ({
+          unicode: ch.charCodeAt(0), advanceWidth: 800,
+          getPath: (x, y, em) => ({ commands: circleCmds(x + em * CXE, y - em * CYE, em * RO2, 'ccw')
+            .concat(polyCmds(x + em * CXE, y - em * CYE, em * RI2, 15, 'cw')) }),
+        })),
+      };
+      const out = gen({
+        text: 'O', font: 'google:' + ID, fitToFrame: false, fontSize: 300, smoothing: 0,
+        fillEnabled: true, fillType: 'hatch', fillDensity: 24, fillAngle: 0,
+        bezierOutline: false, jitter: 0, outlineStroke: true,
+      });
+      const segs = fillsOf(out).filter((s) => s.length >= 2);
+      const pts = flat(segs);
+      expect(pts.length).toBeGreaterThan(0);
+      // Ring centre = centroid of the (symmetric) annulus fill.
+      let sx = 0; let sy = 0; for (const q of pts) { sx += q.x; sy += q.y; }
+      const cx = sx / pts.length; const cy = sy / pts.length;
+      const innerR = (300 / 0.7) * RI2;
+      // Carved: the counter is a hole — no hatch line crosses the centre. Flooded
+      // (fixed-0.16 eps): the disc is solid and lines span the centre.
+      const crossesCentre = segs.some((s) => {
+        const xs = s.map((q) => q.x); const ys = s.map((q) => q.y);
+        return Math.min(...ys) <= cy + innerR * 0.15 && Math.max(...ys) >= cy - innerR * 0.15
+          && Math.min(...xs) <= cx && Math.max(...xs) >= cx;
+      });
+      expect(crossesCentre).toBe(false);
     });
   });
 });

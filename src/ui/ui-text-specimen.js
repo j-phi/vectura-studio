@@ -709,7 +709,11 @@
       const d = clamp(num(p.fillDensity, 14), 1, 100);
       const strokeW = reveal ? 1.05 : 1.7;
       const spacing = strokeW + (1 - (d - 1) / 99) * 15;
-      const geo = buildFillGeometry(p.fillType || 'hatch', W, H, spacing, num(p.fillAngle, 45));
+      // Fill Angle is on the AngleDial (0° up, CW+ → needle dir (sin d, -cos d)).
+      // buildFillGeometry's hatch measures from +x (line dir (cos a, sin a)), so
+      // subtract 90° to draw parallel to the needle — matching text.js's canvas
+      // fill (which applies the same -90° remap before the shared fill engine).
+      const geo = buildFillGeometry(p.fillType || 'hatch', W, H, spacing, num(p.fillAngle, 45) - 90);
 
       const maskId = 'vtpfm' + fcSeq++;
       let regionDef;

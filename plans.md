@@ -37,6 +37,22 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- **v1.2.26 — Built-in text weight optics + fill-angle fix.** Built-in Vectura weights (extra parallel pen
+  passes) are now metered by one pure source, `StrokeFont.weightMetrics(passes, capMM, penW)`:
+  **F-03** widens the per-glyph advance (`extraTrackingMM = passes·penW·0.6`) so heavier stems don't merge, and
+  **F-04** clamps the pen-pass thickness by optical cap size (`min(1+passes, ⌊cap·xHeightFrac/(2·penW)⌋)`) so
+  small text keeps open counters. `text.js` applies both; web faces (real weighted outlines) keep plain
+  tracking. Also fixed the text **Fill Angle** dial drawing perpendicular to the needle — canvas (`text.js`)
+  and specimen (`ui-text-specimen.js`) now subtract 90° before the shared fill engine — and exposed
+  `google-fonts.js` `flattenTol` so coarse-contour glyphs size their winding-canonicalization epsilon in
+  display units. RGR: `tests/unit/stroke-font-quality.test.js` (29), `tests/integration/text-weight-optical.test.js`,
+  `tests/integration/draw-order-reveal-smooth-tip.test.js`, updated `text-synthesis-features.test.js`.
+- **v1.2.23–1.2.25 — Area Type on the Type tool.** Click-drag with the Type tool creates an Area Type frame
+  (v1.2.23): additive `textMode`/`frameWidth`/`frameHeight` layer model, an `areaWrap()` word-wrapper keeping
+  `sourceIndex` exact across wrap boundaries, fully editable wrapped text. Corner-handle **resize-reflow** re-wraps
+  at constant point size (no glyph scale) with a red "+" overset out-port (v1.2.24). A **point↔area conversion
+  dot** (hollow ring / filled dot) toggles the mode in one click (v1.2.25). Web-font area editing deferred
+  (ligature `sourceIndex` degrades). Verified live in-browser; suites green.
 - **v1.2.22 — Export plot-order fixes.** (1) The Export SVG "Line Sort Print Order" gear opened an empty
   settings pane when a Text layer was active (the bespoke Text-panel early return in `buildControls()` skipped
   the optimization-panel render, and the modal's fallback-layer recovery had nothing to promote in a Text-only

@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>specimen built-in faithful test</title>
+  <style>
+    body { margin: 0; background: #1a1f26; font: 13px ui-monospace, monospace; color: #9fb4c8; padding: 16px; }
+    .panel { width: 300px; margin: 10px 0 24px; }
+    .cap { color: #5a7characters; margin-bottom: 4px; }
+    .stage { position: relative; width: 300px; height: 96px; background: #0f1318; border: 1px solid #232c36; border-radius: 8px; overflow: hidden; }
+    .spec { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            color: rgba(241,241,241,.14); font-size: 40px; white-space: pre; }
+    svg.ov { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="../src/core/algorithms/stroke-font.js"></script>
+  <script src="../src/ui/ui-text-specimen.js"></script>
+  <script>
+    const V = window.Vectura;
+    function panel(label, params, view) {
+      const wrap = document.createElement('div'); wrap.className = 'panel';
+      const cap = document.createElement('div'); cap.textContent = label; cap.style.marginBottom = '4px';
+      const stage = document.createElement('div'); stage.className = 'stage';
+      const spec = document.createElement('div'); spec.className = 'spec';
+      const guide = document.createElementNS('http://www.w3.org/2000/svg','svg'); guide.setAttribute('class','ov');
+      const fill = document.createElementNS('http://www.w3.org/2000/svg','svg'); fill.setAttribute('class','ov');
+      const outline = document.createElementNS('http://www.w3.org/2000/svg','svg'); outline.setAttribute('class','ov');
+      stage.append(fill, spec, outline, guide);
+      wrap.append(cap, stage); document.getElementById('root').append(wrap);
+      const c = V.UI.TextSpecimen.create({ stage, specText: spec, guideSvg: guide, fillSvg: fill, outlineSvg: outline });
+      c.render({ params }, view || { guides: 'frame' });
+    }
+    const base = { text: 'VECTURA', font: 'wide', fitToFrame: true, fillRatio: 0.9, outlineStroke: true,
+                   outlineThickness: 1, lineHeight: 1.4, align: 'center', tracking: 0 };
+    panel('wide · VECTURA', base);
+    panel('sans · Hamburgefonts', { ...base, font: 'sans', text: 'Hamburgefonts' });
+    panel('italic · Section A-3', { ...base, font: 'italic', text: 'Section A-3' });
+    panel('condensed · multi-line', { ...base, font: 'condensed', text: 'PLAN\nSCALE 1:50' });
+    panel('sans · lowercase', { ...base, font: 'sans', text: 'drawing grid' });
+  </script>
+</body>
+</html>

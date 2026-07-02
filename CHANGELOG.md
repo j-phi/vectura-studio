@@ -4,6 +4,58 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.26 - 2026-07-01
+
+### Changed
+- **Built-in monoline weights are now optically metered.** Heavier built-in Vectura weights draw as extra
+  parallel pen passes; a single pure source (`StrokeFont.weightMetrics(passes, capMM, penW)`) now governs both
+  their **advance** and their **thickness** so stems no longer merge and counters no longer clog:
+  - **F-03 — advance widening.** Heavier weights widen the per-glyph advance (`extraTrackingMM = passes · penW · 0.6`)
+    so the sideways ink spread of the extra passes doesn't run adjacent stems together. Web faces carry real
+    weighted outlines and keep their plain tracking.
+  - **F-04 — optical thickness clamp.** The pen-pass contribution is clamped by optical cap size
+    (`clampedThickness = min(1 + passes, ⌊cap · xHeightFrac / (2·penW)⌋)`), so small text keeps open counters
+    while large caps still get the full weight. Any user `outlineThickness > 1` is preserved additively.
+
+### Fixed
+- **Text fill angle now matches the dial.** The Fill Angle dial (0° up, clockwise-positive) previously drew
+  hatch lines *perpendicular* to the needle because the shared pattern-fill engine measures its angle from the
+  +x axis — a "/" pick rendered "\". Both the canvas fill (`text.js`) and the SVG panel specimen
+  (`ui-text-specimen.js`) now apply a −90° remap so the hatch runs parallel to what the dial shows.
+- **Coarse-contour fill winding epsilon.** `google-fonts.js` layout now exposes its `flattenTol`, so glyphs that
+  fall back to coarse (non-bézier) contours size their winding-canonicalization epsilon in display units
+  correctly instead of using a fixed guess.
+
+## 1.2.25 - 2026-07-01
+
+### Added
+- **Point ↔ Area type conversion widget.** A conversion dot at the right-middle of a selected text layer's
+  bounding box toggles the mode with a single click — a **hollow ring** for point type, a **filled dot** for
+  area type. `point→area` frames the layer at its current natural extent (text stays put, now wrapping);
+  `area→point` unwraps. One pre-change history snapshot per toggle; the layer stays selected throughout
+  (`TextEditController.convertTextMode`, `Renderer.drawTextModeWidget` / `_hitTextModeWidget`).
+
+## 1.2.24 - 2026-07-01
+
+### Added
+- **Area Type frame resize-reflow + overset indicator.** Dragging a corner handle on an area text layer now
+  resizes its **frame** (`params.frameWidth`/`frameHeight`) and re-wraps the text live at constant point size
+  instead of scaling the glyphs (point-type layers keep normal scaling). Undo restores the prior frame via a
+  single first-move snapshot with the release commit suppressed. When laid text overflows the frame, the
+  renderer draws Illustrator's red "+" out-port at the frame's bottom-right (transient `textOverset` flag,
+  never serialized). Overflow threading to a linked frame stays deferred.
+
+## 1.2.23 - 2026-07-01
+
+### Added
+- **Area Type — click-drag frame with word-wrap (on-canvas Type tool).** With the Type tool, a plain click
+  still creates point type; a **click-drag** now creates an Area Type frame the size of the drag (live W/H
+  readout) and text typed into it word-wraps at the frame width at constant point size. Additive layer model
+  (`textMode` `'point'|'area'`, `frameWidth`/`frameHeight` in mm) round-trips through serialization. A new
+  `areaWrap()` word-wrapper (`stroke-font.js`) returns per-line raw-string offsets so `sourceIndex` stays exact
+  across wrap boundaries — wrapped area text is fully editable (caret/selection/insert/delete). Built-in stroke
+  font area text is mutable; web-font area editing stays deferred (ligature `sourceIndex` degrades).
+
 ## 1.2.22 - 2026-06-30
 
 ### Changed

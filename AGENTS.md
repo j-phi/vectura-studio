@@ -36,6 +36,7 @@
 - Pre-push hook: run `npm run hooks:install` once after cloning. It installs a `pre-push` hook that runs `npm run test:fast` (~12s — unit + integration + visual + perf) before every push. E2E is intentionally gated only by CI to avoid local slowdowns on busy machines. Bypass with `SKIP_PREPUSH=1 git push` only when intentional.
 
 ## Commit & Pull Request Guidelines
+- **Concurrent work safety:** before any destructive git op (`reset`, `clean`, `checkout -- `, `rebase`, `push --force`) or before starting a second effort atop uncommitted WIP, follow `CLAUDE.md` → "Concurrent Development & Working-Tree Safety" — checkpoint first, isolate parallel work in disjoint worktrees, and do not push/merge/tag without explicit approval. A PreToolUse guard hook enforces this.
 - Use short, imperative commit subjects (e.g., “Add new layer preset”).
 - PRs should include: a brief summary, steps to test locally, and screenshots/GIFs for UI or rendering changes.
 - Use `.github/pull_request_template.md` and complete all checklist items before requesting review.
