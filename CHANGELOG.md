@@ -30,6 +30,16 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   only its surrounding chrome (scope, pens, sensitivity, status chip, expand) and the fill-record ↔ params
   mapping; the Text panel mounts it with `typeKey: 'fillType'` and a namespaced id prefix so both can coexist.
 
+## 1.2.31 - 2026-07-02
+
+### Changed
+- **Google Fonts picker is ordered by popularity.** The web-font catalogue now sorts by real Google Fonts usage
+  (Roboto, Open Sans, Lato, Montserrat, Oswald, … first) with an alphabetical tail for everything else, applied
+  to both the cached and the freshly-fetched catalogue (`src/core/google-fonts.js`). The **Built-in single-stroke**
+  section moves below Google Fonts in the font picker so web faces lead.
+- **Text layer hidden from the generic Add-Layer flow.** The `text` layer type is marked `hidden` in
+  `ALGO_DEFAULTS`; the on-canvas Type tool remains its entry point.
+
 ## 1.2.30 - 2026-07-02
 
 ### Changed

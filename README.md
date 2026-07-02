@@ -557,6 +557,9 @@ CI lives in `.github/workflows/test.yml`:
 ### 1.2.32
 - **Type fills gain the full Paint Bucket control set.** The Text panel's Fill tab used to offer only five fill types (Hatch / Spiral / Dots / Stripe / Cross-Hatch) and a density slider. It now shows the **same variant grid and per-variant parameters as the paint bucket tool** — every fill type (Hatch, Wave, Dots, Contour, Spiral, Radial, Polygonal, Truchet, Maze, Stripes, Weave) with its complete set of knobs — because both surfaces render from one shared module and pour through the same fill engine. The Text-only main Angle dial, Fill Offset pad, and Inset control are kept alongside it.
 
+### 1.2.31
+- **Google Fonts are listed by popularity.** The web-font picker now leads with the most-used families (Roboto, Open Sans, Lato, Montserrat, …) and falls back to alphabetical for the rest; the Built-in single-stroke faces move below the Google Fonts section.
+
 ### 1.2.30
 - **Built-in bold plots as one snaking, gapless stroke.** Heavier weights of the built-in Vectura font used to draw stacked parallel copies of every stroke, which crossed into doubled-ink lattices at junctions (the t crossbar, the e bar) and splayed open at terminals. Each glyph is now swept into a single welded **band** and filled with **concentric passes stitched into a continuous snake** — junctions weld clean, terminals get round caps, and the ink edge lands exactly on the letterform. A new **Ink Overlap** control (Text panel → Stroke, default 15 %) sets how much adjacent passes overlap as a fraction of the pen width: spacing is `penWidth × (1 − overlap)`, so the fill is gapless at your actual pen size.
 
