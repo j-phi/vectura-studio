@@ -4071,6 +4071,29 @@
       for (let i = 1; i < f.length; i += 1) this.ctx.lineTo(f[i].x, f[i].y);
       this.ctx.closePath();
       this.ctx.stroke();
+      // Overset out-port: a red square with a "+" at the frame's bottom-right
+      // (f[2]) when the laid text is taller than the frame — Illustrator's signal
+      // that some text is hidden. Threading the overflow to a linked frame is
+      // deferred; this is the indicator only.
+      if (layer.textOverset) {
+        const s = 8 / this.scale;      // constant on-screen size
+        const br = f[2];               // bottom-right corner
+        const x = br.x - s;
+        const y = br.y - s;
+        this.ctx.fillStyle = '#ef4444';
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = Math.max(0.2, 1 / this.scale);
+        this.ctx.fillRect(x, y, s, s);
+        this.ctx.strokeRect(x, y, s, s);
+        // white "+"
+        const pad = s * 0.25;
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + pad, y + s / 2);
+        this.ctx.lineTo(x + s - pad, y + s / 2);
+        this.ctx.moveTo(x + s / 2, y + pad);
+        this.ctx.lineTo(x + s / 2, y + s - pad);
+        this.ctx.stroke();
+      }
       this.ctx.restore();
     }
 
@@ -4709,6 +4732,18 @@
               this.setCanvasCursor('grabbing');
             } else {
               this.dragMode = 'resize';
+              // Area-type text resizes its FRAME (reflow), not its glyphs. Capture
+              // the start frame dims so the move handler can scale them by the
+              // handle drag and re-wrap live instead of scaling the letterforms.
+              this._areaResize = null;
+              const only = selectedLayers[0];
+              if (only && only.type === 'text' && only.params && only.params.textMode === 'area') {
+                this._areaResize = {
+                  layerId: only.id,
+                  startW: Math.max(1, Number(only.params.frameWidth) || 0),
+                  startH: Math.max(1, Number(only.params.frameHeight) || 0),
+                };
+              }
               this.setCanvasCursor(this.handleCursor(handle, selectionBounds), 'resize');
             }
             e.preventDefault();
@@ -5243,10 +5278,34 @@
           }
           scaleX = Math.max(0.05, Math.min(Math.abs(scaleX), 20));
           scaleY = Math.max(0.05, Math.min(Math.abs(scaleY), 20));
-          this.tempTransform = { dx: 0, dy: 0, scaleX, scaleY, origin };
-          const _tw = Math.round(Math.abs((this.startBounds.maxX - this.startBounds.minX) * scaleX));
-          const _th = Math.round(Math.abs((this.startBounds.maxY - this.startBounds.minY) * scaleY));
-          this.showDragTooltip(`${_tw} × ${_th}`, e.clientX, e.clientY);
+          const areaResizeLayer = this._areaResize
+            ? this.engine.layers.find((l) => l.id === this._areaResize.layerId) : null;
+          if (areaResizeLayer) {
+            // Reflow: reinterpret the handle scale as new frame dimensions (local
+            // mm), keep glyph size/scale unchanged, and regenerate so the text
+            // re-wraps live. tempTransform stays identity so glyphs don't scale.
+            // History: the frame is mutated live during the drag, so snapshot the
+            // PRE-change state once (before the first mutation) and suppress the
+            // release-time commit push (which would capture the post-change state).
+            if (!this._areaResize.pushed) {
+              this._areaResize.pushed = true;
+              this._skipCommitHistory = true;
+              if (this.app && typeof this.app.pushHistory === 'function') this.app.pushHistory();
+            }
+            areaResizeLayer.params.frameWidth = Math.max(4, this._areaResize.startW * scaleX);
+            areaResizeLayer.params.frameHeight = Math.max(4, this._areaResize.startH * scaleY);
+            this.engine.generate(areaResizeLayer.id);
+            this.tempTransform = { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin };
+            this.showDragTooltip(
+              `${Math.round(areaResizeLayer.params.frameWidth)} × ${Math.round(areaResizeLayer.params.frameHeight)} mm`,
+              e.clientX, e.clientY,
+            );
+          } else {
+            this.tempTransform = { dx: 0, dy: 0, scaleX, scaleY, origin };
+            const _tw = Math.round(Math.abs((this.startBounds.maxX - this.startBounds.minX) * scaleX));
+            const _th = Math.round(Math.abs((this.startBounds.maxY - this.startBounds.minY) * scaleY));
+            this.showDragTooltip(`${_tw} × ${_th}`, e.clientX, e.clientY);
+          }
           // Live-refold a morph blend while a descendant child is resized.
           if (this.mirrorDragState && this._morphDragActive) this._previewMirrorDragWithTemp(this.tempTransform);
         } else if (this.dragMode === 'rotate' && this.rotateOrigin) {
@@ -5642,6 +5701,9 @@
       this.lastDragWorld = null;
       this.dragMode = null;
       this.activeHandle = null;
+      // Area-type frame-resize bookkeeping ends with the drag.
+      this._areaResize = null;
+      this._skipCommitHistory = false;
       this.hideDragTooltip();
       this.updateCursor();
       this.guides = null;

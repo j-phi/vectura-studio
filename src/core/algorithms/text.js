@@ -1054,10 +1054,21 @@
           ].map((c) => txPt(c))
         : null;
 
+      // Overset: the laid text (all wrapped lines) is taller than the frame, so
+      // some text is clipped/hidden — Illustrator marks this with a red "+" out
+      // port. laid.height is the full multi-line block height in mm (display
+      // space, same scale the frame uses since area type is always absolute).
+      const textOverset = isArea && Number.isFinite(laid.height) && laid.height > frameH + 1e-6;
+
       // The editor glyph cells + area frame ride as sidecars on the returned array
       // (mirrors out.helpers / out.maskPolygons elsewhere). The plot-order resort
       // below builds a fresh array, so re-attach the sidecars to whatever returns.
-      const attachGlyphs = (arr) => { arr.glyphs = glyphs; if (textFrame) arr.textFrame = textFrame; return arr; };
+      const attachGlyphs = (arr) => {
+        arr.glyphs = glyphs;
+        if (textFrame) arr.textFrame = textFrame;
+        arr.textOverset = textOverset;
+        return arr;
+      };
 
       // An empty area box (frame + caret, no ink) still returns its sidecars so the
       // frame draws; every other empty result plots nothing.

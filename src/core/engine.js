@@ -1259,6 +1259,9 @@
       // space, carried through the SAME transform() as the paths so the rectangle
       // lands in WORLD space. Recomputed every generate(), never serialized.
       const frameSidecar = Array.isArray(rawPaths.textFrame) ? rawPaths.textFrame : null;
+      // Area-type overset flag (transient, never serialized): true when the laid
+      // text is taller than the frame, so the renderer draws the red "+" out port.
+      const oversetSidecar = rawPaths.textOverset === true;
       // For shape layers the rebuild already baked smoothing/simplify into anchors;
       // zero the render-time pass so we don't double-apply on the resampled polyline.
       const isShape = usesManualSourceGeometry(layer);
@@ -1498,6 +1501,7 @@
       layer.maskPolygons = transformedMaskPolygons;
       layer.glyphs = transformedGlyphs;
       layer.textFrame = frameSidecar ? frameSidecar.map((pt) => transform(pt)) : null;
+      layer.textOverset = oversetSidecar;
       this.computeAllDisplayGeometry();
     }
 

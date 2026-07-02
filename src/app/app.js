@@ -183,7 +183,13 @@
         this.ui.updateFormula();
       };
       this.renderer.onPatternFill = (payload) => this.ui._applyPatternFillFromCanvas(payload);
-      this.renderer.onCommitTransform = () => { this.pushHistory(); this.ui.buildControls(); };
+      this.renderer.onCommitTransform = () => {
+        // Area-type frame resize mutates params live during the drag and pushes
+        // its own pre-change history snapshot, so skip the commit-time push here
+        // (it would capture the post-change state). buildControls still runs.
+        if (!this.renderer._skipCommitHistory) this.pushHistory();
+        this.ui.buildControls();
+      };
       this.renderer.onDuplicateLayer = () => this.pushHistory();
       this.renderer.onComputeDisplayGeometry = () => this.computeDisplayGeometry();
       this.renderer.isLayerLocked = (layerId) => {
