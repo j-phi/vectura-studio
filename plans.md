@@ -37,7 +37,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
-- **v1.2.29 — Built-in bold → banded concentric snake fill.** Replaced the built-in face's parallel-pass heavy
+- **v1.2.30 — Built-in bold → banded concentric snake fill.** Replaced the built-in face's parallel-pass heavy
   weights (crossing lattices at junctions, splayed terminals) with a region-first model: per-glyph
   `strokeRingsToBand(thickness·penW)` → incremental morphological erosion (`GeometryUtils.insetMultiPolygon`,
   boundary-Minkowski subtraction — inward miter offsets self-cross near collapse and were rejected) at spacing
@@ -50,6 +50,8 @@ This file is the active repository punchlist. Update it whenever meaningful work
   `tests/unit/geometry-band-fill.test.js` + `tests/integration/text-weight-band.test.js`. Merge note: the band
   is swept along the same bezierized contour v1.2.28 renders (curve strokes flattened via
   `rebuildShapeAnchors` + `buildPolylineFromAnchors`), so Bold reads as smooth as Regular.
+- **v1.2.29 — Text specimen keeps real glyphs while editing** (no font swap on click; live trace from the
+  contenteditable text).
 - **v1.2.28 — Built-in stroke-font curves as native béziers.** Curve-built strokes tagged `meta.curve` in
   `stroke-font.js`; `text.js` bezierizes them at Catmull-Rom tension 1 (facets killed, corners preserved).
 - **v1.2.27 — Web-font on-canvas editing** (point + area, exact `sourceIndex`).

@@ -4,7 +4,7 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
-## 1.2.29 - 2026-07-02
+## 1.2.30 - 2026-07-02
 
 ### Changed
 - **Built-in bold is now a banded concentric snake fill — no more crossing passes.** Heavier built-in Vectura
@@ -33,6 +33,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   near-collinear vertices — sub-micron notch, order-of-magnitude fewer union polygons); `insetMultiPolygon`
   snaps coordinates to a 1 µm grid and retries with a sub-percent inset nudge, which eliminated observed
   multi-second sweep-line pathologies. All defaults preserve historical output byte-for-byte.
+
+## 1.2.29 - 2026-07-02
+
+### Fixed
+- **Text specimen keeps real glyphs while editing.** Clicking the panel specimen to edit no longer swaps the
+  traced Vectura geometry for the CSS stand-in font — the trace stays drawn from the live editable text while
+  the transparent field owns the caret.
 
 ## 1.2.28 - 2026-07-02
 
