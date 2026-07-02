@@ -237,7 +237,14 @@
       if (Web && Web.isWebFontKey(p.font)) {
         const id = Web.keyToId(p.font);
         if (Web.getParsed(id)) {
-          laid = Web.layout(str, { id, size, tracking, lineHeight, align, smoothing, bezier: wantBezier, ...synOpts });
+          // Area type drives the wrap width from the frame; areaWrap keeps
+          // sourceIndex exact (word-level break, no synthetic hyphen) so wrapped
+          // web-font text is editable when ligatures are off (the editor's state).
+          laid = Web.layout(str, {
+            id, size, tracking, lineHeight, align, smoothing, bezier: wantBezier,
+            wrapWidth: isArea ? frameW : 0, areaWrap: isArea,
+            ...synOpts,
+          });
           isOutline = true;
         } else {
           if (Web.getFontStatus(id) === 'idle') Web.ensureFont(id).catch(() => {});

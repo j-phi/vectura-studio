@@ -72,6 +72,7 @@
       if (!layer || layer.type !== 'text') return false;
       if (this._jitterBlocked(layer)) return false;
       if (this.active) this.end();
+      this._enableWebEdit(layer);
       this._ensureGlyphs(layer);
       const t = this._text(layer);
       const ci = clamp(caretIndex | 0, 0, t.length);
@@ -93,6 +94,7 @@
     placeCaretAtWorld(layer, wx, wy) {
       if (!layer || layer.type !== 'text') return false;
       if (this._jitterBlocked(layer)) return false;
+      this._enableWebEdit(layer);
       this._ensureGlyphs(layer);
       const TM = Vectura.TextMetrics;
       const r = TM && TM.pointToCaretIndex(layer.glyphs || [], wx, wy);
@@ -143,6 +145,15 @@
       const layer = this.layer;
       const created = this._createdLayer;
       const pushed = this._pushedHistoryThisSession;
+      // Restore web ligatures if this session made no edits (a click-in / click-out
+      // shouldn't persist the ligature-off switch). If edits WERE made, the layer
+      // stays ligature-off so its committed text remains editable.
+      const ligaRestore = this._webLigaRestore;
+      this._webLigaRestore = null;
+      if (ligaRestore && !pushed && ligaRestore.layer && ligaRestore.layer.params) {
+        ligaRestore.layer.params.otLigatures = ligaRestore.original;
+        this._regen(ligaRestore.layer);
+      }
       if (layer && layer._edit) layer._edit = null;
       this.active = false;
       this.layer = null;
@@ -363,15 +374,42 @@
       const p = (layer && layer.params) || {};
       const GF = Vectura.GoogleFonts;
       const isWeb = !!(GF && GF.isWebFontKey && GF.isWebFontKey(p.font));
-      // Web (shaped) faces may ligate → sourceIndex degrades. Blocked in every
-      // mode (area type on web fonts is out of scope / deferred).
-      if (isWeb) return false;
+      // Web (shaped) faces ligate (fi/ffi…), collapsing several source chars into
+      // one glyph so sourceIndex (a per-glyph index) desyncs from the raw string.
+      // With ligatures OFF the mapping is 1:1 and sourceIndex is exact, so wrapped
+      // web-font editing is safe. Entering an edit session disables ligatures on a
+      // web layer (see _enableWebEdit), so this is true during editing.
+      if (isWeb) return p.otLigatures === false;
       // AREA type on a built-in stroke face uses exact-sourceIndex word-wrap (no
       // synthetic hyphen), so wrapped editing is safe — allow it.
       if (p.textMode === 'area') return true;
       // Point type: only the legacy hyphenate soft-wrap reflows the offset.
       const softWrap = p.hyphenate === true && Number(p.wrapWidth) > 0;
       return !softWrap;
+    }
+
+    _isWebFontLayer(layer) {
+      const GF = Vectura.GoogleFonts;
+      const font = layer && layer.params && layer.params.font;
+      return !!(GF && GF.isWebFontKey && GF.isWebFontKey(font));
+    }
+
+    /**
+     * Make a web-font layer editable on canvas. Ligatures fold source chars into
+     * single glyphs and desync sourceIndex, so entering an edit session on a
+     * ligated web layer temporarily switches it to ligature-off (1:1 char↔glyph,
+     * exact sourceIndex). Records the original so end() can restore it when the
+     * session made no edits — merely clicking in then out leaves the layer as it
+     * was. Called before glyphs/caret are derived so positions use the 1:1 layout.
+     */
+    _enableWebEdit(layer) {
+      this._webLigaRestore = null;
+      if (!this._isWebFontLayer(layer) || !layer.params) return;
+      const p = layer.params;
+      if (p.otLigatures === false) return;      // already 1:1 → editable
+      this._webLigaRestore = { layer, original: p.otLigatures };
+      p.otLigatures = false;
+      this._regen(layer);
     }
 
     /**

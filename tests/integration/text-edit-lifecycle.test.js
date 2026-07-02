@@ -96,23 +96,26 @@ describe('Type tool edit lifecycle / safety (blockers)', () => {
     }
   });
 
-  test('B1: gated (google-font) layer — Backspace/Delete swallowed, layer survives, nav works', () => {
+  test('B1: web-font layer edits after ligature-off enablement; delete keys stay swallowed, layer survives', () => {
     const engine = new V.VectorEngine();
     const { id, layer } = makeTextLayer(engine, { text: 'AB', font: 'google:inter' });
     const ctrl = new V.TextEditController(makeHost(engine));
     const g = installGlobalShortcuts(engine, () => id);
     try {
+      // A ligated web font is gated OUTSIDE an edit session (sourceIndex unsafe).
       expect(ctrl.canMutate(layer)).toBe(false);
       ctrl.begin(layer, 1);
-      dispatchKey('Backspace');
-      dispatchKey('Delete');
+      // Entering the session switches it to ligature-off (1:1) → editable.
+      expect(layer.params.otLigatures).toBe(false);
+      expect(ctrl.canMutate(layer)).toBe(true);
+      dispatchKey('Backspace'); // caret at 1 → deletes 'A'
+      // Delete keys are still SWALLOWED (never reach the global delete-layer) and
+      // the layer survives — they edit text now instead of no-op'ing.
       expect(g.onDelete).not.toHaveBeenCalled();
       expect(engine.layers.some((l) => l.id === id)).toBe(true);
-      expect(layer.params.text).toBe('AB');
+      expect(layer.params.text).toBe('B');
       // Caret navigation still works through the real listener.
       dispatchKey('ArrowRight');
-      expect(ctrl.getCaretIndex()).toBe(2);
-      dispatchKey('ArrowLeft');
       expect(ctrl.getCaretIndex()).toBe(1);
     } finally {
       g.remove();
