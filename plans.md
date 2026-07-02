@@ -37,7 +37,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
-- **v1.2.27 — Built-in bold → banded concentric snake fill.** Replaced the built-in face's parallel-pass heavy
+- **v1.2.29 — Built-in bold → banded concentric snake fill.** Replaced the built-in face's parallel-pass heavy
   weights (crossing lattices at junctions, splayed terminals) with a region-first model: per-glyph
   `strokeRingsToBand(thickness·penW)` → incremental morphological erosion (`GeometryUtils.insetMultiPolygon`,
   boundary-Minkowski subtraction — inward miter offsets self-cross near collapse and were rejected) at spacing
@@ -47,7 +47,12 @@ This file is the active repository punchlist. Update it whenever meaningful work
   Per-glyph translation-normalized memo cache makes typing re-renders ~free. polygon-clipping hardening:
   `diskPhase`, `joinSkipAngle`, 1 µm coordinate snap + inset nudge-retry (fixed crashes and a 3 s sweep-line
   pathology). Legacy engine kept for sinusoidal/snake styles and headless. Covered by
-  `tests/unit/geometry-band-fill.test.js` + `tests/integration/text-weight-band.test.js`.
+  `tests/unit/geometry-band-fill.test.js` + `tests/integration/text-weight-band.test.js`. Merge note: the band
+  is swept along the same bezierized contour v1.2.28 renders (curve strokes flattened via
+  `rebuildShapeAnchors` + `buildPolylineFromAnchors`), so Bold reads as smooth as Regular.
+- **v1.2.28 — Built-in stroke-font curves as native béziers.** Curve-built strokes tagged `meta.curve` in
+  `stroke-font.js`; `text.js` bezierizes them at Catmull-Rom tension 1 (facets killed, corners preserved).
+- **v1.2.27 — Web-font on-canvas editing** (point + area, exact `sourceIndex`).
 - **v1.2.26 — Built-in text weight optics + fill-angle fix.** Built-in Vectura weights (extra parallel pen
   passes) are now metered by one pure source, `StrokeFont.weightMetrics(passes, capMM, penW)`:
   **F-03** widens the per-glyph advance (`extraTrackingMM = passes·penW·0.6`) so heavier stems don't merge, and

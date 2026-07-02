@@ -554,8 +554,14 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
-### 1.2.27
+### 1.2.29
 - **Built-in bold plots as one snaking, gapless stroke.** Heavier weights of the built-in Vectura font used to draw stacked parallel copies of every stroke, which crossed into doubled-ink lattices at junctions (the t crossbar, the e bar) and splayed open at terminals. Each glyph is now swept into a single welded **band** and filled with **concentric passes stitched into a continuous snake** — junctions weld clean, terminals get round caps, and the ink edge lands exactly on the letterform. A new **Ink Overlap** control (Text panel → Stroke, default 15 %) sets how much adjacent passes overlap as a fraction of the pen width: spacing is `penWidth × (1 − overlap)`, so the fill is gapless at your actual pen size.
+
+### 1.2.28
+- **Built-in font curves are now truly smooth.** The Vectura stroke font's bowls, arcs and splines render as native béziers instead of faceted chords — designed curves read smooth at any size while stems and serifs stay faithfully sharp.
+
+### 1.2.27
+- **Edit web-font text on the canvas.** Point and Area type set in Google Fonts faces now supports full on-canvas editing (caret, selection, typing), exactly like the built-in face.
 
 ### 1.2.26
 - **Bolder built-in text stays legible.** Heavier weights of the built-in Vectura font draw as extra pen passes; those passes now **widen each letter's advance** so stems don't merge, and their thickness is **optically clamped by size** so small text keeps open counters while large caps still get the full weight. One pure metric source (`StrokeFont.weightMetrics`) drives both.

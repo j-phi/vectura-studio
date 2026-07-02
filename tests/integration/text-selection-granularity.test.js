@@ -12,8 +12,9 @@
  *   - shift-click / shift-arrow EXTEND the focus while keeping the anchor.
  *   - typing a char / Enter REPLACES a non-empty selection; Backspace/Delete
  *     delete the range; the caret collapses to the edit point afterwards.
- *   - MUTATION GATE: on a shaped (google) face, selection + navigation still
- *     work but range deletion / replacement is blocked.
+ *   - WEB FONTS: a shaped (google) face is gated OUTSIDE an edit session, but
+ *     entering a session switches it to ligature-off (1:1, exact sourceIndex) so
+ *     selection AND range editing work like a built-in face.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -230,22 +231,23 @@ describe('Type tool selection granularity (M4)', () => {
   });
 
   // ── Mutation gate ──────────────────────────────────────────────────────────
-  test('gated (google-font) layer: selection + nav work, range delete is blocked', () => {
+  test('web-font layer becomes editable (ligature-off) on edit-entry; selection + range edit work', () => {
     const engine = new V.VectorEngine();
     const { layer } = makeTextLayer(engine, { text: 'abcdef', font: 'google:inter' });
     const ctrl = new V.TextEditController(makeHost(engine));
-    ctrl.begin(layer, 0);
+    // A ligated web font is gated OUTSIDE an edit session.
     expect(ctrl.canMutate(layer)).toBe(false);
-    // Selection still works (display-only).
+    ctrl.begin(layer, 0);
+    // Entering the session switches it to ligature-off (1:1) → editable.
+    expect(layer.params.otLigatures).toBe(false);
+    expect(ctrl.canMutate(layer)).toBe(true);
+    // Selection works.
     expect(ctrl.selectWordAt(0)).toBe(true);
     expect(ctrl.hasSelection()).toBe(true);
-    // Navigation still works.
+    // Range replace now WORKS (exact 1:1 sourceIndex).
     ctrl.selectRange(1, 4);
-    // Range delete / replace are BLOCKED.
-    expect(ctrl.deleteBackward()).toBe(false);
-    expect(ctrl.deleteForward()).toBe(false);
-    expect(ctrl.insertText('X')).toBe(false);
-    expect(layer.params.text).toBe('abcdef');
+    expect(ctrl.insertText('X')).toBe(true);
+    expect(layer.params.text).toBe('aXef');
     ctrl.end();
   });
 

@@ -563,6 +563,46 @@
     return out;
   };
 
+  // Area-type word-wrap with EXACT raw sourceIndex tracking (mirrors
+  // StrokeFont.areaWrap). Greedy line-fill by word: a soft break happens at the
+  // last space that fits and that ONE space is consumed, so each visual line is a
+  // CONTIGUOUS slice of the source — keeping `lineStart[li] + ci` an exact raw
+  // index (used by on-canvas editing). A hard '\n' ends the line and is consumed.
+  // A single word wider than the column OVERFLOWS (no synthetic hyphen, which is
+  // absent from the source and would desync sourceIndex). Requires 1:1 char↔glyph
+  // (ligatures off) — the state the editor puts a web layer in. Returns
+  // { lines: string[], starts: number[] } where starts[i] is the raw code-point
+  // index of lines[i]'s first character.
+  const areaWrap = (text, maxMM, advOf) => {
+    const chars = Array.from(String(text == null ? '' : text));
+    const n = chars.length;
+    const lines = [];
+    const starts = [];
+    let lineStart = 0;
+    let i = 0;
+    let width = 0;
+    let lastSpace = -1;
+    const emit = (endExclusive) => {
+      lines.push(chars.slice(lineStart, endExclusive).join(''));
+      starts.push(lineStart);
+    };
+    while (i < n) {
+      const ch = chars[i];
+      if (ch === '\n') { emit(i); lineStart = i + 1; i += 1; width = 0; lastSpace = -1; continue; }
+      const adv = advOf(ch);
+      if (width + adv > maxMM && i > lineStart && lastSpace > lineStart) {
+        emit(lastSpace);
+        lineStart = lastSpace + 1; i = lineStart; width = 0; lastSpace = -1;
+        continue;
+      }
+      if (ch === ' ' || ch === '\t') lastSpace = i;
+      width += adv;
+      i += 1;
+    }
+    emit(n); // final line (also handles empty input → one empty line)
+    return { lines, starts };
+  };
+
   /**
    * Lay text out into positioned outline polylines.
    *
@@ -650,7 +690,8 @@
     };
 
     let rawLines = String(text == null ? '' : text).split('\n');
-    if (opt.hyphenate === true && wrapWidth > 0) {
+    let areaStart = null; // per-visual-line raw char offsets when areaWrap is used
+    if (wrapWidth > 0 && (opt.areaWrap === true || opt.hyphenate === true)) {
       // Advance estimate per char for wrapping (font kerning ignored — fast path).
       const advOf = (ch) => {
         const gs = font.stringToGlyphs(ch);
@@ -658,7 +699,15 @@
         const sc = synth ? charScale().cs : 1;
         return ((g && g.advanceWidth) || 0) * fu * hScale * sc + tracking + kerning;
       };
-      rawLines = softWrap(rawLines, wrapWidth - indentLeft - indentRight, advOf);
+      const colMM = wrapWidth - indentLeft - indentRight;
+      if (opt.areaWrap === true) {
+        // AREA type: word-wrap with exact raw sourceIndex (editable, liga-off).
+        const wrapped = areaWrap(String(text == null ? '' : text), colMM, advOf);
+        rawLines = wrapped.lines;
+        areaStart = wrapped.starts;
+      } else {
+        rawLines = softWrap(rawLines, colMM, advOf);
+      }
     }
 
     // Build per-line glyph cells with measured advances. The default (non-synth)
@@ -704,7 +753,10 @@
     {
       let accIdx = 0;
       for (let i = 0; i < lineCells.length; i++) {
-        lineStart[i] = accIdx;
+        // AREA type carries EXACT raw offsets (contiguous slices, ligatures off);
+        // otherwise fall back to the cumulative per-glyph offset (exact for 1:1
+        // non-ligated text, the common case).
+        lineStart[i] = areaStart ? areaStart[i] : accIdx;
         accIdx += lineCells[i].length + 1; // +1 for the consumed newline
       }
     }

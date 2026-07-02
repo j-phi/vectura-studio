@@ -4,7 +4,7 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
-## 1.2.27 - 2026-07-02
+## 1.2.29 - 2026-07-02
 
 ### Changed
 - **Built-in bold is now a banded concentric snake fill — no more crossing passes.** Heavier built-in Vectura
@@ -19,7 +19,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   uncovered. Zero pass crossings, gapless coverage at the physical pen width, and the drawn ink edge lands
   exactly on the intended letterform boundary. Per-glyph results are memoized (translation-normalized), so
   repeated letters and every re-render while typing are effectively free; sinusoidal/snake thickening styles and
-  headless (no polygon-clipping) environments keep the legacy parallel-pass engine.
+  headless (no polygon-clipping) environments keep the legacy parallel-pass engine. The band is swept along the
+  same bezierized contour 1.2.28 renders (curve strokes are Catmull-Rom-flattened before banding), so heavy
+  weights read as smooth as Regular.
 - **New `inkOverlap` text parameter (0–60 %, default 15).** Concentric pass spacing is tied to the pen:
   `penW · (1 − inkOverlap)`. 0 % means passes just touch (fastest, least ink); higher values overdraw for denser
   ink coverage. Exposed as an **Ink Overlap** scrub in the Text panel's Stroke tab (built-in face, Parallel mode)
@@ -31,6 +33,21 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   near-collinear vertices — sub-micron notch, order-of-magnitude fewer union polygons); `insetMultiPolygon`
   snaps coordinates to a 1 µm grid and retries with a sub-percent inset nudge, which eliminated observed
   multi-second sweep-line pathologies. All defaults preserve historical output byte-for-byte.
+
+## 1.2.28 - 2026-07-02
+
+### Changed
+- **Built-in Vectura curves render as native béziers (kill facets).** The stroke font's bowls/arcs/splines are
+  dense sampled polylines that previously drew as straight chords (visible facets at large sizes). Curve-built
+  strokes are now tagged (`meta.curve`) in `stroke-font.js` and always bezierized in `text.js` at Catmull-Rom
+  tension 1 — the sampler's own tension, so the cubics reproduce the designed contour exactly. Straight stems,
+  serifs and diagonals stay faithful sharp polylines.
+
+## 1.2.27 - 2026-07-02
+
+### Added
+- **Web-font on-canvas editing.** Point and Area type using web (Google Fonts) faces are now editable directly
+  on the canvas (caret, selection, insert, delete) with exact `sourceIndex` mapping, matching the built-in face.
 
 ## 1.2.26 - 2026-07-01
 

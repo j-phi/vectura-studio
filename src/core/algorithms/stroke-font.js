@@ -31,6 +31,14 @@
   const PI = Math.PI;
   const TAU = PI * 2;
 
+  // Mark a point array as a CURVE stroke (vs. a straight-segment stroke). The flag
+  // is a non-enumerable, non-index property so it survives on the raw glyph-def
+  // array (which layout() inspects) without polluting `.map`/`forEach` over points.
+  // Renderers use it to draw the sampled polyline as native cubic béziers instead
+  // of faceted chords — the stem/serif/diagonal strokes stay flagged false so their
+  // sharp corners are preserved. See text.js (fontCurve branch).
+  const asCurve = (pts) => { pts.curve = true; return pts; };
+
   // Sample an elliptical arc into a polyline. a0/a1 in radians; a0>a1 sweeps the
   // other way (the divisor keeps the step pitch even in either direction).
   const arc = (cx, cy, rx, ry, a0, a1, steps = 16) => {
@@ -39,7 +47,7 @@
       const a = a0 + ((a1 - a0) * i) / steps;
       pts.push([cx + rx * Math.cos(a), cy + ry * Math.sin(a)]);
     }
-    return pts;
+    return asCurve(pts);
   };
   // Closed ellipse, started at 12 o'clock so round glyphs open/close cleanly.
   const ellipse = (cx, cy, rx, ry, steps = 22) => arc(cx, cy, rx, ry, -PI / 2, PI * 1.5, steps);
@@ -55,7 +63,7 @@
   const spline = (anchors, stepsPer = 6, closed = false) => {
     const P = anchors.map((p) => ({ x: p[0], y: p[1] }));
     const n = P.length;
-    if (n < 3) return anchors.map((p) => [p[0], p[1]]);
+    if (n < 3) return asCurve(anchors.map((p) => [p[0], p[1]]));
     const at = (i) => P[closed ? ((i % n) + n) % n : Math.max(0, Math.min(n - 1, i))];
     const out = [];
     const segs = closed ? n : n - 1;
@@ -69,10 +77,17 @@
       }
     }
     if (!closed) out.push([P[n - 1].x, P[n - 1].y]);
-    return out;
+    return asCurve(out);
   };
   // Concatenate point arrays into one stroke (joins a curve to a straight leg).
-  const join = (...parts) => [].concat(...parts);
+  // A joined stroke is a curve if ANY part is a curve — the collinear straight
+  // legs stay straight under Catmull-Rom smoothing, so only the curve→straight
+  // junction rounds (the intended pen behaviour). See asCurve.
+  const join = (...parts) => {
+    const out = [].concat(...parts);
+    if (parts.some((p) => p && p.curve)) out.curve = true;
+    return out;
+  };
 
   // Glyph table: char → { w, s:[ stroke, … ] }, stroke = [ [x,y], … ].
   const G = {};
@@ -452,6 +467,9 @@
               baselineY: (penY + CAP) * scale - baselineShift,
               x0,
               x1: (penX + cell.adv) * scale,
+              // Curve strokes (bowls/arcs/splines) render as native béziers so they
+              // read as true curves; stems/serifs/diagonals stay straight chords.
+              curve: stroke.curve === true,
             });
             drewMeta = true;
           }

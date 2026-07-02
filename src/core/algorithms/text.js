@@ -14,6 +14,12 @@
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const finite = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
+  // Catmull-Rom tension used to bezierize the built-in stroke-font's designed curve
+  // strokes (bowls/arcs/splines). 1 is standard uniform Catmull-Rom — the same
+  // spline the font sampler uses — so the native cubics reproduce the intended
+  // contour exactly while removing the sampled polyline's visible facets.
+  const STROKE_CURVE_SMOOTHING = 1;
+
   // Banded-bold result cache. The concentric erosion fill costs tens of ms per
   // glyph, but its output is a PURE function of the glyph's stroke geometry
   // (translation-normalized), the pass count and the pen/spacing — so repeated
@@ -247,7 +253,14 @@
       if (Web && Web.isWebFontKey(p.font)) {
         const id = Web.keyToId(p.font);
         if (Web.getParsed(id)) {
-          laid = Web.layout(str, { id, size, tracking, lineHeight, align, smoothing, bezier: wantBezier, ...synOpts });
+          // Area type drives the wrap width from the frame; areaWrap keeps
+          // sourceIndex exact (word-level break, no synthetic hyphen) so wrapped
+          // web-font text is editable when ligatures are off (the editor's state).
+          laid = Web.layout(str, {
+            id, size, tracking, lineHeight, align, smoothing, bezier: wantBezier,
+            wrapWidth: isArea ? frameW : 0, areaWrap: isArea,
+            ...synOpts,
+          });
           isOutline = true;
         } else {
           if (Web.getFontStatus(id) === 'idle') Web.ensureFont(id).catch(() => {});
@@ -769,6 +782,31 @@
               : GU.thickenPaths(stroked, { width: thickness, spacing: penW });
             for (const seg of heavy) out.push(seg);
           };
+          // The faithful (thickness 1) outline renders the font's designed curve
+          // strokes as native cubics (meta.curve → Catmull-Rom at
+          // STROKE_CURVE_SMOOTHING; the Curves toggle opts the rest in). The band
+          // must be swept along that SAME smooth contour — banding the raw
+          // sampled polyline would leave Bold faceted while Regular reads smooth.
+          // Mirror the emission's bezierization, then flatten it densely.
+          const OUb = Vectura.OptimizationUtils;
+          const smoothStroke = (it) => {
+            const pts = it.pts;
+            const fontCurve = it.idx >= 0 && meta[it.idx] && meta[it.idx].curve === true;
+            const toggleSmooth = p.curves === true && smoothing > 0;
+            if (!(fontCurve || toggleSmooth) || pts.length < 3
+              || !GU.rebuildShapeAnchors || !GU.buildPolylineFromAnchors) return pts;
+            const closed = !!(OUb && OUb.isClosedPath && OUb.isClosedPath(pts));
+            let base = pts;
+            if (closed && pts.length >= 2) {
+              const a = pts[0]; const b = pts[pts.length - 1];
+              if (Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6) base = pts.slice(0, -1);
+            }
+            const effSmoothing = fontCurve ? Math.max(smoothing, STROKE_CURVE_SMOOTHING) : smoothing;
+            const built = GU.rebuildShapeAnchors(base.map((q) => ({ x: q.x, y: q.y })), { smoothing: effSmoothing, closed });
+            if (!built || !Array.isArray(built.anchors) || built.anchors.length < 2) return pts;
+            const poly = GU.buildPolylineFromAnchors(built.anchors, closed);
+            return (Array.isArray(poly) && poly.length >= 2) ? poly : pts;
+          };
           // Band per GLYPH (gid groups a glyph's strokes) — junction welding is an
           // intra-glyph concern for the monoline face, and small per-glyph unions
           // keep every polygon-clipping call bounded.
@@ -777,7 +815,7 @@
             const key = it.gid != null ? it.gid : ('p' + i);
             let arr = groups.get(key);
             if (!arr) { arr = []; groups.set(key, arr); }
-            if (it.pts && it.pts.length >= 2) arr.push(it.pts);
+            if (it.pts && it.pts.length >= 2) arr.push(smoothStroke(it));
           });
           groups.forEach((strokes) => {
             if (!strokes.length) return;
@@ -919,18 +957,27 @@
               seg.meta = { algorithm: 'text', straight: false, closed: true, forceCurves: true,
                 anchors: anch.map((a) => { const ra = txPtRot(a, it.idx); return { x: ra.x, y: ra.y, in: txPtRot(a.in, it.idx), out: txPtRot(a.out, it.idx) }; }) };
             } else {
-              // Curves toggle converts the polyline's corners to cubic beziers
-              // whose handle width is driven by Smoothing: 0 = zero-width handles
-              // = faithful sharp letterforms (a true no-op), 1 = very smooth. The
-              // handles are built by Catmull-Rom-to-bezier on the display-space
-              // points and rendered as native cubics via meta.anchors; forceCurves
-              // keeps them smooth even inside a curves-off group, mirroring the
-              // web-font outline branch above. Below the threshold (Curves off, or
-              // Smoothing 0, or a 2-point rule) the stroke stays a faithful polyline.
+              // Two ways a built-in stroke becomes native béziers instead of
+              // faceted chords:
+              //   1. FONT CURVES — the Vectura stroke-font marks its bowl/arc/
+              //      spline strokes (meta.curve). Those are dense sampled polylines
+              //      of a designed curve, so we ALWAYS bezierize them (independent
+              //      of the layer Curves toggle) at STROKE_CURVE_SMOOTHING = 1, the
+              //      Catmull-Rom tension that reproduces the exact sampled contour —
+              //      the sharp-cornered stems/serifs/diagonals stay flagged false
+              //      and render as faithful straight polylines.
+              //   2. CURVES TOGGLE — with Curves ON + Smoothing > 0 the user opts
+              //      every stroke's corners into cubic handles (0 = sharp no-op,
+              //      1 = very smooth), mirroring the web-font outline branch above.
+              // Both build handles via Catmull-Rom-to-bezier on the display-space
+              // points and render as native cubics via meta.anchors; forceCurves
+              // keeps them smooth even inside a curves-off group.
               const OU = Vectura.OptimizationUtils;
               let anchors = null;
               let closed = false;
-              if (p.curves === true && smoothing > 0 && GU && GU.rebuildShapeAnchors && seg.length >= 3) {
+              const fontCurve = it.idx >= 0 && meta[it.idx] && meta[it.idx].curve === true;
+              const toggleSmooth = p.curves === true && smoothing > 0;
+              if ((fontCurve || toggleSmooth) && GU && GU.rebuildShapeAnchors && seg.length >= 3) {
                 closed = !!(OU && OU.isClosedPath && OU.isClosedPath(seg));
                 // A closed glyph (O, D…) repeats its first point as its last —
                 // drop the duplicate so the Catmull-Rom wrap-around isn't degenerate.
@@ -939,7 +986,10 @@
                   const a = seg[0]; const b = seg[seg.length - 1];
                   if (Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6) pts = seg.slice(0, -1);
                 }
-                const built = GU.rebuildShapeAnchors(pts.map((q) => ({ x: q.x, y: q.y })), { smoothing, closed });
+                // Font curves get full Catmull-Rom (1); the user Smoothing slider can
+                // only push a designed curve rounder, never flatten it below faithful.
+                const effSmoothing = fontCurve ? Math.max(smoothing, STROKE_CURVE_SMOOTHING) : smoothing;
+                const built = GU.rebuildShapeAnchors(pts.map((q) => ({ x: q.x, y: q.y })), { smoothing: effSmoothing, closed });
                 if (built && Array.isArray(built.anchors) && built.anchors.length >= 2
                   && built.anchors.some((a) => a && (a.in || a.out))) {
                   anchors = built.anchors;
