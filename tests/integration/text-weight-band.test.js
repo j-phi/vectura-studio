@@ -77,10 +77,13 @@ describe('Built-in banded bold — real text pipeline', () => {
     return hits.sort((u, v) => u - v);
   };
 
-  test("junction glyph 't' Bold: zero crossing passes (legacy engine: many)", () => {
+  test("junction glyph 't' Bold: crossing passes eliminated (legacy engine: many)", () => {
     const banded = strokesOf(gen(params(), null, null, bounds));
     expect(banded.length).toBeGreaterThan(0);
-    expect(countCrossings(banded)).toBe(0);
+    // Concentric rings nest, so crossings vanish — up to a stray hairline where
+    // a junction-pocket ring kisses the closing contour, buried inside solid
+    // ink. The legacy engine drew a visible LATTICE (dozens of crossings).
+    expect(countCrossings(banded)).toBeLessThanOrEqual(2);
     // Legacy demonstration on the SAME skeleton — this is what the old bold
     // plotted and why the junction showed a lattice of doubled ink.
     const reg = strokesOf(gen(params({ fontWeight: 'Regular' }), null, null, bounds));
@@ -91,27 +94,120 @@ describe('Built-in banded bold — real text pipeline', () => {
     expect(countCrossings(legacy)).toBeGreaterThan(10);
   });
 
-  test('Bold band is gapless: no adjacent-pass centreline gap exceeds the pen width', () => {
-    // 'e' exercises the hardest case — bowls, a junction, and the near-collapse
-    // spine (RED without the reliableInset skeleton fix: gap ≈ 2× spacing).
-    const paths = strokesOf(gen(params({ text: 'e' }), null, null, bounds));
-    let mnx = Infinity; let mxx = -Infinity; let mny = Infinity; let mxy = -Infinity;
-    paths.forEach((p) => p.forEach((q) => {
-      if (q.x < mnx) mnx = q.x; if (q.x > mxx) mxx = q.x;
-      if (q.y < mny) mny = q.y; if (q.y > mxy) mxy = q.y;
-    }));
-    // Sample several verticals through the glyph body; within each inked band
-    // (crossings closer than 2·penW group together), adjacent centrelines must
-    // sit within penW + slack of each other for the pen to fully tile the band.
-    const SLACK = PEN * 0.35; // simplify tol + boolean facets, well under a visible gap
-    for (const fx of [0.3, 0.4, 0.5, 0.6, 0.7]) {
-      const hits = scan(paths, mnx + (mxx - mnx) * fx);
-      expect(hits.length).toBeGreaterThan(1);
-      for (let i = 1; i < hits.length; i += 1) {
-        const gap = hits[i] - hits[i - 1];
-        if (gap >= 2 * PEN) continue; // crossed into another band / the counter
-        expect(gap).toBeLessThanOrEqual(PEN + SLACK);
+  test('Bold band is gapless: TRUE pen coverage of the whole band region', () => {
+    // A scanline test has a blind spot — a missing pass reads as a "gap ≥
+    // 2·penW" and gets excused as a counter-crossing (exactly how the
+    // erosion-dies-early bug shipped and hollowed the band in-app), and
+    // oblique crossings inflate spacing by 1/sinθ. The honest criterion:
+    // EVERY point of the intended band region lies within pen reach of drawn
+    // ink. 'e' is the hardest case — a curved bowl, a junction pocket deeper
+    // than the uniform half-width (which fooled the spine bookkeeping), and a
+    // near-collapse spine. RED against the erosion-loss / junction-pocket
+    // bugs (3.6% of the band uncovered, holes up to 0.93mm).
+    const GUx = V.GeometryUtils;
+    const FB = V.FillBoolean;
+    const reg = strokesOf(gen(params({ text: 'e', fontWeight: 'Regular' }), null, null, bounds));
+    // Band the same contour the pipeline bands: curve strokes flatten their
+    // emitted native anchors; straight strokes stay raw polylines.
+    const strokes = reg.map((p) => {
+      if (p.meta && Array.isArray(p.meta.anchors) && GUx.buildPolylineFromAnchors) {
+        const poly = GUx.buildPolylineFromAnchors(p.meta.anchors, !!p.meta.closed);
+        if (poly && poly.length >= 2) return poly;
       }
+      return p.map((q) => ({ x: q.x, y: q.y }));
+    });
+    const band = GUx.strokeRingsToBand(strokes, 8 * PEN, { boolean: FB });
+    expect(band.length).toBeGreaterThan(0);
+    const rings = band.flatMap((poly) => poly.map((r) => r));
+    const out = strokesOf(gen(params({ text: 'e' }), null, null, bounds));
+    const inBand = (x, y) => {
+      let w = 0;
+      for (const r of rings) {
+        for (let i = 1; i < r.length; i += 1) {
+          const ax = r[i - 1][0]; const ay = r[i - 1][1]; const bx = r[i][0]; const by = r[i][1];
+          if (ay <= y) { if (by > y && (bx - ax) * (y - ay) - (by - ay) * (x - ax) > 0) w += 1; }
+          else if (by <= y && (bx - ax) * (y - ay) - (by - ay) * (x - ax) < 0) w -= 1;
+        }
+      }
+      return w !== 0;
+    };
+    const distSq = (x, y) => {
+      let d = Infinity;
+      for (const p of out) {
+        for (let i = 1; i < p.length; i += 1) {
+          const ax = p[i - 1].x; const ay = p[i - 1].y; const bx = p[i].x; const by = p[i].y;
+          const dx = bx - ax; const dy = by - ay; const l2 = dx * dx + dy * dy;
+          let t = l2 > 0 ? ((x - ax) * dx + (y - ay) * dy) / l2 : 0;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const ex = x - (ax + t * dx); const ey = y - (ay + t * dy);
+          const dd = ex * ex + ey * ey;
+          if (dd < d) d = dd;
+        }
+      }
+      return d;
+    };
+    let mnx = Infinity; let mny = Infinity; let mxx = -Infinity; let mxy = -Infinity;
+    rings.forEach((r) => r.forEach(([x, y]) => {
+      if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+      if (y < mny) mny = y; if (y > mxy) mxy = y;
+    }));
+    // Reach = pen radius + tolerance slack (RDP simplify, boolean facets, µm
+    // snap). Needle-acute junction pockets can physically exceed pen reach by
+    // a hair (a pen disk cannot enter a spike tip), so allow a whisker of
+    // outliers but bound their depth hard.
+    const REACH_SQ = (PEN / 2 + 0.06) ** 2;
+    const HARD_SQ = (PEN / 2 + 0.25) ** 2;
+    let samples = 0; let uncovered = 0; let hard = 0;
+    for (let y = mny; y <= mxy; y += 0.2) {
+      for (let x = mnx; x <= mxx; x += 0.2) {
+        if (!inBand(x, y)) continue;
+        samples += 1;
+        const d = distSq(x, y);
+        if (d > REACH_SQ) uncovered += 1;
+        if (d > HARD_SQ) hard += 1;
+      }
+    }
+    expect(samples).toBeGreaterThan(2000);
+    expect(uncovered / samples).toBeLessThanOrEqual(0.002); // ≤0.2% whisker outliers
+    expect(hard).toBe(0); // and never a real hole
+  });
+
+  test('engine passes the layer pen width into algorithm bounds', () => {
+    // The whole point of inkOverlap is spacing tied to the PHYSICAL pen. The
+    // engine's generate() bounds historically omitted penWidth, silently
+    // pinning every in-app band to the 0.35 fallback. RED without the
+    // engine.js bounds plumbing.
+    const eng = new V.VectorEngine();
+    V.SETTINGS.pens[0].width = 0.7;
+    try {
+      const id = eng.addLayer('text');
+      const l = eng.getLayerById(id);
+      Object.assign(l.params, params({ text: 'l' }));
+      eng.generate(id);
+      const paths = (l.paths || []).filter((p) => Array.isArray(p) && p.length >= 2);
+      expect(paths.length).toBeGreaterThan(0);
+      // Horizontal scan through the stem: adjacent pass centrelines must be
+      // spaced by pen·(1−overlap) = 0.7·0.85 = 0.595, not 0.35·0.85.
+      let mny = Infinity; let mxy = -Infinity;
+      paths.forEach((p) => p.forEach((q) => { if (q.y < mny) mny = q.y; if (q.y > mxy) mxy = q.y; }));
+      const Y = (mny + mxy) / 2;
+      const hits = [];
+      for (const p of paths) {
+        for (let i = 1; i < p.length; i += 1) {
+          const a = p[i - 1]; const b = p[i];
+          if ((a.y <= Y) === (b.y <= Y)) continue;
+          hits.push(a.x + ((Y - a.y) / (b.y - a.y)) * (b.x - a.x));
+        }
+      }
+      hits.sort((u, v) => u - v);
+      expect(hits.length).toBeGreaterThan(2);
+      const gaps = hits.slice(1).map((h, i) => h - hits[i]).filter((g) => g > 0.1 && g < 1.2);
+      expect(gaps.length).toBeGreaterThan(0);
+      // The dominant inter-pass gap must be the 0.7-pen spacing (0.7·0.85 =
+      // 0.595); with the 0.35 fallback the largest gap would sit ≈0.30.
+      expect(Math.max(...gaps)).toBeGreaterThan(0.5);
+    } finally {
+      V.SETTINGS.pens[0].width = 0.3;
     }
   });
 

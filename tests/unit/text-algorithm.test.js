@@ -99,12 +99,25 @@ describe('Text algorithm + stroke font', () => {
     expect(font.weightPasses('Semibold')).toBeGreaterThan(font.weightPasses('Medium'));
   });
 
-  test('built-in Bold weight wraps extra pen passes per stroke (thicker than Regular)', () => {
+  test('built-in Bold weight lays down far more ink than Regular (banded snake fill)', () => {
     const base = { text: 'VECTURA', font: 'wide', fitToFrame: true, outlineStroke: true, outlineThickness: 1 };
     const reg = gen({ ...base, fontWeight: 'Regular' });
     const bold = gen({ ...base, fontWeight: 'Bold' });
-    // Each stroke is re-drawn as several parallel offset passes → many more paths.
-    expect(bold.length).toBeGreaterThan(reg.length * 3);
+    // The banded bold (v1.2.30) stitches its concentric passes into a handful
+    // of continuous snakes, so PATH COUNT no longer grows with weight — total
+    // drawn ink (polyline length) does. Regular draws each stroke once; Bold
+    // fills a band several pen widths wide, so its total length is a large
+    // multiple of Regular's.
+    const totalLen = (paths) => {
+      let s = 0;
+      for (const p of paths) {
+        if (!Array.isArray(p)) continue;
+        for (let i = 1; i < p.length; i += 1) s += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y);
+      }
+      return s;
+    };
+    expect(bold.length).toBeGreaterThan(0);
+    expect(totalLen(bold)).toBeGreaterThan(totalLen(reg) * 3);
   });
 
   test('empty / whitespace text yields nothing to plot', () => {

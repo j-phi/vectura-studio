@@ -357,6 +357,13 @@
           }
           preDragWidth = null;
           applyWidth(e.target.value);
+          // Pen width feeds generated GEOMETRY for text layers (the banded bold
+          // spaces its concentric passes by the physical pen), so a committed
+          // width change must regenerate — repaint alone would leave the band
+          // sized for the old pen. Commit-only: never during the live drag.
+          const usesPen = (layer) => layer.type === 'text'
+            && ((layer.penId || null) === pen.id || (!layer.penId && SETTINGS.pens && SETTINGS.pens[0] && SETTINGS.pens[0].id === pen.id));
+          if (this.app.engine.layers.some(usesPen) && this.app.regen) this.app.regen();
         };
       }
 

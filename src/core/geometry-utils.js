@@ -828,6 +828,15 @@
     const skipJoinCos = opts.joinSkipAngle > 0 ? Math.cos(opts.joinSkipAngle) : 2;
     // Union per contour first (small unions), then union the contour bands — keeps
     // each polygon-clipping pass bounded instead of one giant N-poly sweep.
+    // When joins are being skipped, each quad is extended LONGITUDINALLY by a
+    // whisker so it covers the corner wedge the missing disk would have swept.
+    // Without this, a skipped vertex whose corner bends toward the region
+    // leaves an un-swept needle (width ≈ halfW·θ) reaching the source ring —
+    // in the erosion use that needle survives as an un-eroded spike touching
+    // the band boundary, and a round-capped pen renders it as a bump on the
+    // letterform silhouette. Over-extension on the far side of a corner only
+    // sweeps area the disk would have swept anyway.
+    const quadExt = skipJoinCos <= 1 ? halfW * Math.sin(Math.max(0, opts.joinSkipAngle)) : 0;
     const bands = [];
     for (const ring of rings) {
       if (!Array.isArray(ring) || ring.length < 2) continue;
@@ -839,13 +848,15 @@
         const dy = b.y - a.y;
         const mag = Math.hypot(dx, dy);
         if (mag < 1e-9) continue;
+        const ux = (dx / mag) * quadExt;
+        const uy = (dy / mag) * quadExt;
         const nx = (-dy / mag) * halfW;
         const ny = (dx / mag) * halfW;
         geoms.push([[[
-          [a.x + nx, a.y + ny],
-          [b.x + nx, b.y + ny],
-          [b.x - nx, b.y - ny],
-          [a.x - nx, a.y - ny],
+          [a.x + nx - ux, a.y + ny - uy],
+          [b.x + nx + ux, b.y + ny + uy],
+          [b.x - nx + ux, b.y - ny + uy],
+          [a.x - nx - ux, a.y - ny - uy],
         ]]]);
       }
       for (let i = 0; i < ring.length; i += 1) {
@@ -1116,17 +1127,31 @@
     }
     if (!boundaryRings.length) return [];
     const joinSides = Math.max(4, Math.round(opts.joinSides || 8));
-    // polygon-clipping can still crash on unlucky exactly-coincident sweep
-    // events; a sub-percent inset nudge (invisible at pen scale) shifts every
-    // event off the degeneracy, so retry before declaring the region gone. A
-    // GENUINELY empty erosion (region thinner than 2·inset) returns [] from the
-    // first successful attempt and is never retried.
-    const attempts = [[inset, 0.5], [inset * 1.0037, 0.29], [inset * 0.9961, 0.71]];
+    // polygon-clipping can still crash on unlucky sweep-line configurations —
+    // exactly-coincident events, or simply a dense curvy boundary (every arc a
+    // fan of near-parallel chords). Escalating retries before declaring the
+    // region gone: first sub-percent inset nudges (shift every event off the
+    // degeneracy), then RDP-simplified boundary rings (the cut only needs the
+    // boundary to within a few % of the inset — coarsening it shifts the eroded
+    // edge by that tolerance, far below a pen width, while removing exactly the
+    // near-parallel chords that thrash the sweep). A GENUINELY empty erosion
+    // (region thinner than 2·inset) returns [] from the first successful
+    // attempt and is never retried.
+    const attempts = [
+      [inset, 0.5, 0],
+      [inset * 1.0037, 0.29, 0],
+      [inset * 0.9961, 0.71, 0],
+      [inset, 0.13, inset * 0.03],
+      [inset * 1.0053, 0.87, inset * 0.08],
+    ];
     const joinSkipAngle = Number.isFinite(opts.joinSkipAngle) ? opts.joinSkipAngle : 0.35;
     let region = null;
-    for (const [ins, phase] of attempts) {
+    for (const [ins, phase, tol] of attempts) {
       try {
-        const cut = strokeRingsToBand(boundaryRings, ins * 2, { boolean: FB, joinSides, diskPhase: phase, joinSkipAngle });
+        const rings = tol > 0
+          ? boundaryRings.map((r) => { const s = simplifyPath(r, tol); return (s && s.length >= 4) ? s : r; })
+          : boundaryRings;
+        const cut = strokeRingsToBand(rings, ins * 2, { boolean: FB, joinSides, diskPhase: phase, joinSkipAngle });
         region = (cut && cut.length) ? (FB.difference(snappedMp, cut) || []) : [];
         break;
       } catch (_) { region = null; }

@@ -1232,7 +1232,14 @@
           : layer.params;
       const p = fastPreview ? { ...baseParams, fastPreview: true } : baseParams;
 
-      const bounds = { width, height, m, dW, dH, truncate: SETTINGS.truncate, fastPreview, preview3dQuality: SETTINGS.preview3dQuality };
+      // The physical pen width (mm) of the layer's assigned pen — algorithms
+      // that space geometry by the pen (the text banded bold's concentric fill,
+      // spacing = penWidth·(1 − inkOverlap)) read it from bounds. Falls back to
+      // the first pen, then a fine default, so headless callers stay stable.
+      const pens = Array.isArray(SETTINGS.pens) ? SETTINGS.pens : [];
+      const layerPen = pens.find((pn) => pn && pn.id === layer.penId) || pens[0];
+      const penWidth = Number(layerPen && layerPen.width) > 0 ? Number(layerPen.width) : 0.35;
+      const bounds = { width, height, m, dW, dH, penWidth, truncate: SETTINGS.truncate, fastPreview, preview3dQuality: SETTINGS.preview3dQuality };
 
       // Shape layers: bake simplify/smoothing destructively into sourcePath anchors
       // (reversible — originalAnchors snapshot lives on path.meta).

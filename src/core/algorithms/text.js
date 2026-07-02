@@ -881,12 +881,28 @@
             // without doubling.
             const passes = [];
             let lastInset = 0;
+            // Deepest pass that covers the WHOLE band reliably. lastInset alone
+            // is a trap: junction pockets run deeper than the uniform bandW/2,
+            // keeping the loop alive past the stroke spine's collapse — the last
+            // surviving pass then only exists inside the pocket while the bowl
+            // spine sits bare. Reliable = comfortably above collapse everywhere.
+            let reliableInset = 0;
             let region = band;
             for (let k = 0; k < 64; k += 1) {
               const step = k === 0 ? penW / 2 : passSpacing;
               let mp = [];
               try { mp = GU.insetMultiPolygon(region, step, { boolean: FB, minArea: MIN_AREA }); }
               catch (_) { mp = []; }
+              if ((!mp || !mp.length) && k > 0) {
+                // The incremental step can fail on a boolean pathology of the
+                // PREVIOUS pass's boundary, not a true collapse — losing every
+                // deeper pass and hollowing the band (a ~3-spacing white ring the
+                // skeleton can't bridge). The base band is far simpler geometry:
+                // retry this depth as one single-shot erosion from it before
+                // concluding the region is consumed.
+                try { mp = GU.insetMultiPolygon(band, penW / 2 + k * passSpacing, { boolean: FB, minArea: MIN_AREA }); }
+                catch (_) { mp = []; }
+              }
               if (!mp || !mp.length) break;
               // Simplify each pass's rings once: they are both the emitted pen
               // path AND the next erosion's boundary (keeps every cut cheap).
@@ -901,6 +917,42 @@
               if (!rings.length) break;
               passes.push(rings);
               lastInset = penW / 2 + k * passSpacing;
+              if (lastInset <= bandW / 2 - passSpacing) reliableInset = lastInset;
+            }
+            // Closing contour: the pass whose centreline sits at (bandW − penW)/2
+            // tiles a uniform band exactly to its spine. The stepped loop's own
+            // deeper passes can't be trusted for this — near collapse a ring
+            // pinches off locally (and junction pockets keep the loop alive past
+            // the spine's collapse) — so whenever the RELIABLE depth falls short,
+            // run the exact closing depth as one single-shot erosion from the
+            // clean base band, and lay the skeleton down as spine insurance
+            // (for a uniform stroke it IS the medial axis; the closing ring and
+            // skeleton overlap harmlessly inside solid ink).
+            const finalInset = (bandW - penW) / 2;
+            let emitSkeleton = false;
+            if (passes.length && bandW / 2 - (reliableInset + penW / 2) > penW * 0.05) {
+              // Prefer the ring: reliable passes + the closing contour tile the
+              // uniform band completely, and the ring NESTS with every other
+              // pass. The skeleton is the fallback of last resort only — its
+              // full-length strokes slash across the junction pockets' deep
+              // rings (visible hairline crossings), so it draws only when the
+              // closing erosion itself failed.
+              let closed = false;
+              if (finalInset > reliableInset + penW * 0.05) {
+                let mp = [];
+                try { mp = GU.insetMultiPolygon(band, finalInset, { boolean: FB, minArea: MIN_AREA }); }
+                catch (_) { mp = []; }
+                if (mp && mp.length) {
+                  const rings = [];
+                  for (const poly of simplifyMp(mp)) {
+                    for (const ring of poly) {
+                      if (Array.isArray(ring) && ring.length >= 4) rings.push(ring.map((q) => ({ x: q[0], y: q[1] })));
+                    }
+                  }
+                  if (rings.length) { passes.push(rings); closed = true; }
+                }
+              }
+              emitSkeleton = !closed;
             }
             if (!passes.length) { legacyHeavy(strokes); return; }
             // One continuous snake per band region: graft each ring onto the
@@ -908,14 +960,6 @@
             // buried in ink, never streaking across a counter).
             const chains = GU.stitchConcentricRings(passes, Math.max(penW, passSpacing * 2))
               .filter((c) => Array.isArray(c) && c.length >= 2);
-            // Skeleton = guaranteed medial pass. A pass whose inset sits within
-            // one spacing of the collapse depth (bandW/2) is UNRELIABLE — near
-            // collapse its sliver ring pinches off locally and leaves the spine
-            // bare between the flanking passes — so coverage is judged from the
-            // deepest RELIABLE pass. For a uniform stroke the skeleton IS the
-            // medial axis, so the closing pass lands dead centre.
-            const reliableInset = lastInset <= bandW / 2 - passSpacing ? lastInset : lastInset - passSpacing;
-            const emitSkeleton = bandW / 2 - (reliableInset + penW / 2) > penW * 0.05;
             if (cacheKey) {
               if (BAND_FILL_CACHE.size >= BAND_FILL_CACHE_MAX) BAND_FILL_CACHE.clear();
               BAND_FILL_CACHE.set(cacheKey, {

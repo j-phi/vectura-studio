@@ -86,10 +86,22 @@ describe('Stroke-font weight system — real text pipeline (F-03 / F-04)', () =>
     const small = gen(glyphParams(6), null, null, bounds);
     expect(big.length).toBeGreaterThan(0);
     expect(small.length).toBeGreaterThan(0);
-    // The monoline face thickens Bold into parallel pen passes; the clamp caps the
-    // pass count at small optical size, so 'o' emits STRICTLY fewer paths at 6mm.
-    // RED if text.js reverts `clampedPass` to the unclamped `1 + weightPasses`.
-    expect(small.length).toBeLessThan(big.length);
+    // The banded bold's ink width is clampedThickness·penW, so the clamp shows
+    // up as the ABSOLUTE extra ink beyond the Regular skeleton: unclamped both
+    // sizes would gain the full (8−1)·penW ≈ 2.45mm; the 6mm cap trims it.
+    // (Path count stopped being a valid proxy when the stitched snake landed —
+    // both sizes emit a handful of chains.) RED if text.js reverts
+    // `clampedPass` to the unclamped `1 + weightPasses`.
+    const inkW = (paths) => {
+      let mnx = Infinity; let mxx = -Infinity;
+      for (const p of paths) { if (!Array.isArray(p)) continue; for (const q of p) { if (q.x < mnx) mnx = q.x; if (q.x > mxx) mxx = q.x; } }
+      return mxx - mnx;
+    };
+    const regBig = gen({ ...glyphParams(40), fontWeight: 'Regular' }, null, null, bounds);
+    const regSmall = gen({ ...glyphParams(6), fontWeight: 'Regular' }, null, null, bounds);
+    const extraBig = inkW(big) - inkW(regBig);
+    const extraSmall = inkW(small) - inkW(regSmall);
+    expect(extraSmall).toBeLessThan(extraBig - 0.3);
   });
 
   // ── F-04 · the pure helper the clamp reads from ─────────────────────────────
