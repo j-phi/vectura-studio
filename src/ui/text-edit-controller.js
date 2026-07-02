@@ -374,6 +374,36 @@
       return !softWrap;
     }
 
+    /**
+     * Point↔Area conversion — Illustrator's baseline-dot widget toggle.
+     * `mode` is 'point', 'area', or 'toggle'. Point→area wraps the existing text
+     * in a frame sized from `dims` ({width,height} in LOCAL mm — the layer's
+     * current natural text extent, computed by the caller from the selection
+     * bounds); area→point unwraps to natural width. Pushes one pre-change history
+     * snapshot and regenerates. Returns the resulting mode, or null on no-op.
+     */
+    convertTextMode(layer, mode, dims) {
+      if (!layer || layer.type !== 'text' || !layer.params) return null;
+      const p = layer.params;
+      const cur = p.textMode === 'area' ? 'area' : 'point';
+      const target = mode === 'toggle' ? (cur === 'area' ? 'point' : 'area') : mode;
+      if (target !== 'area' && target !== 'point') return null;
+      if (target === cur) return null;
+      if (typeof this.host.pushHistory === 'function') this.host.pushHistory();
+      if (target === 'area') {
+        const fs = Number(p.fontSize) || 40;
+        p.textMode = 'area';
+        p.frameWidth = Math.max(4, Number(dims && dims.width) || fs * 8);
+        p.frameHeight = Math.max(4, Number(dims && dims.height) || fs * 3);
+      } else {
+        p.textMode = 'point';
+      }
+      this._regen(layer);
+      if (typeof this.host.refreshPanel === 'function') this.host.refreshPanel(layer);
+      if (typeof this.host.requestDraw === 'function') this.host.requestDraw();
+      return target;
+    }
+
     // ── Editing — mutations ────────────────────────────────────────────────
     insertText(str) {
       if (!this.active || !str) return false;

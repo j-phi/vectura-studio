@@ -3869,6 +3869,7 @@
       // (its segment is derived from world-space layer.glyphs). The selection
       // highlight draws first so the caret rides above it.
       this.drawTextFrame();
+      this.drawTextModeWidget();
       this.drawAreaCreatePreview();
       this.drawTextSelection();
       this.drawTextCaret();
@@ -4059,6 +4060,55 @@
     // indicator when laid height exceeds frameHeight (+ threading), and a
     // point↔area conversion widget. Web-font area editing stays gated in
     // TextEditController.canMutate.
+    // Point↔Area conversion widget — Illustrator's baseline dot. Shown at the
+    // right-middle of a single selected text layer (Select tool, not mid-edit):
+    // HOLLOW ring = point type, FILLED dot = area type. Double-clicking it toggles
+    // the mode (see the down() dbl-click path). Returns {layer, point, isArea}.
+    _textModeWidgetInfo() {
+      const te = this.app && this.app.textEdit;
+      if (te && te.isActive && te.isActive()) return null;      // hidden while editing
+      if (this.activeTool !== 'select') return null;
+      const sel = this.getSelectedLayers ? this.getSelectedLayers() : [];
+      if (sel.length !== 1) return null;
+      const layer = sel[0];
+      if (!layer || layer.type !== 'text' || !layer.params) return null;
+      const bounds = this.getSelectionBounds([layer]);
+      if (!bounds || !bounds.corners) return null;
+      const { ne, se } = bounds.corners;
+      const off = 14 / this.scale;
+      return {
+        layer,
+        point: { x: (ne.x + se.x) / 2 + off, y: (ne.y + se.y) / 2 },
+        isArea: layer.params.textMode === 'area',
+      };
+    }
+
+    drawTextModeWidget() {
+      const info = this._textModeWidgetInfo();
+      if (!info) return;
+      const r = 5 / this.scale;
+      const { x, y } = info.point;
+      this.ctx.save();
+      const stroke = getThemeToken('--render-selection-handle-stroke', '#60a5fa');
+      this.ctx.strokeStyle = stroke;
+      // Filled dot = area; background-filled (reads hollow) = point.
+      this.ctx.fillStyle = info.isArea ? stroke : (getThemeToken('--render-canvas-bg', '#0b0e14') || '#0b0e14');
+      this.ctx.lineWidth = Math.max(0.3, 1.4 / this.scale);
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, r, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+
+    // Hit-test the conversion widget at canvas-relative screen (sx,sy).
+    _hitTextModeWidget(sx, sy) {
+      const info = this._textModeWidgetInfo();
+      if (!info) return null;
+      const sc = this.worldToScreen(info.point.x, info.point.y);
+      return Math.hypot(sx - sc.x, sy - sc.y) <= 10 ? info.layer : null;
+    }
+
     drawTextFrame() {
       const layer = this._areaFrameLayer();
       if (!layer) return;
@@ -4765,6 +4815,22 @@
           const sYT = e.clientY ?? 0;
           const isDblText = !!(prevT && (nowT - prevT.time) < 400 && Math.hypot(sXT - prevT.x, sYT - prevT.y) < 8);
           if (this.activeTool === 'direct') this._selectLastClick = { time: nowT, x: sXT, y: sYT };
+          // Clicking the point↔area conversion dot toggles the mode. It sits
+          // OUTSIDE the layer bounds, so a double-click's first click would
+          // deselect (hiding the widget) — a SINGLE click is used, and it runs
+          // before any deselect/marquee logic so the layer stays selected.
+          if (this.activeTool === 'select') {
+            const widgetLayer = this._hitTextModeWidget(sx, sy);
+            if (widgetLayer) {
+              const b = this.getSelectionBounds([widgetLayer]);
+              const sX = Math.abs(widgetLayer.params.scaleX) || 1;
+              const sY = Math.abs(widgetLayer.params.scaleY) || 1;
+              const dims = b ? { width: (b.maxX - b.minX) / sX, height: (b.maxY - b.minY) / sY } : undefined;
+              this.app.textEdit.convertTextMode(widgetLayer, 'toggle', dims);
+              if (e.cancelable) e.preventDefault();
+              return;
+            }
+          }
           if (isDblText && topLayer && topLayer.type === 'text') {
             this._beginTextEditFromHit(topLayer, world);
             if (e.cancelable) e.preventDefault();
