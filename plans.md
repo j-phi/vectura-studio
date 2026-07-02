@@ -37,6 +37,14 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- **v1.2.32 — Type fills share the Paint Bucket control surface.** Extracted the paint bucket panel's variant
+  grid + per-variant control rendering into a single shared module, `Vectura.UI.FillControlSurface`
+  (`src/ui/fill-control-surface.js`), and mounted it in both the paint bucket panel and the Text panel's Fill
+  tab. Type fills now expose the exact same twelve fill types and their full parameter sets as the bucket, driven
+  by the same code (the engine path — `text.js → PaintBucketOps.buildFillRecord → _generatePatternFillPaths` —
+  was already shared). Text keeps its bespoke main Angle dial (0°-up / −90° convention), Fill Offset pad, and
+  Inset (excluded from the shared surface). RGR: new `tests/unit/fill-control-surface.test.js` +
+  updated `tests/integration/text-panel.test.js`.
 - **v1.2.30 — Built-in bold → banded concentric snake fill.** Replaced the built-in face's parallel-pass heavy
   weights (crossing lattices at junctions, splayed terminals) with a region-first model: per-glyph
   `strokeRingsToBand(thickness·penW)` → incremental morphological erosion (`GeometryUtils.insetMultiPolygon`,

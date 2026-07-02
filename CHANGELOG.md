@@ -4,6 +4,32 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.32 - 2026-07-02
+
+### Changed
+- **Type fills now offer the exact same controls as the Paint Bucket tool.** The Text panel's Fill tab used to
+  hand-roll a five-option subset (Hatch / Spiral / Dots / Stripe / Cross-Hatch) with a single density slider. It
+  now renders the **same variant grid and per-variant parameters the paint bucket exposes** — all twelve fill
+  types (Hatch, Wave, Dots, Contour, Spiral, Radial, Polygonal, Truchet, Maze, Stripes, Weave, plus None) with
+  their full parameter sets (amplitude, dot shape/pattern/size/rotation/jitter, line count, sides, poly tiling,
+  wave smoothing/frequency, spiral tightness/direction, radial skip, contour direction/variance/simplify/center
+  padding, and the Truchet/Maze/Stripes/Weave controls). Every fill type and parameter matches the bucket because
+  both surfaces now render from **one shared module**, `Vectura.UI.FillControlSurface`
+  (`src/ui/fill-control-surface.js`), rather than duplicating the control logic. The engine path was already
+  shared (`text.js → PaintBucketOps.buildFillRecord → AlgorithmRegistry._generatePatternFillPaths`); this closes
+  the UI gap so the same knobs drive the same fill code.
+- The text-specific main **Angle** dial (0°-up convention — see the −90° note in `text.js`), the **Fill Offset**
+  pad, and the **Inset** control stay as bespoke Text-panel controls (excluded from the shared surface) because
+  they own placement roles the paint bucket handles via padding/shift. The shared surface's own per-variant
+  angles (stripe, weave, poly, dot rotation) come through unchanged and match the bucket.
+
+### Internal
+- Extracted the variant grid + per-variant control rendering out of `src/ui/panels/paint-bucket-panel.js` into
+  the shared `Vectura.UI.FillControlSurface.mount({ gridEl, controlsEl, params, typeKey, exclude, idPrefix,
+  onEdit, onChange })`. The paint bucket panel now mounts the surface (`onChange → persistAndRedraw`) and keeps
+  only its surrounding chrome (scope, pens, sensitivity, status chip, expand) and the fill-record ↔ params
+  mapping; the Text panel mounts it with `typeKey: 'fillType'` and a namespaced id prefix so both can coexist.
+
 ## 1.2.30 - 2026-07-02
 
 ### Changed

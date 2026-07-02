@@ -272,12 +272,21 @@ describe('Text panel (vtp-)', () => {
     expect(sm.querySelector('.vtp-sm')).toBeNull();
   });
 
-  test('fill density defaults to 21 (slider + chip reflect it)', () => {
+  test('fill type is the shared paint-bucket variant grid; density comes from the shared surface', () => {
     const { container, layer } = mount({ font: 'google:inter', fillEnabled: true });
     expect(layer.params.fillDensity).toBe(21);
-    const dens = container.querySelector('[data-ref="densSlider"]');
+    // The Fill tab now renders the SAME variant grid the paint bucket uses
+    // (12 fill types) via Vectura.UI.FillControlSurface — not a 5-option select.
+    const grid = container.querySelector('[data-ref="fillVariantGrid"]');
+    expect(grid).toBeTruthy();
+    expect(grid.querySelectorAll('.pb-variant-btn').length).toBe(12);
+    expect(grid.querySelector('.pb-variant-btn.active').dataset.bucketVariant).toBe('hatch');
+    // Density is a shared-surface control, id-namespaced with the txtfill prefix.
+    const dens = container.querySelector('#txtfill-fillDensity');
+    expect(dens).toBeTruthy();
     expect(dens.value).toBe('21');
-    expect(container.querySelector('[data-ref="densChip"]').textContent).toBe('21');
+    // The excluded main Angle stays a bespoke 0°-up AngleDial (see text.js −90°).
+    expect(container.querySelector('#txtfill-fillAngle')).toBeNull();
   });
 
   test('fill angle is a radial dial (not a linear scrub) and commits fillAngle', () => {
