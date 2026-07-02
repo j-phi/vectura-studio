@@ -832,7 +832,6 @@
       if (favVals.length) { addSection('★ Favorites'); addOptions(favVals); }
       const recentVals = recent.filter((v) => nameKnown(v) && favVals.indexOf(v) < 0);
       if (recentVals.length) { addSection('Recent'); addOptions(recentVals); }
-      addSection('Built-in single-stroke'); addOptions(builtinValues);
       addSection('Google Fonts');
       if (families.length) {
         addOptions(families.slice(0, POPULAR_N).map((f) => idToKey(f.id)));
@@ -840,6 +839,7 @@
       } else {
         addHint('Web font catalog unavailable — built-in faces only.');
       }
+      addSection('Built-in single-stroke'); addOptions(builtinValues);
     }
     function moveActive(dir) {
       const rows = Array.from(fpList.querySelectorAll('.vtp-fp-opt'));

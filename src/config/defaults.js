@@ -1328,6 +1328,7 @@
     },
     text: {
       label: 'Text',
+      hidden: true,
       is3d: false,
       category: 'Typography',
       preset: 'text-default',
