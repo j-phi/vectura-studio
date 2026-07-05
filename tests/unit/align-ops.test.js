@@ -239,3 +239,43 @@ describe('AlignOps undo-step granularity', () => {
     expect(deltas).toEqual({});
   });
 });
+
+// MSC-2 — Horizontal & Vertical Align Center (concentric snap) as ONE compound
+// op that moves each layer on BOTH axes so a single apply (one undo step) makes
+// the selection concentric.
+describe('AlignOps.align alignCenterBoth (MSC-2)', () => {
+  const boundsFor = boundsForFactory();
+
+  test('centers each layer on both axes to the selection center in one delta map', () => {
+    // Two rects with different centers → both must snap to the shared center.
+    const a = layerWithRect('a', 0, 0, 10, 10);   // center (5, 5)
+    const b = layerWithRect('b', 20, 30, 40, 50); // center (30, 40)
+    // Selection aggregate rect: x[0..40] y[0..50] → center (20, 25).
+    const deltas = AO.align('alignCenterBoth', [a, b], boundsFor, { mode: 'selection' });
+    expect(deltas.a).toEqual({ dx: 15, dy: 20 });  // (20-5, 25-5)
+    expect(deltas.b).toEqual({ dx: -10, dy: -15 }); // (20-30, 25-40)
+  });
+
+  test('two shapes become concentric after applying the deltas (single action)', () => {
+    const a = layerWithRect('a', 0, 0, 10, 10);   // center (5, 5)
+    const b = layerWithRect('b', 20, 30, 40, 50); // center (30, 40)
+    const deltas = AO.align('alignCenterBoth', [a, b], boundsFor, { mode: 'selection' });
+    const centerAfter = (rect, d = { dx: 0, dy: 0 }) => ({
+      cx: (rect.minX + rect.maxX) / 2 + d.dx,
+      cy: (rect.minY + rect.maxY) / 2 + d.dy,
+    });
+    const ca = centerAfter(a.rect, deltas.a);
+    const cb = centerAfter(b.rect, deltas.b);
+    expect(ca.cx).toBeCloseTo(cb.cx, 6);
+    expect(ca.cy).toBeCloseTo(cb.cy, 6);
+  });
+
+  test('respects Align-To artboard as the reference center', () => {
+    const a = layerWithRect('a', 0, 0, 10, 10); // center (5, 5)
+    const deltas = AO.align('alignCenterBoth', [a], boundsFor, {
+      mode: 'artboard', artboard: { width: 100, height: 80 },
+    });
+    // Artboard center (50, 40) → dx 45, dy 35.
+    expect(deltas.a).toEqual({ dx: 45, dy: 35 });
+  });
+});

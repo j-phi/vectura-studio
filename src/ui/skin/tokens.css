@@ -79,6 +79,16 @@
   --ui-on-accent: #fff;
   --ui-on-danger: #fff;
   --ui-on-warning: #fff;
+
+  /* === SG: smart-guide accent (Illustrator tools parity, Lane A) ===
+   * Magenta family for object-to-object alignment guides, semantic labels,
+   * and hover highlight of unselected geometry. Read by the canvas renderer
+   * (drawGuides / hover highlight) via getThemeToken('--render-smart-guide').
+   * Skin-agnostic: magenta clears both light and dark canvases. */
+  --render-smart-guide: #e6007e;
+  --render-smart-guide-label: #e6007e;
+  --render-smart-guide-label-text: #ffffff;
+  /* === /SG === */
 }
 
 [data-skin-swapping="true"] *,
@@ -87,3 +97,19 @@
   transition: none !important;
   animation: none !important;
 }
+
+/* === ISO: isolation breadcrumb tokens (Phase 2 Lane I — ISO-1/2) === */
+:root {
+  /*
+   * ISO-2 top-edge isolation accent. Deliberately an explicit Illustrator-blue
+   * default rather than var(--ui-accent): several skins set --ui-accent to a
+   * near-white (#fafafa), which would make the "isolation scope" edge line
+   * invisible. Per-skin palette files may override --iso-edge-color where a
+   * different isolation hue reads better.
+   */
+  --iso-edge-color: #2680eb;
+  --iso-edge-height: 2px;
+  /* ISO-1 breadcrumb strip height. */
+  --iso-bc-height: 30px;
+}
+/* === END ISO tokens === */

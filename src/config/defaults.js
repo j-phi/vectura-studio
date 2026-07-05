@@ -1461,9 +1461,12 @@
       // Affine glyph scaling as a percentage of natural size (100 = unscaled).
       vScale: 100,
       hScale: 100,
-      // Manual global kern added to (web) or between (built-in) every glyph,
-      // in font-relative units. Distinct from `tracking` (absolute mm spacing).
-      kerning: 0,
+      // Per-PAIR manual kern: a sparse map keyed by caret index (the gap between
+      // char c-1 and char c) → extra advance for that single gap, in font-relative
+      // units (built-in) / mm (web), matching `tracking`'s per-face units. Only
+      // editable from text-edit mode with the caret between two letters; there is
+      // no global uniform kern (that role belongs to `tracking`).
+      kernPairs: {},
       // Vertical baseline shift in mm (positive raises the whole block).
       baselineShift: 0,
       // Per-character rotation in degrees (deterministic; seeded like jitter).
@@ -2206,6 +2209,10 @@
     marginLineDotting: 0,
     showGuides: true,
     snapGuides: true,
+    // Contextual Task Bar (Illustrator parity, Phase 2). Enabled by default; the
+    // position/pinned bag is populated lazily by src/ui/shell/context-bar.js.
+    contextBarEnabled: true,
+    contextBar: { pinned: false, x: null, y: null },
     selectionOutline: true,
     selectionOutlineColor: '#ef4444',
     selectionOutlineWidth: 0.15,

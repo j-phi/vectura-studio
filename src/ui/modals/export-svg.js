@@ -442,9 +442,20 @@
       ctx.globalAlpha = alpha;
       ctx.strokeStyle = strokeStyle;
       ctx.lineWidth = lineWidth;
-      ctx.lineCap = item.lineCap || 'round';
-      ctx.lineJoin = 'round';
-      const dash = renderer?.getPathStrokeDash?.(item.path) || window.Vectura?.Geometry3D?.getPathStrokeDash?.(item.path);
+      // Stroke style model (STR-1/STR-3): the preview draw mirrors the exact
+      // values the SVG emission writes (cap mapping, join, miter limit,
+      // layer-level dash) so screen matches export.
+      ctx.lineCap = window.Vectura?.STROKE_STYLE?.toCanvasCap
+        ? window.Vectura.STROKE_STYLE.toCanvasCap(item.lineCap)
+        : (item.lineCap === 'projecting' ? 'square' : (item.lineCap || 'round'));
+      ctx.lineJoin = item.lineJoin || 'round';
+      if (item.lineJoin === 'miter' && Number.isFinite(item.miterLimit)) {
+        ctx.miterLimit = item.miterLimit;
+      }
+      const dash = renderer?.getPathStrokeDash?.(item.path)
+        || window.Vectura?.Geometry3D?.getPathStrokeDash?.(item.path)
+        || item.dashArray
+        || null;
       if (dash) ctx.setLineDash(dash);
       ctx.stroke();
       ctx.restore();

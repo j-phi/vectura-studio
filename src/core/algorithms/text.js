@@ -215,7 +215,7 @@
         fontWeight: p.fontWeight,
         vScale: p.vScale,
         hScale: p.hScale,
-        kerning: p.kerning,
+        kernPairs: p.kernPairs,
         baselineShift: p.baselineShift,
         indentLeft: p.indentLeft,
         indentRight: p.indentRight,
@@ -264,7 +264,15 @@
           isOutline = true;
         } else {
           if (Web.getFontStatus(id) === 'idle') Web.ensureFont(id).catch(() => {});
-          laid = Font.layout(str, { size, tracking: builtinTracking, lineHeight, align, font: 'sans', ...synOpts });
+          // Stroke-font placeholder while the web face parses. It must honour the
+          // area frame too (wrapWidth/areaWrap) so the pre-parse flash wraps to the
+          // box instead of overflowing as one long line; the loader re-renders with
+          // the real outlines once they arrive.
+          laid = Font.layout(str, {
+            size, tracking: builtinTracking, lineHeight, align, font: 'sans',
+            wrapWidth: isArea ? frameW : 0, areaWrap: isArea,
+            ...synOpts,
+          });
         }
       } else {
         laid = Font.layout(str, {
@@ -741,13 +749,28 @@
           const inkOverlap = clamp(finite(p.inkOverlap, 15), 0, 60) / 100;
           const passSpacing = penW * (1 - inkOverlap);
           const bandW = thickness * penW;
-          // Near collapse the erosion boolean can spit sub-pen-dot crumbs — drop
-          // anything smaller than one pen footprint.
+          // Sliver floor for erosion output. Only true boolean crumbs (sub-dot
+          // specks) are dropped: a SMALL ring can be legitimate coverage — the
+          // deep ring of a needle-acute junction pocket is a roundish blob well
+          // under one pen-square, and filtering it at penW² left the pocket
+          // interior up to ~0.4mm from any ink. Thin interior slivers that
+          // survive the lower floor draw as short strokes buried in solid ink —
+          // harmless. (The band region is a disk sweep, so with faithful
+          // contours the pen reaches EVERYTHING — residuals are discretization,
+          // and this floor was the largest discretization error.)
           const MIN_AREA = penW * penW;
+          // Join-disk arc resolution for the erosion cuts. Corner arcs in the
+          // eroded contours inherit these facets; 16 sides keeps the arc sagitta
+          // (and thus the corner-coverage shortfall) under 2% of the inset.
+          // Cheap since joinSkipAngle already skips the disks along gentle
+          // curvature — only real corners pay.
+          const JOIN_SIDES = 16;
           // polygon-clipping output rings are dense with micro/collinear vertices;
           // every erosion pass sweeps a disk along every boundary vertex, so ring
-          // point count is THE cost driver. RDP at 5% of a pen width (an order of
-          // magnitude under the ink-overlap slack) collapses them harmlessly.
+          // point count is THE cost driver. RDP at 5% of a pen width collapses
+          // them harmlessly: the shave is common-mode across adjacent passes at
+          // a corner (each starts from the previous pass's pulled-in boundary),
+          // so INTER-PASS spacing — what gaplessness depends on — is preserved.
           const SIMP_TOL = penW * 0.05;
           // Emergency complexity valve: past RING_CAP vertices the tolerance
           // escalates (at most twice — escalating further would open visible
@@ -862,7 +885,15 @@
               }
             }
             let band = null;
-            try { band = GU.strokeRingsToBand(strokes, bandW, { boolean: FB }); }
+            // Join-disk resolution must scale with the band RADIUS: an 8-gon
+            // chord at radius bandW/2 dips R·(1−cos π/8) ≈ 0.076·R inside the
+            // true circle — at Bold widths that is a visible ~0.1mm NOTCH in the
+            // letterform silhouette at every gentle convex skeleton vertex
+            // (boundary = quad edge → chord → quad edge). Choose the side count
+            // so the sagitta stays under the simplify tolerance.
+            const bandJoinSides = Math.min(48, Math.max(8,
+              Math.ceil(Math.PI / Math.acos(Math.max(0.5, 1 - SIMP_TOL / (bandW / 2))))));
+            try { band = GU.strokeRingsToBand(strokes, bandW, { boolean: FB, joinSides: bandJoinSides }); }
             catch (_) { band = null; }
             if (!band || !band.length) { legacyHeavy(strokes); return; }
             band = simplifyMp(band);
@@ -891,7 +922,7 @@
             for (let k = 0; k < 64; k += 1) {
               const step = k === 0 ? penW / 2 : passSpacing;
               let mp = [];
-              try { mp = GU.insetMultiPolygon(region, step, { boolean: FB, minArea: MIN_AREA }); }
+              try { mp = GU.insetMultiPolygon(region, step, { boolean: FB, minArea: MIN_AREA, joinSides: JOIN_SIDES }); }
               catch (_) { mp = []; }
               if ((!mp || !mp.length) && k > 0) {
                 // The incremental step can fail on a boolean pathology of the
@@ -900,7 +931,7 @@
                 // skeleton can't bridge). The base band is far simpler geometry:
                 // retry this depth as one single-shot erosion from it before
                 // concluding the region is consumed.
-                try { mp = GU.insetMultiPolygon(band, penW / 2 + k * passSpacing, { boolean: FB, minArea: MIN_AREA }); }
+                try { mp = GU.insetMultiPolygon(band, penW / 2 + k * passSpacing, { boolean: FB, minArea: MIN_AREA, joinSides: JOIN_SIDES }); }
                 catch (_) { mp = []; }
               }
               if (!mp || !mp.length) break;
@@ -940,7 +971,7 @@
               let closed = false;
               if (finalInset > reliableInset + penW * 0.05) {
                 let mp = [];
-                try { mp = GU.insetMultiPolygon(band, finalInset, { boolean: FB, minArea: MIN_AREA }); }
+                try { mp = GU.insetMultiPolygon(band, finalInset, { boolean: FB, minArea: MIN_AREA, joinSides: JOIN_SIDES }); }
                 catch (_) { mp = []; }
                 if (mp && mp.length) {
                   const rings = [];
@@ -997,9 +1028,11 @@
             if (anch) {
               // Native cubic outline: forceCurves renders the glyph's real beziers
               // regardless of the layer's Curves toggle; `closed` joins the final
-              // segment back to the start.
+              // segment back to the start. `anch` is the minimal-anchor re-trace
+              // (Illustrator "Create Outlines" parity) produced in GoogleFonts.layout;
+              // each anchor carries a `corner` flag for the node editor's affordance.
               seg.meta = { algorithm: 'text', straight: false, closed: true, forceCurves: true,
-                anchors: anch.map((a) => { const ra = txPtRot(a, it.idx); return { x: ra.x, y: ra.y, in: txPtRot(a.in, it.idx), out: txPtRot(a.out, it.idx) }; }) };
+                anchors: anch.map((a) => { const ra = txPtRot(a, it.idx); return { x: ra.x, y: ra.y, in: txPtRot(a.in, it.idx), out: txPtRot(a.out, it.idx), corner: a.corner === true }; }) };
             } else {
               // Two ways a built-in stroke becomes native béziers instead of
               // faceted chords:

@@ -114,6 +114,8 @@
     alignTop:     () => alignSvg(`<path d="M3 3h18"/><rect width="4" height="11" x="5" y="6" rx="1"/><rect width="4" height="7" x="15" y="6" rx="1"/>`),
     alignCenterV: () => alignSvg(`<path d="M3 12h18"/><rect width="4" height="11" x="5" y="6.5" rx="1"/><rect width="4" height="7" x="15" y="8.5" rx="1"/>`),
     alignBottom:  () => alignSvg(`<path d="M3 21h18"/><rect width="4" height="11" x="5" y="7" rx="1" transform="rotate(180 7 12.5)"/><rect width="4" height="7" x="15" y="11" rx="1" transform="rotate(180 17 14.5)"/>`),
+    // MSC-2 — Horizontal & Vertical Align Center (both axes, concentric): crosshair + centered box
+    alignCenterBoth: () => alignSvg(`<path d="M12 3v18"/><path d="M3 12h18"/><rect width="8" height="8" x="8" y="8" rx="1"/>`),
     // Distribute by edge (V top/bottom, H left/right) and by center
     distributeTop:     () => alignSvg(`<rect width="14" height="6" x="5" y="14" rx="2"/><rect width="10" height="6" x="7" y="4" rx="2"/><path d="M2 14h20"/><path d="M2 4h20"/>`),
     distributeCenterV: () => alignSvg(`<rect width="14" height="6" x="5" y="14" rx="2"/><rect width="10" height="6" x="7" y="4" rx="2"/><path d="M22 7h-5"/><path d="M7 7H1"/><path d="M22 17h-3"/><path d="M5 17H2"/>`),

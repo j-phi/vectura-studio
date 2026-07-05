@@ -298,7 +298,9 @@
    *     fontWeight  ignored by the built-in face (single weight).
    *     vScale/hScale  percent (100 = unchanged); scale glyph geometry about the
    *                    glyph baseline origin. hScale also scales the advance.
-   *     kerning     extra advance added to EVERY glyph, in FONT UNITS.
+   *     kernPairs   sparse per-pair kern map keyed by caret index (the gap
+   *                 between char c-1 and char c) → extra advance for THAT gap
+   *                 only, in FONT UNITS. No global uniform kern.
    *     baselineShift  mm; raises the whole block (y up).
    *     indentLeft/indentRight/indentFirst  mm; per-line / paragraph-head indents.
    *     spaceBefore/spaceAfter  mm; vertical gap before/after each paragraph.
@@ -317,7 +319,15 @@
     const scale = size / CAP;
     const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
     const tracking = (Number(opt.tracking) || 0) / scale; // back to font units
-    const kerning = num(opt.kerning, 0); // font units, per the layout contract
+    // Per-pair kern (font units), keyed by caret index (the gap between char
+    // c-1 and char c). kernAfter(s) is the kern applied AFTER the char at source
+    // index s — i.e. the gap at caret index s+1.
+    const kernPairs = (opt.kernPairs && typeof opt.kernPairs === 'object') ? opt.kernPairs : null;
+    const kernAfter = (srcIdx) => {
+      if (!kernPairs) return 0;
+      const v = Number(kernPairs[srcIdx + 1]);
+      return Number.isFinite(v) ? v : 0;
+    };
     const lineHeight = (Number(opt.lineHeight) || 1.4) * CAP;
     const vScale = num(opt.vScale, 100) / 100;
     const hScale = num(opt.hScale, 100) / 100;
@@ -361,7 +371,7 @@
     // A char's laid-out advance in FONT UNITS (used by wrap measurement + below).
     const advFU = (ch) => {
       const r = resolveChar(ch);
-      return r.g.w * sx * hScale * r.cScaleX + tracking + kerning;
+      return r.g.w * sx * hScale * r.cScaleX + tracking;
     };
 
     // Tokenise the input into lines. Two wrap modes are mutually exclusive:
@@ -381,12 +391,31 @@
       rawLines = softWrap(rawLines, wrapWidthFU - indentLeft - indentRight, advFU);
     }
 
-    // A char's laid-out advance (font units).
-    const charAdvance = (r) => r.g.w * sx * hScale * r.cScaleX + tracking + kerning;
+    // A char's laid-out advance (font units). Per-pair kern is added at the gap
+    // during positioning (below), not folded into every char's advance.
+    const charAdvance = (r) => r.g.w * sx * hScale * r.cScaleX + tracking;
     const lineCells = rawLines.map((line) => Array.from(line).map((ch) => {
       const r = resolveChar(ch);
       return { ch, r, adv: charAdvance(r) };
     }));
+    // Raw-string offset of each visual line's first char (full semantics in the
+    // note by the positioning loop). Computed here so per-pair kern can fold into
+    // each cell's advance BEFORE width and alignment are measured.
+    const lineStart = [];
+    if (areaStart) {
+      for (let i = 0; i < lineCells.length; i++) lineStart[i] = areaStart[i] || 0;
+    } else {
+      let accIdx = 0;
+      for (let i = 0; i < lineCells.length; i++) {
+        lineStart[i] = accIdx;
+        accIdx += lineCells[i].length + 1; // +1 for the consumed newline
+      }
+    }
+    // Fold each glyph's per-pair kern (toward the next glyph on its line) into its
+    // advance, so width, alignment slack and pen positioning stay consistent.
+    lineCells.forEach((cells, li) => {
+      for (let ci = 0; ci < cells.length - 1; ci++) cells[ci].adv += kernAfter(lineStart[li] + ci);
+    });
     const lineWidth = (cells) => Math.max(0, cells.reduce((w, c) => w + c.adv, 0) - tracking);
     const widths = lineCells.map(lineWidth);
     const maxW = widths.reduce((m, w) => Math.max(m, w), 0);
@@ -398,27 +427,15 @@
 
     const colWidth = wrapWidthFU > 0 ? wrapWidthFU : (maxW + indentLeft + indentRight);
 
-    // Per-character cell source offsets (M1 seam). `cells` runs dense over the
-    // RAW input string (one entry per char incl. spaces / zero-stroke glyphs);
-    // sourceIndex accounts for the '\n' between lines (a newline consumes an
-    // index but produces no cell). For AREA type (areaStart present) the exact
-    // raw-string index of each visual line's first char is used, so `sourceIndex`
-    // stays exact across every soft-wrap boundary (a wrapped line is a contiguous
-    // slice of the source with only the single break space dropped). NOTE: when
-    // the legacy hyphenate+wrapWidth soft-wrap reflows lines, rawLines no longer
-    // maps 1:1 to the source string, so sourceIndex degrades to the post-wrap
-    // layout offset — hit-testing is a soft-wrap edge case (area type is exact).
-    const lineStart = [];
-    if (areaStart) {
-      for (let i = 0; i < lineCells.length; i++) lineStart[i] = areaStart[i] || 0;
-    } else {
-      let accIdx = 0;
-      for (let i = 0; i < lineCells.length; i++) {
-        lineStart[i] = accIdx;
-        accIdx += lineCells[i].length + 1; // +1 for the consumed newline
-      }
-    }
-
+    // Per-character cell source offsets (M1 seam) were computed above (as
+    // `lineStart`) so per-pair kern could fold into advances before measurement.
+    // `cells` runs dense over the RAW input string (one entry per char incl.
+    // spaces / zero-stroke glyphs); sourceIndex accounts for the '\n' between
+    // lines. For AREA type (areaStart present) the exact raw-string index of each
+    // visual line's first char is used, so `sourceIndex` stays exact across every
+    // soft-wrap boundary. NOTE: the legacy hyphenate+wrapWidth soft-wrap reflows
+    // lines, so sourceIndex degrades to the post-wrap layout offset there — a
+    // known hit-testing edge case (area type is exact).
     const paths = [];
     const meta = [];
     const cellOut = [];
@@ -443,6 +460,23 @@
         : baseAlign === 'right' ? slack : 0;
 
       let penX = indentLeft + (firstOfPara[li] ? indentFirst : 0) + alignOffset;
+      // Empty line (a bare '\n' with no glyphs) still gets a zero-width caret
+      // anchor at the line start, so an editor can place a blinking caret on the
+      // new line and grow the text box the instant Enter is pressed — before any
+      // glyph is typed there. Skipped for a lone empty line (rawLines.length === 1)
+      // so a brand-new, glyph-less box keeps its origin-anchored caret fallback.
+      if (cells.length === 0 && rawLines.length > 1) {
+        cellOut.push({
+          sourceIndex: lineStart[li],
+          lineIndex: li,
+          x0: penX * scale,
+          x1: penX * scale,
+          baselineY: (penY + CAP) * scale - baselineShift,
+          advance: 0,
+          isSpace: true,
+          caretAnchor: true,
+        });
+      }
       cells.forEach((cell, ci) => {
         const { g, cScaleX, cScaleY, cDY } = cell.r;
         const x0 = penX * scale;
@@ -475,7 +509,8 @@
           }
         });
         void drewMeta;
-        // Effective advance includes the justify perGap so cells tile contiguously.
+        // Effective advance includes the justify perGap so cells tile contiguously
+        // (per-pair kern is already folded into cell.adv above).
         const eff = cell.adv + (cell.r.isSpace ? perGap : 0);
         cellOut.push({
           sourceIndex: lineStart[li] + ci,

@@ -401,6 +401,10 @@
         marginLineDotting: SETTINGS.marginLineDotting,
         showGuides: SETTINGS.showGuides,
         snapGuides: SETTINGS.snapGuides,
+        contextualHints: SETTINGS.contextualHints !== false,
+        contextBarEnabled: SETTINGS.contextBarEnabled !== false,
+        contextBar: SETTINGS.contextBar ? clone(SETTINGS.contextBar) : null,
+        toolDrawerView: SETTINGS.toolDrawerView === 'list' ? 'list' : 'grid',
         selectionOutline: SETTINGS.selectionOutline,
         selectionOutlineColor: SETTINGS.selectionOutlineColor,
         selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
@@ -548,6 +552,25 @@
       SETTINGS.marginLineDotting = takeNumber('marginLineDotting', SETTINGS.marginLineDotting, 0, 10000);
       SETTINGS.showGuides = snapshot.showGuides === undefined ? SETTINGS.showGuides : snapshot.showGuides === true;
       SETTINGS.snapGuides = snapshot.snapGuides === undefined ? SETTINGS.snapGuides : snapshot.snapGuides === true;
+      SETTINGS.contextualHints = snapshot.contextualHints === undefined ? SETTINGS.contextualHints : snapshot.contextualHints === true;
+      // Contextual Task Bar (Illustrator parity, Phase 2 Lane G): enabled flag +
+      // position/pinned bag round-trip through the canonical snapshot.
+      SETTINGS.contextBarEnabled = snapshot.contextBarEnabled === undefined
+        ? SETTINGS.contextBarEnabled
+        : snapshot.contextBarEnabled === true;
+      if (snapshot.contextBar && typeof snapshot.contextBar === 'object') {
+        SETTINGS.contextBar = clone(snapshot.contextBar);
+      }
+      // All Tools drawer view (Illustrator parity, Phase 3 Lane L): grid|list.
+      if (snapshot.toolDrawerView === 'grid' || snapshot.toolDrawerView === 'list') {
+        SETTINGS.toolDrawerView = snapshot.toolDrawerView;
+      }
+      try {
+        const ctxBar = window.Vectura && window.Vectura.UI && window.Vectura.UI.ContextBar;
+        if (ctxBar && typeof ctxBar.setEnabled === 'function') {
+          ctxBar.setEnabled(SETTINGS.contextBarEnabled !== false);
+        }
+      } catch (_e) { /* bar not mounted yet; it reads SETTINGS on next refresh */ }
       SETTINGS.selectionOutline = snapshot.selectionOutline === undefined
         ? SETTINGS.selectionOutline
         : snapshot.selectionOutline === true;
@@ -765,6 +788,10 @@
           marginLineDotting: SETTINGS.marginLineDotting,
           showGuides: SETTINGS.showGuides,
           snapGuides: SETTINGS.snapGuides,
+          contextualHints: SETTINGS.contextualHints !== false,
+          contextBarEnabled: SETTINGS.contextBarEnabled !== false,
+          contextBar: SETTINGS.contextBar ? clone(SETTINGS.contextBar) : null,
+          toolDrawerView: SETTINGS.toolDrawerView === 'list' ? 'list' : 'grid',
           selectionOutline: SETTINGS.selectionOutline,
           selectionOutlineColor: SETTINGS.selectionOutlineColor,
           selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
@@ -830,6 +857,10 @@
       SETTINGS.marginLineDotting = s.marginLineDotting ?? SETTINGS.marginLineDotting;
       SETTINGS.showGuides = s.showGuides ?? SETTINGS.showGuides;
       SETTINGS.snapGuides = s.snapGuides ?? SETTINGS.snapGuides;
+      SETTINGS.contextualHints = s.contextualHints ?? SETTINGS.contextualHints;
+      SETTINGS.contextBarEnabled = s.contextBarEnabled ?? SETTINGS.contextBarEnabled;
+      SETTINGS.contextBar = s.contextBar ? clone(s.contextBar) : SETTINGS.contextBar;
+      if (s.toolDrawerView === 'grid' || s.toolDrawerView === 'list') SETTINGS.toolDrawerView = s.toolDrawerView;
       SETTINGS.selectionOutline = s.selectionOutline ?? SETTINGS.selectionOutline;
       SETTINGS.selectionOutlineColor = s.selectionOutlineColor ?? SETTINGS.selectionOutlineColor;
       SETTINGS.selectionOutlineWidth = s.selectionOutlineWidth ?? SETTINGS.selectionOutlineWidth;
@@ -1125,18 +1156,17 @@
       const layer = this.engine.layers.find((l) => l.id === id);
       if (!layer) return null;
       const b = this.engine.getBounds();
-      // On-canvas Type-tool layers must be immediately editable: the global
-      // ALGO_DEFAULTS.text.font is a web font ('google:inter') for which the
-      // edit controller's mutation gate (canMutate) returns false — so typing
-      // would insert nothing. Force the built-in Vectura stroke font (the id the
-      // panel's font picker assigns for the non-Google family, styleIds[0]) so
-      // insert/delete work the instant the box is created. This does NOT change
-      // the global default used by panel-created layers.
-      const SF = window.Vectura && window.Vectura.StrokeFont;
-      const builtinFont = (SF && SF.styles && SF.styles[0] && SF.styles[0].id) || 'sans';
+      // On-canvas Type-tool layers inherit the global default face — Inter, a web
+      // font vendored locally (src/vendor/inter-400.ttf) and parsed at boot, so it
+      // renders real outlines with no network wait. A web-font layer is editable
+      // the instant a session begins: begin() → _enableWebEdit switches it to
+      // ligatures-off (1:1 char↔glyph, exact sourceIndex) so canMutate accepts
+      // insert/delete. Until Inter parses (or if the vendored load fails), the
+      // layer shows the stroke-font placeholder and the regen hook swaps in the
+      // real letterforms when the font lands. (No font override here → new
+      // Type-tool text matches panel-created text.)
       Object.assign(layer.params, {
         text: '',
-        font: builtinFont,
         fitToFrame: false,
         align: 'left',
         jitter: 0,
@@ -1155,8 +1185,9 @@
     // (fitToFrame off). Positions the layer so the frame's top-left lands at the
     // drag rect's top-left: for an empty (ink-less) area box the block is centred
     // on the frame, so world frame-TL = docCentre + posX − frame/2, hence posX =
-    // left − docW/2 + frameW/2 (docCentre = margin + displayW/2 = docW/2). Uses the
-    // built-in stroke font so on-canvas editing is immediately mutable (canMutate).
+    // left − docW/2 + frameW/2 (docCentre = margin + displayW/2 = docW/2). Inherits
+    // the global default face (Inter); on-canvas editing stays mutable because
+    // begin() switches the layer ligatures-off (see _createPointTextLayerAt).
     _createAreaTextLayerAt(x0, y0, x1, y1) {
       this.pushHistory();
       this._textCreateHistoryLen = this.history.length;
@@ -1164,15 +1195,12 @@
       const layer = this.engine.layers.find((l) => l.id === id);
       if (!layer) return null;
       const b = this.engine.getBounds();
-      const SF = window.Vectura && window.Vectura.StrokeFont;
-      const builtinFont = (SF && SF.styles && SF.styles[0] && SF.styles[0].id) || 'sans';
       const left = Math.min(x0, x1);
       const top = Math.min(y0, y1);
       const frameWidth = Math.abs(x1 - x0);
       const frameHeight = Math.abs(y1 - y0);
       Object.assign(layer.params, {
         text: '',
-        font: builtinFont,
         textMode: 'area',
         frameWidth,
         frameHeight,

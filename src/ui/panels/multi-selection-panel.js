@@ -28,6 +28,7 @@
   const ALIGN_OPS = new Set([
     'alignLeft', 'alignCenterH', 'alignRight',
     'alignTop',  'alignCenterV', 'alignBottom',
+    'alignCenterBoth', // MSC-2 — compound H+V center in one undo step
   ]);
   const DISTRIBUTE_OPS = new Set([
     'distributeLeft', 'distributeCenterH', 'distributeRight',

@@ -305,4 +305,32 @@ describe('Type tool edit lifecycle / safety (blockers)', () => {
     expect(ctrl.getCaretIndex()).toBe(1);
     ctrl.end();
   });
+
+  test('caret changes broadcast vectura:textcaret (drives the gated per-pair kern UI)', () => {
+    const engine = new V.VectorEngine();
+    const { layer } = makeTextLayer(engine, { text: 'AVA' });
+    const ctrl = new V.TextEditController(makeHost(engine));
+    const seen = [];
+    const onCaret = (e) => seen.push(e.detail);
+    doc.addEventListener('vectura:textcaret', onCaret);
+    try {
+      ctrl.begin(layer, 1);
+      const afterBegin = seen[seen.length - 1];
+      expect(afterBegin.active).toBe(true);
+      expect(afterBegin.layerId).toBe(layer.id);
+      expect(afterBegin.caretIndex).toBe(1);
+      // Arrow-move the caret → a fresh broadcast with the new index.
+      seen.length = 0;
+      dispatchKey('ArrowRight');
+      expect(seen.length).toBeGreaterThanOrEqual(1);
+      expect(seen[seen.length - 1].caretIndex).toBe(2);
+      // Ending the session broadcasts active:false so the kern control re-locks.
+      seen.length = 0;
+      ctrl.end();
+      expect(seen.some((d) => d.active === false)).toBe(true);
+    } finally {
+      doc.removeEventListener('vectura:textcaret', onCaret);
+      ctrl.end();
+    }
+  });
 });

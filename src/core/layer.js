@@ -34,7 +34,14 @@
       this.penId = defaultPen ? defaultPen.id : null;
       this.color = defaultPen?.color || themePenColor;
       this.strokeWidth = defaultPen?.width ?? SETTINGS?.strokeWidth ?? 0.3;
-      this.lineCap = 'round';
+      // Stroke style model (STR-1). Defaults come from the shared config
+      // vocabulary when loaded; hard fallbacks keep legacy load orders safe.
+      const strokeDefaults = window.Vectura?.STROKE_STYLE?.DEFAULTS || {};
+      this.lineCap = strokeDefaults.lineCap || 'round';
+      this.lineJoin = strokeDefaults.lineJoin || 'round';
+      this.miterLimit = Number.isFinite(strokeDefaults.miterLimit) ? strokeDefaults.miterLimit : 10;
+      this.dash = { enabled: false, pattern: [] };
+      this.strokeAlign = strokeDefaults.strokeAlign || 'center';
       this.visible = true;
       this.origin = { x: 0, y: 0 };
       this.paths = [];

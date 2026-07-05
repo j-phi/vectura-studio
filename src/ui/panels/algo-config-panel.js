@@ -1418,7 +1418,14 @@
     if (primaryTitleEl) primaryTitleEl.textContent = 'Algorithm';
     if (moduleLabelWrap) moduleLabelWrap.style.display = '';
     if (moduleTriggerEl) moduleTriggerEl.style.display = '';
-    if (algoAboutEl) algoAboutEl.style.display = '';
+    // Respect the persisted ABOUT visibility instead of force-showing it: the
+    // task bar's "Show Properties panel" hides ABOUT to surface more controls,
+    // and that must survive the next buildControls() rebuild (P3 feedback).
+    if (algoAboutEl) {
+      const aboutHidden = window.Vectura && window.Vectura.SETTINGS
+        && window.Vectura.SETTINGS.aboutVisible === false;
+      algoAboutEl.style.display = aboutHidden ? 'none' : '';
+    }
     if (seedControlsEl) seedControlsEl.style.display = '';
     // Return the Transform section to its single-selection home (last child of
     // #left-section-algorithm-body) and restore its inner header so the nested

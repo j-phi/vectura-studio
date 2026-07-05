@@ -227,6 +227,131 @@
     return generateId() + generateId();
   };
 
+  // ── Stroke style model (STR-1) ─────────────────────────────────────────────
+  // Import-side sanitizers for the per-layer stroke fields. Prefer the shared
+  // config vocabulary (src/config/stroke-options.js); fall back to equivalent
+  // local rules so legacy load orders and headless tests stay safe.
+  const strokeStyleConfig = () => window.Vectura?.STROKE_STYLE || null;
+  const sanitizeLineJoin = (value, fallback) =>
+    (['miter', 'round', 'bevel'].includes(value) ? value : (fallback || 'round'));
+  const sanitizeMiterLimit = (value, fallback) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return Number.isFinite(fallback) ? fallback : 10;
+    return Math.max(1, Math.min(100, num));
+  };
+  const sanitizeStrokeAlign = (value, fallback) =>
+    (['center', 'inside', 'outside'].includes(value) ? value : (fallback || 'center'));
+  const sanitizeDashBag = (value) => {
+    const cfg = strokeStyleConfig();
+    if (cfg?.sanitizeDash) return cfg.sanitizeDash(value);
+    if (!value || typeof value !== 'object') return { enabled: false, pattern: [] };
+    const pattern = (Array.isArray(value.pattern) ? value.pattern : [])
+      .map((entry) => Number(entry))
+      .filter((entry) => Number.isFinite(entry) && entry >= 0)
+      .slice(0, 6);
+    return { enabled: Boolean(value.enabled), pattern };
+  };
+
+  // ── Align Stroke (STR-4) ───────────────────────────────────────────────────
+  // Display-geometry transform for layer.strokeAlign 'inside' / 'outside':
+  // offset every CLOSED path's centerline by ±strokeWidth/2 along the path
+  // normal, so the drawn ink sits fully inside / outside the source boundary.
+  // Runs inside computeLayerEffectiveGeometry (recomputed on commit, never
+  // per-frame) and always re-derives from the source paths — lossless.
+  //
+  // Machinery: GeometryUtils.miterOffsetClosedRing — the robust closed-outline
+  // concentric-band engine (winding-agnostic true miter offset with round
+  // needle-corner resolution). Deliberately NOT the parallel-pass thickenPaths,
+  // whose inward offsets are collapse-prone (repo memory).
+  //
+  // Gating (in-lane decision, spec STR-4): open paths stay centered; a
+  // degenerate or winding-inverted offset (stroke consumed the shape) falls
+  // back to the centered geometry for that path.
+  const ringSignedArea2 = (points) => {
+    let area2 = 0;
+    for (let i = 0, n = points.length; i < n; i += 1) {
+      const a = points[i];
+      const b = points[(i + 1) % n];
+      area2 += a.x * b.y - b.x * a.y;
+    }
+    return area2;
+  };
+
+  const applyStrokeAlignToPaths = (layer, paths) => {
+    const align = layer?.strokeAlign;
+    if (align !== 'inside' && align !== 'outside') return paths;
+    const width = Number(layer.strokeWidth);
+    if (!Number.isFinite(width) || width <= 0 || !Array.isArray(paths)) return paths;
+    const GU = window.Vectura?.GeometryUtils || {};
+    const OU = window.Vectura?.OptimizationUtils || {};
+    if (typeof GU.miterOffsetClosedRing !== 'function') return paths;
+    const delta = (align === 'outside' ? 1 : -1) * (width / 2);
+    const miterLimit = Number.isFinite(layer.miterLimit) && layer.miterLimit > 1 ? layer.miterLimit : 10;
+    const smoothedLayer = Boolean(layer.params?.curves);
+    const isClosed = (path) => {
+      if (path?.meta?.closed === true) return true;
+      if (typeof OU.isClosedPath === 'function') return OU.isClosedPath(path);
+      if (!Array.isArray(path) || path.length < 3) return false;
+      const dx = path[0].x - path[path.length - 1].x;
+      const dy = path[0].y - path[path.length - 1].y;
+      return dx * dx + dy * dy < 1e-6;
+    };
+
+    return paths.map((path) => {
+      if (!Array.isArray(path)) return path;
+      const meta = path.meta || {};
+      // Parametric circles/ellipses (empty point list + kind meta) offset
+      // exactly: adjust the radius by ±weight/2.
+      if (meta.kind === 'circle') {
+        const nextMeta = { ...meta };
+        const rx = (nextMeta.rx ?? nextMeta.r ?? 0) + delta;
+        const ry = (nextMeta.ry ?? nextMeta.r ?? nextMeta.rx ?? 0) + delta;
+        if (rx <= 0 || ry <= 0) return path; // consumed → keep centered
+        if (nextMeta.r !== undefined && nextMeta.rx === undefined && nextMeta.ry === undefined) {
+          nextMeta.r = nextMeta.r + delta;
+        } else {
+          if (nextMeta.rx !== undefined) nextMeta.rx = rx;
+          if (nextMeta.ry !== undefined) nextMeta.ry = ry;
+          if (nextMeta.r !== undefined) nextMeta.r = nextMeta.r + delta;
+        }
+        const next = path.slice();
+        next.meta = nextMeta;
+        return next;
+      }
+      if (path.length < 3 || !isClosed(path)) return path;
+      // Curve-smoothed geometry is a sparse control polyline smoothed at
+      // render time — offset the FLATTENED curve, not the raw polyline
+      // (repo rule: mutations must flatten first).
+      const hasHandles = Array.isArray(meta.anchors) && meta.anchors.length >= 2
+        && meta.anchors.some((a) => a && (a.in || a.out));
+      const shouldFlatten = (smoothedLayer || hasHandles) && typeof GU.flattenSmoothedPath === 'function';
+      const source = shouldFlatten ? GU.flattenSmoothedPath(path) : path;
+      if (!Array.isArray(source) || source.length < 3) return path;
+      const offset = GU.miterOffsetClosedRing(source, delta, { miterLimit, round: true });
+      if (!offset || offset.length < 4) return path; // degenerate → keep centered
+      // Collapse guard: an inside offset deeper than the shape's inradius
+      // inverts the ring. Polygonal swallowtails flip the winding sign; a
+      // smooth ring inverted through its own interior keeps the sign but
+      // GROWS while shrinking was requested — catch both, render the
+      // centered source instead of a phantom.
+      const srcArea = ringSignedArea2(source);
+      const offArea = ringSignedArea2(offset);
+      if (!(Math.abs(offArea) > 0) || Math.sign(offArea) !== Math.sign(srcArea)) return path;
+      const shrunk = Math.abs(offArea) < Math.abs(srcArea);
+      if (delta < 0 && !shrunk) return path;
+      if (delta > 0 && shrunk) return path;
+      const nextMeta = { ...((source.meta || path.meta) || {}) };
+      // The offset ring is final display geometry — parametric/editing
+      // descriptors from the source no longer apply.
+      delete nextMeta.anchors;
+      delete nextMeta.shape;
+      nextMeta.straight = true;
+      nextMeta.closed = true;
+      offset.meta = nextMeta;
+      return offset;
+    });
+  };
+
   class VectorEngine {
     constructor() {
       this.layers = [];
@@ -370,6 +495,9 @@
           shape.color = firstChild.color;
           shape.strokeWidth = firstChild.strokeWidth;
           shape.lineCap = firstChild.lineCap;
+          shape.lineJoin = firstChild.lineJoin;
+          shape.miterLimit = firstChild.miterLimit;
+          shape.dash = firstChild.dash ? JSON.parse(JSON.stringify(firstChild.dash)) : { enabled: false, pattern: [] };
           shape.visible = true;
           return shape;
         });
@@ -423,6 +551,9 @@
         shape.color = child.color;
         shape.strokeWidth = child.strokeWidth;
         shape.lineCap = child.lineCap;
+        shape.lineJoin = child.lineJoin;
+        shape.miterLimit = child.miterLimit;
+        shape.dash = child.dash ? JSON.parse(JSON.stringify(child.dash)) : { enabled: false, pattern: [] };
         shape.visible = true;
         return shape;
       });
@@ -509,6 +640,10 @@
           color: layer.color,
           strokeWidth: layer.strokeWidth,
           lineCap: layer.lineCap,
+          lineJoin: layer.lineJoin,
+          miterLimit: layer.miterLimit,
+          dash: layer.dash ? JSON.parse(JSON.stringify(layer.dash)) : null,
+          strokeAlign: layer.strokeAlign,
           visible: layer.visible,
           origin: layer.origin
             ? { x: Number(layer.origin.x) || 0, y: Number(layer.origin.y) || 0 }
@@ -587,6 +722,16 @@
         layer.color = data.color || layer.color;
         layer.strokeWidth = Number.isFinite(data.strokeWidth) ? data.strokeWidth : layer.strokeWidth;
         layer.lineCap = data.lineCap || layer.lineCap;
+        // Stroke style model (STR-1) — backward-compatible: legacy payloads
+        // without these fields keep the Layer constructor defaults.
+        layer.lineJoin = sanitizeLineJoin(data.lineJoin, layer.lineJoin);
+        layer.miterLimit = data.miterLimit !== undefined
+          ? sanitizeMiterLimit(data.miterLimit, layer.miterLimit)
+          : (layer.miterLimit ?? 10);
+        layer.dash = data.dash !== undefined && data.dash !== null
+          ? sanitizeDashBag(data.dash)
+          : (layer.dash || { enabled: false, pattern: [] });
+        layer.strokeAlign = sanitizeStrokeAlign(data.strokeAlign, layer.strokeAlign);
         layer.visible = data.visible !== false;
         if (data.origin && Number.isFinite(data.origin.x) && Number.isFinite(data.origin.y)) {
           layer.origin = { x: data.origin.x, y: data.origin.y };
@@ -650,6 +795,10 @@
       layer.color = source.color;
       layer.strokeWidth = source.strokeWidth;
       layer.lineCap = source.lineCap;
+      layer.lineJoin = source.lineJoin;
+      layer.miterLimit = source.miterLimit;
+      layer.dash = source.dash ? JSON.parse(JSON.stringify(source.dash)) : { enabled: false, pattern: [] };
+      layer.strokeAlign = source.strokeAlign;
       layer.visible = source.visible;
       layer.paths = clonePaths(source.paths);
       layer.displayPaths = clonePaths(source.displayPaths || source.paths || []);
@@ -1004,7 +1153,7 @@
           (current, modifierLayer) => applyModifierToPaths(current, modifierLayer.modifier, this.getBounds()),
           basePaths
         );
-      const baseEffective = clonePaths(effective || []);
+      const baseEffective = applyStrokeAlignToPaths(layer, clonePaths(effective || []));
       const fillPaths = window.Vectura?.PaintBucketOps?.generateGeometryForLayer?.(layer) || [];
       layer.effectivePaths = fillPaths.length ? baseEffective.concat(fillPaths) : baseEffective;
       layer.effectiveStats = countPathPoints(layer.effectivePaths);
@@ -1074,6 +1223,9 @@
           layer.color = null;
           layer.strokeWidth = null;
           layer.lineCap = null;
+          layer.lineJoin = null;
+          layer.miterLimit = null;
+          layer.dash = null;
         }
       });
       this.layers.forEach((layer) => {
@@ -1153,6 +1305,9 @@
         group.color = first.color;
         group.strokeWidth = first.strokeWidth;
         group.lineCap = first.lineCap;
+        group.lineJoin = first.lineJoin;
+        group.miterLimit = first.miterLimit;
+        group.dash = first.dash ? JSON.parse(JSON.stringify(first.dash)) : { enabled: false, pattern: [] };
       }
     }
 
@@ -1341,6 +1496,7 @@
         const out = transformMetaPoint(a);
         if (a.in) out.in = transformMetaPoint(a.in);
         if (a.out) out.out = transformMetaPoint(a.out);
+        if (a.corner === true) out.corner = true; // preserve the minimal-trace corner flag
         return out;
       };
       const transformMeta = (meta) => {

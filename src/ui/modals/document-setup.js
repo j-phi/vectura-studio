@@ -216,6 +216,8 @@
           <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
             ${swToggle('set-show-guides', 'Show guides')}
             ${swToggle('set-snap-guides', 'Snap to guides')}
+            ${swToggle('set-contextual-hints', 'Contextual hints', 'true')}
+            ${swToggle('set-context-bar', 'Contextual task bar', 'true')}
             <div class="ctrl-row">
               <label class="ctrl-lbl" for="set-preview-3d-quality">3D move preview</label>
               <div class="ctrl-sel-wrap" style="width:120px">
@@ -724,6 +726,8 @@ ${isDevEligible() ? `
     const setMarginLineStyleReset = getEl('set-margin-line-style-reset');
     const setShowGuides = getEl('set-show-guides');
     const setSnapGuides = getEl('set-snap-guides');
+    const setContextualHints = getEl('set-contextual-hints', { silent: true });
+    const setContextBar = getEl('set-context-bar', { silent: true });
     const setPreview3dQuality = getEl('set-preview-3d-quality', { silent: true });
     const setShowDocumentDimensions = getEl('set-show-document-dimensions', { silent: true });
     const setSelectionOutline = getEl('set-selection-outline');
@@ -940,6 +944,49 @@ ${isDevEligible() ? `
       setSnapGuides.onchange = (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.snapGuides = e.target.checked;
+      };
+    }
+    if (setContextualHints) {
+      // HUD-4 (Illustrator parity, Lane F): gates the hint text in the bottom
+      // strip; tool/zoom readouts always show. Default ON (`!== false`). No
+      // history push — the preference is not part of undo snapshots.
+      // `contextualHints` is folded into the App preference snapshot, so
+      // persistPreferencesDebounced() below is the canonical save path (the
+      // HintBar's old localStorage fallback was retired at integration).
+      setContextualHints.checked = SETTINGS.contextualHints !== false;
+      setContextualHints.closest('[role="switch"]')?.setAttribute(
+        'aria-checked',
+        String(setContextualHints.checked)
+      );
+      setContextualHints.onchange = (e) => {
+        const UIHintBar = window.Vectura?.UI?.HintBar;
+        if (UIHintBar?.setContextualHints) {
+          UIHintBar.setContextualHints(e.target.checked);
+        } else {
+          SETTINGS.contextualHints = e.target.checked;
+        }
+        this.app.persistPreferencesDebounced?.();
+      };
+    }
+    if (setContextBar) {
+      // TB-8 (Illustrator parity, Phase 2 Lane G): gates the Contextual Task
+      // Bar. Default ON (`!== false`). No history push — a UI preference, not
+      // part of undo snapshots. Delegates to ContextBar.setEnabled which
+      // persists (self-contained cookie + SETTINGS.contextBarEnabled) and
+      // re-renders the bar immediately.
+      setContextBar.checked = SETTINGS.contextBarEnabled !== false;
+      setContextBar.closest('[role="switch"]')?.setAttribute(
+        'aria-checked',
+        String(setContextBar.checked)
+      );
+      setContextBar.onchange = (e) => {
+        const ContextBar = window.Vectura?.UI?.ContextBar;
+        if (ContextBar?.setEnabled) {
+          ContextBar.setEnabled(e.target.checked);
+        } else {
+          SETTINGS.contextBarEnabled = e.target.checked;
+        }
+        this.app.persistPreferencesDebounced?.();
       };
     }
     if (setShowDocumentDimensions) {

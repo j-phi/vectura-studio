@@ -93,6 +93,10 @@
     alignTop:     (R, r) => ({ dx: 0, dy: R.minY    - r.minY }),
     alignCenterV: (R, r) => ({ dx: 0, dy: R.centerY - r.centerY }),
     alignBottom:  (R, r) => ({ dx: 0, dy: R.maxY    - r.maxY }),
+    // MSC-2 — compound Horizontal & Vertical Align Center: one op that moves
+    // each layer on BOTH axes so a single apply (one undo step) snaps the
+    // selection concentric to the reference center (video f0191–192).
+    alignCenterBoth: (R, r) => ({ dx: R.centerX - r.centerX, dy: R.centerY - r.centerY }),
   };
 
   function align(op, layers, boundsFor, opts = {}) {

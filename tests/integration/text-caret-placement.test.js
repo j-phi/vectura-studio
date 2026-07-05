@@ -94,6 +94,27 @@ describe('Type tool caret placement (M2)', () => {
     ctrl.end();
   });
 
+  test('pressing Enter places the caret on the new blank line (line-1 caret anchor)', () => {
+    const engine = new V.VectorEngine();
+    const { layer } = makeTextLayer(engine); // "Hello", one line
+    const ctrl = new V.TextEditController(makeHost(engine));
+    ctrl.begin(layer, 5); // caret at end of "Hello"
+    expect(ctrl.insertNewline()).toBe(true);
+    expect(layer.params.text).toBe('Hello\n');
+    expect(ctrl.getCaretIndex()).toBe(6);
+    // A zero-width caret anchor now exists ON line 1 at the caret's source index,
+    // even though no glyph has been typed there yet.
+    const anchor = layer.glyphs.find((g) => g.lineIndex === 1 && g.sourceIndex === 6);
+    expect(anchor).toBeTruthy();
+    // The caret segment sits on line 1 — strictly below line 0's baseline (y-down).
+    const line0 = layer.glyphs.filter((g) => g.lineIndex === 0);
+    const line0Baseline = Math.max(...line0.map((g) => g.quad[3].y));
+    const seg = ctrl.getCaretSegment();
+    expect(seg).toBeTruthy();
+    expect(seg.y0).toBeGreaterThan(line0Baseline);
+    ctrl.end();
+  });
+
   test('jitter>0 layer does NOT enter edit mode (jitter gate)', () => {
     const engine = new V.VectorEngine();
     const { layer } = makeTextLayer(engine, { jitter: 5 });

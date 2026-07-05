@@ -1,6 +1,6 @@
 {
   "name": "vectura-studio",
-  "version": "1.2.33",
+  "version": "1.2.40",
   "private": true,
   "description": "Vectura Studio - physics-inspired vector generator",
   "scripts": {
@@ -14,7 +14,7 @@
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "npm run patch:test-runtime && vitest run tests/unit",
     "test:integration": "npm run patch:test-runtime && vitest run tests/integration",
-    "test:e2e": "npm run patch:test-runtime && playwright test tests/e2e/smoke.spec.js --reporter=line && playwright test tests/e2e/iphone-mini.spec.js --reporter=line",
+    "test:e2e": "npm run patch:test-runtime && playwright test tests/e2e/smoke.spec.js --reporter=line && playwright test tests/e2e/stroke-options.spec.js --reporter=line && playwright test tests/e2e/tool-drawer.spec.js --reporter=line && playwright test tests/e2e/iphone-mini.spec.js --reporter=line",
     "test:visual": "npm run patch:test-runtime && vitest run tests/visual",
     "test:visual:screenshots": "npm run patch:test-runtime && ENABLE_SCREENSHOT_VISUALS=1 playwright test tests/e2e/visual.spec.js",
     "test:perf": "npm run patch:test-runtime && vitest run tests/perf",

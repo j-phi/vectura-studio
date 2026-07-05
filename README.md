@@ -84,14 +84,47 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 - Fill tool supports nested closed regions in the Texture Designer: click the smallest containing region, `Shift`-click to fill the whole containing stack, drag to keep pouring across new regions, and hold `Alt/Option` to temporarily erase fills while dragging
 - The Texture Designer seam preview now includes a `Show Gaps` tolerance slider that reveals near-miss tile joins in yellow and offers auto-close fixes for closable seam endpoints
 - Direct canvas manipulation: drag to move the selected layer, drag corner handles to resize, rotate via the upper-right handle (`Shift` snaps)
+- Eight-handle selection box: the four corners plus four **edge-midpoint** handles for single-axis resize (`Shift` constrains proportions)
+- **Flip Horizontal / Flip Vertical** mirror the selection (single or multi) about its bounds center — world-exact, self-inverse, one undo step; also available as icon buttons in the Transform section and the right-click menu
+- **Numeric transform fields:** the Transform section shows editable **X / Y / W / H** for shape/text selections (single or combined multi-selection bounds) with a **link W/H** proportional toggle — setting W resizes to that exact width, one undo step. With Direct Selection and one anchor selected, X / Y become the anchor's world position and move it live
+- **Right-click canvas menu:** a context menu of the usual verbs — Duplicate, Delete, Undo/Redo, Group / Ungroup / Isolate, Simplify, Smooth, Flip H/V, and Transform — each routing to the same command as the toolbar / shortcut / Task Bar
+- **Object-to-object smart guides:** while dragging, magenta guides + snapping align to other objects' edges and centers with semantic labels (`path` / `anchor` / `midpoint` / `endpoint`), equal-spacing hint chips, and a hover-highlight of the path under the cursor — all behind the existing guide/snap toggles
+- Live measurement chips: hovering shows `X / Y`, a move-drag shows relative `dX / dY`, in document units
 - Alignment guides for canvas center and size matching while dragging
 - Guide visibility and snapping toggles in Document Setup (`Cmd` while dragging overrides snapping)
+- Alt/Option+drag duplicates the whole selection (multi-select included); `Esc` mid-drag cancels with no copy left behind
+- **Stroke Options** surface: cap (butt / round / projecting), corner (miter / round / bevel) with miter limit, align-stroke (center / inside / outside), and a live dashed-line editor — all serialized in `.vectura` and emitted on SVG export
+- **Pen Picker popover:** click a stroke's pen chip to apply any document pen instantly, or mix a new pen (color + width + name); a mixed-selection chip shows `?`; shares the pen list with the docked Pens panel
+- **Simplify / Smooth / anchor verbs** (`Vectura.PathEditOps`): scrubbable lossless Simplify preview, Auto-Smooth, one-shot Smooth, and anchor convert / cut / join — with live-shape auto-expand and a "Shape Expanded" toast (these become one-click Task-Bar actions in the next phase)
+- **Outline Text:** convert a Text layer into a group of per-glyph editable path layers (each named for its character), one undo step; double-click isolation drills into individual glyphs
+- **Contextual hint bar:** the bottom workspace strip shows per-tool hints, the active tool name, live zoom %, and rotation; the hint text clears during a drag. Toggle the hints in Document Setup → Guides & Display (readouts always show)
 - Mask parents ghost-preview their masked descendants outside the silhouette while you move/resize/rotate them, then restore normal masking on release
 - Tablet/touch parity: pointer-native canvas interactions, one-finger tool input, two-finger pan/pinch zoom, and touch modifier buttons (`Shift`, `Alt`, `Meta`, `Pan`)
 - Switching algorithms restores transform defaults for the selected algorithm (position/scale/rotation do not carry over)
 - Seeded, repeatable results with live transform controls (position, scale, rotation) via the collapsible `Transform & Seed` sub-panel
 - Double-click any value to edit inline; double-click a control to reset to defaults
 - Arrow keys to nudge layers (`Shift` for larger steps)
+
+</details>
+
+---
+
+### Contextual Task Bar
+
+Select an object and an Illustrator-style **Contextual Task Bar** floats just below it with the actions that matter right now — edit path, pen, stroke weight, shape properties, group/align, isolate, or text. Stroke weight and Simplify open inline sub-modes; live rectangles and polygons get a corner-radius / side-count popover. Double-clicking into a group shows an isolation breadcrumb across the top of the canvas. Toggle the bar under Document Setup → Guides & Display. No AI tooling anywhere.
+
+<details>
+<summary>Full contextual task bar feature list</summary>
+
+- **Floating contextual bar** (`.ctxbar`) anchors below the selection, flips above near the viewport bottom, clamps to the viewport, yields to the tool rail, and hides during canvas drag / drawing / text-caret edits
+- **Per-selection actions:** idle (Draw + Document Setup); single path (Edit Path, pen chip, stroke, shape properties, lock); multi (Group, Align flyout, pen, stroke); group (Ungroup, Isolate group, pen, stroke); direct (Simplify, Smooth, six anchor verbs); text (family/style/size bound to the Text panel, Outline, pen)
+- **Stroke-weight sub-mode:** slider + steppers + document-unit field morph into the bar, with "Open Stroke Options" for the full popover; one undo step per gesture
+- **Simplify sub-mode:** live `PathEditOps` preview with an Auto-Smooth pass and a points/percent badge; Done commits, Esc / click-away cancels
+- **Shape-properties popover:** corner type & radius for live rectangles, side count (3–20) for polygons — round-trips with the on-canvas corner widget as one undo step
+- **Overflow … menu:** Show panel · Hide bar · Reset position · Pin position · Quick help. A drag handle pins the bar; `role="toolbar"` with roving tabindex never steals focus on appearance
+- **Isolation breadcrumb:** double-click into a group for a top-of-canvas ancestry strip (`Document › … › group`) — click an ancestor to step out one level, the back arrow to exit one level, or the root to leave isolation; a fixed-blue top-edge line marks the isolated state
+- Toggle the whole bar under **Document Setup → Guides & Display** (default on); enabled state + pinned position persist via `.vectura` and cookie preferences
+- Reduced-motion friendly (`≤120ms` fade/slide, animation disabled under `prefers-reduced-motion`)
 
 </details>
 
@@ -166,6 +199,8 @@ Vectura's UI is Illustrator-familiar: a desktop menu bar with `File/View/Insert/
 - ABOUT card is visible by default, toggled by the Algorithm info button, and remembered in saved UI preferences
 - Parameter simplification controls with live line/point counts
 - In-app help guide and shortcut menu (press `?`)
+- **All Tools drawer:** a `…` overflow button on the tool rail opens a non-modal **All Tools** drawer listing every tool grouped by category (Select / Draw / Shapes / Type / Modify / Navigate) with a **grid/list** view toggle (remembered); clicking a tool activates it, hovering an entry highlights the rail slot it lives in
+- **Font hover-preview & size presets:** the Text panel's font picker live-previews a family on the canvas while you hover it (settling before it commits), and the font-size control offers a preset dropdown (6–72 mm); the Task Bar's text chips open these same pickers
 - `Save/Open` full projects via `.vectura` files; import SVGs as new layers
 - Pattern layers now include a custom-tile workflow: import SVG tiles, preview a live `3x3` repeat, flag seam/fill mismatches before save, save valid custom patterns to the runtime library, and carry those custom patterns inside `.vectura` project files
 - Petalis profile library loads from `src/config/petal-profiles` in both hosted and direct `file://` runs via a preloaded `library.js` bundle
@@ -553,6 +588,37 @@ CI lives in `.github/workflows/test.yml`:
 ---
 
 ## Release Notes
+
+### 1.2.40
+- **Type tool gets a live web font, per-pair kerning, and an Outline Text action.** New Type-tool layers
+  now default to a vendored Inter web font parsed at boot, so they're editable with real letterforms
+  the instant you start typing. Kerning gains a per-pair manual override alongside the existing uniform
+  tracking, and the context bar can convert a text layer straight to its outline.
+- **Eyedropper gets a sampling loupe.** The color picker and pen-picker popover's eyedropper now shows a
+  magnified preview circle that follows the pointer while you sample a color.
+- **Minimal-anchor path re-trace.** A new geometry op re-traces a bezier contour into the fewest
+  editable anchors that reproduce it within a sub-pixel tolerance, surfaced through the renderer's node
+  overlay.
+- **Fixed:** cutting a closed path with the scissors tool no longer silently re-closes it on the next
+  selection refresh.
+
+### 1.2.39
+- **Illustrator Parity — feedback pass (15 fixes).** **Shift/Cmd-click** now multi-selects (and a Shift-marquee adds to the selection); **isolating a group** locks selection to that group until you press Escape. The **contextual task bar** gets a working drag handle (it follows your pointer now), **Font / Font Style dropdowns** with carets that open beneath the control, a **Point Type ↔ Area Type** toggle, and a **"Show Properties panel"** action that opens the Text panel and hides the ABOUT blurb. The **edit-path** buttons now light up based on what you select (one anchor → remove / cut / convert; two endpoints → connect), and **Smooth** opens a live rounding slider with Done + Auto. Every right-click and task-bar command is now also in the top menu — including a new **Object** menu and a **Contextual Task Bar** toggle under View. Each **pen** gets its own stroke-weight slider and number box; the standalone stroke-weight menu is gone. Plus: context-menu **Flip** now actually redraws, and smart-guide labels stop drifting on Retina displays.
+
+### 1.2.38
+- **Illustrator Tools Parity — Phase 3 (final).** The finishing lanes land: the Transform section gains editable **X / Y / W / H** fields (with a link-ratio toggle and per-anchor X/Y in Direct-Selection) plus **Flip Horizontal / Vertical** buttons; the Text panel's font picker **live-previews a family on hover** and swaps the size scrub for a real **size-preset dropdown**; a rail **"…" All Tools drawer** lists every tool grouped by category with a grid/list toggle and rail cross-highlighting; and **right-clicking the canvas** opens a context menu of the usual verbs (Duplicate, Delete, Group, Isolate, Simplify, Smooth, Flip, Transform). A new **Align centers (both axes)** button snaps a selection concentric in one step, and multi-selections with differing stroke weights now show a **"mixed"** indicator. This completes the Illustrator-Parity effort across all 13 lanes; no AI tooling anywhere.
+
+### 1.2.37
+- **Illustrator Tools Parity — Phase 2: the Contextual Task Bar.** Selecting an object now floats a small **contextual toolbar** below it with exactly the actions that make sense — edit path, pen, **stroke weight** and **Simplify** inline sub-modes, **shape properties** (corner radius / side count) for live rectangles and polygons, group / align / isolate, and text. Double-clicking into a group shows an **isolation breadcrumb** across the top of the canvas so you always know how deep you are and can step back out one level at a time. The bar's enabled state and pinned position persist with your document and preferences. Toggle it under Document Setup → Guides & Display; no AI tooling anywhere.
+
+### 1.2.36
+- **Illustrator-style direct-manipulation editing (Phase 1).** A big foundation drop toward parity with pro vector tools: an **8-handle selection box** (edge-midpoint resize), **Flip Horizontal / Vertical**, **object-to-object smart guides** with labeled magenta guides + live `dX/dY` chips, a full **Stroke Options** surface (caps / joins / miter / align / dashed lines), an anchored **Pen Picker** popover, **Simplify / Smooth / anchor** path verbs, **Outline Text** (a Text layer → per-glyph editable paths), and a **contextual hint bar** with live tool / zoom / rotation readouts. Most of these become one-click actions in the upcoming floating Task Bar; no AI tooling anywhere.
+
+### 1.2.35
+- **Bold edges are now clean at any zoom.** The tiny notches along bold letter silhouettes came from coarse join-disk sampling in the band build (a geometry bug older than the banded bold itself); adaptive arc resolution removes them — and as a bonus makes first-render of bold text ~6× faster.
+
+### 1.2.34
+- **Bold text coverage, mathematically honest.** The bold band is a pen-disk sweep, so a round pen can reach every point of it — sharp junction corners included. The fill now honors that: 22/26 letters measure exactly 0.00% uncovered, the rest are within a hair of measurement noise at a single junction pocket.
 
 ### 1.2.33
 - **Bold text now plots truly solid.** Fixes from in-app review of the banded bold: interior passes no longer vanish on curved glyphs (the hollow-ring look), the letterform silhouette is bump-free, bowl spines are fully inked, and pass spacing now follows your **actual pen's width** (changing a pen's width regenerates text that uses it).

@@ -87,6 +87,7 @@
       this._startBlink();
       this._attachKeys();
       this._requestDraw();
+      this._emitCaret();
       return true;
     }
 
@@ -177,6 +178,7 @@
       }
       if (typeof this.host.refreshPanel === 'function') this.host.refreshPanel(layer);
       if (typeof this.host.requestDraw === 'function') this.host.requestDraw();
+      this._emitCaret();
     }
 
     // Commit (Cmd/Ctrl+Enter) / cancel (Esc): end the session and return the
@@ -594,6 +596,25 @@
       if (typeof this.host.requestDraw === 'function') this.host.requestDraw();
     }
 
+    // Broadcast the caret position (and edit-active state) so passive listeners —
+    // e.g. the Text panel's per-pair Kerning control, which only lights up when
+    // the caret sits between two letters — can refresh without a full rebuild.
+    // Fired on session begin/end, caret moves, and text mutations. Silent in a
+    // non-DOM host (headless tests without a document).
+    _emitCaret() {
+      try {
+        const doc = (typeof document !== 'undefined') ? document : null;
+        if (!doc || typeof doc.dispatchEvent !== 'function' || typeof CustomEvent === 'undefined') return;
+        doc.dispatchEvent(new CustomEvent('vectura:textcaret', {
+          detail: {
+            active: this.active === true,
+            layerId: this.layer ? this.layer.id : null,
+            caretIndex: this.caretIndex,
+          },
+        }));
+      } catch (_) { /* non-DOM host */ }
+    }
+
     _pushHistoryOncePerRun() {
       if (this._runDirty) return;
       if (typeof this.host.pushHistory === 'function') this.host.pushHistory();
@@ -611,6 +632,7 @@
       this._syncEditState();
       if (typeof this.host.refreshPanel === 'function') this.host.refreshPanel(this.layer);
       this._requestDraw();
+      this._emitCaret();
     }
 
     // Caret move: update the focus, break the typing-run coalescing, redraw.
@@ -622,6 +644,7 @@
       this._runDirty = false;
       this._syncEditState();
       this._requestDraw();
+      this._emitCaret();
     }
 
     _syncEditState() {

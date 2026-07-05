@@ -86,6 +86,16 @@ describe('Text algorithm + stroke font', () => {
     expect(paths.every((pth) => pth.meta && pth.meta.straight === true)).toBe(true);
   });
 
+  test('per-pair kern flows through the algorithm and widens only its gap', () => {
+    const base = bbox(gen({ text: 'AVA', font: 'sans', fitToFrame: false, fontSize: 40 }));
+    // Kern the FIRST gap (caret index 1, between A and V) wider.
+    const kerned = bbox(gen({ text: 'AVA', font: 'sans', fitToFrame: false, fontSize: 40, kernPairs: { 1: 40 } }));
+    expect(kerned.w).toBeGreaterThan(base.w);
+    // The removed global `kerning` opt is now inert.
+    const legacy = bbox(gen({ text: 'AVA', font: 'sans', fitToFrame: false, fontSize: 40, kerning: 40 }));
+    expect(legacy.w).toBeCloseTo(base.w, 3);
+  });
+
   test('Vectura is one family with selectable styles + weights', () => {
     const font = V.StrokeFont;
     expect(font.family && font.family.id).toBe('vectura');

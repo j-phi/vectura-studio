@@ -156,12 +156,16 @@
   // --- Anchor helpers (shared with renderer for shape-layer simplify/smooth) ---
 
   const cloneAnchors = (anchors) =>
-    (anchors || []).map((a) => ({
-      x: a.x,
-      y: a.y,
-      in: a.in ? { x: a.in.x, y: a.in.y } : null,
-      out: a.out ? { x: a.out.x, y: a.out.y } : null,
-    }));
+    (anchors || []).map((a) => {
+      const c = {
+        x: a.x,
+        y: a.y,
+        in: a.in ? { x: a.in.x, y: a.in.y } : null,
+        out: a.out ? { x: a.out.x, y: a.out.y } : null,
+      };
+      if (a.corner === true) c.corner = true; // preserve the minimal-trace corner flag
+      return c;
+    });
 
   const pointsToAnchors = (points) =>
     (points || []).map((pt) => ({ x: pt.x, y: pt.y, in: null, out: null }));
@@ -1159,16 +1163,27 @@
     if (!region || !region.length) return [];
     const minArea = Number.isFinite(opts.minArea) && opts.minArea > 0 ? opts.minArea : 0;
     if (!minArea) return region;
+    // Shape-aware sliver filter. A flat area floor throws out exactly the
+    // rings that matter most: the deep ring of a needle-acute junction pocket
+    // is a small ROUNDISH blob (its ink is real coverage — dropping it left
+    // pockets ~0.4mm from any pen ink), while true boolean crumbs are HAIR
+    // slivers. Roundness 4πA/P² separates them (disk = 1, hair → 0): small
+    // rings survive down to minArea/16 when they are compact.
     const kept = region.filter((polygon) => {
       const shell = polygon && polygon[0];
       if (!Array.isArray(shell) || shell.length < 4) return false;
       let s = 0;
+      let per = 0;
       for (let i = 0, n = shell.length; i < n; i += 1) {
         const a = shell[i];
         const b = shell[(i + 1) % n];
         s += a[0] * b[1] - b[0] * a[1];
+        per += Math.hypot(b[0] - a[0], b[1] - a[1]);
       }
-      return Math.abs(s * 0.5) >= minArea;
+      const area = Math.abs(s * 0.5);
+      if (area >= minArea) return true;
+      if (area < minArea / 16 || per <= 0) return false;
+      return (4 * Math.PI * area) / (per * per) >= 0.3;
     });
     return kept;
   };
@@ -1243,11 +1258,496 @@
     return chains;
   };
 
+  // ── Schneider cubic-bezier curve fitting (Graphics Gems) ────────────────────
+  // Fit the FEWEST cubic bezier segments to a point list within `errorTol`, then
+  // express them as editable anchors { x, y, in, out } (in/out are ABSOLUTE
+  // handle control points). Used by the interactive Smooth to add the minimal
+  // bezier anchors that approximate the curve — not one anchor per input point.
+  const _vSub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+  const _vAdd = (a, b) => ({ x: a.x + b.x, y: a.y + b.y });
+  const _vScale = (a, s) => ({ x: a.x * s, y: a.y * s });
+  const _vDot = (a, b) => a.x * b.x + a.y * b.y;
+  const _vLen = (a) => Math.hypot(a.x, a.y);
+  const _vNorm = (a) => { const l = Math.hypot(a.x, a.y) || 1; return { x: a.x / l, y: a.y / l }; };
+
+  // de Casteljau evaluation of a bezier (any degree) at t.
+  const _bezEval = (ctrl, t) => {
+    const p = ctrl.map((c) => ({ x: c.x, y: c.y }));
+    for (let k = 1; k < ctrl.length; k++) {
+      for (let i = 0; i < ctrl.length - k; i++) {
+        p[i] = { x: p[i].x * (1 - t) + p[i + 1].x * t, y: p[i].y * (1 - t) + p[i + 1].y * t };
+      }
+    }
+    return p[0];
+  };
+  const _B0 = (u) => { const t = 1 - u; return t * t * t; };
+  const _B1 = (u) => { const t = 1 - u; return 3 * u * t * t; };
+  const _B2 = (u) => { const t = 1 - u; return 3 * u * u * t; };
+  const _B3 = (u) => u * u * u;
+
+  const _chordParams = (pts, first, last) => {
+    const u = [0];
+    for (let i = first + 1; i <= last; i++) u[i - first] = u[i - first - 1] + _vLen(_vSub(pts[i], pts[i - 1]));
+    const total = u[last - first] || 1;
+    for (let i = 1; i < u.length; i++) u[i] /= total;
+    return u;
+  };
+
+  const _generateBezier = (pts, first, last, u, tHat1, tHat2) => {
+    const n = last - first + 1;
+    const A = [];
+    for (let i = 0; i < n; i++) A.push([_vScale(tHat1, _B1(u[i])), _vScale(tHat2, _B2(u[i]))]);
+    let c00 = 0; let c01 = 0; let c11 = 0; let x0 = 0; let x1 = 0;
+    const P0 = pts[first]; const P3 = pts[last];
+    for (let i = 0; i < n; i++) {
+      c00 += _vDot(A[i][0], A[i][0]);
+      c01 += _vDot(A[i][0], A[i][1]);
+      c11 += _vDot(A[i][1], A[i][1]);
+      const b0 = _B0(u[i]); const b1 = _B1(u[i]); const b2 = _B2(u[i]); const b3 = _B3(u[i]);
+      const tmp = {
+        x: pts[first + i].x - (P0.x * b0 + P0.x * b1 + P3.x * b2 + P3.x * b3),
+        y: pts[first + i].y - (P0.y * b0 + P0.y * b1 + P3.y * b2 + P3.y * b3),
+      };
+      x0 += _vDot(A[i][0], tmp);
+      x1 += _vDot(A[i][1], tmp);
+    }
+    const detC = c00 * c11 - c01 * c01;
+    let alphaL = detC === 0 ? 0 : (x0 * c11 - c01 * x1) / detC;
+    let alphaR = detC === 0 ? 0 : (c00 * x1 - c01 * x0) / detC;
+    const segLen = _vLen(_vSub(P3, P0));
+    const eps = 1e-6 * segLen;
+    if (alphaL < eps || alphaR < eps) {
+      const d = segLen / 3; alphaL = d; alphaR = d;
+    } else {
+      // Clamp handle length to the chord so an ill-conditioned least-squares fit
+      // (sparse points around a bend) can't blow the handles out into a balloon.
+      alphaL = Math.min(alphaL, segLen);
+      alphaR = Math.min(alphaR, segLen);
+    }
+    return [P0, _vAdd(P0, _vScale(tHat1, alphaL)), _vAdd(P3, _vScale(tHat2, alphaR)), P3];
+  };
+
+  const _computeMaxError = (pts, first, last, bez, u) => {
+    let maxDist = 0; let split = Math.floor((last - first + 1) / 2) + first;
+    for (let i = first + 1; i < last; i++) {
+      const p = _bezEval(bez, u[i - first]);
+      const d = _vSub(p, pts[i]);
+      const dist = d.x * d.x + d.y * d.y;
+      if (dist >= maxDist) { maxDist = dist; split = i; }
+    }
+    return { maxError: maxDist, split }; // squared
+  };
+
+  const _newtonReparam = (pts, first, last, u, bez) => {
+    const uPrime = u.slice();
+    const Q1 = [_vScale(_vSub(bez[1], bez[0]), 3), _vScale(_vSub(bez[2], bez[1]), 3), _vScale(_vSub(bez[3], bez[2]), 3)];
+    const Q2 = [_vScale(_vSub(Q1[1], Q1[0]), 2), _vScale(_vSub(Q1[2], Q1[1]), 2)];
+    for (let i = first; i <= last; i++) {
+      const t = u[i - first];
+      const Qt = _bezEval(bez, t);
+      const Q1t = _bezEval(Q1, t);
+      const Q2t = _bezEval(Q2, t);
+      const diff = _vSub(Qt, pts[i]);
+      const num = _vDot(diff, Q1t);
+      const den = _vDot(Q1t, Q1t) + _vDot(diff, Q2t);
+      uPrime[i - first] = den === 0 ? t : t - num / den;
+    }
+    return uPrime;
+  };
+
+  const _fitCubic = (pts, first, last, tHat1, tHat2, errorTol, out, depth) => {
+    if (last - first === 1) {
+      const dist = _vLen(_vSub(pts[last], pts[first])) / 3;
+      out.push([pts[first], _vAdd(pts[first], _vScale(tHat1, dist)), _vAdd(pts[last], _vScale(tHat2, dist)), pts[last]]);
+      return;
+    }
+    let u = _chordParams(pts, first, last);
+    let bez = _generateBezier(pts, first, last, u, tHat1, tHat2);
+    let res = _computeMaxError(pts, first, last, bez, u);
+    const tolSq = errorTol * errorTol;
+    if (res.maxError < tolSq) { out.push(bez); return; }
+    if (res.maxError < tolSq * 16 && depth < 10) {
+      for (let iter = 0; iter < 4; iter++) {
+        const uPrime = _newtonReparam(pts, first, last, u, bez);
+        bez = _generateBezier(pts, first, last, uPrime, tHat1, tHat2);
+        res = _computeMaxError(pts, first, last, bez, uPrime);
+        u = uPrime;
+        if (res.maxError < tolSq) { out.push(bez); return; }
+      }
+    }
+    if (depth > 48) { out.push(bez); return; } // recursion backstop
+    const split = res.split;
+    const centerTangent = _vNorm({
+      x: (pts[split - 1].x - pts[split + 1].x) / 2,
+      y: (pts[split - 1].y - pts[split + 1].y) / 2,
+    });
+    _fitCubic(pts, first, split, tHat1, centerTangent, errorTol, out, depth + 1);
+    _fitCubic(pts, split, last, _vScale(centerTangent, -1), tHat2, errorTol, out, depth + 1);
+  };
+
+  // Round each detected corner into a fillet arc (Illustrator "Smooth" on a
+  // polygon). Each corner C is replaced by two setback anchors P1 (on the
+  // incoming edge) and P2 (on the outgoing edge) joined by a cubic that
+  // approximates a circular arc; the edges between fillets stay straight. The
+  // setback grows with `radiusFrac` (0 = untouched corner, 1 = fillets meet at
+  // edge midpoints → the polygon rounds into a circle). `cornerPos` is the set
+  // of original corner positions to match against the fitted anchors.
+  const _FILLET_K = 0.5523; // cubic handle factor for a ~circular quarter arc
+  const _applyFillets = (anchors, closedRing, cornerPos, radiusFrac) => {
+    if (!(radiusFrac > 0) || !Array.isArray(anchors) || anchors.length < 3) return anchors;
+    const m = anchors.length;
+    const isCorner = anchors.map((a) => cornerPos.some((c) => Math.hypot(c.x - a.x, c.y - a.y) < 1e-6));
+    const out = [];
+    for (let i = 0; i < m; i++) {
+      const a = anchors[i];
+      const endpoint = !closedRing && (i === 0 || i === m - 1);
+      if (!isCorner[i] || endpoint) { out.push(a); continue; }
+      const prev = anchors[(i - 1 + m) % m];
+      const next = anchors[(i + 1) % m];
+      const C = { x: a.x, y: a.y };
+      const inDir = _vNorm(_vSub(C, prev));   // prev → C
+      const outDir = _vNorm(_vSub(next, C));  // C → next
+      const d = radiusFrac * 0.5 * Math.min(_vLen(_vSub(C, prev)), _vLen(_vSub(next, C)));
+      if (!(d > 0)) { out.push(a); continue; }
+      const P1 = _vSub(C, _vScale(inDir, d));
+      const P2 = _vAdd(C, _vScale(outDir, d));
+      // P1: straight edge in, arc out (toward C). P2: arc in (from C), straight out.
+      out.push({ x: P1.x, y: P1.y, in: null, out: _vAdd(P1, _vScale(inDir, _FILLET_K * d)) });
+      out.push({ x: P2.x, y: P2.y, in: _vSub(P2, _vScale(outDir, _FILLET_K * d)), out: null });
+    }
+    return out;
+  };
+
+  // Concatenated bezier segments (each sharing endpoints) → editable anchors.
+  const _segsToAnchors = (segs, closedRing) => {
+    if (!segs.length) return [];
+    const anchors = [{ x: segs[0][0].x, y: segs[0][0].y, in: null, out: { x: segs[0][1].x, y: segs[0][1].y } }];
+    for (let k = 1; k < segs.length; k++) {
+      anchors.push({
+        x: segs[k][0].x, y: segs[k][0].y,
+        in: { x: segs[k - 1][2].x, y: segs[k - 1][2].y },
+        out: { x: segs[k][1].x, y: segs[k][1].y },
+      });
+    }
+    const lastSeg = segs[segs.length - 1];
+    if (closedRing) {
+      anchors[0].in = { x: lastSeg[2].x, y: lastSeg[2].y }; // last segment ends at the first anchor
+    } else {
+      anchors.push({ x: lastSeg[3].x, y: lastSeg[3].y, in: { x: lastSeg[2].x, y: lastSeg[2].y }, out: null });
+    }
+    return anchors;
+  };
+
+  // A "corner" is a vertex whose turn angle exceeds the threshold. Smoothing
+  // must NOT fit a single curve across corners (that rounds them into balloons)
+  // — it fits each corner-to-corner run independently, so sharp corners survive
+  // (their in/out handles come from two different runs and point different ways)
+  // while gentle runs round into curves. Default threshold keeps ~≥35° bends.
+  const SMOOTH_CORNER_ANGLE_DEG = 35;
+
+  const fitBezierAnchors = (rawPoints, closed, errorTol, cornerAngleDeg, cornerRadiusFrac) => {
+    const src = [];
+    (rawPoints || []).forEach((p) => {
+      const last = src[src.length - 1];
+      if (!last || Math.hypot(last.x - p.x, last.y - p.y) > 1e-9) src.push({ x: p.x, y: p.y });
+    });
+    let pts = src;
+    const isClosed = !!closed;
+    if (isClosed && pts.length > 2
+        && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1e-9) {
+      pts = pts.slice(0, -1);
+    }
+    const n = pts.length;
+    if (n < 3) return pts.map((p) => ({ x: p.x, y: p.y, in: null, out: null }));
+
+    // Detect corners by turn angle.
+    const cornerCos = Math.cos((Number.isFinite(cornerAngleDeg) ? cornerAngleDeg : SMOOTH_CORNER_ANGLE_DEG) * Math.PI / 180);
+    const sharp = (prev, cur, next) => {
+      const a = _vNorm(_vSub(cur, prev));
+      const b = _vNorm(_vSub(next, cur));
+      return _vDot(a, b) < cornerCos; // angle between edges exceeds the threshold
+    };
+    const cornerIdx = [];
+    if (isClosed) {
+      for (let i = 0; i < n; i++) {
+        if (sharp(pts[(i - 1 + n) % n], pts[i], pts[(i + 1) % n])) cornerIdx.push(i);
+      }
+    } else {
+      cornerIdx.push(0);
+      for (let i = 1; i < n - 1; i++) if (sharp(pts[i - 1], pts[i], pts[i + 1])) cornerIdx.push(i);
+      cornerIdx.push(n - 1);
+    }
+
+    const segs = [];
+    const fitRun = (run) => {
+      const m = run.length;
+      if (m < 2) return;
+      _fitCubic(run, 0, m - 1, _vNorm(_vSub(run[1], run[0])), _vNorm(_vSub(run[m - 2], run[m - 1])), errorTol, segs, 0);
+    };
+
+    // No corners → one smooth curve (closed ring or open path).
+    const cornerCount = isClosed ? cornerIdx.length : cornerIdx.length - 2;
+    if (cornerCount <= 0) {
+      if (isClosed) {
+        const ring = [...pts, { x: pts[0].x, y: pts[0].y }];
+        const r = ring.length;
+        const seam = _vNorm({ x: (ring[r - 2].x - ring[1].x) / 2, y: (ring[r - 2].y - ring[1].y) / 2 });
+        _fitCubic(ring, 0, r - 1, _vScale(seam, -1), seam, errorTol, segs, 0);
+      } else {
+        fitRun(pts);
+      }
+    } else if (isClosed) {
+      // Fit each corner→next-corner run independently (wrapping the ring).
+      for (let k = 0; k < cornerIdx.length; k++) {
+        const start = cornerIdx[k];
+        const end = cornerIdx[(k + 1) % cornerIdx.length];
+        const run = [pts[start]];
+        let i = start;
+        do { i = (i + 1) % n; run.push(pts[i]); } while (i !== end);
+        fitRun(run);
+      }
+    } else {
+      for (let k = 0; k < cornerIdx.length - 1; k++) {
+        const run = pts.slice(cornerIdx[k], cornerIdx[k + 1] + 1);
+        fitRun(run);
+      }
+    }
+    if (!segs.length) return pts.map((p) => ({ x: p.x, y: p.y, in: null, out: null }));
+    const anchors = _segsToAnchors(segs, isClosed);
+    // Round the sharp corners into fillet arcs (Illustrator "Smooth" on a
+    // polygon). Interior corners only for open paths (endpoints stay put).
+    if (cornerRadiusFrac > 0 && cornerCount > 0) {
+      const cornerPos = cornerIdx
+        .filter((i) => isClosed || (i !== 0 && i !== n - 1))
+        .map((i) => ({ x: pts[i].x, y: pts[i].y }));
+      return _applyFillets(anchors, isClosed, cornerPos, cornerRadiusFrac);
+    }
+    return anchors;
+  };
+
+  // ── Minimal-anchor re-trace (Illustrator "Create Outlines" parity) ──────────
+  //
+  // Native font outlines — especially TrueType/quadratic faces — carry FAR more
+  // on-curve points than the shape needs: every quadratic is its own segment, a
+  // smooth join is often split across a zero-length seam into a coincident anchor
+  // PAIR, and a straight edge is broken into a collinear run. reduceAnchors
+  // re-traces a bezier-anchor contour into the MINIMAL set of editable anchors
+  // that reproduces it within a sub-pixel tolerance:
+  //   1. merge coincident seams (fuse the arriving `in` with the departing `out`),
+  //   2. detect corners from the ANCHOR HANDLES (tangent discontinuity) — robust
+  //      where a flattened turn-angle is not: a smooth quad-chain reads as ONE run,
+  //      a flat-terminal cut reads as two corners,
+  //   3. Schneider-fit each corner→corner run to the tolerance (straight runs stay
+  //      as a single handle-less line so flat terminals render crisp).
+  // Every returned anchor carries a `corner` flag (true at tangent breaks / open
+  // endpoints, false on smooth runs) for the editor's corner affordance. Anchor
+  // shape in and out: { x, y, in, out[, corner] } with absolute handle coords or null.
+  //
+  // opts (lengths default to FRACTIONS of the contour bbox diagonal, so the result
+  // is resolution-independent; absolute overrides skip the diagonal scaling):
+  //   toleranceFrac / tolerance   max fit deviation      (default 0.002·diag)
+  //   cornerAngleDeg              tangent-break threshold (default 30°)
+  //   mergeFrac / mergeEps        coincident-seam epsilon (default 0.0008·diag)
+  //   flattenTol                  run-flatten chord tol   (default tol·0.25)
+  const _reduceTangents = (anchors) => {
+    const n = anchors.length;
+    return anchors.map((a, i) => {
+      const prev = anchors[(i - 1 + n) % n];
+      const next = anchors[(i + 1) % n];
+      const outRaw = a.out && _vLen(_vSub(a.out, a)) > 1e-9 ? _vSub(a.out, a) : _vSub(next, a);
+      const inRaw = a.in && _vLen(_vSub(a, a.in)) > 1e-9 ? _vSub(a, a.in) : _vSub(a, prev);
+      return { inT: _vNorm(inRaw), outT: _vNorm(outRaw) };
+    });
+  };
+
+  const _mergeCoincidentAnchors = (anchors, closed, eps) => {
+    const out = [];
+    anchors.forEach((a) => {
+      if (!a || !Number.isFinite(a.x) || !Number.isFinite(a.y)) return;
+      const na = {
+        x: a.x, y: a.y,
+        in: a.in ? { x: a.in.x, y: a.in.y } : null,
+        out: a.out ? { x: a.out.x, y: a.out.y } : null,
+      };
+      const last = out[out.length - 1];
+      if (last && _vLen(_vSub(last, na)) <= eps) {
+        // Fuse the seam: keep the arriving `in`, adopt the departing `out`.
+        if (na.out) last.out = na.out;
+        if (!last.in && na.in) last.in = na.in;
+      } else {
+        out.push(na);
+      }
+    });
+    if (closed && out.length > 2 && _vLen(_vSub(out[0], out[out.length - 1])) <= eps) {
+      const last = out.pop();
+      if (last.in) out[0].in = last.in;
+    }
+    return out;
+  };
+
+  // Flatten an OPEN run of anchors (segments 0..len-2, no wrap) into a polyline.
+  // UNIFORM sampling at the fit scale (`step`) — NOT adaptive: a least-squares fit
+  // only "sees" deviation at the sample points, so a gentle curve sampled sparsely
+  // (as adaptive flattening would) lets _fitCubic under-subdivide and drift. Even
+  // density at the fit tolerance keeps every feature resolved for the error check.
+  const _flattenAnchorRun = (run, step) => {
+    const s = Math.max(step, 1e-4);
+    const pts = [{ x: run[0].x, y: run[0].y }];
+    for (let i = 0; i < run.length - 1; i += 1) {
+      const A = run[i];
+      const B = run[i + 1];
+      if (A.out || B.in) {
+        const c1 = A.out || A;
+        const c2 = B.in || B;
+        // Upper-bound the arc length by the control polygon to pick a sample count.
+        const approx = _vLen(_vSub(c1, A)) + _vLen(_vSub(c2, c1)) + _vLen(_vSub(B, c2));
+        const steps = Math.max(8, Math.min(400, Math.ceil(approx / s)));
+        for (let k = 1; k <= steps; k += 1) {
+          const t = k / steps;
+          pts.push(cubicAtT(A, c1, c2, B, t));
+        }
+      } else {
+        pts.push({ x: B.x, y: B.y });
+      }
+    }
+    return pts;
+  };
+
+  // Max perpendicular deviation of a polyline from its endpoint chord ≤ tol.
+  const _runIsStraight = (pts, tol) => {
+    if (pts.length <= 2) return true;
+    const a = pts[0];
+    const b = pts[pts.length - 1];
+    const ab = _vSub(b, a);
+    const L = _vLen(ab);
+    if (L < 1e-9) return false;
+    const nx = -ab.y / L;
+    const ny = ab.x / L;
+    for (let i = 1; i < pts.length - 1; i += 1) {
+      if (Math.abs((pts[i].x - a.x) * nx + (pts[i].y - a.y) * ny) > tol) return false;
+    }
+    return true;
+  };
+
+  const reduceAnchors = (rawAnchors, closed = false, opts = {}) => {
+    const tagAll = (list) => (list || []).map((a) => ({
+      x: a.x, y: a.y,
+      in: a.in ? { x: a.in.x, y: a.in.y } : null,
+      out: a.out ? { x: a.out.x, y: a.out.y } : null,
+      corner: true,
+    }));
+    if (!Array.isArray(rawAnchors) || rawAnchors.length < 2) return tagAll(rawAnchors);
+
+    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+    rawAnchors.forEach((a) => {
+      if (!a || !Number.isFinite(a.x) || !Number.isFinite(a.y)) return;
+      if (a.x < minX) minX = a.x;
+      if (a.x > maxX) maxX = a.x;
+      if (a.y < minY) minY = a.y;
+      if (a.y > maxY) maxY = a.y;
+    });
+    if (!Number.isFinite(minX)) return tagAll(rawAnchors);
+    const diag = Math.hypot(maxX - minX, maxY - minY) || 1;
+    const tol = Number.isFinite(opts.tolerance) ? opts.tolerance
+      : (Number.isFinite(opts.toleranceFrac) ? opts.toleranceFrac : 0.002) * diag;
+    const eps = Number.isFinite(opts.mergeEps) ? opts.mergeEps
+      : (Number.isFinite(opts.mergeFrac) ? opts.mergeFrac : 0.0008) * diag;
+    const flTol = Number.isFinite(opts.flattenTol) ? opts.flattenTol : Math.max(tol * 0.25, 1e-4);
+    const cornerCos = Math.cos((Number.isFinite(opts.cornerAngleDeg) ? opts.cornerAngleDeg : 30) * Math.PI / 180);
+
+    const merged = _mergeCoincidentAnchors(rawAnchors, closed, eps);
+    const n = merged.length;
+    if (n < 3) return tagAll(merged);
+
+    const tans = _reduceTangents(merged);
+    const isCorner = merged.map((_, i) => _vDot(tans[i].inT, tans[i].outT) < cornerCos);
+    if (!closed) { isCorner[0] = true; isCorner[n - 1] = true; }
+    const cornerIdx = [];
+    for (let i = 0; i < n; i += 1) if (isCorner[i]) cornerIdx.push(i);
+    const cornerPos = cornerIdx.map((i) => ({ x: merged[i].x, y: merged[i].y }));
+
+    const outA = [];
+    const pushAnchor = (a, forceCorner) => {
+      const last = outA[outA.length - 1];
+      if (last && _vLen(_vSub(last, a)) <= 1e-6) { // shared run-boundary anchor
+        if (a.out) last.out = a.out;
+        if (forceCorner) last.corner = true;
+        return;
+      }
+      const isC = forceCorner || cornerPos.some((c) => _vLen(_vSub(c, a)) <= Math.max(eps, tol));
+      outA.push({ x: a.x, y: a.y, in: a.in || null, out: a.out || null, corner: isC });
+    };
+
+    const emitRun = (run) => {
+      const poly = _flattenAnchorRun(run, flTol);
+      const startIsC = cornerPos.some((c) => _vLen(_vSub(c, run[0])) <= Math.max(eps, tol));
+      const endIsC = cornerPos.some((c) => _vLen(_vSub(c, run[run.length - 1])) <= Math.max(eps, tol));
+      if (_runIsStraight(poly, tol)) {
+        pushAnchor({ x: run[0].x, y: run[0].y, in: null, out: null }, startIsC);
+        pushAnchor({ x: run[run.length - 1].x, y: run[run.length - 1].y, in: null, out: null }, endIsC);
+        return;
+      }
+      const segs = [];
+      const m = poly.length;
+      _fitCubic(poly, 0, m - 1,
+        _vNorm(_vSub(poly[1], poly[0])), _vNorm(_vSub(poly[m - 2], poly[m - 1])), tol, segs, 0);
+      if (!segs.length) {
+        pushAnchor({ x: run[0].x, y: run[0].y, in: null, out: null }, startIsC);
+        pushAnchor({ x: run[run.length - 1].x, y: run[run.length - 1].y, in: null, out: null }, endIsC);
+        return;
+      }
+      pushAnchor({ x: segs[0][0].x, y: segs[0][0].y, in: null, out: { x: segs[0][1].x, y: segs[0][1].y } }, startIsC);
+      for (let k = 1; k < segs.length; k += 1) {
+        pushAnchor({
+          x: segs[k][0].x, y: segs[k][0].y,
+          in: { x: segs[k - 1][2].x, y: segs[k - 1][2].y },
+          out: { x: segs[k][1].x, y: segs[k][1].y },
+        }, false);
+      }
+      const ls = segs[segs.length - 1];
+      pushAnchor({ x: ls[3].x, y: ls[3].y, in: { x: ls[2].x, y: ls[2].y }, out: null }, endIsC);
+    };
+
+    if (cornerIdx.length === 0) {
+      // No corners: fit the whole closed ring (or the open span) as one smooth run.
+      if (closed) {
+        emitRun([...merged, { x: merged[0].x, y: merged[0].y, in: merged[0].in, out: null }]);
+      } else {
+        emitRun(merged);
+      }
+    } else if (closed) {
+      for (let k = 0; k < cornerIdx.length; k += 1) {
+        const start = cornerIdx[k];
+        const end = cornerIdx[(k + 1) % cornerIdx.length];
+        const run = [merged[start]];
+        let i = start;
+        do { i = (i + 1) % n; run.push(merged[i]); } while (i !== end);
+        emitRun(run);
+      }
+    } else {
+      // Open path: runs between consecutive corners (endpoints are corners).
+      for (let k = 0; k < cornerIdx.length - 1; k += 1) {
+        emitRun(merged.slice(cornerIdx[k], cornerIdx[k + 1] + 1));
+      }
+    }
+
+    // Closed contours: the first anchor (start of run 0) and the final emitted
+    // anchor coincide — fuse the seam so the ring has no duplicate.
+    if (closed && outA.length > 2 && _vLen(_vSub(outA[0], outA[outA.length - 1])) <= 1e-6) {
+      const last = outA.pop();
+      if (last.in) outA[0].in = last.in;
+      if (last.corner) outA[0].corner = true;
+    }
+    return outA.length >= 2 ? outA : tagAll(merged);
+  };
+
   const api = {
     stripCurveMeta,
     smoothPath,
     simplifyPath,
     simplifyPathVisvalingam,
+    fitBezierAnchors,
+    reduceAnchors,
     countPathPoints,
     clonePaths,
     cloneAnchors,

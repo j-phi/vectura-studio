@@ -1678,3 +1678,101 @@ test.describe('Vectura smoke interactions', () => {
     expect(pageErrors).toEqual([]);
   });
 });
+
+// ── HUD hint bar & canvas toast (Illustrator parity Phase 1, Lane F) ────────
+// Screenshot-sanity gate for HUD-1…3: the bottom strip renders per-tool hints
+// + tool/zoom/rotation readouts, and UI.toast() shows the transient pill.
+test.describe('HUD hint bar & toast', () => {
+  test('bottom strip shows hints + readouts, toast pill appears and auto-dismisses', async ({ page }, testInfo) => {
+    const fs = require('fs');
+    const path = require('path');
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    // HUD-1/HUD-2: strip visible with the select-tool hint and live readouts.
+    const bar = page.locator('#hud-bar');
+    await expect(bar).toBeVisible();
+    await expect(page.locator('#status-bar')).toBeVisible();
+    await expect(page.locator('#status-bar .hud-hint-seg').first()).toBeVisible();
+    await expect(page.locator('#status-bar')).toContainText('the object to select');
+    await expect(page.locator('#hud-tool')).toHaveText('Selection');
+    await expect(page.locator('#hud-zoom')).toHaveText(/^\d+%$/);
+    await expect(page.locator('#hud-rotation')).toHaveText('0°');
+
+    // Hint switches with the tool (copy from src/config/hints.js).
+    await page.evaluate(() => window.app.renderer.setTool('shape-rect'));
+    await expect(page.locator('#status-bar')).toContainText('rectangle');
+    await expect(page.locator('#hud-tool')).toHaveText('Rectangle');
+
+    const screenshotDir = path.join(__dirname, '../../screenshots');
+    fs.mkdirSync(screenshotDir, { recursive: true });
+    await bar.screenshot({ path: path.join(screenshotDir, `hud-hint-bar-${testInfo.project.name}.png`) });
+
+    // HUD-3: toast pill top-center of the canvas, then auto-dismissed.
+    await page.evaluate(() => window.Vectura.UI.toast('Shape Expanded'));
+    const toast = page.locator('#canvas-toast');
+    await expect(toast).toBeVisible();
+    await expect(toast).toHaveText('Shape Expanded');
+    await page.screenshot({ path: path.join(screenshotDir, `hud-toast-${testInfo.project.name}.png`), fullPage: false });
+    await expect(toast).toBeHidden({ timeout: 5_000 });
+
+    await page.evaluate(() => window.app.renderer.setTool('select'));
+    expect(pageErrors).toEqual([]);
+  });
+
+  // Illustrator parity Phase 2: the Contextual Task Bar + isolation breadcrumb are
+  // wired into index.html for the first time. Smoke the two headline flows in the
+  // live shell: (1) select an object → the bar appears; (2) enter group isolation →
+  // the breadcrumb becomes visible.
+  test('contextual task bar appears on selection and isolation shows the breadcrumb', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+    await page.waitForFunction(() => !!window.app && !!window.Vectura?.UI?.ContextBar);
+
+    // The bar module and its sub-modes are loaded and registered.
+    const modules = await page.evaluate(() => ({
+      ctxBar: !!window.Vectura?.UI?.ContextBar,
+      modes: !!window.Vectura?.UI?.ContextBarModes,
+      breadcrumb: !!window.Vectura?.UI?.BreadcrumbBar,
+    }));
+    expect(modules).toEqual({ ctxBar: true, modes: true, breadcrumb: true });
+
+    // (1) Add an object and select it → the bar shows below the selection.
+    await addAlgoLayer(page);
+    await page.evaluate(() => {
+      const id = window.app.engine.getActiveLayer().id;
+      window.app.renderer.setTool('select');
+      window.app.renderer.setSelection([id], id);
+    });
+    await expect(page.locator('.ctxbar')).toHaveClass(/is-visible/, { timeout: 5_000 });
+
+    // (2) Build a nested group and isolate it via the renderer (the same API the
+    // app's double-click-into-group path calls). The self-mounted breadcrumb reacts
+    // to the vectura:isolation-changed event and becomes visible.
+    await page.evaluate(() => {
+      const { Layer } = window.Vectura;
+      const app = window.app;
+      const g = new Layer('e2e-grp', 'group', 'E2E Group');
+      g.isGroup = true; g.groupType = 'group'; g.type = 'group';
+      g.parentId = null; g.visible = true;
+      const child = new Layer('e2e-child', 'shape', 'Child');
+      child.parentId = 'e2e-grp'; child.visible = true;
+      app.engine.layers = [g, child];
+      app.renderer.enterGroupEditMode(child); // isolate the group containing `child`
+    });
+    const breadcrumb = page.locator('.iso-breadcrumb');
+    await expect(breadcrumb).toHaveClass(/is-visible/, { timeout: 5_000 });
+    await expect(page.locator('.iso-edge-indicator')).toHaveClass(/is-visible/);
+    await expect(breadcrumb.locator('.iso-bc-current')).toHaveText('E2E Group');
+
+    // Exiting isolation hides the breadcrumb again (event-driven, no manual sync).
+    await page.evaluate(() => window.app.renderer.exitGroupEditMode());
+    await expect(breadcrumb).not.toHaveClass(/is-visible/, { timeout: 5_000 });
+
+    expect(pageErrors).toEqual([]);
+  });
+});

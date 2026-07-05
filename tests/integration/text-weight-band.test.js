@@ -106,7 +106,10 @@ describe('Built-in banded bold — real text pipeline', () => {
     // bugs (3.6% of the band uncovered, holes up to 0.93mm).
     const GUx = V.GeometryUtils;
     const FB = V.FillBoolean;
-    const reg = strokesOf(gen(params({ text: 'e', fontWeight: 'Regular' }), null, null, bounds));
+    // 'e' = curved bowl + junction pocket + near-collapse spine; 'u' = the
+    // needle-acute spur whose pocket ring the flat sliver filter used to drop.
+    for (const glyph of ['e', 'u']) {
+    const reg = strokesOf(gen(params({ text: glyph, fontWeight: 'Regular' }), null, null, bounds));
     // Band the same contour the pipeline bands: curve strokes flatten their
     // emitted native anchors; straight strokes stay raw polylines.
     const strokes = reg.map((p) => {
@@ -119,7 +122,7 @@ describe('Built-in banded bold — real text pipeline', () => {
     const band = GUx.strokeRingsToBand(strokes, 8 * PEN, { boolean: FB });
     expect(band.length).toBeGreaterThan(0);
     const rings = band.flatMap((poly) => poly.map((r) => r));
-    const out = strokesOf(gen(params({ text: 'e' }), null, null, bounds));
+    const out = strokesOf(gen(params({ text: glyph }), null, null, bounds));
     const inBand = (x, y) => {
       let w = 0;
       for (const r of rings) {
@@ -152,9 +155,11 @@ describe('Built-in banded bold — real text pipeline', () => {
       if (y < mny) mny = y; if (y > mxy) mxy = y;
     }));
     // Reach = pen radius + tolerance slack (RDP simplify, boolean facets, µm
-    // snap). Needle-acute junction pockets can physically exceed pen reach by
-    // a hair (a pen disk cannot enter a spike tip), so allow a whisker of
-    // outliers but bound their depth hard.
+    // snap). The band is a disk sweep, so in exact geometry NOTHING is out of
+    // pen reach (a union of R-disks is fully coverable by any pen ≤ R —
+    // including sharp weld corners, which the outer erosion contour rolls
+    // into). Residuals are pure discretization; allow a whisker of them but
+    // bound their depth hard.
     const REACH_SQ = (PEN / 2 + 0.06) ** 2;
     const HARD_SQ = (PEN / 2 + 0.25) ** 2;
     let samples = 0; let uncovered = 0; let hard = 0;
@@ -170,6 +175,7 @@ describe('Built-in banded bold — real text pipeline', () => {
     expect(samples).toBeGreaterThan(2000);
     expect(uncovered / samples).toBeLessThanOrEqual(0.002); // ≤0.2% whisker outliers
     expect(hard).toBe(0); // and never a real hole
+    }
   });
 
   test('engine passes the layer pen width into algorithm bounds', () => {

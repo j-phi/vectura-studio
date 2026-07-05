@@ -414,6 +414,10 @@
       this.rotateStart = 0;
       this.rotation3DDrag = null;
       this.guides = null;
+      // SEL-4/SG-2/SG-5 hover feedback state (test-visible hooks).
+      this.hoverReadout = null;
+      this.hoverHighlight = null;
+      this.lastTooltipText = null;
       this.selectedLayerId = null;
       this.selectedLayerIds = new Set();
       // Illustrator-style "key object" — the anchor that Align-To: Key Object
@@ -577,6 +581,16 @@
       document.addEventListener('keydown', this._onModKeyChange);
       document.addEventListener('keyup', this._onModKeyChange);
       window.addEventListener('blur', this._onWindowBlur);
+      // SEL-2: Escape cancels an in-flight layer drag (removing any alt-drag
+      // duplicates). Capture phase so tool-level Escape shortcuts don't race.
+      this._onDragCancelKey = (e) => {
+        if (e.key !== 'Escape' || !this.isLayerDrag) return;
+        if (this.cancelLayerDrag()) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      };
+      document.addEventListener('keydown', this._onDragCancelKey, true);
     }
 
     destroy() {
@@ -592,6 +606,9 @@
       if (this._onModKeyChange) {
         document.removeEventListener('keydown', this._onModKeyChange);
         document.removeEventListener('keyup', this._onModKeyChange);
+      }
+      if (this._onDragCancelKey) {
+        document.removeEventListener('keydown', this._onDragCancelKey, true);
       }
       if (this._onWindowBlur) {
         window.removeEventListener('blur', this._onWindowBlur);
@@ -773,10 +790,132 @@
       el.style.left = `${clientX + 14}px`;
       el.style.top = `${clientY - 10}px`;
       el.style.display = 'block';
+      // Test-visible hook (SEL-4): integration tests observe the chip content
+      // here instead of scraping the DOM element.
+      this.lastTooltipText = text;
     }
 
     hideDragTooltip() {
       if (this._dragTooltipEl) this._dragTooltipEl.style.display = 'none';
+      this.lastTooltipText = null;
+    }
+
+    // ——— SEL-4: live measurement chips (hover X/Y, move dX/dY) ———————————
+    // All thresholds/vocabulary come from src/config/smart-guides.js; when the
+    // config is absent the chips quietly stay off (late-loading tolerance).
+
+    _smartGuidesConfig() {
+      return (window.Vectura && window.Vectura.SMART_GUIDES) || null;
+    }
+
+    _formatChipText(kind, values) {
+      const cfg = this._smartGuidesConfig();
+      if (!cfg || !cfg.chip) return null;
+      const settings = (window.Vectura && window.Vectura.SETTINGS) || SETTINGS || {};
+      const units = normalizeDocumentUnits(settings.documentUnits);
+      const precision = Number.isFinite(cfg.chipPrecision) ? cfg.chipPrecision : 2;
+      const fmt = (v) => formatDocumentLength(v, units, {
+        includeUnit: false,
+        precision,
+        trimTrailingZeros: true,
+      });
+      const unitLabel = typeof UnitUtils.getDocumentUnitLabel === 'function'
+        ? UnitUtils.getDocumentUnitLabel(units)
+        : (units === 'imperial' ? 'in' : 'mm');
+      const sep = cfg.chip.labelSeparator ?? ': ';
+      const pair = cfg.chip.pairSeparator ?? ' / ';
+      if (kind === 'delta') {
+        return `${cfg.chip.dx}${sep}${fmt(values.dx)}${pair}${cfg.chip.dy}${sep}${fmt(values.dy)} ${unitLabel}`;
+      }
+      return `${cfg.chip.x}${sep}${fmt(values.x)}${pair}${cfg.chip.y}${sep}${fmt(values.y)} ${unitLabel}`;
+    }
+
+    _showMoveDeltaChip(dx, dy, e) {
+      const text = this._formatChipText('delta', { dx, dy });
+      if (text == null) return;
+      this.showDragTooltip(text, e.clientX ?? 0, e.clientY ?? 0);
+    }
+
+    // Hover feedback while no drag is active: X/Y chip over anchors/bezier
+    // handles (editing tools) and selection handles (Select tool). Exposes
+    // `hoverReadout` ({x, y, label}) as the integration-test hook.
+    _updateHoverFeedback(e) {
+      const cfg = this._smartGuidesConfig();
+      if (!cfg) return;
+      let chipPoint = null;
+      let label = null;
+      let hoverHighlight = null;
+      const busy = this.isLayerDrag || this.isPan || this.isSelecting || this.directDrag
+        || this.penAnchorDrag || this.touchGesture || this.shapeCornerDrag || this.modifierDrag;
+      if (!busy && this.canvas) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = (e.clientX ?? 0) - rect.left;
+        const sy = (e.clientY ?? 0) - rect.top;
+        const world = this.screenToWorld(sx, sy);
+        const tool = this.activeTool;
+        let overControlOrHandle = false;
+        if (tool === 'direct' || (tool === 'pen' && this.penMode !== 'draw')) {
+          const control = this.hitDirectControl(world);
+          if (control) {
+            overControlOrHandle = true;
+            const data = control.auxIdx >= 0
+              ? this._selectionWorldAnchors(this.directAuxSelections[control.auxIdx])
+              : this.getDirectSelectionWorldAnchors();
+            const anchor = data?.anchors?.[control.index];
+            if (anchor) {
+              const pt = control.type === 'anchor' ? anchor : (anchor[control.type] || anchor);
+              chipPoint = { x: pt.x, y: pt.y };
+              if (control.type === 'anchor') label = cfg.labels?.anchor ?? null;
+            }
+          }
+        } else if (tool === 'select') {
+          const activeLayers = this.getSelectedLayers();
+          const bounds = activeLayers.length
+            ? this.getSelectionBounds(activeLayers, this.tempTransform)
+            : null;
+          if (bounds && !activeLayers.some((l) => this.isLayerLocked?.(l.id))) {
+            const handle = this.hitHandle(sx, sy, bounds);
+            if (handle && !handle.startsWith('rotate')) {
+              overControlOrHandle = true;
+              chipPoint = this.getHandlePoint(handle, bounds);
+            } else if (bounds && this.pointInBounds(world, bounds)) {
+              // Hovering inside the current selection's own bounds — no
+              // unselected-path highlight (avoids flicker over the selection).
+              overControlOrHandle = true;
+            }
+          }
+        }
+        // SG-5: highlight an unselected path under Selection/Direct tools so
+        // click targets read before clicking (magenta outline + `path` label).
+        if (!overControlOrHandle && (tool === 'select' || tool === 'direct')) {
+          const hit = tool === 'direct'
+            ? this.findLayerAtPointPrecise?.(world)
+            : this.findLayerAtPoint(world);
+          if (hit && !this.selectedLayerIds?.has(hit.id) && !this.isLayerLocked?.(hit.id)) {
+            hoverHighlight = { layerId: hit.id, label: cfg.labels?.path ?? 'path' };
+          }
+        }
+      }
+      // SG-5 hover-highlight state + redraw only on change (avoid churn).
+      const prevHL = this._hoverHighlightKey || null;
+      const nextHL = hoverHighlight ? `${hoverHighlight.layerId}` : null;
+      this.hoverHighlight = hoverHighlight;
+      this._hoverHighlightKey = nextHL;
+      if (prevHL !== nextHL) this.draw();
+      if (chipPoint) {
+        this.hoverReadout = { x: chipPoint.x, y: chipPoint.y, label };
+        const text = this._formatChipText('position', chipPoint);
+        if (text != null) {
+          this._hoverChipActive = true;
+          this.showDragTooltip(text, e.clientX ?? 0, e.clientY ?? 0);
+        }
+      } else {
+        this.hoverReadout = null;
+        if (this._hoverChipActive) {
+          this._hoverChipActive = false;
+          this.hideDragTooltip();
+        }
+      }
     }
 
     ensureFillLoupe() {
@@ -1829,6 +1968,106 @@
       this.draw();
     }
 
+    // ── SHP-1/2/3 — live shape-property plumbing ──────────────────────────────
+    // Reads/writes the persisted live-shape params (`cornerRadii`, `sides`) that
+    // the polygon/rect rounding pipeline (getShapeRadii / getCornerDescriptors /
+    // buildRoundedPolygonAnchors) and the on-canvas corner widget (shapeCornerDrag)
+    // already consume. This is param plumbing for the Task Bar's Shape Properties
+    // popover — no new geometry. Uniform corner mode only (per-corner stays on the
+    // canvas widget); the same push-before-change history contract as the "all"
+    // scope corner drag (onDirectEditStart snapshots once per gesture).
+    getShapePropsState() {
+      const layer = this.getSelectedShapeLayer();
+      if (!layer) return null;
+      const meta = this.getShapeMetaForLayer(layer, 0);
+      const shape = meta?.shape;
+      if (!shape) return null;
+      const type = shape.type;
+      const supportsCornerRadius = type === 'rect' || type === 'polygon';
+      const supportsSides = type === 'polygon';
+      const descriptors = supportsCornerRadius ? getCornerDescriptors(shape) : [];
+      const radii = descriptors.length ? getShapeRadii(shape, descriptors.length) : [];
+      const uniform = radii.length ? Math.max.apply(null, radii) : 0;
+      const first = radii.length ? radii[0] : 0;
+      const allEqual = radii.every((r) => Math.abs(r - first) < 1e-4);
+      const maxCorner = descriptors.length
+        ? Math.min.apply(null, descriptors.map((d) => d.maxRadius))
+        : 0;
+      return {
+        layerId: layer.id,
+        pathIndex: 0,
+        type,
+        supportsCornerRadius,
+        supportsSides,
+        cornerRadiusMm: uniform,
+        cornerRadiusMixed: radii.length > 0 && !allEqual,
+        maxCornerRadiusMm: Number.isFinite(maxCorner) ? maxCorner : 0,
+        sides: supportsSides ? Math.max(3, Math.round(shape.sides ?? descriptors.length ?? 3)) : null,
+      };
+    }
+
+    beginShapePropsEdit() {
+      const layer = this.getSelectedShapeLayer();
+      if (!layer) return false;
+      this._shapePropsEdit = { layerId: layer.id, historyPushed: false };
+      return true;
+    }
+
+    _applyShapePropsMutation(mutator) {
+      const layer = this.getSelectedShapeLayer();
+      if (!layer) return null;
+      const meta = this.getShapeMetaForLayer(layer, 0);
+      if (!meta?.shape) return null;
+      // Push-before-change: one undo step per gesture. If no explicit gesture was
+      // opened (a discrete stepper click / field commit), snapshot once here.
+      if (this._shapePropsEdit && this._shapePropsEdit.layerId === layer.id) {
+        if (!this._shapePropsEdit.historyPushed) {
+          if (this.onDirectEditStart) this.onDirectEditStart();
+          this._shapePropsEdit.historyPushed = true;
+        }
+      } else if (this.onDirectEditStart) {
+        this.onDirectEditStart();
+      }
+      const shape = cloneShape(meta.shape);
+      mutator(shape);
+      meta.shape = shape;
+      const nextPath = this.buildShapePath(shape);
+      const sourcePaths = this.ensureLayerSourcePaths(layer);
+      sourcePaths[0] = nextPath;
+      layer.sourcePaths = sourcePaths;
+      this.engine.generate(layer.id);
+      this.draw();
+      return this.getShapePropsState();
+    }
+
+    setShapeUniformCornerRadius(mm) {
+      const value = Math.max(0, Number(mm) || 0);
+      return this._applyShapePropsMutation((shape) => {
+        if (shape.type !== 'rect' && shape.type !== 'polygon') return;
+        const vertexCount = getShapeVertices(shape).length;
+        shape.cornerRadii = new Array(vertexCount).fill(value);
+      });
+    }
+
+    setShapeSides(sides) {
+      const n = Math.max(3, Math.round(Number(sides) || 3));
+      return this._applyShapePropsMutation((shape) => {
+        if (shape.type !== 'polygon') return;
+        const radii = getShapeRadii(shape, getShapeVertices(shape).length);
+        const uniform = radii.length ? Math.max.apply(null, radii) : 0;
+        shape.sides = n;
+        shape.cornerRadii = new Array(n).fill(uniform);
+      });
+    }
+
+    endShapePropsEdit() {
+      const pushed = Boolean(this._shapePropsEdit && this._shapePropsEdit.historyPushed);
+      this._shapePropsEdit = null;
+      if (pushed && this.onDirectEditCommit) this.onDirectEditCommit();
+      this.draw();
+      return pushed;
+    }
+
     cancelScissor() {
       if (!this.isScissor) return;
       this.isScissor = false;
@@ -1839,12 +2078,16 @@
 
     cloneAnchor(anchor) {
       if (!anchor) return null;
-      return {
+      const c = {
         x: anchor.x,
         y: anchor.y,
         in: anchor.in ? { x: anchor.in.x, y: anchor.in.y } : null,
         out: anchor.out ? { x: anchor.out.x, y: anchor.out.y } : null,
       };
+      // Minimal-trace corner flag: a corner anchor whose flat side carries no
+      // handle draws the "drag me into a curve" affordance in the node overlay.
+      if (anchor.corner === true) c.corner = true;
+      return c;
     }
 
     cloneAnchors(anchors) {
@@ -1958,7 +2201,14 @@
         return dx * dx + dy * dy < 1e-6;
       })();
       let anchors;
-      let closed = closedByPoints || Boolean(path.meta?.closed);
+      // An explicit meta.closed === false is authoritative: a closed ring cut
+      // at one anchor (scissors) is an OPEN path that legitimately starts and
+      // ends at the same point — coincident endpoints must not force `closed`
+      // or the seam re-welds on the next parse (mirrors parsePathAnchors in
+      // path-edit-ops.js).
+      let closed = path.meta?.closed === false
+        ? false
+        : (closedByPoints || Boolean(path.meta?.closed));
       if (Array.isArray(path.meta?.anchors) && path.meta.anchors.length >= 2) {
         anchors = this.cloneAnchors(path.meta.anchors);
       } else {
@@ -2085,6 +2335,70 @@
       sel.closed = parsed.closed;
       sel.selectedIndices = next;
       sel.meta = sourcePath.meta ? { ...sourcePath.meta } : {};
+    }
+
+    // Illustrator-parity edit-path toolbar: expose the current anchor selection
+    // as stable refs ({layerId, pathIndex, anchorIndex}) across the primary and
+    // auxiliary direct selections, so the contextual task bar can gate its
+    // anchor verbs (delete / cut / corner / smooth / connect) on what is
+    // actually selected. Read-only — never mutates state.
+    getSelectedAnchorRefs() {
+      const refs = [];
+      const collect = (sel) => {
+        if (!sel || !sel.selectedIndices) return;
+        for (const i of sel.selectedIndices) {
+          refs.push({ layerId: sel.layerId, pathIndex: sel.pathIndex, anchorIndex: i });
+        }
+      };
+      collect(this.directSelection);
+      (this.directAuxSelections || []).forEach(collect);
+      return refs;
+    }
+
+    // An anchor is "smooth" when it carries a bezier handle (in or out), else a
+    // "corner" (handle-less). Used to make Convert-to-Corner / Convert-to-Smooth
+    // behave as a toggle.
+    _anchorIsSmooth(a) {
+      return !!(a && (a.in || a.out));
+    }
+
+    // Summarize the selected anchors' types across the primary + aux selections:
+    // { hasCorner, hasSmooth, count }. Read-only.
+    getSelectedAnchorTypes() {
+      let hasCorner = false;
+      let hasSmooth = false;
+      let count = 0;
+      const scan = (sel) => {
+        if (!sel || !sel.selectedIndices || !Array.isArray(sel.anchors)) return;
+        for (const i of sel.selectedIndices) {
+          const a = sel.anchors[i];
+          if (!a) continue;
+          count += 1;
+          if (this._anchorIsSmooth(a)) hasSmooth = true; else hasCorner = true;
+        }
+      };
+      scan(this.directSelection);
+      (this.directAuxSelections || []).forEach(scan);
+      return { hasCorner, hasSmooth, count };
+    }
+
+    // Cheap change-detector for the RAF-driven task bar: a string that changes
+    // whenever the anchor selection changes — layer/path, sorted indices, AND
+    // each selected anchor's type (so a corner↔smooth conversion re-renders the
+    // toggle even though the index set is unchanged).
+    getSelectedAnchorSignature() {
+      const parts = [];
+      const enc = (sel) => {
+        if (!sel || !sel.selectedIndices) return;
+        const anchors = Array.isArray(sel.anchors) ? sel.anchors : [];
+        const idx = [...sel.selectedIndices].sort((a, b) => a - b)
+          .map((i) => `${i}${this._anchorIsSmooth(anchors[i]) ? 's' : 'c'}`)
+          .join('.');
+        parts.push(`${sel.layerId}:${sel.pathIndex}:${idx}`);
+      };
+      enc(this.directSelection);
+      (this.directAuxSelections || []).forEach(enc);
+      return parts.join('|');
     }
 
     _applyDirectLasso(poly) {
@@ -2298,6 +2612,112 @@
       );
     }
 
+    // SEL-2: duplicate the current selection at alt-drag start and retarget the
+    // drag onto the copies. Duplicates only the top-most selected roots (a
+    // selected group deep-duplicates its children via engine.duplicateLayer).
+    // History: exactly ONE push-before-change snapshot (via onDuplicateLayer);
+    // the commit-time push is suppressed so the whole duplicate+move is a
+    // single undo step on drop.
+    _beginAltDragDuplicate(selectedLayers, world, bounds) {
+      if (!this.engine?.duplicateLayer) return false;
+      const selectedIds = new Set(selectedLayers.map((l) => l.id));
+      const roots = selectedLayers.filter((layer) => {
+        let pid = layer.parentId;
+        while (pid) {
+          if (selectedIds.has(pid)) return false;
+          pid = this.engine.layers.find((l) => l.id === pid)?.parentId ?? null;
+        }
+        return true;
+      });
+      if (!roots.length) return false;
+      this._altDupHistoryLen = this.app?.history?.length ?? null;
+      if (this.onDuplicateLayer) this.onDuplicateLayer();
+      const dups = roots.map((layer) => this.engine.duplicateLayer(layer.id)).filter(Boolean);
+      if (!dups.length) {
+        this._altDupHistoryLen = null;
+        return false;
+      }
+      this._altDragDup = {
+        dupIds: dups.map((d) => d.id),
+        originalIds: [...selectedIds],
+        primaryId: this.selectedLayerId,
+      };
+      // Include descendants of duplicated groups in the new selection so the
+      // move drag fans out exactly like dragging the originals would.
+      const dupSelection = [];
+      const collectWithDescendants = (id) => {
+        dupSelection.push(id);
+        this.engine.layers.forEach((l) => {
+          if (l.parentId === id) collectWithDescendants(l.id);
+        });
+      };
+      this._altDragDup.dupIds.forEach(collectWithDescendants);
+      this.setSelection(dupSelection, dupSelection[0]);
+      const dupLayers = this.getSelectedLayers();
+      this.dragStart = world;
+      this.startBounds = this.getSelectionBounds(dupLayers) || bounds;
+      // Re-arm mirror/morph drag previews for the copies (they were armed for
+      // the originals before the duplicate swap).
+      this._startMirrorDrag(dupLayers);
+      this._skipCommitHistory = true;
+      return true;
+    }
+
+    // Cancel an in-flight layer drag (SEL-2: Escape mid-drag). Restores any
+    // live-mutated mirror-drag geometry, removes alt-drag duplicates, restores
+    // the pre-drag selection, and pops the pre-duplicate history snapshot when
+    // it is still the stack top (the live state is identical to it again).
+    cancelLayerDrag() {
+      if (!this.isLayerDrag) return false;
+      if (this.mirrorDragState) {
+        this.mirrorDragState.forEach((state, layerId) => {
+          const layer = this.engine.layers.find((l) => l.id === layerId);
+          if (!layer) return;
+          layer.paths = state.basePaths;
+          if (this.engine.computeLayerEffectiveGeometry) this.engine.computeLayerEffectiveGeometry(layer.id);
+          if (this.engine.computeLayerDisplayGeometry) this.engine.computeLayerDisplayGeometry(layer.id);
+        });
+      }
+      this._clearMorphDrag();
+      const dup = this._altDragDup;
+      if (dup) {
+        dup.dupIds.forEach((id) => this.engine.removeLayer?.(id));
+        const originals = dup.originalIds.filter((id) =>
+          this.engine.layers.some((l) => l.id === id));
+        if (originals.length) {
+          this.setSelection(originals, dup.primaryId || originals[originals.length - 1]);
+        }
+        if (this.app?.history && this._altDupHistoryLen != null
+            && this.app.history.length === this._altDupHistoryLen + 1) {
+          this.app.history.pop();
+        }
+      }
+      this._altDragDup = null;
+      this._altDupHistoryLen = null;
+      this._guideCandidates = null;
+      this._objectGuideMatches = null;
+      this._spacingHints = null;
+      this._pendingSingleSelect = null;
+      this.isLayerDrag = false;
+      this.dragMode = null;
+      this.activeHandle = null;
+      this.tempTransform = null;
+      this.rotateOrigin = null;
+      this.startBounds = null;
+      this.lastDragWorld = null;
+      this._areaResize = null;
+      this._skipCommitHistory = false;
+      this._detachShiftDragListener();
+      this.clearMaskPreview();
+      this.mirrorDragState = null;
+      this.snap = null;
+      this.guides = null;
+      this.hideDragTooltip();
+      this.updateCursor();
+      this.draw();
+      return true;
+    }
+
     // Schedules at most one morph refold per animation frame so a morph parent's
     // morphedPaths refresh live while a descendant is dragged, without queueing a
     // recompute per pointermove. Refolds ONLY the dragged children's morph
@@ -2374,6 +2794,7 @@
         y: this.sourceToWorldPoint(layer, anchor).y,
         in: anchor.in ? this.sourceToWorldPoint(layer, anchor.in) : null,
         out: anchor.out ? this.sourceToWorldPoint(layer, anchor.out) : null,
+        corner: anchor.corner === true, // carry the minimal-trace corner affordance flag to world space
       }));
       return { layer, anchors };
     }
@@ -2729,10 +3150,26 @@
             // other endpoint — intermediate anchors must not be detected first just
             // because the loop happens to reach them before the far endpoint.
             const isEndpointDrag = !this.directSelection.closed && (drag.index === 0 || drag.index === mLastIdx);
+            // A candidate COINCIDENT with the drag's start position (the twin
+            // seam endpoint a scissors cut leaves behind) must not merge until
+            // the pointer has actually LEFT that spot — otherwise a click with
+            // sub-pixel jitter on the seam re-welds the cut. Dragging away and
+            // dropping back onto the twin still joins (leftStartRegion latches).
+            const startWorld = drag.anchorStart ? this.sourceToWorldPoint(layer, drag.anchorStart) : null;
+            if (!drag.leftStartRegion && startWorld) {
+              const sdx = world.x - startWorld.x;
+              const sdy = world.y - startWorld.y;
+              if (sdx * sdx + sdy * sdy > mergeTolSq) drag.leftStartRegion = true;
+            }
             for (let i = 0; i < wdata.anchors.length; i++) {
               if (i === drag.index) continue;
               if (isEndpointDrag && i !== 0 && i !== mLastIdx) continue;
               const wa = wdata.anchors[i];
+              if (!drag.leftStartRegion && startWorld) {
+                const cdx = wa.x - startWorld.x;
+                const cdy = wa.y - startWorld.y;
+                if (cdx * cdx + cdy * cdy <= mergeTolSq) continue;
+              }
               const ddx = world.x - wa.x;
               const ddy = world.y - wa.y;
               if (ddx * ddx + ddy * ddy <= mergeTolSq) { drag.mergeTarget = i; break; }
@@ -3136,7 +3573,12 @@
           let currentStrokeStyle = layerPen?.color || l.color;
 
           this.ctx.lineWidth = currentStrokeWidth;
-          this.ctx.lineCap = l.lineCap || 'round';
+          // Lane B: per-layer cap/join/miter + layer-level dash (document units
+          // → world mm). The layer dash becomes the batch default; per-path
+          // dash/weight/fill branches save/restore around it, so it persists.
+          this._applyLayerStrokeCtx(l);
+          const layerDash = this._layerDashPattern(l);
+          this.ctx.setLineDash(layerDash || []);
           this.ctx.beginPath();
           this.ctx.strokeStyle = currentStrokeStyle;
 
@@ -3200,8 +3642,7 @@
               this.ctx.beginPath();
               this.ctx.lineWidth = currentStrokeWidth;
               this.ctx.strokeStyle = currentStrokeStyle;
-              this.ctx.lineCap = l.lineCap || 'round';
-              this.ctx.lineJoin = 'round';
+              this._applyLayerStrokeCtx(l);
               return;
             }
             const dash = this.getPathStrokeDash(path);
@@ -3224,13 +3665,15 @@
               this.ctx.beginPath();
               this.ctx.lineWidth = currentStrokeWidth;
               this.ctx.strokeStyle = currentStrokeStyle;
-              this.ctx.lineCap = l.lineCap || 'round';
-              this.ctx.lineJoin = 'round';
+              this._applyLayerStrokeCtx(l);
               return;
             }
             this.traceLayerPath(path, l, temp, useCurves);
           });
           this.ctx.stroke();
+          // Lane B: clear the layer-level dash so it can't leak into the next
+          // layer's batch or the overlays drawn after this loop.
+          if (layerDash) this.ctx.setLineDash([]);
           if (fadeLayer || dimMorphBlend) { this.ctx.restore(); }
 
           // Active morph child: its own geometry is consumed (drew nothing
@@ -3815,6 +4258,11 @@
       }
 
       if (SETTINGS.showGuides && this.guides) this.drawGuides(this.guides);
+      // SG-3: equal-spacing hint chips + connecting guide during a move-drag.
+      if (SETTINGS.showGuides && this._spacingHints) this.drawSpacingHints();
+      // SG-5: outline the hovered unselected path (magenta) beneath the
+      // selection box so click targets are legible before clicking.
+      if (this.hoverHighlight) this.drawHoverHighlight();
       const selectionLayersForBox = this.tempTransform
         ? selectedLayers.filter((l) =>
             !l.displayMaskActive &&
@@ -4147,16 +4595,18 @@
       this.ctx.restore();
     }
 
-    // The area-type layer whose frame should be drawn: the actively edited text
-    // layer takes precedence, else a single selected area layer.
+    // The area-type layer whose frame should be drawn: ONLY the layer being
+    // actively edited on canvas, so the wrap boundary is visible while typing.
+    // A merely-selected area layer draws NO frame — its transform bounding box
+    // already conveys extent, and the extra solid rectangle read as redundant
+    // helper-box noise (Illustrator shows the type frame while editing, not as a
+    // persistent selection overlay).
     _areaFrameLayer() {
       const te = this.app && this.app.textEdit;
       const active = te && te.getActiveLayer && te.getActiveLayer();
       const isArea = (l) => l && l.type === 'text' && l.params && l.params.textMode === 'area'
         && Array.isArray(l.textFrame) && l.textFrame.length === 4;
-      if (isArea(active)) return active;
-      const sel = this.getSelectedLayer ? this.getSelectedLayer() : null;
-      return isArea(sel) ? sel : null;
+      return isArea(active) ? active : null;
     }
 
     // Live preview during a Type-tool area-frame creation drag: the frame rectangle
@@ -4870,14 +5320,32 @@
                 this.exitGroupEditMode();
               }
             } else {
-              const inGroup = topLayer?.parentId === this.groupEditMode.groupId;
-              if (!inGroup) {
-                this.exitGroupEditMode();
-              } else {
-                this.groupEditMode.activeLayerId = topLayer.id;
-                this.setSelection([topLayer.id], topLayer.id);
+              // Isolation-scoped hit test: only objects inside the isolated
+              // group are selectable, and a foreground foreign layer never
+              // shadows a group member. Clicking outside the group is swallowed
+              // (stay isolated) — the user must press Escape / use the
+              // breadcrumb to leave. Nested descendants resolve to the
+              // immediate child of the isolated group (Illustrator-parity).
+              const member = this._findIsolatedMemberAtPoint(world);
+              if (member) {
+                const additiveInGroup = modifiers.shift || modifiers.meta || modifiers.ctrl;
+                this.groupEditMode.activeLayerId = member.id;
+                if (additiveInGroup) {
+                  // Shift/Cmd-click extends the multi-selection WITHIN the
+                  // isolated group; discrete action, so return before drag-init.
+                  this.selectLayer(member, { toggle: true });
+                  this.draw();
+                  if (e.cancelable) e.preventDefault();
+                  return;
+                }
+                this.setSelection([member.id], member.id);
                 this.draw();
                 _groupHandled = true;
+                // fall through so a press-drag moves the member
+              } else {
+                if (e.cancelable) e.preventDefault();
+                this.draw();
+                return;
               }
             }
           }
@@ -4954,7 +5422,17 @@
         }
 
         if (!_groupHandled) {
-          if (topLayer && !this.selectedLayerIds.has(topLayer.id)) {
+          const additive = modifiers.shift || modifiers.meta || modifiers.ctrl;
+          if (additive && topLayer) {
+            // SEL: Shift/Cmd-click toggles the clicked object in or out of the
+            // multi-selection (Illustrator-parity). This is a DISCRETE action —
+            // return before the drag-init below so a jittery shift-click never
+            // arms a move of the whole selection.
+            this.selectLayer(topLayer, { toggle: true });
+            this._pendingSingleSelect = null;
+            if (e.cancelable) e.preventDefault();
+            return;
+          } else if (topLayer && !this.selectedLayerIds.has(topLayer.id)) {
             // If the clicked layer's mask ancestor is already selected, keep the existing
             // selection rather than auto-expanding to the whole mask group. The user is
             // dragging within the mask parent's bounds, not trying to re-select.
@@ -5007,14 +5485,11 @@
             this._startMirrorDrag(updatedSelected);
             this.setCanvasCursor(updatedSelected.length > 1 ? 'grabbing' : 'move');
             this._attachShiftDragListener();
-            if (modifiers.alt && updatedSelected.length === 1) {
-              if (this.onDuplicateLayer) this.onDuplicateLayer();
-              const dup = this.engine.duplicateLayer ? this.engine.duplicateLayer(updatedSelected[0].id) : null;
-              if (dup) {
-                this.selectLayer(dup);
-                this.dragStart = world;
-                this.startBounds = this.getSelectionBounds([dup]) || bounds;
-              }
+            if (modifiers.alt && updatedSelected.length) {
+              // SEL-2: Alt/Option-drag duplicates the whole selection (single or
+              // multi) and drags the copies. Never CMD/Ctrl — macOS Chrome
+              // cancels drops on that modifier.
+              this._beginAltDragDuplicate(updatedSelected, world, bounds);
             }
           }
           e.preventDefault();
@@ -5028,7 +5503,12 @@
             this.isSelecting = true;
             this.selectionStart = world;
             this.selectionRect = { x: world.x, y: world.y, w: 0, h: 0 };
-            this.clearSelection();
+            // SEL: a Shift/Cmd marquee is additive — preserve the existing
+            // selection and union the marquee hits on commit. A plain marquee
+            // clears first (replace semantics).
+            this._marqueeAdditive = !!(modifiers.shift || modifiers.meta || modifiers.ctrl);
+            this._marqueeBaseIds = this._marqueeAdditive ? new Set(this.selectedLayerIds) : null;
+            if (!this._marqueeAdditive) this.clearSelection();
           }
         }
       }
@@ -5298,7 +5778,50 @@
             dx = ux * proj;
             dy = uy * proj;
           }
+          // SG-1/SG-4: object-to-object alignment snap (edges, centers, and
+          // nearby anchors/endpoints), composed with grid snap (nearest wins).
+          // Applied live so the drag lands on the matched position; guide lines
+          // for the matched axes are stashed for computeGuides to draw.
+          this._objectGuideMatches = null;
+          this._spacingHints = null;
+          if (this._smartGuidesConfig() && this.startBounds
+              && (SETTINGS.showGuides || SETTINGS.snapGuides) && !modifiers.shift) {
+            const cand = this._ensureGuideCandidates(this.getSelectedLayers());
+            if (cand) {
+              const s = this._boundsExtents(this.startBounds);
+              const ext = {
+                minX: s.minX + dx, maxX: s.maxX + dx, midX: s.midX + dx,
+                minY: s.minY + dy, maxY: s.maxY + dy, midY: s.midY + dy,
+              };
+              const snap = this._computeObjectSnap(ext);
+              if (snap) {
+                if (SETTINGS.snapGuides && !modifiers.meta) { dx += snap.dx; dy += snap.dy; }
+                if (SETTINGS.showGuides && (snap.matchX || snap.matchY)) {
+                  this._objectGuideMatches = { x: snap.matchX, y: snap.matchY };
+                }
+                // SG-3: equal-spacing detection on the (post edge/center-snap)
+                // extents, only on an axis that edge/center snap didn't claim.
+                this._spacingHints = null;
+                const snappedExt = {
+                  minX: ext.minX + (SETTINGS.snapGuides && !modifiers.meta ? snap.dx : 0),
+                  maxX: ext.maxX + (SETTINGS.snapGuides && !modifiers.meta ? snap.dx : 0),
+                  minY: ext.minY + (SETTINGS.snapGuides && !modifiers.meta ? snap.dy : 0),
+                  maxY: ext.maxY + (SETTINGS.snapGuides && !modifiers.meta ? snap.dy : 0),
+                };
+                const spacing = this._computeEqualSpacing(snappedExt);
+                if (spacing && ((spacing.axis === 'y' && !snap.matchY) || (spacing.axis === 'x' && !snap.matchX))) {
+                  if (SETTINGS.snapGuides && !modifiers.meta) {
+                    if (spacing.axis === 'y') { dy += spacing.delta; snappedExt.minY += spacing.delta; snappedExt.maxY += spacing.delta; }
+                    else { dx += spacing.delta; snappedExt.minX += spacing.delta; snappedExt.maxX += spacing.delta; }
+                  }
+                  if (SETTINGS.showGuides) this._spacingHints = this._buildSpacingHints(spacing, snappedExt);
+                }
+              }
+            }
+          }
           this.tempTransform = { dx, dy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } };
+          // SEL-4: live relative-delta chip while a move-drag is in progress.
+          this._showMoveDeltaChip(dx, dy, e);
           if (this.mirrorDragState) {
             this.mirrorDragState.forEach((state, layerId) => {
               const layer = this.engine.layers.find((l) => l.id === layerId);
@@ -5337,7 +5860,16 @@
           const safeY = Math.abs(startVecLocal.y) < 0.001 ? 0.001 : startVecLocal.y;
           let scaleX = currVecLocal.x / safeX;
           let scaleY = currVecLocal.y / safeY;
-          if (modifiers.shift) {
+          // SEL-1: edge-midpoint handles resize along one axis only (opposite
+          // edge fixed); Shift constrains proportions to the driven axis.
+          const edgeAxis = (this.activeHandle === 'n' || this.activeHandle === 's')
+            ? 'y'
+            : (this.activeHandle === 'e' || this.activeHandle === 'w') ? 'x' : null;
+          if (edgeAxis) {
+            const driven = edgeAxis === 'y' ? scaleY : scaleX;
+            scaleX = edgeAxis === 'x' || modifiers.shift ? driven : 1;
+            scaleY = edgeAxis === 'y' || modifiers.shift ? driven : 1;
+          } else if (modifiers.shift) {
             const uni = Math.abs(scaleX) > Math.abs(scaleY) ? scaleX : scaleY;
             scaleX = uni;
             scaleY = uni;
@@ -5549,6 +6081,8 @@
       if (!this.isTouchPointer(e)) {
         this._lastPointerEvent = e;
         this.updateHoverCursor(e);
+        // SEL-4/SG-2/SG-5: hover chips, semantic labels, and hover highlight.
+        this._updateHoverFeedback(e);
       }
     }
 
@@ -5755,6 +6289,13 @@
         this.tempTransform = null;
         this.rotateOrigin = null;
         this.snap = null;
+        // SEL-2: alt-drag duplicate bookkeeping ends with the drop.
+        this._altDragDup = null;
+        this._altDupHistoryLen = null;
+        // SG-1: object-guide candidate cache lives for one drag session only.
+        this._guideCandidates = null;
+        this._objectGuideMatches = null;
+        this._spacingHints = null;
       }
       // Release flow already recomputes morph via engine.generate() →
       // computeAllDisplayGeometry(); drop the live-preview flag and any pending
@@ -5789,7 +6330,15 @@
         const rect = this.selectionRect;
         if (rect) {
           const selected = this.engine.layers.filter((layer) => this.layerIntersectsRect(layer, rect));
-          if (selected.length) {
+          if (this._marqueeAdditive && this._marqueeBaseIds) {
+            // Union the marquee hits into the preserved base selection.
+            const ids = new Set(this._marqueeBaseIds);
+            selected.forEach((layer) => ids.add(layer.id));
+            if (ids.size) {
+              const primary = selected.length ? selected[selected.length - 1].id : this.selectedLayerId;
+              this.setSelection([...ids], primary);
+            }
+          } else if (selected.length) {
             this.setSelection(
               selected.map((layer) => layer.id),
               selected[selected.length - 1].id
@@ -5799,9 +6348,358 @@
         this.isSelecting = false;
         this.selectionStart = null;
         this.selectionRect = null;
+        this._marqueeAdditive = false;
+        this._marqueeBaseIds = null;
       }
       this.draw();
       clearActivePointer();
+    }
+
+    // ——— SG-1/SG-4: object-to-object alignment guides + snap ————————————
+    // Extends the existing computeGuides/computeSnap subsystem (single guide
+    // system in the pointermove path). All thresholds live in
+    // src/config/smart-guides.js; absent config → object guides quietly off.
+
+    _boundsExtents(bounds) {
+      const xs = Object.values(bounds.corners).map((pt) => pt.x);
+      const ys = Object.values(bounds.corners).map((pt) => pt.y);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      return { minX, maxX, minY, maxY, midX: (minX + maxX) / 2, midY: (minY + maxY) / 2 };
+    }
+
+    // Candidate bounds/anchor cache — built once per drag session (cleared on
+    // up()/cancel), NOT per pointermove, to hold the drag frame budget with
+    // dense documents. Above cfg.maxCandidateLayers visible layers, only the
+    // cfg.nearestCandidateCount nearest (to the drag-start bounds) participate.
+    _ensureGuideCandidates(activeLayers) {
+      if (this._guideCandidates) return this._guideCandidates;
+      const cfg = this._smartGuidesConfig();
+      if (!cfg) return null;
+      const activeIds = new Set(activeLayers.map((l) => l.id));
+      const ancestorIds = new Set(
+        activeLayers.flatMap((l) => getMaskingAncestors(l, this.engine).map((a) => a.id))
+      );
+      const isUnderActive = (layer) => {
+        let pid = layer.parentId;
+        while (pid) {
+          if (activeIds.has(pid)) return true;
+          pid = this.engine.layers.find((x) => x.id === pid)?.parentId ?? null;
+        }
+        return false;
+      };
+      let boxes = [];
+      this.engine.layers.forEach((layer) => {
+        if (activeIds.has(layer.id) || !layer.visible || ancestorIds.has(layer.id)) return;
+        if (isUnderActive(layer)) return;
+        const b = this.getLayerBounds(layer);
+        if (!b || !b.corners) return;
+        const ext = this._boundsExtents(b);
+        boxes.push({ layerId: layer.id, isGroup: Boolean(layer.isGroup), ...ext });
+      });
+      const maxLayers = cfg.maxCandidateLayers ?? 40;
+      if (boxes.length > maxLayers) {
+        const ref = this.startBounds?.center
+          || (activeLayers.length ? this.getSelectionBounds(activeLayers)?.center : null)
+          || { x: 0, y: 0 };
+        boxes = boxes
+          .map((box) => ({ box, d: Math.hypot(box.midX - ref.x, box.midY - ref.y) }))
+          .sort((a, b) => a.d - b.d)
+          .slice(0, cfg.nearestCandidateCount ?? 16)
+          .map((entry) => entry.box);
+      }
+      // Axis value lists (precomputed once so the per-frame scan is flat).
+      // For an x entry, refMin/refMax are the candidate's Y extent (guide span).
+      const xValues = [];
+      const yValues = [];
+      boxes.forEach((box) => {
+        [['min', box.minX], ['mid', box.midX], ['max', box.maxX]].forEach(([kind, value]) => {
+          xValues.push({ value, kind, refMin: box.minY, refMax: box.maxY, label: kind === 'mid' ? (cfg.labels?.midpoint ?? null) : null, source: 'box' });
+        });
+        [['min', box.minY], ['mid', box.midY], ['max', box.maxY]].forEach(([kind, value]) => {
+          yValues.push({ value, kind, refMin: box.minX, refMax: box.maxX, label: kind === 'mid' ? (cfg.labels?.midpoint ?? null) : null, source: 'box' });
+        });
+      });
+      // Canvas-center snap folds into the same resolution (synthetic: keeps
+      // the legacy dashed center guide as its visual, no object guide line).
+      const prof = this.engine.currentProfile;
+      if (prof) {
+        xValues.push({ value: prof.width / 2, kind: 'mid', refMin: 0, refMax: prof.height, label: null, source: 'canvas', synthetic: true });
+        yValues.push({ value: prof.height / 2, kind: 'mid', refMin: 0, refMax: prof.width, label: null, source: 'canvas', synthetic: true });
+      }
+      // SG-4: anchor/endpoint points of nearby paths join the candidate set.
+      const maxTotal = cfg.maxAnchorCandidates ?? 600;
+      const perLayer = cfg.maxAnchorsPerLayer ?? 24;
+      const endpointLabel = cfg.labels?.endpoint ?? null;
+      const anchorLabel = cfg.labels?.anchor ?? null;
+      const boxIds = new Set(boxes.filter((b) => !b.isGroup).map((b) => b.layerId));
+      let anchorCount = 0;
+      for (const layer of this.engine.layers) {
+        if (anchorCount >= maxTotal) break;
+        if (!boxIds.has(layer.id)) continue;
+        const paths = this.getInteractionPaths(layer) || [];
+        let taken = 0;
+        const pushPoint = (pt, label) => {
+          if (!pt || taken >= perLayer || anchorCount >= maxTotal) return;
+          xValues.push({ value: pt.x, kind: 'point', refMin: pt.y, refMax: pt.y, label, source: 'anchor' });
+          yValues.push({ value: pt.y, kind: 'point', refMin: pt.x, refMax: pt.x, label, source: 'anchor' });
+          taken += 1;
+          anchorCount += 1;
+        };
+        for (const path of paths) {
+          if (taken >= perLayer || anchorCount >= maxTotal) break;
+          if (!Array.isArray(path) || path.length < 2) continue;
+          const closed = path.meta?.closed === true
+            || Boolean(window.Vectura?.OptimizationUtils?.isClosedPath?.(path));
+          if (!closed) {
+            pushPoint(path[0], endpointLabel);
+            pushPoint(path[path.length - 1], endpointLabel);
+            if (path.length <= perLayer) {
+              for (let i = 1; i < path.length - 1; i++) pushPoint(path[i], anchorLabel);
+            }
+          } else if (path.length <= perLayer + 1) {
+            const last = path.length - 1;
+            const dupClose = path[0].x === path[last].x && path[0].y === path[last].y;
+            for (let i = 0; i < (dupClose ? last : path.length); i++) pushPoint(path[i], anchorLabel);
+          }
+        }
+      }
+      this._guideCandidates = { boxes, xValues, yValues };
+      return this._guideCandidates;
+    }
+
+    // Per-axis grid snap candidate (mirrors snapPointToGrid's spacing/radius
+    // rules but per-axis, so it can compose with object snap — nearest wins).
+    _gridAxisSnapDiff(values) {
+      if (!SETTINGS.gridSnapEnabled) return null;
+      const gridType = SETTINGS.gridType || 'none';
+      if (gridType === 'none') return null;
+      const sensitivity = SETTINGS.gridSnapSensitivity ?? 50;
+      if (sensitivity <= 0) return null;
+      let best = null;
+      const evalSpacing = (spacing) => {
+        if (!spacing || spacing <= 0) return;
+        const radius = (sensitivity / 100) * (spacing / 2);
+        values.forEach((v) => {
+          const diff = Math.round(v / spacing) * spacing - v;
+          if (Math.abs(diff) <= radius && (best === null || Math.abs(diff) < Math.abs(best))) {
+            best = diff;
+          }
+        });
+      };
+      evalSpacing(SETTINGS.gridSize || 10);
+      if (gridType === 'major-minor') evalSpacing(SETTINGS.gridMinorSize || 5);
+      return best;
+    }
+
+    // Resolve the best snap adjustment per axis for the moved extents.
+    // Priority on (near-)equal distance: center↔center > anchor/endpoint >
+    // edge matches; grid composes afterwards (nearest wins, no guide line).
+    _computeObjectSnap(ext) {
+      const cfg = this._smartGuidesConfig();
+      const cand = this._guideCandidates;
+      if (!cfg || !cand) return null;
+      const tol = (cfg.toleranceScreenPx ?? 6) / Math.max(this.scale || 1, 1e-6);
+      const EPS = 1e-6;
+      const resolveAxis = (entries, dragVals) => {
+        let best = null;
+        for (const entry of entries) {
+          for (const d of dragVals) {
+            const diff = entry.value - d.v;
+            const abs = Math.abs(diff);
+            if (abs > tol) continue;
+            const priority = (entry.kind === 'mid' && d.kind === 'mid' && entry.source === 'box') ? 2
+              : entry.source === 'anchor' ? 1 : 0;
+            if (!best || abs < best.abs - EPS || (abs <= best.abs + EPS && priority > best.priority)) {
+              best = {
+                diff,
+                abs,
+                priority,
+                value: entry.value,
+                label: entry.label ?? null,
+                refMin: entry.refMin,
+                refMax: entry.refMax,
+                synthetic: entry.synthetic === true,
+              };
+            }
+          }
+        }
+        return best;
+      };
+      let matchX = resolveAxis(cand.xValues, [
+        { kind: 'mid', v: ext.midX }, { kind: 'min', v: ext.minX }, { kind: 'max', v: ext.maxX },
+      ]);
+      let matchY = resolveAxis(cand.yValues, [
+        { kind: 'mid', v: ext.midY }, { kind: 'min', v: ext.minY }, { kind: 'max', v: ext.maxY },
+      ]);
+      // Grid composition — nearest wins per axis; grid wins draw no guide.
+      const gridX = this._gridAxisSnapDiff([ext.midX, ext.minX, ext.maxX]);
+      const gridY = this._gridAxisSnapDiff([ext.midY, ext.minY, ext.maxY]);
+      let dx = matchX ? matchX.diff : 0;
+      let dy = matchY ? matchY.diff : 0;
+      if (gridX !== null && (!matchX || Math.abs(gridX) < matchX.abs)) {
+        dx = gridX;
+        matchX = null;
+      }
+      if (gridY !== null && (!matchY || Math.abs(gridY) < matchY.abs)) {
+        dy = gridY;
+        matchY = null;
+      }
+      if (matchX?.synthetic) matchX = null;
+      if (matchY?.synthetic) matchY = null;
+      return { dx, dy, matchX, matchY };
+    }
+
+    // Convert the current drag's object-snap matches into drawable guide
+    // lines: full-length along the matched axis, spanning the dragged bounds
+    // and the matched object plus a screen-space overhang (SG-1), carrying the
+    // SG-2 semantic label.
+    _buildObjectGuideLines(bounds) {
+      const cfg = this._smartGuidesConfig();
+      const matches = this._objectGuideMatches;
+      if (!cfg || !matches) return [];
+      const ext = this._boundsExtents(bounds);
+      const overhang = (cfg.guideOverhangScreenPx ?? 12) / Math.max(this.scale || 1, 1e-6);
+      const lines = [];
+      if (matches.x) {
+        lines.push({
+          axis: 'x',
+          x1: matches.x.value,
+          x2: matches.x.value,
+          y1: Math.min(ext.minY, matches.x.refMin) - overhang,
+          y2: Math.max(ext.maxY, matches.x.refMax) + overhang,
+          label: matches.x.label ?? null,
+        });
+      }
+      if (matches.y) {
+        lines.push({
+          axis: 'y',
+          y1: matches.y.value,
+          y2: matches.y.value,
+          x1: Math.min(ext.minX, matches.y.refMin) - overhang,
+          x2: Math.max(ext.maxX, matches.y.refMax) + overhang,
+          label: matches.y.label ?? null,
+        });
+      }
+      return lines;
+    }
+
+    // SG-3: equal-spacing detection. For the moved extents, find the nearest
+    // neighbor above/below (and left/right) among cached candidate boxes that
+    // overlap on the cross axis; when the two gaps are equal within tolerance,
+    // return the axis, the equalizing snap delta, the common gap, and the two
+    // chip anchors. Bounded (nearest neighbor each side) — cheap per frame.
+    _computeEqualSpacing(ext) {
+      const cfg = this._smartGuidesConfig();
+      const cand = this._guideCandidates;
+      if (!cfg || !cfg.spacing || cfg.spacing.enabled === false || !cand) return null;
+      const tol = (cfg.spacing.toleranceScreenPx ?? 6) / Math.max(this.scale || 1, 1e-6);
+      const maxGap = cfg.spacing.maxGapWorld ?? Infinity;
+      const evalAxis = (axis) => {
+        const isY = axis === 'y';
+        const lo = isY ? ext.minY : ext.minX;
+        const hi = isY ? ext.maxY : ext.maxX;
+        const crossLo = isY ? ext.minX : ext.minY;
+        const crossHi = isY ? ext.maxX : ext.maxY;
+        let above = null; // largest box-hi below lo
+        let below = null; // smallest box-lo above hi
+        for (const box of cand.boxes) {
+          const bLo = isY ? box.minY : box.minX;
+          const bHi = isY ? box.maxY : box.maxX;
+          const bcLo = isY ? box.minX : box.minY;
+          const bcHi = isY ? box.maxX : box.maxY;
+          if (bcHi <= crossLo || bcLo >= crossHi) continue; // must overlap cross axis
+          if (bHi <= lo) { if (!above || bHi > above.hi) above = { hi: bHi, box }; }
+          else if (bLo >= hi) { if (!below || bLo < below.lo) below = { lo: bLo, box }; }
+        }
+        if (!above || !below) return null;
+        const gapAbove = lo - above.hi;
+        const gapBelow = below.lo - hi;
+        if (gapAbove < 0 || gapBelow < 0) return null;
+        if (gapAbove > maxGap || gapBelow > maxGap) return null;
+        if (Math.abs(gapAbove - gapBelow) > tol) return null;
+        const delta = (gapBelow - gapAbove) / 2; // move toward the larger gap
+        const gap = (gapAbove + gapBelow) / 2;
+        return { axis, delta, gap, above, below, absDiff: Math.abs(gapAbove - gapBelow) };
+      };
+      const y = evalAxis('y');
+      const x = evalAxis('x');
+      let best = null;
+      if (y) best = y;
+      if (x && (!best || x.absDiff < best.absDiff)) best = x;
+      return best;
+    }
+
+    // Build the two chip anchors + connecting guide line for an equal-spacing
+    // match, after the equalizing snap has been applied (uses final ext).
+    _buildSpacingHints(match, ext) {
+      const cfg = this._smartGuidesConfig();
+      const settings = (window.Vectura && window.Vectura.SETTINGS) || SETTINGS || {};
+      const units = normalizeDocumentUnits(settings.documentUnits);
+      const text = formatDocumentLength(match.gap, units, {
+        includeUnit: true, trimTrailingZeros: true,
+        precision: Number.isFinite(cfg?.chipPrecision) ? cfg.chipPrecision : 2,
+      });
+      if (match.axis === 'y') {
+        const cx = (ext.minX + ext.maxX) / 2;
+        const midAbove = (match.above.hi + ext.minY) / 2;
+        const midBelow = (ext.maxY + match.below.lo) / 2;
+        return {
+          axis: 'y', gap: match.gap, text,
+          chips: [{ x: cx, y: midAbove, text }, { x: cx, y: midBelow, text }],
+          guide: { x1: cx, y1: match.above.hi, x2: cx, y2: match.below.lo },
+        };
+      }
+      const cy = (ext.minY + ext.maxY) / 2;
+      const midLeft = (match.above.hi + ext.minX) / 2;
+      const midRight = (ext.maxX + match.below.lo) / 2;
+      return {
+        axis: 'x', gap: match.gap, text,
+        chips: [{ x: midLeft, y: cy, text }, { x: midRight, y: cy, text }],
+        guide: { x1: match.above.hi, y1: cy, x2: match.below.lo, y2: cy },
+      };
+    }
+
+    // SG-3: draw the equal-spacing connecting guide + the two matching chips.
+    drawSpacingHints() {
+      const hints = this._spacingHints;
+      if (!hints) return;
+      const accent = getThemeToken('--render-smart-guide', '#e6007e');
+      this.ctx.save();
+      this.ctx.setLineDash([]);
+      this.ctx.strokeStyle = accent;
+      this.ctx.lineWidth = 1 / this.scale;
+      this.ctx.beginPath();
+      this.ctx.moveTo(hints.guide.x1, hints.guide.y1);
+      this.ctx.lineTo(hints.guide.x2, hints.guide.y2);
+      this.ctx.stroke();
+      this.ctx.restore();
+      const cfg = this._smartGuidesConfig();
+      const fontPx = cfg?.labelFontPx ?? 10;
+      const family = cfg?.labelFontFamily ?? 'system-ui, sans-serif';
+      // worldToScreen yields CSS pixels; the canvas base transform is
+      // scale(dpr,dpr). Reset to the dpr base (NOT identity) so labels land at
+      // the correct CSS position on HiDPI displays and stay zoom-invariant.
+      const dpr = window.devicePixelRatio || 1;
+      hints.chips.forEach((chip) => {
+        const screen = this.worldToScreen(chip.x, chip.y);
+        this.ctx.save();
+        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        this.ctx.font = `${fontPx}px ${family}`;
+        this.ctx.textBaseline = 'middle';
+        const padX = 4;
+        const w = this.ctx.measureText(chip.text).width + padX * 2;
+        const h = fontPx + 4;
+        const bx = screen.x + 6;
+        const by = screen.y - h / 2;
+        this.ctx.fillStyle = getThemeToken('--render-smart-guide-label', accent);
+        this.ctx.fillRect(bx, by, w, h);
+        this.ctx.fillStyle = getThemeToken('--render-smart-guide-label-text', '#ffffff');
+        this.ctx.fillText(chip.text, bx + padX, by + h / 2);
+        this.ctx.restore();
+      });
     }
 
     computeGuides(activeLayers, bounds) {
@@ -5846,7 +6744,12 @@
         guides.size.push({ x1: bounds.corners.sw.x, y1: bounds.corners.sw.y, x2: bounds.corners.se.x, y2: bounds.corners.se.y });
       }
 
-      return guides.center.length || guides.size.length ? guides : null;
+      // SG-1/SG-2: object-to-object alignment guide lines for the active
+      // move-drag's snap matches (magenta, labeled).
+      const objectLines = this._buildObjectGuideLines(bounds);
+      if (objectLines.length) guides.object = objectLines;
+
+      return guides.center.length || guides.size.length || objectLines.length ? guides : null;
     }
 
     computeSnap(activeLayers, bounds) {
@@ -5893,6 +6796,34 @@
       return snap;
     }
 
+    // SG-5: stroke the currently hover-highlighted unselected path in the
+    // smart-guide accent. Reads live interaction geometry so it tracks the
+    // real, on-screen shape (including circle-meta primitives).
+    drawHoverHighlight() {
+      const hl = this.hoverHighlight;
+      if (!hl) return;
+      const layer = this.engine.layers.find((l) => l.id === hl.layerId);
+      if (!layer || !layer.visible) { this.hoverHighlight = null; return; }
+      const paths = this.getInteractionPaths(layer) || [];
+      if (!paths.length) return;
+      const accent = getThemeToken('--render-smart-guide', '#e6007e');
+      this.ctx.save();
+      this.ctx.setLineDash([]);
+      this.ctx.lineWidth = Math.max(0.6, 1.5 / this.scale);
+      this.ctx.strokeStyle = accent;
+      const useCurves = Boolean(layer.params && layer.params.curves);
+      paths.forEach((path) => {
+        this.ctx.beginPath();
+        if (path && path.meta && path.meta.kind === 'circle') {
+          this.traceCircle(path.meta);
+        } else {
+          this.tracePath(path, useCurves);
+        }
+        this.ctx.stroke();
+      });
+      this.ctx.restore();
+    }
+
     drawGuides(guides) {
       if (!guides) return;
       this.ctx.save();
@@ -5913,7 +6844,55 @@
         this.ctx.lineTo(line.x2, line.y2);
         this.ctx.stroke();
       });
+      // SG-1/SG-2: object-to-object alignment guides — solid magenta with an
+      // optional semantic label near the guide's end.
+      if (Array.isArray(guides.object) && guides.object.length) {
+        const accent = getThemeToken('--render-smart-guide', '#e6007e');
+        this.ctx.setLineDash([]);
+        this.ctx.strokeStyle = accent;
+        this.ctx.lineWidth = 1 / this.scale;
+        guides.object.forEach((line) => {
+          this.ctx.beginPath();
+          this.ctx.moveTo(line.x1, line.y1);
+          this.ctx.lineTo(line.x2, line.y2);
+          this.ctx.stroke();
+        });
+        guides.object.forEach((line) => {
+          if (line.label) this._drawGuideLabel(line, accent);
+        });
+      }
       this.ctx.restore();
+    }
+
+    // SG-2: draw a small magenta label chip at the far end of an object guide.
+    // Text is screen-px sized (zoom-invariant) via a temporary reset transform.
+    _drawGuideLabel(line, accent) {
+      const cfg = this._smartGuidesConfig();
+      const ctx = this.ctx;
+      const fontPx = cfg?.labelFontPx ?? 10;
+      const family = cfg?.labelFontFamily ?? 'system-ui, sans-serif';
+      const anchorWorld = line.axis === 'x'
+        ? { x: line.x1, y: line.y2 }
+        : { x: line.x2, y: line.y1 };
+      const screen = this.worldToScreen(anchorWorld.x, anchorWorld.y);
+      // worldToScreen yields CSS pixels; reset to the dpr base transform (NOT
+      // identity) so the label lands at the correct CSS position on HiDPI
+      // displays instead of drifting to half-position toward the top-left.
+      const dpr = window.devicePixelRatio || 1;
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.font = `${fontPx}px ${family}`;
+      ctx.textBaseline = 'middle';
+      const padX = 4;
+      const w = ctx.measureText(line.label).width + padX * 2;
+      const h = fontPx + 4;
+      const bx = screen.x + 6;
+      const by = screen.y + 6;
+      ctx.fillStyle = getThemeToken('--render-smart-guide-label', accent);
+      ctx.fillRect(bx, by, w, h);
+      ctx.fillStyle = getThemeToken('--render-smart-guide-label-text', '#ffffff');
+      ctx.fillText(line.label, bx + padX, by + h / 2);
+      ctx.restore();
     }
 
     tracePath(path, useCurves) {
@@ -6706,12 +7685,39 @@
       this.ctx.restore();
     }
 
-    findLayerAtPoint(world, includeLocked = false) {
+    // Walks up the layer tree from `layer` and returns the immediate child of
+    // the currently-isolated group that contains it (or `layer` itself when it
+    // is a direct child). Returns null when `layer` is outside the isolated
+    // group, or when no group is isolated.
+    _isolatedGroupMember(layer) {
+      if (!this.groupEditMode || !layer) return null;
+      const groupId = this.groupEditMode.groupId;
+      let cur = layer;
+      let guard = 0;
+      while (cur && guard++ < 64) {
+        if (cur.parentId === groupId) return cur;
+        cur = cur.parentId ? this.engine.layers.find((l) => l.id === cur.parentId) : null;
+      }
+      return null;
+    }
+
+    // Isolation-scoped hit test: returns the immediate child of the isolated
+    // group under `world`, ignoring every layer outside that group (so
+    // foreground foreign layers never shadow group members). Null when the
+    // click misses every group member.
+    _findIsolatedMemberAtPoint(world) {
+      if (!this.groupEditMode) return null;
+      const hit = this.findLayerAtPoint(world, false, (l) => this._isolatedGroupMember(l) !== null);
+      return hit ? this._isolatedGroupMember(hit) : null;
+    }
+
+    findLayerAtPoint(world, includeLocked = false, filterFn = null) {
       const layers = this.engine.layers.slice().reverse();
       let best = null;
       let bestDist = Infinity;
       layers.forEach((layer) => {
         if (!layer.visible) return;
+        if (filterFn && !filterFn(layer)) return;
         // Compound (Pathfinder) groups expose baked geometry — let them be hit
         // even though `isGroup` is true; other groups stay non-selectable.
         const isCompound = layer.containerRole === 'compound';
@@ -6755,6 +7761,15 @@
       this.groupEditMode = { groupId: layer.parentId, activeLayerId: layer.id, kind: 'group' };
       this.setSelection([layer.id], layer.id);
       this.draw();
+      this._emitIsolationChanged();
+    }
+
+    // Lane I (breadcrumb) listens for this so it can render event-driven instead
+    // of polling groupEditMode on a rAF loop. Fires whenever isolation enters or
+    // exits (group or morph). Guarded for non-DOM test contexts; no detail.
+    _emitIsolationChanged() {
+      if (typeof document === 'undefined' || typeof CustomEvent !== 'function') return;
+      try { document.dispatchEvent(new CustomEvent('vectura:isolation-changed')); } catch (_e) { /* noop */ }
     }
 
     // Isolation for a MORPH modifier child. Unlike a plain group, the child's
@@ -6767,6 +7782,7 @@
       this.groupEditMode = { groupId: container.id, activeLayerId: child.id, kind: 'morph' };
       this.setSelection([child.id], child.id);
       this.draw();
+      this._emitIsolationChanged();
     }
 
     exitGroupEditMode() {
@@ -6780,6 +7796,7 @@
         const container = this.engine.layers.find((l) => l.id === groupId);
         if (container) this.setSelection([container.id], container.id);
         this.draw();
+        this._emitIsolationChanged();
         return;
       }
       const siblings = this.engine.getLayerChildren(groupId) || [];
@@ -6788,6 +7805,7 @@
         this.setSelection(selectable.map(l => l.id), selectable[0].id);
       }
       this.draw();
+      this._emitIsolationChanged();
     }
 
     // Shared point/paths hit-test mirroring the circle/segment distance loop in
@@ -7183,6 +8201,177 @@
       };
     }
 
+    // Phase-2 (Contextual Task Bar) read API: axis-aligned screen-space bbox
+    // of the current selection (accounting for any live tempTransform), or
+    // null when nothing is selected. Returned in CSS px relative to the canvas
+    // top-left so a floating bar can anchor under/over the selection. Stable
+    // shape: { minX, minY, maxX, maxY, width, height, centerX, centerY }.
+    getSelectionScreenBounds() {
+      const layers = this.getSelectedLayers();
+      if (!layers.length) return null;
+      const bounds = this.getSelectionBounds(layers, this.tempTransform);
+      if (!bounds || !bounds.corners) return null;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      Object.values(bounds.corners).forEach((pt) => {
+        const s = this.worldToScreen(pt.x, pt.y);
+        minX = Math.min(minX, s.x); minY = Math.min(minY, s.y);
+        maxX = Math.max(maxX, s.x); maxY = Math.max(maxY, s.y);
+      });
+      if (!Number.isFinite(minX)) return null;
+      return {
+        minX, minY, maxX, maxY,
+        width: maxX - minX,
+        height: maxY - minY,
+        centerX: (minX + maxX) / 2,
+        centerY: (minY + maxY) / 2,
+      };
+    }
+
+    // ── Phase-3 Lane K (SEL-5 / SG-6): transform-panel read/write model ────
+    // The transform panel (src/ui/panels/transform-panel.js) consumes these to
+    // show true X/Y/W/H for manual (shape/text) layers, a link W/H scale, and a
+    // single-anchor readout under the Direct-Selection tool. All coordinates are
+    // WORLD (document-mm) space; the panel formats to document units for display.
+
+    // Read model for the transform panel. Returns one of:
+    //   { mode:'none' }
+    //   { mode:'anchor', anchorX, anchorY, index }   — one anchor, Direct tool
+    //   { mode:'object', manual, count, x, y, width, height, rotation }
+    // where (x,y) is the top-left of the combined selection bounding box.
+    getTransformPanelModel() {
+      const anchor = this.getSelectedAnchorState();
+      if (anchor) {
+        return { mode: 'anchor', anchorX: anchor.x, anchorY: anchor.y, index: anchor.index };
+      }
+      const layers = this.getSelectedLayers();
+      if (!layers.length) return { mode: 'none' };
+      const bounds = this.getSelectionBounds(layers, this.tempTransform);
+      if (!bounds || !bounds.corners) return { mode: 'none' };
+      const xs = Object.values(bounds.corners).map((p) => p.x);
+      const ys = Object.values(bounds.corners).map((p) => p.y);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      const manual = layers.every((l) => l && !l.isGroup && (l.type === 'shape' || l.type === 'text'));
+      const rotation = (layers.length === 1 && layers[0].params)
+        ? (layers[0].params.rotation ?? 0)
+        : null;
+      return {
+        mode: 'object',
+        manual,
+        count: layers.length,
+        x: minX,
+        y: minY,
+        width: maxX - minX,
+        height: maxY - minY,
+        rotation,
+      };
+    }
+
+    // SG-6: the single selected direct-selection anchor in world space, or null
+    // (wrong tool, no direct selection, or ≠1 anchor selected).
+    getSelectedAnchorState() {
+      if (this.activeTool !== 'direct') return null;
+      const sel = this.directSelection;
+      if (!sel || !sel.selectedIndices || sel.selectedIndices.size !== 1) return null;
+      const idx = [...sel.selectedIndices][0];
+      const data = this._selectionWorldAnchors(sel);
+      const a = data && data.anchors ? data.anchors[idx] : null;
+      if (!a) return null;
+      return { x: a.x, y: a.y, index: idx };
+    }
+
+    // SEL-5: resize + reposition the current selection so its combined bounding
+    // box matches the given WORLD box, as ONE undo step. Any of x/y/width/height
+    // may be null/undefined to leave that dimension unchanged. Resizing keeps the
+    // box's top-left fixed (Illustrator's default reference point), then the
+    // optional x/y translate moves the top-left to its new location. The panel
+    // pre-applies the link-W/H ratio; the renderer just honours the target box.
+    applySelectionBox(box = {}) {
+      const layers = this.getSelectedLayers();
+      if (!layers.length) return false;
+      const model = this.getTransformPanelModel();
+      if (!model || model.mode !== 'object') return false;
+      const EPS = 1e-6;
+      const curW = model.width;
+      const curH = model.height;
+      let sx = (Number.isFinite(box.width) && box.width > EPS && curW > EPS) ? box.width / curW : 1;
+      let sy = (Number.isFinite(box.height) && box.height > EPS && curH > EPS) ? box.height / curH : 1;
+      // clamp scale to the same envelope handle-resize uses
+      const clampScale = (s) => Math.max(0.05, Math.min(Math.abs(s), 20)) * (s < 0 ? -1 : 1);
+      sx = clampScale(sx);
+      sy = clampScale(sy);
+      const doResize = Math.abs(sx - 1) > EPS || Math.abs(sy - 1) > EPS;
+      const targetX = Number.isFinite(box.x) ? box.x : model.x;
+      const targetY = Number.isFinite(box.y) ? box.y : model.y;
+      // top-left stays fixed through the resize, so the translate is measured
+      // from the current top-left.
+      const dx = targetX - model.x;
+      const dy = targetY - model.y;
+      const doMove = Math.abs(dx) > EPS || Math.abs(dy) > EPS;
+      if (!doResize && !doMove) return false;
+
+      if (this.app && typeof this.app.pushHistory === 'function') this.app.pushHistory();
+      const { targets, expandedMorph } = this._expandTransformTargets(layers);
+      const prof = this.engine.currentProfile;
+
+      if (doResize) {
+        const resizeOrigin = { x: model.x, y: model.y };
+        const prevTemp = this.tempTransform;
+        this.tempTransform = { dx: 0, dy: 0, scaleX: sx, scaleY: sy, origin: resizeOrigin };
+        targets.forEach((layer) =>
+          this._applyCommittedTransformToLeaf(layer, 'resize', { scaleX: sx, scaleY: sy, prof }));
+        this.tempTransform = prevTemp;
+      }
+      if (doMove) {
+        const moveTemp = { dx, dy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } };
+        targets.forEach((layer) =>
+          this._applyCommittedTransformToLeaf(layer, 'move', { dx, dy, moveTemp }));
+      }
+
+      if (expandedMorph || this._dragHasMorphAncestor(layers)) this._refreshMorphGeometry();
+      const primary = this.getSelectedLayer();
+      const effectivePrimary = (primary?.isGroup)
+        ? layers.find((l) => !l.isGroup) || primary
+        : primary;
+      if (effectivePrimary) this.updateTransformInputs?.(effectivePrimary);
+      this.draw();
+      return true;
+    }
+
+    // SG-6: move the single selected direct-selection anchor to a WORLD point,
+    // dragging its bezier handles with it, as ONE undo step.
+    applySelectedAnchorPosition(point = {}) {
+      const state = this.getSelectedAnchorState();
+      if (!state) return false;
+      if (!Number.isFinite(point.x) && !Number.isFinite(point.y)) return false;
+      const sel = this.directSelection;
+      const layer = this.engine.layers.find((l) => l.id === sel.layerId);
+      if (!layer) return false;
+      const targetWorld = {
+        x: Number.isFinite(point.x) ? point.x : state.x,
+        y: Number.isFinite(point.y) ? point.y : state.y,
+      };
+      const src = this.worldToSourcePoint(layer, targetWorld);
+      const anchor = sel.anchors[state.index];
+      if (!anchor) return false;
+      const ddx = src.x - anchor.x;
+      const ddy = src.y - anchor.y;
+      if (Math.abs(ddx) < 1e-6 && Math.abs(ddy) < 1e-6) return false;
+      if (this.app && typeof this.app.pushHistory === 'function') this.app.pushHistory();
+      anchor.x = src.x;
+      anchor.y = src.y;
+      if (anchor.in) { anchor.in.x += ddx; anchor.in.y += ddy; }
+      if (anchor.out) { anchor.out.x += ddx; anchor.out.y += ddy; }
+      this._applySelectionPath(sel);
+      this.draw();
+      return true;
+    }
+
     applyRotationToBounds(bounds, deltaAngleDeg) {
       const deltaRad = (deltaAngleDeg * Math.PI) / 180;
       const cosD = Math.cos(deltaRad);
@@ -7357,6 +8546,39 @@
       const rotation = baseRotation + tempRotation;
       const origin = this.getLayerTransformedOrigin(layer, temp);
       return buildBoundsFromVertices(vertices, origin, rotation);
+    }
+
+    // Lane B interface (single-owner rule): apply per-layer stroke style
+    // fields (extended lineCap, lineJoin, miterLimit) to the canvas context.
+    // Defensive — fields may be absent on layers in this worktree; falls back
+    // to the historical `round`/`round`/10 defaults. Lane B owns the model &
+    // serialization; the renderer only mirrors the fields at draw time.
+    _applyLayerStrokeCtx(layer) {
+      // Canvas/SVG spell the extended "projecting" cap as "square".
+      const capMap = { butt: 'butt', round: 'round', projecting: 'square', square: 'square' };
+      const cap = layer && layer.lineCap;
+      this.ctx.lineCap = capMap[cap] || cap || 'round';
+      this.ctx.lineJoin = (layer && layer.lineJoin) || 'round';
+      const miter = layer && Number(layer.miterLimit);
+      this.ctx.miterLimit = Number.isFinite(miter) && miter > 0 ? miter : 10;
+    }
+
+    // Lane B interface: resolve a layer-level dash pattern to canvas-space
+    // (world/mm) values. The `dash` field is {enabled, pattern:number[]} in
+    // document units; convert each entry to mm so it matches the world-space
+    // canvas transform. Returns null when no layer dash is active.
+    _layerDashPattern(layer) {
+      const dash = layer && layer.dash;
+      if (!dash || dash.enabled !== true || !Array.isArray(dash.pattern) || !dash.pattern.length) return null;
+      const settings = (window.Vectura && window.Vectura.SETTINGS) || SETTINGS || {};
+      const units = normalizeDocumentUnits(settings.documentUnits);
+      const toMm = typeof UnitUtils.documentUnitsToMm === 'function'
+        ? (v) => UnitUtils.documentUnitsToMm(v, units)
+        : (v) => v;
+      const arr = dash.pattern
+        .map((n) => toMm(Number(n)))
+        .filter((n) => Number.isFinite(n) && n >= 0);
+      return arr.length ? arr : null;
     }
 
     getPathStrokeDash(path) {
@@ -7542,6 +8764,20 @@
           addPoint(next);
         });
       });
+      // While a text layer is being edited on canvas, fold its glyph em-boxes into
+      // the bounds — including the zero-width caret anchors emitted for empty lines
+      // — so the dotted editing outline grows to include a blank line the instant
+      // Enter is pressed, before any glyph is typed there. Gated to the active edit
+      // layer so committed-layer bounds (and their visual baselines) are unchanged.
+      if (layer.type === 'text' && Array.isArray(layer.glyphs) && layer.glyphs.length) {
+        const te = this.app && this.app.textEdit;
+        if (te && te.getActiveLayer && te.getActiveLayer() === layer) {
+          layer.glyphs.forEach((g) => {
+            if (!g || !Array.isArray(g.quad)) return;
+            g.quad.forEach((pt) => addPoint(temp ? this.transformPoint(pt, temp) : pt));
+          });
+        }
+      }
       if (!Number.isFinite(minX)) return null;
       const toWorld = (local) => ({
         x: origin.x + local.x * cosR - local.y * sinR,
@@ -7964,6 +9200,43 @@
         this.ctx.arc(anchor.x, anchor.y, anchorR, 0, Math.PI * 2);
         this.ctx.fill();
         this.ctx.stroke();
+
+        // Minimal-trace corner affordance (Illustrator parity): a corner anchor
+        // (a tangent break — not a smooth-through bezier vertex) gets a small hollow
+        // ring just INSIDE the shape, signalling "drag me to pull out a curve".
+        // Placed along the interior angle bisector so it reads as belonging to the
+        // ink, never overlapping the anchor dot.
+        if (anchor.corner === true) {
+          const n = worldAnchors.length;
+          const prev = worldAnchors[(i - 1 + n) % n];
+          const next = worldAnchors[(i + 1) % n];
+          let bx = 0;
+          let by = 0;
+          const acc = (p) => {
+            if (!p) return;
+            const dx = p.x - anchor.x;
+            const dy = p.y - anchor.y;
+            const l = Math.hypot(dx, dy);
+            if (l > 1e-9) { bx += dx / l; by += dy / l; }
+          };
+          if (!sel.closed && (i === 0 || i === n - 1)) {
+            acc(i === 0 ? next : prev); // open endpoint: offset off its single edge
+          } else {
+            acc(prev);
+            acc(next);
+          }
+          const bl = Math.hypot(bx, by);
+          if (bl > 1e-6) {
+            const off = 7 / this.scale;
+            const ox = anchor.x + (bx / bl) * off;
+            const oy = anchor.y + (by / bl) * off;
+            this.ctx.beginPath();
+            this.ctx.lineWidth = 1.1 / this.scale;
+            this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
+            this.ctx.arc(ox, oy, 2.5 / this.scale, 0, Math.PI * 2);
+            this.ctx.stroke();
+          }
+        }
       });
     }
 
@@ -8181,7 +9454,25 @@
         { key: 'ne', ...bounds.corners.ne },
         { key: 'se', ...bounds.corners.se },
         { key: 'sw', ...bounds.corners.sw },
+        // SEL-1: edge-midpoint handles, derived from the corners so they stay
+        // correct for rotated bounds.
+        { key: 'n', ...this._edgeMidpoint(bounds, 'n') },
+        { key: 'e', ...this._edgeMidpoint(bounds, 'e') },
+        { key: 's', ...this._edgeMidpoint(bounds, 's') },
+        { key: 'w', ...this._edgeMidpoint(bounds, 'w') },
       ];
+    }
+
+    _edgeMidpoint(bounds, edge) {
+      const { nw, ne, se, sw } = bounds.corners;
+      const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      switch (edge) {
+        case 'n': return mid(nw, ne);
+        case 'e': return mid(ne, se);
+        case 's': return mid(sw, se);
+        case 'w': return mid(nw, sw);
+        default: return { x: bounds.center.x, y: bounds.center.y };
+      }
     }
 
     getRotateHandlePoint(bounds) {
@@ -8200,6 +9491,10 @@
         ne: bounds.corners.ne,
         se: bounds.corners.se,
         sw: bounds.corners.sw,
+        n: this._edgeMidpoint(bounds, 'n'),
+        e: this._edgeMidpoint(bounds, 'e'),
+        s: this._edgeMidpoint(bounds, 's'),
+        w: this._edgeMidpoint(bounds, 'w'),
       };
       return map[handle] || bounds.corners.se;
     }
@@ -8210,8 +9505,50 @@
         ne: bounds.corners.sw,
         se: bounds.corners.nw,
         sw: bounds.corners.ne,
+        // SEL-1: edge drags anchor on the opposite edge midpoint.
+        n: this._edgeMidpoint(bounds, 's'),
+        e: this._edgeMidpoint(bounds, 'w'),
+        s: this._edgeMidpoint(bounds, 'n'),
+        w: this._edgeMidpoint(bounds, 'e'),
       };
       return map[handle] || bounds.center;
+    }
+
+    // SEL-3: Flip Horizontal / Vertical command wrapper. Thin invoker only —
+    // the geometry op lives in Lane C's window.Vectura.PathEditOps.flipLayers
+    // (feature-detected; no-ops with a warning until it lands). ALL flip math
+    // — path mirroring AND generative-layer scale negation — is the op's job,
+    // keeping geometry out of renderer.js per the SPEC ownership note.
+    //
+    // FLIP-1/2 reconciliation (integration): flipLayers OWNS the single undo
+    // checkpoint (app.pushHistory) + regen when given the app, and computes its
+    // OWN selection-bounds center — so the renderer must NOT push its own
+    // history (that produced a double undo step, violating SEL-3's "one undo
+    // step") and must NOT pass a pivot. It reads the returned {changed} object
+    // rather than testing `!== false` (the op never returns a bare boolean).
+    flipSelection(axis) {
+      const layers = this.getSelectedLayers();
+      if (!layers.length) return false;
+      const ops = window.Vectura && window.Vectura.PathEditOps;
+      if (!ops || typeof ops.flipLayers !== 'function') {
+        console.warn('[Renderer] flipSelection: Vectura.PathEditOps.flipLayers unavailable — flip skipped.');
+        return false;
+      }
+      const ids = layers.map((l) => l.id);
+      let changed = false;
+      try {
+        const res = ops.flipLayers(ids, axis, { app: this.app, engine: this.engine });
+        changed = !!(res && res.changed);
+      } catch (err) {
+        console.warn('[Renderer] flipSelection: PathEditOps.flipLayers threw', err);
+        return false;
+      }
+      if (this.onComputeDisplayGeometry) this.onComputeDisplayGeometry();
+      else this.engine.computeAllDisplayGeometry?.();
+      const primary = this.getSelectedLayer();
+      if (primary) this.updateTransformInputs?.(primary);
+      this.draw();
+      return changed;
     }
 
     hitHandle(sx, sy, bounds) {
@@ -8223,12 +9560,21 @@
         { key: 'se', ...bounds.corners.se },
         { key: 'sw', ...bounds.corners.sw },
       ];
+      // Corners win over edge midpoints when the zones overlap (small boxes).
+      for (const c of corners) {
+        const sc = this.worldToScreen(c.x, c.y);
+        if (Math.hypot(sx - sc.x, sy - sc.y) <= RESIZE_R) return c.key;
+      }
+      // SEL-1: edge-midpoint resize zones.
+      for (const edge of ['n', 'e', 's', 'w']) {
+        const pt = this._edgeMidpoint(bounds, edge);
+        const sc = this.worldToScreen(pt.x, pt.y);
+        if (Math.hypot(sx - sc.x, sy - sc.y) <= RESIZE_R) return edge;
+      }
       let world = null;
       for (const c of corners) {
         const sc = this.worldToScreen(c.x, c.y);
-        const dist = Math.hypot(sx - sc.x, sy - sc.y);
-        if (dist <= RESIZE_R) return c.key;
-        if (dist <= ROTATE_R) {
+        if (Math.hypot(sx - sc.x, sy - sc.y) <= ROTATE_R) {
           if (!world) world = this.screenToWorld(sx, sy);
           if (!this.pointInBounds(world, bounds)) return `rotate-${c.key}`;
         }
@@ -8612,6 +9958,15 @@
         const fallback = (handle === 'nw' || handle === 'se') ? 'nwse-resize' : 'nesw-resize';
         if (!corner || !center) return fallback;
         const angleDeg = Math.atan2(corner.y - center.y, corner.x - center.x) * 180 / Math.PI;
+        return this.cursorDataUrl('resize', 12, 12, fallback, angleDeg);
+      }
+      // SEL-1: edge-midpoint handles resize along one axis.
+      if (handle === 'n' || handle === 'e' || handle === 's' || handle === 'w') {
+        const fallback = (handle === 'n' || handle === 's') ? 'ns-resize' : 'ew-resize';
+        const center = bounds?.center;
+        if (!bounds?.corners || !center) return fallback;
+        const pt = this._edgeMidpoint(bounds, handle);
+        const angleDeg = Math.atan2(pt.y - center.y, pt.x - center.x) * 180 / Math.PI;
         return this.cursorDataUrl('resize', 12, 12, fallback, angleDeg);
       }
       if (typeof handle === 'string' && handle.startsWith('rotate-')) {

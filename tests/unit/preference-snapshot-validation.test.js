@@ -229,6 +229,33 @@ describe('applyPreferenceSnapshot field validation (Bugs-7)', () => {
     expect(SETTINGS.bgColor.startsWith('#')).toBe(true);
   });
 
+  test('Contextual Task Bar prefs (enabled + position bag) round-trip through the snapshot (Illustrator parity P2)', async () => {
+    const window = await bootApp();
+    const { SETTINGS } = window.Vectura;
+
+    // Default: enabled true, contextBar carried as an object in the snapshot.
+    const defaultSnap = window.app.getPreferenceSnapshot();
+    expect(defaultSnap.contextBarEnabled).toBe(true);
+    expect('contextBar' in defaultSnap).toBe(true);
+
+    // Simulate the bar mutating SETTINGS (pinned at a position) + disabled.
+    SETTINGS.contextBar = { pinned: true, x: 120, y: 240 };
+    SETTINGS.contextBarEnabled = false;
+    const snap = window.app.getPreferenceSnapshot();
+    expect(snap.contextBarEnabled).toBe(false);
+    expect(snap.contextBar).toEqual({ pinned: true, x: 120, y: 240 });
+    // Snapshot must be a clone, not a live reference into SETTINGS.
+    expect(snap.contextBar).not.toBe(SETTINGS.contextBar);
+
+    // Round-trip: reset SETTINGS, re-apply the snapshot, values must return.
+    SETTINGS.contextBar = { pinned: false, x: null, y: null };
+    SETTINGS.contextBarEnabled = true;
+    window.app.applyPreferenceSnapshot(snap);
+    expect(SETTINGS.contextBarEnabled).toBe(false);
+    expect(SETTINGS.contextBar).toEqual({ pinned: true, x: 120, y: 240 });
+    expect(warnCalls.length).toBe(0);
+  });
+
   test('Vectura.Validators is exposed with hex / finite / enum helpers', async () => {
     const window = await bootApp();
     const V = window.Vectura.Validators;

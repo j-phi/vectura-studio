@@ -253,7 +253,9 @@
             <input type="color" class="pen-color" value="${pen.color}" aria-label="Pen color">
           </div>
           <input type="range" min="0.05" max="2" step="0.05" value="${pen.width}" class="pen-width">
-          <span class="text-[10px] text-vectura-muted pen-width-value">${pen.width}</span>
+          <input type="number" min="0.05" max="2" step="0.05" value="${pen.width}"
+            class="pen-width-value w-10 bg-transparent text-[10px] text-vectura-muted text-right focus:outline-none"
+            inputmode="decimal" aria-label="Pen stroke weight (mm)">
           <button class="pen-remove" type="button" aria-label="Remove pen">✕</button>
         </div>
       `;
@@ -327,10 +329,21 @@
       }
 
       if (widthInput && widthValue) {
-        // Drag-commit pattern for the width range slider — see Bug-3 fix above.
-        const applyWidth = (value) => {
-          pen.width = parseFloat(value);
-          widthValue.textContent = pen.width.toFixed(2);
+        // Per-pen stroke weight: a range slider AND an editable numeric textbox,
+        // kept in sync. Both use the drag/edit-commit pattern (see Bug-3 above):
+        //   - live `input` cascades to layers + repaints, no history;
+        //   - `change` (drag release / Enter / blur) pushes ONE history entry
+        //     and regenerates text layers whose banded geometry depends on pen
+        //     width.
+        const WMIN = 0.05;
+        const WMAX = 2;
+        const clampW = (mm) => Math.max(WMIN, Math.min(WMAX, Number(mm) || WMIN));
+        // Sync the sibling control's displayed value without re-triggering its
+        // own handler (assigning .value does not dispatch input/change).
+        const applyWidth = (value, source) => {
+          pen.width = clampW(value);
+          if (source !== 'slider') widthInput.value = String(pen.width);
+          if (source !== 'field') widthValue.value = pen.width.toFixed(2);
           applyIcon();
           this.app.engine.layers.forEach((layer) => {
             if (layer.penId === pen.id) {
@@ -342,29 +355,47 @@
           }
           this.app.render();
         };
-        let preDragWidth = null;
-        const beginWidthEdit = () => {
-          if (preDragWidth === null) preDragWidth = pen.width;
-        };
-        widthInput.addEventListener('pointerdown', beginWidthEdit);
-        widthInput.addEventListener('focus', beginWidthEdit);
-        widthInput.oninput = (e) => applyWidth(e.target.value);
-        widthInput.onchange = (e) => {
-          const committed = parseFloat(e.target.value);
-          if (preDragWidth !== null && preDragWidth !== committed) {
-            pen.width = preDragWidth;
-            if (this.app.pushHistory) this.app.pushHistory();
-          }
-          preDragWidth = null;
-          applyWidth(e.target.value);
-          // Pen width feeds generated GEOMETRY for text layers (the banded bold
-          // spaces its concentric passes by the physical pen), so a committed
-          // width change must regenerate — repaint alone would leave the band
-          // sized for the old pen. Commit-only: never during the live drag.
+        // Pen width feeds generated GEOMETRY for text layers (the banded bold
+        // spaces its concentric passes by the physical pen), so a committed
+        // width change must regenerate — repaint alone would leave the band
+        // sized for the old pen. Commit-only: never during the live drag/type.
+        const regenPenTextLayers = () => {
           const usesPen = (layer) => layer.type === 'text'
             && ((layer.penId || null) === pen.id || (!layer.penId && SETTINGS.pens && SETTINGS.pens[0] && SETTINGS.pens[0].id === pen.id));
           if (this.app.engine.layers.some(usesPen) && this.app.regen) this.app.regen();
         };
+        let preEditWidth = null;
+        const beginWidthEdit = () => {
+          if (preEditWidth === null) preEditWidth = pen.width;
+        };
+        const commitWidth = (rawValue, source) => {
+          const committed = clampW(rawValue);
+          if (preEditWidth !== null && preEditWidth !== committed) {
+            pen.width = preEditWidth;
+            if (this.app.pushHistory) this.app.pushHistory();
+          }
+          preEditWidth = null;
+          applyWidth(committed, source);
+          // Normalize the textbox display on commit even when the field was the
+          // edit source — a number input does not auto-clamp its text to
+          // min/max on blur, so "5" (max 2) would otherwise keep reading "5"
+          // while pen.width is really 2.
+          widthValue.value = pen.width.toFixed(2);
+          regenPenTextLayers();
+        };
+
+        widthInput.addEventListener('pointerdown', beginWidthEdit);
+        widthInput.addEventListener('focus', beginWidthEdit);
+        widthInput.oninput = (e) => applyWidth(e.target.value, 'slider');
+        widthInput.onchange = (e) => commitWidth(e.target.value, 'slider');
+
+        widthValue.addEventListener('focus', beginWidthEdit);
+        widthValue.oninput = (e) => {
+          // Ignore intermediate empty / partial entries; apply once parseable.
+          if (e.target.value === '' || Number.isNaN(Number(e.target.value))) return;
+          applyWidth(e.target.value, 'field');
+        };
+        widthValue.onchange = (e) => commitWidth(e.target.value, 'field');
       }
 
       if (removeBtn) {
@@ -472,6 +503,66 @@
     return (SETTINGS.pens || []).find((pen) => pen.id === id) || null;
   }
 
+  // === COL-2 (Illustrator Tools Parity, Phase 1 Lane D) ====================
+  // Shared pen-assignment helper. Vectura's color model is pen-based: a
+  // layer's color is a reference to a document pen, stored as layer.penId
+  // (authoritative) plus the denormalized caches layer.color/strokeWidth.
+  // Plot-order optimization groups strokes by penId (engine.js), so the
+  // triple MUST always be written together — never color alone. This is the
+  // single shared implementation of that triple-write, used by the Pen
+  // Picker popover (pen-picker-popover.js). The four pre-existing inline
+  // triple-write sites (layers-panel.js applyPen, group/expand propagation,
+  // pens-panel.js applyArmedPenToLayers and the pen-edit cascade) are NOT
+  // migrated in this lane per the SPEC — that consolidation is a follow-up
+  // owned by the lanes that own those files.
+  //
+  // Pure function: no DEPS required, no history/render side effects — the
+  // caller owns pushHistory (one undo step per apply) and re-render.
+
+  /**
+   * Write the full penId/color/strokeWidth triple of `penId` onto every
+   * target layer. Never performs a partial write: if `penId` does not
+   * resolve to a pen in `pens`, no layer is touched and null is returned.
+   * @param {Array<{id,name,color,width}>} pens - document pen list (SETTINGS.pens)
+   * @param {Array<object>} targetLayers - layers to assign
+   * @param {string} penId - id of the pen to assign
+   * @returns {object|null} the resolved pen record, or null if not found
+   */
+  function assignPenToLayers(pens, targetLayers, penId) {
+    const list = Array.isArray(pens) ? pens : [];
+    const pen = list.find((p) => p && p.id === penId) || null;
+    if (!pen) return null;
+    const layers = Array.isArray(targetLayers) ? targetLayers.filter(Boolean) : [];
+    layers.forEach((layer) => {
+      layer.penId = pen.id;
+      layer.color = pen.color;
+      layer.strokeWidth = pen.width;
+      // Parity with the existing assignment sites (layers-panel.js applyPen,
+      // applyArmedPenToLayers below): default lineCap only when absent.
+      if (!layer.lineCap) layer.lineCap = 'round';
+    });
+    return pen;
+  }
+
+  /**
+   * Popover/chip-facing read: report the selection's shared pen, or a mixed
+   * state when penIds diverge (COL-2/COL-3 `?` chip). A missing penId is its
+   * own bucket — a layer without a pen is "mixed" against any penned layer.
+   * @param {Array} pens - document pen list (SETTINGS.pens)
+   * @param {Array} layers - selected layers
+   * @returns {{penId: string|null, pen: object|null, mixed: boolean}}
+   */
+  function getSelectionPenState(pens, layers) {
+    const list = Array.isArray(layers) ? layers.filter(Boolean) : [];
+    if (!list.length) return { penId: null, pen: null, mixed: false };
+    const first = list[0].penId || null;
+    const mixed = list.some((layer) => (layer.penId || null) !== first);
+    if (mixed || first === null) return { penId: null, pen: null, mixed };
+    const pen = (Array.isArray(pens) ? pens : []).find((p) => p && p.id === first) || null;
+    return { penId: first, pen, mixed: false };
+  }
+  // === end COL-2 ===========================================================
+
   function applyArmedPenToLayers(targetLayers) {
     requireDeps('applyArmedPenToLayers');
     if (!this.armedPenId) return false;
@@ -514,6 +605,10 @@
     renderPens,
     getPenById,
     applyArmedPenToLayers,
+    // COL-2: shared triple-write helper + popover-facing reads (pure, no
+    // bind() required). Also exposed at the SPEC-named alias Vectura.PensPanel.
+    assignPenToLayers,
+    getSelectionPenState,
     installOn(proto) {
       proto.setArmedPen = function(penId) { return setArmedPen.call(this, penId); };
       proto.clearArmedPen = function() { return clearArmedPen.call(this); };
@@ -529,5 +624,10 @@
       proto.applyArmedPenToLayers = function(targetLayers) { return applyArmedPenToLayers.call(this, targetLayers); };
     },
   };
+
+  // COL-2: the SPEC names the helper `Vectura.PensPanel.assignPenToLayers`.
+  // Alias the panel namespace there (same object as Vectura.UI.PensPanel) so
+  // both paths resolve to the single shared implementation.
+  Vectura.PensPanel = UI.PensPanel;
 })();
 

@@ -78,10 +78,28 @@ describe('Text layout opts (Unit A — font layout engine)', () => {
       expect(bbox(wide.paths).w).toBeGreaterThan(bbox(base.paths).w * 1.8);
     });
 
-    test('kerning adds to every glyph advance (wider block)', () => {
+    test('per-pair kern widens ONLY the targeted gap (built-in)', () => {
+      const x0 = (r, si) => r.cells.find((c) => c.sourceIndex === si).x0;
       const base = SF.layout('AAA', { size: 20 });
-      const loose = SF.layout('AAA', { size: 20, kerning: 6 });
-      expect(loose.width).toBeGreaterThan(base.width);
+      const g1 = SF.layout('AAA', { size: 20, kernPairs: { 1: 6 } }); // gap A0|A1
+      const g2 = SF.layout('AAA', { size: 20, kernPairs: { 2: 6 } }); // gap A1|A2
+      const both = SF.layout('AAA', { size: 20, kernPairs: { 1: 6, 2: 6 } });
+      // Gap 1 shifts A1 and A2 right; A0 stays put.
+      expect(x0(g1, 0)).toBeCloseTo(x0(base, 0), 6);
+      expect(x0(g1, 1)).toBeGreaterThan(x0(base, 1));
+      expect(x0(g1, 2)).toBeGreaterThan(x0(base, 2));
+      // Gap 2 shifts ONLY A2; A1 unchanged — proves it is not global.
+      expect(x0(g2, 1)).toBeCloseTo(x0(base, 1), 6);
+      expect(x0(g2, 2)).toBeGreaterThan(x0(base, 2));
+      // Width grows per applied gap.
+      expect(g1.width).toBeGreaterThan(base.width);
+      expect(both.width).toBeGreaterThan(g1.width);
+    });
+
+    test('the removed global `kerning` opt no longer affects layout (built-in)', () => {
+      const base = SF.layout('AAA', { size: 20 });
+      const legacy = SF.layout('AAA', { size: 20, kerning: 6 });
+      expect(legacy.width).toBeCloseTo(base.width, 6);
     });
 
     test('baselineShift raises the whole block (mm)', () => {
@@ -221,10 +239,21 @@ describe('Text layout opts (Unit A — font layout engine)', () => {
       expect(wide.width).toBeGreaterThan(base.width * 1.8);
     });
 
-    test('kerning widens the block (added per advance)', () => {
+    test('per-pair kern widens ONLY the targeted gap (web)', () => {
+      const x0 = (r, si) => r.cells.find((c) => c.sourceIndex === si).x0;
       const base = GF.layout('AAA', { id: ID, size: 14 });
-      const loose = GF.layout('AAA', { id: ID, size: 14, kerning: 4 });
-      expect(loose.width).toBeGreaterThan(base.width);
+      const g1 = GF.layout('AAA', { id: ID, size: 14, kernPairs: { 1: 4 } });
+      const both = GF.layout('AAA', { id: ID, size: 14, kernPairs: { 1: 4, 2: 4 } });
+      expect(x0(g1, 0)).toBeCloseTo(x0(base, 0), 6);
+      expect(x0(g1, 2)).toBeGreaterThan(x0(base, 2));
+      expect(g1.width).toBeGreaterThan(base.width);
+      expect(both.width).toBeGreaterThan(g1.width);
+    });
+
+    test('the removed global `kerning` opt no longer affects the web layout', () => {
+      const base = GF.layout('AAA', { id: ID, size: 14 });
+      const legacy = GF.layout('AAA', { id: ID, size: 14, kerning: 4 });
+      expect(legacy.width).toBeCloseTo(base.width, 6);
     });
 
     test('baselineShift raises the block (mm)', () => {

@@ -4,6 +4,298 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.40 - 2026-07-05
+
+### Added
+- **On-canvas Type layers default to a vendored web font (Inter)**, parsed at boot and swapped in live
+  the instant a text session begins, so a fresh Type-tool layer is editable with real letterforms
+  instead of the stroke-font placeholder.
+- **Per-pair manual kerning** (`kernPairs`): a sparse caret-indexed map, editable only with the caret
+  between two letters, layered on top of the existing uniform `tracking`.
+- **Outline Text action in the context bar** (hollow-T icon) converts a text layer to its
+  filled/stroked contour.
+- **Eyedropper sampling loupe** in the color picker and pen-picker popover: a magnified preview circle
+  that follows the pointer while sampling a pen color.
+- **`GeometryUtils.reduceAnchors`** re-traces a bezier-anchor contour into the minimal set of editable
+  anchors that reproduces it within a sub-pixel tolerance — merges coincident seams, detects corners
+  from handle tangents, and Schneider-fits each corner-to-corner run. Anchors carry a `corner` flag,
+  threaded through the renderer's node overlay and preserved through engine anchor cloning.
+
+### Fixed
+- **Scissors-cut selection no longer silently re-closes.** An explicit `meta.closed === false` is now
+  authoritative when the renderer parses a path's anchors; previously a closed ring cut at one anchor
+  (coincident start/end points) got re-merged into a closed ring on the next selection refresh, undoing
+  the cut.
+
+## 1.2.39 - 2026-07-04
+
+**Illustrator Parity — feedback pass.** Fifteen usability fixes from a review of the Phase-1–3
+parity work, spanning selection, the contextual task bar, the edit-path tools, the menu system, and
+per-pen stroke weight.
+
+### Added
+- **Every right-click and task-bar verb is now in the top menu.** A new **Object** menu (Edit Path,
+  Flip Horizontal/Vertical, Isolate Group / Exit Isolation, Lock / Unlock All, Simplify…, Smooth…,
+  Outline Text, Transform…) plus **Duplicate / Delete** in the Edit menu, each reusing the canvas
+  context-menu verbs via new `CanvasContextMenu.runCommand()` / `getCommandStates()` (single source of
+  wiring). Menu items gate on the live selection state.
+- **Contextual Task Bar toggle in the View menu** (with a checkmark), in addition to Document Setup.
+- **Point Type ↔ Area Type toggle** on the text task bar (drives `textEdit.convertTextMode`).
+- **Progressive Smooth slider** (`PathEditOps.smoothBegin/Preview/Commit/Cancel`): the Smooth button
+  now opens a live slider with **Done** and **Auto**. It **fits the fewest cubic bezier segments** to
+  the path (Schneider curve fitting, `GeometryUtils.fitBezierAnchors`) within a tolerance the slider
+  drives — so a dense 84-point polyline collapses to a handful of clean bezier anchors instead of one
+  anchor per point or a stair-stepped line. **Sharp corners get a corner-radius fillet** (Illustrator
+  "Smooth" on a polygon): each corner is replaced by a rounded arc (two setback anchors + a
+  circular-arc cubic), the edges between stay straight, and the fillet radius grows with the slider
+  until adjacent fillets meet (a hexagon rounds toward a circle). Fillets round INWARD — no ballooning
+  or overshoot (handles are chord-clamped). Corner-less shapes (an ellipse) just get the minimal-anchor
+  curve fit. The result is stamped `forceCurves`, so it renders AND exports as true cubic beziers
+  (`M … C … Z`) even when the layer's Curves toggle is off.
+- **Per-pen stroke weight textbox.** Each pen row now has an editable numeric weight field synced with
+  its slider; the standalone stroke-weight task-bar entry was removed (weight is a pen property).
+
+### Fixed
+- **Shift/Cmd-click multi-select** now adds/removes objects (and a Shift-marquee unions into the
+  selection); it's a discrete toggle that never arms an accidental move.
+- **Isolate group** now scopes canvas hit-testing to the group: clicks outside are swallowed (Escape /
+  breadcrumb exits), foreground foreign layers no longer shadow members, and nested descendants resolve
+  to the immediate child.
+- **Edit-path anchor verbs** (right of Smooth) enable/disable by the actual anchor selection — one
+  anchor → Remove / Cut / Convert-Corner / Convert-Smooth; two open endpoints → Connect — and act on the
+  correct anchors (new `PathEditOps.deleteAnchors`).
+- **Task-bar drag handle** now follows the pointer live (was snapping only to the release point).
+- **Text task-bar Font / Font Style** show a dropdown caret and open their picker anchored beneath the
+  clicked chip (was appearing over the left panel).
+- **"Show Properties panel"** (⋯ overflow) for text now focuses the Text panel and auto-hides the ABOUT
+  block so more controls are visible.
+- **Context-menu Flip Horizontal/Vertical** routes through `renderer.flipSelection` so the display and
+  the Transform panel inputs both refresh (previously looked like a no-op).
+- **Smart-guide measurement labels** ("midpoint", spacing chips) no longer drift to the top-left on
+  HiDPI displays (reset to the devicePixelRatio base transform instead of identity).
+- Task bar re-renders when the selected layer changes within the same kind (controls were staying bound
+  to the previously-selected layer).
+
+## 1.2.38 - 2026-07-03
+
+**Illustrator Tools Parity — Phase 3 (final): transform numerics, text pickers, All Tools drawer,
+right-click menu.** The last four lanes (J, K, L, M) merged and reconciled onto the Phase-2 bar,
+completing the whole Illustrator-Parity effort across all 13 lanes. No AI tooling anywhere (hard
+exclusion).
+
+### Added
+- **Numeric transform X / Y / W / H + Flip (Lane K — SEL-5/6, SG-6).** The Transform section now shows
+  editable **X / Y / W / H** for manual shape/text selections (single or multi, combined bounds) with a
+  **link W/H** proportional toggle; setting W resizes to that exact width about the bounding-box top-left,
+  each edit is one undo step. **Flip Horizontal / Vertical** icon buttons sit beside rotate and route
+  through the shared `PathEditOps.flipLayers` op (one undo, flip-twice restores). With the
+  Direct-Selection tool and exactly one anchor selected, X / Y repurpose to that anchor's world position
+  ("Anchor X/Y") and move the anchor live. Renderer gains `getTransformPanelModel` /
+  `getSelectedAnchorState` / `applySelectionBox` / `applySelectedAnchorPosition`; the panel self-mounts
+  `#transform-bbox-controls` (config `src/config/transform-panel.js`).
+- **Text hover-preview & size presets (Lane J — TXT-3/4/5).** The Text panel's font picker now **live-
+  previews a family on hover** after a ≥150 ms dwell (no history push; dismiss/teardown revert to the
+  committed face; click commits with a clean single-step undo), fetches web faces only on settled hover
+  (zero eager webfont fetches on open), adds a filter **clear (×)** affordance, and replaces the size
+  scrub-cycle with a real **size-preset dropdown** (6–72 mm). Config `src/config/text-ui-config.js`;
+  exposes `Vectura.UI.TextPanel.openFontPicker()` / `openSizePresets()`.
+- **All Tools drawer (Lane L — TLD-1/2).** A rail overflow **"…"** button opens a non-modal **All Tools**
+  drawer listing every registered tool (grouped Select / Draw / Shapes / Type / Modify / Navigate) with a
+  **grid/list** toggle (persisted). Clicking a tool activates it and updates the rail slot; hovering an
+  entry **cross-highlights** the rail slot its tool lives in. Enumeration is derived from the real tool
+  registry (drift-guarded). Config `src/config/tool-drawer.js`, shell `src/ui/shell/tool-drawer.js`.
+- **Canvas right-click context menu (Lane M — CTX-1).** Right-clicking the canvas opens a menu of the
+  existing verbs — Duplicate / Delete, Undo / Redo, Group / Ungroup / Isolate·Exit, Simplify… / Smooth /
+  Flip H / Flip V, Transform▸ — each routing to the command the toolbar / shortcut / Task Bar already
+  uses, with eligibility disabled-with-reason. Self-mounts to `#main-canvas` (no renderer edit). Config
+  `src/config/context-menu.js`, shell `src/ui/shell/canvas-context-menu.js`.
+- **Mixed-value indicators (Lane M — MSC-1).** A multi-selection with differing stroke weights blanks the
+  weight field and shows a muted "mixed" placeholder (Stroke Options panel + Task Bar stroke sub-mode)
+  instead of a misleading single value. Headless helper `Vectura.MixedValue` (config
+  `src/config/mixed-values.js`).
+- **Align centers (both axes) (Lane M — MSC-2).** A new compound **`alignCenterBoth`** align op snaps a
+  multi-selection concentric in a single undo step, surfaced as a button in the docked Align panel and in
+  the Task Bar's Align flyout.
+
+### Reconciliations (integration)
+- **Six new module tags** wired into `index.html` in load order (`transform-panel`, `text-ui-config`,
+  `tool-drawer`, `context-menu`, `mixed-values` config; `tool-drawer`, `canvas-context-menu` shell) at
+  `?v=1.2.38`.
+- **MSC-2 surfacing.** The `alignCenterBoth` op (Lane M) is wired into its live controls: an align-panel
+  button (`index.html` + `multi-selection-panel.js` `ALIGN_OPS` + `icons.js`) and a Task Bar align-flyout
+  action (`src/config/context-bar.js`).
+- **Task Bar Smooth fix.** The bar's **Smooth** button was a pre-existing no-op — `doSmooth` called
+  `smoothSelection` with no strength (which clamps to 0 and early-returns). It now passes a config-driven
+  default strength (`Vectura.CONTEXT_MENU.smoothStrength`, 0.5) and lets the op own its single
+  push-before-change history (one undo step).
+- **Task Bar text pickers.** The bar's family/style chips now open Lane J's real inline **font picker**
+  and the size field's caret opens the **size presets** (`Vectura.UI.TextPanel.openFontPicker` /
+  `openSizePresets`), feature-detected in addition to the existing wayfinding pulse.
+- **Preference round-trip.** `toolDrawerView` (grid|list) folds into
+  `App.getPreferenceSnapshot`/`applyPreferenceSnapshot` (mirroring `contextBar`/`contextualHints`).
+- **Playwright.** `tests/e2e/tool-drawer.spec.js` registered in the desktop-chromium project + `test:e2e`.
+
+### Deferred
+- Rotated-layer object-frame W/H (`PRH-020`), a real clipboard subsystem for the context menu (`PRH-021`),
+  and Text-specimen kick-loop bounding (`PRH-022`).
+
+## 1.2.37 - 2026-07-03
+
+**Illustrator Tools Parity — Phase 2: Contextual Task Bar.** Three lanes (bar framework, sub-modes +
+shape properties, isolation breadcrumb) merged and reconciled onto the Phase-1 foundation. The
+plotter-native engine APIs shipped in Phase 1 are now user-facing: a floating contextual toolbar surfaces
+the right actions for the current selection, and double-clicking into a group shows an isolation
+breadcrumb. No AI tooling anywhere (hard exclusion).
+
+### Added
+- **Contextual Task Bar framework (Lane G — TB-1…8).** A floating pill (`.ctxbar`, mounted into
+  `#viewport-container`) anchors just below the current selection, flips above near the viewport bottom,
+  clamps to the viewport, and yields to the tool rail. It hides during canvas drag, drawing, and text-caret
+  edits. Per selection kind it renders a tailored action set:
+  - **Idle** — Draw + Document Setup.
+  - **Single path** — Edit Path, pen chip, stroke weight, shape properties (live rect/poly), lock.
+  - **Multi** — Group, Align flyout (reuses the docked align buttons for byte-identical geometry), pen,
+    stroke. **Group** — Ungroup, Isolate group, pen, stroke.
+  - **Direct** — Simplify, Smooth, and six anchor verbs (visible-but-disabled until an eligible anchor is
+    selected). **Text** — family/style/size bound to the Text panel, Outline, pen.
+  - A trailing **…** overflow menu (Show panel / Hide bar / Reset position / Pin position / Quick help),
+    a drag handle (drag → pin), ARIA `role="toolbar"` with roving tabindex (never steals focus on
+    appearance), and a `≤120ms` fade/slide with reduced-motion fallback. Toggle the whole bar under
+    **Document Setup → Guides & Display** (default on). Copy/icons/timings live in the new
+    `src/config/context-bar.js`.
+- **Bar sub-modes & shape properties (Lane H — TB-9…11, SHP-1…3).** Inline sub-modes morph into the bar:
+  **Stroke weight** (slider + steppers + document-unit field, with "Open Stroke Options" for the full
+  popover) and **Simplify** (live `PathEditOps` preview, Auto-Smooth, points/percent badge; Done commits,
+  Esc/click-away cancels). Selecting a live **rectangle or polygon** opens a **shape-properties popover**
+  (corner type & radius for rects, side count 3–20 for polygons) that round-trips with the on-canvas
+  corner widget as one undo step per gesture. New renderer plumbing
+  (`getShapePropsState`/`beginShapePropsEdit`/`setShapeUniformCornerRadius`/`setShapeSides`/
+  `endShapePropsEdit`) and a `vectura:isolation-changed` document event fired on enter/exit isolation.
+  Strings/ranges in the new `src/config/shape-props.js`.
+- **Isolation breadcrumb (Lane I — ISO-1…2).** Double-clicking into a group shows a breadcrumb strip
+  (`.iso-breadcrumb`) across the top of the canvas: the ancestry chain from `Document` to the active
+  group, with each ancestor crumb stepping out one isolation level, a back arrow to exit one level, and
+  the root crumb to leave isolation entirely. A thin top-edge accent line (`.iso-edge-indicator`, fixed
+  isolation blue) marks the isolated state. The breadcrumb updates immediately off the renderer's
+  `vectura:isolation-changed` event. Strings/tokens in the new `src/config/breadcrumb.js`.
+
+### Reconciliations (integration)
+- **Preference round-trip.** `contextBarEnabled` + the `contextBar` position/pinned bag now fold into the
+  canonical `App.getPreferenceSnapshot`/`applyPreferenceSnapshot` (and undo capture/apply), so the bar's
+  enabled state and pinned position persist via `.vectura` files and cookie prefs (mirroring Lane F's
+  `contextualHints`). Defaults added to `src/config/defaults.js`.
+- **Isolation event ↔ breadcrumb.** Lane H's `vectura:isolation-changed` event drives Lane I's breadcrumb
+  directly (verified by an integration test); the breadcrumb's rAF poll is retained only as a harmless,
+  visibility-gated auto-mount fallback.
+- **Z-index layering.** tool-bar (5) < context bar (35) < isolation breadcrumb (41) < edge indicator (42)
+  < modals — no element occludes another or the tool rail.
+
+### Deferred
+- Full inline text **family/style pickers** in the bar's Text state → Phase 3 (Lane J, TXT-3…5); the bar
+  currently opens/focuses the Text panel for wayfinding and edits size live.
+- Simplify advanced-options gear (`PRH-019`).
+
+## 1.2.36 - 2026-07-03
+
+**Illustrator Tools Parity — Phase 1.** Six lanes (renderer interaction core, stroke model & options,
+path-edit ops, pen picker, text outline, hint bar) merged and reconciled. These are the plotter-native
+foundations the Phase-2 Contextual Task Bar surfaces; several engine APIs below are reachable now and
+become fully user-facing in Phase 2. No AI tooling anywhere (hard exclusion).
+
+### Added
+- **Renderer interaction core (Lane A — SEL-1…4, SG-1…5).**
+  - **SEL-1** — 8-handle selection box: the 4 existing corners plus 4 edge-midpoint handles for
+    single-axis resize (Shift constrains proportions).
+  - **SEL-2** — Alt/Option+drag now duplicates a **multi-selection** (not just a single layer); Escape
+    mid-drag cancels leaving no copy; the whole duplicate commits as one undo step.
+  - **SEL-3** — **Flip Horizontal / Flip Vertical** for the selection (single or multi), mirroring about
+    the selection-bounds center; world-exact and self-inverse at any rotation; one undo step.
+  - **SEL-4** — live measurement chips: hover shows `X / Y`, a move-drag shows relative `dX / dY`, all in
+    document units (reuses the existing drag-tooltip surface).
+  - **SG-1…5** — object-to-object smart guides that **extend** the existing guide/snap subsystem: edge/
+    center alignment guides + snap against other objects, magenta semantic labels (`path` / `anchor` /
+    `midpoint` / `endpoint`), anchor/endpoint snapping during object drags, equal-spacing hint chips, and
+    a hover-highlight of the unselected path under the cursor. All behind `showGuides`/`snapGuides`.
+    Guide vocabulary/tokens live in the new `src/config/smart-guides.js`; guides are overlay-only, never
+    exported.
+- **Stroke model & options (Lane B — STR-1…6).** The per-layer stroke model gains `lineJoin`,
+  `miterLimit`, `dash {enabled, pattern}`, and `strokeAlign`, plus the full `lineCap`
+  (`butt|round|projecting`) set — all serialized in `.vectura` (backward-compatible) and emitted as
+  `stroke-linecap`/`stroke-linejoin`/`stroke-miterlimit`/`stroke-dasharray` on SVG export, with the live
+  canvas matching the export. A reusable **Stroke Options** panel component (weight / cap / corner+limit
+  / align / dashed-line editor) renders the full popover anatomy. Align Stroke offsets closed paths
+  ±weight/2 via the robust closed-outline band machinery (open paths stay centered; a per-path collapse
+  guard falls back to centered). A single `StrokeModel.setStrokeWeight` API drives weight edits without
+  ever touching `penId` or the pen record.
+- **Path-edit ops engine (Lane C — PTH-1…5).** New `window.Vectura.PathEditOps`: lossless Simplify
+  preview/commit/cancel with live point counts, Auto-Smooth suggestion, one-shot Smooth, anchor verbs
+  (convert-to-corner / convert-to-smooth / cut-at-anchors / join-endpoints) with eligibility predicates,
+  and live-shape auto-expand (destructive verbs on a parametric rect/polygon expand it to a plain path
+  and fire a `vectura:shape-expanded` event → HUD-3 toast). Also hosts the SEL-3 `flipLayers` geometry op.
+- **Pen Picker popover (Lane D — COL-1…4).** New anchored Pen Picker popover (`Pens` + `New Pen` tabs)
+  translating the video's Swatches/Mixer to Vectura's document-pen model: click a pen to apply it
+  instantly, or mix a color + width + name and Add Pen. A shared `PensPanel.assignPenToLayers` helper
+  writes the `penId`/`color`/`strokeWidth` triple (never a bare color), a mixed-pen `?` chip state, and
+  an optional eyedropper that samples/creates a matching pen. The popover and docked Pens panel share
+  `SETTINGS.pens` as a single source of truth.
+- **Outline Text (Lane E — TXT-1…2).** `window.Vectura.TextOutlineOps.outlineText(layerId)` replaces a
+  Text layer with a group of per-glyph static path layers (named for each character), reusing the exact
+  rendered glyph outlines; one undo step restores the editable Text layer. Glyph layers are ordinary
+  shapes — movable, simplifiable, mask-capable — and double-click isolation drills into the group.
+- **Hint bar & HUD (Lane F — HUD-1…4).** The generic header `READY` text is replaced by a bottom
+  workspace strip:
+  - **HUD-1** — a per-tool contextual hint line (up to 3 `|`-separated segments, each with a bolded
+    keyword). All copy is config-driven in `src/config/hints.js`; the hint text clears while a canvas drag
+    is in progress and restores on release.
+  - **HUD-2** — live active-tool name, zoom %, and canvas rotation readouts (text only).
+  - **HUD-3** — a transient top-center canvas toast pill (`Vectura.UI.toast(message)`), ~2s auto-dismiss,
+    reduced-motion aware; subscribes to `vectura:shape-expanded` (Lane C / PTH-5).
+  - **HUD-4** — a **Contextual hints** checkbox in Document Setup → Guides & Display (default ON) gating
+    the hint text only; tool/zoom/rotation readouts always show.
+
+### Fixed / Integration reconciliations
+- **Flip seam (SEL-3, one undo step).** The renderer flip wrapper and the `flipLayers` geometry op each
+  pushed history, so a flip took two undo steps and the wrapper mis-read the op's `{changed}` return as a
+  boolean. The op is now the sole owner of the single history checkpoint (the wrapper threads the app
+  through and reads `res.changed`). New composed regression asserts a selection flip is exactly one undo
+  step end-to-end.
+- **Contextual-hints persistence.** `SETTINGS.contextualHints` is folded into the canonical App
+  preference snapshot (`getPreferenceSnapshot`/`applyPreferenceSnapshot` + `captureState`/`applyState`),
+  so it round-trips via `.vectura` files and cookie-backed prefs alongside `showGuides`/`snapGuides`; the
+  hint bar's standalone `localStorage` fallback was retired.
+
+### Notes
+- Deferred to **Phase 2**: the docked mount of the Stroke Options panel and the Pen Picker chip land in
+  the Task Bar (TB-10 / TB-4/5/7); both components are reachable and tested now. Pen-Picker popover e2e is
+  deferred until it is mounted by the Task Bar.
+- New hardening items logged: PRH-014 (welded-kern glyph split), PRH-015 (hint-bar rAF idle bail-out),
+  PRH-016 (arrowhead stroke rows), PRH-017 (width-profile control), PRH-018 (Pen-Picker MRU ordering).
+
+## 1.2.35 - 2026-07-03
+
+### Fixed
+- **Banded bold: silhouette notches eliminated (and a 6× cold-render win).** The ~0.1 mm nicks visible along
+  bold letterform edges were in the band boundary itself, present since `strokeRingsToBand` was born: join
+  disks were sampled as 8-gons, and at Bold radii an 8-gon chord dips `R·(1−cos π/8) ≈ 0.076·R` inside the
+  true circle — one notch at every gentle convex skeleton vertex (boundary = quad edge → chord → quad edge).
+  The band build now sizes its join-disk sampling adaptively so the chord sagitta stays under the simplify
+  tolerance (~0.02 mm). Side effect: the smoother boundary erodes far more cleanly — polygon-clipping stops
+  thrashing through crash-retries — so cold Bold rendering dropped ~6× (e.g. three fresh glyphs 1.25 s → 0.22 s)
+  and near-collapse crumb slivers vanished from the output.
+
+## 1.2.34 - 2026-07-03
+
+### Fixed
+- **Banded bold: junction-pocket residuals driven to the noise floor.** Jay's observation that the band region
+  is itself a pen-disk sweep — so a union of R-disks has NO point a pen ≤ R cannot reach, sharp weld corners
+  included — reframed the remaining sub-0.4 mm coverage residuals as pure discretization, not "plotting
+  physics". Two fixes: the erosion sliver filter is now shape-aware (roundness 4πA/P² keeps small compact
+  junction-pocket rings — real coverage — down to 1/16 of the old flat area floor, while still dropping hair
+  crumbs), and the erosion cut's join disks sample at 16 sides (corner-arc sagitta < 2% of the inset; cheap
+  because gentle curvature already skips its joins). True pen-coverage sweep a–z: 22/26 glyphs at exactly
+  0.00% uncovered; the other four carry only ≤0.09 mm probe-noise-floor whiskers at one junction pocket each.
+  Coverage regression test now also runs the 'u' spur (the glyph whose pocket ring the flat floor dropped).
+
 ## 1.2.33 - 2026-07-02
 
 ### Fixed

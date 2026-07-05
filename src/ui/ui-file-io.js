@@ -32,6 +32,20 @@
     return NOOP_HANDLE;
   };
 
+  // Stroke style model (STR-1): internal cap vocabulary → SVG/canvas spelling.
+  // Prefers the shared config helper; local fallback keeps legacy load orders safe.
+  const svgLineCap = (cap) => {
+    const fn = window.Vectura?.STROKE_STYLE?.toCanvasCap;
+    if (fn) return fn(cap);
+    if (cap === 'projecting') return 'square';
+    return cap === 'butt' ? 'butt' : 'round';
+  };
+
+  // Format a dash pattern (mm numbers) for a stroke-dasharray attribute —
+  // same trimming as the per-path meta dash emission below.
+  const formatDashArray = (pattern) =>
+    pattern.map((value) => Number(value).toFixed(3).replace(/\.?0+$/, '')).join(' ');
+
   const normalizeSvgId = (value, prefix = 'id') => {
     const fallback = `${prefix || 'id'}`;
     const base = `${value ?? ''}`.trim() || fallback;
@@ -535,6 +549,17 @@
           const ancestorMasks = this.app.engine.getAncestorMaskLayers ? this.app.engine.getAncestorMaskLayers(layer) : [];
           const forceLinear = destructiveMarginCrop || (removeHiddenGeometry && ancestorMasks.length);
           const lineCap = forceLinear ? 'butt' : layer.lineCap || 'round';
+          // Stroke style model (STR-1/STR-3): join, miter limit and layer-level
+          // dash travel with each item so SVG emission and the export-preview
+          // canvas draw stay in lockstep.
+          const lineJoin = ['miter', 'round', 'bevel'].includes(layer.lineJoin) ? layer.lineJoin : 'round';
+          const miterLimit = Number.isFinite(layer.miterLimit) ? layer.miterLimit : 10;
+          const dashArray = window.Vectura.STROKE_STYLE?.getLayerDashPattern
+            ? window.Vectura.STROKE_STYLE.getLayerDashPattern(layer)
+            : (layer.dash?.enabled && Array.isArray(layer.dash.pattern)
+                && layer.dash.pattern.some((value) => Number(value) > 0)
+              ? layer.dash.pattern.slice(0, 6)
+              : null);
           const useCurves = Boolean(layer.params && layer.params.curves);
           const layerGroupId = window.Vectura._UIExportUtil.escapeXmlAttr(normalizeSvgId(layer.name || layer.id || 'Layer', 'layer'));
           const useLayerOptimized = useOptimized && optimizationTargetIds.has(layer.id);
@@ -556,6 +581,9 @@
               pathIndex,
               path,
               lineCap,
+              lineJoin,
+              miterLimit,
+              dashArray,
               useCurves: forceLinear ? false : useCurves,
               sharpEdges: !forceLinear && useCurves && layer.type === 'pattern' && !layer.params?.tileEdgeCurves,
               layerGroupId,
@@ -651,7 +679,11 @@
             const clipId = layerClipIds.get(layerId);
             if (clipId) svg += `<g clip-path="url(#${window.Vectura._UIExportUtil.escapeXmlAttr(clipId)})">`;
           });
-          svg += `<g id="${item.layerGroupId}-${itemIndex + 1}" stroke-width="${item.strokeWidth}" stroke-linecap="${item.lineCap}" stroke-linejoin="round">`;
+          const joinAttrs = item.lineJoin === 'miter'
+            ? ` stroke-linejoin="miter" stroke-miterlimit="${Number(item.miterLimit ?? 10)}"`
+            : ` stroke-linejoin="${item.lineJoin || 'round'}"`;
+          const layerDashAttr = item.dashArray ? ` stroke-dasharray="${formatDashArray(item.dashArray)}"` : '';
+          svg += `<g id="${item.layerGroupId}-${itemIndex + 1}" stroke-width="${item.strokeWidth}" stroke-linecap="${svgLineCap(item.lineCap)}"${joinAttrs}${layerDashAttr}>`;
           let attrs = item.path?.meta?.exportClipped ? { 'stroke-linecap': 'butt' } : null;
           if (item.pathPenId && item.pathPenId !== item.groupPenId) {
             attrs = attrs || {};

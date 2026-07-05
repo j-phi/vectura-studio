@@ -207,6 +207,45 @@
   }
 }
 
+/* === HUD: canvas toast motion (Illustrator parity, Lane F HUD-3) === */
+.canvas-toast {
+  transition: opacity 160ms ease, transform 160ms ease, visibility 160ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .canvas-toast {
+    transition: none;
+    transform: translate(-50%, 0);
+  }
+}
+/* === END HUD toast motion === */
+
+/* === TB: Contextual Task Bar motion (Illustrator parity, Phase 2 Lane G) === */
+/* TB-8: fade/slide show-hide ≤120ms. The pill sits in #viewport-container and
+   nudges up 4px on entry. */
+.ctxbar {
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms;
+  transform: translateY(4px);
+}
+.ctxbar.is-visible { transform: translateY(0); }
+/* TB-2: "Show panel" blue attention pulse (2 pulses over ~1s) around the
+   relevant docked panel. --ctxbar-pulse-count is set inline by context-bar.js. */
+@keyframes ctxbar-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(78, 158, 225, 0); }
+  50% { box-shadow: 0 0 0 3px var(--ui-accent, #4e9ee1); }
+}
+.ctxbar-pulse {
+  animation: ctxbar-pulse 500ms ease-in-out var(--ctxbar-pulse-count, 2);
+  border-radius: inherit;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ctxbar {
+    transition: none;
+    transform: translateY(0);
+  }
+  .ctxbar-pulse { animation: none; }
+}
+/* === END TB task-bar motion === */
+
 /* === Migrated from styles.css (Unit 2.6: reduced-motion fallback, 2026-05-20) === */
 
 /* Accessibility: respect reduced-motion preference */
@@ -218,3 +257,12 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* === ISO: isolation breadcrumb fade (Phase 2 Lane I — ISO-1/2) ===
+   Slim fade on show/hide of the breadcrumb strip + top-edge indicator. The
+   global prefers-reduced-motion rule above collapses these to ~0ms. */
+.iso-breadcrumb,
+.iso-edge-indicator {
+  transition: opacity 160ms ease, visibility 160ms ease;
+}
+/* === END ISO motion === */

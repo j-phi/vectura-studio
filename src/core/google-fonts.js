@@ -652,7 +652,9 @@
    *                 falls back to the base face.
    *     vScale/hScale  percent (100 = unchanged); scale the flattened contour coords
    *                    about the glyph baseline origin. hScale also scales advance.
-   *     kerning     extra advance per glyph, in mm.
+   *     kernPairs   sparse per-pair kern map keyed by caret index (the gap
+   *                 between char c-1 and char c) → extra advance for THAT gap
+   *                 only, in mm. No global uniform kern.
    *     baselineShift  mm; raises the whole block.
    *     indentLeft/indentRight/indentFirst  mm; per-line / paragraph-head indents.
    *     spaceBefore/spaceAfter  mm; vertical gap before/after each paragraph.
@@ -686,7 +688,15 @@
     const emSize = size / capHeightEm(font); // mm per em so cap-height maps to size
     const fu = emSize / font.unitsPerEm; // font units → mm
     const tracking = Number(opt.tracking) || 0;
-    const kerning = num(opt.kerning, 0); // mm, added to every advance
+    // Per-pair kern (mm), keyed by caret index (the gap between char c-1 and
+    // char c). kernAfter(s) is the kern applied AFTER the char at source index s
+    // — i.e. the gap at caret index s+1. No global uniform kern.
+    const kernPairs = (opt.kernPairs && typeof opt.kernPairs === 'object') ? opt.kernPairs : null;
+    const kernAfter = (srcIdx) => {
+      if (!kernPairs) return 0;
+      const v = Number(kernPairs[srcIdx + 1]);
+      return Number.isFinite(v) ? v : 0;
+    };
     const lineHeight = (Number(opt.lineHeight) || 1.4) * size;
     const vScale = num(opt.vScale, 100) / 100;
     const hScale = num(opt.hScale, 100) / 100;
@@ -730,7 +740,7 @@
         const gs = font.stringToGlyphs(ch);
         const g = gs[0];
         const sc = synth ? charScale().cs : 1;
-        return ((g && g.advanceWidth) || 0) * fu * hScale * sc + tracking + kerning;
+        return ((g && g.advanceWidth) || 0) * fu * hScale * sc + tracking;
       };
       const colMM = wrapWidth - indentLeft - indentRight;
       if (opt.areaWrap === true) {
@@ -755,7 +765,7 @@
           const sc = cs * (isSmall ? SMALL_CAPS_SCALE : 1);
           const gs = font.stringToGlyphs(drawCh);
           const g = gs[0] || null;
-          const adv = ((g && g.advanceWidth) || 0) * fu * hScale * sc + tracking + kerning;
+          const adv = ((g && g.advanceWidth) || 0) * fu * hScale * sc + tracking;
           return { g, sc, dy, charIndex: ci, isSpace: ch === ' ', adv };
         });
       }
@@ -763,25 +773,17 @@
       return glyphs.map((g, i) => {
         let adv = (g.advanceWidth || 0) * fu * hScale;
         if (i < glyphs.length - 1) adv += (font.getKerningValue(g, glyphs[i + 1]) || 0) * fu;
-        adv += tracking + kerning;
+        adv += tracking;
         const u = g.unicode != null ? g.unicode : (g.unicodes && g.unicodes[0]);
         return { g, sc: 1, dy: 0, charIndex: i, isSpace: u === 32, adv };
       });
     });
-    const lineWidth = (cells) => Math.max(0, cells.reduce((w, c) => w + c.adv, 0) - tracking);
-    const widths = lineCells.map(lineWidth);
-    const maxW = widths.reduce((m, w) => Math.max(m, w), 0);
-
-    const blank = rawLines.map((l) => l.trim().length === 0);
-    const firstOfPara = rawLines.map((_, i) => !blank[i] && (i === 0 || blank[i - 1]));
-    const lastOfPara = rawLines.map((_, i) => !blank[i] && (i === rawLines.length - 1 || blank[i + 1]));
-    const colWidth = wrapWidth > 0 ? wrapWidth : (maxW + indentLeft + indentRight);
-
     // Per-character cell source offsets (M1 seam). `cells` runs dense over the
     // RAW input string; sourceIndex accounts for the '\n' between lines. NOTE:
     // ligature shaping can fold multiple source chars into one glyph cell, so on
     // ligated runs sourceIndex is the per-line glyph index rather than a precise
     // source offset — exact for 1:1 (non-ligated) text, which is the common case.
+    // Computed here so per-pair kern folds into advances before measurement.
     const lineStart = [];
     {
       let accIdx = 0;
@@ -793,6 +795,19 @@
         accIdx += lineCells[i].length + 1; // +1 for the consumed newline
       }
     }
+    // Fold each glyph's per-pair kern (toward the next glyph on its line) into its
+    // advance, so width, alignment slack and pen positioning stay consistent.
+    lineCells.forEach((cells, li) => {
+      for (let ci = 0; ci < cells.length - 1; ci++) cells[ci].adv += kernAfter(lineStart[li] + ci);
+    });
+    const lineWidth = (cells) => Math.max(0, cells.reduce((w, c) => w + c.adv, 0) - tracking);
+    const widths = lineCells.map(lineWidth);
+    const maxW = widths.reduce((m, w) => Math.max(m, w), 0);
+
+    const blank = rawLines.map((l) => l.trim().length === 0);
+    const firstOfPara = rawLines.map((_, i) => !blank[i] && (i === 0 || blank[i - 1]));
+    const lastOfPara = rawLines.map((_, i) => !blank[i] && (i === rawLines.length - 1 || blank[i + 1]));
+    const colWidth = wrapWidth > 0 ? wrapWidth : (maxW + indentLeft + indentRight);
 
     const paths = [];
     const meta = [];
@@ -815,6 +830,22 @@
 
       let penX = indentLeft + (firstOfPara[li] ? indentFirst : 0) + alignOffset;
       const baselineY = li * lineHeight + size; // cap-top of line 0 sits near y=0
+      // Empty line (a bare '\n') gets a zero-width caret anchor at the line start
+      // so the editor can blink a caret on the new line and grow the text box the
+      // instant Enter is pressed. Skipped for a lone empty line so a brand-new box
+      // keeps its origin-anchored caret fallback (mirrors StrokeFont.layout).
+      if (cells.length === 0 && rawLines.length > 1) {
+        cellOut.push({
+          sourceIndex: lineStart[li],
+          lineIndex: li,
+          x0: penX,
+          x1: penX,
+          baselineY: baselineY - baselineShift,
+          advance: 0,
+          isSpace: true,
+          caretAnchor: true,
+        });
+      }
       cells.forEach((cell, ci) => {
         const { g, sc, dy } = cell;
         const x0 = penX;
@@ -843,16 +874,33 @@
                 x1: penX + cell.adv,
               });
               if (wantBezier) {
-                const a = aligned ? optimizeAnchorsCardinal(contours[ci], { smoothing }) : null;
+                let a = aligned ? contours[ci] : null;
+                // Minimal-anchor re-trace (Illustrator "Create Outlines" parity):
+                // native TrueType/quadratic outlines carry ~2–3× the on-curve points
+                // a cubic shape needs (each quad is its own segment; smooth joins are
+                // split across zero-length seams). reduceAnchors fuses the seams and
+                // fits the FEWEST cubics per corner→corner run, tagging real corners —
+                // so the glyph traces to a clean, minimal, Illustrator-like anchor set
+                // (one node per quad becomes a handful). The fit tolerance is the same
+                // chord tolerance the coarse polyline uses, so the re-trace stays at
+                // least as faithful to the true edge as the coarse contour (render,
+                // fill and node-edit all share this one outline).
+                const GU = Vectura.GeometryUtils;
+                if (a && GU && typeof GU.reduceAnchors === 'function') {
+                  a = GU.reduceAnchors(a, true, { tolerance: tolerance * 0.6, cornerAngleDeg: 30 });
+                }
+                if (a) a = optimizeAnchorsCardinal(a, { smoothing });
                 anchors.push(a ? a.map((an) => ({
                   ...tx(an.x, an.y),
                   in: an.in ? tx(an.in.x, an.in.y) : null,
                   out: an.out ? tx(an.out.x, an.out.y) : null,
+                  corner: an.corner === true,
                 })) : null);
               }
             }
           }
         }
+        // Per-pair kern is already folded into cell.adv above.
         const eff = cell.adv + (cell.isSpace ? perGap : 0);
         cellOut.push({
           sourceIndex: lineStart[li] + ci,

@@ -30,7 +30,7 @@ describe('Area type create + edit (Illustrator-style)', () => {
   });
   afterAll(() => runtime.cleanup());
 
-  test('_createAreaTextLayerAt makes an area layer with textMode/frameWidth/frameHeight and a built-in font', () => {
+  test('_createAreaTextLayerAt makes an area layer with textMode/frameWidth/frameHeight and the default Inter face', () => {
     const layer = app._createAreaTextLayerAt(20, 30, 120, 90);
     expect(layer).toBeTruthy();
     expect(layer.type).toBe('text');
@@ -38,9 +38,13 @@ describe('Area type create + edit (Illustrator-style)', () => {
     expect(layer.params.frameWidth).toBeCloseTo(100, 3);   // |120 - 20|
     expect(layer.params.frameHeight).toBeCloseTo(60, 3);    // |90 - 30|
     expect(layer.params.fitToFrame).toBe(false);
-    // Built-in stroke font so the mutation gate accepts editing immediately.
-    expect(window.Vectura.GoogleFonts.isWebFontKey(layer.params.font)).toBe(false);
+    // Inherits the global default face — Inter (web font). It becomes editable the
+    // instant an edit session begins (begin() → _enableWebEdit → ligatures-off).
+    expect(layer.params.font).toBe('google:inter');
+    expect(window.Vectura.GoogleFonts.isWebFontKey(layer.params.font)).toBe(true);
+    expect(app.textEdit.begin(layer, 0)).toBe(true);
     expect(app.textEdit.canMutate(layer)).toBe(true);
+    app.textEdit.end();
     // An empty area layer still exposes a frame (engine sidecar) for the overlay.
     expect(Array.isArray(layer.textFrame)).toBe(true);
     expect(layer.textFrame.length).toBe(4);
@@ -89,6 +93,24 @@ describe('Area type create + edit (Illustrator-style)', () => {
       expect(r.caretIndex).toBe(6);
     } finally {
       app.textEdit.end();
+    }
+  });
+
+  test('area frame overlay draws only while editing, not when merely selected', () => {
+    const r = app.renderer;
+    const layer = app._createAreaTextLayerAt(20, 30, 120, 90);
+    try {
+      // Selected but NOT editing: no solid frame overlay — the transform bounding
+      // box already conveys extent, so the extra rectangle is suppressed.
+      app.textEdit.end();
+      r.selectLayer(layer);
+      expect(r._areaFrameLayer()).toBe(null);
+      // Editing the layer: the frame returns so the wrap boundary is visible.
+      expect(app.textEdit.begin(layer, 0)).toBe(true);
+      expect(r._areaFrameLayer()).toBe(layer);
+    } finally {
+      app.textEdit.end();
+      app.engine.removeLayer(layer.id);
     }
   });
 

@@ -344,4 +344,74 @@ describe('Text panel (vtp-)', () => {
     expect(layer.params.text).toBe('UNSAVED DRAFT');
     expect(pushHistory).toHaveBeenCalledTimes(1);
   });
+
+  // ── Per-pair kerning gating ───────────────────────────────────────────────
+  // Mount a panel with a controllable textEdit stub so we can drive the caret.
+  const mountWithCaret = (text, state) => {
+    const { UI, ALGO_DEFAULTS } = window.Vectura;
+    const params = JSON.parse(JSON.stringify(ALGO_DEFAULTS.text));
+    params.text = text;
+    const layer = { id: 'text-kern', type: 'text', params };
+    const textEdit = {
+      isActive: () => state.active,
+      getActiveLayer: () => (state.active ? layer : null),
+      getCaretIndex: () => state.caret,
+    };
+    const ui = {
+      app: { pushHistory: vi.fn(), regen: vi.fn(), textEdit },
+      storeLayerParams: vi.fn(), updateFormula: vi.fn(), buildControls: vi.fn(),
+    };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    UI.TextPanel.build(ui, layer, container);
+    return { layer, container };
+  };
+  const emitCaret = (layer, caret, active = true) =>
+    document.dispatchEvent(new window.CustomEvent('vectura:textcaret', {
+      detail: { active, layerId: layer.id, caretIndex: caret },
+    }));
+
+  test('Kerning scrub is disabled unless editing between two letters, and edits the pair at the caret', () => {
+    const state = { active: false, caret: 0 };
+    const { layer, container } = mountWithCaret('AVA', state);
+    const scrub = container.querySelector('.vtp-scrub[data-field="kerning"]');
+    expect(scrub).toBeTruthy();
+    // Not in an edit session → locked.
+    expect(scrub.classList.contains('disabled')).toBe(true);
+
+    // Enter edit mode, caret between A and V (gap index 1) → unlocked.
+    state.active = true; state.caret = 1;
+    emitCaret(layer, 1);
+    expect(scrub.classList.contains('disabled')).toBe(false);
+
+    // Commit a value → writes ONLY that pair.
+    const input = scrub.querySelector('input');
+    input.value = '-15';
+    input.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(layer.params.kernPairs).toEqual({ 1: -15 });
+
+    // Move the caret to the other gap (index 2) → still enabled, but a fresh pair.
+    state.caret = 2;
+    emitCaret(layer, 2);
+    expect(scrub.classList.contains('disabled')).toBe(false);
+    expect(scrub.querySelector('input').value).toBe('0'); // no kern set for gap 2 yet
+    input.value = '8';
+    scrub.querySelector('input').dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(layer.params.kernPairs).toEqual({ 1: -15, 2: 8 });
+
+    // Caret at a boundary (index 0, no left char) → locked again.
+    state.caret = 0;
+    emitCaret(layer, 0);
+    expect(scrub.classList.contains('disabled')).toBe(true);
+  });
+
+  test('Kerning stays locked when the caret is adjacent to whitespace', () => {
+    const state = { active: true, caret: 1 }; // 'A B' → caret 1 is A|space
+    const { layer, container } = mountWithCaret('A B', state);
+    const scrub = container.querySelector('.vtp-scrub[data-field="kerning"]');
+    emitCaret(layer, 1);
+    expect(scrub.classList.contains('disabled')).toBe(true); // space on the right
+    state.caret = 2; emitCaret(layer, 2); // space|B
+    expect(scrub.classList.contains('disabled')).toBe(true); // space on the left
+  });
 });

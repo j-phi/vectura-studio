@@ -86,15 +86,23 @@ describe('color-picker compile gate', () => {
 
     expect(lastCall).toBeTruthy();
     expect(lastCall.title).toBe('Margin Color');
-    // Picker scaffold present
-    expect(lastCall.body).toContain('color-modal');
-    expect(lastCall.body).toContain('color-sv-canvas');
-    expect(lastCall.body).toContain('color-hue-canvas');
-    expect(lastCall.body).toContain('color-modal-hex');
-    expect(lastCall.body).toContain('color-modal-cancel');
-    expect(lastCall.body).toContain('color-modal-apply');
+    // Picker scaffold present in the composed modal DOM. (Since the COL-1
+    // extraction of createHsvHexPicker, the scaffold is mounted into the
+    // modal body right after openModal rather than inlined in the body
+    // string — assert the resulting DOM, which is the actual contract.)
+    const bodyEl = stub.modal.bodyEl;
+    expect(bodyEl.querySelector('.color-modal')).toBeTruthy();
+    expect(bodyEl.querySelector('.color-sv-canvas')).toBeTruthy();
+    expect(bodyEl.querySelector('.color-hue-canvas')).toBeTruthy();
+    expect(bodyEl.querySelector('.color-modal-hex')).toBeTruthy();
+    expect(bodyEl.querySelector('.color-modal-cancel')).toBeTruthy();
+    expect(bodyEl.querySelector('.color-modal-apply')).toBeTruthy();
+    // Scaffold sits ABOVE the action row (historical child order preserved).
+    const modalRoot = bodyEl.querySelector('.color-modal');
+    const children = Array.from(modalRoot.children).map((el) => el.className);
+    expect(children.indexOf('color-sv-wrapper')).toBeLessThan(children.indexOf('color-modal-actions'));
     // Hex seed shown uppercase, sans #
-    expect(lastCall.body).toContain('value="ABCDEF"');
+    expect(bodyEl.querySelector('.color-modal-hex').value).toBe('ABCDEF');
   });
 
   it('non-#RRGGBB seed falls back to default red (#ff0000)', () => {
@@ -105,8 +113,10 @@ describe('color-picker compile gate', () => {
       closeModal() {},
     };
     ColorPicker.openColorModal.call(stub, { title: 'X', value: 'not-a-hex' });
-    // Default red, uppercase, no #
-    expect(lastCall.body).toContain('value="FF0000"');
+    expect(lastCall).toBeTruthy();
+    // Default red, uppercase, no # (asserted on the mounted hex input — see
+    // the COL-1 note above).
+    expect(stub.modal.bodyEl.querySelector('.color-modal-hex').value).toBe('FF0000');
   });
 
   it('Cancel routes to closeModal without invoking onApply; Apply invokes onApply then closes', () => {

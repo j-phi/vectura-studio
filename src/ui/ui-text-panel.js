@@ -70,12 +70,12 @@
   // Scrub field registry: param key + range/step/precision/perpx + chrome.
   const SCRUBS = {
     fill:      { param: 'fillRatio', min: 0.3, max: 1, step: 0.01, dec: 2, perpx: 0.005, label: 'Frame Fill', hint: '↔ drag', unit: '×', icon: I.fill },
-    size:      { param: 'fontSize', min: 4, max: 160, step: 1, dec: 0, perpx: 0.5, label: 'Size', hint: '↔ drag', unit: 'mm', ftxt: 'TT', steppers: true, preset: true },
+    size:      { param: 'fontSize', min: 4, max: 160, step: 1, dec: 0, perpx: 0.5, label: 'Size', hint: '↔ drag', unit: 'mm', ftxt: 'TT', steppers: true, preset: 'sizes' },
     leading:   { param: 'lineHeight', min: 0.8, max: 3, step: 0.05, dec: 2, perpx: 0.01, label: 'Leading', hint: '↔', icon: I.leading },
     tracking:  { param: 'tracking', min: -4, max: 24, step: 0.5, dec: 1, perpx: 0.12, label: 'Tracking', hint: '↔', icon: I.tracking },
     vscale:    { param: 'vScale', min: 50, max: 200, step: 1, dec: 0, perpx: 0.6, label: 'V-Scale', hint: '↔', unit: '%', icon: I.vscale },
     hscale:    { param: 'hScale', min: 50, max: 200, step: 1, dec: 0, perpx: 0.6, label: 'H-Scale', hint: '↔', unit: '%', icon: I.hscale },
-    kerning:   { param: 'kerning', min: -50, max: 200, step: 1, dec: 0, perpx: 1, label: 'Kerning', hint: '↔', icon: I.kerning },
+    kerning:   { param: 'kernPairs', min: -200, max: 200, step: 1, dec: 0, perpx: 1, label: 'Kerning', hint: '↔ · edit between two letters while typing', icon: I.kerning },
     baseline:  { param: 'baselineShift', min: -20, max: 20, step: 0.5, dec: 1, perpx: 0.1, label: 'Baseline', hint: '↔', unit: 'mm', icon: I.baseline },
     rotation:  { param: 'charRotation', min: -180, max: 180, step: 1, dec: 0, perpx: 0.8, label: 'Character Rotation', hint: '↔ drag · Shift = ×10', unit: '°', icon: I.rotation, steppers: true },
     jitter:    { param: 'jitter', min: 0, max: 3, step: 0.1, dec: 1, perpx: 0.012, label: 'Character Jitter', hint: '↔ drag', icon: I.jitter },
@@ -145,7 +145,21 @@
   }
 
   function createPanel(ui, layer, container) {
+    // When the contextual task bar opens a picker, it passes the clicked chip's
+    // viewport rect here so the popup anchors BENEATH the task bar control
+    // instead of the docked left-pane trigger (P3 feedback). Cleared on close.
+    let taskbarAnchorRect = null;
     const GF = Vectura.GoogleFonts || {};
+    // TXT-3/5 thresholds + strings live in src/config/text-ui-config.js; fall
+    // back inline so the panel tolerates that config loading late or not at all.
+    const TUC = Vectura.TextUIConfig || {};
+    const SIZE_PRESETS = (Array.isArray(TUC.sizePresets) && TUC.sizePresets.length)
+      ? TUC.sizePresets.slice() : [6, 7, 8, 9, 10, 11, 12, 14, 18, 21, 24, 36, 48, 60, 72];
+    const HOVER_DWELL_MS = (typeof TUC.hoverDwellMs === 'number') ? TUC.hoverDwellMs : 150;
+    const STR = {
+      clearFilter: TUC.clearFilterLabel || 'Clear font filter',
+      sizePresets: TUC.sizePresetsLabel || 'Size presets',
+    };
     const DEF = (Vectura.ALGO_DEFAULTS && Vectura.ALGO_DEFAULTS.text) || {};
     const isWeb = (v) => (GF.isWebFontKey ? GF.isWebFontKey(v) : String(v || '').startsWith('google:'));
     const keyToId = (v) => (GF.keyToId ? GF.keyToId(v) : String(v || '').replace(/^google:/, ''));
@@ -208,6 +222,47 @@
       renderSpec();
     };
     const setParam = (key, value) => { pushHist(); layer.params[key] = value; flush(); };
+
+    // ── Per-pair kerning (gated) ────────────────────────────────────────────
+    // Kern is only editable while THIS layer is being edited on-canvas and the
+    // caret sits between two visible (non-whitespace) characters. Returns the
+    // caret index of that gap, or null when kern must be locked. The stored map
+    // (params.kernPairs) is keyed by this caret index.
+    const kernGapIndex = (lyr) => {
+      const te = ui.app && ui.app.textEdit;
+      if (!te || typeof te.isActive !== 'function' || !te.isActive()) return null;
+      const active = typeof te.getActiveLayer === 'function' ? te.getActiveLayer() : null;
+      if (!active || !lyr || active.id !== lyr.id) return null;
+      const c = typeof te.getCaretIndex === 'function' ? te.getCaretIndex() : -1;
+      const t = String((lyr.params && lyr.params.text) || '');
+      if (!(c > 0 && c < t.length)) return null;          // must have a char on both sides
+      if (/\s/.test(t[c - 1]) || /\s/.test(t[c])) return null; // both sides must be letters
+      return c;
+    };
+    const kernAtCaret = (lyr) => {
+      const c = kernGapIndex(lyr);
+      if (c == null) return 0;
+      const kp = lyr.params && lyr.params.kernPairs;
+      const v = kp ? Number(kp[c]) : 0;
+      return Number.isFinite(v) ? v : 0;
+    };
+    const setKernAtCaret = (lyr, v) => {
+      const c = kernGapIndex(lyr);
+      if (c == null || !lyr.params) return;
+      if (!lyr.params.kernPairs || typeof lyr.params.kernPairs !== 'object') lyr.params.kernPairs = {};
+      const n = Number(v) || 0;
+      if (n === 0) delete lyr.params.kernPairs[c];        // keep the map sparse
+      else lyr.params.kernPairs[c] = n;
+    };
+    // Live preview (TXT-3/5): mutate a param and re-render the specimen + canvas
+    // WITHOUT a history push, so a hover can be reverted cleanly. Syncs the engine
+    // (storeLayerParams) so a subsequent pushHistory captures the reverted state.
+    const previewParam = (key, value) => {
+      layer.params[key] = value;
+      try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ }
+      try { ui.app && ui.app.regen && ui.app.regen(); } catch (_) { /* */ }
+      renderSpec();
+    };
 
     // ── specimen controller ─────────────────────────────────────────────────
     const specTextEl = ref('specText');
@@ -325,10 +380,17 @@
       const input = cell.querySelector('input');
       const handle = cell.querySelector('.vtp-scrub-handle');
       const nameEl = cell.querySelector('.vtp-scrub-name');
-      const defVal = (DEF[cfg.param] != null) ? DEF[cfg.param] : cfg.min;
+      // Kerning is special: it edits the per-pair value at the caret (not a plain
+      // global param) and is only live in text-edit mode between two letters.
+      const isKern = field === 'kerning';
+      const defVal = isKern ? 0 : ((DEF[cfg.param] != null) ? DEF[cfg.param] : cfg.min);
+      const readVal = () => isKern
+        ? kernAtCaret(layer)
+        : (layer.params[cfg.param] != null ? layer.params[cfg.param] : defVal);
+      const writeVal = (v) => { if (isKern) setKernAtCaret(layer, v); else layer.params[cfg.param] = v; };
 
       const clampSnap = (raw) => {
-        let v = clamp(num(raw, layer.params[cfg.param] != null ? layer.params[cfg.param] : cfg.min), cfg.min, cfg.max);
+        let v = clamp(num(raw, readVal()), cfg.min, cfg.max);
         let s = Math.round(v / cfg.step) * cfg.step;
         s = clamp(s, cfg.min, cfg.max);
         return parseFloat(s.toFixed(6));
@@ -339,10 +401,25 @@
         if (handle) handle.setAttribute('aria-valuenow', String(s));
         return s;
       };
-      const live = (raw) => { const s = setDisplay(raw); layer.params[cfg.param] = s; syncSiblings(cfg.param, s, input); renderSpec(); };
-      const commit = (raw) => { const s = clampSnap(raw); pushHist(); layer.params[cfg.param] = s; setDisplay(s); syncSiblings(cfg.param, s, input); flush(); };
+      const live = (raw) => { const s = setDisplay(raw); writeVal(s); syncSiblings(cfg.param, s, input); renderSpec(); };
+      const commit = (raw) => { const s = clampSnap(raw); pushHist(); writeVal(s); setDisplay(s); syncSiblings(cfg.param, s, input); flush(); };
 
-      setDisplay(layer.params[cfg.param] != null ? layer.params[cfg.param] : defVal);
+      setDisplay(readVal());
+
+      // Gate the kern scrub: disabled unless the caret is between two letters.
+      // Refreshed live off the controller's caret broadcasts (managed listener,
+      // torn down in destroy()).
+      const applyGate = () => {
+        if (!isKern) return;
+        const on = kernGapIndex(layer) != null;
+        scrub.classList.toggle('disabled', !on);
+        if (input) input.disabled = !on;
+        setDisplay(readVal());
+      };
+      if (isKern) {
+        applyGate();
+        listen(document, 'vectura:textcaret', applyGate);
+      }
 
       const beginDrag = (e, origin) => {
         if (e.button !== undefined && e.button !== 0) return;
@@ -350,7 +427,7 @@
         if (e.target.closest && e.target.closest('.vtp-scrub-steppers, .vtp-scrub-preset, input')) return;
         e.preventDefault();
         const startX = e.clientX;
-        const startVal = num(input.value, layer.params[cfg.param] || 0);
+        const startVal = num(input.value, readVal());
         const pid = e.pointerId;
         // Defer pushHistory() to the FIRST real movement: a bare click (focus/
         // select, or the two pointer cycles of a dblclick-reset) must not record
@@ -394,8 +471,8 @@
         listen(handle, 'dblclick', (e) => { e.preventDefault(); commit(defVal); });
         listen(handle, 'keydown', (e) => {
           const c = e.shiftKey ? 10 : 1;
-          if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); commit(num(input.value, layer.params[cfg.param]) + cfg.step * c); }
-          else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { e.preventDefault(); commit(num(input.value, layer.params[cfg.param]) - cfg.step * c); }
+          if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); commit(num(input.value, readVal()) + cfg.step * c); }
+          else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { e.preventDefault(); commit(num(input.value, readVal()) - cfg.step * c); }
           else if (e.key === 'Home') { e.preventDefault(); commit(cfg.min); }
           else if (e.key === 'End') { e.preventDefault(); commit(cfg.max); }
         });
@@ -404,12 +481,12 @@
         listen(nameEl, 'pointerdown', (e) => beginDrag(e, nameEl));
         listen(nameEl, 'dblclick', (e) => { e.preventDefault(); commit(defVal); });
       }
-      listen(input, 'change', () => commit(num(input.value, layer.params[cfg.param])));
+      listen(input, 'change', () => commit(num(input.value, readVal())));
       listen(input, 'keydown', (e) => {
         const c = e.shiftKey ? 10 : 1;
-        if (e.key === 'Enter') { e.preventDefault(); commit(num(input.value, layer.params[cfg.param])); input.blur(); }
-        else if (e.key === 'ArrowUp') { e.preventDefault(); commit(num(input.value, layer.params[cfg.param]) + cfg.step * c); }
-        else if (e.key === 'ArrowDown') { e.preventDefault(); commit(num(input.value, layer.params[cfg.param]) - cfg.step * c); }
+        if (e.key === 'Enter') { e.preventDefault(); commit(num(input.value, readVal())); input.blur(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); commit(num(input.value, readVal()) + cfg.step * c); }
+        else if (e.key === 'ArrowDown') { e.preventDefault(); commit(num(input.value, readVal()) - cfg.step * c); }
       });
       cell.querySelectorAll('.vtp-scrub-steppers button').forEach((b) => {
         listen(b, 'pointerdown', (e) => e.stopPropagation());
@@ -417,15 +494,101 @@
           e.stopPropagation();
           const dir = parseInt(b.dataset.dir, 10) || 0;
           const c = e.shiftKey ? 10 : 1;
-          commit(num(input.value, layer.params[cfg.param]) + dir * cfg.step * c);
+          commit(num(input.value, readVal()) + dir * cfg.step * c);
         });
       });
       const presetBtn = cell.querySelector('.vtp-scrub-preset');
-      if (presetBtn) {
+      if (presetBtn && cfg.preset === 'sizes') {
+        buildSizePresetMenu(presetBtn, { commit, setDisplay, clampSnap, input, param: cfg.param });
+      } else if (presetBtn) {
         const presets = [cfg.min, (cfg.min + cfg.max) / 2, cfg.max];
         let pi = 0;
         listen(presetBtn, 'click', (e) => { e.stopPropagation(); pi = (pi + 1) % presets.length; commit(presets[pi]); });
       }
+    }
+
+    // ── size preset dropdown (TXT-5) ────────────────────────────────────────
+    // A body-level menu of quick sizes with hover live-preview + click-commit;
+    // dismissing without a click reverts to the size in effect when it opened.
+    // The scrub's own text input remains the free-entry path for any other value.
+    let openSizeMenuFn = null;
+    function buildSizePresetMenu(btn, ctx) {
+      let menu = null;
+      let prior = null;
+      let previewing = false;
+      let outside = null;
+
+      const restore = (silent) => {
+        if (!previewing) return;
+        previewing = false;
+        layer.params[ctx.param] = prior;
+        try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ }
+        if (!silent) {
+          ctx.setDisplay(prior);
+          syncSiblings(ctx.param, prior, ctx.input);
+          try { ui.app && ui.app.regen && ui.app.regen(); } catch (_) { /* */ }
+          renderSpec();
+        }
+      };
+      const close = () => {
+        restore(false);
+        taskbarAnchorRect = null;
+        if (outside) { document.removeEventListener('pointerdown', outside, true); outside = null; }
+        if (menu && menu.parentNode) menu.parentNode.removeChild(menu);
+        menu = null;
+        btn.setAttribute('aria-expanded', 'false');
+      };
+      const open = () => {
+        if (menu) { close(); return; }
+        prior = ctx.clampSnap(layer.params[ctx.param]);
+        previewing = false;
+        menu = document.createElement('div');
+        menu.className = 'vtp-size-pop';
+        menu.setAttribute('role', 'listbox');
+        menu.setAttribute('aria-label', STR.sizePresets);
+        SIZE_PRESETS.forEach((s) => {
+          const o = document.createElement('button');
+          o.type = 'button';
+          o.className = `vtp-size-opt${s === prior ? ' sel' : ''}`;
+          o.dataset.size = String(s);
+          o.setAttribute('role', 'option');
+          o.textContent = String(s);
+          o.addEventListener('pointerenter', () => {
+            previewing = true;
+            const v = ctx.clampSnap(s);
+            ctx.setDisplay(v);
+            syncSiblings(ctx.param, v, ctx.input);
+            previewParam(ctx.param, v);
+            Array.from(menu.querySelectorAll('.vtp-size-opt')).forEach((x) => x.classList.toggle('active', x === o));
+          });
+          o.addEventListener('click', (e) => {
+            e.stopPropagation();
+            restore(true); // engine → prior so the commit's history push is clean
+            ctx.commit(s);
+            close();
+          });
+          menu.appendChild(o);
+        });
+        document.body.appendChild(menu);
+        const r = taskbarAnchorRect || btn.getBoundingClientRect();
+        const w = Math.max(r.width, 108);
+        menu.style.width = `${w}px`;
+        menu.style.left = `${Math.min(r.right - w, window.innerWidth - w - 8)}px`;
+        const below = window.innerHeight - r.bottom;
+        if (below < 220 && r.top > below) { menu.style.bottom = `${window.innerHeight - r.top + 4}px`; }
+        else { menu.style.top = `${r.bottom + 4}px`; }
+        menu.classList.add('open');
+        btn.setAttribute('aria-expanded', 'true');
+        outside = (ev) => { if (menu && !menu.contains(ev.target) && ev.target !== btn && !btn.contains(ev.target)) close(); };
+        document.addEventListener('pointerdown', outside, true);
+      };
+
+      btn.setAttribute('aria-haspopup', 'listbox');
+      btn.setAttribute('aria-expanded', 'false');
+      listen(btn, 'click', (e) => { e.stopPropagation(); open(); });
+      openSizeMenuFn = open;
+      // Tear the menu down with the panel (it lives on document.body).
+      dials.push({ destroy: () => { try { close(); } catch (_) { /* */ } } });
     }
 
     // Mount every scrub into its slot/grid.
@@ -771,11 +934,13 @@
     pop.setAttribute('role', 'listbox');
     pop.setAttribute('aria-label', 'Font face');
     pop.innerHTML = '<div class="vtp-fp-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>'
-      + '<input type="text" placeholder="Search name or category (serif, mono…)" spellcheck="false" autocomplete="off" aria-label="Search fonts"></div>'
+      + '<input type="text" placeholder="Search name or category (serif, mono…)" spellcheck="false" autocomplete="off" aria-label="Search fonts">'
+      + '<button type="button" class="vtp-fp-clear" title="' + STR.clearFilter + '" aria-label="' + STR.clearFilter + '"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>'
       + '<div class="vtp-fp-tags" role="group" aria-label="Filter by category"></div>'
       + '<div class="vtp-fp-list"></div>';
     document.body.appendChild(pop);
     const fpSearch = pop.querySelector('.vtp-fp-search input');
+    const fpClear = pop.querySelector('.vtp-fp-clear');
     const fpTags = pop.querySelector('.vtp-fp-tags');
     const fpList = pop.querySelector('.vtp-fp-list');
     const fpTrigger = ref('fpTrigger');
@@ -783,6 +948,14 @@
     const fpTagMini = ref('fpTagMini');
     let popOpen = false;
     let activeTags = [];
+    // TXT-3 hover live-preview state. `committedFont` is the face in effect when
+    // the popover opened (the revert target); `previewFont` is the currently
+    // previewed value (null = none). The dwell timer + token gate + debounce the
+    // webfont fetch so rapid hover fetches only the settled family (TXT-4).
+    let committedFont = null;
+    let previewFont = null;
+    let hoverTimer = null;
+    let hoverToken = 0;
 
     STYLE_CHIPS.forEach(([tag, label]) => {
       const b = document.createElement('button');
@@ -799,6 +972,55 @@
     const passTag = (v) => { if (!activeTags.length) return true; if (!isWeb(v)) return false; const f = idMap[keyToId(v)]; return f ? activeTags.indexOf(f.category) >= 0 : false; };
     const passSearch = (v, query) => { if (!query) return true; return faceName(v).toLowerCase().indexOf(query) >= 0 || faceCat(v).toLowerCase().indexOf(query) >= 0; };
     const nameKnown = (v) => (isWeb(v) ? true : isBuiltinId(v));
+
+    // ── font hover live-preview (TXT-3) ────────────────────────────────────
+    const cancelHoverTimer = () => { if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; } };
+    // Apply a previewed face to the layer WITHOUT a history push, previewing it
+    // on the specimen + canvas. Highlights the previewed row.
+    const applyPreviewFont = (v) => {
+      previewFont = v;
+      previewParam('font', v);
+      Array.from(fpList.querySelectorAll('.vtp-fp-opt')).forEach((r) => r.classList.toggle('previewing', r.dataset.value === v));
+    };
+    // Debounced hover: after HOVER_DWELL_MS of dwell we fetch (webfonts) then
+    // preview. Rapid hover across rows re-arms the timer, so only the settled
+    // family triggers a fetch (no network spam — TXT-4). Built-in faces need no
+    // fetch and preview immediately after the dwell.
+    const doHoverPreview = (v) => {
+      const token = ++hoverToken;
+      if (isWeb(v) && GF.ensureFont) {
+        GF.ensureFont(keyToId(v)).then(() => {
+          if (token !== hoverToken || !popOpen) return;
+          applyPreviewFont(v);
+          if (GF.loadWeight) GF.loadWeight(keyToId(v), layer.params.fontWeight).then(() => { if (token === hoverToken && popOpen) renderSpec(); }).catch(() => {});
+        }).catch(() => { if (token === hoverToken && popOpen) applyPreviewFont(v); });
+      } else {
+        applyPreviewFont(v);
+      }
+    };
+    const scheduleHoverPreview = (v) => {
+      if (v === (previewFont != null ? previewFont : committedFont)) { cancelHoverTimer(); return; }
+      cancelHoverTimer();
+      hoverTimer = setTimeout(() => { hoverTimer = null; doHoverPreview(v); }, HOVER_DWELL_MS);
+    };
+    // Undo a live preview. `silent` restores the committed face to params + engine
+    // without a regen — used right before a commit so pushHistory captures the
+    // pre-preview state (correct undo target); the visible dismiss path regens.
+    const clearFontPreview = (silent) => {
+      cancelHoverTimer();
+      hoverToken += 1; // invalidate any in-flight fetch
+      const had = previewFont != null;
+      previewFont = null;
+      if (fpList) Array.from(fpList.querySelectorAll('.vtp-fp-opt.previewing')).forEach((r) => r.classList.remove('previewing'));
+      if (had && committedFont != null) {
+        layer.params.font = committedFont;
+        try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ }
+        if (!silent) {
+          try { ui.app && ui.app.regen && ui.app.regen(); } catch (_) { /* */ }
+          renderSpec();
+        }
+      }
+    };
 
     function syncFontTrigger() {
       if (!fpName) return;
@@ -825,7 +1047,11 @@
       const tg = document.createElement('span'); tg.className = 'vtp-fp-tag'; tg.textContent = faceCat(v);
       row.appendChild(star); row.appendChild(nm); row.appendChild(tg);
       listen(row, 'click', () => chooseFace(v));
-      ensureWeb(v);
+      // TXT-3/4: hovering a row live-previews the face (loading un-cached web
+      // faces on demand — no eager catalog fetch on open). Leaving cancels a
+      // still-pending dwell but keeps an applied preview until dismiss.
+      listen(row, 'pointerenter', () => scheduleHoverPreview(v));
+      listen(row, 'pointerleave', () => cancelHoverTimer());
       return row;
     }
     const addSection = (title) => { const h = document.createElement('div'); h.className = 'vtp-fp-sec'; h.textContent = title; fpList.appendChild(h); };
@@ -867,7 +1093,7 @@
       rows[idx].scrollIntoView({ block: 'nearest' });
     }
     function positionPop() {
-      const r = fpTrigger.getBoundingClientRect();
+      const r = taskbarAnchorRect || fpTrigger.getBoundingClientRect();
       const w = Math.max(r.width, 260);
       pop.style.width = `${w}px`;
       pop.style.left = `${Math.min(r.left, window.innerWidth - w - 8)}px`;
@@ -875,16 +1101,28 @@
       if (below < 240 && r.top > below) { pop.style.top = ''; pop.style.bottom = `${window.innerHeight - r.top + 6}px`; }
       else { pop.style.bottom = ''; pop.style.top = `${r.bottom + 6}px`; }
     }
+    const syncClearBtn = () => {
+      const has = !!(fpSearch.value || '').length;
+      if (fpClear) fpClear.classList.toggle('show', has);
+      pop.classList.toggle('has-query', has);
+    };
     function openPop() {
       if (popOpen) return; popOpen = true;
-      fpSearch.value = ''; activeTags = [];
+      // Capture the committed face so a hover preview can be reverted on dismiss.
+      committedFont = layer.params.font; previewFont = null; cancelHoverTimer();
+      fpSearch.value = ''; activeTags = []; syncClearBtn();
       fpTags.querySelectorAll('.vtp-fp-chip').forEach((b) => { b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); });
       rebuildList(); positionPop(); pop.classList.add('open'); fpTrigger.setAttribute('aria-expanded', 'true');
-      favs.concat(recent).forEach((v) => ensureWeb(v));
+      // TXT-4: no eager specimen fetch on open — un-cached web faces render in the
+      // UI font until hovered (load-on-hover). Only the selected face is loaded
+      // (at init) so the trigger + specimen show real letterforms.
       setTimeout(() => { try { fpSearch.focus(); } catch (_) { /* */ } }, 20);
     }
-    function closePop() { if (!popOpen) return; popOpen = false; pop.classList.remove('open'); fpTrigger.setAttribute('aria-expanded', 'false'); }
+    function closePop() { if (!popOpen) return; popOpen = false; taskbarAnchorRect = null; clearFontPreview(false); pop.classList.remove('open'); fpTrigger.setAttribute('aria-expanded', 'false'); }
     function chooseFace(v) {
+      // Restore the committed face to the engine first (silent) so pushHistory
+      // captures the pre-preview state — undo returns to the original face.
+      clearFontPreview(true);
       recent = [v].concat(recent.filter((x) => x !== v)).slice(0, 8); lsSet(LS.recent, recent);
       closePop();
       // The Vectura row is a family marker — keep the current style if already on a
@@ -899,7 +1137,14 @@
       renderSpec();
     }
     listen(fpTrigger, 'click', () => (popOpen ? closePop() : openPop()));
-    listen(fpSearch, 'input', rebuildList);
+    listen(fpSearch, 'input', () => { syncClearBtn(); rebuildList(); });
+    if (fpClear) {
+      listen(fpClear, 'click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        fpSearch.value = ''; syncClearBtn(); rebuildList();
+        try { fpSearch.focus(); } catch (_) { /* */ }
+      });
+    }
     listen(fpSearch, 'keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); closePop(); fpTrigger.focus(); }
       else if (e.key === 'ArrowDown') { e.preventDefault(); moveActive(1); }
@@ -968,6 +1213,10 @@
       // Flush a pending debounced specimen edit before tearing down — otherwise
       // the most recent keystrokes (within the 400ms window, pre-blur) are lost.
       if (textTimer) { try { commitText(); } catch (_) { /* */ } textTimer = null; }
+      // Revert an un-committed font hover-preview so tearing the panel down (e.g.
+      // a layer switch) never leaves a previewed face applied without a history
+      // step. The size preset menu reverts itself via its `dials` entry below.
+      try { clearFontPreview(false); } catch (_) { /* */ }
       dials.forEach((d) => { try { if (d && d.destroy) d.destroy(); } catch (_) { /* */ } });
       dials.length = 0;
       listeners.forEach(([t, e, f, o]) => { try { t.removeEventListener(e, f, o); } catch (_) { /* */ } });
@@ -978,7 +1227,14 @@
       try { if (spec && spec.destroy) spec.destroy(); } catch (_) { /* */ }
     }
 
-    return { destroy };
+    // Public surface for the Task Bar (Phase 2 TB-7): the bar wayfinds to the
+    // Text panel for family/style/size; these let it open the real inline pickers
+    // once it wants to (see Vectura.UI.TextPanel.openFontPicker / openSizePresets).
+    return {
+      destroy,
+      openFontPicker: (anchorRect) => { taskbarAnchorRect = anchorRect || null; try { openPop(); } catch (_) { /* */ } },
+      openSizePresets: (anchorRect) => { taskbarAnchorRect = anchorRect || null; try { if (openSizeMenuFn) openSizeMenuFn(); } catch (_) { /* */ } },
+    };
   }
 
   // ── static skeleton ───────────────────────────────────────────────────
@@ -1300,5 +1556,9 @@
   <div class="vtp-foot">VECTURA STUDIO · TEXT</div>`;
   }
 
-  Vectura.UI.TextPanel = { build };
+  // Delegators so the Task Bar can drive the live panel's inline pickers without
+  // reaching into the DOM: no-op when no panel is mounted.
+  const openFontPicker = (anchorRect) => { if (CURRENT && CURRENT.openFontPicker) CURRENT.openFontPicker(anchorRect); };
+  const openSizePresets = (anchorRect) => { if (CURRENT && CURRENT.openSizePresets) CURRENT.openSizePresets(anchorRect); };
+  Vectura.UI.TextPanel = { build, openFontPicker, openSizePresets };
 })();

@@ -367,7 +367,7 @@
         font: p.font || 'sans',
         vScale: num(p.vScale, 100),
         hScale: num(p.hScale, 100),
-        kerning: num(p.kerning, 0),
+        kernPairs: (p.kernPairs && typeof p.kernPairs === 'object') ? p.kernPairs : null,
         baselineShift: num(p.baselineShift, 0),
         smallCaps: !!p.smallCaps,
         superscript: !!p.superscript,

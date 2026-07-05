@@ -568,6 +568,9 @@
 
     this._updateAllSubmenuDirs = () => updateAllSubmenuDirs(toolbar);
     initToolBarDock.call(this, toolbar);
+    // All Tools drawer (TLD-1/2): overflow "…" affordance + inventory drawer.
+    // Self-contained module; optional-chained so a missing/late load no-ops.
+    Vectura.UI.ToolDrawer?.attach?.(this);
     requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
   }
 

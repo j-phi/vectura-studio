@@ -189,8 +189,12 @@
         <tbody>
           ${row(mouse('drag on canvas'),            'Marquee multi-select')}
           ${row(mouse('drag corner handle'),        'Resize selection')}
+          ${row(mouse('drag edge handle'),          'Resize one axis',      'Shift keeps proportions')}
           ${row(mouse('top-right handle'),          'Rotate',               'Shift snaps to 45°')}
+          ${row(OPT + sep + mouse('drag'),          'Duplicate selection',  'Esc cancels the copy')}
           ${row(mouse('corner widget'),             'Round corners',        'Direct Select = one corner')}
+          ${row(mouse('drag near an object'),       'Snap to smart guides', 'Magenta guides + dX/dY chips')}
+          ${row(mouse('right-click canvas'),        'Context menu',         'Duplicate · Group · Simplify · Flip · Transform')}
           ${row(k('↑↓←→'),     'Nudge position',       'Shift = 10 ×')}
         </tbody>
       </table>`;
@@ -201,9 +205,46 @@
           ${row(mouse('2 fingers'),  'Pan / pinch-zoom')}
         </tbody>
       </table>`;
+    const contextBarBody = `
+      <div class="help-prose" id="help-context-bar" data-help-section="context-bar">
+        <p>When you select an object, a small <strong>Contextual Task Bar</strong> floats
+        just below it with the actions that make sense right now &mdash; edit the path,
+        change the pen, adjust stroke weight, group or align a multi-selection, isolate a
+        group, or edit text. It mirrors Illustrator&rsquo;s contextual toolbar.</p>
+        <p>Some actions open an inline <em>sub-mode</em> inside the bar: <strong>Stroke
+        weight</strong> (slider + document-unit field, with &ldquo;Open Stroke
+        Options&rdquo; for the full popover) and <strong>Simplify</strong> (live preview
+        with an Auto-Smooth pass and a points/percent badge). Press <kbd>Esc</kbd> or
+        <em>Back</em>/<em>Done</em> to leave a sub-mode.</p>
+        <p>Selecting a live <strong>rectangle or polygon</strong> adds a shape-properties
+        popover for corner radius and side count. The trailing <strong>&hellip;</strong>
+        menu lets you show the docked panel, pin, reset, or hide the bar. Turn the whole
+        bar on or off under <em>Document Setup &rarr; Guides &amp; Display</em>.</p>
+        <p>Double-clicking into a group shows an <strong>isolation breadcrumb</strong>
+        across the top of the canvas: click any ancestor crumb to step out one level, the
+        back arrow to exit one level, or <em>Document</em> to leave isolation entirely.</p>
+      </div>`;
+    const toolsAndTransformBody = `
+      <div class="help-prose" id="help-tools-transform" data-help-section="tools-transform">
+        <p>The <strong>All Tools</strong> drawer opens from the <strong>&hellip;</strong> button
+        at the bottom of the tool rail. It lists every tool grouped by category
+        (Select, Draw, Shapes, Type, Modify, Navigate); click one to switch to it, and hover an
+        entry to see which rail slot it lives in. A <strong>grid / list</strong> toggle at the top
+        remembers your choice.</p>
+        <p>The <strong>Transform</strong> section shows editable <strong>X / Y / W / H</strong>
+        for shape and text selections &mdash; type a value to move or resize precisely. The
+        <em>link</em> toggle keeps width and height proportional. <strong>Flip Horizontal</strong>
+        and <strong>Flip Vertical</strong> buttons sit beside rotate. With the Direct-Selection
+        tool and a single anchor selected, X / Y edit that anchor&rsquo;s position instead.</p>
+        <p>In the <strong>Text</strong> panel, hovering a font in the picker previews it live on
+        the canvas before you commit, and the size field offers a preset dropdown of common
+        sizes.</p>
+      </div>`;
     const canvas = `
       ${accordion('Navigation', navRows, true)}
       ${accordion('Selection &amp; Transform', selRows, true)}
+      ${accordion('Contextual Task Bar', contextBarBody, true)}
+      ${accordion('All Tools &amp; Numeric Transform', toolsAndTransformBody, true)}
       ${accordion('Touch &amp; Trackpad', touchRows)}`;
 
     /* -- Layers -- */
