@@ -56,6 +56,8 @@
     const marginLineStyleReset = getEl('set-margin-line-style-reset');
     const showGuides = getEl('set-show-guides');
     const snapGuides = getEl('set-snap-guides');
+    const coordinateReadout = getEl('set-coordinate-readout', { silent: true });
+    const centerPoint = getEl('set-center-point', { silent: true });
     const preview3dQuality = getEl('set-preview-3d-quality', { silent: true });
     const showDocumentDimensions = getEl('set-show-document-dimensions', { silent: true });
     const selectionOutline = getEl('set-selection-outline');
@@ -105,6 +107,20 @@
     if (marginLineStyleReset) marginLineStyleReset.disabled = false;
     if (showGuides) showGuides.checked = SETTINGS.showGuides !== false;
     if (snapGuides) snapGuides.checked = SETTINGS.snapGuides !== false;
+    if (coordinateReadout) {
+      coordinateReadout.checked = SETTINGS.showCoordinateReadout !== false;
+      coordinateReadout.closest('[role="switch"]')?.setAttribute(
+        'aria-checked',
+        String(coordinateReadout.checked)
+      );
+    }
+    if (centerPoint) {
+      centerPoint.checked = SETTINGS.showCenterPoint !== false;
+      centerPoint.closest('[role="switch"]')?.setAttribute(
+        'aria-checked',
+        String(centerPoint.checked)
+      );
+    }
     if (preview3dQuality) preview3dQuality.value = SETTINGS.preview3dQuality || 'balanced';
     if (showDocumentDimensions) showDocumentDimensions.checked = SETTINGS.showDocumentDimensions === true;
     const gridType = SETTINGS.gridType || 'none';

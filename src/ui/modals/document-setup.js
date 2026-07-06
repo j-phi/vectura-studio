@@ -216,6 +216,8 @@
           <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
             ${swToggle('set-show-guides', 'Show guides')}
             ${swToggle('set-snap-guides', 'Snap to guides')}
+            ${swToggle('set-coordinate-readout', 'Coordinate readout', 'true')}
+            ${swToggle('set-center-point', 'Center point', 'true')}
             ${swToggle('set-contextual-hints', 'Contextual hints', 'true')}
             ${swToggle('set-context-bar', 'Contextual task bar', 'true')}
             <div class="ctrl-row">
@@ -726,6 +728,8 @@ ${isDevEligible() ? `
     const setMarginLineStyleReset = getEl('set-margin-line-style-reset');
     const setShowGuides = getEl('set-show-guides');
     const setSnapGuides = getEl('set-snap-guides');
+    const setCoordinateReadout = getEl('set-coordinate-readout', { silent: true });
+    const setCenterPoint = getEl('set-center-point', { silent: true });
     const setContextualHints = getEl('set-contextual-hints', { silent: true });
     const setContextBar = getEl('set-context-bar', { silent: true });
     const setPreview3dQuality = getEl('set-preview-3d-quality', { silent: true });
@@ -944,6 +948,41 @@ ${isDevEligible() ? `
       setSnapGuides.onchange = (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.snapGuides = e.target.checked;
+      };
+    }
+    if (setCoordinateReadout) {
+      // Gates the live X/Y coordinate readout chip (hover + anchor/handle drag).
+      // Default ON (`!== false`). A UI preference, not part of undo snapshots.
+      setCoordinateReadout.checked = SETTINGS.showCoordinateReadout !== false;
+      setCoordinateReadout.closest('[role="switch"]')?.setAttribute(
+        'aria-checked',
+        String(setCoordinateReadout.checked)
+      );
+      setCoordinateReadout.onchange = (e) => {
+        SETTINGS.showCoordinateReadout = e.target.checked;
+        setCoordinateReadout.closest('[role="switch"]')?.setAttribute(
+          'aria-checked',
+          String(e.target.checked)
+        );
+        this.app.persistPreferencesDebounced?.();
+      };
+    }
+    if (setCenterPoint) {
+      // Gates the center helper point (marker + "center" label + X/Y chip) on
+      // all objects. Default ON (`!== false`). UI preference, not undo state.
+      setCenterPoint.checked = SETTINGS.showCenterPoint !== false;
+      setCenterPoint.closest('[role="switch"]')?.setAttribute(
+        'aria-checked',
+        String(setCenterPoint.checked)
+      );
+      setCenterPoint.onchange = (e) => {
+        SETTINGS.showCenterPoint = e.target.checked;
+        setCenterPoint.closest('[role="switch"]')?.setAttribute(
+          'aria-checked',
+          String(e.target.checked)
+        );
+        if (!e.target.checked) { this.app.renderer.hoverCenter = null; this.app.render?.(); }
+        this.app.persistPreferencesDebounced?.();
       };
     }
     if (setContextualHints) {

@@ -647,7 +647,7 @@
         const frac = pct / 100;
         if (this.app.renderer) this.app.renderer.drawProgress = frac;
         const valEl = document.getElementById('draw-order-value');
-        if (valEl) valEl.textContent = `${Math.round(pct)}%`;
+        if (valEl) valEl.textContent = Number.isInteger(pct) ? `${pct}%` : `${pct.toFixed(1)}%`;
         drawOrderInput.style.setProperty('--draw-order-fill', `${pct}%`);
         // Recolour the thumb halo to the gradient colour under the handle as it drags.
         this.app.renderer?.refreshDrawOrderHalo?.();
@@ -655,6 +655,94 @@
       };
       drawOrderInput.addEventListener('input', (e) => applyDrawOrder(e.target.value));
       applyDrawOrder(drawOrderInput.value);
+      // The bar's own title covers the general gesture; the slider gets a more
+      // specific one for the two things a hover here can't otherwise tell you.
+      drawOrderInput.title =
+        'Drag to scrub (hold Shift for tenths) — click to play from here ' +
+        '(Shift-click to play at 1/10 speed)';
+
+      // Holding Shift while dragging switches the granularity from whole percent to
+      // tenths of a percent, for scrubbing to a precise plot position. The `step`
+      // attribute is what the browser consults on every pointermove to snap the
+      // dragged value, so toggling it live (from the modifier key on the same
+      // pointermove) is enough — no need to recompute position ourselves.
+      let drawOrderDragActive = false;
+      let drawOrderDragMoved = false;
+      let drawOrderDragStartX = 0;
+      let drawOrderDragStartY = 0;
+      let drawOrderClickShift = false;
+      let drawOrderPlayRaf = null;
+      const DRAW_ORDER_DRAG_THRESHOLD = 3;
+      const DRAW_ORDER_PLAY_RATE = 35; // percent per second
+
+      const stopDrawOrderPlayback = () => {
+        if (drawOrderPlayRaf != null) {
+          cancelAnimationFrame(drawOrderPlayRaf);
+          drawOrderPlayRaf = null;
+        }
+      };
+      // Shift-click plays back at 1/10 speed with tenths visible, so a precise
+      // stretch of the plot order can be watched unfold; a plain click plays at
+      // full speed with whole-percent steps only (no stray decimals). The running
+      // total is tracked in `current` — a plain JS float — rather than read back
+      // from drawOrderInput.value each frame: with `step` at '1' (whole-percent
+      // mode), the browser's native value-sanitization silently rounds any
+      // fractional assignment to the nearest whole percent, so re-reading it would
+      // reset the accumulator to ~0 (or a stray ".6") every single frame instead of
+      // advancing smoothly.
+      const startDrawOrderPlayback = (slow) => {
+        stopDrawOrderPlayback();
+        const rate = slow ? DRAW_ORDER_PLAY_RATE / 10 : DRAW_ORDER_PLAY_RATE;
+        drawOrderInput.step = slow ? '0.1' : '1';
+        let last = null;
+        let current = Number(drawOrderInput.value) || 0;
+        const tick = (ts) => {
+          if (last == null) last = ts;
+          const dt = (ts - last) / 1000;
+          last = ts;
+          current = Math.min(100, current + dt * rate);
+          const shown = slow ? current : Math.round(current);
+          drawOrderInput.value = String(shown);
+          applyDrawOrder(shown);
+          drawOrderPlayRaf = shown < 100 ? requestAnimationFrame(tick) : null;
+        };
+        drawOrderPlayRaf = requestAnimationFrame(tick);
+      };
+
+      drawOrderInput.addEventListener('pointerdown', (e) => {
+        stopDrawOrderPlayback();
+        drawOrderDragActive = true;
+        drawOrderDragMoved = false;
+        drawOrderDragStartX = e.clientX;
+        drawOrderDragStartY = e.clientY;
+        drawOrderClickShift = e.shiftKey;
+        drawOrderInput.step = e.shiftKey ? '0.1' : '1';
+      });
+      window.addEventListener('pointermove', (e) => {
+        if (!drawOrderDragActive) return;
+        if (!drawOrderDragMoved) {
+          const dx = e.clientX - drawOrderDragStartX;
+          const dy = e.clientY - drawOrderDragStartY;
+          if (Math.hypot(dx, dy) > DRAW_ORDER_DRAG_THRESHOLD) {
+            drawOrderDragMoved = true;
+            // Scrubbing the plot order previews the WHOLE document mid-draw; a
+            // lingering canvas selection (handles, bbox) fights that preview visually.
+            this.app.renderer?.clearSelection?.();
+          }
+        }
+        drawOrderInput.step = e.shiftKey ? '0.1' : '1';
+      });
+      window.addEventListener('pointerup', () => {
+        if (!drawOrderDragActive) return;
+        drawOrderDragActive = false;
+        drawOrderInput.step = '1';
+        // A click that never dragged the playhead starts the plot-order playback,
+        // scrubbing forward from wherever the handle currently sits. A Shift-click
+        // plays back at 1/10 speed instead of the normal rate.
+        if (!drawOrderDragMoved) {
+          startDrawOrderPlayback(drawOrderClickShift);
+        }
+      });
     }
     // Eye → toggle the line-sort overlay (the order colouring + its legend) on the
     // primary canvas via its own non-persisted flag, so it is closed by default and

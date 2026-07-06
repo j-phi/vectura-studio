@@ -401,6 +401,8 @@
         marginLineDotting: SETTINGS.marginLineDotting,
         showGuides: SETTINGS.showGuides,
         snapGuides: SETTINGS.snapGuides,
+        showCoordinateReadout: SETTINGS.showCoordinateReadout !== false,
+        showCenterPoint: SETTINGS.showCenterPoint !== false,
         contextualHints: SETTINGS.contextualHints !== false,
         contextBarEnabled: SETTINGS.contextBarEnabled !== false,
         contextBar: SETTINGS.contextBar ? clone(SETTINGS.contextBar) : null,
@@ -552,6 +554,8 @@
       SETTINGS.marginLineDotting = takeNumber('marginLineDotting', SETTINGS.marginLineDotting, 0, 10000);
       SETTINGS.showGuides = snapshot.showGuides === undefined ? SETTINGS.showGuides : snapshot.showGuides === true;
       SETTINGS.snapGuides = snapshot.snapGuides === undefined ? SETTINGS.snapGuides : snapshot.snapGuides === true;
+      SETTINGS.showCoordinateReadout = snapshot.showCoordinateReadout === undefined ? SETTINGS.showCoordinateReadout : snapshot.showCoordinateReadout === true;
+      SETTINGS.showCenterPoint = snapshot.showCenterPoint === undefined ? SETTINGS.showCenterPoint : snapshot.showCenterPoint === true;
       SETTINGS.contextualHints = snapshot.contextualHints === undefined ? SETTINGS.contextualHints : snapshot.contextualHints === true;
       // Contextual Task Bar (Illustrator parity, Phase 2 Lane G): enabled flag +
       // position/pinned bag round-trip through the canonical snapshot.
@@ -788,6 +792,8 @@
           marginLineDotting: SETTINGS.marginLineDotting,
           showGuides: SETTINGS.showGuides,
           snapGuides: SETTINGS.snapGuides,
+          showCoordinateReadout: SETTINGS.showCoordinateReadout !== false,
+          showCenterPoint: SETTINGS.showCenterPoint !== false,
           contextualHints: SETTINGS.contextualHints !== false,
           contextBarEnabled: SETTINGS.contextBarEnabled !== false,
           contextBar: SETTINGS.contextBar ? clone(SETTINGS.contextBar) : null,

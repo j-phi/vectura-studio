@@ -2249,6 +2249,12 @@
       pan: false,
     },
     documentUnits: 'metric',
+    // Live X/Y coordinate readout chip shown while hovering/dragging anchors and
+    // handles (Settings ▸ Guides & Display ▸ "Coordinate readout"). Default ON.
+    showCoordinateReadout: true,
+    // Center helper point (blue diamond + "center" label + X/Y chip) revealed
+    // when hovering any object's center (Settings ▸ Guides & Display). Default ON.
+    showCenterPoint: true,
     paperSize: 'letter',
     paperWidth: 216,
     paperHeight: 279,

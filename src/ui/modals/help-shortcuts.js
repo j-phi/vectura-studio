@@ -210,7 +210,9 @@
         <p>When you select an object, a small <strong>Contextual Task Bar</strong> floats
         just below it with the actions that make sense right now &mdash; edit the path,
         change the pen, adjust stroke weight, group or align a multi-selection, isolate a
-        group, or edit text. It mirrors Illustrator&rsquo;s contextual toolbar.</p>
+        group, or edit text. It mirrors Illustrator&rsquo;s contextual toolbar. With nothing
+        selected, the bar shows an <strong>Add Layer</strong> dropdown (matching the sidebar
+        menu) alongside Draw.</p>
         <p>Some actions open an inline <em>sub-mode</em> inside the bar: <strong>Stroke
         weight</strong> (slider + document-unit field, with &ldquo;Open Stroke
         Options&rdquo; for the full popover) and <strong>Simplify</strong> (live preview

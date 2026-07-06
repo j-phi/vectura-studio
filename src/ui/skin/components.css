@@ -1511,6 +1511,49 @@
   border: 2px solid var(--draw-order-halo, var(--ui-accent));
   box-shadow: 0 0 7px 1px var(--draw-order-halo, var(--ui-accent));
 }
+/* Below 100% the handle becomes a rounded "play" triangle (more left to reveal).
+   JS (refreshDrawOrderHalo/updateDrawOrderThumbShape) bakes the fill/ring into the
+   --draw-order-thumb-icon SVG so they hug the triangle exactly like the circle's
+   border hugs the circle — a plain border-radius can't do that for a non-circular
+   shape on a single pseudo-element. The triangle fills its own viewBox edge-to-edge
+   (like border-radius:50% fills the circle's box) so there's no dead transparent
+   margin for the track underneath to peek through at low values. `border-radius: 0`
+   is NOT optional here — the base rule's 50% (for the circle) otherwise survives
+   the cascade and clips this background-image into a circle, chopping the
+   triangle's base corners off into a rounded mask. The glow itself is a
+   `filter: drop-shadow` (unlike box-shadow/background-image it isn't clipped to the
+   box, so it can bleed the same way the circle's box-shadow glow does) tied to the
+   same --draw-order-halo colour the ring uses. Sized to 85% of what the CIRCLE looks
+   like mid-hover (13px * 1.18 * 0.85 ≈ 22px) as its resting size, so the SAME
+   `:hover` scale(1.18) rule above grows it further from there, matching the
+   circle's hover behaviour. */
+[data-ui-skin] .draw-order-slider.is-progress::-webkit-slider-thumb {
+  width: 22px;
+  height: 22px;
+  margin-top: -8px;
+  border-radius: 0;
+  background: transparent;
+  background-image: var(--draw-order-thumb-icon);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  border: none;
+  box-shadow: none;
+  filter: drop-shadow(0 0 5px var(--draw-order-halo, var(--ui-accent)));
+}
+[data-ui-skin] .draw-order-slider.is-progress::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 0;
+  background: transparent;
+  background-image: var(--draw-order-thumb-icon);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  border: none;
+  box-shadow: none;
+  filter: drop-shadow(0 0 5px var(--draw-order-halo, var(--ui-accent)));
+}
 
 /* ─── Header & brand ─────────────────────────────────────────────────── */
 [data-ui-skin] #app-header {
@@ -9606,13 +9649,34 @@ input[type='color']::-webkit-color-swatch {
   display: none;
   pointer-events: none;
   z-index: 1000;
+  /* Illustrator-style measurement chip: a light-gray rounded box with dark,
+     two-line text (X/Y or dX/dY). `white-space: pre` renders the newline the
+     readout embeds between the two axes. */
   font-size: 11px;
-  font-family: var(--font-mono, monospace);
+  line-height: 1.35;
+  font-family: var(--font-ui, system-ui, -apple-system, sans-serif);
+  color: #2b2b30;
+  background: rgba(233, 233, 236, 0.96);
+  padding: 4px 8px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  white-space: pre;
+  user-select: none;
+}
+
+.drag-anchor-label {
+  position: fixed;
+  display: none;
+  pointer-events: none;
+  z-index: 1001;
+  /* Pink feature label pinned at the point (e.g. "anchor"), shown on select/hover
+     but not while dragging. */
+  font-size: 11px;
+  line-height: 1.2;
+  font-family: var(--font-ui, system-ui, -apple-system, sans-serif);
   color: #f472b6;
-  text-shadow: 0 0 6px rgba(0, 0, 0, 0.7);
   white-space: nowrap;
   user-select: none;
-  letter-spacing: 0.02em;
 }
 
 .fill-loupe {
@@ -11770,6 +11834,12 @@ body.mobile-layout .hud-bar {
   z-index: 6;
 }
 .ctxbar-align-flyout.is-open { display: flex; }
+/* Direction-aware flyout (Add Layer, TB-3): flips to open upward when the bar
+   has more room above than below, so it never clips at the viewport edge. */
+.ctxbar-align-flyout.ctxbar-flyout-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
 .ctxbar-align-group-label {
   font-size: var(--font-size-xs, 10px);
   color: var(--ui-muted, #686868);
@@ -11797,6 +11867,24 @@ body.mobile-layout .hud-bar {
 .ctxbar-algo-flyout .algo-group-div:first-child { margin-top: 0; }
 .ctxbar-algo-menu-wrap .ctxbar-text-field { max-width: 150px; }
 .ctxbar-algo-field .lvl-algo-sub-ico { margin-right: 5px; }
+/* Add Layer dropdown (idle TB-3) reuses the same field/flyout markup. */
+.ctxbar-add-layer-field .lvl-algo-sub-ico { margin-right: 5px; }
+/* Add Layer drill-down rows: distinct class from `.ctxbar-menu-item` so the
+   overflow ⋯ menu's unscoped `.ctxbar-menu-item` queries don't pick these up
+   (both render in the idle state). Same look as `.ctxbar-menu-item`. */
+.ctxbar-add-layer-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: var(--ui-text, #e0e0e0);
+  font-size: var(--font-size-sm, 11px);
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+}
+.ctxbar-add-layer-item:hover { background: var(--ui-ctrl, #2c2c2c); }
 /* Text controls (TB-7). */
 .ctxbar-text-field {
   display: inline-flex;
@@ -11827,8 +11915,11 @@ body.mobile-layout .hud-bar {
   font-size: 9px;
   line-height: 1;
   opacity: 0.7;
+  transition: transform 120ms ease;
 }
 .ctxbar-text-field:hover .ctxbar-text-caret { opacity: 1; }
+/* Points up when its flyout has flipped to open upward (`ctxbar-flyout-up`). */
+.ctxbar-text-caret.ctxbar-caret-up { transform: rotate(180deg); }
 .ctxbar-text-size {
   width: 58px;
   height: 26px;
@@ -11923,6 +12014,7 @@ body.mobile-layout .hud-bar {
 }
 .ctxbar-wave-min { opacity: 0.7; }
 .ctxbar-wave-max { opacity: 0.9; }
+.ctxbar-wave-sharp { opacity: 0.7; }
 /* Nothing left to reduce (e.g. a triangle): the slider has no travel. */
 .ctxbar-slider:disabled,
 .ctxbar-auto-smooth:disabled {

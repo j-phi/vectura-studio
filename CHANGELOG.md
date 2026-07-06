@@ -7,6 +7,39 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **Illustrator-style measurement readouts, center points, and multi-corner rounding.**
+  The smart-guide coordinate chip is now a compact light-gray, dark-text, two-line box (was a
+  large single-line pink label): a live `dX/dY` **delta** while dragging an anchor, and `X/Y`
+  **position** on hover/select, paired with a small pink feature label (`anchor`) pinned at the
+  point — all rounded to **0.1 mm**. A new **center helper point** (blue diamond + pink `center`
+  label + `X/Y` box) is revealed when hovering the center of *any* object, not just the
+  selection. Both are gated by new Settings ▸ Guides & Display toggles — **Coordinate readout**
+  and **Center point** (default on, persisted). In direct-select, selecting several corners and
+  dragging one corner's rounding handle now rounds **all selected corners together** to the
+  radius under the cursor (already-rounded corners snap to it); unselected corners are untouched
+  (`beginShapeCornerDrag` scope `'selected'`, mapping selected anchors → shape vertices). Config
+  in `src/config/smart-guides.js` (`chipPrecision: 1`, `labels.center`, `centerHitScreenPx`).
+  Covered by `tests/integration/direct-drag-coordinate-readout.test.js` and
+  `tests/integration/direct-select-multi-corner-round.test.js`.
+- **Idle task bar gets an Add Layer dropdown; Draw gets a pen-nib icon.** A new pill sits left
+  of Draw in the contextual task bar's idle state, matching the sidebar's Add Layer menu:
+  Algorithm Layer (drill-down to the same grouped/iconed list as the module dropdown and
+  algorithm switcher, via `Vectura.UI.utils.getDrawableAlgorithmOptions`/`renderAlgoMenuHTML`),
+  Mirror Modifier Group, Morph Modifier Group, Empty Layer, and Empty Group — each wired to the
+  same underlying engine/UI actions as the sidebar version (`addLayer`, `insertMirrorModifier`,
+  `insertMorphModifier`, `addEmptyLayer`, `addGroupLayer`). The drill-down list swaps in place
+  for the algorithm submenu (rather than the sidebar's hover-revealed side panel) so it doesn't
+  clip inside the bar's scrollable flyout and works the same on touch. The Draw button now uses
+  a pen-nib glyph instead of a pencil (it activates the pen tool), keeping its "Draw" text label.
+  The dropdown also flips open upward instead of downward (rotating its caret to match) whenever
+  the bar has more room above than below — evaluated on open, and re-evaluated live via the same
+  `reanchor()`/drag-move hooks that already move the bar itself (`state.repositionOpenFlyout`),
+  so it keeps pointing the right way while the bar is dragged or auto-repositions. The caret is
+  kept correct even before the dropdown is ever opened (registered unconditionally, not just
+  while open, so a hard refresh with the bar pinned near the bottom no longer shows a
+  down-pointing caret that only fixes itself after the first click). Grabbing the drag handle no
+  longer counts as an "outside click" that dismisses the open flyout, so the live re-flip is
+  actually visible mid-drag. Covered by eight new `tests/integration/context-bar.test.js` cases.
 - **Radial fill gets a draggable Centerpoint.** The Type panel's Fill tab now shows a
   **Centerpoint** XY pad — a twin of the existing Fill Offset pad — whenever the **radial**
   fill type is active. Dragging its knob (or arrow-keying it, or double-clicking to recenter)

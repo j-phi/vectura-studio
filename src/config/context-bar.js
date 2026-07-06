@@ -64,6 +64,7 @@
     // ── Per-context button labels & tooltips ───────────────────────────────
     buttons: {
       // TB-3 idle
+      addLayer: { label: 'Add Layer', tooltip: 'Add a new layer' },
       draw: { label: 'Draw', tooltip: 'Draw with the pencil tool' },
       documentSetup: { label: 'Document Setup', tooltip: 'Open Document Setup' },
       // TB-4 single path/shape
@@ -167,7 +168,12 @@
     icons: {
       grip: svg('<circle cx="7" cy="5" r="0.9"/><circle cx="7" cy="10" r="0.9"/><circle cx="7" cy="15" r="0.9"/><circle cx="12" cy="5" r="0.9"/><circle cx="12" cy="10" r="0.9"/><circle cx="12" cy="15" r="0.9"/>'),
       overflow: svg('<circle cx="4.5" cy="10" r="1"/><circle cx="10" cy="10" r="1"/><circle cx="15.5" cy="10" r="1"/>'),
-      draw: svg('<path d="M4 16l1-3 8-8 2 2-8 8-3 1z"/><path d="M11.5 5.5l2 2"/>'),
+      // Pen-tool nib: the Draw button activates the pen tool, so it gets the
+      // nib glyph (diamond nib + ink hole) rather than a pencil.
+      draw: svg('<path d="M10 1.8L16.8 8.5L12.3 18.2H7.7L3.2 8.5Z"/><circle cx="10" cy="9.7" r="1.4" fill="currentColor" stroke="none"/>'),
+      // Add Layer: a module grid with a plus in the fourth cell, distinct
+      // from `changeAlgo`'s plain 2×2 grid.
+      addLayer: svg('<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><path d="M14 11v6M11 14h6"/>'),
       documentSetup: svg('<rect x="4" y="3" width="12" height="14" rx="1.5"/><path d="M7 7h6M7 10h6M7 13h4"/>'),
       editPath: svg('<path d="M4 15l7-7"/><rect x="3" y="14" width="2.4" height="2.4" rx="0.3"/><rect x="10.6" y="6.4" width="2.4" height="2.4" rx="0.3"/><circle cx="15" cy="4.5" r="1.2"/>'),
       // Algorithm-layer affordances. changeAlgo: a 2×2 module grid (pick another

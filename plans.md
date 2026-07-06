@@ -39,6 +39,18 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — Illustrator-style measurement readouts, center points, and multi-corner rounding.**
+  Smart-guide chip redesigned to a compact gray two-line box (dark text) rounded to 0.1 mm: `dX/dY`
+  delta while dragging, `X/Y` on hover/select with a pink feature label (`anchor`) pinned at the
+  point (`src/render/renderer.js` `_formatChipText`/`updateDirectDrag`/`showAnchorLabel`,
+  `src/ui/skin/components.css` `.drag-value-tooltip`/`.drag-anchor-label`). New center helper point
+  (blue diamond + `center` label + `X/Y`) on hovering any object's center (`_hitObjectCenter`,
+  `drawCenterMarker`). New Settings ▸ Guides & Display toggles **Coordinate readout**
+  (`showCoordinateReadout`) and **Center point** (`showCenterPoint`), persisted via the App
+  preference snapshot. Direct-select multi-corner rounding rounds all selected corners to the
+  cursor radius (`beginShapeCornerDrag` scope `'selected'` + `_selectedCornerIndices`/
+  `_reselectCornerAnchors`). Config: `src/config/smart-guides.js`. Tests:
+  `direct-drag-coordinate-readout.test.js`, `direct-select-multi-corner-round.test.js`.
 - **Unreleased — radial fill gets a draggable Centerpoint pad.** The Type panel Fill tab
   (`src/ui/ui-text-panel.js`) mounts a second XY pad — identical to the Fill Offset pad but
   wired to `fillShiftX`/`fillShiftY` — shown only when `fillType === 'radial'`

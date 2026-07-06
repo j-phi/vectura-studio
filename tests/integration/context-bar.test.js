@@ -133,6 +133,166 @@ describe('Contextual Task Bar (Lane G — TB-1…8)', () => {
       docSetupBtn.click();
       expect(clicked).toBe(1);
     });
+    test('Add Layer dropdown renders left of the labeled Draw button', async () => {
+      await reset('select');
+      const addField = host().querySelector('.ctxbar-add-layer-field');
+      expect(addField).toBeTruthy();
+      // Draw keeps its text label alongside the pen icon.
+      const drawBtn = host().querySelector('.ctxbar-btn');
+      expect(drawBtn.title).toBe(window.Vectura.CONTEXT_BAR.buttons.draw.tooltip);
+      expect(drawBtn.querySelector('.ctxbar-label')?.textContent).toBe(window.Vectura.CONTEXT_BAR.buttons.draw.label);
+      // Add Layer precedes Draw in DOM order.
+      const all = Array.from(host().children);
+      expect(all.indexOf(addField.closest('.ctxbar-align-wrap'))).toBeLessThan(all.indexOf(drawBtn));
+    });
+    test('Add Layer menu matches the sidebar Add Layer menu\'s options', async () => {
+      await reset('select');
+      const field = host().querySelector('.ctxbar-add-layer-field');
+      field.click(); // open the root menu
+      await nextFrames();
+      const rowLabels = Array.from(host().querySelectorAll('.ctxbar-add-layer-flyout .ctxbar-add-layer-item'))
+        .map((n) => n.textContent);
+      expect(rowLabels.some((t) => t.includes('Algorithm Layer'))).toBe(true);
+      expect(rowLabels).toContain('Mirror Modifier Group');
+      expect(rowLabels).toContain('Morph Modifier Group');
+      expect(rowLabels).toContain('Empty Layer');
+      expect(rowLabels).toContain('Empty Group');
+    });
+    test('drilling into Algorithm Layer and picking one adds a new layer of that type', async () => {
+      await reset('select');
+      const before = app.engine.layers.length;
+      const field = host().querySelector('.ctxbar-add-layer-field');
+      field.click();
+      await nextFrames();
+      const algoRow = Array.from(host().querySelectorAll('.ctxbar-add-layer-flyout .ctxbar-add-layer-item'))
+        .find((n) => n.textContent.includes('Algorithm Layer'));
+      algoRow.click(); // drill down
+      await nextFrames();
+      const item = Array.from(host().querySelectorAll('.ctxbar-add-layer-flyout .lvl-algo-sub-item'))
+        .find((n) => n.getAttribute('data-algo-type') === 'spiral');
+      expect(item).toBeTruthy();
+      item.click();
+      await nextFrames();
+      expect(app.engine.layers.length).toBe(before + 1);
+      const added = app.engine.layers[app.engine.layers.length - 1];
+      expect(added.type).toBe('spiral');
+      expect([...app.renderer.selectedLayerIds]).toEqual([added.id]);
+    });
+    test('Empty Layer / Empty Group / Mirror Modifier Group rows add the matching layer', async () => {
+      const clickRow = async (label) => {
+        await reset('select');
+        const before = app.engine.layers.length;
+        const field = host().querySelector('.ctxbar-add-layer-field');
+        field.click();
+        await nextFrames();
+        const row = Array.from(host().querySelectorAll('.ctxbar-add-layer-flyout .ctxbar-add-layer-item'))
+          .find((n) => n.textContent === label);
+        expect(row).toBeTruthy();
+        row.click();
+        await nextFrames();
+        expect(app.engine.layers.length).toBe(before + 1);
+        return app.engine.layers[app.engine.layers.length - 1];
+      };
+      expect((await clickRow('Empty Layer')).groupType).toBe('layer');
+      expect((await clickRow('Empty Group')).groupType).toBe('group');
+      const mirrorLayer = await clickRow('Mirror Modifier Group');
+      expect(mirrorLayer.groupType).toBe('modifier');
+      expect(mirrorLayer.modifier?.type).toBe('mirror');
+    });
+    // Each case below explicitly closes the flyout it opens — the click
+    // handler toggles open/closed, and since consecutive idle-state tests
+    // reuse the same DOM (no kind change to force a fresh re-render), a
+    // flyout left open would flip the NEXT test's click into a close instead.
+    const closeAddLayerFlyout = (field) => {
+      if (field.getAttribute('aria-expanded') === 'true') field.click();
+    };
+    test('Add Layer flyout opens downward (caret unrotated) when there is more room below the bar', async () => {
+      await reset('select');
+      const origH = window.innerHeight;
+      const field = host().querySelector('.ctxbar-add-layer-field');
+      closeAddLayerFlyout(field);
+      const wrap = field.closest('.ctxbar-align-wrap');
+      // Bar near the TOP of a 600px viewport — more room below than above.
+      wrap.getBoundingClientRect = () => ({ top: 20, bottom: 46, left: 100, right: 260, width: 160, height: 26 });
+      Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true });
+      field.click();
+      await nextFrames();
+      const fly = host().querySelector('.ctxbar-add-layer-flyout');
+      const caret = field.querySelector('.ctxbar-text-caret');
+      expect(fly.classList.contains('ctxbar-flyout-up')).toBe(false);
+      expect(caret.classList.contains('ctxbar-caret-up')).toBe(false);
+      closeAddLayerFlyout(field);
+      Object.defineProperty(window, 'innerHeight', { value: origH, configurable: true });
+    });
+    test('Add Layer flyout opens upward (caret rotated) when there is more room above the bar', async () => {
+      await reset('select');
+      const origH = window.innerHeight;
+      const field = host().querySelector('.ctxbar-add-layer-field');
+      closeAddLayerFlyout(field);
+      const wrap = field.closest('.ctxbar-align-wrap');
+      // Bar near the BOTTOM of a 600px viewport — more room above than below.
+      wrap.getBoundingClientRect = () => ({ top: 560, bottom: 586, left: 100, right: 260, width: 160, height: 26 });
+      Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true });
+      field.click();
+      await nextFrames();
+      const fly = host().querySelector('.ctxbar-add-layer-flyout');
+      const caret = field.querySelector('.ctxbar-text-caret');
+      expect(fly.classList.contains('ctxbar-flyout-up')).toBe(true);
+      expect(caret.classList.contains('ctxbar-caret-up')).toBe(true);
+      closeAddLayerFlyout(field);
+      Object.defineProperty(window, 'innerHeight', { value: origH, configurable: true });
+    });
+    test('the caret points the right direction before ever opening the dropdown (regression: hard refresh with the bar near the bottom left it pointing down)', async () => {
+      await reset('select');
+      const origH = window.innerHeight;
+      const field = host().querySelector('.ctxbar-add-layer-field');
+      closeAddLayerFlyout(field); // known-closed baseline
+      const wrap = field.closest('.ctxbar-align-wrap');
+      const caret = field.querySelector('.ctxbar-text-caret');
+      // Bar sits near the BOTTOM of a 600px viewport — but the dropdown is
+      // never clicked/opened, mirroring a fresh page load with a pinned
+      // low position: nothing should need to be opened first.
+      wrap.getBoundingClientRect = () => ({ top: 560, bottom: 586, left: 100, right: 260, width: 160, height: 26 });
+      Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true });
+      await nextFrames(); // let the RAF-driven reanchor() tick run — no click
+      expect(field.getAttribute('aria-expanded')).toBe('false'); // still closed
+      expect(caret.classList.contains('ctxbar-caret-up')).toBe(true);
+      Object.defineProperty(window, 'innerHeight', { value: origH, configurable: true });
+    });
+    test('Add Layer flyout direction updates live while the bar is dragged by its handle', async () => {
+      await reset('select');
+      const origH = window.innerHeight;
+      Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true });
+      const field = host().querySelector('.ctxbar-add-layer-field');
+      closeAddLayerFlyout(field);
+      const wrap = field.closest('.ctxbar-align-wrap');
+      let mockRect = { top: 20, bottom: 46, left: 100, right: 260, width: 160, height: 26 };
+      wrap.getBoundingClientRect = () => mockRect;
+      field.click(); // opens downward — near the top
+      await nextFrames();
+      const fly = host().querySelector('.ctxbar-add-layer-flyout');
+      const caret = field.querySelector('.ctxbar-text-caret');
+      expect(fly.classList.contains('ctxbar-flyout-up')).toBe(false);
+
+      // Grabbing the drag handle must NOT dismiss the open flyout (regression
+      // for treating the handle like any other "outside click"), and the
+      // pointermove handler that moves the bar must re-flip the still-open
+      // flyout live as the bar crosses toward the bottom of the viewport.
+      const handle = document.querySelector('.ctxbar-handle');
+      handle.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, clientX: 100, clientY: 30, button: 0 }));
+      expect(fly.classList.contains('is-open')).toBe(true); // handle grab alone doesn't close it
+
+      mockRect = { top: 560, bottom: 586, left: 100, right: 260, width: 160, height: 26 };
+      window.dispatchEvent(new window.MouseEvent('pointermove', { bubbles: true, clientX: 100, clientY: 570 }));
+
+      expect(fly.classList.contains('is-open')).toBe(true); // still open, never closed
+      expect(fly.classList.contains('ctxbar-flyout-up')).toBe(true);
+      expect(caret.classList.contains('ctxbar-caret-up')).toBe(true);
+
+      window.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true }));
+      closeAddLayerFlyout(field);
+      Object.defineProperty(window, 'innerHeight', { value: origH, configurable: true });
+    });
   });
 
   // ── TB-4 single path/shape ──────────────────────────────────────────

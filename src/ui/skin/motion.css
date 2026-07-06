@@ -243,6 +243,8 @@
     transform: translateY(0);
   }
   .ctxbar-pulse { animation: none; }
+  /* Add Layer dropdown's up/down caret flip (TB-3). */
+  .ctxbar-text-caret { transition: none; }
 }
 /* === END TB task-bar motion === */
 

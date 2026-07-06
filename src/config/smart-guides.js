@@ -47,7 +47,12 @@
       anchor: 'anchor',
       midpoint: 'midpoint',
       endpoint: 'endpoint',
+      center: 'center',
     },
+
+    // Screen-px radius within which hovering the selection's bounding-box center
+    // reveals the center helper point (marker + "center" label + X/Y chip).
+    centerHitScreenPx: 7,
 
     // SEL-4: measurement chip vocabulary (hover X/Y, move-drag dX/dY).
     chip: {
@@ -59,8 +64,8 @@
       pairSeparator: ' / ',
     },
 
-    // Decimal places for measurement chips (video shows 1/100 precision).
-    chipPrecision: 2,
+    // Decimal places for measurement chips — round to 0.1 document unit (0.1 mm).
+    chipPrecision: 1,
 
     // Canvas-overlay guide label typography (screen px; drawn zoom-invariant).
     labelFontPx: 10,

@@ -115,6 +115,10 @@
   };
   const WAVE_MIN = 'M3 12q4.5 -3 9 0t9 0';               // gentle wave — fewer points
   const WAVE_MAX = 'M3 14q1.5 -6 3 0t3 0t3 0t3 0t3 0t3 0'; // busy wave — more detail
+  // Sharp-cornered zigzag tracing the same envelope (base/peak x-positions and
+  // ±3 amplitude) as WAVE_MAX, but with straight segments instead of curves —
+  // the "unrounded" counterpart shown opposite it in the smooth sub-mode.
+  const ZIGZAG_SHARP = 'M3 14L4.5 11L6 14L7.5 17L9 14L10.5 11L12 14L13.5 17L15 14L16.5 11L18 14L19.5 17L21 14L22.5 11L24 14';
   const CORNER_ICON = 'M6 20V12a6 6 0 0 1 6 -6h8';
   const HASH_ICON = 'M9 4L7 20M17 4L15 20M4 9H20M4 15H20';
 
@@ -591,7 +595,7 @@
         const ids = () => ((ctx.layerIds && ctx.layerIds.length) ? ctx.layerIds : resolveLayers(ctx).map((l) => l.id));
 
         const wrap = el('div', { class: 'ctxbar-submode ctxbar-simplify ctxbar-smooth-mode' });
-        wrap.appendChild(el('span', { class: 'ctxbar-submode-icon', title: strings.smoothMinWave || 'Sharper' }, [svgIcon(WAVE_MIN, 'ctxbar-wave-min')]));
+        wrap.appendChild(el('span', { class: 'ctxbar-submode-icon', title: strings.smoothMinWave || 'Sharper' }, [svgIcon(ZIGZAG_SHARP, 'ctxbar-wave-sharp')]));
         const slider = el('input', {
           type: 'range', class: 'ctxbar-slider ctxbar-smooth-slider',
           min: `${c.SIMPLIFY_MIN ?? 0}`, max: `${c.SIMPLIFY_MAX ?? 100}`, step: `${c.SIMPLIFY_STEP ?? 1}`,

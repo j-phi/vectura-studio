@@ -50,6 +50,7 @@
     handleDrag: null,          // { startX, startY, baseX, baseY, moved }
     menuOpen: false,
     closeFlyout: null,         // active align-flyout close fn (single handler)
+    repositionOpenFlyout: null, // re-flips the open flyout's up/down direction on bar move
     overflowExtra: null,       // optional sub-mode overflow item
     pulseTimer: 0,
     visible: false,
@@ -241,8 +242,12 @@
     G.document.addEventListener('pointerdown', (e) => {
       // Single global outside-click handler (bound once) closes both the
       // overflow menu and any open align flyout — avoids a per-render listener.
+      // The drag handle is excluded from the flyout's outside-click check: grabbing
+      // it to reposition the bar shouldn't dismiss an open dropdown, since the
+      // dropdown's own up/down direction re-flips live as the bar moves (TB-3).
       if (state.menuOpen && !els.overflow.contains(e.target) && !els.menu.contains(e.target)) closeMenu();
-      if (state.closeFlyout && els.content && !els.content.contains(e.target)) state.closeFlyout();
+      const onHandle = els.handle && els.handle.contains(e.target);
+      if (state.closeFlyout && els.content && !els.content.contains(e.target) && !onHandle) state.closeFlyout();
     }, true);
     G.document.addEventListener('keydown', (e) => {
       if (state.menuOpen && e.key === 'Escape') { closeMenu(); }
@@ -445,6 +450,7 @@
       const ny = clampBarTop(state.handleDrag.baseY + dy);
       els.bar.style.left = `${nx}px`;
       els.bar.style.top = `${ny}px`;
+      state.repositionOpenFlyout && state.repositionOpenFlyout();
     };
     const onUp = () => {
       G.removeEventListener('pointermove', onMove, true);
@@ -540,6 +546,7 @@
     if (p.pinned && Number.isFinite(p.x) && Number.isFinite(p.y)) {
       els.bar.style.left = `${clampBarLeft(p.x)}px`;
       els.bar.style.top = `${clampBarTop(p.y)}px`;
+      state.repositionOpenFlyout && state.repositionOpenFlyout();
       return;
     }
     const renderer = getRenderer();
@@ -554,6 +561,7 @@
     });
     els.bar.style.left = `${left}px`;
     els.bar.style.top = `${top}px`;
+    state.repositionOpenFlyout && state.repositionOpenFlyout();
   };
 
   // ── TB-1: hide during canvas drag/draw (own listeners; renderer.js is
@@ -709,6 +717,11 @@
 
   const renderIdle = () => {
     const b = B(); const ic = IC();
+    // Add Layer dropdown sits left of Draw — full parity with the sidebar's
+    // Add Layer menu (Algorithm Layer submenu, Mirror/Morph Modifier Group,
+    // Empty Layer, Empty Group), just reachable without leaving the canvas.
+    const addWrap = makeAddLayerDropdown();
+    if (addWrap) els.content.appendChild(addWrap);
     els.content.appendChild(makeBtn({
       icon: ic.draw, label: (b.draw && b.draw.label), tooltip: (b.draw && b.draw.tooltip),
       onClick: activateDraw,
@@ -1190,6 +1203,159 @@
     field.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open ? close() : openFn(); });
     wrap.appendChild(field); wrap.appendChild(fly);
     return wrap;
+  };
+
+  // Flips `fly` to open upward (and rotates `caret` to match) when there's
+  // more room above `wrap` than below, so the flyout never clips at the
+  // viewport edge. Called once on open, and again whenever the bar itself
+  // moves (drag or auto-anchor) so the direction stays correct live.
+  const positionFlyoutForSpace = (wrap, fly, caret) => {
+    const r = wrap.getBoundingClientRect();
+    const viewH = G.innerHeight || (G.document && G.document.documentElement.clientHeight) || 0;
+    const openUp = r.top > (viewH - r.bottom);
+    fly.classList.toggle('ctxbar-flyout-up', openUp);
+    if (caret) caret.classList.toggle('ctxbar-caret-up', openUp);
+  };
+
+  // ── TB-3: idle "Add Layer" dropdown ────────────────────────────────────
+  // Full parity with the sidebar's Add Layer menu (`#btn-add-layer`/
+  // `#layer-add-menu` in shortcuts.js): Algorithm Layer (drill-down to the
+  // same shared grouped algo list as the switcher/module dropdown/sidebar
+  // submenu), Mirror/Morph Modifier Group, Empty Layer, Empty Group — wired
+  // to the same underlying UI/engine actions so behavior stays identical,
+  // just reachable from the floating bar. A click-to-drill-down list (rather
+  // than the sidebar's hover-revealed side submenu) avoids clipping inside
+  // the scrollable flyout box and works the same on touch.
+  const makeAddLayerDropdown = () => {
+    const b = B(); const ic = IC();
+    const utils = window.Vectura.UI && window.Vectura.UI.utils;
+    const algoItems = (utils && utils.getDrawableAlgorithmOptions && utils.getDrawableAlgorithmOptions()) || [];
+    const field = makeDropField(
+      'ctxbar-add-layer-field', (b.addLayer && b.addLayer.label) || 'Add Layer',
+      (b.addLayer && b.addLayer.tooltip), ic.addLayer,
+    );
+    const wrap = el('span', 'ctxbar-align-wrap ctxbar-algo-menu-wrap');
+    const fly = el('div', 'ctxbar-align-flyout ctxbar-algo-flyout ctxbar-add-layer-flyout', { role: 'menu', 'aria-hidden': 'true' });
+    const caret = field.querySelector('.ctxbar-text-caret');
+    let open = false;
+    // `ctxbar-add-layer-item`, not `ctxbar-menu-item` — the overflow ⋯ menu
+    // queries `.ctxbar-menu-item` globally (unscoped) to manage its own rows,
+    // and this flyout renders alongside it in the idle state.
+    const mkRow = (label) => {
+      const row = el('div', 'ctxbar-add-layer-item', { role: 'menuitem', tabindex: '-1' });
+      row.textContent = label;
+      return row;
+    };
+    const renderRoot = () => {
+      fly.textContent = '';
+      const algoRow = mkRow('Algorithm Layer ›');
+      algoRow.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); showAlgoList(); });
+      fly.appendChild(algoRow);
+      const mirrorRow = mkRow('Mirror Modifier Group');
+      mirrorRow.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); close(); doInsertModifier('mirror'); });
+      fly.appendChild(mirrorRow);
+      const morphRow = mkRow('Morph Modifier Group');
+      morphRow.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); close(); doInsertModifier('morph'); });
+      fly.appendChild(morphRow);
+      const emptyLayerRow = mkRow('Empty Layer');
+      emptyLayerRow.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); close(); doAddEmptyLayer(); });
+      fly.appendChild(emptyLayerRow);
+      const emptyGroupRow = mkRow('Empty Group');
+      emptyGroupRow.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); close(); doAddGroupLayer(); });
+      fly.appendChild(emptyGroupRow);
+    };
+    const showAlgoList = () => {
+      fly.textContent = '';
+      const back = mkRow('‹ Algorithm Layer');
+      back.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); renderRoot(); });
+      fly.appendChild(back);
+      const list = el('div', '');
+      list.innerHTML = (utils && utils.renderAlgoMenuHTML) ? utils.renderAlgoMenuHTML(algoItems, null) : '';
+      fly.appendChild(list);
+    };
+    const close = () => {
+      open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
+      field.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
+      renderRoot(); // reset to the top-level list for the next time it opens
+    };
+    const reposition = () => positionFlyoutForSpace(wrap, fly, caret);
+    const openFn = () => {
+      if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout();
+      open = true; fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false');
+      field.setAttribute('aria-expanded', 'true'); state.closeFlyout = close;
+      reposition();
+    };
+    // Delegated: rows in the algo drill-down list carry `data-algo-type`.
+    fly.addEventListener('click', (e) => {
+      const row = e.target.closest('[data-algo-type]');
+      if (!row) return;
+      e.preventDefault(); e.stopPropagation();
+      close();
+      doAddAlgoLayer(row.getAttribute('data-algo-type'));
+    });
+    renderRoot();
+    field.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open ? close() : openFn(); });
+    wrap.appendChild(field); wrap.appendChild(fly);
+    // The caret must hint the correct open direction even while closed (e.g.
+    // right after a hard refresh with the bar pinned near the bottom), so this
+    // registers unconditionally rather than only while open — `reanchor()`
+    // calls it every tick regardless of open/closed state. Calling `reposition()`
+    // here directly would be premature: `wrap` isn't attached to the document
+    // yet (the caller appends it right after this returns), so it would only
+    // measure a zero rect — `reanchor()` runs `state.repositionOpenFlyout()`
+    // synchronously right after this render completes, once attached, which is
+    // the earliest point an accurate measurement is possible.
+    state.repositionOpenFlyout = reposition;
+    return wrap;
+  };
+  const doAddAlgoLayer = (layerType) => {
+    const a = getApp();
+    const ui = a && a.ui;
+    if (!a || !a.engine || typeof a.engine.addLayer !== 'function') return;
+    a.pushHistory && a.pushHistory();
+    const activeLayer = a.engine.getActiveLayer?.();
+    const id = a.engine.addLayer(layerType);
+    const created = ui && ui.getLayerById ? ui.getLayerById(id) : null;
+    if (created && ui) ui.rememberDrawableLayerType?.(created);
+    const selectedModifier = (activeLayer && ui && ui.isModifierLayer?.(activeLayer)) ? activeLayer : null;
+    if (selectedModifier && created) {
+      ui.assignLayersToParent?.(selectedModifier.id, [created], { selectAssigned: true, primaryId: id });
+    } else if (a.renderer) {
+      a.renderer.setSelection([id], id);
+    }
+    ui && ui.renderLayers && ui.renderLayers();
+    ui && ui.buildControls && ui.buildControls();
+    a.render && a.render();
+    restoreState();
+  };
+  // insertMirrorModifier/insertMorphModifier own history + selection + render
+  // + renderLayers already — no need to repeat any of that here.
+  const doInsertModifier = (kind) => {
+    const ui = getApp()?.ui;
+    const fn = ui && (kind === 'morph' ? ui.insertMorphModifier : ui.insertMirrorModifier);
+    if (typeof fn !== 'function') return;
+    fn.call(ui);
+    restoreState();
+  };
+  const doAddEmptyLayer = () => {
+    const a = getApp();
+    if (!a || !a.engine || typeof a.engine.addEmptyLayer !== 'function') return;
+    a.pushHistory && a.pushHistory();
+    const id = a.engine.addEmptyLayer();
+    if (id && a.renderer) a.renderer.setSelection([id], id);
+    a.ui && a.ui.renderLayers && a.ui.renderLayers();
+    a.render && a.render();
+    restoreState();
+  };
+  const doAddGroupLayer = () => {
+    const a = getApp();
+    if (!a || !a.engine || typeof a.engine.addGroupLayer !== 'function') return;
+    a.pushHistory && a.pushHistory();
+    const id = a.engine.addGroupLayer();
+    if (id && a.renderer) a.renderer.setSelection([id], id);
+    a.ui && a.ui.renderLayers && a.ui.renderLayers();
+    a.render && a.render();
+    restoreState();
   };
   const prettifyType = (t) => String(t || '').replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/^\w/, (c) => c.toUpperCase());
