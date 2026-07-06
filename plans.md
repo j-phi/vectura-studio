@@ -39,6 +39,15 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — radial fill gets a draggable Centerpoint pad.** The Type panel Fill tab
+  (`src/ui/ui-text-panel.js`) mounts a second XY pad — identical to the Fill Offset pad but
+  wired to `fillShiftX`/`fillShiftY` — shown only when `fillType === 'radial'`
+  (`syncCenterVisibility()` toggles it from the shared fill grid's `onChange`). The engine path
+  was already there: `PaintBucketOps.buildFillRecord` maps `fillShiftX/Y → shiftX/Y`, and
+  `pattern.js` `radialFill`/`radialFillComposite` add them to the bounds centre. New text defaults
+  `fillShiftX`/`fillShiftY`/`fillShiftMax` in `src/config/defaults.js`. Verified in-app (Playwright:
+  centre `50,50 → 70,60` for shift `+20,+10`) and covered by three `tests/integration/text-panel.test.js`
+  cases (hidden for non-radial, shown for radial, drag writes the shift + dbl-click recenters).
 - **Unreleased — task-bar Simplify is an anchor-reduction ladder with bounded travel.** The
   slider runs complex → simple (L → R) with the thumb starting at the untouched original.
   `PathEditOps.simplifyBegin` (`src/core/path-edit-ops.js`) precomputes a per-path reduction

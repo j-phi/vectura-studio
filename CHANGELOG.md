@@ -6,6 +6,16 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added
+- **Radial fill gets a draggable Centerpoint.** The Type panel's Fill tab now shows a
+  **Centerpoint** XY pad — a twin of the existing Fill Offset pad — whenever the **radial**
+  fill type is active. Dragging its knob (or arrow-keying it, or double-clicking to recenter)
+  shifts the radial fill's origin off the region's bounds centre; a vertical slider sets the
+  pad-edge radius. It writes `fillShiftX`/`fillShiftY` (new `fillShiftMax` for the radius),
+  which the pattern engine already consumes as the radial centre offset
+  (`pattern.js` `radialFill`: `cx = midX + shiftX`). The pad reveals/hides in step with the
+  fill-type grid — shown only for radial. Covered by `tests/integration/text-panel.test.js`.
+
 ### Changed
 - **The task bar's Simplify slider is now an anchor-reduction control with bounded travel.**
   It runs complex → simple (left → right), and the thumb starts at the complex end
