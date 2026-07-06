@@ -686,6 +686,16 @@
         if (child && !child.isGroup && this.directSelection?.layerId !== child.id) {
           this.setDirectSelection(child, 0);
         }
+      } else if (tool === 'direct') {
+        // Entering direct-select on a layer already picked with the Select tool
+        // (e.g. the contextual task bar's Edit Path button): show its anchors
+        // and bezier handles immediately, matching the morph case above,
+        // instead of requiring a fresh canvas click to populate directSelection.
+        const layers = this.getSelectedLayers ? this.getSelectedLayers() : [];
+        const layer = layers.length === 1 ? layers[0] : null;
+        if (layer && this.canEditSourceGeometry(layer) && this.directSelection?.layerId !== layer.id) {
+          this.setDirectSelection(layer, 0);
+        }
       }
       this.updateCursor();
       if (!['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(tool)) {
