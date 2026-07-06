@@ -2241,9 +2241,18 @@
       if (!handle || !this.directSelection) return false;
       const layer = this.engine.layers.find((l) => l.id === this.directSelection.layerId);
       if (!layer) return false;
+      const sel = this.directSelection;
+      // Multi-corner round: if 2+ corners are selected and the grabbed handle
+      // is one of them, round the whole set together; else just this corner.
+      let corners = [handle];
+      if (sel.selectedIndices && sel.selectedIndices.size >= 2 && sel.selectedIndices.has(handle.anchorIndex)) {
+        const matched = this._getFreeformCornerHandles().filter((h) => sel.selectedIndices.has(h.anchorIndex));
+        if (matched.length >= 2) corners = matched;
+      }
+      corners = corners.slice().sort((a, b) => a.anchorIndex - b.anchorIndex);
       this.freeformCornerDrag = {
-        layerId: this.directSelection.layerId,
-        pathIndex: this.directSelection.pathIndex,
+        layerId: sel.layerId,
+        pathIndex: sel.pathIndex,
         anchorIndex: handle.anchorIndex,
         sourceVertex: handle.sourceVertex,
         sourcePrevDir: handle.sourcePrevDir,
@@ -2255,7 +2264,8 @@
         nextLen: handle.nextLen,
         maxRadius: handle.maxRadius,
         currentRadius: 0,
-        originalAnchors: this.cloneAnchors(this.directSelection.anchors),
+        corners,
+        originalAnchors: this.cloneAnchors(sel.anchors),
         historyPushed: false,
       };
       return true;
@@ -2269,7 +2279,8 @@
       const srcPt = this.worldToSourcePoint(layer, world);
       const dx = srcPt.x - drag.sourceVertex.x, dy = srcPt.y - drag.sourceVertex.y;
       const projected = Math.max(0, dx * drag.sourceInward.x + dy * drag.sourceInward.y);
-      const r = clamp(drag.sinHalf > 1e-4 ? projected * drag.sinHalf : 0, 0, drag.maxRadius);
+      const rawRadius = drag.sinHalf > 1e-4 ? projected * drag.sinHalf : 0;
+      const r = clamp(rawRadius, 0, drag.maxRadius);
       drag.currentRadius = r;
       if (this._dragCursorPos) this.showDragTooltip(`r ${r.toFixed(1)}`, this._dragCursorPos.x, this._dragCursorPos.y);
       if (!drag.historyPushed) {
@@ -2278,23 +2289,47 @@
         drag.historyPushed = true;
       }
       const anchors = this.cloneAnchors(drag.originalAnchors);
-      const i = drag.anchorIndex;
-      if (r > 1e-4 && drag.tanHalf > 1e-4) {
-        const tDist = Math.min(drag.prevLen * 0.5, drag.nextLen * 0.5, r / drag.tanHalf);
-        const arcAngle = Math.PI - Math.max(1e-4, Math.acos(clamp(
-          drag.sourcePrevDir.x * drag.sourceNextDir.x + drag.sourcePrevDir.y * drag.sourceNextDir.y, -1, 1
-        )));
-        const handleLen = (4 / 3) * Math.tan(arcAngle / 4) * r;
-        const v = drag.sourceVertex, pd = drag.sourcePrevDir, nd = drag.sourceNextDir;
-        anchors.splice(i, 1,
-          { x: v.x + pd.x * tDist, y: v.y + pd.y * tDist, in: null,
-            out: { x: v.x + pd.x * tDist - pd.x * handleLen, y: v.y + pd.y * tDist - pd.y * handleLen } },
-          { x: v.x + nd.x * tDist, y: v.y + nd.y * tDist, out: null,
-            in: { x: v.x + nd.x * tDist - nd.x * handleLen, y: v.y + nd.y * tDist - nd.y * handleLen } }
-        );
+      const corners = drag.corners || [{
+        anchorIndex: drag.anchorIndex,
+        sourceVertex: drag.sourceVertex,
+        sourcePrevDir: drag.sourcePrevDir,
+        sourceNextDir: drag.sourceNextDir,
+        tanHalf: drag.tanHalf,
+        prevLen: drag.prevLen,
+        nextLen: drag.nextLen,
+        maxRadius: drag.maxRadius,
+      }];
+      const newSelected = new Set();
+      // corners is sorted ascending by original anchorIndex; each rounded
+      // corner inserts one extra anchor, so later corners' splice positions
+      // must be shifted by every insertion made so far.
+      let offset = 0;
+      for (const corner of corners) {
+        const i = corner.anchorIndex + offset;
+        const rc = clamp(rawRadius, 0, corner.maxRadius);
+        if (rc > 1e-4 && corner.tanHalf > 1e-4) {
+          const tDist = Math.min(corner.prevLen * 0.5, corner.nextLen * 0.5, rc / corner.tanHalf);
+          const arcAngle = Math.PI - Math.max(1e-4, Math.acos(clamp(
+            corner.sourcePrevDir.x * corner.sourceNextDir.x + corner.sourcePrevDir.y * corner.sourceNextDir.y, -1, 1
+          )));
+          const handleLen = (4 / 3) * Math.tan(arcAngle / 4) * rc;
+          const v = corner.sourceVertex, pd = corner.sourcePrevDir, nd = corner.sourceNextDir;
+          anchors.splice(i, 1,
+            { x: v.x + pd.x * tDist, y: v.y + pd.y * tDist, in: null,
+              out: { x: v.x + pd.x * tDist - pd.x * handleLen, y: v.y + pd.y * tDist - pd.y * handleLen } },
+            { x: v.x + nd.x * tDist, y: v.y + nd.y * tDist, out: null,
+              in: { x: v.x + nd.x * tDist - nd.x * handleLen, y: v.y + nd.y * tDist - nd.y * handleLen } }
+          );
+          newSelected.add(i);
+          newSelected.add(i + 1);
+          offset += 1;
+        } else {
+          newSelected.add(i);
+        }
       }
       if (this.directSelection) {
         this.directSelection.anchors = anchors;
+        if (corners.length > 1) this.directSelection.selectedIndices = newSelected;
         this.applyDirectPath();
       }
       this.draw();
