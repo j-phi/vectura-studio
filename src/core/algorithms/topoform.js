@@ -360,6 +360,22 @@
     };
   };
 
+  // In contour mode the plane controls (planeRotate/planeTilt) pre-rotate the
+  // mesh before the depth slicer cuts it (see buildContours), so the whole
+  // rendered form is plane-oriented. Overlays that must wrap that form — the
+  // silhouette and the creases — have to be built from the SAME pre-rotated
+  // vertices, or they float off the tilted contours. Wireframe/triangleMesh
+  // modes ignore the plane controls entirely, so their overlays stay pinned to
+  // the raw mesh. Returns the vertex set the displayed geometry is built from.
+  const planeOrientedVertices = (mesh, p) => {
+    const mode = p.renderMode || 'contours';
+    if (mode === 'wireframe' || mode === 'triangleMesh') return mesh.vertices;
+    const yaw = finite(p.planeRotate, 0);
+    const pitch = finite(p.planeTilt, 0);
+    if (yaw === 0 && pitch === 0) return mesh.vertices;
+    return mesh.vertices.map((pt) => rotatePoint(pt, { yaw, pitch }));
+  };
+
   const trianglePlaneSegment = (tri, z) => {
     const pts = [];
     for (let i = 0; i < 3; i++) {
@@ -588,7 +604,7 @@
     // Gate on the legacy outline toggle OR the new emphasizeOutline enhancement.
     const emphasize = p.emphasizeOutline === true;
     if (p.showOutline === false && !emphasize) return [];
-    const projected = mesh.vertices.map((pt) => project3(pt, p, bounds));
+    const projected = planeOrientedVertices(mesh, p).map((pt) => project3(pt, p, bounds));
     const faceFront = mesh.faces.map((face) => faceNormal(face.map((idx) => projected[idx].rotated)).z >= -0.001);
     const weightScale = emphasize ? Math.max(0.1, finite(p.outlineWeight, 2)) : null;
     const paths = [];
@@ -610,7 +626,7 @@
   // #3 — crease (feature-edge) extraction. Per-face normals are computed from the
   // rotated (camera-space) face vertices so the threshold is view-consistent.
   const buildCreases = (mesh, p, bounds, flags = {}) => {
-    const projectedVerts = mesh.vertices.map((pt) => project3(pt, p, bounds));
+    const projectedVerts = planeOrientedVertices(mesh, p).map((pt) => project3(pt, p, bounds));
     const projected = projectedVerts.map((pr) => ({ x: pr.projected.x, y: pr.projected.y }));
     const faceNormals = mesh.faces.map((face) => faceNormal(face.map((idx) => projectedVerts[idx].rotated)));
     const edges = collectEdges(mesh.faces);

@@ -4,6 +4,18 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.41 - 2026-07-05
+
+### Fixed
+- **Topoform silhouette now tracks the plane controls.** In contour mode the
+  `Plane Tilt` / `Plane Rotate` controls pre-rotate the mesh before the depth
+  slicer cuts it, so the contour lines tilt with the planes — but the silhouette
+  outline (and creases) were still projected from the raw, un-rotated mesh, so
+  they floated off the tilted form. Both overlays are now built from the same
+  plane-oriented vertices as the contours, so they move and reshape together.
+  Wireframe / triangle-mesh modes (which ignore the plane controls) are
+  unchanged, and the default view (tilt/rotate at 0) is byte-identical.
+
 ## 1.2.40 - 2026-07-05
 
 ### Added
