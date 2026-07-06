@@ -11791,7 +11791,12 @@ body.mobile-layout .hud-bar {
 .ctxbar-algo-flyout .ctxbar-menu-item { width: 100%; }
 .ctxbar-algo-flyout .ctxbar-align-group-label { margin-top: 4px; }
 .ctxbar-algo-flyout .ctxbar-align-group-label:first-child { margin-top: 0; }
+/* Algorithm switcher rows reuse the shared lvl-algo-sub-item/algo-group-div
+   markup (same as the Add Layer submenu + left-pane module dropdown). */
+.ctxbar-algo-flyout .algo-group-div { margin-top: 4px; }
+.ctxbar-algo-flyout .algo-group-div:first-child { margin-top: 0; }
 .ctxbar-algo-menu-wrap .ctxbar-text-field { max-width: 150px; }
+.ctxbar-algo-field .lvl-algo-sub-ico { margin-right: 5px; }
 /* Text controls (TB-7). */
 .ctxbar-text-field {
   display: inline-flex;

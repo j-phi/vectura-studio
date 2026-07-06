@@ -65,11 +65,11 @@
     menu.id = 'gm-module-menu';
     menu.className = 'gm-module-menu hidden';
     menu.addEventListener('click', (e) => {
-      const item = e.target.closest('[data-gm-value]');
+      const item = e.target.closest('[data-algo-type]');
       if (!item) return;
       const select = getEl('generator-module', { silent: true });
       if (select) {
-        select.value = item.dataset.gmValue;
+        select.value = item.dataset.algoType;
         select.dispatchEvent(new Event('change', { bubbles: true }));
       }
       menu.classList.add('hidden');
@@ -94,28 +94,12 @@
     if (!select || !trigger) return;
     const menu = this._buildModuleMenu();
     const currentValue = select.value;
-    const allOpts = Array.from(select.options);
-    const renderOpt = (opt) => {
-      const type = opt.value;
-      const ico = this._LVL_I?.[type];
-      const color = this._algoMenuColor?.(type) ?? '';
-      const iconHtml = ico ? `<span class="lvl-algo-sub-ico" style="color:${color}">${ico()}</span>` : '';
-      const activeClass = type === currentValue ? ' gm-item-active' : '';
-      return `<div class="lvl-algo-sub-item${activeClass}" data-gm-value="${type}">${iconHtml}${opt.innerText}</div>`;
-    };
-    const items = allOpts.map((opt) => ({
+    const items = Array.from(select.options).map((opt) => ({
       type: opt.value,
       label: opt.innerText,
       is3d: !!(ALGO_DEFAULTS && ALGO_DEFAULTS[opt.value]?.is3d),
-      opt,
     }));
-    const parts = [];
-    window.Vectura.groupAlgorithmsForMenu(items).forEach((group, gi) => {
-      if (!group.items.length) return;
-      parts.push(`<div class="algo-group-div${gi ? ' algo-group-sep' : ''}">${group.label}</div>`);
-      group.items.forEach((item) => parts.push(renderOpt(item.opt)));
-    });
-    menu.innerHTML = parts.join('');
+    menu.innerHTML = window.Vectura.UI.utils.renderAlgoMenuHTML(items, currentValue);
     const r = trigger.getBoundingClientRect();
     menu.style.top = `${r.bottom + 2}px`;
     menu.style.left = `${r.left}px`;
@@ -133,9 +117,9 @@
     const iconEl = document.getElementById('gm-current-icon');
     const labelEl = document.getElementById('gm-current-label');
     if (iconEl) {
-      const ico = this._LVL_I?.[currentValue];
-      iconEl.innerHTML = ico ? ico() : '';
-      iconEl.style.color = ico ? (this._algoMenuColor?.(currentValue) ?? '') : '';
+      const utils = window.Vectura.UI.utils;
+      iconEl.innerHTML = utils.getAlgoMenuIcon(currentValue);
+      iconEl.style.color = utils.getAlgoMenuColor(currentValue);
     }
     if (labelEl) labelEl.textContent = currentLabel;
     trigger.classList.toggle('gm-trigger-disabled', !!select.disabled);

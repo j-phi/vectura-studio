@@ -33,6 +33,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   or resized narrower than its skin-default width. Choosing it restores the panel — un-collapsing
   it and, if shrunk, widening it back to the default (a user-widened pane keeps its custom width) —
   and fires the existing blue attention pulse. At full size the item is omitted from the menu.
+- **The contextual task bar's algorithm switcher now matches the Add Layer submenu and the
+  left-pane module dropdown** — same grouped list, section headers, and per-algorithm icon +
+  palette color, including on the closed pill. All three now render from one shared pair of
+  helpers, `Vectura.UI.utils.renderAlgoMenuHTML`/`getAlgoMenuIcon`/`getAlgoMenuColor`
+  (`src/ui/utils.js`), so the list is defined once. Covered by
+  `tests/integration/context-bar.test.js`.
 
 ## 1.2.41 - 2026-07-05
 

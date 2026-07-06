@@ -129,6 +129,57 @@
       .replace(/'/g, '&#39;');
   };
 
+  /**
+   * Resolves the icon-color for an algorithm id from the active layer-bar
+   * palette (SETTINGS.layerBarPaletteId, default 'prism'). Single source for
+   * the left-pane module dropdown, the Add Layer algorithm submenu, and the
+   * contextual toolbar's algorithm switcher so their row colors can't drift.
+   */
+  const getAlgoMenuColor = (type) => {
+    const SETTINGS = (window.Vectura && window.Vectura.SETTINGS) || {};
+    const palettes = (window.Vectura && window.Vectura.LAYER_PALETTES) || [];
+    const pid = SETTINGS.layerBarPaletteId || 'prism';
+    const pal = palettes.find((p) => p.id === pid) || palettes.find((p) => p.id === 'prism');
+    const colors = pal && pal.colors;
+    if (!colors) return 'currentColor';
+    return colors[type] || colors._default || 'currentColor';
+  };
+
+  /** Resolves the SVG icon markup for an algorithm id, falling back to `grid`. */
+  const getAlgoMenuIcon = (type) => {
+    const icons = (window.Vectura && window.Vectura.Icons && window.Vectura.Icons.layer) || {};
+    const fn = icons[type] || icons.grid;
+    return typeof fn === 'function' ? fn() : '';
+  };
+
+  /**
+   * Renders the grouped `algo-group-div` + `lvl-algo-sub-item` menu markup
+   * shared by the left-pane module dropdown, the Add Layer algorithm
+   * submenu, and the contextual toolbar's algorithm switcher — the one place
+   * all three build their rows from, so the list, icons, and colors can
+   * never diverge. `items` is `getDrawableAlgorithmOptions()`-shaped;
+   * `currentType` (optional) marks the active row with `gm-item-active`.
+   */
+  const renderAlgoMenuHTML = (items, currentType) => {
+    const groupFn = window.Vectura && window.Vectura.groupAlgorithmsForMenu;
+    const groups = typeof groupFn === 'function' ? groupFn(items || []) : [{ label: '', items: items || [] }];
+    const parts = [];
+    groups.forEach((group, gi) => {
+      if (!group.items.length) return;
+      parts.push(`<div class="algo-group-div${gi ? ' algo-group-sep' : ''}">${escapeHtml(group.label)}</div>`);
+      group.items.forEach((item) => {
+        const active = item.type === currentType ? ' gm-item-active' : '';
+        const color = getAlgoMenuColor(item.type);
+        const icon = getAlgoMenuIcon(item.type);
+        parts.push(
+          `<div class="lvl-algo-sub-item${active}" data-algo-type="${escapeHtml(item.type)}">` +
+          `<span class="lvl-algo-sub-ico" style="color:${color}">${icon}</span>${escapeHtml(item.label)}</div>`,
+        );
+      });
+    });
+    return parts.join('');
+  };
+
   UI.utils = {
     clamp,
     formatNumber,
@@ -136,6 +187,9 @@
     cssVarPx,
     prefersReducedMotion,
     getDrawableAlgorithmOptions,
+    getAlgoMenuColor,
+    getAlgoMenuIcon,
+    renderAlgoMenuHTML,
     uid,
     on,
     off,

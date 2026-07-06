@@ -219,13 +219,59 @@ describe('Contextual Task Bar (Lane G — TB-1…8)', () => {
       const field = host().querySelector('.ctxbar-algo-field');
       field.click(); // open the switcher flyout
       await nextFrames();
-      const item = Array.from(host().querySelectorAll('.ctxbar-algo-flyout .ctxbar-menu-item'))
+      const item = Array.from(host().querySelectorAll('.ctxbar-algo-flyout .lvl-algo-sub-item'))
         .find((n) => n.textContent && n.textContent.toLowerCase().includes('spiral'));
       if (item) {
         item.click();
         await nextFrames();
         expect(app.engine.layers.find((l) => l.id === layer.id).type).not.toBe('wavetable');
       }
+    });
+    test('the algorithm switcher renders the same icon-labeled rows as the Add Layer submenu and module dropdown', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+      // The closed pill shows the current algorithm's icon (matches gm-current-icon).
+      const field = host().querySelector('.ctxbar-algo-field');
+      expect(field.querySelector('.lvl-algo-sub-ico svg')).toBeTruthy();
+      field.click(); // open the switcher flyout
+      await nextFrames();
+      const rows = Array.from(host().querySelectorAll('.ctxbar-algo-flyout .lvl-algo-sub-item'));
+      expect(rows.length).toBeGreaterThan(1);
+      // Every row carries the same icon/color markup as Icons.layer + getAlgoMenuColor.
+      rows.forEach((row) => expect(row.querySelector('.lvl-algo-sub-ico svg')).toBeTruthy());
+      // Grouped under the same section headers (algo-group-div) as the other pickers.
+      expect(host().querySelectorAll('.ctxbar-algo-flyout .algo-group-div').length).toBeGreaterThan(0);
+    });
+    test('the die button rerolls the full param set (same as Algorithm Configuration Randomize), not just the seed', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable'); // seed: 0 — a "seeded" layer, the case the old bug mis-routed
+      select([layer.id]);
+      await nextFrames();
+      const seedBtn = document.getElementById('btn-rand-seed');
+      const paramsBtn = document.getElementById('btn-randomize-params');
+      expect(paramsBtn).toBeTruthy();
+      let seedCalled = false;
+      let paramsCalled = false;
+      const origSeedOnclick = seedBtn && seedBtn.onclick;
+      const origParamsOnclick = paramsBtn.onclick;
+      if (seedBtn) {
+        seedBtn.onclick = function (...args) { seedCalled = true; return origSeedOnclick.apply(this, args); };
+      }
+      paramsBtn.onclick = function (...args) { paramsCalled = true; return origParamsOnclick.apply(this, args); };
+      try {
+        const randBtn = Array.from(host().querySelectorAll('.ctxbar-btn'))
+          .find((b) => b.title === window.Vectura.CONTEXT_BAR.buttons.randomize.tooltip);
+        expect(randBtn).toBeTruthy();
+        randBtn.click();
+        await nextFrames();
+      } finally {
+        if (seedBtn) seedBtn.onclick = origSeedOnclick;
+        paramsBtn.onclick = origParamsOnclick;
+      }
+      expect(paramsCalled).toBe(true);
+      expect(seedCalled).toBe(false);
     });
   });
 

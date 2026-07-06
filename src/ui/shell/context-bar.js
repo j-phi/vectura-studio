@@ -769,8 +769,8 @@
     // Presets — flyout of the layer system's named presets (absent when none).
     const presetWrap = makePresetFlyout(layer);
     if (presetWrap) els.content.appendChild(presetWrap);
-    // Randomize (single die) — reroll the seed for a fresh variation, or the
-    // full param set for seedless generators.
+    // Randomize (single die) — reroll the full param set, same as the
+    // Algorithm Configuration panel's Randomize button.
     els.content.appendChild(makeBtn({
       icon: ic.randomize, tooltip: (b.randomize && b.randomize.tooltip),
       onClick: () => doRandomizeAlgo(layer), disabled: locked,
@@ -1094,14 +1094,21 @@
   };
 
   // ── TB-4b: algorithm-layer affordances ────────────────────────────────
-  // A labeled dropdown pill (reuses the text-field chip styling). Caret + label,
-  // no bound picker — the caller wires the toggle via makeMenuFlyout.
-  const makeDropField = (extraClass, text, title) => {
+  // A labeled dropdown pill (reuses the text-field chip styling). Caret + label
+  // (+ optional leading icon, used by the algorithm switcher), no bound picker
+  // — the caller wires the toggle via makeMenuFlyout/makeAlgoFlyout.
+  const makeDropField = (extraClass, text, title, iconHtml, iconColor) => {
     const field = el('span', `ctxbar-text-field ${extraClass}`);
     field.setAttribute('tabindex', '-1'); field.setAttribute('data-ctxbar-roving', '');
     field.setAttribute('role', 'button'); field.setAttribute('aria-haspopup', 'menu');
     field.setAttribute('aria-expanded', 'false');
     if (title) field.title = title;
+    if (iconHtml) {
+      const ico = el('span', 'lvl-algo-sub-ico');
+      ico.style.color = iconColor || '';
+      ico.innerHTML = iconHtml;
+      field.appendChild(ico);
+    }
     const lbl = el('span', 'ctxbar-text-fieldlabel'); lbl.textContent = text; field.appendChild(lbl);
     const caret = el('span', 'ctxbar-text-caret'); caret.textContent = '▾'; caret.setAttribute('aria-hidden', 'true');
     field.appendChild(caret);
@@ -1136,33 +1143,54 @@
     return wrap;
   };
 
-  // Algorithm switcher — reads the docked module dropdown's already-grouped
-  // <option>s (single source of truth for the algorithm list + labels) and, on
-  // pick, drives that real <select> so the switch path stays byte-identical.
+  // Algorithm switcher — sourced from the same list/icon/color helpers as the
+  // Add Layer algorithm submenu and the left-pane module dropdown
+  // (Vectura.UI.utils.getDrawableAlgorithmOptions/renderAlgoMenuHTML), so all
+  // three surfaces render an identical grouped, icon-labeled list from one
+  // place. On pick, drives the real docked <select> so the switch path stays
+  // byte-identical to the other two.
   const makeAlgoSwitcher = (layer) => {
     const b = B();
-    const sel = G.document.getElementById('generator-module');
-    if (!sel || !sel.options || !sel.options.length) return null;
+    const utils = window.Vectura.UI && window.Vectura.UI.utils;
+    const items = (utils && utils.getDrawableAlgorithmOptions && utils.getDrawableAlgorithmOptions()) || [];
+    if (!items.length) return null;
     const curType = layer && layer.type;
-    const items = [];
-    Array.from(sel.children).forEach((node) => {
-      if (node.tagName === 'OPTGROUP') {
-        if (node.label) items.push({ header: node.label });
-        Array.from(node.children).forEach((opt) => items.push(optionItem(opt, curType)));
-      } else if (node.tagName === 'OPTION') {
-        items.push(optionItem(node, curType));
-      }
-    });
-    const hit = Array.from(sel.options).find((o) => o.value === curType);
-    const curLabel = (hit && hit.textContent) || prettifyType(curType);
-    const field = makeDropField('ctxbar-algo-field', curLabel, (b.changeAlgo && b.changeAlgo.tooltip));
-    return makeMenuFlyout(field, items, 'ctxbar-algo-flyout');
+    const hit = items.find((it) => it.type === curType);
+    const curLabel = (hit && hit.label) || prettifyType(curType);
+    const curIcon = utils && utils.getAlgoMenuIcon ? utils.getAlgoMenuIcon(curType) : '';
+    const curColor = utils && utils.getAlgoMenuColor ? utils.getAlgoMenuColor(curType) : '';
+    const field = makeDropField('ctxbar-algo-field', curLabel, (b.changeAlgo && b.changeAlgo.tooltip), curIcon, curColor);
+    return makeAlgoFlyout(field, items, curType);
   };
-  const optionItem = (opt, curType) => ({
-    label: opt.textContent || opt.value,
-    active: opt.value === curType,
-    onSelect: () => switchAlgorithm(opt.value),
-  });
+  // Wraps `field` with the shared grouped/iconed algorithm list markup (same
+  // `algo-group-div`/`lvl-algo-sub-item` rows as the other two pickers) and
+  // routes row clicks through `switchAlgorithm` via event delegation.
+  const makeAlgoFlyout = (field, items, curType) => {
+    const wrap = el('span', 'ctxbar-align-wrap ctxbar-algo-menu-wrap');
+    const fly = el('div', 'ctxbar-align-flyout ctxbar-algo-flyout', { role: 'menu', 'aria-hidden': 'true' });
+    const utils = window.Vectura.UI && window.Vectura.UI.utils;
+    fly.innerHTML = (utils && utils.renderAlgoMenuHTML) ? utils.renderAlgoMenuHTML(items, curType) : '';
+    let open = false;
+    const close = () => {
+      open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
+      field.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
+    };
+    const openFn = () => {
+      if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout(); // close any other open flyout
+      open = true; fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false');
+      field.setAttribute('aria-expanded', 'true'); state.closeFlyout = close;
+    };
+    fly.addEventListener('click', (e) => {
+      const row = e.target.closest('[data-algo-type]');
+      if (!row) return;
+      e.preventDefault(); e.stopPropagation();
+      close();
+      switchAlgorithm(row.getAttribute('data-algo-type'));
+    });
+    field.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open ? close() : openFn(); });
+    wrap.appendChild(field); wrap.appendChild(fly);
+    return wrap;
+  };
   const prettifyType = (t) => String(t || '').replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/^\w/, (c) => c.toUpperCase());
   const switchAlgorithm = (nextType) => {
@@ -1206,25 +1234,21 @@
     restoreState();
   };
 
-  // Randomize (single die): reroll the seed when the generator is seeded (fresh
-  // variation, keeps the user's tuning); otherwise reroll the full param set.
+  // Randomize (single die): mirrors the Algorithm Configuration panel's
+  // "Randomize" button — always rerolls the full param set, not just the seed.
   const doRandomizeAlgo = (layer) => {
-    const seeded = layer && layer.params && Number.isFinite(Number(layer.params.seed));
     const doc = G.document;
-    if (seeded) {
-      const btn = doc.getElementById('btn-rand-seed');
-      if (btn) { btn.click(); restoreState(); return; }
-    }
     const rnd = doc.getElementById('btn-randomize-params');
     if (rnd) { rnd.click(); restoreState(); return; }
-    // Fallback: reseed directly if the docked buttons aren't mounted.
+    // Fallback: call the randomizer directly if the docked button isn't mounted.
     const a = getApp();
-    if (seeded && a && layer && layer.params) {
+    const ui = a && a.ui;
+    if (ui && typeof ui.randomizeLayerParams === 'function' && layer) {
       a.pushHistory && a.pushHistory();
-      layer.params.seed = Math.floor(Math.abs((Number(layer.params.seed) || 0) * 9301 + 49297) % 99999);
-      a.ui && a.ui.storeLayerParams && a.ui.storeLayerParams(layer);
+      ui.randomizeLayerParams(layer);
+      ui.storeLayerParams && ui.storeLayerParams(layer);
       (a.regen ? a.regen() : a.render && a.render());
-      a.ui && a.ui.buildControls && a.ui.buildControls();
+      ui.buildControls && ui.buildControls();
       restoreState();
     }
   };

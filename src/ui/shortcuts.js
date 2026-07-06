@@ -515,27 +515,8 @@
     algoSubmenuEl = document.createElement('div');
     algoSubmenuEl.id = 'lvl-algo-submenu';
     algoSubmenuEl.className = 'lvl-algo-submenu';
-    this._algoMenuColor = (type) => {
-      const pid = SETTINGS.layerBarPaletteId || 'prism';
-      const palettes = window.Vectura.LAYER_PALETTES || [];
-      const pal = palettes.find((p) => p.id === pid) || palettes.find((p) => p.id === 'prism');
-      const c = pal?.colors;
-      if (!c) return 'currentColor';
-      return c[type] || c._default || 'currentColor';
-    };
-    {
-      const renderItem = ({ type, label }) =>
-        `<div class="lvl-algo-sub-item" data-add="algo" data-algo-type="${type}">` +
-        `<span class="lvl-algo-sub-ico" style="color:${this._algoMenuColor(type)}">${(this._LVL_I[type] ?? this._LVL_I.grid)?.() ?? ''}</span>${label}</div>`;
-      const groups = window.Vectura.groupAlgorithmsForMenu(_ALGO_LIST);
-      const parts = [];
-      groups.forEach((group, gi) => {
-        if (!group.items.length) return;
-        parts.push(`<div class="algo-group-div${gi ? ' algo-group-sep' : ''}">${group.label}</div>`);
-        group.items.forEach((item) => parts.push(renderItem(item)));
-      });
-      algoSubmenuEl.innerHTML = parts.join('');
-    }
+    this._algoMenuColor = (type) => window.Vectura.UI.utils.getAlgoMenuColor(type);
+    algoSubmenuEl.innerHTML = window.Vectura.UI.utils.renderAlgoMenuHTML(_ALGO_LIST, null);
     this._refreshAlgoSubmenuColors = () => {
       if (!algoSubmenuEl) return;
       algoSubmenuEl.querySelectorAll('.lvl-algo-sub-item').forEach((item) => {
