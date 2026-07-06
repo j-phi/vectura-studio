@@ -417,6 +417,7 @@
       // SEL-4/SG-2/SG-5 hover feedback state (test-visible hooks).
       this.hoverReadout = null;
       this.hoverHighlight = null;
+      this.hoverCenter = null;
       this.lastTooltipText = null;
       this.selectedLayerId = null;
       this.selectedLayerIds = new Set();
@@ -465,6 +466,7 @@
       this.shapeDraft = null;
       this.shapeDraftSides = 6;
       this.shapeCornerDrag = null;
+      this.freeformCornerDrag = null;
       this.algoDraft = null;
       this.algoDraftType = 'wavetable';
       this._lastAlgoTap = { time: 0, x: 0, y: 0 };
@@ -808,6 +810,34 @@
     hideDragTooltip() {
       if (this._dragTooltipEl) this._dragTooltipEl.style.display = 'none';
       this.lastTooltipText = null;
+      this.hideAnchorLabel();
+    }
+
+    // Small pink feature label (e.g. "anchor") drawn at the point itself, above
+    // the gray measurement chip — Illustrator smart-guide parity. Positioned in
+    // client (fixed) coordinates from the anchor's on-screen location.
+    ensureAnchorLabel() {
+      if (this._anchorLabelEl) return this._anchorLabelEl;
+      const el = document.createElement('div');
+      el.className = 'drag-anchor-label';
+      el.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(el);
+      this._anchorLabelEl = el;
+      return el;
+    }
+
+    showAnchorLabel(text, clientX, clientY) {
+      const el = this.ensureAnchorLabel();
+      el.textContent = text;
+      el.style.left = `${clientX + 8}px`;
+      el.style.top = `${clientY - 16}px`;
+      el.style.display = 'block';
+      this.lastAnchorLabelText = text;
+    }
+
+    hideAnchorLabel() {
+      if (this._anchorLabelEl) this._anchorLabelEl.style.display = 'none';
+      this.lastAnchorLabelText = null;
     }
 
     // ——— SEL-4: live measurement chips (hover X/Y, move dX/dY) ———————————
@@ -818,7 +848,37 @@
       return (window.Vectura && window.Vectura.SMART_GUIDES) || null;
     }
 
+    // Nearest visible object's bounding-box center within the screen-px hit
+    // radius, or null. Considers ALL objects (not just the selection) so the
+    // center helper point is available for every object.
+    _hitObjectCenter(sx, sy, cfg) {
+      const tol = cfg?.centerHitScreenPx ?? 7;
+      let best = null;
+      let bestD = tol;
+      for (const layer of this.engine.layers) {
+        if (!layer.visible || layer.isGroup || this.isLayerLocked?.(layer.id)) continue;
+        if (this.engine.hasCompoundAncestor?.(layer)) continue;
+        const b = this.getLayerBounds(layer, null);
+        if (!b) continue;
+        const c = b.center || { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+        if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) continue;
+        const s = this.worldToScreen(c.x, c.y);
+        const d = Math.hypot(s.x - sx, s.y - sy);
+        if (d <= bestD) { bestD = d; best = { x: c.x, y: c.y }; }
+      }
+      return best;
+    }
+
+    // User preference (Settings ▸ Guides & Display ▸ "Coordinate readout"):
+    // gates every X/Y & dX/dY measurement chip (hover, move-delta, anchor drag).
+    // Default ON. Transient action feedback (rotate °, resize W×H) is unaffected.
+    _coordinateReadoutEnabled() {
+      const settings = (window.Vectura && window.Vectura.SETTINGS) || SETTINGS || {};
+      return settings.showCoordinateReadout !== false;
+    }
+
     _formatChipText(kind, values) {
+      if (!this._coordinateReadoutEnabled()) return null;
       const cfg = this._smartGuidesConfig();
       if (!cfg || !cfg.chip) return null;
       const settings = (window.Vectura && window.Vectura.SETTINGS) || SETTINGS || {};
@@ -833,11 +893,12 @@
         ? UnitUtils.getDocumentUnitLabel(units)
         : (units === 'imperial' ? 'in' : 'mm');
       const sep = cfg.chip.labelSeparator ?? ': ';
-      const pair = cfg.chip.pairSeparator ?? ' / ';
+      // Illustrator-style two-line readout: each axis on its own line with its
+      // own unit suffix (rendered in the gray chip via `white-space: pre`).
       if (kind === 'delta') {
-        return `${cfg.chip.dx}${sep}${fmt(values.dx)}${pair}${cfg.chip.dy}${sep}${fmt(values.dy)} ${unitLabel}`;
+        return `${cfg.chip.dx}${sep}${fmt(values.dx)} ${unitLabel}\n${cfg.chip.dy}${sep}${fmt(values.dy)} ${unitLabel}`;
       }
-      return `${cfg.chip.x}${sep}${fmt(values.x)}${pair}${cfg.chip.y}${sep}${fmt(values.y)} ${unitLabel}`;
+      return `${cfg.chip.x}${sep}${fmt(values.x)} ${unitLabel}\n${cfg.chip.y}${sep}${fmt(values.y)} ${unitLabel}`;
     }
 
     _showMoveDeltaChip(dx, dy, e) {
@@ -855,14 +916,16 @@
       let chipPoint = null;
       let label = null;
       let hoverHighlight = null;
+      let nextCenter = null;
       const busy = this.isLayerDrag || this.isPan || this.isSelecting || this.directDrag
-        || this.penAnchorDrag || this.touchGesture || this.shapeCornerDrag || this.modifierDrag;
+        || this.penAnchorDrag || this.touchGesture || this.shapeCornerDrag || this.freeformCornerDrag || this.modifierDrag;
       if (!busy && this.canvas) {
         const rect = this.canvas.getBoundingClientRect();
         const sx = (e.clientX ?? 0) - rect.left;
         const sy = (e.clientY ?? 0) - rect.top;
         const world = this.screenToWorld(sx, sy);
         const tool = this.activeTool;
+        const settingsRef = (window.Vectura && window.Vectura.SETTINGS) || SETTINGS || {};
         let overControlOrHandle = false;
         if (tool === 'direct' || (tool === 'pen' && this.penMode !== 'draw')) {
           const control = this.hitDirectControl(world);
@@ -895,6 +958,20 @@
             }
           }
         }
+        // Center helper point: hovering near ANY object's center reveals a
+        // marker + "center" label + X/Y chip (Illustrator parity). Runs for all
+        // visible objects, not just the selection, when no anchor/handle is
+        // grabbed. Gated by Settings ▸ Guides & Display ▸ "Center point".
+        if (!chipPoint && (tool === 'select' || tool === 'direct')
+            && (settingsRef.showCenterPoint !== false)) {
+          const c = this._hitObjectCenter(sx, sy, cfg);
+          if (c) {
+            overControlOrHandle = true;
+            chipPoint = c;
+            label = cfg.labels?.center ?? null;
+            nextCenter = c;
+          }
+        }
         // SG-5: highlight an unselected path under Selection/Direct tools so
         // click targets read before clicking (magenta outline + `path` label).
         if (!overControlOrHandle && (tool === 'select' || tool === 'direct')) {
@@ -911,13 +988,26 @@
       const nextHL = hoverHighlight ? `${hoverHighlight.layerId}` : null;
       this.hoverHighlight = hoverHighlight;
       this._hoverHighlightKey = nextHL;
-      if (prevHL !== nextHL) this.draw();
+      // Center helper marker state + redraw only on change.
+      const prevCenter = this._hoverCenterKey || null;
+      const nextCenterKey = nextCenter ? `${nextCenter.x.toFixed(2)},${nextCenter.y.toFixed(2)}` : null;
+      this.hoverCenter = nextCenter;
+      this._hoverCenterKey = nextCenterKey;
+      if (prevHL !== nextHL || prevCenter !== nextCenterKey) this.draw();
       if (chipPoint) {
         this.hoverReadout = { x: chipPoint.x, y: chipPoint.y, label };
         const text = this._formatChipText('position', chipPoint);
         if (text != null) {
           this._hoverChipActive = true;
           this.showDragTooltip(text, e.clientX ?? 0, e.clientY ?? 0);
+          // Pink feature label pinned at the point itself (e.g. "anchor").
+          if (label && this.canvas) {
+            const rect = this.canvas.getBoundingClientRect();
+            const s = this.worldToScreen(chipPoint.x, chipPoint.y);
+            this.showAnchorLabel(label, rect.left + s.x, rect.top + s.y);
+          } else {
+            this.hideAnchorLabel();
+          }
         }
       } else {
         this.hoverReadout = null;
@@ -1171,7 +1261,41 @@
       const fillRaw = slider.style.getPropertyValue('--draw-order-fill');
       const frac = fillRaw ? Math.max(0, Math.min(1, parseFloat(fillRaw) / 100)) : 1;
       const halo = this.mixRgb(start, end, frac);
-      slider.style.setProperty('--draw-order-halo', this.rgbToCss(halo, 1));
+      const haloCss = this.rgbToCss(halo, 1);
+      slider.style.setProperty('--draw-order-halo', haloCss);
+      this.updateDrawOrderThumbShape(slider, haloCss);
+    }
+
+    // Below 100% the handle swaps from a plain circle to a rounded "play" triangle
+    // (so the bar reads as "there's more to reveal"), built from a tiny inline SVG since
+    // ::-webkit-slider-thumb is a single pseudo-element — a background-image is the only
+    // way to draw a shape whose fill/ring hug a non-circular silhouette the way the
+    // circle's border hugs the circle. The path fills its 13x13 viewBox edge-to-edge —
+    // the SAME way border-radius:50% fills the circle's own box — so there's no dead
+    // transparent margin around it for the track to show through at low values (a
+    // regression an earlier oversized-canvas version had). The outer glow is a CSS
+    // `filter: drop-shadow` on the thumb (see components.css) instead of anything baked
+    // into this SVG: drop-shadow follows the rendered silhouette and, like box-shadow,
+    // isn't clipped to the box, so it can bleed outward the same way the circle's glow
+    // does regardless of how big the (CSS-controlled) thumb box itself is. The two
+    // stacked copies of the path below are just the ring: a dark separation stroke
+    // behind (the circle's "0 0 0 2px black" ring) and the crisp halo-stroke + white
+    // fill on top (the circle's border + background).
+    updateDrawOrderThumbShape(slider, haloCss) {
+      const pct = Number(slider.value);
+      const isProgress = Number.isFinite(pct) && pct < 100;
+      slider.classList.toggle('is-progress', isProgress);
+      if (!isProgress) return;
+      const fill = getThemeToken('--ui-text', '#ffffff');
+      const path =
+        'M0.8,2.3 L0.8,10.7 Q0.8,12 1.973,11.439 L11.488,6.888 ' +
+        'Q12.3,6.5 11.488,6.112 L1.973,1.561 Q0.8,1 0.8,2.3 Z';
+      const svg =
+        `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 13 13'>` +
+        `<path d='${path}' fill='${fill}' stroke='rgba(0,0,0,0.45)' stroke-width='2.2' stroke-linejoin='round'/>` +
+        `<path d='${path}' fill='${fill}' stroke='${haloCss}' stroke-width='1.2' stroke-linejoin='round'/>` +
+        `</svg>`;
+      slider.style.setProperty('--draw-order-thumb-icon', `url("data:image/svg+xml,${encodeURIComponent(svg)}")`);
     }
 
     mixRgb(a, b, t) {
@@ -1387,6 +1511,7 @@
       this.penDragStart = null;
       this.penDragMirrorLock = null;
       this.shapeCornerDrag = null;
+      this.freeformCornerDrag = null;
       this.directDrag = null;
       this.isScissor = false;
       this.scissorStart = null;
@@ -1898,7 +2023,56 @@
       return null;
     }
 
-    beginShapeCornerDrag(layer, pathIndex, corner, scope = 'all') {
+    // Vertex indices whose corner is part of the current direct multi-selection.
+    // Selected anchors map to their nearest shape vertex, so this works even
+    // when some corners are rounded (a rounded corner is 2 anchors, both nearest
+    // their shared vertex).
+    _selectedCornerIndices(shape) {
+      const sel = this.directSelection;
+      if (!shape || !sel?.selectedIndices?.size || !Array.isArray(sel.anchors)) return new Set();
+      const descriptors = getCornerDescriptors(shape);
+      if (!descriptors.length) return new Set();
+      const set = new Set();
+      for (const ai of sel.selectedIndices) {
+        const a = sel.anchors[ai];
+        if (!a) continue;
+        let best = -1;
+        let bd = Infinity;
+        descriptors.forEach((d, i) => {
+          const dx = d.vertex.x - a.x;
+          const dy = d.vertex.y - a.y;
+          const dd = dx * dx + dy * dy;
+          if (dd < bd) { bd = dd; best = i; }
+        });
+        if (best >= 0) set.add(best);
+      }
+      return set;
+    }
+
+    // After a rounded-corner rebuild the anchor count changes, so re-derive the
+    // selected-anchor set from the persistent vertex set (keeps the multi-corner
+    // selection visually intact through the drag).
+    _reselectCornerAnchors(cornerSet) {
+      const sel = this.directSelection;
+      if (!sel || !Array.isArray(sel.anchors) || !cornerSet) return;
+      const descriptors = getCornerDescriptors(this.shapeCornerDrag?.shape);
+      if (!descriptors.length) return;
+      const next = new Set();
+      sel.anchors.forEach((a, ai) => {
+        let best = -1;
+        let bd = Infinity;
+        descriptors.forEach((d, i) => {
+          const dx = d.vertex.x - a.x;
+          const dy = d.vertex.y - a.y;
+          const dd = dx * dx + dy * dy;
+          if (dd < bd) { bd = dd; best = i; }
+        });
+        if (best >= 0 && cornerSet.has(best)) next.add(ai);
+      });
+      sel.selectedIndices = next;
+    }
+
+    beginShapeCornerDrag(layer, pathIndex, corner, scope = 'all', cornerSet = null) {
       if (!layer || !corner) return false;
       const meta = this.getShapeMetaForLayer(layer, pathIndex);
       if (!meta?.shape) return false;
@@ -1907,12 +2081,16 @@
         pathIndex,
         scope,
         cornerIndex: corner.index,
+        cornerSet: scope === 'selected' && cornerSet ? new Set(cornerSet) : null,
         shape: cloneShape(meta.shape),
         historyPushed: false,
       };
       if (scope === 'single') {
         this.selectLayer(layer);
         this.setDirectSelection(layer, pathIndex);
+      } else if (scope === 'selected') {
+        // Keep the existing multi-corner direct selection intact.
+        this.selectLayer(layer);
       } else {
         this.selectLayer(layer);
       }
@@ -1935,6 +2113,13 @@
       const currentRadii = getShapeRadii(this.shapeCornerDrag.shape, descriptors.length);
       if (this.shapeCornerDrag.scope === 'single') {
         currentRadii[this.shapeCornerDrag.cornerIndex] = clamp(nextRadius, 0, descriptor.maxRadius);
+      } else if (this.shapeCornerDrag.scope === 'selected') {
+        // Round every selected corner to the same dragged radius (each clamped
+        // to its own geometric maximum). Already-rounded corners snap to it.
+        const set = this.shapeCornerDrag.cornerSet || new Set([this.shapeCornerDrag.cornerIndex]);
+        descriptors.forEach((entry, index) => {
+          if (set.has(index)) currentRadii[index] = clamp(nextRadius, 0, entry.maxRadius);
+        });
       } else {
         descriptors.forEach((entry, index) => {
           currentRadii[index] = clamp(nextRadius, 0, entry.maxRadius);
@@ -1946,14 +2131,15 @@
         this.showDragTooltip(`r ${_dr.toFixed(1)}`, this._dragCursorPos.x, this._dragCursorPos.y);
       }
       if (!this.shapeCornerDrag.historyPushed) {
-        if (this.shapeCornerDrag.scope === 'single' && this.onDirectEditStart) this.onDirectEditStart();
+        if ((this.shapeCornerDrag.scope === 'single' || this.shapeCornerDrag.scope === 'selected') && this.onDirectEditStart) this.onDirectEditStart();
         if (this.shapeCornerDrag.scope === 'all' && this.onCommitTransform) this.onCommitTransform();
         this.shapeCornerDrag.historyPushed = true;
       }
-      if (this.shapeCornerDrag.scope === 'single') {
+      if (this.shapeCornerDrag.scope === 'single' || this.shapeCornerDrag.scope === 'selected') {
         const nextMeta = this.directSelection?.meta ? { ...this.directSelection.meta, shape: cloneShape(this.shapeCornerDrag.shape) } : null;
         if (!nextMeta) return false;
         this.setShapePathFromMeta(nextMeta);
+        if (this.shapeCornerDrag.scope === 'selected') this._reselectCornerAnchors(this.shapeCornerDrag.cornerSet);
       } else {
         const meta = this.getShapeMetaForLayer(layer, this.shapeCornerDrag.pathIndex);
         if (!meta?.shape) return false;
@@ -1977,6 +2163,152 @@
       this.hideDragTooltip();
       this.draw();
     }
+
+    // Returns draggable corner handles for hard-corner anchors in freeform (non-parametric) paths.
+    // A hard corner is an anchor with corner:true (from reduceAnchors) OR no bezier handles.
+    _getFreeformCornerHandles() {
+      const sel = this.directSelection;
+      if (!sel || sel.meta?.shape) return [];
+      const data = this.getDirectSelectionWorldAnchors();
+      if (!data) return [];
+      const worldAnchors = data.anchors;
+      const srcAnchors = sel.anchors;
+      const n = srcAnchors.length;
+      if (n < 3) return [];
+      const result = [];
+      for (let i = 0; i < n; i++) {
+        const sa = srcAnchors[i];
+        const wa = worldAnchors[i];
+        if (!(sa.corner === true || (sa.in === null && sa.out === null))) continue;
+        if (!sel.closed && (i === 0 || i === n - 1)) continue;
+        const prevS = srcAnchors[(i - 1 + n) % n];
+        const nextS = srcAnchors[(i + 1) % n];
+        const prevW = worldAnchors[(i - 1 + n) % n];
+        const nextW = worldAnchors[(i + 1) % n];
+        const pdx = prevS.x - sa.x, pdy = prevS.y - sa.y;
+        const ndx = nextS.x - sa.x, ndy = nextS.y - sa.y;
+        const prevLen = Math.hypot(pdx, pdy), nextLen = Math.hypot(ndx, ndy);
+        if (prevLen < 1e-9 || nextLen < 1e-9) continue;
+        const prevDirS = { x: pdx / prevLen, y: pdy / prevLen };
+        const nextDirS = { x: ndx / nextLen, y: ndy / nextLen };
+        let sbx = prevDirS.x + nextDirS.x, sby = prevDirS.y + nextDirS.y;
+        const sbl = Math.hypot(sbx, sby);
+        if (sbl < 1e-6) continue;
+        const inwardS = { x: sbx / sbl, y: sby / sbl };
+        const cosAng = clamp(prevDirS.x * nextDirS.x + prevDirS.y * nextDirS.y, -1, 1);
+        const edgeAngle = Math.acos(cosAng);
+        const halfAngle = Math.max(1e-4, edgeAngle * 0.5);
+        const sinHalf = Math.sin(halfAngle);
+        const tanHalf = Math.tan(halfAngle);
+        const maxRadius = tanHalf > 1e-4 ? Math.min(prevLen, nextLen) * tanHalf * 0.5 : 0;
+        const wpx = prevW.x - wa.x, wpy = prevW.y - wa.y;
+        const wnx = nextW.x - wa.x, wny = nextW.y - wa.y;
+        const wpl = Math.hypot(wpx, wpy), wnl = Math.hypot(wnx, wny);
+        if (wpl < 1e-9 || wnl < 1e-9) continue;
+        let wbx = wpx / wpl + wnx / wnl, wby = wpy / wpl + wny / wnl;
+        const wbl = Math.hypot(wbx, wby);
+        if (wbl < 1e-6) continue;
+        const inwardW = { x: wbx / wbl, y: wby / wbl };
+        const off = SHAPE_CORNER_HANDLE_MIN / Math.max(this.scale, 0.01);
+        result.push({
+          anchorIndex: i,
+          worldVertex: wa,
+          worldPoint: { x: wa.x + inwardW.x * off, y: wa.y + inwardW.y * off },
+          worldInward: inwardW,
+          sourceVertex: { x: sa.x, y: sa.y },
+          sourcePrevDir: prevDirS,
+          sourceNextDir: nextDirS,
+          sourceInward: inwardS,
+          sinHalf, tanHalf,
+          prevLen, nextLen,
+          maxRadius,
+        });
+      }
+      return result;
+    }
+
+    hitFreeformCornerHandle(world) {
+      const handles = this._getFreeformCornerHandles();
+      const tolSq = Math.pow(7 / this.scale, 2);
+      for (const h of handles) {
+        const dx = world.x - h.worldPoint.x, dy = world.y - h.worldPoint.y;
+        if (dx * dx + dy * dy <= tolSq) return h;
+      }
+      return null;
+    }
+
+    beginFreeformCornerDrag(handle) {
+      if (!handle || !this.directSelection) return false;
+      const layer = this.engine.layers.find((l) => l.id === this.directSelection.layerId);
+      if (!layer) return false;
+      this.freeformCornerDrag = {
+        layerId: this.directSelection.layerId,
+        pathIndex: this.directSelection.pathIndex,
+        anchorIndex: handle.anchorIndex,
+        sourceVertex: handle.sourceVertex,
+        sourcePrevDir: handle.sourcePrevDir,
+        sourceNextDir: handle.sourceNextDir,
+        sourceInward: handle.sourceInward,
+        sinHalf: handle.sinHalf,
+        tanHalf: handle.tanHalf,
+        prevLen: handle.prevLen,
+        nextLen: handle.nextLen,
+        maxRadius: handle.maxRadius,
+        currentRadius: 0,
+        originalAnchors: this.cloneAnchors(this.directSelection.anchors),
+        historyPushed: false,
+      };
+      return true;
+    }
+
+    updateFreeformCornerDrag(world) {
+      const drag = this.freeformCornerDrag;
+      if (!drag || !world) return false;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer) return false;
+      const srcPt = this.worldToSourcePoint(layer, world);
+      const dx = srcPt.x - drag.sourceVertex.x, dy = srcPt.y - drag.sourceVertex.y;
+      const projected = Math.max(0, dx * drag.sourceInward.x + dy * drag.sourceInward.y);
+      const r = clamp(drag.sinHalf > 1e-4 ? projected * drag.sinHalf : 0, 0, drag.maxRadius);
+      drag.currentRadius = r;
+      if (this._dragCursorPos) this.showDragTooltip(`r ${r.toFixed(1)}`, this._dragCursorPos.x, this._dragCursorPos.y);
+      if (!drag.historyPushed) {
+        if (this.onDirectEditStart) this.onDirectEditStart();
+        this.markDirectSelectionAsCustomPath();
+        drag.historyPushed = true;
+      }
+      const anchors = this.cloneAnchors(drag.originalAnchors);
+      const i = drag.anchorIndex;
+      if (r > 1e-4 && drag.tanHalf > 1e-4) {
+        const tDist = Math.min(drag.prevLen * 0.5, drag.nextLen * 0.5, r / drag.tanHalf);
+        const arcAngle = Math.PI - Math.max(1e-4, Math.acos(clamp(
+          drag.sourcePrevDir.x * drag.sourceNextDir.x + drag.sourcePrevDir.y * drag.sourceNextDir.y, -1, 1
+        )));
+        const handleLen = (4 / 3) * Math.tan(arcAngle / 4) * r;
+        const v = drag.sourceVertex, pd = drag.sourcePrevDir, nd = drag.sourceNextDir;
+        anchors.splice(i, 1,
+          { x: v.x + pd.x * tDist, y: v.y + pd.y * tDist, in: null,
+            out: { x: v.x + pd.x * tDist - pd.x * handleLen, y: v.y + pd.y * tDist - pd.y * handleLen } },
+          { x: v.x + nd.x * tDist, y: v.y + nd.y * tDist, out: null,
+            in: { x: v.x + nd.x * tDist - nd.x * handleLen, y: v.y + nd.y * tDist - nd.y * handleLen } }
+        );
+      }
+      if (this.directSelection) {
+        this.directSelection.anchors = anchors;
+        this.applyDirectPath();
+      }
+      this.draw();
+      return true;
+    }
+
+    endFreeformCornerDrag() {
+      if (!this.freeformCornerDrag) return;
+      this.freeformCornerDrag = null;
+      if (this.onDirectEditCommit) this.onDirectEditCommit();
+      this.hideDragTooltip();
+      this.draw();
+    }
+
 
     // ── SHP-1/2/3 — live shape-property plumbing ──────────────────────────────
     // Reads/writes the persisted live-shape params (`cornerRadii`, `sides`) that
@@ -3204,6 +3536,19 @@
       for (const auxSel of this.directAuxSelections || []) {
         this._applySelectionPath(auxSel);
       }
+      // Live measurement chip: while dragging, the gray box shows the relative
+      // delta dX/dY from the drag start (Illustrator parity) — no pink feature
+      // label during the drag. Gated by the "Coordinate readout" setting via
+      // _formatChipText → null. Skips synthetic events with no clientX/Y.
+      if (e && (e.clientX != null || e.clientY != null) && drag.anchorStart) {
+        const dragged = this.directSelection.anchors[drag.index];
+        const startW = this.sourceToWorldPoint(layer, drag.anchorStart);
+        const nowW = this.sourceToWorldPoint(layer, dragged);
+        this.hoverReadout = { x: nowW.x, y: nowW.y, label: null };
+        this.hideAnchorLabel();
+        const text = this._formatChipText('delta', { dx: nowW.x - startW.x, dy: nowW.y - startW.y });
+        if (text != null) this.showDragTooltip(text, e.clientX ?? 0, e.clientY ?? 0);
+      }
       this.draw();
       return true;
     }
@@ -4273,6 +4618,7 @@
       // SG-5: outline the hovered unselected path (magenta) beneath the
       // selection box so click targets are legible before clicking.
       if (this.hoverHighlight) this.drawHoverHighlight();
+      if (this.hoverCenter) this.drawCenterMarker();
       const selectionLayersForBox = this.tempTransform
         ? selectedLayers.filter((l) =>
             !l.displayMaskActive &&
@@ -5107,7 +5453,19 @@
           const selectedShape = this.getSelectedShapeLayer();
           if (selectedShape) {
             const shapeCorner = this.hitShapeCornerHandle(world, selectedShape, 0);
-            if (shapeCorner && this.beginShapeCornerDrag(selectedShape, 0, shapeCorner, 'single')) return;
+            if (shapeCorner) {
+              // Multi-corner round: if 2+ corners are selected and the grabbed
+              // handle is one of them, round the whole set together; else single.
+              const shapeMeta = this.getShapeMetaForLayer(selectedShape, 0);
+              const cornerSet = shapeMeta?.shape ? this._selectedCornerIndices(shapeMeta.shape) : new Set();
+              const multi = cornerSet.size >= 2 && cornerSet.has(shapeCorner.index);
+              const scope = multi ? 'selected' : 'single';
+              if (this.beginShapeCornerDrag(selectedShape, 0, shapeCorner, scope, cornerSet)) return;
+            }
+          }
+          if (!selectedShape && this.directSelection && !this.directSelection.meta?.shape) {
+            const freeformCorner = this.hitFreeformCornerHandle(world);
+            if (freeformCorner && this.beginFreeformCornerDrag(freeformCorner)) return;
           }
           const directControl = this.hitDirectControl(world);
           if (directControl) {
@@ -5647,6 +6005,16 @@
         return;
       }
 
+      if (this.freeformCornerDrag) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const world = this.screenToWorld(sx, sy);
+        this._dragCursorPos = { x: e.clientX, y: e.clientY };
+        this.updateFreeformCornerDrag(world);
+        return;
+      }
+
       if (this.penAnchorDrag && this.activeTool === 'pen' && this.penMode === 'anchor') {
         const rect = this.canvas.getBoundingClientRect();
         const sx = e.clientX - rect.left;
@@ -6180,6 +6548,11 @@
       }
       if (this.shapeCornerDrag) {
         this.endShapeCornerDrag();
+        clearActivePointer();
+        return;
+      }
+      if (this.freeformCornerDrag) {
+        this.endFreeformCornerDrag();
         clearActivePointer();
         return;
       }
@@ -6832,6 +7205,29 @@
         this.ctx.stroke();
       });
       this.ctx.restore();
+    }
+
+    // Small blue diamond drawn at the selection center while it's hovered
+    // (paired with the "center" label + X/Y chip). Drawn in world space, so the
+    // size is divided by scale to stay a constant ~8px on screen.
+    drawCenterMarker() {
+      const c = this.hoverCenter;
+      if (!c) return;
+      const ctx = this.ctx;
+      const h = 4 / this.scale;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(c.x, c.y - h);
+      ctx.lineTo(c.x + h, c.y);
+      ctx.lineTo(c.x, c.y + h);
+      ctx.lineTo(c.x - h, c.y);
+      ctx.closePath();
+      ctx.fillStyle = getThemeToken('--render-selection-accent', '#2b6cff');
+      ctx.fill();
+      ctx.lineWidth = Math.max(0.5, 1 / this.scale);
+      ctx.strokeStyle = getThemeToken('--render-selection-accent-strong', '#1d4ed8');
+      ctx.stroke();
+      ctx.restore();
     }
 
     drawGuides(guides) {
@@ -9211,42 +9607,6 @@
         this.ctx.fill();
         this.ctx.stroke();
 
-        // Minimal-trace corner affordance (Illustrator parity): a corner anchor
-        // (a tangent break — not a smooth-through bezier vertex) gets a small hollow
-        // ring just INSIDE the shape, signalling "drag me to pull out a curve".
-        // Placed along the interior angle bisector so it reads as belonging to the
-        // ink, never overlapping the anchor dot.
-        if (anchor.corner === true) {
-          const n = worldAnchors.length;
-          const prev = worldAnchors[(i - 1 + n) % n];
-          const next = worldAnchors[(i + 1) % n];
-          let bx = 0;
-          let by = 0;
-          const acc = (p) => {
-            if (!p) return;
-            const dx = p.x - anchor.x;
-            const dy = p.y - anchor.y;
-            const l = Math.hypot(dx, dy);
-            if (l > 1e-9) { bx += dx / l; by += dy / l; }
-          };
-          if (!sel.closed && (i === 0 || i === n - 1)) {
-            acc(i === 0 ? next : prev); // open endpoint: offset off its single edge
-          } else {
-            acc(prev);
-            acc(next);
-          }
-          const bl = Math.hypot(bx, by);
-          if (bl > 1e-6) {
-            const off = 7 / this.scale;
-            const ox = anchor.x + (bx / bl) * off;
-            const oy = anchor.y + (by / bl) * off;
-            this.ctx.beginPath();
-            this.ctx.lineWidth = 1.1 / this.scale;
-            this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
-            this.ctx.arc(ox, oy, 2.5 / this.scale, 0, Math.PI * 2);
-            this.ctx.stroke();
-          }
-        }
       });
     }
 
@@ -9286,6 +9646,27 @@
       const layer = this.getDirectSelectionLayer();
       if (layer && this.directSelection?.meta?.shape) {
         this.drawShapeCornerHandles(layer, this.directSelection.pathIndex, 'single');
+      }
+      if (layer && !this.directSelection?.meta?.shape) {
+        const freeHandles = this._getFreeformCornerHandles();
+        if (freeHandles.length) {
+          this.ctx.save();
+          this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
+          this.ctx.fillStyle = getThemeToken('--render-direct-handle-fill', '#0f172a');
+          this.ctx.lineWidth = 1 / this.scale;
+          const r = 3.2 / this.scale;
+          freeHandles.forEach((h) => {
+            this.ctx.beginPath();
+            this.ctx.moveTo(h.worldVertex.x, h.worldVertex.y);
+            this.ctx.lineTo(h.worldPoint.x, h.worldPoint.y);
+            this.ctx.stroke();
+            this.ctx.beginPath();
+            this.ctx.arc(h.worldPoint.x, h.worldPoint.y, r, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+          });
+          this.ctx.restore();
+        }
       }
       this.ctx.restore();
     }
@@ -10056,6 +10437,11 @@
       if (this.activeTool === 'direct') {
         const selectedShape = this.getSelectedShapeLayer();
         if (selectedShape && this.hitShapeCornerHandle(world, selectedShape, 0)) {
+          this.setCanvasCursor('pointer');
+          return;
+        }
+        if (!selectedShape && this.directSelection && !this.directSelection.meta?.shape
+            && this.hitFreeformCornerHandle(world)) {
           this.setCanvasCursor('pointer');
           return;
         }

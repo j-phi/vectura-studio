@@ -592,7 +592,7 @@
     const result = smoothPreview(tFinal, opts);
     session.records.forEach((rec) => {
       const layer = findLayer(engine, rec.id);
-      if (layer && rec.wasLive) emitShapeExpanded(layer, 'smooth');
+      if (layer && rec.wasLive) expandLiveShapeInPlace(layer, 'smooth');
     });
     smoothSession = null;
     return { committed: true, t: result?.t ?? tFinal };
