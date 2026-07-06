@@ -702,8 +702,28 @@
             for (const g of cluster) for (const i of g.idxs) rings.push(contours[i]);
             const mp = FB.nonZeroUnionByContainment(rings);
             const welded = FB.multiPolygonToPaths ? FB.multiPolygonToPaths(mp) : [];
-            if (welded.length) for (const r of welded) strokeItems.push({ pts: r, idx: -1, gid });
-            else for (const g of cluster) for (const i of g.idxs) strokeItems.push({ pts: contours[i], idx: i, gid });
+            if (welded.length) {
+              for (const r of welded) {
+                // The union only ever sees flat points, so it carries no font
+                // anchor map — re-trace the welded boundary into a fresh bezier
+                // fit (same GU.reduceAnchors used for un-merged glyphs) so a
+                // connected script run stays smooth instead of faceting at
+                // every point the boolean lib emitted. cornerAngleDeg is raised
+                // well above the font-anchor default (30): a clipped ring has no
+                // handles, so corner detection falls back to raw chord angles
+                // between consecutive points, and the clipper packs a few extra
+                // near-duplicate vertices right at each true intersection — that
+                // irregular local density reads as several small (30-70deg) false
+                // corners in a row. A real corner here (the two glyphs' outlines
+                // actually crossing) is always a sharp, near-perpendicular turn,
+                // so a high threshold only lets those through.
+                let anchors = null;
+                if (wantBezier && GU && typeof GU.reduceAnchors === 'function' && Array.isArray(r) && r.length >= 4) {
+                  anchors = GU.reduceAnchors(r.map((pt) => ({ x: pt.x, y: pt.y, in: null, out: null })), true, { cornerAngleDeg: 75 });
+                }
+                strokeItems.push({ pts: r, idx: -1, gid, anchors });
+              }
+            } else for (const g of cluster) for (const i of g.idxs) strokeItems.push({ pts: contours[i], idx: i, gid });
           });
         } else {
           strokeItems = contours.map((c, i) => ({ pts: c, idx: i, gid: glyphKey(i) }));
@@ -1022,9 +1042,11 @@
         } else {
           strokeItems.forEach((it) => {
             const seg = it.pts;
-            // Welded rings (idx -1) are fresh point arrays with no anchor map, so
-            // native beziers only apply to the kept un-welded glyph contours.
-            const anch = (it.idx >= 0 && laidAnchors) ? laidAnchors[it.idx] : null;
+            // Welded rings (idx -1) carry their own re-fit anchors (see above),
+            // already in DISPLAY space (fit from the post-transform union ring) —
+            // un-merged glyph contours look theirs up in laidAnchors by index,
+            // where they're still in LAYOUT space and need txPtRot to place them.
+            const anch = it.anchors || ((it.idx >= 0 && laidAnchors) ? laidAnchors[it.idx] : null);
             if (anch) {
               // Native cubic outline: forceCurves renders the glyph's real beziers
               // regardless of the layer's Curves toggle; `closed` joins the final
@@ -1032,7 +1054,9 @@
               // (Illustrator "Create Outlines" parity) produced in GoogleFonts.layout;
               // each anchor carries a `corner` flag for the node editor's affordance.
               seg.meta = { algorithm: 'text', straight: false, closed: true, forceCurves: true,
-                anchors: anch.map((a) => { const ra = txPtRot(a, it.idx); return { x: ra.x, y: ra.y, in: txPtRot(a.in, it.idx), out: txPtRot(a.out, it.idx), corner: a.corner === true }; }) };
+                anchors: it.anchors
+                  ? anch.map((a) => ({ x: a.x, y: a.y, in: a.in ? { x: a.in.x, y: a.in.y } : null, out: a.out ? { x: a.out.x, y: a.out.y } : null, corner: a.corner === true }))
+                  : anch.map((a) => { const ra = txPtRot(a, it.idx); return { x: ra.x, y: ra.y, in: txPtRot(a.in, it.idx), out: txPtRot(a.out, it.idx), corner: a.corner === true }; }) };
             } else {
               // Two ways a built-in stroke becomes native béziers instead of
               // faceted chords:

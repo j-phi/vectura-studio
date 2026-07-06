@@ -525,7 +525,12 @@ describe('GoogleFonts web-font source', () => {
       expect(welded.length).toBe(1);
       // …and nothing crosses anything anymore.
       expect(anyCrossingBetweenRings(welded)).toBe(false);
-      expect(welded.every((p) => p.meta && p.meta.straight === true && !p.meta.anchors)).toBe(true);
+      // The union boolean only ever sees flat points, so the welded ring has no
+      // font anchor map of its own — it must be RE-FIT into native bezier
+      // anchors (same as any un-merged glyph) rather than left as a bare
+      // straight-segment polygon, so a connected script run stays smooth.
+      expect(welded.every((p) => p.meta && p.meta.straight === false && p.meta.forceCurves === true
+        && Array.isArray(p.meta.anchors) && p.meta.anchors.length > 0)).toBe(true);
     });
 
     test('merge preserves counters (hole survives, is not flooded)', () => {
@@ -553,17 +558,21 @@ describe('GoogleFonts web-font source', () => {
     test('merge welds only the overlapping glyphs and keeps the rest as beziers', () => {
       V.WEBFONT_GLYPHS[MERGE] = mixedFont();
       // "IXX": the narrow curved I touches nothing; the two wide X triangles ink-
-      // overlap each other. Default merge must weld the XX pair into one flattened
+      // overlap each other. Default merge must weld the XX pair into one
       // boundary while leaving I as a native cubic outline (selective merge).
+      // The welded boundary is re-fit into its own bezier anchors (no font
+      // anchor map survives a boolean union), so BOTH the untouched I and the
+      // welded XX ring end up native-curve — welding no longer means faceted.
       const out = gen({ font: `google:${MERGE}`, text: 'IXX', fitToFrame: false, fontSize: 40 });
       const curved = out.filter((p) => p.meta && p.meta.anchors);
       const flat = out.filter((p) => p.meta && p.meta.straight === true && !p.meta.anchors);
-      // the I survived as a native curve…
-      expect(curved.length).toBeGreaterThan(0);
+      // the I survived as a native curve, and the welded XX ring is native too…
+      expect(curved.length).toBe(2);
       expect(curved.every((p) => p.meta.forceCurves === true)).toBe(true);
-      // …and the X pair welded into flattened ring(s) that no longer cross.
-      expect(flat.length).toBeGreaterThan(0);
-      expect(anyCrossingBetweenRings(flat)).toBe(false);
+      // …so nothing is left as a bare straight-segment polygon…
+      expect(flat.length).toBe(0);
+      // …and the welded ring's fitted anchors still don't cross anything.
+      expect(anyCrossingBetweenRings(curved.map((p) => p.meta.anchors))).toBe(false);
     });
 
     test('bezierOutline off + merge keeps non-overlapping glyphs as plain polylines', () => {

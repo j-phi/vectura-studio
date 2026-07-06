@@ -113,4 +113,32 @@ describe('GeometryUtils.reduceAnchors', () => {
     const one = GU.reduceAnchors([{ x: 1, y: 2, in: null, out: null }], true, {});
     expect(one).toHaveLength(1);
   });
+
+  // A polygon-boolean union (text.js welds touching script-font glyphs this
+  // way) carries no font anchor handles, so corner detection falls back to raw
+  // chord angles between consecutive points — and the clipper packs a few extra
+  // near-duplicate vertices right at each true intersection. That irregular
+  // local density reads as a false corner at the font-anchor default (30°) even
+  // though the boundary is otherwise a smooth curve. Fixture captured from a
+  // real Dancing Script "aa" weld seam (the exact bug this guards against).
+  test('a boolean-union weld seam needs a higher corner threshold than font anchors to stay smooth', () => {
+    const raw = [
+      [122.611, 99.576], [124.75, 98.278], [126.938, 97.444], [129.111, 97.167],
+      [131.097, 97.451], [132.722, 98.306], [133.806, 99.632], [134.167, 101.333],
+      [133.979, 102.5], [133.417, 103.222], [131.444, 103.722], [131.639, 102.75],
+      [131.722, 101.778], [131.569, 100.59], [131.111, 99.583], [130.278, 98.896],
+      [129, 98.667], [127.431, 98.938], [125.833, 99.75], [122.722, 102.639],
+    ].map(([x, y]) => ({ x, y, in: null, out: null }));
+
+    const atFontDefault = GU.reduceAnchors(raw, false, {}); // cornerAngleDeg 30
+    const atWeldThreshold = GU.reduceAnchors(raw, false, { cornerAngleDeg: 75 });
+    const cornerCount = (anchors) => anchors.filter((a) => a.corner).length;
+    const flaggedNear = (anchors, x, y) => anchors.some((a) => a.corner && Math.hypot(a.x - x, a.y - y) < 0.5);
+
+    expect(cornerCount(atFontDefault)).toBeGreaterThan(cornerCount(atWeldThreshold));
+    // The specific clip-noise point collapses into the smooth run at the
+    // weld's threshold instead of staying a spurious extra corner.
+    expect(flaggedNear(atFontDefault, 133.417, 103.222)).toBe(true);
+    expect(flaggedNear(atWeldThreshold, 133.417, 103.222)).toBe(false);
+  });
 });
