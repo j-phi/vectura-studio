@@ -2128,7 +2128,7 @@
       this.shapeCornerDrag.shape.cornerRadii = currentRadii;
       if (this._dragCursorPos) {
         const _dr = clamp(nextRadius, 0, descriptor.maxRadius);
-        this.showDragTooltip(`r ${_dr.toFixed(1)}`, this._dragCursorPos.x, this._dragCursorPos.y);
+        this.showDragTooltip(`R: ${_dr.toFixed(2)} px`, this._dragCursorPos.x, this._dragCursorPos.y);
       }
       if (!this.shapeCornerDrag.historyPushed) {
         if ((this.shapeCornerDrag.scope === 'single' || this.shapeCornerDrag.scope === 'selected') && this.onDirectEditStart) this.onDirectEditStart();
@@ -2282,7 +2282,7 @@
       const rawRadius = drag.sinHalf > 1e-4 ? projected * drag.sinHalf : 0;
       const r = clamp(rawRadius, 0, drag.maxRadius);
       drag.currentRadius = r;
-      if (this._dragCursorPos) this.showDragTooltip(`r ${r.toFixed(1)}`, this._dragCursorPos.x, this._dragCursorPos.y);
+      if (this._dragCursorPos) this.showDragTooltip(`R: ${r.toFixed(2)} px`, this._dragCursorPos.x, this._dragCursorPos.y);
       if (!drag.historyPushed) {
         if (this.onDirectEditStart) this.onDirectEditStart();
         this.markDirectSelectionAsCustomPath();
@@ -9686,19 +9686,31 @@
         const freeHandles = this._getFreeformCornerHandles();
         if (freeHandles.length) {
           this.ctx.save();
-          this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
-          this.ctx.fillStyle = getThemeToken('--render-direct-handle-fill', '#0f172a');
+          const strokeColor = getThemeToken('--render-direct-stroke', '#22d3ee');
+          const fillColor = getThemeToken('--render-direct-handle-fill', '#0f172a');
+          this.ctx.strokeStyle = strokeColor;
+          this.ctx.fillStyle = fillColor;
           this.ctx.lineWidth = 1 / this.scale;
           const r = 3.2 / this.scale;
+          const rd = r * 0.38;
           freeHandles.forEach((h) => {
+            // Stem line from vertex to handle
             this.ctx.beginPath();
             this.ctx.moveTo(h.worldVertex.x, h.worldVertex.y);
             this.ctx.lineTo(h.worldPoint.x, h.worldPoint.y);
             this.ctx.stroke();
+            // Bullseye outer ring
             this.ctx.beginPath();
+            this.ctx.fillStyle = fillColor;
+            this.ctx.strokeStyle = strokeColor;
             this.ctx.arc(h.worldPoint.x, h.worldPoint.y, r, 0, Math.PI * 2);
             this.ctx.fill();
             this.ctx.stroke();
+            // Bullseye inner dot
+            this.ctx.beginPath();
+            this.ctx.fillStyle = strokeColor;
+            this.ctx.arc(h.worldPoint.x, h.worldPoint.y, rd, 0, Math.PI * 2);
+            this.ctx.fill();
           });
           this.ctx.restore();
         }
@@ -9711,20 +9723,32 @@
       if (!handles.length) return;
       this.ctx.save();
       this.ctx.lineWidth = 1 / this.scale;
-      this.ctx.strokeStyle = scope === 'all'
+      const strokeColor = scope === 'all'
         ? getThemeToken('--render-selection-handle-stroke', '#f8fafc')
         : getThemeToken('--render-direct-stroke', '#22d3ee');
-      this.ctx.fillStyle = getThemeToken('--render-direct-handle-fill', '#0f172a');
+      const fillColor = getThemeToken('--render-direct-handle-fill', '#0f172a');
+      this.ctx.strokeStyle = strokeColor;
+      this.ctx.fillStyle = fillColor;
       const r = 3.2 / this.scale;
+      const rd = r * 0.38;
       handles.forEach((handle) => {
+        // Stem line from vertex to handle
         this.ctx.beginPath();
         this.ctx.moveTo(handle.vertex.x, handle.vertex.y);
         this.ctx.lineTo(handle.point.x, handle.point.y);
         this.ctx.stroke();
+        // Bullseye outer ring
         this.ctx.beginPath();
+        this.ctx.fillStyle = fillColor;
+        this.ctx.strokeStyle = strokeColor;
         this.ctx.arc(handle.point.x, handle.point.y, r, 0, Math.PI * 2);
         this.ctx.fill();
         this.ctx.stroke();
+        // Bullseye inner dot
+        this.ctx.beginPath();
+        this.ctx.fillStyle = strokeColor;
+        this.ctx.arc(handle.point.x, handle.point.y, rd, 0, Math.PI * 2);
+        this.ctx.fill();
       });
       this.ctx.restore();
     }
@@ -10471,14 +10495,32 @@
       const world = this.screenToWorld(sx, sy);
       if (this.activeTool === 'direct') {
         const selectedShape = this.getSelectedShapeLayer();
-        if (selectedShape && this.hitShapeCornerHandle(world, selectedShape, 0)) {
-          this.setCanvasCursor('pointer');
-          return;
+        if (selectedShape) {
+          const cornerHit = this.hitShapeCornerHandle(world, selectedShape, 0);
+          if (cornerHit) {
+            this.setCanvasCursor(this.cursorDataUrl('cornerRadius', 4, 4, 'pointer'));
+            const meta = this.getShapeMetaForLayer(selectedShape, 0);
+            const shape = meta?.shape;
+            const descriptors = shape ? getCornerDescriptors(shape) : [];
+            const radii = shape ? getShapeRadii(shape, descriptors.length) : [];
+            const currentR = radii[cornerHit.index] || 0;
+            this.showDragTooltip(`R: ${currentR.toFixed(2)} px`, e.clientX, e.clientY);
+            this._cornerHoverTooltipActive = true;
+            return;
+          }
         }
-        if (!selectedShape && this.directSelection && !this.directSelection.meta?.shape
-            && this.hitFreeformCornerHandle(world)) {
-          this.setCanvasCursor('pointer');
-          return;
+        if (!selectedShape && this.directSelection && !this.directSelection.meta?.shape) {
+          const freeHit = this.hitFreeformCornerHandle(world);
+          if (freeHit) {
+            this.setCanvasCursor(this.cursorDataUrl('cornerRadius', 4, 4, 'pointer'));
+            this.showDragTooltip(`R: 0.00 px`, e.clientX, e.clientY);
+            this._cornerHoverTooltipActive = true;
+            return;
+          }
+        }
+        if (this._cornerHoverTooltipActive) {
+          this.hideDragTooltip();
+          this._cornerHoverTooltipActive = false;
         }
         const control = this.hitDirectControl(world);
         if (control) {
@@ -10536,9 +10578,23 @@
       }
       if (this.activeTool === 'select' && activeLayers.length === 1) {
         const shapeLayer = this.getSelectedShapeLayer();
-        if (shapeLayer && this.hitShapeCornerHandle(world, shapeLayer, 0)) {
-          this.setCanvasCursor('pointer');
-          return;
+        if (shapeLayer) {
+          const cornerHit = this.hitShapeCornerHandle(world, shapeLayer, 0);
+          if (cornerHit) {
+            this.setCanvasCursor(this.cursorDataUrl('cornerRadius', 4, 4, 'pointer'));
+            const meta = this.getShapeMetaForLayer(shapeLayer, 0);
+            const shape = meta?.shape;
+            const descriptors = shape ? getCornerDescriptors(shape) : [];
+            const radii = shape ? getShapeRadii(shape, descriptors.length) : [];
+            const currentR = radii[cornerHit.index] || 0;
+            this.showDragTooltip(`R: ${currentR.toFixed(2)} px`, e.clientX, e.clientY);
+            this._cornerHoverTooltipActive = true;
+            return;
+          }
+        }
+        if (this._cornerHoverTooltipActive) {
+          this.hideDragTooltip();
+          this._cornerHoverTooltipActive = false;
         }
       }
       const bounds = this.getSelectionBounds(activeLayers, this.tempTransform);
