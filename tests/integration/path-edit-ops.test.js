@@ -89,14 +89,17 @@ describe('PathEditOps integration (full-stack app)', () => {
       const original = cloneDeepPaths(layer.sourcePaths);
       const historyBefore = app.history.length;
 
-      Ops.simplifyBegin([layer.id], { app });
-      Ops.simplifyPreview(75, { app });
+      const begun = Ops.simplifyBegin([layer.id], { app });
+      expect(begun.maxSteps).toBeGreaterThan(0);
+      Ops.simplifyPreview(begun.maxSteps, { app });
       const res = Ops.simplifyCommit({ app });
 
       expect(res.committed).toBe(true);
       expect(app.history.length).toBe(historyBefore + 1);
+      // The committed path reduced its editable anchor count (endpoints removed).
+      expect(res.pointsAfter).toBeLessThan(res.pointsBefore);
       const committed = app.engine.layers.find((l) => l.id === layer.id);
-      expect(committed.sourcePaths[0].length).toBeLessThan(original[0].length);
+      expect(committed.sourcePaths[0].meta.anchors.length).toBeLessThan(original[0].length);
 
       app.undo();
       const restored = app.engine.layers.find((l) => l.id === layer.id);
@@ -224,6 +227,24 @@ describe('PathEditOps integration (full-stack app)', () => {
       return app.engine.layers.find((l) => l.id === id);
     };
 
+    // A live OVAL: a smooth, corner-free closed ring sampled densely, so the
+    // anchor-reduction ladder can genuinely simplify it (unlike a rectangle,
+    // whose four sharp corners leave nothing to remove).
+    const makeLiveOvalLayer = () => {
+      const cx = 60; const cy = 40; const rx = 50; const ry = 30; const N = 32;
+      const anchors = [];
+      for (let i = 0; i < N; i += 1) {
+        const a = (i / N) * Math.PI * 2;
+        anchors.push({ x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a), in: null, out: null });
+      }
+      const pts = window.Vectura.GeometryUtils
+        .buildPolylineFromAnchors(anchors, true)
+        .map((p) => ({ x: p.x, y: p.y }));
+      pts.meta = { kind: 'shape', closed: true, anchors, shape: { type: 'oval', cx, cy, rx, ry } };
+      const id = app.engine.addShapeLayer('Oval', [pts]);
+      return app.engine.layers.find((l) => l.id === id);
+    };
+
     const listenShapeExpanded = () => {
       const events = [];
       window.addEventListener('vectura:shape-expanded', (e) => events.push(e.detail));
@@ -249,11 +270,12 @@ describe('PathEditOps integration (full-stack app)', () => {
       expect(after.sourcePaths[0].meta.closed).toBe(false);
     });
 
-    test('simplify commit on a live shape expands it and fires the event once', () => {
-      const layer = makeLiveRectLayer();
+    test('simplify commit on a reducible live shape expands it and fires the event once', () => {
+      const layer = makeLiveOvalLayer();
       const events = listenShapeExpanded();
-      Ops.simplifyBegin([layer.id], { app });
-      Ops.simplifyPreview(60, { app });
+      const begun = Ops.simplifyBegin([layer.id], { app });
+      expect(begun.maxSteps).toBeGreaterThan(0); // the oval is reducible
+      Ops.simplifyPreview(begun.maxSteps, { app });
       Ops.simplifyCommit({ app });
       expect(events).toHaveLength(1);
       expect(events[0].source).toBe('simplify');
@@ -261,15 +283,28 @@ describe('PathEditOps integration (full-stack app)', () => {
       expect(Ops.isLiveShapeLayer(after)).toBe(false);
     });
 
-    test('simplify cancel on a live shape does NOT expand and fires no event', () => {
-      const layer = makeLiveRectLayer();
+    test('simplify cancel on a reducible live shape does NOT expand and fires no event', () => {
+      const layer = makeLiveOvalLayer();
       const events = listenShapeExpanded();
-      Ops.simplifyBegin([layer.id], { app });
-      Ops.simplifyPreview(60, { app });
+      const begun = Ops.simplifyBegin([layer.id], { app });
+      Ops.simplifyPreview(begun.maxSteps, { app });
       Ops.simplifyCancel({ app });
       expect(events).toHaveLength(0);
       const after = app.engine.layers.find((l) => l.id === layer.id);
       expect(Ops.isLiveShapeLayer(after)).toBe(true);
+    });
+
+    test('a live rectangle has nothing to simplify (4 sharp corners): maxSteps 0, commit is a no-op', () => {
+      const layer = makeLiveRectLayer();
+      const events = listenShapeExpanded();
+      const begun = Ops.simplifyBegin([layer.id], { app });
+      expect(begun.maxSteps).toBe(0);
+      Ops.simplifyPreview(100, { app }); // clamped to 0 → original
+      const res = Ops.simplifyCommit({ app });
+      expect(res.committed).toBe(false);
+      expect(events).toHaveLength(0);
+      const after = app.engine.layers.find((l) => l.id === layer.id);
+      expect(Ops.isLiveShapeLayer(after)).toBe(true); // unchanged
     });
 
     test('public expandLiveShape: strips the descriptor, one undo step, event once', () => {

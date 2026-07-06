@@ -77,6 +77,10 @@ describe('P3: text task bar (carets, anchored pickers, point/area, show properti
     const layer = await selectText();
     SETTINGS.aboutVisible = true;
     const about = document.querySelector('#algo-about');
+    // The item only appears while the target panel needs restoring — collapse
+    // the left pane (the text context's Show-panel target) first.
+    const leftPane = document.getElementById('left-pane');
+    leftPane.classList.add('pane-collapsed');
     // Open the overflow menu and click Show Properties panel.
     document.querySelector('.ctxbar-overflow').click();
     await nextFrames();
@@ -86,6 +90,8 @@ describe('P3: text task bar (carets, anchored pickers, point/area, show properti
     expect(app.engine.activeLayerId).toBe(layer.id);
     expect(SETTINGS.aboutVisible).toBe(false);
     if (about) expect(about.style.display).toBe('none');
+    // The restore un-collapsed the pane it points at.
+    expect(leftPane.classList.contains('pane-collapsed')).toBe(false);
   });
 
   test('Outline button is icon-only (no text label) and the Point/Area toggle sits to its right', async () => {

@@ -11779,6 +11779,19 @@ body.mobile-layout .hud-bar {
 }
 .ctxbar-align-row { display: flex; gap: 2px; }
 .ctxbar-align-btn { padding: 0 5px; }
+/* Algorithm-layer flyouts (TB-4b): a scrollable vertical list of menu items
+   (switch-algorithm can run ~25 entries; presets vary). Reuses the align-flyout
+   box; items stretch full-width and left-align like a native menu. */
+.ctxbar-algo-flyout {
+  gap: 1px;
+  max-height: 320px;
+  overflow-y: auto;
+  min-width: 148px;
+}
+.ctxbar-algo-flyout .ctxbar-menu-item { width: 100%; }
+.ctxbar-algo-flyout .ctxbar-align-group-label { margin-top: 4px; }
+.ctxbar-algo-flyout .ctxbar-align-group-label:first-child { margin-top: 0; }
+.ctxbar-algo-menu-wrap .ctxbar-text-field { max-width: 150px; }
 /* Text controls (TB-7). */
 .ctxbar-text-field {
   display: inline-flex;
@@ -11905,6 +11918,13 @@ body.mobile-layout .hud-bar {
 }
 .ctxbar-wave-min { opacity: 0.7; }
 .ctxbar-wave-max { opacity: 0.9; }
+/* Nothing left to reduce (e.g. a triangle): the slider has no travel. */
+.ctxbar-slider:disabled,
+.ctxbar-auto-smooth:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.ctxbar-simplify.is-unreducible .ctxbar-submode-icon { opacity: 0.4; }
 
 /* Standalone anchored popovers + menu (STR-2 host, "…" menu). */
 .ctxbar-popover {

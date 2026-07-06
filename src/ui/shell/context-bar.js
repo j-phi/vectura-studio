@@ -208,7 +208,10 @@
     if (state.overflowExtra && state.overflowExtra.label) {
       add(state.overflowExtra.label, () => { try { state.overflowExtra.onClick?.(); } catch (_) { /* noop */ } }, true);
     }
-    add(items.showPanel || 'Show panel', doShowPanel);
+    // "Show Properties panel" is a RESTORE affordance: it only appears while
+    // the docked panel this context targets is collapsed or narrower than its
+    // default width. At full size the item is omitted (menu rebuilds on open).
+    if (showPanelNeedsRestore()) add(items.showPanel || 'Show panel', doShowPanel);
     add(items.hideBar || 'Hide bar', doHideBar);
     add(items.resetPosition || 'Reset bar position', doResetPosition);
     add(items.pinPosition || 'Pin bar position', doPinPosition);
@@ -246,6 +249,91 @@
     });
   };
 
+  // ── Show-panel restore gating ─────────────────────────────────────────
+  // The docked panel a context's Show-panel action targets: the left pane for
+  // a single text layer (mirrors doShowPanel's text branch), else the
+  // config-owned showPanel map (right pane).
+  const showPanelSelector = () => {
+    const c = cfg();
+    const ctx = getContext();
+    if (ctx.kind === 'single-text' && ctx.primaryLayer && ctx.primaryLayer.type === 'text') {
+      return (c.textPanel && c.textPanel.selector) || '#left-pane';
+    }
+    const map = c.showPanel || {};
+    const spec = map[ctx.kind] || map.idle || {};
+    return spec.selector || '#right-pane';
+  };
+  const paneSideFor = (node) => {
+    const id = (node && node.id) || '';
+    if (id.indexOf('left') >= 0) return 'left';
+    if (id.indexOf('right') >= 0) return 'right';
+    return null;
+  };
+  // "Original size" = the active skin's manifest pane width (SkinManager pushes
+  // it as the --pane-*-width baseline), falling back to the pristine SETTINGS
+  // default snapshot.
+  const paneDefaultWidth = (side) => {
+    const key = side === 'left' ? 'paneLeftWidth' : 'paneRightWidth';
+    const theme = (Vectura.THEMES && Vectura.THEMES[settings().uiTheme]) || null;
+    const manifest = (theme && theme.manifest) || theme;
+    const skinW = manifest && Number(manifest[key]);
+    if (Number.isFinite(skinW) && skinW > 0) return skinW;
+    const a = getApp();
+    const defW = a && a.defaultSettingsSnapshot && Number(a.defaultSettingsSnapshot[key]);
+    if (Number.isFinite(defW) && defW > 0) return defW;
+    return 335;
+  };
+  // Effective configured width: the inline --pane-*-width var on :root (the
+  // resizer, skin manager, and preference-restore all write there), else the
+  // live rect (0 in jsdom → treated as not-shrunk; collapse has its own check).
+  const paneCurrentWidth = (node, side) => {
+    const d = G.document;
+    const varName = side === 'left' ? '--pane-left-width' : '--pane-right-width';
+    const inline = d && d.documentElement && parseFloat(d.documentElement.style.getPropertyValue(varName));
+    if (Number.isFinite(inline) && inline > 0) return inline;
+    const r = node && node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+    return (r && r.width) || 0;
+  };
+  const paneIsCollapsed = (node) => {
+    if (!node) return false;
+    const body = G.document && G.document.body;
+    const auto = body && body.classList.contains('auto-collapsed') && !node.classList.contains('pane-force-open');
+    return Boolean(auto || node.classList.contains('pane-collapsed'));
+  };
+  const paneIsShrunk = (node, side) => {
+    if (!side) return false;
+    const w = paneCurrentWidth(node, side);
+    return w > 0 && w < paneDefaultWidth(side) - 1;
+  };
+  const showPanelNeedsRestore = () => {
+    const d = G.document;
+    const node = d ? d.querySelector(showPanelSelector()) : null;
+    if (!node) return false;
+    return paneIsCollapsed(node) || paneIsShrunk(node, paneSideFor(node));
+  };
+  // Bring a collapsed/shrunk pane back: un-collapse (phone drawers force-open),
+  // and if it sits below the default width, widen back to it. A user-widened
+  // pane that was merely collapsed keeps its custom width.
+  const restorePane = (node) => {
+    if (!node) return;
+    const side = paneSideFor(node);
+    const s = settings();
+    if (paneIsCollapsed(node)) {
+      node.classList.remove('pane-collapsed');
+      const body = G.document && G.document.body;
+      if (body && body.classList.contains('auto-collapsed')) node.classList.add('pane-force-open');
+      if (side === 'left') s.leftPaneCollapsed = false;
+      else if (side === 'right') s.rightPaneCollapsed = false;
+    }
+    if (side && paneIsShrunk(node, side)) {
+      const w = paneDefaultWidth(side);
+      G.document.documentElement.style.setProperty(side === 'left' ? '--pane-left-width' : '--pane-right-width', `${w}px`);
+      if (side === 'left') s.paneLeftWidth = w;
+      else s.paneRightWidth = w;
+    }
+    getApp()?.persistPreferencesDebounced?.();
+  };
+
   // Overflow menu actions --------------------------------------------------
   const doShowPanel = () => {
     const c = cfg();
@@ -268,7 +356,9 @@
       if (a && a.ui && typeof a.ui.setAboutVisible === 'function') {
         try { a.ui.setAboutVisible(false); } catch (_e) { /* optional */ }
       }
-      doShowPanelTarget((c.textPanel && c.textPanel.selector) || '#left-pane');
+      const textSel = (c.textPanel && c.textPanel.selector) || '#left-pane';
+      restorePane(G.document.querySelector(textSel));
+      doShowPanelTarget(textSel);
       return;
     }
     const spec = map[state.kind] || map.idle || { selector: '#right-pane', tab: null };
@@ -280,6 +370,9 @@
     }
     const target = spec.selector ? d.querySelector(spec.selector) : null;
     if (!target) return;
+    // Restore the panel to its original size first (the menu item is only
+    // offered while it is collapsed or shrunk), then draw attention to it.
+    restorePane(target);
     // Blue attention pulse: 2 pulses over ~1s via CSS animation.
     const t = c.timing || {};
     if (state.pulseTimer) { clearTimeout(state.pulseTimer); state.pulseTimer = 0; }
@@ -517,6 +610,7 @@
       const layer = layers[0] || null;
       if (layer && layer.type === 'text') kind = 'single-text';
       else if (isPrimitiveShape(layer)) kind = 'single-shape';
+      else if (isDrawableAlgoLayer(layer)) kind = 'single-algo';
       else kind = 'single-path';
     } else {
       kind = 'multi';
@@ -548,6 +642,25 @@
       return Boolean(p && p.id === layer.id);
     }
     return false;
+  };
+  // A single-selected drawable GENERATOR layer (flowfield, boids, spiral, …) as
+  // opposed to a manual vector path (`shape`), a live primitive, text, a group,
+  // or a modifier. These get algorithm-aware task-bar affordances (switch algo,
+  // presets, randomize, expand) instead of Edit Path — their output is many
+  // paths, not one editable contour.
+  const isDrawableAlgoLayer = (layer) => {
+    if (!layer || layer.isGroup) return false;
+    const t = layer.type;
+    if (!t || t === 'text' || t === 'shape' || t === 'group' || t === 'compound') return false;
+    if (isPrimitiveShape(layer)) return false;
+    const ui = getApp() && getApp().ui;
+    // isDrawableLayerType already excludes modifiers/groups; text/shape are
+    // filtered above (they are technically in the registry too).
+    if (ui && typeof ui.isDrawableLayerType === 'function') return Boolean(ui.isDrawableLayerType(t));
+    const V = Vectura || {};
+    const algos = V.Algorithms || V.AlgorithmRegistry;
+    const defs = V.ALGO_DEFAULTS;
+    return Boolean((algos && algos[t]) || (defs && defs[t]));
   };
   const primitiveShapeKind = () => {
     const renderer = getRenderer();
@@ -634,6 +747,40 @@
       }));
     }
     // Lock toggle.
+    els.content.appendChild(makeBtn({
+      icon: locked ? ic.unlock : ic.lock,
+      tooltip: locked ? (b.lock && b.lock.tooltipUnlock) : (b.lock && b.lock.tooltip),
+      onClick: () => toggleLock(ctx.layerIds), extraClass: locked ? 'is-active' : '',
+    }));
+  };
+
+  // ── TB-4b: single drawable-algorithm layer ────────────────────────────
+  // Algorithm-aware affordances: switch the generator, apply a preset, reroll a
+  // variation, and expand to an editable group. Edit Path is intentionally
+  // omitted — a generator emits many paths, so "Expand into group" is the route
+  // to anchor-level editing.
+  const renderAlgo = (ctx) => {
+    const b = B(); const ic = IC();
+    const layer = ctx.primaryLayer;
+    const locked = layerLocked(layer);
+    // Switch algorithm — labeled pill mirroring the docked module dropdown.
+    const algoWrap = makeAlgoSwitcher(layer);
+    if (algoWrap) els.content.appendChild(algoWrap);
+    // Presets — flyout of the layer system's named presets (absent when none).
+    const presetWrap = makePresetFlyout(layer);
+    if (presetWrap) els.content.appendChild(presetWrap);
+    // Randomize (single die) — reroll the seed for a fresh variation, or the
+    // full param set for seedless generators.
+    els.content.appendChild(makeBtn({
+      icon: ic.randomize, tooltip: (b.randomize && b.randomize.tooltip),
+      onClick: () => doRandomizeAlgo(layer), disabled: locked,
+    }));
+    // Expand into group — bakes the generator to child shape layers (editable).
+    els.content.appendChild(makeBtn({
+      icon: ic.expand, label: (b.expand && b.expand.label), tooltip: (b.expand && b.expand.tooltip),
+      onClick: () => doExpandLayer(layer), disabled: locked,
+    }));
+    appendPenChip(ctx);
     els.content.appendChild(makeBtn({
       icon: locked ? ic.unlock : ic.lock,
       tooltip: locked ? (b.lock && b.lock.tooltipUnlock) : (b.lock && b.lock.tooltip),
@@ -747,6 +894,7 @@
       case 'idle': renderIdle(); break;
       case 'single-text': renderText(ctx); break;
       case 'group': renderGroup(ctx); break;
+      case 'single-algo': renderAlgo(ctx); break;
       case 'single-shape':
       case 'single-path': renderSingle(ctx); break;
       case 'multi': renderMulti(ctx); break;
@@ -943,6 +1091,150 @@
     const a = getApp();
     if (!AO || !a) return;
     // (Best-effort — the docked button is the primary path.)
+  };
+
+  // ── TB-4b: algorithm-layer affordances ────────────────────────────────
+  // A labeled dropdown pill (reuses the text-field chip styling). Caret + label,
+  // no bound picker — the caller wires the toggle via makeMenuFlyout.
+  const makeDropField = (extraClass, text, title) => {
+    const field = el('span', `ctxbar-text-field ${extraClass}`);
+    field.setAttribute('tabindex', '-1'); field.setAttribute('data-ctxbar-roving', '');
+    field.setAttribute('role', 'button'); field.setAttribute('aria-haspopup', 'menu');
+    field.setAttribute('aria-expanded', 'false');
+    if (title) field.title = title;
+    const lbl = el('span', 'ctxbar-text-fieldlabel'); lbl.textContent = text; field.appendChild(lbl);
+    const caret = el('span', 'ctxbar-text-caret'); caret.textContent = '▾'; caret.setAttribute('aria-hidden', 'true');
+    field.appendChild(caret);
+    return field;
+  };
+  // Wraps `field` with a vertical menu flyout (reuses the align-flyout box +
+  // menu-item styling, like the text-weight dropdown). `items` entries are
+  // either `{ header }` group labels or `{ label, active, onSelect }` rows.
+  const makeMenuFlyout = (field, items, extraFlyClass) => {
+    const wrap = el('span', 'ctxbar-align-wrap ctxbar-algo-menu-wrap');
+    const fly = el('div', `ctxbar-align-flyout ${extraFlyClass || ''}`.trim(), { role: 'menu', 'aria-hidden': 'true' });
+    let open = false;
+    const close = () => {
+      open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
+      field.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
+    };
+    const openFn = () => {
+      if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout(); // close any other open flyout
+      open = true; fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false');
+      field.setAttribute('aria-expanded', 'true'); state.closeFlyout = close;
+    };
+    (items || []).forEach((it) => {
+      if (it.header) { const h = el('div', 'ctxbar-align-group-label'); h.textContent = it.header; fly.appendChild(h); return; }
+      const item = el('button', 'ctxbar-menu-item', { type: 'button', tabindex: '-1' });
+      item.textContent = it.label;
+      if (it.active) { item.classList.add('is-active'); item.style.color = 'var(--ui-accent, #4e9ee1)'; }
+      item.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); close(); it.onSelect && it.onSelect(); });
+      fly.appendChild(item);
+    });
+    field.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open ? close() : openFn(); });
+    wrap.appendChild(field); wrap.appendChild(fly);
+    return wrap;
+  };
+
+  // Algorithm switcher — reads the docked module dropdown's already-grouped
+  // <option>s (single source of truth for the algorithm list + labels) and, on
+  // pick, drives that real <select> so the switch path stays byte-identical.
+  const makeAlgoSwitcher = (layer) => {
+    const b = B();
+    const sel = G.document.getElementById('generator-module');
+    if (!sel || !sel.options || !sel.options.length) return null;
+    const curType = layer && layer.type;
+    const items = [];
+    Array.from(sel.children).forEach((node) => {
+      if (node.tagName === 'OPTGROUP') {
+        if (node.label) items.push({ header: node.label });
+        Array.from(node.children).forEach((opt) => items.push(optionItem(opt, curType)));
+      } else if (node.tagName === 'OPTION') {
+        items.push(optionItem(node, curType));
+      }
+    });
+    const hit = Array.from(sel.options).find((o) => o.value === curType);
+    const curLabel = (hit && hit.textContent) || prettifyType(curType);
+    const field = makeDropField('ctxbar-algo-field', curLabel, (b.changeAlgo && b.changeAlgo.tooltip));
+    return makeMenuFlyout(field, items, 'ctxbar-algo-flyout');
+  };
+  const optionItem = (opt, curType) => ({
+    label: opt.textContent || opt.value,
+    active: opt.value === curType,
+    onSelect: () => switchAlgorithm(opt.value),
+  });
+  const prettifyType = (t) => String(t || '').replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/^\w/, (c) => c.toUpperCase());
+  const switchAlgorithm = (nextType) => {
+    const sel = G.document.getElementById('generator-module');
+    if (!sel || sel.disabled) return;
+    const layer = getContext().primaryLayer;
+    if (!layer || layer.type === nextType) return;
+    sel.value = nextType;
+    // The docked handler (algo-config-panel) owns history + regen + rebuild.
+    sel.dispatchEvent(new G.Event('change', { bubbles: true }));
+    restoreState();
+  };
+
+  // Preset flyout — lists the named presets for the layer's system. Returns null
+  // when the system has no preset library (so the chip is simply absent).
+  const makePresetFlyout = (layer) => {
+    const b = B();
+    const lib = (Vectura && Vectura.PresetLibraries && layer) ? Vectura.PresetLibraries[layer.type] : null;
+    if (!Array.isArray(lib) || !lib.length) return null;
+    const cur = (layer.params && layer.params.preset) || null;
+    // User presets grouped under a header when present; built-ins render flat.
+    const builtins = lib.filter((p) => p && p.group !== 'User');
+    const users = lib.filter((p) => p && p.group === 'User');
+    const rowFor = (p) => ({
+      label: p.name || p.label || p.id,
+      active: p.id === cur,
+      onSelect: () => applyAlgoPreset(p.id),
+    });
+    const items = [];
+    builtins.forEach((p) => items.push(rowFor(p)));
+    if (users.length) { items.push({ header: 'User' }); users.forEach((p) => items.push(rowFor(p))); }
+    const field = makeDropField('ctxbar-preset-field', (b.presets && b.presets.label) || 'Presets', (b.presets && b.presets.tooltip));
+    return makeMenuFlyout(field, items, 'ctxbar-algo-flyout');
+  };
+  const applyAlgoPreset = (presetId) => {
+    const a = getApp();
+    const ui = a && a.ui;
+    if (!ui || typeof ui._applyActivePreset !== 'function') return;
+    a.pushHistory && a.pushHistory();
+    ui._applyActivePreset(presetId); // owns storeLayerParams + regen + rebuild
+    restoreState();
+  };
+
+  // Randomize (single die): reroll the seed when the generator is seeded (fresh
+  // variation, keeps the user's tuning); otherwise reroll the full param set.
+  const doRandomizeAlgo = (layer) => {
+    const seeded = layer && layer.params && Number.isFinite(Number(layer.params.seed));
+    const doc = G.document;
+    if (seeded) {
+      const btn = doc.getElementById('btn-rand-seed');
+      if (btn) { btn.click(); restoreState(); return; }
+    }
+    const rnd = doc.getElementById('btn-randomize-params');
+    if (rnd) { rnd.click(); restoreState(); return; }
+    // Fallback: reseed directly if the docked buttons aren't mounted.
+    const a = getApp();
+    if (seeded && a && layer && layer.params) {
+      a.pushHistory && a.pushHistory();
+      layer.params.seed = Math.floor(Math.abs((Number(layer.params.seed) || 0) * 9301 + 49297) % 99999);
+      a.ui && a.ui.storeLayerParams && a.ui.storeLayerParams(layer);
+      (a.regen ? a.regen() : a.render && a.render());
+      a.ui && a.ui.buildControls && a.ui.buildControls();
+      restoreState();
+    }
+  };
+  const doExpandLayer = (layer) => {
+    const a = getApp();
+    const ui = a && a.ui;
+    if (!ui || typeof ui.expandLayer !== 'function' || !layer) return;
+    ui.expandLayer(layer); // owns history + generate + child selection
+    a.render && a.render();
+    restoreState(); // selection is now the produced group → ticker flips state
   };
 
   // ── TB-7: text controls bound to the Text panel params ─────────────────

@@ -104,6 +104,44 @@ const makeMinimalPath = () => {
   return pts;
 };
 
+// A closed triangle stored as a straight polyline (3 corners + closing dup).
+// Three hard corners → nothing removable (the "3 points does nothing" case).
+const makeTrianglePath = () => {
+  const pts = [
+    { x: 0, y: 0 },
+    { x: 60, y: 0 },
+    { x: 30, y: 50 },
+    { x: 0, y: 0 },
+  ];
+  pts.meta = { straight: true, closed: true };
+  return pts;
+};
+
+// An OPEN 4-point gentle arc (no sharp interior corners), so bezier fitting can
+// collapse it to fewer anchors while holding the silhouette (the "four → three,
+// leveraging beziers" case).
+const makeGentleQuadPath = () => {
+  const pts = [
+    { x: 0, y: 0 },
+    { x: 10, y: 4 },
+    { x: 20, y: 4 },
+    { x: 30, y: 0 },
+  ];
+  pts.meta = { straight: true, closed: false };
+  return pts;
+};
+
+// Editable-anchor count under the renderer's semantics (meta.anchors when
+// present, else polyline points with a closed path's duplicate vertex dropped).
+const anchorCount = (path) => {
+  const a = path && path.meta && path.meta.anchors;
+  if (Array.isArray(a) && a.length >= 2) return a.length;
+  const closed = !!(path.meta && path.meta.closed)
+    || (path.length > 2 && Math.abs(path[0].x - path[path.length - 1].x) < 1e-6
+      && Math.abs(path[0].y - path[path.length - 1].y) < 1e-6);
+  return closed && path.length > 2 ? path.length - 1 : path.length;
+};
+
 const setup = (pathFactory = makeNoisyPath, layerPatch = {}) => {
   const engine = makeEngine();
   const app = makeApp(engine);
@@ -253,6 +291,73 @@ describe('PTH-1 simplifyBegin/Preview/Commit/Cancel', () => {
     expect(layer.params.smoothing).toBe(0.8);
     Ops.simplifyCancel(ctx);
     expect(layer.params.smoothing).toBe(0.8);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PTH-1 — anchor-reduction ladder (complex → simple, bounded slider travel)
+// ---------------------------------------------------------------------------
+
+describe('PTH-1 reduction ladder: bounded travel + bezier-preserving reduction', () => {
+  test('simplifyBegin reports maxSteps > 0 for a reducible path', () => {
+    const { ctx, layer } = setup(makeNoisyPath);
+    const res = Ops.simplifyBegin([layer.id], ctx);
+    expect(Number.isInteger(res.maxSteps)).toBe(true);
+    expect(res.maxSteps).toBeGreaterThan(0);
+  });
+
+  test('a triangle (3 corners) has nothing to simplify: maxSteps 0, slider cannot move', () => {
+    const { ctx, layer } = setup(makeTrianglePath);
+    const original = cloneDeepPaths(layer.sourcePaths);
+    const res = Ops.simplifyBegin([layer.id], ctx);
+    expect(res.maxSteps).toBe(0);
+    // Any drag is clamped to rung 0 → the original, untouched.
+    Ops.simplifyPreview(5, ctx);
+    expect(cloneDeepPaths(layer.sourcePaths)).toEqual(original);
+    const commit = Ops.simplifyCommit(ctx);
+    expect(commit.committed).toBe(false);
+  });
+
+  test('a curves:false rectangle (4 corners) also has nothing to simplify', () => {
+    const { ctx, layer } = setup(makeSharpRectPath, { curves: false });
+    const res = Ops.simplifyBegin([layer.id], ctx);
+    expect(res.maxSteps).toBe(0);
+  });
+
+  test('a 4-point gentle curve reduces below 4 anchors, leveraging beziers', () => {
+    const { ctx, layer } = setup(makeGentleQuadPath);
+    const res = Ops.simplifyBegin([layer.id], ctx);
+    expect(res.maxSteps).toBeGreaterThanOrEqual(1);
+    const preview = Ops.simplifyPreview(res.maxSteps, ctx);
+    const path = layer.sourcePaths[0];
+    // Endpoints were removed (4 → 3 or fewer) and the reduced outline is a
+    // true-curve (forceCurves) bezier path, not a stair-stepped polyline.
+    expect(anchorCount(path)).toBeLessThan(4);
+    expect(preview.pointsAfter).toBeLessThan(preview.pointsBefore);
+    expect(path.meta.forceCurves).toBe(true);
+    expect(Array.isArray(path.meta.anchors)).toBe(true);
+  });
+
+  test('preview clamps the rung index to maxSteps (no travel past the minimum)', () => {
+    const { ctx, layer } = setup(makeNoisyPath);
+    const { maxSteps } = Ops.simplifyBegin([layer.id], ctx);
+    Ops.simplifyPreview(maxSteps, ctx);
+    const atMax = cloneDeepPaths(layer.sourcePaths);
+    Ops.simplifyPreview(maxSteps + 500, ctx);
+    expect(cloneDeepPaths(layer.sourcePaths)).toEqual(atMax);
+    expect(Ops.getSimplifyState().index).toBe(maxSteps);
+  });
+
+  test('anchor count is monotonic non-increasing from complex (0) to simple (maxSteps)', () => {
+    const { ctx, layer } = setup(makeNoisyPath);
+    const { maxSteps } = Ops.simplifyBegin([layer.id], ctx);
+    const samples = [0, Math.round(maxSteps / 3), Math.round((2 * maxSteps) / 3), maxSteps];
+    const counts = samples.map((i) => Ops.simplifyPreview(i, ctx).pointsAfter);
+    for (let k = 1; k < counts.length; k += 1) {
+      expect(counts[k]).toBeLessThanOrEqual(counts[k - 1]);
+    }
+    expect(counts[0]).toBe(200); // rung 0 = the untouched original
+    expect(counts[counts.length - 1]).toBeLessThan(200);
   });
 });
 

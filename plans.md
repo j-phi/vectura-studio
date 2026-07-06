@@ -39,6 +39,23 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — task-bar Simplify is an anchor-reduction ladder with bounded travel.** The
+  slider runs complex → simple (L → R) with the thumb starting at the untouched original.
+  `PathEditOps.simplifyBegin` (`src/core/path-edit-ops.js`) precomputes a per-path reduction
+  ladder: rung 0 = original, higher rungs = strictly-fewer-anchor `GeometryUtils.fitBezierAnchors`
+  fits (corners preserved via `cornerRadiusFrac 0`). `simplifyPreview(index)` applies a rung;
+  `simplifyBegin`/`getSimplifyState` return `maxSteps` (deepest rung across the selection).
+  The `context-bar-modes.js` simplify sub-mode scales the slider's `max` to `maxSteps`, disables
+  it when nothing is reducible (triangle/rectangle → 0), swaps the wave icons to complex-left /
+  simple-right, and shows a "{pts} pts" badge. `autoSmooth` now returns a suggested rung index.
+  Covered by `tests/unit/path-edit-ops-simplify.test.js` (ladder/maxSteps/clamp/triangle/quad)
+  and `tests/integration/{path-edit-ops,context-bar-modes}.test.js`.
+- **Unreleased — task-bar "Show Properties panel" is now a restore action.** The ⋯-menu item only
+  renders while the context's docked panel (right pane; left pane for single-text) is collapsed or
+  narrower than its skin-default width; clicking it un-collapses / re-widens the panel (a
+  user-widened pane keeps its custom width) and fires the existing blue attention pulse. Gating +
+  restore live in `src/ui/shell/context-bar.js` (`showPanelNeedsRestore`/`restorePane`); covered by
+  the TB-2b describe in `tests/integration/context-bar.test.js`.
 - **v1.2.40 — Type tool web font + kerning, pen-picker loupe, minimal-anchor re-trace, scissors fix.**
   Type layers default to a vendored Inter web font parsed at boot (editable with real letterforms
   immediately); new per-pair `kernPairs` map alongside uniform tracking; context-bar Outline Text

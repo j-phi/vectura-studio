@@ -182,9 +182,10 @@ describe('TB-11 — simplify sub-mode', () => {
   const stubOps = (dom) => {
     const calls = { begin: [], preview: [], commit: 0, cancel: 0, auto: 0 };
     dom.window.Vectura.PathEditOps = {
-      simplifyBegin: (ids) => { calls.begin.push(ids); return { layerIds: ids, pointsBefore: 100 }; },
-      simplifyPreview: (t) => { calls.preview.push(t); return { t, pointsBefore: 100, pointsAfter: Math.round(100 - t / 2) }; },
-      simplifyCommit: () => { calls.commit += 1; return { committed: true, t: 50 }; },
+      // maxSteps 100 → the slider is reducible (range 0..100).
+      simplifyBegin: (ids) => { calls.begin.push(ids); return { layerIds: ids, pointsBefore: 100, maxSteps: 100 }; },
+      simplifyPreview: (index) => { calls.preview.push(index); return { index, maxSteps: 100, pointsBefore: 100, pointsAfter: Math.round(100 - index / 2) }; },
+      simplifyCommit: () => { calls.commit += 1; return { committed: true, index: 50 }; },
       simplifyCancel: () => { calls.cancel += 1; return true; },
       autoSmooth: () => { calls.auto += 1; return 42; },
     };
@@ -210,16 +211,18 @@ describe('TB-11 — simplify sub-mode', () => {
     expect(host.querySelector('[data-ctxbar-exit="done"]')).not.toBeNull();
   });
 
-  test('slider live-previews and shows a "{pts} pts · {t} %" badge', () => {
+  test('slider live-previews a reduction-ladder rung and shows a "{pts} pts" badge', () => {
     const Modes = dom.window.Vectura.UI.ContextBarModes;
     Modes.enterSimplify({ app, layerIds: ['l1'] });
     const slider = dom.window.document.querySelector('.ctxbar-simplify-slider');
+    expect(slider.disabled).toBe(false); // reducible (maxSteps 100)
+    expect(slider.getAttribute('max')).toBe('100');
     slider.value = '40';
     fire(dom, slider, 'input');
     expect(ops.preview[ops.preview.length - 1]).toBe(40);
     const badge = dom.window.document.querySelector('.ctxbar-simplify-badge');
     expect(badge).not.toBeNull();
-    expect(badge.textContent).toBe('80 pts · 40 %');
+    expect(badge.textContent).toBe('80 pts');
   });
 
   test('Auto-Smooth positions the slider at the suggestion and previews', () => {

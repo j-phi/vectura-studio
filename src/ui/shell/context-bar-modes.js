@@ -9,10 +9,12 @@
  *           units) driving Vectura.StrokeModel.setStrokeWeight (one undo step
  *           per gesture); "…" → "Open Stroke Options" mounts the STR-2 panel as
  *           an anchored popover, kept synchronized with the bar.
- *   TB-11 — simplify sub-mode: min/max wave icons, strength slider, Auto-Smooth,
- *           Done. Live PathEditOps.simplifyPreview with a "{pts} pts · {t} %"
- *           badge anchored below the selection; Done commits, Escape/click-away
- *           cancels and restores.
+ *   TB-11 — simplify sub-mode: complex→simple wave icons and an anchor-reduction
+ *           slider whose range is scaled to the deepest achievable rung
+ *           (maxSteps), so it stops once no endpoint can be removed (disabled
+ *           outright when nothing is reducible). Auto-Smooth, Done. Live
+ *           PathEditOps.simplifyPreview with a "{pts} pts" badge anchored below
+ *           the selection; Done commits, Escape/click-away cancels and restores.
  *   SHP-1/2 — Shape Properties popover (polygon side count + uniform corner
  *           radius; rectangle uniform corner radius) bound to the renderer's
  *           live-shape param plumbing. Exposed as a standalone anchored popover
@@ -408,14 +410,20 @@
     let ctx = outerCtx || {};
     let badge = null;
     let clickAway = null;
+    // Usable slider travel (deepest reduction rung) and the starting point count,
+    // captured from simplifyBegin(); the slider range is scaled to maxSteps so the
+    // thumb physically stops once no more endpoints can be removed.
+    let maxSteps = 0;
+    let pointsBefore = 0;
+    let started = false;
 
     const removeBadge = () => { if (badge) { badge.remove(); badge = null; } };
     const showBadge = (res) => {
       const strings = MSTR();
-      const t = Math.round((res && res.t) || 0);
-      const pts = (res && Number.isFinite(res.pointsAfter)) ? res.pointsAfter : 0;
-      const text = (strings.simplifyBadge || '{pts} pts · {t} %')
-        .replace('{pts}', pts).replace('{t}', t);
+      const pts = (res && Number.isFinite(res.pointsAfter)) ? res.pointsAfter
+        : (res && Number.isFinite(res.pointsBefore)) ? res.pointsBefore : pointsBefore;
+      let text = (strings.simplifyBadge || '{pts} pts').replace('{pts}', pts);
+      if (maxSteps <= 0) text += ` · ${strings.simplifyNothing || 'nothing to simplify'}`;
       if (!badge) {
         badge = el('div', { class: 'ctxbar-simplify-badge', role: 'status' });
         badge.style.position = 'fixed';
@@ -437,10 +445,8 @@
       exitKind: 'done',
       onEnter(barCtx) {
         ctx = { ...outerCtx, ...barCtx, app: resolveApp(barCtx) || resolveApp(outerCtx) };
-        const ops = Vectura.PathEditOps;
-        const app = resolveApp(ctx);
-        const ids = (ctx.layerIds && ctx.layerIds.length) ? ctx.layerIds : resolveLayers(ctx).map((l) => l.id);
-        if (ops && ops.simplifyBegin) ops.simplifyBegin(ids, { app });
+        // The session itself is begun in render() (which enter() runs BEFORE
+        // onEnter) so the slider range can be scaled to the returned maxSteps.
         // Click-away cancels (Escape/click-away → cancel per PTH-1).
         clickAway = (e) => {
           if (!active) return;
@@ -458,31 +464,52 @@
         const app = resolveApp(ctx);
         const ids = () => ((ctx.layerIds && ctx.layerIds.length) ? ctx.layerIds : resolveLayers(ctx).map((l) => l.id));
 
-        const wrap = el('div', { class: 'ctxbar-submode ctxbar-simplify' });
-        wrap.appendChild(el('span', { class: 'ctxbar-submode-icon', title: strings.simplifyMinWave || 'Fewer points' }, [svgIcon(WAVE_MIN, 'ctxbar-wave-min')]));
+        // Begin the reduction-ladder session (once), capturing the usable travel
+        // (maxSteps) so the slider range can be scaled to it. enter() runs
+        // render() BEFORE onEnter(), so beginning here (not in onEnter) is what
+        // lets the slider size itself to the deepest achievable rung.
+        if (!started) {
+          started = true;
+          const begun = (ops && ops.simplifyBegin) ? ops.simplifyBegin(ids(), { app }) : null;
+          maxSteps = (begun && Number.isFinite(begun.maxSteps)) ? Math.max(0, begun.maxSteps) : 0;
+          pointsBefore = (begun && Number.isFinite(begun.pointsBefore)) ? begun.pointsBefore : 0;
+        }
+
+        // Left = complex (most detail); right = simple (fewest points). The
+        // slider's usable range is scaled to maxSteps — the deepest reduction
+        // rung — so the thumb starts at the complex end and cannot travel past
+        // the point where no further endpoint can be removed.
+        const reducible = maxSteps > 0;
+        const wrap = el('div', { class: `ctxbar-submode ctxbar-simplify${reducible ? '' : ' is-unreducible'}` });
+        wrap.appendChild(el('span', { class: 'ctxbar-submode-icon', title: strings.simplifyMaxWave || 'More detail' }, [svgIcon(WAVE_MAX, 'ctxbar-wave-max')]));
         const slider = el('input', {
           type: 'range', class: 'ctxbar-slider ctxbar-simplify-slider',
-          min: `${c.SIMPLIFY_MIN ?? 0}`, max: `${c.SIMPLIFY_MAX ?? 100}`, step: `${c.SIMPLIFY_STEP ?? 1}`,
+          min: '0', max: `${reducible ? maxSteps : (c.SIMPLIFY_STEP ?? 1)}`, step: `${c.SIMPLIFY_STEP ?? 1}`,
           value: '0', 'aria-label': strings.simplifyLabel || 'Simplify',
         });
+        if (!reducible) slider.disabled = true;
         wrap.appendChild(slider);
-        wrap.appendChild(el('span', { class: 'ctxbar-submode-icon', title: strings.simplifyMaxWave || 'More detail' }, [svgIcon(WAVE_MAX, 'ctxbar-wave-max')]));
+        wrap.appendChild(el('span', { class: 'ctxbar-submode-icon', title: strings.simplifyMinWave || 'Fewer points' }, [svgIcon(WAVE_MIN, 'ctxbar-wave-min')]));
         const auto = el('button', { type: 'button', class: 'ctxbar-auto-smooth', title: strings.autoSmooth || 'Auto-Smooth', 'aria-label': strings.autoSmooth || 'Auto-Smooth' }, []);
         auto.textContent = strings.autoSmooth || 'Auto-Smooth';
+        if (!reducible) auto.disabled = true;
         wrap.appendChild(auto);
         host.appendChild(wrap);
+        // Show the starting count immediately (and the "nothing to simplify"
+        // note when the selection is already at its minimal anchor set).
+        showBadge({ pointsAfter: pointsBefore });
 
-        const preview = (t) => {
+        const preview = (index) => {
           if (!ops || !ops.simplifyPreview) return;
-          const res = ops.simplifyPreview(Number(t) || 0, { app });
-          showBadge(res || { t: Number(t) || 0, pointsAfter: 0 });
+          const res = ops.simplifyPreview(Number(index) || 0, { app });
+          showBadge(res || { pointsAfter: pointsBefore });
         };
         slider.addEventListener('input', () => preview(slider.value));
         auto.addEventListener('click', () => {
-          if (!ops || !ops.autoSmooth) return;
-          const t = ops.autoSmooth(ids(), { app });
-          slider.value = `${t}`;
-          preview(t);
+          if (!ops || !ops.autoSmooth || !reducible) return;
+          const idx = ops.autoSmooth(ids(), { app });
+          slider.value = `${idx}`;
+          preview(idx);
         });
 
         return {

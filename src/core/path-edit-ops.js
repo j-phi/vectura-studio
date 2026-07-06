@@ -43,13 +43,19 @@
   const GU = () => Vectura.GeometryUtils || {};
 
   // ── Tuning constants (engine-internal; not user-visible strings) ────────────
-  // Fraction of the geometry's bbox diagonal used as simplify tolerance at
-  // t = 100 ("maximal reduction").
-  const SIMPLIFY_MAX_TOLERANCE_FRACTION = 0.25;
-  // t → tolerance curve exponent; > 1 gives fine control at low t (video feel).
-  const SIMPLIFY_CURVE_EXPONENT = 2;
   // World-unit (mm) chord tolerance when flattening displayed curves.
   const FLATTEN_TOLERANCE = 0.1;
+  // Simplify reduction ladder: the fit tolerance is swept geometrically from
+  // MIN→MAX (as a fraction of the path's bbox diagonal) to enumerate every
+  // achievable anchor count, from the untouched original down to the minimal
+  // shape-preserving bezier fit. Corners are preserved (cornerRadiusFrac 0), so
+  // hard-cornered shapes (triangles, rectangles) collapse to a single rung and
+  // cannot be reduced — the slider then has nowhere to travel.
+  const SIMPLIFY_LADDER_MIN_FRAC = 0.0004;
+  const SIMPLIFY_LADDER_MAX_FRAC = 0.25;
+  const SIMPLIFY_LADDER_SAMPLES = 64;
+  const SIMPLIFY_CORNER_ANGLE_DEG = 30;
+  const SIMPLIFY_MIN_ANCHORS = 2;
   // autoSmooth: interior points whose Visvalingam triangle area is below
   // (fraction · diagonal)² are counted as removable noise.
   const AUTOSMOOTH_NOISE_FRACTION = 0.004;
@@ -248,13 +254,19 @@
     return { changed: true, layerIds: [layer.id] };
   };
 
-  // ── PTH-1 — simplify session ───────────────────────────────────────────────
+  // ── PTH-1 — simplify session (anchor-reduction ladder) ──────────────────────
+  //
+  // The Simplify slider is an ANCHOR-COUNT reducer, not a free tolerance dial.
+  // begin() precomputes, per source path, a monotonic "reduction ladder": rung
+  // 0 is the untouched original (the COMPLEX end — the slider's left, where the
+  // thumb starts) and every higher rung is a strictly-lower anchor count from
+  // fitting the fewest cubic beziers that still reproduce the shape. Corner
+  // detection preserves hard corners, so a triangle / rectangle yields a single
+  // rung (nothing removable) and the slider's usable range (maxSteps) is 0 — the
+  // user is physically stopped once no more endpoints can be removed. A 4-point
+  // gentle curve collapses to 3 (or fewer) with the silhouette held by beziers.
 
   let simplifySession = null;
-
-  const toleranceForT = (t, diag) =>
-    Math.pow(Math.max(0, Math.min(100, t)) / 100, SIMPLIFY_CURVE_EXPONENT)
-      * diag * SIMPLIFY_MAX_TOLERANCE_FRACTION;
 
   const restoreSessionLayer = (engine, rec) => {
     const layer = findLayer(engine, rec.id);
@@ -265,6 +277,67 @@
     return layer;
   };
 
+  // A reduced rung → a path with meta.anchors + forceCurves, so the fitted
+  // outline draws/exports as true cubic beziers even when the layer's Curves
+  // toggle is off (mirrors the Smooth session). The parametric shape descriptor
+  // is dropped: a reduced path is a plain, direct-editable path.
+  const buildSimplifiedVariant = (anchors, closed, baseMeta) => {
+    const built = buildPathFromAnchors(anchors, closed, baseMeta);
+    if (built.meta) built.meta.forceCurves = true; else built.meta = { forceCurves: true };
+    return built;
+  };
+
+  // The deepest rung index a record can reach across all of its paths.
+  const recMaxRung = (rec) => rec.ladders.reduce((m, l) => Math.max(m, l.length - 1), 0);
+
+  // Editable-anchor count under the renderer's semantics (meta.anchors when
+  // present, else one anchor per polyline point with a closed path's duplicate
+  // closing vertex dropped). This is the number fitBezierAnchors also reports,
+  // so a triangle stored as a closed 4-point polyline reads as 3 — not 4 — and
+  // is correctly seen as already-minimal (no phantom "drop the closing dup" rung).
+  const anchorCountOf = (path) => parsePathAnchors(path).anchors.length;
+
+  // Precompute one source path's reduction ladder. Rung 0 is the exact original
+  // (lossless scrub). Higher rungs are the distinct, strictly-fewer-anchor
+  // bezier fits found by sweeping the fit tolerance geometrically; corners are
+  // preserved (cornerRadiusFrac 0) so the shape is held, only redundant anchors
+  // are shed. Each rung records its tolerance fraction so autoSmooth can pick a
+  // sensible default rung.
+  const buildPathLadder = (path, useCurves) => {
+    const originalClone = clonePaths([path])[0];
+    const origCount = anchorCountOf(originalClone);
+    const ladder = [{ count: origCount, path: originalClone, tolFrac: 0 }];
+    const GUmod = GU();
+    if (typeof GUmod.fitBezierAnchors !== 'function') return ladder;
+    const flat = flattenForEdit(path, useCurves);
+    const pts = (Array.isArray(flat) ? flat : []).map((pt) => ({ x: pt.x, y: pt.y }));
+    if (pts.length < 4) return ladder; // 3-point (or fewer) shapes: nothing to reduce
+    const closed = !!(flat.meta && flat.meta.closed)
+      || (pts.length > 2 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1e-6);
+    // Reduced rungs are plain paths — strip the live-shape / stale-curve descriptor.
+    const baseMeta = (path.meta ? { ...path.meta } : {});
+    delete baseMeta.shape;
+    delete baseMeta.originalAnchors;
+    delete baseMeta.originalClosed;
+    if (baseMeta.kind === 'shape' || baseMeta.kind === 'circle') delete baseMeta.kind;
+    const diag = bboxDiagonal(pathsBBox([pts]));
+    if (!(diag > 0)) return ladder;
+    let lastCount = origCount;
+    for (let s = 1; s <= SIMPLIFY_LADDER_SAMPLES; s += 1) {
+      const frac = SIMPLIFY_LADDER_MIN_FRAC
+        * Math.pow(SIMPLIFY_LADDER_MAX_FRAC / SIMPLIFY_LADDER_MIN_FRAC, s / SIMPLIFY_LADDER_SAMPLES);
+      const anchors = GUmod.fitBezierAnchors(pts, closed, frac * diag, SIMPLIFY_CORNER_ANGLE_DEG, 0);
+      if (!Array.isArray(anchors) || anchors.length < SIMPLIFY_MIN_ANCHORS) continue;
+      const count = anchors.length;
+      if (count < lastCount) {
+        ladder.push({ count, path: buildSimplifiedVariant(anchors, closed, baseMeta), tolFrac: frac });
+        lastCount = count;
+      }
+      if (count <= SIMPLIFY_MIN_ANCHORS) break;
+    }
+    return ladder;
+  };
+
   const simplifyBegin = (layerIds, opts = {}) => {
     const engine = resolveEngine(opts);
     if (!engine || !Array.isArray(layerIds)) return null;
@@ -273,68 +346,62 @@
       const layer = findLayer(engine, id);
       if (!isEligibleLayer(layer)) return;
       const original = clonePaths(layer.sourcePaths);
-      const basis = layer.sourcePaths.map((path) => flattenForEdit(path, layerCurves(layer)));
+      const useCurves = layerCurves(layer);
+      const ladders = layer.sourcePaths.map((p) => buildPathLadder(p, useCurves));
       records.push({
         id: layer.id,
         original,
-        basis,
+        ladders,
         params: {
           smoothing: layer.params?.smoothing ?? 0,
           simplify: layer.params?.simplify ?? 0,
         },
-        pointsBefore: countGeoPoints(original),
-        diag: bboxDiagonal(pathsBBox(basis)),
+        pointsBefore: ladders.reduce((sum, l) => sum + l[0].count, 0),
         wasLive: isLiveShapeLayer(layer),
       });
     });
     if (!records.length) return null;
     const pointsBefore = records.reduce((sum, rec) => sum + rec.pointsBefore, 0);
-    simplifySession = {
-      engine,
-      records,
-      t: 0,
-      pointsBefore,
-      pointsAfter: pointsBefore,
-    };
-    return { layerIds: records.map((rec) => rec.id), pointsBefore };
+    const maxSteps = records.reduce((m, rec) => Math.max(m, recMaxRung(rec)), 0);
+    simplifySession = { engine, records, index: 0, maxSteps, pointsBefore, pointsAfter: pointsBefore };
+    return { layerIds: records.map((rec) => rec.id), pointsBefore, maxSteps };
   };
 
-  // Recompute the preview for `t` from the begin() snapshot. Scrubbing is
-  // lossless: t = 0 writes back the untouched originals; t > 0 simplifies the
-  // flattened basis (never the previous preview).
-  const simplifyPreview = (t, opts = {}) => {
+  // Apply reduction-ladder rung `index` (0 = original, lossless scrub). Each
+  // path uses min(index, its deepest rung); a record with nothing removable is
+  // restored verbatim (params untouched) so unrelated layers in a multi-select
+  // are never reshaped. Scrubbing is lossless — every rung is precomputed from
+  // the begin() snapshot, never chained off a prior preview.
+  const simplifyPreview = (index, opts = {}) => {
     if (!simplifySession) return null;
     const app = resolveApp(opts);
     const engine = simplifySession.engine;
-    const tc = Math.max(0, Math.min(100, Number(t) || 0));
+    const maxSteps = simplifySession.maxSteps;
+    const idx = Math.max(0, Math.min(maxSteps, Math.round(Number(index) || 0)));
     let pointsAfter = 0;
     simplifySession.records.forEach((rec) => {
       const layer = findLayer(engine, rec.id);
       if (!layer) return;
-      if (tc <= 0) {
+      const recIdx = Math.min(idx, recMaxRung(rec));
+      if (recIdx <= 0) {
         restoreSessionLayer(engine, rec);
         pointsAfter += rec.pointsBefore;
         return;
       }
-      const tol = toleranceForT(tc, rec.diag);
-      layer.sourcePaths = rec.basis.map((basisPath) => {
-        const simplified = GU().simplifyPathVisvalingam
-          ? GU().simplifyPathVisvalingam(basisPath, tol)
-          : basisPath;
-        const out = simplified.map((pt) => ({ x: pt.x, y: pt.y }));
-        out.meta = cloneMeta(simplified.meta || basisPath.meta);
-        return out;
+      layer.sourcePaths = rec.ladders.map((ladder) => {
+        const rung = ladder[Math.min(recIdx, ladder.length - 1)];
+        return clonePaths([rung.path])[0];
       });
       // The preview IS the geometry now; a nonzero smoothing/simplify param
       // would trigger the shape-anchor rebuild on generate() and clobber it.
       layer.params.smoothing = 0;
       layer.params.simplify = 0;
-      pointsAfter += countGeoPoints(layer.sourcePaths);
+      pointsAfter += layer.sourcePaths.reduce((s, p) => s + anchorCountOf(p), 0);
     });
-    simplifySession.t = tc;
+    simplifySession.index = idx;
     simplifySession.pointsAfter = pointsAfter;
     regenerateLayers(engine, app, simplifySession.records.map((rec) => rec.id));
-    return { t: tc, pointsBefore: simplifySession.pointsBefore, pointsAfter };
+    return { index: idx, maxSteps, pointsBefore: simplifySession.pointsBefore, pointsAfter };
   };
 
   const simplifyCancel = (opts = {}) => {
@@ -347,36 +414,36 @@
     return true;
   };
 
-  // Bake the current preview as ONE undo step. Order matters with the app's
+  // Bake the current rung as ONE undo step. Order matters with the app's
   // push-before-change history: restore the originals, push (the snapshot IS
-  // the pre-simplify document), then re-apply the final preview. Live
-  // parametric shape layers are expanded as part of the destructive commit
-  // (PTH-5) and fire the shape-expanded event once each.
+  // the pre-simplify document), then re-apply the final rung. Live parametric
+  // shape layers that were actually reduced are expanded as part of the
+  // destructive commit (PTH-5) and fire the shape-expanded event once each.
   const simplifyCommit = (opts = {}) => {
     if (!simplifySession) return null;
     const app = resolveApp(opts);
     const engine = simplifySession.engine;
     const session = simplifySession;
-    const tFinal = session.t;
-    if (tFinal <= 0) {
+    const idxFinal = session.index;
+    if (idxFinal <= 0) {
       simplifyCancel(opts);
-      return { committed: false, t: 0, pointsBefore: session.pointsBefore, pointsAfter: session.pointsBefore };
+      return { committed: false, index: 0, pointsBefore: session.pointsBefore, pointsAfter: session.pointsBefore };
     }
     // 1. Back to the pre-simplify document so the history snapshot is clean.
     session.records.forEach((rec) => restoreSessionLayer(engine, rec));
     regenerateLayers(engine, app, session.records.map((rec) => rec.id));
     app?.pushHistory?.();
-    // 2. Re-apply the final preview destructively.
+    // 2. Re-apply the final rung destructively.
     simplifySession = session; // (unchanged; explicit for clarity)
-    const result = simplifyPreview(tFinal, opts);
+    const result = simplifyPreview(idxFinal, opts);
     session.records.forEach((rec) => {
       const layer = findLayer(engine, rec.id);
-      if (layer && rec.wasLive) emitShapeExpanded(layer, 'simplify');
+      if (layer && rec.wasLive && recMaxRung(rec) > 0) emitShapeExpanded(layer, 'simplify');
     });
     simplifySession = null;
     return {
       committed: true,
-      t: tFinal,
+      index: idxFinal,
       pointsBefore: result?.pointsBefore ?? session.pointsBefore,
       pointsAfter: result?.pointsAfter ?? session.pointsAfter,
     };
@@ -386,7 +453,8 @@
     if (!simplifySession) return { active: false };
     return {
       active: true,
-      t: simplifySession.t,
+      index: simplifySession.index,
+      maxSteps: simplifySession.maxSteps,
       layerIds: simplifySession.records.map((rec) => rec.id),
       pointsBefore: simplifySession.pointsBefore,
       pointsAfter: simplifySession.pointsAfter,
@@ -543,41 +611,69 @@
   // Curvature-error heuristic: flatten the displayed curve, measure each
   // interior point's Visvalingam triangle area, and treat points whose area is
   // below (noiseFraction · diagonal)² as removable noise. The suggested
-  // tolerance clears the AUTOSMOOTH_NOISE_QUANTILE of those noise areas; it is
-  // mapped back through the t → tolerance curve. Returns integer t in
-  // [0, 100]; 0 when nothing is removable. Pure — no mutation, no history.
+  // tolerance clears the AUTOSMOOTH_NOISE_QUANTILE of those noise areas.
+  // Returns a suggested FRACTION of the bbox diagonal, or 0 when nothing is
+  // removable. Pure per-layer helper (no mutation, no history).
+  const autoSmoothTolFrac = (layer) => {
+    const basis = layer.sourcePaths.map((path) => flattenForEdit(path, layerCurves(layer)));
+    const diag = bboxDiagonal(pathsBBox(basis));
+    if (!(diag > 0)) return 0;
+    const noiseAreaCeil = Math.pow(AUTOSMOOTH_NOISE_FRACTION * diag, 2);
+    const noiseAreas = [];
+    basis.forEach((p) => {
+      if (!Array.isArray(p) || p.length < 3) return;
+      for (let i = 1; i < p.length - 1; i++) {
+        const area = triArea(p[i - 1], p[i], p[i + 1]);
+        if (area < noiseAreaCeil) noiseAreas.push(area);
+      }
+    });
+    if (!noiseAreas.length) return 0;
+    noiseAreas.sort((a, b) => a - b);
+    const q = noiseAreas[Math.min(noiseAreas.length - 1,
+      Math.floor(noiseAreas.length * AUTOSMOOTH_NOISE_QUANTILE))];
+    const tol = Math.sqrt(q) * AUTOSMOOTH_TOLERANCE_FACTOR;
+    return tol / diag;
+  };
+
+  // Suggest a sensible default reduction-ladder rung: the deepest rung whose
+  // fit tolerance stays within the noise heuristic's suggested fraction (so the
+  // default removes noise without distorting the shape). Returns a rung INDEX
+  // (matching the slider domain), or 0 when nothing is worth removing. Reads the
+  // active session's precomputed ladders when scrubbing (the live geometry may
+  // already be a preview); otherwise builds ladders ephemerally. Pure — no
+  // mutation, no history.
+  const rungForTolFrac = (ladders, tolFrac) => {
+    let best = 0;
+    let deepest = 0;
+    ladders.forEach((ladder) => {
+      deepest = Math.max(deepest, ladder.length - 1);
+      for (let i = ladder.length - 1; i >= 1; i -= 1) {
+        if (ladder[i].tolFrac > 0 && ladder[i].tolFrac <= tolFrac) { best = Math.max(best, i); break; }
+      }
+    });
+    // Noise exists but every rung is coarser than the suggestion → still take
+    // the gentlest reduction available.
+    if (best === 0 && tolFrac > 0 && deepest > 0) best = 1;
+    return best;
+  };
+
   const autoSmooth = (layerIds, opts = {}) => {
     const engine = resolveEngine(opts);
     if (!engine || !Array.isArray(layerIds)) return 0;
-    let suggested = 0;
+    let tolFrac = 0;
+    const laddersByRec = [];
     layerIds.forEach((id) => {
       const layer = findLayer(engine, id);
       if (!isEligibleLayer(layer)) return;
-      const basis = layer.sourcePaths.map((path) => flattenForEdit(path, layerCurves(layer)));
-      const diag = bboxDiagonal(pathsBBox(basis));
-      if (!(diag > 0)) return;
-      const noiseAreaCeil = Math.pow(AUTOSMOOTH_NOISE_FRACTION * diag, 2);
-      const noiseAreas = [];
-      basis.forEach((p) => {
-        if (!Array.isArray(p) || p.length < 3) return;
-        for (let i = 1; i < p.length - 1; i++) {
-          const area = triArea(p[i - 1], p[i], p[i + 1]);
-          if (area < noiseAreaCeil) noiseAreas.push(area);
-        }
-      });
-      if (!noiseAreas.length) return;
-      noiseAreas.sort((a, b) => a - b);
-      const q = noiseAreas[Math.min(noiseAreas.length - 1,
-        Math.floor(noiseAreas.length * AUTOSMOOTH_NOISE_QUANTILE))];
-      const tol = Math.sqrt(q) * AUTOSMOOTH_TOLERANCE_FACTOR;
-      // Invert toleranceForT: t = 100 · (tol / maxTol)^(1/exponent)
-      const maxTol = diag * SIMPLIFY_MAX_TOLERANCE_FRACTION;
-      if (!(maxTol > 0)) return;
-      const t = 100 * Math.pow(Math.min(1, tol / maxTol), 1 / SIMPLIFY_CURVE_EXPONENT);
-      suggested = Math.max(suggested, t);
+      tolFrac = Math.max(tolFrac, autoSmoothTolFrac(layer));
+      const sessionRec = simplifySession
+        && simplifySession.records.find((r) => r.id === id);
+      laddersByRec.push(sessionRec
+        ? sessionRec.ladders
+        : layer.sourcePaths.map((p) => buildPathLadder(p, layerCurves(layer))));
     });
-    if (suggested <= 0) return 0;
-    return Math.max(1, Math.min(100, Math.round(suggested)));
+    if (tolFrac <= 0 || !laddersByRec.length) return 0;
+    return laddersByRec.reduce((m, ladders) => Math.max(m, rungForTolFrac(ladders, tolFrac)), 0);
   };
 
   // ── PTH-4 — anchor parsing / write-back (renderer-compatible) ──────────────

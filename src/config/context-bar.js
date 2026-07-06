@@ -68,6 +68,13 @@
       documentSetup: { label: 'Document Setup', tooltip: 'Open Document Setup' },
       // TB-4 single path/shape
       editPath: { label: 'Edit Path', tooltip: 'Edit path anchors (Direct Selection)' },
+      // TB-4b single algorithm layer (drawable generator) — algorithm-aware
+      // affordances shown instead of Edit Path, since generator output is many
+      // paths, not one editable contour.
+      changeAlgo: { tooltip: 'Switch algorithm' },
+      presets: { label: 'Presets', tooltip: 'Apply a preset' },
+      randomize: { tooltip: 'Randomize (new variation)' },
+      expand: { label: 'Expand', tooltip: 'Expand into an editable group' },
       stroke: { tooltip: 'Stroke weight' },
       shapeProps: { tooltip: 'Shape properties' },
       lock: { tooltip: 'Lock layer', tooltipUnlock: 'Unlock layer' },
@@ -128,6 +135,7 @@
     // to switch to (null = leave current tab). Wayfinding, not navigation.
     showPanel: {
       idle: { selector: '#right-pane', tab: null },
+      'single-algo': { selector: '#right-pane', tab: 'layers' },
       'single-path': { selector: '#right-pane', tab: 'layers' },
       'single-shape': { selector: '#right-pane', tab: 'layers' },
       'single-text': { selector: '#right-pane', tab: 'layers' },
@@ -162,6 +170,13 @@
       draw: svg('<path d="M4 16l1-3 8-8 2 2-8 8-3 1z"/><path d="M11.5 5.5l2 2"/>'),
       documentSetup: svg('<rect x="4" y="3" width="12" height="14" rx="1.5"/><path d="M7 7h6M7 10h6M7 13h4"/>'),
       editPath: svg('<path d="M4 15l7-7"/><rect x="3" y="14" width="2.4" height="2.4" rx="0.3"/><rect x="10.6" y="6.4" width="2.4" height="2.4" rx="0.3"/><circle cx="15" cy="4.5" r="1.2"/>'),
+      // Algorithm-layer affordances. changeAlgo: a 2×2 module grid (pick another
+      // generator). presets: stacked cards. randomize: a five-pip die face.
+      // expand: four corner arrows fanning outward (explode into a group).
+      changeAlgo: svg('<rect x="3" y="3" width="5.6" height="5.6" rx="1"/><rect x="11.4" y="3" width="5.6" height="5.6" rx="1"/><rect x="3" y="11.4" width="5.6" height="5.6" rx="1"/><rect x="11.4" y="11.4" width="5.6" height="5.6" rx="1"/>'),
+      presets: svg('<rect x="4" y="7" width="9" height="8" rx="1"/><path d="M7 7V5.4A1.4 1.4 0 0 1 8.4 4h6.2A1.4 1.4 0 0 1 16 5.4v6.2A1.4 1.4 0 0 1 14.6 13H13"/>'),
+      randomize: svg('<rect x="4" y="4" width="12" height="12" rx="2.6"/><circle cx="7.6" cy="7.6" r="0.95" fill="currentColor" stroke="none"/><circle cx="12.4" cy="7.6" r="0.95" fill="currentColor" stroke="none"/><circle cx="10" cy="10" r="0.95" fill="currentColor" stroke="none"/><circle cx="7.6" cy="12.4" r="0.95" fill="currentColor" stroke="none"/><circle cx="12.4" cy="12.4" r="0.95" fill="currentColor" stroke="none"/>'),
+      expand: svg('<path d="M8 4H4v4"/><path d="M12 4h4v4"/><path d="M8 16H4v-4"/><path d="M12 16h4v-4"/><path d="M8.5 8.5l-3-3M11.5 8.5l3-3M8.5 11.5l-3 3M11.5 11.5l3 3"/>'),
       stroke: svg('<path d="M4 6h12M4 10h12M4 14h12"/>'),
       shapeRect: svg('<rect x="4" y="6" width="12" height="8" rx="2"/>'),
       shapePolygon: svg('<path d="M10 3l6 4.4-2.3 7H6.3L4 7.4z"/>'),

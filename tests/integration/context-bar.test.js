@@ -137,9 +137,12 @@ describe('Contextual Task Bar (Lane G — TB-1…8)', () => {
 
   // ── TB-4 single path/shape ──────────────────────────────────────────
   describe('TB-4 — single path/shape', () => {
-    test('single layer shows Edit Path + lock, NO stroke entry (weight is per-pen now)', async () => {
+    test('single path/shape layer shows Edit Path + lock, NO stroke entry (weight is per-pen now)', async () => {
       await reset('select');
+      // A genuine manual path (type 'shape') keeps the single-path state;
+      // drawable generator layers route to single-algo (see TB-4b below).
       const layer = addLayer('wavetable');
+      layer.type = 'shape';
       select([layer.id]);
       await nextFrames();
       expect(['single-path', 'single-shape']).toContain(CB.getContext().kind);
@@ -155,6 +158,7 @@ describe('Contextual Task Bar (Lane G — TB-1…8)', () => {
     test('Edit Path switches to the Direct Selection tool (flips to TB-6)', async () => {
       await reset('select');
       const layer = addLayer('wavetable');
+      layer.type = 'shape'; // single-path state hosts Edit Path
       select([layer.id]);
       await nextFrames();
       const edit = Array.from(host().querySelectorAll('.ctxbar-btn'))
@@ -174,6 +178,54 @@ describe('Contextual Task Bar (Lane G — TB-1…8)', () => {
       lockBtn.click();
       await nextFrames();
       expect(app.renderer.isLayerLocked(layer.id)).toBe(true);
+    });
+  });
+
+  // ── TB-4b single drawable-algorithm layer ───────────────────────────
+  describe('TB-4b — single algorithm layer', () => {
+    test('a generator layer routes to single-algo with Expand (not Edit Path)', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+      expect(CB.getContext().kind).toBe('single-algo');
+      const titles = btnTitles();
+      expect(titles).toContain(window.Vectura.CONTEXT_BAR.buttons.expand.tooltip);
+      expect(titles).toContain(window.Vectura.CONTEXT_BAR.buttons.randomize.tooltip);
+      expect(titles).toContain(window.Vectura.CONTEXT_BAR.buttons.lock.tooltip);
+      // Edit Path is intentionally absent — a generator emits many paths.
+      expect(titles).not.toContain(window.Vectura.CONTEXT_BAR.buttons.editPath.tooltip);
+      // The algorithm switcher pill is present and reflects the current algo.
+      expect(host().querySelector('.ctxbar-algo-field')).toBeTruthy();
+    });
+    test('Expand converts the generator into an editable group', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+      const expandBtn = Array.from(host().querySelectorAll('.ctxbar-btn'))
+        .find((b) => b.title === window.Vectura.CONTEXT_BAR.buttons.expand.tooltip);
+      expect(expandBtn).toBeTruthy();
+      expandBtn.click();
+      await nextFrames();
+      const expanded = app.engine.layers.find((l) => l.id === layer.id);
+      expect(expanded.isGroup).toBe(true);
+    });
+    test('switching the algorithm pill changes the layer type', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+      const field = host().querySelector('.ctxbar-algo-field');
+      field.click(); // open the switcher flyout
+      await nextFrames();
+      const item = Array.from(host().querySelectorAll('.ctxbar-algo-flyout .ctxbar-menu-item'))
+        .find((n) => n.textContent && n.textContent.toLowerCase().includes('spiral'));
+      if (item) {
+        item.click();
+        await nextFrames();
+        expect(app.engine.layers.find((l) => l.id === layer.id).type).not.toBe('wavetable');
+      }
     });
   });
 
@@ -317,13 +369,18 @@ describe('Contextual Task Bar (Lane G — TB-1…8)', () => {
 
   // ── TB-2 overflow & management ──────────────────────────────────────
   describe('TB-2 — overflow menu & management', () => {
-    test('overflow menu has exactly the five spec items in order', async () => {
+    test('overflow menu has exactly the five spec items in order (panel collapsed)', async () => {
       await reset('select');
+      // Show Properties panel only appears while the docked panel needs
+      // restoring — collapse it so the full five-item menu renders.
+      document.getElementById('right-pane').classList.add('pane-collapsed');
       openOverflow();
       const items = Array.from(document.querySelectorAll('.ctxbar-menu-item')).map((n) => n.textContent);
       expect(items).toEqual([
         'Show Properties panel', 'Hide bar', 'Reset bar position', 'Pin bar position', 'Quick help',
       ]);
+      openOverflow(); // close
+      document.getElementById('right-pane').classList.remove('pane-collapsed');
     });
     test('Pin freezes the bar and persists; Reset restores auto-anchor', async () => {
       await reset('select');
@@ -352,9 +409,77 @@ describe('Contextual Task Bar (Lane G — TB-1…8)', () => {
     });
     test('Show panel adds the attention pulse to the docked panel', async () => {
       await reset('select');
+      document.getElementById('right-pane').classList.add('pane-collapsed');
       openOverflow();
       Array.from(document.querySelectorAll('.ctxbar-menu-item')).find((n) => n.textContent === 'Show Properties panel').click();
       expect(document.querySelector('#right-pane').classList.contains('ctxbar-pulse')).toBe(true);
+    });
+  });
+
+  // ── TB-2b — Show Properties panel gating (collapsed/shrunk only) ─────
+  describe('TB-2b — Show Properties panel only offered while the panel needs restoring', () => {
+    const rightPane = () => document.getElementById('right-pane');
+    const menuLabels = () => Array.from(document.querySelectorAll('.ctxbar-menu-item')).map((n) => n.textContent);
+    const findItem = () => Array.from(document.querySelectorAll('.ctxbar-menu-item'))
+      .find((n) => n.textContent === 'Show Properties panel');
+
+    const cleanPaneState = () => {
+      // Close a still-open menu and undo any pane collapse/shrink a test made.
+      if (document.querySelector('.ctxbar-menu.is-open')) openOverflow();
+      rightPane().classList.remove('pane-collapsed', 'pane-force-open');
+      document.documentElement.style.removeProperty('--pane-right-width');
+      document.body.classList.remove('auto-collapsed');
+    };
+    beforeEach(cleanPaneState);
+    afterEach(cleanPaneState);
+
+    test('item is hidden while the properties panel is at full size', async () => {
+      await reset('select');
+      openOverflow();
+      expect(menuLabels()).not.toContain('Show Properties panel');
+      // The rest of the management menu is still there.
+      expect(menuLabels()).toContain('Hide bar');
+    });
+
+    test('collapsed panel → item shows; clicking restores (un-collapses) and pulses', async () => {
+      await reset('select');
+      rightPane().classList.add('pane-collapsed');
+      SETTINGS.rightPaneCollapsed = true;
+      openOverflow();
+      const item = findItem();
+      expect(item).toBeTruthy();
+      item.click();
+      expect(rightPane().classList.contains('pane-collapsed')).toBe(false);
+      expect(SETTINGS.rightPaneCollapsed).toBe(false);
+      expect(rightPane().classList.contains('ctxbar-pulse')).toBe(true);
+    });
+
+    test('shrunk panel → item shows; clicking restores the skin-default width and pulses', async () => {
+      await reset('select');
+      // Simulate a resizer drag that narrowed the pane below the skin default.
+      document.documentElement.style.setProperty('--pane-right-width', '200px');
+      SETTINGS.paneRightWidth = 200;
+      openOverflow();
+      const item = findItem();
+      expect(item).toBeTruthy();
+      item.click();
+      const w = parseFloat(document.documentElement.style.getPropertyValue('--pane-right-width'));
+      expect(w).toBeGreaterThan(200); // back to the skin/default width
+      expect(SETTINGS.paneRightWidth).toBe(w);
+      expect(rightPane().classList.contains('ctxbar-pulse')).toBe(true);
+    });
+
+    test('restoring a collapsed panel does not clobber a user-widened width', async () => {
+      await reset('select');
+      // Wider than default, then collapsed: restore should only un-collapse.
+      document.documentElement.style.setProperty('--pane-right-width', '480px');
+      SETTINGS.paneRightWidth = 480;
+      rightPane().classList.add('pane-collapsed');
+      openOverflow();
+      findItem().click();
+      expect(rightPane().classList.contains('pane-collapsed')).toBe(false);
+      expect(parseFloat(document.documentElement.style.getPropertyValue('--pane-right-width'))).toBe(480);
+      expect(SETTINGS.paneRightWidth).toBe(480);
     });
   });
 
@@ -422,7 +547,7 @@ describe('Contextual Task Bar (Lane G — TB-1…8)', () => {
       select([layer.id]);
       await nextFrames();
       expect(got).toBeTruthy();
-      expect(['single-path', 'single-shape']).toContain(got.kind);
+      expect(['single-path', 'single-shape', 'single-algo']).toContain(got.kind);
     });
   });
 });

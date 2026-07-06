@@ -1528,6 +1528,13 @@
       // Radius (mm) the fill-offset pad edge maps to — user-set via the vertical
       // slider beside the XY pad (1–1000mm). Both X and Y clamp to this bound.
       fillOffsetMax: 20,
+      // Radial-fill centerpoint offset (mm) from the fill region's bounds centre,
+      // driven by the Centerpoint XY pad shown only for the radial fill type. Fed
+      // to the pattern engine as shiftX/shiftY (see pattern.js radialFill). Max is
+      // the pad-edge radius, mirroring fillOffsetMax.
+      fillShiftX: 0,
+      fillShiftY: 0,
+      fillShiftMax: 20,
     },
     grid: {
       preset: 'grid-default',

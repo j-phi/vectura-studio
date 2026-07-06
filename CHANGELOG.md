@@ -4,6 +4,26 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## Unreleased
+
+### Changed
+- **The task bar's Simplify slider is now an anchor-reduction control with bounded travel.**
+  It runs complex → simple (left → right), and the thumb starts at the complex end
+  (the untouched original). Behind it, `simplifyBegin` precomputes a per-path *reduction
+  ladder* — rung 0 is the original, and each higher rung is a strictly-lower anchor count
+  fit with the fewest cubic beziers that still reproduce the shape (corners preserved).
+  The slider's range is scaled to the deepest achievable rung, so it physically stops
+  once no more endpoints can be removed: a triangle or rectangle (all hard corners) has
+  nothing to simplify and the slider is disabled with a "nothing to simplify" note, while
+  a 4-point gentle curve collapses toward 3 (or fewer) anchors with the silhouette held by
+  the fitted beziers. The badge now reads "{pts} pts"; the wave icons were swapped so the
+  left (complex) shows *More detail* and the right (simple) shows *Fewer points*.
+- **"Show Properties panel" in the task bar's ⋯ menu is now a restore action.** The item only
+  appears while the docked panel it targets (right pane; left pane for a text layer) is collapsed
+  or resized narrower than its skin-default width. Choosing it restores the panel — un-collapsing
+  it and, if shrunk, widening it back to the default (a user-widened pane keeps its custom width) —
+  and fires the existing blue attention pulse. At full size the item is omitted from the menu.
+
 ## 1.2.41 - 2026-07-05
 
 ### Fixed

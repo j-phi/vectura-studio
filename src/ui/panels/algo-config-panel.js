@@ -1855,6 +1855,10 @@
       this.buildControls();
       this.updateFormula();
     };
+    // Surface the active layer's preset applier for out-of-panel callers (the
+    // contextual task bar's preset flyout). Re-stashed each buildControls() so
+    // it always closes over the current active layer; the caller owns history.
+    this._applyActivePreset = applyPreset;
 
     const renderDef = (def, targetEl) => {
       const target = targetEl || container;

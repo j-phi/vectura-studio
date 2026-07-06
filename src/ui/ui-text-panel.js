@@ -789,6 +789,9 @@
     // Inset + Offset-pad controls own those roles). onEdit snapshots history
     // once per interaction; onChange previews live (renderSpec) then commits
     // (flush) on release, matching the old density slider's behaviour.
+    // Assigned by the Centerpoint pad block below; called whenever the fill type
+    // changes so the radial-only pad reveals/hides itself in step with the grid.
+    let syncCenterVisibility = () => {};
     const fillGridEl = ref('fillVariantGrid');
     const fillControlsEl = ref('fillControls');
     if (fillGridEl && fillControlsEl && Vectura.UI && Vectura.UI.FillControlSurface) {
@@ -801,7 +804,7 @@
         exclude: ['fillAngle', 'fillPadding', 'fillShiftX', 'fillShiftY'],
         noneHint: 'Pick a fill type to fill glyph interiors.',
         onEdit: () => pushHist(),
-        onChange: (committed) => { if (committed) flush(); else renderSpec(); },
+        onChange: (committed) => { if (committed) flush(); else renderSpec(); syncCenterVisibility(); },
       });
     }
 
@@ -874,6 +877,79 @@
       }
       padRefresh();
     }
+
+    // ── radial centerpoint XY pad ─────────────────────────────────────────
+    // A twin of the Fill Offset pad above, wired to fillShiftX/fillShiftY — the
+    // engine feeds those to the radial fill as its centre offset from the region
+    // bounds (pattern.js radialFill: cx = midX + shiftX). Revealed only when the
+    // radial fill type is active; syncCenterVisibility() (called from the fill
+    // grid's onChange) toggles it as the user switches types.
+    const cField = ref('fillCenterField');
+    const cPad = ref('fillCenterPad'); const cKnob = ref('fillCenterKnob'); const cRead = ref('fillCenterRead');
+    const cMaxSlider = ref('fillCenterMaxSlider'); const cMaxChip = ref('fillCenterMaxChip');
+    if (cField) {
+      syncCenterVisibility = () => { cField.style.display = layer.params.fillType === 'radial' ? '' : 'none'; };
+    }
+    if (cPad) {
+      const cMax = () => { const v = +layer.params.fillShiftMax; return isFinite(v) && v > 0 ? clamp(v, 1, 1000) : (DEF.fillShiftMax != null ? DEF.fillShiftMax : 20); };
+      const cRefresh = () => {
+        const M = cMax();
+        const x = layer.params.fillShiftX || 0; const y = layer.params.fillShiftY || 0;
+        cKnob.style.left = `${50 + (x / M) * 50}%`; cKnob.style.top = `${50 + (y / M) * 50}%`;
+        const c = !x && !y;
+        cPad.classList.toggle('off', c);
+        cPad.setAttribute('aria-valuetext', c ? 'centred' : `${x.toFixed(1)} by ${y.toFixed(1)} millimetres`);
+        if (cRead) cRead.textContent = c ? 'centred' : `${x.toFixed(1)}, ${y.toFixed(1)} mm`;
+      };
+      const cApply = (mx, my, render) => {
+        const M = cMax();
+        let ax = mx; let ay = my; const mag = Math.hypot(ax, ay);
+        if (mag > M) { ax = (ax / mag) * M; ay = (ay / mag) * M; }
+        layer.params.fillShiftX = Math.round(ax * 100) / 100;
+        layer.params.fillShiftY = Math.round(ay * 100) / 100;
+        cRefresh();
+        if (render) renderSpec();
+      };
+      const cFromPoint = (cx, cy) => { const M = cMax(); const r = cPad.getBoundingClientRect(); cApply(((cx - r.left) / r.width - 0.5) * 2 * M, ((cy - r.top) / r.height - 0.5) * 2 * M, true); };
+      listen(cPad, 'pointerdown', (e) => {
+        e.preventDefault(); pushHist();
+        try { cPad.setPointerCapture(e.pointerId); } catch (_) { /* */ }
+        cFromPoint(e.clientX, e.clientY);
+        const mv = (ev) => cFromPoint(ev.clientX, ev.clientY);
+        const up = () => { cPad.removeEventListener('pointermove', mv); cPad.removeEventListener('pointerup', up); cPad.removeEventListener('pointercancel', up); flush(); };
+        cPad.addEventListener('pointermove', mv); cPad.addEventListener('pointerup', up); cPad.addEventListener('pointercancel', up);
+      });
+      listen(cPad, 'dblclick', () => { pushHist(); cApply(0, 0, false); flush(); });
+      listen(cPad, 'keydown', (e) => {
+        const s = e.shiftKey ? 2 : 0.5; const x = layer.params.fillShiftX || 0; const y = layer.params.fillShiftY || 0; let hit = true;
+        if (e.key === 'ArrowLeft') { pushHist(); cApply(x - s, y, false); flush(); }
+        else if (e.key === 'ArrowRight') { pushHist(); cApply(x + s, y, false); flush(); }
+        else if (e.key === 'ArrowUp') { pushHist(); cApply(x, y - s, false); flush(); }
+        else if (e.key === 'ArrowDown') { pushHist(); cApply(x, y + s, false); flush(); }
+        else hit = false;
+        if (hit) e.preventDefault();
+      });
+      if (cMaxSlider) {
+        const syncMaxUI = () => { const M = cMax(); cMaxSlider.value = M; if (cMaxChip) cMaxChip.textContent = String(Math.round(M)); };
+        syncMaxUI();
+        listen(cMaxSlider, 'pointerdown', () => pushHist());
+        listen(cMaxSlider, 'input', (e) => {
+          layer.params.fillShiftMax = clamp(+e.target.value || 1, 1, 1000);
+          if (cMaxChip) cMaxChip.textContent = String(Math.round(layer.params.fillShiftMax));
+          cApply(layer.params.fillShiftX || 0, layer.params.fillShiftY || 0, true);
+        });
+        listen(cMaxSlider, 'change', () => flush());
+        listen(cMaxSlider, 'dblclick', (e) => {
+          e.preventDefault(); pushHist();
+          layer.params.fillShiftMax = (DEF.fillShiftMax != null ? DEF.fillShiftMax : 20);
+          syncMaxUI();
+          cApply(layer.params.fillShiftX || 0, layer.params.fillShiftY || 0, false);
+          flush();
+        });
+      }
+      cRefresh();
+    }
+    syncCenterVisibility();
 
     // ── fill angle radial selector ─────────────────────────────────────────
     const angleMount = ref('fillAngleMount');
@@ -1537,6 +1613,25 @@
                 </div>
               </div>
               <div class="vtp-xypad-read" data-ref="fillOffsetRead">centred</div>
+            </div>
+            <!-- Radial-only Centerpoint pad — identical control to Fill Offset,
+                 but drags the radial fill's origin (fillShiftX/Y) instead of the
+                 whole fill window. Shown only when the radial fill type is active. -->
+            <div class="vtp-field-block" data-ref="fillCenterField" style="margin-top:11px; display:none;">
+              <div class="vtp-field-cap"><label>Centerpoint <span class="vtp-drag-hint">drag · dbl-click resets</span></label></div>
+              <div class="vtp-xypad-row">
+                <div class="vtp-xypad" data-ref="fillCenterPad" role="slider" aria-label="Radial centerpoint offset" aria-valuetext="centred" tabindex="0">
+                  <div class="vtp-xypad-cross"></div>
+                  <div class="vtp-xypad-rim"></div>
+                  <div class="vtp-xypad-knob" data-ref="fillCenterKnob"></div>
+                </div>
+                <div class="vtp-xypad-max" title="Maximum centerpoint offset — the pad edge maps to this distance">
+                  <input type="range" class="vtp-vslider vtp-vslider-vert" data-ref="fillCenterMaxSlider" min="1" max="1000" step="1" value="20" orient="vertical" aria-label="Maximum centerpoint offset in millimetres">
+                  <span class="vtp-vchip vtp-mono" data-ref="fillCenterMaxChip">20</span>
+                  <span class="vtp-xypad-max-unit">mm</span>
+                </div>
+              </div>
+              <div class="vtp-xypad-read" data-ref="fillCenterRead">centred</div>
             </div>
             <div class="vtp-row-toggle" style="margin-top:11px;">
               <span class="vtp-rt-label">Inset fill from edge</span><span class="vtp-rt-sub">pull fill in from the outline</span>

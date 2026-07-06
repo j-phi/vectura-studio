@@ -96,7 +96,12 @@ describe('Pen Picker eyedropper (COL-4)', () => {
     const target = addTestLayer();
     window.Vectura.PensPanel.assignPenToLayers(SETTINGS.pens, [source], 'pen-3');
     window.Vectura.PensPanel.assignPenToLayers(SETTINGS.pens, [target], 'pen-1');
-    // Keep the source ON TOP for the nearest-path hit, but sample its own point.
+    // source & target are identical overlapping wavetables — move source to the
+    // top of the z-order so it wins the nearest-path hit (findLayerAtPoint scans
+    // reversed). Without this the tie is decided by array order (target on top),
+    // which flakes green locally but samples pen-1 on CI.
+    app.engine.layers.splice(app.engine.layers.indexOf(source), 1);
+    app.engine.layers.push(source);
     const world = pointOnLayer(source);
 
     const anchor = openPopoverFor([target.id]);

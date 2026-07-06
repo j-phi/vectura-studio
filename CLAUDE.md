@@ -11,11 +11,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Always run the full test suite before committing (target: all tests passing, e.g., 741/936/950 tests)
 - Use Red-Green-Refactor (RGR): write a failing regression test FIRST when fixing bugs, then verify it fails, fix the code, verify it passes
 - After any CSS or layout change, also run e2e/visual tests to catch z-index, media query, and specificity regressions
+- **No user-visible change is "done" until observed in the running app.** Passing tests are not visual verification (harness-clean ≠ app-clean) — screenshot or interact with the real app and check the actual result before reporting completion. If you genuinely cannot verify (e.g., no browser available), lead your report with "NOT visually verified" instead of claiming it works.
+- When the user sends a numbered/multi-item feedback list, track every item as an explicit checklist and account for each one in the final report — silently dropping items from multi-part lists is a recurring failure mode.
 
 ## Commit Hygiene
 
 - Before staging, run `git status` and explicitly list files to be included; never `git add -A` if there is unrelated WIP
 - If unrelated WIP files are present, stop and ask the user before proceeding
+- A PreToolUse hook **auto-bumps the patch version** (and runs `version:sync`, staging `package.json`, `src/config/version.js`, `index.html`) on any `git commit` that stages `src/`, `tests/`, or `index.html` without `package.json` already staged. Expect those extra staged files; if you bumped manually and staged `package.json` yourself, the hook skips.
 - Stage + commit when work is ready, then **stop**: print the commit hash + one-line summary. Do **not** `git push` until the user explicitly says to ("push" / "ship it"). The same applies to opening PRs, merging, and tagging/releases — those are publishing operations that require explicit approval.
 
 ## Concurrent Development & Working-Tree Safety
@@ -38,10 +41,22 @@ Simultaneous development paths (parallel agents, multiple worktrees, the user ed
 - Sync a worktree branch to main via rebase/merge — **never `git reset --hard main`**. Get approval.
 - Treat `graphify-out/*` as generated: in any conflict take either side and regenerate; disable the graphify post-checkout/pre-commit hooks during a rebase.
 
+**Shared-file contention**
+
+- `CHANGELOG.md`, `plans.md`, `README.md`, `src/config/defaults.js`, and whatever file is the current feature's hub are the highest-collision files across parallel sessions. Read (or re-read) the target region **immediately before** editing them. On a "file modified since read" error, re-read and merge your change into the new content — never overwrite with your remembered version.
+
 **Recovery-first**
 
 - If work seems lost, check `git reflog`, `git stash list`, and `git fsck --lost-found` before redoing it; pin recovered work as a tag immediately.
 - Untracked files surviving an op do **not** mean tracked edits survived — verify tracked files explicitly.
+
+## Shared MCP Browser (chrome-devtools)
+
+The chrome-devtools MCP browser is a **singleton shared by every live session** (one profile at `~/.cache/chrome-devtools-mcp/chrome-profile`). The error "The browser is already running… Use --isolated" almost always means **another live session owns it right now** — not a stale lock.
+
+- **Never** `pkill` the chrome-devtools browser or delete its `SingletonLock` while other sessions are live (the SessionStart hook lists them). That kills the browser out from under the owning session and triggers a lock-fight where every session repeatedly clears the others' locks.
+- Only clear the lock when no other session is active **and** `pgrep -f chrome-devtools-mcp/chrome-profile` shows no live process (then it really is stale).
+- If the browser is owned elsewhere, don't wait or retry-loop: verify with **Playwright** instead (already a dev dependency) — a short script or the `tests/e2e` helpers can load `http://localhost:8000`, drive the UI, and screenshot.
 
 ## CSS & Layout Rules
 

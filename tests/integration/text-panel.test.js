@@ -333,6 +333,49 @@ describe('Text panel (vtp-)', () => {
     expect(regen).toHaveBeenCalled();
   });
 
+  test('radial centerpoint pad is hidden for non-radial fills, revealed for radial', () => {
+    // Hatch (default) → the Centerpoint pad stays hidden.
+    const { container, layer } = mount({ font: 'google:inter', fillEnabled: true, fillType: 'hatch' });
+    const field = container.querySelector('[data-ref="fillCenterField"]');
+    expect(field).toBeTruthy();
+    expect(field.style.display).toBe('none');
+    expect(container.querySelector('[data-ref="fillCenterPad"]')).toBeTruthy();
+    // Switching to the radial variant reveals it in step with the grid.
+    const grid = container.querySelector('[data-ref="fillVariantGrid"]');
+    const radialBtn = grid.querySelector('.pb-variant-btn[data-bucket-variant="radial"]');
+    expect(radialBtn).toBeTruthy();
+    radialBtn.click();
+    expect(layer.params.fillType).toBe('radial');
+    expect(field.style.display).toBe('');
+  });
+
+  test('radial fill mounts with the centerpoint pad already shown', () => {
+    const { container } = mount({ font: 'google:inter', fillEnabled: true, fillType: 'radial' });
+    const field = container.querySelector('[data-ref="fillCenterField"]');
+    expect(field.style.display).toBe('');
+  });
+
+  test('dragging the centerpoint pad writes fillShiftX/fillShiftY (radial centre offset)', () => {
+    const { container, layer, pushHistory, regen } = mount({
+      font: 'google:inter', fillEnabled: true, fillType: 'radial',
+      fillShiftX: 0, fillShiftY: 0, fillShiftMax: 20,
+    });
+    const pad = container.querySelector('[data-ref="fillCenterPad"]');
+    // jsdom gives the pad a 0-size rect; stub it so the pointer maps to the rim.
+    pad.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100 });
+    // Pointer at the pad's right-centre edge → +x rim, y centred.
+    firePtr(pad, 'pointerdown', { clientX: 100, clientY: 50 });
+    expect(pushHistory).toHaveBeenCalledTimes(1);
+    expect(layer.params.fillShiftX).toBeCloseTo(20, 5); // clamped to the max radius
+    expect(layer.params.fillShiftY).toBeCloseTo(0, 5);
+    firePtr(pad, 'pointerup', { clientX: 100, clientY: 50 });
+    expect(regen).toHaveBeenCalled();
+    // Double-click recentres the origin.
+    fire(pad, 'dblclick');
+    expect(layer.params.fillShiftX).toBe(0);
+    expect(layer.params.fillShiftY).toBe(0);
+  });
+
   test('rebuild flushes a pending debounced specimen edit (no silent text loss)', () => {
     const { container, layer, pushHistory } = mount();
     const spec = container.querySelector('.vtp-spec-text');

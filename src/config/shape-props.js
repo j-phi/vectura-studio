@@ -49,7 +49,9 @@
     STROKE_SLIDER_MIN_MM: 0.05,
     STROKE_SLIDER_MAX_MM: 5,
     STROKE_STEP_MM: 0.05,
-    // Simplify strength slider (percentage, PTH-1 t domain).
+    // Simplify slider: reduction-ladder rung index. The range is dynamic — the
+    // max is the deepest achievable rung (maxSteps from simplifyBegin); STEP is
+    // one rung. MIN/MAX are retained as fallbacks only.
     SIMPLIFY_MIN: 0,
     SIMPLIFY_MAX: 100,
     SIMPLIFY_STEP: 1,
@@ -62,14 +64,15 @@
       strokeDecrease: 'Decrease stroke weight',
       strokeIncrease: 'Increase stroke weight',
       openStrokeOptions: 'Open Stroke Options',
-      // Simplify sub-mode (TB-11).
+      // Simplify sub-mode (TB-11). Left icon = complex (More detail), right icon
+      // = simple (Fewer points); the slider runs complex → simple, L → R.
       simplifyLabel: 'Simplify',
       simplifyMinWave: 'Fewer points',
       simplifyMaxWave: 'More detail',
+      simplifyNothing: 'nothing to simplify',
       autoSmooth: 'Auto-Smooth',
-      // Badge template: {pts} and {t} substituted (PTH-1 exposes the counts;
-      // the video shows % only — the pts prefix is a Vectura addition).
-      simplifyBadge: '{pts} pts · {t} %',
+      // Badge template: {pts} = current anchor/point count after reduction.
+      simplifyBadge: '{pts} pts',
     },
   };
 })();
