@@ -728,7 +728,15 @@
       // most browsers). Cookie is back-compat fallback for older saved state.
       const lsRaw = this.readLocalStorage(PREFERENCE_STORAGE_KEY);
       const cookieRaw = this.readCookie(this.preferenceCookieName);
-      const candidates = [lsRaw, cookieRaw ? decodeURIComponent(cookieRaw) : null];
+      // Cookie may be base64-encoded (btoa) or legacy URL-encoded (encodeURIComponent).
+      // Try base64 first; fall back to URL-decode for cookies written by older builds.
+      let decodedCookie = null;
+      if (cookieRaw) {
+        try { decodedCookie = atob(cookieRaw); } catch (_) {
+          try { decodedCookie = decodeURIComponent(cookieRaw); } catch (_2) { /* ignore */ }
+        }
+      }
+      const candidates = [lsRaw, decodedCookie];
       for (const raw of candidates) {
         if (!raw) continue;
         try {
@@ -756,7 +764,9 @@
       if (!force && json === this.lastPreferenceHash) return;
       this.lastPreferenceHash = json;
       this.writeLocalStorage(PREFERENCE_STORAGE_KEY, json);
-      this.writeCookie(this.preferenceCookieName, encodeURIComponent(json), PREFERENCE_COOKIE_MAX_AGE);
+      // btoa reduces cookie size vs encodeURIComponent (~33% vs ~45% overhead),
+      // keeping the value under the 4096-byte browser limit.
+      this.writeCookie(this.preferenceCookieName, btoa(json), PREFERENCE_COOKIE_MAX_AGE);
     }
 
     persistPreferencesDebounced(delay = 280) {
