@@ -1534,9 +1534,15 @@
   // re-traces a bezier-anchor contour into the MINIMAL set of editable anchors
   // that reproduces it within a sub-pixel tolerance:
   //   1. merge coincident seams (fuse the arriving `in` with the departing `out`),
-  //   2. detect corners from the ANCHOR HANDLES (tangent discontinuity) — robust
-  //      where a flattened turn-angle is not: a smooth quad-chain reads as ONE run,
-  //      a flat-terminal cut reads as two corners,
+  //   2. detect corners from the ANCHOR HANDLES (tangent discontinuity) over a
+  //      WINDOWED span (_windowedTangent), not just the immediate neighbor — a
+  //      real sharp corner is often drawn as a tiny tangent-continuous "fillet"
+  //      (a hinting/optical-correction artifact: a few units of curve standing in
+  //      for a true point), which reads as perfectly smooth one hop out but is
+  //      revealed once the window walks past it onto the real edges either side.
+  //      A genuine smooth curve (a letter's bowl) or an already-long segment hits
+  //      the window in one hop, so its classification is unchanged: a smooth
+  //      quad-chain reads as ONE run, a flat-terminal cut reads as two corners,
   //   3. Schneider-fit each corner→corner run to the tolerance (straight runs stay
   //      as a single handle-less line so flat terminals render crisp).
   // Every returned anchor carries a `corner` flag (true at tangent breaks / open
@@ -1549,16 +1555,59 @@
   //   cornerAngleDeg              tangent-break threshold (default 30°)
   //   mergeFrac / mergeEps        coincident-seam epsilon (default 0.0008·diag)
   //   flattenTol                  run-flatten chord tol   (default tol·0.25)
-  const _reduceTangents = (anchors) => {
+  //   windowDistFrac / windowDist corner-detection lookahead (default 0.035·diag)
+  // Tangent at anchor i, looked ahead/behind until `windowDist` of arc length has
+  // been covered. A single hop (the anchor's own handle, or the chord to its
+  // immediate neighbor) is used as-is when it already reaches windowDist — this
+  // is the ONLY behavior real corners and well-sampled smooth curves ever hit, so
+  // their classification is unchanged. Short hops (font-hinting "corner fillets":
+  // a tiny, tangent-continuous curve a TrueType outline substitutes for a true
+  // sharp corner) get walked past, onto the following anchor-to-anchor chord —
+  // interpolated to the exact windowDist point so an uneven next segment can't
+  // overshoot the window — so the comparison sees the real edge direction on
+  // either side of the fillet instead of the fillet's own local (near-)continuity.
+  const _windowedTangent = (anchors, i, forward, windowDist, closed) => {
     const n = anchors.length;
-    return anchors.map((a, i) => {
-      const prev = anchors[(i - 1 + n) % n];
-      const next = anchors[(i + 1) % n];
-      const outRaw = a.out && _vLen(_vSub(a.out, a)) > 1e-9 ? _vSub(a.out, a) : _vSub(next, a);
-      const inRaw = a.in && _vLen(_vSub(a, a.in)) > 1e-9 ? _vSub(a, a.in) : _vSub(a, prev);
-      return { inT: _vNorm(inRaw), outT: _vNorm(outRaw) };
-    });
+    const a = anchors[i];
+    const step = (idx) => {
+      if (forward) return closed ? (idx + 1) % n : (idx + 1 < n ? idx + 1 : -1);
+      return closed ? (idx - 1 + n) % n : (idx - 1 >= 0 ? idx - 1 : -1);
+    };
+    const first = step(i);
+    if (first === -1) return _vNorm({ x: 1, y: 0 });
+    const neighbor = anchors[first];
+    const handleRaw = forward
+      ? (a.out && _vLen(_vSub(a.out, a)) > 1e-9 ? _vSub(a.out, a) : _vSub(neighbor, a))
+      : (a.in && _vLen(_vSub(a, a.in)) > 1e-9 ? _vSub(a, a.in) : _vSub(a, neighbor));
+    const firstLen = _vLen(handleRaw);
+    if (firstLen >= windowDist) return _vNorm(handleRaw);
+
+    let acc = firstLen;
+    let j = first;
+    let far = neighbor;
+    let guard = 0;
+    while (acc < windowDist && guard < n) {
+      const k = step(j);
+      if (k === -1 || k === i) break;
+      const segLen = _vLen(_vSub(anchors[k], anchors[j]));
+      if (segLen < 1e-9) { j = k; guard += 1; continue; }
+      if (acc + segLen >= windowDist) {
+        const t = (windowDist - acc) / segLen;
+        far = { x: anchors[j].x + (anchors[k].x - anchors[j].x) * t, y: anchors[j].y + (anchors[k].y - anchors[j].y) * t };
+        break;
+      }
+      acc += segLen;
+      j = k;
+      far = anchors[j];
+      guard += 1;
+    }
+    return _vNorm(forward ? _vSub(far, a) : _vSub(a, far));
   };
+
+  const _reduceTangents = (anchors, closed, windowDist) => anchors.map((_, i) => ({
+    inT: _windowedTangent(anchors, i, false, windowDist, closed),
+    outT: _windowedTangent(anchors, i, true, windowDist, closed),
+  }));
 
   const _mergeCoincidentAnchors = (anchors, closed, eps) => {
     const out = [];
@@ -1654,12 +1703,14 @@
       : (Number.isFinite(opts.mergeFrac) ? opts.mergeFrac : 0.0008) * diag;
     const flTol = Number.isFinite(opts.flattenTol) ? opts.flattenTol : Math.max(tol * 0.25, 1e-4);
     const cornerCos = Math.cos((Number.isFinite(opts.cornerAngleDeg) ? opts.cornerAngleDeg : 30) * Math.PI / 180);
+    const windowDist = Number.isFinite(opts.windowDist) ? opts.windowDist
+      : (Number.isFinite(opts.windowDistFrac) ? opts.windowDistFrac : 0.035) * diag;
 
     const merged = _mergeCoincidentAnchors(rawAnchors, closed, eps);
     const n = merged.length;
     if (n < 3) return tagAll(merged);
 
-    const tans = _reduceTangents(merged);
+    const tans = _reduceTangents(merged, closed, windowDist);
     const isCorner = merged.map((_, i) => _vDot(tans[i].inT, tans[i].outT) < cornerCos);
     if (!closed) { isCorner[0] = true; isCorner[n - 1] = true; }
     const cornerIdx = [];

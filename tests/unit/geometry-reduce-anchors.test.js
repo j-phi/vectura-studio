@@ -92,6 +92,41 @@ describe('GeometryUtils.reduceAnchors', () => {
     expect(maxRadialDev(out, false, 100)).toBeLessThan(1.0);
   });
 
+  test('tiny hinting-style corner fillet reads as a real corner, not a smooth run', () => {
+    // A 1000x1000 square where ONE corner is drawn the way a TrueType hinter
+    // often draws a "sharp" corner: not a bare point, but a tiny (radius-2)
+    // tangent-continuous quarter-arc fillet — G1-continuous with both adjoining
+    // straight edges, so a 1-hop tangent check at either fillet endpoint sees
+    // no discontinuity at all. This is what made a real "W" render wavy: with
+    // every corner disguised this way, ALL corners went undetected and the
+    // whole glyph outline got Schneider-fit as one smooth self-intersecting
+    // loop instead of a sharp-cornered polygon (bug repro: Barlow "W").
+    const kk = 0.5523 * 2; // quarter-arc handle length for radius 2
+    const sq = [
+      { x: 0, y: 0, in: null, out: null },
+      { x: 998, y: 0, in: null, out: { x: 998 + kk, y: 0 } },
+      { x: 1000, y: 2, in: { x: 1000, y: 2 - kk }, out: null },
+      { x: 1000, y: 1000, in: null, out: null },
+      { x: 0, y: 1000, in: null, out: null },
+    ];
+    const out = GU.reduceAnchors(sq, true, {});
+    // Without the fix, the fillet is invisible to corner detection, so the run
+    // from (0,0) to (1000,1000) — spanning the fillet — gets Schneider-fit as
+    // ONE cubic. Forcing a single smooth curve through a 90° bend requires huge
+    // overshooting control handles, which bulge the curve outside the square's
+    // own bounding box entirely (observed: x up to ~1037, y down to ~-37) —
+    // the same self-intersecting "extra diagonal stroke" look reported live.
+    // With the fix, every real corner (including the fillet) is its own run
+    // boundary, so the flattened outline never leaves the true [0,1000]² box.
+    const poly = GU.buildPolylineFromAnchors(out, true);
+    const xs = poly.map((p) => p.x);
+    const ys = poly.map((p) => p.y);
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(-1e-6);
+    expect(Math.max(...xs)).toBeLessThanOrEqual(1000 + 1e-6);
+    expect(Math.min(...ys)).toBeGreaterThanOrEqual(-1e-6);
+    expect(Math.max(...ys)).toBeLessThanOrEqual(1000 + 1e-6);
+  });
+
   test('open path: both endpoints are corners', () => {
     const arc = circleAnchors(12, 100).slice(0, 5); // an open arc fragment
     arc[0].in = null;
