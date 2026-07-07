@@ -170,6 +170,63 @@
     return { x: pt.x / len, y: pt.y / len };
   };
   const dot = (a, b) => (a?.x ?? 0) * (b?.x ?? 0) + (a?.y ?? 0) * (b?.y ?? 0);
+  // True departure/arrival tangent at `anchor`, heading toward `neighbor`. A
+  // corner adjacent to a curved segment (e.g. the top of a capital "S") often
+  // has only ONE handle at the vertex itself — the "single-handle bezier"
+  // case — so the tangent there is bent by the curve even though `anchor`
+  // carries no handle on that side. Preference order mirrors cubic-bezier
+  // degenerate-control-point tangent rules: the anchor's own handle first,
+  // then the far anchor's opposite handle, then the straight chord.
+  const CORNER_TANGENT_EPS = 1e-6;
+  const cornerTangentDir = (anchor, neighbor, ownKey, neighborKey) => {
+    const own = anchor?.[ownKey];
+    if (own && (Math.abs(own.x - anchor.x) > CORNER_TANGENT_EPS || Math.abs(own.y - anchor.y) > CORNER_TANGENT_EPS)) {
+      return normalizePoint({ x: own.x - anchor.x, y: own.y - anchor.y });
+    }
+    const far = neighbor?.[neighborKey];
+    if (far && (Math.abs(far.x - anchor.x) > CORNER_TANGENT_EPS || Math.abs(far.y - anchor.y) > CORNER_TANGENT_EPS)) {
+      return normalizePoint({ x: far.x - anchor.x, y: far.y - anchor.y });
+    }
+    return normalizePoint({ x: neighbor.x - anchor.x, y: neighbor.y - anchor.y });
+  };
+  // Cubic-bezier point-at-t and De Casteljau split — used to trim the curve
+  // adjacent to a corner being rounded so the ADJACENT anchor's own handle
+  // shortens to meet the new fillet endpoint exactly, instead of keeping its
+  // original (now too-long) handle aimed at the discarded corner vertex. The
+  // latter is what produces a visible kink where a fillet meets a curve.
+  const cubicPointAt = (p0, c1, c2, p3, t) => {
+    const u = 1 - t;
+    const a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t;
+    return { x: a * p0.x + b * c1.x + c * c2.x + d * p3.x, y: a * p0.y + b * c1.y + c * c2.y + d * p3.y };
+  };
+  const cubicSplitAt = (p0, c1, c2, p3, t) => {
+    const lerp = (a, b, tt) => ({ x: a.x + (b.x - a.x) * tt, y: a.y + (b.y - a.y) * tt });
+    const q1 = lerp(p0, c1, t);
+    const q2 = lerp(c1, c2, t);
+    const q3 = lerp(c2, p3, t);
+    const r1 = lerp(q1, q2, t);
+    const r2 = lerp(q2, q3, t);
+    const s = lerp(r1, r2, t);
+    return { left: [p0, q1, r1, s], right: [s, r2, q3, p3] };
+  };
+  // Finds t where the curve point's distance to one endpoint equals `targetDist`.
+  // `fromEnd=true` measures distance to p3 (searching toward t=1, decreasing);
+  // `fromEnd=false` measures distance to p0 (searching toward t=0, increasing).
+  const cubicParamAtDistance = (p0, c1, c2, p3, targetDist, fromEnd) => {
+    const ref = fromEnd ? p3 : p0;
+    let lo = 0, hi = 1;
+    for (let iter = 0; iter < 30; iter++) {
+      const mid = (lo + hi) / 2;
+      const pt = cubicPointAt(p0, c1, c2, p3, mid);
+      const d = Math.hypot(pt.x - ref.x, pt.y - ref.y);
+      // Both branches converge by raising `lo` while the target hasn't been
+      // reached yet: fromEnd shrinks distance-to-p3 as t grows, the other
+      // grows distance-to-p0 as t grows.
+      const needsLargerT = fromEnd ? d > targetDist : d < targetDist;
+      if (needsLargerT) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+  };
   const polygonArea = (vertices = []) => {
     let area = 0;
     for (let i = 0; i < vertices.length; i++) {
@@ -273,48 +330,47 @@
       { x: cx - rx, y: cy, in: { x: cx - rx, y: cy + oy }, out: { x: cx - rx, y: cy - oy } },
     ];
   };
+  // Shared tangent-circle-fillet math: the two spliced anchor points (with
+  // their bezier handles) for rounding `descriptor`'s corner to `radius`.
+  // Used both to build the actual rounded-shape geometry and to preview the
+  // fillet arc as an overlay (e.g. the max-radius highlight) without mutating
+  // the path.
+  const buildFilletArc = (descriptor, radius) => {
+    if (!descriptor || radius <= 1e-4 || descriptor.tanHalf <= 1e-4) return null;
+    const tangentDistance = Math.min(
+      descriptor.prevLen * 0.5,
+      descriptor.nextLen * 0.5,
+      radius / descriptor.tanHalf
+    );
+    const start = {
+      x: descriptor.vertex.x + descriptor.prevDir.x * tangentDistance,
+      y: descriptor.vertex.y + descriptor.prevDir.y * tangentDistance,
+    };
+    const end = {
+      x: descriptor.vertex.x + descriptor.nextDir.x * tangentDistance,
+      y: descriptor.vertex.y + descriptor.nextDir.y * tangentDistance,
+    };
+    const arcAngle = Math.PI - Math.max(1e-4, Math.acos(clamp(dot(descriptor.prevDir, descriptor.nextDir), -1, 1)));
+    const handleLength = (4 / 3) * Math.tan(arcAngle / 4) * radius;
+    return {
+      start,
+      startOut: { x: start.x - descriptor.prevDir.x * handleLength, y: start.y - descriptor.prevDir.y * handleLength },
+      end,
+      endIn: { x: end.x - descriptor.nextDir.x * handleLength, y: end.y - descriptor.nextDir.y * handleLength },
+    };
+  };
   const buildRoundedPolygonAnchors = (shape) => {
     const descriptors = getCornerDescriptors(shape);
     if (!descriptors.length) return [];
     const anchors = [];
     descriptors.forEach((descriptor) => {
-      if (descriptor.radius <= 1e-4 || descriptor.tanHalf <= 1e-4) {
+      const arc = buildFilletArc(descriptor, descriptor.radius);
+      if (!arc) {
         anchors.push({ x: descriptor.vertex.x, y: descriptor.vertex.y, in: null, out: null });
         return;
       }
-      const tangentDistance = Math.min(
-        descriptor.prevLen * 0.5,
-        descriptor.nextLen * 0.5,
-        descriptor.radius / descriptor.tanHalf
-      );
-      const start = {
-        x: descriptor.vertex.x + descriptor.prevDir.x * tangentDistance,
-        y: descriptor.vertex.y + descriptor.prevDir.y * tangentDistance,
-      };
-      const end = {
-        x: descriptor.vertex.x + descriptor.nextDir.x * tangentDistance,
-        y: descriptor.vertex.y + descriptor.nextDir.y * tangentDistance,
-      };
-      const arcAngle = Math.PI - Math.max(1e-4, Math.acos(clamp(dot(descriptor.prevDir, descriptor.nextDir), -1, 1)));
-      const handleLength = (4 / 3) * Math.tan(arcAngle / 4) * descriptor.radius;
-      anchors.push({
-        x: start.x,
-        y: start.y,
-        in: null,
-        out: {
-          x: start.x - descriptor.prevDir.x * handleLength,
-          y: start.y - descriptor.prevDir.y * handleLength,
-        },
-      });
-      anchors.push({
-        x: end.x,
-        y: end.y,
-        in: {
-          x: end.x - descriptor.nextDir.x * handleLength,
-          y: end.y - descriptor.nextDir.y * handleLength,
-        },
-        out: null,
-      });
+      anchors.push({ x: arc.start.x, y: arc.start.y, in: null, out: arc.startOut });
+      anchors.push({ x: arc.end.x, y: arc.end.y, in: arc.endIn, out: null });
     });
     return anchors;
   };
@@ -2130,6 +2186,24 @@
         const _dr = clamp(nextRadius, 0, descriptor.maxRadius);
         this.showDragTooltip(`R: ${_dr.toFixed(2)} px`, this._dragCursorPos.x, this._dragCursorPos.y);
       }
+      // Flag whichever corner(s) this drag actually touches that have hit
+      // their geometric max, so the draw pass can highlight the fillet red.
+      const touchedIndices = this.shapeCornerDrag.scope === 'single'
+        ? [this.shapeCornerDrag.cornerIndex]
+        : this.shapeCornerDrag.scope === 'selected'
+          ? Array.from(this.shapeCornerDrag.cornerSet || [this.shapeCornerDrag.cornerIndex])
+          : descriptors.map((_, index) => index);
+      const maxArcs = [];
+      touchedIndices.forEach((index) => {
+        const entry = descriptors[index];
+        if (!entry) return;
+        const rEff = currentRadii[index] || 0;
+        if (rEff > 1e-4 && entry.maxRadius > 1e-4 && rEff >= entry.maxRadius - 1e-3) {
+          const arc = buildFilletArc(entry, rEff);
+          if (arc) maxArcs.push(arc);
+        }
+      });
+      this.shapeCornerDrag.maxArcs = maxArcs;
       if (!this.shapeCornerDrag.historyPushed) {
         if ((this.shapeCornerDrag.scope === 'single' || this.shapeCornerDrag.scope === 'selected') && this.onDirectEditStart) this.onDirectEditStart();
         if (this.shapeCornerDrag.scope === 'all' && this.onCommitTransform) this.onCommitTransform();
@@ -2185,12 +2259,13 @@
         const nextS = srcAnchors[(i + 1) % n];
         const prevW = worldAnchors[(i - 1 + n) % n];
         const nextW = worldAnchors[(i + 1) % n];
-        const pdx = prevS.x - sa.x, pdy = prevS.y - sa.y;
-        const ndx = nextS.x - sa.x, ndy = nextS.y - sa.y;
-        const prevLen = Math.hypot(pdx, pdy), nextLen = Math.hypot(ndx, ndy);
+        const prevLen = Math.hypot(prevS.x - sa.x, prevS.y - sa.y);
+        const nextLen = Math.hypot(nextS.x - sa.x, nextS.y - sa.y);
         if (prevLen < 1e-9 || nextLen < 1e-9) continue;
-        const prevDirS = { x: pdx / prevLen, y: pdy / prevLen };
-        const nextDirS = { x: ndx / nextLen, y: ndy / nextLen };
+        // Tangent direction, NOT the straight chord — a corner beside a curved
+        // segment (single-handle bezier) has its wedge bent by the curve.
+        const prevDirS = cornerTangentDir(sa, prevS, 'in', 'out');
+        const nextDirS = cornerTangentDir(sa, nextS, 'out', 'in');
         let sbx = prevDirS.x + nextDirS.x, sby = prevDirS.y + nextDirS.y;
         const sbl = Math.hypot(sbx, sby);
         if (sbl < 1e-6) continue;
@@ -2201,11 +2276,9 @@
         const sinHalf = Math.sin(halfAngle);
         const tanHalf = Math.tan(halfAngle);
         const maxRadius = tanHalf > 1e-4 ? Math.min(prevLen, nextLen) * tanHalf * 0.5 : 0;
-        const wpx = prevW.x - wa.x, wpy = prevW.y - wa.y;
-        const wnx = nextW.x - wa.x, wny = nextW.y - wa.y;
-        const wpl = Math.hypot(wpx, wpy), wnl = Math.hypot(wnx, wny);
-        if (wpl < 1e-9 || wnl < 1e-9) continue;
-        let wbx = wpx / wpl + wnx / wnl, wby = wpy / wpl + wny / wnl;
+        const prevDirW = cornerTangentDir(wa, prevW, 'in', 'out');
+        const nextDirW = cornerTangentDir(wa, nextW, 'out', 'in');
+        let wbx = prevDirW.x + nextDirW.x, wby = prevDirW.y + nextDirW.y;
         const wbl = Math.hypot(wbx, wby);
         if (wbl < 1e-6) continue;
         const inwardW = { x: wbx / wbl, y: wby / wbl };
@@ -2222,6 +2295,15 @@
           sinHalf, tanHalf,
           prevLen, nextLen,
           maxRadius,
+          // Raw handle/position data for the adjacent segments, so a drag can
+          // trim (De Casteljau split) whichever side is a real curve rather
+          // than assuming both sides are straight lines.
+          cornerIn: sa.in ? { x: sa.in.x, y: sa.in.y } : null,
+          cornerOut: sa.out ? { x: sa.out.x, y: sa.out.y } : null,
+          prevPos: { x: prevS.x, y: prevS.y },
+          nextPos: { x: nextS.x, y: nextS.y },
+          prevControlOut: prevS.out ? { x: prevS.out.x, y: prevS.out.y } : null,
+          nextControlIn: nextS.in ? { x: nextS.in.x, y: nextS.in.y } : null,
         });
       }
       return result;
@@ -2304,29 +2386,88 @@
       // corner inserts one extra anchor, so later corners' splice positions
       // must be shifted by every insertion made so far.
       let offset = 0;
+      const maxArcs = [];
+      const n0 = drag.originalAnchors.length;
       for (const corner of corners) {
         const i = corner.anchorIndex + offset;
         const rc = clamp(rawRadius, 0, corner.maxRadius);
         if (rc > 1e-4 && corner.tanHalf > 1e-4) {
           const tDist = Math.min(corner.prevLen * 0.5, corner.nextLen * 0.5, rc / corner.tanHalf);
-          const arcAngle = Math.PI - Math.max(1e-4, Math.acos(clamp(
-            corner.sourcePrevDir.x * corner.sourceNextDir.x + corner.sourcePrevDir.y * corner.sourceNextDir.y, -1, 1
-          )));
+          const v = corner.sourceVertex;
+          // pd/nd start as the tangent-at-vertex approximation (used to place
+          // the setback point and, for straight sides, the final handle
+          // direction) but get OVERWRITTEN below with the exact tangent AT
+          // THE SPLIT POINT wherever a side is trimmed from a real curve —
+          // otherwise the fillet's own kappa handle and the trimmed curve's
+          // handle point in slightly different directions, which is a corner
+          // (non-collinear handles) rather than a smooth point, and still
+          // reads as a kink even though both curves meet at the same spot.
+          let pd = corner.sourcePrevDir;
+          let nd = corner.sourceNextDir;
+
+          // Prev side: if the adjacent segment is a real curve (not a straight
+          // edge), trim it via De Casteljau split so its OWN handle shortens to
+          // land exactly on the new fillet start — otherwise the old handle
+          // keeps aiming at the discarded vertex and the join kinks visibly.
+          let startPt = { x: v.x + pd.x * tDist, y: v.y + pd.y * tDist };
+          let startIn = null;
+          const prevOriginalIdx = (corner.anchorIndex - 1 + n0) % n0;
+          const prevShared = corners.some((c) => c !== corner && c.anchorIndex === prevOriginalIdx);
+          if (!prevShared && (corner.cornerIn || corner.prevControlOut)) {
+            const p0 = corner.prevPos, c1 = corner.prevControlOut || corner.prevPos, c2 = corner.cornerIn || v;
+            const t = cubicParamAtDistance(p0, c1, c2, v, tDist, true);
+            const { left } = cubicSplitAt(p0, c1, c2, v, t);
+            const prevAnchorObj = anchors[prevOriginalIdx + offset];
+            if (prevAnchorObj) {
+              prevAnchorObj.out = { x: left[1].x, y: left[1].y };
+              startPt = { x: left[3].x, y: left[3].y };
+              startIn = { x: left[2].x, y: left[2].y };
+              pd = normalizePoint({ x: startIn.x - startPt.x, y: startIn.y - startPt.y });
+            }
+          }
+
+          // Next side: same trim, mirrored.
+          let endPt = { x: v.x + nd.x * tDist, y: v.y + nd.y * tDist };
+          let endOut = null;
+          const nextOriginalIdx = (corner.anchorIndex + 1) % n0;
+          const nextShared = corners.some((c) => c !== corner && c.anchorIndex === nextOriginalIdx);
+          if (!nextShared && (corner.cornerOut || corner.nextControlIn)) {
+            const p0 = v, c1 = corner.cornerOut || v, c2 = corner.nextControlIn || corner.nextPos, p3 = corner.nextPos;
+            const t = cubicParamAtDistance(p0, c1, c2, p3, tDist, false);
+            const { right } = cubicSplitAt(p0, c1, c2, p3, t);
+            const nextAnchorObj = anchors[nextOriginalIdx + offset];
+            if (nextAnchorObj) {
+              nextAnchorObj.in = { x: right[2].x, y: right[2].y };
+              endPt = { x: right[0].x, y: right[0].y };
+              endOut = { x: right[1].x, y: right[1].y };
+              nd = normalizePoint({ x: endOut.x - endPt.x, y: endOut.y - endPt.y });
+            }
+          }
+
+          // Kappa arc handle length, using whichever tangents (refined or
+          // vertex-approximate) ended up governing each side — so the fillet
+          // always departs/arrives exactly opposite its neighboring handle.
+          const arcAngle = Math.PI - Math.max(1e-4, Math.acos(clamp(pd.x * nd.x + pd.y * nd.y, -1, 1)));
           const handleLen = (4 / 3) * Math.tan(arcAngle / 4) * rc;
-          const v = corner.sourceVertex, pd = corner.sourcePrevDir, nd = corner.sourceNextDir;
+          const startOut = { x: startPt.x - pd.x * handleLen, y: startPt.y - pd.y * handleLen };
+          const endIn = { x: endPt.x - nd.x * handleLen, y: endPt.y - nd.y * handleLen };
           anchors.splice(i, 1,
-            { x: v.x + pd.x * tDist, y: v.y + pd.y * tDist, in: null,
-              out: { x: v.x + pd.x * tDist - pd.x * handleLen, y: v.y + pd.y * tDist - pd.y * handleLen } },
-            { x: v.x + nd.x * tDist, y: v.y + nd.y * tDist, out: null,
-              in: { x: v.x + nd.x * tDist - nd.x * handleLen, y: v.y + nd.y * tDist - nd.y * handleLen } }
+            { x: startPt.x, y: startPt.y, in: startIn, out: startOut },
+            { x: endPt.x, y: endPt.y, out: endOut, in: endIn }
           );
           newSelected.add(i);
           newSelected.add(i + 1);
           offset += 1;
+          // Max-radius reached for this corner — flag the fillet arc so the
+          // draw pass can highlight it (Illustrator's red "can't go further" cue).
+          if (corner.maxRadius > 1e-4 && rc >= corner.maxRadius - 1e-3) {
+            maxArcs.push({ start: startPt, startOut, end: endPt, endIn });
+          }
         } else {
           newSelected.add(i);
         }
       }
+      drag.maxArcs = maxArcs;
       if (this.directSelection) {
         this.directSelection.anchors = anchors;
         if (corners.length > 1) this.directSelection.selectedIndices = newSelected;
@@ -4119,20 +4260,25 @@
         const hasLineSort = overlayItems.some((item) => this.hasLineSortOrderMetadata(item.path));
         const secondaryOverride = (SETTINGS.optimizationOverlaySecondaryColor || '').trim();
         const lineSortSecondary = secondaryOverride || this.getLineSortOverlaySecondaryColor(targetLayers);
-        const shouldUseGradient = hasLineSort && overlayItems.length > 1;
+        const shouldUseGradient = hasLineSort && overlayItems.length >= 1;
         const base = this.hexToRgb(overlayColor);
         const startRgb = base;
         const endRgb = lineSortSecondary ? this.hexToRgb(lineSortSecondary) : this.getComplementRgb(base);
         if (shouldUseGradient) {
-          const total = Math.max(1, overlayItems.length - 1);
-          overlayItems.forEach((item, index) => {
-            const l = item.layer;
-            // Reveal in lock-step with the base draw: keep the gradient color tied
-            // to the path's full line-sort position (index/total), but skip lines
-            // the pen hasn't reached and truncate the in-progress line by arc length.
+          // Reveal in lock-step with the base draw first (skip lines the pen
+          // hasn't reached, truncate the in-progress one by arc length), THEN
+          // split each revealed path into point-count chunks so the gradient
+          // sweeps across a single very-long path (e.g. one 6000-point
+          // Pendula/Attractor trace) the same way it already does across many
+          // short ones — see Renderer.buildLineSortGradientChunks.
+          const revealedItems = [];
+          overlayItems.forEach((item) => {
             const revealed = applyReveal(item.path);
             if (revealed == null) return;
-            const t = index / total;
+            revealedItems.push({ layer: item.layer, useCurves: item.useCurves, path: revealed });
+          });
+          const chunks = Renderer.buildLineSortGradientChunks(revealedItems);
+          chunks.forEach(({ layer: l, useCurves, path, t }) => {
             const color = this.mixRgb(startRgb, endRgb, t);
             this.ctx.save();
             this.ctx.lineWidth = overlayWidth;
@@ -4141,7 +4287,7 @@
             this.ctx.strokeStyle = this.rgbToCss(color, 0.9);
             this.ctx.beginPath();
             const temp = this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.tempTransform : null;
-            this.traceLayerPath(revealed, l, temp, item.useCurves);
+            this.traceLayerPath(path, l, temp, useCurves);
             this.ctx.stroke();
             this.ctx.restore();
           });
@@ -9694,11 +9840,6 @@
           const r = 3.2 / this.scale;
           const rd = r * 0.38;
           freeHandles.forEach((h) => {
-            // Stem line from vertex to handle
-            this.ctx.beginPath();
-            this.ctx.moveTo(h.worldVertex.x, h.worldVertex.y);
-            this.ctx.lineTo(h.worldPoint.x, h.worldPoint.y);
-            this.ctx.stroke();
             // Bullseye outer ring
             this.ctx.beginPath();
             this.ctx.fillStyle = fillColor;
@@ -9714,7 +9855,33 @@
           });
           this.ctx.restore();
         }
+        if (this.freeformCornerDrag?.maxArcs?.length) {
+          this.drawCornerMaxArcOverlay(this.freeformCornerDrag.maxArcs, (pt) => this.sourceToWorldPoint(layer, pt));
+        }
       }
+      this.ctx.restore();
+    }
+
+    // Illustrator-parity "hit the geometric limit" cue: while actively
+    // dragging a corner handle past its max radius, stroke the clamped
+    // fillet arc(s) in red on top of the normal path.
+    drawCornerMaxArcOverlay(arcs, toWorld) {
+      if (!arcs?.length) return;
+      this.ctx.save();
+      this.ctx.strokeStyle = getThemeToken('--render-corner-max-radius', '#ef4444');
+      this.ctx.lineWidth = 2.4 / this.scale;
+      this.ctx.lineCap = 'round';
+      this.ctx.setLineDash([]);
+      arcs.forEach((arc) => {
+        const p0 = toWorld(arc.start);
+        const c1 = toWorld(arc.startOut);
+        const c2 = toWorld(arc.endIn);
+        const p3 = toWorld(arc.end);
+        this.ctx.beginPath();
+        this.ctx.moveTo(p0.x, p0.y);
+        this.ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, p3.x, p3.y);
+        this.ctx.stroke();
+      });
       this.ctx.restore();
     }
 
@@ -9732,11 +9899,6 @@
       const r = 3.2 / this.scale;
       const rd = r * 0.38;
       handles.forEach((handle) => {
-        // Stem line from vertex to handle
-        this.ctx.beginPath();
-        this.ctx.moveTo(handle.vertex.x, handle.vertex.y);
-        this.ctx.lineTo(handle.point.x, handle.point.y);
-        this.ctx.stroke();
         // Bullseye outer ring
         this.ctx.beginPath();
         this.ctx.fillStyle = fillColor;
@@ -9751,6 +9913,9 @@
         this.ctx.fill();
       });
       this.ctx.restore();
+      if (this.shapeCornerDrag?.maxArcs?.length) {
+        this.drawCornerMaxArcOverlay(this.shapeCornerDrag.maxArcs, (pt) => this.transformShapeSourcePoint(pt, layer, temp));
+      }
     }
 
     drawPenPreview() {
@@ -10791,6 +10956,55 @@
       return PU?.pathLength ? PU.pathLength(flat) : chordLen;
     }
     return chordLen;
+  };
+
+  // Draw-Order overlay gradient: colour is keyed on where each path sits among
+  // its siblings (index/total). That works well for algorithms that emit many
+  // short strokes (flowfield, boids, hyphae — hundreds/thousands of paths), but
+  // single-stroke algorithms (Pendula/Harmonograph, Attractor) emit their ENTIRE
+  // drawing as one (however long) optimized path — index/total then collapses
+  // to a single flat colour and the gradient's far stop never appears. Splitting
+  // each path into point-count-sized runs gives the gradient somewhere to sweep
+  // across even when there's only one source path, while leaving the common
+  // case (many short paths) at ~1 chunk per path, unchanged. Native-cubic paths
+  // (real bezier handles) and circle points are left whole — chunking would
+  // need to re-flatten/re-anchor them, and at overlay line widths the loss of a
+  // few colour stops on those shapes isn't worth the complexity.
+  Renderer.buildLineSortGradientChunks = function buildLineSortGradientChunks(items, opts = {}) {
+    const pointsPerChunk = Math.max(4, opts.pointsPerChunk || 40);
+    const chunks = [];
+    let totalWeight = 0;
+    (items || []).forEach((item) => {
+      const path = item.path;
+      const anchors = path && path.meta ? path.meta.anchors : null;
+      const hasHandles = Array.isArray(anchors) && anchors.some((a) => a && (a.in || a.out));
+      const isCircle = Boolean(path && path.meta && path.meta.kind === 'circle');
+      if (!Array.isArray(path) || isCircle || hasHandles || path.length <= 2) {
+        chunks.push({ ...item, weight: 1 });
+        totalWeight += 1;
+        return;
+      }
+      const segs = path.length - 1;
+      const chunkCount = Math.max(1, Math.round(segs / pointsPerChunk));
+      const step = segs / chunkCount;
+      for (let c = 0; c < chunkCount; c++) {
+        const from = Math.round(c * step);
+        const to = c === chunkCount - 1 ? segs : Math.round((c + 1) * step);
+        if (to <= from) continue;
+        const slice = path.slice(from, to + 1);
+        if (slice.length < 2) continue;
+        const weight = slice.length - 1;
+        chunks.push({ ...item, path: slice, weight });
+        totalWeight += weight;
+      }
+    });
+    const total = Math.max(1, totalWeight);
+    let cursor = 0;
+    return chunks.map(({ weight, ...rest }) => {
+      const t = (cursor + weight / 2) / total;
+      cursor += weight;
+      return { ...rest, t };
+    });
   };
 
   const Vectura = (window.Vectura = window.Vectura || {});

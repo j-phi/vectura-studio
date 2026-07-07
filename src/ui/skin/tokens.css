@@ -89,6 +89,11 @@
   --render-smart-guide-label: #e6007e;
   --render-smart-guide-label-text: #ffffff;
   /* === /SG === */
+
+  /* Corner-rounding fillet preview at max radius (Illustrator-parity "can't
+   * go further" cue). Skin-agnostic: red reads as a limit warning on both
+   * light and dark canvases, so it is not overridden per-skin. */
+  --render-corner-max-radius: #ef4444;
 }
 
 [data-skin-swapping="true"] *,
