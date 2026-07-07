@@ -1660,7 +1660,13 @@
     // kind (e.g. selecting a different text layer) — otherwise the controls stay
     // bound to the previously-selected layer (stale family/size/point-area).
     const primaryId = (ctx.primaryLayer && ctx.primaryLayer.id) || null;
-    const changed = ctx.kind !== state.kind || primaryId !== state.primaryId;
+    // Also re-render when text-layer params that the bar displays change (e.g.
+    // font family changed in the Text panel while the same layer stays selected).
+    const primaryParams = (ctx.primaryLayer && ctx.primaryLayer.params) || {};
+    const paramSig = ctx.kind === 'single-text'
+      ? `${primaryParams.font || ''}|${primaryParams.fontWeight || ''}|${primaryParams.fontSize || ''}`
+      : '';
+    const changed = ctx.kind !== state.kind || primaryId !== state.primaryId || paramSig !== state.paramSig;
     // In edit-path (direct) mode the anchor verbs' enabled state depends on the
     // live anchor selection, which changes without the bar's `kind` changing.
     // Track the renderer's anchor signature and re-render when it moves so the
@@ -1671,6 +1677,7 @@
     if (changed && !state.busy) {
       state.kind = ctx.kind;
       state.primaryId = primaryId;
+      state.paramSig = paramSig;
       state.anchorSig = anchorSig;
       renderContext(ctx);
       dispatchStateEvent(ctx.kind);
@@ -1678,6 +1685,7 @@
       // busy (sub-mode active): record the kind but let H own the host.
       state.kind = ctx.kind;
       state.primaryId = primaryId;
+      state.paramSig = paramSig;
       state.anchorSig = anchorSig;
       dispatchStateEvent(ctx.kind);
     } else if (!state.busy && ctx.kind === 'direct' && anchorSig !== state.anchorSig) {
@@ -1709,6 +1717,9 @@
     // Sync the change-detection signatures so the next RAF refresh() doesn't
     // treat this render as stale and re-render a second time.
     state.primaryId = (ctx.primaryLayer && ctx.primaryLayer.id) || null;
+    const rp = (ctx.primaryLayer && ctx.primaryLayer.params) || {};
+    state.paramSig = ctx.kind === 'single-text'
+      ? `${rp.font || ''}|${rp.fontWeight || ''}|${rp.fontSize || ''}` : '';
     const renderer = getRenderer();
     state.anchorSig = (ctx.kind === 'direct' && renderer && typeof renderer.getSelectedAnchorSignature === 'function')
       ? renderer.getSelectedAnchorSignature() : '';
