@@ -125,3 +125,65 @@ describe('UI.Slider (dual)', () => {
     inst.destroy();
   });
 });
+
+describe('UI.Slider (defaultValue reset + format/parse)', () => {
+  let runtime;
+  let Slider;
+  beforeEach(() => {
+    runtime = loadUIComponent(['utils', 'motion', 'slider']);
+    Slider = runtime.window.Vectura.UI.Slider;
+  });
+  afterEach(() => runtime.cleanup());
+
+  test('dblclick resets to defaultValue and fires onChange + onCommit', () => {
+    const changes = [];
+    const commits = [];
+    const inst = Slider(runtime.document.body, {
+      ariaLabel: 'X', value: 80, min: 0, max: 100, defaultValue: 40,
+      onChange: (v) => changes.push(v), onCommit: (v) => commits.push(v),
+    });
+    const slider = inst.el.querySelector('.ctrl-slider');
+    slider.dispatchEvent(new runtime.window.MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    expect(inst.getValue()).toBe(40);
+    expect(changes).toEqual([40]);
+    expect(commits).toEqual([40]);
+    inst.destroy();
+  });
+
+  test('dblclick without defaultValue is a no-op', () => {
+    const commits = [];
+    const inst = Slider(runtime.document.body, {
+      ariaLabel: 'X', value: 80, min: 0, max: 100, onCommit: (v) => commits.push(v),
+    });
+    const slider = inst.el.querySelector('.ctrl-slider');
+    slider.dispatchEvent(new runtime.window.MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    expect(inst.getValue()).toBe(80);
+    expect(commits).toEqual([]);
+    inst.destroy();
+  });
+
+  test('dual dblclick resets both thumbs to defaultValue pair', () => {
+    const inst = Slider(runtime.document.body, {
+      ariaLabel: 'X', dual: true, min: 0, max: 100,
+      value: { min: 30, max: 70 }, defaultValue: { min: 10, max: 90 },
+    });
+    const [minR] = inst.el.querySelectorAll('.ctrl-slider');
+    minR.dispatchEvent(new runtime.window.MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    expect(inst.getValue()).toEqual({ min: 10, max: 90 });
+    inst.destroy();
+  });
+
+  test('format() overrides chip text; parse() interprets chip edits', () => {
+    const inst = Slider(runtime.document.body, {
+      ariaLabel: 'X', value: 5, min: 0, max: 100, step: 1,
+      format: (v) => `${v}mm`, parse: (txt) => parseFloat(txt) * 2,
+    });
+    const chip = inst.el.querySelector('.slider-val');
+    expect(chip.value).toBe('5mm');
+    chip.value = '10';
+    chip.dispatchEvent(new runtime.window.Event('blur', { bubbles: true }));
+    expect(inst.getValue()).toBe(20);
+    expect(chip.value).toBe('20mm');
+    inst.destroy();
+  });
+});

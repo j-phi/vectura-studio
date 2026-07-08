@@ -23,6 +23,10 @@
  *               the chip with another control.
  *   onChange(value) — fires on every input event during drag.
  *   onCommit(value) — fires on release (change/pointerup/blur).
+ *   defaultValue — optional; double-click on the track resets to it
+ *               (fires onChange + onCommit). Dual mode takes {min, max}.
+ *   format(v) — optional chip-text override (e.g. unit suffixes).
+ *   parse(text) — optional chip-edit parser paired with format.
  *
  * Props (dual):
  *   value     — { min, max } pair.
@@ -74,6 +78,7 @@
     }
 
     const formatChip = (v) => {
+      if (typeof props.format === 'function') return props.format(props.dual ? { min: v.min, max: v.max } : v);
       if (props.dual) return `${v.min.toFixed(props.precision)} – ${v.max.toFixed(props.precision)}`;
       return v.toFixed(props.precision);
     };
@@ -173,7 +178,7 @@
     };
     const onChipBlur = () => {
       if (props.dual) { renderChip(); return; }
-      const parsed = parseFloat(chip.value);
+      const parsed = typeof props.parse === 'function' ? props.parse(chip.value) : parseFloat(chip.value);
       if (!Number.isFinite(parsed)) { renderChip(); return; }
       const clamped = utils.clamp ? utils.clamp(parsed, props.min, props.max) : Math.min(Math.max(parsed, props.min), props.max);
       value = Number(clamped.toFixed(props.precision));
@@ -181,6 +186,19 @@
       renderChip(); renderFill();
       fire('onChange', value);
       fire('onCommit', value);
+    };
+
+    const onResetDblClick = (event) => {
+      if (props.defaultValue == null) return;
+      event.preventDefault();
+      setValue(props.defaultValue);
+      if (props.dual) {
+        if (motion.triggerThumbRelease) motion.triggerThumbRelease(sliderMax);
+      } else if (motion.triggerThumbRelease) {
+        motion.triggerThumbRelease(slider);
+      }
+      if (motion.triggerSliderPulse) motion.triggerSliderPulse(wrap);
+      fire('onCommit', props.dual ? { min: value.min, max: value.max } : value);
     };
 
     const offs = [];
@@ -194,9 +212,12 @@
       bind(sliderMax, 'input', onDualInput);
       bind(sliderMin, 'change', onDualChange(sliderMin));
       bind(sliderMax, 'change', onDualChange(sliderMax));
+      bind(sliderMin, 'dblclick', onResetDblClick);
+      bind(sliderMax, 'dblclick', onResetDblClick);
     } else {
       bind(slider, 'input', onSingleInput);
       bind(slider, 'change', onSingleChange);
+      bind(slider, 'dblclick', onResetDblClick);
     }
     if (chip) {
       bind(chip, 'keydown', onChipKey);

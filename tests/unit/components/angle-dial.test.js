@@ -58,3 +58,45 @@ describe('UI.AngleDial', () => {
     expect(el.parentNode).toBeNull();
   });
 });
+
+describe('UI.AngleDial (dial keyboard + defaultValue reset)', () => {
+  let runtime;
+  let AngleDial;
+  beforeEach(() => {
+    runtime = loadUIComponent(['utils', 'motion', 'angle-dial']);
+    AngleDial = runtime.window.Vectura.UI.AngleDial;
+  });
+  afterEach(() => runtime.cleanup());
+
+  test('arrow keys on the dial SVG nudge the angle and commit', () => {
+    const commits = [];
+    const inst = AngleDial(runtime.document.body, { value: 0, onCommit: (v) => commits.push(v) });
+    const dial = inst.dialEl;
+    dial.dispatchEvent(new runtime.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }));
+    expect(inst.getValue()).toBe(1);
+    dial.dispatchEvent(new runtime.window.KeyboardEvent('keydown', { key: 'ArrowRight', shiftKey: true, bubbles: true, cancelable: true }));
+    expect(inst.getValue()).toBe(11);
+    dial.dispatchEvent(new runtime.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    expect(inst.getValue()).toBe(10);
+    dial.dispatchEvent(new runtime.window.KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true }));
+    expect(inst.getValue()).toBe(0);
+    expect(commits.length).toBe(4);
+    inst.destroy();
+  });
+
+  test('dblclick resets to defaultValue and commits', () => {
+    const commits = [];
+    const inst = AngleDial(runtime.document.body, { value: 135, defaultValue: 45, onCommit: (v) => commits.push(v) });
+    inst.dialEl.dispatchEvent(new runtime.window.MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    expect(inst.getValue()).toBe(45);
+    expect(commits).toEqual([45]);
+    inst.destroy();
+  });
+
+  test('dblclick without defaultValue is a no-op', () => {
+    const inst = AngleDial(runtime.document.body, { value: 135 });
+    inst.dialEl.dispatchEvent(new runtime.window.MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    expect(inst.getValue()).toBe(135);
+    inst.destroy();
+  });
+});

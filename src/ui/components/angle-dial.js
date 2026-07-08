@@ -16,6 +16,10 @@
  *   onChange(v) — fires on every drag step.
  *   onCommit(v) — fires on pointerup / Enter.
  *   allowOverflow — boolean. Default false (wraps).
+ *   defaultValue — optional; double-click on the dial resets to it.
+ *
+ * The dial SVG itself is keyboard-operable: arrows nudge (Shift ×10),
+ * Home returns to 0°.
  *
  * Returns: { el, dialEl, inputEl, getValue, setValue, update, destroy }
  */
@@ -193,6 +197,31 @@
       }
     };
 
+    const onDialKey = (event) => {
+      const step = event.shiftKey ? 10 : 1;
+      if (event.key === 'ArrowUp' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        setValue(value + step);
+        fire('onCommit', value);
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setValue(value - step);
+        fire('onCommit', value);
+      } else if (event.key === 'Home') {
+        event.preventDefault();
+        setValue(0);
+        fire('onCommit', value);
+      }
+    };
+
+    const onDialDblClick = (event) => {
+      if (props.defaultValue == null) return;
+      event.preventDefault();
+      setValue(props.defaultValue);
+      if (motion.triggerDialWave) motion.triggerDialWave(svg, CENTER, CENTER);
+      fire('onCommit', value);
+    };
+
     const offs = [];
     const bind = (target, evt, fn) => {
       target.addEventListener(evt, fn);
@@ -202,6 +231,8 @@
     bind(svg, 'pointermove', onPointerMove);
     bind(svg, 'pointerup', onPointerUp);
     bind(svg, 'pointercancel', onPointerUp);
+    bind(svg, 'keydown', onDialKey);
+    bind(svg, 'dblclick', onDialDblClick);
     bind(input, 'keydown', onInputKey);
     bind(input, 'blur', onInputBlur);
 
