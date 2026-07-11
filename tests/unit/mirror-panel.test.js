@@ -103,10 +103,6 @@ describe('MirrorPanel — pure helpers (would fail against legacy UI)', () => {
     expect(out % 15).toBe(0);
   });
 
-  test('fillPct clamps degenerate ranges', () => {
-    expect(MirrorPanel.fillPct(5, 0, 10)).toBe('50.00');
-    expect(MirrorPanel.fillPct(0, 5, 5)).toBe('0');
-  });
 });
 
 describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
@@ -607,6 +603,70 @@ describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
       new runtime.window.MouseEvent('dblclick', { bubbles: true, cancelable: true })
     );
     expect(wallLayer.modifier.mirrors[0].rotation).toBe(0);
+  });
+
+  // === UI.Slider migration (2026-07-11) ===
+  // These pin the panel to the shared component library: they FAIL against
+  // the legacy hand-rolled .mp-slider + .mp-val-tag + fillPct() system
+  // (different markup, no editable chip, no per-gesture history gating hooks).
+
+  test('sliders render as shared UI.Slider rows (no legacy .mp-slider / .mp-val-tag)', () => {
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(), mkLayer(), container);
+    expect(container.querySelector('.mp-sld-host .slider-row .sld-fx-wrap > .ctrl-slider')).toBeTruthy();
+    expect(container.querySelector('.mp-slider')).toBeFalsy();
+    expect(container.querySelector('.mp-val-tag')).toBeFalsy();
+    // The chip renders the unit-formatted value (line default angle = 90°).
+    const angleHost = container.querySelector('[data-mp-slider="angle"]');
+    expect(angleHost.querySelector('.slider-val').value).toBe('90°');
+  });
+
+  test('dragging a slider writes the param live and pushes history once per gesture', () => {
+    const container = document.createElement('div');
+    const layer = mkLayer();
+    const ctx = mkCtx();
+    MirrorPanel.build(ctx, layer, container);
+    const input = container.querySelector('input[data-param="angle"]');
+    const before = ctx._calls.pushHistory;
+    input.value = '120';
+    input.dispatchEvent(new runtime.window.Event('input', { bubbles: true }));
+    input.value = '150';
+    input.dispatchEvent(new runtime.window.Event('input', { bubbles: true }));
+    expect(layer.modifier.mirrors[0].angle).toBe(150);
+    expect(ctx._calls.pushHistory).toBe(before + 1); // one push per gesture, not per input
+    expect(ctx._calls.refresh).toBeGreaterThanOrEqual(2); // live regen on every input
+    input.dispatchEvent(new runtime.window.Event('change', { bubbles: true }));
+    // A new gesture pushes history again.
+    input.value = '30';
+    input.dispatchEvent(new runtime.window.Event('input', { bubbles: true }));
+    expect(ctx._calls.pushHistory).toBe(before + 2);
+  });
+
+  test('editing the value chip commits the parsed value (unit suffix tolerated)', () => {
+    const container = document.createElement('div');
+    const layer = mkLayer();
+    const ctx = mkCtx();
+    MirrorPanel.build(ctx, layer, container);
+    const chip = container.querySelector('[data-mp-slider="angle"] .slider-val');
+    const before = ctx._calls.pushHistory;
+    chip.value = '270';
+    chip.dispatchEvent(new runtime.window.Event('blur'));
+    expect(layer.modifier.mirrors[0].angle).toBe(270);
+    expect(chip.value).toBe('270°');
+    expect(ctx._calls.pushHistory).toBe(before + 1);
+  });
+
+  test('locked wallpaper sliders disable both the range input and its chip', () => {
+    SETTINGS.wallpaperPanelMode = 'build';
+    const layer = mkLayer([Modifiers.createWallpaperMirror(0)]); // p4m locks H + angle
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(), layer, container);
+    const host = container.querySelector('[data-mp-slider="tileHeight"]');
+    expect(host.querySelector('input[type=range]').disabled).toBe(true);
+    expect(host.querySelector('.slider-val').disabled).toBe(true);
+    const free = container.querySelector('[data-mp-slider="tileWidth"]');
+    expect(free.querySelector('input[type=range]').disabled).toBe(false);
+    expect(free.querySelector('.slider-val').disabled).toBe(false);
   });
 
   test('the legacy fallback was deleted from algo-config-panel.js', () => {
