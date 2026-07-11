@@ -82,6 +82,9 @@ describe('Pendula oscillator cards — mini-trace + frequency ratio', () => {
     const slider = freqSliderInCard(cards()[1]);
     expect(slider).toBeTruthy();
     slider.value = '4';
+    // UI.Slider reads the value on 'input' and commits it on 'change' —
+    // browsers always fire input before change on a range drag/keystep.
+    slider.dispatchEvent(new window.Event('input', { bubbles: true }));
     slider.dispatchEvent(new window.Event('change', { bubbles: true }));
 
     // Param committed...

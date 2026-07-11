@@ -221,6 +221,9 @@ describe('Pendula oscillator controls — pluck pad, advanced disclosure, padloc
     const ampSlider = details.querySelector('input[type="range"]');
     expect(ampSlider).toBeTruthy();
     ampSlider.value = '120';
+    // UI.Slider reads the value on 'input' and commits it on 'change' —
+    // browsers always fire input before change on a range drag/keystep.
+    ampSlider.dispatchEvent(new window.Event('input', { bubbles: true }));
     ampSlider.dispatchEvent(new window.Event('change', { bubbles: true }));
     expect(layer().params.pendulums[0].ampX).toBe(120);
   });

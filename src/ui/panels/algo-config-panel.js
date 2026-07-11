@@ -311,21 +311,32 @@
       };
     };
 
-    const syncSliderFill = (slider) => {
-      const mn = parseFloat(slider.min) || 0;
-      const mx = parseFloat(slider.max) || 100;
-      const pct = ((parseFloat(slider.value) - mn) / (mx - mn)) * 100;
-      slider.style.setProperty('--fill', pct.toFixed(1) + '%');
-      const wrap = slider.closest('.sld-fx-wrap');
-      if (wrap) wrap.style.setProperty('--fill', pct.toFixed(1) + '%');
+    // Shared UI.Slider factory for def-driven controls. The component owns the
+    // fill gradient, release halo/pulse motion, chip rendering + inline chip
+    // editing, and dblclick-reset (via defaultValue). Values flowing through
+    // onChange/onCommit are DISPLAY values — the same numbers the old
+    // parseFloat(e.target.value) handlers saw. `format`/`parse` route the chip
+    // through the def's display config (unit suffixes like ° / mm / %).
+    const createDefSlider = (host, def, opts = {}) => {
+      const { min, max, step, unit, precision } = getDisplayConfig(def);
+      return UI.Slider(host, {
+        value: opts.value,
+        min, max, step, precision,
+        ariaLabel: opts.ariaLabel || getDisplayLabel(def) || 'Value',
+        defaultValue: opts.defaultValue,
+        format: (v) => formatDisplayValue(def, fromDisplayValue(def, v)),
+        parse: (text) => parseFloat(String(text).replace(unit, '')),
+        onChange: opts.onChange,
+        onCommit: opts.onCommit,
+      });
     };
-    const triggerSliderMotion = (slider) => {
-      const m = window.Vectura?.UI?.motion;
-      if (!m) return;
-      const wrap = slider.closest('.sld-fx-wrap');
-      if (wrap && m.triggerSliderPulse) m.triggerSliderPulse(wrap);
-      if (m.triggerThumbRelease) m.triggerThumbRelease(slider);
-    };
+    // Standard header row (label + optional info button) above a mounted control.
+    const controlHeaderHtml = (def, infoBtnHtml = '') => `
+      <div class="flex items-center gap-2 mb-1">
+        <label class="control-label mb-0">${getDisplayLabel(def)}</label>
+        ${infoBtnHtml}
+      </div>
+    `;
 
     const renderOptimizationPanel = (target) => {
       if (!target) return;
@@ -387,19 +398,6 @@
         if (isDocumentLengthControl(def)) return documentUnitsToMm(value, this.getDocumentUnits());
         return fromDisplayValue(def, value);
       };
-      const toOptimizationEditorDef = (def) => {
-        if (!isDocumentLengthControl(def)) return def;
-        const display = getOptimizationDisplayConfig(def);
-        return {
-          ...def,
-          displayMin: display.min,
-          displayMax: display.max,
-          displayStep: display.step,
-          displayUnit: display.unit,
-          displayPrecision: display.precision,
-        };
-      };
-
       const targets = getTargets();
       const config = targets.length ? normalizeConfig(this.app.engine.ensureLayerOptimization(targets[0])) : null;
 
@@ -712,33 +710,29 @@
           <div class="flex items-center gap-2 mb-1">
             <label class="control-label mb-0">Precision</label>
           </div>
-          <div class="slider-row">
-            <div class="sld-fx-wrap">
-              <input type="range" min="0" max="6" step="1" value="${precisionValue}" class="ctrl-slider">
-            </div>
-            <button type="button" class="value-chip">${precisionValue}</button>
-          </div>
         `;
-        const precisionRange = precisionControl.querySelector('input[type="range"]');
-        const precisionChip = precisionControl.querySelector('.value-chip');
-        if (precisionRange) syncSliderFill(precisionRange);
+        let precisionSlider = null;
         const applyPrecision = (raw, options = {}) => {
           const { commit = false } = options;
           if (commit && this.app.pushHistory) this.app.pushHistory();
           const next = Math.max(0, Math.min(6, parseInt(raw, 10) || 3));
           SETTINGS.precision = next;
-          if (precisionRange) {
-            precisionRange.value = `${next}`;
-            syncSliderFill(precisionRange);
+          // The legacy handler snapped the slider back when the raw value was
+          // coerced (e.g. 0 → 3 via the `|| 3` fallback); mirror that so the
+          // thumb/chip never disagree with SETTINGS.precision.
+          if (precisionSlider && precisionSlider.getValue() !== next) {
+            precisionSlider.setValue(next, { silent: true });
           }
-          if (precisionChip) precisionChip.textContent = `${next}`;
           updateStats();
           if (this.exportModalState?.isOpen) this.renderExportPreview();
         };
-        if (precisionRange) {
-          precisionRange.oninput = (e) => applyPrecision(e.target.value);
-          precisionRange.onchange = (e) => applyPrecision(e.target.value, { commit: true });
-        }
+        precisionSlider = UI.Slider(precisionControl, {
+          value: precisionValue, min: 0, max: 6, step: 1,
+          ariaLabel: 'Export precision',
+          defaultValue: 3,
+          onChange: (v) => applyPrecision(v),
+          onCommit: (v) => applyPrecision(v, { commit: true }),
+        });
         controlsWrap.appendChild(precisionControl);
 
         const strokeOverrideOn = SETTINGS.strokeWidthOverride === true;
@@ -767,21 +761,7 @@
           <div class="flex items-center gap-2 mb-1">
             <label class="control-label mb-0">Stroke (${strokeConfig.unitLabel})</label>
           </div>
-          <div class="slider-row">
-            <div class="sld-fx-wrap">
-              <input type="range" min="${strokeConfig.min}" max="${strokeConfig.max}" step="${strokeConfig.step}" value="${strokeValueDisplay}" class="ctrl-slider">
-            </div>
-            <button type="button" class="value-chip">${strokeValueDisplay}${strokeConfig.unitLabel}</button>
-          </div>
         `;
-        const strokeRange = strokeControl.querySelector('input[type="range"]');
-        const strokeChip = strokeControl.querySelector('.value-chip');
-        if (strokeRange) syncSliderFill(strokeRange);
-        const setStrokeSliderVisible = (visible) => {
-          strokeControl.hidden = !visible;
-          if (strokeRange) strokeRange.disabled = !visible;
-        };
-        setStrokeSliderVisible(strokeOverrideOn);
         const applyStroke = (raw, options = {}) => {
           const { commit = false } = options;
           if (commit && this.app.pushHistory) this.app.pushHistory();
@@ -790,20 +770,27 @@
           this.app.engine.layers.forEach((layer) => {
             layer.strokeWidth = SETTINGS.strokeWidth;
           });
-          const display = this.formatDocumentNumber(SETTINGS.strokeWidth, { precision: strokeConfig.precision });
-          if (strokeRange) {
-            strokeRange.value = display;
-            syncSliderFill(strokeRange);
-          }
-          if (strokeChip) strokeChip.textContent = `${display}${strokeConfig.unitLabel}`;
           this.app.render();
           updateStats();
           if (this.exportModalState?.isOpen) this.renderExportPreview();
         };
-        if (strokeRange) {
-          strokeRange.oninput = (e) => applyStroke(e.target.value);
-          strokeRange.onchange = (e) => applyStroke(e.target.value, { commit: true });
-        }
+        const strokeSlider = UI.Slider(strokeControl, {
+          value: parseFloat(strokeValueDisplay),
+          min: strokeConfig.min, max: strokeConfig.max, step: strokeConfig.step,
+          precision: strokeConfig.precision,
+          ariaLabel: 'Export stroke width',
+          defaultValue: mmToDocumentUnits(0.3, this.getDocumentUnits()),
+          format: (v) => `${this.formatDocumentNumber(this.parseDocumentNumber(v, { fallbackMm: 0.3 }), { precision: strokeConfig.precision })}${strokeConfig.unitLabel}`,
+          parse: (text) => parseFloat(String(text).replace(strokeConfig.unitLabel, '')),
+          onChange: (v) => applyStroke(v),
+          onCommit: (v) => applyStroke(v, { commit: true }),
+        });
+        const strokeRange = strokeSlider.el.querySelector('input[type="range"]');
+        const setStrokeSliderVisible = (visible) => {
+          strokeControl.hidden = !visible;
+          if (strokeRange) strokeRange.disabled = !visible;
+        };
+        setStrokeSliderVisible(strokeOverrideOn);
         if (strokeOverrideToggle) {
           strokeOverrideToggle.onchange = (e) => {
             if (this.app.pushHistory) this.app.pushHistory();
@@ -871,22 +858,7 @@
           <div class="flex items-center gap-2 mb-1">
             <label class="control-label mb-0">Optimization Tolerance (${toleranceConfig.unitLabel})</label>
           </div>
-          <div class="slider-row">
-            <div class="sld-fx-wrap">
-              <input type="range" min="${toleranceConfig.min}" max="${toleranceConfig.max}" step="${toleranceConfig.step}" value="${toleranceDisplay}" class="ctrl-slider">
-            </div>
-            <button type="button" class="value-chip">${toleranceDisplay}${toleranceConfig.unitLabel}</button>
-          </div>
         `;
-        const tolRange = toleranceControl.querySelector('input[type="range"]');
-        if (tolRange) syncSliderFill(tolRange);
-        const tolNumber = toleranceControl.querySelector('input[type="number"]');
-        const tolValue = toleranceControl.querySelector('.value-chip');
-        const setToleranceVisible = (visible) => {
-          toleranceControl.hidden = !visible;
-          if (tolRange) tolRange.disabled = !visible;
-          if (tolNumber) tolNumber.disabled = !visible;
-        };
         const clampTolerance = (raw) => {
           const next = this.parseDocumentNumber(raw, { fallbackMm: 0.1 });
           if (!Number.isFinite(next)) return 0.1;
@@ -896,16 +868,25 @@
           const { commit = false } = options;
           if (commit && this.app.pushHistory) this.app.pushHistory();
           const next = clampTolerance(raw);
-          const displayValue = this.formatDocumentNumber(next, { precision: toleranceConfig.precision });
-          if (tolRange) {
-            tolRange.value = displayValue;
-            syncSliderFill(tolRange);
-          }
-          if (tolNumber) tolNumber.value = displayValue;
-          if (tolValue) tolValue.textContent = `${displayValue}${toleranceConfig.unitLabel}`;
           SETTINGS.plotterOptimize = plotterToggle?.checked ? next : 0;
           if (toggleState) toggleState.textContent = SETTINGS.plotterOptimize > 0 ? 'ON' : 'OFF';
           rerenderOptimizationPreview();
+        };
+        const tolSlider = UI.Slider(toleranceControl, {
+          value: parseFloat(toleranceDisplay),
+          min: toleranceConfig.min, max: toleranceConfig.max, step: toleranceConfig.step,
+          precision: toleranceConfig.precision,
+          ariaLabel: 'Optimization tolerance',
+          defaultValue: mmToDocumentUnits(0.1, this.getDocumentUnits()),
+          format: (v) => `${this.formatDocumentNumber(clampTolerance(v), { precision: toleranceConfig.precision })}${toleranceConfig.unitLabel}`,
+          parse: (text) => parseFloat(String(text).replace(toleranceConfig.unitLabel, '')),
+          onChange: (v) => applyTolerance(v),
+          onCommit: (v) => applyTolerance(v, { commit: true }),
+        });
+        const tolRange = tolSlider.el.querySelector('input[type="range"]');
+        const setToleranceVisible = (visible) => {
+          toleranceControl.hidden = !visible;
+          if (tolRange) tolRange.disabled = !visible;
         };
         if (plotterToggle) {
           plotterToggle.checked = SETTINGS.plotterOptimize > 0;
@@ -914,20 +895,11 @@
             if (this.app.pushHistory) this.app.pushHistory();
             const enabled = Boolean(e.target.checked);
             setToleranceVisible(enabled);
-            const rawTol = tolNumber?.value || tolRange?.value || 0.1;
-            const clamped = clampTolerance(rawTol);
+            const clamped = clampTolerance(tolSlider.getValue());
             SETTINGS.plotterOptimize = enabled ? clamped : 0;
             if (toggleState) toggleState.textContent = enabled ? 'ON' : 'OFF';
             rerenderOptimizationPreview();
           };
-        }
-        if (tolRange) {
-          tolRange.oninput = (e) => applyTolerance(e.target.value);
-          tolRange.onchange = (e) => applyTolerance(e.target.value, { commit: true });
-        }
-        if (tolNumber) {
-          tolNumber.oninput = (e) => applyTolerance(e.target.value);
-          tolNumber.onchange = (e) => applyTolerance(e.target.value, { commit: true });
         }
         controlsWrap.appendChild(toggleControl);
         controlsWrap.appendChild(toleranceControl);
@@ -949,64 +921,33 @@
         control.className = 'optimization-control';
         const value = stepConfig[def.key] ?? getStepDefaults(stepConfig.id)[def.key] ?? def.min ?? 0;
         if (stepConfig[def.key] === undefined) stepConfig[def.key] = value;
-        const { min, max, step } = getOptimizationDisplayConfig(def);
-        const displayValue = toOptimizationDisplayValue(def, value);
-        const editorDef = toOptimizationEditorDef(def);
+        const { min, max, step, unit } = getOptimizationDisplayConfig(def);
         control.innerHTML = `
           <div class="flex items-center gap-2 mb-1">
             <label class="control-label mb-0">${getOptimizationLabel(def.label)}</label>
           </div>
-          <div class="slider-row">
-            <div class="sld-fx-wrap">
-              <input type="range" min="${min}" max="${max}" step="${step}" value="${displayValue}" class="ctrl-slider">
-            </div>
-            <button type="button" class="value-chip">${formatOptValue(def, value)}</button>
-          </div>
-          <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
         `;
-        const input = control.querySelector('input[type="range"]');
-        const valueBtn = control.querySelector('.value-chip');
-        const valueInput = control.querySelector('.value-input');
-        if (input) syncSliderFill(input);
-        if (input && valueBtn) {
-          input.oninput = (e) => {
-            syncSliderFill(e.target);
-            const next = fromOptimizationDisplayValue(def, parseFloat(e.target.value));
-            valueBtn.textContent = formatOptValue(def, next);
-            applyOptimization((cfg) => {
-              const step = cfg.steps.find((s) => s.id === stepConfig.id);
-              if (step) step[def.key] = next;
-            });
-          };
-          input.onchange = (e) => { triggerSliderMotion(e.target); };
-          input.addEventListener('dblclick', (e) => {
-            e.preventDefault();
-            const defaults = getStepDefaults(stepConfig.id);
-            if (defaults[def.key] === undefined) return;
-            const next = defaults[def.key];
-            input.value = toOptimizationDisplayValue(def, next);
-            syncSliderFill(input);
-            valueBtn.textContent = formatOptValue(def, next);
-            applyOptimization((cfg) => {
-              const step = cfg.steps.find((s) => s.id === stepConfig.id);
-              if (step) step[def.key] = next;
-            });
+        const applyStepValue = (next) => {
+          applyOptimization((cfg) => {
+            const stepCfg = cfg.steps.find((s) => s.id === stepConfig.id);
+            if (stepCfg) stepCfg[def.key] = next;
           });
-          attachValueEditor({
-            def: editorDef,
-            valueEl: valueBtn,
-            inputEl: valueInput,
-            getValue: () => stepConfig[def.key],
-            setValue: (displayVal, opts) => {
-              input.value = displayVal;
-              syncSliderFill(input);
-              applyOptimization((cfg) => {
-                const step = cfg.steps.find((s) => s.id === stepConfig.id);
-                if (step) step[def.key] = fromOptimizationDisplayValue(def, displayVal);
-              });
-            },
-          });
-        }
+        };
+        const defaults = getStepDefaults(stepConfig.id);
+        UI.Slider(control, {
+          value: toOptimizationDisplayValue(def, value),
+          min, max, step,
+          ariaLabel: getOptimizationLabel(def.label),
+          defaultValue: defaults[def.key] === undefined
+            ? undefined
+            : toOptimizationDisplayValue(def, defaults[def.key]),
+          format: (v) => formatOptValue(def, fromOptimizationDisplayValue(def, v)),
+          parse: (text) => parseFloat(String(text).replace(unit, '')),
+          // Live regen on every input (matches the old oninput handler); the
+          // release motion is played by the component itself, and step ranges
+          // never pushed history on change.
+          onChange: (v) => applyStepValue(fromOptimizationDisplayValue(def, v)),
+        });
         return control;
       };
 
@@ -2815,80 +2756,25 @@
           control.className = 'pendulum-control';
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
           const value = pendulum[def.key] ?? getPendulumDefault(idx, def.key);
-          const { min, max, step } = getDisplayConfig(def);
-          const displayVal = toDisplayValue(def, value);
-          control.innerHTML = `
-            <div class="flex items-center gap-2 mb-1">
-              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
-              ${infoBtn}
-            </div>
-            <div class="slider-row">
-              <div class="sld-fx-wrap">
-                <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="ctrl-slider">
-              </div>
-              <button type="button" class="value-chip">${formatDisplayValue(def, value)}</button>
-            </div>
-          `;
-          const input = control.querySelector('input[type="range"]');
-          const valueBtn = control.querySelector('.value-chip');
-          if (input) syncSliderFill(input);
-          const resetValue = () => {
-            const nextVal = getPendulumDefault(idx, def.key);
-            if (nextVal === undefined) return;
-            if (this.app.pushHistory) this.app.pushHistory();
-            pendulum[def.key] = nextVal;
-            if (input) input.value = toDisplayValue(def, nextVal);
-            if (valueBtn) valueBtn.innerText = formatDisplayValue(def, nextVal);
-            this.storeLayerParams(layer);
-            this.app.regen();
-            this.updateFormula();
-            afterCommit();
-          };
-          if (input && valueBtn) {
-            input.disabled = !pendulum.enabled;
-            input.oninput = (e) => {
-              syncSliderFill(e.target);
-              const nextDisplay = parseFloat(e.target.value);
-              valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
-            };
-            input.onchange = (e) => {
-              triggerSliderMotion(e.target);
+          const defaultVal = getPendulumDefault(idx, def.key);
+          control.innerHTML = controlHeaderHtml(def, infoBtn);
+          // Live drag ('input') only refreshed the chip — the component owns
+          // that now — while release ('change'), keyboard, chip edits, and
+          // dblclick-reset all committed: history + param + regen.
+          const slider = createDefSlider(control, def, {
+            value: toDisplayValue(def, value),
+            defaultValue: defaultVal === undefined ? undefined : toDisplayValue(def, defaultVal),
+            onCommit: (nextDisplay) => {
               if (this.app.pushHistory) this.app.pushHistory();
-              const nextDisplay = parseFloat(e.target.value);
               pendulum[def.key] = fromDisplayValue(def, nextDisplay);
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
               afterCommit();
-            };
-            attachKeyboardRangeNudge(input, (nextDisplay) => {
-              pendulum[def.key] = fromDisplayValue(def, nextDisplay);
-              syncSliderFill(input);
-              this.storeLayerParams(layer);
-              this.app.regen();
-              this.updateFormula();
-              afterCommit();
-            });
-            input.addEventListener('dblclick', (e) => {
-              e.preventDefault();
-              resetValue();
-            });
-            attachValueEditor({
-              def,
-              valueEl: valueBtn,
-              getValue: () => pendulum[def.key],
-              setValue: (displayVal, opts) => {
-                const commit = opts?.commit !== false;
-                if (commit && this.app.pushHistory) this.app.pushHistory();
-                pendulum[def.key] = fromDisplayValue(def, displayVal);
-                this.storeLayerParams(layer);
-                this.app.regen();
-                valueBtn.innerText = formatDisplayValue(def, pendulum[def.key]);
-                this.updateFormula();
-                afterCommit();
-              },
-            });
-          }
+            },
+          });
+          const rangeEl = slider.el.querySelector('input[type="range"]');
+          if (rangeEl) rangeEl.disabled = !pendulum.enabled;
           return control;
         };
 
@@ -2906,79 +2792,31 @@
                 <label class="control-label mb-0">${getDisplayLabel(def)}</label>
                 ${infoBtn}
               </div>
-              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
-                def,
-                value
-              )}</button>
-            </div>
-            <div class="angle-control">
-              <div class="angle-dial" style="--angle:${displayVal}deg;">
-                <div class="angle-indicator"></div>
-              </div>
             </div>
           `;
-          const dial = control.querySelector('.angle-dial');
-          const valueBtn = control.querySelector('.value-chip');
-          let lastDisplay = displayVal;
-          const setAngle = (nextDisplay, commit = false) => {
-            const clamped = clamp(roundToStep(nextDisplay, step), min, max);
-            lastDisplay = clamped;
-            if (dial) dial.style.setProperty('--angle', `${clamped}deg`);
-            if (valueBtn) valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, clamped));
-            if (commit) {
+          const defaultVal = getPendulumDefault(idx, def.key);
+          // Drag ('mousemove') only moved the needle — the component owns that —
+          // while release/dblclick/text-entry committed: history + param + regen.
+          const dial = UI.AngleDial(control, {
+            value: displayVal,
+            ariaLabel: getDisplayLabel(def),
+            defaultValue: defaultVal === undefined ? undefined : toDisplayValue(def, defaultVal),
+            onCommit: (deg) => {
+              const clamped = clamp(roundToStep(deg, step), min, max);
+              if (clamped !== dial.getValue()) dial.setValue(clamped, { silent: true });
               if (this.app.pushHistory) this.app.pushHistory();
               pendulum[def.key] = fromDisplayValue(def, clamped);
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
               afterCommit();
-            }
-          };
-          const resetAngle = () => {
-            const nextVal = getPendulumDefault(idx, def.key);
-            if (nextVal === undefined) return;
-            setAngle(toDisplayValue(def, nextVal), true);
-          };
-          if (dial) {
-            dial.classList.toggle('angle-disabled', !pendulum.enabled);
-            dial.addEventListener('mousedown', (e) => {
-              if (!pendulum.enabled) return;
-              e.preventDefault();
-              const updateFromEvent = (ev) => {
-                const rect = dial.getBoundingClientRect();
-                const cx = rect.left + rect.width / 2;
-                const cy = rect.top + rect.height / 2;
-                const dx = ev.clientX - cx;
-                const dy = ev.clientY - cy;
-                let deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
-                if (deg < 0) deg += 360;
-                setAngle(deg, false);
-              };
-              updateFromEvent(e);
-              const move = (ev) => updateFromEvent(ev);
-              const up = () => {
-                window.removeEventListener('mousemove', move);
-                setAngle(lastDisplay, true);
-              };
-              window.addEventListener('mousemove', move);
-              window.addEventListener('mouseup', up, { once: true });
-            });
-            dial.addEventListener('dblclick', (e) => {
-              e.preventDefault();
-              resetAngle();
-            });
-          }
-          if (valueBtn) {
-            valueBtn.classList.toggle('opacity-60', !pendulum.enabled);
-            attachValueEditor({
-              def,
-              valueEl: valueBtn,
-              getValue: () => pendulum[def.key],
-            setValue: (displayVal, opts) => {
-              const commit = opts?.commit !== false;
-              setAngle(displayVal, commit);
             },
-            });
+          });
+          if (!pendulum.enabled) {
+            dial.dialEl.classList.add('angle-disabled');
+            dial.dialEl.style.pointerEvents = 'none';
+            dial.dialEl.tabIndex = -1;
+            dial.inputEl.disabled = true;
           }
           return control;
         };
@@ -3181,76 +3019,26 @@
           control.className = 'noise-control';
           const value = modifier[def.key] ?? def.min ?? 0;
           if (modifier[def.key] === undefined) modifier[def.key] = value;
-          const { min, max, step } = getDisplayConfig(def);
-          const displayVal = toDisplayValue(def, value);
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
-          control.innerHTML = `
-            <div class="flex items-center gap-2 mb-1">
-              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
-              ${infoBtn}
-            </div>
-            <div class="slider-row">
-              <div class="sld-fx-wrap">
-                <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="ctrl-slider">
-              </div>
-              <button type="button" class="value-chip">${formatDisplayValue(def, value)}</button>
-            </div>
-            <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
-          `;
-          const input = control.querySelector('input[type="range"]');
-          const valueBtn = control.querySelector('.value-chip');
-          const valueInput = control.querySelector('.value-input');
-          if (input) syncSliderFill(input);
-          if (input && valueBtn) {
-            input.disabled = !modifier.enabled;
-            valueBtn.classList.toggle('opacity-60', !modifier.enabled);
-            input.oninput = (e) => {
-              syncSliderFill(e.target);
-              const nextDisplay = parseFloat(e.target.value);
-              valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
-            };
-            input.onchange = (e) => {
-              triggerSliderMotion(e.target);
+          control.innerHTML = controlHeaderHtml(def, infoBtn);
+          // Live drag ('input') only refreshed the chip (component-owned now);
+          // release/keyboard/chip-edit/dblclick-reset commit: history + regen.
+          // dblclick-reset keeps its legacy target of def.min.
+          const slider = createDefSlider(control, def, {
+            value: toDisplayValue(def, value),
+            defaultValue: toDisplayValue(def, def.min ?? 0),
+            onCommit: (nextDisplay) => {
               if (this.app.pushHistory) this.app.pushHistory();
-              const nextDisplay = parseFloat(e.target.value);
               modifier[def.key] = fromDisplayValue(def, nextDisplay);
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
-            };
-            attachKeyboardRangeNudge(input, (nextDisplay) => {
-              modifier[def.key] = fromDisplayValue(def, nextDisplay);
-              syncSliderFill(input);
-              this.storeLayerParams(layer);
-              this.app.regen();
-              this.updateFormula();
-            });
-            input.addEventListener('dblclick', (e) => {
-              e.preventDefault();
-              modifier[def.key] = def.min ?? 0;
-              input.value = toDisplayValue(def, modifier[def.key]);
-              syncSliderFill(input);
-              valueBtn.innerText = formatDisplayValue(def, modifier[def.key]);
-              this.storeLayerParams(layer);
-              this.app.regen();
-              this.updateFormula();
-            });
-            attachValueEditor({
-              def,
-              valueEl: valueBtn,
-              inputEl: valueInput,
-              getValue: () => modifier[def.key],
-              setValue: (displayVal, opts) => {
-                const commit = opts?.commit !== false;
-                if (commit && this.app.pushHistory) this.app.pushHistory();
-                modifier[def.key] = fromDisplayValue(def, displayVal);
-                this.storeLayerParams(layer);
-                this.app.regen();
-                valueBtn.innerText = formatDisplayValue(def, modifier[def.key]);
-                this.updateFormula();
-              },
-            });
-          }
+            },
+          });
+          const rangeEl = slider.el.querySelector('input[type="range"]');
+          if (rangeEl) rangeEl.disabled = !modifier.enabled;
+          const chipEl = slider.el.querySelector('.slider-val');
+          if (chipEl) chipEl.classList.toggle('opacity-60', !modifier.enabled);
           return control;
         };
 
@@ -3452,76 +3240,26 @@
           control.className = 'noise-control';
           const value = modifier[def.key] ?? def.min ?? 0;
           if (modifier[def.key] === undefined) modifier[def.key] = value;
-          const { min, max, step } = getDisplayConfig(def);
-          const displayVal = toDisplayValue(def, value);
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
-          control.innerHTML = `
-            <div class="flex items-center gap-2 mb-1">
-              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
-              ${infoBtn}
-            </div>
-            <div class="slider-row">
-              <div class="sld-fx-wrap">
-                <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="ctrl-slider">
-              </div>
-              <button type="button" class="value-chip">${formatDisplayValue(def, value)}</button>
-            </div>
-            <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
-          `;
-          const input = control.querySelector('input[type="range"]');
-          const valueBtn = control.querySelector('.value-chip');
-          const valueInput = control.querySelector('.value-input');
-          if (input) syncSliderFill(input);
-          if (input && valueBtn) {
-            input.disabled = !modifier.enabled;
-            valueBtn.classList.toggle('opacity-60', !modifier.enabled);
-            input.oninput = (e) => {
-              syncSliderFill(e.target);
-              const nextDisplay = parseFloat(e.target.value);
-              valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
-            };
-            input.onchange = (e) => {
-              triggerSliderMotion(e.target);
+          control.innerHTML = controlHeaderHtml(def, infoBtn);
+          // Live drag ('input') only refreshed the chip (component-owned now);
+          // release/keyboard/chip-edit/dblclick-reset commit: history + regen.
+          // dblclick-reset keeps its legacy target of def.min.
+          const slider = createDefSlider(control, def, {
+            value: toDisplayValue(def, value),
+            defaultValue: toDisplayValue(def, def.min ?? 0),
+            onCommit: (nextDisplay) => {
               if (this.app.pushHistory) this.app.pushHistory();
-              const nextDisplay = parseFloat(e.target.value);
               modifier[def.key] = fromDisplayValue(def, nextDisplay);
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
-            };
-            attachKeyboardRangeNudge(input, (nextDisplay) => {
-              modifier[def.key] = fromDisplayValue(def, nextDisplay);
-              syncSliderFill(input);
-              this.storeLayerParams(layer);
-              this.app.regen();
-              this.updateFormula();
-            });
-            input.addEventListener('dblclick', (e) => {
-              e.preventDefault();
-              modifier[def.key] = def.min ?? 0;
-              input.value = toDisplayValue(def, modifier[def.key]);
-              syncSliderFill(input);
-              valueBtn.innerText = formatDisplayValue(def, modifier[def.key]);
-              this.storeLayerParams(layer);
-              this.app.regen();
-              this.updateFormula();
-            });
-            attachValueEditor({
-              def,
-              valueEl: valueBtn,
-              inputEl: valueInput,
-              getValue: () => modifier[def.key],
-              setValue: (displayVal, opts) => {
-                const commit = opts?.commit !== false;
-                if (commit && this.app.pushHistory) this.app.pushHistory();
-                modifier[def.key] = fromDisplayValue(def, displayVal);
-                this.storeLayerParams(layer);
-                this.app.regen();
-                valueBtn.innerText = formatDisplayValue(def, modifier[def.key]);
-                this.updateFormula();
-              },
-            });
-          }
+            },
+          });
+          const rangeEl = slider.el.querySelector('input[type="range"]');
+          if (rangeEl) rangeEl.disabled = !modifier.enabled;
+          const chipEl = slider.el.querySelector('.slider-val');
+          if (chipEl) chipEl.classList.toggle('opacity-60', !modifier.enabled);
           return control;
         };
 
@@ -3723,76 +3461,24 @@
           control.className = 'noise-control';
           const value = shade[def.key] ?? def.min ?? 0;
           if (shade[def.key] === undefined) shade[def.key] = value;
-          const { min, max, step } = getDisplayConfig(def);
-          const displayVal = toDisplayValue(def, value);
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
-          control.innerHTML = `
-            <div class="flex items-center gap-2 mb-1">
-              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
-              ${infoBtn}
-            </div>
-            <div class="slider-row">
-              <div class="sld-fx-wrap">
-                <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="ctrl-slider">
-              </div>
-              <button type="button" class="value-chip">${formatDisplayValue(def, value)}</button>
-            </div>
-            <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
-          `;
-          const input = control.querySelector('input[type="range"]');
-          const valueBtn = control.querySelector('.value-chip');
-          const valueInput = control.querySelector('.value-input');
-          if (input) syncSliderFill(input);
-          if (input && valueBtn) {
-            input.disabled = !shade.enabled;
-            valueBtn.classList.toggle('opacity-60', !shade.enabled);
-            input.oninput = (e) => {
-              syncSliderFill(e.target);
-              const nextDisplay = parseFloat(e.target.value);
-              valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
-            };
-            input.onchange = (e) => {
-              triggerSliderMotion(e.target);
+          control.innerHTML = controlHeaderHtml(def, infoBtn);
+          // Same contract as buildModifierRangeControl: commit on release only.
+          const slider = createDefSlider(control, def, {
+            value: toDisplayValue(def, value),
+            defaultValue: toDisplayValue(def, def.min ?? 0),
+            onCommit: (nextDisplay) => {
               if (this.app.pushHistory) this.app.pushHistory();
-              const nextDisplay = parseFloat(e.target.value);
               shade[def.key] = fromDisplayValue(def, nextDisplay);
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
-            };
-            attachKeyboardRangeNudge(input, (nextDisplay) => {
-              shade[def.key] = fromDisplayValue(def, nextDisplay);
-              syncSliderFill(input);
-              this.storeLayerParams(layer);
-              this.app.regen();
-              this.updateFormula();
-            });
-            input.addEventListener('dblclick', (e) => {
-              e.preventDefault();
-              shade[def.key] = def.min ?? 0;
-              input.value = toDisplayValue(def, shade[def.key]);
-              syncSliderFill(input);
-              valueBtn.innerText = formatDisplayValue(def, shade[def.key]);
-              this.storeLayerParams(layer);
-              this.app.regen();
-              this.updateFormula();
-            });
-            attachValueEditor({
-              def,
-              valueEl: valueBtn,
-              inputEl: valueInput,
-              getValue: () => shade[def.key],
-              setValue: (displayVal, opts) => {
-                const commit = opts?.commit !== false;
-                if (commit && this.app.pushHistory) this.app.pushHistory();
-                shade[def.key] = fromDisplayValue(def, displayVal);
-                this.storeLayerParams(layer);
-                this.app.regen();
-                valueBtn.innerText = formatDisplayValue(def, shade[def.key]);
-                this.updateFormula();
-              },
-            });
-          }
+            },
+          });
+          const rangeEl = slider.el.querySelector('input[type="range"]');
+          if (rangeEl) rangeEl.disabled = !shade.enabled;
+          const chipEl = slider.el.querySelector('.slider-val');
+          if (chipEl) chipEl.classList.toggle('opacity-60', !shade.enabled);
           return control;
         };
 
@@ -4208,85 +3894,28 @@
       }
 
       if (def.id === 'simplify') {
-        const { min, max, step } = getDisplayConfig(def);
-        const displayVal = toDisplayValue(def, val);
-        div.innerHTML = `
-          <div class="flex items-center gap-2 mb-1">
-            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
-            ${infoBtn}
-          </div>
-          <div class="slider-row mb-2">
-            <div class="sld-fx-wrap">
-              <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="ctrl-slider">
-            </div>
-            <button type="button" class="value-chip">${formatDisplayValue(def, val)}</button>
-          </div>
-          <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
-          <div class="text-[10px] text-vectura-muted simplify-stats">${statsText()}</div>
-        `;
-        const input = div.querySelector('input[type="range"]');
-        const valueBtn = div.querySelector('.value-chip');
-        const valueInput = div.querySelector('.value-input');
-        const statsEl = div.querySelector('.simplify-stats');
-        if (input) syncSliderFill(input);
-        if (input && valueBtn && valueInput && statsEl) {
-          const resetToDefault = () => {
-            const defaultVal = getDefaultValue(def);
-            if (defaultVal === null || defaultVal === undefined) return;
+        div.innerHTML = controlHeaderHtml(def, infoBtn);
+        const statsEl = document.createElement('div');
+        statsEl.className = 'text-[10px] text-vectura-muted simplify-stats';
+        statsEl.textContent = statsText();
+        const defaultVal = getDefaultValue(def);
+        // 'input' only refreshed the chip (component-owned); commits refresh
+        // the simplification stats line after the regen.
+        createDefSlider(div, def, {
+          value: toDisplayValue(def, val),
+          defaultValue: (defaultVal === null || defaultVal === undefined)
+            ? undefined
+            : toDisplayValue(def, defaultVal),
+          onCommit: (nextDisplay) => {
             if (this.app.pushHistory) this.app.pushHistory();
-            layer.params[def.id] = defaultVal;
-            this.storeLayerParams(layer);
-            input.value = toDisplayValue(def, defaultVal);
-            syncSliderFill(input);
-            valueBtn.innerText = formatDisplayValue(def, defaultVal);
-            this.app.regen();
-            statsEl.textContent = statsText();
-            this.updateFormula();
-          };
-          input.oninput = (e) => {
-            syncSliderFill(e.target);
-            const nextDisplay = parseFloat(e.target.value);
-            valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
-          };
-          input.onchange = (e) => {
-            triggerSliderMotion(e.target);
-            if (this.app.pushHistory) this.app.pushHistory();
-            const nextDisplay = parseFloat(e.target.value);
             layer.params[def.id] = fromDisplayValue(def, nextDisplay);
             this.storeLayerParams(layer);
             this.app.regen();
             statsEl.textContent = statsText();
             this.updateFormula();
-          };
-          attachKeyboardRangeNudge(input, (nextDisplay) => {
-            layer.params[def.id] = fromDisplayValue(def, nextDisplay);
-            syncSliderFill(input);
-            this.storeLayerParams(layer);
-            this.app.regen();
-            statsEl.textContent = statsText();
-            this.updateFormula();
-          });
-          input.addEventListener('dblclick', (e) => {
-            e.preventDefault();
-            resetToDefault();
-          });
-          attachValueEditor({
-            def,
-            valueEl: valueBtn,
-            inputEl: valueInput,
-            getValue: () => layer.params[def.id],
-            setValue: (displayVal, opts) => {
-              const commit = opts?.commit !== false;
-              if (commit && this.app.pushHistory) this.app.pushHistory();
-              layer.params[def.id] = fromDisplayValue(def, displayVal);
-              this.storeLayerParams(layer);
-              this.app.regen();
-              statsEl.textContent = statsText();
-              valueBtn.innerText = formatDisplayValue(def, layer.params[def.id]);
-              this.updateFormula();
-            },
-          });
-        }
+          },
+        });
+        div.appendChild(statsEl);
         target.appendChild(div);
         return;
       }
@@ -4346,20 +3975,31 @@
           this.app.regen(commit ? undefined : { preview: true });
           this.updateFormula();
         };
-        pad.addEventListener('mousedown', (e) => {
+        // Pointer events + pointer capture so the pad also works with touch and
+        // pen input (mouse-only mousedown/mousemove wiring predated this) and
+        // keeps receiving moves when the pointer leaves the pad mid-drag.
+        let padDragging = false;
+        pad.addEventListener('pointerdown', (e) => {
           e.preventDefault();
+          padDragging = true;
+          try { pad.setPointerCapture(e.pointerId); } catch (_) {}
           if (!pushed && this.app.pushHistory) { this.app.pushHistory(); pushed = true; }
           apply(e, false);
-          const move = (ev) => apply(ev, false);
-          const up = (ev) => {
-            window.removeEventListener('mousemove', move);
-            apply(ev, true);
-            pushed = false;
-            maybeRebuildControls();
-          };
-          window.addEventListener('mousemove', move);
-          window.addEventListener('mouseup', up, { once: true });
         });
+        pad.addEventListener('pointermove', (e) => {
+          if (!padDragging) return;
+          apply(e, false);
+        });
+        const endPadDrag = (e) => {
+          if (!padDragging) return;
+          padDragging = false;
+          try { pad.releasePointerCapture(e.pointerId); } catch (_) {}
+          apply(e, true);
+          pushed = false;
+          maybeRebuildControls();
+        };
+        pad.addEventListener('pointerup', endPadDrag);
+        pad.addEventListener('pointercancel', endPadDrag);
         pad.addEventListener('dblclick', (e) => {
           e.preventDefault();
           if (this.app.pushHistory) this.app.pushHistory();
@@ -4384,79 +4024,25 @@
               <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
-            <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
-              def,
-              val
-            )}</button>
-          </div>
-          <div class="angle-control">
-            <div class="angle-dial" style="--angle:${displayVal}deg;">
-              <div class="angle-indicator"></div>
-            </div>
-            <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
           </div>
         `;
-        const dial = div.querySelector('.angle-dial');
-        const valueBtn = div.querySelector('.value-chip');
-        const valueInput = div.querySelector('.value-input');
-
-        let lastDisplay = displayVal;
-        const setAngle = (nextDisplay, commit = false, live = false) => {
-          const clamped = clamp(roundToStep(nextDisplay, step), min, max);
-          lastDisplay = clamped;
-          if (dial) dial.style.setProperty('--angle', `${clamped}deg`);
-          if (valueBtn) valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, clamped));
-          if (commit || live) {
-            if (commit && this.app.pushHistory) this.app.pushHistory();
+        const defaultVal = getDefaultValue(def);
+        // Drag only moved the needle (component-owned); release, keyboard,
+        // dblclick-reset, and text entry commit: history + param + regen.
+        const dial = UI.AngleDial(div, {
+          value: displayVal,
+          ariaLabel: getDisplayLabel(def) || 'Angle',
+          defaultValue: (defaultVal === null || defaultVal === undefined)
+            ? undefined
+            : toDisplayValue(def, defaultVal),
+          onCommit: (deg) => {
+            const clamped = clamp(roundToStep(deg, step), min, max);
+            if (clamped !== dial.getValue()) dial.setValue(clamped, { silent: true });
+            if (this.app.pushHistory) this.app.pushHistory();
             layer.params[def.id] = fromDisplayValue(def, clamped);
             this.storeLayerParams(layer);
             this.app.regen();
             this.updateFormula();
-          }
-        };
-        const resetAngle = () => {
-          const defaultVal = getDefaultValue(def);
-          if (defaultVal === null || defaultVal === undefined) return;
-          setAngle(toDisplayValue(def, defaultVal), true);
-        };
-
-        if (dial) {
-          const updateFromEvent = (e) => {
-            const rect = dial.getBoundingClientRect();
-            const cx = rect.left + rect.width / 2;
-            const cy = rect.top + rect.height / 2;
-            const dx = e.clientX - cx;
-            const dy = e.clientY - cy;
-            let deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
-            if (deg < 0) deg += 360;
-            setAngle(deg, false);
-          };
-          dial.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            updateFromEvent(e);
-            const move = (ev) => updateFromEvent(ev);
-            const up = () => {
-              window.removeEventListener('mousemove', move);
-              setAngle(lastDisplay, true);
-            };
-            window.addEventListener('mousemove', move);
-            window.addEventListener('mouseup', up, { once: true });
-          });
-          dial.addEventListener('dblclick', (e) => {
-            e.preventDefault();
-            resetAngle();
-          });
-        }
-
-        attachValueEditor({
-          def,
-          valueEl: valueBtn,
-          inputEl: valueInput,
-          getValue: () => layer.params[def.id],
-          setValue: (displayVal, opts) => {
-            const commit = opts?.commit !== false;
-            const live = Boolean(opts?.live);
-            setAngle(displayVal, commit, live);
           },
         });
         const target = def.inlineGroup ? getInlineGroup(def.inlineGroup) : container;
@@ -4473,21 +4059,16 @@
               <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
-            <span class="text-xs text-vectura-accent font-mono">${checked ? 'ON' : 'OFF'}</span>
           </div>
-          <label class="sw-toggle" role="switch" aria-checked="${checked ? 'true' : 'false'}">
-            <input type="checkbox" ${checked ? 'checked' : ''} />
-            <span class="sw-track"></span>
-            <span class="sw-thumb"></span>
-          </label>
         `;
-        const input = div.querySelector('input');
-        const span = div.querySelector('span');
-        if (input && span) {
-          input.onchange = (e) => {
+        // UI.SwToggle brings keyboard (Space/Enter + focus ring) and
+        // aria-checked state the hand-rolled markup lacked. The redundant
+        // "ON/OFF" text span is dropped — the pill itself is the state.
+        const toggle = UI.SwToggle(div, {
+          checked,
+          ariaLabel: getDisplayLabel(def) || def.id,
+          onChange: (next) => {
             if (this.app.pushHistory) this.app.pushHistory();
-            const next = Boolean(e.target.checked);
-            span.innerText = next ? 'ON' : 'OFF';
             layer.params[def.id] = next;
             // Enabling Raster-Plane "Lines as Planes" seeds the relief defaults that
             // read best for extruded curtains: a small base lift so flat regions
@@ -4515,15 +4096,19 @@
               this.updateFormula();
             }
             maybeRebuildControls();
-          };
-          input.addEventListener('dblclick', (e) => {
+          },
+        });
+        // dblclick on the pill resets to the algorithm default — parity with
+        // the legacy hand-rolled toggle and with the sliders' dblclick-reset.
+        const cbInput = toggle.el.querySelector('input[type="checkbox"]');
+        if (cbInput) {
+          cbInput.addEventListener('dblclick', (e) => {
             e.preventDefault();
             const defaultVal = getDefaultValue(def);
             if (defaultVal === null || defaultVal === undefined) return;
             if (this.app.pushHistory) this.app.pushHistory();
             const next = Boolean(defaultVal);
-            input.checked = next;
-            span.innerText = next ? 'ON' : 'OFF';
+            toggle.setChecked(next, { silent: true });
             layer.params[def.id] = next;
             this.storeLayerParams(layer);
             if (def.id === 'curves' && !curvesBakedAtGenerate(layer)) {
@@ -4846,117 +4431,69 @@
           });
         }
       } else {
-        const { min, max, step } = getDisplayConfig(def);
-        const displayVal = toDisplayValue(def, val);
-        div.innerHTML = `
-          <div class="flex items-center gap-2 mb-1">
-            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
-            ${infoBtn}
-          </div>
-          <div class="slider-row">
-            <div class="sld-fx-wrap">
-              <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="ctrl-slider">
-            </div>
-            <button type="button" class="value-chip">${formatDisplayValue(def, val)}</button>
-          </div>
-          <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
-        `;
-        const input = div.querySelector('input[type="range"]');
-        const valueBtn = div.querySelector('.value-chip');
-        const valueInput = div.querySelector('.value-input');
-        if (input) syncSliderFill(input);
-        if (input && valueBtn && valueInput) {
-          const confirmHeavy = (displayVal) => {
-            const nextVal = fromDisplayValue(def, displayVal);
+        div.innerHTML = controlHeaderHtml(def, infoBtn);
+        const defaultVal = getDefaultValue(def);
+        let livePreviewHistoryPushed = false;
+        let slider = null;
+        const applyCommit = (nextVal) => {
+          if (!livePreviewHistoryPushed && this.app.pushHistory) this.app.pushHistory();
+          livePreviewHistoryPushed = false;
+          layer.params[def.id] = nextVal;
+          this.storeLayerParams(layer);
+          this.app.regen();
+          this.updateFormula();
+          maybeRebuildControls();
+        };
+        const revertSlider = () => {
+          if (!slider) return;
+          slider.setValue(toDisplayValue(def, layer.params[def.id]), { silent: true });
+        };
+        slider = createDefSlider(div, def, {
+          value: toDisplayValue(def, val),
+          defaultValue: (defaultVal === null || defaultVal === undefined)
+            ? undefined
+            : toDisplayValue(def, defaultVal),
+          // 'input' during drag: chip/fill are component-owned; livePreview
+          // defs additionally push history once per drag session and preview-
+          // regenerate on every step — exactly the legacy oninput contract.
+          onChange: (nextDisplay) => {
+            if (!def.livePreview) return;
+            if (!livePreviewHistoryPushed && this.app.pushHistory) {
+              this.app.pushHistory();
+              livePreviewHistoryPushed = true;
+            }
+            layer.params[def.id] = fromDisplayValue(def, nextDisplay);
+            this.storeLayerParams(layer);
+            this.app.regen({ preview: true });
+            this.updateFormula();
+          },
+          // 'change' on release (also keyboard steps, chip edits, and
+          // dblclick-reset): full commit — history (unless livePreview already
+          // pushed this session) + store + regen + possible control rebuild.
+          onCommit: (nextDisplay) => {
+            const nextVal = fromDisplayValue(def, nextDisplay);
             if (Number.isFinite(def.confirmAbove) && nextVal >= def.confirmAbove) {
               const message = def.confirmMessage || 'This value may be slow. Continue?';
-              if (!window.confirm(message)) {
-                const resetVal = toDisplayValue(def, layer.params[def.id]);
-                input.value = resetVal;
-                syncSliderFill(input);
-                valueBtn.innerText = formatDisplayValue(def, layer.params[def.id]);
-                return null;
+              if (UI.overlays?.Dialog) {
+                const dlg = UI.overlays.Dialog(document.body, {
+                  title: 'Heavy computation',
+                  message,
+                  confirmLabel: 'Continue',
+                  cancelLabel: 'Cancel',
+                  onConfirm: () => { dlg.destroy(); applyCommit(nextVal); },
+                  onCancel: () => { dlg.destroy(); revertSlider(); },
+                });
+                dlg.open();
+              } else if (window.confirm(message)) {
+                applyCommit(nextVal);
+              } else {
+                revertSlider();
               }
+              return;
             }
-            return nextVal;
-          };
-          const resetToDefault = () => {
-            const defaultVal = getDefaultValue(def);
-            if (defaultVal === null || defaultVal === undefined) return;
-            if (this.app.pushHistory) this.app.pushHistory();
-            layer.params[def.id] = defaultVal;
-            this.storeLayerParams(layer);
-            input.value = toDisplayValue(def, defaultVal);
-            syncSliderFill(input);
-            valueBtn.innerText = formatDisplayValue(def, defaultVal);
-            this.app.regen();
-            this.updateFormula();
-            maybeRebuildControls();
-          };
-          let livePreviewHistoryPushed = false;
-          input.oninput = (e) => {
-            syncSliderFill(e.target);
-            const nextDisplay = parseFloat(e.target.value);
-            valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
-            if (def.livePreview) {
-              if (!livePreviewHistoryPushed && this.app.pushHistory) {
-                this.app.pushHistory();
-                livePreviewHistoryPushed = true;
-              }
-              layer.params[def.id] = fromDisplayValue(def, nextDisplay);
-              this.storeLayerParams(layer);
-              this.app.regen({ preview: true });
-              this.updateFormula();
-            }
-          };
-          input.onchange = (e) => {
-            triggerSliderMotion(e.target);
-            const nextDisplay = parseFloat(e.target.value);
-            const nextVal = confirmHeavy(nextDisplay);
-            if (nextVal === null) return;
-            if (!livePreviewHistoryPushed && this.app.pushHistory) this.app.pushHistory();
-            livePreviewHistoryPushed = false;
-            layer.params[def.id] = nextVal;
-            this.storeLayerParams(layer);
-            this.app.regen();
-            this.updateFormula();
-            maybeRebuildControls();
-          };
-          attachKeyboardRangeNudge(input, (nextDisplay) => {
-            const nextVal = confirmHeavy(nextDisplay);
-            if (nextVal === null) return;
-            layer.params[def.id] = nextVal;
-            syncSliderFill(input);
-            this.storeLayerParams(layer);
-            this.app.regen();
-            this.updateFormula();
-            maybeRebuildControls();
-          });
-          input.addEventListener('dblclick', (e) => {
-            e.preventDefault();
-            resetToDefault();
-          });
-          attachValueEditor({
-            def,
-            valueEl: valueBtn,
-            inputEl: valueInput,
-            getValue: () => layer.params[def.id],
-            setValue: (displayVal, opts) => {
-              const nextVal = confirmHeavy(displayVal);
-              if (nextVal === null) return;
-              const commit = opts?.commit !== false;
-              if (commit && this.app.pushHistory) this.app.pushHistory();
-              layer.params[def.id] = nextVal;
-              input.value = toDisplayValue(def, nextVal);
-              syncSliderFill(input);
-              this.storeLayerParams(layer);
-              this.app.regen();
-              valueBtn.innerText = formatDisplayValue(def, layer.params[def.id]);
-              this.updateFormula();
-              maybeRebuildControls();
-            },
-          });
-        }
+            applyCommit(nextVal);
+          },
+        });
       }
       const inlineTarget = def.inlineGroup ? getInlineGroup(def.inlineGroup) : target;
       if (def.inlineGroup) div.classList.add('control-inline-item');
@@ -5168,6 +4705,10 @@
       randSeed.onclick = () => {
         const l = this.app.engine.getActiveLayer();
         const seedInput = getEl('inp-seed', { silent: true });
+        // Reroll feedback on the dice affordance (existing motion helper —
+        // same pulse the header buttons use; no new keyframes).
+        const motion = window.Vectura?.UI?.motion;
+        if (motion?.triggerBtnPulse) motion.triggerBtnPulse(randSeed);
         if (l) {
           if (this.app.pushHistory) this.app.pushHistory();
           l.params.seed = Math.floor(Math.random() * 99999);
