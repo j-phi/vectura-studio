@@ -64,6 +64,31 @@ describe('Phase 3 closure — toast wire-ups', () => {
     expect(last.classList.contains('vectura-toast-success')).toBe(true);
   });
 
+  test('exportSVG() fires a success toast naming the file and its path count', () => {
+    if (!window.URL.createObjectURL) window.URL.createObjectURL = () => 'blob:test';
+    if (!window.URL.revokeObjectURL) window.URL.revokeObjectURL = () => {};
+    const origCreate = document.createElement.bind(document);
+    document.createElement = (tag) => {
+      const el = origCreate(tag);
+      if (tag === 'a') el.click = () => {};
+      return el;
+    };
+
+    window.app.engine.addLayer('flowfield');
+    window.app.ui.exportSVG();
+
+    document.createElement = origCreate;
+    const host = document.getElementById('vectura-toast-host');
+    expect(host).toBeTruthy();
+    const toasts = host.querySelectorAll('.vectura-toast');
+    expect(toasts.length).toBeGreaterThanOrEqual(1);
+    const last = toasts[toasts.length - 1];
+    // Delight contract: filename + comma-grouped path count, e.g.
+    // "Exported vectura.svg — 1,165 paths".
+    expect(last.textContent).toMatch(/^Exported vectura\.svg — [\d,]+ paths?$/);
+    expect(last.classList.contains('vectura-toast-success')).toBe(true);
+  });
+
   test('openVecturaFile() emits a danger toast on invalid JSON', () => {
     let onloadCb = null;
     class FakeReader {

@@ -95,7 +95,7 @@
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
-        toast('Project saved', 'success');
+        toast(`Saved vectura-${date}.vectura`, 'success');
       } finally {
         progress.done();
       }
@@ -733,7 +733,10 @@
       a.click();
       a.remove();
       if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url);
-      toast('SVG exported', 'success');
+      // Delight moment: the snapshot's groups are already in hand, so the
+      // path count comes for free — "Exported vectura.svg — 1,165 paths".
+      const pathCount = groups.reduce((n, group) => n + (group.items?.length || 0), 0);
+      toast(`Exported ${a.download} — ${pathCount.toLocaleString()} path${pathCount === 1 ? '' : 's'}`, 'success');
       } finally {
         progress.done();
       }
@@ -746,7 +749,7 @@
     exportAnimatedSVG() {
       const builder = window.Vectura.AnimatedSvg;
       if (!builder || typeof builder.buildDrawOn !== 'function') {
-        toast('Animated export unavailable', 'error');
+        toast('Animated export unavailable', 'danger');
         return;
       }
       const progress = startProgress('Exporting animated SVG…');
@@ -775,7 +778,7 @@
         });
 
         if (!polylines.length) {
-          toast('Animated export needs line-mode paths (no continuous strokes found)', 'error');
+          toast('Animated export needs line-mode paths (no continuous strokes found)', 'danger');
           return;
         }
 
@@ -804,7 +807,7 @@
         a.click();
         a.remove();
         if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url);
-        toast('Animated SVG exported', 'success');
+        toast(`Exported ${a.download} — ${polylines.length.toLocaleString()} path${polylines.length === 1 ? '' : 's'}`, 'success');
       } finally {
         progress.done();
       }

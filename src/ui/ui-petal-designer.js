@@ -22,6 +22,18 @@
     isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type),
   } = (window.Vectura && window.Vectura.PresetLibraries) || {};
 
+  // Skinned async replacement for window.prompt. Resolves the entered string
+  // on OK/Enter, null on Cancel/Esc. Falls back to the native prompt when the
+  // overlay primitive isn't loaded (legacy load orders / bare JSDOM).
+  const promptText = (props = {}) => {
+    const Prompt = window.Vectura?.UI?.overlays?.Prompt;
+    if (Prompt && typeof Prompt.show === 'function') return Prompt.show(props);
+    const nativePrompt = typeof window !== 'undefined' && typeof window.prompt === 'function'
+      ? window.prompt(props.message || '', props.value != null ? `${props.value}` : '')
+      : null;
+    return Promise.resolve(nativePrompt);
+  };
+
   // Shading/modifier stack factories + option lists live in ControlDefsData.
   // ui.js binds these into its OWN closure; this mixin file runs as a separate
   // IIFE, so it must bind them here too or every Add-Shading / Add-Modifier /
@@ -2100,28 +2112,42 @@
         if (exportBtn) {
           exportBtn.onclick = () => {
             const fallback = `${side}-petal-profile`;
-            const requested = window.prompt('Profile name', fallback);
-            if (requested === null) return;
-            const payload = this.buildPetalDesignerProfileExportPayload(pd.state, {
-              scope: side,
-              name: requested,
+            // Async prompt dialog: the export must run in the resolution path
+            // (native prompt was synchronous). The dialog backdrop blocks a
+            // re-click of exportBtn while open, so no re-entrancy guard needed.
+            promptText({
+              title: 'Export Profile',
+              message: 'Profile name',
+              value: fallback,
+            }).then((requested) => {
+              if (requested === null) return;
+              const payload = this.buildPetalDesignerProfileExportPayload(pd.state, {
+                scope: side,
+                name: requested,
+              });
+              if (!payload) return;
+              this.downloadJsonPayload(payload, `${payload.id}.json`);
             });
-            if (!payload) return;
-            this.downloadJsonPayload(payload, `${payload.id}.json`);
           };
         }
       });
       const exportPairBtn = pd.root.querySelector('[data-petal-profile-export-pair]');
       if (exportPairBtn) {
         exportPairBtn.onclick = () => {
-          const requested = window.prompt('Profile pair name', 'petal-profile-pair');
-          if (requested === null) return;
-          const payload = this.buildPetalDesignerProfileExportPayload(pd.state, {
-            scope: 'both',
-            name: requested,
+          // Async prompt dialog — export moves into the resolution path.
+          promptText({
+            title: 'Export Profile Pair',
+            message: 'Profile pair name',
+            value: 'petal-profile-pair',
+          }).then((requested) => {
+            if (requested === null) return;
+            const payload = this.buildPetalDesignerProfileExportPayload(pd.state, {
+              scope: 'both',
+              name: requested,
+            });
+            if (!payload) return;
+            this.downloadJsonPayload(payload, `${payload.id}.json`);
           });
-          if (!payload) return;
-          this.downloadJsonPayload(payload, `${payload.id}.json`);
         };
       }
     },
