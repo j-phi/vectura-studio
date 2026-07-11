@@ -750,10 +750,26 @@
     return '';
   }
 
-  function fillPct(val, min, max) {
-    if (max === min) return '0';
-    return (((val - min) / (max - min)) * 100).toFixed(2);
+  // Shared-slider placeholder. bindBodyControls() mounts UI.Slider (the app-wide
+  // component: gradient fill, editable value chip, release halo, dblclick reset)
+  // into each [data-mp-slider] host, so the per-type template functions stay
+  // declarative HTML strings. Replaces the legacy hand-rolled .mp-slider +
+  // .mp-val-tag + fillPct() system.
+  function sliderHost(param, min, max, opts = {}) {
+    const step = opts.step != null ? ` data-step="${opts.step}"` : '';
+    const fmt = opts.fmt ? ` data-fmt="${opts.fmt}"` : '';
+    const locked = opts.locked ? ' data-locked="1"' : '';
+    const label = opts.label ? ` data-label="${opts.label}"` : '';
+    return `<div class="mp-sld-host" data-mp-slider="${param}" data-min="${min}" data-max="${max}"${step}${fmt}${locked}${label}></div>`;
   }
+
+  // Unit-suffixed chip renderers for UI.Slider's format/parse hooks. parseFloat
+  // ignores the trailing unit glyph, so a single parser covers all three.
+  const CHIP_FMT = {
+    deg:   { format: (v) => `${Math.round(v)}°`, parse: (t) => parseFloat(t) },
+    pct:   { format: (v) => `${Math.round(v)}%`, parse: (t) => parseFloat(t) },
+    scale: { format: (v) => `${Number(v).toFixed(2)}×`, parse: (t) => parseFloat(t) },
+  };
 
   function pointToAngleDeg(clientX, clientY, rect, shift) {
     const dx = clientX - (rect.left + rect.width / 2);
@@ -906,23 +922,19 @@
           <div class="mp-dial-knob"></div>
         </div>
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Angle <span class="mp-val-tag" data-tag="angle">${Math.round(m.angle)}°</span></div>
-          <input type="range" class="mp-slider" min="0" max="360" value="${m.angle}"
-                 data-param="angle" data-fmt="deg"
-                 style="--fill:${fillPct(m.angle, 0, 360)}%;">
+          <div class="mp-ctrl-lbl">Angle</div>
+          ${sliderHost('angle', 0, 360, { fmt: 'deg', label: 'Angle' })}
         </div>
       </div>
 
       <div class="mp-ctrl-row-2">
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Shift X <span class="mp-val-tag" data-tag="xShift">${Math.round(m.xShift)}</span></div>
-          <input type="range" class="mp-slider" min="-200" max="200" value="${m.xShift}"
-                 data-param="xShift" style="--fill:${fillPct(m.xShift, -200, 200)}%;">
+          <div class="mp-ctrl-lbl">Shift X</div>
+          ${sliderHost('xShift', -200, 200, { label: 'Shift X' })}
         </div>
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Shift Y <span class="mp-val-tag" data-tag="yShift">${Math.round(m.yShift)}</span></div>
-          <input type="range" class="mp-slider" min="-200" max="200" value="${m.yShift}"
-                 data-param="yShift" style="--fill:${fillPct(m.yShift, -200, 200)}%;">
+          <div class="mp-ctrl-lbl">Shift Y</div>
+          ${sliderHost('yShift', -200, 200, { label: 'Shift Y' })}
         </div>
       </div>
     `;
@@ -947,9 +959,8 @@
       </div>
 
       <div class="mp-ctrl-grp">
-        <div class="mp-ctrl-lbl">Wedges <span class="mp-val-tag" data-tag="count">${m.count}</span></div>
-        <input type="range" class="mp-slider" min="2" max="24" value="${m.count}"
-               data-param="count" data-int="1" style="--fill:${fillPct(m.count, 2, 24)}%;">
+        <div class="mp-ctrl-lbl">Wedges</div>
+        ${sliderHost('count', 2, 24, { label: 'Wedges' })}
       </div>
 
       <div class="mp-dial-row">
@@ -962,22 +973,19 @@
           <div class="mp-dial-knob"></div>
         </div>
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Rotation offset <span class="mp-val-tag" data-tag="angle">${Math.round(m.angle)}°</span></div>
-          <input type="range" class="mp-slider" min="0" max="360" value="${m.angle}"
-                 data-param="angle" data-fmt="deg" style="--fill:${fillPct(m.angle, 0, 360)}%;">
+          <div class="mp-ctrl-lbl">Rotation offset</div>
+          ${sliderHost('angle', 0, 360, { fmt: 'deg', label: 'Rotation offset' })}
         </div>
       </div>
 
       <div class="mp-ctrl-row-2">
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Center X <span class="mp-val-tag" data-tag="centerX">${Math.round(m.centerX)}</span></div>
-          <input type="range" class="mp-slider" min="-200" max="200" value="${m.centerX}"
-                 data-param="centerX" style="--fill:${fillPct(m.centerX, -200, 200)}%;">
+          <div class="mp-ctrl-lbl">Center X</div>
+          ${sliderHost('centerX', -200, 200, { label: 'Center X' })}
         </div>
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Center Y <span class="mp-val-tag" data-tag="centerY">${Math.round(m.centerY)}</span></div>
-          <input type="range" class="mp-slider" min="-200" max="200" value="${m.centerY}"
-                 data-param="centerY" style="--fill:${fillPct(m.centerY, -200, 200)}%;">
+          <div class="mp-ctrl-lbl">Center Y</div>
+          ${sliderHost('centerY', -200, 200, { label: 'Center Y' })}
         </div>
       </div>
     `;
@@ -1000,48 +1008,41 @@
 
       <div class="mp-ctrl-row-2">
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Radius <span class="mp-val-tag" data-tag="radius">${Math.round(m.radius)}</span></div>
-          <input type="range" class="mp-slider" min="10" max="400" value="${m.radius}"
-                 data-param="radius" style="--fill:${fillPct(m.radius, 10, 400)}%;">
+          <div class="mp-ctrl-lbl">Radius</div>
+          ${sliderHost('radius', 10, 400, { label: 'Radius' })}
         </div>
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Copies <span class="mp-val-tag" data-tag="copies">${m.copies}</span></div>
-          <input type="range" class="mp-slider" min="1" max="12" value="${m.copies}"
-                 data-param="copies" data-int="1" style="--fill:${fillPct(m.copies, 1, 12)}%;">
+          <div class="mp-ctrl-lbl">Copies</div>
+          ${sliderHost('copies', 1, 12, { label: 'Copies' })}
         </div>
       </div>
 
       <div class="mp-ctrl-row-2">
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Arc start <span class="mp-val-tag" data-tag="arcStart">${Math.round(m.arcStart)}°</span></div>
-          <input type="range" class="mp-slider" min="-180" max="180" value="${m.arcStart}"
-                 data-param="arcStart" data-fmt="deg" style="--fill:${fillPct(m.arcStart, -180, 180)}%;">
+          <div class="mp-ctrl-lbl">Arc start</div>
+          ${sliderHost('arcStart', -180, 180, { fmt: 'deg', label: 'Arc start' })}
         </div>
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Arc end <span class="mp-val-tag" data-tag="arcEnd">${Math.round(m.arcEnd)}°</span></div>
-          <input type="range" class="mp-slider" min="-180" max="180" value="${m.arcEnd}"
-                 data-param="arcEnd" data-fmt="deg" style="--fill:${fillPct(m.arcEnd, -180, 180)}%;">
+          <div class="mp-ctrl-lbl">Arc end</div>
+          ${sliderHost('arcEnd', -180, 180, { fmt: 'deg', label: 'Arc end' })}
         </div>
       </div>
 
       <div class="mp-ctrl-row-2">
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Strength <span class="mp-val-tag" data-tag="strength">${Math.round(m.strength)}%</span></div>
-          <input type="range" class="mp-slider" min="0" max="100" value="${m.strength}"
-                 data-param="strength" data-fmt="pct" style="--fill:${fillPct(m.strength, 0, 100)}%;">
+          <div class="mp-ctrl-lbl">Strength</div>
+          ${sliderHost('strength', 0, 100, { fmt: 'pct', label: 'Strength' })}
         </div>
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Falloff <span class="mp-val-tag" data-tag="falloff">${Math.round(m.falloff)}%</span></div>
-          <input type="range" class="mp-slider" min="0" max="100" value="${m.falloff}"
-                 data-param="falloff" data-fmt="pct" style="--fill:${fillPct(m.falloff, 0, 100)}%;">
+          <div class="mp-ctrl-lbl">Falloff</div>
+          ${sliderHost('falloff', 0, 100, { fmt: 'pct', label: 'Falloff' })}
         </div>
       </div>
 
       <div class="mp-ctrl-row-2">
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Min radius <span class="mp-val-tag" data-tag="minRadius">${Math.round(m.minRadius ?? 0)}</span></div>
-          <input type="range" class="mp-slider" min="0" max="400" value="${m.minRadius ?? 0}"
-                 data-param="minRadius" style="--fill:${fillPct(m.minRadius ?? 0, 0, 400)}%;">
+          <div class="mp-ctrl-lbl">Min radius</div>
+          ${sliderHost('minRadius', 0, 400, { label: 'Min radius' })}
         </div>
         <div class="mp-ctrl-grp"></div>
       </div>
@@ -1056,9 +1057,8 @@
           <div class="mp-dial-knob"></div>
         </div>
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Rotation offset <span class="mp-val-tag" data-tag="rotationOffset">${Math.round(m.rotationOffset)}°</span></div>
-          <input type="range" class="mp-slider" min="0" max="360" value="${m.rotationOffset}"
-                 data-param="rotationOffset" data-fmt="deg" style="--fill:${fillPct(m.rotationOffset, 0, 360)}%;">
+          <div class="mp-ctrl-lbl">Rotation offset</div>
+          ${sliderHost('rotationOffset', 0, 360, { fmt: 'deg', label: 'Rotation offset' })}
         </div>
       </div>
       <div class="mp-ctrl-grp">
@@ -1075,14 +1075,12 @@
 
       <div class="mp-ctrl-row-2">
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Center X <span class="mp-val-tag" data-tag="centerX">${Math.round(m.centerX)}</span></div>
-          <input type="range" class="mp-slider" min="-200" max="200" value="${m.centerX}"
-                 data-param="centerX" style="--fill:${fillPct(m.centerX, -200, 200)}%;">
+          <div class="mp-ctrl-lbl">Center X</div>
+          ${sliderHost('centerX', -200, 200, { label: 'Center X' })}
         </div>
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Center Y <span class="mp-val-tag" data-tag="centerY">${Math.round(m.centerY)}</span></div>
-          <input type="range" class="mp-slider" min="-200" max="200" value="${m.centerY}"
-                 data-param="centerY" style="--fill:${fillPct(m.centerY, -200, 200)}%;">
+          <div class="mp-ctrl-lbl">Center Y</div>
+          ${sliderHost('centerY', -200, 200, { label: 'Center Y' })}
         </div>
       </div>
     `;
@@ -1269,14 +1267,12 @@
       ${desc ? `<div class="mp-wall-desc" data-testid="wall-desc">${desc}</div>` : ''}
       <div class="mp-ctrl-row-2">
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Tile width <span class="mp-val-tag" data-tag="tileWidth">${Math.round(m.tileWidth)}</span></div>
-          <input type="range" class="mp-slider" min="20" max="400" value="${m.tileWidth}"
-                 data-param="tileWidth" style="--fill:${fillPct(m.tileWidth, 20, 400)}%;">
+          <div class="mp-ctrl-lbl">Tile width</div>
+          ${sliderHost('tileWidth', 20, 400, { label: 'Tile width' })}
         </div>
         <div class="mp-ctrl-grp${lockedCls(locked.tileHeight)}">
-          <div class="mp-ctrl-lbl">Tile height <span class="mp-val-tag" data-tag="tileHeight">${Math.round(m.tileHeight)}</span>${lockHint(locked.tileHeight)}</div>
-          <input type="range" class="mp-slider" min="20" max="400" value="${m.tileHeight}"
-                 data-param="tileHeight" ${lockedAttr(locked.tileHeight)} style="--fill:${fillPct(m.tileHeight, 20, 400)}%;">
+          <div class="mp-ctrl-lbl">Tile height${lockHint(locked.tileHeight)}</div>
+          ${sliderHost('tileHeight', 20, 400, { label: 'Tile height', locked: locked.tileHeight })}
           ${lockNote(locked.tileHeight, 'the tile height to match the tile width')}
         </div>
       </div>
@@ -1289,9 +1285,8 @@
           <div class="mp-dial-knob"></div>
         </div>
         <div class="mp-ctrl-grp${lockedCls(locked.tileAngle)}">
-          <div class="mp-ctrl-lbl">Tile angle <span class="mp-val-tag" data-tag="tileAngle">${Math.round(m.tileAngle)}°</span>${lockHint(locked.tileAngle)}</div>
-          <input type="range" class="mp-slider" min="45" max="135" value="${m.tileAngle}"
-                 data-param="tileAngle" data-fmt="deg" ${lockedAttr(locked.tileAngle)} style="--fill:${fillPct(m.tileAngle, 45, 135)}%;">
+          <div class="mp-ctrl-lbl">Tile angle${lockHint(locked.tileAngle)}</div>
+          ${sliderHost('tileAngle', 45, 135, { fmt: 'deg', label: 'Tile angle', locked: locked.tileAngle })}
           ${lockNote(locked.tileAngle, 'the tile angle')}
         </div>
       </div>
@@ -1305,28 +1300,24 @@
           <div class="mp-dial-knob"></div>
         </div>
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Pattern angle <span class="mp-val-tag" data-tag="rotation">${Math.round(m.rotation)}°</span></div>
-          <input type="range" class="mp-slider" min="0" max="360" value="${m.rotation}"
-                 data-param="rotation" data-fmt="deg" style="--fill:${fillPct(m.rotation, 0, 360)}%;">
+          <div class="mp-ctrl-lbl">Pattern angle</div>
+          ${sliderHost('rotation', 0, 360, { fmt: 'deg', label: 'Pattern angle' })}
         </div>
       </div>
       <div class="mp-ctrl-row-2">
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Center X <span class="mp-val-tag" data-tag="centerX">${Math.round(m.centerX)}</span></div>
-          <input type="range" class="mp-slider" min="-200" max="200" value="${m.centerX}"
-                 data-param="centerX" style="--fill:${fillPct(m.centerX, -200, 200)}%;">
+          <div class="mp-ctrl-lbl">Center X</div>
+          ${sliderHost('centerX', -200, 200, { label: 'Center X' })}
         </div>
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Center Y <span class="mp-val-tag" data-tag="centerY">${Math.round(m.centerY)}</span></div>
-          <input type="range" class="mp-slider" min="-200" max="200" value="${m.centerY}"
-                 data-param="centerY" style="--fill:${fillPct(m.centerY, -200, 200)}%;">
+          <div class="mp-ctrl-lbl">Center Y</div>
+          ${sliderHost('centerY', -200, 200, { label: 'Center Y' })}
         </div>
       </div>
       <div class="mp-ctrl-row-2">
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Tile scale <span class="mp-val-tag" data-tag="domainScale">${Number(m.domainScale ?? 1).toFixed(2)}×</span></div>
-          <input type="range" class="mp-slider" min="0.3" max="2" step="0.05" value="${m.domainScale ?? 1}"
-                 data-param="domainScale" data-fmt="scale" style="--fill:${fillPct(m.domainScale ?? 1, 0.3, 2)}%;">
+          <div class="mp-ctrl-lbl">Tile scale</div>
+          ${sliderHost('domainScale', 0.3, 2, { step: 0.05, fmt: 'scale', label: 'Tile scale' })}
         </div>
       </div>
       ${hasV1 ? (() => {
@@ -1706,77 +1697,71 @@
     function bindBodyControls(body, mirror) {
       if (!mirror) return;
 
-      // Sliders — live tag/fill update without rebuild for smooth dragging.
-      // History contract: pushHistory MUST be called on the pre-drag state so
-      // undo rewinds to the value before this gesture started. We snapshot
-      // on pointerdown/first-input and push exactly once per drag.
-      body.querySelectorAll('input[type=range][data-param]').forEach((el) => {
-        const param = el.dataset.param;
-        const isInt = el.dataset.int === '1';
-        let preDragValue = null; // pre-drag snapshot; null between drags
+      // Sliders — each [data-mp-slider] host mounts the shared UI.Slider
+      // (gradient fill, editable value chip, release halo, dblclick reset).
+      // History contract: pushHistory MUST capture the pre-gesture state so
+      // undo rewinds to the value before this gesture started. mirror[param]
+      // is only mutated inside onChange, so on the FIRST onChange of a gesture
+      // it still holds the pre-gesture value — push history before assigning,
+      // exactly once per gesture. onCommit (release / chip commit / dblclick
+      // reset) closes the gesture.
+      const typeDefaults = defaultParamsFor(mirror.type);
+      body.querySelectorAll('[data-mp-slider]').forEach((host) => {
+        const param = host.dataset.mpSlider;
+        const min = parseFloat(host.dataset.min);
+        const max = parseFloat(host.dataset.max);
+        const step = host.dataset.step != null ? parseFloat(host.dataset.step) : 1;
+        const fmt = CHIP_FMT[host.dataset.fmt] || null;
+        const isLocked = host.dataset.locked === '1';
+        const cur = Number(mirror[param]);
         let historyPushed = false;
-        const beginDrag = () => {
-          if (preDragValue === null) preDragValue = mirror[param];
-        };
-        el.addEventListener('pointerdown', beginDrag);
-        el.addEventListener('keydown', beginDrag);
-        el.addEventListener('input', () => {
-          const v = isInt ? Math.round(+el.value) : +el.value;
-          if (!historyPushed) {
-            // Push history with the value as it was BEFORE this gesture.
-            const newVal = v;
-            mirror[param] = preDragValue !== null ? preDragValue : mirror[param];
-            if (uiCtx.app?.pushHistory) uiCtx.app.pushHistory();
-            mirror[param] = newVal;
-            historyPushed = true;
-          } else {
-            mirror[param] = v;
-          }
-          const min = +el.min, max = +el.max;
-          el.style.setProperty('--fill', ((v - min) / (max - min || 1)) * 100 + '%');
-          const tag = body.querySelector(`[data-tag="${param}"]`);
-          if (tag) {
-            const fmt = el.dataset.fmt;
-            tag.textContent = fmt === 'deg' ? `${Math.round(v)}°`
-              : fmt === 'pct' ? `${Math.round(v)}%`
-              : fmt === 'scale' ? `${v.toFixed(2)}×`
-              : `${Math.round(v)}`;
-          }
-          // sync dial pin if present (range-gauge dials map the value through
-          // the top-semicircle, compass dials show the value angle directly)
-          const dial = body.querySelector(`.mp-dial[data-dial-param="${param}"]`);
-          if (dial) {
-            const pin = dial.querySelector('.mp-dial-pin');
-            if (pin) {
-              let pinDeg = v;
-              if ((dial.dataset.dialMode || 'compass') === 'range') {
-                const { min, max } = dialRangeMeta(dial);
-                pinDeg = rangePinAngle(v, min, max);
-              }
-              pin.style.setProperty('--angle', `${pinDeg}deg`);
+        const inst = UI.Slider(host, {
+          value: Number.isFinite(cur) ? cur : (typeDefaults[param] ?? min),
+          min, max, step,
+          ariaLabel: host.dataset.label || param,
+          defaultValue: param in typeDefaults ? typeDefaults[param] : undefined,
+          format: fmt ? fmt.format : undefined,
+          parse: fmt ? fmt.parse : undefined,
+          onChange: (v) => {
+            if (!historyPushed) {
+              if (uiCtx.app?.pushHistory) uiCtx.app.pushHistory();
+              historyPushed = true;
             }
-            dial.setAttribute('aria-valuenow', String(v));
-          }
-          refreshRowText();
-          // Recompute mirrored geometry + redraw. Skip the panel rebuild so
-          // the slider DOM stays put and the drag remains smooth.
-          uiCtx.refreshModifierLayer(layer, { rebuildControls: false });
+            mirror[param] = v;
+            // sync dial pin if present (range-gauge dials map the value
+            // through the top-semicircle, compass dials show it directly)
+            const dial = body.querySelector(`.mp-dial[data-dial-param="${param}"]`);
+            if (dial) {
+              const pin = dial.querySelector('.mp-dial-pin');
+              if (pin) {
+                let pinDeg = v;
+                if ((dial.dataset.dialMode || 'compass') === 'range') {
+                  const meta = dialRangeMeta(dial);
+                  pinDeg = rangePinAngle(v, meta.min, meta.max);
+                }
+                pin.style.setProperty('--angle', `${pinDeg}deg`);
+              }
+              dial.setAttribute('aria-valuenow', String(v));
+            }
+            refreshRowText();
+            // Recompute mirrored geometry + redraw. Skip the panel rebuild so
+            // the slider DOM stays put and the drag remains smooth.
+            uiCtx.refreshModifierLayer(layer, { rebuildControls: false });
+          },
+          onCommit: () => { historyPushed = false; },
         });
-        const endDrag = () => {
-          preDragValue = null;
-          historyPushed = false;
-        };
-        el.addEventListener('change', endDrag);
-        el.addEventListener('pointerup', endDrag);
-        el.addEventListener('pointercancel', endDrag);
-        el.addEventListener('dblclick', (e) => {
-          e.preventDefault();
-          const defaults = defaultParamsFor(mirror.type);
-          if (!(param in defaults)) return;
-          el.value = defaults[param];
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-        });
+        // Annotate the inner range input so the dial wiring below (and
+        // integration tests) can target it per-param, and honor symmetry
+        // locks by disabling both the range and its chip.
+        const rangeEl = inst.el.querySelector('input[type=range]');
+        if (rangeEl) {
+          rangeEl.dataset.param = param;
+          if (isLocked) rangeEl.disabled = true;
+        }
+        if (isLocked) {
+          const chip = inst.el.querySelector('.slider-val');
+          if (chip) chip.disabled = true;
+        }
       });
 
       // Tile clicks: side / mode / clipToArc / variantV1
@@ -2171,7 +2156,6 @@
     nameFor,
     summaryFor,
     pointToAngleDeg,
-    fillPct,
     TYPES,
     WALL_GROUPS,
     INFO_TOPICS,

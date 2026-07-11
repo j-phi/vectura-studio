@@ -1518,81 +1518,60 @@
         </button>
       `;
 
+      // Range rows ride the shared UI.Slider component (gradient fill, release
+      // halo, inline-editable value chip, dblclick reset-to-default). The chip
+      // replaces the legacy .value-chip button + hidden .value-input editor;
+      // it renders/parses the DISPLAY value (unit conversion via to/from
+      // DisplayValue) exactly like the old formatDisplayValue text.
       const buildRangeControl = (noise, def, idx) => {
         const control = document.createElement('div');
         control.className = 'noise-control';
         const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
         const value = noise[def.key] ?? getNoiseDefault(idx, def.key);
         const { min, max, step } = getDisplayConfig(def);
-        const displayVal = toDisplayValue(def, value);
         control.innerHTML = `
-          <div class="flex justify-between mb-1">
-            <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
-              ${infoBtn}
-            </div>
-            <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
-              def,
-              value
-            )}</button>
+          <div class="flex items-center gap-2 mb-1">
+            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
+            ${infoBtn}
           </div>
-          <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
-          <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
         `;
-        const input = control.querySelector('input[type="range"]');
-        const valueBtn = control.querySelector('.value-chip');
-        const valueInput = control.querySelector('.value-input');
-        const resetValue = () => {
-          const nextVal = getNoiseDefault(idx, def.key);
-          if (nextVal === undefined) return;
+        const defaultVal = getNoiseDefault(idx, def.key);
+        const commitDisplay = (nextDisplay) => {
           if (this.app.pushHistory) this.app.pushHistory();
-          noise[def.key] = nextVal;
-          if (input) input.value = toDisplayValue(def, nextVal);
-          if (valueBtn) valueBtn.innerText = formatDisplayValue(def, nextVal);
+          noise[def.key] = fromDisplayValue(def, nextDisplay);
           this.storeLayerParams(layer);
           this.app.regen();
           this.updateFormula();
         };
-        if (input && valueBtn) {
+        const inst = UI.Slider(control, {
+          value: toDisplayValue(def, value),
+          min, max, step,
+          ariaLabel: getDisplayLabel(def),
+          format: (dv) => formatDisplayValue(def, fromDisplayValue(def, dv)),
+          parse: (t) => parseFloat(t),
+          defaultValue: defaultVal !== undefined ? toDisplayValue(def, defaultVal) : undefined,
+          // Live drags only repaint the chip (the component does that);
+          // param writes + regen happen on release, matching the legacy
+          // input/onchange split.
+          onCommit: commitDisplay,
+        });
+        const input = inst.el.querySelector('input[type=range]');
+        const chip = inst.el.querySelector('.slider-val');
+        if (input) {
+          input.dataset.noiseKey = def.key;
           input.disabled = !noise.enabled;
-          valueBtn.classList.toggle('opacity-60', !noise.enabled);
-          input.oninput = (e) => {
-            const nextDisplay = parseFloat(e.target.value);
-            valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
-          };
-          input.onchange = (e) => {
-            if (this.app.pushHistory) this.app.pushHistory();
-            const nextDisplay = parseFloat(e.target.value);
-            noise[def.key] = fromDisplayValue(def, nextDisplay);
-            this.storeLayerParams(layer);
-            this.app.regen();
-            this.updateFormula();
-          };
+          // Held arrow keys keep applying live (no history), then the native
+          // change event commits once — same behavior as the legacy slider.
           attachKeyboardRangeNudge(input, (nextDisplay) => {
             noise[def.key] = fromDisplayValue(def, nextDisplay);
             this.storeLayerParams(layer);
             this.app.regen();
             this.updateFormula();
           });
-          input.addEventListener('dblclick', (e) => {
-            e.preventDefault();
-            resetValue();
-          });
-          attachValueEditor({
-            def,
-            valueEl: valueBtn,
-            inputEl: valueInput,
-            getValue: () => noise[def.key],
-            setValue: (displayVal, opts) => {
-              const commit = opts?.commit !== false;
-              if (commit && this.app.pushHistory) this.app.pushHistory();
-              noise[def.key] = fromDisplayValue(def, displayVal);
-              this.storeLayerParams(layer);
-              this.app.regen();
-              valueBtn.innerText = formatDisplayValue(def, noise[def.key]);
-              this.updateFormula();
-            },
-          });
+        }
+        if (chip) {
+          chip.disabled = !noise.enabled;
+          chip.classList.toggle('opacity-60', !noise.enabled);
         }
         return control;
       };
@@ -2014,6 +1993,8 @@
           </button>
         `;
 
+        // Same shared-slider treatment as buildRangeControl above, keyed on
+        // the effect object with baseEffect providing the dblclick default.
         const buildEffectRangeControl = (effect, def) => {
           const control = document.createElement('div');
           control.className = 'noise-control';
@@ -2021,72 +2002,44 @@
           const value = effect[def.key] ?? baseEffect[def.key] ?? 0;
           if (effect[def.key] === undefined) effect[def.key] = value;
           const { min, max, step } = getDisplayConfig(def);
-          const displayVal = toDisplayValue(def, value);
           control.innerHTML = `
-            <div class="flex justify-between mb-1">
-              <div class="flex items-center gap-2">
-                <label class="control-label mb-0">${getDisplayLabel(def)}</label>
-                ${infoBtn}
-              </div>
-              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
-                def,
-                value
-              )}</button>
+            <div class="flex items-center gap-2 mb-1">
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
+              ${infoBtn}
             </div>
-            <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
-            <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
           `;
-          const input = control.querySelector('input[type="range"]');
-          const valueBtn = control.querySelector('.value-chip');
-          const valueInput = control.querySelector('.value-input');
-          if (input && valueBtn) {
-            input.disabled = !noise.enabled || !effect.enabled;
-            valueBtn.classList.toggle('opacity-60', !noise.enabled || !effect.enabled);
-            input.oninput = (e) => {
-              const nextDisplay = parseFloat(e.target.value);
-              valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
-            };
-            input.onchange = (e) => {
+          const defaultVal = baseEffect[def.key];
+          const inst = UI.Slider(control, {
+            value: toDisplayValue(def, value),
+            min, max, step,
+            ariaLabel: getDisplayLabel(def),
+            format: (dv) => formatDisplayValue(def, fromDisplayValue(def, dv)),
+            parse: (t) => parseFloat(t),
+            defaultValue: defaultVal !== undefined ? toDisplayValue(def, defaultVal) : undefined,
+            onCommit: (nextDisplay) => {
               if (this.app.pushHistory) this.app.pushHistory();
-              const nextDisplay = parseFloat(e.target.value);
               effect[def.key] = fromDisplayValue(def, nextDisplay);
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
-            };
+            },
+          });
+          const input = inst.el.querySelector('input[type=range]');
+          const chip = inst.el.querySelector('.slider-val');
+          const isDisabled = !noise.enabled || !effect.enabled;
+          if (input) {
+            input.dataset.effectKey = def.key;
+            input.disabled = isDisabled;
             attachKeyboardRangeNudge(input, (nextDisplay) => {
               effect[def.key] = fromDisplayValue(def, nextDisplay);
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
             });
-            input.addEventListener('dblclick', (e) => {
-              e.preventDefault();
-              const nextVal = baseEffect[def.key];
-              if (nextVal === undefined) return;
-              if (this.app.pushHistory) this.app.pushHistory();
-              effect[def.key] = nextVal;
-              input.value = toDisplayValue(def, nextVal);
-              valueBtn.innerText = formatDisplayValue(def, nextVal);
-              this.storeLayerParams(layer);
-              this.app.regen();
-              this.updateFormula();
-            });
-            attachValueEditor({
-              def,
-              valueEl: valueBtn,
-              inputEl: valueInput,
-              getValue: () => effect[def.key],
-              setValue: (displayVal, opts) => {
-                const commit = opts?.commit !== false;
-                if (commit && this.app.pushHistory) this.app.pushHistory();
-                effect[def.key] = fromDisplayValue(def, displayVal);
-                this.storeLayerParams(layer);
-                this.app.regen();
-                valueBtn.innerText = formatDisplayValue(def, effect[def.key]);
-                this.updateFormula();
-              },
-            });
+          }
+          if (chip) {
+            chip.disabled = isDisabled;
+            chip.classList.toggle('opacity-60', isDisabled);
           }
           return control;
         };
@@ -2377,8 +2330,9 @@
           <button type="button" class="noise-reset text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">
             Reset
           </button>
-          <button type="button" class="noise-rand text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">
-            Randomize
+          <button type="button" class="noise-rand text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors"
+            title="Surprise me — roll random values for this noise layer.">
+            <span aria-hidden="true">⚄</span> Randomize
           </button>
         `;
         const resetBtn = tools.querySelector('.noise-reset');
