@@ -41,6 +41,19 @@
   const slugify = (str) =>
     String(str).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+  // Skinned async replacement for window.prompt. Resolves the entered string
+  // on OK/Enter, null on Cancel/Esc. Falls back to the native prompt when the
+  // overlay primitive isn't loaded (legacy load orders / bare JSDOM).
+  const promptText = (props = {}) => {
+    const Prompt = window.Vectura && window.Vectura.UI && window.Vectura.UI.overlays
+      && window.Vectura.UI.overlays.Prompt;
+    if (Prompt && typeof Prompt.show === 'function') return Prompt.show(props);
+    const nativePrompt = typeof window !== 'undefined' && typeof window.prompt === 'function'
+      ? window.prompt(props.message || '', props.value != null ? `${props.value}` : '')
+      : null;
+    return Promise.resolve(nativePrompt);
+  };
+
   const stripParams = (params) =>
     Object.fromEntries(Object.entries(params || {}).filter(([k]) => !STRIP.has(k)));
 
@@ -483,13 +496,19 @@
           sel.addEventListener('pointerdown', (e) => e.stopPropagation());
           sel.addEventListener('change', (e) => {
             e.stopPropagation();
-            let target = sel.value;
+            const target = sel.value;
             if (target === NEW_SENTINEL) {
-              const promptFn = (typeof window !== 'undefined' && typeof window.prompt === 'function')
-                ? window.prompt : null;
-              const raw = promptFn ? (promptFn('New group name:', '') || '').trim() : '';
-              if (!raw) { sel.value = curGroup; return; }
-              target = raw;
+              // Async prompt dialog: the reassignment moves into the resolution
+              // path (native prompt was synchronous). While the dialog is open
+              // the select keeps showing the sentinel; it snaps back to the
+              // current group on cancel/empty.
+              promptText({ title: 'New Group', message: 'New group name:', value: '' })
+                .then((raw) => {
+                  const name = (raw || '').trim();
+                  if (!name || name === curGroup) { sel.value = curGroup; return; }
+                  reassignGroup(presetId, name);
+                });
+              return;
             }
             if (target === curGroup) { sel.value = curGroup; return; }
             reassignGroup(presetId, target);
@@ -680,29 +699,32 @@
             reader.onload = () => {
               let doc;
               try { doc = JSON.parse(reader.result); } catch (_) {
-                alert('Could not read .vectura file — invalid JSON.');
+                toast('Could not read .vectura file — invalid JSON.', 'danger');
                 return;
               }
               const layers = Array.isArray(doc.layers) ? doc.layers : [];
               const matchLayer = layers.find((l) => l.type === system);
               if (!matchLayer) {
-                alert(`No ${system} layer found in this .vectura file.`);
+                toast(`No ${system} layer found in this .vectura file.`, 'danger');
                 return;
               }
               const stem = file.name.replace(/\.vectura$/i, '');
               const defaultName = stem.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-              const promptFn = typeof window !== 'undefined' && typeof window.prompt === 'function'
-                ? window.prompt
-                : null;
-              const name = promptFn
-                ? (promptFn('Preset name:', defaultName) || '').trim() || defaultName
-                : defaultName;
-              const params = stripParams(matchLayer.params);
-              const id = `user-${system}-${Date.now()}`;
-              const newPreset = { id, name, preset_system: system, group: 'User', params };
-              const updated = [...loadUserPresets(system), newPreset];
-              saveUserPresets(system, updated);
-              rebuildPopover();
+              // Async prompt dialog: the save moves into the resolution path.
+              // Cancel/Esc now aborts the import (the native prompt's null
+              // silently fell through to defaultName); confirming an empty
+              // field still falls back to the filename-derived default.
+              promptText({ title: 'Import Preset', message: 'Preset name:', value: defaultName })
+                .then((entered) => {
+                  if (entered === null) return;
+                  const name = `${entered}`.trim() || defaultName;
+                  const params = stripParams(matchLayer.params);
+                  const id = `user-${system}-${Date.now()}`;
+                  const newPreset = { id, name, preset_system: system, group: 'User', params };
+                  const updated = [...loadUserPresets(system), newPreset];
+                  saveUserPresets(system, updated);
+                  rebuildPopover();
+                });
             };
             reader.readAsText(file);
           });

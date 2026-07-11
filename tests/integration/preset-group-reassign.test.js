@@ -115,29 +115,60 @@ describe('Preset gallery — dev-mode inline group reassignment', () => {
     expect(second[0].savedAt).toBeGreaterThanOrEqual(first[0].savedAt);
   });
 
-  test('+ New group… prompts for a name and relocates the preset into a brand-new section', async () => {
+  // The "+ New group…" sentinel now opens the skinned UI.overlays.Prompt dialog
+  // (async) instead of the native window.prompt. Helpers to drive it:
+  const promptBackdrop = () => document.querySelector('.vectura-modal-backdrop');
+  const promptInput = () => promptBackdrop()?.querySelector('input[type="text"]');
+  const promptButtons = () => promptBackdrop()?.querySelectorAll('.vectura-dialog-footer button') || [];
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  test('+ New group… opens a prompt dialog; confirming a name relocates the preset into a brand-new section', async () => {
     await mount('flowfield');
-    window.prompt = () => 'My Lab';
 
     const sel = selectFor('flowfield-storm-cell');
     sel.value = '__new__';
     fire(sel, 'change');
+
+    // Skinned prompt dialog is open — no native window.prompt involved.
+    expect(promptBackdrop()).toBeTruthy();
+    promptInput().value = 'My Lab';
+    promptButtons()[1].click(); // OK
+    await flush(); // let the promise resolution path run
 
     expect(userPresets('flowfield').find((p) => p.id === 'flowfield-storm-cell').group).toBe('My Lab');
     expect(groupTitles()).toContain('My Lab');
     expect(sectionGroupOf('flowfield-storm-cell')).toBe('My Lab');
   });
 
-  test('+ New group… with an empty/cancelled prompt is a no-op (select reverts, group unchanged)', async () => {
+  test('+ New group… cancelled via the dialog is a no-op (select reverts, group unchanged)', async () => {
     await mount('flowfield');
-    window.prompt = () => null; // user cancelled
 
     const sel = selectFor('flowfield-storm-cell');
     const before = sel.value;
     sel.value = '__new__';
     fire(sel, 'change');
 
+    expect(promptBackdrop()).toBeTruthy();
+    promptButtons()[0].click(); // Cancel
+    await flush();
+
     // No shadow written, select snapped back to the original group.
+    expect(userPresets('flowfield').find((p) => p.id === 'flowfield-storm-cell')).toBeFalsy();
+    expect(selectFor('flowfield-storm-cell').value).toBe(before);
+  });
+
+  test('+ New group… confirmed with an empty name is a no-op (select reverts)', async () => {
+    await mount('flowfield');
+
+    const sel = selectFor('flowfield-storm-cell');
+    const before = sel.value;
+    sel.value = '__new__';
+    fire(sel, 'change');
+
+    promptInput().value = '   ';
+    promptButtons()[1].click(); // OK with whitespace-only name
+    await flush();
+
     expect(userPresets('flowfield').find((p) => p.id === 'flowfield-storm-cell')).toBeFalsy();
     expect(selectFor('flowfield-storm-cell').value).toBe(before);
   });

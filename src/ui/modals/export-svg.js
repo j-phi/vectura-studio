@@ -655,6 +655,15 @@
     // it picks up the project's toggle styling (Meridian skins) while
     // remaining a plain checkbox on classic skins — matches the convention
     // used elsewhere in the app.
+    //
+    // NOTE: this deliberately wraps the EXISTING checkbox rather than mounting
+    // UI.SwToggle (src/ui/components/sw-toggle.js): buildControls creates these
+    // inputs from template strings with change handlers already bound, so the
+    // component's own hidden input would need bidirectional event forwarding.
+    // Instead the wrap emits the exact SwToggle markup contract (label.sw-toggle
+    // [role=switch] > input + .sw-track + .sw-thumb, aria-checked + is-checked/
+    // is-disabled sync, aria-label) around the live input. Keyboard support
+    // comes from the native checkbox itself, which stays focusable.
     const outputSection = sections.find((s) => s.meta.id === 'output')?.el;
     if (outputSection) {
       outputSection.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
@@ -662,7 +671,10 @@
         const wrap = document.createElement('label');
         wrap.className = 'sw-toggle';
         wrap.setAttribute('role', 'switch');
-        wrap.setAttribute('aria-checked', cb.checked ? 'true' : 'false');
+        // Name the switch for screen readers from the row's visible label.
+        const row = cb.closest('.optimization-control') || cb.closest('.optimization-row');
+        const labelText = row?.querySelector('.control-label')?.textContent?.trim();
+        if (labelText) wrap.setAttribute('aria-label', labelText);
         cb.parentNode.insertBefore(wrap, cb);
         wrap.appendChild(cb);
         const track = document.createElement('span');
@@ -671,7 +683,13 @@
         thumb.className = 'sw-thumb';
         wrap.appendChild(track);
         wrap.appendChild(thumb);
-        cb.addEventListener('change', () => wrap.setAttribute('aria-checked', cb.checked ? 'true' : 'false'));
+        const sync = () => {
+          wrap.setAttribute('aria-checked', cb.checked ? 'true' : 'false');
+          wrap.classList.toggle('is-checked', cb.checked);
+          wrap.classList.toggle('is-disabled', cb.disabled);
+        };
+        cb.addEventListener('change', sync);
+        sync();
       });
     }
 
