@@ -129,42 +129,15 @@
     return getDocUnits() === 'imperial' ? Number(v || 0) * 25.4 : Number(v || 0);
   };
   const docPrecision = () => (getDocUnits() === 'imperial' ? 3 : 2);
-  const fmtDoc = (mm, digits = docPrecision()) => {
-    const v = mmToDoc(mm);
-    return Number.isFinite(v) ? v.toFixed(digits).replace(/\.?0+$/, '') || '0' : '0';
-  };
-
-  function updateSliderFill(input) {
-    const min = Number(input.min);
-    const max = Number(input.max);
-    const val = Number(input.value);
-    if (!Number.isFinite(min) || !Number.isFinite(max) || max === min) return;
-    const pct = ((val - min) / (max - min)) * 100;
-    const wrap = input.closest('.sld-fx-wrap');
-    if (wrap) wrap.style.setProperty('--fill', `${pct}%`);
-  }
 
   function renderControlHtml(ctrl, value, hidden, fillMode, idPrefix) {
     const hiddenAttr = hidden ? ' style="display:none"' : '';
     if (ctrl.type === 'range') {
-      const distance = !!ctrl.distance;
-      const effectiveMax = ctrl.maxByMode?.[fillMode] ?? ctrl.max;
-      const min = distance ? mmToDoc(ctrl.min) : ctrl.min;
-      const max = distance ? mmToDoc(effectiveMax) : effectiveMax;
-      const step = distance
-        ? (getDocUnits() === 'imperial' ? Math.max(0.001, ctrl.step / 25.4) : ctrl.step)
-        : ctrl.step;
-      const v = value != null ? value : 0;
-      const displayV = distance ? mmToDoc(v) : v;
-      const displayStr = distance ? fmtDoc(v) : `${displayV}`;
-      const unit = distance ? getUnitLabel() : (ctrl.unit || '');
+      // Range rows render just the label cell; bindRange() mounts the shared
+      // UI.Slider component (slider + editable value chip) into the row.
       return `
         <div class="paint-bucket-row" data-ctrl="${ctrl.id}"${hiddenAttr}>
           <label class="paint-bucket-label" for="${idPrefix}-${ctrl.id}">${ctrl.label}</label>
-          <div class="sld-fx-wrap paint-bucket-slider-wrap">
-            <input id="${idPrefix}-${ctrl.id}" class="ctrl-slider" type="range" min="${min}" max="${max}" step="${step}" value="${displayV}">
-          </div>
-          <input type="text" id="${idPrefix}-${ctrl.id}-chip" class="slider-val" value="${displayStr}${unit ? unit : ''}" inputmode="decimal">
         </div>
       `;
     }
@@ -212,6 +185,9 @@
    *                                        collisions when both are mounted)
    * @param {object}     [opts.icons]      variant-button icon factory map
    * @param {string}     [opts.noneHint]   hint shown when the type is 'none'
+   * @param {object}     [opts.defaults]   param-id → default value map (stored
+   *                                        units, i.e. mm for distance params);
+   *                                        wires double-click-to-reset on sliders
    * @param {Function}   [opts.onEdit]     () → snapshot point, before first write
    * @param {Function}   [opts.onChange]   (committed) → after a value write
    * @returns {{refresh: Function, refreshVariants: Function}}
@@ -227,6 +203,7 @@
       idPrefix = 'pb',
       icons = (Vectura.Icons && Vectura.Icons.paintBucket) || {},
       noneHint = 'Pick a fill type to pour onto regions.',
+      defaults = {},
       onEdit = () => {},
       onChange = () => {},
     } = opts;
@@ -326,55 +303,64 @@
     }
 
     function bindRange(ctrl) {
-      const input = controlsEl.querySelector(`#${idPrefix}-${ctrl.id}`);
-      if (!input) return;
-      const chip = controlsEl.querySelector(`#${idPrefix}-${ctrl.id}-chip`);
+      const row = controlsEl.querySelector(`[data-ctrl="${ctrl.id}"]`);
+      if (!row || typeof UI.Slider !== 'function') return;
       const distance = !!ctrl.distance;
       const unit = distance ? getUnitLabel() : (ctrl.unit || '');
-      const minDisplay = Number(input.getAttribute('min'));
-      const maxDisplay = Number(input.getAttribute('max'));
+      const effectiveMax = ctrl.maxByMode?.[get(typeKey)] ?? ctrl.max;
+      const min = distance ? mmToDoc(ctrl.min) : ctrl.min;
+      const max = distance ? mmToDoc(effectiveMax) : effectiveMax;
+      const step = distance
+        ? (getDocUnits() === 'imperial' ? Math.max(0.001, ctrl.step / 25.4) : ctrl.step)
+        : ctrl.step;
+      const stored = get(ctrl.id) != null ? get(ctrl.id) : 0;
+      const defRaw = defaults[ctrl.id];
+      const defaultValue = Number.isFinite(defRaw)
+        ? (distance ? mmToDoc(defRaw) : defRaw)
+        : undefined;
+      // onEdit fires ONCE per interaction, before the first write (history
+      // snapshot); the flag arms on the first live frame and disarms on commit.
       let editing = false;
-      const writeChip = (displayNum) => {
-        if (!chip) return;
-        chip.value = distance
-          ? `${Number(displayNum).toFixed(docPrecision()).replace(/\.?0+$/, '') || '0'}${unit}`
-          : `${displayNum}${unit}`;
-      };
-      const apply = (committed) => {
-        const numDisplay = Number(input.value);
-        if (!Number.isFinite(numDisplay)) return;
-        const stored = distance ? docToMm(numDisplay) : numDisplay;
-        set(ctrl.id, stored);
-        writeChip(numDisplay);
-        updateSliderFill(input);
+      const apply = (displayNum, committed) => {
+        if (!Number.isFinite(displayNum)) return;
+        const storedV = distance ? docToMm(displayNum) : displayNum;
+        set(ctrl.id, storedV);
         onChange(committed);
         // Dot rotation shows when dotLength > 0 OR a non-circle shape is selected.
         if (ctrl.id === 'fillDotLength') {
           const dotShapeIsCircle = (get('fillDotShape') ?? 'circle') === 'circle';
           const dotRotRow = controlsEl.querySelector('[data-ctrl="fillDotRotation"]');
-          if (dotRotRow) dotRotRow.style.display = (stored > 0 || !dotShapeIsCircle) ? '' : 'none';
+          if (dotRotRow) dotRotRow.style.display = (storedV > 0 || !dotShapeIsCircle) ? '' : 'none';
         }
       };
-      input.addEventListener('input', () => {
-        if (!editing) { editing = true; onEdit(); }
-        apply(false);
+      const inst = UI.Slider(row, {
+        value: distance ? mmToDoc(stored) : stored,
+        min, max, step,
+        precision: distance ? docPrecision() : undefined,
+        ariaLabel: ctrl.label,
+        defaultValue,
+        format: (v) => (distance
+          ? `${Number(v).toFixed(docPrecision()).replace(/\.?0+$/, '') || '0'}${unit}`
+          : `${v}${unit}`),
+        parse: (text) => Number(`${text}`.replace(/[^\d.\-]/g, '')),
+        onChange: (v) => {
+          if (!editing) { editing = true; onEdit(); }
+          apply(v, false);
+        },
+        onCommit: (v) => {
+          editing = false;
+          apply(v, true);
+        },
       });
-      input.addEventListener('change', () => {
-        editing = false;
-        apply(true);
-      });
-      if (chip) {
-        chip.addEventListener('change', () => {
-          const cleaned = `${chip.value}`.replace(/[^\d.\-]/g, '');
-          const num = Number(cleaned);
-          if (!Number.isFinite(num)) return;
-          const clamped = Math.min(maxDisplay, Math.max(minDisplay, num));
-          input.value = `${clamped}`;
-          onEdit();
-          apply(true);
-        });
-      }
-      updateSliderFill(input);
+      // Slot the component into the row grid and reapply the host ids/classes
+      // the paint-bucket layout, tests, and <label for> wiring key on.
+      inst.el.style.gridColumn = '2 / span 2';
+      const rangeInput = inst.el.querySelector('input[type="range"]');
+      if (rangeInput) rangeInput.id = `${idPrefix}-${ctrl.id}`;
+      const chipEl = inst.el.querySelector('.slider-val');
+      if (chipEl) chipEl.id = `${idPrefix}-${ctrl.id}-chip`;
+      const wrapEl = inst.el.querySelector('.sld-fx-wrap');
+      if (wrapEl) wrapEl.classList.add('paint-bucket-slider-wrap');
     }
 
     function bindAngle(ctrl) {
