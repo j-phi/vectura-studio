@@ -210,6 +210,101 @@ describe('Multi-selection algorithm panel', () => {
     });
   });
 
+  describe('Distribute Spacing slider (shared UI.Slider migration)', () => {
+    test('spacing slider renders through UI.Slider with the static ids preserved', () => {
+      const slider = document.getElementById('inp-align-spacing');
+      expect(slider).toBeTruthy();
+      // UI.Slider markup: .slider-row > .sld-fx-wrap > input.ctrl-slider + chip.
+      const sliderRow = slider.closest('.slider-row');
+      expect(sliderRow).toBeTruthy();
+      const wrap = slider.closest('.sld-fx-wrap');
+      expect(wrap.classList.contains('align-spacing-slider-wrap')).toBe(true);
+      // Gradient fill var is initialised at construction (no first-drag flash).
+      expect(wrap.style.getPropertyValue('--fill')).not.toBe('');
+      const chip = document.getElementById('align-spacing-chip');
+      expect(chip).toBeTruthy();
+      expect(chip.classList.contains('slider-val')).toBe(true);
+      expect(chip.closest('.slider-row')).toBe(sliderRow);
+      expect(chip.getAttribute('aria-label')).toBe('Spacing value (mm)');
+      // Static markup was replaced, not duplicated.
+      expect(document.querySelectorAll('#align-section-spacing input[type="range"]').length).toBe(1);
+      expect(document.querySelectorAll('#align-section-spacing .slider-val').length).toBe(1);
+      // Layout guard: `.align-btn { width: 100% }` starved the old static
+      // slider to 0px wide; the component root reserves real space so the
+      // slider is actually visible next to the two distribute buttons.
+      expect(sliderRow.style.minWidth).toBe('120px');
+      expect(sliderRow.style.flex).toBe('1 1 auto');
+    });
+
+    test('dragging the slider syncs the chip and the gradient fill', () => {
+      const slider = document.getElementById('inp-align-spacing');
+      const chip = document.getElementById('align-spacing-chip');
+      slider.value = '40';
+      slider.dispatchEvent(new window.Event('input', { bubbles: true }));
+      expect(chip.value).toBe('40');
+      expect(slider.closest('.sld-fx-wrap').style.getPropertyValue('--fill')).toBe('40%');
+    });
+
+    test('chip edit clamps to the 0–100 range and syncs the slider', () => {
+      const slider = document.getElementById('inp-align-spacing');
+      const chip = document.getElementById('align-spacing-chip');
+      chip.value = '250';
+      chip.dispatchEvent(new window.Event('blur', { bubbles: true }));
+      expect(slider.value).toBe('100');
+      expect(chip.value).toBe('100');
+    });
+
+    test('double-click resets spacing to its 0 default', () => {
+      const slider = document.getElementById('inp-align-spacing');
+      const chip = document.getElementById('align-spacing-chip');
+      slider.value = '60';
+      slider.dispatchEvent(new window.Event('input', { bubbles: true }));
+      slider.dispatchEvent(new window.Event('dblclick', { bubbles: true, cancelable: true }));
+      expect(slider.value).toBe('0');
+      expect(chip.value).toBe('0');
+    });
+
+    test('slider + chip disable without a key object and enable once one is set', () => {
+      const { a, b } = addTwoLayers();
+      app.renderer.setSelection([a.id, b.id], a.id);
+      const slider = document.getElementById('inp-align-spacing');
+      const chip = document.getElementById('align-spacing-chip');
+      expect(app.renderer.keyObjectId).toBeFalsy();
+      expect(slider.disabled).toBe(true);
+      expect(chip.disabled).toBe(true);
+
+      app.renderer.setKeyObject(a.id);
+      app.ui.refreshAlignPanel();
+      expect(slider.disabled).toBe(false);
+      expect(chip.disabled).toBe(false);
+    });
+
+    test('distribute-spacing buttons read the migrated slider value', () => {
+      const { a, b } = addTwoLayers();
+      app.renderer.setSelection([a.id, b.id], a.id);
+      app.renderer.setKeyObject(a.id);
+      app.ui.refreshAlignPanel();
+
+      const slider = document.getElementById('inp-align-spacing');
+      slider.value = '25';
+      slider.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+      const AO = window.Vectura.AlignOps;
+      const orig = AO.distributeSpacing;
+      const seen = [];
+      AO.distributeSpacing = (op, layers, boundsFor, opts) => {
+        seen.push({ op, spacing: opts.spacing });
+        return {};
+      };
+      try {
+        document.querySelector('.align-btn[data-align-op="distributeSpacingH"]').click();
+      } finally {
+        AO.distributeSpacing = orig;
+      }
+      expect(seen).toEqual([{ op: 'distributeSpacingH', spacing: 25 }]);
+    });
+  });
+
   describe('Pathfinder panel for selected compound', () => {
     function addCompound() {
       const { a, b } = addTwoLayers();

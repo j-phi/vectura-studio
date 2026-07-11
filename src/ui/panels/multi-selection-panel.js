@@ -149,40 +149,48 @@
     };
 
     const hintEl = $('align-panel-hint');
-    const spacingSlider = $('inp-align-spacing');
-    const spacingChip = $('align-spacing-chip');
-    const spacingWrap = spacingSlider?.closest('.sld-fx-wrap');
 
-    const syncSpacingFill = () => {
-      if (!spacingSlider) return;
-      const pct = ((Number(spacingSlider.value) - Number(spacingSlider.min)) /
-        (Number(spacingSlider.max) - Number(spacingSlider.min))) * 100;
-      const fill = pct + '%';
-      spacingSlider.style.setProperty('--fill', fill);
-      if (spacingWrap) spacingWrap.style.setProperty('--fill', fill);
-    };
-
-    if (spacingSlider) {
-      spacingSlider.addEventListener('input', () => {
-        if (spacingChip) spacingChip.value = spacingSlider.value;
-        syncSpacingFill();
-      });
-    }
-    if (spacingChip) {
-      spacingChip.addEventListener('blur', () => {
-        const v = Math.max(0, Math.min(100, Number(spacingChip.value) || 0));
-        spacingChip.value = String(v);
-        if (spacingSlider) { spacingSlider.value = String(v); syncSpacingFill(); }
-      });
-      spacingChip.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); spacingChip.blur(); }
-        else if (e.key === 'Escape') {
-          spacingChip.value = spacingSlider?.value ?? '0';
-          spacingChip.blur();
+    // Migrate the static index.html spacing slider + chip to the shared
+    // UI.Slider component (gradient fill, release halo, editable chip with
+    // Enter/Esc handling, dblclick reset-to-0). The static ids and aria
+    // labels are re-applied so the distribute handlers and the
+    // `#align-spacing-chip:disabled` skin rule keep working unchanged.
+    let spacingSlider = $('inp-align-spacing');
+    let spacingChip = $('align-spacing-chip');
+    if (spacingSlider && typeof UI.Slider === 'function') {
+      const staticWrap = spacingSlider.closest('.sld-fx-wrap');
+      const host = staticWrap?.parentElement;
+      if (staticWrap && host) {
+        const inst = UI.Slider(null, {
+          value: Number(spacingSlider.value) || 0,
+          min: 0, max: 100, step: 1,
+          ariaLabel: 'Spacing in millimeters',
+          defaultValue: 0,
+          format: (v) => `${v}`,
+          parse: (text) => Number(`${text}`.replace(/[^\d.\-]/g, '')),
+        });
+        // `.align-btn { width: 100% }` gives the two spacing buttons a flex
+        // basis of the full row, which starved the slider to 0px wide even
+        // BEFORE this migration (verified against the static markup with the
+        // component blocked). A real min-width forces the buttons — whose
+        // min-content is just an icon — to yield space so the slider is
+        // actually visible and usable.
+        inst.el.style.flex = '1 1 auto';
+        inst.el.style.minWidth = '120px';
+        host.insertBefore(inst.el, staticWrap);
+        staticWrap.remove();
+        spacingChip?.remove();
+        spacingSlider = inst.el.querySelector('input[type="range"]');
+        if (spacingSlider) spacingSlider.id = 'inp-align-spacing';
+        spacingChip = inst.el.querySelector('.slider-val');
+        if (spacingChip) {
+          spacingChip.id = 'align-spacing-chip';
+          spacingChip.setAttribute('aria-label', 'Spacing value (mm)');
         }
-      });
+        const wrapEl = inst.el.querySelector('.sld-fx-wrap');
+        if (wrapEl) wrapEl.classList.add('align-spacing-slider-wrap');
+      }
     }
-    syncSpacingFill();
 
     const setHint = (text) => {
       if (hintEl) hintEl.textContent = text || '';

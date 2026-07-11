@@ -99,16 +99,6 @@
     state.app?.renderer?.draw?.();
   }
 
-  function updateSliderFill(input) {
-    const min = Number(input.min);
-    const max = Number(input.max);
-    const val = Number(input.value);
-    if (!Number.isFinite(min) || !Number.isFinite(max) || max === min) return;
-    const pct = ((val - min) / (max - min)) * 100;
-    const wrap = input.closest('.sld-fx-wrap');
-    if (wrap) wrap.style.setProperty('--fill', `${pct}%`);
-  }
-
   function populatePens(state) {
     const sel = document.getElementById('paint-bucket-pen');
     if (!sel) return;
@@ -155,33 +145,40 @@
   }
 
   function bindSensitivity(state) {
-    const input = document.getElementById('paint-bucket-sensitivity');
-    const chip = document.getElementById('paint-bucket-sensitivity-chip');
-    if (!input) return;
-    input.value = `${state.fillParams.fillSensitivity ?? DEFAULTS.fillSensitivity}`;
-    if (chip) chip.value = input.value;
-    updateSliderFill(input);
-    input.addEventListener('input', () => {
-      const v = Number(input.value);
-      if (Number.isFinite(v)) {
-        state.fillParams.fillSensitivity = v;
-        if (chip) chip.value = `${v}`;
-        updateSliderFill(input);
-        persistAndRedraw(state);
-      }
-    });
-    if (chip) {
-      chip.addEventListener('change', () => {
-        const v = Number(`${chip.value}`.replace(/[^\d.\-]/g, ''));
+    // Replace the static index.html slider + chip with the shared UI.Slider
+    // component (gradient fill, release halo, editable chip, dblclick reset).
+    // The static ids are re-applied to the component's elements so external
+    // automation keeps working.
+    const staticInput = document.getElementById('paint-bucket-sensitivity');
+    if (!staticInput || typeof UI.Slider !== 'function') return;
+    const row = staticInput.closest('.paint-bucket-row');
+    const staticWrap = staticInput.closest('.sld-fx-wrap');
+    const staticChip = document.getElementById('paint-bucket-sensitivity-chip');
+    if (!row || !staticWrap) return;
+    const inst = UI.Slider(null, {
+      value: Number(state.fillParams.fillSensitivity ?? DEFAULTS.fillSensitivity),
+      min: 0.1, max: 20, step: 0.1,
+      ariaLabel: 'Sensitivity',
+      defaultValue: DEFAULTS.fillSensitivity,
+      format: (v) => `${v}`,
+      parse: (text) => Number(`${text}`.replace(/[^\d.\-]/g, '')),
+      onChange: (v) => {
         if (!Number.isFinite(v)) return;
-        const clamped = Math.min(20, Math.max(0.1, v));
-        input.value = `${clamped}`;
-        state.fillParams.fillSensitivity = clamped;
-        chip.value = `${clamped}`;
-        updateSliderFill(input);
+        state.fillParams.fillSensitivity = v;
         persistAndRedraw(state);
-      });
-    }
+      },
+    });
+    staticWrap.remove();
+    staticChip?.remove();
+    inst.el.style.gridColumn = '2 / span 2';
+    const rangeInput = inst.el.querySelector('input[type="range"]');
+    if (rangeInput) rangeInput.id = 'paint-bucket-sensitivity';
+    const chipEl = inst.el.querySelector('.slider-val');
+    if (chipEl) chipEl.id = 'paint-bucket-sensitivity-chip';
+    const wrapEl = inst.el.querySelector('.sld-fx-wrap');
+    if (wrapEl) wrapEl.classList.add('paint-bucket-slider-wrap');
+    row.appendChild(inst.el);
+    state.sensitivitySlider = inst;
   }
 
   function setHint(text) {
@@ -302,12 +299,8 @@
       state.surface?.refresh();
       const penSel = document.getElementById('paint-bucket-pen');
       if (penSel && state.fillParams.penId) penSel.value = state.fillParams.penId;
-      const sensInput = document.getElementById('paint-bucket-sensitivity');
-      const sensChip = document.getElementById('paint-bucket-sensitivity-chip');
-      if (sensInput && state.fillParams.fillSensitivity != null) {
-        sensInput.value = `${state.fillParams.fillSensitivity}`;
-        if (sensChip) sensChip.value = `${state.fillParams.fillSensitivity}`;
-        updateSliderFill(sensInput);
+      if (state.sensitivitySlider && state.fillParams.fillSensitivity != null) {
+        state.sensitivitySlider.setValue(Number(state.fillParams.fillSensitivity), { silent: true });
       }
       const SETTINGS = Vectura.SETTINGS || {};
       SETTINGS.paintBucket = { ...state.fillParams };
@@ -420,6 +413,7 @@
       params: state.fillParams,
       typeKey: 'fillMode',
       idPrefix: 'pb',
+      defaults: DEFAULTS,
       onChange: () => persistAndRedraw(state),
     });
 
