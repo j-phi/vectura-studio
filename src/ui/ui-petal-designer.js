@@ -107,6 +107,69 @@
     const unit = U.getDocumentUnitLabel ? U.getDocumentUnitLabel(units) : (units === 'imperial' ? 'in' : 'mm');
     return label.replace(/\(mm\)/g, `(${unit})`);
   };
+  // Mounts the shared UI.Slider (gradient track, editable value chip, release
+  // halo, dblclick reset) into a .petal-slider-label row, replacing the legacy
+  // native <input type="range"> + .petal-slider-value text span. The row's grid
+  // ('label value' / 'input input') only assigns direct <input>/<select>
+  // children to the input area, so the slider-row is spanned explicitly here
+  // (skin CSS is a shared surface this mixin must not depend on changing).
+  // Values flow in DISPLAY units (per lengthAdapter); callers convert back to
+  // stored units inside onChange/onCommit.
+  const mountPetalDesignerSlider = (wrap, opts = {}) => {
+    const SliderCtor = window.Vectura?.UI?.Slider;
+    if (typeof SliderCtor !== 'function') return null;
+    const {
+      value, min, max, step, precision, unit = '', label = null, ariaLabel,
+      defaultValue, disabled = false, rangeAttrs = null, onChange, onCommit,
+    } = opts;
+    const chipPrecision = Number.isFinite(precision)
+      ? precision
+      : (`${step ?? 1}`.includes('.') ? `${step}`.split('.')[1].length : 0);
+    // Single-glyph units (° / %) render inline in the chip with the legacy
+    // compact rounding ("45°", not "45.0°"). Length units ("mm"/"in") are too
+    // wide for the chip box, so they move into the row label instead — the
+    // same convention as the algorithm panel's "Line Spacing (mm)" rows.
+    const chipUnit = unit.length === 1 ? unit : '';
+    const chipRound = (v) => {
+      const factor = Math.pow(10, chipPrecision);
+      return Math.round((Number(v) || 0) * factor) / factor;
+    };
+    let labelText = label;
+    if (labelText != null) {
+      if (unit && !chipUnit && !labelText.includes(`(${unit})`)) {
+        labelText = `${labelText} (${unit})`;
+      }
+      const labelEl = document.createElement('span');
+      labelEl.textContent = labelText;
+      wrap.appendChild(labelEl);
+    }
+    const inst = SliderCtor(null, {
+      value,
+      min,
+      max,
+      step,
+      precision: chipPrecision,
+      ariaLabel: ariaLabel || labelText || 'Value',
+      defaultValue,
+      format: chipUnit ? (v) => `${chipRound(v)}${chipUnit}` : undefined,
+      parse: chipUnit ? (text) => parseFloat(text) : undefined,
+      onChange,
+      onCommit,
+    });
+    inst.el.style.gridArea = 'input';
+    wrap.appendChild(inst.el);
+    const range = inst.el.querySelector('input[type=range]');
+    if (range && rangeAttrs) {
+      Object.entries(rangeAttrs).forEach(([key, val]) => range.setAttribute(key, val));
+    }
+    if (disabled) {
+      if (range) range.disabled = true;
+      const chip = inst.el.querySelector('.slider-val');
+      if (chip) chip.disabled = true;
+    }
+    return inst;
+  };
+
   const PETAL_DESIGNER_TARGET_OPTIONS = [
     { value: 'inner', label: 'Inner' },
     { value: 'outer', label: 'Outer' },
@@ -1160,18 +1223,12 @@
         <div class="petal-designer-structure">
           <label class="petal-slider-label" data-petal-inner-count-wrap>
             <span>Inner Petal Count</span>
-            <span class="petal-slider-value" data-petal-slider-value="inner-count" data-petal-slider-precision="0"></span>
-            <input type="range" min="0" max="400" step="1" data-petal-inner-count>
           </label>
           <label class="petal-slider-label" data-petal-outer-count-wrap>
             <span>Outer Petal Count</span>
-            <span class="petal-slider-value" data-petal-slider-value="outer-count" data-petal-slider-precision="0"></span>
-            <input type="range" min="1" max="600" step="1" data-petal-outer-count>
           </label>
           <label class="petal-slider-label" data-petal-split-feather-wrap>
             <span>Split Feathering</span>
-            <span class="petal-slider-value" data-petal-slider-value="split-feather" data-petal-slider-precision="0" data-petal-slider-unit="%"></span>
-            <input type="range" min="0" max="100" step="1" data-petal-split-feather>
           </label>
         </div>
         <div class="petal-designer-transition">
@@ -1424,18 +1481,6 @@
       return normalized;
     },
 
-    setPetalDesignerSliderValue(pd, key, value) {
-      const root = pd?.root;
-      if (!root) return;
-      const el = root.querySelector(`[data-petal-slider-value="${key}"]`);
-      if (!el) return;
-      const precision = Number.parseInt(el.dataset.petalSliderPrecision || '0', 10);
-      const unit = el.dataset.petalSliderUnit || '';
-      const factor = Math.pow(10, Number.isFinite(precision) ? precision : 0);
-      const rounded = Math.round((Number(value) || 0) * factor) / factor;
-      el.textContent = `${rounded}${unit}`;
-    },
-
     renderPetalDesignerShadingStack(pd, applyChanges = null) {
       if (!pd?.root || !pd?.state) return;
       const list = pd.root.querySelector('[data-petal-shading-stack]');
@@ -1488,14 +1533,11 @@
         { key: 'gapPosY', label: 'Gap Position Y', min: 0, max: 100, step: 1, precision: 0, unit: '%' },
       ];
 
-      const formatValue = (value, precision = 0, unit = '') => {
-        const factor = Math.pow(10, precision);
-        const rounded = Math.round((Number(value) || 0) * factor) / factor;
-        return `${rounded}${unit}`;
-      };
-
       list.innerHTML = '';
       shadings.forEach((shade, idx) => {
+        // Canonical per-key defaults for the dblclick-reset affordance on the
+        // shared sliders (the factory's numeric fields are the baseline).
+        const shadeDefaults = createPetalisShading(shade.type);
         const card = document.createElement('div');
         card.className = `noise-card${shade.enabled ? '' : ' noise-disabled'}`;
         card.innerHTML = `
@@ -1553,29 +1595,33 @@
           const adapter = lengthAdapter(def);
           const stored = clamp(shade[def.key] ?? def.min, def.min, def.max);
           shade[def.key] = stored;
-          const displayVal = adapter.toDisplay(stored);
-          wrap.innerHTML = `
-            <span>${decorateLabelForUnits(def.label)}</span>
-            <span class="petal-slider-value">${formatValue(displayVal, adapter.precision, adapter.unit)}</span>
-            <input type="range" min="${adapter.min}" max="${adapter.max}" step="${adapter.step}" value="${displayVal}" data-shade-key="${def.key}">
-          `;
-          const input = wrap.querySelector('input');
-          const valueLabel = wrap.querySelector('.petal-slider-value');
-          if (input && valueLabel) {
-            input.disabled = !shade.enabled;
-            const onRange = (live = false) => {
-              const nextDisplay = Number.parseFloat(input.value);
-              if (!Number.isFinite(nextDisplay)) return;
-              const nextStored = adapter.fromDisplay(nextDisplay);
-              shade[def.key] = clamp(nextStored, def.min, def.max);
-              shadings[idx] = shade;
-              syncState();
-              valueLabel.textContent = formatValue(adapter.toDisplay(shade[def.key]), adapter.precision, adapter.unit);
-              onApply({ live });
-            };
-            input.oninput = () => onRange(true);
-            input.onchange = () => onRange(false);
-          }
+          // input (drag) → live apply; change/chip commit/dblclick reset → full
+          // apply (regenerate + persist), matching the legacy oninput/onchange pair.
+          const onRange = (nextDisplay, live) => {
+            if (!Number.isFinite(nextDisplay)) return;
+            const nextStored = adapter.fromDisplay(nextDisplay);
+            shade[def.key] = clamp(nextStored, def.min, def.max);
+            shadings[idx] = shade;
+            syncState();
+            onApply({ live });
+          };
+          const baseline = Number(shadeDefaults[def.key]);
+          mountPetalDesignerSlider(wrap, {
+            value: adapter.toDisplay(stored),
+            min: adapter.min,
+            max: adapter.max,
+            step: adapter.step,
+            precision: adapter.precision,
+            unit: adapter.unit,
+            label: decorateLabelForUnits(def.label),
+            defaultValue: Number.isFinite(baseline)
+              ? adapter.toDisplay(clamp(baseline, def.min, def.max))
+              : undefined,
+            disabled: !shade.enabled,
+            rangeAttrs: { 'data-shade-key': def.key },
+            onChange: (v) => onRange(v, true),
+            onCommit: (v) => onRange(v, false),
+          });
           return wrap;
         };
 
@@ -1679,14 +1725,12 @@
         if (!text.includes('.')) return 0;
         return text.split('.')[1].length;
       };
-      const formatValue = (value, precision = 0, unit = '') => {
-        const factor = Math.pow(10, precision);
-        const rounded = Math.round((Number(value) || 0) * factor) / factor;
-        return `${rounded}${unit}`;
-      };
       list.innerHTML = '';
       modifiers.forEach((modifier, idx) => {
         const typeDef = this.getPetalDesignerModifierType(modifier.type);
+        // Canonical per-key defaults for the dblclick-reset affordance on the
+        // shared sliders (the factory's numeric fields are the baseline).
+        const modifierDefaults = createPetalModifier(modifier.type);
         const card = document.createElement('div');
         card.className = `noise-card${modifier.enabled ? '' : ' noise-disabled'}`;
         card.innerHTML = `
@@ -1773,29 +1817,32 @@
           const precision = Number.isFinite(adapter.precision) ? adapter.precision : stepToPrecision(adapter.step);
           const stored = clamp(modifier[def.key] ?? def.min ?? 0, def.min, def.max);
           modifier[def.key] = stored;
-          const displayVal = adapter.toDisplay(stored);
-          wrap.innerHTML = `
-            <span>${decorateLabelForUnits(def.label)}</span>
-            <span class="petal-slider-value">${formatValue(displayVal, precision, adapter.unit)}</span>
-            <input type="range" min="${adapter.min}" max="${adapter.max}" step="${adapter.step}" value="${displayVal}">
-          `;
-          const input = wrap.querySelector('input');
-          const valueLabel = wrap.querySelector('.petal-slider-value');
-          if (input && valueLabel) {
-            input.disabled = !modifier.enabled;
-            const onRange = (live = false) => {
-              const nextDisplay = Number.parseFloat(input.value);
-              if (!Number.isFinite(nextDisplay)) return;
-              const nextStored = adapter.fromDisplay(nextDisplay);
-              modifier[def.key] = clamp(nextStored, def.min, def.max);
-              modifiers[idx] = modifier;
-              syncState();
-              valueLabel.textContent = formatValue(adapter.toDisplay(modifier[def.key]), precision, adapter.unit);
-              onApply({ live });
-            };
-            input.oninput = () => onRange(true);
-            input.onchange = () => onRange(false);
-          }
+          // input (drag) → live apply; change/chip commit/dblclick reset → full
+          // apply (regenerate + persist), matching the legacy oninput/onchange pair.
+          const onRange = (nextDisplay, live) => {
+            if (!Number.isFinite(nextDisplay)) return;
+            const nextStored = adapter.fromDisplay(nextDisplay);
+            modifier[def.key] = clamp(nextStored, def.min, def.max);
+            modifiers[idx] = modifier;
+            syncState();
+            onApply({ live });
+          };
+          const baseline = Number(modifierDefaults[def.key]);
+          mountPetalDesignerSlider(wrap, {
+            value: adapter.toDisplay(stored),
+            min: adapter.min,
+            max: adapter.max,
+            step: adapter.step,
+            precision,
+            unit: adapter.unit,
+            label: decorateLabelForUnits(def.label),
+            defaultValue: Number.isFinite(baseline)
+              ? adapter.toDisplay(clamp(baseline, def.min, def.max))
+              : undefined,
+            disabled: !modifier.enabled,
+            onChange: (v) => onRange(v, true),
+            onCommit: (v) => onRange(v, false),
+          });
           return wrap;
         };
         controls.appendChild(makeTypeSelect());
@@ -1874,11 +1921,6 @@
       panel.ontoggle = () => {
         pd.state.randomnessOpen = panel.open;
       };
-      const formatValue = (value, precision = 0, unit = '') => {
-        const factor = Math.pow(10, precision);
-        const rounded = Math.round((Number(value) || 0) * factor) / factor;
-        return `${rounded}${unit}`;
-      };
       stack.innerHTML = '';
       PETALIS_DESIGNER_RANDOMNESS_DEFS.forEach((def) => {
         const wrap = document.createElement('label');
@@ -1887,26 +1929,31 @@
         const precision = Number.isFinite(adapter.precision) ? adapter.precision : (def.precision || 0);
         const stored = clamp(pd.state[def.key] ?? def.min ?? 0, def.min, def.max);
         pd.state[def.key] = stored;
-        const displayVal = adapter.toDisplay(stored);
-        wrap.innerHTML = `
-          <span>${decorateLabelForUnits(def.label)}</span>
-          <span class="petal-slider-value">${formatValue(displayVal, precision, adapter.unit)}</span>
-          <input type="range" min="${adapter.min}" max="${adapter.max}" step="${adapter.step}" value="${displayVal}">
-        `;
-        const input = wrap.querySelector('input');
-        const valueLabel = wrap.querySelector('.petal-slider-value');
-        if (input && valueLabel) {
-          const onRange = (live = false) => {
-            const nextDisplay = Number.parseFloat(input.value);
-            if (!Number.isFinite(nextDisplay)) return;
-            const nextStored = adapter.fromDisplay(nextDisplay);
-            pd.state[def.key] = clamp(nextStored, def.min, def.max);
-            valueLabel.textContent = formatValue(adapter.toDisplay(pd.state[def.key]), precision, adapter.unit);
-            onApply({ live });
-          };
-          input.oninput = () => onRange(true);
-          input.onchange = () => onRange(false);
-        }
+        // input (drag) → live apply; change/chip commit/dblclick reset → full
+        // apply (regenerate + persist), matching the legacy oninput/onchange pair.
+        const onRange = (nextDisplay, live) => {
+          if (!Number.isFinite(nextDisplay)) return;
+          const nextStored = adapter.fromDisplay(nextDisplay);
+          pd.state[def.key] = clamp(nextStored, def.min, def.max);
+          onApply({ live });
+        };
+        // Canonical default = the algorithm's factory default for the same key.
+        // Seed has no meaningful default, so it gets no dblclick reset.
+        const algoDefault = Number(ALGO_DEFAULTS?.petalisDesigner?.[def.key]);
+        mountPetalDesignerSlider(wrap, {
+          value: adapter.toDisplay(stored),
+          min: adapter.min,
+          max: adapter.max,
+          step: adapter.step,
+          precision,
+          unit: adapter.unit,
+          label: decorateLabelForUnits(def.label),
+          defaultValue: Number.isFinite(algoDefault)
+            ? adapter.toDisplay(clamp(algoDefault, def.min, def.max))
+            : undefined,
+          onChange: (v) => onRange(v, true),
+          onCommit: (v) => onRange(v, false),
+        });
         stack.appendChild(wrap);
       });
     },
@@ -2014,31 +2061,24 @@
         if (ringParamsContainer) {
           const stateKey = `${side}RingParams`;
           if (!ringParamsContainer.children.length) {
+            // Live slider instances are pinned onto the container so the sync
+            // branch below can repaint chip + gradient fill via setValue.
+            ringParamsContainer.__sliders = {};
             PETAL_DESIGNER_RING_PARAM_DEFS.forEach((def) => {
               const adpt = lengthAdapter(def);
               const storedVal = pd.state[stateKey]?.[def.key];
               const displayVal = adpt.toDisplay(storedVal ?? PETAL_RING_PARAM_DEFAULTS[def.key] ?? def.min);
-              const unitSuffix = adpt.unit || '';
               const row = document.createElement('label');
               row.className = 'petal-slider-label petal-ring-param-row';
-              row.innerHTML = `
-                <span>${decorateLabelForUnits(def.label)}</span>
-                <span class="petal-slider-value" data-ring-param-value="${side}-${def.key}">${Number(displayVal).toFixed(adpt.precision ?? 1)}${unitSuffix}</span>
-                <input type="range" min="${adpt.min}" max="${adpt.max}" step="${adpt.step}" value="${displayVal}"
-                       data-ring-param="${side}-${def.key}" />
-              `;
-              const input = row.querySelector('input');
-              const valueEl = row.querySelector('[data-ring-param-value]');
-              const applyParam = (commit) => {
+              const applyParam = (raw, commit) => {
+                if (!Number.isFinite(raw)) return;
                 // Touching a side's Advanced slider makes that side active so the
                 // Inner|Outer toggle follows the user's focus.
                 pd.state.activeTarget = side;
                 pd.state.target = side;
-                const raw = parseFloat(input.value);
                 const stored = adpt.fromDisplay(raw);
                 if (!pd.state[stateKey]) pd.state[stateKey] = {};
                 pd.state[stateKey][def.key] = stored;
-                if (valueEl) valueEl.textContent = Number(raw).toFixed(adpt.precision ?? 1) + unitSuffix;
                 if (pd.state.innerOuterLock) {
                   const otherSide = side === 'inner' ? 'outer' : 'inner';
                   const otherKey = `${otherSide}RingParams`;
@@ -2047,8 +2087,19 @@
                 }
                 onApply(commit ? {} : { live: true });
               };
-              input.oninput = () => applyParam(false);
-              input.onchange = () => applyParam(true);
+              ringParamsContainer.__sliders[def.key] = mountPetalDesignerSlider(row, {
+                value: displayVal,
+                min: adpt.min,
+                max: adpt.max,
+                step: adpt.step,
+                precision: Number.isFinite(adpt.precision) ? adpt.precision : 1,
+                unit: adpt.unit,
+                label: decorateLabelForUnits(def.label),
+                defaultValue: adpt.toDisplay(PETAL_RING_PARAM_DEFAULTS[def.key] ?? def.min),
+                rangeAttrs: { 'data-ring-param': `${side}-${def.key}` },
+                onChange: (v) => applyParam(v, false),
+                onCommit: (v) => applyParam(v, true),
+              });
               ringParamsContainer.appendChild(row);
             });
           } else {
@@ -2059,11 +2110,8 @@
               // override was just cleared (e.g. by selecting a new profile);
               // the early-return left stale values frozen on screen.
               const effectiveVal = storedVal ?? PETAL_RING_PARAM_DEFAULTS[def.key] ?? def.min;
-              const displayVal = adpt.toDisplay(effectiveVal);
-              const input = ringParamsContainer.querySelector(`input[data-ring-param="${side}-${def.key}"]`);
-              const valueEl = ringParamsContainer.querySelector(`[data-ring-param-value="${side}-${def.key}"]`);
-              if (input) input.value = displayVal;
-              if (valueEl) valueEl.textContent = Number(displayVal).toFixed(adpt.precision ?? 1) + (adpt.unit || '');
+              const inst = ringParamsContainer.__sliders?.[def.key];
+              if (inst) inst.setValue(adpt.toDisplay(effectiveVal), { silent: true });
             });
           }
         }
@@ -2157,9 +2205,6 @@
       this.syncInnerOuterLock(pd.state);
       const side = this.getPetalDesignerTarget(pd.state);
       const viewStyleSelect = pd.root.querySelector('select[data-petal-view-style]');
-      const innerCountInput = pd.root.querySelector('input[data-petal-inner-count]');
-      const outerCountInput = pd.root.querySelector('input[data-petal-outer-count]');
-      const splitFeatherInput = pd.root.querySelector('input[data-petal-split-feather]');
       const innerCountWrap = pd.root.querySelector('[data-petal-inner-count-wrap]');
       const outerCountWrap = pd.root.querySelector('[data-petal-outer-count-wrap]');
       const splitFeatherWrap = pd.root.querySelector('[data-petal-split-feather-wrap]');
@@ -2212,9 +2257,11 @@
       if (innerTitle) innerTitle.textContent = side === 'inner' ? 'Inner Shape (Active)' : 'Inner Shape';
       if (outerTitle) outerTitle.textContent = side === 'outer' ? 'Outer Shape (Active)' : 'Outer Shape';
       if (viewStyleSelect) viewStyleSelect.value = pd.state.viewStyle;
-      if (innerCountInput) innerCountInput.value = pd.state.innerCount;
-      if (outerCountInput) outerCountInput.value = pd.state.outerCount;
-      if (splitFeatherInput) splitFeatherInput.value = pd.state.profileTransitionFeather;
+      // Structure rows host shared UI.Sliders (mounted in bindPetalDesignerUI);
+      // silent setValue repaints track fill + value chip without re-firing apply.
+      pd.sliders?.innerCount?.setValue(pd.state.innerCount, { silent: true });
+      pd.sliders?.outerCount?.setValue(pd.state.outerCount, { silent: true });
+      pd.sliders?.splitFeather?.setValue(pd.state.profileTransitionFeather, { silent: true });
       if (innerCountWrap) innerCountWrap.classList.remove('hidden');
       if (outerCountWrap) outerCountWrap.classList.remove('hidden');
       if (splitFeatherWrap) splitFeatherWrap.classList.remove('hidden');
@@ -2227,9 +2274,6 @@
       });
       const sideToggleGroup = pd.root.querySelector('[data-petal-profile-side-toggle]');
       if (sideToggleGroup) sideToggleGroup.classList.toggle('is-locked', Boolean(pd.state.innerOuterLock));
-      this.setPetalDesignerSliderValue(pd, 'inner-count', pd.state.innerCount);
-      this.setPetalDesignerSliderValue(pd, 'outer-count', pd.state.outerCount);
-      this.setPetalDesignerSliderValue(pd, 'split-feather', pd.state.profileTransitionFeather);
       this.renderPetalDesignerProfileEditor(pd, pd.applyChanges);
     },
 
@@ -2252,9 +2296,6 @@
         });
       };
       const viewStyleSelect = pd.root.querySelector('select[data-petal-view-style]');
-      const innerCountInput = pd.root.querySelector('input[data-petal-inner-count]');
-      const outerCountInput = pd.root.querySelector('input[data-petal-outer-count]');
-      const splitFeatherInput = pd.root.querySelector('input[data-petal-split-feather]');
       const lockToggle = pd.root.querySelector('input[data-petal-inner-outer-lock]');
       if (viewStyleSelect) {
         viewStyleSelect.onchange = () => {
@@ -2263,28 +2304,58 @@
           this.renderPetalDesigner(pd);
         };
       }
-      if (innerCountInput) {
-        const onInnerCount = (live = false) => {
-          const next = Number.parseFloat(innerCountInput.value);
-          if (!Number.isFinite(next)) return;
-          pd.state.innerCount = Math.round(clamp(next, 0, 400));
+      // Structure sliders (shared UI.Slider): input (drag) → live apply;
+      // change/chip commit/dblclick reset → full apply (regenerate + persist),
+      // matching the legacy oninput/onchange pair. Instances are pinned on
+      // pd.sliders so syncPetalDesignerControls can repaint them silently.
+      pd.sliders = {};
+      const mountStructureSlider = (wrapAttr, cfg) => {
+        const wrap = pd.root.querySelector(`[${wrapAttr}]`);
+        if (!wrap) return null;
+        // Rebinding on the same root must not stack a second slider-row.
+        wrap.querySelectorAll('.slider-row').forEach((el) => el.remove());
+        const onStructure = (raw, live) => {
+          if (!Number.isFinite(raw)) return;
+          cfg.assign(raw);
           this.syncPetalDesignerControls(pd);
           applyChanges({ live });
         };
-        innerCountInput.oninput = () => onInnerCount(true);
-        innerCountInput.onchange = () => onInnerCount(false);
-      }
-      if (outerCountInput) {
-        const onOuterCount = (live = false) => {
-          const next = Number.parseFloat(outerCountInput.value);
-          if (!Number.isFinite(next)) return;
-          pd.state.outerCount = Math.round(clamp(next, 1, 600));
-          this.syncPetalDesignerControls(pd);
-          applyChanges({ live });
-        };
-        outerCountInput.oninput = () => onOuterCount(true);
-        outerCountInput.onchange = () => onOuterCount(false);
-      }
+        return mountPetalDesignerSlider(wrap, {
+          value: cfg.value,
+          min: cfg.min,
+          max: cfg.max,
+          step: 1,
+          precision: 0,
+          unit: cfg.unit || '',
+          ariaLabel: cfg.ariaLabel,
+          defaultValue: cfg.defaultValue,
+          rangeAttrs: cfg.rangeAttrs,
+          onChange: (v) => onStructure(v, true),
+          onCommit: (v) => onStructure(v, false),
+        });
+      };
+      pd.sliders.innerCount = mountStructureSlider('data-petal-inner-count-wrap', {
+        value: Math.round(clamp(pd.state.innerCount ?? pd.state.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 0, 400)),
+        min: 0,
+        max: 400,
+        ariaLabel: 'Inner Petal Count',
+        defaultValue: PETALIS_DESIGNER_DEFAULT_INNER_COUNT,
+        rangeAttrs: { 'data-petal-inner-count': '' },
+        assign: (raw) => {
+          pd.state.innerCount = Math.round(clamp(raw, 0, 400));
+        },
+      });
+      pd.sliders.outerCount = mountStructureSlider('data-petal-outer-count-wrap', {
+        value: Math.round(clamp(pd.state.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 1, 600)),
+        min: 1,
+        max: 600,
+        ariaLabel: 'Outer Petal Count',
+        defaultValue: PETALIS_DESIGNER_DEFAULT_OUTER_COUNT,
+        rangeAttrs: { 'data-petal-outer-count': '' },
+        assign: (raw) => {
+          pd.state.outerCount = Math.round(clamp(raw, 1, 600));
+        },
+      });
       if (lockToggle) {
         lockToggle.onchange = () => {
           pd.state.innerOuterLock = Boolean(lockToggle.checked);
@@ -2302,17 +2373,18 @@
           this.renderPetalDesigner(pd);
         };
       });
-      if (splitFeatherInput) {
-        const onFeather = (live = false) => {
-          const next = Number.parseFloat(splitFeatherInput.value);
-          if (!Number.isFinite(next)) return;
-          pd.state.profileTransitionFeather = clamp(next, 0, 100);
-          this.syncPetalDesignerControls(pd);
-          applyChanges({ live });
-        };
-        splitFeatherInput.oninput = () => onFeather(true);
-        splitFeatherInput.onchange = () => onFeather(false);
-      }
+      pd.sliders.splitFeather = mountStructureSlider('data-petal-split-feather-wrap', {
+        value: clamp(pd.state.profileTransitionFeather ?? 0, 0, 100),
+        min: 0,
+        max: 100,
+        unit: '%',
+        ariaLabel: 'Split Feathering',
+        defaultValue: clamp(Number(ALGO_DEFAULTS?.petalisDesigner?.profileTransitionFeather) || 0, 0, 100),
+        rangeAttrs: { 'data-petal-split-feather': '' },
+        assign: (raw) => {
+          pd.state.profileTransitionFeather = clamp(raw, 0, 100);
+        },
+      });
       this.renderPetalDesignerProfileEditor(pd, applyChanges);
       pd.root.querySelectorAll('.petal-tool-btn').forEach((btn) => {
         btn.onclick = () => setTool(btn.dataset.petalTool || 'direct');
