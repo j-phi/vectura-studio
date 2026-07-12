@@ -321,8 +321,13 @@
         // rightward and never shoves earlier glyphs left. Right/justify-right pin
         // the RIGHT edge (grows leftward). Fit-to-frame text stays CENTRED (it is
         // scaled to fill the frame, so re-centring is the intended behaviour), as
-        // does the historical centre default. Vertical anchor stays centred so a
-        // single line matches the empty-box caret's vertical midpoint.
+        // does the historical centre default. The VERTICAL anchor pins the FIRST
+        // line's metric cap box (baselineY - size .. baselineY) to the display
+        // anchor — its midpoint is exactly the empty-box caret's midpoint
+        // (text-edit-controller _emptyBoxCaretSegment), so the first keystroke
+        // lands on the caret, Enter grows strictly downward (Illustrator
+        // point-type), and — unlike the old ink-bbox midpoint — typing the first
+        // ascender/descender cannot nudge earlier glyphs vertically.
         //
         // The edge is taken from the LAYOUT CELL box (pen advance), not the ink
         // bbox: cell.x0 of the first slot is the pen origin — exactly where the
@@ -340,6 +345,14 @@
             else if (c.x1 > edge) edge = c.x1;
           }
           if (Number.isFinite(edge)) blockCx = edge;
+        }
+        // Vertical pin has NO alignment gate (there is no vertical-align param
+        // and centre-aligned absolute text suffers the same keystroke nudge);
+        // only fit-to-frame keeps ink-bbox centring.
+        if (p.fitToFrame === false && cellsForAnchor.length) {
+          let firstBase = Infinity;
+          for (const c of cellsForAnchor) if (c.baselineY < firstBase) firstBase = c.baselineY;
+          if (Number.isFinite(firstBase)) blockCy = firstBase - size / 2;
         }
       }
 
@@ -689,6 +702,24 @@
           });
           strokeItems = [];
           let clusterSeq = 0;
+          // Weld re-fit tolerances must be ABSOLUTE (glyph-scale), never relative
+          // to the welded ring's own bbox: a connected script (Dancing Script…)
+          // welds the whole word into ONE ring, so bbox-relative defaults grow
+          // with every typed letter and re-shape every EARLIER letter's fit on
+          // each keystroke. tolerance mirrors the per-glyph un-merged re-fit
+          // (google-fonts.js layout: flattenTol * 0.6) so welded and un-welded
+          // glyphs carry comparable anchor density; mergeEps/windowDist keep
+          // reduceAnchors' default FRACTIONS but anchored to the em box (a
+          // stand-in for a single glyph's diagonal) instead of the cluster
+          // diagonal. All ×scale because the union runs on display-space
+          // contours (scale === 1 for on-canvas absolute point text).
+          const emDisp = finite(laid.emSize, size / 0.7) * scale;
+          const weldFitOpts = {
+            cornerAngleDeg: 75,
+            tolerance: finite(laid.flattenTol, finite(laid.emSize, size / 0.7) * 0.004) * scale * 0.6,
+            mergeEps: emDisp * 0.0008,
+            windowDist: emDisp * 0.035,
+          };
           clusters.forEach((cluster) => {
             // gid groups the contours that must be banded/welded together when the
             // outline is thickened: every contour of one glyph (shell + counters),
@@ -700,6 +731,27 @@
             const gid = 'c' + (clusterSeq += 1);
             const rings = [];
             for (const g of cluster) for (const i of g.idxs) rings.push(contours[i]);
+            // Source-vertex identity set (quantized; ±1 grid-cell neighbours
+            // absorb the clipper's ~1e-14 float perturbation of preserved
+            // vertices). A welded-ring vertex NOT in this set was CREATED by the
+            // clipper at a ring crossing — a true tangent discontinuity where
+            // the boundary switches source curves — and must split the bezier
+            // fit (forceCorner). Without the split, a connected script's whole
+            // smoothly-joined word boundary is ONE fit run, and the recursive
+            // fit re-splits every earlier letter each time a keystroke extends
+            // the ring.
+            const JGRID = 1e7; // 1e-7 mm quantum
+            const srcKeys = new Set();
+            for (const ring of rings) {
+              for (const pt of ring) {
+                const qx = Math.round(pt.x * JGRID);
+                const qy = Math.round(pt.y * JGRID);
+                for (let ddx = -1; ddx <= 1; ddx += 1) {
+                  for (let ddy = -1; ddy <= 1; ddy += 1) srcKeys.add((qx + ddx) + ',' + (qy + ddy));
+                }
+              }
+            }
+            const isSrcVertex = (pt) => srcKeys.has(Math.round(pt.x * JGRID) + ',' + Math.round(pt.y * JGRID));
             const mp = FB.nonZeroUnionByContainment(rings);
             const welded = FB.multiPolygonToPaths ? FB.multiPolygonToPaths(mp) : [];
             if (welded.length) {
@@ -714,12 +766,16 @@
                 // between consecutive points, and the clipper packs a few extra
                 // near-duplicate vertices right at each true intersection — that
                 // irregular local density reads as several small (30-70deg) false
-                // corners in a row. A real corner here (the two glyphs' outlines
-                // actually crossing) is always a sharp, near-perpendicular turn,
-                // so a high threshold only lets those through.
+                // corners in a row. Sharp crossings clear the threshold on their
+                // own; SHALLOW crossings (script letters joining near-tangent)
+                // are caught by the forceCorner flag on clipper-created
+                // intersection vertices instead.
                 let anchors = null;
                 if (wantBezier && GU && typeof GU.reduceAnchors === 'function' && Array.isArray(r) && r.length >= 4) {
-                  anchors = GU.reduceAnchors(r.map((pt) => ({ x: pt.x, y: pt.y, in: null, out: null })), true, { cornerAngleDeg: 75 });
+                  anchors = GU.reduceAnchors(
+                    r.map((pt) => ({ x: pt.x, y: pt.y, in: null, out: null, forceCorner: !isSrcVertex(pt) })),
+                    true, weldFitOpts
+                  );
                 }
                 strokeItems.push({ pts: r, idx: -1, gid, anchors });
               }

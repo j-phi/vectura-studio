@@ -1617,12 +1617,14 @@
         x: a.x, y: a.y,
         in: a.in ? { x: a.in.x, y: a.in.y } : null,
         out: a.out ? { x: a.out.x, y: a.out.y } : null,
+        forceCorner: a.forceCorner === true,
       };
       const last = out[out.length - 1];
       if (last && _vLen(_vSub(last, na)) <= eps) {
         // Fuse the seam: keep the arriving `in`, adopt the departing `out`.
         if (na.out) last.out = na.out;
         if (!last.in && na.in) last.in = na.in;
+        if (na.forceCorner) last.forceCorner = true;
       } else {
         out.push(na);
       }
@@ -1630,6 +1632,7 @@
     if (closed && out.length > 2 && _vLen(_vSub(out[0], out[out.length - 1])) <= eps) {
       const last = out.pop();
       if (last.in) out[0].in = last.in;
+      if (last.forceCorner) out[0].forceCorner = true;
     }
     return out;
   };
@@ -1711,7 +1714,10 @@
     if (n < 3) return tagAll(merged);
 
     const tans = _reduceTangents(merged, closed, windowDist);
-    const isCorner = merged.map((_, i) => _vDot(tans[i].inT, tans[i].outT) < cornerCos);
+    // An input anchor may carry `forceCorner: true` (e.g. a boolean-union
+    // intersection vertex — a true tangent discontinuity regardless of the
+    // local chord angle); it splits the fit there unconditionally.
+    const isCorner = merged.map((a, i) => a.forceCorner === true || _vDot(tans[i].inT, tans[i].outT) < cornerCos);
     if (!closed) { isCorner[0] = true; isCorner[n - 1] = true; }
     const cornerIdx = [];
     for (let i = 0; i < n; i += 1) if (isCorner[i]) cornerIdx.push(i);

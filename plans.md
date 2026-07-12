@@ -39,6 +39,17 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — connected-script keystroke stability (Dancing Script drift).** Typing in a
+  connected-script web face no longer re-shapes earlier letters. Weld re-fit
+  (`text.js` mergeOverlaps → `GU.reduceAnchors`) now uses absolute em-derived tolerances
+  instead of cluster-bbox-relative defaults, and clipper-created intersection vertices are
+  forced corners (`forceCorner` input flag on `reduceAnchors`) so each bezier fit run stays
+  local to one glyph's boundary span. Absolute-size point text now pins its vertical anchor
+  to the first line's metric cap box (matches the empty-box caret; Enter grows downward)
+  instead of the whole-string ink midpoint. RGR: `tests/unit/text-weld-refit-stability.test.js`
+  + `tests/unit/text-point-vertical-anchor.test.js`; verified in-app with real Dancing Script
+  (zero drift of earlier-letter geometry across keystrokes). One-time visual consequence:
+  absolute-size text layers shift vertically; `text-outline-parity` baseline regenerated.
 - **Unreleased — UI-consistency migration: every parameter control on the shared component
   library.** Five parallel implement teams + two adversarial reviewers + two fix teams
   (branch `ui-delight`). All hand-rolled sliders/dials/toggles across algo-config-panel,
