@@ -470,8 +470,13 @@
     return { outer, bands };
   };
 
+  // Shared view Euler angles: rotate = yaw, tilt = pitch, roll = image-plane
+  // spin (Rotate Z). Every rotatePoint call must go through this so all render
+  // passes (faces, edges, silhouette, creases, vertex markers) agree.
+  const viewAngles = (p) => ({ yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28), roll: finite(p.roll, 0) });
+
   const projectFace = (facePts, p, bounds) => {
-    const view = { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28), roll: 0 };
+    const view = viewAngles(p);
     const rotated = facePts.map((pt) => rotatePoint(pt, view));
     const normal = faceNormal(rotated);
     const projected = rotated.map((pt) => projectPoint(pt, { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1, ...G3.resolveProjection(p) }));
@@ -486,7 +491,7 @@
   // array of { screen:{x,y}, z } so callers can read screen position + camera z.
   const projectMeshVertices = (vertices, p, bounds) =>
     vertices.map((pt) => {
-      const rotated = rotatePoint(pt, { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28) });
+      const rotated = rotatePoint(pt, viewAngles(p));
       const screen = projectPoint(rotated, { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1, ...G3.resolveProjection(p) });
       return { screen, z: rotated.z };
     });
@@ -780,12 +785,12 @@
             const b3 = vertices[edge.b];
             const visibleFaces = edge.faces.map((idx) => faceRecords.find((record) => record.index === idx)).filter(Boolean);
             const front = visibleFaces.some((record) => record.front);
-            const a = projectPoint(rotatePoint(a3, { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28) }), { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1, ...G3.resolveProjection(p) });
-            const b = projectPoint(rotatePoint(b3, { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28) }), { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1, ...G3.resolveProjection(p) });
+            const a = projectPoint(rotatePoint(a3, viewAngles(p)), { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1, ...G3.resolveProjection(p) });
+            const b = projectPoint(rotatePoint(b3, viewAngles(p)), { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1, ...G3.resolveProjection(p) });
             const meta = { edge: true, strokeDash: edgeDash };
             if (depthCueOn) {
-              const za = rotatePoint(a3, { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28) }).z;
-              const zb = rotatePoint(b3, { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28) }).z;
+              const za = rotatePoint(a3, viewAngles(p)).z;
+              const zb = rotatePoint(b3, viewAngles(p)).z;
               meta.depth = (za + zb) / 2;
             }
             pushPath(paths, [a, b], front, p, meta);
@@ -809,7 +814,7 @@
         if (p.showCreases) {
           // Per-face normals indexed by original face index (not depth-sorted).
           const faceNormals = mesh.faces.map((face) =>
-            faceNormal(face.map((idx) => rotatePoint(vertices[idx], { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28) }))));
+            faceNormal(face.map((idx) => rotatePoint(vertices[idx], viewAngles(p)))));
           G3.extractCreases(collectEdges(mesh.faces), faceNormals, finite(p.creaseAngle, 35), projectedScreen, { weightScale: finite(p.outlineWeight, 2) })
             .forEach((path) => {
               path.meta = { algorithm: 'polyhedron', ...(path.meta || {}) };

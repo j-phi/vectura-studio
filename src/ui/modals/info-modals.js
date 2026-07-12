@@ -2509,19 +2509,19 @@
     // Shared help for the View → Rotate X/Y/Z sliders on every 3D algorithm
     // (spiralizer, topoform, polyhedron, raster plane). Axis naming follows
     // the industry standard (Photoshop/After Effects/Blender): X tips, Y
-    // turns, Z spins — matching the red/green/blue rings of the on-canvas
+    // turns, Z spins — matching the amber/violet/cyan rings of the on-canvas
     // rotation gizmo.
     'view3d.rotateX': {
       title: 'Rotate X',
-      description: 'Tilts the object toward or away from you, rotating about the horizontal axis (also called pitch). Drag the red ring on the on-canvas gizmo, or drag its center pad up/down.',
+      description: 'Tilts the object toward or away from you, rotating about the horizontal axis (also called pitch). Drag the amber ring on the on-canvas gizmo, or drag its center pad up/down.',
     },
     'view3d.rotateY': {
       title: 'Rotate Y',
-      description: 'Turns the object left or right, rotating about the vertical axis (also called yaw). Drag the green ring on the on-canvas gizmo, or drag its center pad sideways.',
+      description: 'Turns the object left or right, rotating about the vertical axis (also called yaw). Drag the violet ring on the on-canvas gizmo, or drag its center pad sideways.',
     },
     'view3d.rotateZ': {
       title: 'Rotate Z',
-      description: 'Spins the object flat within the canvas, rotating about the axis pointing at you (also called roll). Drag the blue outer ring on the on-canvas gizmo.',
+      description: 'Spins the object flat within the canvas, rotating about the axis pointing at you (also called roll). Drag the cyan outer ring on the on-canvas gizmo.',
     },
     'terrain.preset': {
       title: 'Style Preset',
@@ -2545,15 +2545,15 @@
     },
     'terrain.yaw': {
       title: 'Rotate Y (Free 3D)',
-      description: 'Turns the terrain left/right about the vertical axis (yaw) — view the landscape from a different compass bearing. Green ring on the on-canvas gizmo.',
+      description: 'Turns the terrain left/right about the vertical axis (yaw) — view the landscape from a different compass bearing. Violet ring on the on-canvas gizmo.',
     },
     'terrain.pitch': {
       title: 'Rotate X (Free 3D)',
-      description: 'Tilts the terrain toward or away from the camera (pitch) — from a near top-down map to a low grazing horizon view. Red ring on the on-canvas gizmo.',
+      description: 'Tilts the terrain toward or away from the camera (pitch) — from a near top-down map to a low grazing horizon view. Amber ring on the on-canvas gizmo.',
     },
     'terrain.roll': {
       title: 'Rotate Z (Free 3D)',
-      description: 'Spins the terrain within the canvas plane (roll), banking the whole scene. Blue outer ring on the on-canvas gizmo.',
+      description: 'Spins the terrain within the canvas plane (roll), banking the whole scene. Cyan outer ring on the on-canvas gizmo.',
     },
     'terrain.topWidth': {
       title: 'Top Width (Free 3D)',

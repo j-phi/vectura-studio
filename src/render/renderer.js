@@ -59,8 +59,10 @@
     polyhedron: {
       yawParam: 'rotate',
       pitchParam: 'tilt',
+      rollParam: 'roll',
       yawDefault: -18,
       pitchDefault: 28,
+      rollDefault: 0,
       pitchMin: 0,
       pitchMax: 89,
     },
@@ -77,8 +79,10 @@
     rasterPlane: {
       yawParam: 'rotate',
       pitchParam: 'tilt',
+      rollParam: 'roll',
       yawDefault: -45,
       pitchDefault: 60,
+      rollDefault: 0,
       pitchMin: 0,
       pitchMax: 89,
     },
@@ -9594,20 +9598,17 @@
       const { center, padRadius, ringRadius, yawRadiusX, yawRadiusY, pitchRadiusX, yawMarker, pitchMarker, rollHandle } = control;
       const accent = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
       const fill = getThemeToken('--render-selection-handle-fill', '#111827');
-      const underlay = getThemeToken('--render-underlay-fill', 'rgba(15, 23, 42, 0.92)');
-      // Standard 3D-gizmo axis colors (X=red, Y=green, Z=blue) so the rings
-      // read the same as every mainstream 3D tool's rotation gizmo.
-      const axisX = getThemeToken('--render-gizmo-x', '#f87171');
-      const axisY = getThemeToken('--render-gizmo-y', '#4ade80');
-      const axisZ = getThemeToken('--render-gizmo-z', '#60a5fa');
+      // Axis palette deliberately avoids red and green: red/green rings clash
+      // with common pen colors and collapse for red-green color-blind users.
+      // X=amber, Y=violet, Z=cyan — three well-separated hues that stay
+      // distinct over both light and dark canvases. The gizmo draws no backing
+      // disc; rings sit directly over the artwork.
+      const axisX = getThemeToken('--render-gizmo-x', '#fbbf24');
+      const axisY = getThemeToken('--render-gizmo-y', '#a78bfa');
+      const axisZ = getThemeToken('--render-gizmo-z', '#22d3ee');
       this.ctx.save();
       this.ctx.lineCap = 'round';
       this.ctx.lineJoin = 'round';
-
-      this.ctx.fillStyle = underlay;
-      this.ctx.beginPath();
-      this.ctx.arc(center.x, center.y, padRadius + 4 * unit, 0, TAU);
-      this.ctx.fill();
 
       this.ctx.lineWidth = 1.1 * unit;
       this.ctx.globalAlpha = 0.78;
@@ -9661,10 +9662,6 @@
         this.ctx.stroke();
         this.ctx.setLineDash([]);
         this.ctx.globalAlpha = 1;
-        this.ctx.fillStyle = underlay;
-        this.ctx.beginPath();
-        this.ctx.arc(rollHandle.x, rollHandle.y, 5.8 * unit, 0, TAU);
-        this.ctx.fill();
         this.ctx.fillStyle = fill;
         this.ctx.beginPath();
         this.ctx.arc(rollHandle.x, rollHandle.y, 4.4 * unit, 0, TAU);

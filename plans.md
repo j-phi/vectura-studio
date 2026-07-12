@@ -44,6 +44,13 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — 3D rotation gizmo: 3 axes everywhere, no backing disc, amber/violet/cyan
+  palette.** Polyhedron + Raster-Plane gained real Rotate Z (`roll` param through the shared
+  Geometry3D view, View → Rotate Z slider, gizmo outer roll ring); the gizmo's circular
+  underlay disc is gone (rings draw directly over the artwork); axis rings recolored off
+  red/green/blue → amber X / violet Y / cyan Z across all six skins (pen-color clash +
+  red-green color-blindness). RGR coverage in `tests/unit/3d-gizmo-three-axes.test.js`;
+  verified in-app via Playwright (both themes, roll-ring drag drives `params.roll`).
 - **Unreleased — welded-script junction fit quality (hooks/teeth/S-wiggles).** Follow-up to
   the keystroke-stability fix: forced-corner run endpoints in `GU.reduceAnchors` now take a
   windowed chord over the run (clamped to run arc length) instead of the single adjacent

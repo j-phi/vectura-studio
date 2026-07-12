@@ -63,9 +63,9 @@
   --render-direct-handle-line: rgba(34, 211, 238, 0.65);
   --render-direct-handle-fill: #0f0f12;
   --render-underlay-fill: rgba(9, 9, 11, 0.92);
-  --render-gizmo-x: #f87171;
-  --render-gizmo-y: #4ade80;
-  --render-gizmo-z: #60a5fa;
+  --render-gizmo-x: #fbbf24;
+  --render-gizmo-y: #a78bfa;
+  --render-gizmo-z: #22d3ee;
   --render-underlay-stroke: rgba(9, 9, 11, 1);
 
   /* Petal / Pattern designer — zinc-toned dark workspace. */

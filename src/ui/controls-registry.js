@@ -2268,6 +2268,7 @@
     { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 1, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'tilt', label: 'Rotate X', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', infoKey: 'view3d.rotateX', livePreview: true },
     { id: 'rotate', label: 'Rotate Y', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'view3d.rotateY', livePreview: true },
+    { id: 'roll', label: 'Rotate Z', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'view3d.rotateZ', livePreview: true },
     ...buildShadingControls(SHADING_CAPS.polyhedron),
   ];
 
@@ -2401,6 +2402,7 @@
     { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 1, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'tilt', label: 'Rotate X', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', infoKey: 'view3d.rotateX', livePreview: true },
     { id: 'rotate', label: 'Rotate Y', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'view3d.rotateY', livePreview: true },
+    { id: 'roll', label: 'Rotate Z', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'view3d.rotateZ', livePreview: true },
     ...buildShadingControls(SHADING_CAPS.rasterPlane),
   ];
 

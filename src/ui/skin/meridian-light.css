@@ -55,9 +55,9 @@
   --render-direct-handle-line: rgba(14, 165, 233, 0.55);
   --render-direct-handle-fill: #ffffff;
   --render-underlay-fill: rgba(255, 255, 255, 0.95);
-  --render-gizmo-x: #dc2626;
-  --render-gizmo-y: #16a34a;
-  --render-gizmo-z: #2563eb;
+  --render-gizmo-x: #d97706;
+  --render-gizmo-y: #7c3aed;
+  --render-gizmo-z: #0891b2;
   --render-underlay-stroke: rgba(255, 255, 255, 1);
 
   --designer-grid-bg: #f4f5f7;

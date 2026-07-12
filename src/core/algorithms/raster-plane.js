@@ -481,7 +481,11 @@
     };
   };
 
-  const viewAngles = (p) => ({ yaw: finite(p.rotate, -45), pitch: finite(p.tilt, 60), roll: 0 });
+  // rotate = yaw, tilt = pitch, roll = image-plane spin (Rotate Z). Roll is
+  // applied last by rotatePoint and leaves camera z untouched, so depth
+  // ordering, back-face tests, and the floating-horizon occlusion (which
+  // measures its de-roll angle from the projected rows) all stay correct.
+  const viewAngles = (p) => ({ yaw: finite(p.rotate, -45), pitch: finite(p.tilt, 60), roll: finite(p.roll, 0) });
 
   // The base "Image" layer's Field Weight (its `amplitude`) scales the ENTIRE
   // relief amplitude. It used to contrast-stretch the [0,1] heightfield inside

@@ -7,6 +7,17 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D rotation gizmo: three axes on every 3D algorithm, no backing disc, new palette.**
+  Polyhedron and Raster-Plane gained real Rotate Z (`roll`) support — wired through the
+  shared Geometry3D view (applied after yaw/pitch, so depth ordering and occlusion are
+  unaffected), exposed as a View → Rotate Z slider, and driven by the gizmo's outer roll
+  ring, which both algorithms previously lacked. The gizmo itself no longer paints the
+  circular underlay disc behind the rings (it sat as a visual blob over the artwork in
+  both themes), and the axis rings moved off the standard red/green/blue to an
+  amber (X) / violet (Y) / cyan (Z) palette — red/green rings clashed with common pen
+  colors and collapsed for red-green color-blind users. Skin tokens
+  (`--render-gizmo-x/y/z`) updated across all six skins; help copy names the new
+  ring colors.
 - **Compass-heading controls are radial dials, not linear sliders.** Every parameter that's
   conceptually a direction/orientation rather than a magnitude now mounts `UI.AngleDial`
   instead of a `type:'range'` slider: `gridAngle` (halftone/Dotscreen "Screen Angle"),
