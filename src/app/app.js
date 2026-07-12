@@ -54,8 +54,49 @@
     return Array.from(keys);
   })();
 
+  // AUD-17: without this, any uncaught exception or rejected promise left the
+  // user staring at a silently dead UI — no message, no recovery hint. Installed
+  // once per window (guarded) since App is constructed fresh in many test files
+  // within the same jsdom window; a plain re-install would stack duplicate
+  // listeners and multiply toasts per error.
+  const GLOBAL_ERROR_TOAST_INTERVAL_MS = 10000;
+  const installGlobalErrorHandler = () => {
+    if (window.__vecturaGlobalErrorHandlerInstalled) return;
+    window.__vecturaGlobalErrorHandlerInstalled = true;
+    let lastToastAt = 0;
+    const notify = () => {
+      const now = Date.now();
+      if (now - lastToastAt < GLOBAL_ERROR_TOAST_INTERVAL_MS) return;
+      lastToastAt = now;
+      const T = window.Vectura?.UI?.overlays?.Toast;
+      if (T && typeof T.show === 'function') {
+        try {
+          T.show({
+            message: 'Something went wrong — your last action may not have applied. Save your work (Ctrl/Cmd+S) and check the console.',
+            variant: 'danger',
+            duration: 6000,
+          });
+        } catch (_) { /* noop */ }
+      }
+    };
+    window.addEventListener('error', (event) => {
+      const message = event?.message || '';
+      // Benign noise: a ResizeObserver stall isn't a broken app, and a
+      // cross-origin "Script error." with no stack carries no actionable info.
+      if (/ResizeObserver loop/i.test(message)) return;
+      if (message === 'Script error.' && !event.error) return;
+      console.error('[Vectura] Uncaught error', event.error || message);
+      notify();
+    });
+    window.addEventListener('unhandledrejection', (event) => {
+      console.error('[Vectura] Unhandled promise rejection', event.reason);
+      notify();
+    });
+  };
+
   class App {
     constructor() {
+      installGlobalErrorHandler();
       // Suppress CSS transitions during boot so pane-width and color vars can
       // be set from cookie/manifest without triggering the .pane width animation.
       // skinManager.activate() resets this with its own timer (60–320 ms);
