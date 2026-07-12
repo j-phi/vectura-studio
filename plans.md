@@ -39,6 +39,22 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — UI-consistency migration: every parameter control on the shared component
+  library.** Five parallel implement teams + two adversarial reviewers + two fix teams
+  (branch `ui-delight`). All hand-rolled sliders/dials/toggles across algo-config-panel,
+  mirror-panel (24), noise-rack, fill-control-surface, paint-bucket, multi-selection,
+  export optimization, and the Petal Designer (53) migrated to `UI.Slider`/`UI.AngleDial`/
+  `UI.SwToggle` — inline-editable chips, dblclick reset-to-default, dial keyboard + touch
+  everywhere. New `UI.overlays.Prompt`; all `window.prompt/alert/confirm` call sites
+  replaced; export/save/error toasts; seed + noise rerolls use the ⚄ dice. Foundation:
+  Slider `defaultValue`/`format`/`parse`, AngleDial keyboard/`defaultValue`. Fixed en route:
+  shortcuts leaking through open modals (new `Modal.anyOpen()` guard), invisible
+  Distribute Spacing slider, clipped dial chips, `'error'`→`'danger'` toast variants.
+  Known exclusions (deliberate): hand-rolled dual-range (shared dual mode lacks skin CSS),
+  harmonograph plotter reveal ranges, ✦ params-randomize glyph kept distinct from ⚄ seed
+  dice. Follow-up candidates: per-mirror-type slider tinting CSS hook, dual-mode skin CSS
+  + chip editing, migrating the legacy `openModal` content modals onto the focus-trapping
+  `UI.overlays.Modal`, `UI.Section` adoption for the four divergent collapse systems.
 - **Unreleased — Illustrator-style measurement readouts, center points, and multi-corner rounding.**
   Smart-guide chip redesigned to a compact gray two-line box (dark text) rounded to 0.1 mm: `dX/dY`
   delta while dragging, `X/Y` on hover/select with a pink feature label (`anchor`) pinned at the

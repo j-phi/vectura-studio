@@ -7,6 +7,52 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **Every parameter control now speaks one language: the shared component library.** The
+  hand-rolled sliders, angle dials, and switch toggles across the app's biggest surfaces —
+  the algorithm parameter panel, mirror panel (24 sliders), noise rack, fill/paint-bucket
+  surfaces, align-spacing, export optimization steps, and all 53 Petal Designer sliders —
+  were migrated onto `UI.Slider`, `UI.AngleDial`, and `UI.SwToggle`. Every slider gains an
+  **inline-editable value chip** (click, type, Enter), a **double-click reset to default**,
+  the gradient track fill + release-halo motion, and unit-aware chips (mm/%/°); every angle
+  dial gains **keyboard operation** (arrows ±1, Shift ×10, Home) and **touch support**;
+  every toggle gains Space/Enter keyboard handling with proper `aria-checked`. Foundation:
+  `UI.Slider` grew `defaultValue`/`format`/`parse` props and `UI.AngleDial` grew dial
+  keyboard + `defaultValue` so panels migrated without losing any legacy behavior (undo
+  history still pushes exactly once per drag gesture; live-preview params still regen per
+  input frame). Known intentional exclusions: the hand-rolled dual-range control (shared
+  dual mode has no skin CSS yet) and the harmonograph plotter reveal ranges.
+- **Native browser dialogs are gone; file actions now toast.** A new skinned
+  `UI.overlays.Prompt` (text-input dialog: Enter confirms, Esc cancels, focus+select on
+  open, Promise-based) replaces every `window.prompt`/`alert` in the Petal Designer export
+  and harmonograph preset gallery flows; the heavy-computation guard (flowfield density/max
+  steps) uses `UI.overlays.Dialog` instead of `window.confirm`. Saving a project, exporting
+  SVG (with path count — "Exported vectura.svg — 1,197 paths"), and failed opens/imports
+  now surface as toasts. Canceling the preset-import name prompt now aborts the import
+  instead of silently proceeding with a default name.
+- **Seed rerolls are a dice.** The global seed's text "RANDOMIZE" button and the per-noise
+  randomize button now use the same ⚄ dice affordance as the wallpaper "surprise me" button,
+  with a button-pulse on reroll. (The ✦ sparkle on "Randomize params" is intentionally
+  distinct — it mutates all parameters, not just the seed.)
+
+### Fixed
+- **Keyboard shortcuts no longer fire through open modals.** Window-level shortcuts
+  (Delete, Cmd+Z, Cmd+K…) were reaching the engine while any dialog or modal was open —
+  including the legacy settings/export/help overlay, where Delete could remove the very
+  layer a pending confirm dialog was about to write to. Shortcuts now bail while any modal
+  is open (`UI.overlays.Modal.anyOpen()` + legacy overlay check), and the heavy-computation
+  confirm re-resolves its target layer by id at confirm time.
+- **Distribute Spacing slider was invisible (0px wide).** `.align-btn { width:100% }` starved
+  the slider's flex basis in the multi-selection panel; it now renders and drags.
+- **Angle dial value chips clipped** ("180°" rendered as "18(") in the 290px left panel;
+  chip input widened to fit three digits.
+- Two toast calls used an unsupported `'error'` variant (unstyled); corrected to `'danger'`.
+
+### Changed
+- Mirror-panel sliders now fill with the skin accent color rather than the per-mirror-type
+  hue (consequence of the shared-component look; per-type tinting noted as a possible
+  follow-up CSS hook).
+- Petalis modifier/shading slider double-click now resets to the factory default for that
+  control (was: slider minimum).
 - **Illustrator-style measurement readouts, center points, and multi-corner rounding.**
   The smart-guide coordinate chip is now a compact light-gray, dark-text, two-line box (was a
   large single-line pink label): a live `dX/dY` **delta** while dragging an anchor, and `X/Y`
