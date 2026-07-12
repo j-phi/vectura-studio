@@ -519,6 +519,11 @@ describe('Vectura geometry algorithms', () => {
       sampleDetail: 40,
       rows: 22,
       amplitude: 80,
+      // This scenario measures the OCCLUSION differential only. generate()
+      // spreads ALGO_DEFAULTS, and the default Map Blur (18) now reaches
+      // lines mode — softening the 1-row ridge and narrowing the tight/loose
+      // ratio past the margin. Pin blur off so the fixture stays a hard ridge.
+      mapBlur: 0,
     };
     const ridgeTight = generate('rasterPlane', { ...ridgeCfg, depthBias: 0.3 });
     const ridgeLoose = generate('rasterPlane', { ...ridgeCfg, depthBias: 50 });
