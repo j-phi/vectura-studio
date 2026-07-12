@@ -6,6 +6,24 @@ verification pass and a second discovery sweep on 2026-07-11. This file is the
 executable punchlist. Each task is written so an agent with no prior context can pick
 it up cold.
 
+## Status — pick up here
+
+Last updated 2026-07-12 (after commit `24d93c5`). **6 of 20 tasks done.** Full specifics
+in the Done section at the bottom; commit hashes below are copy-pasteable for `git show`.
+
+- **Done:** AUD-01 (`dd074f7`), AUD-03 (`6e8ac1c`), AUD-09 (`dc14b1d`), AUD-15.3
+  (`cab94d9`), AUD-17 (`53e2365`), AUD-20 (`2229064`).
+- **Unblocked — no decision needed, pick any of these next:** AUD-02, AUD-04, AUD-05,
+  AUD-06, AUD-08, AUD-12, AUD-13, AUD-14, and AUD-15's items 1/4/5 (hooks:install
+  parity, settings.local leftovers, `window.app` alias — item 2 is decision-gated,
+  item 3 is done).
+- **Recommended next task: AUD-02** (`formatVersion` + migration shim). Per
+  Sequencing below, it's independent of every other task and is the other half of the
+  P0 data-integrity core alongside the now-done AUD-03.
+- **Blocked — do not start without Jay picking an option first:** AUD-07, AUD-10,
+  AUD-11 (untrack step already done under AUD-20; the history-rewrite proposal and
+  examples-relocation remain), AUD-15.2, AUD-16, AUD-18, AUD-19.
+
 ## Ground rules for any agent working this list
 
 - **One task per commit.** Reference the task ID (e.g. `AUD-03`) in the commit message.
@@ -721,21 +739,24 @@ dry-run zip shrinkage shown; suites green (nothing references the images, so
 
 ## Sequencing and dependencies
 
-- AUD-01 first (it re-arms the safety net every other task relies on). Guard hardening
-  (step 1) can proceed immediately; tag/stash cleanup follows Jay's triage and AUD-06.
-- AUD-02 and AUD-03 are independent of everything; do them early — they're the
-  data-integrity core.
-- AUD-17 early too: it's small and makes every other latent crash visible while the
-  rest of the list lands.
-- AUD-06 before AUD-14 (re-land lost tests before churning test helpers).
+_(See "Status — pick up here" at the top for the current done/unblocked/blocked
+snapshot; this section is the reasoning behind that ordering, kept for reference.)_
+
+- ~~AUD-01 first~~ **DONE.** It re-armed the safety net every other task relies on.
+- ~~AUD-02 and AUD-03 are independent of everything; do them early~~ — **AUD-03 DONE,
+  AUD-02 still open** and is now the last piece of the P0 data-integrity core.
+- ~~AUD-17 early too~~ **DONE.**
+- AUD-06 before AUD-14 (re-land lost tests before churning test helpers). Both open.
 - AUD-15.2 before/with AUD-19 (bump frequency is the cheap lever on cache blast
-  radius).
-- AUD-20 is unblocked and mechanical; its zip-shrink proof rides on AUD-04's dry-run.
-  Both feed AUD-11's history-filter plan.
-- Decisions needed from Jay before their tasks unblock: AUD-01 (tag deletions),
-  AUD-07 (revive vs delete screenshots), AUD-10 (delete vs adopt components),
-  AUD-15.2 (tests/ bump trigger), AUD-11 (examples destination), AUD-16 (license
-  choice), AUD-18 (multi-tab scope), AUD-19 (cache strategy).
+  radius). Both open, both decision-gated.
+- ~~AUD-20 is unblocked and mechanical~~ **DONE** (the untrack step; its zip-shrink
+  proof still rides on AUD-04's dry-run, and AUD-04 is still open). Both feed AUD-11's
+  history-filter plan.
+- ~~Decisions needed from Jay: AUD-01 (tag deletions)~~ **RESOLVED** (2026-07-12, see
+  Done section). Still outstanding: AUD-07 (revive vs delete screenshots), AUD-10
+  (delete vs adopt components), AUD-15.2 (tests/ bump trigger), AUD-11 (examples
+  destination), AUD-16 (license choice), AUD-18 (multi-tab scope), AUD-19 (cache
+  strategy).
 
 ## Done
 

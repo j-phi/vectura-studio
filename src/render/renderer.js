@@ -9595,6 +9595,11 @@
       const accent = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
       const fill = getThemeToken('--render-selection-handle-fill', '#111827');
       const underlay = getThemeToken('--render-underlay-fill', 'rgba(15, 23, 42, 0.92)');
+      // Standard 3D-gizmo axis colors (X=red, Y=green, Z=blue) so the rings
+      // read the same as every mainstream 3D tool's rotation gizmo.
+      const axisX = getThemeToken('--render-gizmo-x', '#f87171');
+      const axisY = getThemeToken('--render-gizmo-y', '#4ade80');
+      const axisZ = getThemeToken('--render-gizmo-z', '#60a5fa');
       this.ctx.save();
       this.ctx.lineCap = 'round';
       this.ctx.lineJoin = 'round';
@@ -9604,12 +9609,13 @@
       this.ctx.arc(center.x, center.y, padRadius + 4 * unit, 0, TAU);
       this.ctx.fill();
 
-      this.ctx.strokeStyle = accent;
       this.ctx.lineWidth = 1.1 * unit;
-      this.ctx.globalAlpha = 0.72;
+      this.ctx.globalAlpha = 0.78;
+      this.ctx.strokeStyle = axisY;
       this.ctx.beginPath();
       this.ctx.ellipse(center.x, center.y, yawRadiusX, yawRadiusY, 0, 0, TAU);
       this.ctx.stroke();
+      this.ctx.strokeStyle = axisX;
       this.ctx.beginPath();
       this.ctx.ellipse(center.x, center.y, pitchRadiusX, padRadius, 0, 0, TAU);
       this.ctx.stroke();
@@ -9621,7 +9627,7 @@
       this.ctx.fill();
 
       this.ctx.fillStyle = fill;
-      this.ctx.strokeStyle = accent;
+      this.ctx.strokeStyle = axisY;
       this.ctx.lineWidth = 1 * unit;
       this.ctx.beginPath();
       this.ctx.arc(yawMarker.x, yawMarker.y, 3.4 * unit, 0, TAU);
@@ -9634,6 +9640,7 @@
       this.ctx.lineTo(yawMarker.x + 7.2 * unit, yawMarker.y);
       this.ctx.stroke();
 
+      this.ctx.strokeStyle = axisX;
       this.ctx.beginPath();
       this.ctx.arc(pitchMarker.x, pitchMarker.y, 3.4 * unit, 0, TAU);
       this.ctx.fill();
@@ -9646,7 +9653,8 @@
       this.ctx.stroke();
 
       if (rollHandle) {
-        this.ctx.globalAlpha = 0.56;
+        this.ctx.strokeStyle = axisZ;
+        this.ctx.globalAlpha = 0.62;
         this.ctx.setLineDash([2.4 * unit, 2.4 * unit]);
         this.ctx.beginPath();
         this.ctx.arc(center.x, center.y, ringRadius, 0, TAU);
@@ -9658,7 +9666,6 @@
         this.ctx.arc(rollHandle.x, rollHandle.y, 5.8 * unit, 0, TAU);
         this.ctx.fill();
         this.ctx.fillStyle = fill;
-        this.ctx.strokeStyle = accent;
         this.ctx.beginPath();
         this.ctx.arc(rollHandle.x, rollHandle.y, 4.4 * unit, 0, TAU);
         this.ctx.fill();
@@ -10331,23 +10338,23 @@
 
     show3DRotationDragTooltip(layer, drag, event = {}) {
       if (!layer?.params || !drag?.spec) return;
-      const yaw = Math.round(layer.params[drag.spec.yawParam] ?? 0);
-      const pitch = Math.round(layer.params[drag.spec.pitchParam] ?? 0);
+      // Axis naming matches the panel sliders: X = pitch/tilt, Y = yaw/rotate,
+      // Z = roll (the standard Photoshop/After Effects/Blender convention).
+      const rotY = Math.round(layer.params[drag.spec.yawParam] ?? 0);
+      const rotX = Math.round(layer.params[drag.spec.pitchParam] ?? 0);
       if (drag.type === 'roll' && drag.spec.rollParam) {
-        this.showDragTooltip(`roll ${Math.round(layer.params[drag.spec.rollParam] ?? 0)}°`, event.clientX ?? 0, event.clientY ?? 0);
+        this.showDragTooltip(`Z ${Math.round(layer.params[drag.spec.rollParam] ?? 0)}°`, event.clientX ?? 0, event.clientY ?? 0);
         return;
       }
-      const yawLabel = drag.spec.yawParam === 'yaw' ? 'yaw' : 'rot';
-      const pitchLabel = drag.spec.pitchParam === 'pitch' ? 'pitch' : 'tilt';
       if (drag.type === 'yaw') {
-        this.showDragTooltip(`${yawLabel} ${yaw}°`, event.clientX ?? 0, event.clientY ?? 0);
+        this.showDragTooltip(`Y ${rotY}°`, event.clientX ?? 0, event.clientY ?? 0);
         return;
       }
       if (drag.type === 'pitch') {
-        this.showDragTooltip(`${pitchLabel} ${pitch}°`, event.clientX ?? 0, event.clientY ?? 0);
+        this.showDragTooltip(`X ${rotX}°`, event.clientX ?? 0, event.clientY ?? 0);
         return;
       }
-      this.showDragTooltip(`${yawLabel} ${yaw}°  ${pitchLabel} ${pitch}°`, event.clientX ?? 0, event.clientY ?? 0);
+      this.showDragTooltip(`X ${rotX}°  Y ${rotY}°`, event.clientX ?? 0, event.clientY ?? 0);
     }
 
     end3DRotationDrag() {

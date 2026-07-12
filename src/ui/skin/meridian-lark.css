@@ -61,6 +61,9 @@
   --render-direct-handle-line: rgba(14, 111, 224, 0.55);
   --render-direct-handle-fill: #ffffff;
   --render-underlay-fill: rgba(255, 255, 255, 0.95);
+  --render-gizmo-x: #dc2626;
+  --render-gizmo-y: #16a34a;
+  --render-gizmo-z: #2563eb;
   --render-underlay-stroke: rgba(255, 255, 255, 1);
 
   /* Designer surfaces — keep dark like meridian-dark since the designer pop-out

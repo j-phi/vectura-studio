@@ -1861,7 +1861,7 @@
           { value: 'one-point-landscape', label: 'One-point with Landscape Horizon' },
           { value: 'two-point', label: 'Two-point' },
           { value: 'isometric', label: 'Isometric' },
-          { value: 'free-3d', label: 'Free 3D (yaw/pitch/roll)' },
+          { value: 'free-3d', label: 'Free 3D (X/Y/Z rotation)' },
         ],
         infoKey: 'terrain.perspectiveMode',
       },
@@ -1941,9 +1941,13 @@
       { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }], infoKey: 'terrain.projection', showIf: (p) => p.perspectiveMode === 'free-3d' },
       { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 1, max: 2000, step: 10, infoKey: 'terrain.cameraDistance', showIf: (p) => p.perspectiveMode === 'free-3d' && p.projection === 'perspective', livePreview: true },
       { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 1, max: 1500, step: 10, infoKey: 'terrain.focalLength', showIf: (p) => p.perspectiveMode === 'free-3d' && p.projection === 'perspective', livePreview: true },
-      { id: 'yaw', label: 'Yaw', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'terrain.yaw', showIf: (p) => p.perspectiveMode === 'free-3d', livePreview: true },
-      { id: 'pitch', label: 'Pitch', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'terrain.pitch', showIf: (p) => p.perspectiveMode === 'free-3d', livePreview: true },
-      { id: 'roll', label: 'Roll', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'terrain.roll', showIf: (p) => p.perspectiveMode === 'free-3d', livePreview: true },
+      // Industry-standard axis naming (Photoshop/After Effects/Blender):
+      // Rotate X tips toward/away (pitch), Rotate Y turns left/right (yaw),
+      // Rotate Z spins in the canvas plane (roll). Param ids are unchanged so
+      // saved presets keep deserializing.
+      { id: 'pitch', label: 'Rotate X', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'terrain.pitch', showIf: (p) => p.perspectiveMode === 'free-3d', livePreview: true },
+      { id: 'yaw', label: 'Rotate Y', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'terrain.yaw', showIf: (p) => p.perspectiveMode === 'free-3d', livePreview: true },
+      { id: 'roll', label: 'Rotate Z', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'terrain.roll', showIf: (p) => p.perspectiveMode === 'free-3d', livePreview: true },
       { id: 'topWidth', label: 'Top Width', type: 'range', min: 1, max: 10, step: 0.1, displayUnit: '×', infoKey: 'terrain.topWidth', showIf: (p) => p.perspectiveMode === 'free-3d', livePreview: true },
       { type: 'section', label: 'Depth & Resolution' },
       { id: 'depthSlices', label: 'Depth Slices', type: 'range', min: 10, max: 300, step: 1, infoKey: 'terrain.depthSlices' },
@@ -2165,9 +2169,9 @@
     { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }] },
     { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 1, max: 2000, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 1, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
-    { id: 'yaw', label: 'Yaw', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
-    { id: 'pitch', label: 'Pitch', type: 'range', min: -90, max: 90, step: 1, displayUnit: '°', livePreview: true },
-    { id: 'roll', label: 'Roll', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'pitch', label: 'Rotate X', type: 'range', min: -90, max: 90, step: 1, displayUnit: '°', infoKey: 'view3d.rotateX', livePreview: true },
+    { id: 'yaw', label: 'Rotate Y', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'view3d.rotateY', livePreview: true },
+    { id: 'roll', label: 'Rotate Z', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'view3d.rotateZ', livePreview: true },
     { id: 'curveResolution', label: 'Resolution', type: 'range', min: 90, max: 1800, step: 10, livePreview: true },
     ...buildShadingControls(SHADING_CAPS.spiralizer),
   ];
@@ -2262,8 +2266,8 @@
     { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }] },
     { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 1, max: 2000, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 1, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
-    { id: 'rotate', label: 'Rotate', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
-    { id: 'tilt', label: 'Tilt', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'tilt', label: 'Rotate X', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', infoKey: 'view3d.rotateX', livePreview: true },
+    { id: 'rotate', label: 'Rotate Y', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'view3d.rotateY', livePreview: true },
     ...buildShadingControls(SHADING_CAPS.polyhedron),
   ];
 
@@ -2306,8 +2310,8 @@
     { type: 'section', label: 'Contours' },
     { id: 'lineCount', label: 'Line Count', type: 'range', min: 2, max: 80, step: 1, showIf: (p) => p.renderMode !== 'wireframe' && p.renderMode !== 'triangleMesh', livePreview: true },
     // UX7: the cutting-plane rotation wraps around a full circle, so the angle
-    // dial fits better than a linear slider. (View yaw/pitch/roll are separate
-    // controls owned elsewhere and intentionally left as ranges.)
+    // dial fits better than a linear slider. (The view Rotate X/Y/Z are
+    // separate controls owned elsewhere and intentionally left as ranges.)
     { id: 'planeRotate', label: 'Plane Rotate', type: 'angle', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
     { id: 'planeTilt', label: 'Plane Tilt', type: 'range', min: -90, max: 90, step: 1, displayUnit: '°', livePreview: true },
     {
@@ -2325,9 +2329,9 @@
     { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }] },
     { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 1, max: 2000, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 1, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
-    { id: 'yaw', label: 'Yaw', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
-    { id: 'pitch', label: 'Pitch', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
-    { id: 'roll', label: 'Roll', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'pitch', label: 'Rotate X', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'view3d.rotateX', livePreview: true },
+    { id: 'yaw', label: 'Rotate Y', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'view3d.rotateY', livePreview: true },
+    { id: 'roll', label: 'Rotate Z', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'view3d.rotateZ', livePreview: true },
     ...buildShadingControls(SHADING_CAPS.topoform, { sceneLightingMaster: true }),
   ];
 
@@ -2393,8 +2397,8 @@
     { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }] },
     { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 1, max: 2000, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 1, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
-    { id: 'rotate', label: 'Rotate', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
-    { id: 'tilt', label: 'Tilt', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'tilt', label: 'Rotate X', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', infoKey: 'view3d.rotateX', livePreview: true },
+    { id: 'rotate', label: 'Rotate Y', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'view3d.rotateY', livePreview: true },
     ...buildShadingControls(SHADING_CAPS.rasterPlane),
   ];
 

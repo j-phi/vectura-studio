@@ -2506,13 +2506,30 @@
       title: 'Set Light Source',
       description: 'Places a draggable light source marker on the canvas to preview lighting direction (in development).',
     },
+    // Shared help for the View → Rotate X/Y/Z sliders on every 3D algorithm
+    // (spiralizer, topoform, polyhedron, raster plane). Axis naming follows
+    // the industry standard (Photoshop/After Effects/Blender): X tips, Y
+    // turns, Z spins — matching the red/green/blue rings of the on-canvas
+    // rotation gizmo.
+    'view3d.rotateX': {
+      title: 'Rotate X',
+      description: 'Tilts the object toward or away from you, rotating about the horizontal axis (also called pitch). Drag the red ring on the on-canvas gizmo, or drag its center pad up/down.',
+    },
+    'view3d.rotateY': {
+      title: 'Rotate Y',
+      description: 'Turns the object left or right, rotating about the vertical axis (also called yaw). Drag the green ring on the on-canvas gizmo, or drag its center pad sideways.',
+    },
+    'view3d.rotateZ': {
+      title: 'Rotate Z',
+      description: 'Spins the object flat within the canvas, rotating about the axis pointing at you (also called roll). Drag the blue outer ring on the on-canvas gizmo.',
+    },
     'terrain.preset': {
       title: 'Style Preset',
       description: 'Loads a curated set of terrain parameters (alpine, hills, canyon, archipelago, river delta, tundra) into all groups below. Switch back to Custom to keep your tweaks.',
     },
     'terrain.perspectiveMode': {
       title: 'Perspective Mode',
-      description: 'Top-down draws scanlines without convergence. One-point projects rows toward a single vanishing point. One-point with Landscape Horizon adds an explicit horizontal line at the horizon to anchor the scene. Two-point converges to two distinct vanishing points along the horizon for an off-axis terrain look. Isometric uses parallel-oblique projection — no convergence but with a tilted depth axis. Free 3D routes the terrain through the shared 3D engine for free yaw/pitch/roll orbit plus the Shading & Lines powers (depth cue, silhouette, creases, hatching).',
+      description: 'Top-down draws scanlines without convergence. One-point projects rows toward a single vanishing point. One-point with Landscape Horizon adds an explicit horizontal line at the horizon to anchor the scene. Two-point converges to two distinct vanishing points along the horizon for an off-axis terrain look. Isometric uses parallel-oblique projection — no convergence but with a tilted depth axis. Free 3D routes the terrain through the shared 3D engine for free X/Y/Z rotation plus the Shading & Lines powers (depth cue, silhouette, creases, hatching).',
     },
     'terrain.projection': {
       title: 'Projection (Free 3D)',
@@ -2527,16 +2544,16 @@
       description: 'Perspective only: focal length of the pinhole projection. Higher values strengthen the foreshortening of distant terrain.',
     },
     'terrain.yaw': {
-      title: 'Yaw (Free 3D)',
-      description: 'Rotates the terrain about the vertical axis — turn the landscape left/right to view it from a different compass bearing.',
+      title: 'Rotate Y (Free 3D)',
+      description: 'Turns the terrain left/right about the vertical axis (yaw) — view the landscape from a different compass bearing. Green ring on the on-canvas gizmo.',
     },
     'terrain.pitch': {
-      title: 'Pitch (Free 3D)',
-      description: 'Tilts the terrain toward or away from the camera — from a near top-down map to a low grazing horizon view.',
+      title: 'Rotate X (Free 3D)',
+      description: 'Tilts the terrain toward or away from the camera (pitch) — from a near top-down map to a low grazing horizon view. Red ring on the on-canvas gizmo.',
     },
     'terrain.roll': {
-      title: 'Roll (Free 3D)',
-      description: 'Banks the terrain about the view axis, rotating the whole scene within the canvas plane.',
+      title: 'Rotate Z (Free 3D)',
+      description: 'Spins the terrain within the canvas plane (roll), banking the whole scene. Blue outer ring on the on-canvas gizmo.',
     },
     'terrain.topWidth': {
       title: 'Top Width (Free 3D)',

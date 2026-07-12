@@ -20,6 +20,8 @@ graphify-out/.graphify_old.json
 # Generated review/evidence artifacts (not source)
 /archive/
 /bars-occlusion-evidence/
+# Personal development playbook (private, never committed)
+/PLAYBOOK.md
 # Local-only design/requirements docs (kept out of the repo for now)
 /docs/canvas-masking-ux-requirements.html
 /docs/canvas-masking-ux-requirements.md
