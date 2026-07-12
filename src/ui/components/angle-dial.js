@@ -40,8 +40,41 @@
     return v;
   };
 
+  const clampNum = (v, min, max) => Math.min(max, Math.max(min, v));
+
+  // Folds `deg` into the descriptor's real [min, max] domain instead of the
+  // hardcoded [0, 360) that wrap360() always produced. Full-circle domains
+  // (max - min >= 360, e.g. the default 0..360 or an explicit -180..180) use a
+  // plain modular fold and are byte-identical to the old wrap360() behavior
+  // when min=0,max=360. Narrower (half-circle-or-less) domains, e.g. -90..90,
+  // can legitimately receive input outside [min, max] (a drag/nudge into the
+  // dial's "back half" dead zone) — fold to a candidate and also try its ±360
+  // twins, keeping whichever needs the smallest clamp adjustment into
+  // [min, max] so dead-zone input saturates to the nearest valid edge rather
+  // than jumping to the wrong extreme.
+  const wrapToDomain = (deg, min = 0, max = 360) => {
+    const span = max - min;
+    if (!Number.isFinite(span) || span <= 0) return deg;
+    if (span >= 360) {
+      return ((deg - min) % span + span) % span + min;
+    }
+    const folded = ((deg - min) % 360 + 360) % 360 + min;
+    const candidates = [folded - 360, folded, folded + 360];
+    let best = candidates[0];
+    let bestAdj = Math.abs(clampNum(candidates[0], min, max) - candidates[0]);
+    for (let i = 1; i < candidates.length; i++) {
+      const c = candidates[i];
+      const adj = Math.abs(clampNum(c, min, max) - c);
+      if (adj < bestAdj) {
+        best = c;
+        bestAdj = adj;
+      }
+    }
+    return clampNum(best, min, max);
+  };
+
   const create = (host, initialProps = {}) => {
-    let props = Object.assign({ allowOverflow: false }, initialProps);
+    let props = Object.assign({ allowOverflow: false, min: 0, max: 360 }, initialProps);
     const utils = UI.utils || {};
     const motion = UI.motion || {};
     let value = Number.isFinite(props.value) ? props.value : 0;
@@ -55,8 +88,8 @@
     svg.setAttribute('width', String(SIZE));
     svg.setAttribute('height', String(SIZE));
     svg.setAttribute('role', 'slider');
-    svg.setAttribute('aria-valuemin', '0');
-    svg.setAttribute('aria-valuemax', '360');
+    svg.setAttribute('aria-valuemin', String(props.min));
+    svg.setAttribute('aria-valuemax', String(props.max));
     svg.tabIndex = 0;
 
     const ring = document.createElementNS(NS, 'circle');
@@ -114,7 +147,8 @@
     };
 
     const render = () => {
-      const display = props.allowOverflow ? value : wrap360(value);
+      const { min, max } = props;
+      const display = props.allowOverflow ? value : wrapToDomain(value, min, max);
       const { x, y } = computePoint(display);
       needle.setAttribute('x2', String(x));
       needle.setAttribute('y2', String(y));
@@ -122,6 +156,8 @@
       handle.setAttribute('cy', String(y));
       input.value = Math.round(display).toString();
       svg.setAttribute('aria-valuenow', String(Math.round(display)));
+      svg.setAttribute('aria-valuemin', String(min));
+      svg.setAttribute('aria-valuemax', String(max));
     };
 
     const fire = (channel, v) => {
@@ -130,7 +166,7 @@
     };
 
     const setValue = (next, { silent = false } = {}) => {
-      const v = props.allowOverflow ? Number(next) : wrap360(Number(next));
+      const v = props.allowOverflow ? Number(next) : wrapToDomain(Number(next), props.min, props.max);
       if (!Number.isFinite(v)) return;
       const changed = v !== value;
       value = v;
@@ -243,7 +279,7 @@
       el,
       dialEl: svg,
       inputEl: input,
-      getValue: () => (props.allowOverflow ? value : wrap360(value)),
+      getValue: () => (props.allowOverflow ? value : wrapToDomain(value, props.min, props.max)),
       setValue,
       update(newProps) {
         const merged = Object.assign({}, props, newProps || {});

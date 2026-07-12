@@ -134,6 +134,41 @@ describe('Algo-config panel — shared component controls', () => {
     expect(layer().params.angleOffset).toBe((before + 1) % 360);
   });
 
+  // Regression coverage for the angle-dial min/max domain-corruption bug
+  // (src/ui/components/angle-dial.js): setValue() used to force-wrap every
+  // input into [0, 360) regardless of the descriptor's real domain, so a
+  // committed negative value on any non-[0,360] control (min:-90,max:90 here)
+  // got silently collapsed to `max` by the panel's clamp(deg, min, max).
+  test("gridAngle (halftone, min:-90,max:90) mounts the angle dial and round-trips a negative value", async () => {
+    await setup('halftone');
+    const ctrl = findControl('Screen Angle');
+    expect(ctrl).toBeTruthy();
+    const dial = ctrl.querySelector('svg.angle-dial');
+    expect(dial).toBeTruthy();
+    expect(dial.getAttribute('aria-valuemin')).toBe('-90');
+    expect(dial.getAttribute('aria-valuemax')).toBe('90');
+    const input = ctrl.querySelector('.angle-inp');
+    input.value = '-45';
+    input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(layer().params.gridAngle).toBe(-45);
+    expect(dial.getAttribute('aria-valuenow')).toBe('-45');
+  });
+
+  test("penAngle (spirograph, min:-180,max:180) mounts the angle dial and round-trips a negative value", async () => {
+    await setup('spirograph');
+    const ctrl = findControl('Pen Angle');
+    expect(ctrl).toBeTruthy();
+    const dial = ctrl.querySelector('svg.angle-dial');
+    expect(dial).toBeTruthy();
+    expect(dial.getAttribute('aria-valuemin')).toBe('-180');
+    expect(dial.getAttribute('aria-valuemax')).toBe('180');
+    const input = ctrl.querySelector('.angle-inp');
+    input.value = '-120';
+    input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(layer().params.penAngle).toBe(-120);
+    expect(dial.getAttribute('aria-valuenow')).toBe('-120');
+  });
+
   test('checkbox defs mount UI.SwToggle — keyboard toggles the param', async () => {
     await setup('flowfield');
     const ctrl = findControl('Curves');

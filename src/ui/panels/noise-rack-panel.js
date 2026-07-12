@@ -1705,6 +1705,8 @@
         const defaultVal = getNoiseDefault(idx, def.key);
         const dial = UI.AngleDial(control, {
           value: displayVal,
+          min,
+          max,
           ariaLabel: getDisplayLabel(def) || 'Angle',
           defaultValue: (defaultVal === null || defaultVal === undefined)
             ? undefined
