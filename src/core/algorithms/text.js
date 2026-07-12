@@ -714,8 +714,14 @@
           // diagonal. All ×scale because the union runs on display-space
           // contours (scale === 1 for on-canvas absolute point text).
           const emDisp = finite(laid.emSize, size / 0.7) * scale;
+          // cornerAngleDeg 40 (not the historical 75): true glyph-junction
+          // corners are handled by the forceCorner flag below and the clipper's
+          // irregular vertex density is absorbed by the WINDOWED tangents, so
+          // the angle threshold's only remaining job is catching real elbows in
+          // the source outline (the 's' bowl-to-exit turn is ~45° windowed) —
+          // miss those and the fit S-wiggles ~0.5mm trying to smooth through.
           const weldFitOpts = {
-            cornerAngleDeg: 75,
+            cornerAngleDeg: 40,
             tolerance: finite(laid.flattenTol, finite(laid.emSize, size / 0.7) * 0.004) * scale * 0.6,
             mergeEps: emDisp * 0.0008,
             windowDist: emDisp * 0.035,
@@ -760,16 +766,13 @@
                 // anchor map — re-trace the welded boundary into a fresh bezier
                 // fit (same GU.reduceAnchors used for un-merged glyphs) so a
                 // connected script run stays smooth instead of faceting at
-                // every point the boolean lib emitted. cornerAngleDeg is raised
-                // well above the font-anchor default (30): a clipped ring has no
-                // handles, so corner detection falls back to raw chord angles
-                // between consecutive points, and the clipper packs a few extra
-                // near-duplicate vertices right at each true intersection — that
-                // irregular local density reads as several small (30-70deg) false
-                // corners in a row. Sharp crossings clear the threshold on their
-                // own; SHALLOW crossings (script letters joining near-tangent)
-                // are caught by the forceCorner flag on clipper-created
-                // intersection vertices instead.
+                // every point the boolean lib emitted. Glyph crossings — sharp
+                // or near-tangent — are corners via the forceCorner flag on
+                // clipper-created intersection vertices; the clipper's
+                // irregular near-duplicate vertex density at those crossings is
+                // absorbed by reduceAnchors' windowed tangents, so the angle
+                // threshold (weldFitOpts.cornerAngleDeg) only needs to catch
+                // real elbows in the source outline.
                 let anchors = null;
                 if (wantBezier && GU && typeof GU.reduceAnchors === 'function' && Array.isArray(r) && r.length >= 4) {
                   anchors = GU.reduceAnchors(

@@ -1735,6 +1735,27 @@
       outA.push({ x: a.x, y: a.y, in: a.in || null, out: a.out || null, corner: isC });
     };
 
+    // Endpoint tangent for a fit run. At a FORCED corner (a boolean-union
+    // intersection vertex) the boundary arrives via a tiny clipper noise
+    // chord whose direction is arbitrary — the single adjacent chord is
+    // unusable, and a mis-aimed end tangent makes the fitted cubic hook off
+    // the boundary between the sparse error samples (visible loops/teeth at
+    // connected-script letter joins). Use a windowed chord over the run
+    // itself instead, clamped to half the run's arc length so short junction
+    // wedge runs get a chord-scale window.
+    const runEndTangent = (poly, atStart, endAnchor) => {
+      const mN = poly.length;
+      const chordT = atStart ? _vNorm(_vSub(poly[1], poly[0])) : _vNorm(_vSub(poly[mN - 2], poly[mN - 1]));
+      if (!endAnchor || endAnchor.forceCorner !== true) return chordT;
+      let arc = 0;
+      for (let i = 0; i < mN - 1; i += 1) arc += _vLen(_vSub(poly[i + 1], poly[i]));
+      const w = Math.min(windowDist, arc / 2);
+      const t = _windowedTangent(poly, atStart ? 0 : mN - 1, atStart, w, false);
+      // _windowedTangent gives the direction of travel; _fitCubic's end
+      // tangent points back INTO the run.
+      return atStart ? t : _vScale(t, -1);
+    };
+
     const emitRun = (run) => {
       const poly = _flattenAnchorRun(run, flTol);
       const startIsC = cornerPos.some((c) => _vLen(_vSub(c, run[0])) <= Math.max(eps, tol));
@@ -1747,7 +1768,7 @@
       const segs = [];
       const m = poly.length;
       _fitCubic(poly, 0, m - 1,
-        _vNorm(_vSub(poly[1], poly[0])), _vNorm(_vSub(poly[m - 2], poly[m - 1])), tol, segs, 0);
+        runEndTangent(poly, true, run[0]), runEndTangent(poly, false, run[run.length - 1]), tol, segs, 0);
       if (!segs.length) {
         pushAnchor({ x: run[0].x, y: run[0].y, in: null, out: null }, startIsC);
         pushAnchor({ x: run[run.length - 1].x, y: run[run.length - 1].y, in: null, out: null }, endIsC);
