@@ -254,15 +254,68 @@
     };
   };
 
+  // Map Blur (p.mapBlur, 0–100) smooths the RAW base height at the sampler, so
+  // every mode (lines/mesh/topography/bars) reads a softened field — hard
+  // luminance steps in the source no longer project as jagged square-wave
+  // profiles. It wraps only the base-value lookup: the tone pipeline
+  // (mapType/invert/gamma/contrast) and the noise-rack fold run AFTER the
+  // blur, once, on the blurred value. Returns `baseValue` untouched when
+  // mapBlur <= 0 so the zero setting stays byte-identical to no blur at all.
+  const createBlurredBase = (p, baseValue, { fixture, direct, noiseImage }) => {
+    const blur = finite(p.mapBlur, 0);
+    if (blur <= 0) return baseValue;
+    // Texel size of the ACTIVE source, mirroring the fall-through priority in
+    // baseValue: fixture grid → direct imageData → NOISE_IMAGES raster (which
+    // also backs the custom-controls Image-layer path) → the procedural
+    // built-in, treated as a SOURCE_RES-texel surface.
+    let resU = SOURCE_RES;
+    let resV = SOURCE_RES;
+    const flat = noiseImage?.imageData || noiseImage;
+    if (Array.isArray(fixture) && fixture.length && Array.isArray(fixture[0])) {
+      resU = fixture[0].length;
+      resV = fixture.length;
+    } else if (direct && Number.isFinite(direct.width) && Number.isFinite(direct.height)) {
+      resU = direct.width;
+      resV = direct.height;
+    } else if (flat && Number.isFinite(flat.width) && Number.isFinite(flat.height)) {
+      resU = flat.width;
+      resV = flat.height;
+    }
+    // Radius in texels of the active source: sub-texel feathering at low
+    // settings, ramping quadratically to ~9 texels at 100.
+    const t = blur / 100;
+    const radius = 0.35 + t * t * 8.65;
+    const du = radius / Math.max(1, resU);
+    const dv = radius / Math.max(1, resV);
+    // Diagonal taps sit on the same radius ring as the axis taps.
+    const dg = Math.SQRT1_2;
+    // Fixed 9-tap kernel (center ×4, axis ×2, diagonal ×1 — weights sum 16).
+    // Deterministic, locals only; taps clamp into [0,1] so edges replicate.
+    return (uu, vv) => {
+      const xl = clamp(uu - du, 0, 1);
+      const xr = clamp(uu + du, 0, 1);
+      const yt = clamp(vv - dv, 0, 1);
+      const yb = clamp(vv + dv, 0, 1);
+      const xld = clamp(uu - du * dg, 0, 1);
+      const xrd = clamp(uu + du * dg, 0, 1);
+      const ytd = clamp(vv - dv * dg, 0, 1);
+      const ybd = clamp(vv + dv * dg, 0, 1);
+      return (
+        baseValue(uu, vv) * 4
+        + (baseValue(xl, vv) + baseValue(xr, vv) + baseValue(uu, yt) + baseValue(uu, yb)) * 2
+        + baseValue(xld, ytd) + baseValue(xrd, ytd) + baseValue(xld, ybd) + baseValue(xrd, ybd)
+      ) / 16;
+    };
+  };
+
   const createSampler = (p, noise) => {
     const direct = p.imageData || p.fixtureImageData || null;
     const fixture = p.fixtureGrid || p.sampleGrid || null;
     const noiseImage = p.imageId && Vectura.NOISE_IMAGES ? Vectura.NOISE_IMAGES[p.imageId] : null;
     const baseImageLuma = createBaseImageLuma(p);
     const noiseField = createNoiseField(p, noise);
-    return (u, v) => {
-      const uu = clamp(u, 0, 1);
-      const vv = p.normalFlipY ? 1 - clamp(v, 0, 1) : clamp(v, 0, 1);
+    // Raw base height: the source fall-through, untouched by tone or noise.
+    const baseValue = (uu, vv) => {
       let value = fixtureSample(fixture, uu, vv);
       if (value === null) value = imageDataSample(direct, uu, vv);
       // When the Image base layer has custom controls, its NoiseRack-resolved
@@ -274,6 +327,13 @@
       // the dimensions. `.imageData` unwraps any future nested wrapper shape.
       if (value === null) value = imageDataSample(noiseImage?.imageData || noiseImage, uu, vv);
       if (value === null) value = sampleBuiltIn(uu, vv);
+      return value;
+    };
+    const resolveBase = createBlurredBase(p, baseValue, { fixture, direct, noiseImage });
+    return (u, v) => {
+      const uu = clamp(u, 0, 1);
+      const vv = p.normalFlipY ? 1 - clamp(v, 0, 1) : clamp(v, 0, 1);
+      let value = resolveBase(uu, vv);
       if (p.mapType === 'normal') value = clamp(0.5 + (value - sampleBuiltIn(uu, 1 - vv)) * 1.4, 0, 1);
       if (p.invert) value = 1 - value;
       const gamma = Math.max(0.1, finite(p.gamma, 1));
@@ -346,30 +406,11 @@
       for (let x = 0; x <= cols; x++) row.push(sampler(x / cols, y / rows));
       field.push(row);
     }
-    // Map Blur (p.mapBlur) blurs the sampled height field BEFORE projection — a
-    // distinct operation from the universal output-line Smoothing (p.smoothing),
-    // which the engine now applies post-projection. Renamed off `smoothing` so
-    // the two no longer collide on one param id.
-    if (finite(p.mapBlur, 0) <= 0) return field;
-    const passes = Math.max(1, Math.round(clamp(finite(p.mapBlur, 0) / 25, 0, 4)));
-    let current = field;
-    for (let pass = 0; pass < passes; pass++) {
-      current = current.map((row, y) => row.map((value, x) => {
-        let sum = 0;
-        let count = 0;
-        for (let yy = -1; yy <= 1; yy++) {
-          for (let xx = -1; xx <= 1; xx++) {
-            const next = current[y + yy]?.[x + xx];
-            if (Number.isFinite(next)) {
-              sum += next;
-              count++;
-            }
-          }
-        }
-        return count ? sum / count : value;
-      }));
-    }
-    return current;
+    // Map Blur (p.mapBlur) is already baked into `sampler` (createBlurredBase
+    // wraps the base-value lookup pre-tone, for every mode), so the field is
+    // sampled smooth here — no second field-level blur pass, which would
+    // double-blur topography relative to lines/mesh/bars.
+    return field;
   };
 
   // Mean camera-space z over a set of surface samples (or raw projected points),

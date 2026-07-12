@@ -2366,7 +2366,9 @@
     { id: 'artworkSize', label: 'Artwork Size', type: 'range', min: 30, max: 260, step: 1, displayUnit: 'mm', livePreview: true },
     { id: 'amplitude', label: 'Amplitude', type: 'range', min: 0, max: 160, step: 0.5, displayUnit: 'mm', livePreview: true },
     { id: 'sampleDetail', label: 'Sample Detail', type: 'range', min: 12, max: 220, step: 1, livePreview: true },
-    { id: 'mapBlur', label: 'Map Blur', type: 'range', min: 0, max: 100, step: 1, showIf: (p) => p.mode === 'topography', livePreview: true },
+    // Map Blur smooths the sampled height source pre-tone for EVERY mode
+    // (lines/mesh/topography/bars), so it is no longer gated to topography.
+    { id: 'mapBlur', label: 'Map Blur', type: 'range', min: 0, max: 100, step: 1, livePreview: true },
     { id: 'invert', label: 'Invert', type: 'checkbox' },
     { id: 'gamma', label: 'Gamma', type: 'range', min: 0.2, max: 3, step: 0.05, livePreview: true },
     { id: 'contrast', label: 'Contrast', type: 'range', min: -50, max: 100, step: 1, livePreview: true },
