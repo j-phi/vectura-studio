@@ -49,6 +49,20 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   `tests/unit/raster-plane-plane-width.test.js`.
 
 ### Fixed
+- **Typing in a connected-script web font no longer re-shapes earlier letters.** With
+  Dancing Script (and any face whose letters touch), every keystroke visibly re-smoothed,
+  re-faceted, or nudged the letters already typed. Two whole-string dependencies fixed:
+  (1) the `mergeOverlaps` weld re-fit called `reduceAnchors` with tolerances relative to
+  the welded ring's own bbox — a connected script welds the whole word into one ring, so
+  each letter grew the tolerances and re-fit every earlier letter; the weld now passes
+  absolute em-derived tolerances and marks the clipper's intersection vertices as forced
+  corners (true tangent discontinuities), keeping each bezier fit run local to one glyph's
+  boundary span. (2) Absolute-size point text vertically centred on the whole-string INK
+  bbox, so the first ascender/descender typed nudged everything; the vertical anchor is now
+  pinned to the first line's metric cap box — its midpoint is exactly the empty-box caret,
+  so the first keystroke lands on the caret and Enter grows strictly downward (Illustrator
+  point-type). One-time consequence: existing absolute-size text layers re-render with a
+  small vertical shift, and welded webfont text gets a one-time outline re-fit.
 - **Keyboard shortcuts no longer fire through open modals.** Window-level shortcuts
   (Delete, Cmd+Z, Cmd+K…) were reaching the engine while any dialog or modal was open —
   including the legacy settings/export/help overlay, where Delete could remove the very

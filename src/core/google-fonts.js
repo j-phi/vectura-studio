@@ -924,6 +924,9 @@
     // algorithm scales it to display units to size its winding-canonicalization
     // epsilon when a glyph falls back to these coarse contours (no bézier anchors).
     out.flattenTol = tolerance;
+    // mm per em (layout space) — the Type algorithm derives ABSOLUTE anchor-fit
+    // scales from it when re-tracing welded overlap clusters.
+    out.emSize = emSize;
     return out;
   };
 
