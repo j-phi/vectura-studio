@@ -334,6 +334,43 @@
     return normal.z >= -0.001;
   };
 
+  // Discontinuity-aware visibility for the HLR (See-Through OFF) pipeline only.
+  // surfaceVisible's CENTRAL-difference normal smears a height cliff into the
+  // flat vertices beside it: the crest row of a step samples across the drop
+  // (low side behind, top face ahead) and inherits the back-facing wall
+  // normal, so the back-face pass deleted the most visible edge in the scene
+  // (crest rows chewed away, columns losing their first plateau segment).
+  // Per axis we take the FLATTEST of {backward, central, forward} differences:
+  // identical to the classic gradient on smooth terrain (all three agree), but
+  // a vertex beside a cliff keeps the tangent of the face it actually lies on,
+  // while true wall/back-slope vertices (steep on both sides) stay culled.
+  // Anything this pass now keeps still has to survive the depth clip, so
+  // being permissive here can only cost a little clip work, never leak ink.
+  // The see-through pipeline keeps the classic test (its dashed hidden-line
+  // splits are pinned by baselines and must stay byte-identical).
+  const flattest = (a, b, c) => {
+    let g = a;
+    if (Math.abs(b) < Math.abs(g)) g = b;
+    if (Math.abs(c) < Math.abs(g)) g = c;
+    return g;
+  };
+
+  const surfaceVisibleHLR = (u, v, rect, p, sampler) => {
+    const d = 1 / Math.max(24, finite(p.sampleDetail, 84));
+    const h0 = sampler(u, v);
+    const hL = sampler(u - d, v);
+    const hR = sampler(u + d, v);
+    const hT = sampler(u, v - d);
+    const hB = sampler(u, v + d);
+    const amp = reliefAmp(p);
+    const sx = amp / Math.max(1e-6, rect.width * d);
+    const sz = amp / Math.max(1e-6, rect.height * d);
+    const dx = flattest((hR - hL) / 2, h0 - hL, hR - h0) * sx;
+    const dz = flattest((hB - hT) / 2, h0 - hT, hB - h0) * sz;
+    const normal = rotatePoint(normalize({ x: -dx, y: 1, z: -dz }), viewAngles(p));
+    return normal.z >= -0.001;
+  };
+
   const artworkRect = (p) => {
     const size = Math.max(4, finite(p.artworkSize, 150));
     return { left: -size / 2, top: -size / 2, width: size, height: size };
@@ -1060,7 +1097,9 @@
         row.push({
           point: s.point,
           camZ: s.rotated.z,
-          visible: surfaceVisible(u, v, rect, p, sampler),
+          visible: hlr
+            ? surfaceVisibleHLR(u, v, rect, p, sampler)
+            : surfaceVisible(u, v, rect, p, sampler),
         });
       }
       points.push(row);
@@ -1087,7 +1126,7 @@
           const v1 = (y + 1) / rows;
           const uc = (u0 + u1) / 2;
           const vc = (v0 + v1) / 2;
-          if (!surfaceVisible(uc, vc, rect, p, sampler)) continue;
+          if (!(hlr ? surfaceVisibleHLR(uc, vc, rect, p, sampler) : surfaceVisible(uc, vc, rect, p, sampler))) continue;
           const cell = [
             surfaceSample(rect.left + u0 * rect.width, rect.top + v0 * rect.height, sampler(u0, v0), p, bounds),
             surfaceSample(rect.left + u1 * rect.width, rect.top + v0 * rect.height, sampler(u1, v0), p, bounds),
@@ -1133,7 +1172,9 @@
         return {
           point: s.point,
           camZ: s.rotated.z,
-          visible: surfaceVisible(u, v, rect, p, sampler),
+          visible: hlr
+            ? surfaceVisibleHLR(u, v, rect, p, sampler)
+            : surfaceVisible(u, v, rect, p, sampler),
         };
       });
       if (hlr) {

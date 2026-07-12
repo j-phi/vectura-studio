@@ -168,6 +168,64 @@ describe('Raster-Plane — mesh/topography hidden-line removal (See-Through OFF)
     expect(leak).toBe(0);
   });
 
+  test('E: no over-occlusion — the plateau wireframe survives whole (mesh)', () => {
+    // View chosen to break the -45/60/30 lattice degeneracy AND to expose the
+    // crest defect: at -38/55 the central-difference surface normal at the
+    // crest row (v = 0.5) smears the cliff into the top-face vertex and used
+    // to misclassify the whole crest row as back-facing — the visibility pass
+    // ate a legitimately-visible line the depth clip would have kept. Nothing
+    // is in front of the plateau top in this scene, so ≥ 99.5% of its
+    // wireframe must emit ink.
+    const rot = -38;
+    const tilt = 55;
+    const amp = 26;
+    const planZ2 = (pz) => G3.rotatePoint({ x: 0, y: 0, z: pz }, { yaw: rot, pitch: tilt, roll: 0 }).z;
+    const nearHigh = planZ2(SIZE / 2) > planZ2(-SIZE / 2);
+    const hv = (vv) => (nearHigh ? vv >= 0.5 : vv <= 0.5);
+    const grid = Array.from({ length: 64 }, (_, y) =>
+      Array.from({ length: 64 }, () => (hv((y + 0.5) / 64) ? 1 : 0)));
+    const paths = gen(baseParams({ rotate: rot, tilt, amplitude: amp, fixtureGrid: grid }));
+    const pr = (u, vv, h) => {
+      const c = { x: -SIZE / 2 + u * SIZE, y: (h - 0.5) * amp, z: -SIZE / 2 + vv * SIZE };
+      return G3.projectPoint(G3.rotatePoint(c, { yaw: rot, pitch: tilt, roll: 0 }),
+        { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1 });
+    };
+    const distToSeg = (px, py, a, b) => {
+      const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy;
+      const t = L2 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / L2)) : 0;
+      return Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy));
+    };
+    const inkNear = (x, y) => paths.some((p) => {
+      if (!Array.isArray(p) || p.length < 2) return false;
+      for (let i = 0; i < p.length - 1; i++) if (distToSeg(x, y, p[i], p[i + 1]) < 0.8) return true;
+      return false;
+    });
+    // Sample the plateau's own wireframe (h=1 rows and columns of the high half).
+    const highRows = [];
+    for (let yi = 0; yi <= 24; yi++) if (hv(yi / 24)) highRows.push(yi);
+    const wires = [];
+    highRows.forEach((yi) => {
+      for (let xi = 0; xi < 24; xi++) wires.push([pr(xi / 24, yi / 24, 1), pr((xi + 1) / 24, yi / 24, 1)]);
+    });
+    for (let xi = 0; xi <= 24; xi++) {
+      for (let k = 0; k < highRows.length - 1; k++) {
+        if (highRows[k + 1] - highRows[k] !== 1) continue;
+        wires.push([pr(xi / 24, highRows[k] / 24, 1), pr(xi / 24, highRows[k + 1] / 24, 1)]);
+      }
+    }
+    let total = 0;
+    let missing = 0;
+    wires.forEach(([a, b]) => {
+      const steps = Math.max(2, Math.round(Math.hypot(b.x - a.x, b.y - a.y) / 2));
+      for (let k = 0; k <= steps; k++) {
+        const t = k / steps;
+        total++;
+        if (!inkNear(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)) missing++;
+      }
+    });
+    expect(missing / total).toBeLessThanOrEqual(0.005);
+  });
+
   test('D: default relief shows no depth-acne fragmentation (mesh)', () => {
     const paths = gen(baseParams({}));
     expect(paths.length).toBeGreaterThan(0);
