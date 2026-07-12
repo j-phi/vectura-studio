@@ -39,6 +39,22 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — compass-heading controls converted to the radial `UI.AngleDial`.** Fixed a
+  data-corruption bug in the widget first: it had no `min`/`max` concept and always
+  force-wrapped into `[0,360)`, so any non-`[0,360]` domain (e.g. `-90..90`) silently
+  clamped every negative value to `max`. Added `wrapToDomain()` (full-circle domains fold
+  modularly, byte-identical to old behavior; narrower domains saturate to the nearest edge
+  on dead-zone input) and threaded `min`/`max` through the widget + its three panel mount
+  sites. Then converted 9 `controls-registry.js` descriptors (`gridAngle`, `hatchAngle`,
+  `lineAngle`, `horizontalLineAngle`, `topographyAngle`, `barRotate`, `barkWeaveAngle`,
+  `penAngle`, `dotSpin`) plus two bespoke non-generic-renderer surfaces (the Petalis Shading
+  stack's Hatch Angle — both `algo-config-panel.js` and the inline Petal Designer in
+  `ui-petal-designer.js` — and Auto-Colorize's Angle Offset) from `type:'range'` to
+  `type:'angle'`. Full test:ci gate green; new regression coverage in
+  `tests/unit/components/angle-dial.test.js`,
+  `tests/integration/algo-config-shared-controls.test.js`,
+  `tests/integration/auto-colorize.test.js`, and
+  `tests/integration/petal-designer-shared-sliders.test.js`.
 - **Unreleased — UI-consistency migration: every parameter control on the shared component
   library.** Five parallel implement teams + two adversarial reviewers + two fix teams
   (branch `ui-delight`). All hand-rolled sliders/dials/toggles across algo-config-panel,

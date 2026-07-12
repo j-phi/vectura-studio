@@ -1522,7 +1522,7 @@
         { key: 'density', label: 'Line Density', min: 0.2, max: 3, step: 0.05, precision: 2 },
         { key: 'jitter', label: 'Line Jitter', min: 0, max: 1, step: 0.05, precision: 2 },
         { key: 'lengthJitter', label: 'Length Jitter', min: 0, max: 1, step: 0.05, precision: 2 },
-        { key: 'angle', label: 'Hatch Angle', min: -90, max: 90, step: 1, precision: 0, unit: '°' },
+        { key: 'angle', label: 'Hatch Angle', type: 'angle', min: -90, max: 90, step: 1, precision: 0, unit: '°' },
         { key: 'widthX', label: 'Width X', min: 0, max: 100, step: 1, precision: 0, unit: '%' },
         { key: 'posX', label: 'Position X', min: 0, max: 100, step: 1, precision: 0, unit: '%' },
         { key: 'gapX', label: 'Gap Width X', min: 0, max: 100, step: 1, precision: 0, unit: '%' },
@@ -1625,10 +1625,56 @@
           return wrap;
         };
 
+        // Angle-type defs (currently just 'Hatch Angle') mount the shared
+        // UI.AngleDial radial dial instead of a linear slider, matching the
+        // conversion of the same param on the non-inline Petalis Shading
+        // stack (algo-config-panel.js buildShadingAngleControl). The dial's
+        // own `.angle-ctrl` root isn't a direct <input>/<select> child, so
+        // its grid-area must be set explicitly to land in the shared
+        // 'label value' / 'input input' .petal-slider-label layout.
+        const makeAngle = (def) => {
+          const wrap = document.createElement('label');
+          wrap.className = 'petal-slider-label';
+          const AngleDialCtor = window.Vectura?.UI?.AngleDial;
+          const stored = clamp(shade[def.key] ?? def.min, def.min, def.max);
+          shade[def.key] = stored;
+          const labelText = decorateLabelForUnits(def.label);
+          if (labelText != null) {
+            const labelEl = document.createElement('span');
+            labelEl.textContent = labelText;
+            wrap.appendChild(labelEl);
+          }
+          if (typeof AngleDialCtor !== 'function') return wrap;
+          const onAngle = (deg, live) => {
+            if (!Number.isFinite(deg)) return;
+            shade[def.key] = clamp(deg, def.min, def.max);
+            shadings[idx] = shade;
+            syncState();
+            onApply({ live });
+          };
+          const baseline = Number(shadeDefaults[def.key]);
+          const dial = AngleDialCtor(wrap, {
+            value: stored,
+            min: def.min,
+            max: def.max,
+            ariaLabel: labelText || 'Angle',
+            defaultValue: Number.isFinite(baseline) ? clamp(baseline, def.min, def.max) : undefined,
+            onChange: (deg) => onAngle(deg, true),
+            onCommit: (deg) => onAngle(deg, false),
+          });
+          dial.el.style.gridArea = 'input';
+          if (!shade.enabled) {
+            dial.dialEl.style.pointerEvents = 'none';
+            dial.dialEl.tabIndex = -1;
+            if (dial.inputEl) dial.inputEl.disabled = true;
+          }
+          return wrap;
+        };
+
         controls.appendChild(makeSelect('Shading Type', 'type', PETALIS_SHADING_TYPES));
         controls.appendChild(makeSelect('Petal Shape', 'target', PETAL_DESIGNER_TARGET_OPTIONS));
         controls.appendChild(makeSelect('Line Type', 'lineType', PETALIS_LINE_TYPES));
-        rangeDefs.forEach((def) => controls.appendChild(makeRange(def)));
+        rangeDefs.forEach((def) => controls.appendChild(def.type === 'angle' ? makeAngle(def) : makeRange(def)));
         card.appendChild(controls);
 
         const upBtn = card.querySelector('[data-shade-up]');

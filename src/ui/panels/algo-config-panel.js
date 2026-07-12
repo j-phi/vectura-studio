@@ -2798,6 +2798,8 @@
           // while release/dblclick/text-entry committed: history + param + regen.
           const dial = UI.AngleDial(control, {
             value: displayVal,
+            min,
+            max,
             ariaLabel: getDisplayLabel(def),
             defaultValue: defaultVal === undefined ? undefined : toDisplayValue(def, defaultVal),
             onCommit: (deg) => {
@@ -3496,6 +3498,51 @@
           return control;
         };
 
+        const buildShadingAngleControl = (shade, def) => {
+          const control = document.createElement('div');
+          control.className = 'noise-control';
+          const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+          const value = shade[def.key] ?? def.min ?? 0;
+          if (shade[def.key] === undefined) shade[def.key] = value;
+          const { min, max, step } = getDisplayConfig(def);
+          const displayVal = clamp(toDisplayValue(def, value), min, max);
+          control.innerHTML = `
+            <div class="angle-label">
+              <div class="flex items-center gap-2">
+                <label class="control-label mb-0">${getDisplayLabel(def)}</label>
+                ${infoBtn}
+              </div>
+            </div>
+          `;
+          // dblclick-reset targets the shading TYPE's true default (same
+          // contract as buildShadingRangeControl), falling back to def.min.
+          const shadingDefaults = createPetalisShading(shade.type);
+          const resetTarget = shadingDefaults[def.key] !== undefined ? shadingDefaults[def.key] : (def.min ?? 0);
+          const dial = UI.AngleDial(control, {
+            value: displayVal,
+            min,
+            max,
+            ariaLabel: getDisplayLabel(def) || 'Angle',
+            defaultValue: toDisplayValue(def, resetTarget),
+            onCommit: (deg) => {
+              const clamped = clamp(roundToStep(deg, step), min, max);
+              if (clamped !== dial.getValue()) dial.setValue(clamped, { silent: true });
+              if (this.app.pushHistory) this.app.pushHistory();
+              shade[def.key] = fromDisplayValue(def, clamped);
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.updateFormula();
+            },
+          });
+          if (!shade.enabled) {
+            dial.el.classList.add('angle-disabled', 'opacity-60');
+            dial.dialEl.style.pointerEvents = 'none';
+            dial.dialEl.tabIndex = -1;
+            if (dial.inputEl) dial.inputEl.disabled = true;
+          }
+          return control;
+        };
+
         const buildShadingSelect = (shade, def, options) => {
           const control = document.createElement('div');
           control.className = 'noise-control';
@@ -3598,7 +3645,7 @@
           { key: 'density', label: 'Line Density', type: 'range', min: 0.2, max: 3, step: 0.05, infoKey: 'petalis.shadingDensity' },
           { key: 'jitter', label: 'Line Jitter', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.shadingJitter' },
           { key: 'lengthJitter', label: 'Length Jitter', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.shadingLengthJitter' },
-          { key: 'angle', label: 'Hatch Angle', type: 'range', min: -90, max: 90, step: 1, displayUnit: '°', infoKey: 'petalis.shadingAngle' },
+          { key: 'angle', label: 'Hatch Angle', type: 'angle', min: -90, max: 90, step: 1, displayUnit: '°', infoKey: 'petalis.shadingAngle' },
           { key: 'widthX', label: 'Width X (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.shadingWidthX' },
           { key: 'posX', label: 'Position X (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.shadingPosX' },
           { key: 'gapX', label: 'Gap Width X (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.shadingGapX' },
@@ -3665,7 +3712,8 @@
           const lineTypeDef = { key: 'lineType', label: 'Line Type', infoKey: 'petalis.shadingLineType' };
           controls.appendChild(buildShadingSelect(shade, lineTypeDef, PETALIS_LINE_TYPES));
           shadingRangeDefs.forEach((cDef) => {
-            controls.appendChild(buildShadingRangeControl(shade, cDef));
+            if (cDef.type === 'angle') controls.appendChild(buildShadingAngleControl(shade, cDef));
+            else controls.appendChild(buildShadingRangeControl(shade, cDef));
           });
           card.appendChild(controls);
           list.appendChild(card);
@@ -4053,6 +4101,8 @@
         // dblclick-reset, and text entry commit: history + param + regen.
         const dial = UI.AngleDial(div, {
           value: displayVal,
+          min,
+          max,
           ariaLabel: getDisplayLabel(def) || 'Angle',
           defaultValue: (defaultVal === null || defaultVal === undefined)
             ? undefined

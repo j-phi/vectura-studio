@@ -82,4 +82,32 @@ describe('auto-colorize panel (mixin dissolved)', () => {
     const distinct = new Set(firstPass.filter(Boolean));
     expect(distinct.size).toBeGreaterThanOrEqual(1);
   });
+
+  // Regression coverage for converting angleOffset (Spiral Sweep / Angle Slice
+  // modes) from a plain <input type="range"> to the shared UI.AngleDial. This
+  // panel's renderParams() has its own bespoke render loop (not the generic
+  // algo-config-panel renderer), so the type:'angle' dispatch had to be added
+  // by hand here — this closes the loop on that dedicated branch, including
+  // the min:-180,max:180 domain the angle-dial min/max fix exists for.
+  test("Spiral Sweep's Angle Offset renders as a UI.AngleDial and round-trips a negative value", () => {
+    const ui = window.app.ui;
+    const config = ui.getAutoColorizationConfig();
+    config.mode = 'spiral';
+    ui.initAutoColorizationPanel();
+    const paramsTarget = window.document.getElementById('auto-colorization-params');
+    expect(paramsTarget).toBeTruthy();
+    const dial = paramsTarget.querySelector('svg.angle-dial');
+    expect(dial).toBeTruthy();
+    expect(dial.getAttribute('aria-valuemin')).toBe('-180');
+    expect(dial.getAttribute('aria-valuemax')).toBe('180');
+    const input = paramsTarget.querySelector('.angle-inp');
+    input.value = '-90';
+    input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    // Before the angle-dial min/max fix, this would force-wrap -90 into
+    // [0,360) as 270, which config.params.angleOffset would then store
+    // uncorrected (this panel has no downstream clamp, so it would have
+    // stored 270 instead of -90).
+    expect(config.params.angleOffset).toBe(-90);
+    expect(dial.getAttribute('aria-valuenow')).toBe('-90');
+  });
 });

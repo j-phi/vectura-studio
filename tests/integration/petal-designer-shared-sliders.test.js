@@ -187,4 +187,53 @@ describe('Petal Designer — shared UI.Slider rows', () => {
     pd.state.shadings = [];
     app.ui.closePetalDesigner();
   });
+
+  // Regression coverage for converting the shading stack's 'Hatch Angle'
+  // rangeDef (key: 'angle') from a linear slider to the shared UI.AngleDial —
+  // matching the same param's conversion on the non-inline Petalis Shading
+  // stack (algo-config-panel.js buildShadingAngleControl). This is the
+  // Petal Designer's own bespoke render loop (renderPetalDesignerShadingStack
+  // → makeAngle), a separate construction site from that panel, so it needed
+  // its own dispatch branch and its own coverage.
+  test("shading stack's Hatch Angle mounts UI.AngleDial (not a linear slider) and round-trips a negative value", () => {
+    const { win, pd } = openDesigner();
+    pd.state.shadings = [{ id: 's-angle', enabled: true, type: 'radial', angle: 30 }];
+    app.ui.renderPetalDesignerShadingStack(app.ui.petalDesigner);
+
+    // No bare range input for 'angle' anymore.
+    expect(win.querySelector('input[data-shade-key="angle"]')).toBeNull();
+
+    const dial = win.querySelector('svg.angle-dial');
+    expect(dial).toBeTruthy();
+    expect(dial.getAttribute('aria-valuemin')).toBe('-90');
+    expect(dial.getAttribute('aria-valuemax')).toBe('90');
+    expect(dial.getAttribute('aria-valuenow')).toBe('30');
+
+    const input = win.querySelector('.angle-inp');
+    expect(input).toBeTruthy();
+    input.value = '-45';
+    input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    // Before the angle-dial min/max fix + this dispatch branch, a negative
+    // value on a [-90,90] domain either had no dial to enter it into, or
+    // (once wired to a plain AngleDial with the pre-fix wrap360) would have
+    // been force-wrapped into [0,360) and clamped to 90.
+    expect(pd.state.shadings[0].angle).toBe(-45);
+
+    pd.state.shadings = [];
+    app.ui.closePetalDesigner();
+  });
+
+  test('a disabled shading card disables its Hatch Angle dial too', () => {
+    const { win, pd } = openDesigner();
+    pd.state.shadings = [{ id: 's-angle-dis', enabled: false, type: 'radial', angle: 10 }];
+    app.ui.renderPetalDesignerShadingStack(app.ui.petalDesigner);
+
+    const dial = win.querySelector('svg.angle-dial');
+    expect(dial).toBeTruthy();
+    expect(dial.tabIndex).toBe(-1);
+    expect(win.querySelector('.angle-inp').disabled).toBe(true);
+
+    pd.state.shadings = [];
+    app.ui.closePetalDesigner();
+  });
 });

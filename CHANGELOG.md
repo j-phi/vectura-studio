@@ -7,6 +7,17 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **Compass-heading controls are radial dials, not linear sliders.** Every parameter that's
+  conceptually a direction/orientation rather than a magnitude now mounts `UI.AngleDial`
+  instead of a `type:'range'` slider: `gridAngle` (halftone/Dotscreen "Screen Angle"),
+  `hatchAngle` (shared across terrain/spiralizer/polyhedron/topoform/rasterPlane),
+  `lineAngle` (imageWeave), `horizontalLineAngle`/`topographyAngle`/`barRotate`
+  (rasterPlane per-mode), `barkWeaveAngle` (rings bark woven), `penAngle` (spirograph),
+  `dotSpin` (halftone, now consistent with its sibling `dotSpinDir`), the Petalis Shading
+  stack's "Hatch Angle" (both the panel and the inline Petal Designer surface), and
+  Auto-Colorize's "Angle Offset" (Spiral Sweep + Angle Slice modes). Required the
+  `UI.AngleDial` min/max domain fix above — every one of these controls has a non-`[0,360]`
+  domain (e.g. `-90..90`, `-180..180`) that the dial would previously have corrupted.
 - **Every parameter control now speaks one language: the shared component library.** The
   hand-rolled sliders, angle dials, and switch toggles across the app's biggest surfaces —
   the algorithm parameter panel, mirror panel (24 sliders), noise rack, fill/paint-bucket
@@ -49,6 +60,23 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   `tests/unit/raster-plane-plane-width.test.js`.
 
 ### Fixed
+- **`UI.AngleDial` corrupted every negative value on a non-`[0,360]` domain.** The widget
+  had no concept of `min`/`max` — `setValue()` always force-wrapped into `[0, 360)`, so a
+  descriptor like `min:-90,max:90` (e.g. `gridAngle`) would commit a negative drag/nudge as
+  a large positive number (e.g. -30° → 330°), which the mount sites' `clamp(deg, min, max)`
+  then silently collapsed to `max` — every negative value in the domain was unreachable.
+  The widget now accepts optional `min`/`max` (default `0`/`360`, fully backward compatible)
+  and folds input into the descriptor's real domain via a new `wrapToDomain()`: full-circle
+  domains (`max - min >= 360`) use a plain modular fold (byte-identical to the old
+  behavior); narrower domains (e.g. `-90..90`) saturate to the nearest valid edge when a
+  drag/nudge lands in the dial's "back half" dead zone, instead of jumping to the wrong
+  extreme. `aria-valuemin`/`aria-valuemax` now reflect the real domain. This was a
+  prerequisite for converting any non-`[0,360]` angle control to the dial (see Added,
+  below) — every one of them would otherwise have hit this corruption. Regression coverage
+  in `tests/unit/components/angle-dial.test.js`,
+  `tests/integration/algo-config-shared-controls.test.js`,
+  `tests/integration/auto-colorize.test.js`, and
+  `tests/integration/petal-designer-shared-sliders.test.js`.
 - **Keyboard shortcuts no longer fire through open modals.** Window-level shortcuts
   (Delete, Cmd+Z, Cmd+K…) were reaching the engine while any dialog or modal was open —
   including the legacy settings/export/help overlay, where Delete could remove the very

@@ -91,7 +91,7 @@
       value: 'spiral',
       label: 'Spiral Sweep',
       params: [
-        { id: 'angleOffset', label: 'Angle Offset (°)', type: 'range', min: -180, max: 180, step: 1 },
+        { id: 'angleOffset', label: 'Angle Offset (°)', type: 'angle', min: -180, max: 180, step: 1 },
         { id: 'spiralTurns', label: 'Spiral Turns', type: 'range', min: 0.2, max: 4, step: 0.1 },
       ],
     },
@@ -99,7 +99,7 @@
       value: 'angle',
       label: 'Angle Slice',
       params: [
-        { id: 'angleOffset', label: 'Angle Offset (°)', type: 'range', min: -180, max: 180, step: 1 },
+        { id: 'angleOffset', label: 'Angle Offset (°)', type: 'angle', min: -180, max: 180, step: 1 },
         { id: 'angleSpan', label: 'Angle Span (°)', type: 'range', min: 30, max: 360, step: 5 },
       ],
     },
@@ -290,6 +290,29 @@
             config.params[param.id] = Boolean(input.checked);
             applyIfContinuous({ commit: true });
           };
+        } else if (param.type === 'angle' && typeof UI.AngleDial === 'function') {
+          const stored = config.params[param.id] ?? param.min ?? 0;
+          wrapper.innerHTML = `
+            <div class="angle-label">
+              <div class="flex items-center gap-2">
+                <label class="control-label mb-0">${param.label}</label>
+              </div>
+            </div>
+          `;
+          UI.AngleDial(wrapper, {
+            value: stored,
+            min: param.min,
+            max: param.max,
+            ariaLabel: param.label,
+            onChange: (deg) => {
+              config.params[param.id] = deg;
+              applyIfContinuous({ commit: false });
+            },
+            onCommit: (deg) => {
+              config.params[param.id] = deg;
+              applyIfContinuous({ commit: true });
+            },
+          });
         } else {
           const adapter = lenAdapter(param);
           const stored = config.params[param.id] ?? param.min ?? 0;
