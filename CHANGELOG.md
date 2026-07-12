@@ -130,6 +130,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   `.github/workflows/test.yml`'s coverage step now retries up to 3 times before failing.
 
 ### Changed
+- **Raster-Plane: Map Blur now smooths every mode.** Map Blur previously only affected
+  Topography (a post-tone box blur on its contour field); Relief Lines, Deformed Mesh, and
+  Bars sampled the raw raster nearest-neighbour, so hard luminance steps projected as
+  jagged square-wave profiles regardless of the slider. The blur now lives at the sampler:
+  a deterministic 9-tap kernel (radius 0.35–9 texels of the active source, quadratic ramp)
+  smooths the raw base height BEFORE the tone pipeline (map type/invert/gamma/contrast) and
+  the noise-rack fold, for all four modes. Topography's duplicate field-level blur was
+  removed so it no longer double-blurs, and the Map Blur control is un-gated from
+  topography-only to all modes. Map Blur 0 remains byte-identical to no blur. Note: at the
+  default Map Blur 18 the `raster-plane-canonical` and `raster-plane-topography` SVG
+  baselines legitimately shift (lines gains blur for the first time; topography's blur
+  moved pre-tone) — baseline refresh is a merge-review decision.
 - Mirror-panel sliders now fill with the skin accent color rather than the per-mirror-type
   hue (consequence of the shared-component look; per-type tinting noted as a possible
   follow-up CSS hook).
