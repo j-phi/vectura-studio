@@ -99,7 +99,22 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm install --no-audit --no-fund --loglevel=error
-      - run: npm run test:coverage
+      - name: Run test:coverage (retry on vitest worker-RPC timeout)
+        # v8 coverage instrumentation + maxForks:4 under CI's shared runner
+        # occasionally trips vitest's internal birpc "Timeout calling
+        # onTaskUpdate" — a worker-communication timeout, not a test
+        # failure (all suites still report 100% passed when this occurs).
+        # No vitest-level config exposes that RPC timeout, so retry the
+        # whole step a couple of times; a real regression fails all 3.
+        run: |
+          for attempt in 1 2 3; do
+            if npm run test:coverage; then
+              exit 0
+            fi
+            echo "test:coverage attempt $attempt failed" >&2
+            sleep 5
+          done
+          exit 1
       - name: Upload Coverage Report
         if: always()
         uses: actions/upload-artifact@v7

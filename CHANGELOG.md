@@ -60,6 +60,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - **Angle dial value chips clipped** ("180°" rendered as "18(") in the 290px left panel;
   chip input widened to fit three digits.
 - Two toast calls used an unsupported `'error'` variant (unstyled); corrected to `'danger'`.
+- **CI `coverage` job retries on a vitest worker-RPC timeout.** `v8` coverage instrumentation
+  under CI's shared runner occasionally trips vitest's internal `birpc` "Timeout calling
+  onTaskUpdate" — a worker-communication timeout, not a test failure (every suite still
+  reports 100% passed when it occurs). No vitest config exposes that RPC timeout, so
+  `.github/workflows/test.yml`'s coverage step now retries up to 3 times before failing.
 
 ### Changed
 - Mirror-panel sliders now fill with the skin accent color rather than the per-mirror-type
