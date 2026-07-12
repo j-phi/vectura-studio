@@ -524,7 +524,11 @@ describe('Vectura geometry algorithms', () => {
     const ridgeLoose = generate('rasterPlane', { ...ridgeCfg, depthBias: 50 });
     expect(finitePaths(ridgeTight)).toBe(true);
     expect(countPoints(ridgeTight)).toBeGreaterThan(0);
-    expect(totalLen(ridgeTight)).toBeLessThan(totalLen(ridgeLoose) * 0.85);
+    // Margin recalibrated (0.85 → 0.92) when row occlusion order switched to
+    // plan-position depth: the tall ridge no longer wrongly clips the rows in
+    // FRONT of it (it used to sort as "nearest" and eat their length), so the
+    // tight/loose differential narrowed while occlusion itself still holds.
+    expect(totalLen(ridgeTight)).toBeLessThan(totalLen(ridgeLoose) * 0.92);
 
     const solidBars = generate('rasterPlane', {
       mode: 'bars',
