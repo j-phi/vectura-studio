@@ -389,6 +389,31 @@
     return count ? sum / count : null;
   };
 
+  // Mean PLAN-position camera z over a set of surface samples, LARGER = NEARER.
+  // Occlusion order between parallel plan-line rows must depend ONLY on plan
+  // position: every row occludes the full vertical extent behind it, so the
+  // content's height is irrelevant to who hides whom. meanDepth's raw camera z
+  // mixes object height (y) into z under tilt, which let a taller-but-farther
+  // row register as "nearer" — it reached the hidden-line pass out of order,
+  // so its lines were never tested against the truly nearer curtain and broke
+  // through it. rotatePoint is linear, so subtracting the height axis's camera-z
+  // contribution (object.y × rotated ŷ.z) recovers the exact plan-only depth.
+  // Returns null when no sample is usable, mirroring meanDepth's contract.
+  const meanPlanDepth = (samples, p) => {
+    const hz = rotatePoint({ x: 0, y: 1, z: 0 }, viewAngles(p)).z;
+    let sum = 0;
+    let count = 0;
+    (samples || []).forEach((s) => {
+      if (!s || !s.rotated || !s.object) return;
+      const z = s.rotated.z - s.object.y * hz;
+      if (Number.isFinite(z)) {
+        sum += z;
+        count++;
+      }
+    });
+    return count ? sum / count : null;
+  };
+
   const pathFromSurfaceSamples = (samples, meta = {}) => {
     const path = samples.map((pt) => {
       const projected = pt?.point || pt;
@@ -548,8 +573,8 @@
 
     const scr = (arr) => arr.map((s) => ({ x: s.point.x, y: s.point.y }));
     const items = slices.map((sl) => {
-      const dA = finite(meanDepth(sl.a.top), 0);
-      const dB = finite(meanDepth(sl.b.top), 0);
+      const dA = finite(meanPlanDepth(sl.a.top, p), 0);
+      const dB = finite(meanPlanDepth(sl.b.top, p), 0);
       const aNear = dA >= dB;
       const near = aNear ? sl.a : sl.b;
       const far = aNear ? sl.b : sl.a;
@@ -726,7 +751,7 @@
     const mkMeta = (s) => ({ algorithm: 'rasterPlane', straight: true, mode: 'lines', reliefPlane: planes, row: s.row });
     // The nearest segment is the block's front wall: nothing occludes it, so it draws
     // its full closed outline (top + sides + floor). Every farther floor is occluder-only.
-    const maxDepth = segments.reduce((m, s) => Math.max(m, finite(meanDepth(s.top), 0)), -Infinity);
+    const maxDepth = segments.reduce((m, s) => Math.max(m, finite(meanPlanDepth(s.top, p), 0)), -Infinity);
     // Side-face facing (planes only). The block's left (u=0) / right (u=1) faces lie
     // along the row direction, so their outward normals are ∓(plan row direction).
     // Rotate that into camera space: z > 0 faces the viewer. Back-facing side risers
@@ -770,7 +795,7 @@
       floor: (planes && s.base && s.base.length === s.top.length)
         ? s.base.map((b) => ({ x: b.point.x, y: b.point.y }))
         : null,
-      depth: finite(meanDepth(s.top), 0),
+      depth: finite(meanPlanDepth(s.top, p), 0),
       full: s.top.length === cols + 1,
     })).sort((a, b) => b.depth - a.depth);
     const rows = [];

@@ -49,6 +49,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   `tests/unit/raster-plane-plane-width.test.js`.
 
 ### Fixed
+- **Raster-Plane "Lines as Planes" hidden-line order now follows plan position.** The
+  near→far ordering of slices/walls used the raw camera-space depth of each row's TOP
+  surface, which mixes the content's height into depth under tilt: a taller-but-farther
+  row could sort as "nearer", reach the floating-horizon pass out of order, and its lines
+  were never tested against the truly nearer curtain — back rows broke through front
+  walls (worst on narrow "cardboard" slices, Plane Width < 100). A new plan-position
+  depth (`meanPlanDepth`) subtracts the height axis's camera-z contribution so occlusion
+  order between parallel rows depends only on plan position; the front-wall pick, sort
+  keys, and slab depths all follow. Depth-cue stamping (`meta.depth`) is unchanged.
 - **Keyboard shortcuts no longer fire through open modals.** Window-level shortcuts
   (Delete, Cmd+Z, Cmd+K…) were reaching the engine while any dialog or modal was open —
   including the legacy settings/export/help overlay, where Delete could remove the very
