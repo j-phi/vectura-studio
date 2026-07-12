@@ -1480,8 +1480,10 @@
       });
       this.applyRandomizationBias(layer);
     },
-    _buildNoiseRack(target, { layer, noiseDefs, noiseBase, noiseTemplates, noises, assignNoiseStack, getNoiseDefault, resetNoise, createNoise, label, containerClass, attachValueEditor: attachValueEditorOpt }) {
-      const attachValueEditor = attachValueEditorOpt || (() => {});
+    _buildNoiseRack(target, { layer, noiseDefs, noiseBase, noiseTemplates, noises, assignNoiseStack, getNoiseDefault, resetNoise, createNoise, label, containerClass }) {
+      // NOTE: the attachValueEditor option was removed with the UI.AngleDial
+      // migration — the dial's inline degree input replaced the last
+      // chip/hidden-input editor in this rack.
       const hasNoiseConditional = noiseDefs.some((d) => typeof d.showIf === 'function');
       const maybeRebuildNoiseControls = () => { if (hasNoiseConditional) this.buildControls(); };
 
@@ -1689,82 +1691,43 @@
               <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
-            <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
-              def,
-              value
-            )}</button>
-          </div>
-          <div class="angle-control">
-            <div class="angle-dial" style="--angle:${displayVal}deg;">
-              <div class="angle-indicator"></div>
-            </div>
-            <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
           </div>
         `;
-        const dial = control.querySelector('.angle-dial');
-        const valueBtn = control.querySelector('.value-chip');
-        const valueInput = control.querySelector('.value-input');
-        let lastDisplay = displayVal;
-        if (valueBtn) valueBtn.classList.toggle('opacity-60', !noise.enabled);
-        const setAngle = (nextDisplay, commit = false, live = false) => {
-          const clamped = clamp(roundToStep(nextDisplay, step), min, max);
-          lastDisplay = clamped;
-          if (dial) dial.style.setProperty('--angle', `${clamped}deg`);
-          if (valueBtn) valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, clamped));
-          if (commit || live) {
-            if (commit && this.app.pushHistory) this.app.pushHistory();
+        // UI.AngleDial (keyboard arrows + aria + inline degree input) replaces
+        // the legacy hand-rolled .angle-dial div / .value-chip / hidden
+        // .value-input trio, which was mouse-only. Both use the same 0°-up,
+        // clockwise-positive convention (the legacy pointer math was
+        // atan2 + 90 into --angle, which the component reproduces 1:1), so the
+        // display value maps straight through — no offset needed here.
+        // Commit contract preserved exactly: drag only moves the needle
+        // (component-owned, no param writes); release / keyboard / text entry /
+        // dblclick-reset commit — history push + param write + regen.
+        const defaultVal = getNoiseDefault(idx, def.key);
+        const dial = UI.AngleDial(control, {
+          value: displayVal,
+          ariaLabel: getDisplayLabel(def) || 'Angle',
+          defaultValue: (defaultVal === null || defaultVal === undefined)
+            ? undefined
+            : toDisplayValue(def, defaultVal),
+          onCommit: (deg) => {
+            const clamped = clamp(roundToStep(deg, step), min, max);
+            if (clamped !== dial.getValue()) dial.setValue(clamped, { silent: true });
+            if (this.app.pushHistory) this.app.pushHistory();
             noise[def.key] = fromDisplayValue(def, clamped);
             this.storeLayerParams(layer);
             this.app.regen();
             this.updateFormula();
-          }
-        };
-        const resetAngle = () => {
-          const defaultVal = getNoiseDefault(idx, def.key);
-          if (defaultVal === undefined) return;
-          setAngle(toDisplayValue(def, defaultVal), true);
-        };
-        if (dial) {
-          dial.classList.toggle('angle-disabled', !noise.enabled);
-          const updateFromEvent = (e) => {
-            const rect = dial.getBoundingClientRect();
-            const cx = rect.left + rect.width / 2;
-            const cy = rect.top + rect.height / 2;
-            const dx = e.clientX - cx;
-            const dy = e.clientY - cy;
-            let deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
-            if (deg < 0) deg += 360;
-            setAngle(deg, false);
-          };
-          dial.addEventListener('mousedown', (e) => {
-            if (!noise.enabled) return;
-            e.preventDefault();
-            updateFromEvent(e);
-            const move = (ev) => updateFromEvent(ev);
-            const up = () => {
-              window.removeEventListener('mousemove', move);
-              setAngle(lastDisplay, true);
-            };
-            window.addEventListener('mousemove', move);
-            window.addEventListener('mouseup', up, { once: true });
-          });
-          dial.addEventListener('dblclick', (e) => {
-            if (!noise.enabled) return;
-            e.preventDefault();
-            resetAngle();
-          });
-        }
-        attachValueEditor({
-          def,
-          valueEl: valueBtn,
-          inputEl: valueInput,
-          getValue: () => noise[def.key],
-          setValue: (displayVal, opts) => {
-            const commit = opts?.commit !== false;
-            const live = Boolean(opts?.live);
-            setAngle(displayVal, commit, live);
           },
         });
+        // Disabled state (noise card switched off): the component has no
+        // disabled prop, so gate interaction externally — same visual class the
+        // legacy dial used, plus removal from pointer/tab order.
+        if (!noise.enabled) {
+          dial.el.classList.add('angle-disabled', 'opacity-60');
+          dial.dialEl.style.pointerEvents = 'none';
+          dial.dialEl.tabIndex = -1;
+          if (dial.inputEl) dial.inputEl.disabled = true;
+        }
         return control;
       };
 
@@ -1786,35 +1749,37 @@
             </div>
             <span class="text-xs text-vectura-accent font-mono">${checked ? 'ON' : 'OFF'}</span>
           </div>
-          <label class="sw-toggle" role="switch" aria-checked="${checked ? 'true' : 'false'}">
-            <input type="checkbox" ${checked ? 'checked' : ''} />
-            <span class="sw-track"></span>
-            <span class="sw-thumb"></span>
-          </label>
         `;
-        const input = control.querySelector('input');
-        const span = control.querySelector('span');
-        if (input && span) {
-          input.disabled = !noise.enabled;
-          input.onchange = (e) => {
-            if (this.app.pushHistory) this.app.pushHistory();
-            const next = Boolean(e.target.checked);
-            noise[def.key] = next;
-            span.innerText = next ? 'ON' : 'OFF';
-            this.storeLayerParams(layer);
-            this.app.regen();
-            this.updateFormula();
-          };
-          input.addEventListener('dblclick', (e) => {
+        const span = control.querySelector('.font-mono');
+        const applyValue = (next) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          noise[def.key] = next;
+          if (span) span.textContent = next ? 'ON' : 'OFF';
+          this.storeLayerParams(layer);
+          this.app.regen();
+          this.updateFormula();
+        };
+        // UI.SwToggle brings keyboard (Space/Enter + focus ring) and
+        // aria-checked state the hand-rolled markup lacked — same migration as
+        // the algo-config checkbox defs. Disabled follows the noise card's
+        // enabled flag, exactly like the legacy raw checkbox.
+        const toggle = UI.SwToggle(control, {
+          checked,
+          disabled: !noise.enabled,
+          ariaLabel: getDisplayLabel(def) || def.key,
+          onChange: applyValue,
+        });
+        // dblclick on the pill resets to the noise default — legacy parity.
+        // (Disabled inputs dispatch no mouse events, so this stays inert when
+        // the noise card is off, matching the old behavior.)
+        const cbInput = toggle.el.querySelector('input[type="checkbox"]');
+        if (cbInput) {
+          cbInput.addEventListener('dblclick', (e) => {
             e.preventDefault();
+            if (cbInput.disabled) return;
             const next = Boolean(getNoiseDefault(idx, def.key));
-            if (this.app.pushHistory) this.app.pushHistory();
-            noise[def.key] = next;
-            input.checked = next;
-            span.innerText = next ? 'ON' : 'OFF';
-            this.storeLayerParams(layer);
-            this.app.regen();
-            this.updateFormula();
+            toggle.setChecked(next, { silent: true });
+            applyValue(next);
           });
         }
         return control;

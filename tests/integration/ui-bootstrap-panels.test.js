@@ -68,6 +68,12 @@ describe('UI bootstrap – core panels', () => {
     expect(checkbox).toBeTruthy();
     expect(checkbox.checked).toBe(true);
     expect(window.Vectura.SETTINGS.removeHiddenGeometry).toBe(true);
+
+    // Close the modal so later tests in this shared runtime see a clean shell:
+    // global shortcuts are (correctly) suppressed while #modal-overlay is open.
+    window.app.ui.closeModal();
+    await Promise.resolve();
+    expect(document.getElementById('modal-overlay')?.classList.contains('open')).toBe(false);
   });
 
   test('theme toggle updates UI theme, document background, and Pen 1 without serializing theme into project state', async () => {

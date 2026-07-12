@@ -31,6 +31,25 @@
     return DEPS;
   };
 
+  /**
+   * True while any modal overlay holds the screen:
+   *   - a Phase-1 UI.overlays.Modal (Dialog/Prompt compose it — e.g. the
+   *     confirmAbove "Heavy computation" dialog), via Modal.anyOpen(); or
+   *   - the legacy #modal-overlay card (document setup / export / help),
+   *     which toggles the 'open' class.
+   * Global shortcuts must be suppressed then: the backdrop blocks pointers
+   * but Delete/Backspace/Cmd+Z on window would still delete/undo the layer a
+   * pending dialog closure references, corrupting the undo stack when the
+   * user later clicks Continue.
+   */
+  const isModalOverlayOpen = () => {
+    const overlays = G.Vectura && G.Vectura.UI && G.Vectura.UI.overlays;
+    if (overlays?.Modal?.anyOpen?.()) return true;
+    if (typeof document === 'undefined') return false;
+    const legacy = document.getElementById('modal-overlay');
+    return Boolean(legacy && legacy.classList.contains('open'));
+  };
+
   function handleTopMenuShortcut(e) {
     requireDeps('handleTopMenuShortcut');
     const primary = e.metaKey || e.ctrlKey;
@@ -92,6 +111,11 @@
           target.tagName === 'SELECT' ||
           target.isContentEditable);
       if (isInput) return;
+      // Modal overlays swallow ALL global shortcuts (incl. the top-menu
+      // accelerators — Cmd+Z inside a confirm dialog must not undo the layer
+      // its pending onConfirm closure points at). Escape/Enter/Tab are handled
+      // by the modal's own scoped listeners, which run independently of this.
+      if (isModalOverlayOpen()) return;
       if (this.handleTopMenuShortcut(e)) {
         e.preventDefault();
         e.stopPropagation();

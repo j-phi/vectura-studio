@@ -363,12 +363,16 @@
   border-radius: var(--radius-sm);
   padding: 0 var(--spacing-sm); height: var(--row-height);
   transition: border-color 0.12s, box-shadow 0.12s;
+  /* The chip must never be squeezed by flex in narrow (~290px) panels. */
+  flex-shrink: 0;
 }
 .angle-inp-wrap:focus-within { border-color: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-accent-2); }
 .angle-inp {
   background: none; border: none; outline: none;
   color: var(--ui-text); font-family: var(--font-mono);
-  font-size: var(--font-size-sm); width: 34px; text-align: right;
+  /* 40px fits three tabular digits ("180", "360") — 34px clipped the last
+     digit at --font-size-sm mono (scrollWidth 36px). */
+  font-size: var(--font-size-sm); width: 40px; text-align: right;
   font-variant-numeric: tabular-nums;
 }
 .angle-unit { color: var(--ui-muted); font-size: var(--font-size-xs); font-family: var(--font-mono); }

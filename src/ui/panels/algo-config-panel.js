@@ -1008,34 +1008,33 @@
             <label class="control-label mb-0">${getDisplayLabel(def)}</label>
             <span class="text-xs text-vectura-accent font-mono">${checked ? 'ON' : 'OFF'}</span>
           </div>
-          <label class="sw-toggle" role="switch" aria-checked="${checked ? 'true' : 'false'}">
-            <input type="checkbox" ${checked ? 'checked' : ''} />
-            <span class="sw-track"></span>
-            <span class="sw-thumb"></span>
-          </label>
         `;
-        const input = control.querySelector('input');
         const span = control.querySelector('span');
-        if (input && span) {
-          input.onchange = (e) => {
-            const next = Boolean(e.target.checked);
-            span.textContent = next ? 'ON' : 'OFF';
-            applyOptimization((cfg) => {
-              const step = cfg.steps.find((s) => s.id === stepConfig.id);
-              if (step) step[def.key] = next;
-            });
-          };
-          input.addEventListener('dblclick', (e) => {
+        const applyValue = (next) => {
+          if (span) span.textContent = next ? 'ON' : 'OFF';
+          applyOptimization((cfg) => {
+            const step = cfg.steps.find((s) => s.id === stepConfig.id);
+            if (step) step[def.key] = next;
+          });
+        };
+        // UI.SwToggle brings keyboard (Space/Enter + focus ring) and
+        // aria-checked state the hand-rolled markup lacked (same migration as
+        // the algorithm `type:'checkbox'` defs below).
+        const toggle = UI.SwToggle(control, {
+          checked,
+          ariaLabel: getDisplayLabel(def) || def.key,
+          onChange: applyValue,
+        });
+        // dblclick on the pill resets to the step default — legacy parity.
+        const cbInput = toggle.el.querySelector('input[type="checkbox"]');
+        if (cbInput) {
+          cbInput.addEventListener('dblclick', (e) => {
             e.preventDefault();
             const defaults = getStepDefaults(stepConfig.id);
             if (defaults[def.key] === undefined) return;
             const next = Boolean(defaults[def.key]);
-            input.checked = next;
-            span.textContent = next ? 'ON' : 'OFF';
-            applyOptimization((cfg) => {
-              const step = cfg.steps.find((s) => s.id === stepConfig.id);
-              if (step) step[def.key] = next;
-            });
+            toggle.setChecked(next, { silent: true });
+            applyValue(next);
           });
         }
         return control;
@@ -3023,10 +3022,15 @@
           control.innerHTML = controlHeaderHtml(def, infoBtn);
           // Live drag ('input') only refreshed the chip (component-owned now);
           // release/keyboard/chip-edit/dblclick-reset commit: history + regen.
-          // dblclick-reset keeps its legacy target of def.min.
+          // dblclick-reset targets the param's TRUE default — the value a
+          // freshly created modifier gets (createPetalisModifier factory) —
+          // matching every other slider's reset-to-default; def.min is only
+          // the fallback for keys the factory doesn't seed.
+          const factoryDefaults = createPetalisModifier(modifier.type);
+          const resetTarget = factoryDefaults[def.key] !== undefined ? factoryDefaults[def.key] : (def.min ?? 0);
           const slider = createDefSlider(control, def, {
             value: toDisplayValue(def, value),
-            defaultValue: toDisplayValue(def, def.min ?? 0),
+            defaultValue: toDisplayValue(def, resetTarget),
             onCommit: (nextDisplay) => {
               if (this.app.pushHistory) this.app.pushHistory();
               modifier[def.key] = fromDisplayValue(def, nextDisplay);
@@ -3244,10 +3248,15 @@
           control.innerHTML = controlHeaderHtml(def, infoBtn);
           // Live drag ('input') only refreshed the chip (component-owned now);
           // release/keyboard/chip-edit/dblclick-reset commit: history + regen.
-          // dblclick-reset keeps its legacy target of def.min.
+          // dblclick-reset targets the param's TRUE default — the value a
+          // freshly created petal modifier gets (createPetalModifier factory) —
+          // matching every other slider's reset-to-default; def.min is only
+          // the fallback for keys the factory doesn't seed.
+          const factoryDefaults = createPetalModifier(modifier.type);
+          const resetTarget = factoryDefaults[def.key] !== undefined ? factoryDefaults[def.key] : (def.min ?? 0);
           const slider = createDefSlider(control, def, {
             value: toDisplayValue(def, value),
-            defaultValue: toDisplayValue(def, def.min ?? 0),
+            defaultValue: toDisplayValue(def, resetTarget),
             onCommit: (nextDisplay) => {
               if (this.app.pushHistory) this.app.pushHistory();
               modifier[def.key] = fromDisplayValue(def, nextDisplay);
@@ -3464,9 +3473,14 @@
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
           control.innerHTML = controlHeaderHtml(def, infoBtn);
           // Same contract as buildModifierRangeControl: commit on release only.
+          // dblclick-reset targets the param's TRUE default — the value a
+          // freshly created shading gets (createPetalisShading factory) —
+          // with def.min only as fallback for unseeded keys.
+          const shadingDefaults = createPetalisShading(shade.type);
+          const resetTarget = shadingDefaults[def.key] !== undefined ? shadingDefaults[def.key] : (def.min ?? 0);
           const slider = createDefSlider(control, def, {
             value: toDisplayValue(def, value),
-            defaultValue: toDisplayValue(def, def.min ?? 0),
+            defaultValue: toDisplayValue(def, resetTarget),
             onCommit: (nextDisplay) => {
               if (this.app.pushHistory) this.app.pushHistory();
               shade[def.key] = fromDisplayValue(def, nextDisplay);
@@ -3779,7 +3793,6 @@
             : this.createWavetableNoise(idx),
           label: getDisplayLabel(def) || 'Noise Stack',
           containerClass: 'noise-list mb-4',
-          attachValueEditor,
         });
         return;
       }
@@ -3979,18 +3992,11 @@
         // pen input (mouse-only mousedown/mousemove wiring predated this) and
         // keeps receiving moves when the pointer leaves the pad mid-drag.
         let padDragging = false;
-        pad.addEventListener('pointerdown', (e) => {
-          e.preventDefault();
-          padDragging = true;
-          try { pad.setPointerCapture(e.pointerId); } catch (_) {}
-          if (!pushed && this.app.pushHistory) { this.app.pushHistory(); pushed = true; }
-          apply(e, false);
-        });
-        pad.addEventListener('pointermove', (e) => {
-          if (!padDragging) return;
-          apply(e, false);
-        });
         const endPadDrag = (e) => {
+          // Always detach the window fallback listeners, even if the drag
+          // already ended through the pad's own pointerup.
+          window.removeEventListener('pointerup', endPadDrag);
+          window.removeEventListener('pointercancel', endPadDrag);
           if (!padDragging) return;
           padDragging = false;
           try { pad.releasePointerCapture(e.pointerId); } catch (_) {}
@@ -3998,6 +4004,22 @@
           pushed = false;
           maybeRebuildControls();
         };
+        pad.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          padDragging = true;
+          try { pad.setPointerCapture(e.pointerId); } catch (_) {}
+          // Window-level fallback: if setPointerCapture failed (unsupported or
+          // element detached), a pointerup outside the pad would never reach
+          // the pad's listeners and the drag would stick until the next click.
+          window.addEventListener('pointerup', endPadDrag);
+          window.addEventListener('pointercancel', endPadDrag);
+          if (!pushed && this.app.pushHistory) { this.app.pushHistory(); pushed = true; }
+          apply(e, false);
+        });
+        pad.addEventListener('pointermove', (e) => {
+          if (!padDragging) return;
+          apply(e, false);
+        });
         pad.addEventListener('pointerup', endPadDrag);
         pad.addEventListener('pointercancel', endPadDrag);
         pad.addEventListener('dblclick', (e) => {
@@ -4434,12 +4456,25 @@
         div.innerHTML = controlHeaderHtml(def, infoBtn);
         const defaultVal = getDefaultValue(def);
         let livePreviewHistoryPushed = false;
+        // Committed value at the start of the current livePreview drag session,
+        // captured before the first preview write. A confirmAbove dialog's
+        // Cancel restores THIS, not layer.params (which livePreview mutates).
+        let liveGestureStartValue;
         let slider = null;
-        const applyCommit = (nextVal) => {
+        // The confirmAbove dialog is async: the layer can be deleted (or undone
+        // away) while it sits open. Always re-resolve by id at settle time; a
+        // null result means the captured closure `layer` is dead.
+        const resolveLiveLayer = () => {
+          const engine = this.app?.engine;
+          if (!engine) return null;
+          if (typeof engine.getLayerById === 'function') return engine.getLayerById(layer.id) || null;
+          return (engine.layers || []).find((l) => l && l.id === layer.id) || null;
+        };
+        const applyCommit = (nextVal, targetLayer = layer) => {
           if (!livePreviewHistoryPushed && this.app.pushHistory) this.app.pushHistory();
           livePreviewHistoryPushed = false;
-          layer.params[def.id] = nextVal;
-          this.storeLayerParams(layer);
+          targetLayer.params[def.id] = nextVal;
+          this.storeLayerParams(targetLayer);
           this.app.regen();
           this.updateFormula();
           maybeRebuildControls();
@@ -4459,6 +4494,7 @@
           onChange: (nextDisplay) => {
             if (!def.livePreview) return;
             if (!livePreviewHistoryPushed && this.app.pushHistory) {
+              liveGestureStartValue = layer.params[def.id];
               this.app.pushHistory();
               livePreviewHistoryPushed = true;
             }
@@ -4480,8 +4516,37 @@
                   message,
                   confirmLabel: 'Continue',
                   cancelLabel: 'Cancel',
-                  onConfirm: () => { dlg.destroy(); applyCommit(nextVal); },
-                  onCancel: () => { dlg.destroy(); revertSlider(); },
+                  onConfirm: () => {
+                    dlg.destroy();
+                    // No-op if the layer died while the dialog was open —
+                    // writing into the stale closure object would target a
+                    // removed layer and corrupt the undo stack.
+                    const liveLayer = resolveLiveLayer();
+                    if (!liveLayer) {
+                      livePreviewHistoryPushed = false;
+                      return;
+                    }
+                    applyCommit(nextVal, liveLayer);
+                  },
+                  onCancel: () => {
+                    dlg.destroy();
+                    // livePreview+confirmAbove hardening: a livePreview drag
+                    // already wrote preview values into layer.params before the
+                    // dialog opened. Restore the pre-gesture committed snapshot
+                    // (and regen) instead of trusting layer.params, and disarm
+                    // the once-per-gesture history flag.
+                    if (livePreviewHistoryPushed) {
+                      livePreviewHistoryPushed = false;
+                      const liveLayer = resolveLiveLayer();
+                      if (liveLayer && liveGestureStartValue !== undefined) {
+                        liveLayer.params[def.id] = liveGestureStartValue;
+                        this.storeLayerParams(liveLayer);
+                        this.app.regen();
+                        this.updateFormula();
+                      }
+                    }
+                    revertSlider();
+                  },
                 });
                 dlg.open();
               } else if (window.confirm(message)) {

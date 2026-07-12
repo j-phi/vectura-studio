@@ -144,14 +144,14 @@
     if (ctrl.type === 'angle') {
       const v = Number.isFinite(value) ? value : 0;
       const display = ((v % 360) + 360) % 360;
+      // The .angle-control div is a mount point: bindAngle() mounts the shared
+      // UI.AngleDial (keyboard-operable SVG dial) into it. The host chip stays
+      // separate because it shows/edits the PARAM convention (see bindAngle's
+      // dial-space mapping note), which the dial's own input cannot express.
       return `
         <div class="paint-bucket-row paint-bucket-row-angle" data-ctrl="${ctrl.id}"${hiddenAttr}>
           <label class="paint-bucket-label">${ctrl.label}</label>
-          <div class="angle-control" data-fcs-angle="${ctrl.id}">
-            <div class="angle-dial" style="--angle:${(display + 90) % 360}deg;">
-              <div class="angle-indicator"></div>
-            </div>
-          </div>
+          <div class="angle-control" data-fcs-angle="${ctrl.id}"></div>
           <input type="text" id="${idPrefix}-${ctrl.id}-chip" class="slider-val" value="${Math.round(display)}°" inputmode="decimal">
         </div>
       `;
@@ -365,50 +365,67 @@
 
     function bindAngle(ctrl) {
       const row = controlsEl.querySelector(`[data-fcs-angle="${ctrl.id}"]`);
-      if (!row) return;
-      const dial = row.querySelector('.angle-dial');
+      if (!row || typeof UI.AngleDial !== 'function') return;
       const chip = controlsEl.querySelector(`#${idPrefix}-${ctrl.id}-chip`);
-      if (!dial) return;
       const wrap = (deg) => ((deg % 360) + 360) % 360;
-      const setAngle = (deg, committed) => {
-        const v = wrap(deg);
+      // CONVENTION MAPPING — fill params vs UI.AngleDial dial-space:
+      // Fill angles are stored screen-atan2 style: 0° = east (3 o'clock),
+      // growing clockwise. UI.AngleDial's dial-space is 0° = up (12 o'clock),
+      // also clockwise. The legacy hand-rolled dial rendered its needle at
+      // `--angle:(param+90)deg` in that same 0°-up space, so
+      //   dial-space = param + 90.
+      // Keeping this offset preserves BOTH the needle direction and the
+      // pointer→param mapping exactly as before — this is the recorded 90°
+      // fillAngle convention gotcha; do NOT "simplify" the offset away, or
+      // every hatch rotates 90° out from under its needle.
+      const paramToDial = (v) => wrap(v + 90);
+      const dialToParam = (d) => wrap(d - 90);
+      const stored = Number(get(ctrl.id));
+      const paramVal = Number.isFinite(stored) ? wrap(stored) : 0;
+      // dblclick resets to the HOST's default for this param (e.g. the paint
+      // bucket's DEFAULTS.fillAngle = 45), not a hardcoded 0.
+      const defRaw = defaults[ctrl.id];
+      const defaultParam = Number.isFinite(defRaw) ? wrap(defRaw) : 0;
+      // onEdit fires ONCE per interaction, before the first write (history
+      // snapshot) — same arming pattern as bindRange.
+      let editing = false;
+      const writeParam = (v, committed) => {
         set(ctrl.id, v);
-        dial.style.setProperty('--angle', `${(v + 90) % 360}deg`);
         if (chip) chip.value = `${Math.round(v)}°`;
         onChange(committed);
       };
-      const updateFromEvent = (e, committed) => {
-        const rect = dial.getBoundingClientRect();
-        const cx = rect.left + rect.width / 2;
-        const cy = rect.top + rect.height / 2;
-        const deg = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI;
-        setAngle(deg, committed);
-      };
-      dial.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        onEdit();
-        updateFromEvent(e, false);
-        const move = (ev) => updateFromEvent(ev, false);
-        const up = () => {
-          window.removeEventListener('mousemove', move);
-          const v = Number(get(ctrl.id));
-          setAngle(Number.isFinite(v) ? v : 0, true);
-        };
-        window.addEventListener('mousemove', move);
-        window.addEventListener('mouseup', up, { once: true });
+      const dial = UI.AngleDial(row, {
+        value: paramToDial(paramVal),
+        ariaLabel: ctrl.label,
+        defaultValue: paramToDial(defaultParam),
+        onChange: (d) => {
+          if (!editing) { editing = true; onEdit(); }
+          writeParam(dialToParam(d), false);
+        },
+        onCommit: (d) => {
+          if (!editing) onEdit();
+          editing = false;
+          writeParam(dialToParam(d), true);
+        },
       });
-      dial.addEventListener('dblclick', (e) => {
-        e.preventDefault();
-        onEdit();
-        setAngle(0, true);
-      });
+      // The dial's own numeric input reads in dial-space (param + 90) — hide
+      // it and keep the host chip, which shows the param values users know
+      // from the fill engine (and which tests/labels key on).
+      const innerWrap = dial.el.querySelector('.angle-inp-wrap');
+      if (innerWrap) innerWrap.style.display = 'none';
       if (chip) {
         chip.addEventListener('change', () => {
           const cleaned = `${chip.value}`.replace(/[^\d.\-]/g, '');
           const num = Number(cleaned);
-          if (!Number.isFinite(num)) return;
+          if (!Number.isFinite(num)) {
+            const cur = Number(get(ctrl.id));
+            chip.value = `${Math.round(Number.isFinite(cur) ? wrap(cur) : 0)}°`;
+            return;
+          }
           onEdit();
-          setAngle(num, true);
+          const v = wrap(num);
+          dial.setValue(paramToDial(v), { silent: true });
+          writeParam(v, true);
         });
       }
     }

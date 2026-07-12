@@ -43,6 +43,13 @@
   // (1) Phase 1 primitive: UI.overlays.Modal(host, props) factory.
   // ---------------------------------------------------------------------------
 
+  // Module-level count of currently-open Phase-1 modal instances. Dialog and
+  // Prompt compose this primitive, so they are counted automatically. Exposed
+  // as UI.overlays.Modal.anyOpen() so global key handlers (src/ui/shortcuts.js)
+  // can suppress app shortcuts (Delete/Backspace/Cmd+Z, tool keys, …) while a
+  // modal overlay holds the screen — without DOM sniffing.
+  let openModalCount = 0;
+
   const create = (host, initialProps = {}) => {
     let props = Object.assign({ keyboard: true, dismissOnBackdrop: false }, initialProps);
     const utils = UI.utils || {};
@@ -108,6 +115,7 @@
     function doOpen() {
       if (open) return;
       open = true;
+      openModalCount += 1;
       restoreFocus = focus.restoreOnReturn ? focus.restoreOnReturn(ownerDoc) : null;
       backdrop.style.display = 'flex';
       // After display:flex, defer focus to next microtask so DOM is laid out.
@@ -123,6 +131,7 @@
     function close() {
       if (!open) return;
       open = false;
+      openModalCount = Math.max(0, openModalCount - 1);
       backdrop.style.display = 'none';
       if (trapHandle && typeof trapHandle.release === 'function') trapHandle.release();
       trapHandle = null;
@@ -166,6 +175,9 @@
 
   // Preserve callable Modal(host, props) factory + attach Unit 1.7 namespace below.
   UI.overlays.Modal = create;
+
+  /** True while at least one Phase-1 modal (or Dialog/Prompt built on it) is open. */
+  UI.overlays.Modal.anyOpen = () => openModalCount > 0;
 
   // ---------------------------------------------------------------------------
   // (2) Mount wrappers — installed onto UI.prototype via Modal.installOn.
