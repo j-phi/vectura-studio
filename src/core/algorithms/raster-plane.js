@@ -479,6 +479,178 @@
   };
 
 
+  // --- True hidden-line removal for the surface wire modes (mesh/topography,
+  // See-Through OFF). The per-vertex back-face test (surfaceVisible) culls
+  // back-slope runs cheaply, but it cannot stop FRONT-FACING geometry behind a
+  // ridge from drawing straight through it (a far valley shows through a near
+  // hill). So the surviving visible runs are additionally clipped against the
+  // surface itself: the same sampler is meshed once into screen-space depth
+  // triangles and every path sample must survive a depth-buffer test
+  // (G3.occludeSegmentsDepthBuffer), whose slope-scaled bias keeps lines that
+  // lie ON the surface from being eaten by their own heightfield ("acne").
+
+  // Occluder triangles: a surfaceSample grid over the artwork rect at a capped
+  // resolution — independent of rows/columns so occlusion accuracy doesn't
+  // degrade on coarse meshes, and cheap enough to build per frame. Under fast
+  // preview the cap scales down with the same policy as the wire density.
+  const SURFACE_OCCLUDER_RES = 128;
+  const surfaceOccluderTris = (p, bounds, sampler) => {
+    const rect = artworkRect(p);
+    const res = Math.max(24, (p.fastPreview || bounds.fastPreview)
+      ? G3.previewCap(bounds, SURFACE_OCCLUDER_RES)
+      : SURFACE_OCCLUDER_RES);
+    const grid = [];
+    for (let y = 0; y <= res; y++) {
+      const row = [];
+      for (let x = 0; x <= res; x++) {
+        const u = x / res;
+        const v = y / res;
+        const s = surfaceSample(rect.left + u * rect.width, rect.top + v * rect.height, sampler(u, v), p, bounds);
+        row.push({ x: s.point.x, y: s.point.y, d: s.rotated.z });
+      }
+      grid.push(row);
+    }
+    const tris = [];
+    for (let y = 0; y < res; y++) {
+      for (let x = 0; x < res; x++) {
+        const a = grid[y][x];
+        const b = grid[y][x + 1];
+        const c = grid[y + 1][x + 1];
+        const d = grid[y + 1][x];
+        tris.push([a, b, c], [a, c, d]);
+      }
+    }
+    return tris;
+  };
+
+  // Split surface samples into front-facing runs, KEEPING the sample objects so
+  // their camera depths (camZ) survive to the depth clip — the sample-level
+  // mirror of splitPathByVisibility's visible-only mode.
+  const visibleSampleRuns = (samples) => {
+    const runs = [];
+    let current = null;
+    (samples || []).forEach((s) => {
+      if (!s || !s.point || s.visible === false) {
+        current = null;
+        return;
+      }
+      if (!current) {
+        current = [];
+        runs.push(current);
+      }
+      current.push(s);
+    });
+    return runs.filter((run) => run.length >= 2);
+  };
+
+  // Deferred-clip collector. Runs are queued per build and flushed through ONE
+  // occludeSegmentsDepthBuffer call, so the occluder triangles are rasterized
+  // exactly once per frame (topography can queue hundreds of contours).
+  const beginSurfaceClip = () => ({ runs: [] });
+
+  // Queue a wire polyline: back-face split first (pass 1), then each surviving
+  // run rides the depth clip (pass 2). Mirrors pushVisibilityPaths' meta/depth
+  // stamping; the curve conversion happens AFTER the clip (bezier output can't
+  // be depth-clipped sanely), exactly like the see-through pipeline splits
+  // before it curves.
+  const queueSurfaceClipPath = (clip, samples, p, meta = {}) => {
+    if (!Array.isArray(samples) || samples.length < 2) return;
+    const depth = meta.depth == null ? meanDepth(samples) : null;
+    visibleSampleRuns(samples).forEach((run) => clip.runs.push({ samples: run, meta, depth }));
+  };
+
+  // Queue an already-projected straight segment at a constant camera depth
+  // (hatch scan lines). Emitted verbatim (no curve conversion), meta preserved.
+  const queueSurfaceClipSegment = (clip, path, depth) => {
+    if (!Array.isArray(path) || path.length < 2) return;
+    const z = finite(depth, 0);
+    clip.runs.push({
+      samples: path.map((pt) => ({ point: pt, camZ: z })),
+      meta: path.meta || {},
+      depth: null,
+      noCurve: true,
+    });
+  };
+
+  const flushSurfaceClip = (paths, clip, p, tris) => {
+    if (!clip.runs.length) return;
+    const segs = [];
+    clip.runs.forEach((run, idx) => {
+      for (let i = 0; i < run.samples.length - 1; i++) {
+        const a = run.samples[i];
+        const b = run.samples[i + 1];
+        segs.push({
+          a: { x: a.point.x, y: a.point.y, z: finite(a.camZ, a.point.z) },
+          b: { x: b.point.x, y: b.point.y, z: finite(b.camZ, b.point.z) },
+          meta: { run: idx, seg: segs.length },
+        });
+      }
+    });
+    // Camera depth of a fragment point, re-interpolated along its source
+    // segment, so every emitted fragment carries the mean depth of the piece
+    // that actually SURVIVED the clip — a wire crossing a step must depth-cue
+    // by its visible part, not by the whole pre-clip polyline's average.
+    const zAt = (pt, seg) => {
+      const dx = seg.b.x - seg.a.x;
+      const dy = seg.b.y - seg.a.y;
+      const len2 = dx * dx + dy * dy;
+      if (!(len2 > 0)) return seg.a.z;
+      const t = clamp(((pt.x - seg.a.x) * dx + (pt.y - seg.a.y) * dy) / len2, 0, 1);
+      return seg.a.z + (seg.b.z - seg.a.z) * t;
+    };
+    const frags = G3.occludeSegmentsDepthBuffer(segs, tris, {
+      mode: 'remove',
+      // Occlusion Bias is the user's z-fight tolerance; the slope-scaled term
+      // absorbs per-cell surface thickness on steep faces so crest/silhouette
+      // lines that lie ON the surface stay whole (no stippled "acne") while a
+      // genuinely nearer ridge still wins.
+      depthBias: Math.max(0.05, finite(p.depthBias, 0.5)),
+      slopeScale: 1.75,
+    });
+    // Every fragment is a straight visible piece of one queued segment, so it
+    // collapses losslessly to its endpoints; consecutive fragments of the same
+    // run are stitched back into one polyline (plotter-friendly, and required
+    // for a faithful curve conversion afterwards).
+    let pts = null;
+    let runIdx = null;
+    let zSum = 0;
+    let zCount = 0;
+    const flush = () => {
+      if (pts && pts.length >= 2) {
+        const run = clip.runs[runIdx];
+        pts.meta = { algorithm: 'rasterPlane', straight: true, ...run.meta };
+        if (pts.meta.depth == null) {
+          const depth = zCount ? zSum / zCount : run.depth;
+          if (depth != null) pts.meta.depth = depth;
+        }
+        paths.push(run.noCurve ? pts : curveSurfacePath(pts, p));
+      }
+      pts = null;
+      zSum = 0;
+      zCount = 0;
+    };
+    frags.forEach((frag) => {
+      if (!Array.isArray(frag) || frag.length < 2) return;
+      const idx = frag.meta ? frag.meta.run : null;
+      const seg = frag.meta ? segs[frag.meta.seg] : null;
+      const a = frag[0];
+      const b = frag[frag.length - 1];
+      if (pts && runIdx === idx) {
+        const tail = pts[pts.length - 1];
+        if (Math.hypot(tail.x - a.x, tail.y - a.y) < 0.05) {
+          pts.push({ x: b.x, y: b.y });
+          if (seg) { zSum += zAt(a, seg) + zAt(b, seg); zCount += 2; }
+          return;
+        }
+      }
+      flush();
+      runIdx = idx;
+      pts = [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
+      if (seg) { zSum = zAt(a, seg) + zAt(b, seg); zCount = 2; }
+    });
+    flush();
+  };
+
   // Plane Width < 100 (Lines as Planes, See-Through OFF): each slice stops
   // sharing faces with its neighbours and becomes a free-standing extruded
   // plane — the row's height profile extruded ±half the slice thickness along
@@ -873,23 +1045,33 @@
     const rect = artworkRect(p);
     const rows = Math.max(2, Math.round(clamp(finite(p.rows, 28), 2, 120)));
     const cols = Math.max(2, Math.round(clamp(finite(p.columns, 28), 2, 120)));
+    // See-Through OFF: back-face culling alone still lets front-facing valleys
+    // BEHIND a hill draw through it, so the wires additionally get clipped
+    // against the surface's own depth buffer (see flushSurfaceClip).
+    const hlr = p.seeThrough === false;
+    const clip = hlr ? beginSurfaceClip() : null;
     const points = [];
     for (let y = 0; y <= rows; y++) {
       const row = [];
       for (let x = 0; x <= cols; x++) {
         const u = x / cols;
         const v = y / rows;
+        const s = surfaceSample(rect.left + u * rect.width, rect.top + v * rect.height, sampler(u, v), p, bounds);
         row.push({
-          point: surfacePoint(rect.left + u * rect.width, rect.top + v * rect.height, sampler(u, v), p, bounds),
+          point: s.point,
+          camZ: s.rotated.z,
           visible: surfaceVisible(u, v, rect, p, sampler),
         });
       }
       points.push(row);
     }
     const paths = [];
-    for (let y = 0; y <= rows; y++) pushVisibilityPaths(paths, points[y], p, { mode: 'mesh', axis: 'row' });
+    const pushWire = (samples, meta) => (hlr
+      ? queueSurfaceClipPath(clip, samples, p, meta)
+      : pushVisibilityPaths(paths, samples, p, meta));
+    for (let y = 0; y <= rows; y++) pushWire(points[y], { mode: 'mesh', axis: 'row' });
     for (let x = 0; x <= cols; x++) {
-      pushVisibilityPaths(paths, points.map((row) => row[x]), p, { mode: 'mesh', axis: 'column' });
+      pushWire(points.map((row) => row[x]), { mode: 'mesh', axis: 'column' });
     }
     // Enhancement #5 — Lambert hatch front mesh cells (additive, off by default).
     if (p.hatchEnable) {
@@ -912,11 +1094,21 @@
             surfaceSample(rect.left + u1 * rect.width, rect.top + v1 * rect.height, sampler(u1, v1), p, bounds),
             surfaceSample(rect.left + u0 * rect.width, rect.top + v1 * rect.height, sampler(u0, v1), p, bounds),
           ];
-          pushFaceHatch(paths, cell, p, light, { mode: 'mesh', hatchCell: true });
+          if (hlr) {
+            // Hatch scan lines ride the same surface clip as the wires, at the
+            // face's constant camera depth, so a hatched valley behind a hill
+            // is swallowed exactly like its mesh lines.
+            const hatchTmp = [];
+            pushFaceHatch(hatchTmp, cell, p, light, { mode: 'mesh', hatchCell: true });
+            hatchTmp.forEach((seg) => queueSurfaceClipSegment(clip, seg, seg.meta && seg.meta.depth));
+          } else {
+            pushFaceHatch(paths, cell, p, light, { mode: 'mesh', hatchCell: true });
+          }
           hatched++;
         }
       }
     }
+    if (hlr) flushSurfaceClip(paths, clip, p, surfaceOccluderTris(p, bounds, sampler));
     return paths;
   };
 
@@ -928,22 +1120,34 @@
     const thresholds = Array.from({ length: levels }, (_, i) => (i + 1) / (levels + 1));
     const contours = marchingSquares(field, rect.width, rect.height, thresholds, { left: rect.left, top: rect.top });
     const angle = finite(p.topographyAngle, 0);
-    return contours.flatMap((path) => {
+    // See-Through OFF: contours behind a nearer ridge must vanish, not just
+    // back-facing ones — queue every contour and clip the lot in one pass.
+    const hlr = p.seeThrough === false;
+    const clip = hlr ? beginSurfaceClip() : null;
+    const paths = contours.flatMap((path) => {
       const samples = path.map((pt) => {
         const r = angle ? rotate2(pt, angle) : pt;
         const u = (pt.x - rect.left) / rect.width;
         const v = (pt.y - rect.top) / rect.height;
+        const s = surfaceSample(r.x, r.y, sampler(u, v), p, bounds);
         return {
-          point: surfacePoint(r.x, r.y, sampler(u, v), p, bounds),
+          point: s.point,
+          camZ: s.rotated.z,
           visible: surfaceVisible(u, v, rect, p, sampler),
         };
       });
+      if (hlr) {
+        queueSurfaceClipPath(clip, samples, p, { mode: 'topography' });
+        return [];
+      }
       const split = [];
       // pushVisibilityPaths applies curveSurfacePath, so the contour is already
       // smoothed (toggle-on, or legacy slider-only back-compat) here.
       pushVisibilityPaths(split, samples, p, { mode: 'topography' });
       return split;
     });
+    if (hlr) flushSurfaceClip(paths, clip, p, surfaceOccluderTris(p, bounds, sampler));
+    return paths;
   };
 
   const sampleBarFootprint = (sampler, u0, v0, u1, v1, p) => {
