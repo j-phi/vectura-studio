@@ -72,6 +72,23 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   `tests/unit/raster-plane-plane-width.test.js`.
 
 ### Fixed
+- **Saved Default preset overrides now reapply to fresh layers.** The preset
+  gallery correctly recognizes the factory state after Layer construction has
+  merged the bundled Default preset, then applies a matching local Default
+  override. This restores user-saved Pendula settings on rebuild instead of
+  leaving raw `ALGO_DEFAULTS` values in place.
+- **Welded script outlines: junction hooks/teeth and elbow S-wiggles removed.** Follow-up
+  to the connected-script stability fix below, which introduced forced corners at glyph
+  junctions: the bezier fit took its endpoint tangent at a forced corner from the single
+  adjacent raw chord — clipper noise at a junction, so the cubic left the corner mis-aimed
+  and (because fit error is only sampled at the sparse input points) an ~1mm hook/tooth was
+  accepted between samples at every letter join. Forced-corner run endpoints now use a
+  windowed chord over the run itself, clamped to the run's arc length. The weld's corner
+  angle threshold also drops 75°→40°: junction corners and clipper vertex noise are handled
+  by forceCorner + windowed tangents now, and 75° missed real outline elbows (the 's'
+  bowl-to-exit turn), which the fit S-wiggled ~0.5mm trying to smooth through. Regression
+  fixture: a real welded Dancing Script ring (`tests/fixtures/welded-script-ring.json`)
+  asserting the whole fit stays within 0.4mm of the source boundary.
 - **Typing in a connected-script web font no longer re-shapes earlier letters.** With
   Dancing Script (and any face whose letters touch), every keystroke visibly re-smoothed,
   re-faceted, or nudged the letters already typed. Two whole-string dependencies fixed:

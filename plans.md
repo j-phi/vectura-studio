@@ -44,6 +44,18 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — welded-script junction fit quality (hooks/teeth/S-wiggles).** Follow-up to
+  the keystroke-stability fix: forced-corner run endpoints in `GU.reduceAnchors` now take a
+  windowed chord over the run (clamped to run arc length) instead of the single adjacent
+  raw chord — clipper noise at junctions mis-aimed the cubic and ~1mm hooks were accepted
+  between sparse error samples. Weld `cornerAngleDeg` 75→40 (junctions are forceCorner-
+  handled now; 75 missed real elbows → 0.5mm S-wiggles). Regression: real Dancing Script
+  ring fixture in `tests/unit/reduce-anchors-forced-corner-fit.test.js`; junction deviation
+  0.648mm → 0.109mm, keystroke stability re-verified at zero drift.
+- **Saved Default preset overrides hydrate fresh layers again.** The preset
+  gallery now compares against the bundled Default state (not raw
+  `ALGO_DEFAULTS`) before applying a local override, fixing the Pendula
+  regression that failed both integration and coverage CI on 2026-07-12.
 - **Unreleased — audit remediation: AUD-15.3, AUD-20, AUD-03, AUD-09, AUD-17.** Five
   independent Tier-1 fixes from the audit punchlist (`docs/audit-remediation-todo.md`),
   one commit each. Deleted the orphaned `scripts/benchmark_clone.js` (`cab94d9`).

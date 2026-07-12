@@ -261,6 +261,12 @@
     // pointing at a missing id (→ "Custom") and, for the synthesized
     // "<type>-default" markers, there is no file to remove anyway.
     const defaultPresetId = (typeof defaults.preset === 'string' && defaults.preset) || null;
+    // Keep the bundled default separate from the merged list: a localStorage
+    // entry with this id is an override, not the factory state used to decide
+    // whether a newly created layer is still safe to hydrate.
+    const builtInDefaultPreset = defaultPresetId
+      ? builtInPresets.find((p) => p && p.id === defaultPresetId)
+      : null;
 
     const presetMap = {};
     presets.forEach((p) => { presetMap[p.id] = p; });
@@ -981,8 +987,12 @@
         && layer.params && layer.params.preset === defaultPresetId) {
       const userSaved = userPresets.find((p) => p.id === defaultPresetId);
       if (userSaved && userSaved.params && Object.keys(userSaved.params).length > 0) {
-        const isFactory = Object.keys(defaults).every((k) =>
-          IGNORED_KEYS.has(k) || deepEqual(layer.params[k], defaults[k])
+        // Layer construction applies the bundled Default preset on top of
+        // ALGO_DEFAULTS, so raw defaults alone can wrongly classify a fresh
+        // layer as edited (for example, Pendula's bundled duration differs).
+        const factoryParams = { ...defaults, ...(builtInDefaultPreset?.params || {}) };
+        const isFactory = Object.keys(factoryParams).every((k) =>
+          IGNORED_KEYS.has(k) || deepEqual(layer.params[k], factoryParams[k])
         );
         if (isFactory) {
           Object.entries(userSaved.params).forEach(([k, v]) => {
