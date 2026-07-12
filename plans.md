@@ -62,6 +62,19 @@ This file is the active repository punchlist. Update it whenever meaningful work
   `pendula-preset-gallery.test.js` integration failure traced to a concurrent session's
   uncommitted `user-presets/pendula/default.vectura` edit, confirmed unrelated by
   reverting each fix in isolation).
+  **Commit-hygiene note:** the follow-up docs commit `6efa3a3` ("Docs: add a 'pick up
+  here' status section...") was intended as docs-only (`plans.md` +
+  `docs/audit-remediation-todo.md`) but a shared-index race with another live session
+  in this same main worktree meant the pre-commit hooks (graphify + user-presets
+  bundler) staged and committed that session's in-flight files too (`renderer.js`,
+  `controls-registry.js`, `info-modals.js`, six skin CSS files, `index.html`,
+  regenerated `user-presets.js`). Nothing was lost or pushed — verified via
+  `git reflog` — Jay reviewed and chose to leave the commit as-is rather than rewrite
+  history. Flagging for future sessions: a `git commit` in a worktree another live
+  session is actively `git add`-ing into can sweep in their staged files even when you
+  only `git add` your own — this is a real gap in the existing concurrent-safety rules
+  (which cover destructive ops and dirty-tree collisions but not this shared-index
+  staging race).
 - **Unreleased — connected-script keystroke stability (Dancing Script drift).** Typing in a
   connected-script web face no longer re-shapes earlier letters. Weld re-fit
   (`text.js` mergeOverlaps → `GU.reduceAnchors`) now uses absolute em-derived tolerances
