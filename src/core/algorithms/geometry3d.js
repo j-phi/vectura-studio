@@ -820,6 +820,7 @@
     const valid = (Array.isArray(rows) ? rows : [])
       .map((r) => (r && Array.isArray(r.pts))
         ? { meta: r.meta, depth: finite(r.depth, 0), occludes: r.occludes !== false, draw: r.draw !== false,
+            inset: Math.max(0, finite(r.inset, 0)),
             pts: r.pts.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)).map(deRoll) }
         : null)
       .filter((r) => r && r.pts.length >= 2);
@@ -861,7 +862,27 @@
       const d = valid[b].depth - valid[a].depth;
       return d !== 0 ? d : a - b;
     });
+    // The visibility test resamples every row at the horizon resolution (~1px), so
+    // emitted runs are packed with exactly-collinear intermediate samples. Drop
+    // them (shape-identical within fp noise): a run keeps only its endpoints, the
+    // original direction-changing vertices, and the visibility boundaries — the
+    // leanest polyline that renders the same geometry.
+    const decimate = (pts) => {
+      if (pts.length <= 2) return pts;
+      const out = [pts[0]];
+      for (let i = 1; i < pts.length - 1; i++) {
+        const a = out[out.length - 1];
+        const b = pts[i];
+        const c = pts[i + 1];
+        const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        if (Math.abs(cross) > Math.hypot(c.x - a.x, c.y - a.y) * 1e-6) out.push(b);
+      }
+      out.push(pts[pts.length - 1]);
+      return out;
+    };
     const out = [];
+    // Scratch buffers for inset occluders (allocated on first use).
+    let rowUp = null, rowLo = null, rowTouched = null, rowStamp = 0;
     for (let oi = 0; oi < order.length; oi++) {
       const r = valid[order[oi]];
       // 1) Split the row into visible / hidden runs against the current horizon.
@@ -872,7 +893,7 @@
       let current = null, curVis = null;
       const flush = () => {
         if (current && current.length >= 2) {
-          const pts = current.map(reRoll);
+          const pts = decimate(current).map(reRoll);
           if (curVis) out.push(pathWithMeta(pts, r.meta ? { ...r.meta } : null));
           else if (mode === 'dash') out.push(markHidden(pathWithMeta(pts, r.meta ? { ...r.meta } : null)));
         }
@@ -902,7 +923,20 @@
       // 2) Extend the horizon with this opaque row so farther rows see its
       //    silhouette. Rasterise every column the row spans (fills near-vertical
       //    segments) and accumulate the per-column top/bottom extent.
+      //    r.inset (px) shrinks THIS row's band before it merges — used by
+      //    occluders whose boundary is another drawn row (e.g. a relief slab
+      //    whose upper edge IS the next row's top profile), so that boundary
+      //    row can never z-fight its own occluder at a low eps. Columns whose
+      //    shrunk band would invert (thinner than 2·inset) contribute nothing.
       if (r.occludes) {
+        const inset = Math.max(0, finite(r.inset, 0));
+        if (inset > 0 && !rowUp) {
+          rowUp = new Float32Array(cols);
+          rowLo = new Float32Array(cols);
+          rowTouched = new Int32Array(cols);
+          rowStamp = 0;
+        }
+        if (inset > 0) rowStamp++;
         for (let s = 0; s < r.pts.length - 1; s++) {
           const a = r.pts[s], b = r.pts[s + 1];
           let c0 = colOf(a.x), c1 = colOf(b.x);
@@ -912,8 +946,23 @@
             const xc = minX + c * res;
             const t = Math.abs(dx) < 1e-9 ? 0 : clamp((xc - a.x) / dx, 0, 1);
             const y = lerp(a.y, b.y, t);
-            if (y < upper[c]) upper[c] = y;
-            if (y > lower[c]) lower[c] = y;
+            if (inset > 0) {
+              if (rowTouched[c] !== rowStamp) { rowTouched[c] = rowStamp; rowUp[c] = y; rowLo[c] = y; }
+              else { if (y < rowUp[c]) rowUp[c] = y; if (y > rowLo[c]) rowLo[c] = y; }
+            } else {
+              if (y < upper[c]) upper[c] = y;
+              if (y > lower[c]) lower[c] = y;
+            }
+          }
+        }
+        if (inset > 0) {
+          for (let c = 0; c < cols; c++) {
+            if (rowTouched[c] !== rowStamp) continue;
+            const up = rowUp[c] + inset;
+            const lo = rowLo[c] - inset;
+            if (up > lo) continue; // band thinner than the inset — nothing left
+            if (up < upper[c]) upper[c] = up;
+            if (lo > lower[c]) lower[c] = lo;
           }
         }
       }

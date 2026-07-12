@@ -33,6 +33,20 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   randomize button now use the same ⚄ dice affordance as the wallpaper "surprise me" button,
   with a button-pulse on reroll. (The ✦ sparkle on "Randomize params" is intentionally
   distinct — it mutates all parameters, not just the seed.)
+- **Raster-Plane: solid Lines-as-Planes rendering + Plane Width slider.** Lines as Planes with
+  See-Through OFF now renders as a true extruded solid: back-facing side risers are culled
+  instead of "peeking through" as floating corner ticks, the space between adjacent slices
+  occludes as solid material (inter-row surface strips + side quads, band-inset so tops never
+  z-fight their own occluders at low Occlusion Bias), the block's side silhouettes draw as
+  clean edge-profile bridges, and front-facing side faces skip hidden-line removal entirely
+  (orthographic side faces are never occluded — kills mid-air "whisker" clipping). A new
+  **Plane Width** slider (1–100%, shown when Lines as Planes is on) shrinks each slice from
+  the touching solid slab (100%) into free-standing extruded planes with real gaps between
+  rows — thickness facets and back edges render per slice — down to flat single-curtain
+  planes at 1% (near-coincident face pairs collapse so plotters never double-ink). The
+  floating-horizon output is also decimated to drop exactly-collinear resampled points
+  (crater preset: ~21k → ~7k points, geometry-identical). Covered by
+  `tests/unit/raster-plane-plane-width.test.js`.
 
 ### Fixed
 - **Keyboard shortcuts no longer fire through open modals.** Window-level shortcuts

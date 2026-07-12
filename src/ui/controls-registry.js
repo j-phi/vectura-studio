@@ -2376,6 +2376,7 @@
     { id: 'horizontalLineAngle', label: 'Line Angle', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', showIf: (p) => p.mode === 'lines', livePreview: true },
     { id: 'horizontalLinesAsPlanes', label: 'Lines as Planes', type: 'checkbox', showIf: (p) => p.mode === 'lines' },
     { id: 'baseHeight', label: 'Base Height', type: 'range', min: 0, max: 10, step: 0.01, showIf: (p) => p.mode === 'lines' && p.horizontalLinesAsPlanes, livePreview: true },
+    { id: 'planeWidth', label: 'Plane Width', type: 'range', min: 1, max: 100, step: 1, displayUnit: '%', showIf: (p) => p.mode === 'lines' && p.horizontalLinesAsPlanes, livePreview: true },
     { id: 'seeThrough', label: 'See-Through', type: 'checkbox', showIf: (p) => p.mode === 'mesh' || p.mode === 'topography' || p.mode === 'bars' || p.mode === 'lines' },
     { type: 'section', label: 'Topography / Bars' },
     { id: 'topographyAngle', label: 'Topo Angle', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', showIf: (p) => p.mode === 'topography', livePreview: true },

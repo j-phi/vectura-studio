@@ -2088,6 +2088,10 @@
       horizontalLinesAsPlanes: false,
       // Base Height (Lines as Planes only): constant lift added to every slice.
       baseHeight: 0,
+      // Plane Width (Lines as Planes only): each slice's thickness as a % of the
+      // row pitch. 100 = slices touch and merge into a solid slab; lower values
+      // shrink each slice into a free-standing extruded plane with real gaps.
+      planeWidth: 100,
       seeThrough: true,
       topographyAngle: 0,
       contourSmoothing: 20,

@@ -55,6 +55,18 @@ This file is the active repository punchlist. Update it whenever meaningful work
   dice. Follow-up candidates: per-mirror-type slider tinting CSS hook, dual-mode skin CSS
   + chip editing, migrating the legacy `openModal` content modals onto the focus-trapping
   `UI.overlays.Modal`, `UI.Section` adoption for the four divergent collapse systems.
+- **Unreleased — Raster-Plane solid Lines-as-Planes + Plane Width slider.** Lines as Planes
+  (See-Through OFF) now renders as a true solid: back-facing side risers culled (no floating
+  corner ticks), inter-row slab strips + side quads occlude the material between slices
+  (band-inset against self-z-fighting), side silhouettes drawn as edge-profile bridges, and
+  front-facing side faces bypass HLR (orthographic side faces are never occluded). New
+  `planeWidth` param + **Plane Width** slider (1–100%, planes mode only): 100% = solid slab,
+  lower = free-standing "cardboard" slices with real gaps (per-slab edge culling; flat
+  single-curtain collapse below ~0.6 px projected thickness). Floating-horizon output now
+  drops exactly-collinear resampled points (~3× fewer points, geometry-identical).
+  (`src/core/algorithms/raster-plane.js` `buildLines`/`buildCardboardPlanes`,
+  `src/core/algorithms/geometry3d.js` `occludeRowsFloatingHorizon`,
+  `tests/unit/raster-plane-plane-width.test.js`.)
 - **Unreleased — Illustrator-style measurement readouts, center points, and multi-corner rounding.**
   Smart-guide chip redesigned to a compact gray two-line box (dark text) rounded to 0.1 mm: `dX/dY`
   delta while dragging, `X/Y` on hover/select with a pink feature label (`anchor`) pinned at the
