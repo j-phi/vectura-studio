@@ -77,13 +77,20 @@
 
   /**
    * Plays a one-shot expanding-ring "wave" inside an `<svg.angle-dial>`. The
-   * caller passes the SVG element plus the cx/cy in dial-local coordinates
-   * (typically the center of the dial). Reduced motion → no-op.
+   * caller passes the SVG element plus the cx/cy in dial-local coordinates —
+   * typically the handle's current position, so the wave radiates from the
+   * exact point just released rather than the dial's center.
+   *
+   * `opts.clipCx/clipCy/clipR` (all optional, dial-local coordinates) confine
+   * the expanding ring to a circular region — e.g. the dial's own outer ring
+   * — via an SVG `<clipPath>` so a wave starting near the edge never
+   * visually escapes the dial face. Omit them for the old unclipped behavior.
    *
    * Reads timing/peak/maxR from CSS vars set by SkinManager.activate().
-   * Returns a `{ cancel() }` handle; cancel removes the in-progress circle.
+   * Returns a `{ cancel() }` handle; cancel removes the in-progress circle
+   * (and its clipPath, if any).
    */
-  const triggerDialWave = (svg, cx = 0, cy = 0) => {
+  const triggerDialWave = (svg, cx = 0, cy = 0, opts = {}) => {
     if (reduced()) return { cancel() {} };
     if (!svg || svg.namespaceURI !== 'http://www.w3.org/2000/svg') return { cancel() {} };
     if (typeof window.requestAnimationFrame !== 'function') return { cancel() {} };
@@ -112,7 +119,32 @@
     ring.setAttribute('stroke-width', '1.4');
     ring.setAttribute('opacity', String(peak));
     ring.classList.add('dial-wave-ring');
+
+    let clipPathEl = null;
+    const { clipCx, clipCy, clipR } = opts;
+    if (Number.isFinite(clipR)) {
+      let defs = svg.querySelector('defs');
+      if (!defs) {
+        defs = document.createElementNS(NS, 'defs');
+        svg.insertBefore(defs, svg.firstChild);
+      }
+      const clipId = utils().uid ? utils().uid('dial-wave-clip') : `dial-wave-clip-${Math.random().toString(36).slice(2)}`;
+      clipPathEl = document.createElementNS(NS, 'clipPath');
+      clipPathEl.setAttribute('id', clipId);
+      const clipCircle = document.createElementNS(NS, 'circle');
+      clipCircle.setAttribute('cx', String(clipCx ?? cx));
+      clipCircle.setAttribute('cy', String(clipCy ?? cy));
+      clipCircle.setAttribute('r', String(clipR));
+      clipPathEl.appendChild(clipCircle);
+      defs.appendChild(clipPathEl);
+      ring.setAttribute('clip-path', `url(#${clipId})`);
+    }
     svg.appendChild(ring);
+
+    const cleanup = () => {
+      ring.remove();
+      if (clipPathEl && clipPathEl.parentNode) clipPathEl.remove();
+    };
 
     let start = 0;
     let frameId = 0;
@@ -131,7 +163,7 @@
       if (t < 1) {
         frameId = window.requestAnimationFrame(tick);
       } else {
-        ring.remove();
+        cleanup();
       }
     };
     frameId = window.requestAnimationFrame(tick);
@@ -141,7 +173,7 @@
         if (frameId && typeof window.cancelAnimationFrame === 'function') {
           window.cancelAnimationFrame(frameId);
         }
-        if (ring.parentNode) ring.remove();
+        cleanup();
       },
     };
   };

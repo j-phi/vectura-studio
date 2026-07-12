@@ -3,8 +3,10 @@
  *
  * Mockup parity: `.angle-ctrl` (row) > `.angle-dial` (38×38 SVG) +
  * `.angle-inp-wrap` (input + ° unit). Pointer drag updates the angle;
- * release plays the dial-wave halo via UI.motion.triggerDialWave (rAF
- * expanding ring inside the SVG, clipped to the dial face).
+ * release plays the dial-wave halo via UI.motion.triggerDialWave — an rAF
+ * expanding ring that originates from the handle's current position (where
+ * the drag/reset just landed), clipped to the dial's outer ring so it never
+ * escapes the dial face even when it starts near the edge.
  *
  * Geometry: 0° points up (-y); positive angles rotate clockwise. Display
  * normalizes to [0, 360). Internally the value can pass through full
@@ -165,6 +167,17 @@
       if (typeof fn === 'function') fn(v);
     };
 
+    // Wave originates from the handle's current position (where the drag/
+    // reset just landed), not the dial center — clipped to the outer ring so
+    // it never visually escapes the dial face even when it starts near the
+    // edge.
+    const triggerWave = () => {
+      if (!motion.triggerDialWave) return;
+      const hx = parseFloat(handle.getAttribute('cx'));
+      const hy = parseFloat(handle.getAttribute('cy'));
+      motion.triggerDialWave(svg, hx, hy, { clipCx: CENTER, clipCy: CENTER, clipR: RING_R });
+    };
+
     const setValue = (next, { silent = false } = {}) => {
       const v = props.allowOverflow ? Number(next) : wrapToDomain(Number(next), props.min, props.max);
       if (!Number.isFinite(v)) return;
@@ -199,7 +212,7 @@
       dragging = false;
       svg.classList.remove('is-dragging');
       try { svg.releasePointerCapture(event.pointerId); } catch (_) {}
-      if (motion.triggerDialWave) motion.triggerDialWave(svg, CENTER, CENTER);
+      triggerWave();
       fire('onCommit', value);
     };
 
@@ -254,7 +267,7 @@
       if (props.defaultValue == null) return;
       event.preventDefault();
       setValue(props.defaultValue);
-      if (motion.triggerDialWave) motion.triggerDialWave(svg, CENTER, CENTER);
+      triggerWave();
       fire('onCommit', value);
     };
 

@@ -101,6 +101,84 @@ describe('UI.AngleDial (dial keyboard + defaultValue reset)', () => {
   });
 });
 
+describe('UI.AngleDial (release wave originates from the handle, clipped to the outer ring)', () => {
+  let runtime;
+  let AngleDial;
+  let motion;
+  // SIZE=38, CENTER=19, RING_R=16 are the module's own geometry constants
+  // (angle-dial.js) — hardcoded here since they aren't exported, and are
+  // stable dial-face geometry, not app config.
+  const CENTER = 19;
+  const RING_R = 16;
+
+  beforeEach(() => {
+    runtime = loadUIComponent(['utils', 'motion', 'angle-dial']);
+    AngleDial = runtime.window.Vectura.UI.AngleDial;
+    motion = runtime.window.Vectura.UI.motion;
+  });
+  afterEach(() => runtime.cleanup());
+
+  // jsdom has no PointerEvent constructor; dispatch a plain Event with the
+  // pointer-ish properties the handlers read (matches the pattern used
+  // elsewhere in this repo's tests, e.g. tests/integration/algo-draw-toolbar).
+  const firePointerEvent = (target, type, props = {}) => {
+    const event = new runtime.window.Event(type, { bubbles: true, cancelable: true });
+    Object.assign(event, { pointerId: 1, clientX: 0, clientY: 0, ...props });
+    target.dispatchEvent(event);
+  };
+
+  test('pointerup passes the handle\'s current position (not the dial center) plus the outer-ring clip bounds', () => {
+    const calls = [];
+    const original = motion.triggerDialWave;
+    motion.triggerDialWave = (...args) => { calls.push(args); return original(...args); };
+
+    const inst = AngleDial(runtime.document.body, { value: 0 });
+    const svg = inst.dialEl;
+    const handle = svg.querySelector('.dial-handle');
+
+    // Drag to some non-zero angle so the handle isn't sitting at its initial spot.
+    firePointerEvent(svg, 'pointerdown', { clientX: 100, clientY: 0 });
+    const expectedCx = parseFloat(handle.getAttribute('cx'));
+    const expectedCy = parseFloat(handle.getAttribute('cy'));
+    firePointerEvent(svg, 'pointerup', {});
+
+    expect(calls.length).toBe(1);
+    const [calledSvg, cx, cy, opts] = calls[0];
+    expect(calledSvg).toBe(svg);
+    expect(cx).toBe(expectedCx);
+    expect(cy).toBe(expectedCy);
+    // The handle always sits on the ring circumference (radius RING_R from
+    // CENTER), so it can never coincide with the dial's own center point —
+    // this is the regression check that the origin moved off-center.
+    expect(cx === CENTER && cy === CENTER).toBe(false);
+    expect(opts).toEqual({ clipCx: CENTER, clipCy: CENTER, clipR: RING_R });
+
+    motion.triggerDialWave = original;
+    inst.destroy();
+  });
+
+  test('dblclick-reset passes the reset position\'s coordinates plus the same outer-ring clip bounds', () => {
+    const calls = [];
+    const original = motion.triggerDialWave;
+    motion.triggerDialWave = (...args) => { calls.push(args); return original(...args); };
+
+    const inst = AngleDial(runtime.document.body, { value: 135, defaultValue: 45 });
+    const svg = inst.dialEl;
+    const handle = svg.querySelector('.dial-handle');
+
+    svg.dispatchEvent(new runtime.window.MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+
+    expect(calls.length).toBe(1);
+    const [, cx, cy, opts] = calls[0];
+    expect(cx).toBe(parseFloat(handle.getAttribute('cx')));
+    expect(cy).toBe(parseFloat(handle.getAttribute('cy')));
+    expect(opts).toEqual({ clipCx: CENTER, clipCy: CENTER, clipR: RING_R });
+
+    motion.triggerDialWave = original;
+    inst.destroy();
+  });
+});
+
 describe('UI.AngleDial (non-default min/max domain — data-corruption regression)', () => {
   let runtime;
   let AngleDial;
