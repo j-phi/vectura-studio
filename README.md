@@ -591,6 +591,18 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.59
+- **Raster-Plane: hidden lines stay hidden.** Lines-as-Planes occlusion order now derives from
+  each slice's plan position instead of its sampled height, so back rows no longer break through
+  front curtains on high-contrast sources (worst at narrow Plane Width). Fix applies to cardboard
+  slices, the solid slab, and plain ridgelines.
+- **Raster-Plane: Map Blur works in every mode.** The blur now smooths the height source at the
+  sampler, so Relief Lines, Mesh, and Bars benefit — not just Topography. Blur 0 stays
+  byte-identical to previous output.
+- **Raster-Plane: Map Type "Normal" is real.** Tangent-space normal maps now reconstruct height by
+  integrating the encoded slope field (cached per source), replacing the old placeholder transform.
+  Flip Y is the green-channel convention switch.
+
 ### 1.2.40
 - **Type tool gets a live web font, per-pair kerning, and an Outline Text action.** New Type-tool layers
   now default to a vendored Inter web font parsed at boot, so they're editable with real letterforms
