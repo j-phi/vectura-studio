@@ -115,4 +115,55 @@ describe('Phase 3 closure — toast wire-ups', () => {
     expect(dangerToast).toBeTruthy();
     expect(dangerToast.textContent).toMatch(/invalid/i);
   });
+
+  // AUD-09: openVecturaFile's catch collapsed every failure mode into one
+  // opaque modal and never logged the real error, making the actual parse
+  // failure unrecoverable from the console.
+  test('openVecturaFile() console.errors the real parse error on invalid JSON', () => {
+    class FakeReader {
+      constructor() { this.result = ''; }
+      readAsText(_blob) {
+        this.result = '{ not valid';
+        if (typeof this.onload === 'function') this.onload();
+      }
+    }
+    const origReader = window.FileReader;
+    window.FileReader = FakeReader;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      window.app.ui.openVecturaFile(new window.Blob(['{}']));
+    } finally {
+      window.FileReader = origReader;
+    }
+    expect(errSpy).toHaveBeenCalled();
+    // The jsdom window realm's Error differs from this file's global Error,
+    // so check for a thrown-error shape (a `.message` string) rather than
+    // `instanceof Error`.
+    const loggedErr = errSpy.mock.calls.find((args) =>
+      args.some((a) => a && typeof a === 'object' && typeof a.message === 'string')
+    );
+    expect(loggedErr).toBeTruthy();
+    errSpy.mockRestore();
+  });
+
+  // AUD-09: saveVecturaFile was try/finally with no catch — a thrown
+  // captureState()/stringify meant no file downloaded, the progress bar
+  // closed normally, and the user got zero feedback that the save failed.
+  test('saveVecturaFile() catches a captureState failure, toasts distinctly from success, and console.errors', () => {
+    const origCapture = window.app.captureState;
+    window.app.captureState = () => { throw new Error('boom'); };
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() => window.app.ui.saveVecturaFile()).not.toThrow();
+
+    window.app.captureState = origCapture;
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+
+    const host = document.getElementById('vectura-toast-host');
+    const toasts = host.querySelectorAll('.vectura-toast');
+    const dangerToast = Array.from(toasts).find((t) => t.classList.contains('vectura-toast-danger'));
+    expect(dangerToast).toBeTruthy();
+    expect(dangerToast.textContent).not.toMatch(/^saved/i);
+  });
 });

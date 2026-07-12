@@ -96,6 +96,9 @@
         a.remove();
         URL.revokeObjectURL(url);
         toast(`Saved vectura-${date}.vectura`, 'success');
+      } catch (err) {
+        console.error('saveVecturaFile failed', err);
+        toast('Could not save the project — see console for details', 'danger');
       } finally {
         progress.done();
       }
@@ -132,6 +135,7 @@
           // Restore the pre-import state. applyState is idempotent so this
           // safely undoes any half-applied SETTINGS or engine.layers mutation.
           try { this.app.applyState(rollback); } catch (_) { /* best-effort */ }
+          console.error('openVecturaFile failed', err);
           toast('Invalid .vectura file', 'danger');
           // Bugs-4: build the body as a Node so we never feed an HTML string
           // through the modal's sanitizer for this error path.
