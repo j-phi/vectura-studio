@@ -7,6 +7,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **Raster-Plane: Map Type ‘Normal’ now performs real normal-map height reconstruction.**
+  Previously the Normal map type was a placeholder that differenced the raster's luminance
+  against the built-in procedural relief — meaningless for an actual tangent-space normal
+  map. The sampler now decodes each texel's normal (RGB → nx/ny/nz, with a quantization
+  dead-zone so flat maps stay flat and nz clamped away from zero), converts it to a slope
+  field, integrates it scanline-wise into a Float32 height grid, normalizes to [0,1], and
+  bilinearly samples that grid as the base height. Reconstructed grids are cached (bounded,
+  content-keyed) per source raster. Convention: positive red tilts the surface uphill along
+  +x; `Flip Normal Y` is now solely the green-channel sign flip in Normal mode (for maps
+  authored with the opposite green convention) — in Height mode it keeps its legacy meaning
+  as a v-axis flip. Non-raster sources (fixture grids, the image-pipeline path, the built-in
+  relief) fall back to the plain height path in Normal mode.
 - **Every parameter control now speaks one language: the shared component library.** The
   hand-rolled sliders, angle dials, and switch toggles across the app's biggest surfaces —
   the algorithm parameter panel, mirror panel (24 sliders), noise rack, fill/paint-bucket
