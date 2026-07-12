@@ -39,6 +39,18 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — Raster-Plane solid Lines-as-Planes + Plane Width slider.** Lines as Planes
+  (See-Through OFF) now renders as a true solid: back-facing side risers culled (no floating
+  corner ticks), inter-row slab strips + side quads occlude the material between slices
+  (band-inset against self-z-fighting), side silhouettes drawn as edge-profile bridges, and
+  front-facing side faces bypass HLR (orthographic side faces are never occluded). New
+  `planeWidth` param + **Plane Width** slider (1–100%, planes mode only): 100% = solid slab,
+  lower = free-standing "cardboard" slices with real gaps (per-slab edge culling; flat
+  single-curtain collapse below ~0.6 px projected thickness). Floating-horizon output now
+  drops exactly-collinear resampled points (~3× fewer points, geometry-identical).
+  (`src/core/algorithms/raster-plane.js` `buildLines`/`buildCardboardPlanes`,
+  `src/core/algorithms/geometry3d.js` `occludeRowsFloatingHorizon`,
+  `tests/unit/raster-plane-plane-width.test.js`.)
 - **Unreleased — Illustrator-style measurement readouts, center points, and multi-corner rounding.**
   Smart-guide chip redesigned to a compact gray two-line box (dark text) rounded to 0.1 mm: `dX/dY`
   delta while dragging, `X/Y` on hover/select with a pink feature label (`anchor`) pinned at the

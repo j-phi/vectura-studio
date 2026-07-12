@@ -479,6 +479,177 @@
   };
 
 
+  // Plane Width < 100 (Lines as Planes, See-Through OFF): each slice stops
+  // sharing faces with its neighbours and becomes a free-standing extruded
+  // plane — the row's height profile extruded ±half the slice thickness along
+  // the stacking axis ("cardboard slice"), with REAL gaps between rows that
+  // reveal the planes behind. Rendering is classic hidden-line removal per
+  // slab: edges are culled by which of the slab's six faces can see the
+  // camera, then horizon-clipped near→far. A slice's far-side pieces are
+  // emitted AFTER its own near curtain so the slab correctly self-occludes.
+  const buildCardboardPlanes = (p, bounds, sampler, ctx) => {
+    const { rect, nRows, cols, angle, baseHeight, planeWidth } = ctx;
+    const pitch = rect.height / Math.max(1, nRows - 1);
+    const halfT = ((planeWidth / 100) * pitch) / 2;
+    const planPt = (px, py) => (angle ? rotate2({ x: px, y: py }, angle) : { x: px, y: py });
+
+    // Sample each row's profile ONCE and extrude it to the slice's two faces
+    // (offset ∓halfT along plan v BEFORE the Line Angle roll). clipBlackAreas
+    // can split a row into disjoint slices, same as the solid path.
+    const slices = []; // { a:{top,base}, b:{top,base}, row } — a = -v side, b = +v side
+    for (let y = 0; y < nRows; y++) {
+      const v = nRows === 1 ? 0.5 : y / (nRows - 1);
+      let cur = null;
+      const flushSeg = () => { if (cur && cur.a.top.length >= 2) slices.push(cur); cur = null; };
+      for (let x = 0; x <= cols; x++) {
+        const u = x / cols;
+        const h = sampler(u, v);
+        if (p.clipBlackAreas && h < 0.04) { flushSeg(); continue; }
+        if (!cur) cur = { a: { top: [], base: [] }, b: { top: [], base: [] }, row: y };
+        const px = rect.left + u * rect.width;
+        const py = rect.top + v * rect.height;
+        const pa = planPt(px, py - halfT);
+        const pb = planPt(px, py + halfT);
+        cur.a.top.push(surfaceSample(pa.x, pa.y, h + baseHeight, p, bounds));
+        cur.a.base.push(surfaceSample(pa.x, pa.y, 0, p, bounds));
+        cur.b.top.push(surfaceSample(pb.x, pb.y, h + baseHeight, p, bounds));
+        cur.b.base.push(surfaceSample(pb.x, pb.y, 0, p, bounds));
+      }
+      flushSeg();
+    }
+    if (!slices.length) return [];
+
+    // Global face culling in camera space (linear projection ⇒ one answer for
+    // every slice): rotate each face's outward plan/vertical normal; z > 0
+    // faces the viewer. faceA/faceB are the slice's two big faces (-v / +v).
+    const angles = viewAngles(p);
+    const ref = slices[0];
+    const aFirst = ref.a.top[0].object;
+    const aLast = ref.a.top[ref.a.top.length - 1].object;
+    const uLen = Math.hypot(aLast.x - aFirst.x, aLast.z - aFirst.z) || 1;
+    const uDir = { x: (aLast.x - aFirst.x) / uLen, y: 0, z: (aLast.z - aFirst.z) / uLen };
+    const bFirst = ref.b.top[0].object;
+    const vLen = Math.hypot(bFirst.x - aFirst.x, bFirst.z - aFirst.z) || 1;
+    const vDir = { x: (bFirst.x - aFirst.x) / vLen, y: 0, z: (bFirst.z - aFirst.z) / vLen };
+    const facing = {
+      sideL: rotatePoint({ x: -uDir.x, y: 0, z: -uDir.z }, angles).z > 1e-3,
+      sideR: rotatePoint(uDir, angles).z > 1e-3,
+      faceA: rotatePoint({ x: -vDir.x, y: 0, z: -vDir.z }, angles).z > 1e-3,
+      faceB: rotatePoint(vDir, angles).z > 1e-3,
+      top: rotatePoint({ x: 0, y: 1, z: 0 }, angles).z > 1e-3,
+      bottom: rotatePoint({ x: 0, y: -1, z: 0 }, angles).z > 1e-3,
+    };
+    // Below ~half a pixel of projected thickness the two faces coincide on
+    // screen: collapse to a single flat curtain per slice so the output never
+    // double-strokes near-coincident lines (bad for plotting).
+    const tA = ref.a.top[0].point;
+    const tB = ref.b.top[0].point;
+    const flat = Math.hypot(tB.x - tA.x, tB.y - tA.y) < 0.6;
+
+    const scr = (arr) => arr.map((s) => ({ x: s.point.x, y: s.point.y }));
+    const items = slices.map((sl) => {
+      const dA = finite(meanDepth(sl.a.top), 0);
+      const dB = finite(meanDepth(sl.b.top), 0);
+      const aNear = dA >= dB;
+      const near = aNear ? sl.a : sl.b;
+      const far = aNear ? sl.b : sl.a;
+      return {
+        row: sl.row,
+        depth: Math.max(dA, dB),
+        nTop: scr(near.top), nFloor: scr(near.base),
+        fTop: scr(far.top), fFloor: scr(far.base),
+        farFront: aNear ? facing.faceB : facing.faceA,
+      };
+    }).sort((x, y) => y.depth - x.depth);
+
+    const rows = [];
+    const orthoView = p.projection !== 'perspective';
+    const direct = [];
+    const emitDirect = (a, b, meta, depth) => {
+      if (!orthoView) {
+        rows.push({ pts: [a, b], depth, occludes: false, meta });
+        return;
+      }
+      const path = [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
+      path.meta = meta;
+      direct.push(path);
+    };
+    const maxDepth = items[0].depth;
+    items.forEach((it) => {
+      const meta = { algorithm: 'rasterPlane', straight: true, mode: 'lines', reliefPlane: true, row: it.row };
+      const last = it.nTop.length - 1;
+      const nearLoop = it.nTop.concat(it.nFloor.slice().reverse(), [it.nTop[0]]);
+      const sideMetaNear = { ...meta, planeSide: true };
+      if (it.depth >= maxDepth || flat) {
+        // Front slice (nothing occludes it) and flat curtains draw the whole
+        // closed outline as one plotter-friendly path; the horizon clips it.
+        rows.push({
+          pts: nearLoop, depth: it.depth, occludes: true,
+          meta: it.depth >= maxDepth ? { ...meta, frontWall: true } : meta,
+        });
+      } else {
+        // Interior slices decompose the near face so front-facing side risers
+        // can bypass the horizon (see the side-face rule below); the closed
+        // outline would get fragmented by occlusion anyway.
+        rows.push({ pts: it.nTop, depth: it.depth, occludes: false, meta });
+        if (facing.sideL) emitDirect(it.nTop[0], it.nFloor[0], sideMetaNear, it.depth);
+        else rows.push({ pts: [it.nTop[0], it.nFloor[0]], depth: it.depth, occludes: false, meta: sideMetaNear });
+        if (facing.sideR) emitDirect(it.nTop[last], it.nFloor[last], sideMetaNear, it.depth);
+        else rows.push({ pts: [it.nTop[last], it.nFloor[last]], depth: it.depth, occludes: false, meta: sideMetaNear });
+        rows.push({ pts: it.nFloor, depth: it.depth, occludes: false, meta });
+        rows.push({ pts: nearLoop, depth: it.depth, occludes: true, draw: false, meta });
+      }
+      if (!flat) {
+        const sideMeta = { ...meta, planeSide: true };
+        const edgeMeta = { ...meta, planeEdge: true };
+        // Far-side pieces + thickness facets, culled by face visibility. Far
+        // pieces are emitted after the near loop, so the slab hides its own far
+        // side wherever the near face covers it. Anything on a FRONT-facing
+        // side face (u-extreme plane) can never be occluded in an orthographic
+        // heightfield view — those edges bypass the horizon test (see the
+        // solid-slab builder for the same rule).
+        if (it.farFront || facing.top) rows.push({ pts: it.fTop, depth: it.depth, occludes: false, meta });
+        if (facing.sideL) emitDirect(it.fTop[0], it.fFloor[0], sideMeta, it.depth);
+        else if (it.farFront) rows.push({ pts: [it.fTop[0], it.fFloor[0]], depth: it.depth, occludes: false, meta: sideMeta });
+        if (facing.sideR) emitDirect(it.fTop[last], it.fFloor[last], sideMeta, it.depth);
+        else if (it.farFront) rows.push({ pts: [it.fTop[last], it.fFloor[last]], depth: it.depth, occludes: false, meta: sideMeta });
+        if (it.farFront || facing.bottom) rows.push({ pts: it.fFloor, depth: it.depth, occludes: false, meta });
+        if (facing.sideL) {
+          emitDirect(it.nTop[0], it.fTop[0], edgeMeta, it.depth);
+          emitDirect(it.nFloor[0], it.fFloor[0], edgeMeta, it.depth);
+        } else if (facing.top) {
+          rows.push({ pts: [it.nTop[0], it.fTop[0]], depth: it.depth, occludes: false, meta: edgeMeta });
+        }
+        if (facing.sideR) {
+          emitDirect(it.nTop[last], it.fTop[last], edgeMeta, it.depth);
+          emitDirect(it.nFloor[last], it.fFloor[last], edgeMeta, it.depth);
+        } else if (facing.top) {
+          rows.push({ pts: [it.nTop[last], it.fTop[last]], depth: it.depth, occludes: false, meta: edgeMeta });
+        }
+        // Occlude with the rest of the slab: far curtain, top face, side quads.
+        rows.push({ pts: it.fTop.concat(it.fFloor.slice().reverse(), [it.fTop[0]]), depth: it.depth, occludes: true, draw: false, meta });
+        rows.push({ pts: it.nTop.concat(it.fTop.slice().reverse(), [it.nTop[0]]), depth: it.depth, occludes: true, draw: false, meta });
+        rows.push({ pts: [it.nTop[0], it.fTop[0], it.fFloor[0], it.nFloor[0], it.nTop[0]], depth: it.depth, occludes: true, draw: false, meta });
+        rows.push({ pts: [it.nTop[last], it.fTop[last], it.fFloor[last], it.nFloor[last], it.nTop[last]], depth: it.depth, occludes: true, draw: false, meta });
+      }
+    });
+
+    let roll = 0;
+    const midIt = items[Math.floor(items.length / 2)] || items[0];
+    if (midIt && midIt.nTop.length >= 2) {
+      const a = midIt.nTop[0];
+      const b = midIt.nTop[midIt.nTop.length - 1];
+      if (Number.isFinite(a.x) && Number.isFinite(a.y) && Number.isFinite(b.x) && Number.isFinite(b.y)) {
+        roll = Math.atan2(b.y - a.y, b.x - a.x);
+      }
+    }
+    return G3.occludeRowsFloatingHorizon(rows, {
+      mode: 'remove',
+      eps: Math.max(0, finite(p.depthBias, 0.5)),
+      angle: roll,
+    }).concat(direct);
+  };
+
   const buildLines = (p, bounds, sampler) => {
     const rect = artworkRect(p);
     const nRows = Math.max(2, Math.round(clamp(finite(p.rows, 42), 2, 160)));
@@ -493,6 +664,12 @@
     // The floor profile (h=0) is only needed to fill the solid occlusion band:
     // planes mode with See-Through OFF. Skip it otherwise.
     const needBase = planes && !keepHidden;
+    // Plane Width 100% = the solid slab below (slices share faces). Anything
+    // less hands off to the cardboard-slice renderer with real gaps.
+    const planeWidth = clamp(finite(p.planeWidth, 100), 1, 100);
+    if (planes && !keepHidden && planeWidth < 99.995) {
+      return buildCardboardPlanes(p, bounds, sampler, { rect, nRows, cols, angle, baseHeight, planeWidth });
+    }
 
     // Sample every model row into screen-space surface samples (carry .rotated for
     // depth + .point for screen XY). A clipBlackAreas split can break one model row
@@ -550,27 +727,126 @@
     // The nearest segment is the block's front wall: nothing occludes it, so it draws
     // its full closed outline (top + sides + floor). Every farther floor is occluder-only.
     const maxDepth = segments.reduce((m, s) => Math.max(m, finite(meanDepth(s.top), 0)), -Infinity);
-    const rows = segments.flatMap((s) => {
-      const topPts = s.top.map((t) => ({ x: t.point.x, y: t.point.y }));
-      const depth = finite(meanDepth(s.top), 0);
-      if (planes && s.base && s.base.length === s.top.length) {
-        // EVERY curtain is a solid wall: draw its full CLOSED outline — top ridgeline +
-        // right riser + floor + left riser — as one path, drawn AND used as an occluder.
-        // Processed near→far, each closed row draws (step 1) against the accumulated
-        // horizon of the nearer rows BEFORE adding itself (step 2), so a wall's sides
-        // and bottom show wherever no nearer wall covers them and are hidden where one
-        // does — exactly "every plane has a side and bottom, occluded only when another
-        // plane blocks it." The dense stack of risers fills the front/side FACES of the
-        // solid; the floors fill the bottom; interior risers sit behind nearer walls and
-        // drop out. What remains visible along the outer left/right silhouette is each
-        // row's short edge-sliver peeking above its nearer neighbour — the genuine,
-        // wanted side of the block, not interior noise.
-        const floorPts = s.base.map((b) => ({ x: b.point.x, y: b.point.y }));
-        const wall = topPts.concat(floorPts.slice().reverse(), [topPts[0]]);
-        return [{ pts: wall, depth, occludes: true, meta: { ...mkMeta(s), frontWall: depth >= maxDepth } }];
+    // Side-face facing (planes only). The block's left (u=0) / right (u=1) faces lie
+    // along the row direction, so their outward normals are ∓(plan row direction).
+    // Rotate that into camera space: z > 0 faces the viewer. Back-facing side risers
+    // are interior edges of the solid — culled, NOT drawn-if-horizon-visible, because
+    // the discrete curtain stack leaves their corner columns uncovered and they'd
+    // "peek through" as floating ticks the solid's continuous surface would hide.
+    const sideFacing = (() => {
+      if (!planes) return { left: true, right: true };
+      const ref = segments.find((s) => s.top.length >= 2);
+      if (!ref) return { left: true, right: true };
+      const a = ref.top[0].object;
+      const b = ref.top[ref.top.length - 1].object;
+      // Plan direction only (object y is the height axis).
+      const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+      const u = { x: (b.x - a.x) / len, y: 0, z: (b.z - a.z) / len };
+      const angles = viewAngles(p);
+      return {
+        left: rotatePoint({ x: -u.x, y: 0, z: -u.z }, angles).z > 1e-3,
+        right: rotatePoint(u, angles).z > 1e-3,
+      };
+    })();
+    // Build the floating-horizon entry list. Plain lines keep one drawn+occluding
+    // top-profile row per segment. Planes decompose each curtain wall so the solid
+    // renders faithfully at any slice count:
+    //   draw  — top ridgeline; side risers only on FRONT-facing sides (the comb that
+    //           fills a visible side face); the front wall's full closed outline; and
+    //           "bridge" edges between adjacent rows' endpoints (the u=0/u=1 boundary
+    //           of the top surface — the clean side silhouette that replaces the
+    //           stair-stepped corner ticks). Floor bridges (bottom silhouette) draw
+    //           on front-facing sides only.
+    //   occlude — every wall's closed band (as before), PLUS the slab between each
+    //           adjacent pair: the top-surface strip and the two side quads. These
+    //           cover the corner columns the discrete curtains miss, so nothing
+    //           farther leaks through what is actually solid material.
+    // Entries are emitted near→far already interleaved; strip/bridge depths sit
+    // strictly between their two walls so the sort keeps this exact order (stable
+    // tie-break preserves input order when depths collapse).
+    const walls = segments.map((s) => ({
+      s,
+      top: s.top.map((t) => ({ x: t.point.x, y: t.point.y })),
+      floor: (planes && s.base && s.base.length === s.top.length)
+        ? s.base.map((b) => ({ x: b.point.x, y: b.point.y }))
+        : null,
+      depth: finite(meanDepth(s.top), 0),
+      full: s.top.length === cols + 1,
+    })).sort((a, b) => b.depth - a.depth);
+    const rows = [];
+    // Side-face geometry on a FRONT-facing side is never occluded (orthographic
+    // heightfield: a ray to the extreme-u plane leaves the block immediately, so
+    // no slice can be in front of it). Horizon-testing it anyway WRONGLY clips
+    // it against nearer cross-slice bands that merely share screen columns —
+    // that's the "floating whisker" artifact (risers/edge bridges cut mid-air).
+    // So front-facing side edges bypass the HLR and emit directly.
+    // The never-occluded argument requires parallel rays: under perspective the
+    // side edges fall back to normal horizon testing.
+    const orthoView = p.projection !== 'perspective';
+    const direct = [];
+    const emitDirect = (a, b, meta, depth) => {
+      if (!orthoView) {
+        rows.push({ pts: [a, b], depth, occludes: false, meta });
+        return;
       }
-      return [{ pts: topPts, depth, occludes: true, meta: mkMeta(s) }];
-    });
+      const path = [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
+      path.meta = meta;
+      direct.push(path);
+    };
+    for (let i = 0; i < walls.length; i++) {
+      const w = walls[i];
+      const meta = mkMeta(w.s);
+      if (!w.floor) {
+        rows.push({ pts: w.top, depth: w.depth, occludes: true, meta });
+        continue;
+      }
+      const last = w.top.length - 1;
+      const wallLoop = w.top.concat(w.floor.slice().reverse(), [w.top[0]]);
+      if (w.depth >= maxDepth) {
+        // Front wall: nothing occludes it — draw the full closed outline whole.
+        rows.push({ pts: wallLoop, depth: w.depth, occludes: true, meta: { ...meta, frontWall: true } });
+      } else {
+        rows.push({ pts: w.top, depth: w.depth, occludes: false, meta });
+        const sideMeta = { ...meta, planeSide: true };
+        if (sideFacing.left && w.full) emitDirect(w.top[0], w.floor[0], sideMeta, w.depth);
+        if (sideFacing.right && w.full) emitDirect(w.top[last], w.floor[last], sideMeta, w.depth);
+        // clipBlackAreas hole edges are interior, not block sides: horizon-tested.
+        if (!w.full) {
+          rows.push({ pts: [w.top[0], w.floor[0]], depth: w.depth, occludes: false, meta: sideMeta });
+          rows.push({ pts: [w.top[last], w.floor[last]], depth: w.depth, occludes: false, meta: sideMeta });
+        }
+        // Interior floors are inside the solid — occluder-only via the wall band.
+        rows.push({ pts: wallLoop, depth: w.depth, occludes: true, draw: false, meta });
+      }
+      // Slab between this wall and the adjacent farther row (full rows only —
+      // clipBlackAreas splits break the solid interpretation, so clipped rows
+      // keep the plain curtain behavior). The slab's band is INSET by ~1px so
+      // the farther wall's own top — the slab's boundary — can never z-fight
+      // it at low Occlusion Bias (self-occlusion acne).
+      const n = walls[i + 1];
+      if (!n || !n.floor || !w.full || !n.full || Math.abs(n.s.row - w.s.row) !== 1) continue;
+      const mid = (w.depth + n.depth) / 2;
+      const edgeMeta = { ...meta, planeEdge: true };
+      // Edge-profile bridges: on a front-facing side they lie on the side face
+      // (direct); on a back-facing side they form the silhouette where nothing
+      // nearer covers them (horizon-tested).
+      if (sideFacing.left) {
+        emitDirect(w.top[0], n.top[0], edgeMeta, mid);
+        emitDirect(w.floor[0], n.floor[0], edgeMeta, mid);
+      } else {
+        rows.push({ pts: [w.top[0], n.top[0]], depth: mid, occludes: false, meta: edgeMeta });
+      }
+      if (sideFacing.right) {
+        emitDirect(w.top[last], n.top[last], edgeMeta, mid);
+        emitDirect(w.floor[last], n.floor[last], edgeMeta, mid);
+      } else {
+        rows.push({ pts: [w.top[last], n.top[last]], depth: mid, occludes: false, meta: edgeMeta });
+      }
+      const slabInset = 1.25;
+      rows.push({ pts: w.top.concat(n.top.slice().reverse(), [w.top[0]]), depth: mid, occludes: true, draw: false, inset: slabInset, meta });
+      rows.push({ pts: [w.top[0], n.top[0], n.floor[0], w.floor[0], w.top[0]], depth: mid, occludes: true, draw: false, inset: slabInset, meta });
+      rows.push({ pts: [w.top[last], n.top[last], n.floor[last], w.floor[last], w.top[last]], depth: mid, occludes: true, draw: false, inset: slabInset, meta });
+    }
     // Roll: align the rows to screen-X so the horizon band is measured along the
     // near→far stacking axis. The projection's rotate + tilt + Line Angle all fold
     // into the on-screen slant of a row, so derive it from a representative row's
@@ -590,7 +866,7 @@
       mode: 'remove',
       eps: Math.max(0, finite(p.depthBias, 0.5)),
       angle: roll,
-    });
+    }).concat(direct);
   };
 
   const buildMesh = (p, bounds, sampler) => {
