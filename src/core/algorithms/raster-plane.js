@@ -254,15 +254,197 @@
     };
   };
 
+  // ---------------------------------------------------------------------------
+  // Normal-map height reconstruction (mapType 'normal').
+  //
+  // A tangent-space normal map stores per-texel surface ORIENTATION, not height,
+  // so the relief must be recovered by integrating the slope field it encodes.
+  //  - Decode per texel: n = byte/127.5 - 1 per channel; nz is clamped away from
+  //    zero so grazing normals cannot blow the slopes up. Bytes within half a
+  //    quantization step of the 0.5 midpoint decode to exactly zero slope, so a
+  //    nominally flat map (128,128,255) does not integrate a spurious drift that
+  //    the final normalization would then amplify to full range.
+  //  - Convention: a positive red/green component tilts the surface UPHILL along
+  //    +x/+y. `normalFlipY` flips the green-channel sign for maps authored with
+  //    the opposite green convention (in normal mode it is NOT a v-coordinate
+  //    flip — see createSampler).
+  //  - Integration: scanline pass — h(0,0) = 0, the first row accumulates the
+  //    x-slope, the first column accumulates the y-slope, and every interior
+  //    texel averages its two one-step predictions (left + sx, up + sy). The
+  //    grid is then normalized to [0,1] (zero range → flat 0.5).
+  // ---------------------------------------------------------------------------
+
+  // Half a byte quantization step around the 0.5 midpoint: bytes 127/128 both
+  // mean "no tilt" and must decode to a mathematically flat slope.
+  const NORMAL_DEAD_ZONE = 1.5 / 255;
+
+  const reconstructNormalHeightGrid = (img, flipY) => {
+    const w = img.width;
+    const h = img.height;
+    const d = img.data;
+    const grid = new Float32Array(w * h);
+    const ySign = flipY ? -1 : 1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        let nx = d[i] / 127.5 - 1;
+        let ny = d[i + 1] / 127.5 - 1;
+        const nz = Math.max(d[i + 2] / 127.5 - 1, 0.08);
+        if (Math.abs(nx) < NORMAL_DEAD_ZONE) nx = 0;
+        if (Math.abs(ny) < NORMAL_DEAD_ZONE) ny = 0;
+        const sx = nx / nz;
+        const sy = ySign * (ny / nz);
+        const k = y * w + x;
+        if (x === 0 && y === 0) grid[k] = 0;
+        else if (y === 0) grid[k] = grid[k - 1] + sx;
+        else if (x === 0) grid[k] = grid[k - w] + sy;
+        else grid[k] = (grid[k - 1] + sx + grid[k - w] + sy) * 0.5;
+      }
+    }
+    let min = Infinity;
+    let max = -Infinity;
+    for (let k = 0; k < grid.length; k++) {
+      if (grid[k] < min) min = grid[k];
+      if (grid[k] > max) max = grid[k];
+    }
+    const range = max - min;
+    if (range < 1e-6) grid.fill(0.5);
+    else for (let k = 0; k < grid.length; k++) grid[k] = (grid[k] - min) / range;
+    return { width: w, height: h, grid };
+  };
+
+  // Bounded cache of reconstructed grids. Cheap content key: dims + byteLength
+  // + first/last bytes + a sparse FNV-1a (~1 byte per KiB) + the flip flag — so
+  // a repainted or re-imported raster naturally invalidates its entry.
+  const NORMAL_GRID_CACHE = new Map();
+  const NORMAL_GRID_CACHE_MAX = 4;
+
+  const normalGridKey = (img, flipY) => {
+    const d = img.data;
+    const n = d.length;
+    let hsh = 2166136261 >>> 0;
+    const mix = (b) => {
+      hsh ^= b;
+      hsh = Math.imul(hsh, 16777619);
+    };
+    const step = Math.max(4, Math.floor(n / 4096) * 4);
+    for (let i = 0; i < n; i += step) mix(d[i]);
+    for (let i = 0; i < 4 && i < n; i++) mix(d[i]);
+    for (let i = Math.max(0, n - 4); i < n; i++) mix(d[i]);
+    return img.width + 'x' + img.height + ':' + n + ':' + (hsh >>> 0).toString(36) + ':' + (flipY ? 1 : 0);
+  };
+
+  const resolveNormalHeightGrid = (img, flipY) => {
+    if (!img || !img.data || !Number.isFinite(img.width) || !Number.isFinite(img.height)) return null;
+    if (img.width < 1 || img.height < 1 || img.data.length < img.width * img.height * 4) return null;
+    const key = normalGridKey(img, flipY);
+    if (NORMAL_GRID_CACHE.has(key)) {
+      const hit = NORMAL_GRID_CACHE.get(key);
+      NORMAL_GRID_CACHE.delete(key); // refresh recency (Map keeps insertion order)
+      NORMAL_GRID_CACHE.set(key, hit);
+      return hit;
+    }
+    const rec = reconstructNormalHeightGrid(img, flipY);
+    NORMAL_GRID_CACHE.set(key, rec);
+    while (NORMAL_GRID_CACHE.size > NORMAL_GRID_CACHE_MAX) {
+      NORMAL_GRID_CACHE.delete(NORMAL_GRID_CACHE.keys().next().value);
+    }
+    return rec;
+  };
+
+  // Bilinear sample of a reconstructed height grid at (u, v) ∈ [0,1]².
+  const sampleHeightGrid = (rec, u, v) => {
+    const fx = clamp(u, 0, 1) * (rec.width - 1);
+    const fy = clamp(v, 0, 1) * (rec.height - 1);
+    const x0 = Math.floor(fx);
+    const y0 = Math.floor(fy);
+    const x1 = Math.min(rec.width - 1, x0 + 1);
+    const y1 = Math.min(rec.height - 1, y0 + 1);
+    const tx = fx - x0;
+    const ty = fy - y0;
+    const g = rec.grid;
+    const top = g[y0 * rec.width + x0] * (1 - tx) + g[y0 * rec.width + x1] * tx;
+    const bot = g[y1 * rec.width + x0] * (1 - tx) + g[y1 * rec.width + x1] * tx;
+    return top * (1 - ty) + bot * ty;
+  };
+
+  // Map Blur (p.mapBlur, 0–100) smooths the RAW base height at the sampler, so
+  // every mode (lines/mesh/topography/bars) reads a softened field — hard
+  // luminance steps in the source no longer project as jagged square-wave
+  // profiles. It wraps only the base-value lookup: the tone pipeline
+  // (mapType/invert/gamma/contrast) and the noise-rack fold run AFTER the
+  // blur, once, on the blurred value. Returns `baseValue` untouched when
+  // mapBlur <= 0 so the zero setting stays byte-identical to no blur at all.
+  const createBlurredBase = (p, baseValue, { fixture, direct, noiseImage }) => {
+    const blur = finite(p.mapBlur, 0);
+    if (blur <= 0) return baseValue;
+    // Texel size of the ACTIVE source, mirroring the fall-through priority in
+    // baseValue: fixture grid → direct imageData → NOISE_IMAGES raster (which
+    // also backs the custom-controls Image-layer path) → the procedural
+    // built-in, treated as a SOURCE_RES-texel surface.
+    let resU = SOURCE_RES;
+    let resV = SOURCE_RES;
+    const flat = noiseImage?.imageData || noiseImage;
+    if (Array.isArray(fixture) && fixture.length && Array.isArray(fixture[0])) {
+      resU = fixture[0].length;
+      resV = fixture.length;
+    } else if (direct && Number.isFinite(direct.width) && Number.isFinite(direct.height)) {
+      resU = direct.width;
+      resV = direct.height;
+    } else if (flat && Number.isFinite(flat.width) && Number.isFinite(flat.height)) {
+      resU = flat.width;
+      resV = flat.height;
+    }
+    // Radius in texels of the active source: sub-texel feathering at low
+    // settings, ramping quadratically to ~9 texels at 100.
+    const t = blur / 100;
+    const radius = 0.35 + t * t * 8.65;
+    const du = radius / Math.max(1, resU);
+    const dv = radius / Math.max(1, resV);
+    // Diagonal taps sit on the same radius ring as the axis taps.
+    const dg = Math.SQRT1_2;
+    // Fixed 9-tap kernel (center ×4, axis ×2, diagonal ×1 — weights sum 16).
+    // Deterministic, locals only; taps clamp into [0,1] so edges replicate.
+    return (uu, vv) => {
+      const xl = clamp(uu - du, 0, 1);
+      const xr = clamp(uu + du, 0, 1);
+      const yt = clamp(vv - dv, 0, 1);
+      const yb = clamp(vv + dv, 0, 1);
+      const xld = clamp(uu - du * dg, 0, 1);
+      const xrd = clamp(uu + du * dg, 0, 1);
+      const ytd = clamp(vv - dv * dg, 0, 1);
+      const ybd = clamp(vv + dv * dg, 0, 1);
+      return (
+        baseValue(uu, vv) * 4
+        + (baseValue(xl, vv) + baseValue(xr, vv) + baseValue(uu, yt) + baseValue(uu, yb)) * 2
+        + baseValue(xld, ytd) + baseValue(xrd, ytd) + baseValue(xld, ybd) + baseValue(xrd, ybd)
+      ) / 16;
+    };
+  };
+
   const createSampler = (p, noise) => {
     const direct = p.imageData || p.fixtureImageData || null;
     const fixture = p.fixtureGrid || p.sampleGrid || null;
     const noiseImage = p.imageId && Vectura.NOISE_IMAGES ? Vectura.NOISE_IMAGES[p.imageId] : null;
     const baseImageLuma = createBaseImageLuma(p);
     const noiseField = createNoiseField(p, noise);
-    return (u, v) => {
-      const uu = clamp(u, 0, 1);
-      const vv = p.normalFlipY ? 1 - clamp(v, 0, 1) : clamp(v, 0, 1);
+    // mapType 'normal': the active raster is a tangent-space normal map, so its
+    // base height comes from gradient-field integration (resolveNormalHeightGrid)
+    // instead of reading the raster as luminance. Only actual rasters carry
+    // normals — fixture grids, the NoiseRack image pipeline (baseImageLuma), and
+    // the procedural builtin are plain heightfields and keep the height path
+    // even in normal mode. Source priority mirrors the height chain below:
+    // fixture > direct raster > image-pipeline > NOISE_IMAGES raster.
+    const fixtureActive = Array.isArray(fixture) && fixture.length > 0 && Array.isArray(fixture[0]);
+    const normalRaster = p.mapType === 'normal' && !fixtureActive
+      ? (direct || (!baseImageLuma && (noiseImage?.imageData || noiseImage)) || null)
+      : null;
+    const normalGrid = normalRaster ? resolveNormalHeightGrid(normalRaster, !!p.normalFlipY) : null;
+    // Raw base height: the source fall-through, untouched by tone or noise. In
+    // normal mode the reconstructed grid IS the base height, so it sits inside
+    // this function and Map Blur (below) smooths it like any other source.
+    const baseValue = (uu, vv) => {
+      if (normalGrid) return sampleHeightGrid(normalGrid, uu, vv);
       let value = fixtureSample(fixture, uu, vv);
       if (value === null) value = imageDataSample(direct, uu, vv);
       // When the Image base layer has custom controls, its NoiseRack-resolved
@@ -274,7 +456,17 @@
       // the dimensions. `.imageData` unwraps any future nested wrapper shape.
       if (value === null) value = imageDataSample(noiseImage?.imageData || noiseImage, uu, vv);
       if (value === null) value = sampleBuiltIn(uu, vv);
-      if (p.mapType === 'normal') value = clamp(0.5 + (value - sampleBuiltIn(uu, 1 - vv)) * 1.4, 0, 1);
+      return value;
+    };
+    const resolveBase = createBlurredBase(p, baseValue, { fixture, direct, noiseImage });
+    return (u, v) => {
+      const uu = clamp(u, 0, 1);
+      // Legacy: `normalFlipY` doubles as a v-axis flip for the plain height
+      // chain (kept for back-compat). When a reconstructed grid is active the
+      // flag is ONLY the green-channel sign flip baked into the grid — flipping
+      // v here as well would double-apply it.
+      const vv = p.normalFlipY && !normalGrid ? 1 - clamp(v, 0, 1) : clamp(v, 0, 1);
+      let value = resolveBase(uu, vv);
       if (p.invert) value = 1 - value;
       const gamma = Math.max(0.1, finite(p.gamma, 1));
       value = Math.pow(clamp(value, 0, 1), gamma);
@@ -346,30 +538,11 @@
       for (let x = 0; x <= cols; x++) row.push(sampler(x / cols, y / rows));
       field.push(row);
     }
-    // Map Blur (p.mapBlur) blurs the sampled height field BEFORE projection — a
-    // distinct operation from the universal output-line Smoothing (p.smoothing),
-    // which the engine now applies post-projection. Renamed off `smoothing` so
-    // the two no longer collide on one param id.
-    if (finite(p.mapBlur, 0) <= 0) return field;
-    const passes = Math.max(1, Math.round(clamp(finite(p.mapBlur, 0) / 25, 0, 4)));
-    let current = field;
-    for (let pass = 0; pass < passes; pass++) {
-      current = current.map((row, y) => row.map((value, x) => {
-        let sum = 0;
-        let count = 0;
-        for (let yy = -1; yy <= 1; yy++) {
-          for (let xx = -1; xx <= 1; xx++) {
-            const next = current[y + yy]?.[x + xx];
-            if (Number.isFinite(next)) {
-              sum += next;
-              count++;
-            }
-          }
-        }
-        return count ? sum / count : value;
-      }));
-    }
-    return current;
+    // Map Blur (p.mapBlur) is already baked into `sampler` (createBlurredBase
+    // wraps the base-value lookup pre-tone, for every mode), so the field is
+    // sampled smooth here — no second field-level blur pass, which would
+    // double-blur topography relative to lines/mesh/bars.
+    return field;
   };
 
   // Mean camera-space z over a set of surface samples (or raw projected points),
@@ -381,6 +554,31 @@
     let count = 0;
     (samples || []).forEach((s) => {
       const z = s && (s.rotated ? s.rotated.z : (s.point ? s.point.z : s.z));
+      if (Number.isFinite(z)) {
+        sum += z;
+        count++;
+      }
+    });
+    return count ? sum / count : null;
+  };
+
+  // Mean PLAN-position camera z over a set of surface samples, LARGER = NEARER.
+  // Occlusion order between parallel plan-line rows must depend ONLY on plan
+  // position: every row occludes the full vertical extent behind it, so the
+  // content's height is irrelevant to who hides whom. meanDepth's raw camera z
+  // mixes object height (y) into z under tilt, which let a taller-but-farther
+  // row register as "nearer" — it reached the hidden-line pass out of order,
+  // so its lines were never tested against the truly nearer curtain and broke
+  // through it. rotatePoint is linear, so subtracting the height axis's camera-z
+  // contribution (object.y × rotated ŷ.z) recovers the exact plan-only depth.
+  // Returns null when no sample is usable, mirroring meanDepth's contract.
+  const meanPlanDepth = (samples, p) => {
+    const hz = rotatePoint({ x: 0, y: 1, z: 0 }, viewAngles(p)).z;
+    let sum = 0;
+    let count = 0;
+    (samples || []).forEach((s) => {
+      if (!s || !s.rotated || !s.object) return;
+      const z = s.rotated.z - s.object.y * hz;
       if (Number.isFinite(z)) {
         sum += z;
         count++;
@@ -548,8 +746,8 @@
 
     const scr = (arr) => arr.map((s) => ({ x: s.point.x, y: s.point.y }));
     const items = slices.map((sl) => {
-      const dA = finite(meanDepth(sl.a.top), 0);
-      const dB = finite(meanDepth(sl.b.top), 0);
+      const dA = finite(meanPlanDepth(sl.a.top, p), 0);
+      const dB = finite(meanPlanDepth(sl.b.top, p), 0);
       const aNear = dA >= dB;
       const near = aNear ? sl.a : sl.b;
       const far = aNear ? sl.b : sl.a;
@@ -726,7 +924,7 @@
     const mkMeta = (s) => ({ algorithm: 'rasterPlane', straight: true, mode: 'lines', reliefPlane: planes, row: s.row });
     // The nearest segment is the block's front wall: nothing occludes it, so it draws
     // its full closed outline (top + sides + floor). Every farther floor is occluder-only.
-    const maxDepth = segments.reduce((m, s) => Math.max(m, finite(meanDepth(s.top), 0)), -Infinity);
+    const maxDepth = segments.reduce((m, s) => Math.max(m, finite(meanPlanDepth(s.top, p), 0)), -Infinity);
     // Side-face facing (planes only). The block's left (u=0) / right (u=1) faces lie
     // along the row direction, so their outward normals are ∓(plan row direction).
     // Rotate that into camera space: z > 0 faces the viewer. Back-facing side risers
@@ -770,7 +968,7 @@
       floor: (planes && s.base && s.base.length === s.top.length)
         ? s.base.map((b) => ({ x: b.point.x, y: b.point.y }))
         : null,
-      depth: finite(meanDepth(s.top), 0),
+      depth: finite(meanPlanDepth(s.top, p), 0),
       full: s.top.length === cols + 1,
     })).sort((a, b) => b.depth - a.depth);
     const rows = [];

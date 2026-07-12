@@ -519,12 +519,21 @@ describe('Vectura geometry algorithms', () => {
       sampleDetail: 40,
       rows: 22,
       amplitude: 80,
+      // This scenario measures the OCCLUSION differential only. generate()
+      // spreads ALGO_DEFAULTS, and the default Map Blur (18) now reaches
+      // lines mode — softening the 1-row ridge and narrowing the tight/loose
+      // ratio past the margin. Pin blur off so the fixture stays a hard ridge.
+      mapBlur: 0,
     };
     const ridgeTight = generate('rasterPlane', { ...ridgeCfg, depthBias: 0.3 });
     const ridgeLoose = generate('rasterPlane', { ...ridgeCfg, depthBias: 50 });
     expect(finitePaths(ridgeTight)).toBe(true);
     expect(countPoints(ridgeTight)).toBeGreaterThan(0);
-    expect(totalLen(ridgeTight)).toBeLessThan(totalLen(ridgeLoose) * 0.85);
+    // Margin recalibrated (0.85 → 0.92) when row occlusion order switched to
+    // plan-position depth: the tall ridge no longer wrongly clips the rows in
+    // FRONT of it (it used to sort as "nearest" and eat their length), so the
+    // tight/loose differential narrowed while occlusion itself still holds.
+    expect(totalLen(ridgeTight)).toBeLessThan(totalLen(ridgeLoose) * 0.92);
 
     const solidBars = generate('rasterPlane', {
       mode: 'bars',

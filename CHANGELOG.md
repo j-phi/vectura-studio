@@ -18,6 +18,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   Auto-Colorize's "Angle Offset" (Spiral Sweep + Angle Slice modes). Required the
   `UI.AngleDial` min/max domain fix above — every one of these controls has a non-`[0,360]`
   domain (e.g. `-90..90`, `-180..180`) that the dial would previously have corrupted.
+- **Raster-Plane: Map Type ‘Normal’ now performs real normal-map height reconstruction.**
+  Previously the Normal map type was a placeholder that differenced the raster's luminance
+  against the built-in procedural relief — meaningless for an actual tangent-space normal
+  map. The sampler now decodes each texel's normal (RGB → nx/ny/nz, with a quantization
+  dead-zone so flat maps stay flat and nz clamped away from zero), converts it to a slope
+  field, integrates it scanline-wise into a Float32 height grid, normalizes to [0,1], and
+  bilinearly samples that grid as the base height. Reconstructed grids are cached (bounded,
+  content-keyed) per source raster. Convention: positive red tilts the surface uphill along
+  +x; `Flip Normal Y` is now solely the green-channel sign flip in Normal mode (for maps
+  authored with the opposite green convention) — in Height mode it keeps its legacy meaning
+  as a v-axis flip. Non-raster sources (fixture grids, the image-pipeline path, the built-in
+  relief) fall back to the plain height path in Normal mode.
 - **Every parameter control now speaks one language: the shared component library.** The
   hand-rolled sliders, angle dials, and switch toggles across the app's biggest surfaces —
   the algorithm parameter panel, mirror panel (24 sliders), noise rack, fill/paint-bucket
@@ -91,6 +103,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   `tests/integration/algo-config-shared-controls.test.js`,
   `tests/integration/auto-colorize.test.js`, and
   `tests/integration/petal-designer-shared-sliders.test.js`.
+- **Raster-Plane "Lines as Planes" hidden-line order now follows plan position.** The
+  near→far ordering of slices/walls used the raw camera-space depth of each row's TOP
+  surface, which mixes the content's height into depth under tilt: a taller-but-farther
+  row could sort as "nearer", reach the floating-horizon pass out of order, and its lines
+  were never tested against the truly nearer curtain — back rows broke through front
+  walls (worst on narrow "cardboard" slices, Plane Width < 100). A new plan-position
+  depth (`meanPlanDepth`) subtracts the height axis's camera-z contribution so occlusion
+  order between parallel rows depends only on plan position; the front-wall pick, sort
+  keys, and slab depths all follow. Depth-cue stamping (`meta.depth`) is unchanged.
 - **Keyboard shortcuts no longer fire through open modals.** Window-level shortcuts
   (Delete, Cmd+Z, Cmd+K…) were reaching the engine while any dialog or modal was open —
   including the legacy settings/export/help overlay, where Delete could remove the very
@@ -109,6 +130,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   `.github/workflows/test.yml`'s coverage step now retries up to 3 times before failing.
 
 ### Changed
+- **Raster-Plane: Map Blur now smooths every mode.** Map Blur previously only affected
+  Topography (a post-tone box blur on its contour field); Relief Lines, Deformed Mesh, and
+  Bars sampled the raw raster nearest-neighbour, so hard luminance steps projected as
+  jagged square-wave profiles regardless of the slider. The blur now lives at the sampler:
+  a deterministic 9-tap kernel (radius 0.35–9 texels of the active source, quadratic ramp)
+  smooths the raw base height BEFORE the tone pipeline (map type/invert/gamma/contrast) and
+  the noise-rack fold, for all four modes. Topography's duplicate field-level blur was
+  removed so it no longer double-blurs, and the Map Blur control is un-gated from
+  topography-only to all modes. Map Blur 0 remains byte-identical to no blur. Note: at the
+  default Map Blur 18 the `raster-plane-canonical` and `raster-plane-topography` SVG
+  baselines legitimately shift (lines gains blur for the first time; topography's blur
+  moved pre-tone) — baseline refresh is a merge-review decision.
 - Mirror-panel sliders now fill with the skin accent color rather than the per-mirror-type
   hue (consequence of the shared-component look; per-type tinting noted as a possible
   follow-up CSS hook).

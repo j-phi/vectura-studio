@@ -2069,8 +2069,8 @@
       artworkSize: 150,
       amplitude: 10,
       sampleDetail: 84,
-      // Map Blur blurs the sampled height field before projection (topography
-      // mode only). Distinct from the universal output-line `smoothing` below.
+      // Map Blur smooths the raw height source at the sampler (pre-tone, every
+      // mode). Distinct from the universal output-line `smoothing` below.
       mapBlur: 18,
       invert: false,
       gamma: 1,
