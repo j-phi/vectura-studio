@@ -1,4 +1,4 @@
 (() => {
   const Vectura = (window.Vectura = window.Vectura || {});
-  Vectura.APP_VERSION = '1.2.54';
+  Vectura.APP_VERSION = '1.2.55';
 })();
