@@ -153,7 +153,7 @@ field).
 
 ---
 
-### AUD-03 · Fix `SeededRNG(0)` falling back to `Math.random()` (reproducibility bug)
+### AUD-03 · Fix `SeededRNG(0)` falling back to `Math.random()` (reproducibility bug) — DONE, see Done section
 
 **Problem (verified against source 2026-07-11).** `src/core/rng.js:10`:
 `this.state = seed ? seed : Math.floor(Math.random() * (this.m - 1));`
@@ -341,7 +341,7 @@ manual check: save a preset normally in the running app, confirm no behavior cha
 
 ---
 
-### AUD-09 · Stop losing errors in `.vectura` save/open
+### AUD-09 · Stop losing errors in `.vectura` save/open — DONE, see Done section
 
 **Problem.** `src/ui/ui-file-io.js`: `saveVecturaFile` (~67) is `try/finally` with **no
 catch** — if `captureState()`/stringify throws, no file downloads, the progress bar
@@ -366,7 +366,7 @@ e2e); manual: save + reopen a real project in the app still works.
 
 ---
 
-### AUD-17 · Add a global error handler (uncaught errors are currently invisible) *(added 2026-07-11)*
+### AUD-17 · Add a global error handler (uncaught errors are currently invisible) *(added 2026-07-11)* — DONE, see Done section
 
 **Problem (verified: no `window.onerror` / `error` / `unhandledrejection` listener
 anywhere in src/ or index.html).** Any uncaught exception — including the AUD-05
@@ -584,7 +584,7 @@ One commit per bullet; all are independent.
    bumps = fewer cache invalidations on the public site. DoD: scratch commit staging
    only a test file does not bump package.json.
 3. **Orphaned script.** Delete `scripts/benchmark_clone.js` (zero references). DoD:
-   grep proves no references, suites unaffected.
+   grep proves no references, suites unaffected. — **DONE, see Done section (AUD-15.3)**
 4. **settings.local.json leftovers.** Remove one-off permission entries
    (`node /tmp/test-lissajous.js`, hardcoded gstatic curl, `.audit3d` mkdir). Show Jay
    the removal list in the commit body. DoD: entries gone, no active workflow depends
@@ -690,7 +690,7 @@ scratch-commit demonstration.
 
 ---
 
-### AUD-20 · Untrack the 11 stale-tracked `src/inspiration` images (~25 MB shipping by accident) *(added 2026-07-11, resolved from discovery)*
+### AUD-20 · Untrack the 11 stale-tracked `src/inspiration` images (~25 MB shipping by accident) *(added 2026-07-11, resolved from discovery)* — DONE, see Done section
 
 **Problem (verified).** `src/inspiration/` holds 67 reference images (68 MB — the
 entire mystery weight of the 73 MB `src/`). The dir is gitignored (`.gitignore:19:
@@ -772,3 +772,47 @@ dry-run zip shrinkage shown; suites green (nothing references the images, so
   Excluded from triage: `recover-other-session-wip-2026-07-12` and its matching
   stash — an active checkpoint from another live session, left untouched. Stash
   triage (`stash@{0}`/`stash@{1}`) remains owned by AUD-06, not touched here.
+
+- **AUD-15.3** (2026-07-12, `cab94d9`). Deleted `scripts/benchmark_clone.js` — zero
+  references from `src/`, `tests/`, `scripts/`, or `package.json` (grep-verified).
+
+- **AUD-20** (2026-07-12, `2229064`). `git rm --cached` the 11 stale-tracked
+  `src/inspiration/*.png` (~25 MB); zero code references confirmed; images remain on
+  disk, already covered by the existing `.gitignore` rule. Blobs remain in git history
+  until AUD-11's history-filter plan executes.
+
+- **AUD-03** (2026-07-12, `6e8ac1c`). `rng.js`'s `seed ? seed : <random>` treated seed 0
+  as falsy, so `SeededRNG(0)` reseeded from `Math.random()` every construction — SVG
+  import hard-sets `seed = 0`, so every imported layer and any saved seed-0 layer
+  rendered non-deterministically. Fixed to `seed == null ? <random> : seed`. Algorithm
+  call sites already used the null-safe `p.seed ?? 0`, so only the constructor needed
+  the fix. Added a constants-lock test pinning the LCG's first-5-output sequences for
+  seeds 0/1/42. RGR in `tests/unit/rng-noise.test.js`. Full unit (256/256) + visual
+  (34/34) green; one pre-existing unrelated integration failure
+  (`pendula-preset-gallery.test.js` "auto-applied to a fresh layer") verified caused by
+  a concurrent session's uncommitted edit to `user-presets/pendula/default.vectura`
+  (reproduces identically with this commit's diff reverted).
+
+- **AUD-09** (2026-07-12, `dc14b1d`). `saveVecturaFile` was try/finally with no catch —
+  a thrown `captureState()`/stringify meant no file downloaded and zero user feedback.
+  Added a catch: `console.error` + a danger toast distinct from the success toast.
+  `openVecturaFile` already caught and toasted but never logged the real error; added
+  `console.error(err)` alongside the existing rollback/toast/modal. RGR: two new tests
+  in `tests/integration/menus/toast-wireups.test.js`. Full unit (256/256) + integration
+  (168/169, same pre-existing unrelated failure as AUD-03) + e2e (53/53 + 7 skipped)
+  green.
+
+- **AUD-17** (2026-07-12, `53e2365`). No `window.onerror`/`unhandledrejection` listener
+  existed anywhere — any uncaught exception left the UI silently dead. Added
+  `installGlobalErrorHandler()` (`src/app/app.js`, called from `App`'s constructor):
+  `console.error` + a rate-limited (max 1/10s) danger toast, benign-noise filtered
+  (ResizeObserver loop warnings, stackless cross-origin `Script error.`), installed once
+  per window via a guard flag (App is constructed repeatedly within the same jsdom
+  window across test files). RGR: `tests/integration/global-error-handler.test.js`
+  (synthetic `ErrorEvent`/`unhandledrejection` dispatch, rate-limit collapse, noise
+  filters, no-listener-stacking on repeated `App()`). Full unit (256/256) + integration
+  (169/170, same pre-existing unrelated failure) + visual (34/34) green; full parallel
+  `test:e2e` showed 38 `smoke.spec.js` flakes from resource contention with other
+  concurrent sessions on this machine — re-ran both projects serially
+  (desktop-chromium 27/28 + 1 skipped, tablet-touch-chromium 22/28 + 6 skipped), both
+  clean, confirming no real regression.
