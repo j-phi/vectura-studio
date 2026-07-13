@@ -42,6 +42,21 @@
 
   const GU = () => Vectura.GeometryUtils || {};
 
+  // Resolved lazily, never at load time: in the browser this file may load
+  // before PathDraw registers, and under Node the unit tests require core
+  // modules directly (and stitch only part of the namespace onto globalThis).
+  const PD = () => {
+    if (Vectura.PathDraw) return Vectura.PathDraw;
+    if (typeof require === 'function') {
+      try {
+        return require('./path-draw.js');
+      } catch (err) {
+        return null;
+      }
+    }
+    return null;
+  };
+
   // ── Tuning constants (engine-internal; not user-visible strings) ────────────
   // World-unit (mm) chord tolerance when flattening displayed curves.
   const FLATTEN_TOLERANCE = 0.1;
@@ -143,36 +158,33 @@
     bbox ? Math.hypot(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY) : 0;
 
   // Flatten a path into the EXACT polyline the renderer draws for it, detached
-  // from the input. This MUST mirror renderer.tracePath's three-way branch
-  // (renderer.js:5919) — flattening what the renderer draws, not a smoothed
-  // guess — or a mutation silently reshapes the layer:
-  //   1. curves ON (or meta.forceCurves) AND anchors carry a bezier handle →
-  //      native-cubic flatten (GeometryUtils.flattenSmoothedPath's hasHandles
-  //      branch samples the exact bezier).
-  //   2. curves ON, no handles (algorithm polyline) → midpoint-quadratic
-  //      (flattenSmoothedPath's fallback — what tracePath's quadratic branch
-  //      draws).
-  //   3. curves OFF (or meta.straight, or <3 pts) → STRAIGHT, verbatim points
-  //      (tracePath's lineTo branch). A default-drawn rect/polygon is stored as
-  //      handle-less anchors in a curves:false layer and drawn SHARP; smoothing
-  //      it here would round its corners away (the flatten-must-mirror-what-the-
-  //      renderer-draws trap). `useCurves` comes from the owning layer's
-  //      params.curves.
+  // from the input. The branch decision is NOT restated here — it is
+  // PathDraw.classify, the single source of truth that renderer.tracePath, the
+  // SVG exporters and flattenSmoothedPath all share. Flattening anything other
+  // than what is drawn silently reshapes the layer on mutation:
+  //   'cubic'     — anchors carry real bezier handles (curves ON, or the
+  //                 per-path meta.forceCurves opt-in) → sample the exact bezier.
+  //   'quadratic' — curves ON, no handles (algorithm polyline) → the draw-time
+  //                 midpoint quadratic.
+  //   'verbatim'/ — curves OFF, meta.straight/meta.baked, or <3 pts → the raw
+  //   'empty'       POINTS array, unsmoothed. A default-drawn rect/polygon is
+  //                 stored as handle-less anchors in a curves:false layer and
+  //                 drawn SHARP; smoothing it here would round its corners away.
+  // Both curve modes route through flattenSmoothedPath, which classifies again
+  // and already strips anchors/shape and tags its result straight.
+  // `useCurves` comes from the owning layer's params.curves.
   // The output is straight-tagged with stale baselines (originalAnchors) and
   // the parametric descriptor (anchors/shape) dropped, so the mutated result
   // renders verbatim and applyShapeAnchorRebuild can't restore pre-edit geometry.
   const flattenForEdit = (path, useCurves = false) => {
     const clone = clonePaths([path])[0];
     const meta = clone.meta ? { ...clone.meta } : {};
-    const forceCurves = meta.forceCurves === true;
-    const curving = (useCurves || forceCurves) && meta.straight !== true;
-    const anchors = curving && Array.isArray(meta.anchors) ? meta.anchors : null;
-    const hasHandles = Array.isArray(anchors) && anchors.some((a) => a && (a.in || a.out));
+    const pathDraw = PD();
+    const mode = pathDraw ? pathDraw.classify(clone, { useCurves }).mode : 'verbatim';
+    const curved = mode === 'cubic' || mode === 'quadratic';
 
     let out;
-    if ((hasHandles || (curving && clone.length >= 3)) && GU().flattenSmoothedPath) {
-      // Branches 1 & 2: native cubic or midpoint-quadratic — flattenSmoothedPath
-      // already strips anchors/shape and tags the result straight.
+    if (curved && GU().flattenSmoothedPath) {
       out = GU().flattenSmoothedPath(clone, FLATTEN_TOLERANCE);
       if (out.meta) {
         const m = { ...out.meta };
@@ -182,10 +194,10 @@
       }
       return out;
     }
-    // Branch 3: straight, verbatim — the raw POINTS array is authoritative
-    // (exactly what tracePath's lineTo branch draws; the anchors are ignored
-    // when curves are off). Using the points also keeps this correct for world
-    // paths, whose points are ground truth regardless of anchor bookkeeping.
+    // Verbatim: the raw POINTS array is authoritative (exactly what tracePath's
+    // lineTo branch draws; the anchors are ignored when curves are off). Using
+    // the points also keeps this correct for world paths, whose points are
+    // ground truth regardless of anchor bookkeeping.
     out = clone.map((pt) => ({ x: pt.x, y: pt.y }));
     const m = { ...meta };
     delete m.anchors;
