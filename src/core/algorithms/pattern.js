@@ -2398,37 +2398,15 @@
   };
 
   // ── C7: contour helpers ──────────────────────────────────────────────────
-  // Douglas-Peucker simplification — recursive iterative variant. tolerance is
-  // the perpendicular distance below which intermediate vertices are dropped.
-  const _douglasPeucker = (pts, tolerance) => {
-    if (!Array.isArray(pts) || pts.length < 3 || tolerance <= 0) return pts;
-    const keep = new Uint8Array(pts.length);
-    keep[0] = 1;
-    keep[pts.length - 1] = 1;
-    const stack = [[0, pts.length - 1]];
-    const sqTol = tolerance * tolerance;
-    while (stack.length) {
-      const [i0, i1] = stack.pop();
-      const a = pts[i0], b = pts[i1];
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const len2 = dx * dx + dy * dy || 1;
-      let maxD = 0, maxI = -1;
-      for (let i = i0 + 1; i < i1; i += 1) {
-        const px = pts[i].x - a.x, py = pts[i].y - a.y;
-        const t = Math.max(0, Math.min(1, (px * dx + py * dy) / len2));
-        const nx = a.x + t * dx - pts[i].x, ny = a.y + t * dy - pts[i].y;
-        const d = nx * nx + ny * ny;
-        if (d > maxD) { maxD = d; maxI = i; }
-      }
-      if (maxD > sqTol && maxI !== -1) {
-        keep[maxI] = 1;
-        stack.push([i0, maxI]);
-        stack.push([maxI, i1]);
-      }
-    }
-    const out = [];
-    for (let i = 0; i < pts.length; i += 1) if (keep[i]) out.push(pts[i]);
-    return out;
+  // Ramer-Douglas-Peucker lives in GeometryUtils and nowhere else. `tolerance`
+  // is a perpendicular DISTANCE (not a Visvalingam area) — do not swap the two.
+  // Both call sites hand it a bare marching-squares ring with no `meta`, so the
+  // shared helper's stripCurveMeta pass is a no-op; a ring carrying curve meta
+  // must never be routed here (simplification invalidates its anchors).
+  const _simplifyRing = (pts, tolerance) => {
+    if (!Array.isArray(pts)) return pts;
+    const GU = window.Vectura && window.Vectura.GeometryUtils;
+    return GU && GU.simplifyPath ? GU.simplifyPath(pts, tolerance) : pts;
   };
 
   // Mulberry-32 indexed per-step jitter so spacing variance is deterministic
@@ -2611,7 +2589,7 @@
       if (!wantBezier || ring.length < 4) return ring;
       const f = ring[0], l = ring[ring.length - 1];
       const closed = Math.hypot(f.x - l.x, f.y - l.y) <= cs * 1.5;
-      let pts = _douglasPeucker(ring, bezTol);
+      let pts = _simplifyRing(ring, bezTol);
       if (closed && pts.length > 3
         && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1e-6) {
         pts = pts.slice(0, -1); // drop the duplicated close so the wrap doesn't double a node
@@ -2645,7 +2623,7 @@
       L += Math.max(spacing * 0.25, _contourStepNoise(iter, spacing, stepVariance));
       if (L > cap + 1e-6) break;
       for (let ring of _marchingSquares(dist, nx, ny, ox, oy, cs, L)) {
-        if (simplify > 0) ring = _douglasPeucker(ring, simplify);
+        if (simplify > 0) ring = _simplifyRing(ring, simplify);
         if (ring.length >= 2) result.push(smoothRing(ring));
       }
     }
