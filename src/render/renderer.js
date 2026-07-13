@@ -7486,77 +7486,21 @@
       ctx.restore();
     }
 
+    // The curve branch — native cubics from bezier handles, verbatim segments,
+    // or the draw-time midpoint quadratic — is decided by PathDraw, the single
+    // source of truth shared with SVG export, the export preview, and the
+    // masking flattener. Those four had each grown their own hand-synced copy of
+    // this decision and drifted. Do not re-inline it here.
+    //
+    // Two deliberate omissions, both preserving long-standing renderer behavior:
+    //   - Parametric circles are intercepted by traceCircle in traceLayerPath
+    //     before they ever reach here; PathDraw does not handle them.
+    //   - `sharpEdges` (the per-point `_tileEdge` branch) is not passed: it has
+    //     always been export-only, and the canvas has never honoured it.
+    //
+    // Emits no beginPath/stroke — callers batch many paths into one canvas path.
     tracePath(path, useCurves) {
-      if (!path || path.length < 2) return;
-      // Native cubic rendering when bezier metadata is present. Canvas2D's
-      // bezierCurveTo evaluates the math itself, so the visible curve stays
-      // perfectly smooth at any zoom regardless of how dense the cached
-      // polyline is. Falls back to the midpoint-quadratic path below for
-      // algorithmically-generated polylines that carry no anchor handles.
-      // `meta.forceCurves` is a per-path opt-in (mirror of `meta.straight`):
-      // the path's stored bezier anchors render as native cubics even when the
-      // owning layer has curves OFF. The morph modifier stamps it on its sparse
-      // corner-matched rings, which ARE smooth bezier curves by construction but
-      // live in a group layer whose curves default is false — without this they
-      // were drawn as their raw flattened polyline (visibly faceted / "excessive
-      // line segments") despite the geometry being smooth.
-      const forceCurves = path.meta?.forceCurves === true;
-      const anchors = (useCurves || forceCurves) && !path.meta?.straight ? path.meta?.anchors : null;
-      // Only emit native cubics when at least one anchor actually carries a
-      // bezier handle. Chord-polyline shapes (e.g. exploded wavetables rebuilt
-      // by applyShapeAnchorRebuild at smoothing=0) populate meta.anchors with
-      // null in/out handles — feeding those to bezierCurveTo yields degenerate
-      // straight segments, reintroducing kinks. Those fall through to the
-      // midpoint-quadratic smoothing below instead.
-      const hasHandles = Array.isArray(anchors) && anchors.some((a) => a && (a.in || a.out));
-      if (hasHandles && anchors.length >= 2) {
-        const closed = path.meta?.closed === true;
-        this.ctx.moveTo(anchors[0].x, anchors[0].y);
-        for (let i = 0; i < anchors.length - 1; i++) {
-          const a = anchors[i];
-          const b = anchors[i + 1];
-          const c1 = a.out || a;
-          const c2 = b.in || b;
-          this.ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y);
-        }
-        if (closed) {
-          const a = anchors[anchors.length - 1];
-          const b = anchors[0];
-          const c1 = a.out || a;
-          const c2 = b.in || b;
-          this.ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y);
-        }
-        return;
-      }
-      if (!useCurves || path.meta?.straight || path.length < 3) {
-        this.ctx.moveTo(path[0].x, path[0].y);
-        for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
-        return;
-      }
-      const isClosed = window.Vectura?.OptimizationUtils?.isClosedPath?.(path);
-      if (isClosed) {
-        // Closed loop: anchor on each edge midpoint, vertex acts as control point.
-        // Without this branch the wrap-around edge is rendered as a straight line.
-        const n = path.length - 1;
-        const m0x = (path[0].x + path[1].x) / 2;
-        const m0y = (path[0].y + path[1].y) / 2;
-        this.ctx.moveTo(m0x, m0y);
-        for (let i = 1; i < n; i++) {
-          const midX = (path[i].x + path[i + 1].x) / 2;
-          const midY = (path[i].y + path[i + 1].y) / 2;
-          this.ctx.quadraticCurveTo(path[i].x, path[i].y, midX, midY);
-        }
-        this.ctx.quadraticCurveTo(path[0].x, path[0].y, m0x, m0y);
-        return;
-      }
-      this.ctx.moveTo(path[0].x, path[0].y);
-      for (let i = 1; i < path.length - 1; i++) {
-        const midX = (path[i].x + path[i + 1].x) / 2;
-        const midY = (path[i].y + path[i + 1].y) / 2;
-        this.ctx.quadraticCurveTo(path[i].x, path[i].y, midX, midY);
-      }
-      const last = path[path.length - 1];
-      this.ctx.lineTo(last.x, last.y);
+      window.Vectura.PathDraw.toCanvas(this.ctx, path, { useCurves });
     }
 
     traceCircle(meta) {
