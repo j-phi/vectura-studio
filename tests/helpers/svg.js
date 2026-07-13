@@ -1,3 +1,19 @@
+/*
+ * SVG serialization for the visual baselines.
+ *
+ * The branch decision ("cubic, verbatim, or quadratic?") is NOT restated here:
+ * it is PathDraw.commands, the single source of truth shared with
+ * renderer.tracePath and the production SVG exporters. Only the FORMATTING is
+ * local — the baselines are byte-compared and use a tighter spelling than
+ * PathDraw.toSvgD ('M1 2', no space after the command letter).
+ *
+ * `useCurves: false` is deliberate and matches the callers: the baseline tests
+ * invoke Algorithms[type].generate() directly and never pass a `curves` flag,
+ * so a path here draws as native cubics only via its own meta.forceCurves
+ * opt-in, and as a verbatim polyline otherwise.
+ */
+const PathDraw = require('../../src/core/path-draw.js');
+
 const fmt = (value, precision = 3) => Number(value).toFixed(precision);
 
 const dashAttr = (path, precision = 3) => {
@@ -28,32 +44,15 @@ const shapeToSvg = (path, precision = 3) => {
   }
 
   if (!Array.isArray(path) || !path.length) return '';
-  // Mirror production ui.pathToSvg: when a path carries bezier anchors with
-  // handles (Geometry3D.smoothToBezier / morph rings stamp forceCurves), emit
-  // true cubic 'C' commands so the baseline actually exercises the cubic export
-  // path instead of silently serializing the sparse control polyline.
-  const anchors = path.meta && path.meta.anchors;
-  const useCubic = path.meta && path.meta.forceCurves && !path.meta.straight
-    && Array.isArray(anchors) && anchors.length >= 2
-    && anchors.some((a) => a && (a.in || a.out));
-  if (useCubic) {
-    const closed = path.meta.closed === true;
-    let d = `M${fmt(anchors[0].x, precision)} ${fmt(anchors[0].y, precision)}`;
-    for (let i = 0; i < anchors.length - 1; i++) {
-      const c1 = anchors[i].out || anchors[i];
-      const c2 = anchors[i + 1].in || anchors[i + 1];
-      d += ` C${fmt(c1.x, precision)} ${fmt(c1.y, precision)} ${fmt(c2.x, precision)} ${fmt(c2.y, precision)} ${fmt(anchors[i + 1].x, precision)} ${fmt(anchors[i + 1].y, precision)}`;
-    }
-    if (closed) {
-      const c1 = anchors[anchors.length - 1].out || anchors[anchors.length - 1];
-      const c2 = anchors[0].in || anchors[0];
-      d += ` C${fmt(c1.x, precision)} ${fmt(c1.y, precision)} ${fmt(c2.x, precision)} ${fmt(c2.y, precision)} ${fmt(anchors[0].x, precision)} ${fmt(anchors[0].y, precision)} Z`;
-    }
-    return `<path d="${d}"${dashAttr(path, precision)} />`;
-  }
-  const d = path
-    .map((pt, index) => `${index === 0 ? 'M' : 'L'}${fmt(pt.x, precision)} ${fmt(pt.y, precision)}`)
-    .join(' ');
+
+  const commands = PathDraw.commands(path, { useCurves: false });
+  // A lone point yields no commands; the baselines' historical spelling for it
+  // is a bare moveto.
+  const d = commands.length
+    ? commands
+      .map((cmd) => (cmd[0] === 'Z' ? 'Z' : `${cmd[0]}${cmd.slice(1).map((v) => fmt(v, precision)).join(' ')}`))
+      .join(' ')
+    : `M${fmt(path[0].x, precision)} ${fmt(path[0].y, precision)}`;
   return `<path d="${d}"${dashAttr(path, precision)} />`;
 };
 
