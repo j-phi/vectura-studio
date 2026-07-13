@@ -219,7 +219,45 @@ const canonical = (v) => {
   }
   return v;
 };
-const restatesDefault = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+
+/**
+ * Drop a noise entry's SHADOWED legacy image* keys before comparing.
+ *
+ * Image adjustments used to live flat on the noise entry; they now live in its
+ * `imageEffects` array. Old app-saved dumps carry BOTH, so a preset's noise entry can
+ * be a strict superset of the current default's — identical in behaviour, unequal to a
+ * deep-compare. That is enough to keep `noises` looking like a deliberate override, and
+ * a key listed as an override is a key `defaults.js` no longer controls. It is the
+ * dead-config problem in miniature.
+ *
+ * The flat keys are NOT dead in general, so this cannot be a blanket strip:
+ *   - noise-rack.js `getParam()` falls back to the flat key when an effect omits it,
+ *   - `resolveEffects()` synthesises an effect FROM the flat entry when `imageEffects`
+ *     is absent — which is exactly the case for flowfield/grid/svgDistort's presets,
+ *     where these keys are load-bearing.
+ *
+ * So drop a flat key only when EVERY effect already defines it. Then `getParam` can
+ * never reach the flat copy, and removing it cannot change what renders. Anything an
+ * effect leaves undefined is preserved.
+ */
+const IMAGE_KEY = /^image/;
+const withoutShadowedLegacyKeys = (entry) => {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+  const effects = entry.imageEffects;
+  if (!Array.isArray(effects) || !effects.length) return entry;   // flat keys are LIVE here
+  const out = {};
+  for (const key of Object.keys(entry)) {
+    const shadowed = IMAGE_KEY.test(key)
+      && key !== 'imageEffects'
+      && effects.every((fx) => fx && typeof fx === 'object' && key in fx);
+    if (!shadowed) out[key] = entry[key];
+  }
+  return out;
+};
+const forComparison = (v) => (Array.isArray(v) ? v.map(withoutShadowedLegacyKeys) : v);
+
+const restatesDefault = (a, b) =>
+  JSON.stringify(canonical(forComparison(a))) === JSON.stringify(canonical(forComparison(b)));
 
 let strippedKeys = 0;
 for (const p of finalPresets) {
