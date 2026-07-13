@@ -358,15 +358,15 @@
     },
     'common.smoothing': {
       title: 'Smoothing',
-      description: 'Softens sharp angles by averaging each point with its neighbors. 0 keeps raw lines.',
+      description: 'How much the curve rounds THROUGH bends rather than tracking them. It bends the line by moving the Bézier handles — it never moves the points the algorithm generated, so nothing is lost and it is fully reversible. 0 fits the shape faithfully, keeping genuine corners crisp; higher values dissolve fine detail and sampling noise first, so the curve flows through it.',
     },
     'common.curves': {
       title: 'Curves',
-      description: 'Renders smooth quadratic curves between points instead of straight segments.',
+      description: 'Fits true Bézier curves to the line instead of drawing it as straight segments. The curve passes through the generated points, and the same curve is what the canvas shows and what the plotter gets — so the preview and the SVG can never disagree. Real corners stay sharp; use Smoothing to round them.',
     },
     'common.simplify': {
       title: 'Simplify',
-      description: 'Reduces point density while keeping the overall form. Higher values simplify more.',
+      description: 'Reduces point (and anchor) density while keeping the overall form. Higher values simplify more. With Curves on it never strips the curve — the Bézier handles ARE the compact form, so it thins them rather than flattening them back to a polyline.',
     },
     'flowfield.noiseScale': {
       title: 'Noise Scale',

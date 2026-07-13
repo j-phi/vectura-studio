@@ -45,6 +45,41 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   the error blocks printed and every one of them to be the RPC timeout, and anchors the summary to
   its own line. Boundary pinned by 14 cases in `tests/unit/run-vitest-wrapper.test.js`.
 
+### Changed
+- **One curve system.** Curves, Smoothing and Simplify were not one feature — they were **eight**
+  polyline→curve implementations, **five** simplify implementations, and **six hand-synced copies**
+  of the decision "how does this path draw?" (`renderer.tracePath`, `ui.pathToSvg`,
+  `export-svg.buildExportPreviewPath`, `geometry-utils.flattenSmoothedPath`,
+  `path-edit-ops.flattenForEdit`, `tests/helpers/svg.shapeToSvg`). They had already drifted apart:
+  the export copies rounded Pattern's tile corners in a way the canvas didn't, the canvas never
+  closed a closed subpath while the exporter always did, and `flattenForEdit` diverged from
+  `tracePath` in a case its own comment insisted it mirrored. All six now delegate to one module,
+  `src/core/path-draw.js` — held by a grep guard so a seventh cannot appear.
+- **Curves fits real Béziers instead of faking them at draw time.** What "Curves ON" actually did
+  for a 2D layer was a *draw-time midpoint quadratic*: it re-anchored the path onto edge midpoints
+  and used your sample points as control points, so the drawn curve never passed through the
+  algorithm's own geometry, and the canvas and the exporter each re-derived it independently. The
+  curve is now fitted once, in the engine, and carried as Bézier anchors that every consumer reads
+  — the preview, the export and the plotter cannot disagree. It is also far leaner than the
+  quadratics it replaces: **Rings 226 KB → 8.7 KB (−96%), Harmonograph 197 KB → 53 KB (−73%),
+  Flowfield −25%** on the curves-on baselines. Most of what was being sent to plotters was
+  redundant control points.
+- **Smoothing means one thing, on one scale.** It meant three unrelated things across four numeric
+  domains (0–1, 0–2, 0–6, 0–100), and for most layers it ran a *destructive* Laplacian pass that
+  physically moved your sample points toward their neighbours — degrading the geometry, irreversibly,
+  on every regenerate. It is now Bézier tension on a single 0–1 domain: **it moves the handles and
+  never the points.** Raster-Plane's Smoothing had to be rewired to suit (its projected wires carry
+  `meta.straight`, which the new fit refuses); the test that caught that regression asserted
+  smoothing *moves the points* — the old contract — and now compares the geometry actually **drawn**,
+  which is mechanism-agnostic and would have caught the original dead-slider bug too.
+- `meta.straight` was carrying three meanings at once: "these are true line segments", "this is
+  already-baked display geometry", and — wrongly — "this algorithm doesn't do curves", which is what
+  made the toggle a dead switch. Baked display geometry (flattener output, mask fragments,
+  miter-offset rings, the spiral close-feather connectors) is now `meta.baked`, and the fit also
+  refuses anything that already carries handles: the 3D algorithms bezierize their own wires at
+  generate time, where they know which geometry is a curvable profile and which is a hatch or an
+  edge, and re-fitting their anchors would fit a curve to a curve.
+
 ### Added
 - **A regression net for the curve system, which had none.** The existing 33 SVG baselines call
   `Algorithms[type].generate()` directly with `smoothing: 0, simplify: 0` hardcoded and serialize

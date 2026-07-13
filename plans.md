@@ -25,11 +25,34 @@ This file is the active repository punchlist. Update it whenever meaningful work
   Spiralizer; (2) what "Curves ON" does for most 2D algorithms is a draw-time midpoint-quadratic
   corner-cut, not a curve fit — it never passes through the algorithm's own sample points; (3)
   `smoothing` means three unrelated things across four numeric domains (0..1, 0..2, 0..6, 0..100).
-  **Critically, the visual suite is blind to all of it: all 33 SVG baselines contain zero curve
-  commands.** Approved plan (full unification onto the Schneider fit in `reduceAnchors`; `smoothing`
-  redefined as curve tension on one 0..1 domain, with a curve floor so Curves-on always visibly
-  curves): `~/.claude/plans/assess-why-enabling-curves-shimmering-hopcroft.md`. Stage 0 (the two
-  standalone bug fixes below + the missing regression net) is in flight; Stages A–F follow.
+  **Critically, the visual suite was blind to all of it: all 33 SVG baselines contained zero curve
+  commands.** Plan: `~/.claude/plans/assess-why-enabling-curves-shimmering-hopcroft.md`.
+  **Stages 0, A, B, C are LANDED** (2026-07-13): the regression net
+  (`tests/visual/curve-baseline.test.js`, 10 algorithms × curves-off/on/on+smooth, driven through
+  `engine.addLayer` → `engine.generate` → the production exporter); Simplify no longer strips
+  bezier anchors; Spiralizer honours `p.curves`; `src/core/path-draw.js` collapses all six trace
+  copies (grep-guarded); `GeometryUtils.toCurveAnchors`/`applyCurveFit` is the one fit; the engine
+  fits real curves instead of the draw-time quadratic. Remaining:
+  - **Stage D (mostly cosmetic now).** The liveness ratchet proves no algorithm's Curves toggle is
+    wrongly dead any more, so the remaining `meta.straight` → `meta.baked` reclassifications
+    (`halftone.js:187/326`, `spirograph.js:121`) are semantic clean-up with zero behavior change.
+    Polyhedron's edges are legitimately straight — consider `showIf`-hiding its Curves control
+    rather than leaving a dead switch.
+  - **Stage E (real work left).** `controls-registry.js:1608` — text's "Smoothness" (0..6) writes
+    the SAME `smoothing` key as the universal 0..1 slider; rename it to `textSmoothness` (it feeds
+    `optimizeAnchorsCardinal`, it is not a tension). `engine.js:55` shape smoothing still clamps
+    0..2. `EXTRA_PRESERVED` (`algo-config-panel.js:1751`) should move `[smoothing, simplify,
+    curves]` into the base preserve set. `.vectura` writes a version but `ui-file-io.js:117`
+    throws it away on load — thread it to `sanitizeImportedParams` for a migration shim. (All 38
+    shipped presets carry `smoothing: 0`, so the semantic change is invisible to them; only
+    user-saved files with a non-zero smoothing are affected.)
+  - **Stage F.** Collapse the remaining private RDP/decimator copies (`pattern.js:2403`,
+    `geometry3d.js:878`) onto `GeometryUtils.simplifyPath`.
+  - **Open question for Jay.** Text's Curves toggle is inert: glyph outlines arrive already
+    bezierized, and the engine deliberately does not re-fit them (re-fitting a curve degrades it,
+    and the welded-script fit is the most fragile geometry in the repo). Making Curves-off actually
+    de-curve a glyph is a text-specific change, not a universal-pipeline one. Held by the ratchet
+    in `curve-baseline.test.js`.
 - **Audit remediation punchlist (2026-07-07, verified + extended 2026-07-11).** A 4-agent "unknown unknowns" audit plus a source-level verification pass produced 20 work items (AUD-01…AUD-20). Full specs — steps, RGR criteria, definitions of done, approval gates — live in `docs/audit-remediation-todo.md`; work one task per commit, reference the AUD ID. **6/20 done as of 2026-07-12 — see the "Status — pick up here" section at the top of that file for the current done/unblocked/blocked breakdown and the recommended next task (AUD-02).** Snapshot:
   - **P0 — safety net & data integrity:** ~~AUD-01 destructive-git guard~~ **DONE** (2026-07-12, `dd074f7`) — now requires a checkpoint within the last 30 minutes, not merely any checkpoint; the 7 stale `recover-*` tags were triaged (all superseded by landed work) and deleted with Jay's approval; AUD-02 `.vectura` files have no `formatVersion`/migration shim (old saves silently re-render with today's defaults); ~~AUD-03 `SeededRNG(0)` falls back to `Math.random()`~~ **DONE** (2026-07-12, `6e8ac1c`) — seed-0 saves/SVG imports are now deterministic.
   - **P1 — pipelines & lost coverage:** AUD-05 ~25 bare polygon-clipping call sites can throw uncaught through compound recompute; AUD-06 re-land 3 regression tests stranded in `stash@{0}` (2026-06-13); AUD-07 orphaned Playwright screenshot suite (baselines ~3 months stale, runs nowhere) + `mask-shift-drag.spec.js:131` executes in no suite; AUD-08 cookie has ~230 B headroom with no length guard + 6 silent localStorage quota swallows on preset save; ~~AUD-09 `saveVecturaFile` has no catch / `openVecturaFile` drops the underlying error~~ **DONE** (2026-07-12, `dc14b1d`); ~~AUD-17 no global `error`/`unhandledrejection` handler anywhere~~ **DONE** (2026-07-12, `53e2365`).
