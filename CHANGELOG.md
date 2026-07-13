@@ -7,6 +7,23 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Fixed
+- **The Simplify slider no longer destroys curves.** Both simplifiers call `stripCurveMeta`,
+  which drops `meta.anchors` — and the display pass in `engine.generate()` ran them over every
+  path. Any layer whose true geometry lives in its handles (text glyphs, morph rings, curve
+  shapes) was therefore degraded to the faceted polyline it was cached as, the moment Simplify
+  left zero: a Type layer with Curves on lost every glyph bezier at `simplify: 0.5`. The point
+  array is only a flattened cache and the handle list is already the compact representation, so
+  there was never anything to win. The export-side `linesimplify` step had always guarded this;
+  the display pass now does too, and still decimates handle-less polylines exactly as before.
+- **Spiralizer: the Smoothing slider was 100x under-scaled and did nothing.** `spiralizer.js`
+  passed `smoothing` — the universal Post-Processing Lab slider, domain 0..1 — straight into
+  `Geometry3D.smoothToBezier`, whose `amount` is on a 0..100 scale. At the slider's maximum the
+  resulting Catmull-Rom tension was 0.01, so the emitted handles were a fraction of a millimetre
+  long: mathematically present, visually nothing, and the strands stayed faceted wherever the
+  user dragged it. Converted at the call site — handle length relative to sample spacing goes
+  from 0.007 to 0.73, and the renderer now takes its native-cubic branch. (The *Curves* toggle
+  is separately inert on Spiralizer — it stamps `meta.straight` on its strands, which vetoes
+  curves outright. That is tracked as its own fix.)
 - **Raster-Plane: See-Through now makes the planes see-through instead of deleting them.** With
   Lines as Planes on, ticking See-Through fell back to the plain stacked-wire branch — the
   vertical slices disappeared entirely and only the top profiles were left. See-Through is a

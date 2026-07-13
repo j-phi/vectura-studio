@@ -1649,6 +1649,17 @@
         finalPaths = transformed.map((path) => {
           if (!Array.isArray(path)) return path;
           if (path.meta && path.meta.kind === 'circle') return path;
+          // Native-cubic outlines (text glyphs, morph rings, curve shapes) carry
+          // the TRUE curve in meta.anchors; the point array is only a flattened
+          // cache. Both simplifiers call stripCurveMeta, which drops those
+          // handles — degrading a mathematically-smooth curve into the faceted
+          // polyline it was cached as. The handle list is already the compact
+          // representation, so there is nothing to win here. The export-side
+          // `linesimplify` step (simplifyPaths, below) has always guarded this;
+          // the display pass did not, so any curved layer lost its curves the
+          // moment the Simplify slider left zero.
+          if (path.meta && Array.isArray(path.meta.anchors)
+            && path.meta.anchors.some((a) => a && (a.in || a.out))) return path;
           return useCurves ? simplifyPathVisvalingam(path, tol) : simplifyPath(path, tol);
         });
       }

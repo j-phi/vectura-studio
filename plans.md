@@ -14,6 +14,22 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Fix the remaining strict Playwright Pattern fidelity regressions as product bugs, with `Autumn` horizontal-seam mismatch and representative `Bamboo` / `Bathroom Floor` / `Dominos` silhouette drift still failing source-faithful smoke coverage.
 
 ## Inbox
+- **Curve/smoothing/simplify unification (started 2026-07-13).** The Curves toggle is not
+  universal — on Spiralizer it is a total no-op. An audit found **8 distinct polyline→curve
+  implementations**, **5 simplify implementations**, and **6 hand-synced copies** of the "which
+  curve branch do I take" decision (`renderer.js tracePath`, `ui.js pathToSvg`, `export-svg.js
+  buildExportPreviewPath`, `geometry-utils.js flattenSmoothedPath`, `path-edit-ops.js
+  flattenForEdit`, `tests/helpers/svg.js shapeToSvg`). Three root causes: (1) `meta.straight` is a
+  hard veto on curves and carries three conflated meanings — "true line segment", "already-baked
+  display geometry", and (wrongly) "this algorithm doesn't do curves", which is what suppresses
+  Spiralizer; (2) what "Curves ON" does for most 2D algorithms is a draw-time midpoint-quadratic
+  corner-cut, not a curve fit — it never passes through the algorithm's own sample points; (3)
+  `smoothing` means three unrelated things across four numeric domains (0..1, 0..2, 0..6, 0..100).
+  **Critically, the visual suite is blind to all of it: all 33 SVG baselines contain zero curve
+  commands.** Approved plan (full unification onto the Schneider fit in `reduceAnchors`; `smoothing`
+  redefined as curve tension on one 0..1 domain, with a curve floor so Curves-on always visibly
+  curves): `~/.claude/plans/assess-why-enabling-curves-shimmering-hopcroft.md`. Stage 0 (the two
+  standalone bug fixes below + the missing regression net) is in flight; Stages A–F follow.
 - **Audit remediation punchlist (2026-07-07, verified + extended 2026-07-11).** A 4-agent "unknown unknowns" audit plus a source-level verification pass produced 20 work items (AUD-01…AUD-20). Full specs — steps, RGR criteria, definitions of done, approval gates — live in `docs/audit-remediation-todo.md`; work one task per commit, reference the AUD ID. **6/20 done as of 2026-07-12 — see the "Status — pick up here" section at the top of that file for the current done/unblocked/blocked breakdown and the recommended next task (AUD-02).** Snapshot:
   - **P0 — safety net & data integrity:** ~~AUD-01 destructive-git guard~~ **DONE** (2026-07-12, `dd074f7`) — now requires a checkpoint within the last 30 minutes, not merely any checkpoint; the 7 stale `recover-*` tags were triaged (all superseded by landed work) and deleted with Jay's approval; AUD-02 `.vectura` files have no `formatVersion`/migration shim (old saves silently re-render with today's defaults); ~~AUD-03 `SeededRNG(0)` falls back to `Math.random()`~~ **DONE** (2026-07-12, `6e8ac1c`) — seed-0 saves/SVG imports are now deterministic.
   - **P1 — pipelines & lost coverage:** AUD-05 ~25 bare polygon-clipping call sites can throw uncaught through compound recompute; AUD-06 re-land 3 regression tests stranded in `stash@{0}` (2026-06-13); AUD-07 orphaned Playwright screenshot suite (baselines ~3 months stale, runs nowhere) + `mask-shift-drag.spec.js:131` executes in no suite; AUD-08 cookie has ~230 B headroom with no length guard + 6 silent localStorage quota swallows on preset save; ~~AUD-09 `saveVecturaFile` has no catch / `openVecturaFile` drops the underlying error~~ **DONE** (2026-07-12, `dc14b1d`); ~~AUD-17 no global `error`/`unhandledrejection` handler anywhere~~ **DONE** (2026-07-12, `53e2365`).

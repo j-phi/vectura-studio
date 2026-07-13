@@ -607,7 +607,12 @@
             if (runDepths && idx < runDepths.length && runDepths[idx] != null) {
               path.meta.depth = runDepths[idx];
             }
-            paths.push(G3.smoothToBezier(path, finite(p.smoothing, 0)));
+            // `smoothing` is the universal Post-Processing Lab slider (0..1);
+            // smoothToBezier's `amount` is on a 0..100 scale. Passing the raw
+            // slider value made the maximum tension 0.01 — handles a fraction of
+            // a millimetre long, so the strands stayed visibly faceted wherever
+            // the user dragged it.
+            paths.push(G3.smoothToBezier(path, finite(p.smoothing, 0) * 100));
           });
         }
       }
