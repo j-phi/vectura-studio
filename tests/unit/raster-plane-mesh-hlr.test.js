@@ -324,4 +324,22 @@ describe('Raster-Plane — mesh/topography hidden-line removal (See-Through OFF)
     });
     expect(hooks).toBe(0);
   });
+
+  test('F: the lower plane keeps its corner at the overlap join (no orphan slivers)', () => {
+    // The wires draw a rows x cols tessellation, which ramps a hard edge across
+    // one cell; the raw sampler resolves that edge sharply. Occluding the wires
+    // with the raw sampler clips them against a surface they do not have, and
+    // at a step that ate a wedge out of the LOWER plane where the two disagree
+    // — leaving an orphan sliver of the last ground row stranded beside the
+    // join. The occluder is the mesh's own interpolated surface, so the drawn
+    // wireframe and the occluding surface are the same object.
+    const paths = gen(baseParams({ fixtureGrid: stepGrid() }));
+    const pathLen = (p) => {
+      let L = 0;
+      for (let i = 1; i < p.length; i++) L += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y);
+      return L;
+    };
+    const orphans = paths.filter((p) => Array.isArray(p) && p.length >= 2 && pathLen(p) < 8);
+    expect(orphans).toHaveLength(0);
+  });
 });

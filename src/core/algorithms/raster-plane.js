@@ -764,7 +764,7 @@
           for (let i = 1; i < open.length; i++) {
             plen += Math.hypot(open[i].x - open[i - 1].x, open[i].y - open[i - 1].y);
           }
-          if (plen >= 0.35) {
+          if (plen >= 0.75) {
             open.meta = { algorithm: 'rasterPlane', straight: true, ...run.meta };
             if (open.meta.depth == null) {
               const depth = zCount ? zSum / zCount : run.depth;
@@ -1215,12 +1215,15 @@
     // kept it and the depth bias preserved its first pixel as a "hook" burr
     // at every crest crossing.
     const points = [];
+    const heights = [];
     for (let y = 0; y <= rows; y++) {
       const row = [];
+      const hRow = [];
       for (let x = 0; x <= cols; x++) {
         const u = x / cols;
         const v = y / rows;
         const h = sampler(u, v);
+        hRow.push(h);
         const s = surfaceSample(rect.left + u * rect.width, rect.top + v * rect.height, h, p, bounds);
         row.push({
           point: s.point,
@@ -1233,6 +1236,7 @@
         });
       }
       points.push(row);
+      heights.push(hRow);
     }
     // Per-cell facing: the face normal from the cell's four corner heights,
     // rotated into camera space. Shared by the segment filter and hatching.
@@ -1347,7 +1351,29 @@
         }
       }
     }
-    if (hlr) flushSurfaceClip(paths, clip, p, surfaceOccluders(p, bounds, sampler));
+    if (hlr) {
+      // The occluder must be the SAME surface the wires draw. The mesh is a
+      // rows x cols tessellation, which ramps a hard edge across one cell; the
+      // raw sampler resolves that edge sharply. Occluding the wires with the
+      // raw sampler would clip them against a surface they do not have — at a
+      // step that eats a wedge out of the lower plane where the two disagree.
+      // So the occluder is built by interpolating the mesh's OWN vertex grid:
+      // exact on every wire (the grid lines) and ruled between them.
+      const meshSampler = (u, v) => {
+        const fx = clamp(u, 0, 1) * cols;
+        const fy = clamp(v, 0, 1) * rows;
+        const x0 = Math.min(cols - 1, Math.floor(fx));
+        const y0 = Math.min(rows - 1, Math.floor(fy));
+        const tx = fx - x0;
+        const ty = fy - y0;
+        const h00 = heights[y0][x0];
+        const h10 = heights[y0][x0 + 1];
+        const h01 = heights[y0 + 1][x0];
+        const h11 = heights[y0 + 1][x0 + 1];
+        return (h00 * (1 - tx) + h10 * tx) * (1 - ty) + (h01 * (1 - tx) + h11 * tx) * ty;
+      };
+      flushSurfaceClip(paths, clip, p, surfaceOccluders(p, bounds, meshSampler));
+    }
     return paths;
   };
 
