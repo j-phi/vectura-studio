@@ -1765,7 +1765,10 @@
       showCreases: false,
       creaseAngle: 35,
       hiddenLineMode: 'remove',
-      depthBias: 0.5,
+      // 0 = clip exactly at the silhouette. This is screen-space SLACK in the
+      // floating-horizon test, not a depth epsilon: anything above 0 lets a farther
+      // row draw that far INSIDE the row in front of it (see terrain.js).
+      depthBias: 0,
       hatchEnable: false,
       lightAzimuth: 135,
       lightElevation: 45,

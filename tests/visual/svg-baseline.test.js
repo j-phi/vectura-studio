@@ -175,6 +175,33 @@ const SCENARIOS = [
       noises: [],
     },
   },
+  // The free-3d pose is the one a fresh terrain layer actually opens at, and it is the
+  // ONLY one that routes through G3.occludeRowsFloatingHorizon — the vanishing-point
+  // modes above use a separate min-Y envelope and never read Occlusion Bias at all. So
+  // until this fixture existed, the whole hidden-line pass (and the bias that shipped
+  // slack into it) had no visual baseline.
+  {
+    id: 'terrain-free3d-occluded',
+    type: 'terrain',
+    seed: 705,
+    overrides: {
+      perspectiveMode: 'free-3d',
+      yaw: -0.4,
+      pitch: 17.3,
+      roll: 0,
+      projection: 'orthographic',
+      depthSlices: 33,
+      xResolution: 210,
+      mountainAmplitude: 22,
+      mountainFrequency: 0.008,
+      mountainOctaves: 5,
+      peakSharpness: 2,
+      valleyCount: 2,
+      occlusion: true,
+      hiddenLineMode: 'remove',
+      noises: [],
+    },
+  },
   {
     id: 'rings-old-growth-oak',
     type: 'rings',

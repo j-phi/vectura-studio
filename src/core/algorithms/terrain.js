@@ -656,11 +656,27 @@
         let paths;
         if (occlusionOn && rows.length) {
           const occMode = (p.hiddenLineMode || 'remove') === 'dash' ? 'dash' : 'remove';
-          // "Occlusion Bias" (depthBias) is the screen-space tolerance (px) that
-          // keeps silhouette-grazing lines whole and stops adjacent rows z-fighting.
+          // "Occlusion Bias" (depthBias) is NOT a depth epsilon — it is pure slack in
+          // the screen-space horizon test (`hidden` only once y is past the opaque band
+          // by eps). So ANY eps > 0 lets a farther row draw up to eps px INSIDE the row
+          // in front of it, and because a terrain silhouette and the row crossing it are
+          // both near-horizontal, that vertical slack is amplified along the line: at the
+          // shipped 0.5 it produced whiskers up to ~13px long (measured, ~1.6% of all ink
+          // sitting inside geometry it should be behind). Default is 0 — clip exactly at
+          // the silhouette.
+          //
+          // This used to be justified as "stops adjacent rows z-fighting". It does not,
+          // and terrain does not need it to: the sweep tests a row ONLY against strictly
+          // NEARER rows, and a single row's own band is degenerate (upper == lower == its
+          // own y at that column), so a row can never occlude itself and two rows only
+          // interact where they genuinely overlap on screen. Zeroing the bias costs no
+          // ink (measured: total ink -1.7%, and 85% of that drop IS the protruding ink;
+          // path count +3%, no fragmentation) — there is no self-occlusion acne to buy
+          // off. Contrast raster-plane, where adjacent slabs literally SHARE a face and
+          // therefore hand the horizon an `inset` occluder instead of leaning on eps.
           paths = G3.occludeRowsFloatingHorizon(rows, {
             mode: occMode,
-            eps: finite(p.depthBias, 0.5),
+            eps: Math.max(0, finite(p.depthBias, 0)),
             angle: finite(p.roll, 0) * Math.PI / 180,
           });
         } else {

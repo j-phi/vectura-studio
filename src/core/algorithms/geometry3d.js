@@ -803,13 +803,21 @@
   // (depth = camera z, larger = nearer). occludes:false rows (rivers, coastline)
   // are tested against the horizon but don't extend it. opts.angle (radians) is the
   // image-plane roll: points are de-rolled so the silhouette band is measured along
-  // true screen-up, then rolled back on output. opts.eps is the screen-space
-  // tolerance (px) that keeps silhouette-grazing lines whole and prevents
-  // adjacent-row z-fighting. mode 'dash' keeps hidden runs via markHidden; 'remove'
-  // drops them. Deterministic.
+  // true screen-up, then rolled back on output.
+  //
+  // opts.eps is SLACK, not a depth epsilon: a sample is hidden only once it is past
+  // the opaque band by eps, so every px of eps is a px a farther row may draw INSIDE
+  // the row in front of it — and where the silhouette and the crossing line are both
+  // shallow, that vertical slack stretches into a long horizontal whisker. It buys
+  // nothing back: a row is never tested against itself (its own band is degenerate),
+  // so there is no self-occlusion to bias away from. Both callers pass 0. If you need
+  // to protect a boundary that IS an occluder's own edge (adjacent slabs sharing a
+  // face), shrink that occluder with `inset` — do not widen the test with eps.
+  //
+  // mode 'dash' keeps hidden runs via markHidden; 'remove' drops them. Deterministic.
   const occludeRowsFloatingHorizon = (rows, opts = {}) => {
     const mode = opts.mode === 'dash' ? 'dash' : 'remove';
-    const eps = Math.max(0, finite(opts.eps, 0.75));
+    const eps = Math.max(0, finite(opts.eps, 0));
     // Roll is the final 2D image-plane rotation (projectPoint flips world-Y to
     // screen-Y, so the net screen rotation is by +roll). De-roll by -roll so the
     // horizon band is taken along screen-up, then roll each emitted point back.
