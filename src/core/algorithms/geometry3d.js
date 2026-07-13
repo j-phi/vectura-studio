@@ -5,6 +5,11 @@
   const Vectura = (window.Vectura = window.Vectura || {});
   const TAU = Math.PI * 2;
   const EPS = 1e-6;
+  // Perpendicular-distance tolerance (px) below which a vertex counts as lying ON
+  // the chord through its neighbours — fp noise, not a fidelity budget. Raising it
+  // would start deforming geometry rather than de-duplicating resampled points.
+  const COLLINEAR_EPS = 1e-6;
+
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
   const finite = (value, fallback = 0) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
@@ -885,6 +890,19 @@
     // them (shape-identical within fp noise): a run keeps only its endpoints, the
     // original direction-changing vertices, and the visibility boundaries — the
     // leanest polyline that renders the same geometry.
+    //
+    // NOT a Douglas-Peucker, and deliberately NOT routed through the shared
+    // GeometryUtils.simplifyPath (curve unification, Stage F, 2026-07-13). This is
+    // a greedy 3-point collinearity filter: it tests each vertex against the chord
+    // through the last KEPT point and the NEXT point, so its error is LOCAL and
+    // unbounded in aggregate — a gently bowed run whose per-vertex sagitta stays
+    // under COLLINEAR_EPS collapses to a straight line no matter how far the run
+    // bows overall. RDP measures deviation against the chord of a recursively
+    // split span instead, so it keeps the apex of that bow. That is the more
+    // faithful filter, but it is a different one: swapping it in adds a vertex to
+    // `terrain-free3d-occluded` (one point at ~1e-6 px, but the SVG baselines are
+    // byte-compared). Retire it only together with a deliberate baseline refresh.
+    // See tests/unit/simplify-shared-parity.test.js, which pins both behaviours.
     const decimate = (pts) => {
       if (pts.length <= 2) return pts;
       const out = [pts[0]];
@@ -893,7 +911,7 @@
         const b = pts[i];
         const c = pts[i + 1];
         const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-        if (Math.abs(cross) > Math.hypot(c.x - a.x, c.y - a.y) * 1e-6) out.push(b);
+        if (Math.abs(cross) > Math.hypot(c.x - a.x, c.y - a.y) * COLLINEAR_EPS) out.push(b);
       }
       out.push(pts[pts.length - 1]);
       return out;
