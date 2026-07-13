@@ -99,19 +99,12 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm install --no-audit --no-fund --loglevel=error
-      - name: Run test:coverage (sharded)
-        # One vitest process running all 444 files under v8 instrumentation
-        # overloads its parent: it stops servicing the workers' `onTaskUpdate`
-        # within birpc's RPC timeout (hard-coded 60s, no config knob), so the run
-        # dies on "[vitest-worker]: Timeout calling onTaskUpdate" — an unhandled
-        # error that fails the job even though every test passed.
-        #
-        # Retrying does not help (it failed all 3 attempts of the loop this
-        # replaces) because the trigger is load, not chance — note the unit job
-        # (266 files) never trips it while coverage (444, instrumented) always
-        # does. Sharding gives each process a third of the files, and
-        # --mergeReports rebuilds one full coverage report from the blobs.
-        run: npm run test:coverage:sharded
+      # Runs through scripts/run-vitest.js, which tolerates vitest's birpc
+      # "Timeout calling onTaskUpdate" RPC timeout — and ONLY that, and only when
+      # zero tests failed. See the header of that script for why nothing else
+      # (fork count, console volume, sharding, coverage scope, the threads pool)
+      # eliminates it. A real failure still fails the job.
+      - run: npm run test:coverage
       - name: Upload Coverage Report
         if: always()
         uses: actions/upload-artifact@v7

@@ -7,14 +7,25 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Fixed
-- **CI: the coverage job now runs in shards.** A single vitest process running all 444 test files
-  under v8 instrumentation overloads its parent process — it stops servicing the workers'
-  `onTaskUpdate` within birpc's RPC timeout (hard-coded 60s, no config knob), so the run dies
-  on `[vitest-worker]: Timeout calling onTaskUpdate`, an unhandled error that fails the job even
-  though every test passed. The trigger is load, not chance (the 266-file unit job never trips
-  it; the 444-file instrumented job always did, including all 3 attempts of the retry loop this
-  replaces), so `npm run test:coverage:sharded` splits the run into thirds and rebuilds one full
-  coverage report from the blob reports via `--mergeReports`.
+- **CI: vitest runs go through `scripts/run-vitest.js`, which tolerates one upstream bug.** Vitest's
+  workers talk to the parent over birpc, whose RPC timeout is a hard-coded 60s with no config
+  knob. On GitHub's shared runners this suite's heavy jsdom mounts push an `onTaskUpdate` ack
+  past that window, the worker throws `[vitest-worker]: Timeout calling onTaskUpdate`, and vitest
+  counts it as an unhandled error and exits non-zero — with a 100% green suite (it failed this
+  way at 1201/1201 and 3847/3847 tests passing). Nothing eliminated it: fewer forks, removing the
+  console flood off the RPC wire, sharding the run, and scoping coverage all failed to, and it
+  fires in the integration job too, which has no instrumentation at all; the threads pool would
+  sidestep the transport entirely but segfaults V8 with jsdom. So the wrapper retries once and
+  then passes **only** if zero tests failed and that RPC timeout is the sole unhandled error. Any
+  failing test, any other unhandled error, or a crash with no summary still fails the build —
+  pinned by `tests/unit/run-vitest-wrapper.test.js`. It deliberately does not use vitest's
+  `dangerouslyIgnoreUnhandledErrors`, which would blanket-ignore real errors too.
+- **CI: coverage was instrumenting the entire repo.** The `coverage` block in `vitest.config.mjs`
+  sat as a *sibling* of `test`, where vitest never reads it — so its `include: ['src/**/*.js']` and
+  `exclude: ['src/vendor/**']` silently did nothing, and v8 instrumented build scripts,
+  `playwright.config.js` and the minified vendor bundles (coverage-range-mapping the 171KB
+  single-line `opentype.min.js` on every run). Moved under `test`; as a side effect the configured
+  `lcov` reporter now actually runs for the first time.
 - **Dropped a dangling source map reference from the vendored opentype build.**
   `src/vendor/opentype.min.js` ended with `//# sourceMappingURL=opentype.min.js.map`, but that
   map is not shipped — so Vite retried a failing ENOENT read in the parent process on every
