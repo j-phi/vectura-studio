@@ -5,6 +5,10 @@ const { JSDOM } = require('jsdom');
 
 const LOCAL_SRC_RE = /<script[^>]*src="([^"]+)"[^>]*><\/script>/g;
 
+// 1x1 transparent PNG — what the stubbed canvas "exports".
+const EMPTY_PNG_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
 const parseLocalScripts = (html) => {
   const scripts = [];
   let match;
@@ -121,6 +125,16 @@ const loadVecturaRuntime = async (options = {}) => {
 
   if (window.HTMLCanvasElement && window.HTMLCanvasElement.prototype) {
     window.HTMLCanvasElement.prototype.getContext = () => create2DContextStub();
+    // Export needs stubbing too, not just drawing. jsdom has no canvas backend, so its
+    // real toDataURL/toBlob emit a "Not implemented" jsdomError that the default virtual
+    // console forwards to console.error with a full stack trace — ~2,344 times across the
+    // suite. Vitest's worker ships every console call to the parent over birpc, and the
+    // flood starved the parent's event loop until it missed a worker's `onTaskUpdate` ack
+    // past birpc's hard-coded 60s RPC timeout, failing CI with all tests green.
+    window.HTMLCanvasElement.prototype.toDataURL = () => EMPTY_PNG_DATA_URL;
+    window.HTMLCanvasElement.prototype.toBlob = (callback) => {
+      if (typeof callback === 'function') callback(null);
+    };
   }
 
   if (!window.ResizeObserver) {
