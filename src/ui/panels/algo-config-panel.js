@@ -4143,16 +4143,20 @@
             if (this.app.pushHistory) this.app.pushHistory();
             layer.params[def.id] = next;
             // Enabling Raster-Plane "Lines as Planes" seeds the relief defaults that
-            // read best for extruded curtains: a small base lift so flat regions
-            // still extrude, see-through OFF so the solid faces occlude, and a gentle
-            // Occlusion Bias so the depth-occlusion reads without eating the front
-            // ridges (the raw default sits at maximum occlusion). Mirrors the
-            // wavetable/topoform param-cascade precedents in the sibling select
-            // onchange handler below.
+            // read best for extruded curtains: a small base lift so flat regions still
+            // extrude, see-through OFF so the faces occlude, and thin free-standing
+            // slices (the look the mode exists for) rather than one fused slab.
+            // Occlusion Bias is seeded to 0 — it is the slack the hidden-line pass
+            // grants a farther row before hiding it, so anything above 0 lets rows poke
+            // through the curtain in front of them (this cascade used to seed 1.5, i.e.
+            // over a pixel of protrusion, which is what made the mode look broken).
+            // Mirrors the wavetable/topoform param-cascade precedents in the sibling
+            // select onchange handler below.
             if (layer.type === 'rasterPlane' && def.id === 'horizontalLinesAsPlanes' && next === true) {
               layer.params.baseHeight = 1;
               layer.params.seeThrough = false;
-              layer.params.depthBias = 1.5;
+              layer.params.planeWidth = 1;
+              layer.params.depthBias = 0;
             }
             this.storeLayerParams(layer);
             // `curves` is normally a render-time flag (the renderer smooths

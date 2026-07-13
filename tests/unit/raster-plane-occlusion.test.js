@@ -192,12 +192,15 @@ describe('Raster-Plane — hidden-line removal & occlusion bias', () => {
     expect(loose).toBeGreaterThan(tight * 1.05);
   });
 
-  test('Occlusion Bias: the cascade default (1.5) keeps more grazing lines than a zero tolerance', () => {
-    // Enabling Lines as Planes seeds depthBias 1.5 (px tolerance) — it must keep at
-    // least as much line as a zero tolerance (grazing silhouette lines survive).
+  test('Occlusion Bias: raising it keeps more grazing lines than the zero default', () => {
+    // Enabling Lines as Planes now seeds depthBias 0 — clip exactly at the silhouette.
+    // (It used to seed 1.5, and since the bias IS the slack a farther row gets before
+    // being hidden, that let every row poke over a pixel through the curtain in front
+    // of it.) Raising the slider is the opt-in for keeping grazing lines whole, so a
+    // loose tolerance must still retain at least as much line as the exact default.
     const zeroTol = visibleLen(relief({ seeThrough: false, depthBias: 0 }));
-    const cascadeDefault = visibleLen(relief({ seeThrough: false, depthBias: 1.5 }));
-    expect(cascadeDefault).toBeGreaterThanOrEqual(zeroTol);
+    const loosened = visibleLen(relief({ seeThrough: false, depthBias: 1.5 }));
+    expect(loosened).toBeGreaterThanOrEqual(zeroTol);
   });
 
   // ---- 4. Floating-horizon integration locks (the user's reported angle) ------

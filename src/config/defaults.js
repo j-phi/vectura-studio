@@ -2093,7 +2093,9 @@
       // Plane Width (Lines as Planes only): each slice's thickness as a % of the
       // row pitch. 100 = slices touch and merge into a solid slab; lower values
       // shrink each slice into a free-standing extruded plane with real gaps.
-      planeWidth: 100,
+      // Defaults to the thinnest slice — free-standing curtains are the look the
+      // mode exists for, and a slab is what you get without it.
+      planeWidth: 1,
       seeThrough: true,
       topographyAngle: 0,
       contourSmoothing: 20,

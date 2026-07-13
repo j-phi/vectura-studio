@@ -3104,6 +3104,7 @@
           "horizontalLineAngle": 5,
           "horizontalLinesAsPlanes": true,
           "baseHeight": 1.96,
+          "planeWidth": 1,
           "seeThrough": false,
           "topographyAngle": 0,
           "contourSmoothing": 20,

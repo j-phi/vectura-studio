@@ -591,6 +591,13 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.66
+- **Raster-Plane: Lines as Planes now starts thin, with no occlusion slack.** Plane Width defaults
+  to `1` — free-standing curtains are the look the mode exists for. Ticking **Lines as Planes** no
+  longer seeds an Occlusion Bias of 1.5, which was the largest single cause of lines poking through
+  the curtains in front of them (over a pixel of protrusion). All five shipped Raster-Plane presets
+  were zeroed to match; the `Crater` preset went from 925 breakthrough points to none.
+
 ### 1.2.65
 - **Raster-Plane: Lines-as-Planes stop exactly at the curtain border.** With See-Through off,
   every row used to leak a little ink through the curtain in front of it — hooks and whiskers

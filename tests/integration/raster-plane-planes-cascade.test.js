@@ -59,7 +59,12 @@ describe('Raster-Plane — Lines as Planes seeds relief defaults', () => {
     expect(layer.params.horizontalLinesAsPlanes).toBe(true);
     expect(layer.params.baseHeight).toBeCloseTo(1, 5);
     expect(layer.params.seeThrough).toBe(false);
-    expect(layer.params.depthBias).toBeCloseTo(1.5, 5);
+    // Thin free-standing curtains, not a fused slab — the look the mode exists for.
+    expect(layer.params.planeWidth).toBe(1);
+    // Occlusion Bias is the slack a farther row gets before the hidden-line pass
+    // hides it, so it must seed at 0: the cascade used to seed 1.5, which let every
+    // row poke over a pixel through the curtain in front of it.
+    expect(layer.params.depthBias).toBe(0);
   });
 
   test('the cascade is scoped to enabling — turning it OFF does not re-seed', () => {

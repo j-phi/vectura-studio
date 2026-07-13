@@ -103,6 +103,21 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   (crater preset: ~21k → ~7k points, geometry-identical). Covered by
   `tests/unit/raster-plane-plane-width.test.js`.
 
+### Changed
+- **Raster-Plane "Lines as Planes" defaults to thin free-standing curtains, and stops seeding an
+  Occlusion Bias.** Plane Width now defaults to `1` (was `100`) — free-standing slices are the
+  look the mode exists for; a fused slab is what you get *without* it. More importantly, ticking
+  the **Lines as Planes** checkbox used to cascade `depthBias = 1.5` — three times the old default
+  and the single biggest source of the reported protrusions, since the bias *is* the slack the
+  hidden-line pass grants a farther row before hiding it. At 1.5 every row punched over a pixel
+  through the curtain in front of it (the `Crater` preset, which carried that seeded value,
+  measured **925 breakthrough points, deepest 1.37px**). The cascade now seeds `planeWidth = 1`
+  and `depthBias = 0`, and all five shipped Raster-Plane presets were zeroed to match: Crater now
+  measures **0 breakthrough points**. Occlusion Bias remains on the slider for anyone who wants
+  grazing lines deliberately kept whole. Stale cascade assertions in
+  `raster-plane-planes-cascade.test.js` and `raster-plane-occlusion.test.js` updated to the new
+  contract (coverage kept, not dropped).
+
 ### Fixed
 - **Raster-Plane "Lines as Planes" clips exactly at the curtain border — no hooks, no hanging
   ends.** With See-Through OFF, every row leaked ink through the curtain standing in front of
