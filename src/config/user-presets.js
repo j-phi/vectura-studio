@@ -201,7 +201,6 @@
         "preset_system": "spiralizer",
         "group": "Classic",
         "params": {
-          "sphereRadius": 65,
           "helixRadius": 12,
           "helixHeight": 214,
           "helixCount": 2,
@@ -236,9 +235,6 @@
         "group": "Classic",
         "params": {
           "perspectiveMode": "free-3d",
-          "vpLeftX": 0,
-          "vpRightX": 100,
-          "depthCompression": 36,
           "depthSlices": 33,
           "xResolution": 210,
           "mountainAmplitude": 22,

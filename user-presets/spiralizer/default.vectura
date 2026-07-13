@@ -15,7 +15,6 @@
         "is3d": true,
         "preset": "spiralizer-default",
         "shape": "helix",
-        "sphereRadius": 65,
         "baseRadius": 68,
         "coneHeight": 136,
         "cylinderRadius": 58,

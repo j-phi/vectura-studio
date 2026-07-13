@@ -1927,7 +1927,13 @@
         max: 100,
         step: 1,
         infoKey: 'terrain.depthCompression',
-        showIf: (p) => p.perspectiveMode !== 'orthographic',
+        // Only the three PINHOLE modes read this (it drives the depth exponent in the
+        // vanishing-point projector). Orthographic uses Depth Scale, isometric uses the
+        // isometric angle, and free-3d routes through the Geometry3D camera entirely —
+        // all three return from project() before the exponent is ever applied. The old
+        // `!== 'orthographic'` gate therefore showed a control that does nothing in two
+        // of the six modes.
+        showIf: (p) => p.perspectiveMode === 'one-point' || p.perspectiveMode === 'one-point-landscape' || p.perspectiveMode === 'two-point',
       },
       {
         id: 'depthScale',
