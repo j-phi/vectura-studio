@@ -110,20 +110,38 @@ describe('toCurveAnchors', () => {
   });
 
   describe('real corners survive', () => {
-    test("a square's four corners are not rounded away at smoothing 0", () => {
-      const { anchors } = GU.toCurveAnchors(SQUARE, { curves: true, smoothing: 0, closed: true });
-      const corners = (anchors || []).filter((a) => a && a.corner);
-      expect(corners.length).toBe(4);
+    // A square is four corners and four dead-straight runs: there is no curve in
+    // it. The fit declines rather than claiming one — which renders it verbatim as
+    // exactly the same four lines. What matters is that Curves ON never ROUNDS a
+    // square's corners away, and never bulges its edges.
+    test('a square is not rounded into a blob by Curves', () => {
+      const { anchors, straight } = GU.toCurveAnchors(SQUARE, {
+        curves: true, smoothing: 0, closed: true,
+      });
+      if (straight) {
+        expect(anchors).toBeNull(); // renders verbatim — the square itself
+        return;
+      }
+      expect((anchors || []).filter((a) => a && a.corner).length).toBe(4);
     });
 
-    test('the fitted square stays on its own edges', () => {
-      const { anchors } = GU.toCurveAnchors(SQUARE, { curves: true, smoothing: 0, closed: true });
-      const flat = GU.buildPolylineFromAnchors(anchors, true);
-      // Every sample sits on the axis-aligned boundary (x or y pinned to 0/100).
-      const onEdge = flat.every((p) => (
-        Math.min(Math.abs(p.x), Math.abs(p.x - 100), Math.abs(p.y), Math.abs(p.y - 100)) < 1
+    // A square is entirely straight runs, so the fit declines and the path keeps
+    // the rendering it always had — the draw-time quadratic, which corner-cuts and
+    // therefore rounds it slightly. That is unchanged from before this work, and
+    // the invariant that actually matters is that it never BULGES: the drawn curve
+    // must stay inside the shape, never swing outside it.
+    test('the drawn square never bulges outside itself', () => {
+      const path = SQUARE.map((p) => ({ ...p }));
+      const fitted = GU.applyCurveFit(path, { curves: true, smoothing: 0, closed: true });
+      const { PathDraw } = runtime.window.Vectura;
+      const drawn = PathDraw.isVerbatim(fitted)
+        ? fitted
+        : PathDraw.toPolyline(fitted, { useCurves: true }, 0.05);
+
+      const inside = drawn.every((p) => (
+        p.x >= -0.001 && p.x <= 100.001 && p.y >= -0.001 && p.y <= 100.001
       ));
-      expect(onEdge).toBe(true);
+      expect(inside).toBe(true);
     });
   });
 

@@ -1469,9 +1469,13 @@
           // compact representation, and the later polyline simplify step skips
           // anchored paths precisely so it cannot strip them.
           simplify,
-          // During a drag the preview may fit loosely; the committed geometry
-          // never does.
-          ...(fastPreview ? { toleranceFrac: 0.006 } : {}),
+          // During a drag the preview may fit LOOSELY — fewer anchors, cheaper
+          // fit. This must never pin an absolute tolerance: the committed fit
+          // already reaches ~0.024 of the diagonal at high Smoothing/Simplify, so
+          // a fixed 0.006 made the drag preview four times TIGHTER than the
+          // geometry it was previewing — slower, and visibly different on
+          // mouse-up. Scale the real tolerance up instead.
+          ...(fastPreview ? { fastPreview: true } : {}),
         };
       const fitCurve = (path) => (curveOpts ? applyCurveFit(path, curveOpts) : path);
 
@@ -1708,7 +1712,26 @@
           return useCurves ? simplifyPathVisvalingam(path, tol) : simplifyPath(path, tol);
         });
       }
-      const simplifiedCounts = countPathPoints(finalPaths);
+      // On a fitted path the ANCHORS are the geometry — the point array is only a
+      // flattened cache the simplify pass deliberately leaves alone. Counting that
+      // cache made the "Points a→b" readout under the Simplify slider stand still
+      // while the user dragged it, even though the exported SVG really was
+      // thinning (a curved flowfield went 455 → 160 anchors while the readout sat
+      // at 891 → 891). Count what the layer actually is.
+      const countGeometry = (paths) => {
+        let lines = 0;
+        let points = 0;
+        (paths || []).forEach((path) => {
+          if (!Array.isArray(path)) return;
+          const anchors = path.meta && path.meta.anchors;
+          const fitted = Array.isArray(anchors) && anchors.some((a) => a && (a.in || a.out));
+          if (!fitted && !path.length) return;
+          lines += 1;
+          points += fitted ? anchors.length : path.length;
+        });
+        return { lines, points };
+      };
+      const simplifiedCounts = countGeometry(finalPaths);
       layer.stats = {
         rawLines: rawCounts.lines,
         rawPoints: rawCounts.points,

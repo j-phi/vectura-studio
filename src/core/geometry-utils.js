@@ -1952,11 +1952,14 @@
     // fewer, longer cubics. The contribution is bounded (and decimation carries
     // most of Simplify's weight) because past roughly 3% of the diagonal the fit
     // degenerates and returns no anchors at all.
-    const toleranceFrac = Number.isFinite(opts.toleranceFrac)
+    const baseTolFrac = Number.isFinite(opts.toleranceFrac)
       ? opts.toleranceFrac
       : CURVE_TOL_MIN_FRAC
         + smoothing * (CURVE_TOL_MAX_FRAC - CURVE_TOL_MIN_FRAC)
         + simplify * SIMPLIFY_TOL_MAX_FRAC;
+    // A drag preview fits LOOSER than the committed geometry — never tighter, or
+    // the preview costs more than the thing it is previewing.
+    const toleranceFrac = opts.fastPreview ? baseTolFrac * 3 : baseTolFrac;
 
     const fitOpts = { cornerAngleDeg, toleranceFrac };
     ['tolerance', 'mergeEps', 'mergeFrac', 'flattenTol', 'windowDist', 'windowDistFrac'].forEach((k) => {
@@ -1965,6 +1968,37 @@
 
     let anchors = reduceAnchors(anchorsIn, closed, fitOpts);
     if (!Array.isArray(anchors) || anchors.length < 2) {
+      return { anchors: null, closed, straight: true };
+    }
+
+    // Quality gate: only claim a curve if the fit actually found one.
+    //
+    // reduceAnchors splits at every corner and emits HANDLE-LESS anchors for the
+    // runs between them — correct for genuinely straight runs. But a handle-less
+    // pair renders as `C a a b b`, a degenerate cubic that draws as a straight
+    // chord; and the renderer enters cubic mode as soon as ANY anchor carries a
+    // handle. So on coarse or noisy geometry, where corner detection fires almost
+    // everywhere, a couple of genuinely-smooth spans were enough to flip the whole
+    // path into cubic mode and draw everything else as chords — bypassing the
+    // smooth quadratic fallback it would otherwise have had.
+    //
+    // The stock Lissajous showed the resulting inversion plainly: Curves ON at
+    // Smoothing 0 drew 88 smooth quadratics, and the SAME layer at Smoothing 0.6
+    // drew 84 straight chords and 2 curves. Turning Smoothing up made the line
+    // straighter.
+    //
+    // So: if most of the spans would come back straight, the geometry is genuinely
+    // angular and there is no curve here to fit. Decline, and let the path keep the
+    // rendering it would otherwise have had. Claiming a curve and then drawing
+    // chords is strictly worse than not claiming one.
+    const spans = closed ? anchors.length : anchors.length - 1;
+    let curvedSpans = 0;
+    for (let i = 0; i < spans; i++) {
+      const a = anchors[i];
+      const b = anchors[(i + 1) % anchors.length];
+      if ((a && a.out) || (b && b.in)) curvedSpans += 1;
+    }
+    if (spans > 0 && curvedSpans * 2 <= spans) {
       return { anchors: null, closed, straight: true };
     }
 

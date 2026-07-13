@@ -654,7 +654,16 @@
     if (!Array.isArray(path) || path.length < 3) return path;
     const mode = p.mode || 'lines';
     if (!SURFACE_CURVE_MODES.has(mode)) return path;
-    const smoothAmt = clamp(finite(p.contourSmoothing, 0), 0, 100);
+    // Two sliders reach this: the bespoke "Curve Smoothing" (contourSmoothing,
+    // 0..100) and the universal Smoothing (0..1). The Curves-ON branch below used
+    // to read only the first, so with Curves on the universal slider did nothing
+    // at all — a panel with two smoothing controls, one of them dead. Take
+    // whichever is asking for more, on the shared 0..100 scale.
+    const smoothAmt = clamp(
+      Math.max(finite(p.contourSmoothing, 0), clamp(finite(p.smoothing, 0), 0, 1) * 100),
+      0,
+      100,
+    );
     if (p.curves === true) {
       // Curves ON — every point becomes a bezier. Tolerance scales with each
       // path's own bounding-box diagonal so it adapts to artwork size: Curves-on

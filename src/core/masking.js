@@ -169,12 +169,21 @@
         workingPath = pts;
       }
       if (workingPath.length < 2) return;
-      // Clip the curve the renderer actually draws, not the raw sparse polyline.
-      // flattenSmoothedPath bakes the midpoint-quadratic smoothing into dense
-      // points (gated on useCurves; straight layers are already display-exact),
+      // Clip the curve the renderer actually DRAWS, not the raw sparse polyline,
       // so mask-boundary crossings keep the curve's shape instead of collapsing
-      // into straight chords. See GeometryUtils.flattenSmoothedPath.
-      if (options.useCurves) {
+      // into straight chords.
+      //
+      // Ask the path, not the layer. A layer with Curves OFF but Smoothing > 0
+      // now carries fitted bezier anchors and `meta.forceCurves`, so it draws as
+      // a curve while `layer.params.curves` is false — gating on the toggle
+      // clipped it along its chords (wrong crossing points) and then drew the
+      // survivors straight, which is the exact bug flattening exists to prevent.
+      // PathDraw.isCurved is the same decision the canvas and the exporter make.
+      const PD = window.Vectura && window.Vectura.PathDraw;
+      const drawsCurved = PD
+        ? PD.isCurved(workingPath, { useCurves: options.useCurves })
+        : Boolean(options.useCurves);
+      if (drawsCurved) {
         workingPath = flattenSmoothedPath(workingPath);
       }
       const isLoop = Boolean(workingPath.meta?.kind === 'circle' || isClosedPath(workingPath));

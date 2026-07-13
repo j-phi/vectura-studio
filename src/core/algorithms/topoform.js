@@ -560,7 +560,15 @@
         // Curves-on is the master enable; Contour Smoothing controls how hard the
         // oversampled slice polyline is simplified before bezier handles are fit,
         // so the result is smooth AND lean ("optimized, elegant lines" on export).
-        const smoothAmt = clamp(finite(p.contourSmoothing, 0), 0, 100);
+        // Two sliders reach this: the bespoke "Contour Smoothing" (0..100) and the
+        // universal Smoothing (0..1). Reading only the first meant that with
+        // Curves on the universal slider did nothing — a panel with two smoothing
+        // controls, one of them dead. Take whichever asks for more.
+        const smoothAmt = clamp(
+          Math.max(finite(p.contourSmoothing, 0), clamp(finite(p.smoothing, 0), 0, 1) * 100),
+          0,
+          100,
+        );
         const curvesOn = p.curves === true;
         const wantBezier = curvesOn || smoothAmt > 0;
         const emit = (segments, depths, hidden) => {
