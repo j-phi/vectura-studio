@@ -591,6 +591,14 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.64
+- **Raster-Plane: Mesh and Topography get true hidden-line removal.** With See-Through off, the
+  wires are now clipped against the surface itself instead of only back-face culled, so a valley
+  behind a hill no longer draws through it. The clip is exact (analytic, not rastered): each wire
+  is split precisely where it crosses the surface's silhouette, so lines end on the edge with no
+  protruding stubs, no chewed crests, and no gaps at an overlap join. See-Through output is
+  unchanged.
+
 ### 1.2.59
 - **Raster-Plane: hidden lines stay hidden.** Lines-as-Planes occlusion order now derives from
   each slice's plan position instead of its sampled height, so back rows no longer break through
