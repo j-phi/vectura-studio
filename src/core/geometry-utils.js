@@ -561,84 +561,48 @@
     return points;
   };
 
+  // PathDraw owns the "which curve branch does this path take?" decision for the
+  // whole app. Resolved lazily — in the browser it loads after this file, and
+  // under Node the two modules are a require cycle that only settles once both
+  // have evaluated. Never called at load time, so both resolve fine.
+  const getPathDraw = () => {
+    if (typeof window !== 'undefined' && window.Vectura && window.Vectura.PathDraw) {
+      return window.Vectura.PathDraw;
+    }
+    if (typeof require === 'function') {
+      try {
+        return require('./path-draw.js');
+      } catch (err) {
+        return null;
+      }
+    }
+    return null;
+  };
+
   // Flatten the *displayed* curve into a dense polyline that traces exactly what
-  // Renderer.tracePath / UI.pathToSvg draw. The masking pipeline clips THIS, not
+  // the canvas and the SVG exporter draw. The masking pipeline clips THIS, not
   // the raw sparse polyline: algorithm output (lissajous, spiral, …) is a coarse
-  // polyline whose on-screen smoothness comes entirely from the renderer's
-  // midpoint-quadratic interpolation. Clipping the raw polyline cuts along its
-  // chords and discards that interpolation, collapsing curves into straight
-  // lines at the mask boundary. Flattening first means a masked curve keeps the
-  // same shape it has unmasked.
+  // sample whose on-screen smoothness comes entirely from the branch PathDraw
+  // picks. Clipping the raw polyline would cut along its chords and discard that
+  // interpolation, collapsing curves into straight lines at the mask boundary.
+  // Flattening first means a masked curve keeps the shape it has unmasked.
   //
-  // Mirrors tracePath's three branches exactly: native cubic when anchors carry
-  // bezier handles, straight passthrough (already flat), and midpoint-quadratic
-  // for plain polylines. Both curve branches route through sampleCubicBezier
-  // (adaptive, tolerance in world units, depth-bounded) by elevating each
-  // quadratic span to its equivalent cubic — no density heuristic, zoom-stable.
+  // The branch logic used to be re-implemented here, hand-synced with
+  // renderer.tracePath ("mirrors tracePath's three branches exactly", said the
+  // comment — a standing invitation to drift). It now delegates, so there is
+  // exactly one definition of what a path draws as.
   const flattenSmoothedPath = (path, tolerance = 0.1) => {
-    if (!Array.isArray(path) || path.length < 2 || path.meta?.straight) return path;
+    if (!Array.isArray(path) || path.length < 2) return path;
+    const PD = getPathDraw();
+    if (!PD) return path;
+    if (PD.isVerbatim(path)) return path;
 
-    const out = [];
-    const append = (samples) => {
-      // samples[0] repeats the previous span's endpoint; skip it once chained.
-      for (let k = out.length ? 1 : 0; k < samples.length; k++) {
-        out.push({ x: samples[k].x, y: samples[k].y });
-      }
-    };
+    const decision = PD.classify(path, { useCurves: true });
+    if (decision.mode !== 'cubic' && decision.mode !== 'quadratic') return path;
 
-    const anchors = path.meta?.anchors;
-    const hasHandles = Array.isArray(anchors) && anchors.length >= 2
-      && anchors.some((a) => a && (a.in || a.out));
-    if (hasHandles) {
-      const closed = path.meta?.closed === true;
-      for (let i = 0; i < anchors.length - 1; i++) {
-        const a = anchors[i];
-        const b = anchors[i + 1];
-        append(sampleCubicBezier(a, a.out || a, b.in || b, b, tolerance));
-      }
-      if (closed) {
-        const a = anchors[anchors.length - 1];
-        const b = anchors[0];
-        append(sampleCubicBezier(a, a.out || a, b.in || b, b, tolerance));
-      }
-      return finalizeFlattened(out, path, closed);
-    }
-
-    if (path.length < 3) return path; // tracePath renders this straight
-
-    // Quadratic span (start, control, end) → equivalent cubic control points.
-    const sampleQuad = (s, c, e) => sampleCubicBezier(
-      s,
-      { x: s.x + (2 / 3) * (c.x - s.x), y: s.y + (2 / 3) * (c.y - s.y) },
-      { x: e.x + (2 / 3) * (c.x - e.x), y: e.y + (2 / 3) * (c.y - e.y) },
-      e,
-      tolerance
-    );
-
-    const closed = isClosedLoopPath(path);
-    if (closed) {
-      const n = path.length - 1;
-      const m0 = { x: (path[0].x + path[1].x) / 2, y: (path[0].y + path[1].y) / 2 };
-      out.push({ x: m0.x, y: m0.y });
-      let prev = m0;
-      for (let i = 1; i < n; i++) {
-        const mid = { x: (path[i].x + path[i + 1].x) / 2, y: (path[i].y + path[i + 1].y) / 2 };
-        append(sampleQuad(prev, path[i], mid));
-        prev = mid;
-      }
-      append(sampleQuad(prev, path[0], m0));
-    } else {
-      out.push({ x: path[0].x, y: path[0].y });
-      let prev = path[0];
-      for (let i = 1; i < path.length - 1; i++) {
-        const mid = { x: (path[i].x + path[i + 1].x) / 2, y: (path[i].y + path[i + 1].y) / 2 };
-        append(sampleQuad(prev, path[i], mid));
-        prev = mid;
-      }
-      const last = path[path.length - 1];
-      out.push({ x: last.x, y: last.y });
-    }
-    return finalizeFlattened(out, path, closed);
+    const points = PD.toPolyline(path, { useCurves: true }, tolerance);
+    if (!Array.isArray(points) || points.length < 2) return path;
+    return finalizeFlattened(points, path, decision.closed === true);
   };
 
   // ── Stroke thickening ───────────────────────────────────────────────────────
@@ -1819,6 +1783,157 @@
     return outA.length >= 2 ? outA : tagAll(merged);
   };
 
+  // ── The universal curve fit ─────────────────────────────────────────────────
+  //
+  // ONE entry point for turning geometry into cubic anchors, replacing a pile of
+  // divergent implementations: Catmull-Rom on a 0..1 scale (rebuildShapeAnchors),
+  // Catmull-Rom on a 0..100 scale (Geometry3D.smoothToBezier), a naive-corner
+  // Schneider fit (fitBezierAnchors), and the renderer's draw-time
+  // midpoint-quadratic, which was not a fit at all.
+  //
+  // The core is `reduceAnchors` — a Schneider least-squares fit with WINDOWED
+  // corner tangents. The windowing is what makes it right for algorithm output:
+  // an immediate-neighbour turn-angle test (what fitBezierAnchors uses) MISSES
+  // corners on a densely-sampled path, because a real corner is spread across
+  // several samples and each individual turn is small; and it OVER-detects on a
+  // coarse path, because every sample of a smooth curve looks like a bend. The
+  // windowed tangent looks ahead/behind by a fixed arc length, so it sees the
+  // shape rather than the sampling — a coarse spiral reads as smooth, a square
+  // reads as four corners, at any resolution.
+  //
+  // Every tolerance is a FRACTION of the contour's bounding-box diagonal, so one
+  // option set serves a 5 mm glyph and a 400 mm spiral identically.
+  //
+  // It also needs no handle-length clamp. pattern.js carries the repo's only
+  // clamp because Catmull-Rom sizes a handle from the (next-prev) chord and
+  // never consults the curve it is approximating, so lopsided neighbour spacing
+  // balloons it into a self-intersecting loop. A least-squares fit solves for
+  // handles against the actual points, and _generateBezier already clamps them
+  // to the chord. See tests/unit/curve-fit-loops.test.js.
+
+  // Smoothing 0 must still be a real curve, not a polyline: `curves: true` means
+  // "draw this as a curve", and a toggle that does nothing at some slider
+  // position is precisely the bug this work exists to kill. At smoothing 0 the
+  // fit is TIGHT (it hugs the samples, preserving genuine corners); smoothing
+  // opens the corner threshold and loosens the tolerance so the curve rounds
+  // through bends instead of tracking them.
+  // The corner threshold: the angle between a vertex's incoming and outgoing
+  // tangents above which it is treated as a CORNER (kept sharp, handles broken)
+  // rather than a point on a smooth curve.
+  //
+  // reduceAnchors defaults to 30 degrees, which is right for FONT outlines —
+  // densely sampled, so its windowed tangent spans many points and reads the
+  // true shape. Algorithm output is the opposite: a coarse spiral's samples are
+  // far wider than the tangent window, so the window degenerates to the
+  // immediate chord and every ~36-degree bend trips a 30-degree threshold. Every
+  // vertex becomes a corner and nothing curves at all.
+  //
+  // 50 degrees is the floor that separates the two real cases: a spiral's bend
+  // (~36 deg) smooths, a square's corner (90 deg) survives. Smoothing opens it
+  // up to 95, where even a right angle rounds.
+  const CURVE_CORNER_MIN_DEG = 50; // smoothing 0 — smooth bends, keep true corners
+  const CURVE_CORNER_MAX_DEG = 95; // smoothing 1 — round through everything
+  const CURVE_TOL_MIN_FRAC = 0.002; // reduceAnchors' default: a tight fit
+  const CURVE_TOL_MAX_FRAC = 0.012;
+  const SIMPLIFY_TOL_MAX_FRAC = 0.030; // what the Simplify slider adds on top
+
+  const hasAnchorShape = (list) =>
+    Array.isArray(list) && list.some((a) => a && (('in' in a) || ('out' in a)));
+
+  /**
+   * points-or-anchors -> { anchors, closed, straight }
+   *
+   *   smoothing 0..1  how much the curve rounds THROUGH bends rather than
+   *                   tracking them. Moves handles, never sample points.
+   *   curves    bool  master enable. False + smoothing 0 => straight passthrough.
+   *   simplify  0..1  additive anchor reduction (widens the fit tolerance).
+   *   cornerRadius 0..1  optional fillet pass ("Round Corners"), applied after
+   *                   the fit — a distinct verb from curve fitting.
+   *
+   * `straight: true` means nothing was fitted and the caller should leave the
+   * point array alone — a byte-identical no-op, not an empty result.
+   */
+  const toCurveAnchors = (input, opts = {}) => {
+    const closed = Boolean(opts.closed);
+    if (!Array.isArray(input) || input.length < 2) {
+      return { anchors: null, closed, straight: true };
+    }
+
+    const smoothing = clamp01(opts.smoothing ?? 0);
+    const simplify = clamp01(opts.simplify ?? 0);
+    const curves = opts.curves === true;
+
+    // Nothing asked for a curve.
+    if (!curves && smoothing <= 0) return { anchors: null, closed, straight: true };
+    if (input.length < 3) return { anchors: null, closed, straight: true };
+
+    const anchorsIn = hasAnchorShape(input)
+      ? input
+      : input.map((p) => ({ x: p.x, y: p.y, in: null, out: null, forceCorner: p.forceCorner === true || p._tileEdge === true }));
+
+    const cornerAngleDeg = Number.isFinite(opts.cornerAngleDeg)
+      ? opts.cornerAngleDeg
+      : CURVE_CORNER_MIN_DEG + smoothing * (CURVE_CORNER_MAX_DEG - CURVE_CORNER_MIN_DEG);
+
+    const toleranceFrac = Number.isFinite(opts.toleranceFrac)
+      ? opts.toleranceFrac
+      : CURVE_TOL_MIN_FRAC
+        + smoothing * (CURVE_TOL_MAX_FRAC - CURVE_TOL_MIN_FRAC)
+        + simplify * SIMPLIFY_TOL_MAX_FRAC;
+
+    const fitOpts = { cornerAngleDeg, toleranceFrac };
+    ['tolerance', 'mergeEps', 'mergeFrac', 'flattenTol', 'windowDist', 'windowDistFrac'].forEach((k) => {
+      if (opts[k] !== undefined) fitOpts[k] = opts[k];
+    });
+
+    let anchors = reduceAnchors(anchorsIn, closed, fitOpts);
+    if (!Array.isArray(anchors) || anchors.length < 2) {
+      return { anchors: null, closed, straight: true };
+    }
+
+    const cornerRadius = clamp01(opts.cornerRadius ?? 0);
+    if (cornerRadius > 0 && typeof _applyFillets === 'function') {
+      // reduceAnchors already marks tangent breaks with `corner: true`; feed the
+      // fillet pass those rather than re-deriving them by float-comparing
+      // positions (which is what fitBezierAnchors did, fragilely).
+      const cornerPos = anchors.filter((a) => a && a.corner).map((a) => ({ x: a.x, y: a.y }));
+      if (cornerPos.length) anchors = _applyFillets(anchors, closed, cornerPos, cornerRadius);
+    }
+
+    return { anchors, closed, straight: false };
+  };
+
+  /**
+   * The engine-side companion: fit a path in place and stamp the result onto its
+   * meta so the renderer and the exporter both draw native cubics from it.
+   *
+   * Refuses any path that has declared its point array final (`meta.straight` /
+   * `meta.baked`) or that is a parametric circle. Returns the input untouched
+   * when nothing was fitted, so `smoothing 0, curves off` is free.
+   */
+  const applyCurveFit = (path, opts = {}) => {
+    if (!Array.isArray(path) || path.length < 3) return path;
+    const meta = path.meta || {};
+    if (meta.kind === 'circle') return path;
+    if (meta.straight === true || meta.baked === true) return path;
+
+    const closed = opts.closed !== undefined ? Boolean(opts.closed) : isClosedLoopPath(path);
+    const { anchors, straight } = toCurveAnchors(path, { ...opts, closed });
+    if (straight || !anchors) return path;
+
+    const out = path.map((pt) => ({ ...pt }));
+    out.meta = { ...meta, anchors, closed, forceCurves: true };
+    delete out.meta.straight;
+    return out;
+  };
+
+  // `straight` (true line segments) or `baked` (already the exact display
+  // curve) — either way the point array is final and must not be re-curved.
+  const isVerbatimPath = (path) => {
+    const meta = path && path.meta;
+    return Boolean(meta && (meta.straight === true || meta.baked === true));
+  };
+
   const api = {
     stripCurveMeta,
     smoothPath,
@@ -1826,6 +1941,9 @@
     simplifyPathVisvalingam,
     fitBezierAnchors,
     reduceAnchors,
+    toCurveAnchors,
+    applyCurveFit,
+    isVerbatimPath,
     countPathPoints,
     clonePaths,
     cloneAnchors,
