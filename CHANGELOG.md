@@ -83,6 +83,26 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   `tests/unit/raster-plane-plane-width.test.js`.
 
 ### Fixed
+- **Raster-Plane "Lines as Planes" clips exactly at the curtain border — no hooks, no hanging
+  ends.** With See-Through OFF, every row leaked ink through the curtain standing in front of
+  it: little hooks and whiskers at each border, worst at thin Plane Widths, up to half a pixel
+  deep (measured across five heights: 158–400 breakthrough points each, deepest 0.50px). The
+  cause was a default, not a miscalculation — **Occlusion Bias** shipped at `0.5`, and that
+  number is exactly the slack the hidden-line pass grants a farther row before it agrees to
+  hide it. Bias now defaults to `0` (clip exactly at the silhouette) in `ALGO_DEFAULTS`, in the
+  algorithm's own fallback, and in the `rasterplane-default` preset a new layer actually loads;
+  the slider remains for anyone who deliberately wants grazing lines kept whole. The slices are
+  free-standing and each is only tested against strictly-nearer ones, so no bias was ever needed
+  to stop them z-fighting (the solid-slab path has its own `inset` occluder for that, and is
+  unaffected at zero bias). Two supporting changes, without which zeroing the bias merely swaps
+  hooks for gaps: `occludeRowsFloatingHorizon` now **bisects the true visible/hidden crossing**
+  instead of cutting at the last sample (a clipped line ended up to one sample short of the
+  border — the hanging end), and its sampling stride is now decoupled from its occluder column
+  pitch (`columnResolution`), letting the cardboard path rasterise its horizon 5× finer without
+  paying for 5× the redundant sampling. Result across all five heights: breakthrough points
+  1186 → **0**, deepest protrusion 0.50px → **0.00px**, hanging ends 351 → **0**, render time
+  ~68ms → ~78ms. Bars, mesh and topography are byte-identical (they no longer read `depthBias`
+  at all). Regression coverage: `tests/unit/raster-plane-plane-overlap.test.js`.
 - **Left-aligned text never pushes its left side leftwards while typing.** Fit-to-frame
   text (the panel default) kept the whole block centred, so typing into a left-aligned fit
   layer re-centred it and shoved the left edge left on every keystroke. Left/right-aligned

@@ -591,6 +591,15 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.65
+- **Raster-Plane: Lines-as-Planes stop exactly at the curtain border.** With See-Through off,
+  every row used to leak a little ink through the curtain in front of it — hooks and whiskers
+  along each border, worst at thin Plane Widths. **Occlusion Bias** now defaults to `0`, which
+  means "clip exactly at the silhouette"; the old `0.5` default *was* the slack that let a
+  farther row poke through. The slider stays for anyone who wants grazing lines kept whole.
+  Clipped lines also now end precisely *on* the border rather than a fraction short of it, so
+  the fix doesn't trade hooks for gaps. Bars, Mesh and Topography are unchanged.
+
 ### 1.2.64
 - **Raster-Plane: Mesh and Topography get true hidden-line removal.** With See-Through off, the
   wires are now clipped against the surface itself instead of only back-face culled, so a valley

@@ -1173,10 +1173,22 @@
         roll = Math.atan2(b.y - a.y, b.x - a.x);
       }
     }
+    // Occlusion Bias defaults to 0 so a curtain clips its neighbours EXACTLY at
+    // its silhouette: the slices are free-standing (no shared faces, and a slice
+    // is only ever tested against strictly-nearer ones), so no bias is needed to
+    // stop them z-fighting — any bias is just slack for a farther row to poke
+    // through the one in front, which at thin Plane Widths shows as hooks and
+    // whiskers along every border.
+    // A curtain is a vertical span per screen column, so the horizon's band model
+    // represents it exactly in y — its only error is the column pitch in x, which
+    // rounds the silhouette by up to half a column. At the default ~1px pitch that
+    // rounding is the last source of ragged borders, so rasterise the occluders
+    // five times finer, keeping the rounding well inside a plotted line's width.
     return G3.occludeRowsFloatingHorizon(rows, {
       mode: 'remove',
-      eps: Math.max(0, finite(p.depthBias, 0.5)),
+      eps: Math.max(0, finite(p.depthBias, 0)),
       angle: roll,
+      columnResolution: 0.2,
     }).concat(direct);
   };
 
@@ -1391,10 +1403,13 @@
       }
     }
     // Occlusion Bias (p.depthBias) is the screen-space tolerance (px) that keeps
-    // silhouette-grazing lines whole and stops adjacent rows from z-fighting.
+    // silhouette-grazing lines whole. It defaults to 0 (clip exactly at the
+    // silhouette); adjacent slabs share a face, but they hand the horizon an
+    // inset occluder rather than leaning on this tolerance, so they still cannot
+    // z-fight their own boundary at zero bias.
     return G3.occludeRowsFloatingHorizon(rows, {
       mode: 'remove',
-      eps: Math.max(0, finite(p.depthBias, 0.5)),
+      eps: Math.max(0, finite(p.depthBias, 0)),
       angle: roll,
     }).concat(direct);
   };

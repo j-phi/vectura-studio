@@ -697,7 +697,7 @@
           "showCreases": false,
           "creaseAngle": 35,
           "hiddenLineMode": "backface",
-          "depthBias": 0.5,
+          "depthBias": 0,
           "hatchEnable": false,
           "lightAzimuth": 135,
           "lightElevation": 45,

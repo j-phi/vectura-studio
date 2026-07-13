@@ -2115,7 +2115,12 @@
       showCreases: false,
       creaseAngle: 35,
       hiddenLineMode: 'backface',
-      depthBias: 0.5,
+      // Occlusion Bias 0 = clip exactly at the silhouette. The bias is slack the
+      // hidden-line pass grants a farther row before hiding it, so any non-zero
+      // default lets every row poke that far through the curtain in front of it —
+      // hooks and whiskers along each border, worst at thin Plane Widths. Raising
+      // it stays available for anyone who wants grazing lines kept whole.
+      depthBias: 0,
       hatchEnable: false,
       lightAzimuth: 135,
       lightElevation: 45,

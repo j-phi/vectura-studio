@@ -44,6 +44,29 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — Raster-Plane Lines-as-Planes clips exactly at the curtain border.** Occlusion
+  Bias defaulted to `0.5`, and in the floating-horizon pass that number *is* the slack a farther
+  row gets before it is hidden — so every row poked up to half a pixel through the curtain in
+  front of it (hooks/whiskers at each border, worst at thin Plane Widths). Now `0` everywhere a
+  new layer can pick it up. Three architectural notes worth keeping:
+  1. **A default lives in three places here, and the app reads the one the tests don't.**
+     `ALGO_DEFAULTS.rasterPlane`, the algorithm's own `finite(p.depthBias, …)` fallback, and
+     `user-presets/rasterPlane/default.vectura` — the preset a fresh layer actually loads, which
+     *overrides* `ALGO_DEFAULTS`. Unit tests call `generate()` directly and see only the fallback,
+     so they went green while the running app still shipped the bug. Any default change to a
+     preset-backed algorithm has to touch the `.vectura` file and re-run `user-presets:bundle`,
+     and has to be confirmed in the browser — this is precisely the case the "not done until
+     observed in the running app" rule exists for.
+  2. **Bias and rasterisation are two different errors, in opposite directions.** Bias lets ink
+     *overshoot* into an occluder; the horizon's sample grid makes a clipped run stop *short* of
+     it. Fixing one alone just trades it for the other, so both must be pinned by tests at once
+     (`raster-plane-plane-overlap.test.js` does). The horizon now bisects the true crossing rather
+     than cutting at the last sample.
+  3. **Occluder pitch and sampling stride are separate concerns.** They were one `resolution`
+     option, so buying a sharper silhouette also bought proportionally more redundant sampling
+     (5× finer columns cost +75% render time). Split into `columnResolution`; the same accuracy
+     now costs ~+15%. A rasterised horizon still has an irreducible sub-pitch rounding floor — the
+     exactly-zero route is the analytic polygon clip already used by mesh/topography.
 - **Unreleased — left/right-aligned text pins its alignment edge in ALL modes.** Fit-to-frame
   left/right-aligned text now pins the alignment cell edge to the matching frame edge
   (was: block re-centred every keystroke, pushing the left side leftwards while typing);

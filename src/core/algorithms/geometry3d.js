@@ -830,9 +830,17 @@
     if (!(maxX > minX)) {
       return valid.map((r) => pathWithMeta(r.pts.map(reRoll), r.meta ? { ...r.meta } : null));
     }
+    // Two independent pitches. `res` is how densely a row is SAMPLED for the
+    // visibility test — it only has to be fine enough not to step over a whole
+    // visible/hidden island, because the exact crossing is bisected afterwards.
+    // `colRes` is how finely the occluders are RASTERISED into the horizon, and
+    // that pitch is what rounds the silhouette, so accuracy wants it small. They
+    // used to be the same number, which meant buying a sharper border also bought
+    // a proportional pile of redundant sampling.
     const res = Math.max(finite(opts.resolution, 1), (maxX - minX) / 4000);
-    const cols = Math.max(1, Math.min(4001, Math.floor((maxX - minX) / res) + 1));
-    const colOf = (x) => clamp(Math.round((x - minX) / res), 0, cols - 1);
+    const colRes = Math.max(finite(opts.columnResolution, res), (maxX - minX) / 4000);
+    const cols = Math.max(1, Math.min(4001, Math.floor((maxX - minX) / colRes) + 1));
+    const colOf = (x) => clamp(Math.round((x - minX) / colRes), 0, cols - 1);
     const upper = new Float32Array(cols).fill(Infinity);   // topmost (min screen-y) covered
     const lower = new Float32Array(cols).fill(-Infinity);  // bottommost (max screen-y) covered
     // Read the horizon by linear interpolation between bracketing columns (matching
@@ -843,7 +851,7 @@
     // discretely and flipped visible/hidden sample-to-sample; interpolating removes
     // those jumps so a row stays a clean run.
     const horizonAt = (arr, x, fill) => {
-      const cf = clamp((x - minX) / res, 0, cols - 1);
+      const cf = clamp((x - minX) / colRes, 0, cols - 1);
       const c0 = Math.floor(cf);
       const c1 = Math.min(c0 + 1, cols - 1);
       const a = arr[c0], b = arr[c1];
@@ -890,7 +898,7 @@
       //    horizon in step 2 — used for hidden support geometry (e.g. a relief
       //    curtain's interior floor contour) that must hide farther rows without
       //    being drawn itself.
-      let current = null, curVis = null;
+      let current = null, curVis = null, prev = null;
       const flush = () => {
         if (current && current.length >= 2) {
           const pts = decimate(current).map(reRoll);
@@ -899,16 +907,42 @@
         }
         current = null;
       };
-      const test = (x, y) => {
+      const visibleAt = (x, y) => {
         const up = horizonAt(upper, x, Infinity);
         const lo = horizonAt(lower, x, -Infinity);
         // Hidden only when strictly inside the opaque band by the eps margin.
-        const visible = !(y > up + eps && y < lo - eps);
-        if (current && curVis !== visible) flush();
+        return !(y > up + eps && y < lo - eps);
+      };
+      // The horizon is only sampled every `res`, so a run that flips visibility
+      // between two samples would otherwise be cut at the last sample — leaving
+      // it up to one sample SHORT of the silhouette (a hanging end) and starting
+      // the next run one sample late. Bisect for the true crossing and hand it to
+      // both runs, so a clipped line stops exactly ON the border it was cut at.
+      const crossing = (a, b, visA) => {
+        let lo = 0, hi = 1;
+        for (let i = 0; i < 24; i++) {
+          const m = (lo + hi) / 2;
+          if (visibleAt(lerp(a.x, b.x, m), lerp(a.y, b.y, m)) === visA) lo = m; else hi = m;
+        }
+        const t = (lo + hi) / 2;
+        return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
+      };
+      const test = (x, y) => {
+        const pt = { x, y };
+        const visible = visibleAt(x, y);
+        if (current && curVis !== visible && prev) {
+          const edge = crossing(prev, pt, curVis);
+          current.push(edge);
+          flush();
+          current = [edge];
+          curVis = visible;
+        }
         if (!current) { current = []; curVis = visible; }
-        current.push({ x, y });
+        current.push(pt);
+        prev = pt;
       };
       if (r.draw) {
+        prev = null;
         for (let s = 0; s < r.pts.length - 1; s++) {
           const a = r.pts[s], b = r.pts[s + 1];
           const len = Math.hypot(b.x - a.x, b.y - a.y);
@@ -943,7 +977,7 @@
           if (c0 > c1) { const tmp = c0; c0 = c1; c1 = tmp; }
           const dx = b.x - a.x;
           for (let c = c0; c <= c1; c++) {
-            const xc = minX + c * res;
+            const xc = minX + c * colRes;
             const t = Math.abs(dx) < 1e-9 ? 0 : clamp((xc - a.x) / dx, 0, 1);
             const y = lerp(a.y, b.y, t);
             if (inset > 0) {
