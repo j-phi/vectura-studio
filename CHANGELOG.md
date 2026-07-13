@@ -7,6 +7,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Fixed
+- **CI: the coverage job now runs in shards.** A single vitest process running all 444 test files
+  under v8 instrumentation overloads its parent process — it stops servicing the workers'
+  `onTaskUpdate` within birpc's RPC timeout (hard-coded 60s, no config knob), so the run dies
+  on `[vitest-worker]: Timeout calling onTaskUpdate`, an unhandled error that fails the job even
+  though every test passed. The trigger is load, not chance (the 266-file unit job never trips
+  it; the 444-file instrumented job always did, including all 3 attempts of the retry loop this
+  replaces), so `npm run test:coverage:sharded` splits the run into thirds and rebuilds one full
+  coverage report from the blob reports via `--mergeReports`.
+- **Dropped a dangling source map reference from the vendored opentype build.**
+  `src/vendor/opentype.min.js` ended with `//# sourceMappingURL=opentype.min.js.map`, but that
+  map is not shipped — so Vite retried a failing ENOENT read in the parent process on every
+  transform of it.
 - **Panel rebuilds no longer re-run every preset's algorithm.** The preset gallery drew each
   option's thumbnail by evaluating that preset's geometry, with nothing cached — so every
   `buildControls()` re-ran the full algorithm once per preset (for Raster-Plane: a 3D mesh +

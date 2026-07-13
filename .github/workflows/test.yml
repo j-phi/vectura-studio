@@ -99,22 +99,19 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm install --no-audit --no-fund --loglevel=error
-      - name: Run test:coverage (retry on vitest worker-RPC timeout)
-        # v8 coverage instrumentation + maxForks:4 under CI's shared runner
-        # occasionally trips vitest's internal birpc "Timeout calling
-        # onTaskUpdate" — a worker-communication timeout, not a test
-        # failure (all suites still report 100% passed when this occurs).
-        # No vitest-level config exposes that RPC timeout, so retry the
-        # whole step a couple of times; a real regression fails all 3.
-        run: |
-          for attempt in 1 2 3; do
-            if npm run test:coverage; then
-              exit 0
-            fi
-            echo "test:coverage attempt $attempt failed" >&2
-            sleep 5
-          done
-          exit 1
+      - name: Run test:coverage (sharded)
+        # One vitest process running all 444 files under v8 instrumentation
+        # overloads its parent: it stops servicing the workers' `onTaskUpdate`
+        # within birpc's RPC timeout (hard-coded 60s, no config knob), so the run
+        # dies on "[vitest-worker]: Timeout calling onTaskUpdate" — an unhandled
+        # error that fails the job even though every test passed.
+        #
+        # Retrying does not help (it failed all 3 attempts of the loop this
+        # replaces) because the trigger is load, not chance — note the unit job
+        # (266 files) never trips it while coverage (444, instrumented) always
+        # does. Sharding gives each process a third of the files, and
+        # --mergeReports rebuilds one full coverage report from the blobs.
+        run: npm run test:coverage:sharded
       - name: Upload Coverage Report
         if: always()
         uses: actions/upload-artifact@v7

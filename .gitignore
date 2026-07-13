@@ -28,3 +28,6 @@ graphify-out/.graphify_old.json
 /docs/illustrator-tools-parity-requirements.html
 /docs/illustrator-tools-parity-requirements.md
 /docs/assets/illustrator-tools-reference/
+
+# vitest blob reports (sharded coverage runs)
+.vitest-reports
