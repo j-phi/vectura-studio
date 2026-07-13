@@ -10,15 +10,21 @@
  * `ALGO_DEFAULTS.terrain.noises` was DEAD CONFIG: editing it could not reach the app.
  * That is the same trap that hid a stale Occlusion Bias, in miniature.
  *
- * The bundler now ignores a flat key when comparing IF every `imageEffects` entry already
+ * The bundler ignores a flat key when comparing IF every `imageEffects` entry already
  * defines it — because `getParam()` (src/core/noise-rack.js) checks the effect first and
- * only falls back to the flat key, so a shadowed copy is unreachable and dropping it
- * cannot change what renders.
+ * only falls back to the flat copy, so a shadowed one is unreachable.
  *
- * The dangerous half is the converse, and it is what this file guards hardest: when a
- * noise entry has NO `imageEffects`, `resolveEffects()` synthesises an effect FROM the
- * flat entry. There those keys are LOAD-BEARING — flowfield, grid and svgDistort ship
- * exactly that shape. A blanket "strip legacy keys" would silently gut them.
+ * THE DANGEROUS HALF, and what this file guards hardest: that argument holds ONLY for the
+ * keys `getParam` reads. A noise entry also carries SOURCE / IDENTITY keys with the same
+ * `image*` spelling — `imageId`, `imageWidth`, `imageHeight`, `imageInvertColor`,
+ * `imageInvertOpacity`, `imageAlgo`, `imageName`, `imagePreview` — which are read DIRECTLY
+ * off the entry, never through `getParam` (`noiseDef?.imageId` resolves the raster,
+ * noise-rack.js:61; `noiseLayer.imageWidth/Height` scale it, rainfall.js:252). "The effect
+ * wins" is simply false of those. A rule keyed on the SPELLING (`/^image/`) would strip a
+ * flat `imageId` the moment any effect carried one, and the noise layer would render blank.
+ *
+ * So the allowlist is derived from the code, and these tests pin that boundary from both
+ * sides: the adjustment keys may be ignored, the source keys never may.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -97,24 +103,83 @@ describe('Preset noise entries — stale schema must not masquerade as a curatio
     ).toEqual([]);
   });
 
-  // THE DANGEROUS HALF. Without imageEffects, resolveEffects() builds the effect FROM the
-  // flat entry, so these keys decide what renders. A blanket strip would delete them.
-  test.each(['flowfield', 'grid'])(
-    '%s keeps its flat legacy image keys — with no imageEffects they are LOAD-BEARING',
-    (type) => {
+  /*
+   * THE DANGEROUS HALF — exercise the RULE, not its output.
+   *
+   * These call scripts/lib/noise-canonical.js directly. Asserting on the generated bundle
+   * instead would prove nothing: the bundle looks identical whether the rule is keyed on an
+   * allowlist or on a /^image/ regex, because no preset happens to carry an effect with an
+   * `imageId` today. "Safe by luck" and "safe by construction" are indistinguishable from
+   * the output — you can only tell them apart by feeding the rule the case that breaks.
+   */
+  const { withoutShadowedLegacyKeys, GETPARAM_READ_KEYS } = require('../../scripts/lib/noise-canonical');
+
+  const entryWith = (extra, effect) => ({
+    id: 'noise-1', type: 'image', imageId: 'img-123', imageWidth: 4, imageHeight: 2,
+    imageAlgo: 'luma', ...extra,
+    imageEffects: [{ id: 'effect-1', enabled: true, mode: 'luma', ...effect }],
+  });
+
+  test('a SHADOWED adjustment key is dropped (the whole point of the rule)', () => {
+    const out = withoutShadowedLegacyKeys(
+      entryWith({ imageBrightness: 0, imageGamma: 1 }, { imageBrightness: 0, imageGamma: 1 }),
+    );
+    expect(out.imageBrightness, 'the effect defines it, so the flat copy is unreachable').toBeUndefined();
+    expect(out.imageGamma).toBeUndefined();
+  });
+
+  test('an adjustment key the effect does NOT define is kept — getParam would fall back to it', () => {
+    const out = withoutShadowedLegacyKeys(entryWith({ imageBrightness: 0.5 }, {}));
+    expect(out.imageBrightness, 'no effect defines it, so the flat copy is the live value').toBe(0.5);
+  });
+
+  test('an image SOURCE key is NEVER dropped, even when an effect carries one', () => {
+    // THE case a /^image/ rule gets wrong. imageId is read straight off the entry
+    // (noise-rack.js:61 `noiseDef?.imageId` -> resolves the raster), never via getParam, so
+    // an effect carrying an imageId does NOT shadow it. Strip it and the layer renders blank.
+    const out = withoutShadowedLegacyKeys(
+      entryWith({}, { imageId: 'img-123', imageWidth: 4, imageHeight: 2, imageAlgo: 'luma' }),
+    );
+    expect(out.imageId, 'imageId is the noise layer\'s image SOURCE — dropping it renders nothing').toBe('img-123');
+    expect(out.imageWidth).toBe(4);
+    expect(out.imageHeight).toBe(2);
+    expect(out.imageAlgo).toBe('luma');
+    ['imageId', 'imageWidth', 'imageHeight', 'imageAlgo', 'imageInvertColor', 'imageName', 'imagePreview']
+      .forEach((k) => expect(GETPARAM_READ_KEYS.has(k), `${k} must not be treated as shadowable`).toBe(false));
+  });
+
+  test('an entry with no imageEffects is untouched — resolveEffects() builds its effect FROM it', () => {
+    const flat = { id: 'noise-1', type: 'image', imageId: 'img-9', imageBrightness: 0.3 };
+    expect(withoutShadowedLegacyKeys(flat)).toEqual(flat);
+  });
+
+  test('the allowlist matches what noise-rack.js actually reads via getParam', () => {
+    // The allowlist is a hand-copied mirror of the code. If someone adds a getParam key to
+    // noise-rack.js and forgets the mirror, the rule silently stops ignoring it (harmless),
+    // but if they REMOVE one, the rule keeps stripping a key that is now read directly
+    // (not harmless). Pin them together.
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '../../src/core/noise-rack.js'), 'utf8',
+    );
+    const readByGetParam = new Set(
+      (src.match(/getParam\(effect, '([a-zA-Z]+)'/g) || [])
+        .map((m) => m.replace(/getParam\(effect, '/, '').replace(/'$/, '')),
+    );
+    expect([...GETPARAM_READ_KEYS].sort()).toEqual([...readByGetParam].sort());
+  });
+
+  test('presets that carry a real image SOURCE keep it — flowfield and grid', () => {
+    ['flowfield', 'grid'].forEach((type) => {
       const engine = new V.VectorEngine({ width: 800, height: 600 });
       const id = engine.addLayer(type);
       const entry = engine.getLayerById(id).params.noises?.[0];
       engine.removeLayer(id);
-      if (!entry) return;
-      if (Array.isArray(entry.imageEffects) && entry.imageEffects.length) return; // shape changed; rule N/A
-      expect(
-        flatImageKeys(entry).length,
-        `${type}'s noise entry has no imageEffects, so its flat image* keys are the only ` +
-        'source for the synthesised effect — they must not be stripped',
-      ).toBeGreaterThan(0);
-    },
-  );
+      expect(entry, `${type} must still have a noise entry`).toBeTruthy();
+      expect(flatImageKeys(entry), `${type} lost its image source keys`).toEqual(
+        expect.arrayContaining(['imageId', 'imageWidth', 'imageHeight', 'imageAlgo']),
+      );
+    });
+  });
 
   test('a real noise curation is still preserved (rasterPlane adds a source layer)', () => {
     // The rule must not overreach: rasterPlane's default is `noises: []` and its factory

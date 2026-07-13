@@ -810,7 +810,9 @@
   // the row in front of it — and where the silhouette and the crossing line are both
   // shallow, that vertical slack stretches into a long horizontal whisker. It buys
   // nothing back: a row is never tested against itself (its own band is degenerate),
-  // so there is no self-occlusion to bias away from. Both callers pass 0. If you need
+  // so there is no self-occlusion to bias away from. All three product call sites
+  // (terrain, and rasterPlane's two) pass an explicit eps of 0; this fallback is
+  // reached only by tests that omit it. If you need
   // to protect a boundary that IS an occluder's own edge (adjacent slabs sharing a
   // face), shrink that occluder with `inset` — do not widen the test with eps.
   //

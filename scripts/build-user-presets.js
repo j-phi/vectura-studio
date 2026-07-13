@@ -31,6 +31,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { withoutShadowedLegacyKeys } = require('./lib/noise-canonical');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const OUTPUT_PATH = path.join(REPO_ROOT, 'src/config/user-presets.js');
@@ -230,30 +231,11 @@ const canonical = (v) => {
  * a key listed as an override is a key `defaults.js` no longer controls. It is the
  * dead-config problem in miniature.
  *
- * The flat keys are NOT dead in general, so this cannot be a blanket strip:
- *   - noise-rack.js `getParam()` falls back to the flat key when an effect omits it,
- *   - `resolveEffects()` synthesises an effect FROM the flat entry when `imageEffects`
- *     is absent — which is exactly the case for flowfield/grid/svgDistort's presets,
- *     where these keys are load-bearing.
- *
- * So drop a flat key only when EVERY effect already defines it. Then `getParam` can
- * never reach the flat copy, and removing it cannot change what renders. Anything an
- * effect leaves undefined is preserved.
+ * The rule itself lives in scripts/lib/noise-canonical.js, so a test can exercise it
+ * directly rather than inferring it from this file's output. It is NOT "any key starting
+ * with image" — the source/identity keys (`imageId`, `imageWidth`, …) are read straight off
+ * the entry and are never shadowable. See that module for the full argument.
  */
-const IMAGE_KEY = /^image/;
-const withoutShadowedLegacyKeys = (entry) => {
-  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
-  const effects = entry.imageEffects;
-  if (!Array.isArray(effects) || !effects.length) return entry;   // flat keys are LIVE here
-  const out = {};
-  for (const key of Object.keys(entry)) {
-    const shadowed = IMAGE_KEY.test(key)
-      && key !== 'imageEffects'
-      && effects.every((fx) => fx && typeof fx === 'object' && key in fx);
-    if (!shadowed) out[key] = entry[key];
-  }
-  return out;
-};
 const forComparison = (v) => (Array.isArray(v) ? v.map(withoutShadowedLegacyKeys) : v);
 
 const restatesDefault = (a, b) =>

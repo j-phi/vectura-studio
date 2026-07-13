@@ -68,13 +68,13 @@ describe('factory presets pin nothing for a mode they are not in', () => {
       (p) => p.preset_system && p.id === `${p.preset_system.toLowerCase()}-default` && p.params && Object.keys(p.params).length,
     );
 
-  test('no factory default pins a param its own showIf gate hides', () => {
-    const V = window.Vectura;
-    const presets = factoryDefaults(V);
-    expect(presets.length, 'no sparsified factory defaults found — the sweep would be vacuous').toBeGreaterThan(0);
-
+  // THE sweep. Both tests below call this exact function — the mutation test must exercise
+  // the guard, not re-derive its preconditions. Re-deriving them means a later refactor of
+  // the oracle can blind the guard while the mutation test stays cheerfully green, which is
+  // the same "proof that cannot fail" this whole test file exists to prevent.
+  const findOffenders = (V) => {
     const offenders = [];
-    presets.forEach((preset) => {
+    factoryDefaults(V).forEach((preset) => {
       const type = preset.preset_system;
       const params = effectiveParams(type);
       const byId = controlsById(V, type);
@@ -89,31 +89,45 @@ describe('factory presets pin nothing for a mode they are not in', () => {
         );
       });
     });
+    return offenders;
+  };
 
+  test('no factory default pins a param its own showIf gate hides', () => {
+    const V = window.Vectura;
+    expect(
+      factoryDefaults(V).length,
+      'no sparsified factory defaults found — the sweep would be vacuous',
+    ).toBeGreaterThan(0);
+
+    const offenders = findOffenders(V);
     expect(offenders, `\n  ${offenders.join('\n  ')}\n`).toEqual([]);
   });
 
   // The guard above is a claim about EVERY factory preset, so it must be able to see a
-  // violation in ANY of them. Plant one and require it to be caught — a guard that cannot
-  // fail is a false statement of safety.
-  test('the sweep above can actually FAIL — plant a hidden pin', () => {
+  // violation in ANY of them. Plant one and RUN THE SWEEP — a guard that cannot fail is a
+  // false statement of safety.
+  test('the sweep above can actually FAIL — plant a hidden pin and re-run it', () => {
     const V = window.Vectura;
     const terrain = (V.PRESETS || []).find((p) => p.id === 'terrain-default');
     expect(terrain).toBeTruthy();
 
+    expect(findOffenders(V), 'the sweep must be clean before the pin is planted').toEqual([]);
+
     // vpLeftX is gated on perspectiveMode === 'two-point'; the preset ships 'free-3d'.
     // This is precisely the historical bug, re-planted.
     terrain.params.vpLeftX = 0;
+    try {
+      const caught = findOffenders(V);
+      expect(
+        caught.length,
+        'the sweep did not catch a pin on a param its own gate hides — it is measuring nothing',
+      ).toBeGreaterThan(0);
+      expect(caught.join('\n')).toContain('vpLeftX');
+    } finally {
+      delete terrain.params.vpLeftX;   // PRESETS is shared shipped state — put it back
+    }
 
-    const params = effectiveParams('terrain');
-    const ctrl = controlsById(V, 'terrain').get('vpLeftX');
-    expect(ctrl, 'vpLeftX must have a control — the gate is what the guard reads').toBeTruthy();
-    expect(typeof ctrl.showIf).toBe('function');
-    expect(
-      ctrl.showIf(params),
-      'the planted pin is on a param the gate must HIDE, or the guard is measuring nothing',
-    ).toBe(false);
-    expect(params.vpLeftX, 'the planted pin must reach the layer, or the guard is blind').toBe(0);
+    expect(findOffenders(V), 'the sweep must be clean again once the pin is removed').toEqual([]);
   });
 });
 

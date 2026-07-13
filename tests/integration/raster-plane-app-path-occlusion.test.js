@@ -90,10 +90,18 @@ describe('Raster-Plane — the app path draws no line through a nearer curtain',
    * `poison` lets a caller force a bias in after the cascade — used only to prove
    * this measurement can fail.
    */
+  // addLayer mints a RANDOM seed, so two calls can build two different surfaces. The
+  // poison test below A/Bs a clean render against a biased one, and an A/B that does not
+  // hold the subject still is measuring the subject, not the change. rasterPlane's factory
+  // source happens to be seed-independent today, so this is not currently a live flake —
+  // it is a trap armed and waiting for the first stochastic noise layer to enter the scene.
+  const SEED = 4242;
+
   const renderViaApp = (view = {}, poison = null, { useCascade = true } = {}) => {
     app.engine.addLayer('rasterPlane');
     const layer = app.engine.getActiveLayer();
     layer.params.mode = 'lines';
+    layer.params.seed = SEED;
     app.ui.buildControls();
 
     if (useCascade) {
