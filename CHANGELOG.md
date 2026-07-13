@@ -6,6 +6,27 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed
+- **Panel rebuilds no longer re-run every preset's algorithm.** The preset gallery drew each
+  option's thumbnail by evaluating that preset's geometry, with nothing cached — so every
+  `buildControls()` re-ran the full algorithm once per preset (for Raster-Plane: a 3D mesh +
+  hidden-line removal + a noise raster render, each time). Thumbnail geometry is a pure
+  function of `(params, layerType)`, so it is now memoized, keyed on the params themselves
+  (an edited preset re-evaluates rather than showing a stale thumbnail).
+- **Raster-Plane stopped re-rendering its built-in relief on every regen.** `sampleBuiltIn` is a
+  pure function of `(u, v)` — no seed, no params — yet the 384x384 procedural source raster
+  (147k exp/sin/cos samples, ~950ms) was rebuilt from scratch on every `generate()` of a layer
+  using the default built-in source. Now cached per resolution.
+- **CI: the test suite no longer fails with every test passing.** Two infrastructure bugs, both of
+  which failed the run while reporting 100% of tests green. (1) `hookTimeout` was left at
+  vitest's 10s default while `testTimeout` was raised to 60s for CI slowness — hooks do not
+  inherit it, so full-stack mounts done in `beforeEach` aborted with "Hook timed out". (2) The
+  jsdom runtime stubbed canvas drawing but not canvas export, so `toDataURL` hit jsdom's
+  backend-less implementation and emitted a stack-trace-bearing "Not implemented" error 2,344
+  times; vitest ships every console call to the parent over birpc, and the flood plus the
+  preset-thumbnail CPU above starved the RPC until it blew birpc's 60s timeout
+  ("[vitest-worker]: Timeout calling onTaskUpdate").
+
 ### Added
 - **3D rotation gizmo: three axes on every 3D algorithm, no backing disc, new palette.**
   Polyhedron and Raster-Plane gained real Rotate Z (`roll`) support — wired through the

@@ -2384,8 +2384,17 @@
 
   const noiseStore = () => (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
 
+  // `sampleBuiltIn` is a pure function of (u, v) — no seed, no params, no state —
+  // so the relief at a given resolution is a constant. createNoiseField rebuilds its
+  // sampler on every generate and re-rendered it each time: 147k exp/sin/cos samples
+  // at SOURCE_RES, ~950ms of solid synchronous CPU per regen. Cache per resolution;
+  // consumers only sample/draw the raster, never mutate it.
+  const builtinImageCache = new Map();
+
   const renderBuiltinImageData = (res = SOURCE_RES) => {
     const w = Math.max(1, Math.round(res));
+    const cached = builtinImageCache.get(w);
+    if (cached) return cached;
     const data = new Uint8ClampedArray(w * w * 4);
     for (let y = 0; y < w; y++) {
       for (let x = 0; x < w; x++) {
@@ -2395,7 +2404,9 @@
         data[o + 3] = 255;
       }
     }
-    return { width: w, height: w, data };
+    const image = { width: w, height: w, data };
+    builtinImageCache.set(w, image);
+    return image;
   };
 
   // Ensure a NOISE_IMAGES raster exists for `p`. Returns true when the source is

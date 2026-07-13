@@ -97,9 +97,26 @@
     return out;
   };
 
+  // Thumbnail geometry is a pure function of (params, layerType): preset params are
+  // static and generate() is seeded from them. Without this, every buildControls()
+  // re-ran the full algorithm once per preset — for Raster-Plane a 3D mesh + hidden
+  // line removal + a noise raster render each, ~1.4s per panel rebuild. Keyed on the
+  // params themselves, so an edited preset re-evaluates rather than showing a stale
+  // thumbnail. Callers only read the result (bounds + draw), never mutate it.
+  const THUMB_CACHE_MAX = 300;
+  const thumbPathCache = new Map();
+
+  const thumbCacheKey = (params, layerType) => {
+    try {
+      return `${layerType}|${JSON.stringify(params)}`;
+    } catch (_) {
+      return null; // cyclic/unserializable params — just don't cache.
+    }
+  };
+
   // Evaluate a preset's geometry as an array of polylines [[{x,y}...]...],
   // dispatching by layer type. Returns [] on any failure.
-  const evalPaths = (params, layerType) => {
+  const evalPathsUncached = (params, layerType) => {
     const V = (typeof window !== 'undefined' ? window : globalThis)?.Vectura;
     if (!V) return [];
     try {
@@ -138,6 +155,20 @@
     } catch (_) {
       return [];
     }
+  };
+
+  const evalPaths = (params, layerType) => {
+    const key = thumbCacheKey(params, layerType);
+    if (key !== null && thumbPathCache.has(key)) return thumbPathCache.get(key);
+    const paths = evalPathsUncached(params, layerType);
+    if (key !== null) {
+      // Simple FIFO bound — the working set is one gallery's worth of presets.
+      if (thumbPathCache.size >= THUMB_CACHE_MAX) {
+        thumbPathCache.delete(thumbPathCache.keys().next().value);
+      }
+      thumbPathCache.set(key, paths);
+    }
+    return paths;
   };
 
   const LS_KEY = (system) => `vectura.user_presets.${system}`;
