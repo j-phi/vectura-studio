@@ -17,7 +17,7 @@
     Modifiers = {},
   } = window.Vectura || {};
 
-  const smoothPath = GeometryUtils.smoothPath || ((path) => path);
+  const applyCurveFit = GeometryUtils.applyCurveFit || ((path) => path);
   const simplifyPath = GeometryUtils.simplifyPath || ((path) => path);
   const simplifyPathVisvalingam = GeometryUtils.simplifyPathVisvalingam || ((path) => path);
   const countPathPoints = GeometryUtils.countPathPoints || (() => ({ lines: 0, points: 0 }));
@@ -342,10 +342,16 @@
       if (delta > 0 && shrunk) return path;
       const nextMeta = { ...((source.meta || path.meta) || {}) };
       // The offset ring is final display geometry — parametric/editing
-      // descriptors from the source no longer apply.
+      // descriptors from the source no longer apply. `baked`, not `straight`:
+      // the ring is not made of line segments, it is a flattened CURVE (the
+      // source was flattened before offsetting, per the repo rule that mutations
+      // flatten first). Both flags mean "render these points verbatim", but only
+      // `baked` says why, and conflating the two is what let "this algorithm
+      // doesn't do curves" hide inside `straight`.
       delete nextMeta.anchors;
       delete nextMeta.shape;
-      nextMeta.straight = true;
+      nextMeta.baked = true;
+      nextMeta.straight = true; // until every consumer reads PathDraw.isVerbatim
       nextMeta.closed = true;
       offset.meta = nextMeta;
       return offset;
@@ -1433,6 +1439,42 @@
       const smooth = isShape ? 0 : Math.max(0, Math.min(1, p.smoothing ?? 0));
       const simplify = isShape ? 0 : Math.max(0, Math.min(1, p.simplify ?? 0));
 
+      // The universal curve fit. Replaces GeometryUtils.smoothPath, which was a
+      // destructive Laplacian pass: it MOVED the algorithm's sample points toward
+      // their neighbours' midpoint — degrading the geometry, irreversibly, every
+      // regenerate — and produced no beziers at all. What actually curved a 2D
+      // layer was the renderer's draw-time midpoint-quadratic, which is not a fit
+      // either: it re-anchors the path onto edge MIDPOINTS and uses the samples as
+      // control points, so the drawn curve never passed through the algorithm's own
+      // geometry, and the canvas and the exporter each re-derived it independently.
+      //
+      // Now the fit happens ONCE, here, and is carried as real bezier anchors on
+      // meta. Every downstream consumer — canvas, SVG export, export preview,
+      // masking, the edit verbs — reads those same anchors, so they can no longer
+      // disagree about what the curve is. Sample points are never moved.
+      //
+      // Shape layers are excluded: applyShapeAnchorRebuild (above) already bakes
+      // smoothing/simplify into their editable anchors, and double-fitting would
+      // fight it. Paths that have declared their point array final (meta.straight
+      // for true line segments, meta.baked for already-flattened display geometry)
+      // are refused by applyCurveFit itself, which also keeps the cost off the
+      // thousands of 2-point spans the 3D algorithms emit.
+      const curveOpts = isShape || !(p.curves === true || smooth > 0)
+        ? null
+        : {
+          curves: p.curves === true,
+          smoothing: smooth,
+          // Simplify is absorbed into the fit tolerance rather than run as a
+          // separate decimation pass: on a fitted path the anchors ARE the
+          // compact representation, and the later polyline simplify step skips
+          // anchored paths precisely so it cannot strip them.
+          simplify,
+          // During a drag the preview may fit loosely; the committed geometry
+          // never does.
+          ...(fastPreview ? { toleranceFrac: 0.006 } : {}),
+        };
+      const fitCurve = (path) => (curveOpts ? applyCurveFit(path, curveOpts) : path);
+
       let minX = Infinity;
       let minY = Infinity;
       let maxX = -Infinity;
@@ -1537,7 +1579,7 @@
         if (!Array.isArray(path)) return path;
         const transformed = path.map((pt) => transform(pt));
         if (path.meta) transformed.meta = transformMeta(path.meta);
-        return smoothPath(transformed, smooth);
+        return fitCurve(transformed);
       });
       if (layer.type === 'spiral' && p.close && Array.isArray(transformed[0]) && transformed[0].length > 6) {
         const path = transformed[0];
@@ -1609,6 +1651,9 @@
               t * t * t * best.y;
             curve.push({ x, y });
           }
+          // Already a densely-sampled cubic — this point array IS the curve.
+          // Re-fitting it would be fitting a curve to a curve.
+          curve.meta = { baked: true };
           return curve;
         };
         const skip = Math.max(4, Math.floor(path.length * 0.02));
@@ -1622,7 +1667,7 @@
             if (!Array.isArray(path)) return path;
             const transformed = path.map((pt) => transform(pt));
             if (path.meta) transformed.meta = transformMeta(path.meta);
-            return smoothPath(transformed, smooth);
+            return fitCurve(transformed);
           })
         : [];
       const transformedMaskPolygons = maskPolygons

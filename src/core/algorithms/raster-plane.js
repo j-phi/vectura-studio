@@ -676,8 +676,17 @@
     }
     // Curves OFF: topography keeps its legacy contour smoothing — its contours
     // have always smoothed via the slider alone, independent of the toggle, so
-    // existing files/baselines render byte-identical. Lines / mesh stay straight.
+    // existing files/baselines render byte-identical.
     if (mode === 'topography' && smoothAmt > 0) return G3.smoothToBezier(path, smoothAmt);
+    // The universal Smoothing slider (0..1) still has to reach these wires. It
+    // used to, via the engine's Laplacian smoothPath pass, which MOVED the
+    // projected sample points. That pass is gone — the engine now fits real
+    // curves instead — but it cannot fit these: they carry meta.straight, which
+    // the wire modes stamp on every path including their sampled profiles, and
+    // that flag is a hard refusal. So bezierize here, where we still know which
+    // modes are curvable (bars and relief-plane edges are not).
+    const universal = clamp(finite(p.smoothing, 0), 0, 1);
+    if (universal > 0) return G3.smoothToBezier(path, universal * 100);
     return path;
   };
 

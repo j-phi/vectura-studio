@@ -549,12 +549,22 @@
   };
 
   // The flattened polyline IS the display geometry now, so its parametric outline
-  // (anchors/shape) is stale and it must render verbatim — tag it `straight`.
+  // (anchors/shape) is stale and it must render verbatim.
+  //
+  // Tagged `baked`: these points trace a CURVE, they are not line segments.
+  // `straight` is stamped alongside it because the flag means two different
+  // things to two audiences — "genuinely straight" and "render verbatim" — and
+  // conflating them is how "this algorithm doesn't do curves" crept in as a
+  // third meaning and turned the Curves toggle into a dead switch. Consumers
+  // that ask `PathDraw.isVerbatim(path)` see either flag; the direct
+  // `meta.straight` readers still in the tree only see the old one, so both are
+  // set until every consumer routes through PathDraw.
   const finalizeFlattened = (points, path, closed) => {
     const meta = path.meta ? { ...path.meta } : {};
     delete meta.anchors;
     delete meta.shape;
     if (meta.kind === 'shape' || meta.kind === 'circle') delete meta.kind;
+    meta.baked = true;
     meta.straight = true;
     if (closed) meta.closed = true;
     points.meta = meta;
@@ -1835,7 +1845,44 @@
   const CURVE_CORNER_MAX_DEG = 95; // smoothing 1 — round through everything
   const CURVE_TOL_MIN_FRAC = 0.002; // reduceAnchors' default: a tight fit
   const CURVE_TOL_MAX_FRAC = 0.012;
-  const SIMPLIFY_TOL_MAX_FRAC = 0.030; // what the Simplify slider adds on top
+  const SIMPLIFY_TOL_MAX_FRAC = 0.012; // bounded: past ~3% of the diagonal the fit returns nothing
+
+  // Decimation BEFORE the fit — the step reduceAnchors does not have, and needs.
+  //
+  // reduceAnchors was built for FONT outlines: already-clean anchor contours,
+  // where every vertex is meaningful. Algorithm output is raw sampled geometry
+  // and is frequently NOISY — the stock `spiral` ships with a turbulence noise
+  // enabled, giving a median turn angle of 42 degrees and a p90 of 140. Run
+  // corner detection on that directly and ~2700 of its 4000 vertices read as
+  // corners. Corners are hard SPLIT points, so no fit tolerance can merge them:
+  // the result is a polyline with thousands of anchors and zero handles — a
+  // curve toggle that produces no curve.
+  //
+  // Every other implementation in this repo got this right and decimated first
+  // (rebuildShapeAnchors runs RDP; Geometry3D.smoothToBezier takes a
+  // simplifyTolerance; raster-plane and topoform both pass one). So: decimate,
+  // THEN detect corners, THEN fit. Corner detection then sees the SHAPE instead
+  // of the sampling noise.
+  //
+  // At smoothing 0 + simplify 0 the tolerance is zero and nothing is decimated —
+  // the fit stays faithful, and a genuinely jagged path stays jagged. Smoothing
+  // is what decides how much detail to dissolve before fitting.
+  const SMOOTH_DECIMATE_MAX_FRAC = 0.020;
+  const SIMPLIFY_DECIMATE_MAX_FRAC = 0.035;
+
+  const bboxDiagonal = (pts) => {
+    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    if (!Number.isFinite(minX)) return 0;
+    return Math.hypot(maxX - minX, maxY - minY);
+  };
 
   const hasAnchorShape = (list) =>
     Array.isArray(list) && list.some((a) => a && (('in' in a) || ('out' in a)));
@@ -1867,14 +1914,44 @@
     if (!curves && smoothing <= 0) return { anchors: null, closed, straight: true };
     if (input.length < 3) return { anchors: null, closed, straight: true };
 
-    const anchorsIn = hasAnchorShape(input)
-      ? input
-      : input.map((p) => ({ x: p.x, y: p.y, in: null, out: null, forceCorner: p.forceCorner === true || p._tileEdge === true }));
+    // Anchors in (a font contour) are already clean — never decimate those, the
+    // handles ARE the geometry. Only raw sampled point arrays get decimated.
+    const isAnchorInput = hasAnchorShape(input);
+
+    let source = input;
+    if (!isAnchorInput) {
+      const decimateFrac = smoothing * SMOOTH_DECIMATE_MAX_FRAC
+        + simplify * SIMPLIFY_DECIMATE_MAX_FRAC;
+      if (decimateFrac > 0) {
+        const tol = decimateFrac * (bboxDiagonal(input) || 1);
+        // Bare points, so RDP cannot strip curve metadata here. Keep at least a
+        // triangle: an over-aggressive tolerance must not dissolve the path.
+        const reduced = simplifyPath(input.map((p) => ({ x: p.x, y: p.y })), tol);
+        if (Array.isArray(reduced) && reduced.length >= 3) source = reduced;
+      }
+    }
+
+    const anchorsIn = isAnchorInput
+      ? source
+      : source.map((p) => ({
+        x: p.x,
+        y: p.y,
+        in: null,
+        out: null,
+        forceCorner: p.forceCorner === true || p._tileEdge === true,
+      }));
 
     const cornerAngleDeg = Number.isFinite(opts.cornerAngleDeg)
       ? opts.cornerAngleDeg
       : CURVE_CORNER_MIN_DEG + smoothing * (CURVE_CORNER_MAX_DEG - CURVE_CORNER_MIN_DEG);
 
+    // The fit tolerance governs how tightly the cubics track the (already
+    // decimated) points. Simplify contributes here too — decimation alone cannot
+    // thin a CLEAN curve, where every sample is significant to RDP and nothing
+    // gets dropped; letting the fit run looser is what merges those samples into
+    // fewer, longer cubics. The contribution is bounded (and decimation carries
+    // most of Simplify's weight) because past roughly 3% of the diagonal the fit
+    // degenerates and returns no anchors at all.
     const toleranceFrac = Number.isFinite(opts.toleranceFrac)
       ? opts.toleranceFrac
       : CURVE_TOL_MIN_FRAC
@@ -1916,6 +1993,12 @@
     const meta = path.meta || {};
     if (meta.kind === 'circle') return path;
     if (meta.straight === true || meta.baked === true) return path;
+    // Already a fitted curve. The 3D algorithms (raster-plane, topoform,
+    // spiralizer) bezierize their own sampled wires at generate time, where they
+    // know which geometry is curvable and which is a hatch or an edge. Re-fitting
+    // their anchors here would fit a curve to a curve and throw away what they
+    // knew.
+    if (Array.isArray(meta.anchors) && meta.anchors.some((a) => a && (a.in || a.out))) return path;
 
     const closed = opts.closed !== undefined ? Boolean(opts.closed) : isClosedLoopPath(path);
     const { anchors, straight } = toCurveAnchors(path, { ...opts, closed });

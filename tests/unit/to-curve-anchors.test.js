@@ -135,6 +135,42 @@ describe('toCurveAnchors', () => {
       expect(few.anchors.length).toBeLessThan(many.anchors.length);
     });
 
+    // Simplify at full tilt used to widen the fit tolerance so far that the fit
+    // degenerated and returned NOTHING — the curve silently vanished at the top
+    // of the slider. Simplify now does most of its work by decimating, and its
+    // tolerance contribution is bounded. Sweep the whole range: the fit must
+    // always come back with a usable curve.
+    test('the curve never vanishes anywhere on the Simplify range', () => {
+      const pts = coarseSpiral(4, 20);
+      [0, 0.25, 0.5, 0.75, 1].forEach((simplify) => {
+        const r = GU.toCurveAnchors(pts, { curves: true, smoothing: 0.5, simplify });
+        expect(r.straight).toBe(false);
+        expect(r.anchors.length).toBeGreaterThanOrEqual(2);
+        expect(handled(r.anchors)).toBeGreaterThan(0);
+      });
+    });
+
+    test('smoothing dissolves sampling noise instead of tracking it', () => {
+      // A clean circle with high-frequency jitter on top. At smoothing 0 the fit
+      // is faithful and keeps the jitter; smoothing decimates it away first, so
+      // corner detection sees the circle rather than the noise. Without the
+      // decimate-before-fit step every jittered vertex reads as a corner and the
+      // "curve" comes back as a polyline with no handles at all.
+      const noisy = [];
+      for (let i = 0; i < 240; i++) {
+        const t = (i / 240) * Math.PI * 2;
+        const wobble = (i % 2 ? 1 : -1) * 1.5;
+        const r = 80 + wobble;
+        noisy.push({ x: 100 + r * Math.cos(t), y: 100 + r * Math.sin(t) });
+      }
+      const raw = GU.toCurveAnchors(noisy, { curves: true, smoothing: 0, closed: true });
+      const smoothed = GU.toCurveAnchors(noisy, { curves: true, smoothing: 1, closed: true });
+
+      expect(smoothed.anchors.length).toBeLessThan(raw.anchors.length / 2);
+      // and what comes back is an actual curve, not a corner-riddled polyline
+      expect(handled(smoothed.anchors)).toBe(smoothed.anchors.length);
+    });
+
     test('smoothing never moves the fitted curve off the shape entirely', () => {
       const pts = coarseSpiral(2, 16);
       const flat = GU.buildPolylineFromAnchors(

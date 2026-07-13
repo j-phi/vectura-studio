@@ -143,21 +143,30 @@ describe('curve baselines (real display pipeline + production exporter)', () => 
   /**
    * Ratchet on the reported bug.
    *
-   * For these algorithms the Curves toggle still produces BYTE-IDENTICAL output
-   * whether it is on or off — it is a dead switch. shapePack stamps
-   * `meta.straight` on its geometry, which vetoes curves in both the renderer
-   * and the exporter regardless of the toggle; text emits its font-designed
-   * glyph curves either way, so the toggle changes nothing.
+   * The Curves toggle used to produce BYTE-IDENTICAL output, on or off, for
+   * spiralizer, text AND shapePack — dead switches, all three, and the old
+   * baselines could not see it. Spiralizer came off this list when it was taught
+   * to honour `p.curves`.
    *
-   * This list is a ratchet, not an endorsement: it must only ever SHRINK. When
-   * the `meta.straight` audit (Stage D of the unification plan) makes one of
-   * these live, this test fails and forces the entry to be removed — which is
-   * exactly the signal we want, since the old net could not see the difference
-   * at all. Spiralizer — the originally-reported bug — came off this list when
-   * it was taught to honour `p.curves`.
+   * The two that remain are dead for reasons that are NOT the spiralizer bug:
+   *
+   *   shape-pack — its geometry is parametric circles and ellipses
+   *     (`meta.kind === 'circle'`), which are already exact. There is no polyline
+   *     to fit, so Curves is *inapplicable* rather than broken.
+   *
+   *   text — glyph outlines arrive from the font as bezier contours and are
+   *     already fitted, so the engine's curve pass deliberately leaves them
+   *     alone (re-fitting a curve to a curve degrades it, and the welded-script
+   *     fit is the most fragile geometry in the repo). Curves-off therefore does
+   *     not de-curve a glyph. Making it do so is a real question, but it belongs
+   *     to text's own fit — not to the universal pipeline — and is not worth
+   *     risking the weld for.
+   *
+   * This list is a ratchet: it may only ever SHRINK. If an algorithm's toggle
+   * goes dead, this fails.
    */
   describe('Curves toggle liveness', () => {
-    const TOGGLE_IS_DEAD = ['text', 'shape-pack'];
+    const TOGGLE_IS_DEAD = ['shape-pack', 'text'];
 
     const isDead = (scenario) =>
       render(scenario, { curves: false, smoothing: 0 })
