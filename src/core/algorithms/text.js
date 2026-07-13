@@ -295,6 +295,9 @@
       // stays top-left-anchored in the frame regardless of how much is typed — and
       // an empty box (no strokes) still has a well-defined placement.
       let blockW; let blockH; let blockCx; let blockCy;
+      // 'left' | 'right' when the block is pinned to an alignment cell edge —
+      // fit-to-frame mode maps that edge to the matching FRAME edge (below).
+      let edgeAnchor = null;
       if (isArea) {
         blockW = Math.max(1e-3, frameW);
         blockH = Math.max(1e-3, frameH);
@@ -314,14 +317,14 @@
         blockH = Math.max(1e-3, maxY - minY);
         blockCy = (minY + maxY) / 2;
         blockCx = (minX + maxX) / 2;
-        // Absolute-size point text anchors on its ALIGNMENT edge (Illustrator-
-        // style): the on-canvas Type tool creates layers with align:'left',
-        // fitToFrame:false, so pinning the block's LEFT edge to the display
-        // reference keeps that edge fixed as text is typed — the string grows
-        // rightward and never shoves earlier glyphs left. Right/justify-right pin
-        // the RIGHT edge (grows leftward). Fit-to-frame text stays CENTRED (it is
-        // scaled to fill the frame, so re-centring is the intended behaviour), as
-        // does the historical centre default. The VERTICAL anchor pins the FIRST
+        // Point text anchors on its ALIGNMENT edge (Illustrator-style): left/
+        // justify-left/justify-all (base align left) pin the block's LEFT edge
+        // so the string grows rightward and never shoves earlier glyphs left;
+        // right/justify-right pin the RIGHT edge (grows leftward). In absolute
+        // mode the pinned edge sits on the display anchor (the Type-tool click
+        // point); in fit-to-frame mode it maps to the matching FRAME edge and
+        // only the scale changes as text is typed. Centre align keeps the
+        // historical re-centring (grows both ways). The VERTICAL anchor pins the FIRST
         // line's metric cap box (baselineY - size .. baselineY) to the display
         // anchor — its midpoint is exactly the empty-box caret's midpoint
         // (text-edit-controller _emptyBoxCaretSegment), so the first keystroke
@@ -335,16 +338,19 @@
         // the anchor is immune to per-glyph side bearings (a changing first/last
         // character would drift an ink-bbox anchor). Falls back to the ink centre
         // when a face emits no cells (headless monoline).
-        const anchorLeft = align === 'left' || align === 'justify-left';
+        const anchorLeft = align === 'left' || align === 'justify-left' || align === 'justify-all';
         const anchorRight = align === 'right' || align === 'justify-right';
         const cellsForAnchor = Array.isArray(laid.cells) ? laid.cells : [];
-        if (p.fitToFrame === false && (anchorLeft || anchorRight) && cellsForAnchor.length) {
+        if ((anchorLeft || anchorRight) && cellsForAnchor.length) {
           let edge = anchorLeft ? Infinity : -Infinity;
           for (const c of cellsForAnchor) {
             if (anchorLeft) { if (c.x0 < edge) edge = c.x0; }
             else if (c.x1 > edge) edge = c.x1;
           }
-          if (Number.isFinite(edge)) blockCx = edge;
+          if (Number.isFinite(edge)) {
+            blockCx = edge;
+            edgeAnchor = anchorLeft ? 'left' : 'right';
+          }
         }
         // Vertical pin has NO alignment gate (there is no vertical-align param
         // and centre-aligned absolute text suffers the same keystroke nudge);
@@ -367,7 +373,13 @@
         scale = (Math.min(dW / blockW, dH / blockH) || 1) * fillR;
       }
 
-      const cx = m + dW / 2 + finite(p.offsetX, 0);
+      // Edge-anchored fit-to-frame text pins the alignment edge to the FRAME
+      // edge (not the frame centre): typing into a left-aligned fit layer must
+      // never push the left side leftwards — the block scales in place instead.
+      let cx = m + dW / 2 + finite(p.offsetX, 0);
+      if (!isArea && p.fitToFrame !== false && edgeAnchor) {
+        cx = (edgeAnchor === 'left' ? m : m + dW) + finite(p.offsetX, 0);
+      }
       const cy = m + dH / 2 + finite(p.offsetY, 0);
       const wobble = () => (rng && jitter > 0 ? (rng.nextFloat() - 0.5) * 2 * jitter : 0);
       const txPt = (pt) => ({ x: cx + (pt.x - blockCx) * scale, y: cy + (pt.y - blockCy) * scale });

@@ -83,6 +83,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   `tests/unit/raster-plane-plane-width.test.js`.
 
 ### Fixed
+- **Left-aligned text never pushes its left side leftwards while typing.** Fit-to-frame
+  text (the panel default) kept the whole block centred, so typing into a left-aligned fit
+  layer re-centred it and shoved the left edge left on every keystroke. Left/right-aligned
+  fit-to-frame text now pins its alignment cell edge to the matching FRAME edge and only
+  rescales in place — new text extends away from the pinned edge. `justify-all` (base
+  align left) now left-anchors like `justify-left` in absolute mode too. Centre align
+  keeps the historical grow-both-ways behaviour.
 - **Saved Default preset overrides now reapply to fresh layers.** The preset
   gallery correctly recognizes the factory state after Layer construction has
   merged the bundled Default preset, then applies a matching local Default

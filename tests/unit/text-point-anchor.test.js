@@ -79,17 +79,64 @@ describe('Point-text alignment-edge anchoring', () => {
     expect(after).toBeLessThan(before - 1);
   });
 
-  test('fit-to-frame left-aligned text stays centred (does NOT left-anchor)', () => {
+  // Fit-to-frame previously kept the whole block centred, so typing into a
+  // left-aligned fit layer (the panel default) pushed the left edge LEFT on
+  // every keystroke. Left/right-aligned fit text now pins the block's cell
+  // edge to the matching frame edge — new text only ever extends away from it.
+  test('fit-to-frame left-aligned text keeps its left edge fixed at the frame edge', () => {
     const engine = new V.VectorEngine();
     const { id, layer } = makeLayer(engine, { align: 'left', fitToFrame: true, text: 'A' });
+    engine.generate(id);
+    const before = firstLeftEdge(layer);
+    const { m } = engine.getBounds();
+    expect(before).toBeCloseTo(m, 3);
+
+    layer.params.text = 'Along the way';
+    engine.generate(id);
+
+    expect(firstLeftEdge(layer)).toBeCloseTo(before, 3);
+  });
+
+  test('fit-to-frame right-aligned text keeps its right edge fixed at the frame edge', () => {
+    const engine = new V.VectorEngine();
+    const rightEdge = (layer) => {
+      let mx = -Infinity;
+      for (const g of layer.glyphs) for (const pt of g.quad) if (pt.x > mx) mx = pt.x;
+      return mx;
+    };
+    const { id, layer } = makeLayer(engine, { align: 'right', fitToFrame: true, text: 'A' });
+    engine.generate(id);
+    const before = rightEdge(layer);
+    const { m, dW } = engine.getBounds();
+    expect(before).toBeCloseTo(m + dW, 3);
+
+    layer.params.text = 'Along the way';
+    engine.generate(id);
+
+    expect(rightEdge(layer)).toBeCloseTo(before, 3);
+  });
+
+  test('justify-all point text left-anchors like left align (base align is left)', () => {
+    const engine = new V.VectorEngine();
+    const { id, layer } = makeLayer(engine, { align: 'justify-all', text: 'A' });
     engine.generate(id);
     const before = firstLeftEdge(layer);
 
     layer.params.text = 'Along the way';
     engine.generate(id);
-    const after = firstLeftEdge(layer);
 
-    // Fit-to-frame re-centres/scales the block, so the left edge is NOT pinned.
-    expect(after).not.toBeCloseTo(before, 1);
+    expect(firstLeftEdge(layer)).toBeCloseTo(before, 3);
+  });
+
+  test('fit-to-frame centre-aligned text still re-centres (unchanged)', () => {
+    const engine = new V.VectorEngine();
+    const { id, layer } = makeLayer(engine, { align: 'center', fitToFrame: true, text: 'A' });
+    engine.generate(id);
+    const before = firstLeftEdge(layer);
+
+    layer.params.text = 'Along the way';
+    engine.generate(id);
+
+    expect(firstLeftEdge(layer)).toBeLessThan(before - 1);
   });
 });

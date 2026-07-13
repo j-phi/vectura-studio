@@ -44,6 +44,12 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — left/right-aligned text pins its alignment edge in ALL modes.** Fit-to-frame
+  left/right-aligned text now pins the alignment cell edge to the matching frame edge
+  (was: block re-centred every keystroke, pushing the left side leftwards while typing);
+  `justify-all` left-anchors like `justify-left`. Centre align unchanged. RGR in
+  `tests/unit/text-point-anchor.test.js` (stale fit-stays-centred assertion replaced with
+  the new contract); verified in-app with Dancing Script fit-mode typing.
 - **Unreleased — 3D rotation gizmo: 3 axes everywhere, no backing disc, amber/violet/cyan
   palette.** Polyhedron + Raster-Plane gained real Rotate Z (`roll` param through the shared
   Geometry3D view, View → Rotate Z slider, gizmo outer roll ring); the gizmo's circular
