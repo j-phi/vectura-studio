@@ -30,4 +30,20 @@
     frac,
     applyPad,
   };
+
+  // Asset epoch — a counter that anything memoizing algorithm output can fold into its
+  // cache key, bumped whenever an asynchronously-loaded asset lands.
+  //
+  // Several algorithms render a FALLBACK when an asset the params only NAME hasn't
+  // arrived yet: `text` draws built-in stroke letterforms until a Google face is fetched
+  // and parsed; the picture algorithms draw a procedural sphere until `imageSrc` decodes
+  // into IMAGE_SOURCES. The params — and so any key derived from them — are identical
+  // before and after. A params-only cache therefore pins the fallback render forever.
+  // Bumping this on arrival retires those entries. Callers must be defensive about load
+  // order and go through Vectura.bumpAssetEpoch().
+  window.Vectura.ASSET_EPOCH = window.Vectura.ASSET_EPOCH || 0;
+  window.Vectura.bumpAssetEpoch = () => {
+    window.Vectura.ASSET_EPOCH = (window.Vectura.ASSET_EPOCH || 0) + 1;
+    return window.Vectura.ASSET_EPOCH;
+  };
 })();

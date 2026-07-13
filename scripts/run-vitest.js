@@ -19,67 +19,92 @@
  * fixes that cut the worst file's CPU by ~3x. The threads pool would sidestep the
  * transport entirely but segfaults V8 with jsdom.
  *
- * So: re-run once (it is load-dependent, not deterministic), and only if the
- * retry ALSO ends in that exact state do we pass — and only when the run is
- * otherwise perfectly clean:
+ * So: re-run once (it is load-dependent, not deterministic), and only if the retry
+ * ALSO ends in that exact state do we pass — and only when the run is otherwise
+ * perfectly clean. This predicate FAILS CLOSED: anything it cannot positively
+ * recognise as "green suite + RPC timeout and nothing else" fails the build.
  *
- *   - vitest reported at least one test file, and ZERO failed,
- *   - the ONLY unhandled error is the onTaskUpdate RPC timeout.
+ * It reads the two lines vitest itself prints as its verdict, rather than
+ * pattern-matching loose prose:
+ *   - the `Test Files  N passed (N)` summary (anchored to its own line, so an
+ *     echoed source line or console output cannot fake one), and
+ *   - one `⎯ Unhandled Error ⎯` block per unhandled error, cross-checked against
+ *     vitest's own `Vitest caught N unhandled error(s)` count.
+ * Every one of those blocks must be the RPC timeout.
  *
- * Any failing test, any other unhandled error, or an unparseable summary still
- * fails the build. This does not use `dangerouslyIgnoreUnhandledErrors`, which
- * would blanket-ignore every unhandled error including real ones.
+ * It deliberately does NOT use vitest's `dangerouslyIgnoreUnhandledErrors`, which
+ * blanket-ignores every unhandled error including real ones.
  */
 
-const { spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const RPC_TIMEOUT_RE = /\[vitest-worker\]: Timeout calling "onTaskUpdate"/;
-// "Test Files  170 passed (170)" / "Test Files  1 failed | 169 passed (170)"
-const TEST_FILES_RE = /Test Files\s+(.*)$/gm;
 
-const stripAnsi = (s) => s.replace(/\[[0-9;]*m/g, '');
+// Vitest's own summary line, anchored to the start of its line and required to end
+// in the "(N)" total — e.g. " Test Files  170 passed (170)". Anchoring matters: a
+// code-frame echo ("  71|   const x = ' Test Files  170 passed (170)';") or a
+// console.log must NOT be mistaken for a summary, or a crash could be waved through.
+const TEST_FILES_RE = /^\s*Test Files\s+(.+\(\d+\))\s*$/gm;
+// The banner vitest prints above each unhandled error it collected.
+const UNHANDLED_BLOCK_RE = /⎯+\s*Unhandled Error\s*⎯+/;
+const CAUGHT_COUNT_RE = /Vitest caught (\d+) unhandled error/;
 
-const runVitest = (args) => {
-  const res = spawnSync('npx', ['vitest', ...args], {
-    encoding: 'utf8',
-    env: process.env,
-    // Capture so we can inspect, but stream through so CI logs stay live.
-    stdio: ['inherit', 'pipe', 'pipe'],
+const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
+
+const runVitest = (args) =>
+  new Promise((resolve) => {
+    // Stream straight through to the terminal/CI log AND capture a copy. spawnSync
+    // could not do both: it buffers everything until exit (nothing appears live) and
+    // its 1MB default maxBuffer SIGTERMs the child on overflow.
+    const child = spawn('npx', ['vitest', ...args], { env: process.env, stdio: ['inherit', 'pipe', 'pipe'] });
+    let output = '';
+    child.stdout.on('data', (d) => { output += d; process.stdout.write(d); });
+    child.stderr.on('data', (d) => { output += d; process.stderr.write(d); });
+    child.on('error', (error) => resolve({ status: 1, output, error }));
+    child.on('close', (code, signal) => resolve({ status: code ?? 1, output, signal }));
   });
-  const stdout = res.stdout || '';
-  const stderr = res.stderr || '';
-  process.stdout.write(stdout);
-  process.stderr.write(stderr);
-  return { status: res.status ?? 1, output: stripAnsi(stdout + '\n' + stderr) };
-};
 
-// True only when vitest printed at least one "Test Files" summary and none of
-// them reported a failure. A missing summary (crash, segfault) is NOT clean.
+// True only when vitest printed at least one real summary line, every one of them
+// reports passing files, and none reports a failure. An all-skipped run is not a
+// pass, and a crash that printed no summary at all is certainly not one.
 const everyTestPassed = (output) => {
-  const summaries = [...output.matchAll(TEST_FILES_RE)].map((m) => m[1]);
+  const summaries = [...stripAnsi(output).matchAll(TEST_FILES_RE)].map((m) => m[1]);
   if (!summaries.length) return false;
-  return summaries.every((s) => !/failed/.test(s));
+  return summaries.every((s) => /\d+ passed/.test(s) && !/failed/.test(s));
 };
 
-// The RPC timeout must be the ONLY unhandled error in the run.
+// True only when vitest collected at least one unhandled error, its own count of them
+// agrees with the number of error blocks printed, and EVERY block is the RPC timeout.
+// If vitest's count line is missing we cannot verify what else may be in there, so we
+// refuse to tolerate — fail closed.
 const onlyErrorIsRpcTimeout = (output) => {
-  if (!RPC_TIMEOUT_RE.test(output)) return false;
-  const declared = output.match(/Vitest caught (\d+) unhandled error/);
-  const rpcHits = (output.match(new RegExp(RPC_TIMEOUT_RE.source, 'g')) || []).length;
-  // Every unhandled error vitest counted must be an onTaskUpdate timeout.
-  return declared ? Number(declared[1]) <= rpcHits : true;
+  const clean = stripAnsi(output);
+  const declared = clean.match(CAUGHT_COUNT_RE);
+  if (!declared) return false;
+
+  // Split on the block banner; segment 0 is everything before the first error.
+  const blocks = clean.split(UNHANDLED_BLOCK_RE).slice(1);
+  if (!blocks.length) return false;
+  if (blocks.length !== Number(declared[1])) return false;
+  return blocks.every((block) => RPC_TIMEOUT_RE.test(block));
 };
 
 const isBenignRpcTimeout = (status, output) =>
-  status !== 0 && everyTestPassed(stripAnsi(output)) && onlyErrorIsRpcTimeout(stripAnsi(output));
+  status !== 0 && everyTestPassed(output) && onlyErrorIsRpcTimeout(output);
 
-const main = () => {
+const reportSpawnTrouble = ({ error, signal }) => {
+  if (error) console.error(`\n[run-vitest] failed to launch vitest: ${error.message}`);
+  else if (signal) console.error(`\n[run-vitest] vitest was killed by signal ${signal}`);
+};
+
+const main = async () => {
   const args = process.argv.slice(2);
 
-  let { status, output } = runVitest(args);
-  if (status === 0) process.exit(0);
+  let result = await runVitest(args);
+  if (result.status === 0) return 0;
+  reportSpawnTrouble(result);
 
-  if (!isBenignRpcTimeout(status, output)) process.exit(status);
+  if (!isBenignRpcTimeout(result.status, result.output)) return result.status;
 
   console.warn(
     '\n[run-vitest] All tests passed, but the run exited non-zero on vitest\'s\n' +
@@ -87,21 +112,27 @@ const main = () => {
     '[run-vitest] timeout, not a test failure). Retrying once...\n'
   );
 
-  ({ status, output } = runVitest(args));
-  if (status === 0) process.exit(0);
+  result = await runVitest(args);
+  if (result.status === 0) return 0;
+  reportSpawnTrouble(result);
 
-  if (isBenignRpcTimeout(status, output)) {
+  if (isBenignRpcTimeout(result.status, result.output)) {
     console.warn(
       '\n[run-vitest] The retry hit the same RPC timeout with every test still\n' +
-      '[run-vitest] passing. Treating as a pass: no test failed and the timeout is\n' +
+      '[run-vitest] passing. Treating as a pass: no test failed and that timeout is\n' +
       '[run-vitest] the only unhandled error. A real failure still fails the build.\n'
     );
-    process.exit(0);
+    return 0;
   }
 
-  process.exit(status);
+  return result.status;
 };
 
 module.exports = { isBenignRpcTimeout, everyTestPassed, onlyErrorIsRpcTimeout };
 
-if (require.main === module) main();
+if (require.main === module) {
+  // Set exitCode rather than calling process.exit(): process.exit() discards
+  // whatever is still queued on stdout when it is a pipe (as it is under CI), which
+  // silently truncated the log — the summary lines are at the very end.
+  main().then((code) => { process.exitCode = code; });
+}

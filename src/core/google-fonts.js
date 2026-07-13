@@ -264,6 +264,9 @@
           fontStore[id] = font;
           fontState[id] = 'ready';
           registerPreviewFace(entry, url);
+          // Anything memoized off a text layer's params was computed against the
+          // built-in fallback letterforms — retire it now the real face is here.
+          Vectura.bumpAssetEpoch?.();
           if (typeof regenHook === 'function') {
             try { regenHook(id); } catch (_) { /* host re-render is best-effort */ }
           }
@@ -513,6 +516,7 @@
           const font = opentype.parse(buffer);
           fontStore[key] = font;
           fontState[key] = 'ready';
+          Vectura.bumpAssetEpoch?.();
           if (typeof regenHook === 'function') {
             try { regenHook(id); } catch (_) { /* host re-render is best-effort */ }
           }

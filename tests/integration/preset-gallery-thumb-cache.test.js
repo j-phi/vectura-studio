@@ -62,4 +62,45 @@ describe('preset gallery thumbnail caching', () => {
     expect(second).toBeLessThan(first);
     expect(second).toBeLessThanOrEqual(2);
   });
+
+  /*
+   * The cache is NOT keyed on params alone, because thumbnail geometry is not a pure
+   * function of them: `text` renders built-in fallback letterforms until a Google face
+   * finishes loading, and the picture algorithms render a procedural sphere until
+   * `imageSrc` finishes decoding — in both cases the params (and any key derived from
+   * them) are identical before and after the asset lands. Keying on params alone froze
+   * those thumbnails on the fallback for the whole session. The key carries an asset
+   * epoch that each async load bumps; bumping it must retire the cached thumbnails.
+   */
+  test('bumping the asset epoch retires cached thumbnails so they re-evaluate', () => {
+    // Start from a cold cache for this epoch (an earlier test warmed the old one).
+    window.Vectura.bumpAssetEpoch();
+    counts.rasterPlane = 0;
+    app.ui.buildControls();
+    const cold = counts.rasterPlane;
+    expect(cold).toBeGreaterThan(1); // a thumbnail per preset was actually evaluated
+
+    counts.rasterPlane = 0;
+    app.ui.buildControls();
+    expect(counts.rasterPlane).toBeLessThanOrEqual(2); // now served from cache
+
+    // An async asset (a web font, a decoded picture) has just landed.
+    window.Vectura.bumpAssetEpoch();
+
+    counts.rasterPlane = 0;
+    app.ui.buildControls();
+    // The thumbnails must be re-evaluated against the now-loaded asset, not served
+    // from the entries computed while it was still missing.
+    expect(counts.rasterPlane).toBe(cold);
+  });
+
+  test('a failed/empty evaluation is never cached (no permanently blank thumbnail)', () => {
+    const gallerySrc = require('fs').readFileSync(
+      require('path').join(__dirname, '../../src/ui/components/harmonograph-preset-gallery.js'),
+      'utf8'
+    );
+    // evalPathsUncached returns [] when generate() throws or the registry isn't ready;
+    // pinning that would leave the thumbnail blank for the rest of the session.
+    expect(gallerySrc).toMatch(/if \(key !== null && paths\.length\)/);
+  });
 });

@@ -134,6 +134,11 @@
       ctx.drawImage(im, 0, 0, w, h);
       try {
         store[id] = ctx.getImageData(0, 0, w, h);
+        // Anything memoized off these params was computed against the procedural
+        // fallback (the raster wasn't decoded yet) — retire it. `imageId` is a hash of
+        // `imageSrc`, so the params do NOT change when the picture lands; without this
+        // a cached preset thumbnail would show the fallback for the whole session.
+        Vectura.bumpAssetEpoch?.();
       } catch (e) { /* tainted canvas — leave undecoded, fallback handles it */ }
       if (onReady) onReady(id);
     };

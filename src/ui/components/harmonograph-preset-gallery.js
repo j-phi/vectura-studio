@@ -97,18 +97,33 @@
     return out;
   };
 
-  // Thumbnail geometry is a pure function of (params, layerType): preset params are
-  // static and generate() is seeded from them. Without this, every buildControls()
-  // re-ran the full algorithm once per preset — for Raster-Plane a 3D mesh + hidden
-  // line removal + a noise raster render each, ~1.4s per panel rebuild. Keyed on the
-  // params themselves, so an edited preset re-evaluates rather than showing a stale
-  // thumbnail. Callers only read the result (bounds + draw), never mutate it.
+  // Thumbnail geometry is memoized: without this, every buildControls() re-ran the
+  // full algorithm once per preset — for Raster-Plane a 3D mesh + hidden line removal
+  // + a noise raster render each, ~1.4s per panel rebuild. Callers only read the
+  // result (bounds + draw), never mutate it.
+  //
+  // It is NOT a pure function of (params, layerType), which an earlier version of this
+  // cache assumed. Several algorithms also read asynchronously-loaded assets that the
+  // params only NAME: `text` falls back to built-in stroke letterforms until a Google
+  // face lands in GoogleFonts' store, and the picture algorithms fall back to a
+  // procedural sphere until `imageSrc` finishes decoding into IMAGE_SOURCES — and the
+  // params (hence the key) do not change when it lands. Caching on params alone froze
+  // those thumbnails on their fallback render for the whole session.
+  //
+  // So the key carries an asset epoch that every async load bumps (see
+  // Vectura.bumpAssetEpoch), which retires the stale entries. Failed/empty evaluations
+  // are never cached, so a transient error cannot become a permanently blank thumbnail.
   const THUMB_CACHE_MAX = 300;
   const thumbPathCache = new Map();
 
+  const assetEpoch = () => {
+    const V = (typeof window !== 'undefined' ? window : globalThis)?.Vectura;
+    return (V && V.ASSET_EPOCH) || 0;
+  };
+
   const thumbCacheKey = (params, layerType) => {
     try {
-      return `${layerType}|${JSON.stringify(params)}`;
+      return `${assetEpoch()}|${layerType}|${JSON.stringify(params)}`;
     } catch (_) {
       return null; // cyclic/unserializable params — just don't cache.
     }
@@ -161,7 +176,9 @@
     const key = thumbCacheKey(params, layerType);
     if (key !== null && thumbPathCache.has(key)) return thumbPathCache.get(key);
     const paths = evalPathsUncached(params, layerType);
-    if (key !== null) {
+    // Never cache a failure: evalPathsUncached returns [] when generate() throws or the
+    // registry isn't ready yet, and pinning that would leave a blank thumbnail forever.
+    if (key !== null && paths.length) {
       // Simple FIFO bound — the working set is one gallery's worth of presets.
       if (thumbPathCache.size >= THUMB_CACHE_MAX) {
         thumbPathCache.delete(thumbPathCache.keys().next().value);

@@ -6,6 +6,26 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed
+- **Preset thumbnails no longer freeze on an asset's fallback render.** The gallery's thumbnail
+  memoization (added earlier this cycle) keyed on `(params, layerType)` alone, justified as "a pure
+  function of its inputs". That was wrong: `text` draws built-in stroke letterforms until a Google
+  face finishes downloading, and the picture algorithms draw a procedural sphere until `imageSrc`
+  finishes decoding — and the params (hence the key) are identical before and after the asset
+  lands. A user-saved preset on a web font would therefore show generic monoline letterforms for
+  the whole session, and no amount of re-rendering could fix it. The key now carries
+  `Vectura.ASSET_EPOCH`, which every async font/image load bumps, retiring the stale entries.
+  Failed evaluations are also no longer cached (a transient error could pin a blank thumbnail).
+- **`scripts/run-vitest.js` hardened after an adversarial review.** It (1) truncated CI logs to 64KB
+  — `process.exit()` discards output still queued on a pipe, so the tail, including the summary,
+  never reached the CI log; (2) counted occurrences of the RPC-timeout *string* rather than error
+  blocks, so a real unhandled error riding alongside it could be swallowed; (3) failed *open* when
+  vitest's "caught N unhandled errors" line was absent; and (4) accepted any text containing
+  `Test Files … passed` as a summary, including a source line echoed in a stack trace. It now
+  streams output (no truncation), and fails closed: it requires vitest's own error count to match
+  the error blocks printed and every one of them to be the RPC timeout, and anchors the summary to
+  its own line. Boundary pinned by 14 cases in `tests/unit/run-vitest-wrapper.test.js`.
+
 ### Added
 - **A regression net for the curve system, which had none.** The existing 33 SVG baselines call
   `Algorithms[type].generate()` directly with `smoothing: 0, simplify: 0` hardcoded and serialize
