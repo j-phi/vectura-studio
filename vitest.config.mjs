@@ -32,11 +32,18 @@ export default defineConfig({
         maxForks: CI ? 2 : 4,
       },
     },
-  },
-  coverage: {
-    provider: 'v8',
-    reporter: ['text', 'lcov'],
-    include: ['src/**/*.js'],
-    exclude: ['src/vendor/**'],
+    // NOTE: this block belongs under `test`. It sat as a sibling of it, where vitest
+    // never reads it — so `include`/`exclude` silently did nothing and v8 instrumented
+    // the WHOLE repo: build scripts, playwright.config.js, and (worst) the minified
+    // vendor bundles. Coverage-mapping a 171KB single-line file like opentype.min.js is
+    // pathologically expensive, and that cost lands on the parent process — which is why
+    // only the coverage job ever died on "[vitest-worker]: Timeout calling onTaskUpdate"
+    // (an unhandled error that fails the run with every test green). Scope it to src/.
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      include: ['src/**/*.js'],
+      exclude: ['src/vendor/**'],
+    },
   },
 });

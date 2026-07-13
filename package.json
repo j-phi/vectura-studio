@@ -21,7 +21,7 @@
     "test:ci": "npm run test:unit && npm run test:integration && npm run test:e2e && npm run test:visual && npm run test:perf",
     "test:fast": "npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf",
     "test:coverage": "vitest run --coverage",
-    "test:coverage:sharded": "npm run patch:test-runtime && rm -rf .vitest-reports && for i in 1 2 3; do vitest run --coverage --reporter=blob --shard=$i/3 || exit 1; done && vitest --mergeReports --coverage",
+    "test:coverage:sharded": "npm run patch:test-runtime && rm -rf .vitest-reports && for i in 1 2 3; do vitest run --coverage --reporter=blob --reporter=default --shard=$i/3 || exit 1; done && vitest --mergeReports --coverage",
     "test:update": "npm run patch:test-runtime && VECTURA_UPDATE_BASELINES=1 npm run test:visual",
     "hooks:install": "HOOKS_DIR=\"$(git rev-parse --git-common-dir)/hooks\" && cp scripts/hooks/pre-commit \"$HOOKS_DIR/pre-commit\" && cp scripts/hooks/pre-push \"$HOOKS_DIR/pre-push\" && chmod +x \"$HOOKS_DIR/pre-commit\" \"$HOOKS_DIR/pre-push\""
   },
