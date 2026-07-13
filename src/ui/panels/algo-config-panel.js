@@ -1754,10 +1754,16 @@
     // tuning like smoothing. `presetId === 'custom'` just stamps the custom
     // marker (petalisDesigner also clears its derived shading state). The caller
     // owns pushHistory (one entry per user action).
+    // Curves / Smoothing / Simplify are not part of the figure a preset defines —
+    // they are universal output controls describing how the resulting line is
+    // drawn and plotted, and they mean the same thing for every algorithm. They
+    // were preserved for only three of them, so on the other ~25 picking a preset
+    // silently switched a user's Curves back off. They belong in the base set, for
+    // the same reason the transform is there: applying a preset must not move your
+    // layer, and must not un-curve your line either.
+    const OUTPUT_CONTROL_KEYS = ['smoothing', 'simplify', 'curves'];
     const EXTRA_PRESERVED = {
-      rings: ['smoothing', 'simplify', 'curves', 'outerDiameter', 'centerDiameter'],
-      petalisDesigner: ['smoothing', 'simplify', 'curves'],
-      terrain: ['smoothing', 'simplify', 'curves'],
+      rings: ['outerDiameter', 'centerDiameter'],
     };
     const lookupPreset = (type, presetId) => {
       const libs = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.PresetLibraries;
@@ -1789,7 +1795,7 @@
       }
       const preset = lookupPreset(layer.type, presetId);
       const base = ALGO_DEFAULTS?.[layer.type] ? clone(ALGO_DEFAULTS[layer.type]) : {};
-      const preserved = new Set([...TRANSFORM_KEYS, ...(EXTRA_PRESERVED[layer.type] || [])]);
+      const preserved = new Set([...TRANSFORM_KEYS, ...OUTPUT_CONTROL_KEYS, ...(EXTRA_PRESERVED[layer.type] || [])]);
       const nextParams = { ...base, ...(preset?.params || {}) };
       preserved.forEach((key) => {
         if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
@@ -1922,7 +1928,7 @@
               // Keys a preset apply never overwrites — the gallery ignores these
               // when deciding whether the layer still matches its named preset
               // (so moving/resizing a layer doesn't read as "diverged").
-              preservedKeys: [...TRANSFORM_KEYS, ...(EXTRA_PRESERVED[layer.type] || [])],
+              preservedKeys: [...TRANSFORM_KEYS, ...OUTPUT_CONTROL_KEYS, ...(EXTRA_PRESERVED[layer.type] || [])],
               onApply: (presetId) => {
                 if (this.app.pushHistory) this.app.pushHistory();
                 applyPreset(presetId);
