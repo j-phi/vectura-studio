@@ -147,6 +147,19 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   depth (`meanPlanDepth`) subtracts the height axis's camera-z contribution so occlusion
   order between parallel rows depends only on plan position; the front-wall pick, sort
   keys, and slab depths all follow. Depth-cue stamping (`meta.depth`) is unchanged.
+- **Raster-Plane mesh + topography now perform true hidden-line removal with See-Through
+  OFF.** The wire modes only ran a per-vertex back-face test, so front-facing geometry
+  BEHIND a ridge — a valley floor, far contour rings — drew straight through the hill in
+  front of it. The surviving visible runs are now additionally clipped against the surface
+  itself: the same height sampler is meshed once per frame into screen-space depth
+  triangles (capped 128/axis, preview-scaled) and every wire, contour, and hatch scan line
+  is occlusion-tested through `G3.occludeSegmentsDepthBuffer`, with the Occlusion Bias
+  param plus a slope-scaled bias so lines lying ON the surface keep their crest and
+  silhouette runs whole (no stippled "acne"). Clipping happens before curve conversion, so
+  the Curves toggle and contour smoothing behave exactly as before; See-Through ON output
+  is byte-identical to the previous release. Covered by
+  `tests/unit/raster-plane-mesh-hlr.test.js` (leak-through, see-through invariance,
+  topography occlusion, anti-acne fragmentation guard).
 - **Keyboard shortcuts no longer fire through open modals.** Window-level shortcuts
   (Delete, Cmd+Z, Cmd+K…) were reaching the engine while any dialog or modal was open —
   including the legacy settings/export/help overlay, where Delete could remove the very
