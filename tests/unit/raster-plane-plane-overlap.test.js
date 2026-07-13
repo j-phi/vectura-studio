@@ -16,6 +16,24 @@
  *
  * The contract is "visible AT the border, with no overlap": clipped ends land
  * ON the silhouette, and no ink survives inside it.
+ *
+ * SCOPE — this file tests the ALGORITHM, not the app, and the distinction is not
+ * pedantic: it is the whole reason this bug shipped three times.
+ *
+ * These tests hand generate() an explicit param object. That means they SUPPLY the
+ * value they are testing, so they can only ever exercise the `finite(p.depthBias, …)`
+ * fallback — never ALGO_DEFAULTS, never the factory preset that Layer applies on top
+ * of it, never the UI cascade. Each of those three has shipped a wrong Occlusion Bias
+ * while a suite of this shape stayed green. The camera has the same problem: the pose
+ * below is ALGO_DEFAULTS', and a real fresh layer opens at the factory preset's,
+ * which is a different angle entirely.
+ *
+ * Nothing here is wrong. It is just narrower than it looks, and a reader (or an
+ * author) who forgets that will read "0 breakthrough points" as a statement about
+ * the product when it is a statement about one function. The guard that speaks for
+ * the product is tests/integration/raster-plane-app-path-occlusion.test.js: it buys
+ * the layer the way a user does and asserts on the output, and it mutation-tests
+ * itself so it cannot go quietly vacuous. Keep both; they cover different things.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 

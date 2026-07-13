@@ -198,6 +198,53 @@ for (const p of presets) {
 }
 const finalPresets = [...dedupedMap.values()];
 
+// ── A factory default may only carry what it deliberately OVERRIDES ───────────
+// `<type>-default` is the factory preset, and Layer applies it ON TOP of
+// ALGO_DEFAULTS (src/core/layer.js). These files are app-saved full param dumps —
+// 50+ keys captured from whatever a live session happened to have on screen — so
+// every value their author never thought about got frozen in alongside the handful
+// they meant. That is how a stale Occlusion Bias survived being corrected in
+// defaults.js: the preset silently restated the old value on every new layer, and
+// editing the config file appeared to do nothing.
+//
+// So strip every key a factory preset merely RESTATES. What remains is exactly its
+// deliberate curation (a camera angle, a noise stack), and it reads as such.
+// Byte-identical today — assigning a value that already equals the default is a
+// no-op — but from here on a change in defaults.js actually reaches the app.
+// Named presets (artworks) are untouched: those SHOULD be self-contained snapshots.
+const canonical = (v) => {
+  if (Array.isArray(v)) return v.map(canonical);
+  if (v && typeof v === 'object') {
+    return Object.keys(v).sort().reduce((o, k) => { o[k] = canonical(v[k]); return o; }, {});
+  }
+  return v;
+};
+const restatesDefault = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+
+let strippedKeys = 0;
+for (const p of finalPresets) {
+  if (!p.params || !p.preset_system) continue;
+  // ONLY the pure `<type>-default` factory marker. A few algorithms (wavetable,
+  // topo, phylla) instead nominate a NAMED artwork as their factory default
+  // (`wavetable-rolling-hills`); those also sit in the gallery as a preset you can
+  // pick, and an artwork must stay a self-contained snapshot — sparsify it and a
+  // later edit to defaults.js would quietly repaint it.
+  if (p.id !== `${p.preset_system.toLowerCase()}-default`) continue;
+  const defaults = ALGO_DEFAULTS[p.preset_system] || {};
+  const overrides = [];
+  for (const key of Object.keys(p.params)) {
+    if (!(key in defaults)) continue;                 // unknown keys are handled elsewhere
+    if (restatesDefault(p.params[key], defaults[key])) { delete p.params[key]; strippedKeys++; }
+    else overrides.push(key);
+  }
+  if (overrides.length) {
+    console.log(`[user-presets:bundle] ${p.id}: overrides ${overrides.length} default(s) — ${overrides.join(', ')}`);
+  }
+}
+if (strippedKeys) {
+  console.log(`[user-presets:bundle] Stripped ${strippedKeys} restated key(s) from factory defaults (they now defer to ALGO_DEFAULTS).`);
+}
+
 const presetsJson = JSON.stringify(finalPresets, null, 2)
   .split('\n')
   .map((line) => '    ' + line)

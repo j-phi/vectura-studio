@@ -183,7 +183,14 @@ All defaults, machine profiles, palettes, and descriptions live in `src/config/`
 
 **Presets are file-based (single source of truth).** `src/config/presets.js` was deleted in v1.1.68 — there is no hand-authored preset file. Every preset is a `.vectura` file under `user-presets/<layer_type>/`; `npm run user-presets:bundle` regenerates `src/config/user-presets.js` (the only generated library file, loaded into `window.Vectura.PRESETS`). Do not hand-edit `user-presets.js`. The directory name must exactly match the layer `type` / `preset_system`, including camelCase (e.g. `shapePack`, `svgDistort`, `petalisDesigner`). When adding a new algorithm, create its `user-presets/<layer_type>/` directory (with a `.gitkeep`).
 
-**On-disk file format:** identity/category live in a canonical `meta:{presetId, group, system, savedAt}` block (written by `PresetSync.buildDoc`; the bundler also reads it, falling back to top-level `id`/`group`, then a computed user id + `User` group). The 15 empty-params `<type>-default` "reset to factory" markers are **synthesized by the bundler** from `ALGO_DEFAULTS[type].preset` — never store them as files.
+**On-disk file format:** identity/category live in a canonical `meta:{presetId, group, system, savedAt}` block (written by `PresetSync.buildDoc`; the bundler also reads it, falling back to top-level `id`/`group`, then a computed user id + `User` group).
+
+**Where a default actually comes from (read this before changing one).** A `<type>-default` marker is synthesized by the bundler from `ALGO_DEFAULTS[type].preset`, but **a `user-presets/<type>/default.vectura` file, if present, wins over it** — and ~20 algorithms have one. `Layer` (`src/core/layer.js`) clones `ALGO_DEFAULTS[type]` and then `Object.assign`s the factory preset **on top**, so *the preset is what a new layer actually gets*. A default therefore has up to four origins: the algorithm's own `finite(p.x, <literal>)` fallback, `ALGO_DEFAULTS`, the factory preset, and any UI cascade that writes `layer.params` on toggle.
+
+Consequences, learned the hard way (a stale Occlusion Bias survived being "fixed" three times):
+- **Unit tests calling `generate(params)` directly cannot see three of the four origins** — they *supply* the value they are testing. A default change is not verified until it is driven through `engine.addLayer` + the UI, or observed in the running app.
+- The bundler **strips any key a `<type>-default` preset merely restates**, so a factory preset carries only its deliberate overrides (it prints them at build time) and `ALGO_DEFAULTS` is live for everything else. Named artworks that double as a default (`wavetable-rolling-hills`) are exempt — they stay self-contained snapshots.
+- A **cascade must pin every mode-critical param** (it is the last word, and legitimately overrides upstream). It must never restate a value it doesn't need to control — that is how a bad bias hides.
 
 **Preset naming:** `id` must be lowercase kebab-case prefixed by system: `<preset_system>-<preset-name>`.
 
