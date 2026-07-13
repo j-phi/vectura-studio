@@ -1549,7 +1549,13 @@
       const transform = this.getDefaultTransformForType(layer.type, layer.params);
       if (!layer.paramStates) layer.paramStates = {};
       delete layer.paramStates[layer.type];
-      const base = ALGO_DEFAULTS[layer.type] ? clone(ALGO_DEFAULTS[layer.type]) : {};
+      // "Defaults" means what a NEW layer of this type gets — ALGO_DEFAULTS with the
+      // factory preset on top (Vectura.factoryParams, src/core/layer.js). Resetting to
+      // ALGO_DEFAULTS alone drops everything the preset curates, so the layer lands on
+      // a state no new layer has ever had, while still claiming `preset: <type>-default`.
+      const base = window.Vectura.factoryParams
+        ? window.Vectura.factoryParams(layer.type)
+        : (ALGO_DEFAULTS[layer.type] ? clone(ALGO_DEFAULTS[layer.type]) : {});
       layer.params = { ...base, ...transform };
       this.storeLayerParams(layer);
       this.buildControls();

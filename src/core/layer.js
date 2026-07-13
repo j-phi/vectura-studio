@@ -14,6 +14,15 @@
    * in three places that could drift apart, and the panel needs it to tell a user
    * which controls have been moved off their default — the question nobody could
    * answer when a cascade was quietly seeding an Occlusion Bias.
+   *
+   * Every path that puts a layer into factory state MUST come through here — layer
+   * birth, the Algorithm dropdown, Reset to Defaults. Rebuilding params from
+   * ALGO_DEFAULTS alone gets a DIFFERENT answer (it drops everything the preset
+   * curates) while still claiming `preset: '<type>-default'`.
+   *
+   * The result is deep-cloned, preset params included: PRESETS is shipped state shared
+   * by every layer ever created, so handing a layer the preset's own `noises` array
+   * would let the first edit rewrite the preset in memory for the rest of the session.
    */
   const factoryParams = (type) => {
     const base = JSON.parse(JSON.stringify(ALGO_DEFAULTS[type] || ALGO_DEFAULTS.flowfield || {}));
@@ -23,7 +32,7 @@
         (p) => p.id === defaultId && p.preset_system === type,
       );
       if (preset && preset.params && Object.keys(preset.params).length > 0) {
-        Object.assign(base, preset.params);
+        Object.assign(base, JSON.parse(JSON.stringify(preset.params)));
       }
     }
     return base;

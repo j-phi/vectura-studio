@@ -7,6 +7,25 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Fixed
+- **Changing a layer's algorithm now loads that algorithm's factory Default.** Factory state for a
+  type is `ALGO_DEFAULTS` with the `<type>-default` preset applied on top — that is what `new Layer()`
+  builds, and what the preset gallery compares against. The Algorithm dropdown re-derived it by hand
+  and got a different answer: it rebuilt params from `ALGO_DEFAULTS` *alone*, so the swapped layer
+  stamped itself `preset: '<type>-default'` while missing every value that preset curates (topoform
+  arrived at `primitiveDetail` 18 instead of 100; spiralizer lost 11 curated params). The gallery,
+  correctly, called it "Custom" — the Default was never loaded. "Reset to Defaults" had the same bug,
+  resetting to a state no new layer has ever had. Both now go through `Vectura.factoryParams()`, the
+  single definition introduced with the modified-parameter markers; it was always the third caller
+  that had drifted. Not a regression from this cycle's preset sparsification — the pre-sparsification
+  build fails identically. Guarded by three mechanical sweeps in
+  `tests/integration/algorithm-switch-loads-factory-default.test.js` that name no algorithm and no
+  value, so a new factory preset is covered on arrival.
+- **A factory preset no longer hands a new layer its own nested objects.** `factoryParams` merged the
+  preset's params by reference, and `rasterplane-default` carries an entire `noises` rack — so every
+  new Raster-Plane layer shared one array with the shipped preset, and the first edit to that noise
+  would rewrite the preset in memory for the rest of the session (every later layer inheriting the
+  edit, with the gallery still reporting "Default" because it compares against the mutated preset).
+  Deep-cloned now.
 - **Preset thumbnails no longer freeze on an asset's fallback render.** The gallery's thumbnail
   memoization (added earlier this cycle) keyed on `(params, layerType)` alone, justified as "a pure
   function of its inputs". That was wrong: `text` draws built-in stroke letterforms until a Google

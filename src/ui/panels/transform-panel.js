@@ -60,10 +60,25 @@
     layer.paramStates[layer.type] = clone(next);
   }
 
+  /**
+   * Factory state for a type: ALGO_DEFAULTS with the `<type>-default` preset on top.
+   * Vectura.factoryParams (src/core/layer.js) is the single definition — the same one
+   * `new Layer()` uses — so a type swap lands a layer exactly where a freshly created
+   * layer of that type lands. Rebuilding from ALGO_DEFAULTS alone silently dropped
+   * everything the factory preset curates while still claiming to be on it.
+   * The ALGO_DEFAULTS fallback only matters if core loads after the panels.
+   */
+  function factoryParamsFor(type) {
+    const { ALGO_DEFAULTS, clone } = requireDeps('factoryParamsFor');
+    const factory = (G.Vectura || {}).factoryParams;
+    if (typeof factory === 'function') return factory(type);
+    return ALGO_DEFAULTS[type] ? clone(ALGO_DEFAULTS[type]) : {};
+  }
+
   function restoreLayerParams(layer, nextType) {
-    const { ALGO_DEFAULTS, clone } = requireDeps('restoreLayerParams');
+    const { clone } = requireDeps('restoreLayerParams');
     if (!layer) return;
-    const base = ALGO_DEFAULTS[nextType] ? clone(ALGO_DEFAULTS[nextType]) : {};
+    const base = factoryParamsFor(nextType);
     const stored = layer.paramStates?.[nextType] ? clone(layer.paramStates[nextType]) : null;
     const transform = this.getDefaultTransformForType(nextType, layer.params);
     layer.type = nextType;

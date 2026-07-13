@@ -60,6 +60,29 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — the Algorithm dropdown never loaded the factory Default.** Reported as "Default presets
+  are no longer being loaded during algorithm load". They never were, on that path: `restoreLayerParams`
+  rebuilt a swapped layer's params from `ALGO_DEFAULTS` alone, so the layer claimed
+  `preset: '<type>-default'` while carrying none of what that preset curates, and the gallery honestly
+  read "Custom". Same bug in "Reset to Defaults". Three things worth keeping:
+  1. **The bug was older than the work it was blamed on.** Serving the pre-sparsification commit and
+     driving the real `<select>` reproduced it exactly. This cycle's preset work did not break it — it
+     made it *visible* (a sparse factory preset means the divergence is now precisely the curation, and
+     the new modified-parameter dots light it up). Worth confirming *when* a regression started before
+     reaching for the revert: the fix here extends this cycle's work rather than undoing it.
+  2. **A "single definition" only holds if every caller uses it.** `Vectura.factoryParams()` was
+     introduced as the one definition of factory state because it "was previously re-derived in three
+     places that could drift apart" — and then only the first of the three was switched over. The other
+     two kept their hand-rolled copy and kept drifting. Introducing the canonical helper is half the
+     job; retiring the duplicates is the other half.
+  3. **Shipped config handed out by reference is a time bomb.** `factoryParams` merged preset params with
+     `Object.assign`, so every new Raster-Plane layer shared `rasterplane-default`'s `noises` array with
+     the library itself. Deep-cloned now.
+  Known, separate, still open: after a swap, terrain's gallery still shows "Custom" although its params
+  are now correct. The gallery compares a live noise rack (normalized to 53 keys on first regen) against
+  `ALGO_DEFAULTS`' 36-key entry, which can never match; a fresh layer only reads "Default" because its
+  label is computed before the normalization lands. Adjacent to the in-flight noise legacy-key work, so
+  deliberately left alone.
 - **Unreleased — the same Occlusion Bias bug in Terrain, and the preset-pins-junk bug class.** Two
   follow-ups from the Raster-Plane work, each investigated in an isolated worktree. Both were
   confirmed real and fixed. Three things worth keeping:
