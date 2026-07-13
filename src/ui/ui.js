@@ -819,79 +819,14 @@
 
   const clonePaths = (paths) => (paths || []).map((path) => clonePath(path));
 
+  // Which branch a path draws as (native cubic / verbatim polyline / draw-time
+  // quadratic, incl. the `sharpEdges` per-point `_tileEdge` exception) is decided
+  // once, in PathDraw — shared with Renderer.tracePath and the export preview so
+  // the plotted SVG cannot disagree with the on-screen curve. Parametric circles
+  // never reach here; shapeToSvg emits them as <circle>/<ellipse> first.
   const pathToSvg = (path, precision, useCurves, sharpEdges = false) => {
     if (!path || path.length < 2) return '';
-    const fmt = (n) => Number(n).toFixed(precision);
-    // Native cubic export when bezier metadata is present — mirrors
-    // Renderer.tracePath so the plotted SVG matches the on-screen curve exactly.
-    // `meta.forceCurves` (stamped by GeometryUtils smoothing / Geometry3D
-    // .smoothToBezier / the morph modifier) renders as cubics even when the
-    // layer's `curves` toggle is off, so a *Smoothing slider curves the line on
-    // its own. `meta.straight` always wins and forces a verbatim polyline.
-    const forceCurves = path.meta?.forceCurves === true;
-    const anchors = (useCurves || forceCurves) && !path.meta?.straight ? path.meta?.anchors : null;
-    const hasHandles = Array.isArray(anchors) && anchors.some((a) => a && (a.in || a.out));
-    if (hasHandles && anchors.length >= 2) {
-      const closed = path.meta?.closed === true;
-      let d = `M ${fmt(anchors[0].x)} ${fmt(anchors[0].y)}`;
-      for (let i = 0; i < anchors.length - 1; i++) {
-        const a = anchors[i];
-        const b = anchors[i + 1];
-        const c1 = a.out || a;
-        const c2 = b.in || b;
-        d += ` C ${fmt(c1.x)} ${fmt(c1.y)} ${fmt(c2.x)} ${fmt(c2.y)} ${fmt(b.x)} ${fmt(b.y)}`;
-      }
-      if (closed) {
-        const a = anchors[anchors.length - 1];
-        const b = anchors[0];
-        const c1 = a.out || a;
-        const c2 = b.in || b;
-        d += ` C ${fmt(c1.x)} ${fmt(c1.y)} ${fmt(c2.x)} ${fmt(c2.y)} ${fmt(b.x)} ${fmt(b.y)} Z`;
-      }
-      return d;
-    }
-    // Mirror Renderer.tracePath: `meta.straight` geometry (e.g. mask fragments
-    // pre-flattened by GeometryUtils.flattenSmoothedPath) is already baked and
-    // must be emitted verbatim, never re-smoothed, independent of `useCurves`.
-    if (!useCurves || path.meta?.straight || path.length < 3) {
-      return `M ${path.map((pt) => `${fmt(pt.x)} ${fmt(pt.y)}`).join(' L ')}`;
-    }
-    const isClosed = window.Vectura?.OptimizationUtils?.isClosedPath?.(path);
-    if (isClosed) {
-      const n = path.length - 1;
-      const m0x = (path[0].x + path[1].x) / 2;
-      const m0y = (path[0].y + path[1].y) / 2;
-      let d = `M ${fmt(m0x)} ${fmt(m0y)}`;
-      for (let i = 1; i < n; i++) {
-        if (sharpEdges && path[i]._tileEdge) {
-          d += ` L ${fmt(path[i].x)} ${fmt(path[i].y)}`;
-        } else {
-          const midX = (path[i].x + path[i + 1].x) / 2;
-          const midY = (path[i].y + path[i + 1].y) / 2;
-          d += ` Q ${fmt(path[i].x)} ${fmt(path[i].y)} ${fmt(midX)} ${fmt(midY)}`;
-        }
-      }
-      if (sharpEdges && path[0]._tileEdge) {
-        d += ` L ${fmt(path[0].x)} ${fmt(path[0].y)} L ${fmt(m0x)} ${fmt(m0y)}`;
-      } else {
-        d += ` Q ${fmt(path[0].x)} ${fmt(path[0].y)} ${fmt(m0x)} ${fmt(m0y)}`;
-      }
-      d += ' Z';
-      return d;
-    }
-    let d = `M ${fmt(path[0].x)} ${fmt(path[0].y)}`;
-    for (let i = 1; i < path.length - 1; i++) {
-      if (sharpEdges && path[i]._tileEdge) {
-        d += ` L ${fmt(path[i].x)} ${fmt(path[i].y)}`;
-      } else {
-        const midX = (path[i].x + path[i + 1].x) / 2;
-        const midY = (path[i].y + path[i + 1].y) / 2;
-        d += ` Q ${fmt(path[i].x)} ${fmt(path[i].y)} ${fmt(midX)} ${fmt(midY)}`;
-      }
-    }
-    const last = path[path.length - 1];
-    d += ` L ${fmt(last.x)} ${fmt(last.y)}`;
-    return d;
+    return window.Vectura.PathDraw.toSvgD(path, { useCurves, sharpEdges }, precision);
   };
 
   const shapeToSvg = (path, precision, useCurves, attrs = null, sharpEdges = false) => {
