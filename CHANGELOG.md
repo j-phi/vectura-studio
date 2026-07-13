@@ -7,6 +7,16 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Fixed
+- **Raster-Plane: See-Through now makes the planes see-through instead of deleting them.** With
+  Lines as Planes on, ticking See-Through fell back to the plain stacked-wire branch — the
+  vertical slices disappeared entirely and only the top profiles were left. See-Through is a
+  hidden-line *style*, not a geometry switch: the slices (tops, floors, side risers, thickness
+  edges) are now built and occluded exactly as they are with See-Through off, and the spans that
+  other slices hide are drawn as dashed hidden lines rather than removed — the x-ray view, showing
+  where each plane stands behind the solid. Applies to both the solid slab (Plane Width 100) and
+  the free-standing cardboard slices, so Plane Width — previously a dead control under
+  See-Through — is live there too, as is Occlusion Bias (now surfaced in the panel, since the
+  floating-horizon pass it tunes runs on this path).
 - **CI: vitest runs go through `scripts/run-vitest.js`, which tolerates one upstream bug.** Vitest's
   workers talk to the parent over birpc, whose RPC timeout is a hard-coded 60s with no config
   knob. On GitHub's shared runners this suite's heavy jsdom mounts push an `onTaskUpdate` ack

@@ -1009,16 +1009,22 @@
     });
   };
 
-  // Plane Width < 100 (Lines as Planes, See-Through OFF): each slice stops
-  // sharing faces with its neighbours and becomes a free-standing extruded
-  // plane — the row's height profile extruded ±half the slice thickness along
-  // the stacking axis ("cardboard slice"), with REAL gaps between rows that
-  // reveal the planes behind. Rendering is classic hidden-line removal per
-  // slab: edges are culled by which of the slab's six faces can see the
-  // camera, then horizon-clipped near→far. A slice's far-side pieces are
-  // emitted AFTER its own near curtain so the slab correctly self-occludes.
+  // Plane Width < 100 (Lines as Planes): each slice stops sharing faces with
+  // its neighbours and becomes a free-standing extruded plane — the row's
+  // height profile extruded ±half the slice thickness along the stacking axis
+  // ("cardboard slice"), with REAL gaps between rows that reveal the planes
+  // behind. Rendering is classic hidden-line removal per slab: edges are culled
+  // by which of the slab's six faces can see the camera, then horizon-clipped
+  // near→far. A slice's far-side pieces are emitted AFTER its own near curtain
+  // so the slab correctly self-occludes.
+  //
+  // ctx.dash (See-Through ON) keeps the very same slabs and the very same
+  // occlusion, and only changes what happens to an occluded span: it is DASHED
+  // rather than dropped. Back-facing edges are therefore kept too — in an x-ray
+  // view the far side of a slice is exactly what you want to see through to.
   const buildCardboardPlanes = (p, bounds, sampler, ctx) => {
     const { rect, nRows, cols, angle, baseHeight, planeWidth } = ctx;
+    const dash = !!ctx.dash;
     const pitch = rect.height / Math.max(1, nRows - 1);
     const halfT = ((planeWidth / 100) * pitch) / 2;
     const planPt = (px, py) => (angle ? rotate2({ x: px, y: py }, angle) : { x: px, y: py });
@@ -1132,29 +1138,32 @@
       if (!flat) {
         const sideMeta = { ...meta, planeSide: true };
         const edgeMeta = { ...meta, planeEdge: true };
-        // Far-side pieces + thickness facets, culled by face visibility. Far
-        // pieces are emitted after the near loop, so the slab hides its own far
-        // side wherever the near face covers it. Anything on a FRONT-facing
-        // side face (u-extreme plane) can never be occluded in an orthographic
-        // heightfield view — those edges bypass the horizon test (see the
-        // solid-slab builder for the same rule).
-        if (it.farFront || facing.top) rows.push({ pts: it.fTop, depth: it.depth, occludes: false, meta });
+        // Far-side pieces + thickness facets, culled by face visibility (See-
+        // Through ON keeps them all — a culled back edge is precisely the line
+        // an x-ray view is meant to dash in). Far pieces are emitted after the
+        // near loop, so the slab hides its own far side wherever the near face
+        // covers it. Anything on a FRONT-facing side face (u-extreme plane) can
+        // never be occluded in an orthographic heightfield view — those edges
+        // bypass the horizon test (see the solid-slab builder for the same rule).
+        if (it.farFront || facing.top || dash) rows.push({ pts: it.fTop, depth: it.depth, occludes: false, meta });
         if (facing.sideL) emitDirect(it.fTop[0], it.fFloor[0], sideMeta, it.depth);
-        else if (it.farFront) rows.push({ pts: [it.fTop[0], it.fFloor[0]], depth: it.depth, occludes: false, meta: sideMeta });
+        else if (it.farFront || dash) rows.push({ pts: [it.fTop[0], it.fFloor[0]], depth: it.depth, occludes: false, meta: sideMeta });
         if (facing.sideR) emitDirect(it.fTop[last], it.fFloor[last], sideMeta, it.depth);
-        else if (it.farFront) rows.push({ pts: [it.fTop[last], it.fFloor[last]], depth: it.depth, occludes: false, meta: sideMeta });
-        if (it.farFront || facing.bottom) rows.push({ pts: it.fFloor, depth: it.depth, occludes: false, meta });
+        else if (it.farFront || dash) rows.push({ pts: [it.fTop[last], it.fFloor[last]], depth: it.depth, occludes: false, meta: sideMeta });
+        if (it.farFront || facing.bottom || dash) rows.push({ pts: it.fFloor, depth: it.depth, occludes: false, meta });
         if (facing.sideL) {
           emitDirect(it.nTop[0], it.fTop[0], edgeMeta, it.depth);
           emitDirect(it.nFloor[0], it.fFloor[0], edgeMeta, it.depth);
-        } else if (facing.top) {
+        } else if (facing.top || dash) {
           rows.push({ pts: [it.nTop[0], it.fTop[0]], depth: it.depth, occludes: false, meta: edgeMeta });
+          if (dash) rows.push({ pts: [it.nFloor[0], it.fFloor[0]], depth: it.depth, occludes: false, meta: edgeMeta });
         }
         if (facing.sideR) {
           emitDirect(it.nTop[last], it.fTop[last], edgeMeta, it.depth);
           emitDirect(it.nFloor[last], it.fFloor[last], edgeMeta, it.depth);
-        } else if (facing.top) {
+        } else if (facing.top || dash) {
           rows.push({ pts: [it.nTop[last], it.fTop[last]], depth: it.depth, occludes: false, meta: edgeMeta });
+          if (dash) rows.push({ pts: [it.nFloor[last], it.fFloor[last]], depth: it.depth, occludes: false, meta: edgeMeta });
         }
         // Occlude with the rest of the slab: far curtain, top face, side quads.
         rows.push({ pts: it.fTop.concat(it.fFloor.slice().reverse(), [it.fTop[0]]), depth: it.depth, occludes: true, draw: false, meta });
@@ -1185,7 +1194,7 @@
     // rounding is the last source of ragged borders, so rasterise the occluders
     // five times finer, keeping the rounding well inside a plotted line's width.
     return G3.occludeRowsFloatingHorizon(rows, {
-      mode: 'remove',
+      mode: dash ? 'dash' : 'remove',
       eps: Math.max(0, finite(p.depthBias, 0)),
       angle: roll,
       columnResolution: 0.2,
@@ -1203,14 +1212,20 @@
     // stays on the floor (h=0); only the top profile rises by baseHeight.
     const baseHeight = planes ? Math.max(0, finite(p.baseHeight, 0)) : 0;
     const keepHidden = p.seeThrough !== false;
-    // The floor profile (h=0) is only needed to fill the solid occlusion band:
-    // planes mode with See-Through OFF. Skip it otherwise.
-    const needBase = planes && !keepHidden;
+    // See-Through is a hidden-line STYLE (dash the occluded spans), not a
+    // geometry switch: planes build their slices either way. `dash` is that
+    // style — every builder below runs the same occlusion and only differs in
+    // whether a hidden span is dashed or dropped. Plain wires (no planes) keep
+    // their historic See-Through meaning: a bare stacked wireframe, no occlusion.
+    const dash = planes && keepHidden;
+    // The floor profile (h=0) closes each slice's curtain — needed by every
+    // planes render (it fills the occlusion band, and See-Through draws it).
+    const needBase = planes;
     // Plane Width 100% = the solid slab below (slices share faces). Anything
     // less hands off to the cardboard-slice renderer with real gaps.
     const planeWidth = clamp(finite(p.planeWidth, 100), 1, 100);
-    if (planes && !keepHidden && planeWidth < 99.995) {
-      return buildCardboardPlanes(p, bounds, sampler, { rect, nRows, cols, angle, baseHeight, planeWidth });
+    if (planes && planeWidth < 99.995) {
+      return buildCardboardPlanes(p, bounds, sampler, { rect, nRows, cols, angle, baseHeight, planeWidth, dash });
     }
 
     // Sample every model row into screen-space surface samples (carry .rotated for
@@ -1244,22 +1259,22 @@
       pushSeg(top, needBase ? base : null, y);
     }
 
-    if (keepHidden) {
-      // See-Through ON: stacked top-surface wires, no occlusion. Both plain lines
-      // and planes draw ONLY the surface profile (planes lifted by baseHeight). The
-      // floor lattice / curtain walls are never drawn — in a see-through wireframe
-      // they read as disconnected clutter; the extruded-solid look comes from the
-      // hidden-line removal when See-Through is OFF.
+    if (keepHidden && !planes) {
+      // Plain lines, See-Through ON: stacked top-surface wires, no occlusion at
+      // all. There is no volume here to see through — the rows are bare wires —
+      // so the historic stacked-wireframe render stands.
       const paths = [];
       segments.forEach((s) => paths.push(curveSurfacePath(pathFromSurfaceSamples(s.top, { mode: 'lines' }), p)));
       return paths;
     }
 
-    // See-Through OFF: floating-horizon hidden-line removal — the classic stacked-
-    // profile scanline algorithm (think "Unknown Pleasures" ridgelines). Rows are
-    // processed near→far; samples inside the screen-Y band already covered by nearer
-    // rows are dropped, so visible spans emerge as long continuous runs — no painter
-    // shatter, no back rows leaking through.
+    // Floating-horizon hidden-line pass — the classic stacked-profile scanline
+    // algorithm (think "Unknown Pleasures" ridgelines). Rows are processed
+    // near→far; samples inside the screen-Y band already covered by nearer rows
+    // are occluded, so visible spans emerge as long continuous runs — no painter
+    // shatter, no back rows leaking through. See-Through OFF drops the occluded
+    // spans; See-Through ON dashes them (`dash`), which is the x-ray render: the
+    // slices are all still there, the ones behind the solid just go dotted.
     //
     // Plain lines: the top profile is BOTH the drawn line and its own occluder (a
     // ridgeline plot). Planes: the row is the CLOSED curtain outline (top profile +
@@ -1351,13 +1366,18 @@
         rows.push({ pts: w.top, depth: w.depth, occludes: false, meta });
         const sideMeta = { ...meta, planeSide: true };
         if (sideFacing.left && w.full) emitDirect(w.top[0], w.floor[0], sideMeta, w.depth);
+        else if (dash && w.full) rows.push({ pts: [w.top[0], w.floor[0]], depth: w.depth, occludes: false, meta: sideMeta });
         if (sideFacing.right && w.full) emitDirect(w.top[last], w.floor[last], sideMeta, w.depth);
+        else if (dash && w.full) rows.push({ pts: [w.top[last], w.floor[last]], depth: w.depth, occludes: false, meta: sideMeta });
         // clipBlackAreas hole edges are interior, not block sides: horizon-tested.
         if (!w.full) {
           rows.push({ pts: [w.top[0], w.floor[0]], depth: w.depth, occludes: false, meta: sideMeta });
           rows.push({ pts: [w.top[last], w.floor[last]], depth: w.depth, occludes: false, meta: sideMeta });
         }
-        // Interior floors are inside the solid — occluder-only via the wall band.
+        // Interior floors sit inside the solid: See-Through OFF keeps them as
+        // pure occluders (the wall band), See-Through ON draws them too — the
+        // dashed baseline is what shows where the buried slice actually stands.
+        if (dash) rows.push({ pts: w.floor, depth: w.depth, occludes: false, meta });
         rows.push({ pts: wallLoop, depth: w.depth, occludes: true, draw: false, meta });
       }
       // Slab between this wall and the adjacent farther row (full rows only —
@@ -1377,12 +1397,14 @@
         emitDirect(w.floor[0], n.floor[0], edgeMeta, mid);
       } else {
         rows.push({ pts: [w.top[0], n.top[0]], depth: mid, occludes: false, meta: edgeMeta });
+        if (dash) rows.push({ pts: [w.floor[0], n.floor[0]], depth: mid, occludes: false, meta: edgeMeta });
       }
       if (sideFacing.right) {
         emitDirect(w.top[last], n.top[last], edgeMeta, mid);
         emitDirect(w.floor[last], n.floor[last], edgeMeta, mid);
       } else {
         rows.push({ pts: [w.top[last], n.top[last]], depth: mid, occludes: false, meta: edgeMeta });
+        if (dash) rows.push({ pts: [w.floor[last], n.floor[last]], depth: mid, occludes: false, meta: edgeMeta });
       }
       const slabInset = 1.25;
       rows.push({ pts: w.top.concat(n.top.slice().reverse(), [w.top[0]]), depth: mid, occludes: true, draw: false, inset: slabInset, meta });
@@ -1408,7 +1430,7 @@
     // inset occluder rather than leaning on this tolerance, so they still cannot
     // z-fight their own boundary at zero bias.
     return G3.occludeRowsFloatingHorizon(rows, {
-      mode: 'remove',
+      mode: dash ? 'dash' : 'remove',
       eps: Math.max(0, finite(p.depthBias, 0)),
       angle: roll,
     }).concat(direct);

@@ -92,9 +92,17 @@ describe('Raster-Plane — Plane Width (Lines as Planes)', () => {
     expect(closed.length).toBeGreaterThan(0);
   });
 
-  test('See-Through ON ignores planeWidth (wires-only path unchanged)', () => {
-    const a = gen({ seeThrough: true });
-    const b = gen({ seeThrough: true, planeWidth: 20 });
-    expect(JSON.stringify(b)).toBe(JSON.stringify(a));
+  // See-Through ON used to discard the planes entirely (bare stacked wires), which
+  // made planeWidth a dead control there. It is now a hidden-line STYLE: the same
+  // slices are built and the same occlusion runs, the hidden spans are merely
+  // dashed instead of dropped — so the slab/cardboard split applies just the same.
+  test('See-Through ON honours planeWidth (slab vs cardboard slices still differ)', () => {
+    const solid = gen({ seeThrough: true });
+    const sliced = gen({ seeThrough: true, planeWidth: 20 });
+    expect(sliced.length).toBeGreaterThan(0);
+    expect(JSON.stringify(sliced)).not.toBe(JSON.stringify(solid));
+    // Both are x-ray renders: the occluded spans survive as dashed hidden lines.
+    expect(solid.some((p) => p.meta && p.meta.hiddenLine)).toBe(true);
+    expect(sliced.some((p) => p.meta && p.meta.hiddenLine)).toBe(true);
   });
 });

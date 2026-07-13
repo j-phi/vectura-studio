@@ -231,12 +231,15 @@
       // p.hiddenLineMode (the real visibility toggle is the existing seeThrough
       // control), so showing it is a dead, misleading, duplicative control.
       hiddenLineModes: () => false,
-      // Occlusion Bias IS wired for Lines: when See-Through is OFF, buildLines runs
-      // depth-spread painter occlusion and reads p.depthBias to scale how tightly
-      // nearer ridges hide farther ones. Keyed on See-Through (not the dead
-      // hiddenLineMode) per the deferred generator-wiring note.
+      // Occlusion Bias IS wired for Lines: it is the floating-horizon tolerance
+      // buildLines reads to decide how tightly nearer ridges hide farther ones.
+      // That pass runs whenever there is something to occlude — See-Through OFF
+      // (hidden spans removed), and Lines as Planes with See-Through ON (hidden
+      // spans dashed). Plain wires + See-Through ON is the one no-occlusion
+      // render, so the bias is genuinely dead there. Keyed on See-Through (not
+      // the dead hiddenLineMode) per the deferred generator-wiring note.
       allowDepthBias: (p = {}) => (p.mode || 'lines') === 'lines',
-      depthBiasSelf: (p = {}) => p.seeThrough === false,
+      depthBiasSelf: (p = {}) => p.seeThrough === false || !!p.horizontalLinesAsPlanes,
       allowOutline: () => false,
     },
   };

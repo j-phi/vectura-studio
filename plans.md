@@ -44,6 +44,17 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — Raster-Plane See-Through makes the planes see-through, not absent.** With Lines
+  as Planes on, See-Through routed to the plain stacked-wire branch: the slices were never built,
+  so the vertical geometry vanished and only the top profiles drew. It is now a hidden-line
+  *style* layered on the same builders — `buildLines`' slab path and `buildCardboardPlanes` both
+  take a `dash` flag, keep the identical occluder set, and run the floating horizon in `'dash'`
+  mode, so an occluded span comes back as a dashed hidden line instead of being dropped. Back-
+  facing edges (culled under HLR as interior) are kept when dashing — in an x-ray view the far
+  side of a slice is exactly the line you want to see. Consequences: Plane Width is live under
+  See-Through (slab vs cardboard both x-ray), and Occlusion Bias — the horizon tolerance this
+  path reads — is no longer hidden by the panel's `depthBiasSelf` gate. The one genuinely
+  occlusion-free render, plain wires + See-Through, is untouched.
 - **Unreleased — Raster-Plane Lines-as-Planes clips exactly at the curtain border.** Occlusion
   Bias defaulted to `0.5`, and in the floating-horizon pass that number *is* the slack a farther
   row gets before it is hidden — so every row poked up to half a pixel through the curtain in

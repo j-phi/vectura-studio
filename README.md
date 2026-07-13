@@ -259,7 +259,7 @@ Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom
 | **Spiralizer** | Lines or marker styles (dots, filled points, plusses, crosses, squares, triangles, dashes) coiled around sphere/cone/cylinder/ellipsoid/torus/capsule and a twistable helix shape (2+ twists add DNA base-pair rungs). Markers scatter at mm spacing with a thickness selector, hollow glyphs take a universal fill (spiral, hatch, …), plus front-only or see-through projection, full-shape silhouette outlining, curve smoothing, and orthographic or perspective view |
 | **Polyhedron** | Platonic/Archimedean solids, a **swept-profile family** (flat polygon, prism, antiprism, bipyramid, cone, frustum, cupola, star prism — all driven by a side count, with taper/star-inset where it applies), **or imported STL meshes** — face bands, edges, and vertex rings with front-face culling, dashed hidden lines, extrude/explode/twist effects, and orthographic or perspective projection |
 | **Topoform** | Primitive 3D meshes (sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot) **or imported STL meshes**, rendered as projected wireframes or depth-plane topographic contours — with detail up to 100 on every primitive, bezier contour smoothing, dashed hidden lines, an optional Scene Lighting pass, and orthographic/perspective view |
-| **Raster-Plane** | A height source (built-in relief, preloaded noise, imported image, or hand-painted canvas) projected as line relief, deformed mesh, raster topography, or extruded bars — Bars take a **Bar Sides** count (3–8) that interlocks gap-free as triangles / squares / hexagons (other counts inscribe a regular polygon in each cell), a **Bar Rotate** dial to orient the footprints, and a **Corner Radius** that fillets the bar footprints into rounded columns. Plus a **Surface Noise** rack stack where each layer's own Blend Mode + Field Weight emboss the surface live, a **Base Height** lift and a **Plane Width** slider for "Lines as Planes" (100% = a solid extruded slab, lower widths = free-standing planes with real gaps between rows), clean hidden-line removal on opaque bars, and orthographic or perspective view |
+| **Raster-Plane** | A height source (built-in relief, preloaded noise, imported image, or hand-painted canvas) projected as line relief, deformed mesh, raster topography, or extruded bars — Bars take a **Bar Sides** count (3–8) that interlocks gap-free as triangles / squares / hexagons (other counts inscribe a regular polygon in each cell), a **Bar Rotate** dial to orient the footprints, and a **Corner Radius** that fillets the bar footprints into rounded columns. Plus a **Surface Noise** rack stack where each layer's own Blend Mode + Field Weight emboss the surface live, a **Base Height** lift and a **Plane Width** slider for "Lines as Planes" (100% = a solid extruded slab, lower widths = free-standing planes with real gaps between rows), **See-Through** for an x-ray render that dots in whatever the planes hide, clean hidden-line removal on opaque bars, and orthographic or perspective view |
 
 Algorithm defaults live in `src/config/defaults.js`, modifier defaults/descriptions in `src/config/modifiers.js`, and algorithm descriptions in `src/config/descriptions.js`.
 
@@ -590,6 +590,15 @@ CI lives in `.github/workflows/test.yml`:
 ---
 
 ## Release Notes
+
+### 1.2.68
+- **Raster-Plane: See-Through makes the planes see-through instead of deleting them.** With **Lines
+  as Planes** on, ticking **See-Through** used to throw the slices away — the vertical planes
+  vanished and you were left with the bare top profiles. It now does what it says: the same slices,
+  occluded the same way, with everything hidden behind them drawn as dotted lines. You see exactly
+  where each plane stands inside the solid. Works for both a solid slab and free-standing slices,
+  so **Plane Width** — which See-Through used to ignore — now applies there too, alongside
+  **Occlusion Bias**.
 
 ### 1.2.67
 - **Changed parameters are marked, and one click resets them.** Any control sitting away from its
