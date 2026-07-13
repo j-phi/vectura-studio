@@ -4,23 +4,38 @@
 (() => {
   const { ALGO_DEFAULTS, SETTINGS, THEMES = {} } = window.Vectura || {};
 
+  /**
+   * The params a BRAND-NEW layer of this type is born with: ALGO_DEFAULTS with the
+   * factory preset applied on top (the preset wins — see the bundler, which strips
+   * every key a factory preset merely restates, so what it still carries is exactly
+   * its deliberate curation).
+   *
+   * This is the single definition of "factory state". It was previously re-derived
+   * in three places that could drift apart, and the panel needs it to tell a user
+   * which controls have been moved off their default — the question nobody could
+   * answer when a cascade was quietly seeding an Occlusion Bias.
+   */
+  const factoryParams = (type) => {
+    const base = JSON.parse(JSON.stringify(ALGO_DEFAULTS[type] || ALGO_DEFAULTS.flowfield || {}));
+    const defaultId = base.preset;
+    if (defaultId) {
+      const preset = ((window.Vectura || {}).PRESETS || []).find(
+        (p) => p.id === defaultId && p.preset_system === type,
+      );
+      if (preset && preset.params && Object.keys(preset.params).length > 0) {
+        Object.assign(base, preset.params);
+      }
+    }
+    return base;
+  };
+
   class Layer {
     constructor(id, type = 'flowfield', name) {
       if (type === 'expanded') type = 'shape';
       this.id = id;
       this.type = type;
       this.name = name;
-      this.params = JSON.parse(JSON.stringify(ALGO_DEFAULTS[type] || ALGO_DEFAULTS.flowfield));
-      // Apply file-based default preset params on top of ALGO_DEFAULTS
-      const _defaultId = this.params.preset;
-      if (_defaultId) {
-        const _dp = ((window.Vectura || {}).PRESETS || []).find(
-          p => p.id === _defaultId && p.preset_system === type
-        );
-        if (_dp && _dp.params && Object.keys(_dp.params).length > 0) {
-          Object.assign(this.params, _dp.params);
-        }
-      }
+      this.params = factoryParams(type);
       this.params.seed = Math.floor(Math.random() * 99999);
       this.params.posX = 0;
       this.params.posY = 0;
@@ -90,4 +105,5 @@
 
   const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.Layer = Layer;
+  window.Vectura.factoryParams = factoryParams;
 })();

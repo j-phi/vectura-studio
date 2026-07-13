@@ -1888,6 +1888,49 @@
   color: var(--ui-text-2);
   margin-bottom: var(--spacing-xs);
 }
+
+/* "Moved off its default" marker. A parameter can be set without the user ever
+   touching it — by the factory preset, by a mode cascade on a toggle, or by a saved
+   document — and until now nothing said so. The dot marks any control that is not at
+   the value a brand-new layer of this type would have; clicking it resets that one
+   control. Deliberately quiet: it should read as a footnote when you go looking, not
+   as an error when you don't. */
+[data-ui-skin] .control-modified {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  margin-left: var(--spacing-xs, 4px);
+  vertical-align: middle;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 0;
+}
+[data-ui-skin] .control-modified::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ui-accent);
+  opacity: 0.75;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+[data-ui-skin] .control-modified:hover::before,
+[data-ui-skin] .control-modified:focus-visible::before {
+  opacity: 1;
+  transform: scale(1.5);
+}
+[data-ui-skin] .control-modified:focus-visible {
+  outline: 1px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-ui-skin] .control-modified::before { transition: none; }
+}
 [data-ui-skin] .control-group {
   margin-bottom: var(--spacing-md);
   padding-bottom: var(--spacing-md);

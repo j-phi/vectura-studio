@@ -591,6 +591,14 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.67
+- **Changed parameters are marked, and one click resets them.** Any control sitting away from its
+  default now carries a small dot — including values you never set yourself, because a preset
+  carried them or enabling a mode seeded them. Click the dot to put that one control back.
+- **Presets stop shadowing the defaults.** A factory preset now carries only the values it
+  deliberately curates instead of a full 50+ key dump, so the app's defaults are the defaults —
+  no invisible overrides. Your presets and layers look exactly as before.
+
 ### 1.2.66
 - **Raster-Plane: Lines as Planes now starts thin, with no occlusion slack.** Plane Width defaults
   to `1` — free-standing curtains are the look the mode exists for. Ticking **Lines as Planes** no

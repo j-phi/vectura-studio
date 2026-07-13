@@ -1800,7 +1800,60 @@
     // it always closes over the current active layer; the caller owns history.
     this._applyActivePreset = applyPreset;
 
-    const renderDef = (def, targetEl) => {
+    /*
+     * "Moved off its default" indicator.
+     *
+     * A parameter can be set without the user ever touching it: the factory preset
+     * carries it, a mode cascade seeds it on a toggle, or it rode in with a saved
+     * document. When that happens there is nothing on screen to say so — which is how
+     * an Occlusion Bias of 1.5, seeded silently by ticking "Lines as Planes", sat
+     * putting hooks on every border with no way for anyone to reasonably suspect it.
+     *
+     * So mark any control whose value differs from what a brand-new layer of this type
+     * would have. Click the marker to put it back. The point is not decoration: it is
+     * that a value nobody chose should never be indistinguishable from one they did.
+     */
+    const factory = (window.Vectura.factoryParams || (() => ({})))(layer.type);
+    const sameAsFactory = (a, b) => {
+      if (a === b) return true;
+      if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) < 1e-9;
+      if (a && b && typeof a === 'object' && typeof b === 'object') {
+        try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
+      }
+      return false;
+    };
+    // Identity/placement keys are per-layer by nature — flagging them would be noise.
+    const NOT_A_LOOK = new Set(['seed', 'posX', 'posY', 'scaleX', 'scaleY', 'rotation', 'preset', 'label', 'is3d']);
+    const isModified = (def) => {
+      if (!def || !def.id || NOT_A_LOOK.has(def.id)) return false;
+      if (!(def.id in factory)) return false;
+      return !sameAsFactory(layer.params[def.id], factory[def.id]);
+    };
+    const markModified = (def, rows) => {
+      if (!isModified(def)) return;
+      const row = rows.find((el) => el && el.querySelector && el.querySelector('.control-label')) || rows[0];
+      if (!row || !row.classList) return;
+      row.classList.add('is-modified');
+      const label = row.querySelector('.control-label');
+      if (!label || label.querySelector('.control-modified')) return;
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'control-modified';
+      dot.setAttribute('aria-label', `${getDisplayLabel(def)} is not at its default — reset it`);
+      dot.title = `Changed from the default (${JSON.stringify(factory[def.id])}). Click to reset.`;
+      dot.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.app.pushHistory) this.app.pushHistory();
+        layer.params[def.id] = JSON.parse(JSON.stringify(factory[def.id]));
+        this.storeLayerParams(layer);
+        this.app.regen();
+        this.buildControls();
+      });
+      label.appendChild(dot);
+    };
+
+    const renderDefBase = (def, targetEl) => {
       const target = targetEl || container;
       if (def.showIf && !def.showIf(layer.params)) return;
       if (def.type === 'section') {
@@ -4619,6 +4672,23 @@
       inlineTarget.appendChild(div);
     };
 
+    /*
+     * Decorate whatever renderDefBase just appended. Wrapping it (rather than editing
+     * each of the ~20 control-type branches) means every control gets the marker,
+     * including any added later — a guard that only covers the controls someone
+     * remembered to annotate is the same class of mistake as a test that only covers
+     * the code path someone remembered to drive.
+     */
+    const renderDef = (def, targetEl) => {
+      const target = targetEl || container;
+      const before = target.childElementCount;
+      const result = renderDefBase(def, targetEl);
+      if (def && def.type !== 'section' && def.type !== 'sectionHint') {
+        const added = Array.from(target.children).slice(before);
+        if (added.length) markModified(def, added);
+      }
+      return result;
+    };
 
     if (!isGroup) {
       let groupTarget = null;

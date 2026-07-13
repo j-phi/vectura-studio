@@ -115,7 +115,44 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   (crater preset: ~21k → ~7k points, geometry-identical). Covered by
   `tests/unit/raster-plane-plane-width.test.js`.
 
+### Added
+- **Parameters moved off their default are marked in the panel, and one click resets them.** A
+  value can be set without the user ever touching it — the factory preset carries it, a mode
+  cascade seeds it on a toggle, or it rode in with a saved document — and nothing on screen
+  distinguished a value somebody *chose* from one chosen *for* them. That is precisely why an
+  Occlusion Bias of 1.5, seeded silently by ticking "Lines as Planes", could put hooks on every
+  border with no reasonable way to suspect it. Every control whose value differs from what a
+  brand-new layer of that type would have now carries a quiet dot ("Changed from the default
+  (0). Click to reset."). Applied by wrapping the single `renderDef` funnel rather than
+  annotating ~20 control branches, so controls added later are covered by construction. Factory
+  state now has one definition, `Vectura.factoryParams(type)` (`src/core/layer.js`), replacing
+  three copies that could drift. Covered by `tests/integration/control-modified-indicator.test.js`,
+  whose central case is the one that hid the bug: a param a cascade changed behind the user's back.
+
 ### Changed
+- **Factory presets now carry only what they deliberately override.** `user-presets/<type>/default.vectura`
+  files are app-saved *full param dumps* — 50+ keys captured from whatever a live session had on
+  screen — and `Layer` applies them ON TOP of `ALGO_DEFAULTS`, so the preset wins. That made **707
+  config values dead letters**: editing `defaults.js` did nothing, which is exactly how a stale
+  Occlusion Bias survived being "fixed" three times. The bundler now strips every key a
+  `<type>-default` preset merely *restates*, leaving 38 deliberate overrides across 6 algorithms —
+  printed at build time so they are auditable rather than buried. Byte-identical today (assigning a
+  value that already equals the default is a no-op; verified across 1216 params in all 29
+  algorithms), but from here on `defaults.js` actually reaches the app. Named artworks that double
+  as a factory default (`wavetable-rolling-hills`) are exempt — an artwork must stay a
+  self-contained snapshot. `CLAUDE.md` corrected: it claimed these markers are "never stored as
+  files"; 20 are, and the bundler's own docstring says the file wins.
+- **New guard at the app path** (`tests/integration/raster-plane-app-path-occlusion.test.js`).
+  Every other test of the occlusion behaviour calls `generate()` with a hand-written param object —
+  which *supplies* the value it is testing, and so is structurally blind to `ALGO_DEFAULTS`, the
+  factory preset, and the UI cascade. This one buys the layer the way a user does (addLayer → tick
+  the real checkbox → regen) and asserts on the **output**, naming no parameter value. Two paths,
+  because they see different origins: with the cascade (which pins the mode-critical params, so it
+  is the last word) and without it (a saved doc or a preset shipping planes already on — the only
+  path where a bad `ALGO_DEFAULTS` or preset can still bite). Mutation-proven one origin at a time:
+  poison `ALGO_DEFAULTS` → 3 fail, poison the preset → 3 fail, poison the cascade → 9 fail, clean →
+  12 pass. It also mutation-tests **itself** (inject the historical 0.5; the suite must go red) —
+  an assertion that immediately earned its place by catching the guard measuring nothing at all.
 - **Raster-Plane "Lines as Planes" defaults to thin free-standing curtains, and stops seeding an
   Occlusion Bias.** Plane Width now defaults to `1` (was `100`) — free-standing slices are the
   look the mode exists for; a fused slab is what you get *without* it. More importantly, ticking
