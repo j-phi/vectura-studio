@@ -591,6 +591,16 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.69
+- **Terrain: hidden lines stop poking through the ridge in front of them.** Terrain used the same
+  occlusion slack that caused the Raster-Plane whiskers — up to 12.8px of line drawn *inside* the
+  terrain it should have been behind. Occlusion Bias now defaults to 0 (clip exactly at the
+  silhouette); nothing is lost but the protruding ink.
+- **Two-point perspective converges again.** Terrain's default preset was quietly pinning the
+  vanishing points to the canvas edges, which flattened two-point mode into a rectangle with no
+  perspective at all. The curated vanishing points are back, and a new guard stops any preset from
+  pinning a value for a control it does not even show.
+
 ### 1.2.68
 - **Raster-Plane: See-Through makes the planes see-through instead of deleting them.** With **Lines
   as Planes** on, ticking **See-Through** used to throw the slices away — the vertical planes

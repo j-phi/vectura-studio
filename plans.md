@@ -44,6 +44,26 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
 
 ## Done
+- **Unreleased — the same Occlusion Bias bug in Terrain, and the preset-pins-junk bug class.** Two
+  follow-ups from the Raster-Plane work, each investigated in an isolated worktree. Both were
+  confirmed real and fixed. Three things worth keeping:
+  1. **A stochastic A/B must pin the seed.** Terrain mints a random seed per layer, so
+     `render(bias 0)` vs `render(bias 0.5)` built two *different mountains* and reported the
+     difference as the effect of the change. The delivered anti-stipple guard was flaky for exactly
+     this reason and passed only by luck. It fooled *me* too: my first check of the vanishing-point
+     change concluded it had moved terrain's render (125 vs 136 paths) — that was seed noise, and
+     with the seed pinned the change is byte-identical. An A/B on a stochastic algorithm measures
+     nothing until the seed is held still.
+  2. **A comment is not evidence.** `terrain.js` asserted its bias "stops adjacent rows z-fighting";
+     measurement showed terrain cannot occlude itself at all (a row is tested only against strictly
+     nearer rows, and its own band is degenerate). The claim had been true of a different design and
+     outlived it.
+  3. **The preset-pins-hidden-junk signature is now guarded generically.** A full-dump preset freezes
+     values for modes it is not in — invisible until the user switches mode, then they bite
+     (terrain's two-point vanishing points collapsed the trapezoid to a rectangle: zero horizontal
+     convergence). The guard in `factory-preset-inactive-mode-pins.test.js` names no algorithm and no
+     value — no factory preset may pin a param its own `showIf` gate hides. It caught
+     `spiralizer.sphereRadius` on arrival.
 - **Unreleased — Raster-Plane See-Through makes the planes see-through, not absent.** With Lines
   as Planes on, See-Through routed to the plain stacked-wire branch: the slices were never built,
   so the vertical geometry vanished and only the top profiles drew. It is now a hidden-line

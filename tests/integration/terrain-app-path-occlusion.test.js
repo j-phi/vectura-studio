@@ -55,10 +55,16 @@ describe('Terrain — the app path draws no line inside the row in front of it',
    * `poison` forces a bias in after the layer is built — used only to prove this
    * measurement can fail.
    */
+  // Terrain is stochastic and addLayer mints a RANDOM seed, so two calls build two
+  // different mountains. Any A/B here — ink at bias 0 vs bias 0.5 — must hold the
+  // terrain still, or it compares one landscape against another and reports the
+  // difference as if it were the effect of the change. Pin it.
+  const SEED = 4242;
+
   const renderViaApp = (view = {}, poison = null) => {
     const id = app.engine.addLayer('terrain');
     const layer = app.engine.layers.find((l) => l.id === id);
-    Object.assign(layer.params, view);
+    Object.assign(layer.params, { seed: SEED }, view);
     if (poison) Object.assign(layer.params, poison);
 
     app.engine.activeLayerId = layer.id;

@@ -136,6 +136,35 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   (crater preset: ~21k → ~7k points, geometry-identical). Covered by
   `tests/unit/raster-plane-plane-width.test.js`.
 
+### Fixed
+- **Terrain: hidden lines are clipped exactly at the silhouette (Occlusion Bias 0).** Terrain feeds
+  the *same* floating-horizon occluder as Raster-Plane, where `eps` is a screen-space slack margin —
+  so its shipped `0.5` let farther rows draw *inside* the ridge in front of them. Measured through
+  the app path: whiskers up to **12.8px** long as shipped (23.3px on a dense grid), ~1.6% of all ink
+  sitting inside geometry it should have been behind; **0** at zero slack. The code's own comment
+  claimed the bias "stops adjacent rows z-fighting" — that is measurably false: a row is only ever
+  tested against strictly *nearer* rows and its own band is degenerate, so terrain cannot occlude
+  itself. Zeroing costs no ink beyond the protruding ink itself (−1.7%, of which ~85% *is* the
+  whiskers) with no stipple, no collapse, no shattered runs. New `tests/helpers/floating-horizon-oracle.js`
+  rebuilds the pass's own band *continuously* (no rasterisation, no tolerance band) and measures ink
+  length **inside** it; it mutation-tests itself against the historical 0.5 and a gross 3.0, and its
+  sensitivity floor (0.02–0.05px) is recorded in the test. First SVG baseline for the free-3d pose —
+  the only mode that reaches this code, and it had none.
+- **Factory presets stop pinning junk for modes they are not in.** Terrain's preset pinned
+  `vpLeftX: 0 / vpRightX: 100` — the two-point vanishing points — while shipping `free-3d`, where
+  they are invisible and inert. The moment a user switched to Two-point they got VPs on the canvas
+  edges, which makes both `lerp`s constant in depth: the trapezoid collapsed to a rectangle and
+  two-point perspective had **zero horizontal convergence** (far/near width ratio 1.000, one distinct
+  row width). With the curated 20/80 restored: ratio 0.600, 33 distinct widths. Same signature found
+  and removed in `spiralizer` (`sphereRadius` pinned while shipping `helix`), and `terrain`'s
+  `depthCompression` pin removed — it is read only by the three pinhole modes, so its gate was
+  narrowed from "not orthographic" to those, retiring a control that rendered dead in two of six
+  modes. All verified behaviour-preserving for the shipped look (seed pinned — terrain is stochastic,
+  and an unpinned A/B compares two different mountains). New generic guard in
+  `tests/integration/factory-preset-inactive-mode-pins.test.js`: **no factory preset may pin a value
+  for a parameter its own `showIf` gate hides.** It names no algorithm and no value, so a preset
+  freezing hidden junk fails on arrival.
+
 ### Added
 - **Parameters moved off their default are marked in the panel, and one click resets them.** A
   value can be set without the user ever touching it — the factory preset carries it, a mode
