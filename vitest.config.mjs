@@ -13,6 +13,12 @@ export default defineConfig({
     // an isolated local coverage run (~3.7s → >20s in CI). The plain test:ci job
     // never hits this. A genuine hang still fails well within 60s.
     testTimeout: 60000,
+    // Same reasoning, applied to hooks: `testTimeout` does NOT bound
+    // beforeEach/beforeAll, which default to 10s. Many integration files do
+    // their full-stack mount inside the hook, so under CI contention the mount
+    // blew the default while the test body had 60s ("Hook timed out in
+    // 10000ms" — raster-plane-source-widget). Keep the two in lockstep.
+    hookTimeout: 60000,
     poolOptions: {
       forks: {
         maxForks: 4,
