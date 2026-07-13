@@ -526,6 +526,29 @@
     return out;
   };
 
+  // Curve conversion for the SAMPLED geometry — the wrap strands and the
+  // silhouette. Mirrors raster-plane's curveSurfacePath contract: the layer's
+  // Curves toggle is the master enable, and Smoothing tunes the bezier tension
+  // on top of it.
+  //
+  // The strands and the silhouette are point-samples of a smooth curve, so they
+  // must NOT carry meta.straight when curves are wanted — that flag is a hard
+  // veto on curve rendering in both the renderer and the SVG exporter, and
+  // stamping it unconditionally is what made the Curves toggle a dead switch
+  // here. (smoothToBezier clears the flag itself once the tension is non-zero.)
+  // Genuinely-straight geometry — the DNA rungs, the marker glyphs — keeps it.
+  //
+  // `smoothing` is the universal Post-Processing Lab slider (0..1); smoothToBezier's
+  // `amount` is 0..100. The tension floor keeps Curves-ON visibly curved at
+  // Smoothing 0, so the toggle is never a no-op; the slider then drives it to
+  // full tension.
+  const curveSampledPath = (path, p) => {
+    if (!Array.isArray(path) || path.length < 3) return path; // a 2-point path can't curve
+    const smoothAmt = clamp(finite(p.smoothing, 0), 0, 1) * 100;
+    if (p.curves === true) return G3.smoothToBezier(path, Math.min(100, 55 + smoothAmt * 0.45));
+    return G3.smoothToBezier(path, smoothAmt);
+  };
+
   const buildOutline = (p, bounds) => {
     if ((p.outlineMode || 'outline') === 'none') return [];
     const loops = buildSilhouette(p, bounds);
@@ -552,7 +575,9 @@
         path.meta = { algorithm: 'spiralizer', outline: true, closed: !loop.open, straight: true };
         if (emphasize) path.meta.weightScale = weightScale;
         if (depthCueOn && loop.depth != null) path.meta.depth = loop.depth;
-        out.push(path);
+        // The silhouette is a sampled curve too (a hull / torus ring), so it
+        // curves with the toggle like the strands do.
+        out.push(curveSampledPath(path, p));
       });
       return out;
     }
@@ -607,12 +632,7 @@
             if (runDepths && idx < runDepths.length && runDepths[idx] != null) {
               path.meta.depth = runDepths[idx];
             }
-            // `smoothing` is the universal Post-Processing Lab slider (0..1);
-            // smoothToBezier's `amount` is on a 0..100 scale. Passing the raw
-            // slider value made the maximum tension 0.01 — handles a fraction of
-            // a millimetre long, so the strands stayed visibly faceted wherever
-            // the user dragged it.
-            paths.push(G3.smoothToBezier(path, finite(p.smoothing, 0) * 100));
+            paths.push(curveSampledPath(path, p));
           });
         }
       }

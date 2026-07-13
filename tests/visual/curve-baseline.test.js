@@ -143,20 +143,21 @@ describe('curve baselines (real display pipeline + production exporter)', () => 
   /**
    * Ratchet on the reported bug.
    *
-   * For these algorithms the Curves toggle currently produces BYTE-IDENTICAL
-   * output whether it is on or off — it is a dead switch. Spiralizer and
-   * shapePack stamp `meta.straight` on their geometry, which vetoes curves in
-   * both the renderer and the exporter regardless of the toggle; text emits its
-   * font-designed glyph curves either way, so the toggle changes nothing.
+   * For these algorithms the Curves toggle still produces BYTE-IDENTICAL output
+   * whether it is on or off — it is a dead switch. shapePack stamps
+   * `meta.straight` on its geometry, which vetoes curves in both the renderer
+   * and the exporter regardless of the toggle; text emits its font-designed
+   * glyph curves either way, so the toggle changes nothing.
    *
    * This list is a ratchet, not an endorsement: it must only ever SHRINK. When
    * the `meta.straight` audit (Stage D of the unification plan) makes one of
    * these live, this test fails and forces the entry to be removed — which is
    * exactly the signal we want, since the old net could not see the difference
-   * at all.
+   * at all. Spiralizer — the originally-reported bug — came off this list when
+   * it was taught to honour `p.curves`.
    */
   describe('Curves toggle liveness', () => {
-    const TOGGLE_IS_DEAD = ['spiralizer', 'text', 'shape-pack'];
+    const TOGGLE_IS_DEAD = ['text', 'shape-pack'];
 
     const isDead = (scenario) =>
       render(scenario, { curves: false, smoothing: 0 })

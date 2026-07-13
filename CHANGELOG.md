@@ -28,6 +28,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   polygon. The clamp is a Catmull-Rom pathology, not a general one.
 
 ### Fixed
+- **Spiralizer: the Curves toggle now actually curves the spiral.** It was a dead switch — output
+  was *byte-identical* with the toggle on and off. `spiralizer.js` never read `params.curves` at
+  all, and stamped `meta.straight` on every path it emitted, including the wrap strands and the
+  silhouette — which are point-samples of a smooth curve, not line segments. `meta.straight` is a
+  hard veto on curve rendering in both the canvas renderer and the SVG exporter, so the toggle
+  could not take effect even in principle; and because Spiralizer is flagged `is3d`, the UI routed
+  the toggle to a full regenerate rather than a re-render, denying it even the draw-time fallback
+  that 2D algorithms get. It now mirrors Raster-Plane's `curveSurfacePath`, the working model: the
+  toggle is the master enable and floors the bézier tension so Curves-ON curves visibly even at
+  Smoothing 0, with Smoothing tuning it from there. The strands and silhouette emit true cubics
+  (209 `L` commands become 209 `C` on the canonical baseline); the DNA rungs and marker glyphs stay
+  straight, because those really are line segments.
 - **The Simplify slider no longer destroys curves.** Both simplifiers call `stripCurveMeta`,
   which drops `meta.anchors` — and the display pass in `engine.generate()` ran them over every
   path. Any layer whose true geometry lives in its handles (text glyphs, morph rings, curve
