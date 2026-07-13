@@ -6,6 +6,27 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added
+- **A regression net for the curve system, which had none.** The existing 33 SVG baselines call
+  `Algorithms[type].generate()` directly with `smoothing: 0, simplify: 0` hardcoded and serialize
+  through a hand-rolled copy of the exporter in `tests/helpers/svg.js` that only emits cubics on
+  `meta.forceCurves` and has no quadratic branch at all — so **not one of them contained a single
+  curve command**, and the entire curve/smoothing/simplify system was invisible to the suite.
+  `tests/visual/curve-baseline.test.js` drives the real path instead — `engine.addLayer` (so the
+  true default cascade runs) → `engine.generate` (so the display pipeline runs) → the production
+  `shapeToSvg` — and snapshots 10 algorithms with Curves off, Curves on, and Curves + Smoothing.
+  It immediately pinned three findings the old net could not see: the Curves toggle emits
+  **byte-identical** output on Spiralizer, Type, and Shape Pack (a dead switch, now held by a
+  ratchet test that must only ever shrink); the draw-time quadratic that "Curves ON" actually
+  performs on 2D algorithms nearly **doubles exported file size** (Rings 120 KB → 226 KB) while
+  the real Bézier fit used by Raster-Plane *shrinks* it (63 KB → 54 KB); and the Smoothing slider
+  is inert whenever Curves is on for those same 2D algorithms (a 3-byte diff across its full range).
+- **`tests/unit/curve-fit-loops.test.js`** pins why the coming shared curve fit needs no
+  handle-length clamp: on the lopsided ring that `pattern.js`'s clamp exists for (one neighbour
+  far, one near), unclamped Catmull-Rom balloons into a self-intersection, while the Schneider
+  least-squares fit in `GeometryUtils.reduceAnchors` stays inside a 5-unit tube around the source
+  polygon. The clamp is a Catmull-Rom pathology, not a general one.
+
 ### Fixed
 - **The Simplify slider no longer destroys curves.** Both simplifiers call `stripCurveMeta`,
   which drops `meta.anchors` — and the display pass in `engine.generate()` ran them over every
