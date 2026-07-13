@@ -242,7 +242,6 @@
     return outMin + (outMax - outMin) * t;
   };
   const simplifyPath = GeometryUtils?.simplifyPath || ((path) => path);
-  const smoothPath = GeometryUtils?.smoothPath || ((path) => path);
   const joinNearbyPaths = OptimizationUtils?.joinNearbyPaths || ((paths) => paths);
   const createModifierState = Modifiers.createModifierState || ((type) => ({ type, enabled: true, guidesVisible: true, guidesLocked: false, mirrors: [] }));
   const createMirrorLine = Modifiers.createMirrorLine || ((index) => ({ id: `mirror-${index + 1}`, enabled: true }));
@@ -920,10 +919,18 @@
       maxY = height;
     }
     base.origin = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+    // Mirror the engine's display pipeline exactly, or a preset thumbnail stops
+    // matching the layer it is previewing. This used to run the Laplacian
+    // smoothPath; the engine now fits real curves, so this has to as well.
     const smooth = clamp(base.smoothing ?? 0, 0, 1);
+    const curveOpts = (base.curves === true || smooth > 0)
+      ? { curves: base.curves === true, smoothing: smooth, simplify: clamp(base.simplify ?? 0, 0, 1) }
+      : null;
+    const applyCurveFit = GeometryUtils?.applyCurveFit || ((path) => path);
     const transformed = rawPaths.map((path) => {
       if (!Array.isArray(path)) return path;
-      return smoothPath(transformPath(path, base, bounds), smooth);
+      const next = transformPath(path, base, bounds);
+      return curveOpts ? applyCurveFit(next, curveOpts) : next;
     });
     const limited = limitPaths(transformed);
     const useCurves = Boolean(base.curves);
