@@ -79,6 +79,16 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   refuses anything that already carries handles: the 3D algorithms bezierize their own wires at
   generate time, where they know which geometry is a curvable profile and which is a hatch or an
   edge, and re-fitting their anchors would fit a curve to a curve.
+- **The fit declines when there is no curve to find, so nothing gets straighter.** The fit splits at
+  every corner, and coarse or noisy geometry is nearly all corners — so it would emit a handful of
+  real curves plus hundreds of *degenerate* Béziers that draw as straight chords, while the presence
+  of any single real curve locked the whole path into that mode. The stock Lissajous inverted: Curves
+  ON at Smoothing 0 drew 88 smooth curves, and the same layer at Smoothing 0.6 drew 84 straight
+  chords. If most spans would come back straight, the geometry is genuinely angular and the fit now
+  declines — the line keeps the rendering it always had. **Net effect: strictly better where there is
+  a curve, byte-identical where there isn't.** Harmonograph, Lissajous and Spiral (all noise-driven,
+  genuinely angular) render exactly as before; Rings, Flowfield, Raster-Plane, Topoform, Spiralizer
+  and Type get true Béziers.
 
 ### Added
 - **A regression net for the curve system, which had none.** The existing 33 SVG baselines call
