@@ -728,31 +728,84 @@
         }
       }
     }
-    const depthAt = (x, y) => {
+    const depthAtNearest = (x, y) => {
       const gx = Math.round(px(x)), gy = Math.round(py(y));
       if (gx < 0 || gy < 0 || gx >= cols || gy >= rows) return -Infinity;
       return buf[gy * cols + gx];
     };
-    // Largest absolute depth difference to a 4-neighbour cell — the surface's
-    // local per-pixel thickness used to scale the self-occlusion bias. Empty
-    // (-Infinity) neighbours are skipped so silhouette edges don't inflate it.
+    // opts.interpolateDepth: bilinear read over the four surrounding cell
+    // centres (mirroring the floating-horizon's interpolated horizonAt, which
+    // killed the same class of artifact). Nearest-cell rounding quantizes an
+    // INTERIOR depth cliff to half-cell steps, leaking sub-cell "whisker"
+    // stubs past the silhouette; interpolation resolves the transition
+    // continuously. Applied ONLY when all four corners are covered: at the
+    // occluder's outer silhouette (empty corners) renormalized interpolation
+    // would pull the read toward the nearer interior and eat the boundary
+    // wire itself — there the nearest read is already exact, so it stays.
+    // Off by default (back-compatible).
+    const interpolateDepth = !!opts.interpolateDepth;
+    const depthAt = !interpolateDepth ? depthAtNearest : (x, y) => {
+      const cx = px(x) - 0.5, cy = py(y) - 0.5;
+      const c0 = Math.floor(cx), r0 = Math.floor(cy);
+      const tx = cx - c0, ty = cy - r0;
+      if (c0 < 0 || r0 < 0 || c0 + 1 >= cols || r0 + 1 >= rows) return depthAtNearest(x, y);
+      const d00 = buf[r0 * cols + c0];
+      const d10 = buf[r0 * cols + c0 + 1];
+      const d01 = buf[(r0 + 1) * cols + c0];
+      const d11 = buf[(r0 + 1) * cols + c0 + 1];
+      if (!Number.isFinite(d00) || !Number.isFinite(d10) || !Number.isFinite(d01) || !Number.isFinite(d11)) {
+        return depthAtNearest(x, y);
+      }
+      const top = d00 * (1 - tx) + d10 * tx;
+      const bot = d01 * (1 - tx) + d11 * tx;
+      return top * (1 - ty) + bot * ty;
+    };
+    // Local depth gradient to the 4-neighbour cells — the surface's per-pixel
+    // thickness used to scale the self-occlusion bias. Empty (-Infinity)
+    // neighbours are skipped so silhouette edges don't inflate it.
+    //
+    // Default statistic: MAX neighbour difference (back-compatible). With
+    // opts.slopeRobust, the MEDIAN of the finite neighbour differences is used
+    // instead: at a depth DISCONTINUITY (a cliff edge between two separate
+    // surfaces) only the across-edge neighbour carries the huge jump while the
+    // along-edge neighbours stay flat, so the median stays small and geometry
+    // just behind the edge is still hidden — the max statistic inflated the
+    // bias past the occludee's whole depth deficit and let 1-cell "whisker"
+    // stubs poke through at the silhouette. On a CONTINUOUS steep face every
+    // neighbour carries a similar gradient, so median ≈ max and the acne
+    // protection is unchanged.
+    // The median is right only for an INTERIOR cell. A cell on the occluder's
+    // own silhouette (one of its 4 neighbours is empty) is half-covered, so the
+    // depth it stores is pulled toward the nearer interior — a wire lying on
+    // that boundary sits "behind" its own cell and gets nibbled into dashes.
+    // Such a cell keeps the generous MAX bias: nothing can hide behind the
+    // surface's outline anyway, so a loose bias there costs nothing, while the
+    // interior keeps the tight median that kills the cliff whiskers.
+    const slopeRobust = !!opts.slopeRobust;
     const slopeAt = (x, y) => {
       if (slopeScale <= 0) return 0;
       const gx = Math.round(px(x)), gy = Math.round(py(y));
       if (gx < 0 || gy < 0 || gx >= cols || gy >= rows) return 0;
       const here = buf[gy * cols + gx];
       if (!Number.isFinite(here)) return 0;
+      const grads = [];
       let maxGrad = 0;
+      let onSilhouette = false;
       const nbs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
       for (let n = 0; n < nbs.length; n++) {
         const nx = gx + nbs[n][0], ny = gy + nbs[n][1];
-        if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+        if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) { onSilhouette = true; continue; }
         const nb = buf[ny * cols + nx];
-        if (!Number.isFinite(nb)) continue;
+        if (!Number.isFinite(nb)) { onSilhouette = true; continue; }
         const g = Math.abs(nb - here);
         if (g > maxGrad) maxGrad = g;
+        if (slopeRobust) grads.push(g);
       }
-      return maxGrad;
+      if (!slopeRobust || onSilhouette) return maxGrad;
+      if (!grads.length) return 0;
+      grads.sort((a, b) => a - b);
+      const mid = grads.length >> 1;
+      return grads.length % 2 ? grads[mid] : (grads[mid - 1] + grads[mid]) / 2;
     };
     const out = [];
     segments.forEach((seg) => {

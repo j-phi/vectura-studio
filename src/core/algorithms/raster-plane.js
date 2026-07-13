@@ -643,6 +643,14 @@
       // genuinely nearer ridge still wins.
       depthBias: Math.max(0.05, finite(p.depthBias, 0.5)),
       slopeScale: 1.75,
+      // Median (not max) neighbour gradient: at a height cliff the bias must
+      // not absorb the whole plateau-to-floor depth jump, or lines just behind
+      // the silhouette survive as 1-cell whisker stubs along the crest.
+      slopeRobust: true,
+      // Bilinear depth reads: nearest-cell rounding quantizes an interior
+      // depth cliff to half-cell steps, leaking sub-cell whisker stubs past
+      // the silhouette. Interpolation resolves the transition continuously.
+      interpolateDepth: true,
     });
     // Every fragment is a straight visible piece of one queued segment, so it
     // collapses losslessly to its endpoints; consecutive fragments of the same
@@ -654,13 +662,20 @@
     let zCount = 0;
     const flush = () => {
       if (pts && pts.length >= 2) {
-        const run = clip.runs[runIdx];
-        pts.meta = { algorithm: 'rasterPlane', straight: true, ...run.meta };
-        if (pts.meta.depth == null) {
-          const depth = zCount ? zSum / zCount : run.depth;
-          if (depth != null) pts.meta.depth = depth;
+        // Sub-line-width slivers (heavily foreshortened silhouette-transition
+        // segments) plot as ink dots, not lines — drop them, mirroring the
+        // solid-bars pipeline's short-run floor.
+        let plen = 0;
+        for (let i = 1; i < pts.length; i++) plen += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+        if (plen >= 0.8) {
+          const run = clip.runs[runIdx];
+          pts.meta = { algorithm: 'rasterPlane', straight: true, ...run.meta };
+          if (pts.meta.depth == null) {
+            const depth = zCount ? zSum / zCount : run.depth;
+            if (depth != null) pts.meta.depth = depth;
+          }
+          paths.push(run.noCurve ? pts : curveSurfacePath(pts, p));
         }
-        paths.push(run.noCurve ? pts : curveSurfacePath(pts, p));
       }
       pts = null;
       zSum = 0;
@@ -1087,6 +1102,14 @@
     // against the surface's own depth buffer (see flushSurfaceClip).
     const hlr = p.seeThrough === false;
     const clip = hlr ? beginSurfaceClip() : null;
+    // HLR visibility is decided per grid SEGMENT via the crease-edge rule (a
+    // wire is drawn where at least one of its two adjacent faces looks at the
+    // camera), so under HLR every vertex stays "visible" here and the segment
+    // filter below does the culling. Per-vertex tests can't get this right: a
+    // column segment dropping through a height cliff has two flat, visible
+    // endpoints but lies entirely on the back-facing wall — the vertex pass
+    // kept it and the depth bias preserved its first pixel as a "hook" burr
+    // at every crest crossing.
     const points = [];
     for (let y = 0; y <= rows; y++) {
       const row = [];
@@ -1097,20 +1120,87 @@
         row.push({
           point: s.point,
           camZ: s.rotated.z,
-          visible: hlr
-            ? surfaceVisibleHLR(u, v, rect, p, sampler)
-            : surfaceVisible(u, v, rect, p, sampler),
+          visible: hlr ? true : surfaceVisible(u, v, rect, p, sampler),
         });
       }
       points.push(row);
+    }
+    // Per-cell facing: the face normal from the cell's four corner heights,
+    // rotated into camera space. Shared by the segment filter and hatching.
+    let cellFront = null;
+    if (hlr) {
+      const amp = reliefAmp(p);
+      const cw = Math.max(1e-6, rect.width / cols);
+      const ch = Math.max(1e-6, rect.height / rows);
+      cellFront = [];
+      for (let y = 0; y < rows; y++) {
+        const rowF = [];
+        for (let x = 0; x < cols; x++) {
+          const h00 = sampler(x / cols, y / rows);
+          const h10 = sampler((x + 1) / cols, y / rows);
+          const h01 = sampler(x / cols, (y + 1) / rows);
+          const h11 = sampler((x + 1) / cols, (y + 1) / rows);
+          const dU = (((h10 + h11) - (h00 + h01)) * 0.5 * amp) / cw;
+          const dV = (((h01 + h11) - (h00 + h10)) * 0.5 * amp) / ch;
+          const n = rotatePoint(normalize({ x: -dU, y: 1, z: -dV }), viewAngles(p));
+          rowF.push(n.z >= -0.001);
+        }
+        cellFront.push(rowF);
+      }
     }
     const paths = [];
     const pushWire = (samples, meta) => (hlr
       ? queueSurfaceClipPath(clip, samples, p, meta)
       : pushVisibilityPaths(paths, samples, p, meta));
-    for (let y = 0; y <= rows; y++) pushWire(points[y], { mode: 'mesh', axis: 'row' });
+    // Split a wire into runs of segments whose crease rule passes, then queue
+    // each run for the depth clip (which handles genuine occlusion by nearer
+    // relief; this filter only removes wires living on back-facing faces).
+    const queueCreaseWire = (samples, keepSeg, meta) => {
+      let run = null;
+      for (let i = 0; i < samples.length - 1; i++) {
+        if (keepSeg(i)) {
+          if (!run) run = [samples[i]];
+          run.push(samples[i + 1]);
+        } else if (run) {
+          pushWire(run, meta);
+          run = null;
+        }
+      }
+      if (run) pushWire(run, meta);
+    };
+    // Crease rule with the silhouette exception: an INTERIOR wire (two adjacent
+    // faces) draws only if at least one of them looks at the camera — that is
+    // what kills the cliff-drop segments whose burrs used to hook out at every
+    // crest crossing. A wire on the surface's OUTER boundary has just one
+    // adjacent face and is the surface's silhouette, so it always draws even
+    // when that face is back-facing: the step's riser at the artwork edge is
+    // genuinely visible (the relief simply ends there — nothing is behind it
+    // to hide it). Culling it punched a hole in the outline. Whatever this
+    // rule keeps still has to survive the depth clip, so genuine occlusion is
+    // never at risk.
+    const keepEdge = (a, b) => (a === null || b === null ? true : a || b);
+    for (let y = 0; y <= rows; y++) {
+      if (hlr) {
+        queueCreaseWire(
+          points[y],
+          (i) => keepEdge(y > 0 ? cellFront[y - 1][i] : null, y < rows ? cellFront[y][i] : null),
+          { mode: 'mesh', axis: 'row' },
+        );
+      } else {
+        pushWire(points[y], { mode: 'mesh', axis: 'row' });
+      }
+    }
     for (let x = 0; x <= cols; x++) {
-      pushWire(points.map((row) => row[x]), { mode: 'mesh', axis: 'column' });
+      const colSamples = points.map((row) => row[x]);
+      if (hlr) {
+        queueCreaseWire(
+          colSamples,
+          (j) => keepEdge(x > 0 ? cellFront[j][x - 1] : null, x < cols ? cellFront[j][x] : null),
+          { mode: 'mesh', axis: 'column' },
+        );
+      } else {
+        pushWire(colSamples, { mode: 'mesh', axis: 'column' });
+      }
     }
     // Enhancement #5 — Lambert hatch front mesh cells (additive, off by default).
     if (p.hatchEnable) {
@@ -1126,7 +1216,7 @@
           const v1 = (y + 1) / rows;
           const uc = (u0 + u1) / 2;
           const vc = (v0 + v1) / 2;
-          if (!(hlr ? surfaceVisibleHLR(uc, vc, rect, p, sampler) : surfaceVisible(uc, vc, rect, p, sampler))) continue;
+          if (!(hlr ? cellFront[y][x] : surfaceVisible(uc, vc, rect, p, sampler))) continue;
           const cell = [
             surfaceSample(rect.left + u0 * rect.width, rect.top + v0 * rect.height, sampler(u0, v0), p, bounds),
             surfaceSample(rect.left + u1 * rect.width, rect.top + v0 * rect.height, sampler(u1, v0), p, bounds),

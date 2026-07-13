@@ -237,4 +237,91 @@ describe('Raster-Plane — mesh/topography hidden-line removal (See-Through OFF)
     expect(len).toBeGreaterThan(2000);
     expect(len).toBeLessThan(8000);
   });
+
+  test('E: no whisker hooks at the crest — far ink stays off the plateau side (crease rule)', () => {
+    // View deliberately breaks the (-45, 60) lattice symmetry: at the default
+    // angles the far grid projects onto the plateau's own lattice, so burrs
+    // hide inside legitimate wires and no screen metric can see them.
+    const ROT2 = -38, TILT2 = 55, AMP2 = 26;
+    const nearHigh2 = G3.rotatePoint({ x: 0, y: 0, z: SIZE / 2 }, { yaw: ROT2, pitch: TILT2, roll: 0 }).z
+      > G3.rotatePoint({ x: 0, y: 0, z: -SIZE / 2 }, { yaw: ROT2, pitch: TILT2, roll: 0 }).z;
+    const highV2 = (vv) => (nearHigh2 ? vv >= 0.5 : vv <= 0.5);
+    const grid2 = Array.from({ length: 64 }, (_, y) =>
+      Array.from({ length: 64 }, () => (highV2((y + 0.5) / 64) ? 1 : 0)));
+    // Each far-grid column crosses the step through a cliff-drop segment that
+    // STARTS exactly on the crest surface. A per-vertex visibility test keeps
+    // that segment (both endpoints are flat and visible) and the depth bias
+    // then preserves its first pixel — a "hook" burr at every crest crossing.
+    // The crease rule kills the drop at the source: a grid segment draws only
+    // if one of its two adjacent faces looks at the camera, and both faces
+    // beside a back-facing cliff drop are the cliff itself.
+    const paths = gen(baseParams({ fixtureGrid: grid2, rotate: ROT2, tilt: TILT2, amplitude: AMP2 }));
+    const proj = (u, vv, h) => G3.projectPoint(
+      G3.rotatePoint(
+        { x: -SIZE / 2 + u * SIZE, y: (h - 0.5) * AMP2, z: -SIZE / 2 + vv * SIZE },
+        { yaw: ROT2, pitch: TILT2, roll: 0 },
+      ),
+      { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1 },
+    );
+    const cA = proj(0, 0.5, 1);
+    const cB = proj(1, 0.5, 1);
+    const crossSide = (x, y) => (cB.x - cA.x) * (y - cA.y) - (cB.y - cA.y) * (x - cA.x);
+    const refIn = proj(0.5, nearHigh2 ? 0.9 : 0.1, 1);
+    const plateauSign = Math.sign(crossSide(refIn.x, refIn.y) || 1);
+    const distToCrest = (x, y) => {
+      const dx = cB.x - cA.x, dy = cB.y - cA.y;
+      const L2 = dx * dx + dy * dy;
+      const t = L2 ? Math.max(0, Math.min(1, ((x - cA.x) * dx + (y - cA.y) * dy) / L2)) : 0;
+      return Math.hypot(x - (cA.x + t * dx), y - (cA.y + t * dy));
+    };
+    // Attribution is geometric, not depth-based (at this yaw the camera depth
+    // varies more ALONG the crest than between the two surfaces): ink on the
+    // plateau side of the crest is legitimate only where the plateau's own
+    // wireframe runs. A hook is ink in the mid-crest band, 0.5–4px onto the
+    // plateau side, further than 1.2px from EVERY plateau wire (rows, columns
+    // and boundary edges of the h=1 half) — the cliff drops kink away from
+    // the lattice, so pre-fix burrs land squarely in that dead zone. The u
+    // extremes are excluded (around-the-corner visibility there is genuine).
+    const distToSegLocal = (x, y, a, b) => {
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const L2 = dx * dx + dy * dy;
+      const t = L2 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / L2)) : 0;
+      return Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy));
+    };
+    const N = 24;
+    const wires = [];
+    for (let yi = 0; yi <= N; yi++) {
+      if (!highV2(yi / N) && Math.abs(yi / N - 0.5) > 1e-9) continue;
+      for (let xi = 0; xi < N; xi++) wires.push([proj(xi / N, yi / N, 1), proj((xi + 1) / N, yi / N, 1)]);
+    }
+    for (let xi = 0; xi <= N; xi++) {
+      for (let yi = 0; yi < N; yi++) {
+        const vA = yi / N, vB = (yi + 1) / N;
+        if (!(highV2(vA) || Math.abs(vA - 0.5) < 1e-9) || !highV2(vB)) continue;
+        wires.push([proj(xi / N, vA, 1), proj(xi / N, vB, 1)]);
+      }
+    }
+    const onPlateauWire = (x, y) => wires.some(([a, b]) => distToSegLocal(x, y, a, b) < 1.2);
+    const uBandLo = 0.15, uBandHi = 0.85;
+    const bandLoX = cA.x + (cB.x - cA.x) * uBandLo;
+    const bandHiX = cA.x + (cB.x - cA.x) * uBandHi;
+    let hooks = 0;
+    paths.forEach((p) => {
+      if (!Array.isArray(p) || p.length < 2) return;
+      for (let i = 0; i < p.length - 1; i++) {
+        const steps = Math.max(1, Math.round(Math.hypot(p[i + 1].x - p[i].x, p[i + 1].y - p[i].y) * 2));
+        for (let k = 0; k <= steps; k++) {
+          const t = k / steps;
+          const x = p[i].x + (p[i + 1].x - p[i].x) * t;
+          const y = p[i].y + (p[i + 1].y - p[i].y) * t;
+          if (x < Math.min(bandLoX, bandHiX) || x > Math.max(bandLoX, bandHiX)) continue;
+          if (Math.sign(crossSide(x, y) || plateauSign) !== plateauSign) continue;
+          const d = distToCrest(x, y);
+          if (d <= 0.5 || d >= 4) continue;
+          if (!onPlateauWire(x, y)) hooks++;
+        }
+      }
+    });
+    expect(hooks).toBe(0);
+  });
 });
