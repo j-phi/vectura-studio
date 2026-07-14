@@ -583,9 +583,20 @@
       return { anchors: [], changed: false };
     }
 
-    // The unified fit. Declared later in this IIFE, but only ever reached at call
-    // time — long after the module has finished evaluating — so the reference is safe.
-    if (curves) {
+    // Fit whenever the layer asked for curves, OR the geometry already IS one.
+    //
+    // A path whose anchors carry handles has already answered the question the
+    // Curves toggle asks. Simplifying it with the toggle off used to fall through
+    // to the decimate-and-null-handles branch below, which does not simplify the
+    // curve — it DELETES it: on a shape with sharp corners and one curved notch,
+    // the drawn outline landed 18% of its own diagonal from where it started, the
+    // notch snapped into a hard V, and with Curves back on the handle-less result
+    // fell into the draw-time midpoint-quadratic, which rounded every corner it
+    // had just squared off. Simplify may reduce the anchors describing a curve.
+    // It may never destroy the curve they describe.
+    const alreadyCurved = anchors.some((a) => a && (a.in || a.out));
+
+    if (curves || alreadyCurved) {
       // Fit with the TOOLBAR's fitter, not the engine's.
       //
       // A shape layer's source path is a DENSE FLATTENED OUTLINE — Expand hands
@@ -604,7 +615,6 @@
       // Coarse, noisy algorithm output wants the windowed one; dense, already-drawn
       // outlines want this one. Choosing per regime is the design, not an accident
       // — see plans.md, "The three Simplifies".
-      const alreadyCurved = anchors.some((a) => a && (a.in || a.out));
 
       // Never re-author anchors the user placed by hand. If the path is ALREADY a
       // curve and nothing asked for it to be thinned, leave it exactly as it is —
