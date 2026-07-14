@@ -89,43 +89,86 @@
     return simplified.length >= 2 ? simplified : path;
   };
 
+  // Min-heap of [area, index] entries, ordered by area then index (both
+  // ascending) — the index tiebreak matches the linear-scan reference's
+  // leftmost-wins behavior on equal areas.
+  const heapLess = (a, b) => (a[0] !== b[0] ? a[0] < b[0] : a[1] < b[1]);
+  const heapPush = (heap, entry) => {
+    heap.push(entry);
+    let i = heap.length - 1;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (!heapLess(heap[i], heap[parent])) break;
+      const tmp = heap[i]; heap[i] = heap[parent]; heap[parent] = tmp;
+      i = parent;
+    }
+  };
+  const heapPop = (heap) => {
+    const top = heap[0];
+    const last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      let i = 0;
+      const len = heap.length;
+      for (;;) {
+        let smallest = i;
+        const l = i * 2 + 1;
+        const r = i * 2 + 2;
+        if (l < len && heapLess(heap[l], heap[smallest])) smallest = l;
+        if (r < len && heapLess(heap[r], heap[smallest])) smallest = r;
+        if (smallest === i) break;
+        const tmp = heap[i]; heap[i] = heap[smallest]; heap[smallest] = tmp;
+        i = smallest;
+      }
+    }
+    return top;
+  };
+
+  // Visvalingam-Whyatt point removal, driven by a linked list (O(1) neighbor
+  // lookup after a removal) + a min-heap of candidate areas (O(log n) to find
+  // and re-heapify the next minimum), instead of the textbook-naive full
+  // array rescan per removal. Removal order — and therefore output — is kept
+  // identical to that O(n^2) reference: the heap comparator ties on index
+  // ascending, matching the reference's leftmost-wins scan.
   const simplifyPathVisvalingam = (path, tolerance) => {
     if (!tolerance || tolerance <= 0 || path.length < 3) return path;
     const areaThreshold = tolerance * tolerance;
     const pts = path.map((pt) => ({ x: pt.x, y: pt.y }));
-    const keep = new Array(pts.length).fill(true);
-    const area = new Array(pts.length).fill(Infinity);
+    const n = pts.length;
+    const keep = new Array(n).fill(true);
+    const area = new Array(n).fill(Infinity);
+    const prevIdx = new Array(n);
+    const nextIdx = new Array(n);
+    for (let i = 0; i < n; i++) { prevIdx[i] = i - 1; nextIdx[i] = i + 1; }
     const triArea = (a, b, c) => Math.abs((a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2);
 
-    for (let i = 1; i < pts.length - 1; i++) {
-      area[i] = triArea(pts[i - 1], pts[i], pts[i + 1]);
+    const heap = [];
+    for (let i = 1; i < n - 1; i++) {
+      const a = triArea(pts[i - 1], pts[i], pts[i + 1]);
+      area[i] = a;
+      heapPush(heap, [a, i]);
     }
 
-    const findNext = (idx, dir) => {
-      let i = idx + dir;
-      while (i > 0 && i < pts.length - 1 && !keep[i]) i += dir;
-      return i;
-    };
+    while (heap.length) {
+      const [topArea, idx] = heapPop(heap);
+      if (!keep[idx] || topArea !== area[idx]) continue; // stale entry
+      if (topArea >= areaThreshold) break;
 
-    while (true) {
-      let minArea = Infinity;
-      let minIndex = -1;
-      for (let i = 1; i < pts.length - 1; i++) {
-        if (!keep[i]) continue;
-        if (area[i] < minArea) {
-          minArea = area[i];
-          minIndex = i;
-        }
+      keep[idx] = false;
+      const prev = prevIdx[idx];
+      const next = nextIdx[idx];
+      nextIdx[prev] = next;
+      prevIdx[next] = prev;
+
+      if (prev > 0) {
+        const a = triArea(pts[prevIdx[prev]], pts[prev], pts[next]);
+        area[prev] = a;
+        heapPush(heap, [a, prev]);
       }
-      if (minIndex === -1 || minArea >= areaThreshold) break;
-      keep[minIndex] = false;
-      const prev = findNext(minIndex, -1);
-      const next = findNext(minIndex, 1);
-      if (prev > 0 && next < pts.length) {
-        area[prev] = triArea(pts[findNext(prev, -1)], pts[prev], pts[next]);
-      }
-      if (next < pts.length - 1 && prev >= 0) {
-        area[next] = triArea(pts[prev], pts[next], pts[findNext(next, 1)]);
+      if (next < n - 1) {
+        const a = triArea(pts[prev], pts[next], pts[nextIdx[next]]);
+        area[next] = a;
+        heapPush(heap, [a, next]);
       }
     }
 
@@ -478,25 +521,116 @@
   };
 
   /**
-   * Rebuild anchors of a freeform shape path: decimate via RDP scaled by `simplify`,
-   * then auto-generate cubic bezier .in/.out handles via Catmull-Rom-to-Bezier scaled
-   * by `smoothing`. Pure — no DOM, no engine access.
+   * Rebuild anchors of a freeform shape path.
+   *
+   * With Curves ON this delegates to `toCurveAnchors` — the same least-squares fit
+   * the engine runs on generative layers. That matters because a shape layer is
+   * usually not hand-drawn: it is what Expand produces from every generative layer,
+   * so "Simplify" here has to mean what it meant on the layer it was exploded out
+   * of. It used to mean something else entirely — RDP decimation, then bezier
+   * handles ONLY when smoothing > 0. Expand resets smoothing to 0, so an exploded
+   * spiral line simplified into handle-less chords and the renderer faked a curve
+   * through their midpoints: fewer points, and a visibly different shape.
+   *
+   * With Curves OFF it keeps the original RDP + Catmull-Rom. That branch is
+   * load-bearing, in two ways a curve fit would quietly break:
+   *   - `toCurveAnchors` is a deliberate no-op when curves are off and smoothing is
+   *     0, so delegating unconditionally would make Simplify a DEAD control for
+   *     every pen-drawn polygon.
+   *   - Catmull-Rom rounds a corner unconditionally; the fit PRESERVES corners
+   *     below its angle threshold. Smoothing a hand-drawn square is a request to
+   *     round it, not to have it faithfully reconstructed as a square.
+   *
+   * Pure — no DOM, no engine access.
    *
    * opts:
-   *   simplify   0..1 — RDP tolerance scale (tol = simplify * max(dW,dH) * 0.01)
-   *   smoothing  0..1 — Catmull-Rom tension; 0 keeps straight (null handles)
+   *   curves     bool — fit real cubics (Curves toggle) rather than decimate
+   *   simplify   0..1 — fit tolerance when curving; RDP tolerance when not
+   *   smoothing  0..1 — how much the curve rounds through bends
    *   closed     bool
-   *   bounds     { dW, dH } — for tolerance scaling
+   *   bounds     { dW, dH } — for RDP tolerance scaling (the fit self-scales)
    */
+  // Simplify's travel when re-fitting a shape's curve, as a fraction of the
+  // PATH's own bbox diagonal (not the document's), so a small shape and a big one
+  // simplify by the same visual amount. At 0 the fit is near-lossless; at 1 it is
+  // loose enough to collapse a spiral arm to a couple of anchors — which is what
+  // the toolbar's ladder reaches, and what users expect from "Simplify".
+  // Simplify's travel, as a fraction of the PATH's own bbox diagonal (not the
+  // document's), so a small shape and a big one simplify by the same visual amount.
+  //
+  // Geometric, not linear: fit tolerance is perceptually logarithmic, and a linear
+  // ramp spends most of its travel in a range where nothing more comes off.
+  //
+  // The ceiling is deliberately well below the toolbar ladder's (0.25 of the
+  // diagonal). The toolbar is a destructive, undoable scrub with a live preview —
+  // you can see it deform the shape and back off. This is a live whole-layer
+  // slider on artwork you are not watching anchor-by-anchor, so it guarantees the
+  // shape is PRESERVED: at maximum, the simplified curve still traces the original
+  // within ~2% of the diagonal. Raising it past that starts visibly reshaping the
+  // artwork, which is not what "Simplify" should be able to do behind your back.
+  const SHAPE_FIT_TOL_MIN_FRAC = 0.0005;
+  const SHAPE_FIT_TOL_MAX_FRAC = 0.015;
+
   const rebuildShapeAnchors = (anchors, opts = {}) => {
     const simplify = clamp01(opts.simplify ?? 0);
     const smoothing = clamp01(opts.smoothing ?? 0);
+    const curves = opts.curves === true;
     const closed = Boolean(opts.closed);
     const dW = opts.bounds?.dW ?? 100;
     const dH = opts.bounds?.dH ?? 100;
 
     if (!Array.isArray(anchors) || anchors.length === 0) {
       return { anchors: [], changed: false };
+    }
+
+    // The unified fit. Declared later in this IIFE, but only ever reached at call
+    // time — long after the module has finished evaluating — so the reference is safe.
+    if (curves) {
+      // Fit with the TOOLBAR's fitter, not the engine's.
+      //
+      // A shape layer's source path is a DENSE FLATTENED OUTLINE — Expand hands
+      // over the drawn curve of a generative layer, an SVG import hands over its
+      // polyline. That is exactly the regime where `fitBezierAnchors` (Schneider
+      // least-squares, immediate-neighbour corner detection) is exact, and where
+      // the engine's `toCurveAnchors` is wrong: `reduceAnchors`' WINDOWED corner
+      // detection smears a real corner into a band on dense input and over-fires
+      // on sampling noise, so its quality gate DECLINES the path outright — on a
+      // real expanded spiral, at every Simplify setting — and Simplify then fell
+      // straight through to the chord branch below. That was the bug: an expanded
+      // spiral simplified into a handful of visibly wrong straight chords, while
+      // the toolbar's Simplify traced the same curve in two anchors.
+      //
+      // The two fitters share the Schneider core and differ only in corner policy.
+      // Coarse, noisy algorithm output wants the windowed one; dense, already-drawn
+      // outlines want this one. Choosing per regime is the design, not an accident
+      // — see plans.md, "The three Simplifies".
+      const alreadyCurved = anchors.some((a) => a && (a.in || a.out));
+
+      // Never re-author anchors the user placed by hand. If the path is ALREADY a
+      // curve and nothing asked for it to be thinned, leave it exactly as it is —
+      // re-fitting it would silently replace a hand-edited 3-anchor path with an
+      // 8-anchor approximation of itself, which is what direct-selection editing
+      // does after every drag. A re-fit is only ever a response to Simplify.
+      const refitting = simplify > 0 || !alreadyCurved;
+
+      const points = alreadyCurved
+        ? buildPolylineFromAnchors(anchors, closed) // fit the curve as DRAWN
+        : anchors.map((a) => ({ x: a.x, y: a.y }));
+
+      if (refitting && points.length >= 4) {
+        const diag = bboxDiagonal(points) || 1;
+        const tol = SHAPE_FIT_TOL_MIN_FRAC
+          * Math.pow(SHAPE_FIT_TOL_MAX_FRAC / SHAPE_FIT_TOL_MIN_FRAC, simplify)
+          * diag;
+        // `smoothing` rounds the corners the fit preserved — the same verb the
+        // toolbar's Smooth slider drives. Catmull-Rom tension has no meaning once
+        // the curve is a real least-squares fit.
+        const fitted = fitBezierAnchors(points, closed, tol, undefined, smoothing);
+        if (Array.isArray(fitted) && fitted.length >= 2) {
+          return { anchors: fitted, changed: true };
+        }
+      }
+      // A genuinely straight run has nothing to fit; fall through and decimate it.
     }
 
     // 1. Decimate (positions only)
@@ -1793,23 +1927,33 @@
     return outA.length >= 2 ? outA : tagAll(merged);
   };
 
-  // ── The universal curve fit ─────────────────────────────────────────────────
+  // ── The curve fit for ALGORITHM OUTPUT ──────────────────────────────────────
   //
-  // ONE entry point for turning geometry into cubic anchors, replacing a pile of
-  // divergent implementations: Catmull-Rom on a 0..1 scale (rebuildShapeAnchors),
-  // Catmull-Rom on a 0..100 scale (Geometry3D.smoothToBezier), a naive-corner
-  // Schneider fit (fitBezierAnchors), and the renderer's draw-time
-  // midpoint-quadratic, which was not a fit at all.
+  // The entry point for turning a generative layer's sampled geometry into cubic
+  // anchors, replacing Catmull-Rom on a 0..1 scale (rebuildShapeAnchors),
+  // Catmull-Rom on a 0..100 scale (Geometry3D.smoothToBezier), and the renderer's
+  // draw-time midpoint-quadratic, which was not a fit at all.
   //
-  // The core is `reduceAnchors` — a Schneider least-squares fit with WINDOWED
-  // corner tangents. The windowing is what makes it right for algorithm output:
-  // an immediate-neighbour turn-angle test (what fitBezierAnchors uses) MISSES
-  // corners on a densely-sampled path, because a real corner is spread across
-  // several samples and each individual turn is small; and it OVER-detects on a
-  // coarse path, because every sample of a smooth curve looks like a bend. The
-  // windowed tangent looks ahead/behind by a fixed arc length, so it sees the
-  // shape rather than the sampling — a coarse spiral reads as smooth, a square
-  // reads as four corners, at any resolution.
+  // NOT the entry point for everything. It shares the Schneider core with
+  // `fitBezierAnchors` and differs only in CORNER POLICY, and the two policies
+  // suit opposite regimes:
+  //
+  //   this one (reduceAnchors, WINDOWED tangents) — right for COARSE, NOISY
+  //     algorithm output. An immediate-neighbour turn test over-fires there:
+  //     every sample of a coarse spiral looks like a bend, and 192 of the stock
+  //     Lissajous's 200 samples read as corners. The windowed tangent looks
+  //     ahead/behind by a fixed arc length, so it sees the shape, not the noise.
+  //
+  //   fitBezierAnchors (NAIVE turn angle) — right for DENSE, ALREADY-DRAWN
+  //     outlines: the toolbar's flattened selection, a shape layer's source path,
+  //     an SVG import. There, windowing is actively wrong — it smears a real
+  //     corner into a BAND of pseudo-corners (a dense hexagon fits to 6 anchors
+  //     naively and 140 windowed), and it is the resolution-dependent one of the
+  //     pair, not the resolution-independent one.
+  //
+  // An earlier version of this comment claimed windowing meant "a square reads as
+  // four corners at any resolution". That is false, and measurably backwards. See
+  // plans.md, "The three Simplifies".
   //
   // Every tolerance is a FRACTION of the contour's bounding-box diagonal, so one
   // option set serves a 5 mm glyph and a 400 mm spiral identically.
@@ -1918,20 +2062,16 @@
     // handles ARE the geometry. Only raw sampled point arrays get decimated.
     const isAnchorInput = hasAnchorShape(input);
 
-    let source = input;
-    if (!isAnchorInput) {
-      const decimateFrac = smoothing * SMOOTH_DECIMATE_MAX_FRAC
-        + simplify * SIMPLIFY_DECIMATE_MAX_FRAC;
-      if (decimateFrac > 0) {
-        const tol = decimateFrac * (bboxDiagonal(input) || 1);
-        // Bare points, so RDP cannot strip curve metadata here. Keep at least a
-        // triangle: an over-aggressive tolerance must not dissolve the path.
-        const reduced = simplifyPath(input.map((p) => ({ x: p.x, y: p.y })), tol);
-        if (Array.isArray(reduced) && reduced.length >= 3) source = reduced;
-      }
-    }
+    const decimate = (frac) => {
+      if (isAnchorInput || !(frac > 0)) return input;
+      const tol = frac * (bboxDiagonal(input) || 1);
+      // Bare points, so RDP cannot strip curve metadata here. Keep at least a
+      // triangle: an over-aggressive tolerance must not dissolve the path.
+      const reduced = simplifyPath(input.map((p) => ({ x: p.x, y: p.y })), tol);
+      return (Array.isArray(reduced) && reduced.length >= 3) ? reduced : input;
+    };
 
-    const anchorsIn = isAnchorInput
+    const liftAnchors = (source) => (isAnchorInput
       ? source
       : source.map((p) => ({
         x: p.x,
@@ -1939,7 +2079,7 @@
         in: null,
         out: null,
         forceCorner: p.forceCorner === true || p._tileEdge === true,
-      }));
+      })));
 
     const cornerAngleDeg = Number.isFinite(opts.cornerAngleDeg)
       ? opts.cornerAngleDeg
@@ -1952,24 +2092,26 @@
     // fewer, longer cubics. The contribution is bounded (and decimation carries
     // most of Simplify's weight) because past roughly 3% of the diagonal the fit
     // degenerates and returns no anchors at all.
-    const baseTolFrac = Number.isFinite(opts.toleranceFrac)
-      ? opts.toleranceFrac
-      : CURVE_TOL_MIN_FRAC
+    // Simplify's effect is scaled by `s` so the retry below can back it off. A
+    // drag preview fits LOOSER than the committed geometry — never tighter, or the
+    // preview costs more than the thing it is previewing.
+    const tolFracAt = (s) => {
+      if (Number.isFinite(opts.toleranceFrac)) {
+        return opts.fastPreview ? opts.toleranceFrac * 3 : opts.toleranceFrac;
+      }
+      const base = CURVE_TOL_MIN_FRAC
         + smoothing * (CURVE_TOL_MAX_FRAC - CURVE_TOL_MIN_FRAC)
-        + simplify * SIMPLIFY_TOL_MAX_FRAC;
-    // A drag preview fits LOOSER than the committed geometry — never tighter, or
-    // the preview costs more than the thing it is previewing.
-    const toleranceFrac = opts.fastPreview ? baseTolFrac * 3 : baseTolFrac;
+        + simplify * s * SIMPLIFY_TOL_MAX_FRAC;
+      return opts.fastPreview ? base * 3 : base;
+    };
 
-    const fitOpts = { cornerAngleDeg, toleranceFrac };
-    ['tolerance', 'mergeEps', 'mergeFrac', 'flattenTol', 'windowDist', 'windowDistFrac'].forEach((k) => {
-      if (opts[k] !== undefined) fitOpts[k] = opts[k];
-    });
-
-    let anchors = reduceAnchors(anchorsIn, closed, fitOpts);
-    if (!Array.isArray(anchors) || anchors.length < 2) {
-      return { anchors: null, closed, straight: true };
-    }
+    const fitOptsAt = (s) => {
+      const out = { cornerAngleDeg, toleranceFrac: tolFracAt(s) };
+      ['tolerance', 'mergeEps', 'mergeFrac', 'flattenTol', 'windowDist', 'windowDistFrac'].forEach((k) => {
+        if (opts[k] !== undefined) out[k] = opts[k];
+      });
+      return out;
+    };
 
     // Quality gate: only claim a curve if the fit actually found one.
     //
@@ -1979,26 +2121,56 @@
     // chord; and the renderer enters cubic mode as soon as ANY anchor carries a
     // handle. So on coarse or noisy geometry, where corner detection fires almost
     // everywhere, a couple of genuinely-smooth spans were enough to flip the whole
-    // path into cubic mode and draw everything else as chords — bypassing the
-    // smooth quadratic fallback it would otherwise have had.
+    // path into cubic mode and draw everything else as chords. The stock Lissajous
+    // showed it plainly: Curves ON at Smoothing 0 drew 88 smooth quadratics, and
+    // the SAME layer at Smoothing 0.6 drew 84 straight chords and 2 curves.
+    const acceptable = (list) => {
+      if (!Array.isArray(list) || list.length < 2) return false;
+      const spans = closed ? list.length : list.length - 1;
+      if (spans <= 0) return false;
+      let curved = 0;
+      for (let i = 0; i < spans; i++) {
+        const a = list[i];
+        const b = list[(i + 1) % list.length];
+        if ((a && a.out) || (b && b.in)) curved += 1;
+      }
+      return curved * 2 > spans;
+    };
+
+    // Decimating BEFORE the fit is what lets Simplify thin a curve — but it is
+    // also what breaks it. A coarser path trips corner detection harder, so past
+    // some decimation the gate starts declining, and the path used to fall all the
+    // way back to the raw (already decimated) polyline. That inverted the control:
+    // dragging Simplify UP produced MORE points than the fitted curve it replaced,
+    // and silently turned the curves off — measured on a stock flowfield, 8,899
+    // points at Simplify 0.75 and 10,224 at 1.0.
     //
-    // The stock Lissajous showed the resulting inversion plainly: Curves ON at
-    // Smoothing 0 drew 88 smooth quadratics, and the SAME layer at Smoothing 0.6
-    // drew 84 straight chords and 2 curves. Turning Smoothing up made the line
-    // straighter.
-    //
-    // So: if most of the spans would come back straight, the geometry is genuinely
-    // angular and there is no curve here to fit. Decline, and let the path keep the
-    // rendering it would otherwise have had. Claiming a curve and then drawing
-    // chords is strictly worse than not claiming one.
-    const spans = closed ? anchors.length : anchors.length - 1;
-    let curvedSpans = 0;
-    for (let i = 0; i < spans; i++) {
-      const a = anchors[i];
-      const b = anchors[(i + 1) % anchors.length];
-      if ((a && a.out) || (b && b.in)) curvedSpans += 1;
+    // So back OFF the decimation and re-fit, rather than surrendering. Only
+    // geometry that still cannot be fitted with no decimation at all is genuinely
+    // angular, and only then do we honestly decline.
+    // Back off Simplify's whole contribution together — it drives decimation AND
+    // the fit tolerance, and either can tip the gate. At s = 0 this is exactly the
+    // fit you would have got at Simplify 0, which is the strongest fit available,
+    // so the sweep is monotone by construction: a higher Simplify can never end up
+    // with fewer curves than a lower one.
+    const decimateAt = (s) => (smoothing * SMOOTH_DECIMATE_MAX_FRAC)
+      + (simplify * s * SIMPLIFY_DECIMATE_MAX_FRAC);
+
+    let anchors = null;
+    const scales = simplify > 0 ? [1, 0.5, 0.25, 0] : [1];
+    for (let i = 0; i < scales.length; i++) {
+      const s = scales[i];
+      const candidate = reduceAnchors(liftAnchors(decimate(decimateAt(s))), closed, fitOptsAt(s));
+      if (acceptable(candidate)) {
+        anchors = candidate;
+        break;
+      }
     }
-    if (spans > 0 && curvedSpans * 2 <= spans) {
+
+    // Genuinely angular: there is no curve here to find. Decline, and let the path
+    // keep the rendering it would otherwise have had — claiming a curve and then
+    // drawing chords is strictly worse than not claiming one.
+    if (!anchors) {
       return { anchors: null, closed, straight: true };
     }
 

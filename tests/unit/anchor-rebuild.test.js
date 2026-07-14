@@ -127,6 +127,148 @@ describe('rebuildShapeAnchors', () => {
   });
 });
 
+// The Expand bug. A shape layer (what Expand produces from every generative
+// layer) ran a private simplify — RDP decimation, then Catmull-Rom handles ONLY
+// when smoothing > 0 — while every other surface in the app fits real curves.
+// Expand resets smoothing to 0, so an exploded spiral line simplified into
+// handle-less chords and the renderer faked a curve through their midpoints:
+// visibly a different shape from the line it came from. Simplify has to mean the
+// same thing here as it does on the layer this shape was exploded out of.
+describe('rebuildShapeAnchors — Curves on', () => {
+  // A coarse arc, the shape of one line exploded out of a Spiralizer.
+  const arc = () => {
+    const pts = [];
+    for (let i = 0; i < 25; i++) {
+      const t = Math.PI * 0.15 + (i / 24) * Math.PI * 1.1;
+      pts.push({ x: 100 + 80 * Math.cos(t), y: 100 + 60 * Math.sin(t), in: null, out: null });
+    }
+    return pts;
+  };
+
+  test('simplify with Curves on reduces to few anchors that ALL carry handles', () => {
+    const { anchors: out } = geometry.rebuildShapeAnchors(arc(), {
+      curves: true,
+      simplify: 1,
+      smoothing: 0,
+      closed: false,
+      bounds: { dW: 280, dH: 216 },
+    });
+    expect(out.length).toBeLessThan(10);
+    expect(out.length).toBeGreaterThanOrEqual(2);
+    // The whole point: a curve, not a chord polyline.
+    expect(out.every((a) => a.in !== null || a.out !== null)).toBe(true);
+  });
+
+  test('the simplified curve still traces the original arc', () => {
+    const source = arc();
+    const { anchors: out } = geometry.rebuildShapeAnchors(source, {
+      curves: true,
+      simplify: 1,
+      smoothing: 0,
+      closed: false,
+      bounds: { dW: 280, dH: 216 },
+    });
+    const drawn = geometry.buildPolylineFromAnchors(out, false);
+    // Every original sample must lie on the curve that replaced it. A chord
+    // polyline through 9 points cuts corners badly enough to blow this; the
+    // handle-less midpoint-quadratic the renderer fell back to blows it worse.
+    const diag = Math.hypot(160, 120);
+    source.forEach((p) => {
+      const nearest = drawn.reduce(
+        (best, q) => Math.min(best, Math.hypot(q.x - p.x, q.y - p.y)),
+        Infinity,
+      );
+      expect(nearest).toBeLessThan(diag * 0.02);
+    });
+  });
+
+  test('Curves on with Simplify at 0 still fits a curve, not chords', () => {
+    const { anchors: out } = geometry.rebuildShapeAnchors(arc(), {
+      curves: true,
+      simplify: 0,
+      smoothing: 0,
+      closed: false,
+      bounds: { dW: 280, dH: 216 },
+    });
+    expect(out.some((a) => a.in || a.out)).toBe(true);
+  });
+
+  // The trap in the fix: toCurveAnchors is a deliberate no-op when curves are
+  // off and smoothing is 0, so delegating unconditionally would make Simplify a
+  // DEAD control for every pen-drawn polygon. Straight shapes keep decimating.
+  test('Curves OFF: simplify still decimates, and stays straight', () => {
+    const { anchors: out } = geometry.rebuildShapeAnchors(arc(), {
+      curves: false,
+      simplify: 1,
+      smoothing: 0,
+      closed: false,
+      bounds: { dW: 280, dH: 216 },
+    });
+    expect(out.length).toBeLessThan(25);
+    expect(out.every((a) => a.in === null && a.out === null)).toBe(true);
+  });
+});
+
+// Simplify must never DESTROY a curve — only reduce the anchors describing it.
+//
+// The Curves toggle asks "should this geometry be represented as beziers?", and a
+// path whose anchors already carry handles has answered that question for itself.
+// Simplifying it with the toggle off used to fall through to RDP + null handles,
+// which does not simplify the curve — it deletes it. On a shape with sharp corners
+// and one curved notch, that pulled the drawn outline 18% of its own diagonal away
+// from where it started: the notch snapped into a hard V while the toolbar's
+// Simplify traced the same notch exactly.
+describe('rebuildShapeAnchors — Curves OFF must not destroy an existing curve', () => {
+  // Sharp corners AND one genuinely curved notch (the leading anchors carry handles).
+  const starWithCurvedNotch = () => ([
+    { x: 0, y: 100, in: null, out: { x: 20, y: 80 } },
+    { x: 60, y: 60, in: { x: 40, y: 80 }, out: { x: 80, y: 40 } },
+    { x: 0, y: 20, in: { x: 20, y: 40 }, out: null },
+    { x: 60, y: 0, in: null, out: null },
+    { x: 120, y: 30, in: null, out: null },
+    { x: 160, y: 0, in: null, out: null },
+    { x: 150, y: 90, in: null, out: null },
+    { x: 110, y: 60, in: null, out: null },
+    { x: 70, y: 130, in: null, out: null },
+  ]);
+  const opts = { curves: false, simplify: 1, smoothing: 0, closed: true, bounds: { dW: 200, dH: 150 } };
+
+  test('the curved notch survives Simplify with Curves off', () => {
+    const { anchors: out } = geometry.rebuildShapeAnchors(starWithCurvedNotch(), opts);
+    expect(out.some((a) => a.in || a.out)).toBe(true);
+  });
+
+  test('the simplified outline still traces the original', () => {
+    const source = starWithCurvedNotch();
+    const before = geometry.buildPolylineFromAnchors(source, true);
+    const { anchors: out } = geometry.rebuildShapeAnchors(source, opts);
+    const after = geometry.buildPolylineFromAnchors(out, true);
+
+    const diag = Math.hypot(160, 130);
+    const maxDev = Math.max(...before.map((p) => Math.min(
+      ...after.map((q) => Math.hypot(q.x - p.x, q.y - p.y)),
+    )));
+    // Destroying the notch put this at 18% of the diagonal.
+    expect(maxDev / diag).toBeLessThan(0.05);
+  });
+
+  test('the sharp corners stay sharp — Simplify is not Smooth', () => {
+    const { anchors: out } = geometry.rebuildShapeAnchors(starWithCurvedNotch(), opts);
+    // A corner survives as a tangent discontinuity: the in/out handles of that
+    // anchor are not collinear. (Rounding every corner is the opposite failure —
+    // what the draw-time midpoint-quadratic did to this same star.)
+    const corners = out.filter((a) => {
+      if (!a.in || !a.out) return false;
+      const inAngle = Math.atan2(a.y - a.in.y, a.x - a.in.x);
+      const outAngle = Math.atan2(a.out.y - a.y, a.out.x - a.x);
+      let d = Math.abs(outAngle - inAngle) * 180 / Math.PI;
+      if (d > 180) d = 360 - d;
+      return d > 20;
+    });
+    expect(corners.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
 describe('buildPolylineFromAnchors', () => {
   test('two anchors with null handles → straight segment of 2 points', () => {
     const out = geometry.buildPolylineFromAnchors(

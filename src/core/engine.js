@@ -53,6 +53,7 @@
     const p = layer.params || {};
     const simplify = Math.max(0, Math.min(1, p.simplify ?? 0));
     const smoothing = Math.max(0, Math.min(2, p.smoothing ?? 0));
+    const curves = p.curves === true;
     const active = simplify > 0 || smoothing > 0;
 
     layer.sourcePaths.forEach((path) => {
@@ -68,6 +69,7 @@
           path.meta.originalClosed = Boolean(path.meta.closed);
         }
         const result = rebuildShapeAnchors(path.meta.originalAnchors, {
+          curves,
           simplify,
           smoothing,
           closed: path.meta.originalClosed,
@@ -93,6 +95,27 @@
   };
 
   const usesManualSourceGeometry = (layer) => Boolean(layer && !layer.isGroup && layer.type === 'shape');
+
+  // On a fitted path the ANCHORS are the geometry — the point array is only a
+  // flattened cache, which the simplify pass deliberately leaves alone. Counting
+  // that cache made the readout under the Simplify slider stand still while the
+  // user dragged it, even though the exported SVG really was thinning (a curved
+  // flowfield went 455 -> 160 anchors while the readout sat at 891 -> 891). Both
+  // sides of the "a -> b" arrow must be measured with THIS, or they are not
+  // comparable quantities.
+  const countLayerGeometry = (paths) => {
+    let lines = 0;
+    let points = 0;
+    (paths || []).forEach((path) => {
+      if (!Array.isArray(path)) return;
+      const anchors = path.meta && path.meta.anchors;
+      const fitted = Array.isArray(anchors) && anchors.some((a) => a && (a.in || a.out));
+      if (!fitted && !path.length) return;
+      lines += 1;
+      points += fitted ? anchors.length : path.length;
+    });
+    return { lines, points };
+  };
 
   const pathLength = OptimizationUtils.pathLength || (() => 0);
   const pathEndpoints = OptimizationUtils.pathEndpoints || (() => ({ start: { x: 0, y: 0 }, end: { x: 0, y: 0 } }));
@@ -1402,6 +1425,26 @@
       const penWidth = Number(layerPen && layerPen.width) > 0 ? Number(layerPen.width) : 0.35;
       const bounds = { width, height, m, dW, dH, penWidth, truncate: SETTINGS.truncate, fastPreview, preview3dQuality: SETTINGS.preview3dQuality };
 
+      // The layer's geometry BEFORE any of this pass touches it. Captured here
+      // because applyShapeAnchorRebuild rewrites a shape layer's sourcePaths in
+      // place: measuring afterwards counted the already-simplified result on both
+      // sides of the readout's arrow, so an expanded spiral simplified down to six
+      // chords reported "Points 6 → 6" — a reduction of nothing, from nothing.
+      // Count the UNSIMPLIFIED baseline. A shape layer's sourcePaths are rewritten
+      // in place by every rebuild, so counting them here would report the previous
+      // Simplify setting's output as this one's "before" — the arrow would creep
+      // (4000 → 2085, then 2085 → 2084) instead of standing still. `originalAnchors`
+      // is the untouched baseline the rebuild keeps precisely for this.
+      const preCounts = usesManualSourceGeometry(layer) && Array.isArray(layer.sourcePaths)
+        ? countLayerGeometry(layer.sourcePaths.map((path) => {
+          const baseline = path && path.meta && path.meta.originalAnchors;
+          if (!Array.isArray(baseline)) return path;
+          const proxy = baseline.map((a) => ({ x: a.x, y: a.y }));
+          proxy.meta = { anchors: baseline };
+          return proxy;
+        }))
+        : null;
+
       // Shape layers: bake simplify/smoothing destructively into sourcePath anchors
       // (reversible — originalAnchors snapshot lives on path.meta).
       if (usesManualSourceGeometry(layer)) applyShapeAnchorRebuild(layer, bounds);
@@ -1690,7 +1733,11 @@
             quad: Array.isArray(g.quad) ? g.quad.map((pt) => transform(pt)) : [],
           }))
         : [];
-      const rawCounts = countPathPoints(transformed);
+      // `preCounts` is set for shape layers, whose sourcePaths applyShapeAnchorRebuild
+      // has already rewritten in place — measuring them here would count the
+      // simplified result on BOTH sides of the arrow, which is why an expanded
+      // spiral reduced to six chords reported "Points 6 -> 6".
+      const rawCounts = preCounts || countLayerGeometry(transformed);
       let finalPaths = transformed;
       if (simplify > 0) {
         const tol = simplify * Math.max(dW, dH) * 0.01;
@@ -1712,26 +1759,7 @@
           return useCurves ? simplifyPathVisvalingam(path, tol) : simplifyPath(path, tol);
         });
       }
-      // On a fitted path the ANCHORS are the geometry — the point array is only a
-      // flattened cache the simplify pass deliberately leaves alone. Counting that
-      // cache made the "Points a→b" readout under the Simplify slider stand still
-      // while the user dragged it, even though the exported SVG really was
-      // thinning (a curved flowfield went 455 → 160 anchors while the readout sat
-      // at 891 → 891). Count what the layer actually is.
-      const countGeometry = (paths) => {
-        let lines = 0;
-        let points = 0;
-        (paths || []).forEach((path) => {
-          if (!Array.isArray(path)) return;
-          const anchors = path.meta && path.meta.anchors;
-          const fitted = Array.isArray(anchors) && anchors.some((a) => a && (a.in || a.out));
-          if (!fitted && !path.length) return;
-          lines += 1;
-          points += fitted ? anchors.length : path.length;
-        });
-        return { lines, points };
-      };
-      const simplifiedCounts = countGeometry(finalPaths);
+      const simplifiedCounts = countLayerGeometry(finalPaths);
       layer.stats = {
         rawLines: rawCounts.lines,
         rawPoints: rawCounts.points,
