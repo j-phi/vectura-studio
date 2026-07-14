@@ -14,6 +14,18 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Fix the remaining strict Playwright Pattern fidelity regressions as product bugs, with `Autumn` horizontal-seam mismatch and representative `Bamboo` / `Bathroom Floor` / `Dominos` silhouette drift still failing source-faithful smoke coverage.
 
 ## Inbox
+- **The three Simplifies — FIXED 2026-07-14 (`de9a9f9`).** The Lab's Simplify now re-fits the curve
+  with the toolbar's fitter (`fitBezierAnchors`) instead of stripping its handles into chords;
+  deviation from the true curve drops from **83.9 mm to under 2% of the path diagonal**. Also fixed:
+  the quality gate's decline-to-raw-polyline (which made Simplify *invert* — a flowfield went 8,899
+  points at 0.75 to 10,224 at 1.0 while ~30% of paths silently lost their curves), the readout's
+  mismatched units (and its shape-layer `Points 6→6`), and a bug where re-fitting on every generate
+  silently re-authored anchors the user had hand-placed. A concurrent session's stranded fix
+  (delegate to `toCurveAnchors`) was checkpointed, its tests kept, and its approach discarded —
+  verified in the running app, that fit DECLINES the real input and changed nothing. Remaining from
+  the review below: **P2 rename** (three controls called "Simplify", three different verbs) and the
+  latent fillet-vs-gate ordering in `toCurveAnchors` (`cornerRadius` is vetoed before the fillet pass
+  runs; no production caller today, but it is a landmine if the Smooth slider is ever pointed at it).
 - **The three Simplifies — reviewed + judged 2026-07-13. Do NOT unify them.** Jay observed that the
   Post-Processing Lab's Simplify is much worse than the contextual toolbar's (on an expanded spiral:
   Lab Simplify 1 → an ugly 6-point polygon; toolbar → 2 anchors tracing the curve exactly). Two
