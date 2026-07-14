@@ -387,6 +387,25 @@ describe('Contextual Task Bar (Lane G — TB-1…8)', () => {
         expect(app.engine.layers.find((l) => l.id === layer.id).type).not.toBe('wavetable');
       }
     });
+    test('the toolbar algo pill updates when the algorithm is changed via the left panel (not the pill itself)', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+      const field = () => host().querySelector('.ctxbar-algo-field .ctxbar-text-fieldlabel');
+      expect(field().textContent).toBe('Wavetable');
+      // Drive the docked <select> exactly as the left algorithm panel's own
+      // onchange handler does — the layer stays selected (same id), only its
+      // `type` changes. This must NOT go through the toolbar's own
+      // switchAlgorithm()/restoreState() path, which is what TB-4b already
+      // covers above; this reproduces the left-panel-only path.
+      const sel = document.getElementById('generator-module');
+      sel.value = 'spiral';
+      sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+      await nextFrames();
+      expect(app.engine.layers.find((l) => l.id === layer.id).type).toBe('spiral');
+      expect(field().textContent).toBe('Spiral');
+    });
     test('the algorithm switcher renders the same icon-labeled rows as the Add Layer submenu and module dropdown', async () => {
       await reset('select');
       const layer = addLayer('wavetable');

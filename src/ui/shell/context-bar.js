@@ -1661,11 +1661,16 @@
     // bound to the previously-selected layer (stale family/size/point-area).
     const primaryId = (ctx.primaryLayer && ctx.primaryLayer.id) || null;
     // Also re-render when text-layer params that the bar displays change (e.g.
-    // font family changed in the Text panel while the same layer stays selected).
+    // font family changed in the Text panel while the same layer stays selected),
+    // or when a single-algo layer's algorithm is switched from elsewhere (e.g.
+    // the left Algorithm Configuration panel's own dropdown) — the layer id
+    // stays the same, so only tracking `type` here catches the switch.
     const primaryParams = (ctx.primaryLayer && ctx.primaryLayer.params) || {};
     const paramSig = ctx.kind === 'single-text'
       ? `${primaryParams.font || ''}|${primaryParams.fontWeight || ''}|${primaryParams.fontSize || ''}`
-      : '';
+      : ctx.kind === 'single-algo'
+        ? (ctx.primaryLayer && ctx.primaryLayer.type) || ''
+        : '';
     const changed = ctx.kind !== state.kind || primaryId !== state.primaryId || paramSig !== state.paramSig;
     // In edit-path (direct) mode the anchor verbs' enabled state depends on the
     // live anchor selection, which changes without the bar's `kind` changing.
@@ -1719,7 +1724,10 @@
     state.primaryId = (ctx.primaryLayer && ctx.primaryLayer.id) || null;
     const rp = (ctx.primaryLayer && ctx.primaryLayer.params) || {};
     state.paramSig = ctx.kind === 'single-text'
-      ? `${rp.font || ''}|${rp.fontWeight || ''}|${rp.fontSize || ''}` : '';
+      ? `${rp.font || ''}|${rp.fontWeight || ''}|${rp.fontSize || ''}`
+      : ctx.kind === 'single-algo'
+        ? (ctx.primaryLayer && ctx.primaryLayer.type) || ''
+        : '';
     const renderer = getRenderer();
     state.anchorSig = (ctx.kind === 'direct' && renderer && typeof renderer.getSelectedAnchorSignature === 'function')
       ? renderer.getSelectedAnchorSignature() : '';
