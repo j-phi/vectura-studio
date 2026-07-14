@@ -14,6 +14,52 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Fix the remaining strict Playwright Pattern fidelity regressions as product bugs, with `Autumn` horizontal-seam mismatch and representative `Bamboo` / `Bathroom Floor` / `Dominos` silhouette drift still failing source-faithful smoke coverage.
 
 ## Inbox
+- **The three Simplifies — reviewed + judged 2026-07-13. Do NOT unify them.** Jay observed that the
+  Post-Processing Lab's Simplify is much worse than the contextual toolbar's (on an expanded spiral:
+  Lab Simplify 1 → an ugly 6-point polygon; toolbar → 2 anchors tracing the curve exactly). Two
+  adversarial reviewers + an independent judge re-derived everything against the running code. The
+  findings overturned the obvious plan, so they are recorded here before anyone "fixes" it again.
+  - **Root cause of Jay's case:** `GeometryUtils.rebuildShapeAnchors` — step 2 (`if (smoothing > 0)`)
+    is the ONLY thing that writes handles, so at Smoothing 0 (which Expand sets) it *strips the
+    handles the source anchors already carried* and emits a raw decimated polyline. Measured max
+    deviation from the true curve: **83.9 mm**, vs 3.46 mm for the toolbar. There is no curve fit in
+    that path at all. **Being fixed by a concurrent session** (delegate to `toCurveAnchors` when
+    Curves is on); the judge verified that fix reaches toolbar parity (3.39 mm) and does not import
+    the inversion below.
+  - **REJECTED — unifying `fitBezierAnchors` onto `reduceAnchors`/`toCurveAnchors`.** The claim that
+    windowed corner detection is "strictly better" is **false and measurably backwards**. On the
+    DENSE flattened paths the toolbar actually operates on (`flattenForEdit` output), naive detection
+    returns exactly 4 anchors for a square at any sampling density, while windowed detection smears
+    each real corner into a band — **4 vs 28 anchors on a dense square; 6 vs 140 on a dense hexagon.**
+    Swapping the fit would not shift the toolbar's ladder, it would **delete** it (`maxSteps` → 0 on
+    3 of 5 representative inputs). Conversely the naive detector is just as broken on COARSE input
+    (192 of 200 Lissajous samples read as corners). **Neither detector is better — the discriminator
+    is pre-conditioning, not the detector.** One Schneider core, two corner policies, two genuinely
+    different regimes. That is the correct design, not tech debt. (A false comment asserting the
+    opposite was left in `geometry-utils.js` near the `CURVE_CORNER_*` constants — delete it.)
+  - **REJECTED — porting the toolbar's ladder to the whole-layer slider.** 59x the cost (587 ms vs
+    10 ms over 500 paths; the stock flowfield has 1,165), and a rung *index* is incoherent for a
+    scalar serialized into `.vectura` files and presets — reseed the layer and rung 7 means something
+    else, or nothing.
+  - **P1 — the quality gate declines to the WRONG fallback** (`toCurveAnchors`, the
+    `curvedSpans * 2 <= spans` check). Right intent (never claim a curve it didn't find), wrong
+    fallback: it reverts to the *raw decimated* polyline instead of the last good fit. Result — the
+    universal Simplify **inverts**: stock flowfield, Curves ON, points go 6,622 (simplify 0.5) →
+    7,102 (simplify 1.0) while ~30% of paths silently lose their curves. It should retry with reduced
+    decimation and only decline outright at zero decimation. *Acceptance:* sweeping simplify 0→1 in
+    0.05 steps, `layer.stats.simplifiedPoints` non-increasing and the curve-fitted path count
+    non-decreasing.
+  - **P1 — the decline fall-through must not strip handles** (`rebuildShapeAnchors`). A curved source
+    path whose fit is declined falls back to RDP + null handles — Jay's original bug, reachable again.
+  - **P1 — the Simplify readout compares two different units.** `Lines a→b · Points c→d`: the left
+    side is `countPathPoints` (polyline points), the right is `countGeometry` (anchors). A stock
+    flowfield at Simplify **0** reads `Points 20786→11839`, crediting an untouched control with a 43%
+    reduction. Also, for shape layers `rawCounts` is taken *after* `applyShapeAnchorRebuild` has
+    already overwritten the path in place, which is why Jay saw `Points 6→6`.
+  - **P2 — rename, don't unify.** Three controls named "Simplify", three different verbs: the Lab's is
+    a non-destructive re-fit, the toolbar's is a destructive anchor re-trace, and the export step's is
+    a plotter tolerance in **mm** (the only one with units a pen understands). Rename rather than
+    converge behavior.
 - **Curve/smoothing/simplify unification (started 2026-07-13).** The Curves toggle is not
   universal — on Spiralizer it is a total no-op. An audit found **8 distinct polyline→curve
   implementations**, **5 simplify implementations**, and **6 hand-synced copies** of the "which
