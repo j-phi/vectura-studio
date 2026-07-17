@@ -57,20 +57,42 @@ describe('Renderer.buildLineSortGradientChunks — draw-order gradient spans sin
     expect(chunks[1].t).toBeLessThan(chunks[2].t);
   });
 
-  it('does not chunk circle points or native-cubic (bezier-anchor) paths', () => {
+  it('does not chunk circle points (left whole)', () => {
     const circle = [];
     circle.meta = { kind: 'circle', cx: 0, cy: 0, r: 1 };
-    const bezier = longPath(50);
-    bezier.meta = {
-      anchors: [
-        { x: 0, y: 0, in: null, out: { x: 1, y: 1 } },
-        { x: 50, y: 0, in: { x: 49, y: 1 }, out: null },
-      ],
-    };
-    const items = [{ id: 'circle', path: circle }, { id: 'bezier', path: bezier }];
+    const items = [{ id: 'circle', path: circle }];
     const chunks = buildLineSortGradientChunks(items);
-    expect(chunks.length).toBe(2);
-    expect(chunks.find((c) => c.id === 'circle').path).toBe(circle);
-    expect(chunks.find((c) => c.id === 'bezier').path).toBe(bezier);
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].path).toBe(circle);
+  });
+
+  // REGRESSION: Harmonograph/Pendula default to curves:true, so their single
+  // long optimized path carries real bezier handles (meta.anchors). The old
+  // code left ANY anchored path whole (see the stale comment this replaces),
+  // which is fine for multi-path layers but collapses a single-path layer to
+  // exactly one chunk — t = (0 + 1/2) / 1 = 0.5 — i.e. the gradient's flat
+  // MIDPOINT colour for the entire drawing, every time drawProgress reaches
+  // 1 and the raw (still-anchored) path reaches the overlay unflattened. Below
+  // 100%, Renderer.sliceRevealPath happens to flatten+strip the anchors while
+  // truncating, which accidentally routed the in-progress path through the
+  // chunking branch and hid the bug until the very last percent. The fix
+  // densely flattens anchored paths the same way (GeometryUtils.flattenSmoothedPath)
+  // before chunking, so a single anchored path sweeps the gradient too.
+  it('chunks a single native-cubic (bezier-anchor) path instead of collapsing to one flat colour', () => {
+    const bezier = longPath(500);
+    bezier.meta = {
+      anchors: bezier.map((p, i) => ({
+        x: p.x, y: p.y,
+        in: i === 0 ? null : { x: p.x - 0.4, y: 0 },
+        out: i === bezier.length - 1 ? null : { x: p.x + 0.4, y: 0 },
+      })),
+    };
+    const items = [{ id: 'only', path: bezier }];
+    const chunks = buildLineSortGradientChunks(items);
+    expect(chunks.length).toBeGreaterThan(1);
+    const ts = chunks.map((c) => c.t);
+    expect(Math.min(...ts)).toBeLessThan(0.05);
+    expect(Math.max(...ts)).toBeGreaterThan(0.95);
+    chunks.forEach((c) => expect(c.id).toBe('only'));
   });
 });

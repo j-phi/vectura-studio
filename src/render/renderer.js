@@ -10914,21 +10914,36 @@
   // to a single flat colour and the gradient's far stop never appears. Splitting
   // each path into point-count-sized runs gives the gradient somewhere to sweep
   // across even when there's only one source path, while leaving the common
-  // case (many short paths) at ~1 chunk per path, unchanged. Native-cubic paths
-  // (real bezier handles) and circle points are left whole — chunking would
-  // need to re-flatten/re-anchor them, and at overlay line widths the loss of a
-  // few colour stops on those shapes isn't worth the complexity.
+  // case (many short paths) at ~1 chunk per path, unchanged.
+  //
+  // Native-cubic paths (real bezier handles) are densely flattened first — the
+  // same GeometryUtils.flattenSmoothedPath helper Renderer.sliceRevealPath uses
+  // to truncate the in-progress reveal tip — then chunked like any other
+  // polyline. Leaving them whole used to be "fine" for multi-path layers, but
+  // Harmonograph/Pendula default to curves:true AND emit a single anchored
+  // path: left whole, that lone path became the only chunk, collapsing the
+  // WHOLE drawing to the gradient's flat midpoint colour (t=0.5) the moment
+  // drawProgress reached 1 (the raw anchored path, not yet stripped/truncated
+  // by sliceRevealPath, finally reached the overlay unflattened). Circle points
+  // still don't chunk — there's no polyline to sweep across.
   Renderer.buildLineSortGradientChunks = function buildLineSortGradientChunks(items, opts = {}) {
     const pointsPerChunk = Math.max(4, opts.pointsPerChunk || 40);
     const chunks = [];
     let totalWeight = 0;
+    const flatten = window.Vectura?.GeometryUtils?.flattenSmoothedPath;
     (items || []).forEach((item) => {
-      const path = item.path;
-      const anchors = path && path.meta ? path.meta.anchors : null;
-      const hasHandles = Array.isArray(anchors) && anchors.some((a) => a && (a.in || a.out));
-      const isCircle = Boolean(path && path.meta && path.meta.kind === 'circle');
-      if (!Array.isArray(path) || isCircle || hasHandles || path.length <= 2) {
-        chunks.push({ ...item, weight: 1 });
+      const isCircle = Boolean(item.path && item.path.meta && item.path.meta.kind === 'circle');
+      let path = item.path;
+      if (!isCircle && Array.isArray(path)) {
+        const anchors = path.meta ? path.meta.anchors : null;
+        const hasHandles = Array.isArray(anchors) && anchors.some((a) => a && (a.in || a.out));
+        if (hasHandles && flatten) {
+          const flat = flatten(path);
+          if (Array.isArray(flat) && flat.length >= 2) path = flat;
+        }
+      }
+      if (!Array.isArray(path) || isCircle || path.length <= 2) {
+        chunks.push({ ...item, path, weight: 1 });
         totalWeight += 1;
         return;
       }
