@@ -48,6 +48,7 @@
   ];
   const MULTIPATH_OPTIONS = [
     { value: 'auto',           label: 'Auto' },
+    { value: 'pair',           label: 'Pair Paths' },
     { value: 'index-match',    label: 'Index Match' },
     { value: 'merge-centroid', label: 'Merge Centroid' },
     { value: 'merge-longest',  label: 'Merge Longest' },
@@ -356,6 +357,10 @@
     gTransition.appendChild(buildChips({
       title: 'Sequence Mode', className: 'morph-sequence-chips', dataAttr: 'sequence',
       options: SEQUENCE_OPTIONS, field: 'sequenceMode',
+    }));
+    gTransition.appendChild(buildToggle({
+      title: 'Parameter Morph', testid: 'morph-param-morph', field: 'paramMorph',
+      hint: 'Same-algorithm children: regenerate each step at interpolated parameters (true in-between rotations, sizes, and settings). Off blends geometry only.',
     }));
 
     /* ========== Shape Matching ========== */

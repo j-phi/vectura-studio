@@ -629,6 +629,85 @@
   };
 
   // ---------------------------------------------------------------------------
+  // Parameter-space interpolation (same-algorithm pairs)
+  // ---------------------------------------------------------------------------
+  // Seed-ish keys must never lerp: intermediate seeds are unrelated random
+  // universes, so the blend would flicker chaotically instead of stepping.
+  // They threshold-switch at the visual midpoint like every non-numeric param.
+  const SEED_KEY_RE = /^seed$|Seed$/;
+
+  const lerpParamValue = (av, bv, t, key) => {
+    if (typeof av === 'number' && typeof bv === 'number'
+        && Number.isFinite(av) && Number.isFinite(bv)) {
+      if (key && SEED_KEY_RE.test(key)) return t < 0.5 ? av : bv;
+      return av + (bv - av) * t;
+    }
+    if (Array.isArray(av) && Array.isArray(bv) && av.length === bv.length) {
+      return av.map((x, i) => lerpParamValue(x, bv[i], t, null));
+    }
+    if (av && bv && typeof av === 'object' && typeof bv === 'object'
+        && !Array.isArray(av) && !Array.isArray(bv)) {
+      const out = {};
+      new Set([...Object.keys(av), ...Object.keys(bv)]).forEach((k) => {
+        const r = lerpParamValue(av[k], bv[k], t, k);
+        if (r !== undefined) out[k] = r;
+      });
+      return out;
+    }
+    // Mismatched / non-numeric (strings, booleans, null, one-sided keys):
+    // threshold-switch at the midpoint.
+    const pick = t < 0.5 ? av : bv;
+    return pick && typeof pick === 'object' ? clone(pick) : pick;
+  };
+
+  /**
+   * Interpolates two algorithm param objects at t (0..1). Numbers lerp
+   * (integer stepping for counts emerges from the algorithms flooring them);
+   * seeds, strings, and booleans threshold-switch at t=0.5; nested objects and
+   * equal-length arrays recurse (so e.g. a Petal Designer profile morphs).
+   */
+  const lerpMorphParams = (a, b, t) => lerpParamValue(a || {}, b || {}, t, null);
+
+  // Build every blend ring for one pair by regenerating the child's algorithm
+  // at interpolated params — the branch that makes a rotated/resized 3D copy
+  // morph through TRUE intermediate rotations/sizes (the layer transform lives
+  // in params.posX/posY/scaleX/scaleY/rotation, and algorithm params like a
+  // polyhedron's 3D rotation lerp the same way). Returns null when any step
+  // fails to produce geometry, so the caller falls back to the geometry blend.
+  const buildParamMorphBlends = (childA, childB, params) => {
+    const pa = childA.morphSource.params;
+    const pb = childB.morphSource.params;
+    const emitted = [];
+    for (let i = 1; i <= params.steps; i += 1) {
+      const tRaw = i / (params.steps + 1);
+      const et = applyEasing(params.easing, tRaw);
+      const pi = lerpMorphParams(pa, pb, et);
+      let stepPaths;
+      try {
+        stepPaths = childA.regen(pi) || [];
+      } catch (err) {
+        stepPaths = [];
+      }
+      stepPaths = stepPaths.filter((p) => Array.isArray(p)
+        && (p.length > 1 || (p.meta && p.meta.kind === 'circle')));
+      if (!stepPaths.length) return null;
+      const ringPenId = et < 0.5 ? childA.penId : childB.penId;
+      stepPaths.forEach((p) => {
+        const ring = clonePath(p);
+        const meta = ring.meta || {};
+        if (ringPenId) meta.penId = ringPenId;
+        // Step index (1-based, transient): param-morph steps can emit varying
+        // path counts (e.g. hidden-line removal while a solid turns), so
+        // consumers group rings by this stamp rather than by equal slices.
+        meta.morphStep = i;
+        ring.meta = meta;
+        emitted.push(ring);
+      });
+    }
+    return emitted;
+  };
+
+  // ---------------------------------------------------------------------------
   // Parameter resolution
   // ---------------------------------------------------------------------------
   const resolveMorphParams = (modifier) => {
@@ -647,6 +726,10 @@
       // exploding). Clamped to the dense resampleCount as an upper bound.
       cornerMatchMax: clampFn(Math.round(m.cornerMatchMax ?? 64), 4, 256),
       resampleMode: m.resampleMode === 'uniform-index' ? 'uniform-index' : 'arc-length',
+      // Parameter-space morph (default ON): when a pair of children runs the
+      // SAME algorithm, interpolate their params and regenerate each step
+      // instead of blending baked geometry. Off = always blend geometry.
+      paramMorph: m.paramMorph !== false,
       easing: m.easing || 'linear',
       sequenceMode: m.sequenceMode || 'sequential',
       correspondenceMode: m.correspondenceMode || 'centroid-angle',
@@ -690,6 +773,134 @@
     return best;
   };
 
+  // ---------------------------------------------------------------------------
+  // Spatial path pairing ('pair' strategy)
+  // ---------------------------------------------------------------------------
+  // Per-path features normalized to the child's union bbox, so pairing is
+  // scale/position independent: a petal at the top-left of flower A pairs with
+  // the path at the top-left of flower B regardless of where each child sits
+  // on the canvas or how many paths surround it.
+  const pathFeatures = (paths) => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    const raw = paths.map((p) => {
+      const pts = (Array.isArray(p) && p.length) ? p : flattenForMorph(p, 32);
+      if (!pts.length) return { cx: 0, cy: 0, diag: 0, empty: true };
+      let sx = 0;
+      let sy = 0;
+      let pMinX = Infinity;
+      let pMinY = Infinity;
+      let pMaxX = -Infinity;
+      let pMaxY = -Infinity;
+      for (let i = 0; i < pts.length; i += 1) {
+        sx += pts[i].x;
+        sy += pts[i].y;
+        if (pts[i].x < pMinX) pMinX = pts[i].x;
+        if (pts[i].y < pMinY) pMinY = pts[i].y;
+        if (pts[i].x > pMaxX) pMaxX = pts[i].x;
+        if (pts[i].y > pMaxY) pMaxY = pts[i].y;
+      }
+      const n = Math.max(1, pts.length);
+      if (pMinX < minX) minX = pMinX;
+      if (pMinY < minY) minY = pMinY;
+      if (pMaxX > maxX) maxX = pMaxX;
+      if (pMaxY > maxY) maxY = pMaxY;
+      return { cx: sx / n, cy: sy / n, diag: Math.hypot(pMaxX - pMinX, pMaxY - pMinY) };
+    });
+    const w = Number.isFinite(maxX - minX) ? Math.max(1e-6, maxX - minX) : 1;
+    const h = Number.isFinite(maxY - minY) ? Math.max(1e-6, maxY - minY) : 1;
+    const diag = Math.hypot(w, h);
+    return raw.map((f) => (f.empty
+      ? { x: 0.5, y: 0.5, size: 0 }
+      : {
+        x: (f.cx - minX) / w,
+        y: (f.cy - minY) / h,
+        size: f.diag / diag,
+      }));
+  };
+
+  const pairCost = (fa, fb) => {
+    const dx = fa.x - fb.x;
+    const dy = fa.y - fb.y;
+    const ds = fa.size - fb.size;
+    return dx * dx + dy * dy + 0.25 * ds * ds;
+  };
+
+  /**
+   * Pairs paths of two children by spatial correspondence: a greedy one-to-one
+   * assignment on normalized centroid+size covers the smaller child, then each
+   * leftover path of the busier child joins its nearest counterpart
+   * (many-to-one), so extra detail converges into / emerges from the matching
+   * structure instead of being averaged into a blob. Returns equal-length
+   * listA/listB ordered by the busier child's draw order.
+   */
+  const buildPairedRepresentatives = (childA, childB) => {
+    const fa = pathFeatures(childA);
+    const fb = pathFeatures(childB);
+    // All-pairs cost, cheapest first. Bounded: beyond this, spatial pairing's
+    // O(n·m) table stops being worth it — fall back to index pairing.
+    if (fa.length * fb.length > 250000) {
+      const K = Math.max(childA.length, childB.length);
+      const listA = [];
+      const listB = [];
+      for (let i = 0; i < K; i += 1) {
+        listA.push(childA[Math.min(i, childA.length - 1)]);
+        listB.push(childB[Math.min(i, childB.length - 1)]);
+      }
+      return { listA, listB };
+    }
+    const costs = [];
+    for (let i = 0; i < fa.length; i += 1) {
+      for (let j = 0; j < fb.length; j += 1) {
+        costs.push({ i, j, c: pairCost(fa[i], fb[j]) });
+      }
+    }
+    costs.sort((p, q) => p.c - q.c);
+    const usedA = new Array(fa.length).fill(false);
+    const usedB = new Array(fb.length).fill(false);
+    const matchOfA = new Array(fa.length).fill(-1);
+    const matchOfB = new Array(fb.length).fill(-1);
+    let matched = 0;
+    const oneToOne = Math.min(fa.length, fb.length);
+    for (let k = 0; k < costs.length && matched < oneToOne; k += 1) {
+      const { i, j } = costs[k];
+      if (usedA[i] || usedB[j]) continue;
+      usedA[i] = true;
+      usedB[j] = true;
+      matchOfA[i] = j;
+      matchOfB[j] = i;
+      matched += 1;
+    }
+    // Leftovers on the busier side: nearest counterpart, many-to-one.
+    const nearest = (f, others) => {
+      let best = 0;
+      let bc = Infinity;
+      for (let j = 0; j < others.length; j += 1) {
+        const c = pairCost(f, others[j]);
+        if (c < bc) { bc = c; best = j; }
+      }
+      return best;
+    };
+    const listA = [];
+    const listB = [];
+    if (fa.length >= fb.length) {
+      for (let i = 0; i < fa.length; i += 1) {
+        const j = matchOfA[i] >= 0 ? matchOfA[i] : nearest(fa[i], fb);
+        listA.push(childA[i]);
+        listB.push(childB[j]);
+      }
+    } else {
+      for (let j = 0; j < fb.length; j += 1) {
+        const i = matchOfB[j] >= 0 ? matchOfB[j] : nearest(fb[j], fa);
+        listA.push(childA[i]);
+        listB.push(childB[j]);
+      }
+    }
+    return { listA, listB };
+  };
+
   /**
    * Returns { listA, listB } of representative paths for a pair of children,
    * each list having equal length K. Each representative is a raw (un-resampled)
@@ -708,11 +919,19 @@
         // single outline, the other is many paths. Merge to the dominant outline
         // rather than averaging a dense polyline into mush.
         resolved = 'merge-longest';
+      } else if (countA !== countB) {
+        // Differing multi-path counts: pair paths spatially. The old
+        // merge-centroid fallback AVERAGED every path into one blob, which
+        // collapsed a param-changed flower's intermediates to tiny squiggles.
+        resolved = 'pair';
       } else {
-        resolved = Math.abs(countA - countB) > 3 ? 'merge-centroid' : 'index-match';
+        resolved = 'index-match';
       }
     }
 
+    if (resolved === 'pair') {
+      return buildPairedRepresentatives(childA, childB);
+    }
     if (resolved === 'merge-centroid') {
       return {
         listA: [averagePaths(childA, resampleCount, closed)],
@@ -859,7 +1078,7 @@
   // with no fills. The new engine caller passes the payload object directly.
   const normalizeChild = (c) => {
     if (Array.isArray(c)) {
-      return { outline: c, fillPaths: [], fills: [], penId: (c[0] && c[0].meta && c[0].meta.penId) || null };
+      return { outline: c, fillPaths: [], fills: [], penId: (c[0] && c[0].meta && c[0].meta.penId) || null, morphSource: null, regen: null };
     }
     if (c && typeof c === 'object') {
       return {
@@ -867,9 +1086,13 @@
         fillPaths: Array.isArray(c.fillPaths) ? c.fillPaths : [],
         fills: Array.isArray(c.fills) ? c.fills : [],
         penId: c.penId || null,
+        // Parameter-space morph inputs (engine callers): the child's algorithm
+        // identity + params, and a pure regen(params) → paths[] callback.
+        morphSource: (c.morphSource && typeof c.morphSource === 'object') ? c.morphSource : null,
+        regen: typeof c.regen === 'function' ? c.regen : null,
       };
     }
-    return { outline: [], fillPaths: [], fills: [], penId: null };
+    return { outline: [], fillPaths: [], fills: [], penId: null, morphSource: null, regen: null };
   };
 
   const applyMorphModifierToPaths = (pathsPerChild, modifier, bounds) => {
@@ -922,6 +1145,19 @@
     const blendsForPair = pairs.map(([ai, bi]) => {
       const childA = activeChildren[ai];
       const childB = activeChildren[bi];
+      // --- Parameter-space morph (same algorithm on both sides) --------------
+      // Regenerate real geometry at interpolated params — true in-between
+      // rotations/sizes/param steps for every algorithm. Falls through to the
+      // geometry blend when types differ, regen is unavailable, or a step
+      // produces no geometry.
+      if (params.paramMorph
+          && childA.morphSource && childB.morphSource
+          && childA.morphSource.type
+          && childA.morphSource.type === childB.morphSource.type
+          && typeof childA.regen === 'function') {
+        const paramBlends = buildParamMorphBlends(childA, childB, params);
+        if (paramBlends) return paramBlends;
+      }
       // Closure is per-pair: forced modes win; 'auto' treats the pair as closed
       // only when BOTH children are entirely closed loops. Closed pairs use
       // rotational correspondence so a hexagon's corners map to the circle's
@@ -1191,6 +1427,7 @@
   Modifiers.correspondenceAlign = correspondenceAlign;
   Modifiers.blendPaths = blendPaths;
   Modifiers.applyEasing = applyEasing;
+  Modifiers.lerpMorphParams = lerpMorphParams;
   Modifiers.lerpFillRecord = lerpFillRecord;
   Modifiers.regenerateRingFill = regenerateRingFill;
   Modifiers.applyMorphModifierToPaths = applyMorphModifierToPaths;

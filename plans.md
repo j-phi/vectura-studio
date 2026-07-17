@@ -10,6 +10,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 ## In Progress
 - Continue extracting shared Noise Rack runtime primitives; stack blend-combination logic is now centralized, with deeper sampler extraction still pending.
 - Extend Noise Rack to the remaining direct consumers, now mainly any leftover bespoke samplers after Petalis per-modifier stack UI parity.
+- Morph parameter-space follow-ups: fill morphing is skipped on param-morph pairs (rings are whole regenerated path sets, not single regions); curve-fit anchors are not re-fitted on regenerated intermediates (`p.curves` layers get dense polyline rings).
 - Extend Layer Modifiers further now that `Mirror` and `Morph` both ride the group-like modifier container model — new types layer onto the `applyModifierToMultiChildPaths` multi-child path or the single-child contract. Known Morph follow-ups: (a) a Morph group nested *under* another modifier (e.g. Mirror) currently has its rings rendered un-mirrored — the outer modifier isn't applied to `morphedPaths` (logged PRH-005).
 - Fix the remaining strict Playwright Pattern fidelity regressions as product bugs, with `Autumn` horizontal-seam mismatch and representative `Bamboo` / `Bathroom Floor` / `Dominos` silhouette drift still failing source-faithful smoke coverage.
 

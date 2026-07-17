@@ -73,7 +73,10 @@ describe('Morph modifier serialization', () => {
     expect(m.emitSources).toBe(true);
     expect(m.sequenceMode).toBe('sequential');
     expect(m.correspondenceMode).toBe('centroid-angle');
-    expect(m.multiPathStrategy).toBe('merge-centroid');
+    // v1.2.82: default strategy is 'auto' (spatial pairing for differing path
+    // counts) — merge-centroid averaged multi-path children into a blob.
+    expect(m.multiPathStrategy).toBe('auto');
+    expect(m.paramMorph).toBe(true);
     expect(m.closureMode).toBe('auto');
     expect(m.windingCheck).toBe(true);
     expect(m.smoothing).toBe(0);

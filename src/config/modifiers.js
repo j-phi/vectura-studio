@@ -28,8 +28,10 @@
       resampleMode: 'arc-length',            // arc-length | uniform-index
       correspondenceMode: 'centroid-angle',  // centroid-angle | nearest | arc-length
       windingCheck: true,                    // auto-reverse B if it lowers correspondence cost
+      // Interpolation
+      paramMorph: true,                      // same-algorithm pairs: interpolate params + regenerate each step
       // Multi-path handling
-      multiPathStrategy: 'merge-centroid',   // auto | index-match | merge-centroid | merge-longest
+      multiPathStrategy: 'auto',             // auto | pair | index-match | merge-centroid | merge-longest
       // Output control
       emitSources: true,                     // include original child paths alongside blends
       closureMode: 'auto',                   // auto | force-open | force-closed
@@ -43,7 +45,7 @@
     mirror:
       'Mirrors child layer geometry across one or more axes. Supports line, radial (kaleidoscope), and arc mirror types applied top-to-bottom.',
     morph:
-      'Blends 2+ child layers into graduated in-between rings — a circle morphing into a wavetable, etc. Children chain in layer order (A→B→C); each consecutive pair gets N interpolated steps. Output is plotter-ready polylines.',
+      'Blends 2+ child layers into graduated in-between rings — a circle morphing into a wavetable, etc. Same-algorithm children interpolate their parameters and regenerate each step (true in-between rotations/sizes/settings); different children blend geometry, pairing paths spatially. Children chain in layer order (A→B→C); each consecutive pair gets N interpolated steps. Output is plotter-ready polylines.',
     mirrorLine:
       'Reflects geometry across an infinite line axis at a given angle and position.',
     mirrorRadial:

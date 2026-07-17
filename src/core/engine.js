@@ -149,6 +149,122 @@
   };
   const clone = window.Vectura.Utils.clone;
 
+  // Geometry origin (bbox center) of freshly generated raw paths — the pivot
+  // for the layer post-transform. Circle primitives contribute their meta
+  // extents (their point arrays may be empty). Falls back to the document
+  // center when there is no finite geometry.
+  const computeGeometryOrigin = (rawPaths, width, height) => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    rawPaths.forEach((path) => {
+      if (!Array.isArray(path)) return;
+      if (path.meta && path.meta.kind === 'circle') {
+        const cx = path.meta.cx ?? path.meta.x;
+        const cy = path.meta.cy ?? path.meta.y;
+        const rx = path.meta.rx ?? path.meta.r;
+        const ry = path.meta.ry ?? path.meta.r;
+        if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(rx) && Number.isFinite(ry)) {
+          minX = Math.min(minX, cx - rx);
+          maxX = Math.max(maxX, cx + rx);
+          minY = Math.min(minY, cy - ry);
+          maxY = Math.max(maxY, cy + ry);
+        }
+        return;
+      }
+      path.forEach((pt) => {
+        minX = Math.min(minX, pt.x);
+        minY = Math.min(minY, pt.y);
+        maxX = Math.max(maxX, pt.x);
+        maxY = Math.max(maxY, pt.y);
+      });
+    });
+    if (!Number.isFinite(minX)) {
+      minX = 0;
+      minY = 0;
+      maxX = width;
+      maxY = height;
+    }
+    return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+  };
+
+  // Post-generation layer transform (scale → rotate about the geometry origin,
+  // then translate by posX/posY). Factored out of generate() so the morph
+  // modifier's parameter-space regeneration (generateParamMorphPaths) applies
+  // EXACTLY the same transform semantics as a real layer — any drift here
+  // would make morph intermediates jump at the pair endpoints.
+  const buildParamPostTransform = (p, origin) => {
+    const rot = ((p.rotation ?? 0) * Math.PI) / 180;
+    const cosR = Math.cos(rot);
+    const sinR = Math.sin(rot);
+    const scaleX = p.scaleX ?? 1;
+    const scaleY = p.scaleY ?? 1;
+    const posX = p.posX ?? 0;
+    const posY = p.posY ?? 0;
+
+    const transform = (pt) => {
+      let x = pt.x - origin.x;
+      let y = pt.y - origin.y;
+      x *= scaleX;
+      y *= scaleY;
+      const rx = x * cosR - y * sinR;
+      const ry = x * sinR + y * cosR;
+      x = rx + origin.x + posX;
+      y = ry + origin.y + posY;
+      return { x, y };
+    };
+
+    const transformMetaPoint = (pt) => {
+      if (!pt || typeof pt !== 'object') return pt;
+      const t = transform({ x: pt.x, y: pt.y });
+      return { ...pt, x: t.x, y: t.y };
+    };
+    const transformAnchor = (a) => {
+      if (!a || typeof a !== 'object') return a;
+      const out = transformMetaPoint(a);
+      if (a.in) out.in = transformMetaPoint(a.in);
+      if (a.out) out.out = transformMetaPoint(a.out);
+      if (a.corner === true) out.corner = true; // preserve the minimal-trace corner flag
+      return out;
+    };
+    const transformMeta = (meta) => {
+      if (!meta) return meta;
+      if (meta.kind === 'circle') {
+        const center = transform({ x: meta.cx, y: meta.cy });
+        const baseR = Number.isFinite(meta.r) ? meta.r : Math.max(meta.rx ?? 0, meta.ry ?? 0);
+        return {
+          ...meta,
+          cx: center.x,
+          cy: center.y,
+          rx: Math.abs(baseR * scaleX),
+          ry: Math.abs(baseR * scaleY),
+          rotation: rot,
+        };
+      }
+      // Other meta (kind:'shape' ovals/polys, pen paths) carries bezier
+      // `anchors` and an embedded `shape` that the renderer's native-cubic
+      // tracePath draws from. These live in source space on rawPaths, so they
+      // must be carried through the same posX/posY/scale/rotation transform as
+      // the sampled points — otherwise the drawn outline stays at the origin
+      // while the points (and fill) translate.
+      const copy = JSON.parse(JSON.stringify(meta));
+      if (Array.isArray(meta.anchors)) copy.anchors = meta.anchors.map(transformAnchor);
+      if (meta.shape && typeof meta.shape === 'object') {
+        const s = meta.shape;
+        const sc = transform({ x: s.cx, y: s.cy });
+        copy.shape = { ...s, cx: sc.x, cy: sc.y };
+        if (Number.isFinite(s.rx)) copy.shape.rx = Math.abs(s.rx * scaleX);
+        if (Number.isFinite(s.ry)) copy.shape.ry = Math.abs(s.ry * scaleY);
+        if (Number.isFinite(s.r)) copy.shape.r = Math.abs(s.r * ((Math.abs(scaleX) + Math.abs(scaleY)) / 2));
+        copy.shape.rotation = (s.rotation ?? 0) + rot;
+      }
+      return copy;
+    };
+
+    return { transform, transformMeta };
+  };
+
   // Bugs-8: sanitize imported numeric params so corrupted/legacy `.vectura`
   // files cannot inject NaN / Infinity / non-numeric strings into algorithm
   // hot paths (e.g. p.scaleX, p.density, p.amplitude — all of which feed
@@ -486,7 +602,20 @@
             (meta.paintBucketFillId ? fillPaths : outline).push(p);
           });
           const fills = Array.isArray(child.fills) ? child.fills.map((rec) => clone(rec)) : [];
-          return { outline, fillPaths, fills, penId: child.penId || null };
+          // Same parameter-space morph inputs as _refoldMorphGroup, so Expand
+          // bakes the SAME rings the canvas shows (param morph, not a
+          // geometry-blend re-derivation).
+          const canParamMorph = !usesManualSourceGeometry(child)
+            && child.type !== 'compound'
+            && Boolean(Algorithms && Algorithms[child.type]
+              && typeof Algorithms[child.type].generate === 'function');
+          const morphSource = canParamMorph
+            ? { type: child.type, params: clone(child.params) }
+            : null;
+          const regen = canParamMorph
+            ? (ip) => this.generateParamMorphPaths(child.type, ip, { penId: child.penId })
+            : null;
+          return { outline, fillPaths, fills, penId: child.penId || null, morphSource, regen };
         });
         const morphed = (typeof multiFn === 'function'
           ? multiFn(pathsPerChild, modifier, bounds)
@@ -1289,11 +1418,100 @@
       });
     }
 
+    // Pure parameter-space regeneration for morph intermediates: run an
+    // algorithm at arbitrary params and apply the standard layer post-transform
+    // (posX/posY/scaleX/scaleY/rotation about the geometry origin) WITHOUT
+    // touching any layer. The morph modifier calls this once per blend step
+    // with interpolated params, which is what turns a rotated/resized copy
+    // into true in-between rotations/sizes instead of a geometry-blend tangle.
+    //
+    // Raw (untransformed) algorithm output is cached per core-param signature —
+    // transform-only changes (child drags/resizes/rotates) reuse the cached
+    // geometry and only re-apply the cheap post-transform, keeping the
+    // hot-path refold at frame rate even for simulation-heavy algorithms.
+    generateParamMorphPaths(type, params, opts = {}) {
+      const algo = Algorithms && Algorithms[type];
+      if (!algo || typeof algo.generate !== 'function') return [];
+      if (!params || typeof params !== 'object') return [];
+      const p = type === 'petalisDesigner'
+        ? { ...params, lightSource: SETTINGS.lightSource }
+        : params;
+
+      const { width, height } = this.currentProfile;
+      const m = SETTINGS.margin;
+      const pens = Array.isArray(SETTINGS.pens) ? SETTINGS.pens : [];
+      const pen = pens.find((pn) => pn && pn.id === opts.penId) || pens[0];
+      const penWidth = Number(pen && pen.width) > 0 ? Number(pen.width) : 0.35;
+      const bounds = {
+        width, height, m, dW: width - m * 2, dH: height - m * 2, penWidth,
+        truncate: SETTINGS.truncate, preview3dQuality: SETTINGS.preview3dQuality,
+      };
+
+      // Cache key: everything that shapes the RAW output. The post-transform
+      // params are excluded — algorithms don't read them (the engine applies
+      // them after generation), so a drag must not invalidate the cache.
+      const core = { ...p };
+      delete core.posX;
+      delete core.posY;
+      delete core.scaleX;
+      delete core.scaleY;
+      delete core.rotation;
+      let key;
+      try {
+        key = `${type}|${width}x${height}|${m}|${penWidth}|${SETTINGS.truncate ? 1 : 0}|${JSON.stringify(core)}`;
+      } catch (err) {
+        key = null; // unserializable params (shouldn't happen) → skip caching
+      }
+      if (!this._paramMorphCache) this._paramMorphCache = new Map();
+      let raw = key ? this._paramMorphCache.get(key) : null;
+      if (raw && key) {
+        // refresh LRU recency
+        this._paramMorphCache.delete(key);
+        this._paramMorphCache.set(key, raw);
+      }
+      if (!raw) {
+        const rng = new SeededRNG(p.seed);
+        const noise = new SimpleNoise(p.seed);
+        try {
+          raw = algo.generate(p, rng, noise, bounds) || [];
+        } catch (err) {
+          raw = [];
+        }
+        if (key) {
+          this._paramMorphCache.set(key, raw);
+          while (this._paramMorphCache.size > 64) {
+            this._paramMorphCache.delete(this._paramMorphCache.keys().next().value);
+          }
+        }
+      }
+
+      const origin = computeGeometryOrigin(raw, width, height);
+      const { transform, transformMeta } = buildParamPostTransform(p, origin);
+      const out = [];
+      raw.forEach((path) => {
+        if (!Array.isArray(path)) return;
+        // Circle primitives (e.g. phylla dots) carry their geometry in meta
+        // with an EMPTY point array — keep them; only drop true degenerates.
+        if (path.length < 2 && !(path.meta && path.meta.kind === 'circle')) return;
+        const t = path.map((pt) => transform(pt));
+        if (path.meta) t.meta = transformMeta(path.meta);
+        out.push(t);
+      });
+      return out;
+    }
+
     // Refold ONE morph group's blend from its leaves' current effective
     // geometry. Self-contained (sets the consumed flags + pen/style fallback it
     // needs), so it doubles as the hot-path refold during a child drag without
     // re-running the whole document's effective/display/optimize passes.
-    _refoldMorphGroup(group, bounds) {
+    //
+    // `liveDragIds` (Set, optional): children currently in a live drag preview.
+    // The renderer rewrites their layer.paths directly and only commits
+    // params.posX/rotation/scale on release, so parameter-space morphing would
+    // read STALE params mid-drag and freeze the rings. Those children blend
+    // geometry (which tracks the preview) until the release recompute restores
+    // the parameter-space rings.
+    _refoldMorphGroup(group, bounds, liveDragIds) {
       const multiFn = Modifiers.applyModifierToMultiChildPaths;
       if (typeof multiFn !== 'function' || !group) return;
       const b = bounds || this.getBounds();
@@ -1323,7 +1541,22 @@
         const fills = Array.isArray(child.fills)
           ? child.fills.map((rec) => clone(rec))
           : [];
-        return { outline, fillPaths, fills, penId: child.penId || null };
+        // Parameter-space morph inputs: algorithm children expose their
+        // type+params and a pure regen callback so same-algorithm pairs can
+        // interpolate params and regenerate true intermediates. Shape/compound
+        // layers (manual geometry) stay geometry-blended.
+        const canParamMorph = !usesManualSourceGeometry(child)
+          && child.type !== 'compound'
+          && !(liveDragIds && liveDragIds.has(child.id))
+          && Boolean(Algorithms && Algorithms[child.type]
+            && typeof Algorithms[child.type].generate === 'function');
+        const morphSource = canParamMorph
+          ? { type: child.type, params: clone(child.params) }
+          : null;
+        const regen = canParamMorph
+          ? (ip) => this.generateParamMorphPaths(child.type, ip, { penId: child.penId })
+          : null;
+        return { outline, fillPaths, fills, penId: child.penId || null, morphSource, regen };
       });
       const morphed = multiFn(pathsPerChild, group.modifier, b) || [];
       group.morphedPaths = morphed;
@@ -1359,9 +1592,10 @@
       });
       if (!groups.size) return;
       const bounds = this.getBounds();
+      const liveDragIds = new Set(ids);
       [...groups.values()]
         .sort((a, b) => this.getLayerDepth(b) - this.getLayerDepth(a))
-        .forEach((group) => this._refoldMorphGroup(group, bounds));
+        .forEach((group) => this._refoldMorphGroup(group, bounds, liveDragIds));
     }
 
     resolveProfile() {
@@ -1522,105 +1756,10 @@
         };
       const fitCurve = (path) => (curveOpts ? applyCurveFit(path, curveOpts) : path);
 
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      rawPaths.forEach((path) => {
-        if (!Array.isArray(path)) return;
-        if (path.meta && path.meta.kind === 'circle') {
-          const cx = path.meta.cx ?? path.meta.x;
-          const cy = path.meta.cy ?? path.meta.y;
-          const rx = path.meta.rx ?? path.meta.r;
-          const ry = path.meta.ry ?? path.meta.r;
-          if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(rx) && Number.isFinite(ry)) {
-            minX = Math.min(minX, cx - rx);
-            maxX = Math.max(maxX, cx + rx);
-            minY = Math.min(minY, cy - ry);
-            maxY = Math.max(maxY, cy + ry);
-          }
-          return;
-        }
-        path.forEach((pt) => {
-          minX = Math.min(minX, pt.x);
-          minY = Math.min(minY, pt.y);
-          maxX = Math.max(maxX, pt.x);
-          maxY = Math.max(maxY, pt.y);
-        });
-      });
-      if (!Number.isFinite(minX)) {
-        minX = 0;
-        minY = 0;
-        maxX = width;
-        maxY = height;
-      }
-      const origin = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+      const origin = computeGeometryOrigin(rawPaths, width, height);
       layer.origin = origin;
 
-      const rot = ((p.rotation ?? 0) * Math.PI) / 180;
-      const cosR = Math.cos(rot);
-      const sinR = Math.sin(rot);
-
-      const transform = (pt) => {
-        let x = pt.x - origin.x;
-        let y = pt.y - origin.y;
-        x *= p.scaleX;
-        y *= p.scaleY;
-        const rx = x * cosR - y * sinR;
-        const ry = x * sinR + y * cosR;
-        x = rx + origin.x + p.posX;
-        y = ry + origin.y + p.posY;
-        return { x, y };
-      };
-
-      const scaleX = p.scaleX ?? 1;
-      const scaleY = p.scaleY ?? 1;
-      const transformMetaPoint = (pt) => {
-        if (!pt || typeof pt !== 'object') return pt;
-        const t = transform({ x: pt.x, y: pt.y });
-        return { ...pt, x: t.x, y: t.y };
-      };
-      const transformAnchor = (a) => {
-        if (!a || typeof a !== 'object') return a;
-        const out = transformMetaPoint(a);
-        if (a.in) out.in = transformMetaPoint(a.in);
-        if (a.out) out.out = transformMetaPoint(a.out);
-        if (a.corner === true) out.corner = true; // preserve the minimal-trace corner flag
-        return out;
-      };
-      const transformMeta = (meta) => {
-        if (!meta) return meta;
-        if (meta.kind === 'circle') {
-          const center = transform({ x: meta.cx, y: meta.cy });
-          const baseR = Number.isFinite(meta.r) ? meta.r : Math.max(meta.rx ?? 0, meta.ry ?? 0);
-          return {
-            ...meta,
-            cx: center.x,
-            cy: center.y,
-            rx: Math.abs(baseR * scaleX),
-            ry: Math.abs(baseR * scaleY),
-            rotation: rot,
-          };
-        }
-        // Other meta (kind:'shape' ovals/polys, pen paths) carries bezier
-        // `anchors` and an embedded `shape` that the renderer's native-cubic
-        // tracePath draws from. These live in source space on rawPaths, so they
-        // must be carried through the same posX/posY/scale/rotation transform as
-        // the sampled points — otherwise the drawn outline stays at the origin
-        // while the points (and fill) translate.
-        const copy = JSON.parse(JSON.stringify(meta));
-        if (Array.isArray(meta.anchors)) copy.anchors = meta.anchors.map(transformAnchor);
-        if (meta.shape && typeof meta.shape === 'object') {
-          const s = meta.shape;
-          const sc = transform({ x: s.cx, y: s.cy });
-          copy.shape = { ...s, cx: sc.x, cy: sc.y };
-          if (Number.isFinite(s.rx)) copy.shape.rx = Math.abs(s.rx * scaleX);
-          if (Number.isFinite(s.ry)) copy.shape.ry = Math.abs(s.ry * scaleY);
-          if (Number.isFinite(s.r)) copy.shape.r = Math.abs(s.r * ((Math.abs(scaleX) + Math.abs(scaleY)) / 2));
-          copy.shape.rotation = (s.rotation ?? 0) + rot;
-        }
-        return copy;
-      };
+      const { transform, transformMeta } = buildParamPostTransform(p, origin);
 
       const transformed = rawPaths.map((path) => {
         if (!Array.isArray(path)) return path;

@@ -6,6 +6,24 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added
+- **Parameter-space morphing (Morph modifier).** When two morph children run the same algorithm,
+  the modifier now interpolates their *parameters* per step and regenerates real geometry, instead
+  of blending baked polylines. Layer transforms live in params (`posX/posY/scaleX/scaleY/rotation`),
+  so a rotated + resized copy morphs through true in-between rotations and sizes — including 3D
+  rotation params (a spun polyhedron steps through the spin, where the geometry blend produced
+  tangles). Seeds and non-numeric params threshold-switch at the midpoint; nested param objects
+  (e.g. Petal Designer profiles) interpolate recursively. Raw algorithm output is LRU-cached per
+  core-param signature so transform-only child drags stay at frame rate. New `Parameter Morph`
+  toggle in the morph panel (default on); off restores pure geometry blending.
+- **`Pair Paths` multi-path morph strategy.** Paths are paired across children by
+  normalized-centroid + size correspondence (greedy one-to-one, leftovers many-to-one into their
+  nearest counterpart), so cross-algorithm morphs blend line-for-line. `Auto` now resolves to
+  pairing when children's path counts differ — the old fallback, `merge-centroid`, *averaged* every
+  path into one blob, which collapsed the in-betweens of a param-changed multi-path child (e.g. a
+  petalis flower) into tiny squiggles. The default `multiPathStrategy` is now `auto` (was
+  `merge-centroid`).
+
 ### Fixed
 - **Changing a layer's algorithm now loads that algorithm's factory Default.** Factory state for a
   type is `ALGO_DEFAULTS` with the `<type>-default` preset applied on top — that is what `new Layer()`
