@@ -27,6 +27,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { compareSvgGeometry } = require('../helpers/svg-geometry-compare');
 
 const UPDATE = process.env.VECTURA_UPDATE_BASELINES === '1';
 const BASELINE_DIR = path.resolve(__dirname, '../baselines/curves');
@@ -124,7 +125,23 @@ describe('curve baselines (real display pipeline + production exporter)', () => 
     }
 
     expect(fs.existsSync(file)).toBe(true);
-    expect(actual).toBe(fs.readFileSync(file, 'utf8'));
+    const baseline = fs.readFileSync(file, 'utf8');
+
+    // Geometric, not byte-exact. The curve fitter's segmentation (corner detection
+    // + RDP decimation) turns on float-threshold comparisons, so macOS and CI's
+    // Linux legitimately place different anchors for the SAME visual curve — an
+    // exact-string baseline fails on whichever platform did not record it. This
+    // compares what the paths DRAW within a tolerance that absorbs that drift but
+    // not a real regression. "Curves are actually emitted / the toggle is live" is
+    // asserted structurally by the ratchet tests below, independent of this.
+    const result = compareSvgGeometry(actual, baseline);
+    if (!result.ok) {
+      throw new Error(
+        `curve baseline '${name}' diverged from geometry: ${result.reason}\n`
+        + `Refresh baselines with: VECTURA_UPDATE_BASELINES=1 npx vitest run tests/visual/curve-baseline.test.js`
+      );
+    }
+    expect(result.ok).toBe(true);
   });
 
   // The whole point of the net: if these stop being true, the baselines above
