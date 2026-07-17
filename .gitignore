@@ -7,9 +7,10 @@ test-results
 coverage
 vite.log
 archive.zip
-graphify-out/cache/
-graphify-out/.graphify_cached.json                                                                                                         
-graphify-out/.graphify_old.json
+# graphify output is a generated knowledge-graph artifact (graph.json alone is
+# ~10MB). Regenerated locally by the pre-commit hook for navigation; never
+# committed — it bloated the repo and conflicted on every merge.
+graphify-out/
 .claude/scheduled_tasks.lock
 .claude/worktrees/
 .claude/active-sessions/
