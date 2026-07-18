@@ -44,6 +44,17 @@ export default defineConfig({
       reporter: ['text', 'lcov'],
       include: ['src/**/*.js'],
       exclude: ['src/vendor/**'],
+      // Ratchet, not target: pinned ~1 point below measured coverage
+      // (2026-07-18: lines 84.14%, functions 78.48%, branches 70.68%) so the
+      // full `test:coverage` CI job fails on silent erosion. When coverage
+      // rises meaningfully, re-measure and move these up — never down without
+      // a deliberate decision recorded in plans.md.
+      thresholds: {
+        statements: 83,
+        lines: 83,
+        functions: 77,
+        branches: 69,
+      },
     },
   },
 });

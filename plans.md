@@ -22,10 +22,7 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
-1. **Coverage thresholds in `vitest.config.mjs`.** The `coverage` block has no `thresholds`
-   key, so coverage can erode silently and CI never fails on a drop. Measure current coverage
-   and pin ratchet thresholds just below it. (From the 2026-05 test-suite review, verified
-   still open 2026-07-18.)
+*(empty — promote the top of Next when picking up new work)*
 
 ## Next
 - **Morph parameter-space follow-ups.** (a) A Morph group nested *under* another modifier
@@ -183,6 +180,14 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — coverage ratchet: `vitest.config.mjs` gains `coverage.thresholds`.**
+  Pinned ~1 point below measured coverage (2026-07-18: lines 84.14%, functions 78.48%,
+  branches 70.68% → thresholds 83/77/69) so the CI `test:coverage` job fails on silent
+  erosion instead of never failing on a drop. Mechanism red-proved (a single-file coverage
+  run trips all four thresholds, exit 1); full `test:coverage` green with the ratchet in
+  place. Move thresholds up as coverage rises; never down without a decision recorded here.
+  (Last item graduated from the 2026-05 test-suite review's "Immediate" tier; the remaining
+  review items live under Later → test-suite refinement batch.)
 - **Unreleased — AUD-05: degenerate geometry can no longer crash the boolean pipeline.**
   polygon-clipping throws ("Unable to complete output ring") on degenerate input; the four
   `FillBoolean` ops now route through a `safeOp` guard that warns and returns `[]` instead of

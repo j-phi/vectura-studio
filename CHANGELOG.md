@@ -13,6 +13,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   un-combined child geometry instead of a dead UI or a vanished layer.
 
 ### Added
+- **Coverage ratchet.** `vitest.config.mjs` now enforces coverage thresholds
+  (statements/lines 83%, functions 77%, branches 69% — pinned ~1 point below measured) so
+  the CI coverage job fails on silent erosion.
 - **`.vectura` schema versioning (AUD-02).** Saved projects and presets now carry
   `formatVersion: 1`; files without it are treated as version 0 (legacy) and migrate through
   a no-op shim, giving the next format change a real migration path instead of silently
