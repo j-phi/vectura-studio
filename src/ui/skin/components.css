@@ -11206,7 +11206,6 @@ body.vtp-is-scrubbing * { cursor: ew-resize !important; user-select: none !impor
 .vtp-xypad-row .vtp-xypad { margin: 0; }
 .vtp-xypad-max { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; height: 86px; }
 .vtp-vslider-vert {
-  -webkit-appearance: slider-vertical; appearance: slider-vertical;
   writing-mode: vertical-lr; direction: rtl;
   flex: 1 1 auto; width: 4px; min-height: 0; height: auto; align-self: stretch;
 }
