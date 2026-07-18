@@ -119,6 +119,18 @@
           if (!state?.engine || !state?.settings) {
             throw new Error('Missing state payload');
           }
+          // AUD-02: a file from a FUTURE format still loads best-effort
+          // (importState migrates known versions; unknown-newer passes
+          // through), but the user must know settings may not apply.
+          const fileFormat = Number(state.engine.formatVersion) || 0;
+          const knownFormat = window.Vectura?.VECTURA_FORMAT_VERSION ?? 1;
+          if (fileFormat > knownFormat) {
+            toast(
+              'This file was saved by a newer version of Vectura Studio; some settings may not apply.',
+              'warning',
+              6000
+            );
+          }
           if (parsed?.images) {
             const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
             Object.entries(parsed.images).forEach(([id, img]) => {

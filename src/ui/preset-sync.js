@@ -67,6 +67,9 @@
     return {
       type: 'vectura',
       version: (window.Vectura || {}).VERSION,
+      // AUD-02: schema version for future migrations. `version` above is the
+      // cosmetic app-version display string; this one is compared on load.
+      formatVersion: (window.Vectura || {}).VECTURA_FORMAT_VERSION ?? 1,
       name: p.name || system,
       meta: { presetId: p.id || null, group: p.group || 'User', system, savedAt },
       layers: [{ type: system, params: { ...(p.params || {}) } }],

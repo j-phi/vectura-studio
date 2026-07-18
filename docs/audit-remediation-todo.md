@@ -133,7 +133,7 @@ transcript.
 
 ---
 
-### AUD-02 · Add `formatVersion` + migration shim to `.vectura` serialization
+### AUD-02 · Add `formatVersion` + migration shim to `.vectura` serialization — DONE, see Done section
 
 **Problem.** `exportState()` / `importState()` (`src/core/engine.js` ~606/~657) emit a
 bare layer dump with no schema version (verified: `grep -n version src/core/engine.js`
@@ -763,6 +763,16 @@ snapshot; this section is the reasoning behind that ordering, kept for reference
 
 ## Done
 
+- **AUD-02** (2026-07-18). `exportState()` stamps `formatVersion: 1`
+  (`Vectura.VECTURA_FORMAT_VERSION`); `importState()` migrates via the
+  `STATE_MIGRATIONS` table (absent field = version 0 legacy, 0→1 no-op) so the next
+  format change has a home; `openVecturaFile` warns non-blockingly when a file's
+  format is newer than the app knows; `PresetSync.buildDoc` stamps preset docs too.
+  Format documented in `docs/vectura-format.md`. RGR:
+  `tests/unit/vectura-format-version.test.js` (stamp red-failed pre-fix) +
+  `tests/integration/vectura-format-version.test.js` (newer-format toast red-failed
+  pre-fix; legacy round-trip + no-false-warning armor). Bundler output verified
+  byte-identical; full unit + integration + e2e suites green.
 - **AUD-01** (2026-07-12, `dd074f7`). Guard hardened: newest of (latest stash creation
   time, latest `recover-*` tag creatordate) must be within 30 minutes or the op is
   blocked, replacing the old any-checkpoint-disarms-it check. RGR proof (throwaway

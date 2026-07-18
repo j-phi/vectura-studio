@@ -6,6 +6,14 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added
+- **`.vectura` schema versioning (AUD-02).** Saved projects and presets now carry
+  `formatVersion: 1`; files without it are treated as version 0 (legacy) and migrate through
+  a no-op shim, giving the next format change a real migration path instead of silently
+  resolving missing params to current defaults. Opening a file saved by a newer app version
+  loads best-effort and shows a non-blocking warning. Format documented in
+  `docs/vectura-format.md`.
+
 ### Changed
 - **`plans.md` is now the single canonical punchlist**, restructured into priority tiers
   (Now / Next / Later / Blocked on Jay). Four stale planning docs were validated against

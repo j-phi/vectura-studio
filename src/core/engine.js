@@ -40,6 +40,31 @@
   const rebuildShapeAnchors =
     GeometryUtils.rebuildShapeAnchors || ((anchors) => ({ anchors: anchors || [], changed: false }));
 
+  // AUD-02: `.vectura` engine-state schema version. Bump when exportState's
+  // shape changes incompatibly, and add a migration step below. Payloads
+  // without the field are version 0 (legacy, pre-1.3.x) — identical to
+  // version 1 except for the field itself.
+  const VECTURA_FORMAT_VERSION = 1;
+
+  // Keyed by SOURCE version: STATE_MIGRATIONS[n] upgrades a version-n payload
+  // to version n+1. importState walks the chain up to VECTURA_FORMAT_VERSION.
+  const STATE_MIGRATIONS = {
+    0: (state) => state, // 0 → 1: the field was added; the payload shape is unchanged.
+  };
+
+  // Payloads NEWER than this build load as-is (best-effort forward compat);
+  // the file-open UI surfaces a non-blocking warning for that case.
+  const migrateEngineState = (state) => {
+    let version = Number.isFinite(Number(state?.formatVersion)) ? Number(state.formatVersion) : 0;
+    let out = state;
+    while (version < VECTURA_FORMAT_VERSION) {
+      const step = STATE_MIGRATIONS[version];
+      if (typeof step === 'function') out = step(out) || out;
+      version += 1;
+    }
+    return out;
+  };
+
   const PRIMITIVE_SHAPE_KINDS = new Set(['circle', 'rect', 'oval', 'polygon', 'star']);
   const isFreeformShapePath = (path) => {
     if (!Array.isArray(path)) return false;
@@ -763,6 +788,7 @@
 
     exportState() {
       return {
+        formatVersion: VECTURA_FORMAT_VERSION,
         activeLayerId: this.activeLayerId,
         layers: this.layers.map((layer) => ({
           id: layer.id,
@@ -814,6 +840,7 @@
 
     importState(state) {
       if (!state) return;
+      state = migrateEngineState(state);
       this.layers = (state.layers || []).map((data) => {
         // 'compound' is a synthetic type — Layer constructor doesn't know it.
         // Build it as a 'shape' then patch the type + compound bag below.
@@ -2409,4 +2436,7 @@
 
   const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.VectorEngine = VectorEngine;
+  // AUD-02: the current `.vectura` engine-state schema version, exposed so the
+  // file-open UI can warn when a file comes from a newer build than this one.
+  window.Vectura.VECTURA_FORMAT_VERSION = VECTURA_FORMAT_VERSION;
 })();

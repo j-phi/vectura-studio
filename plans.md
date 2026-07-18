@@ -22,21 +22,17 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
-1. **AUD-02 — `.vectura` `formatVersion` + migration shim.** The last P0 data-integrity item
-   from the audit: `exportState()`/`importState()` carry no schema version, so params missing
-   from an old file silently resolve to *today's* defaults and old files can re-render
-   differently after a defaults change. Add `formatVersion: 1`, treat absent as version 0
-   (legacy), warn non-blockingly on newer-than-known files, and add the migrations table the
-   next format change will need. Full spec: `docs/audit-remediation-todo.md` § AUD-02. This is
-   also the natural home for the Curves Stage E finding that `ui-file-io.js` throws the saved
-   display version away on load.
-2. **AUD-05 — guard the bare polygon-clipping call sites.** ~25 raw
+1. **AUD-05 — guard the bare polygon-clipping call sites.** ~25 raw
    `polygonClipping.union/xor/difference/intersection` sites (`fill-boolean.js`,
    `pathfinder-ops.js`, `geometry-utils.js`, `svgdistort.js`) can throw
    "Unable to complete output ring" uncaught through compound recompute — one degenerate user
    shape can kill `applyState()`. Single `safeOp` wrapper in `fill-boolean.js`, degrade to
    un-combined child paths, never crash. Full spec: `docs/audit-remediation-todo.md` § AUD-05.
-3. **Coverage thresholds in `vitest.config.mjs`.** The `coverage` block has no `thresholds`
+   *(Scope note, verified 2026-07-18: the raw sites have since consolidated — `halftone.js`
+   and `ui-text-specimen.js` already try/catch locally, and `pathfinder-ops.js`/`svgdistort.js`
+   route through `Vectura.FillBoolean` — so the wrapper in `fill-boolean.js`'s four ops covers
+   the compound-recompute crash path.)*
+2. **Coverage thresholds in `vitest.config.mjs`.** The `coverage` block has no `thresholds`
    key, so coverage can erode silently and CI never fails on a drop. Measure current coverage
    and pin ratchet thresholds just below it. (From the 2026-05 test-suite review, verified
    still open 2026-07-18.)
@@ -197,6 +193,14 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — AUD-02: `.vectura` files carry a schema version with a migration path.**
+  `exportState()` stamps `formatVersion: 1`; `importState()` runs the new `STATE_MIGRATIONS`
+  table (absent field = version 0 legacy, 0→1 no-op) so the next incompatible format change
+  has exactly one place to live; opening a file saved by a NEWER build loads best-effort and
+  surfaces a non-blocking warning toast; `PresetSync.buildDoc` stamps preset docs too. Format
+  documented in `docs/vectura-format.md`. RGR: `tests/unit/vectura-format-version.test.js` +
+  `tests/integration/vectura-format-version.test.js` (stamp + toast red-failed pre-fix; legacy
+  round-trip and no-false-warning armor). Preset-bundler output verified byte-identical.
 - **The three Simplifies — FIXED 2026-07-14 (`de9a9f9`).** The Lab's Simplify now re-fits the curve
   with the toolbar's fitter (`fitBezierAnchors`) instead of stripping its handles into chords;
   deviation from the true curve drops from **83.9 mm to under 2% of the path diagonal**. Also fixed:
