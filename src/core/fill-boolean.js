@@ -64,18 +64,43 @@
       )
       .filter((polygon) => polygon.length);
 
+  // AUD-05: polygon-clipping throws ("Unable to complete output ring") on
+  // degenerate input, and every boolean surface in the app routes through
+  // these four ops — so one self-intersecting user shape must degrade here,
+  // never crash through compound recompute / applyState. On failure the op
+  // returns [] and records the error so callers that can fall back to raw
+  // inputs (e.g. recomputeCompound) can tell a failure apart from a
+  // genuinely empty result.
+  let lastOpError = null;
+  const safeOp = (name, args) => {
+    try {
+      return polygonClipping[name](...args);
+    } catch (err) {
+      lastOpError = { op: name, error: err };
+      console.warn(`[FillBoolean] polygon ${name} failed on degenerate geometry:`, err);
+      return null;
+    }
+  };
+  const consumeLastOpError = () => {
+    const entry = lastOpError;
+    lastOpError = null;
+    return entry;
+  };
+
   const union = (...geoms) => {
     if (!polygonClipping?.union) return [];
     const filtered = geoms.filter((geom) => Array.isArray(geom) && geom.length);
     if (!filtered.length) return [];
-    return normalizeMultiPolygon(polygonClipping.union(...filtered));
+    const result = safeOp('union', filtered);
+    return result ? normalizeMultiPolygon(result) : [];
   };
 
   const xor = (...geoms) => {
     if (!polygonClipping?.xor) return [];
     const filtered = geoms.filter((geom) => Array.isArray(geom) && geom.length);
     if (!filtered.length) return [];
-    return normalizeMultiPolygon(polygonClipping.xor(...filtered));
+    const result = safeOp('xor', filtered);
+    return result ? normalizeMultiPolygon(result) : [];
   };
 
   const difference = (subject, ...clips) => {
@@ -83,14 +108,16 @@
     const filteredClips = clips.filter((geom) => Array.isArray(geom) && geom.length);
     if (!Array.isArray(subject) || !subject.length) return [];
     if (!filteredClips.length) return normalizeMultiPolygon(subject);
-    return normalizeMultiPolygon(polygonClipping.difference(subject, ...filteredClips));
+    const result = safeOp('difference', [subject, ...filteredClips]);
+    return result ? normalizeMultiPolygon(result) : [];
   };
 
   const intersection = (...geoms) => {
     if (!polygonClipping?.intersection) return [];
     const filtered = geoms.filter((geom) => Array.isArray(geom) && geom.length);
     if (!filtered.length) return [];
-    return normalizeMultiPolygon(polygonClipping.intersection(...filtered));
+    const result = safeOp('intersection', filtered);
+    return result ? normalizeMultiPolygon(result) : [];
   };
 
   const ringToMultiPolygon = (ring = []) => {
@@ -197,6 +224,7 @@
     xor,
     difference,
     intersection,
+    consumeLastOpError,
     ringToMultiPolygon,
     ringsToEvenOddMultiPolygon,
     ringsToNonZeroMultiPolygon,

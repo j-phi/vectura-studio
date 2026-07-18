@@ -210,7 +210,7 @@ non-deterministic, so no existing art is "changed" by this — say so explicitly
 
 ## P1 — Broken pipelines and lost coverage
 
-### AUD-05 · Guard the bare polygon-clipping call sites (uncaught throw path)
+### AUD-05 · Guard the bare polygon-clipping call sites (uncaught throw path) — DONE, see Done section
 
 **Problem (verified: zero `catch` in both files).** Only the algorithm boundary
 (`src/core/engine.js` ~1405) wraps geometry in try/catch. The compound/pathfinder
@@ -763,6 +763,17 @@ snapshot; this section is the reasoning behind that ordering, kept for reference
 
 ## Done
 
+- **AUD-05** (2026-07-18). Single `safeOp` guard inside `fill-boolean.js` wraps the four
+  `polygonClipping` ops (warn + return `[]` on throw) and records the failure;
+  `FB.consumeLastOpError()` lets `recomputeCompound` distinguish a failed op from a
+  genuinely empty result and fall back to the un-combined child paths, cache left unset
+  for retry. Scope had consolidated since the audit: `halftone.js`/`ui-text-specimen.js`
+  already guard locally; `pathfinder-ops.js`/`svgdistort.js`/`geometry-utils.js` route
+  through FillBoolean — the four ops are the single choke point. RGR:
+  `tests/unit/fill-boolean-safe-op.test.js` red-proved the uncaught throw through
+  `refreshAllCompounds`; real repro attempted (bowties, mfogel issue cases — vendored
+  build absorbs them), throw monkeypatched per the spec's sanctioned fallback. Full
+  unit/integration/visual suites green; in-app: healthy compounds byte-identical.
 - **AUD-02** (2026-07-18). `exportState()` stamps `formatVersion: 1`
   (`Vectura.VECTURA_FORMAT_VERSION`); `importState()` migrates via the
   `STATE_MIGRATIONS` table (absent field = version 0 legacy, 0→1 no-op) so the next

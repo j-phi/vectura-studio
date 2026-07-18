@@ -264,7 +264,28 @@
       clipAndWriteToCompound(layer, childLayers, layer.compound.cache.multiPolygon);
       return;
     }
+    // AUD-05: drop any stale error entry from other FillBoolean consumers so
+    // the check below only sees failures from THIS compute.
+    Vectura.FillBoolean?.consumeLastOpError?.();
     const mp = computeOp(layer.compound.opType, childLayers, layer.compound.sourceMode, engine);
+    const opError = Vectura.FillBoolean?.consumeLastOpError?.();
+    if (opError) {
+      // Degenerate child geometry killed the boolean op. Keep the user's
+      // geometry visible — write the un-combined child paths — and leave the
+      // cache unset so a later recompute retries the real op once the
+      // offending shape is repaired.
+      layer.compound.cache.signature = null;
+      layer.compound.cache.multiPolygon = null;
+      const fallback = [];
+      childLayers.forEach((child) => {
+        const src = child.effectivePaths?.length ? child.effectivePaths : child.paths || [];
+        src.forEach((p) => {
+          if (Array.isArray(p) && p.length >= 2) fallback.push(p);
+        });
+      });
+      writePathsToCompound(layer, fallback);
+      return;
+    }
     layer.compound.cache.signature = sig;
     layer.compound.cache.multiPolygon = mp;
     clipAndWriteToCompound(layer, childLayers, mp);

@@ -22,17 +22,7 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
-1. **AUD-05 — guard the bare polygon-clipping call sites.** ~25 raw
-   `polygonClipping.union/xor/difference/intersection` sites (`fill-boolean.js`,
-   `pathfinder-ops.js`, `geometry-utils.js`, `svgdistort.js`) can throw
-   "Unable to complete output ring" uncaught through compound recompute — one degenerate user
-   shape can kill `applyState()`. Single `safeOp` wrapper in `fill-boolean.js`, degrade to
-   un-combined child paths, never crash. Full spec: `docs/audit-remediation-todo.md` § AUD-05.
-   *(Scope note, verified 2026-07-18: the raw sites have since consolidated — `halftone.js`
-   and `ui-text-specimen.js` already try/catch locally, and `pathfinder-ops.js`/`svgdistort.js`
-   route through `Vectura.FillBoolean` — so the wrapper in `fill-boolean.js`'s four ops covers
-   the compound-recompute crash path.)*
-2. **Coverage thresholds in `vitest.config.mjs`.** The `coverage` block has no `thresholds`
+1. **Coverage thresholds in `vitest.config.mjs`.** The `coverage` block has no `thresholds`
    key, so coverage can erode silently and CI never fails on a drop. Measure current coverage
    and pin ratchet thresholds just below it. (From the 2026-05 test-suite review, verified
    still open 2026-07-18.)
@@ -193,6 +183,19 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — AUD-05: degenerate geometry can no longer crash the boolean pipeline.**
+  polygon-clipping throws ("Unable to complete output ring") on degenerate input; the four
+  `FillBoolean` ops now route through a `safeOp` guard that warns and returns `[]` instead of
+  throwing, and records the failure (`FB.consumeLastOpError`) so `recomputeCompound` can tell
+  a failure from a genuinely empty result — on failure it writes the un-combined child paths
+  (user geometry stays visible) and leaves the cache unset so a repaired shape retries the
+  real op. Scope note: the audit's "~25 raw sites" had consolidated — `halftone.js` and
+  `ui-text-specimen.js` already guard locally and everything else routes through
+  `FillBoolean`, so the four ops are the single choke point. RGR:
+  `tests/unit/fill-boolean-safe-op.test.js` (red-proved the crash: the injected throw
+  propagated through `refreshAllCompounds`; a real geometric repro was attempted first — the
+  vendored build absorbs bowties/issue-tracker cases — so the throw is monkeypatched per
+  spec). Verified in-app: healthy compounds recompute byte-identically.
 - **Unreleased — AUD-02: `.vectura` files carry a schema version with a migration path.**
   `exportState()` stamps `formatVersion: 1`; `importState()` runs the new `STATE_MIGRATIONS`
   table (absent field = version 0 legacy, 0→1 no-op) so the next incompatible format change

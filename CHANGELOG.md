@@ -6,6 +6,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed
+- **Degenerate shapes can no longer crash the boolean pipeline (AUD-05).** All polygon
+  boolean ops route through a guard that degrades to an empty result with a console
+  warning instead of throwing; a compound whose recompute fails keeps showing its
+  un-combined child geometry instead of a dead UI or a vanished layer.
+
 ### Added
 - **`.vectura` schema versioning (AUD-02).** Saved projects and presets now carry
   `formatVersion: 1`; files without it are treated as version 0 (legacy) and migrate through
