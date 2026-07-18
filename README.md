@@ -591,6 +591,28 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.3.0
+- **Parameter-space morphing.** The Morph modifier now interpolates two same-algorithm children's
+  *parameters* per step and regenerates real geometry instead of blending baked polylines — rotated
+  or resized copies morph through true in-between transforms, and 3D rotation params tween cleanly
+  instead of tangling. A new `Pair Paths` multi-path strategy pairs paths across children by
+  centroid + size correspondence and is now the default, replacing the old blob-averaging fallback.
+- **One curve system.** Curves, Smoothing, and Simplify were eight, five, and six independently
+  drifted implementations spread across the canvas, exporter, and editor. They now share one
+  path-drawing module and one real Bézier fit computed in the engine, so the preview, export, and
+  plotter can no longer disagree — and output shrinks (Rings −96%, Harmonograph −73%) instead of
+  ballooning the way the old draw-time quadratics did.
+- **3D rotation gizmo, rebuilt.** Three axes (amber/violet/cyan, no more backing-disc blob) on
+  every 3D algorithm, with real Rotate Z support added to Polyhedron and Raster-Plane.
+- **Raster-Plane hidden-line fixes.** See-Through now shows occluded slices as dashed lines instead
+  of deleting them; Mesh and Topography get true analytic hidden-line removal; Lines-as-Planes
+  curtains clip exactly at their border with no leaked ink.
+- **Every parameter control now speaks one language.** Sliders, dials, and toggles across the app
+  share one component library, one changed-from-default marker, and one-click reset.
+- Dozens of smaller fixes: welded script-font outlines, left-aligned text no longer drifting while
+  typing, angle-dial corruption on non-[0,360] domains, keyboard shortcuts leaking through open
+  modals, and CI hardening (a birpc RPC-timeout tolerance and real coverage instrumentation).
+
 ### 1.2.69
 - **Terrain: hidden lines stop poking through the ridge in front of them.** Terrain used the same
   occlusion slack that caused the Raster-Plane whiskers — up to 12.8px of line drawn *inside* the

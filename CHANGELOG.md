@@ -6,6 +6,8 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+## 1.3.0 - 2026-07-18
+
 ### Added
 - **Parameter-space morphing (Morph modifier).** When two morph children run the same algorithm,
   the modifier now interpolates their *parameters* per step and regenerates real geometry, instead
