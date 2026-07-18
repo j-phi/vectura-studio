@@ -1,20 +1,202 @@
 # Plans
 
-This file is the active repository punchlist. Update it whenever meaningful work starts, changes scope, or completes.
+This file is the **single canonical punchlist** for the repository. Every open work item lives
+here, in one of four priority tiers. Update it whenever meaningful work starts, changes scope,
+or completes.
 
 ## Operating Rules
-- Keep `Inbox`, `In Progress`, `Done`, and `Decisions` current in the same PR as the implementation.
-- Move items instead of duplicating them when status changes.
+- This is the only punchlist. Detailed per-task specs may live in companion docs
+  (`docs/audit-remediation-todo.md` holds the executable specs for `AUD-##` items), but an item
+  is open only if it appears in a tier below.
+- Tiers: **Now** (highest-importance, do next) · **Next** (real bugs and lost coverage) ·
+  **Later** (debt, polish, feature backlog) · **Blocked on Jay** (needs a decision — do not
+  start). Move items between tiers instead of duplicating them.
+- Keep the tiers, `Done`, and `Decisions` current in the same PR as the implementation.
 - Record architecture-level decisions in `Decisions` so future work has a stable reference.
+- **Consolidation note (2026-07-18).** `algorithm_todo.md`, `test_refinement_plan.md`,
+  `docs/todo-universal-preset-system.md`, and `specs/review-2026-05/` were each validated
+  against current source and deleted; every item that survived validation was folded into the
+  tiers below (originals remain in git history). `docs/todo-universal-preset-system.md` was
+  fully done. Of the May review specs, A4/B3/C2/S1 were verified done; the A3-C1/A5/B1-A6
+  remainders are under **Later**. The unbuilt algorithm families from `algorithm_todo.md` and
+  the open findings from `test_refinement_plan.md` are under **Later**.
 
-## In Progress
-- Continue extracting shared Noise Rack runtime primitives; stack blend-combination logic is now centralized, with deeper sampler extraction still pending.
-- Extend Noise Rack to the remaining direct consumers, now mainly any leftover bespoke samplers after Petalis per-modifier stack UI parity.
-- Morph parameter-space follow-ups: fill morphing is skipped on param-morph pairs (rings are whole regenerated path sets, not single regions); curve-fit anchors are not re-fitted on regenerated intermediates (`p.curves` layers get dense polyline rings).
-- Extend Layer Modifiers further now that `Mirror` and `Morph` both ride the group-like modifier container model — new types layer onto the `applyModifierToMultiChildPaths` multi-child path or the single-child contract. Known Morph follow-ups: (a) a Morph group nested *under* another modifier (e.g. Mirror) currently has its rings rendered un-mirrored — the outer modifier isn't applied to `morphedPaths` (logged PRH-005).
-- Fix the remaining strict Playwright Pattern fidelity regressions as product bugs, with `Autumn` horizontal-seam mismatch and representative `Bamboo` / `Bathroom Floor` / `Dominos` silhouette drift still failing source-faithful smoke coverage.
+## Now
+1. **AUD-02 — `.vectura` `formatVersion` + migration shim.** The last P0 data-integrity item
+   from the audit: `exportState()`/`importState()` carry no schema version, so params missing
+   from an old file silently resolve to *today's* defaults and old files can re-render
+   differently after a defaults change. Add `formatVersion: 1`, treat absent as version 0
+   (legacy), warn non-blockingly on newer-than-known files, and add the migrations table the
+   next format change will need. Full spec: `docs/audit-remediation-todo.md` § AUD-02. This is
+   also the natural home for the Curves Stage E finding that `ui-file-io.js` throws the saved
+   display version away on load.
+2. **AUD-05 — guard the bare polygon-clipping call sites.** ~25 raw
+   `polygonClipping.union/xor/difference/intersection` sites (`fill-boolean.js`,
+   `pathfinder-ops.js`, `geometry-utils.js`, `svgdistort.js`) can throw
+   "Unable to complete output ring" uncaught through compound recompute — one degenerate user
+   shape can kill `applyState()`. Single `safeOp` wrapper in `fill-boolean.js`, degrade to
+   un-combined child paths, never crash. Full spec: `docs/audit-remediation-todo.md` § AUD-05.
+3. **Coverage thresholds in `vitest.config.mjs`.** The `coverage` block has no `thresholds`
+   key, so coverage can erode silently and CI never fails on a drop. Measure current coverage
+   and pin ratchet thresholds just below it. (From the 2026-05 test-suite review, verified
+   still open 2026-07-18.)
 
-## Inbox
+## Next
+- **Morph parameter-space follow-ups.** (a) A Morph group nested *under* another modifier
+  (e.g. Mirror) renders its rings un-mirrored — the outer modifier isn't applied to
+  `morphedPaths` (logged PRH-005); (b) fill morphing is skipped on param-morph pairs (rings are
+  whole regenerated path sets, not single regions); (c) curve-fit anchors are not re-fitted on
+  regenerated intermediates (`p.curves` layers get dense polyline rings).
+- **Strict Playwright Pattern fidelity regressions** — product bugs, not test debt: `Autumn`
+  horizontal-seam mismatch and representative `Bamboo` / `Bathroom Floor` / `Dominos`
+  silhouette drift still fail source-faithful smoke coverage.
+- **AUD-06 — re-land the three regression tests stranded in the 2026-06-13 stash.** Note the
+  audit doc calls it `stash@{0}`; the stash list has since shifted — it is currently
+  `stash@{5}: On main: vectura-wip-inplace-repair+tests (pre-revert-merge)`. Verify by message,
+  not index. Full spec: `docs/audit-remediation-todo.md` § AUD-06.
+- **AUD-08 — surface silent persistence failures.** Cookie is ~230 B from the 4096-byte limit
+  with no length guard; 6 sites swallow localStorage quota errors so a preset "saved" in
+  private mode is silently lost. Full spec: `docs/audit-remediation-todo.md` § AUD-08.
+- **Simplify follow-ups from the 2026-07-14 fix** (see Done + Decisions for the full record):
+  (a) **P2 rename, don't unify** — three controls named "Simplify" with three different verbs:
+  the Lab's is a non-destructive re-fit, the toolbar's a destructive anchor re-trace, the
+  export step's a plotter tolerance in mm. Rename rather than converge behavior. (b) The
+  latent **fillet-vs-gate ordering** in `toCurveAnchors`: `cornerRadius` is vetoed before the
+  fillet pass runs — no production caller today, but a landmine if the Smooth slider is ever
+  pointed at it. (c) Delete the false "windowed detection is strictly better" comment left in
+  `geometry-utils.js` near the `CURVE_CORNER_*` constants.
+- **Curve/smoothing unification — Stage E (the real work left).** `controls-registry.js:1608`
+  — text's "Smoothness" (0..6) writes the SAME `smoothing` key as the universal 0..1 slider;
+  rename it to `textSmoothness` (it feeds `optimizeAnchorsCardinal`, it is not a tension).
+  `engine.js:55` shape smoothing still clamps 0..2. `EXTRA_PRESERVED`
+  (`algo-config-panel.js:1751`) should move `[smoothing, simplify, curves]` into the base
+  preserve set *(verify first — the preset-system validation found `OUTPUT_CONTROL_KEYS` may
+  already cover this)*. Thread the saved `.vectura` version to `sanitizeImportedParams` for a
+  migration shim — lands naturally with AUD-02. (All 38 shipped presets carry `smoothing: 0`,
+  so the semantic change is invisible to them; only user-saved files with non-zero smoothing
+  are affected.) Context: stages 0/A/B/C landed 2026-07-13 — the regression net
+  (`tests/visual/curve-baseline.test.js`), Simplify no longer strips bezier anchors,
+  Spiralizer honours `p.curves`, `src/core/path-draw.js` collapses all six trace copies,
+  `GeometryUtils.toCurveAnchors`/`applyCurveFit` is the one fit. Plan:
+  `~/.claude/plans/assess-why-enabling-curves-shimmering-hopcroft.md`.
+
+## Later
+- **Curves Stage D (cosmetic).** The liveness ratchet proves no algorithm's Curves toggle is
+  wrongly dead, so the remaining `meta.straight` → `meta.baked` reclassifications
+  (`halftone.js:187/326`, `spirograph.js:121`) are semantic clean-up with zero behavior
+  change. Polyhedron's edges are legitimately straight — consider `showIf`-hiding its Curves
+  control rather than leaving a dead switch.
+- **Curves Stage F.** Collapse the remaining private RDP/decimator copies (`pattern.js:2403`,
+  `geometry3d.js:878`) onto `GeometryUtils.simplifyPath`.
+- **Audit P2 debt** (specs in `docs/audit-remediation-todo.md`): AUD-04 stale `styles.css` in
+  `release.yml` zip list (cosmetic); AUD-12 8 silently-passing `if (el) expect(...)` guards;
+  AUD-13 CLAUDE.md algorithm counts stale + CHANGELOG behind; AUD-14 `loadInJSDOM` ×21 /
+  `makeEngine` ×10 copy-paste divergence; AUD-15 items 1/4/5 (hooks:install parity,
+  settings.local leftovers, `window.app` alias).
+- **Math-utils consolidation remainder (May review A3-C1, re-verified 2026-07-18).**
+  `Vectura.AlgorithmUtils` exists but the sweep is incomplete: local `clamp` still redefined in
+  `src/ui/utils.js:18`, `ui-text-panel.js:111`, `algorithms/text.js:14`, `geometry3d.js:14`,
+  `halftone.js:19`, `image-weave.js:16`, `image-source-util.js:15`; local `applyTile` in
+  `rainfall.js:67`, `wavetable.js:56`, `topo.js:25`, `spiral.js:26`, `raster-plane.js:60`;
+  `lerp`/`clamp01` in `geometry-utils.js:278/474`, `renderer.js:207`. Fold this together with
+  the applyTile-reconciliation item below — they are the same sweep.
+- **Engine state encapsulation remainder (May review B1-A6, re-verified 2026-07-18).**
+  `reorderLayers`/`deleteLayersById`/`setActiveLayerId` exist but direct assignments remain:
+  `layers-panel.js:208/218/676` (`engine.layers =`), `:959/983/1609/1858`
+  (`engine.activeLayerId =`), plus `shell/header.js:191`, `ui-tutorial.js:671/1144/1155/1162`,
+  `context-bar.js:357/1561`, `algorithm-panel.js:173`, `ui-file-io.js:201`, `shortcuts.js:313`.
+- **Algorithm-tuning config remainder (May review A5).** Add `hexRatio: Math.sqrt(3)/2` to the
+  frozen `rainfall` block of `src/config/algorithm-tuning.js` and have `rainfall.js:16` read it
+  instead of the local `HEX_RATIO`. Fold into the wider magic-number extraction: wavetable
+  `0.45`/`0.866`/`0.5`, topo `0.45`/`0.866`, spiral tile constants.
+- **Reconcile the divergent `applyTile` implementations** across `rainfall`/`wavetable`/`topo`/
+  `spiral` — unify into `algorithm-utils.js` or formally document the per-algorithm contract.
+- **Noise Rack convergence.** Extract the remaining shared runtime primitives from the
+  duplicated `wavetable`/`spiral`/`rainfall` implementations into `src/core/noise-rack.js`
+  (stack blend-combination is centralized; deeper sampler extraction pending); extend to the
+  remaining bespoke samplers after Petalis per-modifier stack UI parity; migrate the
+  algorithm-local legacy noise paths (`flowfield`, `grid`, `rings`, `horizon`) onto
+  `NoiseRack.defaultConfigFor`; add tests for determinism, serialization, UI normalization,
+  and parity across migrated systems.
+- **Test-suite refinement batch (from the 2026-05 review, re-verified 2026-07-18 — coverage
+  thresholds graduated to Now).** Remove the vestigial `runtimeScene` wrapper in
+  `tests/integration/mask-preview-group-drag.test.js:84`. Add error-path tests: corrupt /
+  missing-viewBox SVG import; undo history driven past `maxHistory`; recursive mask hierarchy
+  (A masks B masks A); `engine.generate()` with NaN/Infinity coordinates; 0-layer document
+  save/open roundtrip. Add unit tests for `pen-validate.js`, `src/core/utils.js`,
+  `validators.js`. Add `tests/perf/baselines.json` + `baseline × 1.5` gate to
+  `tests/perf/stress.test.js` (replace the bare `<10000ms`). Trim DOM-selector coupling from
+  `tests/unit/components/slider.test.js`. Replace the 2 remaining `waitForTimeout(80)` in
+  `tests/e2e/smoke.spec.js:1601/1608` with `expect.poll()`.
+- **Petalis overhaul — remaining delight/UX follow-ups** (core shipped v1.2.0): species morph
+  A→B crossfade (reuse `blendProfilePoints`/`profileBlendWeight`, needs two-source picker +
+  blend slider); Petal Designer undo (zero `pushHistory` calls today — hook point exists near
+  `applyPetalDesignerToLayer`); per-type shading cards (render only the controls a shading
+  type uses; surface `veinCount`/`veinReach` on the Venation card).
+- **Pendula studio — Phase 3/4 remaining** (shipped v1.2.0): per-loop morph animation export
+  (blocked on a frame-packaging decision — no zip lib in the no-build repo); plotter hygiene
+  on export (randomize closed-loop seam start to avoid the pen ink-blot artifact); optional
+  node/matrix view over the existing edge data. Deferred by design: the skeuomorphic Bench,
+  the Patchbench node graph, Twin-Elliptic machine, true-physics RK4 mode, elastic linkage.
+- **Meridian branch e2e shape-rect drift.** `tests/e2e/smoke.spec.js:1044` fails on
+  `meridian-blue-skin` with a ~0.6 px Alt-drag rect midpoint drift vs `worldStart`; passes on
+  `main`. Pre-existing relative to Phase 5; likely a Phases 2-4 layout shift nudging
+  `getBoundingClientRect` between capture and mouse-down. Investigate canvas-bounding-rect
+  timing in `src/render/renderer.js`. Precision drift, not a behavioral break.
+- **Meridian Phase 3 menu deferrals.** (a) Layer-add submenu (`src/ui/shortcuts.js:517-565`)
+  needs `UI.overlays.Menu` submenu + custom item renderer support; (b) pen palette dropdown
+  (`src/ui/panels/pens-panel.js:141-219`) needs a `UI.Menus.Palette`; (c) promote the 7
+  centered `this.openModal` modals onto `UI.overlays.Modal` (pick CSS rewrite vs class-name
+  shim during the work).
+- **Layer Modifiers — more types.** Layer new modifier types onto the
+  `applyModifierToMultiChildPaths` multi-child / single-child contract now that Mirror and
+  Morph both ride the group-like container model.
+- **Algorithm backlog — genuinely unbuilt visual families** (from the 2026-05 inspiration
+  roadmap, re-triaged 2026-07-18 against the shipped registry; halftone/image-weave/topoform/
+  raster-plane/spiralizer already cover the rest): `polarLouver` (sunburst bars, louvered
+  spheres, radial dash rings — fully unbuilt); `lSystem` (grammar/turtle branching — distinct
+  from stochastic hyphae); `tessellationWeave` non-isometric modes (hex fan, hex labyrinth,
+  scallop, Y-motif); `glyphField` field/vector/wells grammar (noise-driven mark fields,
+  plotter glyph set); `scanlineWeaver` polar/cross/posterize modes; true swept
+  `parametricTube` (parallel-transport frames + depth occlusion); `perspectiveMesh`
+  projection modes (polarTunnel, globeGrid, fisheye). Shared-infra prerequisites: an SDF
+  library and a reusable glyph emitter.
+- **Drag-to-mask layer assignment + richer silhouette providers** for currently open-line-only
+  algorithms once their envelope rules are stable.
+- **Repo hygiene.** GitHub-side rulesets/branch protection, merge queue, Project fields once
+  repository settings are configurable. Decide whether to gate PRs on lint after introducing a
+  repo-wide ESLint config compatible with the browser-IIFE codebase. Optional cosmetic: delete
+  the four unused `*_PRESET_OPTIONS` arrays in `src/ui/controls-registry.js:24-50`.
+- **Investigate `layer.origin` back-compat default.** Whether the `{x:0, y:0}` default for
+  pre-0.8.24 `.vectura` files preserves the prior bounds-derived behavior (renderer falls back
+  to `profile.{width,height}/2` only when `origin` is absent — the new default may shift
+  visuals on legacy saves).
+- **Known limitations, kept visible (not defects).** SHP-1: the Shape Properties popover is
+  uniform-corner-mode only — a side-count change resizes `cornerRadii` by refilling with the
+  max radius, losing per-corner variation (per-corner editing stays on-canvas; a future
+  enhancement could preserve/rescale the pattern). TXT-1: welded-kern glyph pairs on parsed
+  web faces can merge two glyphs' ink into one contour so the sibling glyph gets no layer
+  (geometry fully preserved; fix options logged as PRH-014; current behavior pinned by
+  `tests/unit/text-outline-ops.test.js`).
+
+## Blocked on Jay
+Seven audit decisions (full options in `docs/audit-remediation-todo.md`) plus one design
+question. Do not start these without a decision:
+- **AUD-07** — revive vs delete the orphaned Playwright screenshot suite (baselines ~3 months
+  stale, runs in no CI job); either way, `mask-shift-drag.spec.js` must join `test:e2e`.
+- **AUD-10** — delete vs adopt the dead 16-component "Phase 1" library kept green by 16 tests.
+- **AUD-11** — destination for the 85 MB example + the history-rewrite proposal
+  ([APPROVAL GATE]; the untrack step already landed under AUD-20).
+- **AUD-15.2** — drop `tests/` from the version-bump hook trigger?
+- **AUD-16** — license choice; the public repo has no LICENSE (cheap, arguably urgent).
+- **AUD-18** — multi-tab storage coordination scope.
+- **AUD-19** — cache strategy (every version bump busts all ~184 script/CSS URLs per visitor).
+- **Text's Curves toggle is inert by design** — glyph outlines arrive already bezierized and
+  the engine deliberately does not re-fit them. Making Curves-off actually de-curve a glyph is
+  a text-specific change. Held by the ratchet in `curve-baseline.test.js`. Decide: hide the
+  control for text, or build the de-curve.
+
+## Done
 - **The three Simplifies — FIXED 2026-07-14 (`de9a9f9`).** The Lab's Simplify now re-fits the curve
   with the toolbar's fitter (`fitBezierAnchors`) instead of stripping its handles into chords;
   deviation from the true curve drops from **83.9 mm to under 2% of the path diagonal**. Also fixed:
@@ -23,125 +205,9 @@ This file is the active repository punchlist. Update it whenever meaningful work
   mismatched units (and its shape-layer `Points 6→6`), and a bug where re-fitting on every generate
   silently re-authored anchors the user had hand-placed. A concurrent session's stranded fix
   (delegate to `toCurveAnchors`) was checkpointed, its tests kept, and its approach discarded —
-  verified in the running app, that fit DECLINES the real input and changed nothing. Remaining from
-  the review below: **P2 rename** (three controls called "Simplify", three different verbs) and the
-  latent fillet-vs-gate ordering in `toCurveAnchors` (`cornerRadius` is vetoed before the fillet pass
-  runs; no production caller today, but it is a landmine if the Smooth slider is ever pointed at it).
-- **The three Simplifies — reviewed + judged 2026-07-13. Do NOT unify them.** Jay observed that the
-  Post-Processing Lab's Simplify is much worse than the contextual toolbar's (on an expanded spiral:
-  Lab Simplify 1 → an ugly 6-point polygon; toolbar → 2 anchors tracing the curve exactly). Two
-  adversarial reviewers + an independent judge re-derived everything against the running code. The
-  findings overturned the obvious plan, so they are recorded here before anyone "fixes" it again.
-  - **Root cause of Jay's case:** `GeometryUtils.rebuildShapeAnchors` — step 2 (`if (smoothing > 0)`)
-    is the ONLY thing that writes handles, so at Smoothing 0 (which Expand sets) it *strips the
-    handles the source anchors already carried* and emits a raw decimated polyline. Measured max
-    deviation from the true curve: **83.9 mm**, vs 3.46 mm for the toolbar. There is no curve fit in
-    that path at all. **Being fixed by a concurrent session** (delegate to `toCurveAnchors` when
-    Curves is on); the judge verified that fix reaches toolbar parity (3.39 mm) and does not import
-    the inversion below.
-  - **REJECTED — unifying `fitBezierAnchors` onto `reduceAnchors`/`toCurveAnchors`.** The claim that
-    windowed corner detection is "strictly better" is **false and measurably backwards**. On the
-    DENSE flattened paths the toolbar actually operates on (`flattenForEdit` output), naive detection
-    returns exactly 4 anchors for a square at any sampling density, while windowed detection smears
-    each real corner into a band — **4 vs 28 anchors on a dense square; 6 vs 140 on a dense hexagon.**
-    Swapping the fit would not shift the toolbar's ladder, it would **delete** it (`maxSteps` → 0 on
-    3 of 5 representative inputs). Conversely the naive detector is just as broken on COARSE input
-    (192 of 200 Lissajous samples read as corners). **Neither detector is better — the discriminator
-    is pre-conditioning, not the detector.** One Schneider core, two corner policies, two genuinely
-    different regimes. That is the correct design, not tech debt. (A false comment asserting the
-    opposite was left in `geometry-utils.js` near the `CURVE_CORNER_*` constants — delete it.)
-  - **REJECTED — porting the toolbar's ladder to the whole-layer slider.** 59x the cost (587 ms vs
-    10 ms over 500 paths; the stock flowfield has 1,165), and a rung *index* is incoherent for a
-    scalar serialized into `.vectura` files and presets — reseed the layer and rung 7 means something
-    else, or nothing.
-  - **P1 — the quality gate declines to the WRONG fallback** (`toCurveAnchors`, the
-    `curvedSpans * 2 <= spans` check). Right intent (never claim a curve it didn't find), wrong
-    fallback: it reverts to the *raw decimated* polyline instead of the last good fit. Result — the
-    universal Simplify **inverts**: stock flowfield, Curves ON, points go 6,622 (simplify 0.5) →
-    7,102 (simplify 1.0) while ~30% of paths silently lose their curves. It should retry with reduced
-    decimation and only decline outright at zero decimation. *Acceptance:* sweeping simplify 0→1 in
-    0.05 steps, `layer.stats.simplifiedPoints` non-increasing and the curve-fitted path count
-    non-decreasing.
-  - **P1 — the decline fall-through must not strip handles** (`rebuildShapeAnchors`). A curved source
-    path whose fit is declined falls back to RDP + null handles — Jay's original bug, reachable again.
-  - **P1 — the Simplify readout compares two different units.** `Lines a→b · Points c→d`: the left
-    side is `countPathPoints` (polyline points), the right is `countGeometry` (anchors). A stock
-    flowfield at Simplify **0** reads `Points 20786→11839`, crediting an untouched control with a 43%
-    reduction. Also, for shape layers `rawCounts` is taken *after* `applyShapeAnchorRebuild` has
-    already overwritten the path in place, which is why Jay saw `Points 6→6`.
-  - **P2 — rename, don't unify.** Three controls named "Simplify", three different verbs: the Lab's is
-    a non-destructive re-fit, the toolbar's is a destructive anchor re-trace, and the export step's is
-    a plotter tolerance in **mm** (the only one with units a pen understands). Rename rather than
-    converge behavior.
-- **Curve/smoothing/simplify unification (started 2026-07-13).** The Curves toggle is not
-  universal — on Spiralizer it is a total no-op. An audit found **8 distinct polyline→curve
-  implementations**, **5 simplify implementations**, and **6 hand-synced copies** of the "which
-  curve branch do I take" decision (`renderer.js tracePath`, `ui.js pathToSvg`, `export-svg.js
-  buildExportPreviewPath`, `geometry-utils.js flattenSmoothedPath`, `path-edit-ops.js
-  flattenForEdit`, `tests/helpers/svg.js shapeToSvg`). Three root causes: (1) `meta.straight` is a
-  hard veto on curves and carries three conflated meanings — "true line segment", "already-baked
-  display geometry", and (wrongly) "this algorithm doesn't do curves", which is what suppresses
-  Spiralizer; (2) what "Curves ON" does for most 2D algorithms is a draw-time midpoint-quadratic
-  corner-cut, not a curve fit — it never passes through the algorithm's own sample points; (3)
-  `smoothing` means three unrelated things across four numeric domains (0..1, 0..2, 0..6, 0..100).
-  **Critically, the visual suite was blind to all of it: all 33 SVG baselines contained zero curve
-  commands.** Plan: `~/.claude/plans/assess-why-enabling-curves-shimmering-hopcroft.md`.
-  **Stages 0, A, B, C are LANDED** (2026-07-13): the regression net
-  (`tests/visual/curve-baseline.test.js`, 10 algorithms × curves-off/on/on+smooth, driven through
-  `engine.addLayer` → `engine.generate` → the production exporter); Simplify no longer strips
-  bezier anchors; Spiralizer honours `p.curves`; `src/core/path-draw.js` collapses all six trace
-  copies (grep-guarded); `GeometryUtils.toCurveAnchors`/`applyCurveFit` is the one fit; the engine
-  fits real curves instead of the draw-time quadratic. Remaining:
-  - **Stage D (mostly cosmetic now).** The liveness ratchet proves no algorithm's Curves toggle is
-    wrongly dead any more, so the remaining `meta.straight` → `meta.baked` reclassifications
-    (`halftone.js:187/326`, `spirograph.js:121`) are semantic clean-up with zero behavior change.
-    Polyhedron's edges are legitimately straight — consider `showIf`-hiding its Curves control
-    rather than leaving a dead switch.
-  - **Stage E (real work left).** `controls-registry.js:1608` — text's "Smoothness" (0..6) writes
-    the SAME `smoothing` key as the universal 0..1 slider; rename it to `textSmoothness` (it feeds
-    `optimizeAnchorsCardinal`, it is not a tension). `engine.js:55` shape smoothing still clamps
-    0..2. `EXTRA_PRESERVED` (`algo-config-panel.js:1751`) should move `[smoothing, simplify,
-    curves]` into the base preserve set. `.vectura` writes a version but `ui-file-io.js:117`
-    throws it away on load — thread it to `sanitizeImportedParams` for a migration shim. (All 38
-    shipped presets carry `smoothing: 0`, so the semantic change is invisible to them; only
-    user-saved files with a non-zero smoothing are affected.)
-  - **Stage F.** Collapse the remaining private RDP/decimator copies (`pattern.js:2403`,
-    `geometry3d.js:878`) onto `GeometryUtils.simplifyPath`.
-  - **Open question for Jay.** Text's Curves toggle is inert: glyph outlines arrive already
-    bezierized, and the engine deliberately does not re-fit them (re-fitting a curve degrades it,
-    and the welded-script fit is the most fragile geometry in the repo). Making Curves-off actually
-    de-curve a glyph is a text-specific change, not a universal-pipeline one. Held by the ratchet
-    in `curve-baseline.test.js`.
-- **Audit remediation punchlist (2026-07-07, verified + extended 2026-07-11).** A 4-agent "unknown unknowns" audit plus a source-level verification pass produced 20 work items (AUD-01…AUD-20). Full specs — steps, RGR criteria, definitions of done, approval gates — live in `docs/audit-remediation-todo.md`; work one task per commit, reference the AUD ID. **6/20 done as of 2026-07-12 — see the "Status — pick up here" section at the top of that file for the current done/unblocked/blocked breakdown and the recommended next task (AUD-02).** Snapshot:
-  - **P0 — safety net & data integrity:** ~~AUD-01 destructive-git guard~~ **DONE** (2026-07-12, `dd074f7`) — now requires a checkpoint within the last 30 minutes, not merely any checkpoint; the 7 stale `recover-*` tags were triaged (all superseded by landed work) and deleted with Jay's approval; AUD-02 `.vectura` files have no `formatVersion`/migration shim (old saves silently re-render with today's defaults); ~~AUD-03 `SeededRNG(0)` falls back to `Math.random()`~~ **DONE** (2026-07-12, `6e8ac1c`) — seed-0 saves/SVG imports are now deterministic.
-  - **P1 — pipelines & lost coverage:** AUD-05 ~25 bare polygon-clipping call sites can throw uncaught through compound recompute; AUD-06 re-land 3 regression tests stranded in `stash@{0}` (2026-06-13); AUD-07 orphaned Playwright screenshot suite (baselines ~3 months stale, runs nowhere) + `mask-shift-drag.spec.js:131` executes in no suite; AUD-08 cookie has ~230 B headroom with no length guard + 6 silent localStorage quota swallows on preset save; ~~AUD-09 `saveVecturaFile` has no catch / `openVecturaFile` drops the underlying error~~ **DONE** (2026-07-12, `dc14b1d`); ~~AUD-17 no global `error`/`unhandledrejection` handler anywhere~~ **DONE** (2026-07-12, `53e2365`).
-  - **P2 — debt & bloat:** AUD-04 stale `styles.css` in `release.yml` zip list (verified cosmetic-only — zip exits 0; demoted from P0); AUD-10 dead 16-component "Phase 1" library kept green by 16 tests; AUD-11 untrack `graphify-out/graph.json`/`graph.html` (committed on 384/725 commits) + relocate the 85 MB example; AUD-12 8 silently-passing `if (el) expect(...)` guards; AUD-13 CLAUDE.md counts stale (~28 algorithms vs "13+") + CHANGELOG 11+ versions behind; AUD-14 `loadInJSDOM` ×21 / `makeEngine` ×10 copy-paste divergence; AUD-15 hook/scripts batch (hooks:install parity, `tests/`-triggered version bumps, ~~orphaned script~~ **DONE** (2026-07-12, `cab94d9`), settings.local leftovers, `window.app`); AUD-16 public repo has no LICENSE; AUD-18 zero cross-tab storage coordination; AUD-19 every version bump cache-busts all ~184 script/CSS URLs for every Pages visitor; ~~AUD-20 untrack 11 stale-tracked `src/inspiration` images~~ **DONE** (2026-07-12, `2229064`).
-  - **Gated on Jay (7 remaining decisions):** AUD-07 revive-vs-delete screenshots; AUD-10 delete-vs-adopt components; AUD-11 examples destination; AUD-15.2 drop `tests/` from the bump trigger; AUD-16 license choice; AUD-18 multi-tab scope; AUD-19 cache strategy. AUD-11's history rewrite is proposal-only (approval gate).
-- **Petalis overhaul — remaining delight + UX follow-ups.** The overhaul core shipped in v1.2.0 (whorl layout, distinct shading + modifier stacks, convex botanical petal profiles + centre-anchoring, opt-in venation, the Bloom/Asymmetry/Cupping macros, a varied randomizer, and the non-destructive designer mount). Still to build:
-  - **Species morph A→B.** A crossfade between two species/profiles, reusing `blendProfilePoints`/`profileBlendWeight` (already in `petalis.js`) — needs a two-source picker + a single blend slider in the panel/designer.
-  - **Petal Designer undo.** The designer has zero `pushHistory` calls; route non-live commits in the canvas/shading/modifier/randomness bind sites through `this.app.pushHistory()` (hook point exists near `applyPetalDesignerToLayer`).
-  - **Per-type shading cards.** Render only the controls a shading type actually uses (mirror the modifier-card pattern); add info buttons; surface the new `veinCount`/`veinReach` controls on the Venation card.
-- **Pendula studio — Phase 3/4 remaining (tactile + craft + export).** The studio shipped in v1.2.0; still to build:
-  - **Per-loop morph animation export** (the second time axis: a series of distinct evolving figures) — blocked on a frame-packaging decision (no zip lib in the no-build repo).
-  - **Plotter hygiene on export** — randomize closed-loop seam start ("reloop") to avoid the pen ink-blot artifact.
-  - **Optional node/matrix view** over the existing `{sourceId, targetParamPath, amount, …}` edge data (cheap — the data model already supports it).
-  - **Deferred by design (judge-ranked lower / higher-risk):** the skeuomorphic main-canvas "Bench" (drag gears/arms/force vectors), the Patchbench node graph, the Twin-Elliptic machine type, a true-physics coupled-pendulum RK4 mode (log as a PRH hardening idea), and an elastic rubber-band linkage.
-- **Meridian branch e2e shape-rect drift.** `tests/e2e/smoke.spec.js:1044 — shape reticle cursor appears for shape tools but selection restores normal cursor behavior` fails on `meridian-blue-skin` with a ~0.6 px Alt-drag rect midpoint drift vs `worldStart`. Passes cleanly on `main` (HEAD `6663bc9`). Verified pre-existing relative to Phase 5 — failed identically at the Phase 4 closure HEAD (`65290de`). Likely a layout shift introduced in Phases 2-4 (workspace pane chrome, padding/border drift) that nudges `getBoundingClientRect` between `worldStart` capture and Alt-drag mouse-down. Investigate canvas-bounding-rect timing in `src/render/renderer.js`. Visually rectangles still render correctly; this is a precision drift not a behavioral break.
-- **Meridian Phase 3 menu deferrals.** Three menu wirings still use bespoke handlers and would benefit from primitive-based migration: (a) Layer-add submenu (`src/ui/shortcuts.js:517-565`) — needs `UI.overlays.Menu` to support submenus + custom item renderers; (b) Pen palette dropdown (`src/ui/panels/pens-panel.js:141-219`) — needs a new `UI.Menus.Palette` composing `overlays/Menu` chrome + custom swatch grid; (c) `this.openModal` → `UI.overlays.Modal` primitive promotion across the 7 centered modals (CSS rewrite vs class-name shim — pick an approach during the work).
-- Migrate the remaining algorithm-local legacy noise paths (`flowfield`, `grid`, `rings`, `horizon`) onto `NoiseRack.defaultConfigFor` to finish the universal-noise convergence.
-- Extract the remaining algorithm-tuning magic numbers (wavetable `0.45` / `0.866` / `0.5`, topo `0.45` / `0.866`, spiral tile constants, etc.) into `src/config/algorithm-tuning.js`.
-- Reconcile the divergent `applyTile` implementations across `rainfall` / `wavetable` / `topo` / `spiral` and either unify them into `algorithm-utils.js` or formally document the per-algorithm contract.
-- Investigate whether the `layer.origin` `{x:0, y:0}` back-compat default for pre-0.8.24 `.vectura` files preserves the prior bounds-derived behavior (renderer falls back to `profile.{width,height}/2` only when `origin` is absent — the new default may shift visuals on legacy saves).
-- Extract more shared Noise Rack runtime primitives from the duplicated `wavetable` / `spiral` / `rainfall` implementations into `src/core/noise-rack.js`.
-- Add tests for Noise Rack determinism, serialization, UI normalization, and algorithm parity across migrated systems.
-- Add GitHub-side rulesets / branch protection, merge queue, and Project fields once the repository settings are available to configure.
-- Decide whether to gate PRs on lint after introducing a repo-wide ESLint config that is compatible with the current browser-IIFE codebase.
-- Add drag-to-mask layer assignment and richer silhouette providers for currently open-line-only algorithms once their envelope rules are stable.
-- Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
-- **Shape Properties popover (SHP-1) side-count edit collapses per-corner rounding — known limitation.** The Task Bar Shape Properties popover (`src/ui/shell/context-bar-modes.js` → `renderer.setShapeSides`) is uniform-corner-mode only. When it changes a polygon's side count, the persisted `cornerRadii` array is resized by refilling every entry with the current *max* radius, so a polygon that had per-corner variation (set via the on-canvas corner widget's single-corner drag) loses that variation on a popover side-count change. Acceptable because the popover intentionally exposes only a uniform radius (per-corner editing stays on-canvas), but a future enhancement could preserve/rescale the per-corner pattern across a side-count change. No PRH logged (design choice, not a defect).
-- **Outline Text (TXT-1) welded-kern gap — known behavior, PRH-tracked.** `TextOutlineOps.outlineText` (`src/core/text-outline-ops.js`) partitions the rendered text geometry per glyph by nearest glyph-cell. On parsed web faces with `mergeOverlaps` on, a kerned pair (RA/AV/LT…) or connected script can weld two glyphs' ink into ONE contour; that ring's centroid lands in a single glyph-quad, so the sibling glyph gets zero paths and no layer — diverging from the "glyph count = non-whitespace char count" acceptance. Geometry is still fully preserved (no path dropped) and undo restores the editable Text layer. Fix options (split the welded ring per glyph-quad, or keep welded glyphs as one shared compound path à la Illustrator) are logged as PRH-014 in `docs/pre-release-hardening-log.md`; documented by a current-behavior regression test in `tests/unit/text-outline-ops.test.js`.
-
-## Done
+  verified in the running app, that fit DECLINES the real input and changed nothing. The remaining
+  follow-ups (P2 rename; fillet-vs-gate ordering) are tracked under **Next**; the full review
+  record lives under **Decisions**.
 - **Unreleased — the Algorithm dropdown never loaded the factory Default.** Reported as "Default presets
   are no longer being loaded during algorithm load". They never were, on that path: `restoreLayerParams`
   rebuilt a swapped layer's params from `ALGO_DEFAULTS` alone, so the layer claimed
@@ -739,3 +805,27 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Raster-Plane parity findings deferred (documented, not implemented): whole-path minimum-visible-ratio culling after hidden-line removal; aspect-aware sample density for angled line families; skipping hidden-line removal during active slider drags as a fast preview.
 - Raster-Plane mesh/topography hidden-line removal is ANALYTIC, not rastered: wire segments are split exactly where they cross a projected face boundary, and self-occlusion is settled by source-space identity (does the point lie on that patch of surface?) rather than a depth-buffer bias. A screen-space depth buffer cannot be pixel-perfect here — its bias must be loose enough not to eat wires lying on the surface, which is exactly loose enough to let wires behind it protrude past a ridge.
 - An occluder must represent the SAME surface the wires draw. Mesh mode occludes against its own interpolated vertex grid (a tessellation ramps a hard edge across one cell; the raw sampler resolves it sharply — occluding wires with the raw sampler eats a wedge out of the lower plane at a step). Topography keeps the fine sampler occluder because its contours come from the continuous field, not a tessellation.
+- **The three Simplifies — reviewed + judged 2026-07-13. Do NOT unify them.** Jay observed that the
+  Post-Processing Lab's Simplify was much worse than the contextual toolbar's (on an expanded spiral:
+  Lab Simplify 1 → an ugly 6-point polygon; toolbar → 2 anchors tracing the curve exactly). Two
+  adversarial reviewers + an independent judge re-derived everything against the running code. The
+  findings overturned the obvious plan, so they are recorded here before anyone "fixes" it again.
+  (The P1 defects found by this review were fixed 2026-07-14, `de9a9f9` — see Done.)
+  - **Root cause of Jay's case:** `GeometryUtils.rebuildShapeAnchors` — step 2 (`if (smoothing > 0)`)
+    was the ONLY thing that wrote handles, so at Smoothing 0 (which Expand sets) it *stripped the
+    handles the source anchors already carried* and emitted a raw decimated polyline. Measured max
+    deviation from the true curve: **83.9 mm**, vs 3.46 mm for the toolbar.
+  - **REJECTED — unifying `fitBezierAnchors` onto `reduceAnchors`/`toCurveAnchors`.** The claim that
+    windowed corner detection is "strictly better" is **false and measurably backwards**. On the
+    DENSE flattened paths the toolbar actually operates on (`flattenForEdit` output), naive detection
+    returns exactly 4 anchors for a square at any sampling density, while windowed detection smears
+    each real corner into a band — **4 vs 28 anchors on a dense square; 6 vs 140 on a dense hexagon.**
+    Swapping the fit would not shift the toolbar's ladder, it would **delete** it (`maxSteps` → 0 on
+    3 of 5 representative inputs). Conversely the naive detector is just as broken on COARSE input
+    (192 of 200 Lissajous samples read as corners). **Neither detector is better — the discriminator
+    is pre-conditioning, not the detector.** One Schneider core, two corner policies, two genuinely
+    different regimes. That is the correct design, not tech debt.
+  - **REJECTED — porting the toolbar's ladder to the whole-layer slider.** 59x the cost (587 ms vs
+    10 ms over 500 paths; the stock flowfield has 1,165), and a rung *index* is incoherent for a
+    scalar serialized into `.vectura` files and presets — reseed the layer and rung 7 means something
+    else, or nothing.

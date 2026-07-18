@@ -6,6 +6,16 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Changed
+- **`plans.md` is now the single canonical punchlist**, restructured into priority tiers
+  (Now / Next / Later / Blocked on Jay). Four stale planning docs were validated against
+  source and deleted, with every surviving item folded into `plans.md`:
+  `algorithm_todo.md` (unbuilt visual families carried to the algorithm backlog),
+  `test_refinement_plan.md` (open findings carried to the test-suite refinement batch),
+  `docs/todo-universal-preset-system.md` (fully done — no residue), and
+  `specs/review-2026-05/` (A4/B3/C2/S1 verified done; A3-C1/A5/B1-A6 remainders carried).
+  `docs/audit-remediation-todo.md` remains as the AUD-## spec appendix.
+
 ## 1.3.0 - 2026-07-18
 
 ### Added

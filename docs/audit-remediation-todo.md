@@ -1,10 +1,13 @@
 # Audit Remediation Todo (2026-07-07, verified + extended 2026-07-11)
 
+> **`plans.md` is the single canonical punchlist** (consolidated 2026-07-18). This file is
+> the spec appendix for `AUD-##` items only: an AUD task is open only if it appears in a
+> `plans.md` tier. Use this file for the detailed steps, RGR criteria, and decision options.
+
 Source: full-repo "unknown unknowns" audit (4-agent sweep: test blind spots, doc drift,
 silent-failure risks, automation debt) run 2026-07-07, followed by a source-level
-verification pass and a second discovery sweep on 2026-07-11. This file is the
-executable punchlist. Each task is written so an agent with no prior context can pick
-it up cold.
+verification pass and a second discovery sweep on 2026-07-11. Each task is written so an
+agent with no prior context can pick it up cold.
 
 ## Status — pick up here
 
