@@ -180,6 +180,19 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — paint bucket venn faces: overlapping closed rings expose lens/lune/union
+  rungs in the fill ladder.** Root cause of "can't fill the venn overlap of two circles":
+  `findFillTargetStack` only carved sub-regions against OPEN barrier paths
+  (`collectBarrierPaths` skips closed rings), so two closed circles laddered
+  circle → circle → doc bounds in every prior version — verified empirically at v1.3.2 and
+  v1.2.73 (identical stacks; NOT a regression from AUD-05 or the curve rework, which were
+  both ruled out). Fix: when the cursor ring partially overlaps sibling rings (vertex
+  in/out crossing test, bbox-gated), boolean-carve the cursor face (∩ of all
+  cursor-containing rings − ∪ of the overlapping rest) via `FillBoolean` and prepend it;
+  append the group union before doc bounds. Ladder for a venn lens is now
+  lens → circle → circle → union → canvas. Degenerate input degrades to the classic ladder
+  (AUD-05 guard). Covered by `tests/unit/paint-bucket-venn-regions.test.js` (RGR-proved);
+  verified in the running app (hover highlight, scroll rungs, hatch fill clipped to lens).
 - **Unreleased — coverage ratchet: `vitest.config.mjs` gains `coverage.thresholds`.**
   Pinned ~1 point below measured coverage (2026-07-18: lines 84.14%, functions 78.48%,
   branches 70.68% → thresholds 83/77/69) so the CI `test:coverage` job fails on silent

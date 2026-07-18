@@ -13,6 +13,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   un-combined child geometry instead of a dead UI or a vanished layer.
 
 ### Added
+- **Paint bucket: venn faces for overlapping closed shapes.** Two overlapping circles
+  (or any partially overlapping closed rings) now expose their boolean faces in the
+  scroll-to-widen ladder: the intersection lens (or the lune under the cursor) is the
+  tightest rung, the full shapes follow, and the union of the overlapping group sits
+  before doc bounds. Previously sub-region carving only ran against open barrier paths,
+  so a two-circle venn offered nothing between "one circle" and "the whole canvas".
+  Degenerate geometry degrades to the classic ladder via the AUD-05 FillBoolean guard.
 - **Coverage ratchet.** `vitest.config.mjs` now enforces coverage thresholds
   (statements/lines 83%, functions 77%, branches 69% — pinned ~1 point below measured) so
   the CI coverage job fails on silent erosion.

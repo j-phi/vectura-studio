@@ -418,6 +418,97 @@
           }
         }
       }
+
+      // Venn faces. Sub-region carving above only runs against OPEN barrier
+      // paths, so two CLOSED rings overlapping like a venn diagram never
+      // exposed their lens (A∩B) or lunes (A\B) — the ladder was just
+      // circle → circle → doc bounds. When the cursor ring partially overlaps
+      // sibling rings, boolean-carve the face under the cursor (intersection
+      // of every cursor-containing ring, minus the union of the overlapping
+      // rest) and prepend it as the tightest rung; append the group union as
+      // the "all overlapping shapes" rung before doc bounds. FillBoolean
+      // degrades to [] on degenerate geometry (AUD-05), so a failed op just
+      // leaves the classic ladder untouched.
+      const FB = Vectura.FillBoolean;
+      if (FB?.intersection && FB.ringToMultiPolygon && FB.pointInRing) {
+        const kEntry = candidates[K];
+        const ringBBox = (ring) => {
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const pt of ring) {
+            if (pt.x < minX) minX = pt.x; if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y; if (pt.y > maxY) maxY = pt.y;
+          }
+          return { minX, minY, maxX, maxY };
+        };
+        // Partial overlap = some vertices of one ring inside the other AND
+        // some outside (checked both directions). Full containment (nested
+        // rings — the band/donut case) fails both checks and stays with the
+        // band logic; disjoint rings fail the bbox test.
+        const crosses = (a, b) => {
+          let someIn = false, someOut = false;
+          for (const pt of b) {
+            if (polyContainsPoint(a, pt.x, pt.y)) someIn = true; else someOut = true;
+            if (someIn && someOut) return true;
+          }
+          return false;
+        };
+        const partiallyOverlaps = (a, b) => {
+          const ba = ringBBox(a), bb = ringBBox(b);
+          if (ba.minX > bb.maxX || bb.minX > ba.maxX || ba.minY > bb.maxY || bb.minY > ba.maxY) return false;
+          return crosses(a, b) || crosses(b, a);
+        };
+        const partners = candidates.filter((c, i) => i !== K && partiallyOverlaps(kEntry.path, c.path));
+        if (partners.length) {
+          const toMP = (ring) => FB.ringToMultiPolygon(ring);
+          // From a multipolygon result, take the outer ring of the polygon
+          // that contains the cursor, as {x,y} points.
+          const pickFace = (mp) => {
+            for (const pg of (mp || [])) {
+              const outer = pg && pg[0];
+              if (outer && FB.pointInRing([worldX, worldY], outer)) {
+                return outer.map((pt) => ({ x: pt[0], y: pt[1] }));
+              }
+            }
+            return null;
+          };
+          const containingMPs = [];
+          const otherMPs = [];
+          for (const c of partners) {
+            (polyContainsPoint(c.path, worldX, worldY) ? containingMPs : otherMPs).push(toMP(c.path));
+          }
+          let mp = toMP(kEntry.path);
+          for (const g of containingMPs) {
+            mp = FB.intersection(mp, g);
+            if (!mp.length) break;
+          }
+          if (mp.length && otherMPs.length) mp = FB.difference(mp, FB.union(...otherMPs));
+          const face = pickFace(mp);
+          const faceArea = face ? shoelaceArea(face) : 0;
+          if (face && faceArea > 0 && faceArea < kEntry.area * 0.98) {
+            entries.unshift({
+              layer: kEntry.layer,
+              polygon: face,
+              innerPolygon: null,
+              area: faceArea,
+              loopId: `venn-face:${K}:${kEntry.layer.id}:${partners.length}`,
+              isDocBounds: false,
+            });
+          }
+          const uni = FB.union(toMP(kEntry.path), ...partners.map((c) => toMP(c.path)));
+          const uFace = pickFace(uni);
+          const uArea = uFace ? shoelaceArea(uFace) : 0;
+          if (uFace && uArea > kEntry.area * 1.02) {
+            entries.push({
+              layer: kEntry.layer,
+              polygon: uFace,
+              innerPolygon: null,
+              area: uArea,
+              loopId: `venn-union:${K}:${kEntry.layer.id}:${partners.length}`,
+              isDocBounds: false,
+            });
+          }
+        }
+      }
     }
 
     const docPoly = docBoundsPolygon(engine);
