@@ -184,6 +184,46 @@ describe('PTH-3b smooth session', () => {
     expect(anchors.every((a) => a.in && a.out)).toBe(true);
   });
 
+  // Regression (2026-07-19): an anchor-described path (pen dome) must be
+  // smoothed AT THE ANCHOR LEVEL — the already-smooth top anchor is never
+  // split or re-authored (no 1% jump), only the sharp base corners round.
+  test('anchor path: smooth anchors survive, only sharp corners split', () => {
+    const domePath = () => {
+      const anchors = [
+        { x: 0, y: 100, in: null, out: { x: 0, y: 40 } },
+        { x: 50, y: 0, in: { x: 15, y: 0 }, out: { x: 85, y: 0 } },
+        { x: 100, y: 100, in: { x: 100, y: 40 }, out: null },
+      ];
+      // Dense flatten stand-in for the point cache; anchors are authoritative.
+      const pts = anchors.map((a) => ({ x: a.x, y: a.y }));
+      pts.push({ x: 0, y: 100 });
+      pts.meta = { closed: true, forceCurves: true, anchors };
+      return pts;
+    };
+    const { ctx, layer } = setup(domePath);
+
+    Ops.smoothBegin(['L1'], ctx);
+    Ops.smoothPreview(1, ctx); // 1% — the reported jump case
+    let anchors = anchorsOf(layer.sourcePaths[0]);
+    let tops = anchors.filter((a) => Math.hypot(a.x - 50, a.y - 0) < 1e-6);
+    expect(tops).toHaveLength(1); // never split
+    // Fillet pairs hug the corners at 1% (within 5mm) instead of jumping.
+    const nearBL = anchors.filter((a) => Math.hypot(a.x - 0, a.y - 100) < 5);
+    expect(nearBL).toHaveLength(2);
+
+    Ops.smoothPreview(60, ctx);
+    anchors = anchorsOf(layer.sourcePaths[0]);
+    tops = anchors.filter((a) => Math.hypot(a.x - 50, a.y - 0) < 1e-6);
+    expect(tops).toHaveLength(1); // still one top anchor at 60%
+    expect(anchors).toHaveLength(5); // top + two fillet pairs
+
+    // t=0 restores the original anchors exactly.
+    Ops.smoothPreview(0, ctx);
+    const restored = anchorsOf(layer.sourcePaths[0]);
+    expect(restored).toHaveLength(3);
+    Ops.smoothCancel(ctx);
+  });
+
   // Regression (2026-07-18): the session must round corners with a TIGHT,
   // faithful fit — the old implementation loosened the fit tolerance with t,
   // which reshaped/thinned geometry (that is Simplify's verb) and left the

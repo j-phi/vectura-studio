@@ -635,10 +635,15 @@
           * Math.pow(SHAPE_FIT_TOL_MAX_FRAC / SHAPE_FIT_TOL_MIN_FRAC, simplify)
           * diag;
         // `smoothing` rounds the corners the fit preserved — the same verb the
-        // toolbar's Smooth slider drives. Catmull-Rom tension has no meaning once
-        // the curve is a real least-squares fit.
-        const fitted = fitBezierAnchors(points, closed, tol, undefined, smoothing);
+        // toolbar's Smooth slider drives, via the shared tangent-aware fillet
+        // pass. Catmull-Rom tension has no meaning once the curve is a real
+        // least-squares fit.
+        let fitted = fitBezierAnchors(points, closed, tol, undefined, 0);
         if (Array.isArray(fitted) && fitted.length >= 2) {
+          if (smoothing > 0) {
+            const rounded = filletSharpAnchors(fitted, closed, clamp01(smoothing));
+            if (Array.isArray(rounded) && rounded.length >= 2) fitted = rounded;
+          }
           return { anchors: fitted, changed: true };
         }
       }
@@ -1565,32 +1570,176 @@
     return out;
   };
 
-  // Anchor-preserving corner rounding for shape layers: fillet the SHARP
-  // anchors of an existing anchor run in place. A sharp anchor — handle-less on
-  // both sides, with a turn angle past the threshold — splits into a fillet-arc
-  // pair; every other anchor, and every handle the user placed, stays exactly
-  // where it was. This is the shape-layer face of the ONE Smooth mechanism:
-  // rounding may ADD the fillet anchors it needs, but it never re-authors,
-  // moves, or thins the user's anchors (that is Simplify's verb).
+  // ── Bezier-aware, anchor-preserving corner rounding ─────────────────────────
+  //
+  // Fillet the SHARP anchors of an existing anchor run in place. Sharpness is a
+  // TANGENT BREAK past the threshold — judged from the real segment tangents
+  // (handles when present, chords otherwise) — NOT "has no handles": the corner
+  // where a bezier arc meets a straight base carries a handle on its arc side
+  // and is still sharp. An already tangent-continuous anchor (a pen path's
+  // smooth point) is NEVER split, moved, or re-authored — at most its handles
+  // shorten where a neighbouring trim requires it, which leaves its trace
+  // identical. Each sharp anchor is replaced by a fillet pair whose setback
+  // points lie ON the actual adjacent segments (arc-length trim via de
+  // Casteljau — never on the chord to the neighbouring anchor, which puckered
+  // curved sides), joined by a cubic tangent-continuous with BOTH trimmed
+  // sides. Rounding may ADD the fillet anchors it needs, but it never
+  // re-authors, moves, or thins the user's anchors (that is Simplify's verb).
+
+  const _lp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+
+  // Segment view between two anchors: control points with null c1/c2 marking a
+  // straight span (kept handle-less so lines render crisp).
+  const _segOf = (A, B) => ({
+    p0: { x: A.x, y: A.y },
+    c1: A.out ? { x: A.out.x, y: A.out.y } : null,
+    c2: B.in ? { x: B.in.x, y: B.in.y } : null,
+    p3: { x: B.x, y: B.y },
+  });
+  const _segIsLine = (s) => !s.c1 && !s.c2;
+  const _segPointAt = (s, t) => (_segIsLine(s)
+    ? _lp(s.p0, s.p3, t)
+    : cubicAtT(s.p0, s.c1 || s.p0, s.c2 || s.p3, s.p3, t));
+
+  // Cumulative arc-length table for arc-length→t inversion (uniform samples).
+  const _SEG_ARC_SAMPLES = 32;
+  const _segArcTable = (s) => {
+    const cum = [0];
+    let prev = _segPointAt(s, 0);
+    for (let k = 1; k <= _SEG_ARC_SAMPLES; k++) {
+      const p = _segPointAt(s, k / _SEG_ARC_SAMPLES);
+      cum.push(cum[k - 1] + Math.hypot(p.x - prev.x, p.y - prev.y));
+      prev = p;
+    }
+    return cum;
+  };
+  const _segTAtArc = (cum, dist) => {
+    const total = cum[cum.length - 1];
+    if (!(total > 0)) return 0;
+    const d = Math.max(0, Math.min(total, dist));
+    let k = 1;
+    while (k < cum.length && cum[k] < d) k += 1;
+    const span = cum[k] - cum[k - 1];
+    const frac = span > 0 ? (d - cum[k - 1]) / span : 0;
+    return (k - 1 + frac) / _SEG_ARC_SAMPLES;
+  };
+
+  // De Casteljau sub-segment [t0, t1] of a segment; straight spans stay
+  // handle-less.
+  const _segSlice = (s, t0, t1) => {
+    if (_segIsLine(s)) {
+      return { p0: _lp(s.p0, s.p3, t0), c1: null, c2: null, p3: _lp(s.p0, s.p3, t1) };
+    }
+    const split = (P0, C1, C2, P3, t) => {
+      const a = _lp(P0, C1, t);
+      const b = _lp(C1, C2, t);
+      const c = _lp(C2, P3, t);
+      const d = _lp(a, b, t);
+      const e = _lp(b, c, t);
+      const m = _lp(d, e, t);
+      return { left: [P0, a, d, m], right: [m, e, c, P3] };
+    };
+    const r = split(s.p0, s.c1 || s.p0, s.c2 || s.p3, s.p3, t0).right;
+    const u = t0 < 1 ? (t1 - t0) / (1 - t0) : 0;
+    const l = split(r[0], r[1], r[2], r[3], u).left;
+    return { p0: l[0], c1: l[1], c2: l[2], p3: l[3] };
+  };
+
+  // Travel-direction tangents at a segment's ends (unit vectors).
+  const _segEndTangent = (s) => {
+    const ref = s.c2 || s.c1 || s.p0;
+    const v = _vSub(s.p3, ref);
+    return _vLen(v) > 1e-9 ? _vNorm(v) : _vNorm(_vSub(s.p3, s.p0));
+  };
+  const _segStartTangent = (s) => {
+    const ref = s.c1 || s.c2 || s.p3;
+    const v = _vSub(ref, s.p0);
+    return _vLen(v) > 1e-9 ? _vNorm(v) : _vNorm(_vSub(s.p3, s.p0));
+  };
+
   const filletSharpAnchors = (anchors, closed, radiusFrac, cornerAngleDeg) => {
-    if (!(radiusFrac > 0) || !Array.isArray(anchors) || anchors.length < 3) return anchors;
+    const rf = clamp01(radiusFrac);
+    if (!(rf > 0) || !Array.isArray(anchors) || anchors.length < 3) return anchors;
     const n = anchors.length;
+    const segCount = closed ? n : n - 1;
     const cornerCos = Math.cos(
       (Number.isFinite(cornerAngleDeg) ? cornerAngleDeg : SMOOTH_CORNER_ANGLE_DEG) * Math.PI / 180,
     );
-    const cornerPos = [];
+
+    const segs = [];
+    for (let k = 0; k < segCount; k++) segs.push(_segOf(anchors[k], anchors[(k + 1) % n]));
+    const arcs = segs.map(_segArcTable);
+    const lens = arcs.map((cum) => cum[cum.length - 1]);
+
+    // Sharpness: tangent break between the incoming segment's end tangent and
+    // the outgoing segment's start tangent.
+    const inSegIdx = (i) => (closed ? (i - 1 + n) % n : i - 1);
+    const outSegIdx = (i) => (closed || i < n - 1 ? i % segCount : -1);
+    const setback = new Array(n).fill(0);
+    let anySharp = false;
     for (let i = 0; i < n; i++) {
       if (!closed && (i === 0 || i === n - 1)) continue; // endpoints stay put
-      const a = anchors[i];
-      if (a.in || a.out) continue; // a handle-carrying anchor is already smooth
-      const prev = anchors[(i - 1 + n) % n];
-      const next = anchors[(i + 1) % n];
-      const d1 = _vNorm(_vSub(a, prev));
-      const d2 = _vNorm(_vSub(next, a));
-      if (_vDot(d1, d2) < cornerCos) cornerPos.push({ x: a.x, y: a.y });
+      const si = inSegIdx(i);
+      const so = outSegIdx(i);
+      if (si < 0 || so < 0 || !(lens[si] > 1e-9) || !(lens[so] > 1e-9)) continue;
+      if (_vDot(_segEndTangent(segs[si]), _segStartTangent(segs[so])) >= cornerCos) continue;
+      // 0.5 · min so two corners sharing a segment can meet but never overlap.
+      setback[i] = rf * 0.5 * Math.min(lens[si], lens[so]);
+      anySharp = anySharp || setback[i] > 0;
     }
-    if (!cornerPos.length) return anchors;
-    return _applyFillets(anchors, closed, cornerPos, clamp01(radiusFrac));
+    if (!anySharp) return anchors;
+
+    // Trim every segment at whichever of its ends is sharp.
+    const sliced = segs.map((s, k) => {
+      const dStart = setback[k];
+      const dEnd = setback[(k + 1) % n];
+      const t0 = dStart > 0 ? _segTAtArc(arcs[k], dStart) : 0;
+      const t1 = dEnd > 0 ? _segTAtArc(arcs[k], lens[k] - dEnd) : 1;
+      return _segSlice(s, Math.min(t0, t1), Math.max(t0, t1));
+    });
+
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const a = anchors[i];
+      const si = inSegIdx(i);
+      const so = outSegIdx(i);
+      const inS = si >= 0 ? sliced[si] : null;
+      const outS = so >= 0 ? sliced[so] : null;
+      if (!(setback[i] > 0)) {
+        // Preserved anchor. Handles come from the (possibly trimmed) segment
+        // control points — identical when no trim touched them.
+        out.push({
+          x: a.x,
+          y: a.y,
+          in: inS && inS.c2 ? { x: inS.c2.x, y: inS.c2.y } : null,
+          out: outS && outS.c1 ? { x: outS.c1.x, y: outS.c1.y } : null,
+        });
+        continue;
+      }
+      // Fillet pair: P1 ends the trimmed incoming segment, P2 starts the
+      // trimmed outgoing segment; the joining cubic leaves P1 along the
+      // incoming curve's tangent and arrives at P2 along the outgoing curve's
+      // tangent, handle lengths scaled for a ~circular arc.
+      const P1 = inS.p3;
+      const P2 = outS.p0;
+      const tanIn = _segEndTangent(inS);
+      const tanOut = _segStartTangent(outS);
+      const hIn = _FILLET_K * Math.hypot(P1.x - a.x, P1.y - a.y);
+      const hOut = _FILLET_K * Math.hypot(P2.x - a.x, P2.y - a.y);
+      out.push({
+        x: P1.x,
+        y: P1.y,
+        in: inS.c2 ? { x: inS.c2.x, y: inS.c2.y } : null,
+        out: { x: P1.x + tanIn.x * hIn, y: P1.y + tanIn.y * hIn },
+      });
+      out.push({
+        x: P2.x,
+        y: P2.y,
+        in: { x: P2.x - tanOut.x * hOut, y: P2.y - tanOut.y * hOut },
+        out: outS.c1 ? { x: outS.c1.x, y: outS.c1.y } : null,
+      });
+    }
+    return out;
   };
 
   // Concatenated bezier segments (each sharing endpoints) → editable anchors.
@@ -1734,13 +1883,19 @@
       ? opts.tolerance
       : (Number.isFinite(opts.toleranceFrac) ? opts.toleranceFrac : ROUND_FIT_TOL_FRAC) * diag;
     if (opts.fastPreview) tol *= 3;
-    const anchors = fitBezierAnchors(
+    // Fit first with NO internal fillets, then round the fitted run's sharp
+    // anchors with the same tangent-aware fillet pass every Smooth surface
+    // uses (filletSharpAnchors) — the fit's own position-matched fillet ran
+    // along chords to neighbouring fit anchors, which puckered curved sides.
+    const fitted = fitBezierAnchors(
       points.map((p) => ({ x: p.x, y: p.y })),
       Boolean(closed),
       Math.max(tol, 1e-6),
       opts.cornerAngleDeg,
-      tc,
+      0,
     );
+    if (!Array.isArray(fitted) || fitted.length < 2) return null;
+    const anchors = filletSharpAnchors(fitted, Boolean(closed), tc, opts.cornerAngleDeg);
     if (!Array.isArray(anchors) || anchors.length < 2) return null;
     return anchors.some((a) => a && (a.in || a.out)) ? anchors : null;
   };

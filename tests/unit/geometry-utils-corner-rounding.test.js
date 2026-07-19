@@ -106,6 +106,97 @@ describe('roundCornerAnchors', () => {
   });
 });
 
+describe('filletSharpAnchors — bezier-aware, anchor-preserving rounding', () => {
+  // A closed dome: smooth top anchor (horizontal tangent-continuous handles),
+  // two SHARP base corners where the arc meets the straight base. The corner
+  // anchors carry handles on their arc side — sharpness is a TANGENT BREAK,
+  // not "has no handles".
+  const dome = () => [
+    { x: 0, y: 100, in: null, out: { x: 0, y: 40 } },
+    { x: 50, y: 0, in: { x: 15, y: 0 }, out: { x: 85, y: 0 } },
+    { x: 100, y: 100, in: { x: 100, y: 40 }, out: null },
+  ];
+
+  const turnDeg = (a, b) => {
+    const la = Math.hypot(a.x, a.y);
+    const lb = Math.hypot(b.x, b.y);
+    if (la < 1e-9 || lb < 1e-9) return 0;
+    const dot = (a.x * b.x + a.y * b.y) / (la * lb);
+    return (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
+  };
+
+  test('an already-smooth anchor is never split — handles only adjust', () => {
+    const out = GU.filletSharpAnchors(dome(), true, 0.3);
+    const tops = out.filter((a) => Math.hypot(a.x - 50, a.y - 0) < 1e-6);
+    expect(tops).toHaveLength(1);
+    // The tangent stays horizontal (handles may shorten from trimming, but the
+    // anchor stays smooth and in place).
+    expect(Math.abs(tops[0].in.y - 0)).toBeLessThan(1e-6);
+    expect(Math.abs(tops[0].out.y - 0)).toBeLessThan(1e-6);
+    // Both sharp base corners split into fillet pairs: 1 + 2·2 anchors.
+    expect(out).toHaveLength(5);
+  });
+
+  test('fillet setback points lie ON the original outline, not on chords', () => {
+    // Dense reference sampling of the original dome (the coarse 24-per-span
+    // helper leaves multi-mm gaps between samples on the big arc spans).
+    const src = dome();
+    const orig = [];
+    const cubic = (A, c1, c2, B, t) => {
+      const mt = 1 - t;
+      return {
+        x: mt * mt * mt * A.x + 3 * mt * mt * t * c1.x + 3 * mt * t * t * c2.x + t * t * t * B.x,
+        y: mt * mt * mt * A.y + 3 * mt * mt * t * c1.y + 3 * mt * t * t * c2.y + t * t * t * B.y,
+      };
+    };
+    for (let i = 0; i < src.length; i++) {
+      const A = src[i];
+      const B = src[(i + 1) % src.length];
+      for (let k = 0; k < 400; k++) orig.push(cubic(A, A.out || A, B.in || B, B, k / 400));
+    }
+    const out = GU.filletSharpAnchors(dome(), true, 0.4);
+    const nearOrig = (p) => Math.min(...orig.map((q) => Math.hypot(q.x - p.x, q.y - p.y)));
+    out.forEach((a) => expect(nearOrig(a)).toBeLessThan(0.15));
+  });
+
+  test('tiny t keeps the fillet pair snug to its corner (no jump at 1%)', () => {
+    const out = GU.filletSharpAnchors(dome(), true, 0.01);
+    const nearBL = out.filter((a) => Math.hypot(a.x - 0, a.y - 100) < 5);
+    expect(nearBL).toHaveLength(2);
+  });
+
+  test('fillets are tangent-continuous with curved neighbours — no puckers', () => {
+    const out = GU.filletSharpAnchors(dome(), true, 0.5);
+    const pts = flattenAnchors(out, true);
+    // A pucker is a sharp local turn. Walk the flattened outline and measure
+    // the largest direction change between consecutive segments (skipping
+    // sub-half-mm segments, which are sampling noise).
+    let maxTurn = 0;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const d1 = { x: pts[i].x - pts[i - 1].x, y: pts[i].y - pts[i - 1].y };
+      const d2 = { x: pts[i + 1].x - pts[i].x, y: pts[i + 1].y - pts[i].y };
+      if (Math.hypot(d1.x, d1.y) < 0.5 || Math.hypot(d2.x, d2.y) < 0.5) continue;
+      maxTurn = Math.max(maxTurn, turnDeg(d1, d2));
+    }
+    expect(maxTurn).toBeLessThan(25);
+  });
+
+  test('a fully smooth path is untouched (Illustrator parity: nothing to round)', () => {
+    // Closed "blob" of three tangent-continuous anchors.
+    const blob = [
+      { x: 0, y: 0, in: { x: -20, y: 20 }, out: { x: 20, y: -20 } },
+      { x: 100, y: 0, in: { x: 80, y: -20 }, out: { x: 120, y: 20 } },
+      { x: 50, y: 80, in: { x: 80, y: 80 }, out: { x: 20, y: 80 } },
+    ];
+    const out = GU.filletSharpAnchors(blob.map((a) => ({ ...a })), true, 0.8);
+    expect(out).toHaveLength(3);
+    out.forEach((a, i) => {
+      expect(a.x).toBeCloseTo(blob[i].x, 6);
+      expect(a.y).toBeCloseTo(blob[i].y, 6);
+    });
+  });
+});
+
 describe('applyCornerRounding', () => {
   test('stamps rounded anchors + forceCurves onto an eligible path', () => {
     const p = square();

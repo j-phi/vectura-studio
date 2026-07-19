@@ -493,14 +493,32 @@
       const layer = findLayer(engine, id);
       if (!isEligibleLayer(layer)) return;
       const original = clonePaths(layer.sourcePaths);
-      // Snapshot each source path as its DISPLAYED point curve — smoothing fits
-      // beziers to these points; the original is restored at t=0 / cancel.
+      // Snapshot each source path in its DISPLAYED form; the original is
+      // restored at t=0 / cancel. Anchor-described drawn curves (PathDraw mode
+      // 'cubic') are captured AS ANCHORS so the preview can round sharp anchors
+      // in place — an already-smooth anchor is never split or re-authored.
+      // Everything else (verbatim polylines, draw-time quadratics) is captured
+      // as its flattened point curve for the fit-based rounding.
+      const useCurves = layerCurves(layer);
+      const pathDraw = PD();
       const paths = layer.sourcePaths.map((p) => {
-        const flat = flattenForEdit(p, layerCurves(layer));
+        const mode = pathDraw ? pathDraw.classify(p, { useCurves }).mode : 'verbatim';
+        if (mode === 'cubic') {
+          const parsed = parsePathAnchors(p);
+          if (Array.isArray(parsed.anchors) && parsed.anchors.length >= 2) {
+            return {
+              kind: 'anchors',
+              anchors: parsed.anchors,
+              closed: parsed.closed,
+              meta: (p && p.meta) ? { ...p.meta } : {},
+            };
+          }
+        }
+        const flat = flattenForEdit(p, useCurves);
         const pts = (Array.isArray(flat) ? flat : []).map((pt) => ({ x: pt.x, y: pt.y }));
         const closed = !!(p && p.meta && p.meta.closed)
           || (pts.length > 2 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1e-6);
-        return { points: pts, closed, meta: (p && p.meta) ? { ...p.meta } : {} };
+        return { kind: 'points', points: pts, closed, meta: (p && p.meta) ? { ...p.meta } : {} };
       });
       records.push({
         id: layer.id,
@@ -529,6 +547,23 @@
         return;
       }
       layer.sourcePaths = rec.paths.map((pth) => {
+        // Anchor-described paths round IN PLACE: sharp anchors fillet, smooth
+        // anchors survive untouched (no re-fit, so no anchor re-authoring and
+        // no jump at small t).
+        if (pth.kind === 'anchors') {
+          const src = cloneAnchorList(pth.anchors);
+          const rounded = (GUmod && typeof GUmod.filletSharpAnchors === 'function')
+            ? GUmod.filletSharpAnchors(src, pth.closed, tc / 100)
+            : src;
+          const built = buildPathFromAnchors(
+            (Array.isArray(rounded) && rounded.length >= 2) ? rounded : src,
+            pth.closed,
+            pth.meta,
+          );
+          if (built.meta) built.meta.forceCurves = true;
+          else built.meta = { forceCurves: true };
+          return built;
+        }
         const pts = pth.points || [];
         const passthrough = () => {
           const same = pts.map((a) => ({ x: a.x, y: a.y }));
@@ -1032,10 +1067,29 @@
     app?.pushHistory?.();
     layers.forEach((layer) => {
       const curves = layerCurves(layer);
+      const pathDraw = PD();
       expandLiveShapeInPlace(layer, 'smooth');
       layer.sourcePaths = layer.sourcePaths.map((path) => {
         if (!Array.isArray(path) || path.length < 3) return path;
-        // Round the DISPLAYED curve, exactly as the session preview does.
+        // Anchor-described drawn curves round in place, exactly as the session
+        // preview does: sharp anchors fillet, smooth anchors survive untouched.
+        const mode = pathDraw ? pathDraw.classify(path, { useCurves: curves }).mode : 'verbatim';
+        if (mode === 'cubic') {
+          const parsed = parsePathAnchors(path);
+          if (Array.isArray(parsed.anchors) && parsed.anchors.length >= 2
+            && typeof GUmod.filletSharpAnchors === 'function') {
+            const rounded = GUmod.filletSharpAnchors(parsed.anchors, parsed.closed, s);
+            const built = buildPathFromAnchors(
+              (Array.isArray(rounded) && rounded.length >= 2) ? rounded : parsed.anchors,
+              parsed.closed,
+              path.meta ? { ...path.meta } : {},
+            );
+            if (built.meta) built.meta.forceCurves = true;
+            else built.meta = { forceCurves: true };
+            return built;
+          }
+        }
+        // Everything else: round the DISPLAYED flattened curve via the fit.
         const flat = flattenForEdit(path, curves);
         const pts = flat.map((pt) => ({ x: pt.x, y: pt.y }));
         const closed = !!(path && path.meta && path.meta.closed)

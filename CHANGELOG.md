@@ -7,6 +7,16 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Fixed
+- **Smooth is bezier-aware and anchor-preserving on drawn curves.** An anchor-described
+  path (a pen dome) is now smoothed AT THE ANCHOR LEVEL: an already tangent-continuous
+  anchor is never split or re-authored (the old flatten-and-refit split a smooth top
+  anchor and made its replacements jump apart even at 1%), and only tangent-BREAK
+  anchors round — including corners that carry a handle on their curved side, which the
+  first pass skipped as "already smooth". Fillet setback points are trimmed onto the
+  actual adjacent bezier segments by arc length (de Casteljau), and the joining fillet
+  is tangent-continuous with both trimmed sides — no more angled puckers where a
+  rounded corner met a curved segment. The same tangent-aware fillet pass now also runs
+  after the point-fit path (dense polylines) and the shape-rebuild fit.
 - **Smooth is now Illustrator-parity corner rounding everywhere, on one shared
   mechanism.** Every Smooth surface — Object ▸ Smooth…, the canvas context menu, the
   contextual toolbar's progressive Smooth slider, and the Post-Processing Lab's
