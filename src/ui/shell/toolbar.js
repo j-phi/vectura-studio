@@ -75,6 +75,13 @@
       t === 'fill-erase' ? 'erase' :
       t === 'fill-pattern' ? 'pattern' :
       t === 'fill-pattern-erase' ? 'pattern-erase' : 'fill';
+    // Inverse — the paint-bucket parent re-invokes its last-picked variant on a
+    // short click (this.fillMode), so map that remembered mode back to a tool.
+    // Solid fill stays reachable via the F shortcut even once a child is sticky.
+    const fillToolFromMode = (mode) =>
+      mode === 'erase' ? 'fill-erase' :
+      mode === 'pattern' ? 'fill-pattern' :
+      mode === 'pattern-erase' ? 'fill-pattern-erase' : 'fill';
 
     const updateToolIcon = (tool, mode) => {
       const button = toolbar.querySelector(`.tool-btn[data-tool="${tool}"]`);
@@ -151,11 +158,12 @@
         if (!temporary) SETTINGS.shapeMode = mode;
         updateToolIcon('shape', mode);
       }
-      // Reflect the active fill variant on the paint-bucket parent icon so the
-      // last-picked child sticks (session-only — derived from activeTool, which
-      // is not persisted, so a reload reverts to the default solid-fill icon).
+      // Remember the active fill variant so the paint-bucket parent both shows
+      // its icon and re-invokes it on a short click (session-only — this.fillMode
+      // and activeTool are never persisted, so a reload reverts to solid fill).
       if (`${tool}` === 'fill' || `${tool}`.startsWith('fill-')) {
-        updateToolIcon('fill', fillModeFromTool(tool));
+        this.fillMode = fillModeFromTool(tool);
+        updateToolIcon('fill', this.fillMode);
       }
       if (this.app.renderer?.setTool) this.app.renderer.setTool(tool);
       syncButtons();
@@ -396,7 +404,9 @@
       button: fillButton,
       menu: fillMenu,
       buttons: fillButtons,
-      onActivate: () => this.setActiveTool('fill'),
+      // Short click re-invokes the last-picked fill variant (defaults to solid
+      // fill before any child is chosen, and after the F shortcut resets it).
+      onActivate: () => this.setActiveTool(fillToolFromMode(this.fillMode)),
       onSelect: (btn) => {
         if (btn.dataset.fill === 'erase')         this.setActiveTool('fill-erase');
         else if (btn.dataset.fill === 'pattern')       this.setActiveTool('fill-pattern');

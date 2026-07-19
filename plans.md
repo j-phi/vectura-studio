@@ -62,6 +62,15 @@ or completes.
   Spiralizer honours `p.curves`, `src/core/path-draw.js` collapses all six trace copies,
   `GeometryUtils.toCurveAnchors`/`applyCurveFit` is the one fit. Plan:
   `~/.claude/plans/assess-why-enabling-curves-shimmering-hopcroft.md`.
+- **Pattern Fill as a fill *type* inside the standard paint bucket.** Today Pattern Fill is a
+  separate toolbar child of the paint-bucket group (`fill-pattern` / `fill-pattern-erase`).
+  Instead, make "Pattern" one of the fill-type options within the standard paint bucket flow:
+  pick the fill type, and choosing "Pattern" expands the pattern picker menu (swatch grid +
+  scale/tile/spacing settings) inline in the same panel. This likely subsumes/retires the
+  dedicated `fill-pattern*` toolbar children (which would remove the paint-bucket last-picked-
+  child interplay for pattern). Touches `ui-fill-panel.js` (the paint-bucket panel + the
+  `_buildPatternFillPanel` picker), the fill-type registry in `FillPanel.FILL_TYPE_OPTIONS`,
+  and the toolbar group in `ui-petal-designer.js` / `shell/toolbar.js`.
 
 ## Later
 - **Curves Stage D (cosmetic).** The liveness ratchet proves no algorithm's Curves toggle is

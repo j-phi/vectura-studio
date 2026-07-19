@@ -212,6 +212,7 @@ describe('toolbar subtool submenus', () => {
   // ── fill parent-icon reflects the last-picked child (session-only) ─────────
 
   describe('fill parent icon mirrors the last-selected child tool', () => {
+    const parentBtn = () => document.querySelector('.tool-btn[data-tool="fill"]');
     const parentIcon = () =>
       document.querySelector('.tool-btn[data-tool="fill"] .tool-icon');
     const childSvg = (fillMode) =>
@@ -249,6 +250,29 @@ describe('toolbar subtool submenus', () => {
       app.ui.setActiveTool('select'); // leave the fill tool entirely
       // Parent icon must stay on the last-picked fill child, not reset.
       expect(parentIcon().innerHTML).toBe(patternHtml);
+    });
+
+    test('short-clicking the parent re-invokes the last-picked child, not solid fill', () => {
+      document.querySelector('.tool-sub-btn[data-fill="pattern"]').click();
+      expect(app.ui.activeTool).toBe('fill-pattern');
+      app.ui.setActiveTool('select'); // move away
+      quickTap(parentBtn());             // short click the paint-bucket parent
+      expect(app.ui.activeTool).toBe('fill-pattern');
+    });
+
+    test('a different last-picked child (erase) is what the short click re-invokes', () => {
+      document.querySelector('.tool-sub-btn[data-fill="erase"]').click();
+      app.ui.setActiveTool('select');
+      quickTap(parentBtn());
+      expect(app.ui.activeTool).toBe('fill-erase');
+    });
+
+    test('the F shortcut resets the sticky mode back to solid fill', () => {
+      document.querySelector('.tool-sub-btn[data-fill="pattern"]').click();
+      app.ui.setActiveTool('fill'); // what pressing F does — solid fill
+      app.ui.setActiveTool('select');
+      quickTap(parentBtn());
+      expect(app.ui.activeTool).toBe('fill'); // sticky mode is solid again
     });
   });
 
