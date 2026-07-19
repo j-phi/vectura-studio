@@ -63,6 +63,19 @@
     const penModes = penButtons.map((btn) => btn.dataset.pen).filter(Boolean);
     const shapeToolFromMode = (mode) => `shape-${mode}`;
 
+    // Fill has no sub-button for its own solid mode (that IS the parent's
+    // default icon), so snapshot it here to restore when solid fill is picked.
+    const fillIconEl = fillButton?.querySelector('.tool-icon');
+    const defaultFillIcon = fillIconEl
+      ? { html: fillIconEl.innerHTML, viewBox: fillIconEl.getAttribute('viewBox') || '0 0 24 24' }
+      : null;
+    // Map each fill tool variant to its sub-button's data-fill value; solid
+    // 'fill' has no sub-button and restores the default icon instead.
+    const fillModeFromTool = (t) =>
+      t === 'fill-erase' ? 'erase' :
+      t === 'fill-pattern' ? 'pattern' :
+      t === 'fill-pattern-erase' ? 'pattern-erase' : 'fill';
+
     const updateToolIcon = (tool, mode) => {
       const button = toolbar.querySelector(`.tool-btn[data-tool="${tool}"]`);
       const icon = button?.querySelector('.tool-icon');
@@ -73,6 +86,15 @@
         sourceBtn = penButtons.find((btn) => btn.dataset.pen === mode);
       } else if (tool === 'shape') {
         sourceBtn = shapeButtons.find((btn) => btn.dataset.shape === mode);
+      } else if (tool === 'fill') {
+        if (mode === 'erase' || mode === 'pattern' || mode === 'pattern-erase') {
+          sourceBtn = fillButtons.find((btn) => btn.dataset.fill === mode);
+        } else if (icon && defaultFillIcon) {
+          // Solid fill — no sub-button; restore the parent's original icon.
+          icon.innerHTML = defaultFillIcon.html;
+          icon.setAttribute('viewBox', defaultFillIcon.viewBox);
+          return;
+        }
       }
       const sourceSvg = sourceBtn?.querySelector('svg');
       if (!icon || !sourceSvg) return;
@@ -128,6 +150,12 @@
         this.shapeMode = mode;
         if (!temporary) SETTINGS.shapeMode = mode;
         updateToolIcon('shape', mode);
+      }
+      // Reflect the active fill variant on the paint-bucket parent icon so the
+      // last-picked child sticks (session-only — derived from activeTool, which
+      // is not persisted, so a reload reverts to the default solid-fill icon).
+      if (`${tool}` === 'fill' || `${tool}`.startsWith('fill-')) {
+        updateToolIcon('fill', fillModeFromTool(tool));
       }
       if (this.app.renderer?.setTool) this.app.renderer.setTool(tool);
       syncButtons();

@@ -98,6 +98,47 @@ describe('Pattern Fill Settings panel (buildControls + _buildPatternFillPanel)',
     expect(layer.params.patternId).toBeTruthy();
   });
 
+  test('pattern picker renders each entry as a visual SVG swatch, not a bare text-name button', () => {
+    app.engine.addLayer('flowfield');
+    app.ui.renderLayers();
+    app.ui.activeTool = 'fill-pattern';
+    app.ui.buildControls();
+
+    const patternButtons = Array.from(dynamicControls().querySelectorAll('button'))
+      .filter((btn) => btn.querySelector('svg'));
+    expect(patternButtons.length).toBeGreaterThan(0);
+    const firstBtn = patternButtons[0];
+    expect(firstBtn.querySelector('svg')).toBeTruthy();
+    // The label must still be present (accessible name / hover title), but as
+    // a small caption alongside the icon — not as the button's only content.
+    expect(firstBtn.title.length).toBeGreaterThan(0);
+  });
+
+  test('re-picking a pattern rebuilds the panel in place instead of appending a duplicate copy', () => {
+    app.engine.addLayer('flowfield');
+    app.ui.renderLayers();
+    app.ui.activeTool = 'fill-pattern';
+    app.ui.buildControls();
+
+    const countHeaders = () =>
+      Array.from(dynamicControls().querySelectorAll('p'))
+        .filter((p) => p.textContent.trim() === 'Pattern Fill').length;
+    const swatches = () =>
+      Array.from(dynamicControls().querySelectorAll('button')).filter((b) => b.querySelector('svg'));
+
+    expect(countHeaders()).toBe(1);
+    const before = swatches().length;
+    expect(before).toBeGreaterThan(0);
+
+    // Click a swatch — the onclick re-invokes _buildPatternFillPanel directly.
+    swatches()[0].onclick();
+
+    // Panel must be rebuilt in place: exactly one header, same swatch count —
+    // not two stacked copies (the doubling regression).
+    expect(countHeaders()).toBe(1);
+    expect(swatches().length).toBe(before);
+  });
+
   test('getPatternTileFillParams reflects the picked pattern and settings-panel edits', () => {
     app.engine.addLayer('flowfield');
     app.ui.renderLayers();

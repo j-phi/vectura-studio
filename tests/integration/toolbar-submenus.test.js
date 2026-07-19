@@ -209,6 +209,49 @@ describe('toolbar subtool submenus', () => {
     });
   });
 
+  // ── fill parent-icon reflects the last-picked child (session-only) ─────────
+
+  describe('fill parent icon mirrors the last-selected child tool', () => {
+    const parentIcon = () =>
+      document.querySelector('.tool-btn[data-tool="fill"] .tool-icon');
+    const childSvg = (fillMode) =>
+      document.querySelector(`.tool-sub-btn[data-fill="${fillMode}"] svg`);
+
+    test('selecting the Pattern child copies its icon onto the paint-bucket parent', () => {
+      app.ui.setActiveTool('fill'); // solid — default icon
+      const solidHtml = parentIcon().innerHTML;
+
+      document.querySelector('.tool-sub-btn[data-fill="pattern"]').click();
+      expect(app.ui.activeTool).toBe('fill-pattern');
+      expect(parentIcon().innerHTML).toBe(childSvg('pattern').innerHTML);
+      expect(parentIcon().innerHTML).not.toBe(solidHtml);
+    });
+
+    test('selecting a different child (Erase) swaps the parent icon again', () => {
+      document.querySelector('.tool-sub-btn[data-fill="pattern"]').click();
+      document.querySelector('.tool-sub-btn[data-fill="erase"]').click();
+      expect(app.ui.activeTool).toBe('fill-erase');
+      expect(parentIcon().innerHTML).toBe(childSvg('erase').innerHTML);
+    });
+
+    test('choosing solid fill restores the default paint-bucket icon', () => {
+      app.ui.setActiveTool('fill'); // capture default
+      const solidHtml = parentIcon().innerHTML;
+      document.querySelector('.tool-sub-btn[data-fill="pattern"]').click();
+      expect(parentIcon().innerHTML).not.toBe(solidHtml);
+      app.ui.setActiveTool('fill'); // back to solid
+      expect(parentIcon().innerHTML).toBe(solidHtml);
+    });
+
+    test('the swapped icon persists after switching to an unrelated tool (session state)', () => {
+      document.querySelector('.tool-sub-btn[data-fill="pattern"]').click();
+      const patternHtml = parentIcon().innerHTML;
+      app.ui.setActiveTool('select'); // leave the fill tool entirely
+      // Parent icon must stay on the last-picked fill child, not reset.
+      expect(parentIcon().innerHTML).toBe(patternHtml);
+    });
+  });
+
   // ── shape ─────────────────────────────────────────────────────────────────
 
   describe('shape subtool menu', () => {

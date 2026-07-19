@@ -561,7 +561,30 @@
   // legacy ui.js. Installed onto UI.prototype via FillPanel.installOn().
   // ──────────────────────────────────────────────────────────────────────
 
+  // Renders a pattern's bundled SVG as a small recolored icon (currentColor)
+  // inside `wrap`. Mirrors algo-config-panel.js's patternSelect#injectSvgPreview
+  // so both pattern pickers show the same visual swatch instead of raw text.
+  function _injectPatternSvgIcon(wrap, svgString) {
+    if (!svgString) return;
+    const doc = new DOMParser().parseFromString(svgString, 'image/svg+xml');
+    const svg = doc.querySelector('svg');
+    if (!svg) return;
+    svg.setAttribute('width', '100%');
+    svg.setAttribute('height', '100%');
+    svg.style.maxHeight = '100%';
+    svg.querySelectorAll('*').forEach((el) => {
+      if (el.hasAttribute('stroke') && el.getAttribute('stroke') !== 'none') el.setAttribute('stroke', 'currentColor');
+      if (el.hasAttribute('fill') && el.getAttribute('fill') !== 'none') el.setAttribute('fill', 'currentColor');
+    });
+    wrap.appendChild(svg);
+  }
+
   function _buildPatternFillPanel(container) {
+    // buildControls() clears #dynamic-controls once before the first call, but
+    // the pattern picker's onclick re-invokes this method directly to reflect
+    // the new selection — so clear here too, or each click appends a second
+    // full copy of the panel (doubling its height and stacking pattern grids).
+    container.innerHTML = '';
     const isErase = this.activeTool === 'fill-pattern-erase';
     const layer = this.app.engine?.getActiveLayer?.();
     // A Pattern-algorithm layer fills one tile-topology sub-region within its
@@ -594,18 +617,28 @@
       browserHdr.textContent = 'Pattern';
       container.appendChild(browserHdr);
 
-      const list = document.createElement('div');
-      list.className = 'flex flex-col gap-0.5 mb-4 overflow-y-auto';
-      list.style.maxHeight = '10rem';
+      const grid = document.createElement('div');
+      grid.className = 'grid grid-cols-4 gap-1.5 mb-4 overflow-y-auto p-1 bg-vectura-bg border border-vectura-border rounded';
+      grid.style.maxHeight = '10rem';
       const currentId = isPatternLayer ? (layer?.params?.patternId || '') : (tileSettings.tilePatternId || '');
       patterns.forEach((pat) => {
+        const isSel = pat.id === currentId;
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'text-xs text-left px-2 py-1 rounded hover:bg-vectura-border transition-colors truncate';
-        btn.style.color = pat.id === currentId ? 'var(--vectura-accent)' : '';
-        btn.style.background = pat.id === currentId ? 'var(--vectura-border)' : '';
-        btn.textContent = pat.name || pat.id;
+        btn.className = `relative flex flex-col items-center justify-center gap-1 p-1 rounded border transition-colors ${isSel ? 'border-vectura-accent bg-vectura-border' : 'border-transparent opacity-70 hover:opacity-100 hover:bg-vectura-border'}`;
         btn.title = pat.name || pat.id;
+
+        const iconWrap = document.createElement('div');
+        iconWrap.className = 'w-full flex items-center justify-center text-vectura-text';
+        iconWrap.style.height = '24px';
+        _injectPatternSvgIcon(iconWrap, pat.svg);
+        btn.appendChild(iconWrap);
+
+        const label = document.createElement('div');
+        label.className = 'w-full text-[9px] text-center truncate leading-tight text-vectura-muted';
+        label.textContent = pat.name || pat.id;
+        btn.appendChild(label);
+
         btn.onclick = () => {
           if (isPatternLayer) {
             if (layer) {
@@ -619,9 +652,9 @@
           }
           this._buildPatternFillPanel(container);
         };
-        list.appendChild(btn);
+        grid.appendChild(btn);
       });
-      container.appendChild(list);
+      container.appendChild(grid);
     } else {
       // Phase 4: empty-state illustration for the pattern catalog.
       const ES = window.Vectura?.UI?.EmptyStates;
