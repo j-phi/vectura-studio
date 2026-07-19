@@ -1234,7 +1234,11 @@
       const algoSec = getEl('left-section-algorithm', { silent: true });
       const algoConfSec = getEl('left-section-algorithm-configuration', { silent: true });
       if (algoSec) algoSec.style.display = 'none';
-      if (algoConfSec) algoConfSec.style.display = 'none';
+      // `container` (#dynamic-controls) lives INSIDE algoConfSec, so it must
+      // stay visible here — hiding it (as the solid fill/fill-erase branch
+      // above does for its own, separate #left-section-paint-bucket section)
+      // would hide _buildPatternFillPanel's content along with it.
+      if (algoConfSec) algoConfSec.style.display = '';
       this._buildPatternFillPanel(container);
       renderExportOptimizationIfOpen();
       restoreLeftPanelScroll();
@@ -4025,15 +4029,28 @@
         statsEl.className = 'text-[10px] text-vectura-muted simplify-stats';
         statsEl.textContent = statsText();
         const defaultVal = getDefaultValue(def);
-        // 'input' only refreshed the chip (component-owned); commits refresh
-        // the simplification stats line after the regen.
+        // Live on 'input' (fast-preview regen + stats, history pushed once per
+        // drag session — the same livePreview contract as the generic branch)
+        // and a full-quality regen on 'change'/release.
+        let liveHistoryPushed = false;
         createDefSlider(div, def, {
           value: toDisplayValue(def, val),
           defaultValue: (defaultVal === null || defaultVal === undefined)
             ? undefined
             : toDisplayValue(def, defaultVal),
+          onChange: (nextDisplay) => {
+            if (!liveHistoryPushed && this.app.pushHistory) {
+              this.app.pushHistory();
+              liveHistoryPushed = true;
+            }
+            layer.params[def.id] = fromDisplayValue(def, nextDisplay);
+            this.storeLayerParams(layer);
+            this.app.regen({ preview: true });
+            statsEl.textContent = statsText();
+          },
           onCommit: (nextDisplay) => {
-            if (this.app.pushHistory) this.app.pushHistory();
+            if (!liveHistoryPushed && this.app.pushHistory) this.app.pushHistory();
+            liveHistoryPushed = false;
             layer.params[def.id] = fromDisplayValue(def, nextDisplay);
             this.storeLayerParams(layer);
             this.app.regen();

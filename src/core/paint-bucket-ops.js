@@ -630,6 +630,17 @@
     weaveAngle: fillParams.fillWeaveAngle ?? 0,
     weaveOver: fillParams.fillWeaveOver ?? 1,
     weaveUnder: fillParams.fillWeaveUnder ?? 1,
+    // Pattern Fill on an arbitrary shape (fillType 'patternTile') — the
+    // repeating tile pattern stamped and clipped to this fill's region. See
+    // AlgorithmRegistry._generatePatternTileFill in pattern.js.
+    patternId: fillParams.tilePatternId ?? null,
+    scale: fillParams.tileScale ?? 1,
+    tileMethod: fillParams.tileMethod ?? 'grid',
+    tileSpacingX: fillParams.tileSpacingX ?? 0,
+    tileSpacingY: fillParams.tileSpacingY ?? 0,
+    originX: fillParams.tileOriginX ?? 0,
+    originY: fillParams.tileOriginY ?? 0,
+    removeSeams: fillParams.tileRemoveSeams ?? true,
     sensitivity: fillParams.fillSensitivity ?? 5,
     penId: fillParams.penId ?? null,
     region: clonePolygon(targetEntry.polygon),

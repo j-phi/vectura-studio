@@ -5596,20 +5596,37 @@
         return;
       }
 
+      // Pattern Fill / Erase Pattern Fill has two very different targets:
+      // - active layer IS a Pattern-algorithm layer → fill one tile-topology
+      //   sub-region within its own repeating geometry (unchanged, below).
+      // - any other layer type → stamp the configured pattern's tile grid
+      //   into whatever closed shape was clicked, exactly like solid Fill's
+      //   region detection, tagged with fillType 'patternTile' so the
+      //   generator (pattern.js `_generatePatternTileFill`) clips it to the
+      //   shape boundary. Erase is unaffected — applyFillAtPoint's erase mode
+      //   already removes whatever fill record is under the point regardless
+      //   of fillType.
+      const patternToolOnNonPatternLayer =
+        (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') &&
+        this.engine?.getActiveLayer?.()?.type !== 'pattern';
+
       if (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
         if (!this._isWorldInsidePaper(world)) {
           if (e.cancelable) e.preventDefault();
           return;
         }
-        const poly = this._computeFillPreviewPolygon(world.x, world.y);
-        if (poly && this.onPatternFill) {
-          this.onPatternFill({ tool: this.activeTool, polygon: poly, worldX: world.x, worldY: world.y });
+        if (!patternToolOnNonPatternLayer) {
+          const poly = this._computeFillPreviewPolygon(world.x, world.y);
+          if (poly && this.onPatternFill) {
+            this.onPatternFill({ tool: this.activeTool, polygon: poly, worldX: world.x, worldY: world.y });
+          }
+          if (e.cancelable) e.preventDefault();
+          return;
         }
-        if (e.cancelable) e.preventDefault();
-        return;
+        // Fall through to the shared solid-fill region-detection path below.
       }
 
-      if (this.activeTool === 'fill' || this.activeTool === 'fill-erase') {
+      if (this.activeTool === 'fill' || this.activeTool === 'fill-erase' || patternToolOnNonPatternLayer) {
         if (!this._isWorldInsidePaper(world)) {
           if (e.cancelable) e.preventDefault();
           return;
@@ -5625,9 +5642,13 @@
           if (e.cancelable) e.preventDefault();
           return;
         }
-        this._paintBucketHover(world);
-        const mode = this.activeTool === 'fill-erase' ? 'erase' : 'pour';
-        this._paintBucketPour(world, mode, { startBatch: true });
+        const patternTileParams = patternToolOnNonPatternLayer
+          ? this.app?.ui?.getPatternTileFillParams?.()
+          : null;
+        this._paintBucketHover(world, patternTileParams);
+        const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase')
+          ? 'erase' : 'pour';
+        this._paintBucketPour(world, mode, { startBatch: true, fillParamsOverride: patternTileParams });
         if (e.cancelable) e.preventDefault();
         return;
       }
@@ -6085,7 +6106,11 @@
         this.handleAreaCreateDrag(world, e);
         return;
       }
-      if (this.activeTool === 'fill' || this.activeTool === 'fill-erase') {
+      const moveIsPatternToolOnNonPatternLayer =
+        (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') &&
+        this.engine?.getActiveLayer?.()?.type !== 'pattern';
+
+      if (this.activeTool === 'fill' || this.activeTool === 'fill-erase' || moveIsPatternToolOnNonPatternLayer) {
         const rect = this.canvas.getBoundingClientRect();
         // `move` is wired to the window, so it fires even after the cursor
         // leaves the canvas. Without this guard the hover would re-find a
@@ -6106,7 +6131,10 @@
           this._paintBucketClearHover();
           return;
         }
-        this._paintBucketHover(world);
+        const patternTileParams = moveIsPatternToolOnNonPatternLayer
+          ? this.app?.ui?.getPatternTileFillParams?.()
+          : null;
+        this._paintBucketHover(world, patternTileParams);
         this.showFillLoupe(e.clientX, e.clientY);
         // Drag-pour: while the primary button AND Shift are held and we
         // cross into a new region's loopId, pour again. lastPourLoopId is
@@ -6115,8 +6143,9 @@
         if ((e.buttons & 1) && e.shiftKey && this.paintBucketStack?.length) {
           const target = this.paintBucketStack[this.paintBucketScopeIndex];
           if (target && target.loopId !== this.lastPourLoopId) {
-            const mode = this.activeTool === 'fill-erase' ? 'erase' : 'pour';
-            this._paintBucketPour(world, mode, { startBatch: false });
+            const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase')
+              ? 'erase' : 'pour';
+            this._paintBucketPour(world, mode, { startBatch: false, fillParamsOverride: patternTileParams });
           }
         }
         this.draw();
@@ -7931,10 +7960,13 @@
       return world.x >= m && world.x <= prof.width - m && world.y >= m && world.y <= prof.height - m;
     }
 
-    _paintBucketHover(world) {
+    // fillParamsOverride (used by Pattern Fill on a non-pattern layer) is
+    // layered on top of the normal panel params — scope/sensitivity/pens stay
+    // universal, only fillType + pattern-tile knobs are replaced.
+    _paintBucketHover(world, fillParamsOverride) {
       const PBO = window.Vectura?.PaintBucketOps;
       if (!PBO) { this.paintBucketStack = null; this.patternFillPreviewPolygon = null; return; }
-      const params = this.app?.paintBucketPanel?.getFillParams?.() || {};
+      const params = { ...(this.app?.paintBucketPanel?.getFillParams?.() || {}), ...(fillParamsOverride || {}) };
       const scope = params.fillScope || 'all-objects';
       const sensitivity = params.fillSensitivity ?? 5;
       const { stack } = PBO.findFillTargetStack(this.engine, world.x, world.y, { scope, sensitivity });
@@ -7981,8 +8013,8 @@
     _paintBucketPour(world, mode = 'pour', opts = {}) {
       const PBO = window.Vectura?.PaintBucketOps;
       if (!PBO) return null;
-      const { startBatch = false } = opts;
-      const params = this.app?.paintBucketPanel?.getFillParams?.() || {};
+      const { startBatch = false, fillParamsOverride } = opts;
+      const params = { ...(this.app?.paintBucketPanel?.getFillParams?.() || {}), ...(fillParamsOverride || {}) };
       const result = PBO.applyFillAtPoint(this.engine, this.app, world.x, world.y, {
         scopeIndex: this.paintBucketScopeIndex,
         mode,

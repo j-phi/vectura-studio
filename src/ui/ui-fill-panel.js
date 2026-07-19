@@ -564,6 +564,13 @@
   function _buildPatternFillPanel(container) {
     const isErase = this.activeTool === 'fill-pattern-erase';
     const layer = this.app.engine?.getActiveLayer?.();
+    // A Pattern-algorithm layer fills one tile-topology sub-region within its
+    // own repeating geometry (unchanged below, writes layer.params directly).
+    // Any other layer type stamps the picked pattern's tile grid into
+    // whatever closed shape gets clicked, clipped to that shape's boundary —
+    // settings for that live in this._patternTileFillSettings, not the layer.
+    const isPatternLayer = layer?.type === 'pattern';
+    const tileSettings = isPatternLayer ? null : _ensurePatternTileFillSettings.call(this);
     const PR = window.Vectura?.PatternRegistry;
     const patterns = PR?.getPatterns?.() || PR?.getAll?.() || [];
 
@@ -571,6 +578,15 @@
     hdr.className = 'text-[11px] uppercase text-vectura-muted tracking-widest mb-3';
     hdr.textContent = isErase ? 'Erase Pattern Fill' : 'Pattern Fill';
     container.appendChild(hdr);
+
+    if (!isPatternLayer) {
+      const note = document.createElement('p');
+      note.className = 'text-[11px] text-vectura-muted mb-3';
+      note.textContent = isErase
+        ? 'Click a shape filled with a pattern to remove it.'
+        : 'Click inside any closed shape to stamp the pattern below into it, clipped to its outline.';
+      container.appendChild(note);
+    }
 
     if (patterns.length) {
       const browserHdr = document.createElement('p');
@@ -581,7 +597,7 @@
       const list = document.createElement('div');
       list.className = 'flex flex-col gap-0.5 mb-4 overflow-y-auto';
       list.style.maxHeight = '10rem';
-      const currentId = layer?.params?.patternId || '';
+      const currentId = isPatternLayer ? (layer?.params?.patternId || '') : (tileSettings.tilePatternId || '');
       patterns.forEach((pat) => {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -591,11 +607,15 @@
         btn.textContent = pat.name || pat.id;
         btn.title = pat.name || pat.id;
         btn.onclick = () => {
-          if (layer) {
-            layer.params = layer.params || {};
-            layer.params.patternId = pat.id;
-            this.storeLayerParams?.(layer);
-            this.app.regen?.();
+          if (isPatternLayer) {
+            if (layer) {
+              layer.params = layer.params || {};
+              layer.params.patternId = pat.id;
+              this.storeLayerParams?.(layer);
+              this.app.regen?.();
+            }
+          } else {
+            tileSettings.tilePatternId = pat.id;
           }
           this._buildPatternFillPanel(container);
         };
@@ -623,7 +643,9 @@
       }
     }
 
-    if (!isErase) {
+    if (isErase) return;
+
+    if (isPatternLayer) {
       const settingsHdr = document.createElement('p');
       settingsHdr.className = 'text-[11px] uppercase text-vectura-muted tracking-widest mb-2';
       settingsHdr.textContent = 'Fill Settings';
@@ -666,7 +688,66 @@
       densInput.oninput = () => { this._patternFillSettings.density = parseFloat(densInput.value) || 1; };
       densRow.appendChild(densInput);
       container.appendChild(densRow);
+      return;
     }
+
+    // Non-pattern layer: Pattern Fill Settings — scale + tile method + spacing,
+    // read by getPatternTileFillParams() at fill-creation time.
+    const settingsHdr = document.createElement('p');
+    settingsHdr.className = 'text-[11px] uppercase text-vectura-muted tracking-widest mb-2';
+    settingsHdr.textContent = 'Pattern Fill Settings';
+    container.appendChild(settingsHdr);
+
+    const scaleRow = document.createElement('div');
+    scaleRow.className = 'mb-2';
+    const scaleLabel = document.createElement('label');
+    scaleLabel.className = 'control-label block mb-1';
+    scaleLabel.textContent = 'Scale';
+    scaleRow.appendChild(scaleLabel);
+    const scaleInput = document.createElement('input');
+    scaleInput.type = 'number'; scaleInput.step = '0.1'; scaleInput.min = '0.05'; scaleInput.max = '20';
+    scaleInput.className = 'w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none focus:border-vectura-accent';
+    scaleInput.value = tileSettings.tileScale;
+    scaleInput.oninput = () => { tileSettings.tileScale = parseFloat(scaleInput.value) || 1; };
+    scaleRow.appendChild(scaleInput);
+    container.appendChild(scaleRow);
+
+    const methodRow = document.createElement('div');
+    methodRow.className = 'mb-2';
+    const methodLabel = document.createElement('label');
+    methodLabel.className = 'control-label block mb-1';
+    methodLabel.textContent = 'Tile Method';
+    methodRow.appendChild(methodLabel);
+    const methodSelect = document.createElement('select');
+    methodSelect.className = 'w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none focus:border-vectura-accent';
+    [['grid', 'Grid'], ['brick', 'Brick'], ['hexagonal', 'Hexagonal'], ['off', 'Single Tile']].forEach(([v, label]) => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = label;
+      methodSelect.appendChild(o);
+    });
+    methodSelect.value = tileSettings.tileMethod;
+    methodSelect.onchange = () => { tileSettings.tileMethod = methodSelect.value; };
+    methodRow.appendChild(methodSelect);
+    container.appendChild(methodRow);
+
+    const spacingRow = document.createElement('div');
+    spacingRow.className = 'mb-2 flex gap-2';
+    [['tileSpacingX', 'Spacing X'], ['tileSpacingY', 'Spacing Y']].forEach(([key, label]) => {
+      const col = document.createElement('div');
+      col.className = 'flex-1';
+      const lbl = document.createElement('label');
+      lbl.className = 'control-label block mb-1';
+      lbl.textContent = label;
+      col.appendChild(lbl);
+      const input = document.createElement('input');
+      input.type = 'number'; input.step = '0.5';
+      input.className = 'w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none focus:border-vectura-accent';
+      input.value = tileSettings[key];
+      input.oninput = () => { tileSettings[key] = parseFloat(input.value) || 0; };
+      col.appendChild(input);
+      spacingRow.appendChild(col);
+    });
+    container.appendChild(spacingRow);
   }
 
   function _applyPatternFillFromCanvas({ tool, worldX, worldY }) {
@@ -732,6 +813,38 @@
     this.app.renderer?.draw?.();
   }
 
+  // Settings for Pattern Fill / Erase Pattern Fill used on a NON-pattern
+  // layer (the main-toolbar tools, distinct from `_patternFillSettings`
+  // above which is the hatch-fillType/density panel for single-tile fills
+  // *within* a Pattern-algorithm layer). Rendered by the Pattern Fill
+  // Settings panel (buildControls); read here at fill-creation time.
+  function _ensurePatternTileFillSettings() {
+    if (this._patternTileFillSettings) return this._patternTileFillSettings;
+    const firstPatternId = window.Vectura?.PatternRegistry?.getPatterns?.()?.[0]?.id
+      ?? window.Vectura?.PATTERNS?.[0]?.id
+      ?? null;
+    this._patternTileFillSettings = {
+      tilePatternId: firstPatternId,
+      tileScale: 1,
+      tileMethod: 'grid',
+      tileSpacingX: 0,
+      tileSpacingY: 0,
+      tileOriginX: 0,
+      tileOriginY: 0,
+      tileRemoveSeams: true,
+    };
+    return this._patternTileFillSettings;
+  }
+
+  function getPatternTileFillParams() {
+    const s = _ensurePatternTileFillSettings.call(this);
+    // buildFillRecord() resolves fillType via `fillMode ?? fillType`, and this
+    // is merged on top of the generic paint-bucket panel's params (which
+    // always carries a `fillMode`) — so both keys must be set here, or the
+    // panel's fillMode wins and silently produces a hatch fill instead.
+    return { fillMode: 'patternTile', fillType: 'patternTile', ...s };
+  }
+
   window.Vectura.FillPanel = {
     FILL_TYPE_OPTIONS,
     FILL_TYPE_OPTIONS_RAINFALL,
@@ -747,9 +860,12 @@
     },
     _buildPatternFillPanel,
     _applyPatternFillFromCanvas,
+    getPatternTileFillParams,
     installOn(proto) {
       proto._buildPatternFillPanel = function(container) { return _buildPatternFillPanel.call(this, container); };
       proto._applyPatternFillFromCanvas = function(payload) { return _applyPatternFillFromCanvas.call(this, payload); };
+      proto.getPatternTileFillParams = function() { return getPatternTileFillParams.call(this); };
+      proto._ensurePatternTileFillSettings = function() { return _ensurePatternTileFillSettings.call(this); };
     },
   };
 })();

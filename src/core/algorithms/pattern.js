@@ -4416,6 +4416,111 @@
     'meander', 'polygonal', 'triaxial', 'scribble',
   ]);
 
+  // Paint-bucket "Pattern Fill" on an arbitrary closed shape: stamp the
+  // configured pattern's tile grid across the region's world-space bbox (one
+  // tile of overhang so boundary tiles aren't clipped short), merge seams
+  // across the whole stamped grid first (so `_tileEdge` markers are still
+  // intact — the polygon clip below strips them), then clip every stamped
+  // path down to the region boundary. Tiles whose bbox can't reach the region
+  // are culled before stamping to avoid paying for the interior of a large
+  // sparse grid.
+  const _generatePatternTileFill = (fill, region) => {
+    const patternId = fill.patternId || (window.Vectura.PATTERNS[0] ? window.Vectura.PATTERNS[0].id : null);
+    if (!patternId || !Array.isArray(region) || region.length < 3) return [];
+    const data = getTargetSvgData(patternId);
+    if (!data) return [];
+
+    const scale = fill.scale ?? 1;
+    const originX = fill.originX ?? 0;
+    const originY = fill.originY ?? 0;
+    const tileSpacingX = fill.tileSpacingX ?? 0;
+    const tileSpacingY = fill.tileSpacingY ?? 0;
+    const tileMethod = fill.tileMethod || 'grid';
+
+    const scaledW = (data.vbW + tileSpacingX) * scale;
+    const scaledH = (data.vbH + tileSpacingY) * scale;
+    if (scaledW <= 0 || scaledH <= 0) return [];
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const pt of region) {
+      if (!pt) continue;
+      if (pt.x < minX) minX = pt.x;
+      if (pt.x > maxX) maxX = pt.x;
+      if (pt.y < minY) minY = pt.y;
+      if (pt.y > maxY) maxY = pt.y;
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(minY)) return [];
+
+    const startX = minX + (originX % scaledW) - scaledW;
+    const startY = minY + (originY % scaledH) - scaledH;
+
+    const tilePositions = [];
+    if (tileMethod === 'off') {
+      tilePositions.push({ tx: minX + originX, ty: minY + originY });
+    } else if (tileMethod === 'hexagonal') {
+      const rowH = scaledH * Math.sin(Math.PI / 3);
+      let rowCount = 0;
+      for (let y = startY; y < maxY + rowH; y += rowH) {
+        const xOff = (rowCount % 2) ? scaledW / 2 : 0;
+        for (let x = startX + xOff - scaledW; x < maxX + scaledW; x += scaledW)
+          tilePositions.push({ tx: x, ty: y });
+        rowCount++;
+      }
+    } else {
+      let rowCount = 0;
+      for (let y = startY; y < maxY + scaledH; y += scaledH) {
+        const xOffset = (tileMethod === 'brick' && rowCount % 2 !== 0) ? scaledW / 2 : 0;
+        for (let x = startX + xOffset - scaledW; x < maxX + scaledW; x += scaledW)
+          tilePositions.push({ tx: x, ty: y });
+        rowCount++;
+      }
+    }
+
+    const stampedPaths = [];
+    for (const { tx, ty } of tilePositions) {
+      if (tx + scaledW < minX || tx > maxX || ty + scaledH < minY || ty > maxY) continue;
+      data.groups.forEach((group) => {
+        const penId = fill.penMapping && fill.penMapping[group.id] ? fill.penMapping[group.id] : null;
+        group.paths.forEach((originalPath) => {
+          const tp = [];
+          for (const pt of originalPath) {
+            const tpt = { x: tx + pt.x * scale, y: ty + pt.y * scale };
+            if (pt._tileEdge) tpt._tileEdge = true;
+            tp.push(tpt);
+          }
+          tp.meta = { penId };
+          stampedPaths.push(tp);
+        });
+      });
+    }
+    if (!stampedPaths.length) return [];
+
+    let mergedPaths = stampedPaths;
+    if (fill.removeSeams !== false && tileMethod !== 'off') {
+      const byPen = new Map();
+      for (const path of stampedPaths) {
+        const key = path.meta?.penId ?? null;
+        if (!byPen.has(key)) byPen.set(key, []);
+        byPen.get(key).push(path);
+      }
+      mergedPaths = [];
+      for (const [, group] of byPen) {
+        for (const r of removeSeamSegments(group)) mergedPaths.push(r);
+      }
+    }
+
+    const PathBoolean = window.Vectura?.PathBoolean || {};
+    const clipToRegion = PathBoolean.segmentPathByPolygons;
+    if (typeof clipToRegion !== 'function') return mergedPaths;
+
+    const clipped = [];
+    for (const path of mergedPaths) {
+      const segments = clipToRegion(path, [region], { invert: true, closed: false });
+      for (const seg of segments) clipped.push(seg);
+    }
+    return clipped;
+  };
+
   // Dispatch to the right fill type → array of paths in tile-local SVG coords
   const _runPatternFill = (fill) => {
     const regions = getFillRegions(fill);
@@ -4521,6 +4626,7 @@
         case 'stripes':     return _stripesFill(fill, region, [region], density);
         case 'spirograph':  return _spirographFill(region, density, spiroRatioA, spiroRatioB, spiroPhase, spiroTurns, spiroDeformation);
         case 'weave':       return _weaveFill(region, density, weavePattern, weaveStrandWidth, weaveGap, weaveAngle, weaveOver, weaveUnder);
+        case 'patternTile': return _generatePatternTileFill(fill, region);
         default:            return hatchLines(region, density, 0 + angle, shiftX, shiftY);
       }
     }
@@ -4578,6 +4684,11 @@
       }
       case 'spirograph':  return _spirographFillComposite(topo, density, spiroRatioA, spiroRatioB, spiroPhase, spiroTurns, spiroDeformation);
       case 'weave':       return _weaveFillComposite(topo, density, weavePattern, weaveStrandWidth, weaveGap, weaveAngle, weaveOver, weaveUnder);
+      case 'patternTile': {
+        const out = [];
+        for (const r of effectiveRegions) out.push(..._generatePatternTileFill(fill, r));
+        return out;
+      }
       default:            return hatchLinesComposite(effectiveRegions, density, 0 + angle, shiftX, shiftY);
     }
   };
