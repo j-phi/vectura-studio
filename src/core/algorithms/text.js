@@ -908,7 +908,7 @@
             const fontCurve = it.idx >= 0 && meta[it.idx] && meta[it.idx].curve === true;
             const toggleSmooth = p.curves === true && smoothing > 0;
             if (!(fontCurve || toggleSmooth) || pts.length < 3
-              || !GU.rebuildShapeAnchors || !GU.buildPolylineFromAnchors) return pts;
+              || !GU.catmullRomAnchors || !GU.buildPolylineFromAnchors) return pts;
             const closed = !!(OUb && OUb.isClosedPath && OUb.isClosedPath(pts));
             let base = pts;
             if (closed && pts.length >= 2) {
@@ -916,9 +916,9 @@
               if (Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6) base = pts.slice(0, -1);
             }
             const effSmoothing = fontCurve ? Math.max(smoothing, STROKE_CURVE_SMOOTHING) : smoothing;
-            const built = GU.rebuildShapeAnchors(base.map((q) => ({ x: q.x, y: q.y })), { smoothing: effSmoothing, closed });
-            if (!built || !Array.isArray(built.anchors) || built.anchors.length < 2) return pts;
-            const poly = GU.buildPolylineFromAnchors(built.anchors, closed);
+            const builtAnchors = GU.catmullRomAnchors(base.map((q) => ({ x: q.x, y: q.y })), closed, effSmoothing);
+            if (!Array.isArray(builtAnchors) || builtAnchors.length < 2) return pts;
+            const poly = GU.buildPolylineFromAnchors(builtAnchors, closed);
             return (Array.isArray(poly) && poly.length >= 2) ? poly : pts;
           };
           // Band per GLYPH (gid groups a glyph's strokes) — junction welding is an
@@ -1149,7 +1149,7 @@
               let closed = false;
               const fontCurve = it.idx >= 0 && meta[it.idx] && meta[it.idx].curve === true;
               const toggleSmooth = p.curves === true && smoothing > 0;
-              if ((fontCurve || toggleSmooth) && GU && GU.rebuildShapeAnchors && seg.length >= 3) {
+              if ((fontCurve || toggleSmooth) && GU && GU.catmullRomAnchors && seg.length >= 3) {
                 closed = !!(OU && OU.isClosedPath && OU.isClosedPath(seg));
                 // A closed glyph (O, D…) repeats its first point as its last —
                 // drop the duplicate so the Catmull-Rom wrap-around isn't degenerate.
@@ -1161,10 +1161,10 @@
                 // Font curves get full Catmull-Rom (1); the user Smoothing slider can
                 // only push a designed curve rounder, never flatten it below faithful.
                 const effSmoothing = fontCurve ? Math.max(smoothing, STROKE_CURVE_SMOOTHING) : smoothing;
-                const built = GU.rebuildShapeAnchors(pts.map((q) => ({ x: q.x, y: q.y })), { smoothing: effSmoothing, closed });
-                if (built && Array.isArray(built.anchors) && built.anchors.length >= 2
-                  && built.anchors.some((a) => a && (a.in || a.out))) {
-                  anchors = built.anchors;
+                const builtAnchors = GU.catmullRomAnchors(pts.map((q) => ({ x: q.x, y: q.y })), closed, effSmoothing);
+                if (Array.isArray(builtAnchors) && builtAnchors.length >= 2
+                  && builtAnchors.some((a) => a && (a.in || a.out))) {
+                  anchors = builtAnchors;
                 }
               }
               if (anchors) {

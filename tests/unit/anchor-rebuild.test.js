@@ -33,11 +33,15 @@ describe('rebuildShapeAnchors', () => {
     expect(out[out.length - 1].y).toBe(anchors[anchors.length - 1].y);
   });
 
-  test('smoothing > 0 generates cubic bezier .in/.out handles for interior anchors', () => {
+  // Smoothing is Illustrator-parity corner ROUNDING (roundCornerAnchors): a
+  // sharp interior corner is replaced by a fillet-arc anchor pair that carries
+  // real bezier handles, pulled back from the original vertex. (The old
+  // Catmull-Rom tension pass bulged THROUGH the vertex instead.)
+  test('smoothing > 0 rounds a sharp interior corner with bezier fillets', () => {
     const anchors = pointsToAnchors([
       { x: 0, y: 0 },
       { x: 10, y: 0 },
-      { x: 20, y: 0 },
+      { x: 10, y: 10 },
     ]);
     const { anchors: out } = geometry.rebuildShapeAnchors(anchors, {
       simplify: 0,
@@ -45,12 +49,16 @@ describe('rebuildShapeAnchors', () => {
       closed: false,
       bounds: { dW: 100, dH: 100 },
     });
-    expect(out.length).toBe(3);
-    expect(out[1].in).not.toBeNull();
-    expect(out[1].out).not.toBeNull();
-    // Catmull-Rom-to-Bezier: dx = (next.x - prev.x) * tension / 6 = (20 - 0) / 6
-    expect(out[1].out.x).toBeCloseTo(10 + 20 / 6, 5);
-    expect(out[1].in.x).toBeCloseTo(10 - 20 / 6, 5);
+    // The corner splits into a fillet pair — anchors are ADDED, not moved.
+    expect(out.length).toBeGreaterThan(3);
+    expect(out.some((a) => a.in !== null || a.out !== null)).toBe(true);
+    // No anchor remains at the sharp vertex (10, 0).
+    expect(out.every((a) => Math.hypot(a.x - 10, a.y - 0) > 1)).toBe(true);
+    // Open-path endpoints stay exactly where they were.
+    expect(out[0].x).toBeCloseTo(0, 5);
+    expect(out[0].y).toBeCloseTo(0, 5);
+    expect(out[out.length - 1].x).toBeCloseTo(10, 5);
+    expect(out[out.length - 1].y).toBeCloseTo(10, 5);
   });
 
   test('open path endpoints have null outward handle even when smoothing > 0', () => {
@@ -84,7 +92,7 @@ describe('rebuildShapeAnchors', () => {
     expect(out.every((a) => a.in === null && a.out === null)).toBe(true);
   });
 
-  test('closed path: every anchor gets bezier handles (no endpoint nulling)', () => {
+  test('closed path: every corner rounds — the seam is not treated as an endpoint', () => {
     const anchors = pointsToAnchors([
       { x: 0, y: 0 },
       { x: 10, y: 0 },
@@ -97,8 +105,14 @@ describe('rebuildShapeAnchors', () => {
       closed: true,
       bounds: { dW: 100, dH: 100 },
     });
-    expect(out.length).toBe(4);
-    expect(out.every((a) => a.in !== null && a.out !== null)).toBe(true);
+    // 4 corners → 4 fillet pairs; every anchor carries a handle on its arc side.
+    expect(out.length).toBe(8);
+    expect(out.every((a) => a.in !== null || a.out !== null)).toBe(true);
+    // The seam corner (0,0) rounds exactly like the other three.
+    const pull = (cx, cy) => Math.min(...out.map((a) => Math.hypot(a.x - cx, a.y - cy)));
+    const pulls = [[0, 0], [10, 0], [10, 10], [0, 10]].map(([x, y]) => pull(x, y));
+    pulls.forEach((d) => expect(d).toBeGreaterThan(0.5));
+    expect(Math.max(...pulls) - Math.min(...pulls)).toBeLessThan(0.1);
   });
 
   test('empty anchors → empty result', () => {

@@ -18,6 +18,7 @@
   } = window.Vectura || {};
 
   const applyCurveFit = GeometryUtils.applyCurveFit || ((path) => path);
+  const applyCornerRounding = GeometryUtils.applyCornerRounding || ((path) => path);
   const simplifyPath = GeometryUtils.simplifyPath || ((path) => path);
   const simplifyPathVisvalingam = GeometryUtils.simplifyPathVisvalingam || ((path) => path);
   const countPathPoints = GeometryUtils.countPathPoints || (() => ({ lines: 0, points: 0 }));
@@ -1763,11 +1764,27 @@
       // for true line segments, meta.baked for already-flattened display geometry)
       // are refused by applyCurveFit itself, which also keeps the cost off the
       // thousands of 2-point spans the 3D algorithms emit.
-      const curveOpts = isShape || !(p.curves === true || smooth > 0)
+      // Smoothing is corner ROUNDING (Illustrator parity): the same fillet
+      // mechanism as the toolbar's progressive Smooth slider and the one-shot
+      // Object ▸ Smooth… verb — GeometryUtils.roundCornerAnchors: a tight,
+      // faithful re-trace plus corner fillets that grow with the slider. It
+      // replaces the old smoothing-ramped loose fit, which "smoothed" by
+      // RESHAPING — it widened the fit tolerance and raised the corner
+      // threshold with the slider, so geometry drifted and thinned instead of
+      // its sharp edges rounding. Reduction stays Simplify's verb (it widens
+      // the rounding fit's tolerance, never the fillet radius).
+      const roundOpts = isShape || !(smooth > 0)
         ? null
         : {
-          curves: p.curves === true,
-          smoothing: smooth,
+          t: smooth,
+          simplify,
+          ...(fastPreview ? { fastPreview: true } : {}),
+        };
+      const curveOpts = isShape || roundOpts || p.curves !== true
+        ? null
+        : {
+          curves: true,
+          smoothing: 0,
           // Simplify is absorbed into the fit tolerance rather than run as a
           // separate decimation pass: on a fitted path the anchors ARE the
           // compact representation, and the later polyline simplify step skips
@@ -1781,7 +1798,10 @@
           // mouse-up. Scale the real tolerance up instead.
           ...(fastPreview ? { fastPreview: true } : {}),
         };
-      const fitCurve = (path) => (curveOpts ? applyCurveFit(path, curveOpts) : path);
+      const fitCurve = (path) => {
+        if (roundOpts) return applyCornerRounding(path, roundOpts);
+        return curveOpts ? applyCurveFit(path, curveOpts) : path;
+      };
 
       const origin = computeGeometryOrigin(rawPaths, width, height);
       layer.origin = origin;

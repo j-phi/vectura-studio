@@ -615,11 +615,11 @@
         };
         slider.addEventListener('input', () => preview(slider.value));
         auto.addEventListener('click', () => {
-          // Auto-optimise: derive a data-driven rounding amount from the shape's
-          // removable-noise heuristic (falls back to a pleasant mid value).
-          let t = 0;
-          if (ops && ops.autoSmooth) t = ops.autoSmooth(ids(), { app });
-          if (!t) t = 50;
+          // Auto: a pleasant mid rounding. (PTH-2 autoSmooth returns a
+          // simplify-LADDER RUNG index — a different domain from this slider's
+          // 0-100 t — so reusing it here parked the thumb at ~3% and visibly
+          // did nothing.)
+          const t = 50;
           slider.value = `${t}`;
           preview(t);
         });

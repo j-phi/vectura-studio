@@ -184,6 +184,38 @@ describe('PTH-3b smooth session', () => {
     expect(anchors.every((a) => a.in && a.out)).toBe(true);
   });
 
+  // Regression (2026-07-18): the session must round corners with a TIGHT,
+  // faithful fit — the old implementation loosened the fit tolerance with t,
+  // which reshaped/thinned geometry (that is Simplify's verb) and left the
+  // slider's top half dead (radius saturated at t=50).
+  test('square corners round progressively across the FULL slider travel', () => {
+    const sq = () => {
+      const pts = [
+        { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }, { x: 0, y: 0 },
+      ];
+      pts.meta = { straight: true, closed: true };
+      return pts;
+    };
+    const pullAt = (t) => {
+      const { ctx, layer } = setup(sq);
+      Ops.smoothBegin(['L1'], ctx);
+      Ops.smoothPreview(t, ctx);
+      const p = layer.sourcePaths[0];
+      let min = Infinity;
+      p.forEach((pt) => { const d = Math.hypot(pt.x, pt.y); if (d < min) min = d; });
+      Ops.smoothCancel(ctx);
+      return min;
+    };
+    const p25 = pullAt(25);
+    const p50 = pullAt(50);
+    const p75 = pullAt(75);
+    const p100 = pullAt(100);
+    expect(p25).toBeGreaterThan(1);
+    expect(p50).toBeGreaterThan(p25 + 0.5);
+    expect(p75).toBeGreaterThan(p50 + 0.5);
+    expect(p100).toBeGreaterThan(p75 + 0.5);
+  });
+
   test('open path keeps its endpoints as one-sided anchors (no outer handle)', () => {
     const { ctx, layer } = setup(makeOpenPath);
     Ops.smoothBegin(['L1'], ctx);

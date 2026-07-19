@@ -621,6 +621,8 @@
       max: 1,
       step: 0.05,
       infoKey: 'common.smoothing',
+      // Applies during the drag (fast-preview regen) AND on release.
+      livePreview: true,
     },
     {
       id: 'curves',

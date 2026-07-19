@@ -180,6 +180,22 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — Smooth unified on Illustrator-parity corner rounding
+  (`GeometryUtils.roundCornerAnchors`).** All four Smooth surfaces (Object menu /
+  context menu one-shot, ctxbar progressive slider, Post-Processing Lab Smoothing,
+  shape-layer rebuild) now share one mechanism: tight faithful re-trace + fillet arcs,
+  linear across the full control travel. Killed: the Laplacian one-shot (shriveled
+  closed shapes), the slider's tolerance-loosening (reshaping + dead top half past 50),
+  the engine's loose-fit "smoothing", and the shape-layer Catmull-Rom bulge (the
+  lopsided-ring self-intersection test now asserts the fix). Shape-layer rounding is
+  anchor-preserving (`filletSharpAnchors`); text's stroke-font bezierizer kept its
+  Catmull pass via the extracted `catmullRomAnchors`. Post-Processing Smoothing +
+  Simplify sliders regen live during drag (`regen({preview:true})`, history once per
+  gesture) and full-quality on release. Note for the "fillet-vs-gate ordering" follow-up
+  above: smoothing now routes through `applyCornerRounding`, NOT `toCurveAnchors`'
+  `cornerRadius` — that gate ordering stays latent/uncalled. Five
+  `*-curves-on-smooth` visual baselines deliberately regenerated (the old loose fit had
+  visible distortion, e.g. a spurious spike on the stock lissajous).
 - **Unreleased — paint bucket venn faces: overlapping closed rings expose lens/lune/union
   rungs in the fill ladder.** Root cause of "can't fill the venn overlap of two circles":
   `findFillTargetStack` only carved sub-regions against OPEN barrier paths

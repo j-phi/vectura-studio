@@ -7,6 +7,28 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Fixed
+- **Smooth is now Illustrator-parity corner rounding everywhere, on one shared
+  mechanism.** Every Smooth surface — Object ▸ Smooth…, the canvas context menu, the
+  contextual toolbar's progressive Smooth slider, and the Post-Processing Lab's
+  Smoothing slider — now converges on `GeometryUtils.roundCornerAnchors`: a tight,
+  faithful re-trace plus fillet arcs that grow linearly across the full control travel.
+  Previously each surface did something different and wrong: the one-shot verb ran a
+  Laplacian pass that shriveled a closed square into a leaf pinned at its seam; the
+  toolbar slider loosened the fit tolerance with t (reshaping geometry, with a dead top
+  half past 50%); the engine's Smoothing param "smoothed" by widening the fit tolerance
+  and corner threshold (drifting and thinning instead of rounding); and shape layers
+  got a Catmull-Rom tension pass that bulged through corners (and could self-intersect
+  a lopsided ring — that pathology test now asserts the fix). Shape-layer rounding is
+  anchor-preserving: sharp anchors split into fillet pairs, every other anchor and
+  every user-placed handle stays put. Reduction remains Simplify's verb — smoothing
+  never thins. The text algorithm's stroke-font bezierizer kept its Catmull-Rom pass
+  via the extracted `GeometryUtils.catmullRomAnchors` (a curve-through-points job,
+  deliberately not smoothing). The ctxbar Smooth's Auto button also no longer feeds a
+  simplify-ladder rung index into the slider's percent domain (it parked at ~3%).
+- **Post-Processing Lab Smoothing and Simplify sliders now update live during the
+  drag** (fast-preview regen per input tick, history pushed once per gesture) **and**
+  commit a full-quality regen on release.
+
 - **Degenerate shapes can no longer crash the boolean pipeline (AUD-05).** All polygon
   boolean ops route through a guard that degrades to an empty result with a console
   warning instead of throwing; a compound whose recompute fails keeps showing its

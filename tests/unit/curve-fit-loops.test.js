@@ -74,14 +74,18 @@ describe('curve fit on a lopsided ring (the handle-clamp pathology)', () => {
 
   const flatten = (anchors, closed) => GU.buildPolylineFromAnchors(anchors, closed);
 
-  test('unclamped Catmull-Rom (rebuildShapeAnchors) balloons into a self-intersection', () => {
+  test('smoothing (rebuildShapeAnchors) no longer balloons into a self-intersection', () => {
     const { anchors } = GU.rebuildShapeAnchors(
       LOPSIDED_RING.map((p) => ({ ...p, in: null, out: null })),
       { smoothing: 1, simplify: 0, closed: true, bounds: { dW: 200, dH: 200 } },
     );
     const hits = selfIntersections(flatten(anchors, true), true);
-    // Documents the status quo this test exists to justify moving away from.
-    expect(hits).toBeGreaterThan(0);
+    // This test used to document the unclamped Catmull-Rom pathology (the
+    // tension pass ballooned this ring into a self-crossing) as the status quo
+    // to move away from. rebuildShapeAnchors now rounds corners via
+    // roundCornerAnchors (fillet arcs on a faithful re-trace), which never
+    // pushes the curve outside the shape — so the ring must stay simple.
+    expect(hits).toBe(0);
   });
 
   test('Schneider fit (reduceAnchors) stays inside the polygon — no self-intersection', () => {

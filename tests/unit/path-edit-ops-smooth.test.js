@@ -57,6 +57,31 @@ const makeJaggedPath = (n = 80) => {
   return pts;
 };
 
+// A sharp closed 100×100 square (straight-tagged so it flattens verbatim).
+const makeSquare = () => {
+  const pts = [
+    { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }, { x: 0, y: 0 },
+  ];
+  pts.meta = { straight: true, closed: true };
+  return pts;
+};
+
+const pathBBox = (p) => {
+  let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+  p.forEach((pt) => {
+    minX = Math.min(minX, pt.x); maxX = Math.max(maxX, pt.x);
+    minY = Math.min(minY, pt.y); maxY = Math.max(maxY, pt.y);
+  });
+  return { minX, minY, maxX, maxY };
+};
+
+// Min distance from the drawn geometry to a given point (corner pullback).
+const distTo = (p, cx, cy) => {
+  let min = Infinity;
+  p.forEach((pt) => { const d = Math.hypot(pt.x - cx, pt.y - cy); if (d < min) min = d; });
+  return min;
+};
+
 // Variance of interior turning angles — the jaggedness metric of PTH-3.
 const angleVariance = (p) => {
   const angles = [];
@@ -104,6 +129,59 @@ describe('PTH-3 smoothSelection', () => {
     expect(Ops.smoothSelection(['nope'], 0.7, ctx).changed).toBe(false);
     expect(app.pushCount).toBe(0);
     expect(cloneDeepPaths(layer.sourcePaths)).toEqual(original);
+  });
+
+  // Regression (2026-07-18): the old Laplacian implementation SHRIVELED a
+  // closed square into a degenerate leaf pinned at its first point (corner
+  // pullbacks 0 / 64 / 66 / 64 on a 100mm square at strength 0.5). Smooth is
+  // corner ROUNDING (Illustrator parity): every corner rounds by the same
+  // fillet, edge midpoints stay put, and the bounding box is preserved.
+  test('rounds a closed square symmetrically instead of collapsing it', () => {
+    const engine = makeEngine();
+    const app = makeApp(engine);
+    const layer = makeShapeLayer('SQ', [makeSquare()]);
+    engine.layers.push(layer);
+    engine.generate(layer.id);
+    const ctx = { app, engine };
+
+    const res = Ops.smoothSelection([layer.id], 0.5, ctx);
+    expect(res.changed).toBe(true);
+    const p = layer.sourcePaths[0];
+
+    // Every corner pulled back by the same amount, and actually rounded.
+    const pulls = [[0, 0], [100, 0], [100, 100], [0, 100]].map(([x, y]) => distTo(p, x, y));
+    pulls.forEach((d) => expect(d).toBeGreaterThan(1));
+    const spread = Math.max(...pulls) - Math.min(...pulls);
+    expect(spread).toBeLessThan(1);
+
+    // Edge midpoints hold → the bounding box is preserved (no shriveling).
+    const bb = pathBBox(p);
+    expect(bb.minX).toBeCloseTo(0, 0);
+    expect(bb.minY).toBeCloseTo(0, 0);
+    expect(bb.maxX).toBeCloseTo(100, 0);
+    expect(bb.maxY).toBeCloseTo(100, 0);
+
+    // The rounded result is a real bezier path (editable fillet anchors).
+    expect(Array.isArray(p.meta.anchors)).toBe(true);
+    expect(p.meta.anchors.some((a) => a && (a.in || a.out))).toBe(true);
+    expect(p.meta.forceCurves).toBe(true);
+    expect(p.meta.closed).toBe(true);
+  });
+
+  test('higher strength rounds more (progressive corner pullback)', () => {
+    const run = (strength) => {
+      const engine = makeEngine();
+      const app = makeApp(engine);
+      const layer = makeShapeLayer('SQ', [makeSquare()]);
+      engine.layers.push(layer);
+      engine.generate(layer.id);
+      Ops.smoothSelection([layer.id], strength, { app, engine });
+      return distTo(layer.sourcePaths[0], 0, 0);
+    };
+    const low = run(0.25);
+    const high = run(0.75);
+    expect(low).toBeGreaterThan(0.5);
+    expect(high).toBeGreaterThan(low + 1);
   });
 
   test('clears the stale smoothing baseline so a later regen cannot clobber it', () => {

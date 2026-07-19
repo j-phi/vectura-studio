@@ -88,10 +88,15 @@ describe('Shape anchor edit with curves ON — engine rebuild follows edited anc
     expect(maxY).toBeGreaterThan(50 + DRAG_DY * 0.5);
 
     // And path.meta.anchors must reflect the edit too — not be silently
-    // overwritten back to the snapshot.
+    // overwritten back to the snapshot. The drag turned the collinear middle
+    // anchor into a real corner, which live smoothing rounds into a fillet
+    // pair — so the count may grow, but the moved vertex's geometry must be
+    // there (not clamped back near the y=50 snapshot).
     const newAnchors = layer.sourcePaths[0].meta.anchors;
-    expect(newAnchors).toHaveLength(3);
-    expect(newAnchors[1].y).toBeGreaterThan(50 + DRAG_DY * 0.5);
+    expect(newAnchors.length).toBeGreaterThanOrEqual(3);
+    // At max smoothing the fillet setback reaches half the edge, so the anchors
+    // sit well below the dragged vertex — but far above the y=50 snapshot.
+    expect(Math.max(...newAnchors.map((a) => a.y))).toBeGreaterThan(60);
   });
 });
 
@@ -157,12 +162,13 @@ describe('curves-only toggle must not strip bezier handles from pen-path anchors
     expect(src.meta.originalAnchors).toBeUndefined();
   });
 
-  test('curves=true with smoothing>0 still rebuilds and computes Catmull-Rom handles', () => {
+  test('curves=true with smoothing>0 still rebuilds and rounds sharp corners in place', () => {
     const { VectorEngine, Layer } = runtime.window.Vectura;
     const engine = new VectorEngine();
     engine.layers = [];
 
-    const path = [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 100, y: 0 }];
+    // An L: the interior anchor is a real 90° corner for smoothing to round.
+    const path = [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 50 }];
     path.meta = {
       kind: 'poly',
       closed: false,
@@ -184,8 +190,13 @@ describe('curves-only toggle must not strip bezier handles from pen-path anchors
     engine.generate(layer.id);
 
     const anchors = layer.sourcePaths[0].meta.anchors;
-    // smoothing > 0 → rebuild ran → Catmull-Rom handles on interior anchor
-    expect(anchors[1].in).not.toBeNull();
-    expect(anchors[1].out).not.toBeNull();
+    // smoothing > 0 → rebuild ran → the sharp corner split into a fillet-arc
+    // pair carrying bezier handles (Illustrator-parity corner rounding, not
+    // the old Catmull-Rom tension bulge), while both endpoints stayed put.
+    expect(anchors.length).toBeGreaterThan(3);
+    expect(anchors.some((a) => a.in !== null || a.out !== null)).toBe(true);
+    expect(anchors.every((a) => Math.hypot(a.x - 50, a.y - 0) > 1)).toBe(true);
+    expect(anchors[0].x).toBeCloseTo(0, 3);
+    expect(anchors[anchors.length - 1].y).toBeCloseTo(50, 3);
   });
 });

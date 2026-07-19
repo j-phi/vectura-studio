@@ -620,7 +620,9 @@
       // curve and nothing asked for it to be thinned, leave it exactly as it is —
       // re-fitting it would silently replace a hand-edited 3-anchor path with an
       // 8-anchor approximation of itself, which is what direct-selection editing
-      // does after every drag. A re-fit is only ever a response to Simplify.
+      // does after every drag. A re-fit is only ever a response to Simplify;
+      // Smoothing on an already-curved path fillets its sharp anchors IN PLACE
+      // (the anchor-preserving branch below) rather than re-fitting.
       const refitting = simplify > 0 || !alreadyCurved;
 
       const points = alreadyCurved
@@ -652,35 +654,62 @@
       if (filtered.length >= 2) kept = filtered;
     }
 
-    // 2. Bezierize via Catmull-Rom-to-Bezier
+    // 2. Round corners — the SAME fillet mechanism as the toolbar's Smooth
+    // slider and the engine's Smoothing pass, in its anchor-preserving form
+    // (filletSharpAnchors): sharp anchors split into fillet-arc pairs, every
+    // other anchor and every existing handle stays exactly where the user put
+    // it. The old Catmull-Rom tension pass bulged the drawn curve THROUGH
+    // every vertex — pushing geometry outside the shape, never holding a
+    // straight edge straight, and (on an already-curved path) replacing the
+    // user's real handles with tension handles.
     const n = kept.length;
-    const out = kept.map((a) => ({ x: a.x, y: a.y, in: null, out: null }));
-    if (smoothing > 0 && n >= 2) {
-      const tension = smoothing;
-      for (let i = 0; i < n; i++) {
-        let prev;
-        let next;
-        if (closed) {
-          prev = kept[(i - 1 + n) % n];
-          next = kept[(i + 1) % n];
-        } else {
-          prev = i === 0 ? kept[i] : kept[i - 1];
-          next = i === n - 1 ? kept[i] : kept[i + 1];
-        }
-        const dx = ((next.x - prev.x) * tension) / 6;
-        const dy = ((next.y - prev.y) * tension) / 6;
-        out[i].out = { x: out[i].x + dx, y: out[i].y + dy };
-        out[i].in = { x: out[i].x - dx, y: out[i].y - dy };
-      }
-      if (!closed) {
-        // Endpoints get one-sided derivative — null the outward-pointing handle
-        out[0].in = null;
-        out[n - 1].out = null;
-      }
+    let out = kept.map((a) => ({
+      x: a.x,
+      y: a.y,
+      in: a.in ? { x: a.in.x, y: a.in.y } : null,
+      out: a.out ? { x: a.out.x, y: a.out.y } : null,
+    }));
+    if (smoothing > 0 && n >= 3) {
+      out = filletSharpAnchors(out, closed, clamp01(smoothing));
     }
 
     const changed = out.length !== anchors.length || smoothing > 0;
     return { anchors: out, changed };
+  };
+
+  // Catmull-Rom-to-bezier handle synthesis through EVERY point (tension 0..1):
+  // writes tangent handles, never moves or removes a point. This is the
+  // bezierizer for DESIGNED dense curves (the text algorithm's stroke-font
+  // bowls and arcs) — a curve-through-points pass, deliberately distinct from
+  // smoothing/corner rounding: a sampled ellipse has no corners to round, it
+  // needs handles through its samples. Extracted verbatim from the old
+  // rebuildShapeAnchors tail when that tail became corner rounding.
+  const catmullRomAnchors = (pts, closed, tension) => {
+    const t = clamp01(tension ?? 0);
+    const n = Array.isArray(pts) ? pts.length : 0;
+    const out = (pts || []).map((a) => ({ x: a.x, y: a.y, in: null, out: null }));
+    if (!(t > 0) || n < 2) return out;
+    for (let i = 0; i < n; i++) {
+      let prev;
+      let next;
+      if (closed) {
+        prev = pts[(i - 1 + n) % n];
+        next = pts[(i + 1) % n];
+      } else {
+        prev = i === 0 ? pts[i] : pts[i - 1];
+        next = i === n - 1 ? pts[i] : pts[i + 1];
+      }
+      const dx = ((next.x - prev.x) * t) / 6;
+      const dy = ((next.y - prev.y) * t) / 6;
+      out[i].out = { x: out[i].x + dx, y: out[i].y + dy };
+      out[i].in = { x: out[i].x - dx, y: out[i].y - dy };
+    }
+    if (!closed) {
+      // Endpoints get one-sided derivative — null the outward-pointing handle.
+      out[0].in = null;
+      out[n - 1].out = null;
+    }
+    return out;
   };
 
   const isClosedLoopPath = (path) => {
@@ -1536,6 +1565,34 @@
     return out;
   };
 
+  // Anchor-preserving corner rounding for shape layers: fillet the SHARP
+  // anchors of an existing anchor run in place. A sharp anchor — handle-less on
+  // both sides, with a turn angle past the threshold — splits into a fillet-arc
+  // pair; every other anchor, and every handle the user placed, stays exactly
+  // where it was. This is the shape-layer face of the ONE Smooth mechanism:
+  // rounding may ADD the fillet anchors it needs, but it never re-authors,
+  // moves, or thins the user's anchors (that is Simplify's verb).
+  const filletSharpAnchors = (anchors, closed, radiusFrac, cornerAngleDeg) => {
+    if (!(radiusFrac > 0) || !Array.isArray(anchors) || anchors.length < 3) return anchors;
+    const n = anchors.length;
+    const cornerCos = Math.cos(
+      (Number.isFinite(cornerAngleDeg) ? cornerAngleDeg : SMOOTH_CORNER_ANGLE_DEG) * Math.PI / 180,
+    );
+    const cornerPos = [];
+    for (let i = 0; i < n; i++) {
+      if (!closed && (i === 0 || i === n - 1)) continue; // endpoints stay put
+      const a = anchors[i];
+      if (a.in || a.out) continue; // a handle-carrying anchor is already smooth
+      const prev = anchors[(i - 1 + n) % n];
+      const next = anchors[(i + 1) % n];
+      const d1 = _vNorm(_vSub(a, prev));
+      const d2 = _vNorm(_vSub(next, a));
+      if (_vDot(d1, d2) < cornerCos) cornerPos.push({ x: a.x, y: a.y });
+    }
+    if (!cornerPos.length) return anchors;
+    return _applyFillets(anchors, closed, cornerPos, clamp01(radiusFrac));
+  };
+
   // Concatenated bezier segments (each sharing endpoints) → editable anchors.
   const _segsToAnchors = (segs, closedRing) => {
     if (!segs.length) return [];
@@ -1641,6 +1698,86 @@
       return _applyFillets(anchors, isClosed, cornerPos, cornerRadiusFrac);
     }
     return anchors;
+  };
+
+  // ── Illustrator-parity progressive corner rounding (the ONE Smooth verb) ────
+  //
+  // Every Smooth surface — the Post-Processing Lab's Smoothing slider, the
+  // contextual toolbar's progressive Smooth slider, and the one-shot
+  // Object ▸ Smooth… / context-menu verb — converges HERE. Smoothing is corner
+  // ROUNDING: re-trace the drawn polyline faithfully (tight tolerance —
+  // smoothing must never reshape, thin, or shrivel the path; reduction is
+  // Simplify's verb, not this one), then round every detected corner into a
+  // fillet arc whose setback grows with t. Straight runs stay straight, open
+  // endpoints stay put, and a gentle curve with no corners is simply re-traced.
+  //
+  //   t 0..1   0 = untouched; 1 = fillets meet at edge midpoints (a polygon
+  //            rounds into its inscribed round form). Linear, full travel — no
+  //            saturation, so every slider position changes the result.
+  //
+  // opts:
+  //   toleranceFrac   fit tolerance as a fraction of the bbox diagonal
+  //                   (default ROUND_FIT_TOL_FRAC; Simplify may widen it)
+  //   tolerance       absolute override (skips the diagonal scaling)
+  //   cornerAngleDeg  corner-detection threshold (default fitBezierAnchors' 35°)
+  //   fastPreview     drag preview: fit 3× looser — never tighter than the
+  //                   committed fit it previews
+  //
+  // Returns fillet/bezier anchors, or null when there is nothing to round
+  // (t=0, under 3 points, or a fit that produced no handles at all).
+  const ROUND_FIT_TOL_FRAC = 0.002; // tight — the re-trace stays sub-percent faithful
+  const roundCornerAnchors = (points, closed, t, opts = {}) => {
+    const tc = clamp01(Number(t) || 0);
+    if (!Array.isArray(points) || points.length < 3 || tc <= 0) return null;
+    const diag = bboxDiagonal(points) || 1;
+    let tol = Number.isFinite(opts.tolerance)
+      ? opts.tolerance
+      : (Number.isFinite(opts.toleranceFrac) ? opts.toleranceFrac : ROUND_FIT_TOL_FRAC) * diag;
+    if (opts.fastPreview) tol *= 3;
+    const anchors = fitBezierAnchors(
+      points.map((p) => ({ x: p.x, y: p.y })),
+      Boolean(closed),
+      Math.max(tol, 1e-6),
+      opts.cornerAngleDeg,
+      tc,
+    );
+    if (!Array.isArray(anchors) || anchors.length < 2) return null;
+    return anchors.some((a) => a && (a.in || a.out)) ? anchors : null;
+  };
+
+  // Engine-side companion (mirrors applyCurveFit): round a display path's
+  // corners and stamp the anchors onto meta so the canvas, the SVG exporter,
+  // masking, and the edit verbs all draw the SAME native cubics. Same refusals
+  // as applyCurveFit: declared-final point arrays, parametric circles, and
+  // paths already carrying a fitted curve (the 3D algorithms bezierize their
+  // own wires — re-fitting them would discard what they knew).
+  //
+  // opts: { t, simplify, fastPreview, closed, toleranceFrac, cornerAngleDeg }.
+  // Simplify widens the fit tolerance (fewer anchors) — it never drives the
+  // rounding itself; the two verbs stay orthogonal.
+  const applyCornerRounding = (path, opts = {}) => {
+    if (!Array.isArray(path) || path.length < 3) return path;
+    const meta = path.meta || {};
+    if (meta.kind === 'circle') return path;
+    if (meta.straight === true || meta.baked === true) return path;
+    if (Array.isArray(meta.anchors) && meta.anchors.some((a) => a && (a.in || a.out))) return path;
+
+    const closed = opts.closed !== undefined ? Boolean(opts.closed) : isClosedLoopPath(path);
+    const simplify = clamp01(opts.simplify ?? 0);
+    const toleranceFrac = Number.isFinite(opts.toleranceFrac)
+      ? opts.toleranceFrac
+      : ROUND_FIT_TOL_FRAC + simplify * SIMPLIFY_TOL_MAX_FRAC;
+    const anchors = roundCornerAnchors(path, closed, opts.t, {
+      toleranceFrac,
+      cornerAngleDeg: opts.cornerAngleDeg,
+      fastPreview: opts.fastPreview === true,
+    });
+    if (!anchors) return path;
+
+    const out = path.map((pt) => ({ ...pt }));
+    out.meta = { ...meta, anchors, closed, forceCurves: true };
+    delete out.meta.straight;
+    return out;
   };
 
   // ── Minimal-anchor re-trace (Illustrator "Create Outlines" parity) ──────────
@@ -2240,6 +2377,10 @@
     simplifyPathVisvalingam,
     fitBezierAnchors,
     reduceAnchors,
+    roundCornerAnchors,
+    applyCornerRounding,
+    filletSharpAnchors,
+    catmullRomAnchors,
     toCurveAnchors,
     applyCurveFit,
     isVerbatimPath,

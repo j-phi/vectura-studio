@@ -78,8 +78,6 @@
   // clear, and the safety factor applied on top.
   const AUTOSMOOTH_NOISE_QUANTILE = 0.95;
   const AUTOSMOOTH_TOLERANCE_FACTOR = 1.5;
-  // smoothSelection: extra smoothing passes at strength 1 (1 + round(s * N)).
-  const SMOOTH_EXTRA_PASSES = 3;
 
   const SHAPE_EXPANDED_EVENT = 'vectura:shape-expanded';
 
@@ -473,34 +471,19 @@
     };
   };
 
-  // ── PTH-3b — smooth session (bezier curve fitting) ─────────────────────────
+  // ── PTH-3b — smooth session (progressive corner rounding) ──────────────────
   //
-  // The interactive Smooth slider (Illustrator-parity) FITS the fewest cubic
-  // bezier segments to the path within a tolerance the slider drives, then
-  // stores them as bezier anchors — so it produces the MINIMAL number of curve
-  // anchors that approximate the shape, never one-anchor-per-input-point and
-  // never a stair-stepped polyline. Higher t → looser tolerance → fewer, rounder
-  // anchors. At t=0 the original path is restored. Uses GeometryUtils'
-  // Schneider fit; the rebuilt path is a densely-flattened curve (renders smooth
-  // even with Curves off) whose meta.anchors are the minimal editable points.
+  // The interactive Smooth slider is Illustrator-parity corner ROUNDING, driven
+  // by the shared mechanism every Smooth surface uses
+  // (GeometryUtils.roundCornerAnchors): the displayed curve is re-traced with a
+  // TIGHT, faithful Schneider fit — the slider must never reshape or thin the
+  // path (that is Simplify's verb) — and every detected corner rounds into a
+  // fillet arc whose setback grows linearly with t across the slider's full
+  // travel. At t=0 the original path is restored; at t=100 fillets meet at edge
+  // midpoints. The rebuilt path is a densely-flattened curve (renders smooth
+  // even with Curves off) whose meta.anchors are the editable fillet points.
 
   let smoothSession = null;
-
-  const SMOOTH_FIT_MIN_FRAC = 0.0015; // fit tolerance as a fraction of the path diagonal at t→0+
-  const SMOOTH_FIT_MAX_FRAC = 0.06;   // ...and at t=100 (looser → fewer anchors)
-  const SMOOTH_FIT_EXP = 1.6;
-  const SMOOTH_FILLET_FULL_T = 50;    // slider % at which corner fillets max out (edges → circle)
-
-  const smoothToleranceForT = (t, diag) => {
-    const tc = Math.max(0, Math.min(100, Number(t) || 0)) / 100;
-    const frac = SMOOTH_FIT_MIN_FRAC + Math.pow(tc, SMOOTH_FIT_EXP) * (SMOOTH_FIT_MAX_FRAC - SMOOTH_FIT_MIN_FRAC);
-    return Math.max(1e-6, frac * (diag || 1));
-  };
-
-  // Corner-fillet radius fraction (0 → sharp corner, 1 → fillets meet, polygon
-  // rounds to a circle) as a function of the slider. Saturates at
-  // SMOOTH_FILLET_FULL_T so the low half of the slider gives fine control.
-  const smoothRadiusFracForT = (t) => Math.max(0, Math.min(1, (Number(t) || 0) / SMOOTH_FILLET_FULL_T));
 
   const smoothBegin = (layerIds, opts = {}) => {
     const engine = resolveEngine(opts);
@@ -517,7 +500,7 @@
         const pts = (Array.isArray(flat) ? flat : []).map((pt) => ({ x: pt.x, y: pt.y }));
         const closed = !!(p && p.meta && p.meta.closed)
           || (pts.length > 2 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1e-6);
-        return { points: pts, closed, meta: (p && p.meta) ? { ...p.meta } : {}, diag: bboxDiagonal(pathsBBox([pts])) };
+        return { points: pts, closed, meta: (p && p.meta) ? { ...p.meta } : {} };
       });
       records.push({
         id: layer.id,
@@ -552,10 +535,8 @@
           if (pth.meta) same.meta = { ...pth.meta };
           return same;
         };
-        if (pts.length < 3 || !GUmod || typeof GUmod.fitBezierAnchors !== 'function') return passthrough();
-        const tol = smoothToleranceForT(tc, pth.diag);
-        const radiusFrac = smoothRadiusFracForT(tc);
-        const anchors = GUmod.fitBezierAnchors(pts, pth.closed, tol, undefined, radiusFrac);
+        if (pts.length < 3 || !GUmod || typeof GUmod.roundCornerAnchors !== 'function') return passthrough();
+        const anchors = GUmod.roundCornerAnchors(pts, pth.closed, tc / 100);
         if (!Array.isArray(anchors) || anchors.length < 2) return passthrough();
         const built = buildPathFromAnchors(anchors, pth.closed, pth.meta);
         // Render + export the fitted anchors as TRUE cubic beziers even when the
@@ -1030,36 +1011,46 @@
 
   // ── PTH-3 — smoothSelection verb ───────────────────────────────────────────
 
-  // One-shot undoable smoothing verb over the existing geometry-utils pipeline
-  // (GeometryUtils.smoothPath). Each source path is flattened to its displayed
-  // curve first, then neighbor-averaged `1 + round(strength · N)` passes at
-  // `strength` (clamped to [0, 1]). Live parametric shapes are expanded first
-  // (destructive verb — PTH-5 contract) and fire the shape-expanded event.
+  // One-shot undoable Smooth verb — the SAME corner-rounding mechanism as the
+  // progressive slider (GeometryUtils.roundCornerAnchors), applied at a fixed
+  // strength: `strength` 0..1 maps directly onto the slider's t. The previous
+  // implementation ran Laplacian neighbor-averaging passes (GeometryUtils.
+  // smoothPath), which SHRIVELED closed shapes toward their pinned seam point
+  // instead of rounding their corners. Live parametric shapes are expanded
+  // first (destructive verb — PTH-5 contract) and fire the shape-expanded event.
   const smoothSelection = (layerIds, strength, opts = {}) => {
     const engine = resolveEngine(opts);
     const app = resolveApp(opts);
     const s = Math.max(0, Math.min(1, Number(strength) || 0));
     if (!engine || !Array.isArray(layerIds) || s <= 0) return { changed: false };
+    const GUmod = GU();
+    if (typeof GUmod.roundCornerAnchors !== 'function') return { changed: false };
     const layers = layerIds
       .map((id) => findLayer(engine, id))
       .filter((layer) => isEligibleLayer(layer));
     if (!layers.length) return { changed: false };
     app?.pushHistory?.();
-    const smoothPath = GU().smoothPath || ((p) => p);
-    const passes = 1 + Math.round(s * SMOOTH_EXTRA_PASSES);
     layers.forEach((layer) => {
       const curves = layerCurves(layer);
       expandLiveShapeInPlace(layer, 'smooth');
       layer.sourcePaths = layer.sourcePaths.map((path) => {
         if (!Array.isArray(path) || path.length < 3) return path;
-        let cur = flattenForEdit(path, curves);
-        const meta = cur.meta;
-        for (let i = 0; i < passes; i++) cur = smoothPath(cur, s);
-        const out = cur.map((pt) => ({ x: pt.x, y: pt.y }));
-        if (meta) out.meta = cloneMeta(meta);
-        return out;
+        // Round the DISPLAYED curve, exactly as the session preview does.
+        const flat = flattenForEdit(path, curves);
+        const pts = flat.map((pt) => ({ x: pt.x, y: pt.y }));
+        const closed = !!(path && path.meta && path.meta.closed)
+          || (pts.length > 2
+            && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1e-6);
+        const anchors = GUmod.roundCornerAnchors(pts, closed, s);
+        if (!Array.isArray(anchors) || anchors.length < 2) return flat;
+        const built = buildPathFromAnchors(anchors, closed, flat.meta);
+        // True cubic output even with the layer's Curves toggle off (same
+        // per-path opt-in the session commit uses).
+        if (built.meta) built.meta.forceCurves = true;
+        else built.meta = { forceCurves: true };
+        return built;
       });
-      // The smoothed polyline is the new baseline; a nonzero smoothing param
+      // The rounded geometry is the new baseline; a nonzero smoothing param
       // would re-run the shape-anchor rebuild over it on the next generate().
       if (layer.params) {
         layer.params.smoothing = 0;
