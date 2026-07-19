@@ -1082,8 +1082,12 @@
       { type: 'collapsibleGroupEnd' },
     ],
     topo: [
-      { id: 'resolution', label: 'Resolution', type: 'range', min: 40, max: 240, step: 5, infoKey: 'topo.resolution' },
-      { id: 'levels', label: 'Contour Levels', type: 'range', min: 4, max: 60, step: 1, infoKey: 'topo.levels' },
+      // Generation cost scales with resolution² × levels; randomized upper
+      // bounds stay below the slider max (same idiom as flowfield density/
+      // maxSteps) so Randomize can't land on a multi-second pathological combo
+      // — observed up to 7.4s locally (60s+ on CI) at resolution 215 × levels 35.
+      { id: 'resolution', label: 'Resolution', type: 'range', min: 40, max: 240, step: 5, randomMax: 150, infoKey: 'topo.resolution' },
+      { id: 'levels', label: 'Contour Levels', type: 'range', min: 4, max: 60, step: 1, randomMax: 30, infoKey: 'topo.levels' },
       { type: 'noiseList' },
       { id: 'sensitivity', label: 'Sensitivity', type: 'range', min: 0.3, max: 2.5, step: 0.05, infoKey: 'topo.sensitivity' },
       { id: 'thresholdOffset', label: 'Threshold Offset', type: 'range', min: -1, max: 1, step: 0.05, infoKey: 'topo.thresholdOffset' },
