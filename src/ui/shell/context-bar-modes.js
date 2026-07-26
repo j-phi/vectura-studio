@@ -542,7 +542,7 @@
   // ── TB-11b — smooth sub-mode (progressive corner rounding) ──────────────────
   // Mirrors the simplify sub-mode but drives PathEditOps' smooth session, so
   // the Smooth button opens a live slider (low → high rounding) with Done and
-  // an Auto button — Illustrator-parity — instead of a fixed one-shot.
+  // an Auto button — instead of a fixed one-shot.
   const buildSmoothMode = (outerCtx) => {
     let ctx = outerCtx || {};
     let badge = null;
@@ -660,6 +660,7 @@
     if (!state0 || (!state0.supportsCornerRadius && !state0.supportsSides)) return null;
 
     closeShapeProps();
+    closeCorners();
     const strings = SSTR();
     const cfg = SCFG();
     const rect = anchorRectFor(ctx);
@@ -827,6 +828,146 @@
     return { id: 'shape-props', close: closeShapeProps, refresh };
   };
 
+  // ── Corners dialog (double-click a Live Corner widget) ──────────────────────
+  // Corner armature glyphs: two edge stubs joined by the corner treatment.
+  const CORNER_TYPE_ICONS = {
+    round: 'M4 20 V12 A8 8 0 0 1 12 4 H20',
+    invert: 'M4 20 V12 A8 8 0 0 0 12 4 H20',
+    chamfer: 'M4 20 V12 L12 4 H20',
+  };
+  let cornersPopover = null;
+  const closeCorners = () => {
+    if (cornersPopover) { cornersPopover.destroy(); cornersPopover = null; }
+  };
+
+  const enterCorners = (payload, ctx) => {
+    const renderer = resolveRenderer(ctx);
+    if (!renderer || !payload || typeof renderer.getCornerDialogState !== 'function') return null;
+    const state0 = renderer.getCornerDialogState(payload);
+    if (!state0) return null;
+
+    closeShapeProps();
+    closeCorners();
+    const strings = SSTR();
+    const anchorRect = (Number.isFinite(payload.clientX) && Number.isFinite(payload.clientY))
+      ? { left: payload.clientX, right: payload.clientX, top: payload.clientY, bottom: payload.clientY, width: 0, centerX: payload.clientX }
+      : anchorRectFor(ctx);
+    const pop = mountPopover(anchorRect, 'shape-props-popover corners-popover');
+    const host = pop.host;
+
+    const title = el('div', { class: 'shape-props-title' });
+    title.textContent = strings.cornersTitle || 'Corners';
+    host.appendChild(title);
+
+    // Corner style row — the three Live Corner types.
+    const styleRow = el('div', { class: 'shape-props-row corners-style-row' });
+    styleRow.appendChild(el('span', { class: 'shape-props-label', text: strings.cornersStyleLabel || 'Corner' }));
+    const styleCtrl = el('div', { class: 'shape-props-control corners-style-control' });
+    const typeLabels = {
+      round: strings.cornerTypeRound || 'Round',
+      invert: strings.cornerTypeInvert || 'Inverted Round',
+      chamfer: strings.cornerTypeChamfer || 'Chamfer',
+    };
+    const styleButtons = {};
+    ['round', 'invert', 'chamfer'].forEach((type) => {
+      const btn = el('button', {
+        type: 'button',
+        class: 'corners-style-btn',
+        title: typeLabels[type],
+        'aria-label': typeLabels[type],
+        'data-corner-type': type,
+      }, [svgIcon(CORNER_TYPE_ICONS[type])]);
+      btn.addEventListener('click', () => {
+        renderer.applyCornerDialogEdit(payload, { cornerType: type });
+        refresh();
+      });
+      styleButtons[type] = btn;
+      styleCtrl.appendChild(btn);
+    });
+    styleRow.appendChild(styleCtrl);
+    host.appendChild(styleRow);
+
+    // Radius row — numeric field with steppers, document units.
+    const radiusRow = el('div', { class: 'shape-props-row corners-radius-row' });
+    radiusRow.appendChild(el('span', { class: 'shape-props-label', text: strings.cornersRadiusLabel || 'Radius' }));
+    const radiusCtrl = el('div', { class: 'shape-props-control' });
+    const rDec = el('button', { type: 'button', class: 'shape-props-stepper', title: strings.cornerDecrease || 'Decrease', 'aria-label': strings.cornerDecrease || 'Decrease' });
+    rDec.textContent = '−';
+    const radiusField = el('input', { type: 'text', class: 'shape-props-field corners-radius-field', inputmode: 'decimal', 'aria-label': strings.cornersRadiusLabel || 'Radius' });
+    const rInc = el('button', { type: 'button', class: 'shape-props-stepper', title: strings.cornerIncrease || 'Increase', 'aria-label': strings.cornerIncrease || 'Increase' });
+    rInc.textContent = '+';
+    radiusCtrl.appendChild(rDec);
+    radiusCtrl.appendChild(radiusField);
+    radiusCtrl.appendChild(rInc);
+    radiusCtrl.appendChild(el('span', { class: 'shape-props-unit', text: units().label }));
+    radiusRow.appendChild(radiusCtrl);
+    host.appendChild(radiusRow);
+
+    const cfg = SCFG();
+    const stepMm = Number.isFinite(cfg.CORNER_STEP_MM) ? cfg.CORNER_STEP_MM : 0.5;
+    const readRadius = () => {
+      const s = renderer.getCornerDialogState(payload);
+      return s ? s.radius : 0;
+    };
+    const setRadius = (mm) => {
+      renderer.applyCornerDialogEdit(payload, { radius: Math.max(0, mm) });
+      refresh();
+    };
+    rDec.addEventListener('click', () => setRadius(readRadius() - stepMm));
+    rInc.addEventListener('click', () => setRadius(readRadius() + stepMm));
+    const commitRadius = () => {
+      const mm = parseDoc(radiusField.value);
+      if (mm != null) setRadius(mm); else refresh();
+    };
+    radiusField.addEventListener('change', commitRadius);
+    radiusField.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commitRadius(); radiusField.blur(); }
+    });
+
+    const closeBtn = el('button', { type: 'button', class: 'shape-props-close', title: strings.close || 'Close', 'aria-label': strings.cornersCloseLabel || 'Close corners dialog' });
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', () => closeCorners());
+    host.appendChild(closeBtn);
+
+    const refresh = () => {
+      const s = renderer.getCornerDialogState(payload);
+      if (!s) { closeCorners(); return; }
+      Object.entries(styleButtons).forEach(([type, btn]) => {
+        btn.classList.toggle('is-active', !s.typeMixed && s.cornerType === type);
+      });
+      if (document.activeElement !== radiusField) {
+        radiusField.value = s.radiusMixed ? (strings.cornerMixed || 'Mixed') : fmtDoc(s.radius);
+      }
+      pop.position();
+    };
+    refresh();
+
+    const onDocDown = (e) => {
+      if (host.contains(e.target)) return;
+      closeCorners();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); closeCorners(); } };
+    document.addEventListener('keydown', onKey, true);
+    let downBound = false;
+    let destroyed = false;
+    // rAF-deferred so the opening double-click doesn't immediately close us;
+    // the destroyed guard keeps a same-frame destroy from leaking the listener.
+    const bindDown = () => { if (!downBound && !destroyed) { document.addEventListener('pointerdown', onDocDown, true); downBound = true; } };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(bindDown); else bindDown();
+
+    cornersPopover = {
+      host,
+      refresh,
+      destroy: () => {
+        destroyed = true;
+        document.removeEventListener('keydown', onKey, true);
+        if (downBound) document.removeEventListener('pointerdown', onDocDown, true);
+        pop.close();
+      },
+    };
+    return { id: 'corners', close: closeCorners, refresh };
+  };
+
   // ── Public surface (exactly the shared contract) ────────────────────────────
   UI.ContextBarModes = {
     ...(UI.ContextBarModes || {}),
@@ -835,8 +976,10 @@
     enterSimplify,
     enterSmooth,
     enterShapeProps,
+    enterCorners,
     // Escape hatch for the integrator / tests.
     _exitActive: teardownActive,
     _closeShapeProps: closeShapeProps,
+    _closeCorners: closeCorners,
   };
 })();

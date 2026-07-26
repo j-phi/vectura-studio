@@ -485,6 +485,12 @@
         this.updateFormula();
         this.app.render();
       };
+      // Double-click on a Live Corner widget → anchored Corners dialog
+      // (corner style + radius).
+      this.app.renderer.onCornerDialogRequest = (payload) => {
+        const modes = window.Vectura.UI?.ContextBarModes;
+        if (modes?.enterCorners) modes.enterCorners(payload, { app: this.app, renderer: this.app.renderer });
+      };
     }
 
     // ── algo-draw press-and-hold picker ─────────────────────────

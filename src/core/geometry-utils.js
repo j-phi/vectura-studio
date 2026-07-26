@@ -207,6 +207,8 @@
         out: a.out ? { x: a.out.x, y: a.out.y } : null,
       };
       if (a.corner === true) c.corner = true; // preserve the minimal-trace corner flag
+      if (a.cornerType) c.cornerType = a.cornerType; // preserve the Live Corners style
+      if (a.liveCorner) c.liveCorner = JSON.parse(JSON.stringify(a.liveCorner)); // baked live-corner record
       return c;
     });
 
@@ -1537,7 +1539,7 @@
     _fitCubic(pts, split, last, _vScale(centerTangent, -1), tHat2, errorTol, out, depth + 1);
   };
 
-  // Round each detected corner into a fillet arc (Illustrator "Smooth" on a
+  // Round each detected corner into a fillet arc ("Smooth" on a
   // polygon). Each corner C is replaced by two setback anchors P1 (on the
   // incoming edge) and P2 (on the outgoing edge) joined by a cubic that
   // approximates a circular arc; the edges between fillets stay straight. The
@@ -1838,7 +1840,7 @@
     }
     if (!segs.length) return pts.map((p) => ({ x: p.x, y: p.y, in: null, out: null }));
     const anchors = _segsToAnchors(segs, isClosed);
-    // Round the sharp corners into fillet arcs (Illustrator "Smooth" on a
+    // Round the sharp corners into fillet arcs ("Smooth" on a
     // polygon). Interior corners only for open paths (endpoints stay put).
     if (cornerRadiusFrac > 0 && cornerCount > 0) {
       const cornerPos = cornerIdx
@@ -1849,7 +1851,7 @@
     return anchors;
   };
 
-  // ── Illustrator-parity progressive corner rounding (the ONE Smooth verb) ────
+  // ── industry-parity progressive corner rounding (the ONE Smooth verb) ────
   //
   // Every Smooth surface — the Post-Processing Lab's Smoothing slider, the
   // contextual toolbar's progressive Smooth slider, and the one-shot
@@ -1935,7 +1937,7 @@
     return out;
   };
 
-  // ── Minimal-anchor re-trace (Illustrator "Create Outlines" parity) ──────────
+  // ── Minimal-anchor re-trace ("Create Outlines" parity) ──────────────────────
   //
   // Native font outlines — especially TrueType/quadratic faces — carry FAR more
   // on-curve points than the shape needs: every quadratic is its own segment, a

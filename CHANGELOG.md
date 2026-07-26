@@ -6,6 +6,34 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added
+- **industry-parity Live Corner styles: Round, Inverted Round, and Chamfer.**
+  Corner widgets (parametric rect/polygon corners and freeform hard corners alike)
+  now carry a corner *style*, not just a radius. Option/Alt+click a widget cycles
+  Round → Inverted Round → Chamfer (whole selected set when 2+ corners are selected;
+  every corner from the Select tool); pressing ↑/↓ *while dragging* a widget switches
+  the style live, re-applying the in-progress radius with the new geometry; and
+  double-clicking a widget opens an anchored **Corners dialog** with the three style
+  buttons plus a numeric radius field. The pointer swaps to a style-specific cursor
+  glyph over a widget (convex arc / concave arc / straight cut), the drag label shows
+  a live `R: …` readout in document units (matching the dialog; shown while dragging
+  only, not on hover), and the max-radius red overlay follows the active style
+  (straight red cut for chamfer). Inverted Round is a true vertex-centered concave
+  arc (meets both edges at right angles on a square); Chamfer
+  is a straight cut between the same setback points.
+  **Freeform corners are now truly live:** reshaping a hard corner
+  stores a `liveCorner` record on the spliced pair, so the ⊙ widget survives the
+  edit — re-drag it (continuing from the current radius), Alt/Option+click it to
+  switch style at the same radius, or dial it back to 0 to restore the square
+  corner; manually disturbing the pair's anchors retires the widget (the
+  "roundness lost" rule). Widgets also now ride the corner geometry itself (arc /
+  cut midpoint) rather than the fillet-circle center, so they stay near their
+  corners and never converge at max radius, and drags are delta-mapped from the
+  grab point (no jump on re-grab, no radius jump when cycling styles mid-drag).
+  Shape `cornerTypes` and freeform per-anchor `cornerType`/`liveCorner` persist
+  through save/load and undo. In-app help (Selection & Direct Selection table) and
+  the Direct Selection status-bar hint document the new shortcuts.
+
 ### Fixed
 - **Smooth is bezier-aware and anchor-preserving on drawn curves.** An anchor-described
   path (a pen dome) is now smoothed AT THE ANCHOR LEVEL: an already tangent-continuous
@@ -17,7 +45,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   is tangent-continuous with both trimmed sides — no more angled puckers where a
   rounded corner met a curved segment. The same tangent-aware fillet pass now also runs
   after the point-fit path (dense polylines) and the shape-rebuild fit.
-- **Smooth is now Illustrator-parity corner rounding everywhere, on one shared
+- **Smooth is now industry-parity corner rounding everywhere, on one shared
   mechanism.** Every Smooth surface — Object ▸ Smooth…, the canvas context menu, the
   contextual toolbar's progressive Smooth slider, and the Post-Processing Lab's
   Smoothing slider — now converges on `GeometryUtils.roundCornerAnchors`: a tight,
@@ -493,8 +521,8 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   boundary span. (2) Absolute-size point text vertically centred on the whole-string INK
   bbox, so the first ascender/descender typed nudged everything; the vertical anchor is now
   pinned to the first line's metric cap box — its midpoint is exactly the empty-box caret,
-  so the first keystroke lands on the caret and Enter grows strictly downward (Illustrator
-  point-type). One-time consequence: existing absolute-size text layers re-render with a
+  so the first keystroke lands on the caret and Enter grows strictly downward (point-type
+  convention). One-time consequence: existing absolute-size text layers re-render with a
   small vertical shift, and welded webfont text gets a one-time outline re-fit.
 - **`UI.AngleDial` corrupted every negative value on a non-`[0,360]` domain.** The widget
   had no concept of `min`/`max` — `setValue()` always force-wrapped into `[0, 360)`, so a
@@ -570,7 +598,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   follow-up CSS hook).
 - Petalis modifier/shading slider double-click now resets to the factory default for that
   control (was: slider minimum).
-- **Illustrator-style measurement readouts, center points, and multi-corner rounding.**
+- **measurement readouts, center points, and multi-corner rounding.**
   The smart-guide coordinate chip is now a compact light-gray, dark-text, two-line box (was a
   large single-line pink label): a live `dX/dY` **delta** while dragging an anchor, and `X/Y`
   **position** on hover/select, paired with a small pink feature label (`anchor`) pinned at the
@@ -673,7 +701,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## 1.2.39 - 2026-07-04
 
-**Illustrator Parity — feedback pass.** Fifteen usability fixes from a review of the Phase-1–3
+**Tools Parity — feedback pass.** Fifteen usability fixes from a review of the Phase-1–3
 parity work, spanning selection, the contextual task bar, the edit-path tools, the menu system, and
 per-pen stroke weight.
 
@@ -689,8 +717,8 @@ per-pen stroke weight.
   now opens a live slider with **Done** and **Auto**. It **fits the fewest cubic bezier segments** to
   the path (Schneider curve fitting, `GeometryUtils.fitBezierAnchors`) within a tolerance the slider
   drives — so a dense 84-point polyline collapses to a handful of clean bezier anchors instead of one
-  anchor per point or a stair-stepped line. **Sharp corners get a corner-radius fillet** (Illustrator
-  "Smooth" on a polygon): each corner is replaced by a rounded arc (two setback anchors + a
+  anchor per point or a stair-stepped line. **Sharp corners get a corner-radius fillet** ("Smooth"
+  on a polygon): each corner is replaced by a rounded arc (two setback anchors + a
   circular-arc cubic), the edges between stay straight, and the fillet radius grows with the slider
   until adjacent fillets meet (a hexagon rounds toward a circle). Fillets round INWARD — no ballooning
   or overshoot (handles are chord-clamped). Corner-less shapes (an ellipse) just get the minimal-anchor
@@ -722,9 +750,9 @@ per-pen stroke weight.
 
 ## 1.2.38 - 2026-07-03
 
-**Illustrator Tools Parity — Phase 3 (final): transform numerics, text pickers, All Tools drawer,
+**Tools Parity — Phase 3 (final): transform numerics, text pickers, All Tools drawer,
 right-click menu.** The last four lanes (J, K, L, M) merged and reconciled onto the Phase-2 bar,
-completing the whole Illustrator-Parity effort across all 13 lanes. No AI tooling anywhere (hard
+completing the whole Tools-Parity effort across all 13 lanes. No AI tooling anywhere (hard
 exclusion).
 
 ### Added
@@ -785,7 +813,7 @@ exclusion).
 
 ## 1.2.37 - 2026-07-03
 
-**Illustrator Tools Parity — Phase 2: Contextual Task Bar.** Three lanes (bar framework, sub-modes +
+**Tools Parity — Phase 2: Contextual Task Bar.** Three lanes (bar framework, sub-modes +
 shape properties, isolation breadcrumb) merged and reconciled onto the Phase-1 foundation. The
 plotter-native engine APIs shipped in Phase 1 are now user-facing: a floating contextual toolbar surfaces
 the right actions for the current selection, and double-clicking into a group shows an isolation
@@ -841,7 +869,7 @@ breadcrumb. No AI tooling anywhere (hard exclusion).
 
 ## 1.2.36 - 2026-07-03
 
-**Illustrator Tools Parity — Phase 1.** Six lanes (renderer interaction core, stroke model & options,
+**Tools Parity — Phase 1.** Six lanes (renderer interaction core, stroke model & options,
 path-edit ops, pen picker, text outline, hint bar) merged and reconciled. These are the plotter-native
 foundations the Phase-2 Contextual Task Bar surfaces; several engine APIs below are reachable now and
 become fully user-facing in Phase 2. No AI tooling anywhere (hard exclusion).
@@ -1092,7 +1120,7 @@ become fully user-facing in Phase 2. No AI tooling anywhere (hard exclusion).
   resizes its **frame** (`params.frameWidth`/`frameHeight`) and re-wraps the text live at constant point size
   instead of scaling the glyphs (point-type layers keep normal scaling). Undo restores the prior frame via a
   single first-move snapshot with the release commit suppressed. When laid text overflows the frame, the
-  renderer draws Illustrator's red "+" out-port at the frame's bottom-right (transient `textOverset` flag,
+  renderer draws the red "+" out-port at the frame's bottom-right (transient `textOverset` flag,
   never serialized). Overflow threading to a linked frame stays deferred.
 
 ## 1.2.23 - 2026-07-01
@@ -1588,9 +1616,9 @@ real river hydrology, and a gallery-first Wallpaper experience.
   included), save into any category, reassign groups inline, and delete to disk — written straight
   into the repo's `user-presets/` folder.
 - **Morph Modifier.** A new blend container alongside Mirror: drop in 2+ layers and it fills the gap
-  with graduated in-between rings (an Illustrator-style Blend, but plotter-native — every path is a
+  with graduated in-between rings (an Blend, but plotter-native — every path is a
   polyline). Corner-matched bézier rings keep sharp corners crisp, fill / position / size all morph,
-  shapes chain sequentially or cyclically, and **Illustrator-style isolation** lets you single-click
+  shapes chain sequentially or cyclically, and **isolation** lets you single-click
   to select the group and double-click to step in and edit one child while the blend re-folds live.
 - **Pendula — a new kinetic-harmonograph studio.** A Motion Rack of drag-assignable temporal LFOs,
   macro knobs, and draw-your-own shapes baked into the figure; **Lateral** and **Pintograph** machine
@@ -1649,7 +1677,7 @@ Closes the Meridian cleanup chain that was tracked since the Meridian Blue migra
 
 ### Added
 - **Pen tool — bezier handle editing in the reticule subtool.** Direct-select on a pen-drawn anchor now exposes draggable bezier handles with snap-to-origin (5 px screen-space) and handle collapse-to-anchor behavior. Pairs with the new close-drag snap-to-start gesture.
-- **Direct-select — drag-to-merge anchor nodes.** Dragging an anchor on top of another anchor on the same path merges the two into a single anchor (Illustrator-parity). Also fixes a regression where `sourcePaths.meta.anchors` were silently dropped through Undo/Redo and `.vectura` save/load.
+- **Direct-select — drag-to-merge anchor nodes.** Dragging an anchor on top of another anchor on the same path merges the two into a single anchor. Also fixes a regression where `sourcePaths.meta.anchors` were silently dropped through Undo/Redo and `.vectura` save/load.
 - **Topo algorithm icon** replaced with a new brand mark.
 
 ### Changed
@@ -1674,12 +1702,12 @@ Closes the Meridian cleanup chain that was tracked since the Meridian Blue migra
 ### Added
 - **Wallpaper mirror — universal Domain scale slider.** New 0.30–2.00× control on every wallpaper mirror scales the fundamental-domain clip polygon around its centroid before symmetry ops. Values <1 introduce gaps between symmetric copies (open-tile aesthetic), values >1 introduce overlap (woven aesthetic), 1.00 keeps exact tiling. Works uniformly across all 17 groups and serializes to `.vectura` alongside the other tile params. Double-click to reset.
 - **Wallpaper mirror — v1 layout toggle for 5 groups.** p3, p3m1, p4g, p6, and p6m gain a `Tile layout` row in the mirror panel to switch between **v2 (exact tile)** — the new mathematically correct fundamental domain — and **v1 (classic spacing)** — the pre-1.1 layout that produces the canonical "alternating triangles" look of p3, the open spacing of p3m1/p4g, and the dense overlap of p6/p6m. Default is v2; the toggle composes with Domain scale.
-- **Pathfinder panel — full Illustrator parity.** Multi-selection sidebar gains a collapsible `Pathfinder` section that exposes all ten Illustrator-style operations on 2+ selected layers: four **Shape Modes** (Unite, Minus Front, Intersect, Exclude) produce non-destructive compound shapes editable via the Shape Modes row plus an Expand button to bake; six **Pathfinders** (Divide, Trim, Merge, Crop, Outline, Minus Back) produce destructive baked output grouped under a new `pathfinder` group container. The mode toggle (Silhouette / Shape-Only) drives input geometry — Silhouette chord-closes open paths, Shape-Only restricts to closed shapes. Outline preserves source `strokeWidth` (Vectura divergence vs Illustrator's 0pt — plotter output needs a real width). Divide is capped at 8 input layers to avoid `2^n` cell explosion. Empty results are no-ops with a transient hint (no spurious history entries). Each op is undoable as a single history step. Section collapse state persists in `SETTINGS.uiSections.multiSelectionPathfinderOpen`.
+- **Pathfinder panel — the full ten-operation suite.** Multi-selection sidebar gains a collapsible `Pathfinder` section that exposes all ten operations on 2+ selected layers: four **Shape Modes** (Unite, Minus Front, Intersect, Exclude) produce non-destructive compound shapes editable via the Shape Modes row plus an Expand button to bake; six **Pathfinders** (Divide, Trim, Merge, Crop, Outline, Minus Back) produce destructive baked output grouped under a new `pathfinder` group container. The mode toggle (Silhouette / Shape-Only) drives input geometry — Silhouette chord-closes open paths, Shape-Only restricts to closed shapes. Outline preserves source `strokeWidth` (instead of zeroing it — plotter output needs a real width). Divide is capped at 8 input layers to avoid `2^n` cell explosion. Empty results are no-ops with a transient hint (no spurious history entries). Each op is undoable as a single history step. Section collapse state persists in `SETTINGS.uiSections.multiSelectionPathfinderOpen`.
 - **Export Stroke Override toggle.** New switch in the Optimization panel sits above the Stroke (mm) slider and defaults to OFF. With the toggle off, the SVG export honors each pen's configured width as set in the Pens panel. Turn it on to surface the slider and apply a single uniform stroke across the whole document, overriding the per-pen widths. Persisted across sessions and `.vectura` saves.
 
 ### Fixed
 - **Wallpaper groups — exact tiling restored for 9 of 17 groups.** `pmg`, `pgg`, `cmm`, `p4g`, `p3`, `p3m1`, `p31m`, `p6`, and `p6m` all previously failed to tile the cell correctly: misplaced glide axes routed multiple ops to the same quadrant (pmg, pgg), non-perpendicular mirror angles in cmm generated D₃ instead of D₂, lattice-equivalent duplicate ops in p4g left a 25% gap, and incorrect fundamental-domain sizes/shapes in the hex groups produced partial coverage (p3/p3m1: ~50%), ~3× overlap (p6), or asymmetric overlap (p31m, p6m). Each group now has exact 1.000 coverage with no op-pair overlap, verified by sampling the fund-domain images and checking the reduced-mod-lattice grid union. Old behavior of `p3`/`p3m1`/`p4g`/`p6`/`p6m` is preserved as a per-group v1 toggle for aesthetic continuity.
-- **Pathfinder ops now respect panel layer order (panel-top = "front" of the stack).** Previously TRIM, MERGE, CROP, MINUS BACK, DIVIDE, UNITE, INTERSECT, and EXCLUDE treated the *bottom* of the layer panel as the front of the stack, so the layer at the top of the panel was the one getting trimmed / cropped away / having its color discarded — opposite of every Illustrator-style design tool. They now consistently use the Illustrator convention: the panel-top layer is the cookie cutter (Crop), the survivor (Minus Back), the layer that stays whole (Trim/Merge), and the appearance-donor (Divide cells, Unite/Intersect/Exclude compounds). MINUS FRONT is unchanged — it still keeps the bottom-of-panel layer, since "subtract the front" means the *back* survives.
+- **Pathfinder ops now respect panel layer order (panel-top = "front" of the stack).** Previously TRIM, MERGE, CROP, MINUS BACK, DIVIDE, UNITE, INTERSECT, and EXCLUDE treated the *bottom* of the layer panel as the front of the stack, so the layer at the top of the panel was the one getting trimmed / cropped away / having its color discarded — opposite of every design tool. They now consistently use the standard design-tool convention: the panel-top layer is the cookie cutter (Crop), the survivor (Minus Back), the layer that stays whole (Trim/Merge), and the appearance-donor (Divide cells, Unite/Intersect/Exclude compounds). MINUS FRONT is unchanged — it still keeps the bottom-of-panel layer, since "subtract the front" means the *back* survives.
 - **Make-clipping-mask drag gesture now uses Shift instead of CMD/Ctrl.** macOS Chrome silently cancels the `drop` event whenever CMD is held throughout an HTML5 drag (the OS treats it as a system alias gesture), so the previous "CMD+drag a mask-capable layer onto another to mask it" UX never worked for real users despite passing all synthetic tests. Switching the modifier to Shift sidesteps the OS-level intercept entirely — Shift has no special drag interpretation on any platform. Updated in-app help and README to document the new gesture.
 
 ### Changed
@@ -1819,13 +1847,13 @@ First stable release. The 0.x series shipped 13+ generative algorithms, the Peta
 - Added `Insert > Mirror Modifier`, a new modifier-container layer type that behaves like a group in the Layers panel while applying a sequential mirror-axis stack to its child layers.
 - Added mirror-guide canvas overlays with dashed full-canvas axes, reflection-direction triangles, separate rotate handles, and per-axis/stack show-hide, lock, reorder, and delete controls.
 - Added unit, integration, and Playwright coverage for mirror modifier geometry, state roundtrip, and the new Insert-menu workflow.
-- Added Illustrator-style Rectangle (`M`), Oval (`L`), and Polygon (`Y`) shape tools that create editable `expanded` layers, including polygon side-count changes during draft and shape-aware corner-rounding handles.
+- Added Rectangle (`M`), Oval (`L`), and Polygon (`Y`) shape tools that create editable `expanded` layers, including polygon side-count changes during draft and shape-aware corner-rounding handles.
 - Added export coverage for masked shape geometry with `Remove Hidden Geometry` enabled and disabled, plus focused unit/browser tests for shape creation flows.
-- Added Illustrator-style parent-mask coverage so visible mask parents clip their full descendant subtree on canvas and in SVG export.
+- Added parent-mask coverage so visible mask parents clip their full descendant subtree on canvas and in SVG export.
 - Added a `Hide Mask Layer` option on mask parents so the parent can keep clipping descendants while suppressing its own visible artwork on canvas and in export.
 - Added a document-level Metric/Imperial unit switch in Document Setup, unit-aware paper/margin/stroke/tolerance controls, an optional blueprint-style document-dimension readout outside the canvas, and a `Clear Saved Preferences` action for cookie-backed UI state.
 - Added unit, integration, Playwright, and screenshot coverage for document-unit conversion, clearing saved preferences, Document Setup shortcut toggling, multi-layer Line Sort scoping, and the new outside-canvas dimension labels.
-- Added an Illustrator-style Export SVG modal with a large left-side preview, right-side export settings, bottom-right actions, and preview zoom/pan controls.
+- Added an Export SVG modal with a large left-side preview, right-side export settings, bottom-right actions, and preview zoom/pan controls.
 - Added representative Playwright source-fidelity coverage for fill-built Pattern tiles: the harness now scans the full pattern catalog to pick compound-fill archetypes, keeps `Autumn` seam fidelity as an expected-fail regression, and tracks representative tile-silhouette mismatches for known-bad patterns like `Autumn`, `Bamboo`, and `Bank Note` without breaking the suite.
 - Added a runtime custom Pattern registry with local-library plus project-carried custom tiles, `.vectura` round-trip support for saved custom patterns, inline `Import SVG Tile` / `Save Pattern` / `Load Saved` actions in the Pattern Texture Designer, and a live `3x3` seam-validation preview that blocks saving invalid imported tiles.
 - Added unit coverage for custom-pattern registry/validation flows and Playwright coverage for invalid-tile save blocking plus custom-pattern project round-tripping.
@@ -1863,9 +1891,9 @@ First stable release. The 0.x series shipped 13+ generative algorithms, the Peta
 - Rectangle and Polygon shape-tool layers now start with straight-edge primitive rendering instead of inheriting `Curves` from the previously selected layer, and rotated primitive selections keep their bounds plus corner-rounding handles aligned to the transformed shape geometry.
 - Fixed algorithm switching so changing a generator layer type clears stale manual-geometry contamination, regenerates the artboard immediately, and stays covered by integration plus Playwright geometry regressions.
 - Mask-parent move/resize/rotate drags now ghost-preview the masked descendant subtree against the transformed silhouette until mouse release.
-- Rectangle, Oval, and Polygon creation plus single-shape Selection now use an Illustrator-style reticle cursor while keeping existing handle, drag, and center-out `Alt/Option` behaviors intact.
+- Rectangle, Oval, and Polygon creation plus single-shape Selection now use an reticle cursor while keeping existing handle, drag, and center-out `Alt/Option` behaviors intact.
 - Added `Remove Hidden Geometry` to `Document Setup > Export Settings`, defaulting it on so exported SVGs can destructively trim masked and frame-hidden geometry to match the current visible frame while still allowing non-destructive clip-path export when turned off.
-- Replaced the old source-layer clipping workflow with Illustrator-style parent masks: mask state now lives on the visible parent, descendant layers are indented beneath it, legacy `sourceIds` masks are cleared on load, and export clip paths are derived from ancestor mask silhouettes instead of arbitrary source lists.
+- Replaced the old source-layer clipping workflow with parent masks: mask state now lives on the visible parent, descendant layers are indented beneath it, legacy `sourceIds` masks are cleared on load, and export clip paths are derived from ancestor mask silhouettes instead of arbitrary source lists.
 - Fixed `Remove Hidden Geometry` export to correctly clip ancestor-masked layers; the export now uses `displayMaskActive` (matching the canvas renderer) instead of `layer.mask?.enabled`, so child layers clipped by a parent mask are properly trimmed on export.
 - Improved accessibility across all UI: theme-aware canvas reticle cursor, `prefers-reduced-motion` support, `aria-live` on notification toasts, modal focus management, `aria-pressed`/`aria-current`/`aria-expanded` on interactive controls, visible focus rings, and a minimum 11 px text-size floor.
 - Changed Pattern-layer fill records to store normalized multi-region targets instead of only raw single-loop polygons, which lets the Texture Designer distinguish inner fills from outer-minus-hole rings and preserve those targets through save/load.

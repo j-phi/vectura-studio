@@ -8,9 +8,9 @@
  * the neighboring anchor's handle completely untouched — so a curve tuned to
  * reach the OLD (now-discarded) vertex kept the same control point while its
  * endpoint moved. That produces a visible tangent-discontinuity "kink" right
- * where the fillet meets the curve (confirmed against an Illustrator
- * reference: /Users/jayphi/Desktop/bezier2.mp4 — our result had a crease on
- * the curve-adjacent side of a rounded corner that Illustrator's did not).
+ * where the fillet meets the curve (confirmed against a reference-editor
+ * trace: /Users/jayphi/Desktop/bezier2.mp4 — our result had a crease on
+ * the curve-adjacent side of a rounded corner that the reference's did not).
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -76,12 +76,13 @@ describe('direct-select corner rounding — adjacent bezier gets trimmed, not or
     expect(handle).toBeTruthy();
     expect(handle.prevControlOut).toEqual({ x: 63.01, y: 36.21 });
 
-    expect(renderer.beginFreeformCornerDrag(handle)).toBe(true);
-    // A modest radius, well under the corner's geometric max — drag a few
-    // pixels along the handle's own bisector, same as a real short drag.
+    // Grab at the drawn widget, then drag a couple of px along the bisector —
+    // the drag mapping is delta-based from the grab point (widget
+    // tracking), so radius comes from travel, not absolute distance.
+    expect(renderer.beginFreeformCornerDrag(handle, handle.worldPoint)).toBe(true);
     const target = {
-      x: handle.worldVertex.x + handle.worldInward.x * 8,
-      y: handle.worldVertex.y + handle.worldInward.y * 8,
+      x: handle.worldPoint.x + handle.worldInward.x * 2,
+      y: handle.worldPoint.y + handle.worldInward.y * 2,
     };
     renderer.updateFreeformCornerDrag(target);
 
@@ -133,10 +134,10 @@ describe('direct-select corner rounding — adjacent bezier gets trimmed, not or
     expect(handle.cornerOut).toBeNull();
     expect(handle.nextControlIn).toBeNull();
 
-    expect(renderer.beginFreeformCornerDrag(handle)).toBe(true);
+    expect(renderer.beginFreeformCornerDrag(handle, handle.worldPoint)).toBe(true);
     const target = {
-      x: handle.worldVertex.x + handle.worldInward.x * 4,
-      y: handle.worldVertex.y + handle.worldInward.y * 4,
+      x: handle.worldPoint.x + handle.worldInward.x * 2,
+      y: handle.worldPoint.y + handle.worldInward.y * 2,
     };
     renderer.updateFreeformCornerDrag(target);
 

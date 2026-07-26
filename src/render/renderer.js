@@ -24,6 +24,10 @@
   });
   const TAU = Math.PI * 2;
   const ELLIPSE_KAPPA = 0.5522847498307936;
+  // Live Corners drag readout in document units (source units are mm), e.g.
+  // "R: 12.50 mm" / "R: 0.49 in" — matches the dialog instead of hardcoding px.
+  const cornerRadiusLabel = (valueMm) =>
+    `R: ${formatDocumentLength(valueMm, SETTINGS?.documentUnits, { precision: 2, spaceBeforeUnit: true })}`;
   const {
     SHAPE_CORNER_HANDLE_MIN = 8,
     MASK_PREVIEW_ALPHA = 0.2,
@@ -162,12 +166,18 @@
   const distance = (a, b) => Math.hypot((b?.x ?? 0) - (a?.x ?? 0), (b?.y ?? 0) - (a?.y ?? 0));
   const clonePoint = (pt) => ({ x: pt.x, y: pt.y });
   const cloneHandle = (pt) => (pt ? { x: pt.x, y: pt.y } : null);
-  const cloneAnchor = (anchor) => ({
-    x: anchor.x,
-    y: anchor.y,
-    in: cloneHandle(anchor.in),
-    out: cloneHandle(anchor.out),
-  });
+  const cloneAnchor = (anchor) => {
+    const c = {
+      x: anchor.x,
+      y: anchor.y,
+      in: cloneHandle(anchor.in),
+      out: cloneHandle(anchor.out),
+    };
+    if (anchor.corner === true) c.corner = true;
+    if (anchor.cornerType) c.cornerType = anchor.cornerType;
+    if (anchor.liveCorner) c.liveCorner = JSON.parse(JSON.stringify(anchor.liveCorner));
+    return c;
+  };
   const normalizePoint = (pt) => {
     const len = Math.hypot(pt?.x ?? 0, pt?.y ?? 0);
     if (!len) return { x: 0, y: 0 };
@@ -278,11 +288,26 @@
     while (base.length < vertexCount) base.push(base.length ? base[base.length - 1] : 0);
     return base.map((value) => Math.max(0, Number(value) || 0));
   };
+  // Live Corners: the three corner styles, in the order
+  // Option/Alt+click cycles them (Round → Inverted Round → Chamfer → Round).
+  const CORNER_TYPES = ['round', 'invert', 'chamfer'];
+  const normalizeCornerType = (value) => (CORNER_TYPES.includes(value) ? value : 'round');
+  const nextCornerType = (value, step = 1) => {
+    const idx = CORNER_TYPES.indexOf(normalizeCornerType(value));
+    return CORNER_TYPES[(idx + step + CORNER_TYPES.length) % CORNER_TYPES.length];
+  };
+  const getShapeCornerTypes = (shape, vertexCount) => {
+    if (!shape || shape.type === 'oval') return [];
+    const base = Array.isArray(shape.cornerTypes) ? shape.cornerTypes.slice(0, vertexCount) : [];
+    while (base.length < vertexCount) base.push(base.length ? base[base.length - 1] : 'round');
+    return base.map(normalizeCornerType);
+  };
   const getCornerDescriptors = (shape) => {
     const vertices = getShapeVertices(shape);
     if (!vertices.length) return [];
     const area = polygonArea(vertices);
     const radii = getShapeRadii(shape, vertices.length);
+    const types = getShapeCornerTypes(shape, vertices.length);
     return vertices.map((vertex, index) => {
       const prev = vertices[(index - 1 + vertices.length) % vertices.length];
       const next = vertices[(index + 1) % vertices.length];
@@ -317,6 +342,7 @@
         nextLen,
         radius: Math.min(radii[index] || 0, maxRadius),
         maxRadius,
+        cornerType: types[index] || 'round',
       };
     });
   };
@@ -335,11 +361,15 @@
     ];
   };
   // Shared tangent-circle-fillet math: the two spliced anchor points (with
-  // their bezier handles) for rounding `descriptor`'s corner to `radius`.
-  // Used both to build the actual rounded-shape geometry and to preview the
-  // fillet arc as an overlay (e.g. the max-radius highlight) without mutating
-  // the path.
-  const buildFilletArc = (descriptor, radius) => {
+  // their bezier handles) for reshaping `descriptor`'s corner to `radius`
+  // in one of the three Live Corner styles:
+  //   round   — convex arc tangent to both edges (circle center inside the shape)
+  //   invert  — concave arc through the same setback points (circle center at
+  //             the original vertex, bulging toward it)
+  //   chamfer — straight cut between the setback points (no handles)
+  // Used both to build the actual reshaped geometry and to preview the corner
+  // as an overlay (e.g. the max-radius highlight) without mutating the path.
+  const buildFilletArc = (descriptor, radius, cornerType = 'round') => {
     if (!descriptor || radius <= 1e-4 || descriptor.tanHalf <= 1e-4) return null;
     const tangentDistance = Math.min(
       descriptor.prevLen * 0.5,
@@ -354,6 +384,31 @@
       x: descriptor.vertex.x + descriptor.nextDir.x * tangentDistance,
       y: descriptor.vertex.y + descriptor.nextDir.y * tangentDistance,
     };
+    const type = normalizeCornerType(cornerType);
+    if (type === 'chamfer') {
+      return { start, startOut: null, end, endIn: null };
+    }
+    if (type === 'invert') {
+      // Arc centered at the original vertex, radius = setback distance. The
+      // tangents at the setback points are perpendicular to the spokes
+      // (prevDir/nextDir), oriented toward the opposite setback point.
+      const chord = normalizePoint({ x: end.x - start.x, y: end.y - start.y });
+      const perpToward = (dir) => {
+        const p = { x: -dir.y, y: dir.x };
+        return dot(p, chord) >= 0 ? p : { x: -p.x, y: -p.y };
+      };
+      const startTan = perpToward(descriptor.prevDir);
+      const endTan = perpToward(descriptor.nextDir);
+      // The vertex-centered arc spans the wedge angle between the two spokes.
+      const arcAngle = Math.max(1e-4, Math.acos(clamp(dot(descriptor.prevDir, descriptor.nextDir), -1, 1)));
+      const handleLength = (4 / 3) * Math.tan(arcAngle / 4) * tangentDistance;
+      return {
+        start,
+        startOut: { x: start.x + startTan.x * handleLength, y: start.y + startTan.y * handleLength },
+        end,
+        endIn: { x: end.x - endTan.x * handleLength, y: end.y - endTan.y * handleLength },
+      };
+    }
     const arcAngle = Math.PI - Math.max(1e-4, Math.acos(clamp(dot(descriptor.prevDir, descriptor.nextDir), -1, 1)));
     const handleLength = (4 / 3) * Math.tan(arcAngle / 4) * radius;
     return {
@@ -368,7 +423,7 @@
     if (!descriptors.length) return [];
     const anchors = [];
     descriptors.forEach((descriptor) => {
-      const arc = buildFilletArc(descriptor, descriptor.radius);
+      const arc = buildFilletArc(descriptor, descriptor.radius, descriptor.cornerType);
       if (!arc) {
         anchors.push({ x: descriptor.vertex.x, y: descriptor.vertex.y, in: null, out: null });
         return;
@@ -397,11 +452,36 @@
     return [];
   };
   const cloneShape = (shape) => (shape ? JSON.parse(JSON.stringify(shape)) : null);
+  // Distance from the corner vertex to the ⊙ widget along the inward bisector:
+  // the widget rides the corner geometry itself (arc / cut midpoint) —
+  // NOT the fillet circle center. Widgets therefore stay near
+  // their corners and never converge into one point at max radius.
+  //   round   — arc midpoint: r·(1−sinHalf)/sinHalf
+  //   invert  — vertex-centered arc midpoint: setback distance r/tanHalf
+  //   chamfer — cut midpoint: (r/tanHalf)·cos(halfAngle)
+  const cornerWidgetDistance = (radius, sinHalf, tanHalf, cornerType) => {
+    if (!(radius > 1e-9)) return 0;
+    const type = normalizeCornerType(cornerType);
+    if (type === 'invert') return tanHalf > 1e-4 ? radius / tanHalf : 0;
+    if (type === 'chamfer') {
+      if (tanHalf <= 1e-4) return 0;
+      return (radius / tanHalf) * Math.cos(Math.atan(tanHalf));
+    }
+    return sinHalf > 1e-4 ? (radius * (1 - sinHalf)) / sinHalf : 0;
+  };
+  // Radius gained per unit of pointer travel along the bisector — the slope
+  // of the ROUND widget-position mapping, so the widget tracks the pointer.
+  // One slope for every style (drags are delta-based from the grab point), so
+  // cycling styles mid-drag never jumps the radius under the pointer.
+  const cornerDragSlope = (sinHalf) => {
+    if (!(sinHalf > 1e-4)) return 0;
+    return sinHalf < 1 - 1e-9 ? sinHalf / (1 - sinHalf) : sinHalf;
+  };
   const getShapeCornerHandlePosition = (descriptor, scale = 1) => {
     if (!descriptor) return null;
     const minDist = SHAPE_CORNER_HANDLE_MIN / Math.max(scale || 1, 0.01);
-    const centerDist = descriptor.sinHalf > 1e-4 ? descriptor.radius / descriptor.sinHalf : 0;
-    const dist = Math.max(minDist, centerDist);
+    const arcDist = cornerWidgetDistance(descriptor.radius, descriptor.sinHalf, descriptor.tanHalf, descriptor.cornerType);
+    const dist = Math.max(minDist, arcDist);
     return {
       x: descriptor.vertex.x + descriptor.inward.x * dist,
       y: descriptor.vertex.y + descriptor.inward.y * dist,
@@ -481,7 +561,7 @@
       this.lastTooltipText = null;
       this.selectedLayerId = null;
       this.selectedLayerIds = new Set();
-      // Illustrator-style "key object" — the anchor that Align-To: Key Object
+      // "key object" — the anchor that Align-To: Key Object
       // uses as its reference rect. Cleared whenever the layer leaves the
       // selection or selection drops below 2 layers.
       this.keyObjectId = null;
@@ -874,7 +954,7 @@
     }
 
     // Small pink feature label (e.g. "anchor") drawn at the point itself, above
-    // the gray measurement chip — Illustrator smart-guide parity. Positioned in
+    // the gray measurement chip — smart-guide parity. Positioned in
     // client (fixed) coordinates from the anchor's on-screen location.
     ensureAnchorLabel() {
       if (this._anchorLabelEl) return this._anchorLabelEl;
@@ -953,7 +1033,7 @@
         ? UnitUtils.getDocumentUnitLabel(units)
         : (units === 'imperial' ? 'in' : 'mm');
       const sep = cfg.chip.labelSeparator ?? ': ';
-      // Illustrator-style two-line readout: each axis on its own line with its
+      // two-line readout: each axis on its own line with its
       // own unit suffix (rendered in the gray chip via `white-space: pre`).
       if (kind === 'delta') {
         return `${cfg.chip.dx}${sep}${fmt(values.dx)} ${unitLabel}\n${cfg.chip.dy}${sep}${fmt(values.dy)} ${unitLabel}`;
@@ -1019,7 +1099,7 @@
           }
         }
         // Center helper point: hovering near ANY object's center reveals a
-        // marker + "center" label + X/Y chip (Illustrator parity). Runs for all
+        // marker + "center" label + X/Y chip. Runs for all
         // visible objects, not just the selection, when no anchor/handle is
         // grabbed. Gated by Settings ▸ Guides & Display ▸ "Center point".
         if (!chipPoint && (tool === 'select' || tool === 'direct')
@@ -2112,10 +2192,10 @@
     // After a rounded-corner rebuild the anchor count changes, so re-derive the
     // selected-anchor set from the persistent vertex set (keeps the multi-corner
     // selection visually intact through the drag).
-    _reselectCornerAnchors(cornerSet) {
+    _reselectCornerAnchors(cornerSet, shape = this.shapeCornerDrag?.shape) {
       const sel = this.directSelection;
       if (!sel || !Array.isArray(sel.anchors) || !cornerSet) return;
-      const descriptors = getCornerDescriptors(this.shapeCornerDrag?.shape);
+      const descriptors = getCornerDescriptors(shape);
       if (!descriptors.length) return;
       const next = new Set();
       sel.anchors.forEach((a, ai) => {
@@ -2132,7 +2212,7 @@
       sel.selectedIndices = next;
     }
 
-    beginShapeCornerDrag(layer, pathIndex, corner, scope = 'all', cornerSet = null) {
+    beginShapeCornerDrag(layer, pathIndex, corner, scope = 'all', cornerSet = null, world = null) {
       if (!layer || !corner) return false;
       const meta = this.getShapeMetaForLayer(layer, pathIndex);
       if (!meta?.shape) return false;
@@ -2145,6 +2225,28 @@
         shape: cloneShape(meta.shape),
         historyPushed: false,
       };
+      // Delta-based drag mapping, anchored at the grab point: the grabbed
+      // corner keeps its current radius until the pointer actually moves, so
+      // a re-grab of an already-reshaped corner never jumps. When the grab
+      // position isn't known (API callers), assume the pointer sits exactly
+      // on the drawn widget.
+      const descriptor = getCornerDescriptors(this.shapeCornerDrag.shape)[corner.index];
+      if (descriptor) {
+        this.shapeCornerDrag.startRadius = descriptor.radius;
+        const drawnDist = Math.max(
+          SHAPE_CORNER_HANDLE_MIN / Math.max(this.scale, 0.01),
+          cornerWidgetDistance(descriptor.radius, descriptor.sinHalf, descriptor.tanHalf, descriptor.cornerType)
+        );
+        if (world) {
+          const localWorld = this.inverseShapeSourcePoint(world, layer);
+          this.shapeCornerDrag.pointerBase = dot(
+            { x: localWorld.x - descriptor.vertex.x, y: localWorld.y - descriptor.vertex.y },
+            descriptor.inward
+          );
+        } else {
+          this.shapeCornerDrag.pointerBase = drawnDist;
+        }
+      }
       if (scope === 'single') {
         this.selectLayer(layer);
         this.setDirectSelection(layer, pathIndex);
@@ -2161,6 +2263,9 @@
       if (!this.shapeCornerDrag || !world) return false;
       const layer = this.engine.layers.find((entry) => entry.id === this.shapeCornerDrag.layerId);
       if (!layer) return false;
+      this.shapeCornerDrag.lastWorld = { x: world.x, y: world.y };
+      // A real drag is not the first click of a double-click.
+      this._cornerWidgetLastClick = null;
       const descriptors = getCornerDescriptors(this.shapeCornerDrag.shape);
       const descriptor = descriptors[this.shapeCornerDrag.cornerIndex];
       if (!descriptor) return false;
@@ -2169,7 +2274,10 @@
         { x: localWorld.x - descriptor.vertex.x, y: localWorld.y - descriptor.vertex.y },
         descriptor.inward
       ));
-      const nextRadius = descriptor.sinHalf > 1e-4 ? projected * descriptor.sinHalf : 0;
+      if (this.shapeCornerDrag.pointerBase == null) this.shapeCornerDrag.pointerBase = projected;
+      const nextRadius = Math.max(0,
+        (this.shapeCornerDrag.startRadius || 0) +
+        (projected - this.shapeCornerDrag.pointerBase) * cornerDragSlope(descriptor.sinHalf));
       const currentRadii = getShapeRadii(this.shapeCornerDrag.shape, descriptors.length);
       if (this.shapeCornerDrag.scope === 'single') {
         currentRadii[this.shapeCornerDrag.cornerIndex] = clamp(nextRadius, 0, descriptor.maxRadius);
@@ -2188,7 +2296,7 @@
       this.shapeCornerDrag.shape.cornerRadii = currentRadii;
       if (this._dragCursorPos) {
         const _dr = clamp(nextRadius, 0, descriptor.maxRadius);
-        this.showDragTooltip(`R: ${_dr.toFixed(2)} px`, this._dragCursorPos.x, this._dragCursorPos.y);
+        this.showDragTooltip(cornerRadiusLabel(_dr), this._dragCursorPos.x, this._dragCursorPos.y);
       }
       // Flag whichever corner(s) this drag actually touches that have hit
       // their geometric max, so the draw pass can highlight the fillet red.
@@ -2203,28 +2311,39 @@
         if (!entry) return;
         const rEff = currentRadii[index] || 0;
         if (rEff > 1e-4 && entry.maxRadius > 1e-4 && rEff >= entry.maxRadius - 1e-3) {
-          const arc = buildFilletArc(entry, rEff);
+          const arc = buildFilletArc(entry, rEff, entry.cornerType);
           if (arc) maxArcs.push(arc);
         }
       });
       this.shapeCornerDrag.maxArcs = maxArcs;
-      if (!this.shapeCornerDrag.historyPushed) {
-        if ((this.shapeCornerDrag.scope === 'single' || this.shapeCornerDrag.scope === 'selected') && this.onDirectEditStart) this.onDirectEditStart();
-        if (this.shapeCornerDrag.scope === 'all' && this.onCommitTransform) this.onCommitTransform();
-        this.shapeCornerDrag.historyPushed = true;
+      return this._flushShapeCornerDragShape();
+    }
+
+    // Push-once history + apply for the in-progress shape corner drag's
+    // snapshot shape. Split out of updateShapeCornerDrag so a mid-drag style
+    // cycle (Up/Down) can flush even before the first pointer move.
+    _flushShapeCornerDragShape() {
+      const drag = this.shapeCornerDrag;
+      if (!drag) return false;
+      const layer = this.engine.layers.find((entry) => entry.id === drag.layerId);
+      if (!layer) return false;
+      if (!drag.historyPushed) {
+        if ((drag.scope === 'single' || drag.scope === 'selected') && this.onDirectEditStart) this.onDirectEditStart();
+        if (drag.scope === 'all' && this.onCommitTransform) this.onCommitTransform();
+        drag.historyPushed = true;
       }
-      if (this.shapeCornerDrag.scope === 'single' || this.shapeCornerDrag.scope === 'selected') {
-        const nextMeta = this.directSelection?.meta ? { ...this.directSelection.meta, shape: cloneShape(this.shapeCornerDrag.shape) } : null;
+      if (drag.scope === 'single' || drag.scope === 'selected') {
+        const nextMeta = this.directSelection?.meta ? { ...this.directSelection.meta, shape: cloneShape(drag.shape) } : null;
         if (!nextMeta) return false;
         this.setShapePathFromMeta(nextMeta);
-        if (this.shapeCornerDrag.scope === 'selected') this._reselectCornerAnchors(this.shapeCornerDrag.cornerSet);
+        if (drag.scope === 'selected') this._reselectCornerAnchors(drag.cornerSet, drag.shape);
       } else {
-        const meta = this.getShapeMetaForLayer(layer, this.shapeCornerDrag.pathIndex);
+        const meta = this.getShapeMetaForLayer(layer, drag.pathIndex);
         if (!meta?.shape) return false;
-        meta.shape = cloneShape(this.shapeCornerDrag.shape);
+        meta.shape = cloneShape(drag.shape);
         const nextPath = this.buildShapePath(meta.shape);
         const sourcePaths = this.ensureLayerSourcePaths(layer);
-        sourcePaths[this.shapeCornerDrag.pathIndex] = nextPath;
+        sourcePaths[drag.pathIndex] = nextPath;
         layer.sourcePaths = sourcePaths;
         this.engine.generate(layer.id);
       }
@@ -2234,16 +2353,342 @@
 
     endShapeCornerDrag() {
       if (!this.shapeCornerDrag) return;
-      const scope = this.shapeCornerDrag.scope;
+      // Commit only when the drag actually changed something (historyPushed) —
+      // a plain widget click must stay cheap so the second click of a
+      // double-click lands inside the detection window. Fires for every scope;
+      // 'selected' previously skipped the refresh, leaving panels stale.
+      const changed = this.shapeCornerDrag.historyPushed;
       this.shapeCornerDrag = null;
-      if (scope === 'single' && this.onDirectEditCommit) this.onDirectEditCommit();
-      if (scope === 'all' && this.onDirectEditCommit) this.onDirectEditCommit();
+      if (changed && this.onDirectEditCommit) this.onDirectEditCommit();
       this.hideDragTooltip();
       this.draw();
     }
 
-    // Returns draggable corner handles for hard-corner anchors in freeform (non-parametric) paths.
-    // A hard corner is an anchor with corner:true (from reduceAnchors) OR no bezier handles.
+    // True while a Live Corner widget drag (shape or freeform) is in progress —
+    // gates the Up/Down arrow-key corner-style cycling in shortcuts.js.
+    isCornerDragActive() {
+      return Boolean(this.shapeCornerDrag || this.freeformCornerDrag);
+    }
+
+    // Live Corners: pressing Up/Down while dragging a corner
+    // widget cycles the corner style mid-drag; the cursor swaps to show the
+    // style now being applied and the in-progress radius is re-applied with
+    // the new geometry.
+    cycleActiveCornerDragType(step = 1) {
+      if (this.shapeCornerDrag) {
+        const drag = this.shapeCornerDrag;
+        const descriptors = getCornerDescriptors(drag.shape);
+        if (!descriptors.length) return false;
+        const types = getShapeCornerTypes(drag.shape, descriptors.length);
+        const next = nextCornerType(types[drag.cornerIndex], step);
+        const touched = drag.scope === 'single'
+          ? [drag.cornerIndex]
+          : drag.scope === 'selected'
+            ? Array.from(drag.cornerSet || [drag.cornerIndex])
+            : descriptors.map((_, index) => index);
+        touched.forEach((index) => {
+          if (index >= 0 && index < types.length) types[index] = next;
+        });
+        drag.shape.cornerTypes = types;
+        this.setCanvasCursor(this.cursorDataUrl('cornerRadius', 4, 4, 'pointer', next));
+        // No pointer move yet: still flush the style change through the live
+        // meta (with its history push) — otherwise a cycle-then-release would
+        // silently discard the edit.
+        if (drag.lastWorld) this.updateShapeCornerDrag(drag.lastWorld);
+        else this._flushShapeCornerDragShape();
+        return true;
+      }
+      if (this.freeformCornerDrag) {
+        const drag = this.freeformCornerDrag;
+        const next = nextCornerType(drag.cornerType, step);
+        drag.cornerType = next;
+        (drag.corners || []).forEach((corner) => {
+          corner.cornerType = next;
+          // Persist on the drag's source anchors too, so releasing at radius 0
+          // still keeps the chosen style for the next drag.
+          const anchor = drag.originalAnchors?.[corner.anchorIndex];
+          if (anchor) anchor.cornerType = next;
+        });
+        this.setCanvasCursor(this.cursorDataUrl('cornerRadius', 4, 4, 'pointer', next));
+        // lastRawRadius ?? 0 so a cycle before the first pointer move still
+        // persists the style (radius-0 apply keeps the anchors, pushes history).
+        this._applyFreeformCornerRadius(drag.lastRawRadius ?? 0);
+        return true;
+      }
+      return false;
+    }
+
+    // Manual double-click tracking for corner widgets — pointerdown does not
+    // reliably carry e.detail > 1 (same rationale as the pen tool's detector).
+    // Keyed per-widget so two quick clicks on different corners don't count.
+    _isCornerWidgetDoubleClick(e, key) {
+      const now = performance.now();
+      const prev = this._cornerWidgetLastClick;
+      const x = e.clientX ?? 0;
+      const y = e.clientY ?? 0;
+      const isDouble = Boolean(prev && prev.key === key &&
+        (now - prev.time) < 400 && Math.hypot(x - prev.x, y - prev.y) < 8);
+      this._cornerWidgetLastClick = isDouble ? null : { key, time: now, x, y };
+      return isDouble;
+    }
+
+    // Corner indices a Live Corner edit applies to, mirroring drag scoping:
+    // 'selected' → the multi-corner selection, 'all' → every corner,
+    // otherwise just the clicked corner.
+    _shapeCornerTargets(scope, cornerSet, cornerIndex, count) {
+      const setSize = cornerSet ? (cornerSet.size ?? cornerSet.length ?? 0) : 0;
+      if (scope === 'selected' && setSize) return Array.from(cornerSet);
+      if (scope === 'all') return Array.from({ length: count }, (_, index) => index);
+      return [cornerIndex];
+    }
+
+    // Shared history + apply plumbing for non-drag shape corner edits
+    // (Alt+click style cycling, Corners dialog). `mutate(shape, descriptors)`
+    // edits the cloned shape in place; the same undo/apply contract as the
+    // corresponding corner-drag scope is honored.
+    _applyShapeCornerMutation(layer, pathIndex, scope, cornerSet, mutate) {
+      if (!layer) return false;
+      // Dialog payloads carry the corner set as a plain Array (JSON-safe);
+      // everything below (incl. _reselectCornerAnchors) expects a Set.
+      if (cornerSet && !(cornerSet instanceof Set)) cornerSet = new Set(cornerSet);
+      const meta = this.getShapeMetaForLayer(layer, pathIndex);
+      if (!meta?.shape) return false;
+      const shape = cloneShape(meta.shape);
+      const descriptors = getCornerDescriptors(shape);
+      if (!descriptors.length) return false;
+      mutate(shape, descriptors);
+      if (scope === 'all') {
+        const liveMeta = this.getShapeMetaForLayer(layer, pathIndex);
+        if (!liveMeta?.shape) return false;
+        if (this.onCommitTransform) this.onCommitTransform();
+        liveMeta.shape = cloneShape(shape);
+        const nextPath = this.buildShapePath(liveMeta.shape);
+        const sourcePaths = this.ensureLayerSourcePaths(layer);
+        sourcePaths[pathIndex] = nextPath;
+        layer.sourcePaths = sourcePaths;
+        this.engine.generate(layer.id);
+      } else {
+        if (this.onDirectEditStart) this.onDirectEditStart();
+        this.selectLayer(layer);
+        if (!this.directSelection || this.directSelection.layerId !== layer.id) {
+          this.setDirectSelection(layer, pathIndex);
+        }
+        const nextMeta = this.directSelection?.meta ? { ...this.directSelection.meta, shape: cloneShape(shape) } : null;
+        if (!nextMeta) return false;
+        this.setShapePathFromMeta(nextMeta);
+        if (scope === 'selected' && cornerSet) {
+          this._reselectCornerAnchors(cornerSet, shape);
+        }
+      }
+      if (this.onDirectEditCommit) this.onDirectEditCommit();
+      this.draw();
+      return true;
+    }
+
+    // Live Corners: Option/Alt+click on a corner widget switches
+    // the corner style (Round → Inverted Round → Chamfer → Round). When the
+    // clicked widget belongs to a 2+ multi-corner selection the whole set
+    // switches together, mirroring the drag scoping.
+    cycleShapeCornerType(layer, pathIndex, corner, scope = 'single', cornerSet = null, step = 1) {
+      if (!layer || !corner) return false;
+      return this._applyShapeCornerMutation(layer, pathIndex, scope, cornerSet, (shape, descriptors) => {
+        const types = getShapeCornerTypes(shape, descriptors.length);
+        const next = nextCornerType(types[corner.index], step);
+        const targets = this._shapeCornerTargets(scope, cornerSet, corner.index, descriptors.length);
+        targets.forEach((index) => {
+          if (index >= 0 && index < types.length) types[index] = next;
+        });
+        shape.cornerTypes = types;
+      });
+    }
+
+    // Fresh radius/style readout for the Corners dialog target (re-read from
+    // the live geometry, never from the stale double-click payload).
+    getCornerDialogState(payload) {
+      if (!payload) return null;
+      const layer = this.engine.layers.find((entry) => entry.id === payload.layerId);
+      if (!layer) return null;
+      if (payload.kind === 'shape') {
+        const meta = this.getShapeMetaForLayer(layer, payload.pathIndex || 0);
+        if (!meta?.shape) return null;
+        const descriptors = getCornerDescriptors(meta.shape);
+        const targets = this._shapeCornerTargets(payload.scope, payload.cornerSet, payload.cornerIndex, descriptors.length)
+          .filter((index) => index >= 0 && index < descriptors.length);
+        if (!targets.length) return null;
+        const radii = targets.map((index) => descriptors[index].radius);
+        const types = targets.map((index) => descriptors[index].cornerType);
+        return {
+          radius: radii[0],
+          radiusMixed: radii.some((value) => Math.abs(value - radii[0]) > 1e-6),
+          cornerType: types[0],
+          typeMixed: types.some((value) => value !== types[0]),
+          maxRadius: Math.max(...targets.map((index) => descriptors[index].maxRadius)),
+        };
+      }
+      const handle = this._findFreeformDialogHandle(payload);
+      if (!handle) return null;
+      // Aggregate over the same selection-expanded set an edit will touch, so
+      // the dialog never displays one corner while editing several.
+      const set = this._freeformDialogTargets(handle);
+      const radii = set.map((h) => h.radius || 0);
+      const types = set.map((h) => h.cornerType);
+      return {
+        radius: handle.radius || 0,
+        radiusMixed: radii.some((value) => Math.abs(value - radii[0]) > 1e-6),
+        cornerType: handle.cornerType,
+        typeMixed: types.some((value) => value !== types[0]),
+        maxRadius: Math.max(...set.map((h) => h.maxRadius || 0)),
+      };
+    }
+
+    // Resolve a freeform Corners-dialog payload to its live handle. Corners
+    // are matched by vertex position — stable across bake/unbake, unlike
+    // anchor indices which shift as pairs splice in and out.
+    _findFreeformDialogHandle(payload) {
+      const handles = this._getFreeformCornerHandles();
+      if (payload.vertex) {
+        const byVertex = handles.find((h) =>
+          Math.hypot(h.sourceVertex.x - payload.vertex.x, h.sourceVertex.y - payload.vertex.y) < 1e-6);
+        if (byVertex) return byVertex;
+      }
+      if (payload.anchorIndex != null) {
+        return handles.find((h) => !h.baked && h.anchorIndex === payload.anchorIndex) || null;
+      }
+      return null;
+    }
+
+    _freeformDialogTargets(handle) {
+      const sel = this.directSelection;
+      if (sel?.selectedIndices?.size >= 2 && this._freeformHandleSelected(handle, sel.selectedIndices)) {
+        const matched = this._getFreeformCornerHandles().filter((h) => this._freeformHandleSelected(h, sel.selectedIndices));
+        if (matched.length >= 2) return matched;
+      }
+      return [handle];
+    }
+
+    // Corners dialog commit: set radius and/or style on the payload's target
+    // corners as one undo step. Freeform corners persist the style on the
+    // anchor; a radius > 0 reshapes the corner exactly like a widget drag.
+    applyCornerDialogEdit(payload, edit = {}) {
+      if (!payload) return false;
+      const layer = this.engine.layers.find((entry) => entry.id === payload.layerId);
+      if (!layer) return false;
+      if (payload.kind === 'shape') {
+        return this._applyShapeCornerMutation(layer, payload.pathIndex || 0, payload.scope, payload.cornerSet, (shape, descriptors) => {
+          const radii = getShapeRadii(shape, descriptors.length);
+          const types = getShapeCornerTypes(shape, descriptors.length);
+          const targets = this._shapeCornerTargets(payload.scope, payload.cornerSet, payload.cornerIndex, descriptors.length);
+          targets.forEach((index) => {
+            if (index < 0 || index >= descriptors.length) return;
+            if (Number.isFinite(edit.radius)) radii[index] = clamp(edit.radius, 0, descriptors[index].maxRadius);
+            if (edit.cornerType) types[index] = normalizeCornerType(edit.cornerType);
+          });
+          shape.cornerRadii = radii;
+          shape.cornerTypes = types;
+        });
+      }
+      const handle = this._findFreeformDialogHandle(payload);
+      if (!handle) return false;
+      // Style-only edit: each corner keeps its own radius.
+      if (edit.cornerType && !Number.isFinite(edit.radius)) {
+        return this._setFreeformCornerType(handle, edit.cornerType);
+      }
+      if (!Number.isFinite(edit.radius)) return false;
+      if (!this.beginFreeformCornerDrag(handle)) return false;
+      const drag = this.freeformCornerDrag;
+      if (edit.cornerType) {
+        // Explicit style + radius: stamp the style on every target corner.
+        // A radius-only commit leaves each corner's own style untouched.
+        const type = normalizeCornerType(edit.cornerType);
+        drag.cornerType = type;
+        (drag.corners || []).forEach((corner) => {
+          corner.cornerType = type;
+          const anchor = drag.originalAnchors?.[corner.anchorIndex];
+          if (anchor) anchor.cornerType = type;
+        });
+      }
+      // Radius 0 unbakes back to a square corner — the widget survives either way.
+      this._applyFreeformCornerRadius(edit.radius);
+      this.endFreeformCornerDrag();
+      return true;
+    }
+
+    // Source-space Live Corner data for the hard-corner anchor at index `i`
+    // of `anchors` — everything a drag needs to reshape that corner (tangent
+    // dirs, wedge trig, max radius, adjacent-segment control data for the
+    // De Casteljau trims). Returns null when `i` is not a reshapeable corner.
+    _freeformCornerDataAt(anchors, closed, i) {
+      const n = anchors.length;
+      if (n < 3) return null;
+      const sa = anchors[i];
+      if (!sa) return null;
+      if (!(sa.corner === true || (sa.in === null && sa.out === null))) return null;
+      if (!closed && (i === 0 || i === n - 1)) return null;
+      const prevS = anchors[(i - 1 + n) % n];
+      const nextS = anchors[(i + 1) % n];
+      const prevLen = Math.hypot(prevS.x - sa.x, prevS.y - sa.y);
+      const nextLen = Math.hypot(nextS.x - sa.x, nextS.y - sa.y);
+      if (prevLen < 1e-9 || nextLen < 1e-9) return null;
+      // Tangent direction, NOT the straight chord — a corner beside a curved
+      // segment (single-handle bezier) has its wedge bent by the curve.
+      const prevDirS = cornerTangentDir(sa, prevS, 'in', 'out');
+      const nextDirS = cornerTangentDir(sa, nextS, 'out', 'in');
+      const sbx = prevDirS.x + nextDirS.x, sby = prevDirS.y + nextDirS.y;
+      const sbl = Math.hypot(sbx, sby);
+      if (sbl < 1e-6) return null;
+      const inwardS = { x: sbx / sbl, y: sby / sbl };
+      const cosAng = clamp(prevDirS.x * nextDirS.x + prevDirS.y * nextDirS.y, -1, 1);
+      const edgeAngle = Math.acos(cosAng);
+      const halfAngle = Math.max(1e-4, edgeAngle * 0.5);
+      const sinHalf = Math.sin(halfAngle);
+      const tanHalf = Math.tan(halfAngle);
+      const maxRadius = tanHalf > 1e-4 ? Math.min(prevLen, nextLen) * tanHalf * 0.5 : 0;
+      return {
+        anchorIndex: i,
+        cornerType: normalizeCornerType(sa.cornerType),
+        vertexCorner: sa.corner === true,
+        sourceVertex: { x: sa.x, y: sa.y },
+        sourcePrevDir: prevDirS,
+        sourceNextDir: nextDirS,
+        sourceInward: inwardS,
+        sinHalf, tanHalf,
+        prevLen, nextLen,
+        maxRadius,
+        // Raw handle/position data for the adjacent segments, so a drag can
+        // trim (De Casteljau split) whichever side is a real curve rather
+        // than assuming both sides are straight lines.
+        cornerIn: sa.in ? { x: sa.in.x, y: sa.in.y } : null,
+        cornerOut: sa.out ? { x: sa.out.x, y: sa.out.y } : null,
+        prevPos: { x: prevS.x, y: prevS.y },
+        nextPos: { x: nextS.x, y: nextS.y },
+        prevControlOut: prevS.out ? { x: prevS.out.x, y: prevS.out.y } : null,
+        nextControlIn: nextS.in ? { x: nextS.in.x, y: nextS.in.y } : null,
+      };
+    }
+
+    // Baked Live Corner pairs in `anchors`: start-role records whose pair is
+    // intact and whose anchors still sit exactly where the bake left them.
+    // A pair the user has manually disturbed loses its widget — the
+    // "roundness lost" rule.
+    _liveCornerPairsIn(anchors) {
+      const n = anchors.length;
+      const pairs = [];
+      for (let i = 0; i < n - 1; i++) {
+        const rec = anchors[i]?.liveCorner;
+        if (!rec || rec.role !== 'start') continue;
+        const end = anchors[i + 1];
+        if (!end?.liveCorner || end.liveCorner.role !== 'end') continue;
+        if (Math.hypot(anchors[i].x - rec.bakedStart.x, anchors[i].y - rec.bakedStart.y) > 1e-6) continue;
+        if (Math.hypot(end.x - rec.bakedEnd.x, end.y - rec.bakedEnd.y) > 1e-6) continue;
+        pairs.push({ pairIndex: i, rec });
+      }
+      return pairs;
+    }
+
+    // Returns draggable corner handles for freeform (non-parametric) paths:
+    // fresh hard corners (corner:true from reduceAnchors, or no bezier
+    // handles) AND baked live corners, whose widget rides the reshaped corner
+    // and stays draggable/cyclable — Live Corners.
     _getFreeformCornerHandles() {
       const sel = this.directSelection;
       if (!sel || sel.meta?.shape) return [];
@@ -2253,63 +2698,64 @@
       const srcAnchors = sel.anchors;
       const n = srcAnchors.length;
       if (n < 3) return [];
+      const layer = this.getDirectSelectionLayer();
       const result = [];
+      const off = SHAPE_CORNER_HANDLE_MIN / Math.max(this.scale, 0.01);
       for (let i = 0; i < n; i++) {
-        const sa = srcAnchors[i];
+        const cornerData = this._freeformCornerDataAt(srcAnchors, sel.closed, i);
+        if (!cornerData) continue;
         const wa = worldAnchors[i];
-        if (!(sa.corner === true || (sa.in === null && sa.out === null))) continue;
-        if (!sel.closed && (i === 0 || i === n - 1)) continue;
-        const prevS = srcAnchors[(i - 1 + n) % n];
-        const nextS = srcAnchors[(i + 1) % n];
         const prevW = worldAnchors[(i - 1 + n) % n];
         const nextW = worldAnchors[(i + 1) % n];
-        const prevLen = Math.hypot(prevS.x - sa.x, prevS.y - sa.y);
-        const nextLen = Math.hypot(nextS.x - sa.x, nextS.y - sa.y);
-        if (prevLen < 1e-9 || nextLen < 1e-9) continue;
-        // Tangent direction, NOT the straight chord — a corner beside a curved
-        // segment (single-handle bezier) has its wedge bent by the curve.
-        const prevDirS = cornerTangentDir(sa, prevS, 'in', 'out');
-        const nextDirS = cornerTangentDir(sa, nextS, 'out', 'in');
-        let sbx = prevDirS.x + nextDirS.x, sby = prevDirS.y + nextDirS.y;
-        const sbl = Math.hypot(sbx, sby);
-        if (sbl < 1e-6) continue;
-        const inwardS = { x: sbx / sbl, y: sby / sbl };
-        const cosAng = clamp(prevDirS.x * nextDirS.x + prevDirS.y * nextDirS.y, -1, 1);
-        const edgeAngle = Math.acos(cosAng);
-        const halfAngle = Math.max(1e-4, edgeAngle * 0.5);
-        const sinHalf = Math.sin(halfAngle);
-        const tanHalf = Math.tan(halfAngle);
-        const maxRadius = tanHalf > 1e-4 ? Math.min(prevLen, nextLen) * tanHalf * 0.5 : 0;
         const prevDirW = cornerTangentDir(wa, prevW, 'in', 'out');
         const nextDirW = cornerTangentDir(wa, nextW, 'out', 'in');
-        let wbx = prevDirW.x + nextDirW.x, wby = prevDirW.y + nextDirW.y;
+        const wbx = prevDirW.x + nextDirW.x, wby = prevDirW.y + nextDirW.y;
         const wbl = Math.hypot(wbx, wby);
         if (wbl < 1e-6) continue;
         const inwardW = { x: wbx / wbl, y: wby / wbl };
-        const off = SHAPE_CORNER_HANDLE_MIN / Math.max(this.scale, 0.01);
         result.push({
-          anchorIndex: i,
+          ...cornerData,
+          baked: false,
+          radius: 0,
           worldVertex: wa,
           worldPoint: { x: wa.x + inwardW.x * off, y: wa.y + inwardW.y * off },
           worldInward: inwardW,
-          sourceVertex: { x: sa.x, y: sa.y },
-          sourcePrevDir: prevDirS,
-          sourceNextDir: nextDirS,
-          sourceInward: inwardS,
-          sinHalf, tanHalf,
-          prevLen, nextLen,
-          maxRadius,
-          // Raw handle/position data for the adjacent segments, so a drag can
-          // trim (De Casteljau split) whichever side is a real curve rather
-          // than assuming both sides are straight lines.
-          cornerIn: sa.in ? { x: sa.in.x, y: sa.in.y } : null,
-          cornerOut: sa.out ? { x: sa.out.x, y: sa.out.y } : null,
-          prevPos: { x: prevS.x, y: prevS.y },
-          nextPos: { x: nextS.x, y: nextS.y },
-          prevControlOut: prevS.out ? { x: prevS.out.x, y: prevS.out.y } : null,
-          nextControlIn: nextS.in ? { x: nextS.in.x, y: nextS.in.y } : null,
         });
       }
+      // Baked live corners: widget at the arc/cut midpoint of the reshaped
+      // corner, along the bisector from the stored (discarded) vertex.
+      this._liveCornerPairsIn(srcAnchors).forEach(({ pairIndex, rec }) => {
+        const v = rec.vertex;
+        const start = srcAnchors[pairIndex];
+        const end = srcAnchors[pairIndex + 1];
+        const spokeS = normalizePoint({ x: start.x - v.x, y: start.y - v.y });
+        const spokeE = normalizePoint({ x: end.x - v.x, y: end.y - v.y });
+        const bx = spokeS.x + spokeE.x, by = spokeS.y + spokeE.y;
+        const bl = Math.hypot(bx, by);
+        if (bl < 1e-6) return;
+        const inwardS = { x: bx / bl, y: by / bl };
+        const wedge = Math.max(1e-4, Math.acos(clamp(spokeS.x * spokeE.x + spokeS.y * spokeE.y, -1, 1)));
+        const halfAngle = Math.max(1e-4, wedge * 0.5);
+        const sinHalf = Math.sin(halfAngle);
+        const tanHalf = Math.tan(halfAngle);
+        const dist = Math.max(off, cornerWidgetDistance(rec.radius, sinHalf, tanHalf, rec.cornerType));
+        const srcPoint = { x: v.x + inwardS.x * dist, y: v.y + inwardS.y * dist };
+        const worldPoint = layer ? this.sourceToWorldPoint(layer, srcPoint) : srcPoint;
+        const worldVertex = layer ? this.sourceToWorldPoint(layer, v) : { x: v.x, y: v.y };
+        result.push({
+          baked: true,
+          pairIndex,
+          anchorIndex: null,
+          cornerType: normalizeCornerType(rec.cornerType),
+          radius: rec.radius,
+          maxRadius: rec.maxRadius,
+          sinHalf, tanHalf,
+          sourceVertex: { x: v.x, y: v.y },
+          sourceInward: inwardS,
+          worldVertex,
+          worldPoint,
+        });
+      });
       return result;
     }
 
@@ -2323,37 +2769,133 @@
       return null;
     }
 
-    beginFreeformCornerDrag(handle) {
+    // Fold a baked live-corner pair (start at `i`, end at `i+1`) back into its
+    // original single vertex anchor, restoring any neighbor handles the bake
+    // trimmed. Mutates `anchors` in place; returns the vertex anchor's index
+    // (or -1 if `i` is not a valid pair start).
+    _restoreLiveCornerPair(anchors, i) {
+      const rec = anchors[i]?.liveCorner;
+      if (!rec || rec.role !== 'start') return -1;
+      const end = anchors[i + 1];
+      if (!end?.liveCorner || end.liveCorner.role !== 'end') return -1;
+      const vertexAnchor = {
+        x: rec.vertex.x,
+        y: rec.vertex.y,
+        in: rec.vertexIn ? { x: rec.vertexIn.x, y: rec.vertexIn.y } : null,
+        out: rec.vertexOut ? { x: rec.vertexOut.x, y: rec.vertexOut.y } : null,
+      };
+      if (rec.vertexCorner) vertexAnchor.corner = true;
+      vertexAnchor.cornerType = normalizeCornerType(rec.cornerType);
+      anchors.splice(i, 2, vertexAnchor);
+      const m = anchors.length;
+      // Only sides the bake actually trimmed get their handles restored —
+      // a side shared with an adjacent live corner was never trimmed.
+      if (rec.prevTrimmed) {
+        const prev = anchors[(i - 1 + m) % m];
+        if (prev) prev.out = rec.prevOut ? { x: rec.prevOut.x, y: rec.prevOut.y } : null;
+      }
+      if (rec.nextTrimmed) {
+        const next = anchors[(i + 1) % m];
+        if (next) next.in = rec.nextIn ? { x: rec.nextIn.x, y: rec.nextIn.y } : null;
+      }
+      return i;
+    }
+
+    // Is this handle part of the current multi-corner selection? A baked
+    // corner counts as selected when either of its pair anchors is selected.
+    _freeformHandleSelected(handle, selectedIndices) {
+      if (!handle || !selectedIndices) return false;
+      if (handle.baked) {
+        return selectedIndices.has(handle.pairIndex) || selectedIndices.has(handle.pairIndex + 1);
+      }
+      return selectedIndices.has(handle.anchorIndex);
+    }
+
+    beginFreeformCornerDrag(handle, world = null) {
       if (!handle || !this.directSelection) return false;
       const layer = this.engine.layers.find((l) => l.id === this.directSelection.layerId);
       if (!layer) return false;
       const sel = this.directSelection;
-      // Multi-corner round: if 2+ corners are selected and the grabbed handle
-      // is one of them, round the whole set together; else just this corner.
-      let corners = [handle];
-      if (sel.selectedIndices && sel.selectedIndices.size >= 2 && sel.selectedIndices.has(handle.anchorIndex)) {
-        const matched = this._getFreeformCornerHandles().filter((h) => sel.selectedIndices.has(h.anchorIndex));
-        if (matched.length >= 2) corners = matched;
+      // Multi-corner: if 2+ corners are selected and the grabbed handle is one
+      // of them, reshape the whole set together; else just this corner.
+      let targetHandles = [handle];
+      if (sel.selectedIndices && sel.selectedIndices.size >= 2 && this._freeformHandleSelected(handle, sel.selectedIndices)) {
+        const matched = this._getFreeformCornerHandles().filter((h) => this._freeformHandleSelected(h, sel.selectedIndices));
+        if (matched.length >= 2) targetHandles = matched;
       }
-      corners = corners.slice().sort((a, b) => a.anchorIndex - b.anchorIndex);
+      // Unbake every baked corner in the target set on a working copy of the
+      // anchors — the drag then reshapes restored vertices exactly like fresh
+      // ones, which is what keeps live corners re-draggable. The on-screen
+      // anchors stay baked until the first pointer move re-applies them.
+      const working = this.cloneAnchors(sel.anchors);
+      const bakedTargets = targetHandles.filter((h) => h.baked).sort((a, b) => b.pairIndex - a.pairIndex);
+      const targetIndices = targetHandles.filter((h) => !h.baked).map((h) => h.anchorIndex);
+      const restoredRadii = new Map(); // restored vertex index → its pre-drag radius
+      for (const bh of bakedTargets) {
+        const vi = this._restoreLiveCornerPair(working, bh.pairIndex);
+        if (vi < 0) continue;
+        // Restoring removes one anchor at pairIndex — shift indices above it.
+        for (let k = 0; k < targetIndices.length; k++) {
+          if (targetIndices[k] > bh.pairIndex) targetIndices[k] -= 1;
+        }
+        const shifted = new Map();
+        restoredRadii.forEach((radius, index) => {
+          shifted.set(index > bh.pairIndex ? index - 1 : index, radius);
+        });
+        restoredRadii.clear();
+        shifted.forEach((radius, index) => restoredRadii.set(index, radius));
+        targetIndices.push(vi);
+        restoredRadii.set(vi, bh.radius);
+      }
+      const corners = targetIndices
+        .sort((a, b) => a - b)
+        .map((index) => {
+          const data = this._freeformCornerDataAt(working, sel.closed, index);
+          if (data && restoredRadii.has(index)) data.currentRadius = restoredRadii.get(index);
+          return data;
+        })
+        .filter(Boolean);
+      if (!corners.length) return false;
+      // The grabbed corner's restored data drives the pointer→radius mapping.
+      // Match by vertex position — index spaces differ between the on-screen
+      // (baked) anchors and the restored working copy.
+      const grabbed = corners.find((c) =>
+        Math.hypot(c.sourceVertex.x - handle.sourceVertex.x, c.sourceVertex.y - handle.sourceVertex.y) < 1e-6);
+      const anchor = grabbed || corners[0];
       this.freeformCornerDrag = {
         layerId: sel.layerId,
         pathIndex: sel.pathIndex,
-        anchorIndex: handle.anchorIndex,
-        sourceVertex: handle.sourceVertex,
-        sourcePrevDir: handle.sourcePrevDir,
-        sourceNextDir: handle.sourceNextDir,
-        sourceInward: handle.sourceInward,
-        sinHalf: handle.sinHalf,
-        tanHalf: handle.tanHalf,
-        prevLen: handle.prevLen,
-        nextLen: handle.nextLen,
-        maxRadius: handle.maxRadius,
-        currentRadius: 0,
+        anchorIndex: anchor.anchorIndex,
+        cornerType: anchor.cornerType,
+        sourceVertex: anchor.sourceVertex,
+        sourcePrevDir: anchor.sourcePrevDir,
+        sourceNextDir: anchor.sourceNextDir,
+        sourceInward: anchor.sourceInward,
+        sinHalf: anchor.sinHalf,
+        tanHalf: anchor.tanHalf,
+        prevLen: anchor.prevLen,
+        nextLen: anchor.nextLen,
+        maxRadius: anchor.maxRadius,
+        startRadius: handle.baked ? handle.radius : 0,
+        currentRadius: handle.baked ? handle.radius : 0,
         corners,
-        originalAnchors: this.cloneAnchors(sel.anchors),
+        originalAnchors: working,
         historyPushed: false,
       };
+      // Delta-based drag mapping anchored at the grab point (or, for API
+      // callers with no pointer, at the drawn widget position) — a re-grab of
+      // a live corner continues from its current radius with no jump.
+      const drag = this.freeformCornerDrag;
+      if (world) {
+        const srcPt = this.worldToSourcePoint(layer, world);
+        drag.pointerBase = (srcPt.x - drag.sourceVertex.x) * drag.sourceInward.x +
+          (srcPt.y - drag.sourceVertex.y) * drag.sourceInward.y;
+      } else {
+        drag.pointerBase = Math.max(
+          SHAPE_CORNER_HANDLE_MIN / Math.max(this.scale, 0.01),
+          cornerWidgetDistance(drag.startRadius || 0, drag.sinHalf, drag.tanHalf, drag.cornerType)
+        );
+      }
       return true;
     }
 
@@ -2365,26 +2907,35 @@
       const srcPt = this.worldToSourcePoint(layer, world);
       const dx = srcPt.x - drag.sourceVertex.x, dy = srcPt.y - drag.sourceVertex.y;
       const projected = Math.max(0, dx * drag.sourceInward.x + dy * drag.sourceInward.y);
-      const rawRadius = drag.sinHalf > 1e-4 ? projected * drag.sinHalf : 0;
+      // A real drag is not the first click of a double-click.
+      this._cornerWidgetLastClick = null;
+      // Delta-based mapping anchored at the grab point (see beginFreeformCornerDrag).
+      if (drag.pointerBase == null) drag.pointerBase = projected;
+      const rawRadius = Math.max(0,
+        (drag.startRadius || 0) + (projected - drag.pointerBase) * cornerDragSlope(drag.sinHalf));
+      drag.lastRawRadius = rawRadius;
+      return this._applyFreeformCornerRadius(rawRadius);
+    }
+
+    // Core of the freeform corner reshape: rebuilds the selection's anchors
+    // from the drag's original snapshot with each dragged corner spliced into
+    // its Live Corner geometry at `rawRadius` (clamped per corner). Shared by
+    // pointer drags, mid-drag arrow-key style cycling, and the Corners dialog.
+    _applyFreeformCornerRadius(rawRadius) {
+      const drag = this.freeformCornerDrag;
+      if (!drag) return false;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer) return false;
       const r = clamp(rawRadius, 0, drag.maxRadius);
       drag.currentRadius = r;
-      if (this._dragCursorPos) this.showDragTooltip(`R: ${r.toFixed(2)} px`, this._dragCursorPos.x, this._dragCursorPos.y);
+      if (this._dragCursorPos) this.showDragTooltip(cornerRadiusLabel(r), this._dragCursorPos.x, this._dragCursorPos.y);
       if (!drag.historyPushed) {
         if (this.onDirectEditStart) this.onDirectEditStart();
         this.markDirectSelectionAsCustomPath();
         drag.historyPushed = true;
       }
       const anchors = this.cloneAnchors(drag.originalAnchors);
-      const corners = drag.corners || [{
-        anchorIndex: drag.anchorIndex,
-        sourceVertex: drag.sourceVertex,
-        sourcePrevDir: drag.sourcePrevDir,
-        sourceNextDir: drag.sourceNextDir,
-        tanHalf: drag.tanHalf,
-        prevLen: drag.prevLen,
-        nextLen: drag.nextLen,
-        maxRadius: drag.maxRadius,
-      }];
+      const corners = drag.corners || [];
       const newSelected = new Set();
       // corners is sorted ascending by original anchorIndex; each rounded
       // corner inserts one extra anchor, so later corners' splice positions
@@ -2394,7 +2945,10 @@
       const n0 = drag.originalAnchors.length;
       for (const corner of corners) {
         const i = corner.anchorIndex + offset;
-        const rc = clamp(rawRadius, 0, corner.maxRadius);
+        // radiusOverride: style-only edits (Alt+click, dialog style buttons)
+        // re-bake each corner at its own current radius instead of the shared
+        // dragged radius.
+        const rc = clamp(corner.radiusOverride ?? rawRadius, 0, corner.maxRadius);
         if (rc > 1e-4 && corner.tanHalf > 1e-4) {
           const tDist = Math.min(corner.prevLen * 0.5, corner.nextLen * 0.5, rc / corner.tanHalf);
           const v = corner.sourceVertex;
@@ -2415,6 +2969,8 @@
           // keeps aiming at the discarded vertex and the join kinks visibly.
           let startPt = { x: v.x + pd.x * tDist, y: v.y + pd.y * tDist };
           let startIn = null;
+          let prevTrimmed = false;
+          let nextTrimmed = false;
           const prevOriginalIdx = (corner.anchorIndex - 1 + n0) % n0;
           const prevShared = corners.some((c) => c !== corner && c.anchorIndex === prevOriginalIdx);
           if (!prevShared && (corner.cornerIn || corner.prevControlOut)) {
@@ -2427,6 +2983,7 @@
               startPt = { x: left[3].x, y: left[3].y };
               startIn = { x: left[2].x, y: left[2].y };
               pd = normalizePoint({ x: startIn.x - startPt.x, y: startIn.y - startPt.y });
+              prevTrimmed = true;
             }
           }
 
@@ -2445,25 +3002,71 @@
               endPt = { x: right[0].x, y: right[0].y };
               endOut = { x: right[1].x, y: right[1].y };
               nd = normalizePoint({ x: endOut.x - endPt.x, y: endOut.y - endPt.y });
+              nextTrimmed = true;
             }
           }
 
-          // Kappa arc handle length, using whichever tangents (refined or
-          // vertex-approximate) ended up governing each side — so the fillet
-          // always departs/arrives exactly opposite its neighboring handle.
-          const arcAngle = Math.PI - Math.max(1e-4, Math.acos(clamp(pd.x * nd.x + pd.y * nd.y, -1, 1)));
-          const handleLen = (4 / 3) * Math.tan(arcAngle / 4) * rc;
-          const startOut = { x: startPt.x - pd.x * handleLen, y: startPt.y - pd.y * handleLen };
-          const endIn = { x: endPt.x - nd.x * handleLen, y: endPt.y - nd.y * handleLen };
-          anchors.splice(i, 1,
-            { x: startPt.x, y: startPt.y, in: startIn, out: startOut },
-            { x: endPt.x, y: endPt.y, out: endOut, in: endIn }
-          );
+          // Corner-style geometry between the two setback points:
+          //   round   — kappa arc handles opposing whichever tangents (refined
+          //             or vertex-approximate) govern each side, so the fillet
+          //             departs/arrives exactly opposite its neighboring handle.
+          //   invert  — concave arc centered on the discarded vertex; tangents
+          //             are perpendicular to the vertex spokes.
+          //   chamfer — straight cut, no handles.
+          const cornerType = normalizeCornerType(corner.cornerType);
+          let startOut = null;
+          let endIn = null;
+          if (cornerType === 'round') {
+            const arcAngle = Math.PI - Math.max(1e-4, Math.acos(clamp(pd.x * nd.x + pd.y * nd.y, -1, 1)));
+            const handleLen = (4 / 3) * Math.tan(arcAngle / 4) * rc;
+            startOut = { x: startPt.x - pd.x * handleLen, y: startPt.y - pd.y * handleLen };
+            endIn = { x: endPt.x - nd.x * handleLen, y: endPt.y - nd.y * handleLen };
+          } else if (cornerType === 'invert') {
+            const spokeS = normalizePoint({ x: startPt.x - v.x, y: startPt.y - v.y });
+            const spokeE = normalizePoint({ x: endPt.x - v.x, y: endPt.y - v.y });
+            const chord = normalizePoint({ x: endPt.x - startPt.x, y: endPt.y - startPt.y });
+            const perpToward = (dir) => {
+              const p = { x: -dir.y, y: dir.x };
+              return (p.x * chord.x + p.y * chord.y) >= 0 ? p : { x: -p.x, y: -p.y };
+            };
+            const startTan = perpToward(spokeS);
+            const endTan = perpToward(spokeE);
+            const wedge = Math.max(1e-4, Math.acos(clamp(spokeS.x * spokeE.x + spokeS.y * spokeE.y, -1, 1)));
+            const k = (4 / 3) * Math.tan(wedge / 4);
+            const hStart = k * Math.hypot(startPt.x - v.x, startPt.y - v.y);
+            const hEnd = k * Math.hypot(endPt.x - v.x, endPt.y - v.y);
+            startOut = { x: startPt.x + startTan.x * hStart, y: startPt.y + startTan.y * hStart };
+            endIn = { x: endPt.x - endTan.x * hEnd, y: endPt.y - endTan.y * hEnd };
+          }
+          // Live Corner record: everything needed to resurrect the widget on
+          // the baked pair, restore the original vertex neighborhood for a
+          // re-drag/style change, and detect manual disturbance (widget death).
+          const startAnchor = {
+            x: startPt.x, y: startPt.y, in: startIn, out: startOut,
+            liveCorner: {
+              role: 'start',
+              radius: rc,
+              cornerType,
+              maxRadius: corner.maxRadius,
+              vertex: { x: v.x, y: v.y },
+              vertexIn: corner.cornerIn ? { x: corner.cornerIn.x, y: corner.cornerIn.y } : null,
+              vertexOut: corner.cornerOut ? { x: corner.cornerOut.x, y: corner.cornerOut.y } : null,
+              vertexCorner: corner.vertexCorner === true,
+              prevTrimmed,
+              nextTrimmed,
+              prevOut: corner.prevControlOut ? { x: corner.prevControlOut.x, y: corner.prevControlOut.y } : null,
+              nextIn: corner.nextControlIn ? { x: corner.nextControlIn.x, y: corner.nextControlIn.y } : null,
+              bakedStart: { x: startPt.x, y: startPt.y },
+              bakedEnd: { x: endPt.x, y: endPt.y },
+            },
+          };
+          const endAnchor = { x: endPt.x, y: endPt.y, out: endOut, in: endIn, liveCorner: { role: 'end' } };
+          anchors.splice(i, 1, startAnchor, endAnchor);
           newSelected.add(i);
           newSelected.add(i + 1);
           offset += 1;
           // Max-radius reached for this corner — flag the fillet arc so the
-          // draw pass can highlight it (Illustrator's red "can't go further" cue).
+          // draw pass can highlight it (the red "can't go further" cue).
           if (corner.maxRadius > 1e-4 && rc >= corner.maxRadius - 1e-3) {
             maxArcs.push({ start: startPt, startOut, end: endPt, endIn });
           }
@@ -2483,10 +3086,43 @@
 
     endFreeformCornerDrag() {
       if (!this.freeformCornerDrag) return;
+      // Same as endShapeCornerDrag: no-change clicks skip the commit rebuild.
+      const changed = this.freeformCornerDrag.historyPushed;
       this.freeformCornerDrag = null;
-      if (this.onDirectEditCommit) this.onDirectEditCommit();
+      if (changed && this.onDirectEditCommit) this.onDirectEditCommit();
       this.hideDragTooltip();
       this.draw();
+    }
+
+    // Option/Alt+click on a freeform corner widget: switch that corner's Live
+    // Corner style (Round → Inverted Round → Chamfer). The style is stored on
+    // the anchor and consumed by the next widget drag; when the clicked widget
+    // is part of a 2+ multi-corner selection the whole set switches together.
+    cycleFreeformCornerType(handle, step = 1) {
+      if (!handle) return false;
+      return this._setFreeformCornerType(handle, nextCornerType(handle.cornerType, step));
+    }
+
+    _setFreeformCornerType(handle, type) {
+      const sel = this.directSelection;
+      if (!handle || !sel || !Array.isArray(sel.anchors)) return false;
+      const next = normalizeCornerType(type);
+      // One code path for fresh and baked corners: unbake targets into a drag
+      // snapshot, stamp the style, then re-apply each corner at ITS OWN
+      // current radius (radiusOverride) — a baked corner keeps its radius with
+      // the new style, an unrounded corner just stores the style for later.
+      if (!this.beginFreeformCornerDrag(handle)) return false;
+      const drag = this.freeformCornerDrag;
+      drag.cornerType = next;
+      (drag.corners || []).forEach((corner) => {
+        corner.cornerType = next;
+        corner.radiusOverride = corner.currentRadius || 0;
+        const anchor = drag.originalAnchors?.[corner.anchorIndex];
+        if (anchor) anchor.cornerType = next;
+      });
+      this._applyFreeformCornerRadius(0);
+      this.endFreeformCornerDrag();
+      return true;
     }
 
 
@@ -2609,6 +3245,10 @@
       // Minimal-trace corner flag: a corner anchor whose flat side carries no
       // handle draws the "drag me into a curve" affordance in the node overlay.
       if (anchor.corner === true) c.corner = true;
+      // Live Corners style chosen via Option/Alt+click on the corner widget.
+      if (anchor.cornerType) c.cornerType = anchor.cornerType;
+      // Baked live-corner record — keeps the widget re-editable after a bake.
+      if (anchor.liveCorner) c.liveCorner = JSON.parse(JSON.stringify(anchor.liveCorner));
       return c;
     }
 
@@ -2859,7 +3499,7 @@
       sel.meta = sourcePath.meta ? { ...sourcePath.meta } : {};
     }
 
-    // Illustrator-parity edit-path toolbar: expose the current anchor selection
+    // industry-parity edit-path toolbar: expose the current anchor selection
     // as stable refs ({layerId, pathIndex, anchorIndex}) across the primary and
     // auxiliary direct selections, so the contextual task bar can gate its
     // anchor verbs (delete / cut / corner / smooth / connect) on what is
@@ -3717,7 +4357,7 @@
         this._applySelectionPath(auxSel);
       }
       // Live measurement chip: while dragging, the gray box shows the relative
-      // delta dX/dY from the drag start (Illustrator parity) — no pink feature
+      // delta dX/dY from the drag start — no pink feature
       // label during the drag. Gated by the "Coordinate readout" setting via
       // _formatChipText → null. Skips synthetic events with no clientX/Y.
       if (e && (e.clientX != null || e.clientY != null) && drag.anchorStart) {
@@ -4828,7 +5468,7 @@
           }
         }
       }
-      // Key-object emphasis: when an Illustrator-style key object is set,
+      // Key-object emphasis: when an key object is set,
       // overlay its individual bbox with a thicker, solid stroke so the
       // anchor is visually distinguishable from sibling selection outlines.
       if (this.keyObjectId && this.selectedLayerIds.size > 1) {
@@ -4983,7 +5623,7 @@
     // via ui.setActiveTool) and places the caret at the clicked boundary. The
     // tool switches whenever the hit is a text layer; the return value reports
     // whether an edit SESSION actually began (false when the jitter gate blocks
-    // it, even though the tool still switched — Illustrator-style).
+    // it, even though the tool still switched).
     _beginTextEditFromHit(hitLayer, world) {
       const te = this.app && this.app.textEdit;
       if (!te || !hitLayer || hitLayer.type !== 'text') return false;
@@ -4996,7 +5636,7 @@
 
     // Draw the blinking insertion caret for an active edit session. The ctx is
     // already in world space (translate+scale applied) in the overlay pass. The
-    // caret is hidden while a non-empty range is highlighted (Illustrator-style).
+    // caret is hidden while a non-empty range is highlighted.
     drawTextCaret() {
       const te = this.app && this.app.textEdit;
       if (!te || !te.isActive() || !te.getCaretVisible()) return;
@@ -5049,7 +5689,7 @@
     // indicator when laid height exceeds frameHeight (+ threading), and a
     // point↔area conversion widget. Web-font area editing stays gated in
     // TextEditController.canMutate.
-    // Point↔Area conversion widget — Illustrator's baseline dot. Shown at the
+    // Point↔Area conversion widget — the baseline dot. Shown at the
     // right-middle of a single selected text layer (Select tool, not mid-edit):
     // HOLLOW ring = point type, FILLED dot = area type. Double-clicking it toggles
     // the mode (see the down() dbl-click path). Returns {layer, point, isArea}.
@@ -5111,7 +5751,7 @@
       this.ctx.closePath();
       this.ctx.stroke();
       // Overset out-port: a red square with a "+" at the frame's bottom-right
-      // (f[2]) when the laid text is taller than the frame — Illustrator's signal
+      // (f[2]) when the laid text is taller than the frame — the standard signal
       // that some text is hidden. Threading the overflow to a linked frame is
       // deferred; this is the indicator only.
       if (layer.textOverset) {
@@ -5140,7 +5780,7 @@
     // actively edited on canvas, so the wrap boundary is visible while typing.
     // A merely-selected area layer draws NO frame — its transform bounding box
     // already conveys extent, and the extra solid rectangle read as redundant
-    // helper-box noise (Illustrator shows the type frame while editing, not as a
+    // helper-box noise (pro editors show the type frame while editing, not as a
     // persistent selection overlay).
     _areaFrameLayer() {
       const te = this.app && this.app.textEdit;
@@ -5666,12 +6306,59 @@
               const cornerSet = shapeMeta?.shape ? this._selectedCornerIndices(shapeMeta.shape) : new Set();
               const multi = cornerSet.size >= 2 && cornerSet.has(shapeCorner.index);
               const scope = multi ? 'selected' : 'single';
-              if (this.beginShapeCornerDrag(selectedShape, 0, shapeCorner, scope, cornerSet)) return;
+              // Option/Alt+click switches the corner style instead of dragging.
+              if (this.getModifierState(e).alt) {
+                this.cycleShapeCornerType(selectedShape, 0, shapeCorner, scope, cornerSet);
+                return;
+              }
+              // Double-click on the widget opens the Corners dialog.
+              if (this._isCornerWidgetDoubleClick(e, `${selectedShape.id}:shape:${shapeCorner.index}`)) {
+                if (this.onCornerDialogRequest) {
+                  this.onCornerDialogRequest({
+                    kind: 'shape',
+                    layerId: selectedShape.id,
+                    pathIndex: 0,
+                    cornerIndex: shapeCorner.index,
+                    scope,
+                    cornerSet: Array.from(cornerSet),
+                    cornerType: shapeCorner.cornerType,
+                    radius: shapeCorner.radius,
+                    maxRadius: shapeCorner.maxRadius,
+                    clientX: e.clientX,
+                    clientY: e.clientY,
+                  });
+                  return;
+                }
+              }
+              if (this.beginShapeCornerDrag(selectedShape, 0, shapeCorner, scope, cornerSet, world)) return;
             }
           }
           if (!selectedShape && this.directSelection && !this.directSelection.meta?.shape) {
             const freeformCorner = this.hitFreeformCornerHandle(world);
-            if (freeformCorner && this.beginFreeformCornerDrag(freeformCorner)) return;
+            if (freeformCorner) {
+              if (this.getModifierState(e).alt) {
+                this.cycleFreeformCornerType(freeformCorner);
+                return;
+              }
+              const widgetKey = `${this.directSelection.layerId}:freeform:${freeformCorner.sourceVertex.x},${freeformCorner.sourceVertex.y}`;
+              if (this._isCornerWidgetDoubleClick(e, widgetKey)) {
+                if (this.onCornerDialogRequest) {
+                  this.onCornerDialogRequest({
+                    kind: 'freeform',
+                    layerId: this.directSelection.layerId,
+                    pathIndex: this.directSelection.pathIndex,
+                    vertex: { x: freeformCorner.sourceVertex.x, y: freeformCorner.sourceVertex.y },
+                    cornerType: freeformCorner.cornerType,
+                    radius: freeformCorner.radius || 0,
+                    maxRadius: freeformCorner.maxRadius,
+                    clientX: e.clientX,
+                    clientY: e.clientY,
+                  });
+                  return;
+                }
+              }
+              if (this.beginFreeformCornerDrag(freeformCorner, world)) return;
+            }
           }
           const directControl = this.hitDirectControl(world);
           if (directControl) {
@@ -5768,7 +6455,33 @@
           const shapeLayer = this.getSelectedShapeLayer();
           if (shapeLayer) {
             const shapeCorner = this.hitShapeCornerHandle(world, shapeLayer, 0);
-            if (shapeCorner && this.beginShapeCornerDrag(shapeLayer, 0, shapeCorner, 'all')) return;
+            if (shapeCorner) {
+              // Option/Alt+click switches the corner style for every corner
+              // (Select-tool scope is always the whole shape).
+              if (this.getModifierState(e).alt) {
+                this.cycleShapeCornerType(shapeLayer, 0, shapeCorner, 'all');
+                return;
+              }
+              if (this._isCornerWidgetDoubleClick(e, `${shapeLayer.id}:shape:${shapeCorner.index}`)) {
+                if (this.onCornerDialogRequest) {
+                  this.onCornerDialogRequest({
+                    kind: 'shape',
+                    layerId: shapeLayer.id,
+                    pathIndex: 0,
+                    cornerIndex: shapeCorner.index,
+                    scope: 'all',
+                    cornerSet: [],
+                    cornerType: shapeCorner.cornerType,
+                    radius: shapeCorner.radius,
+                    maxRadius: shapeCorner.maxRadius,
+                    clientX: e.clientX,
+                    clientY: e.clientY,
+                  });
+                  return;
+                }
+              }
+              if (this.beginShapeCornerDrag(shapeLayer, 0, shapeCorner, 'all', null, world)) return;
+            }
           }
         }
         if (
@@ -5899,7 +6612,7 @@
               // shadows a group member. Clicking outside the group is swallowed
               // (stay isolated) — the user must press Escape / use the
               // breadcrumb to leave. Nested descendants resolve to the
-              // immediate child of the isolated group (Illustrator-parity).
+              // immediate child of the isolated group.
               const member = this._findIsolatedMemberAtPoint(world);
               if (member) {
                 const additiveInGroup = modifiers.shift || modifiers.meta || modifiers.ctrl;
@@ -5999,7 +6712,7 @@
           const additive = modifiers.shift || modifiers.meta || modifiers.ctrl;
           if (additive && topLayer) {
             // SEL: Shift/Cmd-click toggles the clicked object in or out of the
-            // multi-selection (Illustrator-parity). This is a DISCRETE action —
+            // multi-selection. This is a DISCRETE action —
             // return before the drag-init below so a jittery shift-click never
             // arms a move of the whole selection.
             this.selectLayer(topLayer, { toggle: true });
@@ -6866,7 +7579,7 @@
         }
         if (!this.tempTransform && this._pendingSingleSelect) {
           const pending = this._pendingSingleSelect;
-          // Illustrator semantics: when multi-selected and the user clicks
+          // Standard semantics: when multi-selected and the user clicks
           // (without modifiers) on a layer that's already in the selection,
           // promote it to the Key Object instead of collapsing the selection.
           // Click again on the same key → unset; click on a different selected
@@ -8855,7 +9568,7 @@
     // SEL-5: resize + reposition the current selection so its combined bounding
     // box matches the given WORLD box, as ONE undo step. Any of x/y/width/height
     // may be null/undefined to leave that dimension unchanged. Resizing keeps the
-    // box's top-left fixed (Illustrator's default reference point), then the
+    // box's top-left fixed (the default reference point), then the
     // optional x/y translate moves the top-left to its new location. The panel
     // pre-applies the link-W/H ratio; the renderer just honours the target box.
     applySelectionBox(box = {}) {
@@ -9842,7 +10555,7 @@
       this.ctx.restore();
     }
 
-    // Illustrator-parity "hit the geometric limit" cue: while actively
+    // industry-parity "hit the geometric limit" cue: while actively
     // dragging a corner handle past its max radius, stroke the clamped
     // fillet arc(s) in red on top of the normal path.
     drawCornerMaxArcOverlay(arcs, toWorld) {
@@ -9854,12 +10567,17 @@
       this.ctx.setLineDash([]);
       arcs.forEach((arc) => {
         const p0 = toWorld(arc.start);
-        const c1 = toWorld(arc.startOut);
-        const c2 = toWorld(arc.endIn);
         const p3 = toWorld(arc.end);
         this.ctx.beginPath();
         this.ctx.moveTo(p0.x, p0.y);
-        this.ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, p3.x, p3.y);
+        if (arc.startOut && arc.endIn) {
+          const c1 = toWorld(arc.startOut);
+          const c2 = toWorld(arc.endIn);
+          this.ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, p3.x, p3.y);
+        } else {
+          // Chamfer corners have no handles — the clamped cut is a straight line.
+          this.ctx.lineTo(p3.x, p3.y);
+        }
         this.ctx.stroke();
       });
       this.ctx.restore();
@@ -10643,29 +11361,18 @@
         if (selectedShape) {
           const cornerHit = this.hitShapeCornerHandle(world, selectedShape, 0);
           if (cornerHit) {
-            this.setCanvasCursor(this.cursorDataUrl('cornerRadius', 4, 4, 'pointer'));
-            const meta = this.getShapeMetaForLayer(selectedShape, 0);
-            const shape = meta?.shape;
-            const descriptors = shape ? getCornerDescriptors(shape) : [];
-            const radii = shape ? getShapeRadii(shape, descriptors.length) : [];
-            const currentR = radii[cornerHit.index] || 0;
-            this.showDragTooltip(`R: ${currentR.toFixed(2)} px`, e.clientX, e.clientY);
-            this._cornerHoverTooltipActive = true;
+            // Style-specific corner cursor only — the radius label is shown
+            // while dragging, never on hover.
+            this.setCanvasCursor(this.cursorDataUrl('cornerRadius', 4, 4, 'pointer', cornerHit.cornerType));
             return;
           }
         }
         if (!selectedShape && this.directSelection && !this.directSelection.meta?.shape) {
           const freeHit = this.hitFreeformCornerHandle(world);
           if (freeHit) {
-            this.setCanvasCursor(this.cursorDataUrl('cornerRadius', 4, 4, 'pointer'));
-            this.showDragTooltip(`R: 0.00 px`, e.clientX, e.clientY);
-            this._cornerHoverTooltipActive = true;
+            this.setCanvasCursor(this.cursorDataUrl('cornerRadius', 4, 4, 'pointer', freeHit.cornerType));
             return;
           }
-        }
-        if (this._cornerHoverTooltipActive) {
-          this.hideDragTooltip();
-          this._cornerHoverTooltipActive = false;
         }
         const control = this.hitDirectControl(world);
         if (control) {
@@ -10726,20 +11433,9 @@
         if (shapeLayer) {
           const cornerHit = this.hitShapeCornerHandle(world, shapeLayer, 0);
           if (cornerHit) {
-            this.setCanvasCursor(this.cursorDataUrl('cornerRadius', 4, 4, 'pointer'));
-            const meta = this.getShapeMetaForLayer(shapeLayer, 0);
-            const shape = meta?.shape;
-            const descriptors = shape ? getCornerDescriptors(shape) : [];
-            const radii = shape ? getShapeRadii(shape, descriptors.length) : [];
-            const currentR = radii[cornerHit.index] || 0;
-            this.showDragTooltip(`R: ${currentR.toFixed(2)} px`, e.clientX, e.clientY);
-            this._cornerHoverTooltipActive = true;
+            this.setCanvasCursor(this.cursorDataUrl('cornerRadius', 4, 4, 'pointer', cornerHit.cornerType));
             return;
           }
-        }
-        if (this._cornerHoverTooltipActive) {
-          this.hideDragTooltip();
-          this._cornerHoverTooltipActive = false;
         }
       }
       const bounds = this.getSelectionBounds(activeLayers, this.tempTransform);

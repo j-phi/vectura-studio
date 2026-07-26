@@ -40,6 +40,14 @@
       sidesIncrease: 'More sides',
       close: 'Close',
       closeLabel: 'Close shape properties',
+      // Corners dialog (double-click a Live Corner widget).
+      cornersTitle: 'Corners',
+      cornersStyleLabel: 'Corner',
+      cornersRadiusLabel: 'Radius',
+      cornerTypeRound: 'Round',
+      cornerTypeInvert: 'Inverted Round',
+      cornerTypeChamfer: 'Chamfer',
+      cornersCloseLabel: 'Close corners dialog',
     },
   };
 

@@ -1,5 +1,5 @@
 /**
- * Vectura path-edit operations (Illustrator Tools Parity, Phase 1 Lane C).
+ * Vectura path-edit operations (Tools Parity, Phase 1 Lane C).
  *
  * Selection-verb engine APIs over static path ('shape') layers:
  *
@@ -473,7 +473,7 @@
 
   // ── PTH-3b — smooth session (progressive corner rounding) ──────────────────
   //
-  // The interactive Smooth slider is Illustrator-parity corner ROUNDING, driven
+  // The interactive Smooth slider is industry-parity corner ROUNDING, driven
   // by the shared mechanism every Smooth surface uses
   // (GeometryUtils.roundCornerAnchors): the displayed curve is re-traced with a
   // TIGHT, faithful Schneider fit — the slider must never reshape or thin the
@@ -706,12 +706,19 @@
 
   // ── PTH-4 — anchor parsing / write-back (renderer-compatible) ──────────────
 
-  const cloneAnchor = (a) => (a ? {
-    x: a.x,
-    y: a.y,
-    in: a.in ? { x: a.in.x, y: a.in.y } : null,
-    out: a.out ? { x: a.out.x, y: a.out.y } : null,
-  } : null);
+  const cloneAnchor = (a) => {
+    if (!a) return null;
+    const c = {
+      x: a.x,
+      y: a.y,
+      in: a.in ? { x: a.in.x, y: a.in.y } : null,
+      out: a.out ? { x: a.out.x, y: a.out.y } : null,
+    };
+    if (a.corner === true) c.corner = true; // preserve the minimal-trace corner flag
+    if (a.cornerType) c.cornerType = a.cornerType; // preserve the Live Corners style
+    if (a.liveCorner) c.liveCorner = JSON.parse(JSON.stringify(a.liveCorner)); // baked live-corner record
+    return c;
+  };
 
   const cloneAnchorList = (anchors) => (anchors || []).map(cloneAnchor);
 

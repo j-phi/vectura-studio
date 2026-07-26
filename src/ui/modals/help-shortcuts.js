@@ -193,6 +193,9 @@
           ${row(mouse('top-right handle'),          'Rotate',               'Shift snaps to 45°')}
           ${row(OPT + sep + mouse('drag'),          'Duplicate selection',  'Esc cancels the copy')}
           ${row(mouse('corner widget'),             'Round corners',        'Direct Select = one corner')}
+          ${row(OPT + sep + mouse('click widget'),  'Cycle corner style',   'Round → Inverted Round → Chamfer')}
+          ${row(k('↑ / ↓'),                         'Corner style while dragging a widget')}
+          ${row(mouse('double-click widget'),       'Corners dialog',       'Style + radius')}
           ${row(mouse('drag near an object'),       'Snap to smart guides', 'Magenta guides + dX/dY chips')}
           ${row(mouse('right-click canvas'),        'Context menu',         'Duplicate · Group · Simplify · Flip · Transform')}
           ${row(k('↑↓←→'),     'Nudge position',       'Shift = 10 ×')}
@@ -210,7 +213,7 @@
         <p>When you select an object, a small <strong>Contextual Task Bar</strong> floats
         just below it with the actions that make sense right now &mdash; edit the path,
         change the pen, adjust stroke weight, group or align a multi-selection, isolate a
-        group, or edit text. It mirrors Illustrator&rsquo;s contextual toolbar. With nothing
+        group, or edit text. With nothing
         selected, the bar shows an <strong>Add Layer</strong> dropdown (matching the sidebar
         menu) alongside Draw.</p>
         <p>Some actions open an inline <em>sub-mode</em> inside the bar: <strong>Stroke

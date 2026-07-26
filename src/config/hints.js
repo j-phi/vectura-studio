@@ -1,5 +1,5 @@
 /**
- * Vectura Studio — HUD copy & timings (Illustrator Tools Parity, Phase 1
+ * Vectura Studio — HUD copy & timings (Tools Parity, Phase 1
  * Lane F: HUD-1…4).
  *
  * Single source of truth for every user-visible HUD string and threshold:
@@ -50,6 +50,7 @@
         hint: [
           seg('Select', 'the path or anchor point of an object'),
           seg('Shift+Click', 'to select multiple anchor points or paths'),
+          seg('Option+Click', 'a corner widget to switch its corner style'),
         ],
       },
       lasso: {

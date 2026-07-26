@@ -189,7 +189,15 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
-- **Unreleased — Smooth unified on Illustrator-parity corner rounding
+- **Unreleased — Live Corner styles (Round / Inverted Round / Chamfer).**
+  Corner widgets on parametric shapes and freeform hard corners carry a per-corner
+  style: Alt/Option+click cycles it (selected set when 2+ corners selected), ↑/↓ cycles
+  it live mid-drag with a style-specific cursor glyph, double-click opens an anchored
+  Corners dialog (style buttons + radius). Inverted Round = vertex-centered concave
+  arc; Chamfer = straight cut; both share the round widget/drag/label/max-red plumbing.
+  `shape.cornerTypes` + per-anchor `cornerType` serialize. Covered by
+  `tests/integration/live-corners-styles.test.js` (12 tests) + Playwright in-app pass.
+- **Unreleased — Smooth unified on industry-parity corner rounding
   (`GeometryUtils.roundCornerAnchors`).** All four Smooth surfaces (Object menu /
   context menu one-shot, ctxbar progressive slider, Post-Processing Lab Smoothing,
   shape-layer rebuild) now share one mechanism: tight faithful re-trace + fillet arcs,
@@ -446,7 +454,7 @@ question. Do not start these without a decision:
   (`src/core/algorithms/raster-plane.js` `buildLines`/`buildCardboardPlanes`,
   `src/core/algorithms/geometry3d.js` `occludeRowsFloatingHorizon`,
   `tests/unit/raster-plane-plane-width.test.js`.)
-- **Unreleased — Illustrator-style measurement readouts, center points, and multi-corner rounding.**
+- **Unreleased — measurement readouts, center points, and multi-corner rounding.**
   Smart-guide chip redesigned to a compact gray two-line box (dark text) rounded to 0.1 mm: `dX/dY`
   delta while dragging, `X/Y` on hover/select with a pink feature label (`anchor`) pinned at the
   point (`src/render/renderer.js` `_formatChipText`/`updateDirectDrag`/`showAnchorLabel`,
@@ -494,7 +502,7 @@ question. Do not start these without a decision:
   and engine anchor cloning. Fixed: renderer now treats an explicit `meta.closed === false` as
   authoritative, so a scissors-cut ring no longer gets silently re-closed on the next selection
   refresh. Full `test:ci`; version bumped + `version:sync`.
-- **v1.2.39 — Illustrator Parity feedback pass (15 fixes).** Selection: Shift/Cmd-click + Shift-marquee
+- **v1.2.39 — Tools Parity feedback pass (15 fixes).** Selection: Shift/Cmd-click + Shift-marquee
   multi-select (discrete toggle, no accidental move); isolate-group hit-test scoping (outside clicks
   swallowed, foreground layers don't shadow members). Task bar: drag-handle live preview; text Font/Style
   dropdown carets + chip-anchored pickers; Point/Area toggle; "Show Properties panel" focuses the Text
@@ -504,9 +512,9 @@ question. Do not start these without a decision:
   context-menu verbs (`CanvasContextMenu.runCommand`/`getCommandStates`); Contextual Task Bar toggle added
   to View. Pens: per-pen weight textbox. Rendering: HiDPI smart-guide label fix. Flip H/V routes through
   `renderer.flipSelection`. Full `test:ci`; version bumped + `version:sync`.
-- **v1.2.38 — Illustrator Tools Parity, Phase 3 (FINAL): transform numerics / text pickers / All Tools
+- **v1.2.38 — Tools Parity, Phase 3 (FINAL): transform numerics / text pickers / All Tools
   drawer / right-click menu (Lanes J, K, L, M merged + reconciled). This completes the whole
-  Illustrator-Parity effort across all 13 lanes (A–M).** Merge order K→J→L→M onto v1.2.37; full `test:ci`;
+  Tools-Parity effort across all 13 lanes (A–M).** Merge order K→J→L→M onto v1.2.37; full `test:ci`;
   version bumped + `version:sync`. Delivered:
   - **Lane K (SEL-5/6, SG-6)** — Transform section true **X / Y / W / H** for manual shape/text selections
     (single + combined multi bounds) with **link W/H** proportional toggle (setting W resizes to the exact
@@ -557,7 +565,7 @@ question. Do not start these without a decision:
   - **Deferred:** rotated-layer object-frame W/H (`PRH-020`); real clipboard subsystem for the context menu
     Cut/Copy/Paste (`PRH-021`); Text-specimen kick-loop bounding (`PRH-022`); Simplify advanced gear
     (`PRH-019`, from Phase 2).
-- **v1.2.37 — Illustrator Tools Parity, Phase 2: Contextual Task Bar (Lanes G, H, I merged + reconciled).**
+- **v1.2.37 — Tools Parity, Phase 2: Contextual Task Bar (Lanes G, H, I merged + reconciled).**
   Merge order G→H→I onto v1.2.36; full `test:ci` run; version bumped + `version:sync`. Delivered:
   - **Lane G (TB-1…8)** — the floating `.ctxbar` framework: anchor-below-selection with viewport-flip +
     tool-rail yielding, hide-on-drag/draw/caret, per-kind state renderers (idle / single-path /
@@ -586,7 +594,7 @@ question. Do not start these without a decision:
   - **Deferred to Phase 3 (Lane J, TXT-3…5):** full inline text family/style pickers in the bar's Text
     state — the bar currently opens/focuses the Text panel for wayfinding and edits size live. Simplify
     advanced-options gear tracked as `PRH-019`.
-- **v1.2.36 — Illustrator Tools Parity, Phase 1 (all six lanes merged + reconciled).** Merge order
+- **v1.2.36 — Tools Parity, Phase 1 (all six lanes merged + reconciled).** Merge order
   A→C→E→B→D→F onto v1.2.34; full `test:ci` green; version bumped + `version:sync`. Delivered:
   - **Lane A (SEL-1…4, SG-1…5)** — 8-handle selection (edge-midpoint resize), multi-select Alt-drag
     duplicate, Flip H/V wrapper, live `X/Y` + `dX/dY` chips, and object-to-object smart guides that
@@ -835,14 +843,14 @@ question. Do not start these without a decision:
 - Layer Modifiers use explicit modifier-container layers (`containerRole = 'modifier'`) instead of overloading ordinary generator layers, so drag/drop nesting, export, and future modifier types share one tree model.
 - Mirror Modifier axes are infinite reflection lines clipped only for guide drawing; multiple mirrors apply in stack order from top to bottom, and later mirrors operate on already-mirrored geometry.
 - Mirror guide visibility/locking is editor-only state; dashed guides, triangles, and rotate handles never export, but mirrored child geometry does.
-- Masking now follows an Illustrator-style parent-owned model: the visible parent layer is the mask, all descendants are clipped recursively, and the legacy source-layer mask workflow is retired rather than migrated.
+- Masking now follows an parent-owned model: the visible parent layer is the mask, all descendants are clipped recursively, and the legacy source-layer mask workflow is retired rather than migrated.
 - Mask parents can optionally hide their own artwork while still contributing silhouette clipping to descendants and export clip paths.
 - `sourcePaths` are reserved for manual `expanded` geometry; generator-backed layers must always regenerate from their algorithm when the layer type changes.
 - Live mask preview is editor-only: it never mutates layer geometry or export data, and it uses the active mask parent’s temporary transformed silhouette only while the drag is in progress.
 - In `Rings`, `Top Down` means a universal world-space XY field beneath the artwork; `Concentric` means seam-corrected path-space sampling around each full ring loop; `Orbit Field` preserves the legacy ring-local orbital sampler.
 - Live masking is non-destructive by default. Parent masks affect only descendants at display/export time; checked `Remove Hidden Geometry` trims hidden export geometry destructively while unchecked export preserves hidden source paths with SVG clip paths.
 - `Remove Hidden Geometry` is export-only and defaults to on: checked exports physically trim hidden geometry to the current visible frame, unchecked exports preserve hidden source paths and recreate visibility with SVG clip paths.
-- **Illustrator Tools Parity — Phase 1 in-lane decisions.**
+- **Tools Parity — Phase 1 in-lane decisions.**
   - SEL-3 flip geometry lives entirely in Lane C's `PathEditOps.flipLayers` (renderer is a pure invoker); the op reflects in **world** space and resets the transform, making flip world-exact and self-inverse at any rotation. `flipLayers` silently flattens live parametric shapes (rect `cornerRadii` / polygon `sides`) on flip (flip is not a PTH-5 verb, so no "Shape Expanded" toast).
   - Object smart guides **extend** the existing `computeGuides`/`computeSnap` pass (never a second guide system); magenta `#e6007e` token reconciled in one `drawGuides` pass with the existing cyan-center / yellow-equal-size styling; per-session candidate cache + N-nearest cap; grid and object snap compose (nearest per axis wins). SG-3 equal-spacing shipped in Phase 1 (perf headroom).
   - STR-4 Align Stroke inside/outside applies to **closed** subpaths only via the robust closed-band offset (`miterOffsetClosedRing`, not the collapse-prone `thickenPaths`); open paths stay centered; a per-path collapse guard silently reverts to centered (no tooltip). STR-5 pushes one history step per gesture on begin.

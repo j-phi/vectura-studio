@@ -1,5 +1,5 @@
 /**
- * Direct-select multi-corner rounding (Illustrator Live Corners parity):
+ * Direct-select multi-corner rounding (Live Corners parity):
  * with several corners selected, dragging one corner's rounding handle rounds
  * ALL selected corners to the radius under the cursor — unselected corners are
  * untouched. Corners already rounded snap to the dragged level.
@@ -71,12 +71,15 @@ describe('direct-select multi-corner rounding', () => {
     expect(set.has(2)).toBe(true);
 
     renderer.beginShapeCornerDrag(layer, 0, { index: 0 }, 'selected', set);
-    const world = renderer.transformShapeSourcePoint({ x: 8, y: 8 }, layer, null);
+    // Delta-based mapping: the grab anchors at corner 0's current widget
+    // position (r=20), so dragging back TOWARD the vertex shrinks the radius.
+    const world = renderer.transformShapeSourcePoint({ x: 2, y: 2 }, layer, null);
     renderer.updateShapeCornerDrag(world);
 
     const radii = renderer.getShapeMetaForLayer(layer, 0).shape.cornerRadii;
     // Both previously-different radii (20 and 5) snap to the same dragged value.
     expect(radii[0]).toBeCloseTo(radii[2], 3);
+    expect(radii[0]).toBeGreaterThan(0);
     expect(radii[0]).toBeLessThan(20);
   });
 });

@@ -143,6 +143,19 @@
         return;
       }
 
+      // Live Corners: while a corner widget drag is in progress,
+      // Up/Down arrows cycle the corner style (Round → Inverted Round →
+      // Chamfer) instead of nudging anchors.
+      if (
+        (e.key === 'ArrowUp' || e.key === 'ArrowDown') &&
+        !e.metaKey && !e.ctrlKey && !e.altKey &&
+        this.app.renderer?.isCornerDragActive?.()
+      ) {
+        e.preventDefault();
+        this.app.renderer.cycleActiveCornerDragType(e.key === 'ArrowUp' ? 1 : -1);
+        return;
+      }
+
       if (e.code === 'Space') {
         if (!this.spacePanActive) {
           e.preventDefault();
@@ -168,7 +181,7 @@
       }
 
       // Shift+F7 → focus the Align panel when 2+ layers are selected
-      // (Illustrator's native shortcut). No-op otherwise.
+      // (the conventional Align-panel shortcut). No-op otherwise.
       if (e.key === 'F7' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         const selected = this.app.renderer?.getSelectedLayers?.() || [];
