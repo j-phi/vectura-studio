@@ -1334,7 +1334,7 @@
       preset: 'text-default',
       text: 'Vectura',
       font: 'google:inter',
-      // Type-layout mode (Illustrator-style). 'point' = classic auto-sized box
+      // Type-layout mode. 'point' = classic auto-sized box
       // (default; all historical layers/files behave as before). 'area' = a fixed
       // frame the text word-wraps inside; frameWidth/frameHeight (mm, local space)
       // define the frame and only carry meaning in area mode.
@@ -2232,7 +2232,7 @@
     marginLineDotting: 0,
     showGuides: true,
     snapGuides: true,
-    // Contextual Task Bar (Illustrator parity, Phase 2). Enabled by default; the
+    // Contextual Task Bar (parity, Phase 2). Enabled by default; the
     // position/pinned bag is populated lazily by src/ui/shell/context-bar.js.
     contextBarEnabled: true,
     contextBar: { pinned: false, x: null, y: null },

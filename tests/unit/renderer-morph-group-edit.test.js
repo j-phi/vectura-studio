@@ -1,7 +1,7 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
 /**
- * Illustrator-style sub-selection for the MORPH modifier.
+ * Sub-selection for the MORPH modifier.
  *
  * Contract (see design spec):
  *  - Single click on a morph's blended output selects the morph CONTAINER as one

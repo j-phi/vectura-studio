@@ -8,7 +8,7 @@
  * up/down. The fix pins blockCy to the FIRST line's baseline metrics
  * (baselineY - size/2 = midpoint of the cap box), which is also exactly the
  * empty-box caret's midpoint (_emptyBoxCaretSegment) — so the first keystroke
- * lands on the caret and Enter grows strictly downward (Illustrator point-type
+ * lands on the caret and Enter grows strictly downward (point-type
  * behaviour). Fit-to-frame text keeps ink-bbox centring (fit semantics).
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');

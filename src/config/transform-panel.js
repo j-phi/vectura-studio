@@ -1,5 +1,5 @@
 /**
- * Vectura Studio — Transform-panel copy & icons (Illustrator Tools Parity,
+ * Vectura Studio — Transform-panel copy & icons (Tools Parity,
  * Phase 3 Lane K: SEL-5 / SEL-6 / SG-6).
  *
  * Single source of truth for every user-visible string and inline icon used by

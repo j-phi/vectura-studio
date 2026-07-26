@@ -1,5 +1,5 @@
 /*
- * Illustrator-parity corner rounding — the ONE Smooth mechanism.
+ * Corner rounding — the ONE Smooth mechanism.
  *
  * GeometryUtils.roundCornerAnchors(points, closed, t) re-traces the drawn
  * polyline faithfully (tight fit — smoothing never reshapes or thins; that is
@@ -181,7 +181,7 @@ describe('filletSharpAnchors — bezier-aware, anchor-preserving rounding', () =
     expect(maxTurn).toBeLessThan(25);
   });
 
-  test('a fully smooth path is untouched (Illustrator parity: nothing to round)', () => {
+  test('a fully smooth path is untouched (nothing to round)', () => {
     // Closed "blob" of three tangent-continuous anchors.
     const blob = [
       { x: 0, y: 0, in: { x: -20, y: 20 }, out: { x: 20, y: -20 } },

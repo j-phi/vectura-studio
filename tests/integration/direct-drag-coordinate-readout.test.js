@@ -1,5 +1,5 @@
 /**
- * Coordinate readout during direct-selection anchor drag (Illustrator parity).
+ * Coordinate readout during direct-selection anchor drag.
  *
  *  - While an anchor is being dragged the X/Y chip must UPDATE LIVE to the
  *    anchor's current position (previously the chip was only shown on hover and

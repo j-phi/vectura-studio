@@ -2,7 +2,7 @@
  * Vectura Text Outline operations (TXT-1/TXT-2).
  *
  * "Outline the text": converts a live Text layer into a plain group of static
- * per-glyph shape layers — Illustrator's Type → Create Outlines, plotter-native.
+ * per-glyph shape layers — Type → Create Outlines, plotter-native.
  *
  *   window.Vectura.TextOutlineOps.outlineText(layerId[, ctx])
  *

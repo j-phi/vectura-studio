@@ -1,5 +1,5 @@
 /**
- * Vectura Studio — Contextual Task Bar framework (Illustrator Tools Parity,
+ * Vectura Studio — Contextual Task Bar framework (Tools Parity,
  * Phase 2 Lane G: TB-1…8).
  *
  * A floating horizontal pill anchored below the selection that morphs its
@@ -627,8 +627,8 @@
   };
 
   // Returns the sole selected group container when the selection is exactly one
-  // group (optionally alongside its own descendants), else null. Mirrors the
-  // Illustrator "a group counts as one object" semantics on top of Vectura's
+  // group (optionally alongside its own descendants), else null. Applies
+  // "a group counts as one object" semantics on top of Vectura's
   // grouping op, which selects [group, ...children].
   const selectedGroupContainer = (app, layers) => {
     const groups = layers.filter((l) => l && l.isGroup && l.type !== 'compound');
@@ -836,8 +836,8 @@
       icon: ic.outlineText,
       tooltip: (b.outlineText && b.outlineText.tooltip), onClick: () => doOutlineText(ctx.primaryLayer),
     }));
-    // Point Type ↔ Area Type toggle — sits to the RIGHT of Outline
-    // (Illustrator-parity). Reflects the current mode and flips it on click.
+    // Point Type ↔ Area Type toggle — sits to the RIGHT of Outline.
+    // Reflects the current mode and flips it on click.
     const isArea = !!(layer && layer.params && layer.params.textMode === 'area');
     const pa = b.pointArea || {};
     els.content.appendChild(makeBtn({
@@ -1023,7 +1023,7 @@
   };
   const safe = (fn) => { try { return fn(); } catch (_) { return false; } };
   const enterAddAnchorMode = () => {
-    // "Add anchor point" is a click tool (Illustrator-parity): switch to the
+    // "Add anchor point" is a click tool: switch to the
     // pen in add-anchor mode so the next canvas click inserts an anchor.
     const r = getRenderer();
     setTool('pen');

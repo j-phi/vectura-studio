@@ -1,7 +1,7 @@
 /**
  * Vectura Pathfinder operations.
  *
- * Wraps polygon-clipping (via FillBoolean) with Illustrator-style Shape Mode
+ * Wraps polygon-clipping (via FillBoolean) with Shape Mode
  * semantics over Vectura's layer model. Each operation:
  *
  *   1. Extracts a multipolygon "silhouette" for every selected layer.
@@ -27,7 +27,7 @@
  * the signature (children + their transforms + opType + mode) changes.
  *
  * expand() bakes a compound into a plain 'shape' layer and removes the
- * underlying child layers — matching Illustrator's "Expand Compound Shape".
+ * underlying child layers — the "Expand Compound Shape" behavior.
  *
  * All mutating helpers expect callers to bracket with app.pushHistory().
  */
@@ -108,7 +108,7 @@
   const filterEmpty = (geoms) => geoms.filter((g) => Array.isArray(g) && g.length);
 
   // Pathfinder semantics treat the TOP of the layer panel as the "front" of
-  // the stack (Illustrator convention). Vectura's panel renders engine.layers
+  // the stack (standard design-tool convention). Vectura's panel renders engine.layers
   // in natural order — engine.layers[0] is the panel TOP, engine.layers[last]
   // is the panel BOTTOM. So under panel-top-as-front:
   //   ordered[0]            = panel-TOP    = front of the stack
@@ -348,7 +348,7 @@
       cache: { signature: null, multiPolygon: null },
     };
     // Inherit appearance from the layer whose silhouette dominates the result
-    // (Illustrator convention). For unite/intersect/exclude that's the top of
+    // (standard design-tool convention). For unite/intersect/exclude that's the top of
     // the panel — the "front" of the stack — which is ordered[0] under
     // sortFrontToBack. For minusFront the survivor is the panel-BOTTOM layer
     // (everything above it gets subtracted away), so inheritance comes from
@@ -743,7 +743,7 @@
   // ── Op: Outline ────────────────────────────────────────────────────────────
   // Split each input's ring(s) at intersections with every OTHER input's
   // ring(s). Output: open polyline layers. Stroke color = source fill color;
-  // strokeWidth = source strokeWidth (Vectura divergence vs Illustrator's 0pt).
+  // strokeWidth = source strokeWidth (instead of zeroing it).
   //
   // Implementation note (per PRD §4.5): we take the simpler ring-by-ring
   // approach. Each input ring is treated as a polyline; we split it at every
@@ -874,7 +874,7 @@
           path.meta = { kind: 'polyline', closed: false, source: 'pathfinder-outline' };
           const src = ordered[i];
           const layer = makeShapeLayer(engine, src.name, [path], src, { stripStroke: false });
-          // Stroke width preserved from source (Vectura divergence vs Illustrator).
+          // Stroke width preserved from source (instead of being zeroed).
           outputs.push({ paths: [path], source: src, prebuilt: layer });
         });
       });

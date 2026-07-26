@@ -1,7 +1,7 @@
 /*
  * Area-type OVERSET detection (RGR).
  *
- * When wrapped area text is taller than the frame, Illustrator shows a red "+"
+ * When wrapped area text is taller than the frame, the standard cue is a red "+"
  * out-port. The engine must flag this: after generate(), an area text layer
  * whose laid height exceeds frameHeight has transient `layer.textOverset === true`
  * (never serialized); a layer whose text fits has `false`; point type never

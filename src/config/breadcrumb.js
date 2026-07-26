@@ -1,5 +1,5 @@
 /**
- * Vectura Studio — Isolation breadcrumb copy (Illustrator Tools Parity,
+ * Vectura Studio — Isolation breadcrumb copy (Tools Parity,
  * Phase 2 Lane I: ISO-1 / ISO-2).
  *
  * Single source of truth for every user-visible string used by
@@ -7,7 +7,7 @@
  * morph-child isolation is active. Never inline breadcrumb copy in UI code;
  * add or edit entries here.
  *
- * The `rootLabel` is the top-of-trail crumb (Illustrator shows "Layer 1"); in
+ * The `rootLabel` is the top-of-trail crumb (e.g. "Layer 1"); in
  * Vectura the top level is the document itself, so clicking it exits isolation
  * entirely. `unnamedGroup` is the fallback when a group layer has no name.
  */

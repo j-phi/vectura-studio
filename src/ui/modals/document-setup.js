@@ -986,7 +986,7 @@ ${isDevEligible() ? `
       };
     }
     if (setContextualHints) {
-      // HUD-4 (Illustrator parity, Lane F): gates the hint text in the bottom
+      // HUD-4 (Lane F): gates the hint text in the bottom
       // strip; tool/zoom readouts always show. Default ON (`!== false`). No
       // history push — the preference is not part of undo snapshots.
       // `contextualHints` is folded into the App preference snapshot, so
@@ -1008,7 +1008,7 @@ ${isDevEligible() ? `
       };
     }
     if (setContextBar) {
-      // TB-8 (Illustrator parity, Phase 2 Lane G): gates the Contextual Task
+      // TB-8 (Phase 2 Lane G): gates the Contextual Task
       // Bar. Default ON (`!== false`). No history push — a UI preference, not
       // part of undo snapshots. Delegates to ContextBar.setEnabled which
       // persists (self-contained cookie + SETTINGS.contextBarEnabled) and

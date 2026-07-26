@@ -1,7 +1,7 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
 /**
- * Transform semantics for Illustrator-style morph sub-selection:
+ * Transform semantics for morph sub-selection:
  *  - Selecting the morph CONTAINER (one object) and transforming it fans the
  *    committed move/resize/rotate out to every leaf, then refolds the blend.
  *    (The historical `if (layer.isGroup) return;` commit guard would otherwise

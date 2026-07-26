@@ -1,5 +1,5 @@
 /*
- * COL-2 (Illustrator Tools Parity, Phase 1 Lane D) — shared pen-assignment
+ * COL-2 (Tools Parity, Phase 1 Lane D) — shared pen-assignment
  * helper unit gate.
  *
  * Vectura's color model is pen-based: a layer's color is a reference to a

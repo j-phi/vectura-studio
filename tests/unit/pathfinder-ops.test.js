@@ -1003,7 +1003,7 @@ describe('PathfinderOps.applyPathfinder — cross-cutting', () => {
 //
 // Vectura's layer panel renders engine.layers in natural order: engine.layers[0]
 // sits at the TOP of the panel and engine.layers[last] at the bottom. Users
-// reason about Pathfinder ops the Illustrator way — the layer at the TOP of
+// reason about Pathfinder ops front-to-back — the layer at the TOP of
 // the panel is the "front" of the stack:
 //   • TRIM / MERGE: top stays whole; layers below lose any region covered by
 //     a higher-in-panel layer.

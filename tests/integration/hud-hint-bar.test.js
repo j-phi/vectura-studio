@@ -1,5 +1,5 @@
 /**
- * HUD-1…4 — Hint bar & HUD (Illustrator Tools Parity, Phase 1 Lane F).
+ * HUD-1…4 — Hint bar & HUD (Tools Parity, Phase 1 Lane F).
  *
  * Covers:
  *  - HUD-1: per-tool contextual hint line (config-driven, bolded keyword

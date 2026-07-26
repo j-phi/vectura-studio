@@ -1,5 +1,5 @@
 /**
- * SEL-1 (Illustrator tools parity, Phase 1 Lane A): 8 selection handles —
+ * SEL-1 (Tools parity, Phase 1 Lane A): 8 selection handles —
  * 4 corners (existing) + 4 edge midpoints (new). Edge-midpoint drags resize
  * along one axis only; Shift constrains proportions.
  */

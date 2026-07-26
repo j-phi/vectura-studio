@@ -145,7 +145,7 @@
           // Empty-canvas click → new point-type text layer at the world point.
           createTextLayerAt: (wx, wy) => this._createPointTextLayerAt(wx, wy),
           // Empty-canvas click-DRAG → new area-type text layer sized to the drag
-          // rectangle (Illustrator-style). Text word-wraps inside the frame.
+          // rectangle. Text word-wraps inside the frame.
           createAreaTextLayerAt: (x0, y0, x1, y1) => this._createAreaTextLayerAt(x0, y0, x1, y1),
           // Panel specimen is suppressed during a session; rebuild on end so it
           // re-syncs to the final text without two editors fighting params.text.
@@ -598,7 +598,7 @@
       SETTINGS.showCoordinateReadout = snapshot.showCoordinateReadout === undefined ? SETTINGS.showCoordinateReadout : snapshot.showCoordinateReadout === true;
       SETTINGS.showCenterPoint = snapshot.showCenterPoint === undefined ? SETTINGS.showCenterPoint : snapshot.showCenterPoint === true;
       SETTINGS.contextualHints = snapshot.contextualHints === undefined ? SETTINGS.contextualHints : snapshot.contextualHints === true;
-      // Contextual Task Bar (Illustrator parity, Phase 2 Lane G): enabled flag +
+      // Contextual Task Bar (parity, Phase 2 Lane G): enabled flag +
       // position/pinned bag round-trip through the canonical snapshot.
       SETTINGS.contextBarEnabled = snapshot.contextBarEnabled === undefined
         ? SETTINGS.contextBarEnabled
@@ -606,7 +606,7 @@
       if (snapshot.contextBar && typeof snapshot.contextBar === 'object') {
         SETTINGS.contextBar = clone(snapshot.contextBar);
       }
-      // All Tools drawer view (Illustrator parity, Phase 3 Lane L): grid|list.
+      // All Tools drawer view (parity, Phase 3 Lane L): grid|list.
       if (snapshot.toolDrawerView === 'grid' || snapshot.toolDrawerView === 'list') {
         SETTINGS.toolDrawerView = snapshot.toolDrawerView;
       }

@@ -1,5 +1,5 @@
 /*
- * COL-3 (Illustrator Tools Parity, Phase 1 Lane D) — reusable pen chip.
+ * COL-3 (Tools Parity, Phase 1 Lane D) — reusable pen chip.
  *
  * The Task Bar (Phase 2, TB-4/5/7) hosts a pen chip showing the selection's
  * current pen swatch — or an explicit `?` mixed badge when the selection

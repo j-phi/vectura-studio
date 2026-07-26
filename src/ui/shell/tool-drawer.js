@@ -1,5 +1,5 @@
 /**
- * Vectura Studio — All Tools drawer (Illustrator Tools Parity, Phase 3 Lane L).
+ * Vectura Studio — All Tools drawer (Tools Parity, Phase 3 Lane L).
  *
  * Exposes window.Vectura.UI.ToolDrawer — a non-modal drawer, opened from the
  * tool rail's overflow ("…") affordance, that lists EVERY Vectura tool

@@ -12,7 +12,7 @@
  * bowed away from its chord.
  *
  * Also covers: the stem line from vertex to handle was removed (the handle
- * now floats free, matching the Illustrator reference), and the max-radius
+ * now floats free, matching the reference trace), and the max-radius
  * "can't go further" red-arc cue is tracked while dragging.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');

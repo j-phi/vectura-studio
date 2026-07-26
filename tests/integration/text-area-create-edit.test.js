@@ -1,5 +1,5 @@
 /*
- * Area type (Illustrator-style) — create, wrap, edit, gate, serialize (RGR).
+ * Area type — create, wrap, edit, gate, serialize (RGR).
  *
  * Click-DRAG with the Type tool on empty canvas creates an AREA text layer whose
  * text WRAPS at the frame width. The controller edits the wrapped text against
@@ -12,7 +12,7 @@
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
-describe('Area type create + edit (Illustrator-style)', () => {
+describe('Area type create + edit', () => {
   let runtime, window, app;
   const FULL_STACK = {
     includeRenderer: true,

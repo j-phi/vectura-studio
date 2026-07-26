@@ -1,5 +1,5 @@
 /*
- * GeometryUtils.reduceAnchors — minimal-anchor re-trace (Illustrator "Create
+ * GeometryUtils.reduceAnchors — minimal-anchor re-trace ("Create
  * Outlines" parity). Re-traces a bezier-anchor contour into the FEWEST editable
  * anchors that reproduce it within a sub-pixel tolerance: merges coincident font
  * seams, detects corners from the anchor HANDLES (tangent break), and Schneider-

@@ -33,7 +33,7 @@
     ROTATE_TRIANGLE_TIP_LENGTH: 10.8,
     ROTATE_TRIANGLE_UNDERLAY_TIP_LENGTH: 13.8,
 
-    // === COL (Illustrator Tools Parity, Phase 1 Lane D): Pen Picker popover
+    // === COL (Tools Parity, Phase 1 Lane D): Pen Picker popover
     // Strings + thresholds for src/ui/panels/pen-picker-popover.js.
     PEN_PICKER: {
       LABELS: {
@@ -58,7 +58,7 @@
       // COL-4 eyedropper: per-RGB-channel tolerance when matching a sampled
       // layer color back to an existing pen.
       EYEDROPPER_RGB_TOLERANCE: 8,
-      // COL-4b Illustrator-style sampling loupe: magnifier circle diameter,
+      // COL-4b sampling loupe: magnifier circle diameter,
       // zoom factor of the canvas view inside it, and its gap from the pointer.
       LOUPE_SIZE_PX: 110,
       LOUPE_ZOOM: 3,

@@ -1,7 +1,7 @@
 /*
  * Area-type word-wrap + EXACT sourceIndex (RGR coverage).
  *
- * Illustrator-style area type wraps text at a frame width, but on-canvas editing
+ * Area type wraps text at a frame width, but on-canvas editing
  * indexes the RAW string by `sourceIndex`. The built-in stroke-font layout must
  * therefore make `sourceIndex` the TRUE raw-string index even across a wrap
  * boundary. Contract:

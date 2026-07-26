@@ -33,7 +33,7 @@ describe('rebuildShapeAnchors', () => {
     expect(out[out.length - 1].y).toBe(anchors[anchors.length - 1].y);
   });
 
-  // Smoothing is Illustrator-parity corner ROUNDING (roundCornerAnchors): a
+  // Smoothing is corner ROUNDING (roundCornerAnchors): a
   // sharp interior corner is replaced by a fillet-arc anchor pair that carries
   // real bezier handles, pulled back from the original vertex. (The old
   // Catmull-Rom tension pass bulged THROUGH the vertex instead.)

@@ -191,7 +191,7 @@ describe('curves-only toggle must not strip bezier handles from pen-path anchors
 
     const anchors = layer.sourcePaths[0].meta.anchors;
     // smoothing > 0 → rebuild ran → the sharp corner split into a fillet-arc
-    // pair carrying bezier handles (Illustrator-parity corner rounding, not
+    // pair carrying bezier handles (industry-parity corner rounding, not
     // the old Catmull-Rom tension bulge), while both endpoints stayed put.
     expect(anchors.length).toBeGreaterThan(3);
     expect(anchors.some((a) => a.in !== null || a.out !== null)).toBe(true);

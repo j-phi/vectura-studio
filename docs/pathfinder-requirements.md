@@ -5,20 +5,20 @@ Predecessors: `src/core/pathfinder-ops.js`, `src/ui/panels/pathfinder-panel.js`,
 
 ## 1. Goal & Non-Goals
 
-**Goal.** Ship full Illustrator-Pathfinder parity for the six remaining Pathfinder-row operations (Divide, Trim, Merge, Crop, Outline, Minus Back) and restructure the existing Pathfinder panel into a collapsible `Pathfinder` section that matches the Align panel's `global-section` pattern. Result: a user with Illustrator muscle memory can select 2+ layers and click any of the ten buttons with no surprises, working within Vectura's line-art conventions.
+**Goal.** Ship full reference-Pathfinder parity for the six remaining Pathfinder-row operations (Divide, Trim, Merge, Crop, Outline, Minus Back) and restructure the existing Pathfinder panel into a collapsible `Pathfinder` section that matches the Align panel's `global-section` pattern. Result: a user with pro-editor muscle memory can select 2+ layers and click any of the ten buttons with no surprises, working within Vectura's line-art conventions.
 
 **Non-goals (v1).**
 - No live "compound shape" semantics for the six Pathfinder-row ops. Pathfinder ops are **destructive / baked** outputs grouped under a plain `groupType: 'pathfinder'` container — they do **not** create `type: 'compound'` layers. Live re-editability stays exclusive to the existing Shape Modes path.
-- No Alt/Option modifier behavior for Pathfinder-row ops (Illustrator itself has none). Alt-click on a Shape Mode (currently produces a compound) keeps its existing meaning.
+- No Alt/Option modifier behavior for Pathfinder-row ops (the reference editor itself has none). Alt-click on a Shape Mode (currently produces a compound) keeps its existing meaning.
 - No panel-menu flyout, no Trap, no Pathfinder Options dialog (precision / redundant-points / unpainted-artwork toggle). Precision is fixed; unpainted artwork is always kept (line-art parity — see §4.5).
-- No new keyboard shortcuts (Illustrator ships none; matching that).
+- No new keyboard shortcuts (the reference editor ships none; matching that).
 - No new boolean engine. All ops route through the existing `Vectura.FillBoolean` primitives already used by `pathfinder-ops.js`.
 
 ## 2. UI Structure
 
 ### 2.1 Section wrapping
 
-The existing `.pathfinder-panel` block in `index.html` (currently lines 458–487 of `index.html`) gains a single outer `.global-section` wrapper named **"Pathfinder"**, matching the Align panel pattern exactly. Inside, the mode toggle and the two operation rows become a flat body (no sub-sub-collapsibles in v1 — Illustrator presents both rows always-visible inside one panel; mirror that).
+The existing `.pathfinder-panel` block in `index.html` (currently lines 458–487 of `index.html`) gains a single outer `.global-section` wrapper named **"Pathfinder"**, matching the Align panel pattern exactly. Inside, the mode toggle and the two operation rows become a flat body (no sub-sub-collapsibles in v1 — the reference editor presents both rows always-visible inside one panel; mirror that).
 
 ```html
 <div id="pf-section-root" class="global-section pathfinder-panel-section" data-pf-section="root">
@@ -84,9 +84,9 @@ Back-to-front ordering is the existing `sortBackToFront(layers, engine)`. "Top" 
 - **Tooltip:** `Divide`
 - **Inputs:** 2+ eligible layers. Silhouette or shape-only mode.
 - **Algorithm:** For each input multipolygon `Pi`, output the **arrangement cells** of the union. Concretely: compute `U = union(P1..Pn)`. For every non-empty subset `S ⊆ {1..n}`, compute `cell(S) = intersection(Pi for i∈S) − union(Pj for j∉S)`. Each non-empty `cell(S)` becomes one output layer whose appearance is inherited from `topmost(S)` (highest-z input in the subset). Implementation note: this is `O(2^n)`; cap `n` at 8 (show hint "Divide supports up to 8 layers; please reduce the selection."). For 2 ≤ n ≤ 8 this is fast enough for interactive use given Vectura's typical selection sizes.
-- **Output:** group of N flat `type:'shape'` layers, each with `paths` = baked closed polygons (`meta.kind='polygon', meta.closed=true, meta.source='pathfinder-divide'`). Strokes **preserved** (Illustrator parity for Divide alone — Trim/Merge/Crop/Outline strip strokes; Divide keeps them).
+- **Output:** group of N flat `type:'shape'` layers, each with `paths` = baked closed polygons (`meta.kind='polygon', meta.closed=true, meta.source='pathfinder-divide'`). Strokes **preserved** (reference parity for Divide alone — Trim/Merge/Crop/Outline strip strokes; Divide keeps them).
 - **Open paths:** chord-closed by `geometryFor` in silhouette mode; ineligible in shape-only mode.
-- **Zero overlaps:** each input becomes its own output cell (i.e. you get back N layers identical to the inputs but in a new group). This matches Illustrator.
+- **Zero overlaps:** each input becomes its own output cell (i.e. you get back N layers identical to the inputs but in a new group). This matches the reference behavior.
 - **Z-order:** preserves source z-order within the group; group sits at frontmost input's old slot.
 - **Icon factory:** `Vectura.Icons.pathfinder.divide` (exists).
 
@@ -114,7 +114,7 @@ Back-to-front ordering is the existing `sortBackToFront(layers, engine)`. "Top" 
 
 - **Tooltip:** `Crop`
 - **Inputs:** 2+ eligible layers. The frontmost is the cookie cutter.
-- **Algorithm:** Let `F` = front layer's multipolygon, `Lj` (j < front) = the rest. For each `Lj`, output `Lj ∩ F`. Drop empty. **The front layer itself is discarded** (consumed by the crop, per Illustrator).
+- **Algorithm:** Let `F` = front layer's multipolygon, `Lj` (j < front) = the rest. For each `Lj`, output `Lj ∩ F`. Drop empty. **The front layer itself is discarded** (consumed by the crop, per the reference behavior).
 - **Output:** group of ≤ (N-1) flat `type:'shape'` layers, fills inherited per source, **strokes stripped**.
 - **Open paths:** silhouette closes; shape-only skips. If the front layer is ineligible in the current mode, show hint "Crop needs a closed front shape — switch to Silhouette." and do not execute.
 - **Zero overlaps:** front discards everything → empty result; no-op + hint "Crop produced no geometry (no overlap with front shape)."
@@ -124,8 +124,8 @@ Back-to-front ordering is the existing `sortBackToFront(layers, engine)`. "Top" 
 
 - **Tooltip:** `Outline`
 - **Inputs:** 2+ eligible layers.
-- **Algorithm:** For each input's silhouette ring(s), break every ring into open segments at intersection points with **all** other inputs' rings (and self-intersections). Each segment is one output open path; stroke color = source layer's `color`/`penId`; `strokeWidth` inherits from source (Illustrator uses 0pt; Vectura defaults to source weight because plotter output requires a real stroke width — divergence noted).
-- **Implementation note (line-art divergence):** Illustrator deletes interior fills; Vectura already operates on stroke-only line art, so "delete fill" is a no-op. The key behavior is **splitting at intersections**. Use `FillBoolean.union(P1..Pn)` to build the planar arrangement of edges, then walk each input's ring and split at any vertex of the arrangement that lies on the ring (within `FillBoolean` epsilon). For v1, take the simpler equivalent route: for each input ring `Ri`, compute `Ri ∩ Pj` and `Ri − Pj` segment-by-segment for every `j ≠ i`; concatenate boundary fragments. If the boolean library's segment-level slicing is not exposed, walk the ring polyline against each other ring as a polyline-polygon intersection (existing `geometry-utils.js` provides segment intersection helpers).
+- **Algorithm:** For each input's silhouette ring(s), break every ring into open segments at intersection points with **all** other inputs' rings (and self-intersections). Each segment is one output open path; stroke color = source layer's `color`/`penId`; `strokeWidth` inherits from source (the reference editor uses 0pt; Vectura defaults to source weight because plotter output requires a real stroke width — divergence noted).
+- **Implementation note (line-art divergence):** The reference editor deletes interior fills; Vectura already operates on stroke-only line art, so "delete fill" is a no-op. The key behavior is **splitting at intersections**. Use `FillBoolean.union(P1..Pn)` to build the planar arrangement of edges, then walk each input's ring and split at any vertex of the arrangement that lies on the ring (within `FillBoolean` epsilon). For v1, take the simpler equivalent route: for each input ring `Ri`, compute `Ri ∩ Pj` and `Ri − Pj` segment-by-segment for every `j ≠ i`; concatenate boundary fragments. If the boolean library's segment-level slicing is not exposed, walk the ring polyline against each other ring as a polyline-polygon intersection (existing `geometry-utils.js` provides segment intersection helpers).
 - **Output:** group of K open-path `type:'shape'` layers, each with one open polyline path (`meta.kind='polyline', meta.closed=false, meta.source='pathfinder-outline'`). No fill semantics.
 - **Open paths:** input open paths participate as their literal polyline (no chord closure for outline — they're already lines).
 - **Zero overlaps:** each input becomes one output layer = its source ring(s) flattened to open polyline(s), unchanged. Useful pass-through.
@@ -136,7 +136,7 @@ Back-to-front ordering is the existing `sortBackToFront(layers, engine)`. "Top" 
 - **Tooltip:** `Minus Back`
 - **Inputs:** 2+ eligible layers.
 - **Algorithm:** Let `F` = front layer, `Bj` = all others. Compute `F − union(Bj)`. Single output.
-- **Output:** **single** `type:'shape'` layer (not a group — matches Illustrator's single-path output). Inherits front layer's full appearance. Source layers removed. Inserted at front layer's old z-index. Strokes preserved.
+- **Output:** **single** `type:'shape'` layer (not a group — matches the reference's single-path output). Inherits front layer's full appearance. Source layers removed. Inserted at front layer's old z-index. Strokes preserved.
 - **Open paths:** silhouette closes; shape-only skips. If front is ineligible in shape-only mode → hint "Minus Back needs a closed front shape — switch to Silhouette." and no-op.
 - **Zero overlaps:** front survives unchanged.
 - **Icon factory:** `Vectura.Icons.pathfinder.minusBack` (exists).
@@ -156,7 +156,7 @@ Per op, the following RGR cases must each fail without the implementation and pa
 
 ### Divide
 1. Two overlapping squares (A back red, B front blue, 50% overlap) → group of 3 layers: A-only (red), B-only (blue), overlap (blue, topmost wins).
-2. Three concentric squares → group of 5 layers (outer ring, middle ring, inner; per Illustrator's 2^n−1 cells, minus empties).
+2. Three concentric squares → group of 5 layers (outer ring, middle ring, inner; per the reference's 2^n−1 cells, minus empties).
 3. Two disjoint squares → group of 2 layers, each identical to its source.
 4. n = 9 inputs → hint "Divide supports up to 8 layers…"; no mutation.
 5. One closed + one open path in silhouette mode → open path chord-closed; output has both contributions.
@@ -225,7 +225,7 @@ Per the project's documentation contract:
 | File | Update |
 |---|---|
 | `README.md` | Add the six Pathfinder ops to the feature-group list ("Layers & Modifiers" group, expandable detail panel). |
-| `CHANGELOG.md` | New entry: "Pathfinder: full Illustrator parity — Divide / Trim / Merge / Crop / Outline / Minus Back; Pathfinder panel collapsible." |
+| `CHANGELOG.md` | New entry: "Pathfinder: full reference parity — Divide / Trim / Merge / Crop / Outline / Minus Back; Pathfinder panel collapsible." |
 | `plans.md` | Mark Pathfinder feature complete. |
 | `docs/agentic-harness-strategy.md` | No update needed unless test matrix changes (it doesn't). |
 | In-app help guide (`src/ui/help-content.js` or similar) | Add a "Pathfinder" subsection mirroring the Align subsection style. |
@@ -238,9 +238,9 @@ Per the project's documentation contract:
 **Decisions made (v1, opinionated):**
 1. Pathfinder-row ops are **destructive only**. No "live compound" variant. Live shapes remain a Shape-Modes-only feature, preserving the existing mental model where the four Shape Modes are the non-destructive primitives.
 2. Output groupings use `groupType: 'pathfinder'` (a new groupType value), distinct from `'compound'`. The existing layers-panel rendering for generic groups handles display; no new UI affordance needed.
-3. **Strokes preserved on Divide** (matching Illustrator), **stripped on Trim/Merge/Crop**. Outline replaces strokes with new stroke = source fill color, **but keeps source `strokeWidth`** (line-art divergence — 0pt strokes are meaningless for a plotter).
+3. **Strokes preserved on Divide**, **stripped on Trim/Merge/Crop**. Outline replaces strokes with new stroke = source fill color, **but keeps source `strokeWidth`** (line-art divergence — 0pt strokes are meaningless for a plotter).
 4. **Divide cap at n = 8 layers** to prevent 2^n explosion. Above the cap, show a hint and no-op. 8 covers ~99% of real selections.
-5. Single collapsible `Pathfinder` section (not nested sub-sections per row). Illustrator presents both rows in one panel; sub-collapsing would add UX cost without benefit.
+5. Single collapsible `Pathfinder` section (not nested sub-sections per row). The reference editor presents both rows in one panel; sub-collapsing would add UX cost without benefit.
 6. Front-shape-must-be-closed enforcement for Crop and Minus Back in shape-only mode. Silhouette mode falls back to bounding rect (per existing `geometryFor`), which is consistent with how Shape Modes already treat ineligible silhouettes.
 7. Empty results are no-ops with a transient hint and no history entry, rather than creating an empty group.
 8. Pathfinder ops operate on the lifted compound (compounds count as one input via `liftToCompoundAncestor`, same as Shape Modes already do). They don't unwrap the compound's children.
@@ -251,6 +251,6 @@ Per the project's documentation contract:
 - Trap (print pre-press) op.
 - Alt-click "live Pathfinder" semantics.
 - `Release Compound Shape` panel-menu equivalent (the existing Expand button covers most workflows).
-- Keyboard shortcuts (none in Illustrator either; users can add custom in a later iteration).
+- Keyboard shortcuts (none in the reference editor either; users can add custom in a later iteration).
 - Live compound containment of grouped Pathfinder outputs (i.e., re-edit a Trim result by changing a source). Out of scope.
 - Per-result selection of "what counts as fill identity" for Merge (currently `penId || color`; could add a UI for "merge by stroke color" later).

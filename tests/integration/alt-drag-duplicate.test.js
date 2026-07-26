@@ -1,5 +1,5 @@
 /**
- * SEL-2 (Illustrator tools parity, Phase 1 Lane A): Alt/Option+drag duplicates
+ * SEL-2 (tools parity, Phase 1 Lane A): Alt/Option+drag duplicates
  * the selection.
  *  - single-layer alt-drag duplicate is a pre-existing behavior (regression);
  *  - multi-selection alt-drag duplicates ALL selected layers (new);

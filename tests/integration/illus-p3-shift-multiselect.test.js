@@ -1,6 +1,6 @@
 /**
  * P3 feedback: Shift/Cmd-click must add/remove objects from a multi-selection
- * (Illustrator-parity). Before the fix, the object-selection path in down()
+ *. Before the fix, the object-selection path in down()
  * never passed {toggle} to selectLayer, so shift-clicking a second object
  * *replaced* the selection (size stayed 1) instead of extending it.
  *

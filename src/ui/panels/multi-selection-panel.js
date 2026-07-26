@@ -2,7 +2,7 @@
  * Vectura multi-selection (Align/Distribute) panel.
  *
  * Activates in the left pane whenever 2+ layers are selected, replacing the
- * Algorithm-Configuration section with an Illustrator-style Align panel:
+ * Algorithm-Configuration section with an Align panel:
  *
  *   - 6 Align buttons (L/CH/R/T/CV/B)
  *   - 6 Distribute buttons (V T/C/B + H L/C/R)
@@ -203,7 +203,7 @@
 
     const getEligibleLayers = () => {
       const selected = renderer()?.getSelectedLayers?.() || [];
-      // Skip locked, hidden, and group containers — Illustrator parity.
+      // Skip locked, hidden, and group containers.
       return selected.filter((l) => l && l.visible !== false && !l.isGroup);
     };
 
@@ -222,7 +222,7 @@
       document.querySelectorAll('.align-target-btn[data-align-to]').forEach((btn) => {
         btn.setAttribute('aria-pressed', btn.dataset.alignTo === state.alignTo ? 'true' : 'false');
       });
-      // Spacing requires a key object (Illustrator parity).
+      // Spacing requires a key object.
       const spacingDisabled = !keyId;
       document.querySelectorAll('.align-btn[data-align-op]').forEach((btn) => {
         const op = btn.dataset.alignOp;

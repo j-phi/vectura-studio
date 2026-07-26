@@ -2,7 +2,7 @@
  * Area-type frame resize → REFLOW contract (RGR).
  *
  * Dragging a selection handle on an area text layer resizes its FRAME and the
- * text re-wraps at the new width with the point size UNCHANGED (Illustrator area
+ * text re-wraps at the new width with the point size UNCHANGED (standard area-type
  * behavior) — it does NOT scale the glyphs. The renderer maps the handle drag to
  * params.frameWidth/frameHeight (browser/e2e-verified); this test pins the
  * observable contract the gesture relies on: regenerating an area layer at a

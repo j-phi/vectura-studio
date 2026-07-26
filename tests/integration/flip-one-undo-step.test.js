@@ -1,5 +1,5 @@
 /*
- * FLIP-1/2 integration reconciliation (Illustrator Tools Parity Phase 1) —
+ * FLIP-1/2 integration reconciliation (Tools Parity Phase 1) —
  * the composed test neither Lane A nor Lane C could write alone.
  *
  * Lane A owns renderer.flipSelection(axis) (the SEL-3 command wrapper); Lane C

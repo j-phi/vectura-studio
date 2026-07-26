@@ -1,5 +1,5 @@
 /**
- * Smart-guide configuration — Illustrator tools parity, Phase 1 Lane A
+ * Smart-guide configuration — tools parity, Phase 1 Lane A
  * (SEL-4, SG-1…SG-5).
  *
  * Every object-to-object guide threshold, perf limit, and user-visible label

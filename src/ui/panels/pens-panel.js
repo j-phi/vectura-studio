@@ -503,7 +503,7 @@
     return (SETTINGS.pens || []).find((pen) => pen.id === id) || null;
   }
 
-  // === COL-2 (Illustrator Tools Parity, Phase 1 Lane D) ====================
+  // === COL-2 (Tools Parity, Phase 1 Lane D) ================================
   // Shared pen-assignment helper. Vectura's color model is pen-based: a
   // layer's color is a reference to a document pen, stored as layer.penId
   // (authoritative) plus the denormalized caches layer.color/strokeWidth.

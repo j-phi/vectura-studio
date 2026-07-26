@@ -1,5 +1,5 @@
 /**
- * SG-3 (Illustrator tools parity, Phase 1 Lane A) — OPTIONAL, built on SG-1.
+ * SG-3 (tools parity, Phase 1 Lane A) — OPTIONAL, built on SG-1.
  * WHILE a dragged selection sits so the gap to the neighbor above and below
  * (or left/right) is equal within tolerance, the renderer snaps to the
  * equal-spacing position and reports two matching distance chips + a

@@ -1,5 +1,5 @@
 /**
- * Vectura Studio — HUD hint bar, readouts & canvas toast (Illustrator Tools
+ * Vectura Studio — HUD hint bar, readouts & canvas toast (Tools
  * Parity, Phase 1 Lane F: HUD-1…4).
  *
  * Renders the bottom workspace strip:

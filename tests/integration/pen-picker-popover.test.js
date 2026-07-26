@@ -1,5 +1,5 @@
 /*
- * COL-1/COL-3/COL-4 (Illustrator Tools Parity, Phase 1 Lane D) — anchored
+ * COL-1/COL-3/COL-4 (Tools Parity, Phase 1 Lane D) — anchored
  * Pen Picker popover.
  *
  * Vectura's plotter-native translation of the video's Swatches/Mixer color

@@ -207,7 +207,7 @@
   }
 }
 
-/* === HUD: canvas toast motion (Illustrator parity, Lane F HUD-3) === */
+/* === HUD: canvas toast motion (Lane F HUD-3) === */
 .canvas-toast {
   transition: opacity 160ms ease, transform 160ms ease, visibility 160ms;
 }
@@ -219,7 +219,7 @@
 }
 /* === END HUD toast motion === */
 
-/* === TB: Contextual Task Bar motion (Illustrator parity, Phase 2 Lane G) === */
+/* === TB: Contextual Task Bar motion (Phase 2 Lane G) === */
 /* TB-8: fade/slide show-hide ≤120ms. The pill sits in #viewport-container and
    nudges up 4px on entry. */
 .ctxbar {

@@ -1,5 +1,5 @@
 /**
- * SEL-3 (Illustrator tools parity, Phase 1 Lane A): Flip Horizontal / Vertical.
+ * SEL-3 (tools parity, Phase 1 Lane A): Flip Horizontal / Vertical.
  * Lane A owns only the thin renderer/command wrapper `flipSelection(axis)`; the
  * geometry op `flipLayers(layerIds, axis, opts)` lives in Lane C's
  * `window.Vectura.PathEditOps` (built in parallel — feature-detected here).

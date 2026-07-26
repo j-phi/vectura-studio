@@ -1,5 +1,5 @@
 /*
- * COL-1 prerequisite (Illustrator Tools Parity, Phase 1 Lane D) — embeddable
+ * COL-1 prerequisite (Tools Parity, Phase 1 Lane D) — embeddable
  * HSV+hex picker extracted from the Color Picker modal.
  *
  * The Pen Picker popover's New Pen tab must reuse openColorModal's HSV canvas

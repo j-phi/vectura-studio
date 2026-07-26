@@ -1,8 +1,8 @@
 /*
  * PTH-3b — PathEditOps progressive smooth session (begin/preview/commit/cancel).
  *
- * The interactive Smooth slider rounds corners progressively (Illustrator
- * parity): higher t = more corner rounding, with live preview + a single
+ * The interactive Smooth slider rounds corners progressively:
+ * higher t = more corner rounding, with live preview + a single
  * undoable commit. Closed paths round uniformly (ring-aware); open paths hold
  * their endpoints. Mirrors the simplify-session pure-core test harness.
  */

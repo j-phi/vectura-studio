@@ -1,5 +1,5 @@
 /**
- * SEL-4 (Illustrator tools parity, Phase 1 Lane A): live measurement chips.
+ * SEL-4 (tools parity, Phase 1 Lane A): live measurement chips.
  *  - move-drags show a relative-delta chip `dX: … / dY: …` in document units;
  *  - hovering an anchor with an editing tool shows an `X: … / Y: …` chip
  *    (with the SG-2 `anchor` label reported via hook);

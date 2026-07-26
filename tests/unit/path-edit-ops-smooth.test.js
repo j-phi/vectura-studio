@@ -134,7 +134,7 @@ describe('PTH-3 smoothSelection', () => {
   // Regression (2026-07-18): the old Laplacian implementation SHRIVELED a
   // closed square into a degenerate leaf pinned at its first point (corner
   // pullbacks 0 / 64 / 66 / 64 on a 100mm square at strength 0.5). Smooth is
-  // corner ROUNDING (Illustrator parity): every corner rounds by the same
+  // corner ROUNDING: every corner rounds by the same
   // fillet, edge midpoints stay put, and the bounding box is preserved.
   test('rounds a closed square symmetrically instead of collapsing it', () => {
     const engine = makeEngine();

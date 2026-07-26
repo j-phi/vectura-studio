@@ -1,5 +1,5 @@
 /*
- * COL-4 (Illustrator Tools Parity, Phase 1 Lane D) — eyedropper samples/
+ * COL-4 (Tools Parity, Phase 1 Lane D) — eyedropper samples/
  * creates a matching PEN, never a bare hex.
  *
  * The popover's eyedropper samples the pen of a clicked canvas layer

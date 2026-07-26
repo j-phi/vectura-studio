@@ -879,12 +879,12 @@
               });
               if (wantBezier) {
                 let a = aligned ? contours[ci] : null;
-                // Minimal-anchor re-trace (Illustrator "Create Outlines" parity):
+                // Minimal-anchor re-trace ("Create Outlines" parity):
                 // native TrueType/quadratic outlines carry ~2–3× the on-curve points
                 // a cubic shape needs (each quad is its own segment; smooth joins are
                 // split across zero-length seams). reduceAnchors fuses the seams and
                 // fits the FEWEST cubics per corner→corner run, tagging real corners —
-                // so the glyph traces to a clean, minimal, Illustrator-like anchor set
+                // so the glyph traces to a clean, minimal anchor set
                 // (one node per quad becomes a handful). The fit tolerance is the same
                 // chord tolerance the coarse polyline uses, so the re-trace stays at
                 // least as faithful to the true edge as the coarse contour (render,

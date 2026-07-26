@@ -93,7 +93,7 @@ describe('Selection-tool double-click enters Type editing (M5)', () => {
     const ok = b.renderer._beginTextEditFromHit(layer, c);
     expect(ok).toBe(false);
     expect(b.ctrl.isActive()).toBe(false);
-    // Tool did switch to type (Illustrator switches even if the caret can't land),
+    // Tool did switch to type (the tool switches even if the caret can't land),
     // but no session is active on the jittered layer.
   });
 

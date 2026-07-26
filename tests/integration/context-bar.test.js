@@ -1,5 +1,5 @@
 /**
- * TB-1…8 — Contextual Task Bar framework (Illustrator Tools Parity, Phase 2
+ * TB-1…8 — Contextual Task Bar framework (Tools Parity, Phase 2
  * Lane G). The floating pill morphs per selection context with drag/pin/reset/
  * hide management, an overflow menu, and an ARIA toolbar that never steals
  * focus. Sub-modes (Lane H) are feature-detected — the bar works without them.

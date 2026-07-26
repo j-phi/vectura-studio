@@ -1,5 +1,5 @@
 /**
- * Vectura Studio — All Tools drawer catalog & categories (Illustrator Tools
+ * Vectura Studio — All Tools drawer catalog & categories (Tools
  * Parity, Phase 3 Lane L: TLD-1/2).
  *
  * Single source of truth for the drawer's *structure*: the ordered category

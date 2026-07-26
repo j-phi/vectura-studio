@@ -1,5 +1,5 @@
 /**
- * Text edit controller — Illustrator-style on-canvas Type-tool editing (M2/M3).
+ * Text edit controller — on-canvas Type-tool editing (M2/M3).
  *
  * Owns the transient edit SESSION for a single text layer. It reads caret
  * position ONLY from the layer's world-space `layer.glyphs` (via
@@ -182,7 +182,7 @@
     }
 
     // Commit (Cmd/Ctrl+Enter) / cancel (Esc): end the session and return the
-    // active tool to Selection (Illustrator-style). Both share behavior here —
+    // active tool to Selection. Both share behavior here —
     // there is no revert semantics; the text is already written through.
     _endAndReturnToSelect() {
       this.end();
@@ -415,7 +415,7 @@
     }
 
     /**
-     * Point↔Area conversion — Illustrator's baseline-dot widget toggle.
+     * Point↔Area conversion — the baseline-dot widget toggle.
      * `mode` is 'point', 'area', or 'toggle'. Point→area wraps the existing text
      * in a frame sized from `dims` ({width,height} in LOCAL mm — the layer's
      * current natural text extent, computed by the caller from the selection
@@ -713,7 +713,7 @@
 
     // Undo/redo chord (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Y). importState
     // rebuilds every Layer, so the cached `this.layer` would orphan — instead we
-    // COMMIT-AND-EXIT the field (Illustrator-style) and let the chord propagate
+    // COMMIT-AND-EXIT the field and let the chord propagate
     // to the global undo handler, which then runs against a session-free engine.
     _isUndoRedoChord(e) {
       if (!e || !(e.ctrlKey || e.metaKey) || e.altKey) return false;

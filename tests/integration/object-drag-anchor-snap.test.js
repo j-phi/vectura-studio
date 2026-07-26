@@ -1,5 +1,5 @@
 /**
- * SG-4 (Illustrator tools parity, Phase 1 Lane A) — VERIFY-FIRST probe result:
+ * SG-4 (tools parity, Phase 1 Lane A) — VERIFY-FIRST probe result:
  * object move-drags did NOT snap to other paths' anchors/endpoints (the
  * pre-existing endpoint/anchor snap at renderer.js:2671+ serves pen/direct
  * editing only; computeSnap knew only canvas-center + equal-size). This test

@@ -1,5 +1,5 @@
 /**
- * SG-5 + SG-2 (Illustrator tools parity, Phase 1 Lane A): hover highlight of
+ * SG-5 + SG-2 (tools parity, Phase 1 Lane A): hover highlight of
  * unselected geometry with the smart-guide accent and the `path` label.
  *  - Selection/Direct tools hovering an unselected path set renderer.hoverHighlight
  *    ({ layerId, label:'path' }) so draw() can outline it magenta;

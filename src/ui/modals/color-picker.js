@@ -17,7 +17,7 @@
  *       canvas updates HSV; typing 6 hex chars updates HSV. Apply invokes
  *       `onApply(hex)` and closes; Cancel closes without invoking onApply.
  *   - createHsvHexPicker(rootEl, { value, onChange })
- *       COL-1 (Illustrator Tools Parity, Lane D): the same HSV+hex machinery
+ *       COL-1 (Tools Parity, Lane D): the same HSV+hex machinery
  *       as an embeddable component — mounts the scaffold into any host
  *       element and returns { getHex, setHex }. openColorModal is built on
  *       it; the Pen Picker popover's New Pen tab is the other consumer.
@@ -78,7 +78,7 @@
   };
 
   /**
-   * COL-1 (Illustrator Tools Parity, Phase 1 Lane D): embeddable HSV+hex
+   * COL-1 (Tools Parity, Phase 1 Lane D): embeddable HSV+hex
    * picker — the exact machinery openColorModal always used (saturation-value
    * canvas, hue strip, preview swatch, 6-char hex field), extracted so the
    * Pen Picker popover's New Pen tab can host it inline. Same class names as

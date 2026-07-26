@@ -172,7 +172,7 @@
       const Font = Vectura.StrokeFont;
       if (!Font) return [];
       const raw = p.text == null ? '' : String(p.text);
-      // Area type (Illustrator-style): text word-wraps inside a fixed frame. The
+      // Area type: text word-wraps inside a fixed frame. The
       // frame (mm, local space) drives the layout wrap width and is emitted as a
       // sidecar so the renderer can draw it — even for an EMPTY box (so a freshly
       // dragged area frame is visible with just a caret). Point type is unchanged.
@@ -317,7 +317,7 @@
         blockH = Math.max(1e-3, maxY - minY);
         blockCy = (minY + maxY) / 2;
         blockCx = (minX + maxX) / 2;
-        // Point text anchors on its ALIGNMENT edge (Illustrator-style): left/
+        // Point text anchors on its ALIGNMENT edge: left/
         // justify-left/justify-all (base align left) pin the block's LEFT edge
         // so the string grows rightward and never shoves earlier glyphs left;
         // right/justify-right pin the RIGHT edge (grows leftward). In absolute
@@ -328,8 +328,8 @@
         // line's metric cap box (baselineY - size .. baselineY) to the display
         // anchor — its midpoint is exactly the empty-box caret's midpoint
         // (text-edit-controller _emptyBoxCaretSegment), so the first keystroke
-        // lands on the caret, Enter grows strictly downward (Illustrator
-        // point-type), and — unlike the old ink-bbox midpoint — typing the first
+        // lands on the caret, Enter grows strictly downward (point-type
+        // convention), and — unlike the old ink-bbox midpoint — typing the first
         // ascender/descender cannot nudge earlier glyphs vertically.
         //
         // The edge is taken from the LAYOUT CELL box (pen advance), not the ink
@@ -1122,7 +1122,7 @@
               // Native cubic outline: forceCurves renders the glyph's real beziers
               // regardless of the layer's Curves toggle; `closed` joins the final
               // segment back to the start. `anch` is the minimal-anchor re-trace
-              // (Illustrator "Create Outlines" parity) produced in GoogleFonts.layout;
+              // ("Create Outlines" parity) produced in GoogleFonts.layout;
               // each anchor carries a `corner` flag for the node editor's affordance.
               seg.meta = { algorithm: 'text', straight: false, closed: true, forceCurves: true,
                 anchors: it.anchors
@@ -1493,7 +1493,7 @@
         : null;
 
       // Overset: the laid text (all wrapped lines) is taller than the frame, so
-      // some text is clipped/hidden — Illustrator marks this with a red "+" out
+      // some text is clipped/hidden — marked with a red "+" out
       // port. laid.height is the full multi-line block height in mm (display
       // space, same scale the frame uses since area type is always absolute).
       const textOverset = isArea && Number.isFinite(laid.height) && laid.height > frameH + 1e-6;

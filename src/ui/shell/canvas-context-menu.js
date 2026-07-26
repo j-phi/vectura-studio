@@ -1,5 +1,5 @@
 /**
- * Vectura Studio — canvas right-click context menu (Illustrator Tools Parity,
+ * Vectura Studio — canvas right-click context menu (Tools Parity,
  * Phase 3 Lane M: CTX-1).
  *
  * WHEN the user right-clicks the canvas with a selection, a context menu opens

@@ -1,5 +1,5 @@
 /**
- * Vectura Studio — Isolation breadcrumb bar (Illustrator Tools Parity,
+ * Vectura Studio — Isolation breadcrumb bar (Tools Parity,
  * Phase 2 Lane I: ISO-1 / ISO-2).
  *
  * Renders, WHILE group / morph-child isolation is active, a slim breadcrumb

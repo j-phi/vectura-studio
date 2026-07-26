@@ -1,5 +1,5 @@
 /**
- * Vectura Studio — Contextual Task Bar copy, icons & timings (Illustrator
+ * Vectura Studio — Contextual Task Bar copy, icons & timings (Tools
  * Tools Parity, Phase 2 Lane G: TB-1…8).
  *
  * Single source of truth for every user-visible Task Bar string, every inline

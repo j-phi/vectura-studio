@@ -36,7 +36,7 @@ describe('Reduced-motion compliance', () => {
     'rand-glow-pulse': ['btn-randomize-params', 'reduce'],
     'rand-spark-fly':  ['rand-spark-overlay', 'reduce'],
     'preset-pip-pulse': ['hg-preset-save-pip', 'reduce'],
-    // Contextual Task Bar attention pulse (Illustrator parity, Phase 2 Lane G).
+    // Contextual Task Bar attention pulse (Tools parity, Phase 2 Lane G).
     // Reduced-motion fallback: `.ctxbar-pulse { animation: none; }`.
     'ctxbar-pulse': ['ctxbar-pulse', 'ctxbar', 'reduce'],
   };

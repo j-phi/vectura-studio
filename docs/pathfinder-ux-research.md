@@ -1,4 +1,4 @@
-# Adobe Illustrator Pathfinder Panel — UX Research
+# Reference Pathfinder Panel — UX Research
 
 Reference: panel screenshot shows two labeled rows. Top row "Shape Modes:" has 4 icon buttons followed by an "Expand" text button. Bottom row "Pathfinders:" has 6 icon buttons. This spec targets pixel-faithful parity for a Vectura clone.
 
@@ -26,7 +26,7 @@ Sources for behavior and attribute winners: [helpx Pathfinder overview](https://
 
 ### Pre-conditions (enable/disable)
 
-- All ten buttons require **≥ 2 objects selected**. With 1 or 0 objects selected, all buttons appear pressable but produce no result; Illustrator does not visually grey them out (documented limitation).
+- All ten buttons require **≥ 2 objects selected**. With 1 or 0 objects selected, all buttons appear pressable but produce no result; the reference editor does not visually grey them out (documented limitation).
 - Operations work on closed paths, open paths, compound paths, groups, and live shapes. Open paths are closed implicitly (start-to-end virtual segment) for boolean evaluation — see [pagecrafter Pathfinder tips](https://pagecrafter.com/intersect-not-working-illustrator-pathfinder-tips/).
 - Pathfinder operations from the **panel** do not work on text, raster images, or symbols directly — convert text to outlines first. The **Effect > Pathfinder** menu version works on groups/text/layers without destroying them ([helpx combining objects](https://helpx.adobe.com/au/illustrator/using/combining-objects.html)).
 - Groups: the panel buttons operate on the union of all paths inside any selected group. Nested groups are flattened in-place.
@@ -61,17 +61,17 @@ Per [helpx Create compound shapes](https://helpx.adobe.com/illustrator/desktop/m
 
 ## Visual / Layout Spec
 
-Based on the reference screenshot and current Illustrator builds:
+Based on the reference screenshot and current reference-editor builds:
 
 - **Panel labels**: "Shape Modes:" and "Pathfinders:" rendered as small (~10–11 px) regular-weight sans-serif (Adobe Clean) in the panel's secondary text color. Trailing colon. Sentence-case, not all-caps.
 - **Row layout**: label sits on its own short line; buttons sit on the next line as a single horizontal flex strip. Shape Modes row: 4 square icon buttons + small gap + "Expand" pill-shaped text button (wider, ~3× a single icon button). Pathfinders row: 6 square icon buttons, evenly spaced.
 - **Button visuals**: icon-only, monochrome glyphs on a flat button background. Button size ~22×22 px. No labels under icons.
 - **Hover state**: subtle background tint (slightly lighter than panel chrome).
 - **Active/pressed state**: deeper inset background while mouse is down; operation fires on mouse-up.
-- **Disabled state**: Illustrator does not visually disable Pathfinder buttons for low selection counts — they remain enabled-looking but no-op (a known UX quirk; some third-party guides flag it).
+- **Disabled state**: the reference editor does not visually disable Pathfinder buttons for low selection counts — they remain enabled-looking but no-op (a known UX quirk; some third-party guides flag it).
 - **Row separator**: a thin horizontal divider between the Shape Modes and Pathfinders rows; no vertical dividers between buttons.
 - **Expand button**: enabled only when the selection is a live compound shape. Greys out otherwise. Conveys "bake to flat path."
-- **Keyboard shortcuts**: Illustrator ships **no default keyboard shortcuts** for any Pathfinder operation (per [helpx Default keyboard shortcuts](https://helpx.adobe.com/illustrator/using/default-keyboard-shortcuts.html) and [UserVoice request for Pathfinder shortcuts](https://illustrator.uservoice.com/forums/333657-illustrator-desktop-feature-requests/suggestions/37343224-keyboard-shortcuts-for-all-pathfinder-options-uni)). Users must assign via Edit > Keyboard Shortcuts. The only standard shortcut is **Shift+Ctrl/Cmd+F9** to open the panel. Adjacent shortcuts often confused for Pathfinder: Cmd/Ctrl+8 (Make Compound Path), Cmd/Ctrl+Alt+8 (Release Compound Path).
+- **Keyboard shortcuts**: the reference editor ships **no default keyboard shortcuts** for any Pathfinder operation (per [helpx Default keyboard shortcuts](https://helpx.adobe.com/illustrator/using/default-keyboard-shortcuts.html) and [UserVoice request for Pathfinder shortcuts](https://illustrator.uservoice.com/forums/333657-illustrator-desktop-feature-requests/suggestions/37343224-keyboard-shortcuts-for-all-pathfinder-options-uni)). Users must assign via Edit > Keyboard Shortcuts. The only standard shortcut is **Shift+Ctrl/Cmd+F9** to open the panel. Adjacent shortcuts often confused for Pathfinder: Cmd/Ctrl+8 (Make Compound Path), Cmd/Ctrl+Alt+8 (Release Compound Path).
 
 ### Panel menu (hamburger / flyout) options
 
@@ -93,6 +93,6 @@ For Vectura parity, items 1 and the Pathfinder Options dialog are *advanced/opti
 
 ## Discrepancies with the screenshot
 
-- The screenshot shows enabled-looking buttons even with no selection — consistent with current Illustrator behavior; **not a bug to replicate as disabled**. Recommendation: Vectura should disable on `selection.length < 2` for clarity, diverging intentionally.
-- The reference image labels the second row "Pathfinders:" (plural). Some legacy Illustrator builds rendered "Pathfinder:" (singular). Match the screenshot.
-- Tooltip text in older Illustrator builds used phrases like "Add to shape area" / "Subtract from shape area" / "Intersect shape areas" / "Exclude overlapping shape areas." Current CC builds shortened these to "Unite" / "Minus Front" / "Intersect" / "Exclude" on the panel buttons but retained the longer phrasing in some tooltips. Treat the long forms as authoritative tooltip text (consistent across [krankykids cheatsheet](https://www.krankykids.com/cheatsheets/illustrator/pathfinder_shape_modes.html) and [Envato Tuts+ guide](https://design.tutsplus.com/tutorials/a-comprehensive-guide-to-the-pathfinder-panel--vector-3306)).
+- The screenshot shows enabled-looking buttons even with no selection — consistent with the reference editor's current behavior; **not a bug to replicate as disabled**. Recommendation: Vectura should disable on `selection.length < 2` for clarity, diverging intentionally.
+- The reference image labels the second row "Pathfinders:" (plural). Some legacy builds of the reference editor rendered "Pathfinder:" (singular). Match the screenshot.
+- Tooltip text in older reference-editor builds used phrases like "Add to shape area" / "Subtract from shape area" / "Intersect shape areas" / "Exclude overlapping shape areas." Current CC builds shortened these to "Unite" / "Minus Front" / "Intersect" / "Exclude" on the panel buttons but retained the longer phrasing in some tooltips. Treat the long forms as authoritative tooltip text (consistent across [krankykids cheatsheet](https://www.krankykids.com/cheatsheets/illustrator/pathfinder_shape_modes.html) and [Envato Tuts+ guide](https://design.tutsplus.com/tutorials/a-comprehensive-guide-to-the-pathfinder-panel--vector-3306)).

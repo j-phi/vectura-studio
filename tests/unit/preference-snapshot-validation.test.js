@@ -229,7 +229,7 @@ describe('applyPreferenceSnapshot field validation (Bugs-7)', () => {
     expect(SETTINGS.bgColor.startsWith('#')).toBe(true);
   });
 
-  test('Contextual Task Bar prefs (enabled + position bag) round-trip through the snapshot (Illustrator parity P2)', async () => {
+  test('Contextual Task Bar prefs (enabled + position bag) round-trip through the snapshot (parity P2)', async () => {
     const window = await bootApp();
     const { SETTINGS } = window.Vectura;
 

@@ -1,8 +1,8 @@
 /**
- * Vectura anchored Pen Picker popover (Illustrator Tools Parity, Phase 1
+ * Vectura anchored Pen Picker popover (Tools Parity, Phase 1
  * Lane D — COL-1/COL-3/COL-4).
  *
- * Plotter-native translation of Illustrator's fill-chip color hub: Vectura
+ * Plotter-native translation of the fill-chip color hub: Vectura
  * colors are PENS — document-level {id, name, color, width} records in
  * SETTINGS.pens — never bare hex values. Plot-order optimization groups
  * strokes by layer.penId, so every apply writes the full
@@ -401,7 +401,7 @@
     return { outcome: 'prefilled', hex: hit.hex };
   };
 
-  // ── COL-4b Illustrator-style sampling loupe ────────────────────────────────
+  // ── COL-4b sampling loupe ──────────────────────────────────────────────────
   // While the eyedropper is armed the canvas cursor becomes an eyedropper and
   // a magnifier circle follows the pointer: a zoomed snapshot of the canvas
   // centered on the pointer, a center reticle marking the exact sample point,

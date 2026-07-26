@@ -1679,7 +1679,7 @@ test.describe('Vectura smoke interactions', () => {
   });
 });
 
-// ── HUD hint bar & canvas toast (Illustrator parity Phase 1, Lane F) ────────
+// ── HUD hint bar & canvas toast (Parity Phase 1, Lane F) ────────
 // Screenshot-sanity gate for HUD-1…3: the bottom strip renders per-tool hints
 // + tool/zoom/rotation readouts, and UI.toast() shows the transient pill.
 test.describe('HUD hint bar & toast', () => {
@@ -1722,7 +1722,7 @@ test.describe('HUD hint bar & toast', () => {
     expect(pageErrors).toEqual([]);
   });
 
-  // Illustrator parity Phase 2: the Contextual Task Bar + isolation breadcrumb are
+  // Parity Phase 2: the Contextual Task Bar + isolation breadcrumb are
   // wired into index.html for the first time. Smoke the two headline flows in the
   // live shell: (1) select an object → the bar appears; (2) enter group isolation →
   // the breadcrumb becomes visible.

@@ -1764,7 +1764,7 @@
       // for true line segments, meta.baked for already-flattened display geometry)
       // are refused by applyCurveFit itself, which also keeps the cost off the
       // thousands of 2-point spans the 3D algorithms emit.
-      // Smoothing is corner ROUNDING (Illustrator parity): the same fillet
+      // Smoothing is corner ROUNDING: the same fillet
       // mechanism as the toolbar's progressive Smooth slider and the one-shot
       // Object ▸ Smooth… verb — GeometryUtils.roundCornerAnchors: a tight,
       // faithful re-trace plus corner fillets that grow with the slider. It

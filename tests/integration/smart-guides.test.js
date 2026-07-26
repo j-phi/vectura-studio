@@ -1,5 +1,5 @@
 /**
- * SG-1 (Illustrator tools parity, Phase 1 Lane A): object-to-object alignment
+ * SG-1 (tools parity, Phase 1 Lane A): object-to-object alignment
  * smart guides, extending the existing computeGuides/computeSnap subsystem
  * (never a second guide system).
  *  - dragging near another object's edge/center snaps live (config tolerance);

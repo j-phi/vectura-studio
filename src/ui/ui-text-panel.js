@@ -1492,7 +1492,7 @@
       <div class="vtp-grp-label">Offsets</div>
       <div class="vtp-grid2" data-ref="offsetsGrid"></div>
 
-      <div class="vtp-grp-label">Indents <span class="vtp-info-i" title="Illustrator-convention controls — affect paragraph block geometry">i</span></div>
+      <div class="vtp-grp-label">Indents <span class="vtp-info-i" title="Affect paragraph block geometry">i</span></div>
       <div class="vtp-grid2" data-ref="indentsGrid"></div>
       <div class="vtp-field-block" data-ref="slot-indFirst" style="margin-top:7px;"></div>
 

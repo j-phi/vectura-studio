@@ -1,6 +1,6 @@
 /**
  * Task Bar TB-6 Smooth — P3 feedback: Smooth now opens a progressive slider
- * (Illustrator-parity), NOT a fixed one-shot. Clicking Smooth enters the smooth
+ *, NOT a fixed one-shot. Clicking Smooth enters the smooth
  * sub-mode; dragging the slider previews corner rounding live; Done commits in
  * exactly one undo step; Escape/cancel restores.
  *
