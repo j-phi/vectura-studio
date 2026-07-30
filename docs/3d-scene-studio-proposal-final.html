@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D Scene Studio — Proposal · Vectura Studio</title>
+<style>
+:root{
+  --paper:#f7f3ea; --paper2:#efe9db; --ink:#231f18; --ink-soft:#5a5244; --line:#d8cfba;
+  --accent:#2b5fb0; --accent2:#6b3fa0; --good:#2f7d4f; --warn:#b06a2b; --bad:#a83232;
+  --card:#fffdf7; --code:#efe9db; --chip:#e6dfcd;
+  --pen-ink:#1a1a1a; --pen-purple:#6b3fa0; --pen-orange:#e0762f; --pen-teal:#2f9e9a;
+  --pen-cream:#d9c89a; --pen-crimson:#c0392b; --pen-blue:#2b5fb0; --pen-sepia:#7a5b3a;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --paper:#191713; --paper2:#211e18; --ink:#e8e2d4; --ink-soft:#a89e8a; --line:#3a352a;
+    --card:#211e18; --code:#2a2620; --chip:#322d24; --accent:#7ea7e8; --accent2:#b08ae0;
+    --good:#6fbf8f; --warn:#d99a5b; --bad:#d97a7a; --pen-ink:#e8e2d4; --pen-cream:#cdbd92;
+    --pen-purple:#a67ee0; --pen-blue:#7ea7e8; --pen-sepia:#b08a5e; --pen-crimson:#e0837a;
+    --pen-teal:#4fc4bf; --pen-orange:#f0955a; }
+}
+:root{color-scheme:light dark}
+h2{scroll-margin-top:16px}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.65 Georgia,'Iowan Old Style',serif;}
+main{max-width:1080px;margin:0 auto;padding:0 28px 120px}
+h1,h2,h3,h4{font-family:Futura,'Avenir Next','Century Gothic',sans-serif;letter-spacing:.01em;line-height:1.2}
+h1{font-size:2.6rem;margin:.2em 0 .1em}
+h2{font-size:1.7rem;margin:2.6em 0 .5em;padding-top:.8em;border-top:3px solid var(--ink)}
+h2 .secno{color:var(--accent);margin-right:.45em}
+h3{font-size:1.18rem;margin:1.8em 0 .4em;color:var(--ink)}
+h4{font-size:1rem;margin:1.4em 0 .3em}
+p{margin:.55em 0}
+a{color:var(--accent)}
+code,kbd{font-family:var(--mono);font-size:.86em;background:var(--code);padding:.08em .35em;border-radius:4px}
+kbd{border:1px solid var(--line);border-bottom-width:2px}
+table{border-collapse:collapse;width:100%;margin:.8em 0;font-size:.92rem}
+th,td{border:1px solid var(--line);padding:.45em .6em;text-align:left;vertical-align:top}
+th{background:var(--paper2);font-family:'Avenir Next',sans-serif;font-size:.85rem;text-transform:uppercase;letter-spacing:.05em}
+.tablewrap{overflow-x:auto}
+.lead{font-size:1.14rem;color:var(--ink)}
+.muted{color:var(--ink-soft)}
+.small{font-size:.86rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin:1em 0;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.pill{display:inline-block;background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:.1em .7em;font:.78rem/1.7 'Avenir Next',sans-serif;letter-spacing:.03em;margin:0 .25em .25em 0;white-space:nowrap}
+.pill.must{background:var(--accent);color:var(--paper);border-color:transparent}
+.pill.should{background:var(--chip)}
+.pill.v2{background:transparent;border-style:dashed}
+.tag-fix{font:.72rem/1.5 var(--mono);color:var(--good)}
+.hero{padding:70px 0 8px;border-bottom:none}
+.hero .kicker{font:700 .85rem/1 'Avenir Next',sans-serif;text-transform:uppercase;letter-spacing:.25em;color:var(--accent)}
+.hero .sub{font-size:1.25rem;color:var(--ink-soft);max-width:56ch;margin:.6em 0 0}
+.toc{columns:2;gap:30px;font-family:'Avenir Next',sans-serif;font-size:.95rem;margin:1.4em 0}
+.toc a{text-decoration:none;display:block;padding:.18em 0;color:var(--ink)}
+.toc a b{color:var(--accent);margin-right:.5em}
+.toc a:hover{color:var(--accent)}
+blockquote{margin:1em 0;padding:.6em 1.1em;border-left:4px solid var(--accent2);background:var(--card);border-radius:0 8px 8px 0;color:var(--ink-soft);font-style:italic}
+/* pipeline diagram */
+.pipe{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch;margin:1.2em 0}
+.pipe .stage{flex:1 1 120px;background:var(--card);border:1.5px solid var(--ink);border-radius:8px;padding:10px 12px;position:relative;min-width:118px}
+.pipe .stage b{display:block;font:700 .8rem/1.3 'Avenir Next',sans-serif;letter-spacing:.02em}
+.pipe .stage span{font-size:.78rem;color:var(--ink-soft);line-height:1.35;display:block;margin-top:4px}
+.pipe .stage i{position:absolute;top:6px;right:9px;font:700 .7rem var(--mono);color:var(--accent);font-style:normal}
+/* demos */
+.demo{background:var(--card);border:1.5px solid var(--ink);border-radius:12px;margin:1.6em 0;overflow:hidden}
+.demo header{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--paper2)}
+.demo header h3{margin:0;font-size:1.05rem}
+.demo header .why{font-size:.8rem;color:var(--ink-soft);font-family:'Avenir Next',sans-serif}
+.demo .body{display:flex;flex-wrap:wrap;gap:0}
+.demo .stage-wrap{flex:1 1 480px;min-width:300px;position:relative;background:var(--paper)}
+.demo canvas{display:block;width:100%;height:auto;touch-action:none;cursor:crosshair}
+.demo .ctrl{flex:0 1 280px;min-width:240px;padding:14px 16px;border-left:1px solid var(--line);font-family:'Avenir Next',sans-serif;font-size:.85rem;background:var(--card)}
+.demo .ctrl label{display:block;margin:.65em 0 .15em;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft)}
+.demo .ctrl input[type=range]{width:100%;accent-color:var(--accent)}
+.demo .ctrl .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.demo .hint{position:absolute;left:10px;bottom:8px;font:.75rem 'Avenir Next',sans-serif;color:var(--ink-soft);background:color-mix(in srgb,var(--card) 82%,transparent);padding:.15em .6em;border-radius:6px;pointer-events:none}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font:600 .8rem/1 'Avenir Next',sans-serif;padding:.55em .8em;border:1.5px solid var(--line);border-radius:8px;background:var(--paper2);color:var(--ink);cursor:pointer;user-select:none}
+.chip:hover{border-color:var(--accent)}
+.chip.on{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.swatch{width:22px;height:22px;border-radius:6px;border:2px solid var(--line);cursor:pointer;padding:0}
+.swatch.on{border-color:var(--ink);box-shadow:0 0 0 2px var(--paper),0 0 0 4px var(--accent)}
+.stat{display:inline-block;background:var(--code);border-radius:6px;padding:.25em .6em;font-family:var(--mono);font-size:.78rem;margin:.15em .3em .15em 0}
+/* requirement styling */
+.req{margin:.35em 0;padding:.5em .8em .5em .9em;border-left:3px solid var(--line);background:var(--card);border-radius:0 6px 6px 0;font-size:.93rem}
+.req b.id{font-family:var(--mono);font-size:.8rem;color:var(--accent);margin-right:.5em}
+.req .pr{float:right;font:700 .68rem/1.9 'Avenir Next',sans-serif;letter-spacing:.06em;text-transform:uppercase;padding:0 .55em;border-radius:99px;margin-left:.6em}
+.req .pr.M{background:var(--accent);color:var(--paper)} .req .pr.S{background:var(--chip)} .req .pr.C{border:1px dashed var(--line)}
+/* phases */
+.phase{border:1.5px solid var(--ink);border-radius:10px;margin:1.1em 0;overflow:hidden}
+.phase>header{background:var(--paper2);padding:10px 16px;display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px}
+.phase>header h3{margin:0;font-size:1.02rem}
+.phase>header .meta{font:.78rem 'Avenir Next',sans-serif;color:var(--ink-soft)}
+.phase .streams{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:0}
+.phase .stream{padding:12px 16px;border-top:1px solid var(--line);font-size:.9rem}
+.phase .stream+.stream{border-left:1px solid var(--line)}
+.phase .stream b{font-family:'Avenir Next',sans-serif;font-size:.82rem;display:block;margin-bottom:4px}
+.phase .stream .files{font-family:var(--mono);font-size:.72rem;color:var(--ink-soft);display:block;margin-top:6px}
+.gate{background:var(--code);border-top:1px dashed var(--line);padding:8px 16px;font:.8rem 'Avenir Next',sans-serif}
+.gate b{color:var(--good)}
+/* wireframe mock */
+.wire{background:var(--paper2);border:1px solid var(--line);border-radius:10px;padding:14px;font-family:'Avenir Next',sans-serif;font-size:.8rem}
+.wire .panel{background:var(--card);border:1.5px solid var(--ink-soft);border-radius:8px;max-width:330px;margin:0 auto}
+.wire .tabs{display:flex;border-bottom:1.5px solid var(--ink-soft)}
+.wire .tabs span{flex:1;text-align:center;padding:.5em 0;font-weight:600}
+.wire .tabs span.on{background:var(--chip);border-radius:6px 6px 0 0}
+.wire .shelfrow{display:flex;gap:5px;padding:9px;flex-wrap:wrap}
+.wire .shelfrow i{width:30px;height:30px;border:1.5px solid var(--ink-soft);border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:.95rem;background:var(--paper)}
+.wire .treerow{display:flex;align-items:center;gap:7px;padding:.35em 12px;border-top:1px dotted var(--line)}
+.wire .treerow.sel{background:var(--chip)}
+.wire .treerow .sw{margin-left:auto;display:flex;gap:4px}
+.wire .treerow .sw i{width:15px;height:15px;border:1px solid var(--ink-soft);border-radius:4px;font-size:.6rem;display:inline-flex;align-items:center;justify-content:center;font-style:normal}
+.wire .insp{border-top:1.5px solid var(--ink-soft);padding:10px 12px}
+.provchip{display:inline-flex;gap:6px;align-items:center;background:var(--chip);border:1px solid var(--line);border-radius:99px;padding:.15em .7em;font-size:.75rem}
+.ctxbar{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1.5px solid var(--ink);border-radius:99px;padding:.45em 1em;font-family:'Avenir Next',sans-serif;font-size:.82rem;box-shadow:0 3px 10px rgba(0,0,0,.12)}
+.ctxbar .cc{display:inline-flex;gap:4px}
+.ctxbar .cc span{border:1px solid var(--line);border-radius:6px;padding:.15em .5em;cursor:default}
+.ctxbar .cc span.on{background:var(--accent);color:var(--paper);border-color:var(--accent)}
+details{margin:.7em 0;border:1px solid var(--line);border-radius:8px;padding:.5em .9em;background:var(--card)}
+summary{cursor:pointer;font-family:'Avenir Next',sans-serif;font-weight:600;font-size:.92rem}
+.legend{font-size:.8rem;font-family:'Avenir Next',sans-serif;color:var(--ink-soft)}
+.footer{margin-top:80px;border-top:3px solid var(--ink);padding-top:14px;font-size:.85rem;color:var(--ink-soft)}
+@media (max-width:760px){ .toc{columns:1} h1{font-size:2rem} .demo .ctrl{border-left:none;border-top:1px solid var(--line)} }
+</style>
+</head>
+<body>
+<main>
+
+<div class="hero">
+  <div class="kicker">Vectura Studio · Feature Proposal · Final (merged)</div>
+  <h1>3D Scene Studio</h1>
+  <p class="sub">One scene. Many objects. Light that manufactures styleable regions. Every surface, edge, shadow, and highlight rendered in exactly the pen strokes you choose.</p>
+  <p class="legend">Produced by a staged multi-agent design process (research → concepts → adversarial critics → synthesis → judged review gates), then merged with the independent Ink-Pass proposal — see §10 for the merge record. Interactive demos below are live — drag them.</p>
+</div>
+
+<nav class="toc">
+  <a href="#exec"><b>1</b>Executive summary</a>
+  <a href="#inspiration"><b>2</b>What the inspiration demands</a>
+  <a href="#model"><b>3</b>The model: five nouns</a>
+  <a href="#demos"><b>4</b>Interactive demos</a>
+  <a href="#interaction"><b>5</b>Interaction design</a>
+  <a href="#arch"><b>6</b>Architecture &amp; reuse</a>
+  <a href="#reqs"><b>7</b>Requirements</a>
+  <a href="#plan"><b>8</b>Implementation plan</a>
+  <a href="#succession"><b>9</b>Succession &amp; control parity</a>
+  <a href="#merge"><b>10</b>Merge record: two proposals, one plan</a>
+  <a href="#risks"><b>11</b>Risks &amp; open questions</a>
+</nav>
+
+<h2 id="exec"><span class="secno">1</span>Executive summary</h2>
+
+<p class="lead"><b>3D Scene Studio</b> is a new <code>scene3d</code> layer type that turns Vectura into a plotter-native 3D still-life tool — and, over time, the successor to spiralizer, polyhedron, and topoform.</p>
+
+<p>Today, three separate algorithms each own one shape, one look, and one bag of controls. A torus can spiral <em>or</em> contour <em>or</em> facet — never toggle between them — and no algorithm knows about any other object, any light, or any shadow. Meanwhile the inspiration board (voxel cities with kilometer-long hatched shadows, wood-grain cubes whose tops share one continuous grain, dash-shimmer still lifes in four pens) is all about <em>scenes</em>: multiple objects, real lighting, and per-surface styling decisions.</p>
+
+<p>3D Scene Studio makes four moves:</p>
+
+<div class="card">
+<p><b>1 · Objects become a scene.</b> Parametric primitives (box, sphere, cylinder, cone, torus, capsule, the full polyhedron solid family, plane) placed, scaled, and rotated in one scene with a ground plane, a backdrop, and a camera. Primitives stay parametric forever — a torus is two radius sliders, never an editable mesh. STL import (auto-segmented into selectable patches) follows in Phase 4.</p>
+<p><b>2 · The three algorithms become mappers, and styles become stacks.</b> A surface style is just a polyline generator on a surface: <em>spiral</em> (spiralizer), <em>facet</em> (polyhedron), <em>contour</em> (topoform), <em>wireframe</em>, <em>hatch</em>, <em>rings</em>, and the whole 2D pattern/texture library (<em>topo, wavetable, dots, truchet, flowfield, halftone…</em>) draped over faces. A Plot Style is an <em>ordered stack of Ink Passes</em> — each reading <em>Target → Driver → Action → Pen</em> — so one torus can wear base contours, a thick silhouette, purple shadow hatch, ring highlights, and a four-pen cycle at once. One selected torus still toggles spiral ↔ facet ↔ contour ↔ wireframe ↔ textured with one click — and every family remembers its tuning (the style stash).</p>
+<p><b>3 · Light manufactures styleable targets.</b> Lights don't shade lines; they create <em>regions</em> — tone bands, cast shadows, specular hotspots — that you can click and style like anything else. "Shadows on the ground = purple lines at 45° with 2&nbsp;mm gaps" is four clicks. Highlights can swap patterns, or <em>modify the existing lines</em>: wider spacing, priority thinning, or radial perforation at a chosen density.</p>
+<p><b>4 · Strokes divide into pens.</b> A universal stroke-division treatment cuts any line work into repeating multi-pen dash cycles (A–B–A–C, weighted random, phase jitter, butt-joined or gapped) — physical geometry per pen, not a dash pattern — with pen lifts, travel, and plot time reported per pen before export. It mounts on <em>every</em> layer type, not just scenes.</p>
+</div>
+
+<p><b>Why we win:</b> the heavy machinery already exists in the codebase — the shared 3D kernel (<code>geometry3d.js</code>: projection, silhouettes, three hidden-line engines, Lambert hatching), the 25-type region fill engine, two boolean stacks, per-path pen overrides, and the shared fill control surface that two panels already mount. The plan below reuses them by <em>extract-and-rewire</em> (with visual-baseline gates), and is honest about the genuinely new work: scene assembly, shadow projection, the region compiler, the style cascade, stroke division, and a scene-scope depth-buffer API.</p>
+
+<p><b>Selection is the product.</b> <kbd>V</kbd> (the existing select tool) picks whole objects; <kbd>A</kbd> (the existing direct-select tool) picks faces, edges, and regions — zero new keybindings, exactly the Illustrator convention the app already follows. If you can select it, you can style it: objects, faces, named face groups, edge classes, individual edges, tone bands, and every cast shadow.</p>
+
+<blockquote>The test of success: a plotter artist who has never touched a 3D app drops three boxes, drags the <em>shadow</em> until the light is right, clicks the shadow, makes it purple hatch at 2&nbsp;mm, and plots — without opening a single dialog.</blockquote>
+
+<h2 id="inspiration"><span class="secno">2</span>What the inspiration demands</h2>
+
+<p>We audited all eight inspiration pieces clause-by-clause. Each row names the capability that piece cannot exist without — these became requirements, and every one is producible in v1.</p>
+
+<div class="tablewrap"><table>
+<tr><th>Piece</th><th>Signature</th><th>Capability it demands</th></tr>
+<tr><td>Isometric machine, hatched ground shadow</td><td>Shadow darkness varies by caster; ground is the canvas's biggest surface</td><td>Ground plane as first-class receiver; per-caster shadow style classes (union within style class, not across)</td></tr>
+<tr><td>Green voxel city</td><td>One global hatch direction across every face; only density responds to light</td><td><b>Screen-space</b> fill fields clipped by visible faces; tone-driven density; merged multi-caster shadow</td></tr>
+<tr><td>Wood-grain cubes</td><td>All tops share one continuous grain; every side independent</td><td>Face groups with a shared chart across <em>parallel</em> faces; per-face seeds; noise-displaced contour fills</td></tr>
+<tr><td>Framed multicolor still life</td><td>Dashed 4-pen ring fills; solid purple shadows; concentric dashed backdrop; dark paper</td><td>Stroke divisions per style assignment; <code>rings</code> mapper on an infinite backdrop; paper-color preview; per-band style override</td></tr>
+<tr><td>Paint-marker dash close-ups</td><td>Butt-joined color sequences, no gaps</td><td>Butt-join division grammar; mm-accurate segment lengths that survive optimization</td></tr>
+<tr><td>Multi-pen dash flowfield</td><td>An ordinary 2D fill, divided</td><td>Divisions as a <b>universal per-layer treatment</b>, not a scene3d exclusive</td></tr>
+<tr><td>Blue architectural cutaway</td><td>Smooth density gradients <em>within</em> single flat walls</td><td>Scalar density drivers (distance-to-edge) modulating fills on planar faces</td></tr>
+<tr><td>Red block maze, halftone shadow</td><td>Shadow rendered as a dot ramp fading with distance</td><td>Density driver on receiver regions (distance ramp) feeding the existing halftone fill</td></tr>
+</table></div>
+
+<h2 id="model"><span class="secno">3</span>The model: five nouns</h2>
+
+<p class="lead">A look is never baked into geometry. <b>Geometry produces targets; lighting produces more targets; styles resolve onto targets through a cascade; mappers turn (target + style) into polylines; modify passes reshape them; treatments turn polylines into pen-ready strokes.</b></p>
+
+<div class="pipe">
+  <div class="stage"><i>1</i><b>Scene</b><span>objects · lights · ground · backdrop · camera · face&nbsp;groups</span></div>
+  <div class="stage"><i>2</i><b>Regions</b><span>tone bands · cast shadows · specular hotspots — styleable targets made by light</span></div>
+  <div class="stage"><i>3</i><b>Cascade</b><span>face &gt; group &gt; object &gt; scene; whole-stack, fork-on-override</span></div>
+  <div class="stage"><i>4</i><b>Mappers</b><span>spiral · facet · contour · wireframe · hatch · rings · pattern:* · field:* — plus modify-existing actions (§3.4b)</span></div>
+  <div class="stage"><i>5</i><b>Treatments</b><span>stroke divisions — then HLR-safe optimization &amp; per-pen export</span></div>
+</div>
+
+<h3>3.1 Scene</h3>
+<p>A <code>scene3d</code> layer owns one scene, fully serialized in <code>layer.params</code> (JSON-safe; regenerates from params; format-versioned with a migration slot). Nodes:</p>
+<ul>
+<li><b>Objects</b> — parametric primitives: box, sphere (incl. superellipsoid exponents), cylinder, cone, torus, torus knot, capsule, plane, and the full polyhedron solid family (platonic, geodesic, Goldberg dual, prism/antiprism, cupola, star) with its deformers (expand, twist, explode, extrude, shard) as object-level params. Transform = position, yaw/pitch/roll, scale. Internally each object is a <b>SceneMesh</b>: a welded mesh (drives HLR, hit-testing, shadows) <em>plus</em> the analytic (u,v) chart where one exists (drives exact curved-surface fills).</li>
+<li><b>Lights</b> — v1: one or more <em>directional</em> lights (all eight inspiration pieces are directional; point/spot are v2). A light = azimuth/elevation + tone thresholds + <code>castShadows</code>. Each light carries a <code>type</code> field (<code>'directional'</code> in v1) so point/spot lights extend the schema without migration.</li>
+<li><b>Ground &amp; Backdrop</b> — first-class styleable receivers, default scene members. The backdrop is the infinite "sky" behind everything. <b>Paper color</b> is a document-level preview setting (dark-stock work).</li>
+<li><b>Camera</b> — isometric presets + ortho/perspective toggle; reuses <code>resolveProjection</code>/<code>projectPoint</code> and the existing on-canvas orbit gizmo.</li>
+<li><b>Face groups</b> — named face sets. <code>continuous:true</code> requires <em>parallel</em> faces (shared normal — coplanarity is sufficient, not required, so stacked block tops group fine); the group compiles to one shared planar chart: fill generated once over the union, clipped per member face, fragments re-stamped with their <code>faceId</code>.</li>
+<li><b>Assets &amp; instances</b> — imported meshes live in a content-hashed asset table referenced by id; objects may <em>instance</em> shared geometry (ten duplicated blocks reference one mesh); history snapshots clone refs, not blobs. Cap ≈8k faces with a warning.</li>
+<li><b>Determinism</b> — all sampling, region extraction, seeds, and pen sequences are deterministic: the same scene + seed + version produces the same paths and the same SVG.</li>
+</ul>
+<p><b>Stable identity.</b> Primitives emit deterministic semantic face IDs (<code>box→f:top…</code>; torus→<code>f:outer/f:inner</code> + (u,v) addressing). Imported meshes are segmented at import into dihedral-bounded <em>patches</em> — patches are the selectable unit, raw triangles never are. Edge IDs are canonical sorted vertex-pair keys. On topology change, orphaned styles invalidate <em>loudly</em> ("3 styles lost their faces — reassign?"), never silently remap. Every emitted path carries <code>meta:{objectId, faceId, role, regionClass?}</code> — the same meta channel hit-testing, transforms, and export already consume.</p>
+
+<h3>3.2 Regions &amp; drivers — lighting as a target factory</h3>
+<p>Both proposals converged on the same move independently, which is strong evidence it is right: <b>lighting produces named, styleable inputs — never pixels.</b> The merged model unifies this doc's tone bands and density drivers with the Ink-Pass proposal's driver taxonomy: a pass's <b>Driver</b> is one of <code>always · tone band · castShadow · specular · distance-to-edge · radial · noise</code> (<code>depth</code>, <code>facing</code>, and <code>curvature</code> are v2). The v1 mechanisms behind each driver are the judged, feasibility-verified ones below.</p>
+<ul>
+<li><b>Tone bands.</b> Lambert I = N·L quantized at user thresholds into named buckets (highlight / lit / shade / core). Flat faces: constant I → whole-face band assignment (trivial, exact). Curved faces: <b>Winkenbach priority modulation</b> — fills generate as prioritized stroke families; bands thin/cull priorities in highlights and add the cross-pass in shadows. No fragile iso-band polygons on curved meshes in v1; the <em>specular hotspot</em> is the one exemption (small, closed → clipping rings to it is cheap, satisfying "highlights = concentric rings" on a sphere).</li>
+<li><b>Tone is calibrated in ink, not millimetres.</b> Band response is expressed as coverage % computed from the pen's width; a one-click <em>tone ladder</em> test swatch calibrates any pen. Preview renders true pen widths on the paper color.</li>
+<li><b>Cast shadows.</b> Occluder silhouettes projected along the light direction onto ground/receiver faces. Shadows union <em>within style-equivalence classes</em>: a caster-bound style ("make <em>this</em> shadow purple") subtracts its caster's projection from the general union and fills separately; styled wins where they overlap. All booleans route through <code>FillBoolean.safeOp</code> (degrade = drop region; never crash generate()).</li>
+<li><b>Density drivers (v1 minimal).</b> A modify pass's driver can read one scalar field — <code>distanceToRegionEdge</code>, <code>radialFromPoint</code>, or <code>noise</code> — driving spacing, cull rate, or <b>perforation</b> (region-masked gap cutting: "gaps in a radial pattern of a given density", verbatim from the brief). Planar faces + receiver regions in v1; full driver plumbing v2.</li>
+<li><b>Stable addressing.</b> Region styles bind to <code>(receiver, regionClass[, casterId])</code> tuples — never polygon instances — so styles survive the light moving, shadows merging and splitting.</li>
+</ul>
+
+<h3>3.3 The cascade — Plot Styles as Ink Pass stacks</h3>
+<p>A <b>Plot Style is an ordered stack of Ink Passes, not a single render-mode enum</b> <span class="muted small">(adopted from the parallel Ink-Pass proposal — it raises the creative ceiling decisively)</span>. Every pass reads as one sentence: <b>Target → Driver → Action → Pen</b>. A collapsed pass card reads "Shadow · Hatch 45° · 2 mm · Purple". One torus can stack: base contours + thick silhouette + purple shadow hatch + ring highlights + dashed hidden lines + a four-pen cycle — each pass independently editable, reorderable, and hideable. Overlapping add-passes simply overprint — both draw, deterministically, in stack order; Knockout/Interleave combination modes are v2.</p>
+<pre class="card" style="font:.8rem/1.5 var(--mono);overflow-x:auto">styleTable: {                                  // scope → Plot Style (whole stack)
+  scene: PlotStyle,
+  byObject:  { objectId: PlotStyle },
+  byGroup:   { faceGroupId | smartSetId: PlotStyle },
+  byFace:    { "objectId/faceId": PlotStyle },
+  byRegion:  { "receiver/regionClass[/casterId]": PlotStyle },   // "ground/castShadow"
+  byEdge:    { edgeClass | "objectId/edgeClass" | "objectId/edgeId": EdgeStyle }
+}
+PlotStyle = { passes: [InkPass, …] }           // ordered; new-object template: Base · Tone · Edges · Pen Cycle
+InkPass   = { target,                          // surface | region class | edge class | smart set
+              driver,                          // always | tone band | castShadow | specular | distance | radial | noise (v2: depth, facing, curvature)
+              action,                          // ADD strokes (a mapper: family, space, params)
+                                               //   or MODIFY existing (spacing× · cull · perforate · weight · pen-swap · jitter)
+              penId }
+EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset passes — physically honest thickness
+              dash, hiddenTreatment }          // hidden: drop | dash | ghost</pre>
+<p><b>Legibility guardrails (the judged rules survive the stack model).</b> The cascade resolves the <em>whole stack</em>, most-specific-wins: face &gt; group/set &gt; object &gt; scene. Overriding forks the full stack — an explicit "Detach" moment; the inspector always shows one provenance chip ("Styled by: Object · Wood Grain" with ✕-to-clear). No per-pass inheritance across scopes in v1: "why is this face purple?" must always have one answer. New objects start from a fixed four-card template (Base Surface · Tone response · Edges · Pen Cycle), so the default experience stays exactly as simple as the old single-material model — the stack is there when you reach for it. One clarification keeps the card model honest: the Pen Cycle card is a front-end for the style's division treatment (§3.5) — whatever its position in the stack, it compiles to the division stage and always executes last (G-04).</p>
+<p><b>Swatches are copy-on-apply presets</b> (Wood Grain, Blueprint Hatch, Dash Shimmer, Solid Purple Shadow ship as starters). Editing a swatch never retroactively edits objects. Style DNA copy/paste and an Alt-click eyedropper move whole stacks between targets. Each object also keeps a <b>style stash</b>: every mapper family's params persist on the base pass, so toggling spiral→contour→spiral restores your twelve turns of tuning. <b>Looks</b> (named A/B snapshots of a whole stack for one object) are a P2 fast-follow.</p>
+
+<h3>3.4 Actions I: add-stroke mappers</h3>
+<p>An Ink Pass's <b>Action</b> is either <em>add strokes</em> (a mapper) or <em>modify existing strokes</em> (§3.4b). A mapper is a pure polyline generator on a surface, fully decoupled from visibility (fogleman/ln's architecture). Mapper params <em>extend</em> the fill-record schema — the 2D subset mounts on the existing <code>FillControlSurface</code>; native params (turns, slice-plane, band count) register alongside.</p>
+<div class="tablewrap"><table>
+<tr><th>Family</th><th>Space</th><th>Surfaces (v1)</th><th>Ported from</th></tr>
+<tr><td><code>hatch</code></td><td>screen <em>or</em> chart</td><td>all — chart-hatch allowed on analytic primitives</td><td><code>hatchPolygon</code> + Lambert spacing</td></tr>
+<tr><td><code>contour</code></td><td>world-slice / chart</td><td>all</td><td>topoform plane-slicer (slice-plane orientation = topoform's planeRotate/planeTilt)</td></tr>
+<tr><td><code>spiral</code> / <code>meridians</code></td><td>chart (exact)</td><td>analytic primitives</td><td>spiralizer samplers — turns, twist, lineCount, marker styles carried over</td></tr>
+<tr><td><code>facet</code></td><td>per-face</td><td>all</td><td>polyhedron faceBands (inset ring look)</td></tr>
+<tr><td><code>wireframe</code> / <code>trimesh</code></td><td>mesh</td><td>all</td><td>mesh edges + pole suppression</td></tr>
+<tr><td><code>rings</code></td><td>screen</td><td>backdrop, ground, planar regions — concentric about a draggable center</td><td>rings algorithm</td></tr>
+<tr><td><code>pattern:*</code> (dots, truchet, flowfield, halftone, stripes, weave, maze…)</td><td>chart</td><td>planar faces <b>and analytic-chart primitives</b> (bounded, declared metric distortion); arbitrary meshes planar-only</td><td><code>_generatePatternFillPaths</code> — all ~25 types</td></tr>
+<tr><td><code>field:*</code> (topo, wavetable)</td><td>chart</td><td>same as pattern:*</td><td>noise rack sampled over the chart</td></tr>
+<tr><td><code>none</code></td><td>—</td><td>all</td><td>blank paper as a tool</td></tr>
+</table></div>
+<p><b>Space discipline.</b> Screen-space fields are one global 2D field clipped against the <em>merged visible-silhouette union per (object × tone band)</em> — never per facet — so a plainly hatched sphere stays a family of long strokes (pen lifts matter). Chart-space fills are mm-honest on planar faces; on analytic charts distortion is bounded and declared. <b>Fill-record granularity:</b> one record per style-equivalence class of faces (regions = the class's union); fragments are re-stamped with <code>faceId</code> during the per-face clip pass; tone <code>override</code> splits the class (accepted, documented discontinuity), tone <code>modulate</code> is a post-op on the shared field's output so global fields never break.</p>
+
+<h3>3.4b Actions II: modify-existing strokes</h3>
+<p>The second action family operates on strokes another pass already produced — this is the brief's "apply an effect to the existing lines" verbatim, and the Ink-Pass proposal's taxonomy names it well. v1 ships: <b>spacing ×</b> (Winkenbach priority thin/densify), <b>cull %</b>, <b>perforate</b> (region-masked gap cutting at a driver-set density — "gaps in a radial pattern of a given density"), <b>weight ×</b>, and <b>pen swap</b>. v2 adds jitter, warp, shorten, and suppress-below-length. Modify passes run on stroke samples before visibility, so they compose with every mapper.</p>
+
+<h3>3.5 Treatments</h3>
+<p><b><code>divideStroke</code></b> — a new core primitive: walk true arc length, cut into a repeating cycle of classes <code>[{lenMm, penId}, {gapMm}, …]</code>, each sub-path stamped <code>meta.penId</code>. Grammar: ordered cycles (A–B–A–C), weighted-random pen choice, phase fixed / per-path / jitter, <b>butt-join default</b> (pen lifts only on true gaps), gaps as a first-class "pen named none". <b>Phase is computed in pre-clip arc length</b> — the unbroken source path (or the group chart) stamps every fragment's offset, so color sequences flow seamlessly across face seams and occlusion gaps. Divisions mount on <em>every layer type</em> as an optional treatment (flowfield + divisions is inspiration piece 6, no scene needed).</p>
+<p><b>Division data flow (explicit contract):</b> division runs as a final engine-side display-pipeline stage <em>after</em> <code>engine.optimizeLayers</code> (simplify → sort → parent-path dedupe), chain-aware so pen classes sort as ordered chains; one divided output feeds canvas, preview, plot statistics, and export identically. The SVG export fix — grouping by effective per-path pen, dedupe re-keyed by effective pen — lands first as its own regression-covered PR.</p>
+
+<h2 id="demos"><span class="secno">4</span>Interactive demos</h2>
+<p>Five working prototypes of the core loops, in ~450 lines of dependency-free JS — the same math the product will use (orthographic projection, Newell normals, painter visibility, scanline hatch clipping, arc-length division). <span class="muted">Each demonstrates a specific requirement group; drag, click, and toggle everything.</span></p>
+
+<!-- ── Demo 1: Light Lab ─────────────────────────────── -->
+<div class="demo" id="demo1">
+  <header><h3>① The Light Lab — drag the shadow, style the shadow</h3><div class="why">demos: regions · shadow-as-handle · draft mode · per-region styling</div></header>
+  <div class="body">
+    <div class="stage-wrap"><canvas id="c1" width="640" height="460"></canvas><div class="hint">Drag the ☀ sun — or grab the <b>shadow tip ◆</b> and put the shadow where you want it. While dragging, shadows show as flat draft tints; release for full hatch (exactly the product's draft/final contract).</div></div>
+    <div class="ctrl">
+      <label>Cast-shadow style (region: <code>ground/castShadow</code>)</label>
+      <div class="row" id="d1pens"></div>
+      <label>Shadow hatch angle <span class="stat" id="d1angleV">45°</span></label>
+      <input type="range" id="d1angle" min="0" max="180" value="45">
+      <label>Shadow gap <span class="stat" id="d1gapV">2.0 mm</span></label>
+      <input type="range" id="d1gap" min="6" max="40" value="14">
+      <label>Face tone bands (light / mid / shade)</label>
+      <div class="row chips" id="d1bands">
+        <button class="chip on" data-b="3">3 bands</button><button class="chip" data-b="2">2 bands</button><button class="chip" data-b="1">flat</button>
+      </div>
+      <label>Object hatch</label>
+      <div class="row chips" id="d1mode">
+        <button class="chip on" data-m="screen">screen-space (voxel-city)</button><button class="chip" data-m="face">per-face angle</button>
+      </div>
+      <p class="small muted" style="margin-top:12px">The shadow is the union of every caster's projection — grab the ◆ tip: direction sets azimuth, length sets elevation. The sun follows as feedback. This is the product's input model, not just its render loop.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Demo 2: Torus mapper toggle ────────────────────── -->
+<div class="demo" id="demo2">
+  <header><h3>② Same torus, five ways — mappers + the style stash</h3><div class="why">demos: mapper registry · one-click toggling · per-family tuning preserved</div></header>
+  <div class="body">
+    <div class="stage-wrap"><canvas id="c2" width="640" height="440"></canvas><div class="hint">Drag to orbit. Click a family chip — then tune, switch away, and switch back: your tuning is preserved (the style stash).</div></div>
+    <div class="ctrl">
+      <label>Mapper family (context-bar chips)</label>
+      <div class="chips" id="d2chips">
+        <button class="chip on" data-f="spiral">◎ spiral</button>
+        <button class="chip" data-f="facet">◇ facet</button>
+        <button class="chip" data-f="contour">≋ contour</button>
+        <button class="chip" data-f="wire">▦ wire</button>
+        <button class="chip" data-f="texture">▨ texture</button>
+      </div>
+      <div id="d2params"></div>
+      <label>Pen</label>
+      <div class="row" id="d2pens"></div>
+      <p class="small muted" style="margin-top:12px">Spiral is spiralizer's math; contour is topoform's slicer; facet is polyhedron's inset bands; texture is contour + noise-rack displacement on the analytic (u,v) chart. One object, five looks — the reason these three algorithms become one.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Demo 3: Selection & face groups ────────────────── -->
+<div class="demo" id="demo3">
+  <header><h3>③ The Woodshop — V/A selection, face groups, continuous fills</h3><div class="why">demos: v/a model · Select Similar · Group Selection · shared-chart fills across parallel faces</div></header>
+  <div class="body">
+    <div class="stage-wrap"><canvas id="c3" width="640" height="440"></canvas><div class="hint" id="d3hint">Mode <b>A</b>: click a top face, then “Select similar”. Blocks sit at two heights — the group chart only needs <i>parallel</i> faces, not coplanar.</div></div>
+    <div class="ctrl">
+      <label>Selection mode</label>
+      <div class="chips" id="d3mode">
+        <button class="chip" data-m="v"><b>V</b> objects</button>
+        <button class="chip on" data-m="a"><b>A</b> faces</button>
+      </div>
+      <label>Workflow</label>
+      <div class="row" style="flex-direction:column;align-items:stretch;gap:6px">
+        <button class="chip" id="d3similar">Select similar → same normal (scoped)</button>
+        <button class="chip" id="d3group">⛓ Group selection → “Tops”</button>
+        <button class="chip" id="d3cont">Continuous grain across group: <b id="d3contState">off</b></button>
+        <button class="chip" id="d3reseed">↻ Re-seed selected block’s grain</button>
+      </div>
+      <div style="margin-top:10px" class="small">Provenance: <span class="provchip" id="d3prov">nothing selected</span></div>
+      <p class="small muted" style="margin-top:10px">Continuous = one fill generated in the group’s shared plane, clipped per face (rings flow across all tops). Sides always keep independent seeded grain.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Demo 4: Division lab ───────────────────────────── -->
+<div class="demo" id="demo4">
+  <header><h3>④ The Division Lab — multi-pen stroke divisions + plot physics</h3><div class="why">demos: divideStroke grammar · butt-join vs gaps · phase modes · per-pen plot stats</div></header>
+  <div class="body">
+    <div class="stage-wrap" style="background:#241f33"><canvas id="c4" width="640" height="440"></canvas><div class="hint" style="background:rgba(30,26,48,.8);color:#cfc7e8">Concentric-ring fill on dark stock, divided into a pen cycle — inspiration piece 4's shimmer. Try phase “jitter”.</div></div>
+    <div class="ctrl">
+      <label>Pen cycle (drag lengths)</label>
+      <div id="d4cycle"></div>
+      <label>Gap between segments <span class="stat" id="d4gapV">1.0 mm</span></label>
+      <input type="range" id="d4gap" min="0" max="24" value="4">
+      <label>Phase</label>
+      <div class="chips" id="d4phase">
+        <button class="chip" data-p="fixed">fixed</button>
+        <button class="chip on" data-p="perpath">per-path</button>
+        <button class="chip" data-p="jitter">jitter</button>
+      </div>
+      <label>Plot physics (per pen, live)</label>
+      <div id="d4stats" class="small" style="font-family:var(--mono)"></div>
+      <p class="small muted" style="margin-top:10px">Gap 0 = butt-joined paint-marker look (no paper between colors). Longer segments = fewer lifts. These numbers appear in the Output tab before you ever reach the machine — the machine is the renderer.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Demo 5: Cascade inspector ──────────────────────── -->
+<div class="demo" id="demo5">
+  <header><h3>⑤ The Cascade Inspector — “why is this face purple?” always has one answer</h3><div class="why">demos: styleTable resolution · fork-on-override · provenance chips</div></header>
+  <div class="body">
+    <div class="stage-wrap" style="padding:18px">
+      <div class="wire" style="background:transparent;border:none;padding:0">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center" id="d5targets"></div>
+        <div style="text-align:center;margin-top:14px">
+          <span class="ctxbar" id="d5ctx">select a target above</span>
+        </div>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>styleTable (click entries to toggle)</label>
+      <div id="d5rules" style="font-family:var(--mono);font-size:.78rem"></div>
+      <p class="small muted" style="margin-top:10px">Resolution is whole-<em>stack</em>, most-specific-wins: <b>face → group → object → scene</b>, region/edge entries beside them. Overriding forks the Plot Style — the provenance chip and ✕-to-clear keep inheritance legible.</p>
+    </div>
+  </div>
+</div>
+
+<h2 id="interaction"><span class="secno">5</span>Interaction design</h2>
+
+<h3>5.1 Selection: <kbd>V</kbd> and <kbd>A</kbd>, specialized — zero new bindings</h3>
+<p><kbd>V</kbd> already activates the select tool and <kbd>A</kbd> the direct-select tool (<code>src/ui/shortcuts.js:211/221</code>). When a <code>scene3d</code> layer is active they specialize — exactly the Illustrator convention users already have:</p>
+<ul>
+<li><b>Object mode (V):</b> click picks a whole scene object via its projected path bundle (<code>meta.objectId</code>, nearest depth wins). Standard bounds; the existing 3D orbit gizmo targets the <em>selected object</em> — with nothing selected it orbits the <em>camera</em>. Scene layers suppress the 2D layer-transform handles (no dual-meaning drags).</li>
+<li><b>Component mode (A):</b> click picks a face (point-in-projected-polygon, nearest first); <em>edges</em> hit within a screen-px tolerance win over faces; Alt-click cycles deeper through faces → regions → occluded targets, with a "Cast shadow (ground) · 2 of 3" readout in the context bar. If a region already carries a style, it is preferred on first hit. Marquee selects intersecting faces; Shift adds; plain marquee = front faces, Alt-marquee includes occluded ones ("all six sides").</li>
+<li><b>Select Similar → Smart Sets</b> (right-click): same normal / facing up · same object · same group · same style · coplanar-touching · shadowed-by (v2). Scoped to the <em>selected objects</em> by default — "expand to scene" is the secondary action, so "all tops" never accidentally grabs the floor. Any Select Similar result can be saved as a <b>Smart Set</b> — a <em>live</em> predicate that re-evaluates when the scene changes (add a tenth block: it joins "Tops" automatically) — or frozen as a static set. Smart Sets may span objects and are style targets like any face group.</li>
+<li><b>Group Selection:</b> any multi-face selection surfaces a ⛓ button in the context bar — name it (static set or live Smart Set), optionally mark it continuous (with a live parallel-faces validity check). This is the face-group birth story; selecting is not grouping.</li>
+<li>Double-click an object enters it (existing isolation breadcrumb); Esc walks out. Isolation is for crowded scenes, never a prerequisite — <kbd>A</kbd> works directly on the scene.</li>
+</ul>
+
+<h3>5.2 Building and posing</h3>
+<ul>
+<li><b>Primitive shelf</b> (panel, Scene tab): one row of icon chips — click drops at origin, drag places a ghost on the ground with drag-to-size. Feels like the existing shape tools, not a 3D app.</li>
+<li><b>Pose:</b> plain drag moves in the ground plane (the 95% case); Shift-drag lifts vertically with a live footprint circle; corner handles scale; rotation via the existing orbit gizmo.</li>
+<li><b>Camera:</b> iso presets (NE/NW/SE/SW, Front, Top) + ortho/perspective toggle + free orbit. No fly modes, ever.</li>
+</ul>
+
+<h3>5.3 Light: the shadow is the handle</h3>
+<p>Azimuth/elevation mean nothing to a 2D artist; "the shadow goes <em>there</em> and is <em>this long</em>" means everything. So the primary manipulation is <b>dragging the shadow's tip</b> — direction sets azimuth, length sets elevation — with the sun widget following as feedback (Demo ①). During a drag, shadows render as flat draft tints from ground-projection only (no polygon booleans → nothing can flicker); full regions and fills regenerate debounced on release.</p>
+
+<h3>5.4 One style surface</h3>
+<p>Selecting anything morphs the context bar to a scene context with five mapper-family chips — one click swaps the family, the style stash preserves each family's tuning. The chip's caret opens the <b>Style popover</b>: a <code>FillControlSurface</code> mount (extended with the mapper families' native params + pen row + tone + divisions). The panel's Style tab mounts <em>the same schema on the same params bag</em> — chips and popover are shortcuts into it, never parallel implementations (the paint-bucket panel-doubling lesson). A radial pie menu is a P2 fast-follow; chips already make toggling one click.</p>
+
+<div class="grid2">
+<div>
+<h4>Panel (bespoke tabbed, TextPanel pattern)</h4>
+<div class="wire"><div class="panel">
+  <div class="tabs"><span class="on">Scene</span><span>Style</span><span>Output</span></div>
+  <div class="shelfrow"><i>◫</i><i>◉</i><i>▭</i><i>◎</i><i>△</i><i>⬠</i><i>⌂</i><i title="import">⇪</i><i title="light">☀</i></div>
+  <div class="treerow"><span>☀ Sun</span><span class="sw"><i>◐</i></span></div>
+  <div class="treerow sel"><span>▾ ◫ Cube 1</span><span class="sw"><i>▨</i><i>👁</i></span></div>
+  <div class="treerow" style="padding-left:26px"><span>⛓ Tops <i style="border:none">(continuous)</i></span></div>
+  <div class="treerow"><span>▸ ◎ Torus</span><span class="sw"><i>◎</i><i>👁</i></span></div>
+  <div class="treerow"><span>▭ Ground</span><span class="sw"><i>≋</i><i>👁</i></span></div>
+  <div class="insp">
+    <b>Cube 1 · face f:top</b><br>
+    <span class="provchip">Styled by: Group “Tops” · Wood Grain <b style="cursor:pointer">✕</b></span>
+    <div style="margin-top:8px" class="chips"><span class="chip">◎</span><span class="chip">◇</span><span class="chip on">▨</span><span class="chip">▦</span><span class="chip">≋</span></div>
+  </div>
+</div></div>
+</div>
+<div>
+<h4>Context bar (scene contexts)</h4>
+<p style="text-align:center;margin-top:26px"><span class="ctxbar">Torus 2 <span class="cc"><span>◎</span><span class="on">◇</span><span>≋</span><span>▦</span><span>▨</span></span> <span style="width:14px;height:14px;border-radius:4px;background:var(--pen-purple);display:inline-block"></span> ⛓ ⋯</span></p>
+<p style="text-align:center"><span class="ctxbar">Cast shadow (ground) · <b>2 of 3</b> <span class="cc"><span class="on">▨</span></span> <span style="width:14px;height:14px;border-radius:4px;background:var(--pen-purple);display:inline-block"></span></span></p>
+<h4>Scene-scoped keys (registered only while a scene3d layer is active)</h4>
+<div class="tablewrap"><table>
+<tr><th>Key</th><th>Action</th></tr>
+<tr><td><kbd>V</kbd> / <kbd>A</kbd></td><td>object / component mode (existing tools)</td></tr>
+<tr><td><kbd>A</kbd> again / <kbd>2</kbd> <kbd>3</kbd></td><td>cycle component submode · direct: edge / face (vertex is v2; status bar shows "A · Face")</td></tr>
+<tr><td><kbd>Tab</kbd></td><td>toggle V↔A</td></tr>
+<tr><td><kbd>L</kbd></td><td>select light</td></tr>
+<tr><td><kbd>Alt</kbd>-click</td><td>cycle depth / region sub-targets</td></tr>
+<tr><td><kbd>Alt</kbd>-click (popover open)</td><td>style eyedropper</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>exit isolation</td></tr>
+</table></div>
+</div>
+</div>
+
+<p><b>Undo:</b> one history entry per gesture (snapshot on pointer-down via <code>onEdit</code>, commit on release — the app-wide contract), taken on release only; <code>sceneSelection</code> restores with the snapshot.</p>
+
+<h2 id="arch"><span class="secno">6</span>Architecture &amp; reuse</h2>
+
+<h3>6.1 Pipeline</h3>
+<div class="pipe">
+  <div class="stage"><i>S1</i><b>Assemble</b><span>objects → world-space SceneMeshes + charts, normals, edge adjacency</span></div>
+  <div class="stage"><i>S2</i><b>Project</b><span>resolveProjection / projectPoint (unchanged); per-face polygons + depth</span></div>
+  <div class="stage"><i>S3</i><b>Classify edges</b><span>silhouette · crease · boundary · hidden (Blender Line Art taxonomy)</span></div>
+  <div class="stage"><i>S4</i><b>Regions</b><span>tone bands · cast shadows (class-scoped union) · specular hotspots</span></div>
+  <div class="stage"><i>S5</i><b>Map fills</b><span>cascade-resolved mappers per style class; chart or screen space; modify passes (spacing · cull · perforate) run here, pre-visibility</span></div>
+  <div class="stage"><i>S6</i><b>Visibility</b><span>flat-face fast path + scene depth buffer; binary + dash</span></div>
+  <div class="stage"><i>S7</i><b>Treat</b><span>outline weight (offset passes) on classified edges</span></div>
+  <div class="stage"><i>S8</i><b>Optimize → divide → export</b><span>simplify · sort · dedupe · divideStroke · per-pen SVG</span></div>
+</div>
+
+<h3>6.2 Visibility strategy (the crux, specified honestly)</h3>
+<ul>
+<li><b>Flat-face fast path</b> (default for polyhedral scenes): z-sorted projected face polygons clip farther paths via <code>segmentPathByPolygons</code> (crash-proof, exact). Occluder depth is computed <em>per sample from the face's support plane at (x,y)</em> — never one scalar z per face (large ground-plane receivers and coplanar contacts break scalar sorting). Ground and backdrop are universal never-occluders. Auto-fallback to the depth buffer when two objects' depth ranges overlap ambiguously.</li>
+<li><b>Scene depth buffer</b> (curved/mixed scenes): this is <em>new API work, not a promotion</em> — today's <code>occludeSegmentsDepthBuffer</code> takes one global mode/bias and has no owner concept. Phase 1 builds: rasterize the scene's triangle soup once per frame into a reusable buffer exposing <code>depthAt(x,y)</code>; segments carry <code>{ownerId, mode, bias}</code>; owner-aware bias prevents self-occlusion acne.</li>
+<li><b>See-through v1 = binary + dash:</b> per-object <code>solid | xray</code> (hidden runs dropped or dashed — today's <code>hiddenLineMode</code> conventions). Quantitative invisibility (per-level styling) is v2, restricted to the flat-face path where counting occluders is cheap.</li>
+</ul>
+
+<h3>6.3 Reuse map (extract-and-rewire, not free)</h3>
+<p class="muted small">Mapper sources are currently IIFE-private and shaped by per-algorithm param bags. Phase 0C extracts them into shared modules <em>and rewires the three legacy algorithms to consume the extraction</em>, gated on unchanged visual baselines — the honest cost of reuse.</p>
+<div class="tablewrap"><table>
+<tr><th>Existing code</th><th>Role in Scene Studio</th></tr>
+<tr><td><code>geometry3d.js</code> (1.1k lines)</td><td>Kernel: vec math, rotate/project, <code>resolveProjection</code>, silhouette/crease extraction, <code>occludeSegments</code> + depth-buffer base, <code>marchingSquares</code>, <code>hatchPolygon</code>/<code>lambertHatch</code>, hidden-dash conventions, preview throttle</td></tr>
+<tr><td><code>spiralizer.js</code></td><td>Parametric samplers → analytic charts; spiral/meridian mappers; marker system; arc-length walker (divideStroke's model)</td></tr>
+<tr><td><code>polyhedron.js</code></td><td>Solid generators (platonic/geodesic/dual/prism/cupola/star) + deformers → shelf object family; faceBands → facet mapper</td></tr>
+<tr><td><code>topoform.js</code></td><td><code>makeGridMesh</code>/<code>makeBoxMesh</code>/<code>weldMesh</code> → canonical mesh builders; plane-slicer → contour mapper; specular half-vector</td></tr>
+<tr><td><code>pattern.js</code> <code>_generatePatternFillPaths</code></td><td>All ~25 region fill types, scanline-clipped (crash-proof) — pattern:*/field:* mappers + region fills</td></tr>
+<tr><td><code>fill-boolean.js</code> / <code>path-boolean.js</code></td><td>Shadow ∩ face and group-chart unions via <code>safeOp</code> (degrade, never crash) / per-face clipping + flat-face HLR</td></tr>
+<tr><td><code>fill-control-surface.js</code></td><td>The one style-editing surface — extended with mapper families, pen/tone/divisions sections (Phase 0D registers them; paint-bucket + Text hosts regression-tested)</td></tr>
+<tr><td><code>paint-bucket-ops.js</code></td><td>Fill-record schema base; <code>expandFill</code> per-pen bake pattern</td></tr>
+<tr><td><code>noise-rack.js</code></td><td>Displacement fields (wood grain, hand-wobble), image-luma density samplers</td></tr>
+<tr><td><code>stl-parser.js</code>, <code>optimization-utils.js</code>, renderer gizmo (<code>ROTATION_3D_SPECS</code>), context bar, layers-panel tree, <code>UI.Tabs/PenList/Section…</code></td><td>Import; pathLength/offset/join; per-object orbit gizmo (selection-aware target resolver added); scene contexts; scene tree; panel primitives</td></tr>
+</table></div>
+
+<h3>6.4 Performance contract</h3>
+<ul>
+<li><b>Dirty-flag DAG from day one</b> (not a late phase): camera dirties projection+; a light dirties regions only; a style edit dirties one class's fills; an object transform dirties that object + shadows it casts. Per-stage caches keyed on signature hashes (compound-cache precedent).</li>
+<li><b>Draft mode is structural:</b> flat tints for regions, cull-only visibility, decimated sampling during drags; full quality debounced on release (<code>SETTINGS.preview3dQuality</code> hook).</li>
+<li><b>Mesh interning:</b> content-hashed asset table outside history clones (<code>cloneLayerParams</code> generalized); release-only snapshots. NOTE: styleTable still deep-clones per gesture — accepted v1 cost, monitored in the perf suite.</li>
+<li><b>No workers in v1</b> — the app must run from <code>file://</code>. Worker offload of the depth buffer is a v2 enhancement when served over http.</li>
+<li>Budgets: ≤8k faces/scene (import warning), light-drag ≥20fps in draft, full regen ≤1.5s for a 12-object scene.</li>
+<li><b>Complexity is never silently dropped.</b> Before dense operations, the UI shows a path-count/plot-length estimate and offers a preview LOD — the live-app audit found a default wireframe sphere producing ~30,000 paths / 57&nbsp;m of plotting with no warning; that class of surprise is a release blocker here.</li>
+</ul>
+
+<h2 id="reqs"><span class="secno">7</span>Requirements</h2>
+
+<p><b>Summary.</b> v1 spans 12 requirement groups (A–L, 107 MUSTs): scene/objects and selection (A–B), the style cascade and mappers (C–D), lighting-made regions (E), visibility (F), stroke divisions (G), panels (H), performance and serialization (I–J), export and testing (K–L). The riskiest clusters are the shadow booleans (E-07…E-09), the depth-buffer API (F-04/F-05), and the Phase 0C extraction (L-02). Point/spot lights, OBJ, quantitative x-ray, and full density plumbing form the v2 line. Requirements are written in Simplified Technical English: short sentences, active voice, one requirement per item. Priorities: <span class="pill must">MUST</span> ships in v1 · <span class="pill should">SHOULD</span> ships in v1 if the phase stays on budget · <span class="pill v2">V2</span> is deferred and flagged. Every MUST maps to a phase in §8 and at least one test class.</p>
+
+<h3>A · Scene and objects</h3>
+<div class="req"><b class="id">A-01</b><span class="pr M">must</span>The <code>scene3d</code> layer must hold many objects, one or more directional lights, one ground plane, one backdrop, and one camera.</div>
+<div class="req"><b class="id">A-02</b><span class="pr M">must</span>The primitive set must include: box, sphere, superellipsoid, cylinder, cone, torus, torus knot, capsule, plane, and the polyhedron solid family (platonic, geodesic, dual, prism, antiprism, cupola, star).</div>
+<div class="req"><b class="id">A-03</b><span class="pr M">must</span>Each primitive must stay parametric. The user must not edit a primitive as a raw mesh.</div>
+<div class="req"><b class="id">A-04</b><span class="pr M">must</span>Each object must have position, yaw, pitch, roll, and scale.</div>
+<div class="req"><b class="id">A-05</b><span class="pr M">must</span>Each object must build a SceneMesh: a welded mesh, plus an analytic (u,v) chart when one exists.</div>
+<div class="req"><b class="id">A-06</b><span class="pr M">must</span>Polyhedron deformers (expand, twist, explode, extrude, shard) must be object-level parameters on the solid family.</div>
+<div class="req"><b class="id">A-07</b><span class="pr M">must</span>Every face must have a deterministic ID that is stable across regeneration.</div>
+<div class="req"><b class="id">A-08</b><span class="pr M">must</span>Every edge must have a deterministic ID from its sorted vertex pair.</div>
+<div class="req"><b class="id">A-09</b><span class="pr M">must</span>When topology changes, the system must invalidate orphaned styles with a visible message. It must not remap them silently.</div>
+<div class="req"><b class="id">A-10a</b><span class="pr M">must</span>STL import must land in Phase 4.</div>
+<div class="req"><b class="id">A-10b</b><span class="pr M">must</span>The importer must segment the mesh into dihedral-bounded patches.</div>
+<div class="req"><b class="id">A-10c</b><span class="pr M">must</span>Patches are the selectable unit for imported meshes.</div>
+<div class="req"><b class="id">A-10d</b><span class="pr M">must</span>STL import must present a repair sheet: units, up axis, centering, normal repair / weld tolerance, and preview simplification.</div>
+<div class="req"><b class="id">A-11</b><span class="pr M">must</span>Imported meshes must live in a content-hashed asset table. History snapshots must clone references, not mesh data.</div>
+<div class="req"><b class="id">A-12</b><span class="pr M">must</span>The system must warn at 8,000 faces per scene.</div>
+<div class="req"><b class="id">A-13</b><span class="pr S">should</span>Drag-and-drop of an STL file onto the canvas should import it into the active scene.</div>
+<div class="req"><b class="id">A-14</b><span class="pr C">v2</span>OBJ import (named groups become face groups); glTF; SVG-extrude; point and spot lights.</div>
+<div class="req"><b class="id">A-15</b><span class="pr M">must</span>Each light must carry a <code>type</code> field. v1 implements <code>directional</code>. The schema must accept new light types without a format migration.</div>
+<div class="req"><b class="id">A-16</b><span class="pr M">must</span>Objects must be able to instance a shared mesh asset. Ten duplicates must reference one mesh, in memory and in undo snapshots.</div>
+<div class="req"><b class="id">A-17</b><span class="pr M">must</span>Generation must be deterministic: the same scene, seed, and version must produce the same paths and the same SVG.</div>
+
+<h3>B · Selection</h3>
+<div class="req"><b class="id">B-01a</b><span class="pr M">must</span>With a scene layer active, the select tool (<kbd>V</kbd>) must pick whole objects.</div>
+<div class="req"><b class="id">B-01b</b><span class="pr M">must</span>With a scene layer active, the direct tool (<kbd>A</kbd>) must pick faces, edges, and regions.</div>
+<div class="req"><b class="id">B-01c</b><span class="pr M">must</span>The feature must not add new global keybindings.</div>
+<div class="req"><b class="id">B-02</b><span class="pr M">must</span>Face hit-testing must use point-in-projected-polygon with nearest depth first.</div>
+<div class="req"><b class="id">B-03</b><span class="pr M">must</span>Edge hit-testing must use a screen-pixel distance threshold. Edges must win over faces inside the threshold.</div>
+<div class="req"><b class="id">B-04</b><span class="pr M">must</span>Alt-click must cycle through overlapping targets (face → region → occluded). The context bar must show the cycle position ("2 of 3").</div>
+<div class="req"><b class="id">B-05</b><span class="pr M">must</span>When a region already has a style, a click must prefer the region.</div>
+<div class="req"><b class="id">B-06</b><span class="pr M">must</span>Marquee in component mode must select intersecting front faces. Alt-marquee must include occluded faces.</div>
+<div class="req"><b class="id">B-07</b><span class="pr M">must</span>Select Similar must offer: same normal, same object, same group, same style, coplanar-touching. The default scope is the selected objects. "Expand to scene" is a secondary action.</div>
+<div class="req"><b class="id">B-07b</b><span class="pr M">must</span>A Select Similar result must be savable as a live Smart Set (the predicate re-evaluates on scene change) or a frozen static set. Sets may span objects and are style targets.</div>
+<div class="req"><b class="id">B-07c</b><span class="pr M">must</span>The component submode (edge / face) must be visible in the status readout ("A · Face"). Pressing <kbd>A</kbd> again cycles submodes; <kbd>2</kbd>/<kbd>3</kbd> select directly. Vertex submode is v2.</div>
+<div class="req"><b class="id">B-08</b><span class="pr M">must</span>A multi-face selection must show a "Group Selection" action in the context bar. The action names the group and offers the continuous toggle with a live validity check.</div>
+<div class="req"><b class="id">B-09</b><span class="pr M">must</span>Double-click must enter an object (isolation breadcrumb). Component selection must also work without isolation.</div>
+<div class="req"><b class="id">B-10</b><span class="pr M">must</span>Selection state must restore with undo snapshots.</div>
+
+<h3>C · Plot Styles, Ink Passes, and the cascade</h3>
+<div class="req"><b class="id">C-01</b><span class="pr M">must</span>One styleTable per scene must hold entries at scopes: scene, object, face group / smart set, face, region tuple, and edge (class, object/class, object/edge).</div>
+<div class="req"><b class="id">C-02</b><span class="pr M">must</span>Resolution must be whole-stack, most-specific-wins: face &gt; group/set &gt; object &gt; scene.</div>
+<div class="req"><b class="id">C-03</b><span class="pr M">must</span>An override must fork the full Plot Style stack. The inspector must show one provenance chip with a clear-override control.</div>
+<div class="req"><b class="id">C-04a</b><span class="pr M">must</span>A Plot Style must be an ordered stack of Ink Passes. Passes must support reorder, hide, duplicate, and delete.</div>
+<div class="req"><b class="id">C-04b</b><span class="pr M">must</span>Every Ink Pass must declare: Target, Driver, Action, and Pen. A collapsed pass card must read as that sentence.</div>
+<div class="req"><b class="id">C-04c</b><span class="pr M">must</span>Actions divide into add-strokes (a mapper) and modify-existing (spacing ×, cull %, perforate, weight ×, pen swap in v1).</div>
+<div class="req"><b class="id">C-04d</b><span class="pr M">must</span>New objects must start from the fixed four-card template: Base Surface, Tone response, Edges, Pen Cycle.</div>
+<div class="req"><b class="id">C-04e</b><span class="pr M">must</span>Mapper params extend the fill-record schema.</div>
+<div class="req"><b class="id">C-05</b><span class="pr M">must</span>Region styles must bind to (receiver, regionClass, optional casterId) tuples. They must not bind to polygon instances.</div>
+<div class="req"><b class="id">C-06</b><span class="pr M">must</span>An EdgeStyle must hold: pen, weight in mm, dash, and hidden treatment (drop, dash, or ghost).</div>
+<div class="req"><b class="id">C-07</b><span class="pr M">must</span>Edge weight must render as N parallel offset passes. The silhouette class must default heavier than creases.</div>
+<div class="req"><b class="id">C-08</b><span class="pr M">must</span>Each object must keep a style stash: the last params of every mapper family. A family toggle must restore that family's stash.</div>
+<div class="req"><b class="id">C-09</b><span class="pr M">must</span>Swatches must be copy-on-apply presets. A swatch edit must not change objects that used it.</div>
+<div class="req"><b class="id">C-10</b><span class="pr M">must</span>Style copy/paste must move the whole stack between targets. Alt-click with an open popover must sample a target's stack (eyedropper).</div>
+<div class="req"><b class="id">C-11</b><span class="pr S">should</span>Per-face and per-assignment random seeds should be editable ("re-seed this face's grain").</div>
+<div class="req"><b class="id">C-12</b><span class="pr C">v2</span>Looks: named A/B snapshots of a whole stack per object, switchable without duplicating geometry.</div>
+
+<h3>D · Mappers</h3>
+<div class="req"><b class="id">D-01</b><span class="pr M">must</span>The v1 mapper registry must include: hatch, contour, spiral/meridians, facet, wireframe/trimesh, rings, pattern:*, field:*, and none.</div>
+<div class="req"><b class="id">D-02</b><span class="pr M">must</span>Each mapper must declare its space: chart or screen.</div>
+<div class="req"><b class="id">D-03</b><span class="pr M">must</span>Screen-space fields must clip against the merged visible-silhouette union per (object × tone band). They must not clip per facet.</div>
+<div class="req"><b class="id">D-04</b><span class="pr M">must</span>pattern:* and field:* mappers must work on planar faces and on analytic-chart primitives (torus, sphere, cylinder, cone). Arbitrary meshes are planar-only in v1.</div>
+<div class="req"><b class="id">D-05</b><span class="pr M">must</span>The rings mapper must draw concentric rings about a draggable center on backdrop, ground, and planar regions.</div>
+<div class="req"><b class="id">D-06</b><span class="pr M">must</span>The spiral mapper must keep spiralizer's controls: turns, twist turns, line count, render/marker styles.</div>
+<div class="req"><b class="id">D-07</b><span class="pr M">must</span>The contour mapper must keep topoform's slice-plane orientation controls.</div>
+<div class="req"><b class="id">D-08</b><span class="pr M">must</span>One fill record must serve each style-equivalence class of faces. The per-face clip pass must re-stamp fragments with their faceId.</div>
+<div class="req"><b class="id">D-09</b><span class="pr M">must</span>A continuous face group must generate one fill in the shared chart and clip it per member face. Member faces must be parallel (shared normal); coplanarity is not required.</div>
+<div class="req"><b class="id">D-10</b><span class="pr S">should</span>The system should offer a noise-rack displacement post-op on fill outputs (grain warble, hand wobble).</div>
+
+<h3>E · Lighting and regions</h3>
+<div class="req"><b class="id">E-01</b><span class="pr M">must</span>Lambert tone must quantize into user-named bands at user thresholds (default: highlight, lit, shade, core).</div>
+<div class="req"><b class="id">E-02</b><span class="pr M">must</span>On flat faces, the whole face must take its constant-tone band.</div>
+<div class="req"><b class="id">E-03a</b><span class="pr M">must</span>On curved faces, bands must modulate prioritized stroke families: thin or cull in highlights, add the cross-pass in shadows.</div>
+<div class="req"><b class="id">E-03b</b><span class="pr M">must</span>v1 must not build iso-band polygons on curved meshes. The specular hotspot is the one exception.</div>
+<div class="req"><b class="id">E-04</b><span class="pr M">must</span>The specular hotspot region must accept region-shaped fills (for example, concentric rings) on curved and flat surfaces.</div>
+<div class="req"><b class="id">E-05</b><span class="pr M">must</span>Each band must either modulate the base passes' output or override it with its own add-stroke pass.</div>
+<div class="req"><b class="id">E-06</b><span class="pr M">must</span>The system must express tone response as ink coverage %, computed from pen width. The tone-ladder generator must output a labeled swatch grid at fixed coverage steps (10–90%) for any pen.</div>
+<div class="req"><b class="id">E-07</b><span class="pr M">must</span>Cast shadows must project occluder silhouettes along the light direction onto the ground and receiver faces.</div>
+<div class="req"><b class="id">E-08a</b><span class="pr M">must</span>Shadows must union within each style-equivalence class.</div>
+<div class="req"><b class="id">E-08b</b><span class="pr M">must</span>A caster-bound style must subtract its caster's projection from the general union.</div>
+<div class="req"><b class="id">E-08c</b><span class="pr M">must</span>The styled fill wins where a styled and an unstyled shadow overlap.</div>
+<div class="req"><b class="id">E-09</b><span class="pr M">must</span>All area booleans must run through <code>safeOp</code>. A failed boolean must drop the region. It must never crash generation.</div>
+<div class="req"><b class="id">E-10</b><span class="pr M">must</span>A modify pass must accept one scalar driver: distance-to-region-edge, radial-from-point, or noise. The driver must drive spacing, cull rate, or perforation. v1 scope: planar faces and receiver regions. (Depth, facing, and curvature drivers are v2.)</div>
+<div class="req"><b class="id">E-11</b><span class="pr M">must</span>Perforation must cut region-masked gaps into existing strokes at a given density and gap length.</div>
+<div class="req"><b class="id">E-12</b><span class="pr C">v2</span>Specular spill onto neighbor faces; point/spot lights with falloff; penumbra ramps; full density-field plumbing. (Spill needs receiver-side reflected-ray region generation — genuinely new machinery no inspiration piece depends on; the hotspot-on-object half of the ask ships in v1 via E-04.)</div>
+
+<h3>F · Visibility</h3>
+<div class="req"><b class="id">F-01</b><span class="pr M">must</span>Polyhedral scenes must use the flat-face fast path: z-sorted projected face polygons clipping farther paths.</div>
+<div class="req"><b class="id">F-02</b><span class="pr M">must</span>Fast-path occluder depth must come from the face's support plane at each sample point, not one scalar per face.</div>
+<div class="req"><b class="id">F-03</b><span class="pr M">must</span>Ground and backdrop must never occlude.</div>
+<div class="req"><b class="id">F-04</b><span class="pr M">must</span>The scene depth buffer must rasterize the scene's triangles once per frame and expose a <code>depthAt(x,y)</code> query. Segments must carry {ownerId, mode, bias}.</div>
+<div class="req"><b class="id">F-05</b><span class="pr M">must</span>The system must fall back from the fast path to the depth buffer when object depth ranges overlap ambiguously.</div>
+<div class="req"><b class="id">F-06</b><span class="pr M">must</span>Each object must be solid or x-ray. Hidden runs must drop (solid) or dash (x-ray).</div>
+<div class="req"><b class="id">F-07</b><span class="pr C">v2</span>Quantitative invisibility (style per occlusion level), flat-face path only.</div>
+
+<h3>G · Treatments, pens, divisions</h3>
+<div class="req"><b class="id">G-01</b><span class="pr M">must</span><code>divideStroke</code> must cut a polyline into a repeating cycle of {length, pen} and {gap} classes by true arc length in mm.</div>
+<div class="req"><b class="id">G-02</b><span class="pr M">must</span>The grammar must support: ordered cycles, weighted-random pen choice, phase fixed / per-path / jitter, butt-join (default), and true gaps.</div>
+<div class="req"><b class="id">G-03a</b><span class="pr M">must</span>The engine must compute phase in pre-clip arc length.</div>
+<div class="req"><b class="id">G-03b</b><span class="pr M">must</span>Fragments must inherit their source-path offset, so color sequences continue across face seams and occlusion gaps.</div>
+<div class="req"><b class="id">G-04</b><span class="pr M">must</span>Division must run as the final engine stage, after simplify, sort, and parent-path dedupe. One divided output must feed canvas, preview, plot stats, and export.</div>
+<div class="req"><b class="id">G-05</b><span class="pr M">must</span>Divided pen classes must sort as ordered chains. They must not be exempt from travel optimization.</div>
+<div class="req"><b class="id">G-06</b><span class="pr M">must</span>Divisions must mount as an optional treatment on every layer type, with the same editor.</div>
+<div class="req"><b class="id">G-07</b><span class="pr M">must</span>Sub-paths must carry <code>meta.penId</code>. The renderer and exporter must honor it.</div>
+
+<h3>H · Panels and controls</h3>
+<div class="req"><b class="id">H-01</b><span class="pr M">must</span>The scene panel must use the bespoke-panel hook with three tabs: Scene (shelf, tree, inspector), Style (cascade + edge classes + divisions), Output (camera, quality, plot stats).</div>
+<div class="req"><b class="id">H-02</b><span class="pr M">must</span>All style-editing surfaces (context-bar chips, popover, Style tab) must mount one control schema on one params bag.</div>
+<div class="req"><b class="id">H-03</b><span class="pr M">must</span>FillControlSurface must gain registered sections for mapper families, pen, tone, and divisions. Paint-bucket and Text hosts must pass regression tests.</div>
+<div class="req"><b class="id">H-04</b><span class="pr M">must</span>The orbit gizmo must target the selected object. With no selection, it must orbit the camera.</div>
+<div class="req"><b class="id">H-05</b><span class="pr M">must</span>The shadow tip must be draggable: direction sets azimuth, length sets elevation. During the drag, shadows must render as flat tints. Full fills regenerate on release.</div>
+<div class="req"><b class="id">H-06</b><span class="pr M">must</span>The scene tree must reuse the layers-panel nested rendering. Tree and canvas selection must stay in sync.</div>
+<div class="req"><b class="id">H-07</b><span class="pr M">must</span>Paper color must be a document-level preview setting. Preview must render true pen widths on the paper color.</div>
+<div class="req"><b class="id">H-08</b><span class="pr S">should</span>New-layer defaults: one sun, ground, backdrop, one starter object, and a hint card.</div>
+<div class="req"><b class="id">H-09</b><span class="pr C">v2</span>Radial pie menu; on-face hatch-angle vane; "distribute selected pens across cycle" quick action.</div>
+
+<h3>I · Performance</h3>
+<div class="req"><b class="id">I-01</b><span class="pr M">must</span>Dirty-flag caching must ship with Phase 1: camera, light, style, and transform edits must each recompute only their downstream stages.</div>
+<div class="req"><b class="id">I-02</b><span class="pr M">must</span>Light drags must hold 20 fps or better in draft mode on a 12-object scene.</div>
+<div class="req"><b class="id">I-03</b><span class="pr M">must</span>Full regeneration of a 12-object scene must finish within 1.5 s on the perf-suite reference machine (the CI perf runner).</div>
+<div class="req"><b class="id">I-04</b><span class="pr M">must</span>v1 must not require web workers. The app must keep working from <code>file://</code>.</div>
+<div class="req"><b class="id">I-05</b><span class="pr M">must</span>The system must never silently drop complexity. Before dense operations, it must show a path-count and plot-length estimate and offer a preview LOD.</div>
+
+<h3>J · Serialization and migration</h3>
+<div class="req"><b class="id">J-01</b><span class="pr M">must</span>The whole scene (objects, lights, camera, groups, styleTable, assets) must serialize inside <code>layer.params</code> as JSON-safe data.</div>
+<div class="req"><b class="id">J-02</b><span class="pr M">must</span>The scene schema must carry its own version and a migration entry in the format chain.</div>
+<div class="req"><b class="id">J-03</b><span class="pr M">must</span><code>cloneLayerParams</code> must handle the asset table generically (clone by reference into snapshots).</div>
+<div class="req"><b class="id">J-04</b><span class="pr M">must</span>A <code>user-presets/scene3d/</code> directory and <code>ALGO_DEFAULTS.scene3d</code> must exist. Defaults live in config, never in the algorithm.</div>
+<div class="req"><b class="id">J-05</b><span class="pr M">must</span>Old spiralizer, polyhedron, and topoform layers must keep loading unchanged.</div>
+
+<h3>K · Export and plot physics</h3>
+<div class="req"><b class="id">K-01</b><span class="pr M">must</span>SVG export must group paths by effective per-path pen, with regression tests over compound, morph, and mask documents.</div>
+<div class="req"><b class="id">K-02</b><span class="pr M">must</span>Export dedupe must key by effective pen.</div>
+<div class="req"><b class="id">K-03</b><span class="pr M">must</span>The Output tab must show pen lifts, travel distance, and estimated plot time per pen before export.</div>
+<div class="req"><b class="id">K-04</b><span class="pr S">should</span>Per-pen registration marks should be an export option.</div>
+<div class="req"><b class="id">K-05</b><span class="pr M">must</span>Minimum-segment and minimum-gap guards must warn when division output violates the active machine profile, with the violating fragment count.</div>
+
+<h3>L · Testing and docs</h3>
+<div class="req"><b class="id">L-01</b><span class="pr M">must</span>Every phase must pass its test-matrix gate: unit (geometry, regions, division), integration (panel, selection), e2e (flows), visual (hero scenes), perf (drag loop).</div>
+<div class="req"><b class="id">L-02</b><span class="pr M">must</span>Phase 0C refactors must keep the three legacy algorithms' visual baselines unchanged.</div>
+<div class="req"><b class="id">L-03</b><span class="pr M">must</span>Each behavior change must have a test that fails without it (repo RGR rule).</div>
+<div class="req"><b class="id">L-04</b><span class="pr M">must</span>Docs contract per repo rules: README, CHANGELOG, plans.md, in-app help, version sync.</div>
+
+<h2 id="plan"><span class="secno">8</span>Implementation plan — parallel phases</h2>
+
+<p>Six phases. Inside each phase, workstreams touch <b>disjoint file sets</b> and can run as parallel implementer→adversarial-review→judge teams in isolated worktrees (the project's established multi-agent pattern). Every phase ends at a test gate; Phase 0's three product-independent enablers de-risk everything after them.</p>
+
+<div class="phase"><header><h3>Phase 0 · Enablers</h3><span class="meta">4 parallel streams · no user-visible scene yet · every stream independently shippable</span></header>
+<div class="streams">
+  <div class="stream"><b>0A · Export pen grouping</b>Group by effective per-path pen; re-key dedupe; define per-pen-subsequence sort semantics. Lands first — touches every existing document, so it gets its own regression-covered PR.<span class="files">src/ui/ui-file-io.js · tests</span></div>
+  <div class="stream"><b>0B · divideStroke</b>Core primitive + full grammar + pre-clip phase + chain semantics + the division-stage data-flow contract (post-optimizeLayers engine stage feeding canvas, stats, export).<span class="files">src/core/stroke-divide.js · engine.js hook · tests</span></div>
+  <div class="stream"><b>0C · SceneMesh extraction</b>Extract-and-rewire: charts/samplers out of spiralizer, mesh builders out of topoform, solid generators out of polyhedron — legacy algorithms consume the extraction; visual baselines must not move.<span class="files">src/core/scene3d/mesh.js, charts.js · 3 algorithm files · visual tests</span></div>
+  <div class="stream"><b>0D · Control-surface registration</b>FillControlSurface gains registered family/caps sections (mapper natives, pen, tone, divisions); paint-bucket + Text hosts regression-tested.<span class="files">src/ui/fill-control-surface.js · ui-fill-panel.js · tests</span></div>
+</div>
+<div class="gate"><b>Gate:</b> full test:ci green · legacy visual baselines unchanged · export regression suite passes on existing corpus</div>
+</div>
+
+<div class="phase"><header><h3>Phase 1 · Core scene MVP</h3><span class="meta">3 parallel streams · flat-face scenes, styled per object/face, selectable</span></header>
+<div class="streams">
+  <div class="stream"><b>1A · Engine</b>scene3d layer + params schema + assembly (world transforms) + camera + flat-face HLR (per-sample support-plane depth; ground/backdrop never occlude) + scene depth-buffer API (depthAt, ownerId) + edge classification + dirty-flag DAG.<span class="files">src/core/algorithms/scene3d.js · src/core/scene3d/* · config/defaults.js</span></div>
+  <div class="stream"><b>1B · Panel & styles</b>Scene3DPanel (Scene tab: shelf, tree, inspector) + styleTable + cascade resolver + provenance chips + asset-aware cloneLayerParams + serialization/migration.<span class="files">src/ui/panels/scene3d-panel.js · engine serialization · skin/components.css</span></div>
+  <div class="stream"><b>1C · Selection & canvas</b>v/a specialization + face/edge hit-testing + Alt-cycling + marquee + gizmo target resolver + ground-drag/Shift-lift + context-bar scene contexts.<span class="files">renderer.js · context-bar · shortcuts (scene-scoped)</span></div>
+</div>
+<div class="gate"><b>Gate:</b> build a 6-box composition, style objects/faces independently, export correct per-pen SVG · e2e flow test · perf: 12-object drag ≥20fps</div>
+</div>
+
+<div class="phase"><header><h3>Phase 2 · Light</h3><span class="meta">2 parallel streams · the magic trick</span></header>
+<div class="streams">
+  <div class="stream"><b>2A · Regions</b>Tone bands (flat whole-face + curved priority modulation) + coverage-% calibration + tone ladder + cast shadows (class-scoped union, safeOp degrade) + region styling + ground/backdrop receivers.<span class="files">src/core/scene3d/regions.js, shadows.js</span></div>
+  <div class="stream"><b>2B · Light UX</b>Sun widget + shadow-as-handle drag (draft tints during drag, debounced full regen) + band editor + paper-color pen-true preview.<span class="files">renderer overlays · scene3d-panel · document settings</span></div>
+</div>
+<div class="gate"><b>Gate:</b> hero “Golden Hour” (voxel city, shadow sweep) reproduces · shadow drag never crashes under grazing light fuzz test · visual baselines for 3 lit scenes · paper-color pen-true preview verified on dark stock</div>
+</div>
+
+<div class="phase"><header><h3>Phase 3 · Mappers</h3><span class="meta">3 parallel streams · the unification payoff</span></header>
+<div class="streams">
+  <div class="stream"><b>3A · Native mappers</b>spiral/meridians, contour, facet, wireframe on SceneMesh charts + style stash. (Context-bar family chips are wired by 1C/3C, which own the context-bar file.)<span class="files">src/core/scene3d/mappers/*.js</span></div>
+  <div class="stream"><b>3B · Field mappers</b>Screen-space fields with silhouette-union clipping + rings mapper (draggable center) + pattern:*/field:* on charts (planar + analytic) + noise displacement post-op.<span class="files">mappers/screen.js, pattern-bridge.js</span></div>
+  <div class="stream"><b>3C · Face groups &amp; Smart Sets</b>Parallel-face shared charts + per-face clip/re-stamp + Group Selection + scoped Select Similar + live Smart Sets + per-face seeds.<span class="files">scene3d/groups.js, sets.js · context-bar · renderer</span></div>
+</div>
+<div class="gate"><b>Gate:</b> hero “Same Torus, Five Ways” (the succession gate) · hero “Woodshop” (stacked-block continuous tops) · visual baselines per mapper</div>
+</div>
+
+<div class="phase"><header><h3>Phase 4 · Treatments & output</h3><span class="meta">3 parallel streams · pens, physics, imports</span></header>
+<div class="streams">
+  <div class="stream"><b>4A · Divisions UX</b>Cycle editor (PenList rows) on scene styles AND as a universal per-layer treatment; phase modes; butt-join.<span class="files">scene3d-panel · layer panel treatment section</span></div>
+  <div class="stream"><b>4B · Density & physics</b>Scalar density driver (distance/radial/noise) + perforation + plot stats (lifts, travel, time per pen) in Output tab.<span class="files">scene3d/modulate.js · export stats</span></div>
+  <div class="stream"><b>4C · Import & presets</b>STL import + dihedral patch segmentation + drag-drop + swatch shelf + style DNA copy/paste + starter swatches + hero-demo presets (user-presets/scene3d/).<span class="files">stl-parser extension · scene3d/patches.js · preset bundle</span></div>
+</div>
+<div class="gate"><b>Gate:</b> hero “Disco Still Life” (4-pen shimmer + solid purple shadows + rings backdrop, on dark paper) · plot-stats accuracy test vs known geometry · import a 5k-face STL and style patches</div>
+</div>
+
+<div class="phase"><header><h3>Phase 5 · Reach</h3><span class="meta">post-v1 · prioritized by artist demand</span></header>
+<div class="streams">
+  <div class="stream"><b>Deferred, flagged</b>OBJ import · quantitative x-ray levels · specular spill · full density-field plumbing · radial pie menu · point/spot lights · section cutaways · Convert-to-Scene upgrader · worker offload (http-served) · turntable multi-frame export.<span class="files">—</span></div>
+</div>
+<div class="gate"><b>Gate per item:</b> its own RGR coverage + doc contract</div>
+</div>
+
+<h3>8.0 Release gates (every phase, non-negotiable)</h3>
+<p class="small">Adopted from the Ink-Pass proposal's doctrine — its live audit proved that visible controls cannot be assumed to equal dependable capability (the June 3D audit's silent no-ops). Three "truths" gate every release:</p>
+<ul class="small">
+<li><b>Visual truth</b> — every surfaced control changes a reviewed output under a representative scene; dense output cannot conceal a nominal effect.</li>
+<li><b>Plot truth</b> — pen groups, physical gaps, stats, optimization, sort order, and SVG all agree on the same effective path pen.</li>
+<li><b>Compatibility truth</b> — historical layers and presets stay loadable; conversion is explicit; schema migrations are versioned and tested.</li>
+</ul>
+
+<h3>8.1 Dependencies</h3>
+<p class="small" style="font-family:var(--mono)">0A → (G-gates in 4A/4B) · 0B → 4A · 0C → 1A → {2A, 3A} · 0D → 1B → 3A · 1C → 3C · 2A → 4B driver · all → 4C presets. Streams inside a phase are file-disjoint by construction; collisions found in scouting re-partition before implementation (repo rule).</p>
+
+<h3>8.2 Hero demos (ship with presets; each is a marketing asset and a test)</h3>
+<ol class="small">
+<li><b>Golden Hour</b> — voxel city, six exported frames as the light sweeps; shadows merge and stretch.</li>
+<li><b>Same Torus, Five Ways</b> — the succession gate: spiral / facet / contour / wire-xray / textured, one object.</li>
+<li><b>Disco Still Life</b> — the piece-4 homage: 4-pen dashed rings, solid purple shadows, dashed-ring backdrop, dark stock.</li>
+<li><b>Woodshop</b> — stacked blocks, one continuous knotted grain across all tops, independent sides.</li>
+<li><b>X-Ray Machine</b> — one glass object among solids, interior dashed, specular hotspot ringed.</li>
+<li><b>One Pen, All Tones</b> — the blue cutaway: a single pen, everything said with density drivers and tone bands.</li>
+</ol>
+
+<h2 id="succession"><span class="secno">9</span>Succession &amp; control parity</h2>
+<p>v1 ships <b>alongside</b> spiralizer, polyhedron, and topoform. Deprecation happens only after: (a) the "Same Torus, Five Ways" gate passes, (b) the preset libraries migrate, and (c) a per-layer "Convert to 3D Scene" upgrader covers the parametric cases. Old layer types keep loading indefinitely.</p>
+<details><summary>Control-parity appendix — where every legacy control lands</summary>
+<div class="tablewrap"><table>
+<tr><th>Legacy control</th><th>New home</th></tr>
+<tr><td>spiralizer shape + dims</td><td>primitive params (sphere/ellipsoid/cone/cylinder/torus/capsule/helix)</td></tr>
+<tr><td>spiralizer turns / twistTurns / lineCount / renderStyle / marker styles + marker fills</td><td><code>spiral</code> mapper params (schema extension)</td></tr>
+<tr><td>spiralizer surfaceMode (front / seeThrough)</td><td>object opacity solid / x-ray</td></tr>
+<tr><td>polyhedron solid family, geodesic freq, duals</td><td>shelf "Solids" object family params</td></tr>
+<tr><td>polyhedron deformers (expand/twist/explode/extrude/shard)</td><td>object-level deform params</td></tr>
+<tr><td>polyhedron faceBands (count, bulge)</td><td><code>facet</code> mapper params</td></tr>
+<tr><td>polyhedron vertex markers</td><td>edge/vertex style class (v1: edge classes; vertex glyphs v2 if missed)</td></tr>
+<tr><td>topoform primitives incl. superellipsoid exponents, torus knot</td><td>shelf primitives (sphere-family shape params)</td></tr>
+<tr><td>topoform renderMode contours/wireframe/triangleMesh</td><td>mapper choice</td></tr>
+<tr><td>topoform planeRotate / planeTilt / levels</td><td><code>contour</code> mapper slice-plane orientation + spacing</td></tr>
+<tr><td>topoform specular highlight</td><td>light hotspot region (styleable)</td></tr>
+<tr><td>shared block: hiddenLineMode / depthBias / depth cue / outline emphasis / lightPad / Lambert hatch</td><td>scene render settings + light objects + hatch mapper tone response</td></tr>
+<tr><td>shared projection (ortho/perspective, focal, camera distance)</td><td>scene camera (same params, same code)</td></tr>
+</table></div>
+<p class="small muted">Anything found unmapped during Phase 0C is listed in the phase report with a justification, per the review gate's mandate.</p>
+</details>
+
+<h2 id="merge"><span class="secno">10</span>Merge record — two proposals, one plan</h2>
+<p>This document was authored blind, then merged with the independently-produced <code>docs/3d-scene-studio-proposal.html</code> ("the Ink-Pass proposal") per the brief. The two converged independently on the same spine — regions as styleable targets, geometry/look decoupling, the effective-pen resolver as the first blocking fix, physical (not decorative) gaps, ship-alongside succession — which is strong evidence the spine is right. Where they differed, here is what the final plan takes from each, and why.</p>
+
+<div class="tablewrap"><table>
+<tr><th>Decision</th><th>Adopted from</th><th>Rationale</th></tr>
+<tr><td><b>Plot Styles = ordered Ink Pass stacks</b> (Target → Driver → Action → Pen), replacing the single atomic material</td><td>Ink-Pass proposal</td><td>Decisively higher creative ceiling (base + silhouette + shadow + highlight + pen cycle on one object). Legibility is preserved by this doc's judged guardrails: whole-<em>stack</em> cascade, fork-on-override, provenance chip, and a fixed four-card starter template.</td></tr>
+<tr><td><b>Driver as the unified concept</b> (always · tone band · shadow · specular · distance · radial · noise; depth/facing/curvature v2)</td><td>Ink-Pass proposal (taxonomy) + this doc (v1 mechanisms)</td><td>One grammar for "styled by light" instead of two special cases; each driver keeps this doc's feasibility-verified v1 mechanism and scope.</td></tr>
+<tr><td><b>Live Smart Sets</b> alongside static groups</td><td>Ink-Pass proposal</td><td>"All tops" that self-maintains when a tenth block lands is the wood-cubes workflow done right; this doc adds the scoped-by-default rule and the Group Selection birth story.</td></tr>
+<tr><td><b>Instancing, determinism, complexity warnings, min-fragment guards</b> (A-16/17, I-05, K-05)</td><td>Ink-Pass proposal</td><td>Its live audit (a default wireframe sphere ≈ 30k paths / 57 m) proved the warnings are not hypothetical.</td></tr>
+<tr><td><b>Release gates as visual / plot / compatibility truth</b></td><td>Ink-Pass proposal</td><td>Doctrine born from the June 3D audit's silent no-ops; folded into every phase gate.</td></tr>
+<tr><td><b>All code-level plumbing contracts</b>: division data flow after optimizeLayers, depth-buffer API as new work, support-plane fast path, safeOp shadow degrade, fill-record granularity, silhouette-union clipping, parallel-face charts, pre-clip dash phase, ink-coverage tone calibration, paper-color preview</td><td>This doc</td><td>Each was adversarially verified against the actual code (file:line) by a three-attacker panel + independent judge; the Ink-Pass proposal books one of these — depth-buffer occlusion — as "reuse directly" when it is real new work (its own Build-new list correctly claims stroke segmentation, effective-pen routing, light fields, and the cascade).</td></tr>
+<tr><td><b>Selection model</b>: V/A on the existing tools, edges win in tolerance, Alt-cycling with the "2 of 3" readout, no isolation prerequisite — plus the Ink-Pass proposal's submode cycling (<kbd>A</kbd> again / <kbd>2</kbd> <kbd>3</kbd>) and status readout</td><td>Both</td><td>Same convention, merged details. Vertex submode deferred to v2 (no v1 use case).</td></tr>
+<tr><td><b>Panel-integrated scene editing</b> (Scene tab + tree + optional double-click isolation), not a separate internal studio subdocument</td><td>This doc</td><td>Lower modality and reuses the layers-panel/isolation machinery users know; the Ink-Pass proposal itself flags renderer complexity as a top risk. If scenes outgrow the panel, its studio concept is the natural v2 escape hatch.</td></tr>
+<tr><td><b>Directional-only lights in v1</b> (schema carries <code>type</code>); point/spot open Phase 5</td><td>This doc</td><td>All eight inspiration pieces are directional; the Ink-Pass proposal wanted point/spot in alpha, which buys no inspiration piece and costs shadow-projection generality early.</td></tr>
+<tr><td><b>Working demos over illustrative sketches</b>; five live prototypes kept</td><td>This doc</td><td>The demos run the real math (painter HLR, cast shadows, arc-length division, group charts) — they de-risk, not just persuade. The Ink-Pass proposal's three sketches ask good product questions; those questions are answered interactively here.</td></tr>
+<tr><td><b>Control-parity appendix</b> (§9) + its process gates (SYS-09-style two-cycle loading)</td><td>Both</td><td>This doc supplies the concrete mapping table; the Ink-Pass proposal supplies the deprecation process discipline.</td></tr>
+<tr><td><b>Material response presets (Matte/Satin/Gloss/Mirror), area lights, soft shadows, full studio workspace, style wheel</b></td><td>Deferred (both/v2)</td><td>Post-v1 by both documents' own staging; kept on the roadmap.</td></tr>
+<tr><td><b>Trimmed without adoption</b>: ping-pong &amp; seeded-shuffle sequence modes, global/across-selection phase scopes, Lighting-Masks &amp; Pen-Order preview modes, Knockout/Interleave pass combination modes, connected-island selection &amp; continuity, per-requirement acceptance-signal column, export-time budget, input-parity requirement</td><td>Ink-Pass proposal</td><td>Deliberate v1 scope trims, not disagreements — each is additive later. Closest v1 equivalents: G-02/G-03 (division grammar), H-07/K-03 (preview/plot stats), K-01 (mask-document export tests). A/B Looks are adopted as a P2 fast-follow (§3.3).</td></tr>
+</table></div>
+
+<h2 id="risks"><span class="secno">11</span>Risks &amp; open questions</h2>
+<div class="tablewrap"><table>
+<tr><th>Risk</th><th>Mitigation</th></tr>
+<tr><td>polygon-clipping fragility (known AUD-05 crashes) on degenerate shadows at grazing light</td><td>All booleans via <code>safeOp</code> + drop-region degrade; draft drags never run booleans; grazing-light fuzz test in the Phase 2 gate</td></tr>
+<tr><td>Sampled-HLR acne on fills lying exactly on faces</td><td>Owner-aware bias in the new depth-buffer API; flat-face path avoids sampling entirely</td></tr>
+<tr><td>Phase 0C refactor destabilizes three shipping algorithms</td><td>Extract-and-rewire under unchanged visual baselines; smallest-possible extraction first (charts, then builders)</td></tr>
+<tr><td>Undo latency from styleTable deep-clones</td><td>Release-only snapshots + asset-table refs; perf-suite tracked; interning if it bites</td></tr>
+<tr><td>Scope creep in the style system</td><td>Whole-stack cascade is frozen for v1; per-pass inheritance explicitly out</td></tr>
+<tr><td>Face-count ceiling on imports</td><td>8k warning + patch segmentation; QI and workers wait for v2</td></tr>
+</table></div>
+<p><b>Open questions for Jay:</b> (1) Should the backdrop be a per-scene node or a document-level setting shared by all scene layers? (2) Do we want scene lights to be able to affect <em>non-scene</em> layers someday (global illumination for 2D fills), or is that scope poison? (3) v1 primitive shelf ordering — which six primitives earn top-row placement? (4) Is "Convert to 3D Scene" worth pulling into Phase 4 for spiralizer only (its shapes map 1:1)?</p>
+
+<div class="footer">
+<p>3D Scene Studio proposal · final merged edition. Authored blind by the Claude design-team pipeline (research × 4 → concepts × 4 → critics × 2 → synthesis → judged adversarial gate × 2, 35 mandated fixes applied), then merged with the independent Ink-Pass proposal (<code>docs/3d-scene-studio-proposal.html</code>) — merge record in §10. Vectura Studio worktree <code>3d-scene-studio</code>.</p>
+</div>
+
+</main>
+<script>
+(function(){
+'use strict';
+/* ============ shared mini engine ============ */
+const TAU = Math.PI*2;
+const V3=(x=0,y=0,z=0)=>({x,y,z});
+const dot3=(a,b)=>a.x*b.x+a.y*b.y+a.z*b.z;
+const norm3=a=>{const l=Math.hypot(a.x,a.y,a.z)||1;return V3(a.x/l,a.y/l,a.z/l);};
+function rotYP(p,yaw,pitch){let c=Math.cos(yaw),s=Math.sin(yaw);
+  const x=p.x*c+p.z*s,z1=-p.x*s+p.z*c,y=p.y;c=Math.cos(pitch);s=Math.sin(pitch);
+  return V3(x,y*c-z1*s,y*s+z1*c);}
+function mkProj(cam){return p=>{const r=rotYP(p,cam.yaw,cam.pitch);return {x:cam.cx+r.x*cam.scale,y:cam.cy-r.y*cam.scale,z:r.z};};}
+function groundFromScreen(sx,sy,cam){const c1=Math.cos(cam.yaw),s1=Math.sin(cam.yaw),sp=Math.sin(cam.pitch);
+  const a=(sx-cam.cx)/cam.scale,b=(sy-cam.cy)/(cam.scale*sp);
+  return {x:a*c1-b*s1,z:a*s1+b*c1};}
+function newell(vs){let x=0,y=0,z=0;for(let i=0;i<vs.length;i++){const a=vs[i],b=vs[(i+1)%vs.length];
+  x+=(a.y-b.y)*(a.z+b.z);y+=(a.z-b.z)*(a.x+b.x);z+=(a.x-b.x)*(a.y+b.y);}return norm3(V3(x,y,z));}
+function boxMesh(w,h,d,P){const x=w/2,yl=0,yh=h,z=d/2;
+  const v=(a,b,c)=>V3(P.x+a,b,P.z+c);
+  const c=[v(-x,yl,-z),v(x,yl,-z),v(x,yh,-z),v(-x,yh,-z),v(-x,yl,z),v(x,yl,z),v(x,yh,z),v(-x,yh,z)];
+  const F=(ids,id)=>({vs:ids.map(i=>c[i]),id});
+  return [F([0,3,2,1],'f:south'),F([4,5,6,7],'f:north'),F([3,7,6,2],'f:top'),F([1,2,6,5],'f:east'),F([0,4,7,3],'f:west')];}
+function pyramidMesh(w,h,P){const x=w/2;
+  const b=[V3(P.x-x,0,P.z-x),V3(P.x+x,0,P.z-x),V3(P.x+x,0,P.z+x),V3(P.x-x,0,P.z+x)],t=V3(P.x,h,P.z);
+  return [{vs:[b[0],b[1],t],id:'f:s0'},{vs:[b[1],b[2],t],id:'f:s1'},{vs:[b[2],b[3],t],id:'f:s2'},{vs:[b[3],b[0],t],id:'f:s3'}];}
+function cylMesh(r,h,seg,P){const fs=[],top=[],bot=[];
+  for(let i=0;i<seg;i++){const a=i/seg*TAU;top.push(V3(P.x+r*Math.cos(a),h,P.z+r*Math.sin(a)));bot.push(V3(P.x+r*Math.cos(a),0,P.z+r*Math.sin(a)));}
+  for(let i=0;i<seg;i++){const j=(i+1)%seg;fs.push({vs:[bot[i],bot[j],top[j],top[i]],id:'f:side'+i});}
+  fs.push({vs:top.slice().reverse(),id:'f:top'});return fs;}
+function hull2(pts){const p=pts.slice().sort((a,b)=>a.x-b.x||a.y-b.y);if(p.length<3)return p;
+  const cr=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);
+  const lo=[];for(const q of p){while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],q)<=0)lo.pop();lo.push(q);}
+  const up=[];for(let i=p.length-1;i>=0;i--){const q=p[i];while(up.length>=2&&cr(up[up.length-2],up[up.length-1],q)<=0)up.pop();up.push(q);}
+  up.pop();lo.pop();return lo.concat(up);}
+function hatchPoly(poly,angleDeg,spacing,phase=0){
+  if(poly.length<3||spacing<=0.5)return [];
+  const a=angleDeg*Math.PI/180,dx=Math.cos(a),dy=Math.sin(a),px=-dy,py=dx;
+  let mn=Infinity,mx=-Infinity;poly.forEach(p=>{const d=p.x*px+p.y*py;if(d<mn)mn=d;if(d>mx)mx=d;});
+  const out=[];
+  for(let d=mn+((phase-mn)%spacing+spacing)%spacing;d<=mx;d+=spacing){
+    const xs=[];
+    for(let i=0;i<poly.length;i++){const p1=poly[i],p2=poly[(i+1)%poly.length];
+      const d1=p1.x*px+p1.y*py-d,d2=p2.x*px+p2.y*py-d;
+      if((d1>0)!==(d2>0)){const t=d1/(d1-d2);xs.push((p1.x+(p2.x-p1.x)*t)*dx+(p1.y+(p2.y-p1.y)*t)*dy);}}
+    xs.sort((u,v)=>u-v);
+    for(let i=0;i+1<xs.length;i+=2)out.push([{x:d*px+xs[i]*dx,y:d*py+xs[i]*dy},{x:d*px+xs[i+1]*dx,y:d*py+xs[i+1]*dy}]);
+  }return out;}
+function pip(pt,poly){let ins=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+  const xi=poly[i].x,yi=poly[i].y,xj=poly[j].x,yj=poly[j].y;
+  if(((yi>pt.y)!==(yj>pt.y))&&(pt.x<(xj-xi)*(pt.y-yi)/(yj-yi)+xi))ins=!ins;}return ins;}
+function divideStroke(pts,cycle,phase){
+  const classes=cycle.filter(c=>(c.len!=null?c.len:(c.gap||0))>0);
+  const total=classes.reduce((s,c)=>s+(c.len!=null?c.len:c.gap),0);
+  if(total<0.5||!classes.length)return [{pts,pen:cycle[0]&&cycle[0].pen||0}];
+  const out=[];let cur=null,dist=((phase%total)+total)%total,iter=0;
+  for(let i=0;i+1<pts.length;i++){
+    const a=pts[i],b=pts[i+1];const segLen=Math.hypot(b.x-a.x,b.y-a.y);let t0=0;
+    while(t0<segLen-1e-6){
+      if(++iter>1e5)return out;
+      let m=dist%total,st=null,remain=0;
+      for(const c of classes){const l=c.len!=null?c.len:c.gap;if(m<l){st=c;remain=l-m;break;}m-=l;}
+      if(!st){t0=segLen;continue;}
+      const step=Math.min(remain,segLen-t0);
+      const p1={x:a.x+(b.x-a.x)*(t0/segLen),y:a.y+(b.y-a.y)*(t0/segLen)};
+      const p2={x:a.x+(b.x-a.x)*((t0+step)/segLen),y:a.y+(b.y-a.y)*((t0+step)/segLen)};
+      if(st.len!=null){if(cur&&cur.pen===st.pen)cur.pts.push(p2);else{cur={pts:[p1,p2],pen:st.pen};out.push(cur);}}
+      else cur=null;
+      t0+=step;dist+=step;}}
+  return out;}
+const $=s=>document.querySelector(s);
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function setupCanvas(id){const cv=$(id);const W=+cv.getAttribute('width'),H=+cv.getAttribute('height');
+  const dpr=Math.min(2,window.devicePixelRatio||1);
+  cv.width=W*dpr;cv.height=H*dpr;cv.style.aspectRatio=W+' / '+H;
+  const ctx=cv.getContext('2d');ctx.scale(dpr,dpr);
+  const pos=e=>{const r=cv.getBoundingClientRect();return {x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height};};
+  return {cv,ctx,W,H,pos};}
+function strokePath(ctx,pts,color,w,cap){ctx.strokeStyle=color;ctx.lineWidth=w||1.1;ctx.lineCap=cap||'butt';ctx.lineJoin='round';
+  ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y);ctx.stroke();}
+const rngf=seed=>{let s=seed>>>0;return()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};};
+
+/* ============ Demo 1: Light Lab ============ */
+(function(){
+  const D=setupCanvas('#c1');
+  const cam={yaw:-0.72,pitch:0.58,scale:1.02,cx:D.W*0.52,cy:D.H*0.44};
+  const objects=[
+    {mesh:boxMesh(84,128,84,V3(-78,0,-30)),h:128},
+    {mesh:boxMesh(66,58,66,V3(14,0,44)),h:58},
+    {mesh:pyramidMesh(84,92,V3(96,0,-38)),h:92},
+    {mesh:cylMesh(30,84,16,V3(-6,0,-108)),h:84},
+    {mesh:boxMesh(50,26,110,V3(96,0,68)),h:26},
+  ];
+  const st={az:2.45,el:0.52,dragging:null,draft:false,angle:45,gap:14,pen:'--pen-purple',bands:3,mode:'screen'};
+  const lightDir=()=>{const c=Math.cos(st.el);return norm3(V3(Math.cos(st.az)*c,-Math.sin(st.el),Math.sin(st.az)*c));};
+  function shadowHulls(){const d=lightDir();const hulls=[];
+    objects.forEach(o=>{const pts=[];o.mesh.forEach(f=>f.vs.forEach(v=>{
+      const t=v.y/(-d.y);pts.push(D3proj({x:v.x+d.x*t,y:0,z:v.z+d.z*t}));
+      if(v.y===0)pts.push(D3proj(v));}));
+      hulls.push(hull2(pts));});return hulls;}
+  let D3proj=mkProj(cam);
+  function tip(){const hulls=shadowHulls();let best=null,bd=-1;const c0=D3proj(V3(0,0,0));
+    hulls.forEach(h=>h.forEach(p=>{const dd=Math.hypot(p.x-c0.x,p.y-c0.y);if(dd>bd){bd=dd;best=p;}}));return best;}
+  function sunScreen(){const d=lightDir();const p=D3proj(V3(-d.x*330,-d.y*330,-d.z*330));
+    // clamp the widget into view along its direction from canvas center
+    const cx=D.W*0.52,cy=D.H*0.44;let dx=p.x-cx,dy=p.y-cy;
+    const m=28,tx=dx>0?(D.W-m-cx)/dx:dx<0?(m-cx)/dx:1,ty=dy>0?(D.H-m-cy)/dy:dy<0?(m-cy)/dy:1;
+    const t=Math.min(1,tx,ty);return {x:cx+dx*t,y:cy+dy*t};}
+  function render(){
+    const ctx=D.ctx,ink=cssv('--pen-ink'),paper=cssv('--card'),soft=cssv('--ink-soft');
+    ctx.clearRect(0,0,D.W,D.H);
+    const d=lightDir(),penCol=cssv(st.pen);
+    // shadows
+    const hulls=shadowHulls();
+    if(st.draft){ctx.globalAlpha=0.22;ctx.fillStyle=penCol;
+      hulls.forEach(h=>{ctx.beginPath();h.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fill();});
+      ctx.globalAlpha=1;}
+    else hulls.forEach(h=>hatchPoly(h,st.angle,st.gap*0.55).forEach(s=>strokePath(ctx,s,penCol,1.15)));
+    // faces painter back-to-front
+    const faces=[];
+    objects.forEach((o,oi)=>o.mesh.forEach(f=>{
+      const n=newell(f.vs);const rn=rotYP(n,cam.yaw,cam.pitch);
+      if(rn.z<0.001)return;
+      const pv=f.vs.map(D3proj);const depth=pv.reduce((s,p)=>s+p.z,0)/pv.length;
+      faces.push({pv,n,depth,oi,id:f.id});}));
+    faces.sort((a,b)=>a.depth-b.depth);
+    faces.forEach(f=>{
+      ctx.fillStyle=paper;ctx.beginPath();f.pv.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fill();
+      const I=Math.max(0,dot3(f.n,V3(-d.x,-d.y,-d.z)));
+      let band=0; // 0 highlight,1 mid,2 shade
+      if(st.bands===1)band=1;else if(st.bands===2)band=I>0.55?0:2;else band=I>0.72?0:(I>0.38?1:2);
+      const ang=st.mode==='screen'?63:(f.id.charCodeAt(2)*47)%180;
+      if(!st.draft){
+        if(band===1)hatchPoly(f.pv,ang,9).forEach(s=>strokePath(ctx,s,ink,0.85));
+        if(band===2){hatchPoly(f.pv,ang,4.4).forEach(s=>strokePath(ctx,s,ink,0.85));}
+      } else if(band>0){ctx.globalAlpha=band===1?0.10:0.25;ctx.fillStyle=ink;
+        ctx.beginPath();f.pv.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fill();ctx.globalAlpha=1;}
+      strokePath(ctx,f.pv.concat([f.pv[0]]),ink,1.5);
+    });
+    // sun + tip widgets
+    const ss=sunScreen();
+    ctx.strokeStyle=soft;ctx.fillStyle=cssv('--warn');
+    ctx.beginPath();ctx.arc(ss.x,ss.y,9,0,TAU);ctx.fill();
+    for(let i=0;i<8;i++){const a=i/8*TAU;ctx.beginPath();ctx.moveTo(ss.x+13*Math.cos(a),ss.y+13*Math.sin(a));ctx.lineTo(ss.x+18*Math.cos(a),ss.y+18*Math.sin(a));ctx.stroke();}
+    const tp=tip();
+    if(tp){ctx.fillStyle=cssv('--accent');ctx.save();ctx.translate(tp.x,tp.y);ctx.rotate(Math.PI/4);ctx.fillRect(-6,-6,12,12);ctx.restore();
+      ctx.font='11px Avenir Next,sans-serif';ctx.fillText('drag me',tp.x+12,tp.y+4);}
+  }
+  D.cv.addEventListener('pointerdown',e=>{
+    const p=D.pos(e);const ss=sunScreen(),tp=tip();
+    if(Math.hypot(p.x-ss.x,p.y-ss.y)<24)st.dragging='sun';
+    else if(tp&&Math.hypot(p.x-tp.x,p.y-tp.y)<48)st.dragging='tip';
+    else if(shadowHulls().some(h=>pip(p,h)))st.dragging='tip';  // grab the shadow itself
+    else return;
+    st.draft=true;D.cv.setPointerCapture(e.pointerId);applyDrag(p);});
+  function applyDrag(p){
+    if(st.dragging==='sun'){const g=groundFromScreen(p.x,p.y,cam);
+      st.az=Math.atan2(-g.z,-g.x);const L=Math.hypot(g.x,g.z);st.el=Math.max(0.18,Math.min(1.25,Math.atan2(330,L)));}
+    else{const g=groundFromScreen(p.x,p.y,cam);const L=Math.hypot(g.x,g.z)||1;
+      st.az=Math.atan2(g.z,g.x);st.el=Math.max(0.18,Math.min(1.25,Math.atan2(150,L)));}
+    render();}
+  D.cv.addEventListener('pointermove',e=>{if(st.dragging)applyDrag(D.pos(e));});
+  D.cv.addEventListener('pointerup',()=>{st.dragging=null;st.draft=false;render();});
+  D.cv.addEventListener('pointercancel',()=>{st.dragging=null;st.draft=false;render();});
+  // controls
+  const pens=['--pen-purple','--pen-ink','--pen-crimson','--pen-teal','--pen-blue'];
+  pens.forEach(pn=>{const b=document.createElement('button');b.className='swatch'+(pn===st.pen?' on':'');
+    b.style.background=cssv(pn);b.title=pn.replace('--pen-','');
+    b.onclick=()=>{st.pen=pn;document.querySelectorAll('#d1pens .swatch').forEach(x=>x.classList.remove('on'));b.classList.add('on');render();};
+    $('#d1pens').appendChild(b);});
+  $('#d1angle').oninput=e=>{st.angle=+e.target.value;$('#d1angleV').textContent=st.angle+'°';render();};
+  $('#d1gap').oninput=e=>{st.gap=+e.target.value;$('#d1gapV').textContent=(st.gap*0.14).toFixed(1)+' mm';render();};
+  document.querySelectorAll('#d1bands .chip').forEach(c=>c.onclick=()=>{st.bands=+c.dataset.b;
+    document.querySelectorAll('#d1bands .chip').forEach(x=>x.classList.toggle('on',x===c));render();});
+  document.querySelectorAll('#d1mode .chip').forEach(c=>c.onclick=()=>{st.mode=c.dataset.m;
+    document.querySelectorAll('#d1mode .chip').forEach(x=>x.classList.toggle('on',x===c));render();});
+  render();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change',render);
+})();
+
+/* ============ Demo 2: Torus five ways ============ */
+(function(){
+  const D=setupCanvas('#c2');
+  const cam={yaw:-0.5,pitch:0.42,scale:1.35,cx:D.W/2,cy:D.H/2};
+  const R=95,r=40;
+  const st={family:'spiral',pen:'--pen-ink',drag:null,
+    stash:{spiral:{turns:22},facet:{segs:16},contour:{levels:15},wire:{u:9,v:22},texture:{warble:9,levels:16}}};
+  const P=mkProj(cam);
+  const tor=(u,t)=>({p:V3((R+r*Math.cos(t))*Math.cos(u),r*Math.sin(t),(R+r*Math.cos(t))*Math.sin(u)),
+                     n:V3(Math.cos(t)*Math.cos(u),Math.sin(t),Math.cos(t)*Math.sin(u))});
+  function runs(samples){ // samples: [{p,n}] -> visible polyline runs
+    const out=[];let cur=null;
+    samples.forEach(s=>{const vis=rotYP(s.n,cam.yaw,cam.pitch).z>0.001;
+      if(vis){const pr=P(s.p);if(cur)cur.push(pr);else{cur=[pr];out.push(cur);}}
+      else cur=null;});
+    return out.filter(rn=>rn.length>1);}
+  function thetaRing(t,warp,seedR){ // circle at tube angle t
+    const s=[];const rnd=seedR||(()=>0);
+    for(let i=0;i<=160;i++){const u=i/160*TAU;
+      let pt=tor(u,t);
+      if(warp){const w=warp(u,t);pt={p:V3(pt.p.x+pt.n.x*w,pt.p.y+pt.n.y*w,pt.p.z+pt.n.z*w),n:pt.n};}
+      s.push(pt);}return s;}
+  function render(){
+    const ctx=D.ctx,ink=cssv(st.pen),paper=cssv('--card'),base=cssv('--pen-ink');
+    ctx.clearRect(0,0,D.W,D.H);
+    const f=st.family,prm=st.stash[f];
+    if(f==='spiral'){
+      const n=Math.max(600,prm.turns*90),pts=[];
+      for(let i=0;i<=n;i++){const t=i/n;pts.push(tor(t*TAU,t*TAU*prm.turns));}
+      runs(pts).forEach(rn=>strokePath(D.ctx,rn,ink,1.25));
+    }
+    if(f==='wire'){
+      for(let k=0;k<prm.u;k++)runs(thetaRing(-Math.PI+ (k+0.5)/prm.u*TAU,null)).forEach(rn=>strokePath(ctx,rn,ink,1));
+      for(let k=0;k<prm.v;k++){const u0=k/prm.v*TAU,s=[];
+        for(let i=0;i<=72;i++){const t=i/72*TAU;s.push(tor(u0,t));}
+        runs(s).forEach(rn=>strokePath(ctx,rn,ink,1));}
+    }
+    if(f==='contour'){
+      for(let k=1;k<prm.levels;k++){const y0=-r+2*r*k/prm.levels,t1=Math.asin(y0/r);
+        [t1,Math.PI-t1].forEach(t=>runs(thetaRing(t,null)).forEach(rn=>strokePath(ctx,rn,ink,1.2)));}
+    }
+    if(f==='texture'){
+      for(let k=1;k<prm.levels;k++){const y0=-r+2*r*k/prm.levels,t1=Math.asin(y0/r);
+        const warp=(u,t)=>prm.warble*(Math.sin(3*u+2*t)+0.55*Math.sin(7*u-3*t)+0.3*Math.sin(11*u+5*t))/1.85;
+        [t1,Math.PI-t1].forEach(t=>runs(thetaRing(t,warp)).forEach(rn=>strokePath(ctx,rn,ink,1.1)));}
+    }
+    if(f==='facet'){
+      const su=prm.segs,sv=Math.max(6,Math.round(prm.segs*0.62)),faces=[];
+      for(let i=0;i<su;i++)for(let j=0;j<sv;j++){
+        const u0=i/su*TAU,u1=(i+1)/su*TAU,t0=j/sv*TAU,t1=(j+1)/sv*TAU;
+        const vs=[tor(u0,t0).p,tor(u1,t0).p,tor(u1,t1).p,tor(u0,t1).p];
+        const n=newell(vs);if(rotYP(n,cam.yaw,cam.pitch).z<0.001)continue;
+        const pv=vs.map(P);faces.push({pv,depth:pv.reduce((s,p)=>s+p.z,0)/4});}
+      faces.sort((a,b)=>a.depth-b.depth);
+      faces.forEach(fc=>{const ctx2=ctx;ctx2.fillStyle=paper;
+        ctx2.beginPath();fc.pv.forEach((p,i)=>i?ctx2.lineTo(p.x,p.y):ctx2.moveTo(p.x,p.y));ctx2.closePath();ctx2.fill();
+        strokePath(ctx2,fc.pv.concat([fc.pv[0]]),ink,1.15);
+        const cx=fc.pv.reduce((s,p)=>s+p.x,0)/4,cy=fc.pv.reduce((s,p)=>s+p.y,0)/4;
+        [0.62,0.3].forEach(sc=>{const inner=fc.pv.map(p=>({x:cx+(p.x-cx)*sc,y:cy+(p.y-cy)*sc}));
+          strokePath(ctx2,inner.concat([inner[0]]),ink,0.8);});});
+    }
+  }
+  const PARAM_DEFS={spiral:[['turns','Turns',4,44]],facet:[['segs','Segments',8,26]],
+    contour:[['levels','Levels',6,30]],wire:[['u','Rings',4,18],['v','Meridians',8,40]],
+    texture:[['warble','Warble',0,20],['levels','Levels',8,26]]};
+  function buildParams(){
+    const host=$('#d2params');host.innerHTML='';
+    PARAM_DEFS[st.family].forEach(([k,label,mn,mx])=>{
+      const l=document.createElement('label');l.innerHTML=label+' <span class="stat">'+st.stash[st.family][k]+'</span>';
+      const i=document.createElement('input');i.type='range';i.min=mn;i.max=mx;i.value=st.stash[st.family][k];
+      i.oninput=()=>{st.stash[st.family][k]=+i.value;l.querySelector('.stat').textContent=i.value;render();};
+      host.appendChild(l);host.appendChild(i);});}
+  document.querySelectorAll('#d2chips .chip').forEach(c=>c.onclick=()=>{
+    st.family=c.dataset.f;document.querySelectorAll('#d2chips .chip').forEach(x=>x.classList.toggle('on',x===c));
+    buildParams();render();});
+  const pens=['--pen-ink','--pen-blue','--pen-crimson','--pen-teal','--pen-sepia'];
+  pens.forEach(pn=>{const b=document.createElement('button');b.className='swatch'+(pn===st.pen?' on':'');
+    b.style.background=cssv(pn);b.onclick=()=>{st.pen=pn;
+      document.querySelectorAll('#d2pens .swatch').forEach(x=>x.classList.remove('on'));b.classList.add('on');render();};
+    $('#d2pens').appendChild(b);});
+  D.cv.addEventListener('pointerdown',e=>{st.drag=D.pos(e);D.cv.setPointerCapture(e.pointerId);});
+  D.cv.addEventListener('pointermove',e=>{if(!st.drag)return;const p=D.pos(e);
+    cam.yaw+=(p.x-st.drag.x)*0.008;cam.pitch=Math.max(-1.2,Math.min(1.2,cam.pitch+(p.y-st.drag.y)*0.008));st.drag=p;render();});
+  D.cv.addEventListener('pointerup',()=>st.drag=null);
+  D.cv.addEventListener('pointercancel',()=>st.drag=null);
+  buildParams();render();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change',render);
+})();
+
+/* ============ Demo 3: Woodshop ============ */
+(function(){
+  const D=setupCanvas('#c3');
+  const cam={yaw:-0.68,pitch:0.52,scale:1.0,cx:D.W*0.5,cy:D.H*0.56};
+  const P=mkProj(cam);
+  const SIZE=78,GAPW=14;
+  const heights=[78,78,132,78,132,78,78,132,78];
+  const boxes=[];
+  for(let gz=0;gz<3;gz++)for(let gx=0;gx<3;gx++){
+    const i=gz*3+gx;
+    boxes.push({id:'cube'+i,h:heights[i],cx:(gx-1)*(SIZE+GAPW),cz:(gz-1)*(SIZE+GAPW),
+      mesh:boxMesh(SIZE,heights[i],SIZE,V3((gx-1)*(SIZE+GAPW),0,(gz-1)*(SIZE+GAPW))),seed:i*7+3});}
+  const st={mode:'a',selFaces:new Set(),selObj:null,grouped:false,continuous:false,center:{x:28,z:36}};
+  function visFaces(){const out=[];
+    boxes.forEach((b,bi)=>b.mesh.forEach(f=>{
+      const n=newell(f.vs);if(rotYP(n,cam.yaw,cam.pitch).z<0.001)return;
+      const pv=f.vs.map(P);out.push({b,bi,f,n,pv,depth:pv.reduce((s,p)=>s+p.z,0)/pv.length,key:b.id+'/'+f.id});}));
+    out.sort((a,b)=>a.depth-b.depth);return out;}
+  function grainSide(face,seed){ // wavy vertical lines in quad param space
+    const rnd=rngf(seed);const off=rnd()*10;
+    const [a,b,c,d]=face.pv; // quad: bottom a,b top c,d? boxMesh side faces order varies; use vs y to split
+    const lo=face.f.vs.map((v,i)=>({v,i})).filter(x=>x.v.y===0).map(x=>face.pv[x.i]);
+    const hi=face.f.vs.map((v,i)=>({v,i})).filter(x=>x.v.y>0).map(x=>face.pv[x.i]);
+    if(lo.length!==2||hi.length!==2)return [];
+    // order hi to match lo x-direction
+    const l0=lo[0],l1=lo[1];
+    const h0=Math.hypot(hi[0].x-l0.x,hi[0].y-l0.y)<Math.hypot(hi[1].x-l0.x,hi[1].y-l0.y)?hi[0]:hi[1];
+    const h1=h0===hi[0]?hi[1]:hi[0];
+    const lines=[];const n=11;
+    for(let k=1;k<n;k++){const s=k/n+ (rnd()-0.5)*0.02;const pts=[];
+      for(let j=0;j<=14;j++){const t=j/14;
+        const bx=l0.x+(l1.x-l0.x)*s,by=l0.y+(l1.y-l0.y)*s;
+        const tx=h0.x+(h1.x-h0.x)*s,ty=h0.y+(h1.y-h0.y)*s;
+        const wob=Math.sin(t*5.2+seed+k*1.7)*1.7+Math.sin(t*11+k)*0.7;
+        // wobble perpendicular to the line
+        const dx=tx-bx,dy=ty-by,L=Math.hypot(dx,dy)||1;
+        pts.push({x:bx+dx*t+(-dy/L)*wob,y:by+dy*t+(dx/L)*wob});}
+      lines.push(pts);}
+    return lines;}
+  function grainTop(face){
+    const b=face.b;const lines=[];
+    const half=SIZE/2-3;
+    const cx=st.continuous&&st.grouped?st.center.x:b.cx+(rngf(b.seed)()*30-15);
+    const cz=st.continuous&&st.grouped?st.center.z:b.cz+(rngf(b.seed+1)()*30-15);
+    const maxR=st.continuous?420:90;
+    for(let rr=7;rr<maxR;rr+=9){
+      const n=Math.max(40,Math.floor(rr*0.9));let run=[];
+      for(let i=0;i<=n;i++){const a=i/n*TAU;
+        const wob=Math.sin(a*3+rr)*1.8+Math.sin(a*7-rr*0.6)*0.9;
+        const x=cx+(rr+wob)*Math.cos(a),z=cz+(rr+wob)*Math.sin(a);
+        if(Math.abs(x-b.cx)<=half&&Math.abs(z-b.cz)<=half)run.push(P(V3(x,b.h,z)));
+        else if(run.length>1){lines.push(run);run=[];}else run=[];}
+      if(run.length>1)lines.push(run);}
+    return lines;}
+  function render(){
+    const ctx=D.ctx,ink=cssv('--pen-sepia'),edge=cssv('--pen-ink'),paper=cssv('--card'),acc=cssv('--accent');
+    ctx.clearRect(0,0,D.W,D.H);
+    visFaces().forEach(fc=>{
+      ctx.fillStyle=paper;ctx.beginPath();fc.pv.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fill();
+      const isTop=fc.f.id==='f:top';
+      (isTop?grainTop(fc):grainSide(fc,fc.b.seed+fc.f.id.length)).forEach(l=>strokePath(ctx,l,ink,0.85));
+      strokePath(ctx,fc.pv.concat([fc.pv[0]]),edge,1.4);
+      if(st.selFaces.has(fc.key)||st.selObj===fc.b.id){
+        ctx.globalAlpha=0.16;ctx.fillStyle=acc;
+        ctx.beginPath();fc.pv.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fill();ctx.globalAlpha=1;
+        strokePath(ctx,fc.pv.concat([fc.pv[0]]),acc,2.2);}
+    });}
+  function prov(){
+    const el=$('#d3prov');
+    if(st.selObj)el.textContent='Styled by: Scene · Pine — object “'+st.selObj+'” selected';
+    else if(st.selFaces.size===0)el.textContent='nothing selected';
+    else{const anyTop=[...st.selFaces].some(k=>k.endsWith('f:top'));
+      el.textContent=st.grouped&&anyTop?'Styled by: Group “Tops” · Knotted Grain ✕':'Styled by: Object · Pine (face selected — override forks the Plot Style)';}
+  }
+  D.cv.addEventListener('pointerdown',e=>{
+    const p=D.pos(e);const fs=visFaces();
+    let hit=null;for(let i=fs.length-1;i>=0;i--){if(pip(p,fs[i].pv)){hit=fs[i];break;}}
+    if(!hit){st.selFaces.clear();st.selObj=null;}
+    else if(st.mode==='v'){st.selObj=hit.b.id;st.selFaces.clear();}
+    else{st.selObj=null;
+      if(!e.shiftKey)st.selFaces.clear();
+      st.selFaces.has(hit.key)?st.selFaces.delete(hit.key):st.selFaces.add(hit.key);}
+    prov();render();});
+  document.querySelectorAll('#d3mode .chip').forEach(c=>c.onclick=()=>{st.mode=c.dataset.m;
+    document.querySelectorAll('#d3mode .chip').forEach(x=>x.classList.toggle('on',x===c));
+    $('#d3hint').innerHTML=st.mode==='v'?'Mode <b>V</b>: click any block — whole-object selection.':'Mode <b>A</b>: click faces; Shift adds. Then “Select similar”.';
+    st.selFaces.clear();st.selObj=null;prov();render();});
+  $('#d3similar').onclick=()=>{
+    const anyTop=[...st.selFaces].some(k=>k.endsWith('f:top'));
+    st.selFaces.clear();boxes.forEach(b=>st.selFaces.add(b.id+'/f:top'));st.selObj=null;
+    $('#d3hint').innerHTML=(anyTop?'':'(Auto-selected a top for you.) ')+'All 9 tops selected — same normal, scoped to these blocks. The floor was <i>not</i> grabbed.';
+    prov();render();};
+  $('#d3group').onclick=()=>{
+    if(st.selFaces.size<2){$('#d3hint').innerHTML='Select several faces first (try “Select similar”).';return;}
+    st.grouped=true;$('#d3hint').innerHTML='Group <b>“Tops”</b> created — 9 parallel faces at two heights. Now toggle continuous grain.';prov();render();};
+  $('#d3cont').onclick=()=>{
+    if(!st.grouped){$('#d3hint').innerHTML='Create the group first.';return;}
+    st.continuous=!st.continuous;$('#d3contState').textContent=st.continuous?'on':'off';
+    $('#d3hint').innerHTML=st.continuous?'One fill in the shared chart, clipped per face — the rings flow across every top, even at different heights.':'Independent per-face grain (each top has its own seed).';
+    prov();render();};
+  $('#d3reseed').onclick=()=>{
+    boxes.forEach(b=>{if(st.selFaces.has(b.id+'/f:top')||st.selObj===b.id)b.seed=(b.seed*31+17)%1000;});
+    if(st.continuous&&st.grouped){st.center={x:(Math.random()*140-70)|0,z:(Math.random()*140-70)|0};}
+    render();};
+  prov();render();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change',render);
+})();
+
+/* ============ Demo 4: Division Lab ============ */
+(function(){
+  const D=setupCanvas('#c4');
+  const PENS=[['#e0762f','orange'],['#2f9e9a','teal'],['#e8dcc0','cream'],['#7a5cc7','purple']];
+  const st={lens:[9,9,9,9],gap:4,phase:'perpath'};
+  // content: concentric rings + a diagonal hatch block (two styles, one treatment)
+  function rings(){
+    const out=[],cx=D.W*0.40,cy=D.H*0.52;
+    for(let r=16;r<Math.max(D.W,D.H)*0.78;r+=13){
+      const n=Math.max(60,Math.floor(r*1.1)),pts=[];
+      for(let i=0;i<=n;i++){const a=i/n*TAU,x=cx+r*Math.cos(a),y=cy+r*Math.sin(a);
+        if(x>8&&x<D.W-8&&y>8&&y<D.H-8)pts.push({x,y});
+        else if(pts.length>1){out.push(pts.slice());pts.length=0;}else pts.length=0;}
+      if(pts.length>1)out.push(pts);}
+    return out;}
+  function render(){
+    const ctx=D.ctx;ctx.clearRect(0,0,D.W,D.H);
+    const cycle=[];
+    st.lens.forEach((L,i)=>{if(L>0){cycle.push({len:L,pen:i});if(st.gap>0)cycle.push({gap:st.gap});}});
+    if(!cycle.length)cycle.push({len:10,pen:0});
+    const src=rings();
+    const stats=PENS.map(()=>({dashes:0,drawn:0,travel:0,last:null}));
+    const jr=rngf(42);
+    src.forEach((pts,pi)=>{
+      const phase=st.phase==='fixed'?0:st.phase==='perpath'?pi*7.3:jr()*60;
+      divideStroke(pts,cycle,phase).forEach(sub=>{
+        strokePath(ctx,sub.pts,PENS[sub.pen][0],3.4,'round');
+        const s=stats[sub.pen];s.dashes++;
+        let L=0;for(let i=0;i+1<sub.pts.length;i++)L+=Math.hypot(sub.pts[i+1].x-sub.pts[i].x,sub.pts[i+1].y-sub.pts[i].y);
+        s.drawn+=L;
+        if(s.last)s.travel+=Math.hypot(sub.pts[0].x-s.last.x,sub.pts[0].y-s.last.y);
+        s.last=sub.pts[sub.pts.length-1];});});
+    const mm=v=>(v*0.24).toFixed(0);
+    $('#d4stats').innerHTML=stats.map((s,i)=>'<div style="margin:.2em 0"><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:'+PENS[i][0]+'"></span> '+PENS[i][1]+': <b>'+s.dashes+'</b> lifts · '+mm(s.drawn)+'mm ink · '+mm(s.travel)+'mm travel</div>').join('');}
+  const host=$('#d4cycle');
+  PENS.forEach((p,i)=>{
+    const row=document.createElement('div');row.className='row';row.style.margin='.25em 0';
+    row.innerHTML='<span style="width:14px;height:14px;border-radius:4px;background:'+p[0]+';flex:0 0 auto"></span>';
+    const inp=document.createElement('input');inp.type='range';inp.min=0;inp.max=30;inp.value=st.lens[i];inp.style.flex='1';
+    const val=document.createElement('span');val.className='stat';val.textContent=(st.lens[i]*0.24).toFixed(1)+'mm';
+    inp.oninput=()=>{st.lens[i]=+inp.value;val.textContent=(st.lens[i]*0.24).toFixed(1)+'mm';render();};
+    row.appendChild(inp);row.appendChild(val);host.appendChild(row);});
+  $('#d4gap').oninput=e=>{st.gap=+e.target.value;$('#d4gapV').textContent=(st.gap*0.24).toFixed(1)+' mm';render();};
+  document.querySelectorAll('#d4phase .chip').forEach(c=>c.onclick=()=>{st.phase=c.dataset.p;
+    document.querySelectorAll('#d4phase .chip').forEach(x=>x.classList.toggle('on',x===c));render();});
+  render();
+})();
+
+/* ============ Demo 5: Cascade inspector ============ */
+(function(){
+  const MATS={pine:['Pine Hatch','var(--pen-sepia)'],grain:['Wood Grain','var(--pen-ink)'],
+    knot:['Knotted Grain','var(--pen-crimson)'],solo:['Solo Purple','var(--pen-purple)'],
+    shadow:['Purple 45°','var(--pen-purple)'],heavy:['Heavy Ink · 3 offset passes','var(--pen-ink)']};
+  const rules=[
+    {id:'scene',label:'scene',mat:'pine',on:true,locked:true},
+    {id:'obj',label:'byObject["cube1"]',mat:'grain',on:true},
+    {id:'grp',label:'byGroup["Tops"]',mat:'knot',on:true},
+    {id:'face',label:'byFace["cube1/f:top"]',mat:'solo',on:false},
+    {id:'reg',label:'byRegion["ground/castShadow"]',mat:'shadow',on:true},
+    {id:'edge',label:'byEdge["silhouette"]',mat:'heavy',on:true}];
+  const targets=[
+    {label:'Scene',resolve:()=>['scene']},
+    {label:'Object · Cube 1',resolve:()=>['obj','scene']},
+    {label:'Face · cube1/f:top',resolve:()=>['face','grp','obj','scene']},
+    {label:'Face · cube1/f:east',resolve:()=>['obj','scene']},
+    {label:'Region · shadow on ground',resolve:()=>['reg','scene']},
+    {label:'Edge · silhouette',resolve:()=>['edge']}];
+  let cur=2;
+  function draw(){
+    const th=$('#d5targets');th.innerHTML='';
+    targets.forEach((t,i)=>{const b=document.createElement('button');b.className='chip'+(i===cur?' on':'');
+      b.textContent=t.label;b.onclick=()=>{cur=i;draw();};th.appendChild(b);});
+    const rh=$('#d5rules');rh.innerHTML='';
+    rules.forEach(r=>{const row=document.createElement('div');
+      row.style.cssText='display:flex;gap:7px;align-items:center;padding:.22em 0;cursor:'+(r.locked?'default':'pointer')+';opacity:'+(r.on?1:0.42);
+      row.innerHTML='<span style="width:11px;height:11px;border-radius:3px;background:'+MATS[r.mat][1]+';flex:0 0 auto"></span><span>'+r.label+' → '+MATS[r.mat][0]+'</span>'+(r.locked?'':'<span style="margin-left:auto">'+(r.on?'✕':'⟲')+'</span>');
+      if(!r.locked)row.onclick=()=>{r.on=!r.on;draw();};
+      rh.appendChild(row);});
+    const chain=targets[cur].resolve();
+    const win=chain.map(id=>rules.find(r=>r.id===id)).find(r=>r&&r.on);
+    $('#d5ctx').innerHTML=win?targets[cur].label+' &nbsp;→&nbsp; <b>Styled by: '+({scene:'Scene',obj:'Object',grp:'Group “Tops”',face:'Face override',reg:'Region rule',edge:'Edge class'})[win.id]+' · '+MATS[win.mat][0]+'</b>&nbsp;<span style="width:12px;height:12px;border-radius:3px;background:'+MATS[win.mat][1]+';display:inline-block"></span>':'unstyled (blank paper)';
+  }
+  draw();
+})();
+})();
+</script>
+</body>
+</html>
