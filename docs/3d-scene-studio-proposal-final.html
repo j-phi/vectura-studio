@@ -131,10 +131,10 @@ summary{cursor:pointer;font-family:'Avenir Next',sans-serif;font-weight:600;font
 <main>
 
 <div class="hero">
-  <div class="kicker">Vectura Studio · Feature Proposal · Final (merged)</div>
+  <div class="kicker">Vectura Studio · Feature Proposal</div>
   <h1>3D Scene Studio</h1>
   <p class="sub">One scene. Many objects. Light that manufactures styleable regions. Every surface, edge, shadow, and highlight rendered in exactly the pen strokes you choose.</p>
-  <p class="legend">Produced by a staged multi-agent design process (research → concepts → adversarial critics → synthesis → judged review gates), then merged with the independent Ink-Pass proposal — see §10 for the merge record. Interactive demos below are live — drag them.</p>
+  <p class="legend">Interactive demos below are live — drag them.</p>
 </div>
 
 <nav class="toc">
@@ -147,20 +147,20 @@ summary{cursor:pointer;font-family:'Avenir Next',sans-serif;font-weight:600;font
   <a href="#reqs"><b>7</b>Requirements</a>
   <a href="#plan"><b>8</b>Implementation plan</a>
   <a href="#succession"><b>9</b>Succession &amp; control parity</a>
-  <a href="#merge"><b>10</b>Merge record: two proposals, one plan</a>
-  <a href="#risks"><b>11</b>Risks &amp; open questions</a>
+  <a href="#merge"><b>10</b>Design decisions &amp; alternatives</a>
+  <a href="#risks"><b>11</b>Risks &amp; open decisions</a>
 </nav>
 
 <h2 id="exec"><span class="secno">1</span>Executive summary</h2>
 
 <p class="lead"><b>3D Scene Studio</b> is a new <code>scene3d</code> layer type that turns Vectura into a plotter-native 3D still-life tool — and, over time, the successor to spiralizer, polyhedron, and topoform.</p>
 
-<p>Today, three separate algorithms each own one shape, one look, and one bag of controls. A torus can spiral <em>or</em> contour <em>or</em> facet — never toggle between them — and no algorithm knows about any other object, any light, or any shadow. Meanwhile the inspiration board (voxel cities with kilometer-long hatched shadows, wood-grain cubes whose tops share one continuous grain, dash-shimmer still lifes in four pens) is all about <em>scenes</em>: multiple objects, real lighting, and per-surface styling decisions.</p>
+<p>Today, three separate algorithms each own one shape, one look, and one bag of controls. A torus can spiral <em>or</em> contour <em>or</em> facet — never toggle between them — and no algorithm knows about any other object, any light, or any shadow. Meanwhile the work this feature targets (voxel cities with kilometer-long hatched shadows, wood-grain cubes whose tops share one continuous grain, dash-shimmer still lifes in four pens) is all about <em>scenes</em>: multiple objects, real lighting, and per-surface styling decisions.</p>
 
 <p>3D Scene Studio makes four moves:</p>
 
 <div class="card">
-<p><b>1 · Objects become a scene.</b> Parametric primitives (box, sphere, cylinder, cone, torus, capsule, the full polyhedron solid family, plane) placed, scaled, and rotated in one scene with a ground plane, a backdrop, and a camera. Primitives stay parametric forever — a torus is two radius sliders, never an editable mesh. STL import (auto-segmented into selectable patches) follows in Phase 4.</p>
+<p><b>1 · Objects become a scene.</b> Parametric primitives (box, sphere, cylinder, cone, torus, capsule, the full polyhedron solid family, plane) placed, scaled, and rotated in one scene with a ground plane, a backdrop, and a camera. Each object carries a non-destructive <b>modifier stack</b> — mirror, arrays, bend/twist/taper, noise displacement, parametric bevels — and objects combine by live <b>CSG</b> (mark a shape as a hole, group, done — or Combine with Join/Cut/Intersect). Primitives stay parametric — a torus is two radius sliders, never a hand-editable mesh; the one explicit bake is Freeze, and even frozen meshes are never edited by hand. STL import (auto-segmented into selectable patches) follows in Phase 4.</p>
 <p><b>2 · The three algorithms become mappers, and styles become stacks.</b> A surface style is just a polyline generator on a surface: <em>spiral</em> (spiralizer), <em>facet</em> (polyhedron), <em>contour</em> (topoform), <em>wireframe</em>, <em>hatch</em>, <em>rings</em>, and the whole 2D pattern/texture library (<em>topo, wavetable, dots, truchet, flowfield, halftone…</em>) draped over faces. A Plot Style is an <em>ordered stack of Ink Passes</em> — each reading <em>Target → Driver → Action → Pen</em> — so one torus can wear base contours, a thick silhouette, purple shadow hatch, ring highlights, and a four-pen cycle at once. One selected torus still toggles spiral ↔ facet ↔ contour ↔ wireframe ↔ textured with one click — and every family remembers its tuning (the style stash).</p>
 <p><b>3 · Light manufactures styleable targets.</b> Lights don't shade lines; they create <em>regions</em> — tone bands, cast shadows, specular hotspots — that you can click and style like anything else. "Shadows on the ground = purple lines at 45° with 2&nbsp;mm gaps" is four clicks. Highlights can swap patterns, or <em>modify the existing lines</em>: wider spacing, priority thinning, or radial perforation at a chosen density.</p>
 <p><b>4 · Strokes divide into pens.</b> A universal stroke-division treatment cuts any line work into repeating multi-pen dash cycles (A–B–A–C, weighted random, phase jitter, butt-joined or gapped) — physical geometry per pen, not a dash pattern — with pen lifts, travel, and plot time reported per pen before export. It mounts on <em>every</em> layer type, not just scenes.</p>
@@ -168,13 +168,13 @@ summary{cursor:pointer;font-family:'Avenir Next',sans-serif;font-weight:600;font
 
 <p><b>Why we win:</b> the heavy machinery already exists in the codebase — the shared 3D kernel (<code>geometry3d.js</code>: projection, silhouettes, three hidden-line engines, Lambert hatching), the 25-type region fill engine, two boolean stacks, per-path pen overrides, and the shared fill control surface that two panels already mount. The plan below reuses them by <em>extract-and-rewire</em> (with visual-baseline gates), and is honest about the genuinely new work: scene assembly, shadow projection, the region compiler, the style cascade, stroke division, and a scene-scope depth-buffer API.</p>
 
-<p><b>Selection is the product.</b> <kbd>V</kbd> (the existing select tool) picks whole objects; <kbd>A</kbd> (the existing direct-select tool) picks faces, edges, and regions — zero new keybindings, exactly the Illustrator convention the app already follows. If you can select it, you can style it: objects, faces, named face groups, edge classes, individual edges, tone bands, and every cast shadow.</p>
+<p><b>Selection is the product.</b> <kbd>V</kbd> (the existing select tool) picks whole objects; <kbd>A</kbd> (the existing direct-select tool) picks faces, edges, and regions — zero new <em>global</em> keybindings, exactly the Illustrator convention the app already follows. If you can select it, you can style it: objects, faces, named face groups, edge classes, individual edges, tone bands, and every cast shadow.</p>
 
 <blockquote>The test of success: a plotter artist who has never touched a 3D app drops three boxes, drags the <em>shadow</em> until the light is right, clicks the shadow, makes it purple hatch at 2&nbsp;mm, and plots — without opening a single dialog.</blockquote>
 
 <h2 id="inspiration"><span class="secno">2</span>What the inspiration demands</h2>
 
-<p>We audited all eight inspiration pieces clause-by-clause. Each row names the capability that piece cannot exist without — these became requirements, and every one is producible in v1.</p>
+<p>Eight reference pieces set the capability bar. Each row names the capability that piece cannot exist without; every one is producible in v1.</p>
 
 <div class="tablewrap"><table>
 <tr><th>Piece</th><th>Signature</th><th>Capability it demands</th></tr>
@@ -204,7 +204,7 @@ summary{cursor:pointer;font-family:'Avenir Next',sans-serif;font-weight:600;font
 <p>A <code>scene3d</code> layer owns one scene, fully serialized in <code>layer.params</code> (JSON-safe; regenerates from params; format-versioned with a migration slot). Nodes:</p>
 <ul>
 <li><b>Objects</b> — parametric primitives: box, sphere (incl. superellipsoid exponents), cylinder, cone, torus, torus knot, capsule, plane, and the full polyhedron solid family (platonic, geodesic, Goldberg dual, prism/antiprism, cupola, star) with its deformers (expand, twist, explode, extrude, shard) as object-level params. Transform = position, yaw/pitch/roll, scale. Internally each object is a <b>SceneMesh</b>: a welded mesh (drives HLR, hit-testing, shadows) <em>plus</em> the analytic (u,v) chart where one exists (drives exact curved-surface fills).</li>
-<li><b>Lights</b> — v1: one or more <em>directional</em> lights (all eight inspiration pieces are directional; point/spot are v2). A light = azimuth/elevation + tone thresholds + <code>castShadows</code>. Each light carries a <code>type</code> field (<code>'directional'</code> in v1) so point/spot lights extend the schema without migration.</li>
+<li><b>Lights</b> — v1: one or more <em>directional</em> lights (all eight reference pieces are directional; point/spot are v2). A light = azimuth/elevation + tone thresholds + <code>castShadows</code>. Each light carries a <code>type</code> field (<code>'directional'</code> in v1) so point/spot lights extend the schema without migration.</li>
 <li><b>Ground &amp; Backdrop</b> — first-class styleable receivers, default scene members. The backdrop is the infinite "sky" behind everything. <b>Paper color</b> is a document-level preview setting (dark-stock work).</li>
 <li><b>Camera</b> — isometric presets + ortho/perspective toggle; reuses <code>resolveProjection</code>/<code>projectPoint</code> and the existing on-canvas orbit gizmo.</li>
 <li><b>Face groups</b> — named face sets. <code>continuous:true</code> requires <em>parallel</em> faces (shared normal — coplanarity is sufficient, not required, so stacked block tops group fine); the group compiles to one shared planar chart: fill generated once over the union, clipped per member face, fragments re-stamped with their <code>faceId</code>.</li>
@@ -213,23 +213,43 @@ summary{cursor:pointer;font-family:'Avenir Next',sans-serif;font-weight:600;font
 </ul>
 <p><b>Stable identity.</b> Primitives emit deterministic semantic face IDs (<code>box→f:top…</code>; torus→<code>f:outer/f:inner</code> + (u,v) addressing). Imported meshes are segmented at import into dihedral-bounded <em>patches</em> — patches are the selectable unit, raw triangles never are. Edge IDs are canonical sorted vertex-pair keys. On topology change, orphaned styles invalidate <em>loudly</em> ("3 styles lost their faces — reassign?"), never silently remap. Every emitted path carries <code>meta:{objectId, faceId, role, regionClass?}</code> — the same meta channel hit-testing, transforms, and export already consume.</p>
 
+<h3>3.1b Object modifications — the modifier stack &amp; CSG</h3>
+<p>Users arriving from Blender, Fusion, SketchUp, or Tinkercad expect a standard modification toolset. A survey of the modifier/deformer systems across Blender, Cinema&nbsp;4D, Maya, 3ds&nbsp;Max, Modo, Fusion&nbsp;360, Shapr3D, SketchUp, Tinkercad, Rhino, OpenSCAD, Spline, and Womp converges on a core set — and on the UX patterns that make it approachable. Everything below preserves the doctrine: <b>objects stay parametric; there is no raw-mesh editing.</b></p>
+<ul>
+<li><b>Per-object modifier stack.</b> Ordered, non-destructive, drag-to-reorder (top→bottom evaluation, the Blender/Max convention), per-modifier enable toggle, duplicate, and <em>Freeze</em> (bake the stack into an imported-mesh asset — the only "apply", and it keeps the no-mesh-editing rule). The existing polyhedron deformers (expand, twist, explode, extrude, shard) stay object-level params on the solid family (A-06); the stack's modifiers apply after them.</li>
+<li><b>v1 modifier set</b> (the operations a 3D-literate user assumes exist): <b>Mirror</b> (per-axis, instanced), <b>Linear/Grid Array</b> and <b>Radial Array</b> (instanced copies with per-step offset/rotate/scale — one feature that covers fans, staircases, and helices), <b>Deform</b> (one modifier with a mode enum: bend · twist · taper · shear, shared axis gizmo with upper/lower limits — the Blender Simple-Deform shape), and <b>Displace by Noise Rack</b> (push vertices along normals from the shared noise stack — native to the house style and unavailable anywhere else). v2: Lattice/FFD (2×2×2, 3×3×3), Subdivision + per-edge crease, curve deform, per-face-ID inset/extrude (region vs individual), scatter with phyllotaxis distribution.</li>
+<li><b>Deformer correctness rules:</b> normals transform by the deformation's inverse-transpose Jacobian (stale normals silently corrupt silhouettes and hatch direction, not just shading); straight edges are pre-subdivided before deformation so bent silhouettes and HLR sampling do not miss curvature; deformers apply in one canonical stage before HLR sampling and shadow rays.</li>
+<li><b>Edge modifiers — Bevel</b>, parametric and exact, never a general mesh bevel: one Bevel concept with <code>width · segments · profile</code> where profile sweeps chamfer (flat) ↔ fillet (round) — the vocabulary all camps recognize. Implemented per primitive family: rounded box (6 inset planes + 12 quarter-cylinder strips + 8 sphere-octant corners — exact, with stable sub-face IDs <code>edge:+X+Y</code>, <code>corner:+X+Y+Z</code>); cylinder/cone fillet/chamfer as arcs in the lathe profile; prism/extrusion chamfer by insetting the 2D profile (path offset exists). Per-edge bevel <em>weights</em> ride on stable edge IDs in the cascade, the Blender pattern. Sphere/torus have nothing to bevel; beveling a CSG seam is B-rep-kernel territory and out of scope.</li>
+<li><b>CSG — Constructive Solid Geometry</b>, two skins over one engine:
+  <ul>
+  <li><i>Beginner skin (Tinkercad's gold standard):</i> <b>Hole is a property, Group is the boolean.</b> Any object can be marked <code>solid | hole</code>; holes render as translucent ghosts; grouping a selection performs the boolean; ungroup restores every operand intact.</li>
+  <li><i>CAD skin:</i> one <b>Combine</b> action with a mode switch — Join · Cut · Intersect, plus a "keep tools" toggle — same engine, familiar to Fusion/Shapr3D users.</li>
+  <li><i>Engine (v1): interval CSG, no mesh booleans.</i> A CSG group is a live scene-graph node over parametric operands. Because visibility is already per-sample, the composite is evaluated fogleman/ln-style: each primitive supplies analytic <code>intersect(ray)</code> and <code>contains(point)</code>; the boolean accepts ray hits on the composed boundary (a hit on A with <code>!B.contains(p)</code> for Cut, etc.). No mesh mutation, no BSP sliver/T-junction robustness cliff, operands stay parametric forever, and param edits re-evaluate live. Per-node bounding boxes prune the tests; shadows and silhouettes route through the composite so subtracted volumes neither occlude nor cast.</li>
+  <li><i>Seam curves:</i> the crisp outline where surfaces meet is computed analytically for plane/quadric pairs (box∩cylinder, sphere∩box — the dominant cases) and marched with Newton correction elsewhere; it joins the edge taxonomy as class <code>seam</code>, styleable like any edge class.</li>
+  <li><i>Cut-face identity:</i> in <code>A − B</code> the cavity wall is B's surface with negated parametric normals, re-keyed <code>cut:&lt;nodeId&gt;:&lt;objectId&gt;/&lt;faceId&gt;</code> — stable across regeneration because it derives from the CSG node and the operand's parametric face, never from mesh indices. The cascade resolves: explicit cut-face style → a <code>cut</code> class default (distinct hatch angle so cuts read) → tool style → base style.</li>
+  <li><i>v2: mesh-domain booleans</i> via vendored Manifold WASM (guaranteed-manifold, preserves face provenance through <code>faceID</code>) — needed only to boolean STL imports or deformed meshes, and to bake CSG trees to watertight geometry. BSP csg.js is the emergency fallback, never the primary path.</li>
+  <li><i>Failure discipline:</i> when an operation degenerates (tangent/coplanar contact), operands stay untouched and the bad contact is marked in-canvas — loud and local, never a silent wrong result.</li>
+  </ul></li>
+<li><b>Alignment &amp; placement:</b> per-axis Align (min/center/max) and Distribute for 3+ objects; <kbd>D</kbd> = drop to ground; click a face to set a temporary <b>workplane</b> (new objects and drags use it); snap grid plus face/edge/vertex inference snapping while dragging.</li>
+</ul>
+
 <h3>3.2 Regions &amp; drivers — lighting as a target factory</h3>
-<p>Both proposals converged on the same move independently, which is strong evidence it is right: <b>lighting produces named, styleable inputs — never pixels.</b> The merged model unifies this doc's tone bands and density drivers with the Ink-Pass proposal's driver taxonomy: a pass's <b>Driver</b> is one of <code>always · tone band · castShadow · specular · distance-to-edge · radial · noise</code> (<code>depth</code>, <code>facing</code>, and <code>curvature</code> are v2). The v1 mechanisms behind each driver are the judged, feasibility-verified ones below.</p>
+<p><b>Lighting produces named, styleable inputs — never pixels.</b> Tone bands and density drivers unify under one concept: a pass's <b>Driver</b> is one of <code>always · tone band · castShadow · specular · distance-to-edge · radial · noise</code> (<code>depth</code>, <code>facing</code>, and <code>curvature</code> are v2). The v1 mechanism behind each driver follows.</p>
 <ul>
 <li><b>Tone bands.</b> Lambert I = N·L quantized at user thresholds into named buckets (highlight / lit / shade / core). Flat faces: constant I → whole-face band assignment (trivial, exact). Curved faces: <b>Winkenbach priority modulation</b> — fills generate as prioritized stroke families; bands thin/cull priorities in highlights and add the cross-pass in shadows. No fragile iso-band polygons on curved meshes in v1; the <em>specular hotspot</em> is the one exemption (small, closed → clipping rings to it is cheap, satisfying "highlights = concentric rings" on a sphere).</li>
 <li><b>Tone is calibrated in ink, not millimetres.</b> Band response is expressed as coverage % computed from the pen's width; a one-click <em>tone ladder</em> test swatch calibrates any pen. Preview renders true pen widths on the paper color.</li>
 <li><b>Cast shadows.</b> Occluder silhouettes projected along the light direction onto ground/receiver faces. Shadows union <em>within style-equivalence classes</em>: a caster-bound style ("make <em>this</em> shadow purple") subtracts its caster's projection from the general union and fills separately; styled wins where they overlap. All booleans route through <code>FillBoolean.safeOp</code> (degrade = drop region; never crash generate()).</li>
-<li><b>Density drivers (v1 minimal).</b> A modify pass's driver can read one scalar field — <code>distanceToRegionEdge</code>, <code>radialFromPoint</code>, or <code>noise</code> — driving spacing, cull rate, or <b>perforation</b> (region-masked gap cutting: "gaps in a radial pattern of a given density", verbatim from the brief). Planar faces + receiver regions in v1; full driver plumbing v2.</li>
+<li><b>Density drivers (v1 minimal).</b> A modify pass's driver can read one scalar field — <code>distanceToRegionEdge</code>, <code>radialFromPoint</code>, or <code>noise</code> — driving spacing, cull rate, or <b>perforation</b> (region-masked gap cutting — gaps in a radial pattern of a given density). Planar faces + receiver regions in v1; full driver plumbing v2.</li>
 <li><b>Stable addressing.</b> Region styles bind to <code>(receiver, regionClass[, casterId])</code> tuples — never polygon instances — so styles survive the light moving, shadows merging and splitting.</li>
 </ul>
 
 <h3>3.3 The cascade — Plot Styles as Ink Pass stacks</h3>
-<p>A <b>Plot Style is an ordered stack of Ink Passes, not a single render-mode enum</b> <span class="muted small">(adopted from the parallel Ink-Pass proposal — it raises the creative ceiling decisively)</span>. Every pass reads as one sentence: <b>Target → Driver → Action → Pen</b>. A collapsed pass card reads "Shadow · Hatch 45° · 2 mm · Purple". One torus can stack: base contours + thick silhouette + purple shadow hatch + ring highlights + dashed hidden lines + a four-pen cycle — each pass independently editable, reorderable, and hideable. Overlapping add-passes simply overprint — both draw, deterministically, in stack order; Knockout/Interleave combination modes are v2.</p>
+<p>A <b>Plot Style is an ordered stack of Ink Passes, not a single render-mode enum.</b> Every pass reads as one sentence: <b>Target → Driver → Action → Pen</b>. A collapsed pass card reads "Shadow · Hatch 45° · 2 mm · Purple". One torus can stack: base contours + thick silhouette + purple shadow hatch + ring highlights + dashed hidden lines + a four-pen cycle — each pass independently editable, reorderable, and hideable. Overlapping add-passes simply overprint — both draw, deterministically, in stack order; Knockout/Interleave combination modes are v2.</p>
 <pre class="card" style="font:.8rem/1.5 var(--mono);overflow-x:auto">styleTable: {                                  // scope → Plot Style (whole stack)
   scene: PlotStyle,
   byObject:  { objectId: PlotStyle },
   byGroup:   { faceGroupId | smartSetId: PlotStyle },
-  byFace:    { "objectId/faceId": PlotStyle },
+  byFace:    { "objectId/faceId": PlotStyle },   // also accepts cut:<nodeId>:<objectId>/<faceId>; class defaults exist for cut and seam
   byRegion:  { "receiver/regionClass[/casterId]": PlotStyle },   // "ground/castShadow"
   byEdge:    { edgeClass | "objectId/edgeClass" | "objectId/edgeId": EdgeStyle }
 }
@@ -240,8 +260,8 @@ InkPass   = { target,                          // surface | region class | edge 
                                                //   or MODIFY existing (spacing× · cull · perforate · weight · pen-swap · jitter)
               penId }
 EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset passes — physically honest thickness
-              dash, hiddenTreatment }          // hidden: drop | dash | ghost</pre>
-<p><b>Legibility guardrails (the judged rules survive the stack model).</b> The cascade resolves the <em>whole stack</em>, most-specific-wins: face &gt; group/set &gt; object &gt; scene. Overriding forks the full stack — an explicit "Detach" moment; the inspector always shows one provenance chip ("Styled by: Object · Wood Grain" with ✕-to-clear). No per-pass inheritance across scopes in v1: "why is this face purple?" must always have one answer. New objects start from a fixed four-card template (Base Surface · Tone response · Edges · Pen Cycle), so the default experience stays exactly as simple as the old single-material model — the stack is there when you reach for it. One clarification keeps the card model honest: the Pen Cycle card is a front-end for the style's division treatment (§3.5) — whatever its position in the stack, it compiles to the division stage and always executes last (G-04).</p>
+              dash, hiddenTreatment }          // hidden: drop | dash (ghost v2)</pre>
+<p><b>Legibility guardrails.</b> The cascade resolves the <em>whole stack</em>, most-specific-wins: face &gt; group/set &gt; object &gt; scene. Overriding forks the full stack — an explicit "Detach" moment; the inspector always shows one provenance chip ("Styled by: Object · Wood Grain" with ✕-to-clear). No per-pass inheritance across scopes in v1: "why is this face purple?" must always have one answer. New objects start from a fixed four-card template (Base Surface · Tone response · Edges · Pen Cycle), so the default experience stays exactly as simple as a single material — the stack is there when you reach for it. One clarification keeps the card model honest: the Pen Cycle card is a front-end for the style's division treatment (§3.5) — whatever its position in the stack, it compiles to the division stage and always executes last (G-04).</p>
 <p><b>Swatches are copy-on-apply presets</b> (Wood Grain, Blueprint Hatch, Dash Shimmer, Solid Purple Shadow ship as starters). Editing a swatch never retroactively edits objects. Style DNA copy/paste and an Alt-click eyedropper move whole stacks between targets. Each object also keeps a <b>style stash</b>: every mapper family's params persist on the base pass, so toggling spiral→contour→spiral restores your twelve turns of tuning. <b>Looks</b> (named A/B snapshots of a whole stack for one object) are a P2 fast-follow.</p>
 
 <h3>3.4 Actions I: add-stroke mappers</h3>
@@ -261,10 +281,10 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 <p><b>Space discipline.</b> Screen-space fields are one global 2D field clipped against the <em>merged visible-silhouette union per (object × tone band)</em> — never per facet — so a plainly hatched sphere stays a family of long strokes (pen lifts matter). Chart-space fills are mm-honest on planar faces; on analytic charts distortion is bounded and declared. <b>Fill-record granularity:</b> one record per style-equivalence class of faces (regions = the class's union); fragments are re-stamped with <code>faceId</code> during the per-face clip pass; tone <code>override</code> splits the class (accepted, documented discontinuity), tone <code>modulate</code> is a post-op on the shared field's output so global fields never break.</p>
 
 <h3>3.4b Actions II: modify-existing strokes</h3>
-<p>The second action family operates on strokes another pass already produced — this is the brief's "apply an effect to the existing lines" verbatim, and the Ink-Pass proposal's taxonomy names it well. v1 ships: <b>spacing ×</b> (Winkenbach priority thin/densify), <b>cull %</b>, <b>perforate</b> (region-masked gap cutting at a driver-set density — "gaps in a radial pattern of a given density"), <b>weight ×</b>, and <b>pen swap</b>. v2 adds jitter, warp, shorten, and suppress-below-length. Modify passes run on stroke samples before visibility, so they compose with every mapper.</p>
+<p>The second action family operates on strokes another pass already produced — applying an effect to the existing lines instead of adding new ones. v1 ships: <b>spacing ×</b> (Winkenbach priority thin/densify), <b>cull %</b>, <b>perforate</b> (region-masked gap cutting at a driver-set density — "gaps in a radial pattern of a given density"), <b>weight ×</b>, and <b>pen swap</b>. v2 adds jitter, warp, shorten, and suppress-below-length. Modify passes run on stroke samples before visibility, so they compose with every mapper.</p>
 
 <h3>3.5 Treatments</h3>
-<p><b><code>divideStroke</code></b> — a new core primitive: walk true arc length, cut into a repeating cycle of classes <code>[{lenMm, penId}, {gapMm}, …]</code>, each sub-path stamped <code>meta.penId</code>. Grammar: ordered cycles (A–B–A–C), weighted-random pen choice, phase fixed / per-path / jitter, <b>butt-join default</b> (pen lifts only on true gaps), gaps as a first-class "pen named none". <b>Phase is computed in pre-clip arc length</b> — the unbroken source path (or the group chart) stamps every fragment's offset, so color sequences flow seamlessly across face seams and occlusion gaps. Divisions mount on <em>every layer type</em> as an optional treatment (flowfield + divisions is inspiration piece 6, no scene needed).</p>
+<p><b><code>divideStroke</code></b> — a new core primitive: walk true arc length, cut into a repeating cycle of classes <code>[{lenMm, penId}, {gapMm}, …]</code>, each sub-path stamped <code>meta.penId</code>. Grammar: ordered cycles (A–B–A–C), weighted-random pen choice, phase fixed / per-path / jitter, <b>butt-join default</b> (pen lifts only on true gaps), gaps as a first-class "pen named none". <b>Phase is computed in pre-clip arc length</b> — the unbroken source path (or the group chart) stamps every fragment's offset, so color sequences flow seamlessly across face seams and occlusion gaps. Divisions mount on <em>every layer type</em> as an optional treatment (flowfield + divisions is reference piece 6, no scene needed).</p>
 <p><b>Division data flow (explicit contract):</b> division runs as a final engine-side display-pipeline stage <em>after</em> <code>engine.optimizeLayers</code> (simplify → sort → parent-path dedupe), chain-aware so pen classes sort as ordered chains; one divided output feeds canvas, preview, plot statistics, and export identically. The SVG export fix — grouping by effective per-path pen, dedupe re-keyed by effective pen — lands first as its own regression-covered PR.</p>
 
 <h2 id="demos"><span class="secno">4</span>Interactive demos</h2>
@@ -345,7 +365,7 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 <div class="demo" id="demo4">
   <header><h3>④ The Division Lab — multi-pen stroke divisions + plot physics</h3><div class="why">demos: divideStroke grammar · butt-join vs gaps · phase modes · per-pen plot stats</div></header>
   <div class="body">
-    <div class="stage-wrap" style="background:#241f33"><canvas id="c4" width="640" height="440"></canvas><div class="hint" style="background:rgba(30,26,48,.8);color:#cfc7e8">Concentric-ring fill on dark stock, divided into a pen cycle — inspiration piece 4's shimmer. Try phase “jitter”.</div></div>
+    <div class="stage-wrap" style="background:#241f33"><canvas id="c4" width="640" height="440"></canvas><div class="hint" style="background:rgba(30,26,48,.8);color:#cfc7e8">Concentric-ring fill on dark stock, divided into a pen cycle — reference piece 4's shimmer. Try phase “jitter”.</div></div>
     <div class="ctrl">
       <label>Pen cycle (drag lengths)</label>
       <div id="d4cycle"></div>
@@ -388,7 +408,7 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 
 <h2 id="interaction"><span class="secno">5</span>Interaction design</h2>
 
-<h3>5.1 Selection: <kbd>V</kbd> and <kbd>A</kbd>, specialized — zero new bindings</h3>
+<h3>5.1 Selection: <kbd>V</kbd> and <kbd>A</kbd>, specialized — zero new global bindings</h3>
 <p><kbd>V</kbd> already activates the select tool and <kbd>A</kbd> the direct-select tool (<code>src/ui/shortcuts.js:211/221</code>). When a <code>scene3d</code> layer is active they specialize — exactly the Illustrator convention users already have:</p>
 <ul>
 <li><b>Object mode (V):</b> click picks a whole scene object via its projected path bundle (<code>meta.objectId</code>, nearest depth wins). Standard bounds; the existing 3D orbit gizmo targets the <em>selected object</em> — with nothing selected it orbits the <em>camera</em>. Scene layers suppress the 2D layer-transform handles (no dual-meaning drags).</li>
@@ -440,12 +460,26 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 <tr><td><kbd>A</kbd> again / <kbd>2</kbd> <kbd>3</kbd></td><td>cycle component submode · direct: edge / face (vertex is v2; status bar shows "A · Face")</td></tr>
 <tr><td><kbd>Tab</kbd></td><td>toggle V↔A</td></tr>
 <tr><td><kbd>L</kbd></td><td>select light</td></tr>
+<tr><td><kbd>D</kbd></td><td>drop selection to ground</td></tr>
+<tr><td><kbd>Cmd/Ctrl+D</kbd></td><td>duplicate selection</td></tr>
+<tr><td><kbd>Cmd/Ctrl+G</kbd></td><td>group faces / boolean-group objects (holes apply)</td></tr>
+<tr><td><kbd>Alt</kbd>-drag</td><td>duplicate and move</td></tr>
+<tr><td>Right-click / long-press</td><td>target-specific context menu (object · face · edge · region · light · canvas)</td></tr>
 <tr><td><kbd>Alt</kbd>-click</td><td>cycle depth / region sub-targets</td></tr>
 <tr><td><kbd>Alt</kbd>-click (popover open)</td><td>style eyedropper</td></tr>
 <tr><td><kbd>Esc</kbd></td><td>exit isolation</td></tr>
 </table></div>
 </div>
 </div>
+
+<h3>5.5 Nothing lives only in a panel</h3>
+<p>The accessibility rule for every common behavior: <b>reachable within two interactions of the canvas</b> — a context-bar control, a right-click menu item, or a shortcut. The panel is the place for depth (full stacks, all params, the scene tree), never the only route to a frequent action.</p>
+<ul>
+<li><b>Right-click is target-aware.</b> Right-click (or long-press) opens a menu for exactly what was hit, common verbs first: <em>object</em> → mapper family, pen, Duplicate, Mirror, Array, Combine, solid/hole, Select Similar, Group, Isolate, Freeze, Delete; <em>face/edge</em> → style, pen, Select Similar, Group Selection, bevel weight, set workplane, copy/paste style; <em>region</em> → fill style, pen, band thresholds, per-caster split; <em>light</em> → band editor, cast-shadows toggle; <em>canvas</em> → add primitive, paste, camera presets.</li>
+<li><b>Gizmos over fields.</b> Orbit, ground-drag, Shift-lift, scale handles, the deformer axis gizmo, the sun/shadow-tip handle, and the rings-center handle all manipulate directly on canvas with live value readouts; the panel mirrors, never gates.</li>
+<li><b>The context bar is the fast lane.</b> It morphs per selection and carries the top actions inline — mapper chips + pen everywhere, ⛓ Group on multi-face, Combine on multi-object, band chips on regions.</li>
+<li><b>Input parity.</b> Every pointer action has a keyboard path; Alt-click cycling and Alt-marquee get touch equivalents (long-press menu); selection cues never rely on color alone.</li>
+</ul>
 
 <p><b>Undo:</b> one history entry per gesture (snapshot on pointer-down via <code>onEdit</code>, commit on release — the app-wide contract), taken on release only; <code>sceneSelection</code> restores with the snapshot.</p>
 
@@ -455,7 +489,7 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 <div class="pipe">
   <div class="stage"><i>S1</i><b>Assemble</b><span>objects → world-space SceneMeshes + charts, normals, edge adjacency</span></div>
   <div class="stage"><i>S2</i><b>Project</b><span>resolveProjection / projectPoint (unchanged); per-face polygons + depth</span></div>
-  <div class="stage"><i>S3</i><b>Classify edges</b><span>silhouette · crease · boundary · hidden (Blender Line Art taxonomy)</span></div>
+  <div class="stage"><i>S3</i><b>Classify edges</b><span>silhouette · crease · boundary · seam (CSG, Phase 4D) · hidden (Blender Line Art taxonomy)</span></div>
   <div class="stage"><i>S4</i><b>Regions</b><span>tone bands · cast shadows (class-scoped union) · specular hotspots</span></div>
   <div class="stage"><i>S5</i><b>Map fills</b><span>cascade-resolved mappers per style class; chart or screen space; modify passes (spacing · cull · perforate) run here, pre-visibility</span></div>
   <div class="stage"><i>S6</i><b>Visibility</b><span>flat-face fast path + scene depth buffer; binary + dash</span></div>
@@ -498,7 +532,7 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 
 <h2 id="reqs"><span class="secno">7</span>Requirements</h2>
 
-<p><b>Summary.</b> v1 spans 12 requirement groups (A–L, 107 MUSTs): scene/objects and selection (A–B), the style cascade and mappers (C–D), lighting-made regions (E), visibility (F), stroke divisions (G), panels (H), performance and serialization (I–J), export and testing (K–L). The riskiest clusters are the shadow booleans (E-07…E-09), the depth-buffer API (F-04/F-05), and the Phase 0C extraction (L-02). Point/spot lights, OBJ, quantitative x-ray, and full density plumbing form the v2 line. Requirements are written in Simplified Technical English: short sentences, active voice, one requirement per item. Priorities: <span class="pill must">MUST</span> ships in v1 · <span class="pill should">SHOULD</span> ships in v1 if the phase stays on budget · <span class="pill v2">V2</span> is deferred and flagged. Every MUST maps to a phase in §8 and at least one test class.</p>
+<p><b>Summary.</b> v1 spans 14 requirement groups (A–N, ~135 MUSTs): scene/objects and selection (A–B), the style cascade and mappers (C–D), lighting-made regions (E), visibility (F), stroke divisions (G), panels (H), performance and serialization (I–J), export and testing (K–L), object modifications and CSG (M), and ease of use (N). The riskiest clusters are the shadow booleans (E-07…E-09), the depth-buffer API (F-04/F-05), CSG seam extraction (M-13), and the Phase 0C extraction (L-02). Point/spot lights, OBJ, quantitative x-ray, and full density plumbing form the v2 line. Requirements are written in Simplified Technical English: short sentences, active voice, one requirement per item. Priorities: <span class="pill must">MUST</span> ships in v1 · <span class="pill should">SHOULD</span> ships in v1 if the phase stays on budget · <span class="pill v2">V2</span> is deferred and flagged. Every MUST maps to a phase in §8 and at least one test class.</p>
 
 <h3>A · Scene and objects</h3>
 <div class="req"><b class="id">A-01</b><span class="pr M">must</span>The <code>scene3d</code> layer must hold many objects, one or more directional lights, one ground plane, one backdrop, and one camera.</div>
@@ -548,7 +582,7 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 <div class="req"><b class="id">C-04d</b><span class="pr M">must</span>New objects must start from the fixed four-card template: Base Surface, Tone response, Edges, Pen Cycle.</div>
 <div class="req"><b class="id">C-04e</b><span class="pr M">must</span>Mapper params extend the fill-record schema.</div>
 <div class="req"><b class="id">C-05</b><span class="pr M">must</span>Region styles must bind to (receiver, regionClass, optional casterId) tuples. They must not bind to polygon instances.</div>
-<div class="req"><b class="id">C-06</b><span class="pr M">must</span>An EdgeStyle must hold: pen, weight in mm, dash, and hidden treatment (drop, dash, or ghost).</div>
+<div class="req"><b class="id">C-06</b><span class="pr M">must</span>An EdgeStyle must hold: pen, weight in mm, dash, and hidden treatment (drop or dash; ghost is v2).</div>
 <div class="req"><b class="id">C-07</b><span class="pr M">must</span>Edge weight must render as N parallel offset passes. The silhouette class must default heavier than creases.</div>
 <div class="req"><b class="id">C-08</b><span class="pr M">must</span>Each object must keep a style stash: the last params of every mapper family. A family toggle must restore that family's stash.</div>
 <div class="req"><b class="id">C-09</b><span class="pr M">must</span>Swatches must be copy-on-apply presets. A swatch edit must not change objects that used it.</div>
@@ -583,7 +617,7 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 <div class="req"><b class="id">E-09</b><span class="pr M">must</span>All area booleans must run through <code>safeOp</code>. A failed boolean must drop the region. It must never crash generation.</div>
 <div class="req"><b class="id">E-10</b><span class="pr M">must</span>A modify pass must accept one scalar driver: distance-to-region-edge, radial-from-point, or noise. The driver must drive spacing, cull rate, or perforation. v1 scope: planar faces and receiver regions. (Depth, facing, and curvature drivers are v2.)</div>
 <div class="req"><b class="id">E-11</b><span class="pr M">must</span>Perforation must cut region-masked gaps into existing strokes at a given density and gap length.</div>
-<div class="req"><b class="id">E-12</b><span class="pr C">v2</span>Specular spill onto neighbor faces; point/spot lights with falloff; penumbra ramps; full density-field plumbing. (Spill needs receiver-side reflected-ray region generation — genuinely new machinery no inspiration piece depends on; the hotspot-on-object half of the ask ships in v1 via E-04.)</div>
+<div class="req"><b class="id">E-12</b><span class="pr C">v2</span>Specular spill onto neighbor faces; point/spot lights with falloff; penumbra ramps; full density-field plumbing. (Spill needs receiver-side reflected-ray region generation — genuinely new machinery no reference piece depends on; the hotspot-on-object half ships in v1 via E-04.)</div>
 
 <h3>F · Visibility</h3>
 <div class="req"><b class="id">F-01</b><span class="pr M">must</span>Polyhedral scenes must use the flat-face fast path: z-sorted projected face polygons clipping farther paths.</div>
@@ -642,9 +676,43 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 <div class="req"><b class="id">L-03</b><span class="pr M">must</span>Each behavior change must have a test that fails without it (repo RGR rule).</div>
 <div class="req"><b class="id">L-04</b><span class="pr M">must</span>Docs contract per repo rules: README, CHANGELOG, plans.md, in-app help, version sync.</div>
 
+<h3>M · Object modifications and CSG</h3>
+<div class="req"><b class="id">M-01</b><span class="pr M">must</span>Each object must carry an ordered, non-destructive modifier stack: drag-to-reorder, per-modifier enable, duplicate.</div>
+<div class="req"><b class="id">M-02</b><span class="pr M">must</span>Freeze must bake an object's stack into an imported-mesh asset. This is the only "apply". Raw meshes stay non-editable.</div>
+<div class="req"><b class="id">M-03</b><span class="pr M">must</span>The v1 modifier set must include: Mirror (per-axis, instanced), Linear/Grid Array, Radial Array, and Deform (bend, twist, taper, shear) with a shared axis gizmo and limits.</div>
+<div class="req"><b class="id">M-04</b><span class="pr M">must</span>Arrays must instance their source and support per-step offset, rotation, and scale.</div>
+<div class="req"><b class="id">M-05</b><span class="pr M">must</span>Displace-by-Noise-Rack must push vertices along normals from the shared noise stack. No modifier-specific noise system.</div>
+<div class="req"><b class="id">M-06</b><span class="pr M">must</span>Deformed geometry must recompute normals by the deformation Jacobian and pre-subdivide straight edges. Deformers apply before HLR sampling and shadow rays.</div>
+<div class="req"><b class="id">M-07</b><span class="pr M">must</span>Bevel must be parametric per primitive family: rounded box, lathe-profile fillet/chamfer on cylinder and cone, inset-profile chamfer on prisms and extrusions. One control set: width, segments, profile (chamfer ↔ round).</div>
+<div class="req"><b class="id">M-08</b><span class="pr M">must</span>Bevel sub-faces and edge strips must carry stable IDs (<code>edge:+X+Y</code>, <code>corner:+X+Y+Z</code>). Per-edge bevel weights must ride on edge IDs.</div>
+<div class="req"><b class="id">M-09</b><span class="pr M">must</span>Any object must accept a <code>solid | hole</code> flag. Holes render as translucent ghosts. Grouping an object selection performs the boolean (Join when no holes are marked); ungroup restores all operands. (Face selections group as face groups per B-08 — the two <kbd>Cmd/Ctrl+G</kbd> meanings never overlap because the selection kinds differ.)</div>
+<div class="req"><b class="id">M-10</b><span class="pr M">must</span>A Combine action must offer Join, Cut, and Intersect with a "keep tools" toggle. It uses the same engine as hole-grouping.</div>
+<div class="req"><b class="id">M-11</b><span class="pr M">must</span>CSG must be a live scene-graph node over parametric operands, evaluated per sample via analytic <code>intersect(ray)</code> and <code>contains(point)</code>. v1 performs no mesh booleans. Parameter edits re-evaluate live.</div>
+<div class="req"><b class="id">M-12</b><span class="pr M">must</span>Shadows, occlusion, and silhouettes must route through the composite solid. Subtracted volumes must not occlude or cast shadows.</div>
+<div class="req"><b class="id">M-13</b><span class="pr M">must</span>Seam curves must render as edge class <code>seam</code>: analytic for plane/quadric pairs, marched elsewhere. The seam class must be styleable like any edge class.</div>
+<div class="req"><b class="id">M-14</b><span class="pr M">must</span>Cut faces must be styleable targets keyed <code>cut:&lt;nodeId&gt;:&lt;objectId&gt;/&lt;faceId&gt;</code> with negated parametric normals, resolving: explicit style → <code>cut</code> class default → tool style → base style.</div>
+<div class="req"><b class="id">M-15</b><span class="pr M">must</span>A degenerate boolean must leave operands untouched and mark the failing contact in-canvas. It must never crash or silently mis-render.</div>
+<div class="req"><b class="id">M-16</b><span class="pr M">must</span>Align (per-axis min/center/max), Distribute, drop-to-ground (<kbd>D</kbd>), workplane-from-face, snap grid, and face/edge/vertex inference snapping must ship in v1 (Phase 1C).</div>
+<div class="req"><b class="id">M-17</b><span class="pr C">v2</span>Lattice/FFD; Subdivision + per-edge crease; curve deform; per-face-ID inset/extrude (region vs individual); Combine "Split" mode (keep all pieces); scatter (incl. phyllotaxis); mesh-domain booleans via vendored Manifold WASM for STL/deformed operands and CSG baking, preserving face provenance. (Manifold cautions: ~1–2 MB vendored binary, async instantiation, manual object lifetime, a "not solid" error path for non-watertight input, and module loading that must still work from <code>file://</code> per I-04.)</div>
+
+<h3>N · Ease of use — nothing lives only in a panel</h3>
+<div class="req"><b class="id">N-01</b><span class="pr M">must</span>Every common action must be reachable within two interactions of the canvas: a context-bar control, a right-click menu item, or a shortcut. The side panel must never be the only route. "Common actions" are the verbs enumerated in N-03 through N-08, which makes this rule checkable by one e2e sweep.</div>
+<div class="req"><b class="id">N-02</b><span class="pr M">must</span>Right-click must open a context menu specific to the hit target — canvas, object, face, edge, region, or light — listing that target's common actions first.</div>
+<div class="req"><b class="id">N-03</b><span class="pr M">must</span>The object context menu must include: mapper family, pen, Duplicate, Mirror, Array, Combine, solid/hole toggle, Select Similar, Group, Isolate, Freeze, Delete.</div>
+<div class="req"><b class="id">N-04</b><span class="pr M">must</span>The face/edge context menu must include: style/pen, Select Similar, Group Selection, bevel weight (edges), set workplane (faces), copy/paste style. Dragging on a selected edge must adjust bevel width live; the profile control toggles chamfer ↔ fillet.</div>
+<div class="req"><b class="id">N-05</b><span class="pr M">must</span>The region context menu must include: fill style, pen, band thresholds, per-caster split. The light context menu must include: tone band editor, cast-shadows toggle.</div>
+<div class="req"><b class="id">N-05b</b><span class="pr M">must</span>The canvas context menu must include: add primitive, paste, and camera presets.</div>
+<div class="req"><b class="id">N-06</b><span class="pr M">must</span>The on-canvas gizmo set must cover: orbit (selected object, else camera), ground-plane drag, Shift-lift, scale handles, the deformer axis gizmo, the sun/shadow-tip handle, and the rings-mapper center handle. Each shows a live value readout while dragging.</div>
+<div class="req"><b class="id">N-07</b><span class="pr M">must</span>The context bar must morph per selection kind and expose the top actions inline: mapper chips + pen for objects/faces, Group for multi-face, Combine for multi-object, band chips for regions.</div>
+<div class="req"><b class="id">N-08</b><span class="pr M">must</span>Scene-scoped shortcuts must cover the common verbs: <kbd>V</kbd>/<kbd>A</kbd>/<kbd>Tab</kbd> modes, <kbd>2</kbd>/<kbd>3</kbd> submodes, <kbd>D</kbd> drop-to-ground, <kbd>L</kbd> light, <kbd>Cmd/Ctrl+D</kbd> duplicate, <kbd>Cmd/Ctrl+G</kbd> group/boolean, Alt-click cycle, Alt-drag duplicate-and-move. The in-app shortcut list must document all of them.</div>
+<div class="req"><b class="id">N-09</b><span class="pr M">must</span>Every pointer action must have a keyboard path, and touch equivalents must exist for Alt-click cycling and Alt-marquee (long-press menu). Selection cues must not rely on color alone.</div>
+<div class="req"><b class="id">N-10</b><span class="pr M">must</span>Hover must pre-highlight the target under the cursor (object silhouette in V; face/edge tint in A) from cached projections, without regeneration.</div>
+<div class="req"><b class="id">N-11</b><span class="pr S">should</span>A press-pull gesture should extrude a clicked face parametrically (box height, cylinder length, prism depth) where the primitive's params allow it.</div>
+<div class="req"><b class="id">N-12</b><span class="pr S">should</span>Double-pressing a tool key should open its options; long-press on canvas should open the context menu (touch parity).</div>
+
 <h2 id="plan"><span class="secno">8</span>Implementation plan — parallel phases</h2>
 
-<p>Six phases. Inside each phase, workstreams touch <b>disjoint file sets</b> and can run as parallel implementer→adversarial-review→judge teams in isolated worktrees (the project's established multi-agent pattern). Every phase ends at a test gate; Phase 0's three product-independent enablers de-risk everything after them.</p>
+<p>Six phases. Inside each phase, workstreams touch <b>disjoint file sets</b> and can be built in parallel in isolated worktrees. Every phase ends at a test gate; Phase 0's four product-independent enablers de-risk everything after them.</p>
 
 <div class="phase"><header><h3>Phase 0 · Enablers</h3><span class="meta">4 parallel streams · no user-visible scene yet · every stream independently shippable</span></header>
 <div class="streams">
@@ -660,7 +728,7 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 <div class="streams">
   <div class="stream"><b>1A · Engine</b>scene3d layer + params schema + assembly (world transforms) + camera + flat-face HLR (per-sample support-plane depth; ground/backdrop never occlude) + scene depth-buffer API (depthAt, ownerId) + edge classification + dirty-flag DAG.<span class="files">src/core/algorithms/scene3d.js · src/core/scene3d/* · config/defaults.js</span></div>
   <div class="stream"><b>1B · Panel & styles</b>Scene3DPanel (Scene tab: shelf, tree, inspector) + styleTable + cascade resolver + provenance chips + asset-aware cloneLayerParams + serialization/migration.<span class="files">src/ui/panels/scene3d-panel.js · engine serialization · skin/components.css</span></div>
-  <div class="stream"><b>1C · Selection & canvas</b>v/a specialization + face/edge hit-testing + Alt-cycling + marquee + gizmo target resolver + ground-drag/Shift-lift + context-bar scene contexts.<span class="files">renderer.js · context-bar · shortcuts (scene-scoped)</span></div>
+  <div class="stream"><b>1C · Selection & canvas</b>v/a specialization + face/edge hit-testing + Alt-cycling + marquee + gizmo target resolver + ground-drag/Shift-lift + context-bar scene contexts + target-aware right-click menus + align/drop-to-ground/workplane + snap grid + face/edge/vertex inference snapping.<span class="files">renderer.js · context-bar · scene context menus · shortcuts (scene-scoped)</span></div>
 </div>
 <div class="gate"><b>Gate:</b> build a 6-box composition, style objects/faces independently, export correct per-pen SVG · e2e flow test · perf: 12-object drag ≥20fps</div>
 </div>
@@ -673,33 +741,35 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 <div class="gate"><b>Gate:</b> hero “Golden Hour” (voxel city, shadow sweep) reproduces · shadow drag never crashes under grazing light fuzz test · visual baselines for 3 lit scenes · paper-color pen-true preview verified on dark stock</div>
 </div>
 
-<div class="phase"><header><h3>Phase 3 · Mappers</h3><span class="meta">3 parallel streams · the unification payoff</span></header>
+<div class="phase"><header><h3>Phase 3 · Mappers</h3><span class="meta">4 parallel streams · the unification payoff</span></header>
 <div class="streams">
   <div class="stream"><b>3A · Native mappers</b>spiral/meridians, contour, facet, wireframe on SceneMesh charts + style stash. (Context-bar family chips are wired by 1C/3C, which own the context-bar file.)<span class="files">src/core/scene3d/mappers/*.js</span></div>
   <div class="stream"><b>3B · Field mappers</b>Screen-space fields with silhouette-union clipping + rings mapper (draggable center) + pattern:*/field:* on charts (planar + analytic) + noise displacement post-op.<span class="files">mappers/screen.js, pattern-bridge.js</span></div>
   <div class="stream"><b>3C · Face groups &amp; Smart Sets</b>Parallel-face shared charts + per-face clip/re-stamp + Group Selection + scoped Select Similar + live Smart Sets + per-face seeds.<span class="files">scene3d/groups.js, sets.js · context-bar · renderer</span></div>
+  <div class="stream"><b>3D · Modifier stack</b>Stack UI + Mirror + Linear/Radial Array (instanced, per-step transforms) + Deform (bend/twist/taper/shear, Jacobian normals, pre-subdivision) + Displace-by-Noise-Rack + parametric bevels + Freeze.<span class="files">scene3d/modifiers/*.js · scene3d-panel stack section</span></div>
 </div>
-<div class="gate"><b>Gate:</b> hero “Same Torus, Five Ways” (the succession gate) · hero “Woodshop” (stacked-block continuous tops) · visual baselines per mapper</div>
+<div class="gate"><b>Gate:</b> hero “Same Torus, Five Ways” (the succession gate) · hero “Woodshop” (stacked-block continuous tops) · visual baselines per mapper · beveled-array composition baseline (rounded boxes, radial array, bent column)</div>
 </div>
 
-<div class="phase"><header><h3>Phase 4 · Treatments & output</h3><span class="meta">3 parallel streams · pens, physics, imports</span></header>
+<div class="phase"><header><h3>Phase 4 · Treatments & output</h3><span class="meta">4 parallel streams · pens, physics, imports</span></header>
 <div class="streams">
   <div class="stream"><b>4A · Divisions UX</b>Cycle editor (PenList rows) on scene styles AND as a universal per-layer treatment; phase modes; butt-join.<span class="files">scene3d-panel · layer panel treatment section</span></div>
   <div class="stream"><b>4B · Density & physics</b>Scalar density driver (distance/radial/noise) + perforation + plot stats (lifts, travel, time per pen) in Output tab.<span class="files">scene3d/modulate.js · export stats</span></div>
   <div class="stream"><b>4C · Import & presets</b>STL import + dihedral patch segmentation + drag-drop + swatch shelf + style DNA copy/paste + starter swatches + hero-demo presets (user-presets/scene3d/).<span class="files">stl-parser extension · scene3d/patches.js · preset bundle</span></div>
+  <div class="stream"><b>4D · CSG</b>Solid/hole flag + boolean-group gesture + Combine (Join/Cut/Intersect, keep-tools) + interval-CSG evaluation in visibility/shadows + seam curves (analytic quadric pairs, marched fallback) + cut-face identity and <code>cut</code> class styling + loud-and-local failure marks.<span class="files">scene3d/csg.js, seams.js · context-bar · scene context menus</span></div>
 </div>
-<div class="gate"><b>Gate:</b> hero “Disco Still Life” (4-pen shimmer + solid purple shadows + rings backdrop, on dark paper) · plot-stats accuracy test vs known geometry · import a 5k-face STL and style patches</div>
+<div class="gate"><b>Gate:</b> hero “Disco Still Life” (4-pen shimmer + solid purple shadows + rings backdrop, on dark paper) · hero “Drilled Monolith” (box minus cylinder array; cut faces styled by the <code>cut</code> class; seam curves crisp; the hole neither occludes nor casts) · plot-stats accuracy test vs known geometry · import a 5k-face STL and style patches</div>
 </div>
 
 <div class="phase"><header><h3>Phase 5 · Reach</h3><span class="meta">post-v1 · prioritized by artist demand</span></header>
 <div class="streams">
-  <div class="stream"><b>Deferred, flagged</b>OBJ import · quantitative x-ray levels · specular spill · full density-field plumbing · radial pie menu · point/spot lights · section cutaways · Convert-to-Scene upgrader · worker offload (http-served) · turntable multi-frame export.<span class="files">—</span></div>
+  <div class="stream"><b>Deferred, flagged</b>OBJ import · quantitative x-ray levels · specular spill · full density-field plumbing · radial pie menu · point/spot lights · section cutaways · Convert-to-Scene upgrader (polyhedron/topoform; the spiralizer converter ships in Phase 4 per §11.1 Decision 4) · worker offload (http-served) · turntable multi-frame export.<span class="files">—</span></div>
 </div>
 <div class="gate"><b>Gate per item:</b> its own RGR coverage + doc contract</div>
 </div>
 
 <h3>8.0 Release gates (every phase, non-negotiable)</h3>
-<p class="small">Adopted from the Ink-Pass proposal's doctrine — its live audit proved that visible controls cannot be assumed to equal dependable capability (the June 3D audit's silent no-ops). Three "truths" gate every release:</p>
+<p class="small">Visible controls cannot be assumed to equal dependable capability — the June 3D audit found controls that were silent no-ops, and a live review caught a default wireframe sphere emitting ≈30,000 paths with no warning. Three "truths" gate every release:</p>
 <ul class="small">
 <li><b>Visual truth</b> — every surfaced control changes a reviewed output under a representative scene; dense output cannot conceal a nominal effect.</li>
 <li><b>Plot truth</b> — pen groups, physical gaps, stats, optimization, sort order, and SVG all agree on the same effective path pen.</li>
@@ -707,7 +777,7 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 </ul>
 
 <h3>8.1 Dependencies</h3>
-<p class="small" style="font-family:var(--mono)">0A → (G-gates in 4A/4B) · 0B → 4A · 0C → 1A → {2A, 3A} · 0D → 1B → 3A · 1C → 3C · 2A → 4B driver · all → 4C presets. Streams inside a phase are file-disjoint by construction; collisions found in scouting re-partition before implementation (repo rule).</p>
+<p class="small" style="font-family:var(--mono)">0A → (G-gates in 4A/4B) · 0B → 4A · 0C → 1A → {2A, 3A, 3D} · 0D → 1B → 3A · 1C → {3C, 4D menus} · 2A → 4B driver · 1A intersect/contains interfaces → 4D · all → 4C presets. Streams inside a phase are file-disjoint by construction; collisions found in scouting re-partition before implementation (repo rule).</p>
 
 <h3>8.2 Hero demos (ship with presets; each is a marketing asset and a test)</h3>
 <ol class="small">
@@ -717,6 +787,7 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 <li><b>Woodshop</b> — stacked blocks, one continuous knotted grain across all tops, independent sides.</li>
 <li><b>X-Ray Machine</b> — one glass object among solids, interior dashed, specular hotspot ringed.</li>
 <li><b>One Pen, All Tones</b> — the blue cutaway: a single pen, everything said with density drivers and tone bands.</li>
+<li><b>Drilled Monolith</b> — a rounded box drilled by a radial array of cylinders: cut walls hatched by the <code>cut</code> class, crisp seam curves, light raking through the holes.</li>
 </ol>
 
 <h2 id="succession"><span class="secno">9</span>Succession &amp; control parity</h2>
@@ -738,30 +809,31 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 <tr><td>shared block: hiddenLineMode / depthBias / depth cue / outline emphasis / lightPad / Lambert hatch</td><td>scene render settings + light objects + hatch mapper tone response</td></tr>
 <tr><td>shared projection (ortho/perspective, focal, camera distance)</td><td>scene camera (same params, same code)</td></tr>
 </table></div>
-<p class="small muted">Anything found unmapped during Phase 0C is listed in the phase report with a justification, per the review gate's mandate.</p>
+<p class="small muted">Anything found unmapped during Phase 0C is listed in the phase report with a justification.</p>
 </details>
 
-<h2 id="merge"><span class="secno">10</span>Merge record — two proposals, one plan</h2>
-<p>This document was authored blind, then merged with the independently-produced <code>docs/3d-scene-studio-proposal.html</code> ("the Ink-Pass proposal") per the brief. The two converged independently on the same spine — regions as styleable targets, geometry/look decoupling, the effective-pen resolver as the first blocking fix, physical (not decorative) gaps, ship-alongside succession — which is strong evidence the spine is right. Where they differed, here is what the final plan takes from each, and why.</p>
+<h2 id="merge"><span class="secno">10</span>Design decisions &amp; alternatives considered</h2>
+<p>Every major decision below was weighed against a credible alternative. This log records the choice and the reasoning, so a choice is not re-litigated without new evidence.</p>
 
 <div class="tablewrap"><table>
-<tr><th>Decision</th><th>Adopted from</th><th>Rationale</th></tr>
-<tr><td><b>Plot Styles = ordered Ink Pass stacks</b> (Target → Driver → Action → Pen), replacing the single atomic material</td><td>Ink-Pass proposal</td><td>Decisively higher creative ceiling (base + silhouette + shadow + highlight + pen cycle on one object). Legibility is preserved by this doc's judged guardrails: whole-<em>stack</em> cascade, fork-on-override, provenance chip, and a fixed four-card starter template.</td></tr>
-<tr><td><b>Driver as the unified concept</b> (always · tone band · shadow · specular · distance · radial · noise; depth/facing/curvature v2)</td><td>Ink-Pass proposal (taxonomy) + this doc (v1 mechanisms)</td><td>One grammar for "styled by light" instead of two special cases; each driver keeps this doc's feasibility-verified v1 mechanism and scope.</td></tr>
-<tr><td><b>Live Smart Sets</b> alongside static groups</td><td>Ink-Pass proposal</td><td>"All tops" that self-maintains when a tenth block lands is the wood-cubes workflow done right; this doc adds the scoped-by-default rule and the Group Selection birth story.</td></tr>
-<tr><td><b>Instancing, determinism, complexity warnings, min-fragment guards</b> (A-16/17, I-05, K-05)</td><td>Ink-Pass proposal</td><td>Its live audit (a default wireframe sphere ≈ 30k paths / 57 m) proved the warnings are not hypothetical.</td></tr>
-<tr><td><b>Release gates as visual / plot / compatibility truth</b></td><td>Ink-Pass proposal</td><td>Doctrine born from the June 3D audit's silent no-ops; folded into every phase gate.</td></tr>
-<tr><td><b>All code-level plumbing contracts</b>: division data flow after optimizeLayers, depth-buffer API as new work, support-plane fast path, safeOp shadow degrade, fill-record granularity, silhouette-union clipping, parallel-face charts, pre-clip dash phase, ink-coverage tone calibration, paper-color preview</td><td>This doc</td><td>Each was adversarially verified against the actual code (file:line) by a three-attacker panel + independent judge; the Ink-Pass proposal books one of these — depth-buffer occlusion — as "reuse directly" when it is real new work (its own Build-new list correctly claims stroke segmentation, effective-pen routing, light fields, and the cascade).</td></tr>
-<tr><td><b>Selection model</b>: V/A on the existing tools, edges win in tolerance, Alt-cycling with the "2 of 3" readout, no isolation prerequisite — plus the Ink-Pass proposal's submode cycling (<kbd>A</kbd> again / <kbd>2</kbd> <kbd>3</kbd>) and status readout</td><td>Both</td><td>Same convention, merged details. Vertex submode deferred to v2 (no v1 use case).</td></tr>
-<tr><td><b>Panel-integrated scene editing</b> (Scene tab + tree + optional double-click isolation), not a separate internal studio subdocument</td><td>This doc</td><td>Lower modality and reuses the layers-panel/isolation machinery users know; the Ink-Pass proposal itself flags renderer complexity as a top risk. If scenes outgrow the panel, its studio concept is the natural v2 escape hatch.</td></tr>
-<tr><td><b>Directional-only lights in v1</b> (schema carries <code>type</code>); point/spot open Phase 5</td><td>This doc</td><td>All eight inspiration pieces are directional; the Ink-Pass proposal wanted point/spot in alpha, which buys no inspiration piece and costs shadow-projection generality early.</td></tr>
-<tr><td><b>Working demos over illustrative sketches</b>; five live prototypes kept</td><td>This doc</td><td>The demos run the real math (painter HLR, cast shadows, arc-length division, group charts) — they de-risk, not just persuade. The Ink-Pass proposal's three sketches ask good product questions; those questions are answered interactively here.</td></tr>
-<tr><td><b>Control-parity appendix</b> (§9) + its process gates (SYS-09-style two-cycle loading)</td><td>Both</td><td>This doc supplies the concrete mapping table; the Ink-Pass proposal supplies the deprecation process discipline.</td></tr>
-<tr><td><b>Material response presets (Matte/Satin/Gloss/Mirror), area lights, soft shadows, full studio workspace, style wheel</b></td><td>Deferred (both/v2)</td><td>Post-v1 by both documents' own staging; kept on the roadmap.</td></tr>
-<tr><td><b>Trimmed without adoption</b>: ping-pong &amp; seeded-shuffle sequence modes, global/across-selection phase scopes, Lighting-Masks &amp; Pen-Order preview modes, Knockout/Interleave pass combination modes, connected-island selection &amp; continuity, per-requirement acceptance-signal column, export-time budget, input-parity requirement</td><td>Ink-Pass proposal</td><td>Deliberate v1 scope trims, not disagreements — each is additive later. Closest v1 equivalents: G-02/G-03 (division grammar), H-07/K-03 (preview/plot stats), K-01 (mask-document export tests). A/B Looks are adopted as a P2 fast-follow (§3.3).</td></tr>
+<tr><th>Decision</th><th>Alternative considered</th><th>Why this choice</th></tr>
+<tr><td><b>Plot Styles = ordered Ink Pass stacks</b> (Target → Driver → Action → Pen)</td><td>One atomic material per target (single mapper + pen + tone + treatment)</td><td>Stacks have a decisively higher creative ceiling (base + silhouette + shadow + highlight + pen cycle on one object). The atomic model's legibility survives via guardrails: whole-<em>stack</em> cascade, fork-on-override, provenance chip, and a fixed four-card starter template.</td></tr>
+<tr><td><b>Driver as the unified concept</b> (always · tone band · shadow · specular · distance · radial · noise; depth/facing/curvature v2)</td><td>Separate mechanisms for tone bands vs density modulation</td><td>One grammar for "styled by light" instead of two special cases; each driver ships with a feasibility-verified v1 mechanism and scope.</td></tr>
+<tr><td><b>Live Smart Sets</b> alongside static groups</td><td>Static face groups only</td><td>"All tops" that self-maintains when a tenth block lands is the wood-cubes workflow done right; scoped-by-default Select Similar and the Group Selection button make set creation a two-click act.</td></tr>
+<tr><td><b>Instancing, determinism, complexity warnings, min-fragment guards</b> (A-16/17, I-05, K-05)</td><td>Treat these as polish items</td><td>Live-app evidence says otherwise: a default wireframe sphere produced ≈30k paths / 57 m of plotting with no warning. These are core requirements, not polish.</td></tr>
+<tr><td><b>Release gates as visual / plot / compatibility truth</b> (§8.0)</td><td>Standard test-suite gates only</td><td>The June 3D audit found visible controls that were silent no-ops; a control that exists but does nothing must be impossible to ship.</td></tr>
+<tr><td><b>Code-verified plumbing contracts</b>: division data flow after optimizeLayers, depth-buffer API as new work, support-plane fast path, safeOp shadow degrade, fill-record granularity, silhouette-union clipping, parallel-face charts, pre-clip dash phase, ink-coverage tone calibration, paper-color preview</td><td>Book these as "reuse existing code"</td><td>Each was verified against the actual source (file:line). Several plausible-sounding reuse claims fail on inspection — e.g. export dedupe runs at export time only, and the depth-buffer occluder has one global bias and no owner concept — so the plan budgets them as real work.</td></tr>
+<tr><td><b>Selection</b>: V/A on the existing tools, edges win in tolerance, Alt-cycling with the "2 of 3" readout, submode cycling (<kbd>A</kbd> again / <kbd>2</kbd> <kbd>3</kbd>), no isolation prerequisite</td><td>New dedicated scene-selection tools and bindings</td><td>Zero new global keybindings; the app already follows the Illustrator select/direct convention. Vertex submode deferred to v2 (no v1 use case).</td></tr>
+<tr><td><b>Panel-integrated scene editing</b> (Scene tab + tree + optional double-click isolation)</td><td>A separate internal "studio" subdocument with its own outliner</td><td>Lower modality; reuses the layers-panel and isolation machinery users already know; keeps scene controllers out of the renderer hot path. If scenes outgrow the panel, the studio concept is the natural v2 escape hatch.</td></tr>
+<tr><td><b>Directional-only lights in v1</b> (schema carries <code>type</code>); point/spot open Phase 5</td><td>Point/spot lights in the first release</td><td>Every reference piece is directional; point/spot buy no target artwork and cost shadow-projection generality early. The <code>type</code> field keeps the schema migration-free.</td></tr>
+<tr><td><b>CSG via interval evaluation</b> (per-sample <code>intersect</code>/<code>contains</code> against a live CSG tree), mesh booleans deferred to v2 (Manifold WASM)</td><td>Mesh booleans first (csg.js BSP or Manifold)</td><td>BSP booleans have known cliffs (T-junction cracks that a line renderer draws, sliver faces, combinatorial blowup); interval CSG has none of them, keeps operands parametric, fits the sampled visibility pass natively, and re-evaluates live on param edits. Mesh-domain booleans are still needed later — for STL/deformed operands and baking — which is exactly what Manifold's face-provenance IDs support.</td></tr>
+<tr><td><b>Parametric bevels per primitive family</b>, never a general mesh bevel</td><td>Post-hoc mesh bevel (Blender-style edge expansion)</td><td>General mesh bevel is a hard topological operation with sliver-corner failure modes; parametric rounded-box / lathe-profile / inset-profile bevels are exact, undoable, cover the shapes users actually bevel, and preserve stable sub-face IDs for styling.</td></tr>
+<tr><td><b>Hole + Group as the primary CSG gesture</b>, Combine as the CAD skin</td><td>A boolean dialog / operation panel</td><td>Tinkercad proved solid/hole + group is learnable in minutes by non-experts; Fusion/Shapr3D users get the Combine verb they expect. Two skins, one engine, no dialog.</td></tr>
+<tr><td><b>Material response presets (Matte/Satin/Gloss/Mirror), area lights, soft shadows, full studio workspace, style wheel</b></td><td>Ship in v1</td><td>Post-v1 staging; kept on the roadmap.</td></tr>
+<tr><td><b>Deferred niceties (v2+)</b>: ping-pong &amp; seeded-shuffle sequence modes, global/across-selection phase scopes, Lighting-Masks &amp; Pen-Order preview modes, Knockout/Interleave pass combination modes, connected-island selection &amp; continuity, per-requirement acceptance signals, export-time budget</td><td>Ship in v1</td><td>Deliberate scope trims, each additive later. Closest v1 equivalents: G-02/G-03 (division grammar), H-07/K-03 (preview/plot stats), K-01 (mask-document export tests). A/B Looks are a P2 fast-follow (§3.3).</td></tr>
 </table></div>
 
-<h2 id="risks"><span class="secno">11</span>Risks &amp; open questions</h2>
+<h2 id="risks"><span class="secno">11</span>Risks &amp; open decisions</h2>
 <div class="tablewrap"><table>
 <tr><th>Risk</th><th>Mitigation</th></tr>
 <tr><td>polygon-clipping fragility (known AUD-05 crashes) on degenerate shadows at grazing light</td><td>All booleans via <code>safeOp</code> + drop-region degrade; draft drags never run booleans; grazing-light fuzz test in the Phase 2 gate</td></tr>
@@ -770,11 +842,42 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 <tr><td>Undo latency from styleTable deep-clones</td><td>Release-only snapshots + asset-table refs; perf-suite tracked; interning if it bites</td></tr>
 <tr><td>Scope creep in the style system</td><td>Whole-stack cascade is frozen for v1; per-pass inheritance explicitly out</td></tr>
 <tr><td>Face-count ceiling on imports</td><td>8k warning + patch segmentation; QI and workers wait for v2</td></tr>
+<tr><td>CSG seam extraction quality (ragged or missing cut outlines)</td><td>Analytic curves for the dominant plane/quadric pairs; marched seams with Newton correction elsewhere; dense-contour implication as the visual fallback; the Drilled Monolith gate makes seam quality a shipping criterion</td></tr>
+<tr><td>Interval-CSG cost on deep trees</td><td>v1 caps tree depth (2-operand nodes, nestable); per-node bounding boxes prune ray tests; Freeze bakes finished compounds to meshes</td></tr>
 </table></div>
-<p><b>Open questions for Jay:</b> (1) Should the backdrop be a per-scene node or a document-level setting shared by all scene layers? (2) Do we want scene lights to be able to affect <em>non-scene</em> layers someday (global illumination for 2D fills), or is that scope poison? (3) v1 primitive shelf ordering — which six primitives earn top-row placement? (4) Is "Convert to 3D Scene" worth pulling into Phase 4 for spiralizer only (its shapes map 1:1)?</p>
+<h3>11.1 Open decisions</h3>
+<p>Four decisions remain open. Each is presented with options, trade-offs, and a recommendation; none blocks Phase 0.</p>
+
+<div class="card">
+<h4>Decision 1 — Where does the backdrop live?</h4>
+<p class="small"><b>Option A (recommended): a per-scene node.</b> Pros: the backdrop styles like everything else (same cascade, same mappers, same right-click); two scene layers can have different backdrops; serialization stays inside <code>layer.params</code> with no new document schema. Cons: two scene layers on one document can disagree about the "sky", and duplicated settings must be copied between scenes.<br>
+<b>Option B: a document-level setting.</b> Pros: one sky for the whole plot; matches paper color's document scope. Cons: needs new document schema + a special styling path outside the cascade; multi-scene documents lose per-scene freedom.<br>
+<b>Recommendation:</b> Option A for v1 — consistency with the cascade outweighs the duplication cost, and a "copy backdrop from other scene" action covers the common case. Revisit only if multi-scene documents become the norm.</p>
+</div>
+
+<div class="card">
+<h4>Decision 2 — May scene lights affect non-scene layers?</h4>
+<p class="small"><b>Option A (recommended): no — lights are scene-internal in v1.</b> Pros: the region compiler stays inside one layer's generate(); no cross-layer dependency graph, no invalidation web, no surprise re-renders of unrelated layers. Cons: a 2D flowfield layer cannot react to the scene's sun.<br>
+<b>Option B: opt-in "environment light" consumed by other layers.</b> Pros: spectacular compositions (2D fills shading under the 3D scene's light). Cons: cross-layer invalidation is a genuinely new engine concept; ordering/refresh semantics leak into every layer type; a performance and correctness tarpit out of proportion to v1 value.<br>
+<b>Recommendation:</b> Option A. Keep the door open by making light state serializable and readable, but build no cross-layer plumbing until a real composition demands it.</p>
+</div>
+
+<div class="card">
+<h4>Decision 3 — Primitive shelf: curated top row or full grid?</h4>
+<p class="small"><b>Option A (recommended): curated top row + "More…" flyout.</b> Top row: box, sphere, cylinder, torus, cone, plane — plus Import and Light; the flyout holds the solids family (platonic/geodesic/dual/prism/cupola/star), superellipsoid, torus knot, capsule. Pros: first-session clarity; the six cover every reference piece; flyout keeps depth one click away. Cons: solids-family fans need a second click.<br>
+<b>Option B: full grid.</b> Pros: everything visible; no hierarchy. Cons: ~16 icons of equal weight on first open — decision paralysis where the product most needs approachability.<br>
+<b>Recommendation:</b> Option A, with the flyout remembering its last pick as a seventh chip (the paint-bucket child pattern already in the app).</p>
+</div>
+
+<div class="card">
+<h4>Decision 4 — When does "Convert to 3D Scene" ship?</h4>
+<p class="small"><b>Option A (recommended): Phase 4, spiralizer only.</b> Its shapes map 1:1 onto scene primitives + the spiral mapper, so conversion is a pure param translation. Pros: an early, cheap migration proof; users can carry tuned spiralizer work into scenes the day imports land. Cons: small scope cost inside Phase 4.<br>
+<b>Option B: Phase 5, all three algorithms together.</b> Pros: one coherent converter; avoids partial-migration confusion. Cons: delays the easiest win; polyhedron/topoform conversions still need parity verification and preset migration, so bundling holds spiralizer hostage.<br>
+<b>Recommendation:</b> Option A — ship the spiralizer converter as Phase 4's migration proof, and hold polyhedron/topoform for Phase 5 when their parity items exist.</p>
+</div>
 
 <div class="footer">
-<p>3D Scene Studio proposal · final merged edition. Authored blind by the Claude design-team pipeline (research × 4 → concepts × 4 → critics × 2 → synthesis → judged adversarial gate × 2, 35 mandated fixes applied), then merged with the independent Ink-Pass proposal (<code>docs/3d-scene-studio-proposal.html</code>) — merge record in §10. Vectura Studio worktree <code>3d-scene-studio</code>.</p>
+<p>Vectura Studio · 3D Scene Studio — product proposal.</p>
 </div>
 
 </main>
