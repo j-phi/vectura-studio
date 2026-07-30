@@ -368,10 +368,12 @@ EdgeStyle = { penId, weightMm,                 // rendered as N parallel offset 
 <div class="demo" id="demo5">
   <header><h3>⑤ The Cascade Inspector — “why is this face purple?” always has one answer</h3><div class="why">demos: styleTable resolution · fork-on-override · provenance chips</div></header>
   <div class="body">
-    <div class="stage-wrap" style="padding:18px">
-      <div class="wire" style="background:transparent;border:none;padding:0">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center" id="d5targets"></div>
-        <div style="text-align:center;margin-top:14px">
+    <div class="stage-wrap">
+      <canvas id="c5" width="640" height="330"></canvas>
+      <div class="hint" style="bottom:auto;top:8px">Click the art — top face, east face, side, shadow, outline, or paper — to ask “why is this styled?”. Toggle styleTable entries and the ink changes live.</div>
+      <div class="wire" style="background:transparent;border:none;padding:6px 18px 16px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center" id="d5targets"></div>
+        <div style="text-align:center;margin-top:12px">
           <span class="ctxbar" id="d5ctx">select a target above</span>
         </div>
       </div>
@@ -1205,6 +1207,7 @@ const rngf=seed=>{let s=seed>>>0;return()=>{s=(s*1664525+1013904223)>>>0;return 
   const MATS={pine:['Pine Hatch','var(--pen-sepia)'],grain:['Wood Grain','var(--pen-ink)'],
     knot:['Knotted Grain','var(--pen-crimson)'],solo:['Solo Purple','var(--pen-purple)'],
     shadow:['Purple 45°','var(--pen-purple)'],heavy:['Heavy Ink · 3 offset passes','var(--pen-ink)']};
+  const VARS={pine:'--pen-sepia',grain:'--pen-ink',knot:'--pen-crimson',solo:'--pen-purple',shadow:'--pen-purple',heavy:'--pen-ink'};
   const rules=[
     {id:'scene',label:'scene',mat:'pine',on:true,locked:true},
     {id:'obj',label:'byObject["cube1"]',mat:'grain',on:true},
@@ -1220,6 +1223,72 @@ const rngf=seed=>{let s=seed>>>0;return()=>{s=(s*1664525+1013904223)>>>0;return 
     {label:'Region · shadow on ground',resolve:()=>['reg','scene']},
     {label:'Edge · silhouette',resolve:()=>['edge']}];
   let cur=2;
+  const winner=i=>targets[i].resolve().map(id=>rules.find(r=>r.id===id)).find(r=>r&&r.on);
+  // ---- the art: one cube on paper, cast shadow, silhouette ----
+  const D=setupCanvas('#c5');
+  const cam={yaw:-0.68,pitch:0.5,scale:0.95,cx:D.W*0.46,cy:D.H*0.47};
+  const P=mkProj(cam);
+  const mesh=boxMesh(130,115,130,V3(0,0,0));
+  const LD=(()=>{const az=2.55,el=0.5,c=Math.cos(el);return norm3(V3(Math.cos(az)*c,-Math.sin(el),Math.sin(az)*c));})();
+  const shadowHull=(()=>{const pts=[];mesh.forEach(f=>f.vs.forEach(v=>{
+    const t=v.y/(-LD.y);pts.push(P({x:v.x+LD.x*t,y:0,z:v.z+LD.z*t}));if(v.y===0)pts.push(P(v));}));return hull2(pts);})();
+  const silhouette=(()=>{const pts=[];mesh.forEach(f=>f.vs.forEach(v=>pts.push(P(v))));return hull2(pts);})();
+  function visFaces(){const out=[];mesh.forEach(f=>{const n=newell(f.vs);
+    if(rotYP(n,cam.yaw,cam.pitch).z<0.001)return;
+    const pv=f.vs.map(P);out.push({id:f.id,pv,depth:pv.reduce((s,p)=>s+p.z,0)/pv.length});});
+    out.sort((a,b)=>a.depth-b.depth);return out;}
+  function paintMat(ctx,poly,mat){
+    const col=cssv(VARS[mat]);
+    if(mat==='pine')hatchPoly(poly,45,9).forEach(s=>strokePath(ctx,s,col,1));
+    if(mat==='grain')hatchPoly(poly,99,6).forEach(s=>strokePath(ctx,s,col,0.9));
+    if(mat==='solo')hatchPoly(poly,45,4.5).forEach(s=>strokePath(ctx,s,col,1));
+    if(mat==='shadow')hatchPoly(poly,45,6).forEach(s=>strokePath(ctx,s,col,1.1));
+    if(mat==='knot'){const cx=poly.reduce((s,p)=>s+p.x,0)/poly.length,cy=poly.reduce((s,p)=>s+p.y,0)/poly.length;
+      let mx=0;poly.forEach(p=>mx=Math.max(mx,Math.hypot(p.x-cx,p.y-cy)));
+      for(let r=5;r<mx;r+=7){const n=Math.max(28,r|0);let run=[];
+        for(let i=0;i<=n;i++){const a=i/n*TAU,wob=Math.sin(a*3+r)*1.4,x=cx+(r+wob)*Math.cos(a),y=cy+(r+wob)*Math.sin(a);
+          if(pip({x,y},poly))run.push({x,y});else if(run.length>1){strokePath(ctx,run,col,0.9);run=[];}else run=[];}
+        if(run.length>1)strokePath(ctx,run,col,0.9);}}}
+  const faceTarget=id=>id==='f:top'?2:(id==='f:east'?3:1);
+  function renderArt(){
+    const ctx=D.ctx,paper=cssv('--card'),ink=cssv('--pen-ink'),acc=cssv('--accent');
+    ctx.clearRect(0,0,D.W,D.H);
+    // shadow region
+    const wReg=winner(4);if(wReg)paintMat(ctx,shadowHull,wReg.mat);
+    // faces, painter back-to-front
+    const faces=visFaces();
+    faces.forEach(f=>{ctx.fillStyle=paper;
+      ctx.beginPath();f.pv.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fill();
+      const w=winner(faceTarget(f.id));if(w)paintMat(ctx,f.pv,w.mat);
+      strokePath(ctx,f.pv.concat([f.pv[0]]),ink,1.1);});
+    // silhouette
+    const wEdge=winner(5);
+    strokePath(ctx,silhouette.concat([silhouette[0]]),ink,wEdge?3.8:1.3);
+    // selection highlight
+    ctx.globalAlpha=1;
+    const hl=poly=>{strokePath(ctx,poly.concat([poly[0]]),acc,2.4);
+      ctx.globalAlpha=0.12;ctx.fillStyle=acc;
+      ctx.beginPath();poly.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fill();ctx.globalAlpha=1;};
+    if(cur===0){ctx.strokeStyle=acc;ctx.lineWidth=3;ctx.strokeRect(4,4,D.W-8,D.H-8);}
+    if(cur===1)faces.forEach(f=>hl(f.pv));
+    if(cur===2){const f=faces.find(x=>x.id==='f:top');if(f)hl(f.pv);}
+    if(cur===3){const f=faces.find(x=>x.id==='f:east');if(f)hl(f.pv);}
+    if(cur===4)hl(shadowHull);
+    if(cur===5)strokePath(ctx,silhouette.concat([silhouette[0]]),acc,3);
+  }
+  const distSeg=(p,a,b)=>{const dx=b.x-a.x,dy=b.y-a.y,L2=dx*dx+dy*dy||1;
+    let t=((p.x-a.x)*dx+(p.y-a.y)*dy)/L2;t=Math.max(0,Math.min(1,t));
+    return Math.hypot(p.x-(a.x+dx*t),p.y-(a.y+dy*t));};
+  D.cv.addEventListener('pointerdown',e=>{
+    const p=D.pos(e);
+    let hit=0;
+    if(silhouette.some((a,i)=>distSeg(p,a,silhouette[(i+1)%silhouette.length])<7))hit=5;
+    else{const faces=visFaces();let f=null;
+      for(let i=faces.length-1;i>=0;i--){if(pip(p,faces[i].pv)){f=faces[i];break;}}
+      if(f)hit=faceTarget(f.id);
+      else if(pip(p,shadowHull))hit=4;
+      else hit=0;}
+    cur=hit;draw();});
   function draw(){
     const th=$('#d5targets');th.innerHTML='';
     targets.forEach((t,i)=>{const b=document.createElement('button');b.className='chip'+(i===cur?' on':'');
@@ -1230,11 +1299,12 @@ const rngf=seed=>{let s=seed>>>0;return()=>{s=(s*1664525+1013904223)>>>0;return 
       row.innerHTML='<span style="width:11px;height:11px;border-radius:3px;background:'+MATS[r.mat][1]+';flex:0 0 auto"></span><span>'+r.label+' → '+MATS[r.mat][0]+'</span>'+(r.locked?'':'<span style="margin-left:auto">'+(r.on?'✕':'⟲')+'</span>');
       if(!r.locked)row.onclick=()=>{r.on=!r.on;draw();};
       rh.appendChild(row);});
-    const chain=targets[cur].resolve();
-    const win=chain.map(id=>rules.find(r=>r.id===id)).find(r=>r&&r.on);
+    const win=winner(cur);
     $('#d5ctx').innerHTML=win?targets[cur].label+' &nbsp;→&nbsp; <b>Styled by: '+({scene:'Scene',obj:'Object',grp:'Group “Tops”',face:'Face override',reg:'Region rule',edge:'Edge class'})[win.id]+' · '+MATS[win.mat][0]+'</b>&nbsp;<span style="width:12px;height:12px;border-radius:3px;background:'+MATS[win.mat][1]+';display:inline-block"></span>':'unstyled (blank paper)';
+    renderArt();
   }
   draw();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change',draw);
 })();
 })();
 </script>
