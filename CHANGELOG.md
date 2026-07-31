@@ -7,6 +7,26 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene Studio Phase 2 — Light.** A single directional sun now drives the
+  scene. Surfaces render *light-made tone*: intensity (n̂·L̂) quantizes into bands,
+  each band maps to an ink coverage that sets hatch spacing, so faces turned toward
+  the sun read light and faces turned away read dark. Objects cast *shadows* on the
+  ground (silhouette projected to the floor, overlapping shadows unioned; grazing
+  light degrades safely). An on-canvas **sun widget** floats by the selected scene —
+  drag it to aim the light; a specular hotspot marks the brightest point. You can
+  also grab a **cast shadow** and drag it to aim the sun the other way. The panel
+  gains a **Tone** editor (band count, thresholds, per-band coverage, specular) and
+  a **Sun** inspector (azimuth, elevation, cast-shadows). A **pen-true paper preview**
+  toggle (Document Setup) renders on the true stock colour. Live drags preview at
+  draft quality (tone, shadows, and the surface hatch resolve on release) so a busy
+  scene stays responsive.
+- **3D Scene inspector — live preview + reset.** Inspector sliders (position, scale,
+  shape dimensions, fidelity, light, tone) now update the scene *on drag* instead of
+  on release, with one undo step per gesture. Double-click any slider handle to
+  restore its default (dimensions reset to the primitive's own default size).
+- **3D Scene surface hatch reads as 3D.** A faceted object hatches each face *in its
+  own plane* and projects the result to screen, so a cube reads as three foreshortened
+  planes rather than one flat field of parallel lines.
 - **3D Scene Studio Phase 1 polish** (live-testing round): hatch (and any surface
   mapper) now *replaces* the wireframe on curved primitives — the surface hatches
   as one continuous region bounded by the silhouette instead of confetti over the

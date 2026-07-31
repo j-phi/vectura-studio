@@ -19,7 +19,8 @@
   const G3 = Vectura.Geometry3D;
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
 
-  const { finite, clamp, pathWithMeta, markHidden, hatchPolygon } = G3;
+  const { finite, clamp, pathWithMeta, markHidden, hatchPolygon,
+    v, add, sub, mul, dot, cross, normalize } = G3;
 
   // Support-plane depth is exact, so the anti-z-fight bias can sit just above
   // fp/perspective-fit noise. A large bias grows "whisker" stubs where hidden
@@ -174,6 +175,60 @@
       });
       const clipper = HLR.createClipper(occluderFaces, { bias: HLR_BIAS });
 
+      // ── Phase 2 lighting: light-made tone + cast shadows (streams 2A). ──────
+      const Lighting = Vectura.Scene3D.Lighting;
+      const Regions = Vectura.Scene3D.Regions;
+      const Shadows = Vectura.Scene3D.Shadows;
+      const light = (p.lights && p.lights[0]) || {};
+      const lightDir = Lighting && typeof Lighting.lightWorldDir === 'function'
+        ? Lighting.lightWorldDir(light) : null;
+      // toneOn drives the intensity → band → coverage → spacing modulation of the
+      // existing hatch. When false, hatching is EXACTLY Phase 1 (density-based,
+      // light-invariant) — CONTRACT L3 regression safety.
+      // Draft previews (live drag) SKIP tone banding and the specular hotspot —
+      // the same responsiveness contract that makes shadows skip booleans (L4).
+      // The drag shows flat Phase-1 hatch; full tone returns on release.
+      const draft = Boolean(bounds && bounds.fastPreview);
+      const toneOn = Boolean(!draft && p.tone && p.tone.enabled && Regions && lightDir);
+      const Lvec = toneOn ? Regions.towardLight(light) : null;
+      const penWidth = finite(bounds.penWidth, 0.3);
+
+      // Hatch a flat face IN ITS OWN PLANE and project the result to screen, so
+      // the strokes lie on the surface and foreshorten with it — a cube reads as
+      // three distinct 3D planes, not one flat screen field. The hatch angle is
+      // measured in the face plane (0 = along the face's first edge). Spacing is
+      // Phase-1 density when tone is off, else intensity→coverage; the darkest
+      // tone band adds a perpendicular cross-pass. Returns SCREEN-space lines.
+      const faceHatchLines = (face, styleParams, normalWorld) => {
+        const wv = face.worldVerts;
+        // Draft (live drag) and the no-world-verts fallback both take the cheap
+        // screen-space hatch — the plane-projection below runs the full camera
+        // pipeline per hatch vertex, too costly for a coalesced drag frame. The
+        // surface-oriented 3D hatch snaps back in on release (full quality).
+        if (draft || !scene.projectWorld || !Array.isArray(wv) || wv.length < 3) {
+          const angleDeg = finite(styleParams.fillAngle, 45);
+          const spacing = toneOn
+            ? Regions.coverageToSpacing(Regions.coverageFor(Regions.band(Regions.intensity(normalWorld, Lvec), p.tone), p.tone), penWidth)
+            : hatchSpacing(styleParams.fillDensity);
+          return hatchPolygon(face.polygon, { angleDeg, spacing });
+        }
+        const origin = wv[0];
+        const U = normalize(sub(wv[1], origin));
+        const V = normalize(cross(normalWorld, U)); // in-plane, ⟂ U
+        const uv = wv.map((pw) => { const d = sub(pw, origin); return { x: dot(d, U), y: dot(d, V) }; });
+        const toScreen = (pt) => scene.projectWorld(add(origin, add(mul(U, pt.x), mul(V, pt.y))));
+        const angleDeg = finite(styleParams.fillAngle, 45);
+        let spacing = hatchSpacing(styleParams.fillDensity);
+        let bandIdx = -1;
+        if (toneOn) {
+          bandIdx = Regions.band(Regions.intensity(normalWorld, Lvec), p.tone);
+          spacing = Regions.coverageToSpacing(Regions.coverageFor(bandIdx, p.tone), penWidth);
+        }
+        const uvLines = hatchPolygon(uv, { angleDeg, spacing });
+        if (bandIdx === 0) hatchPolygon(uv, { angleDeg: angleDeg + 90, spacing }).forEach((l) => uvLines.push(l));
+        return uvLines.map((line) => line.map(toScreen));
+      };
+
       const emitRuns = (runs, baseMeta, hiddenTreatment, hiddenExtras) => {
         runs.forEach((run) => {
           if (runLength(run.pts) < MIN_RUN_MM) return;
@@ -249,10 +304,7 @@
             const plane = HLR.fitSupportPlane(face.polygon);
             if (plane) {
               const styleParams = style.params || {};
-              const lines = hatchPolygon(face.polygon, {
-                angleDeg: finite(styleParams.fillAngle, 45),
-                spacing: hatchSpacing(styleParams.fillDensity),
-              });
+              const lines = faceHatchLines(face, styleParams, face.normalWorld);
               const fillMeta = {
                 algorithm: 'scene3d',
                 kind: 'sceneFill',
@@ -294,7 +346,24 @@
             const boundary = frontRegionBoundary(record, g.faces);
             if (!boundary.length) return;
             const sp = g.style.params || {};
-            const lines = hatchSegments(boundary, finite(sp.fillAngle, 45), hatchSpacing(sp.fillDensity));
+            const angleDeg = finite(sp.fillAngle, 45);
+            // Curved surface (v1): sample intensity from the GROUP's mean world
+            // normal — one spacing for the whole continuous region, deterministic.
+            let spacing = hatchSpacing(sp.fillDensity);
+            let darkBand = false;
+            if (toneOn) {
+              let mx = 0; let my = 0; let mz = 0; let cnt = 0;
+              g.faces.forEach((fi) => {
+                const n = record.faces[fi] && record.faces[fi].normalWorld;
+                if (n) { mx += n.x; my += n.y; mz += n.z; cnt += 1; }
+              });
+              const meanN = cnt ? { x: mx / cnt, y: my / cnt, z: mz / cnt } : { x: 0, y: 0, z: 1 };
+              const bandIdx = Regions.band(Regions.intensity(meanN, Lvec), p.tone);
+              spacing = Regions.coverageToSpacing(Regions.coverageFor(bandIdx, p.tone), penWidth);
+              darkBand = bandIdx === 0;
+            }
+            const lines = hatchSegments(boundary, angleDeg, spacing);
+            if (darkBand) hatchSegments(boundary, angleDeg + 90, spacing).forEach((l) => lines.push(l));
             // Nearest front-face depth for the group: hatch draws over farther
             // objects and is hidden behind nearer ones; the object never
             // occludes its own fill (selfObject).
@@ -317,6 +386,15 @@
               emitRuns(clip.runs, fillMeta, hiddenTreatment);
             });
           });
+        }
+
+        // ── Specular hotspot: one small filled highlight on a lit curved
+        // surface (spec group E — the only iso-band region; flat faces get none).
+        if (!faceted && toneOn && typeof Regions.specularRegion === 'function'
+          && p.tone.specular && p.tone.specular.enabled) {
+          const camAngles = { yaw: scene.camera.yaw, pitch: scene.camera.pitch, roll: scene.camera.roll };
+          const spec = Regions.specularRegion(record, camAngles, p.tone.specular, light);
+          if (spec) out.push(spec);
         }
 
         // ── Edges: silhouette / crease / boundary (+ every edge of a
@@ -356,6 +434,25 @@
           emitRuns(clipped.runs, baseMeta, hiddenTreatment, { edgeClass: 'hidden' });
         });
       });
+
+      // ── Cast shadows on the ground (stream 2A). Orthogonal to tone: driven by
+      // light.castShadows, degrades on grazing light / degenerate geometry.
+      // A draft frame (live drag) SKIPS shadow projection entirely: even the
+      // boolean-free per-caster path (CONTRACT L4) costs a full silhouette
+      // extraction + ground projection per object every frame, which blows the
+      // 12-object drag budget (measured ~150ms vs the 110ms sentinel). The sun
+      // WIDGET gives live aim feedback during the drag; the shadow snaps back on
+      // release with the full union regen. (Follow-up PRH: a coarse draft shadow
+      // — bbox projection, no HLR — could restore live shadow-handle feedback
+      // under budget; shadows.js keeps its tested no-boolean path for that.)
+      if (!draft && Shadows && typeof Shadows.build === 'function' && lightDir) {
+        const shadowStyleOf = (objectId) => {
+          const st = resolveStyle(objectId, null);
+          return { penId: st && st.penId ? st.penId : null };
+        };
+        Shadows.build(scene, p, bounds, clipper, lightDir, { styleOf: shadowStyleOf })
+          .forEach((path) => out.push(path));
+      }
 
       return out;
     },

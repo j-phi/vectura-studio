@@ -154,11 +154,97 @@
       return params.styleTable;
     };
 
+    // CONTRACT L1 — the single directional sun. Structural normalization only;
+    // 2A's normalizeParams also guarantees lights[0], so this is a no-op once
+    // the engine has run.
+    const ensureLight = () => {
+      if (!Array.isArray(params.lights) || !params.lights.length) {
+        params.lights = [{ id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true }];
+      }
+      const l = params.lights[0];
+      if (!Number.isFinite(l.azimuth)) l.azimuth = 135;
+      if (!Number.isFinite(l.elevation)) l.elevation = 45;
+      if (typeof l.castShadows !== 'boolean') l.castShadows = true;
+      return l;
+    };
+
+    // CONTRACT L3 — light-driven tone bands. 2A owns the schema/normalize in
+    // params.js; 2B's editor writes it. Only synthesized when absent so a
+    // normalized tone from the engine is never clobbered.
+    // Default is internally consistent with the L3 prose (thresholds length =
+    // bands-1, ladder length = bands). When 2A's normalizeParams has already
+    // populated params.tone, ensureTone leaves it untouched.
+    const toneDefault = () => ({
+      enabled: true,
+      bands: 3,
+      thresholds: [0.33, 0.66],
+      ladder: [0.2, 0.5, 0.85],
+      specular: { enabled: true, size: 1 },
+    });
+    const toneThresholdsFor = (n) => {
+      const out = [];
+      for (let i = 1; i < n; i++) out.push(Math.round((i / n) * 100) / 100);
+      return out;
+    };
+    const toneLadderFor = (n) => {
+      const out = [];
+      for (let i = 0; i < n; i++) out.push(Math.round(((i + 0.5) / n) * 100) / 100);
+      return out;
+    };
+    const ensureTone = () => {
+      if (!params.tone || typeof params.tone !== 'object') params.tone = toneDefault();
+      const t = params.tone;
+      if (typeof t.enabled !== 'boolean') t.enabled = true;
+      if (![1, 2, 3, 4].includes(t.bands)) t.bands = 3;
+      if (!Array.isArray(t.thresholds)) t.thresholds = toneThresholdsFor(t.bands);
+      if (!Array.isArray(t.ladder)) t.ladder = toneLadderFor(t.bands);
+      if (!t.specular || typeof t.specular !== 'object') t.specular = { enabled: true, size: 1 };
+      if (typeof t.specular.enabled !== 'boolean') t.specular.enabled = true;
+      if (!Number.isFinite(t.specular.size)) t.specular.size = 1;
+      return t;
+    };
+
     // Host commit pattern — ONE undo step per gesture.
     const pushHist = () => { try { ui.app && ui.app.pushHistory && ui.app.pushHistory(); } catch (_) { /* */ } };
     const store = () => { try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ } };
     const regen = () => { try { ui.app && ui.app.regen && ui.app.regen(); } catch (_) { /* */ } };
+    // Draft-quality regen for live drags: sets bounds.fastPreview so scene3d
+    // skips cast shadows + tone banding + the plane-projected surface hatch,
+    // matching the on-canvas handle-drag path (renderer._scheduleSceneDragRegen).
+    // Full quality returns on release (the onCommit regen()).
+    const regenDraft = () => { try { ui.app && ui.app.regen && ui.app.regen({ preview: true }); } catch (_) { /* */ } };
     const commit = (mutate) => { pushHist(); mutate(); store(); regen(); };
+
+    // Live-drag slider gesture (Jay feedback #3): preview on every input event,
+    // coalesced onto rAF, with exactly ONE undo entry per gesture and a full
+    // regen on release. `apply(v)` performs the mutation only — history/store/
+    // regen are owned here. Double-click reset (Jay feedback #4) rides the same
+    // path: UI.Slider fires onChange+onCommit with the slider's defaultValue.
+    const liveSlider = (apply) => {
+      const g = { active: false, raf: 0 };
+      const hasRaf = typeof requestAnimationFrame === 'function';
+      const flushDraft = () => {
+        if (g.raf) return;
+        g.raf = hasRaf
+          ? requestAnimationFrame(() => { g.raf = 0; store(); regenDraft(); })
+          : setTimeout(() => { g.raf = 0; store(); regenDraft(); }, 16);
+      };
+      return {
+        onChange: (v) => {
+          if (!g.active) { pushHist(); g.active = true; }
+          apply(v);
+          flushDraft();
+        },
+        onCommit: (v) => {
+          if (g.raf) { if (hasRaf) cancelAnimationFrame(g.raf); else clearTimeout(g.raf); g.raf = 0; }
+          if (!g.active) pushHist(); // keyboard/click without a drag still gets one entry
+          apply(v);
+          store();
+          regen();
+          g.active = false;
+        },
+      };
+    };
 
     // Panel-local selection (mirrors renderer.sceneSelection when CONTRACT D
     // exists; standalone otherwise).
@@ -180,6 +266,7 @@
     // Component instances per re-renderable area, destroyed on re-render.
     let inspectorComps = [];
     let styleComps = [];
+    let toneComps = [];
     const destroyComps = (list) => { list.forEach((c) => { try { c.destroy && c.destroy(); } catch (_) { /* */ } }); list.length = 0; };
 
     // ── DOM skeleton ────────────────────────────────────────────────────────
@@ -219,6 +306,7 @@
     let treeHost = null;
     let inspectorHost = null;
     let styleHost = null;
+    let toneHost = null;
     let moreMenuOpen = false;
     let moreBtn = null;
     let moreMenu = null;
@@ -354,8 +442,9 @@
         title: 'STL import arrives in Phase 4', dataset: { stub: 'import' },
       });
       buildShelfButton(shelf, {
-        icon: ICON_LIGHT, label: 'Light', className: 'is-stub', disabled: true,
-        title: 'Lights arrive in Phase 2', dataset: { stub: 'light' },
+        icon: ICON_LIGHT, label: 'Light',
+        title: 'Select the sun light', dataset: { light: 'sun' },
+        onClick: () => selectLight(),
       });
 
       // More… flyout (toolbar sub-tool pattern: session last-pick + icon swap).
@@ -532,6 +621,35 @@
       gRow.appendChild(gVis);
       gRow.addEventListener('click', () => selectObject('ground'));
       treeHost.appendChild(gRow);
+
+      // Sun — the scene's single directional light (Phase 2). A selectable
+      // fixture; its controls live in the Inspector, and the visibility dot
+      // toggles cast-shadows.
+      const light0 = Array.isArray(params.lights) && params.lights[0] ? params.lights[0] : null;
+      const castOn = !light0 || light0.castShadows !== false;
+      const sRow = document.createElement('div');
+      sRow.className = 'vs3-tree-row vs3-tree-light';
+      sRow.dataset.objectId = 'light';
+      if (sel.objectId === 'light') sRow.classList.add('selected');
+      const sName = document.createElement('span');
+      sName.className = 'vs3-tree-name';
+      sName.textContent = 'Sun';
+      sRow.appendChild(sName);
+      const sVis = document.createElement('button');
+      sVis.type = 'button';
+      sVis.className = 'vs3-tree-vis';
+      sVis.title = castOn ? 'Casts shadows (click to disable)' : 'No shadows (click to enable)';
+      sVis.setAttribute('aria-label', `Cast shadows ${castOn ? 'on' : 'off'}`);
+      sVis.textContent = castOn ? '●' : '◌';
+      sVis.addEventListener('click', (e) => {
+        e.stopPropagation();
+        commit(() => { ensureLight().castShadows = !castOn; });
+        renderTree();
+        if (sel.objectId === 'light') renderInspector();
+      });
+      sRow.appendChild(sVis);
+      sRow.addEventListener('click', () => selectLight());
+      treeHost.appendChild(sRow);
     };
 
     // ── Selection (CONTRACT D consumer; guarded) ────────────────────────────
@@ -545,10 +663,10 @@
       if (tabs.getActive() === 'style') renderStyle();
     };
 
-    const pushSelectionToRenderer = (selection) => {
+    const pushSelectionToRenderer = (selection, opts) => {
       const r = ui.app && ui.app.renderer;
       if (r && typeof r.setSceneSelection === 'function') {
-        try { r.setSceneSelection(selection); return true; } catch (_) { /* */ }
+        try { r.setSceneSelection(selection, opts || {}); return true; } catch (_) { /* */ }
       }
       return false;
     };
@@ -556,6 +674,16 @@
     const selectObject = (id) => {
       sel = { mode: 'object', objectId: id, faceKey: null };
       pushSelectionToRenderer({ layerId: layer.id, mode: 'object', objectIds: [id], faceKeys: [], edgeKeys: [] });
+      syncSelectionUI();
+    };
+
+    const selectLight = () => {
+      sel = { mode: 'light', objectId: 'light', faceKey: null };
+      // The sun is not a renderer object; clear any object/face selection so the
+      // on-canvas sun widget is the sole light affordance. Do it SILENTLY — a
+      // null scene-selection echo would re-enter onSceneSelection and reset our
+      // just-set 'light' mode back to 'none', so the Sun inspector never opens.
+      pushSelectionToRenderer(null, { silent: true });
       syncSelectionUI();
     };
 
@@ -600,10 +728,56 @@
       return row;
     };
 
+    // Sun inspector — azimuth / elevation / cast-shadows for params.lights[0].
+    const renderLightInspector = () => {
+      const light = ensureLight();
+      const note = document.createElement('p');
+      note.className = 'vs3-empty';
+      note.textContent = 'Sun — drag the on-canvas sun handle (or a shadow) to aim it, or use the controls below.';
+      inspectorHost.appendChild(note);
+      sliderRow(inspectorHost, inspectorComps, 'Azimuth', {
+        value: Number.isFinite(light.azimuth) ? light.azimuth : 135,
+        min: 0, max: 360, step: 1,
+        defaultValue: 135,
+        ariaLabel: 'Light azimuth (degrees)',
+        ...liveSlider((v) => { ensureLight().azimuth = Math.round(v); }),
+      });
+      sliderRow(inspectorHost, inspectorComps, 'Elevation', {
+        value: Number.isFinite(light.elevation) ? light.elevation : 45,
+        min: 0, max: 90, step: 1,
+        defaultValue: 45,
+        ariaLabel: 'Light elevation (degrees)',
+        ...liveSlider((v) => { ensureLight().elevation = Math.round(v); }),
+      });
+      const row = document.createElement('div');
+      row.className = 'vs3-row';
+      const lbl = document.createElement('label');
+      lbl.className = 'vs3-lbl';
+      lbl.textContent = 'Cast shadows';
+      row.appendChild(lbl);
+      const ctlHost = document.createElement('div');
+      ctlHost.className = 'vs3-ctl';
+      row.appendChild(ctlHost);
+      inspectorHost.appendChild(row);
+      inspectorComps.push(UI.SegCtrl(ctlHost, {
+        options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+        value: light.castShadows === false ? 'off' : 'on',
+        ariaLabel: 'Cast shadows',
+        onChange: (v) => {
+          commit(() => { ensureLight().castShadows = v === 'on'; });
+          renderTree();
+        },
+      }));
+    };
+
     const renderInspector = () => {
       if (!inspectorHost) return;
       destroyComps(inspectorComps);
       inspectorHost.textContent = '';
+      if (sel.objectId === 'light') {
+        renderLightInspector();
+        return;
+      }
       if (sel.objectId === 'ground') {
         const note = document.createElement('p');
         note.className = 'vs3-empty';
@@ -648,11 +822,17 @@
       nameRow.appendChild(nameInput);
       inspectorHost.appendChild(nameRow);
 
+      // Canonical per-primitive defaults (what a fresh object gets) — the reset
+      // target for double-click on a dimension/fidelity handle (feedback #4).
+      const primDefaults = (PRIMITIVES[obj.primitive] && PRIMITIVES[obj.primitive].defaults())
+        || {};
+
       const posProps = (axis) => ({
         value: Number.isFinite(t[axis]) ? t[axis] : 0,
         min: -200, max: 200, step: 0.5,
+        defaultValue: 0,
         ariaLabel: `Position ${axis.toUpperCase()} (mm)`,
-        onCommit: (v) => commit(() => { obj.transform[axis] = v; }),
+        ...liveSlider((v) => { obj.transform[axis] = v; }),
       });
       sliderRow(inspectorHost, inspectorComps, 'X (mm)', posProps('x'));
       sliderRow(inspectorHost, inspectorComps, 'Y (mm)', posProps('y'));
@@ -661,8 +841,9 @@
       const rotProps = (axis, label) => ({
         value: Number.isFinite(t[axis]) ? t[axis] : 0,
         min: -180, max: 180, step: 1,
+        defaultValue: 0,
         ariaLabel: `${label} (degrees)`,
-        onCommit: (v) => commit(() => { obj.transform[axis] = v; }),
+        ...liveSlider((v) => { obj.transform[axis] = v; }),
       });
       sliderRow(inspectorHost, inspectorComps, 'Yaw', rotProps('yaw', 'Yaw'));
       sliderRow(inspectorHost, inspectorComps, 'Pitch', rotProps('pitch', 'Pitch'));
@@ -671,8 +852,9 @@
       sliderRow(inspectorHost, inspectorComps, 'Scale', {
         value: Number.isFinite(t.scale) ? t.scale : 1,
         min: 0.1, max: 5, step: 0.05,
+        defaultValue: 1,
         ariaLabel: 'Uniform scale',
-        onCommit: (v) => commit(() => { obj.transform.scale = v; }),
+        ...liveSlider((v) => { obj.transform.scale = v; }),
       });
 
       // Dimensions — per-primitive shape params, in the terms a user expects.
@@ -682,11 +864,13 @@
         const fallbackFor = (key) => (key === 'radius' ? 25 : 30);
         dims.forEach((d) => {
           const cur = Number.isFinite(obj.params[d.key]) ? obj.params[d.key] : fallbackFor(d.key);
+          const dflt = Number.isFinite(primDefaults[d.key]) ? primDefaults[d.key] : fallbackFor(d.key);
           sliderRow(inspectorHost, inspectorComps, d.label, {
             value: cur,
             min: d.min, max: d.max, step: d.step,
+            defaultValue: dflt,
             ariaLabel: `${obj.primitive} ${d.label.toLowerCase()}`,
-            onCommit: (v) => commit(() => {
+            ...liveSlider((v) => {
               obj.params[d.key] = v;
               if (Array.isArray(d.extraKeys)) d.extraKeys.forEach((k) => { obj.params[k] = v; });
             }),
@@ -699,11 +883,13 @@
       if (FIDELITY_PRIMS.has(obj.primitive)) {
         if (!obj.params || typeof obj.params !== 'object') obj.params = {};
         const curDetail = Number.isFinite(obj.params.detail) ? obj.params.detail : 24;
+        const dfltDetail = Number.isFinite(primDefaults.detail) ? primDefaults.detail : 24;
         sliderRow(inspectorHost, inspectorComps, 'Fidelity', {
           value: curDetail,
           min: 6, max: 48, step: 1,
+          defaultValue: dfltDetail,
           ariaLabel: 'Surface fidelity (tessellation detail)',
-          onCommit: (v) => commit(() => { obj.params.detail = Math.round(v); }),
+          ...liveSlider((v) => { obj.params.detail = Math.round(v); }),
         });
       }
 
@@ -884,6 +1070,7 @@
         } else {
           styleComps.push(UI.Slider(angleHost, {
             value: angleVal, min: 0, max: 360, step: 1,
+            defaultValue: HATCH_DEFAULTS.fillAngle,
             ariaLabel: 'Hatch angle',
             onCommit: (v) => commitStyle({ params: { ...clone(resolved.params || {}), fillAngle: v } }),
           }));
@@ -893,8 +1080,130 @@
           value: Number.isFinite(resolved.params && resolved.params.fillDensity)
             ? resolved.params.fillDensity : HATCH_DEFAULTS.fillDensity,
           min: 1, max: 100, step: 1,
+          defaultValue: HATCH_DEFAULTS.fillDensity,
           ariaLabel: 'Hatch density',
           onCommit: (v) => commitStyle({ params: { ...clone(resolved.params || {}), fillDensity: v } }),
+        });
+      }
+    };
+
+    // ── Tone-band editor (CONTRACT L3) ──────────────────────────────────────
+    // Light-driven tone quantization: band count → thresholds → coverage
+    // ladder, plus the specular hotspot. Writes params.tone; regions.js (2A)
+    // reads it. Flat disables tone entirely (Phase-1 look).
+    const BAND_OPTIONS = [
+      { value: 'flat', label: 'Flat' },
+      { value: '2', label: '2' },
+      { value: '3', label: '3' },
+      { value: '4', label: '4' },
+    ];
+    const renderTone = () => {
+      if (!toneHost) return;
+      destroyComps(toneComps);
+      toneHost.textContent = '';
+      const tone = ensureTone();
+
+      const bandRow = document.createElement('div');
+      bandRow.className = 'vs3-row';
+      const bandLbl = document.createElement('label');
+      bandLbl.className = 'vs3-lbl';
+      bandLbl.textContent = 'Bands';
+      bandRow.appendChild(bandLbl);
+      const bandCtl = document.createElement('div');
+      bandCtl.className = 'vs3-ctl';
+      bandRow.appendChild(bandCtl);
+      toneHost.appendChild(bandRow);
+      toneComps.push(UI.SegCtrl(bandCtl, {
+        options: BAND_OPTIONS,
+        value: tone.enabled === false ? 'flat' : String(tone.bands),
+        ariaLabel: 'Tone bands',
+        onChange: (v) => {
+          commit(() => {
+            const t = ensureTone();
+            if (v === 'flat') {
+              t.enabled = false;
+              t.bands = 1;
+            } else {
+              const n = parseInt(v, 10);
+              t.enabled = true;
+              t.bands = n;
+              t.thresholds = toneThresholdsFor(n);
+              t.ladder = toneLadderFor(n);
+            }
+          });
+          renderTone();
+        },
+      }));
+
+      if (tone.enabled === false || tone.bands < 2) {
+        const note = document.createElement('p');
+        note.className = 'vs3-empty';
+        note.textContent = 'Flat shading — the sun tints nothing. Pick 2–4 bands for light-driven tone.';
+        toneHost.appendChild(note);
+        return;
+      }
+
+      // Threshold ladder — ascending intensity cut points (length bands-1).
+      const thr = tone.thresholds;
+      const defThresholds = toneThresholdsFor(tone.bands);
+      thr.forEach((_, i) => {
+        // Live preview clamps to neighbors every frame; the neighbor re-render
+        // (renderTone) only runs on release so it can't tear down an active drag.
+        const live = liveSlider((v) => {
+          const t = ensureTone();
+          const lo = i > 0 ? t.thresholds[i - 1] + 0.01 : 0.01;
+          const hi = i < t.thresholds.length - 1 ? t.thresholds[i + 1] - 0.01 : 0.99;
+          t.thresholds[i] = Math.min(Math.max(v, lo), hi);
+        });
+        sliderRow(toneHost, toneComps, `Threshold ${i + 1}`, {
+          value: Number.isFinite(thr[i]) ? thr[i] : (i + 1) / tone.bands,
+          min: 0.01, max: 0.99, step: 0.01,
+          defaultValue: Number.isFinite(defThresholds[i]) ? defThresholds[i] : (i + 1) / tone.bands,
+          ariaLabel: `Tone threshold ${i + 1}`,
+          onChange: live.onChange,
+          onCommit: (v) => { live.onCommit(v); renderTone(); },
+        });
+      });
+
+      // Coverage ladder — plotted ink coverage per band, dark→light (length bands).
+      const defLadder = toneLadderFor(tone.bands);
+      tone.ladder.forEach((_, i) => {
+        sliderRow(toneHost, toneComps, `Coverage ${i + 1}`, {
+          value: Number.isFinite(tone.ladder[i]) ? tone.ladder[i] : (i + 0.5) / tone.bands,
+          min: 0, max: 1, step: 0.01,
+          defaultValue: Number.isFinite(defLadder[i]) ? defLadder[i] : (i + 0.5) / tone.bands,
+          ariaLabel: `Tone coverage ${i + 1}`,
+          ...liveSlider((v) => { ensureTone().ladder[i] = Math.min(Math.max(v, 0), 1); }),
+        });
+      });
+
+      // Specular hotspot.
+      const specRow = document.createElement('div');
+      specRow.className = 'vs3-row';
+      const specLbl = document.createElement('label');
+      specLbl.className = 'vs3-lbl';
+      specLbl.textContent = 'Specular';
+      specRow.appendChild(specLbl);
+      const specCtl = document.createElement('div');
+      specCtl.className = 'vs3-ctl';
+      specRow.appendChild(specCtl);
+      toneHost.appendChild(specRow);
+      toneComps.push(UI.SegCtrl(specCtl, {
+        options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+        value: tone.specular.enabled === false ? 'off' : 'on',
+        ariaLabel: 'Specular highlight',
+        onChange: (v) => {
+          commit(() => { ensureTone().specular.enabled = v === 'on'; });
+          renderTone();
+        },
+      }));
+      if (tone.specular.enabled !== false) {
+        sliderRow(toneHost, toneComps, 'Highlight size', {
+          value: Number.isFinite(tone.specular.size) ? tone.specular.size : 1,
+          min: 0.2, max: 3, step: 0.1,
+          defaultValue: 1,
+          ariaLabel: 'Specular size',
+          ...liveSlider((v) => { ensureTone().specular.size = v; }),
         });
       }
     };
@@ -921,6 +1230,14 @@
         body.appendChild(inspectorHost);
       },
     }));
+    sections.push(UI.Section(pages.scene, {
+      title: 'Tone',
+      children: (body) => {
+        toneHost = document.createElement('div');
+        toneHost.className = 'vs3-tone';
+        body.appendChild(toneHost);
+      },
+    }));
 
     styleHost = document.createElement('div');
     styleHost.className = 'vs3-style';
@@ -939,6 +1256,7 @@
     renderTree();
     renderInspector();
     renderStyle();
+    renderTone();
 
     let destroyed = false;
     const teardown = () => {
@@ -952,6 +1270,7 @@
       if (moreMenu && moreMenu.parentNode) moreMenu.parentNode.removeChild(moreMenu);
       destroyComps(inspectorComps);
       destroyComps(styleComps);
+      destroyComps(toneComps);
       sections.forEach((s) => { try { s.destroy(); } catch (_) { /* */ } });
       try { tabs.destroy(); } catch (_) { /* */ }
       if (root.parentNode) root.parentNode.removeChild(root);

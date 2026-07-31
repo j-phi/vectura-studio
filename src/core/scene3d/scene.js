@@ -165,6 +165,7 @@
       key: `${objectId}/${faceId}`,
       indices,
       polygon: indices.map((i) => projected[i]), // {x, y, z} per vertex
+      worldVerts, // {x,y,z} per vertex, world space — for in-plane surface hatch
       normalWorld,
       normalCam,
       centroidZ: centroidCam.z,
@@ -187,6 +188,7 @@
       visibility: obj.visibility || 'solid',
       faceIndexArrays: meshData.faces,
       faces,
+      world, // world-space verts (Phase 2: cast-shadow ground projection)
       projected,
       camPts,
       edges: collectEdges(meshData.faces),
@@ -246,7 +248,13 @@
     const ground = p.ground && p.ground.enabled
       ? buildGroundRecord(bounds, camAngles, projOpts, camPos)
       : null;
-    return { params: p, camera: cam, projOpts, objects, ground, width, height };
+    return {
+      params: p, camera: cam, projOpts, objects, ground, width, height,
+      // Project an arbitrary WORLD point to screen through the same camera —
+      // lets downstream stages (e.g. in-plane surface hatch) place new geometry
+      // on a face and foreshorten it correctly.
+      projectWorld: (pt) => projectPoint(rotatePoint(pt, camAngles), projOpts),
+    };
   };
 
   const api = {

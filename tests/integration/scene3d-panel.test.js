@@ -89,11 +89,11 @@ describe('Scene3D panel — buildControls dispatch', () => {
     const tabValues = Array.from(host.querySelectorAll('.tab-btn')).map((b) => b.dataset.value);
     expect(tabValues).toEqual(['scene', 'style', 'output']);
     // Tree rendered the fixture object (plus the always-present Ground row).
-    expect(host.querySelectorAll('.vs3-tree-row:not(.vs3-tree-ground)').length).toBe(1);
+    expect(host.querySelectorAll('.vs3-tree-row:not(.vs3-tree-ground):not(.vs3-tree-light)').length).toBe(1);
     expect(host.querySelector('.vs3-tree-ground')).toBeTruthy();
     // Selecting the object mounts the inspector (works without CONTRACT D —
     // this renderer has no setSceneSelection, so the panel-local path runs).
-    host.querySelector('.vs3-tree-row:not(.vs3-tree-ground)').dispatchEvent(new window.Event('click', { bubbles: true }));
+    host.querySelector('.vs3-tree-row:not(.vs3-tree-ground):not(.vs3-tree-light)').dispatchEvent(new window.Event('click', { bubbles: true }));
     expect(host.querySelector('input.ctrl-slider[aria-label="Position X (mm)"]')).toBeTruthy();
     // No generic control list (the branch early-returned before it).
     expect(host.querySelector('.control-label')).toBeFalsy();
@@ -171,13 +171,16 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     // Output tab is a Phase 1 placeholder.
     expect(container.querySelector('.vs3-page[data-page="output"]').textContent)
       .toContain('Plot stats arrive in a later phase');
-    // Import/Light shelf stubs are disabled with phase tooltips.
+    // Import shelf stub is still disabled with its phase tooltip.
     const importBtn = container.querySelector('.vs3-shelf-btn[data-stub="import"]');
-    const lightBtn = container.querySelector('.vs3-shelf-btn[data-stub="light"]');
     expect(importBtn.disabled).toBe(true);
     expect(importBtn.title).toBe('STL import arrives in Phase 4');
-    expect(lightBtn.disabled).toBe(true);
-    expect(lightBtn.title).toBe('Lights arrive in Phase 2');
+    // Phase 2: the Light shelf stub is activated — it selects the sun (no longer
+    // a disabled stub).
+    const lightBtn = container.querySelector('.vs3-shelf-btn[data-light="sun"]');
+    expect(lightBtn).toBeTruthy();
+    expect(lightBtn.disabled).toBe(false);
+    expect(container.querySelector('.vs3-shelf-btn[data-stub="light"]')).toBeFalsy();
   });
 
   test('shelf click appends a CONTRACT-A object with a unique id and ONE history entry', () => {
@@ -219,14 +222,14 @@ describe('Scene3D panel — behavior (vs3-)', () => {
         byFace: { 'obj-1/face:+X': { penId: 'pen-3', mapper: 'none', params: {} } },
       },
     });
-    expect(container.querySelectorAll('.vs3-tree-row:not(.vs3-tree-ground)').length).toBe(2);
+    expect(container.querySelectorAll('.vs3-tree-row:not(.vs3-tree-ground):not(.vs3-tree-light)').length).toBe(2);
 
     const firstRow = container.querySelector('.vs3-tree-row[data-object-id="obj-1"]');
     fire(firstRow.querySelector('.vs3-tree-del'), 'click');
 
     expect(layer.params.objects.length).toBe(1);
     expect(layer.params.objects[0].id).toBe('obj-2');
-    expect(container.querySelectorAll('.vs3-tree-row:not(.vs3-tree-ground)').length).toBe(1);
+    expect(container.querySelectorAll('.vs3-tree-row:not(.vs3-tree-ground):not(.vs3-tree-light)').length).toBe(1);
     expect(pushHistory).toHaveBeenCalledTimes(1);
     // Orphaned style entries are swept with the object.
     expect(layer.params.styleTable.byObject['obj-1']).toBeUndefined();
@@ -267,9 +270,12 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     expect(xSlider).toBeTruthy();
     xSlider.value = '25';
     fire(xSlider, 'input');
-    // Drag is live-only: no commit yet.
-    expect(pushHistory).toHaveBeenCalledTimes(0);
+    // Live preview (feedback #3): the transform updates on drag, and the
+    // gesture's single undo entry is pushed at drag start (not on release).
+    expect(layer.params.objects[0].transform.x).toBe(25);
+    expect(pushHistory).toHaveBeenCalledTimes(1);
     fire(xSlider, 'change');
+    // Release finalizes with a full regen; still exactly one undo entry.
     expect(layer.params.objects[0].transform.x).toBe(25);
     expect(pushHistory).toHaveBeenCalledTimes(1);
     expect(regen).toHaveBeenCalledTimes(1);
@@ -286,6 +292,37 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     fire(xrayOpt, 'click');
     expect(layer.params.objects[0].visibility).toBe('xray');
     expect(pushHistory).toHaveBeenCalledTimes(3);
+  });
+
+  test('live drag coalesces many input events into ONE undo entry (feedback #3)', () => {
+    const { container, layer, pushHistory } = mount({ objects: [fixtureObject(1)] });
+    fire(container.querySelector('.vs3-tree-row'), 'click');
+    const yaw = container.querySelector('input.ctrl-slider[aria-label="Yaw (degrees)"]');
+    expect(yaw).toBeTruthy();
+    // Simulate a drag: several input events before release.
+    ['10', '20', '35', '50'].forEach((v) => { yaw.value = v; fire(yaw, 'input'); });
+    // Each input previews live (the value tracks the drag)...
+    expect(layer.params.objects[0].transform.yaw).toBe(50);
+    // ...but the whole gesture is exactly ONE undo entry.
+    expect(pushHistory).toHaveBeenCalledTimes(1);
+    fire(yaw, 'change');
+    expect(pushHistory).toHaveBeenCalledTimes(1);
+    expect(layer.params.objects[0].transform.yaw).toBe(50);
+  });
+
+  test('double-click a dimension handle restores the primitive default (feedback #4)', () => {
+    const { container, layer, pushHistory, regen } = mount({ objects: [fixtureObject(1)] });
+    // Grow the box off its 40mm default before mounting the inspector.
+    layer.params.objects[0].params.sx = 120;
+    fire(container.querySelector('.vs3-tree-row'), 'click');
+    const width = container.querySelector('input.ctrl-slider[aria-label="box width"]');
+    expect(width).toBeTruthy();
+    expect(Number(width.value)).toBe(120);
+    // Double-clicking the handle resets to the box default (40mm), one undo entry.
+    fire(width, 'dblclick');
+    expect(layer.params.objects[0].params.sx).toBe(40);
+    expect(pushHistory).toHaveBeenCalledTimes(1);
+    expect(regen).toHaveBeenCalled();
   });
 
   test('Style tab · no selection edits the SCENE scope (chip: Styled by: Scene)', () => {

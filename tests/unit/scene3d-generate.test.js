@@ -228,6 +228,80 @@ describe('scene3d generate (CONTRACT A/B)', () => {
       expect(paths.some((p) => p.meta.kind === 'sceneFill')).toBe(false);
     });
 
+    test('faceted hatch is per-face surface-oriented: a cube\'s visible faces hatch at distinct angles', () => {
+      installStub();
+      const params = sceneParams([box('obj-1', 40, 0, {
+        transform: { x: 0, y: 0, z: 0, yaw: 22, pitch: 0, roll: 0, scale: 1 },
+      })]);
+      // A tilted camera so the three visible faces project to distinct planes.
+      params.camera = { projection: 'orthographic', yaw: -25, pitch: 20, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
+      params.styleTable.byObject['obj-1'] = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 55 } };
+      const paths = algo.generate(params, null, null, BOUNDS) || [];
+      const fills = paths.filter((p) => p.meta.kind === 'sceneFill' && p.length >= 2);
+      const angleByFace = {};
+      fills.forEach((p) => {
+        const f = p.meta.sceneTarget.faceId;
+        if (angleByFace[f] === undefined) {
+          angleByFace[f] = Math.round(Math.atan2(p[1].y - p[0].y, p[1].x - p[0].x) * 180 / Math.PI);
+        }
+      });
+      const faces = Object.keys(angleByFace);
+      expect(faces.length).toBeGreaterThanOrEqual(2);
+      // At least two visible faces hatch at meaningfully different screen angles
+      // (in-plane hatch foreshortens per face — not one uniform flat field).
+      const angles = faces.map((f) => angleByFace[f]);
+      const spread = Math.max(...angles) - Math.min(...angles);
+      expect(spread).toBeGreaterThan(10);
+    });
+
+    test('draft (fastPreview) skips the plane-projected surface hatch: faces hatch at one uniform screen angle', () => {
+      installStub();
+      const mk = () => {
+        const params = sceneParams([box('obj-1', 40, 0, {
+          transform: { x: 0, y: 0, z: 0, yaw: 22, pitch: 0, roll: 0, scale: 1 },
+        })]);
+        params.camera = { projection: 'orthographic', yaw: -25, pitch: 20, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
+        params.styleTable.byObject['obj-1'] = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 55 } };
+        return params;
+      };
+      const faceAngles = (paths) => {
+        const by = {};
+        paths.filter((p) => p.meta.kind === 'sceneFill' && p.length >= 2).forEach((p) => {
+          const f = p.meta.sceneTarget.faceId;
+          if (by[f] === undefined) by[f] = Math.round(Math.atan2(p[1].y - p[0].y, p[1].x - p[0].x) * 180 / Math.PI);
+        });
+        return Object.values(by);
+      };
+      // Full quality: in-plane hatch foreshortens → faces span distinct angles.
+      const full = faceAngles(algo.generate(mk(), null, null, BOUNDS) || []);
+      expect(Math.max(...full) - Math.min(...full)).toBeGreaterThan(10);
+      // Draft: cheap screen-space hatch at the fixed fillAngle → one shared angle.
+      const draft = faceAngles(algo.generate(mk(), null, null, { ...BOUNDS, fastPreview: true }) || []);
+      expect(draft.length).toBeGreaterThanOrEqual(2);
+      expect(Math.max(...draft) - Math.min(...draft)).toBeLessThanOrEqual(1);
+    });
+
+    test('draft (fastPreview) skips cast shadows for drag responsiveness; full quality emits them', () => {
+      installStub();
+      const params = sceneParams([box('obj-1', 40, 0, {
+        transform: { x: 0, y: 25, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+      })], {
+        ground: { enabled: true },
+        lights: [{ id: 'sun', type: 'directional', azimuth: 160, elevation: 45, castShadows: true }],
+        camera: { projection: 'orthographic', yaw: 0, pitch: 55, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 },
+      });
+      params.tone = { ...params.tone, enabled: true };
+      const shadowCount = (paths) => paths.filter((p) => p.meta
+        && p.meta.sceneTarget && p.meta.sceneTarget.regionClass === 'castShadow').length;
+      // Full quality casts the shadow.
+      const full = algo.generate(params, null, null, BOUNDS) || [];
+      expect(shadowCount(full)).toBeGreaterThan(0);
+      // A draft frame (live drag) skips shadow projection entirely so the drag
+      // stays responsive — the shadow snaps back on release (full regen).
+      const draft = algo.generate(params, null, null, { ...BOUNDS, fastPreview: true }) || [];
+      expect(shadowCount(draft)).toBe(0);
+    });
+
     test('curved-surface hatch replaces the wireframe: continuous fill, no face outlines or creases, silhouette kept', () => {
       installStub();
       const torus = {

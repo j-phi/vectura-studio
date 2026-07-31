@@ -633,6 +633,10 @@
       // stack under the last scene click (context bar shows "2 of 3").
       this.sceneCandidateStack = null;
       this._sceneDrag = null;
+      // 3D Scene Studio (Phase 2) — sun-widget / shadow-handle drag state.
+      // null | { mode:'widget'|'shadow', layerId, lightIndex, startLight,
+      // origin, camYaw, unit, historyPushed, moved }.
+      this._sceneLightDrag = null;
       this._sceneMarqueePending = null;
       this._sceneLastClick = null;
       this.paintBucketStack = null;
@@ -790,6 +794,14 @@
       // duplicates). Capture phase so tool-level Escape shortcuts don't race.
       this._onDragCancelKey = (e) => {
         if (e.key !== 'Escape') return;
+        // Escape mid sun-widget / shadow drag restores the pre-drag light.
+        if (this._sceneLightDrag) {
+          if (this._cancelSceneLightDrag()) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          return;
+        }
         // Escape mid scene ground-drag restores the pre-drag transforms.
         if (this._sceneDrag) {
           if (this._cancelSceneGroundDrag()) {
@@ -4844,6 +4856,15 @@
           let currentStrokeWidth = layerPen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
           let currentStrokeStyle = layerPen?.color || l.color;
 
+          // L5: paper-color pen-true preview forces the raw pen color/width (no
+          // display substitution). Guarded by a default-false flag — identical
+          // to the line above when off, so existing behavior is unchanged.
+          if (this.paperPreviewActive()) {
+            const pp = this.resolvePenStroke(defaultPenId, l);
+            currentStrokeStyle = pp.color;
+            currentStrokeWidth = pp.width;
+          }
+
           this.ctx.lineWidth = currentStrokeWidth;
           // Lane B: per-layer cap/join/miter + layer-level dash (document units
           // → world mm). The layer dash becomes the batch default; per-path
@@ -4885,6 +4906,12 @@
               const pPen = SETTINGS.pens?.find((p) => p.id === pathPenId) || null;
               currentStrokeWidth = pPen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
               currentStrokeStyle = pPen?.color || l.color;
+              // L5: pen-true preview (see the batch-default branch above).
+              if (this.paperPreviewActive()) {
+                const pp = this.resolvePenStroke(pathPenId, l);
+                currentStrokeStyle = pp.color;
+                currentStrokeWidth = pp.width;
+              }
               this.ctx.lineWidth = currentStrokeWidth;
               this.ctx.strokeStyle = currentStrokeStyle;
               this.ctx.beginPath();
@@ -5493,6 +5520,8 @@
         // 3D Scene Studio: highlight the selected scene faces/objects on top
         // of the drawn geometry (no-op without a scene selection).
         this.drawSceneSelectionOverlay();
+        // Phase 2: the sun widget (no-op without a selected scene3d layer).
+        this.drawSceneLightOverlay();
         this.ctx.restore();
       } else {
         this.ctx.save();
@@ -5510,6 +5539,8 @@
         // 3D Scene Studio: highlight the selected scene faces/objects on top
         // of the drawn geometry (no-op without a scene selection).
         this.drawSceneSelectionOverlay();
+        // Phase 2: the sun widget (no-op without a selected scene3d layer).
+        this.drawSceneLightOverlay();
         this.ctx.restore();
 
         const outsideAlpha = SETTINGS.outsideOpacity ?? 0.5;
@@ -6615,6 +6646,27 @@
             return;
           }
         }
+        // 3D Scene Studio (Phase 2): the sun widget + shadow handle win over
+        // object selection so the light can be dragged where it overlaps art.
+        // Runs after the orbit gizmo (orbit still wins) and before selection.
+        if (
+          this.activeTool === 'select' &&
+          selectedLayers.length === 1 &&
+          selectedLayers[0].type === 'scene3d' &&
+          !this.isLayerLocked?.(selectedLayers[0].id)
+        ) {
+          const sceneLayer = selectedLayers[0];
+          const lightHit = this.hitSceneLight(sx, sy, sceneLayer);
+          if (lightHit && this.beginSceneLightDrag(lightHit, e)) {
+            if (e.cancelable) e.preventDefault();
+            return;
+          }
+          const shadowHit = this._hitSceneShadow(world, sceneLayer);
+          if (shadowHit && this.beginSceneShadowDrag(shadowHit, e)) {
+            if (e.cancelable) e.preventDefault();
+            return;
+          }
+        }
         // 3D Scene Studio (§5.1 V / object mode): scene object picks +
         // ground-drag arming run after the gizmo (orbit wins) but before the
         // 2D handle/selection flow. Returns false when nothing scene-related
@@ -7197,6 +7249,12 @@
         return;
       }
 
+      // 3D Scene Studio (Phase 2): live sun-widget / shadow-handle drag.
+      if (this._sceneLightDrag) {
+        this._applySceneLightDrag(e);
+        return;
+      }
+
       // 3D Scene Studio: live ground-drag of the selected scene object(s).
       if (this._sceneDrag) {
         this._applySceneGroundDrag(e);
@@ -7678,6 +7736,14 @@
       }
       if (this.rotation3DDrag) {
         this.end3DRotationDrag();
+        clearActivePointer();
+        return;
+      }
+      // 3D Scene Studio (Phase 2): commit a sun-widget / shadow-handle drag
+      // (full regen on release; history pushed once on first movement).
+      if (this._sceneLightDrag) {
+        this.endSceneLightDrag();
+        this.draw();
         clearActivePointer();
         return;
       }
@@ -8491,6 +8557,29 @@
 
     getInteractionPaths(layer) {
       return this.engine.getRenderablePaths ? this.engine.getRenderablePaths(layer, { useOptimized: false }) : layer?.paths || [];
+    }
+
+    // CONTRACT L5 — paper-color pen-true preview. When SETTINGS.paperPreview is
+    // on, the draw loop resolves every stroke to its raw pen color/width with no
+    // display substitution, so dark-stock (dark bgColor) previews render true.
+    // The flag is added to defaults.js by stream 2A; undefined is treated as
+    // false (Phase-1 behavior), so absence never changes rendering.
+    paperPreviewActive() {
+      const S = (window.Vectura && window.Vectura.SETTINGS) || SETTINGS || {};
+      return Boolean(S.paperPreview);
+    }
+
+    // Raw {color, width} for a pen id, falling back to the layer's own color /
+    // width then the document stroke width — the pen-true resolution the paper
+    // preview forces. Pure (no ctx side effects) so tests can assert it.
+    resolvePenStroke(penId, layer) {
+      const S = (window.Vectura && window.Vectura.SETTINGS) || SETTINGS || {};
+      const pen = (Array.isArray(S.pens) ? S.pens : []).find((p) => p && p.id === penId) || null;
+      const color = (pen && pen.color) || (layer && layer.color) || S.strokeColor || '#000000';
+      const width = (pen && pen.width != null) ? pen.width
+        : (layer && layer.strokeWidth != null) ? layer.strokeWidth
+        : S.strokeWidth;
+      return { color, width };
     }
 
     getActiveModifierLayer() {
@@ -9890,6 +9979,407 @@
         if (drag.moved) {
           // Pop the one gesture snapshot pushed on first movement (mirrors the
           // 2D cancelLayerDrag history handling).
+          if (this.app && Array.isArray(this.app.history) && this.app.history.length > 1) {
+            this.app.history.pop();
+          }
+          this.engine.generate(layer.id);
+        }
+      }
+      this.draw();
+      this.updateCursor();
+      return true;
+    }
+
+    // ——— Phase 2: sun widget + shadow handle (CONTRACT L1/L2) ——————————————
+    //
+    // The sun handle is the light-editing peer of the 3D rotation gizmo: it
+    // floats near the scene, is dragged to re-aim the sun, and reads back a
+    // tooltip. Shadows are a second handle onto the same light — dragging a
+    // cast-shadow fill (regionClass 'castShadow', L2) re-derives azimuth +
+    // elevation from the caster→tip vector. Both funnel writes through
+    // _writeSceneLight → draft regen → one history entry per gesture, mirroring
+    // _applySceneGroundDrag / apply3DRotationDrag. Every branch is ADDITIVE:
+    // absent a scene selection nothing draws or hit-tests.
+
+    // The scene3d layer the light affordances act on: the sole selected scene
+    // layer, else the scene-selection's layer. Null disables the widget.
+    _sceneLightLayer() {
+      const sel = this.getSelectedLayers ? this.getSelectedLayers() : [];
+      if (sel.length === 1 && sel[0] && sel[0].type === 'scene3d'
+        && sel[0].visible !== false && !this.isLayerLocked?.(sel[0].id)) {
+        return sel[0];
+      }
+      const ss = this.getSceneSelection && this.getSceneSelection();
+      if (ss) {
+        const l = this.engine.layers.find((x) => x.id === ss.layerId);
+        if (l && l.type === 'scene3d' && l.visible !== false && !this.isLayerLocked?.(l.id)) return l;
+      }
+      return null;
+    }
+
+    // params.lights[0] (single directional sun — L1). Never mutates on read; a
+    // synthesized default is returned when the array is absent so the widget
+    // still draws before 2A's normalizeParams runs.
+    _sceneLight(layer, ensure = false) {
+      const params = (layer && layer.params) || {};
+      if (!Array.isArray(params.lights) || !params.lights.length) {
+        if (ensure) {
+          params.lights = [{ id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true }];
+          return params.lights[0];
+        }
+        return { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true };
+      }
+      return params.lights[0];
+    }
+
+    // World light DIRECTION (travel, pointing away from the sun toward the
+    // scene, d.y < 0) per L1. Uses 2A's exported helper when present so the
+    // widget and the shadow projection agree; else an identical local fallback.
+    _lightWorldDir(light) {
+      const L = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.Lighting;
+      if (L && typeof L.lightWorldDir === 'function') {
+        try {
+          const v = L.lightWorldDir(light);
+          if (v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)) return v;
+        } catch (_e) { /* fall through to local */ }
+      }
+      const az = ((light && light.azimuth) || 0) * Math.PI / 180;
+      const el = clamp((light && light.elevation) || 0, 0, 90) * Math.PI / 180;
+      return {
+        x: -Math.cos(el) * Math.sin(az),
+        y: -Math.sin(el),
+        z: -Math.cos(el) * Math.cos(az),
+      };
+    }
+
+    // Scene-wide anchor (bbox center of all non-ground scene paths, world
+    // coords) — independent of the object selection so the sun stays put while
+    // objects are picked. Null when the layer has no drawn geometry.
+    _sceneLightAnchor(layer) {
+      const paths = this.getInteractionPaths(layer) || [];
+      let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+      let found = false;
+      paths.forEach((path) => {
+        const target = path && path.meta && path.meta.sceneTarget;
+        if (!target || !Array.isArray(path)) return;
+        if (target.objectId === 'ground') return;
+        for (let i = 0; i < path.length; i++) {
+          const pt = path[i];
+          if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
+          if (pt.x < minX) minX = pt.x;
+          if (pt.x > maxX) maxX = pt.x;
+          if (pt.y < minY) minY = pt.y;
+          if (pt.y > maxY) maxY = pt.y;
+          found = true;
+        }
+      });
+      if (!found) return null;
+      return { center: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }, radius: Math.max(maxX - minX, maxY - minY) / 2 };
+    }
+
+    // Forward map: light → world-space offset (dx,dy from the anchor center) of
+    // the sun handle. Azimuth sets the screen direction (yaw-rotated; +Z reads
+    // as screen-up); elevation sets the radius (overhead = near the center,
+    // grazing = far out). Invertible by _lightFromHandleOffset.
+    _lightHandleOffset(layer, light, baseR) {
+      const d = this._lightWorldDir(light);
+      const el = Math.asin(clamp(-d.y, -1, 1)); // radians, sun elevation
+      const hx = -d.x; const hz = -d.z;         // horizontal direction toward the sun
+      const hlen = Math.hypot(hx, hz) || 1e-6;
+      const ux = hx / hlen; const uz = hz / hlen;
+      const camYaw = ((layer && layer.params && layer.params.camera && layer.params.camera.yaw) || 0) * Math.PI / 180;
+      const cy = Math.cos(camYaw); const sy = Math.sin(camYaw);
+      const ex = ux * cy - uz * sy;
+      const ez = ux * sy + uz * cy;
+      // Canvas-Y matches the scene/ground/shadow convention: with the default
+      // positive camera pitch, world +Z projects to screen-DOWN, so the toward-
+      // sun screen offset uses +ez (NOT -ez). This places the sun disc on the
+      // sky side — opposite the cast shadow — instead of over its own shadow.
+      const sxDir = ex; const syDir = ez;
+      const R = baseR * (0.30 + 0.70 * Math.cos(el));
+      return { dx: sxDir * R, dy: syDir * R };
+    }
+
+    // Inverse of _lightHandleOffset: a world-space handle offset → {azimuth,
+    // elevation}. Longer offset = lower sun (smaller elevation).
+    _lightFromHandleOffset(dx, dy, camYaw, baseR) {
+      const R = Math.hypot(dx, dy) || 1e-6;
+      const sxDir = dx / R; const syDir = dy / R;
+      const ex = sxDir; const ez = syDir; // inverse of _lightHandleOffset (syDir = +ez)
+      const cy = Math.cos(camYaw); const sy = Math.sin(camYaw);
+      const ux = ex * cy + ez * sy;             // inverse rotation
+      const uz = -ex * sy + ez * cy;
+      let az = Math.atan2(ux, uz) * 180 / Math.PI; // 0=+Z, 90=+X
+      if (az < 0) az += 360;
+      const cosEl = clamp((R / baseR - 0.30) / 0.70, 0, 1);
+      const el = Math.acos(cosEl) * 180 / Math.PI;
+      return { azimuth: Math.round(az * 10) / 10, elevation: Math.round(clamp(el, 0, 90) * 10) / 10 };
+    }
+
+    // Handle geometry (world coords) for the current sun, or null when the
+    // scene has no anchor. baseR scales with the scene so the handle stays close.
+    getSceneLightControl(layer) {
+      const target = layer || this._sceneLightLayer();
+      if (!target) return null;
+      const anchor = this._sceneLightAnchor(target);
+      if (!anchor) return null;
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const baseR = Math.max(anchor.radius * 1.5, 60 * unit);
+      const light = this._sceneLight(target);
+      const off = this._lightHandleOffset(target, light, baseR);
+      return {
+        layer: target,
+        center: { ...anchor.center },
+        pos: { x: anchor.center.x + off.dx, y: anchor.center.y + off.dy },
+        baseR,
+        unit,
+        light,
+      };
+    }
+
+    drawSceneLightOverlay() {
+      const layer = this._sceneLightLayer();
+      if (!layer) return;
+      const control = this.getSceneLightControl(layer);
+      if (!control) return;
+      const { center, pos, unit } = control;
+      const accent = getThemeToken('--render-gizmo-x', '#fbbf24'); // amber sun
+      const line = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
+      this.ctx.save();
+      this.ctx.lineCap = 'round';
+      this.ctx.lineJoin = 'round';
+      // Ray from the anchor toward the sun.
+      this.ctx.globalAlpha = 0.55;
+      this.ctx.strokeStyle = line;
+      this.ctx.lineWidth = 1 * unit;
+      this.ctx.setLineDash([3 * unit, 3 * unit]);
+      this.ctx.beginPath();
+      this.ctx.moveTo(center.x, center.y);
+      this.ctx.lineTo(pos.x, pos.y);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+      // Sun disc.
+      this.ctx.globalAlpha = 0.95;
+      this.ctx.fillStyle = accent;
+      this.ctx.beginPath();
+      this.ctx.arc(pos.x, pos.y, 4.2 * unit, 0, TAU);
+      this.ctx.fill();
+      // Sun rays.
+      this.ctx.strokeStyle = accent;
+      this.ctx.lineWidth = 1.1 * unit;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * TAU;
+        const rx = Math.cos(a); const ry = Math.sin(a);
+        this.ctx.beginPath();
+        this.ctx.moveTo(pos.x + rx * 6 * unit, pos.y + ry * 6 * unit);
+        this.ctx.lineTo(pos.x + rx * 9 * unit, pos.y + ry * 9 * unit);
+        this.ctx.stroke();
+      }
+      this.ctx.restore();
+    }
+
+    hitSceneLight(sx, sy, layer = null) {
+      const target = layer || this._sceneLightLayer();
+      if (!target) return null;
+      const control = this.getSceneLightControl(target);
+      if (!control) return null;
+      const world = this.screenToWorld(sx, sy);
+      const dist = Math.hypot(world.x - control.pos.x, world.y - control.pos.y);
+      if (dist <= 11 * control.unit) {
+        return { type: 'widget', layer: target, control };
+      }
+      return null;
+    }
+
+    beginSceneLightDrag(hit, event) {
+      if (!hit || !hit.layer) return false;
+      const layer = hit.layer;
+      const light = this._sceneLight(layer, true);
+      const control = hit.control || this.getSceneLightControl(layer);
+      if (!control) return false;
+      this._sceneLightDrag = {
+        mode: 'widget',
+        layerId: layer.id,
+        lightIndex: 0,
+        center: { ...control.center },
+        baseR: control.baseR,
+        camYaw: ((layer.params && layer.params.camera && layer.params.camera.yaw) || 0) * Math.PI / 180,
+        startLight: { azimuth: light.azimuth, elevation: light.elevation },
+        historyPushed: false,
+        moved: false,
+      };
+      this.setCanvasCursor('grabbing', 'rotate-3d');
+      return true;
+    }
+
+    // The cast-shadow fill under `world`, or null (CONTRACT L2). Fills without a
+    // 'castShadow' regionClass (tone-band face fills) are ignored.
+    _hitSceneShadow(world, layer = null) {
+      const target = layer || this._sceneLightLayer();
+      if (!target) return null;
+      const paths = this.getInteractionPaths(target) || [];
+      for (const path of paths) {
+        const meta = path && path.meta;
+        const st = meta && meta.sceneTarget;
+        if (!st || meta.kind !== 'sceneFill' || st.regionClass !== 'castShadow') continue;
+        const poly = Array.isArray(st.pickPolygon) ? st.pickPolygon : null;
+        if (poly && poly.length >= 3 && this.pointInPoly(world, poly)) {
+          return { layer: target, path, casterId: st.casterId || null, pickPolygon: poly };
+        }
+      }
+      return null;
+    }
+
+    // A shadow drag is a second way to aim the same light: the drag origin is
+    // the caster's ground anchor and the cursor is the shadow tip. Direction →
+    // sun azimuth (opposite the shadow); tip length → elevation (longer = lower).
+    beginSceneShadowDrag(hit, event) {
+      if (!hit || !hit.layer) return false;
+      const layer = hit.layer;
+      const light = this._sceneLight(layer, true);
+      // Origin: the caster object's path-bbox center; falls back to the shadow
+      // polygon centroid for a merged (casterId null) union shadow.
+      let origin = null;
+      if (hit.casterId) origin = this._sceneObjectPathCenter(layer, hit.casterId);
+      if (!origin && Array.isArray(hit.pickPolygon)) origin = this._polygonCentroid(hit.pickPolygon);
+      if (!origin) return false;
+      this._sceneLightDrag = {
+        mode: 'shadow',
+        layerId: layer.id,
+        lightIndex: 0,
+        origin,
+        camYaw: ((layer.params && layer.params.camera && layer.params.camera.yaw) || 0) * Math.PI / 180,
+        startLight: { azimuth: light.azimuth, elevation: light.elevation },
+        historyPushed: false,
+        moved: false,
+      };
+      this.setCanvasCursor('grabbing', 'rotate-3d');
+      return true;
+    }
+
+    _sceneObjectPathCenter(layer, objectId) {
+      const paths = this.getInteractionPaths(layer) || [];
+      let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+      let found = false;
+      paths.forEach((path) => {
+        const target = path && path.meta && path.meta.sceneTarget;
+        if (!target || target.objectId !== objectId || !Array.isArray(path)) return;
+        for (let i = 0; i < path.length; i++) {
+          const pt = path[i];
+          if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
+          if (pt.x < minX) minX = pt.x;
+          if (pt.x > maxX) maxX = pt.x;
+          if (pt.y < minY) minY = pt.y;
+          if (pt.y > maxY) maxY = pt.y;
+          found = true;
+        }
+      });
+      if (!found) return null;
+      return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+    }
+
+    _polygonCentroid(poly) {
+      if (!Array.isArray(poly) || !poly.length) return null;
+      let sx = 0; let sy = 0; let n = 0;
+      poly.forEach((p) => {
+        if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) { sx += p.x; sy += p.y; n++; }
+      });
+      if (!n) return null;
+      return { x: sx / n, y: sy / n };
+    }
+
+    _writeSceneLight(layer, patch) {
+      const light = this._sceneLight(layer, true);
+      if (patch.azimuth !== undefined) light.azimuth = patch.azimuth;
+      if (patch.elevation !== undefined) light.elevation = patch.elevation;
+    }
+
+    _applySceneLightDrag(event = {}) {
+      const drag = this._sceneLightDrag;
+      if (!drag) return false;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer || !layer.params) { this._sceneLightDrag = null; return false; }
+      const rect = this.canvas.getBoundingClientRect();
+      const world = this.screenToWorld((event.clientX ?? 0) - rect.left, (event.clientY ?? 0) - rect.top);
+      let dx; let dy;
+      let next;
+      if (drag.mode === 'shadow') {
+        dx = world.x - drag.origin.x;
+        dy = world.y - drag.origin.y;
+      } else {
+        dx = world.x - drag.center.x;
+        dy = world.y - drag.center.y;
+      }
+      if (!drag.moved && Math.hypot(dx, dy) < 1 / (this.scale || 1)) return true;
+      if (!drag.historyPushed) {
+        if (this.app?.pushHistory) this.app.pushHistory();
+        else if (this.onCommitTransform) this.onCommitTransform();
+        drag.historyPushed = true;
+      }
+      drag.moved = true;
+      if (drag.mode === 'shadow') {
+        // Screen shadow delta → ground direction (camera-yaw math, matching
+        // _applySceneGroundDrag). Sun azimuth is opposite the shadow; elevation
+        // falls as the shadow lengthens.
+        const cy = Math.cos(drag.camYaw); const sy = Math.sin(drag.camYaw);
+        const gx = dx * cy + dy * sy;
+        const gz = -dx * sy + dy * cy;
+        const len = Math.hypot(dx, dy);
+        let az = Math.atan2(-gx, -gz) * 180 / Math.PI;
+        if (az < 0) az += 360;
+        const ref = 80 / (this.scale || 1);
+        const el = clamp(Math.atan2(ref, Math.max(len, 1e-3)) * 180 / Math.PI, 2, 88);
+        next = { azimuth: Math.round(az * 10) / 10, elevation: Math.round(el * 10) / 10 };
+      } else {
+        next = this._lightFromHandleOffset(dx, dy, drag.camYaw, drag.baseR);
+      }
+      this._writeSceneLight(layer, next);
+      this._scheduleSceneDragRegen(layer.id);
+      this.showDragTooltip(
+        `Az ${Math.round(next.azimuth)}°  El ${Math.round(next.elevation)}°`,
+        event.clientX ?? 0,
+        event.clientY ?? 0,
+      );
+      return true;
+    }
+
+    endSceneLightDrag() {
+      const drag = this._sceneLightDrag;
+      this._sceneLightDrag = null;
+      this.hideDragTooltip();
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      if (!drag) return;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer && drag.moved) {
+        this.engine.generate(layer.id);
+        this.app?.ui?.buildControls?.();
+        this.app?.ui?.updateFormula?.();
+      }
+      this.updateCursor();
+    }
+
+    // Escape mid light/shadow drag: restore the captured azimuth/elevation and
+    // pop the one gesture history snapshot (mirrors _cancelSceneGroundDrag).
+    _cancelSceneLightDrag() {
+      const drag = this._sceneLightDrag;
+      if (!drag) return false;
+      this._sceneLightDrag = null;
+      this.hideDragTooltip();
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer) {
+        this._writeSceneLight(layer, drag.startLight);
+        if (drag.moved) {
           if (this.app && Array.isArray(this.app.history) && this.app.history.length > 1) {
             this.app.history.pop();
           }

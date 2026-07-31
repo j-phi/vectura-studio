@@ -57,6 +57,17 @@
     cameraDistance: 620, focalLength: 520, zoom: 1,
   };
   const DEFAULT_LIGHT = { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true };
+  // CONTRACT L3 — light-driven tone. `enabled: false` ⇒ EXACT Phase 1 flat look.
+  // bands is a soft hint (2|3|4); the tone READER (Scene3D.Regions) trusts the
+  // ladder length for the real band count, so a hand-edited length mismatch
+  // degrades gracefully rather than throwing.
+  const DEFAULT_TONE = {
+    enabled: true,
+    bands: 3,
+    thresholds: [0.33, 0.66], // ascending intensity cut points (length bands-1)
+    ladder: [0.2, 0.5, 0.85], // coverage (0..1) per band, dark→light (length bands)
+    specular: { enabled: true, size: 1 },
+  };
 
   const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -161,6 +172,53 @@
     };
   };
 
+  const ladderFor = (n) => {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(Math.round(((i + 0.5) / n) * 100) / 100);
+    return out;
+  };
+  const thresholdsFor = (n) => {
+    const out = [];
+    for (let i = 1; i < n; i++) out.push(Math.round((i / n) * 100) / 100);
+    return out;
+  };
+
+  const normalizeTone = (tone) => {
+    const src = isObject(tone) ? tone : {};
+    // `bands` is a soft hint used ONLY to size fallbacks when the arrays are
+    // absent. The ladder length is authoritative for the real band count.
+    const bandsHint = clamp(Math.round(finite(src.bands, DEFAULT_TONE.bands)), 1, 4);
+    let ladder = Array.isArray(src.ladder) && src.ladder.length
+      ? src.ladder.map((c) => clamp(finite(c, 0), 0, 1))
+      : ladderFor(bandsHint);
+    let thresholds = Array.isArray(src.thresholds) && src.thresholds.length
+      ? src.thresholds.map((t) => clamp(finite(t, 0), 0, 1))
+      : thresholdsFor(bandsHint);
+    // Reconcile the three length-coupled fields so the panel SegCtrl, the
+    // threshold/coverage sliders, and Regions all agree. Trim/pad the thresholds
+    // to exactly bands-1 ascending cut points so a legacy or hand-edited length
+    // mismatch self-heals instead of desyncing the UI.
+    const realBands = clamp(ladder.length, 1, 4);
+    if (ladder.length > realBands) ladder = ladder.slice(0, realBands);
+    if (thresholds.length > realBands - 1) thresholds = thresholds.slice(0, realBands - 1);
+    while (thresholds.length < realBands - 1) {
+      const i = thresholds.length + 1;
+      thresholds.push(Math.round((i / realBands) * 100) / 100);
+    }
+    thresholds = thresholds.slice().sort((a, b) => a - b); // ascending
+    const spec = isObject(src.specular) ? src.specular : {};
+    return {
+      enabled: src.enabled !== false,
+      bands: realBands,
+      thresholds,
+      ladder,
+      specular: {
+        enabled: spec.enabled !== false,
+        size: Math.max(0, finite(spec.size, DEFAULT_TONE.specular.size)),
+      },
+    };
+  };
+
   const normalizeCamera = (camera) => {
     const src = isObject(camera) ? camera : {};
     return {
@@ -192,6 +250,7 @@
       .filter(isObject)
       .map((light, index) => normalizeLight(light, index));
     out.lights = lights.length ? lights : [{ ...DEFAULT_LIGHT }];
+    out.tone = normalizeTone(src.tone);
     out.ground = { enabled: isObject(src.ground) ? src.ground.enabled !== false : true };
     out.backdrop = { enabled: isObject(src.backdrop) ? src.backdrop.enabled === true : false };
     out.camera = normalizeCamera(src.camera);
@@ -225,6 +284,8 @@
     PRIMITIVE_PARAM_DEFAULTS,
     DEFAULT_TRANSFORM,
     DEFAULT_CAMERA,
+    DEFAULT_TONE,
+    normalizeTone,
     normalizeStyle,
     normalizeStyleTable,
     normalizeParams,

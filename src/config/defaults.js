@@ -2079,6 +2079,16 @@
       lights: [
         { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true },
       ],
+      // CONTRACT L3: light-driven tone banding. enabled:false ⇒ Phase 1 flat look.
+      tone: {
+        // 3 bands ⇒ 2 ascending cut points + 3 coverage rungs (length-consistent:
+        // thresholds = bands-1, ladder = bands). Regions trusts the ladder length.
+        enabled: true,
+        bands: 3,
+        thresholds: [0.33, 0.66],
+        ladder: [0.2, 0.5, 0.85],
+        specular: { enabled: true, size: 1 },
+      },
       ground: { enabled: true },
       backdrop: { enabled: false },
       camera: {
@@ -2325,6 +2335,11 @@
     // 'draft' = fastest/coarsest, 'high' = near-final. Consumed by the 3D
     // algorithms via bounds.preview3dQuality (see Geometry3D.previewDetailScale).
     preview3dQuality: 'balanced',
+    // CONTRACT L5: pen-true paper preview. When true the renderer paints the
+    // canvas at true pen.color/width with no display-contrast substitution, so
+    // dark-stock previews render honestly. 2B reads it in the draw loop and
+    // surfaces the toggle in document-setup.js. Default off (legacy behaviour).
+    paperPreview: false,
     optimizationScope: 'all',
     optimizationPreview: 'off',
     // Canvas line-sort overlay (the eye toggle on the Draw Order subpanel). Kept

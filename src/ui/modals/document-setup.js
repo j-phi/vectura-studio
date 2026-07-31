@@ -246,6 +246,7 @@
                 <input type="color" id="inp-bg-color" class="hidden" aria-label="Background color" />
               </span>
             </div>
+            ${swToggle('set-paper-preview', 'Pen-true paper preview')}
             ${swToggle('set-selection-outline', 'Selection outline')}
             <div id="set-selection-outline-hide3d-row">
               ${swToggle('set-selection-outline-hide3d', 'Hide outline on 3D layers', 'true')}
@@ -948,6 +949,27 @@ ${isDevEligible() ? `
       setSnapGuides.onchange = (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.snapGuides = e.target.checked;
+      };
+    }
+    const setPaperPreview = getEl('set-paper-preview', { silent: true });
+    if (setPaperPreview) {
+      // CONTRACT L5: pen-true paper preview. When on, the canvas strokes each
+      // pen at its raw color/width with no display substitution, so dark-stock
+      // (dark background) previews render true. Default OFF (undefined → false —
+      // 2A adds the default key in defaults.js). A UI preference, not undo state.
+      setPaperPreview.checked = SETTINGS.paperPreview === true;
+      setPaperPreview.closest('[role="switch"]')?.setAttribute(
+        'aria-checked',
+        String(setPaperPreview.checked)
+      );
+      setPaperPreview.onchange = (e) => {
+        SETTINGS.paperPreview = e.target.checked;
+        setPaperPreview.closest('[role="switch"]')?.setAttribute(
+          'aria-checked',
+          String(e.target.checked)
+        );
+        this.app.render?.();
+        this.app.persistPreferencesDebounced?.();
       };
     }
     if (setCoordinateReadout) {

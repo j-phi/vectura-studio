@@ -210,6 +210,23 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — 3D Scene Studio Phase 2 (Light).** Two file-disjoint streams (2A
+  core: lighting/regions/shadows; 2B UI: sun widget, tone editor, paper preview) built
+  in parallel against a frozen contract (L1–L5), adversarially reviewed + judged, and
+  integrated on branch `3d-scene/p2`: a single directional sun drives light-made **tone**
+  (intensity → band → coverage → hatch spacing, per-face for flat prims, group-mean for
+  curved, darkest-band cross-pass, specular hotspot) and ground **cast shadows**
+  (silhouette → y=0 projection, class-union via `FillBoolean.safeOp`, grazing clamp). An
+  on-canvas **sun widget** and a draggable **cast shadow** both aim the light; the panel
+  gains a Tone editor + Sun inspector; a pen-true **paper preview** toggle renders on the
+  true stock colour. Also folded in from live feedback: per-face **plane-projected surface
+  hatch** (a cube reads as three foreshortened 3D planes), inspector **live-preview on drag**
+  (one undo/gesture) and **double-click-to-default**. Draft drags skip shadows + tone + the
+  plane hatch for a responsive frame (≈60fps at 12 objects); full quality resolves on release.
+  Review gate found 13 confirmed (2 must-fix: sun drawn on the shadow side; light inspector
+  never opened) — all fixed and live-verified. Deferred: `PRH-025` (coarse live draft shadow),
+  `PRH-026` (track double-click reset). Verified live: Golden-Hour hero (tone bands + cast
+  shadows), sun-widget aim, live inspector.
 - **Unreleased — 3D Scene Studio Phase 1 (core scene MVP).** Three file-disjoint streams
   (1A engine, 1B panel+cascade, 1C selection/canvas) built in parallel against a frozen
   contract, adversarially reviewed and judged, integrated on branch `3d-scene/p1`: the
