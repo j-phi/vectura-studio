@@ -210,6 +210,18 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — 3D Scene Studio Phase 1 (core scene MVP).** Three file-disjoint streams
+  (1A engine, 1B panel+cascade, 1C selection/canvas) built in parallel against a frozen
+  contract, adversarially reviewed and judged, integrated on branch `3d-scene/p1`: the
+  `scene3d` layer type with flat-face HLR (support-plane depth + owner-aware depth buffer),
+  edge classification, x-ray mode and styleable ground; the bespoke Scene panel (shelf /
+  tree / inspector) + `StyleCascade` (face>object>scene, provenance) driving per-object and
+  per-face pen + none/hatch/wireframe mappers; scene selection (V objects, A faces/edges,
+  Alt-cycle, marquee, ground-drag + `D` drop, snapping) with scene context-bar contexts and
+  right-click verbs; asset-aware `cloneLayerParams`/`duplicateLayer`. Live drag coalesces
+  regen onto rAF at draft detail (12-object ≈ 60fps). Default camera pitch corrected to +20
+  so object tops are visible. Verified live: 6-box gate composition styled per object AND
+  face, per-pen SVG export, full selection/menu/drag flow. Follow-ups under **Next**.
 - **Unreleased — 3D Scene Studio Phase 0 (enablers).** Four file-disjoint streams built in
   parallel, adversarially reviewed and judged, integrated on branch `3d-scene/p0`:
   effective-pen SVG export (grouping/dedupe/sort by `path.meta.penId || layer.penId`),

@@ -100,6 +100,18 @@
         tooltipToPoint: 'Convert to Point Type',
       },
       outlineText: { label: 'Outline the text', tooltip: 'Convert text to outlines' },
+      // 3D Scene Studio (Phase 1C) — scene-object / scene-face / scene-edge
+      // contexts (kinds 'scene-object' | 'scene-face' | 'scene-edge').
+      sceneDuplicate: { label: 'Duplicate', tooltip: 'Duplicate object' },
+      sceneDelete: { tooltip: 'Delete object' },
+      sceneDrop: { label: 'Drop', tooltip: 'Drop to ground (D)' },
+      sceneVisibility: { tooltipSolid: 'Show solid', tooltipXray: 'Show X-ray' },
+      sceneSelectFaces: { label: 'All Faces', tooltip: 'Select all faces of this object' },
+      sceneClearStyle: {
+        label: 'Clear Style',
+        tooltip: 'Clear face style',
+        tooltipOff: 'Style tools not loaded',
+      },
     },
 
     // ── Align flyout (TB-5) — reuses the docked multi-selection panel's
@@ -143,6 +155,9 @@
       multi: { selector: '#right-pane', tab: 'layers' },
       group: { selector: '#right-pane', tab: 'layers' },
       direct: { selector: '#right-pane', tab: 'layers' },
+      'scene-object': { selector: '#right-pane', tab: 'layers' },
+      'scene-face': { selector: '#right-pane', tab: 'layers' },
+      'scene-edge': { selector: '#right-pane', tab: 'layers' },
     },
 
     // TB-7: the docked panel that hosts the full text controls (family/style
@@ -218,6 +233,13 @@
       alignCenterBoth: svg('<path d="M10 3v14"/><path d="M3 10h14"/><rect x="7" y="7" width="6" height="6" rx="0.6"/>'),
       distributeH: svg('<rect x="3" y="6" width="3" height="8" rx="0.6"/><rect x="8.5" y="6" width="3" height="8" rx="0.6"/><rect x="14" y="6" width="3" height="8" rx="0.6"/>'),
       distributeV: svg('<rect x="6" y="3" width="8" height="3" rx="0.6"/><rect x="6" y="8.5" width="8" height="3" rx="0.6"/><rect x="6" y="14" width="8" height="3" rx="0.6"/>'),
+      // 3D Scene Studio scene-context glyphs.
+      sceneDuplicate: svg('<rect x="3.5" y="3.5" width="9" height="9" rx="1"/><rect x="7.5" y="7.5" width="9" height="9" rx="1"/>'),
+      sceneDelete: svg('<path d="M5 6h10M8 6V4.5h4V6M6.5 6l0.7 9.5h5.6L13.5 6"/>'),
+      sceneDrop: svg('<path d="M10 3v8M6.8 8l3.2 3 3.2-3"/><path d="M3.5 15.5h13"/>'),
+      sceneVisibility: svg('<rect x="4" y="6" width="12" height="9" rx="1" stroke-dasharray="2.4 1.8"/><path d="M4 6l3-2.5h12l-3 2.5"/>'),
+      sceneSelectFaces: svg('<path d="M10 2.8l6.2 3.6v7.2L10 17.2 3.8 13.6V6.4Z"/><path d="M3.8 6.4L10 10l6.2-3.6M10 10v7.2"/>'),
+      sceneClearStyle: svg('<rect x="4" y="4" width="9" height="9" rx="1"/><path d="M12 12l4.5 4.5M16.5 12L12 16.5"/>'),
     },
   };
 })();

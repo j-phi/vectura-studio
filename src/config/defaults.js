@@ -2053,6 +2053,51 @@
       simplify: 0,
       curves: false,
     },
+    // 3D Scene Studio (Phase 1) — CONTRACT A schema. The whole scene lives
+    // JSON-safe in layer.params and regenerates from it; sceneVersion keys the
+    // scene migration slot (Scene3D.Params). `assets` is the content-hashed
+    // asset table cloneLayerParams shares by reference across history clones.
+    scene3d: {
+      label: 'Scene 3D',
+      is3d: true,
+      preset: 'scene3d-default',
+      sceneVersion: 1,
+      seed: 0,
+      objects: [
+        {
+          id: 'obj-1',
+          name: 'Box 1',
+          primitive: 'box',
+          // per-primitive params bag; box: { sx, sy, sz }; sphere: { radius, detail }; etc.
+          params: { sx: 40, sy: 40, sz: 40 },
+          transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+          visibility: 'solid', // 'solid' | 'xray'
+        },
+      ],
+      // Rendered Phase 2; schema present now (A-15: typed so point/spot extend
+      // without a migration).
+      lights: [
+        { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true },
+      ],
+      ground: { enabled: true },
+      backdrop: { enabled: false },
+      camera: {
+        projection: 'orthographic',
+        yaw: -30,
+        pitch: 20,
+        roll: 0,
+        cameraDistance: 620,
+        focalLength: 520,
+        zoom: 1,
+      },
+      groups: [], // Phase 3C reserve
+      assets: {}, // content-hashed asset table; cloneLayerParams ref-skips it
+      styleTable: { // CONTRACT C shape
+        scene: { penId: null, mapper: 'none', params: {} },
+        byObject: {}, // objectId -> Style
+        byFace: {}, // 'objectId/faceId' -> Style
+      },
+    },
     rasterPlane: {
       label: 'Raster-Plane',
       is3d: true,
@@ -2383,6 +2428,7 @@
         pattern: '#2DD4BF', svgDistort: '#FCA5A5', terrain: '#86EFAC',
         horizon: '#93C5FD', spirograph: '#14B8A6', spiralizer: '#8B5CF6',
         polyhedron: '#F472B6', topoform: '#06B6D4', rasterPlane: '#F59E0B',
+        scene3d: '#0EA5E9',
         text: '#A3E635', halftone: '#FB7185', imageWeave: '#5EEAD4',
         _group: '#6B7280', _pen: '#9CA3AF', _default: '#A1A1AA',
       },
@@ -2400,6 +2446,7 @@
         pattern: '#1DE9B6', svgDistort: '#FF9100', terrain: '#B2FF59',
         horizon: '#40C4FF', spirograph: '#00FFCC', spiralizer: '#7C4DFF',
         polyhedron: '#FF00AA', topoform: '#00B8D4', rasterPlane: '#FFD600',
+        scene3d: '#536DFE',
         text: '#76FF03', halftone: '#FF4081', imageWeave: '#18FFFF',
         _group: '#78909C', _pen: '#B0BEC5', _default: '#BDBDBD',
       },
@@ -2417,6 +2464,7 @@
         pattern: '#99F6E4', svgDistort: '#FED7AA', terrain: '#D9F99D',
         horizon: '#E0E7FF', spirograph: '#5EEAD4', spiralizer: '#C4B5FD',
         polyhedron: '#F9A8D4', topoform: '#67E8F9', rasterPlane: '#FDE68A',
+        scene3d: '#7DD3FC',
         text: '#BEF264', halftone: '#FDA4AF', imageWeave: '#A5F3FC',
         _group: '#9CA3AF', _pen: '#D1D5DB', _default: '#E5E7EB',
       },
@@ -2434,6 +2482,7 @@
         pattern: '#0F766E', svgDistort: '#EA580C', terrain: '#65A30D',
         horizon: '#F59E0B', spirograph: '#2DD4BF', spiralizer: '#A855F7',
         polyhedron: '#E11D48', topoform: '#CA8A04', rasterPlane: '#FBBF24',
+        scene3d: '#64748B',
         text: '#A3E635', halftone: '#F43F5E', imageWeave: '#0D9488',
         _group: '#6B7280', _pen: '#9CA3AF', _default: '#78716C',
       },
@@ -2451,6 +2500,7 @@
         pattern: '#22D3EE', svgDistort: '#6366F1', terrain: '#4ADE80',
         horizon: '#BAE6FD', spirograph: '#2DD4BF', spiralizer: '#A78BFA',
         polyhedron: '#F472B6', topoform: '#06B6D4', rasterPlane: '#FACC15',
+        scene3d: '#1D4ED8',
         text: '#5EEAD4', halftone: '#C084FC', imageWeave: '#67E8F9',
         _group: '#64748B', _pen: '#94A3B8', _default: '#6366F1',
       },
@@ -2468,6 +2518,7 @@
         pattern: '#FB7185', svgDistort: '#FDBA74', terrain: '#86EFAC',
         horizon: '#FDE68A', spirograph: '#14B8A6', spiralizer: '#C084FC',
         polyhedron: '#FB7185', topoform: '#38BDF8', rasterPlane: '#F59E0B',
+        scene3d: '#60A5FA',
         text: '#FCD34D', halftone: '#F43F5E', imageWeave: '#22D3EE',
         _group: '#6B7280', _pen: '#9CA3AF', _default: '#F97316',
       },
@@ -2485,6 +2536,7 @@
         pattern: '#2DD4BF', svgDistort: '#D9F99D', terrain: '#854D0E',
         horizon: '#A7F3D0', spirograph: '#2DD4BF', spiralizer: '#A78BFA',
         polyhedron: '#F9A8D4', topoform: '#22D3EE', rasterPlane: '#BEF264',
+        scene3d: '#38BDF8',
         text: '#65A30D', halftone: '#FCD34D', imageWeave: '#5EEAD4',
         _group: '#6B7280', _pen: '#A1A1AA', _default: '#22C55E',
       },
@@ -2502,6 +2554,7 @@
         pattern: '#A1A1AA', svgDistort: '#71717A', terrain: '#52525B',
         horizon: '#FAFAFA', spirograph: '#D4D4D8', spiralizer: '#E4E4E7',
         polyhedron: '#A1A1AA', topoform: '#71717A', rasterPlane: '#F4F4F5',
+        scene3d: '#8E8E96',
         text: '#E4E4E7', halftone: '#D4D4D8', imageWeave: '#71717A',
         _group: '#6B7280', _pen: '#A1A1AA', _default: '#A1A1AA',
       },
@@ -2519,6 +2572,7 @@
         pattern: '#76FF03', svgDistort: '#FFAB40', terrain: '#00E676',
         horizon: '#64FFDA', spirograph: '#00E5CC', spiralizer: '#A855F7',
         polyhedron: '#FF6B9D', topoform: '#40C4FF', rasterPlane: '#FFD600',
+        scene3d: '#448AFF',
         text: '#76FF03', halftone: '#FF4081', imageWeave: '#18FFFF',
         _group: '#78909C', _pen: '#B0BEC5', _default: '#FF6B9D',
       },

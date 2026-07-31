@@ -361,7 +361,18 @@
   const sanitizeImportedParams = (params, layerType) => {
     if (!params || typeof params !== 'object') return {};
     const defaults = (ALGO_DEFAULTS && ALGO_DEFAULTS[layerType]) || {};
-    return sanitizeParamTree(params, defaults, { key: null });
+    const sanitized = sanitizeParamTree(params, defaults, { key: null });
+    // CONTRACT E (3D Scene Studio): scene3d params carry a whole scene graph.
+    // After the generic numeric pass, run the scene-aware sanitizer — clamps
+    // scene numerics, restores objects/lights/camera/styleTable shapes, and
+    // applies the sceneVersion migration chain (Scene3D.Params owns both).
+    if (layerType === 'scene3d') {
+      const sceneParams = window.Vectura?.Scene3D?.Params;
+      if (sceneParams && typeof sceneParams.sanitizeSceneParams === 'function') {
+        return sceneParams.sanitizeSceneParams(sanitized);
+      }
+    }
+    return sanitized;
   };
 
   // Deep-clone params for history/serialization, but SHARE the (immutable,
@@ -370,12 +381,23 @@
   // ever replaced wholesale on re-import, never mutated in place, so sharing the
   // reference is safe and avoids hundreds of KB of JSON churn per interaction.
   // JSON.stringify on save still follows the reference, so .vectura round-trips.
+  //
+  // CONTRACT E (3D Scene Studio): `params.assets` — the scene3d content-hashed
+  // asset table — gets the same ref-skip treatment: history snapshots and
+  // duplicates clone references, never mesh blobs (spec A-11/A-16).
   const cloneLayerParams = (params) => {
     if (!params || typeof params !== 'object') return {};
     const mesh = params.importedMesh;
-    if (!mesh || typeof mesh !== 'object') return JSON.parse(JSON.stringify(params));
-    const rest = JSON.parse(JSON.stringify({ ...params, importedMesh: null }));
-    rest.importedMesh = mesh;
+    const assets = params.assets;
+    const skipMesh = Boolean(mesh) && typeof mesh === 'object';
+    const skipAssets = Boolean(assets) && typeof assets === 'object';
+    if (!skipMesh && !skipAssets) return JSON.parse(JSON.stringify(params));
+    const shallow = { ...params };
+    if (skipMesh) shallow.importedMesh = null;
+    if (skipAssets) shallow.assets = null;
+    const rest = JSON.parse(JSON.stringify(shallow));
+    if (skipMesh) rest.importedMesh = mesh;
+    if (skipAssets) rest.assets = assets;
     return rest;
   };
   const cloneParamStates = (states) => {
@@ -974,8 +996,11 @@
         count += 1;
       }
       const layer = new Layer(newId, source.type, dupName);
-      layer.params = JSON.parse(JSON.stringify(source.params));
-      layer.paramStates = JSON.parse(JSON.stringify(source.paramStates || {}));
+      // CONTRACT E: route through cloneLayerParams/cloneParamStates so large
+      // shared blobs (importedMesh, scene3d params.assets) are cloned by
+      // reference instead of deep-copied into every duplicate.
+      layer.params = cloneLayerParams(source.params);
+      layer.paramStates = cloneParamStates(source.paramStates || {});
       layer.parentId = state && state.parentId !== undefined ? state.parentId : (source.parentId ?? null);
       layer.isGroup = source.isGroup;
       layer.containerRole = source.containerRole ?? null;

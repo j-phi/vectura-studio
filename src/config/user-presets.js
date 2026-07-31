@@ -182,6 +182,13 @@
         "params": {}
       },
       {
+        "id": "scene3d-default",
+        "name": "Default",
+        "preset_system": "scene3d",
+        "group": "Classic",
+        "params": {}
+      },
+      {
         "id": "shapepack-default",
         "name": "Default",
         "preset_system": "shapePack",

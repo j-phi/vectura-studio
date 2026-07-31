@@ -1,0 +1,231 @@
+const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+
+/*
+ * scene3d.generate() contract coverage (Phase 1 stream 1A).
+ *
+ * - Default params produce a non-empty, deterministic path set.
+ * - Every path carries the CONTRACT B meta channel (kind + sceneTarget).
+ * - Face outlines are emitted CLOSED (meta.closed + first point repeated).
+ * - Style resolution routes through Vectura.Scene3D.StyleCascade when present
+ *   (1B's module — stubbed here) and falls back to the neutral default when
+ *   absent (the module-absence guard).
+ */
+
+const clone = (value) => JSON.parse(JSON.stringify(value));
+
+const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, truncate: true };
+
+const KINDS = ['sceneFace', 'sceneEdge', 'sceneFill'];
+const EDGE_CLASSES = ['silhouette', 'crease', 'boundary', 'hidden'];
+
+const box = (id, size, z, extra = {}) => ({
+  id,
+  name: id,
+  primitive: 'box',
+  params: { sx: size, sy: size, sz: size },
+  transform: { x: 0, y: 0, z, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+  visibility: 'solid',
+  ...extra,
+});
+
+describe('scene3d generate (CONTRACT A/B)', () => {
+  let runtime;
+  let V;
+  let algo;
+  let defaults;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    algo = V.AlgorithmRegistry && V.AlgorithmRegistry.scene3d;
+    defaults = V.ALGO_DEFAULTS && V.ALGO_DEFAULTS.scene3d;
+  });
+
+  afterAll(() => runtime.cleanup());
+
+  afterEach(() => {
+    // Tests that stub 1B's StyleCascade must not leak it into other tests.
+    if (V.Scene3D) delete V.Scene3D.StyleCascade;
+  });
+
+  const sceneParams = (objects, extra = {}) => ({
+    ...clone(defaults),
+    seed: 1,
+    objects,
+    ground: { enabled: false },
+    backdrop: { enabled: false },
+    camera: {
+      projection: 'orthographic', yaw: 0, pitch: 0, roll: 0,
+      cameraDistance: 620, focalLength: 520, zoom: 1,
+    },
+    ...extra,
+  });
+
+  test('registers on the AlgorithmRegistry with generate + formula', () => {
+    expect(algo).toBeTruthy();
+    expect(typeof algo.generate).toBe('function');
+    expect(typeof algo.formula).toBe('function');
+    expect(typeof algo.formula(clone(defaults))).toBe('string');
+  });
+
+  test('CONTRACT A defaults ship in ALGO_DEFAULTS.scene3d', () => {
+    expect(defaults).toBeTruthy();
+    expect(defaults.is3d).toBe(true);
+    expect(defaults.sceneVersion).toBe(1);
+    expect(Array.isArray(defaults.objects)).toBe(true);
+    expect(defaults.objects[0].primitive).toBe('box');
+    expect(defaults.objects[0].id).toBe('obj-1');
+    expect(Array.isArray(defaults.lights)).toBe(true);
+    expect(defaults.lights[0].type).toBe('directional');
+    expect(defaults.ground).toEqual({ enabled: true });
+    expect(defaults.backdrop).toEqual({ enabled: false });
+    expect(defaults.camera.projection).toBe('orthographic');
+    expect(defaults.assets).toEqual({});
+    expect(defaults.styleTable).toEqual({
+      scene: { penId: null, mapper: 'none', params: {} },
+      byObject: {},
+      byFace: {},
+    });
+  });
+
+  test('default params generate a non-empty path set with CONTRACT B meta on every path', () => {
+    const paths = algo.generate(clone(defaults), null, null, BOUNDS) || [];
+    expect(paths.length).toBeGreaterThan(0);
+    paths.forEach((path) => {
+      expect(Array.isArray(path)).toBe(true);
+      expect(path.length).toBeGreaterThanOrEqual(2);
+      const meta = path.meta || {};
+      expect(KINDS).toContain(meta.kind);
+      const target = meta.sceneTarget;
+      expect(target).toBeTruthy();
+      expect(typeof target.objectId).toBe('string');
+      expect(Number.isFinite(target.depth)).toBe(true);
+      expect(target.normal).toBeTruthy();
+      expect(Number.isFinite(target.normal.x)).toBe(true);
+      expect(Number.isFinite(target.normal.y)).toBe(true);
+      expect(Number.isFinite(target.normal.z)).toBe(true);
+      expect(typeof target.facingUp).toBe('boolean');
+      expect(typeof target.occluded).toBe('boolean');
+      if (meta.kind === 'sceneEdge') {
+        expect(EDGE_CLASSES).toContain(target.edgeClass);
+      } else {
+        expect(target.edgeClass).toBe(null);
+      }
+    });
+  });
+
+  test('fully visible face outlines are closed polygons (meta.closed + repeated first point)', () => {
+    const paths = algo.generate(sceneParams([box('obj-1', 40, 0)]), null, null, BOUNDS) || [];
+    const faces = paths.filter((p) => p.meta && p.meta.kind === 'sceneFace' && p.meta.closed);
+    expect(faces.length).toBeGreaterThan(0);
+    faces.forEach((face) => {
+      const first = face[0];
+      const last = face[face.length - 1];
+      expect(Math.hypot(first.x - last.x, first.y - last.y)).toBeLessThan(1e-6);
+    });
+  });
+
+  test('same params → byte-identical output (determinism)', () => {
+    const a = algo.generate(clone(defaults), null, null, BOUNDS) || [];
+    const b = algo.generate(clone(defaults), null, null, BOUNDS) || [];
+    const strip = (paths) => paths.map((p) => ({ pts: p.map((q) => ({ x: q.x, y: q.y })), meta: p.meta || null }));
+    expect(strip(a)).toEqual(strip(b));
+  });
+
+  test('module-absence guard: no StyleCascade → generate still works, no penId stamped', () => {
+    expect(V.Scene3D.StyleCascade).toBeUndefined();
+    const params = sceneParams([box('obj-1', 40, 0)]);
+    params.styleTable.byObject['obj-1'] = { penId: 'pen-9', mapper: 'none', params: {} };
+    const paths = algo.generate(params, null, null, BOUNDS) || [];
+    expect(paths.length).toBeGreaterThan(0);
+    paths.forEach((p) => expect(p.meta.penId).toBeUndefined());
+  });
+
+  describe('with a stub StyleCascade (byFace > byObject > scene)', () => {
+    const installStub = () => {
+      V.Scene3D.StyleCascade = {
+        resolve(styleTable, { objectId, faceId }) {
+          const table = styleTable || {};
+          const faceKey = `${objectId}/${faceId}`;
+          const style =
+            (table.byFace && table.byFace[faceKey]) ||
+            (table.byObject && table.byObject[objectId]) ||
+            table.scene || {};
+          return {
+            penId: style.penId != null ? style.penId : null,
+            mapper: style.mapper || 'none',
+            params: { ...(style.params || {}) },
+            provenance: { scope: 'test', key: faceKey },
+          };
+        },
+      };
+    };
+
+    const sixBoxes = () => {
+      const objects = [];
+      for (let i = 0; i < 6; i++) {
+        objects.push(box(`obj-${i + 1}`, 24, 0, {
+          transform: { x: (i % 3) * 80 - 80, y: Math.floor(i / 3) * 70 - 35, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+        }));
+      }
+      return objects;
+    };
+
+    test('a per-object pen override lands on that object\'s paths only', () => {
+      installStub();
+      const params = sceneParams(sixBoxes());
+      params.styleTable.byObject['obj-3'] = { penId: 'pen-9', mapper: 'none', params: {} };
+      const paths = algo.generate(params, null, null, BOUNDS) || [];
+      const obj3 = paths.filter((p) => p.meta.sceneTarget.objectId === 'obj-3');
+      const others = paths.filter((p) => !['obj-3'].includes(p.meta.sceneTarget.objectId));
+      expect(obj3.length).toBeGreaterThan(0);
+      obj3.forEach((p) => expect(p.meta.penId).toBe('pen-9'));
+      others.forEach((p) => expect(p.meta.penId).toBeUndefined());
+    });
+
+    test('a byFace override wins over byObject', () => {
+      installStub();
+      const params = sceneParams(sixBoxes());
+      params.styleTable.byObject['obj-3'] = { penId: 'pen-9', mapper: 'none', params: {} };
+      params.styleTable.byFace['obj-3/face:+Z'] = { penId: 'pen-2', mapper: 'none', params: {} };
+      const paths = algo.generate(params, null, null, BOUNDS) || [];
+      const zFaces = paths.filter((p) =>
+        p.meta.kind === 'sceneFace' &&
+        p.meta.sceneTarget.objectId === 'obj-3' &&
+        p.meta.sceneTarget.faceId === 'face:+Z');
+      expect(zFaces.length).toBeGreaterThan(0);
+      zFaces.forEach((p) => expect(p.meta.penId).toBe('pen-2'));
+      const otherFaces = paths.filter((p) =>
+        p.meta.kind === 'sceneFace' &&
+        p.meta.sceneTarget.objectId === 'obj-3' &&
+        p.meta.sceneTarget.faceId !== 'face:+Z');
+      otherFaces.forEach((p) => expect(p.meta.penId).toBe('pen-9'));
+    });
+
+    test('mapper hatch emits sceneFill paths carrying the face\'s sceneTarget', () => {
+      installStub();
+      const params = sceneParams([box('obj-1', 40, 0)]);
+      params.styleTable.byObject['obj-1'] = {
+        penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 80 },
+      };
+      const paths = algo.generate(params, null, null, BOUNDS) || [];
+      const fills = paths.filter((p) => p.meta.kind === 'sceneFill');
+      expect(fills.length).toBeGreaterThan(0);
+      fills.forEach((p) => {
+        expect(p.meta.sceneTarget.objectId).toBe('obj-1');
+        expect(typeof p.meta.sceneTarget.faceId).toBe('string');
+        expect(p.meta.sceneTarget.edgeClass).toBe(null);
+      });
+    });
+
+    test('mapper wireframe suppresses face outlines and fills, keeps edges', () => {
+      installStub();
+      const params = sceneParams([box('obj-1', 40, 0)]);
+      params.styleTable.byObject['obj-1'] = { penId: null, mapper: 'wireframe', params: {} };
+      const paths = algo.generate(params, null, null, BOUNDS) || [];
+      expect(paths.some((p) => p.meta.kind === 'sceneEdge')).toBe(true);
+      expect(paths.some((p) => p.meta.kind === 'sceneFace')).toBe(false);
+      expect(paths.some((p) => p.meta.kind === 'sceneFill')).toBe(false);
+    });
+  });
+});

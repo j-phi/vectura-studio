@@ -25,6 +25,7 @@ const ALGO_TYPES = [
 // in the completeness test.
 const SKIP = {
   svgDistort: 'requires an imported SVG source; generates nothing headless',
+  scene3d: '3D scene graph params (objects[], styleTable) are structural, not scalar-interpolable; scene morphing is out of Phase 1 scope',
 };
 
 describe('morph modifier — every algorithm, transform-copy pair', () => {

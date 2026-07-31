@@ -7,6 +7,42 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene Studio Phase 1 — core scene MVP** (per
+  `docs/3d-scene-studio-proposal-final.html` §8; the first user-visible scene):
+  - **`scene3d` algorithm + engine (1A).** A new layer type that assembles
+    multiple 3D objects (box · sphere · cylinder · cone · torus · torus-knot ·
+    capsule · superellipsoid · pyramid · plane · solids family) into one scene,
+    projects them through the shared ortho/perspective camera, and renders them as
+    flat-face solids: hidden-line-removed face outlines with per-sample
+    support-plane depth (`src/core/scene3d/hlr.js`), silhouette/crease/boundary
+    edge classification, an x-ray visibility mode (hidden edges dashed), and a
+    styleable ground plane that never occludes. New owner-aware scene depth-buffer
+    API (`depth.js`) backs the HLR fallback. Every emitted path carries
+    `meta.sceneTarget {objectId, faceId, edgeClass, depth, normal, occluded}` so
+    selection is pure metadata lookup.
+  - **Scene panel + style cascade (1B).** A bespoke three-tab Scene panel: a
+    primitive shelf (curated row + "More…" flyout that remembers its last pick),
+    an object tree (rename / visibility / delete), and an inspector (transform
+    sliders + a per-object **Fidelity** slider for curved-primitive tessellation,
+    one undo per gesture). Curved primitives ship at a detail level that reads as
+    the intended shape (a fresh sphere is a smooth globe, not a facet blob), and
+    the flyout is portaled above the panel so its extra primitives are reachable.
+    A `StyleCascade` resolver (face > object >
+    scene, whole-style-wins, provenance chips) drives per-object and per-face
+    pen + mapper (none / hatch / wireframe) styling, all serialized inside
+    `layer.params`.
+  - **Scene selection + canvas (1C).** The Select tool picks whole objects, the
+    Direct tool picks faces or edges (`a` again cycles the submode, `Tab` toggles
+    the tools) with nearest-depth resolution and Alt-cycling through overlapping
+    candidates; marquee selects faces; a ground-drag moves objects in the ground
+    plane (`Shift` lifts, `D` drops to ground) with grid + object-origin snapping;
+    the context bar gains scene-object / face / edge contexts and the canvas
+    right-click menu gains target-aware scene verbs. Live drag coalesces its
+    regeneration onto animation frames at draft detail (12-object scene: ~17ms per
+    move ≈ 60fps).
+  - Engine plumbing: `cloneLayerParams` now interns a per-scene asset table by
+    reference, and `duplicateLayer` routes through it (fixing meshes being
+    deep-copied into every undo snapshot).
 - **3D Scene Studio Phase 0 — four product-independent enablers** (per
   `docs/3d-scene-studio-proposal-final.html` §8, no user-visible scene yet):
   - **Effective-pen export (0A).** SVG export groups, dedupes, and pen-sorts by each

@@ -1532,6 +1532,20 @@
       return;
     }
 
+    // Bespoke tabbed 3D Scene panel (Phase 1). Same early-return escape hatch
+    // the Text/Mirror/Morph panels use. Inert until panels/scene3d-panel.js
+    // loads — non-scene3d layers fall through untouched.
+    if (
+      layer.type === 'scene3d' &&
+      window.Vectura.UI.Scene3DPanel &&
+      typeof window.Vectura.UI.Scene3DPanel.build === 'function'
+    ) {
+      window.Vectura.UI.Scene3DPanel.build(this, layer, container);
+      renderExportOptimizationIfOpen();
+      restoreLeftPanelScroll();
+      return;
+    }
+
     if (isGroup) {
       const msg = document.createElement('p');
       msg.className = 'text-xs text-vectura-muted mb-4';

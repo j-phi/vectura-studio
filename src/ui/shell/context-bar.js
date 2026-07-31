@@ -604,6 +604,20 @@
     const tool = renderer.activeTool || 'select';
     let kind;
     let primary = layers[0] || null;
+    // 3D Scene Studio (Phase 1C): a live scene selection (CONTRACT D) on a
+    // selected scene3d layer morphs the bar into a scene context. Gated on
+    // BOTH the selection API and the layer type so plain layer selection is
+    // untouched when the scene stack is absent.
+    const sceneSel = renderer.getSceneSelection ? renderer.getSceneSelection() : null;
+    const sceneLayer = sceneSel
+      ? layers.find((l) => l && l.id === sceneSel.layerId && l.type === 'scene3d') || null
+      : null;
+    if (sceneSel && sceneLayer) {
+      const sceneKind = sceneSel.mode === 'face'
+        ? 'scene-face'
+        : sceneSel.mode === 'edge' ? 'scene-edge' : 'scene-object';
+      return { kind: sceneKind, layerIds: ids, primaryLayer: sceneLayer, app, renderer, sceneSelection: sceneSel };
+    }
     // A group container may be selected together with its descendants (the
     // grouping op selects [group, ...children]); treat that as the group state.
     const groupContainer = selectedGroupContainer(app, layers);
@@ -900,6 +914,123 @@
     verb('anchorSmooth', 'anchorSmooth', () => anchorOp('smooth'));
   };
 
+  // ── 3D Scene Studio scene contexts (Phase 1C) ─────────────────────────
+  const sceneSel = (ctx) => ctx.sceneSelection
+    || (ctx.renderer && ctx.renderer.getSceneSelection && ctx.renderer.getSceneSelection()) || null;
+
+  const sceneObjectName = (layer, id) => {
+    const objects = (layer && layer.params && layer.params.objects) || [];
+    const o = objects.find((x) => x && x.id === id);
+    return (o && o.name) || id;
+  };
+
+  // Selection summary copy: 'Box 1', '2 objects', '3 faces · Box 1', …
+  const sceneSummaryText = (ctx) => {
+    const sel = sceneSel(ctx);
+    const layer = ctx.primaryLayer;
+    if (!sel || !layer) return '';
+    if (sel.mode === 'object') {
+      if (sel.objectIds.length === 1) return sceneObjectName(layer, sel.objectIds[0]);
+      return `${sel.objectIds.length} objects`;
+    }
+    const keys = sel.mode === 'edge' ? sel.edgeKeys : sel.faceKeys;
+    const noun = sel.mode === 'edge' ? 'edge' : 'face';
+    const owners = Array.from(new Set(keys.map((k) => String(k).split('/')[0])));
+    const owner = owners.length === 1 ? sceneObjectName(layer, owners[0]) : `${owners.length} objects`;
+    return `${keys.length} ${noun}${keys.length === 1 ? '' : 's'} · ${owner}`;
+  };
+
+  // Summary chip + the Alt-click candidate-cycle readout ('2 of 3').
+  const appendSceneReadouts = (ctx) => {
+    const summary = sceneSummaryText(ctx);
+    if (summary) {
+      const s = el('span', 'ctxbar-label ctxbar-scene-summary');
+      s.textContent = summary;
+      els.content.appendChild(s);
+    }
+    const r = ctx.renderer && ctx.renderer.getSceneCandidateReadout
+      ? ctx.renderer.getSceneCandidateReadout() : null;
+    if (r && r.total > 1) {
+      const c = el('span', 'ctxbar-label ctxbar-scene-cycle');
+      c.textContent = `${r.index} of ${r.total}`;
+      c.title = 'Alt-click cycles overlapping targets';
+      els.content.appendChild(c);
+    }
+  };
+
+  const renderSceneObject = (ctx) => {
+    const b = B(); const ic = IC();
+    const r = ctx.renderer;
+    const layer = ctx.primaryLayer;
+    const sel = sceneSel(ctx);
+    if (!r || !layer || !sel) return;
+    const ids = sel.objectIds;
+    appendSceneReadouts(ctx);
+    appendPenChip(ctx);
+    els.content.appendChild(makeBtn({
+      icon: ic.sceneDuplicate, label: (b.sceneDuplicate && b.sceneDuplicate.label),
+      tooltip: (b.sceneDuplicate && b.sceneDuplicate.tooltip),
+      onClick: () => { r.duplicateSceneObjects?.(layer.id, ids); restoreState(); },
+    }));
+    els.content.appendChild(makeBtn({
+      icon: ic.sceneDrop, label: (b.sceneDrop && b.sceneDrop.label),
+      tooltip: (b.sceneDrop && b.sceneDrop.tooltip),
+      onClick: () => { r.dropSceneObjectsToGround?.(layer.id, ids); restoreState(); },
+    }));
+    const objects = (layer.params && layer.params.objects) || [];
+    const first = objects.find((o) => o && o.id === ids[0]);
+    const xray = Boolean(first && first.visibility === 'xray');
+    els.content.appendChild(makeBtn({
+      icon: ic.sceneVisibility,
+      tooltip: xray
+        ? (b.sceneVisibility && b.sceneVisibility.tooltipSolid)
+        : (b.sceneVisibility && b.sceneVisibility.tooltipXray),
+      onClick: () => { r.setSceneObjectVisibility?.(layer.id, ids); restoreState(); },
+    }));
+    els.content.appendChild(makeBtn({
+      icon: ic.sceneDelete, tooltip: (b.sceneDelete && b.sceneDelete.tooltip),
+      onClick: () => { r.deleteSceneObjects?.(layer.id, ids); restoreState(); },
+    }));
+  };
+
+  const renderSceneComponent = (ctx) => {
+    const b = B(); const ic = IC();
+    const r = ctx.renderer;
+    const layer = ctx.primaryLayer;
+    const sel = sceneSel(ctx);
+    if (!r || !layer || !sel) return;
+    appendSceneReadouts(ctx);
+    appendPenChip(ctx);
+    const keys = sel.mode === 'edge' ? sel.edgeKeys : sel.faceKeys;
+    const owners = Array.from(new Set(keys.map((k) => String(k).split('/')[0])));
+    els.content.appendChild(makeBtn({
+      icon: ic.sceneSelectFaces, label: (b.sceneSelectFaces && b.sceneSelectFaces.label),
+      tooltip: (b.sceneSelectFaces && b.sceneSelectFaces.tooltip),
+      disabled: owners.length !== 1,
+      onClick: () => { r.selectAllSceneFacesOfObject?.(layer.id, owners[0]); restoreState(); },
+    }));
+    // Clear Face Style — stub-disabled unless the 1B StyleCascade module (and
+    // a styleTable to write) is present.
+    const SC = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
+    const canClear = Boolean(SC && typeof SC.clearStyle === 'function'
+      && sel.mode === 'face' && sel.faceKeys.length && layer.params && layer.params.styleTable);
+    els.content.appendChild(makeBtn({
+      icon: ic.sceneClearStyle, label: (b.sceneClearStyle && b.sceneClearStyle.label),
+      tooltip: canClear
+        ? (b.sceneClearStyle && b.sceneClearStyle.tooltip)
+        : (b.sceneClearStyle && b.sceneClearStyle.tooltipOff),
+      disabled: !canClear,
+      onClick: () => {
+        const a = getApp();
+        a?.pushHistory?.();
+        sel.faceKeys.forEach((key) => { try { SC.clearStyle(layer.params.styleTable, 'face', key); } catch (_e) { /* guarded */ } });
+        a?.engine?.generate?.(layer.id);
+        a?.render?.();
+        restoreState();
+      },
+    }));
+  };
+
   const renderContext = (ctx) => {
     if (!els.content) return;
     els.content.textContent = '';
@@ -912,6 +1043,9 @@
       case 'single-path': renderSingle(ctx); break;
       case 'multi': renderMulti(ctx); break;
       case 'direct': renderDirect(ctx); break;
+      case 'scene-object': renderSceneObject(ctx); break;
+      case 'scene-face':
+      case 'scene-edge': renderSceneComponent(ctx); break;
       default: renderIdle();
     }
     updateRoving();
@@ -1666,11 +1800,17 @@
     // the left Algorithm Configuration panel's own dropdown) — the layer id
     // stays the same, so only tracking `type` here catches the switch.
     const primaryParams = (ctx.primaryLayer && ctx.primaryLayer.params) || {};
+    const sceneRenderer = getRenderer();
     const paramSig = ctx.kind === 'single-text'
       ? `${primaryParams.font || ''}|${primaryParams.fontWeight || ''}|${primaryParams.fontSize || ''}`
       : ctx.kind === 'single-algo'
         ? (ctx.primaryLayer && ctx.primaryLayer.type) || ''
-        : '';
+        // Scene contexts re-render when the scene selection or the Alt-cycle
+        // readout changes within the same kind (renderer-owned signature).
+        : `${ctx.kind}`.startsWith('scene-')
+          && sceneRenderer && typeof sceneRenderer.getSceneSelectionSignature === 'function'
+          ? sceneRenderer.getSceneSelectionSignature()
+          : '';
     const changed = ctx.kind !== state.kind || primaryId !== state.primaryId || paramSig !== state.paramSig;
     // In edit-path (direct) mode the anchor verbs' enabled state depends on the
     // live anchor selection, which changes without the bar's `kind` changing.
@@ -1723,11 +1863,14 @@
     // treat this render as stale and re-render a second time.
     state.primaryId = (ctx.primaryLayer && ctx.primaryLayer.id) || null;
     const rp = (ctx.primaryLayer && ctx.primaryLayer.params) || {};
+    const rr = getRenderer();
     state.paramSig = ctx.kind === 'single-text'
       ? `${rp.font || ''}|${rp.fontWeight || ''}|${rp.fontSize || ''}`
       : ctx.kind === 'single-algo'
         ? (ctx.primaryLayer && ctx.primaryLayer.type) || ''
-        : '';
+        : `${ctx.kind}`.startsWith('scene-') && rr && typeof rr.getSceneSelectionSignature === 'function'
+          ? rr.getSceneSelectionSignature()
+          : '';
     const renderer = getRenderer();
     state.anchorSig = (ctx.kind === 'direct' && renderer && typeof renderer.getSelectedAnchorSignature === 'function')
       ? renderer.getSelectedAnchorSignature() : '';

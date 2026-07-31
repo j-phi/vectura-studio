@@ -35,6 +35,17 @@
       flipV: 'Flip Vertical',
       // Trailing ▸ marks the "focus the Transform panel" affordance.
       transform: 'Transform ▸',
+      // 3D Scene Studio (Phase 1C) — target-aware scene verbs.
+      sceneDuplicateObject: 'Duplicate Object',
+      sceneDeleteObject: 'Delete Object',
+      sceneDropToGround: 'Drop to Ground',
+      sceneShowSolid: 'Show Solid',
+      sceneShowXray: 'Show X-ray',
+      sceneSelectAllFaces: 'Select All Faces of Object',
+      sceneClearFaceStyle: 'Clear Face Style',
+      sceneAddBox: 'Add Box',
+      sceneAddSphere: 'Add Sphere',
+      sceneAddCylinder: 'Add Cylinder',
     },
     reasons: {
       undo: 'Nothing to undo',
@@ -45,6 +56,7 @@
       simplify: 'Select a path or shape to simplify',
       smooth: 'Select a path or shape to smooth',
       flip: 'Select a shape or path to flip',
+      sceneClearFaceStyle: 'Style tools not loaded',
     },
   };
 })();

@@ -1,0 +1,176 @@
+const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+
+/*
+ * Flat-face hidden-line-removal coverage (Phase 1 stream 1A — spec F-01..F-06).
+ *
+ * - A far box fully covered by a near box loses all its geometry (solid).
+ * - Ground never occludes (F-03).
+ * - X-ray objects keep hidden runs as dashes and never occlude others.
+ * - Support-plane depth: occluder depth is evaluated per sample from the
+ *   face's plane at (x, y), not one scalar per face (F-02) — a tilted
+ *   occluder must hide exactly the part of a crossing segment it is in
+ *   front of.
+ */
+
+const clone = (value) => JSON.parse(JSON.stringify(value));
+
+const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, truncate: true };
+
+const box = (id, size, z, extra = {}) => ({
+  id,
+  name: id,
+  primitive: 'box',
+  params: { sx: size, sy: size, sz: size },
+  transform: { x: 0, y: 0, z, yaw: 0, pitch: 0, roll: 0, scale: 1, ...(extra.transform || {}) },
+  visibility: extra.visibility || 'solid',
+});
+
+describe('scene3d flat-face HLR', () => {
+  let runtime;
+  let V;
+  let algo;
+  let HLR;
+  let defaults;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    algo = V.AlgorithmRegistry && V.AlgorithmRegistry.scene3d;
+    HLR = V.Scene3D && V.Scene3D.HLR;
+    defaults = V.ALGO_DEFAULTS && V.ALGO_DEFAULTS.scene3d;
+  });
+
+  afterAll(() => runtime.cleanup());
+
+  const sceneParams = (objects, extra = {}) => ({
+    ...clone(defaults),
+    seed: 1,
+    objects,
+    ground: { enabled: false },
+    backdrop: { enabled: false },
+    camera: {
+      projection: 'orthographic', yaw: 0, pitch: 0, roll: 0,
+      cameraDistance: 620, focalLength: 520, zoom: 1,
+    },
+    ...extra,
+  });
+
+  const byObject = (paths, id) => paths.filter((p) => p.meta.sceneTarget.objectId === id);
+
+  test('a far box fully behind a near box is dropped entirely (solid)', () => {
+    // Near box (40) at z=+40; far box (20) at z=-40, strictly inside the near
+    // silhouette in screen space → every far-box path is occluded.
+    const paths = algo.generate(
+      sceneParams([box('obj-1', 40, 40), box('obj-2', 20, -40)]),
+      null, null, BOUNDS) || [];
+    expect(byObject(paths, 'obj-1').length).toBeGreaterThan(0);
+    expect(byObject(paths, 'obj-2').length).toBe(0);
+  });
+
+  test('ground never occludes: a box below the ground plane renders identically', () => {
+    const below = (extra) => sceneParams(
+      [{ ...box('obj-1', 40, 0), transform: { x: 0, y: -40, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 } }],
+      { camera: { projection: 'orthographic', yaw: -30, pitch: 20, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 }, ...extra });
+    const withGround = algo.generate(below({ ground: { enabled: true } }), null, null, BOUNDS) || [];
+    const withoutGround = algo.generate(below({ ground: { enabled: false } }), null, null, BOUNDS) || [];
+    const sig = (paths) => JSON.stringify(byObject(paths, 'obj-1').map((p) => p.map((q) => [q.x, q.y])));
+    expect(byObject(withGround, 'obj-1').length).toBeGreaterThan(0);
+    expect(sig(withGround)).toBe(sig(withoutGround));
+    // Ground itself is a styleable target when enabled.
+    expect(byObject(withGround, 'ground').length).toBeGreaterThan(0);
+    expect(byObject(withoutGround, 'ground').length).toBe(0);
+  });
+
+  test('x-ray far box keeps hidden runs as dashed paths flagged occluded', () => {
+    const paths = algo.generate(
+      sceneParams([box('obj-1', 40, 40), box('obj-2', 20, -40, { visibility: 'xray' })]),
+      null, null, BOUNDS) || [];
+    const far = byObject(paths, 'obj-2');
+    expect(far.length).toBeGreaterThan(0);
+    far.forEach((p) => {
+      expect(p.meta.hiddenLine).toBe(true);
+      expect(Array.isArray(p.meta.strokeDash)).toBe(true);
+      expect(p.meta.sceneTarget.occluded).toBe(true);
+      if (p.meta.kind === 'sceneEdge') expect(p.meta.sceneTarget.edgeClass).toBe('hidden');
+    });
+  });
+
+  test('x-ray objects never occlude others', () => {
+    // Near box is x-ray → the far solid box must render fully visible,
+    // identical to when it stands alone.
+    const behind = algo.generate(
+      sceneParams([box('obj-1', 40, 40, { visibility: 'xray' }), box('obj-2', 20, -40)]),
+      null, null, BOUNDS) || [];
+    const alone = algo.generate(
+      sceneParams([box('obj-2', 20, -40)]),
+      null, null, BOUNDS) || [];
+    const sig = (paths) => JSON.stringify(byObject(paths, 'obj-2').map((p) => p.map((q) => [q.x, q.y])));
+    expect(byObject(behind, 'obj-2').length).toBeGreaterThan(0);
+    expect(sig(behind)).toBe(sig(alone));
+    byObject(behind, 'obj-2').forEach((p) => expect(p.meta.hiddenLine).toBeUndefined());
+  });
+
+  describe('support-plane occluder depth (F-02)', () => {
+    test('a tilted occluder hides exactly the part of a segment it is in front of', () => {
+      // Occluder plane depth falls 100 → 0 across x ∈ [0, 100]. A crossing
+      // segment at constant depth 50 must be hidden ONLY where the plane is
+      // nearer (x < ~49.5 with bias 0.5). A scalar per-face depth (max 100 or
+      // centroid 50) would hide all of it or none of it.
+      const faces = [{
+        id: 'T/face:0',
+        objectId: 'T',
+        polygon: [
+          { x: 0, y: 0, z: 100 },
+          { x: 100, y: 0, z: 0 },
+          { x: 100, y: 100, z: 0 },
+          { x: 0, y: 100, z: 100 },
+        ],
+      }];
+      const segments = [{
+        a: { x: 0, y: 50, z: 50 },
+        b: { x: 100, y: 50, z: 50 },
+        ownerKeys: [],
+        objectId: 'S',
+        mode: 'remove',
+      }];
+      const out = HLR.occludeSegments(segments, faces, { bias: 0.5 });
+      expect(out.length).toBeGreaterThan(0);
+      let minX = Infinity;
+      let maxX = -Infinity;
+      out.forEach((path) => path.forEach((pt) => {
+        if (pt.x < minX) minX = pt.x;
+        if (pt.x > maxX) maxX = pt.x;
+      }));
+      // Visible run starts near the crossover (x ≈ 49.5) and reaches the end.
+      expect(minX).toBeGreaterThan(40);
+      expect(minX).toBeLessThan(58);
+      expect(maxX).toBeGreaterThan(95);
+    });
+
+    test('an occluder never hides its own face (ownerKeys exclusion)', () => {
+      const faces = [{
+        id: 'T/face:0',
+        objectId: 'T',
+        polygon: [
+          { x: 0, y: 0, z: 60 },
+          { x: 100, y: 0, z: 60 },
+          { x: 100, y: 100, z: 60 },
+          { x: 0, y: 100, z: 60 },
+        ],
+      }];
+      // A segment ON the face plane, owned by the face: must stay fully visible.
+      const segments = [{
+        a: { x: 10, y: 50, z: 60 },
+        b: { x: 90, y: 50, z: 60 },
+        ownerKeys: ['T/face:0'],
+        objectId: 'T',
+        mode: 'remove',
+      }];
+      const out = HLR.occludeSegments(segments, faces, { bias: 0.5 });
+      expect(out.length).toBe(1);
+      const xs = out[0].map((pt) => pt.x);
+      expect(Math.min(...xs)).toBeLessThan(11);
+      expect(Math.max(...xs)).toBeGreaterThan(89);
+    });
+  });
+});

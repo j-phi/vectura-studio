@@ -104,6 +104,57 @@
       pitchMax: 90,
       appliesIf: (params) => (params && params.perspectiveMode) === 'free-3d',
     },
+    scene3d: {
+      // 3D Scene Studio (Phase 1C): the orbit gizmo routes through a NESTED
+      // spec — scene3d keeps its rotation state in params.camera.{yaw,pitch,
+      // roll} (CONTRACT A) or, when exactly one scene OBJECT is selected
+      // (CONTRACT D), in that object's transform. Flat `layer.params[param]`
+      // writes cannot reach either, so nested specs carry get/set accessors
+      // and the gizmo plumbing takes a tiny `spec.nested` branch; flat specs
+      // are untouched (byte-identical behavior).
+      nested: true,
+      yawDefault: -30,
+      pitchDefault: -20,
+      rollDefault: 0,
+      pitchMin: -90,
+      pitchMax: 90,
+      get(layer, renderer) {
+        const params = (layer && layer.params) || {};
+        const sel = renderer && renderer.getSceneSelection ? renderer.getSceneSelection() : null;
+        const obj = sel && sel.layerId === layer.id && sel.mode === 'object' && sel.objectIds.length === 1
+          ? (Array.isArray(params.objects) ? params.objects : []).find((o) => o && o.id === sel.objectIds[0])
+          : null;
+        if (obj) {
+          const t = obj.transform || {};
+          return { target: 'object', yaw: finiteNumber(t.yaw, 0), pitch: finiteNumber(t.pitch, 0), roll: finiteNumber(t.roll, 0) };
+        }
+        const cam = params.camera || {};
+        return {
+          target: 'camera',
+          yaw: finiteNumber(cam.yaw, -30),
+          pitch: finiteNumber(cam.pitch, -20),
+          roll: finiteNumber(cam.roll, 0),
+        };
+      },
+      set(layer, renderer, next) {
+        const params = (layer && layer.params) || {};
+        const sel = renderer && renderer.getSceneSelection ? renderer.getSceneSelection() : null;
+        const obj = sel && sel.layerId === layer.id && sel.mode === 'object' && sel.objectIds.length === 1
+          ? (Array.isArray(params.objects) ? params.objects : []).find((o) => o && o.id === sel.objectIds[0])
+          : null;
+        if (obj) {
+          const t = obj.transform || (obj.transform = {});
+          if (next.yaw !== undefined) t.yaw = next.yaw;
+          if (next.pitch !== undefined) t.pitch = next.pitch;
+          if (next.roll !== undefined) t.roll = next.roll;
+          return;
+        }
+        const cam = params.camera || (params.camera = {});
+        if (next.yaw !== undefined) cam.yaw = next.yaw;
+        if (next.pitch !== undefined) cam.pitch = next.pitch;
+        if (next.roll !== undefined) cam.roll = next.roll;
+      },
+    },
   };
   const finiteNumber = (value, fallback = 0) => {
     const next = Number(value);
@@ -572,6 +623,18 @@
       this.lassoPath = null;
       this.isLassoSelecting = false;
       this.activeTool = SETTINGS.activeTool || 'select';
+      // 3D Scene Studio (Phase 1C) — scene selection state (CONTRACT D).
+      // sceneSelection: null | { layerId, mode:'object'|'face'|'edge',
+      // objectIds:[], faceKeys:[], edgeKeys:[] }. sceneComponentMode is the
+      // A-tool submode ('a' again cycles face<->edge on scene layers).
+      this.sceneSelection = null;
+      this.sceneComponentMode = 'face';
+      // Alt-click depth-cycle cache: { key, index, total } for the candidate
+      // stack under the last scene click (context bar shows "2 of 3").
+      this.sceneCandidateStack = null;
+      this._sceneDrag = null;
+      this._sceneMarqueePending = null;
+      this._sceneLastClick = null;
       this.paintBucketStack = null;
       this.paintBucketScopeIndex = 0;
       this.paintBucketStackKey = null;
@@ -726,7 +789,16 @@
       // SEL-2: Escape cancels an in-flight layer drag (removing any alt-drag
       // duplicates). Capture phase so tool-level Escape shortcuts don't race.
       this._onDragCancelKey = (e) => {
-        if (e.key !== 'Escape' || !this.isLayerDrag) return;
+        if (e.key !== 'Escape') return;
+        // Escape mid scene ground-drag restores the pre-drag transforms.
+        if (this._sceneDrag) {
+          if (this._cancelSceneGroundDrag()) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          return;
+        }
+        if (!this.isLayerDrag) return;
         if (this.cancelLayerDrag()) {
           e.preventDefault();
           e.stopPropagation();
@@ -783,6 +855,21 @@
 
     setTool(tool) {
       if (!tool) return;
+      // 3D Scene Studio (§5.4): pressing A while the direct tool is already
+      // active on a scene3d layer cycles the component submode (face <-> edge)
+      // instead of re-entering the tool. The shortcut handler simply calls
+      // setActiveTool('direct') again, so the cycle lives here at the tool
+      // seam (documented in src/ui/shortcuts.js).
+      if (tool === 'direct' && this.activeTool === 'direct' && this.getSceneShortcutLayer?.()) {
+        this.sceneComponentMode = this.sceneComponentMode === 'face' ? 'edge' : 'face';
+        const sel = this.sceneSelection;
+        if (sel && (sel.mode === 'face' || sel.mode === 'edge')) {
+          this.setSceneSelection({ ...sel, mode: this.sceneComponentMode });
+        } else {
+          this.draw();
+        }
+        return;
+      }
       this.clearMaskPreview();
       if (tool !== 'pen') {
         this.penDraft = null;
@@ -5403,6 +5490,9 @@
         this.drawMaskPreviewOverlay();
         if (this.patternFillPreviewPolygon) this.drawPatternFillPreview();
         this.drawActiveBatchOutline();
+        // 3D Scene Studio: highlight the selected scene faces/objects on top
+        // of the drawn geometry (no-op without a scene selection).
+        this.drawSceneSelectionOverlay();
         this.ctx.restore();
       } else {
         this.ctx.save();
@@ -5417,6 +5507,9 @@
         this.drawMaskPreviewOverlay();
         if (this.patternFillPreviewPolygon) this.drawPatternFillPreview();
         this.drawActiveBatchOutline();
+        // 3D Scene Studio: highlight the selected scene faces/objects on top
+        // of the drawn geometry (no-op without a scene selection).
+        this.drawSceneSelectionOverlay();
         this.ctx.restore();
 
         const outsideAlpha = SETTINGS.outsideOpacity ?? 0.5;
@@ -5471,8 +5564,12 @@
         }
         const anyLocked = selectionLayersForBox.some((l) => this.isLayerLocked?.(l.id));
         const showHandles = !anyLocked;
+        // 3D Scene Studio (§5.1): a sole selected scene layer suppresses the
+        // 2D transform box/handles (no dual-meaning drags) but keeps the orbit
+        // gizmo, which routes to the camera or the selected scene object.
+        const soleScene = selectionLayersForBox.length === 1 && selectionLayersForBox[0].type === 'scene3d';
         if (bounds) {
-          this.drawSelection(bounds, { showHandles });
+          if (!soleScene) this.drawSelection(bounds, { showHandles });
           if (showHandles && selectionLayersForBox.length === 1) {
             this.draw3DRotationControl(selectionLayersForBox[0], bounds);
           }
@@ -6108,6 +6205,9 @@
       }
 
       const modifiers = this.getModifierState(e);
+      // Scene marquee metadata never survives across gestures (armed fresh by
+      // the scene-branch handlers below, consumed in up()).
+      this._sceneMarqueePending = null;
       if (this.wantsPan(e, modifiers)) {
         this.isPan = true;
         this.lastM = { x: e.clientX, y: e.clientY };
@@ -6306,6 +6406,15 @@
       this._pendingSingleSelect = null;
       if (allowSelection) {
         if (this.activeTool === 'direct') {
+          // 3D Scene Studio (§5.1 A / component mode): scene face/edge picks
+          // and the scene A-marquee run before the 2D direct-select flow. Pure
+          // meta lookup over CONTRACT B sceneTarget paths — returns false for
+          // anything that is not a scene3d interaction, leaving the 2D path
+          // byte-identical.
+          if (this._sceneDownDirect(world, e, modifiers)) {
+            if (e.cancelable) e.preventDefault();
+            return;
+          }
           const selectedShape = this.getSelectedShapeLayer();
           if (selectedShape) {
             const shapeCorner = this.hitShapeCornerHandle(world, selectedShape, 0);
@@ -6506,7 +6615,19 @@
             return;
           }
         }
-        if (selectionBounds && !selectedLayers.some(l => this.isLayerLocked?.(l.id))) {
+        // 3D Scene Studio (§5.1 V / object mode): scene object picks +
+        // ground-drag arming run after the gizmo (orbit wins) but before the
+        // 2D handle/selection flow. Returns false when nothing scene-related
+        // is under the cursor, so 2D behavior stays byte-identical.
+        if (this.activeTool === 'select' && this._sceneDownSelect(world, e, modifiers)) {
+          if (e.cancelable) e.preventDefault();
+          return;
+        }
+        // Scene layers suppress the 2D transform handles (no dual-meaning
+        // drags — §5.1); their resize/rotate grips are never drawn, so a hit
+        // on the invisible handle geometry must not arm a 2D resize.
+        const soleSceneSelected = selectedLayers.length === 1 && selectedLayers[0].type === 'scene3d';
+        if (selectionBounds && !soleSceneSelected && !selectedLayers.some(l => this.isLayerLocked?.(l.id))) {
           const handle = this.hitHandle(sx, sy, selectionBounds);
           if (handle) {
             this.isLayerDrag = true;
@@ -6749,7 +6870,11 @@
         }
         const updatedSelected = this.getSelectedLayers();
         const bounds = this.getSelectionBounds(updatedSelected);
-        if (bounds && this.pointInBounds(world, bounds) && !updatedSelected.some(l => this.isLayerLocked?.(l.id))) {
+        // Scene layers never bounds-drag as a whole 2D object (§5.1) — object
+        // moves are ground-drags handled by _sceneDownSelect above; a press on
+        // empty scene space falls through to the marquee below.
+        const sceneBoundsDragSuppressed = updatedSelected.length === 1 && updatedSelected[0].type === 'scene3d';
+        if (bounds && !sceneBoundsDragSuppressed && this.pointInBounds(world, bounds) && !updatedSelected.some(l => this.isLayerLocked?.(l.id))) {
           if (this.isTouchPointer(e) && !modifiers.alt) {
             // Touch: hold to lift — defer drag until finger has been held still for 350ms
             this._pendingSingleSelect = null;
@@ -7069,6 +7194,12 @@
 
       if (this.rotation3DDrag) {
         this.apply3DRotationDrag(e);
+        return;
+      }
+
+      // 3D Scene Studio: live ground-drag of the selected scene object(s).
+      if (this._sceneDrag) {
+        this._applySceneGroundDrag(e);
         return;
       }
 
@@ -7550,6 +7681,14 @@
         clearActivePointer();
         return;
       }
+      // 3D Scene Studio: commit a ground-drag (full regen on release; history
+      // was pushed once on the first movement, mirroring the 3D gizmo).
+      if (this._sceneDrag) {
+        this._endSceneGroundDrag();
+        this.draw();
+        clearActivePointer();
+        return;
+      }
       if (this.isLayerDrag) {
         const selectedLayers = this.getSelectedLayers();
         if (selectedLayers.length && this.tempTransform) {
@@ -7650,6 +7789,71 @@
         this.draw();
         clearActivePointer();
         return;
+      }
+      // 3D Scene Studio (§5.1): scene marquee commit. V mode collects OBJECTS
+      // intersecting the rect; A mode collects FACES (front faces only; Alt
+      // includes occluded ones). Shift marquees union into the base selection.
+      // When a V marquee catches no scene objects it falls through to the
+      // plain layer-marquee commit below.
+      if (this.isSelecting && this._sceneMarqueePending) {
+        const pending = this._sceneMarqueePending;
+        this._sceneMarqueePending = null;
+        const rect = this.selectionRect;
+        const sceneLayer = this.engine.layers.find((l) => l.id === pending.layerId);
+        const bigEnough = rect && (rect.w > 2 / this.scale || rect.h > 2 / this.scale);
+        const clearMarquee = () => {
+          this.isSelecting = false;
+          this.selectionStart = null;
+          this.selectionRect = null;
+          this._marqueeAdditive = false;
+          this._marqueeBaseIds = null;
+          this.draw();
+          clearActivePointer();
+        };
+        if (sceneLayer && bigEnough) {
+          const includeOccluded = Boolean(pending.alt || e.altKey);
+          if (pending.mode === 'object') {
+            const ids = this._sceneObjectsInRect(sceneLayer, rect, { includeOccluded });
+            if (ids.length) {
+              const base = pending.additive && pending.base && pending.base.layerId === sceneLayer.id
+                && pending.base.mode === 'object' ? pending.base.objectIds : [];
+              this.setSceneSelection({
+                layerId: sceneLayer.id,
+                mode: 'object',
+                objectIds: [...new Set([...base, ...ids])],
+                faceKeys: [],
+                edgeKeys: [],
+              });
+              if (!this.selectedLayerIds.has(sceneLayer.id)) this.selectLayer(sceneLayer);
+              clearMarquee();
+              return;
+            }
+            // No objects caught — fall through to the plain layer marquee.
+          } else {
+            const faceKeys = this._sceneFacesInRect(sceneLayer, rect, { includeOccluded });
+            const base = pending.additive && pending.base && pending.base.layerId === sceneLayer.id
+              && pending.base.mode === 'face' ? pending.base.faceKeys : [];
+            const merged = [...new Set([...base, ...faceKeys])];
+            if (merged.length) {
+              this.setSceneSelection({
+                layerId: sceneLayer.id,
+                mode: 'face',
+                objectIds: [],
+                faceKeys: merged,
+                edgeKeys: [],
+              });
+              if (!this.selectedLayerIds.has(sceneLayer.id)) this.selectLayer(sceneLayer);
+            }
+            // A-mode marquees never fall through to layer selection.
+            clearMarquee();
+            return;
+          }
+        } else if (pending.mode !== 'object') {
+          // A-tool click on empty scene space (marquee never grew): the
+          // selection was already cleared on down; just tidy up.
+          clearMarquee();
+          return;
+        }
       }
       if (this.isSelecting) {
         const rect = this.selectionRect;
@@ -9051,6 +9255,835 @@
       return best;
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // 3D Scene Studio — Phase 1C: scene selection (CONTRACT D), hit testing
+    // over CONTRACT B path meta, ground-drag, and scene object verbs.
+    //
+    // Everything here keys off layer.type === 'scene3d' and
+    // path.meta.sceneTarget (kind 'sceneFace' | 'sceneEdge' | 'sceneFill') —
+    // pure meta lookup, no projection math of its own.
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ——— CONTRACT D API ————————————————————————————————————————————————
+
+    getSceneSelection() {
+      // Self-heal against stale references: undo/redo, layer delete, or a type
+      // change can leave sceneSelection pointing at a layer that no longer
+      // exists or is no longer a scene — never leak that into hit-tests, the
+      // context bar, or a 2D marquee.
+      const sel = this.sceneSelection;
+      if (sel) {
+        const layer = this.engine && this.engine.layers
+          ? this.engine.layers.find((l) => l.id === sel.layerId) : null;
+        if (!layer || layer.type !== 'scene3d') {
+          this.sceneSelection = null;
+          this.sceneCandidateStack = null;
+        }
+      }
+      return this.sceneSelection || null;
+    }
+
+    setSceneSelection(sel, { silent } = {}) {
+      this.sceneSelection = this._normalizeSceneSelection(sel);
+      if (!this.sceneSelection) this.sceneCandidateStack = null;
+      this.draw();
+      if (!silent && typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
+        try {
+          window.dispatchEvent(new window.CustomEvent('vectura:scene-selection', { detail: this.sceneSelection }));
+        } catch (_e) { /* non-DOM context */ }
+      }
+      return this.sceneSelection;
+    }
+
+    _normalizeSceneSelection(sel) {
+      if (!sel || !sel.layerId) return null;
+      const mode = sel.mode === 'face' || sel.mode === 'edge' ? sel.mode : 'object';
+      const strings = (list) => [...new Set((Array.isArray(list) ? list : [])
+        .filter((v) => typeof v === 'string' && v.length))];
+      const next = {
+        layerId: String(sel.layerId),
+        mode,
+        objectIds: strings(sel.objectIds),
+        faceKeys: strings(sel.faceKeys),
+        edgeKeys: strings(sel.edgeKeys),
+      };
+      if (!next.objectIds.length && !next.faceKeys.length && !next.edgeKeys.length) return null;
+      return next;
+    }
+
+    // Cheap change signature for the context bar's RAF ticker.
+    getSceneSelectionSignature() {
+      const sel = this.sceneSelection;
+      if (!sel) return '';
+      const cand = this.sceneCandidateStack;
+      return `${sel.layerId}|${sel.mode}|${sel.objectIds.join(',')}|${sel.faceKeys.join(',')}|`
+        + `${sel.edgeKeys.join(',')}|${cand ? `${cand.index}/${cand.total}` : ''}`;
+    }
+
+    // {index, total} for the context bar's "2 of 3" alt-cycle readout (1-based;
+    // null when there is no stack or nothing to cycle through).
+    getSceneCandidateReadout() {
+      const s = this.sceneCandidateStack;
+      if (!s || !(s.total > 1)) return null;
+      return { index: s.index + 1, total: s.total };
+    }
+
+    // The scene3d layer that scene-scoped shortcuts (§5.4) act on: the scene
+    // selection's layer, else the sole selected scene layer, else the engine's
+    // active layer when it is a scene. Null disables all scene key gating.
+    getSceneShortcutLayer() {
+      const isScene = (l) => Boolean(l && l.type === 'scene3d' && !l.isGroup
+        && l.visible !== false && !(this.isLayerLocked && this.isLayerLocked(l.id)));
+      if (this.sceneSelection) {
+        const l = this.engine.layers.find((x) => x.id === this.sceneSelection.layerId);
+        if (isScene(l)) return l;
+      }
+      const selected = this.getSelectedLayers();
+      if (selected.length === 1 && isScene(selected[0])) return selected[0];
+      const active = this.engine.getActiveLayer ? this.engine.getActiveLayer() : null;
+      return isScene(active) ? active : null;
+    }
+
+    // ——— hit testing (CONTRACT B meta) —————————————————————————————————
+
+    _sceneObjects(layer) {
+      return layer && layer.params && Array.isArray(layer.params.objects) ? layer.params.objects : [];
+    }
+
+    // A scene layer accepts selection/mutation only when it is visible and not
+    // locked (directly or via a locked ancestor) — matching 2D layer rules.
+    _isSceneLayerEditable(layer) {
+      if (!layer || layer.type !== 'scene3d' || layer.visible === false) return false;
+      if (this.isLayerLocked && this.isLayerLocked(layer.id)) return false;
+      return true;
+    }
+
+    _sceneObjectById(layer, id) {
+      return this._sceneObjects(layer).find((o) => o && o.id === id) || null;
+    }
+
+    // CONTRACT B carries no stable edge id, so edge keys are derived from the
+    // edge's per-object ordinal in path order (deterministic for fixed params):
+    // '<objectId>/<faceId|edge>:<edgeClass>:<ordinal>'. Documented contract gap.
+    _sceneEdgeOrdinals(paths) {
+      const counters = new Map();
+      const ordinals = new Map();
+      (paths || []).forEach((path) => {
+        const meta = path && path.meta;
+        const target = meta && meta.sceneTarget;
+        if (!target || meta.kind !== 'sceneEdge') return;
+        const n = counters.get(target.objectId) || 0;
+        counters.set(target.objectId, n + 1);
+        ordinals.set(path, n);
+      });
+      return ordinals;
+    }
+
+    _sceneEdgeKeyFor(target, ordinal) {
+      return `${target.objectId}/${target.faceId || 'edge'}:${target.edgeClass || 'edge'}:${ordinal}`;
+    }
+
+    _sceneFaceKeyFor(target) {
+      return `${target.objectId}/${target.faceId}`;
+    }
+
+    // Depth-sorted candidate stack under `world` for the given pick mode
+    // ('object' | 'face' | 'edge'). Topmost scene3d layer with any hit wins.
+    // Sorting: non-occluded before occluded, then nearest camera depth; in
+    // edge mode, edges within tolerance outrank faces (edges win — §5.1).
+    _sceneCandidatesAtPoint(world, mode = 'object') {
+      const layers = this.engine.layers.slice().reverse();
+      for (const layer of layers) {
+        if (!layer || layer.type !== 'scene3d' || !layer.visible || layer.isGroup) continue;
+        if (this.isLayerLocked?.(layer.id)) continue;
+        const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
+        const tol = Math.max(5 / (this.scale || 1), stroke * 2);
+        const tolSq = tol * tol;
+        const paths = this.getInteractionPaths(layer);
+        const edgeOrdinals = this._sceneEdgeOrdinals(paths);
+        const candidates = [];
+        const byKey = new Map();
+        const push = (cand) => {
+          const prev = byKey.get(cand.key);
+          if (prev) {
+            if (cand.depth < prev.depth) prev.depth = cand.depth;
+            if (cand.dist < prev.dist) prev.dist = cand.dist;
+            if (!cand.occluded) prev.occluded = false;
+            return;
+          }
+          byKey.set(cand.key, cand);
+          candidates.push(cand);
+        };
+        paths.forEach((path) => {
+          const meta = path && path.meta;
+          const target = meta && meta.sceneTarget;
+          if (!target || !Array.isArray(path) || path.length < 2) return;
+          const kind = meta.kind;
+          const depth = Number.isFinite(target.depth) ? target.depth : 0;
+          const occluded = Boolean(target.occluded);
+          // Partially-occluded faces emit OPEN visible runs; 1A stamps the full
+          // closed outline as target.pickPolygon so point-in-poly still hits the
+          // whole face. Fully-visible faces are closed paths (poly === path).
+          const pickPoly = kind === 'sceneFace' && Array.isArray(target.pickPolygon)
+            ? target.pickPolygon : path;
+          const inPoly = kind === 'sceneFace' ? this.pointInPoly(world, pickPoly) : false;
+          let distSq = Infinity;
+          if (!inPoly) {
+            for (let i = 0; i < path.length - 1; i++) {
+              const d = this.distanceToSegmentSq(world, path[i], path[i + 1]);
+              if (d < distSq) distSq = d;
+            }
+          } else {
+            distSq = 0;
+          }
+          const withinTol = inPoly || distSq <= tolSq;
+          if (!withinTol) return;
+          if (mode === 'object') {
+            push({
+              layer, kind: 'object', key: target.objectId, objectId: target.objectId,
+              faceId: target.faceId ?? null, depth, dist: distSq, occluded, rank: 0,
+            });
+            return;
+          }
+          if (mode === 'face') {
+            if (kind !== 'sceneFace' || !inPoly) return;
+            push({
+              layer, kind: 'face', key: this._sceneFaceKeyFor(target), objectId: target.objectId,
+              faceId: target.faceId, depth, dist: 0, occluded, rank: 0,
+            });
+            return;
+          }
+          // mode === 'edge': edges within tolerance win over faces.
+          if (kind === 'sceneEdge') {
+            push({
+              layer, kind: 'edge',
+              key: this._sceneEdgeKeyFor(target, edgeOrdinals.get(path) ?? 0),
+              objectId: target.objectId, faceId: target.faceId ?? null,
+              edgeClass: target.edgeClass ?? null, depth, dist: distSq, occluded, rank: 0,
+            });
+          } else if (kind === 'sceneFace' && inPoly) {
+            push({
+              layer, kind: 'face', key: this._sceneFaceKeyFor(target), objectId: target.objectId,
+              faceId: target.faceId, depth, dist: 0, occluded, rank: 1,
+            });
+          }
+        });
+        if (candidates.length) {
+          candidates.sort((a, b) =>
+            (a.rank - b.rank)
+            || ((a.occluded ? 1 : 0) - (b.occluded ? 1 : 0))
+            || (a.depth - b.depth)
+            || (a.dist - b.dist));
+          return candidates;
+        }
+      }
+      return [];
+    }
+
+    // Single-shot scene hit for external callers (context menu): the top
+    // candidate at `world`, or null. opts.mode defaults to the current tool's
+    // natural target ('object' for select, component submode for direct).
+    _sceneHitAtPoint(world, opts = {}) {
+      const mode = opts.mode
+        || (this.activeTool === 'direct' ? (this.sceneComponentMode || 'face') : 'object');
+      const stack = this._sceneCandidatesAtPoint(world, mode);
+      return stack.length ? stack[0] : null;
+    }
+
+    // Pick from the candidate stack with Alt-click depth cycling: a plain
+    // click resets to the top candidate; repeated Alt-clicks on (nearly) the
+    // same point advance near -> far through the same stack.
+    _scenePickCandidate(stack, world, mode, altHeld) {
+      const layerId = stack[0].layer.id;
+      const key = `${layerId}|${mode}|${Math.round(world.x / 2)},${Math.round(world.y / 2)}|`
+        + stack.map((c) => c.key).join('¦');
+      let index = 0;
+      if (altHeld && this.sceneCandidateStack && this.sceneCandidateStack.key === key) {
+        index = (this.sceneCandidateStack.index + 1) % stack.length;
+      }
+      this.sceneCandidateStack = { key, index, total: stack.length };
+      return stack[index];
+    }
+
+    // ——— pointer-down handlers (called from down()) ————————————————————
+
+    // V / select tool on a scene3d layer. Returns true when the event was a
+    // scene interaction (selection updated and/or ground-drag armed).
+    _sceneDownSelect(world, e, modifiers) {
+      const stack = this._sceneCandidatesAtPoint(world, 'object')
+        .filter((c) => this._isSceneLayerEditable(c.layer));
+      const sceneLayer = stack.length ? stack[0].layer : this.getSceneShortcutLayer();
+      if (!sceneLayer || !this._isSceneLayerEditable(sceneLayer)) return false;
+      const additive = Boolean(modifiers.shift || modifiers.meta || modifiers.ctrl);
+      if (!stack.length) {
+        // Empty scene click: a plain click clears the scene selection; the
+        // normal empty-click flow below owns the marquee. Stash the scene
+        // marquee intent so up() can collect objects instead of layers.
+        const base = this.sceneSelection;
+        if (!additive && this.sceneSelection) this.setSceneSelection(null);
+        this._sceneMarqueePending = {
+          layerId: sceneLayer.id,
+          mode: 'object',
+          additive,
+          alt: Boolean(modifiers.alt),
+          base,
+        };
+        return false;
+      }
+      // A 2D layer stacked ABOVE the scene layer keeps priority for clicks on
+      // its strokes.
+      const top2d = this.findLayerAtPoint(world);
+      if (top2d && top2d.type !== 'scene3d'
+        && this.engine.layers.indexOf(top2d) > this.engine.layers.indexOf(stack[0].layer)) {
+        return false;
+      }
+      const layer = stack[0].layer;
+      const cand = this._scenePickCandidate(stack, world, 'object', modifiers.alt);
+      const now = performance.now();
+      const prev = this._sceneLastClick;
+      const isDbl = Boolean(prev && (now - prev.time) < 400
+        && Math.hypot((e.clientX ?? 0) - prev.x, (e.clientY ?? 0) - prev.y) < 8);
+      this._sceneLastClick = { time: now, x: e.clientX ?? 0, y: e.clientY ?? 0 };
+      if (!this.selectedLayerIds.has(layer.id)) this.selectLayer(layer);
+      const sel = this.sceneSelection && this.sceneSelection.layerId === layer.id ? this.sceneSelection : null;
+      if (isDbl && !additive && !modifiers.alt) {
+        // Double-click enters A / face mode on the clicked object (§5.1).
+        this.sceneComponentMode = 'face';
+        const faceStack = this._sceneCandidatesAtPoint(world, 'face');
+        const face = faceStack.find((c) => c.objectId === cand.objectId) || faceStack[0] || null;
+        this.setSceneSelection({
+          layerId: layer.id,
+          mode: 'face',
+          objectIds: [],
+          faceKeys: face ? [face.key] : [],
+          edgeKeys: [],
+        });
+        if (this.app?.ui?.setActiveTool) this.app.ui.setActiveTool('direct');
+        else this.setTool('direct');
+        return true;
+      }
+      if (additive && sel && sel.mode === 'object') {
+        // Shift-click toggles membership (discrete — no drag).
+        const ids = new Set(sel.objectIds);
+        if (ids.has(cand.objectId)) ids.delete(cand.objectId);
+        else ids.add(cand.objectId);
+        this.setSceneSelection(ids.size ? { ...sel, objectIds: [...ids] } : null);
+        return true;
+      }
+      const already = Boolean(sel && sel.mode === 'object' && sel.objectIds.includes(cand.objectId));
+      const objectIds = already && !modifiers.alt ? sel.objectIds : [cand.objectId];
+      this.setSceneSelection({ layerId: layer.id, mode: 'object', objectIds, faceKeys: [], edgeKeys: [] });
+      if (modifiers.alt) return true; // alt-cycle is discrete
+      this._beginSceneGroundDrag(layer, objectIds, world);
+      return true;
+    }
+
+    // A / direct tool on a scene3d layer (face or edge submode).
+    _sceneDownDirect(world, e, modifiers) {
+      const mode = this.sceneComponentMode === 'edge' ? 'edge' : 'face';
+      const stack = this._sceneCandidatesAtPoint(world, mode)
+        .filter((c) => this._isSceneLayerEditable(c.layer));
+      const additive = Boolean(modifiers.shift || modifiers.meta || modifiers.ctrl);
+      if (!stack.length) {
+        const sceneLayer = this.getSceneShortcutLayer();
+        if (!sceneLayer || !this._isSceneLayerEditable(sceneLayer)) return false;
+        // A 2D path under the cursor keeps plain direct-select behavior.
+        if (this.findPathHitAtPoint && this.findPathHitAtPoint(world)) return false;
+        const base = this.sceneSelection;
+        if (!additive && this.sceneSelection) this.setSceneSelection(null);
+        this._sceneMarqueePending = {
+          layerId: sceneLayer.id,
+          mode,
+          additive,
+          alt: Boolean(modifiers.alt),
+          base,
+        };
+        this.isSelecting = true;
+        this.selectionStart = world;
+        this.selectionRect = { x: world.x, y: world.y, w: 0, h: 0 };
+        this.draw();
+        return true;
+      }
+      const top2d = this.findLayerAtPoint(world);
+      if (top2d && top2d.type !== 'scene3d'
+        && this.engine.layers.indexOf(top2d) > this.engine.layers.indexOf(stack[0].layer)) {
+        return false;
+      }
+      const layer = stack[0].layer;
+      const cand = this._scenePickCandidate(stack, world, mode, modifiers.alt);
+      if (!this.selectedLayerIds.has(layer.id)) this.selectLayer(layer);
+      const selMode = cand.kind === 'edge' ? 'edge' : 'face';
+      const listKey = selMode === 'edge' ? 'edgeKeys' : 'faceKeys';
+      const sel = this.sceneSelection && this.sceneSelection.layerId === layer.id ? this.sceneSelection : null;
+      if (additive && sel && sel.mode === selMode) {
+        const keys = new Set(sel[listKey]);
+        if (keys.has(cand.key)) keys.delete(cand.key);
+        else keys.add(cand.key);
+        this.setSceneSelection(keys.size ? { ...sel, [listKey]: [...keys] } : null);
+      } else {
+        this.setSceneSelection({
+          layerId: layer.id,
+          mode: selMode,
+          objectIds: [],
+          faceKeys: selMode === 'face' ? [cand.key] : [],
+          edgeKeys: selMode === 'edge' ? [cand.key] : [],
+        });
+      }
+      return true;
+    }
+
+    // ——— marquee collection ————————————————————————————————————————————
+
+    _scenePathTouchesRect(path, rect) {
+      if (!Array.isArray(path) || path.length < 2) return false;
+      if (this.pathIntersectsRect(path, rect)) return true;
+      // Fully-contained path (no segment crosses the rect boundary).
+      if (this.rectContainsPoint(rect, path[0])) return true;
+      // Rect fully inside a closed face polygon.
+      if (path.meta && path.meta.kind === 'sceneFace' && this.pointInPoly({ x: rect.x, y: rect.y }, path)) {
+        return true;
+      }
+      return false;
+    }
+
+    // Face keys of the layer's closed face polygons intersecting `rect`.
+    // Front faces only unless includeOccluded (Alt-marquee — §5.1).
+    _sceneFacesInRect(layer, rect, { includeOccluded = false } = {}) {
+      const keys = [];
+      this.getInteractionPaths(layer).forEach((path) => {
+        const meta = path && path.meta;
+        const target = meta && meta.sceneTarget;
+        if (!target || meta.kind !== 'sceneFace') return;
+        if (target.occluded && !includeOccluded) return;
+        if (!this._scenePathTouchesRect(path, rect)) return;
+        const key = this._sceneFaceKeyFor(target);
+        if (!keys.includes(key)) keys.push(key);
+      });
+      return keys;
+    }
+
+    // Object ids of scene objects any of whose paths intersect `rect`.
+    _sceneObjectsInRect(layer, rect, { includeOccluded = false } = {}) {
+      const ids = [];
+      this.getInteractionPaths(layer).forEach((path) => {
+        const meta = path && path.meta;
+        const target = meta && meta.sceneTarget;
+        if (!target) return;
+        if (target.occluded && !includeOccluded) return;
+        if (ids.includes(target.objectId)) return;
+        if (this._scenePathTouchesRect(path, rect)) ids.push(target.objectId);
+      });
+      return ids;
+    }
+
+    // ——— ground-drag (V move in the ground plane; Shift lifts) ——————————
+
+    _beginSceneGroundDrag(layer, objectIds, world) {
+      const objects = this._sceneObjects(layer);
+      const start = new Map();
+      (objectIds || []).forEach((id) => {
+        const obj = objects.find((o) => o && o.id === id);
+        if (!obj) return;
+        const t = obj.transform || (obj.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 });
+        start.set(id, {
+          x: Number(t.x) || 0,
+          y: Number(t.y) || 0,
+          z: Number(t.z) || 0,
+        });
+      });
+      if (!start.size) return;
+      this._sceneDrag = {
+        layerId: layer.id,
+        objectIds: [...start.keys()],
+        startWorld: { x: world.x, y: world.y },
+        start,
+        historyPushed: false,
+        moved: false,
+      };
+      this.setCanvasCursor('move');
+    }
+
+    _applySceneGroundDrag(e = {}) {
+      const drag = this._sceneDrag;
+      if (!drag) return;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer || !layer.params) {
+        this._sceneDrag = null;
+        return;
+      }
+      const rect = this.canvas.getBoundingClientRect();
+      const world = this.screenToWorld((e.clientX ?? 0) - rect.left, (e.clientY ?? 0) - rect.top);
+      const dx = world.x - drag.startWorld.x;
+      const dy = world.y - drag.startWorld.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 1 / (this.scale || 1)) return;
+      if (!drag.historyPushed) {
+        // One history entry per gesture (app-wide contract), pushed before the
+        // first actual movement — mirrors apply3DRotationDrag.
+        if (this.app?.pushHistory) this.app.pushHistory();
+        else if (this.onCommitTransform) this.onCommitTransform();
+        drag.historyPushed = true;
+      }
+      drag.moved = true;
+      const modifiers = this.getModifierState(e);
+      const lift = Boolean(modifiers.shift);
+      const cam = layer.params.camera || {};
+      const yawRad = ((Number(cam.yaw) || 0) * Math.PI) / 180;
+      // Ground mapping v1 (documented simplification): the world-space drag
+      // delta is rotated by the camera YAW only into ground x/z — pitch
+      // foreshortening and perspective scaling are ignored, so 1mm of screen
+      // drag maps to ~1mm on the ground plane.
+      const groundDX = dx * Math.cos(yawRad) + dy * Math.sin(yawRad);
+      const groundDZ = -dx * Math.sin(yawRad) + dy * Math.cos(yawRad);
+      const objects = this._sceneObjects(layer);
+      const inferTol = 6 / (this.scale || 1);
+      drag.objectIds.forEach((id) => {
+        const obj = objects.find((o) => o && o.id === id);
+        const s = drag.start.get(id);
+        if (!obj || !s) return;
+        const t = obj.transform || (obj.transform = {});
+        if (lift) {
+          // Shift-drag lifts vertically: screen up = +y (world up).
+          t.y = Math.round((s.y - dy) * 100) / 100;
+          return;
+        }
+        let nx = s.x + groundDX;
+        let nz = s.z + groundDZ;
+        // Grid snap reuses snapPointToGrid on the ground plane (x -> x, z -> y).
+        const snapped = this.snapPointToGrid({ x: nx, y: nz });
+        nx = snapped.x;
+        nz = snapped.y;
+        // Vertex-inference v1 (documented simplification): per-axis snap to
+        // OTHER objects' transform origins within a screen-px tolerance.
+        objects.forEach((other) => {
+          if (!other || !other.transform || drag.objectIds.includes(other.id)) return;
+          const ox = Number(other.transform.x) || 0;
+          const oz = Number(other.transform.z) || 0;
+          if (Math.abs(ox - nx) <= inferTol) nx = ox;
+          if (Math.abs(oz - nz) <= inferTol) nz = oz;
+        });
+        t.x = Math.round(nx * 100) / 100;
+        t.z = Math.round(nz * 100) / 100;
+      });
+      this._scheduleSceneDragRegen(layer.id);
+      const first = objects.find((o) => o && o.id === drag.objectIds[0]);
+      if (first && first.transform) {
+        const t = first.transform;
+        this.showDragTooltip(
+          lift ? `Y ${t.y ?? 0}` : `X ${t.x ?? 0}  Z ${t.z ?? 0}`,
+          e.clientX ?? 0,
+          e.clientY ?? 0
+        );
+      }
+    }
+
+    // Coalesce drag regens on rAF at DRAFT detail: pointermove events outrun
+    // regen time on populated scenes (12-object gate: ~130ms at balanced vs
+    // ~33ms at draft), so per-move synchronous regens stall the drag. At most
+    // one draft-quality regen per animation frame; release does the full one.
+    _scheduleSceneDragRegen(layerId) {
+      this._sceneDragRegenLayerId = layerId;
+      if (this._sceneDragRegenRaf != null) return;
+      const raf = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : (fn) => setTimeout(fn, 16);
+      this._sceneDragRegenRaf = raf(() => {
+        this._sceneDragRegenRaf = null;
+        const id = this._sceneDragRegenLayerId;
+        if (!id) return;
+        const SETTINGS = window.Vectura && window.Vectura.SETTINGS;
+        const savedQuality = SETTINGS ? SETTINGS.preview3dQuality : undefined;
+        if (SETTINGS) SETTINGS.preview3dQuality = 'draft';
+        try {
+          this.engine.generate(id, { preview: true });
+        } finally {
+          if (SETTINGS) SETTINGS.preview3dQuality = savedQuality;
+        }
+        this.draw();
+      });
+    }
+
+    _endSceneGroundDrag() {
+      const drag = this._sceneDrag;
+      this._sceneDrag = null;
+      this.hideDragTooltip();
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      if (!drag) return;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer && drag.moved) {
+        this.engine.generate(layer.id);
+        this.app?.ui?.updateFormula?.();
+      }
+      this.updateCursor();
+    }
+
+    // Escape mid-drag: restore the captured pre-drag transforms and pop the
+    // one gesture history snapshot (if it was pushed) so the move fully reverts.
+    _cancelSceneGroundDrag() {
+      const drag = this._sceneDrag;
+      if (!drag) return false;
+      this._sceneDrag = null;
+      this.hideDragTooltip();
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer) {
+        const objects = this._sceneObjects(layer);
+        drag.objectIds.forEach((id) => {
+          const obj = objects.find((o) => o && o.id === id);
+          const s = drag.start.get(id);
+          if (!obj || !s || !obj.transform) return;
+          obj.transform.x = s.x;
+          obj.transform.y = s.y;
+          obj.transform.z = s.z;
+        });
+        if (drag.moved) {
+          // Pop the one gesture snapshot pushed on first movement (mirrors the
+          // 2D cancelLayerDrag history handling).
+          if (this.app && Array.isArray(this.app.history) && this.app.history.length > 1) {
+            this.app.history.pop();
+          }
+          this.engine.generate(layer.id);
+        }
+      }
+      this.draw();
+      this.updateCursor();
+      return true;
+    }
+
+    // ——— scene object verbs (context bar / context menu / shortcuts) ————
+
+    _scenePushHistory() {
+      if (this.app?.pushHistory) this.app.pushHistory();
+      else if (this.onCommitTransform) this.onCommitTransform();
+    }
+
+    _sceneRegen(layer) {
+      this.engine.generate(layer.id);
+      if (this.app?.render) this.app.render();
+      else this.draw();
+    }
+
+    _sceneNextObjectId(layer) {
+      let max = 0;
+      this._sceneObjects(layer).forEach((o) => {
+        const m = o && typeof o.id === 'string' ? o.id.match(/^obj-(\d+)$/) : null;
+        if (m) max = Math.max(max, parseInt(m[1], 10));
+      });
+      return `obj-${max + 1}`;
+    }
+
+    // Drop-to-ground v1 (documented simplification): CONTRACT A defines the
+    // ground plane at y = 0 with objects resting on it at transform.y = 0.
+    // Computing the true world min-y needs the mesh (1A-owned), so v1 sets
+    // transform.y = 0 directly.
+    dropSceneObjectsToGround(layerId, objectIds) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      if (!layer || layer.type !== 'scene3d') return false;
+      const targets = this._sceneObjects(layer).filter((o) => o && (objectIds || []).includes(o.id));
+      if (!targets.length) return false;
+      this._scenePushHistory();
+      targets.forEach((o) => {
+        (o.transform || (o.transform = {})).y = 0;
+      });
+      this._sceneRegen(layer);
+      return true;
+    }
+
+    // Keyboard 'D' path: drop whatever the scene selection resolves to (object
+    // mode directly; face/edge modes drop the owning objects).
+    dropSceneSelectionToGround() {
+      const sel = this.sceneSelection;
+      if (!sel) return false;
+      const ids = sel.mode === 'object'
+        ? sel.objectIds
+        : [...new Set([...sel.faceKeys, ...sel.edgeKeys].map((k) => String(k).split('/')[0]))];
+      return this.dropSceneObjectsToGround(sel.layerId, ids);
+    }
+
+    duplicateSceneObjects(layerId, objectIds) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      if (!layer || layer.type !== 'scene3d') return [];
+      const objects = this._sceneObjects(layer);
+      const sources = objects.filter((o) => o && (objectIds || []).includes(o.id));
+      if (!sources.length) return [];
+      this._scenePushHistory();
+      const deepClone = window.Vectura?.Utils?.clone || ((v) => JSON.parse(JSON.stringify(v)));
+      const newIds = [];
+      sources.forEach((src) => {
+        const copy = deepClone(src);
+        copy.id = this._sceneNextObjectId(layer);
+        copy.name = `${src.name || src.id} copy`;
+        // Nudge the copy so it is visible beside the original.
+        copy.transform = copy.transform || {};
+        copy.transform.x = (Number(copy.transform.x) || 0) + 10;
+        copy.transform.z = (Number(copy.transform.z) || 0) + 10;
+        objects.push(copy);
+        newIds.push(copy.id);
+      });
+      this.setSceneSelection({ layerId: layer.id, mode: 'object', objectIds: newIds, faceKeys: [], edgeKeys: [] });
+      this._sceneRegen(layer);
+      return newIds;
+    }
+
+    deleteSceneObjects(layerId, objectIds) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      if (!layer || layer.type !== 'scene3d') return false;
+      const ids = new Set(objectIds || []);
+      const objects = this._sceneObjects(layer);
+      if (!objects.some((o) => o && ids.has(o.id))) return false;
+      this._scenePushHistory();
+      layer.params.objects = objects.filter((o) => !o || !ids.has(o.id));
+      // Prune style entries owned by the removed objects (CONTRACT C shape).
+      const table = layer.params.styleTable;
+      if (table && typeof table === 'object') {
+        ids.forEach((id) => {
+          if (table.byObject && table.byObject[id]) delete table.byObject[id];
+          if (table.byFace) {
+            Object.keys(table.byFace).forEach((key) => {
+              if (key.startsWith(`${id}/`)) delete table.byFace[key];
+            });
+          }
+        });
+      }
+      this.setSceneSelection(null);
+      this._sceneRegen(layer);
+      return true;
+    }
+
+    // visibility: 'solid' | 'xray' | undefined (toggle).
+    setSceneObjectVisibility(layerId, objectIds, visibility) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      if (!layer || layer.type !== 'scene3d') return false;
+      const targets = this._sceneObjects(layer).filter((o) => o && (objectIds || []).includes(o.id));
+      if (!targets.length) return false;
+      this._scenePushHistory();
+      targets.forEach((o) => {
+        o.visibility = visibility || (o.visibility === 'xray' ? 'solid' : 'xray');
+      });
+      this._sceneRegen(layer);
+      return true;
+    }
+
+    // Appends a CONTRACT A object to params.objects (one history entry +
+    // regen). New objects land at the origin (documented simplification —
+    // mapping a click to a ground point needs the camera projection, which is
+    // 1A-owned). Per-primitive params for sphere/cylinder are 1C's provisional
+    // guesses; CONTRACT A only pins the box bag.
+    addSceneObject(layerId, primitive = 'box') {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      if (!layer || layer.type !== 'scene3d' || !layer.params) return null;
+      const defs = {
+        box: { name: 'Box', params: { sx: 40, sy: 40, sz: 40 } },
+        sphere: { name: 'Sphere', params: { radius: 25, detail: 2 } },
+        cylinder: { name: 'Cylinder', params: { radius: 20, height: 40, segments: 16 } },
+      };
+      const def = defs[primitive] || defs.box;
+      const kind = defs[primitive] ? primitive : 'box';
+      this._scenePushHistory();
+      if (!Array.isArray(layer.params.objects)) layer.params.objects = [];
+      const objects = layer.params.objects;
+      const id = this._sceneNextObjectId(layer);
+      const count = objects.filter((o) => o && o.primitive === kind).length + 1;
+      const obj = {
+        id,
+        name: `${def.name} ${count}`,
+        primitive: kind,
+        params: { ...def.params },
+        transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+        visibility: 'solid',
+      };
+      objects.push(obj);
+      this.setSceneSelection({ layerId: layer.id, mode: 'object', objectIds: [id], faceKeys: [], edgeKeys: [] });
+      this._sceneRegen(layer);
+      return obj;
+    }
+
+    selectAllSceneFacesOfObject(layerId, objectId) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      if (!layer || layer.type !== 'scene3d') return false;
+      const keys = [];
+      this.getInteractionPaths(layer).forEach((path) => {
+        const meta = path && path.meta;
+        const target = meta && meta.sceneTarget;
+        if (!target || meta.kind !== 'sceneFace' || target.objectId !== objectId) return;
+        const key = this._sceneFaceKeyFor(target);
+        if (!keys.includes(key)) keys.push(key);
+      });
+      if (!keys.length) return false;
+      this.sceneComponentMode = 'face';
+      this.setSceneSelection({ layerId: layer.id, mode: 'face', objectIds: [], faceKeys: keys, edgeKeys: [] });
+      return true;
+    }
+
+    // ——— selection overlay ————————————————————————————————————————————
+
+    // Highlight stroke over the selected scene targets: object mode strokes
+    // every face/edge path of the selected objects; face/edge modes stroke
+    // (and faintly fill, for faces) just the selected components.
+    drawSceneSelectionOverlay() {
+      const sel = this.sceneSelection;
+      if (!sel) return;
+      const layer = this.engine.layers.find((l) => l.id === sel.layerId);
+      if (!layer || !layer.visible) return;
+      const paths = this.getInteractionPaths(layer);
+      if (!paths.length) return;
+      const edgeOrdinals = this._sceneEdgeOrdinals(paths);
+      const objSet = new Set(sel.objectIds);
+      const faceSet = new Set(sel.faceKeys);
+      const edgeSet = new Set(sel.edgeKeys);
+      const color = SETTINGS.selectionOutlineColor || '#ef4444';
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const strokePaths = [];
+      const fillPaths = [];
+      paths.forEach((path) => {
+        const meta = path && path.meta;
+        const target = meta && meta.sceneTarget;
+        if (!target || !Array.isArray(path) || path.length < 2) return;
+        if (sel.mode === 'object') {
+          if (meta.kind !== 'sceneFill' && objSet.has(target.objectId)) strokePaths.push(path);
+          return;
+        }
+        if (meta.kind === 'sceneFace' && faceSet.has(this._sceneFaceKeyFor(target))) {
+          strokePaths.push(path);
+          fillPaths.push(path);
+          return;
+        }
+        if (meta.kind === 'sceneEdge'
+          && edgeSet.has(this._sceneEdgeKeyFor(target, edgeOrdinals.get(path) ?? 0))) {
+          strokePaths.push(path);
+        }
+      });
+      if (!strokePaths.length && !fillPaths.length) return;
+      this.ctx.save();
+      this.ctx.lineJoin = 'round';
+      this.ctx.lineCap = 'round';
+      if (fillPaths.length) {
+        this.ctx.globalAlpha = 0.14;
+        this.ctx.fillStyle = color;
+        this.ctx.beginPath();
+        fillPaths.forEach((path) => this.tracePath(path, false));
+        this.ctx.fill();
+        this.ctx.globalAlpha = 1;
+      }
+      if (strokePaths.length) {
+        this.ctx.strokeStyle = color;
+        this.ctx.lineWidth = Math.max(0.35, 1.4 * unit);
+        this.ctx.beginPath();
+        strokePaths.forEach((path) => this.tracePath(path, false));
+        this.ctx.stroke();
+      }
+      this.ctx.restore();
+    }
+
     enterGroupEditMode(layer) {
       this.clearTouchHold();
       this.groupEditMode = { groupId: layer.parentId, activeLayerId: layer.id, kind: 'group' };
@@ -10232,6 +11265,38 @@
       return spec;
     }
 
+    // Nested-spec accessors (3D Scene Studio, Phase 1C). Flat specs keep the
+    // original layer.params[spec.*Param] reads/writes byte-identically; specs
+    // marked `nested: true` (scene3d) delegate to spec.get/set, which route to
+    // params.camera or the selected scene object's transform (CONTRACT A/D).
+    _read3DRotation(layer, spec) {
+      if (spec.nested) {
+        const rot = spec.get(layer, this) || {};
+        return {
+          yaw: rot.yaw ?? spec.yawDefault,
+          pitch: finiteNumber(rot.pitch, spec.pitchDefault),
+          roll: rot.roll ?? spec.rollDefault ?? 0,
+          hasRoll: true,
+        };
+      }
+      return {
+        yaw: layer.params[spec.yawParam] ?? spec.yawDefault,
+        pitch: finiteNumber(layer.params[spec.pitchParam], spec.pitchDefault),
+        roll: spec.rollParam ? (layer.params[spec.rollParam] ?? spec.rollDefault) : 0,
+        hasRoll: Boolean(spec.rollParam),
+      };
+    }
+
+    _write3DRotation(layer, spec, patch) {
+      if (spec.nested) {
+        spec.set(layer, this, patch);
+        return;
+      }
+      if (patch.yaw !== undefined) layer.params[spec.yawParam] = patch.yaw;
+      if (patch.pitch !== undefined) layer.params[spec.pitchParam] = patch.pitch;
+      if (patch.roll !== undefined && spec.rollParam) layer.params[spec.rollParam] = patch.roll;
+    }
+
     get3DRotationControl(layer, bounds) {
       const spec = this.get3DRotationSpec(layer);
       if (!spec || !bounds?.corners) return null;
@@ -10252,9 +11317,10 @@
         x: target.x + ux * 35 * unit,
         y: target.y + uy * 35 * unit,
       };
-      const yaw = normalizeDegrees(layer.params[spec.yawParam] ?? spec.yawDefault);
+      const rot = this._read3DRotation(layer, spec);
+      const yaw = normalizeDegrees(rot.yaw);
       const pitch = clamp(
-        finiteNumber(layer.params[spec.pitchParam], spec.pitchDefault),
+        finiteNumber(rot.pitch, spec.pitchDefault),
         spec.pitchMin,
         spec.pitchMax
       );
@@ -10269,11 +11335,11 @@
         x: controlCenter.x - pitchRadiusX,
         y: controlCenter.y + (0.5 - pitchT) * padRadius * 1.28,
       };
-      const roll = spec.rollParam
-        ? normalizeDegrees(layer.params[spec.rollParam] ?? spec.rollDefault)
+      const roll = rot.hasRoll
+        ? normalizeDegrees(rot.roll)
         : 0;
       const rollRad = ((roll - 90) * Math.PI) / 180;
-      const rollHandle = spec.rollParam
+      const rollHandle = rot.hasRoll
         ? {
             x: controlCenter.x + Math.cos(rollRad) * ringRadius,
             y: controlCenter.y + Math.sin(rollRad) * ringRadius,
@@ -10954,6 +12020,7 @@
         (event?.clientY ?? 0) - rect.top
       );
       const rollAngle = Math.atan2(startWorld.y - control.center.y, startWorld.x - control.center.x);
+      const startRot = this._read3DRotation(layer, spec);
       this.rotation3DDrag = {
         type: hit.type,
         layerId: layer.id,
@@ -10963,13 +12030,13 @@
         yawRadiusY: control.yawRadiusY,
         pitchTrackHeight: control.pitchTrackHeight,
         startClient: { x: event?.clientX ?? 0, y: event?.clientY ?? 0 },
-        startYaw: normalizeDegrees(layer.params[spec.yawParam] ?? spec.yawDefault),
+        startYaw: normalizeDegrees(startRot.yaw),
         startPitch: clamp(
-          finiteNumber(layer.params[spec.pitchParam], spec.pitchDefault),
+          finiteNumber(startRot.pitch, spec.pitchDefault),
           spec.pitchMin,
           spec.pitchMax
         ),
-        startRoll: spec.rollParam ? normalizeDegrees(layer.params[spec.rollParam] ?? spec.rollDefault) : 0,
+        startRoll: startRot.hasRoll ? normalizeDegrees(startRot.roll) : 0,
         startRollAngle: rollAngle,
         historyPushed: false,
         moved: false,
@@ -10994,7 +12061,7 @@
       }
       drag.moved = true;
 
-      if (drag.type === 'roll' && drag.spec.rollParam) {
+      if (drag.type === 'roll' && (drag.spec.rollParam || drag.spec.nested)) {
         const rect = this.canvas.getBoundingClientRect();
         const sx = (event.clientX ?? drag.startClient.x) - rect.left;
         const sy = (event.clientY ?? drag.startClient.y) - rect.top;
@@ -11002,7 +12069,7 @@
         const angle = Math.atan2(world.y - drag.center.y, world.x - drag.center.x);
         let delta = ((angle - drag.startRollAngle) * 180) / Math.PI;
         if (modifiers.shift) delta = Math.round(delta / 15) * 15;
-        layer.params[drag.spec.rollParam] = tidyDegrees(normalizeDegrees(drag.startRoll + delta));
+        this._write3DRotation(layer, drag.spec, { roll: tidyDegrees(normalizeDegrees(drag.startRoll + delta)) });
       } else if (drag.type === 'yaw') {
         const rect = this.canvas.getBoundingClientRect();
         const sx = (event.clientX ?? drag.startClient.x) - rect.left;
@@ -11012,7 +12079,7 @@
         const ny = (world.y - drag.center.y) / Math.max(1e-6, drag.yawRadiusY || 1);
         let nextYaw = normalizeDegrees((Math.atan2(nx, ny) * 180) / Math.PI);
         if (modifiers.shift) nextYaw = Math.round(nextYaw / 15) * 15;
-        layer.params[drag.spec.yawParam] = tidyDegrees(normalizeDegrees(nextYaw));
+        this._write3DRotation(layer, drag.spec, { yaw: tidyDegrees(normalizeDegrees(nextYaw)) });
       } else if (drag.type === 'pitch') {
         const rect = this.canvas.getBoundingClientRect();
         const sy = (event.clientY ?? drag.startClient.y) - rect.top;
@@ -11021,7 +12088,7 @@
         const pitchT = clamp(0.5 - ((world.y - drag.center.y) / Math.max(1e-6, drag.pitchTrackHeight || 1)), 0, 1);
         let nextPitch = drag.spec.pitchMin + pitchT * pitchSpan;
         if (modifiers.shift) nextPitch = Math.round(nextPitch / 15) * 15;
-        layer.params[drag.spec.pitchParam] = tidyDegrees(clamp(nextPitch, drag.spec.pitchMin, drag.spec.pitchMax));
+        this._write3DRotation(layer, drag.spec, { pitch: tidyDegrees(clamp(nextPitch, drag.spec.pitchMin, drag.spec.pitchMax)) });
       } else {
         const sensitivity = modifiers.alt ? 0.18 : 0.45;
         let nextYaw = normalizeDegrees(drag.startYaw + dx * sensitivity);
@@ -11030,8 +12097,10 @@
           nextYaw = Math.round(nextYaw / 15) * 15;
           nextPitch = Math.round(nextPitch / 15) * 15;
         }
-        layer.params[drag.spec.yawParam] = tidyDegrees(normalizeDegrees(nextYaw));
-        layer.params[drag.spec.pitchParam] = tidyDegrees(clamp(nextPitch, drag.spec.pitchMin, drag.spec.pitchMax));
+        this._write3DRotation(layer, drag.spec, {
+          yaw: tidyDegrees(normalizeDegrees(nextYaw)),
+          pitch: tidyDegrees(clamp(nextPitch, drag.spec.pitchMin, drag.spec.pitchMax)),
+        });
       }
 
       this.engine.generate(layer.id, { preview: true });
@@ -11046,10 +12115,11 @@
       if (!layer?.params || !drag?.spec) return;
       // Axis naming matches the panel sliders: X = pitch/tilt, Y = yaw/rotate,
       // Z = roll (the standard Photoshop/After Effects/Blender convention).
-      const rotY = Math.round(layer.params[drag.spec.yawParam] ?? 0);
-      const rotX = Math.round(layer.params[drag.spec.pitchParam] ?? 0);
-      if (drag.type === 'roll' && drag.spec.rollParam) {
-        this.showDragTooltip(`Z ${Math.round(layer.params[drag.spec.rollParam] ?? 0)}°`, event.clientX ?? 0, event.clientY ?? 0);
+      const rot = this._read3DRotation(layer, drag.spec);
+      const rotY = Math.round(rot.yaw ?? 0);
+      const rotX = Math.round(rot.pitch ?? 0);
+      if (drag.type === 'roll' && rot.hasRoll) {
+        this.showDragTooltip(`Z ${Math.round(rot.roll ?? 0)}°`, event.clientX ?? 0, event.clientY ?? 0);
         return;
       }
       if (drag.type === 'yaw') {
