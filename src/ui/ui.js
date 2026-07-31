@@ -423,6 +423,11 @@
     if (!layer) return [];
     if (isMaskLayerGeometryHidden(layer)) return [];
     if (layer._morphConsumed) return [];
+    // Stroke-division fragments are the final geometry stage (post-optimization,
+    // post-mask) and take top precedence, matching engine.getRenderablePaths.
+    // An empty-but-present array (all-gap cycle) exports as zero paths — never
+    // fall through to the undivided geometry the canvas is not drawing.
+    if (Array.isArray(layer.dividedPaths)) return clonePathsWithMeta(layer.dividedPaths);
     if (layer.isGroup && Array.isArray(layer.morphedPaths)) return clonePathsWithMeta(layer.morphedPaths);
     const { useOptimized = false } = options;
     const source =
@@ -438,6 +443,7 @@
     if (!layer) return [];
     if (isMaskLayerGeometryHidden(layer)) return [];
     if (layer._morphConsumed) return [];
+    if (Array.isArray(layer.dividedPaths)) return clonePathsWithMeta(layer.dividedPaths);
     if (layer.displayMaskActive && Array.isArray(layer.displayPaths) && layer.displayPaths.length) return clonePathsWithMeta(layer.displayPaths);
     return getRawExportPaths(layer, options);
   };

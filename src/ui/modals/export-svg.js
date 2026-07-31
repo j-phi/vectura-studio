@@ -714,7 +714,7 @@
       root.querySelectorAll('[data-impact-delta]').forEach((el) => { el.textContent = ''; el.removeAttribute('data-trend'); });
       return;
     }
-    const before = engine.computeStats(targets, { useOptimized: false, includePlotterOptimize: false });
+    const before = engine.computeStats(targets, { useOptimized: false, includePlotterOptimize: false, preDivision: true });
     const after = engine.computeStats(targets, { useOptimized: true, includePlotterOptimize: true });
 
     const parseTimeSec = (t) => {

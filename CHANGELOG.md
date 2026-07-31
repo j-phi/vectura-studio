@@ -7,6 +7,34 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene Studio Phase 0 — four product-independent enablers** (per
+  `docs/3d-scene-studio-proposal-final.html` §8, no user-visible scene yet):
+  - **Effective-pen export (0A).** SVG export groups, dedupes, and pen-sorts by each
+    path's *effective* pen (`path.meta.penId || layer.penId`) instead of the layer pen —
+    per-path pen overrides now land in the correct `<g id="pen_…">` group, identical
+    geometry on different pens is never cross-deduped, and pen-grouped line sort can no
+    longer interleave pens. The canvas renderer was already the reference behavior.
+  - **Stroke division primitive (0B).** New `Vectura.StrokeDivide`
+    (`src/core/stroke-divide.js`): arc-length division of strokes into repeating pen/gap
+    class cycles (mm-accurate, butt-joined, phase-offsettable, chain-continuing,
+    deterministic; curve sources are flattened before measuring). A new engine stage
+    runs structurally downstream of optimization and serves `layer.dividedPaths` at top
+    precedence, so canvas, plot stats, and export all consume the same divided output;
+    divisions persist through save/load. Engine-side dedupe/stats/line-sort re-keyed to
+    effective pen with owner-map parent-granularity semantics. *Deferred to a later
+    stream (the divisions UI ships in Phase 4A): weighted-random pen choice and
+    per-path/jitter phase modes (G-02), pre-clip phase stamping (G-03a/b) — 
+    `divideChain`'s multi-path chain semantics are the intended implementation seam —
+    and parentKey/pathKey quantization coherence at plotterOptimize tolerances.*
+  - **SceneMesh extraction (0C).** Parametric surface samplers (`Scene3D.Charts`) and
+    mesh/solid builders (`Scene3D.Mesh`) extracted out of spiralizer/topoform/polyhedron
+    into `src/core/scene3d/`; the three legacy algorithms now consume the shared modules.
+    Byte-exact visual baselines unchanged; 136 new parity/invariant tests pin the
+    extraction against pre-extraction goldens.
+  - **Control-surface sections (0D).** `FillControlSurface.registerSection(name,
+    {build, caps, order})`: future hosts (the 3D scene panel) can register extra control
+    sections gated by capability flags. Hosts that opt into nothing render byte-identical
+    DOM (paint bucket + Text hosts regression-pinned).
 - **industry-parity Live Corner styles: Round, Inverted Round, and Chamfer.**
   Corner widgets (parametric rect/polygon corners and freeform hard corners alike)
   now carry a corner *style*, not just a radius. Option/Alt+click a widget cycles

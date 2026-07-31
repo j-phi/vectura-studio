@@ -829,6 +829,7 @@
           miterLimit: layer.miterLimit,
           dash: layer.dash ? JSON.parse(JSON.stringify(layer.dash)) : null,
           strokeAlign: layer.strokeAlign,
+          divisions: layer.divisions ? JSON.parse(JSON.stringify(layer.divisions)) : null,
           visible: layer.visible,
           origin: layer.origin
             ? { x: Number(layer.origin.x) || 0, y: Number(layer.origin.y) || 0 }
@@ -918,6 +919,13 @@
           ? sanitizeDashBag(data.dash)
           : (layer.dash || { enabled: false, pattern: [] });
         layer.strokeAlign = sanitizeStrokeAlign(data.strokeAlign, layer.strokeAlign);
+        // Stroke division (P0-B) — backward-compatible: legacy payloads
+        // without the field keep the constructor defaults; ensureLayerDivisions
+        // back-fills and sanitizes either way.
+        if (data.divisions !== undefined && data.divisions !== null) {
+          layer.divisions = JSON.parse(JSON.stringify(data.divisions));
+        }
+        this.ensureLayerDivisions(layer);
         layer.visible = data.visible !== false;
         if (data.origin && Number.isFinite(data.origin.x) && Number.isFinite(data.origin.y)) {
           layer.origin = { x: data.origin.x, y: data.origin.y };
@@ -985,6 +993,7 @@
       layer.miterLimit = source.miterLimit;
       layer.dash = source.dash ? JSON.parse(JSON.stringify(source.dash)) : { enabled: false, pattern: [] };
       layer.strokeAlign = source.strokeAlign;
+      layer.divisions = source.divisions ? JSON.parse(JSON.stringify(source.divisions)) : layer.divisions;
       layer.visible = source.visible;
       layer.paths = clonePaths(source.paths);
       layer.displayPaths = clonePaths(source.displayPaths || source.paths || []);
@@ -1384,6 +1393,12 @@
       if (layer._morphConsumed) return [];
       if (layer.isGroup && Array.isArray(layer.morphedPaths)) return layer.morphedPaths;
       if (layer.mask?.enabled && layer.mask?.hideLayer) return [];
+      // Stroke division (P0-B): divided fragments are the FINAL renderable
+      // geometry — canvas, export, and stats all consume them. Null whenever
+      // divisions are disabled (applyStrokeDivision clears it). preDivision
+      // callers (before/after optimization stats, pre-optimization previews)
+      // opt out of fragments to see the undivided source chain.
+      if (!options.preDivision && Array.isArray(layer.dividedPaths)) return layer.dividedPaths;
       const { useOptimized = false } = options;
       if (layer.displayMaskActive && Array.isArray(layer.displayPaths)) return layer.displayPaths;
       if (useOptimized && Array.isArray(layer.optimizedPaths)) return layer.optimizedPaths;
@@ -1433,7 +1448,49 @@
         this.computeLayerDisplayGeometry(layer.id);
       });
       this._computeMorphGroups();
+      // optimizeLayers ends by recutting stroke divisions (the division stage
+      // is structurally downstream of optimization; see optimizeLayers tail).
       this.optimizeLayers(this.layers);
+    }
+
+    // Stroke division stage (P0-B): after optimization, divide each enabled
+    // leaf layer's post-optimization geometry into layer.dividedPaths.
+    // getRenderablePaths serves those fragments at top precedence, so the
+    // canvas renderer, export, and stats consume them automatically. v1:
+    // chain continuation applies WITHIN one parent path (each parent is its
+    // own chain) — no cross-path chain detection — but everything routes
+    // through divideChain so the continuation semantics exist.
+    applyStrokeDivision(layers) {
+      const StrokeDivide = window.Vectura?.StrokeDivide;
+      (layers || this.layers).forEach((layer) => {
+        if (!layer || layer.isGroup) return;
+        // Reset first so the source read below sees pre-division geometry.
+        layer.dividedPaths = null;
+        if (!StrokeDivide) return; // script tag missing — degrade to a no-op
+        const divisions = this.ensureLayerDivisions(layer);
+        if (!divisions || !divisions.enabled) return;
+        const source = this.getRenderablePaths(layer, { useOptimized: true });
+        // Layer curve context: curves-on layers smooth plain polylines at
+        // render time, so the divider must flatten them before measuring.
+        const divideOpts = { useCurves: Boolean(layer.params && layer.params.curves) };
+        const fragments = [];
+        // The fragment cap is a per-LAYER budget shared across the per-path
+        // divideChain calls — otherwise N paths could each spend the full cap.
+        const layerBudget = StrokeDivide.MAX_FRAGMENTS;
+        (source || []).forEach((path) => {
+          const remaining = layerBudget - fragments.length;
+          if (remaining <= 0) {
+            // Budget exhausted: pass the parent through undivided (the cap's
+            // drop-nothing semantics). divideChain treats maxFragments <= 0 as
+            // invalid and would fall back to its own full default.
+            fragments.push(path);
+            return;
+          }
+          StrokeDivide.divideChain([path], divisions, { ...divideOpts, maxFragments: remaining })
+            .forEach((frag) => fragments.push(frag));
+        });
+        layer.dividedPaths = fragments;
+      });
     }
 
     _computeMorphGroups() {
@@ -1961,6 +2018,27 @@
       this.computeAllDisplayGeometry();
     }
 
+    // Stroke division config normalizer — mirrors ensureLayerOptimization.
+    // Back-fills SETTINGS.divisionDefaults on layers that predate the field
+    // (legacy .vectura payloads) and sanitizes via StrokeDivide. Tolerates the
+    // StrokeDivide script being absent (returns the bag un-sanitized).
+    ensureLayerDivisions(layer) {
+      if (!layer) return null;
+      if (!layer.divisions || typeof layer.divisions !== 'object') {
+        layer.divisions = SETTINGS.divisionDefaults
+          ? clone(SETTINGS.divisionDefaults)
+          : { enabled: false, phaseMm: 0, classes: [] };
+      }
+      const StrokeDivide = window.Vectura?.StrokeDivide;
+      if (StrokeDivide?.sanitizeDivisions) {
+        const sanitized = StrokeDivide.sanitizeDivisions(layer.divisions);
+        layer.divisions.enabled = sanitized.enabled;
+        layer.divisions.phaseMm = sanitized.phaseMm;
+        layer.divisions.classes = sanitized.classes;
+      }
+      return layer.divisions;
+    }
+
     ensureLayerOptimization(layer) {
       if (!layer) return null;
       if (!layer.optimization) {
@@ -2249,13 +2327,16 @@
           return nextMap;
         }
         if (grouping === 'pen') {
+          // Effective-pen re-key (P0-B): division fragments (and auto-colorized
+          // paths) carry their own meta.penId, so each PATH is bucketed by the
+          // pen it will actually plot with — not its layer's pen.
           const penGroups = new Map();
           layersToProcess.forEach((layer) => {
-            const penId = layer.penId || 'default';
-            if (!penGroups.has(penId)) penGroups.set(penId, []);
-            (map.get(layer.id) || []).forEach((path) =>
-              penGroups.get(penId).push({ layerId: layer.id, path })
-            );
+            (map.get(layer.id) || []).forEach((path) => {
+              const penId = (path && path.meta && path.meta.penId) || layer.penId || 'default';
+              if (!penGroups.has(penId)) penGroups.set(penId, []);
+              penGroups.get(penId).push({ layerId: layer.id, path });
+            });
           });
           const nextMap = new Map(layersToProcess.map((layer) => [layer.id, []]));
           penGroups.forEach((items) => {
@@ -2339,16 +2420,35 @@
             const rev = tokens.slice().reverse().join('|');
             return fwd <= rev ? fwd : rev;
           };
+          // Effective-pen re-key (P0-B): each path dedupes in the bucket of the
+          // pen it actually plots with. Division fragments dedupe at PARENT
+          // granularity via meta.parentKey — a duplicate layer re-presenting an
+          // already-claimed parent drops ALL its fragments, while the sibling
+          // fragments of that parent within the claiming layer are all kept
+          // (the per-key owner records which layer claimed it). Within the
+          // claiming layer a second COMPOSITE key (parentKey + fragment
+          // geometry) still drops fragments of a coincident duplicate parent —
+          // siblings of one parent are geometrically distinct, duplicates are
+          // not. Plain paths keep the strict set semantics (repeats drop).
           const seenByPen = new Map();
           layersToProcess.forEach((layer) => {
-            const penId = layer.penId || 'default';
-            if (!seenByPen.has(penId)) seenByPen.set(penId, new Set());
-            const seen = seenByPen.get(penId);
             const deduped = [];
             (current.get(layer.id) || []).forEach((path) => {
-              const key = pathKey(path);
-              if (key && seen.has(key)) return;
-              if (key) seen.add(key);
+              const penId = (path && path.meta && path.meta.penId) || layer.penId || 'default';
+              if (!seenByPen.has(penId)) seenByPen.set(penId, new Map());
+              const seen = seenByPen.get(penId);
+              const parentKey = path && path.meta && path.meta.parentKey;
+              const key = parentKey || pathKey(path);
+              if (key) {
+                const owner = seen.get(key);
+                if (owner !== undefined && (!parentKey || owner !== layer.id)) return;
+                seen.set(key, parentKey ? layer.id : true);
+                if (parentKey) {
+                  const fragKey = `${parentKey}::${pathKey(path)}`;
+                  if (seen.has(fragKey)) return;
+                  seen.set(fragKey, true);
+                }
+              }
               deduped.push(path);
             });
             current.set(layer.id, deduped);
@@ -2365,7 +2465,12 @@
       };
 
       if (options.config) {
-        return runPipeline(targetLayers, options.config);
+        const result = runPipeline(targetLayers, options.config);
+        // Division is structurally downstream of optimization: recut here so
+        // direct optimizeLayers callers (optimization panel, export preview)
+        // never serve fragments cut from stale optimizedPaths.
+        this.applyStrokeDivision(targetLayers);
+        return result;
       }
 
       const combined = new Map();
@@ -2376,6 +2481,7 @@
           combined.set(id, paths);
         });
       });
+      this.applyStrokeDivision(targetLayers);
       return combined;
     }
 
@@ -2421,19 +2527,31 @@
         return fwd <= rev ? fwd : rev;
       };
       target.forEach((l) => {
-        const penId = l.penId || 'default';
-        let seen = null;
-        if (dedupe) {
-          if (!dedupe.has(penId)) dedupe.set(penId, new Set());
-          seen = dedupe.get(penId);
-        }
-        const sourcePaths = this.getRenderablePaths(l, { useOptimized });
+        const sourcePaths = this.getRenderablePaths(l, { useOptimized, preDivision: Boolean(options.preDivision) });
         const visiblePaths = [];
         (sourcePaths || []).forEach((p) => {
-          if (seen) {
-            const key = pathKey(p);
-            if (key && seen.has(key)) return;
-            if (key) seen.add(key);
+          if (dedupe) {
+            // Effective-pen re-key (P0-B) — same rules as the plotter-optimize
+            // dedupe in runPipeline: per-path effective pen, and division
+            // fragments dedupe at parent granularity (siblings within the
+            // claiming layer are kept), so stats agree with export.
+            const penId = (p && p.meta && p.meta.penId) || l.penId || 'default';
+            if (!dedupe.has(penId)) dedupe.set(penId, new Map());
+            const seen = dedupe.get(penId);
+            const parentKey = p && p.meta && p.meta.parentKey;
+            const key = parentKey || pathKey(p);
+            if (key) {
+              const owner = seen.get(key);
+              if (owner !== undefined && (!parentKey || owner !== l.id)) return;
+              seen.set(key, parentKey ? l.id : true);
+              if (parentKey) {
+                // Composite key: coincident duplicate parents inside the
+                // claiming layer still dedupe fragment-by-fragment.
+                const fragKey = `${parentKey}::${pathKey(p)}`;
+                if (seen.has(fragKey)) return;
+                seen.set(fragKey, true);
+              }
+            }
           }
           visiblePaths.push(p);
           dist += pathLength(p);

@@ -25,6 +25,27 @@ or completes.
 *(empty — promote the top of Next when picking up new work)*
 
 ## Next
+- **3D Scene: parentKey/pathKey quantization coherence (before the Phase 4A divisions
+  UI ships).** `StrokeDivide.parentKeyOf` quantizes at a fixed 0.001mm while export/engine
+  `pathKey` quantizes at `max(0.001, plotterOptimize)` — at any tolerance above 0.001 a
+  divided layer duplicating an undivided layer's geometry on the same pen double-plots
+  (keys never collide). Fix direction (judged): let consumers compute the parent key at
+  their own tolerance (e.g. stamp parent points, not a pre-quantized string), or document
+  parentKey as an opaque namespace and normalize float stringification. Add a regression
+  test driving a divided layer against an undivided duplicate at `plotterOptimize = 0.5`.
+- **3D Scene: minor division follow-ups (judged non-blocking).** (a) Engine
+  dedupe/stats/linesort bucket by RAW `meta.penId` while export validates ids against the
+  pen set — a stale/unknown per-path penId can drift stats vs export; align by validating
+  in the engine too. (b) Division always cuts from `optimizedPaths` — with optimization
+  preview off the canvas still shows fragments cut from optimized geometry (documented
+  v1 scope; revisit if artists want an unoptimized divided view). (c)
+  `scene3d/mesh.js` captures the Charts namespace at IIFE load (`|| {}` form) — same
+  hardening family as PRH-024.
+- **3D Scene: 0B deferred grammar items (Phase 4A prerequisites).** Weighted-random pen
+  choice and per-path/jitter phase modes (G-02) plus pre-clip phase stamping (G-03a/b)
+  are deferred; `divideChain`'s multi-path chain semantics are the intended seam, and
+  `sanitizeDivisions`/`ensureLayerDivisions` must be extended in lockstep when the new
+  class fields land (today they strip unknown fields on every recompute).
 - **Morph parameter-space follow-ups.** (a) A Morph group nested *under* another modifier
   (e.g. Mirror) renders its rings un-mirrored — the outer modifier isn't applied to
   `morphedPaths` (logged PRH-005); (b) fill morphing is skipped on param-morph pairs (rings are
@@ -189,6 +210,17 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — 3D Scene Studio Phase 0 (enablers).** Four file-disjoint streams built in
+  parallel, adversarially reviewed and judged, integrated on branch `3d-scene/p0`:
+  effective-pen SVG export (grouping/dedupe/sort by `path.meta.penId || layer.penId`),
+  `Vectura.StrokeDivide` + engine division stage downstream of optimization
+  (`layer.dividedPaths` served at top precedence to canvas/stats/export, persisted),
+  SceneMesh extraction (`Scene3D.Charts`/`Scene3D.Mesh` consumed by
+  spiralizer/topoform/polyhedron, byte-exact baselines unchanged, 136 parity tests),
+  and `FillControlSurface.registerSection` (caps-gated sections, bit-identical legacy
+  hosts). Three judge-confirmed defects fixed pre-commit (export sibling-fragment
+  dedupe, stale `dividedPaths` on direct `optimizeLayers`, curves-on flattening in the
+  divider). Follow-ups tracked under **Next**; deferrals recorded in CHANGELOG.
 - **Unreleased — Live Corner styles (Round / Inverted Round / Chamfer).**
   Corner widgets on parametric shapes and freeform hard corners carry a per-corner
   style: Alt/Option+click cycles it (selected set when 2+ corners selected), ↑/↓ cycles

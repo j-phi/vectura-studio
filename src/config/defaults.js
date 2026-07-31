@@ -2313,6 +2313,17 @@
         { id: 'multipass', enabled: false, bypass: false, passes: 2, offset: 0.2, jitter: 0, seed: 0 },
       ],
     },
+    // Stroke division (P0-B): per-layer repeating class cycle that divides
+    // post-optimization strokes by arc length (mm). A null class penId means
+    // "inherit the layer pen"; gap classes plot nothing.
+    divisionDefaults: {
+      enabled: false,
+      phaseMm: 0,
+      classes: [
+        { lenMm: 10, penId: null },
+        { lenMm: 2, gap: true },
+      ],
+    },
     plotterOptimize: 0,
     paletteId: 'blues-01',
     autoColorization: {

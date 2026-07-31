@@ -405,7 +405,7 @@
         const scopedTargets = getTargets();
         if (!config || !scopedTargets.length) return;
         this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true });
-        const before = this.app.engine.computeStats(scopedTargets, { useOptimized: false, includePlotterOptimize: false });
+        const before = this.app.engine.computeStats(scopedTargets, { useOptimized: false, includePlotterOptimize: false, preDivision: true });
         const after = this.app.engine.computeStats(scopedTargets, { useOptimized: true, includePlotterOptimize: true });
         const beforeEl = panel.querySelector('[data-opt-stat="before"]');
         const afterEl = panel.querySelector('[data-opt-stat="after"]');

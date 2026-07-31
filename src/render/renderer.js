@@ -3838,6 +3838,7 @@
           layer.paths = state.basePaths;
           if (this.engine.computeLayerEffectiveGeometry) this.engine.computeLayerEffectiveGeometry(layer.id);
           if (this.engine.computeLayerDisplayGeometry) this.engine.computeLayerDisplayGeometry(layer.id);
+          if (this.engine.applyStrokeDivision) this.engine.applyStrokeDivision([layer]);
         });
       }
       this._clearMorphDrag();
@@ -3925,6 +3926,9 @@
         });
         if (this.engine.computeLayerEffectiveGeometry) this.engine.computeLayerEffectiveGeometry(layer.id);
         if (this.engine.computeLayerDisplayGeometry) this.engine.computeLayerDisplayGeometry(layer.id);
+        // Divided layers: recut from the fresh geometry so the preview tracks
+        // the drag instead of serving pre-drag fragments.
+        if (this.engine.applyStrokeDivision) this.engine.applyStrokeDivision([layer]);
       });
       this._scheduleMorphDragRecompute();
     }
@@ -4667,6 +4671,10 @@
       let reveal = null;
       if (revealActive) {
         const records = [];
+        // Effective-pen rule, matching getExportSnapshot: a known per-path
+        // meta.penId wins, unknown ids fall back to the layer pen — so the
+        // reveal slider walks pen groups in the export's actual print order.
+        const knownPenIds = new Set((SETTINGS.pens || []).map((p) => p.id));
         this.engine.layers.forEach((l, layerSeq) => {
           if (!l.visible || this.shouldSkipLayerForMaskPreview(l) || this.engine.hasCompoundAncestor?.(l)) return;
           const optimized = layerDrawOptimized(l);
@@ -4677,7 +4685,9 @@
             const ends = pathEnds(path);
             records.push({
               path,
-              penKey: l.penId || 'default',
+              penKey: (path && path.meta && path.meta.penId && knownPenIds.has(path.meta.penId)
+                ? path.meta.penId
+                : l.penId) || 'default',
               layerSeq,
               pathIndex,
               length: Renderer.revealPathLength(path),
@@ -7143,6 +7153,11 @@
               });
               if (this.engine.computeLayerEffectiveGeometry) this.engine.computeLayerEffectiveGeometry(layer.id);
               if (this.engine.computeLayerDisplayGeometry) this.engine.computeLayerDisplayGeometry(layer.id);
+              // Divided layers: recut fragments from the fresh geometry, or
+              // getRenderablePaths keeps serving pre-drag fragments (frozen
+              // layer for the whole drag). Resets dividedPaths first, so this
+              // is safe per pointermove.
+              if (this.engine.applyStrokeDivision) this.engine.applyStrokeDivision([layer]);
             });
             // When a dragged layer sits under a morph modifier, the cheap
             // per-layer recompute above does not refresh the parent's morphed

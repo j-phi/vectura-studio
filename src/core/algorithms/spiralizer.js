@@ -37,100 +37,10 @@
   const FILLABLE_STYLES = ['dots', 'squares', 'triangles'];
   const isFillableStyle = (style) => FILLABLE_STYLES.indexOf(style) !== -1;
 
-  const shapePoint = (p, u, longitude) => {
-    const shape = p.shape || 'ellipsoid';
-    if (shape === 'helix') {
-      // A coiled strand: u climbs the central axis (height), longitude winds the
-      // strand around it. Because the spiral wrap couples u and longitude, this
-      // traces a true 3D helix; helixCount offsets several strands in phase to
-      // make a double / triple / n-helix.
-      const R = Math.max(1, finite(p.helixRadius, 48));
-      const h = Math.max(1, finite(p.helixHeight, 168));
-      return {
-        point: { x: Math.cos(longitude) * R, y: (u - 0.5) * h, z: Math.sin(longitude) * R },
-        normal: { x: Math.cos(longitude), y: 0, z: Math.sin(longitude) },
-      };
-    }
-    if (shape === 'cone') {
-      const hh = Math.max(1, finite(p.coneHeight, 136));
-      const r0 = Math.max(1, finite(p.baseRadius, 68));
-      const y = (u - 0.5) * hh;
-      const r = r0 * (1 - u);
-      const point = { x: Math.cos(longitude) * r, y, z: Math.sin(longitude) * r };
-      const normal = normalize({ x: Math.cos(longitude) * hh, y: r0, z: Math.sin(longitude) * hh });
-      return { point, normal };
-    }
-    if (shape === 'cylinder') {
-      const h = Math.max(1, finite(p.cylinderHeight, 156));
-      const r = Math.max(1, finite(p.cylinderRadius, 58));
-      return {
-        point: { x: Math.cos(longitude) * r, y: (u - 0.5) * h, z: Math.sin(longitude) * r },
-        normal: { x: Math.cos(longitude), y: 0, z: Math.sin(longitude) },
-      };
-    }
-    if (shape === 'torus') {
-      // u sweeps the major (toroidal) ring once; longitude winds the minor
-      // (poloidal) tube `turns` times, so a spiral wrap coils around the donut.
-      const R = Math.max(1, finite(p.torusRingRadius, 64));
-      const tube = Math.max(0.5, finite(p.torusTubeRadius, 26));
-      const phi = u * TAU;
-      const ct = Math.cos(longitude);
-      const ringR = R + tube * ct;
-      return {
-        point: { x: Math.cos(phi) * ringR, y: tube * Math.sin(longitude), z: Math.sin(phi) * ringR },
-        normal: { x: Math.cos(phi) * ct, y: Math.sin(longitude), z: Math.sin(phi) * ct },
-      };
-    }
-    if (shape === 'capsule') {
-      // Cylinder of height H radius r, capped by two hemispheres. u is allocated
-      // along the meridian arc length (cap, barrel, cap) so the wrap pitch stays
-      // even across the seams.
-      const r = Math.max(1, finite(p.capsuleRadius, 46));
-      const h = Math.max(0, finite(p.capsuleHeight, 120));
-      const capArc = (r * Math.PI) / 2;
-      const total = h + 2 * capArc;
-      const fCap = capArc / total;
-      const fCyl = h / total;
-      const cl = Math.cos(longitude);
-      const sl = Math.sin(longitude);
-      if (u < fCap) {
-        const lat = (u / fCap - 1) * (Math.PI / 2); // -PI/2 (south pole) .. 0
-        const cr = Math.cos(lat);
-        return {
-          point: { x: cl * cr * r, y: -h / 2 + r * Math.sin(lat), z: sl * cr * r },
-          normal: { x: cl * cr, y: Math.sin(lat), z: sl * cr },
-        };
-      }
-      if (u <= fCap + fCyl) {
-        const b = fCyl > 0 ? (u - fCap) / fCyl : 0;
-        return {
-          point: { x: cl * r, y: -h / 2 + b * h, z: sl * r },
-          normal: { x: cl, y: 0, z: sl },
-        };
-      }
-      const lat = ((u - fCap - fCyl) / fCap) * (Math.PI / 2); // 0 .. PI/2 (north pole)
-      const cr = Math.cos(lat);
-      return {
-        point: { x: cl * cr * r, y: h / 2 + r * Math.sin(lat), z: sl * cr * r },
-        normal: { x: cl * cr, y: Math.sin(lat), z: sl * cr },
-      };
-    }
-    const sphereRadius = Math.max(1, finite(p.sphereRadius, finite(p.ellipsoidEquatorRadius, 64)));
-    const rx = shape === 'sphere' ? sphereRadius : Math.max(1, finite(p.ellipsoidEquatorRadius, 76));
-    const rz = rx;
-    const ry = shape === 'sphere' ? sphereRadius : Math.max(1, finite(p.ellipsoidPolarRadius, 52));
-    const lat = (u - 0.5) * Math.PI;
-    const cl = Math.cos(lat);
-    const point = {
-      x: Math.cos(longitude) * cl * rx,
-      y: Math.sin(lat) * ry,
-      z: Math.sin(longitude) * cl * rz,
-    };
-    return {
-      point,
-      normal: normalize({ x: point.x / (rx * rx), y: point.y / (ry * ry), z: point.z / (rz * rz) }),
-    };
-  };
+  // Parametric wrap surface (sphere / ellipsoid / cone / cylinder / torus /
+  // capsule / helix) — extracted verbatim to Scene3D.Charts.spiralizerSurface
+  // (same signature, same param reads).
+  const shapePoint = Vectura.Scene3D.Charts.spiralizerSurface;
 
   const viewOf = (p) => ({
     yaw: finite(p.yaw, 0),

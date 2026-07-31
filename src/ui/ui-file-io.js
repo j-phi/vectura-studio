@@ -544,75 +544,76 @@
       const dedupe = optimize > 0 ? new Map() : null;
       const seenGroupOrder = [];
       const groupMap = new Map();
-      (this.app.engine.layers || []).forEach((layer) => {
+      // Effective-pen grouping: expand every layer into path items first, then
+      // bucket each item by its EFFECTIVE pen (path.meta.penId || layer.penId;
+      // an unknown meta.penId falls back to the layer pen). Grouping by layer
+      // pen alone put per-path pen overrides in the wrong <g>, deduped
+      // identical geometry across different pens, and let pen-grouped line
+      // sort interleave pens. The canvas renderer is the reference behavior.
+      (this.app.engine.layers || []).forEach((layer, layerIndex) => {
         const isMorphGroup = layer.isGroup && Array.isArray(layer.morphedPaths) && layer.morphedPaths.length > 0;
         if (!layer?.visible || (layer.isGroup && layer.type !== 'compound' && !isMorphGroup) || isMaskLayerGeometryHidden(layer) || (this.app.engine.hasCompoundAncestor && this.app.engine.hasCompoundAncestor(layer))) return;
-        const pen = penMap.get(layer.penId) || fallbackPen;
-        const key = pen.id || fallbackPen.id;
-        if (!groupMap.has(key)) {
-          groupMap.set(key, { key, pen, layers: [] });
-          seenGroupOrder.push(key);
+        const layerPen = penMap.get(layer.penId) || fallbackPen;
+        const ancestorMasks = this.app.engine.getAncestorMaskLayers ? this.app.engine.getAncestorMaskLayers(layer) : [];
+        const forceLinear = destructiveMarginCrop || (removeHiddenGeometry && ancestorMasks.length);
+        const lineCap = forceLinear ? 'butt' : layer.lineCap || 'round';
+        // Stroke style model (STR-1/STR-3): join, miter limit and layer-level
+        // dash travel with each item so SVG emission and the export-preview
+        // canvas draw stay in lockstep.
+        const lineJoin = ['miter', 'round', 'bevel'].includes(layer.lineJoin) ? layer.lineJoin : 'round';
+        const miterLimit = Number.isFinite(layer.miterLimit) ? layer.miterLimit : 10;
+        const dashArray = window.Vectura.STROKE_STYLE?.getLayerDashPattern
+          ? window.Vectura.STROKE_STYLE.getLayerDashPattern(layer)
+          : (layer.dash?.enabled && Array.isArray(layer.dash.pattern)
+              && layer.dash.pattern.some((value) => Number(value) > 0)
+            ? layer.dash.pattern.slice(0, 6)
+            : null);
+        const useCurves = Boolean(layer.params && layer.params.curves);
+        const layerGroupId = window.Vectura._UIExportUtil.escapeXmlAttr(normalizeSvgId(layer.name || layer.id || 'Layer', 'layer'));
+        const useLayerOptimized = useOptimized && optimizationTargetIds.has(layer.id);
+        const ancestorClipLayerIds = removeHiddenGeometry ? [] : ancestorMasks.map((maskLayer) => maskLayer.id).filter(Boolean);
+        let paths = removeHiddenGeometry
+          ? window.Vectura._UIExportUtil.getVisibleExportPaths(layer, { useOptimized: useLayerOptimized })
+          : window.Vectura._UIExportUtil.getRawExportPaths(layer, { useOptimized: useLayerOptimized });
+        if (destructiveMarginCrop) {
+          paths = window.Vectura._UIExportUtil.hardClipExportPaths(paths, marginRect, {
+            useCurves: useCurves && !removeHiddenGeometry,
+          });
         }
-        groupMap.get(key).layers.push(layer);
+        (paths || []).forEach((path, pathIndex) => {
+          const pathPen = penMap.get(path?.meta?.penId) || layerPen;
+          const key = pathPen.id || fallbackPen.id;
+          if (!groupMap.has(key)) {
+            groupMap.set(key, { key, pen: pathPen, items: [] });
+            seenGroupOrder.push(key);
+          }
+          groupMap.get(key).items.push({
+            layer,
+            layerIndex,
+            pathIndex,
+            path,
+            lineCap,
+            lineJoin,
+            miterLimit,
+            dashArray,
+            useCurves: forceLinear ? false : useCurves,
+            sharpEdges: !forceLinear && useCurves && layer.type === 'pattern' && !layer.params?.tileEdgeCurves,
+            layerGroupId,
+            ancestorClipLayerIds,
+            strokeWidth: (SETTINGS.strokeWidthOverride === true
+              ? (layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3)
+              : (pathPen.width ?? SETTINGS.strokeWidth ?? 0.3)).toFixed(3),
+            strokeColor: pathPen.color || layerPen.color || '#000000',
+            groupPenId: key,
+            pathPenId: pathPen.id,
+          });
+        });
       });
 
       seenGroupOrder.forEach((key) => {
         const group = groupMap.get(key);
         if (!group) return;
-        const pen = group.pen || fallbackPen;
-        const items = [];
-        group.layers.forEach((layer, layerIndex) => {
-          const ancestorMasks = this.app.engine.getAncestorMaskLayers ? this.app.engine.getAncestorMaskLayers(layer) : [];
-          const forceLinear = destructiveMarginCrop || (removeHiddenGeometry && ancestorMasks.length);
-          const lineCap = forceLinear ? 'butt' : layer.lineCap || 'round';
-          // Stroke style model (STR-1/STR-3): join, miter limit and layer-level
-          // dash travel with each item so SVG emission and the export-preview
-          // canvas draw stay in lockstep.
-          const lineJoin = ['miter', 'round', 'bevel'].includes(layer.lineJoin) ? layer.lineJoin : 'round';
-          const miterLimit = Number.isFinite(layer.miterLimit) ? layer.miterLimit : 10;
-          const dashArray = window.Vectura.STROKE_STYLE?.getLayerDashPattern
-            ? window.Vectura.STROKE_STYLE.getLayerDashPattern(layer)
-            : (layer.dash?.enabled && Array.isArray(layer.dash.pattern)
-                && layer.dash.pattern.some((value) => Number(value) > 0)
-              ? layer.dash.pattern.slice(0, 6)
-              : null);
-          const useCurves = Boolean(layer.params && layer.params.curves);
-          const layerGroupId = window.Vectura._UIExportUtil.escapeXmlAttr(normalizeSvgId(layer.name || layer.id || 'Layer', 'layer'));
-          const useLayerOptimized = useOptimized && optimizationTargetIds.has(layer.id);
-          const ancestorClipLayerIds = removeHiddenGeometry ? [] : ancestorMasks.map((maskLayer) => maskLayer.id).filter(Boolean);
-          let paths = removeHiddenGeometry
-            ? window.Vectura._UIExportUtil.getVisibleExportPaths(layer, { useOptimized: useLayerOptimized })
-            : window.Vectura._UIExportUtil.getRawExportPaths(layer, { useOptimized: useLayerOptimized });
-          if (destructiveMarginCrop) {
-            paths = window.Vectura._UIExportUtil.hardClipExportPaths(paths, marginRect, {
-              useCurves: useCurves && !removeHiddenGeometry,
-            });
-          }
-          (paths || []).forEach((path, pathIndex) => {
-            const pathPenId = path?.meta?.penId || pen.id;
-            const pathPen = penMap.get(pathPenId) || pen;
-            items.push({
-              layer,
-              layerIndex,
-              pathIndex,
-              path,
-              lineCap,
-              lineJoin,
-              miterLimit,
-              dashArray,
-              useCurves: forceLinear ? false : useCurves,
-              sharpEdges: !forceLinear && useCurves && layer.type === 'pattern' && !layer.params?.tileEdgeCurves,
-              layerGroupId,
-              ancestorClipLayerIds,
-              strokeWidth: (SETTINGS.strokeWidthOverride === true
-                ? (layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3)
-                : (pathPen.width ?? SETTINGS.strokeWidth ?? 0.3)).toFixed(3),
-              strokeColor: pathPen.color || pen.color || '#000000',
-              groupPenId: pen.id,
-              pathPenId,
-            });
-          });
-        });
+        const items = group.items;
 
         const shouldInterleave = useOptimized && items.some((item) => {
           const grouping = item?.path?.meta?.lineSortGrouping;
@@ -631,18 +632,37 @@
         const visibleItems = [];
         let seen = null;
         if (dedupe) {
-          if (!dedupe.has(key)) dedupe.set(key, new Set());
+          if (!dedupe.has(key)) dedupe.set(key, new Map());
           seen = dedupe.get(key);
         }
         items.forEach((item) => {
-          const dedupeKey = seen ? pathKey(item.path) : '';
+          // Owner-map semantics, mirroring the engine's plotter dedupe: a
+          // meta.parentKey (stamped on every fragment of one divided stroke)
+          // claims the key for its LAYER — sibling fragments of the claiming
+          // layer all pass, while another layer re-presenting the same parent
+          // drops entirely. Plain pathKey entries keep strict drop-on-repeat.
+          // Two identical paths on DIFFERENT effective pens never collide
+          // because the seen-map is per pen group.
+          const parentKey = item.path?.meta?.parentKey;
+          const dedupeKey = seen ? (parentKey || pathKey(item.path)) : '';
           if (seen && dedupeKey) {
-            if (seen.has(dedupeKey)) return;
-            seen.add(dedupeKey);
+            if (seen.has(dedupeKey)) {
+              if (!parentKey || seen.get(dedupeKey) !== item.layer.id) return;
+            } else {
+              seen.set(dedupeKey, parentKey ? item.layer.id : true);
+            }
+            if (parentKey) {
+              // Composite key: coincident duplicate parents inside the
+              // claiming layer still dedupe fragment-by-fragment (siblings of
+              // one parent are geometrically distinct, duplicates are not).
+              const fragKey = `${parentKey}::${pathKey(item.path)}`;
+              if (seen.has(fragKey)) return;
+              seen.set(fragKey, true);
+            }
           }
           visibleItems.push(item);
         });
-        groups.push({ key, pen, items: visibleItems });
+        groups.push({ key, pen: group.pen, items: visibleItems });
       });
 
       return {
@@ -701,11 +721,9 @@
           const layerDashAttr = item.dashArray ? ` stroke-dasharray="${formatDashArray(item.dashArray)}"` : '';
           svg += `<g id="${item.layerGroupId}-${itemIndex + 1}" stroke-width="${item.strokeWidth}" stroke-linecap="${svgLineCap(item.lineCap)}"${joinAttrs}${layerDashAttr}>`;
           let attrs = item.path?.meta?.exportClipped ? { 'stroke-linecap': 'butt' } : null;
-          if (item.pathPenId && item.pathPenId !== item.groupPenId) {
-            attrs = attrs || {};
-            attrs.stroke = window.Vectura._UIExportUtil.escapeXmlAttr(item.strokeColor || 'black');
-            attrs['stroke-width'] = item.strokeWidth;
-          }
+          // No per-item stroke/width override here: items are bucketed by
+          // EFFECTIVE pen in getExportSnapshot, so the enclosing pen group
+          // already carries the right stroke color and pen width.
           const dash = window.Vectura._UIExportUtil.getPathStrokeDash?.(item.path);
           if (dash) {
             attrs = attrs || {};

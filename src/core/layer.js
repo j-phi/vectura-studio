@@ -105,10 +105,13 @@
       };
       const optDefaults = SETTINGS?.optimizationDefaults;
       this.optimization = optDefaults ? JSON.parse(JSON.stringify(optDefaults)) : null;
+      const divDefaults = SETTINGS?.divisionDefaults;
+      this.divisions = divDefaults ? JSON.parse(JSON.stringify(divDefaults)) : null;
       this.effectivePaths = [];
       this.effectiveStats = null;
       this.optimizedPaths = null;
       this.optimizedStats = null;
+      this.dividedPaths = null;
     }
   }
 

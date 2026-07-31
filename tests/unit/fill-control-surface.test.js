@@ -211,6 +211,229 @@ describe('Vectura.UI.FillControlSurface (shared fill control surface)', () => {
     expect(changes[changes.length - 1]).toBe(true);
   });
 
+  test('section registration: a registered section renders for a host declaring its caps', () => {
+    const dom = buildHarness();
+    const { document, Vectura } = dom.window;
+    const FCS = Vectura.UI.FillControlSurface;
+    expect(typeof FCS.registerSection).toBe('function');
+    const controls = document.getElementById('controls');
+    const params = { fillMode: 'hatch', fillDensity: 21 };
+    FCS.registerSection('penPicker', {
+      caps: ['pens'],
+      build: (ctx) => {
+        const el = ctx.container.ownerDocument.createElement('div');
+        el.className = 'pen-picker-body';
+        el.textContent = 'pens';
+        ctx.container.appendChild(el);
+      },
+    });
+    const api = FCS.mount({
+      gridEl: document.getElementById('grid'),
+      controlsEl: controls, params, idPrefix: 'pb',
+      caps: ['pens'],
+    });
+    const sectionEl = controls.querySelector('[data-fcs-section="penPicker"]');
+    expect(sectionEl).toBeTruthy();
+    expect(sectionEl.querySelector('.pen-picker-body')).toBeTruthy();
+    // The stock control output stays a strict prefix — sections append after it.
+    expect(controls.querySelector('[data-ctrl="fillDensity"]')).toBeTruthy();
+    const density = controls.querySelector('[data-ctrl="fillDensity"]');
+    expect(density.compareDocumentPosition(sectionEl) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(typeof api.refreshSections).toBe('function');
+  });
+
+  test('section registration: hosts that pass no caps render ZERO sections (opt-in gating)', () => {
+    const dom = buildHarness();
+    const { document, Vectura } = dom.window;
+    const FCS = Vectura.UI.FillControlSurface;
+    const controls = document.getElementById('controls');
+    FCS.registerSection('penPicker', {
+      caps: ['pens'],
+      build: (ctx) => { ctx.container.textContent = 'pens'; },
+    });
+    FCS.registerSection('freebie', {
+      // Even a caps-free section must not leak into a host that never opted in.
+      build: (ctx) => { ctx.container.textContent = 'free'; },
+    });
+    FCS.mount({
+      gridEl: document.getElementById('grid'),
+      controlsEl: controls,
+      params: { fillMode: 'hatch', fillDensity: 21 },
+      idPrefix: 'pb',
+    });
+    expect(controls.querySelectorAll('[data-fcs-section]').length).toBe(0);
+  });
+
+  test('section registration: existing hosts stay bit-identical with vs without registry entries', () => {
+    const dom = buildHarness();
+    const { document, Vectura } = dom.window;
+    const FCS = Vectura.UI.FillControlSurface;
+    const controls = document.getElementById('controls');
+    const mountPb = () => {
+      FCS.mount({
+        gridEl: document.getElementById('grid'),
+        controlsEl: controls,
+        params: { fillMode: 'hatch', fillDensity: 21, fillAngle: 45, fillPadding: 0 },
+        idPrefix: 'pb',
+      });
+      return controls.innerHTML;
+    };
+    const before = mountPb(); // SECTIONS registry empty
+    FCS.registerSection('penPicker', {
+      caps: ['pens'],
+      build: (ctx) => { ctx.container.textContent = 'pens'; },
+    });
+    const after = mountPb(); // registered, but host declares no caps
+    expect(after).toBe(before);
+  });
+
+  test('section registration: EVERY section cap must be present in the host caps', () => {
+    const dom = buildHarness();
+    const { document, Vectura } = dom.window;
+    const FCS = Vectura.UI.FillControlSurface;
+    const controls = document.getElementById('controls');
+    FCS.registerSection('strokeDivisions', {
+      caps: ['pens', 'divisions'],
+      build: (ctx) => { ctx.container.textContent = 'divisions'; },
+    });
+    FCS.mount({
+      gridEl: document.getElementById('grid'),
+      controlsEl: controls,
+      params: { fillMode: 'hatch', fillDensity: 21 },
+      idPrefix: 'pb',
+      caps: ['pens'], // missing 'divisions'
+    });
+    expect(controls.querySelector('[data-fcs-section="strokeDivisions"]')).toBeNull();
+    FCS.mount({
+      gridEl: document.getElementById('grid'),
+      controlsEl: controls,
+      params: { fillMode: 'hatch', fillDensity: 21 },
+      idPrefix: 'pb',
+      caps: ['pens', 'divisions'],
+    });
+    expect(controls.querySelector('[data-fcs-section="strokeDivisions"]')).toBeTruthy();
+  });
+
+  test('section registration: opts.sections allowlists which registered sections may render', () => {
+    const dom = buildHarness();
+    const { document, Vectura } = dom.window;
+    const FCS = Vectura.UI.FillControlSurface;
+    const controls = document.getElementById('controls');
+    FCS.registerSection('penPicker', { caps: ['pens'], build: (ctx) => { ctx.container.textContent = 'pens'; } });
+    FCS.registerSection('toneResponse', { caps: ['pens'], build: (ctx) => { ctx.container.textContent = 'tone'; } });
+    FCS.mount({
+      gridEl: document.getElementById('grid'),
+      controlsEl: controls,
+      params: { fillMode: 'hatch', fillDensity: 21 },
+      idPrefix: 'pb',
+      caps: ['pens'],
+      sections: ['toneResponse'],
+    });
+    expect(controls.querySelector('[data-fcs-section="penPicker"]')).toBeNull();
+    expect(controls.querySelector('[data-fcs-section="toneResponse"]')).toBeTruthy();
+  });
+
+  test('section registration: sections render sorted by (order, registration index)', () => {
+    const dom = buildHarness();
+    const { document, Vectura } = dom.window;
+    const FCS = Vectura.UI.FillControlSurface;
+    const controls = document.getElementById('controls');
+    FCS.registerSection('late', { order: 10, build: (ctx) => { ctx.container.textContent = 'late'; } });
+    FCS.registerSection('early', { order: -5, build: (ctx) => { ctx.container.textContent = 'early'; } });
+    FCS.registerSection('mid', { build: (ctx) => { ctx.container.textContent = 'mid'; } }); // order 0
+    FCS.mount({
+      gridEl: document.getElementById('grid'),
+      controlsEl: controls,
+      params: { fillMode: 'hatch', fillDensity: 21 },
+      idPrefix: 'pb',
+      caps: [],
+      sections: ['late', 'early', 'mid'],
+    });
+    const names = Array.from(controls.querySelectorAll('[data-fcs-section]'))
+      .map((el) => el.dataset.fcsSection);
+    expect(names).toEqual(['early', 'mid', 'late']);
+  });
+
+  test('section registration: build ctx exposes working get/set, hooks, idPrefix, and an attached container', () => {
+    const dom = buildHarness();
+    const { document, Vectura } = dom.window;
+    const FCS = Vectura.UI.FillControlSurface;
+    const controls = document.getElementById('controls');
+    const params = { fillMode: 'hatch', fillDensity: 21, penId: 'p1' };
+    let edits = 0; const changes = [];
+    let seen = null;
+    FCS.registerSection('penPicker', {
+      caps: ['pens'],
+      build: (ctx) => {
+        seen = ctx;
+        expect(ctx.params).toBe(params);
+        expect(ctx.get('penId')).toBe('p1');
+        expect(ctx.idPrefix).toBe('pb');
+        expect(controls.contains(ctx.container)).toBe(true);
+        expect(typeof ctx.onEdit).toBe('function');
+        expect(typeof ctx.refresh).toBe('function');
+        ctx.set('penId', 'p2');
+      },
+    });
+    FCS.mount({
+      gridEl: document.getElementById('grid'),
+      controlsEl: controls, params, idPrefix: 'pb',
+      caps: ['pens'],
+      onEdit: () => { edits += 1; },
+      onChange: (committed) => { changes.push(committed); },
+    });
+    expect(seen).toBeTruthy();
+    expect(params.penId).toBe('p2'); // set writes the caller-owned bag
+    expect(changes[changes.length - 1]).toBe(true); // and reports the change
+  });
+
+  test('section registration: re-registering a name replaces it in place (no duplicates)', () => {
+    const dom = buildHarness();
+    const { document, Vectura } = dom.window;
+    const FCS = Vectura.UI.FillControlSurface;
+    const controls = document.getElementById('controls');
+    FCS.registerSection('penPicker', { caps: ['pens'], build: (ctx) => { ctx.container.textContent = 'v1'; } });
+    FCS.registerSection('other', { caps: ['pens'], order: 5, build: (ctx) => { ctx.container.textContent = 'other'; } });
+    FCS.registerSection('penPicker', { caps: ['pens'], build: (ctx) => { ctx.container.textContent = 'v2'; } });
+    FCS.mount({
+      gridEl: document.getElementById('grid'),
+      controlsEl: controls,
+      params: { fillMode: 'hatch', fillDensity: 21 },
+      idPrefix: 'pb',
+      caps: ['pens'],
+    });
+    const nodes = controls.querySelectorAll('[data-fcs-section="penPicker"]');
+    expect(nodes.length).toBe(1);
+    expect(nodes[0].textContent).toBe('v2');
+    // Replacement keeps the original registration position (same order key → first).
+    const names = Array.from(controls.querySelectorAll('[data-fcs-section]'))
+      .map((el) => el.dataset.fcsSection);
+    expect(names).toEqual(['penPicker', 'other']);
+  });
+
+  test('section registration: refreshSections re-runs the section pass', () => {
+    const dom = buildHarness();
+    const { document, Vectura } = dom.window;
+    const FCS = Vectura.UI.FillControlSurface;
+    const controls = document.getElementById('controls');
+    const params = { fillMode: 'hatch', fillDensity: 21, penId: 'p1' };
+    FCS.registerSection('penPicker', {
+      caps: ['pens'],
+      build: (ctx) => { ctx.container.textContent = `pen:${ctx.get('penId')}`; },
+    });
+    const api = FCS.mount({
+      gridEl: document.getElementById('grid'),
+      controlsEl: controls, params, idPrefix: 'pb',
+      caps: ['pens'],
+    });
+    expect(controls.querySelector('[data-fcs-section="penPicker"]').textContent).toBe('pen:p1');
+    params.penId = 'p9';
+    api.refreshSections();
+    const nodes = controls.querySelectorAll('[data-fcs-section="penPicker"]');
+    expect(nodes.length).toBe(1); // re-run replaces, never accumulates
+    expect(nodes[0].textContent).toBe('pen:p9');
+  });
+
   test('distance params stay canonical mm in the bag and show a unit chip', () => {
     const dom = buildHarness();
     const { document, Vectura, Event } = dom.window;

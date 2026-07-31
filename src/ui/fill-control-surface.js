@@ -47,6 +47,37 @@
   // display time. (Kept in sync with paint-bucket-panel's DISTANCE_PARAMS.)
   const DISTANCE_PARAMS = new Set(['fillDotLength', 'fillPadding', 'fillShiftX', 'fillShiftY', 'fillContourCenterPadding']);
 
+  // ── section registry ────────────────────────────────────────────────────
+  // Additive extension point: future hosts (e.g. a 3D scene panel) register
+  // extra control sections (pen picker, tone response, stroke divisions, …)
+  // that render AFTER the stock variant controls. Rendering is strictly
+  // opt-in per mount: a section appears only when the host declares every
+  // capability flag in the section's `caps` via opts.caps (and, if the host
+  // passes opts.sections, only when the section's name is listed). Existing
+  // hosts (paint bucket, Type Fill tab) pass neither option and therefore
+  // render byte-identical DOM no matter what the registry holds.
+  const SECTIONS = [];
+
+  /**
+   * Register (or replace) a named control section.
+   *
+   * @param {string}   name          registry key; re-registering the same name
+   *                                 replaces the entry in its original position
+   * @param {object}   spec
+   * @param {Function} spec.build    (ctx) => void; renders into ctx.container
+   *                                 and self-binds its own listeners
+   * @param {string[]} [spec.caps]   capability flags a host must ALL declare
+   *                                 (opts.caps) for this section to render
+   * @param {number}   [spec.order]  sort key; ties keep registration order
+   */
+  function registerSection(name, { build, caps = [], order = 0 } = {}) {
+    if (!name || typeof build !== 'function') return;
+    const entry = { name, build, caps, order };
+    const idx = SECTIONS.findIndex((s) => s.name === name);
+    if (idx >= 0) SECTIONS[idx] = entry;
+    else SECTIONS.push(entry);
+  }
+
   // Control schema for the per-variant section. Visibility for each entry is
   // gated by Vectura.FillPanel.FILL_CAPS[fillType]; only the controls that apply
   // to the current variant render, exactly as the pattern designer does. Range
@@ -190,7 +221,14 @@
    *                                        wires double-click-to-reset on sliders
    * @param {Function}   [opts.onEdit]     () → snapshot point, before first write
    * @param {Function}   [opts.onChange]   (committed) → after a value write
-   * @returns {{refresh: Function, refreshVariants: Function}}
+   * @param {string[]}   [opts.caps]       capability flags this host declares;
+   *                                        a registered section renders only if
+   *                                        EVERY flag in its caps is present here
+   * @param {string[]}   [opts.sections]   allowlist of registered section names;
+   *                                        omit to allow any caps-satisfied
+   *                                        section. Hosts passing neither caps
+   *                                        nor sections render ZERO sections.
+   * @returns {{refresh: Function, refreshVariants: Function, refreshSections: Function}}
    */
   function mount(opts = {}) {
     const {
@@ -206,9 +244,17 @@
       defaults = {},
       onEdit = () => {},
       onChange = () => {},
+      caps = [],
+      sections = undefined,
     } = opts;
-    if (!params) return { refresh: () => {}, refreshVariants: () => {} };
+    if (!params) return { refresh: () => {}, refreshVariants: () => {}, refreshSections: () => {} };
     const excludeSet = new Set(exclude);
+    // Section rendering is opt-in: only hosts that declare caps and/or a
+    // sections allowlist participate. Legacy hosts pass neither → the section
+    // pass is a no-op and their DOM stays byte-identical.
+    const sectionsEnabled = ('caps' in opts) || ('sections' in opts);
+    const hostCaps = new Set(caps);
+    const sectionAllow = Array.isArray(sections) ? new Set(sections) : null;
     const get = (k) => params[k];
     const set = (k, v) => { params[k] = v; };
 
@@ -255,6 +301,7 @@
       const caps = Vectura.FillPanel?.FILL_CAPS?.[get(typeKey)] || {};
       if (get(typeKey) === 'none') {
         controlsEl.innerHTML = `<p class="paint-bucket-hint-inline">${noneHint}</p>`;
+        renderSections();
         return;
       }
       const dotLenActive = (get('fillDotLength') ?? 0) > 0;
@@ -274,6 +321,40 @@
         .join('');
       controlsEl.innerHTML = html;
       bindControls();
+      renderSections();
+    }
+
+    // Append every eligible registered section after the stock controls, so
+    // the existing output stays a strict prefix of the DOM. Idempotent: each
+    // pass removes its previous containers before rebuilding.
+    function renderSections() {
+      if (!controlsEl || !sectionsEnabled) return;
+      Array.from(controlsEl.querySelectorAll('[data-fcs-section]')).forEach((el) => el.remove());
+      const doc = controlsEl.ownerDocument;
+      SECTIONS
+        .map((section, index) => ({ section, index }))
+        .filter(({ section }) =>
+          (!sectionAllow || sectionAllow.has(section.name)) &&
+          section.caps.every((c) => hostCaps.has(c)))
+        .sort((a, b) => (a.section.order - b.section.order) || (a.index - b.index))
+        .forEach(({ section }) => {
+          const container = doc.createElement('div');
+          container.className = 'fcs-section';
+          container.dataset.fcsSection = section.name;
+          controlsEl.appendChild(container);
+          section.build({
+            params,
+            get,
+            // Section writes go through the caller-owned bag and report the
+            // change; committed defaults true, pass false for live drag frames.
+            set: (k, v, committed = true) => { set(k, v); onChange(committed); },
+            onEdit,
+            onChange,
+            idPrefix,
+            container,
+            refresh,
+          });
+        });
     }
 
     function bindControls() {
@@ -430,14 +511,17 @@
       }
     }
 
+    function refresh() { refreshVariantSelection(); renderControls(); }
+
     renderVariantGrid();
     renderControls();
 
     return {
-      refresh() { refreshVariantSelection(); renderControls(); },
+      refresh,
       refreshVariants: refreshVariantSelection,
+      refreshSections: renderSections,
     };
   }
 
-  UI.FillControlSurface = { mount, FILL_TYPE_OPTIONS, VARIANT_CONTROLS, DISTANCE_PARAMS };
+  UI.FillControlSurface = { mount, registerSection, FILL_TYPE_OPTIONS, VARIANT_CONTROLS, DISTANCE_PARAMS };
 })();
