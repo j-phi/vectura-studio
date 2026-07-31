@@ -227,5 +227,24 @@ describe('scene3d generate (CONTRACT A/B)', () => {
       expect(paths.some((p) => p.meta.kind === 'sceneFace')).toBe(false);
       expect(paths.some((p) => p.meta.kind === 'sceneFill')).toBe(false);
     });
+
+    test('curved-surface hatch replaces the wireframe: continuous fill, no face outlines or creases, silhouette kept', () => {
+      installStub();
+      const torus = {
+        id: 'obj-1', name: 'Torus', primitive: 'torus',
+        params: { sx: 40, sy: 12, sz: 12, detail: 20 },
+        transform: { x: 0, y: 0, z: 0, yaw: 16, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+      };
+      const params = sceneParams([torus]);
+      params.styleTable.byObject['obj-1'] = { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: 60 } };
+      const paths = algo.generate(params, null, null, BOUNDS) || [];
+      const scene = paths.filter((p) => p.meta.sceneTarget.objectId === 'obj-1');
+      // The per-face wireframe (face outlines + crease edges) is gone…
+      expect(scene.some((p) => p.meta.kind === 'sceneFace')).toBe(false);
+      expect(scene.some((p) => p.meta.sceneTarget.edgeClass === 'crease')).toBe(false);
+      // …replaced by continuous surface hatch, and the silhouette still frames it.
+      expect(scene.filter((p) => p.meta.kind === 'sceneFill').length).toBeGreaterThan(0);
+      expect(scene.some((p) => p.meta.sceneTarget.edgeClass === 'silhouette')).toBe(true);
+    });
   });
 });

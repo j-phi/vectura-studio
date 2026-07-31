@@ -88,11 +88,12 @@ describe('Scene3D panel — buildControls dispatch', () => {
     // Tabs: Scene | Style | Output.
     const tabValues = Array.from(host.querySelectorAll('.tab-btn')).map((b) => b.dataset.value);
     expect(tabValues).toEqual(['scene', 'style', 'output']);
-    // Tree rendered the fixture object.
-    expect(host.querySelectorAll('.vs3-tree-row').length).toBe(1);
+    // Tree rendered the fixture object (plus the always-present Ground row).
+    expect(host.querySelectorAll('.vs3-tree-row:not(.vs3-tree-ground)').length).toBe(1);
+    expect(host.querySelector('.vs3-tree-ground')).toBeTruthy();
     // Selecting the object mounts the inspector (works without CONTRACT D —
     // this renderer has no setSceneSelection, so the panel-local path runs).
-    host.querySelector('.vs3-tree-row').dispatchEvent(new window.Event('click', { bubbles: true }));
+    host.querySelector('.vs3-tree-row:not(.vs3-tree-ground)').dispatchEvent(new window.Event('click', { bubbles: true }));
     expect(host.querySelector('input.ctrl-slider[aria-label="Position X (mm)"]')).toBeTruthy();
     // No generic control list (the branch early-returned before it).
     expect(host.querySelector('.control-label')).toBeFalsy();
@@ -218,14 +219,14 @@ describe('Scene3D panel — behavior (vs3-)', () => {
         byFace: { 'obj-1/face:+X': { penId: 'pen-3', mapper: 'none', params: {} } },
       },
     });
-    expect(container.querySelectorAll('.vs3-tree-row').length).toBe(2);
+    expect(container.querySelectorAll('.vs3-tree-row:not(.vs3-tree-ground)').length).toBe(2);
 
     const firstRow = container.querySelector('.vs3-tree-row[data-object-id="obj-1"]');
     fire(firstRow.querySelector('.vs3-tree-del'), 'click');
 
     expect(layer.params.objects.length).toBe(1);
     expect(layer.params.objects[0].id).toBe('obj-2');
-    expect(container.querySelectorAll('.vs3-tree-row').length).toBe(1);
+    expect(container.querySelectorAll('.vs3-tree-row:not(.vs3-tree-ground)').length).toBe(1);
     expect(pushHistory).toHaveBeenCalledTimes(1);
     // Orphaned style entries are swept with the object.
     expect(layer.params.styleTable.byObject['obj-1']).toBeUndefined();
@@ -428,6 +429,31 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     fire(moreBtn2, 'click');
     expect(second.layer.params.objects.length).toBe(1);
     expect(second.layer.params.objects[0].primitive).toBe('torusKnot');
+  });
+
+  test('Ground is always in the scene tree; its visibility toggles params.ground.enabled', () => {
+    const { container, layer } = mount();
+    const ground = container.querySelector('.vs3-tree-ground');
+    expect(ground).toBeTruthy();
+    expect(ground.querySelector('.vs3-tree-name').textContent).toBe('Ground');
+    expect(layer.params.ground.enabled).not.toBe(false);
+    fire(ground.querySelector('.vs3-tree-vis'), 'click');
+    expect(layer.params.ground.enabled).toBe(false);
+  });
+
+  test('curved-primitive inspector exposes dimension controls (torus: Diameter + Thickness) that write linked params', () => {
+    const { container } = mount({
+      objects: [{
+        id: 'obj-1', name: 'Torus', primitive: 'torus',
+        params: { sx: 34, sy: 9, sz: 9, detail: 24 },
+        transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+      }],
+    });
+    fire(container.querySelector('.vs3-tree-row[data-object-id="obj-1"]'), 'click');
+    const labels = Array.from(container.querySelectorAll('.vs3-lbl')).map((e) => e.textContent);
+    expect(labels).toContain('Diameter');
+    expect(labels).toContain('Thickness');
+    expect(labels).toContain('Fidelity');
   });
 
   test('detaching the panel root self-heals: global listeners + portaled flyout are cleaned up', () => {

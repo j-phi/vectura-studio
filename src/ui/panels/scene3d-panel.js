@@ -91,6 +91,23 @@
   // Primitives whose surface tessellation the Fidelity slider controls (box and
   // plane are flat-faced — subdivision would only add coplanar interior edges).
   const FIDELITY_PRIMS = new Set(['sphere', 'cylinder', 'torus', 'cone', 'superellipsoid', 'torusKnot', 'capsule']);
+
+  // Per-primitive dimension controls, mapped to the param keys 1A's builder
+  // reads (sphere: radius; others: sx/sy/sz). `set` allows one control to drive
+  // linked keys (e.g. a torus's tube radius is sy AND sz). Labels are the terms
+  // a user expects, not the raw axis names.
+  const DIM = (label, key, min, max, step, extraKeys) => ({ label, key, min, max, step, extraKeys });
+  const DIMENSIONS = {
+    box: [DIM('Width', 'sx', 2, 200, 1), DIM('Height', 'sy', 2, 200, 1), DIM('Depth', 'sz', 2, 200, 1)],
+    plane: [DIM('Width', 'sx', 2, 300, 1), DIM('Depth', 'sy', 2, 300, 1)],
+    sphere: [DIM('Radius', 'radius', 2, 150, 1)],
+    cylinder: [DIM('Radius', 'sx', 2, 150, 1, ['sz']), DIM('Height', 'sy', 2, 150, 1)],
+    cone: [DIM('Base radius', 'sx', 2, 150, 1, ['sz']), DIM('Height', 'sy', 2, 150, 1)],
+    torus: [DIM('Diameter', 'sx', 4, 200, 1), DIM('Thickness', 'sy', 1, 60, 0.5, ['sz'])],
+    superellipsoid: [DIM('X', 'sx', 2, 150, 1), DIM('Y', 'sy', 2, 150, 1), DIM('Z', 'sz', 2, 150, 1)],
+    torusKnot: [DIM('Radius', 'sx', 6, 150, 1), DIM('Thickness', 'sy', 1, 40, 0.5, ['sz'])],
+    capsule: [DIM('Radius', 'sx', 2, 100, 1, ['sz']), DIM('Length', 'sy', 2, 150, 1)],
+  };
   const SHELF_PRIMS = ['box', 'sphere', 'cylinder', 'torus', 'cone', 'plane'];
   const MORE_PRIMS = ['superellipsoid', 'torusKnot', 'capsule'];
 
@@ -452,7 +469,6 @@
         empty.className = 'vs3-empty';
         empty.textContent = 'No objects yet — add one from the shelf above.';
         treeHost.appendChild(empty);
-        return;
       }
       params.objects.forEach((obj) => {
         const row = document.createElement('div');
@@ -489,6 +505,33 @@
         row.addEventListener('click', () => selectObject(obj.id));
         treeHost.appendChild(row);
       });
+
+      // Ground — a scene fixture (not in params.objects), listed so it can be
+      // shown/hidden and styled like any object.
+      if (!params.ground || typeof params.ground !== 'object') params.ground = { enabled: true };
+      const gRow = document.createElement('div');
+      gRow.className = 'vs3-tree-row vs3-tree-ground';
+      gRow.dataset.objectId = 'ground';
+      if (sel.objectId === 'ground') gRow.classList.add('selected');
+      const gName = document.createElement('span');
+      gName.className = 'vs3-tree-name';
+      gName.textContent = 'Ground';
+      gRow.appendChild(gName);
+      const gVis = document.createElement('button');
+      gVis.type = 'button';
+      gVis.className = 'vs3-tree-vis';
+      const gOn = params.ground.enabled !== false;
+      gVis.title = gOn ? 'Visible (click to hide)' : 'Hidden (click to show)';
+      gVis.setAttribute('aria-label', `Ground ${gOn ? 'visible' : 'hidden'}`);
+      gVis.textContent = gOn ? '●' : '◌';
+      gVis.addEventListener('click', (e) => {
+        e.stopPropagation();
+        commit(() => { params.ground.enabled = !gOn; });
+        renderTree();
+      });
+      gRow.appendChild(gVis);
+      gRow.addEventListener('click', () => selectObject('ground'));
+      treeHost.appendChild(gRow);
     };
 
     // ── Selection (CONTRACT D consumer; guarded) ────────────────────────────
@@ -561,6 +604,13 @@
       if (!inspectorHost) return;
       destroyComps(inspectorComps);
       inspectorHost.textContent = '';
+      if (sel.objectId === 'ground') {
+        const note = document.createElement('p');
+        note.className = 'vs3-empty';
+        note.textContent = 'Ground plane — style it from the Style tab (pen, hatch, wireframe).';
+        inspectorHost.appendChild(note);
+        return;
+      }
       const obj = sel.objectId ? getObject(sel.objectId) : null;
       if (!obj) {
         const empty = document.createElement('p');
@@ -624,6 +674,25 @@
         ariaLabel: 'Uniform scale',
         onCommit: (v) => commit(() => { obj.transform.scale = v; }),
       });
+
+      // Dimensions — per-primitive shape params, in the terms a user expects.
+      const dims = DIMENSIONS[obj.primitive];
+      if (dims && dims.length) {
+        if (!obj.params || typeof obj.params !== 'object') obj.params = {};
+        const fallbackFor = (key) => (key === 'radius' ? 25 : 30);
+        dims.forEach((d) => {
+          const cur = Number.isFinite(obj.params[d.key]) ? obj.params[d.key] : fallbackFor(d.key);
+          sliderRow(inspectorHost, inspectorComps, d.label, {
+            value: cur,
+            min: d.min, max: d.max, step: d.step,
+            ariaLabel: `${obj.primitive} ${d.label.toLowerCase()}`,
+            onCommit: (v) => commit(() => {
+              obj.params[d.key] = v;
+              if (Array.isArray(d.extraKeys)) d.extraKeys.forEach((k) => { obj.params[k] = v; });
+            }),
+          });
+        });
+      }
 
       // Fidelity — surface tessellation for curved primitives. Higher = smoother
       // silhouette and more surface detail, at the cost of more plotted lines.

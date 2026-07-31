@@ -189,12 +189,18 @@
         // edge, so the bias absorbs it. The buffer path needs a floor of 0.5
         // regardless of the caller's bias — per-cell depth interpolation is
         // quantized, unlike the exact support-plane evaluation.
+        // Continuous surface hatch lies ON the front surface, so in the rare
+        // buffer-fallback path treat it as visible rather than self-occluding.
+        if (seg.selfObject) return false;
         const owner = seg.ownerKeys && seg.ownerKeys.length ? seg.ownerKeys[0] : undefined;
         return buffer.depthAt(x, y, owner) > z + Math.max(bias, 0.5);
       }
       for (let k = 0; k < occluders.length; k++) {
         const occ = occluders[k];
         if (seg.ownerKeys && seg.ownerKeys.indexOf(occ.id) !== -1) continue; // own face
+        // Continuous surface hatch: the object never occludes its own fill (it
+        // lies ON the front surface). Other objects still occlude it.
+        if (seg.selfObject && occ.objectId === seg.objectId) continue;
         if (occ.limitToObject && occ.objectId !== seg.objectId) continue; // x-ray occluder
         if (x < occ.bbox.minX || x > occ.bbox.maxX || y < occ.bbox.minY || y > occ.bbox.maxY) continue;
         if (planeDepthAt(occ, x, y) <= z + bias) continue; // not nearer here

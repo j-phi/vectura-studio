@@ -9350,6 +9350,39 @@
       return layer && layer.params && Array.isArray(layer.params.objects) ? layer.params.objects : [];
     }
 
+    // Gizmo anchor for a scene layer: the 2D bbox of the SELECTED object's
+    // rendered paths (or all scene paths when nothing/only the camera is the
+    // target), returned as { center, ne } in world coords. ne = screen-top-right
+    // corner (max x, min y). Falls through to null if no geometry is present.
+    _sceneGizmoAnchor(layer) {
+      const sel = this.getSceneSelection();
+      const objId = sel && sel.layerId === layer.id && sel.mode === 'object' && sel.objectIds.length === 1
+        ? sel.objectIds[0] : null;
+      const paths = this.getInteractionPaths(layer);
+      let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+      let found = false;
+      (paths || []).forEach((path) => {
+        const target = path && path.meta && path.meta.sceneTarget;
+        if (!target || !Array.isArray(path)) return;
+        if (objId && target.objectId !== objId) return;
+        if (!objId && target.objectId === 'ground') return; // camera anchor skips the ground quad
+        for (let i = 0; i < path.length; i++) {
+          const pt = path[i];
+          if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
+          if (pt.x < minX) minX = pt.x;
+          if (pt.x > maxX) maxX = pt.x;
+          if (pt.y < minY) minY = pt.y;
+          if (pt.y > maxY) maxY = pt.y;
+          found = true;
+        }
+      });
+      if (!found) return null;
+      return {
+        center: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
+        ne: { x: maxX, y: minY },
+      };
+    }
+
     // A scene layer accepts selection/mutation only when it is visible and not
     // locked (directly or via a locked ancestor) — matching 2D layer rules.
     _isSceneLayerEditable(layer) {
@@ -9397,7 +9430,10 @@
         if (!layer || layer.type !== 'scene3d' || !layer.visible || layer.isGroup) continue;
         if (this.isLayerLocked?.(layer.id)) continue;
         const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
-        const tol = Math.max(5 / (this.scale || 1), stroke * 2);
+        // Sparse-wireframe primitives (a box has only 9 edges + 3 faces) are a
+        // thin target; a slightly wider edge-grab makes clicking near an edge or
+        // corner land on the object rather than the ground behind it.
+        const tol = Math.max(9 / (this.scale || 1), stroke * 2);
         const tolSq = tol * tol;
         const paths = this.getInteractionPaths(layer);
         const edgeOrdinals = this._sceneEdgeOrdinals(paths);
@@ -9424,9 +9460,15 @@
           // Partially-occluded faces emit OPEN visible runs; 1A stamps the full
           // closed outline as target.pickPolygon so point-in-poly still hits the
           // whole face. Fully-visible faces are closed paths (poly === path).
-          const pickPoly = kind === 'sceneFace' && Array.isArray(target.pickPolygon)
+          // A face is point-in-poly pickable when it is a sceneFace, OR a
+          // sceneFill (hatch) that carries the face outline as pickPolygon —
+          // surface-filled faces suppress their outline, so the fill lines are
+          // the face's pick surface.
+          const facePickable = kind === 'sceneFace'
+            || (kind === 'sceneFill' && Array.isArray(target.pickPolygon));
+          const pickPoly = facePickable && Array.isArray(target.pickPolygon)
             ? target.pickPolygon : path;
-          const inPoly = kind === 'sceneFace' ? this.pointInPoly(world, pickPoly) : false;
+          const inPoly = facePickable ? this.pointInPoly(world, pickPoly) : false;
           let distSq = Infinity;
           if (!inPoly) {
             for (let i = 0; i < path.length - 1; i++) {
@@ -9446,7 +9488,7 @@
             return;
           }
           if (mode === 'face') {
-            if (kind !== 'sceneFace' || !inPoly) return;
+            if (!facePickable || !inPoly) return;
             push({
               layer, kind: 'face', key: this._sceneFaceKeyFor(target), objectId: target.objectId,
               faceId: target.faceId, depth, dist: 0, occluded, rank: 0,
@@ -11301,8 +11343,12 @@
       const spec = this.get3DRotationSpec(layer);
       if (!spec || !bounds?.corners) return null;
       const unit = 1 / Math.max(this.scale || 1, 0.001);
-      const center = bounds.center || this.getBoundsCenter(bounds);
-      const target = bounds.corners.ne || center;
+      // Scene layers anchor the gizmo to the SELECTED OBJECT's top-right (or the
+      // whole scene's when orbiting the camera), not the layer's doc-corner
+      // bounds — otherwise it floats far from what it rotates.
+      const sceneAnchor = layer.type === 'scene3d' ? this._sceneGizmoAnchor(layer) : null;
+      const center = sceneAnchor ? sceneAnchor.center : (bounds.center || this.getBoundsCenter(bounds));
+      const target = sceneAnchor ? sceneAnchor.ne : (bounds.corners.ne || center);
       const vx = target.x - center.x;
       const vy = target.y - center.y;
       const len = Math.hypot(vx, vy) || 1;

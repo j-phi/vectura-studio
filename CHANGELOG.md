@@ -7,6 +7,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene Studio Phase 1 polish** (live-testing round): hatch (and any surface
+  mapper) now *replaces* the wireframe on curved primitives — the surface hatches
+  as one continuous region bounded by the silhouette instead of confetti over the
+  tessellation mesh (flat primitives keep per-face hatch so each plane fills in its
+  own orientation). Per-object shape dimensions (torus diameter/thickness, cylinder
+  radius/height, etc.) are editable in the inspector. The orbit gizmo floats at the
+  selected object's top-right (or the whole scene's when orbiting the camera) rather
+  than the document corner. The ground plane is listed in the scene tree (show/hide
+  + styleable). Sparse-wireframe objects (boxes) get a wider edge-grab so they're
+  easier to click. Locked/hidden scene layers are inert; Escape cancels an object
+  drag; partially-occluded and surface-filled faces stay pickable.
+
 - **3D Scene Studio Phase 1 — core scene MVP** (per
   `docs/3d-scene-studio-proposal-final.html` §8; the first user-visible scene):
   - **`scene3d` algorithm + engine (1A).** A new layer type that assembles
