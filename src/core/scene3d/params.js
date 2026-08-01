@@ -31,7 +31,8 @@
     'torusKnot', 'capsule', 'superellipsoid', 'pyramid', 'solid',
   ];
 
-  const MAPPERS = ['none', 'hatch', 'wireframe']; // Phase 1 set; Phase 3 extends.
+  // Phase 1 set + Phase 3 surface-fill mappers.
+  const MAPPERS = ['none', 'hatch', 'wireframe', 'crosshatch', 'contour', 'spiral', 'stipple'];
 
   // Per-primitive params-bag defaults. Sizes are document mm. For the topoform
   // family (ellipsoid…pyramid) sx/sy/sz feed the Scene3D.Mesh chart builders

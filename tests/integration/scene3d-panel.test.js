@@ -383,13 +383,22 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     fire(container.querySelector('.vs3-tree-row'), 'click');
     clickTab(container, 'style');
 
-    fire(container.querySelector('.vs3-style .seg-opt[data-value="hatch"]'), 'click');
+    // The mapper picker is the Select carrying the 'contour' option (the pen
+    // Select is the other .ctrl-sel in the Style tab).
+    // The mapper picker is the Select carrying the 'contour' option (the pen
+    // Select is the other one in the Style tab).
+    const mapSel = [...container.querySelectorAll('select')]
+      .find((s) => [...(s.options || [])].some((o) => o.value === 'contour'));
+    expect(mapSel).toBeTruthy();
+    mapSel.value = 'hatch';
+    fire(mapSel, 'change');
     const stored = layer.params.styleTable.byObject['obj-1'];
     expect(stored.mapper).toBe('hatch');
     expect(stored.params).toEqual({ fillAngle: 45, fillDensity: 50 });
 
-    // Hatch controls mounted after re-render.
-    const density = container.querySelector('input.ctrl-slider[aria-label="Hatch density"]');
+    // Hatch controls mounted after re-render (Density is shared across fill
+    // mappers, so its label is the generic "Fill density").
+    const density = container.querySelector('input.ctrl-slider[aria-label="Fill density"]');
     expect(density).toBeTruthy();
     density.value = '72';
     fire(density, 'input');
@@ -397,6 +406,22 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     expect(layer.params.styleTable.byObject['obj-1'].params.fillDensity).toBe(72);
     // Whole-style commit preserved the angle.
     expect(layer.params.styleTable.byObject['obj-1'].params.fillAngle).toBe(45);
+  });
+
+  test('Style tab · a region mapper (contour) mounts Density but NOT Angle; seeds density default', () => {
+    const { container, layer } = mount({ objects: [fixtureObject(1)] });
+    fire(container.querySelector('.vs3-tree-row'), 'click');
+    clickTab(container, 'style');
+    const mapSel = [...container.querySelectorAll('select')]
+      .find((s) => [...(s.options || [])].some((o) => o.value === 'contour'));
+    mapSel.value = 'contour';
+    fire(mapSel, 'change');
+    // Seeded with a density-only default (no fillAngle).
+    expect(layer.params.styleTable.byObject['obj-1'].mapper).toBe('contour');
+    expect(layer.params.styleTable.byObject['obj-1'].params).toEqual({ fillDensity: 50 });
+    // Density control present; Angle control absent for a region mapper.
+    expect(container.querySelector('input.ctrl-slider[aria-label="Fill density"]')).toBeTruthy();
+    expect(container.querySelector('[aria-label="Hatch angle"]')).toBeFalsy();
   });
 
   test('a face selection (CONTRACT D event) scopes the Style tab to byFace', () => {

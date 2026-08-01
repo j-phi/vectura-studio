@@ -40,6 +40,13 @@
 
   const FALLBACK_STYLE = { penId: null, mapper: 'none', params: {} };
 
+  // Mappers that fill the SURFACE (vs 'none' = outlines, 'wireframe' = edges).
+  // A surface fill replaces the face outline + creases with the treatment.
+  // hatch/crosshatch are line fills handled in-plane; contour/spiral/stipple are
+  // region fills delegated to Scene3D.Mappers on the projected region polygon.
+  const SURFACE_FILL = new Set(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
+  const REGION_MAPPERS = new Set(['contour', 'spiral', 'stipple']);
+
   const makeStyleResolver = (styleTable) => {
     const cascade = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
     const cache = new Map();
@@ -179,6 +186,8 @@
       const Lighting = Vectura.Scene3D.Lighting;
       const Regions = Vectura.Scene3D.Regions;
       const Shadows = Vectura.Scene3D.Shadows;
+      const Mappers = Vectura.Scene3D.Mappers;
+      const linkSegments = G3.linkSegments;
       const light = (p.lights && p.lights[0]) || {};
       const lightDir = Lighting && typeof Lighting.lightWorldDir === 'function'
         ? Lighting.lightWorldDir(light) : null;
@@ -199,34 +208,64 @@
       // measured in the face plane (0 = along the face's first edge). Spacing is
       // Phase-1 density when tone is off, else intensity→coverage; the darkest
       // tone band adds a perpendicular cross-pass. Returns SCREEN-space lines.
-      const faceHatchLines = (face, styleParams, normalWorld) => {
+      // Tone-aware fill spacing for a face/region normal + its darkest-band flag.
+      // Phase-1 density when tone is off, else intensity→band→coverage→spacing.
+      const spacingBand = (normalWorld, styleParams) => {
+        if (!toneOn) return { spacing: hatchSpacing(styleParams.fillDensity), bandIdx: -1 };
+        const bandIdx = Regions.band(Regions.intensity(normalWorld, Lvec), p.tone);
+        return { spacing: Regions.coverageToSpacing(Regions.coverageFor(bandIdx, p.tone), penWidth), bandIdx };
+      };
+
+      // In-plane basis for a flat face: its world verts expressed in a 2D (u,v)
+      // frame on the face (WORLD mm), plus a uv→screen projector. Fills are
+      // generated in this frame so their spacing is true surface mm and they
+      // foreshorten with the face when projected. null ⇒ caller falls back to
+      // the cheap screen-space fill (draft, or a face without world verts).
+      const faceUVScaffold = (face, normalWorld) => {
         const wv = face.worldVerts;
-        // Draft (live drag) and the no-world-verts fallback both take the cheap
-        // screen-space hatch — the plane-projection below runs the full camera
-        // pipeline per hatch vertex, too costly for a coalesced drag frame. The
-        // surface-oriented 3D hatch snaps back in on release (full quality).
-        if (draft || !scene.projectWorld || !Array.isArray(wv) || wv.length < 3) {
-          const angleDeg = finite(styleParams.fillAngle, 45);
-          const spacing = toneOn
-            ? Regions.coverageToSpacing(Regions.coverageFor(Regions.band(Regions.intensity(normalWorld, Lvec), p.tone), p.tone), penWidth)
-            : hatchSpacing(styleParams.fillDensity);
-          return hatchPolygon(face.polygon, { angleDeg, spacing });
-        }
+        if (draft || !scene.projectWorld || !Array.isArray(wv) || wv.length < 3) return null;
         const origin = wv[0];
         const U = normalize(sub(wv[1], origin));
         const V = normalize(cross(normalWorld, U)); // in-plane, ⟂ U
         const uv = wv.map((pw) => { const d = sub(pw, origin); return { x: dot(d, U), y: dot(d, V) }; });
         const toScreen = (pt) => scene.projectWorld(add(origin, add(mul(U, pt.x), mul(V, pt.y))));
+        return { uv, toScreen };
+      };
+
+      const faceHatchLines = (face, styleParams, normalWorld, crossPass) => {
         const angleDeg = finite(styleParams.fillAngle, 45);
-        let spacing = hatchSpacing(styleParams.fillDensity);
-        let bandIdx = -1;
-        if (toneOn) {
-          bandIdx = Regions.band(Regions.intensity(normalWorld, Lvec), p.tone);
-          spacing = Regions.coverageToSpacing(Regions.coverageFor(bandIdx, p.tone), penWidth);
+        const scaf = faceUVScaffold(face, normalWorld);
+        if (!scaf) {
+          // Cheap screen-space hatch (draft / no world verts) — snaps back to the
+          // surface-oriented hatch on release.
+          const spacing = spacingBand(normalWorld, styleParams).spacing;
+          const lines = hatchPolygon(face.polygon, { angleDeg, spacing });
+          if (crossPass) hatchPolygon(face.polygon, { angleDeg: angleDeg + 90, spacing }).forEach((l) => lines.push(l));
+          return lines;
         }
-        const uvLines = hatchPolygon(uv, { angleDeg, spacing });
-        if (bandIdx === 0) hatchPolygon(uv, { angleDeg: angleDeg + 90, spacing }).forEach((l) => uvLines.push(l));
-        return uvLines.map((line) => line.map(toScreen));
+        const { spacing, bandIdx } = spacingBand(normalWorld, styleParams);
+        const uvLines = hatchPolygon(scaf.uv, { angleDeg, spacing });
+        // Crosshatch always adds the perpendicular pass; plain hatch adds it only
+        // in the darkest tone band (extra density where the surface is unlit).
+        if (crossPass || bandIdx === 0) hatchPolygon(scaf.uv, { angleDeg: angleDeg + 90, spacing }).forEach((l) => uvLines.push(l));
+        return uvLines.map((line) => line.map(scaf.toScreen));
+      };
+
+      // Region fill (contour/spiral/stipple) for a flat face — generated IN THE
+      // FACE PLANE (true surface mm) then projected, so density matches hatch and
+      // the fill foreshortens with the face. Falls back to a screen-space fill
+      // when there is no plane scaffold.
+      const faceRegionLines = (face, mapper, normalWorld, styleParams) => {
+        if (!Mappers || typeof Mappers.regionFill !== 'function') return [];
+        // Region fills (rings/dots) read the Density slider directly (1–14mm) —
+        // NOT the tone spacing, which floors near the pen width for line coverage
+        // and would pack thousands of rings/dots. Tone-driven region density is
+        // a later refinement.
+        const spacing = hatchSpacing(finite(styleParams.fillDensity, 50));
+        const scaf = faceUVScaffold(face, normalWorld);
+        if (!scaf) return Mappers.regionFill(mapper, [face.polygon], { spacing }) || [];
+        const uvLines = Mappers.regionFill(mapper, [scaf.uv], { spacing }) || [];
+        return uvLines.map((line) => line.map(scaf.toScreen));
       };
 
       const emitRuns = (runs, baseMeta, hiddenTreatment, hiddenExtras) => {
@@ -270,7 +309,7 @@
           // a mesh. The shape's real outline still comes from silhouette +
           // boundary edges below. Face picking survives via the hatch lines,
           // which carry the full face outline as pickPolygon.
-          const surfaceFill = style.mapper === 'hatch';
+          const surfaceFill = SURFACE_FILL.has(style.mapper);
           const segCtx = { ownerKeys: [face.key], objectId: record.id };
           const loop = face.polygon.concat([face.polygon[0]]);
           const clipped = clipper.clipPath(loop, segCtx);
@@ -300,11 +339,21 @@
             }
           }
 
-          if (faceted && style.mapper === 'hatch') {
+          if (faceted && surfaceFill) {
             const plane = HLR.fitSupportPlane(face.polygon);
             if (plane) {
               const styleParams = style.params || {};
-              const lines = faceHatchLines(face, styleParams, face.normalWorld);
+              // Draft (live drag) always renders the cheap screen-space hatch so
+              // a coalesced frame stays responsive; full quality dispatches the
+              // real mapper. Line fills (hatch/crosshatch) hatch IN-PLANE for the
+              // 3D read; region fills (contour/spiral/stipple) fill the projected
+              // face polygon and are mapped back onto the plane below.
+              let lines;
+              if (draft || !REGION_MAPPERS.has(style.mapper)) {
+                lines = faceHatchLines(face, styleParams, face.normalWorld, style.mapper === 'crosshatch');
+              } else {
+                lines = faceRegionLines(face, style.mapper, face.normalWorld, styleParams);
+              }
               const fillMeta = {
                 algorithm: 'scene3d',
                 kind: 'sceneFill',
@@ -335,9 +384,9 @@
           record.faces.forEach((face, idx) => {
             if (!face.front) return;
             const st = styleOf(face);
-            if (st.mapper !== 'hatch') return;
+            if (!SURFACE_FILL.has(st.mapper)) return;
             const sp = st.params || {};
-            const key = `${st.penId || ''}|${finite(sp.fillAngle, 45)}|${finite(sp.fillDensity, 50)}`;
+            const key = `${st.penId || ''}|${st.mapper}|${finite(sp.fillAngle, 45)}|${finite(sp.fillDensity, 50)}`;
             let g = groups.get(key);
             if (!g) { g = { style: st, faces: [] }; groups.set(key, g); }
             g.faces.push(idx);
@@ -362,8 +411,24 @@
               spacing = Regions.coverageToSpacing(Regions.coverageFor(bandIdx, p.tone), penWidth);
               darkBand = bandIdx === 0;
             }
-            const lines = hatchSegments(boundary, angleDeg, spacing);
-            if (darkBand) hatchSegments(boundary, angleDeg + 90, spacing).forEach((l) => lines.push(l));
+            // Dispatch by mapper. Draft frames and line mappers (hatch/
+            // crosshatch) use the cheap scanline fill; region mappers (contour/
+            // spiral/stipple) fill the linked silhouette loops at full quality.
+            let lines;
+            if (draft || !REGION_MAPPERS.has(g.style.mapper)) {
+              lines = hatchSegments(boundary, angleDeg, spacing);
+              if (g.style.mapper === 'crosshatch' || darkBand) {
+                hatchSegments(boundary, angleDeg + 90, spacing).forEach((l) => lines.push(l));
+              }
+            } else {
+              const loops = (linkSegments ? linkSegments(boundary) : [])
+                .filter((lp) => Array.isArray(lp) && lp.length >= 3);
+              // Region fills read the Density slider directly (see faceRegionLines).
+              const regionSpacing = hatchSpacing(finite(sp.fillDensity, 50));
+              lines = Mappers && typeof Mappers.regionFill === 'function'
+                ? (Mappers.regionFill(g.style.mapper, loops, { spacing: regionSpacing }) || [])
+                : [];
+            }
             // Nearest front-face depth for the group: hatch draws over farther
             // objects and is hidden behind nearer ones; the object never
             // occludes its own fill (selfObject).
@@ -409,7 +474,7 @@
           // fill replaces the mesh wireframe. Silhouette and boundary edges
           // (the shape's real outline) always survive.
           if (entry.cls === 'crease' && !wireframeDemand
-            && adjacentFaces.length && adjacentFaces.every((face) => styleOf(face).mapper === 'hatch')) {
+            && adjacentFaces.length && adjacentFaces.every((face) => SURFACE_FILL.has(styleOf(face).mapper))) {
             return;
           }
           // Interior edges surfaced by a wireframe mapper report as creases —

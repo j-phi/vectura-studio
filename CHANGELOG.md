@@ -7,6 +7,14 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene Studio Phase 3 — surface mappers.** Four new fill styles join
+  None / Wireframe / Hatch on every scene surface (per scene, object, or face):
+  **Crosshatch** (hatch plus a perpendicular pass), **Contour** (concentric rings
+  that follow the shape, holes carved), **Spiral** (those rings stitched into one
+  continuous inward pen path), and **Stipple** (a deterministic dot lattice). Each
+  works on flat *and* curved primitives, replaces the wireframe like Hatch does,
+  and has a Density control (Crosshatch also gets an Angle). Region fills read the
+  Density slider directly; live drags preview as flat hatch and resolve on release.
 - **3D Scene on-canvas resize.** Select a scene object and drag a **corner handle**
   to scale it uniformly. Select a **box face** and drag its round push-pull knob to
   resize just that dimension (the face's own width/height/depth). Both preview live

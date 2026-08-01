@@ -117,10 +117,29 @@
 
   const MAPPERS = [
     { value: 'none', label: 'None' },
+    { value: 'wireframe', label: 'Wireframe' },
     { value: 'hatch', label: 'Hatch' },
-    { value: 'wireframe', label: 'Wire' },
+    { value: 'crosshatch', label: 'Crosshatch' },
+    { value: 'contour', label: 'Contour' },
+    { value: 'spiral', label: 'Spiral' },
+    { value: 'stipple', label: 'Stipple' },
   ];
   const HATCH_DEFAULTS = { fillAngle: 45, fillDensity: 50 };
+  // Mappers whose params include a hatch Angle (line fills); the rest are region
+  // fills with a Density only. All surface fills expose Density.
+  const ANGLE_MAPPERS = new Set(['hatch', 'crosshatch']);
+  const FILL_MAPPERS = new Set(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
+  // Params a mapper is seeded with when selected. Carries the user's current
+  // Density (and Angle, for a line mapper) across a switch between fill mappers
+  // so changing hatch→contour→stipple keeps the tuning instead of resetting it.
+  const mapperDefaults = (mapper, current) => {
+    const cur = current || {};
+    if (!FILL_MAPPERS.has(mapper)) return {};
+    const density = Number.isFinite(cur.fillDensity) ? cur.fillDensity : HATCH_DEFAULTS.fillDensity;
+    if (!ANGLE_MAPPERS.has(mapper)) return { fillDensity: density };
+    const angle = Number.isFinite(cur.fillAngle) ? cur.fillAngle : HATCH_DEFAULTS.fillAngle;
+    return { fillAngle: angle, fillDensity: density };
+  };
 
   // Session-only last-pick memory for the More… flyout (Decision 3). Module
   // scope: survives panel rebuilds/layer switches, resets on reload.
@@ -1031,23 +1050,15 @@
       mapHost.className = 'vs3-ctl';
       mapRow.appendChild(mapHost);
       styleHost.appendChild(mapRow);
-      styleComps.push(UI.SegCtrl(mapHost, {
+      styleComps.push(UI.Select(mapHost, {
         options: MAPPERS,
         value: resolved.mapper || 'none',
         ariaLabel: 'Style mapper',
-        onChange: (v) => commitStyle({
-          mapper: v,
-          params: v === 'hatch'
-            ? {
-              fillAngle: Number.isFinite(resolved.params && resolved.params.fillAngle) ? resolved.params.fillAngle : HATCH_DEFAULTS.fillAngle,
-              fillDensity: Number.isFinite(resolved.params && resolved.params.fillDensity) ? resolved.params.fillDensity : HATCH_DEFAULTS.fillDensity,
-            }
-            : {},
-        }),
+        onChange: (v) => commitStyle({ mapper: v, params: mapperDefaults(v, resolved.params) }),
       }));
 
-      // Hatch params
-      if (resolved.mapper === 'hatch') {
+      // Angle (hatch / crosshatch line fills only).
+      if (ANGLE_MAPPERS.has(resolved.mapper)) {
         const angleRow = document.createElement('div');
         angleRow.className = 'vs3-row';
         const angleLbl = document.createElement('label');
@@ -1075,13 +1086,17 @@
             onCommit: (v) => commitStyle({ params: { ...clone(resolved.params || {}), fillAngle: v } }),
           }));
         }
+      }
 
+      // Density (every surface fill: hatch/crosshatch line spacing, or the
+      // contour/spiral ring spacing, or the stipple dot spacing).
+      if (FILL_MAPPERS.has(resolved.mapper)) {
         sliderRow(styleHost, styleComps, 'Density', {
           value: Number.isFinite(resolved.params && resolved.params.fillDensity)
             ? resolved.params.fillDensity : HATCH_DEFAULTS.fillDensity,
           min: 1, max: 100, step: 1,
           defaultValue: HATCH_DEFAULTS.fillDensity,
-          ariaLabel: 'Hatch density',
+          ariaLabel: 'Fill density',
           onCommit: (v) => commitStyle({ params: { ...clone(resolved.params || {}), fillDensity: v } }),
         });
       }

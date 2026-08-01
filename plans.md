@@ -210,6 +210,21 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — 3D Scene Studio Phase 3 (Mappers, feedback #5).** Off `3d-scene/p2r` on
+  branch `3d-scene/p3`: four surface-fill mappers — **crosshatch** (hatch + perpendicular pass),
+  **contour** (concentric inset rings), **spiral** (rings stitched into one inward snake),
+  **stipple** (deterministic jittered dot lattice, no RNG) — joining none/hatch/wireframe. New
+  `Scene3D.Mappers` module (`regionFill(mapper, loops, {spacing})`, pure 2D on closed screen
+  loops); reuses `GeometryUtils.insetMultiPolygon`/`stitchConcentricRings` (hole- and
+  concavity-safe boolean offset) + `circlePath` + `PathBoolean.pointInPolygon`. scene3d.js
+  dispatch: SURFACE_FILL (outline+crease suppression) / REGION_MAPPERS routing; flat faces fill
+  IN THE FACE PLANE (uv scaffold → project back, correct mm density + foreshorten), curved fills
+  the linked silhouette loops; region spacing reads the Density slider (decoupled from tone);
+  draft uses the cheap screen hatch for all mappers. params.js whitelist + panel Select picker.
+  Review gate (8 confirmed) all fixed: stipple blank on triangular faces (pointInPolygon needs the
+  closed ring), stipple cap → uniform thinning, contour/spiral hole-carving + concave via boolean
+  offset, mapper-switch preserves Density/Angle. 16 mapper tests + panel coverage; verified live
+  on box/sphere/torus/icosahedron.
 - **Unreleased — 3D Scene on-canvas resize (feedback #1).** Off `3d-scene/p2` on branch
   `3d-scene/p2r`: a uniform-scale gizmo (corner handles on the selected object's projected
   bbox → `transform.scale` about centre) and a box **face-pull** knob (a box face selection
