@@ -222,7 +222,10 @@
       // The drag shows flat Phase-1 hatch; full tone returns on release.
       const draft = Boolean(bounds && bounds.fastPreview);
       const toneOn = Boolean(!draft && p.tone && p.tone.enabled && Regions && lightDir);
-      const Lvec = toneOn ? Regions.towardLight(light) : null;
+      // Multi-light shading: intensity at a world normal is ambient + every
+      // directional light's weighted Lambert term (Regions.combinedIntensity),
+      // clamped to [0,1]. A lone sun reduces to the Phase-2 single-light look.
+      const intensityFn = toneOn ? (nw) => Regions.combinedIntensity(nw, p.lights) : null;
       const penWidth = finite(bounds.penWidth, 0.3);
 
       // Hatch a flat face IN ITS OWN PLANE and project the result to screen, so
@@ -235,7 +238,7 @@
       // Phase-1 density when tone is off, else intensity→band→coverage→spacing.
       const spacingBand = (normalWorld, styleParams) => {
         if (!toneOn) return { spacing: hatchSpacing(styleParams.fillDensity), bandIdx: -1 };
-        const bandIdx = Regions.band(Regions.intensity(normalWorld, Lvec), p.tone);
+        const bandIdx = Regions.band(intensityFn(normalWorld), p.tone);
         return { spacing: Regions.coverageToSpacing(Regions.coverageFor(bandIdx, p.tone), penWidth), bandIdx };
       };
 
@@ -437,7 +440,7 @@
                 if (n) { mx += n.x; my += n.y; mz += n.z; cnt += 1; }
               });
               const meanN = cnt ? { x: mx / cnt, y: my / cnt, z: mz / cnt } : { x: 0, y: 0, z: 1 };
-              const bandIdx = Regions.band(Regions.intensity(meanN, Lvec), p.tone);
+              const bandIdx = Regions.band(intensityFn(meanN), p.tone);
               spacing = Regions.coverageToSpacing(Regions.coverageFor(bandIdx, p.tone), penWidth);
               darkBand = bandIdx === 0;
             }
@@ -460,7 +463,7 @@
                 fillAngle: angleDeg,
                 fillDensity: finite(sp.fillDensity, 50),
                 toneOn,
-                Lvec,
+                intensityFn,
               });
             }
             if (!lines) {
@@ -561,13 +564,21 @@
       // (CONTRACT L4) — cheap ground projection, no FillBoolean union — while a
       // full frame does the clean class union. Both are y≥0-clipped so a caster
       // straddling the receiver still projects a correct footprint.
-      if (Shadows && typeof Shadows.build === 'function' && lightDir) {
+      if (Shadows && typeof Shadows.build === 'function' && Lighting) {
         const shadowStyleOf = (objectId) => {
           const st = resolveStyle(objectId, null);
           return { penId: st && st.penId ? st.penId : null };
         };
-        Shadows.build(scene, p, bounds, clipper, lightDir, { styleOf: shadowStyleOf })
-          .forEach((path) => out.push(path));
+        // Multi-light: every shadow-casting DIRECTIONAL light drops its own
+        // footprint (ambient lights don't cast). A lone sun → one shadow set,
+        // exactly as before.
+        (p.lights || []).forEach((lt) => {
+          if (!lt || lt.type === 'ambient' || lt.castShadows === false) return;
+          const dir = Lighting.lightWorldDir(lt);
+          if (!dir) return;
+          Shadows.build(scene, p, bounds, clipper, dir, { styleOf: shadowStyleOf })
+            .forEach((path) => out.push(path));
+        });
       }
 
       return out;

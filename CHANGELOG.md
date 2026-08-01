@@ -145,6 +145,16 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   the Direct Selection status-bar hint document the new shortcuts.
 
 ### Added
+- **3D Scene — multi-light shading foundation (directional + ambient).** The
+  scene now shades from every light in `params.lights`, not just the first:
+  intensity at a surface = an **ambient** fill term plus each **directional**
+  light's weighted Lambert contribution, clamped to [0,1]
+  (`Regions.combinedIntensity`). Each light carries an `intensity` weight; an
+  ambient light softens the shadowed side (fills the darkest tone band) without
+  casting, and **every shadow-casting directional light drops its own footprint**.
+  A lone sun with no ambient stays byte-identical to before. (Engine + params +
+  shadows; the panel UI to add/manage lights and positional point/spot lights
+  follow as the next increments.)
 - **3D Scene — unified per-object transform gizmo (move · rotate · scale).** A
   Cinema4D-style gizmo now appears on the selected scene object with all handles
   shown at once: three colour-coded move arrows (X amber, Y violet, Z cyan), three

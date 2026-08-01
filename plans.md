@@ -221,8 +221,13 @@ question. Do not start these without a decision:
   specular disc), and hatch ≠ crosshatch. (J) a unified Cinema4D-style per-object transform
   gizmo (move arrows + rotate rings + scale boxes, all shown at once) drives
   params.objects[i].transform and supersedes the legacy corner-scale handle; the scene orbit
-  gizmo still drives the camera. Still open on this branch: (G) the multi-light-type system
-  (point/spot/area/ambient/emissive) — the sun is already a proper directional light.
+  gizmo still drives the camera. (G) multi-light shading FOUNDATION landed (v1.3.23): scene
+  shades from every light — ambient fill + per-directional weighted Lambert
+  (`Regions.combinedIntensity`, clamped), each shadow-casting directional light drops its own
+  footprint, lone sun byte-identical. Still open on this branch (G, next increments): the panel
+  UI to add/manage lights (per-light inspector, add ambient/directional, delete), and positional
+  point/spot lights (position gizmo + per-face light direction + point-shadow projection); area
+  and emissive lights are later.
 - **Unreleased — 3D Scene Studio acceptance fixes A/B/C (v1.3.18).** On `3d-scene/p4`:
   (A) deleting the last object no longer resurrects a default box — `normalizeParams`
   seeds Box 1 only when the `objects` key is absent, never for an explicit empty array;

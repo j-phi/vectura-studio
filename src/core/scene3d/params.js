@@ -162,13 +162,19 @@
 
   const normalizeLight = (light, index) => {
     const src = isObject(light) ? light : {};
+    // A-15: type field is kept verbatim for unknown (future) light types so new
+    // kinds round-trip without a format migration. v1 renders 'directional' (the
+    // sun) and 'ambient' (a constant fill); unknown types shade as directional.
+    const type = typeof src.type === 'string' && src.type ? src.type : 'directional';
     return {
       id: typeof src.id === 'string' && src.id ? src.id : (index === 0 ? 'sun' : `light-${index + 1}`),
-      // A-15: type field is kept verbatim for unknown (future) light types so
-      // new kinds round-trip without a format migration; v1 renders directional.
-      type: typeof src.type === 'string' && src.type ? src.type : 'directional',
+      type,
       azimuth: finite(src.azimuth, DEFAULT_LIGHT.azimuth),
       elevation: finite(src.elevation, DEFAULT_LIGHT.elevation),
+      // Per-light weight. Directional defaults to 1 (a lone sun stays exactly
+      // Phase-2); ambient defaults to a soft 0.25 fill. Total intensity is
+      // clamped to [0,1] downstream, so this can push/fill without overflow.
+      intensity: clamp(finite(src.intensity, type === 'ambient' ? 0.25 : 1), 0, 4),
       castShadows: src.castShadows !== false,
     };
   };

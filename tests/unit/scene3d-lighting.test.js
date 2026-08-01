@@ -72,6 +72,25 @@ describe('Scene3D.Lighting + Regions (CONTRACT L1/L3)', () => {
     expect(near(Regions.intensity(L, L), 1, 1e-9)).toBe(true);
   });
 
+  test('Regions.combinedIntensity (multi-light: ambient fill + directional sum, clamped)', () => {
+    const sun = { type: 'directional', azimuth: 135, elevation: 45, intensity: 1 };
+    const L = Regions.towardLight(sun);
+    const away = { x: -L.x, y: -L.y, z: -L.z };
+    // A lone directional sun reduces EXACTLY to single-light Lambert (regression).
+    expect(near(Regions.combinedIntensity(L, [sun]), Regions.intensity(L, sun), 1e-9)).toBe(true);
+    expect(Regions.combinedIntensity(away, [sun])).toBe(0);
+    // Ambient adds a flat fill on the UNLIT side (no longer pure black).
+    const amb = { type: 'ambient', intensity: 0.3 };
+    expect(near(Regions.combinedIntensity(away, [sun, amb]), 0.3, 1e-9)).toBe(true);
+    expect(Regions.combinedIntensity(away, [sun, amb])).toBeGreaterThan(Regions.combinedIntensity(away, [sun]));
+    // Two directional lights sum; the total is clamped to 1 (never overflows).
+    const sun2 = { type: 'directional', azimuth: 315, elevation: 45, intensity: 1 };
+    expect(Regions.combinedIntensity(L, [sun, sun2])).toBeGreaterThanOrEqual(Regions.intensity(L, sun));
+    expect(Regions.combinedIntensity(L, [sun, amb, sun2])).toBeLessThanOrEqual(1);
+    // An unknown/future type shades as directional (does not crash or zero out).
+    expect(Regions.combinedIntensity(L, [{ type: 'spot', azimuth: 135, elevation: 45, intensity: 1 }])).toBeGreaterThan(0.9);
+  });
+
   test('band round-trip: low I → band 0, high I → top band', () => {
     const nB = TONE.ladder.length;
     expect(Regions.band(0, TONE)).toBe(0);

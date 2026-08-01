@@ -211,8 +211,9 @@
     if (!scene || !scene.ground || !clipper) return out;
     const HLR = Vectura.Scene3D && Vectura.Scene3D.HLR;
     const FillBoolean = Vectura.FillBoolean;
-    const light = (params && Array.isArray(params.lights) && params.lights[0]) || {};
-    if (light.castShadows === false) return out;
+    // build() casts for the ONE light whose travel direction is passed in — the
+    // caller decides which lights cast (multi-light) and filters out ambient /
+    // castShadows:false lights before calling.
     const d = lightDir;
     if (!d || !Number.isFinite(d.y) || Math.abs(d.y) < MIN_ABS_DY) return out; // grazing/absent
 

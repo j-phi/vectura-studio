@@ -86,6 +86,26 @@
     return Math.max(0, dot(n, L));
   };
 
+  // Combined intensity of a world normal under a LIST of lights (multi-light,
+  // spec §3.2 group G): ambient adds a flat fill; every directional light adds
+  // its weighted Lambert term; the total is clamped to [0,1] so tone banding
+  // stays well-defined. A lone directional sun with intensity 1 and no ambient
+  // reduces EXACTLY to `intensity()` (Phase-2 regression safety). Unknown future
+  // light types shade as directional in v1.
+  const combinedIntensity = (normalWorld, lights) => {
+    const list = Array.isArray(lights) ? lights : (lights ? [lights] : []);
+    const n = normalize(normalWorld || v(0, 0, 1));
+    let total = 0;
+    for (let i = 0; i < list.length; i++) {
+      const light = list[i];
+      if (!light) continue;
+      const weight = finite(light.intensity, 1);
+      if (light.type === 'ambient') { total += weight; continue; }
+      total += Math.max(0, dot(n, towardLight(light))) * weight;
+    }
+    return clamp(total, 0, 1);
+  };
+
   const validLadder = (tone) => {
     const ladder = tone && Array.isArray(tone.ladder) ? tone.ladder.filter((c) => Number.isFinite(c)) : [];
     return ladder.length ? ladder : [0.5];
@@ -196,6 +216,7 @@
 
   const Regions = {
     intensity,
+    combinedIntensity,
     band,
     coverageFor,
     coverageToSpacing,

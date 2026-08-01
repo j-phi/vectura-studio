@@ -199,6 +199,28 @@ describe('Scene3D.Shadows (CONTRACT L2/L4)', () => {
     paths.forEach((p) => expect(['obj-1', 'obj-2']).toContain(p.meta.sceneTarget.casterId));
   });
 
+  test('multi-light: each shadow-casting directional light drops its own footprint; ambient casts none', () => {
+    const algo = V.AlgorithmRegistry.scene3d;
+    const base = {
+      ...clone(defaults), objects: [boxObj('obj-1', 0, 20, 40)], ground: { enabled: true },
+      camera: { projection: 'orthographic', yaw: 0, pitch: 55, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 },
+    };
+    const shadowLen = (lights) => {
+      const paths = algo.generate(V.Scene3D.Params.normalizeParams({ ...base, lights }), null, null, BOUNDS) || [];
+      return paths.filter((p) => p.meta && p.meta.sceneTarget && p.meta.sceneTarget.regionClass === 'castShadow')
+        .reduce((n, p) => n + p.length, 0);
+    };
+    const sun = { id: 'sun', type: 'directional', azimuth: 160, elevation: 40, castShadows: true };
+    const l2 = { id: 'l2', type: 'directional', azimuth: 20, elevation: 40, castShadows: true };
+    const amb = { id: 'amb', type: 'ambient', intensity: 0.4 };
+    const one = shadowLen([sun]);
+    expect(one).toBeGreaterThan(0);
+    // A second directional light adds a second footprint (more shadow run length).
+    expect(shadowLen([sun, l2])).toBeGreaterThan(one);
+    // Ambient casts NOTHING — the footprint is unchanged by adding it.
+    expect(shadowLen([sun, amb])).toBe(one);
+  });
+
   test('grazing light is skipped (no shadows below ~2°)', () => {
     expect(shadowPaths(runShadows([boxObj('obj-1', 0, 20)], { azimuth: 180, elevation: 0.5 })).length).toBe(0);
     expect(shadowPaths(runShadows([boxObj('obj-1', 0, 20)], { azimuth: 180, elevation: 45 })).length).toBeGreaterThan(0);

@@ -63,7 +63,8 @@
 
   // buildObject(opts) → array of screen polylines, or null when unsupported.
   //   opts: { mode, sizes, detail, transform, applyTransform, projectWorld,
-  //           camAngles, mapper, fillAngle, fillDensity, toneOn, Lvec }
+  //           camAngles, mapper, fillAngle, fillDensity, toneOn, intensityFn }
+  //   intensityFn(worldNormal) → [0,1] combined multi-light intensity.
   const buildObject = (opts) => {
     if (!opts || !rotatePoint) return null;
     const chart = chartFor(opts.mode, opts.sizes);
@@ -74,8 +75,8 @@
     const t = opts.transform || { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
     const rot = { yaw: finite(t.yaw, 0), pitch: finite(t.pitch, 0), roll: finite(t.roll, 0) };
     const cam = opts.camAngles || { yaw: 0, pitch: 0, roll: 0 };
-    const toneOn = Boolean(opts.toneOn && opts.Lvec);
-    const Lvec = opts.Lvec || null;
+    const toneOn = Boolean(opts.toneOn && typeof opts.intensityFn === 'function');
+    const intensityFn = opts.intensityFn || null;
     const EPS = 1e-3;
 
     // Sample the surface at (a,b) → screen point + front flag + Lambert intensity.
@@ -96,7 +97,7 @@
       const camN = rotatePoint(wN, cam);
       const scr = projectWorld(world);
       if (!scr || !Number.isFinite(scr.x) || !Number.isFinite(scr.y)) return null;
-      const I = toneOn ? Math.max(0, dot(wN, Lvec)) : 1;
+      const I = toneOn ? clamp(intensityFn(wN), 0, 1) : 1;
       return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, I };
     };
 
