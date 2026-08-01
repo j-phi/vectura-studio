@@ -58,6 +58,15 @@
     cameraDistance: 620, focalLength: 520, zoom: 1,
   };
   const DEFAULT_LIGHT = { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true };
+  // Positional (point/spot) light defaults. `position` is a world-space point;
+  // `range` is the LINEAR falloff distance in world mm (0 ⇒ no falloff). A spot
+  // adds a `target` (cone axis = normalize(target − position)), a `coneAngle`
+  // (half-angle deg) and a soft `penumbra` (deg) edge.
+  const DEFAULT_LIGHT_POSITION = { x: 120, y: 200, z: 120 };
+  const DEFAULT_LIGHT_TARGET = { x: 0, y: 0, z: 0 };
+  const DEFAULT_LIGHT_RANGE = 400;
+  const DEFAULT_CONE_ANGLE = 30;
+  const DEFAULT_PENUMBRA = 8;
   // CONTRACT L3 — light-driven tone. `enabled: false` ⇒ EXACT Phase 1 flat look.
   // bands is a soft hint (2|3|4); the tone READER (Scene3D.Regions) trusts the
   // ladder length for the real band count, so a hand-edited length mismatch
@@ -160,13 +169,23 @@
     };
   };
 
+  const normalizeVec3 = (val, fallback) => {
+    const src = isObject(val) ? val : {};
+    return {
+      x: finite(src.x, fallback.x),
+      y: finite(src.y, fallback.y),
+      z: finite(src.z, fallback.z),
+    };
+  };
+
   const normalizeLight = (light, index) => {
     const src = isObject(light) ? light : {};
     // A-15: type field is kept verbatim for unknown (future) light types so new
     // kinds round-trip without a format migration. v1 renders 'directional' (the
-    // sun) and 'ambient' (a constant fill); unknown types shade as directional.
+    // sun), 'ambient' (a constant fill), and the positional 'point'/'spot'
+    // lights; unknown types shade as directional.
     const type = typeof src.type === 'string' && src.type ? src.type : 'directional';
-    return {
+    const out = {
       id: typeof src.id === 'string' && src.id ? src.id : (index === 0 ? 'sun' : `light-${index + 1}`),
       type,
       azimuth: finite(src.azimuth, DEFAULT_LIGHT.azimuth),
@@ -177,6 +196,18 @@
       intensity: clamp(finite(src.intensity, type === 'ambient' ? 0.25 : 1), 0, 4),
       castShadows: src.castShadows !== false,
     };
+    // Positional lights carry a world position + linear-falloff range; a spot
+    // additionally carries the cone axis target + cone/penumbra half-angles.
+    if (type === 'point' || type === 'spot') {
+      out.position = normalizeVec3(src.position, DEFAULT_LIGHT_POSITION);
+      out.range = Math.max(0, finite(src.range, DEFAULT_LIGHT_RANGE));
+      if (type === 'spot') {
+        out.target = normalizeVec3(src.target, DEFAULT_LIGHT_TARGET);
+        out.coneAngle = clamp(finite(src.coneAngle, DEFAULT_CONE_ANGLE), 1, 89);
+        out.penumbra = clamp(finite(src.penumbra, DEFAULT_PENUMBRA), 0, 45);
+      }
+    }
+    return out;
   };
 
   const ladderFor = (n) => {

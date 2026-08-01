@@ -24,6 +24,7 @@
   const clamp = G3.clamp || ((value, min, max) => Math.max(min, Math.min(max, Number(value) || 0)));
   const v = G3.v || ((x, y, z) => ({ x, y, z }));
   const mul = G3.mul || ((a, s) => v(a.x * s, a.y * s, a.z * s));
+  const sub = G3.sub || ((a, b) => v(a.x - b.x, a.y - b.y, a.z - b.z));
   const dot = G3.dot || ((a, b) => a.x * b.x + a.y * b.y + a.z * b.z);
   const normalize = G3.normalize || ((a) => {
     const len = Math.hypot(a.x, a.y, a.z) || 1;
@@ -86,21 +87,73 @@
     return Math.max(0, dot(n, L));
   };
 
-  // Combined intensity of a world normal under a LIST of lights (multi-light,
-  // spec §3.2 group G): ambient adds a flat fill; every directional light adds
-  // its weighted Lambert term; the total is clamped to [0,1] so tone banding
-  // stays well-defined. A lone directional sun with intensity 1 and no ambient
-  // reduces EXACTLY to `intensity()` (Phase-2 regression safety). Unknown future
-  // light types shade as directional in v1.
-  const combinedIntensity = (normalWorld, lights) => {
+  // Hermite smoothstep: 0 below edge0, 1 above edge1, smooth in between.
+  const smoothstep = (edge0, edge1, x) => {
+    const denom = (edge1 - edge0) || 1e-9;
+    const t = clamp((x - edge0) / denom, 0, 1);
+    return t * t * (3 - 2 * t);
+  };
+
+  // LINEAR distance falloff for a positional (point/spot) light:
+  //   atten = clamp(1 − dist/range, 0, 1);  range ≤ 0 ⇒ no falloff (atten 1).
+  // Chosen over inverse-square deliberately: the tests (and a plotter tone ramp)
+  // want a monotonic, legible near→far decay across the whole scene, not a spike
+  // that saturates near the bulb and vanishes a few mm out. MUST fall off with
+  // distance — a fragment nearer the light is always at least as bright.
+  const positionalAtten = (dist, range) => {
+    const r = finite(range, 0);
+    if (!(r > 0)) return 1;
+    return clamp(1 - dist / r, 0, 1);
+  };
+
+  // Combined intensity of a world normal AT a world point under a LIST of lights
+  // (multi-light, spec §3.2 group G):
+  //   ambient      → += intensity (flat fill; point-independent);
+  //   directional  → += max(0, n̂·L̂) · intensity (Lambert; point-independent);
+  //   point        → dir = normalize(position − worldPoint);
+  //                  += max(0, n̂·dir) · intensity · atten(dist,range);
+  //   spot         → the point term × a smoothstep cone gate: with
+  //                  axis = normalize(target − position) and
+  //                  toFrag = normalize(worldPoint − position),
+  //                  factor = smoothstep(cos(cone+penumbra), cos(cone), toFrag·axis)
+  //                  (1 inside the cone, soft across the penumbra, 0 outside).
+  // The total is clamped to [0,1] so tone banding stays well-defined. A lone
+  // directional sun with intensity 1 and no ambient reduces EXACTLY to
+  // `intensity()` (Phase-2 regression safety). Unknown future light types shade
+  // as directional in v1. `worldPoint` is only consulted by positional lights;
+  // a missing point defaults to the origin (harmless for direction-only lights).
+  const combinedIntensity = (normalWorld, worldPoint, lights) => {
     const list = Array.isArray(lights) ? lights : (lights ? [lights] : []);
     const n = normalize(normalWorld || v(0, 0, 1));
+    const P = worldPoint && Number.isFinite(worldPoint.x) && Number.isFinite(worldPoint.y) && Number.isFinite(worldPoint.z)
+      ? worldPoint : v(0, 0, 0);
     let total = 0;
     for (let i = 0; i < list.length; i++) {
       const light = list[i];
       if (!light) continue;
       const weight = finite(light.intensity, 1);
-      if (light.type === 'ambient') { total += weight; continue; }
+      const type = light.type;
+      if (type === 'ambient') { total += weight; continue; }
+      if (type === 'point' || type === 'spot') {
+        const pos = light.position || v(0, 0, 0);
+        const toL = sub(pos, P);
+        const dist = Math.hypot(toL.x, toL.y, toL.z);
+        const dir = dist > 1e-9 ? mul(toL, 1 / dist) : v(0, 1, 0);
+        let contrib = Math.max(0, dot(n, dir)) * weight * positionalAtten(dist, light.range);
+        if (type === 'spot' && contrib > 0) {
+          const target = light.target || v(0, 0, 0);
+          const axis = normalize(sub(target, pos));
+          const toFrag = dist > 1e-9 ? mul(toL, -1 / dist) : v(0, -1, 0); // normalize(P − pos)
+          const cosA = dot(toFrag, axis);
+          const cone = finite(light.coneAngle, 30);
+          const pen = finite(light.penumbra, 8);
+          const inner = Math.cos(cone * DEG);
+          const outer = Math.cos((cone + pen) * DEG);
+          contrib *= smoothstep(outer, inner, cosA);
+        }
+        total += contrib;
+        continue;
+      }
       total += Math.max(0, dot(n, towardLight(light))) * weight;
     }
     return clamp(total, 0, 1);

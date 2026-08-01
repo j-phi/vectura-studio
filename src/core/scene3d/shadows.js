@@ -109,6 +109,30 @@
     return proj;
   };
 
+  // PERSPECTIVE projection: cast a ray from the light POSITION Lp THROUGH the
+  // world vertex P and find where it crosses the ground y = 0. The ray is
+  // Lp + t·(P − Lp); y = 0 ⇒ t = Lp.y / (Lp.y − P.y). A point light's rays
+  // DIVERGE, so the ground footprint is larger than the caster (an enlarged
+  // umbra), unlike the parallel directional path. Guards (no Infinity/NaN into
+  // the hull): the light must sit above the ground (Lp.y > 0); a vertex at or
+  // above the light height (Lp.y − P.y ≤ 0) or one whose ray does not cross the
+  // ground going downward (t ≤ 0) casts no finite ground shadow and is skipped.
+  const projectShadowVertexPositional = (P, Lp, camAngles, projOpts) => {
+    if (!P || !Number.isFinite(P.x) || !Number.isFinite(P.y) || !Number.isFinite(P.z)) return null;
+    if (!Lp || !Number.isFinite(Lp.y) || Lp.y <= 0) return null;
+    const denom = Lp.y - P.y;
+    if (!(denom > 1e-6)) return null; // vertex at/above the light height
+    const t = Lp.y / denom;
+    if (!(t > 0) || !Number.isFinite(t)) return null;
+    const gx = Lp.x + t * (P.x - Lp.x);
+    const gz = Lp.z + t * (P.z - Lp.z);
+    if (!Number.isFinite(gx) || !Number.isFinite(gz)) return null;
+    const cam = rotatePoint({ x: gx, y: 0, z: gz }, camAngles);
+    const proj = projectPoint(cam, projOpts);
+    if (!proj || !Number.isFinite(proj.x) || !Number.isFinite(proj.y)) return null;
+    return proj;
+  };
+
   // 2D convex hull (Andrew's monotone chain). Screen points → CCW hull ring.
   const convexHull = (input) => {
     const pts = (input || [])
@@ -141,13 +165,13 @@
   // way into a mirrored bow-tie. Trade-off: the hull fills a concave/torus hole —
   // an accepted v1 approximation that matches the reference. Returns a screen-
   // space ring (≥3 pts) or null.
-  const casterHull = (record, d, camAngles, projOpts) => {
+  const casterHull = (record, projectVertex) => {
     const world = record.world || [];
     const pts = [];
     for (let i = 0; i < world.length; i++) {
       const P = world[i];
       if (!P || !Number.isFinite(P.y) || P.y < -1e-6) continue; // below ground casts nothing onto y=0
-      const q = projectShadowVertex(P, d, camAngles, projOpts);
+      const q = projectVertex(P);
       if (q) pts.push({ x: q.x, y: q.y });
     }
     const hull = convexHull(pts);
@@ -203,7 +227,10 @@
   });
 
   // build(scene, params, bounds, clipper, lightDir, opts)
-  //   opts.styleOf(objectId) -> { penId } (optional shadow style key source)
+  //   opts.styleOf(objectId)   -> { penId } (optional shadow style key source)
+  //   opts.lightPosition {x,y,z} -> when set, casts a PERSPECTIVE (point/spot)
+  //     shadow from that world position instead of the PARALLEL directional
+  //     projection along `lightDir` (which may then be null).
   // Returns an array of emitted shadow fill paths (sceneFill / regionClass
   // 'castShadow'). Empty when there is no ground, no caster, or grazing light.
   const build = (scene, params, bounds = {}, clipper, lightDir, opts = {}) => {
@@ -211,15 +238,24 @@
     if (!scene || !scene.ground || !clipper) return out;
     const HLR = Vectura.Scene3D && Vectura.Scene3D.HLR;
     const FillBoolean = Vectura.FillBoolean;
-    // build() casts for the ONE light whose travel direction is passed in — the
-    // caller decides which lights cast (multi-light) and filters out ambient /
-    // castShadows:false lights before calling.
-    const d = lightDir;
-    if (!d || !Number.isFinite(d.y) || Math.abs(d.y) < MIN_ABS_DY) return out; // grazing/absent
+    // build() casts for the ONE light passed in — the caller decides which
+    // lights cast (multi-light) and filters out ambient / castShadows:false
+    // lights before calling. A positional light supplies opts.lightPosition; a
+    // directional light supplies its travel direction in lightDir.
+    const cam0 = scene.camera || {};
+    const camAngles0 = { yaw: finite(cam0.yaw, 0), pitch: finite(cam0.pitch, 0), roll: finite(cam0.roll, 0) };
+    const projOpts0 = scene.projOpts || {};
+    const lightPosition = opts.lightPosition;
+    const positional = Boolean(lightPosition && Number.isFinite(lightPosition.y) && lightPosition.y > 0);
+    let projectVertex;
+    if (positional) {
+      projectVertex = (P) => projectShadowVertexPositional(P, lightPosition, camAngles0, projOpts0);
+    } else {
+      const d = lightDir;
+      if (!d || !Number.isFinite(d.y) || Math.abs(d.y) < MIN_ABS_DY) return out; // grazing/absent
+      projectVertex = (P) => projectShadowVertex(P, d, camAngles0, projOpts0);
+    }
 
-    const cam = scene.camera || {};
-    const camAngles = { yaw: finite(cam.yaw, 0), pitch: finite(cam.pitch, 0), roll: finite(cam.roll, 0) };
-    const projOpts = scene.projOpts || {};
     const groundFace = scene.ground.faces && scene.ground.faces[0];
     const groundPlane = groundFace && HLR ? HLR.fitSupportPlane(groundFace.polygon) : null;
     const groundDepth = groundFace ? -finite(groundFace.centroidZ, 0) : 0;
@@ -234,7 +270,7 @@
     const casters = [];
     (scene.objects || []).forEach((record) => {
       if (!record || record.isGround) return;
-      const hull = casterHull(record, d, camAngles, projOpts);
+      const hull = casterHull(record, projectVertex);
       if (!hull) return;
       const style = styleOf ? (styleOf(record.id) || {}) : {};
       casters.push({ id: record.id, rings: [hull], penId: style.penId || null, classKey: style.penId || '' });

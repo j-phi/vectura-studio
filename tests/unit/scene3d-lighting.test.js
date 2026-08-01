@@ -76,19 +76,57 @@ describe('Scene3D.Lighting + Regions (CONTRACT L1/L3)', () => {
     const sun = { type: 'directional', azimuth: 135, elevation: 45, intensity: 1 };
     const L = Regions.towardLight(sun);
     const away = { x: -L.x, y: -L.y, z: -L.z };
+    // Signature is combinedIntensity(normalWorld, worldPoint, lights); direction-
+    // only lights (directional/ambient) ignore the point, so null is fine here.
     // A lone directional sun reduces EXACTLY to single-light Lambert (regression).
-    expect(near(Regions.combinedIntensity(L, [sun]), Regions.intensity(L, sun), 1e-9)).toBe(true);
-    expect(Regions.combinedIntensity(away, [sun])).toBe(0);
+    expect(near(Regions.combinedIntensity(L, null, [sun]), Regions.intensity(L, sun), 1e-9)).toBe(true);
+    expect(Regions.combinedIntensity(away, null, [sun])).toBe(0);
     // Ambient adds a flat fill on the UNLIT side (no longer pure black).
     const amb = { type: 'ambient', intensity: 0.3 };
-    expect(near(Regions.combinedIntensity(away, [sun, amb]), 0.3, 1e-9)).toBe(true);
-    expect(Regions.combinedIntensity(away, [sun, amb])).toBeGreaterThan(Regions.combinedIntensity(away, [sun]));
+    expect(near(Regions.combinedIntensity(away, null, [sun, amb]), 0.3, 1e-9)).toBe(true);
+    expect(Regions.combinedIntensity(away, null, [sun, amb])).toBeGreaterThan(Regions.combinedIntensity(away, null, [sun]));
     // Two directional lights sum; the total is clamped to 1 (never overflows).
     const sun2 = { type: 'directional', azimuth: 315, elevation: 45, intensity: 1 };
-    expect(Regions.combinedIntensity(L, [sun, sun2])).toBeGreaterThanOrEqual(Regions.intensity(L, sun));
-    expect(Regions.combinedIntensity(L, [sun, amb, sun2])).toBeLessThanOrEqual(1);
+    expect(Regions.combinedIntensity(L, null, [sun, sun2])).toBeGreaterThanOrEqual(Regions.intensity(L, sun));
+    expect(Regions.combinedIntensity(L, null, [sun, amb, sun2])).toBeLessThanOrEqual(1);
     // An unknown/future type shades as directional (does not crash or zero out).
-    expect(Regions.combinedIntensity(L, [{ type: 'spot', azimuth: 135, elevation: 45, intensity: 1 }])).toBeGreaterThan(0.9);
+    expect(Regions.combinedIntensity(L, null, [{ type: 'area', azimuth: 135, elevation: 45, intensity: 1 }])).toBeGreaterThan(0.9);
+  });
+
+  test('point light: Lambert × distance falloff (nearer = brighter, behind = 0)', () => {
+    // Point light on the +z axis; a face facing +z toward it. range 200 (linear).
+    const point = { type: 'point', intensity: 1, range: 200, position: { x: 0, y: 0, z: 100 } };
+    const nUp = { x: 0, y: 0, z: 1 }; // faces toward the light
+    const near50 = { x: 0, y: 0, z: 50 };   // dist 50  → atten 0.75
+    const far50 = { x: 0, y: 0, z: -50 };   // dist 150 → atten 0.25
+    const iNear = Regions.combinedIntensity(nUp, near50, [point]);
+    const iFar = Regions.combinedIntensity(nUp, far50, [point]);
+    expect(iNear).toBeGreaterThan(iFar);           // falloff: nearer is brighter
+    expect(near(iNear, 0.75, 1e-6)).toBe(true);
+    expect(near(iFar, 0.25, 1e-6)).toBe(true);
+    // A face turned AWAY from the light gets ~0 (Lambert back-face).
+    const nDown = { x: 0, y: 0, z: -1 };
+    expect(Regions.combinedIntensity(nDown, near50, [point])).toBe(0);
+    // range 0 ⇒ no falloff: intensity is distance-invariant (still Lambert-gated).
+    const noFall = { type: 'point', intensity: 1, range: 0, position: { x: 0, y: 0, z: 100 } };
+    expect(near(Regions.combinedIntensity(nUp, near50, [noFall]), 1, 1e-9)).toBe(true);
+    expect(near(Regions.combinedIntensity(nUp, far50, [noFall]), 1, 1e-9)).toBe(true);
+  });
+
+  test('spot light: fragment inside the cone is lit, outside the cone is dark', () => {
+    // Spot overhead at y=100 aimed straight down at the origin; 30° half-angle.
+    const spot = {
+      type: 'spot', intensity: 1, range: 400,
+      position: { x: 0, y: 100, z: 0 }, target: { x: 0, y: 0, z: 0 },
+      coneAngle: 30, penumbra: 8,
+    };
+    const nUp = { x: 0, y: 1, z: 0 }; // faces up toward the spot
+    const inside = { x: 0, y: 0, z: 0 };     // on the cone axis → fully lit
+    const outside = { x: 200, y: 0, z: 0 };  // ~63° off-axis → outside the cone
+    const iIn = Regions.combinedIntensity(nUp, inside, [spot]);
+    const iOut = Regions.combinedIntensity(nUp, outside, [spot]);
+    expect(iIn).toBeGreaterThan(0.5);   // inside the cone: lit (0.75 = Lambert×atten)
+    expect(iOut).toBe(0);               // outside the cone: gated to dark
   });
 
   test('band round-trip: low I → band 0, high I → top band', () => {

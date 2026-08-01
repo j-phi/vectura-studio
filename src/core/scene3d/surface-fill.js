@@ -64,7 +64,8 @@
   // buildObject(opts) → array of screen polylines, or null when unsupported.
   //   opts: { mode, sizes, detail, transform, applyTransform, projectWorld,
   //           camAngles, mapper, fillAngle, fillDensity, toneOn, intensityFn }
-  //   intensityFn(worldNormal) → [0,1] combined multi-light intensity.
+  //   intensityFn(worldNormal, worldPoint) → [0,1] combined multi-light intensity
+  //   (worldPoint is the per-sample world surface point, needed by point/spot).
   const buildObject = (opts) => {
     if (!opts || !rotatePoint) return null;
     const chart = chartFor(opts.mode, opts.sizes);
@@ -97,7 +98,7 @@
       const camN = rotatePoint(wN, cam);
       const scr = projectWorld(world);
       if (!scr || !Number.isFinite(scr.x) || !Number.isFinite(scr.y)) return null;
-      const I = toneOn ? clamp(intensityFn(wN), 0, 1) : 1;
+      const I = toneOn ? clamp(intensityFn(wN, world), 0, 1) : 1;
       return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, I };
     };
 

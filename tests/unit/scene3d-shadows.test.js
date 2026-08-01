@@ -221,6 +221,68 @@ describe('Scene3D.Shadows (CONTRACT L2/L4)', () => {
     expect(shadowLen([sun, amb])).toBe(one);
   });
 
+  // Assemble a scene lit by a single POINT light and project its perspective
+  // ground shadow (no HLR occlusion, isolating the projection). range 0 = no
+  // falloff (irrelevant to geometry).
+  const runPointShadows = (objects, position) => {
+    const p = V.Scene3D.Params.normalizeParams({
+      ...clone(defaults), objects, ground: { enabled: true },
+      lights: [{ id: 'pt', type: 'point', castShadows: true, range: 0, position }],
+      camera: { projection: 'orthographic', yaw: 0, pitch: 55, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 },
+    });
+    const scene = V.Scene3D.Scene.assembleScene(p, BOUNDS);
+    const clipper = HLR.createClipper([], { bias: 0.05 });
+    return { scene, paths: Shadows.build(scene, p, BOUNDS, clipper, null, { lightPosition: p.lights[0].position }) };
+  };
+  const hullPoints = (paths) => {
+    const pts = [];
+    shadowPaths(paths).forEach((pp) => (pp.meta.sceneTarget.pickPolygon || []).forEach((pt) => pts.push(pt)));
+    return pts;
+  };
+  const bbox = (pts) => {
+    let minX = Infinity; let maxX = -Infinity; let cx = 0;
+    pts.forEach((pt) => { if (pt.x < minX) minX = pt.x; if (pt.x > maxX) maxX = pt.x; cx += pt.x; });
+    return { minX, maxX, width: maxX - minX, cx: cx / (pts.length || 1) };
+  };
+
+  test('point light overhead casts a perspective hull roughly centered under the box', () => {
+    const { scene, paths } = runPointShadows([boxObj('obj-1', 0, 20, 30)], { x: 0, y: 200, z: 0 });
+    const shadows = shadowPaths(paths);
+    expect(shadows.length).toBeGreaterThan(0);
+    // Every emitted point is finite (no Infinity/NaN leaked from the projection).
+    shadows.forEach((path) => path.forEach((pt) => {
+      expect(Number.isFinite(pt.x)).toBe(true);
+      expect(Number.isFinite(pt.y)).toBe(true);
+    }));
+    // Shadow footprint centroid sits under the caster (overhead light ⇒ centered).
+    let cx = 0; let n = 0;
+    scene.objects[0].faces.forEach((f) => { if (f.front) f.polygon.forEach((pt) => { cx += pt.x; n += 1; }); });
+    cx /= n;
+    expect(Math.abs(bbox(hullPoints(paths)).cx - cx)).toBeLessThan(25);
+  });
+
+  test('moving the point light sideways shifts the hull away and spreads its far edge', () => {
+    const overhead = runPointShadows([boxObj('obj-1', 0, 20, 30)], { x: 0, y: 200, z: 0 });
+    const sideways = runPointShadows([boxObj('obj-1', 0, 20, 30)], { x: 150, y: 200, z: 0 });
+    const bOver = bbox(hullPoints(overhead.paths));
+    const bSide = bbox(hullPoints(sideways.paths));
+    // Light pushed toward +x ⇒ shadow shifts toward −x (screen).
+    expect(bSide.cx).toBeLessThan(bOver.cx);
+    // Perspective divergence: the off-axis footprint stretches wider than the
+    // centered one (the far edge spreads).
+    expect(bSide.width).toBeGreaterThan(bOver.width);
+  });
+
+  test('a caster vertex above the point light casts no NaN (guarded, still finite)', () => {
+    // Light BELOW the top of the box: the box top (y≈35) is above the light
+    // (y=10), so those vertices are skipped rather than projected to Infinity.
+    const { paths } = runPointShadows([boxObj('obj-1', 0, 20, 30)], { x: 0, y: 10, z: 0 });
+    shadowPaths(paths).forEach((path) => path.forEach((pt) => {
+      expect(Number.isFinite(pt.x)).toBe(true);
+      expect(Number.isFinite(pt.y)).toBe(true);
+    }));
+  });
+
   test('grazing light is skipped (no shadows below ~2°)', () => {
     expect(shadowPaths(runShadows([boxObj('obj-1', 0, 20)], { azimuth: 180, elevation: 0.5 })).length).toBe(0);
     expect(shadowPaths(runShadows([boxObj('obj-1', 0, 20)], { azimuth: 180, elevation: 45 })).length).toBeGreaterThan(0);

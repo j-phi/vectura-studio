@@ -222,11 +222,29 @@
       // The drag shows flat Phase-1 hatch; full tone returns on release.
       const draft = Boolean(bounds && bounds.fastPreview);
       const toneOn = Boolean(!draft && p.tone && p.tone.enabled && Regions && lightDir);
-      // Multi-light shading: intensity at a world normal is ambient + every
-      // directional light's weighted Lambert term (Regions.combinedIntensity),
-      // clamped to [0,1]. A lone sun reduces to the Phase-2 single-light look.
-      const intensityFn = toneOn ? (nw) => Regions.combinedIntensity(nw, p.lights) : null;
+      // Multi-light shading: intensity at a world normal + world POINT is
+      // ambient + every directional Lambert term + every positional (point/spot)
+      // term (distance falloff, spot cone), clamped to [0,1] (Regions.combined-
+      // Intensity). A lone sun reduces to the Phase-2 single-light look. The
+      // world point is only consulted by point/spot lights; a call site with no
+      // meaningful point passes the region centroid.
+      const intensityFn = toneOn ? (nw, wp) => Regions.combinedIntensity(nw, wp, p.lights) : null;
       const penWidth = finite(bounds.penWidth, 0.3);
+
+      // Mean world position of a face's verts (the point at which point/spot
+      // lights are sampled for that face). null when the face has no world verts.
+      const faceWorldCentroid = (face) => {
+        const wv = face && face.worldVerts;
+        if (!Array.isArray(wv) || !wv.length) return null;
+        let x = 0; let y = 0; let z = 0; let c = 0;
+        for (let i = 0; i < wv.length; i++) {
+          const pw = wv[i];
+          if (pw && Number.isFinite(pw.x) && Number.isFinite(pw.y) && Number.isFinite(pw.z)) {
+            x += pw.x; y += pw.y; z += pw.z; c += 1;
+          }
+        }
+        return c ? { x: x / c, y: y / c, z: z / c } : null;
+      };
 
       // Hatch a flat face IN ITS OWN PLANE and project the result to screen, so
       // the strokes lie on the surface and foreshorten with it — a cube reads as
@@ -236,9 +254,9 @@
       // tone band adds a perpendicular cross-pass. Returns SCREEN-space lines.
       // Tone-aware fill spacing for a face/region normal + its darkest-band flag.
       // Phase-1 density when tone is off, else intensity→band→coverage→spacing.
-      const spacingBand = (normalWorld, styleParams) => {
+      const spacingBand = (normalWorld, styleParams, worldPoint) => {
         if (!toneOn) return { spacing: hatchSpacing(styleParams.fillDensity), bandIdx: -1 };
-        const bandIdx = Regions.band(intensityFn(normalWorld), p.tone);
+        const bandIdx = Regions.band(intensityFn(normalWorld, worldPoint), p.tone);
         return { spacing: Regions.coverageToSpacing(Regions.coverageFor(bandIdx, p.tone), penWidth), bandIdx };
       };
 
@@ -260,16 +278,18 @@
 
       const faceHatchLines = (face, styleParams, normalWorld, crossPass) => {
         const angleDeg = finite(styleParams.fillAngle, 45);
+        // Sample point/spot lights at the face's world centroid.
+        const worldPoint = faceWorldCentroid(face);
         const scaf = faceUVScaffold(face, normalWorld);
         if (!scaf) {
           // Cheap screen-space hatch (draft / no world verts) — snaps back to the
           // surface-oriented hatch on release.
-          const spacing = spacingBand(normalWorld, styleParams).spacing;
+          const spacing = spacingBand(normalWorld, styleParams, worldPoint).spacing;
           const lines = hatchPolygon(face.polygon, { angleDeg, spacing });
           if (crossPass) hatchPolygon(face.polygon, { angleDeg: angleDeg + 90, spacing }).forEach((l) => lines.push(l));
           return lines;
         }
-        const { spacing, bandIdx } = spacingBand(normalWorld, styleParams);
+        const { spacing, bandIdx } = spacingBand(normalWorld, styleParams, worldPoint);
         const uvLines = hatchPolygon(scaf.uv, { angleDeg, spacing });
         // Crosshatch always adds the perpendicular pass; plain hatch adds it only
         // in the darkest tone band (extra density where the surface is unlit).
@@ -435,12 +455,19 @@
             let darkBand = false;
             if (toneOn) {
               let mx = 0; let my = 0; let mz = 0; let cnt = 0;
+              let px = 0; let py = 0; let pz = 0; let pcnt = 0;
               g.faces.forEach((fi) => {
-                const n = record.faces[fi] && record.faces[fi].normalWorld;
+                const face = record.faces[fi];
+                const n = face && face.normalWorld;
                 if (n) { mx += n.x; my += n.y; mz += n.z; cnt += 1; }
+                const c = faceWorldCentroid(face);
+                if (c) { px += c.x; py += c.y; pz += c.z; pcnt += 1; }
               });
               const meanN = cnt ? { x: mx / cnt, y: my / cnt, z: mz / cnt } : { x: 0, y: 0, z: 1 };
-              const bandIdx = Regions.band(intensityFn(meanN), p.tone);
+              // Group centroid: the sample point for point/spot lights over the
+              // whole continuous region (one spacing for the region, deterministic).
+              const meanP = pcnt ? { x: px / pcnt, y: py / pcnt, z: pz / pcnt } : null;
+              const bandIdx = Regions.band(intensityFn(meanN, meanP), p.tone);
               spacing = Regions.coverageToSpacing(Regions.coverageFor(bandIdx, p.tone), penWidth);
               darkBand = bandIdx === 0;
             }
@@ -569,11 +596,19 @@
           const st = resolveStyle(objectId, null);
           return { penId: st && st.penId ? st.penId : null };
         };
-        // Multi-light: every shadow-casting DIRECTIONAL light drops its own
-        // footprint (ambient lights don't cast). A lone sun → one shadow set,
-        // exactly as before.
+        // Multi-light: every shadow-casting light drops its own footprint
+        // (ambient lights don't cast). Directional lights project PARALLEL along
+        // their travel dir; point/spot lights project in PERSPECTIVE from their
+        // world position (rays diverge → an enlarged umbra). A lone sun → one
+        // shadow set, exactly as before.
         (p.lights || []).forEach((lt) => {
           if (!lt || lt.type === 'ambient' || lt.castShadows === false) return;
+          if (lt.type === 'point' || lt.type === 'spot') {
+            if (!lt.position) return;
+            Shadows.build(scene, p, bounds, clipper, null, { styleOf: shadowStyleOf, lightPosition: lt.position })
+              .forEach((path) => out.push(path));
+            return;
+          }
           const dir = Lighting.lightWorldDir(lt);
           if (!dir) return;
           Shadows.build(scene, p, bounds, clipper, dir, { styleOf: shadowStyleOf })
