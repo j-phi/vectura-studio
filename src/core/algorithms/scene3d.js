@@ -295,7 +295,41 @@
         const V = normalize(cross(normalWorld, U)); // in-plane, ⟂ U
         const uv = wv.map((pw) => { const d = sub(pw, origin); return { x: dot(d, U), y: dot(d, V) }; });
         const toScreen = (pt) => scene.projectWorld(add(origin, add(mul(U, pt.x), mul(V, pt.y))));
-        return { uv, toScreen };
+        return { uv, toScreen, U, V };
+      };
+
+      // WORLD-UP hatch reference (Phase 2 `angleRef:'worldUp'`): the in-plane
+      // angle (deg, hatchPolygon convention) whose lines run along world vertical
+      // projected onto the face plane, so a tilted face still engraves "upright".
+      // Returns 0 when world up is (near) parallel to the face normal (a floor/
+      // ceiling face) so the fill degrades to the face-frame angle.
+      const worldUpAngleInUV = (scaf) => {
+        if (!scaf || !scaf.U || !scaf.V) return 0;
+        const up = { x: 0, y: 1, z: 0 };
+        const ua = dot(up, scaf.U);
+        const va = dot(up, scaf.V);
+        if (Math.hypot(ua, va) < 1e-4) return 0;
+        return Math.atan2(va, ua) * 180 / Math.PI;
+      };
+
+      // Boustrophedon linking (Phase 2 `linkFill`): chain disjoint scanline
+      // segments into one continuous pen path, joining each segment to the nearest
+      // end of the previous one (so the connectors are short). Fewer, longer
+      // polylines = one pen-down per family. Deterministic; input order preserved.
+      const linkBoustrophedon = (segments) => {
+        const segs = segments.filter((s) => Array.isArray(s) && s.length >= 2);
+        if (segs.length < 2) return segs;
+        const path = [segs[0][0], segs[0][segs[0].length - 1]];
+        for (let i = 1; i < segs.length; i++) {
+          const s = segs[i];
+          const a = s[0];
+          const b = s[s.length - 1];
+          const last = path[path.length - 1];
+          const d0 = (a.x - last.x) ** 2 + (a.y - last.y) ** 2;
+          const d1 = (b.x - last.x) ** 2 + (b.y - last.y) ** 2;
+          if (d1 < d0) { path.push(b, a); } else { path.push(a, b); }
+        }
+        return [path];
       };
 
       // Independent crosshatch families (Phase 1.3): family-A is the primary
@@ -318,24 +352,40 @@
         }
       };
 
+      // linkFill (Phase 2): boustrophedon-chain each hatch family into one pen
+      // path. Default off ⇒ disjoint segments (Phase-1 output). Draft frames skip
+      // the linking (cheap live drag). Applied per family so crosshatch keeps two
+      // independent connected passes.
+      const maybeLink = (segs, styleParams) =>
+        (styleParams.linkFill === true && !draft ? linkBoustrophedon(segs) : segs);
+
       const faceHatchLines = (face, styleParams, normalWorld, crossPass) => {
-        const angleDeg = finite(styleParams.fillAngle, 45);
+        // angleRef (Phase 2): 'face' (default) measures the hatch angle in the
+        // face plane; 'screen' engraves flat in screen space regardless of the
+        // face; 'worldUp' keeps the lines upright (world vertical projected onto
+        // the face). 'screen' reuses the cheap screen-space path below.
+        const angleRef = styleParams.angleRef === 'screen' || styleParams.angleRef === 'worldUp'
+          ? styleParams.angleRef : 'face';
+        const userAngle = finite(styleParams.fillAngle, 45);
         // Sample point/spot lights at the face's world centroid.
         const worldPoint = faceWorldCentroid(face);
-        const scaf = faceUVScaffold(face, normalWorld);
+        const scaf = angleRef === 'screen' ? null : faceUVScaffold(face, normalWorld);
         if (!scaf) {
-          // Cheap screen-space hatch (draft / no world verts) — snaps back to the
-          // surface-oriented hatch on release.
+          // Cheap screen-space hatch (draft / no world verts / angleRef:'screen')
+          // — snaps back to the surface-oriented hatch on release.
           const { spacing, bandIdx } = spacingBand(normalWorld, styleParams, worldPoint);
           const lines = [];
-          crossFamilies(face.polygon, angleDeg, spacing, styleParams, crossPass, bandIdx === 0,
-            (segs) => segs.forEach((l) => lines.push(l)));
+          crossFamilies(face.polygon, userAngle, spacing, styleParams, crossPass, bandIdx === 0,
+            (segs) => maybeLink(segs, styleParams).forEach((l) => lines.push(l)));
           return lines;
         }
         const { spacing, bandIdx } = spacingBand(normalWorld, styleParams, worldPoint);
+        // worldUp rotates the in-plane base angle so the lines follow world
+        // vertical; 'face' leaves the user angle measured in the face frame.
+        const baseAngle = angleRef === 'worldUp' ? worldUpAngleInUV(scaf) + userAngle : userAngle;
         const uvLines = [];
-        crossFamilies(scaf.uv, angleDeg, spacing, styleParams, crossPass, bandIdx === 0,
-          (segs) => segs.forEach((l) => uvLines.push(l)));
+        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, bandIdx === 0,
+          (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)));
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
 
@@ -354,14 +404,34 @@
         eccentricity: Number.isFinite(styleParams.spiralEccentricity) ? styleParams.spiralEccentricity : undefined,
       });
 
+      // Region-fill spacing (mm): the explicit contourStep alias wins over the
+      // Density mapping when the user set it (contour only); otherwise Density.
+      const regionSpacingFor = (mapper, styleParams) =>
+        (mapper === 'contour' && Number.isFinite(styleParams.contourStep)
+          ? clamp(styleParams.contourStep, 0.5, 40)
+          : hatchSpacing(finite(styleParams.fillDensity, 50)));
+
+      // Stipple mark options (Phase 2) read off style.params. Absent keys keep
+      // the legacy circle / derived radius / 0.7 jitter — a no-op default.
+      const stippleOptsFrom = (styleParams) => ({
+        dotShape: styleParams.dotShape,
+        dotAngle: finite(styleParams.dotAngle, 0),
+        stippleJitter: styleParams.stippleJitter,
+        ...(Number.isFinite(styleParams.dotSize) ? { dotRadius: clamp(styleParams.dotSize, 0.1, 3) } : {}),
+      });
+
       const faceRegionLines = (face, mapper, normalWorld, styleParams) => {
         if (!Mappers || typeof Mappers.regionFill !== 'function') return [];
         // Region fills (rings/dots/spiral) read the Density slider directly
         // (1–14mm) — NOT the tone spacing, which floors near the pen width for
         // line coverage and would pack thousands of rings/dots. Tone-driven
         // region density is a later refinement.
-        const spacing = hatchSpacing(finite(styleParams.fillDensity, 50));
-        const opts = mapper === 'spiral' ? { spacing, ...spiralOptsFrom(styleParams) } : { spacing };
+        const spacing = regionSpacingFor(mapper, styleParams);
+        const opts = mapper === 'spiral'
+          ? { spacing, ...spiralOptsFrom(styleParams) }
+          : mapper === 'stipple'
+            ? { spacing, ...stippleOptsFrom(styleParams) }
+            : { spacing };
         const scaf = faceUVScaffold(face, normalWorld);
         // Faceted faces are always a flat clip — a genuine spiral in the face
         // plane, projected so it foreshortens with the face.
@@ -628,7 +698,12 @@
             // spiral the faceted path uses; 'surfaceHelix' (default curved) wraps
             // the parametric form. Non-spiral mappers are unaffected.
             const spiralFlatClip = g.style.mapper === 'spiral' && sp.spiralMode === 'flatClip';
-            const chartParams = !draft && SurfaceFill && !spiralFlatClip
+            // contourStyle 'region' opts a curved prim OUT of the parametric
+            // parallels (SurfaceFill) into the flat silhouette inset rings — a
+            // structurally different, topographic contour. 'surface' (default)
+            // keeps the wrapped parallels. Non-contour mappers are unaffected.
+            const contourRegion = g.style.mapper === 'contour' && sp.contourStyle === 'region';
+            const chartParams = !draft && SurfaceFill && !spiralFlatClip && !contourRegion
               ? curvedChartParams(objById.get(record.id) || {}) : null;
             // X-ray: ask SurfaceFill for the far surface too (a tagged, sparser
             // back family) so a hatched sphere shows through (Phase 6, THE FIX).
@@ -645,6 +720,10 @@
                 mapper: g.style.mapper,
                 fillAngle: angleDeg,
                 fillDensity: finite(sp.fillDensity, 50),
+                // Stipple mark controls (Phase 2) — absent ⇒ legacy dot (no-op).
+                dotShape: sp.dotShape,
+                dotAngle: finite(sp.dotAngle, 0),
+                dotSize: Number.isFinite(sp.dotSize) ? clamp(sp.dotSize, 0.1, 3) : undefined,
                 toneOn,
                 intensityFn,
                 xray: (grpXray && grpXray.backFaces)
@@ -670,10 +749,12 @@
               } else {
                 const loops = (linkSegments ? linkSegments(boundary) : [])
                   .filter((lp) => Array.isArray(lp) && lp.length >= 3);
-                const regionSpacing = hatchSpacing(finite(sp.fillDensity, 50));
+                const regionSpacing = regionSpacingFor(g.style.mapper, sp);
                 const regionOpts = g.style.mapper === 'spiral'
                   ? { spacing: regionSpacing, ...spiralOptsFrom(sp) }
-                  : { spacing: regionSpacing };
+                  : g.style.mapper === 'stipple'
+                    ? { spacing: regionSpacing, ...stippleOptsFrom(sp) }
+                    : { spacing: regionSpacing };
                 lines = Mappers && typeof Mappers.regionFill === 'function'
                   ? (Mappers.regionFill(g.style.mapper, loops, regionOpts) || [])
                   : [];
@@ -738,9 +819,22 @@
         const classified = Edges.classifyEdges(record, {});
         classified.forEach((entry) => {
           const adjacentFaces = entry.faceIndices.map((idx) => record.faces[idx]).filter(Boolean);
-          const wireframeDemand = adjacentFaces.some((face) => styleOf(face).mapper === 'wireframe');
+          const wireframeFace = adjacentFaces.find((face) => styleOf(face).mapper === 'wireframe');
+          const wireframeDemand = Boolean(wireframeFace);
           const structural = entry.cls !== 'interior';
           if (!structural && !wireframeDemand) return;
+          // Wireframe edge classes (Phase 2): a wireframe face publishes which
+          // edge classes it draws (default all four = the current all-edges look)
+          // and whether occluded edges dash (showHidden). Filter this edge's class
+          // and pick its hidden treatment. entry.cls is the RAW class
+          // (silhouette|boundary|crease|interior); the edgeClasses keys match it.
+          let wfShowHidden = false;
+          if (wireframeDemand) {
+            const wfParams = styleOf(wireframeFace).params || {};
+            const ec = wfParams.edgeClasses;
+            if (ec && ec[entry.cls] === false) return; // this class hidden for the wireframe
+            wfShowHidden = wfParams.showHidden === true;
+          }
           // A crease that borders only surface-filled faces is suppressed — the
           // fill replaces the mesh wireframe. Silhouette and boundary edges
           // (the shape's real outline) always survive. UNDER X-RAY (hidden edges
@@ -772,8 +866,10 @@
           const clipped = clipper.clipPath([a, b], { ownerKeys, objectId: record.id });
           // Structural edge: line-type dash only (double-drawn with the face
           // outline, so wobble is fill-scoped — see dashOnly). Hidden edges dash
-          // under x-ray unless xrayHiddenEdges is off (edgeHidden = 'remove').
-          emitRuns(clipped.runs, baseMeta, edgeHidden, { edgeClass: 'hidden' }, dashOnly(strokeTreatment(style.params)),
+          // under x-ray unless xrayHiddenEdges is off (edgeHidden = 'remove'), or
+          // when a wireframe face asks for showHidden (dashed occluded edges).
+          const thisEdgeHidden = wfShowHidden ? 'dash' : edgeHidden;
+          emitRuns(clipped.runs, baseMeta, thisEdgeHidden, { edgeClass: 'hidden' }, dashOnly(strokeTreatment(style.params)),
             hiddenOnlyEdge ? { hiddenOnly: true } : undefined);
         });
       });

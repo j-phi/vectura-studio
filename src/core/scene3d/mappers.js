@@ -24,6 +24,7 @@
 
   const finite = (n, d) => (Number.isFinite(n) ? n : d);
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, Number.isFinite(n) ? n : lo));
+  const DOT_SHAPES = ['dot', 'ring', 'cross', 'plus', 'tick'];
 
   // Drop non-finite points, consecutive coincidences, and a closing duplicate.
   const cleanRing = (loop) => {
@@ -152,7 +153,42 @@
 
   const STIPPLE_MAX_CELLS = 12000;
 
-  const stipple = (loops, spacing, dotRadius) => {
+  // Legacy jitter fraction (peak-to-peak, as a fraction of the cell step) that
+  // stipple used before it was exposed. stippleJitter 0–100 maps to 0–1.75× so
+  // the exposed DEFAULT of 40 reproduces this exactly (0.4 × 1.75 = 0.7) — a
+  // no-op default that keeps the stipple baseline fixed.
+  const LEGACY_JITTER_FRAC = 0.7;
+  // Ordered so the default (40) is byte-exact: 40 × 1.75 = 70, / 100 = 0.7 (the
+  // same double as the literal LEGACY_JITTER_FRAC), a true no-op default.
+  const jitterFracFor = (stippleJitter) => (Number.isFinite(stippleJitter)
+    ? clamp(stippleJitter, 0, 100) * 1.75 / 100
+    : LEGACY_JITTER_FRAC);
+
+  // A single stipple mark centred at (cx,cy), radius r, rotated by angleDeg.
+  // Returns an ARRAY of screen-space polylines (a cross/plus is two strokes) so
+  // the caller can push each as its own path. 'dot' is the legacy circle.
+  const stippleMark = (shape, cx, cy, r, angleDeg) => {
+    const circle = G3().circlePath;
+    const rad = (finite(angleDeg, 0) * Math.PI) / 180;
+    const ca = Math.cos(rad); const sa = Math.sin(rad);
+    // A rotated segment from local (x0,y0) to (x1,y1).
+    const seg = (x0, y0, x1, y1) => [
+      { x: cx + (x0 * ca - y0 * sa), y: cy + (x0 * sa + y0 * ca) },
+      { x: cx + (x1 * ca - y1 * sa), y: cy + (x1 * sa + y1 * ca) },
+    ];
+    switch (shape) {
+      case 'ring': return typeof circle === 'function' ? [circle(cx, cy, Math.max(0.3, r * 1.4), 12, null)] : [];
+      case 'cross': return [seg(-r, -r, r, r), seg(-r, r, r, -r)];
+      case 'plus': return [seg(-r, 0, r, 0), seg(0, -r, 0, r)];
+      case 'tick': return [seg(-r, 0, r, 0)];
+      case 'dot':
+      default: return typeof circle === 'function' ? [circle(cx, cy, r, 10, null)] : [];
+    }
+  };
+
+  // opts (all optional): dotShape 'dot'|'ring'|'cross'|'plus'|'tick', dotAngle
+  // (deg), stippleJitter (0–100). Absent ⇒ legacy dot / 0.7 jitter (no-op).
+  const stipple = (loops, spacing, dotRadius, opts = {}) => {
     // Close each ring: PathBoolean.pointInPolygon needs the closing vertex
     // (rejects rings with < 4 points), so a 3-vertex triangular face would test
     // every point as "outside" and emit no dots without this.
@@ -176,19 +212,24 @@
     const cells = ((maxX - minX) / step) * ((maxY - minY) / step);
     if (cells > STIPPLE_MAX_CELLS) step *= Math.sqrt(cells / STIPPLE_MAX_CELLS);
     const r = Math.max(0.25, dotRadius);
+    const shape = DOT_SHAPES.includes(opts.dotShape) ? opts.dotShape : 'dot';
+    const dotAngle = finite(opts.dotAngle, 0);
+    const jitterFrac = jitterFracFor(opts.stippleJitter);
     const dots = [];
     let gy = 0;
     for (let y = minY + step * 0.5; y <= maxY; y += step, gy++) {
       let gx = 0;
       for (let x = minX + step * 0.5; x <= maxX; x += step, gx++) {
-        const jx = (hash2(gx, gy) - 0.5) * step * 0.7;
-        const jy = (hash2(gx + 9973, gy + 8191) - 0.5) * step * 0.7;
+        const jx = (hash2(gx, gy) - 0.5) * step * jitterFrac;
+        const jy = (hash2(gx + 9973, gy + 8191) - 0.5) * step * jitterFrac;
         const px = x + jx;
         const py = y + jy;
         let inside = false;
         rings.forEach((ring) => { if (pip({ x: px, y: py }, ring)) inside = !inside; });
         if (!inside) continue;
-        dots.push(circle(px, py, r, 10, null));
+        // 'dot' at the legacy radius/segments reproduces the old circle exactly.
+        if (shape === 'dot') dots.push(circle(px, py, r, 10, null));
+        else stippleMark(shape, px, py, r, dotAngle).forEach((m) => { if (m.length) dots.push(m); });
       }
     }
     return dots;
@@ -361,12 +402,12 @@
       });
     }
     if (mapper === 'stipple') {
-      return stipple(loops, spacing, finite(opts.dotRadius, Math.max(0.35, spacing * 0.18)));
+      return stipple(loops, spacing, finite(opts.dotRadius, Math.max(0.35, spacing * 0.18)), opts);
     }
     return [];
   };
 
-  const api = { regionFill, trueSpiral, insetRings, stitchSpiral, stipple, cleanRing, closeRing };
+  const api = { regionFill, trueSpiral, insetRings, stitchSpiral, stipple, stippleMark, cleanRing, closeRing };
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Mappers: api });
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -125,11 +125,9 @@
     { value: 'stipple', label: 'Stipple' },
   ];
   const HATCH_DEFAULTS = { fillAngle: 45, fillDensity: 50 };
-  // Mappers whose params include a hatch Angle (line fills); the rest are region
-  // fills with a Density only. All surface fills expose Density.
-  const ANGLE_MAPPERS = new Set(['hatch', 'crosshatch']);
+  // Mappers that expose a Density; the rest (wireframe) publish only their own
+  // controls. FILL_MAPPERS additionally get the shared Line block + stroke tuning.
   const FILL_MAPPERS = new Set(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
-  // Shared stroke-treatment (Phase 1.1) + crosshatch-family (Phase 1.3) defaults.
   const LINE_TYPE_OPTIONS = [
     { value: 'solid', label: 'Solid' },
     { value: 'dashed', label: 'Dashed' },
@@ -137,32 +135,81 @@
     { value: 'dashdot', label: 'Dash-dot' },
   ];
   const STROKE_DEFAULTS = { lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false };
-  const CROSS_DEFAULTS = { crossAngleDelta: 90, crossDensityRatio: 1, tripleHatch: false };
-  // True-spiral (Phase 3) defaults. Density drives the pitch, so no separate
-  // pitch key is seeded here (omitting spiralPitch keeps the density mapping);
-  // eccentricity is likewise omitted so it auto-fits the region aspect until the
-  // user sets it. spiralMode defaults to surfaceHelix (curved prims wrap the
-  // form); faceted prims always render the flat clip regardless.
-  const SPIRAL_DEFAULTS = { spiralAngleOffset: 0, spiralCenter: 'centroid', axisSnap: false, spiralMode: 'surfaceHelix' };
+
+  // ── MAPPER_CONTROLS (Phase 2) ───────────────────────────────────────────────
+  // The single source of truth for each mapper's OWN parameter controls. A
+  // descriptor is { key, kind, label, ariaLabel?, min, max, step, default,
+  // options?, seed? }. `kind` ∈ slider | dial | seg | select | toggle | multi.
+  // renderStyle iterates the current mapper's descriptors and renders the right
+  // control (wired to the one-undo-per-gesture commit path); mapperDefaults seeds
+  // every descriptor default (except `seed:false` keys, whose ABSENCE is
+  // meaningful — auto-fit eccentricity, derived dot size, density-derived contour
+  // step). This replaces the old per-mapper if-tree. The shared Line block +
+  // x-ray block stay separate (they apply across mappers / object visibility).
+  const ANGLE_REF_OPTS = [
+    { value: 'face', label: 'Face' },
+    { value: 'screen', label: 'Screen' },
+    { value: 'worldUp', label: 'Up' },
+  ];
+  const DOT_SHAPE_OPTS = [
+    { value: 'dot', label: 'Dot' }, { value: 'ring', label: 'Ring' },
+    { value: 'cross', label: 'Cross' }, { value: 'plus', label: 'Plus' }, { value: 'tick', label: 'Tick' },
+  ];
+  const EDGE_CLASS_OPTS = [
+    { value: 'silhouette', label: 'Sil' }, { value: 'boundary', label: 'Bound' },
+    { value: 'crease', label: 'Crease' }, { value: 'interior', label: 'Interior' },
+  ];
+  const D_ANGLE = { key: 'fillAngle', kind: 'dial', label: 'Angle', ariaLabel: 'Hatch angle', min: 0, max: 360, step: 1, default: 45 };
+  const D_DENSITY = { key: 'fillDensity', kind: 'slider', label: 'Density', ariaLabel: 'Fill density', min: 1, max: 100, step: 1, default: 50 };
+  const D_ANGLEREF = { key: 'angleRef', kind: 'seg', label: 'Angle ref', ariaLabel: 'Hatch angle reference', default: 'face', options: ANGLE_REF_OPTS };
+  const D_LINKFILL = { key: 'linkFill', kind: 'toggle', label: 'Link fill', ariaLabel: 'Connect scanlines (boustrophedon)', default: false };
+  const MAPPER_CONTROLS = {
+    hatch: [D_ANGLE, D_DENSITY, D_ANGLEREF, D_LINKFILL],
+    crosshatch: [
+      D_ANGLE, D_DENSITY, D_ANGLEREF, D_LINKFILL,
+      { key: 'crossAngleDelta', kind: 'dial', label: 'Cross angle', ariaLabel: 'Crosshatch angle delta', min: 10, max: 170, step: 1, default: 90 },
+      { key: 'crossDensityRatio', kind: 'slider', label: 'Cross density', ariaLabel: 'Second family density ratio', min: 0.25, max: 2, step: 0.05, default: 1 },
+      { key: 'tripleHatch', kind: 'toggle', label: 'Triple hatch', ariaLabel: 'Triple hatch in darkest band', default: false },
+    ],
+    contour: [
+      D_DENSITY,
+      { key: 'contourStyle', kind: 'seg', label: 'Style', ariaLabel: 'Contour style', default: 'surface', options: [{ value: 'surface', label: 'Surface' }, { value: 'region', label: 'Region' }] },
+    ],
+    spiral: [
+      D_DENSITY,
+      { key: 'spiralAngleOffset', kind: 'dial', label: 'Angle offset', ariaLabel: 'Spiral start angle', min: 0, max: 360, step: 1, default: 0 },
+      { key: 'spiralEccentricity', kind: 'slider', label: 'Eccentricity', ariaLabel: 'Spiral eccentricity', min: 0.3, max: 3, step: 0.05, default: 1, seed: false },
+      { key: 'spiralCenter', kind: 'seg', label: 'Centre', ariaLabel: 'Spiral centre', default: 'centroid', options: [{ value: 'centroid', label: 'Centroid' }, { value: 'bboxCenter', label: 'Bounds' }] },
+      { key: 'axisSnap', kind: 'toggle', label: 'Axis snap', ariaLabel: 'Squared spiral', default: false },
+      { key: 'spiralMode', kind: 'seg', label: 'Mode', ariaLabel: 'Spiral mode', default: 'surfaceHelix', options: [{ value: 'surfaceHelix', label: 'Surface' }, { value: 'flatClip', label: 'Flat' }] },
+    ],
+    stipple: [
+      D_DENSITY,
+      { key: 'dotShape', kind: 'select', label: 'Dot', ariaLabel: 'Dot shape', default: 'dot', options: DOT_SHAPE_OPTS },
+      { key: 'dotSize', kind: 'slider', label: 'Dot size', ariaLabel: 'Dot size', min: 0.1, max: 3, step: 0.05, default: 0.7, seed: false },
+      { key: 'stippleJitter', kind: 'slider', label: 'Jitter', ariaLabel: 'Stipple jitter', min: 0, max: 100, step: 1, default: 40 },
+      { key: 'dotAngle', kind: 'dial', label: 'Dot angle', ariaLabel: 'Dot mark angle', min: 0, max: 360, step: 1, default: 0 },
+    ],
+    wireframe: [
+      { key: 'edgeClasses', kind: 'multi', label: 'Edges', ariaLabel: 'Wireframe edge classes', options: EDGE_CLASS_OPTS, default: { silhouette: true, boundary: true, crease: true, interior: true } },
+      { key: 'showHidden', kind: 'toggle', label: 'Show hidden', ariaLabel: 'Dashed occluded edges', default: false },
+    ],
+  };
   const carry = (cur, key, dflt) => (cur[key] !== undefined && cur[key] !== null ? cur[key] : dflt);
-  // Params a mapper is seeded with when selected. Carries the user's current
-  // Density/Angle AND the shared line treatment (line type, wobble…) across a
-  // switch between fill mappers so changing hatch→contour→stipple keeps the
-  // tuning instead of resetting it; crosshatch additionally seeds its family
-  // controls.
+  const cloneDefault = (d) => (d && typeof d === 'object' ? JSON.parse(JSON.stringify(d)) : d);
+  // Params a mapper is seeded with when selected. Every descriptor default is
+  // seeded (carrying the user's current value where present) so switching
+  // hatch→contour→stipple keeps the shared Density/Angle/line tuning; `seed:false`
+  // keys are intentionally left ABSENT (auto/derived). FILL_MAPPERS also carry the
+  // shared stroke treatment. This is driven entirely by MAPPER_CONTROLS.
   const mapperDefaults = (mapper, current) => {
     const cur = current || {};
-    if (!FILL_MAPPERS.has(mapper)) return {};
-    const out = { fillDensity: Number.isFinite(cur.fillDensity) ? cur.fillDensity : HATCH_DEFAULTS.fillDensity };
-    if (ANGLE_MAPPERS.has(mapper)) {
-      out.fillAngle = Number.isFinite(cur.fillAngle) ? cur.fillAngle : HATCH_DEFAULTS.fillAngle;
-    }
-    Object.keys(STROKE_DEFAULTS).forEach((k) => { out[k] = carry(cur, k, STROKE_DEFAULTS[k]); });
-    if (mapper === 'crosshatch') {
-      Object.keys(CROSS_DEFAULTS).forEach((k) => { out[k] = carry(cur, k, CROSS_DEFAULTS[k]); });
-    }
-    if (mapper === 'spiral') {
-      Object.keys(SPIRAL_DEFAULTS).forEach((k) => { out[k] = carry(cur, k, SPIRAL_DEFAULTS[k]); });
+    const descs = MAPPER_CONTROLS[mapper];
+    if (!descs) return {};
+    const out = {};
+    descs.forEach((d) => { if (d.seed !== false) out[d.key] = carry(cur, d.key, cloneDefault(d.default)); });
+    if (FILL_MAPPERS.has(mapper)) {
+      Object.keys(STROKE_DEFAULTS).forEach((k) => { out[k] = carry(cur, k, STROKE_DEFAULTS[k]); });
     }
     return out;
   };
@@ -1312,49 +1359,68 @@
         onChange: (v) => commitStyle({ mapper: v, params: mapperDefaults(v, resolved.params) }),
       }));
 
-      // Angle (hatch / crosshatch line fills only).
-      if (ANGLE_MAPPERS.has(resolved.mapper)) {
-        const angleRow = document.createElement('div');
-        angleRow.className = 'vs3-row';
-        const angleLbl = document.createElement('label');
-        angleLbl.className = 'vs3-lbl';
-        angleLbl.textContent = 'Angle';
-        angleRow.appendChild(angleLbl);
-        const angleHost = document.createElement('div');
-        angleHost.className = 'vs3-ctl';
-        angleRow.appendChild(angleHost);
-        styleHost.appendChild(angleRow);
-        const angleVal = Number.isFinite(resolved.params && resolved.params.fillAngle)
-          ? resolved.params.fillAngle : HATCH_DEFAULTS.fillAngle;
-        if (UI.AngleDial) {
-          styleComps.push(UI.AngleDial(angleHost, {
-            value: angleVal,
-            ariaLabel: 'Hatch angle',
-            defaultValue: HATCH_DEFAULTS.fillAngle,
-            onCommit: (v) => commitStyle({ params: { ...clone(resolved.params || {}), fillAngle: v } }),
+      // ── Mapper-specific controls (Phase 2) — driven by the MAPPER_CONTROLS
+      // descriptor table, one control per descriptor, wired to the whole-style
+      // commit path (CONTRACT C, one undo per gesture). This is the single home
+      // for every mapper's OWN params (density/angle/family/spiral/stipple/edge
+      // classes); the shared Line block + x-ray block follow.
+      const labeledHost = (label) => {
+        const row = document.createElement('div');
+        row.className = 'vs3-row';
+        const lbl = document.createElement('label');
+        lbl.className = 'vs3-lbl';
+        lbl.textContent = label;
+        row.appendChild(lbl);
+        const host = document.createElement('div');
+        host.className = 'vs3-ctl';
+        row.appendChild(host);
+        styleHost.appendChild(row);
+        return host;
+      };
+      const renderControl = (d) => {
+        const rp = resolved.params || {};
+        const has = rp[d.key] !== undefined && rp[d.key] !== null;
+        const raw = has ? rp[d.key] : d.default;
+        const write = (val) => commitStyle({ params: { ...clone(resolved.params || {}), [d.key]: val } });
+        const aria = d.ariaLabel || d.label;
+        if (d.kind === 'slider') {
+          sliderRow(styleHost, styleComps, d.label, {
+            value: Number.isFinite(raw) ? raw : d.default,
+            min: d.min, max: d.max, step: d.step, defaultValue: d.default, ariaLabel: aria,
+            onCommit: (v) => write(v),
+          });
+        } else if (d.kind === 'dial') {
+          const host = labeledHost(d.label);
+          const dv = Number.isFinite(raw) ? raw : d.default;
+          const clampV = (v) => Math.min(d.max, Math.max(d.min, v));
+          if (UI.AngleDial) {
+            styleComps.push(UI.AngleDial(host, { value: dv, ariaLabel: aria, defaultValue: d.default, onCommit: (v) => write(clampV(v)) }));
+          } else {
+            styleComps.push(UI.Slider(host, { value: dv, min: d.min, max: d.max, step: d.step, defaultValue: d.default, ariaLabel: aria, onCommit: (v) => write(v) }));
+          }
+        } else if (d.kind === 'select') {
+          styleComps.push(UI.Select(labeledHost(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
+        } else if (d.kind === 'seg') {
+          styleComps.push(UI.SegCtrl(labeledHost(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
+        } else if (d.kind === 'toggle') {
+          styleComps.push(UI.SegCtrl(labeledHost(d.label), {
+            options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+            value: raw === true ? 'on' : 'off', ariaLabel: aria, onChange: (v) => write(v === 'on'),
           }));
-        } else {
-          styleComps.push(UI.Slider(angleHost, {
-            value: angleVal, min: 0, max: 360, step: 1,
-            defaultValue: HATCH_DEFAULTS.fillAngle,
-            ariaLabel: 'Hatch angle',
-            onCommit: (v) => commitStyle({ params: { ...clone(resolved.params || {}), fillAngle: v } }),
+        } else if (d.kind === 'multi') {
+          const cur = raw && typeof raw === 'object' ? raw : d.default;
+          const selected = d.options.filter((o) => cur[o.value] !== false).map((o) => o.value);
+          styleComps.push(UI.TogGrp(labeledHost(d.label), {
+            options: d.options, multiple: true, value: selected, ariaLabel: aria,
+            onChange: (arr) => {
+              const next = {};
+              d.options.forEach((o) => { next[o.value] = arr.indexOf(o.value) !== -1; });
+              write(next);
+            },
           }));
         }
-      }
-
-      // Density (every surface fill: hatch/crosshatch line spacing, or the
-      // contour/spiral ring spacing, or the stipple dot spacing).
-      if (FILL_MAPPERS.has(resolved.mapper)) {
-        sliderRow(styleHost, styleComps, 'Density', {
-          value: Number.isFinite(resolved.params && resolved.params.fillDensity)
-            ? resolved.params.fillDensity : HATCH_DEFAULTS.fillDensity,
-          min: 1, max: 100, step: 1,
-          defaultValue: HATCH_DEFAULTS.fillDensity,
-          ariaLabel: 'Fill density',
-          onCommit: (v) => commitStyle({ params: { ...clone(resolved.params || {}), fillDensity: v } }),
-        });
-      }
+      };
+      (MAPPER_CONTROLS[resolved.mapper] || []).forEach(renderControl);
 
       // ── Shared line treatment (Phase 1.1) — every fill mapper. Writes the
       // stroke params honored at the scene3d emit chokepoint (line type / dash
@@ -1399,165 +1465,6 @@
           ariaLabel: 'Hand wobble',
           onCommit: (v) => commitStyle({ params: { ...sp(), wobble: v } }),
         });
-      }
-
-      // ── Crosshatch families (Phase 1.3) — only for the crosshatch mapper.
-      if (resolved.mapper === 'crosshatch') {
-        const sp = () => clone(resolved.params || {});
-        const rp = resolved.params || {};
-
-        const deltaRow = document.createElement('div');
-        deltaRow.className = 'vs3-row';
-        const dLbl = document.createElement('label');
-        dLbl.className = 'vs3-lbl';
-        dLbl.textContent = 'Cross angle';
-        deltaRow.appendChild(dLbl);
-        const dHost = document.createElement('div');
-        dHost.className = 'vs3-ctl';
-        deltaRow.appendChild(dHost);
-        styleHost.appendChild(deltaRow);
-        const deltaVal = Number.isFinite(rp.crossAngleDelta) ? rp.crossAngleDelta : CROSS_DEFAULTS.crossAngleDelta;
-        if (UI.AngleDial) {
-          styleComps.push(UI.AngleDial(dHost, {
-            value: deltaVal,
-            ariaLabel: 'Crosshatch angle delta',
-            defaultValue: CROSS_DEFAULTS.crossAngleDelta,
-            onCommit: (v) => commitStyle({ params: { ...sp(), crossAngleDelta: Math.min(170, Math.max(10, v)) } }),
-          }));
-        } else {
-          styleComps.push(UI.Slider(dHost, {
-            value: deltaVal, min: 10, max: 170, step: 1,
-            defaultValue: CROSS_DEFAULTS.crossAngleDelta,
-            ariaLabel: 'Crosshatch angle delta',
-            onCommit: (v) => commitStyle({ params: { ...sp(), crossAngleDelta: v } }),
-          }));
-        }
-
-        sliderRow(styleHost, styleComps, 'Cross density', {
-          value: Number.isFinite(rp.crossDensityRatio) ? rp.crossDensityRatio : CROSS_DEFAULTS.crossDensityRatio,
-          min: 0.25, max: 2, step: 0.05,
-          defaultValue: CROSS_DEFAULTS.crossDensityRatio,
-          ariaLabel: 'Second family density ratio',
-          onCommit: (v) => commitStyle({ params: { ...sp(), crossDensityRatio: v } }),
-        });
-
-        const tripleRow = document.createElement('div');
-        tripleRow.className = 'vs3-row';
-        const tLbl = document.createElement('label');
-        tLbl.className = 'vs3-lbl';
-        tLbl.textContent = 'Triple hatch';
-        tripleRow.appendChild(tLbl);
-        const tHost = document.createElement('div');
-        tHost.className = 'vs3-ctl';
-        tripleRow.appendChild(tHost);
-        styleHost.appendChild(tripleRow);
-        styleComps.push(UI.SegCtrl(tHost, {
-          options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
-          value: rp.tripleHatch === true ? 'on' : 'off',
-          ariaLabel: 'Triple hatch in darkest band',
-          onChange: (v) => commitStyle({ params: { ...sp(), tripleHatch: v === 'on' } }),
-        }));
-      }
-
-      // ── True-spiral controls (Phase 3) — only for the spiral mapper. Density
-      // (above) drives the pitch; these shape the spiral itself. A single undo
-      // per gesture via commitStyle whole-style writes (CONTRACT C).
-      if (resolved.mapper === 'spiral') {
-        const sp = () => clone(resolved.params || {});
-        const rp = resolved.params || {};
-
-        // Angle offset (start angle of the spiral).
-        const offRow = document.createElement('div');
-        offRow.className = 'vs3-row';
-        const offLbl = document.createElement('label');
-        offLbl.className = 'vs3-lbl';
-        offLbl.textContent = 'Angle offset';
-        offRow.appendChild(offLbl);
-        const offHost = document.createElement('div');
-        offHost.className = 'vs3-ctl';
-        offRow.appendChild(offHost);
-        styleHost.appendChild(offRow);
-        const offVal = Number.isFinite(rp.spiralAngleOffset) ? rp.spiralAngleOffset : SPIRAL_DEFAULTS.spiralAngleOffset;
-        if (UI.AngleDial) {
-          styleComps.push(UI.AngleDial(offHost, {
-            value: offVal,
-            ariaLabel: 'Spiral start angle',
-            defaultValue: SPIRAL_DEFAULTS.spiralAngleOffset,
-            onCommit: (v) => commitStyle({ params: { ...sp(), spiralAngleOffset: Math.min(360, Math.max(0, v)) } }),
-          }));
-        } else {
-          styleComps.push(UI.Slider(offHost, {
-            value: offVal, min: 0, max: 360, step: 1,
-            defaultValue: SPIRAL_DEFAULTS.spiralAngleOffset,
-            ariaLabel: 'Spiral start angle',
-            onCommit: (v) => commitStyle({ params: { ...sp(), spiralAngleOffset: v } }),
-          }));
-        }
-
-        // Eccentricity (region-aspect stretch). Neutral 1 shown until adjusted;
-        // once set it overrides the auto-fit.
-        sliderRow(styleHost, styleComps, 'Eccentricity', {
-          value: Number.isFinite(rp.spiralEccentricity) ? rp.spiralEccentricity : 1,
-          min: 0.3, max: 3, step: 0.05,
-          defaultValue: 1,
-          ariaLabel: 'Spiral eccentricity',
-          onCommit: (v) => commitStyle({ params: { ...sp(), spiralEccentricity: v } }),
-        });
-
-        // Centre mode.
-        const ctrRow = document.createElement('div');
-        ctrRow.className = 'vs3-row';
-        const ctrLbl = document.createElement('label');
-        ctrLbl.className = 'vs3-lbl';
-        ctrLbl.textContent = 'Centre';
-        ctrRow.appendChild(ctrLbl);
-        const ctrHost = document.createElement('div');
-        ctrHost.className = 'vs3-ctl';
-        ctrRow.appendChild(ctrHost);
-        styleHost.appendChild(ctrRow);
-        styleComps.push(UI.SegCtrl(ctrHost, {
-          options: [{ value: 'centroid', label: 'Centroid' }, { value: 'bboxCenter', label: 'Bounds' }],
-          value: rp.spiralCenter === 'bboxCenter' ? 'bboxCenter' : 'centroid',
-          ariaLabel: 'Spiral centre',
-          onChange: (v) => commitStyle({ params: { ...sp(), spiralCenter: v } }),
-        }));
-
-        // Axis snap (squared / rectilinear spiral).
-        const snapRow = document.createElement('div');
-        snapRow.className = 'vs3-row';
-        const snapLbl = document.createElement('label');
-        snapLbl.className = 'vs3-lbl';
-        snapLbl.textContent = 'Axis snap';
-        snapRow.appendChild(snapLbl);
-        const snapHost = document.createElement('div');
-        snapHost.className = 'vs3-ctl';
-        snapRow.appendChild(snapHost);
-        styleHost.appendChild(snapRow);
-        styleComps.push(UI.SegCtrl(snapHost, {
-          options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
-          value: rp.axisSnap === true ? 'on' : 'off',
-          ariaLabel: 'Squared spiral',
-          onChange: (v) => commitStyle({ params: { ...sp(), axisSnap: v === 'on' } }),
-        }));
-
-        // Mode (surface helix vs flat clip) — only meaningful for curved prims;
-        // faceted prims always render the flat clip.
-        const modeRow = document.createElement('div');
-        modeRow.className = 'vs3-row';
-        const modeLbl = document.createElement('label');
-        modeLbl.className = 'vs3-lbl';
-        modeLbl.textContent = 'Mode';
-        modeRow.appendChild(modeLbl);
-        const modeHost = document.createElement('div');
-        modeHost.className = 'vs3-ctl';
-        modeRow.appendChild(modeHost);
-        styleHost.appendChild(modeRow);
-        styleComps.push(UI.SegCtrl(modeHost, {
-          options: [{ value: 'surfaceHelix', label: 'Surface' }, { value: 'flatClip', label: 'Flat' }],
-          value: rp.spiralMode === 'flatClip' ? 'flatClip' : 'surfaceHelix',
-          ariaLabel: 'Spiral mode',
-          onChange: (v) => commitStyle({ params: { ...sp(), spiralMode: v } }),
-        }));
       }
 
       // ── X-ray controls (Phase 6) — shown only when the selected OBJECT is set

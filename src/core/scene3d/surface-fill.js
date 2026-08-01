@@ -179,12 +179,19 @@
       } else if (mapper === 'stipple') {
         // Dot lattice on the surface; a dot survives where local shade meets its
         // ordered-dither threshold (fewer dots toward the highlight). Each dot is a
-        // small screen circle (a 0.01-unit marker would fall under the emitter's
-        // MIN_RUN_MM floor and vanish).
+        // small screen mark (a 0.01-unit marker would fall under the emitter's
+        // MIN_RUN_MM floor and vanish). The DEFAULT ('dot', no dotSize) keeps the
+        // legacy 6-segment R=0.7 ring exactly — a no-op default. Other shapes /
+        // an explicit dotSize dispatch to the shared Mappers.stippleMark generator.
         const rows = count;
         const colsPer = Math.max(6, Math.round(count * 1.6));
-        const R = 0.7; // dot radius (screen units)
+        const legacyR = 0.7; // dot radius (screen units)
         const SEG = 6;
+        const dotShape = typeof opts.dotShape === 'string' ? opts.dotShape : 'dot';
+        const dotAngle = finite(opts.dotAngle, 0);
+        const legacy = dotShape === 'dot' && !Number.isFinite(opts.dotSize);
+        const R = Number.isFinite(opts.dotSize) ? clamp(opts.dotSize, 0.1, 3) : legacyR;
+        const Marks = Vectura.Scene3D && Vectura.Scene3D.Mappers;
         for (let r = 0; r < rows; r++) {
           for (let c = 0; c < colsPer; c++) {
             const smp = sampleAt((r + 0.5) / rows, (c + 0.5) / colsPer);
@@ -194,13 +201,21 @@
               const th = ((r * colsPer + c) % 7) / 7; // scattered dither
               if (shade < th) continue;
             }
-            const ring = [];
-            for (let k = 0; k <= SEG; k++) {
-              const ang = (k / SEG) * Math.PI * 2;
-              ring.push({ x: smp.x + Math.cos(ang) * R, y: smp.y + Math.sin(ang) * R, z: smp.z });
+            if (legacy || !Marks || typeof Marks.stippleMark !== 'function') {
+              const ring = [];
+              for (let k = 0; k <= SEG; k++) {
+                const ang = (k / SEG) * Math.PI * 2;
+                ring.push({ x: smp.x + Math.cos(ang) * R, y: smp.y + Math.sin(ang) * R, z: smp.z });
+              }
+              if (back) ring.back = true;
+              out.push(ring);
+            } else {
+              Marks.stippleMark(dotShape, smp.x, smp.y, R, dotAngle).forEach((m) => {
+                const mm = m.map((pt) => ({ x: pt.x, y: pt.y, z: smp.z }));
+                if (back) mm.back = true;
+                if (mm.length) out.push(mm);
+              });
             }
-            if (back) ring.back = true;
-            out.push(ring);
           }
         }
       } else {

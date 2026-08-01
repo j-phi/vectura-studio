@@ -88,6 +88,10 @@
   const STROKE_LINE_TYPES = ['solid', 'dashed', 'dotted', 'dashdot'];
   const SPIRAL_CENTERS = ['centroid', 'bboxCenter'];
   const SPIRAL_MODES = ['flatClip', 'surfaceHelix'];
+  const ANGLE_REFS = ['face', 'screen', 'worldUp'];
+  const CONTOUR_STYLES = ['region', 'surface'];
+  const DOT_SHAPES = ['dot', 'ring', 'cross', 'plus', 'tick'];
+  const EDGE_CLASS_KEYS = ['silhouette', 'boundary', 'crease', 'interior'];
   const clampStyleParam = (key, value) => {
     switch (key) {
       case 'lineType': return STROKE_LINE_TYPES.includes(value) ? value : 'solid';
@@ -105,6 +109,29 @@
       case 'axisSnap': return value === true;
       case 'spiralMode': return SPIRAL_MODES.includes(value) ? value : 'surfaceHelix';
       case 'spiralEccentricity': return clamp(finite(value, 1), 0.3, 3);
+      // ── Phase 2 — per-mapper controls (all no-op at their defaults). ─────────
+      // HATCH: the frame the hatch angle is measured in, and boustrophedon
+      // scanline linking (default false ⇒ disjoint segments = Phase-1 look).
+      case 'angleRef': return ANGLE_REFS.includes(value) ? value : 'face';
+      case 'linkFill': return value === true;
+      // CONTOUR: region (concentric inset rings, the faceted look) vs surface
+      // (parametric parallels, the curved default); an explicit mm step alias.
+      case 'contourStyle': return CONTOUR_STYLES.includes(value) ? value : 'surface';
+      case 'contourStep': return clamp(finite(value, 3), 0.5, 40);
+      // STIPPLE: dot mark shape/size/rotation + deterministic lattice jitter.
+      case 'dotSize': return clamp(finite(value, 0.7), 0.1, 3);
+      case 'dotShape': return DOT_SHAPES.includes(value) ? value : 'dot';
+      case 'stippleJitter': return clamp(finite(value, 40), 0, 100);
+      case 'dotAngle': return clamp(finite(value, 0), 0, 360);
+      // WIREFRAME: per-class edge visibility (default all true = current look)
+      // and a dashed occluded-edge pass (x-ray-lite, default off).
+      case 'edgeClasses': {
+        const s = isObject(value) ? value : {};
+        const out = {};
+        EDGE_CLASS_KEYS.forEach((k) => { out[k] = s[k] !== false; });
+        return out;
+      }
+      case 'showHidden': return value === true;
       // Phase 6 — x-ray controls. Only meaningful when the OBJECT is set to
       // visibility:'xray' (that toggle is the on/off); these shape the look.
       case 'xrayHiddenEdges': return value !== false; // dashed occluded edges
