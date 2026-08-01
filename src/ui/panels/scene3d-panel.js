@@ -195,6 +195,8 @@
     const lightDisplayName = (light, index) => {
       if (!light) return 'Light';
       if (light.type === 'ambient') return 'Ambient';
+      if (light.type === 'point') return `Point ${index + 1}`;
+      if (light.type === 'spot') return `Spot ${index + 1}`;
       if (light.id === 'sun' || index === 0) return 'Sun';
       return `Light ${index + 1}`;
     };
@@ -205,14 +207,27 @@
       while (used.has(id)) { n += 1; id = `light-${n}`; }
       return id;
     };
+    // Engine (params.js) positional-light defaults, mirrored here so a freshly
+    // added light matches normalizeLight before the engine re-runs.
+    const seedLight = (type, id) => {
+      if (type === 'ambient') return { id, type: 'ambient', intensity: 0.3, castShadows: false };
+      if (type === 'point') {
+        return { id, type: 'point', position: { x: 120, y: 200, z: 120 }, range: 400, intensity: 1, castShadows: true };
+      }
+      if (type === 'spot') {
+        return {
+          id, type: 'spot', position: { x: 120, y: 200, z: 120 }, target: { x: 0, y: 0, z: 0 },
+          range: 400, coneAngle: 30, penumbra: 8, intensity: 1, castShadows: true,
+        };
+      }
+      return { id, type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: true };
+    };
     const addLight = (type) => {
       let newId = null;
       commit(() => {
         const arr = getLights();
         newId = (type === 'ambient' && !arr.some((l) => l && l.type === 'ambient')) ? 'ambient' : nextLightId();
-        arr.push(type === 'ambient'
-          ? { id: newId, type: 'ambient', intensity: 0.3, castShadows: false }
-          : { id: newId, type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: true });
+        arr.push(seedLight(type, newId));
       });
       renderTree();
       if (newId) selectLight(newId);
@@ -737,6 +752,22 @@
       addDir.title = 'Add a directional (sun) light';
       addDir.addEventListener('click', (e) => { e.stopPropagation(); addLight('directional'); });
       addRow.appendChild(addDir);
+      const addPoint = document.createElement('button');
+      addPoint.type = 'button';
+      addPoint.className = 'vs3-tree-addbtn';
+      addPoint.textContent = '+ Point';
+      addPoint.title = 'Add a positional point light';
+      addPoint.dataset.light = 'point';
+      addPoint.addEventListener('click', (e) => { e.stopPropagation(); addLight('point'); });
+      addRow.appendChild(addPoint);
+      const addSpot = document.createElement('button');
+      addSpot.type = 'button';
+      addSpot.className = 'vs3-tree-addbtn';
+      addSpot.textContent = '+ Spot';
+      addSpot.title = 'Add a spotlight (position + cone)';
+      addSpot.dataset.light = 'spot';
+      addSpot.addEventListener('click', (e) => { e.stopPropagation(); addLight('spot'); });
+      addRow.appendChild(addSpot);
       if (!lights.some((l) => l && l.type === 'ambient')) {
         const addAmb = document.createElement('button');
         addAmb.type = 'button';
@@ -768,8 +799,18 @@
       return false;
     };
 
+    // Mirror the selected light to the renderer so its 3-axis translate gizmo
+    // arms (null clears it → the legacy sun disc returns).
+    const mirrorSelectedLight = (lightId) => {
+      const r = ui.app && ui.app.renderer;
+      if (r && typeof r.setSelectedSceneLight === 'function') {
+        try { r.setSelectedSceneLight(layer.id, lightId || null); } catch (_) { /* */ }
+      }
+    };
+
     const selectObject = (id) => {
       sel = { mode: 'object', objectId: id, faceKey: null };
+      mirrorSelectedLight(null);
       pushSelectionToRenderer({ layerId: layer.id, mode: 'object', objectIds: [id], faceKeys: [], edgeKeys: [] });
       syncSelectionUI();
     };
@@ -778,15 +819,17 @@
       const lightId = id || (getLights()[0] || {}).id || 'sun';
       sel = { mode: 'light', objectId: `light:${lightId}`, faceKey: null };
       // Lights are not renderer objects; clear any object/face selection so the
-      // on-canvas sun widget is the sole light affordance. Do it SILENTLY — a
+      // on-canvas light gizmo is the sole light affordance. Do it SILENTLY — a
       // null scene-selection echo would re-enter onSceneSelection and reset our
       // just-set 'light' mode back to 'none', so the light Inspector never opens.
       pushSelectionToRenderer(null, { silent: true });
+      mirrorSelectedLight(lightId);
       syncSelectionUI();
     };
 
     const clearSelection = () => {
       sel = { mode: 'none', objectId: null, faceKey: null };
+      mirrorSelectedLight(null);
       pushSelectionToRenderer(null);
       syncSelectionUI();
     };
@@ -795,9 +838,11 @@
       if (teardownIfDetached && teardownIfDetached()) return;
       const d = e && e.detail;
       if (!d || d.layerId !== layer.id) {
-        if (sel.mode !== 'none') { sel = { mode: 'none', objectId: null, faceKey: null }; syncSelectionUI(); }
+        if (sel.mode !== 'none') { sel = { mode: 'none', objectId: null, faceKey: null }; mirrorSelectedLight(null); syncSelectionUI(); }
         return;
       }
+      // A real object/face echo means a light is no longer in focus.
+      if ((d.objectIds && d.objectIds.length) || (d.faceKeys && d.faceKeys.length)) mirrorSelectedLight(null);
       if (d.mode === 'face' && d.faceKeys && d.faceKeys.length) {
         const fk = d.faceKeys[0];
         sel = { mode: 'face', objectId: fk.split('/')[0], faceKey: fk };
@@ -826,8 +871,45 @@
       return row;
     };
 
-    // Light inspector — type-aware. Directional: azimuth / elevation / intensity
-    // / cast-shadows. Ambient: intensity only (a flat fill; never casts). Live
+    // Reset a light to its factory default (mirrors renderer.restoreSceneLight so
+    // the panel button and the on-canvas restore handle agree). Panel-local so it
+    // works with or without a renderer bridge.
+    const resetLight = (lid) => {
+      commit(() => {
+        const lt = lightById(lid);
+        if (!lt) return;
+        if (lt.type === 'directional') { lt.azimuth = 135; lt.elevation = 45; }
+        else if (lt.type === 'point' || lt.type === 'spot') {
+          lt.position = { x: 120, y: 200, z: 120 };
+          lt.range = 400;
+          if (lt.type === 'spot') { lt.target = { x: 0, y: 0, z: 0 }; lt.coneAngle = 30; lt.penumbra = 8; }
+        }
+      });
+      renderInspector();
+    };
+
+    // A world-vector (position/target) X/Y/Z row triplet. `field` names the light
+    // sub-object; live callbacks re-fetch the light + guarantee the sub-object.
+    const vec3Rows = (lid, field, label, def) => {
+      ['x', 'y', 'z'].forEach((axis) => {
+        const light = lightById(lid);
+        const cur = (light && light[field] && Number.isFinite(light[field][axis])) ? light[field][axis] : def[axis];
+        sliderRow(inspectorHost, inspectorComps, `${label} ${axis.toUpperCase()}`, {
+          value: cur, min: -600, max: 600, step: 1, defaultValue: def[axis],
+          ariaLabel: `${label} ${axis.toUpperCase()}`,
+          ...liveSlider((v) => {
+            const lt = lightById(lid);
+            if (!lt) return;
+            if (!lt[field] || typeof lt[field] !== 'object') lt[field] = { ...def };
+            lt[field][axis] = Math.round(v);
+          }),
+        });
+      });
+    };
+
+    // Light inspector — type-aware. Directional: azimuth / elevation. Point/spot:
+    // world position (+ range, + spot cone/target). Ambient: intensity only.
+    // Every type also gets intensity, cast-shadows (non-ambient), and Reset. Live
     // callbacks re-fetch the light by id so they stay bound across regens.
     const renderLightInspector = (light) => {
       if (!light) {
@@ -839,13 +921,18 @@
       }
       const lid = light.id;
       const isAmbient = light.type === 'ambient';
+      const isPoint = light.type === 'point';
+      const isSpot = light.type === 'spot';
+      const isDir = !isAmbient && !isPoint && !isSpot;
       const note = document.createElement('p');
       note.className = 'vs3-empty';
       note.textContent = isAmbient
         ? 'Ambient — a constant fill that lifts the shadowed side. Does not cast shadows.'
-        : 'Sun — drag the on-canvas sun handle (or a shadow) to aim it, or use the controls below.';
+        : (isDir
+          ? 'Sun — drag the on-canvas gizmo (or a shadow) to aim it, or use the controls below.'
+          : 'Positional light — drag the on-canvas 3-axis gizmo to move it, or use the controls below.');
       inspectorHost.appendChild(note);
-      if (!isAmbient) {
+      if (isDir) {
         sliderRow(inspectorHost, inspectorComps, 'Azimuth', {
           value: Number.isFinite(light.azimuth) ? light.azimuth : 135,
           min: 0, max: 360, step: 1, defaultValue: 135,
@@ -858,6 +945,30 @@
           ariaLabel: 'Light elevation (degrees)',
           ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.elevation = Math.round(v); }),
         });
+      }
+      if (isPoint || isSpot) {
+        vec3Rows(lid, 'position', 'Position', { x: 120, y: 200, z: 120 });
+        sliderRow(inspectorHost, inspectorComps, 'Range', {
+          value: Number.isFinite(light.range) ? light.range : 400,
+          min: 0, max: 1000, step: 5, defaultValue: 400,
+          ariaLabel: 'Light range (0 = infinite)',
+          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.range = Math.round(v); }),
+        });
+      }
+      if (isSpot) {
+        sliderRow(inspectorHost, inspectorComps, 'Cone angle', {
+          value: Number.isFinite(light.coneAngle) ? light.coneAngle : 30,
+          min: 1, max: 89, step: 1, defaultValue: 30,
+          ariaLabel: 'Spot cone angle (degrees)',
+          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.coneAngle = Math.round(v); }),
+        });
+        sliderRow(inspectorHost, inspectorComps, 'Penumbra', {
+          value: Number.isFinite(light.penumbra) ? light.penumbra : 8,
+          min: 0, max: 45, step: 1, defaultValue: 8,
+          ariaLabel: 'Spot penumbra (degrees)',
+          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.penumbra = Math.round(v); }),
+        });
+        vec3Rows(lid, 'target', 'Target', { x: 0, y: 0, z: 0 });
       }
       sliderRow(inspectorHost, inspectorComps, 'Intensity', {
         value: Number.isFinite(light.intensity) ? light.intensity : (isAmbient ? 0.3 : 1),
@@ -886,6 +997,20 @@
             renderTree();
           },
         }));
+      }
+      // Reset to factory default (not for ambient — it has no positional/aim
+      // default worth a button).
+      if (!isAmbient) {
+        const resetRow = document.createElement('div');
+        resetRow.className = 'vs3-row vs3-light-reset-row';
+        const resetBtn = document.createElement('button');
+        resetBtn.type = 'button';
+        resetBtn.className = 'vs3-light-reset';
+        resetBtn.textContent = 'Reset light';
+        resetBtn.title = isDir ? 'Restore azimuth 135° / elevation 45°' : 'Restore default position';
+        resetBtn.addEventListener('click', () => resetLight(lid));
+        resetRow.appendChild(resetBtn);
+        inspectorHost.appendChild(resetRow);
       }
     };
 

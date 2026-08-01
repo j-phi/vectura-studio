@@ -170,6 +170,62 @@ describe('Scene3D panel — Light + tone (Phase 2, vs3-)', () => {
     expect(container.querySelector('input.ctrl-slider[aria-label="Specular size"]')).toBeFalsy();
   });
 
+  test('"+ Point" adds a point light, selects it, and shows Position + Range controls', () => {
+    const { container, layer, pushHistory } = mount();
+    const before = layer.params.lights.length;
+    const pointBtn = container.querySelector('.vs3-tree-addbtn[data-light="point"]');
+    expect(pointBtn).toBeTruthy();
+    fire(pointBtn, 'click');
+    expect(layer.params.lights.length).toBe(before + 1);
+    const added = layer.params.lights[layer.params.lights.length - 1];
+    expect(added.type).toBe('point');
+    expect(added.position).toEqual({ x: 120, y: 200, z: 120 });
+    expect(added.range).toBe(400);
+    expect(pushHistory).toHaveBeenCalledTimes(1);
+    // Inspector: Position X/Y/Z + Range (no azimuth/elevation for a point).
+    expect(container.querySelector('input.ctrl-slider[aria-label="Position X"]')).toBeTruthy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Position Y"]')).toBeTruthy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Position Z"]')).toBeTruthy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Light range (0 = infinite)"]')).toBeTruthy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Light azimuth (degrees)"]')).toBeFalsy();
+  });
+
+  test('editing Position X commits to the point light position', () => {
+    const { container, layer } = mount();
+    fire(container.querySelector('.vs3-tree-addbtn[data-light="point"]'), 'click');
+    commitSlider(container.querySelector('input.ctrl-slider[aria-label="Position X"]'), -250);
+    const pt = layer.params.lights[layer.params.lights.length - 1];
+    expect(pt.position.x).toBe(-250);
+  });
+
+  test('"+ Spot" adds a spot light and shows Cone angle / Penumbra / Target', () => {
+    const { container, layer } = mount();
+    const spotBtn = container.querySelector('.vs3-tree-addbtn[data-light="spot"]');
+    expect(spotBtn).toBeTruthy();
+    fire(spotBtn, 'click');
+    const added = layer.params.lights[layer.params.lights.length - 1];
+    expect(added.type).toBe('spot');
+    expect(added.coneAngle).toBe(30);
+    expect(added.penumbra).toBe(8);
+    expect(added.target).toEqual({ x: 0, y: 0, z: 0 });
+    expect(container.querySelector('input.ctrl-slider[aria-label="Spot cone angle (degrees)"]')).toBeTruthy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Spot penumbra (degrees)"]')).toBeTruthy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Target X"]')).toBeTruthy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Position X"]')).toBeTruthy();
+  });
+
+  test('"Reset light" restores a moved point light to its default position', () => {
+    const { container, layer } = mount();
+    fire(container.querySelector('.vs3-tree-addbtn[data-light="point"]'), 'click');
+    commitSlider(container.querySelector('input.ctrl-slider[aria-label="Position X"]'), -400);
+    const pt = layer.params.lights[layer.params.lights.length - 1];
+    expect(pt.position.x).toBe(-400);
+    const resetBtn = container.querySelector('.vs3-light-reset');
+    expect(resetBtn).toBeTruthy();
+    fire(resetBtn, 'click');
+    expect(layer.params.lights[layer.params.lights.length - 1].position).toEqual({ x: 120, y: 200, z: 120 });
+  });
+
   test('non-scene layers never mount the vs3 panel (strict no-op preserved)', () => {
     // The panel module only renders when build() is invoked for a scene3d layer.
     // A fresh container that build() was never called on stays empty.

@@ -7,6 +7,14 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene light gizmo + point/spot controls.** Selecting a light now shows a
+  3-axis translate gizmo on the canvas. Point and spot lights drag their world
+  position along X/Y/Z (past the canvas edge — the light can sit anywhere); the
+  directional Sun re-derives azimuth/elevation as its handle moves; a spot draws
+  its cone-axis line toward the target. A restore handle (and a panel **Reset
+  light** button) returns the light to its default. The Lights strip gains
+  **+ Point** and **+ Spot**, and the light Inspector is now type-complete
+  (Position X/Y/Z, Range, Cone angle, Penumbra, Target X/Y/Z).
 - **3D Scene Studio Phase 3 — surface mappers.** Four new fill styles join
   None / Wireframe / Hatch on every scene surface (per scene, object, or face):
   **Crosshatch** (hatch plus a perpendicular pass), **Contour** (concentric rings

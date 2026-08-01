@@ -641,6 +641,10 @@
       // null | { layerId, objectId, type:'move'|'rotate'|'scale', axis:'x'|'y'|'z',
       // center, startWorld, startAngle, startDist, camYaw, start{…}, historyPushed, moved }.
       this._sceneObjectGizmoDrag = null;
+      // Selected-light 3-axis translate gizmo drag state (Unit 1b).
+      // null | { layerId, lightId, lightType, axis, startWorld, camYaw, startPos,
+      // startToward, startLight, historyPushed, moved }.
+      this._sceneLightGizmoDrag = null;
       // On-canvas uniform-scale gizmo drag state.
       // null | { layerId, objectId, handle, center, startDist, startScale,
       // historyPushed, moved }.
@@ -809,6 +813,14 @@
         // Escape mid transform-gizmo drag restores the pre-drag transform.
         if (this._sceneObjectGizmoDrag) {
           if (this._cancelSceneObjectGizmoDrag()) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          return;
+        }
+        // Escape mid light-translate gizmo drag restores the pre-drag light.
+        if (this._sceneLightGizmoDrag) {
+          if (this._cancelSceneLightGizmoDrag()) {
             e.preventDefault();
             e.stopPropagation();
           }
@@ -5563,6 +5575,9 @@
         // Unified per-object transform gizmo (move/rotate/scale; no-op unless a
         // single scene object is selected — supersedes the corner-scale handle).
         this.drawSceneObjectGizmo();
+        // Unit 1b: the selected-light 3-axis translate gizmo (no-op unless a
+        // light is selected). Suppresses the legacy sun disc while it shows.
+        this.drawSceneLightGizmo();
         // Phase 2: the sun widget (no-op without a selected scene3d layer).
         this.drawSceneLightOverlay();
         this.ctx.restore();
@@ -5589,6 +5604,9 @@
         // Unified per-object transform gizmo (move/rotate/scale; no-op unless a
         // single scene object is selected — supersedes the corner-scale handle).
         this.drawSceneObjectGizmo();
+        // Unit 1b: the selected-light 3-axis translate gizmo (no-op unless a
+        // light is selected). Suppresses the legacy sun disc while it shows.
+        this.drawSceneLightGizmo();
         // Phase 2: the sun widget (no-op without a selected scene3d layer).
         this.drawSceneLightOverlay();
         this.ctx.restore();
@@ -6706,6 +6724,14 @@
           !this.isLayerLocked?.(selectedLayers[0].id)
         ) {
           const sceneLayer = selectedLayers[0];
+          // Selected-light 3-axis translate gizmo wins over everything (the
+          // panel put a light in focus; the legacy sun disc is suppressed while
+          // it shows).
+          const lightGizmoHit = this.hitSceneLightGizmo(sx, sy, sceneLayer);
+          if (lightGizmoHit && this.beginSceneLightGizmoDrag(lightGizmoHit, e)) {
+            if (e.cancelable) e.preventDefault();
+            return;
+          }
           const lightHit = this.hitSceneLight(sx, sy, sceneLayer);
           if (lightHit && this.beginSceneLightDrag(lightHit, e)) {
             if (e.cancelable) e.preventDefault();
@@ -7325,6 +7351,12 @@
         return;
       }
 
+      // 3D Scene Studio (Unit 1b): live selected-light 3-axis translate drag.
+      if (this._sceneLightGizmoDrag) {
+        this._applySceneLightGizmoDrag(e);
+        return;
+      }
+
       // 3D Scene Studio: live uniform-scale gizmo drag.
       if (this._sceneResizeDrag) {
         this._applySceneResizeDrag(e);
@@ -7831,6 +7863,13 @@
       // release; history pushed once on first movement).
       if (this._sceneObjectGizmoDrag) {
         this._endSceneObjectGizmoDrag();
+        this.draw();
+        clearActivePointer();
+        return;
+      }
+      // 3D Scene Studio (Unit 1b): commit a selected-light translate drag.
+      if (this._sceneLightGizmoDrag) {
+        this._endSceneLightGizmoDrag();
         this.draw();
         clearActivePointer();
         return;
@@ -10939,6 +10978,9 @@
     drawSceneLightOverlay() {
       const layer = this._sceneLightLayer();
       if (!layer) return;
+      // The 3-axis gizmo (a light is explicitly selected) supersedes the legacy
+      // 2D sun disc — don't draw both.
+      if (this.getSceneLightGizmo(layer)) return;
       const control = this.getSceneLightControl(layer);
       if (!control) return;
       const { center, pos, unit } = control;
@@ -11194,6 +11236,351 @@
       this.draw();
       this.updateCursor();
       return true;
+    }
+
+    // ─── Multi-light 3-axis TRANSLATE gizmo (Unit 1b) ────────────────────────
+    // The panel selects a light as sel.objectId='light:<id>' and mirrors it to
+    // the renderer via setSelectedSceneLight → layer._selectedLightId. The gizmo
+    // shows for that selected light only (the legacy 2D sun disc stays as the
+    // quick affordance when no light is explicitly selected). Point/spot lights
+    // translate their world `position`; the directional sun re-derives az/el from
+    // the moved handle. Reuses the object gizmo's world-axis-constrained
+    // ground-drag math and visual language.
+    setSelectedSceneLight(layerId, lightId) {
+      const layer = this.engine && this.engine.layers
+        ? this.engine.layers.find((l) => l.id === layerId) : null;
+      if (!layer) return;
+      layer._selectedLightId = lightId || null;
+      this.draw();
+    }
+
+    _lightById(layer, id) {
+      const lights = layer && layer.params && Array.isArray(layer.params.lights) ? layer.params.lights : [];
+      return lights.find((l) => l && l.id === id) || null;
+    }
+
+    // The explicitly-selected light for `layer` (null unless the panel mirrored a
+    // selection here). Never falls back to lights[0] — a null keeps the gizmo off
+    // and the legacy sun disc live.
+    _selectedSceneLight(layer) {
+      const id = layer && layer._selectedLightId;
+      if (!id) return null;
+      return this._lightById(layer, id);
+    }
+
+    // Replicates Scene3D.Scene.assembleScene's projectWorld: a WORLD point →
+    // document (renderer world) coords, through the same camera the scene mesh
+    // uses. Lets the gizmo sit exactly where a positional light renders.
+    _sceneProjectWorld(layer, world) {
+      const G = window.Vectura && window.Vectura.Geometry3D;
+      if (!G || typeof G.projectPoint !== 'function' || typeof G.rotatePoint !== 'function') return null;
+      if (!world || !Number.isFinite(world.x) || !Number.isFinite(world.y) || !Number.isFinite(world.z)) return null;
+      const cam = (layer && layer.params && layer.params.camera) || {};
+      let bounds = {};
+      try { if (this.engine && this.engine.getBounds) bounds = this.engine.getBounds() || {}; } catch (_e) { bounds = {}; }
+      const width = Number(bounds.width) || 0;
+      const height = Number(bounds.height) || 0;
+      const projOpts = {
+        centerX: width / 2,
+        centerY: height / 2,
+        scale: Math.max(0.05, Number(cam.zoom) || 1),
+        ...(typeof G.resolveProjection === 'function'
+          ? G.resolveProjection({ projection: cam.projection, focalLength: cam.focalLength, cameraDistance: cam.cameraDistance })
+          : {}),
+      };
+      const camAngles = { yaw: cam.yaw || 0, pitch: cam.pitch || 0, roll: cam.roll || 0 };
+      const p = G.projectPoint(G.rotatePoint(world, camAngles), projOpts);
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+      return { x: p.x, y: p.y, z: p.z };
+    }
+
+    // Gizmo geometry (doc coords) for the selected light, or null. Point/spot are
+    // anchored at their projected world position (+ a cone-axis line for spot);
+    // the directional sun sits at its projected handle. Axes are world X/Y/Z
+    // rotated through the camera (orientation-only, matching the object gizmo).
+    getSceneLightGizmo(layer) {
+      const target = layer || this._sceneLightLayer();
+      if (!target || target.type !== 'scene3d') return null;
+      const light = this._selectedSceneLight(target);
+      if (!light) return null;
+      const cam = (target.params && target.params.camera) || {};
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const R = 60 * unit;
+      const project = (w) => { const r = this._rotateCam(w, cam); return { x: r.x, y: -r.y, z: r.z }; };
+      let center = null;
+      let coneTip = null;
+      let baseR = null;
+      let anchorCenter = null;
+      if (light.type === 'point' || light.type === 'spot') {
+        center = this._sceneProjectWorld(target, light.position || { x: 120, y: 200, z: 120 });
+        if (!center) return null;
+        if (light.type === 'spot') coneTip = this._sceneProjectWorld(target, light.target || { x: 0, y: 0, z: 0 });
+      } else if (light.type === 'directional') {
+        const anchor = this._sceneLightAnchor(target);
+        if (!anchor) return null;
+        baseR = Math.max(anchor.radius * 1.5, 60 * unit);
+        anchorCenter = { ...anchor.center };
+        const off = this._lightHandleOffset(target, light, baseR);
+        center = { x: anchor.center.x + off.dx, y: anchor.center.y + off.dy };
+      } else {
+        return null; // ambient — nothing to translate
+      }
+      const AX = [
+        { key: 'x', world: { x: 1, y: 0, z: 0 } },
+        { key: 'y', world: { x: 0, y: 1, z: 0 } },
+        { key: 'z', world: { x: 0, y: 0, z: 1 } },
+      ];
+      const axes = AX.map((ax) => {
+        const p = project(ax.world);
+        const len = Math.hypot(p.x, p.y) || 1e-6;
+        const u = { x: p.x / len, y: p.y / len };
+        return { key: ax.key, dir: u, depth: p.z, tip: { x: center.x + u.x * R, y: center.y + u.y * R } };
+      });
+      // Restore dot: a small handle offset up-right of the gizmo (checked after
+      // the axes, so an overlapping axis still wins the drag).
+      const restore = { x: center.x + R * 1.28, y: center.y - R * 1.28 };
+      return { lightId: light.id, lightType: light.type, center, coneTip, R, unit, axes, restore, baseR, anchorCenter };
+    }
+
+    hitSceneLightGizmo(sx, sy, layer) {
+      const giz = this.getSceneLightGizmo(layer);
+      if (!giz) return null;
+      const world = this.screenToWorld(sx, sy);
+      const tol = 9 * giz.unit;
+      const near = (a) => Boolean(a) && Math.hypot(world.x - a.x, world.y - a.y) <= tol;
+      for (const ax of giz.axes) {
+        if (near(ax.tip)) return { type: 'move', axis: ax.key };
+        if (this._gizmoSegDist(world, giz.center, ax.tip) <= tol * 0.8) return { type: 'move', axis: ax.key };
+      }
+      if (near(giz.restore)) return { type: 'restore' };
+      return null;
+    }
+
+    beginSceneLightGizmoDrag(hit, e = {}) {
+      const layer = this._sceneLightLayer();
+      if (!layer || !hit) return false;
+      const light = this._selectedSceneLight(layer);
+      if (!light) return false;
+      if (hit.type === 'restore') { this.restoreSceneLight(layer, light.id); return true; }
+      const giz = this.getSceneLightGizmo(layer);
+      if (!giz) return false;
+      const cam = (layer.params && layer.params.camera) || {};
+      const rect = this.canvas.getBoundingClientRect();
+      const world = this.screenToWorld((e.clientX ?? 0) - rect.left, (e.clientY ?? 0) - rect.top);
+      let startToward = null;
+      if (light.type === 'directional') {
+        const d = this._lightWorldDir(light); // travel
+        const R = giz.baseR || (60 / (this.scale || 1));
+        startToward = { x: -d.x * R, y: -d.y * R, z: -d.z * R }; // toward-sun × radius
+      }
+      this._sceneLightGizmoDrag = {
+        layerId: layer.id,
+        lightId: light.id,
+        lightType: light.type,
+        axis: hit.axis,
+        startWorld: { x: world.x, y: world.y },
+        camYaw: ((cam.yaw) || 0) * Math.PI / 180,
+        startPos: light.position ? { ...light.position } : null,
+        startToward,
+        startLight: { azimuth: light.azimuth, elevation: light.elevation },
+        historyPushed: false,
+        moved: false,
+      };
+      this.setCanvasCursor('move');
+      return true;
+    }
+
+    _applySceneLightGizmoDrag(e = {}) {
+      const drag = this._sceneLightGizmoDrag;
+      if (!drag) return false;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer || !layer.params) { this._sceneLightGizmoDrag = null; return false; }
+      const light = this._lightById(layer, drag.lightId);
+      if (!light) { this._sceneLightGizmoDrag = null; return false; }
+      const rect = this.canvas.getBoundingClientRect();
+      const world = this.screenToWorld((e.clientX ?? 0) - rect.left, (e.clientY ?? 0) - rect.top);
+      const dx = world.x - drag.startWorld.x;
+      const dy = world.y - drag.startWorld.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 1 / (this.scale || 1)) return true;
+      if (!drag.historyPushed) { this._scenePushHistory(); drag.historyPushed = true; }
+      drag.moved = true;
+      // Screen doc-delta → world delta along the chosen axis (object-gizmo math).
+      const cy = Math.cos(drag.camYaw); const sy = Math.sin(drag.camYaw);
+      let dWorld;
+      if (drag.axis === 'x') dWorld = dx * cy + dy * sy;
+      else if (drag.axis === 'z') dWorld = -dx * sy + dy * cy;
+      else dWorld = -dy; // screen up = world +y
+      let tip = '';
+      if (drag.lightType === 'point' || drag.lightType === 'spot') {
+        if (!light.position) light.position = { x: 120, y: 200, z: 120 };
+        const base = drag.startPos || light.position;
+        light.position[drag.axis] = Math.round((base[drag.axis] + dWorld) * 100) / 100;
+        const p = light.position;
+        tip = `X ${Math.round(p.x)}  Y ${Math.round(p.y)}  Z ${Math.round(p.z)}`;
+      } else if (drag.lightType === 'directional' && drag.startToward) {
+        const t = { ...drag.startToward };
+        t[drag.axis] += dWorld;
+        const len = Math.hypot(t.x, t.y, t.z) || 1;
+        let az = Math.atan2(t.x, t.z) * 180 / Math.PI;
+        if (az < 0) az += 360;
+        const el = clamp(Math.asin(clamp(t.y / len, -1, 1)) * 180 / Math.PI, 0, 90);
+        light.azimuth = Math.round(az * 10) / 10;
+        light.elevation = Math.round(el * 10) / 10;
+        tip = `Az ${Math.round(light.azimuth)}°  El ${Math.round(light.elevation)}°`;
+      }
+      this._scheduleSceneDragRegen(layer.id);
+      this.showDragTooltip(tip, e.clientX ?? 0, e.clientY ?? 0);
+      return true;
+    }
+
+    _endSceneLightGizmoDrag() {
+      const drag = this._sceneLightGizmoDrag;
+      this._sceneLightGizmoDrag = null;
+      this.hideDragTooltip();
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      if (!drag) return;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer && drag.moved) {
+        this.engine.generate(layer.id);
+        this.app?.ui?.buildControls?.(layer);
+        this.app?.ui?.updateFormula?.();
+      }
+      this.updateCursor();
+    }
+
+    _cancelSceneLightGizmoDrag() {
+      const drag = this._sceneLightGizmoDrag;
+      if (!drag) return false;
+      this._sceneLightGizmoDrag = null;
+      this.hideDragTooltip();
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      const light = layer && this._lightById(layer, drag.lightId);
+      if (light) {
+        if (drag.startPos && light.position) Object.assign(light.position, drag.startPos);
+        if (drag.startLight) {
+          if (Number.isFinite(drag.startLight.azimuth)) light.azimuth = drag.startLight.azimuth;
+          if (Number.isFinite(drag.startLight.elevation)) light.elevation = drag.startLight.elevation;
+        }
+      }
+      if (drag.moved && this.app && Array.isArray(this.app.history) && this.app.history.length > 1) this.app.history.pop();
+      if (layer) this.engine.generate(layer.id);
+      this.updateCursor();
+      this.draw();
+      return true;
+    }
+
+    // Restore the selected light to its factory default (sun → az135/el45;
+    // point/spot → position {120,200,120}, range 400, spot target/cone/penumbra).
+    // Used by the on-canvas restore handle AND the panel "Reset light" button.
+    restoreSceneLight(layer, lightId) {
+      const target = layer || this._sceneLightLayer();
+      if (!target) return false;
+      const light = (lightId && this._lightById(target, lightId)) || this._selectedSceneLight(target);
+      if (!light) return false;
+      this._scenePushHistory();
+      if (light.type === 'directional') {
+        light.azimuth = 135;
+        light.elevation = 45;
+      } else if (light.type === 'point' || light.type === 'spot') {
+        light.position = { x: 120, y: 200, z: 120 };
+        light.range = 400;
+        if (light.type === 'spot') {
+          light.target = { x: 0, y: 0, z: 0 };
+          light.coneAngle = 30;
+          light.penumbra = 8;
+        }
+      } else {
+        return false;
+      }
+      this.engine.generate(target.id);
+      this.app?.ui?.buildControls?.(target);
+      this.app?.ui?.updateFormula?.();
+      this.draw();
+      return true;
+    }
+
+    // Draws the selected light's 3-axis translate gizmo (+ spot cone-axis line
+    // and a restore handle). No-op unless a light is selected.
+    drawSceneLightGizmo() {
+      const giz = this.getSceneLightGizmo();
+      if (!giz) return;
+      const ctx = this.ctx;
+      const unit = giz.unit;
+      const colors = {
+        x: getThemeToken('--render-gizmo-x', '#fbbf24'),
+        y: getThemeToken('--render-gizmo-y', '#a78bfa'),
+        z: getThemeToken('--render-gizmo-z', '#22d3ee'),
+      };
+      const stroke = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
+      const fillBg = getThemeToken('--render-selection-handle-fill', '#111827');
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      // Spot cone axis: a thin dashed line from position toward target.
+      if (giz.coneTip) {
+        ctx.globalAlpha = 0.7;
+        ctx.strokeStyle = colors.x;
+        ctx.lineWidth = 1.2 * unit;
+        ctx.setLineDash([4 * unit, 3 * unit]);
+        ctx.beginPath();
+        ctx.moveTo(giz.center.x, giz.center.y);
+        ctx.lineTo(giz.coneTip.x, giz.coneTip.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      [...giz.axes].sort((a, b) => a.depth - b.depth).forEach((ax) => {
+        const col = colors[ax.key];
+        const dim = ax.depth < -0.2 ? 0.4 : 0.95;
+        ctx.globalAlpha = dim;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 2 * unit;
+        ctx.beginPath();
+        ctx.moveTo(giz.center.x, giz.center.y);
+        ctx.lineTo(ax.tip.x, ax.tip.y);
+        ctx.stroke();
+        const a = Math.atan2(ax.tip.y - giz.center.y, ax.tip.x - giz.center.x);
+        const ah = 6 * unit;
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.moveTo(ax.tip.x, ax.tip.y);
+        ctx.lineTo(ax.tip.x - Math.cos(a - 0.42) * ah, ax.tip.y - Math.sin(a - 0.42) * ah);
+        ctx.lineTo(ax.tip.x - Math.cos(a + 0.42) * ah, ax.tip.y - Math.sin(a + 0.42) * ah);
+        ctx.closePath();
+        ctx.fill();
+      });
+      // Center pivot.
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = stroke;
+      ctx.beginPath();
+      ctx.arc(giz.center.x, giz.center.y, 2.6 * unit, 0, TAU);
+      ctx.fill();
+      // Restore handle: a small ringed dot with a curved arrow feel (a plain
+      // circle keeps it cheap; the tooltip/cursor explains it).
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = fillBg;
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1.3 * unit;
+      ctx.beginPath();
+      ctx.arc(giz.restore.x, giz.restore.y, 4 * unit, 0, TAU);
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1.1 * unit;
+      ctx.beginPath();
+      ctx.arc(giz.restore.x, giz.restore.y, 2 * unit, Math.PI * 0.25, Math.PI * 1.75);
+      ctx.stroke();
+      ctx.restore();
     }
 
     // ——— scene object verbs (context bar / context menu / shortcuts) ————
