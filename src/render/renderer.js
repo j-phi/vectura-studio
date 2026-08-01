@@ -10519,43 +10519,86 @@
       return { center: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }, radius: Math.max(maxX - minX, maxY - minY) / 2 };
     }
 
-    // Forward map: light → world-space offset (dx,dy from the anchor center) of
-    // the sun handle. Azimuth sets the screen direction (yaw-rotated; +Z reads
-    // as screen-up); elevation sets the radius (overhead = near the center,
-    // grazing = far out). Invertible by _lightFromHandleOffset.
-    _lightHandleOffset(layer, light, baseR) {
-      const d = this._lightWorldDir(light);
-      const el = Math.asin(clamp(-d.y, -1, 1)); // radians, sun elevation
-      const hx = -d.x; const hz = -d.z;         // horizontal direction toward the sun
-      const hlen = Math.hypot(hx, hz) || 1e-6;
-      const ux = hx / hlen; const uz = hz / hlen;
-      const camYaw = ((layer && layer.params && layer.params.camera && layer.params.camera.yaw) || 0) * Math.PI / 180;
-      const cy = Math.cos(camYaw); const sy = Math.sin(camYaw);
-      const ex = ux * cy - uz * sy;
-      const ez = ux * sy + uz * cy;
-      // Canvas-Y matches the scene/ground/shadow convention: with the default
-      // positive camera pitch, world +Z projects to screen-DOWN, so the toward-
-      // sun screen offset uses +ez (NOT -ez). This places the sun disc on the
-      // sky side — opposite the cast shadow — instead of over its own shadow.
-      const sxDir = ex; const syDir = ez;
-      const R = baseR * (0.30 + 0.70 * Math.cos(el));
-      return { dx: sxDir * R, dy: syDir * R };
+    // Camera-space rotation matching Geometry3D.rotatePoint (yaw→pitch→roll) and
+    // its exact inverse. Angles in DEGREES. Used to place the sun handle where
+    // the sun actually is in the current view (and to invert a drag).
+    _rotateCam(pt, cam) {
+      let { x, y, z } = pt;
+      const yaw = ((cam && cam.yaw) || 0) * Math.PI / 180;
+      const pitch = ((cam && cam.pitch) || 0) * Math.PI / 180;
+      const roll = ((cam && cam.roll) || 0) * Math.PI / 180;
+      let c = Math.cos(yaw); let s = Math.sin(yaw);
+      [x, z] = [x * c + z * s, -x * s + z * c];
+      c = Math.cos(pitch); s = Math.sin(pitch);
+      [y, z] = [y * c - z * s, y * s + z * c];
+      c = Math.cos(roll); s = Math.sin(roll);
+      [x, y] = [x * c - y * s, x * s + y * c];
+      return { x, y, z };
     }
 
-    // Inverse of _lightHandleOffset: a world-space handle offset → {azimuth,
-    // elevation}. Longer offset = lower sun (smaller elevation).
-    _lightFromHandleOffset(dx, dy, camYaw, baseR) {
-      const R = Math.hypot(dx, dy) || 1e-6;
-      const sxDir = dx / R; const syDir = dy / R;
-      const ex = sxDir; const ez = syDir; // inverse of _lightHandleOffset (syDir = +ez)
-      const cy = Math.cos(camYaw); const sy = Math.sin(camYaw);
-      const ux = ex * cy + ez * sy;             // inverse rotation
-      const uz = -ex * sy + ez * cy;
-      let az = Math.atan2(ux, uz) * 180 / Math.PI; // 0=+Z, 90=+X
-      if (az < 0) az += 360;
-      const cosEl = clamp((R / baseR - 0.30) / 0.70, 0, 1);
-      const el = Math.acos(cosEl) * 180 / Math.PI;
-      return { azimuth: Math.round(az * 10) / 10, elevation: Math.round(clamp(el, 0, 90) * 10) / 10 };
+    _unrotateCam(pt, cam) {
+      let { x, y, z } = pt;
+      const yaw = ((cam && cam.yaw) || 0) * Math.PI / 180;
+      const pitch = ((cam && cam.pitch) || 0) * Math.PI / 180;
+      const roll = ((cam && cam.roll) || 0) * Math.PI / 180;
+      let c = Math.cos(roll); let s = Math.sin(roll);
+      [x, y] = [x * c + y * s, -x * s + y * c];
+      c = Math.cos(pitch); s = Math.sin(pitch);
+      [y, z] = [y * c + z * s, -y * s + z * c];
+      c = Math.cos(yaw); s = Math.sin(yaw);
+      [x, z] = [x * c - z * s, x * s + z * c];
+      return { x, y, z };
+    }
+
+    // Forward map: light → screen offset (dx,dy from the anchor center) of the
+    // sun handle. The toward-sun unit vector is rotated through the SAME camera
+    // as the scene and projected (screen x = +camX, screen y = −camY, per
+    // Geometry3D.projectPoint), so the disc sits where the sun is in the view:
+    // azimuth sets the bearing, elevation sets the on-screen HEIGHT (a higher
+    // sun sits higher on screen; a smaller elevation number sits lower),
+    // foreshortened by camera pitch. Radius ∝ how far off the view axis the sun
+    // points. Invertible by _lightFromHandleOffset.
+    _lightHandleOffset(layer, light, baseR) {
+      const d = this._lightWorldDir(light);
+      const cam = (layer && layer.params && layer.params.camera) || {};
+      const rot = this._rotateCam({ x: -d.x, y: -d.y, z: -d.z }, cam); // toward-sun, camera space
+      return { dx: rot.x * baseR, dy: -rot.y * baseR };
+    }
+
+    // Inverse of _lightHandleOffset: a screen handle offset → {azimuth,elevation}.
+    // Reconstruct the camera-space toward-sun unit vector from (x = dx/R,
+    // y = −dy/R) plus the unit-length constraint (z = ±√(1−x²−y²)). Two depths
+    // project to the same screen point (front/back of the view sphere); which is
+    // real is unrecoverable from 2D alone, so pick the branch nearest the current
+    // elevation (hintEl) for smooth dragging — defaulting to the front hemisphere
+    // (correct for the common mid/high-elevation sun). Un-rotate → az/el.
+    _lightFromHandleOffset(dx, dy, cam, baseR, hintEl) {
+      const R = Math.max(baseR, 1e-6);
+      let rx = clamp(dx / R, -1, 1);
+      let ry = clamp(-dy / R, -1, 1);
+      const planar = Math.hypot(rx, ry);
+      if (planar > 1) { rx /= planar; ry /= planar; } // clamp onto the unit disc
+      const rz = Math.sqrt(Math.max(0, 1 - rx * rx - ry * ry));
+      const solve = (z) => {
+        const w = this._unrotateCam({ x: rx, y: ry, z }, cam); // toward-sun, world
+        const len = Math.hypot(w.x, w.y, w.z) || 1;
+        const ny = clamp(w.y / len, -1, 1);
+        return {
+          azimuth: (Math.atan2(w.x, w.z) * 180 / Math.PI + 360) % 360,
+          elevation: Math.asin(ny) * 180 / Math.PI,
+        };
+      };
+      const front = solve(rz); const back = solve(-rz);
+      let best;
+      if (Number.isFinite(hintEl)) {
+        best = Math.abs(front.elevation - hintEl) <= Math.abs(back.elevation - hintEl) ? front : back;
+      } else {
+        best = front; // front hemisphere: correct for the common mid/high sun
+      }
+      return {
+        azimuth: Math.round(best.azimuth * 10) / 10,
+        elevation: Math.round(clamp(best.elevation, 0, 90) * 10) / 10,
+      };
     }
 
     // Handle geometry (world coords) for the current sun, or null when the
@@ -10646,6 +10689,11 @@
         center: { ...control.center },
         baseR: control.baseR,
         camYaw: ((layer.params && layer.params.camera && layer.params.camera.yaw) || 0) * Math.PI / 180,
+        cam: {
+          yaw: (layer.params && layer.params.camera && layer.params.camera.yaw) || 0,
+          pitch: (layer.params && layer.params.camera && layer.params.camera.pitch) || 0,
+          roll: (layer.params && layer.params.camera && layer.params.camera.roll) || 0,
+        },
         startLight: { azimuth: light.azimuth, elevation: light.elevation },
         historyPushed: false,
         moved: false,
@@ -10773,7 +10821,8 @@
         const el = clamp(Math.atan2(ref, Math.max(len, 1e-3)) * 180 / Math.PI, 2, 88);
         next = { azimuth: Math.round(az * 10) / 10, elevation: Math.round(el * 10) / 10 };
       } else {
-        next = this._lightFromHandleOffset(dx, dy, drag.camYaw, drag.baseR);
+        next = this._lightFromHandleOffset(dx, dy, drag.cam, drag.baseR,
+          (this._sceneLight(layer) || drag.startLight || {}).elevation);
       }
       this._writeSceneLight(layer, next);
       this._scheduleSceneDragRegen(layer.id);

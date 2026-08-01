@@ -145,6 +145,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   the Direct Selection status-bar hint document the new shortcuts.
 
 ### Fixed
+- **3D Scene — sun elevation reads as on-screen height.** The sun handle now sits
+  where the sun actually is in the view: its toward-sun direction is projected
+  through the same camera as the scene, so a higher elevation puts the sun higher
+  on screen and a smaller elevation number puts it lower (foreshortened by camera
+  pitch). Previously elevation drove the handle's *radius*, which made "up/down"
+  depend on azimuth and read as inverted. The drag inverse round-trips exactly at
+  mid/high sun and follows the current elevation across the front/back ambiguity.
+- **3D Scene — "None" shows the object outline, not its mesh.** A curved primitive
+  (sphere/torus/…) with mapper None no longer draws a per-triangle outline for
+  every tessellation face (781 on a detail-20 sphere) — it shows just the clean
+  silhouette. Faceted primitives keep their face outlines (those are the real
+  cube/plane edges).
 - **3D Scene — deleting the last object no longer resurrects it.** An explicitly
   emptied scene now stays empty: `normalizeParams` seeds a default box only when
   the `objects` key is *absent* (legacy/migrated payloads), not when the array is

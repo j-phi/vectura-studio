@@ -321,7 +321,14 @@
             sceneTarget: target,
             ...(style.penId ? { penId: style.penId } : {}),
           };
-          if (!surfaceFill) {
+          // Curved (tessellated) primitives with mapper 'none' must NOT emit a
+          // per-face outline for every triangle — that draws the whole mesh.
+          // "None" shows just the object OUTLINE, which the silhouette/boundary
+          // edges (Edges pass below) already provide. Faceted prims (box, plane,
+          // polyhedra, ground) keep their face outlines: those ARE the clean
+          // cube/plane edges, and they carry the face pick polygon.
+          const suppressMeshOutline = !faceted && !surfaceFill;
+          if (!surfaceFill && !suppressMeshOutline) {
             if (clipped.fullyVisible) {
               const pts = face.polygon.map((pt) => ({ x: pt.x, y: pt.y }));
               pts.push({ x: pts[0].x, y: pts[0].y });

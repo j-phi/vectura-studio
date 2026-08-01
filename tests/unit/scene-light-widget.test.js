@@ -130,20 +130,24 @@ describe('3D Scene Studio 2B — sun widget (CONTRACT L1)', () => {
     const cx = control.center.x;
     const cy = control.center.y;
     const R = control.baseR;
-    // Drag straight to the RIGHT of the anchor at 0.65·baseR → azimuth 90°,
-    // elevation acos(0.5)=60° (longer offset = lower sun).
-    renderer._applySceneLightDrag({ clientX: cx + R * 0.65, clientY: cy });
-    expect(scene.params.lights[0].azimuth).toBeCloseTo(90, 0);
-    expect(scene.params.lights[0].elevation).toBeCloseTo(60, 0);
+    // The handle sits where the sun IS in the view (its toward-sun direction is
+    // projected through the same camera). "Dragging" it back to its own screen
+    // position must round-trip the light essentially unchanged.
+    renderer._applySceneLightDrag({ clientX: control.pos.x, clientY: control.pos.y });
+    expect(scene.params.lights[0].azimuth).toBeCloseTo(135, 0);
+    expect(scene.params.lights[0].elevation).toBeCloseTo(45, 0);
     expect(renderer.app.pushHistory).toHaveBeenCalledTimes(1);
     // Draft regen coalesced onto the shared rAF scheduler.
     expect(renderer._sceneDragRegenLayerId).toBe(scene.id);
 
-    // A second move keeps the single gesture history entry. Dragging the handle
-    // toward screen-TOP places the sun in world −Z (behind the scene) — azimuth
-    // 180°, since +Z projects to screen-DOWN under the default positive pitch.
-    renderer._applySceneLightDrag({ clientX: cx, clientY: cy - R * 0.65 });
-    expect(scene.params.lights[0].azimuth).toBeCloseTo(180, 0);
+    // Elevation reads as ON-SCREEN HEIGHT (Jay's contract: a smaller elevation
+    // number sits lower). Dragging the handle HIGHER (smaller canvas Y) raises
+    // the sun above where dragging it LOWER puts it — one continuous gesture.
+    renderer._applySceneLightDrag({ clientX: cx, clientY: cy - R * 0.9 });
+    const highEl = scene.params.lights[0].elevation;
+    renderer._applySceneLightDrag({ clientX: cx, clientY: cy - R * 0.15 });
+    const lowEl = scene.params.lights[0].elevation;
+    expect(highEl).toBeGreaterThan(lowEl);
     expect(renderer.app.pushHistory).toHaveBeenCalledTimes(1);
 
     // Release cancels the coalesced draft-regen rAF (test hygiene).
