@@ -187,7 +187,30 @@
       const Regions = Vectura.Scene3D.Regions;
       const Shadows = Vectura.Scene3D.Shadows;
       const Mappers = Vectura.Scene3D.Mappers;
+      const SurfaceFill = Vectura.Scene3D.SurfaceFill;
       const linkSegments = G3.linkSegments;
+
+      // Correlate a scene record back to its source object (records don't carry
+      // params/transform) so SurfaceFill can re-evaluate the object's chart.
+      const objById = new Map((p.objects || []).map((o) => [o.id, o]));
+      // The primitive → chart (mode, sizes, detail) mapping — mirrors
+      // Scene.buildPrimitiveMesh so the wrap fill lands on the rendered surface.
+      const TOPOFORM_MODES = {
+        sphere: 'sphere', ellipsoid: 'sphere', cylinder: 'cylinder', cone: 'cone',
+        torus: 'torus', torusKnot: 'torusKnot', capsule: 'capsule',
+        superellipsoid: 'superellipsoid', pyramid: 'pyramid',
+      };
+      const curvedChartParams = (obj) => {
+        const mode = TOPOFORM_MODES[obj.primitive];
+        if (!mode) return null; // box/plane/solid are faceted, not chart-wrapped
+        const pr = obj.params || {};
+        const detail = Math.max(4, Math.round(finite(pr.detail, 24)));
+        const r = finite(pr.radius, 20);
+        const sizes = obj.primitive === 'sphere'
+          ? { sx: r, sy: r, sz: r }
+          : { sx: finite(pr.sx, 20), sy: finite(pr.sy, 20), sz: finite(pr.sz, 20) };
+        return { mode, sizes, detail };
+      };
       const light = (p.lights && p.lights[0]) || {};
       const lightDir = Lighting && typeof Lighting.lightWorldDir === 'function'
         ? Lighting.lightWorldDir(light) : null;
@@ -418,23 +441,46 @@
               spacing = Regions.coverageToSpacing(Regions.coverageFor(bandIdx, p.tone), penWidth);
               darkBand = bandIdx === 0;
             }
-            // Dispatch by mapper. Draft frames and line mappers (hatch/
-            // crosshatch) use the cheap scanline fill; region mappers (contour/
-            // spiral/stipple) fill the linked silhouette loops at full quality.
-            let lines;
-            if (draft || !REGION_MAPPERS.has(g.style.mapper)) {
-              lines = hatchSegments(boundary, angleDeg, spacing);
-              if (g.style.mapper === 'crosshatch' || darkBand) {
-                hatchSegments(boundary, angleDeg + 90, spacing).forEach((l) => lines.push(l));
+            // FULL QUALITY: wrap the fill around the parametric surface so it
+            // reads as a 3D form, with per-sample tone (dark→dense, brightest
+            // band left blank = the highlight). Falls back to the flat
+            // silhouette fill on draft frames or an unsupported primitive.
+            let lines = null;
+            const chartParams = !draft && SurfaceFill ? curvedChartParams(objById.get(record.id) || {}) : null;
+            if (chartParams) {
+              lines = SurfaceFill.buildObject({
+                mode: chartParams.mode,
+                sizes: chartParams.sizes,
+                detail: chartParams.detail,
+                transform: (objById.get(record.id) || {}).transform,
+                applyTransform: Scene.applyObjectTransform,
+                projectWorld: scene.projectWorld,
+                camAngles: scene.camera,
+                mapper: g.style.mapper,
+                fillAngle: angleDeg,
+                fillDensity: finite(sp.fillDensity, 50),
+                toneOn,
+                Lvec,
+              });
+            }
+            if (!lines) {
+              // Fallback: flat silhouette fill. Draft (live drag) or a primitive
+              // SurfaceFill can't chart. Region mappers link the boundary loops;
+              // line mappers scanline-fill. Plain hatch is NOT auto-crossed in
+              // the dark band any more (that made hatch look like crosshatch).
+              if (draft || !REGION_MAPPERS.has(g.style.mapper)) {
+                lines = hatchSegments(boundary, angleDeg, spacing);
+                if (g.style.mapper === 'crosshatch') {
+                  hatchSegments(boundary, angleDeg + 90, spacing).forEach((l) => lines.push(l));
+                }
+              } else {
+                const loops = (linkSegments ? linkSegments(boundary) : [])
+                  .filter((lp) => Array.isArray(lp) && lp.length >= 3);
+                const regionSpacing = hatchSpacing(finite(sp.fillDensity, 50));
+                lines = Mappers && typeof Mappers.regionFill === 'function'
+                  ? (Mappers.regionFill(g.style.mapper, loops, { spacing: regionSpacing }) || [])
+                  : [];
               }
-            } else {
-              const loops = (linkSegments ? linkSegments(boundary) : [])
-                .filter((lp) => Array.isArray(lp) && lp.length >= 3);
-              // Region fills read the Density slider directly (see faceRegionLines).
-              const regionSpacing = hatchSpacing(finite(sp.fillDensity, 50));
-              lines = Mappers && typeof Mappers.regionFill === 'function'
-                ? (Mappers.regionFill(g.style.mapper, loops, { spacing: regionSpacing }) || [])
-                : [];
             }
             // Nearest front-face depth for the group: hatch draws over farther
             // objects and is hidden behind nearer ones; the object never
@@ -453,21 +499,21 @@
             };
             const segCtx = { objectId: record.id, selfObject: true };
             lines.forEach((line) => {
-              const pts = line.map((pt) => ({ x: pt.x, y: pt.y, z: nearZ }));
+              // SurfaceFill lines carry per-sample camera-depth (they wrap the
+              // form); flat-fill lines don't → fall back to the group's nearZ.
+              const pts = line.map((pt) => ({ x: pt.x, y: pt.y, z: Number.isFinite(pt.z) ? pt.z : nearZ }));
               const clip = clipper.clipPath(pts, segCtx);
               emitRuns(clip.runs, fillMeta, hiddenTreatment);
             });
           });
         }
 
-        // ── Specular hotspot: one small filled highlight on a lit curved
-        // surface (spec group E — the only iso-band region; flat faces get none).
-        if (!faceted && toneOn && typeof Regions.specularRegion === 'function'
-          && p.tone.specular && p.tone.specular.enabled) {
-          const camAngles = { yaw: scene.camera.yaw, pitch: scene.camera.pitch, roll: scene.camera.roll };
-          const spec = Regions.specularRegion(record, camAngles, p.tone.specular, light);
-          if (spec) out.push(spec);
-        }
+        // ── Specular highlight: the brightest tone band of the wrap fill is left
+        // UN-hatched (SurfaceFill's per-sample ordered dither drops every line
+        // toward high intensity), so blank paper reads as the highlight — the
+        // line-art-correct treatment. The old solid-white filled disc
+        // (Regions.specularRegion) is retired: it obscured the form and read as a
+        // pasted-on sphere, not a highlight. (The function stays for reference.)
 
         // ── Edges: silhouette / crease / boundary (+ every edge of a
         // wireframe-mapped face); hidden runs drop (solid) or dash (x-ray).

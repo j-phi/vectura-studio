@@ -210,6 +210,16 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — 3D Scene Studio acceptance fixes D/E/F/H/I + convex-hull shadows (v1.3.19–1.3.21).**
+  On `3d-scene/p4`, from Jay's live-test batch 2: (E) the sun widget projects the toward-sun
+  vector through the scene camera so elevation reads as on-screen height (was radius-encoded →
+  inverted); (H) mapper None on a curved primitive shows the clean silhouette, not the whole
+  tessellation mesh; (B2) cast shadows adopt the light-lab convex-hull footprint per caster
+  (drops the fragile per-face boolean union); (D/I/F) new `Scene3D.SurfaceFill` wraps
+  hatch/crosshatch/contour/spiral/stipple around the parametric surface with per-sample
+  tone-driven density, the brightest band left blank as the highlight (retiring the solid-white
+  specular disc), and hatch ≠ crosshatch. Still open on this branch: (J) a separate per-object
+  transform gizmo, and (G) the multi-light-type system (point/spot/area/ambient/emissive).
 - **Unreleased — 3D Scene Studio acceptance fixes A/B/C (v1.3.18).** On `3d-scene/p4`:
   (A) deleting the last object no longer resurrects a default box — `normalizeParams`
   seeds Box 1 only when the `objects` key is absent, never for an explicit empty array;

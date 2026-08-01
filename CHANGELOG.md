@@ -144,6 +144,22 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   through save/load and undo. In-app help (Selection & Direct Selection table) and
   the Direct Selection status-bar hint document the new shortcuts.
 
+### Added
+- **3D Scene — curved-surface fills wrap the 3D form (`Scene3D.SurfaceFill`).**
+  Hatch/crosshatch/contour/spiral/stipple on a sphere, torus, cylinder, cone,
+  capsule, superellipsoid, or torus-knot now follow the parametric surface and
+  foreshorten with it — a hatched sphere reads as a globe of meridians, a torus
+  crosshatch wraps the tube — instead of flat-filling the 2D silhouette with
+  parallel scanlines (which read as a flat disc). The fill re-evaluates the same
+  chart the mesh was built from, back-face-culls the hidden side, and projects
+  through the scene camera. **Tone reads across the surface:** each wrap line
+  carries an ordered-dither threshold, so lines pile up in shadow and thin toward
+  the light — and the **brightest band is left blank, which is the highlight**.
+  That retires the old solid-white specular disc (it obscured the form and read
+  as a pasted-on sphere). Hatch (meridians) and crosshatch (meridians + parallels)
+  are now visibly different; the dark-band auto-cross that made plain hatch look
+  like crosshatch is gone.
+
 ### Fixed
 - **3D Scene — cleaner, more robust cast shadows (convex-hull model).** Each
   caster's ground footprint is now the 2D convex hull of its above-ground

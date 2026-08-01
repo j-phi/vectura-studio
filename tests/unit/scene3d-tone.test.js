@@ -111,8 +111,12 @@ describe('scene3d tone (CONTRACT L3)', () => {
 
   const specularCount = (paths) => paths.filter((p) => p.meta && p.meta.specular).length;
 
-  test('specular hotspot present on a lit sphere, absent when size 0', () => {
-    expect(specularCount(algo.generate(sphere(1), null, null, BOUNDS) || [])).toBeGreaterThan(0);
+  test('the solid specular disc is retired (highlight is the wrap fill\'s blank brightest band)', () => {
+    // The old solid-white specular disc obscured the form and read as a pasted-on
+    // sphere; it is retired. The highlight is now intrinsic — SurfaceFill leaves
+    // the brightest tone band un-hatched (see scene3d-surface-fill.test.js). No
+    // meta.specular fill is ever emitted now, at any specular size.
+    expect(specularCount(algo.generate(sphere(1), null, null, BOUNDS) || [])).toBe(0);
     expect(specularCount(algo.generate(sphere(0), null, null, BOUNDS) || [])).toBe(0);
   });
 
