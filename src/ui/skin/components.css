@@ -12811,6 +12811,27 @@ body.mobile-layout .hud-bar {
 .vs3-tree-vis:hover { color: var(--ui-accent, #4e9ee1); }
 .vs3-tree-vis[data-visibility="xray"] { color: var(--ui-accent, #4e9ee1); }
 .vs3-tree-del:hover { color: var(--ui-danger, #e5484d); }
+/* Add-light action strip (not a selectable row) — small ghost buttons. */
+.vs3-tree-addlight {
+  display: flex;
+  gap: 6px;
+  padding: 4px 6px 2px;
+}
+.vs3-tree-addbtn {
+  flex: 0 0 auto;
+  border: 1px dashed var(--ui-border, rgba(128, 128, 128, 0.35));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+.vs3-tree-addbtn:hover {
+  color: var(--ui-accent, #4e9ee1);
+  border-color: var(--ui-accent, #4e9ee1);
+}
 .vs3-rename {
   width: 100%;
   min-width: 0;

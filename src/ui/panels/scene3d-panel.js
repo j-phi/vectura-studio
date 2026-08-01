@@ -187,6 +187,47 @@
       return l;
     };
 
+    // ── Multi-light helpers (G): the scene shades from EVERY light — directional
+    // suns (aim + cast shadows) plus ambient fills (a flat lift on the shadowed
+    // side, no shadow). Add / select / delete from the scene tree. ─────────────
+    const getLights = () => (Array.isArray(params.lights) ? params.lights : (params.lights = []));
+    const lightById = (id) => getLights().find((l) => l && l.id === id) || null;
+    const lightDisplayName = (light, index) => {
+      if (!light) return 'Light';
+      if (light.type === 'ambient') return 'Ambient';
+      if (light.id === 'sun' || index === 0) return 'Sun';
+      return `Light ${index + 1}`;
+    };
+    const nextLightId = () => {
+      const used = new Set(getLights().map((l) => l && l.id));
+      let n = getLights().length + 1;
+      let id = `light-${n}`;
+      while (used.has(id)) { n += 1; id = `light-${n}`; }
+      return id;
+    };
+    const addLight = (type) => {
+      let newId = null;
+      commit(() => {
+        const arr = getLights();
+        newId = (type === 'ambient' && !arr.some((l) => l && l.type === 'ambient')) ? 'ambient' : nextLightId();
+        arr.push(type === 'ambient'
+          ? { id: newId, type: 'ambient', intensity: 0.3, castShadows: false }
+          : { id: newId, type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: true });
+      });
+      renderTree();
+      if (newId) selectLight(newId);
+    };
+    const deleteLight = (id) => {
+      if (getLights().length <= 1) return; // a scene keeps at least one light
+      commit(() => {
+        const arr = getLights();
+        const idx = arr.findIndex((l) => l && l.id === id);
+        if (idx >= 0) arr.splice(idx, 1);
+      });
+      if (sel.objectId === `light:${id}`) selectLight((getLights()[0] || {}).id);
+      else { renderTree(); renderInspector(); }
+    };
+
     // CONTRACT L3 — light-driven tone bands. 2A owns the schema/normalize in
     // params.js; 2B's editor writes it. Only synthesized when absent so a
     // normalized tone from the engine is never clobbered.
@@ -462,8 +503,8 @@
       });
       buildShelfButton(shelf, {
         icon: ICON_LIGHT, label: 'Light',
-        title: 'Select the sun light', dataset: { light: 'sun' },
-        onClick: () => selectLight(),
+        title: 'Add a directional (sun) light', dataset: { light: 'add' },
+        onClick: () => addLight('directional'),
       });
 
       // More… flyout (toolbar sub-tool pattern: session last-pick + icon swap).
@@ -641,34 +682,71 @@
       gRow.addEventListener('click', () => selectObject('ground'));
       treeHost.appendChild(gRow);
 
-      // Sun — the scene's single directional light (Phase 2). A selectable
-      // fixture; its controls live in the Inspector, and the visibility dot
-      // toggles cast-shadows.
-      const light0 = Array.isArray(params.lights) && params.lights[0] ? params.lights[0] : null;
-      const castOn = !light0 || light0.castShadows !== false;
-      const sRow = document.createElement('div');
-      sRow.className = 'vs3-tree-row vs3-tree-light';
-      sRow.dataset.objectId = 'light';
-      if (sel.objectId === 'light') sRow.classList.add('selected');
-      const sName = document.createElement('span');
-      sName.className = 'vs3-tree-name';
-      sName.textContent = 'Sun';
-      sRow.appendChild(sName);
-      const sVis = document.createElement('button');
-      sVis.type = 'button';
-      sVis.className = 'vs3-tree-vis';
-      sVis.title = castOn ? 'Casts shadows (click to disable)' : 'No shadows (click to enable)';
-      sVis.setAttribute('aria-label', `Cast shadows ${castOn ? 'on' : 'off'}`);
-      sVis.textContent = castOn ? '●' : '◌';
-      sVis.addEventListener('click', (e) => {
-        e.stopPropagation();
-        commit(() => { ensureLight().castShadows = !castOn; });
-        renderTree();
-        if (sel.objectId === 'light') renderInspector();
+      // Lights — every light in the scene (directional suns + ambient fills).
+      // Each row selects the light (the Inspector edits it); the dot toggles cast
+      // shadows (directional only); ✕ deletes it (never the last one).
+      const lights = getLights();
+      lights.forEach((light, index) => {
+        const rowId = `light:${light.id}`;
+        const isAmbient = light.type === 'ambient';
+        const castOn = light.castShadows !== false;
+        const lRow = document.createElement('div');
+        lRow.className = 'vs3-tree-row vs3-tree-light';
+        lRow.dataset.objectId = rowId;
+        if (sel.objectId === rowId) lRow.classList.add('selected');
+        const lName = document.createElement('span');
+        lName.className = 'vs3-tree-name';
+        lName.textContent = lightDisplayName(light, index);
+        lRow.appendChild(lName);
+        if (!isAmbient) {
+          const lVis = document.createElement('button');
+          lVis.type = 'button';
+          lVis.className = 'vs3-tree-vis';
+          lVis.title = castOn ? 'Casts shadows (click to disable)' : 'No shadows (click to enable)';
+          lVis.setAttribute('aria-label', `Cast shadows ${castOn ? 'on' : 'off'}`);
+          lVis.textContent = castOn ? '●' : '◌';
+          lVis.addEventListener('click', (e) => {
+            e.stopPropagation();
+            commit(() => { const lt = lightById(light.id); if (lt) lt.castShadows = !castOn; });
+            renderTree();
+            if (sel.objectId === rowId) renderInspector();
+          });
+          lRow.appendChild(lVis);
+        }
+        if (lights.length > 1) {
+          const del = document.createElement('button');
+          del.type = 'button';
+          del.className = 'vs3-tree-del';
+          del.title = 'Delete light';
+          del.setAttribute('aria-label', `Delete ${lightDisplayName(light, index)}`);
+          del.textContent = '✕';
+          del.addEventListener('click', (e) => { e.stopPropagation(); deleteLight(light.id); });
+          lRow.appendChild(del);
+        }
+        lRow.addEventListener('click', () => selectLight(light.id));
+        treeHost.appendChild(lRow);
       });
-      sRow.appendChild(sVis);
-      sRow.addEventListener('click', () => selectLight());
-      treeHost.appendChild(sRow);
+      // Add-light affordances (a directional sun; one ambient fill). NOT a
+      // vs3-tree-row — it's an action strip, not a selectable fixture.
+      const addRow = document.createElement('div');
+      addRow.className = 'vs3-tree-addlight';
+      const addDir = document.createElement('button');
+      addDir.type = 'button';
+      addDir.className = 'vs3-tree-addbtn';
+      addDir.textContent = '+ Sun';
+      addDir.title = 'Add a directional (sun) light';
+      addDir.addEventListener('click', (e) => { e.stopPropagation(); addLight('directional'); });
+      addRow.appendChild(addDir);
+      if (!lights.some((l) => l && l.type === 'ambient')) {
+        const addAmb = document.createElement('button');
+        addAmb.type = 'button';
+        addAmb.className = 'vs3-tree-addbtn';
+        addAmb.textContent = '+ Ambient';
+        addAmb.title = 'Add an ambient fill light';
+        addAmb.addEventListener('click', (e) => { e.stopPropagation(); addLight('ambient'); });
+        addRow.appendChild(addAmb);
+      }
+      treeHost.appendChild(addRow);
     };
 
     // ── Selection (CONTRACT D consumer; guarded) ────────────────────────────
@@ -696,12 +774,13 @@
       syncSelectionUI();
     };
 
-    const selectLight = () => {
-      sel = { mode: 'light', objectId: 'light', faceKey: null };
-      // The sun is not a renderer object; clear any object/face selection so the
+    const selectLight = (id) => {
+      const lightId = id || (getLights()[0] || {}).id || 'sun';
+      sel = { mode: 'light', objectId: `light:${lightId}`, faceKey: null };
+      // Lights are not renderer objects; clear any object/face selection so the
       // on-canvas sun widget is the sole light affordance. Do it SILENTLY — a
       // null scene-selection echo would re-enter onSceneSelection and reset our
-      // just-set 'light' mode back to 'none', so the Sun inspector never opens.
+      // just-set 'light' mode back to 'none', so the light Inspector never opens.
       pushSelectionToRenderer(null, { silent: true });
       syncSelectionUI();
     };
@@ -747,54 +826,79 @@
       return row;
     };
 
-    // Sun inspector — azimuth / elevation / cast-shadows for params.lights[0].
-    const renderLightInspector = () => {
-      const light = ensureLight();
+    // Light inspector — type-aware. Directional: azimuth / elevation / intensity
+    // / cast-shadows. Ambient: intensity only (a flat fill; never casts). Live
+    // callbacks re-fetch the light by id so they stay bound across regens.
+    const renderLightInspector = (light) => {
+      if (!light) {
+        const empty = document.createElement('p');
+        empty.className = 'vs3-empty';
+        empty.textContent = 'Select a light in the scene tree.';
+        inspectorHost.appendChild(empty);
+        return;
+      }
+      const lid = light.id;
+      const isAmbient = light.type === 'ambient';
       const note = document.createElement('p');
       note.className = 'vs3-empty';
-      note.textContent = 'Sun — drag the on-canvas sun handle (or a shadow) to aim it, or use the controls below.';
+      note.textContent = isAmbient
+        ? 'Ambient — a constant fill that lifts the shadowed side. Does not cast shadows.'
+        : 'Sun — drag the on-canvas sun handle (or a shadow) to aim it, or use the controls below.';
       inspectorHost.appendChild(note);
-      sliderRow(inspectorHost, inspectorComps, 'Azimuth', {
-        value: Number.isFinite(light.azimuth) ? light.azimuth : 135,
-        min: 0, max: 360, step: 1,
-        defaultValue: 135,
-        ariaLabel: 'Light azimuth (degrees)',
-        ...liveSlider((v) => { ensureLight().azimuth = Math.round(v); }),
+      if (!isAmbient) {
+        sliderRow(inspectorHost, inspectorComps, 'Azimuth', {
+          value: Number.isFinite(light.azimuth) ? light.azimuth : 135,
+          min: 0, max: 360, step: 1, defaultValue: 135,
+          ariaLabel: 'Light azimuth (degrees)',
+          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.azimuth = Math.round(v); }),
+        });
+        sliderRow(inspectorHost, inspectorComps, 'Elevation', {
+          value: Number.isFinite(light.elevation) ? light.elevation : 45,
+          min: 0, max: 90, step: 1, defaultValue: 45,
+          ariaLabel: 'Light elevation (degrees)',
+          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.elevation = Math.round(v); }),
+        });
+      }
+      sliderRow(inspectorHost, inspectorComps, 'Intensity', {
+        value: Number.isFinite(light.intensity) ? light.intensity : (isAmbient ? 0.3 : 1),
+        min: 0, max: isAmbient ? 1 : 2, step: 0.05,
+        defaultValue: isAmbient ? 0.3 : 1,
+        ariaLabel: 'Light intensity',
+        ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.intensity = Math.round(v * 100) / 100; }),
       });
-      sliderRow(inspectorHost, inspectorComps, 'Elevation', {
-        value: Number.isFinite(light.elevation) ? light.elevation : 45,
-        min: 0, max: 90, step: 1,
-        defaultValue: 45,
-        ariaLabel: 'Light elevation (degrees)',
-        ...liveSlider((v) => { ensureLight().elevation = Math.round(v); }),
-      });
-      const row = document.createElement('div');
-      row.className = 'vs3-row';
-      const lbl = document.createElement('label');
-      lbl.className = 'vs3-lbl';
-      lbl.textContent = 'Cast shadows';
-      row.appendChild(lbl);
-      const ctlHost = document.createElement('div');
-      ctlHost.className = 'vs3-ctl';
-      row.appendChild(ctlHost);
-      inspectorHost.appendChild(row);
-      inspectorComps.push(UI.SegCtrl(ctlHost, {
-        options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
-        value: light.castShadows === false ? 'off' : 'on',
-        ariaLabel: 'Cast shadows',
-        onChange: (v) => {
-          commit(() => { ensureLight().castShadows = v === 'on'; });
-          renderTree();
-        },
-      }));
+      if (!isAmbient) {
+        const row = document.createElement('div');
+        row.className = 'vs3-row';
+        const lbl = document.createElement('label');
+        lbl.className = 'vs3-lbl';
+        lbl.textContent = 'Cast shadows';
+        row.appendChild(lbl);
+        const ctlHost = document.createElement('div');
+        ctlHost.className = 'vs3-ctl';
+        row.appendChild(ctlHost);
+        inspectorHost.appendChild(row);
+        inspectorComps.push(UI.SegCtrl(ctlHost, {
+          options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+          value: light.castShadows === false ? 'off' : 'on',
+          ariaLabel: 'Cast shadows',
+          onChange: (v) => {
+            commit(() => { const lt = lightById(lid); if (lt) lt.castShadows = v === 'on'; });
+            renderTree();
+          },
+        }));
+      }
     };
 
     const renderInspector = () => {
       if (!inspectorHost) return;
       destroyComps(inspectorComps);
       inspectorHost.textContent = '';
-      if (sel.objectId === 'light') {
-        renderLightInspector();
+      if (sel.objectId && sel.objectId.indexOf('light:') === 0) {
+        renderLightInspector(lightById(sel.objectId.slice('light:'.length)));
+        return;
+      }
+      if (sel.objectId === 'light') { // legacy selection → first light
+        renderLightInspector(getLights()[0] || null);
         return;
       }
       if (sel.objectId === 'ground') {

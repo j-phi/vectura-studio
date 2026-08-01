@@ -152,9 +152,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   (`Regions.combinedIntensity`). Each light carries an `intensity` weight; an
   ambient light softens the shadowed side (fills the darkest tone band) without
   casting, and **every shadow-casting directional light drops its own footprint**.
-  A lone sun with no ambient stays byte-identical to before. (Engine + params +
-  shadows; the panel UI to add/manage lights and positional point/spot lights
-  follow as the next increments.)
+  A lone sun with no ambient stays byte-identical to before. The **scene tree now
+  manages lights**: every light is a selectable row, **+ Sun** / **+ Ambient** add
+  one, ✕ deletes it (never the last), and the Inspector is type-aware (directional
+  = azimuth / elevation / intensity / cast-shadows; ambient = intensity only).
+  (Positional point/spot lights — with a position gizmo and point-shadow
+  projection — are the next increment.)
 - **3D Scene — unified per-object transform gizmo (move · rotate · scale).** A
   Cinema4D-style gizmo now appears on the selected scene object with all handles
   shown at once: three colour-coded move arrows (X amber, Y violet, Z cyan), three

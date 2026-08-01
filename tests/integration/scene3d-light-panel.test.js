@@ -72,22 +72,26 @@ describe('Scene3D panel — Light + tone (Phase 2, vs3-)', () => {
     const sun = container.querySelector('.vs3-tree-light');
     expect(sun).toBeTruthy();
     expect(sun.querySelector('.vs3-tree-name').textContent).toBe('Sun');
-    // Ordering: object rows, then Ground, then Sun.
+    // Ordering: object rows, then Ground, then the light(s). The add-light action
+    // strip is NOT a vs3-tree-row. The sun's row id is namespaced per light.
     const rows = Array.from(container.querySelectorAll('.vs3-tree-row')).map((r) => r.dataset.objectId);
-    expect(rows).toEqual(['obj-1', 'ground', 'light']);
+    expect(rows).toEqual(['obj-1', 'ground', 'light:sun']);
   });
 
-  test('activating the Light shelf button selects the sun and mounts the light Inspector', () => {
-    const { container, pushHistory } = mount({ objects: [fixtureObject(1)] });
-    const lightBtn = container.querySelector('.vs3-shelf-btn[data-light="sun"]');
+  test('the Light shelf button ADDS a directional light and selects it (one undo)', () => {
+    const { container, layer, pushHistory } = mount({ objects: [fixtureObject(1)] });
+    const before = layer.params.lights.length;
+    const lightBtn = container.querySelector('.vs3-shelf-btn[data-light="add"]');
     expect(lightBtn).toBeTruthy();
     expect(lightBtn.disabled).toBe(false);
     fire(lightBtn, 'click');
-    // Selection is not an undoable edit.
-    expect(pushHistory).toHaveBeenCalledTimes(0);
-    expect(container.querySelector('.vs3-tree-light').classList.contains('selected')).toBe(true);
+    // Adding a light is ONE undoable edit; the new light is selected + inspected.
+    expect(layer.params.lights.length).toBe(before + 1);
+    expect(pushHistory).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('.vs3-tree-light.selected')).toBeTruthy();
     expect(container.querySelector('input.ctrl-slider[aria-label="Light azimuth (degrees)"]')).toBeTruthy();
     expect(container.querySelector('input.ctrl-slider[aria-label="Light elevation (degrees)"]')).toBeTruthy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Light intensity"]')).toBeTruthy();
     expect(container.querySelector('.vs3-inspector .seg-ctrl[aria-label="Cast shadows"]')).toBeTruthy();
   });
 

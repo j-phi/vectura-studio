@@ -175,9 +175,9 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     const importBtn = container.querySelector('.vs3-shelf-btn[data-stub="import"]');
     expect(importBtn.disabled).toBe(true);
     expect(importBtn.title).toBe('STL import arrives in Phase 4');
-    // Phase 2: the Light shelf stub is activated — it selects the sun (no longer
-    // a disabled stub).
-    const lightBtn = container.querySelector('.vs3-shelf-btn[data-light="sun"]');
+    // Phase 2/G: the Light shelf button is activated — it ADDS a directional
+    // light (no longer a disabled stub, and no longer a "select the sun" action).
+    const lightBtn = container.querySelector('.vs3-shelf-btn[data-light="add"]');
     expect(lightBtn).toBeTruthy();
     expect(lightBtn.disabled).toBe(false);
     expect(container.querySelector('.vs3-shelf-btn[data-stub="light"]')).toBeFalsy();
