@@ -637,6 +637,10 @@
       // null | { mode:'widget'|'shadow', layerId, lightIndex, startLight,
       // origin, camYaw, unit, historyPushed, moved }.
       this._sceneLightDrag = null;
+      // Unified per-object transform-gizmo drag state.
+      // null | { layerId, objectId, type:'move'|'rotate'|'scale', axis:'x'|'y'|'z',
+      // center, startWorld, startAngle, startDist, camYaw, start{…}, historyPushed, moved }.
+      this._sceneObjectGizmoDrag = null;
       // On-canvas uniform-scale gizmo drag state.
       // null | { layerId, objectId, handle, center, startDist, startScale,
       // historyPushed, moved }.
@@ -802,6 +806,14 @@
       // duplicates). Capture phase so tool-level Escape shortcuts don't race.
       this._onDragCancelKey = (e) => {
         if (e.key !== 'Escape') return;
+        // Escape mid transform-gizmo drag restores the pre-drag transform.
+        if (this._sceneObjectGizmoDrag) {
+          if (this._cancelSceneObjectGizmoDrag()) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          return;
+        }
         // Escape mid resize-gizmo drag restores the pre-drag scale.
         if (this._sceneResizeDrag) {
           if (this._cancelSceneResizeDrag()) {
@@ -5548,6 +5560,9 @@
         this.drawSceneResizeControl();
         // Box face-pull handle (no-op unless a single box face is selected).
         this.drawSceneFacePullHandle();
+        // Unified per-object transform gizmo (move/rotate/scale; no-op unless a
+        // single scene object is selected — supersedes the corner-scale handle).
+        this.drawSceneObjectGizmo();
         // Phase 2: the sun widget (no-op without a selected scene3d layer).
         this.drawSceneLightOverlay();
         this.ctx.restore();
@@ -5571,6 +5586,9 @@
         this.drawSceneResizeControl();
         // Box face-pull handle (no-op unless a single box face is selected).
         this.drawSceneFacePullHandle();
+        // Unified per-object transform gizmo (move/rotate/scale; no-op unless a
+        // single scene object is selected — supersedes the corner-scale handle).
+        this.drawSceneObjectGizmo();
         // Phase 2: the sun widget (no-op without a selected scene3d layer).
         this.drawSceneLightOverlay();
         this.ctx.restore();
@@ -6698,6 +6716,14 @@
             if (e.cancelable) e.preventDefault();
             return;
           }
+          // The unified transform gizmo (move/rotate/scale) wins over an object
+          // re-pick underneath it — runs after sun/shadow, before the legacy
+          // corner-scale/face-pull (which it supersedes for a selected object).
+          const gizmoHit = this.hitSceneObjectGizmo(sx, sy, sceneLayer);
+          if (gizmoHit && this.beginSceneObjectGizmoDrag(gizmoHit, e)) {
+            if (e.cancelable) e.preventDefault();
+            return;
+          }
           // A corner scale handle wins over an object re-pick underneath it.
           const resizeHit = this.hitSceneResize(sx, sy, sceneLayer);
           if (resizeHit && this.beginSceneResizeDrag(resizeHit, e)) {
@@ -7293,6 +7319,12 @@
         return;
       }
 
+      // 3D Scene Studio: live unified transform-gizmo drag (move/rotate/scale).
+      if (this._sceneObjectGizmoDrag) {
+        this._applySceneObjectGizmoDrag(e);
+        return;
+      }
+
       // 3D Scene Studio: live uniform-scale gizmo drag.
       if (this._sceneResizeDrag) {
         this._applySceneResizeDrag(e);
@@ -7792,6 +7824,14 @@
       }
       if (this.rotation3DDrag) {
         this.end3DRotationDrag();
+        clearActivePointer();
+        return;
+      }
+      // 3D Scene Studio: commit a unified transform-gizmo drag (full regen on
+      // release; history pushed once on first movement).
+      if (this._sceneObjectGizmoDrag) {
+        this._endSceneObjectGizmoDrag();
+        this.draw();
         clearActivePointer();
         return;
       }
@@ -10104,6 +10144,8 @@
     }
 
     drawSceneResizeControl() {
+      // Superseded by the unified transform gizmo (its scale boxes own scaling).
+      if (this.getSceneObjectGizmo()) return;
       const sel = this.getSceneSelection();
       if (!sel) return;
       const layer = this.engine.layers.find((l) => l.id === sel.layerId);
@@ -10141,6 +10183,8 @@
 
     // Screen-px hit-test of the four corner handles → { handle, layer, bbox }.
     hitSceneResize(sx, sy, layer) {
+      // Superseded by the unified transform gizmo for a single selected object.
+      if (this.getSceneObjectGizmo(layer)) return null;
       const bbox = this._sceneResizeBBox(layer);
       if (!bbox) return null;
       const R = 10;
@@ -10620,6 +10664,276 @@
         unit,
         light,
       };
+    }
+
+    // ─── Unified per-object transform gizmo (move · rotate · scale, all shown at
+    // once — Cinema4D-style). Anchored on the selected scene object; axes are
+    // world X/Y/Z rotated through the scene camera (orientation-only, the same v1
+    // simplification the sun handle and ground drag use — no per-point
+    // perspective). Drives params.objects[i].transform and supersedes the legacy
+    // corner-scale handle for a single selected object. ─────────────────────────
+    _gizmoSegDist(p, a, b) {
+      const vx = b.x - a.x; const vy = b.y - a.y;
+      const L2 = vx * vx + vy * vy || 1e-9;
+      let t = ((p.x - a.x) * vx + (p.y - a.y) * vy) / L2;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(p.x - (a.x + vx * t), p.y - (a.y + vy * t));
+    }
+
+    getSceneObjectGizmo(layer) {
+      const target = layer || this._sceneLightLayer();
+      if (!target || target.type !== 'scene3d') return null;
+      const sel = this.getSceneSelection();
+      if (!sel || sel.mode !== 'object' || !Array.isArray(sel.objectIds) || sel.objectIds.length !== 1) return null;
+      const objId = sel.objectIds[0];
+      if (!objId || objId === 'ground') return null;
+      const center = this._sceneObjectPathCenter(target, objId);
+      if (!center) return null;
+      const cam = (target.params && target.params.camera) || {};
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const R = 60 * unit;         // move-arrow length (doc units → constant on-screen)
+      const ringR = R * 0.92;
+      const project = (w) => { const r = this._rotateCam(w, cam); return { x: r.x, y: -r.y, z: r.z }; };
+      const AX = [
+        { key: 'x', world: { x: 1, y: 0, z: 0 }, perp: [{ x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }] },
+        { key: 'y', world: { x: 0, y: 1, z: 0 }, perp: [{ x: 0, y: 0, z: 1 }, { x: 1, y: 0, z: 0 }] },
+        { key: 'z', world: { x: 0, y: 0, z: 1 }, perp: [{ x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }] },
+      ];
+      const axes = AX.map((ax) => {
+        const p = project(ax.world);
+        const len = Math.hypot(p.x, p.y) || 1e-6;
+        const u = { x: p.x / len, y: p.y / len };
+        const ring = [];
+        const N = 40;
+        for (let i = 0; i <= N; i++) {
+          const th = (i / N) * TAU;
+          const c = Math.cos(th); const s = Math.sin(th);
+          const w = {
+            x: ax.perp[0].x * c + ax.perp[1].x * s,
+            y: ax.perp[0].y * c + ax.perp[1].y * s,
+            z: ax.perp[0].z * c + ax.perp[1].z * s,
+          };
+          const pr = project(w);
+          ring.push({ x: center.x + pr.x * ringR, y: center.y + pr.y * ringR });
+        }
+        return {
+          key: ax.key,
+          dir: u,
+          depth: p.z,
+          tip: { x: center.x + u.x * R, y: center.y + u.y * R },
+          scaleBox: { x: center.x + u.x * R * 1.16, y: center.y + u.y * R * 1.16 },
+          ring,
+        };
+      });
+      return { objId, center, R, ringR, unit, axes };
+    }
+
+    hitSceneObjectGizmo(sx, sy, layer) {
+      const giz = this.getSceneObjectGizmo(layer);
+      if (!giz) return null;
+      const world = this.screenToWorld(sx, sy);
+      const tol = 9 * giz.unit;
+      const near = (a) => Math.hypot(world.x - a.x, world.y - a.y) <= tol;
+      // Scale boxes first (small, specific), then move arrows, then rotate rings.
+      for (const ax of giz.axes) if (near(ax.scaleBox)) return { type: 'scale', axis: ax.key };
+      for (const ax of giz.axes) {
+        if (near(ax.tip)) return { type: 'move', axis: ax.key };
+        if (this._gizmoSegDist(world, giz.center, ax.tip) <= tol * 0.8) return { type: 'move', axis: ax.key };
+      }
+      for (const ax of giz.axes) {
+        for (let i = 1; i < ax.ring.length; i++) {
+          if (this._gizmoSegDist(world, ax.ring[i - 1], ax.ring[i]) <= tol * 0.8) return { type: 'rotate', axis: ax.key };
+        }
+      }
+      return null;
+    }
+
+    beginSceneObjectGizmoDrag(hit, e = {}) {
+      const layer = this._sceneLightLayer();
+      if (!layer || !hit) return false;
+      const giz = this.getSceneObjectGizmo(layer);
+      if (!giz) return false;
+      const obj = this._sceneObjectById(layer, giz.objId);
+      if (!obj) return false;
+      const t = obj.transform || (obj.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 });
+      const rect = this.canvas.getBoundingClientRect();
+      const world = this.screenToWorld((e.clientX ?? 0) - rect.left, (e.clientY ?? 0) - rect.top);
+      this._sceneObjectGizmoDrag = {
+        layerId: layer.id,
+        objectId: giz.objId,
+        type: hit.type,
+        axis: hit.axis,
+        center: { ...giz.center },
+        startWorld: { x: world.x, y: world.y },
+        startAngle: Math.atan2(world.y - giz.center.y, world.x - giz.center.x),
+        startDist: Math.max(1e-3, Math.hypot(world.x - giz.center.x, world.y - giz.center.y)),
+        camYaw: ((layer.params && layer.params.camera && layer.params.camera.yaw) || 0) * Math.PI / 180,
+        start: {
+          x: Number(t.x) || 0, y: Number(t.y) || 0, z: Number(t.z) || 0,
+          yaw: Number(t.yaw) || 0, pitch: Number(t.pitch) || 0, roll: Number(t.roll) || 0,
+          scale: Number(t.scale) || 1,
+        },
+        historyPushed: false,
+        moved: false,
+      };
+      this.setCanvasCursor(hit.type === 'rotate' ? 'grabbing' : 'move');
+      return true;
+    }
+
+    _gizmoTooltip(type, t) {
+      if (type === 'move') return `X ${Math.round(t.x)}  Y ${Math.round(t.y)}  Z ${Math.round(t.z)}`;
+      if (type === 'rotate') return `X ${Math.round(t.pitch)}°  Y ${Math.round(t.yaw)}°  Z ${Math.round(t.roll)}°`;
+      return `Scale ${Number(t.scale).toFixed(2)}×`;
+    }
+
+    _applySceneObjectGizmoDrag(e = {}) {
+      const drag = this._sceneObjectGizmoDrag;
+      if (!drag) return false;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer || !layer.params) { this._sceneObjectGizmoDrag = null; return false; }
+      const obj = this._sceneObjectById(layer, drag.objectId);
+      if (!obj || !obj.transform) { this._sceneObjectGizmoDrag = null; return false; }
+      const rect = this.canvas.getBoundingClientRect();
+      const world = this.screenToWorld((e.clientX ?? 0) - rect.left, (e.clientY ?? 0) - rect.top);
+      const dx = world.x - drag.startWorld.x;
+      const dy = world.y - drag.startWorld.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 1 / (this.scale || 1)) return true;
+      if (!drag.historyPushed) {
+        if (this.app?.pushHistory) this.app.pushHistory();
+        else if (this.onCommitTransform) this.onCommitTransform();
+        drag.historyPushed = true;
+      }
+      drag.moved = true;
+      const t = obj.transform;
+      const s = drag.start;
+      const round2 = (val) => Math.round(val * 100) / 100;
+      if (drag.type === 'move') {
+        // Ground-drag mapping (yaw-rotated screen delta), constrained to the axis.
+        const cy = Math.cos(drag.camYaw); const sy = Math.sin(drag.camYaw);
+        if (drag.axis === 'x') t.x = round2(s.x + (dx * cy + dy * sy));
+        else if (drag.axis === 'z') t.z = round2(s.z + (-dx * sy + dy * cy));
+        else t.y = round2(s.y - dy); // screen up = world +y
+      } else if (drag.type === 'rotate') {
+        const ang = Math.atan2(world.y - drag.center.y, world.x - drag.center.x);
+        const dDeg = (ang - drag.startAngle) * 180 / Math.PI;
+        const modifiers = this.getModifierState(e);
+        const apply = (base) => {
+          let val = base + dDeg;
+          if (modifiers.shift) val = Math.round(val / 15) * 15;
+          return Math.round(val * 10) / 10;
+        };
+        if (drag.axis === 'y') t.yaw = apply(s.yaw);
+        else if (drag.axis === 'x') t.pitch = apply(s.pitch);
+        else t.roll = apply(s.roll);
+      } else { // scale
+        const dist = Math.max(1e-3, Math.hypot(world.x - drag.center.x, world.y - drag.center.y));
+        t.scale = Math.round(clamp(s.scale * (dist / drag.startDist), 0.1, 5) * 1000) / 1000;
+      }
+      this._scheduleSceneDragRegen(layer.id);
+      this.showDragTooltip(this._gizmoTooltip(drag.type, t), e.clientX ?? 0, e.clientY ?? 0);
+      return true;
+    }
+
+    _endSceneObjectGizmoDrag() {
+      const drag = this._sceneObjectGizmoDrag;
+      this._sceneObjectGizmoDrag = null;
+      this.hideDragTooltip();
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      if (!drag) return;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer && drag.moved) {
+        this.engine.generate(layer.id);
+        this.app?.ui?.updateFormula?.();
+        this.app?.ui?.buildControls?.(layer);
+      }
+      this.updateCursor();
+    }
+
+    _cancelSceneObjectGizmoDrag() {
+      const drag = this._sceneObjectGizmoDrag;
+      if (!drag) return false;
+      this._sceneObjectGizmoDrag = null;
+      this.hideDragTooltip();
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      const obj = layer && this._sceneObjectById(layer, drag.objectId);
+      if (obj && obj.transform) Object.assign(obj.transform, drag.start);
+      if (drag.moved && this.app && Array.isArray(this.app.history) && this.app.history.length > 1) this.app.history.pop();
+      if (layer) this.engine.generate(layer.id);
+      this.updateCursor();
+      this.draw();
+      return true;
+    }
+
+    drawSceneObjectGizmo() {
+      const giz = this.getSceneObjectGizmo();
+      if (!giz) return;
+      const ctx = this.ctx;
+      const unit = giz.unit;
+      const colors = {
+        x: getThemeToken('--render-gizmo-x', '#fbbf24'),
+        y: getThemeToken('--render-gizmo-y', '#a78bfa'),
+        z: getThemeToken('--render-gizmo-z', '#22d3ee'),
+      };
+      const stroke = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
+      const fillBg = getThemeToken('--render-selection-handle-fill', '#111827');
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      // Far axes first so nearer handles overprint them.
+      [...giz.axes].sort((a, b) => a.depth - b.depth).forEach((ax) => {
+        const col = colors[ax.key];
+        const dim = ax.depth < -0.2 ? 0.4 : 0.95;
+        // rotate ring (projected ellipse)
+        ctx.globalAlpha = dim * 0.8;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1.3 * unit;
+        ctx.beginPath();
+        ax.ring.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+        ctx.stroke();
+        // move arrow
+        ctx.globalAlpha = dim;
+        ctx.lineWidth = 2 * unit;
+        ctx.beginPath();
+        ctx.moveTo(giz.center.x, giz.center.y);
+        ctx.lineTo(ax.tip.x, ax.tip.y);
+        ctx.stroke();
+        const a = Math.atan2(ax.tip.y - giz.center.y, ax.tip.x - giz.center.x);
+        const ah = 6 * unit;
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.moveTo(ax.tip.x, ax.tip.y);
+        ctx.lineTo(ax.tip.x - Math.cos(a - 0.42) * ah, ax.tip.y - Math.sin(a - 0.42) * ah);
+        ctx.lineTo(ax.tip.x - Math.cos(a + 0.42) * ah, ax.tip.y - Math.sin(a + 0.42) * ah);
+        ctx.closePath();
+        ctx.fill();
+        // scale box
+        const bs = 3.4 * unit;
+        ctx.fillStyle = fillBg;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1.4 * unit;
+        ctx.beginPath();
+        ctx.rect(ax.scaleBox.x - bs, ax.scaleBox.y - bs, bs * 2, bs * 2);
+        ctx.fill();
+        ctx.stroke();
+      });
+      // center pivot
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = stroke;
+      ctx.beginPath();
+      ctx.arc(giz.center.x, giz.center.y, 2.4 * unit, 0, TAU);
+      ctx.fill();
+      ctx.restore();
     }
 
     drawSceneLightOverlay() {

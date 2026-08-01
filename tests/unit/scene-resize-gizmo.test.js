@@ -1,11 +1,12 @@
 /**
- * 3D Scene Studio — on-canvas uniform-scale resize gizmo.
+ * 3D Scene Studio — on-canvas per-object transform gizmo (move · rotate · scale)
+ * and box face-pull.
  *
  * Fixture-driven over the REAL renderer: a scene3d layer whose selected object
- * has hand-authored projected paths (a bbox to anchor the corner handles).
- * hitSceneResize / beginSceneResizeDrag / _applySceneResizeDrag /
- * _cancelSceneResizeDrag do not exist on the base branch, so this file fails
- * before the gizmo and passes after (RGR).
+ * has hand-authored projected paths (a bbox to anchor the gizmo). The unified
+ * gizmo (hitSceneObjectGizmo / beginSceneObjectGizmoDrag / _applySceneObjectGizmoDrag
+ * / _cancelSceneObjectGizmoDrag) supersedes the legacy corner-scale handle for a
+ * single selected object; face-pull still owns per-dimension box-face resizing.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -37,7 +38,7 @@ const makeSceneParams = () => ({
   styleTable: { scene: { penId: null, mapper: 'none', params: {} }, byObject: {}, byFace: {} },
 });
 
-describe('3D Scene Studio — uniform-scale resize gizmo', () => {
+describe('3D Scene Studio — per-object transform gizmo + face-pull', () => {
   let runtime;
 
   afterEach(() => {
@@ -66,75 +67,105 @@ describe('3D Scene Studio — uniform-scale resize gizmo', () => {
     return { renderer, scene, engine };
   }
 
-  test('hitSceneResize lands on a corner handle; a far point misses', async () => {
+  // scale=1, offset=0 → world === screen, so gizmo doc coords are click coords.
+  const gizmoOf = (renderer, scene) => renderer.getSceneObjectGizmo(scene);
+  const axisOf = (giz, key) => giz.axes.find((a) => a.key === key);
+
+  test('the gizmo hit-tests scale boxes, move arrows and rotate rings; centre & far miss', async () => {
     const { renderer, scene } = await setup();
-    // se corner is at (50,50). scale=1/offset=0 → world === screen.
-    const hit = renderer.hitSceneResize(50, 50, scene);
-    expect(hit).toBeTruthy();
-    expect(hit.handle).toBe('se');
-    expect(renderer.hitSceneResize(30, 30, scene)).toBeNull(); // centre, not a handle
-    expect(renderer.hitSceneResize(500, 500, scene)).toBeNull();
+    const giz = gizmoOf(renderer, scene);
+    expect(giz && giz.objId).toBe('obj-1');
+    const xBox = axisOf(giz, 'x').scaleBox;
+    const xTip = axisOf(giz, 'x').tip;
+    const yRing = axisOf(giz, 'y').ring[5];
+    expect(renderer.hitSceneObjectGizmo(xBox.x, xBox.y, scene)).toMatchObject({ type: 'scale', axis: 'x' });
+    expect(renderer.hitSceneObjectGizmo(xTip.x, xTip.y, scene)).toMatchObject({ type: 'move', axis: 'x' });
+    expect(renderer.hitSceneObjectGizmo(yRing.x, yRing.y, scene)).toMatchObject({ type: 'rotate' });
+    // A point far outside every handle misses.
+    expect(renderer.hitSceneObjectGizmo(900, 900, scene)).toBeNull();
   });
 
-  test('dragging a corner OUT grows uniform scale with ONE history entry + a draft regen', async () => {
+  test('dragging a SCALE box OUT grows uniform scale with ONE history entry + a draft regen', async () => {
     const { renderer, scene } = await setup();
-    const hit = renderer.hitSceneResize(50, 50, scene);
-    expect(renderer.beginSceneResizeDrag(hit, { clientX: 50, clientY: 50 })).toBe(true);
-
-    // Centre (30,30); grabbed corner at dist √800≈28.28. Drag to (70,70):
-    // dist √3200≈56.57 → ratio 2 → scale 1 → 2.
-    renderer._applySceneResizeDrag({ clientX: 70, clientY: 70 });
+    const giz = gizmoOf(renderer, scene);
+    const c = giz.center;
+    const box = axisOf(giz, 'x').scaleBox;
+    const hit = renderer.hitSceneObjectGizmo(box.x, box.y, scene);
+    expect(renderer.beginSceneObjectGizmoDrag(hit, { clientX: box.x, clientY: box.y })).toBe(true);
+    // Drag to DOUBLE the distance from centre → ratio 2 → scale 1 → 2.
+    const out = { x: c.x + (box.x - c.x) * 2, y: c.y + (box.y - c.y) * 2 };
+    renderer._applySceneObjectGizmoDrag({ clientX: out.x, clientY: out.y });
     expect(scene.params.objects[0].transform.scale).toBeCloseTo(2, 1);
     expect(renderer.app.pushHistory).toHaveBeenCalledTimes(1);
     expect(renderer._sceneDragRegenLayerId).toBe(scene.id);
-
     // A second move keeps the single gesture history entry.
-    renderer._applySceneResizeDrag({ clientX: 45, clientY: 45 });
-    // dist √450≈21.2 → ratio 0.75 → scale 0.75.
+    const half = { x: c.x + (box.x - c.x) * 0.75, y: c.y + (box.y - c.y) * 0.75 };
+    renderer._applySceneObjectGizmoDrag({ clientX: half.x, clientY: half.y });
     expect(scene.params.objects[0].transform.scale).toBeCloseTo(0.75, 1);
     expect(renderer.app.pushHistory).toHaveBeenCalledTimes(1);
-
-    renderer._endSceneResizeDrag();
-    expect(renderer._sceneResizeDrag).toBeNull();
+    renderer._endSceneObjectGizmoDrag();
+    expect(renderer._sceneObjectGizmoDrag).toBeNull();
   });
 
   test('scale is clamped to the inspector slider range [0.1, 5]', async () => {
     const { renderer, scene } = await setup();
-    const hit = renderer.hitSceneResize(50, 50, scene);
-    renderer.beginSceneResizeDrag(hit, { clientX: 50, clientY: 50 });
-    // Drag the corner right onto the centre → ratio ~0 → clamp to 0.1.
-    renderer._applySceneResizeDrag({ clientX: 30, clientY: 30 });
+    const giz = gizmoOf(renderer, scene);
+    const c = giz.center;
+    const box = axisOf(giz, 'x').scaleBox;
+    const hit = renderer.hitSceneObjectGizmo(box.x, box.y, scene);
+    renderer.beginSceneObjectGizmoDrag(hit, { clientX: box.x, clientY: box.y });
+    // Drag onto the centre → ratio ~0 → clamp to 0.1.
+    renderer._applySceneObjectGizmoDrag({ clientX: c.x, clientY: c.y });
     expect(scene.params.objects[0].transform.scale).toBe(0.1);
-    // Drag far out → clamp to 5 (not 20, so the value round-trips to the slider).
-    renderer._applySceneResizeDrag({ clientX: 900, clientY: 900 });
+    // Drag far out → clamp to 5 (round-trips to the slider, not 20).
+    renderer._applySceneObjectGizmoDrag({ clientX: c.x + (box.x - c.x) * 40, clientY: c.y + (box.y - c.y) * 40 });
     expect(scene.params.objects[0].transform.scale).toBe(5);
-    renderer._endSceneResizeDrag();
+    renderer._endSceneObjectGizmoDrag();
   });
 
-  test('grabbing OFF the exact corner (within the hit radius) does not snap the scale', async () => {
+  test('dragging a MOVE arrow translates along its axis (one history entry)', async () => {
     const { renderer, scene } = await setup();
-    // se corner is (50,50); grab at (57,57) — ~9.9px out, still inside R=10.
-    const hit = renderer.hitSceneResize(57, 57, scene);
-    expect(hit && hit.handle).toBe('se');
-    renderer.beginSceneResizeDrag(hit, { clientX: 57, clientY: 57 });
-    // A small 2px outward nudge should grow the scale only slightly — NOT jump to
-    // the ~1.35 the old corner-anchored ratio produced at the grab point.
-    renderer._applySceneResizeDrag({ clientX: 59, clientY: 59 });
-    const s = scene.params.objects[0].transform.scale;
-    expect(s).toBeGreaterThan(1);
-    expect(s).toBeLessThan(1.15);
-    renderer._endSceneResizeDrag();
+    const giz = gizmoOf(renderer, scene);
+    const tip = axisOf(giz, 'x').tip; // camera yaw 0 → X arrow points +screenX
+    const hit = renderer.hitSceneObjectGizmo(tip.x, tip.y, scene);
+    expect(hit).toMatchObject({ type: 'move', axis: 'x' });
+    renderer.beginSceneObjectGizmoDrag(hit, { clientX: tip.x, clientY: tip.y });
+    // +12 screen-x at yaw 0 → transform.x += 12 (ground-drag mapping).
+    renderer._applySceneObjectGizmoDrag({ clientX: tip.x + 12, clientY: tip.y });
+    expect(scene.params.objects[0].transform.x).toBeCloseTo(12, 0);
+    expect(scene.params.objects[0].transform.z).toBe(0);
+    expect(renderer.app.pushHistory).toHaveBeenCalledTimes(1);
+    renderer._endSceneObjectGizmoDrag();
   });
 
-  test('Escape mid-drag restores the pre-drag scale and pops the history entry', async () => {
+  test('dragging a ROTATE ring changes the matching euler angle', async () => {
     const { renderer, scene } = await setup();
-    const hit = renderer.hitSceneResize(50, 50, scene);
-    renderer.beginSceneResizeDrag(hit, { clientX: 50, clientY: 50 });
-    renderer._applySceneResizeDrag({ clientX: 70, clientY: 70 });
+    const giz = gizmoOf(renderer, scene);
+    const c = giz.center;
+    const p = axisOf(giz, 'y').ring[5];
+    const hit = renderer.hitSceneObjectGizmo(p.x, p.y, scene);
+    expect(hit.type).toBe('rotate');
+    renderer.beginSceneObjectGizmoDrag(hit, { clientX: p.x, clientY: p.y });
+    // Move to a point rotated ~90° around the centre → yaw changes by ~±90.
+    const a0 = Math.atan2(p.y - c.y, p.x - c.x);
+    const r = Math.hypot(p.x - c.x, p.y - c.y);
+    const p2 = { x: c.x + Math.cos(a0 + Math.PI / 2) * r, y: c.y + Math.sin(a0 + Math.PI / 2) * r };
+    renderer._applySceneObjectGizmoDrag({ clientX: p2.x, clientY: p2.y });
+    expect(Math.abs(scene.params.objects[0].transform.yaw)).toBeGreaterThan(60);
+    expect(renderer.app.pushHistory).toHaveBeenCalledTimes(1);
+    renderer._endSceneObjectGizmoDrag();
+  });
+
+  test('Escape mid-drag restores the pre-drag transform and pops the history entry', async () => {
+    const { renderer, scene } = await setup();
+    const giz = gizmoOf(renderer, scene);
+    const box = axisOf(giz, 'x').scaleBox;
+    const hit = renderer.hitSceneObjectGizmo(box.x, box.y, scene);
+    renderer.beginSceneObjectGizmoDrag(hit, { clientX: box.x, clientY: box.y });
+    renderer._applySceneObjectGizmoDrag({ clientX: giz.center.x + (box.x - giz.center.x) * 2, clientY: giz.center.y + (box.y - giz.center.y) * 2 });
     expect(scene.params.objects[0].transform.scale).not.toBe(1);
-
-    expect(renderer._cancelSceneResizeDrag()).toBe(true);
-    expect(renderer._sceneResizeDrag).toBeNull();
+    expect(renderer._cancelSceneObjectGizmoDrag()).toBe(true);
+    expect(renderer._sceneObjectGizmoDrag).toBeNull();
     expect(scene.params.objects[0].transform.scale).toBe(1);
   });
 

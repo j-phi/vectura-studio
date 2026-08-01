@@ -145,6 +145,16 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   the Direct Selection status-bar hint document the new shortcuts.
 
 ### Added
+- **3D Scene — unified per-object transform gizmo (move · rotate · scale).** A
+  Cinema4D-style gizmo now appears on the selected scene object with all handles
+  shown at once: three colour-coded move arrows (X amber, Y violet, Z cyan), three
+  rotate rings, and three scale boxes at the axis tips. Drag an arrow to translate
+  along that world axis, a ring to rotate (yaw/pitch/roll), or a box to scale
+  uniformly — one undo entry per gesture, live draft preview during the drag, full
+  quality on release, Escape to cancel. It takes pointer precedence over object
+  re-pick and supersedes the legacy corner-scale handle for a single selected
+  object; the box face-pull knob still handles per-dimension resizing, and the
+  scene orbit gizmo still drives the camera.
 - **3D Scene — curved-surface fills wrap the 3D form (`Scene3D.SurfaceFill`).**
   Hatch/crosshatch/contour/spiral/stipple on a sphere, torus, cylinder, cone,
   capsule, superellipsoid, or torus-knot now follow the parametric surface and

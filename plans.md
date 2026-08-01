@@ -218,8 +218,11 @@ question. Do not start these without a decision:
   (drops the fragile per-face boolean union); (D/I/F) new `Scene3D.SurfaceFill` wraps
   hatch/crosshatch/contour/spiral/stipple around the parametric surface with per-sample
   tone-driven density, the brightest band left blank as the highlight (retiring the solid-white
-  specular disc), and hatch ≠ crosshatch. Still open on this branch: (J) a separate per-object
-  transform gizmo, and (G) the multi-light-type system (point/spot/area/ambient/emissive).
+  specular disc), and hatch ≠ crosshatch. (J) a unified Cinema4D-style per-object transform
+  gizmo (move arrows + rotate rings + scale boxes, all shown at once) drives
+  params.objects[i].transform and supersedes the legacy corner-scale handle; the scene orbit
+  gizmo still drives the camera. Still open on this branch: (G) the multi-light-type system
+  (point/spot/area/ambient/emissive) — the sun is already a proper directional light.
 - **Unreleased — 3D Scene Studio acceptance fixes A/B/C (v1.3.18).** On `3d-scene/p4`:
   (A) deleting the last object no longer resurrects a default box — `normalizeParams`
   seeds Box 1 only when the `objects` key is absent, never for an explicit empty array;
