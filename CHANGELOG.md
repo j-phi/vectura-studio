@@ -7,6 +7,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene on-canvas resize.** Select a scene object and drag a **corner handle**
+  to scale it uniformly. Select a **box face** and drag its round push-pull knob to
+  resize just that dimension (the face's own width/height/depth). Both preview live
+  at draft quality, commit on release as one undo step, and cancel with Escape —
+  matching the sun-widget / ground-drag gesture model. (Curved primitives resize via
+  the corner handles + the inspector's per-dimension sliders.)
 - **3D Scene Studio Phase 2 — Light.** A single directional sun now drives the
   scene. Surfaces render *light-made tone*: intensity (n̂·L̂) quantizes into bands,
   each band maps to an ink coverage that sets hatch spacing, so faces turned toward

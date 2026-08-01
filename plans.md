@@ -210,6 +210,14 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — 3D Scene on-canvas resize (feedback #1).** Off `3d-scene/p2` on branch
+  `3d-scene/p2r`: a uniform-scale gizmo (corner handles on the selected object's projected
+  bbox → `transform.scale` about centre) and a box **face-pull** knob (a box face selection
+  maps `face:±X/±Y/±Z` → `sx/sy/sz`; drag the face out to grow that dimension). Both reuse
+  the once-per-gesture history + rAF draft-regen machinery (`_scheduleSceneDragRegen`),
+  commit full-quality on release, and Escape-restore. Curved primitives resize via the corner
+  handles + the inspector's per-dimension live sliders. Verified live (scale 1→1.6; face-pull
+  sx 40→68) + 8 RGR tests.
 - **Unreleased — 3D Scene Studio Phase 2 (Light).** Two file-disjoint streams (2A
   core: lighting/regions/shadows; 2B UI: sun widget, tone editor, paper preview) built
   in parallel against a frozen contract (L1–L5), adversarially reviewed + judged, and

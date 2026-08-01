@@ -637,6 +637,14 @@
       // null | { mode:'widget'|'shadow', layerId, lightIndex, startLight,
       // origin, camYaw, unit, historyPushed, moved }.
       this._sceneLightDrag = null;
+      // On-canvas uniform-scale gizmo drag state.
+      // null | { layerId, objectId, handle, center, startDist, startScale,
+      // historyPushed, moved }.
+      this._sceneResizeDrag = null;
+      // Box face-pull drag state.
+      // null | { layerId, objectId, axisKey, center, startDist, startDim,
+      // historyPushed, moved }.
+      this._sceneFacePullDrag = null;
       this._sceneMarqueePending = null;
       this._sceneLastClick = null;
       this.paintBucketStack = null;
@@ -794,6 +802,22 @@
       // duplicates). Capture phase so tool-level Escape shortcuts don't race.
       this._onDragCancelKey = (e) => {
         if (e.key !== 'Escape') return;
+        // Escape mid resize-gizmo drag restores the pre-drag scale.
+        if (this._sceneResizeDrag) {
+          if (this._cancelSceneResizeDrag()) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          return;
+        }
+        // Escape mid face-pull drag restores the pre-drag dimension.
+        if (this._sceneFacePullDrag) {
+          if (this._cancelSceneFacePullDrag()) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          return;
+        }
         // Escape mid sun-widget / shadow drag restores the pre-drag light.
         if (this._sceneLightDrag) {
           if (this._cancelSceneLightDrag()) {
@@ -5520,6 +5544,10 @@
         // 3D Scene Studio: highlight the selected scene faces/objects on top
         // of the drawn geometry (no-op without a scene selection).
         this.drawSceneSelectionOverlay();
+        // On-canvas resize gizmo (no-op unless a single scene object is selected).
+        this.drawSceneResizeControl();
+        // Box face-pull handle (no-op unless a single box face is selected).
+        this.drawSceneFacePullHandle();
         // Phase 2: the sun widget (no-op without a selected scene3d layer).
         this.drawSceneLightOverlay();
         this.ctx.restore();
@@ -5539,6 +5567,10 @@
         // 3D Scene Studio: highlight the selected scene faces/objects on top
         // of the drawn geometry (no-op without a scene selection).
         this.drawSceneSelectionOverlay();
+        // On-canvas resize gizmo (no-op unless a single scene object is selected).
+        this.drawSceneResizeControl();
+        // Box face-pull handle (no-op unless a single box face is selected).
+        this.drawSceneFacePullHandle();
         // Phase 2: the sun widget (no-op without a selected scene3d layer).
         this.drawSceneLightOverlay();
         this.ctx.restore();
@@ -6666,6 +6698,18 @@
             if (e.cancelable) e.preventDefault();
             return;
           }
+          // A corner scale handle wins over an object re-pick underneath it.
+          const resizeHit = this.hitSceneResize(sx, sy, sceneLayer);
+          if (resizeHit && this.beginSceneResizeDrag(resizeHit, e)) {
+            if (e.cancelable) e.preventDefault();
+            return;
+          }
+          // A box face-pull knob wins over a face re-pick underneath it.
+          const facePullHit = this.hitSceneFacePull(sx, sy, sceneLayer);
+          if (facePullHit && this.beginSceneFacePullDrag(facePullHit, e)) {
+            if (e.cancelable) e.preventDefault();
+            return;
+          }
         }
         // 3D Scene Studio (§5.1 V / object mode): scene object picks +
         // ground-drag arming run after the gizmo (orbit wins) but before the
@@ -7249,6 +7293,18 @@
         return;
       }
 
+      // 3D Scene Studio: live uniform-scale gizmo drag.
+      if (this._sceneResizeDrag) {
+        this._applySceneResizeDrag(e);
+        return;
+      }
+
+      // 3D Scene Studio: live box face-pull drag.
+      if (this._sceneFacePullDrag) {
+        this._applySceneFacePullDrag(e);
+        return;
+      }
+
       // 3D Scene Studio (Phase 2): live sun-widget / shadow-handle drag.
       if (this._sceneLightDrag) {
         this._applySceneLightDrag(e);
@@ -7736,6 +7792,20 @@
       }
       if (this.rotation3DDrag) {
         this.end3DRotationDrag();
+        clearActivePointer();
+        return;
+      }
+      // 3D Scene Studio: commit a uniform-scale gizmo drag (full regen on
+      // release; history pushed once on first movement).
+      if (this._sceneResizeDrag) {
+        this._endSceneResizeDrag();
+        this.draw();
+        clearActivePointer();
+        return;
+      }
+      if (this._sceneFacePullDrag) {
+        this._endSceneFacePullDrag();
+        this.draw();
         clearActivePointer();
         return;
       }
@@ -9985,6 +10055,378 @@
           this.engine.generate(layer.id);
         }
       }
+      this.draw();
+      this.updateCursor();
+      return true;
+    }
+
+    // ——— On-canvas resize: uniform scale gizmo + box face-pull ——————————————
+    //
+    // The renderer only sees the object's PROJECTED 2D silhouette, so a corner
+    // gizmo scales the object uniformly (transform.scale) about its bbox center.
+    // A box face selection (A-mode) adds a face-pull handle that resizes that
+    // face's own dimension (faceId → sx/sy/sz), honoring the DIMENSIONS linkage.
+
+    // Full screen-projected bbox of the single selected scene object (or null),
+    // with named corners — the anchor for the scale gizmo.
+    _sceneResizeBBox(layer) {
+      if (!this._isSceneLayerEditable(layer)) return null;
+      const sel = this.getSceneSelection();
+      if (!sel || sel.layerId !== layer.id || sel.mode !== 'object' || sel.objectIds.length !== 1) return null;
+      const objId = sel.objectIds[0];
+      if (objId === 'ground') return null;
+      const paths = this.getInteractionPaths(layer);
+      let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+      let found = false;
+      (paths || []).forEach((path) => {
+        const t = path && path.meta && path.meta.sceneTarget;
+        if (!t || !Array.isArray(path) || t.objectId !== objId) return;
+        for (let i = 0; i < path.length; i++) {
+          const pt = path[i];
+          if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
+          if (pt.x < minX) minX = pt.x;
+          if (pt.x > maxX) maxX = pt.x;
+          if (pt.y < minY) minY = pt.y;
+          if (pt.y > maxY) maxY = pt.y;
+          found = true;
+        }
+      });
+      if (!found) return null;
+      return {
+        objId,
+        minX, minY, maxX, maxY,
+        center: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
+        corners: {
+          nw: { x: minX, y: minY }, ne: { x: maxX, y: minY },
+          se: { x: maxX, y: maxY }, sw: { x: minX, y: maxY },
+        },
+      };
+    }
+
+    drawSceneResizeControl() {
+      const sel = this.getSceneSelection();
+      if (!sel) return;
+      const layer = this.engine.layers.find((l) => l.id === sel.layerId);
+      const bbox = layer && this._sceneResizeBBox(layer);
+      if (!bbox) return;
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const ctx = this.ctx;
+      const stroke = getThemeToken('--render-selection-stroke', '#38bdf8');
+      const fill = getThemeToken('--render-selection-handle-fill', '#ffffff');
+      ctx.save();
+      ctx.lineJoin = 'round';
+      // Faint dashed bbox to read the gizmo as a resize frame (not the solid
+      // selection outline, which drawSceneSelectionOverlay already draws).
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1 * unit;
+      ctx.setLineDash([4 * unit, 3 * unit]);
+      ctx.strokeRect(bbox.minX, bbox.minY, bbox.maxX - bbox.minX, bbox.maxY - bbox.minY);
+      ctx.setLineDash([]);
+      // Corner scale handles.
+      ctx.globalAlpha = 1;
+      const hs = 4.5 * unit;
+      ctx.lineWidth = 1.2 * unit;
+      ['nw', 'ne', 'se', 'sw'].forEach((k) => {
+        const p = bbox.corners[k];
+        ctx.fillStyle = fill;
+        ctx.strokeStyle = stroke;
+        ctx.beginPath();
+        ctx.rect(p.x - hs, p.y - hs, hs * 2, hs * 2);
+        ctx.fill();
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+
+    // Screen-px hit-test of the four corner handles → { handle, layer, bbox }.
+    hitSceneResize(sx, sy, layer) {
+      const bbox = this._sceneResizeBBox(layer);
+      if (!bbox) return null;
+      const R = 10;
+      const keys = ['nw', 'ne', 'se', 'sw'];
+      for (let i = 0; i < keys.length; i++) {
+        const s = this.worldToScreen(bbox.corners[keys[i]].x, bbox.corners[keys[i]].y);
+        if (Math.hypot(sx - s.x, sy - s.y) <= R) return { handle: keys[i], layer, bbox };
+      }
+      return null;
+    }
+
+    beginSceneResizeDrag(hit, event) {
+      if (!hit || !hit.layer) return false;
+      const layer = hit.layer;
+      const obj = this._sceneObjectById(layer, hit.bbox.objId);
+      if (!obj || !obj.transform) return false;
+      const center = hit.bbox.center;
+      // Anchor the ratio on the POINTER's grab position (not the exact corner)
+      // so the ratio reads 1.0 at grab — grabbing anywhere inside the handle's
+      // hit radius never snaps the scale on the first move.
+      const rect = this.canvas.getBoundingClientRect();
+      const grab = this.screenToWorld((event?.clientX ?? 0) - rect.left, (event?.clientY ?? 0) - rect.top);
+      const startDist = Math.hypot(grab.x - center.x, grab.y - center.y) || 1e-6;
+      this._sceneResizeDrag = {
+        layerId: layer.id,
+        objectId: obj.id,
+        handle: hit.handle,
+        center: { ...center },
+        startDist,
+        startScale: finiteNumber(obj.transform.scale, 1),
+        historyPushed: false,
+        moved: false,
+      };
+      this.setCanvasCursor(this.handleCursor ? this.handleCursor(hit.handle, hit.bbox) : 'nwse-resize', 'resize');
+      return true;
+    }
+
+    _applySceneResizeDrag(event = {}) {
+      const drag = this._sceneResizeDrag;
+      if (!drag) return false;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer) { this._sceneResizeDrag = null; return false; }
+      const obj = this._sceneObjectById(layer, drag.objectId);
+      if (!obj || !obj.transform) { this._sceneResizeDrag = null; return false; }
+      const rect = this.canvas.getBoundingClientRect();
+      const world = this.screenToWorld((event.clientX ?? 0) - rect.left, (event.clientY ?? 0) - rect.top);
+      const curDist = Math.hypot(world.x - drag.center.x, world.y - drag.center.y);
+      if (!drag.moved && Math.abs(curDist - drag.startDist) < 1 / (this.scale || 1)) return true;
+      if (!drag.historyPushed) {
+        if (this.app?.pushHistory) this.app.pushHistory();
+        drag.historyPushed = true;
+      }
+      drag.moved = true;
+      // Scale about the bbox centre by the corner's distance ratio (drag out =
+      // grow). startDist/center are FIXED for the gesture, so it can't feedback.
+      const ratio = curDist / drag.startDist;
+      // Clamp to the inspector Scale slider's own range so the dragged value
+      // round-trips to the slider on release (a wider range would silently snap).
+      obj.transform.scale = Math.round(clamp(drag.startScale * ratio, 0.1, 5) * 1000) / 1000;
+      this._scheduleSceneDragRegen(layer.id);
+      return true;
+    }
+
+    _endSceneResizeDrag() {
+      const drag = this._sceneResizeDrag;
+      this._sceneResizeDrag = null;
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      if (!drag) return;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer && drag.moved) {
+        this.engine.generate(layer.id);
+        this.app?.ui?.updateFormula?.();
+        // Rebuild the panel so the Scale slider reflects the dragged value.
+        this.app?.ui?.buildControls?.(layer);
+      }
+      this.updateCursor();
+    }
+
+    _cancelSceneResizeDrag() {
+      const drag = this._sceneResizeDrag;
+      if (!drag) return false;
+      this._sceneResizeDrag = null;
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      const obj = layer && this._sceneObjectById(layer, drag.objectId);
+      if (obj && obj.transform) obj.transform.scale = drag.startScale;
+      if (drag.moved && this.app && Array.isArray(this.app.history) && this.app.history.length > 1) {
+        this.app.history.pop();
+      }
+      if (layer && drag.moved) this.engine.generate(layer.id);
+      this.draw();
+      this.updateCursor();
+      return true;
+    }
+
+    // ——— Box face-pull: drag a face to resize that axis's dimension —————————
+    //
+    // Only boxes (A-06 semantic face ids) get a clean faceId → sx/sy/sz mapping,
+    // so face-pull is box-only for v1; other primitives resize via the uniform
+    // scale gizmo + the inspector's per-dimension sliders. The pull magnitude is
+    // the same self-calibrating distance ratio as the scale gizmo, applied to
+    // ONE dimension — pull the face twice as far from centre → dimension doubles.
+    _sceneFacePull(layer) {
+      if (!this._isSceneLayerEditable(layer)) return null;
+      const sel = this.getSceneSelection();
+      if (!sel || sel.layerId !== layer.id || sel.mode !== 'face'
+        || !sel.faceKeys || sel.faceKeys.length !== 1) return null;
+      const faceKey = sel.faceKeys[0];
+      const slash = faceKey.indexOf('/');
+      if (slash < 0) return null;
+      const objId = faceKey.slice(0, slash);
+      const faceId = faceKey.slice(slash + 1);
+      const obj = this._sceneObjectById(layer, objId);
+      if (!obj || obj.primitive !== 'box') return null;
+      const AXIS = {
+        'face:+X': 'sx', 'face:-X': 'sx', 'face:+Y': 'sy',
+        'face:-Y': 'sy', 'face:+Z': 'sz', 'face:-Z': 'sz',
+      };
+      const axisKey = AXIS[faceId];
+      if (!axisKey) return null;
+      // Knob position = the face polygon's BBOX centre (duplicate-vertex proof —
+      // a closed face repeats its first point, which would skew a vertex mean).
+      const paths = this.getInteractionPaths(layer);
+      let fMinX = Infinity; let fMinY = Infinity; let fMaxX = -Infinity; let fMaxY = -Infinity;
+      let found = false;
+      (paths || []).forEach((path) => {
+        const t = path && path.meta && path.meta.sceneTarget;
+        // Any geometry of this face (outline, surface fill, or edges) bounds it —
+        // a hatch/pattern mapper emits sceneFill, not sceneFace, so keying on
+        // 'sceneFace' alone would hide the knob for a styled face.
+        if (!t || !Array.isArray(path) || t.objectId !== objId || t.faceId !== faceId) return;
+        for (let i = 0; i < path.length; i++) {
+          const pt = path[i];
+          if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
+          if (pt.x < fMinX) fMinX = pt.x;
+          if (pt.x > fMaxX) fMaxX = pt.x;
+          if (pt.y < fMinY) fMinY = pt.y;
+          if (pt.y > fMaxY) fMaxY = pt.y;
+          found = true;
+        }
+      });
+      if (!found) return null;
+      const center = this._sceneObjectPathCenter(layer, objId);
+      if (!center) return null;
+      const centroid = { x: (fMinX + fMaxX) / 2, y: (fMinY + fMaxY) / 2 };
+      // Suppress the knob when the face projects face-on (its outward screen
+      // direction collapses toward the object centre): a near-zero pull radius
+      // makes the drag hypersensitive, and you cannot meaningfully pull a face
+      // along the view axis. ~10 screen px of separation is the floor.
+      const outwardPx = Math.hypot(centroid.x - center.x, centroid.y - center.y) * Math.max(this.scale || 1, 0.001);
+      if (outwardPx < 10) return null;
+      return { objId, faceId, axisKey, centroid, center };
+    }
+
+    drawSceneFacePullHandle() {
+      const sel = this.getSceneSelection();
+      if (!sel) return;
+      const layer = this.engine.layers.find((l) => l.id === sel.layerId);
+      const fp = layer && this._sceneFacePull(layer);
+      if (!fp) return;
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.lineJoin = 'round';
+      // A dashed spoke from the object centre through the face + a round push-pull
+      // knob at the face centroid (distinct from the square scale handles).
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = getThemeToken('--render-gizmo-y', '#34d399');
+      ctx.lineWidth = 1 * unit;
+      ctx.setLineDash([3 * unit, 3 * unit]);
+      ctx.beginPath();
+      ctx.moveTo(fp.center.x, fp.center.y);
+      ctx.lineTo(fp.centroid.x, fp.centroid.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = getThemeToken('--render-gizmo-y', '#34d399');
+      ctx.strokeStyle = getThemeToken('--render-selection-handle-stroke', '#ffffff');
+      ctx.lineWidth = 1.2 * unit;
+      ctx.beginPath();
+      ctx.arc(fp.centroid.x, fp.centroid.y, 5 * unit, 0, TAU);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    hitSceneFacePull(sx, sy, layer) {
+      const fp = this._sceneFacePull(layer);
+      if (!fp) return null;
+      const s = this.worldToScreen(fp.centroid.x, fp.centroid.y);
+      if (Math.hypot(sx - s.x, sy - s.y) <= 12) return { layer, fp };
+      return null;
+    }
+
+    beginSceneFacePullDrag(hit, event) {
+      if (!hit || !hit.layer) return false;
+      const { layer, fp } = hit;
+      const obj = this._sceneObjectById(layer, fp.objId);
+      if (!obj || !obj.params) return false;
+      // Anchor the ratio on the POINTER's grab (not the knob centre) so it reads
+      // 1.0 at grab and never snaps the dimension on the first move.
+      const rect = this.canvas.getBoundingClientRect();
+      const grab = this.screenToWorld((event?.clientX ?? 0) - rect.left, (event?.clientY ?? 0) - rect.top);
+      const startDist = Math.hypot(grab.x - fp.center.x, grab.y - fp.center.y) || 1e-6;
+      this._sceneFacePullDrag = {
+        layerId: layer.id,
+        objectId: obj.id,
+        axisKey: fp.axisKey,
+        center: { ...fp.center },
+        startDist,
+        startDim: finiteNumber(obj.params[fp.axisKey], 40),
+        historyPushed: false,
+        moved: false,
+      };
+      this.setCanvasCursor('move', 'resize');
+      return true;
+    }
+
+    _applySceneFacePullDrag(event = {}) {
+      const drag = this._sceneFacePullDrag;
+      if (!drag) return false;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer) { this._sceneFacePullDrag = null; return false; }
+      const obj = this._sceneObjectById(layer, drag.objectId);
+      if (!obj || !obj.params) { this._sceneFacePullDrag = null; return false; }
+      const rect = this.canvas.getBoundingClientRect();
+      const world = this.screenToWorld((event.clientX ?? 0) - rect.left, (event.clientY ?? 0) - rect.top);
+      const curDist = Math.hypot(world.x - drag.center.x, world.y - drag.center.y);
+      if (!drag.moved && Math.abs(curDist - drag.startDist) < 1 / (this.scale || 1)) return true;
+      if (!drag.historyPushed) {
+        if (this.app?.pushHistory) this.app.pushHistory();
+        drag.historyPushed = true;
+      }
+      drag.moved = true;
+      const ratio = curDist / drag.startDist;
+      obj.params[drag.axisKey] = Math.round(clamp(drag.startDim * ratio, 2, 200) * 100) / 100;
+      this._scheduleSceneDragRegen(layer.id);
+      return true;
+    }
+
+    _endSceneFacePullDrag() {
+      const drag = this._sceneFacePullDrag;
+      this._sceneFacePullDrag = null;
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      if (!drag) return;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer && drag.moved) {
+        this.engine.generate(layer.id);
+        this.app?.ui?.updateFormula?.();
+        this.app?.ui?.buildControls?.(layer);
+      }
+      this.updateCursor();
+    }
+
+    _cancelSceneFacePullDrag() {
+      const drag = this._sceneFacePullDrag;
+      if (!drag) return false;
+      this._sceneFacePullDrag = null;
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      const obj = layer && this._sceneObjectById(layer, drag.objectId);
+      if (obj && obj.params) obj.params[drag.axisKey] = drag.startDim;
+      if (drag.moved && this.app && Array.isArray(this.app.history) && this.app.history.length > 1) {
+        this.app.history.pop();
+      }
+      if (layer && drag.moved) this.engine.generate(layer.id);
       this.draw();
       this.updateCursor();
       return true;
