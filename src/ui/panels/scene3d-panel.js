@@ -135,6 +135,22 @@
     { value: 'dashdot', label: 'Dash-dot' },
   ];
   const STROKE_DEFAULTS = { lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false };
+  // Phase 4 — highlight (specular band) treatment options.
+  const HIGHLIGHT_TREATMENT_OPTIONS = [
+    { value: 'blank', label: 'Blank' },
+    { value: 'keep', label: 'Keep' },
+    { value: 'dashed', label: 'Dashed' },
+    { value: 'dotted', label: 'Dotted' },
+    { value: 'sparse', label: 'Sparse' },
+    { value: 'altFill', label: 'Alt fill' },
+    { value: 'burst', label: 'Burst' },
+    { value: 'stippleOut', label: 'Stipple' },
+  ];
+  const ALT_FILL_MAPPER_OPTIONS = [
+    { value: 'stipple', label: 'Stipple' }, { value: 'hatch', label: 'Hatch' },
+    { value: 'crosshatch', label: 'Crosshatch' }, { value: 'contour', label: 'Contour' },
+    { value: 'spiral', label: 'Spiral' },
+  ];
 
   // ── MAPPER_CONTROLS (Phase 2) ───────────────────────────────────────────────
   // The single source of truth for each mapper's OWN parameter controls. A
@@ -1465,6 +1481,77 @@
           ariaLabel: 'Hand wobble',
           onCommit: (v) => commitStyle({ params: { ...sp(), wobble: v } }),
         });
+      }
+
+      // ── Highlight treatment (Phase 4) — every fill mapper. Selects what the
+      // top tone band(s) render as instead of always dropping to bare paper
+      // (blank = the legacy look). Sub-controls (band count / density / alt-fill
+      // mapper / burst) appear per treatment. Writes style.params; scene3d reads
+      // them. Reads-with-default (like the x-ray block) — no forced seeding, so a
+      // 'blank' scene stays byte-identical.
+      if (FILL_MAPPERS.has(resolved.mapper)) {
+        const sp = () => clone(resolved.params || {});
+        const rp = resolved.params || {};
+        const treatment = HIGHLIGHT_TREATMENT_OPTIONS.some((o) => o.value === rp.highlightTreatment)
+          ? rp.highlightTreatment : 'blank';
+
+        const hlHdr = document.createElement('div');
+        hlHdr.className = 'vs3-hl-hdr';
+        hlHdr.textContent = 'Highlight';
+        styleHost.appendChild(hlHdr);
+
+        styleComps.push(UI.Select(labeledHost('Treatment'), {
+          options: HIGHLIGHT_TREATMENT_OPTIONS,
+          value: treatment,
+          ariaLabel: 'Highlight treatment',
+          onChange: (v) => commitStyle({ params: { ...sp(), highlightTreatment: v } }),
+        }));
+
+        if (treatment !== 'blank') {
+          const bands = Math.min(2, Math.max(1, Math.round(Number.isFinite(rp.highlightBands) ? rp.highlightBands : 1)));
+          styleComps.push(UI.SegCtrl(labeledHost('Bands'), {
+            options: [{ value: '1', label: '1' }, { value: '2', label: '2' }],
+            value: String(bands),
+            ariaLabel: 'Highlight band count',
+            onChange: (v) => commitStyle({ params: { ...sp(), highlightBands: parseInt(v, 10) } }),
+          }));
+
+          if (treatment === 'sparse' || treatment === 'altFill' || treatment === 'stippleOut') {
+            sliderRow(styleHost, styleComps, 'HL density', {
+              value: Number.isFinite(rp.highlightDensity) ? rp.highlightDensity : 25,
+              min: 1, max: 100, step: 1, defaultValue: 25, ariaLabel: 'Highlight density',
+              onCommit: (v) => commitStyle({ params: { ...sp(), highlightDensity: v } }),
+            });
+          }
+          if (treatment === 'altFill') {
+            styleComps.push(UI.Select(labeledHost('Alt fill'), {
+              options: ALT_FILL_MAPPER_OPTIONS,
+              value: ALT_FILL_MAPPER_OPTIONS.some((o) => o.value === rp.altFillMapper) ? rp.altFillMapper : 'stipple',
+              ariaLabel: 'Alternate fill mapper',
+              onChange: (v) => commitStyle({ params: { ...sp(), altFillMapper: v } }),
+            }));
+          }
+          if (treatment === 'burst') {
+            sliderRow(styleHost, styleComps, 'Burst count', {
+              value: Number.isFinite(rp.burstCount) ? rp.burstCount : 16,
+              min: 6, max: 48, step: 1, defaultValue: 16, ariaLabel: 'Burst ray count',
+              onCommit: (v) => commitStyle({ params: { ...sp(), burstCount: v } }),
+            });
+            styleComps.push(UI.SegCtrl(labeledHost('Burst centre'), {
+              options: [{ value: 'specular', label: 'Glint' }, { value: 'centroid', label: 'Centre' }],
+              value: rp.burstCenter === 'centroid' ? 'centroid' : 'specular',
+              ariaLabel: 'Burst centre',
+              onChange: (v) => commitStyle({ params: { ...sp(), burstCenter: v } }),
+            }));
+          }
+          // Highlight pen (inherit unless overridden).
+          styleComps.push(UI.Select(labeledHost('HL pen'), {
+            options: [{ value: '', label: 'Inherit' }].concat(pens.map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
+            value: rp.highlightPenId || '',
+            ariaLabel: 'Highlight pen',
+            onChange: (v) => commitStyle({ params: { ...sp(), highlightPenId: v || null } }),
+          }));
+        }
       }
 
       // ── X-ray controls (Phase 6) — shown only when the selected OBJECT is set

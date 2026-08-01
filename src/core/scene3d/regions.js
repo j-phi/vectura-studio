@@ -211,16 +211,19 @@
     spacing: coverageToSpacing(coverage, penWidth),
   }));
 
-  // Specular hotspot for a curved record (spec group E, the one iso-band
-  // exemption). Reuses the topoform half-vector recipe in CAMERA space: the
-  // mirror normal H = normalize(L_cam + V) with V = +z (toward viewer); the
-  // front face whose camera normal best aligns with H carries the highlight.
-  // Returns a filled ring path (meta.fill) or null (off, unlit, size 0).
-  const specularRegion = (record, camAngles, toneSpec, light) => {
+  // Specular hotspot CENTER + radius for a record (Phase 4 highlight sub-region;
+  // spec group E, the one iso-band exemption). Reuses the topoform half-vector
+  // recipe in CAMERA space: the mirror normal H = normalize(L_cam + V) with
+  // V = +z (toward viewer); the front face whose camera normal best aligns with
+  // H carries the highlight. Returns { cx, cy, radius, face, faceId, depth,
+  // normal } or null (no lit front face). UNLIKE specularRegion this does NOT
+  // gate on spec.enabled/size — the highlight sub-region is used by highlight
+  // treatments even when the retired specular disc is off; size only scales the
+  // radius (defaults to 1 when unset), so a burst/altFill still has a region.
+  const specularHotspot = (record, camAngles, toneSpec, light) => {
     const spec = toneSpec || {};
     const size = Math.max(0, finite(spec.size, 0));
-    if (spec.enabled === false || size <= 0) return null;
-    if (!record || !Array.isArray(record.faces) || !circlePath || !rotatePoint) return null;
+    if (!record || !Array.isArray(record.faces) || !rotatePoint) return null;
     const Lcam = normalize(rotatePoint(towardLight(light), camAngles || { yaw: 0, pitch: 0, roll: 0 }));
     const H = normalize(v(Lcam.x, Lcam.y, Lcam.z + 1)); // + view direction (+z)
     let best = null;
@@ -246,8 +249,32 @@
       if (pt.y < minY) minY = pt.y; if (pt.y > maxY) maxY = pt.y;
     });
     const diag = Number.isFinite(minX) ? (Math.hypot(maxX - minX, maxY - minY) || 1) : 1;
-    const radius = Math.max(0.8, diag * 0.05 * clamp(size, 0, 20));
-    const normal = best.normalWorld || v(0, 0, 1);
+    const radius = Math.max(0.8, diag * 0.05 * clamp(size > 0 ? size : 1, 0, 20));
+    return {
+      cx,
+      cy,
+      radius,
+      face: best,
+      faceId: best.faceId || null,
+      depth: finite(best.centroidZ, 0),
+      normal: best.normalWorld || v(0, 0, 1),
+      projBounds: Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null,
+    };
+  };
+
+  // Specular hotspot for a curved record as a filled ring path (spec group E).
+  // Retired from the render pipeline (the blank band IS the highlight) but kept
+  // for reference/reuse — now delegates the hotspot find to specularHotspot.
+  // Returns a filled ring path (meta.fill) or null (off, unlit, size 0).
+  const specularRegion = (record, camAngles, toneSpec, light) => {
+    const spec = toneSpec || {};
+    const size = Math.max(0, finite(spec.size, 0));
+    if (spec.enabled === false || size <= 0) return null;
+    if (!circlePath) return null;
+    const hs = specularHotspot(record, camAngles, toneSpec, light);
+    if (!hs) return null;
+    const cx = hs.cx; const cy = hs.cy; const radius = hs.radius; const best = hs.face;
+    const normal = hs.normal;
     const path = circlePath(cx, cy, radius, 28, {
       algorithm: 'scene3d',
       kind: 'sceneFill',
@@ -277,6 +304,7 @@
     toneLadder,
     towardLight,
     specularRegion,
+    specularHotspot,
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Lighting, Regions });

@@ -118,6 +118,25 @@
     const xray = opts.xray && opts.xray.backFaces ? opts.xray : null;
     const backDensity = clamp(finite(opts.xray && opts.xray.backDensity, 0.4), 0.2, 1);
 
+    // Highlight treatment (Phase 4): generalizes the ordered-dither highlight
+    // gate below from a boolean drop ('blank') into a band classifier that
+    // dispatches the TOP tone band(s) to a chosen treatment. Only engaged when a
+    // NON-'blank' treatment is supplied AND the sample sits in the highlight
+    // band (opts.highlight.isHL(I)); everything else keeps the legacy drop, so
+    // 'blank' output is byte-identical. keep/dashed/dotted/sparse/stippleOut are
+    // handled per-line here; altFill/burst drop here and are filled by a
+    // dedicated specular-region pass in the caller.
+    const hl = (opts.highlight && opts.highlight.treatment && opts.highlight.treatment !== 'blank')
+      ? opts.highlight : null;
+    const hlIsHL = (hl && typeof hl.isHL === 'function') ? hl.isHL : () => false;
+    const hlDensity = hl ? clamp(finite(hl.density, 25), 1, 100) : 25;
+    // Deterministic 2D hash (mirrors geometry3d strokeHash) for stippleOut.
+    const sfHash = (a, b) => {
+      let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
+      h ^= h >>> 13; h = Math.imul(h, 1274126177); h ^= h >>> 16;
+      return (h >>> 0) / 4294967296;
+    };
+
     // Push a run to `out`, tagging the array when it belongs to the back family.
     const pushRun = (run, back) => { if (run.length >= 2) { if (back) run.back = true; out.push(run); } };
 
@@ -126,27 +145,59 @@
     // the sample draws only where the local shade (1 − I) meets it, so lines
     // vanish toward the lit highlight and pile up in shadow. `back` selects the
     // FAR side (camN.z < 0) instead of the visible front side, and tags the run.
-    const emitLine = (fixAxis, fixVal, threshold, back) => {
+    const emitLine = (fixAxis, fixVal, threshold, back, lineIndex, count) => {
       const wantFront = !back;
       let run = [];
+      let hlRun = [];
       const flush = () => { pushRun(run, back); run = []; };
+      // Highlight runs are tagged so the caller draws them dashed/dotted on the
+      // highlight pen (dashed/dotted treatments).
+      const flushHL = () => {
+        if (hlRun.length >= 2) { hlRun.highlight = true; if (back) hlRun.back = true; out.push(hlRun); }
+        hlRun = [];
+      };
+      // sparse: is THIS line kept in the highlight band? (every Nth by density).
+      const sparseStep = hl ? Math.max(1, Math.round(100 / hlDensity)) : 1;
+      const lineKept = !hl || (lineIndex % sparseStep === 0);
       for (let s = 0; s <= steps; s++) {
         const tt = s / steps;
         const smp = fixAxis === 'b' ? sampleAt(tt, fixVal) : sampleAt(fixVal, tt);
-        if (!smp || smp.front !== wantFront) { flush(); continue; }
+        if (!smp || smp.front !== wantFront) { flush(); flushHL(); continue; }
         if (toneOn) {
           const shade = clamp(1 - smp.I, 0, 1);
-          if (shade < threshold) { flush(); continue; }
+          if (shade < threshold) {
+            // Ordered-dither drop zone. Legacy (no highlight, or not the
+            // highlight band): drop = bare paper (byte-identical to pre-Phase-4).
+            if (!hl || !hlIsHL(smp.I)) { flush(); flushHL(); continue; }
+            const t = hl.treatment;
+            if (t === 'keep') { flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); continue; }
+            if (t === 'dashed' || t === 'dotted') { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); continue; }
+            if (t === 'sparse') {
+              if (!lineKept) { flush(); flushHL(); continue; }
+              flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); continue;
+            }
+            if (t === 'stippleOut') {
+              // Thin toward the hotspot: keep-probability rises with shade (away
+              // from the glint), deterministic on the quantized screen point.
+              const keepProb = clamp((hlDensity / 100) * (0.3 + shade * 2), 0, 1);
+              if (sfHash(Math.round(smp.x * 4), Math.round(smp.y * 4)) >= keepProb) { flush(); flushHL(); continue; }
+              flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); continue;
+            }
+            // altFill / burst: base fill drops here; a region pass fills it.
+            flush(); flushHL(); continue;
+          }
         }
+        flushHL();
         run.push({ x: smp.x, y: smp.y, z: smp.z });
       }
       flush();
+      flushHL();
     };
 
     const emitFamily = (fixAxis, count, back) => {
       for (let i = 0; i < count; i++) {
         const fixVal = (i + 0.5) / count;
-        emitLine(fixAxis, fixVal, (i + 0.5) / count, back); // dark→dense ordered dither
+        emitLine(fixAxis, fixVal, (i + 0.5) / count, back, i, count); // dark→dense ordered dither
       }
     };
 

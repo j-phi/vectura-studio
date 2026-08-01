@@ -495,6 +495,34 @@
         };
       };
 
+      // ── Highlight treatments (Phase 4): the top tone band(s) render as a
+      // chosen treatment instead of ALWAYS dropping to bare paper. Read off a
+      // style.params bag. `blank` (default) is a strict no-op — every highlight
+      // branch below is gated on treatment !== 'blank', so toned output with the
+      // default is byte-identical to pre-Phase-4.
+      const HIGHLIGHT_TREATMENTS = ['blank', 'keep', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
+      const ALT_FILL_MAPPERS = new Set(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
+      const highlightCfg = (sp) => {
+        const s = sp || {};
+        const treatment = HIGHLIGHT_TREATMENTS.includes(s.highlightTreatment) ? s.highlightTreatment : 'blank';
+        return {
+          treatment,
+          bands: clamp(Math.round(finite(s.highlightBands, 1)), 1, 2),
+          penId: (typeof s.highlightPenId === 'string' && s.highlightPenId) ? s.highlightPenId : null,
+          density: clamp(finite(s.highlightDensity, 25), 1, 100),
+          altFillMapper: ALT_FILL_MAPPERS.has(s.altFillMapper) ? s.altFillMapper : 'stipple',
+          burstCount: clamp(Math.round(finite(s.burstCount, 16)), 6, 48),
+          burstCenter: s.burstCenter === 'centroid' ? 'centroid' : 'specular',
+        };
+      };
+      // Total tone-band count (ladder length is authoritative) and the highlight
+      // predicate: a sample/face is in the highlight band when its band index is
+      // within the top `bands` of the ladder. Only meaningful when tone is on.
+      const nBands = (p.tone && Array.isArray(p.tone.ladder) && p.tone.ladder.length) ? p.tone.ladder.length : 3;
+      const isHighlightBand = (I, bands) => toneOn && Regions.band(I, p.tone) >= (nBands - clamp(bands, 1, 2));
+      // The line type stamped on dashed/dotted highlight runs.
+      const hlLineType = (treatment) => (treatment === 'dotted' ? 'dotted' : 'dashed');
+
       const records = scene.ground ? scene.objects.concat([scene.ground]) : scene.objects;
 
       records.forEach((record) => {
@@ -571,34 +599,54 @@
             const plane = HLR.fitSupportPlane(face.polygon);
             if (plane) {
               const styleParams = style.params || {};
-              // Draft (live drag) always renders the cheap screen-space hatch so
-              // a coalesced frame stays responsive; full quality dispatches the
-              // real mapper. Line fills (hatch/crosshatch) hatch IN-PLANE for the
-              // 3D read; region fills (contour/spiral/stipple) fill the projected
-              // face polygon and are mapped back onto the plane below.
-              let lines;
-              if (draft || !REGION_MAPPERS.has(style.mapper)) {
-                lines = faceHatchLines(face, styleParams, face.normalWorld, style.mapper === 'crosshatch');
-              } else {
-                lines = faceRegionLines(face, style.mapper, face.normalWorld, styleParams);
+              // Highlight treatment (Phase 4) on a FACETED prim is per-FACE band:
+              // a face in the top tone band(s) renders with the object's chosen
+              // treatment. 'blank'/'keep' = the normal hatch (byte-identical);
+              // burst/altFill blank the face (the region pass fills it); dashed/
+              // dotted dash it on the highlight pen; sparse/stippleOut thin it by
+              // scaling the Density down.
+              const faceHL = highlightCfg(styleParams);
+              const faceIsHL = toneOn && faceHL.treatment !== 'blank'
+                && isHighlightBand(intensityFn(face.normalWorld, faceWorldCentroid(face)), faceHL.bands);
+              const suppressFill = faceIsHL && (faceHL.treatment === 'burst' || faceHL.treatment === 'altFill');
+              if (!suppressFill) {
+                const thin = faceIsHL && (faceHL.treatment === 'sparse' || faceHL.treatment === 'stippleOut');
+                const fillParams = thin
+                  ? { ...styleParams, fillDensity: finite(styleParams.fillDensity, 50) * (faceHL.density / 100) }
+                  : styleParams;
+                // Draft (live drag) always renders the cheap screen-space hatch so
+                // a coalesced frame stays responsive; full quality dispatches the
+                // real mapper. Line fills (hatch/crosshatch) hatch IN-PLANE for the
+                // 3D read; region fills (contour/spiral/stipple) fill the projected
+                // face polygon and are mapped back onto the plane below.
+                let lines;
+                if (draft || !REGION_MAPPERS.has(style.mapper)) {
+                  lines = faceHatchLines(face, fillParams, face.normalWorld, style.mapper === 'crosshatch');
+                } else {
+                  lines = faceRegionLines(face, style.mapper, face.normalWorld, fillParams);
+                }
+                const dashHL = faceIsHL && (faceHL.treatment === 'dashed' || faceHL.treatment === 'dotted');
+                const emitTreat = dashHL
+                  ? strokeTreatment({ ...styleParams, lineType: hlLineType(faceHL.treatment), wobble: 0, overstroke: false })
+                  : faceTreat;
+                const fillMeta = {
+                  algorithm: 'scene3d',
+                  kind: 'sceneFill',
+                  // Face pick surface: with the outline suppressed, the hatch
+                  // lines carry the face outline so a click still resolves.
+                  sceneTarget: { ...target, pickPolygon, ...(faceIsHL ? { highlight: true } : {}) },
+                  ...(dashHL && faceHL.penId ? { penId: faceHL.penId } : (style.penId ? { penId: style.penId } : {})),
+                };
+                lines.forEach((line) => {
+                  const pts = line.map((pt) => ({
+                    x: pt.x,
+                    y: pt.y,
+                    z: plane.A * pt.x + plane.B * pt.y + plane.C,
+                  }));
+                  const fillClip = clipper.clipPath(pts, segCtx);
+                  emitRuns(fillClip.runs, fillMeta, hiddenTreatment, null, emitTreat);
+                });
               }
-              const fillMeta = {
-                algorithm: 'scene3d',
-                kind: 'sceneFill',
-                // Face pick surface: with the outline suppressed, the hatch
-                // lines carry the face outline so a click still resolves.
-                sceneTarget: { ...target, pickPolygon },
-                ...(style.penId ? { penId: style.penId } : {}),
-              };
-              lines.forEach((line) => {
-                const pts = line.map((pt) => ({
-                  x: pt.x,
-                  y: pt.y,
-                  z: plane.A * pt.x + plane.B * pt.y + plane.C,
-                }));
-                const fillClip = clipper.clipPath(pts, segCtx);
-                emitRuns(fillClip.runs, fillMeta, hiddenTreatment, null, faceTreat);
-              });
             }
           }
         });
@@ -708,6 +756,12 @@
             // X-ray: ask SurfaceFill for the far surface too (a tagged, sparser
             // back family) so a hatched sphere shows through (Phase 6, THE FIX).
             const grpXray = xrayOn ? xrayCfg(sp) : null;
+            // Highlight (Phase 4): a non-'blank' treatment engages the per-sample
+            // band classifier inside SurfaceFill (keep/dashed/dotted/sparse/
+            // stippleOut). altFill/burst drop here and are drawn by the region
+            // pass below. Only meaningful with tone on.
+            const grpHL = highlightCfg(sp);
+            const hlActive = toneOn && grpHL.treatment !== 'blank';
             if (chartParams) {
               lines = SurfaceFill.buildObject({
                 mode: chartParams.mode,
@@ -728,6 +782,11 @@
                 intensityFn,
                 xray: (grpXray && grpXray.backFaces)
                   ? { backFaces: true, backDensity: grpXray.backDensity } : null,
+                highlight: hlActive ? {
+                  treatment: grpHL.treatment,
+                  isHL: (I) => isHighlightBand(I, grpHL.bands),
+                  density: grpHL.density,
+                } : null,
               });
             }
             if (!lines) {
@@ -790,21 +849,103 @@
               sceneTarget: { ...sceneTargetMeta(record.id, null, null, nearZ, false), xrayBack: true },
               ...(grpXray.backPenId ? { penId: grpXray.backPenId } : (g.style.penId ? { penId: g.style.penId } : {})),
             } : fillMeta;
+            // Highlight-band runs (dashed/dotted treatments) carry their own
+            // dash line type + optional highlight pen and are tagged so the
+            // renderer/tests can find them.
+            const hlTreat = hlActive
+              ? strokeTreatment({ ...sp, lineType: hlLineType(grpHL.treatment), wobble: 0, overstroke: false })
+              : NO_STROKE_TREATMENT;
+            const hlMeta = {
+              algorithm: 'scene3d',
+              kind: 'sceneFill',
+              sceneTarget: { ...sceneTargetMeta(record.id, null, null, nearZ, false), highlight: true },
+              ...(grpHL.penId ? { penId: grpHL.penId } : (g.style.penId ? { penId: g.style.penId } : {})),
+            };
             lines.forEach((line) => {
               // SurfaceFill lines carry per-sample camera-depth (they wrap the
               // form); flat-fill lines don't → fall back to the group's nearZ.
               const isBack = line.back === true;
+              const isHL = line.highlight === true;
               const pts = line.map((pt) => ({ x: pt.x, y: pt.y, z: Number.isFinite(pt.z) ? pt.z : nearZ }));
               const clip = clipper.clipPath(pts, segCtx);
               if (isBack) {
                 // Far surface: force the dashed/occluded treatment so it reads as
                 // "seen through" even where self-occlusion is skipped (selfObject).
                 emitRuns(clip.runs, backMeta, 'dash', null, backTreat, { forceHidden: true });
+              } else if (isHL) {
+                emitRuns(clip.runs, hlMeta, hiddenTreatment, null, hlTreat);
               } else {
                 emitRuns(clip.runs, fillMeta, hiddenTreatment, null, frontTreat);
               }
             });
           });
+        }
+
+        // ── Highlight region pass (Phase 4): altFill / burst fill the specular
+        // sub-region on the blank highlight band. altFill runs the alternate
+        // mapper clipped to the hotspot disc; burst emits radial rays from the
+        // glint (an engraved specular sparkle). Both work for faceted AND curved
+        // records — Regions.specularHotspot finds the lit front face on either.
+        // The base fill already left this zone blank (curved: SurfaceFill drop;
+        // faceted: the highlight-band face was suppressed). Gated on tone +
+        // fastPreview-off + a burst|altFill treatment, so 'blank' is untouched.
+        if (toneOn && !draft && Regions && typeof Regions.specularHotspot === 'function'
+          && record.id !== 'ground') {
+          const hcfg = highlightCfg((resolveStyle(record.id, null).params) || {});
+          if (hcfg.treatment === 'burst' || hcfg.treatment === 'altFill') {
+            const light0 = (p.lights && p.lights[0]) || {};
+            const hs = Regions.specularHotspot(record, scene.camera, p.tone && p.tone.specular, light0);
+            if (hs) {
+              let cx = hs.cx; let cy = hs.cy;
+              if (hcfg.burstCenter === 'centroid' && hs.projBounds) {
+                cx = (hs.projBounds.minX + hs.projBounds.maxX) / 2;
+                cy = (hs.projBounds.minY + hs.projBounds.maxY) / 2;
+              }
+              const hlMeta = {
+                algorithm: 'scene3d',
+                kind: 'sceneFill',
+                sceneTarget: { ...sceneTargetMeta(record.id, hs.face, null, hs.depth, false), highlight: true },
+                ...(hcfg.penId ? { penId: hcfg.penId } : {}),
+              };
+              const hlCtx = { objectId: record.id, selfObject: true };
+              if (hcfg.treatment === 'burst') {
+                const N = hcfg.burstCount;
+                const inner = hs.radius * 0.12;
+                for (let k = 0; k < N; k++) {
+                  const ang = (k / N) * Math.PI * 2;
+                  const p0 = { x: cx + Math.cos(ang) * inner, y: cy + Math.sin(ang) * inner, z: hs.depth };
+                  const p1 = { x: cx + Math.cos(ang) * hs.radius, y: cy + Math.sin(ang) * hs.radius, z: hs.depth };
+                  const clip = clipper.clipPath([p0, p1], hlCtx);
+                  emitRuns(clip.runs, hlMeta, hiddenTreatment, null, NO_STROKE_TREATMENT);
+                }
+              } else {
+                // altFill: fill the hotspot disc with the alternate mapper.
+                const SEG = 40;
+                const circle = [];
+                for (let k = 0; k < SEG; k++) {
+                  const a = (k / SEG) * Math.PI * 2;
+                  circle.push({ x: cx + Math.cos(a) * hs.radius, y: cy + Math.sin(a) * hs.radius });
+                }
+                const spacing = hatchSpacing(hcfg.density);
+                let alines = [];
+                if (REGION_MAPPERS.has(hcfg.altFillMapper) && Mappers && typeof Mappers.regionFill === 'function') {
+                  alines = Mappers.regionFill(hcfg.altFillMapper, [circle], { spacing }) || [];
+                } else {
+                  const edges = [];
+                  for (let k = 0; k < SEG; k++) edges.push([circle[k], circle[(k + 1) % SEG]]);
+                  alines = hatchSegments(edges, 45, spacing);
+                  if (hcfg.altFillMapper === 'crosshatch') {
+                    hatchSegments(edges, 135, spacing).forEach((l) => alines.push(l));
+                  }
+                }
+                alines.forEach((line) => {
+                  const pts = line.map((pt) => ({ x: pt.x, y: pt.y, z: hs.depth }));
+                  const clip = clipper.clipPath(pts, hlCtx);
+                  emitRuns(clip.runs, hlMeta, hiddenTreatment, null, NO_STROKE_TREATMENT);
+                });
+              }
+            }
+          }
         }
 
         // ── Specular highlight: the brightest tone band of the wrap fill is left

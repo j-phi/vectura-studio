@@ -92,6 +92,12 @@
   const CONTOUR_STYLES = ['region', 'surface'];
   const DOT_SHAPES = ['dot', 'ring', 'cross', 'plus', 'tick'];
   const EDGE_CLASS_KEYS = ['silhouette', 'boundary', 'crease', 'interior'];
+  // Phase 4 — highlight (specular band) treatments. 'blank' is the legacy
+  // default (the brightest band drops to bare paper). altFillMapper reuses the
+  // surface-fill mapper set.
+  const HIGHLIGHT_TREATMENTS = ['blank', 'keep', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
+  const ALT_FILL_MAPPERS = ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'];
+  const BURST_CENTERS = ['specular', 'centroid'];
   const clampStyleParam = (key, value) => {
     switch (key) {
       case 'lineType': return STROKE_LINE_TYPES.includes(value) ? value : 'solid';
@@ -140,6 +146,16 @@
       case 'xrayBackPenId': return (typeof value === 'string' && value) ? value : null; // inherit when null
       case 'xrayBackLineType': return STROKE_LINE_TYPES.includes(value) ? value : 'dashed';
       case 'xrayFront': return value === 'faded' ? 'faded' : 'solid';
+      // Phase 4 — highlight (specular band) treatments. Default 'blank' = the
+      // legacy bare-paper highlight; the others render the top tone band(s) with
+      // a distinct treatment instead of dropping.
+      case 'highlightTreatment': return HIGHLIGHT_TREATMENTS.includes(value) ? value : 'blank';
+      case 'highlightBands': return clamp(Math.round(finite(value, 1)), 1, 2);
+      case 'highlightPenId': return (typeof value === 'string' && value) ? value : null; // inherit when null
+      case 'highlightDensity': return clamp(finite(value, 25), 1, 100);
+      case 'altFillMapper': return ALT_FILL_MAPPERS.includes(value) ? value : 'stipple';
+      case 'burstCount': return clamp(Math.round(finite(value, 16)), 6, 48);
+      case 'burstCenter': return BURST_CENTERS.includes(value) ? value : 'specular';
       default: return undefined;
     }
   };
