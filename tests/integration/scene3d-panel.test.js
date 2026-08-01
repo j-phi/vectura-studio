@@ -394,7 +394,12 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     fire(mapSel, 'change');
     const stored = layer.params.styleTable.byObject['obj-1'];
     expect(stored.mapper).toBe('hatch');
-    expect(stored.params).toEqual({ fillAngle: 45, fillDensity: 50 });
+    // Hatch seeds the angle + density AND the shared stroke-treatment defaults
+    // (Phase 1.1), so switching between fill mappers carries the line tuning.
+    expect(stored.params).toEqual({
+      fillAngle: 45, fillDensity: 50,
+      lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false,
+    });
 
     // Hatch controls mounted after re-render (Density is shared across fill
     // mappers, so its label is the generic "Fill density").
@@ -416,9 +421,12 @@ describe('Scene3D panel — behavior (vs3-)', () => {
       .find((s) => [...(s.options || [])].some((o) => o.value === 'contour'));
     mapSel.value = 'contour';
     fire(mapSel, 'change');
-    // Seeded with a density-only default (no fillAngle).
+    // Seeded with a density default (no fillAngle) + the shared stroke defaults.
     expect(layer.params.styleTable.byObject['obj-1'].mapper).toBe('contour');
-    expect(layer.params.styleTable.byObject['obj-1'].params).toEqual({ fillDensity: 50 });
+    expect(layer.params.styleTable.byObject['obj-1'].params).toEqual({
+      fillDensity: 50,
+      lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false,
+    });
     // Density control present; Angle control absent for a region mapper.
     expect(container.querySelector('input.ctrl-slider[aria-label="Fill density"]')).toBeTruthy();
     expect(container.querySelector('[aria-label="Hatch angle"]')).toBeFalsy();

@@ -20,7 +20,8 @@
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
 
   const { finite, clamp, pathWithMeta, markHidden, hatchPolygon,
-    v, add, sub, mul, dot, cross, normalize } = G3;
+    v, add, sub, mul, dot, cross, normalize,
+    strokeTreatment, applyStrokeTreatment, overstrokeCopy, NO_STROKE_TREATMENT } = G3;
 
   // Support-plane depth is exact, so the anti-z-fight bias can sit just above
   // fp/perspective-fit noise. A large bias grows "whisker" stubs where hidden
@@ -69,6 +70,19 @@
   // fillDensity (0–100) → hatch spacing in document mm. Monotonic: denser in,
   // tighter lines out; hatchPolygon floors spacing at 1.
   const hatchSpacing = (density) => Math.max(1, 14 - 0.13 * clamp(finite(density, 50), 0, 100));
+
+  // Strip the geometry-mutating part of a treatment, keeping only the line-type
+  // dash. Edges and per-face outlines are DOUBLE-DRAWN (the face outline loop and
+  // the silhouette/crease/boundary edge pass both emit the same structural edge);
+  // wobbling only one copy would split them. So structural lines take dash only,
+  // while sceneFill lines (unique, no double-draw) take the full wobble/overstroke.
+  const dashOnly = (tr) => {
+    if (!tr || (tr.wobble <= 0 && !tr.overstroke)) return tr;
+    return {
+      lineType: tr.lineType, dash: tr.dash, wobble: 0, wobbleScale: tr.wobbleScale,
+      overstroke: false, amp: 0, active: Boolean(tr.dash),
+    };
+  };
 
   // The 2D boundary of a set of front faces = edges shared by exactly one face
   // in the set (interior edges appear twice and cancel). Returns [[p0,p1],…] in
@@ -254,10 +268,18 @@
       // tone band adds a perpendicular cross-pass. Returns SCREEN-space lines.
       // Tone-aware fill spacing for a face/region normal + its darkest-band flag.
       // Phase-1 density when tone is off, else intensity→band→coverage→spacing.
+      // Density is AUTHORITATIVE; tone is a MULTIPLIER (Phase-1 density bug fix).
+      // s0 = density-driven base spacing; a band's coverage warps it around a
+      // midpoint gain of ~1 (lit/high-coverage bands pack tighter, dark/low-
+      // coverage bands open up), floored at the pen width. Coverage 0..1 →
+      // gain 0.5..1.6, so changing Density visibly re-spaces the fill with tone
+      // ON, instead of the old coverage-only spacing that discarded it.
+      const coverageGain = (bandIdx) => 0.5 + clamp(Regions.coverageFor(bandIdx, p.tone), 0, 1) * 1.1;
       const spacingBand = (normalWorld, styleParams, worldPoint) => {
-        if (!toneOn) return { spacing: hatchSpacing(styleParams.fillDensity), bandIdx: -1 };
+        const s0 = hatchSpacing(styleParams.fillDensity);
+        if (!toneOn) return { spacing: s0, bandIdx: -1 };
         const bandIdx = Regions.band(intensityFn(normalWorld, worldPoint), p.tone);
-        return { spacing: Regions.coverageToSpacing(Regions.coverageFor(bandIdx, p.tone), penWidth), bandIdx };
+        return { spacing: Math.max(penWidth, s0 / coverageGain(bandIdx)), bandIdx };
       };
 
       // In-plane basis for a flat face: its world verts expressed in a 2D (u,v)
@@ -276,6 +298,26 @@
         return { uv, toScreen };
       };
 
+      // Independent crosshatch families (Phase 1.3): family-A is the primary
+      // hatch at fillAngle; family-B (crosshatch only) is at fillAngle +
+      // crossAngleDelta with spacing × crossDensityRatio (ratio > 1 ⇒ sparser
+      // B); tripleHatch adds a third pass at +45° in the darkest tone band only.
+      const crossFamilies = (target, angleDeg, spacing, styleParams, crossPass, darkBand, push) => {
+        push(hatchPolygon(target, { angleDeg, spacing }));
+        if (crossPass) {
+          const delta = clamp(finite(styleParams.crossAngleDelta, 90), 10, 170);
+          const ratio = clamp(finite(styleParams.crossDensityRatio, 1), 0.25, 2);
+          push(hatchPolygon(target, { angleDeg: angleDeg + delta, spacing: spacing * ratio }));
+          if (styleParams.tripleHatch === true && darkBand) {
+            push(hatchPolygon(target, { angleDeg: angleDeg + 45, spacing: spacing * ratio }));
+          }
+        } else if (darkBand) {
+          // Plain hatch densifies the darkest band with a perpendicular pass
+          // (extra ink where the surface is unlit) — NOT the crosshatch family.
+          push(hatchPolygon(target, { angleDeg: angleDeg + 90, spacing }));
+        }
+      };
+
       const faceHatchLines = (face, styleParams, normalWorld, crossPass) => {
         const angleDeg = finite(styleParams.fillAngle, 45);
         // Sample point/spot lights at the face's world centroid.
@@ -284,16 +326,16 @@
         if (!scaf) {
           // Cheap screen-space hatch (draft / no world verts) — snaps back to the
           // surface-oriented hatch on release.
-          const spacing = spacingBand(normalWorld, styleParams, worldPoint).spacing;
-          const lines = hatchPolygon(face.polygon, { angleDeg, spacing });
-          if (crossPass) hatchPolygon(face.polygon, { angleDeg: angleDeg + 90, spacing }).forEach((l) => lines.push(l));
+          const { spacing, bandIdx } = spacingBand(normalWorld, styleParams, worldPoint);
+          const lines = [];
+          crossFamilies(face.polygon, angleDeg, spacing, styleParams, crossPass, bandIdx === 0,
+            (segs) => segs.forEach((l) => lines.push(l)));
           return lines;
         }
         const { spacing, bandIdx } = spacingBand(normalWorld, styleParams, worldPoint);
-        const uvLines = hatchPolygon(scaf.uv, { angleDeg, spacing });
-        // Crosshatch always adds the perpendicular pass; plain hatch adds it only
-        // in the darkest tone band (extra density where the surface is unlit).
-        if (crossPass || bandIdx === 0) hatchPolygon(scaf.uv, { angleDeg: angleDeg + 90, spacing }).forEach((l) => uvLines.push(l));
+        const uvLines = [];
+        crossFamilies(scaf.uv, angleDeg, spacing, styleParams, crossPass, bandIdx === 0,
+          (segs) => segs.forEach((l) => uvLines.push(l)));
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
 
@@ -314,17 +356,32 @@
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
 
-      const emitRuns = (runs, baseMeta, hiddenTreatment, hiddenExtras) => {
+      // Emit chokepoint — the single home for the shared stroke treatment
+      // (line type / wobble / overstroke, Phase 1.1). `tr` is a descriptor from
+      // strokeTreatment(style.params); a call site with nothing to apply passes
+      // NO_STROKE_TREATMENT. Draft frames keep the (free) dash but skip the
+      // geometry-mutating wobble/overstroke so live drags stay responsive.
+      const emitRuns = (runs, baseMeta, hiddenTreatment, hiddenExtras, tr) => {
+        const treat = tr || NO_STROKE_TREATMENT;
         runs.forEach((run) => {
           if (runLength(run.pts) < MIN_RUN_MM) return;
           if (run.visible) {
-            const path = pathWithMeta(run.pts, baseMeta);
-            if (path.length >= 2) out.push(path);
+            const meta = treat.active ? { ...baseMeta } : baseMeta;
+            const pts = applyStrokeTreatment(run.pts, treat, meta, draft);
+            const path = pathWithMeta(pts, meta);
+            if (path.length >= 2) {
+              out.push(path);
+              if (treat.overstroke && !draft) {
+                const dbl = pathWithMeta(overstrokeCopy(pts), meta);
+                if (dbl.length >= 2) out.push(dbl);
+              }
+            }
             return;
           }
           if (hiddenTreatment !== 'dash') return; // solid: hidden runs drop
           const meta = { ...baseMeta, sceneTarget: { ...baseMeta.sceneTarget, occluded: true, ...(hiddenExtras || {}) } };
-          const path = pathWithMeta(run.pts, meta);
+          const pts = applyStrokeTreatment(run.pts, treat, meta, draft);
+          const path = pathWithMeta(pts, meta);
           if (path.length >= 2) out.push(markHidden(path));
         });
       };
@@ -356,6 +413,7 @@
           // boundary edges below. Face picking survives via the hatch lines,
           // which carry the full face outline as pickPolygon.
           const surfaceFill = SURFACE_FILL.has(style.mapper);
+          const faceTreat = strokeTreatment(style.params);
           const segCtx = { ownerKeys: [face.key], objectId: record.id };
           const loop = face.polygon.concat([face.polygon[0]]);
           const clipped = clipper.clipPath(loop, segCtx);
@@ -378,7 +436,10 @@
             if (clipped.fullyVisible) {
               const pts = face.polygon.map((pt) => ({ x: pt.x, y: pt.y }));
               pts.push({ x: pts[0].x, y: pts[0].y });
-              const path = pathWithMeta(pts, { ...baseMeta, closed: true });
+              // Structural outline: line-type dash only (no wobble — see dashOnly).
+              const outlineMeta = { ...baseMeta, closed: true };
+              if (faceTreat.dash) outlineMeta.strokeDash = faceTreat.dash.slice();
+              const path = pathWithMeta(pts, outlineMeta);
               if (path.length >= 3) out.push(path);
             } else {
               // Partially-occluded face: the visible outline is emitted as open
@@ -388,7 +449,7 @@
               emitRuns(clipped.runs, {
                 ...baseMeta,
                 sceneTarget: { ...target, pickPolygon },
-              }, hiddenTreatment);
+              }, hiddenTreatment, null, dashOnly(faceTreat));
             }
           }
 
@@ -422,7 +483,7 @@
                   z: plane.A * pt.x + plane.B * pt.y + plane.C,
                 }));
                 const fillClip = clipper.clipPath(pts, segCtx);
-                emitRuns(fillClip.runs, fillMeta, hiddenTreatment);
+                emitRuns(fillClip.runs, fillMeta, hiddenTreatment, null, faceTreat);
               });
             }
           }
@@ -468,7 +529,9 @@
               // whole continuous region (one spacing for the region, deterministic).
               const meanP = pcnt ? { x: px / pcnt, y: py / pcnt, z: pz / pcnt } : null;
               const bandIdx = Regions.band(intensityFn(meanN, meanP), p.tone);
-              spacing = Regions.coverageToSpacing(Regions.coverageFor(bandIdx, p.tone), penWidth);
+              // Density authoritative, tone a multiplier (Phase-1 density fix) —
+              // same law as spacingBand so faceted + curved fills respond alike.
+              spacing = Math.max(penWidth, hatchSpacing(sp.fillDensity) / coverageGain(bandIdx));
               darkBand = bandIdx === 0;
             }
             // FULL QUALITY: wrap the fill around the parametric surface so it
@@ -501,7 +564,13 @@
               if (draft || !REGION_MAPPERS.has(g.style.mapper)) {
                 lines = hatchSegments(boundary, angleDeg, spacing);
                 if (g.style.mapper === 'crosshatch') {
-                  hatchSegments(boundary, angleDeg + 90, spacing).forEach((l) => lines.push(l));
+                  // Independent family-B (Phase 1.3): +crossAngleDelta, ×ratio.
+                  const delta = clamp(finite(sp.crossAngleDelta, 90), 10, 170);
+                  const ratio = clamp(finite(sp.crossDensityRatio, 1), 0.25, 2);
+                  hatchSegments(boundary, angleDeg + delta, spacing * ratio).forEach((l) => lines.push(l));
+                  if (sp.tripleHatch === true && darkBand) {
+                    hatchSegments(boundary, angleDeg + 45, spacing * ratio).forEach((l) => lines.push(l));
+                  }
                 }
               } else {
                 const loops = (linkSegments ? linkSegments(boundary) : [])
@@ -528,12 +597,13 @@
               ...(g.style.penId ? { penId: g.style.penId } : {}),
             };
             const segCtx = { objectId: record.id, selfObject: true };
+            const groupTreat = strokeTreatment(g.style.params);
             lines.forEach((line) => {
               // SurfaceFill lines carry per-sample camera-depth (they wrap the
               // form); flat-fill lines don't → fall back to the group's nearZ.
               const pts = line.map((pt) => ({ x: pt.x, y: pt.y, z: Number.isFinite(pt.z) ? pt.z : nearZ }));
               const clip = clipper.clipPath(pts, segCtx);
-              emitRuns(clip.runs, fillMeta, hiddenTreatment);
+              emitRuns(clip.runs, fillMeta, hiddenTreatment, null, groupTreat);
             });
           });
         }
@@ -579,7 +649,9 @@
           };
           const ownerKeys = adjacentFaces.map((face) => face.key);
           const clipped = clipper.clipPath([a, b], { ownerKeys, objectId: record.id });
-          emitRuns(clipped.runs, baseMeta, hiddenTreatment, { edgeClass: 'hidden' });
+          // Structural edge: line-type dash only (double-drawn with the face
+          // outline, so wobble is fill-scoped — see dashOnly).
+          emitRuns(clipped.runs, baseMeta, hiddenTreatment, { edgeClass: 'hidden' }, dashOnly(strokeTreatment(style.params)));
         });
       });
 
@@ -596,6 +668,8 @@
           const st = resolveStyle(objectId, null);
           return { penId: st && st.penId ? st.penId : null };
         };
+        // Scene-scope stroke treatment (line type / wobble) for every shadow line.
+        const shadowStyleParams = (p.styleTable && p.styleTable.scene && p.styleTable.scene.params) || {};
         // Multi-light: every shadow-casting light drops its own footprint
         // (ambient lights don't cast). Directional lights project PARALLEL along
         // their travel dir; point/spot lights project in PERSPECTIVE from their
@@ -605,13 +679,13 @@
           if (!lt || lt.type === 'ambient' || lt.castShadows === false) return;
           if (lt.type === 'point' || lt.type === 'spot') {
             if (!lt.position) return;
-            Shadows.build(scene, p, bounds, clipper, null, { styleOf: shadowStyleOf, lightPosition: lt.position })
+            Shadows.build(scene, p, bounds, clipper, null, { styleOf: shadowStyleOf, styleParams: shadowStyleParams, lightPosition: lt.position })
               .forEach((path) => out.push(path));
             return;
           }
           const dir = Lighting.lightWorldDir(lt);
           if (!dir) return;
-          Shadows.build(scene, p, bounds, clipper, dir, { styleOf: shadowStyleOf })
+          Shadows.build(scene, p, bounds, clipper, dir, { styleOf: shadowStyleOf, styleParams: shadowStyleParams })
             .forEach((path) => out.push(path));
         });
       }

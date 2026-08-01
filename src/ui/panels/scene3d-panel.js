@@ -129,16 +129,33 @@
   // fills with a Density only. All surface fills expose Density.
   const ANGLE_MAPPERS = new Set(['hatch', 'crosshatch']);
   const FILL_MAPPERS = new Set(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
+  // Shared stroke-treatment (Phase 1.1) + crosshatch-family (Phase 1.3) defaults.
+  const LINE_TYPE_OPTIONS = [
+    { value: 'solid', label: 'Solid' },
+    { value: 'dashed', label: 'Dashed' },
+    { value: 'dotted', label: 'Dotted' },
+    { value: 'dashdot', label: 'Dash-dot' },
+  ];
+  const STROKE_DEFAULTS = { lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false };
+  const CROSS_DEFAULTS = { crossAngleDelta: 90, crossDensityRatio: 1, tripleHatch: false };
+  const carry = (cur, key, dflt) => (cur[key] !== undefined && cur[key] !== null ? cur[key] : dflt);
   // Params a mapper is seeded with when selected. Carries the user's current
-  // Density (and Angle, for a line mapper) across a switch between fill mappers
-  // so changing hatch→contour→stipple keeps the tuning instead of resetting it.
+  // Density/Angle AND the shared line treatment (line type, wobble…) across a
+  // switch between fill mappers so changing hatch→contour→stipple keeps the
+  // tuning instead of resetting it; crosshatch additionally seeds its family
+  // controls.
   const mapperDefaults = (mapper, current) => {
     const cur = current || {};
     if (!FILL_MAPPERS.has(mapper)) return {};
-    const density = Number.isFinite(cur.fillDensity) ? cur.fillDensity : HATCH_DEFAULTS.fillDensity;
-    if (!ANGLE_MAPPERS.has(mapper)) return { fillDensity: density };
-    const angle = Number.isFinite(cur.fillAngle) ? cur.fillAngle : HATCH_DEFAULTS.fillAngle;
-    return { fillAngle: angle, fillDensity: density };
+    const out = { fillDensity: Number.isFinite(cur.fillDensity) ? cur.fillDensity : HATCH_DEFAULTS.fillDensity };
+    if (ANGLE_MAPPERS.has(mapper)) {
+      out.fillAngle = Number.isFinite(cur.fillAngle) ? cur.fillAngle : HATCH_DEFAULTS.fillAngle;
+    }
+    Object.keys(STROKE_DEFAULTS).forEach((k) => { out[k] = carry(cur, k, STROKE_DEFAULTS[k]); });
+    if (mapper === 'crosshatch') {
+      Object.keys(CROSS_DEFAULTS).forEach((k) => { out[k] = carry(cur, k, CROSS_DEFAULTS[k]); });
+    }
+    return out;
   };
 
   // Session-only last-pick memory for the More… flyout (Decision 3). Module
@@ -1328,6 +1345,109 @@
           ariaLabel: 'Fill density',
           onCommit: (v) => commitStyle({ params: { ...clone(resolved.params || {}), fillDensity: v } }),
         });
+      }
+
+      // ── Shared line treatment (Phase 1.1) — every fill mapper. Writes the
+      // stroke params honored at the scene3d emit chokepoint (line type / dash
+      // scale / hand wobble). One-undo-per-gesture via liveSlider on the sliders.
+      if (FILL_MAPPERS.has(resolved.mapper)) {
+        const sp = () => clone(resolved.params || {});
+        const rp = resolved.params || {};
+
+        const lineTypeRow = document.createElement('div');
+        lineTypeRow.className = 'vs3-row';
+        const ltLbl = document.createElement('label');
+        ltLbl.className = 'vs3-lbl';
+        ltLbl.textContent = 'Line';
+        lineTypeRow.appendChild(ltLbl);
+        const ltHost = document.createElement('div');
+        ltHost.className = 'vs3-ctl';
+        lineTypeRow.appendChild(ltHost);
+        styleHost.appendChild(lineTypeRow);
+        styleComps.push(UI.Select(ltHost, {
+          options: LINE_TYPE_OPTIONS,
+          value: typeof rp.lineType === 'string' ? rp.lineType : 'solid',
+          ariaLabel: 'Line type',
+          onChange: (v) => commitStyle({ params: { ...sp(), lineType: v } }),
+        }));
+
+        // Dash scale only bites when the line dashes — but showing it always
+        // keeps the layout stable and lets a user pre-set it. Style writes route
+        // through commitStyle (CONTRACT C whole-style write) = one undo/gesture,
+        // preview on release — same pattern as Density / Angle.
+        sliderRow(styleHost, styleComps, 'Dash scale', {
+          value: Number.isFinite(rp.dashScale) ? rp.dashScale : STROKE_DEFAULTS.dashScale,
+          min: 0.25, max: 4, step: 0.05,
+          defaultValue: STROKE_DEFAULTS.dashScale,
+          ariaLabel: 'Dash scale',
+          onCommit: (v) => commitStyle({ params: { ...sp(), dashScale: v } }),
+        });
+
+        sliderRow(styleHost, styleComps, 'Wobble', {
+          value: Number.isFinite(rp.wobble) ? rp.wobble : STROKE_DEFAULTS.wobble,
+          min: 0, max: 100, step: 1,
+          defaultValue: STROKE_DEFAULTS.wobble,
+          ariaLabel: 'Hand wobble',
+          onCommit: (v) => commitStyle({ params: { ...sp(), wobble: v } }),
+        });
+      }
+
+      // ── Crosshatch families (Phase 1.3) — only for the crosshatch mapper.
+      if (resolved.mapper === 'crosshatch') {
+        const sp = () => clone(resolved.params || {});
+        const rp = resolved.params || {};
+
+        const deltaRow = document.createElement('div');
+        deltaRow.className = 'vs3-row';
+        const dLbl = document.createElement('label');
+        dLbl.className = 'vs3-lbl';
+        dLbl.textContent = 'Cross angle';
+        deltaRow.appendChild(dLbl);
+        const dHost = document.createElement('div');
+        dHost.className = 'vs3-ctl';
+        deltaRow.appendChild(dHost);
+        styleHost.appendChild(deltaRow);
+        const deltaVal = Number.isFinite(rp.crossAngleDelta) ? rp.crossAngleDelta : CROSS_DEFAULTS.crossAngleDelta;
+        if (UI.AngleDial) {
+          styleComps.push(UI.AngleDial(dHost, {
+            value: deltaVal,
+            ariaLabel: 'Crosshatch angle delta',
+            defaultValue: CROSS_DEFAULTS.crossAngleDelta,
+            onCommit: (v) => commitStyle({ params: { ...sp(), crossAngleDelta: Math.min(170, Math.max(10, v)) } }),
+          }));
+        } else {
+          styleComps.push(UI.Slider(dHost, {
+            value: deltaVal, min: 10, max: 170, step: 1,
+            defaultValue: CROSS_DEFAULTS.crossAngleDelta,
+            ariaLabel: 'Crosshatch angle delta',
+            onCommit: (v) => commitStyle({ params: { ...sp(), crossAngleDelta: v } }),
+          }));
+        }
+
+        sliderRow(styleHost, styleComps, 'Cross density', {
+          value: Number.isFinite(rp.crossDensityRatio) ? rp.crossDensityRatio : CROSS_DEFAULTS.crossDensityRatio,
+          min: 0.25, max: 2, step: 0.05,
+          defaultValue: CROSS_DEFAULTS.crossDensityRatio,
+          ariaLabel: 'Second family density ratio',
+          onCommit: (v) => commitStyle({ params: { ...sp(), crossDensityRatio: v } }),
+        });
+
+        const tripleRow = document.createElement('div');
+        tripleRow.className = 'vs3-row';
+        const tLbl = document.createElement('label');
+        tLbl.className = 'vs3-lbl';
+        tLbl.textContent = 'Triple hatch';
+        tripleRow.appendChild(tLbl);
+        const tHost = document.createElement('div');
+        tHost.className = 'vs3-ctl';
+        tripleRow.appendChild(tHost);
+        styleHost.appendChild(tripleRow);
+        styleComps.push(UI.SegCtrl(tHost, {
+          options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+          value: rp.tripleHatch === true ? 'on' : 'off',
+          ariaLabel: 'Triple hatch in darkest band',
+          onChange: (v) => commitStyle({ params: { ...sp(), tripleHatch: v === 'on' } }),
+        }));
       }
     };
 

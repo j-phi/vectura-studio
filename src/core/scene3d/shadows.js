@@ -31,6 +31,12 @@
   const rotatePoint = G3.rotatePoint;
   const projectPoint = G3.projectPoint;
   const pathWithMeta = G3.pathWithMeta || ((pts) => pts);
+  // Shared stroke treatment (Phase 1.1): a shadow inherits its caster's line
+  // type / wobble, stamped at the shadow emit chokepoint below.
+  const strokeTreatment = G3.strokeTreatment || (() => G3.NO_STROKE_TREATMENT);
+  const applyStrokeTreatment = G3.applyStrokeTreatment || ((pts) => pts);
+  const overstrokeCopy = G3.overstrokeCopy || ((pts) => pts);
+  const NO_STROKE_TREATMENT = G3.NO_STROKE_TREATMENT || { active: false, dash: null, wobble: 0, overstroke: false };
 
   // Skip shadows below this elevation (|d.y| < sin) — grazing light stretches
   // the ground projection toward infinity and reads as garbage on a plotter.
@@ -189,8 +195,9 @@
   // Hatch a shadow polygon (rings = [outer, hole…]) at the ground support-plane
   // depth, clip against the occluders (ground never occludes; object faces do),
   // and emit visible runs.
-  const emitShadowRegion = (rings, groundPlane, clipper, spacing, out, meta) => {
+  const emitShadowRegion = (rings, groundPlane, clipper, spacing, out, meta, treat, draft) => {
     if (!Array.isArray(rings) || !rings.length || !Array.isArray(rings[0]) || rings[0].length < 3) return;
+    const tr = treat || NO_STROKE_TREATMENT;
     const lines = hatchRingsEvenOdd(rings, SHADOW_ANGLE, spacing);
     lines.forEach((line) => {
       const pts = line.map((pt) => ({
@@ -202,8 +209,16 @@
       clip.runs.forEach((run) => {
         if (!run.visible) return; // ground shadow: hidden runs simply drop
         if (runLength(run.pts) < MIN_RUN_MM) return;
-        const path = pathWithMeta(run.pts, meta);
-        if (path.length >= 2) out.push(path);
+        const m = tr.active ? { ...meta } : meta;
+        const rpts = applyStrokeTreatment(run.pts, tr, m, draft);
+        const path = pathWithMeta(rpts, m);
+        if (path.length >= 2) {
+          out.push(path);
+          if (tr.overstroke && !draft) {
+            const dbl = pathWithMeta(overstrokeCopy(rpts), m);
+            if (dbl.length >= 2) out.push(dbl);
+          }
+        }
       });
     });
   };
@@ -262,6 +277,10 @@
     const penWidth = finite(bounds.penWidth, 0.3);
     const spacing = shadowSpacing(penWidth);
     const styleOf = typeof opts.styleOf === 'function' ? opts.styleOf : null;
+    // Scene-scope stroke treatment (line type / wobble) applied to every shadow
+    // hatch line. Draft frames keep the dash but skip the wobble geometry.
+    const shadowTreat = strokeTreatment(opts.styleParams);
+    const draftFrame = Boolean(bounds && bounds.fastPreview);
 
     // One convex-hull footprint per caster (the light-lab model), plus its
     // shadow style class. `rings: [hull]` keeps the downstream union/precedence
@@ -282,7 +301,7 @@
       casters.forEach((caster) => {
         caster.rings.forEach((ring) => {
           emitShadowRegion([ring], groundPlane, clipper, spacing, out,
-            shadowMeta([ring], caster.id, caster.penId, groundDepth));
+            shadowMeta([ring], caster.id, caster.penId, groundDepth), shadowTreat, draftFrame);
         });
       });
       return out;
@@ -302,7 +321,8 @@
     if (!FillBoolean || typeof FillBoolean.union !== 'function') {
       // No boolean surface available: degrade to the flat per-face tint.
       casters.forEach((caster) => caster.rings.forEach((ring) => emitShadowRegion(
-        [ring], groundPlane, clipper, spacing, out, shadowMeta([ring], caster.id, caster.penId, groundDepth))));
+        [ring], groundPlane, clipper, spacing, out, shadowMeta([ring], caster.id, caster.penId, groundDepth),
+        shadowTreat, draftFrame)));
       return out;
     }
 
@@ -370,7 +390,7 @@
           .filter((ring) => ring.length >= 3);
         if (!rings.length) return;
         emitShadowRegion(rings, groundPlane, clipper, spacing, out,
-          shadowMeta(rings, casterId, cls.penId, groundDepth));
+          shadowMeta(rings, casterId, cls.penId, groundDepth), shadowTreat, draftFrame);
       });
     });
 

@@ -81,11 +81,32 @@
 
   const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
+  // Known style.params keys carry an explicit clamp/whitelist so a hand-edited
+  // scene degrades gracefully (do NOT rely on passthrough alone). Unknown keys
+  // still pass through for forward compat. Returns `undefined` for keys with no
+  // dedicated clamp (the generic finite-guard below then applies).
+  const STROKE_LINE_TYPES = ['solid', 'dashed', 'dotted', 'dashdot'];
+  const clampStyleParam = (key, value) => {
+    switch (key) {
+      case 'lineType': return STROKE_LINE_TYPES.includes(value) ? value : 'solid';
+      case 'dashScale': return clamp(finite(value, 1), 0.25, 4);
+      case 'wobble': return clamp(finite(value, 0), 0, 100);
+      case 'wobbleScale': return clamp(finite(value, 6), 1, 30);
+      case 'overstroke': return value === true;
+      case 'crossAngleDelta': return clamp(finite(value, 90), 10, 170);
+      case 'crossDensityRatio': return clamp(finite(value, 1), 0.25, 2);
+      case 'tripleHatch': return value === true;
+      default: return undefined;
+    }
+  };
+
   const normalizeStyle = (style) => {
     const src = isObject(style) ? style : {};
     const params = {};
     if (isObject(src.params)) {
       Object.keys(src.params).forEach((key) => {
+        const clamped = clampStyleParam(key, src.params[key]);
+        if (clamped !== undefined) { params[key] = clamped; return; }
         const value = src.params[key];
         if (typeof value === 'number') {
           if (Number.isFinite(value)) params[key] = value;
