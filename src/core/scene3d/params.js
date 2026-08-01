@@ -105,6 +105,14 @@
       case 'axisSnap': return value === true;
       case 'spiralMode': return SPIRAL_MODES.includes(value) ? value : 'surfaceHelix';
       case 'spiralEccentricity': return clamp(finite(value, 1), 0.3, 3);
+      // Phase 6 — x-ray controls. Only meaningful when the OBJECT is set to
+      // visibility:'xray' (that toggle is the on/off); these shape the look.
+      case 'xrayHiddenEdges': return value !== false; // dashed occluded edges
+      case 'xrayBackFaces': return value !== false;   // render far-surface fills (THE FIX)
+      case 'xrayBackDensity': return clamp(finite(value, 0.4), 0.2, 1); // back fill sparser
+      case 'xrayBackPenId': return (typeof value === 'string' && value) ? value : null; // inherit when null
+      case 'xrayBackLineType': return STROKE_LINE_TYPES.includes(value) ? value : 'dashed';
+      case 'xrayFront': return value === 'faded' ? 'faded' : 'solid';
       default: return undefined;
     }
   };

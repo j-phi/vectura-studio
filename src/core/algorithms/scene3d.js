@@ -375,11 +375,20 @@
       // strokeTreatment(style.params); a call site with nothing to apply passes
       // NO_STROKE_TREATMENT. Draft frames keep the (free) dash but skip the
       // geometry-mutating wobble/overstroke so live drags stay responsive.
-      const emitRuns = (runs, baseMeta, hiddenTreatment, hiddenExtras, tr) => {
+      // `opts.forceHidden` routes EVERY run (even geometrically-visible ones)
+      // through the occluded/dashed branch — this is how x-ray back-face FILLS
+      // are emitted (the far surface reads as dashed "seen-through" lines), a
+      // generalization of the hiddenTreatment==='dash' edge branch to fills.
+      const emitRuns = (runs, baseMeta, hiddenTreatment, hiddenExtras, tr, opts) => {
         const treat = tr || NO_STROKE_TREATMENT;
+        const forceHidden = Boolean(opts && opts.forceHidden);
+        // `hiddenOnly` drops visible runs and keeps only the occluded (dashed)
+        // ones — an x-ray suppressed crease shows its far side, not its front.
+        const hiddenOnly = Boolean(opts && opts.hiddenOnly);
         runs.forEach((run) => {
           if (runLength(run.pts) < MIN_RUN_MM) return;
-          if (run.visible) {
+          if (run.visible && !forceHidden) {
+            if (hiddenOnly) return;
             const meta = treat.active ? { ...baseMeta } : baseMeta;
             const pts = applyStrokeTreatment(run.pts, treat, meta, draft);
             const path = pathWithMeta(pts, meta);
@@ -400,10 +409,31 @@
         });
       };
 
+      // X-ray (Phase 6) config read off a style.params bag. `visibility:'xray'`
+      // on the object is the on/off; these shape it. Back-face fills default ON
+      // (the actual fix), dashed, at 0.4× density, inheriting the object pen.
+      const STROKE_LINE_TYPES = ['solid', 'dashed', 'dotted', 'dashdot'];
+      const xrayCfg = (sp) => {
+        const s = sp || {};
+        return {
+          backFaces: s.xrayBackFaces !== false,
+          hiddenEdges: s.xrayHiddenEdges !== false,
+          backDensity: clamp(finite(s.xrayBackDensity, 0.4), 0.2, 1),
+          backLineType: STROKE_LINE_TYPES.includes(s.xrayBackLineType) ? s.xrayBackLineType : 'dashed',
+          backPenId: (typeof s.xrayBackPenId === 'string' && s.xrayBackPenId) ? s.xrayBackPenId : null,
+          front: s.xrayFront === 'faded' ? 'faded' : 'solid',
+        };
+      };
+
       const records = scene.ground ? scene.objects.concat([scene.ground]) : scene.objects;
 
       records.forEach((record) => {
         const hiddenTreatment = record.visibility === 'xray' ? 'dash' : 'remove';
+        // Object-scope x-ray settings (drive the hidden-edge toggle + the faceted
+        // back-face loop). Per-fill details re-read the specific style below.
+        const xrayOn = record.visibility === 'xray';
+        const recXray = xrayOn ? xrayCfg((resolveStyle(record.id, null).params) || {}) : null;
+        const edgeHidden = (xrayOn && recXray.hiddenEdges) ? 'dash' : 'remove';
         const styleOf = (face) => resolveStyle(record.id, face.faceId);
         // Flat/faceted primitives (box, plane, polyhedra) hatch per face so each
         // planar face fills in its own orientation. Curved primitives are a fine
@@ -503,6 +533,46 @@
           }
         });
 
+        // ── X-ray back-face fills (faceted prims, Phase 6): the FAR planar
+        // faces, hatched at reduced density and dashed so the near surface is
+        // seen through. Emitted via forceHidden (the object never occludes its
+        // own fill, so these read as dashed "seen-through" lines). Gated strictly
+        // on x-ray + fastPreview-off so solid output is byte-identical and live
+        // drags stay cheap.
+        if (faceted && xrayOn && recXray.backFaces && !draft) {
+          record.faces.forEach((face) => {
+            if (face.front) return; // back faces only
+            const style = styleOf(face);
+            if (!SURFACE_FILL.has(style.mapper)) return;
+            const plane = HLR.fitSupportPlane(face.polygon);
+            if (!plane) return;
+            const sp = style.params || {};
+            const xr = xrayCfg(sp);
+            if (!xr.backFaces) return;
+            // Reduced density = a scaled-down Density slider (lower ⇒ wider spacing).
+            const backParams = { ...sp, fillDensity: finite(sp.fillDensity, 50) * xr.backDensity };
+            const lines = REGION_MAPPERS.has(style.mapper)
+              ? faceRegionLines(face, style.mapper, face.normalWorld, backParams)
+              : faceHatchLines(face, backParams, face.normalWorld, style.mapper === 'crosshatch');
+            const backTreat = strokeTreatment({ ...sp, lineType: xr.backLineType, wobble: 0, overstroke: false });
+            const target = sceneTargetMeta(record.id, face, null, face.centroidZ, false);
+            const backMeta = {
+              algorithm: 'scene3d',
+              kind: 'sceneFill',
+              sceneTarget: { ...target, xrayBack: true },
+              ...(xr.backPenId ? { penId: xr.backPenId } : (style.penId ? { penId: style.penId } : {})),
+            };
+            const backCtx = { objectId: record.id, selfObject: true };
+            lines.forEach((line) => {
+              const pts = line.map((pt) => ({
+                x: pt.x, y: pt.y, z: plane.A * pt.x + plane.B * pt.y + plane.C,
+              }));
+              const fillClip = clipper.clipPath(pts, backCtx);
+              emitRuns(fillClip.runs, backMeta, 'dash', null, backTreat, { forceHidden: true });
+            });
+          });
+        }
+
         // ── Curved-surface hatch: one continuous fill over the visible
         // front-face region (the silhouette boundary), grouped by hatch style.
         // Per-face hatch fails here — the tessellation faces are smaller than
@@ -560,6 +630,9 @@
             const spiralFlatClip = g.style.mapper === 'spiral' && sp.spiralMode === 'flatClip';
             const chartParams = !draft && SurfaceFill && !spiralFlatClip
               ? curvedChartParams(objById.get(record.id) || {}) : null;
+            // X-ray: ask SurfaceFill for the far surface too (a tagged, sparser
+            // back family) so a hatched sphere shows through (Phase 6, THE FIX).
+            const grpXray = xrayOn ? xrayCfg(sp) : null;
             if (chartParams) {
               lines = SurfaceFill.buildObject({
                 mode: chartParams.mode,
@@ -574,6 +647,8 @@
                 fillDensity: finite(sp.fillDensity, 50),
                 toneOn,
                 intensityFn,
+                xray: (grpXray && grpXray.backFaces)
+                  ? { backFaces: true, backDensity: grpXray.backDensity } : null,
               });
             }
             if (!lines) {
@@ -621,12 +696,32 @@
             };
             const segCtx = { objectId: record.id, selfObject: true };
             const groupTreat = strokeTreatment(g.style.params);
+            // X-ray front 'faded' reads the near surface as dotted (lighter); the
+            // back family is dashed at the back line type, on the back pen.
+            const frontTreat = (grpXray && grpXray.front === 'faded')
+              ? strokeTreatment({ ...sp, lineType: 'dotted' }) : groupTreat;
+            const backTreat = grpXray
+              ? strokeTreatment({ ...sp, lineType: grpXray.backLineType, wobble: 0, overstroke: false })
+              : NO_STROKE_TREATMENT;
+            const backMeta = grpXray ? {
+              algorithm: 'scene3d',
+              kind: 'sceneFill',
+              sceneTarget: { ...sceneTargetMeta(record.id, null, null, nearZ, false), xrayBack: true },
+              ...(grpXray.backPenId ? { penId: grpXray.backPenId } : (g.style.penId ? { penId: g.style.penId } : {})),
+            } : fillMeta;
             lines.forEach((line) => {
               // SurfaceFill lines carry per-sample camera-depth (they wrap the
               // form); flat-fill lines don't → fall back to the group's nearZ.
+              const isBack = line.back === true;
               const pts = line.map((pt) => ({ x: pt.x, y: pt.y, z: Number.isFinite(pt.z) ? pt.z : nearZ }));
               const clip = clipper.clipPath(pts, segCtx);
-              emitRuns(clip.runs, fillMeta, hiddenTreatment, null, groupTreat);
+              if (isBack) {
+                // Far surface: force the dashed/occluded treatment so it reads as
+                // "seen through" even where self-occlusion is skipped (selfObject).
+                emitRuns(clip.runs, backMeta, 'dash', null, backTreat, { forceHidden: true });
+              } else {
+                emitRuns(clip.runs, fillMeta, hiddenTreatment, null, frontTreat);
+              }
             });
           });
         }
@@ -648,11 +743,14 @@
           if (!structural && !wireframeDemand) return;
           // A crease that borders only surface-filled faces is suppressed — the
           // fill replaces the mesh wireframe. Silhouette and boundary edges
-          // (the shape's real outline) always survive.
-          if (entry.cls === 'crease' && !wireframeDemand
-            && adjacentFaces.length && adjacentFaces.every((face) => SURFACE_FILL.has(styleOf(face).mapper))) {
-            return;
-          }
+          // (the shape's real outline) always survive. UNDER X-RAY (hidden edges
+          // on) a suppressed crease still passes as HIDDEN-ONLY: its visible
+          // portion drops (no confetti over the fill) but its occluded portion
+          // dashes, so the far-side edges of a hatched box read through (Phase 6).
+          const creaseSuppressed = entry.cls === 'crease' && !wireframeDemand
+            && adjacentFaces.length && adjacentFaces.every((face) => SURFACE_FILL.has(styleOf(face).mapper));
+          const hiddenOnlyEdge = creaseSuppressed && xrayOn && recXray.hiddenEdges;
+          if (creaseSuppressed && !hiddenOnlyEdge) return;
           // Interior edges surfaced by a wireframe mapper report as creases —
           // the closest CONTRACT B class (the enum has no 'interior').
           const cls = structural ? entry.cls : 'crease';
@@ -673,8 +771,10 @@
           const ownerKeys = adjacentFaces.map((face) => face.key);
           const clipped = clipper.clipPath([a, b], { ownerKeys, objectId: record.id });
           // Structural edge: line-type dash only (double-drawn with the face
-          // outline, so wobble is fill-scoped — see dashOnly).
-          emitRuns(clipped.runs, baseMeta, hiddenTreatment, { edgeClass: 'hidden' }, dashOnly(strokeTreatment(style.params)));
+          // outline, so wobble is fill-scoped — see dashOnly). Hidden edges dash
+          // under x-ray unless xrayHiddenEdges is off (edgeHidden = 'remove').
+          emitRuns(clipped.runs, baseMeta, edgeHidden, { edgeClass: 'hidden' }, dashOnly(strokeTreatment(style.params)),
+            hiddenOnlyEdge ? { hiddenOnly: true } : undefined);
         });
       });
 

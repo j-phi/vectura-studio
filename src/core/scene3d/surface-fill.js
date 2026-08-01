@@ -63,9 +63,13 @@
 
   // buildObject(opts) → array of screen polylines, or null when unsupported.
   //   opts: { mode, sizes, detail, transform, applyTransform, projectWorld,
-  //           camAngles, mapper, fillAngle, fillDensity, toneOn, intensityFn }
+  //           camAngles, mapper, fillAngle, fillDensity, toneOn, intensityFn,
+  //           xray }
   //   intensityFn(worldNormal, worldPoint) → [0,1] combined multi-light intensity
   //   (worldPoint is the per-sample world surface point, needed by point/spot).
+  //   xray: { backFaces, backDensity } — when backFaces, also emit the FAR
+  //   surface as a second family (polylines tagged `.back = true`) so the caller
+  //   draws it dashed/sparse; back count = front count × backDensity (0.2–1).
   const buildObject = (opts) => {
     if (!opts || !rotatePoint) return null;
     const chart = chartFor(opts.mode, opts.sizes);
@@ -105,19 +109,31 @@
     const N = lineCountFor(finite(opts.fillDensity, 50));
     const steps = Math.max(28, Math.round(finite(opts.detail, 24) * 2)); // samples along each line
     const out = [];
+    const mapper = opts.mapper;
+
+    // X-ray (Phase 6): when opts.xray.backFaces is set, emit a SECOND family
+    // sampling the FAR surface (camN.z < 0, normally back-face-culled) so the
+    // caller can draw it dashed at reduced density — the fix that makes a hatched
+    // sphere actually show through. Back-family polylines carry a `.back` flag.
+    const xray = opts.xray && opts.xray.backFaces ? opts.xray : null;
+    const backDensity = clamp(finite(opts.xray && opts.xray.backDensity, 0.4), 0.2, 1);
+
+    // Push a run to `out`, tagging the array when it belongs to the back family.
+    const pushRun = (run, back) => { if (run.length >= 2) { if (back) run.back = true; out.push(run); } };
 
     // Emit one iso-line: fixAxis 'b' ⇒ fix b, sweep a (meridian); 'a' ⇒ fix a,
     // sweep b (parallel). `threshold` is this line's ordered-dither cut (0..1) —
     // the sample draws only where the local shade (1 − I) meets it, so lines
-    // vanish toward the lit highlight and pile up in shadow. Back-face culling
-    // breaks each line into its visible (front) arcs.
-    const emitLine = (fixAxis, fixVal, threshold) => {
+    // vanish toward the lit highlight and pile up in shadow. `back` selects the
+    // FAR side (camN.z < 0) instead of the visible front side, and tags the run.
+    const emitLine = (fixAxis, fixVal, threshold, back) => {
+      const wantFront = !back;
       let run = [];
-      const flush = () => { if (run.length >= 2) out.push(run); run = []; };
+      const flush = () => { pushRun(run, back); run = []; };
       for (let s = 0; s <= steps; s++) {
         const tt = s / steps;
         const smp = fixAxis === 'b' ? sampleAt(tt, fixVal) : sampleAt(fixVal, tt);
-        if (!smp || !smp.front) { flush(); continue; }
+        if (!smp || smp.front !== wantFront) { flush(); continue; }
         if (toneOn) {
           const shade = clamp(1 - smp.I, 0, 1);
           if (shade < threshold) { flush(); continue; }
@@ -127,68 +143,75 @@
       flush();
     };
 
-    const emitFamily = (fixAxis) => {
-      for (let i = 0; i < N; i++) {
-        const fixVal = (i + 0.5) / N;
-        emitLine(fixAxis, fixVal, (i + 0.5) / N); // dark→dense ordered dither
+    const emitFamily = (fixAxis, count, back) => {
+      for (let i = 0; i < count; i++) {
+        const fixVal = (i + 0.5) / count;
+        emitLine(fixAxis, fixVal, (i + 0.5) / count, back); // dark→dense ordered dither
       }
     };
 
-    const mapper = opts.mapper;
-    if (mapper === 'hatch') {
-      emitFamily('b'); // meridians wrap top-to-bottom
-    } else if (mapper === 'crosshatch') {
-      emitFamily('b');
-      emitFamily('a'); // + parallels
-    } else if (mapper === 'contour') {
-      emitFamily('a'); // latitude rings following the form
-    } else if (mapper === 'spiral') {
-      // One continuous helix: a sweeps 0→1 across N turns while b advances.
-      const turns = N;
-      let run = [];
-      const flush = () => { if (run.length >= 2) out.push(run); run = []; };
-      const total = steps * turns;
-      for (let s = 0; s <= total; s++) {
-        const tt = s / total;
-        const a = tt;
-        const b = (tt * turns) % 1;
-        const smp = sampleAt(a, b);
-        if (!smp || !smp.front) { flush(); continue; }
-        if (toneOn) { const shade = clamp(1 - smp.I, 0, 1); if (shade < 0.12) { flush(); continue; } }
-        run.push({ x: smp.x, y: smp.y, z: smp.z });
-      }
-      flush();
-    } else if (mapper === 'stipple') {
-      // Dot lattice on the surface; a dot survives where local shade meets its
-      // ordered-dither threshold (fewer dots toward the highlight). Each dot is a
-      // small screen circle (a 0.01-unit marker would fall under the emitter's
-      // MIN_RUN_MM floor and vanish).
-      const rows = N;
-      const colsPer = Math.max(6, Math.round(N * 1.6));
-      const R = 0.7; // dot radius (screen units)
-      const SEG = 6;
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < colsPer; c++) {
-          const a = (r + 0.5) / rows;
-          const b = (c + 0.5) / colsPer;
-          const smp = sampleAt(a, b);
-          if (!smp || !smp.front) continue;
-          if (toneOn) {
-            const shade = clamp(1 - smp.I, 0, 1);
-            const th = ((r * colsPer + c) % 7) / 7; // scattered dither
-            if (shade < th) continue;
-          }
-          const ring = [];
-          for (let k = 0; k <= SEG; k++) {
-            const ang = (k / SEG) * Math.PI * 2;
-            ring.push({ x: smp.x + Math.cos(ang) * R, y: smp.y + Math.sin(ang) * R, z: smp.z });
-          }
-          out.push(ring);
+    // Render one pass of the current mapper. `count` is the line/row budget
+    // (reduced for the sparser back family) and `back` selects the far surface.
+    // Returns false only for an unsupported mapper (so the front pass can bail).
+    const runMapper = (count, back) => {
+      const wantFront = !back;
+      if (mapper === 'hatch') {
+        emitFamily('b', count, back); // meridians wrap top-to-bottom
+      } else if (mapper === 'crosshatch') {
+        emitFamily('b', count, back);
+        emitFamily('a', count, back); // + parallels
+      } else if (mapper === 'contour') {
+        emitFamily('a', count, back); // latitude rings following the form
+      } else if (mapper === 'spiral') {
+        // One continuous helix: a sweeps 0→1 across `count` turns while b advances.
+        const turns = count;
+        let run = [];
+        const flush = () => { pushRun(run, back); run = []; };
+        const total = steps * turns;
+        for (let s = 0; s <= total; s++) {
+          const tt = s / total;
+          const smp = sampleAt(tt, (tt * turns) % 1);
+          if (!smp || smp.front !== wantFront) { flush(); continue; }
+          if (toneOn) { const shade = clamp(1 - smp.I, 0, 1); if (shade < 0.12) { flush(); continue; } }
+          run.push({ x: smp.x, y: smp.y, z: smp.z });
         }
+        flush();
+      } else if (mapper === 'stipple') {
+        // Dot lattice on the surface; a dot survives where local shade meets its
+        // ordered-dither threshold (fewer dots toward the highlight). Each dot is a
+        // small screen circle (a 0.01-unit marker would fall under the emitter's
+        // MIN_RUN_MM floor and vanish).
+        const rows = count;
+        const colsPer = Math.max(6, Math.round(count * 1.6));
+        const R = 0.7; // dot radius (screen units)
+        const SEG = 6;
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < colsPer; c++) {
+            const smp = sampleAt((r + 0.5) / rows, (c + 0.5) / colsPer);
+            if (!smp || smp.front !== wantFront) continue;
+            if (toneOn) {
+              const shade = clamp(1 - smp.I, 0, 1);
+              const th = ((r * colsPer + c) % 7) / 7; // scattered dither
+              if (shade < th) continue;
+            }
+            const ring = [];
+            for (let k = 0; k <= SEG; k++) {
+              const ang = (k / SEG) * Math.PI * 2;
+              ring.push({ x: smp.x + Math.cos(ang) * R, y: smp.y + Math.sin(ang) * R, z: smp.z });
+            }
+            if (back) ring.back = true;
+            out.push(ring);
+          }
+        }
+      } else {
+        return false; // unsupported mapper here
       }
-    } else {
-      return null; // unsupported mapper here
-    }
+      return true;
+    };
+
+    if (!runMapper(N, false)) return null; // front surface (unchanged when no x-ray)
+    // X-ray back surface: sparser (count × backDensity) far-side family, tagged.
+    if (xray) runMapper(Math.max(2, Math.round(N * backDensity)), true);
     return out;
   };
 

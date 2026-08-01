@@ -1559,6 +1559,99 @@
           onChange: (v) => commitStyle({ params: { ...sp(), spiralMode: v } }),
         }));
       }
+
+      // ── X-ray controls (Phase 6) — shown only when the selected OBJECT is set
+      // to visibility:'xray' (the tree eye toggle is the on/off). These shape how
+      // the far surface shows through: back-face fills (THE FIX), their density /
+      // line / pen, the dashed hidden edges, and the near-surface fade.
+      const xrayObj = getObject(scope.target.objectId);
+      if (xrayObj && xrayObj.visibility === 'xray') {
+        const sp = () => clone(resolved.params || {});
+        const rp = resolved.params || {};
+
+        const hdr = document.createElement('div');
+        hdr.className = 'vs3-xray-hdr';
+        hdr.textContent = 'X-ray';
+        styleHost.appendChild(hdr);
+
+        const toggleRow = (label, aria, on, onChange) => {
+          const row = document.createElement('div');
+          row.className = 'vs3-row';
+          const lbl = document.createElement('label');
+          lbl.className = 'vs3-lbl';
+          lbl.textContent = label;
+          row.appendChild(lbl);
+          const host = document.createElement('div');
+          host.className = 'vs3-ctl';
+          row.appendChild(host);
+          styleHost.appendChild(row);
+          styleComps.push(UI.SegCtrl(host, {
+            options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+            value: on ? 'on' : 'off',
+            ariaLabel: aria,
+            onChange: (v) => onChange(v === 'on'),
+          }));
+        };
+        const selectRow = (label, aria, options, value, onChange) => {
+          const row = document.createElement('div');
+          row.className = 'vs3-row';
+          const lbl = document.createElement('label');
+          lbl.className = 'vs3-lbl';
+          lbl.textContent = label;
+          row.appendChild(lbl);
+          const host = document.createElement('div');
+          host.className = 'vs3-ctl';
+          row.appendChild(host);
+          styleHost.appendChild(row);
+          styleComps.push(UI.Select(host, { options, value, ariaLabel: aria, onChange }));
+        };
+
+        // Back-face fills (the fix) — default ON.
+        toggleRow('Back faces', 'X-ray back-face fills', rp.xrayBackFaces !== false,
+          (on) => commitStyle({ params: { ...sp(), xrayBackFaces: on } }));
+
+        // Back density (0.2–1) — far surface sparser than the near one.
+        sliderRow(styleHost, styleComps, 'Back density', {
+          value: Number.isFinite(rp.xrayBackDensity) ? rp.xrayBackDensity : 0.4,
+          min: 0.2, max: 1, step: 0.05,
+          defaultValue: 0.4,
+          ariaLabel: 'X-ray back-face density',
+          onCommit: (v) => commitStyle({ params: { ...sp(), xrayBackDensity: v } }),
+        });
+
+        // Back line type — default dashed (the see-through read).
+        selectRow('Back line', 'X-ray back-face line type', LINE_TYPE_OPTIONS,
+          typeof rp.xrayBackLineType === 'string' ? rp.xrayBackLineType : 'dashed',
+          (v) => commitStyle({ params: { ...sp(), xrayBackLineType: v } }));
+
+        // Back pen — inherit the object pen unless overridden.
+        selectRow('Back pen', 'X-ray back-face pen',
+          [{ value: '', label: 'Inherit' }].concat(pens.map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
+          rp.xrayBackPenId || '',
+          (v) => commitStyle({ params: { ...sp(), xrayBackPenId: v || null } }));
+
+        // Hidden edges dashed — default ON.
+        toggleRow('Hidden edges', 'X-ray dashed hidden edges', rp.xrayHiddenEdges !== false,
+          (on) => commitStyle({ params: { ...sp(), xrayHiddenEdges: on } }));
+
+        // Near surface: solid or faded (dotted).
+        const frontRow = document.createElement('div');
+        frontRow.className = 'vs3-row';
+        const frontLbl = document.createElement('label');
+        frontLbl.className = 'vs3-lbl';
+        frontLbl.textContent = 'Front';
+        frontRow.appendChild(frontLbl);
+        const frontHost = document.createElement('div');
+        frontHost.className = 'vs3-ctl';
+        frontRow.appendChild(frontHost);
+        styleHost.appendChild(frontRow);
+        styleComps.push(UI.SegCtrl(frontHost, {
+          options: [{ value: 'solid', label: 'Solid' }, { value: 'faded', label: 'Faded' }],
+          value: rp.xrayFront === 'faded' ? 'faded' : 'solid',
+          ariaLabel: 'X-ray near surface',
+          onChange: (v) => commitStyle({ params: { ...sp(), xrayFront: v } }),
+        }));
+      }
     };
 
     // ── Tone-band editor (CONTRACT L3) ──────────────────────────────────────
