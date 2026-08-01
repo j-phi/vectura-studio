@@ -145,6 +145,26 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   the Direct Selection status-bar hint document the new shortcuts.
 
 ### Fixed
+- **3D Scene — deleting the last object no longer resurrects it.** An explicitly
+  emptied scene now stays empty: `normalizeParams` seeds a default box only when
+  the `objects` key is *absent* (legacy/migrated payloads), not when the array is
+  deliberately empty. Previously the tree showed "No objects yet" while the box
+  stayed on the canvas, because every regen re-normalized the empty array back to
+  Box 1.
+- **3D Scene — realistic cast shadows.** A caster is now clipped to the `y ≥ 0`
+  half-space before it projects to the ground, so an object straddling the ground
+  plane (the default box, centred on the origin) casts a single-sided footprint
+  instead of a mirrored bow-tie that flipped across the projection singularity.
+  The default box now rests **on** the ground (base at `y = 0`) so its shadow
+  pools from the base and reads as a real cast shadow. Shadows stay world-anchored
+  under camera orbit (they were never screen-space; the apparent "swim" was them
+  vanishing mid-drag — see below).
+- **3D Scene — objects and shadows keep rendering during the orbit gizmo.** The
+  camera-rotation drag now coalesces its regen on `requestAnimationFrame` at draft
+  detail (the same path the ground drag already used) instead of an uncoalesced
+  per-move full-quality regen that stalled the frame and dropped geometry. Cast
+  shadows now render on draft frames too (via the cheap boolean-free per-caster
+  path), so nothing flickers or vanishes while orbiting.
 - **Smooth is bezier-aware and anchor-preserving on drawn curves.** An anchor-described
   path (a pen dome) is now smoothed AT THE ANCHOR LEVEL: an already tangent-continuous
   anchor is never split or re-authored (the old flatten-and-refit split a smooth top

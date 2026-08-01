@@ -109,13 +109,53 @@
     return proj;
   };
 
+  // Clip a world-space polygon ring to the y ≥ 0 half-space (Sutherland–Hodgman
+  // against the ground plane). ONLY the above-ground part of a caster casts a
+  // shadow on y = 0: the projection factor t = P.y / d.y flips sign as P.y
+  // crosses 0, so a straddling face (a box centered on the origin, half-buried
+  // in the receiver) would otherwise project its below-ground vertices the
+  // WRONG way and read as a mirrored bow-tie copy of the object rather than a
+  // ground footprint. Cutting at y = 0 first keeps every projected vertex on the
+  // correct side of the singularity.
+  const clipRingAboveGround = (verts) => {
+    const n = verts.length;
+    if (n < 3) return verts;
+    const EPS = 1e-6;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const cur = verts[i];
+      const prev = verts[(i + n - 1) % n];
+      const curIn = cur.y >= -EPS;
+      const prevIn = prev.y >= -EPS;
+      if (curIn !== prevIn) {
+        const denom = (prev.y - cur.y) || 1e-9;
+        const t = prev.y / denom;
+        out.push({
+          x: prev.x + (cur.x - prev.x) * t,
+          y: 0,
+          z: prev.z + (cur.z - prev.z) * t,
+        });
+      }
+      if (curIn) out.push(cur);
+    }
+    return out;
+  };
+
   // Ground-projected ring (screen {x,y}) for one caster face.
   const faceShadowRing = (record, face, d, camAngles, projOpts) => {
     const indices = face.indices || [];
-    const ring = [];
+    const verts = [];
     for (let i = 0; i < indices.length; i++) {
       const P = record.world && record.world[indices[i]];
-      const q = projectShadowVertex(P, d, camAngles, projOpts);
+      if (!P || !Number.isFinite(P.x) || !Number.isFinite(P.y) || !Number.isFinite(P.z)) return null;
+      verts.push(P);
+    }
+    if (verts.length < 3) return null;
+    const clipped = clipRingAboveGround(verts);
+    if (clipped.length < 3) return null; // face entirely below the receiver
+    const ring = [];
+    for (let i = 0; i < clipped.length; i++) {
+      const q = projectShadowVertex(clipped[i], d, camAngles, projOpts);
       if (!q) return null; // any bad vertex ⇒ discard the whole face ring
       ring.push({ x: q.x, y: q.y });
     }

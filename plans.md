@@ -210,6 +210,18 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — 3D Scene Studio acceptance fixes A/B/C (v1.3.18).** On `3d-scene/p4`:
+  (A) deleting the last object no longer resurrects a default box — `normalizeParams`
+  seeds Box 1 only when the `objects` key is absent, never for an explicit empty array;
+  (B) cast shadows clip casters to `y ≥ 0` before projecting (no mirrored bow-tie for a
+  straddling caster) and the default box rests on the ground so its shadow pools from the
+  base; (C) the orbit gizmo coalesces its regen on rAF at draft detail and shadows render
+  on draft frames, so objects/shadows no longer vanish mid-orbit. RGR tests added
+  (scene3d-generate: empty-scene; scene3d-shadows: single-sided footprint). Still open on
+  this branch (Jay live-test batch 2): sun-elevation inversion in the widget mapping,
+  the specular "white disc" on the dark side, "None = outline" on curved objects, and
+  curved-surface tone/mappers that follow the form (leverage topoform/terrain/polyhedron/
+  spiralizer/rasterPlane surface-wrapping code) — plus the future multi-light-type system.
 - **Unreleased — 3D Scene Studio Phase 3 (Mappers, feedback #5).** Off `3d-scene/p2r` on
   branch `3d-scene/p3`: four surface-fill mappers — **crosshatch** (hatch + perpendicular pass),
   **contour** (concentric inset rings), **spiral** (rings stitched into one inward snake),

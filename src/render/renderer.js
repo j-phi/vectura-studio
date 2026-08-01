@@ -13081,11 +13081,20 @@
         });
       }
 
-      this.engine.generate(layer.id, { preview: true });
+      // scene3d: coalesce on rAF at DRAFT detail (same path as the ground-drag
+      // regen). An uncoalesced per-move synchronous full-quality regen stalls the
+      // orbit and drops frames, so objects/shadows flicker and vanish mid-drag.
+      // Other 3D layers (polyhedron/topoform/…) keep the cheap synchronous
+      // preview regen — their meshes are light enough not to stall.
+      if (layer.type === 'scene3d') {
+        this._scheduleSceneDragRegen(layer.id);
+      } else {
+        this.engine.generate(layer.id, { preview: true });
+        this.draw();
+      }
       this.app?.ui?.updateFormula?.();
       this.app?.ui?._activePresetGalleryRefresh?.();
       this.show3DRotationDragTooltip(layer, drag, event);
-      this.draw();
       return true;
     }
 
@@ -13116,6 +13125,14 @@
       this.rotation3DDrag = null;
       this.hideDragTooltip();
       if (!drag) return;
+      // Cancel any coalesced draft regen still queued from the last move so it
+      // can't fire after — and clobber — the full-quality release regen below.
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
       if (layer && drag.historyPushed) {
         this.engine.generate(layer.id);

@@ -281,7 +281,7 @@ describe('scene3d generate (CONTRACT A/B)', () => {
       expect(Math.max(...draft) - Math.min(...draft)).toBeLessThanOrEqual(1);
     });
 
-    test('draft (fastPreview) skips cast shadows for drag responsiveness; full quality emits them', () => {
+    test('cast shadows render at BOTH draft and full quality (objects/shadows never vanish mid-drag)', () => {
       installStub();
       const params = sceneParams([box('obj-1', 40, 0, {
         transform: { x: 0, y: 25, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
@@ -293,13 +293,29 @@ describe('scene3d generate (CONTRACT A/B)', () => {
       params.tone = { ...params.tone, enabled: true };
       const shadowCount = (paths) => paths.filter((p) => p.meta
         && p.meta.sceneTarget && p.meta.sceneTarget.regionClass === 'castShadow').length;
-      // Full quality casts the shadow.
+      // Full quality casts the shadow (class union + caster-bound subtract).
       const full = algo.generate(params, null, null, BOUNDS) || [];
       expect(shadowCount(full)).toBeGreaterThan(0);
-      // A draft frame (live drag) skips shadow projection entirely so the drag
-      // stays responsive — the shadow snaps back on release (full regen).
+      // A draft frame (live drag) ALSO casts a shadow — via shadows.js's cheap
+      // boolean-free per-caster path — so objects and their shadows keep
+      // rendering while orbiting; the clean union snaps back on release.
       const draft = algo.generate(params, null, null, { ...BOUNDS, fastPreview: true }) || [];
-      expect(shadowCount(draft)).toBe(0);
+      expect(shadowCount(draft)).toBeGreaterThan(0);
+    });
+
+    test('an explicitly emptied scene stays empty — the last-deleted object is NOT resurrected on regen (bug: delete leaves box)', () => {
+      installStub();
+      // normalizeParams must distinguish an ABSENT objects key (seed a box) from
+      // an EXPLICIT empty array (intentionally emptied → stays empty).
+      const seeded = V.Scene3D.Params.normalizeParams({ ...clone(defaults), objects: undefined });
+      expect(seeded.objects.length).toBe(1); // legacy/absent → default box
+      const emptied = V.Scene3D.Params.normalizeParams({ ...clone(defaults), objects: [] });
+      expect(emptied.objects).toEqual([]);   // explicit empty → NO resurrection
+      // …and end-to-end: generate on an emptied scene emits no object geometry.
+      const paths = algo.generate(sceneParams([]), null, null, BOUNDS) || [];
+      expect(paths.some((p) => p.meta && p.meta.kind === 'sceneFace')).toBe(false);
+      expect(paths.some((p) => p.meta && p.meta.kind === 'sceneFill'
+        && p.meta.sceneTarget && p.meta.sceneTarget.objectId !== 'ground')).toBe(false);
     });
 
     test('curved-surface hatch replaces the wireframe: continuous fill, no face outlines or creases, silhouette kept', () => {

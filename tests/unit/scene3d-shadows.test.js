@@ -140,6 +140,39 @@ describe('Scene3D.Shadows (CONTRACT L2/L4)', () => {
     expect(totalLen(clipped)).toBeLessThan(totalLen(unclipped));
   });
 
+  test('a caster straddling the receiver casts a SINGLE-SIDED footprint (no mirrored bow-tie)', () => {
+    // Box CENTERED on the origin ⇒ its lower half is buried below the y=0 ground.
+    // Un-clipped, the below-ground vertices project with a flipped sign (t=P.y/d.y
+    // crosses the singularity) and mirror the footprint to the light side — a
+    // bow-tie. The y≥0 half-space clip must keep the shadow on ONE side.
+    const p = V.Scene3D.Params.normalizeParams({
+      ...clone(defaults), objects: [boxObj('obj-1', 0, 0, 40)], ground: { enabled: true },
+      lights: [{ id: 'sun', castShadows: true, azimuth: 160, elevation: 30 }],
+      camera: { projection: 'orthographic', yaw: 0, pitch: 55, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 },
+    });
+    const scene = V.Scene3D.Scene.assembleScene(p, BOUNDS);
+    const clipper = HLR.createClipper([], { bias: 0.05 });
+    const lightDir = Lighting.lightWorldDir(p.lights[0]);
+    const paths = shadowPaths(Shadows.build(scene, p, BOUNDS, clipper, lightDir, {}));
+    expect(paths.length).toBeGreaterThan(0);
+    // Caster screen-centre (front-face silhouette centroid).
+    let cx = 0; let cy = 0; let n = 0;
+    scene.objects[0].faces.forEach((f) => { if (f.front) f.polygon.forEach((pt) => { cx += pt.x; cy += pt.y; n += 1; }); });
+    cx /= n; cy /= n;
+    // Mean offset direction of the footprint from the caster centre.
+    let mx = 0; let my = 0;
+    paths.forEach((path) => path.forEach((pt) => { mx += pt.x - cx; my += pt.y - cy; }));
+    const L = Math.hypot(mx, my) || 1; const dx = mx / L; const dy = my / L;
+    // Signed reach along that direction: far (smax) vs near-side overhang (smin).
+    let smin = Infinity; let smax = -Infinity;
+    paths.forEach((path) => path.forEach((pt) => {
+      const s = (pt.x - cx) * dx + (pt.y - cy) * dy;
+      if (s < smin) smin = s; if (s > smax) smax = s;
+    }));
+    expect(smax).toBeGreaterThan(10);          // the shadow genuinely extends one way
+    expect(smin).toBeGreaterThan(-smax * 0.5); // …and barely overhangs the opposite (light) side
+  });
+
   test('styled-over-unstyled precedence: the unstyled overlap is carved out', () => {
     const light = { azimuth: 180, elevation: 40 };
     const styleOf = (objectId) => (objectId === 'obj-2' ? { penId: 'pen-9' } : { penId: null });

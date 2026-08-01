@@ -502,15 +502,13 @@
 
       // ── Cast shadows on the ground (stream 2A). Orthogonal to tone: driven by
       // light.castShadows, degrades on grazing light / degenerate geometry.
-      // A draft frame (live drag) SKIPS shadow projection entirely: even the
-      // boolean-free per-caster path (CONTRACT L4) costs a full silhouette
-      // extraction + ground projection per object every frame, which blows the
-      // 12-object drag budget (measured ~150ms vs the 110ms sentinel). The sun
-      // WIDGET gives live aim feedback during the drag; the shadow snaps back on
-      // release with the full union regen. (Follow-up PRH: a coarse draft shadow
-      // — bbox projection, no HLR — could restore live shadow-handle feedback
-      // under budget; shadows.js keeps its tested no-boolean path for that.)
-      if (!draft && Shadows && typeof Shadows.build === 'function' && lightDir) {
+      // Shadows render on EVERY frame, including live drags: objects and their
+      // shadows must not vanish while orbiting or dragging (user contract). A
+      // draft frame routes through shadows.js's boolean-free per-caster path
+      // (CONTRACT L4) — cheap ground projection, no FillBoolean union — while a
+      // full frame does the clean class union. Both are y≥0-clipped so a caster
+      // straddling the receiver still projects a correct footprint.
+      if (Shadows && typeof Shadows.build === 'function' && lightDir) {
         const shadowStyleOf = (objectId) => {
           const st = resolveStyle(objectId, null);
           return { penId: st && st.penId ? st.penId : null };

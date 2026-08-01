@@ -243,10 +243,16 @@
     out.sceneVersion = Math.max(1, Math.round(finite(src.sceneVersion, SCENE_VERSION)));
     out.seed = finite(src.seed, 0);
     const usedIds = new Set();
-    const objects = (Array.isArray(src.objects) ? src.objects : [])
+    // An ABSENT objects key (legacy/migrated payload) seeds a default box; an
+    // EXPLICIT empty array is an intentionally emptied scene and stays empty —
+    // otherwise deleting the last object silently resurrects Box 1 on regen.
+    const hasObjectsKey = Array.isArray(src.objects);
+    const objects = (hasObjectsKey ? src.objects : [])
       .map((obj, index) => normalizeObject(obj, index, usedIds))
       .filter(Boolean);
-    out.objects = objects.length ? objects : [normalizeObject({ primitive: 'box', name: 'Box 1' }, 0, usedIds)];
+    out.objects = objects.length || hasObjectsKey
+      ? objects
+      : [normalizeObject({ primitive: 'box', name: 'Box 1' }, 0, usedIds)];
     const lights = (Array.isArray(src.lights) ? src.lights : [])
       .filter(isObject)
       .map((light, index) => normalizeLight(light, index));

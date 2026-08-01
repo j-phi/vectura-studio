@@ -2070,7 +2070,10 @@
           primitive: 'box',
           // per-primitive params bag; box: { sx, sy, sz }; sphere: { radius, detail }; etc.
           params: { sx: 40, sy: 40, sz: 40 },
-          transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+          // Rest the box ON the ground (base at y=0, so y = sy/2): the cast
+          // shadow then pools from the base and reads as a real cast shadow,
+          // instead of a small wedge from a half-buried, origin-centred box.
+          transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
           visibility: 'solid', // 'solid' | 'xray'
         },
       ],
