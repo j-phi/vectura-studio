@@ -216,6 +216,12 @@ Consequences, learned the hard way (a stale Occlusion Bias survived being "fixed
 
 Always specify thoroughness when spawning Explore agents: `quick` (targeted lookup), `medium` (moderate scan), or `very thorough` (comprehensive cross-codebase analysis).
 
+**Context-preserving delegation (large multi-part efforts).** On big batches, the orchestrator must **delegate the actual implementation to subagents rather than doing it inline** — the goal is to protect the orchestrator's context window so it can steer the whole effort to completion. Rules:
+- Hand each coherent work unit (implement → RGR regression test → run the required suites → live-verify → commit) to an implementer subagent. The orchestrator reads only the subagent's **concise final report**, never its internal thinking/tool logs.
+- Serialize units that touch **shared files** (e.g. `src/core/algorithms/scene3d.js`, `src/render/renderer.js`, `src/ui/panels/*`, `src/core/scene3d/*`) — run one implementer at a time so they don't collide. Only fan out in parallel across **provably disjoint file sets** (confirm in a scout pass).
+- Adversarial-review and judge subagents are encouraged after an implementer lands a unit, but the orchestrator ingests only their verdict/summary, not their full transcript.
+- The orchestrator still owns the checklist, the final live verification, and the commit-then-stop discipline.
+
 **Knowledge graph:** After `graphify .` has been run, read `graphify-out/GRAPH_REPORT.md` before any broad file search — navigate by god-nodes and community clusters rather than raw grep.
 
 ## Documentation Contracts
