@@ -145,6 +145,14 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   the Direct Selection status-bar hint document the new shortcuts.
 
 ### Fixed
+- **3D Scene — cleaner, more robust cast shadows (convex-hull model).** Each
+  caster's ground footprint is now the 2D convex hull of its above-ground
+  vertices projected along the light (the light-lab reference model), instead of
+  a union of per-face rings. This removes the mixed-winding ring soup and the
+  FillBoolean union that occasionally failed (AUD-05), yielding one clean footprint
+  per object; class union + precedence + caster-bound subtraction + HLR occlusion
+  are unchanged. Trade-off: the hull fills a concave/torus hole — an accepted v1
+  approximation that matches the reference.
 - **3D Scene — sun elevation reads as on-screen height.** The sun handle now sits
   where the sun actually is in the view: its toward-sun direction is projected
   through the same camera as the scene, so a higher elevation puts the sun higher

@@ -109,57 +109,49 @@
     return proj;
   };
 
-  // Clip a world-space polygon ring to the y ≥ 0 half-space (Sutherland–Hodgman
-  // against the ground plane). ONLY the above-ground part of a caster casts a
-  // shadow on y = 0: the projection factor t = P.y / d.y flips sign as P.y
-  // crosses 0, so a straddling face (a box centered on the origin, half-buried
-  // in the receiver) would otherwise project its below-ground vertices the
-  // WRONG way and read as a mirrored bow-tie copy of the object rather than a
-  // ground footprint. Cutting at y = 0 first keeps every projected vertex on the
-  // correct side of the singularity.
-  const clipRingAboveGround = (verts) => {
-    const n = verts.length;
-    if (n < 3) return verts;
-    const EPS = 1e-6;
-    const out = [];
-    for (let i = 0; i < n; i++) {
-      const cur = verts[i];
-      const prev = verts[(i + n - 1) % n];
-      const curIn = cur.y >= -EPS;
-      const prevIn = prev.y >= -EPS;
-      if (curIn !== prevIn) {
-        const denom = (prev.y - cur.y) || 1e-9;
-        const t = prev.y / denom;
-        out.push({
-          x: prev.x + (cur.x - prev.x) * t,
-          y: 0,
-          z: prev.z + (cur.z - prev.z) * t,
-        });
-      }
-      if (curIn) out.push(cur);
+  // 2D convex hull (Andrew's monotone chain). Screen points → CCW hull ring.
+  const convexHull = (input) => {
+    const pts = (input || [])
+      .filter((pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y))
+      .map((pt) => ({ x: pt.x, y: pt.y }));
+    if (pts.length < 3) return pts;
+    pts.sort((a, b) => (a.x === b.x ? a.y - b.y : a.x - b.x));
+    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    const lower = [];
+    for (let i = 0; i < pts.length; i++) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], pts[i]) <= 0) lower.pop();
+      lower.push(pts[i]);
     }
-    return out;
+    const upper = [];
+    for (let i = pts.length - 1; i >= 0; i--) {
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], pts[i]) <= 0) upper.pop();
+      upper.push(pts[i]);
+    }
+    lower.pop();
+    upper.pop();
+    return lower.concat(upper);
   };
 
-  // Ground-projected ring (screen {x,y}) for one caster face.
-  const faceShadowRing = (record, face, d, camAngles, projOpts) => {
-    const indices = face.indices || [];
-    const verts = [];
-    for (let i = 0; i < indices.length; i++) {
-      const P = record.world && record.world[indices[i]];
-      if (!P || !Number.isFinite(P.x) || !Number.isFinite(P.y) || !Number.isFinite(P.z)) return null;
-      verts.push(P);
+  // One clean shadow footprint for a caster: project EVERY above-ground world
+  // vertex to the ground (y = 0) along the light, then take the 2D convex hull —
+  // the light-lab model (proposal §Prototypes, shadowHulls). Robust where the old
+  // per-face-ring union was fragile: no mixed-winding ring soup, no FillBoolean
+  // needed to merge a single object's faces, and a below-ground vertex (a caster
+  // straddling the receiver) is simply dropped rather than projected the wrong
+  // way into a mirrored bow-tie. Trade-off: the hull fills a concave/torus hole —
+  // an accepted v1 approximation that matches the reference. Returns a screen-
+  // space ring (≥3 pts) or null.
+  const casterHull = (record, d, camAngles, projOpts) => {
+    const world = record.world || [];
+    const pts = [];
+    for (let i = 0; i < world.length; i++) {
+      const P = world[i];
+      if (!P || !Number.isFinite(P.y) || P.y < -1e-6) continue; // below ground casts nothing onto y=0
+      const q = projectShadowVertex(P, d, camAngles, projOpts);
+      if (q) pts.push({ x: q.x, y: q.y });
     }
-    if (verts.length < 3) return null;
-    const clipped = clipRingAboveGround(verts);
-    if (clipped.length < 3) return null; // face entirely below the receiver
-    const ring = [];
-    for (let i = 0; i < clipped.length; i++) {
-      const q = projectShadowVertex(clipped[i], d, camAngles, projOpts);
-      if (!q) return null; // any bad vertex ⇒ discard the whole face ring
-      ring.push({ x: q.x, y: q.y });
-    }
-    return ring.length >= 3 ? ring : null;
+    const hull = convexHull(pts);
+    return hull.length >= 3 ? hull : null;
   };
 
   const shadowSpacing = (penWidth) => {
@@ -234,18 +226,17 @@
     const spacing = shadowSpacing(penWidth);
     const styleOf = typeof opts.styleOf === 'function' ? opts.styleOf : null;
 
-    // Gather each caster's ground-projected face rings + shadow style class.
+    // One convex-hull footprint per caster (the light-lab model), plus its
+    // shadow style class. `rings: [hull]` keeps the downstream union/precedence
+    // path unchanged — it now unions clean convex hulls instead of a per-face
+    // ring soup.
     const casters = [];
     (scene.objects || []).forEach((record) => {
       if (!record || record.isGround) return;
-      const rings = [];
-      (record.faces || []).forEach((face) => {
-        const ring = faceShadowRing(record, face, d, camAngles, projOpts);
-        if (ring) rings.push(ring);
-      });
-      if (!rings.length) return;
+      const hull = casterHull(record, d, camAngles, projOpts);
+      if (!hull) return;
       const style = styleOf ? (styleOf(record.id) || {}) : {};
-      casters.push({ id: record.id, rings, penId: style.penId || null, classKey: style.penId || '' });
+      casters.push({ id: record.id, rings: [hull], penId: style.penId || null, classKey: style.penId || '' });
     });
     if (!casters.length) return out;
 
