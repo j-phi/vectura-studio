@@ -343,16 +343,30 @@
       // FACE PLANE (true surface mm) then projected, so density matches hatch and
       // the fill foreshortens with the face. Falls back to a screen-space fill
       // when there is no plane scaffold.
+      // True-spiral (Phase 3) controls read off style.params, passed to
+      // Mappers.regionFill('spiral', …). pitch omitted ⇒ density-derived spacing;
+      // eccentricity omitted ⇒ auto-fit the region aspect.
+      const spiralOptsFrom = (styleParams) => ({
+        pitch: Number.isFinite(styleParams.spiralPitch) ? styleParams.spiralPitch : undefined,
+        center: styleParams.spiralCenter === 'bboxCenter' ? 'bboxCenter' : 'centroid',
+        offset: finite(styleParams.spiralAngleOffset, 0),
+        axisSnap: styleParams.axisSnap === true,
+        eccentricity: Number.isFinite(styleParams.spiralEccentricity) ? styleParams.spiralEccentricity : undefined,
+      });
+
       const faceRegionLines = (face, mapper, normalWorld, styleParams) => {
         if (!Mappers || typeof Mappers.regionFill !== 'function') return [];
-        // Region fills (rings/dots) read the Density slider directly (1–14mm) —
-        // NOT the tone spacing, which floors near the pen width for line coverage
-        // and would pack thousands of rings/dots. Tone-driven region density is
-        // a later refinement.
+        // Region fills (rings/dots/spiral) read the Density slider directly
+        // (1–14mm) — NOT the tone spacing, which floors near the pen width for
+        // line coverage and would pack thousands of rings/dots. Tone-driven
+        // region density is a later refinement.
         const spacing = hatchSpacing(finite(styleParams.fillDensity, 50));
+        const opts = mapper === 'spiral' ? { spacing, ...spiralOptsFrom(styleParams) } : { spacing };
         const scaf = faceUVScaffold(face, normalWorld);
-        if (!scaf) return Mappers.regionFill(mapper, [face.polygon], { spacing }) || [];
-        const uvLines = Mappers.regionFill(mapper, [scaf.uv], { spacing }) || [];
+        // Faceted faces are always a flat clip — a genuine spiral in the face
+        // plane, projected so it foreshortens with the face.
+        if (!scaf) return Mappers.regionFill(mapper, [face.polygon], opts) || [];
+        const uvLines = Mappers.regionFill(mapper, [scaf.uv], opts) || [];
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
 
@@ -539,7 +553,13 @@
             // band left blank = the highlight). Falls back to the flat
             // silhouette fill on draft frames or an unsupported primitive.
             let lines = null;
-            const chartParams = !draft && SurfaceFill ? curvedChartParams(objById.get(record.id) || {}) : null;
+            // spiralMode 'flatClip' opts out of the wrapped surface helix and
+            // fills the projected silhouette with the SAME clipped Archimedean
+            // spiral the faceted path uses; 'surfaceHelix' (default curved) wraps
+            // the parametric form. Non-spiral mappers are unaffected.
+            const spiralFlatClip = g.style.mapper === 'spiral' && sp.spiralMode === 'flatClip';
+            const chartParams = !draft && SurfaceFill && !spiralFlatClip
+              ? curvedChartParams(objById.get(record.id) || {}) : null;
             if (chartParams) {
               lines = SurfaceFill.buildObject({
                 mode: chartParams.mode,
@@ -576,8 +596,11 @@
                 const loops = (linkSegments ? linkSegments(boundary) : [])
                   .filter((lp) => Array.isArray(lp) && lp.length >= 3);
                 const regionSpacing = hatchSpacing(finite(sp.fillDensity, 50));
+                const regionOpts = g.style.mapper === 'spiral'
+                  ? { spacing: regionSpacing, ...spiralOptsFrom(sp) }
+                  : { spacing: regionSpacing };
                 lines = Mappers && typeof Mappers.regionFill === 'function'
-                  ? (Mappers.regionFill(g.style.mapper, loops, { spacing: regionSpacing }) || [])
+                  ? (Mappers.regionFill(g.style.mapper, loops, regionOpts) || [])
                   : [];
               }
             }

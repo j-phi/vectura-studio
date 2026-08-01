@@ -86,6 +86,8 @@
   // still pass through for forward compat. Returns `undefined` for keys with no
   // dedicated clamp (the generic finite-guard below then applies).
   const STROKE_LINE_TYPES = ['solid', 'dashed', 'dotted', 'dashdot'];
+  const SPIRAL_CENTERS = ['centroid', 'bboxCenter'];
+  const SPIRAL_MODES = ['flatClip', 'surfaceHelix'];
   const clampStyleParam = (key, value) => {
     switch (key) {
       case 'lineType': return STROKE_LINE_TYPES.includes(value) ? value : 'solid';
@@ -96,6 +98,13 @@
       case 'crossAngleDelta': return clamp(finite(value, 90), 10, 170);
       case 'crossDensityRatio': return clamp(finite(value, 1), 0.25, 2);
       case 'tripleHatch': return value === true;
+      // Phase 3 — true-spiral mapper controls.
+      case 'spiralPitch': return clamp(finite(value, 3), 0.5, 20);
+      case 'spiralAngleOffset': return clamp(finite(value, 0), 0, 360);
+      case 'spiralCenter': return SPIRAL_CENTERS.includes(value) ? value : 'centroid';
+      case 'axisSnap': return value === true;
+      case 'spiralMode': return SPIRAL_MODES.includes(value) ? value : 'surfaceHelix';
+      case 'spiralEccentricity': return clamp(finite(value, 1), 0.3, 3);
       default: return undefined;
     }
   };

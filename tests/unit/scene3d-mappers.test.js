@@ -85,12 +85,18 @@ describe('3D Scene Studio Phase 3 — surface-fill mappers', () => {
       });
     });
 
-    test('spiral emits ONE continuous polyline per loop (fewer, longer paths than contour)', () => {
+    // Phase 3 contract change: spiral is a TRUE clipped Archimedean spiral (one
+    // continuous winding run + boundary arcs), NOT the old stitched concentric
+    // rings. The dominant run is the continuous central spiral.
+    test('spiral emits a continuous winding run (the true-spiral central pass)', () => {
       const M = V.Scene3D.Mappers;
       const spiral = M.regionFill('spiral', [SQ], { spacing: 5 });
       const contour = M.regionFill('contour', [SQ], { spacing: 5 });
-      expect(spiral.length).toBe(1);
-      expect(spiral[0].length).toBeGreaterThan(contour[0].length); // the whole nest, stitched
+      expect(spiral.length).toBeGreaterThanOrEqual(1);
+      const main = spiral.slice().sort((a, b) => b.length - a.length)[0];
+      // The central spiral is one long run — many more vertices than a single
+      // contour ring (which is just 4 corners of the square).
+      expect(main.length).toBeGreaterThan(contour[0].length);
     });
 
     test('stipple emits small closed dots, more of them as spacing shrinks', () => {
@@ -140,6 +146,111 @@ describe('3D Scene Studio Phase 3 — surface-fill mappers', () => {
       rings.forEach((r) => r.forEach((p) => { total += 1; if (pip({ x: p.x, y: p.y }, holeClosed)) inHole += 1; }));
       // Essentially no contour geometry lands inside the empty hole.
       expect(inHole / total).toBeLessThan(0.1);
+    });
+  });
+
+  // ── Phase 3: true spiral (single clipped Archimedean spiral, not rings) ──────
+  describe('Scene3D.Mappers.trueSpiral (Phase 3)', () => {
+    const BIG = [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 200 }, { x: 0, y: 200 }];
+    const SQ = [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 40 }, { x: 0, y: 40 }];
+    const CX = 100; const CY = 100;
+    const allPts = (runs) => runs.reduce((a, r) => a.concat(r), []);
+    const longest = (runs) => runs.slice().sort((a, b) => b.length - a.length)[0] || [];
+    // Cumulative signed winding angle about (cx,cy) along a polyline.
+    const winding = (run, cx, cy) => {
+      let w = 0;
+      for (let i = 1; i < run.length; i++) {
+        const a0 = Math.atan2(run[i - 1].y - cy, run[i - 1].x - cx);
+        const a1 = Math.atan2(run[i].y - cy, run[i].x - cx);
+        let d = a1 - a0;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        w += d;
+      }
+      return w;
+    };
+
+    test('trueSpiral is exported', () => {
+      expect(typeof V.Scene3D.Mappers.trueSpiral).toBe('function');
+    });
+
+    // HEADLINE (Jay's complaint): a spiral on a cube face must be ONE spiral —
+    // winding many turns with a radius that grows monotonically from the centre —
+    // NOT a set of concentric rings (constant-then-jumping radius). This FAILS on
+    // the pre-Phase-3 stitched-ring output.
+    test('the central run is one spiral: >3 turns, radius grows monotonically', () => {
+      const runs = V.Scene3D.Mappers.regionFill('spiral', [BIG], { spacing: 10 });
+      expect(runs.length).toBeGreaterThan(0);
+      const main = longest(runs);
+      // Radius (near-)monotonic increasing — a spiral, not stacked rings.
+      let prev = -Infinity; let drops = 0;
+      main.forEach((p) => {
+        const r = Math.hypot(p.x - CX, p.y - CY);
+        if (r < prev - 0.5) drops += 1;
+        prev = r;
+      });
+      expect(drops).toBeLessThanOrEqual(1);
+      // Many turns (a spiral winds continuously; concentric rings would be split).
+      expect(Math.abs(winding(main, CX, CY))).toBeGreaterThan(3 * 2 * Math.PI);
+    });
+
+    test('every emitted vertex lies within (or on) the region', () => {
+      const runs = V.Scene3D.Mappers.regionFill('spiral', [SQ], { spacing: 4 });
+      const pip = V.PathBoolean.pointInPolygon;
+      const closed = SQ.concat([SQ[0]]);
+      const pts = allPts(runs);
+      expect(pts.length).toBeGreaterThan(0);
+      const EPS = 1e-3;
+      pts.forEach((p) => {
+        expect(p.x).toBeGreaterThanOrEqual(-EPS);
+        expect(p.x).toBeLessThanOrEqual(40 + EPS);
+        expect(p.y).toBeGreaterThanOrEqual(-EPS);
+        expect(p.y).toBeLessThanOrEqual(40 + EPS);
+      });
+      // Most interior vertices are strictly inside (endpoints sit on the edge).
+      const inside = pts.filter((p) => pip(p, closed)).length;
+      expect(inside / pts.length).toBeGreaterThan(0.8);
+    });
+
+    test('smaller pitch ⇒ more turns / more geometry', () => {
+      const fine = V.Scene3D.Mappers.regionFill('spiral', [BIG], { pitch: 3 });
+      const coarse = V.Scene3D.Mappers.regionFill('spiral', [BIG], { pitch: 12 });
+      expect(allPts(fine).length).toBeGreaterThan(allPts(coarse).length);
+    });
+
+    test('axisSnap produces axis-aligned (horizontal/vertical) segments', () => {
+      const snapped = longest(V.Scene3D.Mappers.regionFill('spiral', [BIG], { pitch: 10, axisSnap: true }));
+      let aligned = 0; let total = 0;
+      for (let i = 1; i < snapped.length; i++) {
+        const dx = Math.abs(snapped[i].x - snapped[i - 1].x);
+        const dy = Math.abs(snapped[i].y - snapped[i - 1].y);
+        const mn = Math.min(dx, dy); const mx = Math.max(dx, dy);
+        if (mx > 1e-6 && mn / mx < 0.15) aligned += 1;
+        total += 1;
+      }
+      expect(total).toBeGreaterThan(4);
+      expect(aligned / total).toBeGreaterThan(0.6);
+    });
+
+    test('eccentricity stretches the spiral to fill a non-square region', () => {
+      const WIDE = [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 60 }, { x: 0, y: 60 }];
+      // The central spiral's bounding-box aspect reflects the stretch: auto-fit
+      // widens it to span the region; a forced-circular spiral (ecc 1) only
+      // reaches the inscribed radius (≈square footprint).
+      const runAspect = (runs) => {
+        const run = longest(runs);
+        const xs = run.map((p) => p.x); const ys = run.map((p) => p.y);
+        return (Math.max(...xs) - Math.min(...xs)) / Math.max(1e-6, Math.max(...ys) - Math.min(...ys));
+      };
+      const auto = V.Scene3D.Mappers.regionFill('spiral', [WIDE], { pitch: 4 }); // auto-fit ⇒ wide
+      const circ = V.Scene3D.Mappers.regionFill('spiral', [WIDE], { pitch: 4, eccentricity: 1 });
+      expect(runAspect(auto)).toBeGreaterThan(runAspect(circ) * 1.5);
+    });
+
+    test('deterministic — identical output for identical params', () => {
+      const a = V.Scene3D.Mappers.regionFill('spiral', [BIG], { spacing: 7, axisSnap: false });
+      const b = V.Scene3D.Mappers.regionFill('spiral', [BIG], { spacing: 7, axisSnap: false });
+      expect(JSON.stringify(a)).toBe(JSON.stringify(b));
     });
   });
 

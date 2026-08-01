@@ -23,6 +23,7 @@
   const PB = () => Vectura.PathBoolean || {};
 
   const finite = (n, d) => (Number.isFinite(n) ? n : d);
+  const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, Number.isFinite(n) ? n : lo));
 
   // Drop non-finite points, consecutive coincidences, and a closing duplicate.
   const cleanRing = (loop) => {
@@ -193,6 +194,149 @@
     return dots;
   };
 
+  // ── True spiral (Phase 3) ──────────────────────────────────────────────────
+  // A single continuous Archimedean spiral, generated from the region CENTRE and
+  // CLIPPED to the region boundary — the plotter-honest answer to "spiral fill".
+  // This REPLACES the old stitched-concentric-ring snake (which read as stacked
+  // contours, not a spiral): a cube face now fills with one clear spiral, not a
+  // set of concentric rings. The recurrence is ported from the spiral algorithm
+  // (src/core/algorithms/spiral.js:197–216): theta += dTheta; r += dr;
+  // point = centre + (cosθ, sinθ)·r, plus its axisSnap (rectilinear/squared) and
+  // angleOffset controls. Eccentricity (auto = region aspect) stretches the
+  // spiral so a non-square face fills edge-to-edge. Deterministic (A-17: no RNG).
+
+  const STEPS_PER_REV = 64; // smooth-spiral angular resolution
+  const SPIRAL_MAX_STEPS = 24000; // pathological pitch/size guard (cannot hang)
+
+  // Even-odd point-in-region across all (closed) rings.
+  const insideComposite = (rings, x, y) => {
+    const pip = PB().pointInPolygon;
+    if (typeof pip !== 'function') return false;
+    const pt = { x, y };
+    let inside = false;
+    for (let i = 0; i < rings.length; i++) if (pip(pt, rings[i])) inside = !inside;
+    return inside;
+  };
+
+  // Clip a segment p0→p1 to the composite region (even-odd), returning the inside
+  // sub-segments as [[a,b],…]. Mirrors the pattern-algorithm clip machinery.
+  const clipSegment = (rings, p0, p1) => {
+    const dx = p1.x - p0.x; const dy = p1.y - p0.y;
+    const ts = [0, 1];
+    for (let g = 0; g < rings.length; g++) {
+      const poly = rings[g];
+      const n = poly.length;
+      for (let i = 0; i < n; i++) {
+        const a = poly[i]; const b = poly[(i + 1) % n];
+        const ex = b.x - a.x; const ey = b.y - a.y;
+        const denom = dx * ey - dy * ex;
+        if (Math.abs(denom) < 1e-10) continue;
+        const t = ((a.x - p0.x) * ey - (a.y - p0.y) * ex) / denom;
+        const u = ((a.x - p0.x) * dy - (a.y - p0.y) * dx) / denom;
+        if (t > 1e-9 && t < 1 - 1e-9 && u >= -1e-9 && u <= 1 + 1e-9) ts.push(t);
+      }
+    }
+    ts.sort((a, b) => a - b);
+    const out = [];
+    for (let i = 0; i + 1 < ts.length; i++) {
+      const t0 = ts[i]; const t1 = ts[i + 1];
+      if (t1 - t0 < 1e-9) continue;
+      const mx = p0.x + ((t0 + t1) / 2) * dx;
+      const my = p0.y + ((t0 + t1) / 2) * dy;
+      if (insideComposite(rings, mx, my)) {
+        out.push([{ x: p0.x + t0 * dx, y: p0.y + t0 * dy }, { x: p0.x + t1 * dx, y: p0.y + t1 * dy }]);
+      }
+    }
+    return out;
+  };
+
+  // Clip a polyline to the composite region, returning inside sub-polylines. Keeps
+  // consecutive inside sub-segments joined so the central spiral stays ONE run.
+  const clipPolyline = (rings, pts) => {
+    if (pts.length < 2) return [];
+    const result = [];
+    let seg = null;
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const clipped = clipSegment(rings, pts[i], pts[i + 1]);
+      if (!clipped.length) { if (seg && seg.length >= 2) result.push(seg); seg = null; continue; }
+      for (let c = 0; c < clipped.length; c++) {
+        const a = clipped[c][0]; const b = clipped[c][1];
+        if (!seg) { seg = [a, b]; continue; }
+        const last = seg[seg.length - 1];
+        if (Math.hypot(a.x - last.x, a.y - last.y) > 1e-4) {
+          if (seg.length >= 2) result.push(seg);
+          seg = [a, b];
+        } else {
+          seg.push(b);
+        }
+      }
+    }
+    if (seg && seg.length >= 2) result.push(seg);
+    return result;
+  };
+
+  // trueSpiral(loops, opts) → array of screen-space polylines (the clipped
+  // spiral, one continuous central run + boundary arcs). opts:
+  //   pitch        mm between successive loops (falls back to opts.spacing)
+  //   center       'centroid' (default) | 'bboxCenter'
+  //   offset       start-angle offset in DEGREES (default 0)
+  //   axisSnap     bool — a squared/rectilinear spiral (axis-aligned segments)
+  //   eccentricity 0.3–3 x/y stretch; omitted ⇒ auto-fit the region aspect
+  const trueSpiral = (loops, opts = {}) => {
+    const rings0 = (loops || []).map(cleanRing).filter((r) => r.length >= 3);
+    if (!rings0.length) return [];
+    const rings = rings0.map(closeRing); // pointInPolygon needs the closing vertex
+    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+    let cx = 0; let cy = 0; let cN = 0;
+    rings0.forEach((r) => r.forEach((p) => {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+      cx += p.x; cy += p.y; cN += 1;
+    }));
+    if (!(maxX > minX) || !(maxY > minY) || !cN) return [];
+    const center = opts.center === 'bboxCenter'
+      ? { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
+      : { x: cx / cN, y: cy / cN };
+    const bw = Math.max(1e-6, maxX - minX);
+    const bh = Math.max(1e-6, maxY - minY);
+    // Eccentricity: explicit value, else auto-fit the region's aspect ratio so a
+    // wide/tall face fills edge-to-edge instead of an inscribed circle.
+    const ecc = Number.isFinite(opts.eccentricity)
+      ? clamp(opts.eccentricity, 0.3, 3)
+      : clamp(bw / bh, 0.3, 3);
+    const sx = Math.sqrt(ecc);
+    const sy = 1 / Math.sqrt(ecc);
+    // Largest UN-stretched radius needed to reach every region vertex.
+    let rMax = 0;
+    rings0.forEach((r) => r.forEach((p) => {
+      const rr = Math.hypot((p.x - center.x) / sx, (p.y - center.y) / sy);
+      if (rr > rMax) rMax = rr;
+    }));
+    if (!(rMax > 0)) return [];
+    const pitch = clamp(finite(opts.pitch, finite(opts.spacing, 3)), 0.5, 40);
+    const axisSnap = Boolean(opts.axisSnap);
+    // axisSnap: one straight segment per quadrant (a squared spiral). Offsetting
+    // the start by 45° makes those segments axis-aligned (horizontal/vertical)
+    // for a rectilinear read on cubes.
+    const baseOffset = (finite(opts.offset, 0) * Math.PI) / 180 + (axisSnap ? Math.PI / 4 : 0);
+    const dTheta = axisSnap ? Math.PI / 2 : (Math.PI * 2) / STEPS_PER_REV;
+    const dr = (pitch * dTheta) / (Math.PI * 2); // Archimedean: +pitch per full turn
+    // Sweep a bit past rMax so the outermost loop fully covers the corners.
+    const rEnd = rMax + pitch;
+    const totalSteps = Math.min(SPIRAL_MAX_STEPS, Math.max(4, Math.ceil(rEnd / Math.max(1e-6, dr))));
+    const raw = [];
+    let theta = baseOffset;
+    let r = 0;
+    for (let i = 0; i <= totalSteps; i++) {
+      raw.push({ x: center.x + Math.cos(theta) * r * sx, y: center.y + Math.sin(theta) * r * sy });
+      theta += dTheta;
+      r += dr;
+    }
+    return clipPolyline(rings, raw);
+  };
+
   // mapper: 'contour' | 'spiral' | 'stipple'. loops: closed screen polygons
   // (outer boundary + any holes). opts: { spacing, dotRadius }. Returns an array
   // of screen-space polylines. contour/spiral offset the WHOLE region together
@@ -204,16 +348,17 @@
       return insetPasses(loops, spacing).flat().map(closeRing).filter((r) => r.length >= 4);
     }
     if (mapper === 'spiral') {
-      const passes = insetPasses(loops, spacing);
-      if (!passes.length) return [];
-      const stitch = GU().stitchConcentricRings;
-      if (typeof stitch === 'function') {
-        const snakes = stitch(passes, Math.max(1, spacing * 1.5)) || [];
-        const ok = snakes.filter((s) => Array.isArray(s) && s.length >= 2);
-        if (ok.length) return ok;
-      }
-      // Fallback: stitch each loop's own nested rings into a snake.
-      return loops.map((l) => stitchSpiral(insetRings(l, spacing, true))).filter((s) => s && s.length >= 2);
+      // ONE continuous Archimedean spiral clipped to the region (Phase 3) — not
+      // the old stitched concentric rings. spacing drives the default pitch; the
+      // caller may pass explicit pitch/center/offset/axisSnap/eccentricity.
+      return trueSpiral(loops, {
+        pitch: finite(opts.pitch, spacing),
+        spacing,
+        center: opts.center,
+        offset: opts.offset,
+        axisSnap: opts.axisSnap,
+        eccentricity: opts.eccentricity,
+      });
     }
     if (mapper === 'stipple') {
       return stipple(loops, spacing, finite(opts.dotRadius, Math.max(0.35, spacing * 0.18)));
@@ -221,7 +366,7 @@
     return [];
   };
 
-  const api = { regionFill, insetRings, stitchSpiral, stipple, cleanRing, closeRing };
+  const api = { regionFill, trueSpiral, insetRings, stitchSpiral, stipple, cleanRing, closeRing };
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Mappers: api });
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

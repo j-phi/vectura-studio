@@ -138,6 +138,12 @@
   ];
   const STROKE_DEFAULTS = { lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false };
   const CROSS_DEFAULTS = { crossAngleDelta: 90, crossDensityRatio: 1, tripleHatch: false };
+  // True-spiral (Phase 3) defaults. Density drives the pitch, so no separate
+  // pitch key is seeded here (omitting spiralPitch keeps the density mapping);
+  // eccentricity is likewise omitted so it auto-fits the region aspect until the
+  // user sets it. spiralMode defaults to surfaceHelix (curved prims wrap the
+  // form); faceted prims always render the flat clip regardless.
+  const SPIRAL_DEFAULTS = { spiralAngleOffset: 0, spiralCenter: 'centroid', axisSnap: false, spiralMode: 'surfaceHelix' };
   const carry = (cur, key, dflt) => (cur[key] !== undefined && cur[key] !== null ? cur[key] : dflt);
   // Params a mapper is seeded with when selected. Carries the user's current
   // Density/Angle AND the shared line treatment (line type, wobble…) across a
@@ -154,6 +160,9 @@
     Object.keys(STROKE_DEFAULTS).forEach((k) => { out[k] = carry(cur, k, STROKE_DEFAULTS[k]); });
     if (mapper === 'crosshatch') {
       Object.keys(CROSS_DEFAULTS).forEach((k) => { out[k] = carry(cur, k, CROSS_DEFAULTS[k]); });
+    }
+    if (mapper === 'spiral') {
+      Object.keys(SPIRAL_DEFAULTS).forEach((k) => { out[k] = carry(cur, k, SPIRAL_DEFAULTS[k]); });
     }
     return out;
   };
@@ -1447,6 +1456,107 @@
           value: rp.tripleHatch === true ? 'on' : 'off',
           ariaLabel: 'Triple hatch in darkest band',
           onChange: (v) => commitStyle({ params: { ...sp(), tripleHatch: v === 'on' } }),
+        }));
+      }
+
+      // ── True-spiral controls (Phase 3) — only for the spiral mapper. Density
+      // (above) drives the pitch; these shape the spiral itself. A single undo
+      // per gesture via commitStyle whole-style writes (CONTRACT C).
+      if (resolved.mapper === 'spiral') {
+        const sp = () => clone(resolved.params || {});
+        const rp = resolved.params || {};
+
+        // Angle offset (start angle of the spiral).
+        const offRow = document.createElement('div');
+        offRow.className = 'vs3-row';
+        const offLbl = document.createElement('label');
+        offLbl.className = 'vs3-lbl';
+        offLbl.textContent = 'Angle offset';
+        offRow.appendChild(offLbl);
+        const offHost = document.createElement('div');
+        offHost.className = 'vs3-ctl';
+        offRow.appendChild(offHost);
+        styleHost.appendChild(offRow);
+        const offVal = Number.isFinite(rp.spiralAngleOffset) ? rp.spiralAngleOffset : SPIRAL_DEFAULTS.spiralAngleOffset;
+        if (UI.AngleDial) {
+          styleComps.push(UI.AngleDial(offHost, {
+            value: offVal,
+            ariaLabel: 'Spiral start angle',
+            defaultValue: SPIRAL_DEFAULTS.spiralAngleOffset,
+            onCommit: (v) => commitStyle({ params: { ...sp(), spiralAngleOffset: Math.min(360, Math.max(0, v)) } }),
+          }));
+        } else {
+          styleComps.push(UI.Slider(offHost, {
+            value: offVal, min: 0, max: 360, step: 1,
+            defaultValue: SPIRAL_DEFAULTS.spiralAngleOffset,
+            ariaLabel: 'Spiral start angle',
+            onCommit: (v) => commitStyle({ params: { ...sp(), spiralAngleOffset: v } }),
+          }));
+        }
+
+        // Eccentricity (region-aspect stretch). Neutral 1 shown until adjusted;
+        // once set it overrides the auto-fit.
+        sliderRow(styleHost, styleComps, 'Eccentricity', {
+          value: Number.isFinite(rp.spiralEccentricity) ? rp.spiralEccentricity : 1,
+          min: 0.3, max: 3, step: 0.05,
+          defaultValue: 1,
+          ariaLabel: 'Spiral eccentricity',
+          onCommit: (v) => commitStyle({ params: { ...sp(), spiralEccentricity: v } }),
+        });
+
+        // Centre mode.
+        const ctrRow = document.createElement('div');
+        ctrRow.className = 'vs3-row';
+        const ctrLbl = document.createElement('label');
+        ctrLbl.className = 'vs3-lbl';
+        ctrLbl.textContent = 'Centre';
+        ctrRow.appendChild(ctrLbl);
+        const ctrHost = document.createElement('div');
+        ctrHost.className = 'vs3-ctl';
+        ctrRow.appendChild(ctrHost);
+        styleHost.appendChild(ctrRow);
+        styleComps.push(UI.SegCtrl(ctrHost, {
+          options: [{ value: 'centroid', label: 'Centroid' }, { value: 'bboxCenter', label: 'Bounds' }],
+          value: rp.spiralCenter === 'bboxCenter' ? 'bboxCenter' : 'centroid',
+          ariaLabel: 'Spiral centre',
+          onChange: (v) => commitStyle({ params: { ...sp(), spiralCenter: v } }),
+        }));
+
+        // Axis snap (squared / rectilinear spiral).
+        const snapRow = document.createElement('div');
+        snapRow.className = 'vs3-row';
+        const snapLbl = document.createElement('label');
+        snapLbl.className = 'vs3-lbl';
+        snapLbl.textContent = 'Axis snap';
+        snapRow.appendChild(snapLbl);
+        const snapHost = document.createElement('div');
+        snapHost.className = 'vs3-ctl';
+        snapRow.appendChild(snapHost);
+        styleHost.appendChild(snapRow);
+        styleComps.push(UI.SegCtrl(snapHost, {
+          options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+          value: rp.axisSnap === true ? 'on' : 'off',
+          ariaLabel: 'Squared spiral',
+          onChange: (v) => commitStyle({ params: { ...sp(), axisSnap: v === 'on' } }),
+        }));
+
+        // Mode (surface helix vs flat clip) — only meaningful for curved prims;
+        // faceted prims always render the flat clip.
+        const modeRow = document.createElement('div');
+        modeRow.className = 'vs3-row';
+        const modeLbl = document.createElement('label');
+        modeLbl.className = 'vs3-lbl';
+        modeLbl.textContent = 'Mode';
+        modeRow.appendChild(modeLbl);
+        const modeHost = document.createElement('div');
+        modeHost.className = 'vs3-ctl';
+        modeRow.appendChild(modeHost);
+        styleHost.appendChild(modeRow);
+        styleComps.push(UI.SegCtrl(modeHost, {
+          options: [{ value: 'surfaceHelix', label: 'Surface' }, { value: 'flatClip', label: 'Flat' }],
+          value: rp.spiralMode === 'flatClip' ? 'flatClip' : 'surfaceHelix',
+          ariaLabel: 'Spiral mode',
+          onChange: (v) => commitStyle({ params: { ...sp(), spiralMode: v } }),
         }));
       }
     };
