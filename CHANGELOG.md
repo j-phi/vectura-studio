@@ -13,6 +13,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   Scale. Legacy uniform scale is byte-identical.
 
 ### Fixed
+- **Expand-to-Layers matches the viewport.** Expanding a layer whose cached geometry
+  came from a live-drag/draft frame (where 3D-scene region fills render as a cheap
+  screen-space hatch and shadows skip booleans) froze that draft into the flattened
+  children. Layers now record draft provenance (`_pathsFromDraft`) and force a
+  full-quality regen before expanding, so the children match what you see.
 - **3D Scene — cast shadows stay anchored during orbit; no stray canvas-wide lines.**
   The draft/preview shadow path skipped the ground clip, so at a low sun its hatch ran
   the full canvas along the light ray and the footprint swam as the camera orbited.

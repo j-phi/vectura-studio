@@ -2035,6 +2035,13 @@
         simplifiedPoints: simplifiedCounts.points,
       };
       layer.paths = finalPaths;
+      // Provenance: a fastPreview/DRAFT frame emits cheaper geometry — region
+      // mappers (spiral/contour/stipple) fall back to a screen-space hatch and
+      // scene3d shadows skip their booleans — for live-drag responsiveness.
+      // Record it so consumers that bake `layer.paths` into new geometry (the
+      // layers panel's expand/flatten) can force a full-quality regenerate
+      // rather than freezing the draft cache into their output.
+      layer._pathsFromDraft = fastPreview;
       layer.helperPaths = helperTransformed;
       layer.maskPolygons = transformedMaskPolygons;
       layer.glyphs = transformedGlyphs;

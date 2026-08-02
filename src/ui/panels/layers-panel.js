@@ -2373,8 +2373,15 @@
     if (!Layer) return;
     const { skipHistory = false, returnChildren = false, suppressRender = false, selectChildren = true } = options;
     if (!skipHistory && this.app.pushHistory) this.app.pushHistory();
+    // Expand bakes the parent's cached `layer.paths` into standalone children.
+    // Regenerate first when the cache is empty OR came from a fastPreview/DRAFT
+    // frame (engine sets layer._pathsFromDraft): a draft renders scene3d region
+    // fills as a cheap screen-space hatch and skips shadow booleans, so freezing
+    // it would give children that diverge from the settled full-quality viewport.
     if (!layer.paths || !layer.paths.length) {
       this.app.engine.generate(layer.id);
+    } else if (layer._pathsFromDraft) {
+      this.app.engine.generate(layer.id, { fastPreview: false });
     }
     if (!layer.paths || !layer.paths.length) return;
 
