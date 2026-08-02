@@ -418,20 +418,34 @@ describe('scene3d generate — CSG subtract (Increment 1)', () => {
       && q.meta.sceneTarget.objectId === 'solid-1' && q.meta.sceneTarget.edgeClass === 'silhouette')).toBe(true);
   });
 
-  test('an angled view fills the cut walls: the carve adds surface fills vs the uncarved solid', () => {
+  test('an angled view: the carve fills cut walls and reshapes the surface fill', () => {
     const cam = { yaw: 28, pitch: 22 };
     const carved = csgScene(
       [solidBox('solid-1', 40), solidBox('hole-1', 20, { role: 'hole', params: { sx: 20, sy: 20, sz: 60 } })],
       [{ op: 'subtract', children: ['solid-1', 'hole-1'] }], cam,
     );
-    const plain = csgScene([solidBox('solid-1', 40)], [], cam);
+    // Uncarved baseline routed through the SAME continuous CSG hatch path (a
+    // no-op subtract with a fully-disjoint hole leaves the box unchanged). This
+    // is the fair comparison: a CSG unit hatches its merged front region as ONE
+    // continuous region, NOT the plain box's per-face path — so run counts are
+    // not comparable across the two paths, but two CSG units are.
+    const intact = csgScene(
+      [solidBox('solid-1', 40), solidBox('far-1', 6, { role: 'hole', transform: { x: 300, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 } })],
+      [{ op: 'subtract', children: ['solid-1', 'far-1'] }], cam,
+    );
     const fillsOf = (paths) => paths.filter((q) => q.meta && q.meta.kind === 'sceneFill'
-      && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'solid-1').length;
+      && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'solid-1');
+    const totalLen = (runs) => runs.reduce((s, r) => {
+      let L = 0; for (let i = 1; i < r.length; i++) L += Math.hypot(r[i].x - r[i - 1].x, r[i].y - r[i - 1].y);
+      return s + L;
+    }, 0);
     const carvedFills = fillsOf(algo.generate(carved, null, null, IB) || []);
-    const plainFills = fillsOf(algo.generate(plain, null, null, IB) || []);
-    expect(carvedFills).toBeGreaterThan(0);
-    // Cut walls + the split frame add fill runs beyond the plain 3-face box.
-    expect(carvedFills).toBeGreaterThan(plainFills);
+    const intactFills = fillsOf(algo.generate(intact, null, null, IB) || []);
+    // The carved solid — including its exposed bore walls — still fills.
+    expect(carvedFills.length).toBeGreaterThan(0);
+    // The through-hole measurably reshapes the fill vs the intact CSG box (the
+    // near-face annulus is removed, the cut walls added).
+    expect(Math.abs(totalLen(carvedFills) - totalLen(intactFills))).toBeGreaterThan(1);
   });
 
   test('op:"none" and ungrouped render byte-identically (Increment-0 regression pin)', () => {
@@ -452,5 +466,87 @@ describe('scene3d generate — CSG subtract (Increment 1)', () => {
     // Both children render uncarved on the draft frame.
     expect(paths.some((q) => q.meta && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'solid-1')).toBe(true);
     expect(paths.some((q) => q.meta && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'hole-1')).toBe(true);
+  });
+
+  // ── Increment 3 — union / intersect end-to-end. ─────────────────────────────
+  const edgesOf = (paths, id, cls) => paths.filter((q) => q.meta && q.meta.kind === 'sceneEdge'
+    && q.meta.sceneTarget && q.meta.sceneTarget.objectId === id
+    && (!cls || q.meta.sceneTarget.edgeClass === cls));
+
+  test('union removes the internal seam: combined solid, second solid consumed', () => {
+    const cam = { yaw: 24, pitch: 20 };
+    // Two boxes overlapping in x → a single merged solid (both 40³, offset 24).
+    const objs = () => [solidBox('solid-1', 40), solidBox('solid-2', 40, { transform: { x: 24, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 } })];
+    const united = algo.generate(csgScene(objs(), [{ op: 'union', children: ['solid-1', 'solid-2'] }], cam), null, null, IB) || [];
+    const separate = algo.generate(csgScene(objs(), [{ op: 'none', children: ['solid-1', 'solid-2'] }], cam), null, null, IB) || [];
+
+    // The second solid is consumed into the primary — no geometry tagged to it.
+    expect(united.some((q) => q.meta && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'solid-2')).toBe(false);
+    // A silhouette outline frames the merged solid.
+    expect(edgesOf(united, 'solid-1', 'silhouette').length).toBeGreaterThan(0);
+    // Seam removal: the welded union draws FEWER structural edges than the two
+    // overlapping boxes drawn independently (which double every shared wall +
+    // the interposed seam faces).
+    const structural = (paths) => paths.filter((q) => q.meta && q.meta.kind === 'sceneEdge').length;
+    expect(structural(united)).toBeLessThan(structural(separate));
+  });
+
+  test('CSG carve draws NO interior seam edges: box−box near face is clean', () => {
+    // Straight-down +Z: the near face is a coplanar annulus around the bore. The
+    // fan-triangulation T-junctions on the cut seam are count-1 'boundary' edges;
+    // they must NOT be drawn (regression for the Inc-1 seam-line defect).
+    const p = csgScene(
+      [solidBox('solid-1', 40), solidBox('hole-1', 20, { role: 'hole', params: { sx: 20, sy: 20, sz: 60 } })],
+      [{ op: 'subtract', children: ['solid-1', 'hole-1'] }],
+    );
+    // Outline-only style ('none') so rim CREASE edges are not fill-suppressed —
+    // isolating the seam-edge behavior from the hatch path.
+    p.styleTable = { scene: { penId: null, mapper: 'none', params: {} }, byObject: {}, byFace: {} };
+    const paths = algo.generate(p, null, null, IB) || [];
+    // Zero boundary edges on the carved solid (the seam T-junctions are dropped).
+    expect(edgesOf(paths, 'solid-1', 'boundary').length).toBe(0);
+    // The real geometry still draws: silhouette outline + the rim crease around
+    // the bore (a wall meeting the near face at 90° → a count-2 crease edge).
+    expect(edgesOf(paths, 'solid-1', 'silhouette').length).toBeGreaterThan(0);
+    expect(edgesOf(paths, 'solid-1', 'crease').length).toBeGreaterThan(0);
+  });
+
+  test('intersect keeps only the overlap (fills confined to the shared lens)', () => {
+    const cam = { yaw: 0, pitch: 0 }; // straight down +Z
+    const objs = [solidBox('solid-1', 40), solidBox('solid-2', 40, { transform: { x: 24, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 } })];
+    const paths = algo.generate(csgScene(objs, [{ op: 'intersect', children: ['solid-1', 'solid-2'] }], cam), null, null, IB) || [];
+    const fills = paths.filter((q) => q.meta && q.meta.kind === 'sceneFill'
+      && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'solid-1');
+    expect(fills.length).toBeGreaterThan(0);
+    // The overlap is x∈[0,20] (a 20-wide lens); a single-box near-face fill would
+    // span the full 40. Assert the filled region is narrower than a whole box.
+    const xs = fills.flatMap((run) => run.map((pt) => pt.x));
+    const span = Math.max(...xs) - Math.min(...xs);
+    expect(span).toBeLessThan(40 * 0.9);
+  });
+
+  test('curved cut (box − cylinder) fills its round bore walls (continuous path)', () => {
+    const cam = { yaw: 26, pitch: 20 };
+    const cyl = {
+      id: 'hole-1', name: 'hole-1', primitive: 'cylinder',
+      params: { sx: 16, sy: 60, sz: 16, detail: 32 },
+      transform: { x: 0, y: 0, z: 0, yaw: 90, pitch: 0, roll: 0, scale: 1 },
+      visibility: 'solid', role: 'hole',
+    };
+    const carved = csgScene([solidBox('solid-1', 40), cyl], [{ op: 'subtract', children: ['solid-1', 'hole-1'] }], cam);
+    const fillsOf = (paths) => paths.filter((q) => q.meta && q.meta.kind === 'sceneFill'
+      && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'solid-1').length;
+    let out;
+    expect(() => { out = algo.generate(carved, null, null, IB) || []; }).not.toThrow();
+    // The curved carve routes the continuous-region hatch path and still emits
+    // fills for the round bore walls.
+    expect(fillsOf(out)).toBeGreaterThan(0);
+    // The hole object is consumed.
+    expect(out.some((q) => q.meta && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'hole-1')).toBe(false);
+    // Curved cuts spray far more count-1 rim T-junctions than a box carve; the
+    // csg boundary-suppression must keep them ALL out of the drawn output.
+    expect(edgesOf(out, 'solid-1', 'boundary').length).toBe(0);
+    // The bore rim still reads (silhouette + crease survive).
+    expect(edgesOf(out, 'solid-1', 'silhouette').length + edgesOf(out, 'solid-1', 'crease').length).toBeGreaterThan(0);
   });
 });

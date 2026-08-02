@@ -584,10 +584,15 @@
         const faceted = record.primitive === 'box'
           || record.primitive === 'plane'
           || record.primitive === 'solid'
-          // An all-faceted CSG carve (box−box…) hatches per-face in-plane like a
-          // box; a curved-involving carve stays !faceted (continuous-region path).
-          || (record.primitive === 'csg' && record.csgFaceted)
           || record.id === 'ground';
+        // NOTE: a CSG carve is deliberately NOT faceted. Its BSP output splits
+        // every coplanar face into many small T-junctioned triangles, so per-face
+        // in-plane hatch would phase-fragment across the seam (each fragment
+        // hatched independently → broken-looking fill). CSG units therefore route
+        // through the continuous front-region path below (the same clean path the
+        // curved cut uses), which merges all coplanar front faces into one region
+        // and hatches it continuously. `record.csgFaceted` is retained as metadata
+        // but no longer steers the hatch path.
 
         // ── Faces: outlines (closed when fully visible) + hatch fills.
         record.faces.forEach((face) => {
@@ -1010,6 +1015,16 @@
           const wireframeDemand = Boolean(wireframeFace);
           const structural = entry.cls !== 'interior';
           if (!structural && !wireframeDemand) return;
+          // CSG seam suppression: a boolean RESULT is a closed manifold, so every
+          // genuine edge is shared by exactly two faces (silhouette + crease
+          // survive, classified separately). The count-1 'boundary' edges on a csg
+          // mesh are fan-triangulation T-junction artifacts along the cut seam —
+          // drawing them paints spurious solid lines radiating across the carved
+          // flat faces (and a confetti of rim whiskers on curved cuts). Skip
+          // DRAWING them; HLR occlusion rides on FACES (occluderFaces), not these
+          // edges, so hidden-line removal is unaffected. The real carve rim (a
+          // wall meeting a face at ~90°) is a count-2 CREASE edge and still draws.
+          if (record.primitive === 'csg' && entry.cls === 'boundary') return;
           // Wireframe edge classes (Phase 2): a wireframe face publishes which
           // edge classes it draws (default all four = the current all-edges look)
           // and whether occluded edges dash (showHidden). Filter this edge's class

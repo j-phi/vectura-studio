@@ -146,4 +146,47 @@ describe('Scene3D.CSG box−box subtract', () => {
     // Every face index is in range.
     r.faces.forEach((f) => f.forEach((i) => expect(r.vertices[i]).toBeTruthy()));
   });
+
+  // ── Increment 3 — union / intersect (same weld + winding discipline). ────────
+  const edgeHist = (m) => {
+    const h = {};
+    G3.collectEdges(m.faces).forEach((e) => { h[e.faces.length] = (h[e.faces.length] || 0) + 1; });
+    return h;
+  };
+
+  it('union of two overlapping boxes: volume = union (seam removed), watertight', () => {
+    const A = box(40, 40, 40);
+    const B = box(40, 40, 40, 20, 0, 0); // overlap x∈[0,20] → 20·40·40 = 32000
+    const r = CSG.union(A, B);
+    expect(r).toBeTruthy();
+    // Union volume = 2·64000 − 32000, NOT the 128000 sum: the shared interior
+    // seam is dissolved.
+    expect(CSG.meshVolume(r)).toBeCloseTo(64000 + 64000 - 32000, 4);
+    expect(Object.keys(edgeHist(r)).every((k) => k === '1' || k === '2')).toBe(true);
+    expect(JSON.stringify(r)).toBe(JSON.stringify(CSG.union(A, B))); // deterministic
+  });
+
+  it('intersect of two overlapping boxes: volume = the overlap only', () => {
+    const A = box(40, 40, 40);
+    const B = box(40, 40, 40, 20, 0, 0);
+    const r = CSG.intersect(A, B);
+    expect(r).toBeTruthy();
+    expect(CSG.meshVolume(r)).toBeCloseTo(20 * 40 * 40, 4); // the lens, 32000
+    // The overlap is the box x∈[0,20], y,z∈[−20,20].
+    const xs = r.vertices.map((p) => p.x);
+    expect(Math.min(...xs)).toBeCloseTo(0, 4);
+    expect(Math.max(...xs)).toBeCloseTo(20, 4);
+    expect(Object.keys(edgeHist(r)).every((k) => k === '1' || k === '2')).toBe(true);
+  });
+
+  it('intersect of disjoint solids is empty → null (graceful)', () => {
+    expect(CSG.intersect(box(20, 20, 20), box(20, 20, 20, 200, 0, 0))).toBeNull();
+  });
+
+  it('combine folds a list (union of three → one welded shell)', () => {
+    const r = CSG.combine('union', [box(40, 40, 40), box(40, 40, 40, 20, 0, 0), box(40, 40, 40, 40, 0, 0)]);
+    expect(r).toBeTruthy();
+    // 3 boxes, each overlapping the next by 32000: 3·64000 − 2·32000.
+    expect(CSG.meshVolume(r)).toBeCloseTo(3 * 64000 - 2 * 32000, 4);
+  });
 });

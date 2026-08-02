@@ -317,12 +317,11 @@
   // every object may belong to at most ONE group (a later group's duplicate claim
   // loses). Order within `children` is preserved (it drives positional subtract).
   const normalizeGroups = (groups, objectIds) => {
-    const src = Array.isArray(groups) ? groups : [];
+    const src = (Array.isArray(groups) ? groups : []).filter(isObject);
     const usedGroupIds = new Set();
-    const claimed = new Set(); // object ids already assigned to a group
-    const out = [];
-    src.forEach((group, index) => {
-      if (!isObject(group)) return;
+    // Pass 1 — assign every group a stable, unique id FIRST so a group may be
+    // referenced as another group's child (nesting) regardless of source order.
+    const withIds = src.map((group, index) => {
       let id = typeof group.id === 'string' && group.id ? group.id : '';
       if (!id || usedGroupIds.has(id)) {
         let n = index + 1;
@@ -330,11 +329,22 @@
         while (!id || usedGroupIds.has(id)) { id = `grp-${n}`; n += 1; }
       }
       usedGroupIds.add(id);
+      return { group, id };
+    });
+    const groupIds = new Set(withIds.map((w) => w.id));
+    // Pass 2 — validate children. A child may be an OBJECT id or a GROUP id
+    // (nesting). Each id is claimed by at most one parent; a group is never its
+    // own child; dangling / duplicate ids are dropped. Cycles that survive here
+    // (A⊂B, B⊂A) are broken at resolve time by Scene3D.Boolean's `seen` guard.
+    const claimed = new Set();
+    const out = [];
+    withIds.forEach(({ group, id }, index) => {
       const children = [];
       (Array.isArray(group.children) ? group.children : []).forEach((cid) => {
         if (typeof cid !== 'string') return;
-        if (!objectIds.has(cid)) return;   // dangling id
-        if (claimed.has(cid)) return;      // already in an earlier group
+        if (cid === id) return;                                    // no self-membership
+        if (!objectIds.has(cid) && !groupIds.has(cid)) return;     // dangling id
+        if (claimed.has(cid)) return;                              // already in another group
         claimed.add(cid);
         children.push(cid);
       });

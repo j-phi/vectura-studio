@@ -293,6 +293,67 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     expect(layer.params.groups).toEqual([]);
   });
 
+  test('Boolean Groups UI: create a group, add two objects, pick op, set role', () => {
+    const { container, layer, regen } = mount({ objects: [fixtureObject(1), fixtureObject(2)] });
+    const groupsHost = container.querySelector('.vs3-groups');
+    expect(groupsHost).toBeTruthy();
+    expect(groupsHost.textContent).toContain('No boolean groups');
+
+    // Create a group (defaults to union, empty children).
+    fire(groupsHost.querySelector('.vs3-grp-new'), 'click');
+    expect(layer.params.groups.length).toBe(1);
+    const g = layer.params.groups[0];
+    expect(g.op).toBe('union');
+    expect(g.children).toEqual([]);
+
+    // Add both objects via the add-child picker.
+    const addSel = () => container.querySelector('.vs3-grp-card .vs3-grp-add select');
+    let sel = addSel();
+    sel.value = 'obj-1'; fire(sel, 'change');
+    sel = addSel();
+    sel.value = 'obj-2'; fire(sel, 'change');
+    expect(g.children).toEqual(['obj-1', 'obj-2']);
+
+    // The object tree shows the union membership badge.
+    expect(container.querySelector('.vs3-tree-row[data-object-id="obj-1"] .vs3-tree-grp').textContent).toBe('⋃');
+
+    // Change the op to intersect via the group SegCtrl.
+    const opSeg = container.querySelector('.vs3-grp-card .vs3-grp-op');
+    const interBtn = Array.from(opSeg.querySelectorAll('button')).find((b) => b.textContent.trim() === '⋂');
+    fire(interBtn, 'click');
+    expect(layer.params.groups[0].op).toBe('intersect');
+
+    // Set obj-2's role to Hole through the in-card role toggle.
+    const kid2 = container.querySelector('.vs3-grp-kid[data-child-id="obj-2"]');
+    const holeBtn = Array.from(kid2.querySelectorAll('.vs3-grp-kid-role button')).find((b) => b.textContent.trim() === 'Hole');
+    fire(holeBtn, 'click');
+    expect(layer.params.objects[1].role).toBe('hole');
+    expect(regen).toHaveBeenCalled();
+
+    // Reorder: move obj-2 up → children swap.
+    const upBtn = container.querySelector('.vs3-grp-kid[data-child-id="obj-2"] .vs3-grp-kid-btn:not([disabled])');
+    fire(upBtn, 'click');
+    expect(layer.params.groups[0].children).toEqual(['obj-2', 'obj-1']);
+  });
+
+  test('Boolean Groups UI: nested group renders as an indented card', () => {
+    const { container, layer } = mount({
+      objects: [fixtureObject(1), fixtureObject(2), fixtureObject(3)],
+      groups: [
+        { id: 'inner', op: 'union', children: ['obj-1', 'obj-2'] },
+        { id: 'outer', op: 'subtract', children: ['inner', 'obj-3'] },
+      ],
+    });
+    // Two group cards; the child 'inner' is shown indented (nested).
+    const cards = container.querySelectorAll('.vs3-grp-card');
+    expect(cards.length).toBe(2);
+    expect(container.querySelector('.vs3-grp-nested')).toBeTruthy();
+    // The outer card lists the nested group as a child (⊞ prefix).
+    const outerNames = Array.from(container.querySelectorAll('.vs3-grp-card')).some((c) => c.textContent.includes('⊞'));
+    expect(outerNames).toBe(true);
+    expect(layer.params.groups.map((x) => x.id)).toEqual(['inner', 'outer']);
+  });
+
   test('visibility toggle cycles solid → xray with one commit', () => {
     const { container, layer, pushHistory } = mount({ objects: [fixtureObject(1)] });
     const vis = container.querySelector('.vs3-tree-row .vs3-tree-vis');

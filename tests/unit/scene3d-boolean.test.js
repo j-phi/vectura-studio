@@ -123,4 +123,116 @@ describe('Scene3D.Boolean.resolveAssembly', () => {
     expect(units.length).toBe(2);
     units.forEach((u) => expect(u.obj.primitive).toBe('box'));
   });
+
+  // ── Increment 3 — union / intersect / nesting. ───────────────────────────────
+  const CSG = () => V.Scene3D.CSG;
+
+  it('union group collapses to ONE combined unit whose volume is the union', () => {
+    const p = scene(
+      [box('a', 40, {}), box('b', 40, { x: 20 })], // overlap 20·40·40 = 32000
+      [{ id: 'grp-1', op: 'union', children: ['a', 'b'] }],
+    );
+    const units = Boolean3D.resolveAssembly(p, 1, { draft: false });
+    expect(units.length).toBe(1);
+    const u = units[0];
+    expect(u.obj.primitive).toBe('csg');
+    expect(u.obj.id).toBe('a');              // primary solid (first child)
+    expect(u.meshData.csgFaceted).toBe(true); // both boxes faceted
+    expect(CSG().meshVolume(u.meshData)).toBeCloseTo(64000 + 64000 - 32000, 3);
+  });
+
+  it('intersect group yields only the overlap volume', () => {
+    const p = scene(
+      [box('a', 40, {}), box('b', 40, { x: 20 })],
+      [{ id: 'grp-1', op: 'intersect', children: ['a', 'b'] }],
+    );
+    const units = Boolean3D.resolveAssembly(p, 1, { draft: false });
+    expect(units.length).toBe(1);
+    expect(CSG().meshVolume(units[0].meshData)).toBeCloseTo(20 * 40 * 40, 3);
+  });
+
+  it('changing op subtract→intersect changes the resolved volume', () => {
+    const objs = () => [box('a', 40, {}), box('b', 40, { x: 20 })];
+    const sub = Boolean3D.resolveAssembly(
+      scene(objs(), [{ id: 'g', op: 'subtract', children: ['a', 'b'] }]), 1, {});
+    const inter = Boolean3D.resolveAssembly(
+      scene(objs(), [{ id: 'g', op: 'intersect', children: ['a', 'b'] }]), 1, {});
+    // subtract a−b = 64000 − 32000 = 32000 as well, so compare bboxes not volume.
+    const bx = (u) => Math.min(...u.meshData.vertices.map((q) => q.x));
+    expect(bx(sub[0])).toBeCloseTo(-20, 3);   // keeps a's far −x wall
+    expect(bx(inter[0])).toBeCloseTo(0, 3);    // overlap starts at x=0
+  });
+
+  it('NESTED group resolves depth-first: (a ∪ b) − hole', () => {
+    // Inner union of two overlapping boxes; outer subtract carves a hole out of it.
+    const p = scene(
+      [box('a', 40, {}), box('b', 40, { x: 20 }), box('h', 10, { x: 10 }, { role: 'hole', params: { sx: 10, sy: 10, sz: 80 } })],
+      [
+        { id: 'inner', op: 'union', children: ['a', 'b'] },
+        { id: 'outer', op: 'subtract', children: ['inner', 'h'] },
+      ],
+    );
+    const units = Boolean3D.resolveAssembly(p, 1, { draft: false });
+    expect(units.length).toBe(1);
+    const u = units[0];
+    expect(u.obj.primitive).toBe('csg');
+    // union volume minus a 10×10×40 through-bore = (96000) − 4000.
+    expect(CSG().meshVolume(u.meshData)).toBeCloseTo(96000 - 10 * 10 * 40, 2);
+  });
+
+  it('curved subtract (box − cylinder) is csgFaceted:false and closed-by-volume', () => {
+    const cyl = {
+      id: 'bore', name: 'bore', primitive: 'cylinder',
+      params: { sx: 12, sy: 60, sz: 12, detail: 48 }, // tall, over-detailed → capped to 16
+      transform: { x: 0, y: 0, z: 0, yaw: 90, pitch: 0, roll: 0, scale: 1 },
+      visibility: 'solid', role: 'hole',
+    };
+    const p = scene(
+      [box('slab', 40, {}), cyl],
+      [{ id: 'g', op: 'subtract', children: ['slab', 'bore'] }],
+    );
+    const units = Boolean3D.resolveAssembly(p, 1, { draft: false });
+    expect(units.length).toBe(1);
+    const u = units[0];
+    expect(u.obj.primitive).toBe('csg');
+    expect(u.meshData.csgFaceted).toBe(false); // a curved child → continuous path
+    // Closed by volume within a tessellation tolerance: box (64000) minus a
+    // 16-gon bore of the tall cylinder. The signed divergence-theorem volume of
+    // an OPEN or mis-wound mesh would diverge far past tolerance.
+    const vol = CSG().meshVolume(u.meshData);
+    expect(vol).toBeGreaterThan(64000 * 0.7);
+    expect(vol).toBeLessThan(64000);
+    // Deterministic.
+    const again = Boolean3D.resolveAssembly(p, 1, { draft: false })[0];
+    expect(JSON.stringify(again.meshData)).toBe(JSON.stringify(u.meshData));
+  });
+
+  it('triangle-budget overrun falls back to uncarved children (no throw)', () => {
+    const cyl = (id, extra) => ({
+      id, name: id, primitive: 'cylinder',
+      params: { sx: 20, sy: 40, sz: 20, detail: 16 },
+      transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+      visibility: 'solid', ...extra,
+    });
+    const p = scene(
+      [cyl('slab'), cyl('bore', { role: 'hole', params: { sx: 10, sy: 60, sz: 10, detail: 16 } })],
+      [{ id: 'g', op: 'subtract', children: ['slab', 'bore'] }],
+    );
+    // Under the real budget the curved pair carves fine (a csg unit).
+    const carved = Boolean3D.resolveAssembly(p, 1, { draft: false });
+    expect(carved.length).toBe(1);
+    expect(carved[0].obj.primitive).toBe('csg');
+
+    // Pin the budget to 1 triangle: the FIRST child already overruns → the whole
+    // group falls back to uncarved children, no throw.
+    const orig = Boolean3D.CONFIG.maxTriangles;
+    Boolean3D.CONFIG.maxTriangles = 1;
+    try {
+      const fallback = Boolean3D.resolveAssembly(p, 1, { draft: false });
+      expect(fallback.length).toBe(2);
+      fallback.forEach((u) => expect(u.obj.primitive).toBe('cylinder'));
+    } finally {
+      Boolean3D.CONFIG.maxTriangles = orig;
+    }
+  });
 });

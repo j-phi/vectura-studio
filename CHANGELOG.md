@@ -16,9 +16,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   carved ground shadow — not a 2D outline overlap. A subtract group borrows the
   primary solid's style/visibility/border/shadow; the hole contributes geometry
   only. Live drags and any CSG failure fall back to the uncarved children, and an
-  ungrouped scene renders byte-identically to before. Curved holes (box−cylinder,
-  sphere−box) and union/intersect groups with a full grouping UI land in later
-  increments.
+  ungrouped scene renders byte-identically to before.
+- **3D Scene CSG — curved holes, union/intersect, and a full grouping UI.**
+  Booleans now admit **curved** children: a box drilled by a cylinder or sphere
+  carves round bore walls (curved children are detail-capped and budgeted, with
+  an uncarved fallback on overrun). Groups gained **Union** and **Intersect** ops
+  alongside Subtract, plus multi-solid unions (internal seams welded away),
+  multiple holes, and **nested groups** resolved depth-first. A new **Boolean
+  Groups** panel section lets you create a group, pick its op, add / remove /
+  reorder children (objects or nested groups), and set each child's Solid/Hole
+  role, with op badges in the scene tree. CSG units now hatch as one continuous
+  surface region (clean fills, no per-triangle seam confetti), and interior BSP
+  split-seam edges are no longer drawn as spurious solid lines.
 - **3D Scene light gizmo + point/spot controls.** Selecting a light now shows a
   3-axis translate gizmo on the canvas. Point and spot lights drag their world
   position along X/Y/Z (past the canvas edge — the light can sit anywhere); the

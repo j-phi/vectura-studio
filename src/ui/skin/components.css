@@ -12856,6 +12856,149 @@ body.mobile-layout .hud-bar {
   color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
   background: var(--ui-ctrl, rgba(128, 128, 128, 0.14));
 }
+/* Group-membership badge in the object tree (op glyph of the owning group). */
+.vs3-tree-grp {
+  flex: 0 0 auto;
+  margin: 0 2px;
+  width: 16px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--ui-accent, #4e9ee1);
+  background: color-mix(in srgb, var(--ui-accent, #4e9ee1) 14%, transparent);
+}
+/* ── Boolean Groups section (Increment 3 grouping UI) ─────────────────────── */
+.vs3-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.vs3-grp-card {
+  border: 1px solid var(--ui-border, rgba(128, 128, 128, 0.35));
+  border-radius: 6px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: color-mix(in srgb, var(--ui-accent, #4e9ee1) 4%, transparent);
+}
+.vs3-grp-nested {
+  margin-left: 14px;
+  border-left: 2px solid color-mix(in srgb, var(--ui-accent, #4e9ee1) 40%, transparent);
+}
+.vs3-grp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vs3-grp-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 2px 5px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--ui-ctrl, rgba(128, 128, 128, 0.1));
+  color: var(--ui-text, inherit);
+  font-size: 12px;
+  font-weight: 600;
+}
+.vs3-grp-name:focus {
+  outline: none;
+  border-color: var(--ui-accent, #4e9ee1);
+}
+.vs3-grp-del {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+  font-size: 10px;
+  cursor: pointer;
+}
+.vs3-grp-del:hover { color: var(--ui-danger, #e5484d); }
+.vs3-grp-op {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vs3-grp-op-lbl {
+  flex: 0 0 auto;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+}
+.vs3-grp-op .vs3-ctl { flex: 1 1 auto; }
+.vs3-grp-kids {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vs3-grp-kid {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: var(--ui-ctrl, rgba(128, 128, 128, 0.08));
+}
+.vs3-grp-kid-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.vs3-grp-kid-role { flex: 0 0 auto; }
+.vs3-grp-kid-btn {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+  font-size: 11px;
+  cursor: pointer;
+}
+.vs3-grp-kid-btn:hover:not(:disabled) { color: var(--ui-accent, #4e9ee1); }
+.vs3-grp-kid-btn:disabled { opacity: 0.3; cursor: default; }
+.vs3-grp-kid-rm:hover:not(:disabled) { color: var(--ui-danger, #e5484d); }
+.vs3-grp-empty {
+  margin: 0;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+}
+.vs3-grp-add { margin-top: 2px; }
+.vs3-grp-new {
+  align-self: flex-start;
+  border: 1px dashed var(--ui-border, rgba(128, 128, 128, 0.35));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.vs3-grp-new:hover {
+  color: var(--ui-accent, #4e9ee1);
+  border-color: var(--ui-accent, #4e9ee1);
+}
 .vs3-tree-vis,
 .vs3-tree-del {
   flex: 0 0 auto;

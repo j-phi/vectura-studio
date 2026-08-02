@@ -490,10 +490,43 @@
       renderInspector();
     };
 
+    // ── CSG grouping (Increment 3): full boolean-group management. A group holds
+    // an ORDERED child list of object ids and/or nested group ids, an op, and
+    // per-object roles (solid/hole). These helpers are the panel-side authoring
+    // surface; params.js normalizeGroups owns canonicalization + cycle safety.
+    const GROUP_OP_GLYPH = { none: '·', union: '⋃', subtract: '−', intersect: '⋂' };
+    const GROUP_OP_LABEL = { none: 'None', union: 'Union', subtract: 'Subtract', intersect: 'Intersect' };
+    const groupById = (id) => getGroups().find((g) => g && g.id === id) || null;
+    const objInGroup = (objId) => getGroups().find((g) => g && Array.isArray(g.children)
+      && g.op && g.op !== 'none' && g.children.includes(objId)) || null;
+    // Does group `g` (transitively) contain `targetId`? Guards against cycles when
+    // offering a group as another group's child.
+    const groupContains = (g, targetId, seen = new Set()) => {
+      if (!g || seen.has(g.id)) return false;
+      seen.add(g.id);
+      return (g.children || []).some((cid) => cid === targetId
+        || groupContains(groupById(cid), targetId, seen));
+    };
+    const childDisplayName = (cid) => {
+      const o = getObject(cid);
+      if (o) return o.name || cid;
+      const g = groupById(cid);
+      return g ? `⊞ ${g.name || cid}` : cid;
+    };
+    const addGroup = () => {
+      let id = null;
+      commit(() => {
+        id = nextGroupId();
+        getGroups().push({ id, name: `Group ${getGroups().length + 1}`, op: 'union', children: [] });
+      });
+      renderGroups();
+    };
+
     // Component instances per re-renderable area, destroyed on re-render.
     let inspectorComps = [];
     let styleComps = [];
     let toneComps = [];
+    let groupComps = [];
     const destroyComps = (list) => { list.forEach((c) => { try { c.destroy && c.destroy(); } catch (_) { /* */ } }); list.length = 0; };
 
     // ── DOM skeleton ────────────────────────────────────────────────────────
@@ -531,6 +564,7 @@
 
     // ── Scene tab · Shelf ───────────────────────────────────────────────────
     let treeHost = null;
+    let groupsHost = null;
     let inspectorHost = null;
     let styleHost = null;
     let toneHost = null;
@@ -805,11 +839,21 @@
         if (obj.role === 'hole') {
           const badge = document.createElement('span');
           badge.className = 'vs3-tree-role';
-          const wired = !!holeTargetOf(obj.id);
+          const wired = !!objInGroup(obj.id);
           badge.textContent = wired ? 'hole' : 'hole?';
-          badge.title = wired ? 'Subtracts into a solid' : 'Inert hole — set “Cut into” in the inspector';
+          badge.title = wired ? 'Subtracts inside a boolean group' : 'Inert hole — add it to a boolean group';
           badge.classList.toggle('vs3-tree-role-inert', !wired);
           row.appendChild(badge);
+        }
+        // Group-membership badge: the op glyph of the boolean group this object
+        // belongs to (⋃ union · − subtract · ⋂ intersect).
+        const memberGroup = objInGroup(obj.id);
+        if (memberGroup) {
+          const gb = document.createElement('span');
+          gb.className = 'vs3-tree-grp';
+          gb.textContent = GROUP_OP_GLYPH[memberGroup.op] || '·';
+          gb.title = `In ${memberGroup.name || memberGroup.id} (${GROUP_OP_LABEL[memberGroup.op] || memberGroup.op})`;
+          row.appendChild(gb);
         }
 
         const vis = document.createElement('button');
@@ -943,6 +987,211 @@
         addRow.appendChild(addAmb);
       }
       treeHost.appendChild(addRow);
+      if (groupsHost) renderGroups();
+    };
+
+    // ── Scene tab · Boolean Groups ───────────────────────────────────────────
+    // The full grouping surface (Increment 3): create a group, pick its op, add /
+    // remove / reorder children (objects OR nested groups), and toggle each
+    // object child's role. Complements the per-object Role / Cut-into shortcut in
+    // the Inspector — both write params.groups; normalize canonicalizes.
+    const removeChildFromGroup = (group, cid) => {
+      commit(() => { group.children = (group.children || []).filter((c) => c !== cid); });
+      renderTree();
+      renderInspector();
+    };
+    const moveChild = (group, cid, dir) => {
+      const arr = group.children || [];
+      const i = arr.indexOf(cid);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= arr.length) return;
+      commit(() => { const t = arr[i]; arr[i] = arr[j]; arr[j] = t; });
+      renderGroups();
+    };
+    const addChildToGroup = (group, cid) => {
+      if (!cid) return;
+      commit(() => {
+        // Each id lives in ≤1 group — detach from any current parent first.
+        getGroups().forEach((g) => { if (g !== group && Array.isArray(g.children)) g.children = g.children.filter((c) => c !== cid); });
+        if (!group.children.includes(cid)) group.children.push(cid);
+      });
+      renderTree();
+      renderInspector();
+    };
+    const deleteGroup = (group) => {
+      commit(() => { params.groups = getGroups().filter((g) => g !== group); });
+      renderTree();
+      renderInspector();
+    };
+
+    const renderGroupCard = (group) => {
+      const card = document.createElement('div');
+      card.className = 'vs3-grp-card';
+      card.dataset.groupId = group.id;
+
+      // Header: name · op · delete.
+      const head = document.createElement('div');
+      head.className = 'vs3-grp-head';
+      const nameIn = document.createElement('input');
+      nameIn.type = 'text';
+      nameIn.className = 'vs3-grp-name';
+      nameIn.value = group.name || group.id;
+      nameIn.setAttribute('aria-label', 'Group name');
+      nameIn.addEventListener('change', () => {
+        const next = nameIn.value.trim();
+        if (next && next !== group.name) { commit(() => { group.name = next; }); renderTree(); }
+        else nameIn.value = group.name || group.id;
+      });
+      head.appendChild(nameIn);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'vs3-grp-del';
+      del.title = 'Delete group (children become independent)';
+      del.setAttribute('aria-label', `Delete ${group.name || group.id}`);
+      del.textContent = '✕';
+      del.addEventListener('click', () => deleteGroup(group));
+      head.appendChild(del);
+      card.appendChild(head);
+
+      // Op selector.
+      const opRow = document.createElement('div');
+      opRow.className = 'vs3-grp-op';
+      const opLbl = document.createElement('span');
+      opLbl.className = 'vs3-grp-op-lbl';
+      opLbl.textContent = 'Op';
+      opRow.appendChild(opLbl);
+      const opHost = document.createElement('div');
+      opHost.className = 'vs3-ctl';
+      opRow.appendChild(opHost);
+      card.appendChild(opRow);
+      groupComps.push(UI.SegCtrl(opHost, {
+        options: [
+          { value: 'none', label: 'None' },
+          { value: 'union', label: '⋃' },
+          { value: 'subtract', label: '−' },
+          { value: 'intersect', label: '⋂' },
+        ],
+        value: GROUP_OP_LABEL[group.op] ? group.op : 'none',
+        ariaLabel: 'Boolean operation',
+        onChange: (v) => { commit(() => { group.op = v; }); renderTree(); renderInspector(); },
+      }));
+
+      // Children (ordered).
+      const kids = document.createElement('div');
+      kids.className = 'vs3-grp-kids';
+      (group.children || []).forEach((cid, idx) => {
+        const krow = document.createElement('div');
+        krow.className = 'vs3-grp-kid';
+        krow.dataset.childId = cid;
+        const kname = document.createElement('span');
+        kname.className = 'vs3-grp-kid-name';
+        kname.textContent = childDisplayName(cid);
+        krow.appendChild(kname);
+
+        // Role toggle for OBJECT children (nested groups have no role).
+        const kobj = getObject(cid);
+        if (kobj) {
+          const roleHost = document.createElement('div');
+          roleHost.className = 'vs3-grp-kid-role';
+          krow.appendChild(roleHost);
+          groupComps.push(UI.SegCtrl(roleHost, {
+            options: [{ value: 'solid', label: 'Solid' }, { value: 'hole', label: 'Hole' }],
+            value: kobj.role === 'hole' ? 'hole' : 'solid',
+            ariaLabel: `Role of ${kobj.name || cid}`,
+            onChange: (v) => { commit(() => { kobj.role = v; }); renderTree(); renderInspector(); },
+          }));
+        }
+
+        const up = document.createElement('button');
+        up.type = 'button';
+        up.className = 'vs3-grp-kid-btn';
+        up.title = 'Move up';
+        up.textContent = '↑';
+        up.disabled = idx === 0;
+        up.addEventListener('click', () => moveChild(group, cid, -1));
+        krow.appendChild(up);
+        const down = document.createElement('button');
+        down.type = 'button';
+        down.className = 'vs3-grp-kid-btn';
+        down.title = 'Move down';
+        down.textContent = '↓';
+        down.disabled = idx === (group.children.length - 1);
+        down.addEventListener('click', () => moveChild(group, cid, 1));
+        krow.appendChild(down);
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'vs3-grp-kid-btn vs3-grp-kid-rm';
+        rm.title = 'Remove from group';
+        rm.textContent = '−';
+        rm.addEventListener('click', () => removeChildFromGroup(group, cid));
+        krow.appendChild(rm);
+
+        kids.appendChild(krow);
+      });
+      if (!(group.children || []).length) {
+        const empty = document.createElement('p');
+        empty.className = 'vs3-grp-empty';
+        empty.textContent = 'No children — add objects below.';
+        kids.appendChild(empty);
+      }
+      card.appendChild(kids);
+
+      // Add-child picker: objects + other groups not already claimed and not
+      // creating a cycle (a group that already contains this one is excluded).
+      const claimed = new Set();
+      getGroups().forEach((g) => (g.children || []).forEach((c) => claimed.add(c)));
+      const objectOpts = params.objects
+        .filter((o) => o && !claimed.has(o.id)) // unclaimed objects only (each in ≤1 group)
+        .map((o) => ({ value: o.id, label: o.name || o.id }));
+      const groupOpts = getGroups()
+        .filter((g) => g !== group && !claimed.has(g.id) && !groupContains(g, group.id))
+        .map((g) => ({ value: g.id, label: `⊞ ${g.name || g.id}` }));
+      const addOpts = [{ value: '', label: '+ Add child…' }].concat(objectOpts).concat(groupOpts);
+      if (addOpts.length > 1) {
+        const addHost = document.createElement('div');
+        addHost.className = 'vs3-grp-add';
+        card.appendChild(addHost);
+        groupComps.push(UI.Select(addHost, {
+          options: addOpts,
+          value: '',
+          ariaLabel: 'Add a child to this group',
+          onChange: (v) => addChildToGroup(group, v),
+        }));
+      }
+      return card;
+    };
+
+    const renderGroups = () => {
+      if (!groupsHost) return;
+      destroyComps(groupComps);
+      groupsHost.textContent = '';
+      const groups = getGroups();
+      // Nested groups render inside their parent card's child list, so the
+      // top-level list shows only groups that are nobody's child.
+      const nested = new Set();
+      groups.forEach((g) => (g.children || []).forEach((cid) => { if (groupById(cid)) nested.add(cid); }));
+      const tops = groups.filter((g) => g && !nested.has(g.id));
+      if (!tops.length) {
+        const empty = document.createElement('p');
+        empty.className = 'vs3-empty';
+        empty.textContent = 'No boolean groups. Create one to union / subtract / intersect objects.';
+        groupsHost.appendChild(empty);
+      }
+      tops.forEach((g) => groupsHost.appendChild(renderGroupCard(g)));
+      // Nested-group cards are shown beneath, indented, so their children/op stay
+      // editable (they resolve depth-first inside the parent).
+      groups.filter((g) => g && nested.has(g.id)).forEach((g) => {
+        const wrap = renderGroupCard(g);
+        wrap.classList.add('vs3-grp-nested');
+        groupsHost.appendChild(wrap);
+      });
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'vs3-grp-new';
+      addBtn.textContent = '+ New Group';
+      addBtn.title = 'Create a boolean group';
+      addBtn.addEventListener('click', addGroup);
+      groupsHost.appendChild(addBtn);
     };
 
     // ── Selection (CONTRACT D consumer; guarded) ────────────────────────────
@@ -2068,6 +2317,14 @@
       },
     }));
     sections.push(UI.Section(pages.scene, {
+      title: 'Boolean Groups',
+      children: (body) => {
+        groupsHost = document.createElement('div');
+        groupsHost.className = 'vs3-groups';
+        body.appendChild(groupsHost);
+      },
+    }));
+    sections.push(UI.Section(pages.scene, {
       title: 'Inspector',
       children: (body) => {
         inspectorHost = document.createElement('div');
@@ -2116,6 +2373,7 @@
       destroyComps(inspectorComps);
       destroyComps(styleComps);
       destroyComps(toneComps);
+      destroyComps(groupComps);
       sections.forEach((s) => { try { s.destroy(); } catch (_) { /* */ } });
       try { tabs.destroy(); } catch (_) { /* */ }
       if (root.parentNode) root.parentNode.removeChild(root);
