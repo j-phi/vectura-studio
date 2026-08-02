@@ -194,6 +194,16 @@
     return a / 2;
   };
 
+  // World-space centroid of a face (its worldVerts), used to derive the per-face
+  // light direction of a POINT/SPOT light (normalize(lightPos − faceCenter)).
+  const faceCenterWorld = (face) => {
+    const w = (face && face.worldVerts) || [];
+    let cx = 0; let cy = 0; let cz = 0;
+    for (let i = 0; i < w.length; i++) { cx += w[i].x; cy += w[i].y; cz += w[i].z; }
+    const n = Math.max(1, w.length);
+    return { x: cx / n, y: cy / n, z: cz / n };
+  };
+
   // Chain a set of undirected edges (each [aIdx, bIdx] into the vertex array)
   // into ordered vertex-index loops. A manifold silhouette gives clean degree-2
   // loops (a torus → outer rim + inner rim); a branchy set walks greedily and any
@@ -226,8 +236,10 @@
     return loops;
   };
 
-  // True projected silhouette of a caster: classify its edges, keep the
-  // silhouette + boundary rims (front/back frontier + open-surface borders),
+  // True projected silhouette of a caster: classify its edges (the caller passes
+  // a LIGHT-relative classifier — silhouette = a toward/away-the-light frontier —
+  // so the footprint depends only on the light + geometry, not the camera), keep
+  // the silhouette + boundary rims (light frontier + open-surface borders),
   // chain them into ordered loops, and project each loop's world vertices to the
   // ground along the light. A torus yields an OUTER and an INNER ground loop, so
   // an even-odd fill leaves the middle open (I25 — annular shadow, hole intact).
@@ -444,8 +456,6 @@
     const out = [];
     if (!scene || !scene.ground || !clipper) return out;
     const HLR = Vectura.Scene3D && Vectura.Scene3D.HLR;
-    const Edges = Vectura.Scene3D && Vectura.Scene3D.Edges;
-    const classifyEdges = Edges && typeof Edges.classifyEdges === 'function' ? Edges.classifyEdges : null;
     const FillBoolean = Vectura.FillBoolean;
     // build() casts for the ONE light passed in — the caller decides which
     // lights cast (multi-light) and filters out ambient / castShadows:false
@@ -504,6 +514,52 @@
       projectVertex = (P) => projectShadowVertex(P, d, camAngles0, projOpts0);
       projectVertexRaw = projectVertex;
     }
+
+    // ── Light-relative silhouette (camera-invariant shadow SHAPE) ──────────────
+    // The cast shadow's outline depends only on the LIGHT + geometry, never on
+    // where the camera sits. So the silhouette edge set is classified from the
+    // LIGHT's viewpoint: an edge is a silhouette when its two adjacent faces
+    // straddle the light — one faces TOWARD it, the other AWAY (a sign change of
+    // dot(faceNormalWorld, lightDir)). This is the light analog of the camera
+    // front/back test; classifying from the CAMERA instead made a torus's
+    // shadow-hole swim as the view orbited (physically wrong under a fixed light).
+    //   - DIRECTIONAL: lightDir is the constant world travel direction (shared by
+    //     both faces of every edge).
+    //   - POINT / SPOT: the direction is per-face — normalize(lightPos − faceCenter)
+    //     — so a diverging light silhouettes each face by its own bearing.
+    // Only the CLASSIFICATION source changes; the loops still chain + project +
+    // even-odd fill through the exact same path as before.
+    const lightFaceSign = (face) => {
+      const n = face && face.normalWorld;
+      if (!n) return 0;
+      let lx; let ly; let lz;
+      if (positional) {
+        const c = faceCenterWorld(face);
+        lx = lightPosition.x - c.x; ly = lightPosition.y - c.y; lz = lightPosition.z - c.z;
+      } else {
+        lx = lightDir.x; ly = lightDir.y; lz = lightDir.z;
+      }
+      return n.x * lx + n.y * ly + n.z * lz;
+    };
+    // Drop-in replacement for Edges.classifyEdges within casterSilhouetteLoops:
+    // returns { a, b, cls } per edge with cls ∈ {silhouette, boundary, interior}
+    // decided by the LIGHT, not the camera. Boundary (single-face / open-surface)
+    // rims still bound the footprint, exactly as the camera classifier did.
+    const lightClassifyEdges = (record) => {
+      const faces = record.faces || [];
+      return (record.edges || []).map((edge) => {
+        const adjacent = edge.faces.map((idx) => faces[idx]).filter(Boolean);
+        let cls = 'interior';
+        if (adjacent.length === 1) {
+          cls = 'boundary';
+        } else if (adjacent.length === 2) {
+          const s0 = lightFaceSign(adjacent[0]);
+          const s1 = lightFaceSign(adjacent[1]);
+          if ((s0 >= 0) !== (s1 >= 0)) cls = 'silhouette';
+        }
+        return { a: edge.a, b: edge.b, cls };
+      });
+    };
 
     const groundFace = scene.ground.faces && scene.ground.faces[0];
     const groundPlane = groundFace && HLR ? HLR.fitSupportPlane(groundFace.polygon) : null;
@@ -584,7 +640,7 @@
       if (!objectCasts(record.id)) return; // per-object cast toggle
       const hull = casterHull(record, projectVertex);
       if (!hull) return;
-      const loops = classifyEdges ? casterSilhouetteLoops(record, projectVertex, classifyEdges) : null;
+      const loops = casterSilhouetteLoops(record, projectVertex, lightClassifyEdges);
       const style = styleOf ? (styleOf(record.id) || {}) : {};
       casters.push({ id: record.id, hull, loops, penId: style.penId || null, classKey: style.penId || '' });
     });

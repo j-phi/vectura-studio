@@ -13,6 +13,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   Scale. Legacy uniform scale is byte-identical.
 
 ### Fixed
+- **3D Scene — the cast-shadow shape stays put as you orbit.** The shadow silhouette was
+  classified from the camera, so a torus's shadow hole changed size as the camera moved.
+  It is now classified from the LIGHT (constant direction for the sun; per-face toward the
+  light for point/spot), so a fixed light casts a fixed shadow regardless of viewpoint —
+  the footprint only changes when the light moves.
 - **3D Scene — shadows show the object's real silhouette, holes and all.** A torus (or
   any object with a hole/concavity) cast a solid elliptical shadow because the footprint
   was a convex hull. Full-frame shadows now project the caster's actual silhouette loops
