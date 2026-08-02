@@ -62,7 +62,10 @@
 
   // Split `polygon` by `plane`, routing whole/partial pieces into the four out
   // arrays (Evan-Wallace splitPolygon adapted; verts are plain positions so a
-  // shared reference is safe — nothing mutates a vertex in place).
+  // shared reference is safe — nothing mutates a vertex in place). A polygon's
+  // opaque `shared` slot (the Evan-Wallace source-metadata channel — here a
+  // source `{ objectId, faceId }` tag threaded by Scene3D.Boolean) is COPIED
+  // onto every split piece so per-fragment attribution survives the cut.
   const splitPolygon = (plane, polygon, coplanarFront, coplanarBack, front, back) => {
     let polygonType = 0;
     const types = [];
@@ -98,8 +101,8 @@
           b.push(mid);
         }
       }
-      if (f.length >= 3) front.push({ verts: f, plane: polygon.plane });
-      if (b.length >= 3) back.push({ verts: b, plane: polygon.plane });
+      if (f.length >= 3) front.push({ verts: f, plane: polygon.plane, shared: polygon.shared });
+      if (b.length >= 3) back.push({ verts: b, plane: polygon.plane, shared: polygon.shared });
     }
   };
 
@@ -145,7 +148,7 @@
   const invertNode = (node) => {
     for (let i = 0; i < node.polygons.length; i++) {
       const p = node.polygons[i];
-      node.polygons[i] = { verts: p.verts.slice().reverse(), plane: flipPlane(p.plane) };
+      node.polygons[i] = { verts: p.verts.slice().reverse(), plane: flipPlane(p.plane), shared: p.shared };
     }
     if (node.plane) node.plane = flipPlane(node.plane);
     const tmp = node.front;
@@ -164,11 +167,17 @@
 
   // ── Index mesh ⇄ polygon soup. ─────────────────────────────────────────────
   // Fan-triangulate every input face into flat polygons; drop degenerate tris.
+  // A parallel `mesh.faceTags` array (opaque per-face source metadata) is
+  // carried onto each polygon's `shared` slot so every fan triangle inherits
+  // its source face's tag (Scene3D.Boolean sets/reads these; a plain geometry
+  // caller passes none and every tag reads `null`).
   const meshToPolygons = (mesh) => {
     const polys = [];
     const verts = mesh.vertices || [];
-    (mesh.faces || []).forEach((face) => {
+    const tags = Array.isArray(mesh.faceTags) ? mesh.faceTags : null;
+    (mesh.faces || []).forEach((face, fi) => {
       if (!Array.isArray(face) || face.length < 3) return;
+      const shared = tags ? (tags[fi] || null) : null;
       for (let k = 2; k < face.length; k++) {
         const a = verts[face[0]];
         const b = verts[face[k - 1]];
@@ -176,7 +185,7 @@
         if (!a || !b || !c) continue;
         const plane = planeFromPoints(a, b, c);
         if (planeDegenerate(plane)) continue;
-        polys.push({ verts: [copy(a), copy(b), copy(c)], plane });
+        polys.push({ verts: [copy(a), copy(b), copy(c)], plane, shared });
       }
     });
     return polys;
@@ -184,24 +193,32 @@
 
   // Fan-triangulate output polygons back to an index mesh (pre-weld: raw verts,
   // Scene3D.Mesh.weldMesh shares coincident ones + drops repeated-index tris).
+  // Emits a `faceTags` array parallel to `faces` carrying each triangle's source
+  // tag (its polygon's `shared` slot).
   const polygonsToMesh = (polys) => {
     const vertices = [];
     const faces = [];
+    const faceTags = [];
     polys.forEach((poly) => {
       const vs = poly.verts;
       if (!vs || vs.length < 3) return;
       const base = vertices.length;
       for (let i = 0; i < vs.length; i++) vertices.push(v(vs[i].x, vs[i].y, vs[i].z));
-      for (let k = 2; k < vs.length; k++) faces.push([base, base + k - 1, base + k]);
+      for (let k = 2; k < vs.length; k++) {
+        faces.push([base, base + k - 1, base + k]);
+        faceTags.push(poly.shared || null);
+      }
     });
-    return { vertices, faces };
+    return { vertices, faces, faceTags };
   };
 
   // Signed twice-area of a triangle (|(b−a)×(c−a)|).
   const triArea2 = (a, b, c) => length(cross(sub(b, a), sub(c, a)));
 
   // Drop near-zero-area triangles (collinear T-junction fans etc.). Threshold is
-  // scale-relative to the mesh extent so it never bites real geometry.
+  // scale-relative to the mesh extent so it never bites real geometry. A
+  // parallel `faceTags` array is filtered in lockstep so tag↔face alignment
+  // survives the drop.
   const dropSlivers = (mesh) => {
     let maxAbs = 1;
     for (let i = 0; i < mesh.vertices.length; i++) {
@@ -210,13 +227,64 @@
       if (a > maxAbs) maxAbs = a;
     }
     const areaEps = maxAbs * maxAbs * 1e-9;
-    const faces = mesh.faces.filter((f) => {
+    const tags = Array.isArray(mesh.faceTags) ? mesh.faceTags : null;
+    const faces = [];
+    const faceTags = tags ? [] : null;
+    mesh.faces.forEach((f, i) => {
       const a = mesh.vertices[f[0]];
       const b = mesh.vertices[f[1]];
       const c = mesh.vertices[f[2]];
-      return a && b && c && triArea2(a, b, c) > areaEps;
+      if (!(a && b && c && triArea2(a, b, c) > areaEps)) return;
+      faces.push(f);
+      if (faceTags) faceTags.push(tags[i] || null);
     });
-    return { vertices: mesh.vertices, faces };
+    return faceTags ? { vertices: mesh.vertices, faces, faceTags } : { vertices: mesh.vertices, faces };
+  };
+
+  // Tag-preserving weld — a MIRROR of Scene3D.Mesh.weldMesh (same 1e-5-of-extent
+  // quantisation + repeated-index degenerate drop, so the geometry is
+  // byte-identical) that filters a parallel `faceTags` array in lockstep.
+  // weldMesh itself returns no survival mask, so we replicate its decision here
+  // rather than desync the tags; the visual baselines pin the geometry against
+  // any future drift in weldMesh's constant.
+  const weldTagged = (mesh) => {
+    const verts = mesh.vertices;
+    const tags = Array.isArray(mesh.faceTags) ? mesh.faceTags : null;
+    if (!verts.length) return mesh;
+    let maxAbs = 1;
+    for (let i = 0; i < verts.length; i++) {
+      const a = Math.max(Math.abs(verts[i].x), Math.abs(verts[i].y), Math.abs(verts[i].z));
+      if (a > maxAbs) maxAbs = a;
+    }
+    const q = maxAbs * 1e-5;
+    const cellKey = (pt) => `${Math.round(pt.x / q)},${Math.round(pt.y / q)},${Math.round(pt.z / q)}`;
+    const cellOf = new Map();
+    const remap = new Array(verts.length);
+    const outVerts = [];
+    for (let i = 0; i < verts.length; i++) {
+      const key = cellKey(verts[i]);
+      let target = cellOf.get(key);
+      if (target == null) {
+        target = outVerts.length;
+        cellOf.set(key, target);
+        outVerts.push(verts[i]);
+      }
+      remap[i] = target;
+    }
+    const outFaces = [];
+    const outTags = tags ? [] : null;
+    for (let i = 0; i < mesh.faces.length; i++) {
+      const f = mesh.faces[i];
+      const a = remap[f[0]];
+      const b = remap[f[1]];
+      const c = remap[f[2]];
+      if (a === b || b === c || a === c) continue; // degenerate after weld → drop
+      outFaces.push([a, b, c]);
+      if (outTags) outTags.push(tags[i] || null);
+    }
+    return outTags
+      ? { vertices: outVerts, faces: outFaces, faceTags: outTags }
+      : { vertices: outVerts, faces: outFaces };
   };
 
   // Signed volume via the divergence theorem (Σ v0·(v1×v2) / 6). Exact for any
@@ -239,10 +307,12 @@
     if (!polys || !polys.length) return null;
     let mesh = polygonsToMesh(polys);
     if (!mesh.faces.length) return null;
-    mesh = Mesh.weldMesh ? Mesh.weldMesh(mesh) : mesh;
+    // weldTagged mirrors Mesh.weldMesh (guarded on it staying present) while
+    // threading faceTags; falls back to raw when the Mesh module is absent.
+    mesh = Mesh.weldMesh ? weldTagged(mesh) : mesh;
     mesh = dropSlivers(mesh);
     if (!mesh.faces.length) return null;
-    return { vertices: mesh.vertices, faces: mesh.faces };
+    return { vertices: mesh.vertices, faces: mesh.faces, faceTags: mesh.faceTags };
   };
 
   // ── Boolean fold on two BSP node roots (Evan-Wallace op sequences). ─────────

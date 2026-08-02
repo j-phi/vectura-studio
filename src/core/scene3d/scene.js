@@ -189,6 +189,11 @@
       // a box (Scene3D.Boolean sets this); curved-involving carves fall back to
       // the continuous-region path. Plain objects leave it false.
       csgFaceted: !!meshData.csgFaceted,
+      // Per-fragment source-attributed styles for a CSG carve (Scene3D.Boolean),
+      // keyed by faceId. The generator folds these into a non-persistent byFace
+      // clone so each fragment resolves to its ORIGINATING object's style. Null
+      // for plain objects and uniform-style carves (byte-identical path).
+      faceStyleOverrides: meshData.faceStyleOverrides || null,
       visibility: obj.visibility || 'solid',
       border: (obj.border && obj.border.enabled) ? obj.border : null,
       faceIndexArrays: meshData.faces,

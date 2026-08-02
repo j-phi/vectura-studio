@@ -59,11 +59,12 @@
 
   // Build a child's WORLD-space mesh (camera-independent): primitive mesh, then
   // applyObjectTransform per vertex. Faces stay n-gon; CSG fan-triangulates.
+  // Carries the primitive's per-face ids through for source attribution.
   const worldMesh = (Scene, obj) => {
     const mesh = Scene.buildPrimitiveMesh(capObjForCsg(obj), 1);
     const t = obj.transform;
     const vertices = mesh.vertices.map((pt) => Scene.applyObjectTransform(pt, t));
-    return { vertices, faces: mesh.faces };
+    return { vertices, faces: mesh.faces, faceIds: mesh.faceIds };
   };
 
   // Resolve ONE group to a raw carved mesh `{ vertices, faces, faceted }` (or
@@ -83,7 +84,15 @@
         const mesh = worldMesh(ctx.Scene, obj);
         ctx.tris += triCount(mesh);
         if (ctx.tris > CONFIG.maxTriangles) { ctx.overrun = true; return; }
-        parts.push({ mesh, role: roleOf(obj), faceted: FACETED.has(obj.primitive) });
+        const role = roleOf(obj);
+        // Source-attribution tag per input face (threaded through the BSP's
+        // `shared` slot): a solid's faces keep their own object+face identity;
+        // a hole's faces are attributed to the SOLID being carved (its cut walls
+        // read as the solid's interior — the group's primary), never the hole.
+        mesh.faceTags = mesh.faces.map((_, i) => (role === 'hole'
+          ? { objectId: ctx.primaryId, faceId: null }
+          : { objectId: obj.id, faceId: (mesh.faceIds && mesh.faceIds[i]) || null }));
+        parts.push({ mesh, role, faceted: FACETED.has(obj.primitive) });
         return;
       }
       const nested = ctx.groupIndex.get(cid);
@@ -144,15 +153,50 @@
     return firstAny;
   };
 
-  const combineGroup = (group, objIndex, groupIndex, draft, Scene, CSG) => {
+  // Whole-style equality (byFace > byObject > scene resolution returns a normalized
+  // { penId, mapper, params }); provenance is ignored.
+  const styleEq = (a, b) => a && b && a.penId === b.penId && a.mapper === b.mapper
+    && JSON.stringify(a.params || {}) === JSON.stringify(b.params || {});
+
+  // Re-attribute each output fragment to its SOURCE object+face style where that
+  // DIFFERS from the primary baseline. The combined unit borrows the primary's
+  // id, so downstream `resolveStyle(primaryId, 'face:csg:<i>')` already yields
+  // the baseline; only the differing fragments need an override entry, which the
+  // generator merges into a non-persistent byFace clone. Gate = byte-identical
+  // when a unit carries one uniform style (the common single-style case): no
+  // fragment differs from baseline, so this returns null (no key added).
+  const buildFaceStyleOverrides = (faceTags, primaryId, styleTable) => {
+    const SC = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
+    if (!SC || typeof SC.resolve !== 'function' || !Array.isArray(faceTags)) return null;
+    let baseline;
+    try {
+      baseline = SC.resolve(styleTable, { objectId: primaryId, faceId: null });
+    } catch (_) { return null; }
+    const out = {};
+    let any = false;
+    faceTags.forEach((tag, i) => {
+      if (!tag) return;
+      let src;
+      try { src = SC.resolve(styleTable, { objectId: tag.objectId, faceId: tag.faceId }); } catch (_) { return; }
+      if (!src || styleEq(src, baseline)) return;
+      out[`face:csg:${i}`] = { penId: src.penId, mapper: src.mapper, params: src.params };
+      any = true;
+    });
+    return any ? out : null;
+  };
+
+  const combineGroup = (group, objIndex, groupIndex, draft, Scene, CSG, styleTable) => {
     if (draft) return null;                 // CONTRACT L4 — no booleans on draft frames
     if (!CSG || !Scene) return null;
-    const ctx = { objIndex, groupIndex, Scene, CSG, seen: new Set(), tris: 0, overrun: false };
+    const primary = primaryObject(group, objIndex, groupIndex);
+    if (!primary) return null;
+    // primaryId is needed DURING the carve so a hole's cut walls attribute to the
+    // solid; compute the primary first and thread it through ctx.
+    const ctx = { objIndex, groupIndex, Scene, CSG, seen: new Set(), tris: 0, overrun: false, primaryId: primary.id };
     const result = combineMesh(group, ctx);
     if (ctx.overrun || !result || !Array.isArray(result.faces) || !result.faces.length) return null;
 
-    const primary = primaryObject(group, objIndex, groupIndex);
-    if (!primary) return null;
+    const faceStyleOverrides = buildFaceStyleOverrides(result.faceTags, primary.id, styleTable);
     const meshData = {
       vertices: result.vertices,
       faces: result.faces,
@@ -161,6 +205,9 @@
       // All-faceted carve (box−box…) hatches per-face; any curved child (a
       // box−cylinder bore) routes through the continuous-region path.
       csgFaceted: !!result.faceted,
+      // Per-fragment source-attributed styles (omitted entirely when the unit is
+      // uniform — the byte-identical single-style path).
+      ...(faceStyleOverrides ? { faceStyleOverrides } : {}),
     };
     const pseudo = {
       id: primary.id,
@@ -220,7 +267,7 @@
       if (!g) { units.push(plainUnit(obj)); return; }
       if (emitted.has(g)) return; // already emitted at the first-seen child's slot
       emitted.add(g);
-      const combined = combineGroup(g, objIndex, groupIndex, draft, Scene, CSG);
+      const combined = combineGroup(g, objIndex, groupIndex, draft, Scene, CSG, p.styleTable);
       if (combined) { units.push(combined); return; }
       // Fallback: uncarved leaf objects in child order.
       leafObjectsOf(g).forEach((cid) => {

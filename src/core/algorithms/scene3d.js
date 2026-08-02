@@ -67,6 +67,26 @@
     };
   };
 
+  // Fold every CSG record's per-fragment source-attributed styles into a
+  // NON-PERSISTENT clone of the style table, so a combined unit's fragments
+  // resolve to their originating objects through the ordinary byFace cascade.
+  // Keys are `${record.id}/${faceId}` — record.id is the primary the carve
+  // borrows, faceId the unique `face:csg:<i>`, so entries never collide. Returns
+  // the ORIGINAL table (same reference) when no record carries overrides, so the
+  // common single-style case is byte-identical.
+  const mergeCsgFaceStyles = (styleTable, records) => {
+    const extra = {};
+    let any = false;
+    (records || []).forEach((r) => {
+      const ov = r && r.faceStyleOverrides;
+      if (!ov) return;
+      Object.keys(ov).forEach((faceId) => { extra[`${r.id}/${faceId}`] = ov[faceId]; any = true; });
+    });
+    if (!any) return styleTable;
+    const src = styleTable && typeof styleTable === 'object' ? styleTable : {};
+    return { ...src, byFace: { ...(src.byFace || {}), ...extra } };
+  };
+
   // fillDensity (0–100) → hatch spacing in document mm. Monotonic: denser in,
   // tighter lines out; hatchPolygon floors spacing at 1.
   const hatchSpacing = (density) => Math.max(1, 14 - 0.13 * clamp(finite(density, 50), 0, 100));
@@ -177,7 +197,15 @@
 
       const p = Params.normalizeParams(params);
       const scene = Scene.assembleScene(p, bounds);
-      const resolveStyle = makeStyleResolver(p.styleTable);
+      // Per-fragment CSG styling: a combined carve borrows the primary solid's
+      // id, so each fragment's source-attributed style (Scene3D.Boolean) is
+      // merged into a NON-PERSISTENT byFace clone keyed `${primaryId}/${faceId}`.
+      // resolveStyle then routes every fragment (faces, edges, x-ray, highlight)
+      // to its originating object's style through the ordinary cascade. When no
+      // record carries overrides the clone is skipped and p.styleTable is used
+      // verbatim (byte-identical single-style path).
+      const styleTable = mergeCsgFaceStyles(p.styleTable, scene.objects);
+      const resolveStyle = makeStyleResolver(styleTable);
       const out = [];
 
       // ── Occluder set (S6): solid front faces occlude everyone; x-ray front

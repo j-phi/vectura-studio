@@ -235,4 +235,80 @@ describe('Scene3D.Boolean.resolveAssembly', () => {
       Boolean3D.CONFIG.maxTriangles = orig;
     }
   });
+
+  // ── Per-fragment by-face styling (faceStyleOverrides). ───────────────────────
+  // A carved CSG unit borrows the PRIMARY solid's identity, so every fragment
+  // resolves against the primary by default. `faceStyleOverrides` re-attributes
+  // each output fragment to its ORIGINATING object + face where that differs
+  // from the primary baseline — a solid's surviving per-face style survives the
+  // carve, a hole's cut walls read as the solid's interior, and a unioned
+  // sibling keeps its own per-object style. Gated: identical-to-baseline
+  // fragments emit NO override, so a uniform-style unit is byte-identical.
+  const styleA = { penId: 'pen-A', mapper: 'none', params: {} };
+  const styleB = { penId: 'pen-B', mapper: 'none', params: {} };
+  const styledScene = (objects, groups, styleTable) => Params.normalizeParams({
+    sceneVersion: 1, objects, groups, lights: [], camera: {}, styleTable,
+  });
+  // A blind pocket: a 20×20 square bored into the +Z face to depth 15 — the +Z
+  // face survives as a rim (a set of fragments), the pocket floor + walls are
+  // new cut walls.
+  const pocketHole = {
+    id: 'hole-1', name: 'hole-1', primitive: 'box',
+    params: { sx: 20, sy: 20, sz: 30 },
+    transform: { x: 0, y: 0, z: 20, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+    visibility: 'solid', role: 'hole',
+  };
+
+  it('carved solid keeps its per-face style B; cut walls read as the solid (style A)', () => {
+    const p = styledScene(
+      [box('solid-1', 40, {}), pocketHole],
+      [{ id: 'grp-1', op: 'subtract', children: ['solid-1', 'hole-1'] }],
+      { byObject: { 'solid-1': styleA }, byFace: { 'solid-1/face:+Z': styleB } },
+    );
+    const u = Boolean3D.resolveAssembly(p, 1, { draft: false })[0];
+    const ov = u.meshData.faceStyleOverrides;
+    expect(ov).toBeTruthy();
+    const pens = Object.values(ov).map((s) => s.penId);
+    // The surviving +Z rim carries style B.
+    expect(pens).toContain('pen-B');
+    // Style A == baseline (primary byObject) == cut-wall attribution, so it is
+    // NEVER emitted as an override — it is the un-overridden default.
+    expect(pens).not.toContain('pen-A');
+    Object.keys(ov).forEach((k) => expect(k).toMatch(/^face:csg:\d+$/));
+  });
+
+  it('UNION of two solids with different per-object styles keeps each source style', () => {
+    const p = styledScene(
+      [box('a', 40, {}), box('b', 40, { x: 20 })],
+      [{ id: 'g', op: 'union', children: ['a', 'b'] }],
+      { byObject: { a: styleA, b: styleB } },
+    );
+    const ov = Boolean3D.resolveAssembly(p, 1, { draft: false })[0].meshData.faceStyleOverrides;
+    expect(ov).toBeTruthy();
+    const pens = new Set(Object.values(ov).map((s) => s.penId));
+    expect(pens.has('pen-B')).toBe(true);  // b ≠ baseline(a) → overridden to B
+    expect(pens.has('pen-A')).toBe(false); // a == baseline → left un-overridden
+  });
+
+  it('REGRESSION: a uniform-style carve emits NO overrides + byte-identical geometry', () => {
+    const objs = () => [box('solid-1', 40, {}), pocketHole];
+    const grps = () => [{ id: 'grp-1', op: 'subtract', children: ['solid-1', 'hole-1'] }];
+    const styled = Boolean3D.resolveAssembly(
+      styledScene(objs(), grps(), { byObject: { 'solid-1': styleA } }), 1, {})[0];
+    const bare = Boolean3D.resolveAssembly(
+      Params.normalizeParams({ sceneVersion: 1, objects: objs(), groups: grps(), lights: [], camera: {} }), 1, {})[0];
+    expect(styled.meshData.faceStyleOverrides).toBeUndefined();
+    // Geometry + faceIds identical to the un-styled carve (no new keys, no drift).
+    expect(JSON.stringify(styled.meshData)).toBe(JSON.stringify(bare.meshData));
+  });
+
+  it('faceStyleOverrides are deterministic', () => {
+    const mk = () => styledScene(
+      [box('solid-1', 40, {}), pocketHole],
+      [{ id: 'grp-1', op: 'subtract', children: ['solid-1', 'hole-1'] }],
+      { byObject: { 'solid-1': styleA }, byFace: { 'solid-1/face:+Z': styleB } });
+    const a = Boolean3D.resolveAssembly(mk(), 1, {})[0].meshData;
+    const b = Boolean3D.resolveAssembly(mk(), 1, {})[0].meshData;
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
 });

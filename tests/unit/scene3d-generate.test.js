@@ -549,4 +549,36 @@ describe('scene3d generate — CSG subtract (Increment 1)', () => {
     // The bore rim still reads (silhouette + crease survive).
     expect(edgesOf(out, 'solid-1', 'silhouette').length + edgesOf(out, 'solid-1', 'crease').length).toBeGreaterThan(0);
   });
+
+  // ── Per-fragment by-face styling through generate() (Phase-3 nicety). ─────────
+  const twoBoxUnion = () => [
+    solidBox('solid-1', 40),
+    solidBox('solid-2', 40, { transform: { x: 24, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 } }),
+  ];
+  const twoPenTable = (penForB) => ({
+    scene: { penId: null, mapper: 'none', params: {} },
+    byObject: {
+      'solid-1': { penId: 'pen-A', mapper: 'hatch', params: { fillAngle: 0, fillDensity: 70 } },
+      'solid-2': { penId: penForB, mapper: 'hatch', params: { fillAngle: penForB === 'pen-A' ? 0 : 90, fillDensity: 70 } },
+    },
+    byFace: {},
+  });
+
+  test('per-fragment styling: a unioned sibling keeps its own per-object hatch pen', () => {
+    const p = csgScene(twoBoxUnion(), [{ op: 'union', children: ['solid-1', 'solid-2'] }], { yaw: -25, pitch: 20 });
+    p.styleTable = twoPenTable('pen-B');
+    const paths = algo.generate(p, null, null, IB) || [];
+    const pens = new Set(paths.filter((q) => q.meta && q.meta.kind === 'sceneFill').map((q) => q.meta.penId));
+    expect(pens.has('pen-A')).toBe(true); // primary solid-1
+    expect(pens.has('pen-B')).toBe(true); // unioned solid-2 keeps its own pen
+  });
+
+  test('REGRESSION: a uniform-style union hatches under ONE pen (no phantom fragment groups)', () => {
+    const p = csgScene(twoBoxUnion(), [{ op: 'union', children: ['solid-1', 'solid-2'] }], { yaw: -25, pitch: 20 });
+    p.styleTable = twoPenTable('pen-A'); // both siblings share pen-A
+    const paths = algo.generate(p, null, null, IB) || [];
+    const pens = new Set(paths.filter((q) => q.meta && q.meta.kind === 'sceneFill').map((q) => q.meta.penId));
+    expect(pens.has('pen-A')).toBe(true);
+    expect(pens.has('pen-B')).toBe(false);
+  });
 });

@@ -7,6 +7,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene CSG — per-fragment by-face styling.** A carved/combined boolean unit
+  no longer flattens to the primary solid's style for every face. Each output
+  fragment is now attributed back to its ORIGINATING object + face: a solid keeps
+  its per-face (`byFace`) styles on its surviving faces, a hole's cut walls read
+  as the solid's interior (the solid's style), and a unioned sibling keeps its own
+  per-object style. Source identity threads through the BSP via each polygon's
+  `shared` slot (inherited on every split) and merges into a non-persistent
+  `byFace` clone at generate time. Gated + deterministic (no RNG): a unit with one
+  uniform style is byte-identical to before.
 - **3D Scene ctxbar — multi-select "Mixed" display.** When 2+ scene objects are
   selected and they *disagree* on a contextual-toolbar control, the Style / Shadow /
   Highlight / X-ray flyouts now show an explicit **Mixed** state instead of silently
