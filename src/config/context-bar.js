@@ -112,6 +112,84 @@
         tooltip: 'Clear face style',
         tooltipOff: 'Style tools not loaded',
       },
+      // Persistent scene-object dropdown pills (ask #8). Each opens a flyout that
+      // stays open until you click elsewhere; copy for the rows lives in
+      // CONTEXT_BAR.sceneFlyouts below.
+      sceneStyle: { label: 'Style', tooltip: 'Fill style, pen & density' },
+      sceneShadow: { label: 'Shadow', tooltip: 'Cast shadow, angle & style' },
+      sceneHighlight: { label: 'Highlight', tooltip: 'Highlight treatment & border' },
+      sceneXray: { label: 'X-ray', tooltip: 'See-through / hidden-line style' },
+    },
+
+    // ── Scene-object flyout copy + option lists (ask #8) ───────────────────
+    // Persistent dropdowns opened from the four pills above. Option lists mirror
+    // the docked Scene panel so both surfaces read identically; labels are here,
+    // never inlined in context-bar.js.
+    sceneFlyouts: {
+      mixed: '—', // multi-select mixed-value placeholder (display only)
+      style: {
+        mapper: { label: 'Fill', aria: 'Fill style mapper' },
+        pen: { label: 'Pen', aria: 'Style pen', inherit: 'Layer pen' },
+        angle: { label: 'Angle', aria: 'Hatch angle' },
+        density: { label: 'Density', aria: 'Fill density' },
+        reset: { label: 'Reset override', tooltip: 'Clear this object’s style override' },
+        mappers: [
+          { value: 'none', label: 'None' },
+          { value: 'wireframe', label: 'Wireframe' },
+          { value: 'hatch', label: 'Hatch' },
+          { value: 'crosshatch', label: 'Crosshatch' },
+          { value: 'contour', label: 'Contour' },
+          { value: 'spiral', label: 'Spiral' },
+          { value: 'stipple', label: 'Stipple' },
+        ],
+        // Mappers that expose Angle (hatch families) and Density (all fills).
+        angleMappers: ['hatch', 'crosshatch'],
+        fillMappers: ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'],
+      },
+      shadow: {
+        cast: { label: 'Cast', aria: 'Object casts shadow' },
+        castOptions: [{ value: 'inherit', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+        angle: { label: 'Angle', aria: 'Shadow angle (sun bearing, scene-wide)', note: 'Scene-wide (sun)' },
+        style: { label: 'Style', aria: 'Shadow line style' },
+        styleOptions: [
+          { value: 'solid', label: 'Solid' }, { value: 'dashed', label: 'Dashed' },
+          { value: 'dotted', label: 'Dotted' }, { value: 'dashdot', label: 'Dash-dot' },
+        ],
+        pen: { label: 'Pen', aria: 'Shadow pen', inherit: 'Caster pen' },
+        density: { label: 'Density', aria: 'Shadow density' },
+        layers: { label: 'Layers', aria: 'Shadow penumbra layers' },
+        layerOptions: [{ value: 'off', label: 'Off' }, { value: '2', label: '2' }, { value: '3', label: '3' }, { value: '4', label: '4' }],
+      },
+      highlight: {
+        treatment: { label: 'Treatment', aria: 'Highlight treatment' },
+        treatments: [
+          { value: 'blank', label: 'Blank' }, { value: 'keep', label: 'Keep' },
+          { value: 'dashed', label: 'Dashed' }, { value: 'dotted', label: 'Dotted' },
+          { value: 'sparse', label: 'Sparse' }, { value: 'altFill', label: 'Alt fill' },
+          { value: 'burst', label: 'Burst' }, { value: 'stippleOut', label: 'Stipple' },
+        ],
+        strength: { label: 'Strength', aria: 'Highlight density' },
+        pen: { label: 'Pen', aria: 'Highlight pen', inherit: 'Inherit' },
+        borderHead: 'Border',
+        border: { label: 'Border', aria: 'Silhouette border' },
+        borderStrength: { label: 'Weight', aria: 'Border strength' },
+        borderPen: { label: 'Pen', aria: 'Border pen', inherit: 'Edge pen' },
+        onOff: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+      },
+      xray: {
+        mode: { label: 'X-ray', aria: 'Object visibility' },
+        modeOptions: [{ value: 'solid', label: 'Solid' }, { value: 'xray', label: 'X-ray' }],
+        backFaces: { label: 'Back faces', aria: 'Show far surface' },
+        backDensity: { label: 'Back density', aria: 'Far-surface density' },
+        backLine: { label: 'Back line', aria: 'Far-surface line style' },
+        pen: { label: 'Back pen', aria: 'Far-surface pen', inherit: 'Object pen' },
+        lineOptions: [
+          { value: 'solid', label: 'Solid' }, { value: 'dashed', label: 'Dashed' },
+          { value: 'dotted', label: 'Dotted' }, { value: 'dashdot', label: 'Dash-dot' },
+        ],
+        onOff: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+        disabledHint: 'Set X-ray on to edit',
+      },
     },
 
     // ── Align flyout (TB-5) — reuses the docked multi-selection panel's

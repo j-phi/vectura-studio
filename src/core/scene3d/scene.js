@@ -186,6 +186,7 @@
       name: obj.name,
       primitive: obj.primitive,
       visibility: obj.visibility || 'solid',
+      border: (obj.border && obj.border.enabled) ? obj.border : null,
       faceIndexArrays: meshData.faces,
       faces,
       world, // world-space verts (Phase 2: cast-shadow ground projection)

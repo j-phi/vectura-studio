@@ -254,6 +254,20 @@
     return { enabled };
   };
 
+  // Per-object silhouette border (ctxbar Highlight flyout, ask #8). Default OFF
+  // = zero extra ink, so a scene with no `border` block renders byte-identical.
+  // When enabled, scene3d overstrokes the object's silhouette + boundary edges
+  // proportional to `strength`; `penId` (null ⇒ inherit the edge pen) recolours
+  // the emphasis passes.
+  const normalizeObjectBorder = (border) => {
+    const src = isObject(border) ? border : {};
+    return {
+      enabled: src.enabled === true,
+      strength: clamp(finite(src.strength, 1), 0.25, 4),
+      penId: (typeof src.penId === 'string' && src.penId) ? src.penId : null,
+    };
+  };
+
   const normalizeShadow = (shadow) => {
     const src = isObject(shadow) ? shadow : {};
     return {
@@ -285,6 +299,7 @@
       transform: normalizeTransform(obj.transform),
       visibility: obj.visibility === 'xray' ? 'xray' : 'solid',
       shadow: normalizeObjectShadow(obj.shadow),
+      border: normalizeObjectBorder(obj.border),
     };
   };
 

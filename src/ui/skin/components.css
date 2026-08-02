@@ -11913,6 +11913,50 @@ body.mobile-layout .hud-bar {
 .ctxbar-algo-flyout .algo-group-div:first-child { margin-top: 0; }
 .ctxbar-algo-menu-wrap .ctxbar-text-field { max-width: 150px; }
 .ctxbar-algo-field .lvl-algo-sub-ico { margin-right: 5px; }
+/* Scene-object persistent flyouts (ask #8): Style / Shadow / Highlight / X-ray.
+   A vertical stack of label + control rows; reuses the align-flyout box (open
+   state, up/down flip inherited). Scrolls when tall so it never clips. */
+.ctxbar-scene-flyout {
+  gap: 6px;
+  min-width: 232px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.ctxbar-fly-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ctxbar-fly-label {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--ui-muted, #9a9a9a);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.ctxbar-fly-ctl {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+.ctxbar-fly-ctl > * { max-width: 100%; }
+.ctxbar-fly-subhead {
+  font-size: var(--font-size-xs, 10px);
+  color: var(--ui-muted, #686868);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--ui-border, #363636);
+}
+.ctxbar-fly-note {
+  font-size: var(--font-size-xs, 10px);
+  color: var(--ui-muted, #686868);
+  font-style: italic;
+}
+.ctxbar-fly-reset { width: 100%; justify-content: center; }
+.ctxbar-scene-menu-wrap .ctxbar-scene-field { max-width: 140px; }
 /* Add Layer dropdown (idle TB-3) reuses the same field/flyout markup. */
 .ctxbar-add-layer-field .lvl-algo-sub-ico { margin-right: 5px; }
 /* Add Layer drill-down rows: distinct class from `.ctxbar-menu-item` so the

@@ -11697,6 +11697,124 @@
       return true;
     }
 
+    // ——— ctxbar scene-object flyout bridges (ask #8) —————————————————————
+    // Thin read/write plumbing the persistent Style / Shadow / Highlight /
+    // X-ray flyouts drive. Writes never call ContextBar.restoreState() (that
+    // would tear an open flyout down): they mutate + regen only, and the scene
+    // selection signature is unchanged so the rAF refresh leaves the flyout up.
+    //
+    // Gesture history (opts):
+    //   opts.gesture:true  → one history push on the FIRST write of a drag, then
+    //                        draft regen (opts.preview) on each subsequent write.
+    //   (no gesture)       → a discrete change: push history + full regen, unless
+    //                        it lands mid-gesture (a slider's onCommit), which
+    //                        closes the gesture and does a full regen, no push.
+    _sceneBeginWrite(opts) {
+      const o = opts || {};
+      if (o.gesture === true) {
+        if (!this._sceneWriteGesture) { this._scenePushHistory(); this._sceneWriteGesture = true; }
+      } else if (this._sceneWriteGesture) {
+        this._sceneWriteGesture = false; // gesture commit — history already pushed
+      } else {
+        this._scenePushHistory();
+      }
+    }
+
+    _sceneEndWrite(layer, opts) {
+      const o = opts || {};
+      if (o.gesture === true && o.preview === true) {
+        this.engine.generate(layer.id, { preview: true });
+        if (this.app?.render) this.app.render(); else this.draw();
+      } else {
+        this._sceneRegen(layer);
+      }
+    }
+
+    _sceneStyleTable(layer) {
+      if (!layer.params.styleTable || typeof layer.params.styleTable !== 'object') {
+        layer.params.styleTable = { scene: { penId: null, mapper: 'none', params: {} }, byObject: {}, byFace: {} };
+      }
+      return layer.params.styleTable;
+    }
+
+    getSceneObjectRecord(layerId, objectId) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      if (!layer || layer.type !== 'scene3d') return null;
+      return this._sceneObjectById(layer, objectId);
+    }
+
+    getSceneObjectResolvedStyle(layerId, objectId) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      const SC = window.Vectura?.Scene3D?.StyleCascade;
+      if (!layer || layer.type !== 'scene3d' || !SC) return null;
+      return SC.resolve(this._sceneStyleTable(layer), { objectId });
+    }
+
+    // Whole-style write at object scope (CONTRACT C — no per-field merge across
+    // scopes; the caller assembles the full style.params). `patch` keys replace
+    // the resolved style's keys (penId / mapper / params), exactly like the
+    // docked panel's commitStyle. `opts.clear` removes the byObject override.
+    setSceneObjectStyle(layerId, objectIds, patch, opts) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      const SC = window.Vectura?.Scene3D?.StyleCascade;
+      if (!layer || layer.type !== 'scene3d' || !SC) return false;
+      const ids = (objectIds || []).filter(Boolean);
+      if (!ids.length) return false;
+      const table = this._sceneStyleTable(layer);
+      const o = opts || {};
+      this._sceneBeginWrite(o);
+      ids.forEach((id) => {
+        if (o.clear === true) { SC.clearStyle(table, 'object', id); return; }
+        const cur = SC.resolve(table, { objectId: id });
+        const style = { penId: cur.penId, mapper: cur.mapper, params: { ...(cur.params || {}) } };
+        Object.keys(patch || {}).forEach((k) => { style[k] = patch[k]; });
+        SC.setStyle(table, 'object', id, style);
+      });
+      this._sceneEndWrite(layer, o);
+      return true;
+    }
+
+    // Set a dotted path on each selected object (visibility / shadow.enabled /
+    // border.enabled|strength|penId). Intermediate objects are created.
+    setSceneObjectField(layerId, objectIds, path, value, opts) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      if (!layer || layer.type !== 'scene3d') return false;
+      const targets = this._sceneObjects(layer).filter((o) => o && (objectIds || []).includes(o.id));
+      if (!targets.length) return false;
+      const keys = String(path).split('.');
+      this._sceneBeginWrite(opts);
+      targets.forEach((o) => {
+        let node = o;
+        for (let i = 0; i < keys.length - 1; i++) {
+          const k = keys[i];
+          if (!node[k] || typeof node[k] !== 'object') node[k] = {};
+          node = node[k];
+        }
+        node[keys[keys.length - 1]] = value;
+      });
+      this._sceneEndWrite(layer, opts);
+      return true;
+    }
+
+    // Set a dotted path on the SCENE (layer.params) itself — the Shadow flyout's
+    // scene-wide bag (`shadow.shadowDensity`, …) and the sun bearing
+    // (`lights.0.azimuth`). Numeric array indices in the path are honored.
+    setSceneParam(layerId, path, value, opts) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      if (!layer || layer.type !== 'scene3d' || !layer.params) return false;
+      const keys = String(path).split('.');
+      this._sceneBeginWrite(opts);
+      let node = layer.params;
+      for (let i = 0; i < keys.length - 1; i++) {
+        const k = keys[i];
+        if (!node[k] || typeof node[k] !== 'object') node[k] = {};
+        node = node[k];
+      }
+      node[keys[keys.length - 1]] = value;
+      this._sceneEndWrite(layer, opts);
+      return true;
+    }
+
     // Appends a CONTRACT A object to params.objects (one history entry +
     // regen). New objects land at the origin (documented simplification —
     // mapping a click to a ground point needs the camera projection, which is

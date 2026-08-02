@@ -479,6 +479,49 @@
         });
       };
 
+      // Per-vertex normal offset of a screen-space run by `d` mm — used by the
+      // silhouette border emphasis to lay parallel over-strikes beside an edge.
+      const offsetRun = (pts, d) => {
+        const arr = [];
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[Math.max(0, i - 1)];
+          const b = pts[Math.min(pts.length - 1, i + 1)];
+          let tx = b.x - a.x; let ty = b.y - a.y;
+          const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+          arr.push({ x: pts[i].x - ty * d, y: pts[i].y + tx * d, z: pts[i].z });
+        }
+        return arr;
+      };
+      // Border emphasis (ask #8): when an object's border is enabled, its
+      // silhouette + boundary edges get extra parallel over-strikes so the
+      // outline reads as a heavy, deliberate frame. Pass count + spread scale
+      // with `strength`; `penId` (null ⇒ inherit the edge pen) recolours the
+      // band. Draft frames skip it (keeps live drags cheap); a record with no
+      // border block never enters here, so default-off output is byte-identical.
+      const BORDER_STEP_MM = 0.12;
+      const emitBorderPasses = (record, clippedRuns, baseMeta) => {
+        const border = record && record.border;
+        if (!border || !border.enabled || draft) return;
+        const strength = clamp(finite(border.strength, 1), 0.25, 4);
+        const passes = Math.max(1, Math.round(strength * 2));
+        const meta0 = {
+          ...baseMeta,
+          sceneTarget: { ...baseMeta.sceneTarget },
+          ...(border.penId ? { penId: border.penId } : {}),
+        };
+        clippedRuns.forEach((run) => {
+          if (!run.visible) return; // emphasise only the visible outline
+          const pts = run.pts;
+          if (!Array.isArray(pts) || runLength(pts) < MIN_RUN_MM) return;
+          for (let k = 1; k <= passes; k++) {
+            const sign = (k % 2 === 0) ? 1 : -1;
+            const mag = sign * BORDER_STEP_MM * Math.ceil(k / 2);
+            const path = pathWithMeta(offsetRun(pts, mag), { ...meta0 });
+            if (path.length >= 2) out.push(path);
+          }
+        });
+      };
+
       // X-ray (Phase 6) config read off a style.params bag. `visibility:'xray'`
       // on the object is the on/off; these shape it. Back-face fills default ON
       // (the actual fix), dashed, at 0.4× density, inheriting the object pen.
@@ -1012,6 +1055,11 @@
           const thisEdgeHidden = wfShowHidden ? 'dash' : edgeHidden;
           emitRuns(clipped.runs, baseMeta, thisEdgeHidden, { edgeClass: 'hidden' }, dashOnly(strokeTreatment(style.params)),
             hiddenOnlyEdge ? { hiddenOnly: true } : undefined);
+          // Border emphasis: silhouette + boundary edges only (the shape's real
+          // outline), never creases/interior. Gated on record.border.enabled.
+          if (structural && (cls === 'silhouette' || cls === 'boundary')) {
+            emitBorderPasses(record, clipped.runs, baseMeta);
+          }
         });
       });
 

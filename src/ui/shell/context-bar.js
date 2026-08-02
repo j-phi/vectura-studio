@@ -250,7 +250,11 @@
       if (state.closeFlyout && els.content && !els.content.contains(e.target) && !onHandle) state.closeFlyout();
     }, true);
     G.document.addEventListener('keydown', (e) => {
-      if (state.menuOpen && e.key === 'Escape') { closeMenu(); }
+      if (e.key !== 'Escape') return;
+      if (state.menuOpen) closeMenu();
+      // Escape also dismisses any open persistent flyout (scene Style/Shadow/
+      // Highlight/X-ray, align, algo, add-layer) — mirrors outside-click.
+      if (state.closeFlyout) state.closeFlyout();
     });
   };
 
@@ -967,6 +971,9 @@
     const ids = sel.objectIds;
     appendSceneReadouts(ctx);
     appendPenChip(ctx);
+    // Persistent Style / Shadow / Highlight / X-ray dropdown pills (ask #8) —
+    // between the pen chip and the one-shot verbs.
+    appendSceneFlyouts(ctx);
     els.content.appendChild(makeBtn({
       icon: ic.sceneDuplicate, label: (b.sceneDuplicate && b.sceneDuplicate.label),
       tooltip: (b.sceneDuplicate && b.sceneDuplicate.tooltip),
@@ -1029,6 +1036,267 @@
         restoreState();
       },
     }));
+  };
+
+  // ── Scene-object persistent flyouts (ask #8) ──────────────────────────
+  // Four dropdown pills — Style / Shadow / Highlight / X-ray — that stay open
+  // until you click elsewhere (or press Escape). They reuse the existing flyout
+  // plumbing: mutual exclusion via state.closeFlyout, the single global
+  // outside-click handler in bindOverflow, and positionFlyoutForSpace's up/down
+  // flip. Edits write straight through the renderer bridges + regen; they NEVER
+  // call restoreState() (that rebuilds the bar and would close the flyout). The
+  // scene selection signature is style-independent, so the rAF refresh leaves an
+  // open flyout untouched mid-edit. `buildBody(fly, rebuild)` fills the flyout;
+  // `rebuild()` re-renders the body in place after a discrete change (mapper /
+  // treatment / on-off) that reveals or hides sub-controls — the flyout stays
+  // open. Slider drags must NOT call rebuild (that would destroy the live thumb).
+  const FLY = () => (cfg().sceneFlyouts || {});
+  const scenePens = (inheritLabel) => {
+    const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+    return [{ value: '', label: inheritLabel }].concat(pens.map((p) => ({ value: p.id, label: p.name || p.id })));
+  };
+  const clampNum = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const norm360 = (v) => ((Number(v) % 360) + 360) % 360;
+  // Current scene-object context for a flyout body (fresh each rebuild).
+  const sceneFlyCtx = () => {
+    const ctx = getContext();
+    const r = ctx.renderer;
+    const sel = sceneSel(ctx);
+    if (!r || !ctx.primaryLayer || !sel || sel.mode !== 'object' || !sel.objectIds.length) return null;
+    return { r, layerId: ctx.primaryLayer.id, layer: ctx.primaryLayer, ids: sel.objectIds };
+  };
+  // A label + control host row inside a flyout body.
+  const flyRow = (fly, labelText, note) => {
+    const row = el('div', 'ctxbar-fly-row');
+    const lbl = el('span', 'ctxbar-fly-label'); lbl.textContent = labelText;
+    row.appendChild(lbl);
+    const host = el('span', 'ctxbar-fly-ctl');
+    row.appendChild(host);
+    fly.appendChild(row);
+    if (note) { const n = el('div', 'ctxbar-fly-note'); n.textContent = note; fly.appendChild(n); }
+    return host;
+  };
+  const flySubhead = (fly, text) => { const h = el('div', 'ctxbar-fly-subhead'); h.textContent = text; fly.appendChild(h); };
+  const flyNote = (fly, text) => { const n = el('div', 'ctxbar-fly-note'); n.textContent = text; fly.appendChild(n); };
+
+  // Shared persistent-flyout wrapper for the scene pills.
+  const makeSceneFlyout = (label, tooltip, extraClass, buildBody) => {
+    const field = makeDropField(`ctxbar-scene-field ${extraClass || ''}`.trim(), label, tooltip);
+    const caret = field.querySelector('.ctxbar-text-caret');
+    const wrap = el('span', 'ctxbar-align-wrap ctxbar-scene-menu-wrap');
+    const fly = el('div', 'ctxbar-align-flyout ctxbar-scene-flyout', { role: 'menu', 'aria-hidden': 'true' });
+    let open = false;
+    const reposition = () => positionFlyoutForSpace(wrap, fly, caret);
+    const close = () => {
+      open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
+      field.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
+    };
+    // Re-render the body without closing (a discrete change revealed/hid a row).
+    const rebuild = () => { fly.textContent = ''; try { buildBody(fly, rebuild); } catch (_e) { /* body guarded */ } if (open) reposition(); };
+    const openFn = () => {
+      if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout(); // mutual exclusion
+      open = true; rebuild();
+      fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false');
+      field.setAttribute('aria-expanded', 'true'); state.closeFlyout = close;
+      reposition();
+    };
+    field.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open ? close() : openFn(); });
+    // Clicks inside the flyout (control interaction) must not bubble to the
+    // field's toggle or the roving-key handler.
+    fly.addEventListener('click', (e) => { e.stopPropagation(); });
+    wrap.appendChild(field); wrap.appendChild(fly);
+    return wrap;
+  };
+
+  // ── Style ▾ — fill mapper, pen, angle (hatch families), density, reset. ──
+  const buildStyleBody = (fly, rebuild) => {
+    const sc = sceneFlyCtx(); if (!sc) return;
+    const C = (FLY().style) || {};
+    const resolved = sc.r.getSceneObjectResolvedStyle(sc.layerId, sc.ids[0])
+      || { penId: null, mapper: 'none', params: {}, provenance: { scope: 'scene' } };
+    const params = resolved.params || {};
+    const mapper = resolved.mapper || 'none';
+    const write = (patch, opts) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, patch, opts);
+    UI.Select(flyRow(fly, C.mapper.label), {
+      options: C.mappers, value: mapper, ariaLabel: C.mapper.aria,
+      onChange: (v) => { write({ mapper: v, params: { ...params } }); rebuild(); },
+    });
+    UI.Select(flyRow(fly, C.pen.label), {
+      options: scenePens(C.pen.inherit), value: resolved.penId || '', ariaLabel: C.pen.aria,
+      onChange: (v) => write({ penId: v || null }),
+    });
+    if ((C.angleMappers || []).indexOf(mapper) !== -1 && UI.AngleDial) {
+      const dv = Number.isFinite(params.fillAngle) ? params.fillAngle : 45;
+      UI.AngleDial(flyRow(fly, C.angle.label), {
+        value: dv, ariaLabel: C.angle.aria, defaultValue: 45,
+        onChange: (v) => write({ params: { ...params, fillAngle: norm360(v) } }, { gesture: true, preview: true }),
+        onCommit: (v) => write({ params: { ...params, fillAngle: norm360(v) } }),
+      });
+    }
+    if ((C.fillMappers || []).indexOf(mapper) !== -1) {
+      const dv = Number.isFinite(params.fillDensity) ? params.fillDensity : 50;
+      UI.Slider(flyRow(fly, C.density.label), {
+        value: dv, min: 1, max: 100, step: 1, defaultValue: 50, ariaLabel: C.density.aria,
+        onChange: (v) => write({ params: { ...params, fillDensity: v } }, { gesture: true, preview: true }),
+        onCommit: (v) => write({ params: { ...params, fillDensity: v } }),
+      });
+    }
+    if (resolved.provenance && resolved.provenance.scope === 'object') {
+      const row = el('div', 'ctxbar-fly-row');
+      const btn = makeBtn({ label: C.reset.label, tooltip: C.reset.tooltip, onClick: () => { write(null, { clear: true }); rebuild(); } });
+      btn.classList.add('ctxbar-fly-reset');
+      row.appendChild(btn); fly.appendChild(row);
+    }
+  };
+
+  // ── Shadow ▾ — per-object cast + scene-wide sun/style/pen/density/layers. ─
+  const buildShadowBody = (fly) => {
+    const sc = sceneFlyCtx(); if (!sc) return;
+    const C = (FLY().shadow) || {};
+    const obj = sc.r.getSceneObjectRecord(sc.layerId, sc.ids[0]) || {};
+    const sp = (sc.layer.params) || {};
+    const bag = sp.shadow || {};
+    const light0 = (Array.isArray(sp.lights) && sp.lights[0]) || {};
+    const setObj = (path, value, opts) => sc.r.setSceneObjectField(sc.layerId, sc.ids, path, value, opts);
+    const setScene = (path, value, opts) => sc.r.setSceneParam(sc.layerId, path, value, opts);
+    const castVal = obj.shadow && obj.shadow.enabled === false ? 'off'
+      : (obj.shadow && obj.shadow.enabled === true ? 'on' : 'inherit');
+    UI.SegCtrl(flyRow(fly, C.cast.label), {
+      options: C.castOptions, value: castVal, ariaLabel: C.cast.aria,
+      onChange: (v) => setObj('shadow.enabled', v === 'on' ? true : (v === 'off' ? false : null)),
+    });
+    if (UI.AngleDial) {
+      const az = Number.isFinite(light0.azimuth) ? light0.azimuth : 135;
+      UI.AngleDial(flyRow(fly, C.angle.label, C.angle.note), {
+        value: az, ariaLabel: C.angle.aria, defaultValue: 135,
+        onChange: (v) => setScene('lights.0.azimuth', norm360(v), { gesture: true, preview: true }),
+        onCommit: (v) => setScene('lights.0.azimuth', norm360(v)),
+      });
+    }
+    UI.Select(flyRow(fly, C.style.label), {
+      options: C.styleOptions, value: (typeof bag.shadowLineType === 'string' ? bag.shadowLineType : 'solid'),
+      ariaLabel: C.style.aria, onChange: (v) => setScene('shadow.shadowLineType', v),
+    });
+    UI.Select(flyRow(fly, C.pen.label), {
+      options: scenePens(C.pen.inherit), value: bag.shadowPenId || '', ariaLabel: C.pen.aria,
+      onChange: (v) => setScene('shadow.shadowPenId', v || null),
+    });
+    UI.Slider(flyRow(fly, C.density.label), {
+      value: Number.isFinite(bag.shadowDensity) ? bag.shadowDensity : 50, min: 1, max: 100, step: 1,
+      defaultValue: 50, ariaLabel: C.density.aria,
+      onChange: (v) => setScene('shadow.shadowDensity', v, { gesture: true, preview: true }),
+      onCommit: (v) => setScene('shadow.shadowDensity', v),
+    });
+    const layVal = bag.shadowLayers ? String(clampNum(Math.round(bag.shadowLayerCount || 3), 2, 4)) : 'off';
+    UI.SegCtrl(flyRow(fly, C.layers.label), {
+      options: C.layerOptions, value: layVal, ariaLabel: C.layers.aria,
+      onChange: (v) => {
+        if (v === 'off') { setScene('shadow.shadowLayers', false); return; }
+        // Two writes bundled into ONE undo via the gesture flag (begin, commit).
+        setScene('shadow.shadowLayers', true, { gesture: true });
+        setScene('shadow.shadowLayerCount', parseInt(v, 10));
+      },
+    });
+  };
+
+  // ── Highlight ▾ — treatment + strength/pen, plus the Border sub-section. ──
+  const buildHighlightBody = (fly, rebuild) => {
+    const sc = sceneFlyCtx(); if (!sc) return;
+    const C = (FLY().highlight) || {};
+    const resolved = sc.r.getSceneObjectResolvedStyle(sc.layerId, sc.ids[0]) || { params: {} };
+    const params = resolved.params || {};
+    const write = (patch, opts) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, patch, opts);
+    const treatment = (C.treatments || []).some((o) => o.value === params.highlightTreatment)
+      ? params.highlightTreatment : 'blank';
+    UI.Select(flyRow(fly, C.treatment.label), {
+      options: C.treatments, value: treatment, ariaLabel: C.treatment.aria,
+      onChange: (v) => { write({ params: { ...params, highlightTreatment: v } }); rebuild(); },
+    });
+    if (treatment !== 'blank') {
+      UI.Slider(flyRow(fly, C.strength.label), {
+        value: Number.isFinite(params.highlightDensity) ? params.highlightDensity : 25, min: 1, max: 100, step: 1,
+        defaultValue: 25, ariaLabel: C.strength.aria,
+        onChange: (v) => write({ params: { ...params, highlightDensity: v } }, { gesture: true, preview: true }),
+        onCommit: (v) => write({ params: { ...params, highlightDensity: v } }),
+      });
+      UI.Select(flyRow(fly, C.pen.label), {
+        options: scenePens(C.pen.inherit), value: params.highlightPenId || '', ariaLabel: C.pen.aria,
+        onChange: (v) => write({ params: { ...params, highlightPenId: v || null } }),
+      });
+    }
+    // ── Border sub-section (the one new render feature) → obj.border.* ──
+    flySubhead(fly, C.borderHead);
+    const obj = sc.r.getSceneObjectRecord(sc.layerId, sc.ids[0]) || {};
+    const border = obj.border || {};
+    const setObj = (path, value, opts) => sc.r.setSceneObjectField(sc.layerId, sc.ids, path, value, opts);
+    UI.SegCtrl(flyRow(fly, C.border.label), {
+      options: C.onOff, value: border.enabled ? 'on' : 'off', ariaLabel: C.border.aria,
+      onChange: (v) => { setObj('border.enabled', v === 'on'); rebuild(); },
+    });
+    if (border.enabled) {
+      UI.Slider(flyRow(fly, C.borderStrength.label), {
+        value: Number.isFinite(border.strength) ? border.strength : 1, min: 0.25, max: 4, step: 0.05,
+        defaultValue: 1, ariaLabel: C.borderStrength.aria,
+        onChange: (v) => setObj('border.strength', v, { gesture: true, preview: true }),
+        onCommit: (v) => setObj('border.strength', v),
+      });
+      UI.Select(flyRow(fly, C.borderPen.label), {
+        options: scenePens(C.borderPen.inherit), value: border.penId || '', ariaLabel: C.borderPen.aria,
+        onChange: (v) => setObj('border.penId', v || null),
+      });
+    }
+  };
+
+  // ── X-ray ▾ — visibility on/off + back-face fill controls. ───────────────
+  const buildXrayBody = (fly, rebuild) => {
+    const sc = sceneFlyCtx(); if (!sc) return;
+    const C = (FLY().xray) || {};
+    const obj = sc.r.getSceneObjectRecord(sc.layerId, sc.ids[0]) || {};
+    const xrayOn = obj.visibility === 'xray';
+    const resolved = sc.r.getSceneObjectResolvedStyle(sc.layerId, sc.ids[0]) || { params: {} };
+    const params = resolved.params || {};
+    const write = (patch) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, patch);
+    const setObj = (path, value) => sc.r.setSceneObjectField(sc.layerId, sc.ids, path, value);
+    UI.SegCtrl(flyRow(fly, C.mode.label), {
+      options: C.modeOptions, value: xrayOn ? 'xray' : 'solid', ariaLabel: C.mode.aria,
+      onChange: (v) => { setObj('visibility', v); rebuild(); },
+    });
+    if (!xrayOn) { flyNote(fly, C.disabledHint); return; }
+    UI.SegCtrl(flyRow(fly, C.backFaces.label), {
+      options: C.onOff, value: params.xrayBackFaces !== false ? 'on' : 'off', ariaLabel: C.backFaces.aria,
+      onChange: (v) => write({ params: { ...params, xrayBackFaces: v === 'on' } }),
+    });
+    UI.Slider(flyRow(fly, C.backDensity.label), {
+      value: Number.isFinite(params.xrayBackDensity) ? params.xrayBackDensity : 0.4, min: 0.2, max: 1, step: 0.05,
+      defaultValue: 0.4, ariaLabel: C.backDensity.aria,
+      onChange: (v) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, { params: { ...params, xrayBackDensity: v } }, { gesture: true, preview: true }),
+      onCommit: (v) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, { params: { ...params, xrayBackDensity: v } }),
+    });
+    UI.Select(flyRow(fly, C.backLine.label), {
+      options: C.lineOptions, value: (typeof params.xrayBackLineType === 'string' ? params.xrayBackLineType : 'dashed'),
+      ariaLabel: C.backLine.aria, onChange: (v) => write({ params: { ...params, xrayBackLineType: v } }),
+    });
+    UI.Select(flyRow(fly, C.pen.label), {
+      options: scenePens(C.pen.inherit), value: params.xrayBackPenId || '', ariaLabel: C.pen.aria,
+      onChange: (v) => write({ params: { ...params, xrayBackPenId: v || null } }),
+    });
+  };
+
+  const appendSceneFlyouts = (ctx) => {
+    // Feature-detect the renderer bridges + StyleCascade; omit the pills (rather
+    // than render dead knobs) if the scene style stack isn't present.
+    const r = ctx.renderer;
+    const SC = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
+    if (!r || !SC || typeof r.setSceneObjectStyle !== 'function') return;
+    const b = B();
+    const pill = (key, builder, extraClass) => {
+      const meta = b[key] || {};
+      els.content.appendChild(makeSceneFlyout(meta.label || '', meta.tooltip || '', extraClass, builder));
+    };
+    pill('sceneStyle', buildStyleBody, 'ctxbar-scene-style');
+    pill('sceneShadow', buildShadowBody, 'ctxbar-scene-shadow');
+    pill('sceneHighlight', buildHighlightBody, 'ctxbar-scene-highlight');
+    pill('sceneXray', buildXrayBody, 'ctxbar-scene-xray');
   };
 
   const renderContext = (ctx) => {
