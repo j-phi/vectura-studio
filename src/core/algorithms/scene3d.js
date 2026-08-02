@@ -769,19 +769,27 @@
             let darkBand = false;
             if (toneOn) {
               let mx = 0; let my = 0; let mz = 0; let cnt = 0;
-              let px = 0; let py = 0; let pz = 0; let pcnt = 0;
+              // Per-sample point/spot sampling: sample the light at EACH face's
+              // own world centroid (not one region centroid) and take the region's
+              // brightest reading. A large curved object partly within a near
+              // point/spot light no longer collapses to a dark averaged-centroid
+              // band — its lit side sets the fallback spacing, matching the
+              // per-sample gradient SurfaceFill already wraps onto the surface.
+              // Directional lights ignore the world point, so every per-face
+              // reading equals intensity(meanN) ⇒ this max is byte-identical to
+              // the old single sample (position-independent regression safety).
+              let bestI = 0;
               g.faces.forEach((fi) => {
                 const face = record.faces[fi];
                 const n = face && face.normalWorld;
                 if (n) { mx += n.x; my += n.y; mz += n.z; cnt += 1; }
-                const c = faceWorldCentroid(face);
-                if (c) { px += c.x; py += c.y; pz += c.z; pcnt += 1; }
               });
               const meanN = cnt ? { x: mx / cnt, y: my / cnt, z: mz / cnt } : { x: 0, y: 0, z: 1 };
-              // Group centroid: the sample point for point/spot lights over the
-              // whole continuous region (one spacing for the region, deterministic).
-              const meanP = pcnt ? { x: px / pcnt, y: py / pcnt, z: pz / pcnt } : null;
-              const bandIdx = Regions.band(intensityFn(meanN, meanP), p.tone);
+              g.faces.forEach((fi) => {
+                const I = intensityFn(meanN, faceWorldCentroid(record.faces[fi]));
+                if (I > bestI) bestI = I;
+              });
+              const bandIdx = Regions.band(bestI, p.tone);
               // Density authoritative, tone a multiplier (Phase-1 density fix) —
               // same law as spacingBand so faceted + curved fills respond alike.
               spacing = Math.max(penWidth, hatchSpacing(sp.fillDensity) / coverageGain(bandIdx));
@@ -1108,7 +1116,9 @@
           if (!lt || lt.type === 'ambient' || lt.castShadows === false) return;
           if (lt.type === 'point' || lt.type === 'spot') {
             if (!lt.position) return;
-            Shadows.build(scene, p, bounds, clipper, null, { styleOf: shadowStyleOf, styleParams: shadowStyleParams, shadow: shadowBag, lightPosition: lt.position })
+            // Pass the full record so a spot clips its shadow to the cone and a
+            // ranged light drops casters it never reaches (point stays omni).
+            Shadows.build(scene, p, bounds, clipper, null, { styleOf: shadowStyleOf, styleParams: shadowStyleParams, shadow: shadowBag, lightPosition: lt.position, light: lt })
               .forEach((path) => out.push(path));
             return;
           }

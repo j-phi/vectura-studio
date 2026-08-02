@@ -226,21 +226,49 @@
     return record;
   };
 
+  // Shared world→screen projection (CONTRACT: ONE source of truth). Both the
+  // scene assembly below and the renderer's light gizmo (_sceneProjectWorld)
+  // route through these so the overlay and the mesh can never drift apart.
+  //
+  // buildProjOpts: camera + bounds → the projectPoint options (centre, zoom
+  // scale, resolved perspective/ortho terms). Defaults MUST match assembleScene
+  // (bounds width/height default 200) so a missing-bounds call still lands where
+  // the mesh would.
+  const buildProjOpts = (cam, bounds = {}) => {
+    const c = cam || {};
+    const width = finite(bounds.width, 200);
+    const height = finite(bounds.height, 200);
+    return {
+      centerX: width / 2,
+      centerY: height / 2,
+      scale: Math.max(0.05, finite(c.zoom, 1)),
+      ...resolveProjection({
+        projection: c.projection,
+        focalLength: c.focalLength,
+        cameraDistance: c.cameraDistance,
+      }),
+    };
+  };
+
+  // Project ONE world point to screen through `cam` + `bounds`. Returns
+  // {x,y,z} or null (non-finite input/output). Used by the renderer gizmo; the
+  // assembly hot path closes over a pre-built projOpts instead (below).
+  const projectWorldPoint = (world, cam, bounds = {}) => {
+    if (!world || !Number.isFinite(world.x) || !Number.isFinite(world.y) || !Number.isFinite(world.z)) return null;
+    if (typeof projectPoint !== 'function' || typeof rotatePoint !== 'function') return null;
+    const c = cam || {};
+    const camAngles = { yaw: finite(c.yaw, 0), pitch: finite(c.pitch, 0), roll: finite(c.roll, 0) };
+    const p = projectPoint(rotatePoint(world, camAngles), buildProjOpts(c, bounds));
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+    return { x: p.x, y: p.y, z: p.z };
+  };
+
   // p must already be normalized (Scene3D.Params.normalizeParams).
   const assembleScene = (p, bounds = {}) => {
     const width = finite(bounds.width, 200);
     const height = finite(bounds.height, 200);
     const cam = p.camera;
-    const projOpts = {
-      centerX: width / 2,
-      centerY: height / 2,
-      scale: Math.max(0.05, finite(cam.zoom, 1)),
-      ...resolveProjection({
-        projection: cam.projection,
-        focalLength: cam.focalLength,
-        cameraDistance: cam.cameraDistance,
-      }),
-    };
+    const projOpts = buildProjOpts(cam, { width, height });
     const camAngles = { yaw: cam.yaw, pitch: cam.pitch, roll: cam.roll };
     // Pinhole position along +z for the perspective front-face test (matches
     // projectPoint's denominator focal + cameraDist - z hitting zero).
@@ -277,6 +305,8 @@
     buildPrimitiveMesh,
     applyObjectTransform,
     assembleScene,
+    buildProjOpts,
+    projectWorldPoint,
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Scene: api });

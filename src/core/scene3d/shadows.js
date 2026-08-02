@@ -308,6 +308,10 @@
   //   opts.lightPosition {x,y,z} -> when set, casts a PERSPECTIVE (point/spot)
   //     shadow from that world position instead of the PARALLEL directional
   //     projection along `lightDir` (which may then be null).
+  //   opts.light {type,range,target,coneAngle,penumbra} -> optional full light
+  //     record. A SPOT casts only within its illuminated cone; any positional
+  //     light with a finite range casts nothing past that range. Absent ⇒ the
+  //     legacy omnidirectional, range-less projection (byte-identical).
   // Returns an array of emitted shadow fill paths (sceneFill / regionClass
   // 'castShadow'). Empty when there is no ground, no caster, or grazing light.
   const build = (scene, params, bounds = {}, clipper, lightDir, opts = {}) => {
@@ -324,13 +328,53 @@
     const projOpts0 = scene.projOpts || {};
     const lightPosition = opts.lightPosition;
     const positional = Boolean(lightPosition && Number.isFinite(lightPosition.y) && lightPosition.y > 0);
+    // Full light record (optional): a SPOT casts only within its illuminated
+    // cone, and a positional light with a finite `range` casts nothing past it —
+    // a caster the light never reaches drops no ground shadow. A POINT light
+    // stays omnidirectional (range only). Absent record ⇒ legacy omni behaviour
+    // (byte-identical: the existing point tests pass no record).
+    const lightRec = opts.light || null;
+    const rangeLimit = positional && lightRec ? finite(lightRec.range, 0) : 0;
+    const isSpot = positional && lightRec && lightRec.type === 'spot';
+    let spotAxis = null;
+    let spotCos = -1; // cos of the OUTER cone edge (cone + penumbra)
+    if (isSpot) {
+      const target = lightRec.target || { x: 0, y: 0, z: 0 };
+      const ax = { x: target.x - lightPosition.x, y: target.y - lightPosition.y, z: target.z - lightPosition.z };
+      const al = Math.hypot(ax.x, ax.y, ax.z) || 1;
+      spotAxis = { x: ax.x / al, y: ax.y / al, z: ax.z / al };
+      const cone = finite(lightRec.coneAngle, 30);
+      const pen = finite(lightRec.penumbra, 8);
+      spotCos = Math.cos((cone + pen) * Math.PI / 180);
+    }
+    // A world vertex casts a shadow only if the light actually reaches it: within
+    // range, and (spot only) inside the illuminated cone. Directional / omni
+    // point with no range ⇒ always true (byte-identical legacy path).
+    const vertexLit = (P) => {
+      if (rangeLimit > 0) {
+        const dx = P.x - lightPosition.x; const dy = P.y - lightPosition.y; const dz = P.z - lightPosition.z;
+        if (Math.hypot(dx, dy, dz) > rangeLimit) return false;
+      }
+      if (isSpot) {
+        const fx = P.x - lightPosition.x; const fy = P.y - lightPosition.y; const fz = P.z - lightPosition.z;
+        const fl = Math.hypot(fx, fy, fz) || 1;
+        const cosA = (fx * spotAxis.x + fy * spotAxis.y + fz * spotAxis.z) / fl;
+        if (cosA < spotCos) return false; // outside the (soft) cone → not lit → no caster contribution
+      }
+      return true;
+    };
     let projectVertex;
+    let projectVertexRaw; // ungated (ignores cone/range) — for the hatch-angle probe
     if (positional) {
-      projectVertex = (P) => projectShadowVertexPositional(P, lightPosition, camAngles0, projOpts0);
+      projectVertexRaw = (P) => projectShadowVertexPositional(P, lightPosition, camAngles0, projOpts0);
+      projectVertex = (rangeLimit > 0 || isSpot)
+        ? (P) => (vertexLit(P) ? projectVertexRaw(P) : null)
+        : projectVertexRaw;
     } else {
       const d = lightDir;
       if (!d || !Number.isFinite(d.y) || Math.abs(d.y) < MIN_ABS_DY) return out; // grazing/absent
       projectVertex = (P) => projectShadowVertex(P, d, camAngles0, projOpts0);
+      projectVertexRaw = projectVertex;
     }
 
     const groundFace = scene.ground.faces && scene.ground.faces[0];
@@ -351,8 +395,10 @@
     // on screen, measured by projecting an elevated reference point's footprint).
     let hatchAngle = clamp(finite(shadowBag.shadowAngle, SHADOW_ANGLE), 0, 360);
     if (followsLight) {
-      const hi = projectVertex({ x: 0, y: 100, z: 0 });
-      const lo = projectVertex({ x: 0, y: 0.001, z: 0 });
+      // Ungated probe: a straight-up reference point can sit outside a spot cone,
+      // and the hatch bearing must still resolve — use the raw projector.
+      const hi = projectVertexRaw({ x: 0, y: 100, z: 0 });
+      const lo = projectVertexRaw({ x: 0, y: 0.001, z: 0 });
       if (hi && lo) {
         const bx = hi.x - lo.x;
         const by = hi.y - lo.y;

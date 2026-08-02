@@ -94,16 +94,30 @@
     return t * t * (3 - 2 * t);
   };
 
-  // LINEAR distance falloff for a positional (point/spot) light:
-  //   atten = clamp(1 − dist/range, 0, 1);  range ≤ 0 ⇒ no falloff (atten 1).
+  // LINEAR distance falloff for a positional (point/spot) light, with a SOFT
+  // FLOOR tail past `range` (spec §3.2, positional-light polish):
+  //   in-range core  (lin ≥ FLOOR):  atten = clamp(1 − dist/range, 0, 1) — the
+  //                                   EXACT linear ramp (unchanged);
+  //   tail (lin < FLOOR): atten = FLOOR · (1 − smoothstep) decaying FLOOR→0 over
+  //                       an extra range·TAIL beyond the bulb's reach.
+  // Why: a plain hard clamp drops to 0 AT range, so a still-lit surface just past
+  // it collapses into the darkest tone band — visually identical to a back-face,
+  // reading as an abrupt black edge. The floor keeps a faint, monotonically
+  // decaying tone across that boundary so the transition is graceful, not a
+  // cliff. Continuity: at the crossover (lin = FLOOR) both branches return FLOOR;
+  // the tail is non-increasing, so a nearer fragment is still never darker.
   // Chosen over inverse-square deliberately: the tests (and a plotter tone ramp)
   // want a monotonic, legible near→far decay across the whole scene, not a spike
-  // that saturates near the bulb and vanishes a few mm out. MUST fall off with
-  // distance — a fragment nearer the light is always at least as bright.
+  // that saturates near the bulb and vanishes a few mm out.
+  const ATTEN_FLOOR = 0.05; // faint tone a still-lit past-range surface retains
+  const ATTEN_TAIL = 0.5;   // tail length as a fraction of range (FLOOR→0 span)
   const positionalAtten = (dist, range) => {
     const r = finite(range, 0);
     if (!(r > 0)) return 1;
-    return clamp(1 - dist / r, 0, 1);
+    const lin = 1 - dist / r;
+    if (lin >= ATTEN_FLOOR) return clamp(lin, 0, 1); // in-range core: exact linear
+    const over = clamp((dist - r) / (r * ATTEN_TAIL), 0, 1); // 0 at range → 1 at tail end
+    return ATTEN_FLOOR * (1 - over * over * (3 - 2 * over));
   };
 
   // Combined intensity of a world normal AT a world point under a LIST of lights

@@ -10,6 +10,10 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  */
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
+const normalizeVec = (v) => {
+  const len = Math.hypot(v.x, v.y, v.z) || 1;
+  return { x: v.x / len, y: v.y / len, z: v.z / len };
+};
 
 describe('Scene3D.Lighting + Regions (CONTRACT L1/L3)', () => {
   let runtime;
@@ -127,6 +131,55 @@ describe('Scene3D.Lighting + Regions (CONTRACT L1/L3)', () => {
     const iOut = Regions.combinedIntensity(nUp, outside, [spot]);
     expect(iIn).toBeGreaterThan(0.5);   // inside the cone: lit (0.75 = Lambert×atten)
     expect(iOut).toBe(0);               // outside the cone: gated to dark
+  });
+
+  test('soft falloff floor: past range is small-but-nonzero and smoothly decreasing (no cliff)', () => {
+    // Point on +z, face turned toward it (Lambert 1) so intensity == atten.
+    const nUp = { x: 0, y: 0, z: 1 };
+    const at = (z) => Regions.combinedIntensity(nUp, { x: 0, y: 0, z }, [
+      { type: 'point', intensity: 1, range: 100, position: { x: 0, y: 0, z: 200 } },
+    ]);
+    // In-range values are the EXACT linear ramp (regression: unchanged).
+    expect(near(at(150), 0.5, 1e-6)).toBe(true);   // dist 50  → 1 − 50/100
+    expect(near(at(125), 0.25, 1e-6)).toBe(true);  // dist 75  → 1 − 75/100
+    // AT the range boundary the tone no longer collapses to 0 — a small floor.
+    const atRange = at(100);                        // dist 100 == range
+    expect(atRange).toBeGreaterThan(0);
+    expect(atRange).toBeLessThan(0.1);              // subtle
+    // Just past range: still nonzero, and monotonically decreasing outward.
+    const past1 = at(80);   // dist 120
+    const past2 = at(60);   // dist 140
+    const past3 = at(0);    // dist 200 (well past the tail)
+    expect(past1).toBeGreaterThan(0);
+    expect(atRange).toBeGreaterThanOrEqual(past1);  // nearer never darker
+    expect(past1).toBeGreaterThanOrEqual(past2);
+    expect(past2).toBeGreaterThanOrEqual(past3);
+    expect(past3).toBe(0);                          // far enough → truly dark
+  });
+
+  test('soft floor does NOT touch in-range values or the range-0 (no-falloff) case', () => {
+    const nUp = { x: 0, y: 0, z: 1 };
+    // The original Phase-2 assertions must hold byte-for-byte.
+    const point = { type: 'point', intensity: 1, range: 200, position: { x: 0, y: 0, z: 100 } };
+    expect(near(Regions.combinedIntensity(nUp, { x: 0, y: 0, z: 50 }, [point]), 0.75, 1e-6)).toBe(true);
+    expect(near(Regions.combinedIntensity(nUp, { x: 0, y: 0, z: -50 }, [point]), 0.25, 1e-6)).toBe(true);
+    const noFall = { type: 'point', intensity: 1, range: 0, position: { x: 0, y: 0, z: 100 } };
+    expect(near(Regions.combinedIntensity(nUp, { x: 0, y: 0, z: -400 }, [noFall]), 1, 1e-9)).toBe(true);
+  });
+
+  test('directional/ambient intensity is INDEPENDENT of the world point (per-sample refactor guard)', () => {
+    // The curved-group per-face sampling threads a world point into combined-
+    // Intensity; directional and ambient MUST ignore it so directional scenes
+    // stay byte-identical no matter which face centroid is passed.
+    const sun = { type: 'directional', azimuth: 135, elevation: 45, intensity: 1 };
+    const amb = { type: 'ambient', intensity: 0.3 };
+    const n = normalizeVec({ x: 0.2, y: 0.9, z: 0.3 });
+    const p1 = { x: 999, y: -50, z: 12 };
+    const p2 = { x: -333, y: 400, z: -88 };
+    expect(Regions.combinedIntensity(n, p1, [sun, amb]))
+      .toBe(Regions.combinedIntensity(n, p2, [sun, amb]));
+    expect(Regions.combinedIntensity(n, null, [sun, amb]))
+      .toBe(Regions.combinedIntensity(n, p1, [sun, amb]));
   });
 
   test('band round-trip: low I → band 0, high I → top band', () => {

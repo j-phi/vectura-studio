@@ -283,6 +283,59 @@ describe('Scene3D.Shadows (CONTRACT L2/L4)', () => {
     }));
   });
 
+  // Assemble a scene lit by a single POINT/SPOT light, passing the FULL light
+  // record so the cone/range gating engages (regression: omni point tests above
+  // pass only lightPosition and must stay byte-identical).
+  const runGatedShadows = (objects, light) => {
+    const p = V.Scene3D.Params.normalizeParams({
+      ...clone(defaults), objects, ground: { enabled: true },
+      lights: [{ id: 'l', castShadows: true, ...light }],
+      camera: { projection: 'orthographic', yaw: 0, pitch: 55, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 },
+    });
+    const scene = V.Scene3D.Scene.assembleScene(p, BOUNDS);
+    const clipper = HLR.createClipper([], { bias: 0.05 });
+    const paths = Shadows.build(scene, p, BOUNDS, clipper, null, { lightPosition: p.lights[0].position, light: p.lights[0] });
+    return shadowPaths(paths);
+  };
+  const totalLen = (paths) => paths.reduce((acc, path) => {
+    let l = 0; for (let i = 1; i < path.length; i++) l += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+    return acc + l;
+  }, 0);
+
+  test('SPOT shadow respects the cone: a spot aimed AWAY casts no ground shadow', () => {
+    const box = boxObj('obj-1', 0, 20, 30);
+    // Same overhead position; only the aim (target) differs. Toward → the caster
+    // sits in the illuminated cone and drops a shadow; away → the caster is
+    // outside the cone, so the light never reaches it and it casts nothing.
+    const toward = runGatedShadows([box], {
+      type: 'spot', position: { x: 0, y: 150, z: 0 }, target: { x: 0, y: 0, z: 0 },
+      coneAngle: 20, penumbra: 5, range: 0,
+    });
+    const away = runGatedShadows([box], {
+      type: 'spot', position: { x: 0, y: 150, z: 0 }, target: { x: 320, y: 0, z: 0 },
+      coneAngle: 20, penumbra: 5, range: 0,
+    });
+    expect(toward.length).toBeGreaterThan(0); // lit → shadow present
+    expect(away.length).toBe(0);              // unlit cone side → no shadow (was full omni shadow)
+  });
+
+  test('SPOT/POINT shadow respects range: a caster beyond range casts no shadow', () => {
+    const box = boxObj('obj-1', 0, 20, 30); // box top ≈ y35, ~115mm below the bulb
+    const inRange = runGatedShadows([box], { type: 'point', position: { x: 0, y: 150, z: 0 }, range: 300 });
+    const outRange = runGatedShadows([box], { type: 'point', position: { x: 0, y: 150, z: 0 }, range: 50 });
+    expect(inRange.length).toBeGreaterThan(0); // within reach → shadow
+    expect(outRange.length).toBe(0);           // past range → the light never reaches it
+  });
+
+  test('POINT light stays omnidirectional: a caster off to the side still shadows', () => {
+    // No cone: with ample range the point light illuminates every direction, so a
+    // caster beside the light still drops a shadow (unlike the gated spot).
+    const box = boxObj('obj-1', 90, 20, 30);
+    const paths = runGatedShadows([box], { type: 'point', position: { x: 0, y: 150, z: 0 }, range: 500 });
+    expect(paths.length).toBeGreaterThan(0);
+    expect(totalLen(paths)).toBeGreaterThan(0);
+  });
+
   test('grazing light is skipped (no shadows below ~2°)', () => {
     expect(shadowPaths(runShadows([boxObj('obj-1', 0, 20)], { azimuth: 180, elevation: 0.5 })).length).toBe(0);
     expect(shadowPaths(runShadows([boxObj('obj-1', 0, 20)], { azimuth: 180, elevation: 45 })).length).toBeGreaterThan(0);

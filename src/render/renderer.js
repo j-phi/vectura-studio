@@ -11268,30 +11268,18 @@
       return this._lightById(layer, id);
     }
 
-    // Replicates Scene3D.Scene.assembleScene's projectWorld: a WORLD point →
-    // document (renderer world) coords, through the same camera the scene mesh
-    // uses. Lets the gizmo sit exactly where a positional light renders.
+    // Project a WORLD point → document (renderer world) coords through the same
+    // camera the scene mesh uses, so the gizmo sits exactly where a positional
+    // light renders. Delegates to Scene3D.Scene.projectWorldPoint — the SINGLE
+    // shared projection (buildProjOpts) that assembleScene also uses, so the
+    // overlay and the mesh cannot drift. (Was a hand-copied re-implementation.)
     _sceneProjectWorld(layer, world) {
-      const G = window.Vectura && window.Vectura.Geometry3D;
-      if (!G || typeof G.projectPoint !== 'function' || typeof G.rotatePoint !== 'function') return null;
-      if (!world || !Number.isFinite(world.x) || !Number.isFinite(world.y) || !Number.isFinite(world.z)) return null;
+      const Scene = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.Scene;
+      if (!Scene || typeof Scene.projectWorldPoint !== 'function') return null;
       const cam = (layer && layer.params && layer.params.camera) || {};
       let bounds = {};
       try { if (this.engine && this.engine.getBounds) bounds = this.engine.getBounds() || {}; } catch (_e) { bounds = {}; }
-      const width = Number(bounds.width) || 0;
-      const height = Number(bounds.height) || 0;
-      const projOpts = {
-        centerX: width / 2,
-        centerY: height / 2,
-        scale: Math.max(0.05, Number(cam.zoom) || 1),
-        ...(typeof G.resolveProjection === 'function'
-          ? G.resolveProjection({ projection: cam.projection, focalLength: cam.focalLength, cameraDistance: cam.cameraDistance })
-          : {}),
-      };
-      const camAngles = { yaw: cam.yaw || 0, pitch: cam.pitch || 0, roll: cam.roll || 0 };
-      const p = G.projectPoint(G.rotatePoint(world, camAngles), projOpts);
-      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
-      return { x: p.x, y: p.y, z: p.z };
+      return Scene.projectWorldPoint(world, cam, bounds);
     }
 
     // Gizmo geometry (doc coords) for the selected light, or null. Point/spot are

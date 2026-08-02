@@ -125,4 +125,63 @@ describe('scene3d tone (CONTRACT L3)', () => {
     expect(strip(algo.generate(clone(p), null, null, BOUNDS) || []))
       .toEqual(strip(algo.generate(clone(p), null, null, BOUNDS) || []));
   });
+
+  // ── Per-sample light on a large curved surface (positional-light polish) ─────
+  // A big sphere hatched under a NEAR point light must shade with a gradient
+  // across it, not collapse to one flat band sampled at the region centroid.
+  const BIGB = { width: 400, height: 300, penWidth: 0.3 };
+  const litSphere = (light) => {
+    const p = clone(defaults);
+    p.objects = [{
+      id: 'ball', name: 'Ball', primitive: 'sphere', params: { radius: 90, detail: 20 },
+      transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+    }];
+    p.ground = { enabled: false };
+    p.camera = { projection: 'orthographic', yaw: 0, pitch: 0, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
+    p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 60 } }, byObject: {}, byFace: {} };
+    p.tone = clone(defaults).tone;
+    p.lights = [light];
+    return p;
+  };
+  const pointAt = (x, y, z, range = 260) => ({ id: 'pt', type: 'point', intensity: 1, range, position: { x, y, z } });
+
+  test('per-sample: a near point light shades a large sphere position-dependently (not one flat band)', () => {
+    const left = fills(algo.generate(litSphere(pointAt(-140, 0, 90)), null, null, BIGB) || []);
+    const right = fills(algo.generate(litSphere(pointAt(140, 0, 90)), null, null, BIGB) || []);
+    expect(left.length).toBeGreaterThan(0);
+    // Same sphere + same light, mirrored to the other side ⇒ the wrap fill is NOT
+    // byte-identical: the shading tracks the light's world position per sample.
+    expect(strip(left)).not.toEqual(strip(right));
+  });
+
+  test('per-sample fallback band: the LIT side of a curved region sets the spacing, not the dark centroid', () => {
+    // Force the flat-hatch fallback (SurfaceFill null) so the scene3d.js band —
+    // the code path that used a single region centroid — is exercised directly.
+    const save = V.Scene3D.SurfaceFill.buildObject;
+    V.Scene3D.SurfaceFill.buildObject = () => null;
+    try {
+      const len = (light) => fills(algo.generate(litSphere(light), null, null, BIGB) || [])
+        .reduce((acc, path) => acc + path.length, 0);
+      const side = len(pointAt(160, 0, 60));   // part of the region is well lit
+      const behind = len(pointAt(0, 0, -160));  // light behind ⇒ front face unlit
+      expect(side).toBeGreaterThan(0);
+      // The lit side reaches a denser (brighter) band; the old averaged-centroid
+      // sample washed both to the same dark band (side === behind).
+      expect(side).toBeGreaterThan(behind);
+    } finally {
+      V.Scene3D.SurfaceFill.buildObject = save;
+    }
+  });
+
+  test('directional light: the curved fill is byte-identical when only the world SAMPLE could differ', () => {
+    // Directional lights ignore the per-sample world point, so the refactor from
+    // a single centroid to per-face sampling cannot change a directional scene.
+    // (The exact math is pinned in scene3d-lighting.test.js.) Determinism here
+    // guards the wiring: same directional scene → same wrap fill, twice.
+    const dir = { id: 'sun', type: 'directional', azimuth: 200, elevation: 55, castShadows: false };
+    const a = fills(algo.generate(litSphere(dir), null, null, BIGB) || []);
+    const b = fills(algo.generate(litSphere(dir), null, null, BIGB) || []);
+    expect(a.length).toBeGreaterThan(0);
+    expect(strip(a)).toEqual(strip(b));
+  });
 });

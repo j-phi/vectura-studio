@@ -274,6 +274,19 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   like crosshatch is gone.
 
 ### Fixed
+- **3D Scene — positional-light polish (spot shadows, soft range, per-sample
+  curves).** Four refinements to point/spot lights: (1) a **spot** now casts a
+  ground shadow only within its illuminated cone and drops casters beyond its
+  range — no more full point-shaped shadow flung out the unlit side (a point
+  light stays omnidirectional); (2) a **soft falloff floor** replaces the hard
+  cut at `range` with a small smoothstep tail, so a still-lit surface just past
+  the range fades gracefully instead of snapping to a black back-face edge;
+  (3) a **large curved object under a near point/spot light** now shades with a
+  gradient across its surface rather than one flat band sampled at the region
+  centroid; and (4) the renderer's light-gizmo projection now reuses the shared
+  `Scene3D.Scene.projectWorldPoint` (the same `buildProjOpts` the mesh assembly
+  uses), so the gizmo and the mesh can no longer drift. Directional/ambient
+  scenes are byte-identical.
 - **3D Scene — cleaner, more robust cast shadows (convex-hull model).** Each
   caster's ground footprint is now the 2D convex hull of its above-ground
   vertices projected along the light (the light-lab reference model), instead of

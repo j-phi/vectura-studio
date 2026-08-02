@@ -174,6 +174,34 @@ describe('3D Scene Studio 1b — selected-light 3-axis translate gizmo', () => {
     expect(renderer._sceneLightGizmoDrag).toBeNull(); // restore does NOT start a drag
   });
 
+  test('projection consolidation: Scene.projectWorldPoint == assembleScene.projectWorld (drift pin)', async () => {
+    // The renderer gizmo's _sceneProjectWorld now delegates to the SAME shared
+    // Scene.projectWorldPoint the mesh assembly uses (buildProjOpts). Pin that
+    // the shared helper reproduces assembleScene's own projectWorld exactly, so
+    // the two projections can never silently drift apart again.
+    runtime = await loadVecturaRuntime({ includeRenderer: true });
+    const V = runtime.window.Vectura;
+    const worlds = [
+      { x: 120, y: 200, z: 120 }, { x: 0, y: 0, z: 0 },
+      { x: -88, y: 33, z: 210 }, { x: 300, y: -40, z: -150 },
+    ];
+    ['orthographic', 'perspective'].forEach((projection) => {
+      const raw = makeSceneParams();
+      raw.camera = { ...raw.camera, projection, yaw: 22, pitch: -18, roll: 7, zoom: 1.4 };
+      const p = V.Scene3D.Params.normalizeParams(raw);
+      const bounds = { width: 320, height: 240, penWidth: 0.3 };
+      const scene = V.Scene3D.Scene.assembleScene(p, bounds);
+      worlds.forEach((w) => {
+        const a = scene.projectWorld(w);
+        const b = V.Scene3D.Scene.projectWorldPoint(w, p.camera, bounds);
+        expect(b).toBeTruthy();
+        expect(b.x).toBeCloseTo(a.x, 9);
+        expect(b.y).toBeCloseTo(a.y, 9);
+        expect(b.z).toBeCloseTo(a.z, 9);
+      });
+    });
+  });
+
   test('restoreSceneLight resets a directional sun to az135/el45', async () => {
     const { renderer, scene } = await setup();
     scene.params.lights[0].azimuth = 12;
