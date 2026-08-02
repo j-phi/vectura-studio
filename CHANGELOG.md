@@ -13,6 +13,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   Scale. Legacy uniform scale is byte-identical.
 
 ### Fixed
+- **3D Scene — cast shadows stay anchored during orbit; no stray canvas-wide lines.**
+  The draft/preview shadow path skipped the ground clip, so at a low sun its hatch ran
+  the full canvas along the light ray and the footprint swam as the camera orbited.
+  The draft path now analytically clips each footprint to the ground quad (cheap
+  Sutherland–Hodgman convex clip — no boolean, orbit stays responsive), and the shadow
+  hatch angle/spacing are derived in the world ground plane instead of screen space, so
+  the fill stays glued to the ground and rotates rigidly with it.
 - **3D Scene — no phantom sun on a lightless scene.** With the sun/all lights removed,
   the interactive sun handle no longer draws or accepts hits.
 - **3D Scene — Tone/Highlight controls now actually work.** Curved (sphere/torus/…)

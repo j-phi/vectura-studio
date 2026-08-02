@@ -187,6 +187,50 @@
     return hull.length >= 3 ? hull : null;
   };
 
+  // Cheap analytic clip of a subject polygon against a CONVEX clip polygon
+  // (Sutherland–Hodgman). Used by the DRAFT shadow path ONLY, to bound each
+  // caster hull to the finite ground quad before hatching — no FillBoolean, so
+  // orbit responsiveness stays intact (CONTRACT L4). A projected ground plane is
+  // a convex quad, so the clip is exact; a convex hull ∩ convex quad is convex.
+  const clipPolyToConvex = (subject, clip) => {
+    if (!Array.isArray(subject) || subject.length < 3 || !Array.isArray(clip) || clip.length < 3) return subject;
+    // Clip-polygon orientation → which side of each edge is "inside".
+    let area = 0;
+    for (let i = 0, j = clip.length - 1; i < clip.length; j = i++) {
+      area += clip[j].x * clip[i].y - clip[i].x * clip[j].y;
+    }
+    const sign = area >= 0 ? 1 : -1;
+    let output = subject.map((p) => ({ x: p.x, y: p.y }));
+    for (let e = 0, f = clip.length - 1; e < clip.length; f = e++) {
+      if (!output.length) break;
+      const A = clip[f]; const B = clip[e];
+      const ex = B.x - A.x; const ey = B.y - A.y;
+      const inside = (p) => sign * (ex * (p.y - A.y) - ey * (p.x - A.x)) >= -1e-9;
+      const intersect = (p, q) => {
+        const dpx = q.x - p.x; const dpy = q.y - p.y;
+        const denom = ex * dpy - ey * dpx;
+        if (Math.abs(denom) < 1e-12) return { x: q.x, y: q.y };
+        const t = -(ex * (p.y - A.y) - ey * (p.x - A.x)) / denom;
+        return { x: p.x + t * dpx, y: p.y + t * dpy };
+      };
+      const input = output;
+      output = [];
+      for (let i = 0; i < input.length; i++) {
+        const cur = input[i];
+        const prev = input[(i + input.length - 1) % input.length];
+        const curIn = inside(cur);
+        const prevIn = inside(prev);
+        if (curIn) {
+          if (!prevIn) output.push(intersect(prev, cur));
+          output.push({ x: cur.x, y: cur.y });
+        } else if (prevIn) {
+          output.push(intersect(prev, cur));
+        }
+      }
+    }
+    return output;
+  };
+
   // Density (1..100) → coverage (0.02..1) → spacing. 50 maps to the legacy
   // coverage 0.5, so a default shadow bag reproduces the pre-Phase-5 spacing.
   const densityToCoverage = (density) => clamp(finite(density, 50) / 100, 0.02, 1);
@@ -390,21 +434,37 @@
     const coverage = shadowBag.shadowDensity != null
       ? densityToCoverage(shadowBag.shadowDensity) : SHADOW_COVERAGE;
     const followsLight = shadowBag.shadowAngleFollowsLight === true;
-    // Hatch orientation: the explicit angle, or — when the follow-light flag is
-    // set — perpendicular to the light bearing (the direction the shadow extends
-    // on screen, measured by projecting an elevated reference point's footprint).
-    let hatchAngle = clamp(finite(shadowBag.shadowAngle, SHADOW_ANGLE), 0, 360);
+    // Hatch orientation is CAMERA-INDEPENDENT: we pick a direction in the WORLD
+    // ground plane (y = 0) and project it to a screen bearing ONCE per frame.
+    // Anchoring to the ground (not the screen) keeps the fill texture glued to
+    // the plate as the camera orbits — a fixed SCREEN angle would slide the hatch
+    // across the footprint every frame (the "swim" bug, fix-map #1).
+    const projectGroundDir = (wx, wz) => {
+      const o = projectPoint(rotatePoint({ x: 0, y: 0, z: 0 }, camAngles0), projOpts0);
+      const p = projectPoint(rotatePoint({ x: wx, y: 0, z: wz }, camAngles0), projOpts0);
+      if (!o || !p || !Number.isFinite(o.x) || !Number.isFinite(p.x)) return null;
+      const bx = p.x - o.x; const by = p.y - o.y;
+      if (!(Math.hypot(bx, by) > 1e-6)) return null;
+      return Math.atan2(by, bx) * 180 / Math.PI;
+    };
+    // World-space hatch direction: perpendicular to the light's horizontal travel
+    // when follow-light is set (the shadow extends along that travel dir), else
+    // the explicit shadow angle read as a bearing in the ground XZ plane.
+    let worldDirX; let worldDirZ;
     if (followsLight) {
-      // Ungated probe: a straight-up reference point can sit outside a spot cone,
-      // and the hatch bearing must still resolve — use the raw projector.
-      const hi = projectVertexRaw({ x: 0, y: 100, z: 0 });
-      const lo = projectVertexRaw({ x: 0, y: 0.001, z: 0 });
-      if (hi && lo) {
-        const bx = hi.x - lo.x;
-        const by = hi.y - lo.y;
-        if (Math.hypot(bx, by) > 1e-6) hatchAngle = Math.atan2(by, bx) * 180 / Math.PI + 90;
-      }
+      let hx; let hz;
+      if (positional) { hx = -lightPosition.x; hz = -lightPosition.z; }
+      else { hx = lightDir ? lightDir.x : 0; hz = lightDir ? lightDir.z : 0; }
+      const hl = Math.hypot(hx, hz);
+      if (hl > 1e-9) { worldDirX = -hz / hl; worldDirZ = hx / hl; }
+      else { worldDirX = 1; worldDirZ = 0; }
+    } else {
+      const th = clamp(finite(shadowBag.shadowAngle, SHADOW_ANGLE), 0, 360) * Math.PI / 180;
+      worldDirX = Math.cos(th); worldDirZ = Math.sin(th);
     }
+    let hatchAngle = clamp(finite(shadowBag.shadowAngle, SHADOW_ANGLE), 0, 360);
+    const projectedAngle = projectGroundDir(worldDirX * 100, worldDirZ * 100);
+    if (projectedAngle != null) hatchAngle = projectedAngle;
     // An AREA light casts a SOFTER shadow: it always uses the Phase-5 nested
     // penumbra build-up (densest core, fading rim) even when the scene shadow
     // bag leaves layers off — that is what makes a soft light read as soft. A
@@ -447,11 +507,21 @@
     if (!casters.length) return out;
 
     // ── Draft (CONTRACT L4): NO booleans. Flat per-caster face tints. ──────────
+    // Each hull is CHEAPLY clipped to the finite ground quad (Sutherland–Hodgman,
+    // no FillBoolean) so a low sun can't throw the hull's hatch off the plate and
+    // across the whole viewport, and the draft footprint matches the settled
+    // one's extent as the camera orbits (fix-map #2).
     if (bounds && bounds.fastPreview) {
+      const groundRing = groundFace && Array.isArray(groundFace.polygon)
+        ? groundFace.polygon.filter(isFinitePt).map((pt) => ({ x: pt.x, y: pt.y }))
+        : null;
+      const groundClipReady = groundRing && groundRing.length >= 3;
       casters.forEach((caster) => {
         caster.rings.forEach((ring) => {
-          emitShadowRegion([ring], groundPlane, clipper, out,
-            shadowMeta([ring], caster.id, penFor(caster.penId), groundDepth), shadowTreat, draftFrame, cfg);
+          const clipped = groundClipReady ? clipPolyToConvex(ring, groundRing) : ring;
+          if (!Array.isArray(clipped) || clipped.length < 3) return;
+          emitShadowRegion([clipped], groundPlane, clipper, out,
+            shadowMeta([clipped], caster.id, penFor(caster.penId), groundDepth), shadowTreat, draftFrame, cfg);
         });
       });
       return out;
