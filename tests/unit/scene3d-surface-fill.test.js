@@ -83,4 +83,35 @@ describe('Scene3D.SurfaceFill — curved fills wrap the form (D/I/F)', () => {
     const b = JSON.stringify(fills(algo.generate(sphereScene('hatch', null, true), null, null, BOUNDS) || []));
     expect(a).toBe(b);
   });
+
+  // ── Items 1+2 (fix-map): SurfaceFill consumes the TONE LADDER, not a purely
+  // geometric (i+0.5)/count dither. Band COUNT + coverage + specular now steer
+  // the curved fill. ─────────────────────────────────────────────────────────
+  const SUN = { id: 'sun', type: 'directional', azimuth: 200, elevation: 55, castShadows: false };
+  const toneToned = (mapper, tone) => { const p = sphereScene(mapper, SUN, true); p.tone = tone; return p; };
+  const totalPts = (paths) => paths.reduce((acc, pp) => acc + pp.length, 0);
+  const bands2 = { enabled: true, bands: 2, thresholds: [0.5], ladder: [0.25, 0.75], specular: { enabled: false, size: 0 } };
+  const bands4 = { enabled: true, bands: 4, thresholds: [0.25, 0.5, 0.75], ladder: [0.125, 0.375, 0.625, 0.875], specular: { enabled: false, size: 0 } };
+
+  test('tone BAND COUNT changes the curved fill: Bands 2 ≠ Bands 4 (ladder consumed)', () => {
+    const b2 = fills(algo.generate(toneToned('hatch', bands2), null, null, BOUNDS) || []);
+    const b4 = fills(algo.generate(toneToned('hatch', bands4), null, null, BOUNDS) || []);
+    expect(b2.length).toBeGreaterThan(0);
+    expect(b4.length).toBeGreaterThan(0);
+    // A geometric (i+0.5)/count dither ignores band count → identical. Consuming
+    // the ladder makes the two band counts quantize the surface differently.
+    expect(totalPts(b2)).not.toBe(totalPts(b4));
+  });
+
+  test('specular toggle changes the curved fill (gates the blank glint cap)', () => {
+    // Low top threshold so the lit cap reliably reaches the brightest band.
+    const on = { enabled: true, bands: 3, thresholds: [0.2, 0.4], ladder: [0.2, 0.5, 0.85], specular: { enabled: true, size: 2 } };
+    const off = { ...on, specular: { enabled: false, size: 0 } };
+    const a = fills(algo.generate(toneToned('hatch', on), null, null, BOUNDS) || []);
+    const b = fills(algo.generate(toneToned('hatch', off), null, null, BOUNDS) || []);
+    expect(b.length).toBeGreaterThan(0);
+    // Specular ON blanks/sparsens the brightest band → fewer plotted points than
+    // OFF (bright reads LIGHTER, not denser — the "dark specular" fix).
+    expect(totalPts(a)).toBeLessThan(totalPts(b));
+  });
 });

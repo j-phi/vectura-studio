@@ -92,6 +92,21 @@ describe('Scene3D highlight treatments (Phase 4)', () => {
     expect(sparse).toBeLessThan(keep);
   });
 
+  // ── Item 2 (fix-map): `keep` is no longer a no-op indistinguishable from full
+  // hatch — the highlight-band lines render on the highlight CHANNEL (tagged +
+  // highlight pen), so keep is visibly a highlight, not plain hatch. ──────────
+  test('keep: highlight-band lines render on the highlight channel (distinguishable from full hatch)', () => {
+    const keep = hlFills(gen('sphere', { highlightTreatment: 'keep' }));
+    const blank = hlFills(gen('sphere', { highlightTreatment: 'blank' }));
+    // keep now emits highlight-tagged fills; a plain full-hatch surface (blank,
+    // which drops the band) emits none — so the two are distinguishable.
+    expect(keep.length).toBeGreaterThan(0);
+    expect(blank.length).toBe(0);
+    // keep still keeps the lines (no fewer total fills than the blank drop).
+    expect(fills(gen('sphere', { highlightTreatment: 'keep' })).length)
+      .toBeGreaterThan(fills(gen('sphere', { highlightTreatment: 'blank' })).length);
+  });
+
   test('altFill: fills the highlight sub-region with the alternate mapper', () => {
     const alt = hlFills(gen('sphere', { highlightTreatment: 'altFill', altFillMapper: 'stipple' }));
     expect(alt.length).toBeGreaterThan(0);

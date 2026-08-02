@@ -955,6 +955,12 @@
                 dotSize: Number.isFinite(sp.dotSize) ? clamp(sp.dotSize, 0.1, 3) : undefined,
                 toneOn,
                 intensityFn,
+                // Pass the tone LADDER so SurfaceFill quantizes each sample into
+                // band → coverage (not a purely geometric (i+0.5)/count dither):
+                // band count, thresholds, coverage ladder, and the specular glint
+                // cap all steer the curved fill (items 1+2). Directionally the
+                // fill stays dark→dense / bright→sparse (blank cap = highlight).
+                tone: p.tone,
                 xray: (grpXray && grpXray.backFaces)
                   ? { backFaces: true, backDensity: grpXray.backDensity } : null,
                 highlight: hlActive ? {
@@ -1027,8 +1033,12 @@
             // Highlight-band runs (dashed/dotted treatments) carry their own
             // dash line type + optional highlight pen and are tagged so the
             // renderer/tests can find them.
+            // dashed/dotted stamp their dash line type; 'keep' stays SOLID (it
+            // keeps the lines, just on the highlight channel/pen). Others (sparse/
+            // stippleOut) keep the group's line type too.
+            const hlDash = grpHL.treatment === 'dashed' || grpHL.treatment === 'dotted';
             const hlTreat = hlActive
-              ? strokeTreatment({ ...sp, lineType: hlLineType(grpHL.treatment), wobble: 0, overstroke: false })
+              ? strokeTreatment({ ...sp, ...(hlDash ? { lineType: hlLineType(grpHL.treatment) } : {}), wobble: 0, overstroke: false })
               : NO_STROKE_TREATMENT;
             const hlMeta = {
               algorithm: 'scene3d',

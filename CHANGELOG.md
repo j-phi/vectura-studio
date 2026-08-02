@@ -7,6 +7,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Fixed
+- **3D Scene — Tone/Highlight controls now actually work.** Curved (sphere/torus/…)
+  fills previously ignored the tone ladder entirely, so Bands 2 vs 4 looked identical,
+  Specular did nothing, and the "highlight" read as a dark band. SurfaceFill now
+  consumes `tone` — each sample is quantized by band and the band's coverage sets the
+  line density (dark = dense, bright = sparse), so band count, thresholds, coverage,
+  and the Specular toggle/size all drive the fill. Highlight "keep" now renders on a
+  distinct channel instead of matching the base hatch.
+- **3D Scene — tone/shading sliders update live.** Dragging a Tone threshold/coverage/
+  specular slider showed a static flat-diagonal preview and only rendered the real
+  toned wrap on release (the draft path disables tone). Those sliders now regenerate at
+  full quality each frame, so the shaded sphere updates continuously; geometry sliders
+  keep the cheap draft.
 - **3D Scene — Spiral fill works on all primitives.** The Spiral mapper rendered as
   vertical stripes on superellipsoid/cylinder/capsule/pyramid because those charts
   sample their `(u,v)` axes transposed vs the sphere convention, so the helix wound

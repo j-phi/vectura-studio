@@ -104,6 +104,43 @@
     const intensityFn = opts.intensityFn || null;
     const EPS = 1e-3;
 
+    // ── Tone LADDER consumption (items 1+2). The old dither compared the local
+    // shade (1 − I) to a purely geometric per-line rank (i+0.5)/count, so the
+    // curved fill ignored band count / thresholds / coverage / specular. Now
+    // each sample's intensity I is quantized into a band (Regions.band) and the
+    // band's authored coverage sets how many of the N lines draw there.
+    //
+    // Direction: SurfaceFill renders dark→dense, bright→sparse (the blank cap IS
+    // the highlight — the retired specular disc). The ladder is authored dark→
+    // light and Regions.band gives bright = HIGH index, so we read the coverage
+    // for the COMPLEMENT band: the darkest surface gets the ladder's high-coverage
+    // end (dense), the lit cap the low end (near-blank). Band COUNT (ladder
+    // length) therefore changes the number of tone steps, and each Coverage
+    // slider scales its band's line density.
+    const Regions = Vectura.Scene3D && Vectura.Scene3D.Regions;
+    const tone = opts.tone || null;
+    const ladderLen = tone && Array.isArray(tone.ladder)
+      ? tone.ladder.filter((c) => Number.isFinite(c)).length : 0;
+    const useLadder = Boolean(toneOn && tone && Regions
+      && typeof Regions.band === 'function' && typeof Regions.coverageFor === 'function'
+      && ladderLen >= 1);
+    // Specular: when enabled, the BRIGHTEST band is further sparsened/blanked to
+    // read as a distinct glint cap, scaled by size (bigger size → blanker). When
+    // disabled it keeps the ladder coverage. This is the live wiring of the Tone
+    // section's Specular On/Off + size (they were previously dead), and doubles
+    // as the "dark specular" fix — the bright band reads LIGHTER, never denser.
+    const specOn = Boolean(useLadder && tone.specular && tone.specular.enabled !== false);
+    const specSize = specOn ? clamp(finite(tone.specular.size, 1), 0, 3) : 0;
+    const nB = ladderLen;
+    // Ink line-fraction (0..1) for a sample: how many of the N wrap lines draw at
+    // this local intensity. Dark → high, lit cap → low.
+    const coverageForSample = (I) => {
+      const b = Regions.band(I, tone);            // 0..nB-1, bright = HIGH
+      let cov = Regions.coverageFor(nB - 1 - b, tone); // complement → dark = dense
+      if (specOn && b === nB - 1) cov *= clamp(1 - 0.5 * specSize, 0, 1); // glint cap
+      return clamp(cov, 0, 1);
+    };
+
     // Sample the surface at (a,b) → screen point + front flag + Lambert intensity.
     const sampleAt = (a, b) => {
       const aa = clamp(a, 0, 1);
@@ -185,12 +222,20 @@
         if (!smp || smp.front !== wantFront) { flush(); flushHL(); continue; }
         if (toneOn) {
           const shade = clamp(1 - smp.I, 0, 1);
-          if (shade < threshold) {
+          // `threshold` is this line's ordered-dither rank (i+0.5)/count. With the
+          // ladder, the sample draws where the rank is below the band's coverage
+          // (dark bands cover more ranks → dense; the lit cap covers few → sparse).
+          // Without a ladder (other callers) it degrades to the legacy shade<rank.
+          const dropZone = useLadder ? (threshold >= coverageForSample(smp.I)) : (shade < threshold);
+          if (dropZone) {
             // Ordered-dither drop zone. Legacy (no highlight, or not the
             // highlight band): drop = bare paper (byte-identical to pre-Phase-4).
             if (!hl || !hlIsHL(smp.I)) { flush(); flushHL(); continue; }
             const t = hl.treatment;
-            if (t === 'keep') { flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); continue; }
+            // keep: re-emit the highlight-band lines on the highlight CHANNEL
+            // (tagged + highlight pen) instead of the base run, so keep is a
+            // VISIBLE highlight — not indistinguishable from plain full hatch.
+            if (t === 'keep') { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); continue; }
             if (t === 'dashed' || t === 'dotted') { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); continue; }
             if (t === 'sparse') {
               if (!lineKept) { flush(); flushHL(); continue; }

@@ -417,14 +417,21 @@
     // regen on release. `apply(v)` performs the mutation only — history/store/
     // regen are owned here. Double-click reset (Jay feedback #4) rides the same
     // path: UI.Slider fires onChange+onCommit with the slider's defaultValue.
-    const liveSlider = (apply) => {
+    const liveSlider = (apply, opts) => {
       const g = { active: false, raf: 0 };
       const hasRaf = typeof requestAnimationFrame === 'function';
+      // Tone/shading/highlight edits do NOT move geometry, so their live-drag
+      // flush routes through a FULL regen (the real toned surface wrap) instead
+      // of the draft/fastPreview regen — the draft path forces scene3d draft=true,
+      // which disables tone + nulls chartParams and falls back to flat diagonal
+      // hatchSegments (the "static diagonal lines" bug). Geometry sliders keep
+      // regenDraft() so a transform drag stays cheap/responsive.
+      const flushRegen = (opts && opts.full) ? regen : regenDraft;
       const flushDraft = () => {
         if (g.raf) return;
         g.raf = hasRaf
-          ? requestAnimationFrame(() => { g.raf = 0; store(); regenDraft(); })
-          : setTimeout(() => { g.raf = 0; store(); regenDraft(); }, 16);
+          ? requestAnimationFrame(() => { g.raf = 0; store(); flushRegen(); })
+          : setTimeout(() => { g.raf = 0; store(); flushRegen(); }, 16);
       };
       return {
         onChange: (v) => {
@@ -442,6 +449,10 @@
         },
       };
     };
+
+    // Live-drag variant for TONE / shading edits: full-regen each rAF so the
+    // toned surface wrap updates live under the pointer (item 3 fix-map).
+    const liveSliderFull = (apply) => liveSlider(apply, { full: true });
 
     // Panel-local selection (mirrors renderer.sceneSelection when CONTRACT D
     // exists; standalone otherwise).
@@ -2450,7 +2461,7 @@
       thr.forEach((_, i) => {
         // Live preview clamps to neighbors every frame; the neighbor re-render
         // (renderTone) only runs on release so it can't tear down an active drag.
-        const live = liveSlider((v) => {
+        const live = liveSliderFull((v) => {
           const t = ensureTone();
           const lo = i > 0 ? t.thresholds[i - 1] + 0.01 : 0.01;
           const hi = i < t.thresholds.length - 1 ? t.thresholds[i + 1] - 0.01 : 0.99;
@@ -2474,7 +2485,7 @@
           min: 0, max: 1, step: 0.01,
           defaultValue: Number.isFinite(defLadder[i]) ? defLadder[i] : (i + 0.5) / tone.bands,
           ariaLabel: `Tone coverage ${i + 1}`,
-          ...liveSlider((v) => { ensureTone().ladder[i] = Math.min(Math.max(v, 0), 1); }),
+          ...liveSliderFull((v) => { ensureTone().ladder[i] = Math.min(Math.max(v, 0), 1); }),
         });
       });
 
@@ -2504,7 +2515,7 @@
           min: 0.2, max: 3, step: 0.1,
           defaultValue: 1,
           ariaLabel: 'Specular size',
-          ...liveSlider((v) => { ensureTone().specular.size = v; }),
+          ...liveSliderFull((v) => { ensureTone().specular.size = v; }),
         });
       }
     };

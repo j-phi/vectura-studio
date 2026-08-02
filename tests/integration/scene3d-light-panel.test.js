@@ -170,6 +170,50 @@ describe('Scene3D panel — Light + tone (Phase 2, vs3-)', () => {
     expect(container.querySelector('input.ctrl-slider[aria-label="Specular size"]')).toBeFalsy();
   });
 
+  // ── Item 3 (fix-map): live-update. Tone/shading sliders don't move geometry,
+  // so their live-drag flush must route through a FULL regen (the toned wrap) —
+  // NOT the draft/fastPreview regen that forces flat diagonal hatch mid-drag.
+  // Geometry sliders keep the cheap draft. ────────────────────────────────────
+  test('dragging a Tone threshold live-updates via a FULL regen, not a draft preview', () => {
+    const { container, regen } = mount();
+    // Make the flush synchronous so we can observe the drag frame.
+    const realRaf = window.requestAnimationFrame;
+    window.requestAnimationFrame = (cb) => { cb(); return 0; };
+    try {
+      const t1 = container.querySelector('input.ctrl-slider[aria-label="Tone threshold 1"]');
+      expect(t1).toBeTruthy();
+      regen.mockClear();
+      // Fire ONLY 'input' (a drag frame, no commit yet).
+      t1.value = '0.4';
+      fire(t1, 'input');
+      expect(regen).toHaveBeenCalled();
+      // Every drag-frame regen for a tone edit is FULL (no {preview:true}).
+      expect(regen.mock.calls.every((c) => !(c[0] && c[0].preview === true))).toBe(true);
+    } finally {
+      window.requestAnimationFrame = realRaf;
+    }
+  });
+
+  test('dragging a GEOMETRY slider still uses the cheap draft preview (regression fence)', () => {
+    const { container, regen } = mount({ objects: [fixtureObject(1)] });
+    // Select the object so the inspector (Position sliders) renders.
+    fire(container.querySelector('.vs3-tree-row[data-object-id="obj-1"]'), 'click');
+    const realRaf = window.requestAnimationFrame;
+    window.requestAnimationFrame = (cb) => { cb(); return 0; };
+    try {
+      const px = container.querySelector('input.ctrl-slider[aria-label="Position X (mm)"]');
+      expect(px).toBeTruthy();
+      regen.mockClear();
+      px.value = '20';
+      fire(px, 'input');
+      expect(regen).toHaveBeenCalled();
+      // Geometry moves → draft preview (fastPreview) is still used mid-drag.
+      expect(regen.mock.calls.some((c) => c[0] && c[0].preview === true)).toBe(true);
+    } finally {
+      window.requestAnimationFrame = realRaf;
+    }
+  });
+
   test('"+ Point" adds a point light, selects it, and shows Position + Range controls', () => {
     const { container, layer, pushHistory } = mount();
     const before = layer.params.lights.length;
