@@ -21,6 +21,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   unchanged.
 
 ### Fixed
+- **3D Scene — non-planar occluders no longer leak hidden geometry.** Hidden-line
+  removal now fan-triangulates any occluder face whose vertices are non-planar
+  (n-gon faces from solids, CSG fragments, or imported meshes) so each occluder
+  clips on its exact support plane instead of tripping the whole clipper into the
+  coarse depth-buffer fallback. Planar/triangle/box scenes are byte-identical (the
+  fix only activates on genuinely non-planar occluders).
 - **3D Scene — faceted and curved surfaces now shade the same direction.** Flat faces
   shaded bright=dense while curved surfaces shaded bright=sparse, so a cube and a sphere
   in one scene read inverted. Both now shade dark=dense / bright=sparse (a regression test

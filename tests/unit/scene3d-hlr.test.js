@@ -147,6 +147,70 @@ describe('scene3d flat-face HLR', () => {
       expect(maxX).toBeGreaterThan(95);
     });
 
+    test('a non-planar occluder is fan-triangulated, keeping the exact clip path (F-05)', () => {
+      // A non-triangle occluder face (a solid/polyhedron n-gon, an imported mesh
+      // polygon, or a CSG fragment) can be non-planar in screen+depth space. The
+      // OLD behaviour flipped the WHOLE clipper to the owner-aware depth buffer,
+      // whose per-cell depth is too coarse to resolve one curved object occluding
+      // another → cross-object peek-through. buildOccluders must instead split the
+      // non-planar face into planar triangles so the exact support-plane path is
+      // retained for the entire scene.
+      const nonPlanarQuad = {
+        id: 'C/face:0',
+        objectId: 'C',
+        polygon: [
+          { x: 0, y: 0, z: 0 },
+          { x: 100, y: 0, z: 0 },
+          { x: 100, y: 100, z: 40 }, // lifts one corner → not affine in (x,y,z)
+          { x: 0, y: 100, z: 0 },
+        ],
+      };
+      // Sanity: this quad really is non-planar past the tolerance.
+      expect(HLR.fitSupportPlane(nonPlanarQuad.polygon).residual)
+        .toBeGreaterThan(HLR.PLANAR_RESIDUAL_TOL);
+
+      const built = HLR.buildOccluders([nonPlanarQuad]);
+      // No ambiguity flag → no coarse depth-buffer fallback.
+      expect(built.ambiguous).toBe(false);
+      // Fan-split into planar triangles (2 for a quad), each an exact plane.
+      expect(built.occluders.length).toBe(2);
+      built.occluders.forEach((occ) => {
+        expect(occ.id).toBe('C/face:0'); // owner identity preserved (self-exclusion)
+        expect(occ.objectId).toBe('C');
+        expect(occ.plane.residual).toBeLessThanOrEqual(HLR.PLANAR_RESIDUAL_TOL);
+      });
+
+      // The clipper stays on the exact path (not the buffer) and still occludes.
+      const clip = HLR.createClipper([nonPlanarQuad], { bias: 0.5 });
+      expect(clip.ambiguous).toBe(false);
+      // A segment well behind the near corner (depth 40 region) is hidden there.
+      const out = HLR.occludeSegments([{
+        a: { x: 60, y: 90, z: -10 }, b: { x: 95, y: 90, z: -10 },
+        ownerKeys: [], objectId: 'S', mode: 'remove',
+      }], [nonPlanarQuad], { bias: 0.5 });
+      // Fully behind the lifted (near) part of the quad → nothing survives.
+      expect(out.length).toBe(0);
+    });
+
+    test('a genuinely planar quad occluder is kept whole (byte-identical, not split)', () => {
+      // Planar faces (box tris, the ground/plane quad, tone/fill quads) must be
+      // untouched by the triangulation guard so existing scenes stay identical.
+      const planarQuad = {
+        id: 'B/face:0',
+        objectId: 'B',
+        polygon: [
+          { x: 0, y: 0, z: 60 },
+          { x: 100, y: 0, z: 60 },
+          { x: 100, y: 100, z: 60 },
+          { x: 0, y: 100, z: 60 },
+        ],
+      };
+      const built = HLR.buildOccluders([planarQuad]);
+      expect(built.ambiguous).toBe(false);
+      expect(built.occluders.length).toBe(1); // not split
+      expect(built.occluders[0].polygon.length).toBe(4); // original polygon retained
+    });
+
     test('an occluder never hides its own face (ownerKeys exclusion)', () => {
       const faces = [{
         id: 'T/face:0',

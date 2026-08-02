@@ -104,15 +104,10 @@
   const buildOccluders = (faces) => {
     const occluders = [];
     let ambiguous = false;
-    (Array.isArray(faces) ? faces : []).forEach((face) => {
-      if (!face || face.neverOccludes) return;
-      const polygon = Array.isArray(face.polygon) ? face.polygon.filter(
-        (pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y) && Number.isFinite(pt.z)) : [];
-      if (polygon.length < 3) return;
-      if (polygonArea2(polygon) < 1e-6) return; // degenerate footprint occludes nothing
-      const plane = fitSupportPlane(polygon);
-      if (!plane) return; // edge-on: zero-width footprint, skip
-      if (plane.residual > PLANAR_RESIDUAL_TOL) ambiguous = true;
+    // Append one occluder record for `polygon` under `face`'s identity. Shared so
+    // a whole face and each of its triangulated pieces carry the SAME id/objectId
+    // (owner exclusion stays intact — a face never occludes its own segments).
+    const pushOccluder = (face, polygon, plane) => {
       occluders.push({
         id: face.id,
         objectId: face.objectId,
@@ -123,6 +118,40 @@
         plane,
         bbox: polygonBounds(polygon),
       });
+    };
+    (Array.isArray(faces) ? faces : []).forEach((face) => {
+      if (!face || face.neverOccludes) return;
+      const polygon = Array.isArray(face.polygon) ? face.polygon.filter(
+        (pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y) && Number.isFinite(pt.z)) : [];
+      if (polygon.length < 3) return;
+      if (polygonArea2(polygon) < 1e-6) return; // degenerate footprint occludes nothing
+      const plane = fitSupportPlane(polygon);
+      if (!plane) return; // edge-on: zero-width footprint, skip
+      if (plane.residual <= PLANAR_RESIDUAL_TOL) {
+        pushOccluder(face, polygon, plane); // planar (tri, box quad, ground) — keep whole
+        return;
+      }
+      // Non-planar in screen+depth (an n-gon solid/imported/CSG face, or a quad
+      // whose projected depth is non-affine under perspective). Rather than flip
+      // the WHOLE clipper to the coarse owner-aware depth buffer — too coarse to
+      // resolve one curved object occluding another → cross-object peek-through —
+      // fan-triangulate this face. Three points always define a plane exactly, so
+      // each triangle is planar and the precise support-plane clip path is kept.
+      let addedTriangle = false;
+      for (let i = 1; i + 1 < polygon.length; i++) {
+        const tri = [polygon[0], polygon[i], polygon[i + 1]];
+        if (polygonArea2(tri) < 1e-6) continue; // skip zero-area slivers
+        const triPlane = fitSupportPlane(tri);
+        if (!triPlane) continue; // edge-on sliver
+        pushOccluder(face, tri, triPlane);
+        addedTriangle = true;
+      }
+      // Guard: a face that yields no usable planar triangle (all slivers) falls
+      // back to the depth buffer so it still occludes SOMETHING.
+      if (!addedTriangle) {
+        pushOccluder(face, polygon, plane);
+        ambiguous = true;
+      }
     });
     return { occluders, ambiguous };
   };
