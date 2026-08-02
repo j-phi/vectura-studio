@@ -407,7 +407,7 @@
     return [];
   };
 
-  const api = { regionFill, trueSpiral, insetRings, stitchSpiral, stipple, stippleMark, cleanRing, closeRing };
+  const api = { regionFill, trueSpiral, insetRings, insetPasses, stitchSpiral, stipple, stippleMark, cleanRing, closeRing };
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Mappers: api });
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -368,6 +368,28 @@
       return t;
     };
 
+    // Phase 5 — scene-level cast-shadow controls. ensureShadow back-fills the bag
+    // on the LAYER params (never ALGO_DEFAULTS) so a 1A scene without a shadow
+    // block still edits cleanly. Values mirror params.js DEFAULT_SHADOW.
+    const shadowDefault = () => ({
+      shadowAngle: 45, shadowDensity: 50, shadowPenId: null, shadowLineType: 'solid',
+      shadowLayers: false, shadowLayerCount: 3, shadowFalloff: 0.5, shadowAngleFollowsLight: false,
+    });
+    const ensureShadow = () => {
+      if (!params.shadow || typeof params.shadow !== 'object') params.shadow = shadowDefault();
+      const s = params.shadow;
+      const d = shadowDefault();
+      if (!Number.isFinite(s.shadowAngle)) s.shadowAngle = d.shadowAngle;
+      if (!Number.isFinite(s.shadowDensity)) s.shadowDensity = d.shadowDensity;
+      if (typeof s.shadowPenId !== 'string' || !s.shadowPenId) s.shadowPenId = null;
+      if (!['solid', 'dashed', 'dotted', 'dashdot'].includes(s.shadowLineType)) s.shadowLineType = 'solid';
+      if (typeof s.shadowLayers !== 'boolean') s.shadowLayers = false;
+      if (![2, 3, 4].includes(s.shadowLayerCount)) s.shadowLayerCount = 3;
+      if (!Number.isFinite(s.shadowFalloff)) s.shadowFalloff = d.shadowFalloff;
+      if (typeof s.shadowAngleFollowsLight !== 'boolean') s.shadowAngleFollowsLight = false;
+      return s;
+    };
+
     // Host commit pattern — ONE undo step per gesture.
     const pushHist = () => { try { ui.app && ui.app.pushHistory && ui.app.pushHistory(); } catch (_) { /* */ } };
     const store = () => { try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ } };
@@ -996,6 +1018,136 @@
       });
     };
 
+    // Phase 5 — scene-level cast-shadow controls. Rendered inside the light
+    // inspector beneath the Cast-shadows toggle (the natural home for shadow
+    // tuning), but the values write the SCENE-level params.shadow bag shared by
+    // every caster/light. Sliders ride liveSlider (one undo/gesture); selects and
+    // seg toggles route through commit (a whole-value write + regen).
+    const renderShadowControls = (host) => {
+      const s = ensureShadow();
+      const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+
+      const sub = document.createElement('div');
+      sub.className = 'vs3-subhead';
+      sub.textContent = 'Shadow';
+      host.appendChild(sub);
+
+      // Angle (grayed by Follow-light, but kept live so a user can pre-set it).
+      sliderRow(host, inspectorComps, 'Angle', {
+        value: Number.isFinite(s.shadowAngle) ? s.shadowAngle : 45,
+        min: 0, max: 360, step: 1, defaultValue: 45,
+        ariaLabel: 'Shadow hatch angle (degrees)',
+        ...liveSlider((v) => { ensureShadow().shadowAngle = Math.round(v); }),
+      });
+
+      // Follow light — orient the hatch perpendicular to the light bearing.
+      const followRow = document.createElement('div');
+      followRow.className = 'vs3-row';
+      const followLbl = document.createElement('label');
+      followLbl.className = 'vs3-lbl';
+      followLbl.textContent = 'Follow light';
+      followRow.appendChild(followLbl);
+      const followHost = document.createElement('div');
+      followHost.className = 'vs3-ctl';
+      followRow.appendChild(followHost);
+      host.appendChild(followRow);
+      inspectorComps.push(UI.SegCtrl(followHost, {
+        options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+        value: s.shadowAngleFollowsLight ? 'on' : 'off',
+        ariaLabel: 'Shadow angle follows the light bearing',
+        onChange: (v) => { commit(() => { ensureShadow().shadowAngleFollowsLight = v === 'on'; }); },
+      }));
+
+      // Density (1..100 → hatch spacing; 50 == the legacy coverage 0.5).
+      sliderRow(host, inspectorComps, 'Density', {
+        value: Number.isFinite(s.shadowDensity) ? s.shadowDensity : 50,
+        min: 1, max: 100, step: 1, defaultValue: 50,
+        ariaLabel: 'Shadow density',
+        ...liveSlider((v) => { ensureShadow().shadowDensity = Math.round(v); }),
+      });
+
+      // Pen (Inherit = the caster's pen).
+      const penRow = document.createElement('div');
+      penRow.className = 'vs3-row';
+      const penLbl = document.createElement('label');
+      penLbl.className = 'vs3-lbl';
+      penLbl.textContent = 'Pen';
+      penRow.appendChild(penLbl);
+      const penHost = document.createElement('div');
+      penHost.className = 'vs3-ctl';
+      penRow.appendChild(penHost);
+      host.appendChild(penRow);
+      inspectorComps.push(UI.Select(penHost, {
+        options: [{ value: '', label: 'Inherit' }].concat(pens.map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
+        value: s.shadowPenId || '',
+        ariaLabel: 'Shadow pen (Inherit = caster pen)',
+        onChange: (v) => { commit(() => { ensureShadow().shadowPenId = v || null; }); },
+      }));
+
+      // Line type (solid / dashed / dotted / dash-dot).
+      const ltRow = document.createElement('div');
+      ltRow.className = 'vs3-row';
+      const ltLbl = document.createElement('label');
+      ltLbl.className = 'vs3-lbl';
+      ltLbl.textContent = 'Line';
+      ltRow.appendChild(ltLbl);
+      const ltHost = document.createElement('div');
+      ltHost.className = 'vs3-ctl';
+      ltRow.appendChild(ltHost);
+      host.appendChild(ltRow);
+      inspectorComps.push(UI.Select(ltHost, {
+        options: LINE_TYPE_OPTIONS,
+        value: s.shadowLineType || 'solid',
+        ariaLabel: 'Shadow line type',
+        onChange: (v) => { commit(() => { ensureShadow().shadowLineType = v; }); },
+      }));
+
+      // Layers — penumbra build-up (nested inset rings, densest core).
+      const layRow = document.createElement('div');
+      layRow.className = 'vs3-row';
+      const layLbl = document.createElement('label');
+      layLbl.className = 'vs3-lbl';
+      layLbl.textContent = 'Layers';
+      layRow.appendChild(layLbl);
+      const layHost = document.createElement('div');
+      layHost.className = 'vs3-ctl';
+      layRow.appendChild(layHost);
+      host.appendChild(layRow);
+      inspectorComps.push(UI.SegCtrl(layHost, {
+        options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+        value: s.shadowLayers ? 'on' : 'off',
+        ariaLabel: 'Layered penumbra shadow',
+        onChange: (v) => { commit(() => { ensureShadow().shadowLayers = v === 'on'; }); renderInspector(); },
+      }));
+
+      // Layer count + falloff only bite when layered — shown then to keep the
+      // inspector focused.
+      if (s.shadowLayers) {
+        const lcRow = document.createElement('div');
+        lcRow.className = 'vs3-row';
+        const lcLbl = document.createElement('label');
+        lcLbl.className = 'vs3-lbl';
+        lcLbl.textContent = 'Count';
+        lcRow.appendChild(lcLbl);
+        const lcHost = document.createElement('div');
+        lcHost.className = 'vs3-ctl';
+        lcRow.appendChild(lcHost);
+        host.appendChild(lcRow);
+        inspectorComps.push(UI.SegCtrl(lcHost, {
+          options: [{ value: '2', label: '2' }, { value: '3', label: '3' }, { value: '4', label: '4' }],
+          value: String([2, 3, 4].includes(s.shadowLayerCount) ? s.shadowLayerCount : 3),
+          ariaLabel: 'Shadow layer count',
+          onChange: (v) => { commit(() => { ensureShadow().shadowLayerCount = parseInt(v, 10) || 3; }); },
+        }));
+        sliderRow(host, inspectorComps, 'Falloff', {
+          value: Number.isFinite(s.shadowFalloff) ? s.shadowFalloff : 0.5,
+          min: 0.2, max: 1, step: 0.05, defaultValue: 0.5,
+          ariaLabel: 'Shadow layer density falloff',
+          ...liveSlider((v) => { ensureShadow().shadowFalloff = Math.round(v * 100) / 100; }),
+        });
+      }
+    };
+
     // Light inspector — type-aware. Directional: azimuth / elevation. Point/spot:
     // world position (+ range, + spot cone/target). Ambient: intensity only.
     // Every type also gets intensity, cast-shadows (non-ambient), and Reset. Live
@@ -1084,8 +1236,11 @@
           onChange: (v) => {
             commit(() => { const lt = lightById(lid); if (lt) lt.castShadows = v === 'on'; });
             renderTree();
+            renderInspector();
           },
         }));
+        // Scene-level shadow tuning — only meaningful while this light casts.
+        if (light.castShadows !== false) renderShadowControls(inspectorHost);
       }
       // Reset to factory default (not for ambient — it has no positional/aim
       // default worth a button).
@@ -1248,6 +1403,33 @@
         onChange: (v) => {
           commit(() => { obj.visibility = v; });
           renderTree();
+        },
+      }));
+
+      // Per-object cast-shadow toggle (Phase 5). Inherit = follow the scene
+      // (cast); Off = this object drops no shadow; On = force cast. Stored on
+      // obj.shadow.enabled (null | true | false).
+      const shadowRow = document.createElement('div');
+      shadowRow.className = 'vs3-row';
+      const shadowLbl = document.createElement('label');
+      shadowLbl.className = 'vs3-lbl';
+      shadowLbl.textContent = 'Cast shadow';
+      shadowRow.appendChild(shadowLbl);
+      const shadowHost = document.createElement('div');
+      shadowHost.className = 'vs3-ctl';
+      shadowRow.appendChild(shadowHost);
+      inspectorHost.appendChild(shadowRow);
+      const castVal = obj.shadow && obj.shadow.enabled === false ? 'off'
+        : (obj.shadow && obj.shadow.enabled === true ? 'on' : 'inherit');
+      inspectorComps.push(UI.SegCtrl(shadowHost, {
+        options: [{ value: 'inherit', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+        value: castVal,
+        ariaLabel: 'Object casts shadow',
+        onChange: (v) => {
+          commit(() => {
+            if (!obj.shadow || typeof obj.shadow !== 'object') obj.shadow = { enabled: null };
+            obj.shadow.enabled = v === 'on' ? true : (v === 'off' ? false : null);
+          });
         },
       }));
     };

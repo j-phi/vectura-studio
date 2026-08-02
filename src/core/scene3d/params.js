@@ -67,6 +67,20 @@
   const DEFAULT_LIGHT_RANGE = 400;
   const DEFAULT_CONE_ANGLE = 30;
   const DEFAULT_PENUMBRA = 8;
+  // Phase 5 — scene-level shadow controls. Every default reproduces the legacy
+  // hardcoded look (angle 45°, coverage 0.5 ⇔ density 50, solid, single flat
+  // hull, pen inherited from the caster) so a scene with no `shadow` block
+  // renders byte-identically to the pre-Phase-5 renderer.
+  const DEFAULT_SHADOW = {
+    shadowAngle: 45,             // hatch orientation (deg); replaces SHADOW_ANGLE
+    shadowDensity: 50,           // 1..100; 50 maps to the legacy coverage 0.5
+    shadowPenId: null,           // null ⇒ inherit the caster's pen (legacy)
+    shadowLineType: 'solid',     // reuse the Phase-1 stroke enum
+    shadowLayers: false,         // penumbra: nested inset rings when true
+    shadowLayerCount: 3,         // 2..4 nested layers when layered
+    shadowFalloff: 0.5,          // density drop per layer outward (0.2..1)
+    shadowAngleFollowsLight: false, // orient hatch perpendicular to the light bearing
+  };
   // CONTRACT L3 — light-driven tone. `enabled: false` ⇒ EXACT Phase 1 flat look.
   // bands is a soft hint (2|3|4); the tone READER (Scene3D.Regions) trusts the
   // ladder length for the real band count, so a hand-edited length mismatch
@@ -231,6 +245,29 @@
     return out;
   };
 
+  // Per-object cast-shadow override. `enabled: null` = inherit (the object casts,
+  // matching the legacy default); `true` = force cast; `false` = never cast. Kept
+  // as its own sub-object so future per-object shadow style keys can join it.
+  const normalizeObjectShadow = (shadow) => {
+    const src = isObject(shadow) ? shadow : {};
+    const enabled = src.enabled === true ? true : (src.enabled === false ? false : null);
+    return { enabled };
+  };
+
+  const normalizeShadow = (shadow) => {
+    const src = isObject(shadow) ? shadow : {};
+    return {
+      shadowAngle: clamp(finite(src.shadowAngle, DEFAULT_SHADOW.shadowAngle), 0, 360),
+      shadowDensity: clamp(finite(src.shadowDensity, DEFAULT_SHADOW.shadowDensity), 1, 100),
+      shadowPenId: (typeof src.shadowPenId === 'string' && src.shadowPenId) ? src.shadowPenId : null,
+      shadowLineType: STROKE_LINE_TYPES.includes(src.shadowLineType) ? src.shadowLineType : 'solid',
+      shadowLayers: src.shadowLayers === true,
+      shadowLayerCount: clamp(Math.round(finite(src.shadowLayerCount, DEFAULT_SHADOW.shadowLayerCount)), 2, 4),
+      shadowFalloff: clamp(finite(src.shadowFalloff, DEFAULT_SHADOW.shadowFalloff), 0.2, 1),
+      shadowAngleFollowsLight: src.shadowAngleFollowsLight === true,
+    };
+  };
+
   const normalizeObject = (obj, index, usedIds) => {
     if (!isObject(obj)) return null;
     const primitive = PRIMITIVES.includes(obj.primitive) ? obj.primitive : 'box';
@@ -247,6 +284,7 @@
       params: normalizePrimitiveParams(primitive, obj.params),
       transform: normalizeTransform(obj.transform),
       visibility: obj.visibility === 'xray' ? 'xray' : 'solid',
+      shadow: normalizeObjectShadow(obj.shadow),
     };
   };
 
@@ -376,6 +414,7 @@
       .map((light, index) => normalizeLight(light, index));
     out.lights = lights.length ? lights : [{ ...DEFAULT_LIGHT }];
     out.tone = normalizeTone(src.tone);
+    out.shadow = normalizeShadow(src.shadow);
     out.ground = { enabled: isObject(src.ground) ? src.ground.enabled !== false : true };
     out.backdrop = { enabled: isObject(src.backdrop) ? src.backdrop.enabled === true : false };
     out.camera = normalizeCamera(src.camera);
@@ -410,7 +449,9 @@
     DEFAULT_TRANSFORM,
     DEFAULT_CAMERA,
     DEFAULT_TONE,
+    DEFAULT_SHADOW,
     normalizeTone,
+    normalizeShadow,
     normalizeStyle,
     normalizeStyleTable,
     normalizeParams,

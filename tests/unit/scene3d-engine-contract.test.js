@@ -76,7 +76,10 @@ describe('scene3d engine contract (CONTRACT E)', () => {
     const restored = engine2.getLayerById(id);
     expect(restored).toBeTruthy();
     expect(restored.params.sceneVersion).toBe(1);
-    expect(restored.params.objects).toEqual(layer.params.objects);
+    // Round-trip == normalization: import canonicalizes the scene (e.g. Phase 5
+    // back-fills each object's `shadow: { enabled: null }`), so compare against
+    // the normalized source rather than the raw, pre-normalized layer params.
+    expect(restored.params.objects).toEqual(V.Scene3D.Params.normalizeParams(layer.params).objects);
     expect(restored.params.camera.yaw).toBe(-55);
     expect(restored.params.styleTable.byObject['obj-2']).toEqual(
       layer.params.styleTable.byObject['obj-2']);

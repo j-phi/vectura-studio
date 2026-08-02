@@ -2092,6 +2092,19 @@
         ladder: [0.2, 0.5, 0.85],
         specular: { enabled: true, size: 1 },
       },
+      // Phase 5 — scene-level cast-shadow controls. Every value here reproduces
+      // the legacy hardcoded shadow (angle 45°, density 50 ⇔ coverage 0.5, solid,
+      // single flat hull, pen inherited from the caster).
+      shadow: {
+        shadowAngle: 45,
+        shadowDensity: 50,
+        shadowPenId: null,
+        shadowLineType: 'solid',
+        shadowLayers: false,
+        shadowLayerCount: 3,
+        shadowFalloff: 0.5,
+        shadowAngleFollowsLight: false,
+      },
       ground: { enabled: true },
       backdrop: { enabled: false },
       camera: {

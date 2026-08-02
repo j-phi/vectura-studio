@@ -1030,6 +1030,9 @@
         };
         // Scene-scope stroke treatment (line type / wobble) for every shadow line.
         const shadowStyleParams = (p.styleTable && p.styleTable.scene && p.styleTable.scene.params) || {};
+        // Phase 5 — scene-level shadow controls (angle / density / pen / line
+        // type / penumbra layers). Absent ⇒ the legacy hardcoded shadow look.
+        const shadowBag = p.shadow || {};
         // Multi-light: every shadow-casting light drops its own footprint
         // (ambient lights don't cast). Directional lights project PARALLEL along
         // their travel dir; point/spot lights project in PERSPECTIVE from their
@@ -1039,13 +1042,13 @@
           if (!lt || lt.type === 'ambient' || lt.castShadows === false) return;
           if (lt.type === 'point' || lt.type === 'spot') {
             if (!lt.position) return;
-            Shadows.build(scene, p, bounds, clipper, null, { styleOf: shadowStyleOf, styleParams: shadowStyleParams, lightPosition: lt.position })
+            Shadows.build(scene, p, bounds, clipper, null, { styleOf: shadowStyleOf, styleParams: shadowStyleParams, shadow: shadowBag, lightPosition: lt.position })
               .forEach((path) => out.push(path));
             return;
           }
           const dir = Lighting.lightWorldDir(lt);
           if (!dir) return;
-          Shadows.build(scene, p, bounds, clipper, dir, { styleOf: shadowStyleOf, styleParams: shadowStyleParams })
+          Shadows.build(scene, p, bounds, clipper, dir, { styleOf: shadowStyleOf, styleParams: shadowStyleParams, shadow: shadowBag })
             .forEach((path) => out.push(path));
         });
       }

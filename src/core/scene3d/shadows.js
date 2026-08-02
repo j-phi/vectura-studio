@@ -43,8 +43,11 @@
   const MIN_ELEVATION_DEG = 2;
   const MIN_ABS_DY = Math.sin(MIN_ELEVATION_DEG * Math.PI / 180);
   const MIN_RUN_MM = 0.6;
+  // Legacy fall-backs (Phase 5): a caller that supplies NO shadow bag renders
+  // the pre-Phase-5 look — 45° hatch at coverage 0.5, solid, single flat hull.
   const SHADOW_ANGLE = 45;
   const SHADOW_COVERAGE = 0.5; // shadow tone: moderately dense hatch
+  const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
   const runLength = (pts) => {
     let len = 0;
@@ -184,21 +187,22 @@
     return hull.length >= 3 ? hull : null;
   };
 
-  const shadowSpacing = (penWidth) => {
+  // Density (1..100) → coverage (0.02..1) → spacing. 50 maps to the legacy
+  // coverage 0.5, so a default shadow bag reproduces the pre-Phase-5 spacing.
+  const densityToCoverage = (density) => clamp(finite(density, 50) / 100, 0.02, 1);
+  const coverageToSpacing = (coverage, penWidth) => {
     const Regions = Vectura.Scene3D && Vectura.Scene3D.Regions;
     if (Regions && typeof Regions.coverageToSpacing === 'function') {
-      return Regions.coverageToSpacing(SHADOW_COVERAGE, penWidth);
+      return Regions.coverageToSpacing(coverage, penWidth);
     }
-    return Math.max(Math.max(0.05, finite(penWidth, 0.3)) * 2, 1.5);
+    const pw = Math.max(0.05, finite(penWidth, 0.3));
+    return Math.max(pw, pw / clamp(finite(coverage, 0.5), 0.02, 1));
   };
 
-  // Hatch a shadow polygon (rings = [outer, hole…]) at the ground support-plane
-  // depth, clip against the occluders (ground never occludes; object faces do),
-  // and emit visible runs.
-  const emitShadowRegion = (rings, groundPlane, clipper, spacing, out, meta, treat, draft) => {
-    if (!Array.isArray(rings) || !rings.length || !Array.isArray(rings[0]) || rings[0].length < 3) return;
-    const tr = treat || NO_STROKE_TREATMENT;
-    const lines = hatchRingsEvenOdd(rings, SHADOW_ANGLE, spacing);
+  // Stamp a set of even-odd hatch lines onto the ground plane, clip against the
+  // occluders (ground never occludes; object faces do), and push visible runs.
+  const emitHatchLines = (lines, groundPlane, clipper, out, meta, tr, draft) => {
+    const treat = tr || NO_STROKE_TREATMENT;
     lines.forEach((line) => {
       const pts = line.map((pt) => ({
         x: pt.x,
@@ -209,18 +213,76 @@
       clip.runs.forEach((run) => {
         if (!run.visible) return; // ground shadow: hidden runs simply drop
         if (runLength(run.pts) < MIN_RUN_MM) return;
-        const m = tr.active ? { ...meta } : meta;
-        const rpts = applyStrokeTreatment(run.pts, tr, m, draft);
+        const m = treat.active ? { ...meta } : meta;
+        const rpts = applyStrokeTreatment(run.pts, treat, m, draft);
         const path = pathWithMeta(rpts, m);
         if (path.length >= 2) {
           out.push(path);
-          if (tr.overstroke && !draft) {
+          if (treat.overstroke && !draft) {
             const dbl = pathWithMeta(overstrokeCopy(rpts), m);
             if (dbl.length >= 2) out.push(dbl);
           }
         }
       });
     });
+  };
+
+  // Bounding-box min extent of a ring (used to scale the penumbra inset step).
+  const ringMinExtent = (ring) => {
+    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+    (ring || []).forEach((pt) => {
+      if (!isFinitePt(pt)) return;
+      if (pt.x < minX) minX = pt.x;
+      if (pt.x > maxX) maxX = pt.x;
+      if (pt.y < minY) minY = pt.y;
+      if (pt.y > maxY) maxY = pt.y;
+    });
+    if (!Number.isFinite(minX)) return 0;
+    return Math.min(maxX - minX, maxY - minY);
+  };
+
+  // Hatch a shadow polygon (rings = [outer, hole…]). When cfg.layers is on and
+  // this is a full (non-draft) frame, emit NESTED inset rings — a penumbra: the
+  // rim is the full footprint (sparsest), successive insets crowd toward the
+  // caster's ground contact (densest core). Each layer is its own hatch region
+  // so the core accumulates ink from every enclosing layer.
+  const emitShadowRegion = (rings, groundPlane, clipper, out, meta, treat, draft, cfg) => {
+    if (!Array.isArray(rings) || !rings.length || !Array.isArray(rings[0]) || rings[0].length < 3) return;
+    const { angle, coverage, penWidth, layers, layerCount, falloff, Mappers } = cfg;
+    // Draft / layers-off / no inset util → single flat hatch (legacy path).
+    if (!layers || draft || !Mappers || typeof Mappers.insetPasses !== 'function') {
+      const spacing = coverageToSpacing(coverage, penWidth);
+      emitHatchLines(hatchRingsEvenOdd(rings, angle, spacing), groundPlane, clipper, out, meta, treat, draft);
+      return;
+    }
+    // Penumbra: passes[0] is the footprint boundary, passes[k] the k-th inward
+    // offset. Step so `layerCount` insets stay well inside the footprint.
+    const ext = ringMinExtent(rings[0]);
+    const step = Math.max(1, ext / (layerCount * 2));
+    let passes = [];
+    try { passes = Mappers.insetPasses(rings, step) || []; } catch (_e) { passes = []; }
+    if (passes.length < 2) {
+      const spacing = coverageToSpacing(coverage, penWidth);
+      emitHatchLines(hatchRingsEvenOdd(rings, angle, spacing), groundPlane, clipper, out, meta, treat, draft);
+      return;
+    }
+    const n = Math.min(layerCount, passes.length);
+    for (let L = 0; L < n; L++) {
+      const layerRings = passes[L];
+      if (!Array.isArray(layerRings) || !layerRings.length) continue;
+      // Penumbra build-up: L = 0 (rim / full footprint) carries the base coverage
+      // — the shadow edge matches a flat shadow — and each inward layer adds a
+      // sparser hatch (coverage·falloff^L). The layers nest and overlap, so the
+      // core (covered by every layer) accumulates the most ink = densest, fading
+      // outward to the rim. `falloff` sets how fast the per-layer add-on drops.
+      const cov = clamp(coverage * Math.pow(falloff, L), 0.02, 1);
+      const spacing = coverageToSpacing(cov, penWidth);
+      const layerMeta = { ...meta };
+      if (layerMeta.sceneTarget) {
+        layerMeta.sceneTarget = { ...meta.sceneTarget, shadowLayer: L, pickPolygon: layerRings[0].map((pt) => ({ x: pt.x, y: pt.y })) };
+      }
+      emitHatchLines(hatchRingsEvenOdd(layerRings, angle, spacing), groundPlane, clipper, out, layerMeta, treat, draft);
+    }
   };
 
   const shadowMeta = (rings, casterId, penId, depth) => ({
@@ -275,12 +337,47 @@
     const groundPlane = groundFace && HLR ? HLR.fitSupportPlane(groundFace.polygon) : null;
     const groundDepth = groundFace ? -finite(groundFace.centroidZ, 0) : 0;
     const penWidth = finite(bounds.penWidth, 0.3);
-    const spacing = shadowSpacing(penWidth);
     const styleOf = typeof opts.styleOf === 'function' ? opts.styleOf : null;
-    // Scene-scope stroke treatment (line type / wobble) applied to every shadow
-    // hatch line. Draft frames keep the dash but skip the wobble geometry.
-    const shadowTreat = strokeTreatment(opts.styleParams);
+    const Mappers = Vectura.Scene3D && Vectura.Scene3D.Mappers;
     const draftFrame = Boolean(bounds && bounds.fastPreview);
+
+    // ── Phase 5 shadow bag. Absent ⇒ the legacy constants (byte-identical). ────
+    const shadowBag = opts.shadow || {};
+    const coverage = shadowBag.shadowDensity != null
+      ? densityToCoverage(shadowBag.shadowDensity) : SHADOW_COVERAGE;
+    const followsLight = shadowBag.shadowAngleFollowsLight === true;
+    // Hatch orientation: the explicit angle, or — when the follow-light flag is
+    // set — perpendicular to the light bearing (the direction the shadow extends
+    // on screen, measured by projecting an elevated reference point's footprint).
+    let hatchAngle = clamp(finite(shadowBag.shadowAngle, SHADOW_ANGLE), 0, 360);
+    if (followsLight) {
+      const hi = projectVertex({ x: 0, y: 100, z: 0 });
+      const lo = projectVertex({ x: 0, y: 0.001, z: 0 });
+      if (hi && lo) {
+        const bx = hi.x - lo.x;
+        const by = hi.y - lo.y;
+        if (Math.hypot(bx, by) > 1e-6) hatchAngle = Math.atan2(by, bx) * 180 / Math.PI + 90;
+      }
+    }
+    const shadowLayers = shadowBag.shadowLayers === true;
+    const layerCount = clamp(Math.round(finite(shadowBag.shadowLayerCount, 3)), 2, 4);
+    const falloff = clamp(finite(shadowBag.shadowFalloff, 0.5), 0.2, 1);
+    const penOverride = (typeof shadowBag.shadowPenId === 'string' && shadowBag.shadowPenId) ? shadowBag.shadowPenId : null;
+    const cfg = { angle: hatchAngle, coverage, penWidth, layers: shadowLayers, layerCount, falloff, Mappers };
+    // Stroke treatment: line type comes from the shadow bag (default solid, so a
+    // default scene is byte-identical); wobble/dash-scale still inherit the scene
+    // stroke params. Draft keeps the dash but skips the wobble geometry.
+    const shadowTreat = strokeTreatment({ ...(opts.styleParams || {}), lineType: shadowBag.shadowLineType || 'solid' });
+    // Effective pen: the shadow-pen override wins over the caster's inherited pen.
+    const penFor = (casterPen) => penOverride || casterPen || null;
+
+    // Per-object cast toggle (obj.shadow.enabled): null ⇒ inherit (cast), true ⇒
+    // cast, false ⇒ this object drops no shadow. Read from the source params.
+    const objectCasts = (objectId) => {
+      const o = (params && Array.isArray(params.objects)) ? params.objects.find((ob) => ob && ob.id === objectId) : null;
+      const en = o && o.shadow ? o.shadow.enabled : null;
+      return en !== false;
+    };
 
     // One convex-hull footprint per caster (the light-lab model), plus its
     // shadow style class. `rings: [hull]` keeps the downstream union/precedence
@@ -289,6 +386,7 @@
     const casters = [];
     (scene.objects || []).forEach((record) => {
       if (!record || record.isGround) return;
+      if (!objectCasts(record.id)) return; // per-object cast toggle
       const hull = casterHull(record, projectVertex);
       if (!hull) return;
       const style = styleOf ? (styleOf(record.id) || {}) : {};
@@ -300,8 +398,8 @@
     if (bounds && bounds.fastPreview) {
       casters.forEach((caster) => {
         caster.rings.forEach((ring) => {
-          emitShadowRegion([ring], groundPlane, clipper, spacing, out,
-            shadowMeta([ring], caster.id, caster.penId, groundDepth), shadowTreat, draftFrame);
+          emitShadowRegion([ring], groundPlane, clipper, out,
+            shadowMeta([ring], caster.id, penFor(caster.penId), groundDepth), shadowTreat, draftFrame, cfg);
         });
       });
       return out;
@@ -321,8 +419,8 @@
     if (!FillBoolean || typeof FillBoolean.union !== 'function') {
       // No boolean surface available: degrade to the flat per-face tint.
       casters.forEach((caster) => caster.rings.forEach((ring) => emitShadowRegion(
-        [ring], groundPlane, clipper, spacing, out, shadowMeta([ring], caster.id, caster.penId, groundDepth),
-        shadowTreat, draftFrame)));
+        [ring], groundPlane, clipper, out, shadowMeta([ring], caster.id, penFor(caster.penId), groundDepth),
+        shadowTreat, draftFrame, cfg)));
       return out;
     }
 
@@ -389,8 +487,8 @@
           .map((ring) => (ring || []).map((pt) => ({ x: pt[0], y: pt[1] })))
           .filter((ring) => ring.length >= 3);
         if (!rings.length) return;
-        emitShadowRegion(rings, groundPlane, clipper, spacing, out,
-          shadowMeta(rings, casterId, cls.penId, groundDepth), shadowTreat, draftFrame);
+        emitShadowRegion(rings, groundPlane, clipper, out,
+          shadowMeta(rings, casterId, penFor(cls.penId), groundDepth), shadowTreat, draftFrame, cfg);
       });
     });
 

@@ -12881,6 +12881,17 @@ body.mobile-layout .hud-bar {
 }
 .vs3-ctl { flex: 1 1 auto; min-width: 0; }
 .vs3-ctl .slider-row { width: 100%; }
+/* Section sub-heading inside the inspector (e.g. the Phase 5 Shadow group). */
+.vs3-subhead {
+  margin: 6px 0 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ui-text-2, var(--ui-muted, #9a9a9a));
+  border-top: 1px solid var(--ui-border, #363636);
+  padding-top: 8px;
+}
 .vs3-name-input {
   flex: 1 1 auto;
   min-width: 0;
