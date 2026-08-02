@@ -1818,6 +1818,118 @@
           });
         },
       }));
+
+      // ── Emissive (Phase 7 — the sixth light type). An emissive object glows
+      // (radial burst / concentric halo rings, with a blank/bright core) AND acts
+      // as a co-located point light on every OTHER object. Default OFF ⇒ no ink,
+      // no contribution. Live-slider intensity (one undo/gesture); the enable /
+      // halo / core toggles + pen route through commit (whole-value write + regen).
+      const ensureEmissive = () => {
+        if (!obj.emissive || typeof obj.emissive !== 'object') {
+          obj.emissive = { enabled: false, intensity: 1, penId: null, halo: 'burst', haloCount: 16, haloRings: 3, coreBlank: true };
+        }
+        return obj.emissive;
+      };
+      const em = ensureEmissive();
+      const emRow = document.createElement('div');
+      emRow.className = 'vs3-row';
+      const emLbl = document.createElement('label');
+      emLbl.className = 'vs3-lbl';
+      emLbl.textContent = 'Emissive';
+      emRow.appendChild(emLbl);
+      const emHost = document.createElement('div');
+      emHost.className = 'vs3-ctl';
+      emRow.appendChild(emHost);
+      inspectorHost.appendChild(emRow);
+      inspectorComps.push(UI.SegCtrl(emHost, {
+        options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+        value: em.enabled ? 'on' : 'off',
+        ariaLabel: 'Emissive (object emits light)',
+        onChange: (v) => {
+          commit(() => { ensureEmissive().enabled = v === 'on'; });
+          renderInspector();
+        },
+      }));
+      if (em.enabled) {
+        const emSub = document.createElement('div');
+        emSub.className = 'vs3-emissive-controls';
+        inspectorHost.appendChild(emSub);
+
+        sliderRow(emSub, inspectorComps, 'Glow strength', {
+          value: Number.isFinite(em.intensity) ? em.intensity : 1,
+          min: 0, max: 4, step: 0.05, defaultValue: 1,
+          ariaLabel: 'Emissive intensity',
+          ...liveSlider((v) => { ensureEmissive().intensity = Math.round(v * 100) / 100; }),
+        });
+
+        const haloRow = document.createElement('div');
+        haloRow.className = 'vs3-row';
+        const haloLbl = document.createElement('label');
+        haloLbl.className = 'vs3-lbl';
+        haloLbl.textContent = 'Halo';
+        haloRow.appendChild(haloLbl);
+        const haloHost = document.createElement('div');
+        haloHost.className = 'vs3-ctl';
+        haloRow.appendChild(haloHost);
+        emSub.appendChild(haloRow);
+        inspectorComps.push(UI.SegCtrl(haloHost, {
+          options: [{ value: 'burst', label: 'Burst' }, { value: 'ring', label: 'Rings' }, { value: 'none', label: 'None' }],
+          value: ['burst', 'ring', 'none'].includes(em.halo) ? em.halo : 'burst',
+          ariaLabel: 'Emissive halo style',
+          onChange: (v) => { commit(() => { ensureEmissive().halo = v; }); renderInspector(); },
+        }));
+
+        if (em.halo === 'burst') {
+          sliderRow(emSub, inspectorComps, 'Rays', {
+            value: Number.isFinite(em.haloCount) ? em.haloCount : 16,
+            min: 4, max: 48, step: 1, defaultValue: 16,
+            ariaLabel: 'Emissive burst ray count',
+            ...liveSlider((v) => { ensureEmissive().haloCount = Math.round(v); }),
+          });
+        } else if (em.halo === 'ring') {
+          sliderRow(emSub, inspectorComps, 'Rings', {
+            value: Number.isFinite(em.haloRings) ? em.haloRings : 3,
+            min: 1, max: 6, step: 1, defaultValue: 3,
+            ariaLabel: 'Emissive halo ring count',
+            ...liveSlider((v) => { ensureEmissive().haloRings = Math.round(v); }),
+          });
+        }
+
+        const coreRow = document.createElement('div');
+        coreRow.className = 'vs3-row';
+        const coreLbl = document.createElement('label');
+        coreLbl.className = 'vs3-lbl';
+        coreLbl.textContent = 'Blank core';
+        coreRow.appendChild(coreLbl);
+        const coreHost = document.createElement('div');
+        coreHost.className = 'vs3-ctl';
+        coreRow.appendChild(coreHost);
+        emSub.appendChild(coreRow);
+        inspectorComps.push(UI.SegCtrl(coreHost, {
+          options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+          value: em.coreBlank === false ? 'off' : 'on',
+          ariaLabel: 'Leave the emissive core blank (bright)',
+          onChange: (v) => { commit(() => { ensureEmissive().coreBlank = v === 'on'; }); },
+        }));
+
+        const emPens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+        const emPenRow = document.createElement('div');
+        emPenRow.className = 'vs3-row';
+        const emPenLbl = document.createElement('label');
+        emPenLbl.className = 'vs3-lbl';
+        emPenLbl.textContent = 'Glow pen';
+        emPenRow.appendChild(emPenLbl);
+        const emPenHost = document.createElement('div');
+        emPenHost.className = 'vs3-ctl';
+        emPenRow.appendChild(emPenHost);
+        emSub.appendChild(emPenRow);
+        inspectorComps.push(UI.Select(emPenHost, {
+          options: [{ value: '', label: 'Inherit' }].concat(emPens.map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
+          value: em.penId || '',
+          ariaLabel: 'Emissive glow pen (Inherit = object pen)',
+          onChange: (v) => { commit(() => { ensureEmissive().penId = v || null; }); },
+        }));
+      }
     };
 
     // ── Style tab (CONTRACT C editor) ───────────────────────────────────────

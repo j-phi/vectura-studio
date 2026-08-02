@@ -13099,6 +13099,16 @@ body.mobile-layout .hud-bar {
   border-top: 1px solid var(--ui-border, #363636);
   padding-top: 8px;
 }
+/* Emissive sub-controls (Phase 7): the glow settings revealed when an object's
+   Emissive toggle is On — indented + rule to read as a nested group. */
+.vs3-emissive-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 2px;
+  padding-left: 8px;
+  border-left: 2px solid var(--ui-border, #363636);
+}
 .vs3-name-input {
   flex: 1 1 auto;
   min-width: 0;

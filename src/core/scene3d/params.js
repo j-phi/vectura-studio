@@ -279,6 +279,32 @@
     };
   };
 
+  // Per-object EMISSIVE group (Phase 7 — the sixth light type: a shape that
+  // emits light). Default OFF ⇒ zero extra ink + zero contribution, so a scene
+  // with no `emissive` block renders byte-identically. When enabled the object
+  // (1) SELF-RENDERS a glow (outward radial burst / concentric halo rings, with
+  // an optionally blank/bright core) and (2) acts as a co-located POINT LIGHT at
+  // its own world centroid that shades every OTHER object (never itself).
+  //   intensity  0..4  — the co-located point-light weight + glow scale;
+  //   penId      null ⇒ inherit the object pen for the glow strokes;
+  //   halo       'burst' (radial rays) | 'ring' (concentric circles) | 'none';
+  //   haloCount  4..48  — burst ray count;
+  //   haloRings  1..6   — concentric ring count (halo:'ring');
+  //   coreBlank  bool   — leave the object's own surface fill blank (bright core).
+  const EMISSIVE_HALOS = ['burst', 'ring', 'none'];
+  const normalizeObjectEmissive = (emissive) => {
+    const src = isObject(emissive) ? emissive : {};
+    return {
+      enabled: src.enabled === true,
+      intensity: clamp(finite(src.intensity, 1), 0, 4),
+      penId: (typeof src.penId === 'string' && src.penId) ? src.penId : null,
+      halo: EMISSIVE_HALOS.includes(src.halo) ? src.halo : 'burst',
+      haloCount: clamp(Math.round(finite(src.haloCount, 16)), 4, 48),
+      haloRings: clamp(Math.round(finite(src.haloRings, 3)), 1, 6),
+      coreBlank: src.coreBlank !== false,
+    };
+  };
+
   const normalizeShadow = (shadow) => {
     const src = isObject(shadow) ? shadow : {};
     return {
@@ -315,6 +341,7 @@
       visibility: obj.visibility === 'xray' ? 'xray' : 'solid',
       shadow: normalizeObjectShadow(obj.shadow),
       border: normalizeObjectBorder(obj.border),
+      emissive: normalizeObjectEmissive(obj.emissive),
     };
   };
 

@@ -242,7 +242,14 @@
       // Intensity). A lone sun reduces to the Phase-2 single-light look. The
       // world point is only consulted by point/spot lights; a call site with no
       // meaningful point passes the region centroid.
-      const intensityFn = toneOn ? (nw, wp) => Regions.combinedIntensity(nw, wp, p.lights) : null;
+      // `activeLights` is REASSIGNED per record (below) so an EMISSIVE object's
+      // co-located point light shades every OTHER object but never itself. With
+      // no emissive object it stays === p.lights, so intensityFn — and thus every
+      // toned scene — is byte-identical to pre-emissive. intensityFn reads the
+      // live binding, so the per-record reassignment is picked up by every helper
+      // (spacingBand, the curved pass, SurfaceFill) without re-plumbing them.
+      let activeLights = p.lights;
+      const intensityFn = toneOn ? (nw, wp) => Regions.combinedIntensity(nw, wp, activeLights) : null;
       const penWidth = finite(bounds.penWidth, 0.3);
 
       // Mean world position of a face's verts (the point at which point/spot
@@ -566,9 +573,53 @@
       // The line type stamped on dashed/dotted highlight runs.
       const hlLineType = (treatment) => (treatment === 'dotted' ? 'dotted' : 'dashed');
 
+      // Mean WORLD position of every vert across a record's faces — the point a
+      // co-located emissive light sits at (the object's centroid). null when the
+      // record carries no world verts (e.g. a draft/degenerate assembly).
+      const recordWorldCentroid = (record) => {
+        let x = 0; let y = 0; let z = 0; let c = 0;
+        (record.faces || []).forEach((face) => {
+          const wv = face && face.worldVerts;
+          if (!Array.isArray(wv)) return;
+          for (let i = 0; i < wv.length; i++) {
+            const pw = wv[i];
+            if (pw && Number.isFinite(pw.x) && Number.isFinite(pw.y) && Number.isFinite(pw.z)) {
+              x += pw.x; y += pw.y; z += pw.z; c += 1;
+            }
+          }
+        });
+        return c ? { x: x / c, y: y / c, z: z / c } : null;
+      };
+
+      // ── Emissive contribution (Phase 7): every ENABLED emissive object injects
+      // a co-located POINT light at its world centroid (range 0 ⇒ pure Lambert,
+      // no distance falloff — a legible, monotonic lift on the surfaces it faces).
+      // `_srcId` lets the per-record reassignment exclude the emitter from lighting
+      // ITSELF (its glow is the self-render below). No emissive objects ⇒ empty
+      // list ⇒ activeLights stays === p.lights (byte-identical regression pin).
+      const emissiveLights = [];
+      scene.objects.forEach((record) => {
+        const src = objById.get(record.id);
+        const em = src && src.emissive;
+        if (!em || !em.enabled) return;
+        const c = recordWorldCentroid(record);
+        if (!c) return;
+        emissiveLights.push({ type: 'point', position: c, intensity: em.intensity, range: 0, _srcId: record.id });
+      });
+
       const records = scene.ground ? scene.objects.concat([scene.ground]) : scene.objects;
 
       records.forEach((record) => {
+        // Shade THIS record under the scene lights plus every OTHER object's
+        // emissive point light (self excluded). Empty emissive list ⇒ p.lights.
+        activeLights = emissiveLights.length
+          ? p.lights.concat(emissiveLights.filter((e) => e._srcId !== record.id))
+          : p.lights;
+        // Emissive self-render config for this object (never the ground).
+        const emSrc = objById.get(record.id);
+        const emCfg = (emSrc && emSrc.emissive && emSrc.emissive.enabled && record.id !== 'ground')
+          ? emSrc.emissive : null;
+        const emissiveCoreBlank = Boolean(emCfg && emCfg.coreBlank);
         const hiddenTreatment = record.visibility === 'xray' ? 'dash' : 'remove';
         // Object-scope x-ray settings (drive the hidden-edge toggle + the faceted
         // back-face loop). Per-fill details re-read the specific style below.
@@ -646,7 +697,10 @@
             }
           }
 
-          if (faceted && surfaceFill) {
+          // coreBlank (emissive self-render): leave the emitter's own surface
+          // fill blank so the core reads as bright/glowing. Outlines + edges still
+          // draw (the shape stays legible); only the interior fill is dropped.
+          if (faceted && surfaceFill && !emissiveCoreBlank) {
             const plane = HLR.fitSupportPlane(face.polygon);
             if (plane) {
               const styleParams = style.params || {};
@@ -746,7 +800,7 @@
         // front-face region (the silhouette boundary), grouped by hatch style.
         // Per-face hatch fails here — the tessellation faces are smaller than
         // the line spacing — so the fill reads as the whole surface.
-        if (!faceted) {
+        if (!faceted && !emissiveCoreBlank) {
           const groups = new Map();
           record.faces.forEach((face, idx) => {
             if (!face.front) return;
@@ -1002,6 +1056,83 @@
                   const clip = clipper.clipPath(pts, hlCtx);
                   emitRuns(clip.runs, hlMeta, hiddenTreatment, null, NO_STROKE_TREATMENT);
                 });
+              }
+            }
+          }
+        }
+
+        // ── Emissive self-render (Phase 7): an enabled emissive object draws its
+        // OWN glow — an outward radial BURST (sun rays) or concentric halo RINGS
+        // around the projected silhouette, reusing the Phase-4 burst emitter shape
+        // (radial rays from a center). Deterministic (no RNG). Independent of tone
+        // (a glow reads even with light-made tone off). Scaled by intensity; drawn
+        // on emissive.penId if set. Rays sit at the object's near depth (+ a small
+        // camera-ward bias) so the object never occludes its own glow, while a
+        // NEARER object still can. Skipped only on the ground.
+        if (emCfg && emCfg.halo !== 'none') {
+          // Projected bounds → glow center + base radius (half the diagonal).
+          let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+          (record.projected || []).forEach((pt) => {
+            if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return;
+            if (pt.x < minX) minX = pt.x; if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y; if (pt.y > maxY) maxY = pt.y;
+          });
+          if (Number.isFinite(minX)) {
+            const cx = (minX + maxX) / 2;
+            const cy = (minY + maxY) / 2;
+            const radius = Math.max(2, Math.hypot(maxX - minX, maxY - minY) / 2);
+            // Near depth = the front-most face (bigger camera z = nearer); + a 1mm
+            // camera-ward bias so own faces (at nearZ) never clip the glow.
+            let nearZ = -Infinity;
+            record.faces.forEach((face) => {
+              if (face && face.front && Number.isFinite(face.centroidZ) && face.centroidZ > nearZ) nearZ = face.centroidZ;
+            });
+            if (!Number.isFinite(nearZ)) nearZ = 0;
+            const glowZ = nearZ + 1;
+            const norm = clamp(finite(emCfg.intensity, 1), 0, 4) / 4; // 0..1 glow scale
+            const emMeta = {
+              algorithm: 'scene3d',
+              kind: 'sceneFill',
+              sceneTarget: {
+                objectId: record.id,
+                faceId: null,
+                edgeClass: null,
+                regionClass: 'emissive',
+                depth: -glowZ,
+                normal: { x: 0, y: 0, z: 1 },
+                facingUp: false,
+                occluded: false,
+                emissive: true,
+              },
+              ...(emCfg.penId ? { penId: emCfg.penId } : {}),
+            };
+            const emCtx = { objectId: record.id, selfObject: false };
+            if (emCfg.halo === 'burst') {
+              const N = clamp(Math.round(finite(emCfg.haloCount, 16)), 4, 48);
+              const inner = radius * 0.9;
+              const outer = radius * (1.2 + 0.5 * norm);
+              for (let k = 0; k < N; k++) {
+                const ang = (k / N) * Math.PI * 2;
+                const c = Math.cos(ang); const s = Math.sin(ang);
+                const p0 = { x: cx + c * inner, y: cy + s * inner, z: glowZ };
+                const p1 = { x: cx + c * outer, y: cy + s * outer, z: glowZ };
+                const clip = clipper.clipPath([p0, p1], emCtx);
+                emitRuns(clip.runs, emMeta, hiddenTreatment, null, NO_STROKE_TREATMENT);
+              }
+            } else {
+              // ring: concentric circles expanding outward from the silhouette.
+              const rings = clamp(Math.round(finite(emCfg.haloRings, 3)), 1, 6);
+              const SEG = 48;
+              const step = radius * (0.16 + 0.12 * norm);
+              for (let ri = 0; ri < rings; ri++) {
+                const rr = radius * 1.02 + ri * step;
+                const ring = [];
+                for (let k = 0; k <= SEG; k++) {
+                  const a = (k / SEG) * Math.PI * 2;
+                  ring.push({ x: cx + Math.cos(a) * rr, y: cy + Math.sin(a) * rr, z: glowZ });
+                }
+                const clip = clipper.clipPath(ring, emCtx);
+                emitRuns(clip.runs, emMeta, hiddenTreatment, null, NO_STROKE_TREATMENT);
               }
             }
           }

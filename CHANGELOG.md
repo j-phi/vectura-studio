@@ -7,6 +7,14 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene emissive objects.** The sixth and final light type: any scene object
+  can be made **Emissive** — it now both *glows* and *lights its neighbours*. As a
+  light it acts as a co-located point light at its own world centroid, brightening
+  every OTHER object (never itself); as a self-render it draws its own glow — an
+  outward radial **burst** of rays or concentric halo **rings**, with an optional
+  blank/bright core. The object inspector gains an Emissive group (enable, glow
+  strength, halo style, ray/ring count, blank-core toggle, glow pen). Deterministic
+  (no RNG); a scene with no emissive object renders byte-identically to before.
 - **3D Scene area light.** A new **Area** light type joins directional / ambient /
   point / spot. An area light is a soft light: it shades with a gentler terminator
   and casts a softer shadow than a hard point light, by averaging N deterministic
