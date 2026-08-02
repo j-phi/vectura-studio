@@ -90,6 +90,10 @@
   //   xray: { backFaces, backDensity } — when backFaces, also emit the FAR
   //   surface as a second family (polylines tagged `.back = true`) so the caller
   //   draws it dashed/sparse; back count = front count × backDensity (0.2–1).
+  //   I8 (light-driven): shadowSensitivity (stage count, dark-end grading),
+  //   specularFn(worldNormal, worldPoint) → per-sample specular S, and
+  //   highlight.{lightDriven, sensitivity} place a per-sample glint. All default
+  //   off ⇒ byte-identical to the pre-I8 fill.
   const buildObject = (opts) => {
     if (!opts || !rotatePoint) return null;
     const chart = chartFor(opts.mode, opts.sizes);
@@ -132,6 +136,11 @@
     const specOn = Boolean(useLadder && tone.specular && tone.specular.enabled !== false);
     const specSize = specOn ? clamp(finite(tone.specular.size, 1), 0, 3) : 0;
     const nB = ladderLen;
+    // I8 — shadow SENSITIVITY: graded darkening on the dark end (stage count).
+    // Default 1 = strict no-op; N quantizes low intensity into N darkening stages
+    // (more coverage → denser shadow), a smoother dark gradient as N rises.
+    const shadowSens = clamp(Math.round(finite(opts.shadowSensitivity, 1)), 1, 8);
+    const shadowGrades = Boolean(useLadder && shadowSens > 1 && Regions && typeof Regions.shadowStage === 'function');
     // Ink line-fraction (0..1) for a sample: how many of the N wrap lines draw at
     // this local intensity. Dark → high, lit cap → low.
     const coverageForSample = (I) => {
@@ -140,6 +149,23 @@
       if (specOn && b === nB - 1) cov *= clamp(1 - 0.5 * specSize, 0, 1); // glint cap
       return clamp(cov, 0, 1);
     };
+    const SHADOW_TH = 0.5; // intensity below which the dark-grading infill engages
+
+    // I8 — LIGHT-DRIVEN highlight: the highlight region is where the per-sample
+    // specular term S is high (a glint that spans faces near a point light), not
+    // the top tone band. `sensitivity` stages the drop: 1 = binary (uniform
+    // treatment across the region), N = a gradient (brightest = blankest). When
+    // engaged the perFace band-treatment dispatch is disabled (they are mutually
+    // exclusive within one fill). Default off ⇒ every branch below is inert.
+    const hlCfg = opts.highlight || null;
+    const specularFn = opts.specularFn || null;
+    const ldOn = Boolean(hlCfg && hlCfg.lightDriven && typeof specularFn === 'function' && Regions
+      && typeof Regions.highlightStage === 'function');
+    const ld = ldOn ? {
+      treatment: hlCfg.treatment || 'blank',
+      sensitivity: clamp(Math.round(finite(hlCfg.sensitivity, 1)), 1, 6),
+    } : null;
+    const LD_REG = 0.025; // specular threshold for "in the glint" (matches faceted)
 
     // Sample the surface at (a,b) → screen point + front flag + Lambert intensity.
     const sampleAt = (a, b) => {
@@ -160,7 +186,9 @@
       const scr = projectWorld(world);
       if (!scr || !Number.isFinite(scr.x) || !Number.isFinite(scr.y)) return null;
       const I = toneOn ? clamp(intensityFn(wN, world), 0, 1) : 1;
-      return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, I };
+      // I8 — per-sample specular term for light-driven highlight (0 when off).
+      const S = (ldOn && typeof specularFn === 'function') ? clamp(specularFn(wN, world), 0, 1) : 0;
+      return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, I, S };
     };
 
     const N = lineCountFor(finite(opts.fillDensity, 50));
@@ -183,7 +211,9 @@
     // 'blank' output is byte-identical. keep/dashed/dotted/sparse/stippleOut are
     // handled per-line here; altFill/burst drop here and are filled by a
     // dedicated specular-region pass in the caller.
-    const hl = (opts.highlight && opts.highlight.treatment && opts.highlight.treatment !== 'blank')
+    // perFace band-treatment dispatch — DISABLED when lightDriven owns the
+    // highlight (the two are mutually exclusive within one fill).
+    const hl = (!ldOn && opts.highlight && opts.highlight.treatment && opts.highlight.treatment !== 'blank')
       ? opts.highlight : null;
     const hlIsHL = (hl && typeof hl.isHL === 'function') ? hl.isHL : () => false;
     const hlDensity = hl ? clamp(finite(hl.density, 25), 1, 100) : 25;
@@ -222,6 +252,29 @@
         if (!smp || smp.front !== wantFront) { flush(); flushHL(); continue; }
         if (toneOn) {
           const shade = clamp(1 - smp.I, 0, 1);
+          // I8 — LIGHT-DRIVEN glint: the per-sample specular term overrides the
+          // base tone fill inside the lit region. Brightest sample → blank; the
+          // dim region edge → kept; graded by sensitivity (1 = binary). Spans
+          // faces automatically because a point light's direction varies across
+          // the surface. keep/dashed/dotted route kept samples to the highlight
+          // channel; blank/sparse/stippleOut drop them to bare paper.
+          if (ld) {
+            const stg = Regions.highlightStage(smp.S, ld.sensitivity, LD_REG);
+            if (stg.inRegion) {
+              // `openness` = per-sample treatment strength (brightest → ~1). A
+              // TREATED sample reroutes (keep/dashed/dotted → highlight channel)
+              // or blanks (blank/sparse → bare paper); UNTREATED stays on the base
+              // run. sensitivity 1 → whole region treated (binary); N → graded.
+              const treated = sfHash(Math.round(smp.x * 4), Math.round(smp.y * 4)) < stg.openness;
+              const tr = ld.treatment;
+              if (tr === 'keep' || tr === 'dashed' || tr === 'dotted') {
+                if (treated) { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); }
+                else { flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); }
+              } else if (treated) { flush(); flushHL(); }        // blank glint
+              else { flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); }
+              continue;
+            }
+          }
           // `threshold` is this line's ordered-dither rank (i+0.5)/count. With the
           // ladder, the sample draws where the rank is below the band's coverage
           // (dark bands cover more ranks → dense; the lit cap covers few → sparse).
@@ -266,6 +319,34 @@
       }
     };
 
+    // I8 — SHADOW SENSITIVITY infill. The base dither can't densify shadow past a
+    // meridian's own length (its rank is tied to its longitude), so graded
+    // darkening is added as EXTRA lines confined to the dark region: a sample
+    // survives only where I < SHADOW_TH, and each extra line's rank gates it by
+    // stage so DEEPER shadow keeps MORE of them → a smooth dark gradient. More
+    // sensitivity stages → more infill lines + a finer gradient. Default
+    // (shadowSens 1) emits nothing → byte-identical.
+    const emitShadowInfill = (fixAxis, mainCount, back) => {
+      if (!shadowGrades) return;
+      const wantFront = !back;
+      const extra = (shadowSens - 1) * Math.max(2, mainCount);
+      for (let i = 0; i < extra; i++) {
+        const fixVal = (i + 0.75) / extra; // interleaved with the base family
+        const rank = i % shadowSens;       // 0..shadowSens-1
+        let run = [];
+        const flush = () => { pushRun(run, back); run = []; };
+        for (let s = 0; s <= steps; s++) {
+          const tt = s / steps;
+          const smp = fixAxis === 'b' ? sampleAt(tt, fixVal) : sampleAt(fixVal, tt);
+          if (!smp || smp.front !== wantFront || smp.I >= SHADOW_TH) { flush(); continue; }
+          const stg = Regions.shadowStage(smp.I, shadowSens, SHADOW_TH);
+          if (!stg.inRegion || stg.stage < rank) { flush(); continue; } // deeper shadow keeps more
+          run.push({ x: smp.x, y: smp.y, z: smp.z });
+        }
+        flush();
+      }
+    };
+
     // Render one pass of the current mapper. `count` is the line/row budget
     // (reduced for the sparser back family) and `back` selects the far surface.
     // Returns false only for an unsupported mapper (so the front pass can bail).
@@ -273,11 +354,14 @@
       const wantFront = !back;
       if (mapper === 'hatch') {
         emitFamily('b', count, back); // meridians wrap top-to-bottom
+        emitShadowInfill('b', count, back);
       } else if (mapper === 'crosshatch') {
         emitFamily('b', count, back);
         emitFamily('a', count, back); // + parallels
+        emitShadowInfill('b', count, back);
       } else if (mapper === 'contour') {
         emitFamily('a', count, back); // latitude rings following the form
+        emitShadowInfill('a', count, back);
       } else if (mapper === 'spiral') {
         // One continuous helix: the ALONG-axis coordinate sweeps 0→1 while the
         // AROUND coordinate winds `turns` times. `count` (line budget) is amplified

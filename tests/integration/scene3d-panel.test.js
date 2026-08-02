@@ -278,6 +278,31 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     expect(regen).toHaveBeenCalled();
   });
 
+  test('Highlight mode (I8): selector writes highlightMode + reveals the Sensitivity slider', () => {
+    const { container, layer } = mount({
+      objects: [fixtureObject(1)],
+      styleTable: {
+        scene: { penId: null, mapper: 'hatch', params: { fillDensity: 60 } },
+        byObject: {},
+        byFace: {},
+      },
+    });
+    clickTab(container, 'style');
+    const rowByLabel = (label) => Array.from(container.querySelectorAll('.vs3-row'))
+      .find((r) => r.querySelector('.vs3-lbl') && r.querySelector('.vs3-lbl').textContent === label);
+    // The highlight-mode selector + shadow-grade slider are always present for a
+    // fill mapper; Sensitivity is hidden until light-driven mode.
+    expect(rowByLabel('Highlight mode')).toBeTruthy();
+    expect(rowByLabel('Shadow grade')).toBeTruthy();
+    expect(rowByLabel('Sensitivity')).toBeFalsy();
+    // Flip to Light-driven → highlightMode is written and Sensitivity appears.
+    const lightBtn = Array.from(rowByLabel('Highlight mode').querySelectorAll('button'))
+      .find((b) => b.textContent.trim() === 'Light');
+    fire(lightBtn, 'click');
+    expect(layer.params.styleTable.scene.params.highlightMode).toBe('lightDriven');
+    expect(rowByLabel('Sensitivity')).toBeTruthy();
+  });
+
   test('setting a hole back to Solid detaches it from its subtract group', () => {
     const { container, layer } = mount({
       objects: [fixtureObject(1), { ...fixtureObject(2), role: 'hole' }],

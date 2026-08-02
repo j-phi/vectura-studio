@@ -165,9 +165,14 @@ describe('scene3d tone (CONTRACT L3)', () => {
       const side = len(pointAt(160, 0, 60));   // part of the region is well lit
       const behind = len(pointAt(0, 0, -160));  // light behind ⇒ front face unlit
       expect(side).toBeGreaterThan(0);
-      // The lit side reaches a denser (brighter) band; the old averaged-centroid
-      // sample washed both to the same dark band (side === behind).
-      expect(side).toBeGreaterThan(behind);
+      // I27 (direction unify): faceted fills now shade DARK = DENSE / BRIGHT =
+      // SPARSE, the same direction as the curved SurfaceFill path. The lit side
+      // reaches a SPARSER (brighter) band → FEWER lines than the fully-unlit
+      // "behind" region (every line, densest). The point still stands: the
+      // per-sample max picks the LIT reading, so the two differ — a dark-averaged
+      // centroid would wash both to the same band (side === behind).
+      expect(side).not.toBe(behind);
+      expect(side).toBeLessThan(behind);
     } finally {
       V.Scene3D.SurfaceFill.buildObject = save;
     }

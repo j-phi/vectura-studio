@@ -66,12 +66,16 @@ describe('Scene3D emissive objects (Phase 7)', () => {
   };
 
   // ── HEADLINE (RGR): an enabled emissive object BRIGHTENS a facing object. B's
-  // up-facing plane, unlit by any scene light, gains fill lines only because A
-  // above it emits (a brighter tone band packs the hatch tighter). ────────────
+  // up-facing plane, unlit by any scene light, changes its fill only because A
+  // above it emits. I27 (direction unify): a brighter tone band now reads
+  // SPARSER (dark = dense, bright = sparse — matching the curved fill), so
+  // brightening B's top LOOSENS its hatch → FEWER lines than the fully-dark
+  // no-emitter case. (Before I27 the faceted path packed brighter = denser.) The
+  // contribution is still proven: the emitter demonstrably changes B's shading. ─
   test('contribution: an emissive object brightens a facing object\'s fill', () => {
     const lit = surfFillsOf(gen(scene({ emA: { coreBlank: false } })), 'B').length;
     const dark = surfFillsOf(gen(scene({})), 'B').length;
-    expect(lit).toBeGreaterThan(dark);
+    expect(lit).toBeLessThan(dark);
   });
 
   // ── HEADLINE (RGR): the emitter does NOT light ITSELF via the contribution

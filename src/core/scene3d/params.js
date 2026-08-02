@@ -175,6 +175,14 @@
       // legacy bare-paper highlight; the others render the top tone band(s) with
       // a distinct treatment instead of dropping.
       case 'highlightTreatment': return HIGHLIGHT_TREATMENTS.includes(value) ? value : 'blank';
+      // I8 — light-driven highlight/shadow mode. 'perFace' (default) = the legacy
+      // per-face/per-band highlight (byte-identical). 'lightDriven' places the
+      // highlight by ACTUAL lighting (per-sample specular). highlightSensitivity /
+      // shadowSensitivity are stage counts: 1 = binary difference, N = a graded
+      // gradient. All three default to the byte-identical no-op.
+      case 'highlightMode': return value === 'lightDriven' ? 'lightDriven' : 'perFace';
+      case 'highlightSensitivity': return clamp(Math.round(finite(value, 1)), 1, 6);
+      case 'shadowSensitivity': return clamp(Math.round(finite(value, 1)), 1, 6);
       case 'highlightBands': return clamp(Math.round(finite(value, 1)), 1, 2);
       case 'highlightPenId': return (typeof value === 'string' && value) ? value : null; // inherit when null
       case 'highlightDensity': return clamp(finite(value, 25), 1, 100);

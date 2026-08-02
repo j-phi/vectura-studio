@@ -7,6 +7,20 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — light-driven highlight mode + sensitivity.** A new Highlight mode
+  (`lightDriven`, alongside the existing per-face mode) places the highlight by actual
+  lighting: a per-sample specular term makes the highlight cluster where the light
+  reflects, so a point light near a cube corner produces a highlight that spans both lit
+  faces. A **Sensitivity** slider runs from low (the highlight region's lines merely
+  differ — binary) to high (a gradient, most intense where brightest). A matching
+  **shadow sensitivity** grades the dark side with extra infill. Default per-face mode is
+  unchanged.
+
+### Fixed
+- **3D Scene — faceted and curved surfaces now shade the same direction.** Flat faces
+  shaded bright=dense while curved surfaces shaded bright=sparse, so a cube and a sphere
+  in one scene read inverted. Both now shade dark=dense / bright=sparse (a regression test
+  pins the shared direction).
 - **3D Scene — per-axis object scale.** Dragging an individual scale handle on the
   object gizmo now stretches only that axis (non-uniform `sx/sy/sz`); **Alt+drag** any
   handle scales all axes uniformly. The Inspector gains Scale X/Y/Z alongside a uniform

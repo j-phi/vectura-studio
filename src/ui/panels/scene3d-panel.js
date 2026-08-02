@@ -2289,6 +2289,34 @@
           onChange: (v) => commitStyle({ params: { ...sp(), highlightTreatment: v } }),
         }));
 
+        // I8 — highlight MODE: 'perFace' (the legacy per-face/per-band highlight)
+        // vs 'lightDriven' (the highlight is placed by the ACTUAL per-sample
+        // specular — a localized glint that spans the faces a nearby point light
+        // lights). lightDriven adds a Sensitivity slider (1 = binary difference,
+        // N = a graded gradient). Shadow grade mirrors it on the dark end.
+        const hlMode = rp.highlightMode === 'lightDriven' ? 'lightDriven' : 'perFace';
+        styleComps.push(UI.SegCtrl(labeledHost('Highlight mode'), {
+          options: [{ value: 'perFace', label: 'Per-face' }, { value: 'lightDriven', label: 'Light' }],
+          value: hlMode,
+          ariaLabel: 'Highlight mode',
+          onChange: (v) => commitStyle({ params: { ...sp(), highlightMode: v } }),
+        }));
+        const stageOf = (val) => Math.min(6, Math.max(1, Math.round(Number.isFinite(val) ? val : 1)));
+        if (hlMode === 'lightDriven') {
+          sliderRow(styleHost, styleComps, 'Sensitivity', {
+            value: stageOf(rp.highlightSensitivity),
+            min: 1, max: 6, step: 1, defaultValue: 1, ariaLabel: 'Highlight sensitivity',
+            onCommit: (v) => commitStyle({ params: { ...sp(), highlightSensitivity: Math.round(v) } }),
+          });
+        }
+        // Shadow grade (dark-side sensitivity) applies in BOTH modes — default 1
+        // is the byte-identical no-op.
+        sliderRow(styleHost, styleComps, 'Shadow grade', {
+          value: stageOf(rp.shadowSensitivity),
+          min: 1, max: 6, step: 1, defaultValue: 1, ariaLabel: 'Shadow sensitivity',
+          onCommit: (v) => commitStyle({ params: { ...sp(), shadowSensitivity: Math.round(v) } }),
+        });
+
         if (treatment !== 'blank') {
           const bands = Math.min(2, Math.max(1, Math.round(Number.isFinite(rp.highlightBands) ? rp.highlightBands : 1)));
           styleComps.push(UI.SegCtrl(labeledHost('Bands'), {

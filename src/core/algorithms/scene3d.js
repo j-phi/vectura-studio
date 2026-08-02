@@ -278,6 +278,15 @@
       // (spacingBand, the curved pass, SurfaceFill) without re-plumbing them.
       let activeLights = p.lights;
       const intensityFn = toneOn ? (nw, wp) => Regions.combinedIntensity(nw, wp, activeLights) : null;
+      // I8 — per-sample specular term for light-driven highlight mode. Reads the
+      // live `activeLights` binding (like intensityFn) so an emissive object's
+      // co-located light is picked up. shininess derives from the tone Specular
+      // size (bigger size → broader glint). Only consumed when a style opts into
+      // highlightMode:'lightDriven'; a null fn is a strict no-op otherwise.
+      const specShininess = (toneOn && Regions && typeof Regions.shininessForSize === 'function')
+        ? Regions.shininessForSize(p.tone && p.tone.specular && p.tone.specular.size) : 24;
+      const specularFn = (toneOn && Regions && typeof Regions.specularTerm === 'function')
+        ? (nw, wp) => Regions.specularTerm(nw, wp, activeLights, scene.camera, specShininess) : null;
       const penWidth = finite(bounds.penWidth, 0.3);
 
       // Mean world position of a face's verts (the point at which point/spot
@@ -305,11 +314,22 @@
       // Phase-1 density when tone is off, else intensity→band→coverage→spacing.
       // Density is AUTHORITATIVE; tone is a MULTIPLIER (Phase-1 density bug fix).
       // s0 = density-driven base spacing; a band's coverage warps it around a
-      // midpoint gain of ~1 (lit/high-coverage bands pack tighter, dark/low-
-      // coverage bands open up), floored at the pen width. Coverage 0..1 →
-      // gain 0.5..1.6, so changing Density visibly re-spaces the fill with tone
-      // ON, instead of the old coverage-only spacing that discarded it.
-      const coverageGain = (bandIdx) => 0.5 + clamp(Regions.coverageFor(bandIdx, p.tone), 0, 1) * 1.1;
+      // midpoint gain of ~1, floored at the pen width. Coverage 0..1 → gain
+      // 0.5..1.6, so changing Density visibly re-spaces the fill with tone ON.
+      //
+      // I27 (direction unify): faceted fills now shade DARK = DENSE, BRIGHT =
+      // SPARSE — the SAME physically-correct direction the curved SurfaceFill
+      // path uses (dark surface = every line; the lit cap = near-blank = the
+      // highlight). Before this, faceted read the ladder coverage DIRECTLY
+      // (dark→light), so a lit band packed tighter → bright=DENSE, the OPPOSITE
+      // of a sphere in the same scene. We now read the COMPLEMENT band's coverage
+      // (nBands-1-bandIdx), matching SurfaceFill.coverageForSample, so a cube and
+      // a sphere lit alike shade alike.
+      const toneBandCount = () => (p.tone && Array.isArray(p.tone.ladder) && p.tone.ladder.length) ? p.tone.ladder.length : 3;
+      const coverageGain = (bandIdx) => {
+        const nb = toneBandCount();
+        return 0.5 + clamp(Regions.coverageFor(nb - 1 - bandIdx, p.tone), 0, 1) * 1.1;
+      };
       const spacingBand = (normalWorld, styleParams, worldPoint) => {
         const s0 = hatchSpacing(styleParams.fillDensity);
         if (!toneOn) return { spacing: s0, bandIdx: -1 };
@@ -329,8 +349,10 @@
         const U = normalize(sub(wv[1], origin));
         const V = normalize(cross(normalWorld, U)); // in-plane, ⟂ U
         const uv = wv.map((pw) => { const d = sub(pw, origin); return { x: dot(d, U), y: dot(d, V) }; });
-        const toScreen = (pt) => scene.projectWorld(add(origin, add(mul(U, pt.x), mul(V, pt.y))));
-        return { uv, toScreen, U, V };
+        // uv → WORLD (for per-sample lighting, I8) and uv → SCREEN.
+        const toWorld = (pt) => add(origin, add(mul(U, pt.x), mul(V, pt.y)));
+        const toScreen = (pt) => scene.projectWorld(toWorld(pt));
+        return { uv, toScreen, toWorld, origin, U, V };
       };
 
       // WORLD-UP hatch reference (Phase 2 `angleRef:'worldUp'`): the in-plane
@@ -422,6 +444,76 @@
         crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, bandIdx === 0,
           (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)));
         return uvLines.map((line) => line.map(scaf.toScreen));
+      };
+
+      // Deterministic screen hash (mirrors SurfaceFill.sfHash) for the light-driven
+      // per-sample drop dither. Same quantized point → same value, no RNG.
+      const ldHash = (a, b) => {
+        let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
+        h ^= h >>> 13; h = Math.imul(h, 1274126177); h ^= h >>> 16;
+        return (h >>> 0) / 4294967296;
+      };
+
+      // I8 — LIGHT-DRIVEN faceted fill. The base tone hatch (dark=dense) still
+      // runs; on top of it the actual per-sample specular term S carves the lit
+      // glint. Because a POSITIONAL light's direction varies across a flat face,
+      // S>0 clusters near the light-facing corner and SPANS the two adjacent
+      // faces (the semicircular highlight) — NOT the per-face-uniform band the
+      // perFace path uses. Sensitivity stages the drop: 1 = binary (the whole
+      // region treated uniformly), N = a gradient (brightest = blankest).
+      // Returns { base:[screenLines], hl:[screenLines] } or null (no scaffold →
+      // caller uses the plain faceHatchLines path). Deterministic.
+      const faceLightDrivenLines = (face, styleParams, normalWorld, crossPass, hlCfg) => {
+        if (draft || !specularFn) return null;
+        const angleRef = styleParams.angleRef === 'worldUp' ? 'worldUp' : 'face';
+        const scaf = faceUVScaffold(face, normalWorld);
+        if (!scaf) return null;
+        const worldPoint = faceWorldCentroid(face);
+        const { spacing, bandIdx } = spacingBand(normalWorld, styleParams, worldPoint);
+        const userAngle = finite(styleParams.fillAngle, 45);
+        const baseAngle = angleRef === 'worldUp' ? worldUpAngleInUV(scaf) + userAngle : userAngle;
+        const uvLines = [];
+        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, bandIdx === 0,
+          (segs) => uvLines.push(...segs));
+        const SREG = 0.025;
+        const N = hlCfg.sensitivity;
+        const treat = hlCfg.treatment;
+        const routeHL = treat === 'keep' || treat === 'dashed' || treat === 'dotted';
+        const STEP_MM = 2.5;                         // resample so S varies smoothly across a big face
+        const base = []; const hl = [];
+        uvLines.forEach((line) => {
+          let baseRun = []; let hlRun = [];
+          const flushBase = () => { if (baseRun.length >= 2) base.push(baseRun); baseRun = []; };
+          const flushHL = () => { if (hlRun.length >= 2) hl.push(hlRun); hlRun = []; };
+          for (let seg = 0; seg + 1 < line.length; seg++) {
+            const a = line[seg]; const b = line[seg + 1];
+            const dx = b.x - a.x; const dy = b.y - a.y;
+            const len = Math.hypot(dx, dy) || 1e-6;
+            const steps = Math.max(1, Math.round(len / STEP_MM));
+            for (let s = seg === 0 ? 0 : 1; s <= steps; s++) {
+              const tt = s / steps;
+              const uv = { x: a.x + dx * tt, y: a.y + dy * tt };
+              const wp = scaf.toWorld(uv);
+              const S = specularFn(normalWorld, wp);
+              const st = Regions.highlightStage(S, N, SREG);
+              const scr = scaf.toScreen(uv);
+              if (!st.inRegion) { flushHL(); baseRun.push({ x: scr.x, y: scr.y }); continue; }
+              // In the glint: `openness` is the per-sample treatment strength
+              // (brightest → ~1). A TREATED sample is rerouted (keep/dashed/dotted
+              // → highlight channel) or blanked (blank/sparse → bare paper); an
+              // UNTREATED sample stays on the normal base run. sensitivity 1 →
+              // openness 1 → whole region treated (binary); N → graded.
+              const treated = ldHash(Math.round(scr.x * 4), Math.round(scr.y * 4)) < st.openness;
+              if (routeHL) {
+                if (treated) { flushBase(); hlRun.push({ x: scr.x, y: scr.y }); }
+                else { flushHL(); baseRun.push({ x: scr.x, y: scr.y }); }
+              } else if (treated) { flushBase(); flushHL(); }        // blank glint
+              else { flushHL(); baseRun.push({ x: scr.x, y: scr.y }); }
+            }
+          }
+          flushBase(); flushHL();
+        });
+        return { base, hl };
       };
 
       // Region fill (contour/spiral/stipple) for a flat face — generated IN THE
@@ -592,6 +684,12 @@
         const treatment = HIGHLIGHT_TREATMENTS.includes(s.highlightTreatment) ? s.highlightTreatment : 'blank';
         return {
           treatment,
+          // I8 — light-driven highlight/shadow. mode 'lightDriven' places the
+          // highlight by the per-sample specular term; sensitivity/shadowSensitivity
+          // are stage counts (1 = binary, N = graded). All default to the no-op.
+          mode: s.highlightMode === 'lightDriven' ? 'lightDriven' : 'perFace',
+          sensitivity: clamp(Math.round(finite(s.highlightSensitivity, 1)), 1, 6),
+          shadowSensitivity: clamp(Math.round(finite(s.shadowSensitivity, 1)), 1, 6),
           bands: clamp(Math.round(finite(s.highlightBands, 1)), 1, 2),
           penId: (typeof s.highlightPenId === 'string' && s.highlightPenId) ? s.highlightPenId : null,
           density: clamp(finite(s.highlightDensity, 25), 1, 100),
@@ -763,6 +861,47 @@
               // dotted dash it on the highlight pen; sparse/stippleOut thin it by
               // scaling the Density down.
               const faceHL = highlightCfg(styleParams);
+              // I8 — LIGHT-DRIVEN faceted fill: the highlight is placed by the
+              // per-sample specular term (a localized glint spanning faces near a
+              // point light), not the per-face tone band. Engaged for LINE mappers
+              // (hatch/crosshatch) with tone on and not a draft frame; region
+              // mappers fall through to the perFace path. burst/altFill keep using
+              // the region pass (the base fill is suppressed as before).
+              const faceLD = toneOn && !draft && faceHL.mode === 'lightDriven'
+                && !REGION_MAPPERS.has(style.mapper)
+                && faceHL.treatment !== 'burst' && faceHL.treatment !== 'altFill';
+              if (faceLD) {
+                const ld = faceLightDrivenLines(face, styleParams, face.normalWorld,
+                  style.mapper === 'crosshatch', faceHL);
+                if (ld) {
+                  const dashLD = faceHL.treatment === 'dashed' || faceHL.treatment === 'dotted';
+                  const zAt = (pt) => plane.A * pt.x + plane.B * pt.y + plane.C;
+                  const baseMetaLD = {
+                    algorithm: 'scene3d', kind: 'sceneFill',
+                    sceneTarget: { ...target, pickPolygon },
+                    ...(style.penId ? { penId: style.penId } : {}),
+                  };
+                  ld.base.forEach((line) => {
+                    const pts = line.map((pt) => ({ x: pt.x, y: pt.y, z: zAt(pt) }));
+                    const clip = clipper.clipPath(pts, segCtx);
+                    emitRuns(clip.runs, baseMetaLD, hiddenTreatment, null, faceTreat);
+                  });
+                  const hlTreatLD = dashLD
+                    ? strokeTreatment({ ...styleParams, lineType: hlLineType(faceHL.treatment), wobble: 0, overstroke: false })
+                    : faceTreat;
+                  const hlMetaLD = {
+                    algorithm: 'scene3d', kind: 'sceneFill',
+                    sceneTarget: { ...target, pickPolygon, highlight: true },
+                    ...(faceHL.penId ? { penId: faceHL.penId } : (style.penId ? { penId: style.penId } : {})),
+                  };
+                  ld.hl.forEach((line) => {
+                    const pts = line.map((pt) => ({ x: pt.x, y: pt.y, z: zAt(pt) }));
+                    const clip = clipper.clipPath(pts, segCtx);
+                    emitRuns(clip.runs, hlMetaLD, hiddenTreatment, null, hlTreatLD);
+                  });
+                  return; // lightDriven handled this face
+                }
+              }
               const faceIsHL = toneOn && faceHL.treatment !== 'blank'
                 && isHighlightBand(intensityFn(face.normalWorld, faceWorldCentroid(face)), faceHL.bands);
               const suppressFill = faceIsHL && (faceHL.treatment === 'burst' || faceHL.treatment === 'altFill');
@@ -926,7 +1065,13 @@
             // stippleOut). altFill/burst drop here and are drawn by the region
             // pass below. Only meaningful with tone on.
             const grpHL = highlightCfg(sp);
-            const hlActive = toneOn && grpHL.treatment !== 'blank';
+            // I8 — lightDriven engages the highlight path even with the 'blank'
+            // treatment (blank in lightDriven = a graded blank glint), and adds
+            // per-sample shadow grading. perFace + blank stays the no-op.
+            const grpLD = toneOn && grpHL.mode === 'lightDriven';
+            const hlActive = toneOn && (grpHL.treatment !== 'blank' || grpLD);
+            // Shadow sensitivity applies in BOTH modes (default 1 = no-op).
+            const grpShadowSens = toneOn ? grpHL.shadowSensitivity : 1;
             if (chartParams) {
               lines = SurfaceFill.buildObject({
                 mode: chartParams.mode,
@@ -961,12 +1106,20 @@
                 // cap all steer the curved fill (items 1+2). Directionally the
                 // fill stays dark→dense / bright→sparse (blank cap = highlight).
                 tone: p.tone,
+                // I8 — shadow sensitivity (stage count) graded darkening on the
+                // dark end; default 1 = no-op. Per-sample specular fn drives the
+                // lightDriven highlight region.
+                shadowSensitivity: grpShadowSens,
+                specularFn: grpLD ? specularFn : null,
                 xray: (grpXray && grpXray.backFaces)
                   ? { backFaces: true, backDensity: grpXray.backDensity } : null,
                 highlight: hlActive ? {
                   treatment: grpHL.treatment,
                   isHL: (I) => isHighlightBand(I, grpHL.bands),
                   density: grpHL.density,
+                  // lightDriven: per-sample specular region + sensitivity stages.
+                  lightDriven: grpLD,
+                  sensitivity: grpHL.sensitivity,
                 } : null,
               });
             }

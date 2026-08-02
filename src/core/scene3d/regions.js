@@ -340,6 +340,86 @@
     return path && path.length >= 3 ? path : null;
   };
 
+  // ── Light-driven highlight/shadow (I8) ──────────────────────────────────────
+  // A PER-SAMPLE specular term reusing specularHotspot's half-vector recipe but
+  // evaluated at each surface sample (not one lit face). S = (max(0, n̂·Ĥ))^shin
+  // in CAMERA space, combined across a light list by taking the brightest
+  // reflection (a highlight is one glint, not a sum). worldPoint is consulted by
+  // positional lights (their L direction varies across a face → a point light
+  // near a cube corner lights BOTH adjacent faces there, so S>0 spans the two
+  // faces = the semicircular cross-face highlight). Deterministic (no RNG).
+  const specularTerm = (normalWorld, worldPoint, lights, camAngles, shininess) => {
+    if (!rotatePoint) return 0;
+    const cam = camAngles || { yaw: 0, pitch: 0, roll: 0 };
+    const nCam = normalize(rotatePoint(normalize(normalWorld || v(0, 0, 1)), cam));
+    const P = (worldPoint && Number.isFinite(worldPoint.x) && Number.isFinite(worldPoint.y) && Number.isFinite(worldPoint.z))
+      ? worldPoint : v(0, 0, 0);
+    const list = Array.isArray(lights) ? lights : (lights ? [lights] : []);
+    const sh = Math.max(1, finite(shininess, 24));
+    let best = 0;
+    for (let i = 0; i < list.length; i++) {
+      const light = list[i];
+      if (!light || light.type === 'ambient') continue;
+      let Lworld;
+      if (light.type === 'point' || light.type === 'spot' || light.type === 'area') {
+        const pos = light.position || v(0, 0, 0);
+        const to = sub(pos, P);
+        const d = Math.hypot(to.x, to.y, to.z);
+        Lworld = d > 1e-9 ? mul(to, 1 / d) : v(0, 1, 0);
+      } else {
+        Lworld = towardLight(light);
+      }
+      const Lcam = normalize(rotatePoint(Lworld, cam));
+      const H = normalize(v(Lcam.x, Lcam.y, Lcam.z + 1)); // + view direction (+z)
+      const dHN = Math.max(0, nCam.x * H.x + nCam.y * H.y + nCam.z * H.z);
+      const s = Math.pow(dHN, sh);
+      if (s > best) best = s;
+    }
+    return clamp(best, 0, 1);
+  };
+
+  // Specular exponent for a highlight `size` (bigger size → broader/softer glint
+  // → lower exponent → the lit region spans more of the surface). Deliberately
+  // soft (size 1 → ~6) so the light-driven glint reads as a semicircular REGION
+  // spanning adjacent faces, not a pinpoint. Deterministic.
+  const shininessForSize = (size) => clamp(5 / Math.max(0.35, finite(size, 1)), 1.4, 20);
+
+  // Light-driven highlight staging. Given a specular term S and a sensitivity
+  // stage count, classify the sample: LOW (sensitivity 1) → one BINARY region
+  // (openness 1 everywhere the sample is lit → the whole region is treated
+  // uniformly, "lines merely differ"); HIGH (N) → N graded stages where the
+  // brightest sample (S→1) is the MOST open (blank/sparsest glint) and the dim
+  // region edge is the least open (a smooth gradient). `openness` ∈ [1/N, 1] is
+  // the per-sample drop strength the caller compares against a deterministic
+  // hash. Deterministic — same S → same stage.
+  const highlightStage = (S, sensitivity, regionThreshold) => {
+    const reg = clamp(finite(regionThreshold, 0.04), 0, 1);
+    const s = clamp(finite(S, 0), 0, 1);
+    if (s < reg) return { inRegion: false, stage: 0, openness: 0 };
+    const N = clamp(Math.round(finite(sensitivity, 1)), 1, 8);
+    if (N <= 1) return { inRegion: true, stage: 0, openness: 1 };
+    const f = clamp((s - reg) / (1 - reg || 1e-9), 0, 1); // 0 at region edge → 1 brightest
+    const stage = clamp(Math.floor(f * N), 0, N - 1);      // 0..N-1
+    return { inRegion: true, stage, openness: (stage + 1) / N };
+  };
+
+  // Shadow-side graded darkening (the mirror of highlightStage). sensitivity 1 →
+  // no-op (boost 1). N → quantize LOW intensity into N darkening stages; the
+  // darkest sample gets the biggest coverage boost so more lines pile up there,
+  // and more stages make that dark gradient smoother. Returns a coverage
+  // MULTIPLIER ≥ 1 for the dark region. Deterministic.
+  const shadowStage = (I, sensitivity, shadowThreshold) => {
+    const N = clamp(Math.round(finite(sensitivity, 1)), 1, 8);
+    if (N <= 1) return { inRegion: false, stage: 0, boost: 1 };
+    const th = clamp(finite(shadowThreshold, 0.5), 0.01, 1);
+    const i = clamp(finite(I, 0), 0, 1);
+    if (i >= th) return { inRegion: false, stage: 0, boost: 1 };
+    const f = clamp(1 - i / th, 0, 1);              // 0 at threshold → 1 darkest
+    const stage = clamp(Math.floor(f * N), 0, N - 1);
+    const boost = 1 + (stage / (N - 1 || 1)) * 0.8; // up to +80% coverage at the darkest stage
+    return { inRegion: true, stage, boost };
+  };
+
   const Regions = {
     intensity,
     combinedIntensity,
@@ -351,6 +431,10 @@
     towardLight,
     specularRegion,
     specularHotspot,
+    specularTerm,
+    shininessForSize,
+    highlightStage,
+    shadowStage,
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Lighting, Regions });
