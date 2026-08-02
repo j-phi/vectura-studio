@@ -2152,17 +2152,22 @@
           onChange: (v) => commitStyle({ params: { ...sp(), lineType: v } }),
         }));
 
-        // Dash scale only bites when the line dashes — but showing it always
-        // keeps the layout stable and lets a user pre-set it. Style writes route
-        // through commitStyle (CONTRACT C whole-style write) = one undo/gesture,
-        // preview on release — same pattern as Density / Angle.
-        sliderRow(styleHost, styleComps, 'Dash scale', {
-          value: Number.isFinite(rp.dashScale) ? rp.dashScale : STROKE_DEFAULTS.dashScale,
-          min: 0.25, max: 4, step: 0.05,
-          defaultValue: STROKE_DEFAULTS.dashScale,
-          ariaLabel: 'Dash scale',
-          onCommit: (v) => commitStyle({ params: { ...sp(), dashScale: v } }),
-        });
+        // Dash length (I15) — scales the dash pattern length. Only meaningful
+        // when the line dashes, so it's hidden for a solid line and shown for
+        // dashed / dash-dot / dotted. The lineType Select re-renders via
+        // commitStyle, so the row appears/disappears on the toggle. Style writes
+        // route through commitStyle (CONTRACT C whole-style write) = one
+        // undo/gesture, preview on release — same pattern as Density / Angle.
+        const lt = typeof rp.lineType === 'string' ? rp.lineType : 'solid';
+        if (lt === 'dashed' || lt === 'dashdot' || lt === 'dotted') {
+          sliderRow(styleHost, styleComps, 'Dash length', {
+            value: Number.isFinite(rp.dashScale) ? rp.dashScale : STROKE_DEFAULTS.dashScale,
+            min: 0.25, max: 4, step: 0.05,
+            defaultValue: STROKE_DEFAULTS.dashScale,
+            ariaLabel: 'Dash length',
+            onCommit: (v) => commitStyle({ params: { ...sp(), dashScale: v } }),
+          });
+        }
 
         sliderRow(styleHost, styleComps, 'Wobble', {
           value: Number.isFinite(rp.wobble) ? rp.wobble : STROKE_DEFAULTS.wobble,
@@ -2171,6 +2176,51 @@
           ariaLabel: 'Hand wobble',
           onCommit: (v) => commitStyle({ params: { ...sp(), wobble: v } }),
         });
+      }
+
+      // ── Border (I6) — per-object silhouette outline. Object scope only.
+      // Writes obj.border.* directly (a per-object field, not style.params),
+      // mirroring the ctxbar Style flyout. Enable reveals Weight + Pen. Lives in
+      // the main Style controls (moved here from the Highlight surface).
+      if (scope.scope === 'object' && getObject(scope.target.objectId)) {
+        const border = (getObject(scope.target.objectId) || {}).border || {};
+        const writeBorder = (key, value) => {
+          commit(() => {
+            const o = getObject(scope.target.objectId);
+            if (!o.border || typeof o.border !== 'object') o.border = {};
+            o.border[key] = value;
+          });
+        };
+
+        const bHdr = document.createElement('div');
+        bHdr.className = 'vs3-hl-hdr';
+        bHdr.textContent = 'Border';
+        styleHost.appendChild(bHdr);
+
+        styleComps.push(UI.SegCtrl(labeledHost('Border'), {
+          options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+          value: border.enabled ? 'on' : 'off',
+          ariaLabel: 'Silhouette border',
+          onChange: (v) => { writeBorder('enabled', v === 'on'); renderStyle(); },
+        }));
+
+        if (border.enabled) {
+          sliderRow(styleHost, styleComps, 'Weight', {
+            value: Number.isFinite(border.strength) ? border.strength : 1,
+            min: 0.25, max: 4, step: 0.05,
+            defaultValue: 1,
+            ariaLabel: 'Border strength',
+            onCommit: (v) => writeBorder('strength', v),
+          });
+          styleComps.push(UI.Select(labeledHost('Pen'), {
+            options: [{ value: '', label: 'Edge pen' }].concat(
+              pens.map((pn) => ({ value: pn.id, label: pn.name || pn.id })),
+            ),
+            value: border.penId || '',
+            ariaLabel: 'Border pen',
+            onChange: (v) => writeBorder('penId', v || null),
+          }));
+        }
       }
 
       // ── Highlight treatment (Phase 4) — every fill mapper. Selects what the

@@ -439,12 +439,19 @@
         eccentricity: Number.isFinite(styleParams.spiralEccentricity) ? styleParams.spiralEccentricity : undefined,
       });
 
+      // Spiral pitch (mm) from Density (I13): Density 100 collapses the pitch
+      // toward the pen width so the loops FULLY overlap (max ink, no gaps); lower
+      // Density opens it up to ~14mm. An explicit spiralPitch alias still wins
+      // (spiralOptsFrom → trueSpiral.pitch); this only sets the density fallback.
+      const spiralPitchFor = (density) => clamp(14 - 0.136 * clamp(finite(density, 50), 0, 100), 0.35, 14);
       // Region-fill spacing (mm): the explicit contourStep alias wins over the
-      // Density mapping when the user set it (contour only); otherwise Density.
-      const regionSpacingFor = (mapper, styleParams) =>
-        (mapper === 'contour' && Number.isFinite(styleParams.contourStep)
-          ? clamp(styleParams.contourStep, 0.5, 40)
-          : hatchSpacing(finite(styleParams.fillDensity, 50)));
+      // Density mapping when the user set it (contour only); the spiral uses the
+      // full-overlap pitch law above; every other region mapper uses Density.
+      const regionSpacingFor = (mapper, styleParams) => {
+        if (mapper === 'contour' && Number.isFinite(styleParams.contourStep)) return clamp(styleParams.contourStep, 0.5, 40);
+        if (mapper === 'spiral') return spiralPitchFor(finite(styleParams.fillDensity, 50));
+        return hatchSpacing(finite(styleParams.fillDensity, 50));
+      };
 
       // Stipple mark options (Phase 2) read off style.params. Absent keys keep
       // the legacy circle / derived radius / 0.7 jitter — a no-op default.
@@ -932,6 +939,16 @@
                 mapper: g.style.mapper,
                 fillAngle: angleDeg,
                 fillDensity: finite(sp.fillDensity, 50),
+                // Spiral controls (I14): wire angleOffset / eccentricity / centre /
+                // axis-snap into the wrapped surfaceHelix so each visibly changes the
+                // spiral on curved primitives (they were previously only read by the
+                // faceted flat-clip path). Every default is a strict no-op.
+                spiral: g.style.mapper === 'spiral' ? {
+                  offset: finite(sp.spiralAngleOffset, 0),
+                  eccentricity: Number.isFinite(sp.spiralEccentricity) ? clamp(sp.spiralEccentricity, 0.3, 3) : undefined,
+                  center: sp.spiralCenter === 'bboxCenter' ? 'bboxCenter' : 'centroid',
+                  axisSnap: sp.axisSnap === true,
+                } : null,
                 // Stipple mark controls (Phase 2) — absent ⇒ legacy dot (no-op).
                 dotShape: sp.dotShape,
                 dotAngle: finite(sp.dotAngle, 0),

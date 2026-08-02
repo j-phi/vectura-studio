@@ -115,9 +115,9 @@
       // Persistent scene-object dropdown pills (ask #8). Each opens a flyout that
       // stays open until you click elsewhere; copy for the rows lives in
       // CONTEXT_BAR.sceneFlyouts below.
-      sceneStyle: { label: 'Style', tooltip: 'Fill style, pen & density' },
+      sceneStyle: { label: 'Style', tooltip: 'Fill style, pen, density & border' },
       sceneShadow: { label: 'Shadow', tooltip: 'Cast shadow, angle & style' },
-      sceneHighlight: { label: 'Highlight', tooltip: 'Highlight treatment & border' },
+      sceneHighlight: { label: 'Highlight', tooltip: 'Highlight treatment' },
       sceneXray: { label: 'X-ray', tooltip: 'See-through / hidden-line style' },
       // I22: swap the selected object(s) primitive. Option list in
       // CONTEXT_BAR.sceneFlyouts.shape below.
@@ -155,6 +155,13 @@
         angle: { label: 'Angle', aria: 'Hatch angle' },
         density: { label: 'Density', aria: 'Fill density' },
         reset: { label: 'Reset override', tooltip: 'Clear this object’s style override' },
+        // I6 — Border (silhouette outline) relocated here from the Highlight
+        // flyout. Writes obj.border.* (a per-object field, not style.params).
+        borderHead: 'Border',
+        border: { label: 'Border', aria: 'Silhouette border' },
+        borderStrength: { label: 'Weight', aria: 'Border strength' },
+        borderPen: { label: 'Pen', aria: 'Border pen', inherit: 'Edge pen' },
+        onOff: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
         mappers: [
           { value: 'none', label: 'None' },
           { value: 'wireframe', label: 'Wireframe' },
@@ -192,11 +199,6 @@
         ],
         strength: { label: 'Strength', aria: 'Highlight density' },
         pen: { label: 'Pen', aria: 'Highlight pen', inherit: 'Inherit' },
-        borderHead: 'Border',
-        border: { label: 'Border', aria: 'Silhouette border' },
-        borderStrength: { label: 'Weight', aria: 'Border strength' },
-        borderPen: { label: 'Pen', aria: 'Border pen', inherit: 'Edge pen' },
-        onOff: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
       },
       xray: {
         mode: { label: 'X-ray', aria: 'Object visibility' },

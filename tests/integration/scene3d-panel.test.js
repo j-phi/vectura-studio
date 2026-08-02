@@ -552,6 +552,62 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     expect(container.querySelector('[aria-label="Hatch angle"]')).toBeFalsy();
   });
 
+  // I15 — Dash-length (renamed from "Dash scale") is hidden when Line = solid
+  // and appears only for dashed / dash-dot / dotted line types.
+  test('Style tab · Dash length is hidden for a solid line and appears when dashed (I15)', () => {
+    const { container, layer } = mount({ objects: [fixtureObject(1)] });
+    fire(container.querySelector('.vs3-tree-row'), 'click');
+    clickTab(container, 'style');
+    // A fill mapper mounts the shared Line block (line type seeds to 'solid').
+    const mapSel = [...container.querySelectorAll('select')]
+      .find((s) => [...(s.options || [])].some((o) => o.value === 'contour'));
+    mapSel.value = 'hatch';
+    fire(mapSel, 'change');
+
+    // Line = solid → no dash-length control; the old "Dash scale" label is gone.
+    expect(container.querySelector('input.ctrl-slider[aria-label="Dash length"]')).toBeFalsy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Dash scale"]')).toBeFalsy();
+
+    // Flip Line → dashed via the "Line type" select (the one carrying 'dashdot').
+    const lineSel = [...container.querySelectorAll('select')]
+      .find((s) => [...(s.options || [])].some((o) => o.value === 'dashdot'));
+    expect(lineSel).toBeTruthy();
+    lineSel.value = 'dashed';
+    fire(lineSel, 'change');
+    expect(layer.params.styleTable.byObject['obj-1'].params.lineType).toBe('dashed');
+
+    // Dash length now visible; still writes params.dashScale on commit.
+    const dash = container.querySelector('input.ctrl-slider[aria-label="Dash length"]');
+    expect(dash).toBeTruthy();
+    dash.value = '2';
+    fire(dash, 'input');
+    fire(dash, 'change');
+    expect(layer.params.styleTable.byObject['obj-1'].params.dashScale).toBe(2);
+  });
+
+  // I6 — Border (enable + weight + pen) lives under the Style tab, object scope.
+  test('Style tab · Border toggle writes obj.border.enabled and reveals Weight (I6)', () => {
+    const { container, layer } = mount({ objects: [fixtureObject(1)] });
+    fire(container.querySelector('.vs3-tree-row'), 'click');
+    clickTab(container, 'style');
+
+    const seg = container.querySelector('.seg-ctrl[aria-label="Silhouette border"]');
+    expect(seg).toBeTruthy();
+    // Weight is hidden until the border is enabled.
+    expect(container.querySelector('input.ctrl-slider[aria-label="Border strength"]')).toBeFalsy();
+
+    seg.querySelector('.seg-opt[data-value="on"]').click();
+    expect(layer.params.objects[0].border.enabled).toBe(true);
+
+    // Weight slider revealed in place and writes obj.border.strength.
+    const weight = container.querySelector('input.ctrl-slider[aria-label="Border strength"]');
+    expect(weight).toBeTruthy();
+    weight.value = '2.5';
+    fire(weight, 'input');
+    fire(weight, 'change');
+    expect(layer.params.objects[0].border.strength).toBe(2.5);
+  });
+
   test('a face selection (CONTRACT D event) scopes the Style tab to byFace', () => {
     const { container, layer } = mount({ objects: [fixtureObject(1)] });
     window.dispatchEvent(new window.CustomEvent('vectura:scene-selection', {

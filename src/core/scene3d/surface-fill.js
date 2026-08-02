@@ -42,24 +42,44 @@
   });
   const rotatePoint = G3.rotatePoint;
 
+  // Charts whose native (u,vv) convention samples u=AROUND / vv=ALONG-axis — the
+  // OPPOSITE of the sphere/cone convention every wrap here assumes (a = along-axis
+  // sweep, b = around wind). SurfaceFill wraps these (a,b) → raw(b,a) so a
+  // meridian/parallel/helix lands with the correct roles: before this a
+  // superellipsoid (or cylinder/capsule/pyramid) Spiral wound its LATITUDE `turns`
+  // times → a near-vertical striped band instead of a helix (I21). Only the FILL
+  // is normalized — the MESH still calls Charts.topo* directly, so mesh baselines
+  // and the charts-parity golden are untouched.
+  const AROUND_IS_U = new Set(['cylinder', 'capsule', 'superellipsoid', 'pyramid']);
+
   const chartFor = (mode, sizes) => {
     const C = Vectura.Scene3D && Vectura.Scene3D.Charts;
     if (!C) return null;
+    let raw = null;
     switch (mode) {
-      case 'sphere': return typeof C.topoSphereEllipsoid === 'function' ? C.topoSphereEllipsoid(sizes, 'sphere') : null;
-      case 'torus': return typeof C.topoTorus === 'function' ? C.topoTorus(sizes) : null;
-      case 'cone': return typeof C.topoCone === 'function' ? C.topoCone(sizes) : null;
-      case 'cylinder': return typeof C.topoCylinder === 'function' ? C.topoCylinder(sizes) : null;
-      case 'capsule': return typeof C.topoCapsule === 'function' ? C.topoCapsule(sizes) : null;
-      case 'superellipsoid': return typeof C.topoSuperellipsoid === 'function' ? C.topoSuperellipsoid(sizes) : null;
-      case 'torusKnot': return typeof C.topoTorusKnot === 'function' ? C.topoTorusKnot(sizes) : null;
-      case 'pyramid': return typeof C.topoPyramid === 'function' ? C.topoPyramid(sizes) : null;
-      default: return null;
+      case 'sphere': raw = typeof C.topoSphereEllipsoid === 'function' ? C.topoSphereEllipsoid(sizes, 'sphere') : null; break;
+      case 'torus': raw = typeof C.topoTorus === 'function' ? C.topoTorus(sizes) : null; break;
+      case 'cone': raw = typeof C.topoCone === 'function' ? C.topoCone(sizes) : null; break;
+      case 'cylinder': raw = typeof C.topoCylinder === 'function' ? C.topoCylinder(sizes) : null; break;
+      case 'capsule': raw = typeof C.topoCapsule === 'function' ? C.topoCapsule(sizes) : null; break;
+      case 'superellipsoid': raw = typeof C.topoSuperellipsoid === 'function' ? C.topoSuperellipsoid(sizes) : null; break;
+      case 'torusKnot': raw = typeof C.topoTorusKnot === 'function' ? C.topoTorusKnot(sizes) : null; break;
+      case 'pyramid': raw = typeof C.topoPyramid === 'function' ? C.topoPyramid(sizes) : null; break;
+      default: raw = null;
     }
+    if (typeof raw !== 'function') return null;
+    return AROUND_IS_U.has(mode) ? (a, b) => raw(b, a) : raw;
   };
 
   // Line count from the density slider (1..100 → ~6..40 wrap lines).
   const lineCountFor = (density) => Math.max(4, Math.round(6 + clamp(density, 0, 100) * 0.34));
+
+  // A wrapped spiral needs many more loops than a hatch line-count to read as a
+  // dense helix: Density 100 must approach full overlap (I13). The wrap budget is
+  // `lineCountFor(density) × SPIRAL_TURN_GAIN`, capped so a pathological
+  // density/detail combo cannot explode the sample count (steps × turns).
+  const SPIRAL_TURN_GAIN = 2.4;
+  const SPIRAL_MAX_TURNS = 120;
 
   // buildObject(opts) → array of screen polylines, or null when unsupported.
   //   opts: { mode, sizes, detail, transform, applyTransform, projectWorld,
@@ -214,14 +234,28 @@
       } else if (mapper === 'contour') {
         emitFamily('a', count, back); // latitude rings following the form
       } else if (mapper === 'spiral') {
-        // One continuous helix: a sweeps 0→1 across `count` turns while b advances.
-        const turns = count;
+        // One continuous helix: the ALONG-axis coordinate sweeps 0→1 while the
+        // AROUND coordinate winds `turns` times. `count` (line budget) is amplified
+        // by SPIRAL_TURN_GAIN so Density 100 packs the loops toward full overlap
+        // (I13); the back-face pass keeps its reduced `count`. The spiral controls
+        // (I14) each warp this helix and are a strict no-op at their defaults.
+        const sp = opts.spiral || {};
+        const phase = finite(sp.offset, 0) / 360;              // angle offset → winding phase
+        const gamma = clamp(finite(sp.eccentricity, 1), 0.3, 3); // sweep easing (1 = even)
+        const symmetric = sp.center === 'bboxCenter';          // double helix from the middle
+        const snap = sp.axisSnap === true;                     // wind the OTHER parametric axis
+        const turns = Math.max(4, Math.min(SPIRAL_MAX_TURNS, Math.round(count * SPIRAL_TURN_GAIN)));
         let run = [];
         const flush = () => { pushRun(run, back); run = []; };
         const total = steps * turns;
         for (let s = 0; s <= total; s++) {
-          const tt = s / total;
-          const smp = sampleAt(tt, (tt * turns) % 1);
+          const f = s / total;
+          // Along-axis sweep (0..1). bboxCenter folds it into a symmetric up-and-
+          // down double helix; eccentricity eases where the loops bunch.
+          let sweep = symmetric ? (f < 0.5 ? f * 2 : (1 - f) * 2) : f;
+          if (gamma !== 1) sweep = Math.pow(sweep, gamma);
+          const wind = (f * turns + phase) % 1;
+          const smp = snap ? sampleAt(wind, sweep) : sampleAt(sweep, wind);
           if (!smp || smp.front !== wantFront) { flush(); continue; }
           if (toneOn) { const shade = clamp(1 - smp.I, 0, 1); if (shade < 0.12) { flush(); continue; } }
           run.push({ x: smp.x, y: smp.y, z: smp.z });

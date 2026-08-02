@@ -6,6 +6,24 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed
+- **3D Scene — Spiral fill works on all primitives.** The Spiral mapper rendered as
+  vertical stripes on superellipsoid/cylinder/capsule/pyramid because those charts
+  sample their `(u,v)` axes transposed vs the sphere convention, so the helix wound
+  latitude instead of longitude. The surface-fill chart is now transposed for those
+  modes (mesh untouched). Spiral **Angle-offset / Eccentricity / Centre / Axis-snap**
+  now actually affect the curved spiral (the surface-helix path was never handed the
+  options), and **Density 100 now means full overlap**. Added a 70-case mapper audit
+  covering every mapper × primitive.
+- **3D Scene — Border controls moved to Style; Dash control tidied.** Per-object Border
+  (enable + weight + pen) now lives in the Style section (context bar + docked panel)
+  instead of under Highlight. The dash-length slider is renamed **"Dash length"** and
+  only appears when the Line type is dashed/dash-dot/dotted.
+- **3D Scene — wireframe edge-class control no longer throws.** `index.html` now loads
+  `src/ui/components/tog-grp.js`, which registers `UI.TogGrp`; without it the wireframe
+  mapper's edge-class toggles threw in the running app (now hit by the new wireframe
+  default).
+
 ### Added
 - **3D Scene — default object style is now Wireframe**, and `wireframe` and `none`
   are finally distinct: `none` draws only the object outline (silhouette + boundary),

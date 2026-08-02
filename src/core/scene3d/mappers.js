@@ -356,7 +356,9 @@
       if (rr > rMax) rMax = rr;
     }));
     if (!(rMax > 0)) return [];
-    const pitch = clamp(finite(opts.pitch, finite(opts.spacing, 3)), 0.5, 40);
+    // Floor at 0.2mm (below a typical 0.3mm pen) so the Density-100 full-overlap
+    // pitch reaches the paper; SPIRAL_MAX_STEPS still guards the sample count.
+    const pitch = clamp(finite(opts.pitch, finite(opts.spacing, 3)), 0.2, 40);
     const axisSnap = Boolean(opts.axisSnap);
     // axisSnap: one straight segment per quadrant (a squared spiral). Offsetting
     // the start by 45° makes those segments axis-aligned (horizontal/vertical)

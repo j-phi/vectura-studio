@@ -168,14 +168,24 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     expect(styleTable(scene).byObject['obj-1'].params.highlightTreatment).toBe('burst');
   });
 
-  test('Highlight ▾ Border toggle writes obj.border.enabled', async () => {
+  // I6 — Border relocated from the Highlight flyout to the Style flyout.
+  test('Style ▾ Border toggle writes obj.border.enabled (I6: moved from Highlight)', async () => {
     const scene = addSelectScene();
-    pillByLabel('Highlight').click();
+    pillByLabel('Style').click();
     const fly = openFly();
     rowCtl(fly, 'Border').querySelector('.seg-opt[data-value="on"]').click();
     expect(obj(scene).border.enabled).toBe(true);
-    // Border weight + pen revealed in place.
+    // Border weight + pen revealed in place, still in the Style flyout.
     expect(rowCtl(openFly(), 'Weight')).toBeTruthy();
+  });
+
+  test('Highlight ▾ no longer carries the Border row (I6)', async () => {
+    addSelectScene();
+    pillByLabel('Highlight').click();
+    const fly = openFly();
+    expect(rowCtl(fly, 'Border')).toBeFalsy();
+    // Treatment still lives here.
+    expect(rowCtl(fly, 'Treatment')).toBeTruthy();
   });
 
   // ── Multi-select MIXED-value display (MSC-scene) ───────────────────────────

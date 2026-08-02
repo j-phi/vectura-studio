@@ -1332,6 +1332,35 @@
         },
       });
     }
+    // ── Border sub-section (I6 — moved here from the Highlight flyout) →
+    // obj.border.* (a per-object field, not style.params).
+    flySubhead(fly, C.borderHead);
+    const orec = (id) => sc.r.getSceneObjectRecord(sc.layerId, id) || {};
+    const obj = orec(sc.ids[0]);
+    const border = obj.border || {};
+    const setObj = (path, value, opts) => sc.r.setSceneObjectField(sc.layerId, sc.ids, path, value, opts);
+    flyMixedSeg(flyRow(fly, C.border.label), {
+      options: C.onOff, value: border.enabled ? 'on' : 'off', ariaLabel: C.border.aria,
+      mixed: sceneAgree(sc, (id) => ((orec(id).border || {}).enabled ? 'on' : 'off')).mixed,
+      onChange: (v) => { setObj('border.enabled', v === 'on'); rebuild(); },
+    });
+    if (border.enabled) {
+      flyMixedSlider(flyRow(fly, C.borderStrength.label), {
+        mixed: sceneAgree(sc, (id) => { const b = orec(id).border || {}; return Number.isFinite(b.strength) ? b.strength : 1; }).mixed,
+        props: {
+          value: Number.isFinite(border.strength) ? border.strength : 1, min: 0.25, max: 4, step: 0.05,
+          defaultValue: 1, ariaLabel: C.borderStrength.aria,
+          onChange: (v) => setObj('border.strength', v, { gesture: true, preview: true }),
+          onCommit: (v) => setObj('border.strength', v),
+        },
+      });
+      flyMixedSelect(flyRow(fly, C.borderPen.label), {
+        options: scenePens(C.borderPen.inherit), value: border.penId || '', ariaLabel: C.borderPen.aria,
+        mixed: sceneAgree(sc, (id) => (orec(id).border || {}).penId || '').mixed,
+        onChange: (v) => setObj('border.penId', v || null),
+      });
+    }
+
     if (resolved.provenance && resolved.provenance.scope === 'object') {
       const row = el('div', 'ctxbar-fly-row');
       const btn = makeBtn({ label: C.reset.label, tooltip: C.reset.tooltip, onClick: () => { write(null, { clear: true }); rebuild(); } });
@@ -1395,7 +1424,7 @@
     });
   };
 
-  // ── Highlight ▾ — treatment + strength/pen, plus the Border sub-section. ──
+  // ── Highlight ▾ — treatment + strength/pen. (Border moved to Style, I6.) ──
   const buildHighlightBody = (fly, rebuild) => {
     const sc = sceneFlyCtx(); if (!sc) return;
     const C = (FLY().highlight) || {};
@@ -1427,33 +1456,6 @@
         options: scenePens(C.pen.inherit), value: params.highlightPenId || '', ariaLabel: C.pen.aria,
         mixed: sceneAgree(sc, (id) => (rs(id).params || {}).highlightPenId || '').mixed,
         onChange: (v) => write({ params: { ...params, highlightPenId: v || null } }),
-      });
-    }
-    // ── Border sub-section (the one new render feature) → obj.border.* ──
-    flySubhead(fly, C.borderHead);
-    const orec = (id) => sc.r.getSceneObjectRecord(sc.layerId, id) || {};
-    const obj = orec(sc.ids[0]);
-    const border = obj.border || {};
-    const setObj = (path, value, opts) => sc.r.setSceneObjectField(sc.layerId, sc.ids, path, value, opts);
-    flyMixedSeg(flyRow(fly, C.border.label), {
-      options: C.onOff, value: border.enabled ? 'on' : 'off', ariaLabel: C.border.aria,
-      mixed: sceneAgree(sc, (id) => ((orec(id).border || {}).enabled ? 'on' : 'off')).mixed,
-      onChange: (v) => { setObj('border.enabled', v === 'on'); rebuild(); },
-    });
-    if (border.enabled) {
-      flyMixedSlider(flyRow(fly, C.borderStrength.label), {
-        mixed: sceneAgree(sc, (id) => { const b = orec(id).border || {}; return Number.isFinite(b.strength) ? b.strength : 1; }).mixed,
-        props: {
-          value: Number.isFinite(border.strength) ? border.strength : 1, min: 0.25, max: 4, step: 0.05,
-          defaultValue: 1, ariaLabel: C.borderStrength.aria,
-          onChange: (v) => setObj('border.strength', v, { gesture: true, preview: true }),
-          onCommit: (v) => setObj('border.strength', v),
-        },
-      });
-      flyMixedSelect(flyRow(fly, C.borderPen.label), {
-        options: scenePens(C.borderPen.inherit), value: border.penId || '', ariaLabel: C.borderPen.aria,
-        mixed: sceneAgree(sc, (id) => (orec(id).border || {}).penId || '').mixed,
-        onChange: (v) => setObj('border.penId', v || null),
       });
     }
   };
