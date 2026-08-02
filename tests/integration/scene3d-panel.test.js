@@ -236,6 +236,63 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     expect(layer.params.styleTable.byFace['obj-1/face:+X']).toBeUndefined();
   });
 
+  test('Role → Hole + Cut into wires a subtract group (Increment 1 CSG panel)', () => {
+    const { container, layer, regen } = mount({ objects: [fixtureObject(1), fixtureObject(2)] });
+    // Select the second box so the inspector renders its controls.
+    fire(container.querySelector('.vs3-tree-row[data-object-id="obj-2"]'), 'click');
+
+    const rowByLabel = (label) => Array.from(container.querySelectorAll('.vs3-row'))
+      .find((r) => r.querySelector('.vs3-lbl') && r.querySelector('.vs3-lbl').textContent === label);
+    const clickSeg = (label, optText) => {
+      const btn = Array.from(rowByLabel(label).querySelectorAll('button')).find((b) => b.textContent.trim() === optText);
+      fire(btn, 'click');
+    };
+
+    // Default role is Solid; no boolean group yet.
+    expect(rowByLabel('Role')).toBeTruthy();
+    expect(rowByLabel('Cut into')).toBeFalsy();
+    expect(layer.params.groups).toEqual([]);
+
+    // Flip to Hole — the "Cut into" picker appears; the object is now a hole but
+    // still inert (ungrouped).
+    clickSeg('Role', 'Hole');
+    expect(layer.params.objects[1].role).toBe('hole');
+    const cutRow = rowByLabel('Cut into');
+    expect(cutRow).toBeTruthy();
+    // Tree shows the inert-hole badge until it is pointed at a solid.
+    const holeRow = container.querySelector('.vs3-tree-row[data-object-id="obj-2"]');
+    expect(holeRow.querySelector('.vs3-tree-role.vs3-tree-role-inert')).toBeTruthy();
+
+    // Point the hole at the solid → a subtract group is created.
+    const select = cutRow.querySelector('select');
+    select.value = 'obj-1';
+    fire(select, 'change');
+    expect(layer.params.groups.length).toBe(1);
+    const g = layer.params.groups[0];
+    expect(g.op).toBe('subtract');
+    expect(g.children).toEqual(['obj-1', 'obj-2']);
+    // Wired hole badge is no longer inert.
+    const wiredRow = container.querySelector('.vs3-tree-row[data-object-id="obj-2"]');
+    expect(wiredRow.querySelector('.vs3-tree-role')).toBeTruthy();
+    expect(wiredRow.querySelector('.vs3-tree-role-inert')).toBeFalsy();
+    expect(regen).toHaveBeenCalled();
+  });
+
+  test('setting a hole back to Solid detaches it from its subtract group', () => {
+    const { container, layer } = mount({
+      objects: [fixtureObject(1), { ...fixtureObject(2), role: 'hole' }],
+      groups: [{ id: 'grp-1', op: 'subtract', children: ['obj-1', 'obj-2'] }],
+    });
+    fire(container.querySelector('.vs3-tree-row[data-object-id="obj-2"]'), 'click');
+    const roleRow = Array.from(container.querySelectorAll('.vs3-row'))
+      .find((r) => r.querySelector('.vs3-lbl') && r.querySelector('.vs3-lbl').textContent === 'Role');
+    const solidBtn = Array.from(roleRow.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Solid');
+    fire(solidBtn, 'click');
+    expect(layer.params.objects[1].role).toBe('solid');
+    // The now-degenerate one-child group is pruned.
+    expect(layer.params.groups).toEqual([]);
+  });
+
   test('visibility toggle cycles solid → xray with one commit', () => {
     const { container, layer, pushHistory } = mount({ objects: [fixtureObject(1)] });
     const vis = container.querySelector('.vs3-tree-row .vs3-tree-vis');

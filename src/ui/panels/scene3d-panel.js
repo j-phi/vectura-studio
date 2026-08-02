@@ -449,6 +449,47 @@
 
     const getObject = (id) => params.objects.find((o) => o && o.id === id) || null;
 
+    // ── CSG groups (Increment 1 minimal): role (solid/hole) + subtract pairing.
+    // The full grouping tree (union/intersect, group rows, nested groups,
+    // multi-hole management) is deferred to Increment 3; here a hole is pointed
+    // at a solid and a subtract group carves it. Engine-side normalizeGroups owns
+    // canonicalization; the panel only writes intent.
+    const getGroups = () => (Array.isArray(params.groups) ? params.groups : (params.groups = []));
+    const nextGroupId = () => {
+      const used = new Set(getGroups().map((g) => g && g.id));
+      let n = getGroups().length + 1;
+      let id = `grp-${n}`;
+      while (used.has(id)) { n += 1; id = `grp-${n}`; }
+      return id;
+    };
+    // The solid a hole currently subtracts into (children[0] of its subtract
+    // group), or '' when the hole is ungrouped (inert → renders solid).
+    const holeTargetOf = (holeId) => {
+      const g = getGroups().find((gr) => gr && gr.op === 'subtract'
+        && Array.isArray(gr.children) && gr.children.includes(holeId));
+      return (g && g.children[0]) || '';
+    };
+    const removeObjFromGroups = (id) => {
+      getGroups().forEach((g) => {
+        if (g && Array.isArray(g.children)) g.children = g.children.filter((c) => c !== id);
+      });
+      params.groups = getGroups().filter((g) => g && Array.isArray(g.children) && g.children.length >= 2);
+    };
+    // Point a hole at a solid (or detach it when solidId is falsy). Reuses the
+    // solid's existing subtract group (appending the hole) or creates a new one.
+    const subtractInto = (holeId, solidId) => {
+      commit(() => {
+        removeObjFromGroups(holeId);
+        if (!solidId || solidId === holeId) return;
+        let g = getGroups().find((gr) => gr && gr.op === 'subtract'
+          && Array.isArray(gr.children) && gr.children[0] === solidId);
+        if (!g) { g = { id: nextGroupId(), name: 'Subtract', op: 'subtract', children: [solidId] }; getGroups().push(g); }
+        if (!g.children.includes(holeId)) g.children.push(holeId);
+      });
+      renderTree();
+      renderInspector();
+    };
+
     // Component instances per re-renderable area, destroyed on re-render.
     let inspectorComps = [];
     let styleComps = [];
@@ -691,6 +732,7 @@
       commit(() => {
         const idx = params.objects.indexOf(obj);
         if (idx >= 0) params.objects.splice(idx, 1);
+        removeObjFromGroups(obj.id); // drop from any boolean group (may empty it)
         const table = params.styleTable;
         if (table) {
           if (table.byObject) delete table.byObject[obj.id];
@@ -757,6 +799,18 @@
         name.title = 'Double-click to rename';
         name.addEventListener('dblclick', (e) => { e.stopPropagation(); startRename(name, obj); });
         row.appendChild(name);
+
+        // Hole badge: 'Hole' when subtracting into a solid, 'Hole?' when the
+        // hole is ungrouped (inert — renders solid until pointed at a solid).
+        if (obj.role === 'hole') {
+          const badge = document.createElement('span');
+          badge.className = 'vs3-tree-role';
+          const wired = !!holeTargetOf(obj.id);
+          badge.textContent = wired ? 'hole' : 'hole?';
+          badge.title = wired ? 'Subtracts into a solid' : 'Inert hole — set “Cut into” in the inspector';
+          badge.classList.toggle('vs3-tree-role-inert', !wired);
+          row.appendChild(badge);
+        }
 
         const vis = document.createElement('button');
         vis.type = 'button';
@@ -1313,6 +1367,54 @@
       });
       nameRow.appendChild(nameInput);
       inspectorHost.appendChild(nameRow);
+
+      // Role (CSG): Solid or Hole. A hole subtracts inside a boolean group; an
+      // ungrouped hole is inert (renders solid). When set to Hole a "Cut into"
+      // picker points it at a solid, creating/reusing a subtract group.
+      const roleRow = document.createElement('div');
+      roleRow.className = 'vs3-row';
+      const roleLbl = document.createElement('label');
+      roleLbl.className = 'vs3-lbl';
+      roleLbl.textContent = 'Role';
+      roleRow.appendChild(roleLbl);
+      const roleHost = document.createElement('div');
+      roleHost.className = 'vs3-ctl';
+      roleRow.appendChild(roleHost);
+      inspectorHost.appendChild(roleRow);
+      inspectorComps.push(UI.SegCtrl(roleHost, {
+        options: [{ value: 'solid', label: 'Solid' }, { value: 'hole', label: 'Hole' }],
+        value: obj.role === 'hole' ? 'hole' : 'solid',
+        ariaLabel: 'CSG role (solid or hole)',
+        onChange: (v) => {
+          commit(() => {
+            obj.role = v;
+            if (v !== 'hole') removeObjFromGroups(obj.id); // solids never subtract
+          });
+          renderTree();
+          renderInspector();
+        },
+      }));
+
+      if (obj.role === 'hole') {
+        const solids = params.objects.filter((o) => o && o.id !== obj.id && (o.role || 'solid') !== 'hole');
+        const cutRow = document.createElement('div');
+        cutRow.className = 'vs3-row';
+        const cutLbl = document.createElement('label');
+        cutLbl.className = 'vs3-lbl';
+        cutLbl.textContent = 'Cut into';
+        cutRow.appendChild(cutLbl);
+        const cutHost = document.createElement('div');
+        cutHost.className = 'vs3-ctl';
+        cutRow.appendChild(cutHost);
+        inspectorHost.appendChild(cutRow);
+        inspectorComps.push(UI.Select(cutHost, {
+          options: [{ value: '', label: '— None (inert) —' }]
+            .concat(solids.map((o) => ({ value: o.id, label: o.name || o.id }))),
+          value: holeTargetOf(obj.id),
+          ariaLabel: 'Subtract this hole into a solid',
+          onChange: (v) => subtractInto(obj.id, v),
+        }));
+      }
 
       // Canonical per-primitive defaults (what a fresh object gets) — the reset
       // target for double-click on a dimension/fidelity handle (feedback #4).

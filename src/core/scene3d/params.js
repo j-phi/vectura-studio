@@ -34,6 +34,11 @@
   // Phase 1 set + Phase 3 surface-fill mappers.
   const MAPPERS = ['none', 'hatch', 'wireframe', 'crosshatch', 'contour', 'spiral', 'stipple'];
 
+  // CSG group booleans. 'none' = independent children (the legacy default);
+  // 'subtract'/'union'/'intersect' combine the group's children into one carved
+  // pseudo-object (Scene3D.Boolean). An absent op normalizes to 'none'.
+  const GROUP_OPS = ['none', 'union', 'subtract', 'intersect'];
+
   // Per-primitive params-bag defaults. Sizes are document mm. For the topoform
   // family (ellipsoid…pyramid) sx/sy/sz feed the Scene3D.Mesh chart builders
   // directly (they interpret them as radius / half-height per chart).
@@ -295,12 +300,52 @@
       id,
       name: typeof obj.name === 'string' && obj.name ? obj.name : `Object ${index + 1}`,
       primitive,
+      // CSG role: a 'hole' object subtracts inside a boolean group; every other
+      // value (or absent) is a solid. A hole NOT in a boolean group is inert
+      // (renders as a solid) — Scene3D.Boolean owns that semantics.
+      role: obj.role === 'hole' ? 'hole' : 'solid',
       params: normalizePrimitiveParams(primitive, obj.params),
       transform: normalizeTransform(obj.transform),
       visibility: obj.visibility === 'xray' ? 'xray' : 'solid',
       shadow: normalizeObjectShadow(obj.shadow),
       border: normalizeObjectBorder(obj.border),
     };
+  };
+
+  // Canonical group list: each group is { id: unique 'grp-<n>', name, op, children }.
+  // `objectIds` is the Set of live object ids; dangling child ids are dropped and
+  // every object may belong to at most ONE group (a later group's duplicate claim
+  // loses). Order within `children` is preserved (it drives positional subtract).
+  const normalizeGroups = (groups, objectIds) => {
+    const src = Array.isArray(groups) ? groups : [];
+    const usedGroupIds = new Set();
+    const claimed = new Set(); // object ids already assigned to a group
+    const out = [];
+    src.forEach((group, index) => {
+      if (!isObject(group)) return;
+      let id = typeof group.id === 'string' && group.id ? group.id : '';
+      if (!id || usedGroupIds.has(id)) {
+        let n = index + 1;
+        id = '';
+        while (!id || usedGroupIds.has(id)) { id = `grp-${n}`; n += 1; }
+      }
+      usedGroupIds.add(id);
+      const children = [];
+      (Array.isArray(group.children) ? group.children : []).forEach((cid) => {
+        if (typeof cid !== 'string') return;
+        if (!objectIds.has(cid)) return;   // dangling id
+        if (claimed.has(cid)) return;      // already in an earlier group
+        claimed.add(cid);
+        children.push(cid);
+      });
+      out.push({
+        id,
+        name: typeof group.name === 'string' && group.name ? group.name : `Group ${index + 1}`,
+        op: GROUP_OPS.includes(group.op) ? group.op : 'none',
+        children,
+      });
+    });
+    return out;
   };
 
   const normalizeVec3 = (val, fallback) => {
@@ -433,7 +478,7 @@
     out.ground = { enabled: isObject(src.ground) ? src.ground.enabled !== false : true };
     out.backdrop = { enabled: isObject(src.backdrop) ? src.backdrop.enabled === true : false };
     out.camera = normalizeCamera(src.camera);
-    out.groups = Array.isArray(src.groups) ? src.groups.slice() : [];
+    out.groups = normalizeGroups(src.groups, new Set(out.objects.map((o) => o.id)));
     out.assets = isObject(src.assets) ? src.assets : {};
     out.styleTable = normalizeStyleTable(src.styleTable);
     return out;
@@ -460,6 +505,7 @@
     SCENE_VERSION,
     PRIMITIVES,
     MAPPERS,
+    GROUP_OPS,
     PRIMITIVE_PARAM_DEFAULTS,
     DEFAULT_TRANSFORM,
     DEFAULT_CAMERA,
@@ -469,6 +515,7 @@
     normalizeShadow,
     normalizeStyle,
     normalizeStyleTable,
+    normalizeGroups,
     normalizeParams,
     migrateScene,
     sanitizeSceneParams,

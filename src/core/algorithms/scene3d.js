@@ -584,6 +584,9 @@
         const faceted = record.primitive === 'box'
           || record.primitive === 'plane'
           || record.primitive === 'solid'
+          // An all-faceted CSG carve (box−box…) hatches per-face in-plane like a
+          // box; a curved-involving carve stays !faceted (continuous-region path).
+          || (record.primitive === 'csg' && record.csgFaceted)
           || record.id === 'ground';
 
         // ── Faces: outlines (closed when fully visible) + hatch fills.

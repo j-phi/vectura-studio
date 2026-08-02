@@ -185,6 +185,10 @@
       id: obj.id,
       name: obj.name,
       primitive: obj.primitive,
+      // A combined CSG unit whose children are ALL faceted hatches per-face like
+      // a box (Scene3D.Boolean sets this); curved-involving carves fall back to
+      // the continuous-region path. Plain objects leave it false.
+      csgFaceted: !!meshData.csgFaceted,
       visibility: obj.visibility || 'solid',
       border: (obj.border && obj.border.enabled) ? obj.border : null,
       faceIndexArrays: meshData.faces,
@@ -244,8 +248,16 @@
       ? v(0, 0, Math.max(0, finite(cam.cameraDistance, 620)) + Math.max(1, finite(cam.focalLength, 520)))
       : null;
     const detailScale = previewDetailScale(bounds);
-    const objects = p.objects.map((obj) => buildRecord(
-      obj, buildPrimitiveMesh(obj, detailScale), camAngles, projOpts, camPos));
+    // Boolean.resolveAssembly plans the assembly: ungrouped objects stay 1:1
+    // with buildPrimitiveMesh (byte-identical to the legacy path), while a
+    // boolean group collapses to ONE combined csg unit (pretransformed world
+    // mesh). Absent module → legacy per-object mapping (defensive).
+    const Boolean3D = Vectura.Scene3D && Vectura.Scene3D.Boolean;
+    const units = (Boolean3D && typeof Boolean3D.resolveAssembly === 'function')
+      ? Boolean3D.resolveAssembly(p, detailScale, { draft: !!(bounds && bounds.fastPreview) })
+      : p.objects.map((obj) => ({ obj, meshData: buildPrimitiveMesh(obj, detailScale) }));
+    const objects = units.map((u) => buildRecord(
+      u.obj, u.meshData, camAngles, projOpts, camPos));
     const ground = p.ground && p.ground.enabled
       ? buildGroundRecord(bounds, camAngles, projOpts, camPos)
       : null;

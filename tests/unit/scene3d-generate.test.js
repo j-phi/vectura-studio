@@ -338,3 +338,119 @@ describe('scene3d generate (CONTRACT A/B)', () => {
     });
   });
 });
+
+/*
+ * CSG boolean end-to-end (Increment 1). A subtract group must carve a real
+ * hole through the existing hidden-line pipeline: cut walls fill, the hole
+ * punches through the near face, the silhouette frames the carved shape, the
+ * hole object is consumed into the primary solid, and a op:'none'/ungrouped
+ * scene renders byte-identically to the legacy per-object path.
+ */
+describe('scene3d generate — CSG subtract (Increment 1)', () => {
+  let runtime;
+  let V;
+  let algo;
+  let defaults;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    algo = V.AlgorithmRegistry.scene3d;
+    defaults = V.ALGO_DEFAULTS.scene3d;
+  });
+
+  afterAll(() => runtime.cleanup());
+
+  const clone2 = (value) => JSON.parse(JSON.stringify(value));
+  const IB = { width: 320, height: 220, m: 20, dW: 280, dH: 180, truncate: true };
+
+  const solidBox = (id, size, extra = {}) => ({
+    id, name: id, primitive: 'box',
+    params: { sx: size, sy: size, sz: size },
+    transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+    visibility: 'solid', ...extra,
+  });
+
+  // Hatch the primary solid so cut walls + the near-face frame emit sceneFill
+  // runs (a default 'none' mapper draws face outlines only).
+  const hatchTable = () => ({
+    scene: { penId: null, mapper: 'none', params: {} },
+    byObject: { 'solid-1': { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: 60 } } },
+    byFace: {},
+  });
+
+  const csgScene = (objects, groups, cam) => ({
+    ...clone2(defaults),
+    seed: 1,
+    objects,
+    groups: groups || [],
+    styleTable: hatchTable(),
+    ground: { enabled: false },
+    backdrop: { enabled: false },
+    camera: { projection: 'orthographic', yaw: 0, pitch: 0, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1, ...(cam || {}) },
+  });
+
+  const strip = (paths) => paths.map((p) => ({ pts: p.map((q) => ({ x: q.x, y: q.y })), meta: p.meta || null }));
+
+  test('the hole punches through the near face: primary fills frame it, none in the bore, hole consumed', () => {
+    // Straight-down-+Z camera: a through hole leaves the near +Z face an annulus.
+    const p = csgScene(
+      [solidBox('solid-1', 40), solidBox('hole-1', 20, { role: 'hole', params: { sx: 20, sy: 20, sz: 60 } })],
+      [{ op: 'subtract', children: ['solid-1', 'hole-1'] }],
+    );
+    const paths = algo.generate(p, null, null, IB) || [];
+
+    // The hole object is CONSUMED — no geometry is tagged to it.
+    expect(paths.some((q) => q.meta && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'hole-1')).toBe(false);
+
+    const primaryFills = paths.filter((q) => q.meta && q.meta.kind === 'sceneFill'
+      && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'solid-1');
+    expect(primaryFills.length).toBeGreaterThan(0); // the +Z frame is filled
+
+    // No primary fill lands inside the punched-through hole (screen centre).
+    const cx = IB.width / 2; const cy = IB.height / 2;
+    const inHole = (pt) => Math.abs(pt.x - cx) < 6 && Math.abs(pt.y - cy) < 6;
+    const anyFillInHole = primaryFills.some((run) => run.some(inHole));
+    expect(anyFillInHole).toBe(false);
+
+    // The silhouette still frames the carved shape.
+    expect(paths.some((q) => q.meta && q.meta.sceneTarget
+      && q.meta.sceneTarget.objectId === 'solid-1' && q.meta.sceneTarget.edgeClass === 'silhouette')).toBe(true);
+  });
+
+  test('an angled view fills the cut walls: the carve adds surface fills vs the uncarved solid', () => {
+    const cam = { yaw: 28, pitch: 22 };
+    const carved = csgScene(
+      [solidBox('solid-1', 40), solidBox('hole-1', 20, { role: 'hole', params: { sx: 20, sy: 20, sz: 60 } })],
+      [{ op: 'subtract', children: ['solid-1', 'hole-1'] }], cam,
+    );
+    const plain = csgScene([solidBox('solid-1', 40)], [], cam);
+    const fillsOf = (paths) => paths.filter((q) => q.meta && q.meta.kind === 'sceneFill'
+      && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'solid-1').length;
+    const carvedFills = fillsOf(algo.generate(carved, null, null, IB) || []);
+    const plainFills = fillsOf(algo.generate(plain, null, null, IB) || []);
+    expect(carvedFills).toBeGreaterThan(0);
+    // Cut walls + the split frame add fill runs beyond the plain 3-face box.
+    expect(carvedFills).toBeGreaterThan(plainFills);
+  });
+
+  test('op:"none" and ungrouped render byte-identically (Increment-0 regression pin)', () => {
+    const objects = () => [solidBox('solid-1', 40), solidBox('hole-1', 20, { role: 'hole', transform: { x: 60, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 } })];
+    const ungrouped = algo.generate(csgScene(objects(), []), null, null, IB) || [];
+    const noneGroup = algo.generate(
+      csgScene(objects(), [{ op: 'none', children: ['solid-1', 'hole-1'] }]), null, null, IB) || [];
+    expect(strip(noneGroup)).toEqual(strip(ungrouped));
+  });
+
+  test('draft frame carves nothing and does not throw (uncarved children render)', () => {
+    const p = csgScene(
+      [solidBox('solid-1', 40), solidBox('hole-1', 20, { role: 'hole', params: { sx: 20, sy: 20, sz: 60 } })],
+      [{ op: 'subtract', children: ['solid-1', 'hole-1'] }],
+    );
+    let paths;
+    expect(() => { paths = algo.generate(p, null, null, { ...IB, fastPreview: true }) || []; }).not.toThrow();
+    // Both children render uncarved on the draft frame.
+    expect(paths.some((q) => q.meta && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'solid-1')).toBe(true);
+    expect(paths.some((q) => q.meta && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'hole-1')).toBe(true);
+  });
+});

@@ -7,6 +7,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene boolean holes (CSG, box−box).** A scene object can now be a **Solid**
+  or a **Hole**, and pointing a hole at a solid ("Cut into") carves a real
+  rectangular hole — correct cut walls, silhouette, and shadow — through the
+  existing hidden-line pipeline. The carve is a mesh-level BSP boolean in world
+  space before projection (a new `Scene3D.CSG` engine), so the hole gets true
+  front-facing cut walls that hatch in-plane, a carved outline, and a single
+  carved ground shadow — not a 2D outline overlap. A subtract group borrows the
+  primary solid's style/visibility/border/shadow; the hole contributes geometry
+  only. Live drags and any CSG failure fall back to the uncarved children, and an
+  ungrouped scene renders byte-identically to before. Curved holes (box−cylinder,
+  sphere−box) and union/intersect groups with a full grouping UI land in later
+  increments.
 - **3D Scene light gizmo + point/spot controls.** Selecting a light now shows a
   3-axis translate gizmo on the canvas. Point and spot lights drag their world
   position along X/Y/Z (past the canvas edge — the light can sit anywhere); the
