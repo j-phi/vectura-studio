@@ -7,6 +7,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — configurable Highlight alt-fill.** With Highlight treatment set to
+  "alt fill," the context-bar Highlight flyout now exposes an alt-fill mapper picker
+  (hatch / crosshatch / contour / spiral / stipple), so the alternate fill used in the
+  highlight region is selectable per object (was a fixed default).
 - **3D Scene — light-driven highlight mode + sensitivity.** A new Highlight mode
   (`lightDriven`, alongside the existing per-face mode) places the highlight by actual
   lighting: a per-sample specular term makes the highlight cluster where the light

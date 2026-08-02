@@ -199,6 +199,17 @@
         ],
         strength: { label: 'Strength', aria: 'Highlight density' },
         pen: { label: 'Pen', aria: 'Highlight pen', inherit: 'Inherit' },
+        // I7 — when the treatment is "Alt fill" the flyout reveals this picker so
+        // the alternate fill drawn in the highlight region is configurable (not a
+        // fixed default). Mirrors params.js ALT_FILL_MAPPERS.
+        altFill: { label: 'Alt fill', aria: 'Alternate fill mapper' },
+        altFillMappers: [
+          { value: 'hatch', label: 'Hatch' },
+          { value: 'crosshatch', label: 'Crosshatch' },
+          { value: 'contour', label: 'Contour' },
+          { value: 'spiral', label: 'Spiral' },
+          { value: 'stipple', label: 'Stipple' },
+        ],
       },
       xray: {
         mode: { label: 'X-ray', aria: 'Object visibility' },

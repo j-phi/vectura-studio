@@ -40,6 +40,11 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     ({ window, document } = runtime);
     window.app = new window.Vectura.App();
     app = window.app;
+    // The whole file shares ONE app, so undo history accumulates across tests.
+    // Its default cap (20) evicts old entries once enough writes pile up, which
+    // would corrupt the `before + 1` delta assertions further down. Raise the cap
+    // so eviction never masks a real regression (deltas are unchanged by this).
+    app.maxHistory = 100000;
     CB = window.Vectura.UI.ContextBar;
     await nextFrames();
   });
@@ -186,6 +191,54 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     expect(rowCtl(fly, 'Border')).toBeFalsy();
     // Treatment still lives here.
     expect(rowCtl(fly, 'Treatment')).toBeTruthy();
+  });
+
+  // I7 — when the treatment is "Alt fill" the flyout must reveal a mapper picker
+  // (which alternate fill is drawn in the highlight region) + the density slider;
+  // for any other treatment the mapper picker is hidden (like burst's controls).
+  test('I7: config carries the alt-fill mapper option list', () => {
+    const C = window.Vectura.CONTEXT_BAR.sceneFlyouts.highlight;
+    expect(Array.isArray(C.altFillMappers)).toBe(true);
+    expect(C.altFillMappers.map((o) => o.value))
+      .toEqual(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
+    expect(C.altFill.label).toBeTruthy();
+  });
+
+  test('I7: Alt fill treatment reveals the alt-fill mapper picker + density; hidden otherwise', async () => {
+    const scene = addSelectScene();
+    pillByLabel('Highlight').click();
+    // Default treatment (blank/keep) → no alt-fill picker.
+    expect(rowCtl(openFly(), 'Alt fill')).toBeFalsy();
+    // Switch to a non-altFill treatment → still no picker.
+    const sel0 = rowCtl(openFly(), 'Treatment').querySelector('select');
+    sel0.value = 'burst';
+    sel0.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(rowCtl(openFly(), 'Alt fill')).toBeFalsy();
+    // Switch to Alt fill → picker + density appear, flyout stays open.
+    const sel = rowCtl(openFly(), 'Treatment').querySelector('select');
+    sel.value = 'altFill';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(styleTable(scene).byObject['obj-1'].params.highlightTreatment).toBe('altFill');
+    const mapCtl = rowCtl(openFly(), 'Alt fill');
+    expect(mapCtl).toBeTruthy();
+    expect(rowCtl(openFly(), 'Strength')).toBeTruthy();
+    // The picker exposes the five fill mappers.
+    const opts = Array.from(mapCtl.querySelector('select').options).map((o) => o.value);
+    expect(opts).toEqual(expect.arrayContaining(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']));
+  });
+
+  test('I7: changing the alt-fill mapper writes style.params.altFillMapper scoped to the selection', async () => {
+    const scene = addSelectScene();
+    app.renderer.setSceneObjectStyle(scene.id, ['obj-1'], { params: { highlightTreatment: 'altFill' } });
+    CB.restoreState();
+    pillByLabel('Highlight').click();
+    const sel = rowCtl(openFly(), 'Alt fill').querySelector('select');
+    sel.value = 'contour';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(styleTable(scene).byObject['obj-1'].params.altFillMapper).toBe('contour');
+    // Scoped: the scene-wide style is untouched.
+    expect((styleTable(scene).scene.params || {}).altFillMapper).toBeUndefined();
+    expect(openFly()).toBeTruthy();
   });
 
   // ── Multi-select MIXED-value display (MSC-scene) ───────────────────────────

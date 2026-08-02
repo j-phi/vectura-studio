@@ -1442,6 +1442,20 @@
       mixed: sceneAgree(sc, treatOf).mixed,
       onChange: (v) => { write({ params: { ...params, highlightTreatment: v } }); rebuild(); },
     });
+    if (treatment === 'altFill') {
+      // I7 — pick which mapper renders the alternate fill in the highlight
+      // region (consumed by scene3d.js highlight altFill path). Shown only for
+      // the altFill treatment, like burst's controls are burst-only.
+      const altMapper = C.altFillMappers.some((o) => o.value === params.altFillMapper) ? params.altFillMapper : 'stipple';
+      flyMixedSelect(flyRow(fly, C.altFill.label), {
+        options: C.altFillMappers, value: altMapper, ariaLabel: C.altFill.aria,
+        mixed: sceneAgree(sc, (id) => {
+          const p = rs(id).params || {};
+          return C.altFillMappers.some((o) => o.value === p.altFillMapper) ? p.altFillMapper : 'stipple';
+        }).mixed,
+        onChange: (v) => write({ params: { ...params, altFillMapper: v } }),
+      });
+    }
     if (treatment !== 'blank') {
       flyMixedSlider(flyRow(fly, C.strength.label), {
         mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.highlightDensity) ? p.highlightDensity : 25; }).mixed,
