@@ -82,7 +82,8 @@ describe('scene3d generate (CONTRACT A/B)', () => {
     expect(defaults.camera.projection).toBe('orthographic');
     expect(defaults.assets).toEqual({});
     expect(defaults.styleTable).toEqual({
-      scene: { penId: null, mapper: 'none', params: {} },
+      // I11 — new objects default to the wireframe mapper.
+      scene: { penId: null, mapper: 'wireframe', params: {} },
       byObject: {},
       byFace: {},
     });
@@ -114,14 +115,19 @@ describe('scene3d generate (CONTRACT A/B)', () => {
     });
   });
 
-  test('fully visible face outlines are closed polygons (meta.closed + repeated first point)', () => {
-    const paths = algo.generate(sceneParams([box('obj-1', 40, 0)]), null, null, BOUNDS) || [];
-    const faces = paths.filter((p) => p.meta && p.meta.kind === 'sceneFace' && p.meta.closed);
-    expect(faces.length).toBeGreaterThan(0);
-    faces.forEach((face) => {
-      const first = face[0];
-      const last = face[face.length - 1];
-      expect(Math.hypot(first.x - last.x, first.y - last.y)).toBeLessThan(1e-6);
+  test("faceted 'none' faces emit open OUTLINE segments (silhouette/boundary) carrying a face pickPolygon", () => {
+    // I5: 'none' shows just the object OUTLINE, so a faceted face no longer emits
+    // a closed mesh loop (that drew the interior crease Y). It emits the face's
+    // silhouette/boundary edge segments as OPEN sceneFace runs, each carrying the
+    // full face polygon as pickPolygon so face-mode point-in-poly picking resolves.
+    const p = sceneParams([box('obj-1', 40, 0)]);
+    p.styleTable = { scene: { penId: null, mapper: 'none', params: {} }, byObject: {}, byFace: {} };
+    const paths = algo.generate(p, null, null, BOUNDS) || [];
+    const faceOutlines = paths.filter((q) => q.meta && q.meta.kind === 'sceneFace');
+    expect(faceOutlines.length).toBeGreaterThan(0);
+    faceOutlines.forEach((face) => {
+      expect(face.meta.closed).toBeFalsy(); // no closed mesh loop
+      expect(Array.isArray(face.meta.sceneTarget.pickPolygon)).toBe(true);
     });
   });
 
@@ -477,18 +483,27 @@ describe('scene3d generate — CSG subtract (Increment 1)', () => {
     const cam = { yaw: 24, pitch: 20 };
     // Two boxes overlapping in x → a single merged solid (both 40³, offset 24).
     const objs = () => [solidBox('solid-1', 40), solidBox('solid-2', 40, { transform: { x: 24, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 } })];
-    const united = algo.generate(csgScene(objs(), [{ op: 'union', children: ['solid-1', 'solid-2'] }], cam), null, null, IB) || [];
-    const separate = algo.generate(csgScene(objs(), [{ op: 'none', children: ['solid-1', 'solid-2'] }], cam), null, null, IB) || [];
+    // Compare with a scene-level HATCH style so BOTH solids fill (creases
+    // fill-suppressed uniformly) and each draws its silhouette outline: the
+    // seam-removal signal is that the second solid is fully CONSUMED into one
+    // merged record: it contributes edges when drawn independently (op:'none'),
+    // but ZERO once welded into the union. (A wireframe compare is unusable here —
+    // the union's BSP triangulation explodes the interior edges — and a total
+    // edge-count compare is unreliable now that 'none' draws outline-only.)
+    const hatch = () => ({ scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: 60 } }, byObject: {}, byFace: {} });
+    const unitedP = csgScene(objs(), [{ op: 'union', children: ['solid-1', 'solid-2'] }], cam); unitedP.styleTable = hatch();
+    const separateP = csgScene(objs(), [{ op: 'none', children: ['solid-1', 'solid-2'] }], cam); separateP.styleTable = hatch();
+    const united = algo.generate(unitedP, null, null, IB) || [];
+    const separate = algo.generate(separateP, null, null, IB) || [];
 
     // The second solid is consumed into the primary — no geometry tagged to it.
     expect(united.some((q) => q.meta && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'solid-2')).toBe(false);
     // A silhouette outline frames the merged solid.
     expect(edgesOf(united, 'solid-1', 'silhouette').length).toBeGreaterThan(0);
-    // Seam removal: the welded union draws FEWER structural edges than the two
-    // overlapping boxes drawn independently (which double every shared wall +
-    // the interposed seam faces).
-    const structural = (paths) => paths.filter((q) => q.meta && q.meta.kind === 'sceneEdge').length;
-    expect(structural(united)).toBeLessThan(structural(separate));
+    // Drawn independently, solid-2 DOES contribute its own edges — proving the
+    // union genuinely welded it away rather than there being no second solid.
+    expect(edgesOf(separate, 'solid-2').length).toBeGreaterThan(0);
+    expect(edgesOf(united, 'solid-2').length).toBe(0);
   });
 
   test('CSG carve draws NO interior seam edges: box−box near face is clean', () => {

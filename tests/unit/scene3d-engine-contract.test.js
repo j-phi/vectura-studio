@@ -31,7 +31,9 @@ describe('scene3d engine contract (CONTRACT E)', () => {
     engine.generate(id);
     expect(Array.isArray(layer.paths)).toBe(true);
     expect(layer.paths.length).toBeGreaterThan(0);
-    expect(layer.paths.some((p) => p.meta && p.meta.kind === 'sceneFace')).toBe(true);
+    // I11: new objects default to the WIREFRAME mapper, which emits structural
+    // EDGES (silhouette/crease/…) and no per-face outline fills (sceneFace).
+    expect(layer.paths.some((p) => p.meta && p.meta.kind === 'sceneEdge')).toBe(true);
   });
 
   test('duplicateLayer shares params.assets by ref and deep-copies objects[]', () => {

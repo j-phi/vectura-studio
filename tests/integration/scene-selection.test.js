@@ -165,6 +165,23 @@ describe('3D Scene Studio 1C — scene selection + canvas interactions', () => {
       expect(renderer.getSceneCandidateReadout()).toEqual({ index: 2, total: 2 });
     });
 
+    test('I20b: double-click on the V tool DRILLS object → face (selection is face-level, tool flips to A)', async () => {
+      const { renderer } = await setup();
+      // First click selects the object; a fast second click at (nearly) the
+      // same point drills into face mode on that object.
+      renderer.down({ clientX: 20, clientY: 20, preventDefault() {}, cancelable: true });
+      renderer.up({});
+      expect(renderer.getSceneSelection().mode).toBe('object');
+      renderer.down({ clientX: 20, clientY: 20, preventDefault() {}, cancelable: true });
+      renderer.up({});
+      const sel = renderer.getSceneSelection();
+      expect(sel.mode).toBe('face');
+      expect(sel.faceKeys.length).toBe(1);
+      expect(sel.faceKeys[0].startsWith('obj-1/')).toBe(true);
+      // The bar's context reads the drilled face level, and the tool flipped to A.
+      expect(renderer.activeTool).toBe('direct');
+    });
+
     test('V ground-drag moves the object in the ground plane; Shift lifts; ONE history entry per gesture', async () => {
       const { renderer, scene, app } = await setup();
       const obj1 = scene.params.objects[0];

@@ -962,6 +962,124 @@
     }
   };
 
+  // I20 — a scene selection resolves to a STYLE-TABLE scope: byObject for an
+  // object selection, byFace for a face selection. Pen/style writes from the
+  // ctxbar must target exactly this scope — NEVER the layer pen (which is
+  // scene-wide and would repaint every object). Returns null for edge mode (no
+  // per-edge style) or an empty selection.
+  const sceneStyleWriteCtx = (ctx) => {
+    const r = ctx.renderer;
+    const layer = ctx.primaryLayer;
+    const sel = sceneSel(ctx);
+    if (!r || !layer || !sel) return null;
+    if (sel.mode === 'object' && sel.objectIds.length) {
+      return { r, layerId: layer.id, layer, scope: 'object', ids: sel.objectIds };
+    }
+    if (sel.mode === 'face' && sel.faceKeys.length) {
+      return { r, layerId: layer.id, layer, scope: 'face', keys: sel.faceKeys };
+    }
+    return null;
+  };
+  // Resolved pen id of the PRIMARY target in the selection (byFace/byObject).
+  const scenePenIdOf = (wc) => {
+    if (!wc) return null;
+    if (wc.scope === 'object') {
+      const rs = wc.r.getSceneObjectResolvedStyle(wc.layerId, wc.ids[0]);
+      return (rs && rs.penId) || null;
+    }
+    const rs = wc.r.getSceneFaceResolvedStyle && wc.r.getSceneFaceResolvedStyle(wc.layerId, wc.keys[0]);
+    return (rs && rs.penId) || null;
+  };
+  const writeScenePenScoped = (wc, penId) => {
+    if (!wc) return false;
+    if (wc.scope === 'object') return wc.r.setSceneObjectStyle(wc.layerId, wc.ids, { penId: penId || null });
+    return Boolean(wc.r.setSceneFaceStyle && wc.r.setSceneFaceStyle(wc.layerId, wc.keys, { penId: penId || null }));
+  };
+
+  // Scoped pen chip for scene contexts — replaces the generic, layer-writing pen
+  // chip (which repainted EVERY object, I20). Shows the primary target's resolved
+  // pen swatch; clicking opens a pen list whose picks write to the styleTable at
+  // the selection's own scope (byObject / byFace) via the renderer bridges. It
+  // NEVER touches layer.penId. Like the flyout pills it does not call
+  // restoreState() (that would tear the list down mid-open); it repaints in place.
+  const appendScenePenChip = (ctx) => {
+    const wc = sceneStyleWriteCtx(ctx);
+    if (!wc || typeof wc.r.getSceneObjectResolvedStyle !== 'function') return;
+    const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+    const chip = el('button', 'pen-chip ctxbar-scene-pen-chip', { type: 'button', tabindex: '-1', 'data-ctxbar-roving': '', 'aria-haspopup': 'menu', 'aria-expanded': 'false' });
+    chip.innerHTML = '<span class="pen-chip-swatch"><span class="pen-icon"></span></span>';
+    const icon = chip.querySelector('.pen-icon');
+    const paint = () => {
+      const penId = scenePenIdOf(wc);
+      const pen = pens.find((p) => p && p.id === penId) || null;
+      if (pen) { icon.style.background = pen.color || 'transparent'; chip.title = `Pen — ${pen.name || pen.id}`; }
+      else { icon.style.background = 'transparent'; chip.title = 'Pen — inherits layer pen'; }
+    };
+    paint();
+    const wrap = el('span', 'ctxbar-align-wrap ctxbar-scene-menu-wrap ctxbar-scene-pen-wrap');
+    const fly = el('div', 'ctxbar-align-flyout ctxbar-scene-flyout ctxbar-scene-pen-flyout', { role: 'menu', 'aria-hidden': 'true' });
+    let open = false;
+    const reposition = () => positionFlyoutForSpace(wrap, fly, null);
+    const close = () => {
+      open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
+      chip.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
+    };
+    const buildBody = () => {
+      fly.textContent = '';
+      const curPen = scenePenIdOf(wc) || '';
+      const row = (penId, label, color) => {
+        const b = el('button', 'ctxbar-menu-item ctxbar-scene-pen-row', { type: 'button', tabindex: '-1' });
+        const sw = el('span', 'ctxbar-scene-pen-sw'); sw.style.background = color || 'transparent'; b.appendChild(sw);
+        const nm = el('span', 'ctxbar-scene-pen-name'); nm.textContent = label; b.appendChild(nm);
+        if ((penId || '') === curPen) b.classList.add('is-active');
+        b.addEventListener('click', (e) => {
+          e.preventDefault(); e.stopPropagation();
+          writeScenePenScoped(wc, penId || null);
+          paint(); buildBody(); if (open) reposition();
+        });
+        fly.appendChild(b);
+      };
+      row('', 'Layer pen', null);
+      pens.forEach((p) => { if (p) row(p.id, p.name || p.id, p.color); });
+    };
+    const openFn = () => {
+      if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout();
+      open = true; buildBody();
+      fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false');
+      chip.setAttribute('aria-expanded', 'true'); state.closeFlyout = close;
+      reposition();
+    };
+    chip.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open ? close() : openFn(); });
+    fly.addEventListener('click', (e) => { e.stopPropagation(); });
+    wrap.appendChild(chip); wrap.appendChild(fly);
+    els.content.appendChild(wrap);
+  };
+
+  // I22 — swap the selected object(s) primitive from the ctxbar. A vertical
+  // menu of primitives; picking one mutates obj.primitive + regenerates in ONE
+  // undo via the renderer bridge, then rebuilds the bar.
+  const appendSceneShapePicker = (ctx) => {
+    const r = ctx.renderer;
+    const layer = ctx.primaryLayer;
+    const sel = sceneSel(ctx);
+    if (!r || typeof r.setSceneObjectPrimitive !== 'function' || !layer || !sel || sel.mode !== 'object' || !sel.objectIds.length) return;
+    const b = B();
+    const C = (cfg().sceneFlyouts && cfg().sceneFlyouts.shape) || {};
+    const prims = C.primitives || [];
+    if (!prims.length) return;
+    const objects = (layer.params && layer.params.objects) || [];
+    const first = objects.find((o) => o && o.id === sel.objectIds[0]) || {};
+    const cur = first.primitive;
+    const meta = b.sceneShape || {};
+    const field = makeDropField('ctxbar-scene-field ctxbar-scene-shape', meta.label || 'Shape', meta.tooltip || '');
+    const items = prims.map((opt) => ({
+      label: opt.label,
+      active: cur === opt.value,
+      onSelect: () => { r.setSceneObjectPrimitive(layer.id, sel.objectIds, opt.value); restoreState(); },
+    }));
+    els.content.appendChild(makeMenuFlyout(field, items, 'ctxbar-scene-shape-flyout'));
+  };
+
   const renderSceneObject = (ctx) => {
     const b = B(); const ic = IC();
     const r = ctx.renderer;
@@ -970,7 +1088,8 @@
     if (!r || !layer || !sel) return;
     const ids = sel.objectIds;
     appendSceneReadouts(ctx);
-    appendPenChip(ctx);
+    appendScenePenChip(ctx);
+    appendSceneShapePicker(ctx);
     // Persistent Style / Shadow / Highlight / X-ray dropdown pills (ask #8) —
     // between the pen chip and the one-shot verbs.
     appendSceneFlyouts(ctx);
@@ -1007,7 +1126,7 @@
     const sel = sceneSel(ctx);
     if (!r || !layer || !sel) return;
     appendSceneReadouts(ctx);
-    appendPenChip(ctx);
+    appendScenePenChip(ctx);
     const keys = sel.mode === 'edge' ? sel.edgeKeys : sel.faceKeys;
     const owners = Array.from(new Set(keys.map((k) => String(k).split('/')[0])));
     els.content.appendChild(makeBtn({

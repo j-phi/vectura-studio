@@ -11973,6 +11973,27 @@ body.mobile-layout .hud-bar {
 }
 .ctxbar-fly-reset { width: 100%; justify-content: center; }
 .ctxbar-scene-menu-wrap .ctxbar-scene-field { max-width: 140px; }
+/* I20 scoped scene pen chip + its pen-list flyout (writes byObject/byFace, never
+   the layer pen). The chip reuses the shared .pen-chip look; the flyout reuses
+   the scene-flyout box with compact swatch rows. */
+.ctxbar-scene-pen-flyout { min-width: 168px; padding: 4px; }
+.ctxbar-scene-pen-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+.ctxbar-scene-pen-sw {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--ui-border-hi, #4a4a4a);
+  background-clip: padding-box;
+}
+.ctxbar-scene-pen-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctxbar-scene-pen-row.is-active { color: var(--ui-accent, #4e9ee1); }
 /* Add Layer dropdown (idle TB-3) reuses the same field/flyout markup. */
 .ctxbar-add-layer-field .lvl-algo-sub-ico { margin-right: 5px; }
 /* Add Layer drill-down rows: distinct class from `.ctxbar-menu-item` so the

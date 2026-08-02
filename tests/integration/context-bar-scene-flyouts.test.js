@@ -95,7 +95,8 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     addSelectScene();
     expect(CB.getContext().kind).toBe('scene-object');
     const labels = pills().map((f) => f.querySelector('.ctxbar-text-fieldlabel').textContent);
-    expect(labels).toEqual(['Style', 'Shadow', 'Highlight', 'X-ray']);
+    // I22 adds the leading 'Shape' primitive-swap pill.
+    expect(labels).toEqual(['Shape', 'Style', 'Shadow', 'Highlight', 'X-ray']);
   });
 
   test('Style ▾ opens, changes mapper (writes byObject + one undo), and STAYS OPEN through a slider edit', async () => {
@@ -260,5 +261,80 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     const ctl = rowCtl(openFly(), 'Fill');
     expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(false);
     expect(ctl.querySelector('select').value).not.toBe(MIXED().sentinel);
+  });
+
+  // ── I20 — pen writes are SCOPED to the ctxbar selection (never layer-wide) ──
+  // The old scene ctxbar mounted the generic layer-writing pen chip, so picking
+  // a pen while "1 face" was selected repainted EVERY object (it wrote
+  // layer.penId). The scoped chip writes styleTable.byObject / byFace instead.
+  const seedPens = () => {
+    window.Vectura.SETTINGS.pens = [
+      { id: 'pen-a', name: 'Pen A', color: '#ff0000', width: 0.3 },
+      { id: 'pen-b', name: 'Pen B', color: '#00ff00', width: 0.3 },
+    ];
+  };
+  const penChip = () => host().querySelector('.ctxbar-scene-pen-chip');
+  const penFly = () => document.querySelector('.ctxbar-scene-pen-flyout.is-open');
+  const pickPen = (name) => Array.from(penFly().querySelectorAll('.ctxbar-scene-pen-row'))
+    .find((r) => r.textContent.includes(name)).click();
+
+  const addSelectSceneMulti = (mode, sel) => {
+    app.engine.layers = app.engine.layers.filter((l) => l.type !== 'scene3d');
+    const scene = new window.Vectura.Layer(`scene-scope-${app.engine.layers.length}`, 'scene3d', 'Scene');
+    scene.params = { ...scene.params, ...sceneParamsMulti() };
+    app.engine.layers.push(scene);
+    app.engine.activeLayerId = scene.id;
+    app.engine.generate(scene.id);
+    app.renderer.setSelection([scene.id], scene.id);
+    app.renderer.setSceneSelection({ layerId: scene.id, mode, objectIds: [], faceKeys: [], edgeKeys: [], ...sel });
+    CB.restoreState();
+    return scene;
+  };
+
+  test('I20: FACE pen chip writes byFace only — layer pen + other object untouched', async () => {
+    seedPens();
+    const scene = addSelectSceneMulti('face', { faceKeys: ['obj-1/2'] });
+    expect(CB.getContext().kind).toBe('scene-face');
+    const chip = penChip();
+    expect(chip).toBeTruthy();            // scoped chip present (the global chip is gone)
+    chip.click();
+    expect(penFly()).toBeTruthy();
+    const penBefore = scene.penId; // fresh layer carries a default pen
+    const before = app.history.length;
+    pickPen('Pen A');
+    // Only the selected face carries the pen; the scene-wide layer pen is untouched.
+    expect(scene.params.styleTable.byFace['obj-1/2'].penId).toBe('pen-a');
+    expect(scene.penId).toBe(penBefore);
+    // Neither obj-1 (as a whole) nor obj-2 resolve to the picked pen.
+    expect(app.renderer.getSceneObjectResolvedStyle(scene.id, 'obj-1').penId).toBeFalsy();
+    expect(app.renderer.getSceneObjectResolvedStyle(scene.id, 'obj-2').penId).toBeFalsy();
+    expect(app.history.length).toBe(before + 1);
+  });
+
+  test('I20: OBJECT pen chip writes byObject only — other object unchanged', async () => {
+    seedPens();
+    const scene = addSelectSceneMulti('object', { objectIds: ['obj-1'] });
+    expect(CB.getContext().kind).toBe('scene-object');
+    const penBefore = scene.penId;
+    penChip().click();
+    pickPen('Pen B');
+    expect(scene.params.styleTable.byObject['obj-1'].penId).toBe('pen-b');
+    expect(scene.penId).toBe(penBefore);
+    expect(app.renderer.getSceneObjectResolvedStyle(scene.id, 'obj-2').penId).toBeFalsy();
+  });
+
+  // ── I22 — swap the selected object's primitive from the ctxbar Shape pill. ──
+  test('I22: Shape pill swaps the object primitive (one undo)', async () => {
+    const scene = addSelectScene();       // obj-1 is a box
+    expect(obj(scene).primitive).toBe('box');
+    const shapeField = pillByLabel('Shape');
+    expect(shapeField).toBeTruthy();
+    shapeField.click();
+    const fly = document.querySelector('.ctxbar-scene-shape-flyout.is-open');
+    expect(fly).toBeTruthy();
+    const before = app.history.length;
+    Array.from(fly.querySelectorAll('.ctxbar-menu-item')).find((i) => i.textContent === 'Sphere').click();
+    expect(obj(scene).primitive).toBe('sphere');
+    expect(app.history.length).toBe(before + 1);
   });
 });

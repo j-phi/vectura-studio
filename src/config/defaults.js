@@ -2119,7 +2119,10 @@
       groups: [], // Phase 3C reserve
       assets: {}, // content-hashed asset table; cloneLayerParams ref-skips it
       styleTable: { // CONTRACT C shape
-        scene: { penId: null, mapper: 'none', params: {} },
+        // I11 — new 3D objects come up as WIREFRAME (all structural edges), the
+        // most legible read of a fresh mesh. 'none' (outline only) and the surface
+        // fills are opt-in via the object style flyout.
+        scene: { penId: null, mapper: 'wireframe', params: {} },
         byObject: {}, // objectId -> Style
         byFace: {}, // 'objectId/faceId' -> Style
       },

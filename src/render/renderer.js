@@ -11809,6 +11809,28 @@
       return true;
     }
 
+    // I22 — swap the primitive of each selected object (box → sphere → …). The
+    // params bag is reset to the new primitive's canonical defaults so a swap is
+    // a clean shape change (the box's sx/sy/sz would be meaningless for a
+    // sphere). One history entry + regen. Rejects an unknown primitive name.
+    setSceneObjectPrimitive(layerId, objectIds, primitive) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      if (!layer || layer.type !== 'scene3d') return false;
+      const P = window.Vectura?.Scene3D?.Params;
+      const valid = P && Array.isArray(P.PRIMITIVES) ? P.PRIMITIVES : null;
+      if (valid && valid.indexOf(primitive) === -1) return false;
+      const targets = this._sceneObjects(layer).filter((o) => o && (objectIds || []).includes(o.id));
+      if (!targets.length) return false;
+      const defaults = (P && P.PRIMITIVE_PARAM_DEFAULTS && P.PRIMITIVE_PARAM_DEFAULTS[primitive]) || null;
+      this._scenePushHistory();
+      targets.forEach((o) => {
+        o.primitive = primitive;
+        if (defaults) o.params = { ...defaults };
+      });
+      this._sceneRegen(layer);
+      return true;
+    }
+
     // ——— ctxbar scene-object flyout bridges (ask #8) —————————————————————
     // Thin read/write plumbing the persistent Style / Shadow / Highlight /
     // X-ray flyouts drive. Writes never call ContextBar.restoreState() (that
@@ -11881,6 +11903,47 @@
         const style = { penId: cur.penId, mapper: cur.mapper, params: { ...(cur.params || {}) } };
         Object.keys(patch || {}).forEach((k) => { style[k] = patch[k]; });
         SC.setStyle(table, 'object', id, style);
+      });
+      this._sceneEndWrite(layer, o);
+      return true;
+    }
+
+    // Resolve the effective style for a single face key ('objectId/faceId').
+    // byFace > byObject > scene, mirroring getSceneObjectResolvedStyle.
+    getSceneFaceResolvedStyle(layerId, faceKey) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      const SC = window.Vectura?.Scene3D?.StyleCascade;
+      if (!layer || layer.type !== 'scene3d' || !SC) return null;
+      const key = String(faceKey);
+      const slash = key.indexOf('/');
+      const objectId = slash >= 0 ? key.slice(0, slash) : key;
+      const faceId = slash >= 0 ? key.slice(slash + 1) : null;
+      return SC.resolve(this._sceneStyleTable(layer), { objectId, faceId });
+    }
+
+    // Whole-style write at FACE scope (I20 — pen/style from the ctxbar must
+    // target ONLY the selected faceKeys, writing styleTable.byFace, never the
+    // layer pen or the scene-wide style). `faceKeys` are 'objectId/faceId'
+    // strings. Shape/semantics mirror setSceneObjectStyle: `patch` keys replace
+    // the resolved style's keys; `opts.clear` removes the byFace override.
+    setSceneFaceStyle(layerId, faceKeys, patch, opts) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      const SC = window.Vectura?.Scene3D?.StyleCascade;
+      if (!layer || layer.type !== 'scene3d' || !SC) return false;
+      const keys = (faceKeys || []).filter(Boolean).map(String);
+      if (!keys.length) return false;
+      const table = this._sceneStyleTable(layer);
+      const o = opts || {};
+      this._sceneBeginWrite(o);
+      keys.forEach((key) => {
+        if (o.clear === true) { SC.clearStyle(table, 'face', key); return; }
+        const slash = key.indexOf('/');
+        const objectId = slash >= 0 ? key.slice(0, slash) : key;
+        const faceId = slash >= 0 ? key.slice(slash + 1) : null;
+        const cur = SC.resolve(table, { objectId, faceId });
+        const style = { penId: cur.penId, mapper: cur.mapper, params: { ...(cur.params || {}) } };
+        Object.keys(patch || {}).forEach((k) => { style[k] = patch[k]; });
+        SC.setStyle(table, 'face', key, style);
       });
       this._sceneEndWrite(layer, o);
       return true;

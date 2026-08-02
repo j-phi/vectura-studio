@@ -7,6 +7,21 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — default object style is now Wireframe**, and `wireframe` and `none`
+  are finally distinct: `none` draws only the object outline (silhouette + boundary),
+  while `wireframe` also draws the interior crease edges (a cube's near-corner "Y").
+- **3D Scene — change a shape's primitive from the context bar.** A new "Shape" pill
+  on the object context bar swaps the selected object between box/sphere/torus/cone/
+  cylinder/capsule/pyramid/superellipsoid/torusKnot (one undo, params reset to the
+  new primitive's defaults).
+
+### Fixed
+- **3D Scene — context-bar pen/style edits now stay scoped to the selection.** Applying
+  a pen from the context bar wrote the whole layer's pen (repainting every object);
+  it now writes the styleTable at the selected scope — byObject for an object, byFace
+  for a face — leaving siblings untouched. Double-click still drills object→face so the
+  edit lands exactly where selected.
+
 - **3D Scene — remove ground & sun, plus file-based scene presets.** The ground
   plane can be hidden (Ground row toggle) and the scene can now have zero lights
   (the last light is deletable) — a lightless scene shades flat without crashing

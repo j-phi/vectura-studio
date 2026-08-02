@@ -673,6 +673,23 @@
         // and hatches it continuously. `record.csgFaceted` is retained as metadata
         // but no longer steers the hatch path.
 
+        // Edge classification (silhouette | crease | boundary | interior),
+        // computed ONCE per record and shared by the face-outline pass (below,
+        // to know which face segments are the object outline vs interior creases)
+        // and the structural edge pass (further down). edgeClsById maps the
+        // canonical vertex-pair key → class.
+        const classified = Edges.classifyEdges(record, {});
+        const edgeClsById = new Map();
+        classified.forEach((e) => edgeClsById.set(e.edgeId, e.cls));
+        // A faceted face-edge is part of the object OUTLINE (drawn for 'none')
+        // when it is NOT an interior crease/interior edge. edgeKey canonicalises
+        // the vertex-index pair the same way classifyEdges does.
+        const edgeKey3 = G3.edgeKey;
+        const isOutlineFaceEdge = (va, vb) => {
+          const cls = edgeClsById.get(edgeKey3(va, vb));
+          return cls !== 'crease' && cls !== 'interior';
+        };
+
         // ── Faces: outlines (closed when fully visible) + hatch fills.
         record.faces.forEach((face) => {
           if (!face.front) return;
@@ -687,8 +704,6 @@
           const surfaceFill = SURFACE_FILL.has(style.mapper);
           const faceTreat = strokeTreatment(style.params);
           const segCtx = { ownerKeys: [face.key], objectId: record.id };
-          const loop = face.polygon.concat([face.polygon[0]]);
-          const clipped = clipper.clipPath(loop, segCtx);
           const target = sceneTargetMeta(record.id, face, null, face.centroidZ, false);
           const pickPolygon = face.polygon.map((pt) => ({ x: pt.x, y: pt.y }));
           const baseMeta = {
@@ -701,27 +716,29 @@
           // per-face outline for every triangle — that draws the whole mesh.
           // "None" shows just the object OUTLINE, which the silhouette/boundary
           // edges (Edges pass below) already provide. Faceted prims (box, plane,
-          // polyhedra, ground) keep their face outlines: those ARE the clean
-          // cube/plane edges, and they carry the face pick polygon.
+          // polyhedra, ground) also show only their OUTLINE for 'none': each face
+          // draws just its silhouette/boundary edges, so a cube reads as its outer
+          // hexagon — the interior crease edges (the near-corner Y) are the
+          // WIREFRAME look and are skipped here (I5). Every drawn segment carries
+          // the full face polygon as pickPolygon, so face-mode point-in-poly
+          // picking still resolves. (The structural edge pass below draws the same
+          // outline — documented double-draw.)
           const suppressMeshOutline = !faceted && !surfaceFill;
           if (!surfaceFill && !suppressMeshOutline) {
-            if (clipped.fullyVisible) {
-              const pts = face.polygon.map((pt) => ({ x: pt.x, y: pt.y }));
-              pts.push({ x: pts[0].x, y: pts[0].y });
-              // Structural outline: line-type dash only (no wobble — see dashOnly).
-              const outlineMeta = { ...baseMeta, closed: true };
-              if (faceTreat.dash) outlineMeta.strokeDash = faceTreat.dash.slice();
-              const path = pathWithMeta(pts, outlineMeta);
-              if (path.length >= 3) out.push(path);
-            } else {
-              // Partially-occluded face: the visible outline is emitted as open
-              // runs, so face picking (point-in-poly) has no closed surface.
-              // Stamp the full closed face outline into meta so the renderer
-              // hit-tests the whole face — drawn geometry stays the runs.
-              emitRuns(clipped.runs, {
-                ...baseMeta,
-                sceneTarget: { ...target, pickPolygon },
-              }, hiddenTreatment, null, dashOnly(faceTreat));
+            const idx = face.indices || [];
+            const poly = face.polygon;
+            const n = poly.length;
+            const hasIdx = idx.length === n;
+            const outlineMeta = { ...baseMeta, sceneTarget: { ...target, pickPolygon } };
+            if (faceTreat.dash) outlineMeta.strokeDash = faceTreat.dash.slice();
+            const dashTreat = dashOnly(faceTreat);
+            for (let i = 0; i < n; i++) {
+              // Skip only edges we can positively classify as interior creases.
+              // Missing/mismatched indices ⇒ draw the segment (safe fallback to the
+              // full outline, e.g. the ground plate whose edges are all boundary).
+              if (hasIdx && !isOutlineFaceEdge(idx[i], idx[(i + 1) % n])) continue;
+              const segClip = clipper.clipPath([poly[i], poly[(i + 1) % n]], segCtx);
+              emitRuns(segClip.runs, outlineMeta, hiddenTreatment, null, dashTreat);
             }
           }
 
@@ -1175,7 +1192,7 @@
 
         // ── Edges: silhouette / crease / boundary (+ every edge of a
         // wireframe-mapped face); hidden runs drop (solid) or dash (x-ray).
-        const classified = Edges.classifyEdges(record, {});
+        // `classified` was computed once above (shared with the face-outline pass).
         classified.forEach((entry) => {
           const adjacentFaces = entry.faceIndices.map((idx) => record.faces[idx]).filter(Boolean);
           const wireframeFace = adjacentFaces.find((face) => styleOf(face).mapper === 'wireframe');
@@ -1204,15 +1221,27 @@
             if (ec && ec[entry.cls] === false) return; // this class hidden for the wireframe
             wfShowHidden = wfParams.showHidden === true;
           }
-          // A crease that borders only surface-filled faces is suppressed — the
-          // fill replaces the mesh wireframe. Silhouette and boundary edges
-          // (the shape's real outline) always survive. UNDER X-RAY (hidden edges
-          // on) a suppressed crease still passes as HIDDEN-ONLY: its visible
-          // portion drops (no confetti over the fill) but its occluded portion
-          // dashes, so the far-side edges of a hatched box read through (Phase 6).
+          // A crease/interior edge is part of the WIREFRAME look, NOT the object
+          // OUTLINE: it is drawn ONLY when an adjacent face is wireframe-mapped.
+          // For 'none' (outline only) and for surface fills (the fill replaces the
+          // mesh), the crease is suppressed — so a 'none' cube shows just its outer
+          // hexagon, not the near-corner Y (I5). Silhouette and boundary edges (the
+          // shape's real outline) always survive. UNDER X-RAY (hidden edges on) a
+          // crease that borders only SURFACE-FILLED faces still passes as
+          // HIDDEN-ONLY: its visible portion drops (no confetti over the fill) but
+          // its occluded portion dashes, so the far-side edges of a hatched box read
+          // through (Phase 6). A bare 'none' object has no fill to read through, so
+          // it drops the crease outright.
+          const bordersSurfaceFill = adjacentFaces.length
+            && adjacentFaces.every((face) => SURFACE_FILL.has(styleOf(face).mapper));
+          // A CSG carve rim (a wall meeting a face at ~90°) is a genuine cut
+          // boundary that reads as part of the object outline, not mesh confetti —
+          // so on a CSG result a crease is suppressed ONLY when a surface fill
+          // would otherwise bury it (legacy). On ordinary primitives 'none' drops
+          // every crease (outline only).
           const creaseSuppressed = entry.cls === 'crease' && !wireframeDemand
-            && adjacentFaces.length && adjacentFaces.every((face) => SURFACE_FILL.has(styleOf(face).mapper));
-          const hiddenOnlyEdge = creaseSuppressed && xrayOn && recXray.hiddenEdges;
+            && (record.primitive === 'csg' ? bordersSurfaceFill : true);
+          const hiddenOnlyEdge = creaseSuppressed && bordersSurfaceFill && xrayOn && recXray.hiddenEdges;
           if (creaseSuppressed && !hiddenOnlyEdge) return;
           // Interior edges surfaced by a wireframe mapper report as creases —
           // the closest CONTRACT B class (the enum has no 'interior').
