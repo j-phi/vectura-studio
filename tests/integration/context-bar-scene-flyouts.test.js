@@ -176,4 +176,89 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     // Border weight + pen revealed in place.
     expect(rowCtl(openFly(), 'Weight')).toBeTruthy();
   });
+
+  // ── Multi-select MIXED-value display (MSC-scene) ───────────────────────────
+  const sceneParamsMulti = () => {
+    const p = sceneParams();
+    p.objects = [
+      { id: 'obj-1', name: 'Box 1', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 },
+        transform: { x: -30, y: 20, z: 0, yaw: 20, pitch: 12, roll: 0, scale: 1 }, visibility: 'solid' },
+      { id: 'obj-2', name: 'Box 2', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 },
+        transform: { x: 30, y: 20, z: 0, yaw: 20, pitch: 12, roll: 0, scale: 1 }, visibility: 'solid' },
+    ];
+    return p;
+  };
+  // Two objects selected; optionally seed each with a per-object style patch.
+  const addSelectMulti = (styleA, styleB) => {
+    app.engine.layers = app.engine.layers.filter((l) => l.type !== 'scene3d');
+    const scene = new window.Vectura.Layer(`scene-multi-${app.engine.layers.length}`, 'scene3d', 'Scene');
+    scene.params = { ...scene.params, ...sceneParamsMulti() };
+    app.engine.layers.push(scene);
+    app.engine.activeLayerId = scene.id;
+    app.engine.generate(scene.id);
+    if (styleA) app.renderer.setSceneObjectStyle(scene.id, ['obj-1'], styleA);
+    if (styleB) app.renderer.setSceneObjectStyle(scene.id, ['obj-2'], styleB);
+    app.renderer.setSelection([scene.id], scene.id);
+    app.renderer.setSceneSelection({ layerId: scene.id, mode: 'object', objectIds: ['obj-1', 'obj-2'], faceKeys: [], edgeKeys: [] });
+    CB.restoreState();
+    return scene;
+  };
+  const MIXED = () => window.Vectura.CONTEXT_BAR.sceneFlyouts.mixed;
+
+  test('Style ▾ shows MIXED when two objects have DIFFERENT mappers', async () => {
+    addSelectMulti({ mapper: 'hatch', params: {} }, { mapper: 'stipple', params: {} });
+    pillByLabel('Style').click();
+    const ctl = rowCtl(openFly(), 'Fill');
+    expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(true);
+    const sel = ctl.querySelector('select');
+    expect(sel.value).toBe(MIXED().sentinel);
+    // A "Mixed" sentinel option is present and neither object's real value leaks.
+    const labels = Array.from(sel.options).map((o) => o.textContent);
+    expect(labels).toContain(MIXED().label);
+  });
+
+  test('Style ▾ shows the SHARED value when two objects AGREE on the mapper', async () => {
+    addSelectMulti({ mapper: 'hatch', params: {} }, { mapper: 'hatch', params: {} });
+    pillByLabel('Style').click();
+    const ctl = rowCtl(openFly(), 'Fill');
+    expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(false);
+    expect(ctl.querySelector('select').value).toBe('hatch');
+  });
+
+  test('Editing from MIXED applies to BOTH objects, one undo, and resolves the display', async () => {
+    const scene = addSelectMulti({ mapper: 'hatch', params: {} }, { mapper: 'stipple', params: {} });
+    pillByLabel('Style').click();
+    const before = app.history.length;
+    const sel = rowCtl(openFly(), 'Fill').querySelector('select');
+    sel.value = 'contour';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    // Both objects now carry the picked mapper.
+    expect(styleTable(scene).byObject['obj-1'].mapper).toBe('contour');
+    expect(styleTable(scene).byObject['obj-2'].mapper).toBe('contour');
+    expect(app.history.length).toBe(before + 1);
+    // The flyout rebuilt in place → the control now shows the unified value.
+    const ctl = rowCtl(openFly(), 'Fill');
+    expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(false);
+    expect(ctl.querySelector('select').value).toBe('contour');
+  });
+
+  test('Shadow ▾ Cast shows MIXED when objects disagree on cast', async () => {
+    const scene = addSelectMulti();
+    // obj-1 explicit on, obj-2 explicit off → disagree.
+    app.renderer.setSceneObjectField(scene.id, ['obj-1'], 'shadow.enabled', true);
+    app.renderer.setSceneObjectField(scene.id, ['obj-2'], 'shadow.enabled', false);
+    CB.restoreState();
+    pillByLabel('Shadow').click();
+    const ctl = rowCtl(openFly(), 'Cast');
+    expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(true);
+    expect(ctl.querySelector('.seg-opt[data-value="__scene-mixed__"]')).toBeTruthy();
+  });
+
+  test('single-selection is NOT flagged mixed (regression guard)', async () => {
+    addSelectScene();
+    pillByLabel('Style').click();
+    const ctl = rowCtl(openFly(), 'Fill');
+    expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(false);
+    expect(ctl.querySelector('select').value).not.toBe(MIXED().sentinel);
+  });
 });

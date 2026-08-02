@@ -11941,6 +11941,22 @@ body.mobile-layout .hud-bar {
   justify-content: flex-end;
 }
 .ctxbar-fly-ctl > * { max-width: 100%; }
+/* Multi-select "Mixed" state: the selected objects disagree on this control.
+   The sentinel option / blanked chip already communicate it; the muted italic
+   accent keeps the surface from reading as a real shared value. */
+.ctxbar-fly-ctl.ctxbar-fly-mixed .ctrl-sel,
+.ctxbar-fly-ctl.ctxbar-fly-mixed .seg-ctrl .seg-opt.active,
+.ctxbar-fly-ctl.ctxbar-fly-mixed .slider-val,
+.ctxbar-fly-ctl.ctxbar-fly-mixed .angle-inp {
+  color: var(--ui-muted, #9a9a9a);
+  font-style: italic;
+}
+.ctxbar-fly-ctl.ctxbar-fly-mixed .slider-val::placeholder,
+.ctxbar-fly-ctl.ctxbar-fly-mixed .angle-inp::placeholder {
+  color: var(--ui-muted, #9a9a9a);
+  font-style: italic;
+  opacity: 1;
+}
 .ctxbar-fly-subhead {
   font-size: var(--font-size-xs, 10px);
   color: var(--ui-muted, #686868);

@@ -7,6 +7,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene ctxbar — multi-select "Mixed" display.** When 2+ scene objects are
+  selected and they *disagree* on a contextual-toolbar control, the Style / Shadow /
+  Highlight / X-ray flyouts now show an explicit **Mixed** state instead of silently
+  showing the primary object's value. Selects and segmented controls gain a muted
+  "Mixed" marker; sliders and angle dials blank their numeric readout to a dash.
+  Editing from Mixed applies to every selected object (unchanged) and the display
+  resolves to the new shared value. Single-selection is untouched.
 - **3D Scene emissive objects.** The sixth and final light type: any scene object
   can be made **Emissive** — it now both *glows* and *lights its neighbours*. As a
   light it acts as a co-located point light at its own world centroid, brightening

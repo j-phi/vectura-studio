@@ -126,7 +126,10 @@
     // the docked Scene panel so both surfaces read identically; labels are here,
     // never inlined in context-bar.js.
     sceneFlyouts: {
-      mixed: '—', // multi-select mixed-value placeholder (display only)
+      // Multi-select mixed-value vocabulary (display only). `label` names the
+      // sentinel option shown in a select/segmented control when the selected
+      // objects disagree; `dash` is the blank placeholder for sliders/dials.
+      mixed: { label: 'Mixed', dash: '—', sentinel: '__scene-mixed__' },
       style: {
         mapper: { label: 'Fill', aria: 'Fill style mapper' },
         pen: { label: 'Pen', aria: 'Style pen', inherit: 'Layer pen' },

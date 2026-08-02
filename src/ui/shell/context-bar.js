@@ -1065,6 +1065,69 @@
     if (!r || !ctx.primaryLayer || !sel || sel.mode !== 'object' || !sel.objectIds.length) return null;
     return { r, layerId: ctx.primaryLayer.id, layer: ctx.primaryLayer, ids: sel.objectIds };
   };
+  // ── Multi-select mixed-value helpers (MSC-scene) ─────────────────────────
+  // When 2+ objects are selected the flyouts show the PRIMARY object's value but
+  // must not lie when the selection DISAGREES on a control. `sceneAgree` folds a
+  // per-id value extractor over sc.ids and reports whether they match; the
+  // flyMixed* wrappers then render an explicit "Mixed" state (a sentinel option
+  // for selects/segctrls, a blanked chip for sliders/dials). Applying any value
+  // writes through to ALL ids (unchanged) and unifies the display on rebuild.
+  const mixedCfg = () => (FLY().mixed) || {};
+  const mixedSentinel = () => mixedCfg().sentinel || '__scene-mixed__';
+  const mixedLabel = () => mixedCfg().label || 'Mixed';
+  const mixedDash = () => mixedCfg().dash || '—';
+  // { mixed, value } — value is the primary object's value (sc.ids[0]).
+  const sceneAgree = (sc, fn) => {
+    const ids = (sc && sc.ids) || [];
+    const prim = ids.length ? fn(ids[0]) : undefined;
+    if (ids.length < 2) return { mixed: false, value: prim };
+    const key = (v) => { try { return JSON.stringify(v === undefined ? null : v); } catch (_e) { return String(v); } };
+    const k0 = key(prim);
+    for (let i = 1; i < ids.length; i++) {
+      if (key(fn(ids[i])) !== k0) return { mixed: true, value: prim };
+    }
+    return { mixed: false, value: prim };
+  };
+  // Mixed-aware Select: prepends a "Mixed" sentinel option and swallows re-picks.
+  const flyMixedSelect = (host, o) => {
+    const options = o.mixed ? [{ value: mixedSentinel(), label: mixedLabel() }].concat(o.options || []) : (o.options || []);
+    if (o.mixed) host.classList.add('ctxbar-fly-mixed');
+    return UI.Select(host, {
+      options, value: o.mixed ? mixedSentinel() : o.value, ariaLabel: o.ariaLabel,
+      onChange: (v) => { if (v === mixedSentinel()) return; o.onChange(v); },
+    });
+  };
+  // Mixed-aware SegCtrl: appends a "Mixed" sentinel that reads active when mixed.
+  const flyMixedSeg = (host, o) => {
+    const options = o.mixed ? (o.options || []).concat([{ value: mixedSentinel(), label: mixedLabel() }]) : (o.options || []);
+    if (o.mixed) host.classList.add('ctxbar-fly-mixed');
+    return UI.SegCtrl(host, {
+      options, value: o.mixed ? mixedSentinel() : o.value, ariaLabel: o.ariaLabel,
+      onChange: (v) => { if (v === mixedSentinel()) return; o.onChange(v); },
+    });
+  };
+  // Mixed-aware Slider: thumb sits at the primary value (as MSC-1 stroke weight),
+  // but the numeric chip is blanked to an indeterminate dash.
+  const flyMixedSlider = (host, o) => {
+    const h = UI.Slider(host, o.props || {});
+    if (o.mixed) {
+      host.classList.add('ctxbar-fly-mixed');
+      const chip = host.querySelector('.slider-val, .pen-w');
+      if (chip) { chip.value = ''; chip.placeholder = mixedDash(); }
+    }
+    return h;
+  };
+  // Mixed-aware AngleDial: dial at the primary value, numeric readout blanked.
+  const flyMixedDial = (host, o) => {
+    const h = UI.AngleDial(host, o.props || {});
+    if (o.mixed) {
+      host.classList.add('ctxbar-fly-mixed');
+      const inp = host.querySelector('.angle-inp');
+      if (inp) { inp.value = ''; inp.placeholder = mixedDash(); }
+    }
+    return h;
+  };
+
   // A label + control host row inside a flyout body.
   const flyRow = (fly, labelText, note) => {
     const row = el('div', 'ctxbar-fly-row');
@@ -1112,33 +1175,42 @@
   const buildStyleBody = (fly, rebuild) => {
     const sc = sceneFlyCtx(); if (!sc) return;
     const C = (FLY().style) || {};
-    const resolved = sc.r.getSceneObjectResolvedStyle(sc.layerId, sc.ids[0])
+    const rs = (id) => sc.r.getSceneObjectResolvedStyle(sc.layerId, id)
       || { penId: null, mapper: 'none', params: {}, provenance: { scope: 'scene' } };
+    const resolved = rs(sc.ids[0]);
     const params = resolved.params || {};
     const mapper = resolved.mapper || 'none';
     const write = (patch, opts) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, patch, opts);
-    UI.Select(flyRow(fly, C.mapper.label), {
+    flyMixedSelect(flyRow(fly, C.mapper.label), {
       options: C.mappers, value: mapper, ariaLabel: C.mapper.aria,
+      mixed: sceneAgree(sc, (id) => (rs(id).mapper || 'none')).mixed,
       onChange: (v) => { write({ mapper: v, params: { ...params } }); rebuild(); },
     });
-    UI.Select(flyRow(fly, C.pen.label), {
+    flyMixedSelect(flyRow(fly, C.pen.label), {
       options: scenePens(C.pen.inherit), value: resolved.penId || '', ariaLabel: C.pen.aria,
+      mixed: sceneAgree(sc, (id) => (rs(id).penId || '')).mixed,
       onChange: (v) => write({ penId: v || null }),
     });
     if ((C.angleMappers || []).indexOf(mapper) !== -1 && UI.AngleDial) {
       const dv = Number.isFinite(params.fillAngle) ? params.fillAngle : 45;
-      UI.AngleDial(flyRow(fly, C.angle.label), {
-        value: dv, ariaLabel: C.angle.aria, defaultValue: 45,
-        onChange: (v) => write({ params: { ...params, fillAngle: norm360(v) } }, { gesture: true, preview: true }),
-        onCommit: (v) => write({ params: { ...params, fillAngle: norm360(v) } }),
+      flyMixedDial(flyRow(fly, C.angle.label), {
+        mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.fillAngle) ? p.fillAngle : 45; }).mixed,
+        props: {
+          value: dv, ariaLabel: C.angle.aria, defaultValue: 45,
+          onChange: (v) => write({ params: { ...params, fillAngle: norm360(v) } }, { gesture: true, preview: true }),
+          onCommit: (v) => write({ params: { ...params, fillAngle: norm360(v) } }),
+        },
       });
     }
     if ((C.fillMappers || []).indexOf(mapper) !== -1) {
       const dv = Number.isFinite(params.fillDensity) ? params.fillDensity : 50;
-      UI.Slider(flyRow(fly, C.density.label), {
-        value: dv, min: 1, max: 100, step: 1, defaultValue: 50, ariaLabel: C.density.aria,
-        onChange: (v) => write({ params: { ...params, fillDensity: v } }, { gesture: true, preview: true }),
-        onCommit: (v) => write({ params: { ...params, fillDensity: v } }),
+      flyMixedSlider(flyRow(fly, C.density.label), {
+        mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.fillDensity) ? p.fillDensity : 50; }).mixed,
+        props: {
+          value: dv, min: 1, max: 100, step: 1, defaultValue: 50, ariaLabel: C.density.aria,
+          onChange: (v) => write({ params: { ...params, fillDensity: v } }, { gesture: true, preview: true }),
+          onCommit: (v) => write({ params: { ...params, fillDensity: v } }),
+        },
       });
     }
     if (resolved.provenance && resolved.provenance.scope === 'object') {
@@ -1159,10 +1231,15 @@
     const light0 = (Array.isArray(sp.lights) && sp.lights[0]) || {};
     const setObj = (path, value, opts) => sc.r.setSceneObjectField(sc.layerId, sc.ids, path, value, opts);
     const setScene = (path, value, opts) => sc.r.setSceneParam(sc.layerId, path, value, opts);
-    const castVal = obj.shadow && obj.shadow.enabled === false ? 'off'
-      : (obj.shadow && obj.shadow.enabled === true ? 'on' : 'inherit');
-    UI.SegCtrl(flyRow(fly, C.cast.label), {
+    const castOf = (o) => (o.shadow && o.shadow.enabled === false ? 'off'
+      : (o.shadow && o.shadow.enabled === true ? 'on' : 'inherit'));
+    const castVal = castOf(obj);
+    // Cast is the only per-object control here; the sun/style/pen/density/layers
+    // rows below are scene-wide (per-layer) so they never differ across a
+    // same-layer multi-selection.
+    flyMixedSeg(flyRow(fly, C.cast.label), {
       options: C.castOptions, value: castVal, ariaLabel: C.cast.aria,
+      mixed: sceneAgree(sc, (id) => castOf(sc.r.getSceneObjectRecord(sc.layerId, id) || {})).mixed,
       onChange: (v) => setObj('shadow.enabled', v === 'on' ? true : (v === 'off' ? false : null)),
     });
     if (UI.AngleDial) {
@@ -1203,45 +1280,60 @@
   const buildHighlightBody = (fly, rebuild) => {
     const sc = sceneFlyCtx(); if (!sc) return;
     const C = (FLY().highlight) || {};
-    const resolved = sc.r.getSceneObjectResolvedStyle(sc.layerId, sc.ids[0]) || { params: {} };
+    const rs = (id) => sc.r.getSceneObjectResolvedStyle(sc.layerId, id) || { params: {} };
+    const resolved = rs(sc.ids[0]);
     const params = resolved.params || {};
     const write = (patch, opts) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, patch, opts);
-    const treatment = (C.treatments || []).some((o) => o.value === params.highlightTreatment)
-      ? params.highlightTreatment : 'blank';
-    UI.Select(flyRow(fly, C.treatment.label), {
+    const treatOf = (id) => {
+      const p = rs(id).params || {};
+      return (C.treatments || []).some((o) => o.value === p.highlightTreatment) ? p.highlightTreatment : 'blank';
+    };
+    const treatment = treatOf(sc.ids[0]);
+    flyMixedSelect(flyRow(fly, C.treatment.label), {
       options: C.treatments, value: treatment, ariaLabel: C.treatment.aria,
+      mixed: sceneAgree(sc, treatOf).mixed,
       onChange: (v) => { write({ params: { ...params, highlightTreatment: v } }); rebuild(); },
     });
     if (treatment !== 'blank') {
-      UI.Slider(flyRow(fly, C.strength.label), {
-        value: Number.isFinite(params.highlightDensity) ? params.highlightDensity : 25, min: 1, max: 100, step: 1,
-        defaultValue: 25, ariaLabel: C.strength.aria,
-        onChange: (v) => write({ params: { ...params, highlightDensity: v } }, { gesture: true, preview: true }),
-        onCommit: (v) => write({ params: { ...params, highlightDensity: v } }),
+      flyMixedSlider(flyRow(fly, C.strength.label), {
+        mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.highlightDensity) ? p.highlightDensity : 25; }).mixed,
+        props: {
+          value: Number.isFinite(params.highlightDensity) ? params.highlightDensity : 25, min: 1, max: 100, step: 1,
+          defaultValue: 25, ariaLabel: C.strength.aria,
+          onChange: (v) => write({ params: { ...params, highlightDensity: v } }, { gesture: true, preview: true }),
+          onCommit: (v) => write({ params: { ...params, highlightDensity: v } }),
+        },
       });
-      UI.Select(flyRow(fly, C.pen.label), {
+      flyMixedSelect(flyRow(fly, C.pen.label), {
         options: scenePens(C.pen.inherit), value: params.highlightPenId || '', ariaLabel: C.pen.aria,
+        mixed: sceneAgree(sc, (id) => (rs(id).params || {}).highlightPenId || '').mixed,
         onChange: (v) => write({ params: { ...params, highlightPenId: v || null } }),
       });
     }
     // ── Border sub-section (the one new render feature) → obj.border.* ──
     flySubhead(fly, C.borderHead);
-    const obj = sc.r.getSceneObjectRecord(sc.layerId, sc.ids[0]) || {};
+    const orec = (id) => sc.r.getSceneObjectRecord(sc.layerId, id) || {};
+    const obj = orec(sc.ids[0]);
     const border = obj.border || {};
     const setObj = (path, value, opts) => sc.r.setSceneObjectField(sc.layerId, sc.ids, path, value, opts);
-    UI.SegCtrl(flyRow(fly, C.border.label), {
+    flyMixedSeg(flyRow(fly, C.border.label), {
       options: C.onOff, value: border.enabled ? 'on' : 'off', ariaLabel: C.border.aria,
+      mixed: sceneAgree(sc, (id) => ((orec(id).border || {}).enabled ? 'on' : 'off')).mixed,
       onChange: (v) => { setObj('border.enabled', v === 'on'); rebuild(); },
     });
     if (border.enabled) {
-      UI.Slider(flyRow(fly, C.borderStrength.label), {
-        value: Number.isFinite(border.strength) ? border.strength : 1, min: 0.25, max: 4, step: 0.05,
-        defaultValue: 1, ariaLabel: C.borderStrength.aria,
-        onChange: (v) => setObj('border.strength', v, { gesture: true, preview: true }),
-        onCommit: (v) => setObj('border.strength', v),
+      flyMixedSlider(flyRow(fly, C.borderStrength.label), {
+        mixed: sceneAgree(sc, (id) => { const b = orec(id).border || {}; return Number.isFinite(b.strength) ? b.strength : 1; }).mixed,
+        props: {
+          value: Number.isFinite(border.strength) ? border.strength : 1, min: 0.25, max: 4, step: 0.05,
+          defaultValue: 1, ariaLabel: C.borderStrength.aria,
+          onChange: (v) => setObj('border.strength', v, { gesture: true, preview: true }),
+          onCommit: (v) => setObj('border.strength', v),
+        },
       });
-      UI.Select(flyRow(fly, C.borderPen.label), {
+      flyMixedSelect(flyRow(fly, C.borderPen.label), {
         options: scenePens(C.borderPen.inherit), value: border.penId || '', ariaLabel: C.borderPen.aria,
+        mixed: sceneAgree(sc, (id) => (orec(id).border || {}).penId || '').mixed,
         onChange: (v) => setObj('border.penId', v || null),
       });
     }
@@ -1251,33 +1343,43 @@
   const buildXrayBody = (fly, rebuild) => {
     const sc = sceneFlyCtx(); if (!sc) return;
     const C = (FLY().xray) || {};
-    const obj = sc.r.getSceneObjectRecord(sc.layerId, sc.ids[0]) || {};
+    const orec = (id) => sc.r.getSceneObjectRecord(sc.layerId, id) || {};
+    const rs = (id) => sc.r.getSceneObjectResolvedStyle(sc.layerId, id) || { params: {} };
+    const obj = orec(sc.ids[0]);
     const xrayOn = obj.visibility === 'xray';
-    const resolved = sc.r.getSceneObjectResolvedStyle(sc.layerId, sc.ids[0]) || { params: {} };
+    const resolved = rs(sc.ids[0]);
     const params = resolved.params || {};
     const write = (patch) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, patch);
     const setObj = (path, value) => sc.r.setSceneObjectField(sc.layerId, sc.ids, path, value);
-    UI.SegCtrl(flyRow(fly, C.mode.label), {
+    flyMixedSeg(flyRow(fly, C.mode.label), {
       options: C.modeOptions, value: xrayOn ? 'xray' : 'solid', ariaLabel: C.mode.aria,
+      mixed: sceneAgree(sc, (id) => (orec(id).visibility === 'xray' ? 'xray' : 'solid')).mixed,
       onChange: (v) => { setObj('visibility', v); rebuild(); },
     });
     if (!xrayOn) { flyNote(fly, C.disabledHint); return; }
-    UI.SegCtrl(flyRow(fly, C.backFaces.label), {
+    flyMixedSeg(flyRow(fly, C.backFaces.label), {
       options: C.onOff, value: params.xrayBackFaces !== false ? 'on' : 'off', ariaLabel: C.backFaces.aria,
+      mixed: sceneAgree(sc, (id) => ((rs(id).params || {}).xrayBackFaces !== false ? 'on' : 'off')).mixed,
       onChange: (v) => write({ params: { ...params, xrayBackFaces: v === 'on' } }),
     });
-    UI.Slider(flyRow(fly, C.backDensity.label), {
-      value: Number.isFinite(params.xrayBackDensity) ? params.xrayBackDensity : 0.4, min: 0.2, max: 1, step: 0.05,
-      defaultValue: 0.4, ariaLabel: C.backDensity.aria,
-      onChange: (v) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, { params: { ...params, xrayBackDensity: v } }, { gesture: true, preview: true }),
-      onCommit: (v) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, { params: { ...params, xrayBackDensity: v } }),
+    flyMixedSlider(flyRow(fly, C.backDensity.label), {
+      mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.xrayBackDensity) ? p.xrayBackDensity : 0.4; }).mixed,
+      props: {
+        value: Number.isFinite(params.xrayBackDensity) ? params.xrayBackDensity : 0.4, min: 0.2, max: 1, step: 0.05,
+        defaultValue: 0.4, ariaLabel: C.backDensity.aria,
+        onChange: (v) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, { params: { ...params, xrayBackDensity: v } }, { gesture: true, preview: true }),
+        onCommit: (v) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, { params: { ...params, xrayBackDensity: v } }),
+      },
     });
-    UI.Select(flyRow(fly, C.backLine.label), {
+    flyMixedSelect(flyRow(fly, C.backLine.label), {
       options: C.lineOptions, value: (typeof params.xrayBackLineType === 'string' ? params.xrayBackLineType : 'dashed'),
-      ariaLabel: C.backLine.aria, onChange: (v) => write({ params: { ...params, xrayBackLineType: v } }),
+      ariaLabel: C.backLine.aria,
+      mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return typeof p.xrayBackLineType === 'string' ? p.xrayBackLineType : 'dashed'; }).mixed,
+      onChange: (v) => write({ params: { ...params, xrayBackLineType: v } }),
     });
-    UI.Select(flyRow(fly, C.pen.label), {
+    flyMixedSelect(flyRow(fly, C.pen.label), {
       options: scenePens(C.pen.inherit), value: params.xrayBackPenId || '', ariaLabel: C.pen.aria,
+      mixed: sceneAgree(sc, (id) => (rs(id).params || {}).xrayBackPenId || '').mixed,
       onChange: (v) => write({ params: { ...params, xrayBackPenId: v || null } }),
     });
   };
