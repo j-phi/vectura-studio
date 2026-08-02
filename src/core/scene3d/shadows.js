@@ -405,7 +405,13 @@
         if (Math.hypot(bx, by) > 1e-6) hatchAngle = Math.atan2(by, bx) * 180 / Math.PI + 90;
       }
     }
-    const shadowLayers = shadowBag.shadowLayers === true;
+    // An AREA light casts a SOFTER shadow: it always uses the Phase-5 nested
+    // penumbra build-up (densest core, fading rim) even when the scene shadow
+    // bag leaves layers off — that is what makes a soft light read as soft. A
+    // hard point/directional light keeps the bag's explicit setting, so a scene
+    // with no area light stays byte-identical.
+    const isArea = lightRec && lightRec.type === 'area';
+    const shadowLayers = shadowBag.shadowLayers === true || isArea;
     const layerCount = clamp(Math.round(finite(shadowBag.shadowLayerCount, 3)), 2, 4);
     const falloff = clamp(finite(shadowBag.shadowFalloff, 0.5), 0.2, 1);
     const penOverride = (typeof shadowBag.shadowPenId === 'string' && shadowBag.shadowPenId) ? shadowBag.shadowPenId : null;

@@ -72,6 +72,12 @@
   const DEFAULT_LIGHT_RANGE = 400;
   const DEFAULT_CONE_ANGLE = 30;
   const DEFAULT_PENUMBRA = 8;
+  // Area (soft) light: a positional bulb with a physical extent. `size` is the
+  // world-mm diameter of the emitter; the shader spreads `samples` deterministic
+  // sub-samples across that extent and averages them, so the terminator is a
+  // softer gradient and the cast shadow a softer penumbra than a hard point.
+  const DEFAULT_AREA_SIZE = 120;
+  const DEFAULT_AREA_SAMPLES = 6;
   // Phase 5 — scene-level shadow controls. Every default reproduces the legacy
   // hardcoded look (angle 45°, coverage 0.5 ⇔ density 50, solid, single flat
   // hull, pen inherited from the caster) so a scene with no `shadow` block
@@ -385,15 +391,22 @@
       intensity: clamp(finite(src.intensity, type === 'ambient' ? 0.25 : 1), 0, 4),
       castShadows: src.castShadows !== false,
     };
-    // Positional lights carry a world position + linear-falloff range; a spot
-    // additionally carries the cone axis target + cone/penumbra half-angles.
-    if (type === 'point' || type === 'spot') {
+    // Positional lights carry a world position. A point/spot adds a linear
+    // falloff range (a spot additionally its cone axis target + cone/penumbra
+    // half-angles); an AREA light adds a physical `size` (extent) + `samples`
+    // sub-sample count instead — it has no distance range (softness, not falloff).
+    if (type === 'point' || type === 'spot' || type === 'area') {
       out.position = normalizeVec3(src.position, DEFAULT_LIGHT_POSITION);
-      out.range = Math.max(0, finite(src.range, DEFAULT_LIGHT_RANGE));
-      if (type === 'spot') {
-        out.target = normalizeVec3(src.target, DEFAULT_LIGHT_TARGET);
-        out.coneAngle = clamp(finite(src.coneAngle, DEFAULT_CONE_ANGLE), 1, 89);
-        out.penumbra = clamp(finite(src.penumbra, DEFAULT_PENUMBRA), 0, 45);
+      if (type === 'point' || type === 'spot') {
+        out.range = Math.max(0, finite(src.range, DEFAULT_LIGHT_RANGE));
+        if (type === 'spot') {
+          out.target = normalizeVec3(src.target, DEFAULT_LIGHT_TARGET);
+          out.coneAngle = clamp(finite(src.coneAngle, DEFAULT_CONE_ANGLE), 1, 89);
+          out.penumbra = clamp(finite(src.penumbra, DEFAULT_PENUMBRA), 0, 45);
+        }
+      } else {
+        out.size = clamp(finite(src.size, DEFAULT_AREA_SIZE), 10, 600);
+        out.samples = clamp(Math.round(finite(src.samples, DEFAULT_AREA_SAMPLES)), 2, 16);
       }
     }
     return out;

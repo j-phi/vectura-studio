@@ -120,6 +120,20 @@
     return ATTEN_FLOOR * (1 - over * over * (3 - 2 * over));
   };
 
+  // Deterministic Fibonacci-sphere sub-sample offsets for an AREA light: N unit
+  // points spread evenly on a sphere shell of the given radius (golden-angle
+  // spiral — NO RNG, so the same scene is byte-identical across regens). The
+  // 3D spread makes each sub-sample see the surface point from a slightly
+  // different direction; averaging their Lambert terms yields a softer, non-zero
+  // terminator (a hard point light clamps to 0 the instant n·L crosses 0).
+  const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+  const areaSampleOffset = (i, n, radius) => {
+    const y = 1 - ((i + 0.5) / n) * 2;          // 1 → −1
+    const rr = Math.sqrt(Math.max(0, 1 - y * y));
+    const theta = i * GOLDEN_ANGLE;
+    return v(Math.cos(theta) * rr * radius, y * radius, Math.sin(theta) * rr * radius);
+  };
+
   // Combined intensity of a world normal AT a world point under a LIST of lights
   // (multi-light, spec §3.2 group G):
   //   ambient      → += intensity (flat fill; point-independent);
@@ -148,6 +162,24 @@
       const weight = finite(light.intensity, 1);
       const type = light.type;
       if (type === 'ambient') { total += weight; continue; }
+      if (type === 'area') {
+        // Average N deterministic point-light sub-samples spread across the
+        // emitter's extent. No distance range (softness, not falloff) → each
+        // sub-sample is a pure Lambert term; the average softens the terminator.
+        const pos = light.position || v(0, 0, 0);
+        const radius = Math.max(0, finite(light.size, 120) / 2);
+        const N = clamp(Math.round(finite(light.samples, 6)), 2, 16);
+        let sum = 0;
+        for (let s = 0; s < N; s++) {
+          const off = areaSampleOffset(s, N, radius);
+          const toL = sub(v(pos.x + off.x, pos.y + off.y, pos.z + off.z), P);
+          const dist = Math.hypot(toL.x, toL.y, toL.z);
+          const dir = dist > 1e-9 ? mul(toL, 1 / dist) : v(0, 1, 0);
+          sum += Math.max(0, dot(n, dir));
+        }
+        total += (sum / N) * weight;
+        continue;
+      }
       if (type === 'point' || type === 'spot') {
         const pos = light.position || v(0, 0, 0);
         const toL = sub(pos, P);

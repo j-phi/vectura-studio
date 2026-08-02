@@ -11299,7 +11299,7 @@
       let coneTip = null;
       let baseR = null;
       let anchorCenter = null;
-      if (light.type === 'point' || light.type === 'spot') {
+      if (light.type === 'point' || light.type === 'spot' || light.type === 'area') {
         center = this._sceneProjectWorld(target, light.position || { x: 120, y: 200, z: 120 });
         if (!center) return null;
         if (light.type === 'spot') coneTip = this._sceneProjectWorld(target, light.target || { x: 0, y: 0, z: 0 });
@@ -11399,7 +11399,7 @@
       else if (drag.axis === 'z') dWorld = -dx * sy + dy * cy;
       else dWorld = -dy; // screen up = world +y
       let tip = '';
-      if (drag.lightType === 'point' || drag.lightType === 'spot') {
+      if (drag.lightType === 'point' || drag.lightType === 'spot' || drag.lightType === 'area') {
         if (!light.position) light.position = { x: 120, y: 200, z: 120 };
         const base = drag.startPos || light.position;
         light.position[drag.axis] = Math.round((base[drag.axis] + dWorld) * 100) / 100;
@@ -11480,13 +11480,18 @@
       if (light.type === 'directional') {
         light.azimuth = 135;
         light.elevation = 45;
-      } else if (light.type === 'point' || light.type === 'spot') {
+      } else if (light.type === 'point' || light.type === 'spot' || light.type === 'area') {
         light.position = { x: 120, y: 200, z: 120 };
-        light.range = 400;
-        if (light.type === 'spot') {
-          light.target = { x: 0, y: 0, z: 0 };
-          light.coneAngle = 30;
-          light.penumbra = 8;
+        if (light.type === 'area') {
+          light.size = 120;
+          light.samples = 6;
+        } else {
+          light.range = 400;
+          if (light.type === 'spot') {
+            light.target = { x: 0, y: 0, z: 0 };
+            light.coneAngle = 30;
+            light.penumbra = 8;
+          }
         }
       } else {
         return false;

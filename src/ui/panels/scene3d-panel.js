@@ -286,6 +286,7 @@
       if (light.type === 'ambient') return 'Ambient';
       if (light.type === 'point') return `Point ${index + 1}`;
       if (light.type === 'spot') return `Spot ${index + 1}`;
+      if (light.type === 'area') return `Area ${index + 1}`;
       if (light.id === 'sun' || index === 0) return 'Sun';
       return `Light ${index + 1}`;
     };
@@ -308,6 +309,9 @@
           id, type: 'spot', position: { x: 120, y: 200, z: 120 }, target: { x: 0, y: 0, z: 0 },
           range: 400, coneAngle: 30, penumbra: 8, intensity: 1, castShadows: true,
         };
+      }
+      if (type === 'area') {
+        return { id, type: 'area', position: { x: 120, y: 200, z: 120 }, size: 120, samples: 6, intensity: 1, castShadows: true };
       }
       return { id, type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: true };
     };
@@ -977,6 +981,14 @@
       addSpot.dataset.light = 'spot';
       addSpot.addEventListener('click', (e) => { e.stopPropagation(); addLight('spot'); });
       addRow.appendChild(addSpot);
+      const addArea = document.createElement('button');
+      addArea.type = 'button';
+      addArea.className = 'vs3-tree-addbtn';
+      addArea.textContent = '+ Area';
+      addArea.title = 'Add a soft area light (softer shading + shadows)';
+      addArea.dataset.light = 'area';
+      addArea.addEventListener('click', (e) => { e.stopPropagation(); addLight('area'); });
+      addRow.appendChild(addArea);
       if (!lights.some((l) => l && l.type === 'ambient')) {
         const addAmb = document.createElement('button');
         addAmb.type = 'button';
@@ -1293,7 +1305,11 @@
         const lt = lightById(lid);
         if (!lt) return;
         if (lt.type === 'directional') { lt.azimuth = 135; lt.elevation = 45; }
-        else if (lt.type === 'point' || lt.type === 'spot') {
+        else if (lt.type === 'area') {
+          lt.position = { x: 120, y: 200, z: 120 };
+          lt.size = 120;
+          lt.samples = 6;
+        } else if (lt.type === 'point' || lt.type === 'spot') {
           lt.position = { x: 120, y: 200, z: 120 };
           lt.range = 400;
           if (lt.type === 'spot') { lt.target = { x: 0, y: 0, z: 0 }; lt.coneAngle = 30; lt.penumbra = 8; }
@@ -1467,14 +1483,17 @@
       const isAmbient = light.type === 'ambient';
       const isPoint = light.type === 'point';
       const isSpot = light.type === 'spot';
-      const isDir = !isAmbient && !isPoint && !isSpot;
+      const isArea = light.type === 'area';
+      const isDir = !isAmbient && !isPoint && !isSpot && !isArea;
       const note = document.createElement('p');
       note.className = 'vs3-empty';
       note.textContent = isAmbient
         ? 'Ambient — a constant fill that lifts the shadowed side. Does not cast shadows.'
         : (isDir
           ? 'Sun — drag the on-canvas gizmo (or a shadow) to aim it, or use the controls below.'
-          : 'Positional light — drag the on-canvas 3-axis gizmo to move it, or use the controls below.');
+          : (isArea
+            ? 'Area — a soft light: bigger size + more samples = softer shading and shadows. Drag the on-canvas gizmo to move it.'
+            : 'Positional light — drag the on-canvas 3-axis gizmo to move it, or use the controls below.'));
       inspectorHost.appendChild(note);
       if (isDir) {
         sliderRow(inspectorHost, inspectorComps, 'Azimuth', {
@@ -1490,13 +1509,29 @@
           ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.elevation = Math.round(v); }),
         });
       }
-      if (isPoint || isSpot) {
+      if (isPoint || isSpot || isArea) {
         vec3Rows(lid, 'position', 'Position', { x: 120, y: 200, z: 120 });
+      }
+      if (isPoint || isSpot) {
         sliderRow(inspectorHost, inspectorComps, 'Range', {
           value: Number.isFinite(light.range) ? light.range : 400,
           min: 0, max: 1000, step: 5, defaultValue: 400,
           ariaLabel: 'Light range (0 = infinite)',
           ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.range = Math.round(v); }),
+        });
+      }
+      if (isArea) {
+        sliderRow(inspectorHost, inspectorComps, 'Size', {
+          value: Number.isFinite(light.size) ? light.size : 120,
+          min: 10, max: 600, step: 5, defaultValue: 120,
+          ariaLabel: 'Area light size',
+          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.size = Math.round(v); }),
+        });
+        sliderRow(inspectorHost, inspectorComps, 'Samples', {
+          value: Number.isFinite(light.samples) ? light.samples : 6,
+          min: 2, max: 16, step: 1, defaultValue: 6,
+          ariaLabel: 'Area light samples',
+          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.samples = Math.round(v); }),
         });
       }
       if (isSpot) {

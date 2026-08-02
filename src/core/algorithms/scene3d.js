@@ -1114,7 +1114,7 @@
         // shadow set, exactly as before.
         (p.lights || []).forEach((lt) => {
           if (!lt || lt.type === 'ambient' || lt.castShadows === false) return;
-          if (lt.type === 'point' || lt.type === 'spot') {
+          if (lt.type === 'point' || lt.type === 'spot' || lt.type === 'area') {
             if (!lt.position) return;
             // Pass the full record so a spot clips its shadow to the cone and a
             // ranged light drops casters it never reaches (point stays omni).

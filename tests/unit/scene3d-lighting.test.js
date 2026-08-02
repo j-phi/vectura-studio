@@ -19,6 +19,7 @@ describe('Scene3D.Lighting + Regions (CONTRACT L1/L3)', () => {
   let runtime;
   let Lighting;
   let Regions;
+  let Params;
   let TONE;
 
   beforeAll(async () => {
@@ -26,6 +27,7 @@ describe('Scene3D.Lighting + Regions (CONTRACT L1/L3)', () => {
     const V = runtime.window.Vectura;
     Lighting = V.Scene3D.Lighting;
     Regions = V.Scene3D.Regions;
+    Params = V.Scene3D.Params;
     TONE = V.Scene3D.Params.DEFAULT_TONE;
   });
 
@@ -94,7 +96,63 @@ describe('Scene3D.Lighting + Regions (CONTRACT L1/L3)', () => {
     expect(Regions.combinedIntensity(L, null, [sun, sun2])).toBeGreaterThanOrEqual(Regions.intensity(L, sun));
     expect(Regions.combinedIntensity(L, null, [sun, amb, sun2])).toBeLessThanOrEqual(1);
     // An unknown/future type shades as directional (does not crash or zero out).
-    expect(Regions.combinedIntensity(L, null, [{ type: 'area', azimuth: 135, elevation: 45, intensity: 1 }])).toBeGreaterThan(0.9);
+    expect(Regions.combinedIntensity(L, null, [{ type: 'hemisphere', azimuth: 135, elevation: 45, intensity: 1 }])).toBeGreaterThan(0.9);
+  });
+
+  test('area light: softer terminator than a point light + deterministic', () => {
+    // A point + an area light at the SAME position/intensity. The point is a hard
+    // Lambert edge (0 the instant n·dir crosses 0); the area light averages N
+    // deterministic sub-samples spread across its extent, so the terminator is a
+    // soft, non-zero, smoothly-decaying ramp.
+    const pos = { x: 0, y: 0, z: 400 };
+    const point = { type: 'point', intensity: 1, range: 0, position: pos };
+    const area = { type: 'area', intensity: 1, size: 240, samples: 8, position: pos };
+    const P = { x: 0, y: 0, z: 0 };
+    // Normal sweep about the y axis: n(θ) = (sinθ, 0, cosθ). θ=0 faces the light,
+    // θ=90° is the terminator, θ>90° faces away.
+    const nAt = (deg) => { const r = deg * Math.PI / 180; return { x: Math.sin(r), y: 0, z: Math.cos(r) }; };
+    const areaAt = (deg) => Regions.combinedIntensity(nAt(deg), P, [area]);
+    const pointAt = (deg) => Regions.combinedIntensity(nAt(deg), P, [point]);
+
+    // Determinism: identical output across two identical calls (no RNG).
+    expect(areaAt(60)).toBe(areaAt(60));
+    expect(areaAt(90)).toBe(areaAt(90));
+
+    // At the terminator the area light already exceeds the point's hard edge
+    // (~0 for a flat point light — float cos90) by a clear margin (soft falloff).
+    expect(areaAt(90)).toBeGreaterThan(pointAt(90) + 0.02);
+    // Past the terminator the point is exactly dark but the area still glows.
+    // The area's soft band spans its angular radius (~atan((size/2)/dist) ≈ 17°
+    // for size 240 at z=400), so it stays lit well past 90° — tested at 100°,
+    // comfortably inside that band — while the point is hard-dark the instant
+    // n·dir crosses 0.
+    expect(pointAt(95)).toBe(0);
+    expect(areaAt(95)).toBeGreaterThan(0);
+    expect(pointAt(100)).toBe(0);
+    expect(areaAt(100)).toBeGreaterThan(0);
+
+    // The area ramp is smooth + monotonically non-increasing across the whole
+    // sweep (no oscillation / no hard cliff).
+    let prev = Infinity;
+    for (let deg = 0; deg <= 180; deg += 5) {
+      const val = areaAt(deg);
+      expect(val).toBeLessThanOrEqual(prev + 1e-9);
+      prev = val;
+    }
+  });
+
+  test('area light: more samples do not break determinism or clamp range', () => {
+    const pos = { x: 0, y: 200, z: 0 };
+    const P = { x: 0, y: 0, z: 0 };
+    const n = { x: 0, y: 1, z: 0 };
+    const a6 = Regions.combinedIntensity(n, P, [{ type: 'area', intensity: 1, size: 120, samples: 6, position: pos }]);
+    const a16 = Regions.combinedIntensity(n, P, [{ type: 'area', intensity: 1, size: 120, samples: 16, position: pos }]);
+    expect(a6).toBeGreaterThan(0);
+    expect(a16).toBeGreaterThan(0);
+    // Both stay a well-defined intensity in [0,1].
+    [a6, a16].forEach((v) => { expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1); });
+    // Deterministic across a repeat.
+    expect(Regions.combinedIntensity(n, P, [{ type: 'area', intensity: 1, size: 120, samples: 16, position: pos }])).toBe(a16);
   });
 
   test('point light: Lambert × distance falloff (nearer = brighter, behind = 0)', () => {
@@ -180,6 +238,23 @@ describe('Scene3D.Lighting + Regions (CONTRACT L1/L3)', () => {
       .toBe(Regions.combinedIntensity(n, p2, [sun, amb]));
     expect(Regions.combinedIntensity(n, null, [sun, amb]))
       .toBe(Regions.combinedIntensity(n, p1, [sun, amb]));
+  });
+
+  test('normalizeParams: an area light carries position + clamped size/samples', () => {
+    const p = Params.normalizeParams({
+      lights: [{ id: 'a1', type: 'area', position: { x: 10, y: 20, z: 30 }, size: 5000, samples: 99, intensity: 0.8 }],
+    });
+    const a = p.lights[0];
+    expect(a.type).toBe('area');
+    expect(a.position).toEqual({ x: 10, y: 20, z: 30 });
+    expect(a.size).toBeLessThanOrEqual(600);   // clamped from 5000
+    expect(a.samples).toBeLessThanOrEqual(16);  // clamped from 99
+    expect(Number.isInteger(a.samples)).toBe(true);
+    // Defaults back-fill when absent.
+    const d = Params.normalizeParams({ lights: [{ type: 'area' }] }).lights[0];
+    expect(d.size).toBe(120);
+    expect(d.samples).toBe(6);
+    expect(d.position).toBeTruthy();
   });
 
   test('band round-trip: low I → band 0, high I → top band', () => {

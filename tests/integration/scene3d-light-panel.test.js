@@ -214,6 +214,36 @@ describe('Scene3D panel — Light + tone (Phase 2, vs3-)', () => {
     expect(container.querySelector('input.ctrl-slider[aria-label="Position X"]')).toBeTruthy();
   });
 
+  test('"+ Area" adds an area light, selects it, and shows Size + Samples controls', () => {
+    const { container, layer, pushHistory } = mount();
+    const before = layer.params.lights.length;
+    const areaBtn = container.querySelector('.vs3-tree-addbtn[data-light="area"]');
+    expect(areaBtn).toBeTruthy();
+    fire(areaBtn, 'click');
+    expect(layer.params.lights.length).toBe(before + 1);
+    const added = layer.params.lights[layer.params.lights.length - 1];
+    expect(added.type).toBe('area');
+    expect(added.position).toEqual({ x: 120, y: 200, z: 120 });
+    expect(added.size).toBe(120);
+    expect(added.samples).toBe(6);
+    expect(pushHistory).toHaveBeenCalledTimes(1);
+    // Inspector: Position X/Y/Z + Size + Samples (no range / cone / azimuth).
+    expect(container.querySelector('.vs3-tree-light.selected')).toBeTruthy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Position X"]')).toBeTruthy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Area light size"]')).toBeTruthy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Area light samples"]')).toBeTruthy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Light range (0 = infinite)"]')).toBeFalsy();
+    expect(container.querySelector('input.ctrl-slider[aria-label="Spot cone angle (degrees)"]')).toBeFalsy();
+  });
+
+  test('editing Area size commits to the area light', () => {
+    const { container, layer } = mount();
+    fire(container.querySelector('.vs3-tree-addbtn[data-light="area"]'), 'click');
+    commitSlider(container.querySelector('input.ctrl-slider[aria-label="Area light size"]'), 300);
+    const a = layer.params.lights[layer.params.lights.length - 1];
+    expect(a.size).toBe(300);
+  });
+
   test('"Reset light" restores a moved point light to its default position', () => {
     const { container, layer } = mount();
     fire(container.querySelector('.vs3-tree-addbtn[data-light="point"]'), 'click');

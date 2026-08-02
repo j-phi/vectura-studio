@@ -7,6 +7,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene area light.** A new **Area** light type joins directional / ambient /
+  point / spot. An area light is a soft light: it shades with a gentler terminator
+  and casts a softer shadow than a hard point light, by averaging N deterministic
+  Fibonacci-sphere sub-samples spread across its physical extent (no RNG — the
+  result is byte-stable across regens). The lights panel gains a **+ Area** button
+  and Size / Samples controls, and the light reuses the 3-axis position gizmo. A
+  scene with no area light renders byte-identically to before.
 - **3D Scene boolean holes (CSG, box−box).** A scene object can now be a **Solid**
   or a **Hole**, and pointing a hole at a solid ("Cut into") carves a real
   rectangular hole — correct cut walls, silhouette, and shadow — through the
