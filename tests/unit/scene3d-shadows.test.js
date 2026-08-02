@@ -19,6 +19,14 @@ const boxObj = (id, x, y, size = 30) => ({
   transform: { x, y, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
 });
 
+// A flat torus (ring in the XZ plane, hole along Y) sitting well above the
+// receiver: its silhouette has an OUTER and an INNER rim, so its cast shadow
+// must read as an ANNULUS with an open hole — not a filled ellipse (I25).
+const torusObj = (id, x, y) => ({
+  id, name: id, primitive: 'torus', params: { sx: 80, sy: 18, sz: 18, detail: 26 },
+  transform: { x, y, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+});
+
 describe('Scene3D.Shadows (CONTRACT L2/L4)', () => {
   let runtime;
   let V;
@@ -84,6 +92,50 @@ describe('Scene3D.Shadows (CONTRACT L2/L4)', () => {
       expect(t.facingUp).toBe(true);
       expect(Number.isFinite(t.depth)).toBe(true);
     });
+  });
+
+  // Closest approach of ANY emitted hatch SEGMENT to a point (hatch endpoints
+  // ride the ring boundary, so a point test on endpoints can't see a hole — a
+  // segment test can: a filled footprint has runs crossing its centre, an
+  // annulus has none inside the hole).
+  const distToSeg = (px, py, a, b) => {
+    const vx = b.x - a.x; const vy = b.y - a.y;
+    const wx = px - a.x; const wy = py - a.y;
+    const len2 = vx * vx + vy * vy;
+    let t = len2 > 0 ? (wx * vx + wy * vy) / len2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    return Math.hypot(px - (a.x + t * vx), py - (a.y + t * vy));
+  };
+  // Largest-area footprint ring (pickPolygon) + its centroid/radius, then the
+  // closest a hatch run gets to that centroid, normalised by the radius.
+  const footprintHoleRatio = (paths) => {
+    const polys = [...new Set(shadowPaths(paths).map((p) => JSON.stringify(p.meta.sceneTarget.pickPolygon)))]
+      .map((s) => JSON.parse(s));
+    const area = (poly) => { let a = 0; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) a += poly[j].x * poly[i].y - poly[i].x * poly[j].y; return Math.abs(a); };
+    const outer = polys.sort((a, b) => area(b) - area(a))[0];
+    let cx = 0; let cy = 0; outer.forEach((p) => { cx += p.x; cy += p.y; }); cx /= outer.length; cy /= outer.length;
+    let R = 0; outer.forEach((p) => { R = Math.max(R, Math.hypot(p.x - cx, p.y - cy)); });
+    let closest = Infinity;
+    shadowPaths(paths).forEach((path) => { for (let i = 1; i < path.length; i++) { const d = distToSeg(cx, cy, path[i - 1], path[i]); if (d < closest) closest = d; } });
+    return closest / (R || 1);
+  };
+
+  test('I25: a torus casts an ANNULAR shadow with an open hole (not a filled ellipse)', () => {
+    // Torus high above the plate so its cast footprint clears its own body
+    // silhouette — the hole is purely the projected inner rim, not caster-bound
+    // subtraction. occlude:false isolates the fill from HLR clipping.
+    const paths = runShadows([torusObj('obj-1', 0, 120)], { azimuth: 180, elevation: 55 }, { occlude: false });
+    expect(shadowPaths(paths).length).toBeGreaterThan(0);
+    // No hatch run enters the central hole: closest approach ≥ ~⅓ of the radius.
+    // FAILS on the convex-hull footprint (runs cross the filled centre → ~0).
+    expect(footprintHoleRatio(paths)).toBeGreaterThan(0.3);
+  });
+
+  test('I25 no-regression: a convex box shadow stays a SOLID filled footprint (no spurious hole)', () => {
+    const paths = runShadows([boxObj('obj-1', 0, 20, 30)], { azimuth: 180, elevation: 45 }, { occlude: false });
+    expect(shadowPaths(paths).length).toBeGreaterThan(0);
+    // Hatch runs cross the centre of a convex footprint → closest approach ≈ 0.
+    expect(footprintHoleRatio(paths)).toBeLessThan(0.12);
   });
 
   test('two overlapping casters in one class → single unioned region', () => {

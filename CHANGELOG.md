@@ -13,6 +13,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   Scale. Legacy uniform scale is byte-identical.
 
 ### Fixed
+- **3D Scene — shadows show the object's real silhouette, holes and all.** A torus (or
+  any object with a hole/concavity) cast a solid elliptical shadow because the footprint
+  was a convex hull. Full-frame shadows now project the caster's actual silhouette loops
+  (outer + inner rims) and fill them even-odd, so a torus casts a proper annular shadow
+  with an open middle, while a box still casts a solid footprint. Only the small clean
+  loop set is projected (no dense boolean on the hot path); draft frames keep the cheap
+  convex approximation.
 - **Expand-to-Layers matches the viewport.** Expanding a layer whose cached geometry
   came from a live-drag/draft frame (where 3D-scene region fills render as a cheap
   screen-space hatch and shadows skip booleans) froze that draft into the flattened

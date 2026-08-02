@@ -171,9 +171,10 @@
   // per-face-ring union was fragile: no mixed-winding ring soup, no FillBoolean
   // needed to merge a single object's faces, and a below-ground vertex (a caster
   // straddling the receiver) is simply dropped rather than projected the wrong
-  // way into a mirrored bow-tie. Trade-off: the hull fills a concave/torus hole —
-  // an accepted v1 approximation that matches the reference. Returns a screen-
-  // space ring (≥3 pts) or null.
+  // way into a mirrored bow-tie. Trade-off: the hull fills a concave/torus hole.
+  // The DRAFT frame uses this cheap convex approximation; the FULL frame prefers
+  // the true silhouette loops below (holes preserved). Returns a screen-space
+  // ring (≥3 pts) or null.
   const casterHull = (record, projectVertex) => {
     const world = record.world || [];
     const pts = [];
@@ -185,6 +186,87 @@
     }
     const hull = convexHull(pts);
     return hull.length >= 3 ? hull : null;
+  };
+
+  const ringSignedArea = (ring) => {
+    let a = 0;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) a += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
+    return a / 2;
+  };
+
+  // Chain a set of undirected edges (each [aIdx, bIdx] into the vertex array)
+  // into ordered vertex-index loops. A manifold silhouette gives clean degree-2
+  // loops (a torus → outer rim + inner rim); a branchy set walks greedily and any
+  // leftover open chain is dropped. Small, deterministic — no boolean.
+  const chainLoops = (edges) => {
+    const adj = new Map();
+    const push = (u, w) => { let l = adj.get(u); if (!l) { l = []; adj.set(u, l); } l.push(w); };
+    edges.forEach(([a, b]) => { push(a, b); push(b, a); });
+    const used = new Set();
+    const ek = (u, w) => (u < w ? `${u}_${w}` : `${w}_${u}`);
+    const maxSteps = edges.length + 5;
+    const loops = [];
+    edges.forEach(([a0, b0]) => {
+      if (used.has(ek(a0, b0))) return;
+      used.add(ek(a0, b0));
+      const loop = [a0];
+      let prev = a0; let cur = b0; let guard = 0;
+      while (cur !== a0 && guard++ < maxSteps) {
+        loop.push(cur);
+        const nbrs = adj.get(cur) || [];
+        let next = -1;
+        for (const n of nbrs) { if (n !== prev && !used.has(ek(cur, n))) { next = n; break; } }
+        if (next < 0) { for (const n of nbrs) { if (!used.has(ek(cur, n))) { next = n; break; } } }
+        if (next < 0) break;
+        used.add(ek(cur, next));
+        prev = cur; cur = next;
+      }
+      if (loop.length >= 3) loops.push(loop);
+    });
+    return loops;
+  };
+
+  // True projected silhouette of a caster: classify its edges, keep the
+  // silhouette + boundary rims (front/back frontier + open-surface borders),
+  // chain them into ordered loops, and project each loop's world vertices to the
+  // ground along the light. A torus yields an OUTER and an INNER ground loop, so
+  // an even-odd fill leaves the middle open (I25 — annular shadow, hole intact).
+  // ROBUSTNESS: only the small clean loop set is projected (not every triangle),
+  // so there is no dense polygon-clipping on the hot path. Returns screen-space
+  // rings (outer first) or null — null falls back to the convex hull, which keeps
+  // a caster straddling the receiver from folding into a mirrored bow-tie.
+  const casterSilhouetteLoops = (record, projectVertex, classifyEdges) => {
+    let classified;
+    try { classified = classifyEdges(record, {}); } catch (_e) { return null; }
+    if (!Array.isArray(classified)) return null;
+    const world = record.world || [];
+    const silEdges = [];
+    for (let i = 0; i < classified.length; i++) {
+      const e = classified[i];
+      if (!e || (e.cls !== 'silhouette' && e.cls !== 'boundary')) continue;
+      const Pa = world[e.a]; const Pb = world[e.b];
+      // A silhouette vertex below the receiver folds the ground projection into a
+      // bow-tie; bail to the hull rather than emit a mirrored loop.
+      if ((Pa && Pa.y < -1e-6) || (Pb && Pb.y < -1e-6)) return null;
+      silEdges.push([e.a, e.b]);
+    }
+    if (silEdges.length < 3) return null;
+    const loops = chainLoops(silEdges);
+    if (!loops.length) return null;
+    const rings = [];
+    loops.forEach((loop) => {
+      const ring = [];
+      for (let k = 0; k < loop.length; k++) {
+        const P = world[loop[k]];
+        const q = P ? projectVertex(P) : null;
+        if (q) ring.push({ x: q.x, y: q.y });
+      }
+      if (ring.length >= 3) rings.push(ring);
+    });
+    if (!rings.length) return null;
+    // Outer (largest |area|) first — pickPolygon / ring-extent expect it.
+    rings.sort((a, b) => Math.abs(ringSignedArea(b)) - Math.abs(ringSignedArea(a)));
+    return rings;
   };
 
   // Cheap analytic clip of a subject polygon against a CONVEX clip polygon
@@ -362,6 +444,8 @@
     const out = [];
     if (!scene || !scene.ground || !clipper) return out;
     const HLR = Vectura.Scene3D && Vectura.Scene3D.HLR;
+    const Edges = Vectura.Scene3D && Vectura.Scene3D.Edges;
+    const classifyEdges = Edges && typeof Edges.classifyEdges === 'function' ? Edges.classifyEdges : null;
     const FillBoolean = Vectura.FillBoolean;
     // build() casts for the ONE light passed in — the caller decides which
     // lights cast (multi-light) and filters out ambient / castShadows:false
@@ -491,18 +575,18 @@
       return en !== false;
     };
 
-    // One convex-hull footprint per caster (the light-lab model), plus its
-    // shadow style class. `rings: [hull]` keeps the downstream union/precedence
-    // path unchanged — it now unions clean convex hulls instead of a per-face
-    // ring soup.
+    // Per caster: a convex hull (cheap draft footprint) AND — when available —
+    // its TRUE silhouette loops (outer + inner rims). The full frame prefers the
+    // loops so holes stay open (I25); the draft uses the hull.
     const casters = [];
     (scene.objects || []).forEach((record) => {
       if (!record || record.isGround) return;
       if (!objectCasts(record.id)) return; // per-object cast toggle
       const hull = casterHull(record, projectVertex);
       if (!hull) return;
+      const loops = classifyEdges ? casterSilhouetteLoops(record, projectVertex, classifyEdges) : null;
       const style = styleOf ? (styleOf(record.id) || {}) : {};
-      casters.push({ id: record.id, rings: [hull], penId: style.penId || null, classKey: style.penId || '' });
+      casters.push({ id: record.id, hull, loops, penId: style.penId || null, classKey: style.penId || '' });
     });
     if (!casters.length) return out;
 
@@ -517,12 +601,11 @@
         : null;
       const groundClipReady = groundRing && groundRing.length >= 3;
       casters.forEach((caster) => {
-        caster.rings.forEach((ring) => {
-          const clipped = groundClipReady ? clipPolyToConvex(ring, groundRing) : ring;
-          if (!Array.isArray(clipped) || clipped.length < 3) return;
-          emitShadowRegion([clipped], groundPlane, clipper, out,
-            shadowMeta([clipped], caster.id, penFor(caster.penId), groundDepth), shadowTreat, draftFrame, cfg);
-        });
+        const ring = caster.hull;
+        const clipped = groundClipReady ? clipPolyToConvex(ring, groundRing) : ring;
+        if (!Array.isArray(clipped) || clipped.length < 3) return;
+        emitShadowRegion([clipped], groundPlane, clipper, out,
+          shadowMeta([clipped], caster.id, penFor(caster.penId), groundDepth), shadowTreat, draftFrame, cfg);
       });
       return out;
     }
@@ -539,12 +622,29 @@
       return geoms.length ? FillBoolean.union(...geoms) : [];
     };
     if (!FillBoolean || typeof FillBoolean.union !== 'function') {
-      // No boolean surface available: degrade to the flat per-face tint.
-      casters.forEach((caster) => caster.rings.forEach((ring) => emitShadowRegion(
-        [ring], groundPlane, clipper, out, shadowMeta([ring], caster.id, penFor(caster.penId), groundDepth),
-        shadowTreat, draftFrame, cfg)));
+      // No boolean surface available: degrade to the flat per-caster tint. The
+      // silhouette loops (even-odd, holes intact) beat the hull when present.
+      casters.forEach((caster) => {
+        const rings = (caster.loops && caster.loops.length) ? caster.loops : [caster.hull];
+        emitShadowRegion(rings, groundPlane, clipper, out,
+          shadowMeta(rings, caster.id, penFor(caster.penId), groundDepth), shadowTreat, draftFrame, cfg);
+      });
       return out;
     }
+
+    // Per-caster footprint geometry. Prefer the true silhouette loops folded into
+    // a hole-preserving multipolygon (containment parity → inner rim = hole); one
+    // boolean over a SMALL clean loop set, not dense triangles. Fall back to the
+    // convex hull when loops are unavailable/degenerate (e.g. a straddling caster)
+    // or the boolean collapses.
+    const footprintGeom = (caster) => {
+      const loops = caster.loops;
+      if (loops && loops.length && typeof FillBoolean.nonZeroUnionByContainment === 'function') {
+        const g = FillBoolean.nonZeroUnionByContainment(loops);
+        if (g && g.length) return g;
+      }
+      return unionRings([caster.hull]);
+    };
 
     // Ground extent (clip every shadow to the receiver quad before unioning).
     const groundGeom = groundFace ? FillBoolean.ringToMultiPolygon(
@@ -572,7 +672,7 @@
     // Per-caster shadow footprint: ground-clipped union of its face projections,
     // minus its own silhouette (caster-bound).
     casters.forEach((caster) => {
-      let geom = clipToGround(unionRings(caster.rings));
+      let geom = clipToGround(footprintGeom(caster));
       const own = ownSilhouette(caster.id);
       if (own.length && geom.length) geom = FillBoolean.difference(geom, own);
       caster.geom = geom;
