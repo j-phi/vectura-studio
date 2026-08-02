@@ -85,29 +85,51 @@ describe('3D Scene Studio — per-object transform gizmo + face-pull', () => {
     expect(renderer.hitSceneObjectGizmo(900, 900, scene)).toBeNull();
   });
 
-  test('dragging a SCALE box OUT grows uniform scale with ONE history entry + a draft regen', async () => {
+  test('dragging a SCALE box OUT grows ONLY that axis (non-uniform) with ONE history entry + a draft regen', async () => {
     const { renderer, scene } = await setup();
     const giz = gizmoOf(renderer, scene);
     const c = giz.center;
     const box = axisOf(giz, 'x').scaleBox;
     const hit = renderer.hitSceneObjectGizmo(box.x, box.y, scene);
     expect(renderer.beginSceneObjectGizmoDrag(hit, { clientX: box.x, clientY: box.y })).toBe(true);
-    // Drag to DOUBLE the distance from centre → ratio 2 → scale 1 → 2.
+    // Drag to DOUBLE the distance from centre → ratio 2 → sx 1 → 2. The OTHER
+    // axes stay at 1 (per-axis, non-uniform).
     const out = { x: c.x + (box.x - c.x) * 2, y: c.y + (box.y - c.y) * 2 };
     renderer._applySceneObjectGizmoDrag({ clientX: out.x, clientY: out.y });
-    expect(scene.params.objects[0].transform.scale).toBeCloseTo(2, 1);
+    const tr = scene.params.objects[0].transform;
+    expect(tr.sx).toBeCloseTo(2, 1);
+    expect(tr.sy).toBeCloseTo(1, 1);
+    expect(tr.sz).toBeCloseTo(1, 1);
     expect(renderer.app.pushHistory).toHaveBeenCalledTimes(1);
     expect(renderer._sceneDragRegenLayerId).toBe(scene.id);
     // A second move keeps the single gesture history entry.
     const half = { x: c.x + (box.x - c.x) * 0.75, y: c.y + (box.y - c.y) * 0.75 };
     renderer._applySceneObjectGizmoDrag({ clientX: half.x, clientY: half.y });
-    expect(scene.params.objects[0].transform.scale).toBeCloseTo(0.75, 1);
+    expect(scene.params.objects[0].transform.sx).toBeCloseTo(0.75, 1);
     expect(renderer.app.pushHistory).toHaveBeenCalledTimes(1);
     renderer._endSceneObjectGizmoDrag();
     expect(renderer._sceneObjectGizmoDrag).toBeNull();
   });
 
-  test('scale is clamped to the inspector slider range [0.1, 5]', async () => {
+  test('ALT+dragging a SCALE box scales ALL axes uniformly (sx=sy=sz together)', async () => {
+    const { renderer, scene } = await setup();
+    const giz = gizmoOf(renderer, scene);
+    const c = giz.center;
+    const box = axisOf(giz, 'x').scaleBox;
+    const hit = renderer.hitSceneObjectGizmo(box.x, box.y, scene);
+    renderer.beginSceneObjectGizmoDrag(hit, { clientX: box.x, clientY: box.y, altKey: true });
+    // Alt held → uniform: ratio 2 grows the object's uniform scale to 2, leaving
+    // it uniform (no non-uniform divergence introduced).
+    const out = { x: c.x + (box.x - c.x) * 2, y: c.y + (box.y - c.y) * 2 };
+    renderer._applySceneObjectGizmoDrag({ clientX: out.x, clientY: out.y, altKey: true });
+    const tr = scene.params.objects[0].transform;
+    expect(tr.scale).toBeCloseTo(2, 1);
+    // A uniform object stays uniform: no per-axis keys are introduced.
+    expect('sx' in tr).toBe(false);
+    renderer._endSceneObjectGizmoDrag();
+  });
+
+  test('per-axis scale is clamped to the inspector slider range [0.1, 5]', async () => {
     const { renderer, scene } = await setup();
     const giz = gizmoOf(renderer, scene);
     const c = giz.center;
@@ -116,10 +138,10 @@ describe('3D Scene Studio — per-object transform gizmo + face-pull', () => {
     renderer.beginSceneObjectGizmoDrag(hit, { clientX: box.x, clientY: box.y });
     // Drag onto the centre → ratio ~0 → clamp to 0.1.
     renderer._applySceneObjectGizmoDrag({ clientX: c.x, clientY: c.y });
-    expect(scene.params.objects[0].transform.scale).toBe(0.1);
+    expect(scene.params.objects[0].transform.sx).toBe(0.1);
     // Drag far out → clamp to 5 (round-trips to the slider, not 20).
     renderer._applySceneObjectGizmoDrag({ clientX: c.x + (box.x - c.x) * 40, clientY: c.y + (box.y - c.y) * 40 });
-    expect(scene.params.objects[0].transform.scale).toBe(5);
+    expect(scene.params.objects[0].transform.sx).toBe(5);
     renderer._endSceneObjectGizmoDrag();
   });
 
@@ -163,10 +185,12 @@ describe('3D Scene Studio — per-object transform gizmo + face-pull', () => {
     const hit = renderer.hitSceneObjectGizmo(box.x, box.y, scene);
     renderer.beginSceneObjectGizmoDrag(hit, { clientX: box.x, clientY: box.y });
     renderer._applySceneObjectGizmoDrag({ clientX: giz.center.x + (box.x - giz.center.x) * 2, clientY: giz.center.y + (box.y - giz.center.y) * 2 });
-    expect(scene.params.objects[0].transform.scale).not.toBe(1);
+    expect(scene.params.objects[0].transform.sx).not.toBe(1);
     expect(renderer._cancelSceneObjectGizmoDrag()).toBe(true);
     expect(renderer._sceneObjectGizmoDrag).toBeNull();
+    // The object was uniform pre-drag: cancel restores that (no spurious per-axis keys).
     expect(scene.params.objects[0].transform.scale).toBe(1);
+    expect('sx' in scene.params.objects[0].transform).toBe(false);
   });
 
   // ── Box face-pull ─────────────────────────────────────────────────────────

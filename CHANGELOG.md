@@ -6,7 +6,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added
+- **3D Scene — per-axis object scale.** Dragging an individual scale handle on the
+  object gizmo now stretches only that axis (non-uniform `sx/sy/sz`); **Alt+drag** any
+  handle scales all axes uniformly. The Inspector gains Scale X/Y/Z alongside a uniform
+  Scale. Legacy uniform scale is byte-identical.
+
 ### Fixed
+- **3D Scene — no phantom sun on a lightless scene.** With the sun/all lights removed,
+  the interactive sun handle no longer draws or accepts hits.
 - **3D Scene — Tone/Highlight controls now actually work.** Curved (sphere/torus/…)
   fills previously ignored the tone ladder entirely, so Bands 2 vs 4 looked identical,
   Specular did nothing, and the "highlight" read as a dark band. SurfaceFill now

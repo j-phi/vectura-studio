@@ -225,15 +225,32 @@
 
   const normalizeTransform = (transform) => {
     const src = isObject(transform) ? transform : {};
-    return {
+    const scale = Math.max(0.01, finite(src.scale, 1));
+    const out = {
       x: finite(src.x, 0),
       y: finite(src.y, 0),
       z: finite(src.z, 0),
       yaw: finite(src.yaw, 0),
       pitch: finite(src.pitch, 0),
       roll: finite(src.roll, 0),
-      scale: Math.max(0.01, finite(src.scale, 1)),
+      scale,
     };
+    // I23 — optional per-axis (non-uniform) scale. `sx/sy/sz` are ABSOLUTE
+    // per-axis factors; an absent key inherits the uniform `scale`, so a legacy
+    // scale-only object round-trips byte-identically (no per-axis keys emitted).
+    // The three keys are written ONLY when the object is genuinely non-uniform,
+    // keeping a default/uniform transform's shape unchanged.
+    if (src.sx != null || src.sy != null || src.sz != null) {
+      const sx = Math.max(0.01, finite(src.sx, scale));
+      const sy = Math.max(0.01, finite(src.sy, scale));
+      const sz = Math.max(0.01, finite(src.sz, scale));
+      if (!(sx === scale && sy === scale && sz === scale)) {
+        out.sx = sx;
+        out.sy = sy;
+        out.sz = sz;
+      }
+    }
+    return out;
   };
 
   const normalizePrimitiveParams = (primitive, params) => {

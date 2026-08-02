@@ -10782,6 +10782,17 @@
     getSceneLightControl(layer) {
       const target = layer || this._sceneLightLayer();
       if (!target) return null;
+      // Lightless-scene guard: a scene can now hold zero lights. The sun handle
+      // represents a DIRECTIONAL (sun) light — when the lights array is present
+      // but carries no directional light, there is no sun to place, so suppress
+      // the phantom handle (both draw AND hit-test route through this control).
+      // An ABSENT lights array is left to _sceneLight's pre-normalize synthesis
+      // so the widget still draws before normalizeParams first runs.
+      const lights = target.params && target.params.lights;
+      if (Array.isArray(lights)
+        && !lights.some((l) => l && (l.type === 'directional' || l.type === 'sun'))) {
+        return null;
+      }
       const anchor = this._sceneLightAnchor(target);
       if (!anchor) return null;
       const unit = 1 / Math.max(this.scale || 1, 0.001);
@@ -10904,7 +10915,15 @@
           x: Number(t.x) || 0, y: Number(t.y) || 0, z: Number(t.z) || 0,
           yaw: Number(t.yaw) || 0, pitch: Number(t.pitch) || 0, roll: Number(t.roll) || 0,
           scale: Number(t.scale) || 1,
+          // Effective per-axis start (I23). Falls back to the uniform scale so a
+          // legacy scale-only object drags cleanly.
+          sx: Number.isFinite(t.sx) ? t.sx : (Number(t.scale) || 1),
+          sy: Number.isFinite(t.sy) ? t.sy : (Number(t.scale) || 1),
+          sz: Number.isFinite(t.sz) ? t.sz : (Number(t.scale) || 1),
         },
+        // Whether the object was ALREADY non-uniform at grab time. A uniform
+        // object stays uniform on Escape (no spurious sx/sy/sz left behind).
+        startHadAxis: Number.isFinite(t.sx) || Number.isFinite(t.sy) || Number.isFinite(t.sz),
         historyPushed: false,
         moved: false,
       };
@@ -10915,7 +10934,13 @@
     _gizmoTooltip(type, t) {
       if (type === 'move') return `X ${Math.round(t.x)}  Y ${Math.round(t.y)}  Z ${Math.round(t.z)}`;
       if (type === 'rotate') return `X ${Math.round(t.pitch)}°  Y ${Math.round(t.yaw)}°  Z ${Math.round(t.roll)}°`;
-      return `Scale ${Number(t.scale).toFixed(2)}×`;
+      // Scale: show one figure when uniform, per-axis figures when stretched.
+      const s = Number.isFinite(t.scale) ? t.scale : 1;
+      const sx = Number.isFinite(t.sx) ? t.sx : s;
+      const sy = Number.isFinite(t.sy) ? t.sy : s;
+      const sz = Number.isFinite(t.sz) ? t.sz : s;
+      if (sx === sy && sy === sz) return `Scale ${Number(sx).toFixed(2)}×`;
+      return `X ${sx.toFixed(2)}  Y ${sy.toFixed(2)}  Z ${sz.toFixed(2)}`;
     }
 
     _applySceneObjectGizmoDrag(e = {}) {
@@ -10959,7 +10984,29 @@
         else t.roll = apply(s.roll);
       } else { // scale
         const dist = Math.max(1e-3, Math.hypot(world.x - drag.center.x, world.y - drag.center.y));
-        t.scale = Math.round(clamp(s.scale * (dist / drag.startDist), 0.1, 5) * 1000) / 1000;
+        const ratio = dist / drag.startDist;
+        const cs = (val) => Math.round(clamp(val, 0.1, 5) * 1000) / 1000;
+        const modifiers = this.getModifierState(e);
+        // Was the object non-uniform at grab time? (start sx/sy/sz diverge.)
+        const wasNonUniform = !(s.sx === s.scale && s.sy === s.scale && s.sz === s.scale);
+        if (modifiers.alt) {
+          // I23 — Alt = UNIFORM: every axis scales by the same ratio. (Alt, not
+          // Cmd/Ctrl — Cmd cancels drops on macOS Chrome.) A uniform object
+          // stays scale-only (byte-identical old path); a non-uniform object
+          // keeps its proportions, each axis multiplied by the same ratio.
+          t.scale = cs(s.scale * ratio);
+          if (wasNonUniform) {
+            t.sx = cs(s.sx * ratio);
+            t.sy = cs(s.sy * ratio);
+            t.sz = cs(s.sz * ratio);
+          }
+        } else {
+          // Default = PER-AXIS: only the dragged handle's axis changes; the
+          // others hold their start value, making the object non-uniform.
+          t.sx = drag.axis === 'x' ? cs(s.sx * ratio) : cs(s.sx);
+          t.sy = drag.axis === 'y' ? cs(s.sy * ratio) : cs(s.sy);
+          t.sz = drag.axis === 'z' ? cs(s.sz * ratio) : cs(s.sz);
+        }
       }
       this._scheduleSceneDragRegen(layer.id);
       this.showDragTooltip(this._gizmoTooltip(drag.type, t), e.clientX ?? 0, e.clientY ?? 0);
@@ -10999,7 +11046,16 @@
       this._sceneDragRegenLayerId = null;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
       const obj = layer && this._sceneObjectById(layer, drag.objectId);
-      if (obj && obj.transform) Object.assign(obj.transform, drag.start);
+      if (obj && obj.transform) {
+        Object.assign(obj.transform, drag.start);
+        // If the object was uniform when grabbed, a per-axis drag added sx/sy/sz;
+        // strip them so Escape restores the exact pre-drag (scale-only) shape.
+        if (!drag.startHadAxis) {
+          delete obj.transform.sx;
+          delete obj.transform.sy;
+          delete obj.transform.sz;
+        }
+      }
       if (drag.moved && this.app && Array.isArray(this.app.history) && this.app.history.length > 1) this.app.history.pop();
       if (layer) this.engine.generate(layer.id);
       this.updateCursor();

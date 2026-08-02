@@ -168,6 +168,24 @@ describe('3D Scene Studio 2B — sun widget (CONTRACT L1)', () => {
     expect(scene.params.lights[0].elevation).toBe(45);
   });
 
+  test('lightless-scene guard: a scene with zero lights draws NO sun handle', async () => {
+    const { renderer, scene } = await setup();
+    // A scene can now hold zero lights (the sun was removed). With no
+    // directional/sun light there is nothing for the sun handle to represent.
+    scene.params.lights = [];
+    expect(renderer.getSceneLightControl(scene)).toBeNull();
+    // Hit-testing the (now absent) handle also misses, so a phantom sun can't be
+    // grabbed and dragged into existence.
+    expect(renderer.hitSceneLight(30, 30, scene)).toBeNull();
+    // A scene holding only a non-directional light (e.g. ambient) still has no
+    // sun to place — the handle stays suppressed.
+    scene.params.lights = [{ id: 'fill', type: 'ambient', intensity: 0.3 }];
+    expect(renderer.getSceneLightControl(scene)).toBeNull();
+    // Restoring a directional light brings the handle back.
+    scene.params.lights = [{ id: 'sun', type: 'directional', azimuth: 135, elevation: 45 }];
+    expect(renderer.getSceneLightControl(scene)).toBeTruthy();
+  });
+
   test('regression: the widget only arms for a selected scene3d layer', async () => {
     const { renderer, scene } = await setup();
     // No scene layer selected → no light layer, no control.

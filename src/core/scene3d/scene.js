@@ -141,10 +141,19 @@
 
   // ── Assembly ───────────────────────────────────────────────────────────────
 
-  const applyObjectTransform = (pt, t) => add(
-    rotatePoint(mul(pt, t.scale), { yaw: t.yaw, pitch: t.pitch, roll: t.roll }),
-    v(t.x, t.y, t.z),
-  );
+  // I23 — non-uniform scale. Each local axis stretches by its own factor; an
+  // absent per-axis key inherits the uniform `t.scale`, so a legacy scale-only
+  // transform reproduces the old `mul(pt, scale)` exactly (byte-identical).
+  const applyObjectTransform = (pt, t) => {
+    const s = finite(t.scale, 1);
+    const sx = finite(t.sx, s);
+    const sy = finite(t.sy, s);
+    const sz = finite(t.sz, s);
+    return add(
+      rotatePoint(v(pt.x * sx, pt.y * sy, pt.z * sz), { yaw: t.yaw, pitch: t.pitch, roll: t.roll }),
+      v(t.x, t.y, t.z),
+    );
+  };
 
   const faceRecord = (indices, faceId, objectId, world, camPts, projected, camPos) => {
     const worldVerts = indices.map((i) => world[i]);

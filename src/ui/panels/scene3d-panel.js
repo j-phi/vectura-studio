@@ -1748,13 +1748,44 @@
       sliderRow(inspectorHost, inspectorComps, 'Pitch', rotProps('pitch', 'Pitch'));
       sliderRow(inspectorHost, inspectorComps, 'Roll', rotProps('roll', 'Roll'));
 
+      // Uniform scale — writes the base `scale` and clears any per-axis (I23)
+      // divergence, so the object snaps back to uniform.
       sliderRow(inspectorHost, inspectorComps, 'Scale', {
         value: Number.isFinite(t.scale) ? t.scale : 1,
         min: 0.1, max: 5, step: 0.05,
         defaultValue: 1,
         ariaLabel: 'Uniform scale',
-        ...liveSlider((v) => { obj.transform.scale = v; }),
+        ...liveSlider((v) => {
+          obj.transform.scale = v;
+          delete obj.transform.sx;
+          delete obj.transform.sy;
+          delete obj.transform.sz;
+        }),
       });
+      // Per-axis (non-uniform) scale — I23. Each row shows the effective factor
+      // for its local axis (falls back to the uniform `scale`). Editing one axis
+      // seeds the others from the uniform base so the object becomes non-uniform
+      // without silently resetting the untouched axes.
+      const axisScaleProps = (axis) => {
+        const key = `s${axis}`; // sx / sy / sz
+        const base = Number.isFinite(t.scale) ? t.scale : 1;
+        return {
+          value: Number.isFinite(t[key]) ? t[key] : base,
+          min: 0.1, max: 5, step: 0.05,
+          defaultValue: 1,
+          ariaLabel: `Scale ${axis.toUpperCase()}`,
+          ...liveSlider((v) => {
+            const b = Number.isFinite(obj.transform.scale) ? obj.transform.scale : 1;
+            if (!Number.isFinite(obj.transform.sx)) obj.transform.sx = b;
+            if (!Number.isFinite(obj.transform.sy)) obj.transform.sy = b;
+            if (!Number.isFinite(obj.transform.sz)) obj.transform.sz = b;
+            obj.transform[key] = v;
+          }),
+        };
+      };
+      sliderRow(inspectorHost, inspectorComps, 'Scale X', axisScaleProps('x'));
+      sliderRow(inspectorHost, inspectorComps, 'Scale Y', axisScaleProps('y'));
+      sliderRow(inspectorHost, inspectorComps, 'Scale Z', axisScaleProps('z'));
 
       // Dimensions — per-primitive shape params, in the terms a user expects.
       const dims = DIMENSIONS[obj.primitive];
