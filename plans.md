@@ -94,6 +94,16 @@ or completes.
   and the toolbar group in `ui-petal-designer.js` / `shell/toolbar.js`.
 
 ## Later
+- **3D Scene deferred artistic + geometry work** (backlog after the v1.3.25–1.3.33 controls
+  batch). (a) **Area + emissive light types** — the lighting model now covers
+  directional/ambient/point/spot; area and emissive are the remaining types. (b) **CSG
+  solid/hole + group boolean** — object-level constructive geometry (union/subtract/intersect)
+  and group booleans are still pending. (c) **Multi-select mixed-value display in the ctxbar
+  flyouts** — Style/Shadow/Highlight/X-ray flyouts assume a single object; a mixed-value
+  indicator (like the multi-selection stroke-weight indicator) is needed for multi-object
+  selections. (d) **Point/spot polish list** — spot-shadow cone clip, a soft falloff floor,
+  per-sample light evaluation for large curved objects, and consolidating the world-projection
+  helpers onto one `_sceneProjectWorld`.
 - **Curves Stage D (cosmetic).** The liveness ratchet proves no algorithm's Curves toggle is
   wrongly dead, so the remaining `meta.straight` → `meta.baked` reclassifications
   (`halftone.js:187/326`, `spirograph.js:121`) are semantic clean-up with zero behavior
@@ -210,6 +220,45 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — 3D Scene Studio artistic-controls batch (v1.3.25–1.3.33, `3d-scene/p4`,
+  commits `a756202`..`8920f55`).** Nine commits closing Jay's artistic-requirement asks:
+  - **Positional point + spot lights (a756202, 9ccfa4f).** Engine is now position-aware —
+    point = direction-to-surface Lambert with linear distance falloff over a range; spot adds
+    a cone gate (half-angle + soft penumbra); both cast **perspective** ground shadows. On the
+    canvas a selected light shows a **3-axis translate gizmo** (point/spot drag world XYZ,
+    unclamped; the Sun re-derives azimuth/elevation; a spot draws its cone axis) with a restore
+    handle + panel **Reset light**. Lights strip adds **+ Point** / **+ Spot**; the light
+    Inspector is type-complete. The lighting model is now directional/ambient/point/spot.
+  - **Shared stroke treatment + density fix + crosshatch families (4bef991).** Line type
+    (solid/dashed/dotted/dash-dot + dash scale), deterministic hand-drawn wobble, and
+    overstroke, stamped at the emit chokepoint (canvas + SVG). Density-under-tone bug fixed
+    (fill density is authoritative, tone a multiplier). Independent crosshatch families
+    (cross angle delta, cross density ratio, triple hatch).
+  - **True Archimedean spiral fill (c4ee71a).** The spiral mapper on faceted prims draws one
+    continuous Archimedean spiral clipped to each face region (was stacked concentric rings);
+    curved prims keep the wrapped surface helix. New pitch/offset/center/axis-snap/mode/
+    eccentricity controls.
+  - **Per-mapper control inventory (41f3c30).** A `MAPPER_CONTROLS` descriptor table drives the
+    panel: hatch angle-reference + boustrophedon link-fill; contour surface/region + step;
+    stipple mark shape/size/angle/jitter; wireframe per-edge-class visibility + show-hidden.
+    Every control is a no-op at default.
+  - **Selectable highlight treatments (358c8e9).** The specular band renders as blank / keep /
+    dashed / dotted / sparse / altFill / burst / stipple-out (band count, pen, density);
+    default `blank` is byte-identical.
+  - **X-ray back-face fills (18a1d91).** X-ray now shows the far surface through spheres and all
+    primitives (dashed, reduced-density back family) plus hidden-edge dashing; solid output
+    unchanged.
+  - **Controllable cast shadows (8f06433).** Scene shadow bag — angle (or follow light), density,
+    pen, line type, and a layered penumbra (2–4 nested inset passes) — plus a per-object
+    Auto/On/Off cast toggle; defaults reproduce the old shadow exactly.
+  - **Per-object context-bar flyouts + border (8920f55).** Persistent Style / Shadow / Highlight
+    / X-ray dropdown pills on the contextual task bar (stay open through mapper switch + slider
+    drag, one undo per gesture); the one new render feature is a per-object **Border**
+    (silhouette + boundary overstroke on an optional accent pen, off by default).
+  - **Deferred (tracked under Later — 3D Scene deferred artistic + geometry work):** area +
+    emissive light types; CSG solid/hole + group boolean; multi-select mixed-value display in
+    the ctxbar flyouts; the point/spot polish list (spot-shadow cone clip, soft falloff floor,
+    per-sample light for large curved objects, `_sceneProjectWorld` consolidation).
 - **Unreleased — 3D Scene Studio acceptance fixes D/E/F/H/I + convex-hull shadows (v1.3.19–1.3.21).**
   On `3d-scene/p4`, from Jay's live-test batch 2: (E) the sun widget projects the toward-sun
   vector through the scene camera so elevation reads as on-screen height (was radius-encoded →

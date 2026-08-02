@@ -14,12 +14,73 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   its cone-axis line toward the target. A restore handle (and a panel **Reset
   light** button) returns the light to its default. The Lights strip gains
   **+ Point** and **+ Spot**, and the light Inspector is now type-complete
-  (Position X/Y/Z, Range, Cone angle, Penumbra, Target X/Y/Z).
+  (Position X/Y/Z, Range, Cone angle, Penumbra, Target X/Y/Z). Under the hood the
+  shading engine is now position-aware: a **point** light shades by its direction
+  to each surface point with linear distance falloff over its range; a **spot**
+  adds a cone gate (cone half-angle + soft penumbra edge); and both cast
+  **perspective** ground shadows (rays from the light position through each vertex
+  to the floor) rather than parallel projection. The scene's lighting is now a
+  multi-light system — directional, ambient, point, and spot — with area and
+  emissive light types deferred.
+- **3D Scene per-object context flyouts on the task bar.** Selecting a scene
+  object adds four persistent dropdown pills — **Style**, **Shadow**, **Highlight**,
+  and **X-ray** — to the contextual task bar, between the pen chip and the one-shot
+  verbs. Each flyout stays open while you edit (mapper switch, slider drag) and
+  closes only on an outside click or Escape; edits write straight through to the
+  object's existing params (one undo per gesture, live draft regen). Adds one new
+  render feature: a per-object **Border** — overstroke an object's silhouette and
+  boundary edges with a strength-scaled parallel offset on an optional accent pen
+  (off by default, so output is unchanged until enabled).
+- **3D Scene controllable cast shadows.** The formerly hardcoded 45°, half-density,
+  always-solid shadow is now a scene-level shadow bag plus a per-object cast
+  toggle. Controls: **angle** (or auto-follow the on-screen light bearing),
+  **density**, **pen**, and **line type** (solid / dashed / dotted / dash-dot), plus
+  a layered **penumbra** build-up (2–4 nested inset passes with a falloff, so the
+  overlapping core reads densest). Each object can opt out of casting (Auto / On /
+  Off). Defaults reproduce the previous shadow exactly.
+- **3D Scene selectable highlight treatments.** The specular/highlight tone band
+  is no longer only bare paper. A per-object **Highlight** treatment picks what the
+  brightest band(s) render as: **blank** (legacy default), **keep**, **dashed**,
+  **dotted**, **sparse**, **altFill** (an alternate mapper clipped to the specular
+  hotspot), **burst** (radial engraved glint), or **stippleOut**. Band count, pen,
+  and density are adjustable. Default `blank` leaves toned output byte-identical.
+- **3D Scene x-ray back-face fills.** X-ray mode now shows the *far* surface
+  through an object, not just its hidden edges — a hatched sphere's back wall reads
+  through the front as dashed, reduced-density fill. Controls (shown when an object
+  is x-ray): back-face fills on/off, back-face density, back-face pen and line
+  type, hidden-edge dashing, and a solid/faded front. Solid (non-x-ray) output is
+  byte-identical.
+- **3D Scene per-mapper control inventory.** Every fill mapper now exposes more
+  than density, driven by a single `MAPPER_CONTROLS` descriptor table:
+  **Hatch** — angle reference (face / screen / world-up) and a boustrophedon
+  *link fill* that chains scanlines into one pen path; **Contour** — surface vs.
+  region (flat inset-ring) style and a mm contour step; **Stipple** — mark shape
+  (dot / ring / cross / plus / tick), size, angle, and jitter; **Wireframe** —
+  per-edge-class visibility (silhouette / boundary / crease / interior) and a
+  show-hidden dashed-occluded toggle. Every new control is a no-op at its default,
+  so existing scenes are unchanged.
+- **3D Scene true Archimedean spiral fill.** The **Spiral** mapper on a cube (and
+  every faceted primitive) now draws one continuous Archimedean spiral clipped to
+  each face region — a real spiral — instead of stitched concentric inset rings.
+  New controls: pitch, angle offset, center (centroid / bbox), axis snap
+  (squared / rectilinear), spiral mode (flat-clip / surface-helix), and
+  eccentricity (auto-fits the region aspect). Curved primitives keep the wrapped
+  surface helix by default.
+- **3D Scene shared stroke treatment + density fix + crosshatch families.** Every
+  fill and shadow path can take a shared **line type** (solid / dashed / dotted /
+  dash-dot, with a dash scale) plus deterministic **hand-drawn wobble** and
+  **overstroke** for a sketched look (honored on canvas and in SVG export). Fixes
+  a density bug: with tone on, the **fill density** slider was discarded and
+  spacing came from coverage alone — density is now authoritative and tone a
+  multiplier. Crosshatch families are now independent: a **cross angle delta**
+  (was hardcoded +90°), a **cross density ratio** for the second family, and an
+  optional **triple hatch** (+45° pass in the darkest band).
 - **3D Scene Studio Phase 3 — surface mappers.** Four new fill styles join
   None / Wireframe / Hatch on every scene surface (per scene, object, or face):
   **Crosshatch** (hatch plus a perpendicular pass), **Contour** (concentric rings
-  that follow the shape, holes carved), **Spiral** (those rings stitched into one
-  continuous inward pen path), and **Stipple** (a deterministic dot lattice). Each
+  that follow the shape, holes carved), **Spiral** (a continuous inward pen path;
+  see the true Archimedean spiral entry above), and **Stipple** (a deterministic
+  dot lattice). Each
   works on flat *and* curved primitives, replaces the wireframe like Hatch does,
   and has a Density control (Crosshatch also gets an Angle). Region fills read the
   Density slider directly; live drags preview as flat hatch and resolve on release.
@@ -164,8 +225,8 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   manages lights**: every light is a selectable row, **+ Sun** / **+ Ambient** add
   one, ✕ deletes it (never the last), and the Inspector is type-aware (directional
   = azimuth / elevation / intensity / cast-shadows; ambient = intensity only).
-  (Positional point/spot lights — with a position gizmo and point-shadow
-  projection — are the next increment.)
+  (Positional point/spot lights — with a position gizmo and perspective shadow
+  projection — now ship; see the light gizmo entry near the top of Unreleased.)
 - **3D Scene — unified per-object transform gizmo (move · rotate · scale).** A
   Cinema4D-style gizmo now appears on the selected scene object with all handles
   shown at once: three colour-coded move arrows (X amber, Y violet, Z cyan), three
