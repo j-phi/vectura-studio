@@ -326,14 +326,21 @@
       if (newId) selectLight(newId);
     };
     const deleteLight = (id) => {
-      if (getLights().length <= 1) return; // a scene keeps at least one light
+      // I4: a scene may have ZERO lights (remove the sun) — it then shades flat
+      // and casts no shadows. Deleting the last light is allowed; the Add-light
+      // strip below re-introduces one.
       commit(() => {
         const arr = getLights();
         const idx = arr.findIndex((l) => l && l.id === id);
         if (idx >= 0) arr.splice(idx, 1);
       });
-      if (sel.objectId === `light:${id}`) selectLight((getLights()[0] || {}).id);
-      else { renderTree(); renderInspector(); }
+      if (sel.objectId === `light:${id}`) {
+        const next = getLights()[0];
+        if (next) selectLight(next.id);
+        else clearSelection();
+      }
+      renderTree();
+      renderInspector();
     };
 
     // CONTRACT L3 — light-driven tone bands. 2A owns the schema/normalize in
@@ -912,7 +919,8 @@
 
       // Lights — every light in the scene (directional suns + ambient fills).
       // Each row selects the light (the Inspector edits it); the dot toggles cast
-      // shadows (directional only); ✕ deletes it (never the last one).
+      // shadows (directional only); ✕ deletes it — including the last one (I4:
+      // a lightless scene is allowed; it shades flat and casts no shadows).
       const lights = getLights();
       lights.forEach((light, index) => {
         const rowId = `light:${light.id}`;
@@ -941,7 +949,9 @@
           });
           lRow.appendChild(lVis);
         }
-        if (lights.length > 1) {
+        {
+          // I4: every light is deletable, including the last one (a lightless
+          // scene shades flat / casts no shadows). Re-add via the Add strip below.
           const del = document.createElement('button');
           del.type = 'button';
           del.className = 'vs3-tree-del';

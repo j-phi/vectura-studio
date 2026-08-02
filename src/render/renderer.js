@@ -865,6 +865,33 @@
         }
       };
       document.addEventListener('keydown', this._onDragCancelKey, true);
+      // I10: Delete/Backspace on an active scene-internal selection removes the
+      // selected object(s) / clears the selected face(s) — NOT the whole scene3d
+      // layer. Capture phase so it runs before the global layer-delete shortcut
+      // (shortcuts.js, window bubble); it only stops the event when it actually
+      // consumed a scene selection, so a bare layer selection still falls through
+      // to the normal layer delete.
+      this._onSceneDeleteKey = (e) => {
+        if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        const t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
+          || t.tagName === 'SELECT' || t.isContentEditable)) return;
+        const overlays = (typeof window !== 'undefined' && window.Vectura
+          && window.Vectura.UI) ? window.Vectura.UI.overlays : null;
+        if (overlays && overlays.Modal && typeof overlays.Modal.anyOpen === 'function'
+          && overlays.Modal.anyOpen()) return;
+        if (typeof document !== 'undefined') {
+          const legacy = document.getElementById('modal-overlay');
+          if (legacy && legacy.classList.contains('open')) return;
+        }
+        if (this.deleteSceneSelection()) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+        }
+      };
+      document.addEventListener('keydown', this._onSceneDeleteKey, true);
     }
 
     destroy() {
@@ -883,6 +910,9 @@
       }
       if (this._onDragCancelKey) {
         document.removeEventListener('keydown', this._onDragCancelKey, true);
+      }
+      if (this._onSceneDeleteKey) {
+        document.removeEventListener('keydown', this._onSceneDeleteKey, true);
       }
       if (this._onWindowBlur) {
         window.removeEventListener('blur', this._onWindowBlur);
@@ -9688,6 +9718,10 @@
           byKey.set(cand.key, cand);
           candidates.push(cand);
         };
+        // I12: per-object projected points, so an object with no pickable face
+        // covering the interior (a sphere/torus is drawn as edges + hatch fill)
+        // is still selectable anywhere inside its projected silhouette (below).
+        const objPoints = mode === 'object' ? new Map() : null;
         paths.forEach((path) => {
           const meta = path && path.meta;
           const target = meta && meta.sceneTarget;
@@ -9695,6 +9729,16 @@
           const kind = meta.kind;
           const depth = Number.isFinite(target.depth) ? target.depth : 0;
           const occluded = Boolean(target.occluded);
+          if (objPoints && target.objectId) {
+            let rec = objPoints.get(target.objectId);
+            if (!rec) { rec = { pts: [], depth: Infinity, occluded: true }; objPoints.set(target.objectId, rec); }
+            for (let pi = 0; pi < path.length; pi++) {
+              const pt = path[pi];
+              if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) rec.pts.push(pt);
+            }
+            if (depth < rec.depth) rec.depth = depth;
+            if (!occluded) rec.occluded = false;
+          }
           // Partially-occluded faces emit OPEN visible runs; 1A stamps the full
           // closed outline as target.pickPolygon so point-in-poly still hits the
           // whole face. Fully-visible faces are closed paths (poly === path).
@@ -9748,6 +9792,29 @@
             });
           }
         });
+        // I12 silhouette fallback: an object drawn as wireframe + hatch (a
+        // sphere/torus emits edges, a single face and hatch fill — no pickable
+        // face over its interior) is unselectable when the click lands in a
+        // hatch gap; the ground plane behind it wins instead. For every object
+        // that got NO direct edge/face hit here, test the click against its
+        // projected silhouette (convex hull of its path points) and, if inside,
+        // add an object candidate at the object's NEAREST path depth. Objects
+        // already hit directly (the ground, any solid face) keep their true
+        // per-face depth untouched — critical, since merging a large plane's
+        // min depth would wrongly float it in front of everything.
+        if (objPoints) {
+          const directHitIds = new Set(candidates.map((c) => c.objectId));
+          objPoints.forEach((rec, objectId) => {
+            if (directHitIds.has(objectId) || rec.pts.length < 3) return;
+            const hull = this._convexHull2D(rec.pts);
+            if (hull.length >= 3 && this.pointInPoly(world, hull)) {
+              push({
+                layer, kind: 'object', key: objectId, objectId, faceId: null,
+                depth: rec.depth === Infinity ? 0 : rec.depth, dist: 0, occluded: rec.occluded, rank: 0,
+              });
+            }
+          });
+        }
         if (candidates.length) {
           candidates.sort((a, b) =>
             (a.rank - b.rank)
@@ -9758,6 +9825,32 @@
         }
       }
       return [];
+    }
+
+    // Monotone-chain convex hull of 2D points (screen space). Used as the
+    // object-selection silhouette so meshes drawn as wireframe + hatch (sphere,
+    // torus) are pickable across their whole footprint. Returns a ring of the
+    // hull vertices, or the input when there are fewer than 3 points.
+    _convexHull2D(input) {
+      const pts = (input || [])
+        .filter((pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y))
+        .map((pt) => ({ x: pt.x, y: pt.y }));
+      if (pts.length < 3) return pts;
+      pts.sort((a, b) => (a.x === b.x ? a.y - b.y : a.x - b.x));
+      const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+      const lower = [];
+      for (let i = 0; i < pts.length; i++) {
+        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], pts[i]) <= 0) lower.pop();
+        lower.push(pts[i]);
+      }
+      const upper = [];
+      for (let i = pts.length - 1; i >= 0; i--) {
+        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], pts[i]) <= 0) upper.pop();
+        upper.push(pts[i]);
+      }
+      lower.pop();
+      upper.pop();
+      return lower.concat(upper);
     }
 
     // Single-shot scene hit for external callers (context menu): the top
@@ -11673,6 +11766,32 @@
       }
       this.setSceneSelection(null);
       this._sceneRegen(layer);
+      return true;
+    }
+
+    // I10: keyboard Delete/Backspace routed through the renderer's capture-phase
+    // listener when a scene-internal selection is active. Object mode removes the
+    // selected object(s) (reusing deleteSceneObjects); face/edge mode clears just
+    // those components (the layer + object stay). Returns true when it consumed
+    // the selection — the caller then stops the event so the global layer-delete
+    // shortcut never fires. Returns false with no scene selection, letting the
+    // normal layer delete proceed.
+    deleteSceneSelection() {
+      const sel = this.getSceneSelection && this.getSceneSelection();
+      if (!sel || !sel.layerId) return false;
+      const layer = this.engine.layers.find((l) => l.id === sel.layerId);
+      if (!layer || layer.type !== 'scene3d') return false;
+      if (sel.mode === 'object') {
+        const ids = Array.isArray(sel.objectIds) ? sel.objectIds.slice() : [];
+        if (!ids.length) return false;
+        return this.deleteSceneObjects(sel.layerId, ids);
+      }
+      // face / edge selection → clear just those components; object + layer stay.
+      const listKey = sel.mode === 'edge' ? 'edgeKeys' : 'faceKeys';
+      const keys = Array.isArray(sel[listKey]) ? sel[listKey] : [];
+      if (!keys.length) return false;
+      this.setSceneSelection(null);
+      if (this.app && this.app.render) this.app.render(); else this.draw();
       return true;
     }
 

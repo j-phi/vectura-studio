@@ -519,10 +519,17 @@
     out.objects = objects.length || hasObjectsKey
       ? objects
       : [normalizeObject({ primitive: 'box', name: 'Box 1' }, 0, usedIds)];
-    const lights = (Array.isArray(src.lights) ? src.lights : [])
+    // An ABSENT lights key (legacy/migrated payload) seeds a default sun; an
+    // EXPLICIT empty array is an intentionally lightless scene (I4: remove the
+    // sun) and stays empty — otherwise deleting the last light would silently
+    // resurrect the sun on regen. Mirrors the objects contract above. A lightless
+    // scene shades flat and casts no shadows: lightWorldDir/combinedIntensity and
+    // the castShadows loop in scene3d.js all degrade gracefully on an empty list.
+    const hasLightsKey = Array.isArray(src.lights);
+    const lights = (hasLightsKey ? src.lights : [])
       .filter(isObject)
       .map((light, index) => normalizeLight(light, index));
-    out.lights = lights.length ? lights : [{ ...DEFAULT_LIGHT }];
+    out.lights = lights.length || hasLightsKey ? lights : [{ ...DEFAULT_LIGHT }];
     out.tone = normalizeTone(src.tone);
     out.shadow = normalizeShadow(src.shadow);
     out.ground = { enabled: isObject(src.ground) ? src.ground.enabled !== false : true };

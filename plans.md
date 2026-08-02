@@ -94,16 +94,14 @@ or completes.
   and the toolbar group in `ui-petal-designer.js` / `shell/toolbar.js`.
 
 ## Later
-- **3D Scene deferred artistic + geometry work** (backlog after the v1.3.25–1.3.33 controls
-  batch). (a) **Area + emissive light types** — the lighting model now covers
-  directional/ambient/point/spot; area and emissive are the remaining types. (b) **CSG
-  solid/hole + group boolean** — object-level constructive geometry (union/subtract/intersect)
-  and group booleans are still pending. (c) **Multi-select mixed-value display in the ctxbar
-  flyouts** — Style/Shadow/Highlight/X-ray flyouts assume a single object; a mixed-value
-  indicator (like the multi-selection stroke-weight indicator) is needed for multi-object
-  selections. (d) **Point/spot polish list** — spot-shadow cone clip, a soft falloff floor,
-  per-sample light evaluation for large curved objects, and consolidating the world-projection
-  helpers onto one `_sceneProjectWorld`.
+- **3D Scene: exact smooth curved−curved CSG cut curves.** CSG booleans that involve a curved
+  primitive ship a **tessellation approximation** — curved children are detail-capped (~16 tris)
+  and share the triangle budget, so a box−cylinder bore fills cleanly but the cut rim is faceted,
+  not an analytic intersection curve. Deriving true smooth curved−curved cut curves
+  (surface–surface intersection) is the remaining geometry work. Everything else from the
+  v1.3.25–1.3.33 backlog — area + emissive light types, CSG solid/hole + group boolean,
+  the ctxbar multi-select mixed-value display, and the point/spot polish list — shipped in
+  v1.3.34–1.3.39 (see Done).
 - **Curves Stage D (cosmetic).** The liveness ratchet proves no algorithm's Curves toggle is
   wrongly dead, so the remaining `meta.straight` → `meta.baked` reclassifications
   (`halftone.js:187/326`, `spirograph.js:121`) are semantic clean-up with zero behavior
@@ -220,6 +218,44 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — 3D Scene Studio CSG + light-model completion (v1.3.34–1.3.39, `3d-scene/p4`,
+  commits `2fa2fee`..`37c5754`).** Closes the deferred artistic + geometry backlog that trailed
+  the v1.3.25–1.3.33 controls batch:
+  - **CSG boolean solid/hole (2fa2fee, v1.3.34).** Objects are Solid or Hole; a subtract group
+    carves a real rectangular hole (correct cut walls, silhouette, shadow) through the existing
+    HLR pipeline. New `Scene3D.CSG` (Evan-Wallace BSP on the repo index-mesh, volume/winding
+    pinned) + `Scene3D.Boolean` (`resolveAssembly` — ungrouped objects stay byte-identical,
+    a subtract group collapses to one `csg` unit; draft/failure/budget-overrun fall back to
+    uncarved children).
+  - **CSG curved holes, union/intersect, grouping UI (cb293a9, v1.3.35).** Booleans admit curved
+    children (box−cylinder, sphere−box; detail-capped, shared triangle budget); `CSG.union` /
+    `CSG.intersect` via op-aware group resolution (union = ⋃solids − ⋃holes, intersect =
+    ⋂solids − ⋃holes), multi-solid seam-weld, depth-first nested groups with a cycle guard.
+    New **Boolean Groups** panel (create group, op, add/remove/reorder object-or-group children,
+    per-child Solid/Hole role) + scene-tree op-glyph badges. Interior fan-triangulation
+    T-junctions no longer drawn (kills spurious radiating lines on carved/curved faces).
+  - **Point/spot light polish (3e554ec, v1.3.36).** All four backlog items: spot shadows respect
+    the cone + range, a soft range/falloff floor, per-sample light evaluation for large curved
+    objects, and consolidation of the world-projection helpers onto one shared `_sceneProjectWorld`.
+    Directional projection stays byte-identical.
+  - **Area light (377d846, v1.3.37).** Fifth light type — gentler terminator + softer shadow by
+    averaging N deterministic Fibonacci-sphere sub-samples across its Size (Size/Samples controls,
+    reuses the 3-axis position gizmo). No-area-light scenes are byte-identical.
+  - **Emissive objects (69b0089, v1.3.38).** Sixth and final light type — an enabled
+    `object.emissive` acts as a co-located point light (range 0) shading every other object and
+    self-renders its glow via the burst emitter (radial rays / concentric halo, optional
+    blank/bright core).
+  - **Ctxbar multi-select "Mixed" display (163db3b, v1.3.39).** When 2+ objects disagree on a
+    contextual-toolbar control, the Style/Shadow/Highlight/X-ray flyouts show an explicit **Mixed**
+    state (per-control agree/differ fold over the selection); editing from Mixed applies to all
+    selected objects. Mirrors the MSC-1 stroke-weight pattern.
+  - **Per-fragment by-face CSG styling (37c5754).** A combined boolean unit no longer flattens to
+    the primary solid's style — each output fragment is attributed back to its originating
+    `{objectId, faceId}` (threaded through the BSP `shared` slot, carried through weld/sliver-drop)
+    so faces, edges, x-ray, and highlight resolve each fragment through the ordinary style cascade.
+    Gated + deterministic: a uniform-style unit adds no override and stays byte-identical.
+  - **Still deferred (tracked under Later):** exact smooth curved−curved CSG cut curves — booleans
+    on curved prims ship a detail-capped tessellation approximation, not an analytic intersection.
 - **Unreleased — 3D Scene Studio artistic-controls batch (v1.3.25–1.3.33, `3d-scene/p4`,
   commits `a756202`..`8920f55`).** Nine commits closing Jay's artistic-requirement asks:
   - **Positional point + spot lights (a756202, 9ccfa4f).** Engine is now position-aware —
@@ -255,10 +291,10 @@ question. Do not start these without a decision:
     / X-ray dropdown pills on the contextual task bar (stay open through mapper switch + slider
     drag, one undo per gesture); the one new render feature is a per-object **Border**
     (silhouette + boundary overstroke on an optional accent pen, off by default).
-  - **Deferred (tracked under Later — 3D Scene deferred artistic + geometry work):** area +
-    emissive light types; CSG solid/hole + group boolean; multi-select mixed-value display in
-    the ctxbar flyouts; the point/spot polish list (spot-shadow cone clip, soft falloff floor,
-    per-sample light for large curved objects, `_sceneProjectWorld` consolidation).
+  - **Deferred at the time (now shipped in v1.3.34–1.3.39 — see the CSG + light-model completion
+    entry above):** area + emissive light types; CSG solid/hole + group boolean; multi-select
+    mixed-value display in the ctxbar flyouts; the point/spot polish list. Only exact smooth
+    curved−curved CSG cut curves remain deferred (tessellation approximation ships).
 - **Unreleased — 3D Scene Studio acceptance fixes D/E/F/H/I + convex-hull shadows (v1.3.19–1.3.21).**
   On `3d-scene/p4`, from Jay's live-test batch 2: (E) the sun widget projects the toward-sun
   vector through the scene camera so elevation reads as on-screen height (was radius-encoded →

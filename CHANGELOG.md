@@ -7,6 +7,22 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — remove ground & sun, plus file-based scene presets.** The ground
+  plane can be hidden (Ground row toggle) and the scene can now have zero lights
+  (the last light is deletable) — a lightless scene shades flat without crashing
+  and casts no shadows. Three starter presets ship under `user-presets/scene3d/`:
+  `studio-shadows` (a lit still-life), `shape-grid` (a specimen sheet of primitives,
+  no ground/sun), and `cad-wireframe` (a clean wireframe CAD look).
+
+### Fixed
+- **3D Scene — Delete key no longer nukes the whole layer.** With a scene object
+  or face selected, Backspace/Delete now removes just that object/face (a
+  capture-phase handler intercepts before the layer-delete shortcut); with no
+  scene-internal selection the normal layer delete still applies.
+- **3D Scene — a sphere is now selectable by clicking its body.** Object hit-testing
+  falls back to the object's projected silhouette hull, so a click anywhere inside
+  a sphere (which emits no interior face) selects it instead of the ground behind.
+
 - **3D Scene CSG — per-fragment by-face styling.** A carved/combined boolean unit
   no longer flattens to the primary solid's style for every face. Each output
   fragment is now attributed back to its ORIGINATING object + face: a solid keeps

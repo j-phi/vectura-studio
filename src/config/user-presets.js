@@ -2542,6 +2542,493 @@
         }
       },
       {
+        "id": "scene3d-cad-wireframe",
+        "name": "CAD Wireframe",
+        "preset_system": "scene3d",
+        "group": "Classic",
+        "params": {
+          "sceneVersion": 1,
+          "seed": 0,
+          "objects": [
+            {
+              "id": "obj-1",
+              "name": "Block",
+              "primitive": "box",
+              "params": {
+                "sx": 58,
+                "sy": 34,
+                "sz": 58
+              },
+              "transform": {
+                "x": -38,
+                "y": 0,
+                "z": 0,
+                "yaw": 0,
+                "pitch": 0,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            },
+            {
+              "id": "obj-2",
+              "name": "Shaft",
+              "primitive": "cylinder",
+              "params": {
+                "sx": 18,
+                "sy": 58,
+                "sz": 18,
+                "detail": 28
+              },
+              "transform": {
+                "x": 40,
+                "y": 0,
+                "z": 0,
+                "yaw": 0,
+                "pitch": 0,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            }
+          ],
+          "lights": [],
+          "tone": {
+            "enabled": false,
+            "bands": 3,
+            "thresholds": [
+              0.33,
+              0.66
+            ],
+            "ladder": [
+              0.2,
+              0.5,
+              0.85
+            ],
+            "specular": {
+              "enabled": false,
+              "size": 1
+            }
+          },
+          "ground": {
+            "enabled": false
+          },
+          "backdrop": {
+            "enabled": false
+          },
+          "camera": {
+            "projection": "orthographic",
+            "yaw": -45,
+            "pitch": 30,
+            "roll": 0,
+            "cameraDistance": 620,
+            "focalLength": 520,
+            "zoom": 1
+          },
+          "groups": [],
+          "styleTable": {
+            "scene": {
+              "penId": null,
+              "mapper": "wireframe",
+              "params": {
+                "showHidden": true,
+                "edgeClasses": {
+                  "silhouette": true,
+                  "boundary": true,
+                  "crease": true,
+                  "interior": true
+                }
+              }
+            },
+            "byObject": {},
+            "byFace": {}
+          }
+        }
+      },
+      {
+        "id": "scene3d-shape-grid",
+        "name": "Shape Grid",
+        "preset_system": "scene3d",
+        "group": "Classic",
+        "params": {
+          "sceneVersion": 1,
+          "seed": 0,
+          "objects": [
+            {
+              "id": "obj-1",
+              "name": "Box",
+              "primitive": "box",
+              "params": {
+                "sx": 34,
+                "sy": 34,
+                "sz": 34
+              },
+              "transform": {
+                "x": -60,
+                "y": 0,
+                "z": -60,
+                "yaw": 20,
+                "pitch": 0,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            },
+            {
+              "id": "obj-2",
+              "name": "Sphere",
+              "primitive": "sphere",
+              "params": {
+                "radius": 18,
+                "detail": 18
+              },
+              "transform": {
+                "x": 0,
+                "y": 0,
+                "z": -60,
+                "yaw": 0,
+                "pitch": 0,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            },
+            {
+              "id": "obj-3",
+              "name": "Torus",
+              "primitive": "torus",
+              "params": {
+                "sx": 22,
+                "sy": 16,
+                "sz": 16,
+                "detail": 18
+              },
+              "transform": {
+                "x": 60,
+                "y": 0,
+                "z": -60,
+                "yaw": 0,
+                "pitch": 32,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            },
+            {
+              "id": "obj-4",
+              "name": "Cone",
+              "primitive": "cone",
+              "params": {
+                "sx": 16,
+                "sy": 26,
+                "sz": 16,
+                "detail": 18
+              },
+              "transform": {
+                "x": -60,
+                "y": 0,
+                "z": 0,
+                "yaw": 0,
+                "pitch": 0,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            },
+            {
+              "id": "obj-5",
+              "name": "Cylinder",
+              "primitive": "cylinder",
+              "params": {
+                "sx": 15,
+                "sy": 28,
+                "sz": 15,
+                "detail": 18
+              },
+              "transform": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "yaw": 0,
+                "pitch": 0,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            },
+            {
+              "id": "obj-6",
+              "name": "Torus Knot",
+              "primitive": "torusKnot",
+              "params": {
+                "sx": 18,
+                "sy": 15,
+                "sz": 15,
+                "detail": 22
+              },
+              "transform": {
+                "x": 60,
+                "y": 0,
+                "z": 0,
+                "yaw": 20,
+                "pitch": 20,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            },
+            {
+              "id": "obj-7",
+              "name": "Capsule",
+              "primitive": "capsule",
+              "params": {
+                "sx": 12,
+                "sy": 26,
+                "sz": 12,
+                "detail": 18
+              },
+              "transform": {
+                "x": -60,
+                "y": 0,
+                "z": 60,
+                "yaw": 0,
+                "pitch": 24,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            },
+            {
+              "id": "obj-8",
+              "name": "Pyramid",
+              "primitive": "pyramid",
+              "params": {
+                "sx": 22,
+                "sy": 22,
+                "sz": 22,
+                "detail": 8
+              },
+              "transform": {
+                "x": 0,
+                "y": 0,
+                "z": 60,
+                "yaw": 24,
+                "pitch": 0,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            },
+            {
+              "id": "obj-9",
+              "name": "Superellipsoid",
+              "primitive": "superellipsoid",
+              "params": {
+                "sx": 18,
+                "sy": 18,
+                "sz": 18,
+                "detail": 18
+              },
+              "transform": {
+                "x": 60,
+                "y": 0,
+                "z": 60,
+                "yaw": 0,
+                "pitch": 0,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            }
+          ],
+          "lights": [],
+          "tone": {
+            "enabled": false,
+            "bands": 3,
+            "thresholds": [
+              0.33,
+              0.66
+            ],
+            "ladder": [
+              0.2,
+              0.5,
+              0.85
+            ],
+            "specular": {
+              "enabled": false,
+              "size": 1
+            }
+          },
+          "ground": {
+            "enabled": false
+          },
+          "backdrop": {
+            "enabled": false
+          },
+          "camera": {
+            "projection": "orthographic",
+            "yaw": -26,
+            "pitch": 26,
+            "roll": 0,
+            "cameraDistance": 620,
+            "focalLength": 520,
+            "zoom": 0.82
+          },
+          "groups": [],
+          "styleTable": {
+            "scene": {
+              "penId": null,
+              "mapper": "wireframe",
+              "params": {}
+            },
+            "byObject": {},
+            "byFace": {}
+          }
+        }
+      },
+      {
+        "id": "scene3d-studio-shadows",
+        "name": "Studio Shadows",
+        "preset_system": "scene3d",
+        "group": "Classic",
+        "params": {
+          "sceneVersion": 1,
+          "seed": 0,
+          "objects": [
+            {
+              "id": "obj-1",
+              "name": "Box",
+              "primitive": "box",
+              "params": {
+                "sx": 46,
+                "sy": 46,
+                "sz": 46
+              },
+              "transform": {
+                "x": -46,
+                "y": 23,
+                "z": -6,
+                "yaw": 18,
+                "pitch": 0,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            },
+            {
+              "id": "obj-2",
+              "name": "Sphere",
+              "primitive": "sphere",
+              "params": {
+                "radius": 24,
+                "detail": 24
+              },
+              "transform": {
+                "x": 34,
+                "y": 24,
+                "z": 22,
+                "yaw": 0,
+                "pitch": 0,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            },
+            {
+              "id": "obj-3",
+              "name": "Cylinder",
+              "primitive": "cylinder",
+              "params": {
+                "sx": 16,
+                "sy": 40,
+                "sz": 16,
+                "detail": 24
+              },
+              "transform": {
+                "x": 18,
+                "y": 20,
+                "z": -34,
+                "yaw": 0,
+                "pitch": 0,
+                "roll": 0,
+                "scale": 1
+              },
+              "visibility": "solid"
+            }
+          ],
+          "lights": [
+            {
+              "id": "sun",
+              "type": "directional",
+              "azimuth": 132,
+              "elevation": 40,
+              "intensity": 1,
+              "castShadows": true
+            },
+            {
+              "id": "ambient",
+              "type": "ambient",
+              "intensity": 0.28,
+              "castShadows": false
+            }
+          ],
+          "tone": {
+            "enabled": true,
+            "bands": 3,
+            "thresholds": [
+              0.33,
+              0.66
+            ],
+            "ladder": [
+              0.2,
+              0.5,
+              0.85
+            ],
+            "specular": {
+              "enabled": true,
+              "size": 1
+            }
+          },
+          "shadow": {
+            "shadowAngle": 45,
+            "shadowDensity": 50,
+            "shadowPenId": null,
+            "shadowLineType": "solid",
+            "shadowLayers": false,
+            "shadowLayerCount": 3,
+            "shadowFalloff": 0.5,
+            "shadowAngleFollowsLight": false
+          },
+          "ground": {
+            "enabled": true
+          },
+          "backdrop": {
+            "enabled": false
+          },
+          "camera": {
+            "projection": "orthographic",
+            "yaw": -32,
+            "pitch": 22,
+            "roll": 0,
+            "cameraDistance": 620,
+            "focalLength": 520,
+            "zoom": 1.05
+          },
+          "groups": [],
+          "styleTable": {
+            "scene": {
+              "penId": null,
+              "mapper": "hatch",
+              "params": {
+                "fillDensity": 52
+              }
+            },
+            "byObject": {},
+            "byFace": {}
+          }
+        }
+      },
+      {
         "id": "shapepack-bubbles",
         "name": "Bubbles",
         "preset_system": "shapePack",

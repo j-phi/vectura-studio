@@ -1,0 +1,83 @@
+{
+  "type": "vectura",
+  "name": "Studio Shadows",
+  "meta": {
+    "presetId": "scene3d-studio-shadows",
+    "group": "Classic",
+    "system": "scene3d",
+    "savedAt": 1785200000000
+  },
+  "layers": [
+    {
+      "type": "scene3d",
+      "params": {
+        "sceneVersion": 1,
+        "seed": 0,
+        "objects": [
+          {
+            "id": "obj-1",
+            "name": "Box",
+            "primitive": "box",
+            "params": { "sx": 46, "sy": 46, "sz": 46 },
+            "transform": { "x": -46, "y": 23, "z": -6, "yaw": 18, "pitch": 0, "roll": 0, "scale": 1 },
+            "visibility": "solid"
+          },
+          {
+            "id": "obj-2",
+            "name": "Sphere",
+            "primitive": "sphere",
+            "params": { "radius": 24, "detail": 24 },
+            "transform": { "x": 34, "y": 24, "z": 22, "yaw": 0, "pitch": 0, "roll": 0, "scale": 1 },
+            "visibility": "solid"
+          },
+          {
+            "id": "obj-3",
+            "name": "Cylinder",
+            "primitive": "cylinder",
+            "params": { "sx": 16, "sy": 40, "sz": 16, "detail": 24 },
+            "transform": { "x": 18, "y": 20, "z": -34, "yaw": 0, "pitch": 0, "roll": 0, "scale": 1 },
+            "visibility": "solid"
+          }
+        ],
+        "lights": [
+          { "id": "sun", "type": "directional", "azimuth": 132, "elevation": 40, "intensity": 1, "castShadows": true },
+          { "id": "ambient", "type": "ambient", "intensity": 0.28, "castShadows": false }
+        ],
+        "tone": {
+          "enabled": true,
+          "bands": 3,
+          "thresholds": [0.33, 0.66],
+          "ladder": [0.2, 0.5, 0.85],
+          "specular": { "enabled": true, "size": 1 }
+        },
+        "shadow": {
+          "shadowAngle": 45,
+          "shadowDensity": 50,
+          "shadowPenId": null,
+          "shadowLineType": "solid",
+          "shadowLayers": false,
+          "shadowLayerCount": 3,
+          "shadowFalloff": 0.5,
+          "shadowAngleFollowsLight": false
+        },
+        "ground": { "enabled": true },
+        "backdrop": { "enabled": false },
+        "camera": {
+          "projection": "orthographic",
+          "yaw": -32,
+          "pitch": 22,
+          "roll": 0,
+          "cameraDistance": 620,
+          "focalLength": 520,
+          "zoom": 1.05
+        },
+        "groups": [],
+        "styleTable": {
+          "scene": { "penId": null, "mapper": "hatch", "params": { "fillDensity": 52 } },
+          "byObject": {},
+          "byFace": {}
+        }
+      }
+    }
+  ]
+}
