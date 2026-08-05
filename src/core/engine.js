@@ -1966,27 +1966,35 @@
         const divisions = this.ensureLayerDivisions(layer);
         if (!divisions || !divisions.enabled) return;
         const source = this.getRenderablePaths(layer, { useOptimized: true });
-        // Layer curve context: curves-on layers smooth plain polylines at
-        // render time, so the divider must flatten them before measuring.
-        const divideOpts = { useCurves: Boolean(layer.params && layer.params.curves) };
-        const fragments = [];
-        // The fragment cap is a per-LAYER budget shared across the per-path
-        // divideChain calls — otherwise N paths could each spend the full cap.
-        const layerBudget = StrokeDivide.MAX_FRAGMENTS;
-        (source || []).forEach((path) => {
-          const remaining = layerBudget - fragments.length;
-          if (remaining <= 0) {
-            // Budget exhausted: pass the parent through undivided (the cap's
-            // drop-nothing semantics). divideChain treats maxFragments <= 0 as
-            // invalid and would fall back to its own full default.
-            fragments.push(path);
-            return;
-          }
-          StrokeDivide.divideChain([path], divisions, { ...divideOpts, maxFragments: remaining })
-            .forEach((frag) => fragments.push(frag));
-        });
-        layer.dividedPaths = fragments;
+        // Whole-list division (Inc-3): the layer's sub-paths divide as ONE
+        // continuous arc-length domain, so a stroke stored as several sub-paths
+        // dashes as one ruler (fixed phaseMode) instead of restarting each
+        // sub-path. The whole-list call also gives weighted-pen + jitter modes a
+        // stable per-path index for their deterministic seeded hashes, and the
+        // fragment cap is shared natively across the list (a per-LAYER budget).
+        const divideOpts = {
+          // Layer curve context: curves-on layers smooth plain polylines at
+          // render time, so the divider must flatten them before measuring.
+          useCurves: Boolean(layer.params && layer.params.curves),
+          // Deterministic seed for weighted-pen + jitter: fold the layer's own
+          // stable, serialized seed into the division seed so two layers with
+          // identical divisions still vary, yet every run is reproducible. No
+          // live RNG — both operands are captured in the document.
+          seed: this._divisionSeed(layer, divisions),
+          maxFragments: StrokeDivide.MAX_FRAGMENTS,
+        };
+        layer.dividedPaths = StrokeDivide.divideChain(source || [], divisions, divideOpts);
       });
+    }
+
+    // Deterministic division seed (Inc-3). Combines the layer's own serialized
+    // seed with the division-level seed via an integer mix, so weighted-pen +
+    // jitter vary per layer yet reproduce identically on every reload / export.
+    // Both operands live in the document — there is NO Math.random / Date.now.
+    _divisionSeed(layer, divisions) {
+      const layerSeed = Number.isFinite(layer?.params?.seed) ? (layer.params.seed | 0) : 0;
+      const divSeed = Number.isFinite(divisions?.seed) ? (divisions.seed | 0) : 0;
+      return (layerSeed ^ Math.imul(divSeed || 1, 0x9e3779b1)) | 0;
     }
 
     _computeMorphGroups() {
@@ -2624,6 +2632,12 @@
         const sanitized = StrokeDivide.sanitizeDivisions(layer.divisions);
         layer.divisions.enabled = sanitized.enabled;
         layer.divisions.phaseMm = sanitized.phaseMm;
+        // Deferred grammar (Phase 4A Inc-3) — accepted + defaulted in LOCKSTEP
+        // with StrokeDivide.sanitizeDivisions. Defaults are a no-op ('cycle',
+        // 'fixed', seed 0, per-class weight 1) so a legacy bag is unchanged.
+        layer.divisions.penMode = sanitized.penMode;
+        layer.divisions.phaseMode = sanitized.phaseMode;
+        layer.divisions.seed = sanitized.seed;
         layer.divisions.classes = sanitized.classes;
       }
       return layer.divisions;

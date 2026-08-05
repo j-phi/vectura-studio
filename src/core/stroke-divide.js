@@ -47,28 +47,71 @@
   const MAX_FRAGMENTS = 100000; // hardening: pathological cycles cannot hang
   const CIRCLE_SEGMENTS = 128;
 
-  /** Normalizer — analogue of STROKE_STYLE.sanitizeDash for division configs. */
+  // Deferred grammar (Phase 4A Inc-3) enumerations. Defaults are the FIRST
+  // entry and must be a no-op: an old bag with none of these fields sanitizes
+  // to 'cycle' + 'fixed' + seed 0 + per-class weight 1, byte-identical to Inc-1.
+  const PEN_MODES = ['cycle', 'weighted'];
+  const PHASE_MODES = ['fixed', 'perPath', 'jitter'];
+
+  /**
+   * Normalizer — analogue of STROKE_STYLE.sanitizeDash for division configs.
+   * Inc-3: also accepts penMode / phaseMode / seed (division level) and per-class
+   * weight, in lockstep with engine.ensureLayerDivisions. Every new field
+   * defaults to a NO-OP so a legacy bag divides exactly as it did in Inc-1.
+   */
   const sanitizeDivisions = (cfg) => {
     const src = cfg && typeof cfg === 'object' ? cfg : {};
     const phase = Number(src.phaseMm);
+    const seed = Number(src.seed);
     const classes = (Array.isArray(src.classes) ? src.classes : [])
       .map((cls) => {
         if (!cls || typeof cls !== 'object') return null;
         const lenMm = Number(cls.lenMm);
         if (!Number.isFinite(lenMm)) return null;
+        const weight = Number(cls.weight);
         return {
           lenMm: Math.max(0, lenMm),
           penId: typeof cls.penId === 'string' && cls.penId ? cls.penId : null,
           gap: Boolean(cls.gap),
+          // Weighted-pen selection weight (Inc-3). Non-finite / negative -> 1
+          // so an unset or garbage weight never zeroes a pen out of the pool.
+          weight: Number.isFinite(weight) && weight >= 0 ? weight : 1,
         };
       })
       .filter(Boolean);
     return {
       enabled: Boolean(src.enabled),
       phaseMm: Number.isFinite(phase) ? phase : 0,
+      penMode: PEN_MODES.includes(src.penMode) ? src.penMode : 'cycle',
+      phaseMode: PHASE_MODES.includes(src.phaseMode) ? src.phaseMode : 'fixed',
+      // Stable, serialized seed for deterministic weighted-pen + jitter hashing.
+      // Truncated to an integer (the hash mixes 32-bit ints). No live RNG.
+      seed: Number.isFinite(seed) ? Math.trunc(seed) : 0,
       classes,
     };
   };
+
+  /**
+   * Deterministic seeded hash -> unit float in [0, 1) (contract A-17).
+   * Mixes stable 32-bit integer inputs (seed, pathIndex, fragIndex) through an
+   * FNV-1a + finalizer so the SAME document always plots identically — there is
+   * NO Math.random / Date.now anywhere in the division grammar.
+   */
+  const hashUnit = (...ints) => {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < ints.length; i++) {
+      h ^= (ints[i] | 0);
+      h = Math.imul(h, 16777619) >>> 0;
+      h ^= h >>> 13;
+      h = Math.imul(h, 0x5bd1e995) >>> 0;
+      h ^= h >>> 15;
+    }
+    return (h >>> 0) / 4294967296;
+  };
+
+  // Distinct salt so a path's jitter offset never collides with its fragments'
+  // weighted-pen draws (which hash on fragIndex).
+  const JITTER_SALT = 0x9e3779b1 | 0;
 
   /** Total cycle length in mm. Accepts a divisions bag or a bare class array. */
   const cycleLengthMm = (cycle) => {
@@ -304,23 +347,65 @@
       ? opts.maxFragments
       : MAX_FRAGMENTS;
 
-    // Cursor into the cycle: class index + remaining mm in that class.
-    // Phase (normalized into [0, cycleLen), negatives included) advances it.
-    let phase = divisions.phaseMm % cycleLen;
-    if (phase < 0) phase += cycleLen;
-    let idx = 0;
-    while (phase >= classes[idx].lenMm - EPS) {
-      phase -= classes[idx].lenMm;
-      idx = (idx + 1) % classes.length;
-      if (phase < EPS) break;
-    }
-    let rem = classes[idx].lenMm - Math.max(0, phase);
+    // Deferred grammar (Inc-3). Seed precedence: an explicit opts.seed (the
+    // engine folds the layer seed in) wins, else the division's own seed. Both
+    // are stable + serialized, so the hash is fully deterministic.
+    const seed = Number.isFinite(opts.seed) ? Math.trunc(opts.seed)
+      : (Number.isFinite(divisions.seed) ? divisions.seed : 0);
+    const phaseMode = divisions.phaseMode || 'fixed';
+    const weighted = divisions.penMode === 'weighted';
+
+    // Weighted-pen pool: the non-gap classes' pens with their weights. A
+    // fragment in weighted mode draws its pen from this pool by a deterministic
+    // seeded hash — heavier weight -> more fragments over a long stroke.
+    const pool = weighted
+      ? classes.filter((c) => !c.gap).map((c) => ({ penId: c.penId, weight: c.weight >= 0 ? c.weight : 0 }))
+      : [];
+    const poolTotal = pool.reduce((s, c) => s + (c.weight > 0 ? c.weight : 0), 0);
+    const weightedActive = weighted && pool.length > 0 && poolTotal > EPS;
+    const pickPen = (u) => {
+      let acc = 0;
+      const r = u * poolTotal;
+      for (let i = 0; i < pool.length; i++) {
+        acc += pool[i].weight > 0 ? pool[i].weight : 0;
+        if (r < acc - EPS) return pool[i].penId;
+      }
+      return pool[pool.length - 1].penId;
+    };
+
+    // Cursor into the cycle: class index + remaining mm in that class. Phase
+    // (normalized into [0, cycleLen), negatives included) advances it.
+    const computeCursor = (phaseMm) => {
+      let phase = phaseMm % cycleLen;
+      if (phase < 0) phase += cycleLen;
+      let ci = 0;
+      while (phase >= classes[ci].lenMm - EPS) {
+        phase -= classes[ci].lenMm;
+        ci = (ci + 1) % classes.length;
+        if (phase < EPS) break;
+      }
+      return { idx: ci, rem: classes[ci].lenMm - Math.max(0, phase) };
+    };
+
+    // Fixed mode carries this cursor continuously across every sub-path (one
+    // arc-length ruler over the whole chain). perPath / jitter reset it at the
+    // start of each path (see the per-path reset below).
+    let { idx, rem } = computeCursor(divisions.phaseMm);
 
     const out = [];
     let cuts = 0;
     const capped = () => cuts >= maxFragments;
 
-    list.forEach((path) => {
+    list.forEach((path, pathIndex) => {
+      // phaseMode (Inc-3). fixed carries the cursor across the seam; perPath
+      // restarts the ruler at the base phase every path; jitter adds a
+      // deterministic per-path offset (seeded hash, NOT live RNG).
+      if (phaseMode === 'perPath') {
+        ({ idx, rem } = computeCursor(divisions.phaseMm));
+      } else if (phaseMode === 'jitter') {
+        const off = hashUnit(seed, pathIndex, JITTER_SALT) * cycleLen;
+        ({ idx, rem } = computeCursor(divisions.phaseMm + off));
+      }
       const { pts, flattened } = flattenForMeasure(path, opts);
       if (!Array.isArray(pts) || pts.length < 2) {
         // Degenerate (or unflattenable) source: pass through, zero arc length.
@@ -398,6 +483,18 @@
       // fragments carry meta.parentGeom (the dedup claim). Every fragment gets
       // a stable meta.fragIndex so overlapping / self-retracing siblings (an
       // out-and-back parent) never hash equal and drop each other.
+      // Weighted-pen assignment (Inc-3) — deterministic per-fragment override
+      // of the class-cycle pen, hashed on (seed, pathIndex, fragIndex). Applied
+      // BEFORE the single-pen / claiming test so a weighted (multi-pen) parent
+      // is correctly recognised as non-claiming and never suppresses a
+      // coincident solid (Inc-0 gap-aware dedup invariant).
+      if (weightedActive) {
+        parentFrags.forEach((f, i) => {
+          const penId = pickPen(hashUnit(seed, pathIndex, i));
+          if (penId) f.meta.penId = penId;
+          else delete f.meta.penId; // null pool entry -> inherit the layer pen
+        });
+      }
       const gapless = coveredLen >= parentLen - EPS;
       const singlePen = new Set(parentFrags.map((f) => f.meta.penId)).size <= 1;
       const claiming = gapless && singlePen;

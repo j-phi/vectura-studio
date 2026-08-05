@@ -13262,6 +13262,14 @@ body.mobile-layout .hud-bar {
 }
 .fcs-divisions-add:disabled { opacity: 0.4; cursor: default; }
 .fcs-divisions-hint { font-size: 11px; color: var(--ui-muted, #9aa0a6); margin: 2px 0; }
+/* Deferred grammar (Inc-3): pen/phase mode selects, seed, per-class weight. */
+.fcs-divisions-modes-row { flex-wrap: wrap; }
+.fcs-divisions-select { flex: 1 1 90px; min-width: 80px; }
+.fcs-divisions-select .ctrl-sel-wrap,
+.fcs-divisions-select .ctrl-sel { width: 100%; }
+.fcs-divisions-seed-row .fcs-divisions-num { width: 72px; }
+.fcs-divisions-weight { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--ui-muted, #9aa0a6); }
+.fcs-divisions-weight .fcs-divisions-num { width: 42px; }
 .ctxbar-divisions-host {
   margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ui-border, #34363b);
 }

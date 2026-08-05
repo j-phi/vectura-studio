@@ -79,6 +79,26 @@
     return node;
   };
 
+  // Small select helper (Inc-3) — prefers the shared UI.Select, falls back to a
+  // native <select> on harnesses without the component. The data-attr lands on
+  // whichever element the value lives on so it stays queryable either way.
+  const makeSelect = (options, value, enabled, onChange, attrs = {}) => {
+    const host = el('div', { class: 'fcs-divisions-select' });
+    if (typeof UI.Select === 'function') {
+      UI.Select(host, { options, value, disabled: !enabled, ariaLabel: attrs['aria-label'], onChange });
+      Object.entries(attrs).forEach(([k, v]) => { if (k !== 'aria-label') host.setAttribute(k, v); });
+      return host;
+    }
+    const sel = el('select', { class: 'ctrl-sel' });
+    Object.entries(attrs).forEach(([k, v]) => sel.setAttribute(k, v));
+    options.forEach((o) => sel.appendChild(el('option', { value: o.value, text: o.label })));
+    sel.value = value;
+    sel.disabled = !enabled;
+    sel.addEventListener('change', () => onChange(sel.value));
+    host.appendChild(sel);
+    return host;
+  };
+
   /**
    * Section renderer. Rebuilds `ctx.container` from the LIVE layer.divisions on
    * every structural change (enable / add / remove / reorder); leaf edits
@@ -163,6 +183,50 @@
       phaseInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { commitPhase(); phaseInput.blur(); } });
       phaseRow.appendChild(phaseInput);
       body.appendChild(phaseRow);
+
+      // Grammar modes (Inc-3): pen assignment (Cycle / Weighted) + phase
+      // behavior (Fixed / Per-path / Jitter). Both are structural — a change
+      // shows/hides the per-class weight widgets + the seed row, so they
+      // rebuild the section via render().
+      const modesRow = el('div', { class: 'fcs-divisions-row fcs-divisions-modes-row' });
+      modesRow.appendChild(el('label', { class: 'fcs-divisions-label', text: 'Pens' }));
+      modesRow.appendChild(makeSelect(
+        [{ value: 'cycle', label: 'Cycle' }, { value: 'weighted', label: 'Weighted' }],
+        d.penMode || 'cycle', enabled,
+        (v) => { snapshot(); divs().penMode = v; recompute(); render(); },
+        { 'data-divisions-penmode': '', 'aria-label': 'Pen assignment mode' },
+      ));
+      modesRow.appendChild(el('label', { class: 'fcs-divisions-label', text: 'Phase mode' }));
+      modesRow.appendChild(makeSelect(
+        [{ value: 'fixed', label: 'Fixed' }, { value: 'perPath', label: 'Per-path' }, { value: 'jitter', label: 'Jitter' }],
+        d.phaseMode || 'fixed', enabled,
+        (v) => { snapshot(); divs().phaseMode = v; recompute(); render(); },
+        { 'data-divisions-phasemode': '', 'aria-label': 'Phase mode' },
+      ));
+      body.appendChild(modesRow);
+
+      // Seed (Inc-3) — only relevant to the deterministic modes (weighted pens
+      // and jitter phase). Changing it deterministically re-shuffles.
+      if (d.penMode === 'weighted' || d.phaseMode === 'jitter') {
+        const seedRow = el('div', { class: 'fcs-divisions-row fcs-divisions-seed-row' });
+        seedRow.appendChild(el('label', { class: 'fcs-divisions-label', for: 'fcs-divisions-seed', text: 'Seed' }));
+        const seedInput = el('input', {
+          type: 'number', id: 'fcs-divisions-seed', class: 'fcs-divisions-num',
+          'data-divisions-seed': '', step: '1', inputmode: 'numeric', 'aria-label': 'Division seed',
+        });
+        seedInput.value = String(Math.trunc(Number(d.seed) || 0));
+        seedInput.disabled = !enabled;
+        const commitSeed = () => {
+          const n = parseInt(`${seedInput.value}`.replace(/[^\d.\-]/g, ''), 10);
+          snapshot();
+          divs().seed = Number.isFinite(n) ? n : 0;
+          recompute();
+        };
+        seedInput.addEventListener('change', commitSeed);
+        seedInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { commitSeed(); seedInput.blur(); } });
+        seedRow.appendChild(seedInput);
+        body.appendChild(seedRow);
+      }
 
       // Class list.
       const list = el('div', { class: 'fcs-divisions-classes', 'data-divisions-classes': '' });
@@ -281,6 +345,33 @@
       gapLabel.appendChild(gapInput);
       gapLabel.appendChild(el('span', { text: 'Gap' }));
       row.appendChild(gapLabel);
+
+      // Weight (Inc-3) — only shown in weighted pen mode. It is the class pen's
+      // share of the deterministic weighted draw; a gap class carries no ink so
+      // its weight is inert (disabled). Leaf edit: recompute in place.
+      if (d.penMode === 'weighted') {
+        const wLabel = el('label', { class: 'fcs-divisions-weight' });
+        wLabel.appendChild(el('span', { text: 'w' }));
+        const wInput = el('input', {
+          type: 'number', class: 'fcs-divisions-num', 'data-division-weight': '',
+          inputmode: 'decimal', step: 'any', min: '0', 'aria-label': `Class ${i + 1} weight`,
+        });
+        wInput.value = String(Number.isFinite(cls.weight) ? cls.weight : 1);
+        wInput.disabled = !enabled || Boolean(cls.gap);
+        const commitWeight = () => {
+          const target = divs().classes[i];
+          if (!target) return;
+          const n = parseFloat(`${wInput.value}`.replace(/[^\d.\-]/g, ''));
+          if (!Number.isFinite(n) || n < 0) { wInput.value = String(Number.isFinite(target.weight) ? target.weight : 1); return; }
+          snapshot();
+          target.weight = n;
+          recompute();
+        };
+        wInput.addEventListener('change', commitWeight);
+        wInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { commitWeight(); wInput.blur(); } });
+        wLabel.appendChild(wInput);
+        row.appendChild(wLabel);
+      }
 
       // Reorder + remove actions.
       const acts = el('div', { class: 'fcs-divisions-acts' });

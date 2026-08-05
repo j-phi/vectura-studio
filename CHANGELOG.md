@@ -7,6 +7,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **Stroke Divisions — pen grammar.** The Divisions editor gains a **pen mode** (Cycle /
+  Weighted) and a **phase mode** (Fixed / Per-path / Jitter). In Weighted mode each segment's
+  pen is chosen by weight, so one stroke scatters across pens by a set ratio; Per-path and
+  Jitter vary the dash phase per path (Jitter by a seeded offset). Everything is fully
+  deterministic — the same document always plots identically, and a seed makes the weighted /
+  jitter pattern reproducible. In Fixed mode a stroke split across sub-paths now dashes as one
+  continuous ruler. Existing divisions are unchanged (Cycle + Fixed defaults).
 - **Stroke Divisions editor.** The Stroke Options popover (⋯ → Open Stroke Options) gains a
   **Divisions** section: enable division of a layer's strokes, set the phase, and edit a list
   of classes — each with a run length, a per-class pen (or the layer's own pen), and a gap

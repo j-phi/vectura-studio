@@ -143,4 +143,56 @@ describe('Phase 4A Inc-1 — Divisions editor section', () => {
     app.engine.computeAllDisplayGeometry();
     expect(Array.isArray(layer.dividedPaths)).toBe(true);
   });
+
+  // ── Phase 4A Inc-3 — deferred grammar controls ────────────────────────────
+
+  test('penMode Weighted reveals per-class weight widgets + a seed, and spreads pens', () => {
+    const { app, layer, host } = setup();
+    host.querySelector('[data-divisions-enable]').checked = true;
+    fire(host.querySelector('[data-divisions-enable]'), 'change');
+
+    // Cycle mode: no weight widgets, no seed.
+    expect(host.querySelector('[data-division-weight]')).toBeFalsy();
+    expect(host.querySelector('[data-divisions-seed]')).toBeFalsy();
+
+    // Switch to Weighted via the penMode select.
+    const penMode = host.querySelector('[data-divisions-penmode]');
+    const penModeSel = penMode.matches('select') ? penMode : penMode.querySelector('select');
+    penModeSel.value = 'weighted';
+    fire(penModeSel, 'change');
+    expect(layer.divisions.penMode).toBe('weighted');
+    // Weight widgets + a seed row now exist.
+    expect(host.querySelectorAll('[data-division-weight]').length).toBeGreaterThan(0);
+    expect(host.querySelector('[data-divisions-seed]')).toBeTruthy();
+
+    // Make both classes draw with distinct pens so weighting is observable.
+    layer.divisions.classes = [
+      { lenMm: 10, penId: 'p1', gap: false, weight: 1 },
+      { lenMm: 10, penId: 'p2', gap: false, weight: 3 },
+    ];
+    layer.divisions.enabled = true;
+    layer.divisions.penMode = 'weighted';
+    app.engine.computeAllDisplayGeometry();
+    const pen1 = layer.dividedPaths.filter((f) => f.meta.penId === 'p1').length;
+    const pen2 = layer.dividedPaths.filter((f) => f.meta.penId === 'p2').length;
+    expect(pen1).toBeGreaterThan(0);
+    expect(pen2).toBeGreaterThan(pen1); // heavier weight wins
+  });
+
+  test('phaseMode Per-path is written and recut through the engine', () => {
+    const { layer, host } = setup();
+    host.querySelector('[data-divisions-enable]').checked = true;
+    fire(host.querySelector('[data-divisions-enable]'), 'change');
+    const phaseMode = host.querySelector('[data-divisions-phasemode]');
+    const phaseModeSel = phaseMode.matches('select') ? phaseMode : phaseMode.querySelector('select');
+    phaseModeSel.value = 'perPath';
+    fire(phaseModeSel, 'change');
+    expect(layer.divisions.phaseMode).toBe('perPath');
+    expect(Array.isArray(layer.dividedPaths)).toBe(true);
+    // Jitter also surfaces the seed row.
+    phaseModeSel.value = 'jitter';
+    fire(phaseModeSel, 'change');
+    expect(layer.divisions.phaseMode).toBe('jitter');
+    expect(host.querySelector('[data-divisions-seed]')).toBeTruthy();
+  });
 });

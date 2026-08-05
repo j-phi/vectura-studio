@@ -2471,6 +2471,11 @@
     divisionDefaults: {
       enabled: false,
       phaseMm: 0,
+      // Deferred grammar (Phase 4A Inc-3). Defaults are no-ops: pens follow the
+      // strict class cycle, phase is one fixed global offset, seed 0.
+      penMode: 'cycle', // 'cycle' | 'weighted'
+      phaseMode: 'fixed', // 'fixed' | 'perPath' | 'jitter'
+      seed: 0,
       classes: [
         { lenMm: 10, penId: null },
         { lenMm: 2, gap: true },

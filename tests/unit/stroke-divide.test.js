@@ -49,9 +49,12 @@ const cycleAB = (aLen, gapLen, penId = 'pen-a') => ({
 
 describe('StrokeDivide.sanitizeDivisions', () => {
   test('null/garbage input normalizes to a disabled empty config', () => {
-    expect(StrokeDivide.sanitizeDivisions(null)).toEqual({ enabled: false, phaseMm: 0, classes: [] });
-    expect(StrokeDivide.sanitizeDivisions('nope')).toEqual({ enabled: false, phaseMm: 0, classes: [] });
-    expect(StrokeDivide.sanitizeDivisions({})).toEqual({ enabled: false, phaseMm: 0, classes: [] });
+    // Inc-3: the normalized bag also carries the deferred-grammar defaults
+    // (penMode 'cycle', phaseMode 'fixed', seed 0) — all no-ops.
+    const empty = { enabled: false, phaseMm: 0, penMode: 'cycle', phaseMode: 'fixed', seed: 0, classes: [] };
+    expect(StrokeDivide.sanitizeDivisions(null)).toEqual(empty);
+    expect(StrokeDivide.sanitizeDivisions('nope')).toEqual(empty);
+    expect(StrokeDivide.sanitizeDivisions({})).toEqual(empty);
   });
 
   test('clamps negative lenMm to 0 and drops malformed classes', () => {
@@ -70,8 +73,8 @@ describe('StrokeDivide.sanitizeDivisions', () => {
     expect(out.enabled).toBe(true);
     expect(out.phaseMm).toBe(2);
     expect(out.classes).toEqual([
-      { lenMm: 0, penId: 'a', gap: false },
-      { lenMm: 4, penId: null, gap: true },
+      { lenMm: 0, penId: 'a', gap: false, weight: 1 },
+      { lenMm: 4, penId: null, gap: true, weight: 1 },
     ]);
   });
 

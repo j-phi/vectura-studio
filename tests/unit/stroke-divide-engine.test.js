@@ -152,8 +152,8 @@ describe('engine stroke-division stage', () => {
     expect(restored.divisions.enabled).toBe(true);
     expect(restored.divisions.phaseMm).toBe(3.5);
     expect(restored.divisions.classes).toEqual([
-      { lenMm: 12, penId: 'pen-x', gap: false },
-      { lenMm: 4, penId: null, gap: true },
+      { lenMm: 12, penId: 'pen-x', gap: false, weight: 1 },
+      { lenMm: 4, penId: null, gap: true, weight: 1 },
     ]);
     // Imported divisions must be a fresh clone, not shared with the payload.
     state.layers.find((entry) => entry.id === id).divisions.classes[0].lenMm = 99;
@@ -182,7 +182,7 @@ describe('engine stroke-division stage', () => {
     expect(out).toBe(layer.divisions);
     expect(out.enabled).toBe(true);
     expect(out.phaseMm).toBe(0);
-    expect(out.classes).toEqual([{ lenMm: 0, penId: null, gap: false }]);
+    expect(out.classes).toEqual([{ lenMm: 0, penId: null, gap: false, weight: 1 }]);
   });
 
   test('direct optimizeLayers calls recut dividedPaths (no stale fragments)', () => {
@@ -369,6 +369,87 @@ describe('engine stroke-division stage', () => {
     expect(divided.lines).toBeGreaterThan(1); // fragments
     // Gap spans mean the divided plot distance is shorter than the source.
     expect(parseInt(preDivision.distance, 10)).toBeGreaterThanOrEqual(parseInt(divided.distance, 10));
+  });
+
+  // ── Phase 4A Inc-3 — deferred grammar wired through the engine ────────────
+
+  const makeMultiPathEngine = (segs) => {
+    const { VectorEngine } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    const id = engine.addShapeLayer('Multi', segs);
+    engine.computeAllDisplayGeometry();
+    return { engine, layer: engine.getLayerById(id) };
+  };
+
+  test('Inc-3 phaseMode fixed vs perPath: fixed dashes as ONE continuous ruler across sub-paths', () => {
+    // Two collinear 10mm sub-paths, draw15 / gap5. fixed: the ruler carries
+    // across the seam -> 15mm drawn. perPath: each sub-path restarts -> 20mm.
+    const segs = [[{ x: 0, y: 0 }, { x: 10, y: 0 }], [{ x: 10, y: 0 }, { x: 20, y: 0 }]];
+    const { engine, layer } = makeMultiPathEngine(segs);
+    layer.divisions = {
+      enabled: true, phaseMm: 0, phaseMode: 'fixed',
+      classes: [{ lenMm: 15, penId: null }, { lenMm: 5, gap: true }],
+    };
+    engine.computeAllDisplayGeometry();
+    const fixedLen = totalLen(layer.dividedPaths);
+    expect(fixedLen).toBeCloseTo(15, 4);
+
+    layer.divisions.phaseMode = 'perPath';
+    engine.computeAllDisplayGeometry();
+    const perPathLen = totalLen(layer.dividedPaths);
+    expect(perPathLen).toBeCloseTo(20, 4);
+    expect(perPathLen).not.toBeCloseTo(fixedLen, 2);
+  });
+
+  test('Inc-3 weighted penMode spreads fragments across pens deterministically', () => {
+    const { engine, layer } = makeMultiPathEngine([[{ x: 0, y: 0 }, { x: 1000, y: 0 }]]);
+    layer.divisions = {
+      enabled: true, phaseMm: 0, penMode: 'weighted', seed: 0,
+      classes: [
+        { lenMm: 10, penId: 'pen-a', weight: 1 },
+        { lenMm: 10, penId: 'pen-b', weight: 3 },
+      ],
+    };
+    engine.computeAllDisplayGeometry();
+    const seq = () => layer.dividedPaths.map((f) => f.meta.penId);
+    const first = seq();
+    const counts = first.reduce((a, p) => { a[p] = (a[p] || 0) + 1; return a; }, {});
+    expect(counts['pen-a']).toBeGreaterThan(0);
+    expect(counts['pen-b']).toBeGreaterThan(counts['pen-a']); // heavier weight wins
+    // Deterministic: recompute yields the identical pen sequence.
+    engine.computeAllDisplayGeometry();
+    expect(seq()).toEqual(first);
+  });
+
+  test('Inc-3 weighted (multi-pen) does NOT claim a coincident solid — Inc-0 dedup holds', () => {
+    const { SETTINGS, VectorEngine } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    const src = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
+    const idA = engine.addShapeLayer('Weighted', [src.map((p) => ({ ...p }))]);
+    const idB = engine.addShapeLayer('Solid', [src.map((p) => ({ ...p }))]);
+    const layerA = engine.getLayerById(idA);
+    const layerB = engine.getLayerById(idB);
+    const savedOpt = SETTINGS.plotterOptimize;
+    try {
+      SETTINGS.plotterOptimize = 0.5;
+      // Gapless weighted division across two pens -> inherently multi-pen, so it
+      // must NOT claim the parent; the coincident solid legitimately survives.
+      layerA.divisions = {
+        enabled: true, phaseMm: 0, penMode: 'weighted', seed: 0,
+        classes: [{ lenMm: 10, penId: 'pen-a', weight: 1 }, { lenMm: 10, penId: 'pen-b', weight: 1 }],
+      };
+      engine.computeAllDisplayGeometry();
+      const distinct = new Set(layerA.dividedPaths.map((f) => f.meta.penId));
+      expect(distinct.size).toBeGreaterThan(1); // genuinely multi-pen
+      layerA.dividedPaths.forEach((f) => expect(f.meta.parentGeom).toBeUndefined());
+      // The solid is not suppressed: fragments + 1 solid, in both stack orders.
+      const linesAB = engine.computeStats([layerA, layerB], {}).lines;
+      const linesBA = engine.computeStats([layerB, layerA], {}).lines;
+      expect(linesAB).toBe(linesBA);
+      expect(linesAB).toBe(layerA.dividedPaths.length + 1);
+    } finally {
+      SETTINGS.plotterOptimize = savedOpt;
+    }
   });
 
   test('a missing StrokeDivide module degrades to a no-op (no crash)', () => {
