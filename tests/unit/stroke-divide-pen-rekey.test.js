@@ -4,10 +4,14 @@
  * Effective pen = path.meta.penId || layer.penId || 'default'. Three engine
  * consumers must agree on it (division fragments carry per-path penIds):
  *   1. applyLineSort grouping:'pen' buckets each PATH by its effective pen.
- *   2. Plotter-optimize dedupe keys by (effective pen, meta.parentKey||pathKey)
- *      so divided fragments dedupe at PARENT granularity across layers while
- *      sibling fragments of one parent within a layer are all kept.
+ *   2. Plotter-optimize dedupe keys by (effective pen, parentKey(meta.parentGeom)
+ *      || pathKey) so divided fragments dedupe at PARENT granularity across
+ *      layers while sibling fragments of one parent within a layer are all kept.
  *   3. computeStats applies the same re-key so stats agree with export.
+ *
+ * Fix-A (Phase 4A Inc-0): fragments carry the parent's RAW geometry in
+ * meta.parentGeom; consumers key it at their own tolerance via
+ * StrokeDivide.parentKeyFromGeom, in the same namespace as pathKey.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -91,18 +95,22 @@ describe('effective-pen re-key (line sort, plotter dedupe, stats)', () => {
     expect(orders).toEqual([0, 1]);
   });
 
-  test('plotter dedupe: same parentKey dedupes across layers, siblings kept within a layer', () => {
+  test('plotter dedupe: same parent geometry dedupes across layers, siblings kept within a layer', () => {
     const { engine, layers } = makeEngineWithLayers(2);
     const [layerA, layerB] = layers;
     layerA.penId = null;
     layerB.penId = null;
+    // Shared parent geometry K (keyed at the plotter tolerance downstream).
+    // Claiming fragments carry parentGeom + a per-parent fragIndex (as
+    // divideChain stamps them for a gapless single-pen retrace).
+    const PARENT = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
     // Two sibling fragments of parent K in layer A (different geometry).
     layerA.paths = [
-      mkPath([[0, 0], [4, 0]], { parentKey: 'K' }),
-      mkPath([[6, 0], [10, 0]], { parentKey: 'K' }),
+      mkPath([[0, 0], [4, 0]], { parentGeom: PARENT, fragIndex: 0 }),
+      mkPath([[6, 0], [10, 0]], { parentGeom: PARENT, fragIndex: 1 }),
     ];
     // Layer B re-presents parent K (duplicate layer divided the same parent).
-    layerB.paths = [mkPath([[0, 1], [4, 1]], { parentKey: 'K' })];
+    layerB.paths = [mkPath([[0, 1], [4, 1]], { parentGeom: PARENT, fragIndex: 0 })];
     layerA.effectivePaths = [];
     layerB.effectivePaths = [];
 
@@ -121,9 +129,56 @@ describe('effective-pen re-key (line sort, plotter dedupe, stats)', () => {
     const [layerA, layerB] = layers;
     layerA.penId = null;
     layerB.penId = null;
-    layerA.paths = [mkPath([[0, 0], [4, 0]], { parentKey: 'K' })];
-    // Same parent key but a different effective pen — must be kept.
-    layerB.paths = [mkPath([[0, 1], [4, 1]], { parentKey: 'K', penId: 'pen-z' })];
+    const PARENT = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
+    layerA.paths = [mkPath([[0, 0], [4, 0]], { parentGeom: PARENT, fragIndex: 0 })];
+    // Same parent geometry but a different effective pen — must be kept.
+    layerB.paths = [mkPath([[0, 1], [4, 1]], { parentGeom: PARENT, fragIndex: 0, penId: 'pen-z' })];
+    layerA.effectivePaths = [];
+    layerB.effectivePaths = [];
+
+    SETTINGS.plotterOptimize = 0.1;
+    engine.optimizeLayers([layerA, layerB], {
+      includePlotterOptimize: true,
+      config: lineSortConfig('layer'),
+    });
+
+    expect(layerA.optimizedPaths).toHaveLength(1);
+    expect(layerB.optimizedPaths).toHaveLength(1);
+  });
+
+  test('plotter dedupe: out-and-back sibling fragments (identical geometry, distinct index) BOTH survive', () => {
+    const { engine, layers } = makeEngineWithLayers(1);
+    const [layer] = layers;
+    layer.penId = null;
+    // A self-retracing parent divides into two fragments with IDENTICAL
+    // (reversed) geometry. Direction-agnostic pathKey alone would collapse them;
+    // the per-parent fragIndex keeps both alive.
+    const PARENT = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 0 }];
+    layer.paths = [
+      mkPath([[0, 0], [10, 0]], { parentGeom: PARENT, fragIndex: 0 }),
+      mkPath([[10, 0], [0, 0]], { parentGeom: PARENT, fragIndex: 1 }),
+    ];
+    layer.effectivePaths = [];
+
+    SETTINGS.plotterOptimize = 0.1;
+    engine.optimizeLayers([layer], {
+      includePlotterOptimize: true,
+      config: lineSortConfig('layer'),
+    });
+
+    expect(layer.optimizedPaths).toHaveLength(2);
+  });
+
+  test('plotter dedupe: a GAPPED (non-claiming) fragment does NOT suppress a coincident solid', () => {
+    const { engine, layers } = makeEngineWithLayers(2);
+    const [layerA, layerB] = layers;
+    layerA.penId = null;
+    layerB.penId = null;
+    // Gapped fragment: carries fragIndex but NO parentGeom (it covers only part
+    // of the parent), so it keys on its own geometry and must not claim/drop
+    // the coincident solid that inks the gaps.
+    layerA.paths = [mkPath([[0, 0], [5, 0]], { fragIndex: 0 })];
+    layerB.paths = [mkPath([[0, 0], [20, 0]])]; // solid over the whole parent
     layerA.effectivePaths = [];
     layerB.effectivePaths = [];
 
@@ -176,11 +231,12 @@ describe('effective-pen re-key (line sort, plotter dedupe, stats)', () => {
     const [layerA, layerB] = layers;
     layerA.penId = null;
     layerB.penId = null;
+    const PARENT = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
     layerA.paths = [
-      mkPath([[0, 0], [4, 0]], { parentKey: 'K' }),
-      mkPath([[6, 0], [10, 0]], { parentKey: 'K' }),
+      mkPath([[0, 0], [4, 0]], { parentGeom: PARENT, fragIndex: 0 }),
+      mkPath([[6, 0], [10, 0]], { parentGeom: PARENT, fragIndex: 1 }),
     ];
-    layerB.paths = [mkPath([[0, 1], [4, 1]], { parentKey: 'K' })];
+    layerB.paths = [mkPath([[0, 1], [4, 1]], { parentGeom: PARENT, fragIndex: 0 })];
     layerA.effectivePaths = [];
     layerB.effectivePaths = [];
 

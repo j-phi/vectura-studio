@@ -2,7 +2,7 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
 // Effective-pen export grouping: SVG export must bucket each PATH by its
 // effective pen (path.meta.penId || layer.penId), not by the layer pen alone.
-// Dedupe keys on meta.parentKey when present so divided stroke fragments of
+// Dedupe keys on meta.parentGeom when present so divided stroke fragments of
 // the same parent collapse, while identical geometry on different pens
 // survives once per pen group.
 describe('SVG export effective per-path pen grouping', () => {
@@ -180,43 +180,45 @@ describe('SVG export effective per-path pen grouping', () => {
     expect(groups[1].xs).toEqual([30]);
   });
 
-  test('same meta.parentKey keeps all sibling fragments of the owning layer', async () => {
+  test('same parent geometry keeps all sibling fragments of the owning layer', async () => {
     const SETTINGS = applyBaseSettings();
     SETTINGS.plotterOptimize = 0.1;
+    const PARENT = [{ x: 20, y: 20 }, { x: 50, y: 40 }];
     const layer = makeLayer({
       paths: [
-        makePath([[20, 20], [30, 20]], { parentKey: 'parent-1' }),
-        makePath([[40, 40], [50, 40]], { parentKey: 'parent-1' }),
+        makePath([[20, 20], [30, 20]], { parentGeom: PARENT, fragIndex: 0 }),
+        makePath([[40, 40], [50, 40]], { parentGeom: PARENT, fragIndex: 1 }),
       ],
     });
 
     // Owner-map semantics (mirrors the engine): fragments of one divided
-    // stroke share a parentKey and must ALL survive within their layer.
+    // stroke share a parent geometry and must ALL survive within their layer.
     const groups = penGroups(await exportScene([layer]));
     expect(groups.map((g) => g.id)).toEqual(['pen_PenOne']);
     expect(groups[0].xs).toEqual([20, 40]);
   });
 
-  test('another layer re-presenting the same parentKey on the same pen is dropped', async () => {
+  test('another layer re-presenting the same parent geometry on the same pen is dropped', async () => {
     const SETTINGS = applyBaseSettings();
     SETTINGS.plotterOptimize = 0.1;
+    const PARENT = [{ x: 20, y: 20 }, { x: 50, y: 40 }];
     const layerA = makeLayer({
       id: 'layer-a',
       paths: [
-        makePath([[20, 20], [30, 20]], { parentKey: 'parent-1' }),
-        makePath([[40, 40], [50, 40]], { parentKey: 'parent-1' }),
+        makePath([[20, 20], [30, 20]], { parentGeom: PARENT, fragIndex: 0 }),
+        makePath([[40, 40], [50, 40]], { parentGeom: PARENT, fragIndex: 1 }),
       ],
     });
     const layerB = makeLayer({
       id: 'layer-b',
       paths: [
-        makePath([[60, 60], [70, 60]], { parentKey: 'parent-1' }),
+        makePath([[60, 60], [70, 60]], { parentGeom: PARENT, fragIndex: 0 }),
       ],
     });
 
     const groups = penGroups(await exportScene([layerA, layerB]));
     expect(groups.map((g) => g.id)).toEqual(['pen_PenOne']);
-    // layer-a owns parent-1; layer-b's duplicate parent drops entirely.
+    // layer-a owns the parent geometry; layer-b's duplicate parent drops entirely.
     expect(groups[0].xs).toEqual([20, 40]);
   });
 

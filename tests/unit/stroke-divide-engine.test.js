@@ -80,9 +80,12 @@ describe('engine stroke-division stage', () => {
     expect(out).toBe(layer.dividedPaths);
     // Draw windows [0,.3L] and [.5L,.8L] — two fragments totaling 0.6L.
     expect(out).toHaveLength(2);
-    out.forEach((f) => {
+    out.forEach((f, i) => {
       expect(f.meta.penId).toBe('pen-frag');
-      expect(typeof f.meta.parentKey).toBe('string');
+      // GAPPED cycle -> fragments cover only part of the parent, so they do NOT
+      // claim it (no parentGeom) but still carry a stable per-parent index.
+      expect(f.meta.parentGeom).toBeUndefined();
+      expect(f.meta.fragIndex).toBe(i);
     });
     expect(totalLen(out)).toBeCloseTo(baseLen * 0.6, 4);
   });
@@ -234,7 +237,62 @@ describe('engine stroke-division stage', () => {
     }
   });
 
-  test('a divided layer and an identical undivided layer both plot (explicit overplot)', () => {
+  test('Fix-A: a GAPLESS divided layer + an identical undivided layer on the same pen ink ONCE (order-independent)', () => {
+    const { SETTINGS, VectorEngine } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    const src = [{ x: 20, y: 20 }, { x: 70, y: 20 }]; // 50mm, drawn whole -> 5 frags
+    const idA = engine.addShapeLayer('Divided', [src.map((p) => ({ ...p }))]);
+    const idB = engine.addShapeLayer('Plain', [src.map((p) => ({ ...p }))]);
+    const layerA = engine.getLayerById(idA);
+    const layerB = engine.getLayerById(idB);
+    const savedOpt = SETTINGS.plotterOptimize;
+    try {
+      SETTINGS.plotterOptimize = 0.5; // > the divider's old fixed 0.001 quant
+      layerA.divisions = { enabled: true, phaseMm: 0, classes: [{ lenMm: 10, penId: null }] };
+      engine.computeAllDisplayGeometry();
+      // Gapless single-pen fragments claim the parent at the plotter tolerance,
+      // so the coincident undivided solid always drops (divided ink wins) — the
+      // shared 50mm geometry inks ONCE, never the old double-ink of 6, and the
+      // result is stack-order INDEPENDENT: 5 fragments survive in BOTH orders.
+      expect(engine.computeStats([layerA, layerB], {}).lines).toBe(5);
+      expect(engine.computeStats([layerB, layerA], {}).lines).toBe(5);
+    } finally {
+      SETTINGS.plotterOptimize = savedOpt;
+    }
+  });
+
+  test('Fix-A: a DASHED (gapped) divided layer + a coincident SOLID both ink so gaps are covered (order-independent)', () => {
+    const { SETTINGS, VectorEngine } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    const src = [{ x: 0, y: 0 }, { x: 20, y: 0 }]; // 20mm parent
+    const idA = engine.addShapeLayer('Dashed', [src.map((p) => ({ ...p }))]);
+    const idB = engine.addShapeLayer('Solid', [src.map((p) => ({ ...p }))]);
+    const layerA = engine.getLayerById(idA);
+    const layerB = engine.getLayerById(idB);
+    const savedOpt = SETTINGS.plotterOptimize;
+    try {
+      SETTINGS.plotterOptimize = 0.5;
+      // 5mm dash + 5mm gap over 20mm -> fragments [0,5] and [10,15] (cover 10mm).
+      layerA.divisions = {
+        enabled: true,
+        phaseMm: 0,
+        classes: [{ lenMm: 5, penId: null }, { lenMm: 5, gap: true }],
+      };
+      engine.computeAllDisplayGeometry();
+      expect(layerA.dividedPaths).toHaveLength(2);
+      // The gapped fragments cover only part of the parent, so they must NOT
+      // suppress the solid: 2 dash fragments + 1 solid = 3, in BOTH stack
+      // orders. The gap regions [5,10] and [15,20] are inked by the solid.
+      // (Before the gap-aware fix the fragments wrongly claimed the whole
+      //  parent and the solid was dropped -> 2, losing the gap ink.)
+      expect(engine.computeStats([layerA, layerB], {}).lines).toBe(3);
+      expect(engine.computeStats([layerB, layerA], {}).lines).toBe(3);
+    } finally {
+      SETTINGS.plotterOptimize = savedOpt;
+    }
+  });
+
+  test('Fix-A guard: an undivided duplicate on a DIFFERENT pen is NOT merged (pen separates ink)', () => {
     const { SETTINGS, VectorEngine } = runtime.window.Vectura;
     const engine = new VectorEngine();
     const src = [{ x: 20, y: 20 }, { x: 70, y: 20 }];
@@ -243,16 +301,24 @@ describe('engine stroke-division stage', () => {
     const layerA = engine.getLayerById(idA);
     const layerB = engine.getLayerById(idB);
     const savedOpt = SETTINGS.plotterOptimize;
+    const savedPens = SETTINGS.pens;
     try {
-      SETTINGS.plotterOptimize = 0.1;
+      SETTINGS.plotterOptimize = 0.5;
+      SETTINGS.pens = [
+        { id: 'pen-a', name: 'A', color: '#000', width: 0.3 },
+        { id: 'pen-b', name: 'B', color: '#111', width: 0.3 },
+      ];
+      layerA.penId = 'pen-a';
+      layerB.penId = 'pen-b';
       layerA.divisions = { enabled: true, phaseMm: 0, classes: [{ lenMm: 10, penId: null }] };
       engine.computeAllDisplayGeometry();
-      // 'pk:'-namespaced parentKeys never collide with plain pathKeys, so the
-      // undivided duplicate survives in BOTH layer orders (canvas reference).
+      // Different effective pens -> different dedupe buckets -> both ink.
+      // 5 fragments (pen-a) + 1 undivided path (pen-b) = 6.
       expect(engine.computeStats([layerA, layerB], {}).lines).toBe(6);
       expect(engine.computeStats([layerB, layerA], {}).lines).toBe(6);
     } finally {
       SETTINGS.plotterOptimize = savedOpt;
+      SETTINGS.pens = savedPens;
     }
   });
 

@@ -9,8 +9,10 @@
  *   divideChain(paths, cycle, opts)  -> Array<Path>  (one continuous domain)
  *
  * Gap classes emit nothing. Fragments carry meta = shallow-copied parent meta
- * minus anchors/forceCurves, plus meta.penId (class override only) and a
- * stable, quantized, direction-agnostic meta.parentKey.
+ * minus anchors/forceCurves, plus meta.penId (class override only) and
+ * meta.parentGeom — the parent's RAW geometry (point-copy, or {circle,...}),
+ * shared by reference across all fragments of one parent, keyed downstream via
+ * StrokeDivide.parentKeyFromGeom at each consumer's own tolerance (Fix-A).
  */
 const path = require('path');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
@@ -111,12 +113,13 @@ describe('StrokeDivide.divideStroke', () => {
       expect(f[0].x).toBeCloseTo(i * 15, 6);
       expect(f[f.length - 1].x).toBeCloseTo(i * 15 + 10, 6);
       expect(f.meta.penId).toBe('pen-a');
-      expect(typeof f.meta.parentKey).toBe('string');
-      expect(f.meta.parentKey.length).toBeGreaterThan(0);
+      // Every fragment carries a stable 0-based index within its parent.
+      expect(f.meta.fragIndex).toBe(i);
     });
     expect(totalLen(frags)).toBeCloseTo(70, 6);
-    // All fragments share the SAME parent key.
-    expect(new Set(frags.map((f) => f.meta.parentKey)).size).toBe(1);
+    // GAPPED cycle: fragments cover only part of the parent, so they must NOT
+    // claim it — no parentGeom is stamped (a coincident solid inks the gaps).
+    frags.forEach((f) => expect(f.meta.parentGeom).toBeUndefined());
   });
 
   test('a leading gap class shifts the first fragment inward', () => {
@@ -288,12 +291,60 @@ describe('StrokeDivide.divideStroke', () => {
     expect(a).toEqual(b);
   });
 
-  test('parentKey is direction-agnostic: a reversed parent keys identically', () => {
+  test('parentGeom keys direction-agnostically: a reversed parent keys identically', () => {
+    // Gapless single-pen cycle -> the fragments claim the parent (parentGeom).
+    const gapless = { enabled: true, phaseMm: 0, classes: [{ lenMm: 10, penId: 'a' }] };
     const fwd = line(0, 0, 50, 0);
     const rev = line(50, 0, 0, 0);
-    const a = StrokeDivide.divideStroke(fwd, cycleAB(10, 5));
-    const b = StrokeDivide.divideStroke(rev, cycleAB(10, 5));
-    expect(a[0].meta.parentKey).toBe(b[0].meta.parentKey);
+    const a = StrokeDivide.divideStroke(fwd, gapless);
+    const b = StrokeDivide.divideStroke(rev, gapless);
+    expect(Array.isArray(a[0].meta.parentGeom)).toBe(true);
+    const keyA = StrokeDivide.parentKeyFromGeom(a[0].meta.parentGeom);
+    const keyB = StrokeDivide.parentKeyFromGeom(b[0].meta.parentGeom);
+    expect(keyA).toBe(keyB);
+  });
+
+  test('gapless single-pen cycle stamps parentGeom (claiming) on every fragment', () => {
+    const gapless = { enabled: true, phaseMm: 0, classes: [{ lenMm: 10, penId: 'a' }] };
+    const frags = StrokeDivide.divideStroke(line(0, 0, 50, 0), gapless);
+    expect(frags).toHaveLength(5);
+    frags.forEach((f, i) => {
+      expect(f.meta.fragIndex).toBe(i);
+      expect(Array.isArray(f.meta.parentGeom)).toBe(true);
+    });
+    // One shared parent-geometry reference across all claiming siblings.
+    expect(new Set(frags.map((f) => f.meta.parentGeom)).size).toBe(1);
+  });
+
+  test('multi-pen gapless cycle does NOT claim (fragments split across pens)', () => {
+    const multiPen = {
+      enabled: true,
+      phaseMm: 0,
+      classes: [
+        { lenMm: 10, penId: 'a' },
+        { lenMm: 10, penId: 'b' },
+      ],
+    };
+    const frags = StrokeDivide.divideStroke(line(0, 0, 40, 0), multiPen);
+    // 4 fragments alternating pen a/b — gapless but multi-pen, so no claim.
+    expect(frags.length).toBeGreaterThan(1);
+    frags.forEach((f) => expect(f.meta.parentGeom).toBeUndefined());
+  });
+
+  test('out-and-back parent: both retracing siblings get distinct indices', () => {
+    const gapless = { enabled: true, phaseMm: 0, classes: [{ lenMm: 10, penId: 'a' }] };
+    // (0,0)->(10,0)->(0,0): two 10mm fragments with identical (reversed) geometry.
+    const frags = StrokeDivide.divideStroke([
+      { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 0 },
+    ], gapless);
+    expect(frags).toHaveLength(2);
+    expect(frags[0].meta.fragIndex).toBe(0);
+    expect(frags[1].meta.fragIndex).toBe(1);
+    // Same parent key (both claim), distinct indices keep both alive downstream.
+    const k0 = StrokeDivide.parentKeyFromGeom(frags[0].meta.parentGeom);
+    const k1 = StrokeDivide.parentKeyFromGeom(frags[1].meta.parentGeom);
+    expect(k0).toBe(k1);
+    expect(frags[0].meta.fragIndex).not.toBe(frags[1].meta.fragIndex);
   });
 
   test('pathological tiny classes hit the fragment cap instead of hanging', () => {
@@ -321,8 +372,10 @@ describe('StrokeDivide.divideChain', () => {
     // Fragments never span a join (butt-join, no overlap).
     expect(frags[0][frags[0].length - 1].x).toBeCloseTo(10, 6);
     expect(frags[1][0].x).toBeCloseTo(10, 6);
-    // Each fragment keys to its own parent.
-    expect(frags[0].meta.parentKey).not.toBe(frags[1].meta.parentKey);
+    // fragIndex is per-parent (0-based), so each fragment restarts at its own
+    // parent — both are the first fragment of their respective source path.
+    expect(frags[0].meta.fragIndex).toBe(0);
+    expect(frags[1].meta.fragIndex).toBe(0);
   });
 
   test('disabled or empty cycle returns the input array unchanged', () => {

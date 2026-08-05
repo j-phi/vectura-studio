@@ -3010,35 +3010,29 @@
             const rev = tokens.slice().reverse().join('|');
             return fwd <= rev ? fwd : rev;
           };
-          // Effective-pen re-key (P0-B): each path dedupes in the bucket of the
-          // pen it actually plots with. Division fragments dedupe at PARENT
-          // granularity via meta.parentKey — a duplicate layer re-presenting an
-          // already-claimed parent drops ALL its fragments, while the sibling
-          // fragments of that parent within the claiming layer are all kept
-          // (the per-key owner records which layer claimed it). Within the
-          // claiming layer a second COMPOSITE key (parentKey + fragment
-          // geometry) still drops fragments of a coincident duplicate parent —
-          // siblings of one parent are geometrically distinct, duplicates are
-          // not. Plain paths keep the strict set semantics (repeats drop).
-          const seenByPen = new Map();
+          // Effective-pen re-key (P0-B) + gap-aware division dedup (Fix-A): each
+          // path dedupes in the bucket of the pen it actually plots with. The
+          // shared two-pass StrokeDivide deduper keys division fragments at THIS
+          // pass's own tolerance (same namespace as pathKey) so a coincident
+          // undivided duplicate of a gapless single-pen retrace inks once
+          // (order-independent), while a gapped/multi-pen division never
+          // suppresses a coincident solid (the solid inks the gaps). All three
+          // consumers (here, computeStats, SVG export) drive the same deduper so
+          // their surviving sets agree.
+          const SD = window.Vectura?.StrokeDivide;
+          const deduper = SD ? SD.createPlotDeduper(quant, pathKey) : null;
+          const penOf = (layer, path) => (path && path.meta && path.meta.penId) || layer.penId || 'default';
+          if (deduper) {
+            layersToProcess.forEach((layer) => {
+              (current.get(layer.id) || []).forEach((path) => {
+                deduper.claim(penOf(layer, path), path && path.meta);
+              });
+            });
+          }
           layersToProcess.forEach((layer) => {
             const deduped = [];
             (current.get(layer.id) || []).forEach((path) => {
-              const penId = (path && path.meta && path.meta.penId) || layer.penId || 'default';
-              if (!seenByPen.has(penId)) seenByPen.set(penId, new Map());
-              const seen = seenByPen.get(penId);
-              const parentKey = path && path.meta && path.meta.parentKey;
-              const key = parentKey || pathKey(path);
-              if (key) {
-                const owner = seen.get(key);
-                if (owner !== undefined && (!parentKey || owner !== layer.id)) return;
-                seen.set(key, parentKey ? layer.id : true);
-                if (parentKey) {
-                  const fragKey = `${parentKey}::${pathKey(path)}`;
-                  if (seen.has(fragKey)) return;
-                  seen.set(fragKey, true);
-                }
-              }
+              if (deduper && !deduper.keep(penOf(layer, path), layer.id, path && path.meta, path)) return;
               deduped.push(path);
             });
             current.set(layer.id, deduped);
@@ -3100,7 +3094,6 @@
       let points = 0;
       const optimize = includePlotterOptimize ? Math.max(0, SETTINGS.plotterOptimize ?? 0) : 0;
       const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
-      const dedupe = optimize > 0 ? new Map() : null;
       const quant = (v) => (tol ? Math.round(v / tol) * tol : v);
       // Direction-agnostic hash — see runPipeline.pathKey for rationale.
       const pathKey = (path) => {
@@ -3116,33 +3109,23 @@
         const rev = tokens.slice().reverse().join('|');
         return fwd <= rev ? fwd : rev;
       };
-      target.forEach((l) => {
-        const sourcePaths = this.getRenderablePaths(l, { useOptimized, preDivision: Boolean(options.preDivision) });
+      // Gap-aware division dedup (Fix-A): the SAME shared two-pass deduper the
+      // engine plotter-optimize pass and SVG export use, so reported stats match
+      // the emitted SVG (order-independent). Only active when plotter-optimize
+      // is on (optimize > 0).
+      const SD = window.Vectura?.StrokeDivide;
+      const deduper = (optimize > 0 && SD) ? SD.createPlotDeduper(quant, pathKey) : null;
+      const penOf = (l, p) => (p && p.meta && p.meta.penId) || l.penId || 'default';
+      const sources = target.map((l) => this.getRenderablePaths(l, {
+        useOptimized, preDivision: Boolean(options.preDivision),
+      }) || []);
+      if (deduper) {
+        target.forEach((l, li) => sources[li].forEach((p) => deduper.claim(penOf(l, p), p && p.meta)));
+      }
+      target.forEach((l, li) => {
         const visiblePaths = [];
-        (sourcePaths || []).forEach((p) => {
-          if (dedupe) {
-            // Effective-pen re-key (P0-B) — same rules as the plotter-optimize
-            // dedupe in runPipeline: per-path effective pen, and division
-            // fragments dedupe at parent granularity (siblings within the
-            // claiming layer are kept), so stats agree with export.
-            const penId = (p && p.meta && p.meta.penId) || l.penId || 'default';
-            if (!dedupe.has(penId)) dedupe.set(penId, new Map());
-            const seen = dedupe.get(penId);
-            const parentKey = p && p.meta && p.meta.parentKey;
-            const key = parentKey || pathKey(p);
-            if (key) {
-              const owner = seen.get(key);
-              if (owner !== undefined && (!parentKey || owner !== l.id)) return;
-              seen.set(key, parentKey ? l.id : true);
-              if (parentKey) {
-                // Composite key: coincident duplicate parents inside the
-                // claiming layer still dedupe fragment-by-fragment.
-                const fragKey = `${parentKey}::${pathKey(p)}`;
-                if (seen.has(fragKey)) return;
-                seen.set(fragKey, true);
-              }
-            }
-          }
+        sources[li].forEach((p) => {
+          if (deduper && !deduper.keep(penOf(l, p), l.id, p && p.meta, p)) return;
           visiblePaths.push(p);
           dist += pathLength(p);
         });

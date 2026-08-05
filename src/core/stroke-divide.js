@@ -21,8 +21,18 @@
  *   - meta.penId = class penId when the class names one; a null class penId
  *     means inherit — the divider writes nothing, so the fragment takes the
  *     parent's own meta.penId (if any) or the layer pen downstream.
- *   - meta.parentKey = stable deterministic key of the parent path
- *     (quantized, direction-agnostic — same idea as the export pathKey).
+ *   - meta.fragIndex = stable 0-based index of the fragment within its parent,
+ *     so overlapping / self-retracing siblings (an out-and-back parent) never
+ *     hash equal and drop one another during dedup.
+ *   - meta.parentGeom = the parent path's RAW geometry (a plain point-copy, or
+ *     { circle,cx,cy,r } for circle metas), shared by reference across the
+ *     claiming fragments of one parent. Present ONLY when the fragments
+ *     gaplessly retrace the WHOLE parent on a SINGLE pen (identical ink to a
+ *     solid). Consumers key it at THEIR OWN tolerance via parentKeyFromGeom —
+ *     same namespace as the plain pathKey — so a coincident undivided duplicate
+ *     of the parent dedupes against the fragments. A gapped or multi-pen
+ *     division does NOT stamp it: its fragments cover only part of the parent,
+ *     so a coincident solid legitimately inks the gaps and must survive.
  *   - Gap classes emit nothing. Adjacent fragments butt-join: they share the
  *     cut endpoint exactly, no overlap.
  *
@@ -36,7 +46,6 @@
   const EPS = 1e-6;
   const MAX_FRAGMENTS = 100000; // hardening: pathological cycles cannot hang
   const CIRCLE_SEGMENTS = 128;
-  const KEY_QUANT = 0.001;
 
   /** Normalizer — analogue of STROKE_STYLE.sanitizeDash for division configs. */
   const sanitizeDivisions = (cfg) => {
@@ -120,43 +129,148 @@
     return { pts: path, flattened: false, circle: false };
   };
 
-  const quantKey = (v) => {
-    const q = Math.round(v / KEY_QUANT) * KEY_QUANT;
-    return String(q === 0 ? 0 : q);
+  /**
+   * RAW parent-geometry stamp (Fix-A, Phase 4A Inc-0). Instead of a pre-hashed
+   * key baked at a fixed 0.001 quant, a fragment carries the parent's raw
+   * geometry so each downstream consumer (plotter-optimize dedupe, stats, SVG
+   * export) can key it at ITS OWN tolerance — in the SAME namespace as the
+   * plain pathKey it computes for undivided paths. That coherence is what lets
+   * a coincident UNDIVIDED duplicate of a divided parent dedupe against the
+   * fragments (ink once) instead of over-plotting.
+   *
+   *   - polyline parent -> a plain copy of the parent points (matches the point
+   *     array an undivided duplicate layer presents to the same pathKey).
+   *   - circle parent   -> { circle:true, cx, cy, r } (matches pathKey's own
+   *     circle branch, so a divided circle and an undivided circle collide).
+   */
+  const buildParentGeom = (path) => {
+    if (isCircleMeta(path)) {
+      const meta = path.meta || {};
+      return {
+        circle: true,
+        cx: meta.cx ?? meta.x ?? 0,
+        cy: meta.cy ?? meta.y ?? 0,
+        r: meta.r ?? meta.rx ?? 0,
+      };
+    }
+    if (Array.isArray(path)) return path.map((pt) => ({ x: pt.x, y: pt.y }));
+    return null;
   };
 
   /**
-   * Stable deterministic key of a parent path: quantized coordinates hashed in
-   * both directions, lexicographically-smaller string wins (direction-agnostic).
-   * Circles key on their center/radius.
-   *
-   * The 'pk:' prefix namespaces parent keys away from the consumers' plain
-   * pathKey strings (which quantize at the plotter tolerance and could
-   * otherwise collide byte-for-byte at tol 0.001). Deliberate consequence: a
-   * divided stroke and an identical UNDIVIDED stroke both plot (explicit
-   * overplot, matching the canvas) instead of order-dependently deduping; the
-   * fixed 0.001 quant intentionally does not track the plotter tolerance.
+   * Key a raw parent-geometry stamp at a caller-supplied quantizer. Mirrors the
+   * consumers' plain pathKey exactly (direction-agnostic point hash; circles on
+   * center/radius) so a fragment's parent key and an undivided duplicate's
+   * pathKey are byte-for-byte equal at the same tolerance. `quant` defaults to
+   * identity (raw coordinates).
    */
-  const parentKeyOf = (path, pts) => {
-    if (isCircleMeta(path)) {
-      const meta = path.meta || {};
-      const cx = meta.cx ?? meta.x ?? 0;
-      const cy = meta.cy ?? meta.y ?? 0;
-      const r = meta.r ?? meta.rx ?? 0;
-      return `pk:c:${quantKey(cx)},${quantKey(cy)},${quantKey(r)}`;
+  const parentKeyFromGeom = (parentGeom, quant) => {
+    if (!parentGeom) return null;
+    const q = typeof quant === 'function' ? quant : (v) => v;
+    if (parentGeom.circle) {
+      return `c:${q(parentGeom.cx)},${q(parentGeom.cy)},${q(parentGeom.r)}`;
     }
-    const tokens = (pts || []).map((pt) => `${quantKey(pt.x)},${quantKey(pt.y)}`);
-    const fwd = tokens.join('|');
-    const rev = tokens.slice().reverse().join('|');
-    return 'pk:' + (fwd <= rev ? fwd : rev);
+    if (Array.isArray(parentGeom)) {
+      const tokens = parentGeom.map((pt) => `${q(pt.x)},${q(pt.y)}`);
+      const fwd = tokens.join('|');
+      const rev = tokens.slice().reverse().join('|');
+      return fwd <= rev ? fwd : rev;
+    }
+    return null;
   };
 
-  const buildFragmentMeta = (parentMeta, cls, parentKey, flattened) => {
+  /**
+   * Shared plotter-dedup engine (Fix-A). ALL three consumers — the engine
+   * plotter-optimize pass, computeStats, and SVG export — drive this same
+   * two-pass, per-pen deduper so their surviving path sets (and therefore the
+   * reported line/point/distance vs the emitted SVG) always agree, regardless
+   * of stack order or line-sort interleave.
+   *
+   * The caller supplies its OWN `quant` and `pathKey` (tolerance stays a
+   * per-consumer concern); the RULE lives here once.
+   *
+   * Usage:
+   *   const d = createPlotDeduper(quant, pathKey);
+   *   // pass 1 — register every CLAIMING fragment's parent (order-free):
+   *   forEachPath((penId, meta) => d.claim(penId, meta));
+   *   // pass 2 — keep or drop:
+   *   forEachPath((penId, ownerId, meta, path) => d.keep(penId, ownerId, meta, path));
+   *
+   * Rules:
+   *   - A CLAIMING fragment (gapless single-pen retrace, carries parentGeom)
+   *     claims its parent key for its layer; sibling fragments survive via a
+   *     per-fragment index; a duplicate DIVIDED layer of the same parent drops.
+   *   - A plain path drops when a claiming fragment already covers its geometry
+   *     on that pen (divided ink wins — order-independent) OR it repeats.
+   *   - A NON-claiming fragment (gapped / multi-pen) keys on its OWN geometry
+   *     plus its index, so it never suppresses a coincident solid (the solid
+   *     legitimately inks the gaps) yet a duplicate divided layer still dedupes.
+   */
+  const createPlotDeduper = (quant, pathKey) => {
+    const claimedByPen = new Map();
+    const seenByPen = new Map();
+    const getClaimed = (penId) => {
+      let s = claimedByPen.get(penId);
+      if (!s) { s = new Set(); claimedByPen.set(penId, s); }
+      return s;
+    };
+    const getSeen = (penId) => {
+      let m = seenByPen.get(penId);
+      if (!m) { m = new Map(); seenByPen.set(penId, m); }
+      return m;
+    };
+    const parentKeyOf = (meta) => (meta && meta.parentGeom)
+      ? parentKeyFromGeom(meta.parentGeom, quant)
+      : null;
+    const fragIndexOf = (meta) => (meta && Number.isFinite(meta.fragIndex)) ? meta.fragIndex : null;
+    return {
+      claim: (penId, meta) => {
+        const pk = parentKeyOf(meta);
+        if (pk) getClaimed(penId).add(pk);
+      },
+      keep: (penId, ownerId, meta, path) => {
+        const seen = getSeen(penId);
+        const parentKey = parentKeyOf(meta);
+        const fragIndex = fragIndexOf(meta);
+        if (parentKey) {
+          // Claiming fragment: parent-level owner claim + index sibling key.
+          const owner = seen.get(parentKey);
+          if (owner !== undefined && owner !== ownerId) return false;
+          seen.set(parentKey, ownerId);
+          const fk = `${parentKey}::${fragIndex}`;
+          if (seen.has(fk)) return false;
+          seen.set(fk, true);
+          return true;
+        }
+        const gk = pathKey(path);
+        if (!gk) return true;
+        if (fragIndex != null) {
+          // Non-claiming (gapped / multi-pen) fragment: index disambiguates a
+          // self-retracing sibling; geometry dedupes a duplicate divided layer.
+          const fk = `${gk}::f${fragIndex}`;
+          if (seen.has(fk)) return false;
+          seen.set(fk, true);
+          return true;
+        }
+        // Plain path: a divided layer that fully covers this geometry already
+        // inks it (divided wins, order-independent); otherwise strict repeat.
+        if (getClaimed(penId).has(gk)) return false;
+        if (seen.has(gk)) return false;
+        seen.set(gk, true);
+        return true;
+      },
+    };
+  };
+
+  const buildFragmentMeta = (parentMeta, cls, flattened) => {
     const meta = parentMeta ? { ...parentMeta } : {};
     delete meta.anchors;
     delete meta.forceCurves;
     // A fragment is an open span; a surviving closed flag would seam-close it.
     delete meta.closed;
+    // Stale keys from a previous division pass must never survive a recut.
+    delete meta.parentGeom;
+    delete meta.fragIndex;
     if (flattened) {
       // The point array is now the final geometry — nothing may re-fit it.
       meta.straight = true;
@@ -168,7 +282,8 @@
       delete meta.ry;
     }
     if (cls && cls.penId) meta.penId = cls.penId;
-    meta.parentKey = parentKey;
+    // meta.parentGeom + meta.fragIndex are stamped per parent AFTER the parent
+    // finishes (see the gap-aware finalize step in divideChain).
     return meta;
   };
 
@@ -213,7 +328,14 @@
         return;
       }
       const parentMeta = path.meta || null;
-      const parentKey = parentKeyOf(path, pts);
+      const parentGeom = buildParentGeom(path);
+
+      // Full arc length of THIS parent, to decide whether its fragments
+      // gaplessly tile it (a gapless single-pen retrace == the solid parent).
+      let parentLen = 0;
+      for (let i = 1; i < pts.length; i++) parentLen += segLength(pts[i - 1], pts[i]);
+      const parentFrags = [];
+      let coveredLen = 0;
 
       let frag = [{ x: pts[0].x, y: pts[0].y }];
       let fragLen = 0;
@@ -224,8 +346,9 @@
         // dropping the remainder would silently lose geometry.
         if (frag.length < 2 || fragLen <= EPS) return;
         if (fragClass.gap && !capped()) return;
-        frag.meta = buildFragmentMeta(parentMeta, fragClass, parentKey, flattened);
-        out.push(frag);
+        frag.meta = buildFragmentMeta(parentMeta, fragClass, flattened);
+        coveredLen += fragLen;
+        parentFrags.push(frag);
       };
 
       const advanceClass = (at) => {
@@ -264,6 +387,26 @@
         }
       }
       emitFrag(); // tail of this path — the cycle continues into the next one
+
+      // Gap-aware claim (Fix-A hardening). A divided layer may only suppress a
+      // coincident undivided solid on the SAME pen when its fragments FULLY
+      // COVER the parent on ONE pen — i.e. they retrace exactly the same ink.
+      // When the division has gaps (covered < parent length) or splits the
+      // parent across pens, the fragments do NOT represent the parent's full
+      // ink, so they must NOT claim the parent key: a coincident solid then
+      // legitimately inks the gap regions and must survive. Only claiming
+      // fragments carry meta.parentGeom (the dedup claim). Every fragment gets
+      // a stable meta.fragIndex so overlapping / self-retracing siblings (an
+      // out-and-back parent) never hash equal and drop each other.
+      const gapless = coveredLen >= parentLen - EPS;
+      const singlePen = new Set(parentFrags.map((f) => f.meta.penId)).size <= 1;
+      const claiming = gapless && singlePen;
+      parentFrags.forEach((f, i) => {
+        f.meta.fragIndex = i;
+        // Shared reference across every claiming fragment of one parent.
+        if (claiming) f.meta.parentGeom = parentGeom;
+        out.push(f);
+      });
     });
 
     return out;
@@ -277,6 +420,8 @@
     cycleLengthMm,
     divideStroke,
     divideChain,
+    parentKeyFromGeom,
+    createPlotDeduper,
     MAX_FRAGMENTS,
   };
 

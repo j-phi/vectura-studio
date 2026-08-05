@@ -541,7 +541,13 @@
       }
 
       const groups = [];
-      const dedupe = optimize > 0 ? new Map() : null;
+      // Gap-aware division dedup (Fix-A): the SAME shared two-pass deduper the
+      // engine plotter-optimize pass and computeStats use, so the emitted SVG
+      // matches the reported stats regardless of stack order or line-sort
+      // interleave. Keyed per effective pen (the group key). Only active when
+      // plotter-optimize is on.
+      const SD = window.Vectura?.StrokeDivide;
+      const deduper = (optimize > 0 && SD) ? SD.createPlotDeduper(quant, pathKey) : null;
       const seenGroupOrder = [];
       const groupMap = new Map();
       // Effective-pen grouping: expand every layer into path items first, then
@@ -629,37 +635,17 @@
           });
         }
 
+        // Two passes over this pen group's items (already interleave-sorted):
+        // pass 1 registers every claiming fragment's parent so a coincident
+        // solid drops order-independently; pass 2 keeps or drops. A gapped or
+        // multi-pen division keys on its own geometry + index, so it never
+        // suppresses a coincident solid (the solid inks the gaps).
         const visibleItems = [];
-        let seen = null;
-        if (dedupe) {
-          if (!dedupe.has(key)) dedupe.set(key, new Map());
-          seen = dedupe.get(key);
+        if (deduper) {
+          items.forEach((item) => deduper.claim(key, item.path?.meta));
         }
         items.forEach((item) => {
-          // Owner-map semantics, mirroring the engine's plotter dedupe: a
-          // meta.parentKey (stamped on every fragment of one divided stroke)
-          // claims the key for its LAYER — sibling fragments of the claiming
-          // layer all pass, while another layer re-presenting the same parent
-          // drops entirely. Plain pathKey entries keep strict drop-on-repeat.
-          // Two identical paths on DIFFERENT effective pens never collide
-          // because the seen-map is per pen group.
-          const parentKey = item.path?.meta?.parentKey;
-          const dedupeKey = seen ? (parentKey || pathKey(item.path)) : '';
-          if (seen && dedupeKey) {
-            if (seen.has(dedupeKey)) {
-              if (!parentKey || seen.get(dedupeKey) !== item.layer.id) return;
-            } else {
-              seen.set(dedupeKey, parentKey ? item.layer.id : true);
-            }
-            if (parentKey) {
-              // Composite key: coincident duplicate parents inside the
-              // claiming layer still dedupe fragment-by-fragment (siblings of
-              // one parent are geometrically distinct, duplicates are not).
-              const fragKey = `${parentKey}::${pathKey(item.path)}`;
-              if (seen.has(fragKey)) return;
-              seen.set(fragKey, true);
-            }
-          }
+          if (deduper && !deduper.keep(key, item.layer.id, item.path?.meta, item.path)) return;
           visibleItems.push(item);
         });
         groups.push({ key, pen: group.pen, items: visibleItems });

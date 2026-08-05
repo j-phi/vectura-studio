@@ -75,6 +75,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   unchanged.
 
 ### Fixed
+- **Plotter — divided strokes no longer double-ink a coincident duplicate.** When a layer
+  with stroke divisions and an identical undivided layer sat on the same pen, the plotter
+  inked the shared path twice. Dedup now keys divided fragments to their parent geometry at
+  each consumer's own tolerance, so a coincident duplicate inks once — but only when the
+  division fully covers the parent: a **dashed** (gapped) or multi-pen division no longer
+  suppresses a coincident solid, so the gap regions still ink (a lost-ink regression caught
+  in review). Self-retracing fragments are disambiguated by index so every fragment survives,
+  and preview, plot stats, and SVG export now dedupe identically. Prerequisite for the
+  upcoming divisions editor.
 - **3D Scene — boolean (CSG) results no longer paint a triangulation fan.** A subtract/
   union/intersect result mesh is fan-triangulated, so every flat face is split into many
   coplanar triangles. Under the wireframe mapper those internal diagonals were relabelled
