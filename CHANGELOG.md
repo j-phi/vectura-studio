@@ -7,6 +7,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — saved scenes upgrade to the tree automatically.** Opening a 3D scene saved
+  before this change now loads it as the new layer tree (objects, boolean groups, lights,
+  and ground each as their own rows) instead of a single opaque layer — while rendering
+  exactly as it did before (verified byte-for-byte). The document format version moved to 2;
+  older files migrate on load, and save/reload is stable. Presets keep working unchanged.
 - **3D Scene — ground and lights are tree children.** The ground plane and each light
   (the sun and any added point/spot/area lights) now appear as their own rows under the
   scene group, so the whole scene is one tree. Selecting the sun arms its 3-axis gizmo and

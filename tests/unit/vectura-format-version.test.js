@@ -24,13 +24,15 @@ describe('.vectura formatVersion + migration shim (AUD-02)', () => {
     return new VectorEngine();
   };
 
-  test('exportState stamps formatVersion 1 and registers it on the namespace', () => {
+  test('exportState stamps the current formatVersion and registers it on the namespace', () => {
     const engine = freshEngine();
     engine.addLayer('lissajous');
 
     const state = engine.exportState();
-    expect(state.formatVersion).toBe(1);
-    expect(runtime.window.Vectura.VECTURA_FORMAT_VERSION).toBe(1);
+    // v2 (Scene-tree Increment F): monolith scene3d layers expand to a tree on
+    // load. Non-scene payloads are shape-identical across the whole chain.
+    expect(state.formatVersion).toBe(2);
+    expect(runtime.window.Vectura.VECTURA_FORMAT_VERSION).toBe(2);
   });
 
   test('a legacy payload without formatVersion (version 0) round-trips layers unchanged', () => {

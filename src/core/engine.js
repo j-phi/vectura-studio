@@ -45,12 +45,24 @@
   // shape changes incompatibly, and add a migration step below. Payloads
   // without the field are version 0 (legacy, pre-1.3.x) — identical to
   // version 1 except for the field itself.
-  const VECTURA_FORMAT_VERSION = 1;
+  //
+  // v2 (Scene-tree Increment F): a saved MONOLITH scene3d layer (inline
+  // params.objects/groups/lights/ground, not yet a scene group) expands into
+  // the canonical scene TREE on load. The payload SHAPE is unchanged (the
+  // expansion is a layer-graph rewrite done post-construction — see
+  // _migrateMonolithScenesToTree, gated on the source version so a v2 doc is
+  // left alone). Increment B's inline-union compositor keeps any un-expanded
+  // monolith rendering byte-identically, so this changes the layer TREE, not
+  // the emitted geometry.
+  const VECTURA_FORMAT_VERSION = 2;
 
   // Keyed by SOURCE version: STATE_MIGRATIONS[n] upgrades a version-n payload
   // to version n+1. importState walks the chain up to VECTURA_FORMAT_VERSION.
   const STATE_MIGRATIONS = {
     0: (state) => state, // 0 → 1: the field was added; the payload shape is unchanged.
+    1: (state) => state, // 1 → 2: payload shape unchanged; the monolith → tree
+    //                            expansion is a layer-graph rewrite applied on
+    //                            live layers (_migrateMonolithScenesToTree).
   };
 
   // Payloads NEWER than this build load as-is (best-effort forward compat);
@@ -868,6 +880,26 @@
       return group.id;
     }
 
+    // Scene-tree Increment F — the format v1 → v2 migration step. Walk every
+    // layer and expand each MONOLITH scene3d (type 'scene3d' && !isGroup) into a
+    // scene TREE via expandMonolithToTree. Snapshot the ids up front (that call
+    // mutates this.layers) and preserve the imported active layer.
+    //
+    // Idempotent: an already-expanded scene group is skipped (expandMonolithToTree
+    // guards on isGroup), and object3d / booleanGroup3d / light / ground children
+    // are never scene3d monoliths — so a second run (or a v2 doc) is a no-op.
+    // The gate lives at the call site (importState runs this only when the source
+    // payload predates v2); the pass itself is safe to run any number of times.
+    _migrateMonolithScenesToTree() {
+      const savedActive = this.activeLayerId;
+      const monolithIds = this.layers
+        .filter((l) => l && l.type === 'scene3d' && !l.isGroup)
+        .map((l) => l.id);
+      if (!monolithIds.length) return;
+      monolithIds.forEach((id) => this.expandMonolithToTree(id));
+      if (savedActive && this.getLayerById(savedActive)) this.activeLayerId = savedActive;
+    }
+
     // Insert `layer` directly after `parentId` and any of its existing
     // descendants, so array order matches the tree order the panel renders and
     // the compositor walks. Returns the layer's new id.
@@ -1276,6 +1308,12 @@
 
     importState(state) {
       if (!state) return;
+      // Capture the SOURCE format version before the shape-migration walk so the
+      // Increment F monolith → tree expansion (a layer-graph rewrite, run after
+      // Layer construction below) can be gated on it: only a payload that
+      // predates v2 is expanded; a v2 doc is already canonical and left alone.
+      const sourceFormatVersion = Number.isFinite(Number(state?.formatVersion))
+        ? Number(state.formatVersion) : 0;
       state = migrateEngineState(state);
       this.layers = (state.layers || []).map((data) => {
         // 'compound' is a synthetic type — Layer constructor doesn't know it.
@@ -1379,6 +1417,17 @@
         return layer;
       });
       this.activeLayerId = state.activeLayerId || (this.layers[0] ? this.layers[0].id : null);
+      // Scene-tree Increment F — format v1 → v2: eagerly expand any saved
+      // MONOLITH scene3d layer into its canonical child tree so the tree is the
+      // single UI state. Runs BEFORE the generate loop below so the new object /
+      // boolean / light / ground children are generated + composed this pass.
+      // Gated on the source version — a doc already at v2 is left untouched — and
+      // idempotent besides. Increment B's inline-union render path stays as the
+      // permanent safety net for any monolith that is NOT expanded (v2 presets,
+      // forward-compat), so the render is unchanged either way.
+      if (sourceFormatVersion < VECTURA_FORMAT_VERSION) {
+        this._migrateMonolithScenesToTree();
+      }
       // Sync _layerCounter from SETTINGS after applyState has already restored globalLayerCount.
       this._layerCounter = SETTINGS.globalLayerCount ?? this._layerCounter;
       // Snapshot imported origins so generate() (which derives a fresh origin from path
