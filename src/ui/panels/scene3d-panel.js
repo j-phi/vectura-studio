@@ -383,6 +383,7 @@
     // on the LAYER params (never ALGO_DEFAULTS) so a 1A scene without a shadow
     // block still edits cleanly. Values mirror params.js DEFAULT_SHADOW.
     const shadowDefault = () => ({
+      shadowMode: 'additive',
       shadowAngle: 45, shadowDensity: 50, shadowPenId: null, shadowLineType: 'solid',
       shadowLayers: false, shadowLayerCount: 3, shadowFalloff: 0.5, shadowAngleFollowsLight: false,
     });
@@ -390,6 +391,7 @@
       if (!params.shadow || typeof params.shadow !== 'object') params.shadow = shadowDefault();
       const s = params.shadow;
       const d = shadowDefault();
+      if (s.shadowMode !== 'inverse') s.shadowMode = 'additive';
       if (!Number.isFinite(s.shadowAngle)) s.shadowAngle = d.shadowAngle;
       if (!Number.isFinite(s.shadowDensity)) s.shadowDensity = d.shadowDensity;
       if (typeof s.shadowPenId !== 'string' || !s.shadowPenId) s.shadowPenId = null;
@@ -1371,6 +1373,27 @@
       sub.className = 'vs3-subhead';
       sub.textContent = 'Shadow';
       host.appendChild(sub);
+
+      // Mode — Additive (add hatch in the footprint) vs Inverse (thin the
+      // ground's OWN fill inside the footprint so more dark paper shows → the
+      // physically-correct look for white ink on black paper). Inverse is a no-op
+      // unless the ground carries its own fill/pattern.
+      const modeRow = document.createElement('div');
+      modeRow.className = 'vs3-row';
+      const modeLbl = document.createElement('label');
+      modeLbl.className = 'vs3-lbl';
+      modeLbl.textContent = 'Mode';
+      modeRow.appendChild(modeLbl);
+      const modeHost = document.createElement('div');
+      modeHost.className = 'vs3-ctl';
+      modeRow.appendChild(modeHost);
+      host.appendChild(modeRow);
+      inspectorComps.push(UI.SegCtrl(modeHost, {
+        options: [{ value: 'additive', label: 'Additive' }, { value: 'inverse', label: 'Inverse' }],
+        value: s.shadowMode === 'inverse' ? 'inverse' : 'additive',
+        ariaLabel: 'Shadow mode (additive hatch or inverse ground-fill thinning)',
+        onChange: (v) => { commit(() => { ensureShadow().shadowMode = v === 'inverse' ? 'inverse' : 'additive'; }); },
+      }));
 
       // Angle (grayed by Follow-light, but kept live so a user can pre-set it).
       sliderRow(host, inspectorComps, 'Angle', {

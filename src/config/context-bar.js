@@ -178,6 +178,8 @@
       shadow: {
         cast: { label: 'Cast', aria: 'Object casts shadow' },
         castOptions: [{ value: 'inherit', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+        mode: { label: 'Mode', aria: 'Shadow mode (additive hatch or inverse ground-fill thinning)' },
+        modeOptions: [{ value: 'additive', label: 'Additive' }, { value: 'inverse', label: 'Inverse' }],
         angle: { label: 'Angle', aria: 'Shadow angle (sun bearing, scene-wide)', note: 'Scene-wide (sun)' },
         style: { label: 'Style', aria: 'Shadow line style' },
         styleOptions: [

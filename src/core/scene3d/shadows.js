@@ -57,6 +57,111 @@
 
   const isFinitePt = (pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y);
 
+  // ── I26 inverse / subtractive shadow helpers ──────────────────────────────
+  // Even-odd point test against a polygon-with-holes (rings = [outer, hole…]).
+  // Combining every ring under one parity means a point in a torus HOLE reads as
+  // OUTSIDE — so inverse thinning never touches the ground fill under the hole
+  // (the annular footprint keeps its centre intact, mirroring the additive fill).
+  const pointInRingsEvenOdd = (rings, x, y) => {
+    let inside = false;
+    for (let r = 0; r < rings.length; r++) {
+      const ring = rings[r];
+      if (!Array.isArray(ring) || ring.length < 3) continue;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[i]; const b = ring[j];
+        if (!isFinitePt(a) || !isFinitePt(b)) continue;
+        if (((a.y > y) !== (b.y > y)) &&
+            (x < (b.x - a.x) * (y - a.y) / ((b.y - a.y) || 1e-12) + a.x)) {
+          inside = !inside;
+        }
+      }
+    }
+    return inside;
+  };
+
+  // A ground layer's OWN surface-fill line (the pattern inverse mode thins). NOT
+  // a cast-shadow hatch (regionClass 'castShadow') — inverse emits none of those.
+  const isGroundOwnFill = (path) => {
+    const m = path && path.meta;
+    if (!m || m.kind !== 'sceneFill') return false;
+    const t = m.sceneTarget;
+    return !!t && t.objectId === 'ground' && t.regionClass !== 'castShadow';
+  };
+
+  // Analytic clip of a polyline to the pieces OUTSIDE the even-odd footprint
+  // rings — the ground fill lines span the whole plate, so a midpoint test can't
+  // see a line that merely CROSSES a small offset footprint; we must erase the
+  // in-footprint SUB-segment. For each segment, gather its crossings with every
+  // ring edge, split at them, and keep only the sub-intervals whose midpoint is
+  // OUTSIDE (even-odd, so a torus hole counts as outside → its ground fill
+  // survives). Returns { pieces:[polyline…], hadInside } — a purely analytic
+  // difference (no FillBoolean), cheap enough for the draft frame.
+  const clipPolylineOutsideRings = (path, rings) => {
+    const pieces = [];
+    let hadInside = false;
+    for (let s = 0; s + 1 < path.length; s++) {
+      const p0 = path[s]; const p1 = path[s + 1];
+      if (!isFinitePt(p0) || !isFinitePt(p1)) continue;
+      const dx = p1.x - p0.x; const dy = p1.y - p0.y;
+      const ts = [0, 1];
+      for (let r = 0; r < rings.length; r++) {
+        const ring = rings[r];
+        if (!Array.isArray(ring) || ring.length < 3) continue;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const a = ring[i]; const b = ring[j];
+          if (!isFinitePt(a) || !isFinitePt(b)) continue;
+          const ex = b.x - a.x; const ey = b.y - a.y;
+          const denom = dx * ey - dy * ex;
+          if (Math.abs(denom) < 1e-12) continue;
+          const t = ((a.x - p0.x) * ey - (a.y - p0.y) * ex) / denom;
+          const u = ((a.x - p0.x) * dy - (a.y - p0.y) * dx) / denom;
+          if (t > 1e-9 && t < 1 - 1e-9 && u >= -1e-9 && u <= 1 + 1e-9) ts.push(t);
+        }
+      }
+      ts.sort((m, n) => m - n);
+      let cur = null;
+      for (let k = 0; k + 1 < ts.length; k++) {
+        const t0 = ts[k]; const t1 = ts[k + 1];
+        if (t1 - t0 < 1e-9) continue;
+        const tm = (t0 + t1) / 2;
+        const outside = !pointInRingsEvenOdd(rings, p0.x + dx * tm, p0.y + dy * tm);
+        if (outside) {
+          const A = { x: p0.x + dx * t0, y: p0.y + dy * t0 };
+          const B = { x: p0.x + dx * t1, y: p0.y + dy * t1 };
+          if (!cur) { cur = [A, B]; } else { cur.push(B); }
+        } else {
+          hadInside = true;
+          if (cur) { if (cur.length >= 2) pieces.push(cur); cur = null; }
+        }
+      }
+      if (cur && cur.length >= 2) pieces.push(cur);
+    }
+    return { pieces, hadInside };
+  };
+
+  // I26 composition. Inside the projected footprint (rings, even-odd), ERASE the
+  // in-footprint portion of a `removeFraction` share of the ground's own fill
+  // lines so more dark paper shows through → the shadow reads darker on dark
+  // paper. This is an analytic per-line difference against the footprint (spec
+  // option a, done WITHOUT FillBoolean): robust on dense ground fill, no
+  // polygon-clipping fragility (AUD-05), holes preserved for free, and cheap
+  // enough for the draft frame. Only lines that actually cross the footprint are
+  // candidates; a shared phase accumulator distributes the erasures evenly and
+  // ties the removed share to shadow density. Erased lines are recorded in
+  // `replaceMap` (path → surviving outside pieces); the caller splices+inserts
+  // once so a line already handled by another footprint is not reprocessed.
+  const thinGroundFillInRings = (sink, rings, removeFraction, replaceMap, accRef) => {
+    if (!Array.isArray(sink) || !Array.isArray(rings) || !rings.length || removeFraction <= 0) return;
+    for (let i = 0; i < sink.length; i++) {
+      const path = sink[i];
+      if (replaceMap.has(path) || !isGroundOwnFill(path)) continue;
+      const { pieces, hadInside } = clipPolylineOutsideRings(path, rings);
+      if (!hadInside) continue; // line does not enter this footprint → leave intact
+      accRef.v += removeFraction;
+      if (accRef.v >= 1) { accRef.v -= 1; replaceMap.set(path, pieces); }
+    }
+  };
+
   // Even-odd scanline hatch of a polygon-with-holes (rings = [outer, hole…],
   // each ring an array of {x,y}). Holes stay empty — the shadow of a ring-shaped
   // region, or a footprint carved by caster-bound subtraction, reads correctly.
@@ -616,6 +721,47 @@
     const falloff = clamp(finite(shadowBag.shadowFalloff, 0.5), 0.2, 1);
     const penOverride = (typeof shadowBag.shadowPenId === 'string' && shadowBag.shadowPenId) ? shadowBag.shadowPenId : null;
     const cfg = { angle: hatchAngle, coverage, penWidth, layers: shadowLayers, layerCount, falloff, Mappers };
+    // ── I26 shadow MODE. 'additive' (default) EMITS shadow hatch; 'inverse'
+    // instead THINS the ground layer's own fill inside the footprint (dark-paper
+    // shadow). Inverse needs the accumulated scene output (opts.groundFillPaths)
+    // to reach the ground's fill lines; absent it degrades to a no-op. removeShare
+    // is tied to shadow density (coverage 0.5 ⇒ drop half the lines in-footprint).
+    const inverse = shadowBag.shadowMode === 'inverse';
+    const groundFillSink = inverse && Array.isArray(opts.groundFillPaths) ? opts.groundFillPaths : null;
+    const invRemoveShare = clamp(coverage, 0.02, 1);
+    const invReplace = new Map(); // ground fill path → surviving outside pieces
+    const invAcc = { v: 0 };
+    // Emit hatch (additive) OR thin the ground fill (inverse). One chokepoint so
+    // every footprint path — draft hull, degrade fallback, full class union —
+    // composes identically.
+    const compose = (rings, casterId, penId) => {
+      if (inverse) {
+        if (groundFillSink) thinGroundFillInRings(groundFillSink, rings, invRemoveShare, invReplace, invAcc);
+        return;
+      }
+      emitShadowRegion(rings, groundPlane, clipper, out,
+        shadowMeta(rings, casterId, penFor(penId), groundDepth), shadowTreat, draftFrame, cfg);
+    };
+    // Inverse mode erases the in-footprint portion of the chosen ground-fill
+    // lines: splice each original out of the shared sink and splice its surviving
+    // OUTSIDE pieces back in (descending, so indices stay valid). Each piece
+    // inherits the original's meta so it still reads/picks as ground fill. Every
+    // shadow-emitting return routes through here so this is not skipped.
+    const finalize = () => {
+      if (inverse && groundFillSink && invReplace.size) {
+        for (let i = groundFillSink.length - 1; i >= 0; i--) {
+          const orig = groundFillSink[i];
+          if (!invReplace.has(orig)) continue;
+          const pieces = (invReplace.get(orig) || []).map((pts) => {
+            const piece = pts.map((pt) => ({ x: pt.x, y: pt.y }));
+            if (orig.meta) piece.meta = orig.meta;
+            return piece;
+          });
+          groundFillSink.splice(i, 1, ...pieces);
+        }
+      }
+      return out;
+    };
     // Stroke treatment: line type comes from the shadow bag (default solid, so a
     // default scene is byte-identical); wobble/dash-scale still inherit the scene
     // stroke params. Draft keeps the dash but skips the wobble geometry.
@@ -660,10 +806,9 @@
         const ring = caster.hull;
         const clipped = groundClipReady ? clipPolyToConvex(ring, groundRing) : ring;
         if (!Array.isArray(clipped) || clipped.length < 3) return;
-        emitShadowRegion([clipped], groundPlane, clipper, out,
-          shadowMeta([clipped], caster.id, penFor(caster.penId), groundDepth), shadowTreat, draftFrame, cfg);
+        compose([clipped], caster.id, caster.penId);
       });
-      return out;
+      return finalize();
     }
 
     // ── Full quality: class union + precedence + caster-bound subtract. ────────
@@ -682,10 +827,9 @@
       // silhouette loops (even-odd, holes intact) beat the hull when present.
       casters.forEach((caster) => {
         const rings = (caster.loops && caster.loops.length) ? caster.loops : [caster.hull];
-        emitShadowRegion(rings, groundPlane, clipper, out,
-          shadowMeta(rings, caster.id, penFor(caster.penId), groundDepth), shadowTreat, draftFrame, cfg);
+        compose(rings, caster.id, caster.penId);
       });
-      return out;
+      return finalize();
     }
 
     // Per-caster footprint geometry. Prefer the true silhouette loops folded into
@@ -765,12 +909,11 @@
           .map((ring) => (ring || []).map((pt) => ({ x: pt[0], y: pt[1] })))
           .filter((ring) => ring.length >= 3);
         if (!rings.length) return;
-        emitShadowRegion(rings, groundPlane, clipper, out,
-          shadowMeta(rings, casterId, penFor(cls.penId), groundDepth), shadowTreat, draftFrame, cfg);
+        compose(rings, casterId, cls.penId);
       });
     });
 
-    return out;
+    return finalize();
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Shadows: { build } });

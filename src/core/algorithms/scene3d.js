@@ -1487,6 +1487,10 @@
         // Phase 5 — scene-level shadow controls (angle / density / pen / line
         // type / penumbra layers). Absent ⇒ the legacy hardcoded shadow look.
         const shadowBag = p.shadow || {};
+        // I26 inverse mode reaches the ground's OWN fill lines (already emitted
+        // into `out` above) to THIN them inside the footprint instead of adding
+        // hatch. Passed on every build; only consumed when shadowMode==='inverse'.
+        const shadowGroundSink = out;
         // Multi-light: every shadow-casting light drops its own footprint
         // (ambient lights don't cast). Directional lights project PARALLEL along
         // their travel dir; point/spot lights project in PERSPECTIVE from their
@@ -1498,13 +1502,13 @@
             if (!lt.position) return;
             // Pass the full record so a spot clips its shadow to the cone and a
             // ranged light drops casters it never reaches (point stays omni).
-            Shadows.build(scene, p, bounds, clipper, null, { styleOf: shadowStyleOf, styleParams: shadowStyleParams, shadow: shadowBag, lightPosition: lt.position, light: lt })
+            Shadows.build(scene, p, bounds, clipper, null, { styleOf: shadowStyleOf, styleParams: shadowStyleParams, shadow: shadowBag, lightPosition: lt.position, light: lt, groundFillPaths: shadowGroundSink })
               .forEach((path) => out.push(path));
             return;
           }
           const dir = Lighting.lightWorldDir(lt);
           if (!dir) return;
-          Shadows.build(scene, p, bounds, clipper, dir, { styleOf: shadowStyleOf, styleParams: shadowStyleParams, shadow: shadowBag })
+          Shadows.build(scene, p, bounds, clipper, dir, { styleOf: shadowStyleOf, styleParams: shadowStyleParams, shadow: shadowBag, groundFillPaths: shadowGroundSink })
             .forEach((path) => out.push(path));
         });
       }

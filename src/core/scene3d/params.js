@@ -83,6 +83,7 @@
   // hull, pen inherited from the caster) so a scene with no `shadow` block
   // renders byte-identically to the pre-Phase-5 renderer.
   const DEFAULT_SHADOW = {
+    shadowMode: 'additive',      // 'additive' emits hatch; 'inverse' thins the ground's own fill (I26)
     shadowAngle: 45,             // hatch orientation (deg); replaces SHADOW_ANGLE
     shadowDensity: 50,           // 1..100; 50 maps to the legacy coverage 0.5
     shadowPenId: null,           // null ⇒ inherit the caster's pen (legacy)
@@ -333,6 +334,7 @@
   const normalizeShadow = (shadow) => {
     const src = isObject(shadow) ? shadow : {};
     return {
+      shadowMode: src.shadowMode === 'inverse' ? 'inverse' : 'additive',
       shadowAngle: clamp(finite(src.shadowAngle, DEFAULT_SHADOW.shadowAngle), 0, 360),
       shadowDensity: clamp(finite(src.shadowDensity, DEFAULT_SHADOW.shadowDensity), 1, 100),
       shadowPenId: (typeof src.shadowPenId === 'string' && src.shadowPenId) ? src.shadowPenId : null,

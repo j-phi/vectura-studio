@@ -1390,6 +1390,15 @@
       mixed: sceneAgree(sc, (id) => castOf(sc.r.getSceneObjectRecord(sc.layerId, id) || {})).mixed,
       onChange: (v) => setObj('shadow.enabled', v === 'on' ? true : (v === 'off' ? false : null)),
     });
+    // I26 — additive hatch vs inverse (thin the ground's own fill inside the
+    // footprint). Scene-wide, like the style/pen/density rows below.
+    if (C.mode) {
+      UI.SegCtrl(flyRow(fly, C.mode.label), {
+        options: C.modeOptions, value: bag.shadowMode === 'inverse' ? 'inverse' : 'additive',
+        ariaLabel: C.mode.aria,
+        onChange: (v) => setScene('shadow.shadowMode', v === 'inverse' ? 'inverse' : 'additive'),
+      });
+    }
     if (UI.AngleDial) {
       const az = Number.isFinite(light0.azimuth) ? light0.azimuth : 135;
       UI.AngleDial(flyRow(fly, C.angle.label, C.angle.note), {

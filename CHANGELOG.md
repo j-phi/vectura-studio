@@ -7,6 +7,14 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — inverse / subtractive shadow mode (dark paper).** A new shadow **Mode**
+  (Additive / Inverse) in the shadow controls (panel + context-bar shadow flyout).
+  *Additive* (default, unchanged) lays hatch inside the shadow footprint. *Inverse* instead
+  THINS the ground's own fill inside the projected footprint, so more (dark) paper shows
+  through — physically correct for white ink on black paper, where a shadow means less ink.
+  Reuses the true-silhouette footprint (holes preserved: a torus keeps its annulus). Inverse
+  is a no-op when the ground has no fill. Default additive output is byte-identical (visual
+  baselines unchanged).
 - **3D Scene — configurable Highlight alt-fill.** With Highlight treatment set to
   "alt fill," the context-bar Highlight flyout now exposes an alt-fill mapper picker
   (hatch / crosshatch / contour / spiral / stipple), so the alternate fill used in the
