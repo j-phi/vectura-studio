@@ -10827,9 +10827,25 @@
     // layer, else the scene-selection's layer. Null disables the widget.
     _sceneLightLayer() {
       const sel = this.getSelectedLayers ? this.getSelectedLayers() : [];
-      if (sel.length === 1 && sel[0] && sel[0].type === 'scene3d'
-        && sel[0].visible !== false && !this.isLayerLocked?.(sel[0].id)) {
-        return sel[0];
+      if (sel.length === 1 && sel[0]) {
+        const s = sel[0];
+        // Scene-tree Increment E — a selected sceneLight3d CHILD arms the gizmo
+        // on its owning scene GROUP (the child carries one lights[] entry). Record
+        // which child is armed so _selectedSceneLight resolves the child's params.
+        if (s.type === 'sceneLight3d') {
+          const group = this._sceneGroupOfChild(s);
+          if (group && group.visible !== false && !this.isLayerLocked?.(group.id)) {
+            group._selectedLightChildId = s.id;
+            return group;
+          }
+          return null;
+        }
+        if (s.type === 'scene3d' && s.visible !== false && !this.isLayerLocked?.(s.id)) {
+          // A directly-selected scene layer uses its own _selectedLightId (the
+          // legacy in-panel light tree); no light CHILD is armed.
+          s._selectedLightChildId = null;
+          return s;
+        }
       }
       const ss = this.getSceneSelection && this.getSceneSelection();
       if (ss) {
@@ -10837,6 +10853,45 @@
         if (l && l.type === 'scene3d' && l.visible !== false && !this.isLayerLocked?.(l.id)) return l;
       }
       return null;
+    }
+
+    // Scene-tree Increment E — walk up to the owning scene GROUP of a child layer
+    // (type 'scene3d' + isGroup), or null.
+    _sceneGroupOfChild(layer) {
+      const seen = new Set();
+      let p = layer;
+      while (p && p.parentId && !seen.has(p.id)) {
+        seen.add(p.id);
+        p = this.engine.layers.find((l) => l.id === p.parentId);
+        if (p && p.type === 'scene3d' && p.isGroup) return p;
+      }
+      return null;
+    }
+
+    // Scene-tree Increment E — the armed sceneLight3d CHILD of a scene group (set
+    // by _sceneLightLayer when a light child is selected), or null.
+    _armedLightChild(group) {
+      const cid = group && group._selectedLightChildId;
+      if (!cid) return null;
+      const child = this.engine.layers.find(
+        (l) => l && l.id === cid && l.type === 'sceneLight3d' && l.parentId === group.id
+      );
+      return child || null;
+    }
+
+    // The light object the gizmo edits for `group`: the armed CHILD's params (its
+    // params ARE one lights[] entry) when a light child is selected, else the
+    // inline group light by id (the legacy monolith / in-panel-tree path).
+    _gizmoLight(group, lightId) {
+      const child = this._armedLightChild(group);
+      if (child) return child.params;
+      return this._lightById(group, lightId);
+    }
+
+    // The layer whose controls should rebuild after a light edit: the armed light
+    // child (so its focused panel refreshes), else the group itself.
+    _lightPanelLayer(group) {
+      return this._armedLightChild(group) || group;
     }
 
     // params.lights[0] (single directional sun — L1). Never mutates on read; a
@@ -10986,6 +11041,14 @@
     getSceneLightControl(layer) {
       const target = layer || this._sceneLightLayer();
       if (!target) return null;
+      // Scene-tree Increment E — a scene group whose lights live on CHILD layers
+      // is child-managed: the per-light 3-axis gizmo is the affordance, so the
+      // legacy 2D sun disc is retired (it would otherwise inject a phantom sun
+      // into the group's empty inline lights via _sceneLight(.., true)).
+      if (target.isGroup && this.engine && Array.isArray(this.engine.layers)
+        && this.engine.layers.some((l) => l && l.type === 'sceneLight3d' && l.parentId === target.id)) {
+        return null;
+      }
       // Lightless-scene guard: a scene can now hold zero lights. The sun handle
       // represents a DIRECTIONAL (sun) light — when the lights array is present
       // but carries no directional light, there is no sun to place, so suppress
@@ -11616,6 +11679,10 @@
     // selection here). Never falls back to lights[0] — a null keeps the gizmo off
     // and the legacy sun disc live.
     _selectedSceneLight(layer) {
+      // Scene-tree Increment E — an armed light CHILD's params ARE the selected
+      // light (its params carry one lights[] entry).
+      const child = this._armedLightChild(layer);
+      if (child) return child.params;
       const id = layer && layer._selectedLightId;
       if (!id) return null;
       return this._lightById(layer, id);
@@ -11736,7 +11803,9 @@
       if (!drag) return false;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
       if (!layer || !layer.params) { this._sceneLightGizmoDrag = null; return false; }
-      const light = this._lightById(layer, drag.lightId);
+      // Scene-tree Increment E — resolve the armed light CHILD's params when a
+      // light child is selected, else the inline group light by id.
+      const light = this._gizmoLight(layer, drag.lightId);
       if (!light) { this._sceneLightGizmoDrag = null; return false; }
       const rect = this.canvas.getBoundingClientRect();
       const world = this.screenToWorld((e.clientX ?? 0) - rect.left, (e.clientY ?? 0) - rect.top);
@@ -11788,7 +11857,9 @@
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
       if (layer && drag.moved) {
         this.engine.generate(layer.id);
-        this.app?.ui?.buildControls?.(layer);
+        // Rebuild the ARMED light child's focused panel (or the group's) so the
+        // panel sliders reflect the canvas drag.
+        this.app?.ui?.buildControls?.(this._lightPanelLayer(layer));
         this.app?.ui?.updateFormula?.();
       }
       this.updateCursor();
@@ -11806,7 +11877,7 @@
       }
       this._sceneDragRegenLayerId = null;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
-      const light = layer && this._lightById(layer, drag.lightId);
+      const light = layer && this._gizmoLight(layer, drag.lightId);
       if (light) {
         if (drag.startPos && light.position) Object.assign(light.position, drag.startPos);
         if (drag.startLight) {
@@ -11850,7 +11921,7 @@
         return false;
       }
       this.engine.generate(target.id);
-      this.app?.ui?.buildControls?.(target);
+      this.app?.ui?.buildControls?.(this._lightPanelLayer(target));
       this.app?.ui?.updateFormula?.();
       this.draw();
       return true;

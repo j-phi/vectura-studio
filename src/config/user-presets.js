@@ -203,6 +203,20 @@
         "params": {}
       },
       {
+        "id": "sceneground3d-default",
+        "name": "Default",
+        "preset_system": "sceneGround3d",
+        "group": "Classic",
+        "params": {}
+      },
+      {
+        "id": "scenelight3d-default",
+        "name": "Default",
+        "preset_system": "sceneLight3d",
+        "group": "Classic",
+        "params": {}
+      },
+      {
         "id": "shapepack-default",
         "name": "Default",
         "preset_system": "shapePack",

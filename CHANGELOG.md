@@ -7,6 +7,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — ground and lights are tree children.** The ground plane and each light
+  (the sun and any added point/spot/area lights) now appear as their own rows under the
+  scene group, so the whole scene is one tree. Selecting the sun arms its 3-axis gizmo and
+  routes its controls; right-click the scene group to add a light or the ground; deleting
+  the ground row turns the ground off. The renderer still composes them into the single
+  shared pass, so nothing about the rendered result changes.
 - **3D Scene — click-to-select objects + per-object editing; scenes are trees by default.**
   Adding a 3D Scene now creates a tree (a scene group with one object) instead of a single
   monolithic layer. Clicking an object in the canvas selects its layer in the tree and shows

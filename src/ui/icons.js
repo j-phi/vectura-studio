@@ -58,6 +58,9 @@
     scene3d:      () => layerSvg(`<path d="M6 1.2 10.5 3.5 6 5.8 1.5 3.5z"/><path d="M1.5 3.5v3L6 8.8 10.5 6.5v-3"/><path d="M6 5.8v3"/>`),
     object3d:     () => layerSvg(`<path d="M6 1.3 10.3 3.6v4.8L6 10.7 1.7 8.4V3.6z"/><path d="M1.7 3.6 6 5.9l4.3-2.3M6 5.9v4.8"/>`),
     booleanGroup3d: () => layerSvg(`<circle cx="4.4" cy="6" r="3.1"/><circle cx="7.6" cy="6" r="3.1"/>`),
+    // Scene-tree Increment E — light (sun) + ground child kinds.
+    sceneLight3d: () => layerSvg(`<circle cx="6" cy="6" r="2.1"/><path d="M6 1.3V2.8M6 9.2v1.5M1.3 6H2.8M9.2 6h1.5M2.7 2.7l1 1M8.3 8.3l1 1M9.3 2.7l-1 1M3.7 8.3l-1 1"/>`),
+    sceneGround3d: () => layerSvg(`<path d="M6 2.2 10.6 5 6 7.8 1.4 5z"/><path d="M1.4 5v0M1.9 7.6l3.1 1.9M10.1 7.6 7 9.5"/>`),
     text:         () => layerSvg(`<path d="M2.3 10 6 2l3.7 8" /><path d="M3.7 6.6h4.6"/>`),
     halftone:     () => layerSvg(`<circle cx="3.2" cy="3.4" r="1.7" fill="currentColor" stroke="none"/><circle cx="8.4" cy="3.6" r=".9" fill="currentColor" stroke="none"/><circle cx="3.5" cy="8.4" r="1" fill="currentColor" stroke="none"/><circle cx="8.4" cy="8.2" r="1.8" fill="currentColor" stroke="none"/>`),
     imageWeave:   () => layerSvg(`<path d="M1.4 3.3q2.3 1.8 4.6 0t4.6 0"/><path d="M1.4 6q2.3 1.8 4.6 0t4.6 0"/><path d="M1.4 8.7q2.3 1.8 4.6 0t4.6 0"/>`),

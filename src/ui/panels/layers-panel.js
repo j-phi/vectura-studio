@@ -1160,7 +1160,9 @@
         ai.innerHTML = (this._LVL_I[layer.type] ?? this._LVL_I.grid)?.() ?? '';
         r2.appendChild(ai);
         const al = document.createElement('span'); al.className = 'lvl-algo-label';
-        al.textContent = layer.type || ''; r2.appendChild(al);
+        // Scene-tree Increment E — friendlier labels for the thin 3D child kinds.
+        const LVL_TYPE_LABEL = { sceneLight3d: 'Light', sceneGround3d: 'Ground', object3d: 'Object 3D', booleanGroup3d: 'Boolean 3D' };
+        al.textContent = LVL_TYPE_LABEL[layer.type] || layer.type || ''; r2.appendChild(al);
 
         const acts = document.createElement('div'); acts.className = 'lvl-acts';
         const mkAb = (cls, iconFn, title, fn) => {
@@ -1205,7 +1207,10 @@
             ));
           }
         }
-        if (layer.type !== 'shape') {
+        // Scene-tree Increment E — the thin light/ground child leaves have no
+        // sub-geometry to expand into a group; skip the Expand affordance.
+        const isSceneChildLeaf = layer.type === 'sceneLight3d' || layer.type === 'sceneGround3d';
+        if (layer.type !== 'shape' && !isSceneChildLeaf) {
           acts.appendChild(mkAb('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
         }
         if (layer.type === 'shape' && Array.isArray(layer.fills) && layer.fills.length > 0) {
@@ -1309,6 +1314,28 @@
             if (oid) { renderer.setSelection?.([oid], oid); engine.setActiveLayerId?.(oid); }
             this.renderLayers(); this.app.render();
           }));
+          // Scene-tree Increment E — inline "+ light" / "+ ground" affordances
+          // (ground only when no ground child exists yet). A right-click menu on
+          // the header (below) offers the same, plus a light-type submenu.
+          if (typeof engine.addLightToScene === 'function') {
+            ga.appendChild(mkAb('lvl-add-light', () => this._LVL_I.sceneLight3d?.() ?? this._LVL_I.grpPlus(), 'Add light', () => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              const lid = engine.addLightToScene(layer.id, 'directional');
+              if (lid) { renderer.setSelection?.([lid], lid); engine.setActiveLayerId?.(lid); }
+              this.renderLayers(); this.app.render();
+            }));
+          }
+          if (typeof engine.addGroundToScene === 'function') {
+            const hasGround = engine.getLayerDescendants?.(layer.id)?.some((l) => l && l.type === 'sceneGround3d');
+            if (!hasGround) {
+              ga.appendChild(mkAb('lvl-add-ground', () => this._LVL_I.sceneGround3d?.() ?? this._LVL_I.grpPlus(), 'Add ground', () => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const gid = engine.addGroundToScene(layer.id);
+                if (gid) { renderer.setSelection?.([gid], gid); engine.setActiveLayerId?.(gid); }
+                this.renderLayers(); this.app.render();
+              }));
+            }
+          }
         }
         if (layer.groupType === 'modifier') {
           ga.appendChild(mkAb('', () => this._LVL_I.expand(), 'Expand to folder', () => {
@@ -1342,6 +1369,8 @@
           if (this.armedPenId && this.applyArmedPenToLayers?.([layer])) return;
           _lvlDoSel(e, layer.id);
         });
+        // Scene-tree Increment E — right-click a scene group offers Add light /
+        // Add ground via the shared LayerContext menu (see layer-context-menu.js).
         if (!_lvlEffLocked(layer.id)) { bindCardDrag(hdr, layer); addGrpDropZone(hdr, layer); }
         return hdr;
       };

@@ -599,6 +599,148 @@
     CURRENT = self;
   };
 
+  // Scene-tree Increment E — compact panel for one sceneLight3d LEAF layer. The
+  // child's params ARE one lights[] entry, so this re-keys the EXISTING light
+  // controls (azimuth/elevation OR position, range, cone, intensity, cast) to
+  // layer.params. The on-canvas 3-axis gizmo arms automatically (the renderer's
+  // _sceneLightLayer resolves the selected light child → its scene group).
+  const buildLightPanel = (ui, layer, container) => {
+    const UI = Vectura.UI;
+    const p = layer.params || (layer.params = {});
+    const type = typeof p.type === 'string' && p.type ? p.type : 'directional';
+    const isAmbient = type === 'ambient';
+    const isPoint = type === 'point';
+    const isSpot = type === 'spot';
+    const isArea = type === 'area';
+    const isDir = !isAmbient && !isPoint && !isSpot && !isArea;
+    const { commit, liveSlider } = mkCommitKit(ui, layer);
+    const comps = [];
+    const destroyComps = () => { comps.forEach((c) => { try { c.destroy && c.destroy(); } catch (_) { /* */ } }); comps.length = 0; };
+    const root = document.createElement('div');
+    root.className = 'vs3-panel';
+    container.appendChild(root);
+    const host = document.createElement('div');
+    host.className = 'vs3-page active';
+    root.appendChild(host);
+
+    const slider = (label, props) => { comps.push(UI.Slider(labeledRow(host, label), props)); };
+    const vec3 = (field, label, def) => {
+      ['x', 'y', 'z'].forEach((axis) => {
+        const cur = (p[field] && Number.isFinite(p[field][axis])) ? p[field][axis] : def[axis];
+        slider(`${label} ${axis.toUpperCase()}`, {
+          value: cur, min: -600, max: 600, step: 1, defaultValue: def[axis],
+          ariaLabel: `${label} ${axis.toUpperCase()}`,
+          ...liveSlider((v) => {
+            if (!p[field] || typeof p[field] !== 'object') p[field] = { ...def };
+            p[field][axis] = Math.round(v);
+          }),
+        });
+      });
+    };
+
+    const note = document.createElement('p');
+    note.className = 'vs3-empty';
+    note.textContent = isAmbient
+      ? 'Ambient — a constant fill that lifts the shadowed side. Does not cast shadows.'
+      : (isDir
+        ? 'Sun — drag the on-canvas gizmo to aim it, or use the controls below.'
+        : (isArea
+          ? 'Area — a soft light: bigger size + more samples = softer shading and shadows. Drag the on-canvas gizmo to move it.'
+          : 'Positional light — drag the on-canvas 3-axis gizmo to move it, or use the controls below.'));
+    host.appendChild(note);
+
+    if (isDir) {
+      slider('Azimuth', { value: Number.isFinite(p.azimuth) ? p.azimuth : 135, min: 0, max: 360, step: 1, defaultValue: 135,
+        ariaLabel: 'Light azimuth (degrees)', ...liveSlider((v) => { p.azimuth = Math.round(v); }) });
+      slider('Elevation', { value: Number.isFinite(p.elevation) ? p.elevation : 45, min: 0, max: 90, step: 1, defaultValue: 45,
+        ariaLabel: 'Light elevation (degrees)', ...liveSlider((v) => { p.elevation = Math.round(v); }) });
+    }
+    if (isPoint || isSpot || isArea) vec3('position', 'Position', { x: 120, y: 200, z: 120 });
+    if (isPoint || isSpot) {
+      slider('Range', { value: Number.isFinite(p.range) ? p.range : 400, min: 0, max: 1000, step: 5, defaultValue: 400,
+        ariaLabel: 'Light range (0 = infinite)', ...liveSlider((v) => { p.range = Math.round(v); }) });
+    }
+    if (isArea) {
+      slider('Size', { value: Number.isFinite(p.size) ? p.size : 120, min: 10, max: 600, step: 5, defaultValue: 120,
+        ariaLabel: 'Area light size', ...liveSlider((v) => { p.size = Math.round(v); }) });
+      slider('Samples', { value: Number.isFinite(p.samples) ? p.samples : 6, min: 2, max: 16, step: 1, defaultValue: 6,
+        ariaLabel: 'Area light samples', ...liveSlider((v) => { p.samples = Math.round(v); }) });
+    }
+    if (isSpot) {
+      slider('Cone angle', { value: Number.isFinite(p.coneAngle) ? p.coneAngle : 30, min: 1, max: 89, step: 1, defaultValue: 30,
+        ariaLabel: 'Spot cone angle (degrees)', ...liveSlider((v) => { p.coneAngle = Math.round(v); }) });
+      slider('Penumbra', { value: Number.isFinite(p.penumbra) ? p.penumbra : 8, min: 0, max: 45, step: 1, defaultValue: 8,
+        ariaLabel: 'Spot penumbra (degrees)', ...liveSlider((v) => { p.penumbra = Math.round(v); }) });
+      vec3('target', 'Target', { x: 0, y: 0, z: 0 });
+    }
+    slider('Intensity', { value: Number.isFinite(p.intensity) ? p.intensity : (isAmbient ? 0.3 : 1),
+      min: 0, max: isAmbient ? 1 : 2, step: 0.05, defaultValue: isAmbient ? 0.3 : 1,
+      ariaLabel: 'Light intensity', ...liveSlider((v) => { p.intensity = Math.round(v * 100) / 100; }) });
+    if (!isAmbient) {
+      comps.push(UI.SegCtrl(labeledRow(host, 'Cast shadows'), {
+        options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+        value: p.castShadows === false ? 'off' : 'on',
+        ariaLabel: 'Cast shadows',
+        onChange: (v) => { commit(() => { p.castShadows = v === 'on'; }); },
+      }));
+    }
+
+    // Arm the on-canvas light gizmo for this child; clear any stale object
+    // scene-selection so the object gizmo/overlay don't linger.
+    mirrorChildToCanvas(ui, layer, null);
+
+    let destroyed = false;
+    const teardown = () => {
+      if (destroyed) return; destroyed = true;
+      destroyComps();
+      if (root.parentNode) root.parentNode.removeChild(root);
+      if (CURRENT === self) CURRENT = null;
+    };
+    teardownIfDetached = () => { if (!destroyed && root && !root.isConnected) { teardown(); return true; } return destroyed; };
+    const self = { layerId: layer.id, destroy: teardown };
+    CURRENT = self;
+  };
+
+  // Scene-tree Increment E — compact panel for one sceneGround3d LEAF layer. The
+  // ground currently carries only `enabled`; the row's eye toggle in the Layers
+  // panel already hides/shows it, so the panel is a short explainer + an enable
+  // toggle for parity with the legacy in-panel ground row.
+  const buildGroundPanel = (ui, layer, container) => {
+    const UI = Vectura.UI;
+    const p = layer.params || (layer.params = {});
+    const { commit } = mkCommitKit(ui, layer);
+    const comps = [];
+    const root = document.createElement('div');
+    root.className = 'vs3-panel';
+    container.appendChild(root);
+    const host = document.createElement('div');
+    host.className = 'vs3-page active';
+    root.appendChild(host);
+    const note = document.createElement('p');
+    note.className = 'vs3-empty';
+    note.textContent = 'Ground — the floor plane the scene casts shadows onto. Delete this layer (or hide it) to render the scene without a ground.';
+    host.appendChild(note);
+    comps.push(UI.SegCtrl(labeledRow(host, 'Ground'), {
+      options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+      value: p.enabled === false ? 'off' : 'on',
+      ariaLabel: 'Ground enabled',
+      onChange: (v) => { commit(() => { p.enabled = v === 'on'; }); },
+    }));
+
+    mirrorChildToCanvas(ui, layer, null);
+
+    let destroyed = false;
+    const teardown = () => {
+      if (destroyed) return; destroyed = true;
+      comps.forEach((c) => { try { c.destroy && c.destroy(); } catch (_) { /* */ } });
+      if (root.parentNode) root.parentNode.removeChild(root);
+      if (CURRENT === self) CURRENT = null;
+    };
+    teardownIfDetached = () => { if (!destroyed && root && !root.isConnected) { teardown(); return true; } return destroyed; };
+    const self = { layerId: layer.id, destroy: teardown };
+    CURRENT = self;
+  };
+
   // ── build ─────────────────────────────────────────────────────────────────
   const build = (ui, layer, container) => {
     if (CURRENT) { try { CURRENT.destroy(); } catch (_) { /* */ } CURRENT = null; }
@@ -606,6 +748,9 @@
     // scene3d group / monolith continues through the full builder below.
     if (layer.type === 'object3d') { buildObjectPanel(ui, layer, container); return; }
     if (layer.type === 'booleanGroup3d') { buildBooleanPanel(ui, layer, container); return; }
+    // Scene-tree Increment E — light / ground child leaves route to their editors.
+    if (layer.type === 'sceneLight3d') { buildLightPanel(ui, layer, container); return; }
+    if (layer.type === 'sceneGround3d') { buildGroundPanel(ui, layer, container); return; }
     const isSceneGroup = Boolean(layer.isGroup && layer.containerRole === 'scene');
 
     const UI = Vectura.UI;

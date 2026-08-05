@@ -418,6 +418,8 @@
   //                { kind:'object',  id:<layerId>, params:<object3d layer params> }
   //                { kind:'boolean', id:<layerId>, params:<booleanGroup3d params>,
   //                                  children:[<child object3d layer ids>] }
+  //                { kind:'light',   id:<layerId>, params:<sceneLight3d params> }
+  //                { kind:'ground',  id:<layerId>, params:<sceneGround3d params> }
   //
   // The child LAYER id becomes the objectId (so meta.sceneTarget.objectId maps
   // straight to a tree layer — no lookup table). An object's Style routes to
@@ -425,6 +427,16 @@
   // — NOT styleTable.scene (that scene-scope slot stays the group's own default).
   // BACK-COMPAT: inline arrays come FIRST, collected children after; a group with
   // inline objects and ZERO children yields its params unchanged.
+  //
+  // Increment E — GROUND & LIGHTS as children:
+  //   • light children APPEND to params.lights[] (in tree order), UNIONed after
+  //     any inline lights — the child LAYER id is the light's stable id. A tree
+  //     empties its inline lights so only the children count; a legacy monolith
+  //     (inline lights, no light children) passes through unchanged.
+  //   • a ground child sets params.ground = { enabled: true }. NO ground child ⇒
+  //     the group's INLINE ground is kept: a tree pre-sets inline ground OFF (so
+  //     deleting the ground child turns the ground off), while a legacy monolith
+  //     keeps its inline ground ON (inline back-compat).
   const collectSceneParams = (groupParams, collected) => {
     const gp = isObject(groupParams) ? groupParams : {};
     const items = Array.isArray(collected) ? collected : [];
@@ -434,6 +446,10 @@
     const groups = [];
     const byObject = { ...(isObject(st.byObject) ? st.byObject : {}) };
     const byFace = { ...(isObject(st.byFace) ? st.byFace : {}) };
+    // Lights: inline (legacy) first, then child lights in tree order.
+    const lights = [];
+    (Array.isArray(gp.lights) ? gp.lights : []).forEach((l) => { if (isObject(l)) lights.push(l); });
+    let groundChild = null; // last ground child wins (only one is ever added)
 
     // UNION the inline (legacy) arrays FIRST so a mixed scene keeps its inline
     // objects ahead of collected child layers, and an inline-only scene is a pass-
@@ -443,6 +459,17 @@
 
     items.forEach((item) => {
       if (!isObject(item) || typeof item.id !== 'string') return;
+      if (item.kind === 'light') {
+        const lp = isObject(item.params) ? item.params : {};
+        // The child LAYER id is the stable light id (identity contract, mirrors
+        // objects) so selection + the gizmo map straight back to a tree layer.
+        lights.push({ ...lp, id: item.id });
+        return;
+      }
+      if (item.kind === 'ground') {
+        groundChild = isObject(item.params) ? item.params : {};
+        return;
+      }
       if (item.kind === 'object') {
         const n = normalizeObjectLayerParams(item.params);
         objects.push({
@@ -474,16 +501,21 @@
       }
     });
 
-    return {
+    const out = {
       ...gp,
       objects,
       groups,
+      lights,
       styleTable: {
         scene: st.scene,
         byObject,
         byFace,
       },
     };
+    // A ground child (enabled) turns the ground ON. Absent ⇒ keep the group's
+    // INLINE ground (a tree pre-sets it OFF; a monolith keeps it as authored).
+    if (groundChild) out.ground = { ...groundChild, enabled: groundChild.enabled !== false };
+    return out;
   };
 
   // Canonical group list: each group is { id: unique 'grp-<n>', name, op, children }.

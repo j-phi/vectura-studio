@@ -430,6 +430,21 @@
     capsule: { sx: 14, sy: 16, sz: 14, detail: 22 },
   };
 
+  // Scene-tree Increment E — per-type light seeds for addLightToScene. Mirrors
+  // the scene3d panel's seedLight + Scene3D.Params.normalizeLight defaults so a
+  // freshly added light child is valid before the next compose. The `id` is set
+  // to the child LAYER id at compose time (identity contract) — omitted here.
+  const SCENE_LIGHT_SEED = {
+    directional: { type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: true },
+    point: { type: 'point', position: { x: 120, y: 200, z: 120 }, range: 400, intensity: 1, castShadows: true },
+    spot: {
+      type: 'spot', position: { x: 120, y: 200, z: 120 }, target: { x: 0, y: 0, z: 0 },
+      range: 400, coneAngle: 30, penumbra: 8, intensity: 1, castShadows: true,
+    },
+    area: { type: 'area', position: { x: 120, y: 200, z: 120 }, size: 120, samples: 6, intensity: 1, castShadows: true },
+    ambient: { type: 'ambient', intensity: 0.3, castShadows: false },
+  };
+
   // ── Stroke style model (STR-1) ─────────────────────────────────────────────
   // Import-side sanitizers for the per-layer stroke fields. Prefer the shared
   // config vocabulary (src/config/stroke-options.js); fall back to equivalent
@@ -681,9 +696,19 @@
     // adds), and leaves the group active so the panel shows scene controls.
     addSceneTree() {
       const groupId = this.addSceneGroup();
-      // Seed one default object so a fresh scene is never empty. addObjectToScene
-      // sets the object active + recomputes; re-point active at the group after.
+      // Scene-tree Increment E — the whole scene reads as ONE tree: a default box
+      // object, the sun (a directional light child) and the ground child. Empty
+      // the group's inline lights + pre-set inline ground OFF so the CHILDREN are
+      // the single source of truth (deleting the ground child turns it off; the
+      // sun child owns the light).
+      const grp = this.getLayerById(groupId);
+      if (grp && grp.params) {
+        grp.params.lights = [];
+        grp.params.ground = { enabled: false };
+      }
       this.addObjectToScene(groupId, 'box');
+      this.addLightToScene(groupId, 'directional');
+      this.addGroundToScene(groupId);
       this.activeLayerId = groupId;
       this.computeAllDisplayGeometry();
       return groupId;
@@ -710,6 +735,9 @@
         ? Params.normalizeParams(group.params) : group.params;
       const objects = Array.isArray(src.objects) ? src.objects : [];
       const groups = Array.isArray(src.groups) ? src.groups : [];
+      // Scene-tree Increment E — lights + ground promote to children too.
+      const lights = Array.isArray(src.lights) ? src.lights : [];
+      const groundEnabled = !src.ground || src.ground.enabled !== false;
       const styleTable = (src.styleTable && typeof src.styleTable === 'object') ? src.styleTable : {};
       const byObject = (styleTable.byObject && typeof styleTable.byObject === 'object') ? styleTable.byObject : {};
       const byFace = (styleTable.byFace && typeof styleTable.byFace === 'object') ? styleTable.byFace : {};
@@ -785,10 +813,47 @@
         });
       });
 
+      // Scene-tree Increment E — one sceneLight3d child per inline light (the
+      // child LAYER id adopts the light's id so the identity contract holds), and
+      // a single sceneGround3d child when the inline ground was enabled. Names
+      // mirror the panel's light display names.
+      const lightNameFor = (light, i) => {
+        if (!light) return `Light ${i + 1}`;
+        if (light.type === 'ambient') return 'Ambient';
+        if (light.type === 'point') return `Point ${i + 1}`;
+        if (light.type === 'spot') return `Spot ${i + 1}`;
+        if (light.type === 'area') return `Area ${i + 1}`;
+        return (light.id === 'sun' || i === 0) ? 'Sun' : `Light ${i + 1}`;
+      };
+      lights.forEach((light, i) => {
+        if (!light || typeof light !== 'object') return;
+        const cid = childIdFor(light, 'light', i);
+        const ll = new Layer(cid, 'sceneLight3d', lightNameFor(light, i));
+        ll.parentId = group.id;
+        // The child params ARE the lights[] entry (minus id — the layer id is it).
+        const lp = clone(light);
+        delete lp.id;
+        Object.assign(ll.params, lp);
+        this.layers.splice(insertAt, 0, ll);
+        insertAt += 1;
+      });
+      if (groundEnabled) {
+        const gcid = childIdFor({ id: 'ground' }, 'ground', 0);
+        const gl = new Layer(gcid, 'sceneGround3d', 'Ground');
+        gl.parentId = group.id;
+        gl.params.enabled = true;
+        this.layers.splice(insertAt, 0, gl);
+        insertAt += 1;
+      }
+
       // Clear the inline arrays — the child layers are now the source of truth
       // (compositor unions inline + children; keeping both would double-render).
       group.params.objects = [];
       group.params.groups = [];
+      // Scene-tree Increment E — lights move to children; inline ground pre-set
+      // OFF so deleting the ground child turns the ground off (the child owns ON).
+      group.params.lights = [];
+      group.params.ground = { enabled: false };
       // Keep the scene-scope style; drop the per-object/per-face entries that
       // now live on the children.
       if (group.params.styleTable && typeof group.params.styleTable === 'object') {
@@ -836,6 +901,54 @@
       layer.parentId = sceneGroupId;
       // A boolean-group parent already implies an operand — seed the role.
       if (parent.type === 'booleanGroup3d') this.applyObject3dBooleanRole(layer, null, parent);
+      this._insertUnderParent(layer, sceneGroupId);
+      if (parent.isGroup) parent.groupCollapsed = false;
+      this.activeLayerId = id;
+      this.computeAllDisplayGeometry();
+      return id;
+    }
+
+    // Scene-tree Increment E — add a LIGHT child (sceneLight3d) under a scene
+    // group. `type` is 'directional' (default) | 'point' | 'spot' | 'area' |
+    // 'ambient'; the child's params carry ONE lights[] entry, seeded to match
+    // Scene3D.Params.normalizeLight so a fresh light looks right before the next
+    // compose. The child LAYER id is the light's stable id. Returns the id.
+    addLightToScene(sceneGroupId, type = 'directional') {
+      const parent = this.getLayerById(sceneGroupId);
+      if (!parent) return null;
+      const id = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const nameFor = { directional: 'Sun', point: 'Point', spot: 'Spot', area: 'Area', ambient: 'Ambient' };
+      const layer = new Layer(id, 'sceneLight3d', `${nameFor[type] || 'Light'} ${num}`);
+      const seed = SCENE_LIGHT_SEED[type] || SCENE_LIGHT_SEED.directional;
+      Object.assign(layer.params, JSON.parse(JSON.stringify(seed)));
+      layer.parentId = sceneGroupId;
+      this._insertUnderParent(layer, sceneGroupId);
+      if (parent.isGroup) parent.groupCollapsed = false;
+      this.activeLayerId = id;
+      this.computeAllDisplayGeometry();
+      return id;
+    }
+
+    // Scene-tree Increment E — add the GROUND child (sceneGround3d) under a scene
+    // group. Only ONE ground child is allowed: a second call is a no-op (returns
+    // null). Its presence turns the ground on; deleting it turns the ground off
+    // (the group's inline ground stays OFF once the tree owns it). Returns the id.
+    addGroundToScene(sceneGroupId) {
+      const parent = this.getLayerById(sceneGroupId);
+      if (!parent) return null;
+      const existing = this.getLayerDescendants(sceneGroupId)
+        .some((l) => l && l.type === 'sceneGround3d');
+      if (existing) return null;
+      const id = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const layer = new Layer(id, 'sceneGround3d', `Ground ${num}`);
+      layer.params.enabled = true;
+      layer.parentId = sceneGroupId;
+      // The group's inline ground defers to the child now (deleting it ⇒ off).
+      if (parent.params && typeof parent.params === 'object') parent.params.ground = { enabled: false };
       this._insertUnderParent(layer, sceneGroupId);
       if (parent.isGroup) parent.groupCollapsed = false;
       this.activeLayerId = id;
@@ -1878,6 +1991,16 @@
             .filter((c) => c && c.type === 'object3d')
             .map((c) => c.id);
           collected.push({ kind: 'boolean', id: layer.id, params: layer.params, children });
+        } else if (layer.type === 'sceneLight3d') {
+          // Scene-tree Increment E — a light child carries one lights[] entry.
+          layer._sceneConsumed = true;
+          if (layer.visible === false) return; // hidden ⇒ contributes no light
+          collected.push({ kind: 'light', id: layer.id, params: layer.params });
+        } else if (layer.type === 'sceneGround3d') {
+          // Scene-tree Increment E — a ground child enables the ground fixture.
+          layer._sceneConsumed = true;
+          if (layer.visible === false) return; // hidden ⇒ ground off (inline fallback)
+          collected.push({ kind: 'ground', id: layer.id, params: layer.params });
         }
       });
 

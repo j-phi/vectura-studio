@@ -83,6 +83,21 @@
     if (_isSceneGroup(layer) && ui.app && ui.app.engine
       && typeof ui.app.engine.addObjectToScene === 'function') {
       items.push({ key: 'scene-add-object', label: 'Add object' });
+      // Scene-tree Increment E — add lights (by type) + the ground (only when no
+      // ground child exists yet) straight from the scene group's context menu.
+      const engine = ui.app.engine;
+      if (typeof engine.addLightToScene === 'function') {
+        items.push({ key: 'scene-add-light', label: 'Add light (sun)' });
+        items.push({ key: 'scene-add-light-point', label: 'Add point light' });
+        items.push({ key: 'scene-add-light-spot', label: 'Add spot light' });
+        items.push({ key: 'scene-add-light-area', label: 'Add area light' });
+        items.push({ key: 'scene-add-light-ambient', label: 'Add ambient light' });
+      }
+      if (typeof engine.addGroundToScene === 'function') {
+        const hasGround = typeof engine.getLayerDescendants === 'function'
+          && engine.getLayerDescendants(layer.id).some((l) => l && l.type === 'sceneGround3d');
+        if (!hasGround) items.push({ key: 'scene-add-ground', label: 'Add ground' });
+      }
       items.push({ separator: true });
     }
     const operands = layer && layer.type === 'object3d' ? _booleanOperands(ui, layer) : [];
@@ -133,6 +148,32 @@
       if (oid) {
         ui.app.setSelection && ui.app.setSelection([oid], oid);
         engine.setActiveLayerId && engine.setActiveLayerId(oid);
+      }
+      ui.renderLayers && ui.renderLayers();
+      ui.app.render && ui.app.render();
+      return;
+    }
+    // Scene-tree Increment E — add a light / ground child to a scene group.
+    if (key === 'scene-add-light' || key.indexOf('scene-add-light-') === 0) {
+      if (typeof engine.addLightToScene !== 'function') return;
+      const type = key === 'scene-add-light' ? 'directional' : key.slice('scene-add-light-'.length);
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      const lid = engine.addLightToScene(layer.id, type);
+      if (lid) {
+        ui.app.setSelection && ui.app.setSelection([lid], lid);
+        engine.setActiveLayerId && engine.setActiveLayerId(lid);
+      }
+      ui.renderLayers && ui.renderLayers();
+      ui.app.render && ui.app.render();
+      return;
+    }
+    if (key === 'scene-add-ground') {
+      if (typeof engine.addGroundToScene !== 'function') return;
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      const gid = engine.addGroundToScene(layer.id);
+      if (gid) {
+        ui.app.setSelection && ui.app.setSelection([gid], gid);
+        engine.setActiveLayerId && engine.setActiveLayerId(gid);
       }
       ui.renderLayers && ui.renderLayers();
       ui.app.render && ui.app.render();

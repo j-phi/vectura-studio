@@ -2173,6 +2173,33 @@
       },
       border: { enabled: false, strength: 1, penId: null },
     },
+    // Scene-tree Increment E — sceneLight3d: a thin LEAF layer carrying ONE
+    // lights[] entry (the sun / a point / spot / area / ambient). It owns no
+    // geometry — the scene group (Increment B/E) COLLECTS it back into
+    // params.lights and the shared compositor shades from it. generate()→[]
+    // (algorithms/sceneLight3d.js). The child LAYER id is the light's stable id.
+    // Factory defaults mirror the directional sun (Scene3D.Params.DEFAULT_LIGHT).
+    sceneLight3d: {
+      label: 'Light',
+      is3d: true,
+      preset: 'scenelight3d-default',
+      type: 'directional', // 'directional' | 'point' | 'spot' | 'area' | 'ambient'
+      azimuth: 135,
+      elevation: 45,
+      intensity: 1,
+      castShadows: true,
+    },
+    // Scene-tree Increment E — sceneGround3d: a thin LEAF layer standing in for
+    // the scene GROUND fixture. Its presence (+ enabled) turns the ground on; a
+    // scene group with no ground child renders groundless. The scene group
+    // (Increment B/E) maps it back to params.ground. generate()→[]
+    // (algorithms/sceneGround3d.js).
+    sceneGround3d: {
+      label: 'Ground',
+      is3d: true,
+      preset: 'sceneground3d-default',
+      enabled: true,
+    },
     rasterPlane: {
       label: 'Raster-Plane',
       is3d: true,

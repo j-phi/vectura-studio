@@ -1544,7 +1544,8 @@
     // leaves, and booleanGroup3d groups all to the bespoke 3D Scene panel, which
     // re-keys its editors to the SELECTED layer's params.
     if (
-      (layer.type === 'scene3d' || layer.type === 'object3d' || layer.type === 'booleanGroup3d') &&
+      (layer.type === 'scene3d' || layer.type === 'object3d' || layer.type === 'booleanGroup3d'
+        || layer.type === 'sceneLight3d' || layer.type === 'sceneGround3d') &&
       window.Vectura.UI.Scene3DPanel &&
       typeof window.Vectura.UI.Scene3DPanel.build === 'function'
     ) {
