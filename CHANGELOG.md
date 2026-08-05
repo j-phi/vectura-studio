@@ -7,6 +7,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — reliable object picking + hover hint.** A click now selects the
+  FRONTMOST object under the cursor for every primitive (raycast against the real
+  surface, so a click anywhere on a cube's face selects it — no more missing the
+  interior of flat faces). As the cursor moves, a subtle accent silhouette outlines
+  just the object (or face, in face-edit mode) a click would select. The old crude
+  whole-layer hover highlight is suppressed for 3D scenes so only the precise
+  per-object hint shows. The hint is an overlay only — never exported or expanded.
 - **3D Scene — inverse / subtractive shadow mode (dark paper).** A new shadow **Mode**
   (Additive / Inverse) in the shadow controls (panel + context-bar shadow flyout).
   *Additive* (default, unchanged) lays hatch inside the shadow footprint. *Inverse* instead

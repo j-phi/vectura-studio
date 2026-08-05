@@ -632,6 +632,14 @@
       // Alt-click depth-cycle cache: { key, index, total } for the candidate
       // stack under the last scene click (context bar shows "2 of 3").
       this.sceneCandidateStack = null;
+      // Hover silhouette hint (overlay only): the object/face a click WOULD
+      // select under the cursor, recomputed on plain mouse-move (rAF-throttled)
+      // and drawn as a subtle accent outline. Never touches exported geometry.
+      // sceneHoverPick: null | { layerId, mode:'object'|'face', objectId,
+      // faceId, key }.
+      this.sceneHoverPick = null;
+      this._sceneHoverRaf = null;
+      this._sceneHoverPointer = null;
       this._sceneDrag = null;
       // 3D Scene Studio (Phase 2) — sun-widget / shadow-handle drag state.
       // null | { mode:'widget'|'shadow', layerId, lightIndex, startLight,
@@ -754,8 +762,8 @@
 
       new ResizeObserver(() => this.resize()).observe(parent);
       this.canvas.addEventListener('pointerenter', () => this.updateCursor());
-      this.canvas.addEventListener('pointerleave', () => this._paintBucketClearHover());
-      this.canvas.addEventListener('mouseleave', () => this._paintBucketClearHover());
+      this.canvas.addEventListener('pointerleave', () => { this._paintBucketClearHover(); this._clearSceneHoverHint(); });
+      this.canvas.addEventListener('mouseleave', () => { this._paintBucketClearHover(); this._clearSceneHoverHint(); });
       this.canvas.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
       this._boundMove = (e) => this.move(e);
       this._boundUp = (e) => this.up(e);
@@ -1296,7 +1304,14 @@
             ? this.findLayerAtPointPrecise?.(world)
             : this.findLayerAtPoint(world);
           if (hit && !this.selectedLayerIds?.has(hit.id) && !this.isLayerLocked?.(hit.id)) {
-            hoverHighlight = { layerId: hit.id, label: cfg.labels?.path ?? 'path' };
+            // scene3d: skip the whole-LAYER highlight (it would light up every
+            // object in the scene). The per-OBJECT hover hint (drawSceneHoverHint,
+            // driven by _updateSceneHoverHint) shows just the object under the
+            // cursor instead, which is what a click selects.
+            const hitLayer = this.engine.layers.find((l) => l.id === hit.id);
+            if (!(hitLayer && hitLayer.type === 'scene3d')) {
+              hoverHighlight = { layerId: hit.id, label: cfg.labels?.path ?? 'path' };
+            }
           }
         }
       }
@@ -5595,6 +5610,12 @@
         this.drawMaskPreviewOverlay();
         if (this.patternFillPreviewPolygon) this.drawPatternFillPreview();
         this.drawActiveBatchOutline();
+        // 3D Scene Studio: hover silhouette hint — outlines just the object/face
+        // a click would select, drawn UNDER the selection overlay (no-op without
+        // a hover pick; overlay-only, never emitted to layer.paths). The crude
+        // whole-layer SG-5 highlight is suppressed for scene3d in
+        // _updateHoverFeedback so only this per-object hint shows.
+        this.drawSceneHoverHint();
         // 3D Scene Studio: highlight the selected scene faces/objects on top
         // of the drawn geometry (no-op without a scene selection).
         this.drawSceneSelectionOverlay();
@@ -5624,6 +5645,12 @@
         this.drawMaskPreviewOverlay();
         if (this.patternFillPreviewPolygon) this.drawPatternFillPreview();
         this.drawActiveBatchOutline();
+        // 3D Scene Studio: hover silhouette hint — outlines just the object/face
+        // a click would select, drawn UNDER the selection overlay (no-op without
+        // a hover pick; overlay-only, never emitted to layer.paths). The crude
+        // whole-layer SG-5 highlight is suppressed for scene3d in
+        // _updateHoverFeedback so only this per-object hint shows.
+        this.drawSceneHoverHint();
         // 3D Scene Studio: highlight the selected scene faces/objects on top
         // of the drawn geometry (no-op without a scene selection).
         this.drawSceneSelectionOverlay();
@@ -7742,6 +7769,10 @@
         this.updateHoverCursor(e);
         // SEL-4/SG-2/SG-5: hover chips, semantic labels, and hover highlight.
         this._updateHoverFeedback(e);
+        // 3D Scene Studio: hover silhouette hint (overlay only). Reached only on
+        // the plain-hover tail — every drag/orbit/pan branch returns above — so
+        // the hint is naturally skipped while manipulating.
+        this._updateSceneHoverHint(e);
       }
     }
 
@@ -9792,6 +9823,42 @@
             });
           }
         });
+        // Real projected-face pass (per-pixel depth). For object/face picks,
+        // raycast the cursor against the object's REAL front faces and use the
+        // barycentric-interpolated surface depth as the AUTHORITATIVE depth. This
+        // fixes both a 'none'-mapper box (no emitted face, so it only had the
+        // coarse silhouette fallback below) and the ground plane (whose single
+        // face-centroid depth read as spuriously near). Overrides any path-
+        // derived depth for the same object/face key; edge mode is untouched.
+        if (mode !== 'edge') {
+          const pickFaces = this._scenePickFaces(layer);
+          const realDepth = new Map();
+          for (let fi = 0; fi < pickFaces.length; fi++) {
+            const pf = pickFaces[fi];
+            const z = this._scenePolyDepthAt(pf.poly, world.x, world.y);
+            if (z === null) continue;
+            const depth = -z; // CONTRACT B: bigger z = nearer camera → smaller depth
+            const key = mode === 'face' ? this._sceneFaceKeyFor(pf) : pf.objectId;
+            const prev = realDepth.get(key);
+            if (!prev || depth < prev.depth) {
+              realDepth.set(key, { depth, objectId: pf.objectId, faceId: pf.faceId });
+            }
+          }
+          realDepth.forEach((rec, key) => {
+            const existing = byKey.get(key);
+            if (existing) {
+              existing.depth = rec.depth;
+              existing.dist = 0;
+              existing.occluded = false;
+            } else {
+              push({
+                layer, kind: mode === 'face' ? 'face' : 'object', key,
+                objectId: rec.objectId, faceId: rec.faceId,
+                depth: rec.depth, dist: 0, occluded: false, rank: 0,
+              });
+            }
+          });
+        }
         // I12 silhouette fallback: an object drawn as wireframe + hatch (a
         // sphere/torus emits edges, a single face and hatch fill — no pickable
         // face over its interior) is unselectable when the click lands in a
@@ -9851,6 +9918,80 @@
       lower.pop();
       upper.pop();
       return lower.concat(upper);
+    }
+
+    // Real projected FRONT faces for per-pixel-depth picking, built from the
+    // scene mesh through the SINGLE projection source (Scene3D.Scene.assembleScene)
+    // so pick depth matches the drawn geometry exactly. Two failure modes drove
+    // this: a 'none'-mapper box emits ONLY edges (no pickable face over its
+    // interior — clicks fell through to whatever was behind), and a huge ground
+    // plane's single face-centroid depth is a poor stand-in for its depth AT the
+    // cursor (it read as spuriously "near" and stole every click). Cached per
+    // layer generation — invalidated when engine.generate replaces layer.paths.
+    // Only faces whose object actually appears in the emitted paths are kept, so
+    // a hand-authored test fixture (paths that do not match its params) is never
+    // polluted, and boolean/CSG units that don't map 1:1 fall back cleanly.
+    _scenePickFaces(layer) {
+      if (!layer || layer.type !== 'scene3d' || !layer.params) return [];
+      const cache = this._scenePickFaceCache;
+      const pathsRef = layer.paths;
+      if (cache && cache.layerId === layer.id && cache.pathsRef === pathsRef) return cache.faces;
+      let faces = [];
+      try {
+        const S3 = window.Vectura && window.Vectura.Scene3D;
+        const Scene = S3 && S3.Scene;
+        const Params = S3 && S3.Params;
+        if (Scene && typeof Scene.assembleScene === 'function' && this.engine && this.engine.getBounds) {
+          const norm = (Params && typeof Params.normalizeParams === 'function')
+            ? Params.normalizeParams(layer.params) : layer.params;
+          const asm = Scene.assembleScene(norm, this.engine.getBounds());
+          const present = new Set();
+          (this.getInteractionPaths(layer) || []).forEach((p) => {
+            const t = p && p.meta && p.meta.sceneTarget;
+            if (t && t.objectId) present.add(t.objectId);
+          });
+          const records = Array.isArray(asm.objects) ? asm.objects.slice() : [];
+          if (asm.ground) records.push(asm.ground);
+          records.forEach((rec) => {
+            if (!rec || !present.has(rec.id)) return;
+            (rec.faces || []).forEach((face) => {
+              if (!face || !face.front || !Array.isArray(face.polygon) || face.polygon.length < 3) return;
+              faces.push({ objectId: rec.id, faceId: face.faceId, poly: face.polygon });
+            });
+          });
+        }
+      } catch (_e) {
+        faces = [];
+      }
+      this._scenePickFaceCache = { layerId: layer.id, pathsRef, faces };
+      return faces;
+    }
+
+    // Point-in-face (2D) with barycentric-interpolated camera-space depth. The
+    // projected polygon carries {x, y, z}; z is camera depth (bigger = nearer).
+    // Fan-triangulate so a large quad (the ground) interpolates LOCALLY at the
+    // cursor instead of fitting one plane across its whole span. Returns the
+    // interpolated z, or null when the cursor is outside every triangle.
+    _scenePolyDepthAt(poly, px, py) {
+      const n = poly.length;
+      for (let i = 1; i < n - 1; i++) {
+        const A = poly[0]; const B = poly[i]; const C = poly[i + 1];
+        const v0x = B.x - A.x; const v0y = B.y - A.y;
+        const v1x = C.x - A.x; const v1y = C.y - A.y;
+        const den = v0x * v1y - v1x * v0y;
+        if (Math.abs(den) < 1e-9) continue;
+        const v2x = px - A.x; const v2y = py - A.y;
+        const b1 = (v2x * v1y - v1x * v2y) / den; // weight for B
+        const b2 = (v0x * v2y - v2x * v0y) / den; // weight for C
+        const b0 = 1 - b1 - b2; // weight for A
+        if (b0 >= -1e-6 && b1 >= -1e-6 && b2 >= -1e-6) {
+          const az = Number.isFinite(A.z) ? A.z : 0;
+          const bz = Number.isFinite(B.z) ? B.z : 0;
+          const cz = Number.isFinite(C.z) ? C.z : 0;
+          return b0 * az + b1 * bz + b2 * cz;
+        }
+      }
+      return null;
     }
 
     // Single-shot scene hit for external callers (context menu): the top
@@ -12154,6 +12295,127 @@
         strokePaths.forEach((path) => this.tracePath(path, false));
         this.ctx.stroke();
       }
+      this.ctx.restore();
+    }
+
+    // ——— hover silhouette hint (deliverable B) ——————————————————————————
+    // Arm the hover hint on a plain mouse-move. Stores the canvas-local pointer
+    // and defers the pick to rAF (cheap on rapid moves); the actual recompute +
+    // redraw runs in _recomputeSceneHoverHint. Only the object/component tools
+    // hint; other tools clear it.
+    _updateSceneHoverHint(e) {
+      if (!this.canvas) return;
+      if (this.activeTool !== 'select' && this.activeTool !== 'direct') {
+        this._clearSceneHoverHint();
+        return;
+      }
+      const rect = this.canvas.getBoundingClientRect();
+      const inside = e.clientX >= rect.left && e.clientX <= rect.right
+        && e.clientY >= rect.top && e.clientY <= rect.bottom;
+      if (!inside) { this._clearSceneHoverHint(); return; }
+      this._sceneHoverPointer = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      if (this._sceneHoverRaf) return;
+      const schedule = (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function')
+        ? window.requestAnimationFrame.bind(window)
+        : (fn) => setTimeout(fn, 16);
+      this._sceneHoverRaf = schedule(() => {
+        this._sceneHoverRaf = null;
+        this._recomputeSceneHoverHint();
+      });
+    }
+
+    // Recompute the hovered pick from the stored pointer and redraw only when the
+    // target changes. In face-entered mode the hint tracks the frontmost FACE.
+    _recomputeSceneHoverHint() {
+      const ptr = this._sceneHoverPointer;
+      if (!ptr) return;
+      const world = this.screenToWorld(ptr.x, ptr.y);
+      const sel = this.sceneSelection;
+      const mode = (sel && sel.mode === 'face')
+        ? 'face'
+        : (this.activeTool === 'direct' ? (this.sceneComponentMode || 'face') : 'object');
+      const hit = this._sceneHitAtPoint(world, { mode });
+      const next = hit
+        ? { layerId: hit.layer.id, mode: hit.kind, objectId: hit.objectId, faceId: hit.faceId || null, key: hit.key }
+        : null;
+      const prev = this.sceneHoverPick;
+      const changed = (!!prev !== !!next)
+        || (prev && next && (prev.key !== next.key || prev.layerId !== next.layerId || prev.mode !== next.mode));
+      if (!changed) return;
+      this.sceneHoverPick = next;
+      this.draw();
+    }
+
+    // Immediate synchronous flush of a pending hover recompute (tests / down()).
+    _flushSceneHoverHint() {
+      if (this._sceneHoverRaf && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(this._sceneHoverRaf);
+      }
+      this._sceneHoverRaf = null;
+      this._recomputeSceneHoverHint();
+    }
+
+    _clearSceneHoverHint() {
+      if (this._sceneHoverRaf && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(this._sceneHoverRaf);
+      }
+      this._sceneHoverRaf = null;
+      this._sceneHoverPointer = null;
+      if (this.sceneHoverPick) { this.sceneHoverPick = null; this.draw(); }
+    }
+
+    // Draw the hover hint: a subtle accent outline of the object/face a click
+    // would select. Reuses the target's ALREADY-EMITTED world-space paths (never
+    // a new path pushed to layer.paths), so it can never appear in SVG export or
+    // expand-to-layers. A face with no emitted outline ('none'-mapper box) falls
+    // back to its real projected face polygon (still overlay-only geometry).
+    drawSceneHoverHint() {
+      const hover = this.sceneHoverPick;
+      if (!hover) return;
+      const layer = this.engine.layers.find((l) => l.id === hover.layerId);
+      if (!layer || !layer.visible) return;
+      // Don't shadow an active selection of the same target — the selection
+      // overlay already outlines it.
+      const sel = this.sceneSelection;
+      if (sel && sel.layerId === hover.layerId) {
+        if (hover.mode === 'object' && Array.isArray(sel.objectIds) && sel.objectIds.includes(hover.objectId)) return;
+        if (hover.mode === 'face' && Array.isArray(sel.faceKeys) && sel.faceKeys.includes(hover.key)) return;
+      }
+      const paths = this.getInteractionPaths(layer);
+      const strokePaths = [];
+      (paths || []).forEach((path) => {
+        const meta = path && path.meta;
+        const t = meta && meta.sceneTarget;
+        if (!t || !Array.isArray(path) || path.length < 2) return;
+        if (hover.mode === 'object') {
+          if (meta.kind !== 'sceneFill' && t.objectId === hover.objectId) strokePaths.push(path);
+        } else if (hover.mode === 'face') {
+          if (meta.kind === 'sceneFace' && this._sceneFaceKeyFor(t) === hover.key) strokePaths.push(path);
+        }
+      });
+      // Face-mode fallback: outline the real projected face polygon when no
+      // sceneFace outline was emitted for it.
+      if (hover.mode === 'face' && !strokePaths.length) {
+        const pf = this._scenePickFaces(layer)
+          .find((f) => this._sceneFaceKeyFor(f) === hover.key);
+        if (pf && Array.isArray(pf.poly) && pf.poly.length >= 3) {
+          const ring = pf.poly.map((p) => ({ x: p.x, y: p.y }));
+          ring.push({ x: pf.poly[0].x, y: pf.poly[0].y });
+          strokePaths.push(ring);
+        }
+      }
+      if (!strokePaths.length) return;
+      const color = getThemeToken('--render-selection-accent', '#2b6cff');
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      this.ctx.save();
+      this.ctx.lineJoin = 'round';
+      this.ctx.lineCap = 'round';
+      this.ctx.globalAlpha = 0.5;
+      this.ctx.strokeStyle = color;
+      this.ctx.lineWidth = Math.max(0.3, 1.1 * unit);
+      this.ctx.beginPath();
+      strokePaths.forEach((path) => this.tracePath(path, false));
+      this.ctx.stroke();
       this.ctx.restore();
     }
 
