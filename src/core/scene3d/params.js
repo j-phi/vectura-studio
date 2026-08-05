@@ -404,6 +404,88 @@
     };
   };
 
+  // Scene-tree Increment B — assemble ONE scene-group layer's render input by
+  // COLLECTING its descendant object3d / booleanGroup3d layers back into exactly
+  // today's normalized scene shape (objects[] / groups[] / styleTable), then
+  // UNIONing them with any INLINE arrays still on the group. The result feeds the
+  // UNCHANGED scene3d compositor — the collection reconstructs the same input a
+  // monolith carries, so a scene group renders byte-identically to the monolith.
+  //
+  //   groupParams  the scene-group layer's params (camera / lights / ground /
+  //                backdrop / tone / shadow / styleTable.scene / assets, plus any
+  //                legacy inline objects[] / groups[]).
+  //   collected    descendant descriptors in TREE (depth-first) order:
+  //                { kind:'object',  id:<layerId>, params:<object3d layer params> }
+  //                { kind:'boolean', id:<layerId>, params:<booleanGroup3d params>,
+  //                                  children:[<child object3d layer ids>] }
+  //
+  // The child LAYER id becomes the objectId (so meta.sceneTarget.objectId maps
+  // straight to a tree layer — no lookup table). An object's Style routes to
+  // styleTable.byObject[layerId] and each faceStyle to byFace[`${layerId}/${faceId}`]
+  // — NOT styleTable.scene (that scene-scope slot stays the group's own default).
+  // BACK-COMPAT: inline arrays come FIRST, collected children after; a group with
+  // inline objects and ZERO children yields its params unchanged.
+  const collectSceneParams = (groupParams, collected) => {
+    const gp = isObject(groupParams) ? groupParams : {};
+    const items = Array.isArray(collected) ? collected : [];
+    const st = isObject(gp.styleTable) ? gp.styleTable : {};
+
+    const objects = [];
+    const groups = [];
+    const byObject = { ...(isObject(st.byObject) ? st.byObject : {}) };
+    const byFace = { ...(isObject(st.byFace) ? st.byFace : {}) };
+
+    // UNION the inline (legacy) arrays FIRST so a mixed scene keeps its inline
+    // objects ahead of collected child layers, and an inline-only scene is a pass-
+    // through (empty `collected` ⇒ objects/groups === the inline arrays).
+    (Array.isArray(gp.objects) ? gp.objects : []).forEach((o) => { if (isObject(o)) objects.push(o); });
+    (Array.isArray(gp.groups) ? gp.groups : []).forEach((g) => { if (isObject(g)) groups.push(g); });
+
+    items.forEach((item) => {
+      if (!isObject(item) || typeof item.id !== 'string') return;
+      if (item.kind === 'object') {
+        const n = normalizeObjectLayerParams(item.params);
+        objects.push({
+          id: item.id,          // the LAYER id is the objectId (identity contract)
+          name: n.name,
+          primitive: n.primitive,
+          role: n.role,
+          params: n.params,
+          transform: n.transform,
+          visibility: n.visibility,
+          shadow: n.shadow,
+          border: n.border,
+          emissive: n.emissive,
+        });
+        byObject[item.id] = n.style;
+        Object.keys(n.faceStyles || {}).forEach((fid) => {
+          const full = fid.indexOf('/') >= 0 ? fid : `${item.id}/${fid}`;
+          byFace[full] = n.faceStyles[fid];
+        });
+      } else if (item.kind === 'boolean') {
+        const bp = isObject(item.params) ? item.params : {};
+        groups.push({
+          id: item.id,
+          name: typeof bp.name === 'string' && bp.name ? bp.name : item.id,
+          op: GROUP_OPS.includes(bp.op) ? bp.op : 'none',
+          children: (Array.isArray(item.children) ? item.children : []).filter((c) => typeof c === 'string'),
+        });
+        byObject[item.id] = normalizeStyle(bp.style);
+      }
+    });
+
+    return {
+      ...gp,
+      objects,
+      groups,
+      styleTable: {
+        scene: st.scene,
+        byObject,
+        byFace,
+      },
+    };
+  };
+
   // Canonical group list: each group is { id: unique 'grp-<n>', name, op, children }.
   // `objectIds` is the Set of live object ids; dangling child ids are dropped and
   // every object may belong to at most ONE group (a later group's duplicate claim
@@ -632,6 +714,7 @@
     normalizeStyle,
     normalizeStyleTable,
     normalizeObjectLayerParams,
+    collectSceneParams,
     normalizeGroups,
     normalizeParams,
     migrateScene,

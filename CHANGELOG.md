@@ -7,6 +7,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — scene-group compositor (internal).** A `scene3d` layer can now act as a
+  container that collects child `object3d`/`booleanGroup3d` layers and renders them through
+  a single shared hidden-line/lighting/shadow pass (so occlusion between objects stays
+  correct). Child layers are consumed by the group; each object's paths keep its layer id
+  for selection. Fully back-compatible: a scene layer with inline objects and no child
+  layers renders byte-identically to before, so every saved `.vectura` and preset is
+  unaffected. No visible change yet — the tree UI lands next.
 - **3D Scene — `object3d` and `booleanGroup3d` layer types (foundation).** Two new
   layer types that will let a 3D scene be edited as a tree of layers (one object per
   layer, boolean groups as their own layer) instead of a single monolithic scene layer.

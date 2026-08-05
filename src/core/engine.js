@@ -1417,6 +1417,11 @@
       if (!layer) return [];
       if (layer._morphConsumed) return [];
       if (layer.isGroup && Array.isArray(layer.morphedPaths)) return layer.morphedPaths;
+      // Scene-tree Increment B: a consumed object3d/booleanGroup3d child emits
+      // nothing (the owning scene group emits its paths); a scene group serves
+      // the single composed pass. Mirrors the morph checks above.
+      if (layer._sceneConsumed) return [];
+      if (layer.isGroup && Array.isArray(layer.scenePaths)) return layer.scenePaths;
       if (layer.mask?.enabled && layer.mask?.hideLayer) return [];
       // Stroke division (P0-B): divided fragments are the FINAL renderable
       // geometry — canvas, export, and stats all consume them. Null whenever
@@ -1440,6 +1445,10 @@
         if (!layer) return;
         if (layer.morphedPaths) delete layer.morphedPaths;
         if (layer._morphConsumed) delete layer._morphConsumed;
+        // Scene-tree Increment B: clear last pass's scene compose flags so the
+        // consumed markers + composed paths are re-derived deterministically.
+        if (layer.scenePaths) delete layer.scenePaths;
+        if (layer._sceneConsumed) delete layer._sceneConsumed;
         // Morph groups borrow the first child's pen/style as a render/export
         // fallback. Reset it each pass so a group with no visible children
         // doesn't serialize a stale child's style, and re-derivation is
@@ -1473,6 +1482,7 @@
         this.computeLayerDisplayGeometry(layer.id);
       });
       this._computeMorphGroups();
+      this._computeSceneGroups();
       // optimizeLayers ends by recutting stroke divisions (the division stage
       // is structurally downstream of optimization; see optimizeLayers tail).
       this.optimizeLayers(this.layers);
@@ -1526,6 +1536,76 @@
         if (!isModifierLayer(group) || group.modifier?.type !== 'morph') return;
         this._refoldMorphGroup(group, bounds);
       });
+    }
+
+    // Scene-tree Increment B — compose every scene GROUP once. A scene group is
+    // a scene3d layer flagged isGroup + containerRole 'scene'; it COLLECTS its
+    // descendant object3d/booleanGroup3d layers back into one assembled scene
+    // input and runs the shared compositor over the whole set (occlusion /
+    // lighting / shadow are cross-object, so one HLR pass owns every path).
+    // Mirrors _computeMorphGroups.
+    _computeSceneGroups() {
+      this.layers.forEach((group) => {
+        if (!group || !group.isGroup) return;
+        if (group.type !== 'scene3d' || group.containerRole !== 'scene') return;
+        this._composeSceneGroup(group);
+      });
+    }
+
+    // Compose ONE scene group: walk its descendants in tree order, mark each
+    // object3d/booleanGroup3d child _sceneConsumed (so it emits nothing on its
+    // own — mirrors morph's _morphConsumed), collect them + any INLINE arrays
+    // still on the group into the normalized scene input, and run scene3d's
+    // generate ONCE. The composed paths live on group.scenePaths, which
+    // getRenderablePaths serves for the group (mirrors group.morphedPaths). The
+    // compositor math is untouched — collection only reconstructs its input.
+    _composeSceneGroup(group) {
+      const Params = window.Vectura?.Scene3D?.Params;
+      const algo = Algorithms && Algorithms.scene3d;
+      if (!group || !Params || typeof Params.collectSceneParams !== 'function'
+        || !algo || typeof algo.generate !== 'function') return;
+
+      const collected = [];
+      this.getLayerDescendants(group.id).forEach((layer) => {
+        if (!layer) return;
+        if (layer.type === 'object3d') {
+          layer._sceneConsumed = true;
+          if (layer.visible === false) return; // hidden ⇒ contributes nothing
+          collected.push({ kind: 'object', id: layer.id, params: layer.params });
+        } else if (layer.type === 'booleanGroup3d') {
+          layer._sceneConsumed = true;
+          if (layer.visible === false) return;
+          const children = this.getLayerChildren(layer.id)
+            .filter((c) => c && c.type === 'object3d')
+            .map((c) => c.id);
+          collected.push({ kind: 'boolean', id: layer.id, params: layer.params, children });
+        }
+      });
+
+      const assembled = Params.collectSceneParams(group.params, collected);
+
+      // Bounds built EXACTLY like generate() (penWidth from the group pen), so a
+      // scene group renders byte-identically to the equivalent monolith leaf.
+      const { width, height } = this.currentProfile;
+      const m = SETTINGS.margin;
+      const pens = Array.isArray(SETTINGS.pens) ? SETTINGS.pens : [];
+      const layerPen = pens.find((pn) => pn && pn.id === group.penId) || pens[0];
+      const penWidth = Number(layerPen && layerPen.width) > 0 ? Number(layerPen.width) : 0.35;
+      const bounds = {
+        width, height, m, dW: width - m * 2, dH: height - m * 2, penWidth,
+        truncate: SETTINGS.truncate, fastPreview: false, preview3dQuality: SETTINGS.preview3dQuality,
+      };
+
+      const rng = new SeededRNG(group.params.seed);
+      const noise = new SimpleNoise(group.params.seed);
+      let paths = [];
+      try {
+        paths = algo.generate(assembled, rng, noise, bounds) || [];
+      } catch (err) {
+        console.error('[Engine] Scene group compose failed:', err);
+        paths = [];
+      }
+      group.scenePaths = paths;
     }
 
     // Pure parameter-space regeneration for morph intermediates: run an
