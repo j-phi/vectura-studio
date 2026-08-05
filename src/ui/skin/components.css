@@ -13180,6 +13180,15 @@ body.mobile-layout .hud-bar {
   text-transform: uppercase;
   color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
 }
+/* Edge Styles (C-06) — per-edge-class sub-label between the section header and
+   that class's Pen / Weight / Dash rows. Lighter than the section header. */
+.vs3-edge-cls {
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+}
 .vs3-prov-chip {
   display: inline-flex;
   align-items: center;

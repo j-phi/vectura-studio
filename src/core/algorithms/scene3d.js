@@ -208,6 +208,32 @@
       const resolveStyle = makeStyleResolver(styleTable);
       const out = [];
 
+      // ── Per-edge-class EdgeStyle (C-06). p.edgeStyles maps each class
+      // (silhouette/crease/boundary/interior/hidden) → { pen, weightMm, dash[,
+      // hiddenTreatment] }. Absent / all-default ⇒ every overlay below is null ⇒
+      // byte-identical output. weightMm is expressed against the layer's base pen
+      // width (bounds.penWidth, 0.3mm fallback) and rides the SAME tested
+      // meta.weightScale path the silhouette-emphasis passes use.
+      const EDGE_REF_WIDTH = finite(bounds && bounds.penWidth, 0.3);
+      const edgeStyleFor = (cls) => {
+        const t = p.edgeStyles;
+        return (t && t[cls]) || null;
+      };
+      // Build a meta overlay (penId / weightScale / strokeDash) from an EdgeStyle,
+      // or null when the style is a pure no-op. penId overrides the object pen;
+      // weightScale/strokeDash are honored by the renderer + SVG export.
+      const edgeStyleMeta = (es) => {
+        if (!es) return null;
+        const m = {};
+        if (es.pen) m.penId = es.pen;
+        if (es.weightMm != null) {
+          const ws = clamp(es.weightMm / (EDGE_REF_WIDTH || 0.3), 0.1, 6);
+          if (ws !== 1) m.weightScale = ws;
+        }
+        if (Array.isArray(es.dash) && es.dash.length) m.strokeDash = es.dash.slice();
+        return Object.keys(m).length ? m : null;
+      };
+
       // ── Occluder set (S6): solid front faces occlude everyone; x-ray front
       // faces occlude only their own object; ground/backdrop never occlude.
       const occluderFaces = [];
@@ -589,11 +615,15 @@
         // `hiddenOnly` drops visible runs and keeps only the occluded (dashed)
         // ones — an x-ray suppressed crease shows its far side, not its front.
         const hiddenOnly = Boolean(opts && opts.hiddenOnly);
+        // Per-edge-class overlays (C-06). Only the structural-edge pass passes
+        // these; every other caller leaves them undefined ⇒ byte-identical.
+        const visibleMeta = opts && opts.visibleMeta;
+        const hiddenMeta = opts && opts.hiddenMeta;
         runs.forEach((run) => {
           if (runLength(run.pts) < MIN_RUN_MM) return;
           if (run.visible && !forceHidden) {
             if (hiddenOnly) return;
-            const meta = treat.active ? { ...baseMeta } : baseMeta;
+            const meta = (treat.active || visibleMeta) ? { ...baseMeta, ...(visibleMeta || {}) } : baseMeta;
             const pts = applyStrokeTreatment(run.pts, treat, meta, draft);
             const path = pathWithMeta(pts, meta);
             if (path.length >= 2) {
@@ -606,8 +636,12 @@
             return;
           }
           if (hiddenTreatment !== 'dash') return; // solid: hidden runs drop
-          const meta = { ...baseMeta, sceneTarget: { ...baseMeta.sceneTarget, occluded: true, ...(hiddenExtras || {}) } };
+          const meta = { ...baseMeta, sceneTarget: { ...baseMeta.sceneTarget, occluded: true, ...(hiddenExtras || {}) }, ...(hiddenMeta || {}) };
           const pts = applyStrokeTreatment(run.pts, treat, meta, draft);
+          // The hidden class's own dash (when set) is authoritative over the line
+          // type applyStrokeTreatment may have stamped; markHidden then keeps it
+          // rather than falling back to [3,2].
+          if (hiddenMeta && Array.isArray(hiddenMeta.strokeDash)) meta.strokeDash = hiddenMeta.strokeDash.slice();
           const path = pathWithMeta(pts, meta);
           if (path.length >= 2) out.push(markHidden(path));
         });
@@ -1454,13 +1488,27 @@
           };
           const ownerKeys = adjacentFaces.map((face) => face.key);
           const clipped = clipper.clipPath([a, b], { ownerKeys, objectId: record.id });
+          // Per-edge-class EdgeStyle (C-06). VISIBLE runs take the edge's own class
+          // style (raw entry.cls, so a wireframe interior edge gets the 'interior'
+          // style); HIDDEN runs take the 'hidden' class style. Default table ⇒ both
+          // overlays null ⇒ byte-identical.
+          const visOverlay = edgeStyleMeta(edgeStyleFor(entry.cls));
+          const hidOverlay = edgeStyleMeta(edgeStyleFor('hidden'));
           // Structural edge: line-type dash only (double-drawn with the face
           // outline, so wobble is fill-scoped — see dashOnly). Hidden edges dash
-          // under x-ray unless xrayHiddenEdges is off (edgeHidden = 'remove'), or
-          // when a wireframe face asks for showHidden (dashed occluded edges).
-          const thisEdgeHidden = wfShowHidden ? 'dash' : edgeHidden;
+          // under x-ray (edgeHidden = 'dash') or when a wireframe face asks for
+          // showHidden — those PER-OBJECT overrides still win. Otherwise the
+          // scene-wide edgeStyles.hidden.hiddenTreatment decides drop vs dash
+          // (default 'drop' ⇒ 'remove' ⇒ today's look).
+          const sceneHidden = (p.edgeStyles && p.edgeStyles.hidden
+            && p.edgeStyles.hidden.hiddenTreatment === 'dash') ? 'dash' : 'remove';
+          const thisEdgeHidden = (wfShowHidden || edgeHidden === 'dash') ? 'dash' : sceneHidden;
+          const emitOpts = {};
+          if (hiddenOnlyEdge) emitOpts.hiddenOnly = true;
+          if (visOverlay) emitOpts.visibleMeta = visOverlay;
+          if (hidOverlay) emitOpts.hiddenMeta = hidOverlay;
           emitRuns(clipped.runs, baseMeta, thisEdgeHidden, { edgeClass: 'hidden' }, dashOnly(strokeTreatment(style.params)),
-            hiddenOnlyEdge ? { hiddenOnly: true } : undefined);
+            Object.keys(emitOpts).length ? emitOpts : undefined);
           // Border emphasis: silhouette + boundary edges only (the shape's real
           // outline), never creases/interior. Gated on record.border.enabled.
           if (structural && (cls === 'silhouette' || cls === 'boundary')) {

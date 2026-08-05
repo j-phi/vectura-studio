@@ -7,6 +7,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — per-class Edge Styles.** The scene's Style controls gain an **Edge Styles**
+  section: silhouette, crease, boundary, interior, and hidden edges can each take their own
+  pen, weight, and dash, and hidden (occluded) edges can be **dropped or dashed** scene-wide
+  (the x-ray see-through look, now available without per-object x-ray). Defaults inherit the
+  object's pen/weight/line type, so existing scenes render identically; per-object x-ray
+  toggles still win where set. (A future CSG "seam" edge class slots into the same table.)
 - **Stroke Divisions — pen grammar.** The Divisions editor gains a **pen mode** (Cycle /
   Weighted) and a **phase mode** (Fixed / Per-path / Jitter). In Weighted mode each segment's
   pen is chosen by weight, so one stroke scatters across pens by a set ratio; Per-path and

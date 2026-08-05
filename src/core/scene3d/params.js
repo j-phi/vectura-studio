@@ -107,6 +107,42 @@
 
   const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
+  // ── Per-edge-class EdgeStyle table (C-06). Each class carries its OWN
+  // { pen, weightMm, dash } (the `hidden` class also a hiddenTreatment). Every
+  // default is a strict NO-OP — pen null (inherit the object/layer pen),
+  // weightMm null (inherit the base stroke weight), dash null (inherit the line
+  // type), hidden.hiddenTreatment 'drop' (today's solid behavior; 'dash' = the
+  // x-ray see-through look). So a scene with NO edgeStyles block, or one carrying
+  // only defaults, renders byte-identically. `seam` (CSG) is intentionally NOT in
+  // the class list yet — the shape is open, so a future seam class is additive
+  // (no schema break). Emitted ONLY when the scene actually has one (normalizeParams
+  // attaches it only when present), so a legacy scene serializes unchanged.
+  const EDGE_STYLE_CLASSES = ['silhouette', 'crease', 'boundary', 'interior', 'hidden'];
+  const HIDDEN_TREATMENTS = ['drop', 'dash'];
+  const normalizeDashPattern = (dash) => {
+    if (!Array.isArray(dash) || !dash.length) return null;
+    const out = dash.map((n) => finite(n, 0)).filter((n) => n > 0);
+    return out.length ? out : null;
+  };
+  const normalizeEdgeStyle = (style, cls) => {
+    const src = isObject(style) ? style : {};
+    const out = {
+      pen: (typeof src.pen === 'string' && src.pen) ? src.pen : null,
+      weightMm: src.weightMm == null ? null : clamp(finite(src.weightMm, 0.3), 0.05, 5),
+      dash: normalizeDashPattern(src.dash),
+    };
+    if (cls === 'hidden') {
+      out.hiddenTreatment = HIDDEN_TREATMENTS.includes(src.hiddenTreatment) ? src.hiddenTreatment : 'drop';
+    }
+    return out;
+  };
+  const normalizeEdgeStyles = (styles) => {
+    const src = isObject(styles) ? styles : {};
+    const out = {};
+    EDGE_STYLE_CLASSES.forEach((cls) => { out[cls] = normalizeEdgeStyle(src[cls], cls); });
+    return out;
+  };
+
   // Known style.params keys carry an explicit clamp/whitelist so a hand-edited
   // scene degrades gracefully (do NOT rely on passthrough alone). Unknown keys
   // still pass through for forward compat. Returns `undefined` for keys with no
@@ -711,6 +747,11 @@
     out.groups = normalizeGroups(src.groups, new Set(out.objects.map((o) => o.id)));
     out.assets = isObject(src.assets) ? src.assets : {};
     out.styleTable = normalizeStyleTable(src.styleTable);
+    // Per-edge-class EdgeStyle table (C-06). Attached ONLY when the scene carries
+    // one, so a legacy/default scene keeps its exact serialized shape (and, since
+    // every default is a no-op, its exact render). scene3d.js reads p.edgeStyles
+    // defensively (absent ⇒ all defaults).
+    if (isObject(src.edgeStyles)) out.edgeStyles = normalizeEdgeStyles(src.edgeStyles);
     return out;
   };
 
@@ -737,10 +778,14 @@
     MAPPERS,
     GROUP_OPS,
     PRIMITIVE_PARAM_DEFAULTS,
+    EDGE_STYLE_CLASSES,
+    HIDDEN_TREATMENTS,
     DEFAULT_TRANSFORM,
     DEFAULT_CAMERA,
     DEFAULT_TONE,
     DEFAULT_SHADOW,
+    normalizeEdgeStyles,
+    normalizeEdgeStyle,
     normalizeTone,
     normalizeShadow,
     normalizeStyle,

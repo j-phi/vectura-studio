@@ -2984,6 +2984,93 @@
           onChange: (v) => commitStyle({ params: { ...sp(), xrayFront: v } }),
         }));
       }
+
+      // ── Edge Styles (C-06) — SCENE-WIDE per-edge-class styling. Mounts on the
+      // scene group (scope 'scene'). Each class carries its own pen / weight /
+      // dash; `hidden` adds an occluded-edge Drop|Dash selector (Drop = today's
+      // solid look, Dash = the x-ray see-through look, now available scene-wide
+      // WITHOUT per-object x-ray). Writes params.edgeStyles directly (a scene
+      // field, not a cascade style). Every default is a no-op ⇒ byte-identical.
+      if (scope.scope === 'scene') {
+        const EDGE_CLASSES = [
+          { key: 'silhouette', label: 'Silhouette' },
+          { key: 'crease', label: 'Crease' },
+          { key: 'boundary', label: 'Boundary' },
+          { key: 'interior', label: 'Interior' },
+          { key: 'hidden', label: 'Hidden' },
+        ];
+        const DASH_OPTS = [
+          { value: 'none', label: 'Solid' },
+          { value: 'dashed', label: 'Dashed' },
+          { value: 'dotted', label: 'Dotted' },
+        ];
+        const DASH_PATTERNS = { dashed: [3, 2], dotted: [0.6, 1.6] };
+        const dashName = (arr) => {
+          if (!Array.isArray(arr) || !arr.length) return 'none';
+          return (arr.length === 2 && arr[0] <= 1) ? 'dotted' : 'dashed';
+        };
+        const readEdge = (cls) => {
+          const table = (params.edgeStyles && typeof params.edgeStyles === 'object') ? params.edgeStyles : {};
+          const es = (table[cls] && typeof table[cls] === 'object') ? table[cls] : {};
+          return {
+            pen: typeof es.pen === 'string' ? es.pen : null,
+            weightMm: es.weightMm == null ? null : es.weightMm,
+            dash: Array.isArray(es.dash) ? es.dash : null,
+            hiddenTreatment: es.hiddenTreatment === 'dash' ? 'dash' : 'drop',
+          };
+        };
+        const writeEdge = (cls, patch) => {
+          commit(() => {
+            if (!params.edgeStyles || typeof params.edgeStyles !== 'object') params.edgeStyles = {};
+            const cur = (params.edgeStyles[cls] && typeof params.edgeStyles[cls] === 'object') ? params.edgeStyles[cls] : {};
+            params.edgeStyles[cls] = { ...cur, ...patch };
+          });
+          renderStyle();
+        };
+
+        const esHdr = document.createElement('div');
+        esHdr.className = 'vs3-hl-hdr';
+        esHdr.textContent = 'Edge Styles';
+        styleHost.appendChild(esHdr);
+
+        EDGE_CLASSES.forEach(({ key, label }) => {
+          const cur = readEdge(key);
+          const clsHdr = document.createElement('div');
+          clsHdr.className = 'vs3-edge-cls';
+          clsHdr.textContent = label;
+          styleHost.appendChild(clsHdr);
+
+          styleComps.push(UI.Select(labeledHost('Pen'), {
+            options: [{ value: '', label: 'Inherit' }].concat(pens.map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
+            value: cur.pen || '',
+            ariaLabel: `${label} edge pen`,
+            onChange: (v) => writeEdge(key, { pen: v || null }),
+          }));
+
+          sliderRow(styleHost, styleComps, 'Weight', {
+            value: cur.weightMm == null ? 0 : cur.weightMm,
+            min: 0, max: 2, step: 0.05, defaultValue: 0,
+            ariaLabel: `${label} edge weight (0 = inherit)`,
+            onCommit: (v) => writeEdge(key, { weightMm: v > 0 ? v : null }),
+          });
+
+          styleComps.push(UI.Select(labeledHost('Dash'), {
+            options: DASH_OPTS,
+            value: dashName(cur.dash),
+            ariaLabel: `${label} edge dash`,
+            onChange: (v) => writeEdge(key, { dash: DASH_PATTERNS[v] ? DASH_PATTERNS[v].slice() : null }),
+          }));
+
+          if (key === 'hidden') {
+            styleComps.push(UI.SegCtrl(labeledHost('Occluded'), {
+              options: [{ value: 'drop', label: 'Drop' }, { value: 'dash', label: 'Dash' }],
+              value: cur.hiddenTreatment,
+              ariaLabel: 'Hidden edge treatment',
+              onChange: (v) => writeEdge('hidden', { hiddenTreatment: v === 'dash' ? 'dash' : 'drop' }),
+            }));
+          }
+        });
+      }
     };
 
     // ── Tone-band editor (CONTRACT L3) ──────────────────────────────────────
