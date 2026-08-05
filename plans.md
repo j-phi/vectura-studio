@@ -245,9 +245,13 @@ question. Do not start these without a decision:
     scene-wide on the scene group's Style tab. Defaults no-op (byte-identical); per-object
     x-ray/showHidden stay authoritative and are layered under the scene-wide default. `seam`
     class deferred (open hook for CSG). Adversarial byte-identity confirmed via visual suite.
-  - **Deferred:** Inc-2 plot-physics readout (optional/verify-first); per-object EdgeStyle
-    overrides + full removal of the per-object x-ray toggles; `_divisionSeed` 0/1 cosmetic;
-    per-object scene divisions.
+  - **Inc-2 plot-physics readout (6abd890, v1.3.67).** Document Overview shows per effective
+    pen (real plot order): lifts, pen-up travel, draw length, estimated time (machine speeds +
+    per-lift time), an all-pens total, and a K-05 min-segment/gap guard (count + warning).
+    Extends `computeStats` with `{physics:true}`; read-only (no geometry drift).
+  - **Deferred:** per-object EdgeStyle overrides + full removal of the per-object x-ray
+    toggles; `_divisionSeed` 0/1 cosmetic; per-object scene divisions; Phase 5 backlog
+    (OBJ import, Manifold WASM booleans, curved−curved CSG, etc. — needs prioritization).
 - **Unreleased — 3D Scene Studio → layers-panel scene tree (v1.3.56–1.3.61, `3d-scene/p4`,
   commits `541231e`..`a2ff2cf`).** Decomposed the monolithic single `scene3d` layer into a
   real layer tree, in six increments: **A** new `object3d` + `booleanGroup3d` layer types
