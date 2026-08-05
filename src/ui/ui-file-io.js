@@ -588,7 +588,10 @@
         }
         (paths || []).forEach((path, pathIndex) => {
           const pathPen = penMap.get(path?.meta?.penId) || layerPen;
-          const key = pathPen.id || fallbackPen.id;
+          // Group key comes from the shared effective-pen rule so the engine's
+          // per-pen grouping / dedup / stats bucket paths under the exact same
+          // pen this export plots them with (PenValidate.resolveEffectivePenId).
+          const key = window.Vectura.PenValidate.resolveEffectivePenId(path?.meta, layer.penId, penMap);
           if (!groupMap.has(key)) {
             groupMap.set(key, { key, pen: pathPen, items: [] });
             seenGroupOrder.push(key);

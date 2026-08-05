@@ -33,7 +33,10 @@
   const globalScope = typeof window !== 'undefined' ? window : globalThis;
   const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
   const G3 = Vectura.Geometry3D || {};
-  const Mesh = (Vectura.Scene3D && Vectura.Scene3D.Mesh) || {};
+  // Lazy resolve — see mesh.js getCharts: capturing the Mesh namespace at IIFE
+  // load stranded an empty {} if load order ever placed mesh.js after this
+  // module. Read it on demand instead.
+  const getMesh = () => (Vectura.Scene3D && Vectura.Scene3D.Mesh) || {};
 
   const { v, add, sub, mul, dot, cross, normalize, length } = G3;
 
@@ -309,7 +312,7 @@
     if (!mesh.faces.length) return null;
     // weldTagged mirrors Mesh.weldMesh (guarded on it staying present) while
     // threading faceTags; falls back to raw when the Mesh module is absent.
-    mesh = Mesh.weldMesh ? weldTagged(mesh) : mesh;
+    mesh = getMesh().weldMesh ? weldTagged(mesh) : mesh;
     mesh = dropSlivers(mesh);
     if (!mesh.faces.length) return null;
     return { vertices: mesh.vertices, faces: mesh.faces, faceTags: mesh.faceTags };

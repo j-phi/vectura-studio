@@ -2935,9 +2935,15 @@
           // paths) carry their own meta.penId, so each PATH is bucketed by the
           // pen it will actually plot with — not its layer's pen.
           const penGroups = new Map();
+          // Resolve each path's penId against the document pen SET the SAME way
+          // the SVG export does (PenValidate.resolveEffectivePenId), so a
+          // stale/unknown meta.penId buckets under the pen it will actually
+          // plot with instead of a phantom group.
+          const penSet = new Set((SETTINGS.pens || []).map((pn) => pn && pn.id));
+          const resolvePen = window.Vectura.PenValidate.resolveEffectivePenId;
           layersToProcess.forEach((layer) => {
             (map.get(layer.id) || []).forEach((path) => {
-              const penId = (path && path.meta && path.meta.penId) || layer.penId || 'default';
+              const penId = resolvePen(path && path.meta, layer.penId, penSet);
               if (!penGroups.has(penId)) penGroups.set(penId, []);
               penGroups.get(penId).push({ layerId: layer.id, path });
             });
@@ -3035,7 +3041,10 @@
           // their surviving sets agree.
           const SD = window.Vectura?.StrokeDivide;
           const deduper = SD ? SD.createPlotDeduper(quant, pathKey) : null;
-          const penOf = (layer, path) => (path && path.meta && path.meta.penId) || layer.penId || 'default';
+          // Resolve penId against the pen SET the same way export/computeStats
+          // do, so a stale meta.penId dedupes in the bucket it actually plots in.
+          const penSet = new Set((SETTINGS.pens || []).map((pn) => pn && pn.id));
+          const penOf = (layer, path) => window.Vectura.PenValidate.resolveEffectivePenId(path && path.meta, layer.penId, penSet);
           if (deduper) {
             layersToProcess.forEach((layer) => {
               (current.get(layer.id) || []).forEach((path) => {
@@ -3129,7 +3138,10 @@
       // is on (optimize > 0).
       const SD = window.Vectura?.StrokeDivide;
       const deduper = (optimize > 0 && SD) ? SD.createPlotDeduper(quant, pathKey) : null;
-      const penOf = (l, p) => (p && p.meta && p.meta.penId) || l.penId || 'default';
+      // Resolve penId against the pen SET the same way the SVG export does, so
+      // reported stats never count a path under a phantom pen export coerces away.
+      const penSet = new Set((SETTINGS.pens || []).map((pn) => pn && pn.id));
+      const penOf = (l, p) => window.Vectura.PenValidate.resolveEffectivePenId(p && p.meta, l.penId, penSet);
       const sources = target.map((l) => this.getRenderablePaths(l, {
         useOptimized, preDivision: Boolean(options.preDivision),
       }) || []);

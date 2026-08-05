@@ -16,7 +16,12 @@
   const globalScope = typeof window !== 'undefined' ? window : globalThis;
   const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
   const G3 = Vectura.Geometry3D || {};
-  const Charts = (Vectura.Scene3D && Vectura.Scene3D.Charts) || {};
+  // Resolve the Charts namespace LAZILY at call time. Capturing it at IIFE load
+  // (`const Charts = ... || {}`) stranded an empty {} forever if charts.js ever
+  // registered after mesh.js in load order — chart lookups then silently
+  // no-op'd. Reading window.Vectura.Scene3D.Charts on demand removes that
+  // load-order fragility; the `|| {}` remains only as a last-resort guard.
+  const getCharts = () => (Vectura.Scene3D && Vectura.Scene3D.Charts) || {};
 
   const {
     TAU,
@@ -165,6 +170,7 @@
   // The STL/importedMesh branch and param resolution stay in topoform, which
   // hands the resolved mode + sizes here. Dispatch order matches the original.
   const buildTopoformPrimitive = (mode, sizes, detail) => {
+    const Charts = getCharts();
     if (mode === 'torus') {
       return makeGridMesh(detail, detail * 2, Charts.topoTorus(sizes), true);
     }

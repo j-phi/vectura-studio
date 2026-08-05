@@ -89,6 +89,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   unchanged.
 
 ### Fixed
+- **Plotter — pen stats/grouping now match the exported file.** A path carrying a stale or
+  unknown pen id was counted and grouped under a phantom pen in the plot stats/preview while
+  the SVG export plotted it under a fallback pen — so the numbers disagreed with the artifact.
+  The engine now resolves each path's effective pen the same way export does (shared helper),
+  so stats, line-sorting, and export agree. Also hardened three 3D-scene modules to resolve
+  their sibling namespaces at call time so script load order can't strand them empty.
 - **Plotter — divided strokes no longer double-ink a coincident duplicate.** When a layer
   with stroke divisions and an identical undivided layer sat on the same pen, the plotter
   inked the shared path twice. Dedup now keys divided fragments to their parent geometry at

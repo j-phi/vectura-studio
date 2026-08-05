@@ -20,7 +20,10 @@
   const globalScope = typeof window !== 'undefined' ? window : globalThis;
   const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
   const G3 = Vectura.Geometry3D || {};
-  const Mesh = (Vectura.Scene3D && Vectura.Scene3D.Mesh) || {};
+  // Lazy resolve — see mesh.js getCharts: capturing the Mesh namespace at IIFE
+  // load stranded an empty {} if load order ever placed mesh.js after this
+  // module. Read it on demand instead.
+  const getMesh = () => (Vectura.Scene3D && Vectura.Scene3D.Mesh) || {};
 
   const {
     finite,
@@ -113,6 +116,7 @@
   // Builds the untransformed primitive mesh + deterministic face ids.
   // `detailScale` is the preview throttle (previewDetailScale(bounds)).
   const buildPrimitiveMesh = (obj, detailScale = 1) => {
+    const Mesh = getMesh();
     const p = obj.params || {};
     if (obj.primitive === 'box') return buildBoxMesh(p);
     if (obj.primitive === 'plane') return buildPlaneMesh(p);

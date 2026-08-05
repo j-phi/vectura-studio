@@ -48,6 +48,24 @@
     return out;
   };
 
+  // Effective-pen resolution — the SINGLE rule that decides which pen a path
+  // actually plots with, shared by the SVG export (ui-file-io.js) and the
+  // engine's per-pen grouping / dedup / computeStats. A path's own
+  // `meta.penId` wins, but ONLY if it is a real pen in the current set; a
+  // stale/unknown penId falls back to the layer's pen (again only if it is in
+  // the set), and finally to the synthetic 'default' bucket. `penSet` is any
+  // object with a `.has(id)` membership test (a Map keyed by id, or a Set of
+  // ids). Keeping export and engine on this one function stops the stats /
+  // preview from ever counting a path under a phantom pen the export coerces
+  // away.
+  const resolveEffectivePenId = (pathMeta, layerPenId, penSet) => {
+    const has = (id) => !!id && !!penSet && typeof penSet.has === 'function' && penSet.has(id);
+    const metaPen = pathMeta && pathMeta.penId;
+    if (has(metaPen)) return metaPen;
+    if (has(layerPenId)) return layerPenId;
+    return 'default';
+  };
+
   const validatePens = (input) => {
     if (!Array.isArray(input)) return [];
     const seen = new Set();
@@ -62,5 +80,5 @@
     return out;
   };
 
-  Vectura.PenValidate = { validatePens, validatePen };
+  Vectura.PenValidate = { validatePens, validatePen, resolveEffectivePenId };
 })();

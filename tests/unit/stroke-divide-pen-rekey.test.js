@@ -64,10 +64,13 @@ describe('effective-pen re-key (line sort, plotter dedupe, stats)', () => {
   test("linesort grouping:'pen' buckets each path by its EFFECTIVE pen", () => {
     const { engine, layers } = makeEngineWithLayers(1);
     const [layer] = layers;
-    layer.penId = 'pen-a';
+    // Real pens from the default set — a path's own penId only re-buckets when
+    // it names a pen that actually exists (4a: engine validates the same way
+    // export does; a stale penId is coerced to the layer/default pen).
+    layer.penId = 'pen-1';
     layer.paths = [
       mkPath([[0, 0], [10, 0]]),
-      mkPath([[0, 5], [10, 5]], { penId: 'pen-b' }),
+      mkPath([[0, 5], [10, 5]], { penId: 'pen-2' }),
     ];
     layer.effectivePaths = [];
 
@@ -75,7 +78,7 @@ describe('effective-pen re-key (line sort, plotter dedupe, stats)', () => {
 
     // Each path lands in its own pen bucket, so BOTH are first in their
     // bucket's sort (lineSortOrder 0). Under layer-pen bucketing they would
-    // share the 'pen-a' bucket and come out 0 and 1.
+    // share the 'pen-1' bucket and come out 0 and 1.
     const orders = layer.optimizedPaths.map((p) => p.meta.lineSortOrder);
     expect(orders).toEqual([0, 0]);
   });
@@ -131,8 +134,8 @@ describe('effective-pen re-key (line sort, plotter dedupe, stats)', () => {
     layerB.penId = null;
     const PARENT = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
     layerA.paths = [mkPath([[0, 0], [4, 0]], { parentGeom: PARENT, fragIndex: 0 })];
-    // Same parent geometry but a different effective pen — must be kept.
-    layerB.paths = [mkPath([[0, 1], [4, 1]], { parentGeom: PARENT, fragIndex: 0, penId: 'pen-z' })];
+    // Same parent geometry but a different (REAL) effective pen — must be kept.
+    layerB.paths = [mkPath([[0, 1], [4, 1]], { parentGeom: PARENT, fragIndex: 0, penId: 'pen-2' })];
     layerA.effectivePaths = [];
     layerB.effectivePaths = [];
 
@@ -214,10 +217,12 @@ describe('effective-pen re-key (line sort, plotter dedupe, stats)', () => {
     const { engine, layers } = makeEngineWithLayers(1);
     const [layer] = layers;
     layer.penId = null;
-    // Identical geometry, two different per-path pens: both plot, both count.
+    // Identical geometry, two different REAL per-path pens: both plot, both
+    // count (4a: penIds must exist in the set to bucket distinctly, matching
+    // export — see the stale-penId test below).
     layer.paths = [
-      mkPath([[0, 0], [10, 0]], { penId: 'p1' }),
-      mkPath([[0, 0], [10, 0]], { penId: 'p2' }),
+      mkPath([[0, 0], [10, 0]], { penId: 'pen-1' }),
+      mkPath([[0, 0], [10, 0]], { penId: 'pen-2' }),
     ];
     layer.effectivePaths = [];
 
@@ -245,5 +250,49 @@ describe('effective-pen re-key (line sort, plotter dedupe, stats)', () => {
     // Layer A's two sibling fragments count; layer B's re-presented parent
     // is the duplicate the plotter skips, so stats must skip it too.
     expect(stats.lines).toBe(2);
+  });
+
+  // ── 4a: penId validation drift — engine now resolves an unknown/stale
+  // meta.penId against the document pen SET the SAME way the SVG export does,
+  // so stats/grouping never count a path under a phantom pen the export
+  // coerces away. ────────────────────────────────────────────────────────────
+  test('4a: a stale (unknown) meta.penId is counted under the SAME pen export plots it with', () => {
+    const { engine, layers } = makeEngineWithLayers(1);
+    const [layer] = layers;
+    layer.penId = 'pen-1'; // a real pen from the default set
+    // pathA carries a penId NOT in the set → export coerces it to the layer
+    // pen 'pen-1'. pathB explicitly uses 'pen-1'. Identical geometry → one
+    // physical line the plotter inks ONCE. Before the fix the engine bucketed
+    // pathA under the phantom 'ghost-pen', counted 2 lines, and disagreed with
+    // the exported artifact (1 line). Now both resolve to 'pen-1' → 1 line.
+    layer.paths = [
+      mkPath([[0, 0], [10, 0]], { penId: 'ghost-pen' }),
+      mkPath([[0, 0], [10, 0]], { penId: 'pen-1' }),
+    ];
+    layer.effectivePaths = [];
+
+    SETTINGS.plotterOptimize = 0.1;
+    const stats = engine.computeStats([layer]);
+    expect(stats.lines).toBe(1);
+  });
+
+  test('4a: engine effective-pen resolution equals SVG export for stale/valid/fallback penIds', () => {
+    const V = runtime.window.Vectura;
+    const resolve = V.PenValidate.resolveEffectivePenId;
+    const pens = V.SETTINGS.pens || [];
+    // The two membership shapes the two call sites pass: the engine builds a
+    // Set of pen ids; the export builds a Map keyed by pen id. Both must yield
+    // the identical effective pen id for every case (that is the whole fix).
+    const penSetIds = new Set(pens.map((p) => p && p.id));
+    const penMap = new Map(pens.map((p) => [p.id, p]));
+    // Stale meta.penId → falls back to the (valid) layer pen, both shapes.
+    expect(resolve({ penId: 'ghost-pen' }, 'pen-1', penSetIds)).toBe('pen-1');
+    expect(resolve({ penId: 'ghost-pen' }, 'pen-1', penMap)).toBe('pen-1');
+    // A valid meta.penId always wins.
+    expect(resolve({ penId: 'pen-3' }, 'pen-1', penSetIds)).toBe('pen-3');
+    // Neither path nor layer pen in the set → synthetic 'default' bucket
+    // (== export's fallbackPen.id).
+    expect(resolve({ penId: 'ghost' }, 'also-ghost', penSetIds)).toBe('default');
+    expect(resolve(null, null, penSetIds)).toBe('default');
   });
 });
