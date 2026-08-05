@@ -28,8 +28,12 @@ describe('scene3d 12-object drag performance', () => {
       const { VectorEngine, SETTINGS } = runtime.window.Vectura;
       const engine = new VectorEngine();
 
-      const id = engine.addLayer('scene3d');
-      const layer = engine.getLayerById(id);
+      // Scene-tree Increment D: Add Layer now builds a TREE; this stress test
+      // times the MONOLITH compositor, so build a monolith leaf directly.
+      const layer = new runtime.window.Vectura.Layer('mono-perf', 'scene3d', 'Scene');
+      engine.layers.push(layer);
+      engine.activeLayerId = layer.id;
+      const id = layer.id;
       const prims = ['box', 'sphere', 'cylinder', 'torus', 'cone', 'box',
         'sphere', 'cylinder', 'box', 'box', 'cone', 'box'];
       layer.params.objects = prims.map((p, i) => ({

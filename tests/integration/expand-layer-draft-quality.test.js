@@ -49,8 +49,13 @@ describe('expandLayer emits full-quality geometry after a draft frame', () => {
 
   function makeSpiralScene() {
     const engine = app.engine;
-    const id = engine.addLayer('scene3d');
-    const layer = engine.getLayerById(id);
+    // Scene-tree Increment D: Add Layer now builds a TREE; this test exercises
+    // the MONOLITH expand path, so build a monolith leaf directly (the saved-doc
+    // load shape).
+    const layer = new window.Vectura.Layer(`mono-spiral-${Math.random().toString(36).slice(2)}`, 'scene3d', 'Scene');
+    engine.layers.push(layer);
+    engine.activeLayerId = layer.id;
+    const id = layer.id;
     layer.params.objects = [{
       id: 'obj-1', name: 'box', primitive: 'box',
       params: { sx: 60, sy: 60, sz: 60 },

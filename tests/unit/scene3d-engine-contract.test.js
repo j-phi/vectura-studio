@@ -1,15 +1,27 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
 /*
- * CONTRACT E — engine integration for scene3d (Phase 1 stream 1A).
+ * CONTRACT E — engine integration for scene3d (Phase 1 stream 1A), updated for
+ * Scene-tree Increment D.
  *
- * - addLayer('scene3d') + generate produces paths through the real engine.
- * - duplicateLayer routes params through cloneLayerParams: params.assets is
- *   shared BY REFERENCE, everything else (objects[]) is deep-copied.
- * - exportState/importState round-trips the scene.
- * - sanitizeImportedParams clamps garbage (NaN transforms → finite; missing
- *   camera/styleTable/lights shapes restored).
+ * - Add Layer "3D Scene" (addLayer('scene3d')) now builds a scene TREE: a scene
+ *   GROUP (isGroup + containerRole 'scene') seeded with ONE default object3d
+ *   child. The group composes + renders it (meta.sceneTarget.objectId === child
+ *   layer id).
+ * - The MONOLITH shape (inline params.objects[]) survives only as a load-time
+ *   form for saved docs; it is built directly here (addMonolith) to keep the
+ *   duplicate / export / sanitize coverage that exercises it.
  */
+
+// Build a MONOLITH scene3d layer directly (the load-time / saved-doc shape,
+// no longer produced by addLayer). Mirrors the pre-Increment-D add path.
+const addMonolith = (V, engine) => {
+  const layer = new V.Layer('mono-1', 'scene3d', 'Scene Monolith');
+  engine.layers.push(layer);
+  engine.activeLayerId = layer.id;
+  engine.generate(layer.id);
+  return layer.id;
+};
 
 describe('scene3d engine contract (CONTRACT E)', () => {
   let runtime;
@@ -22,23 +34,82 @@ describe('scene3d engine contract (CONTRACT E)', () => {
 
   afterAll(() => runtime.cleanup());
 
-  test('addLayer(scene3d) generates paths through the engine', () => {
+  test('Add Layer 3D Scene builds a scene TREE (group + one object3d child)', () => {
     const engine = new V.VectorEngine();
     const id = engine.addLayer('scene3d');
+    const group = engine.getLayerById(id);
+    expect(group).toBeTruthy();
+    // The returned layer is the scene GROUP (the three compositor invariants).
+    expect(group.type).toBe('scene3d');
+    expect(group.isGroup).toBe(true);
+    expect(group.containerRole).toBe('scene');
+    // Seeded with exactly one default object3d child, carrying a real pen.
+    const children = engine.getLayerChildren(id).filter((l) => l.type === 'object3d');
+    expect(children.length).toBe(1);
+    expect(children[0].penId).toBeTruthy();
+    // Inline arrays are empty — child layers are the single source of truth.
+    expect(group.params.objects).toEqual([]);
+    // The group composes + renders the child as WIREFRAME edges; every emitted
+    // path targets the CHILD LAYER id (identity contract, no lookup table).
+    engine.computeAllDisplayGeometry();
+    const paths = engine.getRenderablePaths(group);
+    expect(Array.isArray(paths)).toBe(true);
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.some((p) => p.meta && p.meta.kind === 'sceneEdge')).toBe(true);
+    expect(paths.some((p) => p.meta && p.meta.sceneTarget
+      && p.meta.sceneTarget.objectId === children[0].id)).toBe(true);
+  });
+
+  test('a monolith scene3d layer still generates paths (saved-doc load shape)', () => {
+    const engine = new V.VectorEngine();
+    const id = addMonolith(V, engine);
     const layer = engine.getLayerById(id);
-    expect(layer).toBeTruthy();
     expect(layer.type).toBe('scene3d');
+    expect(layer.isGroup).toBeFalsy();
     engine.generate(id);
     expect(Array.isArray(layer.paths)).toBe(true);
     expect(layer.paths.length).toBeGreaterThan(0);
-    // I11: new objects default to the WIREFRAME mapper, which emits structural
-    // EDGES (silhouette/crease/…) and no per-face outline fills (sceneFace).
     expect(layer.paths.some((p) => p.meta && p.meta.kind === 'sceneEdge')).toBe(true);
+  });
+
+  test('expandMonolithToTree converts a monolith into an equivalent scene tree', () => {
+    // A monolith with two boxes renders; expanding it to a tree renders the
+    // SAME object silhouettes (paths still target the same object ids).
+    const engine = new V.VectorEngine();
+    const id = addMonolith(V, engine);
+    const layer = engine.getLayerById(id);
+    layer.params.objects.push({
+      id: 'obj-2', name: 'Box 2', primitive: 'box',
+      params: { sx: 20, sy: 20, sz: 20 },
+      transform: { x: 60, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+      visibility: 'solid',
+    });
+    engine.generate(id);
+    const beforeIds = new Set(engine.getRenderablePaths(layer)
+      .map((p) => p.meta && p.meta.sceneTarget && p.meta.sceneTarget.objectId)
+      .filter(Boolean));
+
+    const groupId = engine.expandMonolithToTree(id);
+    expect(groupId).toBe(id);
+    const group = engine.getLayerById(id);
+    expect(group.isGroup).toBe(true);
+    expect(group.containerRole).toBe('scene');
+    expect(group.params.objects).toEqual([]);
+    const children = engine.getLayerChildren(id).filter((l) => l.type === 'object3d');
+    expect(children.map((c) => c.id).sort()).toEqual(['obj-1', 'obj-2']);
+    engine.computeAllDisplayGeometry();
+    const afterIds = new Set(engine.getRenderablePaths(group)
+      .map((p) => p.meta && p.meta.sceneTarget && p.meta.sceneTarget.objectId)
+      .filter(Boolean));
+    // The same object ids are still present in the composed render.
+    beforeIds.forEach((oid) => expect(afterIds.has(oid)).toBe(true));
+    // Idempotent — expanding an already-expanded tree is a no-op.
+    expect(engine.expandMonolithToTree(id)).toBeNull();
   });
 
   test('duplicateLayer shares params.assets by ref and deep-copies objects[]', () => {
     const engine = new V.VectorEngine();
-    const id = engine.addLayer('scene3d');
+    const id = addMonolith(V, engine);
     const layer = engine.getLayerById(id);
     layer.params.assets.tex1 = { hash: 'abc', data: [1, 2, 3] };
     layer.params.objects.push({
@@ -60,7 +131,7 @@ describe('scene3d engine contract (CONTRACT E)', () => {
 
   test('exportState/importState round-trips the scene', () => {
     const engine = new V.VectorEngine();
-    const id = engine.addLayer('scene3d');
+    const id = addMonolith(V, engine);
     const layer = engine.getLayerById(id);
     layer.params.objects[0].transform.yaw = 33;
     layer.params.objects.push({
@@ -89,7 +160,7 @@ describe('scene3d engine contract (CONTRACT E)', () => {
 
   test('sanitizeImportedParams clamps garbage scene params on import', () => {
     const engine = new V.VectorEngine();
-    const id = engine.addLayer('scene3d');
+    const id = addMonolith(V, engine);
     const state = engine.exportState();
     const entry = state.layers.find((l) => l.id === id);
     entry.params.objects[0].transform.x = NaN;
@@ -121,7 +192,7 @@ describe('scene3d engine contract (CONTRACT E)', () => {
 
   test('object ids are kept unique after import (duplicate ids reassigned)', () => {
     const engine = new V.VectorEngine();
-    const id = engine.addLayer('scene3d');
+    const id = addMonolith(V, engine);
     const state = engine.exportState();
     const entry = state.layers.find((l) => l.id === id);
     entry.params.objects.push({ ...entry.params.objects[0] }); // duplicate 'obj-1'

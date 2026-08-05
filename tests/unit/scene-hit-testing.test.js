@@ -234,4 +234,60 @@ describe('3D Scene Studio 1C — scene hit testing (CONTRACT B meta)', () => {
     // stroke-hit only; scene face interiors never leak into findLayerAtPoint).
     expect(renderer.findLayerAtPoint({ x: 120, y: 120 })).toBeNull();
   });
+
+  // ── Scene-tree Increment D — canvas pick → select CHILD LAYER ──────────────
+  // A scene GROUP owns the composed scenePaths (meta.sceneTarget.objectId ===
+  // the child layer id). Its objects are pickable, and a click selects the
+  // OBJECT'S child layer in the tree (not the group).
+  async function setupGroup() {
+    runtime = await loadVecturaRuntime({ includeRenderer: true });
+    const { VectorEngine, Renderer, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+    const group = new Layer('scene-grp', 'scene3d', 'Scene');
+    group.isGroup = true;
+    group.containerRole = 'scene';
+    group.groupType = 'scene';
+    group.params = { ...group.params, ...makeSceneParams(), objects: [], groups: [] };
+    // Two object3d children; their LAYER ids are the object ids the paths carry.
+    const c1 = new Layer('obj-1', 'object3d', 'Box 1');
+    c1.parentId = 'scene-grp';
+    const c2 = new Layer('obj-2', 'object3d', 'Box 2');
+    c2.parentId = 'scene-grp';
+    // The group serves its composed scenePaths (getRenderablePaths → scenePaths).
+    group.scenePaths = makeScenePaths();
+    engine.layers.push(group, c1, c2);
+    const renderer = new Renderer('main-canvas', engine);
+    renderer.setTool('select');
+    renderer.scale = 1; renderer.offsetX = 0; renderer.offsetY = 0;
+    return { renderer, engine, group, c1, c2 };
+  }
+
+  test('a scene GROUP is pickable and maps a pick to its child layer', async () => {
+    const { renderer, group, c1, c2 } = await setupGroup();
+    // The group is no longer skipped by the candidate scan.
+    const hit = renderer._sceneHitAtPoint({ x: 40, y: 40 }, { mode: 'object' });
+    expect(hit).toBeTruthy();
+    expect(hit.layer.id).toBe('scene-grp');
+    expect(hit.objectId).toBe('obj-2'); // nearer object
+    // objectId → child LAYER (identity contract, no lookup table).
+    expect(renderer._sceneChildLayerFor(group, 'obj-2')).toBe(c2);
+    expect(renderer._sceneChildLayerFor(group, 'obj-1')).toBe(c1);
+    // The ground quad + unknown ids never cross-select.
+    expect(renderer._sceneChildLayerFor(group, 'ground')).toBeNull();
+    expect(renderer._sceneChildLayerFor(group, 'nope')).toBeNull();
+  });
+
+  test('clicking an object in a scene GROUP selects that object\'s CHILD LAYER', async () => {
+    const { renderer, group, c2 } = await setupGroup();
+    renderer._sceneDownSelect({ x: 40, y: 40 }, { clientX: 40, clientY: 40 }, {});
+    // The CHILD layer is now selected (panels route to it), while the scene
+    // selection stays keyed to the GROUP + the picked object id.
+    expect(renderer.selectedLayerIds.has(c2.id)).toBe(true);
+    expect(renderer.selectedLayerIds.has(group.id)).toBe(false);
+    const ss = renderer.getSceneSelection();
+    expect(ss).toBeTruthy();
+    expect(ss.layerId).toBe(group.id);
+    expect(ss.objectIds).toEqual(['obj-2']);
+  });
 });

@@ -244,9 +244,369 @@
   const clone = (obj) => Vectura.Utils.clone(obj);
   const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
+  // ════════════════════════════════════════════════════════════════════════
+  // Scene-tree Increment D — focused per-LAYER panels.
+  // The layers-panel owns the scene TREE now, so a selected object3d /
+  // booleanGroup3d CHILD routes here to a compact editor keyed to THAT layer's
+  // OWN params (not params.objects[i]). The shared module catalogs (PRIMITIVES /
+  // DIMENSIONS / FIDELITY_PRIMS / MAPPERS) drive the controls, and the same
+  // one-undo-per-gesture commit pattern the main panel uses.
+  // ════════════════════════════════════════════════════════════════════════
+
+  // The one-undo-per-gesture commit + live-slider pattern, bound to a layer.
+  const mkCommitKit = (ui, layer) => {
+    const pushHist = () => { try { ui.app && ui.app.pushHistory && ui.app.pushHistory(); } catch (_) { /* */ } };
+    const store = () => { try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ } };
+    const regen = () => { try { ui.app && ui.app.regen && ui.app.regen(); } catch (_) { /* */ } };
+    const regenDraft = () => { try { ui.app && ui.app.regen && ui.app.regen({ preview: true }); } catch (_) { /* */ } };
+    const commit = (mutate) => { pushHist(); mutate(); store(); regen(); };
+    const liveSlider = (apply) => {
+      const g = { active: false, raf: 0 };
+      const hasRaf = typeof requestAnimationFrame === 'function';
+      const flushDraft = () => {
+        if (g.raf) return;
+        g.raf = hasRaf
+          ? requestAnimationFrame(() => { g.raf = 0; store(); regenDraft(); })
+          : setTimeout(() => { g.raf = 0; store(); regenDraft(); }, 16);
+      };
+      return {
+        onChange: (v) => { if (!g.active) { pushHist(); g.active = true; } apply(v); flushDraft(); },
+        onCommit: (v) => {
+          if (g.raf) { if (hasRaf) cancelAnimationFrame(g.raf); else clearTimeout(g.raf); g.raf = 0; }
+          if (!g.active) pushHist();
+          apply(v); store(); regen(); g.active = false;
+        },
+      };
+    };
+    return { commit, liveSlider };
+  };
+
+  // Walk up to the owning scene GROUP (type 'scene3d' + isGroup) of a child.
+  const sceneGroupOf = (ui, layer) => {
+    const engine = ui.app && ui.app.engine;
+    if (!engine || !engine.getLayerById) return null;
+    const seen = new Set();
+    let p = layer;
+    while (p && p.parentId && !seen.has(p.id)) {
+      seen.add(p.id);
+      p = engine.getLayerById(p.parentId);
+      if (p && p.type === 'scene3d' && p.isGroup) return p;
+    }
+    return null;
+  };
+
+  // Mirror the selected child object to the renderer's scene selection so the
+  // on-canvas transform gizmo + selection overlay follow the panel (panel→canvas
+  // sync). Object3d picks target the object; a booleanGroup3d selects nothing on
+  // canvas (its fused result has no single object id).
+  const mirrorChildToCanvas = (ui, layer, objectId) => {
+    const r = ui.app && ui.app.renderer;
+    const group = sceneGroupOf(ui, layer);
+    if (!r || !group || typeof r.setSceneSelection !== 'function') return;
+    try {
+      if (objectId) r.setSceneSelection({ layerId: group.id, mode: 'object', objectIds: [objectId], faceKeys: [], edgeKeys: [] }, { silent: true });
+      else r.setSceneSelection(null, { silent: true });
+    } catch (_) { /* non-DOM */ }
+  };
+
+  const labeledRow = (host, label) => {
+    const row = document.createElement('div');
+    row.className = 'vs3-row';
+    const lbl = document.createElement('label');
+    lbl.className = 'vs3-lbl';
+    lbl.textContent = label;
+    row.appendChild(lbl);
+    const ctl = document.createElement('div');
+    ctl.className = 'vs3-ctl';
+    row.appendChild(ctl);
+    host.appendChild(row);
+    return ctl;
+  };
+
+  // Compact panel for one object3d LEAF layer — Inspector (dims / transform /
+  // fidelity / visibility / role) + Style, re-keyed to layer.params.
+  const buildObjectPanel = (ui, layer, container) => {
+    const UI = Vectura.UI;
+    const params = layer.params || (layer.params = {});
+    if (!params.transform || typeof params.transform !== 'object') {
+      params.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
+    }
+    if (!params.params || typeof params.params !== 'object') params.params = {};
+    if (!params.style || typeof params.style !== 'object') params.style = { penId: null, mapper: 'wireframe', params: {} };
+    const { commit, liveSlider } = mkCommitKit(ui, layer);
+    const engine = ui.app && ui.app.engine;
+    const parent = layer.parentId && engine && engine.getLayerById ? engine.getLayerById(layer.parentId) : null;
+    const inBoolean = !!(parent && parent.type === 'booleanGroup3d');
+
+    const comps = [];
+    const destroyComps = () => { comps.forEach((c) => { try { c.destroy && c.destroy(); } catch (_) { /* */ } }); comps.length = 0; };
+
+    const root = document.createElement('div');
+    root.className = 'vs3-panel';
+    container.appendChild(root);
+    const pages = {};
+    const makePage = (name) => { const el = document.createElement('div'); el.className = 'vs3-page'; el.dataset.page = name; pages[name] = el; return el; };
+    const tabs = UI.Tabs(root, {
+      tabs: [{ value: 'object', label: 'Object' }, { value: 'style', label: 'Style' }],
+      active: 'object',
+      ariaLabel: '3D Object panel tabs',
+      onChange: (v) => {
+        Object.keys(pages).forEach((k) => pages[k].classList.toggle('active', k === v));
+        if (v === 'style') renderStyle(); else renderObject();
+      },
+    });
+    root.appendChild(makePage('object'));
+    root.appendChild(makePage('style'));
+    pages.object.classList.add('active');
+
+    const t = params.transform;
+    const prim = params.primitive || 'box';
+    const primDefaults = (PRIMITIVES[prim] && PRIMITIVES[prim].defaults()) || {};
+
+    const slider = (host, label, props) => { comps.push(UI.Slider(labeledRow(host, label), props)); };
+
+    let renderObject = () => {};
+    renderObject = () => {
+      destroyComps();
+      pages.object.textContent = '';
+      const host = pages.object;
+
+      // Name → layer.name (the tree label).
+      const nameCtl = labeledRow(host, 'Name');
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.className = 'vs3-name-input';
+      nameInput.value = layer.name || '';
+      nameInput.setAttribute('aria-label', 'Object name');
+      nameInput.addEventListener('change', () => {
+        const next = nameInput.value.trim();
+        if (next && next !== layer.name) { commit(() => { layer.name = next; }); try { ui.renderLayers && ui.renderLayers(); } catch (_) { /* */ } }
+        else nameInput.value = layer.name || '';
+      });
+      nameCtl.appendChild(nameInput);
+
+      // Role — only meaningful inside a boolean group (solid / hole).
+      if (inBoolean) {
+        comps.push(UI.SegCtrl(labeledRow(host, 'Role'), {
+          options: [{ value: 'solid', label: 'Solid' }, { value: 'hole', label: 'Hole' }],
+          value: params.role === 'hole' ? 'hole' : 'solid',
+          ariaLabel: 'CSG role (solid or hole)',
+          onChange: (v) => { commit(() => { params.role = v; }); },
+        }));
+      }
+
+      // Position
+      ['x', 'y', 'z'].forEach((ax) => {
+        slider(host, `${ax.toUpperCase()} (mm)`, {
+          value: Number.isFinite(t[ax]) ? t[ax] : 0, min: -200, max: 200, step: 0.5, defaultValue: 0,
+          ariaLabel: `Position ${ax.toUpperCase()} (mm)`,
+          ...liveSlider((v) => { params.transform[ax] = v; }),
+        });
+      });
+      // Rotation
+      [['yaw', 'Yaw'], ['pitch', 'Pitch'], ['roll', 'Roll']].forEach(([ax, lbl]) => {
+        slider(host, lbl, {
+          value: Number.isFinite(t[ax]) ? t[ax] : 0, min: -180, max: 180, step: 1, defaultValue: 0,
+          ariaLabel: `${lbl} (degrees)`,
+          ...liveSlider((v) => { params.transform[ax] = v; }),
+        });
+      });
+      // Uniform scale
+      slider(host, 'Scale', {
+        value: Number.isFinite(t.scale) ? t.scale : 1, min: 0.1, max: 5, step: 0.05, defaultValue: 1,
+        ariaLabel: 'Uniform scale',
+        ...liveSlider((v) => { params.transform.scale = v; delete params.transform.sx; delete params.transform.sy; delete params.transform.sz; }),
+      });
+
+      // Dimensions (per-primitive)
+      const dims = DIMENSIONS[prim];
+      if (dims && dims.length) {
+        const fallbackFor = (key) => (key === 'radius' ? 25 : 30);
+        dims.forEach((d) => {
+          slider(host, d.label, {
+            value: Number.isFinite(params.params[d.key]) ? params.params[d.key] : fallbackFor(d.key),
+            min: d.min, max: d.max, step: d.step,
+            defaultValue: Number.isFinite(primDefaults[d.key]) ? primDefaults[d.key] : fallbackFor(d.key),
+            ariaLabel: `${prim} ${d.label.toLowerCase()}`,
+            ...liveSlider((v) => { params.params[d.key] = v; if (Array.isArray(d.extraKeys)) d.extraKeys.forEach((k) => { params.params[k] = v; }); }),
+          });
+        });
+      }
+      // Fidelity
+      if (FIDELITY_PRIMS.has(prim)) {
+        slider(host, 'Fidelity', {
+          value: Number.isFinite(params.params.detail) ? params.params.detail : 24, min: 6, max: 48, step: 1,
+          defaultValue: Number.isFinite(primDefaults.detail) ? primDefaults.detail : 24,
+          ariaLabel: 'Surface fidelity (tessellation detail)',
+          ...liveSlider((v) => { params.params.detail = Math.round(v); }),
+        });
+      }
+
+      // Visibility
+      comps.push(UI.SegCtrl(labeledRow(host, 'Visibility'), {
+        options: [{ value: 'solid', label: 'Solid' }, { value: 'xray', label: 'X-ray' }],
+        value: params.visibility === 'xray' ? 'xray' : 'solid',
+        ariaLabel: 'Object visibility',
+        onChange: (v) => { commit(() => { params.visibility = v; }); },
+      }));
+
+      // Cast shadow (Auto / On / Off)
+      const castVal = params.shadow && params.shadow.enabled === false ? 'off'
+        : (params.shadow && params.shadow.enabled === true ? 'on' : 'inherit');
+      comps.push(UI.SegCtrl(labeledRow(host, 'Cast shadow'), {
+        options: [{ value: 'inherit', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+        value: castVal,
+        ariaLabel: 'Object casts shadow',
+        onChange: (v) => {
+          commit(() => {
+            if (!params.shadow || typeof params.shadow !== 'object') params.shadow = { enabled: null };
+            params.shadow.enabled = v === 'on' ? true : (v === 'off' ? false : null);
+          });
+        },
+      }));
+    };
+
+    let renderStyle = () => {};
+    renderStyle = () => {
+      destroyComps();
+      pages.style.textContent = '';
+      const host = pages.style;
+      const style = params.style;
+      const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+      comps.push(UI.Select(labeledRow(host, 'Pen'), {
+        options: [{ value: '', label: 'Layer pen' }].concat(pens.map((p) => ({ value: p.id, label: p.name || p.id }))),
+        value: style.penId || '',
+        ariaLabel: 'Style pen',
+        onChange: (v) => { commit(() => { style.penId = v || null; }); },
+      }));
+      comps.push(UI.Select(labeledRow(host, 'Mapper'), {
+        options: MAPPERS,
+        value: style.mapper || 'wireframe',
+        ariaLabel: 'Style mapper',
+        onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); renderStyle(); },
+      }));
+      if (FILL_MAPPERS.has(style.mapper)) {
+        if (!style.params || typeof style.params !== 'object') style.params = {};
+        slider(host, 'Density', {
+          value: Number.isFinite(style.params.fillDensity) ? style.params.fillDensity : 50, min: 5, max: 100, step: 1, defaultValue: 50,
+          ariaLabel: 'Fill density',
+          ...liveSlider((v) => { style.params.fillDensity = Math.round(v); }),
+        });
+        slider(host, 'Angle', {
+          value: Number.isFinite(style.params.fillAngle) ? style.params.fillAngle : 45, min: 0, max: 180, step: 1, defaultValue: 45,
+          ariaLabel: 'Fill angle',
+          ...liveSlider((v) => { style.params.fillAngle = Math.round(v); }),
+        });
+      }
+    };
+
+    // Render the initial (Object) tab; tab switches render the entered tab.
+    renderObject();
+
+    mirrorChildToCanvas(ui, layer, layer.id);
+
+    let destroyed = false;
+    const teardown = () => {
+      if (destroyed) return; destroyed = true;
+      destroyComps();
+      try { tabs.destroy(); } catch (_) { /* */ }
+      if (root.parentNode) root.parentNode.removeChild(root);
+      if (CURRENT === self) CURRENT = null;
+    };
+    teardownIfDetached = () => { if (!destroyed && root && !root.isConnected) { teardown(); return true; } return destroyed; };
+    const self = { layerId: layer.id, destroy: teardown };
+    CURRENT = self;
+  };
+
+  // Compact panel for one booleanGroup3d GROUP — op selector + fused Style +
+  // child-role summary, re-keyed to layer.params.
+  const buildBooleanPanel = (ui, layer, container) => {
+    const UI = Vectura.UI;
+    const params = layer.params || (layer.params = {});
+    if (!params.style || typeof params.style !== 'object') params.style = { penId: null, mapper: 'wireframe', params: {} };
+    const { commit, liveSlider } = mkCommitKit(ui, layer);
+    const engine = ui.app && ui.app.engine;
+    const comps = [];
+    const destroyComps = () => { comps.forEach((c) => { try { c.destroy && c.destroy(); } catch (_) { /* */ } }); comps.length = 0; };
+    const slider = (host, label, props) => { comps.push(UI.Slider(labeledRow(host, label), props)); };
+
+    const root = document.createElement('div');
+    root.className = 'vs3-panel';
+    container.appendChild(root);
+    const pages = {};
+    const makePage = (name) => { const el = document.createElement('div'); el.className = 'vs3-page'; el.dataset.page = name; pages[name] = el; return el; };
+    const tabs = UI.Tabs(root, {
+      tabs: [{ value: 'boolean', label: 'Boolean' }, { value: 'style', label: 'Style' }],
+      active: 'boolean',
+      ariaLabel: '3D Boolean group panel tabs',
+      onChange: (v) => { Object.keys(pages).forEach((k) => pages[k].classList.toggle('active', k === v)); },
+    });
+    root.appendChild(makePage('boolean'));
+    root.appendChild(makePage('style'));
+    pages.boolean.classList.add('active');
+
+    // Boolean tab: op + child roles.
+    const bHost = pages.boolean;
+    comps.push(UI.SegCtrl(labeledRow(bHost, 'Operation'), {
+      options: [{ value: 'union', label: 'Union' }, { value: 'subtract', label: 'Subtract' }, { value: 'intersect', label: 'Intersect' }],
+      value: ['union', 'subtract', 'intersect'].includes(params.op) ? params.op : 'subtract',
+      ariaLabel: 'Boolean operation',
+      onChange: (v) => { commit(() => { params.op = v; }); },
+    }));
+    comps.push(UI.SegCtrl(labeledRow(bHost, 'Visibility'), {
+      options: [{ value: 'solid', label: 'Solid' }, { value: 'xray', label: 'X-ray' }],
+      value: params.visibility === 'xray' ? 'xray' : 'solid',
+      ariaLabel: 'Fused visibility',
+      onChange: (v) => { commit(() => { params.visibility = v; }); },
+    }));
+    const children = (engine && engine.getLayerChildren) ? engine.getLayerChildren(layer.id).filter((c) => c && c.type === 'object3d') : [];
+    const note = document.createElement('p');
+    note.className = 'vs3-empty';
+    note.textContent = children.length
+      ? `${children.length} operand${children.length === 1 ? '' : 's'} — edit each in its own row (roles: first Solid, rest Hole).`
+      : 'Drag object layers into this group in the Layers panel to add operands.';
+    bHost.appendChild(note);
+
+    // Style tab.
+    const sHost = pages.style;
+    const style = params.style;
+    const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+    comps.push(UI.Select(labeledRow(sHost, 'Pen'), {
+      options: [{ value: '', label: 'Layer pen' }].concat(pens.map((p) => ({ value: p.id, label: p.name || p.id }))),
+      value: style.penId || '',
+      ariaLabel: 'Fused style pen',
+      onChange: (v) => { commit(() => { style.penId = v || null; }); },
+    }));
+    comps.push(UI.Select(labeledRow(sHost, 'Mapper'), {
+      options: MAPPERS,
+      value: style.mapper || 'wireframe',
+      ariaLabel: 'Fused style mapper',
+      onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); },
+    }));
+
+    mirrorChildToCanvas(ui, layer, null);
+
+    let destroyed = false;
+    const teardown = () => {
+      if (destroyed) return; destroyed = true;
+      destroyComps();
+      try { tabs.destroy(); } catch (_) { /* */ }
+      if (root.parentNode) root.parentNode.removeChild(root);
+      if (CURRENT === self) CURRENT = null;
+    };
+    teardownIfDetached = () => { if (!destroyed && root && !root.isConnected) { teardown(); return true; } return destroyed; };
+    const self = { layerId: layer.id, destroy: teardown };
+    CURRENT = self;
+  };
+
   // ── build ─────────────────────────────────────────────────────────────────
   const build = (ui, layer, container) => {
     if (CURRENT) { try { CURRENT.destroy(); } catch (_) { /* */ } CURRENT = null; }
+    // Scene-tree Increment D — route child layers to their focused editors; the
+    // scene3d group / monolith continues through the full builder below.
+    if (layer.type === 'object3d') { buildObjectPanel(ui, layer, container); return; }
+    if (layer.type === 'booleanGroup3d') { buildBooleanPanel(ui, layer, container); return; }
+    const isSceneGroup = Boolean(layer.isGroup && layer.containerRole === 'scene');
 
     const UI = Vectura.UI;
     const SC = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
@@ -2604,10 +2964,15 @@
 
     // ── Sections ────────────────────────────────────────────────────────────
     const sections = [];
-    sections.push(UI.Section(pages.scene, {
-      title: 'Add Objects',
-      children: (body) => buildShelf(body),
-    }));
+    // Scene-tree Increment D — a scene GROUP creates objects via the layers-panel
+    // tree (which owns the tree now), so its in-panel "Add Objects" shelf is
+    // retired. A legacy monolith keeps the shelf (no layers-panel tree for it).
+    if (!isSceneGroup) {
+      sections.push(UI.Section(pages.scene, {
+        title: 'Add Objects',
+        children: (body) => buildShelf(body),
+      }));
+    }
     sections.push(UI.Section(pages.scene, {
       title: 'Scene Tree',
       children: (body) => {

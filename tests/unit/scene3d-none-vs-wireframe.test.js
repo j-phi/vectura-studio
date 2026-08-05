@@ -108,25 +108,33 @@ describe('3D Scene Studio — none vs wireframe (I5) + default mapper (I11)', ()
     });
   });
 
-  describe('I11 — a freshly added scene3d object defaults to wireframe', () => {
-    test('engine.addLayer(scene3d) resolves the scene mapper to wireframe (real add path)', () => {
+  describe('I11 — a freshly added scene tree defaults to wireframe', () => {
+    // Scene-tree Increment D — Add Layer now builds a scene GROUP + one default
+    // object3d child; the group's scene-scope mapper resolves to wireframe.
+    test('engine.addLayer(scene3d) builds a scene group whose scene mapper is wireframe', () => {
       const engine = new V.VectorEngine();
       const id = engine.addLayer('scene3d');
-      const layer = engine.getLayerById(id);
-      expect(layer).toBeTruthy();
-      expect(layer.type).toBe('scene3d');
-      expect(layer.params.styleTable.scene.mapper).toBe('wireframe');
+      const group = engine.getLayerById(id);
+      expect(group).toBeTruthy();
+      expect(group.type).toBe('scene3d');
+      expect(group.isGroup).toBe(true);
+      expect(group.params.styleTable.scene.mapper).toBe('wireframe');
+      // The default object child is itself wireframe (I11 per-object default).
+      const child = engine.getLayerChildren(id).find((l) => l.type === 'object3d');
+      expect(child).toBeTruthy();
+      expect(child.params.style.mapper).toBe('wireframe');
     });
 
-    test('the default scene renders as wireframe (interior edges present, no sceneFace)', () => {
+    test('the default scene tree renders as wireframe (interior edges present, no sceneFace)', () => {
       const engine = new V.VectorEngine();
       const id = engine.addLayer('scene3d');
-      engine.generate(id);
-      const layer = engine.getLayerById(id);
-      const es = edges(layer.paths);
+      engine.computeAllDisplayGeometry();
+      const group = engine.getLayerById(id);
+      const paths = engine.getRenderablePaths(group);
+      const es = edges(paths);
       expect(clsCount(es, 'crease') + clsCount(es, 'interior')).toBeGreaterThan(0);
       // wireframe faces emit edges only — no per-face outline fills.
-      expect(layer.paths.some((p) => p.meta && p.meta.kind === 'sceneFace')).toBe(false);
+      expect(paths.some((p) => p.meta && p.meta.kind === 'sceneFace')).toBe(false);
     });
   });
 });

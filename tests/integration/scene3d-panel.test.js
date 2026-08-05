@@ -109,6 +109,45 @@ describe('Scene3D panel — buildControls dispatch', () => {
     expect(host.querySelectorAll('.control-label').length).toBeGreaterThan(0);
     expect(host.querySelector('input[type="range"]')).toBeTruthy();
   });
+
+  // ── Scene-tree Increment D — panel re-key by SELECTED layer ────────────────
+
+  test('(d) selecting the scene GROUP shows scene controls, NOT the Add Objects shelf', () => {
+    // Add Layer builds a scene TREE; the group is active.
+    const gid = app.engine.addLayer('scene3d');
+    app.engine.setActiveLayer ? app.engine.setActiveLayer(gid) : (app.engine.activeLayerId = gid);
+    app.ui.buildControls();
+    const host = controlsHost();
+    expect(host.querySelector('.vs3-panel')).toBeTruthy();
+    // The tabs still mount (scene controls: Scene | Style | Output).
+    const tabValues = Array.from(host.querySelectorAll('.tab-btn')).map((b) => b.dataset.value);
+    expect(tabValues).toEqual(['scene', 'style', 'output']);
+    // The in-panel "Add Objects" shelf is retired for a scene group (the
+    // layers-panel owns object creation now).
+    expect(host.querySelector('.vs3-shelf')).toBeFalsy();
+  });
+
+  test('(c) selecting an object3d CHILD routes the Inspector to that layer and edits re-render', () => {
+    const gid = app.engine.addLayer('scene3d');
+    const child = app.engine.getLayerChildren(gid).find((l) => l.type === 'object3d');
+    expect(child).toBeTruthy();
+    app.engine.activeLayerId = child.id;
+    app.ui.buildControls();
+    const host = controlsHost();
+    // The object panel mounts with its own tabs + a Position slider bound to the
+    // CHILD layer's params (not params.objects[i]).
+    expect(host.querySelector('.vs3-panel')).toBeTruthy();
+    const posX = host.querySelector('input.ctrl-slider[aria-label="Position X (mm)"]');
+    expect(posX).toBeTruthy();
+    // Editing a dimension writes the child layer's params and regenerates.
+    const before = child.params.params.sx;
+    const widthSlider = host.querySelector('input.ctrl-slider[aria-label="box width"]');
+    expect(widthSlider).toBeTruthy();
+    widthSlider.value = String((before || 40) + 12);
+    widthSlider.dispatchEvent(new window.Event('input', { bubbles: true }));
+    widthSlider.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(child.params.params.sx).not.toBe(before);
+  });
 });
 
 // ---------------------------------------------------------------------------

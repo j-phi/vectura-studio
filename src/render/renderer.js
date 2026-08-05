@@ -5723,7 +5723,11 @@
         // 3D Scene Studio (§5.1): a sole selected scene layer suppresses the
         // 2D transform box/handles (no dual-meaning drags) but keeps the orbit
         // gizmo, which routes to the camera or the selected scene object.
-        const soleScene = selectionLayersForBox.length === 1 && selectionLayersForBox[0].type === 'scene3d';
+        // Scene-tree Increment D — object3d / booleanGroup3d children are
+        // scene-managed (no independent 2D transform box); the composed scene
+        // group draws their gizmo. Suppress the 2D box + handles for them too.
+        const soleSceneType = (l) => l && (l.type === 'scene3d' || l.type === 'object3d' || l.type === 'booleanGroup3d');
+        const soleScene = selectionLayersForBox.length === 1 && soleSceneType(selectionLayersForBox[0]);
         if (bounds) {
           if (!soleScene) this.drawSelection(bounds, { showHandles });
           if (showHandles && selectionLayersForBox.length === 1) {
@@ -6774,13 +6778,17 @@
         // 3D Scene Studio (Phase 2): the sun widget + shadow handle win over
         // object selection so the light can be dragged where it overlaps art.
         // Runs after the orbit gizmo (orbit still wins) and before selection.
+        // Scene-tree Increment D — resolve the scene layer the gizmos act on:
+        // the sole selected scene3d, OR (when an object3d / booleanGroup3d CHILD
+        // is selected) its owning scene GROUP via the scene selection. This lets
+        // the transform gizmo arm for a tree object even though the selected 2D
+        // layer is the child, not the group.
+        const gizmoSceneLayer = this.activeTool === 'select' ? this._sceneLightLayer() : null;
         if (
-          this.activeTool === 'select' &&
-          selectedLayers.length === 1 &&
-          selectedLayers[0].type === 'scene3d' &&
-          !this.isLayerLocked?.(selectedLayers[0].id)
+          gizmoSceneLayer &&
+          !this.isLayerLocked?.(gizmoSceneLayer.id)
         ) {
-          const sceneLayer = selectedLayers[0];
+          const sceneLayer = gizmoSceneLayer;
           // Selected-light 3-axis translate gizmo wins over everything (the
           // panel put a light in focus; the legacy sun disc is suppressed while
           // it shows).
@@ -6831,7 +6839,9 @@
         // Scene layers suppress the 2D transform handles (no dual-meaning
         // drags — §5.1); their resize/rotate grips are never drawn, so a hit
         // on the invisible handle geometry must not arm a 2D resize.
-        const soleSceneSelected = selectedLayers.length === 1 && selectedLayers[0].type === 'scene3d';
+        const soleSceneSelected = selectedLayers.length === 1
+          && (selectedLayers[0].type === 'scene3d' || selectedLayers[0].type === 'object3d'
+            || selectedLayers[0].type === 'booleanGroup3d');
         if (selectionBounds && !soleSceneSelected && !selectedLayers.some(l => this.isLayerLocked?.(l.id))) {
           const handle = this.hitHandle(sx, sy, selectionBounds);
           if (handle) {
@@ -9631,7 +9641,11 @@
     // selection's layer, else the sole selected scene layer, else the engine's
     // active layer when it is a scene. Null disables all scene key gating.
     getSceneShortcutLayer() {
-      const isScene = (l) => Boolean(l && l.type === 'scene3d' && !l.isGroup
+      // Scene-tree Increment D — a scene GROUP (isGroup + containerRole 'scene')
+      // is a valid scene target alongside a monolith; only booleanGroup3d and
+      // non-scene groups are excluded.
+      const isScene = (l) => Boolean(l && l.type === 'scene3d'
+        && (!l.isGroup || l.containerRole === 'scene')
         && l.visible !== false && !(this.isLayerLocked && this.isLayerLocked(l.id)));
       if (this.sceneSelection) {
         const l = this.engine.layers.find((x) => x.id === this.sceneSelection.layerId);
@@ -9691,7 +9705,42 @@
     }
 
     _sceneObjectById(layer, id) {
-      return this._sceneObjects(layer).find((o) => o && o.id === id) || null;
+      const inline = this._sceneObjects(layer).find((o) => o && o.id === id);
+      if (inline) return inline;
+      // Scene-tree Increment D — a scene GROUP's objects live on CHILD LAYERS.
+      // The child layer id === the object id (identity contract), and its params
+      // carry the same {primitive, params, transform, visibility, role, ...}
+      // shape, so gizmo / resize / face-pull drags mutate them directly and the
+      // compositor re-collects them on the next generate().
+      if (layer && layer.isGroup && id) {
+        const child = this.engine.getLayerById ? this.engine.getLayerById(id) : null;
+        if (child && child.type === 'object3d' && child.params) {
+          if (child.params.id !== id) child.params.id = id;
+          return child.params;
+        }
+      }
+      return null;
+    }
+
+    // Scene-tree Increment D — resolve the CHILD LAYER that an object pick maps
+    // to inside a scene GROUP. sceneTarget.objectId === child layer id (identity
+    // contract), so this is a direct id lookup restricted to descendants of the
+    // group. Returns the object3d / booleanGroup3d layer, or null (a monolith's
+    // inline object, the ground quad, or an unknown id).
+    _sceneChildLayerFor(group, objectId) {
+      if (!group || !group.isGroup || !objectId || objectId === 'ground') return null;
+      const child = this.engine.getLayerById ? this.engine.getLayerById(objectId) : null;
+      if (!child || (child.type !== 'object3d' && child.type !== 'booleanGroup3d')) return null;
+      // Confirm it actually lives under this group (never cross-select). Walk up
+      // the parent chain; a match on the group id means it is a descendant.
+      const seen = new Set();
+      let p = child;
+      while (p && !seen.has(p.id)) {
+        seen.add(p.id);
+        if (p.parentId === group.id) return child;
+        p = p.parentId ? this.engine.getLayerById(p.parentId) : null;
+      }
+      return null;
     }
 
     // CONTRACT B carries no stable edge id, so edge keys are derived from the
@@ -9726,7 +9775,11 @@
     _sceneCandidatesAtPoint(world, mode = 'object') {
       const layers = this.engine.layers.slice().reverse();
       for (const layer of layers) {
-        if (!layer || layer.type !== 'scene3d' || !layer.visible || layer.isGroup) continue;
+        // Scene-tree Increment D — a scene GROUP (type 'scene3d' + isGroup +
+        // containerRole 'scene') owns the composed scenePaths, so its objects are
+        // pickable too. A monolith (!isGroup) still qualifies. Boolean groups
+        // (type 'booleanGroup3d') are consumed — they never carry scenePaths.
+        if (!layer || layer.type !== 'scene3d' || !layer.visible) continue;
         if (this.isLayerLocked?.(layer.id)) continue;
         const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
         // Sparse-wireframe primitives (a box has only 9 edges + 3 faces) are a
@@ -10058,7 +10111,13 @@
       const isDbl = Boolean(prev && (now - prev.time) < 400
         && Math.hypot((e.clientX ?? 0) - prev.x, (e.clientY ?? 0) - prev.y) < 8);
       this._sceneLastClick = { time: now, x: e.clientX ?? 0, y: e.clientY ?? 0 };
-      if (!this.selectedLayerIds.has(layer.id)) this.selectLayer(layer);
+      // Scene-tree Increment D — clicking an object inside a scene GROUP selects
+      // that object's CHILD LAYER in the tree (sceneTarget.objectId === child
+      // layer id, no lookup table). A monolith's inline object has no child
+      // layer → select the scene layer itself (legacy behavior).
+      const pickedChild = layer.isGroup ? this._sceneChildLayerFor(layer, cand.objectId) : null;
+      const layerToSelect = pickedChild || layer;
+      if (!this.selectedLayerIds.has(layerToSelect.id)) this.selectLayer(layerToSelect);
       const sel = this.sceneSelection && this.sceneSelection.layerId === layer.id ? this.sceneSelection : null;
       if (isDbl && !additive && !modifiers.alt) {
         // Double-click enters A / face mode on the clicked object (§5.1).
@@ -10125,7 +10184,11 @@
       }
       const layer = stack[0].layer;
       const cand = this._scenePickCandidate(stack, world, mode, modifiers.alt);
-      if (!this.selectedLayerIds.has(layer.id)) this.selectLayer(layer);
+      // Scene-tree Increment D — face/edge picks inside a scene GROUP also route
+      // layer selection to the object's child layer (same identity contract).
+      const pickedChild = layer.isGroup ? this._sceneChildLayerFor(layer, cand.objectId) : null;
+      const layerToSelect = pickedChild || layer;
+      if (!this.selectedLayerIds.has(layerToSelect.id)) this.selectLayer(layerToSelect);
       const selMode = cand.kind === 'edge' ? 'edge' : 'face';
       const listKey = selMode === 'edge' ? 'edgeKeys' : 'faceKeys';
       const sel = this.sceneSelection && this.sceneSelection.layerId === layer.id ? this.sceneSelection : null;

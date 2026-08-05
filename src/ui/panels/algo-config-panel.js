@@ -1404,7 +1404,12 @@
     const isStatic = Boolean(isGroup || isModifier);
     const algoSection = getEl('left-section-algorithm', { silent: true });
     const algoConfigSection = getEl('left-section-algorithm-configuration', { silent: true });
-    const hideAlgoPanels = isGroup && !isModifier;
+    // Scene-tree Increment D — a scene GROUP and a booleanGroup3d group are
+    // isGroup, but they own bespoke 3D Scene panels (routed below), so they must
+    // NOT be swallowed by the generic "select a sublayer" group early-return.
+    const isSceneTreeGroup = isGroup
+      && (layer.type === 'scene3d' || layer.type === 'booleanGroup3d');
+    const hideAlgoPanels = isGroup && !isModifier && !isSceneTreeGroup;
     if (algoSection) algoSection.style.display = hideAlgoPanels ? 'none' : '';
     if (algoConfigSection) algoConfigSection.style.display = hideAlgoPanels ? 'none' : '';
     if (hideAlgoPanels) {
@@ -1535,8 +1540,11 @@
     // Bespoke tabbed 3D Scene panel (Phase 1). Same early-return escape hatch
     // the Text/Mirror/Morph panels use. Inert until panels/scene3d-panel.js
     // loads — non-scene3d layers fall through untouched.
+    // Scene-tree Increment D — route scene3d (monolith OR scene group), object3d
+    // leaves, and booleanGroup3d groups all to the bespoke 3D Scene panel, which
+    // re-keys its editors to the SELECTED layer's params.
     if (
-      layer.type === 'scene3d' &&
+      (layer.type === 'scene3d' || layer.type === 'object3d' || layer.type === 'booleanGroup3d') &&
       window.Vectura.UI.Scene3DPanel &&
       typeof window.Vectura.UI.Scene3DPanel.build === 'function'
     ) {

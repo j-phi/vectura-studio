@@ -7,6 +7,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — click-to-select objects + per-object editing; scenes are trees by default.**
+  Adding a 3D Scene now creates a tree (a scene group with one object) instead of a single
+  monolithic layer. Clicking an object in the canvas selects its layer in the tree and shows
+  the transform gizmo, and the Inspector / Style / Tone panel now edits the selected object,
+  boolean group, or the scene itself (camera, lights, ground). A "convert to scene tree"
+  path (`expandMonolithToTree`) promotes an older single-layer scene in place. Saved
+  single-layer scenes still load and render unchanged.
 - **3D Scene — layers-panel scene tree.** A 3D scene can now be built as a tree in the
   Layers panel: a scene-group folder holding one object per layer, with boolean (CSG)
   groups as their own nested layers containing their operand objects. Add objects from a

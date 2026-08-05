@@ -583,6 +583,11 @@
 
     addLayer(type = 'wavetable') {
       type = resolveDrawableLayerType(type, 'wavetable');
+      // Scene-tree Increment D — the "3D Scene" Add-Layer entry now creates a
+      // scene TREE (a scene group seeded with one default object3d child), not a
+      // monolith. The monolith shape survives ONLY as a load-time form for saved
+      // docs (B's inline-union renders it byte-identically); new scenes are trees.
+      if (type === 'scene3d') return this.addSceneTree();
       const id = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const num = String(this._layerCounter).padStart(2, '0');
@@ -668,6 +673,134 @@
       this.activeLayerId = id;
       this.computeAllDisplayGeometry();
       return id;
+    }
+
+    // Scene-tree Increment D — the user-facing CREATION entry. Build a whole
+    // scene TREE in one gesture: a scene group + ONE default object3d child (a
+    // box). Returns the SCENE GROUP id (the group is what "Add Layer → 3D Scene"
+    // adds), and leaves the group active so the panel shows scene controls.
+    addSceneTree() {
+      const groupId = this.addSceneGroup();
+      // Seed one default object so a fresh scene is never empty. addObjectToScene
+      // sets the object active + recomputes; re-point active at the group after.
+      this.addObjectToScene(groupId, 'box');
+      this.activeLayerId = groupId;
+      this.computeAllDisplayGeometry();
+      return groupId;
+    }
+
+    // Scene-tree Increment D/F — expand a MONOLITH scene3d layer (inline
+    // params.objects[] / params.groups[]) IN PLACE into a scene TREE: the layer
+    // becomes the scene group; each inline object becomes an object3d child and
+    // each inline group a booleanGroup3d child. This is the same decomposition
+    // Increment F runs on load, factored here so F can reuse it. Idempotent — a
+    // layer that is already a scene group (isGroup) is left untouched.
+    //
+    // IDENTITY CONTRACT (plan §4): each child LAYER adopts the inline entry's id
+    // (objects[i].id / groups[i].id) as its layer id, so meta.sceneTarget.objectId
+    // + styleTable keys stay valid. Inline arrays are CLEARED afterward so the
+    // compositor collects the children only (no double-union). Returns the scene
+    // group id, or null when the layer is not an expandable monolith.
+    expandMonolithToTree(monolithId) {
+      const group = this.getLayerById(monolithId);
+      if (!group || group.type !== 'scene3d' || group.isGroup) return null;
+      const Params = window.Vectura?.Scene3D?.Params;
+      // Normalize first so ids/styleTable are canonical before we split them out.
+      const src = (Params && typeof Params.normalizeParams === 'function')
+        ? Params.normalizeParams(group.params) : group.params;
+      const objects = Array.isArray(src.objects) ? src.objects : [];
+      const groups = Array.isArray(src.groups) ? src.groups : [];
+      const styleTable = (src.styleTable && typeof src.styleTable === 'object') ? src.styleTable : {};
+      const byObject = (styleTable.byObject && typeof styleTable.byObject === 'object') ? styleTable.byObject : {};
+      const byFace = (styleTable.byFace && typeof styleTable.byFace === 'object') ? styleTable.byFace : {};
+
+      // Promote the layer to a scene group (the three compositor invariants).
+      group.isGroup = true;
+      group.containerRole = 'scene';
+      group.groupType = 'scene';
+      group.groupCollapsed = false;
+
+      const groupIndex = this.layers.findIndex((l) => l.id === group.id);
+      let insertAt = groupIndex + 1;
+      const childIdFor = (entry, fallbackPrefix, i) => {
+        const raw = entry && typeof entry.id === 'string' && entry.id ? entry.id : `${fallbackPrefix}-${i + 1}`;
+        // Guard against a global id collision with an UNRELATED layer.
+        if (this.layers.some((l) => l.id === raw && l.id !== group.id)) return `${group.id}-${raw}`;
+        return raw;
+      };
+
+      // One object3d child per inline object. Face styles for this object move
+      // onto the child (byFace keys are `${objectId}/${faceId}`).
+      const objectLayerIds = {};
+      objects.forEach((obj, i) => {
+        if (!obj || typeof obj !== 'object') return;
+        const cid = childIdFor(obj, 'obj', i);
+        objectLayerIds[obj.id] = cid;
+        const child = new Layer(cid, 'object3d', obj.name || `Object ${i + 1}`);
+        child.parentId = group.id;
+        child.params.primitive = obj.primitive || 'box';
+        child.params.params = (obj.params && typeof obj.params === 'object') ? { ...obj.params } : {};
+        if (obj.transform && typeof obj.transform === 'object') child.params.transform = { ...obj.transform };
+        child.params.visibility = obj.visibility || 'solid';
+        child.params.role = obj.role || 'solid';
+        if (obj.shadow && typeof obj.shadow === 'object') child.params.shadow = { ...obj.shadow };
+        if (obj.border && typeof obj.border === 'object') child.params.border = { ...obj.border };
+        if (obj.emissive && typeof obj.emissive === 'object') child.params.emissive = { ...obj.emissive };
+        if (byObject[obj.id]) child.params.style = clone(byObject[obj.id]);
+        const fs = {};
+        Object.keys(byFace).forEach((key) => {
+          const slash = key.indexOf('/');
+          if (slash > 0 && key.slice(0, slash) === obj.id) fs[key.slice(slash + 1)] = clone(byFace[key]);
+        });
+        if (Object.keys(fs).length) child.params.faceStyles = fs;
+        this.layers.splice(insertAt, 0, child);
+        insertAt += 1;
+      });
+
+      // One booleanGroup3d child per inline group; its operand object3d children
+      // are reparented under it (order preserved for positional subtract).
+      groups.forEach((grp, i) => {
+        if (!grp || typeof grp !== 'object') return;
+        const gid = childIdFor(grp, 'grp', i);
+        const bl = new Layer(gid, 'booleanGroup3d', grp.name || `Boolean ${i + 1}`);
+        bl.isGroup = true;
+        bl.containerRole = 'boolean';
+        bl.groupType = 'boolean';
+        bl.groupCollapsed = false;
+        bl.parentId = group.id;
+        bl.params.op = grp.op || 'subtract';
+        if (byObject[grp.id]) bl.params.style = clone(byObject[grp.id]);
+        this.layers.splice(insertAt, 0, bl);
+        insertAt += 1;
+        // Reparent this group's operand object3d children (they were inserted as
+        // scene-group children above). First operand solid, the rest holes.
+        const childIds = Array.isArray(grp.children) ? grp.children : [];
+        childIds.forEach((rawChildId, ci) => {
+          const layerChildId = objectLayerIds[rawChildId] || rawChildId;
+          const operand = this.getLayerById(layerChildId);
+          if (operand && operand.type === 'object3d') {
+            operand.parentId = gid;
+            operand.params.role = ci === 0 ? 'solid' : 'hole';
+          }
+        });
+      });
+
+      // Clear the inline arrays — the child layers are now the source of truth
+      // (compositor unions inline + children; keeping both would double-render).
+      group.params.objects = [];
+      group.params.groups = [];
+      // Keep the scene-scope style; drop the per-object/per-face entries that
+      // now live on the children.
+      if (group.params.styleTable && typeof group.params.styleTable === 'object') {
+        group.params.styleTable = {
+          scene: group.params.styleTable.scene || { penId: null, mapper: 'wireframe', params: {} },
+          byObject: {},
+          byFace: {},
+        };
+      }
+      this.activeLayerId = group.id;
+      this.computeAllDisplayGeometry();
+      return group.id;
     }
 
     // Insert `layer` directly after `parentId` and any of its existing
@@ -1984,7 +2117,14 @@
     generate(layerId, options = {}) {
       const layer = this.layers.find((l) => l.id === layerId);
       if (!layer) return;
-      if (layer.isGroup) return;
+      if (layer.isGroup) {
+        // Scene-tree Increment D — a scene GROUP recomposes its scenePaths on
+        // generate() so scene-object drags (which call generate on the owning
+        // group) refresh the canvas. Idempotent with computeAllDisplayGeometry's
+        // own compose pass; the compositor math is untouched.
+        if (layer.type === 'scene3d' && layer.containerRole === 'scene') this._composeSceneGroup(layer);
+        return;
+      }
       if (layer.type === 'compound') {
         // Compound layers derive geometry from their children via PathfinderOps.
         // computeAllDisplayGeometry() re-runs the refresh once all primitives
