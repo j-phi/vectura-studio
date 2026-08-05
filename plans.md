@@ -218,6 +218,36 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — Phase 4A divisions/pen-grammar + hidden-edge EdgeStyle (v1.3.62–1.3.66,
+  `3d-scene/p4`, commits `5d232e2`..`8239db7`).** The stroke-division phase (engine already
+  shipped divisions) plus the deferred pen grammar and the Phase-4 tail edge styling:
+  - **Inc-0 dedup (5d232e2, v1.3.62).** Divided-stroke fragments no longer double-ink a
+    coincident undivided duplicate on the same pen. Fragments carry raw parent geometry +
+    fragIndex; one shared `createPlotDeduper` keys at each consumer's tol (engine/stats/export
+    parity). A fragment claims the parent key only when it gaplessly retraces the whole parent
+    on one pen — so a **dashed/multi-pen division no longer suppresses a coincident solid**
+    (a lost-ink regression caught by adversarial review). fragIndex keeps self-retracing
+    siblings alive. Stack-order independent.
+  - **Inc-1 divisions editor (4f99da5, v1.3.63).** First registered `FillControlSurface`
+    section: enable + phaseMm + a class list (lenMm / per-class pen / gap) with add/remove/
+    reorder, mounted in the ctxbar Stroke Options popover (universal per-layer). Writes route
+    `ensureLayerDivisions` → recompute → live preview.
+  - **Inc-3 pen grammar (604c5b7, v1.3.64).** `penMode: cycle|weighted` (+ per-class weight),
+    `phaseMode: fixed|perPath|jitter`, a serialized seed. Weighted picks each fragment's pen by
+    weight via a deterministic FNV-1a hash (no live RNG); fixed now dashes continuously across
+    sub-path seams. sanitize/ensure accept the fields in lockstep; defaults no-op. Adversarially
+    reviewed sound. (Minor: `_divisionSeed` folds div-seed 0 and 1 — cosmetic.)
+  - **Inc-4 hardening (c78babb, v1.3.65).** `PenValidate.resolveEffectivePenId` gives engine
+    stats/grouping the same effective-pen rule as export (stale penId no longer mis-counted);
+    `mesh.js`/`csg.js`/`scene.js` resolve their sibling Scene3D namespaces at call time.
+  - **Hidden-edge EdgeStyle (8239db7, v1.3.66, C-06).** Per-class `edgeStyles`
+    {pen, weightMm, dash} for silhouette/crease/boundary/interior + hidden (drop|dash),
+    scene-wide on the scene group's Style tab. Defaults no-op (byte-identical); per-object
+    x-ray/showHidden stay authoritative and are layered under the scene-wide default. `seam`
+    class deferred (open hook for CSG). Adversarial byte-identity confirmed via visual suite.
+  - **Deferred:** Inc-2 plot-physics readout (optional/verify-first); per-object EdgeStyle
+    overrides + full removal of the per-object x-ray toggles; `_divisionSeed` 0/1 cosmetic;
+    per-object scene divisions.
 - **Unreleased — 3D Scene Studio → layers-panel scene tree (v1.3.56–1.3.61, `3d-scene/p4`,
   commits `541231e`..`a2ff2cf`).** Decomposed the monolithic single `scene3d` layer into a
   real layer tree, in six increments: **A** new `object3d` + `booleanGroup3d` layer types
