@@ -7,6 +7,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **Stroke Divisions editor.** The Stroke Options popover (⋯ → Open Stroke Options) gains a
+  **Divisions** section: enable division of a layer's strokes, set the phase, and edit a list
+  of classes — each with a run length, a per-class pen (or the layer's own pen), and a gap
+  toggle — with add / remove / reorder. Turning it on chops each stroke into alternating
+  segments assigned to the chosen pens, so a single path plots as a multi-pen or dashed run.
+  Edits update the preview and plot stats live. (Per-object divisions inside a 3D scene are a
+  planned follow-up.)
 - **3D Scene — saved scenes upgrade to the tree automatically.** Opening a 3D scene saved
   before this change now loads it as the new layer tree (objects, boolean groups, lights,
   and ground each as their own rows) instead of a single opaque layer — while rendering

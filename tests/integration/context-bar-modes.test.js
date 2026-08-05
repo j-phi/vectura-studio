@@ -167,10 +167,13 @@ describe('TB-10 — stroke weight sub-mode', () => {
     item.click();
     const popover = dom.window.document.querySelector('.ctxbar-stroke-options-popover');
     expect(popover).not.toBeNull();
-    // The STR-2 component rendered into it (its mount adds the .stroke-options
-    // class to the host and builds the weight section).
-    expect(popover.classList.contains('stroke-options')).toBe(true);
-    expect(popover.querySelector('[data-stroke-section="weight"]')).not.toBeNull();
+    // Phase 4A Inc-1: the STR-2 component now renders into its OWN child host
+    // (so a sibling Divisions editor mounted below survives the panel's
+    // innerHTML reset). The popover therefore CONTAINS a .stroke-options element
+    // with the weight section, rather than being that element itself.
+    const strokePanel = popover.querySelector('.stroke-options');
+    expect(strokePanel).not.toBeNull();
+    expect(strokePanel.querySelector('[data-stroke-section="weight"]')).not.toBeNull();
   });
 });
 

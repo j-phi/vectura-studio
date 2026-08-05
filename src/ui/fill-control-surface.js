@@ -228,6 +228,16 @@
    *                                        omit to allow any caps-satisfied
    *                                        section. Hosts passing neither caps
    *                                        nor sections render ZERO sections.
+   * @param {boolean}    [opts.sectionsOnly] render ONLY the eligible sections —
+   *                                        skip the variant grid + per-variant
+   *                                        controls entirely. For hosts (e.g. a
+   *                                        per-layer Divisions editor) that want
+   *                                        the shared section machinery without
+   *                                        the fill-type surface.
+   * @param {object}     [opts.sectionContext] arbitrary bag threaded into each
+   *                                        section's build ctx (e.g. { app,
+   *                                        getLayer }); sections read their own
+   *                                        host state from it.
    * @returns {{refresh: Function, refreshVariants: Function, refreshSections: Function}}
    */
   function mount(opts = {}) {
@@ -246,13 +256,15 @@
       onChange = () => {},
       caps = [],
       sections = undefined,
+      sectionsOnly = false,
+      sectionContext = {},
     } = opts;
     if (!params) return { refresh: () => {}, refreshVariants: () => {}, refreshSections: () => {} };
     const excludeSet = new Set(exclude);
     // Section rendering is opt-in: only hosts that declare caps and/or a
     // sections allowlist participate. Legacy hosts pass neither → the section
     // pass is a no-op and their DOM stays byte-identical.
-    const sectionsEnabled = ('caps' in opts) || ('sections' in opts);
+    const sectionsEnabled = ('caps' in opts) || ('sections' in opts) || sectionsOnly;
     const hostCaps = new Set(caps);
     const sectionAllow = Array.isArray(sections) ? new Set(sections) : null;
     const get = (k) => params[k];
@@ -268,7 +280,7 @@
     }
 
     function renderVariantGrid() {
-      if (!gridEl) return;
+      if (sectionsOnly || !gridEl) return;
       gridEl.innerHTML = '';
       fillTypeOptions.forEach((opt) => {
         const btn = document.createElement('button');
@@ -298,6 +310,9 @@
 
     function renderControls() {
       if (!controlsEl) return;
+      // sectionsOnly hosts skip the variant surface entirely and render just
+      // the eligible sections (e.g. a standalone per-layer Divisions editor).
+      if (sectionsOnly) { controlsEl.innerHTML = ''; renderSections(); return; }
       const caps = Vectura.FillPanel?.FILL_CAPS?.[get(typeKey)] || {};
       if (get(typeKey) === 'none') {
         controlsEl.innerHTML = `<p class="paint-bucket-hint-inline">${noneHint}</p>`;
@@ -353,6 +368,9 @@
             idPrefix,
             container,
             refresh,
+            // Host-supplied context (e.g. { app, getLayer }) — a section that
+            // edits per-layer state (not the fill-params bag) reads it here.
+            sectionContext,
           });
         });
     }

@@ -268,6 +268,7 @@
 
       let strokeOptionsHandle = null;
       let strokeOptionsPopover = null;
+      let divisionsHandle = null;
 
       const applyWeight = (mm, opts = {}) => {
         const M = Vectura.StrokeModel;
@@ -338,6 +339,7 @@
       const closeStrokeOptions = () => {
         if (strokeOptionsHandle && strokeOptionsHandle.destroy) { try { strokeOptionsHandle.destroy(); } catch (_e) { /* noop */ } }
         strokeOptionsHandle = null;
+        divisionsHandle = null;
         if (strokeOptionsPopover) { strokeOptionsPopover.close(); strokeOptionsPopover = null; }
       };
       const openStrokeOptions = () => {
@@ -348,11 +350,36 @@
         const rect = anchorRectFor(ctx);
         strokeOptionsPopover = mountPopover(rect, 'ctxbar-stroke-options-popover');
         const ids = (ctx.layerIds && ctx.layerIds.length) ? ctx.layerIds : layers().map((l) => l.id);
-        strokeOptionsHandle = Panel.render(strokeOptionsPopover.host, {
+        // Stroke controls mount into their own host so the reusable panel's
+        // host.innerHTML='' reset never clears the Divisions editor below it.
+        const strokeHost = document.createElement('div');
+        strokeOptionsPopover.host.appendChild(strokeHost);
+        strokeOptionsHandle = Panel.render(strokeHost, {
           app,
           layerIds: ids,
           onChange: () => { if (app && app.render) app.render(); refresh(); },
         });
+        // Divisions editor (Phase 4A Inc-1) — the shared FillControlSurface
+        // `divisions` section, mounted sectionsOnly against the primary layer.
+        // Universal per-layer surface: reachable for any plottable layer type.
+        const FCS = UI.FillControlSurface;
+        if (FCS && typeof FCS.mount === 'function') {
+          const divHost = document.createElement('div');
+          divHost.className = 'ctxbar-divisions-host';
+          strokeOptionsPopover.host.appendChild(divHost);
+          divisionsHandle = FCS.mount({
+            controlsEl: divHost,
+            params: {},
+            sectionsOnly: true,
+            caps: ['divisions'],
+            sections: ['divisions'],
+            sectionContext: {
+              app,
+              engine: app && app.engine,
+              getLayer: () => primary(),
+            },
+          });
+        }
         strokeOptionsPopover.position();
       };
       overflow.addEventListener('click', (e) => {

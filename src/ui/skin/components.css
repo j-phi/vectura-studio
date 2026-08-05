@@ -13215,3 +13215,53 @@ body.mobile-layout .hud-bar {
 /* ============================================================================
    END VECTURA SCENE PANEL (vs3-*)
    ============================================================================ */
+
+/* ============================================================================
+   DIVISIONS EDITOR (Phase 4A Inc-1) — the FillControlSurface `divisions`
+   section. Mounted sectionsOnly in the ctxbar Stroke Options popover; scoped
+   so it never leaks into the fill-variant surface.
+   ============================================================================ */
+.fcs-divisions { display: flex; flex-direction: column; gap: 8px; }
+.fcs-divisions-head { display: flex; align-items: center; }
+.fcs-divisions-enable { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.fcs-divisions-title { font-weight: 600; font-size: 12px; letter-spacing: 0.02em; }
+.fcs-divisions-body { display: flex; flex-direction: column; gap: 8px; }
+.fcs-divisions-body.is-disabled { opacity: 0.5; }
+.fcs-divisions-row { display: flex; align-items: center; gap: 8px; }
+.fcs-divisions-label { flex: 0 0 auto; font-size: 11px; color: var(--ui-muted, #9aa0a6); }
+.fcs-divisions-num {
+  width: 68px; padding: 3px 6px; font-size: 12px;
+  background: var(--ui-input-bg, #1b1d21); color: var(--ui-fg, #e8eaed);
+  border: 1px solid var(--ui-border, #34363b); border-radius: 4px;
+}
+.fcs-divisions-classes { display: flex; flex-direction: column; gap: 6px; }
+.fcs-divisions-class {
+  padding: 6px; border: 1px solid var(--ui-border, #34363b); border-radius: 6px;
+  background: var(--ui-surface-2, rgba(255, 255, 255, 0.02));
+}
+.fcs-divisions-class .fcs-divisions-num { width: 56px; }
+.fcs-divisions-swatch {
+  flex: 0 0 auto; width: 14px; height: 14px; border-radius: 3px;
+  border: 1px solid var(--ui-border, #34363b);
+}
+.fcs-divisions-pen { flex: 1 1 auto; min-width: 70px; }
+.fcs-divisions-pen .ctrl-sel-wrap { width: 100%; }
+.fcs-divisions-gap { display: flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; }
+.fcs-divisions-acts { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.fcs-divisions-act {
+  width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; line-height: 1; background: transparent; color: var(--ui-fg, #e8eaed);
+  border: 1px solid var(--ui-border, #34363b); border-radius: 4px; cursor: pointer;
+}
+.fcs-divisions-act:disabled { opacity: 0.35; cursor: default; }
+.fcs-divisions-remove:hover:not(:disabled) { color: var(--ui-danger, #e5484d); border-color: var(--ui-danger, #e5484d); }
+.fcs-divisions-add {
+  align-self: flex-start; padding: 4px 10px; font-size: 11px;
+  background: transparent; color: var(--ui-accent, #6ea8fe);
+  border: 1px dashed var(--ui-border, #34363b); border-radius: 4px; cursor: pointer;
+}
+.fcs-divisions-add:disabled { opacity: 0.4; cursor: default; }
+.fcs-divisions-hint { font-size: 11px; color: var(--ui-muted, #9aa0a6); margin: 2px 0; }
+.ctxbar-divisions-host {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ui-border, #34363b);
+}
