@@ -21,6 +21,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   unchanged.
 
 ### Fixed
+- **3D Scene — boolean (CSG) results no longer paint a triangulation fan.** A subtract/
+  union/intersect result mesh is fan-triangulated, so every flat face is split into many
+  coplanar triangles. Under the wireframe mapper those internal diagonals were relabelled
+  as crease edges and drawn — a fan of stray diagonal lines across the carved faces (e.g.
+  Box − Cylinder). The carve result now suppresses those interior coplanar diagonals even
+  under wireframe; only genuine features (silhouette, boundary, and the ~90° rim creases
+  where bore walls meet faces) draw. A regression test pins the drawn-edge count.
 - **3D Scene — non-planar occluders no longer leak hidden geometry.** Hidden-line
   removal now fan-triangulates any occluder face whose vertices are non-planar
   (n-gon faces from solids, CSG fragments, or imported meshes) so each occluder

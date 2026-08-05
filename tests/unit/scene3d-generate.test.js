@@ -526,6 +526,38 @@ describe('scene3d generate — CSG subtract (Increment 1)', () => {
     expect(edgesOf(paths, 'solid-1', 'crease').length).toBeGreaterThan(0);
   });
 
+  test('WIREFRAME on a CSG carve draws NO interior triangulation fan (I32)', () => {
+    // Regression for the Box−Cylinder(hole) "fan of stray diagonal edges"
+    // defect. A boolean RESULT mesh is fan-triangulated (BSP splits every flat
+    // face into many coplanar triangles). Under the default WIREFRAME mapper
+    // those coplanar diagonals are surfaced as 'crease' edges — painting a fan
+    // across the box faces. Only genuine feature edges (silhouette/crease/
+    // boundary of the FUSED solid) must draw; the coplanar triangulation
+    // diagonals are 'interior' and must be suppressed even under wireframe.
+    const cam = { yaw: 26, pitch: 20 };
+    // Box − square-prism hole (all faceted, so EVERY interior edge is a flat-
+    // face triangulation diagonal — a clean result has only the polyhedron's
+    // real edges, no curved tessellation to legitimately keep).
+    const p = csgScene(
+      [solidBox('solid-1', 40), solidBox('hole-1', 20, { role: 'hole', params: { sx: 20, sy: 20, sz: 60 } })],
+      [{ op: 'subtract', children: ['solid-1', 'hole-1'] }], cam,
+    );
+    p.styleTable = { scene: { penId: null, mapper: 'wireframe', params: {} }, byObject: {}, byFace: {} };
+    const paths = algo.generate(p, null, null, IB) || [];
+    const drawn = edgesOf(paths, 'solid-1');
+    // The real box + square-hole polyhedron has ~24 edges; HLR run-splitting can
+    // multiply that a little. A pre-fix render explodes past 100 (the fan). Pin
+    // a clean, modest ceiling that only the suppressed-fan result can meet.
+    expect(drawn.length).toBeLessThan(48);
+    // The genuine feature edges still draw: outline silhouette + the rim creases
+    // where the bore walls meet the box faces at 90°.
+    expect(edgesOf(paths, 'solid-1', 'silhouette').length).toBeGreaterThan(0);
+    expect(edgesOf(paths, 'solid-1', 'crease').length).toBeGreaterThan(0);
+    // And NO 'interior' triangulation diagonals leak through relabelled as crease
+    // confetti: the crease count stays bounded to the real rim, not the fan.
+    expect(edgesOf(paths, 'solid-1', 'crease').length).toBeLessThan(24);
+  });
+
   test('intersect keeps only the overlap (fills confined to the shared lens)', () => {
     const cam = { yaw: 0, pitch: 0 }; // straight down +Z
     const objs = [solidBox('solid-1', 40), solidBox('solid-2', 40, { transform: { x: 24, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 } })];

@@ -1389,6 +1389,18 @@
           // edges, so hidden-line removal is unaffected. The real carve rim (a
           // wall meeting a face at ~90°) is a count-2 CREASE edge and still draws.
           if (record.primitive === 'csg' && entry.cls === 'boundary') return;
+          // CSG triangulation-fan suppression (I32): a boolean RESULT mesh is
+          // fan-triangulated, so every flat face is split into many COPLANAR
+          // triangles whose shared diagonals classify as 'interior'. On an
+          // ordinary primitive those diagonals don't exist (quad faces), so a
+          // wireframe mapper surfaces interior edges harmlessly — but on a CSG
+          // result a wireframe would paint that whole triangulation fan across
+          // the carved faces (Box−Cylinder "stray diagonal edges" defect). Only
+          // the FUSED solid's genuine features (silhouette/crease/boundary)
+          // read as real geometry; the coplanar diagonals never do — suppress
+          // them even under wireframe. Real carve rims are ~90° count-2 CREASE
+          // edges (structural) and still draw; this drops ONLY 'interior'.
+          if (record.primitive === 'csg' && !structural) return;
           // Wireframe edge classes (Phase 2): a wireframe face publishes which
           // edge classes it draws (default all four = the current all-edges look)
           // and whether occluded edges dash (showHidden). Filter this edge's class
