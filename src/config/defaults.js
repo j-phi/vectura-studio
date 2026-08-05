@@ -2127,6 +2127,52 @@
         byFace: {}, // 'objectId/faceId' -> Style
       },
     },
+    // Scene-tree Increment A — object3d: a LEAF layer holding ONE 3D primitive.
+    // Its factory block mirrors a single scene3d object entry EXACTLY (same
+    // shapes Scene3D.Params.normalizeObject / normalizeStyle define), plus the
+    // per-object Style + faceStyles the scene styleTable holds when composited.
+    // A standalone object3d renders by DELEGATING to the scene3d pipeline with a
+    // one-object scene (algorithms/object3d.js); a scene group (Increment B) sets
+    // `_sceneConsumed` and emits the object's paths itself.
+    object3d: {
+      label: 'Object 3D',
+      is3d: true,
+      preset: 'object3d-default',
+      primitive: 'box',
+      // per-primitive params bag (box: { sx, sy, sz }; sphere: { radius, detail }; …).
+      params: { sx: 40, sy: 40, sz: 40 },
+      // Rest ON the ground (base at y=0 ⇒ y = sy/2), matching the scene3d box.
+      transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+      visibility: 'solid', // 'solid' | 'xray'
+      role: 'solid',       // 'solid' | 'hole' (a hole subtracts inside a boolean group)
+      shadow: { enabled: null }, // per-object cast override: null = inherit (casts)
+      border: { enabled: false, strength: 1, penId: null }, // silhouette emphasis (off)
+      emissive: { enabled: false, intensity: 1, penId: null, halo: 'burst', haloCount: 16, haloRings: 3, coreBlank: true },
+      // I11 — a fresh 3D object comes up as WIREFRAME (all structural edges).
+      style: { penId: null, mapper: 'wireframe', params: {} },
+      faceStyles: {}, // faceId -> Style (per-face overrides)
+    },
+    // Scene-tree Increment A — booleanGroup3d: a CONTAINER stub for the fused
+    // result of a CSG set. Owns the op + fused Style/Tone/Border/visibility; its
+    // children (object3d leaves with per-child role) are combined by the scene
+    // group (Increment B). generate() emits nothing itself (algorithms/booleanGroup3d.js).
+    booleanGroup3d: {
+      label: 'Boolean Group 3D',
+      is3d: true,
+      preset: 'booleangroup3d-default',
+      op: 'subtract', // 'union' | 'subtract' | 'intersect'
+      visibility: 'solid',
+      style: { penId: null, mapper: 'wireframe', params: {} },
+      // Fused-result tone (mirrors the scene3d default tone ladder).
+      tone: {
+        enabled: true,
+        bands: 3,
+        thresholds: [0.33, 0.66],
+        ladder: [0.2, 0.5, 0.85],
+        specular: { enabled: true, size: 1 },
+      },
+      border: { enabled: false, strength: 1, penId: null },
+    },
     rasterPlane: {
       label: 'Raster-Plane',
       is3d: true,

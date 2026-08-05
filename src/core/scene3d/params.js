@@ -372,6 +372,38 @@
     };
   };
 
+  // Scene-tree Increment A — normalize ONE object3d leaf layer's params. An
+  // object3d layer holds exactly one primitive PLUS its own Style + per-face
+  // Style overrides (which live in the scene styleTable when composited). This
+  // wraps `normalizeObject` (the object entry) and `normalizeStyle` (the layer
+  // Style + each faceStyle) so an object3d layer normalizes IDENTICALLY to one
+  // scene3d object — no new shapes. The absent-id case yields the stable
+  // 'obj-1' (index 0), matching a fresh scene3d object.
+  const normalizeObjectLayerParams = (p) => {
+    const src = isObject(p) ? p : {};
+    const obj = normalizeObject(src, 0, new Set());
+    const faceStyles = {};
+    if (isObject(src.faceStyles)) {
+      Object.keys(src.faceStyles).forEach((key) => {
+        faceStyles[key] = normalizeStyle(src.faceStyles[key]);
+      });
+    }
+    return {
+      id: obj.id,
+      name: obj.name,
+      primitive: obj.primitive,
+      role: obj.role,
+      params: obj.params,
+      transform: obj.transform,
+      visibility: obj.visibility,
+      shadow: obj.shadow,
+      border: obj.border,
+      emissive: obj.emissive,
+      style: normalizeStyle(src.style),
+      faceStyles,
+    };
+  };
+
   // Canonical group list: each group is { id: unique 'grp-<n>', name, op, children }.
   // `objectIds` is the Set of live object ids; dangling child ids are dropped and
   // every object may belong to at most ONE group (a later group's duplicate claim
@@ -599,6 +631,7 @@
     normalizeShadow,
     normalizeStyle,
     normalizeStyleTable,
+    normalizeObjectLayerParams,
     normalizeGroups,
     normalizeParams,
     migrateScene,

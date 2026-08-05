@@ -7,6 +7,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — `object3d` and `booleanGroup3d` layer types (foundation).** Two new
+  layer types that will let a 3D scene be edited as a tree of layers (one object per
+  layer, boolean groups as their own layer) instead of a single monolithic scene layer.
+  `object3d` renders one primitive by delegating to the existing scene renderer (no math
+  fork); `booleanGroup3d` is the CSG-group container. Data-only in this release — the
+  layers-panel tree, per-object routing, and migration land in follow-up increments;
+  existing single-layer 3D scenes are unaffected.
 - **3D Scene — reliable object picking + hover hint.** A click now selects the
   FRONTMOST object under the cursor for every primitive (raycast against the real
   surface, so a click anywhere on a cube's face selects it — no more missing the

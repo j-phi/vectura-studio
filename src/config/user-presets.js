@@ -23,6 +23,13 @@
         "params": {}
       },
       {
+        "id": "booleangroup3d-default",
+        "name": "Default",
+        "preset_system": "booleanGroup3d",
+        "group": "Classic",
+        "params": {}
+      },
+      {
         "id": "flowfield-default",
         "name": "Default",
         "preset_system": "flowfield",
@@ -68,6 +75,13 @@
         "id": "lissajous-default",
         "name": "Default",
         "preset_system": "lissajous",
+        "group": "Classic",
+        "params": {}
+      },
+      {
+        "id": "object3d-default",
+        "name": "Default",
+        "preset_system": "object3d",
         "group": "Classic",
         "params": {}
       },
