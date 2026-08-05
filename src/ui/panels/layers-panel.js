@@ -204,7 +204,13 @@
           // This preserves intermediate levels (e.g. mask → group → child).
           const newParentId = tgt?.parentId ?? null;
           if (this.app.pushHistory) this.app.pushHistory();
+          // Scene-tree Increment C — an object3d leaving a boolean group reverts
+          // to a plain 'solid' role.
+          const oldParent = src.parentId ? engine.getLayerById?.(src.parentId) : null;
           src.parentId = newParentId;
+          if (src.type === 'object3d' && src.params && oldParent?.type === 'booleanGroup3d') {
+            src.params.role = 'solid';
+          }
           engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
           this.normalizeGroupOrder?.();
           this.app.computeDisplayGeometry?.();
@@ -672,6 +678,11 @@
         const newParentId = grpLayer?.parentId ?? null;
         if (this.app.pushHistory) this.app.pushHistory();
         movers.forEach((m) => { m.parentId = newParentId; });
+        // Scene-tree Increment C — an object3d dragged OUT of a boolean group
+        // is no longer an operand; restore its plain 'solid' role.
+        if (grpLayer?.type === 'booleanGroup3d') {
+          movers.forEach((m) => { if (m.type === 'object3d' && m.params) m.params.role = 'solid'; });
+        }
         const layerMap = new Map(engine.layers.map((l) => [l.id, l]));
         engine.layers = engineIds.map((id) => layerMap.get(id)).filter(Boolean);
         this.normalizeGroupOrder?.();
@@ -1270,9 +1281,15 @@
         gc.appendChild(_lvlMkEye(layer));
         gc.appendChild(_lvlMkLock(layer));
         const fi = document.createElement('span'); fi.className = 'lvl-aico';
-        fi.innerHTML = layer.groupType === 'layer'
-          ? (this._LVL_I.layer?.() ?? this._LVL_I.folder())
-          : this._LVL_I.folder();
+        // Scene-tree Increment C — scene / boolean groups get their own glyphs;
+        // everything else keeps the folder (layer-groups keep the layer icon).
+        fi.innerHTML = layer.groupType === 'scene'
+          ? (this._LVL_I.scene3d?.() ?? this._LVL_I.folder())
+          : layer.groupType === 'boolean'
+            ? (this._LVL_I.booleanGroup3d?.() ?? this._LVL_I.folder())
+            : layer.groupType === 'layer'
+              ? (this._LVL_I.layer?.() ?? this._LVL_I.folder())
+              : this._LVL_I.folder();
         gc.appendChild(fi);
         gc.appendChild(_lvlNameEl(layer, 'lvl-grp-name'));
 
@@ -1283,6 +1300,16 @@
           b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b;
         };
         const ga = document.createElement('div'); ga.className = 'lvl-grp-acts';
+        // Scene-tree Increment C — a scene group gets an inline "+ object"
+        // affordance that inserts a new object3d child (default primitive).
+        if (layer.groupType === 'scene' && typeof engine.addObjectToScene === 'function') {
+          ga.appendChild(mkAb('lvl-add-object', () => this._LVL_I.grpPlus(), 'Add object', () => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            const oid = engine.addObjectToScene(layer.id);
+            if (oid) { renderer.setSelection?.([oid], oid); engine.setActiveLayerId?.(oid); }
+            this.renderLayers(); this.app.render();
+          }));
+        }
         if (layer.groupType === 'modifier') {
           ga.appendChild(mkAb('', () => this._LVL_I.expand(), 'Expand to folder', () => {
             if (this.app.pushHistory) this.app.pushHistory();
@@ -2069,10 +2096,35 @@
     const moveSet = new Set(moveIds);
     const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
     const remaining = this.app.engine.layers.filter((layer) => !moveSet.has(layer.id));
+    // Scene-tree Increment C — capture each mover's OLD parent so an object3d
+    // leaving a boolean group can be reset to a plain 'solid' role below.
+    const oldParentIds = new Map(moveIds.map((id) => [id, map.get(id)?.parentId ?? null]));
     moveIds.forEach((id) => {
       const layer = map.get(id);
       if (layer) layer.parentId = parentId;
     });
+    // Scene-tree Increment C — seed / clear object3d boolean roles on reparent.
+    if (parent.type === 'booleanGroup3d') {
+      // First operand of an EMPTY boolean is solid, the rest holes; if the
+      // boolean already held an operand, every new drop is a hole.
+      const preExisting = this.app.engine.getLayerChildren(parentId)
+        .filter((c) => c && c.type === 'object3d' && !moveSet.has(c.id)).length;
+      let haveSolid = preExisting > 0;
+      moveIds.forEach((id) => {
+        const l = map.get(id);
+        if (!l || l.type !== 'object3d' || !l.params) return;
+        l.params.role = haveSolid ? 'hole' : 'solid';
+        haveSolid = true;
+      });
+    } else {
+      moveIds.forEach((id) => {
+        const l = map.get(id);
+        if (!l || l.type !== 'object3d' || !l.params) return;
+        const op = oldParentIds.get(id);
+        const oldParent = op ? this.getLayerById(op) : null;
+        if (oldParent && oldParent.type === 'booleanGroup3d') l.params.role = 'solid';
+      });
+    }
     const insertIndex = remaining.findIndex((layer) => layer.id === parentId);
     const engineInsert = insertIndex === -1 ? remaining.length : insertIndex;
     const moveEngineOrder = moveIds.slice().reverse().map((id) => map.get(id)).filter(Boolean);

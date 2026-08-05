@@ -50,8 +50,47 @@
     return layers.find((l) => l && l.id === id) || null;
   };
 
+  // Scene-tree Increment C — is this layer a scene GROUP (the three container
+  // invariants Increment B gates on)?
+  const _isSceneGroup = (layer) =>
+    !!(layer && layer.type === 'scene3d' && layer.isGroup && layer.containerRole === 'scene');
+
+  // The object3d leaves eligible to be fused into a boolean group: the current
+  // multi-selection (or the clicked row) restricted to plain object3d layers
+  // that share ONE scene-group parent (not already inside a boolean group —
+  // Increment B collects direct object3d children only, no boolean nesting yet).
+  const _booleanOperands = (ui, layer) => {
+    const engine = ui && ui.app && ui.app.engine;
+    if (!engine) return [];
+    const sel = (ui.app.renderer && ui.app.renderer.selectedLayerIds) || new Set();
+    let ids = Array.from(sel);
+    if (layer && layer.id && !ids.includes(layer.id)) ids = [layer.id];
+    const objs = ids
+      .map((id) => engine.getLayerById && engine.getLayerById(id))
+      .filter((l) => l && l.type === 'object3d');
+    if (objs.length < 2) return [];
+    const parentId = objs[0].parentId;
+    if (!objs.every((o) => o.parentId === parentId)) return [];
+    const parent = engine.getLayerById && engine.getLayerById(parentId);
+    if (!_isSceneGroup(parent)) return []; // operands must sit loose under a scene
+    return objs.map((o) => o.id);
+  };
+
   const _itemsFor = (ui, layer) => {
     const items = [];
+    // Scene-tree Increment C — scene / object actions lead the menu when the
+    // clicked row is part of a 3D scene tree.
+    if (_isSceneGroup(layer) && ui.app && ui.app.engine
+      && typeof ui.app.engine.addObjectToScene === 'function') {
+      items.push({ key: 'scene-add-object', label: 'Add object' });
+      items.push({ separator: true });
+    }
+    const operands = layer && layer.type === 'object3d' ? _booleanOperands(ui, layer) : [];
+    if (operands.length >= 2 && ui.app && ui.app.engine
+      && typeof ui.app.engine.createBooleanGroupFromSelection === 'function') {
+      items.push({ key: 'scene-create-boolean', label: 'Create boolean group' });
+      items.push({ separator: true });
+    }
     items.push({ key: 'rename', label: 'Rename' });
     items.push({ key: 'duplicate', label: 'Duplicate', shortcut: '⌘D' });
     items.push({ key: 'delete', label: 'Delete', shortcut: 'Del' });
@@ -87,6 +126,32 @@
     if (!ui || !layer) return;
     const engine = ui.app && ui.app.engine;
     if (!engine) return;
+    if (key === 'scene-add-object') {
+      if (typeof engine.addObjectToScene !== 'function') return;
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      const oid = engine.addObjectToScene(layer.id);
+      if (oid) {
+        ui.app.setSelection && ui.app.setSelection([oid], oid);
+        engine.setActiveLayerId && engine.setActiveLayerId(oid);
+      }
+      ui.renderLayers && ui.renderLayers();
+      ui.app.render && ui.app.render();
+      return;
+    }
+    if (key === 'scene-create-boolean') {
+      if (typeof engine.createBooleanGroupFromSelection !== 'function') return;
+      const operands = _booleanOperands(ui, layer);
+      if (operands.length < 2) return;
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      const gid = engine.createBooleanGroupFromSelection(operands);
+      if (gid) {
+        ui.app.setSelection && ui.app.setSelection([gid], gid);
+        engine.setActiveLayerId && engine.setActiveLayerId(gid);
+      }
+      ui.renderLayers && ui.renderLayers();
+      ui.app.render && ui.app.render();
+      return;
+    }
     if (key === 'rename') {
       const card = document.querySelector(`[data-layer-id="${layer.id}"] .lvl-name, [data-lvl-id="${layer.id}"] .lvl-name`);
       if (card && typeof card.focus === 'function') {

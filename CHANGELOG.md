@@ -7,6 +7,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — layers-panel scene tree.** A 3D scene can now be built as a tree in the
+  Layers panel: a scene-group folder holding one object per layer, with boolean (CSG)
+  groups as their own nested layers containing their operand objects. Add objects from a
+  "+ object" button or the scene group's right-click menu; multi-select objects and
+  right-click "Create boolean group" to fuse them; drag objects in/out of a boolean group
+  to set their solid/hole role. Renders through the shared scene compositor from the
+  previous increment. (Canvas-click-to-select and per-object Inspector routing land next.)
 - **3D Scene — scene-group compositor (internal).** A `scene3d` layer can now act as a
   container that collects child `object3d`/`booleanGroup3d` layers and renders them through
   a single shared hidden-line/lighting/shadow pass (so occlusion between objects stays

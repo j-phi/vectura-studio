@@ -414,6 +414,22 @@
     return generateId() + generateId();
   };
 
+  // Scene-tree Increment C — per-primitive param bags a fresh object3d child is
+  // born with when the panel's "+ object" affordance names a primitive. These
+  // mirror the panel's PRIMITIVES.defaults() (scene3d-panel.js) — the ONLY keys
+  // 1A's buildPrimitiveMesh reads. 'box' is the default (matches ALGO_DEFAULTS).
+  const OBJECT3D_PRIMITIVE_DEFAULTS = {
+    box: { sx: 40, sy: 40, sz: 40 },
+    sphere: { radius: 25, detail: 28 },
+    cylinder: { sx: 20, sy: 22, sz: 20, detail: 24 },
+    torus: { sx: 34, sy: 9, sz: 9, detail: 24 },
+    cone: { sx: 20, sy: 22, sz: 20, detail: 24 },
+    plane: { sx: 60, sy: 60 },
+    superellipsoid: { sx: 26, sy: 26, sz: 26, detail: 24 },
+    torusKnot: { sx: 30, sy: 6, sz: 6, detail: 28 },
+    capsule: { sx: 14, sy: 16, sz: 14, detail: 22 },
+  };
+
   // ── Stroke style model (STR-1) ─────────────────────────────────────────────
   // Import-side sanitizers for the per-layer stroke fields. Prefer the shared
   // config vocabulary (src/config/stroke-options.js); fall back to equivalent
@@ -618,6 +634,156 @@
       this.activeLayerId = id;
       this.computeAllDisplayGeometry();
       return id;
+    }
+
+    // ── Scene-tree Increment C — scene-group tree construction ───────────────
+    // A scene GROUP is a scene3d layer flagged with the three container
+    // invariants Increment B's compositor gates on (type 'scene3d', isGroup,
+    // containerRole 'scene'). Mirrors addModifierLayer. Its inline (monolith)
+    // objects/groups arrays start EMPTY so the descendant object3d /
+    // booleanGroup3d child layers are the single source of truth; the scene
+    // envelope (camera / lights / tone / shadow / ground / backdrop /
+    // styleTable.scene) is kept from the scene3d factory defaults.
+    addSceneGroup() {
+      const id = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const layer = new Layer(id, 'scene3d', `3D Scene ${num}`);
+      layer.isGroup = true;
+      layer.containerRole = 'scene';
+      layer.groupType = 'scene';
+      layer.groupCollapsed = false;
+      layer.visible = true;
+      // Empty the inline scene graph — child layers provide objects/groups.
+      layer.params.objects = [];
+      layer.params.groups = [];
+      const st = (layer.params.styleTable && typeof layer.params.styleTable === 'object')
+        ? layer.params.styleTable : {};
+      layer.params.styleTable = {
+        scene: st.scene || { penId: null, mapper: 'wireframe', params: {} },
+        byObject: {},
+        byFace: {},
+      };
+      this.layers.push(layer);
+      this.activeLayerId = id;
+      this.computeAllDisplayGeometry();
+      return id;
+    }
+
+    // Insert `layer` directly after `parentId` and any of its existing
+    // descendants, so array order matches the tree order the panel renders and
+    // the compositor walks. Returns the layer's new id.
+    _insertUnderParent(layer, parentId) {
+      const descIds = new Set(this.getLayerDescendants(parentId).map((l) => l.id));
+      let insertIdx = this.layers.findIndex((l) => l.id === parentId);
+      for (let i = 0; i < this.layers.length; i += 1) {
+        const l = this.layers[i];
+        if (l && (l.id === parentId || descIds.has(l.id))) insertIdx = i;
+      }
+      if (insertIdx < 0) this.layers.push(layer);
+      else this.layers.splice(insertIdx + 1, 0, layer);
+      return layer.id;
+    }
+
+    // Add a new object3d LEAF under a scene group (or a booleanGroup3d nested in
+    // one). `primitive` defaults to 'box'. The new Layer is born with a real
+    // penId (pen-1) via the Layer constructor, so the scene-group compositor
+    // derives correct hatch/fill spacing (risk #1 — a null pen breaks spacing).
+    addObjectToScene(sceneGroupId, primitive) {
+      const parent = this.getLayerById(sceneGroupId);
+      if (!parent) return null;
+      const id = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const layer = new Layer(id, 'object3d', `Object ${num}`);
+      const prim = (typeof primitive === 'string' && OBJECT3D_PRIMITIVE_DEFAULTS[primitive])
+        ? primitive : 'box';
+      layer.params.primitive = prim;
+      layer.params.params = { ...OBJECT3D_PRIMITIVE_DEFAULTS[prim] };
+      layer.parentId = sceneGroupId;
+      // A boolean-group parent already implies an operand — seed the role.
+      if (parent.type === 'booleanGroup3d') this.applyObject3dBooleanRole(layer, null, parent);
+      this._insertUnderParent(layer, sceneGroupId);
+      if (parent.isGroup) parent.groupCollapsed = false;
+      this.activeLayerId = id;
+      this.computeAllDisplayGeometry();
+      return id;
+    }
+
+    // Seed / clear an object3d's boolean role from its parentage. Entering a
+    // booleanGroup3d makes it an operand (first operand solid, later ones hole —
+    // a meaningful subtract); leaving one restores the plain 'solid' role.
+    applyObject3dBooleanRole(obj, oldParent, newParent) {
+      if (!obj || obj.type !== 'object3d' || !obj.params) return;
+      if (newParent && newParent.type === 'booleanGroup3d') {
+        const others = this.getLayerChildren(newParent.id)
+          .filter((c) => c && c.type === 'object3d' && c.id !== obj.id);
+        obj.params.role = others.length === 0 ? 'solid' : 'hole';
+      } else if (oldParent && oldParent.type === 'booleanGroup3d') {
+        obj.params.role = 'solid';
+      }
+    }
+
+    // Reassign one object3d layer's parent, seeding / clearing its boolean role.
+    // This is the drag-drop reparent path — the layers-panel routes object3d
+    // moves through here so drag and tests share one code path. Reorders the
+    // layer to sit under its new parent (tree order === array order).
+    setObjectLayerParent(objectId, newParentId) {
+      const obj = this.getLayerById(objectId);
+      if (!obj || obj.type !== 'object3d') return false;
+      const oldParent = obj.parentId ? this.getLayerById(obj.parentId) : null;
+      const newParent = newParentId ? this.getLayerById(newParentId) : null;
+      // Pull the layer out of the array, retarget, then reinsert in tree order.
+      this.layers = this.layers.filter((l) => l.id !== objectId);
+      obj.parentId = newParentId ?? null;
+      this.applyObject3dBooleanRole(obj, oldParent, newParent);
+      if (newParentId && this.getLayerById(newParentId)) this._insertUnderParent(obj, newParentId);
+      else this.layers.push(obj);
+      if (newParent && newParent.isGroup) newParent.groupCollapsed = false;
+      this.computeAllDisplayGeometry();
+      return true;
+    }
+
+    // Fuse the selected object3d layers into a NEW booleanGroup3d under their
+    // shared scene group. Operands are reparented under the boolean group and
+    // seeded with roles (first solid, rest hole — a subtract out of the box).
+    // Requires at least two object3d operands; returns the new group id, or null.
+    createBooleanGroupFromSelection(objectLayerIds) {
+      const ids = Array.isArray(objectLayerIds) ? objectLayerIds : [];
+      const operands = ids
+        .map((id) => this.getLayerById(id))
+        .filter((l) => l && l.type === 'object3d');
+      if (operands.length < 2) return null;
+      // The boolean group inherits the first operand's parent (its scene group).
+      // Increment B collects only DIRECT object3d children of a booleanGroup3d,
+      // so operands must be plain object3d leaves (no boolean-in-boolean yet).
+      const parentId = operands[0].parentId ?? null;
+      const gid = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const bl = new Layer(gid, 'booleanGroup3d', `Boolean ${num}`);
+      bl.isGroup = true;
+      bl.containerRole = 'boolean';
+      bl.groupType = 'boolean';
+      bl.groupCollapsed = false;
+      bl.visible = true;
+      bl.parentId = parentId;
+      bl.params.op = bl.params.op || 'subtract';
+      // Insert the boolean group after the last operand (keeps it in the scene
+      // subtree), then reparent operands under it and seed roles.
+      const lastOperandIdx = operands.reduce((acc, op) => {
+        const i = this.layers.findIndex((l) => l.id === op.id);
+        return i > acc ? i : acc;
+      }, this.layers.findIndex((l) => l.id === parentId));
+      if (lastOperandIdx < 0) this.layers.push(bl);
+      else this.layers.splice(lastOperandIdx + 1, 0, bl);
+      operands.forEach((op, i) => {
+        op.parentId = gid;
+        op.params.role = i === 0 ? 'solid' : 'hole';
+      });
+      this.activeLayerId = gid;
+      this.computeAllDisplayGeometry();
+      return gid;
     }
 
     expandModifierLayer(modifierId) {
