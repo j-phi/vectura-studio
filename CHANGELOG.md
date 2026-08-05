@@ -7,6 +7,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **Plot-physics readout.** The Document Overview now shows a per-pen breakdown of the plot:
+  pen lifts, pen-up travel distance, total draw length, and an estimated plot time (from the
+  machine's pen-up/pen-down speeds and a per-lift time), plus an "all pens" total. A K-05
+  guard flags any drawn segments or pen-up gaps shorter than a minimum threshold (the
+  sub-resolution moves that make a plotter stutter) as a count + warning. Measured on the real
+  post-line-sort / deduped plot order per resolved pen, so the numbers match the exported file.
 - **3D Scene — per-class Edge Styles.** The scene's Style controls gain an **Edge Styles**
   section: silhouette, crease, boundary, interior, and hidden edges can each take their own
   pen, weight, and dash, and hidden (occluded) edges can be **dropped or dashed** scene-wide

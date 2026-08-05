@@ -3148,12 +3148,19 @@
       if (deduper) {
         target.forEach((l, li) => sources[li].forEach((p) => deduper.claim(penOf(l, p), p && p.meta)));
       }
+      // Plot-physics readout (Phase 4A Inc-2, READ-ONLY): when requested, retain
+      // the SURVIVING paths — grouped by the same resolved effective pen the
+      // export/dedup path uses — so we can measure lifts/travel/time on the real
+      // plot order without a second, divergent stats pass.
+      const wantPhysics = Boolean(options.physics);
+      const survivors = wantPhysics ? [] : null;
       target.forEach((l, li) => {
         const visiblePaths = [];
         sources[li].forEach((p) => {
           if (deduper && !deduper.keep(penOf(l, p), l.id, p && p.meta, p)) return;
           visiblePaths.push(p);
           dist += pathLength(p);
+          if (survivors) survivors.push({ penId: penOf(l, p), path: p });
         });
         const count = countPathPoints(visiblePaths);
         lines += count.lines;
@@ -3162,7 +3169,101 @@
       const timeSec = dist / 1000 / (SETTINGS.speedDown / 1000);
       const m = Math.floor(timeSec / 60);
       const s = Math.floor(timeSec % 60);
-      return { distance: Math.round(dist / 1000) + 'm', time: `${m}:${s.toString().padStart(2, '0')}`, lines, points };
+      const result = { distance: Math.round(dist / 1000) + 'm', time: `${m}:${s.toString().padStart(2, '0')}`, lines, points };
+      if (survivors) {
+        const phys = this.computePlotPhysicsFromSurvivors(survivors);
+        result.perPen = phys.perPen;
+        result.physics = phys.totals;
+      }
+      return result;
+    }
+
+    // Plot-physics reducer (Phase 4A Inc-2, K-05). Takes the surviving
+    // { penId, path } records computeStats already resolved + deduped and
+    // measures, per effective pen: pen lifts (pen-down stroke count), pen-down
+    // draw length, pen-up travel (end→start gap between consecutive strokes in
+    // plot order) and an estimated time = draw/speedDown + travel/speedUp +
+    // lifts·penLiftTime from the machine feed rates. The K-05 guard counts
+    // sub-resolution moves: drawn strokes shorter than minSegmentMm and pen-up
+    // gaps shorter than minGapMm. Order within a pen mirrors the SVG export:
+    // when line sort grouped by pen/combined, paths are re-ordered by
+    // meta.lineSortOrder so the travel number matches the emitted plot.
+    // READ-ONLY — it never mutates geometry.
+    computePlotPhysicsFromSurvivors(survivors) {
+      const drawSpeed = Math.max(1e-6, Number(SETTINGS.speedDown) || 250);
+      const travelSpeed = Math.max(1e-6, Number(SETTINGS.speedUp) || 300);
+      const liftTime = Math.max(0, Number.isFinite(SETTINGS.penLiftTime) ? SETTINGS.penLiftTime : 0.1);
+      const minSeg = Math.max(0, Number.isFinite(SETTINGS.minSegmentMm) ? SETTINGS.minSegmentMm : 0.1);
+      const minGap = Math.max(0, Number.isFinite(SETTINGS.minGapMm) ? SETTINGS.minGapMm : 0.1);
+
+      const penOrder = [];
+      const groups = new Map();
+      (survivors || []).forEach((rec) => {
+        if (!groups.has(rec.penId)) {
+          groups.set(rec.penId, []);
+          penOrder.push(rec.penId);
+        }
+        groups.get(rec.penId).push(rec.path);
+      });
+
+      const penMeta = new Map((SETTINGS.pens || []).map((pn) => [pn && pn.id, pn]));
+      const perPen = [];
+      const totals = { lifts: 0, draw: 0, travel: 0, total: 0, timeSec: 0, shortSegments: 0, shortGaps: 0 };
+
+      penOrder.forEach((penId) => {
+        let paths = groups.get(penId) || [];
+        // Match the export's per-pen interleave: only when line sort grouped by
+        // pen/combined does the plot order come from meta.lineSortOrder.
+        const interleave = paths.some((p) => p && p.meta && (p.meta.lineSortGrouping === 'pen' || p.meta.lineSortGrouping === 'combined'));
+        if (interleave) {
+          paths = paths.slice().sort((a, b) => {
+            const ao = Number.isFinite(a && a.meta && a.meta.lineSortOrder) ? a.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
+            const bo = Number.isFinite(b && b.meta && b.meta.lineSortOrder) ? b.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
+            return ao - bo;
+          });
+        }
+        let draw = 0;
+        let travel = 0;
+        let shortSegments = 0;
+        let shortGaps = 0;
+        let prevEnd = null;
+        paths.forEach((p) => {
+          const len = pathLength(p);
+          draw += len;
+          if (len > 0 && len < minSeg) shortSegments += 1;
+          const ep = pathEndpoints(p);
+          if (prevEnd) {
+            const gap = Math.hypot(ep.start.x - prevEnd.x, ep.start.y - prevEnd.y);
+            travel += gap;
+            if (gap > 0 && gap < minGap) shortGaps += 1;
+          }
+          prevEnd = ep.end;
+        });
+        const lifts = paths.length;
+        const timeSec = draw / drawSpeed + travel / travelSpeed + lifts * liftTime;
+        const pen = penMeta.get(penId);
+        perPen.push({
+          penId,
+          name: (pen && pen.name) || (penId === 'default' ? 'Default' : penId),
+          color: (pen && pen.color) || '#888888',
+          lifts,
+          draw,
+          travel,
+          total: draw + travel,
+          timeSec,
+          shortSegments,
+          shortGaps,
+        });
+        totals.lifts += lifts;
+        totals.draw += draw;
+        totals.travel += travel;
+        totals.total += draw + travel;
+        totals.timeSec += timeSec;
+        totals.shortSegments += shortSegments;
+        totals.shortGaps += shortGaps;
+      });
+
+      return { perPen, totals };
     }
 
     getStats(options = {}) {

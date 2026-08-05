@@ -1309,7 +1309,21 @@
 
     updateStats() {
       const s = this.engine.getStats();
-      this.ui?.updateStats?.(s);
+      // Plot-physics readout (Phase 4A Inc-2, READ-ONLY): a per-pen lifts /
+      // travel / time breakdown measured on the real post-line-sort/dedup plot
+      // order. Kept as a separate call so the legacy global readout above is
+      // untouched; degrades to null if the engine build predates it.
+      let physics = null;
+      try {
+        physics = this.engine.computeStats(this.engine.layers, {
+          physics: true,
+          useOptimized: true,
+          includePlotterOptimize: true,
+        });
+      } catch (err) {
+        physics = null;
+      }
+      this.ui?.updateStats?.(s, physics);
     }
 
     computeDisplayGeometry() {

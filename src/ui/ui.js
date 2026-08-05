@@ -1317,7 +1317,7 @@
       this._init(app);
     }
 
-    updateStats(s) {
+    updateStats(s, physics) {
       const dist = document.getElementById('stat-dist');
       const time = document.getElementById('stat-time');
       const lines = document.getElementById('stat-lines');
@@ -1333,6 +1333,66 @@
       if (doDist) doDist.innerText = s.distance;
       if (doLines) doLines.innerText = `${lineCount} ${s.lines === 1 ? 'line' : 'lines'}`;
       if (doTime) doTime.innerText = `~${s.time}`;
+      this.renderPlotPhysics(physics);
+    }
+
+    // Plot-physics readout (Phase 4A Inc-2, K-05, READ-ONLY): render the per-pen
+    // lifts / pen-up travel / estimated time breakdown computed by
+    // engine.computeStats({ physics: true }) into #plot-physics-readout, with a
+    // document total and a sub-resolution (min-segment / min-gap) warning.
+    renderPlotPhysics(physics) {
+      const root = document.getElementById('plot-physics-readout');
+      if (!root) return;
+      const perPen = physics && Array.isArray(physics.perPen) ? physics.perPen : [];
+      const totals = physics && physics.physics ? physics.physics : null;
+      if (!perPen.length || !totals) {
+        root.innerHTML = '';
+        return;
+      }
+
+      const fmtLen = (mm) => {
+        const v = Number(mm) || 0;
+        if (v >= 1000) return `${(v / 1000).toFixed(2)}m`;
+        if (v >= 10) return `${Math.round(v)}mm`;
+        return `${v.toFixed(1)}mm`;
+      };
+      const fmtTime = (sec) => {
+        const t = Math.max(0, Number(sec) || 0);
+        const m = Math.floor(t / 60);
+        const ss = Math.round(t % 60);
+        if (!m) return `${ss}s`;
+        return `${m}:${ss.toString().padStart(2, '0')}`;
+      };
+      const esc = (str) => escapeHtml(`${str == null ? '' : str}`);
+
+      const rowHtml = (label, swatch, r) => `
+        <div class="plot-physics-row">
+          <span class="plot-physics-pen">${swatch}<span class="plot-physics-pen-name">${esc(label)}</span></span>
+          <span class="plot-physics-cell" title="Pen-down strokes (lifts)">${r.lifts}<small>lifts</small></span>
+          <span class="plot-physics-cell" title="Pen-up travel between strokes">${fmtLen(r.travel)}<small>travel</small></span>
+          <span class="plot-physics-cell" title="Estimated plot time">${fmtTime(r.timeSec)}</span>
+        </div>`;
+
+      const rows = perPen.map((r) => {
+        const swatch = `<span class="plot-physics-swatch" style="background:${esc(r.color || '#888')}"></span>`;
+        return rowHtml(r.name || r.penId, swatch, r);
+      }).join('');
+
+      const totalRow = rowHtml('All pens', '<span class="plot-physics-swatch plot-physics-swatch-total"></span>', totals);
+
+      const flagged = (totals.shortSegments || 0) + (totals.shortGaps || 0);
+      const warn = flagged > 0
+        ? `<div class="plot-physics-warn" title="Sub-resolution moves can make a plotter stutter or over-ink">
+             <span class="plot-physics-warn-icon" aria-hidden="true">!</span>
+             ${totals.shortSegments || 0} short segment${totals.shortSegments === 1 ? '' : 's'}, ${totals.shortGaps || 0} short gap${totals.shortGaps === 1 ? '' : 's'}
+           </div>`
+        : '';
+
+      root.innerHTML = `
+        <div class="plot-physics-head">Plot Physics</div>
+        <div class="plot-physics-rows">${rows}</div>
+        <div class="plot-physics-rows plot-physics-total">${totalRow}</div>
+        ${warn}`;
     }
 
     resetPanes() {

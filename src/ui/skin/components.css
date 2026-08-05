@@ -1448,6 +1448,93 @@
 [data-ui-skin] .draw-order-stat-sep {
   color: var(--ui-border);
 }
+/* Plot-physics readout (Phase 4A Inc-2, K-05): read-only per-pen lifts /
+   travel / est. time table in the Document Overview pane, plus a document
+   total and a sub-resolution (min-segment / min-gap) warning. Purely a
+   readout — it never affects emitted geometry. */
+[data-ui-skin] .plot-physics-readout {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+[data-ui-skin] .plot-physics-readout:empty {
+  display: none;
+}
+[data-ui-skin] .plot-physics-head {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ui-muted);
+  margin-bottom: 4px;
+}
+[data-ui-skin] .plot-physics-total {
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--ui-border);
+}
+[data-ui-skin] .plot-physics-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--ui-text);
+  padding: 1px 0;
+}
+[data-ui-skin] .plot-physics-pen {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+[data-ui-skin] .plot-physics-pen-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-ui-skin] .plot-physics-swatch {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  border: 1px solid var(--ui-border);
+}
+[data-ui-skin] .plot-physics-swatch-total {
+  background: linear-gradient(90deg, #38bdf8 0%, #f59e0b 100%);
+}
+[data-ui-skin] .plot-physics-cell {
+  text-align: right;
+  white-space: nowrap;
+  color: var(--ui-accent);
+}
+[data-ui-skin] .plot-physics-cell small {
+  margin-left: 2px;
+  font-size: 8px;
+  color: var(--ui-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+[data-ui-skin] .plot-physics-warn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  font-size: 9px;
+  color: var(--ui-danger);
+}
+[data-ui-skin] .plot-physics-warn-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ui-danger);
+  color: var(--ui-on-danger);
+  font-weight: 700;
+  font-size: 9px;
+}
 /* Low-profile track carrying a vivid plot-progress gradient. The filled portion is
    painted with a left-anchored gradient via a CSS var the JS updates on input. */
 [data-ui-skin] .draw-order-slider {

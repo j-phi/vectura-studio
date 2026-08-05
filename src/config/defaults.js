@@ -2364,6 +2364,17 @@
     margin: 20,
     speedDown: 250,
     speedUp: 300,
+    // Plot-physics readout (Phase 4A Inc-2, K-05). speedDown/speedUp are the
+    // pen-down (draw) / pen-up (travel) feed rates in mm/s. penLiftTime is the
+    // per-stroke pen up-and-down cycle cost, in seconds, added once per pen
+    // lift in the time estimate. minSegmentMm / minGapMm flag sub-resolution
+    // moves — drawn strokes and pen-up gaps below plotter resolution that make
+    // a plotter stutter or over-ink; ~0.1mm sits just under typical 0.05–0.1mm
+    // plotter step resolution. These drive the readout only; they never alter
+    // emitted geometry.
+    penLiftTime: 0.1,
+    minSegmentMm: 0.1,
+    minGapMm: 0.1,
     precision: 3,
     strokeWidth: 0.3,
     strokeWidthOverride: false,
