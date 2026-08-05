@@ -218,6 +218,29 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — 3D Scene Studio → layers-panel scene tree (v1.3.56–1.3.61, `3d-scene/p4`,
+  commits `541231e`..`a2ff2cf`).** Decomposed the monolithic single `scene3d` layer into a
+  real layer tree, in six increments: **A** new `object3d` + `booleanGroup3d` layer types
+  (delegate to the scene renderer; no math fork). **B** scene-GROUP compositor —
+  `_composeSceneGroup`/`collectSceneParams` mirror the morph-group pattern, collecting child
+  object/boolean-group layers into the existing whole-scene HLR/lighting/shadow pass;
+  `_sceneConsumed` children emit nothing; the collection UNIONs children with any inline
+  `params.objects/groups`, so a scene layer with no child layers renders byte-identically
+  (permanent back-compat safety net). **C** layers-panel tree rendering + add-object (button +
+  right-click) + multiselect→create-boolean-group + drag-in/out role, via the existing
+  parentId/isGroup nesting. **D** `Add Layer → 3D Scene` now makes a tree; canvas click selects
+  the child object layer (sceneTarget.objectId == layer id, no lookup); the Inspector/Style/Tone
+  panel re-keys to the selected object / boolean group / scene; `expandMonolithToTree` promotes a
+  monolith in place. **E** ground + lights as `sceneGround3d`/`sceneLight3d` child rows (sun
+  gizmo arms on selecting the light child; delete-ground → ground off). **F** migration —
+  `VECTURA_FORMAT_VERSION` 1→2 + `STATE_MIGRATIONS[1]` expands saved monoliths to trees on
+  import (identity-preserving, idempotent, render byte-identical; presets stay monolith via the
+  inline-union). Every increment: full suite green + live-verified. Deferred (plan §5): nested
+  boolean-in-boolean deep migration/UI.
+- **Unreleased — 3D Scene Studio live-acceptance batch (v1.3.53–1.3.55, `3d-scene/p4`).**
+  CSG triangulation-fan suppression under wireframe (`0869b72`), inverse/subtractive shadow mode
+  for dark paper (`9785656`), and frontmost-object click picking + per-object hover hint
+  (`959619f`, with the crude whole-layer hover highlight suppressed for scene3d).
 - **Unreleased — 3D Scene Studio CSG + light-model completion (v1.3.34–1.3.39, `3d-scene/p4`,
   commits `2fa2fee`..`37c5754`).** Closes the deferred artistic + geometry backlog that trailed
   the v1.3.25–1.3.33 controls batch:
