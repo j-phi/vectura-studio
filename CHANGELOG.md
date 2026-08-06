@@ -101,6 +101,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   unchanged.
 
 ### Fixed
+- **Stroke Divisions — division seed 1 is now distinct from the default.** Changing a
+  division's seed from 0 to 1 previously produced no change; seed 1 now yields its own
+  weighted/jitter pattern. The default seed (0) is unchanged, so existing saved documents plot
+  identically.
+- **Plot-physics readout — light pens are visible.** The per-pen colour swatch gained a
+  contrast border and inner ring so near-white pens read as a defined chip on the dark panel.
 - **Plotter — pen stats/grouping now match the exported file.** A path carrying a stale or
   unknown pen id was counted and grouped under a phantom pen in the plot stats/preview while
   the SVG export plotted it under a fallback pen — so the numbers disagreed with the artifact.

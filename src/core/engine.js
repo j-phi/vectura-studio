@@ -1994,7 +1994,14 @@
     _divisionSeed(layer, divisions) {
       const layerSeed = Number.isFinite(layer?.params?.seed) ? (layer.params.seed | 0) : 0;
       const divSeed = Number.isFinite(divisions?.seed) ? (divisions.seed | 0) : 0;
-      return (layerSeed ^ Math.imul(divSeed || 1, 0x9e3779b1)) | 0;
+      // Map the division seed to a mixing operand. The historical `divSeed || 1`
+      // aliased seed 1 onto seed 0 (both -> operand 1), so changing the default
+      // seed 0 -> 1 produced no visible change. Keep seed 0 on operand 1 (the
+      // default — saved docs stay byte-identical) but route seed 1 to the
+      // otherwise-unused 0 operand so it yields a distinct weighted/jitter
+      // sequence. Every other seed already maps to its own operand, untouched.
+      const mixSeed = divSeed === 1 ? 0 : (divSeed || 1);
+      return (layerSeed ^ Math.imul(mixSeed, 0x9e3779b1)) | 0;
     }
 
     _computeMorphGroups() {

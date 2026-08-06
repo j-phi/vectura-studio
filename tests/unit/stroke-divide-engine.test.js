@@ -452,6 +452,52 @@ describe('engine stroke-division stage', () => {
     }
   });
 
+  test('Inc-3 division seed 0 and 1 produce DISTINCT weighted output (no 0/1 fold), seed 0 byte-identical', () => {
+    // Regression: _divisionSeed used `divSeed || 1`, which aliased division
+    // seed 1 onto seed 0 (both -> mixing operand 1), so a user changing the
+    // default division seed 0 -> 1 saw NO change. The fix keeps seed 0 on its
+    // historical operand (default docs stay byte-identical) but routes seed 1
+    // to a distinct operand.
+    const weightedSeed = (seed) => {
+      const { VectorEngine } = runtime.window.Vectura;
+      const engine = new VectorEngine();
+      const id = engine.addShapeLayer('SeedFold', [[{ x: 0, y: 0 }, { x: 1000, y: 0 }]]);
+      const layer = engine.getLayerById(id);
+      layer.divisions = {
+        enabled: true, phaseMm: 0, penMode: 'weighted', seed,
+        classes: [
+          { lenMm: 10, penId: 'pen-a', weight: 1 },
+          { lenMm: 10, penId: 'pen-b', weight: 3 },
+        ],
+      };
+      engine.computeAllDisplayGeometry();
+      const fp = layer.dividedPaths.map((f) => (f.meta.penId === 'pen-a' ? 'a' : 'b')).join('');
+      const mix = engine._divisionSeed(layer, layer.divisions);
+      return { fp, mix };
+    };
+
+    // Captured baseline — seed 0 (the DEFAULT) must stay byte-identical so
+    // existing saved docs plot exactly as before. The mixing operand is the
+    // historical `0 ^ Math.imul(1, 0x9e3779b1)` and the pen sequence is its
+    // exact deterministic product.
+    const SEED0_MIX = -1640531535;
+    const SEED0_FINGERPRINT =
+      'abbbbbbbbbbbbbbbbbaaaabbbbbbbbabbbabbabbbbbbabbabbabbaabbbbbaaaabaabbbbbabbbbbbbbbbbbaaabaaabbbbabba';
+
+    const s0 = weightedSeed(0);
+    const s1 = weightedSeed(1);
+
+    // (a) seed 0 unchanged vs the captured baseline.
+    expect(s0.mix).toBe(SEED0_MIX);
+    expect(s0.fp).toBe(SEED0_FINGERPRINT);
+    // (b) seed 1 no longer folds onto seed 0 — distinct mix AND distinct output.
+    expect(s1.mix).not.toBe(s0.mix);
+    expect(s1.fp).not.toBe(s0.fp);
+    // (c) each seed remains deterministic (reproducible on recompute).
+    expect(weightedSeed(1).fp).toBe(s1.fp);
+    expect(weightedSeed(0).fp).toBe(s0.fp);
+  });
+
   test('a missing StrokeDivide module degrades to a no-op (no crash)', () => {
     const { engine, layer } = makeLineEngine();
     layer.divisions = {
