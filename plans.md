@@ -256,9 +256,17 @@ question. Do not start these without a decision:
     partitions emitted paths by objectId and runs the shared `divideChain` per contiguous
     object run (byte-identical default; hardened per adversarial review: no-op skip +
     per-run splice fallback). Overrides are isolated per object.
-  - **Deferred:** full removal of the per-object x-ray toggles (folding into per-object
-    EdgeStyle); Phase 5 backlog (OBJ import, Manifold WASM booleans, curved−curved CSG,
-    turntable export, etc. — needs prioritization).
+  - **X-ray fold (ef66c8e, v1.3.70).** Reconciled x-ray with per-class Edge Styles (Jay:
+    Option A pure). X-ray = see-through back-face FILLS only; the per-class `edgeStyles.hidden`
+    (Drop|Dash) is the sole owner of hidden-EDGE treatment. `SCENE_VERSION` 1→2 migration seeds
+    existing x-ray objects to `hidden='dash'` (byte-identical); `edgeStyleFor` became per-field
+    merge; the FILL see-through terms stay `visibility`-coupled. New capability: see-through
+    fills with dropped hidden edges (or dashed edges without x-ray). Three adversarial-review
+    byte-identity regressions found + fixed, pinned by pre-fold goldens.
+  - **Deferred:** Phase 5 backlog (OBJ import, Manifold WASM booleans, Convert-to-Scene,
+    curved−curved CSG, turntable export, v2 modifiers, etc. — needs prioritization). Known
+    flaky test: `divisions-editor-section` weighted-pen-spread (probabilistic; passes isolated,
+    intermittently fails under parallel load) — de-flake candidate.
 - **Unreleased — 3D Scene Studio → layers-panel scene tree (v1.3.56–1.3.61, `3d-scene/p4`,
   commits `541231e`..`a2ff2cf`).** Decomposed the monolithic single `scene3d` layer into a
   real layer tree, in six increments: **A** new `object3d` + `booleanGroup3d` layer types
