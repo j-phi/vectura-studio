@@ -2042,11 +2042,15 @@
         || !algo || typeof algo.generate !== 'function') return;
 
       const collected = [];
+      // Polish P-B — object3d children by layer id, so the post-emit pass can
+      // read each one's own layer.divisions bag (an object3d IS a real layer).
+      const objectLayers = new Map();
       this.getLayerDescendants(group.id).forEach((layer) => {
         if (!layer) return;
         if (layer.type === 'object3d') {
           layer._sceneConsumed = true;
           if (layer.visible === false) return; // hidden ⇒ contributes nothing
+          objectLayers.set(layer.id, layer);
           collected.push({ kind: 'object', id: layer.id, params: layer.params });
         } else if (layer.type === 'booleanGroup3d') {
           layer._sceneConsumed = true;
@@ -2091,7 +2095,100 @@
         console.error('[Engine] Scene group compose failed:', err);
         paths = [];
       }
-      group.scenePaths = paths;
+      group.scenePaths = this._applyObjectDivisions(paths, objectLayers);
+    }
+
+    // Polish P-B — per-object stroke divisions inside a scene group. A composed
+    // scene emits ALL paths on the group (its object3d children are
+    // _sceneConsumed, so their own division pass never runs); this reunites each
+    // object with its divisions by partitioning the group's paths on
+    // meta.sceneTarget.objectId and running the SHARED StrokeDivide.divideChain
+    // over that object's subset — NOT a forked divider, so Inc-0 gap-aware dedup
+    // + Inc-3 grammar (weighted pen, phase modes, seeded jitter) apply verbatim
+    // and a gapped object never suppresses a coincident undivided one. DEFAULT
+    // (no object3d child carries divisions.enabled) returns `paths` UNCHANGED by
+    // reference — byte-identical to pre-P-B.
+    _applyObjectDivisions(paths, objectLayers) {
+      const StrokeDivide = window.Vectura?.StrokeDivide;
+      if (!StrokeDivide || !Array.isArray(paths) || !paths.length || !objectLayers || !objectLayers.size) {
+        return paths;
+      }
+      const EPS = 1e-6;
+      // Objects that carry a NON-DEGENERATE enabled division. An enabled bag whose
+      // classes sum to < EPS total length makes divideChain a no-op — it returns
+      // its input array UNCHANGED (see divideChain's own `cycleLen < EPS` guard).
+      // Such an object must NOT be treated as active: otherwise the partition +
+      // regroup below would run for zero ink change, and the "byte-identical
+      // default" would only hold when every object is fully off. Mirroring the
+      // divider's emptiness check keeps enabled-but-degenerate identical to off.
+      const active = new Map();
+      objectLayers.forEach((layer, id) => {
+        const divisions = this.ensureLayerDivisions(layer);
+        if (!divisions || !divisions.enabled) return;
+        const cycleLen = typeof StrokeDivide.cycleLengthMm === 'function'
+          ? StrokeDivide.cycleLengthMm(divisions) : 0;
+        if (!(cycleLen > EPS)) return; // enabled but degenerate ⇒ a divideChain no-op
+        active.set(id, { layer, divisions });
+      });
+      if (!active.size) return paths; // no usable override ⇒ byte-identical passthrough
+
+      // CONTIGUITY CONTRACT: scene3d emits each object3d's paths CONTIGUOUSLY in
+      // group.scenePaths — one records.forEach emits that object's faces + edges
+      // together, and cast shadows stamp objectId 'ground' (not the caster). We
+      // therefore reserve a slot per CONTIGUOUS RUN of an active object and divide
+      // that run as ONE chain. In the normal (contiguous) case an object is a
+      // SINGLE run, so this is exactly a whole-object divideChain — seam-continuous
+      // phase + deterministic per-path fragment hashes, byte-identical to pre-P-B.
+      // A per-POSITION splice is NOT an option: divideChain needs the whole run in
+      // order for that seam-continuous phase, so fragments must pool at one slot.
+      // GUARD (latent-reorder defense): if a future emit change ever interleaves
+      // one object's paths with another's, that object appears in MORE THAN ONE
+      // run. Pooling all its fragments at the FIRST position would silently pull
+      // later blocks forward and corrupt painter's order for opaque fills — so we
+      // instead divide EACH contiguous run in place (a safe local fallback that
+      // preserves order) and warn. Cross-run phase continuity is the only thing
+      // sacrificed, which is meaningless once the runs are interleaved anyway.
+      const slots = [];           // [{ oid, paths } | path]  (result skeleton)
+      const runCount = new Map(); // oid -> number of contiguous runs seen
+      let openRun = null;         // the run slot currently being appended to
+      let openOid = null;
+      paths.forEach((path) => {
+        const oid = path && path.meta && path.meta.sceneTarget && path.meta.sceneTarget.objectId;
+        if (oid != null && active.has(oid)) {
+          if (openOid !== oid) {
+            openRun = { oid, paths: [] };
+            slots.push(openRun);
+            openOid = oid;
+            runCount.set(oid, (runCount.get(oid) || 0) + 1);
+          }
+          openRun.paths.push(path);
+        } else {
+          slots.push(path);
+          openRun = null;
+          openOid = null;
+        }
+      });
+      runCount.forEach((n, oid) => {
+        if (n > 1) {
+          console.warn(`[Engine] scene object ${oid} emitted non-contiguous paths (${n} runs); dividing each run separately to preserve paint order.`);
+        }
+      });
+
+      const out = [];
+      slots.forEach((item) => {
+        if (item && item.oid != null && Array.isArray(item.paths)) {
+          const { layer, divisions } = active.get(item.oid);
+          const divideOpts = {
+            useCurves: Boolean(layer.params && layer.params.curves),
+            seed: this._divisionSeed(layer, divisions),
+            maxFragments: StrokeDivide.MAX_FRAGMENTS,
+          };
+          StrokeDivide.divideChain(item.paths, divisions, divideOpts).forEach((f) => out.push(f));
+        } else {
+          out.push(item);
+        }
+      });
+      return out;
     }
 
     // Pure parameter-space regeneration for morph intermediates: run an

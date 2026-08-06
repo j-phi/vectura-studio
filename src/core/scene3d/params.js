@@ -142,6 +142,21 @@
     EDGE_STYLE_CLASSES.forEach((cls) => { out[cls] = normalizeEdgeStyle(src[cls], cls); });
     return out;
   };
+  // Polish P-B — per-OBJECT EdgeStyle override. Unlike the scene-wide table
+  // (every class filled with a no-op default), an object override keeps ONLY the
+  // classes the user explicitly set — an ABSENT class inherits the scene default
+  // (null/absent = inherit). Returns null when nothing is overridden so the
+  // object serializes + renders byte-identically. The emit resolver reads
+  // objectOverride[class] ?? sceneEdgeStyle[class] ?? inherit, so a present class
+  // (even one restating base defaults) deliberately breaks scene inheritance.
+  const normalizeObjectEdgeStyles = (styles) => {
+    if (!isObject(styles)) return null;
+    const out = {};
+    EDGE_STYLE_CLASSES.forEach((cls) => {
+      if (isObject(styles[cls])) out[cls] = normalizeEdgeStyle(styles[cls], cls);
+    });
+    return Object.keys(out).length ? out : null;
+  };
 
   // Known style.params keys carry an explicit clamp/whitelist so a hand-edited
   // scene degrades gracefully (do NOT rely on passthrough alone). Unknown keys
@@ -437,6 +452,8 @@
       emissive: obj.emissive,
       style: normalizeStyle(src.style),
       faceStyles,
+      // Polish P-B — per-object EdgeStyle override (null ⇒ inherit scene).
+      edgeStyles: normalizeObjectEdgeStyles(src.edgeStyles),
     };
   };
 
@@ -482,6 +499,11 @@
     const groups = [];
     const byObject = { ...(isObject(st.byObject) ? st.byObject : {}) };
     const byFace = { ...(isObject(st.byFace) ? st.byFace : {}) };
+    // Polish P-B — per-object EdgeStyle overrides collected by object id. Only an
+    // object that actually overrides a class contributes an entry (inherit-scene
+    // objects stay absent), so a scene with no overrides yields an empty map ⇒
+    // the emit resolver falls straight through to the scene-wide table.
+    const edgeStylesByObject = {};
     // Lights: inline (legacy) first, then child lights in tree order.
     const lights = [];
     (Array.isArray(gp.lights) ? gp.lights : []).forEach((l) => { if (isObject(l)) lights.push(l); });
@@ -521,6 +543,7 @@
           emissive: n.emissive,
         });
         byObject[item.id] = n.style;
+        if (n.edgeStyles) edgeStylesByObject[item.id] = n.edgeStyles;
         Object.keys(n.faceStyles || {}).forEach((fid) => {
           const full = fid.indexOf('/') >= 0 ? fid : `${item.id}/${fid}`;
           byFace[full] = n.faceStyles[fid];
@@ -551,6 +574,9 @@
     // A ground child (enabled) turns the ground ON. Absent ⇒ keep the group's
     // INLINE ground (a tree pre-sets it OFF; a monolith keeps it as authored).
     if (groundChild) out.ground = { ...groundChild, enabled: groundChild.enabled !== false };
+    // Polish P-B — attach the per-object EdgeStyle map ONLY when non-empty, so a
+    // scene with no overrides carries no new key (byte-identical assembly).
+    if (Object.keys(edgeStylesByObject).length) out.edgeStylesByObject = edgeStylesByObject;
     return out;
   };
 
@@ -786,6 +812,7 @@
     DEFAULT_SHADOW,
     normalizeEdgeStyles,
     normalizeEdgeStyle,
+    normalizeObjectEdgeStyles,
     normalizeTone,
     normalizeShadow,
     normalizeStyle,

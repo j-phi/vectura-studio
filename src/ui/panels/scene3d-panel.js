@@ -498,6 +498,118 @@
           ...liveSlider((v) => { style.params.fillAngle = Math.round(v); }),
         });
       }
+
+      // ── Edge Styles override (Polish P-B) — this object's OWN edge classes.
+      // Each row defaults to "Inherit (scene)"; switching a class to Override
+      // writes params.edgeStyles[cls] (a per-object map, same shape as the scene
+      // table) so the compositor resolves objectOverride[cls] ?? scene[cls]. An
+      // object with no overrides keeps NO edgeStyles key ⇒ byte-identical render.
+      renderObjectEdgeStyles(host);
+    };
+
+    // Per-object EdgeStyle override editor. Kept as its own function so renderStyle
+    // stays legible; mounts onto the Style tab host beneath the mapper controls.
+    const OBJ_EDGE_CLASSES = [
+      { key: 'silhouette', label: 'Silhouette' },
+      { key: 'crease', label: 'Crease' },
+      { key: 'boundary', label: 'Boundary' },
+      { key: 'interior', label: 'Interior' },
+      { key: 'hidden', label: 'Hidden' },
+    ];
+    const OBJ_DASH_OPTS = [
+      { value: 'none', label: 'Solid' },
+      { value: 'dashed', label: 'Dashed' },
+      { value: 'dotted', label: 'Dotted' },
+    ];
+    const OBJ_DASH_PATTERNS = { dashed: [3, 2], dotted: [0.6, 1.6] };
+    const objDashName = (arr) => {
+      if (!Array.isArray(arr) || !arr.length) return 'none';
+      return (arr.length === 2 && arr[0] <= 1) ? 'dotted' : 'dashed';
+    };
+    const renderObjectEdgeStyles = (host) => {
+      const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+      // A present class = an override; ABSENT = inherit the scene default.
+      const table = () => (params.edgeStyles && typeof params.edgeStyles === 'object') ? params.edgeStyles : null;
+      const has = (cls) => { const t = table(); return !!(t && t[cls] && typeof t[cls] === 'object'); };
+      const readEdge = (cls) => {
+        const t = table();
+        const es = (t && t[cls] && typeof t[cls] === 'object') ? t[cls] : {};
+        return {
+          pen: typeof es.pen === 'string' ? es.pen : null,
+          weightMm: es.weightMm == null ? null : es.weightMm,
+          dash: Array.isArray(es.dash) ? es.dash : null,
+          hiddenTreatment: es.hiddenTreatment === 'dash' ? 'dash' : 'drop',
+        };
+      };
+      const setOverride = (cls, on) => {
+        commit(() => {
+          if (on) {
+            if (!params.edgeStyles || typeof params.edgeStyles !== 'object') params.edgeStyles = {};
+            const seed = { pen: null, weightMm: null, dash: null };
+            if (cls === 'hidden') seed.hiddenTreatment = 'drop';
+            params.edgeStyles[cls] = seed;
+          } else if (params.edgeStyles && typeof params.edgeStyles === 'object') {
+            delete params.edgeStyles[cls];
+            if (!Object.keys(params.edgeStyles).length) delete params.edgeStyles;
+          }
+        });
+        renderStyle();
+      };
+      const writeEdge = (cls, patch) => {
+        commit(() => {
+          if (!params.edgeStyles || typeof params.edgeStyles !== 'object') params.edgeStyles = {};
+          const cur = (params.edgeStyles[cls] && typeof params.edgeStyles[cls] === 'object') ? params.edgeStyles[cls] : {};
+          params.edgeStyles[cls] = { ...cur, ...patch };
+        });
+        renderStyle();
+      };
+
+      const esHdr = document.createElement('div');
+      esHdr.className = 'vs3-hl-hdr';
+      esHdr.textContent = 'Edge Styles';
+      host.appendChild(esHdr);
+
+      OBJ_EDGE_CLASSES.forEach(({ key, label }) => {
+        const overridden = has(key);
+        comps.push(UI.SegCtrl(labeledRow(host, label), {
+          options: [{ value: 'inherit', label: 'Inherit (scene)' }, { value: 'override', label: 'Override' }],
+          value: overridden ? 'override' : 'inherit',
+          ariaLabel: `${label} edge style source`,
+          onChange: (v) => setOverride(key, v === 'override'),
+        }));
+        if (!overridden) return;
+        const cur = readEdge(key);
+        comps.push(UI.Select(labeledRow(host, 'Pen'), {
+          options: [{ value: '', label: 'Inherit' }].concat(pens.map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
+          value: cur.pen || '',
+          ariaLabel: `${label} edge pen`,
+          onChange: (val) => writeEdge(key, { pen: val || null }),
+        }));
+        slider(host, 'Weight', {
+          value: cur.weightMm == null ? 0 : cur.weightMm,
+          min: 0, max: 2, step: 0.05, defaultValue: 0,
+          ariaLabel: `${label} edge weight (0 = inherit)`,
+          ...liveSlider((val) => {
+            if (!params.edgeStyles || typeof params.edgeStyles !== 'object') params.edgeStyles = {};
+            const c = (params.edgeStyles[key] && typeof params.edgeStyles[key] === 'object') ? params.edgeStyles[key] : {};
+            params.edgeStyles[key] = { ...c, weightMm: val > 0 ? val : null };
+          }),
+        });
+        comps.push(UI.Select(labeledRow(host, 'Dash'), {
+          options: OBJ_DASH_OPTS,
+          value: objDashName(cur.dash),
+          ariaLabel: `${label} edge dash`,
+          onChange: (val) => writeEdge(key, { dash: OBJ_DASH_PATTERNS[val] ? OBJ_DASH_PATTERNS[val].slice() : null }),
+        }));
+        if (key === 'hidden') {
+          comps.push(UI.SegCtrl(labeledRow(host, 'Occluded'), {
+            options: [{ value: 'drop', label: 'Drop' }, { value: 'dash', label: 'Dash' }],
+            value: cur.hiddenTreatment,
+            ariaLabel: 'Hidden edge treatment',
+            onChange: (val) => writeEdge('hidden', { hiddenTreatment: val === 'dash' ? 'dash' : 'drop' }),
+          }));
+        }
+      });
     };
 
     // Render the initial (Object) tab; tab switches render the entered tab.

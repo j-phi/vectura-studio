@@ -215,7 +215,15 @@
       // width (bounds.penWidth, 0.3mm fallback) and rides the SAME tested
       // meta.weightScale path the silhouette-emphasis passes use.
       const EDGE_REF_WIDTH = finite(bounds && bounds.penWidth, 0.3);
-      const edgeStyleFor = (cls) => {
+      // Polish P-B — per-object override resolve: objectOverride[cls] ??
+      // sceneEdgeStyle[cls] ?? inherit. p.edgeStylesByObject (assembled by
+      // collectSceneParams) keeps ONLY the classes an object overrode, so an
+      // object that inherits every class falls straight through to the scene
+      // table — byte-identical to the pre-P-B single-arg lookup.
+      const edgeStyleFor = (cls, objectId) => {
+        const byObj = p.edgeStylesByObject;
+        const ov = (objectId && byObj && byObj[objectId]) ? byObj[objectId][cls] : null;
+        if (ov) return ov;
         const t = p.edgeStyles;
         return (t && t[cls]) || null;
       };
@@ -1492,16 +1500,19 @@
           // style (raw entry.cls, so a wireframe interior edge gets the 'interior'
           // style); HIDDEN runs take the 'hidden' class style. Default table ⇒ both
           // overlays null ⇒ byte-identical.
-          const visOverlay = edgeStyleMeta(edgeStyleFor(entry.cls));
-          const hidOverlay = edgeStyleMeta(edgeStyleFor('hidden'));
+          const visOverlay = edgeStyleMeta(edgeStyleFor(entry.cls, record.id));
+          const hidOverlay = edgeStyleMeta(edgeStyleFor('hidden', record.id));
           // Structural edge: line-type dash only (double-drawn with the face
           // outline, so wobble is fill-scoped — see dashOnly). Hidden edges dash
           // under x-ray (edgeHidden = 'dash') or when a wireframe face asks for
           // showHidden — those PER-OBJECT overrides still win. Otherwise the
           // scene-wide edgeStyles.hidden.hiddenTreatment decides drop vs dash
           // (default 'drop' ⇒ 'remove' ⇒ today's look).
-          const sceneHidden = (p.edgeStyles && p.edgeStyles.hidden
-            && p.edgeStyles.hidden.hiddenTreatment === 'dash') ? 'dash' : 'remove';
+          // Polish P-B — the hidden treatment resolves per-object too (an object
+          // may override Drop→Dash for its OWN occluded edges); a non-overriding
+          // object falls through to the scene-wide hidden class.
+          const hiddenStyle = edgeStyleFor('hidden', record.id);
+          const sceneHidden = (hiddenStyle && hiddenStyle.hiddenTreatment === 'dash') ? 'dash' : 'remove';
           const thisEdgeHidden = (wfShowHidden || edgeHidden === 'dash') ? 'dash' : sceneHidden;
           const emitOpts = {};
           if (hiddenOnlyEdge) emitOpts.hiddenOnly = true;

@@ -7,6 +7,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — per-object Edge Styles and Divisions.** Inside a scene, a selected object can
+  now override the scene-wide edge styles for its own edges (each class defaults to "inherit
+  scene"), and can carry its own stroke divisions applied only to its strokes. Overrides are
+  isolated — styling or dividing one object leaves the others untouched — and a scene with no
+  overrides renders identically. Per-object divisions reuse the same division engine (so the
+  pen grammar and double-ink dedup apply), and are split per object by the scene compositor.
 - **Plot-physics readout.** The Document Overview now shows a per-pen breakdown of the plot:
   pen lifts, pen-up travel distance, total draw length, and an estimated plot time (from the
   machine's pen-up/pen-down speeds and a per-lift time), plus an "all pens" total. A K-05
