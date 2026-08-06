@@ -384,6 +384,17 @@
         return sceneParams.sanitizeSceneParams(sanitized);
       }
     }
+    // X-ray fold — scene-TREE layers carry x-ray objects too (an object3d leaf,
+    // or a group still holding legacy inline objects[]). Run the scene migration
+    // CHAIN (the seed only — these are not whole scenes, so no scene-level
+    // normalization) so a v1 x-ray object keeps its dashed hidden edges after
+    // the fold. booleanGroup3d has no x-ray object ⇒ the migration is a no-op.
+    if (layerType === 'object3d' || layerType === 'sceneGroup3d' || layerType === 'booleanGroup3d') {
+      const sceneParams = window.Vectura?.Scene3D?.Params;
+      if (sceneParams && typeof sceneParams.migrateScene === 'function') {
+        return sceneParams.migrateScene(sanitized);
+      }
+    }
     return sanitized;
   };
 
@@ -753,6 +764,11 @@
       const styleTable = (src.styleTable && typeof src.styleTable === 'object') ? src.styleTable : {};
       const byObject = (styleTable.byObject && typeof styleTable.byObject === 'object') ? styleTable.byObject : {};
       const byFace = (styleTable.byFace && typeof styleTable.byFace === 'object') ? styleTable.byFace : {};
+      // Per-object EdgeStyle overrides (incl. the X-ray fold's migrated hidden=dash
+      // seed) live in edgeStylesByObject on the monolith; they must ride onto each
+      // object3d child or an expanded x-ray scene would lose its dashed hidden edges.
+      const edgeStylesByObject = (src.edgeStylesByObject && typeof src.edgeStylesByObject === 'object')
+        ? src.edgeStylesByObject : {};
 
       // Promote the layer to a scene group (the three compositor invariants).
       group.isGroup = true;
@@ -787,6 +803,7 @@
         if (obj.border && typeof obj.border === 'object') child.params.border = { ...obj.border };
         if (obj.emissive && typeof obj.emissive === 'object') child.params.emissive = { ...obj.emissive };
         if (byObject[obj.id]) child.params.style = clone(byObject[obj.id]);
+        if (edgeStylesByObject[obj.id]) child.params.edgeStyles = clone(edgeStylesByObject[obj.id]);
         const fs = {};
         Object.keys(byFace).forEach((key) => {
           const slash = key.indexOf('/');

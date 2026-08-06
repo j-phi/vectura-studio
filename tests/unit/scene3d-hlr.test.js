@@ -81,10 +81,13 @@ describe('scene3d flat-face HLR', () => {
     expect(byObject(withoutGround, 'ground').length).toBe(0);
   });
 
+  // X-RAY FOLD: the see-through dash is owned by edgeStyles.hidden now (a saved
+  // scene gets a migrated hidden=dash seed). With that seed the x-ray far box
+  // keeps its occluded runs as dashes flagged occluded, exactly as before.
   test('x-ray far box keeps hidden runs as dashed paths flagged occluded', () => {
-    const paths = algo.generate(
-      sceneParams([box('obj-1', 40, 40), box('obj-2', 20, -40, { visibility: 'xray' })]),
-      null, null, BOUNDS) || [];
+    const scene = sceneParams([box('obj-1', 40, 40), box('obj-2', 20, -40, { visibility: 'xray' })]);
+    scene.edgeStylesByObject = { 'obj-2': { hidden: { hiddenTreatment: 'dash', pen: null, weightMm: null, dash: null } } };
+    const paths = algo.generate(scene, null, null, BOUNDS) || [];
     const far = byObject(paths, 'obj-2');
     expect(far.length).toBeGreaterThan(0);
     far.forEach((p) => {

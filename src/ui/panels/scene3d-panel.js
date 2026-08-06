@@ -3074,9 +3074,10 @@
           rp.xrayBackPenId || '',
           (v) => commitStyle({ params: { ...sp(), xrayBackPenId: v || null } }));
 
-        // Hidden edges dashed — default ON.
-        toggleRow('Hidden edges', 'X-ray dashed hidden edges', rp.xrayHiddenEdges !== false,
-          (on) => commitStyle({ params: { ...sp(), xrayHiddenEdges: on } }));
+        // X-RAY FOLD: hidden EDGES are no longer an x-ray control — the per-object
+        // Edge Styles → Hidden → Drop|Dash owns them. The X-ray group is fills-only
+        // now (Back faces / density / line / pen / Front). The xrayHiddenEdges param
+        // stays inert (still serialized for back/forward-compat, just unread).
 
         // Near surface: solid or faded (dotted).
         const frontRow = document.createElement('div');

@@ -72,13 +72,16 @@ describe('Scene3D per-edge-class EdgeStyle (C-06)', () => {
     expect(withDefaults).toBe(bare);
   });
 
-  // ── MIGRATION GUARD: an x-ray box still dashes its hidden edges with the
-  // default (drop) scene table — the per-object x-ray flag still wins. ─────────
-  test('x-ray box still dashes hidden edges under default edgeStyles (migration no-op)', () => {
-    const bare = hiddenEdges(algo.generate(scene('wireframe', null, 'xray'), null, null, BOUNDS)).length;
-    const withDefaults = hiddenEdges(algo.generate(scene('wireframe', clone(DEFAULT_EDGE_STYLES), 'xray'), null, null, BOUNDS)).length;
-    expect(bare).toBeGreaterThan(0);
-    expect(withDefaults).toBe(bare);
+  // ── X-RAY FOLD: x-ray no longer forces hidden edges to dash — edgeStyles.hidden
+  // is the sole owner. A fresh x-ray box under the DEFAULT (drop) table drops its
+  // hidden edges; flipping hidden→dash (what the v1→v2 migration seeds) dashes them.
+  test('x-ray box hidden edges follow edgeStyles.hidden, not the x-ray flag', () => {
+    const dropped = hiddenEdges(algo.generate(scene('wireframe', clone(DEFAULT_EDGE_STYLES), 'xray'), null, null, BOUNDS)).length;
+    const es = clone(DEFAULT_EDGE_STYLES);
+    es.hidden.hiddenTreatment = 'dash';
+    const dashed = hiddenEdges(algo.generate(scene('wireframe', es, 'xray'), null, null, BOUNDS)).length;
+    expect(dropped).toBe(0);
+    expect(dashed).toBeGreaterThan(0);
   });
 
   // ── (b) hidden → 'dash' produces dashed hidden edges on a NON-xray box that

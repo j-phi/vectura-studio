@@ -7,6 +7,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — x-ray is now see-through fills; Edge Styles own hidden edges.** X-ray no
+  longer forces hidden edges to dash — that's now controlled entirely by the per-class Edge
+  Styles (Hidden → Drop/Dash), while x-ray keeps its unique job of making back-face fills
+  see-through. So you can now have see-through fills with *dropped* hidden edges, or dashed
+  hidden edges without x-ray. Saved x-ray scenes migrate automatically and render identically.
 - **3D Scene — per-object Edge Styles and Divisions.** Inside a scene, a selected object can
   now override the scene-wide edge styles for its own edges (each class defaults to "inherit
   scene"), and can carry its own stroke divisions applied only to its strokes. Overrides are

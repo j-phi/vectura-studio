@@ -22,7 +22,13 @@
   // Format version of the scene schema INSIDE layer.params (independent of the
   // .vectura engine formatVersion). Bump + add a SCENE_MIGRATIONS step when the
   // scene shape changes incompatibly.
-  const SCENE_VERSION = 1;
+  // v2 (X-ray fold): x-ray narrows to see-through back-face FILLS only; the
+  // hidden-EDGE dash is owned entirely by edgeStyles.hidden. SCENE_MIGRATIONS[1]
+  // seeds edgeStyles.hidden = dash on every x-ray object (whose xrayHiddenEdges
+  // was not explicitly false) so a saved scene renders BYTE-IDENTICALLY — the
+  // seeded override is a pure treatment flip (pen/weightMm/dash all null ⇒
+  // edgeStyleMeta returns null ⇒ no overlay meta).
+  const SCENE_VERSION = 2;
   // Keyed by SOURCE version: SCENE_MIGRATIONS[n] upgrades an n payload to n+1.
   const SCENE_MIGRATIONS = {};
 
@@ -146,9 +152,11 @@
   // (every class filled with a no-op default), an object override keeps ONLY the
   // classes the user explicitly set — an ABSENT class inherits the scene default
   // (null/absent = inherit). Returns null when nothing is overridden so the
-  // object serializes + renders byte-identically. The emit resolver reads
-  // objectOverride[class] ?? sceneEdgeStyle[class] ?? inherit, so a present class
-  // (even one restating base defaults) deliberately breaks scene inheritance.
+  // object serializes + renders byte-identically. The emit resolver (edgeStyleFor)
+  // merges PER FIELD: for a present class each field is objectOverride[field] ??
+  // sceneEdgeStyle[field] ?? null, resolved independently — so overriding one
+  // field (e.g. the X-ray fold's hidden.hiddenTreatment seed) inherits the scene
+  // class's other fields (pen/weightMm/dash) rather than blanking them.
   const normalizeObjectEdgeStyles = (styles) => {
     if (!isObject(styles)) return null;
     const out = {};
@@ -780,6 +788,59 @@
     if (isObject(src.edgeStyles)) out.edgeStyles = normalizeEdgeStyles(src.edgeStyles);
     return out;
   };
+
+  // ── SCENE_MIGRATIONS[1] — the X-ray fold seed (v1 → v2). ───────────────────
+  // X-ray used to FORCE dashed hidden edges. The fold hands that treatment to
+  // edgeStyles.hidden, so a v1 x-ray object must carry a per-object hidden=dash
+  // override or it would lose its dashes. The override is a NO-OP-meta flip
+  // ({hiddenTreatment:'dash', pen:null, weightMm:null, dash:null}) ⇒ byte-identical.
+  //
+  // Handles BOTH scene shapes:
+  //   • MONOLITH / scene-group inline objects[] — seeds params.edgeStylesByObject
+  //     (the same per-object map the emit resolver reads); xrayHiddenEdges is
+  //     resolved through the style cascade (byObject[id] whole-wins over scene).
+  //   • a single object3d LEAF layer (top-level visibility/style/edgeStyles) —
+  //     seeds params.edgeStyles.hidden directly.
+  // Idempotent: an object that already carries a hidden override is left alone.
+  const XRAY_HIDDEN_SEED = { hiddenTreatment: 'dash', pen: null, weightMm: null, dash: null };
+  const resolveXrayHiddenEdges = (styleTable, id) => {
+    const t = isObject(styleTable) ? styleTable : {};
+    const byObj = isObject(t.byObject) ? t.byObject : {};
+    // Whole-style-wins: byObject[id] if present, else the scene default.
+    const style = isObject(byObj[id]) ? byObj[id] : (isObject(t.scene) ? t.scene : {});
+    const sp = isObject(style.params) ? style.params : {};
+    return sp.xrayHiddenEdges !== false; // default true = the old dashed behavior
+  };
+  const seedHidden = (existing) => ({
+    ...(isObject(existing) ? existing : {}),
+    hidden: { ...XRAY_HIDDEN_SEED },
+  });
+  const migrateXrayHiddenEdges = (params) => {
+    const src = isObject(params) ? params : {};
+    const out = { ...src };
+    if (Array.isArray(src.objects)) {
+      const byObject = { ...(isObject(src.edgeStylesByObject) ? src.edgeStylesByObject : {}) };
+      let touched = false;
+      src.objects.forEach((obj) => {
+        if (!isObject(obj) || obj.visibility !== 'xray') return;
+        const id = (typeof obj.id === 'string' && obj.id) ? obj.id : null;
+        if (!id) return;
+        if (isObject(byObject[id]) && isObject(byObject[id].hidden)) return; // idempotent
+        if (!resolveXrayHiddenEdges(src.styleTable, id)) return; // xrayHiddenEdges:false ⇒ inherit
+        byObject[id] = seedHidden(byObject[id]);
+        touched = true;
+      });
+      if (touched) out.edgeStylesByObject = byObject;
+    } else if (src.visibility === 'xray') {
+      const alreadyHidden = isObject(src.edgeStyles) && isObject(src.edgeStyles.hidden);
+      const sp = (isObject(src.style) && isObject(src.style.params)) ? src.style.params : {};
+      if (!alreadyHidden && sp.xrayHiddenEdges !== false) {
+        out.edgeStyles = seedHidden(src.edgeStyles);
+      }
+    }
+    return out;
+  };
+  SCENE_MIGRATIONS[1] = migrateXrayHiddenEdges;
 
   // Scene migration chain (keyed on params.sceneVersion), then normalization.
   // Payloads NEWER than SCENE_VERSION load as-is (best-effort forward compat).

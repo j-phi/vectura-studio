@@ -215,17 +215,27 @@
       // width (bounds.penWidth, 0.3mm fallback) and rides the SAME tested
       // meta.weightScale path the silhouette-emphasis passes use.
       const EDGE_REF_WIDTH = finite(bounds && bounds.penWidth, 0.3);
-      // Polish P-B — per-object override resolve: objectOverride[cls] ??
-      // sceneEdgeStyle[cls] ?? inherit. p.edgeStylesByObject (assembled by
-      // collectSceneParams) keeps ONLY the classes an object overrode, so an
-      // object that inherits every class falls straight through to the scene
-      // table — byte-identical to the pre-P-B single-arg lookup.
+      // Polish P-B + X-ray fold — per-object override resolves PER FIELD, not
+      // whole-class: each field is objectOverride[field] ?? sceneEdgeStyle[field]
+      // ?? null (pen / weightMm / dash, plus hiddenTreatment for the hidden class),
+      // resolved INDEPENDENTLY. So an object that overrides only ONE field inherits
+      // the scene class's other fields — and, critically, the X-ray fold's migrated
+      // hidden seed (which sets ONLY hiddenTreatment='dash', leaving pen/weightMm/
+      // dash null) still inherits the scene hidden class's pen/weight/dash OVERLAY,
+      // reproducing pre-fold x-ray byte-for-byte. An object that overrides nothing
+      // falls straight through to the scene class (or null). p.edgeStylesByObject
+      // (assembled by collectSceneParams) keeps ONLY the classes an object touched.
       const edgeStyleFor = (cls, objectId) => {
         const byObj = p.edgeStylesByObject;
         const ov = (objectId && byObj && byObj[objectId]) ? byObj[objectId][cls] : null;
-        if (ov) return ov;
         const t = p.edgeStyles;
-        return (t && t[cls]) || null;
+        const base = (t && t[cls]) || null;
+        if (!ov) return base;
+        if (!base) return ov;
+        const pick = (k) => (ov[k] != null ? ov[k] : (base[k] != null ? base[k] : null));
+        const merged = { pen: pick('pen'), weightMm: pick('weightMm'), dash: pick('dash') };
+        if (cls === 'hidden') merged.hiddenTreatment = ov.hiddenTreatment || base.hiddenTreatment || 'drop';
+        return merged;
       };
       // Build a meta overlay (penId / weightScale / strokeDash) from an EdgeStyle,
       // or null when the style is a pure no-op. penId overrides the object pen;
@@ -795,12 +805,16 @@
         const emCfg = (emSrc && emSrc.emissive && emSrc.emissive.enabled && record.id !== 'ground')
           ? emSrc.emissive : null;
         const emissiveCoreBlank = Boolean(emCfg && emCfg.coreBlank);
+        // X-ray fold: x-ray's SEE-THROUGH FILLS stay coupled to visibility — the
+        // occluded BASE-FILL / face-outline dash is a fills concern (the far
+        // surface reads through), independent of edgeStyles.hidden. Only the pure
+        // hidden-EDGE treatment (dash vs drop of the structural edge pass below)
+        // moves to edgeStyles.hidden. So this stays exactly as pre-fold.
         const hiddenTreatment = record.visibility === 'xray' ? 'dash' : 'remove';
-        // Object-scope x-ray settings (drive the hidden-edge toggle + the faceted
-        // back-face loop). Per-fill details re-read the specific style below.
+        // Object-scope x-ray settings (drive the see-through back-face FILL loop +
+        // the hidden-only crease-over-fill). Per-fill details re-read the style below.
         const xrayOn = record.visibility === 'xray';
         const recXray = xrayOn ? xrayCfg((resolveStyle(record.id, null).params) || {}) : null;
-        const edgeHidden = (xrayOn && recXray.hiddenEdges) ? 'dash' : 'remove';
         const styleOf = (face) => resolveStyle(record.id, face.faceId);
         // Flat/faceted primitives (box, plane, polyhedra) hatch per face so each
         // planar face fills in its own orientation. Curved primitives are a fine
@@ -1475,6 +1489,12 @@
           // every crease (outline only).
           const creaseSuppressed = entry.cls === 'crease' && !wireframeDemand
             && (record.primitive === 'csg' ? bordersSurfaceFill : true);
+          // A suppressed crease over a surface-filled face survives as HIDDEN-ONLY
+          // (its visible portion drops, its occluded portion reads through the
+          // shown fill) ONLY when the x-ray see-through FILL is active. This is a
+          // FILLS concern (gated on visibility, NOT edgeStyles.hidden) so a
+          // NON-x-ray surface-filled box with a scene hidden=dash class is
+          // unaffected — its creases are not see-through creases.
           const hiddenOnlyEdge = creaseSuppressed && bordersSurfaceFill && xrayOn && recXray.hiddenEdges;
           if (creaseSuppressed && !hiddenOnlyEdge) return;
           // Interior edges surfaced by a wireframe mapper report as creases —
@@ -1503,17 +1523,17 @@
           const visOverlay = edgeStyleMeta(edgeStyleFor(entry.cls, record.id));
           const hidOverlay = edgeStyleMeta(edgeStyleFor('hidden', record.id));
           // Structural edge: line-type dash only (double-drawn with the face
-          // outline, so wobble is fill-scoped — see dashOnly). Hidden edges dash
-          // under x-ray (edgeHidden = 'dash') or when a wireframe face asks for
-          // showHidden — those PER-OBJECT overrides still win. Otherwise the
-          // scene-wide edgeStyles.hidden.hiddenTreatment decides drop vs dash
-          // (default 'drop' ⇒ 'remove' ⇒ today's look).
+          // outline, so wobble is fill-scoped — see dashOnly). X-RAY FOLD: x-ray
+          // no longer forces hidden edges to dash — the per-object/scene
+          // edgeStyles.hidden.hiddenTreatment is the SOLE owner (default 'drop' ⇒
+          // 'remove' ⇒ today's non-x-ray look; a migrated x-ray object carries
+          // 'dash'). A wireframe face's showHidden stays an orthogonal override.
           // Polish P-B — the hidden treatment resolves per-object too (an object
           // may override Drop→Dash for its OWN occluded edges); a non-overriding
           // object falls through to the scene-wide hidden class.
           const hiddenStyle = edgeStyleFor('hidden', record.id);
           const sceneHidden = (hiddenStyle && hiddenStyle.hiddenTreatment === 'dash') ? 'dash' : 'remove';
-          const thisEdgeHidden = (wfShowHidden || edgeHidden === 'dash') ? 'dash' : sceneHidden;
+          const thisEdgeHidden = wfShowHidden ? 'dash' : sceneHidden;
           const emitOpts = {};
           if (hiddenOnlyEdge) emitOpts.hiddenOnly = true;
           if (visOverlay) emitOpts.visibleMeta = visOverlay;

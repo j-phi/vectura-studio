@@ -74,14 +74,26 @@ describe('Scene3D x-ray back-face fills (Phase 6)', () => {
     expect(back.length).toBeLessThan(front.length);
   });
 
-  test('box x-ray shows dashed hidden edges AND back-face fills', () => {
+  const hiddenEdgesOf = (paths) => (paths || []).filter((pp) => pp.meta && pp.meta.kind === 'sceneEdge'
+    && pp.meta.hiddenLine === true && Array.isArray(pp.meta.strokeDash));
+
+  // X-RAY FOLD (Option A): x-ray owns only the see-through back-face FILLS; the
+  // hidden-EDGE dash is owned by edgeStyles.hidden. A FRESH x-ray box therefore
+  // shows back fills but leaves hidden edges to Edge Styles (default 'drop' ⇒ not
+  // dashed). Saved scenes get a migrated hidden=dash seed (scene3d-xray-fold.test.js),
+  // so their look is unchanged.
+  test('fresh box x-ray shows back fills; hidden edges follow Edge Styles (default: not dashed)', () => {
     const paths = algo.generate(scene('box', 'xray'), null, null, BOUNDS);
-    // Back-face fills present.
     expect(backFills(paths).length).toBeGreaterThan(0);
-    // Dashed hidden edges present.
-    const hiddenEdges = (paths || []).filter((pp) => pp.meta && pp.meta.kind === 'sceneEdge'
-      && pp.meta.hiddenLine === true && Array.isArray(pp.meta.strokeDash));
-    expect(hiddenEdges.length).toBeGreaterThan(0);
+    expect(hiddenEdgesOf(paths).length).toBe(0);
+  });
+
+  test('box x-ray with edgeStyles.hidden=dash shows dashed hidden edges AND back-face fills', () => {
+    const p = scene('box', 'xray');
+    p.edgeStylesByObject = { o1: { hidden: { hiddenTreatment: 'dash', pen: null, weightMm: null, dash: null } } };
+    const paths = algo.generate(p, null, null, BOUNDS);
+    expect(backFills(paths).length).toBeGreaterThan(0);
+    expect(hiddenEdgesOf(paths).length).toBeGreaterThan(0);
   });
 
   test('xrayBackFaces=false suppresses back fills (near-only)', () => {
@@ -91,7 +103,9 @@ describe('Scene3D x-ray back-face fills (Phase 6)', () => {
     expect(off).toBe(0);
   });
 
-  test('xrayHiddenEdges=false removes dashed hidden edges but keeps back fills', () => {
+  // xrayHiddenEdges is INERT after the fold — hidden edges are dropped by the
+  // default Edge Styles regardless, while back fills stay gated on visibility.
+  test('xrayHiddenEdges=false: no dashed hidden edges, back fills kept', () => {
     const paths = algo.generate(scene('box', 'xray', { xrayHiddenEdges: false }), null, null, BOUNDS);
     const hiddenEdges = (paths || []).filter((pp) => pp.meta && pp.meta.kind === 'sceneEdge' && pp.meta.hiddenLine === true);
     expect(hiddenEdges.length).toBe(0);

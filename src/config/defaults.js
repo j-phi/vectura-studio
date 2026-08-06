@@ -2061,7 +2061,11 @@
       label: 'Scene 3D',
       is3d: true,
       preset: 'scene3d-default',
-      sceneVersion: 1,
+      // v2 — X-ray fold. A fresh scene is born at the current SCENE_VERSION so it
+      // is NOT subject to the v1→v2 x-ray hidden-edge seed migration; a fresh
+      // x-ray object's hidden edges follow Edge Styles (default drop), and that
+      // stays true across save/reload. Only OLD (v1) saved scenes get the seed.
+      sceneVersion: 2,
       seed: 0,
       objects: [
         {
