@@ -45,6 +45,15 @@ describe('Phase 4A Inc-1 — Divisions editor section', () => {
     layer.penId = 'p1';
     layer.params = layer.params || {};
     layer.params.curves = false;
+    // Pin the layer seed. Layer() assigns params.seed = Math.random()*99999 at
+    // construction (layer.js), and engine._divisionSeed folds it into the
+    // deterministic weighted-pen / jitter hash. Left random, the weighted test's
+    // 1:3 split over only ~10 fragments lands on a losing seed ~7% of runs
+    // (e.g. seed 1 -> 5/5, seed 7 -> 0/10), which is the flake: it is NOT an
+    // async race — recompute() is synchronous — but a per-process random draw.
+    // A fixed seed makes the deterministic feature reproducible without touching
+    // any assertion. seed 12345 yields a healthy 3/7 (pen1=3, pen2=7).
+    layer.params.seed = 12345;
     const line = [{ x: 20, y: 20 }, { x: 120, y: 20 }];
     line.meta = {};
     layer.paths = [line];
