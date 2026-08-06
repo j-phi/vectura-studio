@@ -249,9 +249,16 @@ question. Do not start these without a decision:
     pen (real plot order): lifts, pen-up travel, draw length, estimated time (machine speeds +
     per-lift time), an all-pens total, and a K-05 min-segment/gap guard (count + warning).
     Extends `computeStats` with `{physics:true}`; read-only (no geometry drift).
-  - **Deferred:** per-object EdgeStyle overrides + full removal of the per-object x-ray
-    toggles; `_divisionSeed` 0/1 cosmetic; per-object scene divisions; Phase 5 backlog
-    (OBJ import, Manifold WASM booleans, curved−curved CSG, etc. — needs prioritization).
+  - **Polish follow-ups (v1.3.68–1.3.69, `6728925`..`e4a3bd4`).** (PA) `_divisionSeed` seed 1
+    now distinct from the default (seed 0 byte-identical, no saved-doc drift); plot-physics
+    swatch contrast on the dark panel. (PB) per-object EdgeStyle overrides (per class,
+    inherit-scene default) + per-object stroke Divisions in a scene — the compositor
+    partitions emitted paths by objectId and runs the shared `divideChain` per contiguous
+    object run (byte-identical default; hardened per adversarial review: no-op skip +
+    per-run splice fallback). Overrides are isolated per object.
+  - **Deferred:** full removal of the per-object x-ray toggles (folding into per-object
+    EdgeStyle); Phase 5 backlog (OBJ import, Manifold WASM booleans, curved−curved CSG,
+    turntable export, etc. — needs prioritization).
 - **Unreleased — 3D Scene Studio → layers-panel scene tree (v1.3.56–1.3.61, `3d-scene/p4`,
   commits `541231e`..`a2ff2cf`).** Decomposed the monolithic single `scene3d` layer into a
   real layer tree, in six increments: **A** new `object3d` + `booleanGroup3d` layer types
