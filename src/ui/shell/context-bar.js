@@ -1067,8 +1067,11 @@
     const C = (cfg().sceneFlyouts && cfg().sceneFlyouts.shape) || {};
     const prims = C.primitives || [];
     if (!prims.length) return;
-    const objects = (layer.params && layer.params.objects) || [];
-    const first = objects.find((o) => o && o.id === sel.objectIds[0]) || {};
+    // Scene-tree Increment D — read the CURRENT primitive through the renderer
+    // bridge (child-layer aware), not the legacy inline params.objects array
+    // (empty on a scene tree ⇒ the active checkmark never lit).
+    const first = (typeof r.getSceneObjectRecord === 'function'
+      && r.getSceneObjectRecord(layer.id, sel.objectIds[0])) || {};
     const cur = first.primitive;
     const meta = b.sceneShape || {};
     const field = makeDropField('ctxbar-scene-field ctxbar-scene-shape', meta.label || 'Shape', meta.tooltip || '');

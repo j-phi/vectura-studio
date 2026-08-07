@@ -173,6 +173,23 @@
           });
           this.renderLayers(); this.app.render(); return;
         }
+        // Scene-tree — an object3d dropped BEFORE/AFTER a scene member (the scene
+        // group header OR any of its child cards) NESTS into that scene container
+        // instead of popping out to root. Only the narrow header "into" band used
+        // to nest; every other drop left parentId untouched and the object never
+        // rendered in the scene. Reordering WITHIN the same container (parentId
+        // already matches) falls through to the normal reorder path below.
+        // assignLayersToParent reverts a booleanGroup3d operand's role to 'solid'.
+        if (src.type === 'object3d') {
+          const container = this.sceneNestContainerFor?.(tgt);
+          if (container && container.id !== src.parentId
+              && !this.isDescendant?.(container.id, srcId)) {
+            this.assignLayersToParent(container.id, [src], {
+              captureHistory: true, selectAssigned: true, primaryId: srcId,
+            });
+            this.renderLayers(); this.app.render(); return;
+          }
+        }
         const selectedSet = new Set([srcId]);
         const currentOrder = engine.layers.map((l) => l.id).reverse();
         const nextOrder = currentOrder.filter((id) => id !== srcId);
@@ -2211,6 +2228,26 @@
     return false;
   }
 
+  // Scene-tree — the scene container (a scene3d GROUP or a booleanGroup3d) that a
+  // drop target belongs to, walking UP from the target. Returns the container
+  // LAYER, or null when the target is not part of a scene tree. An object3d
+  // dropped before/after any scene member nests INTO this container (see
+  // _lvlDoMove) instead of popping out to root.
+  function sceneNestContainerFor(tgt) {
+    const engine = this.app && this.app.engine;
+    if (!engine || !engine.getLayerById) return null;
+    const isSceneContainer = (l) =>
+      l && (l.type === 'booleanGroup3d' || (l.type === 'scene3d' && l.isGroup));
+    let node = tgt;
+    const seen = new Set();
+    while (node && !seen.has(node.id)) {
+      seen.add(node.id);
+      if (isSceneContainer(node)) return node;
+      node = node.parentId ? engine.getLayerById(node.parentId) : null;
+    }
+    return null;
+  }
+
   function normalizeGroupOrder() {
     const layers = this.app.engine.layers;
     const parents = layers.filter((layer) => this.canLayerAcceptChildren(layer));
@@ -2657,6 +2694,7 @@
     unlockMirrorChildrenOnDelete,
     shouldLeaveParentScope,
     isDescendant,
+    sceneNestContainerFor,
     normalizeGroupOrder,
     moveSelectedLayers,
     duplicateLayers,
@@ -2695,6 +2733,7 @@
       proto.unlockMirrorChildrenOnDelete = function(layerId) { return unlockMirrorChildrenOnDelete.call(this, layerId); };
       proto.shouldLeaveParentScope = function(...args) { return shouldLeaveParentScope.apply(this, args); };
       proto.isDescendant = function(targetId, ancestorId) { return isDescendant.call(this, targetId, ancestorId); };
+      proto.sceneNestContainerFor = function(tgt) { return sceneNestContainerFor.call(this, tgt); };
       proto.normalizeGroupOrder = function() { return normalizeGroupOrder.call(this); };
       proto.moveSelectedLayers = function(direction) { return moveSelectedLayers.call(this, direction); };
       proto.duplicateLayers = function(targetLayers, options) { return duplicateLayers.call(this, targetLayers, options); };

@@ -121,8 +121,10 @@
       get(layer, renderer) {
         const params = (layer && layer.params) || {};
         const sel = renderer && renderer.getSceneSelection ? renderer.getSceneSelection() : null;
+        // Scene-tree Increment D — resolve the selected object through
+        // _sceneObjectById (child-layer aware), not just inline params.objects.
         const obj = sel && sel.layerId === layer.id && sel.mode === 'object' && sel.objectIds.length === 1
-          ? (Array.isArray(params.objects) ? params.objects : []).find((o) => o && o.id === sel.objectIds[0])
+          ? (renderer && renderer._sceneObjectById ? renderer._sceneObjectById(layer, sel.objectIds[0]) : null)
           : null;
         if (obj) {
           const t = obj.transform || {};
@@ -139,8 +141,10 @@
       set(layer, renderer, next) {
         const params = (layer && layer.params) || {};
         const sel = renderer && renderer.getSceneSelection ? renderer.getSceneSelection() : null;
+        // Scene-tree Increment D — write to the selected object's transform via
+        // _sceneObjectById (child-layer aware), not just inline params.objects.
         const obj = sel && sel.layerId === layer.id && sel.mode === 'object' && sel.objectIds.length === 1
-          ? (Array.isArray(params.objects) ? params.objects : []).find((o) => o && o.id === sel.objectIds[0])
+          ? (renderer && renderer._sceneObjectById ? renderer._sceneObjectById(layer, sel.objectIds[0]) : null)
           : null;
         if (obj) {
           const t = obj.transform || (obj.transform = {});
@@ -5728,11 +5732,14 @@
         // group draws their gizmo. Suppress the 2D box + handles for them too.
         const soleSceneType = (l) => l && (l.type === 'scene3d' || l.type === 'object3d' || l.type === 'booleanGroup3d');
         const soleScene = selectionLayersForBox.length === 1 && soleSceneType(selectionLayersForBox[0]);
-        if (bounds) {
-          if (!soleScene) this.drawSelection(bounds, { showHandles });
-          if (showHandles && selectionLayersForBox.length === 1) {
-            this.draw3DRotationControl(selectionLayersForBox[0], bounds);
-          }
+        if (bounds && !soleScene) this.drawSelection(bounds, { showHandles });
+        // BUG 3 — the orbit gizmo is drawn even when `bounds` is null: a selected
+        // scene object3d/booleanGroup3d child has no independent 2D bounds (its
+        // geometry lives on the composed group), so get3DRotationControl resolves
+        // the owning scene group and anchors off its scenePaths. Non-scene layers
+        // always carry real bounds, so this is a no-op for them.
+        if (showHandles && selectionLayersForBox.length === 1) {
+          this.draw3DRotationControl(selectionLayersForBox[0], bounds || null);
         }
       }
       // Key-object emphasis: when an key object is set,
@@ -12150,7 +12157,13 @@
       const P = window.Vectura?.Scene3D?.Params;
       const valid = P && Array.isArray(P.PRIMITIVES) ? P.PRIMITIVES : null;
       if (valid && valid.indexOf(primitive) === -1) return false;
-      const targets = this._sceneObjects(layer).filter((o) => o && (objectIds || []).includes(o.id));
+      // Scene-tree Increment D — resolve each target through _sceneObjectById so
+      // the swap reaches a CHILD object3d layer (params live at child.params.*),
+      // not just legacy inline objects. Mutating the returned view writes through
+      // to the child layer; the compositor re-collects it on the next generate.
+      const targets = (objectIds || [])
+        .map((id) => this._sceneObjectById(layer, id))
+        .filter(Boolean);
       if (!targets.length) return false;
       const defaults = (P && P.PRIMITIVE_PARAM_DEFAULTS && P.PRIMITIVE_PARAM_DEFAULTS[primitive]) || null;
       this._scenePushHistory();
@@ -13728,10 +13741,43 @@
     }
 
     get3DRotationSpec(layer) {
-      if (!layer || layer.isGroup || !layer.params) return null;
+      if (!layer || !layer.params) return null;
+      // A scene3d GROUP (scene-tree container, isGroup:true) still owns the orbit
+      // gizmo; every OTHER group (boolean, plain) has no 3D rotation spec.
+      if (layer.isGroup && layer.type !== 'scene3d') return null;
       const spec = ROTATION_3D_SPECS[layer.type] || null;
       if (spec && typeof spec.appliesIf === 'function' && !spec.appliesIf(layer.params)) return null;
       return spec;
+    }
+
+    // BUG 3 — the orbit gizmo lives on the scene GROUP (its composed scenePaths
+    // carry the anchor geometry + the camera). When a scene DESCENDANT
+    // (object3d / booleanGroup3d / light / ground child) is the active layer,
+    // resolve up to the owning scene3d group so the gizmo still shows and rotates
+    // the camera (or the selected object's transform). Returns the scene3d layer
+    // itself, or null for a non-scene layer (byte-identical for those).
+    _sceneRotationOwner(layer) {
+      if (!layer) return null;
+      if (layer.type === 'scene3d') return layer;
+      const kinds = ['object3d', 'booleanGroup3d', 'sceneLight3d', 'sceneGround3d'];
+      if (kinds.indexOf(layer.type) === -1) return null;
+      const getById = this.engine && this.engine.getLayerById
+        ? (id) => this.engine.getLayerById(id) : null;
+      if (getById) {
+        const seen = new Set();
+        let p = layer;
+        while (p && !seen.has(p.id)) {
+          seen.add(p.id);
+          p = p.parentId ? getById(p.parentId) : null;
+          if (p && p.type === 'scene3d') return p;
+        }
+      }
+      // Fall back to the active scene selection's group (canvas-pick sets it).
+      if (this.sceneSelection && getById) {
+        const g = getById(this.sceneSelection.layerId);
+        if (g && g.type === 'scene3d') return g;
+      }
+      return null;
     }
 
     // Nested-spec accessors (3D Scene Studio, Phase 1C). Flat specs keep the
@@ -13767,15 +13813,27 @@
     }
 
     get3DRotationControl(layer, bounds) {
+      // BUG 3 — the gizmo lives on the scene group even when a scene descendant
+      // is the active layer. The incoming bounds only needs its corners (the
+      // scene anchor overrides center/target), so the child's bounds are fine.
+      const owner = this._sceneRotationOwner(layer);
+      if (owner && owner !== layer) layer = owner;
       const spec = this.get3DRotationSpec(layer);
-      if (!spec || !bounds?.corners) return null;
-      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      if (!spec) return null;
       // Scene layers anchor the gizmo to the SELECTED OBJECT's top-right (or the
       // whole scene's when orbiting the camera), not the layer's doc-corner
-      // bounds — otherwise it floats far from what it rotates.
+      // bounds — otherwise it floats far from what it rotates. BUG 3: a scene
+      // GROUP's geometry lives in scenePaths, so getSelectionBounds yields no
+      // corners; the anchor (from getInteractionPaths) supplies center/target on
+      // its own, so a valid anchor is sufficient. Non-scene layers still require
+      // real bounds.corners.
       const sceneAnchor = layer.type === 'scene3d' ? this._sceneGizmoAnchor(layer) : null;
-      const center = sceneAnchor ? sceneAnchor.center : (bounds.center || this.getBoundsCenter(bounds));
-      const target = sceneAnchor ? sceneAnchor.ne : (bounds.corners.ne || center);
+      if (!sceneAnchor && !bounds?.corners) return null;
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const center = sceneAnchor ? sceneAnchor.center
+        : (bounds.center || this.getBoundsCenter(bounds));
+      const target = sceneAnchor ? sceneAnchor.ne
+        : (bounds.corners.ne || center);
       const vx = target.x - center.x;
       const vy = target.y - center.y;
       const len = Math.hypot(vx, vy) || 1;
@@ -14454,11 +14512,15 @@
       const targetBounds = bounds || (targetLayer ? this.getSelectionBounds([targetLayer]) : null);
       const control = this.get3DRotationControl(targetLayer, targetBounds);
       if (!control) return null;
+      // BUG 3 — the drag must write to the scene GROUP (nested camera / selected-
+      // object spec), so return the owner group as hit.layer when a scene
+      // descendant is active. Non-scene layers resolve to themselves.
+      const hitLayer = this._sceneRotationOwner(targetLayer) || targetLayer;
       const unit = 1 / Math.max(this.scale || 1, 0.001);
       const world = this.screenToWorld(sx, sy);
       const centerDist = Math.hypot(world.x - control.center.x, world.y - control.center.y);
       if (centerDist <= 5 * unit) {
-        return { type: 'orbit', layer: targetLayer, spec: control.spec, control };
+        return { type: 'orbit', layer: hitLayer, spec: control.spec, control };
       }
       const yawDist = Math.hypot(world.x - control.yawMarker.x, world.y - control.yawMarker.y);
       const pitchDist = Math.hypot(world.x - control.pitchMarker.x, world.y - control.pitchMarker.y);
@@ -14467,19 +14529,19 @@
       if (pitchDist <= 9 * unit) markerHits.push({ distance: pitchDist, type: 'pitch' });
       if (markerHits.length) {
         markerHits.sort((a, b) => a.distance - b.distance);
-        return { type: markerHits[0].type, layer: targetLayer, spec: control.spec, control };
+        return { type: markerHits[0].type, layer: hitLayer, spec: control.spec, control };
       }
       if (control.rollHandle) {
         const rollDist = Math.hypot(world.x - control.rollHandle.x, world.y - control.rollHandle.y);
         if (rollDist <= 9 * unit) {
-          return { type: 'roll', layer: targetLayer, spec: control.spec, control };
+          return { type: 'roll', layer: hitLayer, spec: control.spec, control };
         }
         if (Math.abs(centerDist - control.ringRadius) <= 5 * unit) {
-          return { type: 'roll', layer: targetLayer, spec: control.spec, control };
+          return { type: 'roll', layer: hitLayer, spec: control.spec, control };
         }
       }
       if (centerDist <= control.padRadius + 7 * unit) {
-        return { type: 'orbit', layer: targetLayer, spec: control.spec, control };
+        return { type: 'orbit', layer: hitLayer, spec: control.spec, control };
       }
       return null;
     }
