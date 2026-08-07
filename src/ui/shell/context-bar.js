@@ -922,10 +922,15 @@
   const sceneSel = (ctx) => ctx.sceneSelection
     || (ctx.renderer && ctx.renderer.getSceneSelection && ctx.renderer.getSceneSelection()) || null;
 
-  const sceneObjectName = (layer, id) => {
+  const sceneObjectName = (ctx, layer, id) => {
     const objects = (layer && layer.params && layer.params.objects) || [];
     const o = objects.find((x) => x && x.id === id);
-    return (o && o.name) || id;
+    if (o && o.name) return o.name;
+    // Scene tree — the object lives on a CHILD layer (id === object id); its
+    // display name is the child layer's name, not an inline object.
+    const engine = ctx && ctx.renderer && ctx.renderer.engine;
+    const child = engine && engine.getLayerById ? engine.getLayerById(id) : null;
+    return (child && child.name) || id;
   };
 
   // Selection summary copy: 'Box 1', '2 objects', '3 faces · Box 1', …
@@ -934,13 +939,13 @@
     const layer = ctx.primaryLayer;
     if (!sel || !layer) return '';
     if (sel.mode === 'object') {
-      if (sel.objectIds.length === 1) return sceneObjectName(layer, sel.objectIds[0]);
+      if (sel.objectIds.length === 1) return sceneObjectName(ctx, layer, sel.objectIds[0]);
       return `${sel.objectIds.length} objects`;
     }
     const keys = sel.mode === 'edge' ? sel.edgeKeys : sel.faceKeys;
     const noun = sel.mode === 'edge' ? 'edge' : 'face';
     const owners = Array.from(new Set(keys.map((k) => String(k).split('/')[0])));
-    const owner = owners.length === 1 ? sceneObjectName(layer, owners[0]) : `${owners.length} objects`;
+    const owner = owners.length === 1 ? sceneObjectName(ctx, layer, owners[0]) : `${owners.length} objects`;
     return `${keys.length} ${noun}${keys.length === 1 ? '' : 's'} · ${owner}`;
   };
 
@@ -1106,8 +1111,10 @@
       tooltip: (b.sceneDrop && b.sceneDrop.tooltip),
       onClick: () => { r.dropSceneObjectsToGround?.(layer.id, ids); restoreState(); },
     }));
-    const objects = (layer.params && layer.params.objects) || [];
-    const first = objects.find((o) => o && o.id === ids[0]);
+    // Read the x-ray state through the child-aware record so a scene TREE (whose
+    // objects live on child object3d layers) reports correctly, not just an
+    // inline monolith. getSceneObjectRecord returns the live object def either way.
+    const first = r.getSceneObjectRecord ? r.getSceneObjectRecord(layer.id, ids[0]) : null;
     const xray = Boolean(first && first.visibility === 'xray');
     els.content.appendChild(makeBtn({
       icon: ic.sceneVisibility,

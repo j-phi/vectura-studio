@@ -9750,6 +9750,27 @@
       return null;
     }
 
+    // Child-aware enumeration of ALL object records in a scene layer — the live
+    // mutable object-def views. For a monolith this is the inline params.objects
+    // array; for a scene GROUP it is each child object3d layer's params (with
+    // .id pinned to the child layer id). Used where a bridge must iterate every
+    // object (e.g. the ground-drag vertex-inference snap), not just one by id.
+    // _sceneObjects stays inline-only by design; this is the tree-aware sibling.
+    _allSceneObjectRecords(layer) {
+      if (!layer) return [];
+      if (layer.isGroup && this.engine.getLayerDescendants) {
+        const out = [];
+        this.engine.getLayerDescendants(layer.id).forEach((child) => {
+          if (child && child.type === 'object3d' && child.params) {
+            if (child.params.id !== child.id) child.params.id = child.id;
+            out.push(child.params);
+          }
+        });
+        return out;
+      }
+      return this._sceneObjects(layer);
+    }
+
     // CONTRACT B carries no stable edge id, so edge keys are derived from the
     // edge's per-object ordinal in path order (deterministic for fixed params):
     // '<objectId>/<faceId|edge>:<edgeClass>:<ordinal>'. Documented contract gap.
@@ -10263,7 +10284,8 @@
     // ——— ground-drag (V move in the ground plane; Shift lifts) ——————————
 
     _beginSceneGroundDrag(layer, objectIds, world) {
-      const objects = this._sceneObjects(layer);
+      // Child-aware — a scene GROUP's objects live on child object3d layers.
+      const objects = this._allSceneObjectRecords(layer);
       const start = new Map();
       (objectIds || []).forEach((id) => {
         const obj = objects.find((o) => o && o.id === id);
@@ -10318,7 +10340,7 @@
       // drag maps to ~1mm on the ground plane.
       const groundDX = dx * Math.cos(yawRad) + dy * Math.sin(yawRad);
       const groundDZ = -dx * Math.sin(yawRad) + dy * Math.cos(yawRad);
-      const objects = this._sceneObjects(layer);
+      const objects = this._allSceneObjectRecords(layer);
       const inferTol = 6 / (this.scale || 1);
       drag.objectIds.forEach((id) => {
         const obj = objects.find((o) => o && o.id === id);
@@ -10420,7 +10442,7 @@
       this._sceneDragRegenLayerId = null;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
       if (layer) {
-        const objects = this._sceneObjects(layer);
+        const objects = this._allSceneObjectRecords(layer);
         drag.objectIds.forEach((id) => {
           const obj = objects.find((o) => o && o.id === id);
           const s = drag.start.get(id);
@@ -12036,7 +12058,12 @@
     dropSceneObjectsToGround(layerId, objectIds) {
       const layer = this.engine.layers.find((l) => l.id === layerId);
       if (!layer || layer.type !== 'scene3d') return false;
-      const targets = this._sceneObjects(layer).filter((o) => o && (objectIds || []).includes(o.id));
+      // Scene-tree — resolve each target through _sceneObjectById so the drop
+      // reaches a CHILD object3d layer's transform (params live at child.params);
+      // a monolith returns its inline object. Mutating the view writes through.
+      const targets = (objectIds || [])
+        .map((id) => this._sceneObjectById(layer, id))
+        .filter(Boolean);
       if (!targets.length) return false;
       this._scenePushHistory();
       targets.forEach((o) => {
@@ -12060,6 +12087,30 @@
     duplicateSceneObjects(layerId, objectIds) {
       const layer = this.engine.layers.find((l) => l.id === layerId);
       if (!layer || layer.type !== 'scene3d') return [];
+      // Scene-tree — a scene GROUP's objects are CHILD object3d layers, so a
+      // duplicate must clone the child LAYER (new id, same scene-group parent)
+      // via the engine — NOT push onto params.objects, which would corrupt the
+      // tree. The clone's own transform is nudged so it sits beside the source.
+      if (layer.isGroup) {
+        const sources = (objectIds || [])
+          .map((id) => this._sceneChildLayerFor(layer, id))
+          .filter(Boolean);
+        if (!sources.length) return [];
+        this._scenePushHistory();
+        const newIds = [];
+        sources.forEach((src) => {
+          const clone = this.engine.duplicateLayer(src.id);
+          if (!clone || !clone.params) return;
+          const t = clone.params.transform || (clone.params.transform = {});
+          t.x = (Number(t.x) || 0) + 10;
+          t.z = (Number(t.z) || 0) + 10;
+          newIds.push(clone.id);
+        });
+        if (!newIds.length) return [];
+        this.setSceneSelection({ layerId: layer.id, mode: 'object', objectIds: newIds, faceKeys: [], edgeKeys: [] });
+        this._sceneRegen(layer);
+        return newIds;
+      }
       const objects = this._sceneObjects(layer);
       const sources = objects.filter((o) => o && (objectIds || []).includes(o.id));
       if (!sources.length) return [];
@@ -12082,26 +12133,49 @@
       return newIds;
     }
 
+    // Prune style entries owned by the removed objects (CONTRACT C shape).
+    _pruneSceneStyleEntries(layer, ids) {
+      const table = layer && layer.params && layer.params.styleTable;
+      if (!table || typeof table !== 'object') return;
+      ids.forEach((id) => {
+        if (table.byObject && table.byObject[id]) delete table.byObject[id];
+        if (table.byFace) {
+          Object.keys(table.byFace).forEach((key) => {
+            if (key.startsWith(`${id}/`)) delete table.byFace[key];
+          });
+        }
+      });
+    }
+
     deleteSceneObjects(layerId, objectIds) {
       const layer = this.engine.layers.find((l) => l.id === layerId);
       if (!layer || layer.type !== 'scene3d') return false;
       const ids = new Set(objectIds || []);
+      if (!ids.size) return false;
+      // Scene-tree — a scene GROUP's objects are CHILD LAYERS, so delete removes
+      // the child object3d/booleanGroup3d LAYER(s) via the engine (which prunes
+      // descendants). Reassigning params.objects would corrupt the tree.
+      if (layer.isGroup) {
+        const childLayers = [...ids]
+          .map((id) => this._sceneChildLayerFor(layer, id))
+          .filter(Boolean);
+        if (!childLayers.length) return false;
+        this._scenePushHistory();
+        this._pruneSceneStyleEntries(layer, ids);
+        childLayers.forEach((cl) => this.engine.removeLayer(cl.id));
+        this.setSceneSelection(null);
+        // removeLayer folds the group away if the deleted object was its last
+        // child — only regen when the group survives; otherwise just repaint.
+        if (this.engine.getLayerById(layer.id)) this._sceneRegen(layer);
+        else if (this.app?.render) this.app.render();
+        else this.draw();
+        return true;
+      }
       const objects = this._sceneObjects(layer);
       if (!objects.some((o) => o && ids.has(o.id))) return false;
       this._scenePushHistory();
       layer.params.objects = objects.filter((o) => !o || !ids.has(o.id));
-      // Prune style entries owned by the removed objects (CONTRACT C shape).
-      const table = layer.params.styleTable;
-      if (table && typeof table === 'object') {
-        ids.forEach((id) => {
-          if (table.byObject && table.byObject[id]) delete table.byObject[id];
-          if (table.byFace) {
-            Object.keys(table.byFace).forEach((key) => {
-              if (key.startsWith(`${id}/`)) delete table.byFace[key];
-            });
-          }
-        });
-      }
+      this._pruneSceneStyleEntries(layer, ids);
       this.setSceneSelection(null);
       this._sceneRegen(layer);
       return true;
@@ -12137,7 +12211,12 @@
     setSceneObjectVisibility(layerId, objectIds, visibility) {
       const layer = this.engine.layers.find((l) => l.id === layerId);
       if (!layer || layer.type !== 'scene3d') return false;
-      const targets = this._sceneObjects(layer).filter((o) => o && (objectIds || []).includes(o.id));
+      // Scene-tree — resolve each target through _sceneObjectById so the toggle
+      // writes child.params.visibility on a CHILD object3d layer (a monolith
+      // returns its inline object). Mutating the view writes straight through.
+      const targets = (objectIds || [])
+        .map((id) => this._sceneObjectById(layer, id))
+        .filter(Boolean);
       if (!targets.length) return false;
       this._scenePushHistory();
       targets.forEach((o) => {
@@ -12298,7 +12377,12 @@
     setSceneObjectField(layerId, objectIds, path, value, opts) {
       const layer = this.engine.layers.find((l) => l.id === layerId);
       if (!layer || layer.type !== 'scene3d') return false;
-      const targets = this._sceneObjects(layer).filter((o) => o && (objectIds || []).includes(o.id));
+      // Scene-tree — resolve each target through _sceneObjectById so the flyout
+      // writes the CHILD object3d layer's def (params.*); a monolith returns its
+      // inline object. Intermediate objects on the dotted path are created.
+      const targets = (objectIds || [])
+        .map((id) => this._sceneObjectById(layer, id))
+        .filter(Boolean);
       if (!targets.length) return false;
       const keys = String(path).split('.');
       this._sceneBeginWrite(opts);
