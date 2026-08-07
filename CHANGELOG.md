@@ -7,6 +7,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — Import OBJ / STL 3D models.** `File → Import 3D Model…` reads a `.obj` or `.stl`
+  mesh and drops it into the 3D scene compositor as a lit, shaded, selectable object (HLR,
+  lighting, shadows, and styles all apply). If a 3D scene is active the model is **added to it**;
+  otherwise a fresh scene (with a sun light and ground) is created. OBJ parsing handles `v`/`f`
+  records, n-gon fan-triangulation, `a/b/c` index forms, and negative indices (normals, UVs, and
+  materials are ignored for now); STL reuses the existing binary + ASCII loader. The mesh is
+  auto-centred and unit-normalised so it lands in view at a sensible size. One undo step.
 - **3D Scene — Quantitative X-ray (depth-cued see-through).** X-ray objects gain a **Depth cue**
   option: instead of a flat see-through back-fill, the hidden interior is shaded by how deep it
   sits behind the front surface — deeper material reads denser and/or heavier, turning x-ray into

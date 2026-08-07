@@ -74,6 +74,9 @@
                 <span>Import SVG…</span>
                 <span class="top-menu-shortcut" data-shortcut-mac="Shift+Cmd+P" data-shortcut-win="Shift+Ctrl+P"></span>
               </button>
+              <button id="btn-import-3d" class="top-menu-item" type="button" role="menuitem">
+                <span>Import 3D Model…</span>
+              </button>
               <button id="btn-export" class="top-menu-item" type="button" role="menuitem">
                 <span>Export SVG…</span>
                 <span class="top-menu-shortcut" data-shortcut-mac="Shift+Cmd+E" data-shortcut-win="Shift+Ctrl+E"></span>
@@ -278,6 +281,7 @@
   </header>
   <input id="file-open-vectura" type="file" accept=".vectura,application/json" class="hidden" />
   <input id="file-import-svg" type="file" accept=".svg,image/svg+xml" class="hidden" />
+  <input id="file-import-3d" type="file" accept=".obj,.stl,model/obj,model/stl,application/vnd.ms-pki.stl" class="hidden" />
   <input id="file-import-pattern-svg" type="file" accept=".svg,image/svg+xml" class="hidden" />
 
   <main aria-label="Canvas workspace" class="flex-1 flex overflow-hidden relative">
@@ -1000,6 +1004,7 @@
        Loads AFTER params/mesh/csg and BEFORE scene.js (scene.js calls it). -->
   <script src="./src/core/scene3d/boolean.js?v=1.3.79" defer></script>
   <script src="./src/core/scene3d/scene.js?v=1.3.79" defer></script>
+  <script src="./src/core/scene3d/obj-import.js?v=1.3.79" defer></script>
   <script src="./src/core/scene3d/edges.js?v=1.3.79" defer></script>
   <script src="./src/core/scene3d/depth.js?v=1.3.79" defer></script>
   <script src="./src/core/scene3d/hlr.js?v=1.3.79" defer></script>

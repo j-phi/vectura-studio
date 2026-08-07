@@ -218,6 +218,15 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — OBJ/STL 3D-model import → scene object (`3d-scene/p4`).** `File → Import
+  3D Model…` parses a `.obj` (new `src/core/scene3d/obj-import.js`: v/f, n-gon fan, slash +
+  negative indices) or `.stl` (reuses `src/core/stl-parser.js`) mesh and wraps it via the new
+  `engine.importMeshAsScene` as an object3d `solid` `{solidType:'importedMesh'}` — no new mesh/
+  render plumbing (rides the existing Convert-to-Scene importedMesh path). Lands in the active
+  scene when one is selected, else builds a fresh scene tree (group + sun + ground). Shared
+  `buildImportedMeshParams` centres + unit-normalises like convert. RGR: `tests/unit/obj-import`,
+  `tests/integration/import-mesh-scene`. Follow-up: the object3d "Solid type" dropdown displays a
+  fallback label ("Buckyball") for an imported-mesh solid though it renders correctly.
 - **Unreleased — Phase 4A divisions/pen-grammar + hidden-edge EdgeStyle (v1.3.62–1.3.66,
   `3d-scene/p4`, commits `5d232e2`..`8239db7`).** The stroke-division phase (engine already
   shipped divisions) plus the deferred pen grammar and the Phase-4 tail edge styling:

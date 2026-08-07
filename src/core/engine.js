@@ -460,6 +460,52 @@
     },
   };
 
+  // 3D model import — the on-ground size a freshly imported OBJ/STL mesh gets.
+  // The mesh is unit-normalised (longest half-extent = 1) and `radius` scales it
+  // back up; 40 puts it in the same size class as the default `box` primitive
+  // (sx 40) so it lands clearly visible on the ground.
+  const IMPORT_MESH_RADIUS = 40;
+
+  // 3D model import — SHARED wrap/normalize helper. Mirrors Convert-to-Scene's
+  // unit-normalisation (engine.convertAlgoToScene): centre the mesh on its
+  // bounding-box midpoint, divide by the max hypot-from-centre so the unit verts
+  // sit in a unit sphere, and let `radius` carry the real on-screen size — the
+  // scene's createSolidMesh importedMesh branch multiplies the unit verts back by
+  // `radius`. Convert assumes an already-centred baked mesh; an imported mesh may
+  // be anywhere, so this variant centres first. Returns the object3d `solid`
+  // params bag ({ solidType:'importedMesh', importedMesh:{vertices,faces}, radius })
+  // or null for an empty/invalid mesh.
+  const buildImportedMeshParams = (mesh, targetRadius) => {
+    if (!mesh || !Array.isArray(mesh.vertices) || !mesh.vertices.length
+      || !Array.isArray(mesh.faces) || !mesh.faces.length) return null;
+    const fin = (val) => (Number.isFinite(Number(val)) ? Number(val) : 0);
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    mesh.vertices.forEach((vt) => {
+      const x = fin(vt.x), y = fin(vt.y), z = fin(vt.z);
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    });
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+    let maxExtent = 0;
+    mesh.vertices.forEach((vt) => {
+      const d = Math.hypot(fin(vt.x) - cx, fin(vt.y) - cy, fin(vt.z) - cz);
+      if (d > maxExtent) maxExtent = d;
+    });
+    const k = maxExtent > 1e-6 ? 1 / maxExtent : 1;
+    const unit = mesh.vertices.map((vt) => ({
+      x: Math.round((fin(vt.x) - cx) * k * 10000) / 10000,
+      y: Math.round((fin(vt.y) - cy) * k * 10000) / 10000,
+      z: Math.round((fin(vt.z) - cz) * k * 10000) / 10000,
+    }));
+    return {
+      solidType: 'importedMesh',
+      importedMesh: { vertices: unit, faces: mesh.faces.map((f) => f.slice()) },
+      radius: Number.isFinite(targetRadius) && targetRadius > 0 ? targetRadius : IMPORT_MESH_RADIUS,
+    };
+  };
+
   // Scene-tree Increment E — per-type light seeds for addLightToScene. Mirrors
   // the scene3d panel's seedLight + Scene3D.Params.normalizeLight defaults so a
   // freshly added light child is valid before the next compose. The `id` is set
@@ -951,6 +997,75 @@
       this.activeLayerId = groupId;
       this.computeAllDisplayGeometry();
       return { ok: true, groupId, childId };
+    }
+
+    // Walk the parent chain of `layerId` (inclusive) and return the enclosing
+    // scene group (scene3d container) id, or null. Used by the 3D-model import to
+    // decide whether to drop the mesh into the active scene or start a new one.
+    _enclosingSceneGroupId(layerId) {
+      let cur = this.getLayerById(layerId);
+      let guard = 0;
+      while (cur && guard < 512) {
+        if (cur.type === 'scene3d' && cur.containerRole === 'scene' && cur.isGroup) return cur.id;
+        cur = cur.parentId ? this.getLayerById(cur.parentId) : null;
+        guard += 1;
+      }
+      return null;
+    }
+
+    // 3D model import — turn a parsed OBJ/STL mesh ({ vertices:[{x,y,z}],
+    // faces:[[i,…]], name? }) into a scene object3d `solid` whose solidType is
+    // `importedMesh`, so the shared compositor lights / occludes / shadows it with
+    // NO new mesh plumbing (this is the exact object the Convert-to-Scene
+    // importedMesh branch produces). Landing rule: if a scene group is active (or
+    // the active layer lives inside one), the mesh is ADDED as a child object3d of
+    // that scene (addObjectToScene idiom); otherwise a fresh scene TREE is created
+    // (group + seeded sun light + ground, convert idiom) so the object lights
+    // immediately. Undo is the caller's responsibility (push history first).
+    // Returns { ok:true, groupId, childId, addedToExisting } or { ok:false, reason }.
+    importMeshAsScene(mesh, name) {
+      const solidParams = buildImportedMeshParams(mesh, IMPORT_MESH_RADIUS);
+      if (!solidParams) return { ok: false, reason: 'empty' };
+
+      // Land in the active scene when there is one, else build a new tree.
+      const existingGroupId = this._enclosingSceneGroupId(this.activeLayerId);
+      let groupId = existingGroupId;
+      if (!groupId) {
+        groupId = this.addSceneGroup();
+        const group = this.getLayerById(groupId);
+        if (group && group.params) {
+          group.params.lights = [];
+          group.params.ground = { enabled: false };
+        }
+      }
+
+      // One object3d child holding the imported mesh (mirrors the convert child).
+      const childId = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const label = (typeof name === 'string' && name.trim()) ? name.trim() : `Object ${num}`;
+      const child = new Layer(childId, 'object3d', label);
+      child.parentId = groupId;
+      child.params.primitive = 'solid';
+      child.params.params = solidParams;
+      child.params.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
+      child.params.visibility = 'solid';
+      child.params.role = 'solid';
+      child.params.style = { penId: child.penId || null, mapper: 'hatch', params: {} };
+      this._insertUnderParent(child, groupId);
+
+      // A fresh scene tree needs its sun + ground; an existing scene already has
+      // them (addGroundToScene is a no-op when a ground child is present).
+      if (!existingGroupId) {
+        this.addLightToScene(groupId, 'directional');
+        this.addGroundToScene(groupId);
+      }
+      const grp = this.getLayerById(groupId);
+      if (grp && grp.isGroup) grp.groupCollapsed = false;
+
+      this.activeLayerId = childId;
+      this.computeAllDisplayGeometry();
+      return { ok: true, groupId, childId, addedToExisting: Boolean(existingGroupId) };
     }
 
     // Scene-tree Increment D/F — expand a MONOLITH scene3d layer (inline

@@ -222,6 +222,59 @@
       reader.readAsText(file);
     },
 
+    // Import a .obj or .stl 3D model file and wrap it as a scene object3d
+    // (solidType:'importedMesh') via VectorEngine.importMeshAsScene — the mesh
+    // becomes a lit, shaded, selectable object in the 3D scene compositor. If a
+    // scene is active the object is added to it; otherwise a new scene tree is
+    // created. Binary STL needs an ArrayBuffer; OBJ / ASCII STL are text — the STL
+    // parser accepts either, so .stl is always read as an ArrayBuffer.
+    import3dModelFile(file) {
+      if (!file || !Layer) return;
+      const engine = this.app.engine;
+      const lower = (file.name || '').toLowerCase();
+      const isObj = lower.endsWith('.obj');
+      const reader = new FileReader();
+      reader.onload = () => {
+        let mesh;
+        try {
+          mesh = isObj
+            ? window.Vectura.ObjImport.parse(reader.result, file.name)
+            : window.Vectura.StlParser.parse(reader.result, file.name);
+        } catch (_) {
+          toast('Could not read this 3D model', 'danger');
+          const errBody = document.createElement('p');
+          errBody.className = 'modal-text';
+          errBody.textContent = `Could not read "${file.name}". Make sure it is a valid ${isObj ? 'OBJ' : 'binary or ASCII STL'} mesh.`;
+          this.openModal({ title: '3D Import Failed', body: errBody });
+          return;
+        }
+        if (!mesh || !mesh.vertices?.length || !mesh.faces?.length) {
+          toast('Model had no faces', 'warning');
+          const errBody = document.createElement('p');
+          errBody.className = 'modal-text';
+          errBody.textContent = 'The 3D model contained no faces to import.';
+          this.openModal({ title: 'No Mesh Found', body: errBody });
+          return;
+        }
+        if (this.app.pushHistory) this.app.pushHistory();
+        const result = engine.importMeshAsScene(mesh, mesh.name || file.name);
+        if (!result || !result.ok) {
+          toast('Could not import 3D model', 'danger');
+          return;
+        }
+        engine.activeLayerId = result.childId;
+        if (this.app.renderer) this.app.renderer.setSelection([result.childId], result.childId);
+        this.renderLayers();
+        this.buildControls();
+        this.updateFormula();
+        this.app.render();
+        const tris = mesh.faces.length;
+        toast(`Imported ${mesh.name || file.name} · ${tris.toLocaleString()} tris`, 'success');
+      };
+      if (isObj) reader.readAsText(file);
+      else reader.readAsArrayBuffer(file);
+    },
+
     parseSvgToLayerGroups(svgText) {
       if (!svgText) return [];
       const sanitizeSvg = window.Vectura?.SvgSanitize?.sanitize;
@@ -858,6 +911,8 @@
     const btnImportSvg = getEl('btn-import-svg', { silent: true });
     const fileOpenVectura = getEl('file-open-vectura', { silent: true });
     const fileImportSvg = getEl('file-import-svg', { silent: true });
+    const btnImport3d = getEl('btn-import-3d', { silent: true });
+    const fileImport3d = getEl('file-import-3d', { silent: true });
     if (btnSaveVectura) {
       btnSaveVectura.onclick = () => this.saveVecturaFile();
     }
@@ -875,6 +930,14 @@
         const file = fileImportSvg.files?.[0];
         if (file) this.importSvgFile(file);
         fileImportSvg.value = '';
+      };
+    }
+    if (btnImport3d && fileImport3d) {
+      btnImport3d.onclick = () => fileImport3d.click();
+      fileImport3d.onchange = () => {
+        const file = fileImport3d.files?.[0];
+        if (file) this.import3dModelFile(file);
+        fileImport3d.value = '';
       };
     }
   }

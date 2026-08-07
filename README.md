@@ -208,6 +208,7 @@ Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar wit
 - **All Tools drawer:** a `…` overflow button on the tool rail opens a non-modal **All Tools** drawer listing every tool grouped by category (Select / Draw / Shapes / Type / Modify / Navigate) with a **grid/list** view toggle (remembered); clicking a tool activates it, hovering an entry highlights the rail slot it lives in
 - **Font hover-preview & size presets:** the Text panel's font picker live-previews a family on the canvas while you hover it (settling before it commits), and the font-size control offers a preset dropdown (6–72 mm); the Task Bar's text chips open these same pickers
 - `Save/Open` full projects via `.vectura` files; import SVGs as new layers
+- `File → Import 3D Model…` reads a `.obj` or `.stl` mesh and drops it into the 3D scene compositor as a lit, shaded, selectable object (added to the active scene, or a new scene with sun + ground); the mesh is auto-centred and unit-normalised
 - Pattern layers now include a custom-tile workflow: import SVG tiles, preview a live `3x3` repeat, flag seam/fill mismatches before save, save valid custom patterns to the runtime library, and carry those custom patterns inside `.vectura` project files
 - Petalis profile library loads from `src/config/petal-profiles` in both hosted and direct `file://` runs via a preloaded `library.js` bundle
 
