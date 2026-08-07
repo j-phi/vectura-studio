@@ -55,6 +55,30 @@
   const _isSceneGroup = (layer) =>
     !!(layer && layer.type === 'scene3d' && layer.isGroup && layer.containerRole === 'scene');
 
+  // The shapes a scene group can add. Order + labels MIRROR the scene panel's
+  // PRIMITIVES shelf (src/ui/panels/scene3d-panel.js: SHELF_PRIMS + MORE_PRIMS);
+  // every value is a key of the engine's OBJECT3D_PRIMITIVE_DEFAULTS, which is
+  // what addObjectToScene seeds the new object3d child's param bag from. `box`
+  // and `solid` keep their original menu keys so existing callers/tests hold.
+  const SCENE_ADD_SHAPES = [
+    { prim: 'box', key: 'scene-add-object', label: 'Box' },
+    { prim: 'sphere', label: 'Sphere' },
+    { prim: 'cylinder', label: 'Cylinder' },
+    { prim: 'torus', label: 'Torus' },
+    { prim: 'cone', label: 'Cone' },
+    { prim: 'plane', label: 'Plane' },
+    { prim: 'superellipsoid', label: 'Superellipsoid' },
+    { prim: 'torusKnot', label: 'Torus Knot' },
+    { prim: 'capsule', label: 'Capsule' },
+    { prim: 'solid', key: 'scene-add-solid', label: 'Polyhedron' },
+  ];
+  const _shapeKey = (entry) => entry.key || `scene-add-prim:${entry.prim}`;
+  // Resolve a menu key back to the primitive addObjectToScene should build.
+  const _primitiveForKey = (key) => {
+    const hit = SCENE_ADD_SHAPES.find((s) => _shapeKey(s) === key);
+    return hit ? hit.prim : null;
+  };
+
   // The object3d leaves eligible to be fused into a boolean group: the current
   // multi-selection (or the clicked row) restricted to plain object3d layers
   // that share ONE scene-group parent (not already inside a boolean group —
@@ -82,24 +106,30 @@
     // clicked row is part of a 3D scene tree.
     if (_isSceneGroup(layer) && ui.app && ui.app.engine
       && typeof ui.app.engine.addObjectToScene === 'function') {
-      items.push({ key: 'scene-add-object', label: 'Add object' });
-      // Convert-to-Scene (I3) — a `solid` (parametric polyhedron) is the LIVE
-      // scene-tree add path for a solid; the scene panel's shelf is monolith-only.
-      items.push({ key: 'scene-add-solid', label: 'Add solid (polyhedron)' });
+      // Every primitive the engine can seed, named. Previously this menu only
+      // offered a generic "Add object" (always a BOX) plus "Add solid
+      // (polyhedron)", so sphere / torus / cylinder / cone / plane and the three
+      // exotics could not be added to a scene tree from anywhere in the UI.
+      items.push({ category: 'Add shape' });
+      SCENE_ADD_SHAPES.forEach((s) => items.push({ key: _shapeKey(s), label: s.label }));
       // Scene-tree Increment E — add lights (by type) + the ground (only when no
       // ground child exists yet) straight from the scene group's context menu.
       const engine = ui.app.engine;
       if (typeof engine.addLightToScene === 'function') {
-        items.push({ key: 'scene-add-light', label: 'Add light (sun)' });
-        items.push({ key: 'scene-add-light-point', label: 'Add point light' });
-        items.push({ key: 'scene-add-light-spot', label: 'Add spot light' });
-        items.push({ key: 'scene-add-light-area', label: 'Add area light' });
-        items.push({ key: 'scene-add-light-ambient', label: 'Add ambient light' });
+        items.push({ category: 'Add light' });
+        items.push({ key: 'scene-add-light', label: 'Sun (directional)' });
+        items.push({ key: 'scene-add-light-point', label: 'Point' });
+        items.push({ key: 'scene-add-light-spot', label: 'Spot' });
+        items.push({ key: 'scene-add-light-area', label: 'Area' });
+        items.push({ key: 'scene-add-light-ambient', label: 'Ambient' });
       }
       if (typeof engine.addGroundToScene === 'function') {
         const hasGround = typeof engine.getLayerDescendants === 'function'
           && engine.getLayerDescendants(layer.id).some((l) => l && l.type === 'sceneGround3d');
-        if (!hasGround) items.push({ key: 'scene-add-ground', label: 'Add ground' });
+        if (!hasGround) {
+          items.push({ separator: true });
+          items.push({ key: 'scene-add-ground', label: 'Add ground' });
+        }
       }
       items.push({ separator: true });
     }
@@ -151,12 +181,11 @@
     if (!ui || !layer) return;
     const engine = ui.app && ui.app.engine;
     if (!engine) return;
-    if (key === 'scene-add-object' || key === 'scene-add-solid') {
+    const addPrim = _primitiveForKey(key);
+    if (addPrim) {
       if (typeof engine.addObjectToScene !== 'function') return;
       if (ui.app.pushHistory) ui.app.pushHistory();
-      const oid = key === 'scene-add-solid'
-        ? engine.addObjectToScene(layer.id, 'solid')
-        : engine.addObjectToScene(layer.id);
+      const oid = engine.addObjectToScene(layer.id, addPrim);
       if (oid) {
         ui.app.setSelection && ui.app.setSelection([oid], oid);
         engine.setActiveLayerId && engine.setActiveLayerId(oid);

@@ -1325,7 +1325,10 @@
         // Scene-tree Increment C — a scene group gets an inline "+ object"
         // affordance that inserts a new object3d child (default primitive).
         if (layer.groupType === 'scene' && typeof engine.addObjectToScene === 'function') {
-          ga.appendChild(mkAb('lvl-add-object', () => this._LVL_I.grpPlus(), 'Add object', () => {
+          // Quick-add: always a box. Right-clicking the scene row (or the Scene
+          // panel's Add Objects shelf) offers every other shape — say so, so the
+          // fastest affordance doesn't read as the ONLY one.
+          ga.appendChild(mkAb('lvl-add-object', () => this._LVL_I.grpPlus(), 'Add box (right-click for more shapes)', () => {
             if (this.app.pushHistory) this.app.pushHistory();
             const oid = engine.addObjectToScene(layer.id);
             if (oid) { renderer.setSelection?.([oid], oid); engine.setActiveLayerId?.(oid); }

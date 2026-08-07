@@ -153,6 +153,11 @@
     { value: 'buckyball', label: 'Buckyball' },
   ];
   const SOLID_TYPE_VALUES = new Set(SOLID_TYPE_OPTIONS.map((o) => o.value));
+  // 3D model import — an imported OBJ/STL mesh is a solid family of its own. It
+  // is NOT in SOLID_TYPE_OPTIONS (nothing creates it parametrically); the object
+  // inspector prepends it only when the object actually carries a mesh payload,
+  // so the readout is truthful and switching back to the import stays possible.
+  const IMPORTED_MESH_OPTION = { value: 'importedMesh', label: 'Imported mesh' };
   const SOLID_DEFORMERS = [
     { key: 'expand', label: 'Expand', min: 50, max: 180, step: 1, default: 100 },
     { key: 'twist', label: 'Twist', min: -180, max: 180, step: 1, default: 0 },
@@ -511,9 +516,29 @@
       // mutate → store → regen), so createSolidMesh re-evaluates the mesh live.
       // bulge / faceBands are line-art-only (I2) and are intentionally absent.
       if (prim === 'solid') {
+        // 3D model import — an imported OBJ/STL arrives as a `solid` whose
+        // solidType is 'importedMesh', which is NOT one of the parametric
+        // families. With no option of its own the Select fell back to showing
+        // the LAST entry ("Buckyball") — a false readout of an imported cube —
+        // and picking any family was a one-way trip out of the import with no
+        // UI route back (only Cmd+Z). The mesh payload survives in params, so
+        // surface it as a first-class, SELECTABLE option whenever it is present:
+        // the readout is truthful and the family switch stays reversible. This
+        // matches how the panel handles every other non-applicable control —
+        // the option table is conditioned on the params, not disabled in place.
+        const meshPayload = params.params.importedMesh;
+        const hasImportedMesh = !!(meshPayload && Array.isArray(meshPayload.vertices)
+          && meshPayload.vertices.length && Array.isArray(meshPayload.faces) && meshPayload.faces.length);
+        const isImportedMesh = params.params.solidType === 'importedMesh';
+        const solidTypeOptions = (hasImportedMesh || isImportedMesh)
+          ? [IMPORTED_MESH_OPTION].concat(SOLID_TYPE_OPTIONS)
+          : SOLID_TYPE_OPTIONS;
+        const solidTypeValue = isImportedMesh
+          ? 'importedMesh'
+          : (SOLID_TYPE_VALUES.has(params.params.solidType) ? params.params.solidType : 'buckyball');
         comps.push(UI.Select(labeledRow(host, 'Solid type'), {
-          options: SOLID_TYPE_OPTIONS,
-          value: SOLID_TYPE_VALUES.has(params.params.solidType) ? params.params.solidType : 'buckyball',
+          options: solidTypeOptions,
+          value: solidTypeValue,
           ariaLabel: 'Solid type',
           onChange: (v) => { commit(() => { params.params.solidType = v; }); },
         }));
@@ -1337,6 +1362,25 @@
     const addPrimitive = (prim) => {
       const def = PRIMITIVES[prim];
       if (!def) return;
+      // Scene-tree — a scene GROUP owns its objects as object3d LAYER children,
+      // so the shelf routes through the engine's tree API (the SAME call the
+      // layers-panel "+ object" button and the layer context menu make). The
+      // child is born with a real penId + the primitive's param bag, so it
+      // composes and renders on the next pass. A legacy monolith (no layer
+      // tree) keeps pushing an inline params.objects entry.
+      if (isSceneGroup) {
+        const engine = ui && ui.app && ui.app.engine;
+        if (!engine || typeof engine.addObjectToScene !== 'function') return;
+        if (ui.app.pushHistory) ui.app.pushHistory();
+        const oid = engine.addObjectToScene(layer.id, prim);
+        if (oid) {
+          if (ui.app.setSelection) ui.app.setSelection([oid], oid);
+          if (engine.setActiveLayerId) engine.setActiveLayerId(oid);
+        }
+        if (ui.renderLayers) ui.renderLayers();
+        if (ui.app.render) ui.app.render();
+        return;
+      }
       const n = nextOrdinal();
       const obj = {
         id: `obj-${n}`,
@@ -1450,15 +1494,21 @@
         });
       });
 
-      buildShelfButton(shelf, {
-        icon: ICON_IMPORT, label: 'Import', className: 'is-stub', disabled: true,
-        title: 'STL import arrives in Phase 4', dataset: { stub: 'import' },
-      });
-      buildShelfButton(shelf, {
-        icon: ICON_LIGHT, label: 'Light',
-        title: 'Add a directional (sun) light', dataset: { light: 'add' },
-        onClick: () => addLight('directional'),
-      });
+      // Monolith-only rungs. A scene GROUP imports meshes through File ▸ Import
+      // 3D Model… and adds lights as LAYER children (the "+ Sun / + Point / …"
+      // strip below the tree), so the disabled Import stub and the inline Light
+      // button would both be dead ends on the shelf.
+      if (!isSceneGroup) {
+        buildShelfButton(shelf, {
+          icon: ICON_IMPORT, label: 'Import', className: 'is-stub', disabled: true,
+          title: 'STL import arrives in Phase 4', dataset: { stub: 'import' },
+        });
+        buildShelfButton(shelf, {
+          icon: ICON_LIGHT, label: 'Light',
+          title: 'Add a directional (sun) light', dataset: { light: 'add' },
+          onClick: () => addLight('directional'),
+        });
+      }
 
       // More… flyout (toolbar sub-tool pattern: session last-pick + icon swap).
       const moreWrap = document.createElement('div');
@@ -1570,7 +1620,12 @@
       if (!params.objects.length) {
         const empty = document.createElement('p');
         empty.className = 'vs3-empty';
-        empty.textContent = 'No objects yet — add one from the shelf above.';
+        // A scene GROUP keeps its objects as LAYER children, so this in-panel
+        // tree (which lists inline monolith objects) stays empty by design —
+        // don't tell the user "no objects yet" when the Layers panel shows them.
+        empty.textContent = isSceneGroup
+          ? 'Objects, lights and the ground live in the Layers panel, as children of this scene. Add a shape from the shelf above.'
+          : 'No objects yet — add one from the shelf above.';
         treeHost.appendChild(empty);
       }
       params.objects.forEach((obj) => {
@@ -3431,15 +3486,17 @@
 
     // ── Sections ────────────────────────────────────────────────────────────
     const sections = [];
-    // Scene-tree Increment D — a scene GROUP creates objects via the layers-panel
-    // tree (which owns the tree now), so its in-panel "Add Objects" shelf is
-    // retired. A legacy monolith keeps the shelf (no layers-panel tree for it).
-    if (!isSceneGroup) {
-      sections.push(UI.Section(pages.scene, {
-        title: 'Add Objects',
-        children: (body) => buildShelf(body),
-      }));
-    }
+    // The "Add Objects" shelf is the DISCOVERABLE place to add a shape, for a
+    // scene GROUP as much as for a legacy monolith. Retiring it for groups left
+    // the layer right-click menu as the only add path — and that path only ever
+    // made a box or a polyhedron, so sphere / torus / cylinder / cone / plane /
+    // superellipsoid / torus knot / capsule were unreachable from the UI. The
+    // group's shelf routes each button through engine.addObjectToScene (see
+    // addPrimitive), which creates a real object3d LAYER child.
+    sections.push(UI.Section(pages.scene, {
+      title: 'Add Objects',
+      children: (body) => buildShelf(body),
+    }));
     sections.push(UI.Section(pages.scene, {
       title: 'Scene Tree',
       children: (body) => {

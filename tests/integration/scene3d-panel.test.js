@@ -112,7 +112,7 @@ describe('Scene3D panel — buildControls dispatch', () => {
 
   // ── Scene-tree Increment D — panel re-key by SELECTED layer ────────────────
 
-  test('(d) selecting the scene GROUP shows scene controls, NOT the Add Objects shelf', () => {
+  test('(d) selecting the scene GROUP shows scene controls AND the Add Objects shelf', () => {
     // Add Layer builds a scene TREE; the group is active.
     const gid = app.engine.addLayer('scene3d');
     app.engine.setActiveLayer ? app.engine.setActiveLayer(gid) : (app.engine.activeLayerId = gid);
@@ -122,9 +122,17 @@ describe('Scene3D panel — buildControls dispatch', () => {
     // The tabs still mount (scene controls: Scene | Style | Output).
     const tabValues = Array.from(host.querySelectorAll('.tab-btn')).map((b) => b.dataset.value);
     expect(tabValues).toEqual(['scene', 'style', 'output']);
-    // The in-panel "Add Objects" shelf is retired for a scene group (the
-    // layers-panel owns object creation now).
-    expect(host.querySelector('.vs3-shelf')).toBeFalsy();
+    // CONTRACT CHANGE: the "Add Objects" shelf was retired for a scene group,
+    // which left the layer right-click menu as the only add path — and that
+    // path could make a box or a polyhedron ONLY. The shelf is back, routed
+    // through engine.addObjectToScene so it creates object3d LAYER children.
+    // Full coverage in tests/integration/scene3d-add-shape.test.js.
+    expect(host.querySelector('.vs3-shelf')).toBeTruthy();
+    expect(host.querySelector('.vs3-shelf-btn[data-prim="torus"]')).toBeTruthy();
+    // The monolith-only rungs stay out: the Import stub is a dead end, and
+    // lights are LAYER children added from the "+ Sun / + Point / …" strip.
+    expect(host.querySelector('.vs3-shelf-btn[data-stub="import"]')).toBeFalsy();
+    expect(host.querySelector('.vs3-shelf-btn[data-light="add"]')).toBeFalsy();
   });
 
   test('(c) selecting an object3d CHILD routes the Inspector to that layer and edits re-render', () => {
