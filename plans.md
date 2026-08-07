@@ -276,6 +276,19 @@ question. Do not start these without a decision:
     treatment = I5, next). 8 integration + 5 menu-compile tests (RGR); baselines byte-identical.
     Next: I2 (deformers → live `solid` params), I3 (panel/add-object parity), I4 (topoform
     parametric live), **I5 (scene-level depth-slice contour treatment — do next, not deferred)**.
+  - **Convert-to-Scene I2 (5017481, v1.3.73).** Parametric polyhedron now converts to a LIVE
+    `solid` object3d instead of a frozen mesh. Extracted the deformer math (`hash01`,
+    `applyVertexEffects`, `renderedFace`, `applyPolyhedronDeformers`) into `scene3d/mesh.js`
+    (exported on `Scene3D.Mesh`); `polyhedron.js` now destructures the one implementation (no
+    fork — standalone output byte-identical). `createSolidMesh` applies deformers only when
+    `p.applyDeformers` is set (standalone never sets it; the compositor does). Inert deformer
+    defaults (expand 100, twist/explode/extrude/shard 0) added to `PRIMITIVE_PARAM_DEFAULTS.solid`
+    + `OBJECT3D_PRIMITIVE_DEFAULTS.solid` and forwarded by `buildPrimitiveMesh` → undeformed solid
+    renders identically (baselines byte-identical). `convertAlgoToScene` emits a live `solid`
+    (solidType + deformer params) for a parametric polyhedron; keeps the importedMesh bake for
+    topoform + STL/imported polyhedra. `bulge`/`faceBands` are line-art-only, excluded from the
+    solid mesh. New `convert-to-scene-live-solid.test.js`; live-verified (edit deformer on a
+    converted object → geometry re-evaluates).
   - **Deferred:** Phase 5 backlog (OBJ import, Manifold WASM booleans, curved−curved CSG,
     turntable export, v2 modifiers, etc. — needs prioritization). Known
     flaky test: `divisions-editor-section` weighted-pen-spread (probabilistic; passes isolated,
