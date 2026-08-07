@@ -263,8 +263,21 @@ question. Do not start these without a decision:
     merge; the FILL see-through terms stay `visibility`-coupled. New capability: see-through
     fills with dropped hidden edges (or dashed edges without x-ray). Three adversarial-review
     byte-identity regressions found + fixed, pinned by pre-fold goldens.
-  - **Deferred:** Phase 5 backlog (OBJ import, Manifold WASM booleans, Convert-to-Scene,
-    curved−curved CSG, turntable export, v2 modifiers, etc. — needs prioritization). Known
+  - **Convert-to-Scene I1 (b27f43b, v1.3.72).** "Convert to Scene" on a Polyhedron/Topoform
+    layer context menu. `engine.convertAlgoToScene(layerId)` calls the algo's new `bakeMesh`
+    (polyhedron applies `applyVertexEffects`/`renderedFace` deformers during the bake; topoform
+    replicates its `generate()` mesh), normalizes to unit extent, and wraps it as one
+    `object3d {primitive:'solid', solidType:'importedMesh', importedMesh, radius}` under a fresh
+    scene group seeded with a directional light + ground (mirrors `addSceneTree`). Standalone
+    view angles map onto the scene camera; pen/style migrate onto the child; source layer is
+    removed (undoable). Rides the existing `solid`+`importedMesh` mesh path — fixed a latent
+    `buildPrimitiveMesh` bug that dropped `importedMesh` from the whitelist (undefined for every
+    parametric solid → byte-identical). Topoform `contours` mode blocks with a Toast (its scene
+    treatment = I5, next). 8 integration + 5 menu-compile tests (RGR); baselines byte-identical.
+    Next: I2 (deformers → live `solid` params), I3 (panel/add-object parity), I4 (topoform
+    parametric live), **I5 (scene-level depth-slice contour treatment — do next, not deferred)**.
+  - **Deferred:** Phase 5 backlog (OBJ import, Manifold WASM booleans, curved−curved CSG,
+    turntable export, v2 modifiers, etc. — needs prioritization). Known
     flaky test: `divisions-editor-section` weighted-pen-spread (probabilistic; passes isolated,
     intermittently fails under parallel load) — de-flake candidate.
 - **Unreleased — 3D Scene Studio → layers-panel scene tree (v1.3.56–1.3.61, `3d-scene/p4`,

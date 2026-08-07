@@ -7,6 +7,14 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — Convert to Scene.** A standalone Polyhedron or Topoform layer can now be turned
+  into a real 3D scene tree via a "Convert to Scene" item on its layer context menu. The
+  algorithm's current geometry (including any active polyhedron deformers) is baked into a
+  scene group holding one solid object, a Sun light, and a Ground plane, so it is immediately
+  lit, occluded, and shadowed by the shared compositor and gains per-object Style/Tone/Edge/
+  Divisions controls. The source layer's view angle migrates onto the scene camera and its
+  pen/style migrate onto the object. Topoform's contours render mode is not convertible yet —
+  converting it shows a message instead (that treatment lands in a later increment).
 - **3D Scene — x-ray is now see-through fills; Edge Styles own hidden edges.** X-ray no
   longer forces hidden edges to dash — that's now controlled entirely by the per-class Edge
   Styles (Hidden → Drop/Dash), while x-ray keeps its unique job of making back-face fills
