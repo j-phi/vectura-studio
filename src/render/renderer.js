@@ -9750,17 +9750,22 @@
       return null;
     }
 
-    // Child-aware enumeration of ALL object records in a scene layer — the live
-    // mutable object-def views. For a monolith this is the inline params.objects
-    // array; for a scene GROUP it is each child object3d layer's params (with
-    // .id pinned to the child layer id). Used where a bridge must iterate every
-    // object (e.g. the ground-drag vertex-inference snap), not just one by id.
-    // _sceneObjects stays inline-only by design; this is the tree-aware sibling.
+    // Child-aware enumeration of the TOP-LEVEL object records in a scene layer —
+    // the live mutable object-def views. For a monolith this is the inline
+    // params.objects array; for a scene GROUP it is each DIRECT child object3d
+    // layer's params (with .id pinned to the child layer id). This mirrors the
+    // monolith's params.objects semantics — top-level objects only. It must NOT
+    // recurse into a booleanGroup3d's operand grandchildren (a boolean group has
+    // no transform of its own, so its operands are never ground-drag targets;
+    // enumerating them would snap to operand origins and write child.params.id
+    // onto operands). Used where a bridge iterates every top-level object (e.g.
+    // the ground-drag vertex-inference snap), not just one by id. _sceneObjects
+    // stays inline-only by design; this is the tree-aware sibling.
     _allSceneObjectRecords(layer) {
       if (!layer) return [];
-      if (layer.isGroup && this.engine.getLayerDescendants) {
+      if (layer.isGroup && this.engine.getLayerChildren) {
         const out = [];
-        this.engine.getLayerDescendants(layer.id).forEach((child) => {
+        this.engine.getLayerChildren(layer.id).forEach((child) => {
           if (child && child.type === 'object3d' && child.params) {
             if (child.params.id !== child.id) child.params.id = child.id;
             out.push(child.params);
@@ -12100,7 +12105,27 @@
         const newIds = [];
         sources.forEach((src) => {
           const clone = this.engine.duplicateLayer(src.id);
-          if (!clone || !clone.params) return;
+          if (!clone) return;
+          if (clone.type === 'booleanGroup3d') {
+            // A booleanGroup3d has NO positional transform of its own — the
+            // compositor emits only {id,name,op,children} for it, so nudging the
+            // group's params.transform is ignored and the copy stacks exactly on
+            // the original. Its position lives entirely on its OPERAND object3d
+            // children (deep-cloned with new ids under the clone by
+            // duplicateLayer), so offset THOSE instead.
+            const operands = (this.engine.getLayerChildren
+              ? this.engine.getLayerChildren(clone.id)
+              : []).filter((c) => c && c.type === 'object3d' && c.params);
+            if (!operands.length) return;
+            operands.forEach((op) => {
+              const ot = op.params.transform || (op.params.transform = {});
+              ot.x = (Number(ot.x) || 0) + 10;
+              ot.z = (Number(ot.z) || 0) + 10;
+            });
+            newIds.push(clone.id);
+            return;
+          }
+          if (!clone.params) return;
           const t = clone.params.transform || (clone.params.transform = {});
           t.x = (Number(t.x) || 0) + 10;
           t.z = (Number(t.z) || 0) + 10;

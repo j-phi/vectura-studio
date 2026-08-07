@@ -179,4 +179,85 @@ describe('scene-tree object bridges', () => {
     expect(ok).toBe(true);
     expect(layer.params.objects[0].border.strength).toBe(3);
   });
+
+  // ── 7. boolean-group duplicate / delete / enumeration ────────────────────
+  // A booleanGroup3d has NO positional transform of its own — the compositor
+  // emits only {id,name,op,children} for it, so its position lives entirely on
+  // its OPERAND object3d children's transforms. These regressions cover the
+  // child-aware bridges on a tree that contains a boolean group.
+
+  // Build a scene tree, then fuse the first two objects into a boolean group.
+  const buildTreeWithBoolean = () => {
+    const built = buildTree(3);
+    const { engine, childIds } = built;
+    // Seed distinct operand transforms so an offset is observable.
+    engine.getLayerById(childIds[0]).params.transform = { x: 0, y: 5, z: 0 };
+    engine.getLayerById(childIds[1]).params.transform = { x: 20, y: 5, z: 0 };
+    const boolId = engine.createBooleanGroupFromSelection([childIds[0], childIds[1]]);
+    return { ...built, boolId };
+  };
+
+  test('TREE: duplicating a booleanGroup3d offsets the clone via its OPERAND transforms', () => {
+    const { engine, renderer, gid, childIds, boolId } = buildTreeWithBoolean();
+    expect(boolId).toBeTruthy();
+    const newIds = renderer.duplicateSceneObjects(gid, [boolId]);
+    expect(Array.isArray(newIds) && newIds.length).toBe(1);
+    const clone = engine.getLayerById(newIds[0]);
+    expect(clone).toBeTruthy();
+    expect(clone.type).toBe('booleanGroup3d');
+    expect(clone.parentId).toBe(gid);
+    expect(clone.id).not.toBe(boolId);
+    // engine.duplicateLayer deep-clones the operands with NEW ids under the clone.
+    const cloneOperands = engine.getLayerChildren(clone.id).filter((c) => c.type === 'object3d');
+    expect(cloneOperands.length).toBe(2);
+    cloneOperands.forEach((op) => {
+      expect(op.id).not.toBe(childIds[0]);
+      expect(op.id).not.toBe(childIds[1]);
+    });
+    // Each cloned operand is nudged +10 x/z from its source (0→10, 20→30; z 0→10),
+    // so the boolean-group copy is visibly OFFSET (not stacked on the original).
+    const cloneXs = cloneOperands.map((o) => o.params.transform.x).sort((a, b) => a - b);
+    expect(cloneXs).toEqual([10, 30]);
+    cloneOperands.forEach((op) => expect(op.params.transform.z).toBe(10));
+    // Original operands are untouched.
+    expect(engine.getLayerById(childIds[0]).params.transform.x).toBe(0);
+    expect(engine.getLayerById(childIds[1]).params.transform.x).toBe(20);
+    // No phantom inline object leaks onto the group.
+    expect(engine.getLayerById(gid).params.objects || []).toEqual([]);
+  });
+
+  test('TREE: _allSceneObjectRecords returns only TOP-LEVEL object3d records, not boolean operands', () => {
+    const { engine, renderer, gid, childIds, boolId } = buildTreeWithBoolean();
+    expect(boolId).toBeTruthy();
+    const records = renderer._allSceneObjectRecords(engine.getLayerById(gid));
+    const ids = records.map((r) => r.id);
+    // Only the untouched top-level object3d child — the boolean operands
+    // (grandchildren under the boolean group) are NOT enumerated.
+    expect(ids).toContain(childIds[2]);
+    expect(ids).not.toContain(childIds[0]);
+    expect(ids).not.toContain(childIds[1]);
+    expect(records.length).toBe(1);
+  });
+
+  test('TREE: deleting a booleanGroup3d cascade-removes its operands (no orphans)', () => {
+    const { engine, renderer, gid, childIds, boolId } = buildTreeWithBoolean();
+    expect(boolId).toBeTruthy();
+    const ok = renderer.deleteSceneObjects(gid, [boolId]);
+    expect(ok).toBe(true);
+    expect(engine.getLayerById(boolId)).toBeFalsy();
+    // Operands cascade away with the group.
+    expect(engine.getLayerById(childIds[0])).toBeFalsy();
+    expect(engine.getLayerById(childIds[1])).toBeFalsy();
+    // The untouched top-level object and the scene group survive.
+    expect(engine.getLayerById(childIds[2])).toBeTruthy();
+    expect(engine.getLayerById(gid)).toBeTruthy();
+    expect(engine.getLayerById(gid).params.objects || []).toEqual([]);
+  });
+
+  test('MONOLITH: _allSceneObjectRecords returns the inline objects unchanged (parity)', () => {
+    const { renderer, layer } = buildMonolith();
+    const records = renderer._allSceneObjectRecords(layer);
+    expect(records).toBe(layer.params.objects);
+    expect(records.map((o) => o.id)).toEqual(['obj-1', 'obj-2']);
+  });
 });
