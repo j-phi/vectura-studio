@@ -18,6 +18,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   source layer's view angle migrates onto the scene camera and its pen/style migrate onto the
   object. Topoform's contours render mode is not convertible yet — converting it shows a message
   instead (that treatment lands in a later increment).
+- **3D Scene — add and tune Polyhedron solids in a scene.** You can now add a solid (polyhedron
+  family) object directly to a scene from the layer context menu ("Add solid (polyhedron)"), and
+  a selected solid object's inspector exposes its Solid-type (16 parametric families) plus the
+  five live deformers — expand, twist, explode, extrude, shard — so a converted or added solid
+  is fully editable in the scene, matching the standalone Polyhedron controls. (Bulge and Face
+  Bands are line-art-only and don't apply to a scene solid, so they're hidden there.)
 - **3D Scene — x-ray is now see-through fills; Edge Styles own hidden edges.** X-ray no
   longer forces hidden edges to dash — that's now controlled entirely by the per-class Edge
   Styles (Hidden → Drop/Dash), while x-ray keeps its unique job of making back-face fills

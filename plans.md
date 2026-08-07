@@ -289,6 +289,17 @@ question. Do not start these without a decision:
     topoform + STL/imported polyhedra. `bulge`/`faceBands` are line-art-only, excluded from the
     solid mesh. New `convert-to-scene-live-solid.test.js`; live-verified (edit deformer on a
     converted object → geometry re-evaluates).
+  - **Convert-to-Scene I3 (f885827, v1.3.74).** Panel/inspector parity for `solid`. New scenes
+    are always scene-trees (the monolith Add-Objects shelf is retired for scene-groups), so the
+    live add path is a layer-context-menu verb **"Add solid (polyhedron)"** →
+    `addObjectToScene(id,'solid')` (default solidType `buckyball`, radius 20 scene-consistent,
+    inert deformers). The object3d inspector (`buildObjectPanel`, `if(prim==='solid')`) now shows
+    a Solid-type dropdown (16 parametric families; `importedMesh` omitted — no STL affordance in
+    the panel) + the 5 live deformer sliders (expand/twist/explode/extrude/shard, standalone
+    ranges); edits ride the existing commit/liveSlider → `app.regen()` recompute. `bulge`/
+    `faceBands` hidden (line-art-only). Box/other prims gate them out; existing scenes byte-
+    identical. New `scene-solid-i3.test.js`. I5 seam: mapper controls live in the Style tab's
+    `MAPPER_CONTROLS` table — `contourSlice` extends that, reusing the `SOLID_DEFORMERS` idiom.
   - **Deferred:** Phase 5 backlog (OBJ import, Manifold WASM booleans, curved−curved CSG,
     turntable export, v2 modifiers, etc. — needs prioritization). Known
     flaky test: `divisions-editor-section` weighted-pen-spread (probabilistic; passes isolated,
