@@ -24,6 +24,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   five live deformers — expand, twist, explode, extrude, shard — so a converted or added solid
   is fully editable in the scene, matching the standalone Polyhedron controls. (Bulge and Face
   Bands are line-art-only and don't apply to a scene solid, so they're hidden there.)
+- **3D Scene — parametric Topoform converts to a live scene object.** Converting a Topoform
+  layer in a parametric render mode (wireframe / triangle mesh) now produces a live, editable
+  scene object (sphere/ellipsoid/cylinder/cone/torus/torus-knot/capsule/superellipsoid/pyramid)
+  that re-evaluates through the compositor — adjust its size or detail after converting and the
+  geometry updates. Cube-source and STL/imported topoforms still convert as a baked mesh, and
+  the contours render mode still shows a message (its scene treatment is the next increment).
 - **3D Scene — x-ray is now see-through fills; Edge Styles own hidden edges.** X-ray no
   longer forces hidden edges to dash — that's now controlled entirely by the per-class Edge
   Styles (Hidden → Drop/Dash), while x-ray keeps its unique job of making back-face fills

@@ -300,6 +300,23 @@ question. Do not start these without a decision:
     `faceBands` hidden (line-art-only). Box/other prims gate them out; existing scenes byte-
     identical. New `scene-solid-i3.test.js`. I5 seam: mapper controls live in the Style tab's
     `MAPPER_CONTROLS` table — `contourSlice` extends that, reusing the `SOLID_DEFORMERS` idiom.
+  - **Convert-to-Scene I4 (1f546d4, v1.3.75).** Parametric topoform (renderMode wireframe/
+    triangleMesh) converts to a LIVE `object3d` chart primitive instead of a frozen mesh.
+    `convertAlgoToScene` maps each `sourceMode` → the matching object3d chart primitive
+    (sphere/ellipsoid→`ellipsoid`, others name-for-name) with `{sx,sy,sz,detail}` resolved
+    exactly as `bakeMesh`/`createPrimitiveMesh` do. **Gotcha fixed:** topoform's `ellipsoid`
+    chart applies cosmetic axis factors (rx×1.18, ry×0.72, charts.js:240) the object3d ellipsoid
+    doesn't — baked into the mapped sizes so geometry is byte-identical (9-mode parity sweep).
+    **Mapper = `hatch`, not `wireframe`** (justified deviation): the scene `wireframe` mapper
+    HLR-clips every face edge and is intractable at topoform's default `primitiveDetail 100`
+    (~40k faces → convert hangs); `hatch` composes the same mesh in ~1.5s and matches the I1
+    bake's own look. A faithful live wireframe treatment is deferred to a compositor-perf pass
+    (edge dedup / face budget). **Live:** the 9 chart sourceModes. **Bake fallback:** `cube` (no
+    chart analog) + `stlMesh`/imported. **Blocked (unchanged):** `contours` at engine.js:770-772.
+    Topoform inspector deferred (generic size/detail controls already cover adjustability). New
+    `convert-to-scene-live-topoform.test.js` (14). **I5 seam:** flip the engine.js:770-772 block
+    to a live `contourSlice` emit; NOTE the same wireframe-density limit — a contour mapper must
+    be budget-aware to survive default detail 100.
   - **Deferred:** Phase 5 backlog (OBJ import, Manifold WASM booleans, curved−curved CSG,
     turntable export, v2 modifiers, etc. — needs prioritization). Known
     flaky test: `divisions-editor-section` weighted-pen-spread (probabilistic; passes isolated,
