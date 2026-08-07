@@ -189,4 +189,118 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
     const out = algo.generate(p, null, null, BOUNDS) || [];
     expect(out.filter((q) => q.meta && q.meta.kind === 'sceneFill').length).toBeGreaterThan(0);
   });
+
+  // ── Budget-design regression (CtS I5 fix). ──────────────────────────────────
+  // The original pass derived the effective PLANE count from the global occluder
+  // count (maxClip/planeCap), so a denser mesh (more occluders) sliced FEWER
+  // planes and — after occlusion + the sub-MIN_RUN chord floor — a detail-100
+  // convert rendered ~8 fragments while detail-18 rendered ~940. Camera orbit
+  // and unrelated scene objects (which also move the occluder count) blanked or
+  // swung the output, and the draft preview used a different plane count than the
+  // committed frame. The invariant: the plane set is a pure function of
+  // sliceCount — independent of occluder count, camera pose, other objects, and
+  // draft-vs-full — and perf degrades by emitting overflow rings RAW, never by
+  // dropping planes. These fail on 70becd3 and pass after the fix.
+  describe('plane count is a pure function of sliceCount', () => {
+    // A sphere at an arbitrary detail; radius fixed so plane geometry matches.
+    const detSphere = (detail, extra = {}) => ({
+      id: 'obj-1', name: 'obj-1', primitive: 'sphere', params: { radius: 22, detail },
+      transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+      visibility: 'solid', ...extra,
+    });
+    // Camera clone with an explicit yaw; everything else matches sceneParams.
+    const genYaw = (objects, yaw, sliceParams = {}, styleByObject = {}, bounds) => {
+      const p = clone(defaults);
+      p.seed = 1;
+      p.objects = objects;
+      p.ground = { enabled: false };
+      p.camera = { projection: 'orthographic', yaw, pitch: 20, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
+      p.styleTable = {
+        scene: { penId: null, mapper: 'contourSlice', params: { sliceCount: 26, ...sliceParams } },
+        byObject: styleByObject, byFace: {},
+      };
+      return algo.generate(p, null, null, bounds || BOUNDS) || [];
+    };
+    const forObj = (paths, id) => paths.filter((pp) => pp.meta && pp.meta.kind === 'sceneFill'
+      && pp.length >= 2 && pp.meta.sceneTarget && pp.meta.sceneTarget.objectId === id);
+
+    // #1 — NON-COLLAPSE at high detail. A denser mesh must NOT invert to a
+    // near-empty count; before the fix detail-18→80→100 fell 940→21→8.
+    test('#1 detail 80 and 100 do not collapse below the coarse (18) count', () => {
+      installStub();
+      const c18 = fills(gen([detSphere(18)], { sliceCount: 26 })).length;
+      const c80 = fills(gen([detSphere(80)], { sliceCount: 26 })).length;
+      const c100 = fills(gen([detSphere(100)], { sliceCount: 26 })).length;
+      // Every detail draws a full ring per plane — a two-digit count, never the
+      // single-digit fragment count the old plane-collapse produced.
+      expect(c18).toBeGreaterThan(12);
+      expect(c80).toBeGreaterThan(12);
+      expect(c100).toBeGreaterThan(12);
+      // Dense output must not be DRASTICALLY fewer than the coarse one (no
+      // inversion). Half the coarse count is a generous floor.
+      expect(c80).toBeGreaterThanOrEqual(0.5 * c18);
+      expect(c100).toBeGreaterThanOrEqual(0.5 * c18);
+    });
+
+    // #2 — CAMERA INVARIANCE. The same lone object at three yaws keeps a stable,
+    // non-blank contour set (before the fix: 8 fills at yaw −25, 0 at +70).
+    test('#2 orbiting the camera does not blank or swing the contour set', () => {
+      installStub();
+      const counts = [-25, 70, 140].map((yaw) => fills(genYaw([detSphere(80)], yaw)).length);
+      counts.forEach((n) => expect(n).toBeGreaterThan(12)); // never blanks
+      const max = Math.max(...counts);
+      const min = Math.min(...counts);
+      expect(min).toBeGreaterThanOrEqual(0.5 * max); // stable band, no swing to 0
+    });
+
+    // #3 — DRAFT/FULL PARITY. Draft differs only by skipping HLR, at the SAME
+    // plane count (before the fix draft=144 vs full=8 for detail-100).
+    test('#3 draft and full emit the same plane set (only occlusion differs)', () => {
+      installStub();
+      const full = fills(gen([detSphere(100)], { sliceCount: 26 })).length;
+      const draft = fills(algo.generate(sceneParams([detSphere(100)], { sliceCount: 26 }), null, null, { ...BOUNDS, fastPreview: true })).length;
+      expect(full).toBeGreaterThan(12);
+      expect(draft).toBeGreaterThan(12);
+      // Same ~1 ring per plane either way; occlusion may split a few front runs.
+      expect(Math.abs(draft - full)).toBeLessThanOrEqual(Math.max(4, 0.4 * full));
+    });
+
+    // #4 — SCENE-CONTENT INVARIANCE. A far, non-occluding object (its own mapper
+    // irrelevant) must not change THIS object's contour count (before the fix a
+    // side box moved it 8→112 via the global-occluder coupling).
+    test('#4 a far non-occluding object does not change this object\'s count', () => {
+      installStub();
+      // A FACE-HEAVY neighbour parked far to the side (never between camera and
+      // obj-1, so it cannot occlude it). Its faces still join the global occluder
+      // set — which is exactly the coupling the original pass leaked through: the
+      // extra occluders shrank obj-1's plane budget even though it occludes
+      // nothing. Its own mapper is 'none' (outlines), so it contributes no
+      // obj-1 sceneFill.
+      const farNeighbour = {
+        id: 'faraway', name: 'faraway', primitive: 'sphere', params: { radius: 22, detail: 60 },
+        transform: { x: 600, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+      };
+      const alone = forObj(gen([detSphere(80)], { sliceCount: 26 }), 'obj-1').length;
+      const withNeighbour = forObj(
+        gen([detSphere(80), farNeighbour], { sliceCount: 26 }, { faraway: { penId: null, mapper: 'none', params: {} } }),
+        'obj-1',
+      ).length;
+      expect(alone).toBeGreaterThan(12);
+      // The sphere's own contour set is unmoved by unrelated far geometry.
+      expect(Math.abs(withNeighbour - alone)).toBeLessThanOrEqual(2);
+    });
+
+    // #5 (solid) — fullContour must show the far-side rings as see-through dashes
+    // even on a SOLID object (hiddenTreatment 'remove' would otherwise drop them,
+    // making Full ≡ visibleOnly — a silent no-op the convert mapped onto solids).
+    test('#5 fullContour on a SOLID object emits more (back-ring) runs than visibleOnly', () => {
+      installStub();
+      const visOnly = fills(gen([detSphere(18)], { sliceCount: 26, sliceVisibility: 'visibleOnly' }));
+      const full = fills(gen([detSphere(18)], { sliceCount: 26, sliceVisibility: 'fullContour' }));
+      expect(full.length).toBeGreaterThan(visOnly.length);
+      // The extra runs are dashed see-through (occluded) far-side rings.
+      const backDashed = full.filter((pp) => pp.meta.sceneTarget && pp.meta.sceneTarget.occluded);
+      expect(backDashed.length).toBeGreaterThan(0);
+    });
+  });
 });

@@ -197,7 +197,6 @@
   const BURST_CENTERS = ['specular', 'centroid'];
   // CtS I5 — depth-slice ('contourSlice') controls. All inert on any other
   // mapper (no existing scene sets this mapper), so every default is a no-op.
-  const SLICE_AXES = ['x', 'y', 'z'];
   const SLICE_VISIBILITIES = ['visibleOnly', 'fullContour'];
   const clampStyleParam = (key, value) => {
     switch (key) {
@@ -264,11 +263,11 @@
       case 'highlightDensity': return clamp(finite(value, 25), 1, 100);
       case 'altFillMapper': return ALT_FILL_MAPPERS.includes(value) ? value : 'stipple';
       // CtS I5 — depth-slice ('contourSlice') controls. sliceCount mirrors
-      // topoform's lineCount (default 26); sliceRotate/sliceTilt orient the
-      // cutting planes (topoform planeRotate/planeTilt); sliceVisibility mirrors
-      // contourVisibility (drop back-facing vs keep the full ring).
+      // topoform's lineCount (default 26); sliceRotate/sliceTilt fully orient the
+      // cutting planes (topoform planeRotate/planeTilt — together they reach any
+      // plane normal, so no separate base-axis knob is needed); sliceVisibility
+      // mirrors contourVisibility (drop back-facing vs keep the full ring).
       case 'sliceCount': return clamp(Math.round(finite(value, 26)), 2, 120);
-      case 'sliceAxis': return SLICE_AXES.includes(value) ? value : 'z';
       case 'sliceRotate': return clamp(finite(value, 0), -360, 360);
       case 'sliceTilt': return clamp(finite(value, 0), -180, 180);
       case 'sliceVisibility': return SLICE_VISIBILITIES.includes(value) ? value : 'visibleOnly';

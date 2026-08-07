@@ -45,10 +45,14 @@
   // generalized to an arbitrary plane orientation and working directly in WORLD
   // space, so every cut point projects to an EXACT camera depth for HLR.
   //
-  // Arithmetic guard: slicing a full-detail topoform (~40k faces) by N planes
-  // must not blow up. triCount × planes is capped here; the caller additionally
-  // caps the number of HLR-clipped segments (the real cost) — see the pass.
-  const SLICE_TRI_BUDGET = 2000000;
+  // Anti-hang backstop ONLY: slicing by N planes costs triCount × planes cheap
+  // world-space cuts. This cap is set high enough that it NEVER bites at
+  // primitiveDetail ≤ 100 (a detail-100 topoform is ~40k faces ≈ 80k tris; even
+  // at the max 120 planes that is ~9.6M cuts, well under the budget) — so the
+  // effective plane count stays a pure function of sliceCount. It exists only to
+  // stop a truly pathological (programmatic, out-of-slider-range) detail from
+  // hanging. The real render cost is the HLR clip work, bounded in the pass.
+  const SLICE_TRI_BUDGET = 24000000;
 
   // buildSliceSegments({ world, faces, front?, sliceCount, sliceRotate, sliceTilt })
   //   world       [{x,y,z}]  world-space vertices (record.world)
@@ -56,9 +60,12 @@
   //   front       [bool]     per-face front flag (record.faces[i].front), 1:1
   //   sliceCount             plane count (clamped 2..120, then arithmetic-capped)
   //   sliceRotate/Tilt (deg) plane orientation (topoform planeRotate/planeTilt)
-  // Returns { segments: [{ a:{x,y,z}, b:{x,y,z}, front }], planes }. Pure +
-  // deterministic (no RNG). A plane outside [minD,maxD] never crosses a face, so
-  // only in-range planes emit segments.
+  // Returns { segments: [{ a:{x,y,z}, b:{x,y,z}, front, plane }], planes }. Each
+  // segment is tagged with its 1-based `plane` index so the caller can link the
+  // per-triangle cuts of a single plane into continuous contour polylines (the
+  // 2D linkSegments key is only unique WITHIN a plane). Pure + deterministic (no
+  // RNG). A plane outside [minD,maxD] never crosses a face, so only in-range
+  // planes emit segments.
   const buildSliceSegments = (opts = {}) => {
     const world = Array.isArray(opts.world) ? opts.world : [];
     const faces = Array.isArray(opts.faces) ? opts.faces : [];
@@ -115,18 +122,26 @@
           if (pts.length < 2) edgeCross(pb, pc, d[ib], d[ic], z, pts);
           if (pts.length < 2) edgeCross(pc, pa, d[ic], d[ia], z, pts);
           if (pts.length < 2) continue;
-          segments.push({ a: pts[0], b: pts[1], front: isFront });
+          segments.push({ a: pts[0], b: pts[1], front: isFront, plane: level });
         }
       }
     }
     return { segments, planes: count };
   };
 
-  // Occlusion budget for the contourSlice pass: bound (clipPath calls × occluder
-  // count) so a dense scene stays interactive. Fewer occluders ⇒ more clips.
-  const SLICE_TEST_BUDGET = 25000000;
-  const SLICE_CLIP_MIN = 400;
-  const SLICE_CLIP_MAX = 12000;
+  // FIXED HLR work budget for the contourSlice pass, expressed in OCCLUDER-TESTS.
+  // clipPath resamples each path every ~SLICE_SAMPLE_STEP mm and tests every
+  // sample against every occluder face, so the true cost of clipping a path is
+  // (pathLength / step) × occluders — NOT "one test per segment": a long linked
+  // ring costs its length in samples (up to ~400 per straight span), so a naive
+  // clip-CALL count undercounts by that per-clip sample factor. The pass tracks
+  // this actual cost and, once the budget is spent, emits the remaining front
+  // rings RAW (un-occluded) so every plane still draws — only occlusion fidelity
+  // degrades on a pathological (detail > 100) density. The plane count is never
+  // touched, so it stays a pure function of sliceCount (camera pose, occluder
+  // count, other scene objects, and draft-vs-full never change it).
+  const SLICE_SAMPLE_STEP = 2.5; // mirrors HLR SAMPLE_STEP (hlr.js)
+  const SLICE_CLIP_WORK = 35000000;
 
   const Scene3DNS = (Vectura.Scene3D = Vectura.Scene3D || {});
   Scene3DNS.Slices = { buildSliceSegments };
@@ -1373,15 +1388,25 @@
         }
 
         // ── contourSlice (CtS I5): depth-plane cross-sections through the mesh.
-        // The mesh is cut by N parallel planes (world +z rotated by sliceRotate/
-        // sliceTilt); each cut segment is projected and run through the SAME
-        // clipper the surface fills use, so the slices are occluded by other
-        // objects AND self-occluded (a far-side slice hides behind the near
-        // hemisphere) and shadowed by the compositor. Budget-aware so a
-        // full-detail topoform (~40k faces) can't hang render OR convert (CtS I4
-        // perf constraint): the plane count and the number of HLR-clipped
-        // segments are capped against the occluder count, the overflow emits raw
-        // (front-only, no HLR), and draft frames skip HLR entirely.
+        // The mesh is cut by EXACTLY `sliceCount` parallel planes (world +z
+        // rotated by sliceRotate/sliceTilt); each cut segment is projected and
+        // run through the SAME clipper the surface fills use, so the slices are
+        // occluded by other objects AND self-occluded (a far-side slice hides
+        // behind the near hemisphere) and shadowed by the compositor.
+        //
+        // INVARIANT: the plane count is a pure function of sliceCount — it does
+        // NOT depend on the occluder count, camera pose, other scene objects, or
+        // draft-vs-full. Every plane's per-triangle cuts are LINKED into
+        // continuous contour polylines (per plane, front + back separately) so a
+        // dense mesh draws long rings — not thousands of sub-MIN_RUN chords that
+        // the emission floor would silently drop (that inversion is what made a
+        // detail-100 convert render ~8 fragments). Perf is bounded by a FIXED
+        // clip-work budget (sampled length × occluders) that degrades gracefully
+        // WITHOUT dropping planes: once the budget is spent, the remaining front
+        // rings emit RAW (un-occluded) so every plane still draws — only
+        // occlusion fidelity degrades on a pathological (detail > 100) density.
+        // Draft frames differ from full ONLY by skipping HLR (raw), at the SAME
+        // plane count.
         {
           const sliceStyle = resolveStyle(record.id, null);
           if (sliceStyle.mapper === 'contourSlice' && record.id !== 'ground'
@@ -1390,19 +1415,9 @@
             const sp = sliceStyle.params || {};
             const visibleOnly = (sp.sliceVisibility || 'visibleOnly') !== 'fullContour';
             const frontFlags = record.faces.map((f) => !!(f && f.front));
-            const faceCount = record.faceIndexArrays.length;
+            // Plane count depends ONLY on sliceCount (clamped to its param range).
+            const planes = clamp(Math.round(finite(sp.sliceCount, 26)), 2, 120);
             const occluderCount = (clipper.occluders && clipper.occluders.length) || 0;
-            const maxClip = clamp(Math.floor(SLICE_TEST_BUDGET / (occluderCount + 1)),
-              SLICE_CLIP_MIN, SLICE_CLIP_MAX);
-            // Choose the plane count so the estimated visible-segment total fits
-            // the clip budget (~2·√faces cross a plane); the hard per-record
-            // counter below is the real guard when this estimate runs low.
-            let planes = clamp(Math.round(finite(sp.sliceCount, 26)), 2, 120);
-            if (!draft && faceCount > 0) {
-              const segPerPlane = Math.max(4, Math.round(2 * Math.sqrt(faceCount)));
-              const planeCap = Math.max(2, Math.floor(maxClip / segPerPlane));
-              if (planes > planeCap) planes = planeCap;
-            }
             const sliced = buildSliceSegments({
               world: record.world,
               faces: record.faceIndexArrays,
@@ -1415,28 +1430,72 @@
             // NOT selfObject: a through-body slice SHOULD self-occlude (the far
             // side hides behind the near surface) — only on-surface fills opt out.
             const segCtx = { objectId: record.id };
-            let clipped = 0;
+            // Group the flat cut list by (plane, front|back). Insertion order is
+            // plane-ascending (buildSliceSegments emits level 1..N), so Map order
+            // is deterministic. The 2D link key is unique WITHIN a plane, so
+            // linking never fuses two different planes' rings.
+            const byPlane = new Map();
             sliced.segments.forEach((s) => {
-              if (visibleOnly && !s.front) return;
-              const A = scene.projectWorld(s.a);
-              const B = scene.projectWorld(s.b);
-              if (!A || !B || !Number.isFinite(A.x) || !Number.isFinite(B.x)) return;
-              const pts = [{ x: A.x, y: A.y, z: A.z }, { x: B.x, y: B.y, z: B.z }];
-              const sliceMeta = {
+              let g = byPlane.get(s.plane);
+              if (!g) { g = { front: [], back: [] }; byPlane.set(s.plane, g); }
+              (s.front ? g.front : g.back).push([s.a, s.b]);
+            });
+            const linkPlane = (segs) => (linkSegments ? linkSegments(segs)
+              : segs.map((e) => [e[0], e[1]]));
+            const projectPath = (worldPts) => {
+              const proj = [];
+              for (let i = 0; i < worldPts.length; i++) {
+                const P = scene.projectWorld(worldPts[i]);
+                if (P && Number.isFinite(P.x) && Number.isFinite(P.y)) {
+                  proj.push({ x: P.x, y: P.y, z: P.z });
+                }
+              }
+              return proj;
+            };
+            const metaFor = (proj) => {
+              let zsum = 0;
+              for (let i = 0; i < proj.length; i++) zsum += proj[i].z;
+              return {
                 algorithm: 'scene3d',
                 kind: 'sceneFill',
-                sceneTarget: sceneTargetMeta(record.id, null, null, (A.z + B.z) / 2, false),
+                sceneTarget: sceneTargetMeta(record.id, null, null, zsum / proj.length, false),
                 ...(sliceStyle.penId ? { penId: sliceStyle.penId } : {}),
               };
-              if (draft || clipped >= maxClip) {
-                // Cheap path: emit the (front) segment raw, no HLR — keeps live
-                // drags + pathological densities responsive.
-                emitRuns([{ visible: true, pts }], sliceMeta, hiddenTreatment, null, sliceTreat);
-                return;
-              }
-              clipped += 1;
-              const clip = clipper.clipPath(pts, segCtx);
-              emitRuns(clip.runs, sliceMeta, hiddenTreatment, null, sliceTreat);
+            };
+            // FIXED work budget as occluder-tests (clipPath samples every
+            // SLICE_SAMPLE_STEP mm and tests each sample against every occluder).
+            // Bounding sampled-length × occluders keeps the work fixed regardless
+            // of detail / camera / occluder count; overflow front rings emit raw.
+            let workUsed = 0;
+            byPlane.forEach((g) => {
+              // Front rings: HLR-clipped (occluded/self-occluded) until the fixed
+              // budget is spent, then raw — never dropped.
+              linkPlane(g.front).forEach((worldPts) => {
+                const proj = projectPath(worldPts);
+                if (proj.length < 2) return;
+                const meta = metaFor(proj);
+                if (draft || workUsed >= SLICE_CLIP_WORK) {
+                  emitRuns([{ visible: true, pts: proj }], meta, hiddenTreatment, null, sliceTreat);
+                  return;
+                }
+                let len = 0;
+                for (let i = 1; i < proj.length; i++) {
+                  len += Math.hypot(proj[i].x - proj[i - 1].x, proj[i].y - proj[i - 1].y);
+                }
+                workUsed += Math.max(2, Math.ceil(len / SLICE_SAMPLE_STEP)) * (occluderCount + 1);
+                const clip = clipper.clipPath(proj, segCtx);
+                emitRuns(clip.runs, meta, hiddenTreatment, null, sliceTreat);
+              });
+              // Far-side rings (fullContour only): raw see-through DASHES —
+              // forceHidden routes them through the occluded/dashed branch even
+              // on a solid object (whose 'remove' would otherwise drop them,
+              // making Full ≡ visibleOnly). They never consume the clip budget.
+              if (visibleOnly) return;
+              linkPlane(g.back).forEach((worldPts) => {
+                const proj = projectPath(worldPts);
+                if (proj.length < 2) return;
+                emitRuns([{ visible: true, pts: proj }], metaFor(proj), 'dash', null, sliceTreat, { forceHidden: true });
+              });
             });
           }
         }
