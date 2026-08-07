@@ -6,6 +6,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added
+- **3D Scene — Quantitative X-ray (depth-cued see-through).** X-ray objects gain a **Depth cue**
+  option: instead of a flat see-through back-fill, the hidden interior is shaded by how deep it
+  sits behind the front surface — deeper material reads denser and/or heavier, turning x-ray into
+  a readable depth map. Modes: Off (default, unchanged), Density, Weight, Both. Pure line-art
+  (plottable); off by default so existing scenes are byte-identical.
+
 ### Fixed
 - **3D Scene — object manipulation on scene trees.** Three regressions where scene-object
   controls only worked on the old monolithic scene and silently no-opped on a real scene tree

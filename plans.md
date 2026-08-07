@@ -381,6 +381,20 @@ question. Do not start these without a decision:
     fixes ground-drag snap asymmetry). 15 RGR tests incl. boolean-group dup/delete + monolith
     parity. Adversarial-reviewed (1 confirmed bug found+fixed, monolith byte-identical). Full
     gate green. Closes task #93.
+  - **Phase 5 #3 — Quantitative X-ray, interpretation A (ad4f0bf, v1.3.79).** Depth-cued
+    see-through back-fill: new opt-in `xrayDepthCue` param (off|density|weight|both, default off
+    → byte-identical). When on + object is x-ray + `!draft`, the back-face fill is modulated by
+    depth-behind-front-surface: `norm=clamp((frontDepth−backSampleDepth)/objDepthExtent,0,1)`
+    (front ref = frontmost `HLR.fitSupportPlane` covering the back-line midpoint, faceted;
+    near-z bound for curved). `density` = full hatch then deterministic golden-ratio dither keyed
+    to norm (floor XRAY_CUE_MIN_KEEP=0.25, bypasses backDensity, no double-thin); `weight` =
+    `meta.weightScale` ramp 0.5→2.2 (geometry unchanged, honored by renderer+SVG export). No RNG.
+    Rides existing depth data + per-stroke hooks — no renderer/export change. Faceted + curved
+    both done (curved uses near-bound front ref; per-point is a future fidelity upgrade). 8 RGR
+    tests (deep>shallow, monotonic weight, off golden byte-identical, solid unaffected,
+    determinism). Adversarial-reviewed SAFE. Was Jay's Phase-5 #3 (first in his order #3/#1/#4/#2);
+    interpretations B (thickness readout) + C (iso-depth contours) noted NOT built. Design:
+    scratchpad/design-quantitative-xray.md.
   - **Deferred:** Phase 5 backlog (OBJ import, Manifold WASM booleans, curved−curved CSG,
     turntable export, v2 modifiers, etc. — needs prioritization). Known
     flaky test: `divisions-editor-section` weighted-pen-spread (probabilistic; passes isolated,
