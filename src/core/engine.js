@@ -408,19 +408,31 @@
   // CONTRACT E (3D Scene Studio): `params.assets` — the scene3d content-hashed
   // asset table — gets the same ref-skip treatment: history snapshots and
   // duplicates clone references, never mesh blobs (spec A-11/A-16).
+  //
+  // The mesh lives at TWO depths and both must be skipped. A topoform/polyhedron
+  // layer keeps it at `params.importedMesh`, but a scene object3d child — what
+  // 3D model import and Convert-to-Scene produce — nests its primitive bag one
+  // level down, at `params.params.importedMesh`. Skipping only the top level let
+  // a 40k-face import deep-clone 4.84 MB into EVERY undo snapshot (×20 history
+  // slots, re-cloned on every interaction).
   const cloneLayerParams = (params) => {
     if (!params || typeof params !== 'object') return {};
     const mesh = params.importedMesh;
     const assets = params.assets;
+    const nested = params.params;
+    const nestedMesh = (nested && typeof nested === 'object') ? nested.importedMesh : null;
     const skipMesh = Boolean(mesh) && typeof mesh === 'object';
     const skipAssets = Boolean(assets) && typeof assets === 'object';
-    if (!skipMesh && !skipAssets) return JSON.parse(JSON.stringify(params));
+    const skipNested = Boolean(nestedMesh) && typeof nestedMesh === 'object';
+    if (!skipMesh && !skipAssets && !skipNested) return JSON.parse(JSON.stringify(params));
     const shallow = { ...params };
     if (skipMesh) shallow.importedMesh = null;
     if (skipAssets) shallow.assets = null;
+    if (skipNested) shallow.params = { ...nested, importedMesh: null };
     const rest = JSON.parse(JSON.stringify(shallow));
     if (skipMesh) rest.importedMesh = mesh;
     if (skipAssets) rest.assets = assets;
+    if (skipNested && rest.params) rest.params.importedMesh = nestedMesh;
     return rest;
   };
   const cloneParamStates = (states) => {
@@ -466,6 +478,20 @@
   // (sx 40) so it lands clearly visible on the ground.
   const IMPORT_MESH_RADIUS = 40;
 
+  // 3D model import — SHARED face budget. Both import paths funnel through
+  // buildImportedMeshParams, so capping HERE covers OBJ and STL alike (a mesh
+  // from StlParser.parse is already ≤ MAX_FACES, so the cap is a no-op for it and
+  // the STL/convert geometry is bit-for-bit unchanged). Without a cap an OBJ was
+  // stored whole: real downloads run 50k–500k tris, and a 40k-face unwelded mesh
+  // took 3.6 MINUTES of synchronous compose before the tab responded again.
+  // Reuses StlParser.downsample — one impl. Falls back to the mesh untouched if
+  // the STL module has not loaded (legacy load orders / headless harnesses).
+  const capMeshFaces = (mesh) => {
+    const helper = window.Vectura?.StlParser;
+    if (!helper || typeof helper.downsample !== 'function') return mesh;
+    return helper.downsample(mesh);
+  };
+
   // 3D model import — SHARED wrap/normalize helper. Mirrors Convert-to-Scene's
   // unit-normalisation (engine.convertAlgoToScene): centre the mesh on its
   // bounding-box midpoint, divide by the max hypot-from-centre so the unit verts
@@ -478,10 +504,13 @@
   const buildImportedMeshParams = (mesh, targetRadius) => {
     if (!mesh || !Array.isArray(mesh.vertices) || !mesh.vertices.length
       || !Array.isArray(mesh.faces) || !mesh.faces.length) return null;
+    // Cap first, so the bbox/normalisation below describe exactly the geometry
+    // that will be stored and drawn (downsample also prunes orphan vertices).
+    const capped = capMeshFaces(mesh);
     const fin = (val) => (Number.isFinite(Number(val)) ? Number(val) : 0);
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-    mesh.vertices.forEach((vt) => {
+    capped.vertices.forEach((vt) => {
       const x = fin(vt.x), y = fin(vt.y), z = fin(vt.z);
       if (x < minX) minX = x; if (x > maxX) maxX = x;
       if (y < minY) minY = y; if (y > maxY) maxY = y;
@@ -489,19 +518,19 @@
     });
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
     let maxExtent = 0;
-    mesh.vertices.forEach((vt) => {
+    capped.vertices.forEach((vt) => {
       const d = Math.hypot(fin(vt.x) - cx, fin(vt.y) - cy, fin(vt.z) - cz);
       if (d > maxExtent) maxExtent = d;
     });
     const k = maxExtent > 1e-6 ? 1 / maxExtent : 1;
-    const unit = mesh.vertices.map((vt) => ({
+    const unit = capped.vertices.map((vt) => ({
       x: Math.round((fin(vt.x) - cx) * k * 10000) / 10000,
       y: Math.round((fin(vt.y) - cy) * k * 10000) / 10000,
       z: Math.round((fin(vt.z) - cz) * k * 10000) / 10000,
     }));
     return {
       solidType: 'importedMesh',
-      importedMesh: { vertices: unit, faces: mesh.faces.map((f) => f.slice()) },
+      importedMesh: { vertices: unit, faces: capped.faces.map((f) => f.slice()) },
       radius: Number.isFinite(targetRadius) && targetRadius > 0 ? targetRadius : IMPORT_MESH_RADIUS,
     };
   };
@@ -1048,7 +1077,20 @@
       child.parentId = groupId;
       child.params.primitive = 'solid';
       child.params.params = solidParams;
-      child.params.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
+      // Rest the mesh ON the ground, base at y=0. The verts are normalised about
+      // the mesh CENTRE and scaled by `radius`, so at transform.y=0 half the
+      // object sits below the ground quad (which is at y=0) — an imported cube
+      // spanned world Y [-23.1, +23.1]. Lifting by the post-scale drop below the
+      // centre matches the convention defaults.js states for the scene box: the
+      // cast shadow then pools from the base instead of a small wedge from a
+      // half-buried, origin-centred solid.
+      let minUnitY = 0;
+      solidParams.importedMesh.vertices.forEach((vt) => {
+        const y = Number(vt.y);
+        if (Number.isFinite(y) && y < minUnitY) minUnitY = y;
+      });
+      const groundLift = Math.round(-minUnitY * solidParams.radius * 1000) / 1000;
+      child.params.transform = { x: 0, y: groundLift, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
       child.params.visibility = 'solid';
       child.params.role = 'solid';
       child.params.style = { penId: child.penId || null, mapper: 'hatch', params: {} };
@@ -1065,7 +1107,17 @@
 
       this.activeLayerId = childId;
       this.computeAllDisplayGeometry();
-      return { ok: true, groupId, childId, addedToExisting: Boolean(existingGroupId) };
+      // `faces` is what was actually STORED (post face-budget); `sourceFaces` is
+      // what the file offered, so the caller can tell the user it was reduced.
+      return {
+        ok: true,
+        groupId,
+        childId,
+        addedToExisting: Boolean(existingGroupId),
+        faces: solidParams.importedMesh.faces.length,
+        sourceFaces: mesh.faces.length,
+        groundLift,
+      };
     }
 
     // Scene-tree Increment D/F — expand a MONOLITH scene3d layer (inline

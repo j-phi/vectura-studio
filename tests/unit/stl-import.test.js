@@ -98,6 +98,102 @@ describe('STL import', () => {
     expect(() => V.StlParser.parse('solid empty\nendsolid empty\n')).toThrow();
   });
 
+  /*
+   * ── Face budget (2026-08-07) ────────────────────────────────────────────────
+   * `downsample` is now the SHARED reducer for both import paths (STL and OBJ,
+   * through VectorEngine.buildImportedMeshParams). It reduces by vertex
+   * clustering, which keeps the surface CONNECTED — the previous keep-every-Nth
+   * -face reducer left the budget's worth of disconnected triangles, where every
+   * edge is a boundary edge: a 25,280-face sphere reduced to 12,000 took
+   * 131,033 ms to compose, versus 1,759 ms for the clustered result.
+   */
+  const uvSphereMesh = (segments, rings) => {
+    const P = (u, v) => {
+      const th = u * Math.PI * 2;
+      const ph = v * Math.PI;
+      return { x: Math.sin(ph) * Math.cos(th), y: Math.cos(ph), z: Math.sin(ph) * Math.sin(th) };
+    };
+    const key = (p) => `${p.x.toFixed(5)}|${p.y.toFixed(5)}|${p.z.toFixed(5)}`;
+    const map = new Map();
+    const vertices = [];
+    const idx = (p) => {
+      const k = key(p);
+      if (!map.has(k)) { map.set(k, vertices.length); vertices.push(p); }
+      return map.get(k);
+    };
+    const faces = [];
+    for (let i = 0; i < segments; i += 1) {
+      for (let j = 0; j < rings; j += 1) {
+        const a = idx(P(i / segments, j / rings));
+        const b = idx(P((i + 1) / segments, j / rings));
+        const c = idx(P((i + 1) / segments, (j + 1) / rings));
+        const d = idx(P(i / segments, (j + 1) / rings));
+        if (a !== b && b !== c && a !== c) faces.push([a, b, c]);
+        if (a !== c && c !== d && a !== d) faces.push([a, c, d]);
+      }
+    }
+    return { vertices, faces };
+  };
+
+  // Adjacency ratio: shared edges / total edges. A connected closed surface is
+  // near 1.0; a shredded soup of disconnected triangles is 0.
+  const sharedEdgeRatio = (mesh) => {
+    const counts = new Map();
+    mesh.faces.forEach((f) => {
+      for (let i = 0; i < 3; i += 1) {
+        const a = f[i];
+        const b = f[(i + 1) % 3];
+        const k = a < b ? `${a}|${b}` : `${b}|${a}`;
+        counts.set(k, (counts.get(k) || 0) + 1);
+      }
+    });
+    let shared = 0;
+    counts.forEach((n) => { if (n > 1) shared += 1; });
+    return shared / counts.size;
+  };
+
+  test('downsample leaves a mesh already within budget untouched', () => {
+    const mesh = uvSphereMesh(8, 4);
+    expect(mesh.faces.length).toBeLessThan(V.StlParser.MAX_FACES);
+    expect(V.StlParser.downsample(mesh)).toBe(mesh); // same object, no copy
+  });
+
+  test('downsample reduces an over-budget mesh and keeps it CONNECTED', () => {
+    const mesh = uvSphereMesh(160, 80); // ~25,280 faces, welded + connected
+    expect(mesh.faces.length).toBeGreaterThan(V.StlParser.MAX_FACES);
+    const before = sharedEdgeRatio(mesh);
+    expect(before).toBeGreaterThan(0.95);
+
+    const out = V.StlParser.downsample(mesh);
+    expect(out.faces.length).toBeLessThanOrEqual(V.StlParser.MAX_FACES);
+    expect(out.faces.length).toBeGreaterThan(0);
+    // The reduced mesh is still a connected surface, not triangle confetti.
+    expect(sharedEdgeRatio(out)).toBeGreaterThan(0.95);
+    // Fewer vertices than faces-times-three proves vertices are shared.
+    expect(out.vertices.length).toBeLessThan(out.faces.length * 3);
+    // Indices are valid and re-based; no orphan vertices are carried along.
+    const used = new Set();
+    out.faces.forEach((f) => f.forEach((i) => {
+      expect(i).toBeGreaterThanOrEqual(0);
+      expect(i).toBeLessThan(out.vertices.length);
+      used.add(i);
+    }));
+    expect(used.size).toBe(out.vertices.length);
+    // No degenerate triangles survive the collapse.
+    out.faces.forEach((f) => {
+      expect(f[0]).not.toBe(f[1]);
+      expect(f[1]).not.toBe(f[2]);
+      expect(f[0]).not.toBe(f[2]);
+    });
+  });
+
+  test('downsample honours an explicit smaller budget', () => {
+    const mesh = uvSphereMesh(80, 40); // ~6,240 faces
+    const out = V.StlParser.downsample(mesh, 500);
+    expect(out.faces.length).toBeLessThanOrEqual(500);
+    expect(out.faces.length).toBeGreaterThan(0);
+  });
+
   test('topoform renders an imported STL mesh', () => {
     const mesh = V.StlParser.parse(buildBinaryStl(TET_FACES), 'tetra.stl');
     const wire = generate('topoform', { sourceMode: 'stlMesh', importedMesh: mesh, renderMode: 'wireframe' });

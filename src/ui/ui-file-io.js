@@ -228,48 +228,95 @@
     // scene is active the object is added to it; otherwise a new scene tree is
     // created. Binary STL needs an ArrayBuffer; OBJ / ASCII STL are text — the STL
     // parser accepts either, so .stl is always read as an ArrayBuffer.
+    //
+    // Parsing + the engine's compose are SYNCHRONOUS and can run for seconds on a
+    // real download, so an indeterminate progress bar goes up first and the work
+    // is deferred one frame — otherwise the tab simply froze with no feedback
+    // (saveVecturaFile / exportSVG use the same startProgress idiom). The face
+    // budget in buildImportedMeshParams bounds how long that can be.
     import3dModelFile(file) {
       if (!file || !Layer) return;
       const engine = this.app.engine;
       const lower = (file.name || '').toLowerCase();
       const isObj = lower.endsWith('.obj');
+
+      const failModal = (title, text, variant = 'danger') => {
+        toast(title, variant);
+        const errBody = document.createElement('p');
+        errBody.className = 'modal-text';
+        errBody.textContent = text;
+        this.openModal({ title, body: errBody });
+      };
+
+      const progress = startProgress(`Importing ${file.name}…`);
+      // Yield a frame so the progress bar actually paints before the blocking
+      // parse/compose. Falls back to a timeout under JSDOM / headless harnesses.
+      const defer = (fn) => {
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => setTimeout(fn, 0));
+        else setTimeout(fn, 0);
+      };
+
       const reader = new FileReader();
+      reader.onerror = () => {
+        progress.done();
+        failModal('3D Import Failed', `Could not read "${file.name}" from disk. The file may be unreadable or was removed.`);
+      };
       reader.onload = () => {
-        let mesh;
-        try {
-          mesh = isObj
-            ? window.Vectura.ObjImport.parse(reader.result, file.name)
-            : window.Vectura.StlParser.parse(reader.result, file.name);
-        } catch (_) {
-          toast('Could not read this 3D model', 'danger');
-          const errBody = document.createElement('p');
-          errBody.className = 'modal-text';
-          errBody.textContent = `Could not read "${file.name}". Make sure it is a valid ${isObj ? 'OBJ' : 'binary or ASCII STL'} mesh.`;
-          this.openModal({ title: '3D Import Failed', body: errBody });
-          return;
-        }
-        if (!mesh || !mesh.vertices?.length || !mesh.faces?.length) {
-          toast('Model had no faces', 'warning');
-          const errBody = document.createElement('p');
-          errBody.className = 'modal-text';
-          errBody.textContent = 'The 3D model contained no faces to import.';
-          this.openModal({ title: 'No Mesh Found', body: errBody });
-          return;
-        }
-        if (this.app.pushHistory) this.app.pushHistory();
-        const result = engine.importMeshAsScene(mesh, mesh.name || file.name);
-        if (!result || !result.ok) {
-          toast('Could not import 3D model', 'danger');
-          return;
-        }
-        engine.activeLayerId = result.childId;
-        if (this.app.renderer) this.app.renderer.setSelection([result.childId], result.childId);
-        this.renderLayers();
-        this.buildControls();
-        this.updateFormula();
-        this.app.render();
-        const tris = mesh.faces.length;
-        toast(`Imported ${mesh.name || file.name} · ${tris.toLocaleString()} tris`, 'success');
+        defer(() => {
+          try {
+            let mesh;
+            try {
+              mesh = isObj
+                ? window.Vectura.ObjImport.parse(reader.result, file.name)
+                : window.Vectura.StlParser.parse(reader.result, file.name);
+            } catch (err) {
+              // The parsers say "no faces"/"no triangles" when the file read fine
+              // but described no usable geometry — a different user story from a
+              // file we could not decode at all.
+              if (/no faces|no triangles/i.test(err?.message || '')) {
+                failModal('No Mesh Found',
+                  `"${file.name}" contained no faces to import. ${err.message.replace(/^\w+ parse:\s*/, '')}`,
+                  'warning');
+              } else {
+                failModal('3D Import Failed',
+                  `Could not read "${file.name}". Make sure it is a valid ${isObj ? 'OBJ' : 'binary or ASCII STL'} mesh.`);
+              }
+              return;
+            }
+            if (!mesh || !mesh.vertices?.length || !mesh.faces?.length) {
+              failModal('No Mesh Found', 'The 3D model contained no faces to import.', 'warning');
+              return;
+            }
+            if (this.app.pushHistory) this.app.pushHistory();
+            const result = engine.importMeshAsScene(mesh, mesh.name || file.name);
+            if (!result || !result.ok) {
+              toast('Could not import 3D model', 'danger');
+              return;
+            }
+            engine.activeLayerId = result.childId;
+            if (this.app.renderer) this.app.renderer.setSelection([result.childId], result.childId);
+            this.renderLayers();
+            this.buildControls();
+            this.updateFormula();
+            this.app.render();
+            // Report the STORED triangle count, and say so when the face budget
+            // reduced it — quoting the file's count would be a lie about what is
+            // in the document. Parser warnings (dropped faces / bad `v` records)
+            // ride along so a malformed file is never silently "fine".
+            const stored = Number.isFinite(result.faces) ? result.faces : mesh.faces.length;
+            const source = Number.isFinite(result.sourceFaces) ? result.sourceFaces : stored;
+            const notes = Array.isArray(mesh.warnings) ? mesh.warnings.slice() : [];
+            if (source > stored) notes.unshift(`reduced from ${source.toLocaleString()}`);
+            const suffix = notes.length ? ` · ${notes.join(' · ')}` : '';
+            toast(
+              `Imported ${mesh.name || file.name} · ${stored.toLocaleString()} tris${suffix}`,
+              notes.length ? 'warning' : 'success',
+              notes.length ? 6000 : 3500,
+            );
+          } finally {
+            progress.done();
+          }
+        });
       };
       if (isObj) reader.readAsText(file);
       else reader.readAsArrayBuffer(file);

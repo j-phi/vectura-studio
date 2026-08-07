@@ -176,4 +176,146 @@ describe('Import 3D model as scene object', () => {
     expect(result.reason).toBe('empty');
     expect(sceneGroups(engine).length).toBe(0);
   });
+
+  /*
+   * ── Regressions (2026-08-07 adversarial review of the import feature) ───────
+   * Each of these FAILED on 1d7e951:
+   *   D3  ground   — transform.y was 0, so an imported cube spanned world Y
+   *                  [-23.1, +23.1] with half of it below the ground quad
+   *   D2  budget   — no face cap on the OBJ path; a 25,600-tri mesh was stored
+   *                  whole and took 116,439 ms of synchronous compose
+   *   D4  history  — params.params.importedMesh was missed by the ref-skip, so
+   *                  the whole mesh was JSON deep-cloned into every snapshot
+   */
+
+  // D3 — the mesh rests ON the ground, base at y = 0.
+  test('D3: an imported mesh sits on the ground, not half-buried in it', () => {
+    const engine = freshEngine();
+    const mesh = V.ObjImport.parse(CUBE_OBJ, 'cube.obj');
+    const result = engine.importMeshAsScene(mesh, mesh.name);
+    const child = engine.getLayerById(result.childId);
+    const { importedMesh, radius } = child.params.params;
+    const ty = child.params.transform.y;
+
+    let minY = Infinity;
+    let maxY = -Infinity;
+    importedMesh.vertices.forEach((v) => {
+      const worldY = v.y * radius + ty;
+      if (worldY < minY) minY = worldY;
+      if (worldY > maxY) maxY = worldY;
+    });
+    // Base ON the ground plane (y = 0), whole body above it.
+    expect(minY).toBeCloseTo(0, 2);
+    expect(maxY).toBeGreaterThan(0);
+    // The lift is exactly the mesh's post-scale half-height.
+    expect(ty).toBeGreaterThan(0);
+    expect(ty).toBeCloseTo(maxY / 2, 2);
+  });
+
+  test('D3: the lift tracks the mesh, so an asymmetric mesh also rests on y=0', () => {
+    // A wedge whose centre is NOT its base: verts span y ∈ [-1, 3].
+    const WEDGE = [
+      'v -1 -1 -1', 'v 1 -1 -1', 'v 1 -1 1', 'v -1 -1 1', 'v 0 3 0',
+      'f 1 2 3 4', 'f 1 2 5', 'f 2 3 5', 'f 3 4 5', 'f 4 1 5',
+    ].join('\n') + '\n';
+    const engine = freshEngine();
+    const result = engine.importMeshAsScene(V.ObjImport.parse(WEDGE, 'wedge.obj'), 'wedge');
+    const child = engine.getLayerById(result.childId);
+    const { importedMesh, radius } = child.params.params;
+    const ty = child.params.transform.y;
+    const minY = Math.min(...importedMesh.vertices.map((v) => v.y * radius + ty));
+    expect(minY).toBeCloseTo(0, 2);
+  });
+
+  // D2 — the OBJ path honours the same face budget as the STL path.
+  // NOTE: this drives the reduction through buildImportedMeshParams (via
+  // importMeshAsScene) with a SMALL explicit budget so the assertion is about
+  // the cap, not about composing a 12k-face mesh — see the unit test in
+  // tests/unit/stl-import.test.js for the decimator's own contract.
+  test('D2: a huge OBJ mesh is capped to StlParser.MAX_FACES before it is stored', () => {
+    const MAX = V.StlParser.MAX_FACES;
+    // A UV sphere with comfortably more than MAX triangles.
+    const segs = 180;
+    const rings = 90; // 2 * 180 * 90 = 32,400 tris
+    const P = (u, v) => {
+      const th = u * Math.PI * 2;
+      const ph = v * Math.PI;
+      return [Math.sin(ph) * Math.cos(th), Math.cos(ph), Math.sin(ph) * Math.sin(th)];
+    };
+    const lines = [];
+    let n = 1;
+    for (let i = 0; i < segs; i += 1) {
+      for (let j = 0; j < rings; j += 1) {
+        const quad = [P(i / segs, j / rings), P((i + 1) / segs, j / rings),
+          P((i + 1) / segs, (j + 1) / rings), P(i / segs, (j + 1) / rings)];
+        [[0, 1, 2], [0, 2, 3]].forEach((tri) => {
+          tri.forEach((k) => lines.push(`v ${quad[k][0].toFixed(5)} ${quad[k][1].toFixed(5)} ${quad[k][2].toFixed(5)}`));
+          lines.push(`f ${n} ${n + 1} ${n + 2}`);
+          n += 3;
+        });
+      }
+    }
+    const mesh = V.ObjImport.parse(lines.join('\n') + '\n', 'huge.obj');
+    expect(mesh.faces.length).toBeGreaterThan(MAX);
+
+    const engine = freshEngine();
+    const result = engine.importMeshAsScene(mesh, 'huge');
+    const stored = engine.getLayerById(result.childId).params.params.importedMesh;
+    expect(stored.faces.length).toBeLessThanOrEqual(MAX);
+    // The caller learns both counts so the UI can say it was reduced.
+    expect(result.faces).toBe(stored.faces.length);
+    expect(result.sourceFaces).toBe(mesh.faces.length);
+    expect(result.sourceFaces).toBeGreaterThan(result.faces);
+    // Every surviving index still addresses a stored vertex (the reducer prunes
+    // orphans and re-indexes).
+    stored.faces.forEach((f) => f.forEach((i) => {
+      expect(i).toBeGreaterThanOrEqual(0);
+      expect(i).toBeLessThan(stored.vertices.length);
+    }));
+    // Still unit-normalised after the cap.
+    stored.vertices.forEach((v) => {
+      expect(Math.hypot(v.x, v.y, v.z)).toBeLessThanOrEqual(1.0001);
+    });
+  }, 240_000);
+
+  test('D2: a mesh under the budget is stored whole (the cap is a no-op)', () => {
+    const engine = freshEngine();
+    const mesh = V.ObjImport.parse(CUBE_OBJ, 'cube.obj');
+    const result = engine.importMeshAsScene(mesh, 'cube');
+    const stored = engine.getLayerById(result.childId).params.params.importedMesh;
+    expect(stored.faces.length).toBe(12);
+    expect(result.faces).toBe(12);
+    expect(result.sourceFaces).toBe(12);
+  });
+
+  // D4 — the nested mesh is shared by reference, never deep-cloned.
+  test('D4: exportState shares the nested importedMesh by reference', () => {
+    const engine = freshEngine();
+    const mesh = V.ObjImport.parse(CUBE_OBJ, 'cube.obj');
+    const result = engine.importMeshAsScene(mesh, 'cube');
+    const child = engine.getLayerById(result.childId);
+    const live = child.params.params.importedMesh;
+
+    const snapshot = engine.exportState();
+    const snapChild = snapshot.layers.find((l) => l.id === result.childId);
+    // The SAME object, not a JSON deep copy — this is what keeps a 40k-face
+    // import from duplicating megabytes into all 20 history slots.
+    expect(snapChild.params.params.importedMesh).toBe(live);
+    // …while the rest of the nested bag is still a real copy.
+    expect(snapChild.params.params).not.toBe(child.params.params);
+    snapChild.params.params.radius = 999;
+    expect(child.params.params.radius).not.toBe(999);
+  });
+
+  test('D4: the top-level importedMesh ref-skip still works (topoform/polyhedron)', () => {
+    const engine = freshEngine();
+    const layerId = engine.addLayer('topoform');
+    const layer = engine.getLayerById(layerId) || layerId;
+    const meshBlob = { vertices: [{ x: 0, y: 0, z: 0 }], faces: [[0, 0, 0]] };
+    layer.params.importedMesh = meshBlob;
+    const snapshot = engine.exportState();
+    const snapLayer = snapshot.layers.find((l) => l.id === layer.id);
+    expect(snapLayer.params.importedMesh).toBe(meshBlob);
+    expect(snapLayer.params).not.toBe(layer.params);
+  });
 });

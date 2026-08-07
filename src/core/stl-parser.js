@@ -101,14 +101,15 @@
     }));
   };
 
-  // Uniformly drop faces until at most MAX_FACES remain, then prune orphan
-  // vertices and re-index so the stored mesh stays compact.
-  const downsample = (mesh) => {
-    if (mesh.faces.length <= MAX_FACES) return mesh;
-    const stride = mesh.faces.length / MAX_FACES;
+  // Last-resort reducer: uniformly drop faces until at most MAX_FACES remain,
+  // then prune orphan vertices and re-index. This SHREDS connectivity — the
+  // survivors no longer share edges — so it is only the fallback for a mesh that
+  // vertex clustering cannot get under budget (see decimate below).
+  const strideDrop = (mesh, maxFaces) => {
+    const stride = mesh.faces.length / maxFaces;
     const kept = [];
     for (let i = 0; i < mesh.faces.length; i += stride) kept.push(mesh.faces[Math.floor(i)]);
-    if (kept.length > MAX_FACES) kept.length = MAX_FACES; // hold the documented ≤ MAX_FACES bound
+    if (kept.length > maxFaces) kept.length = maxFaces; // hold the documented ≤ maxFaces bound
     const remap = new Map();
     const vertices = [];
     const faces = kept.map((face) => face.map((idx) => {
@@ -116,6 +117,98 @@
       if (next === undefined) {
         next = vertices.length;
         vertices.push(mesh.vertices[idx]);
+        remap.set(idx, next);
+      }
+      return next;
+    }));
+    return { vertices, faces };
+  };
+
+  // Vertex clustering (Rossignac–Borrel): quantise every vertex onto an N³ grid
+  // over the mesh bounds, collapse each occupied cell to a single vertex, and
+  // rebuild the faces against those cluster vertices — dropping the triangles
+  // that collapse and the duplicates that result.
+  //
+  // This is CONNECTIVITY-PRESERVING, which is the whole point: neighbouring
+  // triangles still share cluster vertices, so the surface stays closed and the
+  // edge/silhouette machinery in geometry3d.js keeps seeing a connected mesh.
+  // Dropping every Nth face instead leaves the budget's worth of DISCONNECTED
+  // triangles, where every edge is a boundary edge — measured on a 25,280-face
+  // sphere reduced to 12,000: 131,033 ms shredded vs 1,101 ms for a connected
+  // mesh of the same size. The cell's FIRST vertex represents it, so the kept
+  // positions stay exactly on the original surface.
+  const clusterAtGrid = (mesh, grid, min, size) => {
+    const cellOf = (p) => {
+      const cx = Math.min(grid - 1, Math.max(0, Math.floor(((p.x - min.x) / size) * grid)));
+      const cy = Math.min(grid - 1, Math.max(0, Math.floor(((p.y - min.y) / size) * grid)));
+      const cz = Math.min(grid - 1, Math.max(0, Math.floor(((p.z - min.z) / size) * grid)));
+      return (cx * grid + cy) * grid + cz;
+    };
+    const cellToIdx = new Map();
+    const vertices = [];
+    const vertexToCluster = new Array(mesh.vertices.length);
+    for (let i = 0; i < mesh.vertices.length; i += 1) {
+      const key = cellOf(mesh.vertices[i]);
+      let idx = cellToIdx.get(key);
+      if (idx === undefined) {
+        idx = vertices.length;
+        vertices.push(mesh.vertices[i]); // first vertex in the cell represents it
+        cellToIdx.set(key, idx);
+      }
+      vertexToCluster[i] = idx;
+    }
+    const seen = new Set();
+    const faces = [];
+    for (let f = 0; f < mesh.faces.length; f += 1) {
+      const src = mesh.faces[f];
+      const a = vertexToCluster[src[0]];
+      const b = vertexToCluster[src[1]];
+      const c = vertexToCluster[src[2]];
+      if (a === undefined || b === undefined || c === undefined) continue;
+      if (a === b || b === c || a === c) continue; // collapsed by the grid
+      const key = a < b ? (a < c ? `${a}|${Math.min(b, c)}|${Math.max(b, c)}` : `${c}|${a}|${b}`)
+        : (b < c ? `${b}|${Math.min(a, c)}|${Math.max(a, c)}` : `${c}|${Math.min(a, b)}|${Math.max(a, b)}`);
+      if (seen.has(key)) continue; // duplicate triangle after clustering
+      seen.add(key);
+      faces.push([a, b, c]);
+    }
+    return { vertices, faces };
+  };
+
+  // Reduce `mesh` to at most MAX_FACES faces, keeping it connected. Returns the
+  // mesh UNTOUCHED when it is already within budget (so this is a no-op for the
+  // meshes the parsers already produce under the cap).
+  const downsample = (mesh, maxFaces = MAX_FACES) => {
+    if (mesh.faces.length <= maxFaces) return mesh;
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    mesh.vertices.forEach((p) => {
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+      if (p.z < minZ) minZ = p.z; if (p.z > maxZ) maxZ = p.z;
+    });
+    const size = Math.max(maxX - minX, maxY - minY, maxZ - minZ) || 1;
+    const min = { x: minX, y: minY, z: minZ };
+    // A closed surface's face count grows ~grid², so start just above the budget
+    // and walk the grid down until it fits. Each pass is O(V+F).
+    let grid = Math.max(4, Math.ceil(Math.sqrt(maxFaces)));
+    let best = null;
+    for (let attempt = 0; attempt < 32 && grid >= 3; attempt += 1) {
+      const built = clusterAtGrid(mesh, grid, min, size);
+      if (built.faces.length <= maxFaces) { best = built; break; }
+      grid = Math.floor(grid * 0.8);
+    }
+    // Nothing fit (a pathological mesh) — fall back to the shredding reducer,
+    // which always hits the bound.
+    if (!best) return strideDrop(mesh, maxFaces);
+    // Prune cluster vertices no surviving face references, and re-index.
+    const remap = new Map();
+    const vertices = [];
+    const faces = best.faces.map((face) => face.map((idx) => {
+      let next = remap.get(idx);
+      if (next === undefined) {
+        next = vertices.length;
+        vertices.push(best.vertices[idx]);
         remap.set(idx, next);
       }
       return next;
@@ -163,5 +256,10 @@
     };
   };
 
-  Vectura.StlParser = { parse, MAX_FACES };
+  // `makeWelder` and `downsample` are exported so the OBJ parser
+  // (src/core/scene3d/obj-import.js) and the engine's shared import wrapper
+  // (VectorEngine.buildImportedMeshParams) reuse THIS implementation rather than
+  // forking a second one — the branch keeps one impl per concern (the same rule
+  // that moved the deformer math into scene3d/mesh.js).
+  Vectura.StlParser = { parse, MAX_FACES, makeWelder, downsample };
 })();
