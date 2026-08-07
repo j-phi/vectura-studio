@@ -352,6 +352,22 @@ question. Do not start these without a decision:
     solid fullContour) fail on 70becd3, pass after; count now flat ~1 ring/plane across detail;
     detail-100 convert ~2.6s; visual 67/67 byte-identical. **Capped/deferred:** on pathological
     (detail > 100) density only occlusion fidelity degrades (overflow rings raw), never the count.
+  - **Scene-tree object-manipulation regression fixes (751c159, v1.3.77).** Three live bugs Jay
+    hit after the scene-tree migration, one root cause: object-manipulation code saw only the
+    legacy inline `params.objects` (empty on a tree; objects live on child object3d layers at
+    `child.params.*`). Fixes: (1) drag-nest — `sceneNestContainerFor` (layers-panel.js ~:2231)
+    + `_lvlDoMove` redirect (~:176) so an object3d dropped resolving to a scene container nests
+    (parentId=container), preserving booleanGroup3d→role:'solid' revert; reorder-within-scene
+    still falls through. (2) primitive swap — `setSceneObjectPrimitive` (renderer.js:12147) maps
+    ids via child-aware `_sceneObjectById` and writes `child.params.primitive` + resets
+    `child.params.params`; ctxbar reads current primitive via `getSceneObjectRecord`. (3) rotation
+    gizmo — `_sceneRotationOwner` resolves any scene descendant → scene3d group; get/hit/draw
+    3DRotation accept the group; `bounds.corners` guard relaxed when a `_sceneGizmoAnchor` exists.
+    Deliberately kept `_sceneObjects` inline-only (array-identity writers would corrupt a tree);
+    reads/writes route through `_sceneObjectById` (returns `child.params` view). 12 RGR tests.
+    Adversarial-reviewed: SAFE, byte-identical for monoliths. **Follow-up (task #93, NOT fixed):**
+    other ctxbar bridges still inline-only on trees — x-ray toggle, delete, duplicate,
+    drop-to-ground, ground-drag, style-flyout writer, name readout.
   - **Deferred:** Phase 5 backlog (OBJ import, Manifold WASM booleans, curved−curved CSG,
     turntable export, v2 modifiers, etc. — needs prioritization). Known
     flaky test: `divisions-editor-section` weighted-pen-spread (probabilistic; passes isolated,

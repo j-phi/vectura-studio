@@ -6,6 +6,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed
+- **3D Scene — object manipulation on scene trees.** Three regressions where scene-object
+  controls only worked on the old monolithic scene and silently no-opped on a real scene tree
+  (the model every new/converted scene uses): (1) dragging an object onto a scene group now
+  **nests** it as a child instead of popping it outside; (2) changing a 3D object's shape from
+  the context toolbar now actually **swaps the primitive** (previously it was stuck on cube);
+  (3) the scene **rotation gizmo** no longer disappears once you select an object — it stays and
+  rotates the selected object (or the camera) as before. Saved legacy scenes are unaffected.
+
 ### Added
 - **3D Scene — Convert to Scene.** A standalone Polyhedron or Topoform layer can now be turned
   into a real 3D scene tree via a "Convert to Scene" item on its layer context menu. The
