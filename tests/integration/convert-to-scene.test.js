@@ -15,8 +15,10 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  *
  * Increment I2 amended (a)/(b): a parametric polyhedron now converts to a LIVE
  * `solid` object (solidType + deformer params) instead of a frozen importedMesh
- * bake. Topoform + STL/importedMesh-sourced polyhedra keep the bake path — see
- * (c) here and convert-to-scene-live-solid.test.js for the full I2 contract.
+ * bake. Increment I4 amended (c): a parametric topoform (wireframe/triangleMesh)
+ * now converts to a LIVE chart primitive — see convert-to-scene-live-topoform.js
+ * for the full I4 contract. STL/importedMesh-sourced polyhedra + `cube`/`stlMesh`
+ * topoforms keep the bake path; topoform `contours` still blocks (d).
  */
 
 describe('Convert-to-Scene I1 — bake a standalone 3D layer into a scene tree', () => {
@@ -126,9 +128,9 @@ describe('Convert-to-Scene I1 — bake a standalone 3D layer into a scene tree',
     expect(live.vertices.length).toBeGreaterThan(base.vertices.length);
   });
 
-  // ── (c) topoform wireframe / triangle convert renders. ─────────────────────
+  // ── (c) topoform wireframe / triangle convert to a LIVE chart object (I4). ──
   ['wireframe', 'triangleMesh'].forEach((renderMode) => {
-    test(`(c) topoform ${renderMode} converts to a rendering scene object`, () => {
+    test(`(c) topoform ${renderMode} converts to a live rendering scene object`, () => {
       const engine = freshEngine();
       const id = engine.addLayer('topoform');
       const src = engine.getLayerById(id);
@@ -140,8 +142,10 @@ describe('Convert-to-Scene I1 — bake a standalone 3D layer into a scene tree',
       const group = engine.getLayerById(result.groupId);
       expect(group.type).toBe('scene3d');
       const child = engine.getLayerDescendants(group.id).find((l) => l.type === 'object3d');
-      expect(child.params.params.solidType).toBe('importedMesh');
-      expect(child.params.params.importedMesh.vertices.length).toBeGreaterThan(0);
+      // I4 — a parametric topoform is now a LIVE chart primitive, not a frozen bake.
+      expect(child.params.primitive).toBe('ellipsoid');
+      expect(child.params.params.solidType).toBeUndefined();
+      expect(child.params.params.importedMesh).toBeUndefined();
 
       engine.computeAllDisplayGeometry();
       expect(group.scenePaths.length).toBeGreaterThan(0);

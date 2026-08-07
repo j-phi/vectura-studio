@@ -782,10 +782,52 @@
       // Convert-to-Scene (I2) — a parametric polyhedron becomes a LIVE `solid`
       // object carrying its solidType + deformer params, so the compositor
       // re-evaluates the deformers (createSolidMesh + applyDeformers) and the
-      // object stays fully editable. Topoform, and a polyhedron whose source is
-      // already an STL/importedMesh, have NO live param equivalent yet — they
-      // keep the I1 importedMesh bake (the deformed index mesh, frozen).
+      // object stays fully editable. A parametric topoform rides its own LIVE chart
+      // path (I4, below). Only a polyhedron whose source is already an
+      // STL/importedMesh, and a topoform whose source has no chart analog
+      // (`cube` / `stlMesh`), keep the I1 importedMesh bake (frozen index mesh).
       const liveSolid = type === 'polyhedron' && (p.solidType || 'buckyball') !== 'importedMesh';
+
+      // Convert-to-Scene (I4) — a parametric topoform (renderMode wireframe /
+      // triangleMesh) becomes a LIVE object3d of the matching chart primitive, so
+      // the compositor re-evaluates Scene3D.Mesh.createTopoformMesh from its
+      // sizes/detail instead of freezing an importedMesh. Each topoform sourceMode
+      // maps to the object3d primitive whose chart mode matches AND whose sizes
+      // read sx/sy/sz independently (so a non-uniform-scaled topoform reproduces
+      // exactly): sphere/ellipsoid → `ellipsoid` (chart 'sphere' with true
+      // semi-axes), the rest map name-for-name. `cube` has no chart analog
+      // (object3d `box` is an 8-vert box, not the welded grid cube) and `stlMesh`
+      // is an imported mesh — both keep the I1 importedMesh bake fallback below.
+      const TOPOFORM_LIVE_PRIMITIVE = {
+        sphere: 'ellipsoid', ellipsoid: 'ellipsoid', cylinder: 'cylinder',
+        cone: 'cone', torus: 'torus', torusKnot: 'torusKnot', capsule: 'capsule',
+        superellipsoid: 'superellipsoid', pyramid: 'pyramid',
+      };
+      const topoLivePrim = type === 'topoform'
+        ? (TOPOFORM_LIVE_PRIMITIVE[p.sourceMode || 'sphere'] || null) : null;
+      const liveTopo = Boolean(topoLivePrim);
+
+      // Resolve topoform's sizes + post-simplify detail EXACTLY as bakeMesh /
+      // createPrimitiveMesh do (Math.max(1, scale); detail = round(rawDetail *
+      // (1 - simplify*0.65))), so the live chart mesh is byte-identical to the I1
+      // bake it replaces. Inert for a polyhedron convert (never read).
+      //
+      // The `ellipsoid` sourceMode is the one chart with COSMETIC, mode-dependent
+      // axis factors (topoSphereEllipsoid: rx=sx*1.18, ry=sy*0.72) that the
+      // object3d `ellipsoid` primitive — which runs the plain `sphere` chart with
+      // true semi-axes — does NOT apply. Baking those factors into the mapped
+      // sizes reproduces topoform's ellipsoid exactly; every other sourceMode maps
+      // its sizes through unchanged (the shared Charts builders are mode-agnostic).
+      const topoSimplify = Math.min(1, Math.max(0, fin(p.simplifyMesh, 0)));
+      const topoRawDetail = Math.min(100, Math.max(4, fin(p.primitiveDetail, 18)));
+      const ellipFx = (p.sourceMode === 'ellipsoid') ? 1.18 : 1;
+      const ellipFy = (p.sourceMode === 'ellipsoid') ? 0.72 : 1;
+      const liveTopoParams = {
+        sx: Math.max(1, fin(p.scaleX3d ?? p.primitiveScaleX, 63)) * ellipFx,
+        sy: Math.max(1, fin(p.scaleY3d ?? p.primitiveScaleY, 63)) * ellipFy,
+        sz: Math.max(1, fin(p.scaleZ3d ?? p.primitiveScaleZ, 63)),
+        detail: Math.max(4, Math.round(topoRawDetail * (1 - topoSimplify * 0.65))),
+      };
 
       // Bake path only — normalize to unit max-extent; `radius` carries the real
       // size. The scene's createSolidMesh importedMesh branch multiplies the unit
@@ -844,19 +886,36 @@
       const num = String(this._layerCounter).padStart(2, '0');
       const child = new Layer(childId, 'object3d', src.name ? `${src.name} Mesh` : `Object ${num}`);
       child.parentId = groupId;
-      child.params.primitive = 'solid';
-      child.params.params = liveSolid
-        ? liveSolidParams
-        : {
+      if (liveSolid) {
+        child.params.primitive = 'solid';
+        child.params.params = liveSolidParams;
+      } else if (liveTopo) {
+        child.params.primitive = topoLivePrim;
+        child.params.params = liveTopoParams;
+      } else {
+        child.params.primitive = 'solid';
+        child.params.params = {
           solidType: 'importedMesh',
           importedMesh: { vertices: unit, faces: baked.faces.map((f) => f.slice()) },
           radius,
         };
+      }
       child.params.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
       child.params.visibility = 'solid';
       child.params.role = 'solid';
       // Migrate the source pen/style onto the child (adoption pattern). A 'hatch'
-      // mapper shows the Lambert shading the seeded light casts on the solid.
+      // mapper shows the Lambert shading the seeded light casts, matching the
+      // pre-I4 (I1) topoform bake — which also used 'hatch' — so the LIVE object
+      // reads identically to the frozen bake it replaces.
+      //
+      // Why NOT the scene 'wireframe' mapper (which would read closer to the
+      // standalone topoform's wireframe render): it draws + hidden-line-clips
+      // EVERY mesh face edge, which is intractable at the topoform's native
+      // density — the default is primitiveDetail 100 (~40k faces): 'wireframe'
+      // takes minutes (and hangs the app on convert), while 'hatch' composes the
+      // same mesh in ~1.5s. A faithful live wireframe treatment therefore waits on
+      // a compositor-perf pass (edge dedup / face-budget); it is NOT an I4 blocker
+      // because I1 already shipped topoform-convert as a shaded (hatch) object.
       child.params.style = { penId: src.penId || null, mapper: 'hatch', params: {} };
       if (src.penId) child.penId = src.penId;
       if (typeof src.color === 'string') child.color = src.color;

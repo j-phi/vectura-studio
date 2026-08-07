@@ -6,9 +6,9 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  * A parametric (non-STL) polyhedron converts to a LIVE `solid` object3d carrying
  * its solidType + deformer params, so the shared compositor re-evaluates the
  * deformers (Scene3D.Mesh.createSolidMesh + applyPolyhedronDeformers) instead of
- * freezing them into an importedMesh. Topoform, and a polyhedron whose source is
- * already an STL/importedMesh, keep the I1 importedMesh bake (no live param
- * equivalent yet).
+ * freezing them into an importedMesh. A polyhedron whose source is already an
+ * STL/importedMesh keeps the I1 importedMesh bake. (A parametric topoform got its
+ * own live chart path in I4 — see convert-to-scene-live-topoform.test.js.)
  *
  * RGR — before I2 convertAlgoToScene ALWAYS emitted solidType:'importedMesh' for
  * a polyhedron, so proofs (a)/(b) below fail on the base branch (the child was a
@@ -116,8 +116,10 @@ describe('Convert-to-Scene I2 — parametric polyhedron converts to a LIVE solid
     expect(group.scenePaths.length).toBeGreaterThan(0);
   });
 
-  // ── (c) topoform and STL/importedMesh-sourced polyhedra keep the bake. ─────
-  test('(c1) a topoform convert still uses the importedMesh bake', () => {
+  // ── (c) STL/importedMesh-sourced polyhedra keep the bake. (A parametric
+  //        topoform now rides its OWN live chart path — I4; see
+  //        convert-to-scene-live-topoform.test.js.) ─────────────────────────
+  test('(c1) a parametric topoform convert now rides the LIVE chart path (I4)', () => {
     const engine = freshEngine();
     const id = engine.addLayer('topoform');
     const src = engine.getLayerById(id);
@@ -127,8 +129,9 @@ describe('Convert-to-Scene I2 — parametric polyhedron converts to a LIVE solid
     const result = engine.convertAlgoToScene(id);
     expect(result.ok).toBe(true);
     const child = childOf(engine, result.groupId);
-    expect(child.params.params.solidType).toBe('importedMesh');
-    expect(child.params.params.importedMesh.vertices.length).toBeGreaterThan(0);
+    expect(child.params.primitive).toBe('ellipsoid');
+    expect(child.params.params.solidType).toBeUndefined();
+    expect(child.params.params.importedMesh).toBeUndefined();
   });
 
   test('(c2) an STL/importedMesh-sourced polyhedron still uses the importedMesh bake', () => {
