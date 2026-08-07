@@ -10020,7 +10020,10 @@
     _scenePickFaces(layer) {
       if (!layer || layer.type !== 'scene3d' || !layer.params) return [];
       const cache = this._scenePickFaceCache;
-      const pathsRef = layer.paths;
+      // A scene GROUP's composed geometry lives on scenePaths (layer.paths stays
+      // stale for it), so key the cache on whichever array the compose pass
+      // actually replaced — otherwise a tree's faces never invalidate.
+      const pathsRef = layer.scenePaths || layer.paths;
       if (cache && cache.layerId === layer.id && cache.pathsRef === pathsRef) return cache.faces;
       let faces = [];
       try {
@@ -10028,8 +10031,16 @@
         const Scene = S3 && S3.Scene;
         const Params = S3 && S3.Params;
         if (Scene && typeof Scene.assembleScene === 'function' && this.engine && this.engine.getBounds) {
+          // Scene-tree — a group's objects live on CHILD object3d layers, so its
+          // OWN params carry an empty objects[] and a disabled ground. Re-deriving
+          // from those yields zero pick faces, which silently kills the per-pixel
+          // depth pass and lets the ground's coarse centroid depth steal every
+          // click. Prefer the collected input the compositor actually drew
+          // (_composeSceneGroup publishes it); a monolith has none and keeps
+          // using its own params, byte-identically.
+          const source = layer._sceneAssembled || layer.params;
           const norm = (Params && typeof Params.normalizeParams === 'function')
-            ? Params.normalizeParams(layer.params) : layer.params;
+            ? Params.normalizeParams(source) : source;
           const asm = Scene.assembleScene(norm, this.engine.getBounds());
           const present = new Set();
           (this.getInteractionPaths(layer) || []).forEach((p) => {

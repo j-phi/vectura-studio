@@ -2258,6 +2258,7 @@
         // consumed markers + composed paths are re-derived deterministically.
         if (layer.scenePaths) delete layer.scenePaths;
         if (layer._sceneConsumed) delete layer._sceneConsumed;
+        if (layer._sceneAssembled) delete layer._sceneAssembled;
         // Morph groups borrow the first child's pen/style as a render/export
         // fallback. Reset it each pass so a group with no visible children
         // doesn't serialize a stale child's style, and re-derivation is
@@ -2421,6 +2422,12 @@
       });
 
       const assembled = Params.collectSceneParams(group.params, collected);
+      // Scene-tree — publish the COLLECTED input so consumers that need to
+      // re-derive the scene (the renderer's per-pixel pick-face pass) use the
+      // same objects/lights/ground the compositor drew, not the group's raw
+      // params (empty objects[] + disabled ground on a tree). Cleared and
+      // re-derived every computeAllDisplayGeometry pass; never serialized.
+      group._sceneAssembled = assembled;
 
       // Bounds built EXACTLY like generate() (penWidth from the group pen), so a
       // scene group renders byte-identically to the equivalent monolith leaf.
