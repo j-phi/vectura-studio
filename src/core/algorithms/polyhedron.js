@@ -461,6 +461,36 @@
       G3.applyDepthCue(cleaned, p);
       return cleaned;
     },
+    // Convert-to-Scene (I1) — the fully-built, DEFORMED index mesh a bake needs.
+    // Vertex-level deformers (expand/twist via applyVertexEffects) map cleanly
+    // onto the shared vertices; per-face deformers (explode/extrude/shard, which
+    // break vertex sharing) bake each face as its OWN polygon so an exploded
+    // solid converts faithfully. bulge/faceBands are interior line-art only (no
+    // effect on the outer face polygon), so they never trigger the per-face split.
+    bakeMesh: (params = {}) => {
+      const p = params || {};
+      const base = createSolidMesh(p);
+      if (!Array.isArray(base.vertices) || !base.vertices.length
+        || !Array.isArray(base.faces) || !base.faces.length) return { vertices: [], faces: [] };
+      const dv = base.vertices.map((pt) => applyVertexEffects(pt, p, base.bounds));
+      const perFace = finite(p.explode, 0) || finite(p.extrude, 0) || finite(p.shard, 0);
+      if (!perFace) {
+        return {
+          vertices: dv.map((pt) => ({ x: pt.x, y: pt.y, z: pt.z })),
+          faces: base.faces.map((f) => f.slice()),
+        };
+      }
+      const vertices = [];
+      const faces = [];
+      base.faces.forEach((face, index) => {
+        const { outer } = renderedFace(base, dv, face, index, p, 0);
+        faces.push(outer.map((pt) => {
+          vertices.push({ x: pt.x, y: pt.y, z: pt.z });
+          return vertices.length - 1;
+        }));
+      });
+      return { vertices, faces };
+    },
     formula: () => 'Polyhedral faces projected with face-normal visibility and dashed hidden paths.',
   };
 })();

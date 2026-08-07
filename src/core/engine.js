@@ -737,6 +737,106 @@
       return groupId;
     }
 
+    // Convert-to-Scene (I1) — turn a STANDALONE polyhedron/topoform layer into a
+    // scene TREE so the shared compositor lights/occludes/shadows it. The family
+    // generator bakes a FULLY-BUILT (deformed) index mesh; it rides the existing
+    // solid/importedMesh object3d path (no new mesh plumbing). A new scene group
+    // holds ONE object3d child carrying the mesh, plus a seeded light + ground so
+    // it lights immediately; the source layer's pen/style migrates onto the child
+    // (expandMonolithToTree's adoption pattern); the standalone view angles map
+    // onto the scene camera so the object faces the same way. Returns
+    // { ok:true, groupId, childId } on success, or { ok:false, reason[, message] }
+    // — 'unsupported' (wrong layer type), 'empty' (no mesh), or 'contours' (the
+    // topoform depth-slice mode has no scene analog yet, so it BLOCKS with a
+    // user-facing message rather than bake a look-destroying surface). Undo is
+    // the caller's responsibility (push history before calling).
+    convertAlgoToScene(layerId) {
+      const src = this.getLayerById(layerId);
+      if (!src) return { ok: false, reason: 'not-found' };
+      const type = src.type;
+      if (type !== 'polyhedron' && type !== 'topoform') return { ok: false, reason: 'unsupported' };
+      const p = (src.params && typeof src.params === 'object') ? src.params : {};
+      const fin = (val, dflt) => (Number.isFinite(Number(val)) ? Number(val) : dflt);
+
+      // Topoform contours (the default render mode) has no compositor analog yet
+      // — block, don't bake; its depth-slice scene treatment is a later increment.
+      if (type === 'topoform' && (p.renderMode || 'contours') === 'contours') {
+        return { ok: false, reason: 'contours', message: "Contours mode isn't convertible yet" };
+      }
+
+      const algo = Algorithms && Algorithms[type];
+      if (!algo || typeof algo.bakeMesh !== 'function') return { ok: false, reason: 'no-baker' };
+      const baked = algo.bakeMesh(p) || { vertices: [], faces: [] };
+      if (!Array.isArray(baked.vertices) || !baked.vertices.length
+        || !Array.isArray(baked.faces) || !baked.faces.length) {
+        return { ok: false, reason: 'empty' };
+      }
+
+      // Normalize to unit max-extent; `radius` carries the real size. The scene's
+      // createSolidMesh importedMesh branch multiplies the unit verts back by
+      // `radius`, reproducing the baked coordinates exactly.
+      let maxExtent = 0;
+      baked.vertices.forEach((vt) => {
+        const d = Math.hypot(fin(vt.x, 0), fin(vt.y, 0), fin(vt.z, 0));
+        if (d > maxExtent) maxExtent = d;
+      });
+      const radius = maxExtent > 1e-6 ? maxExtent : 1;
+      const unit = baked.vertices.map((vt) => ({
+        x: fin(vt.x, 0) / radius, y: fin(vt.y, 0) / radius, z: fin(vt.z, 0) / radius,
+      }));
+
+      // Standalone view Euler angles → the scene camera, so the converted object
+      // faces the same way (the compositor rotates world→camera by these; an
+      // identity object transform leaves the mesh matching the standalone view).
+      const view = type === 'polyhedron'
+        ? { yaw: fin(p.rotate, -18), pitch: fin(p.tilt, 28), roll: fin(p.roll, 0) }
+        : { yaw: fin(p.yaw, -28), pitch: fin(p.pitch, 34), roll: fin(p.roll, 0) };
+
+      // New scene group (mirrors addSceneTree's tree seeding) carrying our child.
+      const groupId = this.addSceneGroup();
+      const group = this.getLayerById(groupId);
+      if (group && group.params) {
+        group.params.lights = [];
+        group.params.ground = { enabled: false };
+        const cam = (group.params.camera && typeof group.params.camera === 'object') ? group.params.camera : {};
+        group.params.camera = { ...cam, yaw: view.yaw, pitch: view.pitch, roll: view.roll };
+      }
+
+      // One object3d child holding the baked mesh. addObjectToScene can't name the
+      // 'solid' primitive, so build the child like expandMonolithToTree does.
+      const childId = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const child = new Layer(childId, 'object3d', src.name ? `${src.name} Mesh` : `Object ${num}`);
+      child.parentId = groupId;
+      child.params.primitive = 'solid';
+      child.params.params = {
+        solidType: 'importedMesh',
+        importedMesh: { vertices: unit, faces: baked.faces.map((f) => f.slice()) },
+        radius,
+      };
+      child.params.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
+      child.params.visibility = 'solid';
+      child.params.role = 'solid';
+      // Migrate the source pen/style onto the child (adoption pattern). A 'hatch'
+      // mapper shows the Lambert shading the seeded light casts on the solid.
+      child.params.style = { penId: src.penId || null, mapper: 'hatch', params: {} };
+      if (src.penId) child.penId = src.penId;
+      if (typeof src.color === 'string') child.color = src.color;
+      if (Number.isFinite(src.strokeWidth)) child.strokeWidth = src.strokeWidth;
+      this._insertUnderParent(child, groupId);
+
+      // Seed a default light + ground so the converted object lights immediately.
+      this.addLightToScene(groupId, 'directional');
+      this.addGroundToScene(groupId);
+
+      // Replace the standalone layer with the scene group.
+      this.removeLayer(layerId);
+      this.activeLayerId = groupId;
+      this.computeAllDisplayGeometry();
+      return { ok: true, groupId, childId };
+    }
+
     // Scene-tree Increment D/F — expand a MONOLITH scene3d layer (inline
     // params.objects[] / params.groups[]) IN PLACE into a scene TREE: the layer
     // becomes the scene group; each inline object becomes an object3d child and

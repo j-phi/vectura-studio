@@ -550,6 +550,22 @@
       if (p.specularHighlight === true) paths.push(...buildSpecularHighlight(mesh, p, bounds));
       return dropDegeneratePaths(cleanPaths(paths));
     },
+    // Convert-to-Scene (I1) — the fully-built index mesh a bake needs. Mirrors
+    // generate()'s mesh build (createPrimitiveMesh at the standalone detail), so
+    // a converted topoform matches its wireframe/triangleMesh render. The caller
+    // BLOCKS `contours` upstream (depth-slice mode has no scene analog yet), so
+    // this only ever bakes a surface mesh.
+    bakeMesh: (params = {}) => {
+      const p = params || {};
+      const simplify = clamp(finite(p.simplifyMesh, 0), 0, 1);
+      const rawDetail = clamp(finite(p.primitiveDetail, 18), 4, 100);
+      const detail = Math.max(4, Math.round(rawDetail * (1 - simplify * 0.65)));
+      const mesh = createPrimitiveMesh(p, detail);
+      return {
+        vertices: (mesh.vertices || []).map((pt) => ({ x: pt.x, y: pt.y, z: pt.z })),
+        faces: (mesh.faces || []).map((f) => f.slice()),
+      };
+    },
     formula: () => 'Primitive mesh sliced by depth planes or drawn as a projected wireframe.',
   };
 })();

@@ -129,6 +129,11 @@
         frequency: p.frequency,
         taper: p.taper,
         starRatio: p.starRatio,
+        // Convert-to-Scene (I1) — a baked object3d carries its geometry as a
+        // solidType:'importedMesh' index mesh; forward it so createSolidMesh's
+        // importedMesh branch can scale unit verts by `radius`. Undefined for
+        // every parametric solid ⇒ byte-identical for all other solidTypes.
+        importedMesh: p.importedMesh,
       }));
     }
     const mode = TOPOFORM_MODES[obj.primitive] || 'sphere';

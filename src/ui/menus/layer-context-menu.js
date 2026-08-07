@@ -123,6 +123,13 @@
       items.push({ separator: true });
       items.push({ key: 'expand-into-group', label: 'Expand into group' });
     }
+    // Convert-to-Scene (I1) — a standalone polyhedron/topoform layer can bake
+    // into a 3D scene tree so the shared compositor lights/occludes/shadows it.
+    if (layer && !layer.isGroup && (layer.type === 'polyhedron' || layer.type === 'topoform')
+      && ui.app && ui.app.engine && typeof ui.app.engine.convertAlgoToScene === 'function') {
+      items.push({ separator: true });
+      items.push({ key: 'convert-to-scene', label: 'Convert to Scene' });
+    }
     const hasFills = layer && !layer.isGroup && Array.isArray(layer.fills) && layer.fills.length > 0;
     if (hasFills) {
       items.push({ separator: true });
@@ -237,6 +244,24 @@
       if (ui.layerLockedIds.has(layer.id)) ui.layerLockedIds.delete(layer.id);
       else ui.layerLockedIds.add(layer.id);
       ui.renderLayers && ui.renderLayers();
+      return;
+    }
+    if (key === 'convert-to-scene') {
+      if (typeof engine.convertAlgoToScene !== 'function') return;
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      const result = engine.convertAlgoToScene(layer.id);
+      if (!result || !result.ok) {
+        // Surface the block (contours) / failure reason; leave the layer intact.
+        const Toast = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.UI?.overlays?.Toast;
+        const msg = (result && result.message)
+          || (result && result.reason === 'unsupported' ? 'This layer type cannot be converted to a scene.' : null);
+        if (Toast && msg) Toast.show({ message: msg, variant: 'warning' });
+        return;
+      }
+      ui.app.setSelection && ui.app.setSelection([result.groupId], result.groupId);
+      engine.setActiveLayerId && engine.setActiveLayerId(result.groupId);
+      ui.renderLayers && ui.renderLayers();
+      ui.app.render && ui.app.render();
       return;
     }
     if (key === 'expand-into-group') {
