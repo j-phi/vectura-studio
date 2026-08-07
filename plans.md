@@ -368,6 +368,19 @@ question. Do not start these without a decision:
     Adversarial-reviewed: SAFE, byte-identical for monoliths. **Follow-up (task #93, NOT fixed):**
     other ctxbar bridges still inline-only on trees — x-ray toggle, delete, duplicate,
     drop-to-ground, ground-drag, style-flyout writer, name readout.
+  - **Scene-tree bridge cluster fix (0aad1b3 + d03f1d0, v1.3.78).** The follow-up from the row
+    above: made the remaining scene-object bridges child-aware via `_sceneObjectById` /
+    `_allSceneObjectRecords` (kept `_sceneObjects` inline-only by design). Fixed on a tree:
+    x-ray/visibility toggle (writes `child.params.visibility`), delete (child layer via
+    `engine.removeLayer` — boolean groups cascade their operands), duplicate (child layer via
+    `engine.duplicateLayer`; **boolean-group clone offsets its OPERAND transforms +10 x/z** since
+    the group itself carries no transform — a bug caught by adversarial review, was stacking the
+    clone on the original), drop-to-ground, ground-drag (all 3 sites), Style/Shadow/Highlight/
+    X-ray flyout writer `setSceneObjectField`, object-name readout. `_allSceneObjectRecords`
+    enumerates only DIRECT top-level object3d children (not boolean operand grandchildren —
+    fixes ground-drag snap asymmetry). 15 RGR tests incl. boolean-group dup/delete + monolith
+    parity. Adversarial-reviewed (1 confirmed bug found+fixed, monolith byte-identical). Full
+    gate green. Closes task #93.
   - **Deferred:** Phase 5 backlog (OBJ import, Manifold WASM booleans, curved−curved CSG,
     turntable export, v2 modifiers, etc. — needs prioritization). Known
     flaky test: `divisions-editor-section` weighted-pen-spread (probabilistic; passes isolated,

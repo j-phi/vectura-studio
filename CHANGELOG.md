@@ -14,6 +14,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   the context toolbar now actually **swaps the primitive** (previously it was stuck on cube);
   (3) the scene **rotation gizmo** no longer disappears once you select an object — it stays and
   rotates the selected object (or the camera) as before. Saved legacy scenes are unaffected.
+- **3D Scene — the rest of the object context-toolbar actions now work on scene trees.** X-ray
+  toggle, delete, duplicate, drop-to-ground, ground dragging, and the Style/Shadow/Highlight/
+  X-ray flyouts all previously did nothing on a converted/tree scene (they only ever touched the
+  old inline object list). They now act on the actual scene objects — including duplicating a
+  boolean group, which produces a visibly offset copy instead of one stacked on the original.
+  Deleting a boolean group removes its operands too. Legacy inline scenes are unchanged.
 
 ### Added
 - **3D Scene — Convert to Scene.** A standalone Polyhedron or Topoform layer can now be turned
