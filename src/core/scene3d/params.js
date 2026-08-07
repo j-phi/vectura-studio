@@ -37,8 +37,12 @@
     'torusKnot', 'capsule', 'superellipsoid', 'pyramid', 'solid',
   ];
 
-  // Phase 1 set + Phase 3 surface-fill mappers.
-  const MAPPERS = ['none', 'hatch', 'wireframe', 'crosshatch', 'contour', 'spiral', 'stipple'];
+  // Phase 1 set + Phase 3 surface-fill mappers + CtS I5 depth-slice treatment.
+  // 'contourSlice' cuts the assembled mesh with parallel planes (topographic
+  // cross-sections) — DISTINCT from 'contour' (UV parallels / inset rings). No
+  // existing content sets it, so its dormant branch keeps every baseline
+  // byte-identical.
+  const MAPPERS = ['none', 'hatch', 'wireframe', 'crosshatch', 'contour', 'spiral', 'stipple', 'contourSlice'];
 
   // CSG group booleans. 'none' = independent children (the legacy default);
   // 'subtract'/'union'/'intersect' combine the group's children into one carved
@@ -191,6 +195,10 @@
   const HIGHLIGHT_TREATMENTS = ['blank', 'keep', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
   const ALT_FILL_MAPPERS = ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'];
   const BURST_CENTERS = ['specular', 'centroid'];
+  // CtS I5 — depth-slice ('contourSlice') controls. All inert on any other
+  // mapper (no existing scene sets this mapper), so every default is a no-op.
+  const SLICE_AXES = ['x', 'y', 'z'];
+  const SLICE_VISIBILITIES = ['visibleOnly', 'fullContour'];
   const clampStyleParam = (key, value) => {
     switch (key) {
       case 'lineType': return STROKE_LINE_TYPES.includes(value) ? value : 'solid';
@@ -255,6 +263,15 @@
       case 'highlightPenId': return (typeof value === 'string' && value) ? value : null; // inherit when null
       case 'highlightDensity': return clamp(finite(value, 25), 1, 100);
       case 'altFillMapper': return ALT_FILL_MAPPERS.includes(value) ? value : 'stipple';
+      // CtS I5 — depth-slice ('contourSlice') controls. sliceCount mirrors
+      // topoform's lineCount (default 26); sliceRotate/sliceTilt orient the
+      // cutting planes (topoform planeRotate/planeTilt); sliceVisibility mirrors
+      // contourVisibility (drop back-facing vs keep the full ring).
+      case 'sliceCount': return clamp(Math.round(finite(value, 26)), 2, 120);
+      case 'sliceAxis': return SLICE_AXES.includes(value) ? value : 'z';
+      case 'sliceRotate': return clamp(finite(value, 0), -360, 360);
+      case 'sliceTilt': return clamp(finite(value, 0), -180, 180);
+      case 'sliceVisibility': return SLICE_VISIBILITIES.includes(value) ? value : 'visibleOnly';
       case 'burstCount': return clamp(Math.round(finite(value, 16)), 6, 48);
       case 'burstCenter': return BURST_CENTERS.includes(value) ? value : 'specular';
       default: return undefined;

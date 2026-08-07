@@ -173,8 +173,13 @@
     { value: 'contour', label: 'Contour' },
     { value: 'spiral', label: 'Spiral' },
     { value: 'stipple', label: 'Stipple' },
+    { value: 'contourSlice', label: 'Slices' },
   ];
   const HATCH_DEFAULTS = { fillAngle: 45, fillDensity: 50 };
+  const SLICE_VIS_OPTS = [
+    { value: 'visibleOnly', label: 'Visible' },
+    { value: 'fullContour', label: 'Full' },
+  ];
   // Mappers that expose a Density; the rest (wireframe) publish only their own
   // controls. FILL_MAPPERS additionally get the shared Line block + stroke tuning.
   const FILL_MAPPERS = new Set(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
@@ -259,6 +264,14 @@
     wireframe: [
       { key: 'edgeClasses', kind: 'multi', label: 'Edges', ariaLabel: 'Wireframe edge classes', options: EDGE_CLASS_OPTS, default: { silhouette: true, boundary: true, crease: true, interior: true } },
       { key: 'showHidden', kind: 'toggle', label: 'Show hidden', ariaLabel: 'Dashed occluded edges', default: false },
+    ],
+    // CtS I5 — depth-slice ('contourSlice') controls: how many cross-section
+    // planes, their orientation, and whether back-facing rings are dropped.
+    contourSlice: [
+      { key: 'sliceCount', kind: 'slider', label: 'Slices', ariaLabel: 'Slice plane count', min: 2, max: 120, step: 1, default: 26 },
+      { key: 'sliceVisibility', kind: 'seg', label: 'Show', ariaLabel: 'Slice visibility', default: 'visibleOnly', options: SLICE_VIS_OPTS },
+      { key: 'sliceRotate', kind: 'dial', label: 'Rotate', ariaLabel: 'Slice plane rotate', min: -360, max: 360, step: 1, default: 0 },
+      { key: 'sliceTilt', kind: 'dial', label: 'Tilt', ariaLabel: 'Slice plane tilt', min: -180, max: 180, step: 1, default: 0 },
     ],
   };
   const carry = (cur, key, dflt) => (cur[key] !== undefined && cur[key] !== null ? cur[key] : dflt);
@@ -568,6 +581,32 @@
           value: Number.isFinite(style.params.fillAngle) ? style.params.fillAngle : 45, min: 0, max: 180, step: 1, defaultValue: 45,
           ariaLabel: 'Fill angle',
           ...liveSlider((v) => { style.params.fillAngle = Math.round(v); }),
+        });
+      }
+      // CtS I5 — depth-slice ('contourSlice') controls on a converted/native
+      // topoform-contours object: slice count, visibility, and plane orientation.
+      if (style.mapper === 'contourSlice') {
+        if (!style.params || typeof style.params !== 'object') style.params = {};
+        slider(host, 'Slices', {
+          value: Number.isFinite(style.params.sliceCount) ? style.params.sliceCount : 26,
+          min: 2, max: 120, step: 1, defaultValue: 26, ariaLabel: 'Slice plane count',
+          ...liveSlider((v) => { style.params.sliceCount = Math.round(v); }),
+        });
+        comps.push(UI.SegCtrl(labeledRow(host, 'Show'), {
+          options: SLICE_VIS_OPTS,
+          value: style.params.sliceVisibility === 'fullContour' ? 'fullContour' : 'visibleOnly',
+          ariaLabel: 'Slice visibility',
+          onChange: (v) => { commit(() => { style.params.sliceVisibility = v; }); },
+        }));
+        slider(host, 'Rotate', {
+          value: Number.isFinite(style.params.sliceRotate) ? style.params.sliceRotate : 0,
+          min: -360, max: 360, step: 1, defaultValue: 0, ariaLabel: 'Slice plane rotate',
+          ...liveSlider((v) => { style.params.sliceRotate = Math.round(v); }),
+        });
+        slider(host, 'Tilt', {
+          value: Number.isFinite(style.params.sliceTilt) ? style.params.sliceTilt : 0,
+          min: -180, max: 180, step: 1, defaultValue: 0, ariaLabel: 'Slice plane tilt',
+          ...liveSlider((v) => { style.params.sliceTilt = Math.round(v); }),
         });
       }
 

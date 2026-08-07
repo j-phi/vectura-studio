@@ -18,7 +18,9 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  * bake. Increment I4 amended (c): a parametric topoform (wireframe/triangleMesh)
  * now converts to a LIVE chart primitive — see convert-to-scene-live-topoform.js
  * for the full I4 contract. STL/importedMesh-sourced polyhedra + `cube`/`stlMesh`
- * topoforms keep the bake path; topoform `contours` still blocks (d).
+ * topoforms keep the bake path. Increment I5 amended (d)/(d2): topoform
+ * `contours` now converts to a LIVE chart object styled with the depth-slice
+ * `contourSlice` mapper (the compositor renders it as cross-sections).
  */
 
 describe('Convert-to-Scene I1 — bake a standalone 3D layer into a scene tree', () => {
@@ -152,37 +154,54 @@ describe('Convert-to-Scene I1 — bake a standalone 3D layer into a scene tree',
     });
   });
 
-  // ── (d) topoform contours is BLOCKED — no bake, no scene group, a message. ─
-  test('(d) topoform contours mode is blocked (no scene group created)', () => {
+  // ── (d) topoform contours converts to a live contourSlice object (CtS I5). ──
+  // Was BLOCKED pre-I5; now the compositor slices the mesh into depth-plane
+  // cross-sections, so convert succeeds with the child styled `contourSlice`.
+  test('(d) topoform contours converts to a live contourSlice scene object', () => {
     const engine = freshEngine();
     const id = engine.addLayer('topoform');
     const src = engine.getLayerById(id);
     src.params.renderMode = 'contours';
+    src.params.sourceMode = 'sphere';
+    src.params.lineCount = 20;
+    src.params.planeRotate = 12;
+    src.params.planeTilt = -8;
+    src.params.contourVisibility = 'fullContour';
 
-    const before = engine.layers.length;
     const result = engine.convertAlgoToScene(id);
-    expect(result.ok).toBe(false);
-    expect(result.reason).toBe('contours');
-    expect(typeof result.message).toBe('string');
-    expect(result.message.length).toBeGreaterThan(0);
+    expect(result.ok).toBe(true);
+    const group = engine.getLayerById(result.groupId);
+    expect(group.type).toBe('scene3d');
+    const child = engine.getLayerDescendants(group.id).find((l) => l.type === 'object3d');
+    // The surface mesh bakes exactly as wireframe/triangleMesh do (live chart).
+    expect(child.params.primitive).toBe('ellipsoid');
+    // The child is styled with the depth-slice mapper + mapped slice controls.
+    expect(child.params.style.mapper).toBe('contourSlice');
+    expect(child.params.style.params.sliceCount).toBe(20);
+    expect(child.params.style.params.sliceRotate).toBe(12);
+    expect(child.params.style.params.sliceTilt).toBe(-8);
+    expect(child.params.style.params.sliceVisibility).toBe('fullContour');
 
-    // The source layer survives; no scene group was created.
-    expect(engine.getLayerById(id)).toBeTruthy();
-    expect(sceneGroups(engine).length).toBe(0);
-    expect(engine.layers.length).toBe(before);
+    // And it renders as scene cross-sections.
+    engine.computeAllDisplayGeometry();
+    expect(group.scenePaths.length).toBeGreaterThan(0);
   });
 
-  // The default (unset renderMode) is contours too — also blocked.
-  test('(d2) topoform with an unset renderMode blocks (defaults to contours)', () => {
+  // The default (unset renderMode) is contours too — also converts.
+  test('(d2) topoform with an unset renderMode converts (defaults to contourSlice)', () => {
     const engine = freshEngine();
     const id = engine.addLayer('topoform');
     const src = engine.getLayerById(id);
     delete src.params.renderMode;
+    src.params.sourceMode = 'sphere';
 
     const result = engine.convertAlgoToScene(id);
-    expect(result.ok).toBe(false);
-    expect(result.reason).toBe('contours');
-    expect(sceneGroups(engine).length).toBe(0);
+    expect(result.ok).toBe(true);
+    const child = engine.getLayerDescendants(result.groupId).find((l) => l.type === 'object3d');
+    expect(child.params.style.mapper).toBe('contourSlice');
+    // Default lineCount (26) → sliceCount.
+    expect(child.params.style.params.sliceCount).toBe(26);
+    expect(sceneGroups(engine).length).toBe(1);
   });
 
   // ── (e) the source pen/style is carried onto the child. ────────────────────

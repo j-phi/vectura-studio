@@ -552,9 +552,10 @@
     },
     // Convert-to-Scene (I1) — the fully-built index mesh a bake needs. Mirrors
     // generate()'s mesh build (createPrimitiveMesh at the standalone detail), so
-    // a converted topoform matches its wireframe/triangleMesh render. The caller
-    // BLOCKS `contours` upstream (depth-slice mode has no scene analog yet), so
-    // this only ever bakes a surface mesh.
+    // a converted topoform matches its wireframe/triangleMesh render. `contours`
+    // also bakes this surface mesh (CtS I5): the caller styles the child with the
+    // `contourSlice` mapper, and the compositor cuts the surface into depth-slice
+    // cross-sections — so every mode bakes the same surface mesh.
     bakeMesh: (params = {}) => {
       const p = params || {};
       const simplify = clamp(finite(p.simplifyMesh, 0), 0, 1);

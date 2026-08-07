@@ -765,11 +765,13 @@
       const p = (src.params && typeof src.params === 'object') ? src.params : {};
       const fin = (val, dflt) => (Number.isFinite(Number(val)) ? Number(val) : dflt);
 
-      // Topoform contours (the default render mode) has no compositor analog yet
-      // — block, don't bake; its depth-slice scene treatment is a later increment.
-      if (type === 'topoform' && (p.renderMode || 'contours') === 'contours') {
-        return { ok: false, reason: 'contours', message: "Contours mode isn't convertible yet" };
-      }
+      // Topoform contours (the default render mode) converts to a LIVE chart
+      // object styled with the depth-slice `contourSlice` mapper (CtS I5): the
+      // compositor slices the mesh with parallel planes and lights/occludes the
+      // cross-sections. The surface mesh bakes exactly as wireframe/triangleMesh
+      // do (I4 live chart, or the importedMesh fallback for cube/stlMesh); only
+      // the child style differs. See the style override below.
+      const topoContours = type === 'topoform' && (p.renderMode || 'contours') === 'contours';
 
       const algo = Algorithms && Algorithms[type];
       if (!algo || typeof algo.bakeMesh !== 'function') return { ok: false, reason: 'no-baker' };
@@ -917,6 +919,24 @@
       // a compositor-perf pass (edge dedup / face-budget); it is NOT an I4 blocker
       // because I1 already shipped topoform-convert as a shaded (hatch) object.
       child.params.style = { penId: src.penId || null, mapper: 'hatch', params: {} };
+      // CtS I5 — a converted contours topoform renders as depth-slice
+      // cross-sections: the child uses the `contourSlice` mapper, mapping the
+      // standalone slicer's controls onto the scene treatment (lineCount →
+      // sliceCount, planeRotate/planeTilt → sliceRotate/sliceTilt,
+      // contourVisibility → sliceVisibility). The mesh is the same live/baked
+      // surface every other mode converts to.
+      if (topoContours) {
+        child.params.style = {
+          penId: src.penId || null,
+          mapper: 'contourSlice',
+          params: {
+            sliceCount: Math.max(2, Math.min(120, Math.round(fin(p.lineCount, 26)))),
+            sliceRotate: fin(p.planeRotate, 0),
+            sliceTilt: fin(p.planeTilt, 0),
+            sliceVisibility: p.contourVisibility === 'fullContour' ? 'fullContour' : 'visibleOnly',
+          },
+        };
+      }
       if (src.penId) child.penId = src.penId;
       if (typeof src.color === 'string') child.color = src.color;
       if (Number.isFinite(src.strokeWidth)) child.strokeWidth = src.strokeWidth;

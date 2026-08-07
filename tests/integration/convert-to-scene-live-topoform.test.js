@@ -155,22 +155,25 @@ describe('Convert-to-Scene I4 — parametric topoform converts to a LIVE chart o
     expect(child.params.params.solidType).toBe('importedMesh');
   });
 
-  // ── (d) contours STILL blocks (I5 owns it) — no bake, no scene group. ─────────
-  test('(d) topoform contours mode still returns the block (unchanged)', () => {
+  // ── (d) contours converts to a live contourSlice object (CtS I5). ────────────
+  // The block was removed in I5: the surface mesh bakes as a live chart just like
+  // wireframe/triangleMesh, but the child is styled with the depth-slice mapper
+  // so the compositor renders it as cross-sections.
+  test('(d) topoform contours converts to a live contourSlice object', () => {
     const engine = freshEngine();
     const id = engine.addLayer('topoform');
     const src = engine.getLayerById(id);
     src.params.renderMode = 'contours';
+    src.params.sourceMode = 'sphere';
 
-    const before = engine.layers.length;
     const result = engine.convertAlgoToScene(id);
-    expect(result.ok).toBe(false);
-    expect(result.reason).toBe('contours');
-    expect(typeof result.message).toBe('string');
-    expect(result.message.length).toBeGreaterThan(0);
-    // Source survives; nothing created.
-    expect(engine.getLayerById(id)).toBeTruthy();
-    expect(engine.layers.length).toBe(before);
+    expect(result.ok).toBe(true);
+    const child = childOf(engine, result.groupId);
+    // Same live-chart surface mesh every other mode bakes …
+    expect(child.params.primitive).toBe('ellipsoid');
+    expect(child.params.params.importedMesh).toBeUndefined();
+    // … styled as depth slices.
+    expect(child.params.style.mapper).toBe('contourSlice');
   });
 
   // ── (e) every mappable sourceMode → its chart primitive, byte-identical mesh. ─

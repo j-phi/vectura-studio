@@ -39,6 +39,98 @@
     return len;
   };
 
+  // ── CtS I5 — depth-slice ('contourSlice') geometry + budgets ────────────────
+  // Slice an assembled mesh with parallel planes (topographic cross-sections),
+  // mirroring topoform's trianglePlaneSegment cut math (topoform.js:132-147) but
+  // generalized to an arbitrary plane orientation and working directly in WORLD
+  // space, so every cut point projects to an EXACT camera depth for HLR.
+  //
+  // Arithmetic guard: slicing a full-detail topoform (~40k faces) by N planes
+  // must not blow up. triCount × planes is capped here; the caller additionally
+  // caps the number of HLR-clipped segments (the real cost) — see the pass.
+  const SLICE_TRI_BUDGET = 2000000;
+
+  // buildSliceSegments({ world, faces, front?, sliceCount, sliceRotate, sliceTilt })
+  //   world       [{x,y,z}]  world-space vertices (record.world)
+  //   faces       [[i,j,k…]] index faces (record.faceIndexArrays); quads+ fan
+  //   front       [bool]     per-face front flag (record.faces[i].front), 1:1
+  //   sliceCount             plane count (clamped 2..120, then arithmetic-capped)
+  //   sliceRotate/Tilt (deg) plane orientation (topoform planeRotate/planeTilt)
+  // Returns { segments: [{ a:{x,y,z}, b:{x,y,z}, front }], planes }. Pure +
+  // deterministic (no RNG). A plane outside [minD,maxD] never crosses a face, so
+  // only in-range planes emit segments.
+  const buildSliceSegments = (opts = {}) => {
+    const world = Array.isArray(opts.world) ? opts.world : [];
+    const faces = Array.isArray(opts.faces) ? opts.faces : [];
+    const front = Array.isArray(opts.front) ? opts.front : null;
+    if (!world.length || !faces.length) return { segments: [], planes: 0 };
+    let count = Math.max(2, Math.round(finite(opts.sliceCount, 26)));
+    // Plane normal = world +z after rotate(yaw:sliceRotate, pitch:sliceTilt),
+    // matching rotatePoint's yaw→pitch order (geometry3d.js). Cutting on the
+    // scalar d = v·N keeps the crossing point in world space (no inverse
+    // rotation), so its projected depth is exact.
+    const yr = (finite(opts.sliceRotate, 0) * Math.PI) / 180;
+    const pr = (finite(opts.sliceTilt, 0) * Math.PI) / 180;
+    const cy = Math.cos(yr); const sy = Math.sin(yr);
+    const cp = Math.cos(pr); const sp = Math.sin(pr);
+    const nx = -sy * cp; const ny = sp; const nz = cy * cp;
+    const d = new Array(world.length);
+    let minD = Infinity; let maxD = -Infinity;
+    for (let i = 0; i < world.length; i++) {
+      const w = world[i];
+      const dv = w.x * nx + w.y * ny + w.z * nz;
+      d[i] = dv;
+      if (dv < minD) minD = dv;
+      if (dv > maxD) maxD = dv;
+    }
+    let triCount = 0;
+    for (let f = 0; f < faces.length; f++) triCount += Math.max(0, faces[f].length - 2);
+    if (triCount > 0) {
+      const planeCap = Math.max(2, Math.floor(SLICE_TRI_BUDGET / triCount));
+      if (count > planeCap) count = planeCap;
+    }
+    const span = (maxD - minD) || 1;
+    const segments = [];
+    const edgeCross = (va, vb, dva, dvb, level, pts) => {
+      const ea = dva - level;
+      const eb = dvb - level;
+      if (Math.abs(ea) < 1e-6) pts.push({ x: va.x, y: va.y, z: va.z });
+      if (ea * eb < 0) {
+        const t = Math.abs(ea) / (Math.abs(ea) + Math.abs(eb));
+        pts.push({ x: va.x + (vb.x - va.x) * t, y: va.y + (vb.y - va.y) * t, z: va.z + (vb.z - va.z) * t });
+      }
+    };
+    for (let level = 1; level <= count; level++) {
+      const z = minD + (level / (count + 1)) * span;
+      for (let f = 0; f < faces.length; f++) {
+        const face = faces[f];
+        const isFront = front ? front[f] !== false : true;
+        // Fan-triangulate the (quad+) face; cut each triangle at z.
+        for (let t = 1; t + 1 < face.length; t++) {
+          const ia = face[0]; const ib = face[t]; const ic = face[t + 1];
+          const pa = world[ia]; const pb = world[ib]; const pc = world[ic];
+          if (!pa || !pb || !pc) continue;
+          const pts = [];
+          edgeCross(pa, pb, d[ia], d[ib], z, pts);
+          if (pts.length < 2) edgeCross(pb, pc, d[ib], d[ic], z, pts);
+          if (pts.length < 2) edgeCross(pc, pa, d[ic], d[ia], z, pts);
+          if (pts.length < 2) continue;
+          segments.push({ a: pts[0], b: pts[1], front: isFront });
+        }
+      }
+    }
+    return { segments, planes: count };
+  };
+
+  // Occlusion budget for the contourSlice pass: bound (clipPath calls × occluder
+  // count) so a dense scene stays interactive. Fewer occluders ⇒ more clips.
+  const SLICE_TEST_BUDGET = 25000000;
+  const SLICE_CLIP_MIN = 400;
+  const SLICE_CLIP_MAX = 12000;
+
+  const Scene3DNS = (Vectura.Scene3D = Vectura.Scene3D || {});
+  Scene3DNS.Slices = { buildSliceSegments };
+
   const FALLBACK_STYLE = { penId: null, mapper: 'none', params: {} };
 
   // Mappers that fill the SURFACE (vs 'none' = outlines, 'wireframe' = edges).
@@ -856,6 +948,11 @@
           if (!face.front) return;
           const style = styleOf(face);
           if (style.mapper === 'wireframe') return; // edges only for this face
+          // contourSlice REPLACES per-face outlines/fills with depth-slice
+          // cross-sections (emitted once per record, after this loop). Suppress
+          // the normal face pass so the slices read as the surface. The object's
+          // silhouette still draws via the structural-edge pass below.
+          if (style.mapper === 'contourSlice') return;
           // A surface fill (hatch, and later spiral/contour/…) REPLACES the
           // per-face wireframe: the face outline and its crease edges are
           // suppressed so the treatment reads as the surface, not confetti over
@@ -1273,6 +1370,75 @@
               }
             });
           });
+        }
+
+        // ── contourSlice (CtS I5): depth-plane cross-sections through the mesh.
+        // The mesh is cut by N parallel planes (world +z rotated by sliceRotate/
+        // sliceTilt); each cut segment is projected and run through the SAME
+        // clipper the surface fills use, so the slices are occluded by other
+        // objects AND self-occluded (a far-side slice hides behind the near
+        // hemisphere) and shadowed by the compositor. Budget-aware so a
+        // full-detail topoform (~40k faces) can't hang render OR convert (CtS I4
+        // perf constraint): the plane count and the number of HLR-clipped
+        // segments are capped against the occluder count, the overflow emits raw
+        // (front-only, no HLR), and draft frames skip HLR entirely.
+        {
+          const sliceStyle = resolveStyle(record.id, null);
+          if (sliceStyle.mapper === 'contourSlice' && record.id !== 'ground'
+            && !emissiveCoreBlank && Array.isArray(record.world)
+            && Array.isArray(record.faceIndexArrays) && record.faceIndexArrays.length) {
+            const sp = sliceStyle.params || {};
+            const visibleOnly = (sp.sliceVisibility || 'visibleOnly') !== 'fullContour';
+            const frontFlags = record.faces.map((f) => !!(f && f.front));
+            const faceCount = record.faceIndexArrays.length;
+            const occluderCount = (clipper.occluders && clipper.occluders.length) || 0;
+            const maxClip = clamp(Math.floor(SLICE_TEST_BUDGET / (occluderCount + 1)),
+              SLICE_CLIP_MIN, SLICE_CLIP_MAX);
+            // Choose the plane count so the estimated visible-segment total fits
+            // the clip budget (~2·√faces cross a plane); the hard per-record
+            // counter below is the real guard when this estimate runs low.
+            let planes = clamp(Math.round(finite(sp.sliceCount, 26)), 2, 120);
+            if (!draft && faceCount > 0) {
+              const segPerPlane = Math.max(4, Math.round(2 * Math.sqrt(faceCount)));
+              const planeCap = Math.max(2, Math.floor(maxClip / segPerPlane));
+              if (planes > planeCap) planes = planeCap;
+            }
+            const sliced = buildSliceSegments({
+              world: record.world,
+              faces: record.faceIndexArrays,
+              front: frontFlags,
+              sliceCount: planes,
+              sliceRotate: finite(sp.sliceRotate, 0),
+              sliceTilt: finite(sp.sliceTilt, 0),
+            });
+            const sliceTreat = strokeTreatment(sp);
+            // NOT selfObject: a through-body slice SHOULD self-occlude (the far
+            // side hides behind the near surface) — only on-surface fills opt out.
+            const segCtx = { objectId: record.id };
+            let clipped = 0;
+            sliced.segments.forEach((s) => {
+              if (visibleOnly && !s.front) return;
+              const A = scene.projectWorld(s.a);
+              const B = scene.projectWorld(s.b);
+              if (!A || !B || !Number.isFinite(A.x) || !Number.isFinite(B.x)) return;
+              const pts = [{ x: A.x, y: A.y, z: A.z }, { x: B.x, y: B.y, z: B.z }];
+              const sliceMeta = {
+                algorithm: 'scene3d',
+                kind: 'sceneFill',
+                sceneTarget: sceneTargetMeta(record.id, null, null, (A.z + B.z) / 2, false),
+                ...(sliceStyle.penId ? { penId: sliceStyle.penId } : {}),
+              };
+              if (draft || clipped >= maxClip) {
+                // Cheap path: emit the (front) segment raw, no HLR — keeps live
+                // drags + pathological densities responsive.
+                emitRuns([{ visible: true, pts }], sliceMeta, hiddenTreatment, null, sliceTreat);
+                return;
+              }
+              clipped += 1;
+              const clip = clipper.clipPath(pts, segCtx);
+              emitRuns(clip.runs, sliceMeta, hiddenTreatment, null, sliceTreat);
+            });
+          }
         }
 
         // ── Highlight region pass (Phase 4): altFill / burst fill the specular
