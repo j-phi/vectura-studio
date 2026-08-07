@@ -134,6 +134,18 @@
         // importedMesh branch can scale unit verts by `radius`. Undefined for
         // every parametric solid ⇒ byte-identical for all other solidTypes.
         importedMesh: p.importedMesh,
+        // Convert-to-Scene (I2) — carry the deformer params so a converted LIVE
+        // solid re-evaluates them here. `applyDeformers` flags the scene path so
+        // createSolidMesh runs the deformer bake (the standalone polyhedron algo
+        // never sets it and applies deformers itself). With the inert defaults
+        // (expand 100 / rest 0) the deformed pass is an identity ⇒ every existing
+        // scene solid stays byte-identical.
+        expand: p.expand,
+        twist: p.twist,
+        explode: p.explode,
+        extrude: p.extrude,
+        shard: p.shard,
+        applyDeformers: true,
       }));
     }
     const mode = TOPOFORM_MODES[obj.primitive] || 'sphere';

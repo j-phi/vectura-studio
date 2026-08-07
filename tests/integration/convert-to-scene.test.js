@@ -12,6 +12,11 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  *
  * RGR — convertAlgoToScene + the algorithm bakers + the scene.js importedMesh
  * passthrough do not exist before I1, so this file fails on the base branch.
+ *
+ * Increment I2 amended (a)/(b): a parametric polyhedron now converts to a LIVE
+ * `solid` object (solidType + deformer params) instead of a frozen importedMesh
+ * bake. Topoform + STL/importedMesh-sourced polyhedra keep the bake path — see
+ * (c) here and convert-to-scene-live-solid.test.js for the full I2 contract.
  */
 
 describe('Convert-to-Scene I1 — bake a standalone 3D layer into a scene tree', () => {
@@ -34,9 +39,9 @@ describe('Convert-to-Scene I1 — bake a standalone 3D layer into a scene tree',
   const sceneGroups = (engine) =>
     engine.layers.filter((l) => l && l.type === 'scene3d' && l.isGroup);
 
-  // ── (a) polyhedron → scene group with one solid/importedMesh child that
-  //        carries the polyhedron's built mesh, and it renders. ──────────────
-  test('(a) polyhedron converts to a scene group whose child holds the built mesh and renders', () => {
+  // ── (a) polyhedron → scene group with one LIVE `solid` child (I2) that
+  //        re-evaluates its deformers, and it renders. ──────────────────────
+  test('(a) polyhedron converts to a scene group whose child is a live solid and renders', () => {
     const engine = freshEngine();
     const id = engine.addLayer('polyhedron');
     const src = engine.getLayerById(id);
@@ -56,23 +61,29 @@ describe('Convert-to-Scene I1 — bake a standalone 3D layer into a scene tree',
     const group = groups[0];
     expect(group.id).toBe(result.groupId);
 
-    // Exactly one object3d child, a solid/importedMesh leaf.
+    // Exactly one object3d child — a LIVE parametric solid (I2), NOT a frozen
+    // importedMesh bake. It carries the polyhedron's solidType + deformer params.
     const kids = engine.getLayerDescendants(group.id);
     const objects = kids.filter((l) => l.type === 'object3d');
     expect(objects.length).toBe(1);
     const child = objects[0];
     expect(child.params.primitive).toBe('solid');
-    expect(child.params.params.solidType).toBe('importedMesh');
+    expect(child.params.params.solidType).toBe('buckyball');
+    expect(child.params.params.importedMesh).toBeUndefined();
+    // Deformer params copied straight off the source layer.
+    expect(child.params.params.expand).toBe(Number(src.params.expand));
+    expect(child.params.params.twist).toBe(Number(src.params.twist || 0));
+    expect(child.params.params.explode).toBe(Number(src.params.explode || 0));
 
-    // The child mesh == the polyhedron's built mesh (unit verts * radius).
-    const im = child.params.params.importedMesh;
-    const radius = child.params.params.radius;
-    expect(im.faces).toEqual(baked.faces);
-    expect(im.vertices.length).toBe(baked.vertices.length);
-    im.vertices.forEach((vt, i) => {
-      expect(vt.x * radius).toBeCloseTo(baked.vertices[i].x, 4);
-      expect(vt.y * radius).toBeCloseTo(baked.vertices[i].y, 4);
-      expect(vt.z * radius).toBeCloseTo(baked.vertices[i].z, 4);
+    // Geometry parity — building the scene mesh from the live params reproduces
+    // the I1 bake exactly (createSolidMesh + applyDeformers == bakeMesh).
+    const live = V.Scene3D.Scene.buildPrimitiveMesh(
+      { primitive: 'solid', params: child.params.params });
+    expect(live.vertices.length).toBe(baked.vertices.length);
+    live.vertices.forEach((vt, i) => {
+      expect(vt.x).toBeCloseTo(baked.vertices[i].x, 6);
+      expect(vt.y).toBeCloseTo(baked.vertices[i].y, 6);
+      expect(vt.z).toBeCloseTo(baked.vertices[i].z, 6);
     });
 
     // A light + ground child were seeded.
@@ -85,8 +96,9 @@ describe('Convert-to-Scene I1 — bake a standalone 3D layer into a scene tree',
     expect(group.scenePaths.length).toBeGreaterThan(0);
   });
 
-  // ── (b) a DEFORMED polyhedron bakes the deformed mesh, not the base. ───────
-  test('(b) polyhedron deformers (twist/explode) bake into the mesh', () => {
+  // ── (b) a DEFORMED polyhedron converts to a live solid carrying the
+  //        deformer params, and the scene mesh reflects the deformation. ─────
+  test('(b) polyhedron deformers (twist/explode) ride the live solid params', () => {
     const engine = freshEngine();
     const id = engine.addLayer('polyhedron');
     const src = engine.getLayerById(id);
@@ -94,23 +106,24 @@ describe('Convert-to-Scene I1 — bake a standalone 3D layer into a scene tree',
 
     const base = V.Algorithms.polyhedron.bakeMesh({ ...src.params, twist: 0, explode: 0, shard: 0 });
 
-    // Vertex-level deformer (twist) moves shared vertices.
-    const twisted = V.Algorithms.polyhedron.bakeMesh({ ...src.params, twist: 60 });
-    expect(twisted.vertices.length).toBe(base.vertices.length);
-    const twistMoved = twisted.vertices.some((vt, i) =>
-      Math.abs(vt.x - base.vertices[i].x) > 1e-6 || Math.abs(vt.y - base.vertices[i].y) > 1e-6);
-    expect(twistMoved).toBe(true);
-
     // Per-face deformer (explode) shatters into per-face polygons — more verts.
     const exploded = V.Algorithms.polyhedron.bakeMesh({ ...src.params, explode: 40 });
     expect(exploded.vertices.length).toBeGreaterThan(base.vertices.length);
 
-    // And the converted child carries the deformed (not base) mesh.
+    // The converted child carries the deformer param LIVE (not a baked mesh) …
     src.params.explode = 40;
     const result = engine.convertAlgoToScene(id);
     expect(result.ok).toBe(true);
     const child = engine.getLayerDescendants(result.groupId).find((l) => l.type === 'object3d');
-    expect(child.params.params.importedMesh.vertices.length).toBe(exploded.vertices.length);
+    expect(child.params.params.solidType).toBe('cube');
+    expect(child.params.params.importedMesh).toBeUndefined();
+    expect(child.params.params.explode).toBe(40);
+
+    // … and building the scene mesh re-evaluates it (exploded vert count).
+    const live = V.Scene3D.Scene.buildPrimitiveMesh(
+      { primitive: 'solid', params: child.params.params });
+    expect(live.vertices.length).toBe(exploded.vertices.length);
+    expect(live.vertices.length).toBeGreaterThan(base.vertices.length);
   });
 
   // ── (c) topoform wireframe / triangle convert renders. ─────────────────────

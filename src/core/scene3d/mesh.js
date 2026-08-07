@@ -432,7 +432,92 @@
     return withBounds({ vertices, faces: faces.map((face) => orientFace(face, vertices)) });
   };
 
-  const createSolidMesh = (p) => {
+  // ── Polyhedron deformers (moved VERBATIM from polyhedron.js) ─────────────────
+  // Convert-to-Scene (I2) — the standalone polyhedron algo and the scene
+  // compositor share ONE implementation of these so a converted (live) solid
+  // re-evaluates the deformers exactly as the standalone layer would. hash01,
+  // applyVertexEffects and renderedFace are byte-for-byte the polyhedron.js
+  // originals; polyhedron.js now imports them from here.
+  const hash01 = (n) => {
+    const s = Math.sin(n * 127.1) * 43758.5453123;
+    return s - Math.floor(s);
+  };
+
+  // Topology-PRESERVING deformers (expand / twist). Operate per vertex on the
+  // shared index mesh so faces keep sharing vertices.
+  const applyVertexEffects = (pt, p, boundsInfo = {}) => {
+    const expand = clamp(finite(p.expand, 100) / 100, 0.5, 1.8);
+    let out = mul(pt, expand);
+    const twist = finite(p.twist, 0);
+    if (Math.abs(twist) > 0.001) {
+      const safeDepth = Math.max(1, boundsInfo.maxDepth || boundsInfo.maxRadius || finite(p.depth, 94));
+      const amount = (out.z / safeDepth) * twist * (Math.PI / 180);
+      const c = Math.cos(amount);
+      const s = Math.sin(amount);
+      out = v(out.x * c - out.y * s, out.x * s + out.y * c, out.z);
+    }
+    return out;
+  };
+
+  // Per-face deformers (explode / extrude / shard) — these BREAK vertex sharing,
+  // so each face is emitted as its own polygon. bulge / faceBands only build
+  // interior bands (line-art) and never touch the `outer` polygon.
+  const renderedFace = (mesh, vertices, face, faceIndex, p, faceBands = 0) => {
+    const base = face.map((idx) => vertices[idx]);
+    const center = average3(base);
+    const normal = faceNormal(base);
+    const outward = normalize(center);
+    const explode = finite(p.explode, 0);
+    const extrude = finite(p.extrude, 0);
+    const shard = clamp(finite(p.shard, 0) / 100, 0, 1);
+    const shiftedCenter = add(center, add(mul(normal, extrude), mul(outward, explode)));
+    const outer = base.map((pt, i) => {
+      const radial = sub(pt, center);
+      const shardScale = 1 + shard * ((hash01(faceIndex * 97 + i * 37) * 2) - 1) * 0.7;
+      return add(shiftedCenter, mul(radial, shardScale));
+    });
+    const bands = [];
+    const bulge = finite(p.bulge, 0);
+    for (let band = 1; band <= faceBands; band++) {
+      const t = band / (faceBands + 1);
+      const bulgeProfile = Math.pow(1 - t, 1.35);
+      bands.push(outer.map((pt) => add(
+        lerp3(shiftedCenter, pt, t),
+        mul(normal, bulge * bulgeProfile)
+      )));
+    }
+    return { outer, bands };
+  };
+
+  // Convert-to-Scene (I2) — bake the deformer pipeline into a base solid mesh,
+  // producing a new { vertices, faces } (the same transform polyhedron.js's
+  // bakeMesh applies). Vertex-level deformers map onto the shared vertices; any
+  // per-face deformer (explode/extrude/shard) shatters each face into its own
+  // polygon. An empty mesh (bad importedMesh) is returned untouched.
+  const applyPolyhedronDeformers = (baseMesh, p) => {
+    if (!baseMesh || !Array.isArray(baseMesh.vertices) || !baseMesh.vertices.length
+      || !Array.isArray(baseMesh.faces) || !baseMesh.faces.length) return baseMesh;
+    const dv = baseMesh.vertices.map((pt) => applyVertexEffects(pt, p, baseMesh.bounds));
+    const perFace = finite(p.explode, 0) || finite(p.extrude, 0) || finite(p.shard, 0);
+    if (!perFace) {
+      return withBounds({
+        vertices: dv.map((pt) => v(pt.x, pt.y, pt.z)),
+        faces: baseMesh.faces.map((f) => f.slice()),
+      });
+    }
+    const vertices = [];
+    const faces = [];
+    baseMesh.faces.forEach((face, index) => {
+      const { outer } = renderedFace(baseMesh, dv, face, index, p, 0);
+      faces.push(outer.map((pt) => {
+        vertices.push(v(pt.x, pt.y, pt.z));
+        return vertices.length - 1;
+      }));
+    });
+    return withBounds({ vertices, faces });
+  };
+
+  const buildSolidBaseMesh = (p) => {
     const type = p.solidType || 'buckyball';
     const radius = Math.max(1, finite(p.radius, 76));
     const sides = Math.max(3, Math.round(clamp(finite(p.sideCount, 5), 3, 180)));
@@ -611,6 +696,18 @@
     return createTruncatedIcosahedronMesh(radius);
   };
 
+  // Public builder. The standalone polyhedron algo (generate / bakeMesh) calls
+  // this WITHOUT `applyDeformers`, so it gets the un-deformed base and applies
+  // the deformers itself (byte-identical to before). The scene compositor
+  // (buildPrimitiveMesh) sets `applyDeformers: true`, so a converted LIVE solid
+  // re-evaluates its deformer params here. With inert deformer defaults
+  // (expand 100 / twist 0 / explode 0 / extrude 0 / shard 0) the deformed pass
+  // is an identity, so every existing scene solid stays byte-identical.
+  const createSolidMesh = (p) => {
+    const base = buildSolidBaseMesh(p);
+    return p && p.applyDeformers ? applyPolyhedronDeformers(base, p) : base;
+  };
+
   const api = {
     // Tessellators
     weldMesh,
@@ -635,7 +732,12 @@
     dualMesh,
     createDodecahedronMesh,
     createGeodesicMesh,
+    buildSolidBaseMesh,
     createSolidMesh,
+    // Polyhedron deformers (shared with polyhedron.js — Convert-to-Scene I2)
+    applyVertexEffects,
+    renderedFace,
+    applyPolyhedronDeformers,
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Mesh: api });

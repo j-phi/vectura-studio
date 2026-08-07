@@ -27,56 +27,18 @@
     cleanPaths,
   } = G3;
 
-  const hash01 = (n) => {
-    const s = Math.sin(n * 127.1) * 43758.5453123;
-    return s - Math.floor(s);
-  };
-
   // Solid-mesh construction (regularRing, mesh helpers, platonic / geodesic /
-  // dual builders, createSolidMesh) moved verbatim to Scene3D.Mesh. average3 and
-  // lerp3 are shared helpers the face renderer below still uses.
-  const { average3, lerp3, createSolidMesh } = Vectura.Scene3D.Mesh;
-
-  const applyVertexEffects = (pt, p, boundsInfo = {}) => {
-    const expand = clamp(finite(p.expand, 100) / 100, 0.5, 1.8);
-    let out = mul(pt, expand);
-    const twist = finite(p.twist, 0);
-    if (Math.abs(twist) > 0.001) {
-      const safeDepth = Math.max(1, boundsInfo.maxDepth || boundsInfo.maxRadius || finite(p.depth, 94));
-      const amount = (out.z / safeDepth) * twist * (Math.PI / 180);
-      const c = Math.cos(amount);
-      const s = Math.sin(amount);
-      out = v(out.x * c - out.y * s, out.x * s + out.y * c, out.z);
-    }
-    return out;
-  };
-
-  const renderedFace = (mesh, vertices, face, faceIndex, p, faceBands = 0) => {
-    const base = face.map((idx) => vertices[idx]);
-    const center = average3(base);
-    const normal = faceNormal(base);
-    const outward = normalize(center);
-    const explode = finite(p.explode, 0);
-    const extrude = finite(p.extrude, 0);
-    const shard = clamp(finite(p.shard, 0) / 100, 0, 1);
-    const shiftedCenter = add(center, add(mul(normal, extrude), mul(outward, explode)));
-    const outer = base.map((pt, i) => {
-      const radial = sub(pt, center);
-      const shardScale = 1 + shard * ((hash01(faceIndex * 97 + i * 37) * 2) - 1) * 0.7;
-      return add(shiftedCenter, mul(radial, shardScale));
-    });
-    const bands = [];
-    const bulge = finite(p.bulge, 0);
-    for (let band = 1; band <= faceBands; band++) {
-      const t = band / (faceBands + 1);
-      const bulgeProfile = Math.pow(1 - t, 1.35);
-      bands.push(outer.map((pt) => add(
-        lerp3(shiftedCenter, pt, t),
-        mul(normal, bulge * bulgeProfile)
-      )));
-    }
-    return { outer, bands };
-  };
+  // dual builders, createSolidMesh) moved verbatim to Scene3D.Mesh. The vertex /
+  // per-face deformers (applyVertexEffects / renderedFace) + the bake pipeline
+  // (applyPolyhedronDeformers) ALSO live in Scene3D.Mesh now (Convert-to-Scene
+  // I2), so the standalone algo and the scene compositor share ONE
+  // implementation.
+  const {
+    createSolidMesh,
+    applyVertexEffects,
+    renderedFace,
+    applyPolyhedronDeformers,
+  } = Vectura.Scene3D.Mesh;
 
   // Shared view Euler angles: rotate = yaw, tilt = pitch, roll = image-plane
   // spin (Rotate Z). Every rotatePoint call must go through this so all render
@@ -472,24 +434,14 @@
       const base = createSolidMesh(p);
       if (!Array.isArray(base.vertices) || !base.vertices.length
         || !Array.isArray(base.faces) || !base.faces.length) return { vertices: [], faces: [] };
-      const dv = base.vertices.map((pt) => applyVertexEffects(pt, p, base.bounds));
-      const perFace = finite(p.explode, 0) || finite(p.extrude, 0) || finite(p.shard, 0);
-      if (!perFace) {
-        return {
-          vertices: dv.map((pt) => ({ x: pt.x, y: pt.y, z: pt.z })),
-          faces: base.faces.map((f) => f.slice()),
-        };
-      }
-      const vertices = [];
-      const faces = [];
-      base.faces.forEach((face, index) => {
-        const { outer } = renderedFace(base, dv, face, index, p, 0);
-        faces.push(outer.map((pt) => {
-          vertices.push({ x: pt.x, y: pt.y, z: pt.z });
-          return vertices.length - 1;
-        }));
-      });
-      return { vertices, faces };
+      // Shared deformer bake (Scene3D.Mesh) — the SAME pipeline a converted LIVE
+      // solid re-evaluates through the compositor, so a baked STL/importedMesh
+      // fallback and a live solid stay geometrically identical.
+      const deformed = applyPolyhedronDeformers(base, p);
+      return {
+        vertices: deformed.vertices.map((pt) => ({ x: pt.x, y: pt.y, z: pt.z })),
+        faces: deformed.faces.map((f) => f.slice()),
+      };
     },
     formula: () => 'Polyhedral faces projected with face-normal visibility and dashed hidden paths.',
   };

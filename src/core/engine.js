@@ -451,6 +451,13 @@
     superellipsoid: { sx: 26, sy: 26, sz: 26, detail: 24 },
     torusKnot: { sx: 30, sy: 6, sz: 6, detail: 28 },
     capsule: { sx: 14, sy: 16, sz: 14, detail: 22 },
+    // Convert-to-Scene (I2) — a freshly added `solid` object is a parametric
+    // polyhedron carrying INERT deformer defaults, so it renders byte-identically
+    // until a deformer is dialed in. Mirrors PRIMITIVE_PARAM_DEFAULTS.solid.
+    solid: {
+      solidType: 'buckyball', radius: 20, sideCount: 5, depth: 24, frequency: 2, taper: 55, starRatio: 45,
+      expand: 100, twist: 0, explode: 0, extrude: 0, shard: 0,
+    },
   };
 
   // Scene-tree Increment E — per-type light seeds for addLightToScene. Mirrors
@@ -772,9 +779,17 @@
         return { ok: false, reason: 'empty' };
       }
 
-      // Normalize to unit max-extent; `radius` carries the real size. The scene's
-      // createSolidMesh importedMesh branch multiplies the unit verts back by
-      // `radius`, reproducing the baked coordinates exactly.
+      // Convert-to-Scene (I2) — a parametric polyhedron becomes a LIVE `solid`
+      // object carrying its solidType + deformer params, so the compositor
+      // re-evaluates the deformers (createSolidMesh + applyDeformers) and the
+      // object stays fully editable. Topoform, and a polyhedron whose source is
+      // already an STL/importedMesh, have NO live param equivalent yet — they
+      // keep the I1 importedMesh bake (the deformed index mesh, frozen).
+      const liveSolid = type === 'polyhedron' && (p.solidType || 'buckyball') !== 'importedMesh';
+
+      // Bake path only — normalize to unit max-extent; `radius` carries the real
+      // size. The scene's createSolidMesh importedMesh branch multiplies the unit
+      // verts back by `radius`, reproducing the baked coordinates exactly.
       let maxExtent = 0;
       baked.vertices.forEach((vt) => {
         const d = Math.hypot(fin(vt.x, 0), fin(vt.y, 0), fin(vt.z, 0));
@@ -784,6 +799,26 @@
       const unit = baked.vertices.map((vt) => ({
         x: fin(vt.x, 0) / radius, y: fin(vt.y, 0) / radius, z: fin(vt.z, 0) / radius,
       }));
+
+      // The LIVE solid params bag: the polyhedron's solidType + parametric size
+      // knobs + deformer params, copied straight off the source layer (defaults
+      // mirror Scene3D.Mesh.buildSolidBaseMesh / applyVertexEffects). Building the
+      // scene mesh from these reproduces bakeMesh(p) exactly, so a converted
+      // undeformed solid is geometrically identical to the I1 bake.
+      const liveSolidParams = {
+        solidType: p.solidType || 'buckyball',
+        radius: fin(p.radius, 76),
+        sideCount: fin(p.sideCount, 5),
+        depth: fin(p.depth, 94),
+        frequency: fin(p.frequency, 2),
+        taper: fin(p.taper, 55),
+        starRatio: fin(p.starRatio, 45),
+        expand: fin(p.expand, 100),
+        twist: fin(p.twist, 0),
+        explode: fin(p.explode, 0),
+        extrude: fin(p.extrude, 0),
+        shard: fin(p.shard, 0),
+      };
 
       // Standalone view Euler angles → the scene camera, so the converted object
       // faces the same way (the compositor rotates world→camera by these; an
@@ -810,11 +845,13 @@
       const child = new Layer(childId, 'object3d', src.name ? `${src.name} Mesh` : `Object ${num}`);
       child.parentId = groupId;
       child.params.primitive = 'solid';
-      child.params.params = {
-        solidType: 'importedMesh',
-        importedMesh: { vertices: unit, faces: baked.faces.map((f) => f.slice()) },
-        radius,
-      };
+      child.params.params = liveSolid
+        ? liveSolidParams
+        : {
+          solidType: 'importedMesh',
+          importedMesh: { vertices: unit, faces: baked.faces.map((f) => f.slice()) },
+          radius,
+        };
       child.params.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
       child.params.visibility = 'solid';
       child.params.role = 'solid';

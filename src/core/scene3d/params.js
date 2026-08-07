@@ -60,7 +60,15 @@
     capsule: { sx: 14, sy: 24, sz: 14, detail: 16 },
     superellipsoid: { sx: 20, sy: 20, sz: 20, detail: 16 },
     pyramid: { sx: 20, sy: 20, sz: 20, detail: 8 },
-    solid: { solidType: 'buckyball', radius: 20, sideCount: 5, depth: 24, frequency: 2, taper: 55, starRatio: 45 },
+    // Convert-to-Scene (I2) — the deformer keys (expand / twist / explode /
+    // extrude / shard) let a converted polyhedron ride the LIVE solid path and
+    // re-evaluate its deformers through the compositor. Every default is INERT
+    // (expand 100 ⇒ ×1.0, the rest 0), so createSolidMesh's deformed pass is an
+    // identity and any pre-I2 solid renders byte-identically.
+    solid: {
+      solidType: 'buckyball', radius: 20, sideCount: 5, depth: 24, frequency: 2, taper: 55, starRatio: 45,
+      expand: 100, twist: 0, explode: 0, extrude: 0, shard: 0,
+    },
   };
 
   const DEFAULT_TRANSFORM = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
