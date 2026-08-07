@@ -246,6 +246,10 @@
       case 'xrayBackPenId': return (typeof value === 'string' && value) ? value : null; // inherit when null
       case 'xrayBackLineType': return STROKE_LINE_TYPES.includes(value) ? value : 'dashed';
       case 'xrayFront': return value === 'faded' ? 'faded' : 'solid';
+      // Quantitative X-ray (interpretation A): modulate the see-through back-fill
+      // by how far behind the front surface each sample sits. 'off' (default) is
+      // the flat x-ray, byte-identical. 'density'/'weight'/'both' opt in.
+      case 'xrayDepthCue': return ['off', 'density', 'weight', 'both'].includes(value) ? value : 'off';
       // Phase 4 — highlight (specular band) treatments. Default 'blank' = the
       // legacy bare-paper highlight; the others render the top tone band(s) with
       // a distinct treatment instead of dropping.

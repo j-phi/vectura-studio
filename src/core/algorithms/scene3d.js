@@ -828,7 +828,46 @@
           backLineType: STROKE_LINE_TYPES.includes(s.xrayBackLineType) ? s.xrayBackLineType : 'dashed',
           backPenId: (typeof s.xrayBackPenId === 'string' && s.xrayBackPenId) ? s.xrayBackPenId : null,
           front: s.xrayFront === 'faded' ? 'faded' : 'solid',
+          depthCue: XRAY_DEPTH_CUES.includes(s.xrayDepthCue) ? s.xrayDepthCue : 'off',
         };
+      };
+
+      // ── Quantitative X-ray, interpretation A (depth-cued see-through fill).
+      // Map a NORMALIZED depth gap (0 = flush behind the front surface, 1 =
+      // deepest material) to a see-through back-fill look: a DENSITY keep-fraction
+      // and/or a stroke WEIGHT scale. Deterministic (no RNG): the density keep is a
+      // golden-ratio low-discrepancy dither over a FULL-density hatch, so deeper
+      // material keeps more lines (reads denser); weight ramps faint→heavy with
+      // depth. 'off' (default) never touches the flat x-ray path ⇒ byte-identical.
+      const XRAY_DEPTH_CUES = ['off', 'density', 'weight', 'both'];
+      const XRAY_CUE_MIN_KEEP = 0.25; // shallowest kept fraction of the full hatch
+      const XRAY_CUE_W_LO = 0.5;      // faint stroke at the front surface
+      const XRAY_CUE_W_HI = 2.2;      // heavy stroke deep in the material
+      const cueKeepFraction = (norm) => XRAY_CUE_MIN_KEEP + (1 - XRAY_CUE_MIN_KEEP) * clamp(norm, 0, 1);
+      const cueWeightScale = (norm) => clamp(XRAY_CUE_W_LO + (XRAY_CUE_W_HI - XRAY_CUE_W_LO) * clamp(norm, 0, 1), 0.1, 6);
+      const cueDitherKeep = (idx, keep) => ((idx * 0.6180339887498949) % 1) < keep; // low-discrepancy, deterministic
+      const round3 = (val) => Math.round(val * 1000) / 1000;
+      const pipXY = (x, y, poly) => {
+        let inside = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          const yi = poly[i].y; const yj = poly[j].y;
+          if (((yi > y) !== (yj > y))
+            && (x < (poly[j].x - poly[i].x) * (y - yi) / (yj - yi) + poly[i].x)) inside = !inside;
+        }
+        return inside;
+      };
+      // Screen-depth extent of an object's projected faces, plus the frontmost
+      // (nearest, largest-z) FRONT support plane covering a screen point — the
+      // reference the back-fill gap is measured against. Falls back to the object
+      // near bound where no front plane covers the point (design v1).
+      const objDepthBounds = (record) => {
+        let zMin = Infinity; let zMax = -Infinity;
+        record.faces.forEach((f) => (f.polygon || []).forEach((v0) => {
+          if (v0.z < zMin) zMin = v0.z;
+          if (v0.z > zMax) zMax = v0.z;
+        }));
+        const extent = (zMax - zMin) > 1e-6 ? (zMax - zMin) : 1;
+        return { zMin, zMax, extent };
       };
 
       // ── Highlight treatments (Phase 4): the top tone band(s) render as a
@@ -1122,6 +1161,25 @@
         // on x-ray + fastPreview-off so solid output is byte-identical and live
         // drags stay cheap.
         if (faceted && xrayOn && recXray.backFaces && !draft) {
+          // Depth-cue reference (interpretation A): the object's screen-depth
+          // extent and the frontmost FRONT support plane covering a screen point.
+          const bounds = objDepthBounds(record);
+          const frontPlanes = [];
+          record.faces.forEach((f) => {
+            if (!f.front) return;
+            const pl = HLR.fitSupportPlane(f.polygon);
+            if (pl) frontPlanes.push({ poly: f.polygon, plane: pl });
+          });
+          const frontDepthAt = (x, y) => {
+            let best = -Infinity;
+            for (let i = 0; i < frontPlanes.length; i++) {
+              const fp = frontPlanes[i];
+              if (!pipXY(x, y, fp.poly)) continue;
+              const d = fp.plane.A * x + fp.plane.B * y + fp.plane.C;
+              if (d > best) best = d; // frontmost = largest depth (nearest)
+            }
+            return best === -Infinity ? bounds.zMax : best; // fallback: object near bound
+          };
           record.faces.forEach((face) => {
             if (face.front) return; // back faces only
             const style = styleOf(face);
@@ -1131,8 +1189,16 @@
             const sp = style.params || {};
             const xr = xrayCfg(sp);
             if (!xr.backFaces) return;
-            // Reduced density = a scaled-down Density slider (lower ⇒ wider spacing).
-            const backParams = { ...sp, fillDensity: finite(sp.fillDensity, 50) * xr.backDensity };
+            const cue = xr.depthCue;
+            const cueDensity = cue === 'density' || cue === 'both';
+            const cueWeight = cue === 'weight' || cue === 'both';
+            // Density-cued fills are generated at FULL density and thinned per-line
+            // by depth (deep keeps more); off/weight keep today's uniform reduced
+            // density = a scaled-down Density slider (lower ⇒ wider spacing).
+            const genDensity = cueDensity
+              ? finite(sp.fillDensity, 50)
+              : finite(sp.fillDensity, 50) * xr.backDensity;
+            const backParams = { ...sp, fillDensity: genDensity };
             const lines = REGION_MAPPERS.has(style.mapper)
               ? faceRegionLines(face, style.mapper, face.normalWorld, backParams)
               : faceHatchLines(face, backParams, face.normalWorld, style.mapper === 'crosshatch');
@@ -1145,12 +1211,29 @@
               ...(xr.backPenId ? { penId: xr.backPenId } : (style.penId ? { penId: style.penId } : {})),
             };
             const backCtx = { objectId: record.id, selfObject: true };
+            let backLineIdx = 0;
             lines.forEach((line) => {
               const pts = line.map((pt) => ({
                 x: pt.x, y: pt.y, z: plane.A * pt.x + plane.B * pt.y + plane.C,
               }));
+              if (cue === 'off') {
+                const fillClip = clipper.clipPath(pts, backCtx);
+                emitRuns(fillClip.runs, backMeta, 'dash', null, backTreat, { forceHidden: true });
+                return;
+              }
+              // Depth gap at the line midpoint: how far this back sample sits
+              // BEHIND the nearest front surface, normalized over the object depth.
+              const mid = pts[(pts.length / 2) | 0] || pts[0];
+              const norm = clamp((frontDepthAt(mid.x, mid.y) - mid.z) / bounds.extent, 0, 1);
+              const idx = backLineIdx++;
+              if (cueDensity && !cueDitherKeep(idx, cueKeepFraction(norm))) return; // thinned (shallow)
+              const lineMeta = {
+                ...backMeta,
+                sceneTarget: { ...backMeta.sceneTarget, xrayDepth: round3(norm) },
+                ...(cueWeight ? { weightScale: round3(cueWeightScale(norm)) } : {}),
+              };
               const fillClip = clipper.clipPath(pts, backCtx);
-              emitRuns(fillClip.runs, backMeta, 'dash', null, backTreat, { forceHidden: true });
+              emitRuns(fillClip.runs, lineMeta, 'dash', null, backTreat, { forceHidden: true });
             });
           });
         }
@@ -1160,6 +1243,10 @@
         // Per-face hatch fails here — the tessellation faces are smaller than
         // the line spacing — so the fill reads as the whole surface.
         if (!faceted && !emissiveCoreBlank) {
+          // Depth-cue reference (interpretation A) for curved prims: the object's
+          // screen-depth extent; the front surface reference is the near bound
+          // (no per-point front support plane on a wrapped surface — design v1).
+          const curveBounds = objDepthBounds(record);
           const groups = new Map();
           record.faces.forEach((face, idx) => {
             if (!face.front) return;
@@ -1228,6 +1315,12 @@
             // X-ray: ask SurfaceFill for the far surface too (a tagged, sparser
             // back family) so a hatched sphere shows through (Phase 6, THE FIX).
             const grpXray = xrayOn ? xrayCfg(sp) : null;
+            // Depth cue (interpretation A): density mode asks SurfaceFill for the
+            // FULL back family (backDensity 1) and thins it per-line by depth at
+            // emit; weight/off keep the flat reduced family. 'off' ⇒ byte-identical.
+            const grpCue = grpXray ? grpXray.depthCue : 'off';
+            const grpCueDensity = grpCue === 'density' || grpCue === 'both';
+            const grpCueWeight = grpCue === 'weight' || grpCue === 'both';
             // Highlight (Phase 4): a non-'blank' treatment engages the per-sample
             // band classifier inside SurfaceFill (keep/dashed/dotted/sparse/
             // stippleOut). altFill/burst drop here and are drawn by the region
@@ -1280,7 +1373,7 @@
                 shadowSensitivity: grpShadowSens,
                 specularFn: grpLD ? specularFn : null,
                 xray: (grpXray && grpXray.backFaces)
-                  ? { backFaces: true, backDensity: grpXray.backDensity } : null,
+                  ? { backFaces: true, backDensity: grpCueDensity ? 1 : grpXray.backDensity } : null,
                 highlight: hlActive ? {
                   treatment: grpHL.treatment,
                   isHL: (I) => isHighlightBand(I, grpHL.bands),
@@ -1367,6 +1460,7 @@
               sceneTarget: { ...sceneTargetMeta(record.id, null, null, nearZ, false), highlight: true },
               ...(grpHL.penId ? { penId: grpHL.penId } : (g.style.penId ? { penId: g.style.penId } : {})),
             };
+            let backLineIdx = 0;
             lines.forEach((line) => {
               // SurfaceFill lines carry per-sample camera-depth (they wrap the
               // form); flat-fill lines don't → fall back to the group's nearZ.
@@ -1377,7 +1471,23 @@
               if (isBack) {
                 // Far surface: force the dashed/occluded treatment so it reads as
                 // "seen through" even where self-occlusion is skipped (selfObject).
-                emitRuns(clip.runs, backMeta, 'dash', null, backTreat, { forceHidden: true });
+                if (grpCue !== 'off') {
+                  // Depth cue (interpretation A): gap = how far this back sample
+                  // sits behind the object's near bound, normalized over its depth.
+                  const mid = pts[(pts.length / 2) | 0] || pts[0];
+                  const midZ = mid ? mid.z : curveBounds.zMax;
+                  const norm = clamp((curveBounds.zMax - midZ) / curveBounds.extent, 0, 1);
+                  const idx = backLineIdx++;
+                  if (grpCueDensity && !cueDitherKeep(idx, cueKeepFraction(norm))) return; // thinned (shallow)
+                  const backMetaCued = {
+                    ...backMeta,
+                    sceneTarget: { ...backMeta.sceneTarget, xrayDepth: round3(norm) },
+                    ...(grpCueWeight ? { weightScale: round3(cueWeightScale(norm)) } : {}),
+                  };
+                  emitRuns(clip.runs, backMetaCued, 'dash', null, backTreat, { forceHidden: true });
+                } else {
+                  emitRuns(clip.runs, backMeta, 'dash', null, backTreat, { forceHidden: true });
+                }
               } else if (isHL) {
                 emitRuns(clip.runs, hlMeta, hiddenTreatment, null, hlTreat);
               } else {

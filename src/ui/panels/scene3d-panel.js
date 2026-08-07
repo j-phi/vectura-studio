@@ -3179,6 +3179,17 @@
           typeof rp.xrayBackLineType === 'string' ? rp.xrayBackLineType : 'dashed',
           (v) => commitStyle({ params: { ...sp(), xrayBackLineType: v } }));
 
+        // Depth cue (Quantitative X-ray) — modulate the see-through back-fill by
+        // how far behind the front surface each sample sits: faint→heavy = near→far.
+        // Off (default) is the flat x-ray.
+        selectRow('Depth cue', 'X-ray depth cue', [
+          { value: 'off', label: 'Off' },
+          { value: 'density', label: 'Density' },
+          { value: 'weight', label: 'Weight' },
+          { value: 'both', label: 'Both' },
+        ], ['density', 'weight', 'both'].includes(rp.xrayDepthCue) ? rp.xrayDepthCue : 'off',
+          (v) => commitStyle({ params: { ...sp(), xrayDepthCue: v } }));
+
         // Back pen — inherit the object pen unless overridden.
         selectRow('Back pen', 'X-ray back-face pen',
           [{ value: '', label: 'Inherit' }].concat(pens.map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
