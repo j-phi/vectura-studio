@@ -230,6 +230,51 @@ describe('UI.Menus.LayerContext (compile gate)', () => {
     expect(calls.some((c) => c[0] === 'sel')).toBe(false);
   });
 
+  // ── Convert-to-Scene (I3) — "Add solid" on a scene group ────────────────────
+  test('_itemsFor() adds "Add solid" to a scene group (alongside Add object)', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const ui = { app: { engine: { addObjectToScene: () => {}, layers: [] } }, layerLockedIds: new Set() };
+    const layer = { id: 'G1', type: 'scene3d', isGroup: true, containerRole: 'scene', visible: true };
+    const items = LC._itemsFor(ui, layer);
+    const keys = items.filter((i) => i.key).map((i) => i.key);
+    expect(keys).toContain('scene-add-object');
+    expect(keys).toContain('scene-add-solid');
+  });
+
+  test('_itemsFor() omits "Add solid" for a non-scene group', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const ui = { app: { engine: { addObjectToScene: () => {}, layers: [] } }, layerLockedIds: new Set() };
+    const items = LC._itemsFor(ui, { id: 'L1', type: 'wavetable', visible: true, isGroup: false });
+    expect(items.some((i) => i.key === 'scene-add-solid')).toBe(false);
+  });
+
+  test('_runAction(scene-add-solid) calls engine.addObjectToScene(groupId, "solid")', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const calls = [];
+    const ui = {
+      app: {
+        engine: {
+          layers: [],
+          addObjectToScene: (gid, prim) => { calls.push(['add', gid, prim]); return 'obj-9'; },
+          setActiveLayerId: (id) => calls.push(['active', id]),
+        },
+        pushHistory: () => calls.push(['hist']),
+        setSelection: (ids, primary) => calls.push(['sel', ids, primary]),
+        render: () => {},
+      },
+      renderLayers: () => {},
+      layerLockedIds: new Set(),
+    };
+    const layer = { id: 'G1', type: 'scene3d', isGroup: true, containerRole: 'scene', visible: true };
+    LC._runAction(ui, layer, 'scene-add-solid');
+    expect(calls).toContainEqual(['add', 'G1', 'solid']);
+    expect(calls.some((c) => c[0] === 'hist')).toBe(true);
+    expect(calls).toContainEqual(['sel', ['obj-9'], 'obj-9']);
+  });
+
   test('_runAction(toggle-lock) toggles the id in ui.layerLockedIds', () => {
     const LC = runtime.window.Vectura.UI.Menus.LayerContext;
     LC.bind({});

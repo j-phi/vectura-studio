@@ -87,6 +87,19 @@
       icon: svg('<path d="M8 4h8a0 0 0 0 1 0 0v16a0 0 0 0 1 0 0H8a0 0 0 0 1 0 0V4a0 0 0 0 1 0 0z" opacity="0"/><path d="M16 4a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4z" transform="rotate(90 12 12)"/>'),
       defaults: () => ({ sx: 14, sy: 16, sz: 14, detail: 22 }),
     },
+    // Convert-to-Scene (I3) — a parametric polyhedron object addable straight
+    // from the shelf. Defaults MIRROR engine OBJECT3D_PRIMITIVE_DEFAULTS.solid
+    // (scene-consistent radius 20 + INERT deformers), so a freshly added solid
+    // renders byte-identically until a deformer / solidType is dialed in. Its
+    // solidType + LIVE deformers surface in the object inspector below.
+    solid: {
+      label: 'Polyhedron',
+      icon: svg('<path d="M12 3 4 8v8l8 5 8-5V8z"/><path d="M12 3v18M4 8l8 5 8-5"/>'),
+      defaults: () => ({
+        solidType: 'buckyball', radius: 20, sideCount: 5, depth: 24, frequency: 2, taper: 55, starRatio: 45,
+        expand: 100, twist: 0, explode: 0, extrude: 0, shard: 0,
+      }),
+    },
   };
   // Primitives whose surface tessellation the Fidelity slider controls (box and
   // plane are flat-faced — subdivision would only add coplanar interior edges).
@@ -107,9 +120,46 @@
     superellipsoid: [DIM('X', 'sx', 2, 150, 1), DIM('Y', 'sy', 2, 150, 1), DIM('Z', 'sz', 2, 150, 1)],
     torusKnot: [DIM('Radius', 'sx', 6, 150, 1), DIM('Thickness', 'sy', 1, 40, 0.5, ['sz'])],
     capsule: [DIM('Radius', 'sx', 2, 100, 1, ['sz']), DIM('Length', 'sy', 2, 150, 1)],
+    // Solid (I3) — one Radius handle; the standalone polyhedron radius range.
+    solid: [DIM('Radius', 'radius', 20, 130, 1)],
   };
   const SHELF_PRIMS = ['box', 'sphere', 'cylinder', 'torus', 'cone', 'plane'];
-  const MORE_PRIMS = ['superellipsoid', 'torusKnot', 'capsule'];
+  const MORE_PRIMS = ['superellipsoid', 'torusKnot', 'capsule', 'solid'];
+
+  // Convert-to-Scene (I3) — solidType families + LIVE deformers surfaced in the
+  // object inspector for a `solid`. Option values mirror Scene3D.Params solid
+  // types and the standalone polyhedron control ranges/labels (controls-registry
+  // .js) so the scene inspector matches the standalone UX. `importedMesh` is
+  // intentionally omitted (the scene panel has no STL import affordance yet; a
+  // converted importedMesh solid keeps its baked mesh regardless). bulge /
+  // faceBands are line-art-only (I2) and are NOT exposed — they do nothing to
+  // the solid mesh.
+  const SOLID_TYPE_OPTIONS = [
+    { value: 'flatPolygon', label: 'Flat Polygon' },
+    { value: 'prism', label: 'Prism' },
+    { value: 'antiprism', label: 'Antiprism' },
+    { value: 'bipyramid', label: 'Bipyramid' },
+    { value: 'cone', label: 'Cone' },
+    { value: 'frustum', label: 'Frustum' },
+    { value: 'cupola', label: 'Cupola' },
+    { value: 'starPrism', label: 'Star Prism' },
+    { value: 'tetrahedron', label: 'Tetrahedron' },
+    { value: 'cube', label: 'Cube' },
+    { value: 'octahedron', label: 'Octahedron' },
+    { value: 'dodecahedron', label: 'Dodecahedron' },
+    { value: 'icosahedron', label: 'Icosahedron' },
+    { value: 'geodesic', label: 'Geodesic' },
+    { value: 'goldberg', label: 'Goldberg' },
+    { value: 'buckyball', label: 'Buckyball' },
+  ];
+  const SOLID_TYPE_VALUES = new Set(SOLID_TYPE_OPTIONS.map((o) => o.value));
+  const SOLID_DEFORMERS = [
+    { key: 'expand', label: 'Expand', min: 50, max: 180, step: 1, default: 100 },
+    { key: 'twist', label: 'Twist', min: -180, max: 180, step: 1, default: 0 },
+    { key: 'explode', label: 'Explode', min: 0, max: 46, step: 0.5, default: 0 },
+    { key: 'extrude', label: 'Extrude', min: 0, max: 40, step: 0.5, default: 0 },
+    { key: 'shard', label: 'Shard', min: 0, max: 100, step: 1, default: 0 },
+  ];
 
   const ICON_IMPORT = svg('<path d="M12 3v10M8.5 9.5 12 13l3.5-3.5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>');
   const ICON_LIGHT = svg('<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 1 3.6 10.8c-.7.6-1.1 1.3-1.1 2.2h-5c0-.9-.4-1.6-1.1-2.2A6 6 0 0 1 12 3z"/>');
@@ -439,6 +489,28 @@
           defaultValue: Number.isFinite(primDefaults.detail) ? primDefaults.detail : 24,
           ariaLabel: 'Surface fidelity (tessellation detail)',
           ...liveSlider((v) => { params.params.detail = Math.round(v); }),
+        });
+      }
+
+      // Solid (parametric polyhedron) — solidType family + the 5 LIVE deformers
+      // (I3). Gated to `solid` objects only. Edits ride the same commit /
+      // liveSlider recompute path as every other object3d param (pushHistory →
+      // mutate → store → regen), so createSolidMesh re-evaluates the mesh live.
+      // bulge / faceBands are line-art-only (I2) and are intentionally absent.
+      if (prim === 'solid') {
+        comps.push(UI.Select(labeledRow(host, 'Solid type'), {
+          options: SOLID_TYPE_OPTIONS,
+          value: SOLID_TYPE_VALUES.has(params.params.solidType) ? params.params.solidType : 'buckyball',
+          ariaLabel: 'Solid type',
+          onChange: (v) => { commit(() => { params.params.solidType = v; }); },
+        }));
+        SOLID_DEFORMERS.forEach((d) => {
+          slider(host, d.label, {
+            value: Number.isFinite(params.params[d.key]) ? params.params[d.key] : d.default,
+            min: d.min, max: d.max, step: d.step, defaultValue: d.default,
+            ariaLabel: `solid ${d.key}`,
+            ...liveSlider((v) => { params.params[d.key] = v; }),
+          });
         });
       }
 

@@ -83,6 +83,9 @@
     if (_isSceneGroup(layer) && ui.app && ui.app.engine
       && typeof ui.app.engine.addObjectToScene === 'function') {
       items.push({ key: 'scene-add-object', label: 'Add object' });
+      // Convert-to-Scene (I3) — a `solid` (parametric polyhedron) is the LIVE
+      // scene-tree add path for a solid; the scene panel's shelf is monolith-only.
+      items.push({ key: 'scene-add-solid', label: 'Add solid (polyhedron)' });
       // Scene-tree Increment E — add lights (by type) + the ground (only when no
       // ground child exists yet) straight from the scene group's context menu.
       const engine = ui.app.engine;
@@ -148,10 +151,12 @@
     if (!ui || !layer) return;
     const engine = ui.app && ui.app.engine;
     if (!engine) return;
-    if (key === 'scene-add-object') {
+    if (key === 'scene-add-object' || key === 'scene-add-solid') {
       if (typeof engine.addObjectToScene !== 'function') return;
       if (ui.app.pushHistory) ui.app.pushHistory();
-      const oid = engine.addObjectToScene(layer.id);
+      const oid = key === 'scene-add-solid'
+        ? engine.addObjectToScene(layer.id, 'solid')
+        : engine.addObjectToScene(layer.id);
       if (oid) {
         ui.app.setSelection && ui.app.setSelection([oid], oid);
         engine.setActiveLayerId && engine.setActiveLayerId(oid);
