@@ -30,6 +30,14 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   that re-evaluates through the compositor — adjust its size or detail after converting and the
   geometry updates. Cube-source and STL/imported topoforms still convert as a baked mesh, and
   the contours render mode still shows a message (its scene treatment is the next increment).
+- **3D Scene — Topoform contours convert to real depth-slice contour lines.** Converting a
+  Topoform layer in *contours* mode now produces true depth-plane cross-section lines in the
+  scene (a new **Contour Slice** object style), lit and occluded by the shared compositor —
+  slices are hidden behind other objects and behind the object's own near surface, with x-ray
+  dashing the far runs. Slice count, plane orientation, and visible-only vs full contour carry
+  over from the Topoform layer. The slice pass is budget-aware (it caps plane count on very
+  dense meshes) so converting or editing never hangs. This completes the Convert-to-Scene chain:
+  a standalone Polyhedron or Topoform — in any render mode — is now a first-class scene object.
 - **3D Scene — x-ray is now see-through fills; Edge Styles own hidden edges.** X-ray no
   longer forces hidden edges to dash — that's now controlled entirely by the per-class Edge
   Styles (Hidden → Drop/Dash), while x-ray keeps its unique job of making back-face fills

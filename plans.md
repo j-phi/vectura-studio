@@ -317,6 +317,41 @@ question. Do not start these without a decision:
     `convert-to-scene-live-topoform.test.js` (14). **I5 seam:** flip the engine.js:770-772 block
     to a live `contourSlice` emit; NOTE the same wireframe-density limit — a contour mapper must
     be budget-aware to survive default detail 100.
+  - **Convert-to-Scene I5 (70becd3, v1.3.76) — CONVERT CHAIN COMPLETE.** New `contourSlice`
+    object3d mapper: depth-plane cross-sections of a mesh, occluded/self-occluded/shadowed by the
+    shared compositor. Slice helper `Scene3D.Slices.buildSliceSegments` (pure/deterministic,
+    registered on the namespace — no new script file / no index.html edit) cuts `record.world` by
+    N planes (normal = world +z rotated by sliceRotate/sliceTilt, so the cut point stays in world
+    space → exact projected depth), reusing topoform's `trianglePlaneSegment` (quads fan-tri'd);
+    standalone topoform slicer untouched. Per-record pass in scene3d.js `records.forEach` (after
+    curved-surface fill): projects via `scene.projectWorld`, runs each segment through the
+    existing `clipper.clipPath(pts,{objectId})` (NO selfObject → through-body self-occludes),
+    `emitRuns('sceneFill', hiddenTreatment)`; normal face outline/fill suppressed for
+    contourSlice (silhouette still draws). Params (inert): sliceCount 26, sliceAxis 'z',
+    sliceRotate/sliceTilt 0, sliceVisibility 'visibleOnly'. **Budget-aware (I4 perf constraint):**
+    tri×plane cap (SLICE_TRI_BUDGET) + occluder-adaptive plane reduction (maxClip =
+    clamp(SLICE_TEST_BUDGET/(occluders+1),400,12000)) + hard per-record clip counter (overflow →
+    raw front-only) + draft frames skip HLR + MIN_RUN_MM sliver floor; guard test (detail-80
+    sphere × 120 slices ~660ms); convert at default detail ~3.9s incl. full recompute. Convert
+    block at engine.js flipped: contours → contourSlice child (lineCount→sliceCount,
+    planeRotate→sliceRotate, planeTilt→sliceTilt, contourVisibility→sliceVisibility). I5.5
+    controls in scene3d-panel Style tab. Only intended baseline flips: convert-to-scene (d)/(d2)
+    + live-topoform (d) block-asserts → emit; visual 67/67 byte-identical. New
+    `scene3d-contour-slice.test.js`. **Adversarial review (new render output) found + fixed a
+    SEVERE budget-model defect** (e177b81, v1.3.76): the original derived plane count from the
+    global occluder count, so at raised `primitiveDetail` the contour output collapsed to ~8
+    fragments, flickered with camera pose, disagreed draft-vs-full, and was perturbed by unrelated
+    objects (all confirmed empirically). Fix: **plane count is now a pure function of `sliceCount`
+    alone** (occluder count / camera / draft / other objects never change it); each plane's cuts
+    are **linked into continuous rings** (a second collapse — thousands of sub-`MIN_RUN_MM` chords
+    the floor silently dropped); perf bounded by a **fixed HLR clip-work budget** (sampled length ×
+    occluders) that degrades by emitting overflow rings RAW, never by dropping planes; draft = full
+    minus HLR at the same plane count; `fullContour` back rings now dash on solids via `forceHidden`
+    (not only x-ray); dead `sliceAxis` removed; budget comment corrected. 5 RGR regression tests
+    (non-collapse at detail 80/100, camera invariance, draft/full parity, scene-content invariance,
+    solid fullContour) fail on 70becd3, pass after; count now flat ~1 ring/plane across detail;
+    detail-100 convert ~2.6s; visual 67/67 byte-identical. **Capped/deferred:** on pathological
+    (detail > 100) density only occlusion fidelity degrades (overflow rings raw), never the count.
   - **Deferred:** Phase 5 backlog (OBJ import, Manifold WASM booleans, curved−curved CSG,
     turntable export, v2 modifiers, etc. — needs prioritization). Known
     flaky test: `divisions-editor-section` weighted-pen-spread (probabilistic; passes isolated,
