@@ -641,7 +641,10 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     expect(container.querySelector('input.ctrl-slider[aria-label="Dash scale"]')).toBeFalsy();
 
     // Flip Line → dashed via the "Line type" select (the one carrying 'dashdot').
-    const lineSel = [...container.querySelectorAll('select')]
+    // Scoped to the STYLE page: the Scene page's always-mounted Shadow section
+    // (RC1) also carries a line-type select with the same options, and it sits
+    // earlier in DOM order — a container-wide lookup would grab the wrong one.
+    const lineSel = [...container.querySelector('.vs3-style').querySelectorAll('select')]
       .find((s) => [...(s.options || [])].some((o) => o.value === 'dashdot'));
     expect(lineSel).toBeTruthy();
     lineSel.value = 'dashed';
