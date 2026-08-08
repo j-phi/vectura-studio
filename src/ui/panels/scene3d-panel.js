@@ -1450,6 +1450,7 @@
     let styleComps = [];
     let toneComps = [];
     let groupComps = [];
+    let shadowComps = [];
     const destroyComps = (list) => { list.forEach((c) => { try { c.destroy && c.destroy(); } catch (_) { /* */ } }); list.length = 0; };
 
     // ── DOM skeleton ────────────────────────────────────────────────────────
@@ -1491,6 +1492,7 @@
     let inspectorHost = null;
     let styleHost = null;
     let toneHost = null;
+    let shadowHost = null;
     let moreMenuOpen = false;
     let moreBtn = null;
     let moreMenu = null;
@@ -2289,19 +2291,23 @@
       });
     };
 
-    // Phase 5 — scene-level cast-shadow controls. Rendered inside the light
-    // inspector beneath the Cast-shadows toggle (the natural home for shadow
-    // tuning), but the values write the SCENE-level params.shadow bag shared by
-    // every caster/light. Sliders ride liveSlider (one undo/gesture); selects and
+    // Phase 5 — scene-level cast-shadow controls (the params.shadow bag shared by
+    // every caster/light). Sliders ride liveSlider (one undo/gesture); selects and
     // seg toggles route through commit (a whole-value write + regen).
-    const renderShadowControls = (host) => {
+    //
+    // RC1 — these used to render ONLY inside the light inspector, beneath the
+    // Cast-shadows toggle, so they were reachable only after selecting a light
+    // ROW in the panel's in-panel tree. That tree lists `params.lights`, and a
+    // scene TREE empties that array (the lights are sceneLight3d CHILD layers;
+    // collectSceneParams re-unions them at compose time) — so on every tree scene
+    // there were zero light rows, renderShadowControls was never called, and the
+    // whole shadow section was dead code. It now has its own always-mounted
+    // "Shadow" section on the Scene page, which works for a tree AND a monolith
+    // and is the honest home anyway: shadow STYLING is scene-wide, not a property
+    // of one light (cast-on/off stays on the light, where it belongs).
+    const renderShadowControls = (host, comps) => {
       const s = ensureShadow();
       const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
-
-      const sub = document.createElement('div');
-      sub.className = 'vs3-subhead';
-      sub.textContent = 'Shadow';
-      host.appendChild(sub);
 
       // Mode — Additive (add hatch in the footprint) vs Inverse (thin the
       // ground's OWN fill inside the footprint so more dark paper shows → the
@@ -2317,22 +2323,17 @@
       modeHost.className = 'vs3-ctl';
       modeRow.appendChild(modeHost);
       host.appendChild(modeRow);
-      inspectorComps.push(UI.SegCtrl(modeHost, {
+      comps.push(UI.SegCtrl(modeHost, {
         options: [{ value: 'additive', label: 'Additive' }, { value: 'inverse', label: 'Inverse' }],
         value: s.shadowMode === 'inverse' ? 'inverse' : 'additive',
         ariaLabel: 'Shadow mode (additive hatch or inverse ground-fill thinning)',
         onChange: (v) => { commit(() => { ensureShadow().shadowMode = v === 'inverse' ? 'inverse' : 'additive'; }); },
       }));
 
-      // Angle (grayed by Follow-light, but kept live so a user can pre-set it).
-      sliderRow(host, inspectorComps, 'Angle', {
-        value: Number.isFinite(s.shadowAngle) ? s.shadowAngle : 45,
-        min: 0, max: 360, step: 1, defaultValue: 45,
-        ariaLabel: 'Shadow hatch angle (degrees)',
-        ...liveSlider((v) => { ensureShadow().shadowAngle = Math.round(v); }),
-      });
-
-      // Follow light — orient the hatch perpendicular to the light bearing.
+      // Follow light — shadows.js derives the hatch bearing from the light travel
+      // direction when this is on, which makes the manual Angle below INERT. Show
+      // the toggle FIRST and replace Angle with a note while it is on, so the
+      // panel never presents a control that cannot bite.
       const followRow = document.createElement('div');
       followRow.className = 'vs3-row';
       const followLbl = document.createElement('label');
@@ -2343,15 +2344,33 @@
       followHost.className = 'vs3-ctl';
       followRow.appendChild(followHost);
       host.appendChild(followRow);
-      inspectorComps.push(UI.SegCtrl(followHost, {
+      comps.push(UI.SegCtrl(followHost, {
         options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
         value: s.shadowAngleFollowsLight ? 'on' : 'off',
-        ariaLabel: 'Shadow angle follows the light bearing',
-        onChange: (v) => { commit(() => { ensureShadow().shadowAngleFollowsLight = v === 'on'; }); },
+        ariaLabel: 'Shadow fill angle follows the light bearing',
+        onChange: (v) => { commit(() => { ensureShadow().shadowAngleFollowsLight = v === 'on'; }); renderShadow(); },
       }));
 
+      // Angle — the bearing of the FILL LINES drawn inside the shadow region.
+      // It restyles the shadow; it does NOT move it (aiming the sun is the
+      // light's job — see the Sun child layer, the on-canvas light gizmo, or
+      // dragging the shadow itself).
+      if (s.shadowAngleFollowsLight) {
+        const note = document.createElement('p');
+        note.className = 'vs3-empty';
+        note.textContent = 'Angle is derived from the light bearing.';
+        host.appendChild(note);
+      } else {
+        sliderRow(host, comps, 'Angle', {
+          value: Number.isFinite(s.shadowAngle) ? s.shadowAngle : 45,
+          min: 0, max: 360, step: 1, defaultValue: 45,
+          ariaLabel: 'Shadow fill angle (degrees)',
+          ...liveSlider((v) => { ensureShadow().shadowAngle = Math.round(v); }),
+        });
+      }
+
       // Density (1..100 → hatch spacing; 50 == the legacy coverage 0.5).
-      sliderRow(host, inspectorComps, 'Density', {
+      sliderRow(host, comps, 'Density', {
         value: Number.isFinite(s.shadowDensity) ? s.shadowDensity : 50,
         min: 1, max: 100, step: 1, defaultValue: 50,
         ariaLabel: 'Shadow density',
@@ -2369,7 +2388,7 @@
       penHost.className = 'vs3-ctl';
       penRow.appendChild(penHost);
       host.appendChild(penRow);
-      inspectorComps.push(UI.Select(penHost, {
+      comps.push(UI.Select(penHost, {
         options: [{ value: '', label: 'Inherit' }].concat(pens.map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
         value: s.shadowPenId || '',
         ariaLabel: 'Shadow pen (Inherit = caster pen)',
@@ -2387,7 +2406,7 @@
       ltHost.className = 'vs3-ctl';
       ltRow.appendChild(ltHost);
       host.appendChild(ltRow);
-      inspectorComps.push(UI.Select(ltHost, {
+      comps.push(UI.Select(ltHost, {
         options: LINE_TYPE_OPTIONS,
         value: s.shadowLineType || 'solid',
         ariaLabel: 'Shadow line type',
@@ -2405,11 +2424,11 @@
       layHost.className = 'vs3-ctl';
       layRow.appendChild(layHost);
       host.appendChild(layRow);
-      inspectorComps.push(UI.SegCtrl(layHost, {
+      comps.push(UI.SegCtrl(layHost, {
         options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
         value: s.shadowLayers ? 'on' : 'off',
         ariaLabel: 'Layered penumbra shadow',
-        onChange: (v) => { commit(() => { ensureShadow().shadowLayers = v === 'on'; }); renderInspector(); },
+        onChange: (v) => { commit(() => { ensureShadow().shadowLayers = v === 'on'; }); renderShadow(); },
       }));
 
       // Layer count + falloff only bite when layered — shown then to keep the
@@ -2425,19 +2444,29 @@
         lcHost.className = 'vs3-ctl';
         lcRow.appendChild(lcHost);
         host.appendChild(lcRow);
-        inspectorComps.push(UI.SegCtrl(lcHost, {
+        comps.push(UI.SegCtrl(lcHost, {
           options: [{ value: '2', label: '2' }, { value: '3', label: '3' }, { value: '4', label: '4' }],
           value: String([2, 3, 4].includes(s.shadowLayerCount) ? s.shadowLayerCount : 3),
           ariaLabel: 'Shadow layer count',
           onChange: (v) => { commit(() => { ensureShadow().shadowLayerCount = parseInt(v, 10) || 3; }); },
         }));
-        sliderRow(host, inspectorComps, 'Falloff', {
+        sliderRow(host, comps, 'Falloff', {
           value: Number.isFinite(s.shadowFalloff) ? s.shadowFalloff : 0.5,
           min: 0.2, max: 1, step: 0.05, defaultValue: 0.5,
           ariaLabel: 'Shadow layer density falloff',
           ...liveSlider((v) => { ensureShadow().shadowFalloff = Math.round(v * 100) / 100; }),
         });
       }
+    };
+
+    // RC1 — the always-mounted Shadow section. Independent of the light rows (a
+    // scene tree has none in this panel), so the shadow line style / pen / fill
+    // angle / density are reachable on a tree AND a monolith.
+    const renderShadow = () => {
+      if (!shadowHost) return;
+      destroyComps(shadowComps);
+      shadowHost.textContent = '';
+      renderShadowControls(shadowHost, shadowComps);
     };
 
     // Light inspector — type-aware. Directional: azimuth / elevation. Point/spot:
@@ -2550,8 +2579,10 @@
             renderInspector();
           },
         }));
-        // Scene-level shadow tuning — only meaningful while this light casts.
-        if (light.castShadows !== false) renderShadowControls(inspectorHost);
+        // Scene-level shadow tuning used to render here, reachable only after a
+        // light row was selected. It now lives in its own always-mounted Shadow
+        // section on the Scene page (RC1) — the light keeps only cast on/off,
+        // which really is a light property.
       }
       // Reset to factory default (not for ambient — it has no positional/aim
       // default worth a button).
@@ -3675,6 +3706,19 @@
         body.appendChild(toneHost);
       },
     }));
+    // RC1 — Shadow is its own section, not a tail of the light inspector, so it
+    // mounts for a scene TREE (whose lights are child layers, leaving this
+    // panel's light rows empty) exactly as it does for a legacy monolith.
+    sections.push(UI.Section(pages.scene, {
+      title: 'Shadow',
+      children: (body) => {
+        shadowHost = document.createElement('div');
+        // Reuse the inspector's column layout (gap + min-width:0) rather than
+        // add a near-duplicate rule to the skin; vs3-shadow is the hook.
+        shadowHost.className = 'vs3-inspector vs3-shadow';
+        body.appendChild(shadowHost);
+      },
+    }));
 
     styleHost = document.createElement('div');
     styleHost.className = 'vs3-style';
@@ -3694,6 +3738,7 @@
     renderInspector();
     renderStyle();
     renderTone();
+    renderShadow();
 
     let destroyed = false;
     const teardown = () => {
@@ -3709,6 +3754,7 @@
       destroyComps(styleComps);
       destroyComps(toneComps);
       destroyComps(groupComps);
+      destroyComps(shadowComps);
       sections.forEach((s) => { try { s.destroy(); } catch (_) { /* */ } });
       try { tabs.destroy(); } catch (_) { /* */ }
       if (root.parentNode) root.parentNode.removeChild(root);

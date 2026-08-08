@@ -1414,14 +1414,30 @@
     }
   };
 
-  // ── Shadow ▾ — per-object cast + scene-wide sun/style/pen/density/layers. ─
-  const buildShadowBody = (fly) => {
+  // ── Shadow ▾ — per-object cast + scene-wide shadow STYLING (fill angle /
+  // line style / pen / density / layers).
+  //
+  // RC1 — the Angle dial here used to drive `lights.0.azimuth` (the SUN bearing),
+  // so "shadow angle" MOVED the shadow instead of restyling it. Two problems:
+  //   1. Semantics. Aiming the sun is a LIGHTING concern; this surface styles the
+  //      ink drawn inside the shadow region. Angle now binds to the scene-wide
+  //      `shadow.shadowAngle` bag — the hatch bearing shadows.js reads — so it
+  //      rotates the fill lines and leaves the footprint exactly where it was.
+  //   2. It was dead on a scene TREE. A tree empties `params.lights` (the lights
+  //      live on sceneLight3d CHILD layers; collectSceneParams re-unions them at
+  //      compose time), so `lights[0]` was `{}` — the dial showed the 135°
+  //      fallback and every write landed on a phantom `params.lights[0]`.
+  // `shadow.*` lives on the scene layer's own params for a monolith AND a tree
+  // (collectSceneParams passes the bag straight through), so setSceneParam
+  // reaches it on both. Sun steering lives on the light itself: the Sun child
+  // layer's panel (azimuth/elevation), the on-canvas light gizmo, and the
+  // shadow-drag re-aim.
+  const buildShadowBody = (fly, rebuild) => {
     const sc = sceneFlyCtx(); if (!sc) return;
     const C = (FLY().shadow) || {};
     const obj = sc.r.getSceneObjectRecord(sc.layerId, sc.ids[0]) || {};
     const sp = (sc.layer.params) || {};
     const bag = sp.shadow || {};
-    const light0 = (Array.isArray(sp.lights) && sp.lights[0]) || {};
     const setObj = (path, value, opts) => sc.r.setSceneObjectField(sc.layerId, sc.ids, path, value, opts);
     const setScene = (path, value, opts) => sc.r.setSceneParam(sc.layerId, path, value, opts);
     const castOf = (o) => (o.shadow && o.shadow.enabled === false ? 'off'
@@ -1444,12 +1460,28 @@
         onChange: (v) => setScene('shadow.shadowMode', v === 'inverse' ? 'inverse' : 'additive'),
       });
     }
-    if (UI.AngleDial) {
-      const az = Number.isFinite(light0.azimuth) ? light0.azimuth : 135;
-      UI.AngleDial(flyRow(fly, C.angle.label, C.angle.note), {
-        value: az, ariaLabel: C.angle.aria, defaultValue: 135,
-        onChange: (v) => setScene('lights.0.azimuth', norm360(v), { gesture: true, preview: true }),
-        onCommit: (v) => setScene('lights.0.azimuth', norm360(v)),
+    // Follow light — shadows.js derives the hatch bearing from the light travel
+    // direction when this is on, so the manual Angle below is INERT then and is
+    // replaced by a note rather than shown as a dial that does nothing.
+    const follows = bag.shadowAngleFollowsLight === true;
+    // The shadow config block carries no on/off pair of its own (style/xray do),
+    // so fall back to the local literal rather than reach across namespaces.
+    UI.SegCtrl(flyRow(fly, (C.follow && C.follow.label) || 'Follow light'), {
+      options: C.onOff || [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+      value: follows ? 'on' : 'off',
+      ariaLabel: (C.follow && C.follow.aria) || 'Shadow fill angle follows the light bearing',
+      onChange: (v) => { setScene('shadow.shadowAngleFollowsLight', v === 'on'); rebuild(); },
+    });
+    if (follows) {
+      flyNote(fly, (C.follow && C.follow.derivedNote) || 'Angle is derived from the light bearing.');
+    } else if (UI.AngleDial) {
+      // Label text still comes from config; the aria/note strings there predate
+      // this fix and describe the sun, so they are overridden locally.
+      const ang = Number.isFinite(bag.shadowAngle) ? bag.shadowAngle : 45;
+      UI.AngleDial(flyRow(fly, C.angle.label, (C.angle && C.angle.fillNote) || 'Fill lines (scene-wide)'), {
+        value: ang, ariaLabel: (C.angle && C.angle.fillAria) || 'Shadow fill angle (scene-wide)', defaultValue: 45,
+        onChange: (v) => setScene('shadow.shadowAngle', norm360(v), { gesture: true, preview: true }),
+        onCommit: (v) => setScene('shadow.shadowAngle', norm360(v)),
       });
     }
     UI.Select(flyRow(fly, C.style.label), {
