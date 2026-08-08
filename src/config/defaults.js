@@ -2061,11 +2061,16 @@
       label: 'Scene 3D',
       is3d: true,
       preset: 'scene3d-default',
-      // v2 — X-ray fold. A fresh scene is born at the current SCENE_VERSION so it
-      // is NOT subject to the v1→v2 x-ray hidden-edge seed migration; a fresh
-      // x-ray object's hidden edges follow Edge Styles (default drop), and that
-      // stays true across save/reload. Only OLD (v1) saved scenes get the seed.
-      sceneVersion: 2,
+      // A fresh scene is born at the current SCENE_VERSION so it is NOT subject
+      // to any migration step:
+      //   v2 — X-ray fold: a fresh x-ray object's hidden edges follow Edge
+      //        Styles (default drop), and that stays true across save/reload.
+      //        Only OLD (v1) saved scenes get the hidden-edge seed.
+      //   v3 — Curved fill angle: a fresh hatch keeps the panel's 45° seed on a
+      //        curved primitive (it now genuinely wraps helically). Only OLD
+      //        (pre-v3) saved scenes are pinned back to the meridian family.
+      // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
+      sceneVersion: 3,
       seed: 0,
       objects: [
         {

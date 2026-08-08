@@ -28,7 +28,14 @@
   // was not explicitly false) so a saved scene renders BYTE-IDENTICALLY — the
   // seeded override is a pure treatment flip (pen/weightMm/dash all null ⇒
   // edgeStyleMeta returns null ⇒ no overlay meta).
-  const SCENE_VERSION = 2;
+  // v3 (Curved fill angle): Style > Hatch > Angle used to be IGNORED by the
+  // chart-wrapped fill (Scene3D.SurfaceFill), so every curved primitive rendered
+  // meridians no matter what the dial said — and the panel seeds a fresh hatch
+  // at 45. Now that the angle is live, a saved scene storing 45 would silently
+  // re-render as a helical wrap. SCENE_MIGRATIONS[2] pins fillAngle = 0 (the
+  // meridian family) on the curved objects of a pre-v3 document, so it renders
+  // BYTE-IDENTICALLY; new objects keep being born at 45.
+  const SCENE_VERSION = 3;
   // Keyed by SOURCE version: SCENE_MIGRATIONS[n] upgrades an n payload to n+1.
   const SCENE_MIGRATIONS = {};
 
@@ -1052,6 +1059,113 @@
   };
   SCENE_MIGRATIONS[1] = migrateXrayHiddenEdges;
 
+  // ── SCENE_MIGRATIONS[2] — the curved fill-angle pin (v2 → v3). ─────────────
+  // Scene3D.SurfaceFill listed `fillAngle` in its opts contract but never READ
+  // it: every chart-wrapped primitive was hard-wired to the meridian family, so
+  // the Angle dial did nothing on a sphere/cylinder/torus/… The panel seeds a
+  // fresh hatch at 45, so essentially every saved scene STORES 45 while
+  // RENDERING meridians. With the angle live, those documents would open as a
+  // helical wrap. This pins them to 0 — the meridian family — so a pre-v3
+  // document renders byte-identically, while anything created at v3 keeps 45.
+  //
+  // SCOPE (measured, not assumed — a spy on SurfaceFill.buildObject over every
+  // primitive × mapper):
+  //   • CURVED_FILL_PRIMITIVES are the only primitives scene3d.js charts
+  //     (TOPOFORM_MODES → SurfaceFill.chartFor). box / plane / solid (which
+  //     covers polyhedra AND solidType:'importedMesh') never reach SurfaceFill
+  //     and always honoured the angle — pinning them would corrupt a document
+  //     that was already correct.
+  //   • Only 'hatch' and 'crosshatch' read fillAngle inside SurfaceFill.
+  //     contour / spiral / stipple are charted too but have no Angle control,
+  //     and their output is provably identical at 0 and 45 — left alone.
+  //   • An ABSENT fillAngle is NOT 0: scene3d.js reads finite(sp.fillAngle, 45),
+  //     so an inherited-default hatch renders at 45 too and must be pinned. (The
+  //     shipped `scene3d-studio-shadows` preset is exactly that case.)
+  //   • Every angle ≡ 0 (mod 180) already takes the legacy axis emitters, so an
+  //     object at 0 or 180 needs no change — which is also what makes the
+  //     migration idempotent (re-running finds every curved style at 0).
+  //
+  // A CSG child is deliberately NOT special-cased: the assembly borrows the
+  // primary object's id, and scene3d.js looks that id up in the ORIGINAL
+  // objects, so a carve whose primary is curved IS surface-filled (verified with
+  // the same spy) and must be pinned like any other curved object.
+  const CURVED_FILL_PRIMITIVES = new Set([
+    'sphere', 'ellipsoid', 'cylinder', 'cone', 'torus', 'torusKnot',
+    'capsule', 'superellipsoid', 'pyramid',
+  ]);
+  const ANGLED_FILL_MAPPERS = new Set(['hatch', 'crosshatch']);
+  // scene3d.js: `const angleDeg = finite(sp.fillAngle, 45)`.
+  const LEGACY_FILL_ANGLE = 45;
+  const rendersMeridians = (angle) => {
+    const a = finite(angle, LEGACY_FILL_ANGLE);
+    return (((a % 180) + 180) % 180) === 0;
+  };
+  // Returns a PINNED clone of `style`, or null when the style needs no change
+  // (wrong mapper, no style at all, or already on the meridian axis). The clone
+  // is whole — StyleCascade resolves whole-style-wins, so materializing an
+  // object override out of the scene style must copy penId/mapper too.
+  const pinCurvedFillAngle = (style) => {
+    if (!isObject(style)) return null;
+    if (!ANGLED_FILL_MAPPERS.has(style.mapper)) return null;
+    const sp = isObject(style.params) ? style.params : {};
+    if (rendersMeridians(sp.fillAngle)) return null;
+    return { ...style, params: { ...sp, fillAngle: 0 } };
+  };
+  const migrateCurvedFillAngle = (params) => {
+    const src = isObject(params) ? params : {};
+    // MONOLITH / scene-group shape: inline objects[] + styleTable.
+    if (Array.isArray(src.objects)) {
+      const curved = new Set();
+      src.objects.forEach((o) => {
+        if (isObject(o) && typeof o.id === 'string' && CURVED_FILL_PRIMITIVES.has(o.primitive)) curved.add(o.id);
+      });
+      if (!curved.size) return src;
+      const table = isObject(src.styleTable) ? src.styleTable : {};
+      const sceneStyle = isObject(table.scene) ? table.scene : null;
+      const byObject = { ...(isObject(table.byObject) ? table.byObject : {}) };
+      const byFace = { ...(isObject(table.byFace) ? table.byFace : {}) };
+      let touched = false;
+      // Object scope: pin an existing override in place; an object that INHERITS
+      // the scene style is materialized as its own override, so the pin never
+      // drags the scene's faceted objects to 0 with it.
+      curved.forEach((id) => {
+        const pinned = pinCurvedFillAngle(isObject(byObject[id]) ? byObject[id] : sceneStyle);
+        if (pinned) { byObject[id] = pinned; touched = true; }
+      });
+      // Face scope: byFace wins over byObject, so each face override on a curved
+      // object carries its own angle and needs its own pin.
+      Object.keys(byFace).forEach((key) => {
+        const slash = key.indexOf('/');
+        if (slash < 0 || !curved.has(key.slice(0, slash))) return;
+        const pinned = pinCurvedFillAngle(byFace[key]);
+        if (pinned) { byFace[key] = pinned; touched = true; }
+      });
+      if (!touched) return src;
+      return { ...src, styleTable: { ...table, byObject, byFace } };
+    }
+    // LEAF object3d layer shape: params.primitive + params.style / faceStyles.
+    // collectSceneParams routes a leaf's own style straight to byObject[layerId],
+    // so a tree object never inherits the group's scene style — the leaf's own
+    // bag is the whole story.
+    if (CURVED_FILL_PRIMITIVES.has(src.primitive)) {
+      let touched = false;
+      const out = { ...src };
+      const pinned = pinCurvedFillAngle(src.style);
+      if (pinned) { out.style = pinned; touched = true; }
+      if (isObject(src.faceStyles)) {
+        const faceStyles = { ...src.faceStyles };
+        Object.keys(faceStyles).forEach((key) => {
+          const p = pinCurvedFillAngle(faceStyles[key]);
+          if (p) { faceStyles[key] = p; touched = true; }
+        });
+        if (touched) out.faceStyles = faceStyles;
+      }
+      return touched ? out : src;
+    }
+    return src;
+  };
+  SCENE_MIGRATIONS[2] = migrateCurvedFillAngle;
+
   // Scene migration chain (keyed on params.sceneVersion), then normalization.
   // Payloads NEWER than SCENE_VERSION load as-is (best-effort forward compat).
   const migrateScene = (params) => {
@@ -1072,6 +1186,9 @@
   const api = {
     SCENE_VERSION,
     PRIMITIVES,
+    // The chart-wrapped (SurfaceFill) primitives — the set the v2→v3 fill-angle
+    // migration owns, and the one place that answers "is this shape curved?".
+    CURVED_FILL_PRIMITIVES,
     MAPPERS,
     GROUP_OPS,
     PRIMITIVE_PARAM_DEFAULTS,

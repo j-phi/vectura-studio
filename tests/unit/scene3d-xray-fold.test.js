@@ -73,12 +73,15 @@ describe('Scene3D x-ray fold — migration + emit', () => {
   const backFills = (paths) => (paths || []).filter((pp) => pp.meta && pp.meta.kind === 'sceneFill'
     && pp.meta.sceneTarget && pp.meta.sceneTarget.xrayBack === true);
 
-  // ── SCENE_VERSION bumped so the chain actually runs. ───────────────────────
-  test('SCENE_VERSION is 2 and SCENE_MIGRATIONS[1] exists', () => {
-    expect(Params.SCENE_VERSION).toBe(2);
+  // ── The v1 → v2 step is still reachable at the head of the chain. ─────────
+  // Pinned to Params.SCENE_VERSION, not to a literal: later steps keep bumping
+  // it (v3 = the curved fill-angle pin), and what this owns is that a v1 payload
+  // walks the WHOLE chain and arrives current.
+  test('SCENE_MIGRATIONS[1] is reachable and a v1 payload lands at SCENE_VERSION', () => {
+    expect(Params.SCENE_VERSION).toBeGreaterThanOrEqual(2);
     // Migration reachable through the public sanitize path.
     const migrated = Params.sanitizeSceneParams(scene('box', 'xray'));
-    expect(migrated.sceneVersion).toBe(2);
+    expect(migrated.sceneVersion).toBe(Params.SCENE_VERSION);
   });
 
   // ── Migration seed: an x-ray object gets a NO-OP-meta hidden=dash override. ──
@@ -171,7 +174,7 @@ describe('Scene3D x-ray fold — migration + emit', () => {
       style: { penId: null, mapper: 'hatch', params: { fillDensity: 60 } },
     };
     const migrated = Params.migrateScene(layer);
-    expect(migrated.sceneVersion).toBe(2);
+    expect(migrated.sceneVersion).toBe(Params.SCENE_VERSION);
     expect(migrated.edgeStyles && migrated.edgeStyles.hidden).toBeTruthy();
     expect(migrated.edgeStyles.hidden.hiddenTreatment).toBe('dash');
     expect(migrated.edgeStyles.hidden.pen).toBe(null);

@@ -71,7 +71,9 @@ describe('scene3d generate (CONTRACT A/B)', () => {
   test('CONTRACT A defaults ship in ALGO_DEFAULTS.scene3d', () => {
     expect(defaults).toBeTruthy();
     expect(defaults.is3d).toBe(true);
-    expect(defaults.sceneVersion).toBe(2);
+    // A fresh scene is always born at the CURRENT schema version, so it never
+    // walks a migration step (see defaults.js).
+    expect(defaults.sceneVersion).toBe(V.Scene3D.Params.SCENE_VERSION);
     expect(Array.isArray(defaults.objects)).toBe(true);
     expect(defaults.objects[0].primitive).toBe('box');
     expect(defaults.objects[0].id).toBe('obj-1');

@@ -1253,7 +1253,16 @@
             const st = styleOf(face);
             if (!SURFACE_FILL.has(st.mapper)) return;
             const sp = st.params || {};
-            const key = `${st.penId || ''}|${st.mapper}|${finite(sp.fillAngle, 45)}|${finite(sp.fillDensity, 50)}`;
+            // Faces only share a continuous fill region when every parameter
+            // that STEERS that fill matches. The crosshatch family-B controls
+            // now do, so they join the key — for any other mapper they are
+            // absent and contribute a constant suffix (same partition, same
+            // output), and two crosshatch faces only split when they genuinely
+            // disagree (which used to render one of them with the other's
+            // crossing family).
+            const crossKey = st.mapper === 'crosshatch'
+              ? `|${finite(sp.crossAngleDelta, 90)}|${finite(sp.crossDensityRatio, 1)}|${sp.tripleHatch === true}` : '';
+            const key = `${st.penId || ''}|${st.mapper}|${finite(sp.fillAngle, 45)}|${finite(sp.fillDensity, 50)}${crossKey}`;
             let g = groups.get(key);
             if (!g) { g = { style: st, faces: [] }; groups.set(key, g); }
             g.faces.push(idx);
@@ -1345,6 +1354,19 @@
                 mapper: g.style.mapper,
                 fillAngle: angleDeg,
                 fillDensity: finite(sp.fillDensity, 50),
+                // Crosshatch family-B controls. They were already live on faceted
+                // geometry and on the flat silhouette fallback below, but were
+                // never handed to the curved fill — so on every chart-wrapped
+                // primitive the crossing family was hard-wired at +90, at family
+                // A's density, with no triple pass. Same clamps, same meaning as
+                // crossFamilies(): +delta, spacing × ratio, and the third pass
+                // only in the DARKEST tone band (the gate lives here, exactly as
+                // it does for the faceted path).
+                cross: g.style.mapper === 'crosshatch' ? {
+                  angleDelta: clamp(finite(sp.crossAngleDelta, 90), 10, 170),
+                  densityRatio: clamp(finite(sp.crossDensityRatio, 1), 0.25, 2),
+                  triple: sp.tripleHatch === true && darkBand,
+                } : null,
                 // Spiral controls (I14): wire angleOffset / eccentricity / centre /
                 // axis-snap into the wrapped surfaceHelix so each visibly changes the
                 // spiral on curved primitives (they were previously only read by the

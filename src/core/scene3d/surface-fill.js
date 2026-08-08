@@ -88,6 +88,13 @@
   //   fillAngle: hatch/crosshatch direction in the surface's OWN tangent frame
   //   (deg). 0 = meridians (the legacy family), 90 = parallels; see the angle
   //   family block below. Omitted/0 ⇒ byte-identical to the pre-angle fill.
+  //   cross: { angleDelta, densityRatio, triple } — the crosshatch family-B
+  //   controls, with EXACTLY the faceted path's semantics (crossFamilies in
+  //   scene3d.js): family B sits at fillAngle + angleDelta and its SPACING is
+  //   scaled by densityRatio (ratio > 1 ⇒ sparser B); `triple` adds a third pass
+  //   at fillAngle + 45 on family-B's spacing, and the CALLER owns its
+  //   darkest-tone-band gate (as the faceted path does). Omitted ⇒ the legacy
+  //   +90 / same-density / no-triple crossing family, byte-identical.
   //   intensityFn(worldNormal, worldPoint) → [0,1] combined multi-light intensity
   //   (worldPoint is the per-sample world surface point, needed by point/spot).
   //   xray: { backFaces, backDensity } — when backFaces, also emit the FAR
@@ -443,6 +450,26 @@
       const hatchAngle = finite(opts.fillAngle, 0);
       const onMeridianAxis = (((hatchAngle % 180) + 180) % 180) === 0;
       const meridianAt = (frac) => axisLine('b', frac);
+      // Crosshatch family-B controls, clamped to the SAME ranges the faceted
+      // path and the params schema use. A wrapped family's spacing is 1/count,
+      // so the faceted "spacing × ratio" is "count ÷ ratio" here.
+      const cross = opts.cross || {};
+      const crossDelta = clamp(finite(cross.angleDelta, 90), 10, 170);
+      const crossRatio = clamp(finite(cross.densityRatio, 1), 0.25, 2);
+      const crossTriple = cross.triple === true;
+      // Emit a family that is NOT the primary one, at an arbitrary angle. When
+      // the primary family sits on a parametric axis the crossing family takes
+      // the axis emitters too (delta 90 ⇒ the parallels family, exactly what
+      // crosshatch has always emitted); when the primary is already an angled
+      // scanline family, so is the crossing one. Either way the default
+      // (delta 90, ratio 1, no triple) reproduces the previous output exactly.
+      const emitSecondary = (angleDeg, count, back) => {
+        if (!onMeridianAxis) { emitAngledFamily(angleDeg, count, back); return; }
+        const a180 = (((finite(angleDeg, 0) % 180) + 180) % 180);
+        if (a180 === 0) emitFamily('b', count, back);
+        else if (a180 === 90) emitFamily('a', count, back);
+        else emitAngledFamily(angleDeg, count, back);
+      };
       if (mapper === 'hatch') {
         if (onMeridianAxis) {
           emitFamily('b', count, back); // meridians wrap top-to-bottom
@@ -452,15 +479,14 @@
           emitShadowInfill(angleFamily(hatchAngle).lineAt, count, back);
         }
       } else if (mapper === 'crosshatch') {
-        if (onMeridianAxis) {
-          emitFamily('b', count, back);
-          emitFamily('a', count, back); // + parallels
-          emitShadowInfill(meridianAt, count, back);
-        } else {
-          emitAngledFamily(hatchAngle, count, back);
-          emitAngledFamily(hatchAngle + 90, count, back); // the crossing family
-          emitShadowInfill(angleFamily(hatchAngle).lineAt, count, back);
-        }
+        // Family B is `crossDensityRatio` SPACING wider than family A, i.e. this
+        // many lines; ratio 1 leaves the count untouched.
+        const countB = Math.max(2, Math.round(count / crossRatio));
+        if (onMeridianAxis) emitFamily('b', count, back);
+        else emitAngledFamily(hatchAngle, count, back);
+        emitSecondary(hatchAngle + crossDelta, countB, back);      // the crossing family
+        if (crossTriple) emitSecondary(hatchAngle + 45, countB, back); // darkest-band third pass
+        emitShadowInfill(onMeridianAxis ? meridianAt : angleFamily(hatchAngle).lineAt, count, back);
       } else if (mapper === 'contour') {
         emitFamily('a', count, back); // latitude rings following the form
         emitShadowInfill((frac) => axisLine('a', frac), count, back);

@@ -1792,6 +1792,10 @@
     const EXTRA_PRESERVED = {
       rings: ['outerDiameter', 'centerDiameter'],
     };
+    // Layer types whose params carry a `sceneVersion` and therefore have to walk
+    // Scene3D.Params' migration chain when a preset (= a saved scene) is applied.
+    // Mirrors the set the engine's sanitizeImportedParams migrates.
+    const SCENE_MIGRATED_TYPES = new Set(['scene3d', 'object3d', 'sceneGroup3d', 'booleanGroup3d']);
     const lookupPreset = (type, presetId) => {
       const libs = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.PresetLibraries;
       const builtIn = (libs && libs[type]) || [];
@@ -1829,6 +1833,18 @@
       });
       nextParams.preset = presetId;
       layer.params = { ...layer.params, ...nextParams };
+      // A 3D-scene preset is a SAVED SCENE: its params carry their own
+      // `sceneVersion`, which overrides the current default on the merge above.
+      // Applying one therefore hands the layer a payload from an older schema —
+      // the same thing opening an old `.vectura` does — so it has to walk the
+      // same migration chain the engine's import branch walks, or a shipped
+      // preset silently renders under the new semantics (e.g. the curved
+      // fill-angle pin). Gated on sceneVersion, so a current-version preset is
+      // untouched, and a no-op for every non-scene layer type.
+      const sceneParams = window.Vectura?.Scene3D?.Params;
+      if (SCENE_MIGRATED_TYPES.has(layer.type) && typeof sceneParams?.migrateScene === 'function') {
+        layer.params = sceneParams.migrateScene(layer.params);
+      }
       this.storeLayerParams(layer);
       this.app.regen();
       this.buildControls();
