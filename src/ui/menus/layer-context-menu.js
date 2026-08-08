@@ -67,9 +67,14 @@
     { prim: 'torus', label: 'Torus' },
     { prim: 'cone', label: 'Cone' },
     { prim: 'plane', label: 'Plane' },
+    // ellipsoid + pyramid have full creation defaults and inspector controls but
+    // were absent here, so the layer menu could not add them — the ctxbar Shape
+    // flyout and the panel shelf now list the same 12.
+    { prim: 'ellipsoid', label: 'Ellipsoid' },
     { prim: 'superellipsoid', label: 'Superellipsoid' },
     { prim: 'torusKnot', label: 'Torus Knot' },
     { prim: 'capsule', label: 'Capsule' },
+    { prim: 'pyramid', label: 'Pyramid' },
     { prim: 'solid', key: 'scene-add-solid', label: 'Polyhedron' },
   ];
   const _shapeKey = (entry) => entry.key || `scene-add-prim:${entry.prim}`;

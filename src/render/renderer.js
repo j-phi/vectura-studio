@@ -12281,31 +12281,70 @@
     }
 
     // I22 — swap the primitive of each selected object (box → sphere → …). The
-    // params bag is reset to the new primitive's canonical defaults so a swap is
-    // a clean shape change (the box's sx/sy/sz would be meaningless for a
-    // sphere). One history entry + regen. Rejects an unknown primitive name.
+    // geometry bag is REBUILT through the shared creation contract
+    // (Scene3D.Params.buildPrimitiveParams: PRIMITIVE_CREATE_DEFAULTS + a
+    // size-preserving rescale + an importedMesh carry-over), never copied
+    // wholesale from PRIMITIVE_PARAM_DEFAULTS — that DESERIALIZATION table has
+    // no mesh payload, so the old code irreversibly destroyed an imported mesh
+    // and made a ctxbar swap disagree with a panel swap.
+    //
+    // A TREE CHILD delegates straight to engine.setObjectPrimitive (the panel's
+    // own path) so both surfaces run one implementation; a legacy INLINE
+    // monolith object — which has no layer to delegate to — is swapped in place
+    // through the same buildPrimitiveParams contract.
+    //
+    // One history entry + regen, plus a 'vectura:scene-object-primitive' event
+    // so the docked panel can re-render the new geometry's controls at once.
+    // Rejects an unknown primitive name and a pure no-op (every target already
+    // on that primitive) so no empty undo step is ever recorded.
     setSceneObjectPrimitive(layerId, objectIds, primitive) {
       const layer = this.engine.layers.find((l) => l.id === layerId);
       if (!layer || layer.type !== 'scene3d') return false;
       const P = window.Vectura?.Scene3D?.Params;
       const valid = P && Array.isArray(P.PRIMITIVES) ? P.PRIMITIVES : null;
       if (valid && valid.indexOf(primitive) === -1) return false;
-      // Scene-tree Increment D — resolve each target through _sceneObjectById so
-      // the swap reaches a CHILD object3d layer (params live at child.params.*),
-      // not just legacy inline objects. Mutating the returned view writes through
-      // to the child layer; the compositor re-collects it on the next generate.
-      const targets = (objectIds || [])
-        .map((id) => this._sceneObjectById(layer, id))
-        .filter(Boolean);
-      if (!targets.length) return false;
-      const defaults = (P && P.PRIMITIVE_PARAM_DEFAULTS && P.PRIMITIVE_PARAM_DEFAULTS[primitive]) || null;
-      this._scenePushHistory();
-      targets.forEach((o) => {
-        o.primitive = primitive;
-        if (defaults) o.params = { ...defaults };
+      // Resolve each target the child-aware way, keeping _sceneObjectById's
+      // precedence: a legacy inline record wins, else the CHILD object3d layer
+      // whose LAYER id is the object id (identity contract).
+      const inline = [];
+      const children = [];
+      (objectIds || []).forEach((id) => {
+        const rec = this._sceneObjects(layer).find((o) => o && o.id === id);
+        if (rec) { if (rec.primitive !== primitive) inline.push(rec); return; }
+        const child = this._sceneChildLayerFor(layer, id);
+        if (child && child.type === 'object3d' && child.params
+          && child.params.primitive !== primitive) children.push(child);
       });
+      if (!inline.length && !children.length) return false;
+      this._scenePushHistory();
+      inline.forEach((o) => {
+        const next = (P && typeof P.buildPrimitiveParams === 'function')
+          ? P.buildPrimitiveParams(primitive, o.primitive || 'box', o.params)
+          : null;
+        o.primitive = primitive;
+        if (next) o.params = next;
+      });
+      // `recompute: false` — _sceneRegen below composes once for the whole swap.
+      children.forEach((c) => this.engine.setObjectPrimitive(c.id, primitive, { recompute: false }));
       this._sceneRegen(layer);
+      this._emitScenePrimitiveChange(
+        layer,
+        inline.map((o) => o.id).concat(children.map((c) => c.id)),
+        primitive,
+      );
       return true;
+    }
+
+    // Announce a primitive swap made from the canvas ctxbar. The docked object
+    // panel rebuilds its geometry controls from this instead of waiting for its
+    // pointerenter/focusin drift guard (which stays as the belt-and-braces
+    // fallback for any surface that swaps without emitting).
+    _emitScenePrimitiveChange(layer, objectIds, primitive) {
+      try {
+        window.dispatchEvent(new window.CustomEvent('vectura:scene-object-primitive', {
+          detail: { layerId: layer.id, objectIds: (objectIds || []).slice(), primitive },
+        }));
+      } catch (_e) { /* noop — the swap already landed */ }
     }
 
     // ——— ctxbar scene-object flyout bridges (ask #8) —————————————————————
@@ -12361,10 +12400,38 @@
       return SC.resolve(this._sceneStyleTable(layer), { objectId });
     }
 
+    // Where an object's STYLE actually lives — the child-aware sibling of
+    // _sceneStyleTable, mirroring _sceneObjectById / _allSceneObjectRecords.
+    //
+    // On a scene TREE the compositor's collect step (Scene3D.Params
+    // .collectSceneParams) republishes `styleTable.byObject[id]` from the CHILD
+    // layer's `params.style` on EVERY compose, so a write into the GROUP's table
+    // is discarded before the scene ever renders — the ctxbar Style flyout was
+    // dead while the object panel's Style tab (which writes the child) worked.
+    // Returns the child object3d / booleanGroup3d LAYER for a tree object, or
+    // null for a legacy INLINE monolith object, whose style stays in the group
+    // table exactly as before (inline objects are collected from `gp.styleTable`
+    // and are never overwritten, so that path must not change).
+    _sceneStyleOwnerLayer(layer, objectId) {
+      if (!layer || !objectId) return null;
+      if (this._sceneObjects(layer).some((o) => o && o.id === objectId)) return null;
+      const child = this._sceneChildLayerFor(layer, objectId);
+      return (child && child.params) ? child : null;
+    }
+
     // Whole-style write at object scope (CONTRACT C — no per-field merge across
     // scopes; the caller assembles the full style.params). `patch` keys replace
     // the resolved style's keys (penId / mapper / params), exactly like the
     // docked panel's commitStyle. `opts.clear` removes the byObject override.
+    //
+    // Scene-tree: the group's styleTable is NOT the source of truth for a child
+    // object — the collect step re-derives it from `child.params.style` on every
+    // compose (see _sceneStyleOwnerLayer). Each write therefore lands on the
+    // CHILD LAYER as well as the group table: the child is what actually
+    // renders, and the mirrored table entry keeps a pre-compose read
+    // (getSceneObjectResolvedStyle, which the flyout rebuild uses) in sync. Both
+    // hold the same value, so nothing stale can be resurrected. A legacy inline
+    // monolith object has no owner layer and keeps the group-table-only path.
     setSceneObjectStyle(layerId, objectIds, patch, opts) {
       const layer = this.engine.layers.find((l) => l.id === layerId);
       const SC = window.Vectura?.Scene3D?.StyleCascade;
@@ -12373,13 +12440,23 @@
       if (!ids.length) return false;
       const table = this._sceneStyleTable(layer);
       const o = opts || {};
+      const plain = (s) => ({ penId: s.penId, mapper: s.mapper, params: { ...(s.params || {}) } });
       this._sceneBeginWrite(o);
       ids.forEach((id) => {
-        if (o.clear === true) { SC.clearStyle(table, 'object', id); return; }
+        const owner = this._sceneStyleOwnerLayer(layer, id);
+        if (o.clear === true) {
+          SC.clearStyle(table, 'object', id);
+          // A tree child has no "override absent" state (its style is always
+          // republished), so the on-screen meaning of clearing — fall through to
+          // the SCENE style — is written onto the child explicitly.
+          if (owner) owner.params.style = plain(SC.resolve(table, {}));
+          return;
+        }
         const cur = SC.resolve(table, { objectId: id });
         const style = { penId: cur.penId, mapper: cur.mapper, params: { ...(cur.params || {}) } };
         Object.keys(patch || {}).forEach((k) => { style[k] = patch[k]; });
         SC.setStyle(table, 'object', id, style);
+        if (owner) owner.params.style = plain(style);
       });
       this._sceneEndWrite(layer, o);
       return true;

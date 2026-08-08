@@ -135,18 +135,26 @@
       mixed: { label: 'Mixed', dash: '—', sentinel: '__scene-mixed__' },
       // I22 — primitive swap menu (object ctxbar). Values must match
       // Scene3D.Params.PRIMITIVES; the renderer bridge rejects any other name.
+      // FULL parity with the docked panel's shelf (SHELF_PRIMS + MORE_PRIMS) and
+      // the layer menu's "Add shape": all 12 primitives, in the panel's order.
+      // Plane / Ellipsoid / Polyhedron were missing, so three shapes could be
+      // added but never swapped TO from the canvas. (`solid` reads "Polyhedron"
+      // everywhere in the UI.)
       shape: {
         label: 'Shape', aria: 'Primitive shape',
         primitives: [
           { value: 'box', label: 'Box' },
           { value: 'sphere', label: 'Sphere' },
           { value: 'cylinder', label: 'Cylinder' },
-          { value: 'cone', label: 'Cone' },
           { value: 'torus', label: 'Torus' },
+          { value: 'cone', label: 'Cone' },
+          { value: 'plane', label: 'Plane' },
+          { value: 'ellipsoid', label: 'Ellipsoid' },
+          { value: 'superellipsoid', label: 'Superellipsoid' },
           { value: 'torusKnot', label: 'Torus Knot' },
           { value: 'capsule', label: 'Capsule' },
           { value: 'pyramid', label: 'Pyramid' },
-          { value: 'superellipsoid', label: 'Superellipsoid' },
+          { value: 'solid', label: 'Polyhedron' },
         ],
       },
       style: {
