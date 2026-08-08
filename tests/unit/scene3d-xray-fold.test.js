@@ -119,8 +119,14 @@ describe('Scene3D x-ray fold — migration + emit', () => {
     expect(ser(paths)).toEqual(golden.xrayBox);
   });
 
+  // fillAngle is pinned to 0 here — NOT a relaxation. The curved SurfaceFill
+  // path used to IGNORE the hatch angle entirely (it was hard-wired to the
+  // meridian family), so this golden was captured at the helper's 45 but is in
+  // fact the angle-0 meridian output. Now that the angle is live on curved
+  // primitives, 45 means 45; asking for 0 asks for the same meridian family the
+  // golden holds, and it still matches BYTE-FOR-BYTE (fixture untouched).
   test('migrated x-ray SPHERE (curved back fills) renders byte-identically', () => {
-    const migrated = Params.sanitizeSceneParams(scene('sphere', 'xray'));
+    const migrated = Params.sanitizeSceneParams(scene('sphere', 'xray', { fillAngle: 0 }));
     expect(ser(algo.generate(migrated, null, null, BOUNDS))).toEqual(golden.xraySphere);
   });
 

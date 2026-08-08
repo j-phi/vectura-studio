@@ -85,6 +85,9 @@
   //   opts: { mode, sizes, detail, transform, applyTransform, projectWorld,
   //           camAngles, mapper, fillAngle, fillDensity, toneOn, intensityFn,
   //           xray }
+  //   fillAngle: hatch/crosshatch direction in the surface's OWN tangent frame
+  //   (deg). 0 = meridians (the legacy family), 90 = parallels; see the angle
+  //   family block below. Omitted/0 ⇒ byte-identical to the pre-angle fill.
   //   intensityFn(worldNormal, worldPoint) → [0,1] combined multi-light intensity
   //   (worldPoint is the per-sample world surface point, needed by point/spot).
   //   xray: { backFaces, backDensity } — when backFaces, also emit the FAR
@@ -227,12 +230,19 @@
     // Push a run to `out`, tagging the array when it belongs to the back family.
     const pushRun = (run, back) => { if (run.length >= 2) { if (back) run.back = true; out.push(run); } };
 
-    // Emit one iso-line: fixAxis 'b' ⇒ fix b, sweep a (meridian); 'a' ⇒ fix a,
-    // sweep b (parallel). `threshold` is this line's ordered-dither cut (0..1) —
+    // A line in the (a,b) parameter square, as a function of its own 0..1 sweep
+    // parameter. The axis-aligned families keep the exact legacy arithmetic:
+    // 'b' ⇒ fix b, sweep a (meridian); 'a' ⇒ fix a, sweep b (parallel).
+    const axisLine = (fixAxis, fixVal) => (fixAxis === 'b'
+      ? (tt) => ({ a: tt, b: fixVal })
+      : (tt) => ({ a: fixVal, b: tt }));
+
+    // Emit one iso-line. `paramAt(tt)` walks the line through the (a,b)
+    // parameter square. `threshold` is this line's ordered-dither cut (0..1) —
     // the sample draws only where the local shade (1 − I) meets it, so lines
     // vanish toward the lit highlight and pile up in shadow. `back` selects the
     // FAR side (camN.z < 0) instead of the visible front side, and tags the run.
-    const emitLine = (fixAxis, fixVal, threshold, back, lineIndex, count) => {
+    const emitLine = (paramAt, threshold, back, lineIndex, count) => {
       const wantFront = !back;
       let run = [];
       let hlRun = [];
@@ -248,7 +258,8 @@
       const lineKept = !hl || (lineIndex % sparseStep === 0);
       for (let s = 0; s <= steps; s++) {
         const tt = s / steps;
-        const smp = fixAxis === 'b' ? sampleAt(tt, fixVal) : sampleAt(fixVal, tt);
+        const pr = paramAt(tt);
+        const smp = sampleAt(pr.a, pr.b);
         if (!smp || smp.front !== wantFront) { flush(); flushHL(); continue; }
         if (toneOn) {
           const shade = clamp(1 - smp.I, 0, 1);
@@ -315,7 +326,73 @@
     const emitFamily = (fixAxis, count, back) => {
       for (let i = 0; i < count; i++) {
         const fixVal = (i + 0.5) / count;
-        emitLine(fixAxis, fixVal, (i + 0.5) / count, back, i, count); // dark→dense ordered dither
+        emitLine(axisLine(fixAxis, fixVal), (i + 0.5) / count, back, i, count); // dark→dense ordered dither
+      }
+    };
+
+    // ── Fill ANGLE on a wrapped surface ────────────────────────────────────────
+    // Live defect (Jay): "Style > Hatch > Angle does nothing on at least one of
+    // the shapes." buildObject documented `fillAngle` in its opts contract and
+    // the scene3d caller passed it, but the module never read it — every
+    // chart-wrapped primitive was hard-wired to the meridian family, so the dial
+    // re-grouped the fill and re-emitted identical line art. (Faceted prims and
+    // the flat-silhouette fallback always honoured it, hence "at least one".)
+    //
+    // The angle is measured in the surface's OWN tangent frame — exactly the
+    // convention the faceted path uses, where 0 runs along the face's first
+    // parametric axis. Here that first axis is `a` (the along-axis sweep), so:
+    //   0°  ⇒ meridians  (the legacy hatch family — byte-identical, see below)
+    //   90° ⇒ parallels  (the latitude family)
+    // and everything between is a helical family that still wraps the form.
+    // The rotation is done in the (a,b) parameter square, so the fill keeps
+    // landing exactly on the rendered surface; `b` is periodic (the wind seam),
+    // so a line clipped at b=0/b=1 continues as its neighbour with no visible
+    // break. Deterministic — no RNG.
+    //
+    // Returns the family as { span, lineAt(frac) }. `frac` (0..1) is the line's
+    // position across the family — the same 0..1 offset the axis families use —
+    // and lineAt returns that line's paramAt(tt), or null when it misses the
+    // parameter square entirely.
+    const angleFamily = (angleDeg) => {
+      const rad = (finite(angleDeg, 0) * Math.PI) / 180;
+      const da = Math.cos(rad); const db = Math.sin(rad);   // along the line
+      const na = -db; const nb = da;                        // across the family
+      // Perpendicular extent of the unit square → the offsets to sweep through.
+      const projs = [0, na, nb, na + nb];
+      const cMin = Math.min.apply(null, projs);
+      const span = Math.max.apply(null, projs) - cMin;
+      const lineAt = (frac) => {
+        const c = cMin + frac * span;
+        // Clip the infinite line p(t) = c·n + t·d to the unit square (slab clip).
+        let t0 = -Infinity; let t1 = Infinity;
+        let inside = true;
+        const slab = (p0, dir) => {
+          if (Math.abs(dir) < 1e-12) { if (p0 < -1e-9 || p0 > 1 + 1e-9) inside = false; return; }
+          const ta = (0 - p0) / dir; const tb = (1 - p0) / dir;
+          t0 = Math.max(t0, Math.min(ta, tb));
+          t1 = Math.min(t1, Math.max(ta, tb));
+        };
+        slab(c * na, da);
+        slab(c * nb, db);
+        if (!inside || !(t1 > t0)) return null;
+        const a0 = c * na; const b0 = c * nb;
+        return (tt) => {
+          const t = t0 + (t1 - t0) * tt;
+          return { a: clamp(a0 + t * da, 0, 1), b: clamp(b0 + t * db, 0, 1) };
+        };
+      };
+      return { span, lineAt };
+    };
+
+    const emitAngledFamily = (angleDeg, count, back) => {
+      const fam = angleFamily(angleDeg);
+      // Keep the LINE SPACING (not the line count) constant as the family
+      // rotates, so Density reads the same at every angle. span = 1 on an axis.
+      const n = Math.max(2, Math.round(count * fam.span));
+      for (let i = 0; i < n; i++) {
+        const at = fam.lineAt((i + 0.5) / n);
+        // Same dark→dense ordered-dither rank the axis families use.
+        if (at) emitLine(at, (i + 0.5) / n, back, i, n);
       }
     };
 
@@ -326,18 +403,23 @@
     // stage so DEEPER shadow keeps MORE of them → a smooth dark gradient. More
     // sensitivity stages → more infill lines + a finer gradient. Default
     // (shadowSens 1) emits nothing → byte-identical.
-    const emitShadowInfill = (fixAxis, mainCount, back) => {
+    // `lineAt(frac)` places the infill line at the family's own 0..1 offset, so
+    // the infill follows whatever direction the base family runs (axis or
+    // angled) instead of always lying along the meridians.
+    const emitShadowInfill = (lineAt, mainCount, back) => {
       if (!shadowGrades) return;
       const wantFront = !back;
       const extra = (shadowSens - 1) * Math.max(2, mainCount);
       for (let i = 0; i < extra; i++) {
-        const fixVal = (i + 0.75) / extra; // interleaved with the base family
+        const paramAt = lineAt((i + 0.75) / extra); // interleaved with the base family
+        if (!paramAt) continue;
         const rank = i % shadowSens;       // 0..shadowSens-1
         let run = [];
         const flush = () => { pushRun(run, back); run = []; };
         for (let s = 0; s <= steps; s++) {
           const tt = s / steps;
-          const smp = fixAxis === 'b' ? sampleAt(tt, fixVal) : sampleAt(fixVal, tt);
+          const pr = paramAt(tt);
+          const smp = sampleAt(pr.a, pr.b);
           if (!smp || smp.front !== wantFront || smp.I >= SHADOW_TH) { flush(); continue; }
           const stg = Regions.shadowStage(smp.I, shadowSens, SHADOW_TH);
           if (!stg.inRegion || stg.stage < rank) { flush(); continue; } // deeper shadow keeps more
@@ -352,16 +434,36 @@
     // Returns false only for an unsupported mapper (so the front pass can bail).
     const runMapper = (count, back) => {
       const wantFront = !back;
+      // Hatch/crosshatch are the two mappers that expose the Angle dial. 0 (and
+      // any multiple of 180) is the legacy meridian family and takes the
+      // axis-aligned emitters — byte-identical to the pre-fix output, so an
+      // existing scene at angle 0 and every direct caller that omits fillAngle
+      // are untouched. Contour/spiral/stipple have no Angle control and keep
+      // their own families.
+      const hatchAngle = finite(opts.fillAngle, 0);
+      const onMeridianAxis = (((hatchAngle % 180) + 180) % 180) === 0;
+      const meridianAt = (frac) => axisLine('b', frac);
       if (mapper === 'hatch') {
-        emitFamily('b', count, back); // meridians wrap top-to-bottom
-        emitShadowInfill('b', count, back);
+        if (onMeridianAxis) {
+          emitFamily('b', count, back); // meridians wrap top-to-bottom
+          emitShadowInfill(meridianAt, count, back);
+        } else {
+          emitAngledFamily(hatchAngle, count, back);
+          emitShadowInfill(angleFamily(hatchAngle).lineAt, count, back);
+        }
       } else if (mapper === 'crosshatch') {
-        emitFamily('b', count, back);
-        emitFamily('a', count, back); // + parallels
-        emitShadowInfill('b', count, back);
+        if (onMeridianAxis) {
+          emitFamily('b', count, back);
+          emitFamily('a', count, back); // + parallels
+          emitShadowInfill(meridianAt, count, back);
+        } else {
+          emitAngledFamily(hatchAngle, count, back);
+          emitAngledFamily(hatchAngle + 90, count, back); // the crossing family
+          emitShadowInfill(angleFamily(hatchAngle).lineAt, count, back);
+        }
       } else if (mapper === 'contour') {
         emitFamily('a', count, back); // latitude rings following the form
-        emitShadowInfill('a', count, back);
+        emitShadowInfill((frac) => axisLine('a', frac), count, back);
       } else if (mapper === 'spiral') {
         // One continuous helix: the ALONG-axis coordinate sweeps 0→1 while the
         // AROUND coordinate winds `turns` times. `count` (line budget) is amplified
