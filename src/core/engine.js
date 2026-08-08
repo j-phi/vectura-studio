@@ -449,27 +449,17 @@
     return generateId() + generateId();
   };
 
-  // Scene-tree Increment C — per-primitive param bags a fresh object3d child is
-  // born with when the panel's "+ object" affordance names a primitive. These
-  // mirror the panel's PRIMITIVES.defaults() (scene3d-panel.js) — the ONLY keys
-  // 1A's buildPrimitiveMesh reads. 'box' is the default (matches ALGO_DEFAULTS).
-  const OBJECT3D_PRIMITIVE_DEFAULTS = {
-    box: { sx: 40, sy: 40, sz: 40 },
-    sphere: { radius: 25, detail: 28 },
-    cylinder: { sx: 20, sy: 22, sz: 20, detail: 24 },
-    torus: { sx: 34, sy: 9, sz: 9, detail: 24 },
-    cone: { sx: 20, sy: 22, sz: 20, detail: 24 },
-    plane: { sx: 60, sy: 60 },
-    superellipsoid: { sx: 26, sy: 26, sz: 26, detail: 24 },
-    torusKnot: { sx: 30, sy: 6, sz: 6, detail: 28 },
-    capsule: { sx: 14, sy: 16, sz: 14, detail: 22 },
-    // Convert-to-Scene (I2) — a freshly added `solid` object is a parametric
-    // polyhedron carrying INERT deformer defaults, so it renders byte-identically
-    // until a deformer is dialed in. Mirrors PRIMITIVE_PARAM_DEFAULTS.solid.
-    solid: {
-      solidType: 'buckyball', radius: 20, sideCount: 5, depth: 24, frequency: 2, taper: 55, starRatio: 45,
-      expand: 100, twist: 0, explode: 0, extrude: 0, shard: 0,
-    },
+  // Scene-tree Increment C — the params bag a fresh object3d child is born
+  // with. There used to be a copy of this table here, a second in the panel
+  // (PRIMITIVES.defaults()) and a THIRD in Scene3D.Params (the swap reset), and
+  // the three disagreed for 8 of 10 primitives. There is now exactly one:
+  // Scene3D.Params.PRIMITIVE_CREATE_DEFAULTS. Resolved lazily so engine.js
+  // survives any script-order shuffle around src/core/scene3d/params.js.
+  const sceneParams = () => (window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.Params) || null;
+  const objectPrimitiveDefaults = (primitive) => {
+    const P = sceneParams();
+    const table = P && P.PRIMITIVE_CREATE_DEFAULTS;
+    return (table && table[primitive]) ? { ...table[primitive] } : null;
   };
 
   // 3D model import — the on-ground size a freshly imported OBJ/STL mesh gets.
@@ -1372,10 +1362,10 @@
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const num = String(this._layerCounter).padStart(2, '0');
       const layer = new Layer(id, 'object3d', `Object ${num}`);
-      const prim = (typeof primitive === 'string' && OBJECT3D_PRIMITIVE_DEFAULTS[primitive])
-        ? primitive : 'box';
+      const named = typeof primitive === 'string' ? objectPrimitiveDefaults(primitive) : null;
+      const prim = named ? primitive : 'box';
       layer.params.primitive = prim;
-      layer.params.params = { ...OBJECT3D_PRIMITIVE_DEFAULTS[prim] };
+      layer.params.params = named || objectPrimitiveDefaults('box') || {};
       layer.parentId = sceneGroupId;
       // A boolean-group parent already implies an operand — seed the role.
       if (parent.type === 'booleanGroup3d') this.applyObject3dBooleanRole(layer, null, parent);
@@ -1384,6 +1374,36 @@
       this.activeLayerId = id;
       this.computeAllDisplayGeometry();
       return id;
+    }
+
+    // Change the GEOMETRY of an object3d LEAF layer in place — the engine-side
+    // half of the object inspector's Geometry select (and the natural target for
+    // any other swap surface). Everything that is not geometry survives: the
+    // transform, style, pen, visibility, role, shadow, border and the layer name.
+    // The geometry-specific bag is rebuilt from the shared creation defaults
+    // (Scene3D.Params.buildPrimitiveParams) and uniformly rescaled so the object
+    // keeps roughly its previous overall size — swapping an 80 mm torus for a box
+    // gives an ~80 mm box, not a default 40 mm one. An imported-mesh payload is
+    // carried across the swap, so solid → box → solid is reversible.
+    //
+    // Returns false for a non-object3d layer, an unknown primitive name, or a
+    // no-op (same primitive) so a caller never records an empty undo step.
+    // `opts.recompute === false` skips the display-geometry pass for callers that
+    // regen themselves (the panel's commit path) — one compose per gesture.
+    setObjectPrimitive(layerId, primitive, opts = {}) {
+      const layer = this.getLayerById(layerId);
+      if (!layer || layer.type !== 'object3d') return false;
+      const P = sceneParams();
+      if (!P || !Array.isArray(P.PRIMITIVES) || P.PRIMITIVES.indexOf(primitive) === -1) return false;
+      const params = layer.params || (layer.params = {});
+      const prevPrim = params.primitive || 'box';
+      if (prevPrim === primitive) return false;
+      const next = P.buildPrimitiveParams(primitive, prevPrim, params.params);
+      if (!next) return false;
+      params.primitive = primitive;
+      params.params = next;
+      if (opts.recompute !== false) this.computeAllDisplayGeometry();
+      return true;
     }
 
     // Scene-tree Increment E — add a LIGHT child (sceneLight3d) under a scene

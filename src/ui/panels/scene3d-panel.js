@@ -37,11 +37,28 @@
   // panel's Phase 1 curation — 1A's builders read the same keys).
   const svg = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
 
+  // Creation defaults come from the ONE shared table
+  // (Scene3D.Params.PRIMITIVE_CREATE_DEFAULTS). The panel used to keep its own
+  // copy, which drifted from the engine's and from the swap reset; `defaults()`
+  // is now a thin read so the shelf, the engine and the Geometry select can
+  // never disagree again. Resolved lazily — params.js loads first, but a stubbed
+  // runtime may not have it at module-eval time.
+  const P3 = () => (Vectura.Scene3D && Vectura.Scene3D.Params) || null;
+  const createBag = (prim) => {
+    const table = P3() && P3().PRIMITIVE_CREATE_DEFAULTS;
+    return (table && table[prim]) ? { ...table[prim] } : {};
+  };
+  const sizeRange = (prim, key, fallback) => {
+    const table = P3() && P3().PRIMITIVE_SIZE_RANGE;
+    const r = table && table[prim] && table[prim][key];
+    return r || fallback;
+  };
+
   const PRIMITIVES = {
     box: {
       label: 'Box',
       icon: svg('<path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/>'),
-      defaults: () => ({ sx: 40, sy: 40, sz: 40 }),
+      defaults: () => createBag('box'),
     },
     // Curved primitives author the keys 1A's buildPrimitiveMesh actually reads
     // (sphere: radius + detail; the rest: sx/sy/sz + detail). `detail` is the
@@ -50,42 +67,55 @@
     sphere: {
       label: 'Sphere',
       icon: svg('<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="9" ry="3.5"/>'),
-      defaults: () => ({ radius: 25, detail: 28 }),
+      defaults: () => createBag('sphere'),
+    },
+    // ellipsoid + pyramid were reachable through a primitive swap but had no
+    // catalog entry, no dimension controls and no add path, so picking one left
+    // a blank inspector. Fully adopted here (labels, icons, controls, shelf).
+    ellipsoid: {
+      label: 'Ellipsoid',
+      icon: svg('<ellipse cx="12" cy="12" rx="9" ry="6"/><ellipse cx="12" cy="12" rx="9" ry="2.5"/>'),
+      defaults: () => createBag('ellipsoid'),
     },
     cylinder: {
       label: 'Cylinder',
       icon: svg('<ellipse cx="12" cy="5" rx="7" ry="2.6"/><path d="M5 5v14M19 5v14"/><ellipse cx="12" cy="19" rx="7" ry="2.6"/>'),
-      defaults: () => ({ sx: 20, sy: 22, sz: 20, detail: 24 }),
+      defaults: () => createBag('cylinder'),
     },
     torus: {
       label: 'Torus',
       icon: svg('<ellipse cx="12" cy="12" rx="9" ry="5.5"/><ellipse cx="12" cy="12" rx="3.6" ry="1.8"/>'),
-      defaults: () => ({ sx: 34, sy: 9, sz: 9, detail: 24 }),
+      defaults: () => createBag('torus'),
     },
     cone: {
       label: 'Cone',
       icon: svg('<path d="M12 3 5 19M12 3l7 16"/><ellipse cx="12" cy="19" rx="7" ry="2.6"/>'),
-      defaults: () => ({ sx: 20, sy: 22, sz: 20, detail: 24 }),
+      defaults: () => createBag('cone'),
     },
     plane: {
       label: 'Plane',
       icon: svg('<path d="M7 6h14l-4 12H3z"/>'),
-      defaults: () => ({ sx: 60, sy: 60 }),
+      defaults: () => createBag('plane'),
     },
     superellipsoid: {
       label: 'Superellipsoid',
       icon: svg('<rect x="4" y="4" width="16" height="16" rx="6"/>'),
-      defaults: () => ({ sx: 26, sy: 26, sz: 26, detail: 24 }),
+      defaults: () => createBag('superellipsoid'),
     },
     torusKnot: {
       label: 'Torus Knot',
       icon: svg('<path d="M8.5 5.5c5-2.5 10 1.5 10 6 0 5.5-6.5 8.5-11 6.5-4-1.8-4.5-7.5-1-9.5 3.7-2.1 8 .5 8 4 0 3-3 5-6 4"/>'),
-      defaults: () => ({ sx: 30, sy: 6, sz: 6, detail: 28 }),
+      defaults: () => createBag('torusKnot'),
     },
     capsule: {
       label: 'Capsule',
       icon: svg('<path d="M8 4h8a0 0 0 0 1 0 0v16a0 0 0 0 1 0 0H8a0 0 0 0 1 0 0V4a0 0 0 0 1 0 0z" opacity="0"/><path d="M16 4a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4z" transform="rotate(90 12 12)"/>'),
-      defaults: () => ({ sx: 14, sy: 16, sz: 14, detail: 22 }),
+      defaults: () => createBag('capsule'),
+    },
+    pyramid: {
+      label: 'Pyramid',
+      icon: svg('<path d="M12 3 3 19h18z"/><path d="M12 3v16M3 19l9-6 9 6"/>'),
+      defaults: () => createBag('pyramid'),
     },
     // Convert-to-Scene (I3) — a parametric polyhedron object addable straight
     // from the shelf. Defaults MIRROR engine OBJECT3D_PRIMITIVE_DEFAULTS.solid
@@ -95,36 +125,21 @@
     solid: {
       label: 'Polyhedron',
       icon: svg('<path d="M12 3 4 8v8l8 5 8-5V8z"/><path d="M12 3v18M4 8l8 5 8-5"/>'),
-      defaults: () => ({
-        solidType: 'buckyball', radius: 20, sideCount: 5, depth: 24, frequency: 2, taper: 55, starRatio: 45,
-        expand: 100, twist: 0, explode: 0, extrude: 0, shard: 0,
-      }),
+      defaults: () => createBag('solid'),
     },
   };
-  // Primitives whose surface tessellation the Fidelity slider controls (box and
-  // plane are flat-faced — subdivision would only add coplanar interior edges).
-  const FIDELITY_PRIMS = new Set(['sphere', 'cylinder', 'torus', 'cone', 'superellipsoid', 'torusKnot', 'capsule']);
-
-  // Per-primitive dimension controls, mapped to the param keys 1A's builder
-  // reads (sphere: radius; others: sx/sy/sz). `set` allows one control to drive
-  // linked keys (e.g. a torus's tube radius is sy AND sz). Labels are the terms
-  // a user expects, not the raw axis names.
-  const DIM = (label, key, min, max, step, extraKeys) => ({ label, key, min, max, step, extraKeys });
-  const DIMENSIONS = {
-    box: [DIM('Width', 'sx', 2, 200, 1), DIM('Height', 'sy', 2, 200, 1), DIM('Depth', 'sz', 2, 200, 1)],
-    plane: [DIM('Width', 'sx', 2, 300, 1), DIM('Depth', 'sy', 2, 300, 1)],
-    sphere: [DIM('Radius', 'radius', 2, 150, 1)],
-    cylinder: [DIM('Radius', 'sx', 2, 150, 1, ['sz']), DIM('Height', 'sy', 2, 150, 1)],
-    cone: [DIM('Base radius', 'sx', 2, 150, 1, ['sz']), DIM('Height', 'sy', 2, 150, 1)],
-    torus: [DIM('Diameter', 'sx', 4, 200, 1), DIM('Thickness', 'sy', 1, 60, 0.5, ['sz'])],
-    superellipsoid: [DIM('X', 'sx', 2, 150, 1), DIM('Y', 'sy', 2, 150, 1), DIM('Z', 'sz', 2, 150, 1)],
-    torusKnot: [DIM('Radius', 'sx', 6, 150, 1), DIM('Thickness', 'sy', 1, 40, 0.5, ['sz'])],
-    capsule: [DIM('Radius', 'sx', 2, 100, 1, ['sz']), DIM('Length', 'sy', 2, 150, 1)],
-    // Solid (I3) — one Radius handle; the standalone polyhedron radius range.
-    solid: [DIM('Radius', 'radius', 20, 130, 1)],
-  };
+  // The order the Geometry select offers, and the shelf / More… split. Twelve
+  // geometries: eleven primitives + Polyhedron (whose 16 parametric families
+  // live one level down, behind the Family select — their params are disjoint
+  // from sx/sy/sz/radius/detail, and 'cone' means a different shape in each
+  // vocabulary, so a flat list of 26 would be a trap).
+  const GEOMETRY_ORDER = [
+    'box', 'plane', 'sphere', 'ellipsoid', 'cylinder', 'cone',
+    'torus', 'torusKnot', 'capsule', 'superellipsoid', 'pyramid', 'solid',
+  ];
+  const GEOMETRY_OPTIONS = GEOMETRY_ORDER.map((v) => ({ value: v, label: PRIMITIVES[v].label }));
   const SHELF_PRIMS = ['box', 'sphere', 'cylinder', 'torus', 'cone', 'plane'];
-  const MORE_PRIMS = ['superellipsoid', 'torusKnot', 'capsule', 'solid'];
+  const MORE_PRIMS = ['ellipsoid', 'superellipsoid', 'torusKnot', 'capsule', 'pyramid', 'solid'];
 
   // Convert-to-Scene (I3) — solidType families + LIVE deformers surfaced in the
   // object inspector for a `solid`. Option values mirror Scene3D.Params solid
@@ -166,7 +181,93 @@
     { key: 'shard', label: 'Shard', min: 0, max: 100, step: 1, default: 0 },
   ];
 
-  const ICON_IMPORT = svg('<path d="M12 3v10M8.5 9.5 12 13l3.5-3.5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>');
+  // ── GEOMETRY_CONTROLS ──────────────────────────────────────────────────────
+  // The single source of truth for the controls each GEOMETRY owns — the
+  // geometry-side twin of MAPPER_CONTROLS below. It replaces the three tables
+  // that used to describe a primitive's controls (DIMENSIONS, FIDELITY_PRIMS and
+  // the inline `if (prim === 'solid')` block).
+  //
+  // A descriptor is { key, kind, label, ariaLabel?, min, max, step, extraKeys?,
+  //   round?, fallback?, showIf? }. `kind` ∈ slider | select.
+  //   extraKeys — one control drives linked keys (a torus's tube radius is sy
+  //               AND sz; a cylinder's radius is sx AND sz).
+  //   fallback  — what the slider READS when the key is absent from the bag.
+  //               It MUST equal the mesh builder's own fallback for that key,
+  //               or the panel would report a size the object does not have.
+  //   showIf    — polyhedron family gating, reusing the predicates the
+  //               standalone polyhedron algorithm already codifies.
+  //
+  // SCOPE: every key here is one the mesh builders ALREADY read. The knobs that
+  // look missing (torus-knot p/q, superellipsoid e1/e2, cone apex offset,
+  // cylinder caps) are hardcoded literals inside the builders — a control for
+  // them would do nothing, so none is offered.
+  const SOLID_FAMILY = {
+    sideCount: ['flatPolygon', 'prism', 'antiprism', 'bipyramid', 'cone', 'frustum', 'cupola', 'starPrism'],
+    depth: ['prism', 'antiprism', 'bipyramid', 'cone', 'frustum', 'cupola', 'starPrism'],
+    frequency: ['geodesic', 'goldberg'],
+    taper: ['frustum', 'cupola'],
+    starRatio: ['starPrism'],
+  };
+  const solidUses = (key) => (p) => SOLID_FAMILY[key].indexOf((p || {}).solidType) !== -1;
+
+  // Fidelity — surface tessellation; identical for every curved primitive.
+  const FIDELITY = {
+    key: 'detail', kind: 'slider', label: 'Fidelity', min: 6, max: 48, step: 1,
+    round: true, fallback: 24, ariaLabel: 'Surface fidelity (tessellation detail)',
+  };
+  let GEOMETRY_CONTROLS = null;
+  const buildGeometryControls = () => {
+    // Dimension descriptor: range comes from Scene3D.Params.PRIMITIVE_SIZE_RANGE
+    // so the swap rescale and the slider that edits the result share one bound.
+    const D = (prim, label, key, step, extraKeys, fallback) => {
+      const r = sizeRange(prim, key, { min: 2, max: 200 });
+      return {
+        key, kind: 'slider', dim: true, label, min: r.min, max: r.max, step, extraKeys,
+        fallback, ariaLabel: `${prim} ${label.toLowerCase()}`,
+      };
+    };
+    const table = {
+      box: [D('box', 'Width', 'sx', 1, null, 40), D('box', 'Height', 'sy', 1, null, 40), D('box', 'Depth', 'sz', 1, null, 40)],
+      // Depth writes `sz` — the key buildPlaneMesh actually reads. It used to
+      // write `sy`, which nothing reads, so the slider was inert and a fresh
+      // plane was 60 × 120. Saved planes carry no `sz`, so they keep reading the
+      // mesh's own 120 fallback (shown here) and their render is untouched.
+      plane: [D('plane', 'Width', 'sx', 1, null, 120), D('plane', 'Depth', 'sz', 1, null, 120)],
+      sphere: [D('sphere', 'Radius', 'radius', 1, null, 20), FIDELITY],
+      ellipsoid: [D('ellipsoid', 'X', 'sx', 1, null, 20), D('ellipsoid', 'Y', 'sy', 1, null, 20), D('ellipsoid', 'Z', 'sz', 1, null, 20), FIDELITY],
+      cylinder: [D('cylinder', 'Radius', 'sx', 1, ['sz'], 20), D('cylinder', 'Height', 'sy', 1, null, 20), FIDELITY],
+      cone: [D('cone', 'Base radius', 'sx', 1, ['sz'], 20), D('cone', 'Height', 'sy', 1, null, 20), FIDELITY],
+      torus: [D('torus', 'Diameter', 'sx', 1, null, 20), D('torus', 'Thickness', 'sy', 0.5, ['sz'], 20), FIDELITY],
+      torusKnot: [D('torusKnot', 'Radius', 'sx', 1, null, 20), D('torusKnot', 'Thickness', 'sy', 0.5, ['sz'], 20), FIDELITY],
+      capsule: [D('capsule', 'Radius', 'sx', 1, ['sz'], 20), D('capsule', 'Length', 'sy', 1, null, 20), FIDELITY],
+      superellipsoid: [D('superellipsoid', 'X', 'sx', 1, null, 20), D('superellipsoid', 'Y', 'sy', 1, null, 20), D('superellipsoid', 'Z', 'sz', 1, null, 20), FIDELITY],
+      pyramid: [D('pyramid', 'Base', 'sx', 1, ['sz'], 20), D('pyramid', 'Height', 'sy', 1, null, 20), FIDELITY],
+      // Polyhedron — the Family select, then the family's OWN structure params.
+      // sideCount / depth / frequency / taper / starRatio are read by
+      // buildSolidBaseMesh but had no scene control at all, so a Polyhedron set
+      // to Prism had no Sides and no Depth handle.
+      solid: [
+        { key: 'solidType', kind: 'select', label: 'Family', ariaLabel: 'Solid type' },
+        D('solid', 'Radius', 'radius', 1, null, 20),
+        { key: 'sideCount', kind: 'slider', label: 'Sides', min: 3, max: 180, step: 1, round: true, fallback: 5, showIf: solidUses('sideCount'), ariaLabel: 'solid sides' },
+        { key: 'frequency', kind: 'slider', label: 'Frequency', min: 1, max: 6, step: 1, round: true, fallback: 2, showIf: solidUses('frequency'), ariaLabel: 'solid frequency' },
+        { ...D('solid', 'Depth', 'depth', 1, null, 94), showIf: solidUses('depth') },
+        { key: 'taper', kind: 'slider', label: 'Taper', min: 1, max: 100, step: 1, fallback: 55, showIf: solidUses('taper'), ariaLabel: 'solid taper' },
+        { key: 'starRatio', kind: 'slider', label: 'Star inset', min: 5, max: 95, step: 1, fallback: 45, showIf: solidUses('starRatio'), ariaLabel: 'solid star inset' },
+        ...SOLID_DEFORMERS.map((d) => ({ ...d, kind: 'slider', fallback: d.default, ariaLabel: `solid ${d.key}` })),
+      ],
+    };
+    return table;
+  };
+  const geomControls = (prim) => {
+    if (!GEOMETRY_CONTROLS) GEOMETRY_CONTROLS = buildGeometryControls();
+    return GEOMETRY_CONTROLS[prim] || [];
+  };
+  // Back-compat views for the legacy monolith inspector (inline params.objects).
+  const dimensionsFor = (prim) => geomControls(prim).filter((d) => d.dim && !d.showIf);
+  const hasFidelity = (prim) => geomControls(prim).some((d) => d.key === 'detail');
+
+  const ICON_IMPORT =svg('<path d="M12 3v10M8.5 9.5 12 13l3.5-3.5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>');
   const ICON_LIGHT = svg('<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 1 3.6 10.8c-.7.6-1.1 1.3-1.1 2.2h-5c0-.9-.4-1.6-1.1-2.2A6 6 0 0 1 12 3z"/>');
   const ICON_MORE = svg('<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>');
 
@@ -317,8 +418,8 @@
   // The layers-panel owns the scene TREE now, so a selected object3d /
   // booleanGroup3d CHILD routes here to a compact editor keyed to THAT layer's
   // OWN params (not params.objects[i]). The shared module catalogs (PRIMITIVES /
-  // DIMENSIONS / FIDELITY_PRIMS / MAPPERS) drive the controls, and the same
-  // one-undo-per-gesture commit pattern the main panel uses.
+  // GEOMETRY_CONTROLS / MAPPER_CONTROLS / MAPPERS) drive the controls, and the
+  // same one-undo-per-gesture commit pattern the main panel uses.
   // ════════════════════════════════════════════════════════════════════════
 
   // The one-undo-per-gesture commit + live-slider pattern, bound to a layer.
@@ -428,16 +529,46 @@
     pages.object.classList.add('active');
 
     const t = params.transform;
-    const prim = params.primitive || 'box';
-    const primDefaults = (PRIMITIVES[prim] && PRIMITIVES[prim].defaults()) || {};
 
     const slider = (host, label, props) => { comps.push(UI.Slider(labeledRow(host, label), props)); };
+
+    // Rebuild the context bar so its "Shape" pill agrees with a swap made here.
+    const refreshContextBar = () => {
+      try { if (UI.ContextBar && UI.ContextBar.restoreState) UI.ContextBar.restoreState(); } catch (_) { /* */ }
+    };
+
+    // Apply a geometry swap. The LOGIC lives in the engine
+    // (engine.setObjectPrimitive → Scene3D.Params.buildPrimitiveParams) so every
+    // swap surface shares one behaviour; the direct Params call is the fallback
+    // for a panel mounted against a ui stub with no engine.
+    const applyPrimitive = (next) => {
+      if (engine && typeof engine.setObjectPrimitive === 'function') {
+        return engine.setObjectPrimitive(layer.id, next, { recompute: false });
+      }
+      const P = P3();
+      if (!P || !P.buildPrimitiveParams || P.PRIMITIVES.indexOf(next) === -1) return false;
+      const bag = P.buildPrimitiveParams(next, params.primitive || 'box', params.params);
+      if (!bag) return false;
+      params.primitive = next;
+      params.params = bag;
+      return true;
+    };
+
+    // The primitive the object page was last drawn for — see the drift guard on
+    // `root` below.
+    let renderedPrim = null;
 
     let renderObject = () => {};
     renderObject = () => {
       destroyComps();
       pages.object.textContent = '';
       const host = pages.object;
+      // Re-read the primitive on EVERY render. These two used to be captured
+      // once outside renderObject, so a control that changed params.primitive
+      // and re-rendered redrew the OLD geometry's sliders.
+      const prim = GEOMETRY_ORDER.indexOf(params.primitive) !== -1 ? params.primitive : 'box';
+      const primDefaults = (PRIMITIVES[prim] && PRIMITIVES[prim].defaults()) || {};
+      renderedPrim = prim;
 
       // Name → layer.name (the tree label).
       const nameCtl = labeledRow(host, 'Name');
@@ -463,6 +594,73 @@
         }));
       }
 
+      // ── Geometry ───────────────────────────────────────────────────────────
+      // The object's SHAPE, plus that shape's own controls. Two levels by
+      // design: the Geometry select names the twelve geometries, and picking
+      // Polyhedron reveals the Family select (16 parametric solid families, plus
+      // Imported mesh when a payload is present) with the structure params and
+      // deformers that only a polyhedron has. Geometry sits directly above the
+      // controls it governs, and above Position, because it decides which of
+      // those rows exist at all.
+      const geoHead = document.createElement('div');
+      geoHead.className = 'vs3-subhead';
+      geoHead.textContent = 'Geometry';
+      host.appendChild(geoHead);
+      comps.push(UI.Select(labeledRow(host, 'Shape'), {
+        options: GEOMETRY_OPTIONS,
+        value: prim,
+        ariaLabel: 'Object geometry',
+        onChange: (v) => {
+          if (v === prim) return;
+          let changed = false;
+          commit(() => { changed = applyPrimitive(v); });
+          if (changed) { renderObject(); refreshContextBar(); }
+        },
+      }));
+      geomControls(prim).forEach((d) => {
+        if (typeof d.showIf === 'function' && !d.showIf(params.params)) return;
+        if (d.kind === 'select' && d.key === 'solidType') {
+          // 3D model import — an imported OBJ/STL arrives as a `solid` whose
+          // solidType is 'importedMesh', which is NOT one of the parametric
+          // families. With no option of its own the Select fell back to showing
+          // the LAST entry ("Buckyball") — a false readout of an imported cube —
+          // and picking any family was a one-way trip out of the import with no
+          // UI route back (only Cmd+Z). The mesh payload survives in params, so
+          // surface it as a first-class, SELECTABLE option whenever it is
+          // present: the readout is truthful and the family switch stays
+          // reversible. This matches how the panel handles every other
+          // non-applicable control — the option table is conditioned on the
+          // params, not disabled in place.
+          const meshPayload = params.params.importedMesh;
+          const hasImportedMesh = !!(meshPayload && Array.isArray(meshPayload.vertices)
+            && meshPayload.vertices.length && Array.isArray(meshPayload.faces) && meshPayload.faces.length);
+          const isImportedMesh = params.params.solidType === 'importedMesh';
+          comps.push(UI.Select(labeledRow(host, d.label), {
+            options: (hasImportedMesh || isImportedMesh)
+              ? [IMPORTED_MESH_OPTION].concat(SOLID_TYPE_OPTIONS)
+              : SOLID_TYPE_OPTIONS,
+            value: isImportedMesh
+              ? 'importedMesh'
+              : (SOLID_TYPE_VALUES.has(params.params.solidType) ? params.params.solidType : 'buckyball'),
+            ariaLabel: d.ariaLabel || d.label,
+            // The family decides which structure params apply, so re-render.
+            onChange: (v) => { commit(() => { params.params.solidType = v; }); renderObject(); },
+          }));
+          return;
+        }
+        const fallback = Number.isFinite(d.fallback) ? d.fallback : 20;
+        slider(host, d.label, {
+          value: Number.isFinite(params.params[d.key]) ? params.params[d.key] : fallback,
+          min: d.min, max: d.max, step: d.step,
+          defaultValue: Number.isFinite(primDefaults[d.key]) ? primDefaults[d.key] : fallback,
+          ariaLabel: d.ariaLabel || `${prim} ${d.label.toLowerCase()}`,
+          ...liveSlider((v) => {
+            params.params[d.key] = d.round ? Math.round(v) : v;
+            if (Array.isArray(d.extraKeys)) d.extraKeys.forEach((k) => { params.params[k] = params.params[d.key]; });
+          }),
+        });
+      });
+
       // Position
       ['x', 'y', 'z'].forEach((ax) => {
         slider(host, `${ax.toUpperCase()} (mm)`, {
@@ -485,72 +683,6 @@
         ariaLabel: 'Uniform scale',
         ...liveSlider((v) => { params.transform.scale = v; delete params.transform.sx; delete params.transform.sy; delete params.transform.sz; }),
       });
-
-      // Dimensions (per-primitive)
-      const dims = DIMENSIONS[prim];
-      if (dims && dims.length) {
-        const fallbackFor = (key) => (key === 'radius' ? 25 : 30);
-        dims.forEach((d) => {
-          slider(host, d.label, {
-            value: Number.isFinite(params.params[d.key]) ? params.params[d.key] : fallbackFor(d.key),
-            min: d.min, max: d.max, step: d.step,
-            defaultValue: Number.isFinite(primDefaults[d.key]) ? primDefaults[d.key] : fallbackFor(d.key),
-            ariaLabel: `${prim} ${d.label.toLowerCase()}`,
-            ...liveSlider((v) => { params.params[d.key] = v; if (Array.isArray(d.extraKeys)) d.extraKeys.forEach((k) => { params.params[k] = v; }); }),
-          });
-        });
-      }
-      // Fidelity
-      if (FIDELITY_PRIMS.has(prim)) {
-        slider(host, 'Fidelity', {
-          value: Number.isFinite(params.params.detail) ? params.params.detail : 24, min: 6, max: 48, step: 1,
-          defaultValue: Number.isFinite(primDefaults.detail) ? primDefaults.detail : 24,
-          ariaLabel: 'Surface fidelity (tessellation detail)',
-          ...liveSlider((v) => { params.params.detail = Math.round(v); }),
-        });
-      }
-
-      // Solid (parametric polyhedron) — solidType family + the 5 LIVE deformers
-      // (I3). Gated to `solid` objects only. Edits ride the same commit /
-      // liveSlider recompute path as every other object3d param (pushHistory →
-      // mutate → store → regen), so createSolidMesh re-evaluates the mesh live.
-      // bulge / faceBands are line-art-only (I2) and are intentionally absent.
-      if (prim === 'solid') {
-        // 3D model import — an imported OBJ/STL arrives as a `solid` whose
-        // solidType is 'importedMesh', which is NOT one of the parametric
-        // families. With no option of its own the Select fell back to showing
-        // the LAST entry ("Buckyball") — a false readout of an imported cube —
-        // and picking any family was a one-way trip out of the import with no
-        // UI route back (only Cmd+Z). The mesh payload survives in params, so
-        // surface it as a first-class, SELECTABLE option whenever it is present:
-        // the readout is truthful and the family switch stays reversible. This
-        // matches how the panel handles every other non-applicable control —
-        // the option table is conditioned on the params, not disabled in place.
-        const meshPayload = params.params.importedMesh;
-        const hasImportedMesh = !!(meshPayload && Array.isArray(meshPayload.vertices)
-          && meshPayload.vertices.length && Array.isArray(meshPayload.faces) && meshPayload.faces.length);
-        const isImportedMesh = params.params.solidType === 'importedMesh';
-        const solidTypeOptions = (hasImportedMesh || isImportedMesh)
-          ? [IMPORTED_MESH_OPTION].concat(SOLID_TYPE_OPTIONS)
-          : SOLID_TYPE_OPTIONS;
-        const solidTypeValue = isImportedMesh
-          ? 'importedMesh'
-          : (SOLID_TYPE_VALUES.has(params.params.solidType) ? params.params.solidType : 'buckyball');
-        comps.push(UI.Select(labeledRow(host, 'Solid type'), {
-          options: solidTypeOptions,
-          value: solidTypeValue,
-          ariaLabel: 'Solid type',
-          onChange: (v) => { commit(() => { params.params.solidType = v; }); },
-        }));
-        SOLID_DEFORMERS.forEach((d) => {
-          slider(host, d.label, {
-            value: Number.isFinite(params.params[d.key]) ? params.params[d.key] : d.default,
-            min: d.min, max: d.max, step: d.step, defaultValue: d.default,
-            ariaLabel: `solid ${d.key}`,
-            ...liveSlider((v) => { params.params[d.key] = v; }),
-          });
-        });
-      }
 
       // Visibility
       comps.push(UI.SegCtrl(labeledRow(host, 'Visibility'), {
@@ -750,6 +882,20 @@
 
     // Render the initial (Object) tab; tab switches render the entered tab.
     renderObject();
+
+    // Panel ↔ context-bar sync. A swap made HERE rebuilds the bar (see
+    // refreshContextBar). The other direction has no signal to listen for — the
+    // ctxbar "Shape" pill writes through renderer.setSceneObjectPrimitive, which
+    // emits no event and rebuilds only itself, so the panel used to keep showing
+    // the OLD geometry's sliders until the layer was reselected. Re-check on the
+    // next interaction the panel can actually observe: the pointer entering it,
+    // or focus arriving in it. Cheap (one string compare) and no timers.
+    const syncPrimitive = () => {
+      const now = GEOMETRY_ORDER.indexOf(params.primitive) !== -1 ? params.primitive : 'box';
+      if (now !== renderedPrim && pages.object.classList.contains('active')) renderObject();
+    };
+    root.addEventListener('pointerenter', syncPrimitive);
+    root.addEventListener('focusin', syncPrimitive);
 
     mirrorChildToCanvas(ui, layer, layer.id);
 
@@ -2594,13 +2740,13 @@
       sliderRow(inspectorHost, inspectorComps, 'Scale Z', axisScaleProps('z'));
 
       // Dimensions — per-primitive shape params, in the terms a user expects.
-      const dims = DIMENSIONS[obj.primitive];
+      const dims = dimensionsFor(obj.primitive);
       if (dims && dims.length) {
         if (!obj.params || typeof obj.params !== 'object') obj.params = {};
-        const fallbackFor = (key) => (key === 'radius' ? 25 : 30);
+        const fallbackFor = (d) => (Number.isFinite(d.fallback) ? d.fallback : (d.key === 'radius' ? 25 : 30));
         dims.forEach((d) => {
-          const cur = Number.isFinite(obj.params[d.key]) ? obj.params[d.key] : fallbackFor(d.key);
-          const dflt = Number.isFinite(primDefaults[d.key]) ? primDefaults[d.key] : fallbackFor(d.key);
+          const cur = Number.isFinite(obj.params[d.key]) ? obj.params[d.key] : fallbackFor(d);
+          const dflt = Number.isFinite(primDefaults[d.key]) ? primDefaults[d.key] : fallbackFor(d);
           sliderRow(inspectorHost, inspectorComps, d.label, {
             value: cur,
             min: d.min, max: d.max, step: d.step,
@@ -2616,7 +2762,7 @@
 
       // Fidelity — surface tessellation for curved primitives. Higher = smoother
       // silhouette and more surface detail, at the cost of more plotted lines.
-      if (FIDELITY_PRIMS.has(obj.primitive)) {
+      if (hasFidelity(obj.primitive)) {
         if (!obj.params || typeof obj.params !== 'object') obj.params = {};
         const curDetail = Number.isFinite(obj.params.detail) ? obj.params.detail : 24;
         const dfltDetail = Number.isFinite(primDefaults.detail) ? primDefaults.detail : 24;

@@ -75,6 +75,188 @@
     },
   };
 
+  // ── Creation defaults — the ONE table an add OR a swap is seeded from ──────
+  // `PRIMITIVE_PARAM_DEFAULTS` above is the DESERIALIZATION contract: it fills
+  // the gaps in a bag read off disk, so its numbers must never move (changing
+  // one silently reshapes every saved document that omitted that key).
+  // `PRIMITIVE_CREATE_DEFAULTS` is the CREATION contract: the proportions a
+  // brand-new object is born with. Historically the add shelf (engine
+  // OBJECT3D_PRIMITIVE_DEFAULTS + the panel's PRIMITIVES.defaults()) and the
+  // primitive swap (PRIMITIVE_PARAM_DEFAULTS) disagreed for 8 of 10 primitives
+  // — `add torus` made a thin ring (sy/sz 9), `swap → torus` a fat donut
+  // (sy/sz 22). The CURATED ADD proportions win; every creation path now reads
+  // this table, and nothing here feeds normalizePrimitiveParams, so existing
+  // documents render byte-identically.
+  const PRIMITIVE_CREATE_DEFAULTS = {
+    box: { sx: 40, sy: 40, sz: 40 },
+    // Plane: buildPlaneMesh reads sx and **sz**. The legacy add bag wrote `sy`,
+    // so a fresh plane was 60 × 120 (sz fell through to the mesh's own 120
+    // literal) and its Depth slider was inert. Seeding `sz` makes Depth live
+    // for NEW planes only — a saved plane still carries no sz, still takes the
+    // 120 fallback, and still renders exactly as it does today.
+    plane: { sx: 60, sz: 60 },
+    sphere: { radius: 25, detail: 28 },
+    // ellipsoid + pyramid were swap-reachable but had no add path, no labels
+    // and no dimension controls (selecting one blanked the inspector). Adopted
+    // here with add-shelf-style proportions (generous `detail`; the pyramid
+    // keeps 8 — its perimeter chart wants a multiple of 4 to land crisp corners
+    // and extra rows on a flat face are coplanar).
+    ellipsoid: { sx: 30, sy: 20, sz: 22, detail: 26 },
+    cylinder: { sx: 20, sy: 22, sz: 20, detail: 24 },
+    cone: { sx: 20, sy: 22, sz: 20, detail: 24 },
+    torus: { sx: 34, sy: 9, sz: 9, detail: 24 },
+    torusKnot: { sx: 30, sy: 6, sz: 6, detail: 28 },
+    capsule: { sx: 14, sy: 16, sz: 14, detail: 22 },
+    superellipsoid: { sx: 26, sy: 26, sz: 26, detail: 24 },
+    pyramid: { sx: 24, sy: 26, sz: 24, detail: 8 },
+    solid: { ...PRIMITIVE_PARAM_DEFAULTS.solid },
+  };
+
+  // Keys that carry SIZE (document mm) per primitive — the ones a swap scales.
+  // Everything else (detail, solidType, sideCount, frequency, taper, starRatio,
+  // the deformers, importedMesh) describes shape or quality, not size, and is
+  // left at its creation default.
+  const PRIMITIVE_SIZE_KEYS = {
+    box: ['sx', 'sy', 'sz'],
+    plane: ['sx', 'sz'],
+    sphere: ['radius'],
+    ellipsoid: ['sx', 'sy', 'sz'],
+    cylinder: ['sx', 'sy', 'sz'],
+    cone: ['sx', 'sy', 'sz'],
+    torus: ['sx', 'sy', 'sz'],
+    torusKnot: ['sx', 'sy', 'sz'],
+    capsule: ['sx', 'sy', 'sz'],
+    superellipsoid: ['sx', 'sy', 'sz'],
+    pyramid: ['sx', 'sy', 'sz'],
+    // `depth` is a linear extent in the same units as `radius` (prism height,
+    // frustum height, star-prism extrusion), so it rides the same scale factor.
+    solid: ['radius', 'depth'],
+  };
+
+  // The editing range of each size key. The Geometry controls in the object
+  // inspector read their slider min/max from here, so a scaled swap can never
+  // land a value outside the control that edits it.
+  const RANGE = (min, max) => ({ min, max });
+  const PRIMITIVE_SIZE_RANGE = {
+    box: { sx: RANGE(2, 200), sy: RANGE(2, 200), sz: RANGE(2, 200) },
+    plane: { sx: RANGE(2, 300), sz: RANGE(2, 300) },
+    sphere: { radius: RANGE(2, 150) },
+    ellipsoid: { sx: RANGE(2, 150), sy: RANGE(2, 150), sz: RANGE(2, 150) },
+    cylinder: { sx: RANGE(2, 150), sy: RANGE(2, 150), sz: RANGE(2, 150) },
+    cone: { sx: RANGE(2, 150), sy: RANGE(2, 150), sz: RANGE(2, 150) },
+    torus: { sx: RANGE(4, 200), sy: RANGE(1, 60), sz: RANGE(1, 60) },
+    torusKnot: { sx: RANGE(6, 150), sy: RANGE(1, 40), sz: RANGE(1, 40) },
+    capsule: { sx: RANGE(2, 100), sy: RANGE(2, 150), sz: RANGE(2, 100) },
+    superellipsoid: { sx: RANGE(2, 150), sy: RANGE(2, 150), sz: RANGE(2, 150) },
+    pyramid: { sx: RANGE(2, 150), sy: RANGE(2, 150), sz: RANGE(2, 150) },
+    solid: { radius: RANGE(20, 130), depth: RANGE(0, 180) },
+  };
+
+  // ── Nominal size ──────────────────────────────────────────────────────────
+  // The largest axis-aligned extent (document mm) of the UNTRANSFORMED mesh a
+  // params bag produces, in closed form. Derived from the MESH BUILDERS, never
+  // from the slider labels: a torus's "Diameter" (sx) is only 0.75× its ring
+  // radius and its "Thickness" 0.28× its tube radius, so an sx-34 torus is
+  // really ~56 mm across. Preserving the true EXTENT is what makes a swapped
+  // object still read as the same object in the same place.
+  //   box              max(sx, sy, sz)                       (buildBoxMesh)
+  //   plane            max(sx, sz)                           (buildPlaneMesh)
+  //   sphere           2·radius                              (sizes = r,r,r)
+  //   ellipsoid |
+  //   cylinder  |
+  //   capsule   |      2·max(sx, sy, sz)                     (semi-axis charts)
+  //   superell. |
+  //   pyramid   |
+  //   cone             2·max(sx, sy)                         (sz unread)
+  //   torus            2·(max(2, .75·sx) + max(1, .28·min(sy,sz)))
+  //   torusKnot        3·max(2, .62·sx) + max(1, .24·min(sy,sz))
+  //   solid            MEASURED (see solidNominalSize)
+  // Every closed-form row is homogeneous of degree 1 in its size keys (apart
+  // from the degenerate max(2,·)/max(1,·) floors, which only bind at
+  // sub-millimetre inputs), which is why scaling the size keys by k scales the
+  // extent by k. tests/unit/scene-geometry-size-map.test.js checks every row
+  // against the real mesh bounding box.
+  //
+  // `solid` is the exception: its 16 families are inscribed in `radius` by
+  // wildly different factors (a flat polygon spans 1.90·r, a buckyball 1.70·r,
+  // a cube only 1.15·r), so no single formula fits. Measure the real solid
+  // instead — it is a few dozen vertices and only runs on a swap.
+  const solidNominalSize = (bag) => {
+    const closed = Math.max(2 * finite(bag.radius, 20), finite(bag.depth, 0));
+    const Mesh = Vectura.Scene3D && Vectura.Scene3D.Mesh;
+    if (!Mesh || typeof Mesh.createSolidMesh !== 'function') return closed;
+    try {
+      const mesh = Mesh.createSolidMesh({ ...bag, applyDeformers: true });
+      const verts = mesh && mesh.vertices;
+      if (!verts || !verts.length) return closed;
+      let extent = 0;
+      ['x', 'y', 'z'].forEach((axis) => {
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (let i = 0; i < verts.length; i += 1) {
+          const value = finite(verts[i][axis], 0);
+          if (value < lo) lo = value;
+          if (value > hi) hi = value;
+        }
+        if (hi - lo > extent) extent = hi - lo;
+      });
+      return extent > 0 ? extent : closed;
+    } catch (_) {
+      return closed;
+    }
+  };
+  const primitiveNominalSize = (primitive, bag) => {
+    const p = isObject(bag) ? bag : {};
+    const sx = finite(p.sx, 20);
+    const sy = finite(p.sy, 20);
+    const sz = finite(p.sz, 20);
+    if (primitive === 'box') return Math.max(finite(p.sx, 40), finite(p.sy, 40), finite(p.sz, 40));
+    if (primitive === 'plane') return Math.max(finite(p.sx, 120), finite(p.sz, 120));
+    if (primitive === 'sphere') return 2 * finite(p.radius, 20);
+    if (primitive === 'cone') return 2 * Math.max(sx, sy);
+    if (primitive === 'torus') return 2 * (Math.max(2, sx * 0.75) + Math.max(1, Math.min(sy, sz) * 0.28));
+    if (primitive === 'torusKnot') return 3 * Math.max(2, sx * 0.62) + Math.max(1, Math.min(sy, sz) * 0.24);
+    if (primitive === 'solid') return solidNominalSize(p);
+    return 2 * Math.max(sx, sy, sz);
+  };
+
+  // A swap can legitimately need a big factor (a 200 mm box → a capsule whose
+  // default is 32 mm across is ×6.25), but a pathological bag must not produce
+  // an absurd one. 0.1×..12× brackets every in-range pair.
+  const SWAP_SCALE_MIN = 0.1;
+  const SWAP_SCALE_MAX = 12;
+
+  // Build the params bag for `primitive`, seeded from PRIMITIVE_CREATE_DEFAULTS
+  // and — when a previous bag is supplied — uniformly rescaled so the object
+  // keeps roughly its previous overall size. Shape params are DELIBERATELY not
+  // carried (a box's sx/sy/sz means nothing to a sphere); only the size follows.
+  // An imported-mesh payload IS carried across any swap, so solid → box → solid
+  // is reversible instead of a one-way trip only Cmd+Z could undo.
+  const buildPrimitiveParams = (primitive, prevPrimitive, prevParams) => {
+    const base = PRIMITIVE_CREATE_DEFAULTS[primitive];
+    if (!base) return null;
+    const out = { ...base };
+    const prev = isObject(prevParams) ? prevParams : null;
+    const mesh = prev && prev.importedMesh;
+    if (isObject(mesh) && Array.isArray(mesh.vertices) && Array.isArray(mesh.faces)) {
+      out.importedMesh = mesh;
+      if (primitive === 'solid') out.solidType = 'importedMesh';
+    }
+    if (!prev || !PRIMITIVE_CREATE_DEFAULTS[prevPrimitive]) return out;
+    const prevSize = primitiveNominalSize(prevPrimitive, prev);
+    const baseSize = primitiveNominalSize(primitive, out);
+    if (!(prevSize > 0) || !(baseSize > 0)) return out;
+    const k = clamp(prevSize / baseSize, SWAP_SCALE_MIN, SWAP_SCALE_MAX);
+    const ranges = PRIMITIVE_SIZE_RANGE[primitive] || {};
+    (PRIMITIVE_SIZE_KEYS[primitive] || []).forEach((key) => {
+      if (typeof out[key] !== 'number') return;
+      const scaled = Math.round(out[key] * k * 2) / 2;
+      const r = ranges[key];
+      out[key] = r ? clamp(scaled, r.min, r.max) : scaled;
+    });
+    return out;
+  };
+
   const DEFAULT_TRANSFORM = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
   const DEFAULT_CAMERA = {
     projection: 'orthographic', yaw: -30, pitch: 20, roll: 0,
@@ -893,6 +1075,11 @@
     MAPPERS,
     GROUP_OPS,
     PRIMITIVE_PARAM_DEFAULTS,
+    PRIMITIVE_CREATE_DEFAULTS,
+    PRIMITIVE_SIZE_KEYS,
+    PRIMITIVE_SIZE_RANGE,
+    primitiveNominalSize,
+    buildPrimitiveParams,
     EDGE_STYLE_CLASSES,
     HIDDEN_TREATMENTS,
     DEFAULT_TRANSFORM,
