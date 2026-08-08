@@ -6770,9 +6770,21 @@
             }
           }
         }
+        // BUG 3 (hit half) — the orbit gizmo is DRAWN with null bounds for a
+        // scene layer (see draw3DRotationControl's call site above), so its HIT
+        // test must accept null bounds too. Requiring `selectionBounds` here
+        // left the drawn gizmo un-hittable on a scene GROUP, whose geometry
+        // lives in scenePaths so getSelectionBounds yields null: the click fell
+        // through to _sceneDownSelect, picked the huge ground quad underneath,
+        // and _sceneGizmoAnchor re-anchored on the ground's far corner — the
+        // gizmo "teleported" off-canvas, and the next click deselected the
+        // scene. get3DRotationControl still returns null for a NON-scene layer
+        // without bounds.corners, so 2D layers stay byte-identical.
+        const rotationBoundsOptional = selectedLayers.length === 1
+          && !!this._sceneRotationOwner(selectedLayers[0]);
         if (
           this.activeTool === 'select' &&
-          selectionBounds &&
+          (selectionBounds || rotationBoundsOptional) &&
           selectedLayers.length === 1 &&
           !this.isLayerLocked?.(selectedLayers[0].id)
         ) {
@@ -9676,8 +9688,14 @@
     // corner (max x, min y). Falls through to null if no geometry is present.
     _sceneGizmoAnchor(layer) {
       const sel = this.getSceneSelection();
-      const objId = sel && sel.layerId === layer.id && sel.mode === 'object' && sel.objectIds.length === 1
+      let objId = sel && sel.layerId === layer.id && sel.mode === 'object' && sel.objectIds.length === 1
         ? sel.objectIds[0] : null;
+      // The GROUND quad is never a gizmo anchor. It is a scene fixture that
+      // spans the whole view, so anchoring on it throws the orbit gizmo hundreds
+      // of doc units out to the quad's far corner — off-canvas. Mirrors
+      // getSceneObjectGizmo's `objId === 'ground'` refusal; a ground selection
+      // falls back to the whole-scene anchor (which already skips the ground).
+      if (objId === 'ground') objId = null;
       const paths = this.getInteractionPaths(layer);
       let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
       let found = false;
@@ -15196,18 +15214,24 @@
         }
       }
       const bounds = this.getSelectionBounds(activeLayers, this.tempTransform);
+      // BUG 3 (hover half) — the orbit gizmo draws and hit-tests without 2D
+      // bounds on a scene layer (its geometry lives in scenePaths), so its
+      // cursor affordance must be resolved BEFORE the no-bounds early return.
+      // Behind that return the gizmo gave zero hover feedback on a scene tree.
+      // get3DRotationControl still returns null for a non-scene layer without
+      // bounds.corners, so 2D layers keep the original cursor behavior.
+      if (this.activeTool === 'select' && activeLayers.length === 1 && !this.isLayerLocked?.(activeLayers[0].id)) {
+        const rotation3DHit = this.hit3DRotationControl(sx, sy, activeLayers[0], bounds || null);
+        if (rotation3DHit) {
+          this.setCanvasCursor('grab', 'rotate-3d');
+          return;
+        }
+      }
       if (!bounds) {
         if (this.activeTool === 'select') {
           this.setCanvasCursor(this.cursorDataUrl('filled', 4, 4, 'auto'), 'select');
         }
         return;
-      }
-      if (this.activeTool === 'select' && activeLayers.length === 1 && !this.isLayerLocked?.(activeLayers[0].id)) {
-        const rotation3DHit = this.hit3DRotationControl(sx, sy, activeLayers[0], bounds);
-        if (rotation3DHit) {
-          this.setCanvasCursor('grab', 'rotate-3d');
-          return;
-        }
       }
       const handle = this.hitHandle(sx, sy, bounds);
       if (handle) {
