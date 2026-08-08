@@ -2030,8 +2030,18 @@
         const nameEl = document.createElement('div');
         nameEl.className = 'text-[11px] text-vectura-muted mb-2';
         const loaded = layer.params.importedMesh;
+        // Report the STORED triangle count, and say when the face budget reduced
+        // it — quoting only the stored count on a reduced mesh reads as if the
+        // whole file were in the document. The File ▸ Import 3D Model… path
+        // already says this in its toast; this is the same story on the
+        // per-layer STL loader.
+        const storedTris = loaded && Number.isFinite(loaded.triangles) ? loaded.triangles : 0;
+        const sourceTris = loaded && Number.isFinite(loaded.sourceTriangles) ? loaded.sourceTriangles : storedTris;
+        const trisLabel = storedTris
+          ? ` · ${storedTris.toLocaleString()} tris${sourceTris > storedTris ? ` (reduced from ${sourceTris.toLocaleString()})` : ''}`
+          : '';
         nameEl.textContent = layer.params.meshName
-          ? `Loaded: ${layer.params.meshName}${loaded && loaded.triangles ? ` · ${loaded.triangles} tris` : ''}`
+          ? `Loaded: ${layer.params.meshName}${trisLabel}`
           : 'No STL loaded';
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -2065,6 +2075,23 @@
               this.buildControls();
               this.updateFormula();
               this.app.render();
+              // Same reduction story the File ▸ Import 3D Model… toast tells, so
+              // a budget-reduced mesh is never silently presented as the whole
+              // file on this (older) import path either.
+              const T = window.Vectura?.UI?.overlays?.Toast;
+              if (T && typeof T.show === 'function') {
+                const stored = Number.isFinite(mesh.triangles) ? mesh.triangles : mesh.faces.length;
+                const source = Number.isFinite(mesh.sourceTriangles) ? mesh.sourceTriangles : stored;
+                const reduced = source > stored;
+                try {
+                  T.show({
+                    message: `Imported ${mesh.name || file.name} · ${stored.toLocaleString()} tris`
+                      + (reduced ? ` · reduced from ${source.toLocaleString()}` : ''),
+                    variant: reduced ? 'warning' : 'success',
+                    duration: reduced ? 6000 : 3500,
+                  });
+                } catch (_) { /* noop */ }
+              }
             };
             reader.readAsArrayBuffer(file);
           };

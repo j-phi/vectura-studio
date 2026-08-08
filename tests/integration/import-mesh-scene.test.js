@@ -318,4 +318,117 @@ describe('Import 3D model as scene object', () => {
     expect(snapLayer.params.importedMesh).toBe(meshBlob);
     expect(snapLayer.params).not.toBe(layer.params);
   });
+
+  /*
+   * ── D3b (2026-08-07 review of the D3 ground lift) ───────────────────────────
+   * The lift was BAKED ONCE at import time from the post-scale half-height, so
+   * the very first Radius or Scale drag left the object half-buried or floating.
+   * `transform.groundLift` now records the lift folded into `transform.y`, and
+   * the compose pass re-derives it from the CURRENT radius + vertical scale.
+   */
+
+  // The lowest world Y of the stored mesh under the object's own transform.
+  const worldMinY = (child) => {
+    const { importedMesh, radius } = child.params.params;
+    const t = child.params.transform;
+    const sy = Number.isFinite(t.sy) ? t.sy : (Number.isFinite(t.scale) ? t.scale : 1);
+    return Math.min(...importedMesh.vertices.map((v) => v.y * radius * sy + t.y));
+  };
+
+  test('D3b: the ground rest survives a Radius change', () => {
+    const engine = freshEngine();
+    const result = engine.importMeshAsScene(V.ObjImport.parse(CUBE_OBJ, 'cube.obj'), 'cube');
+    const child = engine.getLayerById(result.childId);
+    expect(worldMinY(child)).toBeCloseTo(0, 2);
+
+    // What the scene3d panel's Radius slider writes.
+    child.params.params.radius = 90;
+    engine.computeAllDisplayGeometry();
+    expect(worldMinY(child)).toBeCloseTo(0, 2);
+
+    child.params.params.radius = 21;
+    engine.computeAllDisplayGeometry();
+    expect(worldMinY(child)).toBeCloseTo(0, 2);
+  });
+
+  test('D3b: the ground rest survives a Scale change, uniform and per-axis', () => {
+    const engine = freshEngine();
+    const result = engine.importMeshAsScene(V.ObjImport.parse(CUBE_OBJ, 'cube.obj'), 'cube');
+    const child = engine.getLayerById(result.childId);
+
+    child.params.transform.scale = 2.5;
+    engine.computeAllDisplayGeometry();
+    expect(worldMinY(child)).toBeCloseTo(0, 2);
+
+    // I23 per-axis scale: only the VERTICAL factor moves the base.
+    child.params.transform.sx = 2.5;
+    child.params.transform.sy = 0.4;
+    child.params.transform.sz = 2.5;
+    engine.computeAllDisplayGeometry();
+    expect(worldMinY(child)).toBeCloseTo(0, 2);
+  });
+
+  test('D3b: a deliberate vertical offset rides along instead of being reset', () => {
+    const engine = freshEngine();
+    const result = engine.importMeshAsScene(V.ObjImport.parse(CUBE_OBJ, 'cube.obj'), 'cube');
+    const child = engine.getLayerById(result.childId);
+    // Shift-drag the object 30mm up off the ground.
+    child.params.transform.y += 30;
+    engine.computeAllDisplayGeometry();
+    expect(worldMinY(child)).toBeCloseTo(30, 2);
+    // Resizing keeps it 30mm clear rather than snapping it back down.
+    child.params.params.radius = 90;
+    engine.computeAllDisplayGeometry();
+    expect(worldMinY(child)).toBeCloseTo(30, 2);
+  });
+
+  test('D3b: the marker survives an exportState/importState round-trip', () => {
+    const engine = freshEngine();
+    const result = engine.importMeshAsScene(V.ObjImport.parse(CUBE_OBJ, 'cube.obj'), 'cube');
+    const lift = engine.getLayerById(result.childId).params.transform.groundLift;
+    expect(Number.isFinite(lift)).toBe(true);
+
+    const engine2 = new V.VectorEngine();
+    engine2.importState(JSON.parse(JSON.stringify(engine.exportState())));
+    const restored = engine2.getLayerById(result.childId);
+    expect(restored.params.transform.groundLift).toBeCloseTo(lift, 3);
+    restored.params.params.radius = 90;
+    engine2.computeAllDisplayGeometry();
+    expect(worldMinY(restored)).toBeCloseTo(0, 2);
+  });
+
+  /*
+   * ── D5 (2026-08-07) — the convert-to-scene path shares the face budget ──────
+   * The reduction/cap was applied on IMPORT only. Convert-to-Scene freezes a
+   * baked mesh into the same `importedMesh` slot, and a topoform `cube` at full
+   * detail bakes ~120k triangles — stored whole in layer.params and composed
+   * synchronously. `downsample` returns the mesh object untouched below budget,
+   * so every convert that already fitted is unchanged.
+   */
+  test('D5: convert-to-scene caps a frozen bake to the same face budget', () => {
+    const MAX = V.StlParser.MAX_FACES;
+    const engine = freshEngine();
+    const layerId = engine.addLayer('topoform');
+    const layer = engine.getLayerById(layerId);
+    // `cube` has no live chart analog, so it takes the frozen importedMesh bake.
+    layer.params.sourceMode = 'cube';
+    layer.params.renderMode = 'wireframe';
+    layer.params.primitiveDetail = 100;
+    layer.params.simplifyMesh = 0;
+    const baked = V.Algorithms.topoform.bakeMesh(layer.params);
+    expect(baked.faces.length).toBeGreaterThan(MAX);
+
+    const result = engine.convertAlgoToScene(layerId);
+    expect(result.ok).toBe(true);
+    const stored = engine.getLayerById(result.childId).params.params.importedMesh;
+    expect(stored.faces.length).toBeLessThanOrEqual(MAX);
+    stored.faces.forEach((f) => f.forEach((i) => {
+      expect(i).toBeGreaterThanOrEqual(0);
+      expect(i).toBeLessThan(stored.vertices.length);
+    }));
+    // Still unit-normalised (radius carries the real size).
+    stored.vertices.forEach((v) => {
+      expect(Math.hypot(v.x, v.y, v.z)).toBeLessThanOrEqual(1.0001);
+    });
+  }, 240_000);
 });

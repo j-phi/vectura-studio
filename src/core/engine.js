@@ -535,6 +535,40 @@
     };
   };
 
+  // 3D model import — keep an imported mesh RESTING on the ground across size
+  // changes. importMeshAsScene lifts a fresh mesh by its post-scale drop below
+  // the mesh centre (base at y=0, the convention defaults.js:2076-2080 states for
+  // the scene box), but that lift used to be baked ONCE at import time — so the
+  // first Radius or Scale drag left the object half-buried or floating.
+  //
+  // `transform.groundLift` records the lift currently folded into `transform.y`.
+  // This recomputes it from the CURRENT radius + vertical scale and applies only
+  // the DELTA, so a user's own vertical offset (shift-drag, drop-to-ground)
+  // rides along instead of being overwritten. Object ROTATION is deliberately
+  // outside the lift — the import-time value did not include it either, so a
+  // freshly imported mesh's transform is bit-for-bit what it was before.
+  // A no-op for every object without the marker (all pre-existing scenes).
+  const syncGroundRest = (layer) => {
+    const t = layer && layer.params && layer.params.transform;
+    if (!t || !Number.isFinite(t.groundLift)) return;
+    const solid = layer.params.params;
+    const mesh = (solid && solid.solidType === 'importedMesh') ? solid.importedMesh : null;
+    const verts = (mesh && Array.isArray(mesh.vertices)) ? mesh.vertices : null;
+    if (!verts || !verts.length) return;
+    let minY = 0;
+    for (let i = 0; i < verts.length; i += 1) {
+      const y = Number(verts[i].y);
+      if (Number.isFinite(y) && y < minY) minY = y;
+    }
+    const radius = (Number.isFinite(solid.radius) && solid.radius > 0) ? solid.radius : IMPORT_MESH_RADIUS;
+    // I23 non-uniform scale: `sy` when present, else the uniform `scale`.
+    const scaleY = Number.isFinite(t.sy) ? t.sy : (Number.isFinite(t.scale) ? t.scale : 1);
+    const lift = Math.round(-minY * radius * scaleY * 1000) / 1000;
+    if (lift === t.groundLift) return;
+    t.y = Math.round(((Number(t.y) || 0) + lift - t.groundLift) * 1000) / 1000;
+    t.groundLift = lift;
+  };
+
   // Scene-tree Increment E — per-type light seeds for addLightToScene. Mirrors
   // the scene3d panel's seedLight + Scene3D.Params.normalizeLight defaults so a
   // freshly added light child is valid before the next compose. The `id` is set
@@ -909,13 +943,22 @@
       // Bake path only — normalize to unit max-extent; `radius` carries the real
       // size. The scene's createSolidMesh importedMesh branch multiplies the unit
       // verts back by `radius`, reproducing the baked coordinates exactly.
+      //
+      // The SAME face budget the import paths enforce (buildImportedMeshParams)
+      // applies here: a frozen bake is stored in layer.params exactly like an
+      // imported mesh, and a topoform `cube` at full detail bakes ~120k triangles
+      // — enough to stall the compositor for minutes. `downsample` returns the
+      // mesh object UNTOUCHED when it is already within budget, so every convert
+      // that was under the cap (all the parametric ones, and any already-capped
+      // STL source) is byte-identical.
+      const bakedCapped = capMeshFaces(baked);
       let maxExtent = 0;
-      baked.vertices.forEach((vt) => {
+      bakedCapped.vertices.forEach((vt) => {
         const d = Math.hypot(fin(vt.x, 0), fin(vt.y, 0), fin(vt.z, 0));
         if (d > maxExtent) maxExtent = d;
       });
       const radius = maxExtent > 1e-6 ? maxExtent : 1;
-      const unit = baked.vertices.map((vt) => ({
+      const unit = bakedCapped.vertices.map((vt) => ({
         x: fin(vt.x, 0) / radius, y: fin(vt.y, 0) / radius, z: fin(vt.z, 0) / radius,
       }));
 
@@ -973,7 +1016,7 @@
         child.params.primitive = 'solid';
         child.params.params = {
           solidType: 'importedMesh',
-          importedMesh: { vertices: unit, faces: baked.faces.map((f) => f.slice()) },
+          importedMesh: { vertices: unit, faces: bakedCapped.faces.map((f) => f.slice()) },
           radius,
         };
       }
@@ -1090,7 +1133,10 @@
         if (Number.isFinite(y) && y < minUnitY) minUnitY = y;
       });
       const groundLift = Math.round(-minUnitY * solidParams.radius * 1000) / 1000;
-      child.params.transform = { x: 0, y: groundLift, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
+      // `groundLift` records how much of `y` is the ground rest, so syncGroundRest
+      // can re-derive it when Radius/Scale changes instead of leaving the object
+      // half-buried at the first drag.
+      child.params.transform = { x: 0, y: groundLift, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1, groundLift };
       child.params.visibility = 'solid';
       child.params.role = 'solid';
       child.params.style = { penId: child.penId || null, mapper: 'hatch', params: {} };
@@ -2451,6 +2497,9 @@
         if (layer.type === 'object3d') {
           layer._sceneConsumed = true;
           if (layer.visible === false) return; // hidden ⇒ contributes nothing
+          // Re-seat a ground-resting imported mesh before it is collected, so a
+          // Radius/Scale change keeps its base on the ground quad.
+          syncGroundRest(layer);
           objectLayers.set(layer.id, layer);
           collected.push({ kind: 'object', id: layer.id, params: layer.params });
         } else if (layer.type === 'booleanGroup3d') {
