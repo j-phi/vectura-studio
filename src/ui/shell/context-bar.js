@@ -613,9 +613,7 @@
     // BOTH the selection API and the layer type so plain layer selection is
     // untouched when the scene stack is absent.
     const sceneSel = renderer.getSceneSelection ? renderer.getSceneSelection() : null;
-    const sceneLayer = sceneSel
-      ? layers.find((l) => l && l.id === sceneSel.layerId && l.type === 'scene3d') || null
-      : null;
+    const sceneLayer = sceneSel ? sceneSelectionOwner(app, layers, sceneSel) : null;
     if (sceneSel && sceneLayer) {
       const sceneKind = sceneSel.mode === 'face'
         ? 'scene-face'
@@ -642,6 +640,43 @@
       kind = 'multi';
     }
     return { kind, layerIds: ids, primaryLayer: primary, app, renderer };
+  };
+
+  // The scene3d layer a live scene selection belongs to, or null when the
+  // current layer selection does not actually sit inside that scene.
+  //
+  // Two shapes reach here:
+  //   • MONOLITH — the scene3d leaf carries its objects inline and is itself the
+  //     selected layer. `layers` contains it; this is the original behavior.
+  //   • SCENE TREE — the scene is a GROUP (type 'scene3d', isGroup,
+  //     containerRole 'scene') whose objects live on child object3d /
+  //     booleanGroup3d layers. BOTH real entry points select the CHILD, never
+  //     the group: a canvas pick (renderer `_sceneDownSelect`, which resolves
+  //     `_sceneChildLayerFor` and calls selectLayer on it) and a layer-row click
+  //     (scene3d-panel `mirrorChildToCanvas`). Both then point
+  //     sceneSelection.layerId at the GROUP. Requiring the group to be IN the
+  //     selection therefore left every tree scene — i.e. every scene a user can
+  //     build today — without a scene context, and with it no Style / Shadow /
+  //     Highlight / X-ray pills.
+  //
+  // Conservatism matters: getContext() is the hub for EVERY task-bar state, and
+  // sceneSelection outlives the layer selection that produced it. So the tree
+  // branch demands a non-empty selection in which EVERY selected layer is the
+  // scene group or one of its descendants. A stale scene selection alongside an
+  // unrelated (or mixed) layer selection still falls through to the plain layer
+  // contexts, exactly as before.
+  const sceneSelectionOwner = (app, layers, sceneSel) => {
+    const direct = layers.find((l) => l && l.id === sceneSel.layerId && l.type === 'scene3d') || null;
+    if (direct) return direct;
+    const engine = app && app.engine;
+    if (!engine || typeof engine.getLayerById !== 'function'
+      || typeof engine.getLayerAncestors !== 'function') return null;
+    const group = engine.getLayerById(sceneSel.layerId);
+    if (!group || group.type !== 'scene3d' || !group.isGroup || group.containerRole !== 'scene') return null;
+    if (!layers.length) return null;
+    const insideScene = (l) => Boolean(l) && (l.id === group.id
+      || (engine.getLayerAncestors(l) || []).some((a) => a && a.id === group.id));
+    return layers.every(insideScene) ? group : null;
   };
 
   // Returns the sole selected group container when the selection is exactly one
