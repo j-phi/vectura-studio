@@ -225,8 +225,44 @@ question. Do not start these without a decision:
   render plumbing (rides the existing Convert-to-Scene importedMesh path). Lands in the active
   scene when one is selected, else builds a fresh scene tree (group + sun + ground). Shared
   `buildImportedMeshParams` centres + unit-normalises like convert. RGR: `tests/unit/obj-import`,
-  `tests/integration/import-mesh-scene`. Follow-up: the object3d "Solid type" dropdown displays a
-  fallback label ("Buckyball") for an imported-mesh solid though it renders correctly.
+  `tests/integration/import-mesh-scene`. Follow-up (the "Buckyball" fallback label) fixed below.
+- **Unreleased — 3D scene live-defect batch: gizmo picking, addable shapes, import hardening
+  (`3d-scene/p4`, commits `b113151`, `bcdf420`, `1937413`, `446ea02`).** Four units built in
+  parallel in isolated worktrees off `1d7e951`, cherry-picked in, gated together.
+  - **Gizmo picking (`b113151`).** Jay: "the 3d gizmo disappears when I click on it." Root cause
+    was a *fourth* instance of the inline-only scene shape: `_scenePickFaces` rebuilt the depth
+    pick surface from `layer.params`, which is empty on a tree, so the real-depth pass was
+    silently disabled and the ground plane's coarse centroid depth (−170) beat the box (−32).
+    Fix: `_composeSceneGroup` publishes `_sceneAssembled` (cleared each compute pass, never
+    serialized) and the pick builder reads it; pick cache re-keyed on `scenePaths || paths`.
+    RGR `tests/unit/scene-tree-pick-depth`.
+  - **Addable shapes (`bcdf420`).** Jay: "I can't find where to add other shapes." Not merely
+    undiscoverable — 8 of 10 primitives (incl. sphere and torus) were **unreachable from the UI**:
+    the Add Objects shelf was gated `if (!isSceneGroup)` after the tree restructure, leaving two
+    context-menu items hardcoded to `box`/`solid`. Shelf un-gated for scene groups and routed via
+    `addObjectToScene`; context menu gained Add shape / Add light categories; empty-state copy
+    corrected. Also the imported-mesh `solidType` readout + reversible round-trip.
+    RGR `tests/integration/scene3d-add-shape`; one stale assertion in `scene3d-panel` updated.
+  - **Import hardening (`1937413`).** Adversarial review of the import found 3 HIGH defects with
+    measurements: no vertex welding (5× ink, no shared-edge connectivity), no face budget on the
+    OBJ path (57.6k tris = 11.2 min frozen tab), and meshes centred on the origin so they sat
+    half-buried. Plus nested-mesh undo bloat, tab-delimited rejection, and silent failures.
+  - **Reducer + ground-rest (`446ea02`).** Review of the above returned KEEP WITH FIXES: the
+    stride reducer shredded closed surfaces (contours became unplottable 2-point stubs) so it
+    became connectivity-preserving vertex clustering — but that clustering wasted budget (a 40:1
+    rod kept 36.7%) and collapsed short-axis detail (239 → 27 cross-section angles). Now
+    binary-searched grid + per-axis cells (98% budget, 140 angles), re-wound inverted triangles,
+    a lower-bound guard (a mutant emitting 3.2% of budget had passed all 9 tests), ground rest
+    that survives Radius/Scale, and the convert-to-scene bake capped (was 120,000 faces).
+    `package.json`'s `test:e2e` enumeration was also missing `import-3d.spec.js`, so the new
+    9-case spec was not gated despite the `playwright.config.js` edit.
+  - Gate on the integrated tree: unit 3596 / integration 1516 / visual 67 byte-identical /
+    e2e 62 (import-3d 9 executing) / perf 7, `scene3d-drag` flat.
+  - **Open for Jay:** adding a shape selects it (shelf disappears — rapid multi-add?); new
+    children named `Object 05` not `Torus 05`; ~24-row context menu; the Scene panel's in-panel
+    Scene Tree / Boolean Groups sections still read `params.objects` and are permanently empty
+    for a scene group (a fifth inline-only site, untouched); `playwright.config.js` pins port
+    4173 with `reuseExistingServer`, so concurrent e2e across worktrees can cross-attach.
 - **Unreleased — Phase 4A divisions/pen-grammar + hidden-edge EdgeStyle (v1.3.62–1.3.66,
   `3d-scene/p4`, commits `5d232e2`..`8239db7`).** The stroke-division phase (engine already
   shipped divisions) plus the deferred pen grammar and the Phase-4 tail edge styling:

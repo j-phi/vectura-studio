@@ -19,8 +19,43 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   sits behind the front surface — deeper material reads denser and/or heavier, turning x-ray into
   a readable depth map. Modes: Off (default, unchanged), Density, Weight, Both. Pure line-art
   (plottable); off by default so existing scenes are byte-identical.
+- **3D Scene — every shape is addable to a live scene.** The **Add Objects** shelf now appears
+  for a scene group (it was gated to the retired monolithic scene), and the layer right-click
+  menu gained **Add shape** and **Add light** categories. All ten primitives — box, sphere,
+  cylinder, torus, cone, plane, superellipsoid, torus knot, capsule, polyhedron — can now be
+  added to a scene from the UI; previously only `box` and `solid` could be, so sphere, torus and
+  six others were unreachable despite the engine supporting them. The Scene Tree empty state no
+  longer points at a shelf that isn't there.
+- **3D Scene — imported meshes read truthfully in the inspector.** The **Solid type** dropdown
+  gained an *Imported mesh* entry, so an imported model no longer displays a false "Buckyball".
+  The entry stays offered whenever a mesh payload is present, so switching to a parametric solid
+  and back round-trips instead of destroying the import with no route back.
 
 ### Fixed
+- **3D Scene — the transform gizmo no longer vanishes when you click it.** On a scene tree the
+  per-pixel depth pick surface was rebuilt from the group's inline params, which are empty once
+  objects live on child layers — so the pick surface came back empty, the real-depth pass was
+  silently disabled, and the large ground plane's coarse depth won every pick. Clicking the gizmo
+  (or an object) selected the ground, and the gizmo hides for the ground. Picking now runs off
+  the geometry the compositor actually composed. Legacy inline scenes are unchanged.
+- **3D import — meshes are welded, budgeted, and rest on the ground.** Imported OBJ meshes were
+  not vertex-welded, so every internal triangle edge was drawn (~5× the ink and no shared-edge
+  connectivity for contours/silhouettes); the OBJ path had no face budget, so a normal 25k–58k
+  triangle model froze the tab for minutes with no progress feedback; and imported meshes were
+  centred on the origin, leaving them half-buried in the ground plane instead of resting on it.
+  Welding now reuses the shared STL welder, the face budget covers both inputs (and the
+  convert-to-scene bake, which could freeze a 120,000-face mesh), import shows progress, and a
+  mesh rests on the ground and *stays* there when Radius or Scale changes. Undo snapshots no
+  longer deep-clone the mesh payload. Tab-delimited OBJ files are accepted, malformed records
+  fail loudly instead of fabricating geometry, and a failed file read now reports.
+- **3D import — the mesh reducer spends its budget and keeps short-axis detail.** Over-budget
+  meshes were reduced by dropping every Nth face, which shredded a closed surface into
+  disconnected triangles — contours came out as unplottable two-point stubs. Reduction is now
+  connectivity-preserving vertex clustering, so contours plot as continuous rings. The grid is
+  binary-searched to land near the budget (a slender rod kept 37% of its allowance, now 98%) and
+  cells are sized per axis, so a 40:1 rod no longer collapses to a 20-sided cross-section.
+  Triangles inverted by clustering are re-wound, and STL imports now report when a mesh was
+  reduced.
 - **3D Scene — object manipulation on scene trees.** Three regressions where scene-object
   controls only worked on the old monolithic scene and silently no-opped on a real scene tree
   (the model every new/converted scene uses): (1) dragging an object onto a scene group now
