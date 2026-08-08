@@ -218,6 +218,62 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — scene-tree reachability batch: gizmo, geometry, hatch angle, shadows, tone
+  goldens (`3d-scene/p4`, commits `edf8242`, `686eacf`/`57d699a`/`7c82597`, `8e94090`,
+  `eee11eb`).** Seven units built in parallel isolated worktrees, cherry-picked in, gated
+  together (unit 3707 / integration 1557 / visual 109 = 67 byte-identical + 42 new / e2e 62 /
+  perf 7). **The through-line: a control that exists, is labelled plausibly, and is bound to
+  nothing.** Five separate instances found this batch, all consequences of the monolith→tree
+  restructure never being followed through the UI layer.
+  - **Orbit gizmo (`edf8242` precursor `18f1306`).** Drawn without 2D bounds; hit-tested only
+    *with* them. A scene group has none, so clicks fell through to picking, took the ground,
+    and re-anchored to the ground quad (+917px on a 1336px canvas); the next click cleared the
+    selection. Fixed at three sites (down gate, anchor ground-refusal, hover gate). An
+    independent investigator reached the same root cause separately; both agreed the earlier
+    `b113151` fix was correct but for a *different* gizmo, and that its 141-point sweep and its
+    `_sceneDownSelect`-entry tests could not have observed a caller-side gate.
+  - **ctxbar Style writes (`edf8242`).** Landed in the group style table, which
+    `collectSceneParams` overwrites from the child on every compose. A/B on composed
+    `group.scenePaths`: tree child 1 hash (dead) → 3 distinct; monolith 3 → 3 unchanged. Routed
+    to the child layer; `params.js` deliberately untouched (merging there would resurrect stale
+    group-table entries and risk the inline back-compat path).
+  - **Geometry controls (`fcef5af`, earlier).** The panel had no primitive selector at all and
+    8 of 10 shapes were UI-unreachable. Twelve geometries, per-shape control table mirroring
+    `MAPPER_CONTROLS`, size-preserving swap via a new engine-side `setObjectPrimitive`.
+  - **Hatch angle (`c131b56` + `8e94090`).** `fillAngle` was in the curved fill's opts contract
+    and passed by the caller but never read; also part of the group key, so changing it
+    regrouped the fill and re-emitted identical geometry. Nine chart-wrapped primitives
+    affected (ellipsoid included — found empirically by spying on `SurfaceFill.buildObject`
+    across every primitive × mapper, not from a list). SCENE_VERSION 2→3 migration pins
+    pre-existing curved hatches to 0°; **an absent `fillAngle` is 45, not 0**, so the shipped
+    `scene3d-studio-shadows` preset needed pinning too, and `applyPreset` had to run the
+    migration because a preset's own `sceneVersion` wins over the default. Curved crosshatch
+    threaded through, mirroring `crossFamilies()` exactly.
+  - **Shadows (`686eacf`+).** Two root causes: ctxbar required the group in `selectedLayerIds`
+    (both entry points select the child), and the panel's shadow block hung off light rows a
+    tree never renders because tree conversion empties `params.lights`. Implementer rejected
+    both framings offered and moved shadow styling out of the light inspector entirely —
+    correct: it is scene-wide, and `collectSceneParams` unions inline *then* child lights, so
+    un-emptying would light every tree scene twice. **Jay's semantic fix: Shadow ▸ Angle
+    rotates the fill lines, it does not move the shadow** — measured, dial 45→306: bearing
+    51.92°→171.16°, footprint bbox drift ≤0.16px, sun untouched.
+  - **Tone goldens (`eee11eb`).** 26 JSON goldens / 42 tests, the first pins on scene3d tone.
+    Determinism proven (3× per run permanently + 4 cross-process regenerations, identical
+    digest). Sensitivity proven by monkeypatching the coverage read: they detect a flipped
+    ladder at *both* complement sites. The `layer.paths` false-positive trap that misled five
+    agents is now itself a test.
+  - **Method note.** Adversarial review and independent second-opinion agents caught real
+    defects repeatedly this batch; the composed-output measurement warning
+    (`group.scenePaths`, never `layer.paths`) had to be issued five times and prevented at
+    least two fictional result matrices.
+  - **Found, NOT fixed (queued):** `expandMonolithToTree` drops a scene-scoped fill (leaf style
+    copied only `if (byObject[obj.id])` while collect always writes it → 0 `sceneFill` paths);
+    **`tone.specular` is live on the curved fill and ignored by the faceted `coverageGain`**
+    (same family as I27); `highlightPenId` never reaches `stippleOut`/`sparse` ink (applied
+    only when `dashHL` is set); torus "Diameter" label lies (`major = 0.75·sx`); stale
+    "sun bearing" strings in `src/config/context-bar.js`; `booleanGroup3d` Cast row shows a
+    default because `_sceneObjectById` rejects non-`object3d` children; a union/intersect group
+    with a faceted primary + differing curved child style at 45 will shift to 0.
 - **Unreleased — OBJ/STL 3D-model import → scene object (`3d-scene/p4`).** `File → Import
   3D Model…` parses a `.obj` (new `src/core/scene3d/obj-import.js`: v/f, n-gon fan, slash +
   negative indices) or `.stl` (reuses `src/core/stl-parser.js`) mesh and wraps it via the new

@@ -6,7 +6,54 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed
+- **3D Scene — the orbit gizmo no longer teleports off-canvas when you click it.** On a scene
+  tree the orbit/rotation gizmo was *drawn* without needing 2D bounds, but the pointer-down and
+  hover hit-tests still required them — and a scene group has none, so every click fell through
+  to object picking, selected the ground plane, and re-anchored the gizmo to the ground quad's
+  corner (measured: +917px on a 1336px canvas). A second click then landed on empty canvas and
+  cleared the selection. Picking now runs off the composed geometry, the anchor refuses a
+  `ground` selection like every other gizmo already did, and hovering gives a grab cursor again.
+- **3D Scene — Style edits from the context toolbar now reach a scene tree.** Toolbar style
+  writes landed in the scene group's style table, which the collect step overwrites from the
+  child layer on every compose — so on a tree they were silently discarded (the same edit from
+  the panel worked). Writes now route to the child layer. Legacy inline scenes are unchanged.
+- **3D Scene — Hatch Angle now rotates the fill on curved shapes.** `fillAngle` was listed in
+  the curved fill's options contract and passed by the caller, but the module never read it:
+  hatch was hard-wired to meridians on all nine chart-wrapped primitives (sphere, ellipsoid,
+  cylinder, cone, torus, capsule, superellipsoid, torus knot, pyramid), while boxes, planes,
+  polyhedra, imported meshes and CSG results always honoured it. Angle is now measured in the
+  surface's own tangent frame — 0° meridians, 90° parallels, in-between helical — with line
+  spacing held constant so Density reads the same at every angle. **Saved documents are
+  unaffected:** a scene migration pins pre-existing curved hatches to 0° so they keep today's
+  meridians, while newly created hatches use the panel's 45° seed. Curved **crosshatch** also
+  now honours Cross angle delta, Cross density ratio and Triple hatch, matching the faceted
+  path exactly.
+- **3D Scene — shadow configuration is reachable again, and Angle means the right thing.**
+  Shadow controls existed and worked but were unreachable on every scene a user can create:
+  the context toolbar required the scene *group* to be selected while both canvas picks and
+  layer-row clicks select the *child*, and the panel's shadow block hung off light rows that a
+  tree never renders. The toolbar pills are back, and shadow styling moved out of the light
+  inspector into its own always-mounted **Shadow** section (it is a scene-wide property, not a
+  property of one light). **Shadow ▸ Angle now rotates the lines *inside* the shadow instead of
+  moving the sun** — it was bound to the sun's azimuth, so it showed 135° while the actual
+  shadow angle was 45°. Steering the sun lives on the Sun layer, the light gizmo, and dragging
+  the shadow itself.
+
 ### Added
+- **3D Scene — Geometry selector with per-shape controls.** The object inspector gained a
+  **Geometry** section: pick from twelve shapes and the controls beneath swap to that shape's
+  own set (Torus shows Diameter/Thickness/Fidelity, Box shows Width/Height/Depth, Polyhedron
+  reveals its family plus Sides/Frequency/Depth/Taper/Star-inset and the deformers). Previously
+  the panel had no primitive selector at all, and eight of the ten shapes — including sphere
+  and torus — could not be added or switched to from anywhere in the UI. Swapping preserves
+  position, style and pen, and rescales so the object keeps its size. `ellipsoid` and `pyramid`
+  are now fully supported rather than landing on a blank inspector, and Plane's Depth slider is
+  live for new planes. Imported meshes read truthfully as *Imported mesh* and survive a swap.
+- **3D Scene — tone goldens.** 26 deterministic JSON goldens (42 tests) now pin the tone
+  system — bands, specular, highlight modes, shadow modes, multi-light saturation and both the
+  faceted and curved fill implementations. Nothing previously pinned any of it; every existing
+  visual baseline renders a legacy algorithm. Regenerate deliberately with `npm run test:update`.
 - **3D Scene — Import OBJ / STL 3D models.** `File → Import 3D Model…` reads a `.obj` or `.stl`
   mesh and drops it into the 3D scene compositor as a lit, shaded, selectable object (HLR,
   lighting, shadows, and styles all apply). If a 3D scene is active the model is **added to it**;
