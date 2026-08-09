@@ -801,7 +801,32 @@
   const SATURATION = 0.78;
   // C15 — the composed ceiling for the contact collar. Below the 1.0 a third
   // direction would reach, so the accent stays an accent and the plot stays dry.
-  const COLLAR_CEIL = 0.86;
+  const COLLAR_CEIL = 0.80;
+  // C15, ROUND 6. The collar was `keep-1-of-1` on a grid already floored at
+  // 1.2 x pen, so family A ALONE composes to ~0.83 there — and then one or two
+  // crossed families land on top of it and the accent becomes a solid slab with
+  // no resolvable rulings (56 patches >= 0.90 in the trio view, and the same
+  // slab visible in the running app). Capping the PITCH cannot fix that: the
+  // pitch was already at the floor, which is precisely why it floods "by
+  // construction" — past the floor the craft rule says density must go into
+  // another DIRECTION, and here it was going into both at once.
+  //
+  // So the collar's family-A STRIDE is chosen to satisfy a composed ceiling: it
+  // takes the tightest stride whose total, with the crossed families it will
+  // actually get, still leaves white paper between rulings. Every candidate is a
+  // subset of the same master grid, so no new line ever appears and the
+  // ruling-subset architecture is untouched; and Z0's outer boundary is HARD by
+  // design (§4), so a stride that is not nested with Z1's cannot produce a
+  // readable phase break either.
+  const collarStrideFor = (master, crossPitch, penWidth, withThird) => {
+    for (let st = 1; st <= 6; st++) {
+      const fams = withThird
+        ? [master * st, crossPitch, crossPitch]
+        : [master * st, crossPitch];
+      if (perceivedCoverage(fams, penWidth) <= COLLAR_CEIL) return st;
+    }
+    return 6;
+  };
   const perceivedCoverage = (spacings, penWidth) => {
     let clear = 1;
     spacings.forEach((s) => { clear *= 1 - clamp(penWidth / Math.max(penWidth, s), 0, 1); });
@@ -1116,6 +1141,11 @@
     const scale = clamp(Math.max(headroomScale(sBase, penWidth), rungScale), 1, 2.2);
     const ladder = strideLadder(sBase * scale, penWidth);
     const strideA = ladder.strideA;
+    // C15 — the collar takes the tightest stride that still leaves paper showing.
+    strideA[Z_CONTACT] = collarStrideFor(
+      ladder.master, ladder.crossPitch, penWidth,
+      perceivedCoverage([ladder.master, ladder.crossPitch, ladder.crossPitch], penWidth) <= COLLAR_CEIL,
+    );
     const crossPitch = ladder.crossPitch;
     // THIRD LEVER — dash duty. It can only ever LIGHTEN, and the headroom cap
     // already spends what it has. So duty is spent where it is free: thinning the crossed family along
@@ -1186,8 +1216,11 @@
     // 1 - PROD(1 - c) and admit the third direction only while the pair is still
     // under the ceiling. The collar keeps its two directions unconditionally —
     // those carry the accent, and C1 depends on them.
-    const collarPair = perceivedCoverage([ladder.master, crossPitch], penWidth);
-    if (contactOn && collarPair < COLLAR_CEIL) {
+    // The third direction joins only if the collar still has room for it AFTER
+    // the stride has been chosen — otherwise it is the thing that floods.
+    const collarThird = contactOn
+      && perceivedCoverage([ladder.master * strideA[Z_CONTACT], crossPitch, crossPitch], penWidth) <= COLLAR_CEIL;
+    if (collarThird) {
       emitFamily({
         ...base, angle: angle + CROSS_C_DEG, spacing: crossPitch, familyId: 2,
         meta: zoneMeta(Z_CONTACT),
