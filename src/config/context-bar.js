@@ -159,7 +159,7 @@
       // stays open until you click elsewhere; copy for the rows lives in
       // CONTEXT_BAR.sceneFlyouts below.
       sceneStyle: { label: 'Style', tooltip: 'Fill style, pen, density & border' },
-      sceneShadow: { label: 'Shadow', tooltip: 'Cast shadow, angle & style' },
+      sceneShadow: { label: 'Shadow', tooltip: 'Cast shadow — fill angle, style & pen' },
       sceneHighlight: { label: 'Highlight', tooltip: 'Highlight treatment' },
       sceneXray: { label: 'X-ray', tooltip: 'See-through / hidden-line style' },
       // I22: swap the selected object(s) primitive. Option list in
@@ -231,7 +231,21 @@
         castOptions: [{ value: 'inherit', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
         mode: { label: 'Mode', aria: 'Shadow mode (additive hatch or inverse ground-fill thinning)' },
         modeOptions: [{ value: 'additive', label: 'Additive' }, { value: 'inverse', label: 'Inverse' }],
-        angle: { label: 'Angle', aria: 'Shadow angle (sun bearing, scene-wide)', note: 'Scene-wide (sun)' },
+        // RC1 — Angle is the bearing of the FILL LINES drawn inside the shadow
+        // region. It restyles the shadow; it does NOT move it. (Aiming the sun
+        // is a LIGHTING concern — the Sun child layer, the on-canvas light
+        // gizmo, or dragging the shadow itself.) The pre-RC1 strings here said
+        // "sun bearing" / "Scene-wide (sun)" and both ctxbar and panel had to
+        // override them locally; this config is now the single source of truth.
+        angle: { label: 'Angle', aria: 'Shadow fill angle (scene-wide)', note: 'Fill lines (scene-wide)' },
+        // When on, shadows.js derives the fill bearing from the light travel
+        // direction, which makes the manual Angle dial inert — the flyout then
+        // shows derivedNote instead of the dial.
+        follow: {
+          label: 'Follow light',
+          aria: 'Shadow fill angle follows the light bearing',
+          derivedNote: 'Angle is derived from the light bearing.',
+        },
         style: { label: 'Style', aria: 'Shadow line style' },
         styleOptions: [
           { value: 'solid', label: 'Solid' }, { value: 'dashed', label: 'Dashed' },

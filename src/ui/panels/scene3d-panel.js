@@ -2548,7 +2548,7 @@
         onChange: (v) => { commit(() => { ensureShadow().shadowLayers = v === 'on'; }); renderShadow(); },
       }));
 
-      // Layer count + falloff only bite when layered — shown then to keep the
+      // Layer count + softness only bite when layered — shown then to keep the
       // inspector focused.
       if (s.shadowLayers) {
         const lcRow = document.createElement('div');
@@ -2567,10 +2567,15 @@
           ariaLabel: 'Shadow layer count',
           onChange: (v) => { commit(() => { ensureShadow().shadowLayerCount = parseInt(v, 10) || 3; }); },
         }));
-        sliderRow(host, comps, 'Falloff', {
+        // "Softness", not "Falloff". The `shadowFalloff` key began life as a
+        // per-layer DENSITY DROP and was repurposed to drive PENUMBRA SOFTNESS
+        // (how far the dark umbra core extends down the throw), so the old
+        // label described behaviour the slider no longer has. Label-only rename
+        // — the stored key, range and default are deliberately unchanged.
+        sliderRow(host, comps, 'Softness', {
           value: Number.isFinite(s.shadowFalloff) ? s.shadowFalloff : 0.5,
           min: 0.2, max: 1, step: 0.05, defaultValue: 0.5,
-          ariaLabel: 'Shadow layer density falloff',
+          ariaLabel: 'Shadow penumbra softness',
           ...liveSlider((v) => { ensureShadow().shadowFalloff = Math.round(v * 100) / 100; }),
         });
       }

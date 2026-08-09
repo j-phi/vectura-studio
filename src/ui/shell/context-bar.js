@@ -1473,20 +1473,21 @@
     const follows = bag.shadowAngleFollowsLight === true;
     // The shadow config block carries no on/off pair of its own (style/xray do),
     // so fall back to the local literal rather than reach across namespaces.
-    UI.SegCtrl(flyRow(fly, (C.follow && C.follow.label) || 'Follow light'), {
+    const FOL = C.follow || {};
+    UI.SegCtrl(flyRow(fly, FOL.label || 'Follow light'), {
       options: C.onOff || [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
       value: follows ? 'on' : 'off',
-      ariaLabel: (C.follow && C.follow.aria) || 'Shadow fill angle follows the light bearing',
+      ariaLabel: FOL.aria,
       onChange: (v) => { setScene('shadow.shadowAngleFollowsLight', v === 'on'); rebuild(); },
     });
     if (follows) {
-      flyNote(fly, (C.follow && C.follow.derivedNote) || 'Angle is derived from the light bearing.');
+      flyNote(fly, FOL.derivedNote);
     } else if (UI.AngleDial) {
-      // Label text still comes from config; the aria/note strings there predate
-      // this fix and describe the sun, so they are overridden locally.
+      // Label, aria AND note all come from config — its strings were corrected
+      // to describe the fill bearing, so there is nothing left to override here.
       const ang = Number.isFinite(bag.shadowAngle) ? bag.shadowAngle : 45;
-      UI.AngleDial(flyRow(fly, C.angle.label, (C.angle && C.angle.fillNote) || 'Fill lines (scene-wide)'), {
-        value: ang, ariaLabel: (C.angle && C.angle.fillAria) || 'Shadow fill angle (scene-wide)', defaultValue: 45,
+      UI.AngleDial(flyRow(fly, C.angle.label, C.angle.note), {
+        value: ang, ariaLabel: C.angle.aria, defaultValue: 45,
         onChange: (v) => setScene('shadow.shadowAngle', norm360(v), { gesture: true, preview: true }),
         onCommit: (v) => setScene('shadow.shadowAngle', norm360(v)),
       });
