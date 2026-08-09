@@ -2571,7 +2571,204 @@
         console.error('[Engine] Scene group compose failed:', err);
         paths = [];
       }
-      group.scenePaths = this._applyObjectDivisions(paths, objectLayers);
+      // Universal output controls for 3D (Curves / Smoothing / Simplify). Runs
+      // BEFORE divisions, so a dashed object dashes along the true curve rather
+      // than along the chords it was fitted from (divideChain flattens via the
+      // layer's own `curves` flag, which _applyObjectDivisions already reads).
+      const finished = this._applySceneCurveFinish(paths, assembled, objectLayers, group);
+      group.scenePaths = this._applyObjectDivisions(finished, objectLayers);
+    }
+
+    /**
+     * Curves / Smoothing / Simplify for a composed 3D scene — the same three
+     * universal controls every other algorithm has, finally reaching scene3d.
+     *
+     * WHY THIS STAGE HAD TO BE BUILT RATHER THAN TURNED ON
+     * ----------------------------------------------------
+     * `computeLayerDisplayGeometry` (where `applyCurveFit` lives) runs only on
+     * non-group LEAVES, and a scene group's children are `_sceneConsumed`. So a
+     * scene's ink went from `Algorithms.scene3d.generate` to the canvas with the
+     * entire curve/simplify stage bypassed. There was no dead toggle to revive —
+     * the stage did not exist.
+     *
+     * THE TWO DEFECTS THIS FIXES (measured on a detail-16 capsule)
+     * -----------------------------------------------------------
+     *   silhouette — `sceneEdge` paths are emitted ONE PROJECTED MESH EDGE PER
+     *     PATH: 56 separate 2-point paths, each stamped `meta.straight`. A
+     *     2-point path is a straight line by definition, so no fitter could ever
+     *     have smoothed it. They must be CHAINED back into runs first. That is
+     *     the lumpy outline.
+     *   fill rings — `sceneFill` paths are honest multi-point polylines with no
+     *     `straight` flag (median turn 5.5 deg). They only ever needed the fit.
+     *
+     * WHICH GEOMETRY GETS CURVES
+     * --------------------------
+     * Exactly `Scene3D.Params.CURVED_FILL_PRIMITIVES` — the chart-wrapped set
+     * that routes through SurfaceFill. Not a new parallel list: it is the same
+     * set scene3d.js already uses to decide what is a curved surface, so "is
+     * this surface curved?" has one answer in the repo. box / plane / solid
+     * (polyhedron) / imported meshes are faceted, their straight edges are
+     * EXACT, and rounding a cube's edges would be a serious regression. A CSG
+     * assembly borrows its primary object's id, so a carve whose primary is
+     * curved is treated as curved — matching the surface-fill rule it already
+     * follows.
+     *
+     * The fitter's own corner detection is the second net: within a curved
+     * primitive, turns past ~50 deg stay hard corners, so a cylinder's cap rims
+     * and a pyramid's apex survive even though those primitives are in the set.
+     *
+     * SMOOTHING vs HIDDEN-LINE CLIPPING — the order, and why
+     * ------------------------------------------------------
+     * Hidden-line removal happens INSIDE `scene3d.generate`; this pass runs
+     * strictly AFTER, on the already-clipped visible runs. That is the correct
+     * order, not merely the convenient one:
+     *
+     *   • A fit INTERPOLATES its endpoints, so every visible run keeps the exact
+     *     start/end the clipper gave it — an occlusion boundary cannot move.
+     *   • Chaining is EXACT-endpoint only. Two adjacent visible edges share a
+     *     mesh vertex and chain; a clipper-truncated run ends at an interpolated
+     *     interior point that coincides with nothing, so a hidden stretch can
+     *     never be bridged shut.
+     *   • The reverse order is not even expressible here: clipping a smoothed
+     *     path would have to flatten it first (the branch invariant), and the
+     *     clipper would then re-emit `baked` polylines — losing the curves again
+     *     at export. Fitting last is the only order that survives to the plot.
+     *
+     * The one accepted cost: a fitted span may bow off its chords by up to the
+     * fit tolerance (0.002 of the path's OWN bbox diagonal at Simplify 0 — sub
+     * pen-width at normal object sizes), so a curve can sit a hair proud of the
+     * occluder it was clipped against. That is a rendering nicety, not a
+     * correctness break, and it is why this is opt-in.
+     *
+     * DEFAULT IS OFF. No scene3d/object3d type declares `curves` in
+     * ALGO_DEFAULTS, so an untouched scene reaches the early return below and
+     * `paths` passes through BY REFERENCE — byte-identical, every golden intact.
+     */
+    _applySceneCurveFinish(paths, assembled, objectLayers, group) {
+      const GU = window.Vectura?.GeometryUtils;
+      const OU = window.Vectura?.OptimizationUtils;
+      const Params = window.Vectura?.Scene3D?.Params;
+      if (!GU || !OU || !Params || !Array.isArray(paths) || !paths.length) return paths;
+      const CURVED = Params.CURVED_FILL_PRIMITIVES;
+      if (!CURVED || typeof CURVED.has !== 'function') return paths;
+
+      // Scene-level settings act as the default for objects that have not set
+      // their own — one Curves switch for the whole scene, overridable per
+      // object, mirroring how every other per-object 3D control resolves.
+      const scenePar = (group && group.params) || {};
+      const inlineById = new Map();
+      (Array.isArray(scenePar.objects) ? scenePar.objects : []).forEach((o) => {
+        if (o && typeof o.id === 'string') inlineById.set(o.id, o);
+      });
+      const primitiveById = new Map();
+      (Array.isArray(assembled && assembled.objects) ? assembled.objects : []).forEach((o) => {
+        if (o && typeof o.id === 'string') primitiveById.set(o.id, o.primitive);
+      });
+
+      const resolve = (oid) => {
+        const layer = objectLayers && objectLayers.get ? objectLayers.get(oid) : null;
+        const own = (layer && layer.params) || inlineById.get(oid) || {};
+        const pick = (key, dflt) => (own[key] !== undefined && own[key] !== null
+          ? own[key]
+          : (scenePar[key] !== undefined && scenePar[key] !== null ? scenePar[key] : dflt));
+        return {
+          curves: pick('curves', false) === true,
+          smoothing: Math.max(0, Math.min(1, Number(pick('smoothing', 0)) || 0)),
+          simplify: Math.max(0, Math.min(1, Number(pick('simplify', 0)) || 0)),
+        };
+      };
+
+      // Which objects actually want work AND are allowed to have it.
+      const active = new Map();
+      const objectIds = new Set([...primitiveById.keys(), ...inlineById.keys()]);
+      objectIds.forEach((oid) => {
+        const primitive = primitiveById.get(oid)
+          || (inlineById.get(oid) && inlineById.get(oid).primitive);
+        if (!CURVED.has(primitive)) return; // faceted ⇒ its straight edges are exact
+        const s = resolve(oid);
+        if (!s.curves && !(s.smoothing > 0) && !(s.simplify > 0)) return;
+        active.set(oid, s);
+      });
+      if (!active.size) return paths; // untouched default ⇒ byte-identical passthrough
+
+      const ownerOf = (p) => {
+        const t = p && p.meta && p.meta.sceneTarget;
+        return t && typeof t.objectId === 'string' ? t.objectId : null;
+      };
+      const eligible = (p) => {
+        const oid = ownerOf(p);
+        return oid && active.has(oid) ? oid : null;
+      };
+
+      // ── 1. Chain the per-edge sticks back into runs ─────────────────────────
+      // Only the per-edge emitters (`sceneEdge` / `sceneFace`) are fragmented;
+      // fills already arrive as polylines and are left alone so a hatch can
+      // never weld to its neighbour. The key merges only paths that agree on
+      // owner, edge class, occlusion and EVERY styling field (pen, dash, edge
+      // style overlay) — so a chain is always one continuous, identically
+      // stroked run. Per-edge fields that legitimately vary along a run
+      // (faceId, depth, normal) are excluded from the key; the chain carries its
+      // first segment's values as the representative.
+      const CHAINABLE = new Set(['sceneEdge', 'sceneFace']);
+      const chainKey = (p, i) => {
+        const oid = eligible(p);
+        const meta = (p && p.meta) || {};
+        if (!oid || !CHAINABLE.has(meta.kind)) return `x${i}`; // unique ⇒ never chained
+        const t = meta.sceneTarget || {};
+        const rest = {};
+        Object.keys(meta).sort().forEach((k) => {
+          if (k === 'sceneTarget' || k === 'anchors' || k === 'closed') return;
+          rest[k] = meta[k];
+        });
+        return `${oid}|${t.edgeClass}|${t.occluded}|${JSON.stringify(rest)}`;
+      };
+      const chained = OU.chainSegmentsByEndpoint(paths, { tolerance: 1e-6, keyOf: chainKey });
+
+      // ── 2. Fit / round, mirroring VectorEngine.generate's curve stage ───────
+      const { width, height } = this.currentProfile;
+      const m = SETTINGS.margin;
+      const dW = width - m * 2;
+      const dH = height - m * 2;
+
+      const fitOne = (path, s) => {
+        if (!Array.isArray(path) || path.length < 3) return path;
+        const meta = path.meta || {};
+        if (meta.kind === 'circle' || meta.baked === true) return path;
+        // Smoothing wins over the plain fit, exactly as generate() orders them.
+        const round = s.smoothing > 0 ? { t: s.smoothing, simplify: s.simplify } : null;
+        if (!round && !s.curves) return path;
+        const opts = round || { curves: true, smoothing: 0, simplify: s.simplify };
+        const apply = (p) => (round ? GU.applyCornerRounding(p, opts) : GU.applyCurveFit(p, opts));
+        if (meta.straight !== true) return apply(path);
+        // A CHAINED edge run is no longer a single straight segment, so the
+        // `straight` refusal no longer describes it. Offer it to the fitter
+        // without the flag, and put the flag back untouched if the fitter
+        // declines (all-corners geometry) — an un-fitted run must keep drawing
+        // verbatim.
+        const probe = path.map((pt) => ({ ...pt }));
+        probe.meta = { ...meta };
+        delete probe.meta.straight;
+        const fitted = apply(probe);
+        return fitted === probe ? path : fitted;
+      };
+
+      // Polyline Simplify for anything the fit did not claim — the same
+      // Visvalingam-when-curved / RDP-when-not split generate() uses.
+      const simplifyOne = (path, s) => {
+        if (!(s.simplify > 0) || !Array.isArray(path) || path.length < 3) return path;
+        const meta = path.meta || {};
+        if (meta.kind === 'circle') return path;
+        if (Array.isArray(meta.anchors) && meta.anchors.some((a) => a && (a.in || a.out))) return path;
+        const tol = s.simplify * Math.max(dW, dH) * 0.01;
+        return s.curves ? simplifyPathVisvalingam(path, tol) : simplifyPath(path, tol);
+      };
+
+      return chained.map((path) => {
+        const oid = eligible(path);
+        if (!oid) return path;
+        const s = active.get(oid);
+        return simplifyOne(fitOne(path, s), s);
+      });
     }
 
     // Polish P-B — per-object stroke divisions inside a scene group. A composed

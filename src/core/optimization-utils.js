@@ -190,6 +190,146 @@
     return source;
   };
 
+  /**
+   * Chain segments that share an EXACT endpoint back into continuous runs.
+   *
+   * Distinct from `joinNearbyPaths`, which is a plotter optimization: that one
+   * welds across a GAP (default 1 mm) and only when the two runs are roughly
+   * collinear, and it happily merges paths from different pens. This is the
+   * opposite contract — a lossless RE-ASSEMBLY of geometry that was emitted in
+   * pieces:
+   *
+   *   • exact-match only (tolerance defaults to 1e-6 world units), so it can
+   *     never invent ink across a real gap;
+   *   • grouped by a caller-supplied signature (`keyOf`), so runs only chain
+   *     with runs that share a pen / class / owner;
+   *   • no angle test — a chain follows the geometry through corners, because
+   *     the corner is real and the consumer (a curve fitter) is the thing that
+   *     decides whether to round it.
+   *
+   * WHY EXACT MATCH IS THE HIDDEN-LINE SAFETY PROPERTY. 3D scene edges are
+   * emitted one projected mesh edge per path, AFTER hidden-line clipping. Two
+   * adjacent VISIBLE edges share a mesh vertex, so their projected endpoints are
+   * bit-identical and chain. When the clipper truncates an edge, the surviving
+   * run starts at an interpolated interior point that coincides with nothing —
+   * so an occluded stretch can never be bridged. Loosening this to a tolerant
+   * match would silently paint over hidden geometry.
+   *
+   * Deterministic: paths are consumed in input order and, where several
+   * candidates meet at a vertex, the lowest input index wins.
+   *
+   * Returns new arrays; `meta` is carried from each chain's FIRST segment, with
+   * `meta.closed` set when the run comes back to its own start.
+   */
+  const chainSegmentsByEndpoint = (paths, options = {}) => {
+    const list = Array.isArray(paths) ? paths : [];
+    if (list.length < 2) return list.slice();
+    const tol = Number.isFinite(options.tolerance) ? Math.max(options.tolerance, 0) : 1e-6;
+    const keyOf = typeof options.keyOf === 'function' ? options.keyOf : () => '';
+    // Quantize on a grid at least as coarse as the tolerance, then probe the 3x3
+    // neighbourhood so a pair straddling a cell boundary still meets.
+    const q = Math.max(tol, 1e-9);
+    const cell = (v) => Math.round(v / q);
+    const near = (a, b) => Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) <= tol;
+
+    const usable = (p) => Array.isArray(p) && p.length >= 2 && !isClosedPath(p);
+    const out = new Array(list.length).fill(null);
+    const groups = new Map();
+    list.forEach((p, i) => {
+      if (!usable(p)) return;
+      const k = String(keyOf(p, i));
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(i);
+    });
+
+    // Slot bookkeeping: a chain is emitted at the position of its FIRST segment,
+    // so painter's order (which opaque scene fills depend on) is preserved.
+    const consumed = new Set();
+
+    groups.forEach((idxs) => {
+      if (idxs.length < 2) return;
+      // endpoint bucket -> [{ i, end }] where end 0 = head, 1 = tail
+      const buckets = new Map();
+      const push = (pt, i, end) => {
+        const k = `${cell(pt.x)},${cell(pt.y)}`;
+        if (!buckets.has(k)) buckets.set(k, []);
+        buckets.get(k).push({ i, end });
+      };
+      idxs.forEach((i) => {
+        const p = list[i];
+        push(p[0], i, 0);
+        push(p[p.length - 1], i, 1);
+      });
+      const candidates = (pt) => {
+        const cx = cell(pt.x);
+        const cy = cell(pt.y);
+        const hits = [];
+        for (let dx = -1; dx <= 1; dx += 1) {
+          for (let dy = -1; dy <= 1; dy += 1) {
+            const b = buckets.get(`${cx + dx},${cy + dy}`);
+            if (b) hits.push(...b);
+          }
+        }
+        return hits.sort((a, b) => (a.i - b.i) || (a.end - b.end));
+      };
+      // One partner at a vertex: an endpoint shared by 3+ runs is a junction,
+      // and picking a branch there would be arbitrary. Leave junctions alone.
+      const pick = (pt, selfIdx) => {
+        const hits = candidates(pt).filter((h) => h.i !== selfIdx && !consumed.has(h.i)
+          && near(h.end === 0 ? list[h.i][0] : list[h.i][list[h.i].length - 1], pt));
+        return hits.length === 1 ? hits[0] : null;
+      };
+
+      idxs.forEach((seed) => {
+        if (consumed.has(seed)) return;
+        consumed.add(seed);
+        const pts = list[seed].map((pt) => ({ ...pt }));
+        let grew = false;
+
+        // Extend forward off the tail.
+        for (;;) {
+          const tail = pts[pts.length - 1];
+          if (near(tail, pts[0]) && pts.length > 2) break; // closed
+          const hit = pick(tail, -1);
+          if (!hit) break;
+          const seg = list[hit.i];
+          const ordered = hit.end === 0 ? seg : seg.slice().reverse();
+          consumed.add(hit.i);
+          for (let k = 1; k < ordered.length; k += 1) pts.push({ ...ordered[k] });
+          grew = true;
+        }
+        // Extend backward off the head.
+        for (;;) {
+          const head = pts[0];
+          if (near(head, pts[pts.length - 1]) && pts.length > 2) break; // closed
+          const hit = pick(head, -1);
+          if (!hit) break;
+          const seg = list[hit.i];
+          // Append so the segment's far end becomes the new head.
+          const ordered = hit.end === 1 ? seg : seg.slice().reverse();
+          consumed.add(hit.i);
+          for (let k = ordered.length - 2; k >= 0; k -= 1) pts.unshift({ ...ordered[k] });
+          grew = true;
+        }
+
+        if (!grew) { out[seed] = list[seed]; return; }
+        const src = list[seed];
+        const meta = src.meta ? { ...src.meta } : {};
+        if (pts.length > 2 && near(pts[0], pts[pts.length - 1])) meta.closed = true;
+        pts.meta = meta;
+        out[seed] = pts;
+      });
+    });
+
+    const result = [];
+    list.forEach((p, i) => {
+      if (out[i]) { result.push(out[i]); return; }
+      if (!usable(p)) { result.push(p); return; }
+      if (!consumed.has(i)) result.push(p); // untouched (single-item group)
+    });
+    return result;
+  };
+
   const api = {
     pathLength,
     pathEndpoints,
@@ -199,6 +339,7 @@
     reversePath,
     offsetPath,
     joinNearbyPaths,
+    chainSegmentsByEndpoint,
   };
 
   if (typeof window !== 'undefined') {
