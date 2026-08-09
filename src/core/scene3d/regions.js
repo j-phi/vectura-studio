@@ -511,12 +511,25 @@
   // +65°, never +90°: an orthogonal second family reads as a square grid / wire
   // mesh and beats against the raster (§2.3).
   const CROSS_OBJ_DEG = 65;
+  //
+  // ROUND 4 — the form shadow gets its OWN value, via a family rather than via
+  // coverage. Measured, F came out at 0.199 against M's 0.213: the form shadow
+  // was fractionally LIGHTER than the halftone, so the sphere read as one mid
+  // grey with a stripe in it. F was already at coverage 1.00, so there was
+  // nothing left to give it — and worse, F lives where the carrier crowds (the
+  // turning limb), which is exactly where the plot-safe cap takes the most away.
+  // Pushing its coverage could not have worked; it was already at the ceiling.
+  //
+  // So F crosses too, at half the terminator's weight. That is the same §0 move
+  // the terminator already makes, and it decouples F's value from how tightly
+  // the carrier happens to run at the limb. T keeps a clear margin above it.
+  // M comes down a little to open the M→F step from the other side.
   const FORM_INK = {
     H: { coverage: 0.00, cross: 0, duty: 1 },
     L: { coverage: 0.42, cross: 0, duty: 1 },
-    M: { coverage: 0.70, cross: 0, duty: 1 },
-    F: { coverage: 1.00, cross: 0, duty: 1 },
-    T: { coverage: 1.00, cross: 0.85, duty: 1 },
+    M: { coverage: 0.62, cross: 0, duty: 1 },
+    F: { coverage: 1.00, cross: 0.40, duty: 1 },
+    T: { coverage: 1.00, cross: 1.00, duty: 1 },
     R: { coverage: 0.45, cross: 0, duty: 0.7 },
   };
   const formInk = (zone) => FORM_INK[zone] || FORM_INK.M;

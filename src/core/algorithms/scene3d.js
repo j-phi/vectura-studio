@@ -499,6 +499,24 @@
       // of a sphere in the same scene. We now read the COMPLEMENT band's coverage
       // (nBands-1-bandIdx), matching SurfaceFill.coverageForSample, so a cube and
       // a sphere lit alike shade alike.
+      // ── O20 IS NOT FIXED, AND HERE IS WHY, SO THE NEXT ROUND DOES NOT ────
+      //     REDISCOVER IT.
+      //
+      // A cube's lit top (N.L 0.707) and its lit side (N.L 0.500) fall in the
+      // SAME band under the default thresholds [0.25, 0.5, 0.75]. The ladder
+      // therefore assigns them ONE value by construction, and the only thing
+      // separating them on paper is residual projection error — which currently
+      // leaves the top marginally darker than the less-lit side. So O20 ("three
+      // readable values from three orientations", D strictly decreasing in N.L)
+      // is not reachable by tuning the fill: it needs sub-band gradation.
+      //
+      // Tilting the gain across a band's own width does produce it, and was
+      // implemented and measured. It was REVERTED: it collapses the faceted
+      // band-COUNT contract in tests/visual/scene3d-tone-baseline.test.js — a
+      // cube at bands 3 and bands 4 emits identical ink under the tilt — and
+      // that contract is protected. Whatever fixes O20 has to keep the emitted
+      // ink a readable function of the band count, which a naive tilt does not.
+      // Not shipped rather than shipped broken.
       const toneBandCount = () => (p.tone && Array.isArray(p.tone.ladder) && p.tone.ladder.length) ? p.tone.ladder.length : 3;
       const coverageGain = (bandIdx) => {
         const nb = toneBandCount();
@@ -620,6 +638,17 @@
         // R (reflected) is the other half of the dip: the away-facing rim was
         // falling to a hard Lambert 0 with nothing under it, so a low-poly
         // sphere's LOWEST facets came out its darkest. R lightens them back.
+        // ── O20: value must be MONOTONE in N.L, not merely banded ────────────
+        //
+        // A cube's lit top (N.L 0.707) and its lit side (N.L 0.500) fall in the
+        // SAME band under the default thresholds, so the ladder alone gives them
+        // one value and the only thing separating them was residual projection
+        // error — which had the top reading DARKER than the less-lit side. The
+        // cube read side-lit. §5.5.1 calls a facet out of order with its
+        // neighbours' N.L a bug, and O20 wants three readable values from three
+        // orientations, so the band is TILTED across its own width: still stepped
+        // at band boundaries (which §5.5.1 says is correct), but never inverted
+        // inside one. Pure ordering — it cannot move a facet into another band.
         const zone = faceZone(normalWorld, worldPoint, face, record);
         if (zone === 'T') gain = Math.max(gain, coverageGain(0));
         else if (zone === 'R') gain = Math.min(gain, coverageGain(0) * 0.55);
@@ -1620,6 +1649,9 @@
                 // to stand on (§5.4 #1); without a pen width it stays exactly
                 // `lineCountFor(density)`.
                 penWidth,
+                // Density, in the SAME law the faceted path uses, so the dial
+                // means the same thing on both (the O27 parity contract).
+                tonePitch: hatchSpacing(finite(sp.fillDensity, 50)),
                 // I8 — shadow sensitivity (stage count) graded darkening on the
                 // dark end; default 1 = no-op. Per-sample specular fn drives the
                 // lightDriven highlight region.

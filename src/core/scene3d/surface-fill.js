@@ -104,7 +104,11 @@
   // possible if the family the ladder subsets is itself dense enough, so when
   // the ladder is active the line budget is FLOORED at a master pitch measured
   // in pen widths. Density still rules above the floor.
-  const MASTER_PITCH_PEN = 2.0;  // master grid pitch, × pen width (the DARKEST zone)
+  // A tone grid is the FINE grid the ladder subsets, not the finished spacing —
+  // `hatchSpacing(density)` is the latter, so it is subdivided to become the
+  // former. Chosen so the shipped default Density lands the ladder where Round 3
+  // measured it well.
+  const TONE_SUBDIV = 5;
   // §0 / C15 / designer item #5 — "cap TOTAL coverage, not just per-family
   // pitch: ~0.75 dark-fraction ceiling above the 1.2 x pen floor". 1.2 x pen is
   // the plot floor, but a SINGLE family ruling at 1.2 x pen already measures
@@ -114,8 +118,9 @@
   // measures ~0.45, leaving the cross the room it needs to make T read, and the
   // COMBINED perceived coverage is ceilinged outright.
   const PLOT_FLOOR_PEN = 2.2;
-  const TOTAL_DARK_CEIL = 0.55;
-  const LIT_MAX_PITCH_PEN = 6;   // §5.4 #1 — the centre light may never be blanker
+  const TOTAL_DARK_CEIL = 0.47;
+  const DARKEST_WEIGHT = 2.0;    // T's coverage + cross — the ladder's top rung
+  const LIT_MAX_PITCH_PEN = 12;  // §5.4 #1 / O6 — the centre light may never be blanker
   const MASTER_MAX_LINES = 420;  // pathological-input guard (steps × lines)
 
   // Radical inverse base 2, scaled off the index — the classic ordered-dither
@@ -138,8 +143,16 @@
   // stochastic line-end termination, the burin's own answer, at zero extra
   // pen-up cost. The bucket is coarse so the result is a ragged interdigitated
   // boundary, not per-sample speckle.
-  const FEATHER_AMPL = 0.16;
-  const FEATHER_BUCKET = 6;
+  // ROUND 4 (O26). The first cut hashed a QUANTIZED bucket of the along-line
+  // parameter, so the offset was piecewise CONSTANT — every ruling flipped at one
+  // of a handful of shared positions and the boundary came out as traceable right
+  // angles in parameter space. A blocky staircase is exactly the artefact the
+  // feather exists to prevent, and on the ground (C9/C10) the same idea reads as
+  // the best artefact in the set because THERE it is continuous. So the offset is
+  // now interpolated between adjacent hash samples: it wanders smoothly along
+  // each ruling, and independently per ruling, which is what interdigitates.
+  const FEATHER_AMPL = 0.30;
+  const FEATHER_BUCKET = 5;
 
   // Line count from the density slider (1..100 → ~6..40 wrap lines).
   const lineCountFor = (density) => Math.max(4, Math.round(6 + clamp(density, 0, 100) * 0.34));
@@ -307,9 +320,17 @@
     // spacing is exactly 6 × pen, so the floor is stated in the spec's units.
     let litFloorCov = LIT_FLOOR; // assigned once the master pitch is known, below
     let floorPitch = 0;          // ditto: the plot-safe local pitch (C15)
-    const zoneCoverage = (zone, isCross) => {
+    const zoneCoverage = (zone, isCross, isDensityCross) => {
       const ink = Regions.formInk(zone);
       if (isCross) return clamp(ink.cross, 0, 1);
+      if (isDensityCross) {
+        // §0's craft rule made operational: Density past the plot floor spends
+        // itself on a second DIRECTION, never on a tighter pitch. Weighted by the
+        // zone's own coverage so the ladder's ORDER survives the spill — the
+        // highlight gets none of it and the centre light barely any, which is
+        // what keeps the blank readable while the form darkens.
+        return clamp(ink.coverage * densityOverflow, 0, 1);
+      }
       let cov = clamp(ink.coverage, 0, 1);
       if (zone === 'L') {
         const raw = cov;
@@ -406,6 +427,7 @@
     // live above it. With tone off, `N` is bit-for-bit `lineCountFor(density)`.
     let N = lineCountFor(finite(opts.fillDensity, 50));
     let masterPitch = 0;
+    let densityOverflow = 0; // Density past the plot floor, spent on a 2nd direction
     const penWidth = Math.max(0.02, finite(opts.penWidth, 0.3));
     if (useLadder && opts.penWidth != null) {
       // Calibrate off the MEDIAN local pitch the family will actually rule at,
@@ -434,8 +456,39 @@
       if (widths.length >= 8) {
         widths.sort((x, y) => x - y);
         const median = widths[widths.length >> 1];
-        masterPitch = MASTER_PITCH_PEN * penWidth;
-        N = clamp(Math.max(N, Math.ceil(median / masterPitch)), 4, MASTER_MAX_LINES);
+        // ── DENSITY IS THE DIAL; THE FLOOR ONLY CATCHES THE SPARSE END ────────
+        //
+        // Round 3 sized the grid at a FIXED master pitch, and I claimed "Density
+        // is fully live above it". It is not: `lineCountFor(100)` is 40 lines and
+        // the floor wants ~150 for a 92mm ball at a 0.3mm pen, so N sat AT the
+        // floor for every Density value and the ball emitted byte-identical
+        // geometry at Density 10 and at 100. There was no Density setting left.
+        //
+        // So Density sets the pitch, through the SAME `hatchSpacing` law the
+        // faceted path uses (subdivided: a tone grid is the fine grid the ladder
+        // subsets, not the finished spacing). Two clamps sit on it, and each has
+        // a reason rather than a number:
+        //
+        //   SPARSE END — the centre light must still carry ink, or the highlight
+        //   has nothing to be blank against (O6, §5.4 #1). Derived from the LIT
+        //   band's own requirement: L rules at `pitch / cov_L`, and that may not
+        //   exceed LIT_MAX_PITCH. This is the only floor, and it binds only when
+        //   Density is genuinely too sparse to carry a ladder.
+        //
+        //   DENSE END — past the plot floor you do not get darker by ruling
+        //   closer, you get a flooded blob (§0). The excess is NOT discarded: it
+        //   spills into a second DIRECTION, which is what the craft rule says to
+        //   do with it and what keeps Density live at the top of its range.
+        const tonePitch = Math.max(0.05, finite(opts.tonePitch, 3) / TONE_SUBDIV);
+        const litCov = clamp(Regions.formInk('L').coverage, 0.05, 1);
+        const o6Pitch = LIT_MAX_PITCH_PEN * penWidth * litCov;
+        const floorPen = PLOT_FLOOR_PEN * penWidth;
+        masterPitch = Math.min(tonePitch, o6Pitch);
+        if (masterPitch < floorPen) {
+          densityOverflow = clamp(floorPen / masterPitch - 1, 0, 1);
+          masterPitch = floorPen;
+        }
+        N = clamp(Math.max(4, Math.round(median / masterPitch)), 4, MASTER_MAX_LINES);
         masterPitch = median / N; // what the family ACTUALLY rules at, typically
       }
     }
@@ -478,6 +531,19 @@
       return (h >>> 0) / 4294967296;
     };
 
+    // Smoothly-varying per-ruling feather offset in [-0.5, 0.5]. Deterministic:
+    // same ruling, same position, same value, frame to frame (the "swim" contract).
+    const featherAt = (lineIndex, step) => {
+      const u = step / FEATHER_BUCKET;
+      const k = Math.floor(u);
+      const f = u - k;
+      const seed = (lineIndex | 0) * 2654435761;
+      const a = sfHash(seed, k);
+      const b = sfHash(seed, k + 1);
+      const t = f * f * (3 - 2 * f); // smoothstep — no corners at the sample joins
+      return (a + (b - a) * t) - 0.5;
+    };
+
     // Push a run to `out`, tagging the array when it belongs to the back family.
     const pushRun = (run, back) => { if (run.length >= 2) { if (back) run.back = true; out.push(run); } };
 
@@ -499,7 +565,7 @@
     // the line to a single form zone: that is how the terminator's crossed
     // family is spent on T alone instead of being sprayed over the whole dark
     // band (O17 — Round 2 crossed ALL of band 0, at 0/90, and it read as wire mesh).
-    const emitLine = (paramAt, threshold, back, lineIndex, count, ladderRank, zoneGate, pitchStep, lineDir) => {
+    const emitLine = (paramAt, threshold, back, lineIndex, count, ladderRank, zoneGate, pitchStep, lineDir, densityCross) => {
       const wantFront = !back;
       const rank = Number.isFinite(ladderRank) ? ladderRank : threshold;
       let run = [];
@@ -570,7 +636,7 @@
             const zone = zoneOf(smp);
             if (zoneGate && zone !== zoneGate) { flush(); flushHL(); continue; }
             const cov = zone
-              ? zoneCoverage(zone, Boolean(zoneGate))
+              ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true)
               : coverageForSample(smp.I);
             // §0, restated as arithmetic, and C15: past ~1.2 x pen width you do
             // not get darker by ruling closer — you get a flooded blob and a wet
@@ -599,16 +665,26 @@
             // family overlaps family A, so treating them as additive over-reports
             // and lets the pair flood. Solve for the most the CROSS may lay down
             // without the pair passing the ceiling.
-            if (zoneGate && localPitch != null) {
+            if ((zoneGate || densityCross) && localPitch != null) {
               {
-                const primary = Regions.formInk(zone).coverage * cap;
+                // The ceiling is PROPORTIONAL to the zone's intended weight, not
+                // a flat clamp. A flat clamp collapses every zone that reaches it
+                // onto one value — T and F both crossed, both saturated, and
+                // T/F came out 0.98: the core shadow and the form shadow became
+                // the same tone and the dip closed again. Scaling the ceiling by
+                // (this zone's weight / the darkest zone's weight) preserves the
+                // ladder's ORDER through saturation, which is the whole point of
+                // having a ladder.
+                const ink = Regions.formInk(zone);
+                const primary = ink.coverage * cap;
+                const weight = clamp(ink.coverage + ink.cross, 0, 4);
+                const ceil = TOTAL_DARK_CEIL * clamp(weight / DARKEST_WEIGHT, 0, 1);
                 const cA = clamp((penWidth * primary) / localPitch, 0, 1);
-                const room = cA >= TOTAL_DARK_CEIL ? 0
-                  : 1 - (1 - TOTAL_DARK_CEIL) / (1 - cA);
+                const room = cA >= ceil ? 0 : 1 - (1 - ceil) / (1 - cA);
                 covCapped = Math.min(covCapped, (room * localPitch) / penWidth);
               }
             }
-            const jit = (sfHash(lineIndex * 2654435761, Math.round((s / FEATHER_BUCKET))) - 0.5) * FEATHER_AMPL;
+            const jit = featherAt(lineIndex, s) * FEATHER_AMPL;
             dropZone = rank >= covCapped + jit;
             // Dash duty — the reflected rim breaks its rulings rather than
             // tightening them (§5.1: widened spacing + duty 0.7).
@@ -715,7 +791,7 @@
       return { span, lineAt, na, nb, da, db };
     };
 
-    const emitAngledFamily = (angleDeg, count, back, zoneGate) => {
+    const emitAngledFamily = (angleDeg, count, back, zoneGate, densityCross) => {
       const fam = angleFamily(angleDeg);
       // Keep the LINE SPACING (not the line count) constant as the family
       // rotates, so Density reads the same at every angle. span = 1 on an axis.
@@ -726,7 +802,7 @@
         // lines are span/n apart ALONG the family normal, in parameter space.
         const step = fam.span / n;
         if (at) emitLine(at, (i + 0.5) / n, back, i, n, rankOf(i), zoneGate,
-          { a: fam.na * step, b: fam.nb * step }, { a: fam.da, b: fam.db });
+          { a: fam.na * step, b: fam.nb * step }, { a: fam.da, b: fam.db }, densityCross);
       }
     };
 
@@ -805,6 +881,14 @@
       const emitTerminatorCross = (count, back) => {
         if (!zonesOn) return;
         emitAngledFamily(finite(opts.fillAngle, 0) + Regions.CROSS_OBJ_DEG, count, back, 'T');
+        emitAngledFamily(finite(opts.fillAngle, 0) + Regions.CROSS_OBJ_DEG, count, back, 'F');
+        // The Density overflow (see the line budget): everything Density asked
+        // for past the plot floor, laid down in a second direction instead of a
+        // tighter pitch. Zero at and below the floor, so it is inert until it is
+        // needed.
+        if (densityOverflow > 0) {
+          emitAngledFamily(finite(opts.fillAngle, 0) + Regions.CROSS_OBJ_DEG, count, back, null, true);
+        }
       };
       if (mapper === 'hatch') {
         if (onMeridianAxis) {

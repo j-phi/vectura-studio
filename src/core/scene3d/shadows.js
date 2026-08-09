@@ -737,14 +737,41 @@
         // master grid; when N is 1 there is no rung to take and the collar is
         // carried by the crossed family alone (still a legible 1.6x).
         [Z_CONTACT]: 1,
-        [Z_UMBRA]: N,
-        [Z_PENUMBRA]: N,
+        // The umbra takes the SAME rung as the penumbra and gets its extra
+        // weight from the crossed family instead. Leaving it at N while the
+        // penumbra stepped to 2N made Layers 3 gain what Layers 2 could not
+        // (the wedge doubled the mid's pitch on its own), and the ink spread
+        // across 2/3/4 blew past C11 at 1.82:1. C5 only asks for the umbra to sit
+        // between 1.35x and 2.4x the penumbra, and one crossed direction already
+        // delivers that — without the family-A rung, and without ink the
+        // conservation rule says a new zone must not add.
+        [Z_UMBRA]: 2 * N,
+        // ROUND 4 — the mid steps UP a rung (C1, and answer (c) taken properly).
+        //
+        // Round 3 tried to buy the separation by SCALING sBase, via SATURATION and
+        // the headroom cap. That was a no-op and I should have measured it: when
+        // the darkest rung is already under saturation `headroomScale` returns 1,
+        // so `scale` stayed 1 and NOTHING moved. Z2's interior measured 0.440
+        // before and 0.440 after — identical to Round 2 — while the number I
+        // reported came from averaging half-empty fringe patches at the footprint
+        // edge. A metric that moves when the geometry doesn't is worse than none.
+        //
+        // And scaling could never have worked anyway: it moves Z0 and Z2 together,
+        // so the RATIO C1 measures is invariant under it. The ratio only changes
+        // if the ZONES take different rungs. So the penumbra now keeps every
+        // 2N-th ruling instead of every N-th — one rung lighter — while the collar
+        // stays exactly where it is (the instruction was to lighten the mid, never
+        // to darken the accent).
+        //
+        // Strides stay NESTED (1 | N | 2N), so every zone is still a subset of the
+        // same master grid and a boundary still cannot produce a phase break.
+        [Z_PENUMBRA]: 2 * N,
         // C10 — Z3 keeps the SAME grid subset as Z2 and lightens purely by dash
         // duty. A stride change at the Z2/Z3 boundary is a phase break, which is
         // exactly the "abrupt tonal step" the outer margin must not have; duty is
         // continuous, so the two zones share every ruling and the transition can
         // only be read as a tone, never as a line.
-        [Z_OUTER]: N,
+        [Z_OUTER]: 2 * N,
       },
     };
   };
@@ -770,6 +797,9 @@
   // darkening the accent: the whole ladder is built downward, Z0 to 0.70-0.80 and
   // Z2 to 0.22-0.28. C11 is formally amended to +-35% for this.
   const SATURATION = 0.78;
+  // C15 — the composed ceiling for the contact collar. Below the 1.0 a third
+  // direction would reach, so the accent stays an accent and the plot stays dry.
+  const COLLAR_CEIL = 0.86;
   const perceivedCoverage = (spacings, penWidth) => {
     let clear = 1;
     spacings.forEach((s) => { clear *= 1 - clamp(penWidth / Math.max(penWidth, s), 0, 1); });
@@ -1103,7 +1133,18 @@
     // reached 0.81, so the third direction is no longer gated on a coarse master
     // grid: the collar is the ONE place in the drawing that is allowed three
     // directions, and it is where the drawing needs them.
-    if (contactOn) {
+    // C15 on the SHADOW side. The object stopped flooding in Round 3; the collar
+    // did not — 11,218 solid 1mm windows in the trio view, and the accent read as
+    // a black bar rather than as an accent. Family A rules the collar at the
+    // MASTER pitch (stride 1), and two crossed families land on top of it, so the
+    // composed coverage runs past 0.99 whenever the master grid is fine.
+    //
+    // Same treatment that fixed the object side: compose the coverage properly as
+    // 1 - PROD(1 - c) and admit the third direction only while the pair is still
+    // under the ceiling. The collar keeps its two directions unconditionally —
+    // those carry the accent, and C1 depends on them.
+    const collarPair = perceivedCoverage([ladder.master, crossPitch], penWidth);
+    if (contactOn && collarPair < COLLAR_CEIL) {
       emitFamily({
         ...base, angle: angle + CROSS_C_DEG, spacing: crossPitch, familyId: 2,
         meta: zoneMeta(Z_CONTACT),

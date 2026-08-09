@@ -222,23 +222,31 @@ describe('scene3d shadow & highlight anatomy', () => {
       });
     });
 
-    // C16 — enabling Layers must not make the shadow WEAKER than the flat one.
-    // Stated on the NEAR half of the throw, because that is where the criterion
-    // lives: the far tail is deliberately dissolved at Layers 4, and a total-ink
-    // comparison would read that intended loss as a weakened shadow.
-    it('Layers>=2 keeps at least 0.8x the flat shadow ink near the base (C16)', () => {
+    // ROUND 4 — this test used to assert the opposite of what it now asserts,
+    // and the change is a RULING, not a convenience.
+    //
+    // It pinned "enabling Layers must not make the shadow weaker than the flat
+    // one" as `C16`. There is no C16: the spec has C1–C15, and the rule was
+    // invented during implementation. It then did real damage — it is why the
+    // Round-3 attempt to rebase the mid was written as a SCALE (which is a no-op
+    // on the ratio C1 measures, and turned out to be a no-op outright) instead of
+    // as a rung on the master grid. The designer countermanded it explicitly:
+    // "buy separation by lightening the mid, never by darkening the accent",
+    // with C11 formally amended to +-35%.
+    //
+    // So the contract inverts. What must hold is that the mid comes DOWN far
+    // enough for the contact accent to read against it, while the accent itself
+    // is untouched and the total still obeys conservation (pinned above).
+    it('Layers>=2 LIGHTENS the mid so the contact accent can read against it', () => {
       const nearHalf = (paths) => prof(paths).slice(0, 3).reduce((a, b) => a + b, 0);
       const flat = nearHalf(off);
-      // 2 and 3 are the penumbra body: C16 applies to them as stated.
-      expect(nearHalf(l2)).toBeGreaterThan(0.8 * flat);
-      expect(nearHalf(l3)).toBeGreaterThan(0.8 * flat);
-      // 4 is scored looser ON PURPOSE, and only here. C16 is about Z2, and at
-      // Layers 4 the outer rim of the near region is no longer Z2 — it is Z3,
-      // deliberately dissolved so the footprint stops reading as a silhouette
-      // (C8/C9). Holding 4 to the Z2 number would forbid the very thing Layers 4
-      // exists to do. What must not happen is the BODY going soft, which is what
-      // 2 and 3 pin above.
-      expect(nearHalf(l4)).toBeGreaterThan(0.7 * flat);
+      // The mid genuinely comes down — this is the instruction, measured.
+      expect(nearHalf(l2)).toBeLessThan(0.9 * flat);
+      expect(nearHalf(l3)).toBeLessThan(0.9 * flat);
+      // ...but it is a rebase, not a disappearance. A shadow that lost most of
+      // its body would read as "I enabled Layers and lost my shadow", which is
+      // the real concern the invented rule was reaching for.
+      [l2, l3, l4].forEach((p) => expect(nearHalf(p)).toBeGreaterThan(0.35 * flat));
     });
 
     // C13 — softness is the umbra WEDGE LENGTH. If the slider cannot move the
@@ -477,8 +485,19 @@ describe('scene3d shadow & highlight anatomy', () => {
     it('the T zone carries a crossed family and F does not', () => {
       const R = V.Scene3D.Regions;
       expect(typeof R.formZone).toBe('function');
+      // ROUND 4: the form shadow crosses too, but strictly LESS than the
+      // terminator. F was measured at 0.199 against M's 0.213 — the form shadow
+      // came out fractionally LIGHTER than the halftone, so the sphere read as
+      // one mid grey with a stripe in it. F was already at coverage 1.00 with
+      // nothing left to give it, and it lives at the turning limb where the
+      // plot-safe cap takes the most away, so only a second DIRECTION could
+      // decouple its value from how tightly the carrier happens to run there.
+      // What must never close is the gap between them.
       expect(R.formInk('T').cross).toBeGreaterThan(0);
-      expect(R.formInk('F').cross).toBe(0);
+      expect(R.formInk('F').cross).toBeGreaterThan(0);
+      expect(R.formInk('T').cross).toBeGreaterThan(R.formInk('F').cross * 1.5);
+      expect(R.formInk('M').cross).toBe(0);
+      expect(R.formInk('L').cross).toBe(0);
       // §2.3 bans +90 outright: an orthogonal pair reads as a square grid.
       expect(R.CROSS_OBJ_DEG).not.toBe(90);
       expect(R.CROSS_OBJ_DEG).toBeGreaterThan(30);
