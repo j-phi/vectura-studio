@@ -1195,6 +1195,29 @@
       group.groupType = 'scene';
       group.groupCollapsed = false;
 
+      // STYLE RESOLUTION AT EXPANSION TIME (whole-style-wins).
+      //
+      // The cascade is byFace > byObject > scene with NO per-field merge (see
+      // Scene3D.StyleCascade.resolve), and `collectSceneParams` ALWAYS republishes
+      // `styleTable.byObject[layerId]` from each child's own `params.style`. So a
+      // child left without a style does not "inherit the scene" — it publishes the
+      // object3d DEFAULT (wireframe) into byObject, and that entry then WINS over
+      // the group's scene style. A monolith styled only at SCENE scope therefore
+      // expanded into a tree with its surface fill gone (sceneFill 0, edges only).
+      //
+      // Fix: resolve the EFFECTIVE object-scope style here and materialize it on
+      // the child. It must be a WHOLE clone — a partial/per-field copy would drop
+      // penId / mapper / params, which the cascade has no way to fill back in.
+      // Resolving at expansion time (rather than falling back to the group's scene
+      // table at render time) also keeps stale group-table entries out of the tree.
+      const sceneStyle = (styleTable.scene && typeof styleTable.scene === 'object')
+        ? styleTable.scene : null;
+      const resolveObjectStyle = (id) => {
+        const own = byObject[id];
+        if (own && typeof own === 'object') return clone(own);
+        return sceneStyle ? clone(sceneStyle) : null;
+      };
+
       const groupIndex = this.layers.findIndex((l) => l.id === group.id);
       let insertAt = groupIndex + 1;
       const childIdFor = (entry, fallbackPrefix, i) => {
@@ -1221,7 +1244,8 @@
         if (obj.shadow && typeof obj.shadow === 'object') child.params.shadow = { ...obj.shadow };
         if (obj.border && typeof obj.border === 'object') child.params.border = { ...obj.border };
         if (obj.emissive && typeof obj.emissive === 'object') child.params.emissive = { ...obj.emissive };
-        if (byObject[obj.id]) child.params.style = clone(byObject[obj.id]);
+        const objStyle = resolveObjectStyle(obj.id);
+        if (objStyle) child.params.style = objStyle;
         if (edgeStylesByObject[obj.id]) child.params.edgeStyles = clone(edgeStylesByObject[obj.id]);
         const fs = {};
         Object.keys(byFace).forEach((key) => {
@@ -1245,7 +1269,10 @@
         bl.groupCollapsed = false;
         bl.parentId = group.id;
         bl.params.op = grp.op || 'subtract';
-        if (byObject[grp.id]) bl.params.style = clone(byObject[grp.id]);
+        // Same materialization as the object3d children — collectSceneParams
+        // republishes byObject[boolean layer id] from bl.params.style too.
+        const grpStyle = resolveObjectStyle(grp.id);
+        if (grpStyle) bl.params.style = grpStyle;
         this.layers.splice(insertAt, 0, bl);
         insertAt += 1;
         // Reparent this group's operand object3d children (they were inserted as
