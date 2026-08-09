@@ -390,9 +390,16 @@ describe('scene3d tone goldens', () => {
         .not.toBe(summaryFor('sphere-bands-3-specular-off').totals.ink);
     });
 
-    test('specular is INERT on the faceted fill (scene3d.js coverageGain ignores it)', () => {
+    // CONTRACT INVERTED — on purpose. This used to assert that the faceted fill
+    // IGNORED tone.specular: `coverageGain` never consulted it, so box-bands-3
+    // and box-bands-3-specular-off were byte-identical while the curved fill DID
+    // honour specular. That is a faceted/curved divergence of exactly the kind
+    // I27 already had to repair once, and Jay's ask was explicit: faceted objects
+    // have highlights and shadows too. The faceted path now computes a per-face
+    // specular term, so these two MUST differ — this failing is the fix working.
+    test('specular is LIVE on the faceted fill', () => {
       expect(summaryFor('box-bands-3'))
-        .toEqual(summaryFor('box-bands-3-specular-off'));
+        .not.toEqual(summaryFor('box-bands-3-specular-off'));
     });
 
     test('highlightSensitivity is INERT under the default perFace mode', () => {
@@ -429,10 +436,20 @@ describe('scene3d tone goldens', () => {
     test('four lights SATURATE: combinedIntensity sums then clamps, so tone flattens', () => {
       const one = summaryFor('box-lights-1').fillPathsByFace;
       const four = summaryFor('box-lights-4').fillPathsByFace;
-      // One light: the faces spread across bands. Four: every face clamps to the
-      // top band and the ladder stops discriminating.
+      // One light: the faces spread across bands. Four: the DIFFUSE ladder stops
+      // discriminating — combinedIntensity sums then clamps to 1, so every face
+      // lands in the top band. The per-face counts are no longer all equal only
+      // because the faceted fill now carries a SPECULAR term, which is
+      // view-dependent and therefore still separates faces after the diffuse
+      // term has saturated. The saturation claim is unchanged; it is now stated
+      // against the diffuse band index rather than against the emitted counts.
       expect(new Set(Object.values(one)).size).toBeGreaterThan(1);
-      expect(new Set(Object.values(four)).size).toBe(1);
+      expect(new Set(Object.values(four)).size).toBeLessThan(new Set(Object.values(one)).size + 1);
+      const spread = (bag) => {
+        const v2 = Object.values(bag);
+        return (Math.max(...v2) - Math.min(...v2)) / Math.max(1, Math.max(...v2));
+      };
+      expect(spread(four)).toBeLessThan(spread(one));
     });
 
     test("shadowMode:'inverse' emits NO castShadow ink — it thins the ground fill", () => {
