@@ -41,7 +41,12 @@ const CURVED = {
 const FACETED = {
   box: { sx: 40, sy: 40, sz: 40 },
   plane: { sx: 120, sz: 120 },
-  solid: { solidType: 'buckyball', radius: 30 },
+  // An icosahedron, NOT a buckyball: SCENE_MIGRATIONS[3] rescales a pre-v4
+  // buckyball's radius, which would confound this file's "the faceted render is
+  // untouched" comparison. The fill-angle step ignores solidType entirely, so
+  // any solid family exercises it identically. Buckyball radius coverage lives
+  // in scene3d-buckyball-radius-migration.test.js.
+  solid: { solidType: 'icosahedron', radius: 30 },
 };
 
 describe('Scene3D — curved fill-angle migration (SCENE_VERSION 2 → 3)', () => {
@@ -85,10 +90,15 @@ describe('Scene3D — curved fill-angle migration (SCENE_VERSION 2 → 3)', () =
   };
 
   // ── The version itself. ────────────────────────────────────────────────────
-  test('SCENE_VERSION is 3 and the chain reaches it', () => {
-    expect(Params.SCENE_VERSION).toBe(3);
-    expect(Params.sanitizeSceneParams(scene('sphere', CURVED.sphere, { fillAngle: 45 }, 1)).sceneVersion).toBe(3);
-    expect(Params.sanitizeSceneParams(scene('sphere', CURVED.sphere, { fillAngle: 45 }, 2)).sceneVersion).toBe(3);
+  // SCENE_VERSION has moved on since this step landed (v4 = the buckyball radius
+  // correction), so this asserts the CHAIN reaches the head, not a fixed number.
+  // The step this file covers is still the v2 → v3 hop.
+  test('the migration chain reaches SCENE_VERSION from every version at or below 2', () => {
+    expect(Params.SCENE_VERSION).toBeGreaterThanOrEqual(3);
+    [1, 2].forEach((from) => {
+      expect(Params.sanitizeSceneParams(scene('sphere', CURVED.sphere, { fillAngle: 45 }, from)).sceneVersion)
+        .toBe(Params.SCENE_VERSION);
+    });
   });
 
   test('a fresh scene is born at SCENE_VERSION, so it is never migrated', () => {
@@ -254,7 +264,7 @@ describe('Scene3D — curved fill-angle migration (SCENE_VERSION 2 → 3)', () =
     });
     const curvedLeaf = Params.migrateScene(leaf('sphere'));
     expect(curvedLeaf.style.params.fillAngle).toBe(0);
-    expect(curvedLeaf.sceneVersion).toBe(3);
+    expect(curvedLeaf.sceneVersion).toBe(Params.SCENE_VERSION);
     const facetedLeaf = Params.migrateScene(leaf('box'));
     expect(facetedLeaf.style.params.fillAngle).toBe(45);
   });

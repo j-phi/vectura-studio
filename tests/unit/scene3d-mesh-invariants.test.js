@@ -85,11 +85,36 @@ describe('Scene3D.Mesh parity + invariants', () => {
   describe('polyhedron solids (createSolidMesh)', () => {
     const golden = readGolden('mesh-polyhedron.json');
 
+    // The buckyball is the ONE deliberate departure from the pre-extraction
+    // capture. Those goldens were taken while scaleMeshToRadius divided by a
+    // Math.max(1, …)-floored circumradius, which clamped the divide away for the
+    // truncated icosahedron (the only construction whose pre-scale circumradius
+    // is below 1) and built it at 0.8685 · Radius. The golden is NOT regenerated
+    // — it still pins every vertex — but the buckyball cases now assert the
+    // built mesh is exactly the golden scaled by 1/factor, which keeps the
+    // historical parity AND pins the size correction. See
+    // scene3d-buckyball-radius-migration.test.js.
+    const isBuckyball = (params) => !params.solidType || params.solidType === 'buckyball';
+
     golden.cases.forEach(({ label, params, mesh }) => {
       it(`matches the pre-extraction mesh exactly — ${label}`, () => {
         const built = Mesh.createSolidMesh(params);
-        expect(toTriples(built.vertices)).toEqual(mesh.vertices);
         expect(built.faces).toEqual(mesh.faces);
+        if (isBuckyball(params)) {
+          const k = 1 / Mesh.legacyTruncatedIcosahedronScale();
+          const got = toTriples(built.vertices);
+          expect(got.length).toBe(mesh.vertices.length);
+          got.forEach((triple, i) => {
+            triple.forEach((component, axis) => {
+              expect(component).toBeCloseTo(mesh.vertices[i][axis] * k, 9);
+            });
+          });
+          if (mesh.bounds) {
+            expect(built.bounds.maxRadius).toBeCloseTo(mesh.bounds.maxRadius * k, 9);
+          }
+          return;
+        }
+        expect(toTriples(built.vertices)).toEqual(mesh.vertices);
         if (mesh.bounds) {
           expect(built.bounds.maxRadius).toBe(mesh.bounds.maxRadius);
           expect(built.bounds.maxDepth).toBe(mesh.bounds.maxDepth);

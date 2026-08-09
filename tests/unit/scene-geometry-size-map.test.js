@@ -116,9 +116,17 @@ describe('Scene3D geometry — creation defaults + size map', () => {
         if (to === from) return;
         const bag = P.buildPrimitiveParams(to, from, src);
         const got = meshExtent(to, bag);
-        // 10%: the polyhedron radius floor (20 mm, the standalone control's own
-        // minimum) and the torus/knot tube floors are the only binding clamps
-        // in this default-sized sweep.
+        // A swap INTO a solid cannot go below the polyhedron radius floor
+        // (20 mm, the standalone control's own minimum). When that floor binds,
+        // the size target is unreachable by construction — assert the swap
+        // landed exactly ON the floor instead of within tolerance. The floor
+        // binds harder since the buckyball was corrected to its true
+        // circumradius (v4): the smallest buckyball is now 15.1% larger, so a
+        // small source shape (capsule, 32 mm) can no longer be matched.
+        const floor = (P.PRIMITIVE_SIZE_RANGE.solid || {}).radius;
+        if (to === 'solid' && floor && bag.radius === floor.min && got > srcSize) return;
+        // 10%: the torus/knot tube floors are the only other binding clamps in
+        // this default-sized sweep.
         if (Math.abs(got - srcSize) / srcSize > 0.1) fails.push(`${from}→${to}: ${srcSize.toFixed(1)} → ${got.toFixed(1)}`);
       });
     });
