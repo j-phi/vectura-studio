@@ -352,17 +352,11 @@
     { value: 'dashdot', label: 'Dash-dot' },
   ];
   const STROKE_DEFAULTS = { lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false };
-  // Phase 4 — highlight (specular band) treatment options.
-  const HIGHLIGHT_TREATMENT_OPTIONS = [
-    { value: 'blank', label: 'Blank' },
-    { value: 'keep', label: 'Keep' },
-    { value: 'dashed', label: 'Dashed' },
-    { value: 'dotted', label: 'Dotted' },
-    { value: 'sparse', label: 'Sparse' },
-    { value: 'altFill', label: 'Alt fill' },
-    { value: 'burst', label: 'Burst' },
-    { value: 'stippleOut', label: 'Stipple' },
-  ];
+  // Phase 4 — highlight (specular band) treatment options. Shared with the
+  // ctxbar Highlight flyout via Vectura.SCENE_HIGHLIGHT (declared in
+  // src/config/context-bar.js, which loads first): one option list and one
+  // "is this treatment inert?" rule, so the two surfaces cannot drift.
+  const SCENE_HIGHLIGHT = () => Vectura.SCENE_HIGHLIGHT;
   const ALT_FILL_MAPPER_OPTIONS = [
     { value: 'stipple', label: 'Stipple' }, { value: 'hatch', label: 'Hatch' },
     { value: 'crosshatch', label: 'Crosshatch' }, { value: 'contour', label: 'Contour' },
@@ -3393,8 +3387,8 @@
       if (FILL_MAPPERS.has(resolved.mapper)) {
         const sp = () => clone(resolved.params || {});
         const rp = resolved.params || {};
-        const treatment = HIGHLIGHT_TREATMENT_OPTIONS.some((o) => o.value === rp.highlightTreatment)
-          ? rp.highlightTreatment : 'blank';
+        const SH = SCENE_HIGHLIGHT();
+        const treatment = SH.resolve(rp.highlightTreatment);
 
         const hlHdr = document.createElement('div');
         hlHdr.className = 'vs3-hl-hdr';
@@ -3402,7 +3396,7 @@
         styleHost.appendChild(hlHdr);
 
         styleComps.push(UI.Select(labeledHost('Treatment'), {
-          options: HIGHLIGHT_TREATMENT_OPTIONS,
+          options: SH.TREATMENTS,
           value: treatment,
           ariaLabel: 'Highlight treatment',
           onChange: (v) => commitStyle({ params: { ...sp(), highlightTreatment: v } }),
@@ -3436,7 +3430,10 @@
           onCommit: (v) => commitStyle({ params: { ...sp(), shadowSensitivity: Math.round(v) } }),
         });
 
-        if (treatment !== 'blank') {
+        // Bands / HL density / Alt fill / Burst / HL pen all configure highlight
+        // ink. Under "None" (and "Blank") there is none to configure, so the
+        // rows are REMOVED, not disabled — same rule as the ctxbar flyout.
+        if (SH.hasDetailControls(treatment)) {
           const bands = Math.min(2, Math.max(1, Math.round(Number.isFinite(rp.highlightBands) ? rp.highlightBands : 1)));
           styleComps.push(UI.SegCtrl(labeledHost('Bands'), {
             options: [{ value: '1', label: '1' }, { value: '2', label: '2' }],

@@ -193,6 +193,79 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     expect(rowCtl(fly, 'Treatment')).toBeTruthy();
   });
 
+  // ── "None" treatment (was "Keep") ─────────────────────────────────────────
+  // Jay: the no-highlight choice must read "None", must mean no highlighting at
+  // all, and must not offer Strength or Pen — they are inert there. The stored
+  // param value is unchanged (see Vectura.SCENE_HIGHLIGHT.NONE_VALUE); only the
+  // label and the row gating moved.
+  const NONE = () => window.Vectura.SCENE_HIGHLIGHT.NONE_VALUE;
+  const selectedLabel = (ctl) => {
+    const sel = ctl.querySelector('select');
+    return sel.options[sel.selectedIndex].textContent;
+  };
+  const setTreatment = (v) => {
+    const sel = rowCtl(openFly(), 'Treatment').querySelector('select');
+    sel.value = v;
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+  };
+
+  test('config: the no-highlight treatment is labelled "None", and both surfaces share one list', () => {
+    const SH = window.Vectura.SCENE_HIGHLIGHT;
+    expect(SH).toBeTruthy();
+    const labels = SH.TREATMENTS.map((o) => o.label);
+    expect(labels).toContain('None');
+    expect(labels).not.toContain('Keep');
+    expect(SH.TREATMENTS.find((o) => o.label === 'None').value).toBe(SH.NONE_VALUE);
+    // Single source of truth — the ctxbar config reuses the shared list rather
+    // than carrying its own copy (the panel reads it too).
+    expect(window.Vectura.CONTEXT_BAR.sceneFlyouts.highlight.treatments).toBe(SH.TREATMENTS);
+    // None has no configurable ink; every other treatment does (bar Blank).
+    expect(SH.hasDetailControls(SH.NONE_VALUE)).toBe(false);
+    expect(SH.hasDetailControls('blank')).toBe(false);
+    expect(SH.hasDetailControls('sparse')).toBe(true);
+    expect(SH.hasDetailControls('burst')).toBe(true);
+  });
+
+  test('Highlight ▾ None removes the Strength and Pen rows, and the engine accepts the written value', async () => {
+    const scene = addSelectScene();
+    pillByLabel('Highlight').click();
+    setTreatment(NONE());
+    const fly = openFly();
+    expect(selectedLabel(rowCtl(fly, 'Treatment'))).toBe('None');
+    expect(rowCtl(fly, 'Strength')).toBeFalsy();
+    expect(rowCtl(fly, 'Pen')).toBeFalsy();
+    // The value the UI writes must survive engine normalization — a UI writing
+    // an unrecognized treatment would silently degrade to 'blank'.
+    expect(styleTable(scene).byObject['obj-1'].params.highlightTreatment).toBe(NONE());
+    expect(app.renderer.getSceneObjectResolvedStyle(scene.id, 'obj-1').params.highlightTreatment).toBe(NONE());
+  });
+
+  test('Highlight ▾ switching off None brings Strength and Pen back', async () => {
+    addSelectScene();
+    pillByLabel('Highlight').click();
+    setTreatment(NONE());
+    expect(rowCtl(openFly(), 'Strength')).toBeFalsy();
+    setTreatment('sparse');
+    expect(rowCtl(openFly(), 'Strength')).toBeTruthy();
+    expect(rowCtl(openFly(), 'Pen')).toBeTruthy();
+    // …and back off again.
+    setTreatment(NONE());
+    expect(rowCtl(openFly(), 'Strength')).toBeFalsy();
+    expect(rowCtl(openFly(), 'Pen')).toBeFalsy();
+  });
+
+  test('a document saved with the legacy "keep" treatment still loads and reads None', async () => {
+    const scene = addSelectScene();
+    // Simulate a persisted document written before the rename.
+    app.renderer.setSceneObjectStyle(scene.id, ['obj-1'], { params: { highlightTreatment: 'keep' } });
+    CB.restoreState();
+    pillByLabel('Highlight').click();
+    const fly = openFly();
+    expect(selectedLabel(rowCtl(fly, 'Treatment'))).toBe('None');
+    expect(rowCtl(fly, 'Strength')).toBeFalsy();
+    expect(rowCtl(fly, 'Pen')).toBeFalsy();
+  });
+
   // I7 — when the treatment is "Alt fill" the flyout must reveal a mapper picker
   // (which alternate fill is drawn in the highlight region) + the density slider;
   // for any other treatment the mapper picker is hidden (like burst's controls).

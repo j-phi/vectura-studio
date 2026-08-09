@@ -25,6 +25,49 @@
     `<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" ` +
     `stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
 
+  // ── Scene 3D highlight treatments (shared by BOTH surfaces) ──────────────
+  // Deliberately hung off Vectura directly rather than nested under
+  // CONTEXT_BAR, because two independent surfaces render the highlight control
+  // and must not drift: the ctxbar Highlight flyout
+  // (`src/ui/shell/context-bar.js` buildHighlightBody) and the 3D panel's
+  // Highlight block (`src/ui/panels/scene3d-panel.js`). They previously each
+  // carried their own option list and their own "which rows are relevant" rule,
+  // and had already diverged. One list, one predicate, read by both.
+  //
+  // NONE_VALUE is the *persisted* value for "no highlight at all". The engine
+  // (`src/core/scene3d/params.js` HIGHLIGHT_TREATMENTS) still spells that value
+  // 'keep'; only the user-visible label became "None". NONE_ALIASES lets the UI
+  // also recognise a future canonical 'none' so saved documents keep reading as
+  // None whichever spelling they hold.
+  const SCENE_HIGHLIGHT = {
+    NONE_VALUE: 'keep',
+    NONE_ALIASES: ['none', 'keep'],
+    // Treatments that put no configurable ink on the surface. Every detail row
+    // (Strength / Pen / Bands / Alt fill / Burst) is inert for these, so those
+    // rows are REMOVED — never shown disabled.
+    INERT: ['blank', 'none', 'keep'],
+    TREATMENTS: [
+      { value: 'blank', label: 'Blank' },
+      { value: 'keep', label: 'None' },
+      { value: 'dashed', label: 'Dashed' },
+      { value: 'dotted', label: 'Dotted' },
+      { value: 'sparse', label: 'Sparse' },
+      { value: 'altFill', label: 'Alt fill' },
+      { value: 'burst', label: 'Burst' },
+      { value: 'stippleOut', label: 'Stipple' },
+    ],
+  };
+  // Map a stored value onto the option this UI actually offers: any None
+  // spelling collapses onto NONE_VALUE, anything unknown falls back to 'blank'
+  // (matching the engine's own clamp).
+  SCENE_HIGHLIGHT.resolve = (value) => {
+    if (SCENE_HIGHLIGHT.NONE_ALIASES.indexOf(value) !== -1) return SCENE_HIGHLIGHT.NONE_VALUE;
+    return SCENE_HIGHLIGHT.TREATMENTS.some((o) => o.value === value) ? value : 'blank';
+  };
+  SCENE_HIGHLIGHT.hasDetailControls = (value) =>
+    SCENE_HIGHLIGHT.INERT.indexOf(SCENE_HIGHLIGHT.resolve(value)) === -1;
+  Vectura.SCENE_HIGHLIGHT = SCENE_HIGHLIGHT;
+
   Vectura.CONTEXT_BAR = {
     // ── TB-1/8: timings & geometry (constant screen px; zoom-independent) ──
     timing: {
@@ -201,12 +244,8 @@
       },
       highlight: {
         treatment: { label: 'Treatment', aria: 'Highlight treatment' },
-        treatments: [
-          { value: 'blank', label: 'Blank' }, { value: 'keep', label: 'Keep' },
-          { value: 'dashed', label: 'Dashed' }, { value: 'dotted', label: 'Dotted' },
-          { value: 'sparse', label: 'Sparse' }, { value: 'altFill', label: 'Alt fill' },
-          { value: 'burst', label: 'Burst' }, { value: 'stippleOut', label: 'Stipple' },
-        ],
+        // Shared with the 3D panel — see SCENE_HIGHLIGHT above. Do not fork.
+        treatments: SCENE_HIGHLIGHT.TREATMENTS,
         strength: { label: 'Strength', aria: 'Highlight density' },
         pen: { label: 'Pen', aria: 'Highlight pen', inherit: 'Inherit' },
         // I7 — when the treatment is "Alt fill" the flyout reveals this picker so

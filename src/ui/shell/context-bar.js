@@ -1525,10 +1525,11 @@
     const resolved = rs(sc.ids[0]);
     const params = resolved.params || {};
     const write = (patch, opts) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, patch, opts);
-    const treatOf = (id) => {
-      const p = rs(id).params || {};
-      return (C.treatments || []).some((o) => o.value === p.highlightTreatment) ? p.highlightTreatment : 'blank';
-    };
+    // Shared with the 3D panel (src/config/context-bar.js SCENE_HIGHLIGHT):
+    // one option list, one "is this treatment inert?" rule. resolve() also folds
+    // any None spelling onto the single option the select actually offers.
+    const SH = Vectura.SCENE_HIGHLIGHT;
+    const treatOf = (id) => SH.resolve((rs(id).params || {}).highlightTreatment);
     const treatment = treatOf(sc.ids[0]);
     flyMixedSelect(flyRow(fly, C.treatment.label), {
       options: C.treatments, value: treatment, ariaLabel: C.treatment.aria,
@@ -1549,7 +1550,9 @@
         onChange: (v) => write({ params: { ...params, altFillMapper: v } }),
       });
     }
-    if (treatment !== 'blank') {
+    // Strength + Pen configure highlight ink. Under "None" (and "Blank") there
+    // is no highlight ink to configure, so the rows are REMOVED, not disabled.
+    if (SH.hasDetailControls(treatment)) {
       flyMixedSlider(flyRow(fly, C.strength.label), {
         mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.highlightDensity) ? p.highlightDensity : 25; }).mixed,
         props: {

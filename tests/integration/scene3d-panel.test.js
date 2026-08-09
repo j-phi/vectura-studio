@@ -350,6 +350,52 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     expect(rowByLabel('Sensitivity')).toBeTruthy();
   });
 
+  // Jay: the no-highlight treatment reads "None" and offers no Strength/Pen —
+  // they are inert there. Same contract as the ctxbar Highlight flyout; both
+  // surfaces read Vectura.SCENE_HIGHLIGHT so they cannot drift.
+  test('Highlight treatment "None": labelled None, and the inert detail rows are removed', () => {
+    const SH = window.Vectura.SCENE_HIGHLIGHT;
+    const { container, layer } = mount({
+      objects: [fixtureObject(1)],
+      styleTable: {
+        scene: { penId: null, mapper: 'hatch', params: { highlightTreatment: 'sparse' } },
+        byObject: {},
+        byFace: {},
+      },
+    });
+    clickTab(container, 'style');
+    const labels = () => Array.from(container.querySelectorAll('.vs3-row'))
+      .map((r) => (r.querySelector('.vs3-lbl') || {}).textContent);
+    const rowByLabel = (label) => Array.from(container.querySelectorAll('.vs3-row'))
+      .find((r) => r.querySelector('.vs3-lbl') && r.querySelector('.vs3-lbl').textContent === label);
+    // "Bands" is ambiguous — the Tone section owns one too — so count instead of
+    // matching the first hit.
+    const bandsRows = () => labels().filter((t) => t === 'Bands').length;
+    const selectedLabel = () => {
+      const s = rowByLabel('Treatment').querySelector('select');
+      return s.options[s.selectedIndex].textContent;
+    };
+
+    // A real treatment shows the detail rows (Tone Bands + Highlight Bands = 2)…
+    expect(labels()).toContain('HL density');
+    expect(labels()).toContain('HL pen');
+    expect(bandsRows()).toBe(2);
+    // …and the option list spells the no-highlight choice "None", never "Keep".
+    const optLabels = Array.from(rowByLabel('Treatment').querySelectorAll('option')).map((o) => o.textContent);
+    expect(optLabels).toContain('None');
+    expect(optLabels).not.toContain('Keep');
+
+    // Switch to None → every inert row is REMOVED (not disabled).
+    const treatSel = rowByLabel('Treatment').querySelector('select');
+    treatSel.value = SH.NONE_VALUE;
+    fire(treatSel, 'change');
+    expect(layer.params.styleTable.scene.params.highlightTreatment).toBe(SH.NONE_VALUE);
+    expect(selectedLabel()).toBe('None');
+    expect(labels()).not.toContain('HL density');
+    expect(labels()).not.toContain('HL pen');
+    expect(bandsRows()).toBe(1);
+  });
+
   test('setting a hole back to Solid detaches it from its subtract group', () => {
     const { container, layer } = mount({
       objects: [fixtureObject(1), { ...fixtureObject(2), role: 'hole' }],
