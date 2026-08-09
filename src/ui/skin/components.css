@@ -11971,11 +11971,25 @@ body.mobile-layout .hud-bar {
   z-index: 6;
 }
 .ctxbar-align-flyout.is-open { display: flex; }
-/* Direction-aware flyout (Add Layer, TB-3): flips to open upward when the bar
-   has more room above than below, so it never clips at the viewport edge. */
-.ctxbar-align-flyout.ctxbar-flyout-up {
+/* Direction-aware flyouts. Every dropdown in the contextual task bar opens AWAY
+   from whichever viewport edge the bar is nearest, so the menu has the best
+   chance of being seen in its entirety. `ctxbar-flyout-up` is stamped on each
+   flyout by the bar's shared direction pass; the `.ctxbar-menus-up` bar-level
+   rule below covers content rebuilt between ticks so nothing can flash the
+   wrong way for a frame. Both set the same geometry, so order is immaterial. */
+.ctxbar-align-flyout.ctxbar-flyout-up,
+.ctxbar.ctxbar-menus-up .ctxbar-align-flyout {
   top: auto;
   bottom: calc(100% + 6px);
+}
+/* Never let a menu run off-screen: the bar publishes the room available on the
+   side it opens toward as `--ctxbar-menu-space` (inherited by every flyout),
+   and each flyout caps itself to it. The per-type caps below fold it into their
+   own `min()` rather than relying on a separate rule — a later same-specificity
+   `max-height` would otherwise win the cascade and silently drop the clamp. */
+.ctxbar-align-flyout {
+  max-height: var(--ctxbar-menu-space, 100vh);
+  overflow-y: auto;
 }
 .ctxbar-align-group-label {
   font-size: var(--font-size-xs, 10px);
@@ -11991,7 +12005,7 @@ body.mobile-layout .hud-bar {
    box; items stretch full-width and left-align like a native menu. */
 .ctxbar-algo-flyout {
   gap: 1px;
-  max-height: 320px;
+  max-height: min(320px, var(--ctxbar-menu-space, 100vh));
   overflow-y: auto;
   min-width: 148px;
 }
@@ -12010,7 +12024,7 @@ body.mobile-layout .hud-bar {
 .ctxbar-scene-flyout {
   gap: 6px;
   min-width: 232px;
-  max-height: 60vh;
+  max-height: min(60vh, var(--ctxbar-menu-space, 100vh));
   overflow-y: auto;
 }
 .ctxbar-fly-row {
@@ -12133,11 +12147,25 @@ body.mobile-layout .hud-bar {
   font-size: 9px;
   line-height: 1;
   opacity: 0.7;
-  transition: transform 120ms ease;
 }
 .ctxbar-text-field:hover .ctxbar-text-caret { opacity: 1; }
-/* Points up when its flyout has flipped to open upward (`ctxbar-flyout-up`). */
-.ctxbar-text-caret.ctxbar-caret-up { transform: rotate(180deg); }
+/* The caret pivots (rotates through 180°) rather than swapping glyphs, so it
+   reads as the same arrow turning over. Applied to both caret flavours — the
+   pill carets and the standalone size-presets chevron — and driven from either
+   the per-element `ctxbar-caret-up` stamp or the bar-level `.ctxbar-menus-up`
+   state, whichever lands first. The rotation is the STATE, not decoration: it
+   is declared here unconditionally so reduced motion can drop the transition
+   (motion.css) without ever leaving an arrow pointing the wrong way. */
+.ctxbar-text-caret,
+.ctxbar-text-size-caret {
+  transform-origin: 50% 50%;
+}
+.ctxbar-text-caret.ctxbar-caret-up,
+.ctxbar-text-size-caret.ctxbar-caret-up,
+.ctxbar.ctxbar-menus-up .ctxbar-text-caret,
+.ctxbar.ctxbar-menus-up .ctxbar-text-size-caret {
+  transform: rotate(180deg);
+}
 .ctxbar-text-size {
   width: 58px;
   height: 26px;

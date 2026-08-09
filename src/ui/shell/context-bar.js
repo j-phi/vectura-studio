@@ -50,7 +50,8 @@
     handleDrag: null,          // { startX, startY, baseX, baseY, moved }
     menuOpen: false,
     closeFlyout: null,         // active align-flyout close fn (single handler)
-    repositionOpenFlyout: null, // re-flips the open flyout's up/down direction on bar move
+    menuUp: false,             // true when every dropdown in the bar opens upward
+    openFlyoutEl: null,        // the currently open flyout box (measured for fit)
     overflowExtra: null,       // optional sub-mode overflow item
     pulseTimer: 0,
     visible: false,
@@ -454,7 +455,9 @@
       const ny = clampBarTop(state.handleDrag.baseY + dy);
       els.bar.style.left = `${nx}px`;
       els.bar.style.top = `${ny}px`;
-      state.repositionOpenFlyout && state.repositionOpenFlyout();
+      // Deliberately NOT re-evaluating menu direction here: flipping the arrows
+      // every frame the bar crosses the midline reads as thrash. The pivot
+      // settles once, on release (see onUp).
     };
     const onUp = () => {
       G.removeEventListener('pointermove', onMove, true);
@@ -468,6 +471,9 @@
         persist();
       }
       state.handleDrag = null;
+      // Settle the arrows now the bar has come to rest — they pivot down→up
+      // when dropped low, and up→down when dropped back near the top.
+      refreshMenuDirection();
     };
     els.handle.addEventListener('pointerdown', onDown);
   };
@@ -550,7 +556,7 @@
     if (p.pinned && Number.isFinite(p.x) && Number.isFinite(p.y)) {
       els.bar.style.left = `${clampBarLeft(p.x)}px`;
       els.bar.style.top = `${clampBarTop(p.y)}px`;
-      state.repositionOpenFlyout && state.repositionOpenFlyout();
+      refreshMenuDirection();
       return;
     }
     const renderer = getRenderer();
@@ -565,7 +571,7 @@
     });
     els.bar.style.left = `${left}px`;
     els.bar.style.top = `${top}px`;
-    state.repositionOpenFlyout && state.repositionOpenFlyout();
+    refreshMenuDirection();
   };
 
   // ── TB-1: hide during canvas drag/draw (own listeners; renderer.js is
@@ -1059,10 +1065,11 @@
     const wrap = el('span', 'ctxbar-align-wrap ctxbar-scene-menu-wrap ctxbar-scene-pen-wrap');
     const fly = el('div', 'ctxbar-align-flyout ctxbar-scene-flyout ctxbar-scene-pen-flyout', { role: 'menu', 'aria-hidden': 'true' });
     let open = false;
-    const reposition = () => positionFlyoutForSpace(wrap, fly, null);
+    const reposition = () => noteFlyoutOpened(fly);
     const close = () => {
       open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
       chip.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
+      noteFlyoutClosed(fly);
     };
     const buildBody = () => {
       fly.textContent = '';
@@ -1206,7 +1213,7 @@
   // Four dropdown pills — Style / Shadow / Highlight / X-ray — that stay open
   // until you click elsewhere (or press Escape). They reuse the existing flyout
   // plumbing: mutual exclusion via state.closeFlyout, the single global
-  // outside-click handler in bindOverflow, and positionFlyoutForSpace's up/down
+  // outside-click handler in bindOverflow, and the shared menu-direction pass's up/down
   // flip. Edits write straight through the renderer bridges + regen; they NEVER
   // call restoreState() (that rebuilds the bar and would close the flyout). The
   // scene selection signature is style-independent, so the rAF refresh leaves an
@@ -1309,14 +1316,14 @@
   // Shared persistent-flyout wrapper for the scene pills.
   const makeSceneFlyout = (label, tooltip, extraClass, buildBody) => {
     const field = makeDropField(`ctxbar-scene-field ${extraClass || ''}`.trim(), label, tooltip);
-    const caret = field.querySelector('.ctxbar-text-caret');
     const wrap = el('span', 'ctxbar-align-wrap ctxbar-scene-menu-wrap');
     const fly = el('div', 'ctxbar-align-flyout ctxbar-scene-flyout', { role: 'menu', 'aria-hidden': 'true' });
     let open = false;
-    const reposition = () => positionFlyoutForSpace(wrap, fly, caret);
+    const reposition = () => noteFlyoutOpened(fly);
     const close = () => {
       open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
       field.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
+      noteFlyoutClosed(fly);
     };
     // Re-render the body without closing (a discrete change revealed/hid a row).
     const rebuild = () => { fly.textContent = ''; try { buildBody(fly, rebuild); } catch (_e) { /* body guarded */ } if (open) reposition(); };
@@ -1810,8 +1817,8 @@
       gEl.appendChild(row);
       fly.appendChild(gEl);
     });
-    const openFly = () => { open = true; fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false'); btn.setAttribute('aria-expanded', 'true'); state.closeFlyout = closeFly; };
-    const closeFly = () => { open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true'); btn.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === closeFly) state.closeFlyout = null; };
+    const openFly = () => { open = true; fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false'); btn.setAttribute('aria-expanded', 'true'); state.closeFlyout = closeFly; noteFlyoutOpened(fly); };
+    const closeFly = () => { open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true'); btn.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === closeFly) state.closeFlyout = null; noteFlyoutClosed(fly); };
     btn.setAttribute('aria-haspopup', 'menu');
     btn.setAttribute('aria-expanded', 'false');
     btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open ? closeFly() : openFly(); });
@@ -1862,11 +1869,13 @@
     const close = () => {
       open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
       field.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
+      noteFlyoutClosed(fly);
     };
     const openFn = () => {
       if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout(); // close any other open flyout
       open = true; fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false');
       field.setAttribute('aria-expanded', 'true'); state.closeFlyout = close;
+      noteFlyoutOpened(fly);
     };
     (items || []).forEach((it) => {
       if (it.header) { const h = el('div', 'ctxbar-align-group-label'); h.textContent = it.header; fly.appendChild(h); return; }
@@ -1912,11 +1921,13 @@
     const close = () => {
       open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
       field.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
+      noteFlyoutClosed(fly);
     };
     const openFn = () => {
       if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout(); // close any other open flyout
       open = true; fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false');
       field.setAttribute('aria-expanded', 'true'); state.closeFlyout = close;
+      noteFlyoutOpened(fly);
     };
     fly.addEventListener('click', (e) => {
       const row = e.target.closest('[data-algo-type]');
@@ -1930,17 +1941,84 @@
     return wrap;
   };
 
-  // Flips `fly` to open upward (and rotates `caret` to match) when there's
-  // more room above `wrap` than below, so the flyout never clips at the
-  // viewport edge. Called once on open, and again whenever the bar itself
-  // moves (drag or auto-anchor) so the direction stays correct live.
-  const positionFlyoutForSpace = (wrap, fly, caret) => {
-    const r = wrap.getBoundingClientRect();
-    const viewH = G.innerHeight || (G.document && G.document.documentElement.clientHeight) || 0;
-    const openUp = r.top > (viewH - r.bottom);
-    fly.classList.toggle('ctxbar-flyout-up', openUp);
-    if (caret) caret.classList.toggle('ctxbar-caret-up', openUp);
+  // ── Direction-aware dropdowns ─────────────────────────────────────────
+  // Governing rule (Jay): a menu opens AWAY from whichever viewport edge the
+  // bar is nearest, so it has the best chance of being seen in its entirety.
+  // Near the top → down; near the bottom → up. That single rule subsumes the
+  // "bottom third opens upward" heuristic (the bottom third is inside the
+  // bottom half) and it also subsumes an explicit overflow test: a menu can
+  // only fit above when there is more room above than below, which is exactly
+  // when this rule already flips. What overflow protection actually needs is
+  // not a second branch but a height cap — see `--ctxbar-menu-space` below.
+  //
+  // The decision is applied to the WHOLE BAR, never per menu. Every dropdown
+  // the bar can render — through any of its construction paths, in any context,
+  // for any algorithm — is stamped from this one pass, so a dropdown added
+  // later inherits the behavior with no extra wiring.
+  const MENU_GAP_PX = 6;      // matches the flyout's `calc(100% + 6px)` offset
+  const MENU_EDGE_PAD_PX = 8; // keep a menu clear of the very viewport edge
+
+  const viewportH = () => G.innerHeight
+    || (G.document && G.document.documentElement && G.document.documentElement.clientHeight)
+    || 0;
+
+  // jsdom hands back an all-zero rect for anything it hasn't laid out.
+  const isDegenerateRect = (r) => !r || (!r.width && !r.height && !r.top && !r.bottom);
+
+  // The one rect the decision reads: the bar itself, since the bar is the thing
+  // that moves. Unit harnesses leave the bar unlaid-out and mock a dropdown
+  // wrapper instead, so fall back to the first wrapper with a real rect.
+  const menuRefRect = () => {
+    const barRect = (els.bar && els.bar.getBoundingClientRect) ? els.bar.getBoundingClientRect() : null;
+    if (!isDegenerateRect(barRect)) return barRect;
+    const wraps = els.content ? els.content.querySelectorAll('.ctxbar-align-wrap') : [];
+    for (let i = 0; i < wraps.length; i += 1) {
+      const r = wraps[i].getBoundingClientRect();
+      if (!isDegenerateRect(r)) return r;
+    }
+    return barRect;
   };
+
+  // Stamps the up/down state on the bar and on EVERY dropdown it hosts, so a
+  // closed menu's caret agrees with the open one (the bar reads as one object).
+  // `--ctxbar-menu-space` publishes the room available on the chosen side; CSS
+  // clamps each flyout's max-height to it so a tall menu scrolls instead of
+  // running off-screen. CSS owns the caret pivot animation.
+  const applyMenuDirection = (up, space) => {
+    if (!els.bar) return;
+    state.menuUp = up;
+    els.bar.classList.toggle('ctxbar-menus-up', up);
+    if (Number.isFinite(space) && space > 0) {
+      els.bar.style.setProperty('--ctxbar-menu-space', `${Math.round(space)}px`);
+    }
+    const root = els.content || els.bar;
+    root.querySelectorAll('.ctxbar-align-flyout').forEach((f) => f.classList.toggle('ctxbar-flyout-up', up));
+    // Both caret flavours: the pill carets built by makeDropField/dropField,
+    // and the standalone size-presets chevron. Selecting on class rather than
+    // per-dropdown registration is the point — a menu added later is covered
+    // the moment it renders a caret.
+    root.querySelectorAll('.ctxbar-text-caret, .ctxbar-text-size-caret')
+      .forEach((c) => c.classList.toggle('ctxbar-caret-up', up));
+  };
+
+  // Recompute + apply. Cheap enough to run on the RAF tick: two rect reads.
+  const refreshMenuDirection = () => {
+    if (!els.bar) return;
+    const r = menuRefRect();
+    const viewH = viewportH();
+    if (isDegenerateRect(r) || !viewH) return;
+    const roomAbove = r.top - MENU_GAP_PX - MENU_EDGE_PAD_PX;
+    const roomBelow = viewH - r.bottom - MENU_GAP_PX - MENU_EDGE_PAD_PX;
+    const up = roomAbove > roomBelow; // open away from the nearest edge
+    applyMenuDirection(up, up ? roomAbove : roomBelow);
+  };
+
+  // Every flyout's open/close path funnels through these two so the shared pass
+  // knows which box to measure. They deliberately do NOT rebuild the bar —
+  // restoreState()/buildControls() from inside a flyout would tear it down
+  // mid-interaction.
+  const noteFlyoutOpened = (fly) => { state.openFlyoutEl = fly || null; refreshMenuDirection(); };
+  const noteFlyoutClosed = (fly) => { if (state.openFlyoutEl === fly) state.openFlyoutEl = null; };
 
   // ── TB-3: idle "Add Layer" dropdown ────────────────────────────────────
   // Full parity with the sidebar's Add Layer menu (`#btn-add-layer`/
@@ -1961,7 +2039,6 @@
     );
     const wrap = el('span', 'ctxbar-align-wrap ctxbar-algo-menu-wrap');
     const fly = el('div', 'ctxbar-align-flyout ctxbar-algo-flyout ctxbar-add-layer-flyout', { role: 'menu', 'aria-hidden': 'true' });
-    const caret = field.querySelector('.ctxbar-text-caret');
     let open = false;
     // `ctxbar-add-layer-item`, not `ctxbar-menu-item` — the overflow ⋯ menu
     // queries `.ctxbar-menu-item` globally (unscoped) to manage its own rows,
@@ -2002,13 +2079,13 @@
       open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
       field.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
       renderRoot(); // reset to the top-level list for the next time it opens
+      noteFlyoutClosed(fly);
     };
-    const reposition = () => positionFlyoutForSpace(wrap, fly, caret);
     const openFn = () => {
       if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout();
       open = true; fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false');
       field.setAttribute('aria-expanded', 'true'); state.closeFlyout = close;
-      reposition();
+      noteFlyoutOpened(fly);
     };
     // Delegated: rows in the algo drill-down list carry `data-algo-type`.
     fly.addEventListener('click', (e) => {
@@ -2021,16 +2098,12 @@
     renderRoot();
     field.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open ? close() : openFn(); });
     wrap.appendChild(field); wrap.appendChild(fly);
-    // The caret must hint the correct open direction even while closed (e.g.
-    // right after a hard refresh with the bar pinned near the bottom), so this
-    // registers unconditionally rather than only while open — `reanchor()`
-    // calls it every tick regardless of open/closed state. Calling `reposition()`
-    // here directly would be premature: `wrap` isn't attached to the document
-    // yet (the caller appends it right after this returns), so it would only
-    // measure a zero rect — `reanchor()` runs `state.repositionOpenFlyout()`
-    // synchronously right after this render completes, once attached, which is
-    // the earliest point an accurate measurement is possible.
-    state.repositionOpenFlyout = reposition;
+    // No per-dropdown registration is needed any more: `reanchor()` runs the
+    // shared `refreshMenuDirection()` every tick and stamps every caret in the
+    // bar, open or closed. That is what makes a hard refresh with the bar
+    // pinned near the bottom come up with the arrows already pointing up —
+    // measuring here would be premature anyway, since `wrap` is not attached
+    // to the document until the caller appends it just after this returns.
     return wrap;
   };
   const doAddAlgoLayer = (layerType) => {
@@ -2208,10 +2281,12 @@
     const closeWeight = () => {
       wOpen = false; wFly.classList.remove('is-open'); wFly.setAttribute('aria-hidden', 'true');
       wField.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === closeWeight) state.closeFlyout = null;
+      noteFlyoutClosed(wFly);
     };
     const openWeight = () => {
       wOpen = true; wFly.classList.add('is-open'); wFly.setAttribute('aria-hidden', 'false');
       wField.setAttribute('aria-expanded', 'true'); state.closeFlyout = closeWeight;
+      noteFlyoutOpened(wFly);
     };
     const commitWeight = (label) => {
       const a = getApp();
