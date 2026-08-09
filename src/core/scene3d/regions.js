@@ -269,6 +269,10 @@
   const specularHotspot = (record, camAngles, toneSpec, light) => {
     const spec = toneSpec || {};
     const size = Math.max(0, finite(spec.size, 0));
+    // O16 — `specular.enabled: false` must really disable it. The hotspot used to
+    // ignore the flag so `burst` and `altFill` kept firing after specular was
+    // switched off, which reads as a broken toggle.
+    if (spec.enabled === false) return null;
     if (!record || !Array.isArray(record.faces) || !rotatePoint) return null;
     const Lcam = normalize(rotatePoint(towardLight(light), camAngles || { yaw: 0, pitch: 0, roll: 0 }));
     const H = normalize(v(Lcam.x, Lcam.y, Lcam.z + 1)); // + view direction (+z)

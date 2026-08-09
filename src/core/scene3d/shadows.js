@@ -686,22 +686,48 @@
   // plot floor (dense shadows) N collapses toward 1, family A stops separating the
   // zones, and the crossed families carry the whole ladder. That is the correct
   // engraving answer, not a degradation.
-  const strideLadder = (sBase, penWidth) => {
+  // ROUND 2. The first cut pinned the crossed families at sBase/3 — at the
+  // default density that is the PLOT FLOOR itself, so one crossed family alone
+  // covered ~83% of the paper and two of them flooded the collar solid. That is
+  // the §0 craft rule violated from the inside: extra density must go into
+  // another DIRECTION at the same pitch, never into a tighter one.
+  //
+  // So every family now rules at the PENUMBRA pitch, and the ladder is built out
+  // of family COUNT (+ one stride step for the contact accent, + dash duty for
+  // the tail). At penWidth 0.3 / density 50 that is:
+  //   Z2  1 family  @ sPen            0.40 coverage   1.00x   (the anchor)
+  //   Z1  2 families                  0.64            1.60x   (crossed, near)
+  //   Z1far  + duty 0.5 on B          0.52            1.30x   (recedes)
+  //   Z0  A at stride 1 + B           0.88            2.20x   (contact accent)
+  //   Z3  A at stride 2N + duty ramp  0.15            0.37x   (dissolves)
+  // — every pitch at or above 1.2 x penWidth (C15), at most two directions at
+  // default density (C14), and the ratios land on the spec's shape with the TOP
+  // compressed rather than the bottom lifted (C16).
+  const strideLadder = (sPen, penWidth) => {
     const floorSp = Math.max(0.05, PLOT_FLOOR_MULT * Math.max(0.05, penWidth));
     let N = 3;
-    while (N > 1 && sBase / N < floorSp) N--;
-    const master = Math.max(floorSp, sBase / N);
+    while (N > 1 && sPen / N < floorSp) N--;
+    const master = Math.max(floorSp, sPen / N);
     return {
       master,
       floorSp,
       N,
-      sBase,
-      crossPitch: Math.max(floorSp, sBase / 3),
+      sBase: sPen,
+      // The crossing families rule at the penumbra pitch, never at the floor.
+      crossPitch: Math.max(floorSp, sPen),
       strideA: {
+        // The contact accent is the ONE place family A steps down a rung on the
+        // master grid; when N is 1 there is no rung to take and the collar is
+        // carried by the crossed family alone (still a legible 1.6x).
         [Z_CONTACT]: 1,
-        [Z_UMBRA]: Math.max(1, Math.round((N * 2) / 3)),
+        [Z_UMBRA]: N,
         [Z_PENUMBRA]: N,
-        [Z_OUTER]: N * 2,
+        // C10 — Z3 keeps the SAME grid subset as Z2 and lightens purely by dash
+        // duty. A stride change at the Z2/Z3 boundary is a phase break, which is
+        // exactly the "abrupt tonal step" the outer margin must not have; duty is
+        // continuous, so the two zones share every ruling and the transition can
+        // only be read as a tone, never as a line.
+        [Z_OUTER]: N,
       },
     };
   };
@@ -725,10 +751,13 @@
     spacings.forEach((s) => { clear *= 1 - clamp(penWidth / Math.max(penWidth, s), 0, 1); });
     return 1 - clear;
   };
-  // Darkest zone = family A at stride 1 + both crossed families at stride 1.
+  // Darkest zone = family A at stride 1 (the master pitch) + ONE crossed family
+  // at the penumbra pitch. That is what Z0 actually emits at default density; a
+  // third direction only joins when the master grid is coarse enough (N >= 3).
   const darkestCoverage = (sBase, penWidth) => {
     const l = strideLadder(sBase, penWidth);
-    return perceivedCoverage([l.master, l.crossPitch, l.crossPitch], penWidth);
+    const fams = l.N >= 3 ? [l.master, l.crossPitch, l.crossPitch] : [l.master, l.crossPitch];
+    return perceivedCoverage(fams, penWidth);
   };
   // Smallest scale >= 1 on sBase that brings the contact band under saturation.
   // Monotone in the scale, so a short bisection is exact enough and cannot loop.
@@ -915,7 +944,11 @@
     // C3 as a hard clamp: the collar is an ACCENT and must stay thin relative to
     // the throw. A wide contact band is just a second umbra, and it is what makes
     // the dark end of the ladder flood.
-    contactWidth = Math.min(contactWidth, 0.12 * L);
+    // `contactWidth` is a HALF-width (the collar reaches that far on BOTH sides
+    // of the contact boundary), so C3's "width <= 12% of the throw" is a 0.06 L
+    // clamp here. Clamping at 0.12 L drew a collar twice the allowed width and
+    // was a large part of why the first cut read as a black worm.
+    contactWidth = Math.min(contactWidth, 0.06 * L);
     // Penumbra retreat law. `shadowFalloff` is repurposed as SOFTNESS: at 0.2 the
     // umbra survives nearly to the tip (hard sun); at 1.0 it dies inside the first
     // third (broad source). The coefficient range is deliberately wide — the
@@ -929,6 +962,7 @@
     const wantUmbra = nZones >= 3;
     const wantOuter = nZones >= 4;
     const contactOn = contactSegs.length > 0;
+    const outerMargin = clamp(0.05 * L, 0.8, 5);
 
     const zoneAt = (x, y) => {
       const dc = fields.distContact(x, y);
@@ -937,7 +971,12 @@
       const e = fields.distEdge(x, y);
       const w = wAt(t);
       if (wantUmbra && e > w) return Z_UMBRA;
-      if (wantOuter && (e <= w / 2.5 || t > 0.82)) return Z_OUTER;
+      // Z3 is a RIM band plus the far tail. Deriving its margin from w(t) — as
+      // the first cut did — is a trap: w grows along the throw, so past mid-throw
+      // "the outer w/3" is the entire local width and Z3 swallows the shadow
+      // (Layers 4 lost 39% of its ink to it, blowing C11). The rim is a fixed
+      // fraction of the THROW instead, which is what the eye reads it as.
+      if (wantOuter && (e <= outerMargin || t > 0.88)) return Z_OUTER;
       return Z_PENUMBRA;
     };
     fields.bandWidthAt = (x, y) => {
@@ -954,13 +993,12 @@
     const ladder = strideLadder(sBase * scale, penWidth);
     const strideA = ladder.strideA;
     const crossPitch = ladder.crossPitch;
-    // THIRD LEVER — dash duty, but it can only ever LIGHTEN, and C16 pins the
+    // THIRD LEVER — dash duty. It can only ever LIGHTEN, and C16 pins the
     // penumbra at 0.8x the flat shadow, which the headroom cap already spends in
-    // full. So duty cannot be the Z1/Z2 separator: dutying Z2 down would break
-    // C16, and Z1 has no headroom above it. Duty is therefore spent where it is
-    // free — thinning the crossed family along the umbra's throw, and ramping the
-    // outer penumbra out to paper. Zone separation stays on the crossed family's
-    // stride, which is moire-free once the third direction is gone.
+    // full. So duty is spent where it is free: thinning the crossed family along
+    // the umbra's throw (the wedge has to get lighter as it recedes even before
+    // it narrows — C6) and ramping the outer penumbra out to paper (C8). Family
+    // A itself stays solid everywhere but Z3.
     const dutyLadder = { [Z_CONTACT]: 1, [Z_UMBRA]: 1, [Z_PENUMBRA]: 1 };
     const keepA = (zone, i) => {
       const st = strideA[zone] || 1;
@@ -968,8 +1006,12 @@
     };
     const dashA = (zone, s, r) => {
       if (zone === Z_OUTER) {
+        // C8 wants the outer margin at <= 0.55x the penumbra and visibly broken;
+        // C11 wants the total not to collapse when Layers goes 3 -> 4. Duty ramps
+        // 0.7 -> 0.3 across the throw: mean ~0.5x, inside C8, and roughly half the
+        // ink loss a stride step would have cost.
         const t = L > 1e-6 ? fields.distContact(r.a.x, r.a.y) / L : 0;
-        return clamp(0.75 - 0.4 * clamp(t, 0, 1), 0.35, 0.75);
+        return clamp(0.7 - 0.4 * clamp(t, 0, 1), 0.3, 0.7);
       }
       return dutyLadder[zone] != null ? dutyLadder[zone] : 1;
     };
@@ -986,21 +1028,24 @@
       ...base, angle, spacing: ladder.master, familyId: 0,
       keepFor: keepA, dashFor: dashA, meta: zoneMeta(Z_PENUMBRA),
     });
-    // ONE crossed family at default density. A second crossed direction over a
-    // near-solid collar beats against the first and reads as a plaid rather than
-    // as tone, so +32 only joins when the master grid is coarse enough (N >= 3)
-    // for three directions to stay visually separable.
+    // ONE crossed family at default density, ruling at the PENUMBRA pitch. It
+    // covers the contact collar and the umbra wedge; the umbra's copy thins by
+    // DASH DUTY along the throw (continuous, moire-free, plotter-native) rather
+    // than by a second stride, which is what beat against family A into a dot
+    // lattice in the first cut. A second crossed direction over a near-solid
+    // collar reads as plaid, so +32 only joins when the master grid is coarse
+    // enough (N >= 3) for three directions to stay visually separable.
     emitFamily({
       ...base, angle: angle + CROSS_B_DEG, spacing: crossPitch, familyId: 1,
       meta: zoneMeta(Z_CONTACT),
-      dashFor: (zone) => (zone === Z_CONTACT ? 1 : 0.8),
-      keepFor: (zone, i, s, r) => {
-        if (zone === Z_CONTACT) return true;
-        if (zone !== Z_UMBRA) return false;
+      dashFor: (zone, s, r) => {
+        if (zone === Z_CONTACT) return 1;
+        if (zone !== Z_UMBRA) return 0;
+        // C6 — the wedge recedes in TONE as well as in width.
         const t = L > 1e-6 ? fields.distContact(r.a.x, r.a.y) / L : 0;
-        const st = t < 0.5 ? 2 : 4;
-        return (((i % st) + st) % st) === 0;
+        return clamp(1 - 0.9 * clamp(t, 0, 1), 0.45, 1);
       },
+      keepFor: (zone) => zone === Z_CONTACT || zone === Z_UMBRA,
     });
     if (contactOn && ladder.N >= 3) {
       emitFamily({
@@ -1531,9 +1576,15 @@
     return finalize();
   };
 
-  Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Shadows: { build } });
+  // Test seam: the ruling ladder is the thing C15 (plot-safe pitches) and the
+  // whole density argument turn on, and it is not observable from the emitted
+  // paths (a pitch shows up as a spacing only where two rulings both survive
+  // clipping). Exposed read-only, prefixed so it reads as a seam, not API.
+  const __ladderForTest = (sBase, penWidth) => strideLadder(sBase, penWidth);
+
+  Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Shadows: { build, __ladderForTest } });
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { build };
+    module.exports = { build, __ladderForTest };
   }
 })();

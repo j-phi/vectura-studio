@@ -71,6 +71,10 @@
     return AROUND_IS_U.has(mode) ? (a, b) => raw(b, a) : raw;
   };
 
+  // O6 — CENTRE-LIGHT FLOOR (see coverageForSample). Module scope so the test
+  // seam at the bottom of the file reads the same constant the fill does.
+  const LIT_FLOOR = 0.22;
+
   // Line count from the density slider (1..100 → ~6..40 wrap lines).
   const lineCountFor = (density) => Math.max(4, Math.round(6 + clamp(density, 0, 100) * 0.34));
 
@@ -153,10 +157,23 @@
     const shadowGrades = Boolean(useLadder && shadowSens > 1 && Regions && typeof Regions.shadowStage === 'function');
     // Ink line-fraction (0..1) for a sample: how many of the N wrap lines draw at
     // this local intensity. Dark → high, lit cap → low.
+    // O6 — CENTRE-LIGHT FLOOR. A highlight is defined by contrast with its
+    // neighbour, not by absolute emptiness. The glint cap above already halves
+    // the brightest band at the default specular size, and a default-ish bright
+    // coverage of ~0.15 then drops to ~0.075 — the ordered dither below keeps
+    // fewer than one line in ten, so the centre-light region is ALREADY bare
+    // paper and blanking a sub-region of it is invisible. That, not a missing
+    // feature, is why "highlights don't work". Flooring the lit band (after the
+    // cap, as the surround it has to contrast against) is what makes every other
+    // highlight treatment legible.
     const coverageForSample = (I) => {
-      const b = Regions.band(I, tone);            // 0..nB-1, bright = HIGH
+      const b = Regions.band(I, tone);
+      // b: 0..nB-1, bright = HIGH
       let cov = Regions.coverageFor(nB - 1 - b, tone); // complement → dark = dense
-      if (specOn && b === nB - 1) cov *= clamp(1 - 0.5 * specSize, 0, 1); // glint cap
+      if (b === nB - 1) {
+        if (specOn) cov *= clamp(1 - 0.5 * specSize, 0, 1); // glint cap
+        cov = Math.max(cov, LIT_FLOOR);
+      }
       return clamp(cov, 0, 1);
     };
     const SHADOW_TH = 0.5; // intensity below which the dark-grading infill engages
@@ -227,6 +244,7 @@
       ? opts.highlight : null;
     const hlIsHL = (hl && typeof hl.isHL === 'function') ? hl.isHL : () => false;
     const hlDensity = hl ? clamp(finite(hl.density, 25), 1, 100) : 25;
+    const ldDensity = ldOn ? clamp(finite(hlCfg.density, 25), 1, 100) : 25;
     // Deterministic 2D hash (mirrors geometry3d strokeHash) for stippleOut.
     const sfHash = (a, b) => {
       let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
@@ -261,8 +279,13 @@
         hlRun = [];
       };
       // sparse: is THIS line kept in the highlight band? (every Nth by density).
-      const sparseStep = hl ? Math.max(1, Math.round(100 / hlDensity)) : 1;
-      const lineKept = !hl || (lineIndex % sparseStep === 0);
+      // Under lightDriven `hl` is null, so the perFace density is unavailable —
+      // read the same density off the lightDriven config, otherwise `sparse`
+      // keeps every line and collapses onto `keep` (O15).
+      const sparseDensity = hl ? hlDensity : ldDensity;
+      const sparseOwner = hl || ld;
+      const sparseStep = sparseOwner ? Math.max(1, Math.round(100 / sparseDensity)) : 1;
+      const lineKept = !sparseOwner || (lineIndex % sparseStep === 0);
       for (let s = 0; s <= steps; s++) {
         const tt = s / steps;
         const pr = paramAt(tt);
@@ -288,6 +311,17 @@
               if (tr === 'keep' || tr === 'dashed' || tr === 'dotted') {
                 if (treated) { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); }
                 else { flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); }
+              } else if (tr === 'sparse' || tr === 'stippleOut') {
+                // O15 — these two used to fall into the `blank` arm below, so
+                // switching highlightMode to lightDriven silently turned a sparse
+                // or stippled highlight into a hole. They now thin on the
+                // highlight channel here exactly as they do under perFace.
+                if (!treated) { flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); }
+                else if (tr === 'sparse'
+                  ? lineKept
+                  : sfHash(Math.round(smp.x * 4), Math.round(smp.y * 4)) < clamp((ldDensity / 100) * (0.3 + shade * 2), 0, 1)) {
+                  flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z });
+                } else { flush(); flushHL(); }
               } else if (treated) { flush(); flushHL(); }        // blank glint
               else { flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); }
               continue;
@@ -308,16 +342,21 @@
             // VISIBLE highlight — not indistinguishable from plain full hatch.
             if (t === 'keep') { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); continue; }
             if (t === 'dashed' || t === 'dotted') { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); continue; }
+            // O11/O14 — `sparse` and `stippleOut` used to push their survivors
+            // into the BASE run, untagged: they came out in the object pen and
+            // read as slightly thinner fill rather than as a highlight, and the
+            // highlight pen never reached them. They belong on the highlight
+            // channel, like keep/dashed/dotted.
             if (t === 'sparse') {
               if (!lineKept) { flush(); flushHL(); continue; }
-              flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); continue;
+              flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); continue;
             }
             if (t === 'stippleOut') {
               // Thin toward the hotspot: keep-probability rises with shade (away
               // from the glint), deterministic on the quantized screen point.
               const keepProb = clamp((hlDensity / 100) * (0.3 + shade * 2), 0, 1);
               if (sfHash(Math.round(smp.x * 4), Math.round(smp.y * 4)) >= keepProb) { flush(); flushHL(); continue; }
-              flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); continue;
+              flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); continue;
             }
             // altFill / burst: base fill drops here; a region pass fills it.
             flush(); flushHL(); continue;
@@ -572,9 +611,21 @@
     return out;
   };
 
-  Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { SurfaceFill: { buildObject, chartFor, lineCountFor } });
+  // Test seam for O6: the lit-band floor is applied deep inside a per-sample
+  // dither, so its effect on the emitted paths is diluted by everything else in
+  // the pipeline. `rawCoverage` is the brightest band's ladder coverage,
+  // `specSize` the glint size (0 = specular off).
+  const __litFloorForTest = (rawCoverage, specSize) => {
+    const capped = specSize > 0
+      ? rawCoverage * clamp(1 - 0.5 * specSize, 0, 1)
+      : rawCoverage;
+    return clamp(Math.max(capped, LIT_FLOOR), 0, 1);
+  };
+
+  Vectura.Scene3D = Object.assign(Vectura.Scene3D || {},
+    { SurfaceFill: { buildObject, chartFor, lineCountFor, __litFloorForTest } });
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { buildObject, chartFor, lineCountFor };
+    module.exports = { buildObject, chartFor, lineCountFor, __litFloorForTest };
   }
 })();

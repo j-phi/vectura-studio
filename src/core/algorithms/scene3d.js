@@ -544,9 +544,16 @@
         return clamp(Regions.specularTerm(normalWorld, worldPoint, activeLights, scene.camera, specShininess), 0, 1);
       };
 
-      const spacingBand = (normalWorld, styleParams, worldPoint, face, record) => {
+      const spacingBand = (normalWorld, styleParams, worldPoint, face, record, opts) => {
         const s0 = hatchSpacing(styleParams.fillDensity);
         if (!toneOn) return { spacing: s0, bandIdx: -1, terminator: false };
+        // O14 — `keep` on a faceted object. Before this the faceted path had NO
+        // keep branch at all: it fell through to the ordinary band-gained hatch,
+        // so picking `keep` on a cube changed nothing on paper. Keeping the
+        // highlight band means keeping its ink — the face renders at the FULL
+        // fill density instead of the ladder's near-blank cap, which is a
+        // visible, one-directional difference from every other treatment.
+        if (opts && opts.hlKeep) return { spacing: s0, bandIdx: Regions.band(intensityFn(normalWorld, worldPoint), p.tone), terminator: false };
         const I = intensityFn(normalWorld, worldPoint);
         const bandIdx = Regions.band(I, p.tone);
         let gain = coverageGain(bandIdx);
@@ -559,8 +566,10 @@
         }
         // Specular: the glint facet reads LIGHTER, never denser — the highlight is
         // negative space bounded by the surrounding hatch, never a drawn disc.
+        // O24: the response must EXTINGUISH as tone.specular.size → 0, so the
+        // size multiplies straight through with no floor under it.
         const S = faceSpecular(normalWorld, worldPoint);
-        if (S > 0) gain *= clamp(1 - 0.55 * Math.max(0.5, specSizeFaceted) * S, 0.25, 1);
+        if (S > 0 && specSizeFaceted > 0) gain *= clamp(1 - 0.55 * specSizeFaceted * S, 0.25, 1);
         const terminator = Boolean(record && face && terminatorFaces(record).has(face));
         // The ladder tops out at 1.6x gain, which cannot reach a core shadow. Past
         // the spacing floor density goes into a second DIRECTION, so a terminator
@@ -648,7 +657,7 @@
       const maybeLink = (segs, styleParams) =>
         (styleParams.linkFill === true && !draft ? linkBoustrophedon(segs) : segs);
 
-      const faceHatchLines = (face, styleParams, normalWorld, crossPass, record) => {
+      const faceHatchLines = (face, styleParams, normalWorld, crossPass, record, hlOpts) => {
         // angleRef (Phase 2): 'face' (default) measures the hatch angle in the
         // face plane; 'screen' engraves flat in screen space regardless of the
         // face; 'worldUp' keeps the lines upright (world vertical projected onto
@@ -662,13 +671,13 @@
         if (!scaf) {
           // Cheap screen-space hatch (draft / no world verts / angleRef:'screen')
           // — snaps back to the surface-oriented hatch on release.
-          const sb = spacingBand(normalWorld, styleParams, worldPoint, face, record);
+          const sb = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
           const lines = [];
           crossFamilies(face.polygon, userAngle, sb.spacing, styleParams, crossPass, sb.bandIdx === 0 || sb.terminator,
             (segs) => maybeLink(segs, styleParams).forEach((l) => lines.push(l)));
           return lines;
         }
-        const { spacing, bandIdx, terminator } = spacingBand(normalWorld, styleParams, worldPoint, face, record);
+        const { spacing, bandIdx, terminator } = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
         // worldUp rotates the in-plane base angle so the lines follow world
         // vertical; 'face' leaves the user angle measured in the face frame.
         const baseAngle = angleRef === 'worldUp' ? worldUpAngleInUV(scaf) + userAngle : userAngle;
@@ -1205,9 +1214,11 @@
                 // real mapper. Line fills (hatch/crosshatch) hatch IN-PLANE for the
                 // 3D read; region fills (contour/spiral/stipple) fill the projected
                 // face polygon and are mapped back onto the plane below.
+                const hlKeep = faceIsHL && faceHL.treatment === 'keep';
                 let lines;
                 if (draft || !REGION_MAPPERS.has(style.mapper)) {
-                  lines = faceHatchLines(face, fillParams, face.normalWorld, style.mapper === 'crosshatch');
+                  lines = faceHatchLines(face, fillParams, face.normalWorld, style.mapper === 'crosshatch', record,
+                    hlKeep ? { hlKeep: true } : null);
                 } else {
                   lines = faceRegionLines(face, style.mapper, face.normalWorld, fillParams);
                 }
@@ -1221,7 +1232,11 @@
                   // Face pick surface: with the outline suppressed, the hatch
                   // lines carry the face outline so a click still resolves.
                   sceneTarget: { ...target, pickPolygon, ...(faceIsHL ? { highlight: true } : {}) },
-                  ...(dashHL && faceHL.penId ? { penId: faceHL.penId } : (style.penId ? { penId: style.penId } : {})),
+                  // O11 — the highlight pen used to be gated on dashed/dotted only,
+                  // so `keep` / `sparse` / `stippleOut` ink came out in the object
+                  // pen and read as ordinary (slightly thinner) fill. Any treated
+                  // highlight face now carries the highlight pen.
+                  ...(faceIsHL && faceHL.penId ? { penId: faceHL.penId } : (style.penId ? { penId: style.penId } : {})),
                 };
                 lines.forEach((line) => {
                   const pts = line.map((pt) => ({
