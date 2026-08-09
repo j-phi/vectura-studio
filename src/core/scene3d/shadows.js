@@ -555,10 +555,11 @@
 
   // Contact-collar half-width. Thin by construction: a wide "contact" band is
   // just a second umbra, and the accent stops reading as contact.
-  const contactWidthOf = (contactRings) => Math.max(
-    1.5,
-    0.06 * ((contactRings && contactRings[0]) ? ringMinExtent(contactRings[0]) : 0),
-  );
+  const contactWidthOf = (contactSegs) => {
+    const pts = [];
+    (contactSegs || []).forEach(([a, b]) => { pts.push(a, b); });
+    return Math.max(1.2, 0.12 * ringMinExtent(pts));
+  };
 
   const ringsToSegs = (rings) => {
     const segs = [];
@@ -621,7 +622,7 @@
   // segments) the direct form is O(n·m) per frame. The lattice bounds that to one
   // O(cells·m) build plus O(1) lookups, and the interpolation keeps zone edges
   // smooth rather than stair-stepped at the cell size.
-  const buildShadowFields = (footRings, contactRings, edgeSegs) => {
+  const buildShadowFields = (footRings, cSegs, edgeSegs) => {
     const box = ringsBBox([footRings]);
     if (!box) return null;
     const pad = 2;
@@ -635,7 +636,6 @@
     while ((w / cell + 1) * (h / cell + 1) > MAX_CELLS) cell *= 1.5;
     const nx = Math.max(2, Math.ceil(w / cell) + 1);
     const ny = Math.max(2, Math.ceil(h / cell) + 1);
-    const cSegs = ringsToSegs(contactRings);
     const dC = new Float32Array(nx * ny);
     const dE = new Float32Array(nx * ny);
     const hasContact = cSegs.length > 0;
@@ -644,9 +644,10 @@
       for (let i = 0; i < nx; i++) {
         const x = minX + i * cell;
         const k = j * nx + i;
-        dC[k] = hasContact
-          ? (pointInRings(x, y, contactRings) ? 0 : distToSegs(x, y, cSegs))
-          : 0;
+        // Distance to the contact SEGMENTS, with no inside test: the collar hugs
+        // the boundary of the contact set, it never fills it. Filling it is how a
+        // rounded caster's band grows to a whole diameter.
+        dC[k] = hasContact ? distToSegs(x, y, cSegs) : 0;
         dE[k] = edgeSegs.length ? distToSegs(x, y, edgeSegs) : 1e6;
       }
     }
@@ -871,7 +872,11 @@
         // into paper rather than ending on a tone step.
         const duty = dashFor ? dashFor(zone, (s0 + s1) * 0.5, r) : 1;
         if (duty >= 0.999) { emit(s0, s1); return; }
-        const period = Math.max(1.6, spacing * 4);
+        // Long dashes, not a dotted screen: the period is tied to the region, not
+        // to the ruling pitch. Tying it to pitch turned every ruling into dozens
+        // of fragments (100k+ paths on one shadow) and cost far more pen-up travel
+        // than the tone was worth.
+        const period = Math.max(4, spacing * 10);
         const jitter = hash01(r.i * 31 + familyId, 3) * period;
         for (let s = s0 - jitter; s < s1; s += period) {
           emit(Math.max(s0, s), Math.min(s1, s + period * duty));
@@ -896,23 +901,27 @@
     // Edge field excludes the rim that hugs the caster's body: the base of a
     // shadow is not an "edge" of it, and counting it would push the darkest zone
     // into the lightest one exactly where the contact band belongs.
-    const contactRings = (cfg.contactRings && cfg.contactRings.length) ? cfg.contactRings : null;
-    const contactSegs = contactRings ? ringsToSegs(contactRings) : [];
-    const contactWidth = contactWidthOf(contactRings);
+    const contactSegs = (cfg.contactSegs && cfg.contactSegs.length) ? cfg.contactSegs : [];
+    let contactWidth = contactWidthOf(contactSegs);
     const edgeSegs = ringsToSegs(rings).filter(([a, b]) => {
       if (!contactSegs.length) return true;
       const mx = (a.x + b.x) * 0.5; const my = (a.y + b.y) * 0.5;
       return distToSegs(mx, my, contactSegs) > contactWidth * 1.5;
     });
-    const fields = buildShadowFields(rings, contactRings || [], edgeSegs);
+    const fields = buildShadowFields(rings, contactSegs, edgeSegs);
     if (!fields) { flat(); return; }
 
     const L = fields.L;
+    // C3 as a hard clamp: the collar is an ACCENT and must stay thin relative to
+    // the throw. A wide contact band is just a second umbra, and it is what makes
+    // the dark end of the ladder flood.
+    contactWidth = Math.min(contactWidth, 0.12 * L);
     // Penumbra retreat law. `shadowFalloff` is repurposed as SOFTNESS: at 0.2 the
     // umbra survives nearly to the tip (hard sun); at 1.0 it dies inside the first
-    // third (broad source). Sweeping it visibly lengthens/shortens the wedge —
-    // that is the slider's whole job now.
-    const k = 0.06 + 0.44 * clamp(finite(falloff, 0.5), 0.2, 1);
+    // third (broad source). The coefficient range is deliberately wide — the
+    // wedge's length has to change VISIBLY across the slider or the control has
+    // not earned its place.
+    const k = 0.03 + 1.2 * clamp(finite(falloff, 0.5), 0.2, 1);
     const w0 = Math.max(0.8, 0.02 * L);
     const wAt = (t) => w0 + k * t * L;
 
@@ -937,16 +946,32 @@
     };
     fields.rimFeather = wantOuter ? clamp(L * 0.03, 0.8, 6) : 0;
 
-    const ladder = strideLadder(sBase * headroomScale(sBase, penWidth), penWidth);
+    // C16: turning Layers ON must never make the penumbra weaker than the flat
+    // shadow — that reads as "I enabled Layers and lost my shadow". So the
+    // headroom scale is capped: when the ladder still cannot fit, the TOP is
+    // compressed (fewer families, lower duty), never the bottom lifted.
+    const scale = Math.min(headroomScale(sBase, penWidth), 1.25);
+    const ladder = strideLadder(sBase * scale, penWidth);
     const strideA = ladder.strideA;
+    const crossPitch = ladder.crossPitch;
+    // THIRD LEVER — dash duty, but it can only ever LIGHTEN, and C16 pins the
+    // penumbra at 0.8x the flat shadow, which the headroom cap already spends in
+    // full. So duty cannot be the Z1/Z2 separator: dutying Z2 down would break
+    // C16, and Z1 has no headroom above it. Duty is therefore spent where it is
+    // free — thinning the crossed family along the umbra's throw, and ramping the
+    // outer penumbra out to paper. Zone separation stays on the crossed family's
+    // stride, which is moire-free once the third direction is gone.
+    const dutyLadder = { [Z_CONTACT]: 1, [Z_UMBRA]: 1, [Z_PENUMBRA]: 1 };
     const keepA = (zone, i) => {
       const st = strideA[zone] || 1;
       return st <= 1 || (((i % st) + st) % st) === 0;
     };
     const dashA = (zone, s, r) => {
-      if (zone !== Z_OUTER) return 1;
-      const t = L > 1e-6 ? fields.distContact(r.a.x, r.a.y) / L : 0;
-      return clamp(0.75 - 0.4 * clamp(t, 0, 1), 0.35, 0.75);
+      if (zone === Z_OUTER) {
+        const t = L > 1e-6 ? fields.distContact(r.a.x, r.a.y) / L : 0;
+        return clamp(0.75 - 0.4 * clamp(t, 0, 1), 0.35, 0.75);
+      }
+      return dutyLadder[zone] != null ? dutyLadder[zone] : 1;
     };
 
     const base = {
@@ -961,14 +986,14 @@
       ...base, angle, spacing: ladder.master, familyId: 0,
       keepFor: keepA, dashFor: dashA, meta: zoneMeta(Z_PENUMBRA),
     });
-    // Crossed families. Density the master grid cannot reach without dropping
-    // below the plot floor goes HERE — into another direction — never into tighter
-    // spacing. B rides the umbra as well as the contact (thinning along the throw
-    // so the wedge fades before it narrows); C is contact-only.
-    const crossPitch = ladder.crossPitch;
+    // ONE crossed family at default density. A second crossed direction over a
+    // near-solid collar beats against the first and reads as a plaid rather than
+    // as tone, so +32 only joins when the master grid is coarse enough (N >= 3)
+    // for three directions to stay visually separable.
     emitFamily({
       ...base, angle: angle + CROSS_B_DEG, spacing: crossPitch, familyId: 1,
       meta: zoneMeta(Z_CONTACT),
+      dashFor: (zone) => (zone === Z_CONTACT ? 1 : 0.8),
       keepFor: (zone, i, s, r) => {
         if (zone === Z_CONTACT) return true;
         if (zone !== Z_UMBRA) return false;
@@ -977,7 +1002,7 @@
         return (((i % st) + st) % st) === 0;
       },
     });
-    if (contactOn) {
+    if (contactOn && ladder.N >= 3) {
       emitFamily({
         ...base, angle: angle + CROSS_C_DEG, spacing: crossPitch, familyId: 2,
         meta: zoneMeta(Z_CONTACT),
@@ -1192,14 +1217,14 @@
     // Emit hatch (additive) OR thin the ground fill (inverse). One chokepoint so
     // every footprint path — draft hull, degrade fallback, full class union —
     // composes identically.
-    const compose = (rings, casterId, penId, contactRings) => {
+    const compose = (rings, casterId, penId, contactSegs) => {
       if (inverse) {
         if (groundFillSink) thinGroundFillInRings(groundFillSink, rings, invRemoveShare, invReplace, invAcc);
         return;
       }
       emitShadowRegion(rings, groundPlane, clipper, out,
         shadowMeta(rings, casterId, penFor(penId), groundDepth), shadowTreat, draftFrame,
-        contactRings && contactRings.length ? { ...cfg, contactRings } : cfg);
+        contactSegs && contactSegs.length ? { ...cfg, contactSegs } : cfg);
     };
     // Inverse mode erases the in-footprint portion of the chosen ground-fill
     // lines: splice each original out of the shared sink and splice its surviving
@@ -1253,8 +1278,25 @@
     // occlude the ambient dome, which is what a contact shadow IS. For a resting
     // box that recovers the whole base; for a sphere, the small cap around the
     // tangent point.
-    const nadirHull = (record) => {
+    // CONTACT SET — PROXIMITY, not projection.
+    //
+    // The contact set is where the caster comes close enough to the ground to
+    // occlude the ambient dome:  C = { p : minHeight(caster, p) <= h },
+    // h = max(0.5, 0.03 * casterHeight). Projection is the wrong operator here:
+    // a sphere touches at a POINT, but its nadir drop is the whole equatorial
+    // disc, so a projection-based collar is one diameter across and swallows the
+    // near half of the shadow — the flat blob this work exists to remove, back
+    // from the other side. A prism is the only shape for which the two agree,
+    // which is why a cube looked right and a sphere did not.
+    //
+    // C is carried as SEGMENTS (the caster's near-ground edges, dropped to y = 0
+    // and camera-projected), never a convex hull: distance-to-segments is exact
+    // for concave and ring-shaped bases, and the collar then hugs the BOUNDARY of
+    // C rather than filling it. A resting box yields its base outline; a sphere,
+    // the small ring around its tangent cap.
+    const nadirContact = (record) => {
       const world = record.world || [];
+      if (!world.length) return null;
       let minY = Infinity; let maxY = -Infinity;
       for (let i = 0; i < world.length; i++) {
         const P = world[i];
@@ -1263,24 +1305,45 @@
         if (P.y > maxY) maxY = P.y;
       }
       if (!Number.isFinite(minY)) return null;
-      const gap = Math.max(1, 0.05 * Math.max(0, maxY - minY));
-      const cut = Math.max(minY, 0) + gap;
-      const near = [];
-      const all = [];
+      const base = Math.max(minY, 0);
+      const drop = (P) => {
+        const q = projectPoint(rotatePoint({ x: P.x, y: 0, z: P.z }, camAngles0), projOpts0);
+        return (q && Number.isFinite(q.x) && Number.isFinite(q.y)) ? { x: q.x, y: q.y } : null;
+      };
+      // Widen the slice until the mesh actually resolves something inside it — a
+      // coarse sphere can have no edge wholly within h of the ground.
+      const h0 = Math.max(0.5, 0.03 * Math.max(0, maxY - minY));
+      for (let pass = 0; pass < 5; pass++) {
+        const cut = base + h0 * Math.pow(2, pass);
+        const segs = [];
+        const pts = [];
+        (record.edges || []).forEach((edge) => {
+          const A = world[edge.a]; const B = world[edge.b];
+          if (!A || !B || !Number.isFinite(A.y) || !Number.isFinite(B.y)) return;
+          if (A.y > cut || B.y > cut) return;
+          const a = drop(A); const b = drop(B);
+          if (a && b) { segs.push([a, b]); pts.push(a, b); }
+        });
+        if (segs.length) {
+          const hull = convexHull(pts);
+          return { segs, hull: hull.length >= 3 ? hull : null };
+        }
+      }
+      // No edges resolved at all (point cloud / degenerate mesh): fall back to the
+      // lowest vertices as a degenerate segment set so the band still appears.
+      const cut = base + h0 * 8;
+      const pts = [];
       for (let i = 0; i < world.length; i++) {
         const P = world[i];
-        if (!P || !Number.isFinite(P.y) || P.y < -1e-6) continue;
-        const q = projectPoint(rotatePoint({ x: P.x, y: 0, z: P.z }, camAngles0), projOpts0);
-        if (!q || !Number.isFinite(q.x) || !Number.isFinite(q.y)) continue;
-        const pt = { x: q.x, y: q.y };
-        all.push(pt);
-        if (P.y <= cut) near.push(pt);
+        if (!P || !Number.isFinite(P.y) || P.y > cut || P.y < -1e-6) continue;
+        const q = drop(P);
+        if (q) pts.push(q);
       }
-      // A coarse mesh can put no vertex inside the slice (a low-detail sphere's
-      // nearest ring may sit above it); fall back to the full drop rather than
-      // losing the contact band entirely.
-      const hull = convexHull(near.length >= 3 ? near : all);
-      return hull.length >= 3 ? hull : null;
+      if (pts.length < 2) return null;
+      const segs = [];
+      for (let i = 1; i < pts.length; i++) segs.push([pts[i - 1], pts[i]]);
+      const hull = convexHull(pts);
+      return { segs, hull: hull.length >= 3 ? hull : null };
     };
 
     const casters = [];
@@ -1292,7 +1355,7 @@
       const loops = casterSilhouetteLoops(record, projectVertex, lightClassifyEdges);
       const style = styleOf ? (styleOf(record.id) || {}) : {};
       casters.push({
-        id: record.id, hull, loops, contact: nadirHull(record),
+        id: record.id, hull, loops, contact: nadirContact(record),
         penId: style.penId || null, classKey: style.penId || '',
       });
     });
@@ -1414,12 +1477,15 @@
       const rings = [];
       cls.casterIds.forEach((id) => {
         const c = casters.find((k) => k.id === id);
-        if (c && c.contact) rings.push(c.contact);
+        if (c && c.contact && c.contact.hull) rings.push(c.contact.hull);
       });
       if (!rings.length) return [];
       const grown = [];
       rings.forEach((ring) => {
-        const w = contactWidthOf([ring]);
+        // The collar REGION only has to cover the band; the zone field decides
+        // what is actually contact, so a convex grow of the near-ground set is
+        // enough here even though the field itself uses exact segments.
+        const w = Math.max(1.2, 0.12 * ringMinExtent(ring)) * 2;
         let ext = null;
         try { ext = MO(ring, w); } catch (_e) { ext = null; }
         const pts = (ext || []).filter(isFinitePt);
@@ -1447,10 +1513,10 @@
       }
       if (!geom || !geom.length) return;
       const casterId = cls.casterIds.size === 1 ? [...cls.casterIds][0] : null;
-      const contactRings = [];
+      const contactSegs = [];
       cls.casterIds.forEach((id) => {
         const c = casters.find((k) => k.id === id);
-        if (c && c.contact) contactRings.push(c.contact);
+        if (c && c.contact) contactSegs.push(...c.contact.segs);
       });
       // One region per polygon (outer + holes) so even-odd keeps holes empty.
       geom.forEach((polygon) => {
@@ -1458,7 +1524,7 @@
           .map((ring) => (ring || []).map((pt) => ({ x: pt[0], y: pt[1] })))
           .filter((ring) => ring.length >= 3);
         if (!rings.length) return;
-        compose(rings, casterId, cls.penId, contactRings);
+        compose(rings, casterId, cls.penId, contactSegs);
       });
     });
 
