@@ -513,7 +513,7 @@
   const CROSS_OBJ_DEG = 65;
   const FORM_INK = {
     H: { coverage: 0.00, cross: 0, duty: 1 },
-    L: { coverage: 0.50, cross: 0, duty: 1 },
+    L: { coverage: 0.42, cross: 0, duty: 1 },
     M: { coverage: 0.70, cross: 0, duty: 1 },
     F: { coverage: 1.00, cross: 0, duty: 1 },
     T: { coverage: 1.00, cross: 0.85, duty: 1 },

@@ -104,7 +104,8 @@
   // possible if the family the ladder subsets is itself dense enough, so when
   // the ladder is active the line budget is FLOORED at a master pitch measured
   // in pen widths. Density still rules above the floor.
-  const MASTER_PITCH_PEN = 2.5;  // master grid pitch, × pen width
+  const MASTER_PITCH_PEN = 2.33; // master grid pitch, × pen width (the DARKEST zone)
+  const PLOT_FLOOR_PEN = 1.2;    // §0 / C15 — no single family may rule below this
   const LIT_MAX_PITCH_PEN = 6;   // §5.4 #1 — the centre light may never be blanker
   const MASTER_MAX_LINES = 420;  // pathological-input guard (steps × lines)
 
@@ -296,6 +297,7 @@
     // no ink to be defined by. `litFloorCov` is the coverage at which family A's
     // spacing is exactly 6 × pen, so the floor is stated in the spec's units.
     let litFloorCov = LIT_FLOOR; // assigned once the master pitch is known, below
+    let floorPitch = 0;          // ditto: the plot-safe local pitch (C15)
     const zoneCoverage = (zone, isCross) => {
       const ink = Regions.formInk(zone);
       if (isCross) return clamp(ink.cross, 0, 1);
@@ -343,10 +345,23 @@
       const camN = rotatePoint(wN, cam);
       const scr = projectWorld(world);
       if (!scr || !Number.isFinite(scr.x) || !Number.isFinite(scr.y)) return null;
+      // Screen-space derivatives of the parameter square. A wrapped family's
+      // pitch is NOT uniform — meridians converge to nothing at a sphere's poles
+      // — so the only way to know what a family actually rules at HERE is to
+      // measure it here. See the plot-safe cap in emitLine (C15).
+      let dA = null; let dB = null;
+      if (useLadder) {
+        const sa = projectWorld(applyTransform(pa, t));
+        const sb = projectWorld(applyTransform(pb, t));
+        if (sa && sb && Number.isFinite(sa.x) && Number.isFinite(sb.x)) {
+          dA = { x: (sa.x - scr.x) / EPS, y: (sa.y - scr.y) / EPS };
+          dB = { x: (sb.x - scr.x) / EPS, y: (sb.y - scr.y) / EPS };
+        }
+      }
       const I = toneOn ? clamp(intensityFn(wN, world), 0, 1) : 1;
       // I8 — per-sample specular term for light-driven highlight (0 when off).
       const S = (ldOn && typeof specularFn === 'function') ? clamp(specularFn(wN, world), 0, 1) : 0;
-      return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, I, S, wN, world };
+      return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, I, S, wN, world, dA, dB };
     };
 
     // ── Line budget ────────────────────────────────────────────────────────────
@@ -361,24 +376,37 @@
     let masterPitch = 0;
     const penWidth = Math.max(0.02, finite(opts.penWidth, 0.3));
     if (useLadder && opts.penWidth != null) {
-      // Projected extent of the form (coarse lattice — this is a budget, not a
-      // measurement). Only ~half of a closed family's lines face the camera, so
-      // the visible pitch is span / (N/2).
-      let minX = Infinity; let maxX = -Infinity; let minY = Infinity; let maxY = -Infinity;
-      for (let i = 0; i <= 8; i++) {
-        for (let j = 0; j <= 8; j++) {
-          const smp = sampleAt(i / 8, j / 8);
-          if (!smp) continue;
-          if (smp.x < minX) minX = smp.x; if (smp.x > maxX) maxX = smp.x;
-          if (smp.y < minY) minY = smp.y; if (smp.y > maxY) maxY = smp.y;
+      // Calibrate off the MEDIAN local pitch the family will actually rule at,
+      // not off a bounding box. A wrapped family's pitch is wildly non-uniform —
+      // on a sphere the meridians converge to nothing at the poles and crowd at
+      // the silhouette — and a bbox estimate gets it wrong by about 2x. When the
+      // budget is too dense EVERY zone hits the plot floor and the whole ladder
+      // flattens into one value: measured L/M/T/F all landing within 0.05 of each
+      // other at an effective pitch of 0.75-0.79mm. Calibrating on the median
+      // puts the darkest zone at the target pitch and leaves the lit end room.
+      const rad = (finite(opts.fillAngle, 0) * Math.PI) / 180;
+      // Across the primary family, in parameter space. 'contour' rules the other
+      // axis; every other mapper's family runs along (cos, sin) of fillAngle.
+      const acr = opts.mapper === 'contour'
+        ? { a: 1, b: 0 }
+        : { a: -Math.sin(rad), b: Math.cos(rad) };
+      const widths = [];
+      for (let i = 0; i <= 16; i++) {
+        for (let j = 0; j <= 16; j++) {
+          const smp = sampleAt(i / 16, j / 16);
+          if (!smp || !smp.front || !smp.dA || !smp.dB) continue;
+          const wx = smp.dA.x * acr.a + smp.dB.x * acr.b;
+          const wy = smp.dA.y * acr.a + smp.dB.y * acr.b;
+          const w = Math.hypot(wx, wy);
+          if (w > 1e-6) widths.push(w);
         }
       }
-      const span = Math.max(maxX - minX, maxY - minY);
-      if (Number.isFinite(span) && span > 0) {
+      if (widths.length >= 8) {
+        widths.sort((x, y) => x - y);
+        const median = widths[widths.length >> 1];
         masterPitch = MASTER_PITCH_PEN * penWidth;
-        const need = Math.ceil((2 * span) / masterPitch);
-        N = clamp(Math.max(N, need), 4, MASTER_MAX_LINES);
-        masterPitch = (2 * span) / N; // what the family ACTUALLY rules at
+        N = clamp(Math.max(N, Math.ceil(median / masterPitch)), 4, MASTER_MAX_LINES);
+        masterPitch = median / N; // what the family ACTUALLY rules at, typically
       }
     }
     // Coverage at which family A's spacing is exactly LIT_MAX_PITCH_PEN × pen —
@@ -386,6 +414,7 @@
     litFloorCov = masterPitch > 0
       ? clamp(masterPitch / (LIT_MAX_PITCH_PEN * penWidth), 0.05, 1)
       : LIT_FLOOR;
+    floorPitch = PLOT_FLOOR_PEN * penWidth;
     const steps = Math.max(28, Math.round(finite(opts.detail, 24) * 2)); // samples along each line
     const out = [];
     const mapper = opts.mapper;
@@ -440,7 +469,7 @@
     // the line to a single form zone: that is how the terminator's crossed
     // family is spent on T alone instead of being sprayed over the whole dark
     // band (O17 — Round 2 crossed ALL of band 0, at 0/90, and it read as wire mesh).
-    const emitLine = (paramAt, threshold, back, lineIndex, count, ladderRank, zoneGate) => {
+    const emitLine = (paramAt, threshold, back, lineIndex, count, ladderRank, zoneGate, pitchStep) => {
       const wantFront = !back;
       const rank = Number.isFinite(ladderRank) ? ladderRank : threshold;
       let run = [];
@@ -513,8 +542,33 @@
             const cov = zone
               ? zoneCoverage(zone, Boolean(zoneGate))
               : coverageForSample(smp.I);
+            // §0, restated as arithmetic, and C15: past ~1.2 x pen width you do
+            // not get darker by ruling closer — you get a flooded blob and a wet
+            // plot. On a wrapped surface that limit is reached LOCALLY long
+            // before it is reached globally: a sphere's meridians converge to
+            // zero pitch at the poles, so the pole caps flooded solid (measured
+            // D = 1.000) while the equator was still legible. Capping coverage by
+            // the LOCAL pitch spends the excess the only way the craft rule
+            // allows — by dropping rulings — and it is what keeps the lit end of
+            // the ladder separable instead of saturating into the dark end.
+            let cap = 1;
+            if (pitchStep && smp.dA && smp.dB) {
+              const px = smp.dA.x * pitchStep.a + smp.dB.x * pitchStep.b;
+              const py = smp.dA.y * pitchStep.a + smp.dB.y * pitchStep.b;
+              const localPitch = Math.hypot(px, py);
+              // Effective pitch is localPitch / coverage and must stay at or above
+              // the floor, so the darkest zone may not exceed localPitch/floor.
+              // Applied MULTIPLICATIVELY, not as a clamp: where the geometry
+              // crowds, every zone thins by the same factor, so the ladder's
+              // ratios survive intact instead of the whole ramp collapsing onto
+              // the floor together (which is exactly what a clamp did — L, M, T
+              // and F all landed at the same effective pitch and the form went
+              // flat).
+              if (localPitch > 1e-6 && floorPitch > 1e-6) cap = clamp(localPitch / floorPitch, 0, 1);
+            }
+            const covCapped = cov * cap;
             const jit = (sfHash(lineIndex * 2654435761, Math.round((s / FEATHER_BUCKET))) - 0.5) * FEATHER_AMPL;
-            dropZone = rank >= cov + jit;
+            dropZone = rank >= covCapped + jit;
             // Dash duty — the reflected rim breaks its rulings rather than
             // tightening them (§5.1: widened spacing + duty 0.7).
             if (!dropZone && zone) {
@@ -560,7 +614,8 @@
     const emitFamily = (fixAxis, count, back, zoneGate) => {
       for (let i = 0; i < count; i++) {
         const fixVal = (i + 0.5) / count;
-        emitLine(axisLine(fixAxis, fixVal), (i + 0.5) / count, back, i, count, rankOf(i), zoneGate);
+        emitLine(axisLine(fixAxis, fixVal), (i + 0.5) / count, back, i, count, rankOf(i), zoneGate,
+          fixAxis === 'b' ? { a: 0, b: 1 / count } : { a: 1 / count, b: 0 });
       }
     };
 
@@ -615,7 +670,7 @@
           return { a: clamp(a0 + t * da, 0, 1), b: clamp(b0 + t * db, 0, 1) };
         };
       };
-      return { span, lineAt };
+      return { span, lineAt, na, nb };
     };
 
     const emitAngledFamily = (angleDeg, count, back, zoneGate) => {
@@ -625,8 +680,11 @@
       const n = Math.max(2, Math.round(count * fam.span));
       for (let i = 0; i < n; i++) {
         const at = fam.lineAt((i + 0.5) / n);
-        // Same dark→dense ordered-dither rank the axis families use.
-        if (at) emitLine(at, (i + 0.5) / n, back, i, n, rankOf(i), zoneGate);
+        // Same dark→dense ordered-dither rank the axis families use. Adjacent
+        // lines are span/n apart ALONG the family normal, in parameter space.
+        const step = fam.span / n;
+        if (at) emitLine(at, (i + 0.5) / n, back, i, n, rankOf(i), zoneGate,
+          { a: fam.na * step, b: fam.nb * step });
       }
     };
 
