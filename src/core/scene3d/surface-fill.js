@@ -78,6 +78,59 @@
   const GLINT_KEEP = 0.6;
   const LIT_FLOOR = 0.12;
 
+  // ── The tone MASTER GRID (design spec §5.0/§5.4) ────────────────────────────
+  //
+  // Round 2 shipped a curved fill that did not shade: `bands` 2/3/4 produced
+  // pixel-identical drawings. Two faults, and the first one hid the second.
+  //
+  // FAULT 1 — the dither rank WAS the family coordinate. Every family emitted
+  // line i with the ordered-dither threshold `(i+0.5)/count`, and line i sits at
+  // parameter b = `(i+0.5)/count`. Rank and position were the SAME NUMBER. So
+  // "keep the fraction `cov` of the lines" did not thin the family — it cut it
+  // at a LONGITUDE. Worse, on a lit form the light also varies with longitude,
+  // so rank and coverage were correlated and the gate collapsed into a single
+  // hard edge: full family on one side, bare paper on the other, no intermediate
+  // density anywhere. Measured: a flat D ≈ 0.08 across the whole sphere at every
+  // band count. `rankOf` replaces the coordinate with a bit-reversed (van der
+  // Corput) permutation, which is spatially well-distributed at EVERY prefix
+  // length — so keeping the first `cov·N` ranks keeps an evenly spread subset,
+  // and coverage finally means density.
+  //
+  // FAULT 2 — nothing to be blank against. At the shipped line budget a FULL
+  // family already sits at ~17 × pen width, so the lit band (a fraction of that)
+  // was near-bare paper and blanking a sub-region of it — which is what every
+  // highlight treatment does — was invisible. §5.4 states the rule directly:
+  // floor the centre light so its spacing never exceeds 6 × pen. That is only
+  // possible if the family the ladder subsets is itself dense enough, so when
+  // the ladder is active the line budget is FLOORED at a master pitch measured
+  // in pen widths. Density still rules above the floor.
+  const MASTER_PITCH_PEN = 2.5;  // master grid pitch, × pen width
+  const LIT_MAX_PITCH_PEN = 6;   // §5.4 #1 — the centre light may never be blanker
+  const MASTER_MAX_LINES = 420;  // pathological-input guard (steps × lines)
+
+  // Radical inverse base 2, scaled off the index — the classic ordered-dither
+  // permutation. vdc(0,1,2,3,…) = 0, .5, .25, .75, .125, … so any prefix is
+  // spread across [0,1) instead of clustered at one end.
+  const rankOf = (i) => {
+    let n = (i >>> 0) + 1;
+    let rev = 0;
+    let denom = 1;
+    while (n > 0) { rev = rev * 2 + (n & 1); n >>>= 1; denom *= 2; }
+    return (rev / denom) % 1;
+  };
+
+  // Zone-boundary FEATHER (§4, and O26 — a curved form must show NO banding
+  // between tone bands). Coverage is piecewise-constant across a zone boundary,
+  // so without this every line in the family flips state at the same place and
+  // the flips line up into a contour. The comparison is dithered by a hash of
+  // (line index, a COARSE bucket of the along-line parameter), which moves each
+  // line's flip point independently by up to ±FEATHER_AMPL of rank — i.e.
+  // stochastic line-end termination, the burin's own answer, at zero extra
+  // pen-up cost. The bucket is coarse so the result is a ragged interdigitated
+  // boundary, not per-sample speckle.
+  const FEATHER_AMPL = 0.16;
+  const FEATHER_BUCKET = 6;
+
   // Line count from the density slider (1..100 → ~6..40 wrap lines).
   const lineCountFor = (density) => Math.max(4, Math.round(6 + clamp(density, 0, 100) * 0.34));
 
@@ -189,6 +242,62 @@
       }
       return clamp(cov, 0, 1);
     };
+
+    // ── FORM ZONES on the curved path ──────────────────────────────────────────
+    // The ladder's own coverage numbers cannot express T > F > R (Lambert is
+    // clamped, so T, F and R are all I = 0), so the zone classifier in Regions
+    // owns the dark end and the ladder's coverage keeps owning the lit end. Both
+    // fill implementations call the SAME classifier — that is the I27 parity
+    // contract, and it is why a cube, a low-poly sphere and this capsule under
+    // one light now land in the same zones.
+    const zoneCtx = opts.formZone || null;
+    const zonesOn = Boolean(useLadder && zoneCtx && typeof Regions.formZone === 'function');
+    // The blank highlight is placed by the SPECULAR term, not by "the top tone
+    // band". That is what makes it sit offset toward the light (O7), shrink to a
+    // few percent of the silhouette instead of a quarter of it (O4/O5), respond
+    // to `tone.specular` on the curved path at all (O24) and vanish outright
+    // when specular is switched off (O16). The exponent is tighter than the
+    // light-driven glint's: this one has to land inside the ≤8%-of-silhouette
+    // window of §5.4 #8, where the lightDriven region deliberately spans faces.
+    const hlSpecFn = (specOn && typeof opts.specularFn === 'function') ? opts.specularFn : null;
+    const HL_EXP = clamp(30 / Math.max(0.2, specSize || 1), 10, 120);
+    const HL_TH = 0.35;
+    const isGlint = (wN, world) => {
+      if (!hlSpecFn) return false;
+      // specularFn is authored at the lightDriven shininess; re-sharpen it to the
+      // blank-highlight exponent by re-exponentiating the cosine it encodes.
+      const s = clamp(hlSpecFn(wN, world), 0, 1);
+      if (s <= 0) return false;
+      const cosH = Math.pow(s, 1 / Math.max(1, finite(opts.specShininess, 6)));
+      return Math.pow(cosH, HL_EXP) >= HL_TH;
+    };
+    const zoneOf = (smp) => {
+      if (!zonesOn) return null;
+      return Regions.formZone(smp.wN, smp.world, {
+        tone,
+        lights: zoneCtx.lights,
+        ground: zoneCtx.ground,
+        terminatorNL: zoneCtx.terminatorNL,
+        highlight: isGlint(smp.wN, smp.world),
+      });
+    };
+    // Zone → family-A coverage, with the two floors §5.4 #1 demands. The glint
+    // cap may lighten the centre light, but never past LIT_MAX_PITCH_PEN — a
+    // highlight is defined by the ink AROUND it, and a surround at 17 × pen has
+    // no ink to be defined by. `litFloorCov` is the coverage at which family A's
+    // spacing is exactly 6 × pen, so the floor is stated in the spec's units.
+    let litFloorCov = LIT_FLOOR; // assigned once the master pitch is known, below
+    const zoneCoverage = (zone, isCross) => {
+      const ink = Regions.formInk(zone);
+      if (isCross) return clamp(ink.cross, 0, 1);
+      let cov = clamp(ink.coverage, 0, 1);
+      if (zone === 'L') {
+        const raw = cov;
+        if (specOn) cov *= clamp(1 - 0.5 * specSize, 0, 1);
+        cov = Math.max(cov, raw * GLINT_KEEP, litFloorCov);
+      }
+      return clamp(cov, 0, 1);
+    };
     const SHADOW_TH = 0.5; // intensity below which the dark-grading infill engages
 
     // I8 — LIGHT-DRIVEN highlight: the highlight region is where the per-sample
@@ -228,10 +337,46 @@
       const I = toneOn ? clamp(intensityFn(wN, world), 0, 1) : 1;
       // I8 — per-sample specular term for light-driven highlight (0 when off).
       const S = (ldOn && typeof specularFn === 'function') ? clamp(specularFn(wN, world), 0, 1) : 0;
-      return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, I, S };
+      return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, I, S, wN, world };
     };
 
-    const N = lineCountFor(finite(opts.fillDensity, 50));
+    // ── Line budget ────────────────────────────────────────────────────────────
+    // Density owns the count, exactly as before, EXCEPT that an active tone
+    // ladder floors it: the ladder is a set of subsets of this family, so if the
+    // family itself rules at 17 × pen there is no room below it for a centre
+    // light and no room above it for anything but bare paper. The floor is
+    // computed from the object's own PROJECTED size so it holds at any zoom and
+    // for any primitive, and it only ever RAISES the count — Density is fully
+    // live above it. With tone off, `N` is bit-for-bit `lineCountFor(density)`.
+    let N = lineCountFor(finite(opts.fillDensity, 50));
+    let masterPitch = 0;
+    const penWidth = Math.max(0.02, finite(opts.penWidth, 0.3));
+    if (useLadder && opts.penWidth != null) {
+      // Projected extent of the form (coarse lattice — this is a budget, not a
+      // measurement). Only ~half of a closed family's lines face the camera, so
+      // the visible pitch is span / (N/2).
+      let minX = Infinity; let maxX = -Infinity; let minY = Infinity; let maxY = -Infinity;
+      for (let i = 0; i <= 8; i++) {
+        for (let j = 0; j <= 8; j++) {
+          const smp = sampleAt(i / 8, j / 8);
+          if (!smp) continue;
+          if (smp.x < minX) minX = smp.x; if (smp.x > maxX) maxX = smp.x;
+          if (smp.y < minY) minY = smp.y; if (smp.y > maxY) maxY = smp.y;
+        }
+      }
+      const span = Math.max(maxX - minX, maxY - minY);
+      if (Number.isFinite(span) && span > 0) {
+        masterPitch = MASTER_PITCH_PEN * penWidth;
+        const need = Math.ceil((2 * span) / masterPitch);
+        N = clamp(Math.max(N, need), 4, MASTER_MAX_LINES);
+        masterPitch = (2 * span) / N; // what the family ACTUALLY rules at
+      }
+    }
+    // Coverage at which family A's spacing is exactly LIT_MAX_PITCH_PEN × pen —
+    // the floor under the centre light, stated in §5.4's own units.
+    litFloorCov = masterPitch > 0
+      ? clamp(masterPitch / (LIT_MAX_PITCH_PEN * penWidth), 0.05, 1)
+      : LIT_FLOOR;
     const steps = Math.max(28, Math.round(finite(opts.detail, 24) * 2)); // samples along each line
     const out = [];
     const mapper = opts.mapper;
@@ -280,8 +425,15 @@
     // the sample draws only where the local shade (1 − I) meets it, so lines
     // vanish toward the lit highlight and pile up in shadow. `back` selects the
     // FAR side (camN.z < 0) instead of the visible front side, and tags the run.
-    const emitLine = (paramAt, threshold, back, lineIndex, count) => {
+    // `ladderRank` is the line's position in the dither PERMUTATION (see rankOf)
+    // — decoupled from `threshold`, which stays the geometric rank the legacy
+    // no-ladder callers compare shade against. `zoneGate`, when set, restricts
+    // the line to a single form zone: that is how the terminator's crossed
+    // family is spent on T alone instead of being sprayed over the whole dark
+    // band (O17 — Round 2 crossed ALL of band 0, at 0/90, and it read as wire mesh).
+    const emitLine = (paramAt, threshold, back, lineIndex, count, ladderRank, zoneGate) => {
       const wantFront = !back;
+      const rank = Number.isFinite(ladderRank) ? ladderRank : threshold;
       let run = [];
       let hlRun = [];
       const flush = () => { pushRun(run, back); run = []; };
@@ -340,11 +492,29 @@
               continue;
             }
           }
-          // `threshold` is this line's ordered-dither rank (i+0.5)/count. With the
-          // ladder, the sample draws where the rank is below the band's coverage
-          // (dark bands cover more ranks → dense; the lit cap covers few → sparse).
+          // The sample draws where this line's PERMUTED rank sits below the local
+          // coverage — dark zones cover more ranks (dense), the centre light few
+          // (sparse), the glint none (blank). The comparison is feathered so the
+          // flips do not line up into a contour at a zone boundary (O26).
           // Without a ladder (other callers) it degrades to the legacy shade<rank.
-          const dropZone = useLadder ? (threshold >= coverageForSample(smp.I)) : (shade < threshold);
+          let dropZone;
+          if (useLadder) {
+            const zone = zoneOf(smp);
+            if (zoneGate && zone !== zoneGate) { flush(); flushHL(); continue; }
+            const cov = zone
+              ? zoneCoverage(zone, Boolean(zoneGate))
+              : coverageForSample(smp.I);
+            const jit = (sfHash(lineIndex * 2654435761, Math.round((s / FEATHER_BUCKET))) - 0.5) * FEATHER_AMPL;
+            dropZone = rank >= cov + jit;
+            // Dash duty — the reflected rim breaks its rulings rather than
+            // tightening them (§5.1: widened spacing + duty 0.7).
+            if (!dropZone && zone) {
+              const duty = clamp(finite(Regions.formInk(zone).duty, 1), 0, 1);
+              if (duty < 1 && sfHash(lineIndex + 7717, Math.round(s / 2)) >= duty) dropZone = true;
+            }
+          } else {
+            dropZone = shade < threshold;
+          }
           if (dropZone) {
             // Ordered-dither drop zone. Legacy (no highlight, or not the
             // highlight band): drop = bare paper (byte-identical to pre-Phase-4).
@@ -382,10 +552,10 @@
       flushHL();
     };
 
-    const emitFamily = (fixAxis, count, back) => {
+    const emitFamily = (fixAxis, count, back, zoneGate) => {
       for (let i = 0; i < count; i++) {
         const fixVal = (i + 0.5) / count;
-        emitLine(axisLine(fixAxis, fixVal), (i + 0.5) / count, back, i, count); // dark→dense ordered dither
+        emitLine(axisLine(fixAxis, fixVal), (i + 0.5) / count, back, i, count, rankOf(i), zoneGate);
       }
     };
 
@@ -443,7 +613,7 @@
       return { span, lineAt };
     };
 
-    const emitAngledFamily = (angleDeg, count, back) => {
+    const emitAngledFamily = (angleDeg, count, back, zoneGate) => {
       const fam = angleFamily(angleDeg);
       // Keep the LINE SPACING (not the line count) constant as the family
       // rotates, so Density reads the same at every angle. span = 1 on an axis.
@@ -451,7 +621,7 @@
       for (let i = 0; i < n; i++) {
         const at = fam.lineAt((i + 0.5) / n);
         // Same dark→dense ordered-dither rank the axis families use.
-        if (at) emitLine(at, (i + 0.5) / n, back, i, n);
+        if (at) emitLine(at, (i + 0.5) / n, back, i, n, rankOf(i), zoneGate);
       }
     };
 
@@ -522,12 +692,23 @@
         else if (a180 === 90) emitFamily('a', count, back);
         else emitAngledFamily(angleDeg, count, back);
       };
+      // §5.0's hard ceiling, discharged: the ladder cannot reach a core shadow
+      // by coverage alone (it runs out at full family), so the TERMINATOR — and
+      // only the terminator — gains a second family, at +65°. Never +90°: an
+      // orthogonal pair reads as a square grid and beats against the raster
+      // (§2.3). This is what makes T out-ink F, which is the whole dip.
+      const emitTerminatorCross = (count, back) => {
+        if (!zonesOn) return;
+        emitAngledFamily(finite(opts.fillAngle, 0) + Regions.CROSS_OBJ_DEG, count, back, 'T');
+      };
       if (mapper === 'hatch') {
         if (onMeridianAxis) {
           emitFamily('b', count, back); // meridians wrap top-to-bottom
+          emitTerminatorCross(count, back);
           emitShadowInfill(meridianAt, count, back);
         } else {
           emitAngledFamily(hatchAngle, count, back);
+          emitTerminatorCross(count, back);
           emitShadowInfill(angleFamily(hatchAngle).lineAt, count, back);
         }
       } else if (mapper === 'crosshatch') {
@@ -537,10 +718,14 @@
         if (onMeridianAxis) emitFamily('b', count, back);
         else emitAngledFamily(hatchAngle, count, back);
         emitSecondary(hatchAngle + crossDelta, countB, back);      // the crossing family
-        if (crossTriple) emitSecondary(hatchAngle + 45, countB, back); // darkest-band third pass
+        // §2.3 — the tone-driven third pass goes to +32°, not +45°: with family B
+        // already at the user's delta, +45 lands close enough to A or B to beat.
+        if (crossTriple) emitSecondary(hatchAngle + 32, countB, back); // darkest-band third pass
+        emitTerminatorCross(count, back);
         emitShadowInfill(onMeridianAxis ? meridianAt : angleFamily(hatchAngle).lineAt, count, back);
       } else if (mapper === 'contour') {
         emitFamily('a', count, back); // latitude rings following the form
+        emitTerminatorCross(count, back);
         emitShadowInfill((frac) => axisLine('a', frac), count, back);
       } else if (mapper === 'spiral') {
         // One continuous helix: the ALONG-axis coordinate sweeps 0→1 while the
@@ -566,7 +751,21 @@
           const wind = (f * turns + phase) % 1;
           const smp = snap ? sampleAt(wind, sweep) : sampleAt(sweep, wind);
           if (!smp || smp.front !== wantFront) { flush(); continue; }
-          if (toneOn) { const shade = clamp(1 - smp.I, 0, 1); if (shade < 0.12) { flush(); continue; } }
+          if (toneOn) {
+            // O18 — the spiral used to gate on a hardcoded `shade < 0.12` and
+            // ignored `ladder[]` outright, so `bands` did nothing at all on a
+            // spiral-filled object. A helix has no family index, so its rank is
+            // the TURN it is on: whole loops drop out toward the light, which
+            // keeps the arcs continuous instead of speckling the helix.
+            if (useLadder) {
+              const zone = zoneOf(smp);
+              const cov = zone ? zoneCoverage(zone, false) : coverageForSample(smp.I);
+              if (rankOf(Math.floor(f * turns)) >= cov) { flush(); continue; }
+            } else {
+              const shade = clamp(1 - smp.I, 0, 1);
+              if (shade < 0.12) { flush(); continue; }
+            }
+          }
           run.push({ x: smp.x, y: smp.y, z: smp.z });
         }
         flush();
@@ -591,9 +790,19 @@
             const smp = sampleAt((r + 0.5) / rows, (c + 0.5) / colsPer);
             if (!smp || smp.front !== wantFront) continue;
             if (toneOn) {
-              const shade = clamp(1 - smp.I, 0, 1);
-              const th = ((r * colsPer + c) % 7) / 7; // scattered dither
-              if (shade < th) continue;
+              // O18 — stipple used a hardcoded `(…%7)/7` dither and never read
+              // `ladder[]`, so a stippled object showed no tone bands at all.
+              // The dot's rank is now the same bit-reversed permutation the line
+              // families use, compared against the local zone coverage.
+              if (useLadder) {
+                const zone = zoneOf(smp);
+                const cov = zone ? zoneCoverage(zone, false) : coverageForSample(smp.I);
+                if (rankOf(r * colsPer + c) >= cov) continue;
+              } else {
+                const shade = clamp(1 - smp.I, 0, 1);
+                const th = ((r * colsPer + c) % 7) / 7; // scattered dither
+                if (shade < th) continue;
+              }
             }
             if (legacy || !Marks || typeof Marks.stippleMark !== 'function') {
               const ring = [];

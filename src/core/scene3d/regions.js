@@ -382,6 +382,145 @@
     return clamp(best, 0, 1);
   };
 
+  // ── FORM ZONES (design spec §5.1–§5.3) ─────────────────────────────────────
+  //
+  // The object's own shading is a SIX-zone ladder, and its defining feature is
+  // that the ladder is NOT monotonic in "how far the surface has turned from the
+  // light":
+  //
+  //     H(0)   L(light)   M(halftone)   T(terminator)   F(form)   R(reflected)
+  //                                          ▲             ▼          ▼
+  //                                       DARKEST       LIGHTER   LIGHTER STILL
+  //
+  // T > F > R is the whole effect. A naive "darker as it turns away" ramp gives
+  // T ≤ F ≤ R and the form reads as a flat disc with a dirty edge.
+  //
+  // Two facts make the dip impossible to express with `band()` alone:
+  //
+  //   - Lambert is CLAMPED (`max(0, n·L)`), so every surface past the terminator
+  //     collapses onto I = 0 → band 0. T, F and R are all the same number and no
+  //     threshold can separate them. The SIGNED lambert has to be recovered.
+  //   - Nothing in the codebase ever produced a reflected/bounce term, so the
+  //     away-facing rim fell to a hard 0 with no floor. The one 'ambient' light
+  //     type lifts every normal EQUALLY, so it cannot make a rim by construction.
+  //
+  // So this classifier keeps `band()` untouched for the LIT gradation and
+  // subdivides the darkest band by signed lambert + a bounce term. Both fill
+  // implementations call it, which is what keeps a cube and a sphere under one
+  // light in the same zones (the I27 parity contract, §5.5.3).
+  const FORM_ZONES = ['H', 'L', 'M', 'T', 'F', 'R'];
+
+  // SIGNED lambert against whichever light dominates: > 0 lit, < 0 past the
+  // terminator, and — unlike `intensity()` — it keeps going negative so "how far
+  // past the terminator" is measurable. Ambient lights are skipped (they have no
+  // direction and therefore no terminator).
+  const signedLambert = (normalWorld, worldPoint, lights) => {
+    const list = Array.isArray(lights) ? lights : (lights ? [lights] : []);
+    const n = normalize(normalWorld || v(0, 0, 1));
+    const P = worldPoint && Number.isFinite(worldPoint.x) ? worldPoint : v(0, 0, 0);
+    let best = -1;
+    let any = false;
+    for (let i = 0; i < list.length; i++) {
+      const light = list[i];
+      if (!light || light.type === 'ambient') continue;
+      let L;
+      if (light.type === 'point' || light.type === 'spot' || light.type === 'area') {
+        const pos = light.position || v(0, 0, 0);
+        const to = sub(pos, P);
+        const d = Math.hypot(to.x, to.y, to.z);
+        L = d > 1e-9 ? mul(to, 1 / d) : v(0, 1, 0);
+      } else {
+        L = towardLight(light);
+      }
+      const d = dot(n, L);
+      if (!any || d > best) { best = d; any = true; }
+    }
+    return any ? clamp(best, -1, 1) : 0;
+  };
+
+  // Reflected/bounce lift (§5.2). Bounce comes UP off the ground, so the
+  // surfaces that catch it are the ones facing DOWN (−N.y), and it dies off over
+  // roughly one object height. `ground` = { y0, height } in world units — the
+  // object's own footing, so a floating object does not collect bounce it cannot
+  // physically receive. Returns 0..1; the caller gates it to the unlit side.
+  const reflectedLift = (normalWorld, worldPoint, ground) => {
+    const n = normalize(normalWorld || v(0, 1, 0));
+    const down = Math.max(0, -n.y);
+    if (down <= 0) return 0;
+    const g = ground || {};
+    const h = Math.max(1e-6, finite(g.height, 0));
+    if (!(h > 1e-6)) return down;
+    const P = worldPoint && Number.isFinite(worldPoint.y) ? worldPoint : v(0, 0, 0);
+    const prox = clamp(1 - (P.y - finite(g.y0, 0)) / h, 0, 1);
+    return down * prox;
+  };
+
+  // Terminator half-width, expressed in SIGNED-LAMBERT units. Near the
+  // terminator of a curved form nl ≈ −Δθ and the screen arc ≈ R·Δθ, so a band
+  // 8–14% of the form's screen width (2R) is nl ∈ [−0.28, 0). 0.22 sits inside
+  // that window and is deliberately a constant: it is a property of how a
+  // terminator looks, not a dial (§5.1).
+  const TERMINATOR_NL = 0.22;
+  // A rim only reads as reflected light once it is decisively down-facing AND
+  // close to the ground; below this the facet stays in the form shadow.
+  const REFLECT_TH = 0.30;
+
+  // formZone(normalWorld, worldPoint, ctx) → one of FORM_ZONES.
+  //   ctx: { tone, lights, ground:{y0,height}, terminator (bool override),
+  //          terminatorNL, highlight (bool: this sample carries the glint) }
+  // `terminator` is the FACETED override: on a facet the terminator is
+  // topological (unlit + shares a SMOOTH edge with a lit facet, §5.5.2) and the
+  // dihedral gate is what stops a cube from growing a bogus core shadow, so the
+  // faceted caller decides and this function must not second-guess it.
+  //
+  // §5.3 — T and R only exist at bands = 4. That is what `bands = 4` is FOR, and
+  // it is how "2 → 3 → 4 adds bands" stays legible: 2 gives L∪M / T∪F, 3 splits
+  // L from M, 4 opens the dip and the reflected rim.
+  const formZone = (normalWorld, worldPoint, ctx) => {
+    const c = ctx || {};
+    const tone = c.tone || null;
+    const nB = validLadder(tone).length;
+    if (c.highlight === true) return 'H';
+    const I = combinedIntensity(normalWorld, worldPoint, c.lights);
+    const b = band(I, tone);
+    if (b > 0) return b >= nB - 1 ? 'L' : 'M';
+    if (nB < 4) return 'F';                       // no room in the ladder for the dip
+    if (c.terminator === true) return 'T';
+    if (c.terminator === false) {
+      // Facet path: the dihedral gate already ruled this facet out of T. It may
+      // still catch bounce.
+      return reflectedLift(normalWorld, worldPoint, c.ground) >= REFLECT_TH ? 'R' : 'F';
+    }
+    const nl = signedLambert(normalWorld, worldPoint, c.lights);
+    const w = clamp(finite(c.terminatorNL, TERMINATOR_NL), 0.02, 0.9);
+    if (nl >= -w) return 'T';
+    return reflectedLift(normalWorld, worldPoint, c.ground) >= REFLECT_TH ? 'R' : 'F';
+  };
+
+  // Zone → INK RECIPE, in units of "one full family at the master pitch".
+  //
+  //   coverage  fraction of the master grid family A keeps (0..1)
+  //   cross     coverage of a SECOND family, at +65° (0 = none)
+  //   duty      dash duty cycle on family A (1 = solid)
+  //
+  // §5.0 states the ceiling plainly: the ladder alone tops out at 1.6× gain and
+  // the span this design needs is ~8:1, so **the dark end has to gain a crossed
+  // family**. That is the only way T clears F, and it is the same craft rule as
+  // §0 — past the spacing floor, density spills into another DIRECTION.
+  //
+  // +65°, never +90°: an orthogonal second family reads as a square grid / wire
+  // mesh and beats against the raster (§2.3).
+  const CROSS_OBJ_DEG = 65;
+  const FORM_INK = {
+    H: { coverage: 0.00, cross: 0, duty: 1 },
+    L: { coverage: 0.50, cross: 0, duty: 1 },
+    M: { coverage: 0.70, cross: 0, duty: 1 },
+    F: { coverage: 1.00, cross: 0, duty: 1 },
+    T: { coverage: 1.00, cross: 0.85, duty: 1 },
+    R: { coverage: 0.45, cross: 0, duty: 0.7 },
+  };
+  const formInk = (zone) => FORM_INK[zone] || FORM_INK.M;
+
   // Specular exponent for a highlight `size` (bigger size → broader/softer glint
   // → lower exponent → the lit region spans more of the surface). Deliberately
   // soft (size 1 → ~6) so the light-driven glint reads as a semicircular REGION
@@ -439,6 +578,14 @@
     shininessForSize,
     highlightStage,
     shadowStage,
+    FORM_ZONES,
+    CROSS_OBJ_DEG,
+    TERMINATOR_NL,
+    REFLECT_TH,
+    signedLambert,
+    reflectedLift,
+    formZone,
+    formInk,
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Lighting, Regions });

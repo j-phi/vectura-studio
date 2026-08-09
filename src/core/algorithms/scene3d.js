@@ -1487,11 +1487,26 @@
                 // cap all steer the curved fill (items 1+2). Directionally the
                 // fill stays dark→dense / bright→sparse (blank cap = highlight).
                 tone: p.tone,
+                // The FORM-ZONE context (§5.1–§5.3). Handing the curved fill the
+                // lights and the object's own footing lets it classify H/L/M/T/F/R
+                // through the SAME Regions.formZone the faceted path uses — which
+                // is the only reason a cube, a low-poly sphere and a capsule under
+                // one light now agree (the I27 parity contract).
+                formZone: toneOn ? { lights: activeLights, ground: recordGround(record) } : null,
+                // The line budget is floored off the pen so the ladder has a grid
+                // to stand on (§5.4 #1); without a pen width it stays exactly
+                // `lineCountFor(density)`.
+                penWidth,
                 // I8 — shadow sensitivity (stage count) graded darkening on the
                 // dark end; default 1 = no-op. Per-sample specular fn drives the
                 // lightDriven highlight region.
                 shadowSensitivity: grpShadowSens,
-                specularFn: grpLD ? specularFn : null,
+                // The blank highlight is placed by the specular term in BOTH
+                // modes now — under perFace it was previously placed by "the top
+                // tone band", which is why it covered a quarter of the silhouette
+                // and ignored `tone.specular` entirely (O4/O5/O24).
+                specularFn,
+                specShininess,
                 xray: (grpXray && grpXray.backFaces)
                   ? { backFaces: true, backDensity: grpCueDensity ? 1 : grpXray.backDensity } : null,
                 highlight: hlActive ? {
