@@ -53,6 +53,62 @@
     const r = table && table[prim] && table[prim][key];
     return r || fallback;
   };
+  // ── Honest Geometry rows ──────────────────────────────────────────────────
+  // Several rows named a quantity the STORED param is not (a torus "Diameter"
+  // showed sx, but the chart rings it at 0.75·sx plus the tube, so an sx-80
+  // torus is 125 mm across). Scene3D.Params.SIZE_DISPLAY converts the stored
+  // param to the quantity the label names and back on edit; nothing about the
+  // stored bag or the mesh changes, so every saved document still renders
+  // exactly as it did. `sizeLabel` additionally renames the rows that were
+  // merely AMBIGUOUS (ellipsoid "X" → "Radius X").
+  const sizeDisplay = (prim, key) => {
+    const P = P3();
+    return (P && typeof P.sizeDisplay === 'function') ? P.sizeDisplay(prim, key) : null;
+  };
+  const sizeLabel = (prim, key, fallback) => {
+    const P = P3();
+    return (P && typeof P.sizeLabel === 'function') ? P.sizeLabel(prim, key, fallback) : fallback;
+  };
+  // A torus's outer Diameter includes its tube, and a capsule's Length floor is
+  // its Radius — so on those shapes one dimension edit changes what ANOTHER row
+  // displays. The Geometry block re-renders after such a commit so no row is
+  // left showing a number the object no longer has.
+  const dimsAreCoupled = (prim) => {
+    const P = P3();
+    return !!(P && typeof P.sizeDisplayCoupled === 'function' && P.sizeDisplayCoupled(prim));
+  };
+  // The slider props for ONE dimension row, in the units its label promises.
+  // `bag` is the live params bag (a converted quantity may depend on a sibling
+  // key — a torus's outer diameter includes its tube).
+  const dimProps = (prim, d, bag, stored, dflt) => {
+    const conv = sizeDisplay(prim, d.key);
+    const label = sizeLabel(prim, d.key, d.label);
+    if (!conv) {
+      return {
+        label, value: stored, min: d.min, max: d.max, step: d.step, defaultValue: dflt,
+        toStored: (v) => v,
+      };
+    }
+    // `to` is monotone increasing in the key, so the editing range maps across.
+    // The mapped bounds are then snapped INWARD onto the step grid: the range
+    // input lays its stops out from `min`, so an off-grid bound would make every
+    // reachable value off-grid too (…124.04, 125.04…) and a round number like
+    // "125 mm across" unreachable by dragging.
+    const step = Number.isFinite(conv.step) ? conv.step : d.step;
+    const grid = (v, dir) => {
+      const n = v / step;
+      return Number(((dir > 0 ? Math.ceil(n - 1e-9) : Math.floor(n + 1e-9)) * step).toFixed(6));
+    };
+    return {
+      label,
+      value: conv.to(stored, bag),
+      min: grid(conv.to(d.min, bag), 1),
+      max: grid(conv.to(d.max, bag), -1),
+      step,
+      defaultValue: conv.to(dflt, bag),
+      toStored: (v) => conv.from(v, bag),
+    };
+  };
 
   const PRIMITIVES = {
     box: {
@@ -649,15 +705,27 @@
           return;
         }
         const fallback = Number.isFinite(d.fallback) ? d.fallback : 20;
-        slider(host, d.label, {
-          value: Number.isFinite(params.params[d.key]) ? params.params[d.key] : fallback,
-          min: d.min, max: d.max, step: d.step,
-          defaultValue: Number.isFinite(primDefaults[d.key]) ? primDefaults[d.key] : fallback,
-          ariaLabel: d.ariaLabel || `${prim} ${d.label.toLowerCase()}`,
-          ...liveSlider((v) => {
-            params.params[d.key] = d.round ? Math.round(v) : v;
-            if (Array.isArray(d.extraKeys)) d.extraKeys.forEach((k) => { params.params[k] = params.params[d.key]; });
-          }),
+        const stored = Number.isFinite(params.params[d.key]) ? params.params[d.key] : fallback;
+        const dflt = Number.isFinite(primDefaults[d.key]) ? primDefaults[d.key] : fallback;
+        // A dimension row reads/writes in the units its LABEL promises; every
+        // other control (Fidelity, Sides, the deformers) is unconverted.
+        const dp = d.dim ? dimProps(prim, d, params.params, stored, dflt)
+          : { label: d.label, value: stored, min: d.min, max: d.max, step: d.step, defaultValue: dflt, toStored: (v) => v };
+        const kit = liveSlider((v) => {
+          const s = dp.toStored(v);
+          params.params[d.key] = d.round ? Math.round(s) : s;
+          if (Array.isArray(d.extraKeys)) d.extraKeys.forEach((k) => { params.params[k] = params.params[d.key]; });
+        });
+        const refresh = d.dim && dimsAreCoupled(prim);
+        slider(host, dp.label, {
+          value: dp.value,
+          min: dp.min, max: dp.max, step: dp.step,
+          defaultValue: dp.defaultValue,
+          // A dimension's aria name follows its HONEST label (D() baked the old
+          // one in), so a screen reader and the visible row agree.
+          ariaLabel: d.dim ? `${prim} ${dp.label.toLowerCase()}` : (d.ariaLabel || `${prim} ${dp.label.toLowerCase()}`),
+          onChange: kit.onChange,
+          onCommit: (v) => { kit.onCommit(v); if (refresh) renderObject(); },
         });
       });
 
@@ -2778,15 +2846,21 @@
         dims.forEach((d) => {
           const cur = Number.isFinite(obj.params[d.key]) ? obj.params[d.key] : fallbackFor(d);
           const dflt = Number.isFinite(primDefaults[d.key]) ? primDefaults[d.key] : fallbackFor(d);
-          sliderRow(inspectorHost, inspectorComps, d.label, {
-            value: cur,
-            min: d.min, max: d.max, step: d.step,
-            defaultValue: dflt,
-            ariaLabel: `${obj.primitive} ${d.label.toLowerCase()}`,
-            ...liveSlider((v) => {
-              obj.params[d.key] = v;
-              if (Array.isArray(d.extraKeys)) d.extraKeys.forEach((k) => { obj.params[k] = v; });
-            }),
+          // Same honest-units conversion as the per-layer inspector above.
+          const dp = dimProps(obj.primitive, d, obj.params, cur, dflt);
+          const kit = liveSlider((v) => {
+            const s = dp.toStored(v);
+            obj.params[d.key] = s;
+            if (Array.isArray(d.extraKeys)) d.extraKeys.forEach((k) => { obj.params[k] = s; });
+          });
+          const refresh = dimsAreCoupled(obj.primitive);
+          sliderRow(inspectorHost, inspectorComps, dp.label, {
+            value: dp.value,
+            min: dp.min, max: dp.max, step: dp.step,
+            defaultValue: dp.defaultValue,
+            ariaLabel: `${obj.primitive} ${dp.label.toLowerCase()}`,
+            onChange: kit.onChange,
+            onCommit: (v) => { kit.onCommit(v); if (refresh) renderInspector(); },
           });
         });
       }

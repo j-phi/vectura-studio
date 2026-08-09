@@ -28,17 +28,21 @@ const GEOMETRIES = [
 ];
 
 // The control each geometry must own, keyed by its slider aria-label.
+// A dimension's aria name follows its VISIBLE label, and those labels were made
+// honest (see tests/unit/scene-geometry-label-truth.test.js): the ambiguous
+// ellipsoid/superellipsoid axes now say which radius they are, and a torus
+// knot's row is a "Span" (its widest measurement) rather than a false "Radius".
 const EXPECTED_CONTROLS = {
   box: ['box width', 'box height', 'box depth'],
   plane: ['plane width', 'plane depth'],
   sphere: ['sphere radius', 'Surface fidelity (tessellation detail)'],
-  ellipsoid: ['ellipsoid x', 'ellipsoid y', 'ellipsoid z', 'Surface fidelity (tessellation detail)'],
+  ellipsoid: ['ellipsoid radius x', 'ellipsoid radius y', 'ellipsoid radius z', 'Surface fidelity (tessellation detail)'],
   cylinder: ['cylinder radius', 'cylinder height', 'Surface fidelity (tessellation detail)'],
   cone: ['cone base radius', 'cone height', 'Surface fidelity (tessellation detail)'],
   torus: ['torus diameter', 'torus thickness', 'Surface fidelity (tessellation detail)'],
-  torusKnot: ['torusKnot radius', 'torusKnot thickness', 'Surface fidelity (tessellation detail)'],
+  torusKnot: ['torusKnot span', 'torusKnot thickness', 'Surface fidelity (tessellation detail)'],
   capsule: ['capsule radius', 'capsule length', 'Surface fidelity (tessellation detail)'],
-  superellipsoid: ['superellipsoid x', 'superellipsoid y', 'superellipsoid z', 'Surface fidelity (tessellation detail)'],
+  superellipsoid: ['superellipsoid radius x', 'superellipsoid radius y', 'superellipsoid radius z', 'Surface fidelity (tessellation detail)'],
   pyramid: ['pyramid base', 'pyramid height', 'Surface fidelity (tessellation detail)'],
   solid: ['solid radius', 'solid expand', 'solid twist', 'solid explode', 'solid extrude', 'solid shard'],
 };

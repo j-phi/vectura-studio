@@ -227,6 +227,125 @@
     return 2 * Math.max(sx, sy, sz);
   };
 
+  // ── SIZE_DISPLAY — the Geometry labels tell the truth ─────────────────────
+  // PURE DISPLAY METADATA. Several Geometry rows in the object inspector named
+  // a quantity the stored param is NOT: a torus's "Diameter" showed `sx`, but
+  // the chart builds the ring at `major = 0.75·sx` and the tube at
+  // `minor = 0.28·min(sy,sz)`, so an sx-80 torus is 125 mm across. The same
+  // half-extent lie ran through cylinder/cone "Height", pyramid "Base"/"Height",
+  // capsule "Length" and both torus-knot rows (a chart's `sy` is a HALF-height).
+  //
+  // Rather than rename the labels to awkward internal quantities, the labelled
+  // number is CONVERTED: `to(stored, bag)` yields the quantity the label names
+  // (a real world-mm measurement of the untransformed mesh), `from(shown, bag)`
+  // converts an edit back to the stored param. Nothing here is read by a mesh
+  // builder, by normalization, or by the swap size map — the stored params and
+  // the emitted geometry of an existing object are untouched, which is what
+  // makes this safe for every saved document.
+  //
+  // A row with NO entry is already honest (box/plane Width/Height/Depth are the
+  // full extent; sphere/cylinder/cone/capsule "Radius" really is the radius;
+  // ellipsoid/superellipsoid rows are semi-axes and are LABELLED "Radius X/Y/Z"
+  // by the panel so they no longer read as bare axis names).
+  //
+  // Derivation (verified against real mesh bounding boxes in
+  // tests/unit/scene-geometry-label-truth.test.js):
+  //   cylinder/cone/pyramid  y extent = 2·sy          (charts use (v-0.5)·sy·2)
+  //   pyramid                x extent = 2·sx          (unit-square perimeter)
+  //   capsule                y extent = 2·max(r, sy), r = max(1, min(sx,sz))
+  //   torus                  x/z extent = 2·(max(2, .75·sx) + minor)
+  //                          y extent  = 2·minor, minor = max(1, .28·min(sy,sz))
+  //   torusKnot              widest (z) extent = KNOT_SPAN·R + 2·tube,
+  //                          R = max(2, .62·sx), tube = max(1, .24·min(sy,sz))
+  //
+  // Two conversions are NOT globally invertible because a `max()` floor binds:
+  //   • torus Thickness — every sy ≤ 1/0.28 floors `minor` to 1, so they all
+  //     display 2 mm. `from` returns the LARGEST preimage (1/0.28), which
+  //     builds a byte-identical mesh, so the row is self-consistent instead of
+  //     snapping back to a different number after a re-render.
+  //   • capsule Length — a capsule with sy < r IS a sphere of radius r whose
+  //     true length is 2r. `from` clamps to r for the same reason.
+  // In both cases the clamped write is a no-op on the geometry (asserted).
+  //
+  // The knot's centreline span per unit R, for the hardcoded (p,q) = (2,3) knot
+  // in Scene3D.Charts.topoTorusKnot. Numerically max(z)−min(z) of
+  // r(t)=(2+cos3t)/2, z=r·sin2t — just under 2√2. The tube adds 2·tube there.
+  // The knot is NOT axially symmetric (its x span is only 2.6822·R), so the row
+  // is labelled "Span" (the widest measurement across) rather than "Diameter".
+  const KNOT_SPAN = 2.82824744;
+  const minOf = (bag, a, b) => Math.min(finite(bag[a], 20), finite(bag[b], 20));
+  const torusMinor = (bag) => Math.max(1, minOf(bag, 'sy', 'sz') * 0.28);
+  const knotTube = (bag) => Math.max(1, minOf(bag, 'sy', 'sz') * 0.24);
+  const capsuleRadius = (bag) => Math.max(1, minOf(bag, 'sx', 'sz'));
+  // A control that drives linked keys (a torus tube is sy AND sz) is edited as
+  // ONE value, so the candidate `v` stands for the whole linked set.
+  const doubled = (label, step) => ({
+    label, step, to: (v) => 2 * finite(v, 0), from: (shown) => finite(shown, 0) / 2,
+  });
+  const SIZE_DISPLAY = {
+    cylinder: { sy: doubled('Height', 1) },
+    cone: { sy: doubled('Height', 1) },
+    pyramid: { sx: doubled('Base', 1), sy: doubled('Height', 1) },
+    capsule: {
+      sy: {
+        // `coupled` — this row's value depends on a SIBLING key, so the panel
+        // re-renders the Geometry block after any dimension edit (a capsule's
+        // Length floor moves with its Radius; a torus's outer Diameter grows
+        // with its Thickness). Without it the sibling row reads stale.
+        label: 'Length', step: 1, coupled: true,
+        to: (v, bag) => 2 * Math.max(capsuleRadius(bag), finite(v, 0)),
+        from: (shown, bag) => Math.max(capsuleRadius(bag), finite(shown, 0) / 2),
+      },
+    },
+    torus: {
+      sx: {
+        label: 'Diameter', step: 1, coupled: true,
+        to: (v, bag) => 2 * (Math.max(2, finite(v, 0) * 0.75) + torusMinor(bag)),
+        from: (shown, bag) => Math.max(2, finite(shown, 0) / 2 - torusMinor(bag)) / 0.75,
+      },
+      sy: {
+        label: 'Thickness', step: 0.5,
+        to: (v) => 2 * Math.max(1, finite(v, 0) * 0.28),
+        from: (shown) => Math.max(1, finite(shown, 0) / 2) / 0.28,
+      },
+    },
+    torusKnot: {
+      sx: {
+        label: 'Span', step: 1, coupled: true,
+        to: (v, bag) => KNOT_SPAN * Math.max(2, finite(v, 0) * 0.62) + 2 * knotTube(bag),
+        from: (shown, bag) => Math.max(2, (finite(shown, 0) - 2 * knotTube(bag)) / KNOT_SPAN) / 0.62,
+      },
+      sy: {
+        label: 'Thickness', step: 0.5,
+        to: (v) => 2 * Math.max(1, finite(v, 0) * 0.24),
+        from: (shown) => Math.max(1, finite(shown, 0) / 2) / 0.24,
+      },
+    },
+  };
+  // Labels for rows that are honest numbers under an AMBIGUOUS name. "X" says
+  // nothing about whether it is a radius or a width; these are semi-axes, so
+  // they are named the way the sphere's already-honest row is.
+  const SIZE_LABEL = {
+    ellipsoid: { sx: 'Radius X', sy: 'Radius Y', sz: 'Radius Z' },
+    superellipsoid: { sx: 'Radius X', sy: 'Radius Y', sz: 'Radius Z' },
+  };
+  const sizeDisplay = (primitive, key) => {
+    const row = SIZE_DISPLAY[primitive];
+    return (row && row[key]) || null;
+  };
+  // True when ANY of this primitive's rows reads a sibling key, so an edit to
+  // one dimension can change what another dimension DISPLAYS.
+  const sizeDisplayCoupled = (primitive) => {
+    const row = SIZE_DISPLAY[primitive];
+    return !!row && Object.keys(row).some((k) => row[k].coupled === true);
+  };
+  const sizeLabel = (primitive, key, fallback) => {
+    const conv = sizeDisplay(primitive, key);
+    if (conv && conv.label) return conv.label;
+    const row = SIZE_LABEL[primitive];
+    return (row && row[key]) || fallback;
+  };
+
   // A swap can legitimately need a big factor (a 200 mm box → a capsule whose
   // default is 32 mm across is ×6.25), but a pathological bag must not produce
   // an absurd one. 0.1×..12× brackets every in-range pair.
@@ -1195,6 +1314,12 @@
     PRIMITIVE_CREATE_DEFAULTS,
     PRIMITIVE_SIZE_KEYS,
     PRIMITIVE_SIZE_RANGE,
+    // Display/label truth for the Geometry rows (pure metadata — see above).
+    SIZE_DISPLAY,
+    SIZE_LABEL,
+    sizeDisplay,
+    sizeDisplayCoupled,
+    sizeLabel,
     primitiveNominalSize,
     buildPrimitiveParams,
     EDGE_STYLE_CLASSES,
