@@ -950,9 +950,9 @@
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {},
-    { SurfaceFill: { buildObject, chartFor, lineCountFor, __litFloorForTest } });
+    { SurfaceFill: { buildObject, chartFor, lineCountFor, __litFloorForTest, __rankForTest: rankOf } });
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { buildObject, chartFor, lineCountFor, __litFloorForTest };
+    module.exports = { buildObject, chartFor, lineCountFor, __litFloorForTest, __rankForTest: rankOf };
   }
 })();

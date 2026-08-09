@@ -380,4 +380,262 @@ describe('scene3d shadow & highlight anatomy', () => {
       });
     });
   });
+  // ── ROUND 3 ────────────────────────────────────────────────────────────────
+  //
+  // Round 2's verdict was REVISE on one headline finding: the curved path was
+  // not shading AT ALL. `bands` 2/3/4 produced pixel-identical drawings on
+  // curved geometry (fill ink 1359/1447/1464mm, density grids identical), so the
+  // 0.89 lit/dark ratio reported that round was a rounding error on a signal
+  // that did not exist. These pin the signal.
+  describe('the curved path actually shades (O12)', () => {
+    const CAPSULE = {
+      id: 'cap', name: 'Capsule', primitive: 'capsule', params: { radius: 26, height: 56 },
+      transform: { x: 0, y: 54, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+    };
+    const toneN = (n) => clone({
+      2: { enabled: true, bands: 2, thresholds: [0.5], ladder: [0.25, 0.8], specular: { enabled: true, size: 1 } },
+      3: { enabled: true, bands: 3, thresholds: [0.33, 0.66], ladder: [0.2, 0.5, 0.85], specular: { enabled: true, size: 1 } },
+      4: clone(TONE4),
+    }[n]);
+    const fillInk = (paths, id) => paths
+      .filter((p) => p.meta && p.meta.kind === 'sceneFill' && p.meta.sceneTarget.objectId === id)
+      .reduce((s, p) => s + inkOf(p), 0);
+
+    // Measured as a SPATIAL PROFILE, not as a total. Round 2's defect was not
+    // "the totals are close" — the totals moved 7% — it was that the DENSITY
+    // GRIDS were identical: the same ink in the same places, so the drawing did
+    // not change. And a total is the wrong instrument anyway: adding a band
+    // re-partitions the form, it does not add ink (that is the same conservation
+    // principle C11 states for the shadow's Layers). So bin the object's own
+    // fill ink into a coarse screen grid and compare the normalized profiles.
+    const inkProfile = (paths, id, n = 10) => {
+      const cells = new Array(n * n).fill(0);
+      let lo = Infinity; let hi = -Infinity; let loY = Infinity; let hiY = -Infinity;
+      const own = paths.filter((p) => p.meta && p.meta.kind === 'sceneFill'
+        && p.meta.sceneTarget.objectId === id);
+      own.forEach((p) => p.forEach((q) => {
+        if (q.x < lo) lo = q.x; if (q.x > hi) hi = q.x;
+        if (q.y < loY) loY = q.y; if (q.y > hiY) hiY = q.y;
+      }));
+      const w = (hi - lo) || 1; const h = (hiY - loY) || 1;
+      let total = 0;
+      own.forEach((p) => {
+        for (let i = 1; i < p.length; i += 1) {
+          const mx = (p[i - 1].x + p[i].x) / 2;
+          const my = (p[i - 1].y + p[i].y) / 2;
+          const L = segLen(p[i - 1], p[i]);
+          const cx = Math.min(n - 1, Math.max(0, Math.floor(((mx - lo) / w) * n)));
+          const cy = Math.min(n - 1, Math.max(0, Math.floor(((my - loY) / h) * n)));
+          cells[cy * n + cx] += L; total += L;
+        }
+      });
+      return total > 0 ? cells.map((c) => c / total) : cells;
+    };
+    // L1 distance between two normalized profiles: 0 = the same drawing.
+    const profileDist = (a, b) => a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0);
+
+    it('band count re-partitions the curved fill (the density grid MOVES)', () => {
+      const prof = [2, 3, 4].map((n) => inkProfile(compose({ objects: [CAPSULE], tone: toneN(n) }), 'cap'));
+      const ink = [2, 3, 4].map((n) => fillInk(compose({ objects: [CAPSULE], tone: toneN(n) }), 'cap'));
+      ink.forEach((v) => expect(v).toBeGreaterThan(0));
+      // Round 2 measured 0 here — the grids were IDENTICAL below row 6.
+      expect(profileDist(prof[0], prof[1])).toBeGreaterThan(0.05);
+      expect(profileDist(prof[1], prof[2])).toBeGreaterThan(0.05);
+      // bands = 4 is the only setting that opens the terminator dip AND the
+      // reflected rim (§5.3), so it must be the biggest step of the three.
+      expect(profileDist(prof[1], prof[2])).toBeGreaterThan(profileDist(prof[0], prof[1]));
+    });
+
+    it('the dither rank is decorrelated from the family coordinate', () => {
+      // THE root cause. Every family emitted line i with dither threshold
+      // (i+0.5)/count, and line i sits at parameter b = (i+0.5)/count — rank and
+      // position were the same number, so "keep the fraction cov" cut the family
+      // at a LONGITUDE instead of thinning it. A monotonic rank cannot produce an
+      // evenly spread subset; a bit-reversed one can.
+      const { lineCountFor } = V.Scene3D.SurfaceFill;
+      expect(typeof lineCountFor).toBe('function');
+      const rank = V.Scene3D.SurfaceFill.__rankForTest;
+      expect(typeof rank).toBe('function');
+      const N = 32;
+      const ranks = Array.from({ length: N }, (_, i) => rank(i));
+      // Not monotonic — the fatal property of (i+0.5)/count.
+      const monotonic = ranks.every((r, i) => i === 0 || r > ranks[i - 1]);
+      expect(monotonic).toBe(false);
+      // Any PREFIX is evenly spread, which is what makes coverage mean density:
+      // taking the first half must cover both halves of the parameter range.
+      const half = ranks.slice(0, N / 2);
+      expect(half.filter((r) => r < 0.5).length).toBeGreaterThan(N / 8);
+      expect(half.filter((r) => r >= 0.5).length).toBeGreaterThan(N / 8);
+    });
+  });
+
+  // O1 / O3 / O21. Round 2's faceted path read
+  //   `if (terminator) gain = Math.max(gain, coverageGain(0))`
+  // which makes a terminator facet IDENTICAL to a band-0 facet, so T could never
+  // exceed F by construction no matter what the ladder said.
+  describe('terminator out-inks the form shadow (O1, O3, O17, O21)', () => {
+    it('the T zone carries a crossed family and F does not', () => {
+      const R = V.Scene3D.Regions;
+      expect(typeof R.formZone).toBe('function');
+      expect(R.formInk('T').cross).toBeGreaterThan(0);
+      expect(R.formInk('F').cross).toBe(0);
+      // §2.3 bans +90 outright: an orthogonal pair reads as a square grid.
+      expect(R.CROSS_OBJ_DEG).not.toBe(90);
+      expect(R.CROSS_OBJ_DEG).toBeGreaterThan(30);
+      expect(R.CROSS_OBJ_DEG).toBeLessThan(90);
+    });
+
+    it('reflected light exists and lifts DOWN-facing surfaces near the ground', () => {
+      // `grep -rn "bounce|reflected|groundProx" src/` returned NOTHING in Round 2:
+      // every Lambert term was max(0, n.L) with no floor, so a low-poly sphere's
+      // LOWEST facets came out its DARKEST.
+      const R = V.Regions || V.Scene3D.Regions;
+      const ground = { y0: 0, height: 80 };
+      const down = R.reflectedLift({ x: 0, y: -1, z: 0 }, { x: 0, y: 4, z: 0 }, ground);
+      const up = R.reflectedLift({ x: 0, y: 1, z: 0 }, { x: 0, y: 4, z: 0 }, ground);
+      const far = R.reflectedLift({ x: 0, y: -1, z: 0 }, { x: 0, y: 78, z: 0 }, ground);
+      expect(down).toBeGreaterThan(0.8);
+      expect(up).toBe(0);            // bounce comes UP; up-facing surfaces miss it
+      expect(far).toBeLessThan(down); // and it dies over about one object height
+      // R is lighter than F — that is the second half of the dip.
+      expect(R.formInk('R').coverage).toBeLessThan(R.formInk('F').coverage);
+      expect(R.formInk('T').coverage).toBeGreaterThanOrEqual(R.formInk('F').coverage);
+    });
+
+    it('the dip only opens at bands = 4 (spec §5.3)', () => {
+      const R = V.Scene3D.Regions;
+      const lights = [clone(SUN)];
+      const ground = { y0: 0, height: 80 };
+      // A down-facing, unlit normal: T/F/R territory.
+      const n = { x: -0.3, y: -0.9, z: -0.3 };
+      const at = (tone) => R.formZone(n, { x: 0, y: 5, z: 0 }, { tone, lights, ground });
+      const t2 = { enabled: true, bands: 2, thresholds: [0.5], ladder: [0.25, 0.8] };
+      const t3 = { enabled: true, bands: 3, thresholds: [0.33, 0.66], ladder: [0.2, 0.5, 0.85] };
+      expect(at(t2)).toBe('F');       // 2 and 3 have no room in the ladder
+      expect(at(t3)).toBe('F');
+      expect(at(clone(TONE4))).toBe('R');
+    });
+  });
+
+  // O20 / C15. The cube's LIT TOP face measured D = 0.22 against a less-lit side
+  // face's 0.125 — 1.76x DARKER than a face at lower N.L, so the cube read
+  // side-lit. Cause: the fill is generated in the face's own plane, so a grazing
+  // face's rulings pile up under projection. At steeper angles the same effect
+  // flooded a face to D = 1.000.
+  describe('cube face ordering (O20)', () => {
+    const faceInk = (paths, id) => paths
+      .filter((p) => p.meta && p.meta.kind === 'sceneFill' && p.meta.sceneTarget.objectId === id)
+      .reduce((s, p) => s + inkOf(p), 0);
+    it('a cube seen at a grazing angle does not out-ink itself flat-on', () => {
+      // Same cube, same light, same tone — only the camera pitch moves, which
+      // changes NOTHING about the lighting and therefore must not change the
+      // total tone much. Uncompensated, the grazing view piles the top face's
+      // rulings up and the ink climbs.
+      const shot = (pitch) => {
+        const p = clone(V.ALGO_DEFAULTS.scene3d);
+        p.seed = SEED;
+        p.camera = { ...clone(CAMERA), pitch };
+        p.ground = { enabled: false };
+        p.backdrop = { enabled: false };
+        p.objects = [clone(CUBE)];
+        p.lights = [clone(SUN)];
+        p.tone = clone(TONE4);
+        const base = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 85 } };
+        p.styleTable = { scene: clone(base), byObject: { cube: clone(base) }, byFace: {} };
+        const np = Params.normalizeParams(p);
+        return faceInk(algo.generate(Params.collectSceneParams(np, []),
+          new V.SeededRNG(SEED), new V.SimpleNoise(SEED), BOUNDS) || [], 'cube');
+      };
+      const flat = shot(45);
+      const grazing = shot(8);
+      expect(flat).toBeGreaterThan(0);
+      expect(grazing).toBeGreaterThan(0);
+      // Pure projection should REDUCE the visible top face, never inflate the ink.
+      expect(grazing).toBeLessThan(flat * 1.35);
+    });
+  });
+
+  // Jay, 2026-08-09: "The keep highlight choice should be changed to none and
+  // should represent no highlighting being present at all. This means the lines
+  // must not break." Screenshot: Treatment `Keep`, and the capsule's rulings
+  // visibly breaking behind the flyout.
+  describe('`none` is a total highlight bypass', () => {
+    const CAPSULE = {
+      id: 'cap', name: 'Capsule', primitive: 'capsule', params: { radius: 26, height: 56 },
+      transform: { x: 0, y: 54, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+    };
+    // The reference build: the highlight machinery removed from the pipeline
+    // altogether, which is what specular.enabled:false + treatment none means.
+    const signature = (paths, id) => paths
+      .filter((p) => p.meta && p.meta.sceneTarget && p.meta.sceneTarget.objectId === id)
+      .map((p) => [
+        p.meta.sceneTarget.highlight === true ? 'HL' : '-',
+        p.meta.penId || '-',
+        (p.meta.strokeDash || []).join(':') || '-',
+        inkOf(p).toFixed(4),
+      ].join('|'))
+      .sort()
+      .join('\n');
+
+    ['cap', 'cube', 'lowpoly'].forEach((which) => {
+      const obj = { cap: CAPSULE, cube: CUBE, lowpoly: LOWPOLY }[which];
+      it(`emits no highlight ink on a ${which === 'cap' ? 'curved' : 'faceted'} object (${which})`, () => {
+        const withNone = compose({
+          objects: [obj],
+          styleParams: { highlightTreatment: 'none', highlightPenId: 'pen-hl' },
+        });
+        // NOT ONE path may be tagged as highlight, re-penned, or dashed.
+        withNone
+          .filter((p) => p.meta && p.meta.sceneTarget && p.meta.sceneTarget.objectId === obj.id)
+          .forEach((p) => {
+            expect(p.meta.sceneTarget.highlight).not.toBe(true);
+            expect(p.meta.penId).not.toBe('pen-hl');
+          });
+        expect(signature(withNone, obj.id).length).toBeGreaterThan(0);
+      });
+    });
+
+    it('`none` is unaffected by tone.specular — the glint cap does not fire', () => {
+      const shot = (specEnabled, size) => signature(compose({
+        objects: [CAPSULE],
+        tone: { ...clone(TONE4), specular: { enabled: specEnabled, size } },
+        styleParams: { highlightTreatment: 'none' },
+      }), 'cap');
+      // Round 2's cap fired on the brightest band regardless of whether any
+      // highlight was switched on — the confirmed cause of "chunks simply
+      // missing from my rings". Under `none` every specular setting must be
+      // byte-identical.
+      const off = shot(false, 1);
+      expect(shot(true, 1)).toBe(off);
+      expect(shot(true, 3)).toBe(off);
+      expect(shot(true, 0.05)).toBe(off);
+    });
+
+    it('`none` is also unaffected by highlightMode / sensitivity / density', () => {
+      const shot = (extra) => signature(compose({
+        objects: [CAPSULE],
+        styleParams: { highlightTreatment: 'none', ...extra },
+      }), 'cap');
+      const plain = shot({});
+      expect(shot({ highlightMode: 'lightDriven' })).toBe(plain);
+      expect(shot({ highlightSensitivity: 6 })).toBe(plain);
+      expect(shot({ highlightDensity: 90 })).toBe(plain);
+      expect(shot({ highlightBands: 2 })).toBe(plain);
+    });
+
+    it('a document saved with the old `keep` renders exactly as `none`', () => {
+      // Compatibility is a silent alias rather than a SCENE_MIGRATIONS step:
+      // highlightTreatment lives inside styleTable.scene, every byObject entry
+      // and every byFace entry, so a migration would need a three-scope walker
+      // plus a formatVersion bump to rename one string. The alias covers all of
+      // them at the single point the value is coerced.
+      const legacy = signature(compose({
+        objects: [CAPSULE], styleParams: { highlightTreatment: 'keep' },
+      }), 'cap');
+      const renamed = signature(compose({
+        objects: [CAPSULE], styleParams: { highlightTreatment: 'none' },
+      }), 'cap');
+      expect(legacy).toBe(renamed);
+    });
+  });
 });
