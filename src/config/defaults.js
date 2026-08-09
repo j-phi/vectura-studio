@@ -2069,8 +2069,11 @@
       //   v3 — Curved fill angle: a fresh hatch keeps the panel's 45° seed on a
       //        curved primitive (it now genuinely wraps helically). Only OLD
       //        (pre-v3) saved scenes are pinned back to the meridian family.
+      //   v4 — Buckyball radius: a fresh `solid` buckyball is built at its TRUE
+      //        circumradius (it used to come out 13.1% small). Only OLD (pre-v4)
+      //        saved scenes get their stored radius scaled back down to match.
       // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
-      sceneVersion: 3,
+      sceneVersion: 4,
       seed: 0,
       objects: [
         {
@@ -2147,6 +2150,16 @@
       label: 'Object 3D',
       is3d: true,
       preset: 'object3d-default',
+      // A fresh leaf is born at the current SCENE_VERSION, exactly as a fresh
+      // scene3d monolith is. Without this a brand-new object3d carried NO
+      // sceneVersion, so reopening its document made migrateScene read it as v1
+      // and re-run the whole chain on already-correct params — which would have
+      // shrunk a newly created buckyball by 13.1% the first time it was
+      // reloaded (v4). Legacy documents are unaffected: engine
+      // sanitizeParamTree only walks keys the saved payload actually has, so an
+      // old leaf still arrives without a sceneVersion and still migrates.
+      // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
+      sceneVersion: 4,
       primitive: 'box',
       // per-primitive params bag (box: { sx, sy, sz }; sphere: { radius, detail }; …).
       params: { sx: 40, sy: 40, sz: 40 },

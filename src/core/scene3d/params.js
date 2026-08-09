@@ -35,7 +35,15 @@
   // re-render as a helical wrap. SCENE_MIGRATIONS[2] pins fillAngle = 0 (the
   // meridian family) on the curved objects of a pre-v3 document, so it renders
   // BYTE-IDENTICALLY; new objects keep being born at 45.
-  const SCENE_VERSION = 3;
+  // v4 (Buckyball radius): a `solid` of family buckyball was built 13.1% SMALLER
+  // than its stated Radius — Scene3D.Mesh.scaleMeshToRadius divided by a
+  // Math.max(1, …)-floored circumradius, and the truncated icosahedron is the one
+  // construction whose pre-scale circumradius (0.8685…) is below that floor, so
+  // the divide was swallowed. With the mesh fixed, a saved buckyball would grow
+  // ~15.1% on open. SCENE_MIGRATIONS[3] multiplies a pre-v4 buckyball's stored
+  // radius by that same measured factor, so it renders BYTE-IDENTICALLY; new
+  // buckyballs get the true radius.
+  const SCENE_VERSION = 4;
   // Keyed by SOURCE version: SCENE_MIGRATIONS[n] upgrades an n payload to n+1.
   const SCENE_MIGRATIONS = {};
 
@@ -1284,6 +1292,84 @@
     return src;
   };
   SCENE_MIGRATIONS[2] = migrateCurvedFillAngle;
+
+  // ── SCENE_MIGRATIONS[3] — the buckyball radius correction (v3 → v4). ───────
+  // Scene3D.Mesh.scaleMeshToRadius used to divide by meshBounds().maxRadius,
+  // which is floored at Math.max(1, …) for the twist deformer's benefit. The
+  // truncated icosahedron is the ONLY solid whose pre-scale circumradius sits
+  // below that floor (its vertices are the 1/3 points of a UNIT icosahedron's
+  // edges ⇒ 0.8685…), so the divide was clamped away and a buckyball came out at
+  // 0.8685 · Radius — 13.1% under its stated size, and 13.1% under what the
+  // (now honest) Geometry > Radius row claims. Every other family is exact:
+  // the duals (dodecahedron / goldberg) normalize onto the unit sphere before
+  // scaling, and nothing else calls scaleMeshToRadius at all. (Verified across
+  // all 16 families — only buckyball's vertices move.)
+  //
+  // With the mesh fixed, a saved buckyball would silently grow ~15.1%
+  // (1 / 0.8685). This scales its STORED radius by the same factor so the built
+  // mesh is byte-identical to the one it renders today, while a buckyball
+  // created at v4 gets its true circumradius.
+  //
+  // SCOPE — deliberately narrow:
+  //   • primitive 'solid' AND solidType 'buckyball' only. An absent solidType
+  //     IS a buckyball: PRIMITIVE_PARAM_DEFAULTS.solid.solidType is 'buckyball'
+  //     and buildSolidBaseMesh falls through to the truncated icosahedron, so a
+  //     bag that omits the key rendered small too and must be corrected.
+  //   • 'importedMesh' is explicitly NOT touched — it scales by `radius`
+  //     directly and never routed through the clamped divide.
+  //   • Every other solidType, and every non-solid primitive, is left alone.
+  //   • An absent radius is materialized from PRIMITIVE_PARAM_DEFAULTS.solid
+  //     (20) — the deserialization fill this migration runs *ahead* of — because
+  //     that bag rendered at 0.8685 · 20 too.
+  // Idempotency: the step is version-gated by migrateScene (it runs only while
+  // version < 4 and the payload leaves at SCENE_VERSION), so re-sanitizing an
+  // already-migrated scene never re-applies the factor. Asserted by test.
+  const LEGACY_BUCKYBALL_SOLID_TYPE = 'buckyball';
+  // MEASURED from the mesh, never hardcoded: Scene3D.Mesh derives it from the
+  // raw truncated-icosahedron construction itself, so regenerating that base
+  // mesh moves this factor with it. The literal is only a last-resort fallback
+  // for a runtime where Scene3D.Mesh somehow did not load; it is the same
+  // number, sqrt((5 + 4/sqrt5)/9), and a test pins the two together.
+  const legacyBuckyballScale = () => {
+    const Mesh = Vectura.Scene3D && Vectura.Scene3D.Mesh;
+    const measured = Mesh && typeof Mesh.legacyTruncatedIcosahedronScale === 'function'
+      ? Mesh.legacyTruncatedIcosahedronScale()
+      : NaN;
+    return Number.isFinite(measured) && measured > 0 ? measured : Math.sqrt((5 + 4 / Math.sqrt(5)) / 9);
+  };
+  // An ABSENT params bag is still a buckyball — normalization would fill it from
+  // PRIMITIVE_PARAM_DEFAULTS.solid, which is a buckyball at radius 20, and that
+  // bag rendered small too. An absent solidType likewise falls through to the
+  // truncated icosahedron in buildSolidBaseMesh.
+  const isLegacyBuckyball = (primitive, bag) => {
+    if (primitive !== 'solid') return false;
+    const type = isObject(bag) ? bag.solidType : undefined;
+    return type === undefined || type === null || type === LEGACY_BUCKYBALL_SOLID_TYPE;
+  };
+  const shrinkBuckyballRadius = (bag) => {
+    const src = isObject(bag) ? bag : {};
+    const stored = finite(src.radius, PRIMITIVE_PARAM_DEFAULTS.solid.radius);
+    return { ...src, radius: stored * legacyBuckyballScale() };
+  };
+  const migrateBuckyballRadius = (params) => {
+    const src = isObject(params) ? params : {};
+    // MONOLITH / scene-group shape: inline objects[], each with its own params bag.
+    if (Array.isArray(src.objects)) {
+      let touched = false;
+      const objects = src.objects.map((obj) => {
+        if (!isObject(obj) || !isLegacyBuckyball(obj.primitive, obj.params)) return obj;
+        touched = true;
+        return { ...obj, params: shrinkBuckyballRadius(obj.params) };
+      });
+      return touched ? { ...src, objects } : src;
+    }
+    // LEAF object3d layer shape: params.primitive + the params bag alongside it.
+    if (isLegacyBuckyball(src.primitive, src.params)) {
+      return { ...src, params: shrinkBuckyballRadius(src.params) };
+    }
+    return src;
+  };
+  SCENE_MIGRATIONS[3] = migrateBuckyballRadius;
 
   // Scene migration chain (keyed on params.sceneVersion), then normalization.
   // Payloads NEWER than SCENE_VERSION load as-is (best-effort forward compat).
