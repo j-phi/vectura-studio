@@ -559,11 +559,34 @@ describe('scene3d tone goldens', () => {
       expect(after.fillPathsByFace).not.toEqual(before.fillPathsByFace);
     });
 
-    test('a flipped ladder read moves the CURVED golden (surface-fill.js coverageForSample)', () => {
+    // The curved path's ladder READ SITE MOVED in Round 3. It used to read
+    // `Regions.coverageFor` directly (coverageForSample); it now classifies the
+    // sample into a form ZONE and reads `Regions.formInk`, because the ladder's
+    // own numbers cannot express T > F > R — Lambert is clamped, so T, F and R
+    // are all I = 0 and no threshold can separate them. `coverageForSample`
+    // survives only as the no-zone fallback. So the inversion probe has to flip
+    // the site the curved fill actually consults, or it proves nothing.
+    const withFlippedFormInk = (fn) => {
+      const Regions = V.Scene3D.Regions;
+      const original = Regions.formInk;
+      const swap = { L: 'F', M: 'F', F: 'L', T: 'L', R: 'M', H: 'H' };
+      Regions.formInk = (zone) => original(swap[zone] || zone); // read the OTHER end
+      try { return fn(); } finally { Regions.formInk = original; }
+    };
+
+    test('a flipped ladder read moves the CURVED golden (surface-fill.js formInk)', () => {
       const before = summaryFor('sphere-bands-3');
-      const after = withFlippedLadder(() => summaryFor('sphere-bands-3'));
+      const after = withFlippedFormInk(() => summaryFor('sphere-bands-3'));
       expect(after).not.toEqual(before);
       expect(after.fillGrid).not.toEqual(before.fillGrid);
+    });
+
+    test('the curved fill no longer reads coverageFor when zones are live', () => {
+      // Not a redundancy: it PINS where the read moved to. If a future refactor
+      // routes the curved fill back through coverageFor, this fails and the
+      // probe above must be re-pointed rather than silently going blind.
+      const before = summaryFor('sphere-bands-3');
+      expect(withFlippedLadder(() => summaryFor('sphere-bands-3'))).toEqual(before);
     });
 
     test('the flip is fully reverted — the goldens are re-measurable afterwards', () => {
