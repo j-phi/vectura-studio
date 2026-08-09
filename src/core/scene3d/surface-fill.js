@@ -203,7 +203,16 @@
     // disabled it keeps the ladder coverage. This is the live wiring of the Tone
     // section's Specular On/Off + size (they were previously dead), and doubles
     // as the "dark specular" fix — the bright band reads LIGHTER, never denser.
-    const specOn = Boolean(useLadder && tone.specular && tone.specular.enabled !== false);
+    // `none` — the total highlight/specular BYPASS (Jay, 2026-08-09: "none
+    // should represent no highlighting being present at all. This means the
+    // lines must not break"). It kills the glint cap outright, which is the
+    // confirmed cause of the "chunks simply missing from my rings with
+    // highlights off" report: the cap fired on the brightest band regardless of
+    // whether any highlight was switched on. Under `none` there is no H zone, no
+    // cap, no highlight channel and no highlight pen — the fill is exactly what
+    // the tone ladder made.
+    const noHL = opts.noHighlight === true;
+    const specOn = Boolean(useLadder && !noHL && tone.specular && tone.specular.enabled !== false);
     const specSize = specOn ? clamp(finite(tone.specular.size, 1), 0, 3) : 0;
     const nB = ladderLen;
     // I8 — shadow SENSITIVITY: graded darkening on the dark end (stage count).
@@ -473,7 +482,7 @@
               // run. sensitivity 1 → whole region treated (binary); N → graded.
               const treated = sfHash(Math.round(smp.x * 4), Math.round(smp.y * 4)) < stg.openness;
               const tr = ld.treatment;
-              if (tr === 'keep' || tr === 'dashed' || tr === 'dotted') {
+              if (tr === 'dashed' || tr === 'dotted') {
                 if (treated) { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); }
                 else { flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); }
               } else if (tr === 'sparse' || tr === 'stippleOut') {
@@ -520,10 +529,6 @@
             // highlight band): drop = bare paper (byte-identical to pre-Phase-4).
             if (!hl || !hlIsHL(smp.I)) { flush(); flushHL(); continue; }
             const t = hl.treatment;
-            // keep: re-emit the highlight-band lines on the highlight CHANNEL
-            // (tagged + highlight pen) instead of the base run, so keep is a
-            // VISIBLE highlight — not indistinguishable from plain full hatch.
-            if (t === 'keep') { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); continue; }
             if (t === 'dashed' || t === 'dotted') { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); continue; }
             // O11/O14 — `sparse` and `stippleOut` used to push their survivors
             // into the BASE run, untagged: they came out in the object pen and

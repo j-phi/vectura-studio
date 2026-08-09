@@ -455,6 +455,29 @@
         return c ? { x: x / c, y: y / c, z: z / c } : null;
       };
 
+      // The object's own FOOTING — world-Y floor and height — for the reflected
+      // (bounce) term of §5.2. Bounce comes up off the ground and dies over
+      // roughly one object height, so a floating object must not collect light
+      // it cannot physically receive. Cached per record: every sample of a
+      // curved fill asks for it.
+      const groundCache = new Map();
+      const recordGround = (record) => {
+        if (!record) return null;
+        if (groundCache.has(record)) return groundCache.get(record);
+        let lo = Infinity; let hi = -Infinity;
+        ((record && record.faces) || []).forEach((f) => {
+          ((f && f.worldVerts) || []).forEach((pw) => {
+            if (pw && Number.isFinite(pw.y)) {
+              if (pw.y < lo) lo = pw.y;
+              if (pw.y > hi) hi = pw.y;
+            }
+          });
+        });
+        const g = (Number.isFinite(lo) && hi > lo) ? { y0: lo, height: hi - lo } : null;
+        groundCache.set(record, g);
+        return g;
+      };
+
       // Hatch a flat face IN ITS OWN PLANE and project the result to screen, so
       // the strokes lie on the surface and foreshorten with it — a cube reads as
       // three distinct 3D planes, not one flat screen field. The hatch angle is
@@ -544,16 +567,29 @@
         return clamp(Regions.specularTerm(normalWorld, worldPoint, activeLights, scene.camera, specShininess), 0, 1);
       };
 
+      // FORM ZONE for a facet — the faceted twin of the curved classifier, and
+      // the same function, which is what keeps a cube and a sphere in the same
+      // zones under one light (§5.5.3, the I27 contract). The one difference is
+      // that `terminator` is decided HERE and handed in: on a facet the
+      // terminator is topological, and the dihedral gate (a cube has an edge,
+      // not a terminator) is the thing that must not be second-guessed.
+      const faceZone = (normalWorld, worldPoint, face, record) => {
+        if (!Regions || typeof Regions.formZone !== 'function') return null;
+        return Regions.formZone(normalWorld, worldPoint, {
+          tone: p.tone,
+          lights: activeLights,
+          ground: recordGround(record),
+          terminator: Boolean(record && face && terminatorFaces(record).has(face)),
+        });
+      };
+
       const spacingBand = (normalWorld, styleParams, worldPoint, face, record, opts) => {
         const s0 = hatchSpacing(styleParams.fillDensity);
         if (!toneOn) return { spacing: s0, bandIdx: -1, terminator: false };
-        // O14 — `keep` on a faceted object. Before this the faceted path had NO
-        // keep branch at all: it fell through to the ordinary band-gained hatch,
-        // so picking `keep` on a cube changed nothing on paper. Keeping the
-        // highlight band means keeping its ink — the face renders at the FULL
-        // fill density instead of the ladder's near-blank cap, which is a
-        // visible, one-directional difference from every other treatment.
-        if (opts && opts.hlKeep) return { spacing: s0, bandIdx: Regions.band(intensityFn(normalWorld, worldPoint), p.tone), terminator: false };
+        // `none` — the total highlight/specular bypass (Jay, 2026-08-09). Nothing
+        // below may thin, re-space or re-tag this facet's ink on a highlight's
+        // account, so the specular gain multiplier is skipped outright.
+        const hlOff = styleParams.highlightTreatment === 'none' || styleParams.highlightTreatment === 'keep';
         const I = intensityFn(normalWorld, worldPoint);
         const bandIdx = Regions.band(I, p.tone);
         let gain = coverageGain(bandIdx);
@@ -568,14 +604,26 @@
         // negative space bounded by the surrounding hatch, never a drawn disc.
         // O24: the response must EXTINGUISH as tone.specular.size → 0, so the
         // size multiplies straight through with no floor under it.
-        const S = faceSpecular(normalWorld, worldPoint);
+        const S = hlOff ? 0 : faceSpecular(normalWorld, worldPoint);
         if (S > 0 && specSizeFaceted > 0) gain *= clamp(1 - 0.55 * specSizeFaceted * S, 0.25, 1);
         const terminator = Boolean(record && face && terminatorFaces(record).has(face));
-        // The ladder tops out at 1.6x gain, which cannot reach a core shadow. Past
-        // the spacing floor density goes into a second DIRECTION, so a terminator
-        // facet is flagged for a crossed family rather than pushed denser.
-        if (terminator) gain = Math.max(gain, coverageGain(0));
-        return { spacing: Math.max(penWidth, s0 / gain), bandIdx, terminator };
+        // ── The form-zone ladder on facets (§5.1) ──────────────────────────────
+        //
+        // Round 2 wrote `if (terminator) gain = max(gain, coverageGain(0))`, which
+        // made a terminator facet IDENTICAL to a band-0 facet: T could never
+        // exceed F by construction, so O1/O3/O21 were unreachable no matter what
+        // the ladder said. The ceiling is real — gain tops out at 1.6 — so the
+        // excess has to go into a second DIRECTION (§5.0), which `faceHatchLines`
+        // now spends on T and ONLY on T. Band 0 loses the +90 cross it used to
+        // get for free, which is what opens the gap between T and F.
+        //
+        // R (reflected) is the other half of the dip: the away-facing rim was
+        // falling to a hard Lambert 0 with nothing under it, so a low-poly
+        // sphere's LOWEST facets came out its darkest. R lightens them back.
+        const zone = faceZone(normalWorld, worldPoint, face, record);
+        if (zone === 'T') gain = Math.max(gain, coverageGain(0));
+        else if (zone === 'R') gain = Math.min(gain, coverageGain(0) * 0.55);
+        return { spacing: Math.max(penWidth, s0 / gain), bandIdx, terminator, zone };
       };
 
       // In-plane basis for a flat face: its world verts expressed in a 2D (u,v)
@@ -634,6 +682,9 @@
       // hatch at fillAngle; family-B (crosshatch only) is at fillAngle +
       // crossAngleDelta with spacing × crossDensityRatio (ratio > 1 ⇒ sparser
       // B); tripleHatch adds a third pass at +45° in the darkest tone band only.
+      // §2.3 — object-side crossed families are +65° / +32°, NEVER +90°.
+      const CROSS_OBJ_DEG_B = (Regions && Regions.CROSS_OBJ_DEG) || 65;
+      const CROSS_OBJ_DEG_C = 32;
       const crossFamilies = (target, angleDeg, spacing, styleParams, crossPass, darkBand, push) => {
         push(hatchPolygon(target, { angleDeg, spacing }));
         if (crossPass) {
@@ -641,12 +692,22 @@
           const ratio = clamp(finite(styleParams.crossDensityRatio, 1), 0.25, 2);
           push(hatchPolygon(target, { angleDeg: angleDeg + delta, spacing: spacing * ratio }));
           if (styleParams.tripleHatch === true && darkBand) {
-            push(hatchPolygon(target, { angleDeg: angleDeg + 45, spacing: spacing * ratio }));
+            // §2.3 — the tone-driven third pass sits at +32°, not +45°. With
+            // family B already at the user's delta, +45 lands close enough to A
+            // or B to beat against it.
+            push(hatchPolygon(target, { angleDeg: angleDeg + CROSS_OBJ_DEG_C, spacing: spacing * ratio }));
           }
         } else if (darkBand) {
-          // Plain hatch densifies the darkest band with a perpendicular pass
-          // (extra ink where the surface is unlit) — NOT the crosshatch family.
-          push(hatchPolygon(target, { angleDeg: angleDeg + 90, spacing }));
+          // The TERMINATOR's second family. Two Round-2 defects, both fixed here:
+          //
+          //   O17 — it ruled at +90°, which is a square grid. On a faceted object
+          //         that reads as wire mesh, and it beats against the raster.
+          //         §2.3 bans +90 outright; +65 is the engraver's answer.
+          //   O1  — it fired on ALL of band 0, so the form shadow got the same
+          //         two directions the core shadow did and T could never out-ink
+          //         F. `darkBand` is now the T zone alone (see faceHatchLines),
+          //         which is what opens the dip.
+          push(hatchPolygon(target, { angleDeg: angleDeg + CROSS_OBJ_DEG_B, spacing }));
         }
       };
 
@@ -656,6 +717,25 @@
       // independent connected passes.
       const maybeLink = (segs, styleParams) =>
         (styleParams.linkFill === true && !draft ? linkBoustrophedon(segs) : segs);
+
+      // Screen-space compression of one unit measured ACROSS the rulings, under
+      // the current projection. 1 = face-on, → 0 as the face turns edge-on.
+      // Sampled numerically from the scaffold's own uv→screen map so it is exact
+      // for every projection mode (orthographic and perspective alike).
+      const uvCompression = (scaf, acrossAngleDeg) => {
+        if (!scaf || typeof scaf.toScreen !== 'function') return 1;
+        const a = finite(acrossAngleDeg, 0) * Math.PI / 180;
+        const nx = Math.cos(a); const ny = Math.sin(a);
+        const D = 1; // one world mm across the rulings
+        const o = scaf.uv[0] || { x: 0, y: 0 };
+        const p0 = scaf.toScreen({ x: o.x, y: o.y });
+        const p1 = scaf.toScreen({ x: o.x + nx * D, y: o.y + ny * D });
+        if (!p0 || !p1 || !Number.isFinite(p0.x) || !Number.isFinite(p1.x)) return 1;
+        const k = Math.hypot(p1.x - p0.x, p1.y - p0.y) / D;
+        return clamp(k, 0.12, 4); // floored: an edge-on face must not ask for infinity
+      };
+      // §0 / C15 — no single family may rule below 1.2 x pen width ON PAPER.
+      const PLOT_FLOOR_MULT_OBJ = 1.2;
 
       const faceHatchLines = (face, styleParams, normalWorld, crossPass, record, hlOpts) => {
         // angleRef (Phase 2): 'face' (default) measures the hatch angle in the
@@ -673,18 +753,41 @@
           // — snaps back to the surface-oriented hatch on release.
           const sb = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
           const lines = [];
-          crossFamilies(face.polygon, userAngle, sb.spacing, styleParams, crossPass, sb.bandIdx === 0 || sb.terminator,
+          crossFamilies(face.polygon, userAngle, sb.spacing, styleParams, crossPass, sb.zone === 'T',
             (segs) => maybeLink(segs, styleParams).forEach((l) => lines.push(l)));
           return lines;
         }
-        const { spacing, bandIdx, terminator } = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
+        const { spacing, zone } = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
         // worldUp rotates the in-plane base angle so the lines follow world
         // vertical; 'face' leaves the user angle measured in the face frame.
         const baseAngle = angleRef === 'worldUp' ? worldUpAngleInUV(scaf) + userAngle : userAngle;
         const uvLines = [];
+        // ── FORESHORTENING COMPENSATION (O20, and half of C15) ─────────────────
+        //
+        // The fill is generated in the face's OWN plane in world mm and then
+        // projected, which is what makes a cube read as three 3D planes. But it
+        // also means a grazing face's spacing is COMPRESSED on paper: the tone
+        // the ladder asked for is not the tone that lands.
+        //
+        // The cube proved it. Top face N·L = 0.707, near side N·L = 0.5 — the top
+        // is the better-lit face and must be the lighter one. Measured, the top
+        // came out D = 0.22 against the side's 0.125: 1.76x DARKER, purely
+        // because the top is seen at 22 degrees and its rulings piled up. The cube
+        // read side-lit. At a steeper grazing angle the same effect flooded a face
+        // to D = 1.000 — solid black, well under the 1.2 x pen floor, and a wet
+        // blown-out plot.
+        //
+        // So measure how much one unit ACROSS the rulings compresses under the
+        // projection and divide it back out. The tone ladder then lands in SCREEN
+        // space, where the eye reads it, and the plot-safe floor is enforced there
+        // too. `kFloor` stops a near-edge-on face from asking for infinite spacing.
+        const compress = uvCompression(scaf, baseAngle + 90);
+        const screenSpacing = Math.max(spacing, PLOT_FLOOR_MULT_OBJ * penWidth);
+        const planeSpacing = screenSpacing / compress;
         // A terminator facet crosses a second family: the ladder tops out at 1.6x
-        // gain, so the core shadow is unreachable by spacing alone.
-        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, bandIdx === 0 || terminator,
+        // gain, so the core shadow is unreachable by spacing alone. Reserved for
+        // T — band 0 alone no longer buys a second direction (O1/O17).
+        crossFamilies(scaf.uv, baseAngle, planeSpacing, styleParams, crossPass, zone === 'T',
           (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)));
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
@@ -721,7 +824,7 @@
         const SREG = 0.025;
         const N = hlCfg.sensitivity;
         const treat = hlCfg.treatment;
-        const routeHL = treat === 'keep' || treat === 'dashed' || treat === 'dotted';
+        const routeHL = treat === 'dashed' || treat === 'dotted';
         const STEP_MM = 2.5;                         // resample so S varies smoothly across a big face
         const base = []; const hl = [];
         uvLines.forEach((line) => {
@@ -967,11 +1070,15 @@
       // style.params bag. `blank` (default) is a strict no-op — every highlight
       // branch below is gated on treatment !== 'blank', so toned output with the
       // default is byte-identical to pre-Phase-4.
-      const HIGHLIGHT_TREATMENTS = ['blank', 'keep', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
+      // 'none' (formerly 'keep') is a TOTAL bypass, not a subtle treatment — see
+      // the note on HIGHLIGHT_TREATMENTS in params.js. `keep` is accepted as a
+      // silent alias so saved documents render identically.
+      const HIGHLIGHT_TREATMENTS = ['blank', 'none', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
       const ALT_FILL_MAPPERS = new Set(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
       const highlightCfg = (sp) => {
         const s = sp || {};
-        const treatment = HIGHLIGHT_TREATMENTS.includes(s.highlightTreatment) ? s.highlightTreatment : 'blank';
+        const raw = s.highlightTreatment === 'keep' ? 'none' : s.highlightTreatment;
+        const treatment = HIGHLIGHT_TREATMENTS.includes(raw) ? raw : 'blank';
         return {
           treatment,
           // I8 — light-driven highlight/shadow. mode 'lightDriven' places the
@@ -1166,7 +1273,10 @@
               // (hatch/crosshatch) with tone on and not a draft frame; region
               // mappers fall through to the perFace path. burst/altFill keep using
               // the region pass (the base fill is suppressed as before).
+              // `none` is a total bypass — not even lightDriven may re-route this
+              // face's ink (Jay, 2026-08-09).
               const faceLD = toneOn && !draft && faceHL.mode === 'lightDriven'
+                && faceHL.treatment !== 'none'
                 && !REGION_MAPPERS.has(style.mapper)
                 && faceHL.treatment !== 'burst' && faceHL.treatment !== 'altFill';
               if (faceLD) {
@@ -1201,7 +1311,7 @@
                   return; // lightDriven handled this face
                 }
               }
-              const faceIsHL = toneOn && faceHL.treatment !== 'blank'
+              const faceIsHL = toneOn && faceHL.treatment !== 'blank' && faceHL.treatment !== 'none'
                 && isHighlightBand(intensityFn(face.normalWorld, faceWorldCentroid(face)), faceHL.bands);
               const suppressFill = faceIsHL && (faceHL.treatment === 'burst' || faceHL.treatment === 'altFill');
               if (!suppressFill) {
@@ -1214,11 +1324,13 @@
                 // real mapper. Line fills (hatch/crosshatch) hatch IN-PLANE for the
                 // 3D read; region fills (contour/spiral/stipple) fill the projected
                 // face polygon and are mapped back onto the plane below.
-                const hlKeep = faceIsHL && faceHL.treatment === 'keep';
                 let lines;
                 if (draft || !REGION_MAPPERS.has(style.mapper)) {
-                  lines = faceHatchLines(face, fillParams, face.normalWorld, style.mapper === 'crosshatch', record,
-                    hlKeep ? { hlKeep: true } : null);
+                  // The former `keep` branch (render the highlight face at FULL
+                  // density instead of the ladder's cap) is gone with the
+                  // treatment: `none` must leave the fill exactly as the ladder
+                  // made it, which means not overriding the spacing either.
+                  lines = faceHatchLines(face, fillParams, face.normalWorld, style.mapper === 'crosshatch', record, null);
                 } else {
                   lines = faceRegionLines(face, style.mapper, face.normalWorld, fillParams);
                 }
@@ -1436,8 +1548,13 @@
             // I8 — lightDriven engages the highlight path even with the 'blank'
             // treatment (blank in lightDriven = a graded blank glint), and adds
             // per-sample shadow grading. perFace + blank stays the no-op.
-            const grpLD = toneOn && grpHL.mode === 'lightDriven';
-            const hlActive = toneOn && (grpHL.treatment !== 'blank' || grpLD);
+            // `none` — the total highlight bypass (Jay, 2026-08-09): no ink may
+            // be removed, thinned, re-spaced, dashed, re-penned or re-tagged on a
+            // highlight's account, and the glint cap must not fire. It outranks
+            // lightDriven, which is a highlight PLACEMENT mode, not a treatment.
+            const grpHLOff = grpHL.treatment === 'none';
+            const grpLD = toneOn && !grpHLOff && grpHL.mode === 'lightDriven';
+            const hlActive = toneOn && !grpHLOff && (grpHL.treatment !== 'blank' || grpLD);
             // Shadow sensitivity applies in BOTH modes (default 1 = no-op).
             const grpShadowSens = toneOn ? grpHL.shadowSensitivity : 1;
             if (chartParams) {
@@ -1505,8 +1622,9 @@
                 // modes now — under perFace it was previously placed by "the top
                 // tone band", which is why it covered a quarter of the silhouette
                 // and ignored `tone.specular` entirely (O4/O5/O24).
-                specularFn,
+                specularFn: grpHLOff ? null : specularFn,
                 specShininess,
+                noHighlight: grpHLOff,
                 xray: (grpXray && grpXray.backFaces)
                   ? { backFaces: true, backDensity: grpCueDensity ? 1 : grpXray.backDensity } : null,
                 highlight: hlActive ? {

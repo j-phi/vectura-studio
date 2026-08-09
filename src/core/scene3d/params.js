@@ -381,7 +381,28 @@
   // Phase 4 — highlight (specular band) treatments. 'blank' is the legacy
   // default (the brightest band drops to bare paper). altFillMapper reuses the
   // surface-fill mapper set.
-  const HIGHLIGHT_TREATMENTS = ['blank', 'keep', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
+  //
+  // 'none' REPLACES the former 'keep' (Jay, 2026-08-09): "the keep highlight
+  // choice should be changed to none and should represent no highlighting being
+  // present at all. This means the lines must not break." So `none` is not a
+  // treatment that draws something subtle — it is a total BYPASS of the
+  // highlight and specular machinery. No ink is removed, thinned, re-spaced,
+  // dashed, re-penned or re-tagged; the glint cap does not fire.
+  //
+  // COMPATIBILITY — silent alias, deliberately NOT a SCENE_MIGRATIONS step.
+  // A migration is keyed to `formatVersion` and would need a version bump plus a
+  // walker that visits `styleTable.scene`, every `byObject[*]` and every
+  // `byFace[*]` to rewrite one string. The alias covers all three scopes (and
+  // presets, and hand-edited params) at the single point where the value is
+  // coerced, so a document saved with `keep` renders exactly as one saved with
+  // `none` — which is what the rename means. Nothing structural changed, so
+  // nothing needs versioning.
+  const HIGHLIGHT_TREATMENTS = ['blank', 'none', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
+  const HIGHLIGHT_TREATMENT_ALIASES = { keep: 'none' };
+  const normalizeHighlightTreatment = (value) => {
+    const aliased = HIGHLIGHT_TREATMENT_ALIASES[value] || value;
+    return HIGHLIGHT_TREATMENTS.includes(aliased) ? aliased : 'blank';
+  };
   const ALT_FILL_MAPPERS = ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'];
   const BURST_CENTERS = ['specular', 'centroid'];
   // CtS I5 — depth-slice ('contourSlice') controls. All inert on any other
@@ -442,7 +463,7 @@
       // Phase 4 — highlight (specular band) treatments. Default 'blank' = the
       // legacy bare-paper highlight; the others render the top tone band(s) with
       // a distinct treatment instead of dropping.
-      case 'highlightTreatment': return HIGHLIGHT_TREATMENTS.includes(value) ? value : 'blank';
+      case 'highlightTreatment': return normalizeHighlightTreatment(value);
       // I8 — light-driven highlight/shadow mode. 'perFace' (default) = the legacy
       // per-face/per-band highlight (byte-identical). 'lightDriven' places the
       // highlight by ACTUAL lighting (per-sample specular). highlightSensitivity /
