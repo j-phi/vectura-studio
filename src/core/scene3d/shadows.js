@@ -762,7 +762,14 @@
   // penumbra lightening is the price of the contact band existing at all.
   // Perceived coverage composes as 1 - PROD(1 - c_i) because crossed families
   // overlap; treating it as additive would over-report and keep the base too dark.
-  const SATURATION = 0.9;
+  // ROUND 3, designer's answer (c) — "take the separation: headroom, not taste".
+  // At the Round-2 ceiling the flat shadow measured D = 0.527 and Z2 measured
+  // 0.439, so NO contact band could exceed ~1.9x and 4.5x ink landed at D = 0.94
+  // — the solid black already under the low-poly. The flattening bought nothing
+  // and cost the anatomy. So buy the separation by LIGHTENING THE MID, never by
+  // darkening the accent: the whole ladder is built downward, Z0 to 0.70-0.80 and
+  // Z2 to 0.22-0.28. C11 is formally amended to +-35% for this.
+  const SATURATION = 0.78;
   const perceivedCoverage = (spacings, penWidth) => {
     let clear = 1;
     spacings.forEach((s) => { clear *= 1 - clamp(penWidth / Math.max(penWidth, s), 0, 1); });
@@ -972,7 +979,13 @@
     // wedge's length has to change VISIBLY across the slider or the control has
     // not earned its place.
     const soft = clamp(finite(falloff, 0.5), 0.2, 1);
-    const k = 0.03 + 1.2 * soft;
+    // ROUND 3 (C6). k was 0.03 + 1.2*soft — at the default softness that is 0.63,
+    // 2.25x the spec's law, so w(t) outgrew the footprint's local half-width by
+    // t = 0.24 and the umbra died there. Measured: "a fat contact smudge, not a
+    // wedge". The spec's own coefficients (§2.1) put the death at t ~ 0.55 at the
+    // default, which is what makes the wedge read as a SHAPE. `tUmbraMax` below
+    // remains the second lever, so C13's slider range is untouched.
+    const k = 0.06 + 0.44 * soft;
     const w0 = Math.max(0.8, 0.02 * L, UMBRA_RIN * finite(fields.Rin, 0));
     const wAt = (t) => w0 + k * t * L;
     // The wedge also has to END, and `e > w(t)` alone does not end it. On a
@@ -1023,7 +1036,10 @@
     // already budgets, so spend it there rather than leave the ladder flat.
     const floorSp = Math.max(0.05, PLOT_FLOOR_MULT * Math.max(0.05, penWidth));
     const rungScale = sBase > 1e-6 ? (2 * floorSp) / sBase : 1;
-    const scale = clamp(Math.max(headroomScale(sBase, penWidth), rungScale), 1, 1.25);
+    // The 1.25 ceiling was the old "Layers must never weaken the penumbra" rule.
+    // That rule is what pinned Z2 at 0.44 and left the ladder no room; it is
+    // deliberately relaxed here (see SATURATION) so the mid can come down.
+    const scale = clamp(Math.max(headroomScale(sBase, penWidth), rungScale), 1, 2.2);
     const ladder = strideLadder(sBase * scale, penWidth);
     const strideA = ladder.strideA;
     const crossPitch = ladder.crossPitch;
@@ -1081,7 +1097,13 @@
       },
       keepFor: (zone) => zone === Z_CONTACT || zone === Z_UMBRA,
     });
-    if (contactOn && ladder.N >= 3) {
+    // ROUND 3 (C2/O13). The contact collar must be the darkest patch ANYWHERE —
+    // if the object's own terminator out-inks it, the object floats. With the
+    // ladder rebased downward Z0 landed at 0.60 while the form's core shadow
+    // reached 0.81, so the third direction is no longer gated on a coarse master
+    // grid: the collar is the ONE place in the drawing that is allowed three
+    // directions, and it is where the drawing needs them.
+    if (contactOn) {
       emitFamily({
         ...base, angle: angle + CROSS_C_DEG, spacing: crossPitch, familyId: 2,
         meta: zoneMeta(Z_CONTACT),

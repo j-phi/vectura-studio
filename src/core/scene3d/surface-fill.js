@@ -104,8 +104,17 @@
   // possible if the family the ladder subsets is itself dense enough, so when
   // the ladder is active the line budget is FLOORED at a master pitch measured
   // in pen widths. Density still rules above the floor.
-  const MASTER_PITCH_PEN = 2.33; // master grid pitch, × pen width (the DARKEST zone)
-  const PLOT_FLOOR_PEN = 1.2;    // §0 / C15 — no single family may rule below this
+  const MASTER_PITCH_PEN = 2.0;  // master grid pitch, × pen width (the DARKEST zone)
+  // §0 / C15 / designer item #5 — "cap TOTAL coverage, not just per-family
+  // pitch: ~0.75 dark-fraction ceiling above the 1.2 x pen floor". 1.2 x pen is
+  // the plot floor, but a SINGLE family ruling at 1.2 x pen already measures
+  // D ~ 0.83 — and then the terminator's crossed family lands on top of it and
+  // the form hits 0.946, darker than the contact shadow under it (C2/O13 fail:
+  // the object stops sitting on the ground). So family A is floored where it
+  // measures ~0.45, leaving the cross the room it needs to make T read, and the
+  // COMBINED perceived coverage is ceilinged outright.
+  const PLOT_FLOOR_PEN = 2.2;
+  const TOTAL_DARK_CEIL = 0.55;
   const LIT_MAX_PITCH_PEN = 6;   // §5.4 #1 — the centre light may never be blanker
   const MASTER_MAX_LINES = 420;  // pathological-input guard (steps × lines)
 
@@ -364,6 +373,29 @@
       return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, I, S, wN, world, dA, dB };
     };
 
+    // PERPENDICULAR screen pitch between adjacent rulings at this sample.
+    //
+    // The offset between two adjacent lines in PARAMETER space projects to a
+    // screen vector, but that vector's LENGTH is not the spacing the eye (or the
+    // pen) sees: near a silhouette the projection shears hard and the offset
+    // ends up nearly parallel to the rulings themselves, so the true
+    // perpendicular gap is a fraction of it. Measuring the magnitude instead of
+    // the perpendicular component under-reported crowding by 2x exactly where it
+    // mattered, and the form's core shadow flooded to D = 0.81 — darker than the
+    // contact shadow beneath it, which is C2/O13 and means the object floats.
+    // The cross product with the ruling's own screen direction is the fix.
+    const perpPitch = (smp, pitchStep, lineDir) => {
+      if (!pitchStep || !lineDir || !smp.dA || !smp.dB) return null;
+      const ox = smp.dA.x * pitchStep.a + smp.dB.x * pitchStep.b;
+      const oy = smp.dA.y * pitchStep.a + smp.dB.y * pitchStep.b;
+      const lx = smp.dA.x * lineDir.a + smp.dB.x * lineDir.b;
+      const ly = smp.dA.y * lineDir.a + smp.dB.y * lineDir.b;
+      const ll = Math.hypot(lx, ly);
+      if (ll < 1e-9) return Math.hypot(ox, oy);
+      const perp = Math.abs(ox * (ly / ll) - oy * (lx / ll));
+      return perp > 1e-6 ? perp : 1e-6;
+    };
+
     // ── Line budget ────────────────────────────────────────────────────────────
     // Density owns the count, exactly as before, EXCEPT that an active tone
     // ladder floors it: the ladder is a set of subsets of this family, so if the
@@ -395,10 +427,8 @@
         for (let j = 0; j <= 16; j++) {
           const smp = sampleAt(i / 16, j / 16);
           if (!smp || !smp.front || !smp.dA || !smp.dB) continue;
-          const wx = smp.dA.x * acr.a + smp.dB.x * acr.b;
-          const wy = smp.dA.y * acr.a + smp.dB.y * acr.b;
-          const w = Math.hypot(wx, wy);
-          if (w > 1e-6) widths.push(w);
+          const w = perpPitch(smp, acr, { a: -acr.b, b: acr.a });
+          if (w != null && w > 1e-6) widths.push(w);
         }
       }
       if (widths.length >= 8) {
@@ -469,7 +499,7 @@
     // the line to a single form zone: that is how the terminator's crossed
     // family is spent on T alone instead of being sprayed over the whole dark
     // band (O17 — Round 2 crossed ALL of band 0, at 0/90, and it read as wire mesh).
-    const emitLine = (paramAt, threshold, back, lineIndex, count, ladderRank, zoneGate, pitchStep) => {
+    const emitLine = (paramAt, threshold, back, lineIndex, count, ladderRank, zoneGate, pitchStep, lineDir) => {
       const wantFront = !back;
       const rank = Number.isFinite(ladderRank) ? ladderRank : threshold;
       let run = [];
@@ -552,10 +582,8 @@
             // allows — by dropping rulings — and it is what keeps the lit end of
             // the ladder separable instead of saturating into the dark end.
             let cap = 1;
-            if (pitchStep && smp.dA && smp.dB) {
-              const px = smp.dA.x * pitchStep.a + smp.dB.x * pitchStep.b;
-              const py = smp.dA.y * pitchStep.a + smp.dB.y * pitchStep.b;
-              const localPitch = Math.hypot(px, py);
+            const localPitch = perpPitch(smp, pitchStep, lineDir);
+            if (localPitch != null) {
               // Effective pitch is localPitch / coverage and must stay at or above
               // the floor, so the darkest zone may not exceed localPitch/floor.
               // Applied MULTIPLICATIVELY, not as a clamp: where the geometry
@@ -566,7 +594,20 @@
               // flat).
               if (localPitch > 1e-6 && floorPitch > 1e-6) cap = clamp(localPitch / floorPitch, 0, 1);
             }
-            const covCapped = cov * cap;
+            let covCapped = cov * cap;
+            // Perceived coverage composes as 1 - PROD(1 - c_i): the crossed
+            // family overlaps family A, so treating them as additive over-reports
+            // and lets the pair flood. Solve for the most the CROSS may lay down
+            // without the pair passing the ceiling.
+            if (zoneGate && localPitch != null) {
+              {
+                const primary = Regions.formInk(zone).coverage * cap;
+                const cA = clamp((penWidth * primary) / localPitch, 0, 1);
+                const room = cA >= TOTAL_DARK_CEIL ? 0
+                  : 1 - (1 - TOTAL_DARK_CEIL) / (1 - cA);
+                covCapped = Math.min(covCapped, (room * localPitch) / penWidth);
+              }
+            }
             const jit = (sfHash(lineIndex * 2654435761, Math.round((s / FEATHER_BUCKET))) - 0.5) * FEATHER_AMPL;
             dropZone = rank >= covCapped + jit;
             // Dash duty — the reflected rim breaks its rulings rather than
@@ -615,7 +656,8 @@
       for (let i = 0; i < count; i++) {
         const fixVal = (i + 0.5) / count;
         emitLine(axisLine(fixAxis, fixVal), (i + 0.5) / count, back, i, count, rankOf(i), zoneGate,
-          fixAxis === 'b' ? { a: 0, b: 1 / count } : { a: 1 / count, b: 0 });
+          fixAxis === 'b' ? { a: 0, b: 1 / count } : { a: 1 / count, b: 0 },
+          fixAxis === 'b' ? { a: 1, b: 0 } : { a: 0, b: 1 });
       }
     };
 
@@ -670,7 +712,7 @@
           return { a: clamp(a0 + t * da, 0, 1), b: clamp(b0 + t * db, 0, 1) };
         };
       };
-      return { span, lineAt, na, nb };
+      return { span, lineAt, na, nb, da, db };
     };
 
     const emitAngledFamily = (angleDeg, count, back, zoneGate) => {
@@ -684,7 +726,7 @@
         // lines are span/n apart ALONG the family normal, in parameter space.
         const step = fam.span / n;
         if (at) emitLine(at, (i + 0.5) / n, back, i, n, rankOf(i), zoneGate,
-          { a: fam.na * step, b: fam.nb * step });
+          { a: fam.na * step, b: fam.nb * step }, { a: fam.da, b: fam.db });
       }
     };
 
