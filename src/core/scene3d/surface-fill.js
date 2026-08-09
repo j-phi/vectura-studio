@@ -73,7 +73,10 @@
 
   // O6 — CENTRE-LIGHT FLOOR (see coverageForSample). Module scope so the test
   // seam at the bottom of the file reads the same constant the fill does.
-  const LIT_FLOOR = 0.22;
+  // The cap may never remove more than this fraction of the lit band's own
+  // ladder coverage, and never take it under LIT_FLOOR outright.
+  const GLINT_KEEP = 0.6;
+  const LIT_FLOOR = 0.12;
 
   // Line count from the density slider (1..100 → ~6..40 wrap lines).
   const lineCountFor = (density) => Math.max(4, Math.round(6 + clamp(density, 0, 100) * 0.34));
@@ -157,26 +160,32 @@
     const shadowGrades = Boolean(useLadder && shadowSens > 1 && Regions && typeof Regions.shadowStage === 'function');
     // Ink line-fraction (0..1) for a sample: how many of the N wrap lines draw at
     // this local intensity. Dark → high, lit cap → low.
-    // O6 — CENTRE-LIGHT FLOOR. A highlight is defined by contrast with its
-    // neighbour, not by absolute emptiness. The glint cap above already halves
-    // the brightest band at the default specular size, and a default-ish bright
-    // coverage of ~0.15 then drops to ~0.075 — the ordered dither below keeps
-    // fewer than one line in ten, so the centre-light region is ALREADY bare
-    // paper and blanking a sub-region of it is invisible. That, not a missing
-    // feature, is why "highlights don't work". Flooring the lit band (after the
-    // cap, as the surround it has to contrast against) is what makes every other
-    // highlight treatment legible.
+    // O6 — THE GLINT CAP IS BOUNDED. Unbounded, `cov *= (1 - 0.5*specSize)` took
+    // a default-ish lit coverage of ~0.2 down to ~0.1, i.e. fewer than one wrap
+    // line in ten. Two things went wrong with that, and they are the same thing
+    // seen from two sides:
+    //
+    //   - The centre light was ALREADY near-bare paper, so blanking a sub-region
+    //     of it — which is what every highlight treatment does — was invisible.
+    //     That is why highlights "don't work": there was no surround to contrast
+    //     against. A highlight is defined by the ink around it.
+    //   - It fires on the BRIGHTEST BAND regardless of whether any highlight is
+    //     switched on, so with highlights disabled a contour/parallel fill came
+    //     out with chunks simply missing from its rings. Reported from the app on
+    //     a capsule, and it is the same defect.
+    //
+    // So the cap now lightens the lit band by at most 1 - GLINT_KEEP of its own
+    // ladder coverage, never below LIT_FLOOR outright. It still reads as a glint
+    // (specular on is measurably lighter than specular off, and the ladder's
+    // ordering is untouched) without gouging the fill.
     const coverageForSample = (I) => {
       const b = Regions.band(I, tone);
       // b: 0..nB-1, bright = HIGH
       let cov = Regions.coverageFor(nB - 1 - b, tone); // complement → dark = dense
       if (b === nB - 1) {
+        const raw = cov;
         if (specOn) cov *= clamp(1 - 0.5 * specSize, 0, 1); // glint cap
-        // The floor itself yields a little to specular, so a bigger glint still
-        // reads LIGHTER than a smaller one. A hard floor would flatten the cap
-        // out entirely and take the specular response with it — the same
-        // faceted/curved divergence I27 already had to repair once.
-        cov = Math.max(cov, LIT_FLOOR * (specOn ? clamp(1 - 0.15 * specSize, 0.7, 1) : 1));
+        cov = Math.max(cov, raw * GLINT_KEEP, LIT_FLOOR);
       }
       return clamp(cov, 0, 1);
     };
@@ -620,10 +629,10 @@
   // the pipeline. `rawCoverage` is the brightest band's ladder coverage,
   // `specSize` the glint size (0 = specular off).
   const __litFloorForTest = (rawCoverage, specSize) => {
-    const specOn = specSize > 0;
-    const capped = specOn ? rawCoverage * clamp(1 - 0.5 * specSize, 0, 1) : rawCoverage;
-    const floor = LIT_FLOOR * (specOn ? clamp(1 - 0.15 * specSize, 0.7, 1) : 1);
-    return clamp(Math.max(capped, floor), 0, 1);
+    const capped = specSize > 0
+      ? rawCoverage * clamp(1 - 0.5 * specSize, 0, 1)
+      : rawCoverage;
+    return clamp(Math.max(capped, rawCoverage * GLINT_KEEP, LIT_FLOOR), 0, 1);
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {},

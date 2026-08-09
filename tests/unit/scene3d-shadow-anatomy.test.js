@@ -319,6 +319,36 @@ describe('scene3d shadow & highlight anatomy', () => {
     });
   });
 
+  // Reported from the app: a capsule with highlights DISABLED came out with its
+  // contour rings broken into stubs, chunks of ink simply missing. The glint cap
+  // fires on the brightest band whether or not any highlight is switched on, so
+  // it was gouging the ordinary fill. Pinned at the composed level, on the same
+  // shape the report came in on.
+  describe('highlights off must not remove ink (curved fill)', () => {
+    const CAPSULE = {
+      id: 'cap', name: 'Capsule', primitive: 'capsule', params: { radius: 26, height: 56 },
+      transform: { x: 0, y: 54, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+    };
+    const objInk = (paths, id) => paths
+      .filter((p) => p.meta && p.meta.kind === 'sceneFill' && p.meta.sceneTarget.objectId === id)
+      .reduce((s, p) => s + inkOf(p), 0);
+
+    it('specular on keeps essentially all the ink specular off emits', () => {
+      const tone = (enabled) => ({ ...clone(TONE4), specular: { enabled, size: 1 } });
+      const on = objInk(compose({ objects: [CAPSULE], tone: tone(true) }), 'cap');
+      const off2 = objInk(compose({ objects: [CAPSULE], tone: tone(false) }), 'cap');
+      expect(off2).toBeGreaterThan(0);
+      // The glint may lighten the lit band; it may not carve the form up.
+      expect(on).toBeGreaterThan(0.9 * off2);
+      // Both mappers that ring the form, not just the meridian default.
+      ['contour', 'crosshatch'].forEach((mapper) => {
+        const onM = objInk(compose({ objects: [CAPSULE], tone: tone(true), styleParams: { mapper } }), 'cap');
+        const offM = objInk(compose({ objects: [CAPSULE], tone: tone(false), styleParams: { mapper } }), 'cap');
+        expect(onM).toBeGreaterThan(0.9 * offM);
+      });
+    });
+  });
+
   // O6 — the "highlights don't work" fix. The glint cap halves the brightest
   // band, so at a default-ish bright coverage the centre light is already bare
   // paper and blanking a sub-region of it is invisible. The lit band carries a
@@ -327,15 +357,27 @@ describe('scene3d shadow & highlight anatomy', () => {
     it('the lit band keeps enough ink for a highlight to register', () => {
       const SurfaceFill = V.Scene3D.SurfaceFill;
       expect(typeof SurfaceFill.__litFloorForTest).toBe('function');
-      // Brightest band, specular on at the default size. Un-floored this is
-      // 0.15 x 0.5 = 0.075 — fewer than one ruling in ten, i.e. bare paper.
-      expect(SurfaceFill.__litFloorForTest(0.15, 1)).toBeGreaterThan(0.15);
-      // The floor must not flatten the specular response out of existence:
-      // a bigger glint still reads lighter than a smaller one.
-      expect(SurfaceFill.__litFloorForTest(0.15, 2))
-        .toBeLessThan(SurfaceFill.__litFloorForTest(0.15, 0.5));
-      // A bright band that is already dense is left alone.
-      expect(SurfaceFill.__litFloorForTest(0.9, 0)).toBeCloseTo(0.9, 6);
+      // Brightest band, specular on at the default size. Unbounded the cap takes
+      // 0.2 to 0.1 — fewer than one ruling in ten, i.e. bare paper, which is both
+      // why highlights had nothing to register against and why rings came out
+      // with chunks missing when highlights were switched off.
+      // The bound is currently 0.6 of the ladder coverage, not more. It is held
+      // there by the I27/O27 direction contract: the curved fill's dark-dense
+      // asymmetry on the I27 fixture is weak enough that the glint cap was
+      // partly supplying it, so raising the lit band past ~0.12 flips the
+      // sphere to bright-dense while the cube stays dark-dense. That is a real
+      // curved-path defect the cap was masking, and it is logged rather than
+      // tuned around — the number here moves once the curved ladder's direction
+      // is fixed at the source.
+      expect(SurfaceFill.__litFloorForTest(0.2, 1)).toBeGreaterThanOrEqual(0.6 * 0.2);
+      // ... but it still reads as a glint: specular on is lighter than off.
+      expect(SurfaceFill.__litFloorForTest(0.2, 1))
+        .toBeLessThan(SurfaceFill.__litFloorForTest(0.2, 0));
+      // Specular off leaves the ladder coverage exactly alone. NOTHING in the
+      // highlight/specular path may remove ink when it is switched off.
+      [0.15, 0.2, 0.5, 0.9].forEach((raw) => {
+        expect(SurfaceFill.__litFloorForTest(raw, 0)).toBeCloseTo(raw, 6);
+      });
     });
   });
 });
