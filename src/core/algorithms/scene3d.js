@@ -670,8 +670,21 @@
         // World UP is the reference (it is what an engraver would use); a face
         // whose normal is near-parallel to it falls back to world +X, and only a
         // degenerate face falls back to the old first-edge behaviour.
+        // Gated on `toneOn`, for two separate reasons. Untoned faceted output must
+        // stay byte-identical (six x-ray goldens pin it). And `angleRef` is a
+        // user-facing control whose 'face' setting is DOCUMENTED as "0 = along the
+        // face's first edge" — silently making it world-anchored everywhere would
+        // collapse 'face' and 'worldUp' into the same thing and quietly remove a
+        // dial. Tone is where the defect lives: a ladder can only be read across a
+        // form if adjacent facets' rulings are comparable.
         const axisFor = () => {
-          const cand = [{ x: 0, y: 1, z: 0 }, { x: 1, y: 0, z: 0 }];
+          if (!toneOn) return normalize(sub(wv[1], origin));
+          // World +X first, NOT +Y: `angleRef:'worldUp'` already anchors to world
+          // up, and anchoring the toned default to the same axis would make the
+          // two settings produce identical line directions — collapsing a dial
+          // instead of fixing a defect. Both are stable across facets; they just
+          // are not the same stabilization.
+          const cand = [{ x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }];
           for (let i = 0; i < cand.length; i++) {
             const a = cand[i];
             const proj = sub(a, mul(normalWorld, dot(a, normalWorld)));
