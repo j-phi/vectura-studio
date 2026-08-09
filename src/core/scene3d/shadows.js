@@ -694,6 +694,8 @@
       master,
       floorSp,
       N,
+      sBase,
+      crossPitch: Math.max(floorSp, sBase / 3),
       strideA: {
         [Z_CONTACT]: 1,
         [Z_UMBRA]: Math.max(1, Math.round((N * 2) / 3)),
@@ -701,6 +703,43 @@
         [Z_OUTER]: N * 2,
       },
     };
+  };
+
+  // ── Tonal headroom ────────────────────────────────────────────────────────
+  // A flat shadow at the default density already lays down ~50% ink. The contact
+  // band wants to be ~4x that, and 4 x 50% is not "darker" — it is solid black,
+  // and so is anything above ~2x. Stack a ladder on top of an already-dark base
+  // and the top three rungs collapse into one flooded value; that is the same
+  // trap the old layer model fell into from the other direction.
+  //
+  // So when zones are on, the ladder is scaled so its DARKEST rung lands just
+  // below saturation and the rungs below it keep their RATIOS. Ratios, not
+  // absolute values, are what read as an even tonal ladder (Weber), so the
+  // penumbra lightening is the price of the contact band existing at all.
+  // Perceived coverage composes as 1 - PROD(1 - c_i) because crossed families
+  // overlap; treating it as additive would over-report and keep the base too dark.
+  const SATURATION = 0.9;
+  const perceivedCoverage = (spacings, penWidth) => {
+    let clear = 1;
+    spacings.forEach((s) => { clear *= 1 - clamp(penWidth / Math.max(penWidth, s), 0, 1); });
+    return 1 - clear;
+  };
+  // Darkest zone = family A at stride 1 + both crossed families at stride 1.
+  const darkestCoverage = (sBase, penWidth) => {
+    const l = strideLadder(sBase, penWidth);
+    return perceivedCoverage([l.master, l.crossPitch, l.crossPitch], penWidth);
+  };
+  // Smallest scale >= 1 on sBase that brings the contact band under saturation.
+  // Monotone in the scale, so a short bisection is exact enough and cannot loop.
+  const headroomScale = (sBase, penWidth) => {
+    if (darkestCoverage(sBase, penWidth) <= SATURATION) return 1;
+    let lo = 1; let hi = 8;
+    if (darkestCoverage(sBase * hi, penWidth) > SATURATION) return hi;
+    for (let i = 0; i < 24; i++) {
+      const mid = (lo + hi) / 2;
+      if (darkestCoverage(sBase * mid, penWidth) > SATURATION) lo = mid; else hi = mid;
+    }
+    return hi;
   };
 
   // One hatch family over `rings`, phase-anchored to an ABSOLUTE origin (not the
@@ -898,7 +937,7 @@
     };
     fields.rimFeather = wantOuter ? clamp(L * 0.03, 0.8, 6) : 0;
 
-    const ladder = strideLadder(sBase, penWidth);
+    const ladder = strideLadder(sBase * headroomScale(sBase, penWidth), penWidth);
     const strideA = ladder.strideA;
     const keepA = (zone, i) => {
       const st = strideA[zone] || 1;
@@ -926,7 +965,7 @@
     // below the plot floor goes HERE — into another direction — never into tighter
     // spacing. B rides the umbra as well as the contact (thinning along the throw
     // so the wedge fades before it narrows); C is contact-only.
-    const crossPitch = Math.max(ladder.floorSp, sBase / 3);
+    const crossPitch = ladder.crossPitch;
     emitFamily({
       ...base, angle: angle + CROSS_B_DEG, spacing: crossPitch, familyId: 1,
       meta: zoneMeta(Z_CONTACT),
@@ -1200,21 +1239,47 @@
     // Per caster: a convex hull (cheap draft footprint) AND — when available —
     // its TRUE silhouette loops (outer + inner rims). The full frame prefers the
     // loops so holes stay open (I25); the draft uses the hull.
-    // CONTACT SET — the caster's NADIR drop: its world points flattened to y = 0
-    // and camera-projected. Deliberately NOT the light projection: the contact /
-    // ambient-occlusion band sits where the object meets the ground, which does
-    // not move when the sun does. Convex hull is enough — the collar is thin, so
-    // plan-shape concavity is below its own width.
+    // CONTACT SET — where the caster actually MEETS the ground, dropped straight
+    // down (nadir) and camera-projected. Deliberately NOT the light projection:
+    // ambient occlusion sits where the object meets the ground and does not move
+    // when the sun does.
+    //
+    // Only points NEAR the ground contribute. Dropping the whole silhouette is
+    // wrong for anything that is not a prism: a sphere's full nadir drop is its
+    // entire equatorial disc, so the contact band would swallow the whole near
+    // half of the shadow as one solid mass — which is exactly the flat blob this
+    // work exists to remove, reintroduced from the other side. The near-ground
+    // slice is also the physically right set: it is the region close enough to
+    // occlude the ambient dome, which is what a contact shadow IS. For a resting
+    // box that recovers the whole base; for a sphere, the small cap around the
+    // tangent point.
     const nadirHull = (record) => {
       const world = record.world || [];
-      const pts = [];
+      let minY = Infinity; let maxY = -Infinity;
+      for (let i = 0; i < world.length; i++) {
+        const P = world[i];
+        if (!P || !Number.isFinite(P.y)) continue;
+        if (P.y < minY) minY = P.y;
+        if (P.y > maxY) maxY = P.y;
+      }
+      if (!Number.isFinite(minY)) return null;
+      const gap = Math.max(1, 0.05 * Math.max(0, maxY - minY));
+      const cut = Math.max(minY, 0) + gap;
+      const near = [];
+      const all = [];
       for (let i = 0; i < world.length; i++) {
         const P = world[i];
         if (!P || !Number.isFinite(P.y) || P.y < -1e-6) continue;
         const q = projectPoint(rotatePoint({ x: P.x, y: 0, z: P.z }, camAngles0), projOpts0);
-        if (q && Number.isFinite(q.x) && Number.isFinite(q.y)) pts.push({ x: q.x, y: q.y });
+        if (!q || !Number.isFinite(q.x) || !Number.isFinite(q.y)) continue;
+        const pt = { x: q.x, y: q.y };
+        all.push(pt);
+        if (P.y <= cut) near.push(pt);
       }
-      const hull = convexHull(pts);
+      // A coarse mesh can put no vertex inside the slice (a low-detail sphere's
+      // nearest ring may sit above it); fall back to the full drop rather than
+      // losing the contact band entirely.
+      const hull = convexHull(near.length >= 3 ? near : all);
       return hull.length >= 3 ? hull : null;
     };
 
