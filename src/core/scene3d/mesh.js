@@ -232,11 +232,24 @@
     a.z + (b.z - a.z) * t
   );
 
-  const meshBounds = (vertices) => {
+  // The TRUE circumradius (farthest vertex from the origin) — unfloored.
+  const maxVertexRadius = (vertices) => {
     let maxRadius = 0;
-    let maxDepth = 0;
     (vertices || []).forEach((pt) => {
       maxRadius = Math.max(maxRadius, Math.hypot(pt.x, pt.y, pt.z));
+    });
+    return maxRadius;
+  };
+
+  // `bounds` is REPORTING metadata, consumed by exactly one reader: the twist
+  // deformer's divisor in applyVertexEffects. The Math.max(1, …) floors are that
+  // reader's degenerate guard — an empty/flat mesh must never hand it a 0 to
+  // divide by. They are deliberately kept: every mesh's reported bounds stay
+  // byte-identical, so twist is untouched.
+  const meshBounds = (vertices) => {
+    const maxRadius = maxVertexRadius(vertices);
+    let maxDepth = 0;
+    (vertices || []).forEach((pt) => {
       maxDepth = Math.max(maxDepth, Math.abs(pt.z));
     });
     return {
@@ -250,13 +263,44 @@
     bounds: mesh.bounds || meshBounds(mesh.vertices),
   });
 
+  // Uniformly rescale a construction so its circumradius IS `radius`.
+  //
+  // This used to divide by meshBounds().maxRadius, borrowing the twist guard's
+  // Math.max(1, …) floor — which silently swallowed the divide for any
+  // construction whose pre-scale circumradius is BELOW 1. The truncated
+  // icosahedron (buckyball) is the only such solid: its vertices are the 1/3
+  // points of a UNIT icosahedron's edges, giving a pre-scale circumradius of
+  // sqrt((5 + 4/sqrt5)/9) = 0.8685…, so `scale` clamped to `radius` and the
+  // solid came out 13.1% smaller than its stated Radius. Every other family
+  // either sits exactly on the unit sphere pre-scale (the duals) or never calls
+  // this at all.
+  //
+  // The floor is NOT needed here: the `current > 0` ternary below is the correct
+  // degenerate guard (it was previously dead code, since the floor made `current`
+  // never less than 1), and it handles the empty/zero-extent mesh the floor was
+  // protecting — without clamping a legitimate sub-unit radius.
   const scaleMeshToRadius = (mesh, radius) => {
-    const current = meshBounds(mesh.vertices).maxRadius;
+    const current = maxVertexRadius(mesh.vertices);
     const scale = current > 0 ? radius / current : 1;
     return withBounds({
       vertices: mesh.vertices.map((pt) => mul(pt, scale)),
       faces: mesh.faces.map((face) => face.slice()),
     });
+  };
+
+  // The legacy under-scale factor a pre-fix buckyball was built at.
+  //
+  // DERIVATION (measured from the mesh, never hardcoded): the old code scaled by
+  // `radius / Math.max(1, preScale)`, and preScale < 1, so the old mesh was the
+  // RAW construction times `radius` — i.e. old == new · preScale. The factor is
+  // therefore exactly the raw construction's circumradius, which we read off
+  // `buildTruncatedIcosahedronRaw()` itself. Nothing here restates the geometry,
+  // so regenerating the base construction automatically moves the factor with
+  // it. Computed once, lazily (the raw builder is defined below), and cached.
+  let legacyFactor = null;
+  const legacyTruncatedIcosahedronScale = () => {
+    if (legacyFactor === null) legacyFactor = maxVertexRadius(buildTruncatedIcosahedronRaw().vertices);
+    return legacyFactor;
   };
 
   const orientFace = (face, vertices) => {
@@ -317,7 +361,13 @@
     });
   };
 
-  const createTruncatedIcosahedronMesh = (radius) => {
+  // The UNSCALED truncated icosahedron: the 1/3 points of a unit icosahedron's
+  // directed edges. Its circumradius is sqrt((5 + 4/sqrt5)/9) = 0.8685…, i.e.
+  // BELOW 1 — the one construction in this file for which that is true, and the
+  // reason the old clamped divide in scaleMeshToRadius under-scaled it. Split
+  // out of createTruncatedIcosahedronMesh so the migration can measure that
+  // circumradius directly instead of restating it as a literal.
+  const buildTruncatedIcosahedronRaw = () => {
     const base = createIcosahedronMesh(1);
     const orientedBaseFaces = base.faces.map((face) => orientFace(face, base.vertices));
     const directedVertexMap = new Map();
@@ -353,11 +403,13 @@
       }
     }
 
-    return scaleMeshToRadius({
+    return {
       vertices,
       faces: faces.map((face) => orientFace(face, vertices)),
-    }, radius);
+    };
   };
+
+  const createTruncatedIcosahedronMesh = (radius) => scaleMeshToRadius(buildTruncatedIcosahedronRaw(), radius);
 
   // Generic polyhedral dual: one dual vertex per source face (its centroid
   // projected onto the unit sphere), one dual face per source vertex (the ring
@@ -720,14 +772,17 @@
     average3,
     lerp3,
     meshBounds,
+    maxVertexRadius,
     withBounds,
     scaleMeshToRadius,
+    legacyTruncatedIcosahedronScale,
     orientFace,
     projectToTangent,
     buildNeighborsByVertex,
     sortNeighborsAroundVertex,
     // Solid generators
     createIcosahedronMesh,
+    buildTruncatedIcosahedronRaw,
     createTruncatedIcosahedronMesh,
     dualMesh,
     createDodecahedronMesh,
