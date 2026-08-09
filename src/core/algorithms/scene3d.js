@@ -638,17 +638,6 @@
         // R (reflected) is the other half of the dip: the away-facing rim was
         // falling to a hard Lambert 0 with nothing under it, so a low-poly
         // sphere's LOWEST facets came out its darkest. R lightens them back.
-        // ── O20: value must be MONOTONE in N.L, not merely banded ────────────
-        //
-        // A cube's lit top (N.L 0.707) and its lit side (N.L 0.500) fall in the
-        // SAME band under the default thresholds, so the ladder alone gives them
-        // one value and the only thing separating them was residual projection
-        // error — which had the top reading DARKER than the less-lit side. The
-        // cube read side-lit. §5.5.1 calls a facet out of order with its
-        // neighbours' N.L a bug, and O20 wants three readable values from three
-        // orientations, so the band is TILTED across its own width: still stepped
-        // at band boundaries (which §5.5.1 says is correct), but never inverted
-        // inside one. Pure ordering — it cannot move a facet into another band.
         const zone = faceZone(normalWorld, worldPoint, face, record);
         if (zone === 'T') gain = Math.max(gain, coverageGain(0));
         else if (zone === 'R') gain = Math.min(gain, coverageGain(0) * 0.55);
@@ -664,7 +653,33 @@
         const wv = face.worldVerts;
         if (draft || !scene.projectWorld || !Array.isArray(wv) || wv.length < 3) return null;
         const origin = wv[0];
-        const U = normalize(sub(wv[1], origin));
+        // ── THE FACE FRAME IS ANCHORED TO THE WORLD, NOT TO EDGE 0 ────────────
+        //
+        // U used to be `normalize(wv[1] - origin)` — the face's FIRST EDGE. On a
+        // box that is stable enough to look deliberate, but on a geodesic
+        // polyhedron every triangle's first edge points somewhere arbitrary, so
+        // every facet's hatch ran at an effectively random angle. Neighbouring
+        // facets' rulings met at nonsense angles, no tonal ordering was legible
+        // across the form, and the low-poly sphere read as decoration rather than
+        // as a lit solid. It was the single largest reason faceted geometry
+        // looked wrong, and it was never a tone problem at all.
+        //
+        // So the in-plane frame is anchored to a WORLD axis projected onto the
+        // face: adjacent facets of a curved approximation now carry near-parallel
+        // rulings that flow across the form, and the ladder can finally be read.
+        // World UP is the reference (it is what an engraver would use); a face
+        // whose normal is near-parallel to it falls back to world +X, and only a
+        // degenerate face falls back to the old first-edge behaviour.
+        const axisFor = () => {
+          const cand = [{ x: 0, y: 1, z: 0 }, { x: 1, y: 0, z: 0 }];
+          for (let i = 0; i < cand.length; i++) {
+            const a = cand[i];
+            const proj = sub(a, mul(normalWorld, dot(a, normalWorld)));
+            if (Math.hypot(proj.x, proj.y, proj.z) > 1e-3) return normalize(proj);
+          }
+          return normalize(sub(wv[1], origin));
+        };
+        const U = axisFor();
         const V = normalize(cross(normalWorld, U)); // in-plane, ⟂ U
         const uv = wv.map((pw) => { const d = sub(pw, origin); return { x: dot(d, U), y: dot(d, V) }; });
         // uv → WORLD (for per-sample lighting, I8) and uv → SCREEN.

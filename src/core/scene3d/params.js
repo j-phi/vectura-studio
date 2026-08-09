@@ -297,7 +297,11 @@
     shadowLineType: 'solid',     // reuse the Phase-1 stroke enum
     shadowLayers: false,         // penumbra: nested inset rings when true
     shadowLayerCount: 3,         // 2..4 nested layers when layered
-    shadowFalloff: 0.5,          // density drop per layer outward (0.2..1)
+    shadowFalloff: 0.5,          // PENUMBRA SOFTNESS, UI label "Softness" (0.2..1).
+                                 // NOT "density drop per layer" — that lever was
+                                 // deleted by the fixed integer ladder (spec 2.3).
+                                 // 0.2 = hard sun, umbra reaches the tip; 1.0 =
+                                 // broad source, umbra dies inside the first third.
     shadowAngleFollowsLight: false, // orient hatch perpendicular to the light bearing
   };
   // CONTRACT L3 — light-driven tone. `enabled: false` ⇒ EXACT Phase 1 flat look.

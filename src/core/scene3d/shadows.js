@@ -514,7 +514,9 @@
   // The umbra is a WEDGE, not a uniform inset: real penumbra widens with distance
   // from the caster, so the umbra is wide at the base and narrows to nothing
   // partway down the throw — w(t) = w0 + k·t·L. That retreat is the "layers of
-  // decreasing rounds" being asked for, and `shadowFalloff` now drives k.
+  // decreasing rounds" being asked for, and `shadowFalloff` — relabelled
+  // **Softness** in the UI — now drives k. It no longer means "density drop per
+  // layer"; that lever was deleted by the fixed integer ladder of §2.3.
   //
   // Zones (first match wins), and what each Layers setting turns on:
   //   Off → Z2 only, via the untouched legacy path (byte-identical).
@@ -719,7 +721,7 @@
   //   Z3  A at stride 2N + duty ramp  0.15            0.37x   (dissolves)
   // — every pitch at or above 1.2 x penWidth (C15), at most two directions at
   // default density (C14), and the ratios land on the spec's shape with the TOP
-  // compressed rather than the bottom lifted (C16).
+  // compressed rather than the bottom lifted.
   const strideLadder = (sPen, penWidth) => {
     const floorSp = Math.max(0.05, PLOT_FLOOR_MULT * Math.max(0.05, penWidth));
     let N = 3;
@@ -941,15 +943,27 @@
         let s0 = sp[0]; let s1 = sp[1];
         // Rim retraction: stagger the outermost line ends inward so the footprint
         // outline stops being readable as an edge.
-        if (si === 0) s0 += hash01(r.i * 977 + familyId, 7) * 1.2 * fields.rimFeather;
-        if (si === spans.length - 1) s1 -= hash01(r.i * 977 + familyId, 9) * 1.2 * fields.rimFeather;
+        //
+        // NOT on the contact collar. The collar sits ON the footprint's near rim,
+        // so this fired on it and ate 40% of the accent's ink the moment Layers
+        // went to 4 (measured 1.011 -> 0.601): turning the outer penumbra ON
+        // eroded the contact band, which is the one value the whole drawing is
+        // anchored to. Z0's edge is deliberately HARD anyway (§4) — a contact
+        // accent with a feathered edge reads as a mistake, not as subtlety — so
+        // there was never a case for retracting it.
+        if (zone !== Z_CONTACT) {
+          if (si === 0) s0 += hash01(r.i * 977 + familyId, 7) * 1.2 * fields.rimFeather;
+          if (si === spans.length - 1) s1 -= hash01(r.i * 977 + familyId, 9) * 1.2 * fields.rimFeather;
+        }
         if (!(s1 - s0 > MIN_RUN_MM)) return;
         const emit = (t0, t1) => {
           if (!(t1 - t0 > MIN_RUN_MM)) return;
-          lines.push([
+          const seg = [
             { x: r.a.x + ux * t0, y: r.a.y + uy * t0 },
             { x: r.a.x + ux * t1, y: r.a.y + uy * t1 },
-          ]);
+          ];
+          seg.zone = zone;   // per-SPAN, see the emit grouping below
+          lines.push(seg);
         };
         // Dash duty: the outer penumbra breaks its rulings so the shadow dissolves
         // into paper rather than ending on a tone step.
@@ -966,7 +980,32 @@
         }
       });
     });
-    if (lines.length) emitHatchLines(lines, groundPlane, clipper, out, meta, treat, draft);
+    // ── shadowLayer is stamped PER SPAN, not per family ─────────────────────
+    //
+    // It used to be one constant for a whole `emitFamily` call, and that made
+    // every cast-shadow measurement quoted for three rounds wrong in the same
+    // way. Family A carried Z_PENUMBRA over its entire length and family B
+    // carried Z_CONTACT over its entire length — but family B covers the collar
+    // AND the umbra, and family A crosses all four zones. So anything bucketing
+    // by this tag was separating CROSSED-family ink from MASTER-family ink and
+    // calling the result "contact vs penumbra". That is how the Round-4 harness
+    // reported the ratio as 0.89 with n = 1, and reported the mid as un-rebased,
+    // when the same drawing measured geometrically by throw parameter gives
+    // 4.4x / 5.1x / 2.5x. The zone is known exactly where each span is emitted;
+    // it simply was not being written down.
+    if (lines.length) {
+      const byZone = new Map();
+      lines.forEach((seg) => {
+        if (!byZone.has(seg.zone)) byZone.set(seg.zone, []);
+        byZone.get(seg.zone).push(seg);
+      });
+      byZone.forEach((segs, z) => {
+        const m = (meta && meta.sceneTarget)
+          ? { ...meta, sceneTarget: { ...meta.sceneTarget, shadowLayer: z } }
+          : meta;
+        emitHatchLines(segs, groundPlane, clipper, out, m, treat, draft);
+      });
+    }
     if (sink) sink.push(lines.length);
   };
 
@@ -1054,15 +1093,20 @@
     };
     fields.rimFeather = wantOuter ? clamp(L * 0.03, 0.8, 6) : 0;
 
-    // C16: turning Layers ON must never make the penumbra weaker than the flat
-    // shadow — that reads as "I enabled Layers and lost my shadow". So the
-    // headroom scale is capped: when the ladder still cannot fit, the TOP is
-    // compressed (fewer families, lower duty), never the bottom lifted.
+    // The headroom cap. This used to cite a criterion that does not exist and
+    // assert that turning Layers ON must never weaken the penumbra. The spec has
+    // C1-C15 only, the rule was invented during implementation, and it was
+    // countermanded outright: the mid is supposed to come DOWN so the contact
+    // accent can read against it. That invented rule is why the first rebase
+    // attempt was written as a scale — which is a no-op on the ratio the criterion
+    // actually measures. The test encoding it was corrected a round ago; this
+    // rationale was not, and a stale rationale in the source is exactly how the
+    // defect survived. Deleted rather than softened.
     // The ladder needs a RUNG. When sBase/2 sits under the plot floor the master
     // grid collapses to N = 1, family A cannot step down for the contact accent,
     // and every zone rules at the flat shadow's own pitch — so Layers can only
     // ADD crossed families and the total climbs (2.3x the flat shadow on a
-    // compact footprint). Buying N = 2 costs at most the same 1.25 the C16 cap
+    // compact footprint). Buying N = 2 costs at most the same headroom the cap
     // already budgets, so spend it there rather than leave the ladder flat.
     const floorSp = Math.max(0.05, PLOT_FLOOR_MULT * Math.max(0.05, penWidth));
     const rungScale = sBase > 1e-6 ? (2 * floorSp) / sBase : 1;
@@ -1073,9 +1117,8 @@
     const ladder = strideLadder(sBase * scale, penWidth);
     const strideA = ladder.strideA;
     const crossPitch = ladder.crossPitch;
-    // THIRD LEVER — dash duty. It can only ever LIGHTEN, and C16 pins the
-    // penumbra at 0.8x the flat shadow, which the headroom cap already spends in
-    // full. So duty is spent where it is free: thinning the crossed family along
+    // THIRD LEVER — dash duty. It can only ever LIGHTEN, and the headroom cap
+    // already spends what it has. So duty is spent where it is free: thinning the crossed family along
     // the umbra's throw (the wedge has to get lighter as it recedes even before
     // it narrows — C6) and ramping the outer penumbra out to paper (C8). Family
     // A itself stays solid everywhere but Z3.
