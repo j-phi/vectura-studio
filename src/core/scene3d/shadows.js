@@ -537,6 +537,7 @@
   // So no family is ever emitted below PLOT_FLOOR; the contact band reaches its
   // ~4× tone by crossing families at +65° and +32° (never +90°, which reads as a
   // square grid and beats against the raster).
+  const UMBRA_RIN = 0.10;
   const PLOT_FLOOR_MULT = 1.2;   // min spacing for ANY single family, × penWidth
   const CROSS_B_DEG = 65;
   const CROSS_C_DEG = 32;
@@ -672,8 +673,24 @@
       if (d > L) L = d;
     }));
     if (!(L > 1e-6)) L = Math.max(w, h) * 0.5;
+    // Inradius: the largest distance-in-from-the-outline anywhere inside the
+    // footprint, i.e. half the shadow's widest section. The umbra's base width
+    // has to be a fraction of THIS, not of the throw — on a compact footprint a
+    // throw-derived penumbra margin is sub-millimetre and the umbra becomes the
+    // whole shadow.
+    let Rin = 0;
+    for (let j = 0; j < ny; j++) {
+      const y = minY + j * cell;
+      for (let i = 0; i < nx; i++) {
+        const x = minX + i * cell;
+        if (!pointInRings(x, y, footRings || [])) continue;
+        const d = dE[j * nx + i];
+        if (d > Rin) Rin = d;
+      }
+    }
     return {
       L,
+      Rin,
       distContact: (x, y) => sample(dC, x, y),
       distEdge: (x, y) => sample(dE, x, y),
     };
@@ -954,15 +971,24 @@
     // third (broad source). The coefficient range is deliberately wide — the
     // wedge's length has to change VISIBLY across the slider or the control has
     // not earned its place.
-    const k = 0.03 + 1.2 * clamp(finite(falloff, 0.5), 0.2, 1);
-    const w0 = Math.max(0.8, 0.02 * L);
+    const soft = clamp(finite(falloff, 0.5), 0.2, 1);
+    const k = 0.03 + 1.2 * soft;
+    const w0 = Math.max(0.8, 0.02 * L, UMBRA_RIN * finite(fields.Rin, 0));
     const wAt = (t) => w0 + k * t * L;
+    // The wedge also has to END, and `e > w(t)` alone does not end it. On a
+    // COMPACT footprint (a low object, a short throw) w stays small everywhere,
+    // so the umbra swallowed the whole shadow and Layers 3 emitted 2.3x the flat
+    // shadow's ink — C11 blown, and the "retreating wedge" invisible because
+    // there was nothing for it to retreat from. Terminating it at a softness-
+    // driven throw fraction bounds the area AND gives C13 its lever: this is the
+    // number the Softness slider actually moves.
+    const tUmbraMax = clamp(1.05 - 0.75 * soft, 0.25, 0.95);
 
     const nZones = clamp(Math.round(finite(layerCount, 3)), 2, 4);
     const wantUmbra = nZones >= 3;
     const wantOuter = nZones >= 4;
     const contactOn = contactSegs.length > 0;
-    const outerMargin = clamp(0.05 * L, 0.8, 5);
+    const outerMargin = clamp(Math.min(0.05 * L, 0.30 * finite(fields.Rin, L)), 0.8, 5);
 
     const zoneAt = (x, y) => {
       const dc = fields.distContact(x, y);
@@ -970,13 +996,13 @@
       if (contactOn && dc <= contactWidth) return Z_CONTACT;
       const e = fields.distEdge(x, y);
       const w = wAt(t);
-      if (wantUmbra && e > w) return Z_UMBRA;
+      if (wantUmbra && t < tUmbraMax && e > w) return Z_UMBRA;
       // Z3 is a RIM band plus the far tail. Deriving its margin from w(t) — as
       // the first cut did — is a trap: w grows along the throw, so past mid-throw
       // "the outer w/3" is the entire local width and Z3 swallows the shadow
       // (Layers 4 lost 39% of its ink to it, blowing C11). The rim is a fixed
       // fraction of the THROW instead, which is what the eye reads it as.
-      if (wantOuter && (e <= outerMargin || t > 0.88)) return Z_OUTER;
+      if (wantOuter && (e <= outerMargin || t > 0.9)) return Z_OUTER;
       return Z_PENUMBRA;
     };
     fields.bandWidthAt = (x, y) => {
@@ -989,7 +1015,15 @@
     // shadow — that reads as "I enabled Layers and lost my shadow". So the
     // headroom scale is capped: when the ladder still cannot fit, the TOP is
     // compressed (fewer families, lower duty), never the bottom lifted.
-    const scale = Math.min(headroomScale(sBase, penWidth), 1.25);
+    // The ladder needs a RUNG. When sBase/2 sits under the plot floor the master
+    // grid collapses to N = 1, family A cannot step down for the contact accent,
+    // and every zone rules at the flat shadow's own pitch — so Layers can only
+    // ADD crossed families and the total climbs (2.3x the flat shadow on a
+    // compact footprint). Buying N = 2 costs at most the same 1.25 the C16 cap
+    // already budgets, so spend it there rather than leave the ladder flat.
+    const floorSp = Math.max(0.05, PLOT_FLOOR_MULT * Math.max(0.05, penWidth));
+    const rungScale = sBase > 1e-6 ? (2 * floorSp) / sBase : 1;
+    const scale = clamp(Math.max(headroomScale(sBase, penWidth), rungScale), 1, 1.25);
     const ladder = strideLadder(sBase * scale, penWidth);
     const strideA = ladder.strideA;
     const crossPitch = ladder.crossPitch;
@@ -1011,7 +1045,7 @@
         // 0.7 -> 0.3 across the throw: mean ~0.5x, inside C8, and roughly half the
         // ink loss a stride step would have cost.
         const t = L > 1e-6 ? fields.distContact(r.a.x, r.a.y) / L : 0;
-        return clamp(0.7 - 0.4 * clamp(t, 0, 1), 0.3, 0.7);
+        return clamp(0.75 - 0.4 * clamp(t, 0, 1), 0.35, 0.75);
       }
       return dutyLadder[zone] != null ? dutyLadder[zone] : 1;
     };
@@ -1043,7 +1077,7 @@
         if (zone !== Z_UMBRA) return 0;
         // C6 — the wedge recedes in TONE as well as in width.
         const t = L > 1e-6 ? fields.distContact(r.a.x, r.a.y) / L : 0;
-        return clamp(1 - 0.9 * clamp(t, 0, 1), 0.45, 1);
+        return clamp(0.85 - 0.9 * clamp(t, 0, 1), 0.3, 0.85);
       },
       keepFor: (zone) => zone === Z_CONTACT || zone === Z_UMBRA,
     });

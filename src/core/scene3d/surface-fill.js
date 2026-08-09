@@ -172,7 +172,11 @@
       let cov = Regions.coverageFor(nB - 1 - b, tone); // complement → dark = dense
       if (b === nB - 1) {
         if (specOn) cov *= clamp(1 - 0.5 * specSize, 0, 1); // glint cap
-        cov = Math.max(cov, LIT_FLOOR);
+        // The floor itself yields a little to specular, so a bigger glint still
+        // reads LIGHTER than a smaller one. A hard floor would flatten the cap
+        // out entirely and take the specular response with it — the same
+        // faceted/curved divergence I27 already had to repair once.
+        cov = Math.max(cov, LIT_FLOOR * (specOn ? clamp(1 - 0.15 * specSize, 0.7, 1) : 1));
       }
       return clamp(cov, 0, 1);
     };
@@ -616,10 +620,10 @@
   // the pipeline. `rawCoverage` is the brightest band's ladder coverage,
   // `specSize` the glint size (0 = specular off).
   const __litFloorForTest = (rawCoverage, specSize) => {
-    const capped = specSize > 0
-      ? rawCoverage * clamp(1 - 0.5 * specSize, 0, 1)
-      : rawCoverage;
-    return clamp(Math.max(capped, LIT_FLOOR), 0, 1);
+    const specOn = specSize > 0;
+    const capped = specOn ? rawCoverage * clamp(1 - 0.5 * specSize, 0, 1) : rawCoverage;
+    const floor = LIT_FLOOR * (specOn ? clamp(1 - 0.15 * specSize, 0.7, 1) : 1);
+    return clamp(Math.max(capped, floor), 0, 1);
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {},

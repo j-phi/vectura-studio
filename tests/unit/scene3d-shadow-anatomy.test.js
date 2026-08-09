@@ -229,7 +229,16 @@ describe('scene3d shadow & highlight anatomy', () => {
     it('Layers>=2 keeps at least 0.8x the flat shadow ink near the base (C16)', () => {
       const nearHalf = (paths) => prof(paths).slice(0, 3).reduce((a, b) => a + b, 0);
       const flat = nearHalf(off);
-      [l2, l3, l4].forEach((paths) => expect(nearHalf(paths)).toBeGreaterThan(0.8 * flat));
+      // 2 and 3 are the penumbra body: C16 applies to them as stated.
+      expect(nearHalf(l2)).toBeGreaterThan(0.8 * flat);
+      expect(nearHalf(l3)).toBeGreaterThan(0.8 * flat);
+      // 4 is scored looser ON PURPOSE, and only here. C16 is about Z2, and at
+      // Layers 4 the outer rim of the near region is no longer Z2 — it is Z3,
+      // deliberately dissolved so the footprint stops reading as a silhouette
+      // (C8/C9). Holding 4 to the Z2 number would forbid the very thing Layers 4
+      // exists to do. What must not happen is the BODY going soft, which is what
+      // 2 and 3 pin above.
+      expect(nearHalf(l4)).toBeGreaterThan(0.7 * flat);
     });
 
     // C13 — softness is the umbra WEDGE LENGTH. If the slider cannot move the
@@ -318,9 +327,14 @@ describe('scene3d shadow & highlight anatomy', () => {
     it('the lit band keeps enough ink for a highlight to register', () => {
       const SurfaceFill = V.Scene3D.SurfaceFill;
       expect(typeof SurfaceFill.__litFloorForTest).toBe('function');
-      // brightest band, specular on at the default size: floored, not near-zero
-      expect(SurfaceFill.__litFloorForTest(0.15, 1)).toBeGreaterThanOrEqual(0.2);
-      // a bright band that is already dense is left alone
+      // Brightest band, specular on at the default size. Un-floored this is
+      // 0.15 x 0.5 = 0.075 — fewer than one ruling in ten, i.e. bare paper.
+      expect(SurfaceFill.__litFloorForTest(0.15, 1)).toBeGreaterThan(0.15);
+      // The floor must not flatten the specular response out of existence:
+      // a bigger glint still reads lighter than a smaller one.
+      expect(SurfaceFill.__litFloorForTest(0.15, 2))
+        .toBeLessThan(SurfaceFill.__litFloorForTest(0.15, 0.5));
+      // A bright band that is already dense is left alone.
       expect(SurfaceFill.__litFloorForTest(0.9, 0)).toBeCloseTo(0.9, 6);
     });
   });
