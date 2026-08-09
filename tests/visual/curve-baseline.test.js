@@ -181,6 +181,16 @@ describe('curve baselines (real display pipeline + production exporter)', () => 
    *
    * This list is a ratchet: it may only ever SHRINK. If an algorithm's toggle
    * goes dead, this fails.
+   *
+   * WHAT ABOUT scene3d / object3d? It was never on this list — it was never in
+   * SCENARIOS at all, which is a worse gap than a dead switch and is why the
+   * lumpy-capsule defect could ship. The spread above cannot reach it: every
+   * scenario is a `engine.addLayer(type)` LEAF, whereas composed 3D ink lives on
+   * `group.scenePaths` and only exists after `computeAllDisplayGeometry()` runs
+   * `_computeSceneGroups`. `scene3d liveness` below closes that hole with the
+   * same question asked the right way. (Depth of coverage — what the 3D fit
+   * actually does to a silhouette, a fill and a faceted box — is pinned in
+   * tests/unit/scene3d-curves.test.js.)
    */
   describe('Curves toggle liveness', () => {
     const TOGGLE_IS_DEAD = ['shape-pack', 'text'];
@@ -192,6 +202,68 @@ describe('curve baselines (real display pipeline + production exporter)', () => 
     test('the toggle is live everywhere except the known-dead list', () => {
       const dead = SCENARIOS.filter(isDead).map((s) => s.id).sort();
       expect(dead).toEqual([...TOGGLE_IS_DEAD].sort());
+    });
+  });
+
+  describe('scene3d liveness', () => {
+    // A composed scene GROUP with one curved object, driven through the real
+    // display pipeline and serialized with the production exporter — the same
+    // question the ratchet above asks, via the only path that reaches 3D ink.
+    const renderScene = (primitive, objParams, curves) => {
+      const { VectorEngine, _UIExportUtil } = runtime.window.Vectura;
+      const engine = new VectorEngine();
+      const groupId = engine.addLayer('scene3d');
+      const group = engine.layers.find((l) => l.id === groupId);
+      group.isGroup = true;
+      group.containerRole = 'scene';
+      group.params.seed = 4242;
+      group.params.objects = [];
+      group.params.ground = { enabled: false };
+      group.params.backdrop = { enabled: false };
+      group.params.camera = {
+        projection: 'orthographic', yaw: -30, pitch: 25, roll: 0,
+        cameraDistance: 620, focalLength: 520, zoom: 1,
+      };
+      group.params.lights = [{
+        id: 'sun', type: 'directional', azimuth: 135, elevation: 45,
+        intensity: 1, castShadows: false,
+      }];
+
+      const childId = engine.addLayer('object3d');
+      const child = engine.layers.find((l) => l.id === childId);
+      child.parentId = groupId;
+      child.params.seed = 4242;
+      child.params.primitive = primitive;
+      child.params.params = { ...objParams };
+      child.params.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
+      child.params.visibility = 'solid';
+      child.params.style = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 50 } };
+      child.params.curves = curves;
+
+      engine.computeAllDisplayGeometry();
+      const live = engine.layers.find((l) => l.id === groupId);
+      return (live.scenePaths || [])
+        .map((p) => _UIExportUtil.shapeToSvg(p, PRECISION, curves))
+        .filter(Boolean)
+        .join('\n');
+    };
+
+    test('the toggle is LIVE for a curved primitive (capsule)', () => {
+      const off = renderScene('capsule', { sx: 40, sy: 55, sz: 40, detail: 16 }, false);
+      const on = renderScene('capsule', { sx: 40, sy: 55, sz: 40, detail: 16 }, true);
+      expect(on).not.toBe(off);
+      // Curves off emits polylines only; curves on emits real curve commands.
+      expect((off.match(/[CQ] -?\d/g) || []).length).toBe(0);
+      expect((on.match(/[CQ] -?\d/g) || []).length).toBeGreaterThan(0);
+    });
+
+    test('the toggle is INERT for faceted geometry (box) — by design', () => {
+      const off = renderScene('box', { sx: 70, sy: 70, sz: 70 }, false);
+      const on = renderScene('box', { sx: 70, sy: 70, sz: 70 }, true);
+      // A cube's straight edges are EXACT. Rounding them would be a regression,
+      // so this staying byte-identical is the assertion, not a gap.
+      expect(on).toBe(off);
+      expect((on.match(/[CQ] -?\d/g) || []).length).toBe(0);
     });
   });
 });

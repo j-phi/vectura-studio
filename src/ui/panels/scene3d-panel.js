@@ -548,6 +548,51 @@
     return ctl;
   };
 
+  /**
+   * The universal output controls (Curves / Smoothing / Simplify) — the same
+   * three every other algorithm exposes in its Post-Processing Lab, reaching 3D.
+   *
+   * OFFERED ONLY FOR CURVED GEOMETRY. The set is
+   * `Scene3D.Params.CURVED_FILL_PRIMITIVES` — read live, never copied, so this
+   * panel and `Engine._applySceneCurveFinish` can never disagree about what a
+   * curved surface is. A box / plane / polyhedron / imported mesh is faceted:
+   * its straight edges are exact, so the rows are simply absent rather than
+   * present-and-inert.
+   */
+  const curvesApplyTo = (prim) => {
+    const P = P3();
+    const set = P && P.CURVED_FILL_PRIMITIVES;
+    return Boolean(set && typeof set.has === 'function' && set.has(prim));
+  };
+
+  // `inherit` is the scene-level bag: an object that has never been given its
+  // own value follows the scene's, so one switch can curve a whole scene.
+  const curveControls = (host, comps, bag, kit, inherit) => {
+    const UI = Vectura.UI;
+    const val = (k, d) => {
+      if (bag && bag[k] !== undefined && bag[k] !== null) return bag[k];
+      if (inherit && inherit[k] !== undefined && inherit[k] !== null) return inherit[k];
+      return d;
+    };
+    comps.push(UI.SwToggle(labeledRow(host, 'Curves'), {
+      checked: val('curves', false) === true,
+      ariaLabel: 'Fit bezier curves to this geometry',
+      onChange: (v) => { kit.commit(() => { bag.curves = v; }); },
+    }));
+    comps.push(UI.Slider(labeledRow(host, 'Smoothing'), {
+      value: Number(val('smoothing', 0)) || 0,
+      min: 0, max: 1, step: 0.05, defaultValue: 0,
+      ariaLabel: 'Curve smoothing (corner rounding)',
+      ...kit.liveSlider((v) => { bag.smoothing = v; }),
+    }));
+    comps.push(UI.Slider(labeledRow(host, 'Simplify'), {
+      value: Number(val('simplify', 0)) || 0,
+      min: 0, max: 1, step: 0.05, defaultValue: 0,
+      ariaLabel: 'Simplify (reduce points)',
+      ...kit.liveSlider((v) => { bag.simplify = v; }),
+    }));
+  };
+
   // Compact panel for one object3d LEAF layer — Inspector (dims / transform /
   // fidelity / visibility / role) + Style, re-keyed to layer.params.
   const buildObjectPanel = (ui, layer, container) => {
@@ -728,6 +773,15 @@
           onCommit: (v) => { kit.onCommit(v); if (refresh) renderObject(); },
         });
       });
+
+      // Curves / Smoothing / Simplify. Sits directly under Fidelity because the
+      // two answer the same question from opposite ends: Fidelity buys a
+      // smoother silhouette with MORE plotted segments, Curves gets one with
+      // fewer. Inherits the scene group's values until this object sets its own.
+      if (curvesApplyTo(prim)) {
+        const sceneGroup = sceneGroupOf(ui, layer);
+        curveControls(host, comps, params, { commit, liveSlider }, sceneGroup && sceneGroup.params);
+      }
 
       // Position
       ['x', 'y', 'z'].forEach((ax) => {
@@ -1515,6 +1569,7 @@
 
     // Component instances per re-renderable area, destroyed on re-render.
     let inspectorComps = [];
+    let outputComps = [];
     let styleComps = [];
     let toneComps = [];
     let groupComps = [];
@@ -2880,6 +2935,13 @@
         });
       }
 
+      // Curves / Smoothing / Simplify for an INLINE (monolith) object. Same
+      // rows, same gate, same inheritance from the scene bag as the object3d
+      // leaf panel — the two scene shapes must not offer different controls.
+      if (curvesApplyTo(obj.primitive)) {
+        curveControls(inspectorHost, inspectorComps, obj, { commit, liveSlider }, params);
+      }
+
       // Visibility
       const visRow = document.createElement('div');
       visRow.className = 'vs3-row';
@@ -3794,6 +3856,22 @@
       },
     }));
 
+    // Scene-wide Curves / Smoothing / Simplify. These are the DEFAULT every
+    // curved object follows until it sets its own (see curveControls' `inherit`
+    // and Engine._applySceneCurveFinish's `resolve`), so one switch here curves
+    // every sphere, capsule and torus in the scene at once. Faceted geometry in
+    // the scene is unaffected whatever this says — the gate is per-object.
+    sections.push(UI.Section(pages.scene, {
+      title: 'Line Output',
+      children: (body) => {
+        const outHost = document.createElement('div');
+        outHost.className = 'vs3-inspector vs3-output';
+        body.appendChild(outHost);
+        destroyComps(outputComps);
+        curveControls(outHost, outputComps, params, { commit, liveSlider }, null);
+      },
+    }));
+
     styleHost = document.createElement('div');
     styleHost.className = 'vs3-style';
     pages.style.appendChild(styleHost);
@@ -3825,6 +3903,7 @@
       // The flyout is portaled to <body> — remove it explicitly.
       if (moreMenu && moreMenu.parentNode) moreMenu.parentNode.removeChild(moreMenu);
       destroyComps(inspectorComps);
+      destroyComps(outputComps);
       destroyComps(styleComps);
       destroyComps(toneComps);
       destroyComps(groupComps);
