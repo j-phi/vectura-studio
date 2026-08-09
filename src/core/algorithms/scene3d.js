@@ -481,11 +481,92 @@
         const nb = toneBandCount();
         return 0.5 + clamp(Regions.coverageFor(nb - 1 - bandIdx, p.tone), 0, 1) * 1.1;
       };
-      const spacingBand = (normalWorld, styleParams, worldPoint) => {
+      // ── Faceted TERMINATOR — topological, with a dihedral gate ───────────────
+      //
+      // A facet has one normal, so it has one value; the terminator cannot be a
+      // gradient the way it is on a curved surface. It is instead a TOPOLOGICAL
+      // property: a facet is a terminator facet when it is unlit AND it shares a
+      // SMOOTH edge with a lit one.
+      //
+      // The dihedral gate is what makes this correct rather than merely plausible.
+      // Every unlit face of a cube touches its lit top, so without the gate all of
+      // them classify as terminator, both visible sides go darkest, and the cube
+      // loses its form shadow entirely. But a cube has no terminator — it has an
+      // EDGE. The terminator is a curvature phenomenon, so only edges that are
+      // smooth (dihedral below TERMINATOR_SMOOTH_DEG, the same intrinsic
+      // world-space measure Edges.classifyEdges uses for crease) can carry one.
+      // A low-poly sphere's facets sit well inside that angle and produce a
+      // discrete ring of terminator facets; a cube's 90-degree edges never do.
+      //
+      // "Unlit" is read off the SAME combined intensity the rest of the tone
+      // system uses, not a single light's N·L, so a multi-light rig classifies
+      // consistently with the bands it is about to be sorted into.
+      const TERMINATOR_SMOOTH_DEG = 40;
+      const TERMINATOR_TH = 0.5;
+      const terminatorCache = new Map();
+      const terminatorFaces = (record) => {
+        if (terminatorCache.has(record)) return terminatorCache.get(record);
+        const set = new Set();
+        const faces = (record && record.faces) || [];
+        const edges = (record && record.edges) || [];
+        if (faces.length && edges.length) {
+          const cosSmooth = Math.cos(TERMINATOR_SMOOTH_DEG * Math.PI / 180);
+          const lit = faces.map((f) => {
+            const n = f && f.normalWorld;
+            return n ? intensityFn(n, faceWorldCentroid(f)) >= TERMINATOR_TH : false;
+          });
+          edges.forEach((edge) => {
+            const idx = edge && edge.faces;
+            if (!idx || idx.length !== 2) return;
+            const [i, j] = idx;
+            const fi = faces[i]; const fj = faces[j];
+            if (!fi || !fj || !fi.normalWorld || !fj.normalWorld) return;
+            if (lit[i] === lit[j]) return;              // not a light boundary
+            const d = clamp(dot(normalize(fi.normalWorld), normalize(fj.normalWorld)), -1, 1);
+            if (d < cosSmooth) return;                  // hard edge: an edge, not a terminator
+            set.add(lit[i] ? fj : fi);                  // the UNLIT side carries the core shadow
+          });
+        }
+        terminatorCache.set(record, set);
+        return set;
+      };
+
+      // I8 parity — per-FACE specular. A facet either catches the glint or it does
+      // not, so Regions.specularTerm evaluates once per face. That discreteness IS
+      // flat shading (a low-poly sphere pops one or two facets; a cube often none)
+      // and must not be smoothed into a fake hotspot. Before this the faceted path
+      // ignored tone.specular entirely while the curved fill honoured it — the same
+      // class of divergence I27 already had to repair once.
+      const specOnFaceted = Boolean(toneOn && p.tone && p.tone.specular && p.tone.specular.enabled !== false);
+      const specSizeFaceted = specOnFaceted ? clamp(finite(p.tone.specular.size, 1), 0, 3) : 0;
+      const faceSpecular = (normalWorld, worldPoint) => {
+        if (!specOnFaceted || !Regions || typeof Regions.specularTerm !== 'function') return 0;
+        return clamp(Regions.specularTerm(normalWorld, worldPoint, activeLights, scene.camera, specShininess), 0, 1);
+      };
+
+      const spacingBand = (normalWorld, styleParams, worldPoint, face, record) => {
         const s0 = hatchSpacing(styleParams.fillDensity);
-        if (!toneOn) return { spacing: s0, bandIdx: -1 };
-        const bandIdx = Regions.band(intensityFn(normalWorld, worldPoint), p.tone);
-        return { spacing: Math.max(penWidth, s0 / coverageGain(bandIdx)), bandIdx };
+        if (!toneOn) return { spacing: s0, bandIdx: -1, terminator: false };
+        const I = intensityFn(normalWorld, worldPoint);
+        const bandIdx = Regions.band(I, p.tone);
+        let gain = coverageGain(bandIdx);
+        // shadowStage parity: the dark-side coverage boost was curved-path only, so
+        // faceted objects got no grading below the terminator and read flat.
+        const shadowSens = clamp(Math.round(finite(styleParams.shadowSensitivity, 1)), 1, 8);
+        if (shadowSens > 1 && typeof Regions.shadowStage === 'function') {
+          const stg = Regions.shadowStage(I, shadowSens, TERMINATOR_TH);
+          if (stg && Number.isFinite(stg.boost)) gain *= clamp(stg.boost, 0.5, 2);
+        }
+        // Specular: the glint facet reads LIGHTER, never denser — the highlight is
+        // negative space bounded by the surrounding hatch, never a drawn disc.
+        const S = faceSpecular(normalWorld, worldPoint);
+        if (S > 0) gain *= clamp(1 - 0.55 * Math.max(0.5, specSizeFaceted) * S, 0.25, 1);
+        const terminator = Boolean(record && face && terminatorFaces(record).has(face));
+        // The ladder tops out at 1.6x gain, which cannot reach a core shadow. Past
+        // the spacing floor density goes into a second DIRECTION, so a terminator
+        // facet is flagged for a crossed family rather than pushed denser.
+        if (terminator) gain = Math.max(gain, coverageGain(0));
+        return { spacing: Math.max(penWidth, s0 / gain), bandIdx, terminator };
       };
 
       // In-plane basis for a flat face: its world verts expressed in a 2D (u,v)
@@ -567,7 +648,7 @@
       const maybeLink = (segs, styleParams) =>
         (styleParams.linkFill === true && !draft ? linkBoustrophedon(segs) : segs);
 
-      const faceHatchLines = (face, styleParams, normalWorld, crossPass) => {
+      const faceHatchLines = (face, styleParams, normalWorld, crossPass, record) => {
         // angleRef (Phase 2): 'face' (default) measures the hatch angle in the
         // face plane; 'screen' engraves flat in screen space regardless of the
         // face; 'worldUp' keeps the lines upright (world vertical projected onto
@@ -581,18 +662,20 @@
         if (!scaf) {
           // Cheap screen-space hatch (draft / no world verts / angleRef:'screen')
           // — snaps back to the surface-oriented hatch on release.
-          const { spacing, bandIdx } = spacingBand(normalWorld, styleParams, worldPoint);
+          const sb = spacingBand(normalWorld, styleParams, worldPoint, face, record);
           const lines = [];
-          crossFamilies(face.polygon, userAngle, spacing, styleParams, crossPass, bandIdx === 0,
+          crossFamilies(face.polygon, userAngle, sb.spacing, styleParams, crossPass, sb.bandIdx === 0 || sb.terminator,
             (segs) => maybeLink(segs, styleParams).forEach((l) => lines.push(l)));
           return lines;
         }
-        const { spacing, bandIdx } = spacingBand(normalWorld, styleParams, worldPoint);
+        const { spacing, bandIdx, terminator } = spacingBand(normalWorld, styleParams, worldPoint, face, record);
         // worldUp rotates the in-plane base angle so the lines follow world
         // vertical; 'face' leaves the user angle measured in the face frame.
         const baseAngle = angleRef === 'worldUp' ? worldUpAngleInUV(scaf) + userAngle : userAngle;
         const uvLines = [];
-        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, bandIdx === 0,
+        // A terminator facet crosses a second family: the ladder tops out at 1.6x
+        // gain, so the core shadow is unreachable by spacing alone.
+        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, bandIdx === 0 || terminator,
           (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)));
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
