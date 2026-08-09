@@ -484,47 +484,466 @@
     return Math.min(maxX - minX, maxY - minY);
   };
 
-  // Hatch a shadow polygon (rings = [outer, hole…]). When cfg.layers is on and
-  // this is a full (non-draft) frame, emit NESTED inset rings — a penumbra: the
-  // rim is the full footprint (sparsest), successive insets crowd toward the
-  // caster's ground contact (densest core). Each layer is its own hatch region
-  // so the core accumulates ink from every enclosing layer.
+  // ── Shadow ANATOMY: zone model (contact → umbra → penumbra → outer) ────────
+  //
+  // WHY THE OLD LAYER MODEL READ AS A FLAT BLOB
+  // -------------------------------------------
+  // It nested `Mappers.insetPasses` — concentric offsets of the FOOTPRINT — and
+  // hatched every layer at the SAME angle with an independently derived spacing.
+  // Three faults followed:
+  //   D1  concentric insets of an elongated cast footprint make a bullseye on the
+  //       footprint CENTROID. That has nothing to do with where the object meets
+  //       the ground, so the densest ink sat mid-shadow, not at the base.
+  //   D2  same-angle rulings at incommensurate spacings overlap. Ink drawn on top
+  //       of ink is invisible on paper — so "more layers" added strokes without
+  //       adding tone. That is precisely the reported symptom.
+  //   D3  there was no contact/occlusion band at all — the single darkest and most
+  //       structurally important value in a shaded drawing was simply absent.
+  //
+  // THE MODEL THAT REPLACES IT
+  // --------------------------
+  // Two scalar fields over the footprint drive everything:
+  //   t(p) = dist(p, CONTACT) / L    throw parameter; 0 at the object's base,
+  //                                  1 at the far tip. CONTACT is the caster's
+  //                                  NADIR drop (silhouette projected straight
+  //                                  DOWN), never the light projection.
+  //   e(p) = dist(p, ∂FOOTPRINT)     how far in from the outline p sits, measured
+  //                                  only against edges that face PAPER (the rim
+  //                                  against the caster's own body is excluded —
+  //                                  the base is not an "edge" of the shadow).
+  // The umbra is a WEDGE, not a uniform inset: real penumbra widens with distance
+  // from the caster, so the umbra is wide at the base and narrows to nothing
+  // partway down the throw — w(t) = w0 + k·t·L. That retreat is the "layers of
+  // decreasing rounds" being asked for, and `shadowFalloff` now drives k.
+  //
+  // Zones (first match wins), and what each Layers setting turns on:
+  //   Off → Z2 only, via the untouched legacy path (byte-identical).
+  //   2   → Z0 contact collar + Z2.            The object LANDS.
+  //   3   → + Z1 umbra wedge.                  The shadow gains a core.
+  //   4   → + Z3 outer penumbra / far tail.    It stops being a cut-out.
+  //
+  // WHY RULING SUBSETS AND NOT ZONE POLYGONS
+  // ----------------------------------------
+  // Every zone's family-A lines are a SUBSET of one master grid whose phase is
+  // anchored to a fixed world origin. Because a sparser zone keeps every k-th line
+  // of the same grid the denser zone drew, lines can never double up (D2) and can
+  // never shift phase at a boundary — it is geometrically impossible for a contour
+  // line to appear at a zone edge. Zone membership is decided per line SEGMENT by
+  // sampling the fields; no zone polygon is ever built.
+  //
+  // WHY EXTRA DENSITY GOES INTO CROSSED FAMILIES, NOT TIGHTER SPACING
+  // -----------------------------------------------------------------
+  // Past ~1.2·penWidth, ruling closer floods the paper instead of darkening it.
+  // So no family is ever emitted below PLOT_FLOOR; the contact band reaches its
+  // ~4× tone by crossing families at +65° and +32° (never +90°, which reads as a
+  // square grid and beats against the raster).
+  const PLOT_FLOOR_MULT = 1.2;   // min spacing for ANY single family, × penWidth
+  const CROSS_B_DEG = 65;
+  const CROSS_C_DEG = 32;
+  const Z_CONTACT = 0;
+  const Z_UMBRA = 1;
+  const Z_PENUMBRA = 2;
+  const Z_OUTER = 3;
+
+  // Deterministic [0,1) hash. Feathering must be stable frame to frame or the
+  // line ends swim as the camera orbits (same failure the hatch bearing has).
+  const hash01 = (a, b) => {
+    let h = (Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul((b | 0) + 0x9e3779b9, 0x85ebca6b)) >>> 0;
+    h ^= h >>> 15; h = Math.imul(h, 0x2545f491) >>> 0; h ^= h >>> 13;
+    return (h >>> 0) / 4294967296;
+  };
+
+  // Contact-collar half-width. Thin by construction: a wide "contact" band is
+  // just a second umbra, and the accent stops reading as contact.
+  const contactWidthOf = (contactRings) => Math.max(
+    1.5,
+    0.06 * ((contactRings && contactRings[0]) ? ringMinExtent(contactRings[0]) : 0),
+  );
+
+  const ringsToSegs = (rings) => {
+    const segs = [];
+    (rings || []).forEach((ring) => {
+      if (!Array.isArray(ring) || ring.length < 2) return;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        if (isFinitePt(ring[j]) && isFinitePt(ring[i])) segs.push([ring[j], ring[i]]);
+      }
+    });
+    return segs;
+  };
+
+  const distToSegs = (px, py, segs) => {
+    let best = Infinity;
+    for (let i = 0; i < segs.length; i++) {
+      const a = segs[i][0]; const b = segs[i][1];
+      const vx = b.x - a.x; const vy = b.y - a.y;
+      const wx = px - a.x; const wy = py - a.y;
+      const vv = vx * vx + vy * vy;
+      let s = vv > 1e-12 ? (wx * vx + wy * vy) / vv : 0;
+      if (s < 0) s = 0; else if (s > 1) s = 1;
+      const dx = wx - vx * s; const dy = wy - vy * s;
+      const d = dx * dx + dy * dy;
+      if (d < best) best = d;
+    }
+    return best === Infinity ? Infinity : Math.sqrt(best);
+  };
+
+  const pointInRings = (px, py, rings) => {
+    let inside = false;
+    for (let r = 0; r < rings.length; r++) {
+      const ring = rings[r];
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[j]; const b = ring[i];
+        if (!isFinitePt(a) || !isFinitePt(b)) continue;
+        if ((a.y > py) !== (b.y > py)) {
+          const x = a.x + ((py - a.y) / ((b.y - a.y) || 1e-12)) * (b.x - a.x);
+          if (px < x) inside = !inside;
+        }
+      }
+    }
+    return inside;
+  };
+
+  const ringsBBox = (ringGroups) => {
+    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+    ringGroups.forEach((rings) => (rings || []).forEach((ring) => (ring || []).forEach((pt) => {
+      if (!isFinitePt(pt)) return;
+      if (pt.x < minX) minX = pt.x;
+      if (pt.x > maxX) maxX = pt.x;
+      if (pt.y < minY) minY = pt.y;
+      if (pt.y > maxY) maxY = pt.y;
+    })));
+    return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+  };
+
+  // Sample the two fields on a lattice ONCE, then bilinear-sample per hatch
+  // segment. A ruling at the master pitch over a large footprint produces tens of
+  // thousands of midpoint queries; against a boolean-produced outline (hundreds of
+  // segments) the direct form is O(n·m) per frame. The lattice bounds that to one
+  // O(cells·m) build plus O(1) lookups, and the interpolation keeps zone edges
+  // smooth rather than stair-stepped at the cell size.
+  const buildShadowFields = (footRings, contactRings, edgeSegs) => {
+    const box = ringsBBox([footRings]);
+    if (!box) return null;
+    const pad = 2;
+    const minX = box.minX - pad; const minY = box.minY - pad;
+    const w = (box.maxX - box.minX) + pad * 2;
+    const h = (box.maxY - box.minY) + pad * 2;
+    if (!(w > 0) || !(h > 0)) return null;
+    // ~1 mm cells, capped so a huge grazing-light footprint cannot blow up.
+    const MAX_CELLS = 40000;
+    let cell = 1.0;
+    while ((w / cell + 1) * (h / cell + 1) > MAX_CELLS) cell *= 1.5;
+    const nx = Math.max(2, Math.ceil(w / cell) + 1);
+    const ny = Math.max(2, Math.ceil(h / cell) + 1);
+    const cSegs = ringsToSegs(contactRings);
+    const dC = new Float32Array(nx * ny);
+    const dE = new Float32Array(nx * ny);
+    const hasContact = cSegs.length > 0;
+    for (let j = 0; j < ny; j++) {
+      const y = minY + j * cell;
+      for (let i = 0; i < nx; i++) {
+        const x = minX + i * cell;
+        const k = j * nx + i;
+        dC[k] = hasContact
+          ? (pointInRings(x, y, contactRings) ? 0 : distToSegs(x, y, cSegs))
+          : 0;
+        dE[k] = edgeSegs.length ? distToSegs(x, y, edgeSegs) : 1e6;
+      }
+    }
+    const sample = (arr, x, y) => {
+      let fx = (x - minX) / cell; let fy = (y - minY) / cell;
+      if (fx < 0) fx = 0; else if (fx > nx - 1.0001) fx = nx - 1.0001;
+      if (fy < 0) fy = 0; else if (fy > ny - 1.0001) fy = ny - 1.0001;
+      const i0 = fx | 0; const j0 = fy | 0;
+      const tx = fx - i0; const ty = fy - j0;
+      const k = j0 * nx + i0;
+      const a = arr[k]; const b = arr[k + 1];
+      const c = arr[k + nx]; const d = arr[k + nx + 1];
+      return (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty;
+    };
+    // Throw length L: the largest contact-distance anywhere in the footprint. The
+    // max of a distance function over a region is attained on its boundary, so the
+    // outline's own vertices are a sufficient (and cheap) sample set.
+    let L = 0;
+    (footRings || []).forEach((ring) => (ring || []).forEach((pt) => {
+      if (!isFinitePt(pt)) return;
+      const d = sample(dC, pt.x, pt.y);
+      if (d > L) L = d;
+    }));
+    if (!(L > 1e-6)) L = Math.max(w, h) * 0.5;
+    return {
+      L,
+      distContact: (x, y) => sample(dC, x, y),
+      distEdge: (x, y) => sample(dE, x, y),
+    };
+  };
+
+  // Family-A stride ladder. `shadowDensity` fixes S_base (today's flat spacing);
+  // the master pitch is the FINEST plot-safe subdivision of it, at most S_base/3.
+  // Z2 is pinned to stride N so the penumbra keeps exactly the flat shadow's
+  // spacing — the backward-compatible anchor. When S_base is already close to the
+  // plot floor (dense shadows) N collapses toward 1, family A stops separating the
+  // zones, and the crossed families carry the whole ladder. That is the correct
+  // engraving answer, not a degradation.
+  const strideLadder = (sBase, penWidth) => {
+    const floorSp = Math.max(0.05, PLOT_FLOOR_MULT * Math.max(0.05, penWidth));
+    let N = 3;
+    while (N > 1 && sBase / N < floorSp) N--;
+    const master = Math.max(floorSp, sBase / N);
+    return {
+      master,
+      floorSp,
+      N,
+      strideA: {
+        [Z_CONTACT]: 1,
+        [Z_UMBRA]: Math.max(1, Math.round((N * 2) / 3)),
+        [Z_PENUMBRA]: N,
+        [Z_OUTER]: N * 2,
+      },
+    };
+  };
+
+  // One hatch family over `rings`, phase-anchored to an ABSOLUTE origin (not the
+  // ring bbox) so every zone and every region share one grid and the rulings never
+  // shift as the footprint changes. Yields { i, a, b } with i the global ruling
+  // index — the identity the stride ladder and the feather hash both key off.
+  const familyRulings = (rings, angleDeg, spacing, out) => {
+    const segs = ringsToSegs(rings);
+    if (segs.length < 2) return;
+    const ang = finite(angleDeg, 45) * Math.PI / 180;
+    const dirX = Math.cos(ang); const dirY = Math.sin(ang);
+    const perpX = -dirY; const perpY = dirX;
+    let pMin = Infinity; let pMax = -Infinity;
+    for (let i = 0; i < segs.length; i++) {
+      for (let k = 0; k < 2; k++) {
+        const pr = segs[i][k].x * perpX + segs[i][k].y * perpY;
+        if (pr < pMin) pMin = pr;
+        if (pr > pMax) pMax = pr;
+      }
+    }
+    if (!Number.isFinite(pMin)) return;
+    const sp = Math.max(0.05, spacing);
+    const i0 = Math.ceil(pMin / sp);
+    const i1 = Math.floor(pMax / sp);
+    if (i1 - i0 > 6000) return; // pathological footprint: refuse rather than hang
+    for (let idx = i0; idx <= i1; idx++) {
+      const offset = idx * sp;
+      const hits = [];
+      for (let s = 0; s < segs.length; s++) {
+        const a = segs[s][0]; const b = segs[s][1];
+        const pa = a.x * perpX + a.y * perpY;
+        const pb = b.x * perpX + b.y * perpY;
+        if ((pa > offset) === (pb > offset)) continue;
+        const t = (offset - pa) / ((pb - pa) || 1e-9);
+        const x = a.x + (b.x - a.x) * t;
+        const y = a.y + (b.y - a.y) * t;
+        hits.push({ s: x * dirX + y * dirY, x, y });
+      }
+      hits.sort((p, q) => p.s - q.s);
+      for (let k = 0; k + 1 < hits.length; k += 2) {
+        out.push({ i: idx, a: { x: hits[k].x, y: hits[k].y }, b: { x: hits[k + 1].x, y: hits[k + 1].y } });
+      }
+    }
+  };
+
+  // Walk one ruling, classify each sample by zone, and return contiguous
+  // [s0, s1, zone] spans in the ruling's own arc-length parameter.
+  const zoneSpans = (a, b, zoneAt, step) => {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (!(len > 1e-6)) return [];
+    const n = Math.max(1, Math.ceil(len / step));
+    const ux = (b.x - a.x) / len; const uy = (b.y - a.y) / len;
+    const spans = [];
+    let curZone = -1; let curStart = 0;
+    for (let k = 0; k < n; k++) {
+      const s = (k + 0.5) * (len / n);
+      const z = zoneAt(a.x + ux * s, a.y + uy * s);
+      if (z !== curZone) {
+        if (curZone >= 0) spans.push([curStart, k * (len / n), curZone]);
+        curZone = z; curStart = k * (len / n);
+      }
+    }
+    if (curZone >= 0) spans.push([curStart, len, curZone]);
+    return spans;
+  };
+
+  // Emit one family over one region, ruling-subset by zone.
+  //
+  // FEATHERING. Where two zones of DIFFERENT density meet, the shared cut is
+  // displaced along the ruling by Δ = (hash(i, cutOrdinal) − 0.5)·1.4·bandWidth —
+  // one Δ for both sides, so the spans stay adjacent (no gap, no overlap). Some
+  // rulings from the denser zone poke into the sparser one and some stop short, so
+  // the two interlace over a band instead of terminating on a common line. That is
+  // what a burin does at a value transition; it costs no extra pen-up moves and it
+  // is the only thing standing between Layers=4 and four concentric contours. The
+  // contact/umbra cut is deliberately NOT feathered — a contact accent has a crisp
+  // inner edge, and softening it reads as a mistake. At the footprint outline the
+  // displacement is clamped negative (retract only) so feathering can stagger the
+  // rim without throwing ink onto bare paper outside the shadow.
+  const emitFamily = (opts) => {
+    const {
+      rings, angle, spacing, keepFor, zoneAt, fields, dashFor, sink,
+      groundPlane, clipper, out, meta, treat, draft, familyId,
+    } = opts;
+    const rulings = [];
+    familyRulings(rings, angle, spacing, rulings);
+    if (!rulings.length) return;
+    const sampleStep = Math.max(0.5, Math.min(2.5, spacing));
+    const lines = [];
+    rulings.forEach((r) => {
+      const len = Math.hypot(r.b.x - r.a.x, r.b.y - r.a.y);
+      if (!(len > MIN_RUN_MM)) return;
+      const ux = (r.b.x - r.a.x) / len; const uy = (r.b.y - r.a.y) / len;
+      const spans = zoneSpans(r.a, r.b, zoneAt, sampleStep);
+      if (!spans.length) return;
+      // Feather the internal cuts (shared endpoints), then the two rim ends.
+      for (let c = 1; c < spans.length; c++) {
+        const zL = spans[c - 1][2]; const zR = spans[c][2];
+        if (zL === zR) continue;
+        // Hard boundary: contact ↔ anything. Everything else interdigitates.
+        if (zL === Z_CONTACT || zR === Z_CONTACT) continue;
+        const mid = spans[c][0];
+        const band = Math.max(1.2, 0.5 * fields.bandWidthAt(r.a.x + ux * mid, r.a.y + uy * mid));
+        const d = (hash01(r.i * 131 + familyId, c) - 0.5) * 1.4 * band;
+        const lo = spans[c - 1][0] + 0.2;
+        const hi = spans[c][1] - 0.2;
+        const shifted = Math.max(lo, Math.min(hi, mid + d));
+        spans[c - 1][1] = shifted;
+        spans[c][0] = shifted;
+      }
+      spans.forEach((sp, si) => {
+        const zone = sp[2];
+        const keep = keepFor(zone, r.i, (sp[0] + sp[1]) * 0.5, r);
+        if (!keep) return;
+        let s0 = sp[0]; let s1 = sp[1];
+        // Rim retraction: stagger the outermost line ends inward so the footprint
+        // outline stops being readable as an edge.
+        if (si === 0) s0 += hash01(r.i * 977 + familyId, 7) * 1.2 * fields.rimFeather;
+        if (si === spans.length - 1) s1 -= hash01(r.i * 977 + familyId, 9) * 1.2 * fields.rimFeather;
+        if (!(s1 - s0 > MIN_RUN_MM)) return;
+        const emit = (t0, t1) => {
+          if (!(t1 - t0 > MIN_RUN_MM)) return;
+          lines.push([
+            { x: r.a.x + ux * t0, y: r.a.y + uy * t0 },
+            { x: r.a.x + ux * t1, y: r.a.y + uy * t1 },
+          ]);
+        };
+        // Dash duty: the outer penumbra breaks its rulings so the shadow dissolves
+        // into paper rather than ending on a tone step.
+        const duty = dashFor ? dashFor(zone, (s0 + s1) * 0.5, r) : 1;
+        if (duty >= 0.999) { emit(s0, s1); return; }
+        const period = Math.max(1.6, spacing * 4);
+        const jitter = hash01(r.i * 31 + familyId, 3) * period;
+        for (let s = s0 - jitter; s < s1; s += period) {
+          emit(Math.max(s0, s), Math.min(s1, s + period * duty));
+        }
+      });
+    });
+    if (lines.length) emitHatchLines(lines, groundPlane, clipper, out, meta, treat, draft);
+    if (sink) sink.push(lines.length);
+  };
+
+  // Hatch a shadow polygon (rings = [outer, hole…]).
+  //   layers off / draft / no fields → single flat hatch (the legacy path, and the
+  //   Off compatibility contract — this must stay byte-identical);
+  //   layers on → the zone anatomy above.
   const emitShadowRegion = (rings, groundPlane, clipper, out, meta, treat, draft, cfg) => {
     if (!Array.isArray(rings) || !rings.length || !Array.isArray(rings[0]) || rings[0].length < 3) return;
-    const { angle, coverage, penWidth, layers, layerCount, falloff, Mappers } = cfg;
-    // Draft / layers-off / no inset util → single flat hatch (legacy path).
-    if (!layers || draft || !Mappers || typeof Mappers.insetPasses !== 'function') {
-      const spacing = coverageToSpacing(coverage, penWidth);
-      emitHatchLines(hatchRingsEvenOdd(rings, angle, spacing), groundPlane, clipper, out, meta, treat, draft);
-      return;
-    }
-    // Penumbra: passes[0] is the footprint boundary, passes[k] the k-th inward
-    // offset. Step so `layerCount` insets stay well inside the footprint.
-    const ext = ringMinExtent(rings[0]);
-    const step = Math.max(1, ext / (layerCount * 2));
-    let passes = [];
-    try { passes = Mappers.insetPasses(rings, step) || []; } catch (_e) { passes = []; }
-    if (passes.length < 2) {
-      const spacing = coverageToSpacing(coverage, penWidth);
-      emitHatchLines(hatchRingsEvenOdd(rings, angle, spacing), groundPlane, clipper, out, meta, treat, draft);
-      return;
-    }
-    const n = Math.min(layerCount, passes.length);
-    for (let L = 0; L < n; L++) {
-      const layerRings = passes[L];
-      if (!Array.isArray(layerRings) || !layerRings.length) continue;
-      // Penumbra build-up: L = 0 (rim / full footprint) carries the base coverage
-      // — the shadow edge matches a flat shadow — and each inward layer adds a
-      // sparser hatch (coverage·falloff^L). The layers nest and overlap, so the
-      // core (covered by every layer) accumulates the most ink = densest, fading
-      // outward to the rim. `falloff` sets how fast the per-layer add-on drops.
-      const cov = clamp(coverage * Math.pow(falloff, L), 0.02, 1);
-      const spacing = coverageToSpacing(cov, penWidth);
-      const layerMeta = { ...meta };
-      if (layerMeta.sceneTarget) {
-        layerMeta.sceneTarget = { ...meta.sceneTarget, shadowLayer: L, pickPolygon: layerRings[0].map((pt) => ({ x: pt.x, y: pt.y })) };
-      }
-      emitHatchLines(hatchRingsEvenOdd(layerRings, angle, spacing), groundPlane, clipper, out, layerMeta, treat, draft);
+    const { angle, coverage, penWidth, layers, layerCount, falloff } = cfg;
+    const sBase = coverageToSpacing(coverage, penWidth);
+    const flat = () => emitHatchLines(hatchRingsEvenOdd(rings, angle, sBase), groundPlane, clipper, out, meta, treat, draft);
+    if (!layers || draft) { flat(); return; }
+
+    // Edge field excludes the rim that hugs the caster's body: the base of a
+    // shadow is not an "edge" of it, and counting it would push the darkest zone
+    // into the lightest one exactly where the contact band belongs.
+    const contactRings = (cfg.contactRings && cfg.contactRings.length) ? cfg.contactRings : null;
+    const contactSegs = contactRings ? ringsToSegs(contactRings) : [];
+    const contactWidth = contactWidthOf(contactRings);
+    const edgeSegs = ringsToSegs(rings).filter(([a, b]) => {
+      if (!contactSegs.length) return true;
+      const mx = (a.x + b.x) * 0.5; const my = (a.y + b.y) * 0.5;
+      return distToSegs(mx, my, contactSegs) > contactWidth * 1.5;
+    });
+    const fields = buildShadowFields(rings, contactRings || [], edgeSegs);
+    if (!fields) { flat(); return; }
+
+    const L = fields.L;
+    // Penumbra retreat law. `shadowFalloff` is repurposed as SOFTNESS: at 0.2 the
+    // umbra survives nearly to the tip (hard sun); at 1.0 it dies inside the first
+    // third (broad source). Sweeping it visibly lengthens/shortens the wedge —
+    // that is the slider's whole job now.
+    const k = 0.06 + 0.44 * clamp(finite(falloff, 0.5), 0.2, 1);
+    const w0 = Math.max(0.8, 0.02 * L);
+    const wAt = (t) => w0 + k * t * L;
+
+    const nZones = clamp(Math.round(finite(layerCount, 3)), 2, 4);
+    const wantUmbra = nZones >= 3;
+    const wantOuter = nZones >= 4;
+    const contactOn = contactSegs.length > 0;
+
+    const zoneAt = (x, y) => {
+      const dc = fields.distContact(x, y);
+      const t = L > 1e-6 ? dc / L : 0;
+      if (contactOn && dc <= contactWidth) return Z_CONTACT;
+      const e = fields.distEdge(x, y);
+      const w = wAt(t);
+      if (wantUmbra && e > w) return Z_UMBRA;
+      if (wantOuter && (e <= w / 2.5 || t > 0.82)) return Z_OUTER;
+      return Z_PENUMBRA;
+    };
+    fields.bandWidthAt = (x, y) => {
+      const t = L > 1e-6 ? fields.distContact(x, y) / L : 0;
+      return clamp(wAt(t) * 0.45, 1.2, Math.max(1.2, L * 0.08));
+    };
+    fields.rimFeather = wantOuter ? clamp(L * 0.03, 0.8, 6) : 0;
+
+    const ladder = strideLadder(sBase, penWidth);
+    const strideA = ladder.strideA;
+    const keepA = (zone, i) => {
+      const st = strideA[zone] || 1;
+      return st <= 1 || (((i % st) + st) % st) === 0;
+    };
+    const dashA = (zone, s, r) => {
+      if (zone !== Z_OUTER) return 1;
+      const t = L > 1e-6 ? fields.distContact(r.a.x, r.a.y) / L : 0;
+      return clamp(0.75 - 0.4 * clamp(t, 0, 1), 0.35, 0.75);
+    };
+
+    const base = {
+      rings, zoneAt, fields, groundPlane, clipper, out, treat, draft,
+    };
+    const zoneMeta = (zone) => {
+      if (!meta.sceneTarget) return meta;
+      return { ...meta, sceneTarget: { ...meta.sceneTarget, shadowLayer: zone } };
+    };
+    // Family A — the master grid. Every zone is a keep-every-k-th subset of it.
+    emitFamily({
+      ...base, angle, spacing: ladder.master, familyId: 0,
+      keepFor: keepA, dashFor: dashA, meta: zoneMeta(Z_PENUMBRA),
+    });
+    // Crossed families. Density the master grid cannot reach without dropping
+    // below the plot floor goes HERE — into another direction — never into tighter
+    // spacing. B rides the umbra as well as the contact (thinning along the throw
+    // so the wedge fades before it narrows); C is contact-only.
+    const crossPitch = Math.max(ladder.floorSp, sBase / 3);
+    emitFamily({
+      ...base, angle: angle + CROSS_B_DEG, spacing: crossPitch, familyId: 1,
+      meta: zoneMeta(Z_CONTACT),
+      keepFor: (zone, i, s, r) => {
+        if (zone === Z_CONTACT) return true;
+        if (zone !== Z_UMBRA) return false;
+        const t = L > 1e-6 ? fields.distContact(r.a.x, r.a.y) / L : 0;
+        const st = t < 0.5 ? 2 : 4;
+        return (((i % st) + st) % st) === 0;
+      },
+    });
+    if (contactOn) {
+      emitFamily({
+        ...base, angle: angle + CROSS_C_DEG, spacing: crossPitch, familyId: 2,
+        meta: zoneMeta(Z_CONTACT),
+        keepFor: (zone) => zone === Z_CONTACT,
+      });
     }
   };
 
@@ -734,13 +1153,14 @@
     // Emit hatch (additive) OR thin the ground fill (inverse). One chokepoint so
     // every footprint path — draft hull, degrade fallback, full class union —
     // composes identically.
-    const compose = (rings, casterId, penId) => {
+    const compose = (rings, casterId, penId, contactRings) => {
       if (inverse) {
         if (groundFillSink) thinGroundFillInRings(groundFillSink, rings, invRemoveShare, invReplace, invAcc);
         return;
       }
       emitShadowRegion(rings, groundPlane, clipper, out,
-        shadowMeta(rings, casterId, penFor(penId), groundDepth), shadowTreat, draftFrame, cfg);
+        shadowMeta(rings, casterId, penFor(penId), groundDepth), shadowTreat, draftFrame,
+        contactRings && contactRings.length ? { ...cfg, contactRings } : cfg);
     };
     // Inverse mode erases the in-footprint portion of the chosen ground-fill
     // lines: splice each original out of the shared sink and splice its surviving
@@ -780,6 +1200,24 @@
     // Per caster: a convex hull (cheap draft footprint) AND — when available —
     // its TRUE silhouette loops (outer + inner rims). The full frame prefers the
     // loops so holes stay open (I25); the draft uses the hull.
+    // CONTACT SET — the caster's NADIR drop: its world points flattened to y = 0
+    // and camera-projected. Deliberately NOT the light projection: the contact /
+    // ambient-occlusion band sits where the object meets the ground, which does
+    // not move when the sun does. Convex hull is enough — the collar is thin, so
+    // plan-shape concavity is below its own width.
+    const nadirHull = (record) => {
+      const world = record.world || [];
+      const pts = [];
+      for (let i = 0; i < world.length; i++) {
+        const P = world[i];
+        if (!P || !Number.isFinite(P.y) || P.y < -1e-6) continue;
+        const q = projectPoint(rotatePoint({ x: P.x, y: 0, z: P.z }, camAngles0), projOpts0);
+        if (q && Number.isFinite(q.x) && Number.isFinite(q.y)) pts.push({ x: q.x, y: q.y });
+      }
+      const hull = convexHull(pts);
+      return hull.length >= 3 ? hull : null;
+    };
+
     const casters = [];
     (scene.objects || []).forEach((record) => {
       if (!record || record.isGround) return;
@@ -788,7 +1226,10 @@
       if (!hull) return;
       const loops = casterSilhouetteLoops(record, projectVertex, lightClassifyEdges);
       const style = styleOf ? (styleOf(record.id) || {}) : {};
-      casters.push({ id: record.id, hull, loops, penId: style.penId || null, classKey: style.penId || '' });
+      casters.push({
+        id: record.id, hull, loops, contact: nadirHull(record),
+        penId: style.penId || null, classKey: style.penId || '',
+      });
     });
     if (!casters.length) return out;
 
@@ -893,8 +1334,46 @@
     const classList = [...classes.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     classList.forEach((cls) => { cls.geom = cls.geoms.length ? FillBoolean.union(...cls.geoms) : []; });
 
+    // ── Occlusion collar (Layers ≥ 2 only) ────────────────────────────────────
+    // A cast footprint only ever lies AWAY from the light, so on its own it can
+    // never darken the lit side of the base — yet ambient occlusion does not care
+    // where the sun is, and without ink on that side the object still floats. So
+    // when zones are on, each class's footprint is unioned with a thin collar
+    // dilated off the contact set (ground-clipped, own-body subtracted). The zone
+    // field then classifies that collar as contact automatically — no separate
+    // region pass, and the collar and the footprint share one master ruling grid.
+    // Layers = Off skips this entirely: the Off render must not move.
+    const MO = (Vectura.GeometryUtils && Vectura.GeometryUtils.miterOffsetClosedRing) || null;
+    const collarFor = (cls) => {
+      if (!shadowLayers || !MO) return [];
+      const rings = [];
+      cls.casterIds.forEach((id) => {
+        const c = casters.find((k) => k.id === id);
+        if (c && c.contact) rings.push(c.contact);
+      });
+      if (!rings.length) return [];
+      const grown = [];
+      rings.forEach((ring) => {
+        const w = contactWidthOf([ring]);
+        let ext = null;
+        try { ext = MO(ring, w); } catch (_e) { ext = null; }
+        const pts = (ext || []).filter(isFinitePt);
+        if (pts.length >= 3) grown.push(FillBoolean.ringToMultiPolygon(pts));
+      });
+      if (!grown.length) return [];
+      let geom = FillBoolean.union(...grown);
+      geom = clipToGround(geom);
+      cls.casterIds.forEach((id) => {
+        const own = ownSilhouette(id);
+        if (own.length && geom.length) geom = FillBoolean.difference(geom, own);
+      });
+      return geom || [];
+    };
+
     classList.forEach((cls, i) => {
       let geom = cls.geom;
+      const collar = collarFor(cls);
+      if (collar.length) geom = geom && geom.length ? FillBoolean.union(geom, collar) : collar;
       if (!geom || !geom.length) return;
       // Subtract higher-precedence classes.
       for (let j = i + 1; j < classList.length; j++) {
@@ -903,13 +1382,18 @@
       }
       if (!geom || !geom.length) return;
       const casterId = cls.casterIds.size === 1 ? [...cls.casterIds][0] : null;
+      const contactRings = [];
+      cls.casterIds.forEach((id) => {
+        const c = casters.find((k) => k.id === id);
+        if (c && c.contact) contactRings.push(c.contact);
+      });
       // One region per polygon (outer + holes) so even-odd keeps holes empty.
       geom.forEach((polygon) => {
         const rings = (polygon || [])
           .map((ring) => (ring || []).map((pt) => ({ x: pt[0], y: pt[1] })))
           .filter((ring) => ring.length >= 3);
         if (!rings.length) return;
-        compose(rings, casterId, cls.penId);
+        compose(rings, casterId, cls.penId, contactRings);
       });
     });
 
