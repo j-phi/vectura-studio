@@ -781,8 +781,14 @@
         // projection and divide it back out. The tone ladder then lands in SCREEN
         // space, where the eye reads it, and the plot-safe floor is enforced there
         // too. `kFloor` stops a near-edge-on face from asking for infinite spacing.
-        const compress = uvCompression(scaf, baseAngle + 90);
-        const screenSpacing = Math.max(spacing, PLOT_FLOOR_MULT_OBJ * penWidth);
+        //
+        // Gated on `toneOn`. An UNTONED fill makes no tonal claim — its spacing
+        // is the user's Density, read in the face plane, and every existing
+        // untoned scene (and every byte-identical golden that pins one) must
+        // stay exactly as it was. The defect being fixed is a TONE-ordering
+        // defect, so it is corrected where tone is doing the talking.
+        const compress = toneOn ? uvCompression(scaf, baseAngle + 90) : 1;
+        const screenSpacing = toneOn ? Math.max(spacing, PLOT_FLOOR_MULT_OBJ * penWidth) : spacing;
         const planeSpacing = screenSpacing / compress;
         // A terminator facet crosses a second family: the ladder tops out at 1.6x
         // gain, so the core shadow is unreachable by spacing alone. Reserved for
