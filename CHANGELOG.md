@@ -7,6 +7,19 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Fixed
+- **3D Scene — a scene-tree object with no style of its own now inherits the scene, instead of
+  rendering as a bare unfilled outline.** The collect step republished
+  `styleTable.byObject[layerId]` for *every* object3d / booleanGroup3d child, even one carrying
+  no style bag — and a missing bag normalizes to `mapper:'none'`, which then **beat** the
+  group's scene style in the whole-style-wins cascade (`byFace > byObject > scene`, no per-field
+  merge). A scene styled Hatch therefore drew such a child as silhouette-only: face and edge
+  lines, zero fill, while ground cast shadows kept rendering (the shadow path never reads the
+  object's style), which is exactly how the defect presented. Same failure shape as the
+  monolith-expansion fix, reached through a different door — opening a `.vectura` whose
+  object3d child has no `style` (or `style:{}`, or a style with no `mapper`) landed straight in
+  it. An unstyled child now leaves the `byObject` slot absent so resolution falls through to the
+  scene style. **No scene you can build in the UI is affected** — every creation path already
+  seeds a mapper — and an explicit `mapper:'none'` is still honoured as the real user choice it is.
 - **3D Scene — the orbit gizmo no longer teleports off-canvas when you click it.** On a scene
   tree the orbit/rotation gizmo was *drawn* without needing 2D bounds, but the pointer-down and
   hover hit-tests still required them — and a scene group has none, so every click fell through
