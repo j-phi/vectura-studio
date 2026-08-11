@@ -665,24 +665,63 @@
             // family overlaps family A, so treating them as additive over-reports
             // and lets the pair flood. Solve for the most the CROSS may lay down
             // without the pair passing the ceiling.
-            if ((zoneGate || densityCross) && localPitch != null) {
-              {
-                // The ceiling is PROPORTIONAL to the zone's intended weight, not
-                // a flat clamp. A flat clamp collapses every zone that reaches it
-                // onto one value — T and F both crossed, both saturated, and
-                // T/F came out 0.98: the core shadow and the form shadow became
-                // the same tone and the dip closed again. Scaling the ceiling by
-                // (this zone's weight / the darkest zone's weight) preserves the
-                // ladder's ORDER through saturation, which is the whole point of
-                // having a ladder.
-                const ink = Regions.formInk(zone);
-                const primary = ink.coverage * cap;
-                const weight = clamp(ink.coverage + ink.cross, 0, 4);
-                const ceil = TOTAL_DARK_CEIL * clamp(weight / DARKEST_WEIGHT, 0, 1);
-                const cA = clamp((penWidth * primary) / localPitch, 0, 1);
-                const room = cA >= ceil ? 0 : 1 - (1 - ceil) / (1 - cA);
-                covCapped = Math.min(covCapped, (room * localPitch) / penWidth);
+            // ── ONE COMPOSED BUDGET, SPLIT ACROSS EVERY PASS ─────────────────
+            //
+            // ROUND 7 (C2 / O13 / C15-on-the-object). Two faults, one cause.
+            //
+            // (a) The BASE pass had no composed budget at all. It was limited
+            //     only by the multiplicative `cap = localPitch / floorPitch`,
+            //     a per-family PITCH rule — so the ceiling was enforced purely
+            //     by WITHHOLDING the cross, and where family A alone busted it
+            //     the composed total simply stayed at whatever A had done.
+            //     Measured at the peak: one family, alone, at an effective
+            //     0.466 mm = 1.55 x pen, coverage 0.644 — inside C15's literal
+            //     1.2 x bar, 1.4x past this path's own family-A floor, and
+            //     carrying the object's maximum D.
+            //
+            // (b) The cross pass modelled family A's already-laid coverage as
+            //     `penWidth * primary / localPitch` — using the CROSS family's
+            //     local pitch, because that is the only one in scope. Family A
+            //     runs at a different angle and therefore a different pitch, so
+            //     the term was evaluated on the wrong quantity: where the cross
+            //     ran sparser than A, `cA` came out too low, `room` too
+            //     generous, and the pair composed to 0.642 against a 0.47
+            //     ceiling. Measured at the peak window: family A 0.497,
+            //     crossed family 0.289.
+            //
+            // Both are the same error the collar took three rounds to shed — a
+            // cap stated on a proxy one transform away from the metric. So the
+            // budget is no longer modelled at all. Each pass is handed a SHARE
+            // of the zone's composed ceiling, in proportion to the ink that
+            // pass is meant to contribute, and enforces only its own share
+            // against its own pitch — which is the one pitch it actually knows.
+            // Because 1 - PROD(1 - c_i) with c_i = 1 - (1-ceil)^(w_i/W) is
+            // exactly `ceil` when every pass saturates, the composed total is
+            // bounded by construction and no pass needs to know about any
+            // other.
+            if (zone && localPitch != null && localPitch > 1e-6) {
+              // The ceiling stays PROPORTIONAL to the zone's intended weight,
+              // never a flat clamp. A flat clamp collapses every zone that
+              // reaches it onto one value — T and F both crossed, both
+              // saturated, T/F 0.98, and the dip closed again.
+              const ink = Regions.formInk(zone);
+              const weight = clamp(ink.coverage + ink.cross, 0, 4);
+              const ceil = TOTAL_DARK_CEIL * clamp(weight / DARKEST_WEIGHT, 0, 1);
+              // Every family that will land on this sample, and what each is
+              // for. The Density overflow is a THIRD direction and has to be in
+              // the denominator or it spends budget nobody accounted for.
+              const wBase = Math.max(0, ink.coverage);
+              const wCross = Math.max(0, ink.cross);
+              const wOver = densityOverflow > 0 ? Math.max(0, ink.coverage * densityOverflow) : 0;
+              const W = wBase + wCross + wOver;
+              let share = 1;
+              if (W > 1e-6) {
+                if (densityCross) share = wOver / W;
+                else if (zoneGate) share = wCross / W;
+                else share = wBase / W;
               }
+              const myCeil = share >= 1 ? ceil : 1 - Math.pow(1 - ceil, clamp(share, 0, 1));
+              covCapped = Math.min(covCapped, (myCeil * localPitch) / penWidth);
             }
             const jit = featherAt(lineIndex, s) * FEATHER_AMPL;
             dropZone = rank >= covCapped + jit;

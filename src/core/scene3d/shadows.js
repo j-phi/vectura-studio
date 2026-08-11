@@ -827,6 +827,50 @@
     }
     return 6;
   };
+  // C15, ROUND 7 — the same error as Round 6's, one term over.
+  //
+  // Round 6 discharged the collar's ceiling by striding family A. That works
+  // only while family A is the term that busts it. At a wide pen it is not:
+  // the crossed families rule at `crossPitch`, and at pen 0.8 on a 0.96 mm grid
+  // ONE crossed family alone composes to 0.833 against a 0.80 bound. No stride
+  // on A can bring that down, because A is not what is over budget — and the
+  // search dutifully returned stride 6 and reported itself satisfied while the
+  // collar flooded. A cap must bind every term the criterion composes over.
+  //
+  // So the crossed families take a ruling-subset stride of their own. It is the
+  // same keep-every-k-th rule on the same shared grid, so no new line can appear
+  // and the subset architecture is untouched. At every shipped pen and density
+  // it evaluates to 1 and the emitted geometry is byte-identical; it engages
+  // only in the regime that was flooding.
+  const collarCrossStrideFor = (pitchA, crossPitch, penWidth, withThird) => {
+    for (let cs = 1; cs <= 8; cs++) {
+      const fams = withThird
+        ? [pitchA, crossPitch * cs, crossPitch * cs]
+        : [pitchA, crossPitch * cs];
+      if (perceivedCoverage(fams, penWidth) <= COLLAR_CEIL) return cs;
+    }
+    return 8;
+  };
+  // The collar's complete family plan, in ONE place. The emitter and the test
+  // seam both read it, so the ceiling cannot be asserted over a different set of
+  // families than the one actually drawn — which is how C15 stayed broken for
+  // three rounds.
+  const collarPlan = (ladder, penWidth) => {
+    const stride = collarStrideFor(
+      ladder.master, ladder.crossPitch, penWidth,
+      perceivedCoverage([ladder.master, ladder.crossPitch, ladder.crossPitch], penWidth) <= COLLAR_CEIL,
+    );
+    const pitchA = ladder.master * stride;
+    const withThird = perceivedCoverage([pitchA, ladder.crossPitch, ladder.crossPitch], penWidth) <= COLLAR_CEIL;
+    const crossStride = collarCrossStrideFor(pitchA, ladder.crossPitch, penWidth, withThird);
+    const crossPitch = ladder.crossPitch * crossStride;
+    return {
+      stride,
+      crossStride,
+      withThird,
+      families: withThird ? [pitchA, crossPitch, crossPitch] : [pitchA, crossPitch],
+    };
+  };
   const perceivedCoverage = (spacings, penWidth) => {
     let clear = 1;
     spacings.forEach((s) => { clear *= 1 - clamp(penWidth / Math.max(penWidth, s), 0, 1); });
@@ -1141,12 +1185,18 @@
     const scale = clamp(Math.max(headroomScale(sBase, penWidth), rungScale), 1, 2.2);
     const ladder = strideLadder(sBase * scale, penWidth);
     const strideA = ladder.strideA;
-    // C15 — the collar takes the tightest stride that still leaves paper showing.
-    strideA[Z_CONTACT] = collarStrideFor(
-      ladder.master, ladder.crossPitch, penWidth,
-      perceivedCoverage([ladder.master, ladder.crossPitch, ladder.crossPitch], penWidth) <= COLLAR_CEIL,
-    );
+    // C15 — the collar takes the tightest FAMILY PLAN that still leaves paper
+    // showing: a stride on family A, and (only where A cannot discharge the
+    // ceiling on its own) a stride on the crossed families too.
+    const collar = collarPlan(ladder, penWidth);
+    strideA[Z_CONTACT] = collar.stride;
     const crossPitch = ladder.crossPitch;
+    // Keep-every-k-th for the collar's copy of a crossed family. 1 everywhere a
+    // shipped pen/density lands, so this is inert on every current fixture.
+    const keepCollarCross = (i) => {
+      const cs = collar.crossStride;
+      return cs <= 1 || (((i % cs) + cs) % cs) === 0;
+    };
     // THIRD LEVER — dash duty. It can only ever LIGHTEN, and the headroom cap
     // already spends what it has. So duty is spent where it is free: thinning the crossed family along
     // the umbra's throw (the wedge has to get lighter as it recedes even before
@@ -1198,7 +1248,8 @@
         const t = L > 1e-6 ? fields.distContact(r.a.x, r.a.y) / L : 0;
         return clamp(0.85 - 0.9 * clamp(t, 0, 1), 0.3, 0.85);
       },
-      keepFor: (zone) => zone === Z_CONTACT || zone === Z_UMBRA,
+      keepFor: (zone, i) => (zone === Z_UMBRA)
+        || (zone === Z_CONTACT && keepCollarCross(i)),
     });
     // ROUND 3 (C2/O13). The contact collar must be the darkest patch ANYWHERE —
     // if the object's own terminator out-inks it, the object floats. With the
@@ -1218,13 +1269,12 @@
     // those carry the accent, and C1 depends on them.
     // The third direction joins only if the collar still has room for it AFTER
     // the stride has been chosen — otherwise it is the thing that floods.
-    const collarThird = contactOn
-      && perceivedCoverage([ladder.master * strideA[Z_CONTACT], crossPitch, crossPitch], penWidth) <= COLLAR_CEIL;
+    const collarThird = contactOn && collar.withThird;
     if (collarThird) {
       emitFamily({
         ...base, angle: angle + CROSS_C_DEG, spacing: crossPitch, familyId: 2,
         meta: zoneMeta(Z_CONTACT),
-        keepFor: (zone) => zone === Z_CONTACT,
+        keepFor: (zone, i) => zone === Z_CONTACT && keepCollarCross(i),
       });
     }
   };
@@ -1755,9 +1805,33 @@
   // clipping). Exposed read-only, prefixed so it reads as a seam, not API.
   const __ladderForTest = (sBase, penWidth) => strideLadder(sBase, penWidth);
 
-  Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Shadows: { build, __ladderForTest } });
+  // Test seam #2 (C15, ROUND 7). The collar's plot-safety is a property of the
+  // COMPOSED coverage of the families it actually emits — family A at its
+  // chosen stride, plus the crossed families that will land on top of it. That
+  // composition is not observable from the emitted paths either: a stride shows
+  // up as a spacing only where two adjacent rulings both survive clipping, and
+  // in the collar they mostly do not. Round 6 fixed the flood and shipped no
+  // test; this is the seam that lets one exist.
+  //
+  // Returns exactly what the ceiling is asserted over, so the test cannot
+  // re-derive (and therefore re-bless) the implementation's own arithmetic.
+  const __collarForTest = (sBase, penWidth) => {
+    const l = strideLadder(sBase, penWidth);
+    const plan = collarPlan(l, penWidth);
+    return {
+      ...plan,
+      composed: perceivedCoverage(plan.families, penWidth),
+      ceil: COLLAR_CEIL,
+      master: l.master,
+      floorSp: l.floorSp,
+    };
+  };
+
+  Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, {
+    Shadows: { build, __ladderForTest, __collarForTest },
+  });
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { build, __ladderForTest };
+    module.exports = { build, __ladderForTest, __collarForTest };
   }
 })();
