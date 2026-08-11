@@ -744,8 +744,15 @@
         // these; every other caller leaves them undefined ⇒ byte-identical.
         const visibleMeta = opts && opts.visibleMeta;
         const hiddenMeta = opts && opts.hiddenMeta;
+        // `opts.chained` — the caller has ALREADY applied the emission floor, to
+        // whole welded CHAINS of runs rather than to each run (see
+        // `chainedFloorSurvivors`). Re-applying the per-run floor here would
+        // re-punch the very holes the chaining just closed. Only the structural
+        // edge pass sets it; every other caller leaves it undefined ⇒ the
+        // per-run floor is byte-identical to what it always was.
+        const chained = Boolean(opts && opts.chained);
         runs.forEach((run) => {
-          if (runLength(run.pts) < MIN_RUN_MM) return;
+          if (!chained && runLength(run.pts) < MIN_RUN_MM) return;
           if (run.visible && !forceHidden) {
             if (hiddenOnly) return;
             const meta = (treat.active || visibleMeta) ? { ...baseMeta, ...(visibleMeta || {}) } : baseMeta;
@@ -770,6 +777,84 @@
           const path = pathWithMeta(pts, meta);
           if (path.length >= 2) out.push(markHidden(path));
         });
+      };
+
+      // ── Chained emission floor (structural edges) ──────────────────────────
+      // `MIN_RUN_MM` exists to suppress visibility CRUMBS: sub-pen-width
+      // fragments that draw as a dot at best and only cost pen-down travel.
+      // Applied to ONE STICK it does something else entirely. Structural edges
+      // are emitted ONE PROJECTED MESH EDGE PER PATH, so raising Fidelity only
+      // shortens every stick, until stick after stick falls under the floor and
+      // punches a hole in the object OUTLINE — the exact defect the border pass
+      // was fixed for, on the Border-OFF path. Measured on a capsule sx18 sy84:
+      // 56 of 156 silhouette sticks culled at Fidelity 40, breaking the outline
+      // into 14 pieces (28 dangling endpoints); 36 dangling at Fidelity 60.
+      // Zeroing MIN_RUN_MM took every one of those to 0, so the cull was the
+      // sole cause — the mesh silhouette is one closed loop at every Fidelity.
+      //
+      // So the floor moves from the STICK to the CHAIN, exactly as the border
+      // pass applies it to its stitched run. Runs are welded on INTEGER MESH
+      // VERTEX INDICES, never on screen coordinates, so contiguity cannot
+      // depend on float equality and cannot depend on tessellation. A short run
+      // that continues a longer contiguous edge survives; a genuinely isolated
+      // speck — one whose ENTIRE welded chain is under the floor — is still
+      // dropped, which is what the floor was for.
+      //
+      // Runs come back from the clipper ordered along a→b, so run 0 touches
+      // mesh vertex `a` and the last run touches `b`. An INTERIOR run boundary
+      // is an HLR crossing — a real occlusion break — and never welds. Visible
+      // and hidden (dashed) runs weld in separate classes: they are different
+      // ink, and a dashed far-side stretch must not prop up a visible crumb.
+      // Only runs that will actually be emitted take part, so an edge whose
+      // hidden treatment is 'remove' cannot anchor anything.
+      //
+      // Returns the Set of runs that clear the floor; the caller passes the
+      // filtered runs to `emitRuns` with `chained: true`.
+      const chainedFloorSurvivors = (plan) => {
+        const runsById = [];
+        const lens = [];
+        const parent = [];
+        const find = (i) => {
+          let r = i;
+          while (parent[r] !== r) { parent[r] = parent[parent[r]]; r = parent[r]; }
+          return r;
+        };
+        const union = (i, j) => { const a = find(i); const b = find(j); if (a !== b) parent[a] = b; };
+        const anchors = new Map();
+        plan.forEach((item) => {
+          const runs = item.runs || [];
+          const last = runs.length - 1;
+          runs.forEach((run, r) => {
+            if (!run || !Array.isArray(run.pts) || run.pts.length < 2) return;
+            const willEmit = run.visible ? !item.hiddenOnly : item.hidden === 'dash';
+            if (!willEmit) return;
+            const id = runsById.length;
+            runsById.push(run);
+            lens.push(runLength(run.pts));
+            parent.push(id);
+            const cls = run.visible ? 'v' : 'h';
+            if (r === 0) {
+              const k = `${item.a}|${cls}`;
+              const prev = anchors.get(k);
+              if (prev === undefined) anchors.set(k, id); else union(prev, id);
+            }
+            if (r === last) {
+              const k = `${item.b}|${cls}`;
+              const prev = anchors.get(k);
+              if (prev === undefined) anchors.set(k, id); else union(prev, id);
+            }
+          });
+        });
+        const chainLen = new Map();
+        for (let i = 0; i < runsById.length; i++) {
+          const root = find(i);
+          chainLen.set(root, (chainLen.get(root) || 0) + lens[i]);
+        }
+        const keep = new Set();
+        for (let i = 0; i < runsById.length; i++) {
+          if (chainLen.get(find(i)) >= MIN_RUN_MM) keep.add(runsById[i]);
+        }
+        return keep;
       };
 
       // Per-vertex normal offset of a screen-space run by `d` mm — used by the
@@ -1154,6 +1239,13 @@
         // their HLR runs, chained + emitted once after the edge loop below.
         const borderWanted = Boolean(borderCfg(record));
         const borderEdges = [];
+        // Structural edge buffer: every edge's HLR runs plus the emission
+        // decisions already taken for it. Emitted once after the edge loop, so
+        // the emission floor can be applied to WELDED CHAINS instead of to each
+        // 2-point stick (`chainedFloorSurvivors`). Buffering does not reorder
+        // anything — the entries emit in edge order, still ahead of the border
+        // pass — so `out` keeps the order it always had.
+        const edgePlan = [];
         const edgeClsById = new Map();
         classified.forEach((e) => edgeClsById.set(e.edgeId, e.cls));
         // A faceted face-edge is part of the object OUTLINE (drawn for 'none')
@@ -2067,8 +2159,18 @@
           if (hiddenOnlyEdge) emitOpts.hiddenOnly = true;
           if (visOverlay) emitOpts.visibleMeta = visOverlay;
           if (hidOverlay) emitOpts.hiddenMeta = hidOverlay;
-          emitRuns(clipped.runs, baseMeta, thisEdgeHidden, { edgeClass: 'hidden' }, dashOnly(strokeTreatment(style.params)),
-            Object.keys(emitOpts).length ? emitOpts : undefined);
+          // BUFFERED, not emitted: the emission floor has to see whole welded
+          // chains, so nothing can be culled until every edge has been clipped.
+          edgePlan.push({
+            a: entry.a,
+            b: entry.b,
+            runs: clipped.runs,
+            baseMeta,
+            hidden: thisEdgeHidden,
+            hiddenOnly: Boolean(emitOpts.hiddenOnly),
+            treat: dashOnly(strokeTreatment(style.params)),
+            opts: emitOpts,
+          });
           // Border emphasis: silhouette + boundary edges only (the shape's real
           // outline), never creases/interior. Gated on record.border.enabled.
           // COLLECTED here, EMITTED after the loop — the outline has to be
@@ -2076,6 +2178,16 @@
           if (borderWanted && structural && (cls === 'silhouette' || cls === 'boundary')) {
             borderEdges.push({ a: entry.a, b: entry.b, runs: clipped.runs, baseMeta });
           }
+        });
+        // Structural edges emit here, in edge order, with the floor already
+        // applied per welded chain (so `chained: true` suppresses the per-run
+        // floor inside emitRuns — see chainedFloorSurvivors).
+        const edgeKeep = chainedFloorSurvivors(edgePlan);
+        edgePlan.forEach((item) => {
+          const runs = item.runs.filter((run) => edgeKeep.has(run));
+          if (!runs.length) return;
+          emitRuns(runs, item.baseMeta, item.hidden, { edgeClass: 'hidden' }, item.treat,
+            { ...item.opts, chained: true });
         });
         emitBorderChains(record, borderEdges);
       });
