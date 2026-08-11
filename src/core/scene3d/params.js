@@ -842,6 +842,29 @@
   //     the group's INLINE ground is kept: a tree pre-sets inline ground OFF (so
   //     deleting the ground child turns the ground off), while a legacy monolith
   //     keeps its inline ground ON (inline back-compat).
+  // Does this child's params bag DECLARE a style of its own? Only a real mapper
+  // string counts — `undefined`, `{}` and `{penId,params}` all mean "not styled".
+  //
+  // The byObject slot must stay ABSENT for an unstyled child. `normalizeStyle`
+  // turns a missing bag into `{penId:null, mapper:'none', params:{}}`, and
+  // publishing THAT into byObject makes it BEAT styleTable.scene in the
+  // whole-style-wins cascade (byFace > byObject > scene, no per-field merge) —
+  // so a scene styled `hatch` rendered an unstyled child as a bare unfilled
+  // outline (sceneFace + sceneEdge, sceneFill 0) while ground cast shadows, which
+  // never read the object's style, kept rendering. Same failure shape 5cfdbeb
+  // fixed for expansion, reached instead by loading a `.vectura` whose object3d
+  // child has no `style`. Leaving the slot absent restores the documented
+  // fall-through to the scene default.
+  //
+  // No UI-created child is affected: addObjectToScene seeds ALGO_DEFAULTS
+  // .object3d.style (mapper 'wireframe'), Convert-to-Scene seeds 'hatch', and
+  // expandMonolithToTree materializes a whole resolved style. An explicit
+  // mapper:'none' is a real user choice and still publishes.
+  const declaresStyle = (params) => {
+    const s = isObject(params) ? params.style : null;
+    return !!(isObject(s) && typeof s.mapper === 'string' && s.mapper);
+  };
+
   const collectSceneParams = (groupParams, collected) => {
     const gp = isObject(groupParams) ? groupParams : {};
     const items = Array.isArray(collected) ? collected : [];
@@ -894,7 +917,7 @@
           border: n.border,
           emissive: n.emissive,
         });
-        byObject[item.id] = n.style;
+        if (declaresStyle(item.params)) byObject[item.id] = n.style;
         if (n.edgeStyles) edgeStylesByObject[item.id] = n.edgeStyles;
         Object.keys(n.faceStyles || {}).forEach((fid) => {
           const full = fid.indexOf('/') >= 0 ? fid : `${item.id}/${fid}`;
@@ -908,7 +931,8 @@
           op: GROUP_OPS.includes(bp.op) ? bp.op : 'none',
           children: (Array.isArray(item.children) ? item.children : []).filter((c) => typeof c === 'string'),
         });
-        byObject[item.id] = normalizeStyle(bp.style);
+        // Same inherit-when-unstyled rule as an object3d child.
+        if (declaresStyle(bp)) byObject[item.id] = normalizeStyle(bp.style);
       }
     });
 
