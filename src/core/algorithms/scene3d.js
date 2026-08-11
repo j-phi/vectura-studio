@@ -773,45 +773,209 @@
       };
 
       // Per-vertex normal offset of a screen-space run by `d` mm — used by the
-      // silhouette border emphasis to lay parallel over-strikes beside an edge.
-      const offsetRun = (pts, d) => {
+      // silhouette border emphasis to lay parallel over-strikes beside a run.
+      // `closed` wraps the tangent window at the seam so an offset LOOP still
+      // closes exactly: without it the seam vertex averages a one-sided tangent
+      // that no other vertex on the loop shares, and the ring opens by a hair.
+      const offsetRun = (pts, d, closed) => {
+        const n = pts.length;
+        const wrap = closed === true && n > 2;
+        const span = n - 1; // distinct vertices on a closed run (pts[0] === pts[n-1])
         const arr = [];
-        for (let i = 0; i < pts.length; i++) {
-          const a = pts[Math.max(0, i - 1)];
-          const b = pts[Math.min(pts.length - 1, i + 1)];
+        for (let i = 0; i < n; i++) {
+          const ia = wrap ? ((i - 1 + span) % span) : Math.max(0, i - 1);
+          const ib = wrap ? ((i + 1) % span) : Math.min(n - 1, i + 1);
+          const a = pts[ia];
+          const b = pts[ib];
           let tx = b.x - a.x; let ty = b.y - a.y;
           const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
           arr.push({ x: pts[i].x - ty * d, y: pts[i].y + tx * d, z: pts[i].z });
         }
+        if (wrap) arr[n - 1] = { ...arr[0] }; // exact closure, not merely near
         return arr;
       };
-      // Border emphasis (ask #8): when an object's border is enabled, its
-      // silhouette + boundary edges get extra parallel over-strikes so the
-      // outline reads as a heavy, deliberate frame. Pass count + spread scale
-      // with `strength`; `penId` (null ⇒ inherit the edge pen) recolours the
-      // band. Draft frames skip it (keeps live drags cheap); a record with no
-      // border block never enters here, so default-off output is byte-identical.
+
+      // ── Border emphasis (ask #8) ───────────────────────────────────────────
+      // Contract: "a border should be a contiguous single outline of the
+      // silhouette of a 3d object from the current viewing angle." Multiple
+      // loops are legitimate (a torus seen face-on has two); each must be
+      // UNBROKEN.
+      //
+      // WHY THIS IS CHAINED BEFORE IT IS OFFSET
+      // ---------------------------------------
+      // Structural edges are emitted ONE PROJECTED MESH EDGE PER PATH. The old
+      // border offset each 2-point stick along ITS OWN screen normal, so the
+      // mesh vertex two adjacent sticks share landed at two different screen
+      // points — a gap of 2·d·tan(theta/2) at EVERY vertex. That is the dashed
+      // outline. It also defeated the display-stage chain in
+      // `Engine._applySceneCurveFinish` (exact-endpoint by design), so 104 of
+      // 112 border paths stayed 2-point `meta.straight` sticks even with Curves
+      // on and Smoothing 1.00 — and a 2-point path IS a straight line, which no
+      // fitter can smooth. That is the lumpy crown. Per-stick `MIN_RUN_MM`
+      // culling compounded it: raising Fidelity only shortens every stick, so
+      // more of them fell under the floor and punched more holes.
+      //
+      // So the border is assembled in three stages:
+      //   1. CHAIN on integer mesh vertex indices — never on screen coordinates.
+      //      Contiguity then cannot depend on float equality, and the loop count
+      //      is topological, so it is invariant as Fidelity rises. A vertex of
+      //      degree != 2 is a junction and terminates a chain; a branch there
+      //      would be arbitrary.
+      //   2. STITCH the per-edge HLR runs in traversal order. Each edge is still
+      //      clipped individually against its OWN adjacent faces, so hidden-line
+      //      removal is bit-for-bit what it was — a genuinely occluded stretch
+      //      still breaks the outline, which is correct. Only a run that ends
+      //      exactly where the next begins is welded.
+      //   3. OFFSET the stitched polyline as a whole (loop-aware), and apply the
+      //      MIN_RUN_MM floor to the STITCHED run rather than to each stick.
+      //
+      // The emitted run is a real polyline with no `straight` flag, so the
+      // universal Curves/Smoothing stage can finally fit it.
+      //
+      // Draft frames skip the border entirely (keeps live drags cheap); a record
+      // with no border block never enters here, so default-off output stays
+      // byte-identical.
       const BORDER_STEP_MM = 0.12;
-      const emitBorderPasses = (record, clippedRuns, baseMeta) => {
+      const BORDER_WELD_EPS = 1e-9; // exact-endpoint weld: these ARE the same projected vertex
+      const borderCfg = (record) => {
         const border = record && record.border;
-        if (!border || !border.enabled || draft) return;
+        if (!border || !border.enabled || draft) return null;
         const strength = clamp(finite(border.strength, 1), 0.25, 4);
-        const passes = Math.max(1, Math.round(strength * 2));
-        const meta0 = {
-          ...baseMeta,
-          sceneTarget: { ...baseMeta.sceneTarget },
-          ...(border.penId ? { penId: border.penId } : {}),
+        return {
+          passes: Math.max(1, Math.round(strength * 2)),
+          penId: border.penId || null,
         };
-        clippedRuns.forEach((run) => {
-          if (!run.visible) return; // emphasise only the visible outline
-          const pts = run.pts;
-          if (!Array.isArray(pts) || runLength(pts) < MIN_RUN_MM) return;
-          for (let k = 1; k <= passes; k++) {
-            const sign = (k % 2 === 0) ? 1 : -1;
-            const mag = sign * BORDER_STEP_MM * Math.ceil(k / 2);
-            const path = pathWithMeta(offsetRun(pts, mag), { ...meta0 });
-            if (path.length >= 2) out.push(path);
+      };
+
+      // Chain `items` ({ a, b } integer vertex indices) into maximal runs.
+      // Returns [{ seq: [{ i, fwd }], closed }].
+      const chainBorderEdges = (items) => {
+        const incident = new Map();
+        items.forEach((it, i) => {
+          [it.a, it.b].forEach((v) => {
+            let arr = incident.get(v);
+            if (!arr) { arr = []; incident.set(v, arr); }
+            arr.push(i);
+          });
+        });
+        // The one continuation off vertex `v` when arriving via edge `from`.
+        // Degree != 2 is a junction: never guess a branch.
+        const step = (v, from) => {
+          const inc = incident.get(v);
+          if (!inc || inc.length !== 2) return -1;
+          const j = inc[0] === from ? inc[1] : inc[0];
+          return j === from ? -1 : j;
+        };
+        const used = new Array(items.length).fill(false);
+        const chains = [];
+        items.forEach((_, seed) => {
+          if (used[seed]) return;
+          used[seed] = true;
+          const seq = [{ i: seed, fwd: true }];
+          let head = items[seed].a;
+          let tail = items[seed].b;
+          let closed = false;
+          for (;;) {
+            const j = step(tail, seq[seq.length - 1].i);
+            if (j < 0) break;
+            if (used[j]) { if (j === seed) closed = true; break; }
+            used[j] = true;
+            const fwd = items[j].a === tail;
+            seq.push({ i: j, fwd });
+            tail = fwd ? items[j].b : items[j].a;
           }
+          if (!closed) {
+            for (;;) {
+              const j = step(head, seq[0].i);
+              if (j < 0 || used[j]) break;
+              used[j] = true;
+              const fwd = items[j].b === head;
+              seq.unshift({ i: j, fwd });
+              head = fwd ? items[j].a : items[j].b;
+            }
+          }
+          chains.push({ seq, closed });
+        });
+        return chains;
+      };
+
+      // Weld the per-edge HLR runs along one chain into contiguous strips. A
+      // hidden run, or a run that does not start exactly where the previous one
+      // ended, opens a new strip — those breaks are real occlusion.
+      const stitchBorderStrips = (items, chain) => {
+        const strips = [];
+        let cur = null;
+        const flush = () => { if (cur && cur.length >= 2) strips.push(cur); cur = null; };
+        chain.seq.forEach(({ i, fwd }) => {
+          const runs = items[i].runs || [];
+          (fwd ? runs : runs.slice().reverse()).forEach((run) => {
+            if (!run || !run.visible || !Array.isArray(run.pts) || run.pts.length < 2) { flush(); return; }
+            const pts = fwd ? run.pts : run.pts.slice().reverse();
+            if (!cur) { cur = pts.map((q) => ({ ...q })); return; }
+            const last = cur[cur.length - 1];
+            if (Math.abs(last.x - pts[0].x) > BORDER_WELD_EPS
+              || Math.abs(last.y - pts[0].y) > BORDER_WELD_EPS) {
+              flush();
+              cur = pts.map((q) => ({ ...q }));
+              return;
+            }
+            for (let k = 1; k < pts.length; k++) cur.push({ ...pts[k] });
+          });
+        });
+        flush();
+        // The walk starts at an arbitrary edge, so on a closed chain the first
+        // and last strips may be two halves of ONE visible stretch. Rejoin them.
+        if (chain.closed && strips.length > 1) {
+          const first = strips[0];
+          const last = strips[strips.length - 1];
+          const e = last[last.length - 1];
+          const s = first[0];
+          if (Math.abs(e.x - s.x) <= BORDER_WELD_EPS && Math.abs(e.y - s.y) <= BORDER_WELD_EPS) {
+            strips.pop();
+            strips[0] = last.concat(first.slice(1));
+          }
+        }
+        return strips;
+      };
+
+      const emitBorderChains = (record, collected) => {
+        const cfg = borderCfg(record);
+        if (!cfg || !collected.length) return;
+        // Partition by the pen the emphasis will actually draw with, so a chain
+        // can never silently recolour halfway round. With an explicit border pen
+        // every edge lands in one bucket, which is the common case.
+        const buckets = new Map();
+        collected.forEach((it) => {
+          const key = cfg.penId || (it.baseMeta.penId || '');
+          let arr = buckets.get(key);
+          if (!arr) { arr = []; buckets.set(key, arr); }
+          arr.push(it);
+        });
+        buckets.forEach((items) => {
+          chainBorderEdges(items).forEach((chain) => {
+            const src = items[chain.seq[0].i].baseMeta;
+            stitchBorderStrips(items, chain).forEach((pts) => {
+              if (runLength(pts) < MIN_RUN_MM) return;
+              const loop = pts.length > 2
+                && Math.abs(pts[0].x - pts[pts.length - 1].x) <= BORDER_WELD_EPS
+                && Math.abs(pts[0].y - pts[pts.length - 1].y) <= BORDER_WELD_EPS;
+              for (let k = 1; k <= cfg.passes; k++) {
+                const sign = (k % 2 === 0) ? 1 : -1;
+                const mag = sign * BORDER_STEP_MM * Math.ceil(k / 2);
+                const meta = {
+                  ...src,
+                  sceneTarget: { ...src.sceneTarget },
+                  ...(cfg.penId ? { penId: cfg.penId } : {}),
+                };
+                // A stitched run is a polyline, not a stick: drop the `straight`
+                // refusal so the universal curve stage can fit it.
+                if (pts.length > 2) delete meta.straight;
+                if (loop) meta.closed = true;
+                const path = pathWithMeta(offsetRun(pts, mag, loop), meta);
+                if (path.length >= 2) out.push(path);
+              }
+            });
+          });
         });
       };
 
@@ -986,6 +1150,10 @@
         // and the structural edge pass (further down). edgeClsById maps the
         // canonical vertex-pair key → class.
         const classified = Edges.classifyEdges(record, {});
+        // Border emphasis buffer: the object's silhouette/boundary edges plus
+        // their HLR runs, chained + emitted once after the edge loop below.
+        const borderWanted = Boolean(borderCfg(record));
+        const borderEdges = [];
         const edgeClsById = new Map();
         classified.forEach((e) => edgeClsById.set(e.edgeId, e.cls));
         // A faceted face-edge is part of the object OUTLINE (drawn for 'none')
@@ -1899,10 +2067,13 @@
             Object.keys(emitOpts).length ? emitOpts : undefined);
           // Border emphasis: silhouette + boundary edges only (the shape's real
           // outline), never creases/interior. Gated on record.border.enabled.
-          if (structural && (cls === 'silhouette' || cls === 'boundary')) {
-            emitBorderPasses(record, clipped.runs, baseMeta);
+          // COLLECTED here, EMITTED after the loop — the outline has to be
+          // chained across edges before it can be offset without gapping.
+          if (borderWanted && structural && (cls === 'silhouette' || cls === 'boundary')) {
+            borderEdges.push({ a: entry.a, b: entry.b, runs: clipped.runs, baseMeta });
           }
         });
+        emitBorderChains(record, borderEdges);
       });
 
       // ── Cast shadows on the ground (stream 2A). Orthogonal to tone: driven by

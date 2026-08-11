@@ -57,6 +57,11 @@ describe('scene3d Style > Border contiguity', () => {
   const compose = (primitive, objParams, opts = {}) => {
     const engine = new Vectura.VectorEngine();
     const groupId = engine.addLayer('scene3d');
+    // `addLayer('scene3d')` builds a scene TREE seeded with one default object3d
+    // child. Drop it, or the object under test shares the stage with a second
+    // solid that occludes it — and a genuinely occluded silhouette is NOT the
+    // artifact this suite is about.
+    engine.layers = engine.layers.filter((l) => l.parentId !== groupId);
     const group = engine.layers.find((l) => l.id === groupId);
     group.isGroup = true;
     group.containerRole = 'scene';
