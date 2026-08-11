@@ -82,9 +82,12 @@
   const SPIRAL_MAX_TURNS = 120;
 
   // buildObject(opts) → array of screen polylines, or null when unsupported.
-  //   opts: { mode, sizes, detail, transform, applyTransform, projectWorld,
-  //           camAngles, mapper, fillAngle, fillDensity, toneOn, intensityFn,
-  //           xray }
+  //   opts: { mode, sizes, detail, fillFidelity, transform, applyTransform,
+  //           projectWorld, camAngles, mapper, fillAngle, fillDensity, toneOn,
+  //           intensityFn, xray }
+  //   fillFidelity: Style-tab Fidelity — a multiplier (0.25..3, default 1) on the
+  //   number of SAMPLES taken along each fill line. Distinct from `detail`, which
+  //   is the mesh's tessellation. 1 ⇒ byte-identical to the pre-Fidelity fill.
   //   fillAngle: hatch/crosshatch direction in the surface's OWN tangent frame
   //   (deg). 0 = meridians (the legacy family), 90 = parallels; see the angle
   //   family block below. Omitted/0 ⇒ byte-identical to the pre-angle fill.
@@ -202,7 +205,24 @@
     };
 
     const N = lineCountFor(finite(opts.fillDensity, 50));
-    const steps = Math.max(28, Math.round(finite(opts.detail, 24) * 2)); // samples along each line
+    // Samples along each fill line. The MESH's tessellation `detail` sets the
+    // base; the Style tab's own Fidelity (`fillFidelity`) scales it.
+    //
+    // These are two different questions and they now have two different
+    // controls. Mesh Fidelity buys FACETS — a 22-sided capsule. Style Fidelity
+    // buys POINTS: each fill line re-evaluates the SAME parametric chart at more
+    // (or fewer) places, so a dense line follows the form while a coarse one
+    // cuts across it in chunky chords. Nothing here touches the mesh, so the
+    // silhouette is unmoved whatever this says.
+    //
+    // Default 1 ⇒ Math.round(base × 1) === base ⇒ byte-identical. The upper
+    // clamp keeps the spiral's `steps × turns` budget bounded (turns is already
+    // capped at SPIRAL_MAX_TURNS).
+    const baseSteps = Math.max(28, Math.round(finite(opts.detail, 24) * 2));
+    const fillFidelity = clamp(finite(opts.fillFidelity, 1), 0.25, 3);
+    const steps = fillFidelity === 1
+      ? baseSteps
+      : Math.max(6, Math.min(220, Math.round(baseSteps * fillFidelity)));
     const out = [];
     const mapper = opts.mapper;
 

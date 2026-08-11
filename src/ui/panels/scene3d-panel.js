@@ -446,6 +446,15 @@
     if (FILL_MAPPERS.has(mapper)) {
       Object.keys(STROKE_DEFAULTS).forEach((k) => { out[k] = carry(cur, k, STROKE_DEFAULTS[k]); });
     }
+    if (FILL_LINE_MAPPERS.has(mapper)) {
+      // Fill-line output (Curves / Smoothing / Simplify / Fidelity) survives a
+      // hatch→contour→spiral swap, like the shared Density/Angle tuning above.
+      // Carried ONLY when already set: an absent key is exactly what keeps an
+      // untouched style byte-identical, so this must never seed a default.
+      Object.keys(FILL_LINE_DEFAULTS).forEach((k) => {
+        if (cur[k] !== undefined && cur[k] !== null) out[k] = cur[k];
+      });
+    }
     return out;
   };
 
@@ -543,8 +552,17 @@
   };
 
   /**
-   * The universal output controls (Curves / Smoothing / Simplify) — the same
-   * three every other algorithm exposes in its Post-Processing Lab, reaching 3D.
+   * Line output, SPLIT BY ROLE. Two groups, each owning exactly one kind of
+   * line, with no cascade and no override toggle between them:
+   *
+   *   Object tab ▸ "Border lines"  Curves / Smoothing / Simplify on the OBJECT
+   *                                bag — the silhouette, creases and face
+   *                                outlines. Scene → object inheritance.
+   *   Style  tab ▸ "Fill lines"    Curves / Smoothing / Simplify / Fidelity in
+   *                                STYLE PARAMS — the internal fill lines. The
+   *                                Style tab's own scene → object → face
+   *                                cascade carries them (StyleCascade), so this
+   *                                is not a third scoping model.
    *
    * OFFERED ONLY FOR CURVED GEOMETRY. The set is
    * `Scene3D.Params.CURVED_FILL_PRIMITIVES` — read live, never copied, so this
@@ -559,6 +577,14 @@
     return Boolean(set && typeof set.has === 'function' && set.has(prim));
   };
 
+  const subhead = (host, text) => {
+    const el = document.createElement('div');
+    el.className = 'vs3-subhead';
+    el.textContent = text;
+    host.appendChild(el);
+    return el;
+  };
+
   // `inherit` is the scene-level bag: an object that has never been given its
   // own value follows the scene's, so one switch can curve a whole scene.
   const curveControls = (host, comps, bag, kit, inherit) => {
@@ -570,21 +596,84 @@
     };
     comps.push(UI.SwToggle(labeledRow(host, 'Curves'), {
       checked: val('curves', false) === true,
-      ariaLabel: 'Fit bezier curves to this geometry',
+      ariaLabel: 'Fit bezier curves to the border lines',
       onChange: (v) => { kit.commit(() => { bag.curves = v; }); },
     }));
     comps.push(UI.Slider(labeledRow(host, 'Smoothing'), {
       value: Number(val('smoothing', 0)) || 0,
       min: 0, max: 1, step: 0.05, defaultValue: 0,
-      ariaLabel: 'Curve smoothing (corner rounding)',
+      ariaLabel: 'Border line smoothing (corner rounding)',
       ...kit.liveSlider((v) => { bag.smoothing = v; }),
     }));
     comps.push(UI.Slider(labeledRow(host, 'Simplify'), {
       value: Number(val('simplify', 0)) || 0,
       min: 0, max: 1, step: 0.05, defaultValue: 0,
-      ariaLabel: 'Simplify (reduce points)',
+      ariaLabel: 'Simplify the border lines (reduce points)',
       ...kit.liveSlider((v) => { bag.simplify = v; }),
     }));
+  };
+
+  // ── Fill-line output (Style tab) ────────────────────────────────────────────
+  //
+  // Mappers whose fill is made of LINES. Stipple is deliberately out: it draws
+  // dots, so a "fill lines" group there would be a control bound to nothing.
+  const FILL_LINE_MAPPERS = new Set(['hatch', 'crosshatch', 'contour', 'spiral']);
+  // Fidelity scales SurfaceFill's per-line chart sampling, so it is offered only
+  // where the fill is actually chart-sampled. A REGION contour and a FLAT-CLIP
+  // spiral are 2D silhouette passes that never reach SurfaceFill (scene3d.js
+  // nulls `chartParams` for both), so the row is removed rather than left inert.
+  const fillLinesApplyTo = (prim, mapper) => curvesApplyTo(prim) && FILL_LINE_MAPPERS.has(mapper);
+  const fillFidelityApplies = (prim, mapper, sp) => fillLinesApplyTo(prim, mapper)
+    && !(mapper === 'contour' && (sp || {}).contourStyle === 'region')
+    && !(mapper === 'spiral' && (sp || {}).spiralMode === 'flatClip');
+
+  const FILL_LINE_DEFAULTS = { fillCurves: false, fillSmoothing: 0, fillSimplify: 0, fillFidelity: 1 };
+
+  /**
+   * Mount the "Fill lines" group. `params` is the RESOLVED style params (read);
+   * `write(key, value)` performs the scope-correct commit (whole-style write on
+   * the main panel, direct bag write on the object3d leaf).
+   *
+   * Nothing is seeded: an untouched style carries none of these keys, and the
+   * engine/generator defaults are the same values shown here, so a document that
+   * never opened this group renders byte-identically.
+   */
+  const fillLineControls = (host, comps, opts) => {
+    const UI = Vectura.UI;
+    const { primitive, mapper, params, write, mkRow } = opts;
+    if (!fillLinesApplyTo(primitive, mapper)) return;
+    const sp = params || {};
+    const num = (k) => (Number.isFinite(sp[k]) ? sp[k] : FILL_LINE_DEFAULTS[k]);
+    const row = mkRow || ((label) => labeledRow(host, label));
+
+    const hdr = document.createElement('div');
+    hdr.className = 'vs3-hl-hdr';
+    hdr.textContent = 'Fill lines';
+    host.appendChild(hdr);
+
+    comps.push(UI.SegCtrl(row('Curves'), {
+      options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+      value: sp.fillCurves === true ? 'on' : 'off',
+      ariaLabel: 'Fit bezier curves to the fill lines',
+      onChange: (v) => write('fillCurves', v === 'on'),
+    }));
+    comps.push(UI.Slider(row('Smoothing'), {
+      value: num('fillSmoothing'), min: 0, max: 1, step: 0.05, defaultValue: 0,
+      ariaLabel: 'Fill line smoothing (corner rounding)',
+      onCommit: (v) => write('fillSmoothing', v),
+    }));
+    comps.push(UI.Slider(row('Simplify'), {
+      value: num('fillSimplify'), min: 0, max: 1, step: 0.05, defaultValue: 0,
+      ariaLabel: 'Simplify the fill lines (reduce points)',
+      onCommit: (v) => write('fillSimplify', v),
+    }));
+    if (fillFidelityApplies(primitive, mapper, sp)) {
+      comps.push(UI.Slider(row('Fidelity'), {
+        value: num('fillFidelity'), min: 0.25, max: 3, step: 0.05, defaultValue: 1,
+        ariaLabel: 'Fill line fidelity (samples along each fill line)',
+        onCommit: (v) => write('fillFidelity', v),
+      }));
+    }
   };
 
   // Compact panel for one object3d LEAF layer — Inspector (dims / transform /
@@ -768,16 +857,23 @@
         });
       });
 
-      // Curves / Smoothing / Simplify. Sits directly under Fidelity because the
-      // two answer the same question from opposite ends: Fidelity buys a
+      // BORDER lines — Curves / Smoothing / Simplify for the silhouette,
+      // creases and face outlines. Sits directly under Fidelity because the two
+      // answer the same question from opposite ends: mesh Fidelity buys a
       // smoother silhouette with MORE plotted segments, Curves gets one with
       // fewer. Inherits the scene group's values until this object sets its own.
+      // The object's internal FILL lines are governed on the Style tab.
       if (curvesApplyTo(prim)) {
+        subhead(host, 'Border lines');
         const sceneGroup = sceneGroupOf(ui, layer);
         curveControls(host, comps, params, { commit, liveSlider }, sceneGroup && sceneGroup.params);
       }
 
-      // Position
+      // Position. The heading is not decoration: it TERMINATES the Border lines
+      // group above. A scoped heading that runs on into unrelated rows claims
+      // ownership of controls it does not govern, which is precisely the
+      // confusion this split exists to remove.
+      subhead(host, 'Transform');
       ['x', 'y', 'z'].forEach((ax) => {
         slider(host, `${ax.toUpperCase()} (mm)`, {
           value: Number.isFinite(t[ax]) ? t[ax] : 0, min: -200, max: 200, step: 0.5, defaultValue: 0,
@@ -882,6 +978,18 @@
           ...liveSlider((v) => { style.params.sliceTilt = Math.round(v); }),
         });
       }
+
+      // ── Fill lines — this object's INTERNAL fill output. The Object tab's
+      // Border lines group is the other half of the split; neither reaches the
+      // other's ink. Writes straight to this leaf's own style.params (a leaf
+      // publishes byObject[layerId], so its bag IS its resolved style).
+      if (!style.params || typeof style.params !== 'object') style.params = {};
+      fillLineControls(host, comps, {
+        primitive: params.primitive,
+        mapper: style.mapper,
+        params: style.params,
+        write: (key, value) => { commit(() => { style.params[key] = value; }); },
+      });
 
       // ── Edge Styles override (Polish P-B) — this object's OWN edge classes.
       // Each row defaults to "Inherit (scene)"; switching a class to Override
@@ -2934,14 +3042,18 @@
         });
       }
 
-      // Curves / Smoothing / Simplify for an INLINE (monolith) object. Same
-      // rows, same gate, same inheritance from the scene bag as the object3d
-      // leaf panel — the two scene shapes must not offer different controls.
+      // BORDER lines for an INLINE (monolith) object. Same rows, same gate,
+      // same inheritance from the scene bag as the object3d leaf panel — the
+      // two scene shapes must not offer different controls. Fill lines live on
+      // the Style tab.
       if (curvesApplyTo(obj.primitive)) {
+        subhead(inspectorHost, 'Border lines');
         curveControls(inspectorHost, inspectorComps, obj, { commit, liveSlider }, params);
       }
 
-      // Visibility
+      // Visibility. The heading TERMINATES the Border lines group above — a
+      // scoped heading must not run on into rows it does not govern.
+      subhead(inspectorHost, 'Appearance');
       const visRow = document.createElement('div');
       visRow.className = 'vs3-row';
       const visLbl = document.createElement('label');
@@ -3337,6 +3449,40 @@
           onCommit: (v) => commitStyle({ params: { ...sp(), wobble: v } }),
         });
       }
+
+      // ── Fill lines — the INTERNAL fill output of curved geometry (Curves /
+      // Smoothing / Simplify / Fidelity). The other half of the split: the
+      // Object tab's "Border lines" group owns the silhouette, this owns the
+      // hatching, and neither touches the other's ink. Writes style.params
+      // through the same whole-style commit as every other field here, so the
+      // scene → object → face cascade carries it — no new scoping model.
+      //
+      // At SCENE scope the group is offered when the scene actually holds
+      // curved geometry (inline objects, or the assembled tree the engine
+      // published); a wholly faceted scene has nothing for it to bind to, so
+      // the rows are absent rather than present-and-inert.
+      const sceneObjects = () => {
+        const assembled = layer._sceneAssembled;
+        const fromTree = assembled && Array.isArray(assembled.objects) ? assembled.objects : null;
+        if (fromTree && fromTree.length) return fromTree;
+        return Array.isArray(params.objects) ? params.objects : [];
+      };
+      const fillScopePrimitive = () => {
+        if (scope.scope === 'scene') {
+          const hit = sceneObjects().find((o) => o && curvesApplyTo(o.primitive));
+          return hit ? hit.primitive : null;
+        }
+        const o = getObject(scope.target.objectId)
+          || sceneObjects().find((x) => x && x.id === scope.target.objectId);
+        return o ? o.primitive : null;
+      };
+      fillLineControls(styleHost, styleComps, {
+        primitive: fillScopePrimitive(),
+        mapper: resolved.mapper,
+        params: resolved.params || {},
+        write: (key, value) => commitStyle({ params: { ...clone(resolved.params || {}), [key]: value } }),
+        mkRow: labeledHost,
+      });
 
       // ── Border (I6) — per-object silhouette outline. Object scope only.
       // Writes obj.border.* directly (a per-object field, not style.params),
@@ -3858,13 +4004,15 @@
       },
     }));
 
-    // Scene-wide Curves / Smoothing / Simplify. These are the DEFAULT every
-    // curved object follows until it sets its own (see curveControls' `inherit`
-    // and Engine._applySceneCurveFinish's `resolve`), so one switch here curves
-    // every sphere, capsule and torus in the scene at once. Faceted geometry in
-    // the scene is unaffected whatever this says — the gate is per-object.
+    // Scene-wide BORDER lines. These are the DEFAULT every curved object
+    // follows until it sets its own (see curveControls' `inherit` and
+    // Engine._applySceneCurveFinish's `resolveBorder`), so one switch here
+    // curves every sphere, capsule and torus in the scene at once. Faceted
+    // geometry in the scene is unaffected whatever this says — the gate is
+    // per-object. Internal FILL lines are not here: they are style params, so
+    // their scene-wide default is the Style tab at scene scope.
     sections.push(UI.Section(pages.scene, {
-      title: 'Line Output',
+      title: 'Border Lines',
       children: (body) => {
         const outHost = document.createElement('div');
         outHost.className = 'vs3-inspector vs3-output';

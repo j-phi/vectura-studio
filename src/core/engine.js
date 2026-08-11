@@ -2628,6 +2628,30 @@
      *   fill rings — `sceneFill` paths are honest multi-point polylines with no
      *     `straight` flag (median turn 5.5 deg). They only ever needed the fit.
      *
+     * SPLIT BY ROLE — two sets of controls, one kind of line each
+     * -----------------------------------------------------------
+     * Those two defects have two different cures, so they get two different
+     * controls. There is no cascade between them and no override checkbox:
+     *
+     *   BORDER  (`curves`/`smoothing`/`simplify` on the OBJECT bag, Object tab)
+     *     governs every path that is NOT a fill — the chained silhouette,
+     *     creases, and face outlines. It keeps its own scene → object
+     *     inheritance, because those keys live on the object bag.
+     *   FILL    (`fillCurves`/`fillSmoothing`/`fillSimplify` in STYLE PARAMS,
+     *     Style tab) governs `meta.kind === 'sceneFill'` only. Living in
+     *     style.params buys the scene → object → face cascade every other
+     *     Style-tab field already has (StyleCascade.resolve, whole-style-wins) —
+     *     NOT a third scoping model.
+     *
+     * `meta.kind === 'sceneFill'` is the whole dividing line. Chaining is a
+     * BORDER operation (it re-welds the per-edge sticks), so it is gated on the
+     * border side alone: a fill-only edit must never re-group the silhouette.
+     *
+     * The Style tab's fourth control, Fidelity, is NOT here — it is sampling
+     * density along a fill line, which only the generator can supply
+     * (Scene3D.SurfaceFill's `fillFidelity`). This stage cannot invent surface
+     * detail after the fact and does not pretend to.
+     *
      * WHICH GEOMETRY GETS CURVES
      * --------------------------
      * Exactly `Scene3D.Params.CURVED_FILL_PRIMITIVES` — the chart-wrapped set
@@ -2692,7 +2716,11 @@
         if (o && typeof o.id === 'string') primitiveById.set(o.id, o.primitive);
       });
 
-      const resolve = (oid) => {
+      const unit = (val) => Math.max(0, Math.min(1, Number(val) || 0));
+      const wants = (s) => s.curves || s.smoothing > 0 || s.simplify > 0;
+
+      // BORDER settings — the object's own bag, falling back to the scene bag.
+      const resolveBorder = (oid) => {
         const layer = objectLayers && objectLayers.get ? objectLayers.get(oid) : null;
         const own = (layer && layer.params) || inlineById.get(oid) || {};
         const pick = (key, dflt) => (own[key] !== undefined && own[key] !== null
@@ -2700,8 +2728,24 @@
           : (scenePar[key] !== undefined && scenePar[key] !== null ? scenePar[key] : dflt));
         return {
           curves: pick('curves', false) === true,
-          smoothing: Math.max(0, Math.min(1, Number(pick('smoothing', 0)) || 0)),
-          simplify: Math.max(0, Math.min(1, Number(pick('simplify', 0)) || 0)),
+          smoothing: unit(pick('smoothing', 0)),
+          simplify: unit(pick('simplify', 0)),
+        };
+      };
+
+      // FILL settings — the RESOLVED style's params, so face > object > scene
+      // falls out of the cascade the Style tab already uses. A curved fill is
+      // emitted per object (sceneTarget.faceId is null on a chart-wrapped fill),
+      // so the object target is the right question to ask.
+      const SC = window.Vectura?.Scene3D?.StyleCascade;
+      const styleTable = (assembled && assembled.styleTable) || null;
+      const resolveFill = (oid) => {
+        const sp = (SC && styleTable && typeof SC.resolve === 'function')
+          ? (SC.resolve(styleTable, { objectId: oid }).params || {}) : {};
+        return {
+          curves: sp.fillCurves === true,
+          smoothing: unit(sp.fillSmoothing),
+          simplify: unit(sp.fillSimplify),
         };
       };
 
@@ -2712,9 +2756,10 @@
         const primitive = primitiveById.get(oid)
           || (inlineById.get(oid) && inlineById.get(oid).primitive);
         if (!CURVED.has(primitive)) return; // faceted ⇒ its straight edges are exact
-        const s = resolve(oid);
-        if (!s.curves && !(s.smoothing > 0) && !(s.simplify > 0)) return;
-        active.set(oid, s);
+        const border = resolveBorder(oid);
+        const fill = resolveFill(oid);
+        if (!wants(border) && !wants(fill)) return;
+        active.set(oid, { border, fill, borderActive: wants(border) });
       });
       if (!active.size) return paths; // untouched default ⇒ byte-identical passthrough
 
@@ -2722,9 +2767,13 @@
         const t = p && p.meta && p.meta.sceneTarget;
         return t && typeof t.objectId === 'string' ? t.objectId : null;
       };
-      const eligible = (p) => {
+      const isFill = (p) => !!(p && p.meta && p.meta.kind === 'sceneFill');
+      // Chaining is BORDER work: an object whose only edit is on the fill side
+      // must leave its per-edge silhouette sticks exactly as emitted.
+      const chainableOwner = (p) => {
         const oid = ownerOf(p);
-        return oid && active.has(oid) ? oid : null;
+        const s = oid ? active.get(oid) : null;
+        return s && s.borderActive ? oid : null;
       };
 
       // ── 1. Chain the per-edge sticks back into runs ─────────────────────────
@@ -2738,7 +2787,7 @@
       // first segment's values as the representative.
       const CHAINABLE = new Set(['sceneEdge', 'sceneFace']);
       const chainKey = (p, i) => {
-        const oid = eligible(p);
+        const oid = chainableOwner(p);
         const meta = (p && p.meta) || {};
         if (!oid || !CHAINABLE.has(meta.kind)) return `x${i}`; // unique ⇒ never chained
         const t = meta.sceneTarget || {};
@@ -2790,11 +2839,16 @@
         return s.curves ? simplifyPathVisvalingam(path, tol) : simplifyPath(path, tol);
       };
 
+      // Each path is finished by the set that OWNS its role — fill lines by the
+      // Style tab's fill settings, everything else by the Object tab's border
+      // settings. A path whose owning set is idle passes through by reference.
       return chained.map((path) => {
-        const oid = eligible(path);
-        if (!oid) return path;
-        const s = active.get(oid);
-        return simplifyOne(fitOne(path, s), s);
+        const oid = ownerOf(path);
+        const s = oid ? active.get(oid) : null;
+        if (!s) return path;
+        const set = isFill(path) ? s.fill : s.border;
+        if (!wants(set)) return path;
+        return simplifyOne(fitOne(path, set), set);
       });
     }
 
