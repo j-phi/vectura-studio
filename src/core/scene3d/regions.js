@@ -228,6 +228,72 @@
     return clamp(idx, 0, nB - 1);
   };
 
+  // ── RANK QUANTIZATION (O20) ────────────────────────────────────────────────
+  //
+  // `band` above is a THRESHOLD quantizer, and a threshold quantizer is
+  // calibrated for a CONTINUUM of normals. A faceted object does not have one.
+  // A cube has three orientations, and on the design fixture its best-lit face
+  // landed at band 2 of 4 with the next at band 1: the object occupied the dark
+  // two thirds of the ladder, its two lit faces came out 0.012 apart in measured
+  // density, and at bands 3 they fell in the SAME band and the order inverted —
+  // the brighter face drew darker. No amount of fill tuning reaches that,
+  // because the two faces were being handed one rung.
+  //
+  // So re-quantize by RANK. An object's distinct facet intensities are ranked
+  // and spread across the ladder, which is exactly the "the thresholds are the
+  // wrong tool for this object" case and nothing else:
+  //
+  //   ENGAGE ONLY when the object's own facets leave the TOP of the ladder
+  //   unused (`maxBand < nB-1`) and span more than RANK_MIN_SPREAD in
+  //   intensity. An object whose facets already reach both ends — a low-poly
+  //   sphere, a tessellated solid, anything with a real gradient — is left
+  //   exactly as the thresholds put it. This is not a blanket re-grade.
+  //
+  //   NEVER DARKEN. The result is max(thresholdBand, rankBand), so the stretch
+  //   can only lift the light end toward the top of the ladder. A one-sided
+  //   stretch cannot invert an order (the max of two non-decreasing sequences
+  //   is non-decreasing) and cannot drag a uniformly bright object into the
+  //   dark bands, which a two-sided histogram stretch would.
+  //
+  // The result is a band INDEX, so the emitted value stays a function of the
+  // BAND COUNT by construction — bands 2/3/4 read three different ladders and
+  // emit three different ink totals. That is the contract a naive per-facet
+  // gain tilt broke, and why the tilt was reverted rather than shipped.
+  //
+  // Callers must pass EVERY facet of the object, front and back. Ranking only
+  // the visible ones would re-grade the object on every camera orbit step,
+  // which is the view-dependence O28 forbids.
+  const RANK_MIN_SPREAD = 0.15;
+  const rankBands = (intensities, tone) => {
+    const src = Array.isArray(intensities)
+      ? intensities.map((I) => clamp(finite(I, 0), 0, 1))
+      : [];
+    const base = src.map((I) => band(I, tone));
+    const nB = validLadder(tone).length;
+    if (nB < 2 || src.length < 2) return base;
+    let lo = Infinity; let hi = -Infinity; let top = 0;
+    src.forEach((I, i) => {
+      if (I < lo) lo = I;
+      if (I > hi) hi = I;
+      if (base[i] > top) top = base[i];
+    });
+    if (!(hi - lo > RANK_MIN_SPREAD)) return base;  // one orientation, nothing to spread
+    if (top >= nB - 1) return base;                 // the ladder is already fully used
+    // Distinct levels, ascending. Quantized to 1e-3 so floating-point noise on
+    // two copies of the same orientation cannot invent a rank between them.
+    const keyOf = (I) => Math.round(I * 1000);
+    const levels = Array.from(new Set(src.map(keyOf))).sort((a, b) => a - b);
+    const R = levels.length;
+    if (R < 2) return base;
+    const rankOf = new Map();
+    levels.forEach((v, i) => rankOf.set(v, i));
+    return src.map((I, i) => {
+      const r = rankOf.get(keyOf(I));
+      const stretched = Math.floor((r * (nB - 1)) / (R - 1));
+      return clamp(Math.max(base[i], stretched), 0, nB - 1);
+    });
+  };
+
   // Coverage fraction (0..1) for a band index, dark→light along the ladder.
   const coverageFor = (bandIndex, tone) => {
     const ladder = validLadder(tone);
@@ -580,6 +646,8 @@
     intensity,
     combinedIntensity,
     band,
+    rankBands,
+    RANK_MIN_SPREAD,
     coverageFor,
     coverageToSpacing,
     spacingFor,

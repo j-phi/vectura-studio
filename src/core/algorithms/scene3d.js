@@ -499,77 +499,107 @@
       // of a sphere in the same scene. We now read the COMPLEMENT band's coverage
       // (nBands-1-bandIdx), matching SurfaceFill.coverageForSample, so a cube and
       // a sphere lit alike shade alike.
-      // ── O20 IS NOT FIXED, AND HERE IS WHY, SO THE NEXT ROUND DOES NOT ────
-      //     REDISCOVER IT.
+      // ── O20 — the cube's three orientations, three readable values ────────
       //
-      // A cube's lit top (N.L 0.707) and its lit side (N.L 0.500) fall in the
-      // SAME band under the default thresholds [0.25, 0.5, 0.75]. The ladder
-      // therefore assigns them ONE value by construction, and the only thing
-      // separating them on paper is residual projection error — which currently
-      // leaves the top marginally darker than the less-lit side. So O20 ("three
-      // readable values from three orientations", D strictly decreasing in N.L)
-      // is not reachable by tuning the fill: it needs sub-band gradation.
+      // This was a QUANTIZER defect, not a fill defect, and four rounds of fill
+      // tuning could not reach it. A cube's lit faces fall high in the
+      // thresholds' range but not at the top of it: measured, the best-lit face
+      // sat at band 2 of 4 and the next at band 1, so the object used the dark
+      // two thirds of the ladder and its two lit faces came out 0.012 apart in
+      // density. At bands 3 they shared a band outright and the order inverted.
       //
-      // Tilting the gain across a band's own width does produce it, and was
-      // implemented and measured. It was REVERTED: it collapses the faceted
-      // band-COUNT contract in tests/visual/scene3d-tone-baseline.test.js — a
-      // cube at bands 3 and bands 4 emits identical ink under the tilt — and
-      // that contract is protected. Whatever fixes O20 has to keep the emitted
-      // ink a readable function of the band count, which a naive tilt does not.
-      // Not shipped rather than shipped broken.
+      // `Regions.rankBands` re-quantizes an object's own facet orientations by
+      // RANK when — and only when — the thresholds leave the top of the ladder
+      // unused. See regions.js for the two guards that keep it honest (it never
+      // darkens, and it never touches an object that already spans the ladder).
+      //
+      // Sub-band gain gradation was the other candidate and is the wrong route:
+      // tilting the gain across a band's own width collapses the faceted
+      // band-COUNT contract in tests/visual/scene3d-tone-baseline.test.js (a
+      // cube at bands 3 and bands 4 emits identical ink under the tilt). Rank
+      // quantization emits a band INDEX, so the value it produces is still read
+      // off that band count's own ladder and the contract survives.
       const toneBandCount = () => (p.tone && Array.isArray(p.tone.ladder) && p.tone.ladder.length) ? p.tone.ladder.length : 3;
       const coverageGain = (bandIdx) => {
         const nb = toneBandCount();
         return 0.5 + clamp(Regions.coverageFor(nb - 1 - bandIdx, p.tone), 0, 1) * 1.1;
       };
-      // ── Faceted TERMINATOR — topological, with a dihedral gate ───────────────
+      // ── Faceted TERMINATOR — a dihedral ELIGIBILITY gate (O21, O22) ─────────
       //
-      // A facet has one normal, so it has one value; the terminator cannot be a
-      // gradient the way it is on a curved surface. It is instead a TOPOLOGICAL
-      // property: a facet is a terminator facet when it is unlit AND it shares a
-      // SMOOTH edge with a lit one.
+      // A cube has no terminator. It has an EDGE. The terminator is a curvature
+      // phenomenon, so a facet can only carry one when it belongs to a
+      // SMOOTH-SHADED region — one whose facets meet at a dihedral below
+      // TERMINATOR_SMOOTH_DEG, the same intrinsic world-space measure
+      // Edges.classifyEdges uses for crease. A low-poly sphere's facets sit
+      // inside that angle and produce a discrete ring; a cube's 90-degree edges
+      // never do, and a cylinder's flat cap (whose only edge is its sharp rim)
+      // never does either while its barrel does.
       //
-      // The dihedral gate is what makes this correct rather than merely plausible.
-      // Every unlit face of a cube touches its lit top, so without the gate all of
-      // them classify as terminator, both visible sides go darkest, and the cube
-      // loses its form shadow entirely. But a cube has no terminator — it has an
-      // EDGE. The terminator is a curvature phenomenon, so only edges that are
-      // smooth (dihedral below TERMINATOR_SMOOTH_DEG, the same intrinsic
-      // world-space measure Edges.classifyEdges uses for crease) can carry one.
-      // A low-poly sphere's facets sit well inside that angle and produce a
-      // discrete ring of terminator facets; a cube's 90-degree edges never do.
+      // WHAT WAS WRONG (O21 measured 0.91x — the terminator ring came out
+      // LIGHTER than the form shadow below it, inverted):
       //
-      // "Unlit" is read off the SAME combined intensity the rest of the tone
-      // system uses, not a single light's N·L, so a multi-light rig classifies
-      // consistently with the bands it is about to be sorted into.
+      // The ring itself used to be located topologically, "unlit facet sharing a
+      // smooth edge with a lit one", against a hard-coded `I >= 0.5` light test.
+      // But `Regions.formZone` hands T out only in band 0 (`if (b > 0) return
+      // 'M'`), and under the default thresholds a facet at I just under 0.5 is
+      // in band 1. So every facet the topological rule could flag was
+      // intercepted before the terminator branch, the T zone was UNREACHABLE on
+      // a faceted object, and its crossed family never drew. T and F measured
+      // identical because they WERE identical.
+      //
+      // So the gate stays and the LOCATION goes back to the one classifier both
+      // paths share: inside a smooth region, `formZone`'s own signed-Lambert
+      // rule places the ring, exactly as it does on a curved surface. That is
+      // the §5.5.3 / I27 parity contract stated properly — a cube and a sphere
+      // lit alike land in the same zones — instead of two rules that disagreed
+      // about where the dark side starts.
       const TERMINATOR_SMOOTH_DEG = 40;
-      const TERMINATOR_TH = 0.5;
-      const terminatorCache = new Map();
-      const terminatorFaces = (record) => {
-        if (terminatorCache.has(record)) return terminatorCache.get(record);
+      // Where `shadowSensitivity` starts staging the dark side. Half-lit is the
+      // curved fill's own split point, and it is deliberately NOT the terminator
+      // (which lives at band 0): the stages grade everything below mid-light.
+      const SHADOW_STAGE_TH = 0.5;
+      const smoothCache = new Map();
+      const smoothShadedFaces = (record) => {
+        if (smoothCache.has(record)) return smoothCache.get(record);
         const set = new Set();
         const faces = (record && record.faces) || [];
         const edges = (record && record.edges) || [];
         if (faces.length && edges.length) {
           const cosSmooth = Math.cos(TERMINATOR_SMOOTH_DEG * Math.PI / 180);
-          const lit = faces.map((f) => {
-            const n = f && f.normalWorld;
-            return n ? intensityFn(n, faceWorldCentroid(f)) >= TERMINATOR_TH : false;
-          });
           edges.forEach((edge) => {
             const idx = edge && edge.faces;
             if (!idx || idx.length !== 2) return;
             const [i, j] = idx;
             const fi = faces[i]; const fj = faces[j];
             if (!fi || !fj || !fi.normalWorld || !fj.normalWorld) return;
-            if (lit[i] === lit[j]) return;              // not a light boundary
             const d = clamp(dot(normalize(fi.normalWorld), normalize(fj.normalWorld)), -1, 1);
             if (d < cosSmooth) return;                  // hard edge: an edge, not a terminator
-            set.add(lit[i] ? fj : fi);                  // the UNLIT side carries the core shadow
+            set.add(fi); set.add(fj);
           });
         }
-        terminatorCache.set(record, set);
+        smoothCache.set(record, set);
         return set;
+      };
+
+      // ── The object's own tone grade (O20) ───────────────────────────────────
+      //
+      // Ranked over EVERY facet of the record, front and back, so the grade is a
+      // property of the object and the light and never of where the camera
+      // happens to be (O28). Cached per record: every face asks for it.
+      const rankBandCache = new Map();
+      const recordBands = (record) => {
+        if (rankBandCache.has(record)) return rankBandCache.get(record);
+        let map = null;
+        const faces = (record && record.faces) || [];
+        if (faces.length && Regions && typeof Regions.rankBands === 'function') {
+          const I = faces.map((f) => (f && f.normalWorld
+            ? intensityFn(f.normalWorld, faceWorldCentroid(f)) : 0));
+          const bands = Regions.rankBands(I, p.tone);
+          map = new Map();
+          faces.forEach((f, i) => map.set(f, bands[i]));
+        }
+        rankBandCache.set(record, map);
+        return map;
       };
 
       // I8 parity — per-FACE specular. A facet either catches the glint or it does
@@ -673,17 +703,23 @@
       // FORM ZONE for a facet — the faceted twin of the curved classifier, and
       // the same function, which is what keeps a cube and a sphere in the same
       // zones under one light (§5.5.3, the I27 contract). The one difference is
-      // that `terminator` is decided HERE and handed in: on a facet the
-      // terminator is topological, and the dihedral gate (a cube has an edge,
-      // not a terminator) is the thing that must not be second-guessed.
+      // that ELIGIBILITY is decided HERE and handed in: the dihedral gate (a
+      // cube has an edge, not a terminator) is the thing formZone must not be
+      // allowed to second-guess.
       const faceZone = (normalWorld, worldPoint, face, record) => {
         if (!Regions || typeof Regions.formZone !== 'function') return null;
-        return Regions.formZone(normalWorld, worldPoint, {
+        const ctx = {
           tone: p.tone,
           lights: activeLights,
           ground: recordGround(record),
-          terminator: Boolean(record && face && terminatorFaces(record).has(face)),
-        });
+        };
+        // Only a facet in a smooth-shaded region is ELIGIBLE for a terminator.
+        // Ineligible ⇒ `terminator: false`, which is formZone's explicit "this
+        // caller has ruled T out, do not second-guess it" contract; eligible ⇒
+        // the key is absent and formZone places the ring itself, on the same
+        // signed-Lambert rule the curved fill uses.
+        if (!(record && face && smoothShadedFaces(record).has(face))) ctx.terminator = false;
+        return Regions.formZone(normalWorld, worldPoint, ctx);
       };
 
       const spacingBand = (normalWorld, styleParams, worldPoint, face, record, opts) => {
@@ -694,13 +730,17 @@
         // account, so the specular gain multiplier is skipped outright.
         const hlOff = styleParams.highlightTreatment === 'none' || styleParams.highlightTreatment === 'keep';
         const I = intensityFn(normalWorld, worldPoint);
-        const bandIdx = Regions.band(I, p.tone);
+        // O20 — the object's own rank grade when the thresholds under-use the
+        // ladder, the plain threshold band otherwise (and always, for a caller
+        // with no face/record to grade against).
+        const graded = (record && face) ? recordBands(record) : null;
+        const bandIdx = (graded && graded.has(face)) ? graded.get(face) : Regions.band(I, p.tone);
         let gain = coverageGain(bandIdx);
         // shadowStage parity: the dark-side coverage boost was curved-path only, so
         // faceted objects got no grading below the terminator and read flat.
         const shadowSens = clamp(Math.round(finite(styleParams.shadowSensitivity, 1)), 1, 8);
         if (shadowSens > 1 && typeof Regions.shadowStage === 'function') {
-          const stg = Regions.shadowStage(I, shadowSens, TERMINATOR_TH);
+          const stg = Regions.shadowStage(I, shadowSens, SHADOW_STAGE_TH);
           if (stg && Number.isFinite(stg.boost)) gain *= clamp(stg.boost, 0.5, 2);
         }
         // Specular: the glint facet reads LIGHTER, never denser — the highlight is
@@ -712,7 +752,6 @@
         // IS the raw term, so the default response is unchanged.
         const S = hlOff ? 0 : faceGlintTerm(normalWorld, worldPoint, glintSensitivity(styleParams));
         if (S > 0 && specSizeFaceted > 0) gain *= clamp(1 - 0.55 * specSizeFaceted * S, 0.25, 1);
-        const terminator = Boolean(record && face && terminatorFaces(record).has(face));
         // ── The form-zone ladder on facets (§5.1) ──────────────────────────────
         //
         // Round 2 wrote `if (terminator) gain = max(gain, coverageGain(0))`, which
@@ -720,8 +759,8 @@
         // exceed F by construction, so O1/O3/O21 were unreachable no matter what
         // the ladder said. The ceiling is real — gain tops out at 1.6 — so the
         // excess has to go into a second DIRECTION (§5.0), which `faceHatchLines`
-        // now spends on T and ONLY on T. Band 0 loses the +90 cross it used to
-        // get for free, which is what opens the gap between T and F.
+        // spends through `Regions.formInk(zone).cross` — T's full family against
+        // F's 0.40 of one, the same recipe the curved fill spends.
         //
         // R (reflected) is the other half of the dip: the away-facing rim was
         // falling to a hard Lambert 0 with nothing under it, so a low-poly
@@ -747,7 +786,7 @@
           && highlightCfg(styleParams).treatment === 'blank'
           && faceIsGlint(normalWorld, worldPoint, record, styleParams);
         if (glint) gain *= GLINT_GAIN_MULT;
-        return { spacing: Math.max(penWidth, s0 / gain), bandIdx, terminator, zone, glint };
+        return { spacing: Math.max(penWidth, s0 / gain), bandIdx, terminator: zone === 'T', zone, glint };
       };
 
       // In-plane basis for a flat face: its world verts expressed in a 2D (u,v)
@@ -848,30 +887,44 @@
       // §2.3 — object-side crossed families are +65° / +32°, NEVER +90°.
       const CROSS_OBJ_DEG_B = (Regions && Regions.CROSS_OBJ_DEG) || 65;
       const CROSS_OBJ_DEG_C = 32;
-      const crossFamilies = (target, angleDeg, spacing, styleParams, crossPass, darkBand, push) => {
+      // `crossW` is the zone's own `Regions.formInk(zone).cross` — the coverage
+      // of the SECOND family in units of the first, so its pitch is spacing /
+      // crossW. T spends a full family (1.00), F four tenths of one (0.40), and
+      // everything lighter spends none. Passing a weight rather than a boolean
+      // is what puts the faceted path on the curved path's recipe.
+      const crossFamilies = (target, angleDeg, spacing, styleParams, crossPass, crossW, push) => {
         push(hatchPolygon(target, { angleDeg, spacing }));
+        const w = clamp(finite(crossW, 0), 0, 1);
         if (crossPass) {
           const delta = clamp(finite(styleParams.crossAngleDelta, 90), 10, 170);
           const ratio = clamp(finite(styleParams.crossDensityRatio, 1), 0.25, 2);
           push(hatchPolygon(target, { angleDeg: angleDeg + delta, spacing: spacing * ratio }));
-          if (styleParams.tripleHatch === true && darkBand) {
+          if (styleParams.tripleHatch === true && w >= 1) {
             // §2.3 — the tone-driven third pass sits at +32°, not +45°. With
             // family B already at the user's delta, +45 lands close enough to A
-            // or B to beat against it.
+            // or B to beat against it. Reserved for the core shadow, the only
+            // zone whose recipe asks for a whole extra family.
             push(hatchPolygon(target, { angleDeg: angleDeg + CROSS_OBJ_DEG_C, spacing: spacing * ratio }));
           }
-        } else if (darkBand) {
-          // The TERMINATOR's second family. Two Round-2 defects, both fixed here:
+        } else if (w > 0) {
+          // The dark side's second DIRECTION. Two Round-2 defects, both fixed
+          // here:
           //
           //   O17 — it ruled at +90°, which is a square grid. On a faceted object
           //         that reads as wire mesh, and it beats against the raster.
           //         §2.3 bans +90 outright; +65 is the engraver's answer.
           //   O1  — it fired on ALL of band 0, so the form shadow got the same
           //         two directions the core shadow did and T could never out-ink
-          //         F. `darkBand` is now the T zone alone (see faceHatchLines),
-          //         which is what opens the dip.
-          push(hatchPolygon(target, { angleDeg: angleDeg + CROSS_OBJ_DEG_B, spacing }));
+          //         F. The weight now comes from formInk, so T's family and F's
+          //         lighter one differ by construction and the dip stays open.
+          push(hatchPolygon(target, { angleDeg: angleDeg + CROSS_OBJ_DEG_B, spacing: spacing / w }));
         }
+      };
+      // Zone → second-family weight, with the faceted path's one exemption: the
+      // GLINT facet is negative space and must never gain a direction.
+      const crossWeightFor = (zone, glint) => {
+        if (!toneOn || glint || !zone || !Regions || typeof Regions.formInk !== 'function') return 0;
+        return clamp(finite(Regions.formInk(zone).cross, 0), 0, 1);
       };
 
       // linkFill (Phase 2): boustrophedon-chain each hatch family into one pen
@@ -916,11 +969,12 @@
           // — snaps back to the surface-oriented hatch on release.
           const sb = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
           const lines = [];
-          crossFamilies(face.polygon, userAngle, sb.spacing, styleParams, crossPass, sb.zone === 'T',
+          crossFamilies(face.polygon, userAngle, sb.spacing, styleParams, crossPass,
+            crossWeightFor(sb.zone, sb.glint),
             (segs) => maybeLink(segs, styleParams).forEach((l) => lines.push(l)));
           return lines;
         }
-        const { spacing, zone } = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
+        const { spacing, zone, glint } = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
         // worldUp rotates the in-plane base angle so the lines follow world
         // vertical; 'face' leaves the user angle measured in the face frame.
         const baseAngle = angleRef === 'worldUp' ? worldUpAngleInUV(scaf) + userAngle : userAngle;
@@ -953,10 +1007,13 @@
         const compress = toneOn ? uvCompression(scaf, baseAngle + 90) : 1;
         const screenSpacing = toneOn ? Math.max(spacing, PLOT_FLOOR_MULT_OBJ * penWidth) : spacing;
         const planeSpacing = screenSpacing / compress;
-        // A terminator facet crosses a second family: the ladder tops out at 1.6x
-        // gain, so the core shadow is unreachable by spacing alone. Reserved for
-        // T — band 0 alone no longer buys a second direction (O1/O17).
-        crossFamilies(scaf.uv, baseAngle, planeSpacing, styleParams, crossPass, zone === 'T',
+        // The dark side crosses a second family: the ladder tops out at 1.6x
+        // gain, so the core shadow is unreachable by spacing alone (§5.0). The
+        // weight is the zone's own formInk.cross — a whole family for T, 0.40 of
+        // one for F — so the dip between them is a property of the recipe, not
+        // of how tightly the carrier happens to run at the limb.
+        crossFamilies(scaf.uv, baseAngle, planeSpacing, styleParams, crossPass,
+          crossWeightFor(zone, glint),
           (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)));
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
@@ -1046,7 +1103,9 @@
         const userAngle = finite(styleParams.fillAngle, 45);
         const baseAngle = angleRef === 'worldUp' ? worldUpAngleInUV(scaf) + userAngle : userAngle;
         const uvLines = [];
-        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, bandIdx === 0,
+        // lightDriven places the glint per SAMPLE, so it has no face zone to
+        // read; the darkest band buys the same whole second family T does.
+        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, bandIdx === 0 ? 1 : 0,
           (segs) => uvLines.push(...segs));
         const SREG = 0.025;
         const N = hlCfg.sensitivity;
