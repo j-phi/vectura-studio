@@ -12,12 +12,22 @@
  *      every one stamped `meta.straight`. A 2-point path IS a straight line, so
  *      no curve fitter on earth can smooth it. The outline was structurally
  *      unsmoothable until the segments are CHAINED back into runs.
- *   2. `sceneFill` paths ARE multi-point polylines with no `straight` flag
+ *   2. (HISTORICAL — this half has since moved to the Style tab; see
+ *      tests/unit/scene3d-style-fill-lines.test.js.)
+ *      `sceneFill` paths ARE multi-point polylines with no `straight` flag
  *      (median turn 5.5 deg at detail 16) — perfectly fittable, but the entire
  *      curve/simplify display stage never ran for a scene group at all:
  *      `Engine._composeSceneGroup` assigns `group.scenePaths` straight from
  *      `Algorithms.scene3d.generate`, and `computeLayerDisplayGeometry` (which
  *      is where `applyCurveFit` lives) only ever runs on non-group leaves.
+ *
+ * SCOPE (split by role)
+ * ---------------------
+ * The object bag's `curves` / `smoothing` / `simplify` govern the BORDER only —
+ * the silhouette, creases and face outlines. Internal fill lines are governed by
+ * the Style tab's `fillCurves` / `fillSmoothing` / `fillSimplify` / `fillFidelity`
+ * (in style.params, resolved through StyleCascade). Each control owns exactly one
+ * kind of line; there is no cascade between the two sides.
  *
  * THE GATE
  * --------
@@ -142,14 +152,20 @@ describe('scene3d Curves / Simplify', () => {
     expect(curvedPaths(onEdges).length).toBeGreaterThan(0);
   });
 
-  test('Curves ON smooths the internal fill rings', () => {
+  // CONTRACT CHANGE (split by role): these controls are BORDER-scoped now. The
+  // internal fill rings answer to the Style tab's own fillCurves / fillSmoothing
+  // / fillSimplify / fillFidelity — see tests/unit/scene3d-style-fill-lines.test.js,
+  // which pins both halves. This test used to assert the opposite (one set of
+  // controls governing every path an object emits) and is updated, not deleted:
+  // the coverage moves, it does not disappear.
+  test('Curves ON leaves the internal fill rings alone (they are Style-scoped)', () => {
     const off = composeObject('capsule', CAPSULE, { curves: false }).paths;
     const on = composeObject('capsule', CAPSULE, { curves: true }).paths;
     const offFills = kindsOf(off, 'sceneFill');
     const onFills = kindsOf(on, 'sceneFill');
     expect(offFills.length).toBeGreaterThan(0);
     expect(curvedPaths(offFills).length).toBe(0);
-    expect(curvedPaths(onFills).length).toBeGreaterThan(0);
+    expect(curvedPaths(onFills).length).toBe(0);
   });
 
   test('the toggle is LIVE: capsule ink differs with Curves on vs off', () => {

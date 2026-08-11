@@ -1515,6 +1515,10 @@
                 mode: chartParams.mode,
                 sizes: chartParams.sizes,
                 detail: chartParams.detail,
+                // Style-tab Fidelity — SAMPLING DENSITY along each fill line
+                // (points), not mesh tessellation (facets, still `detail`).
+                // Default 1 ⇒ byte-identical.
+                fillFidelity: finite(sp.fillFidelity, 1),
                 transform: (objById.get(record.id) || {}).transform,
                 applyTransform: Scene.applyObjectTransform,
                 projectWorld: scene.projectWorld,
