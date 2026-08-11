@@ -792,21 +792,35 @@
       // Zeroing MIN_RUN_MM took every one of those to 0, so the cull was the
       // sole cause — the mesh silhouette is one closed loop at every Fidelity.
       //
-      // So the floor moves from the STICK to the CHAIN, exactly as the border
-      // pass applies it to its stitched run. Runs are welded on INTEGER MESH
-      // VERTEX INDICES, never on screen coordinates, so contiguity cannot
-      // depend on float equality and cannot depend on tessellation. A short run
-      // that continues a longer contiguous edge survives; a genuinely isolated
-      // speck — one whose ENTIRE welded chain is under the floor — is still
-      // dropped, which is what the floor was for.
+      // So the floor splits into the two jobs it was always doing at once:
       //
-      // Runs come back from the clipper ordered along a→b, so run 0 touches
-      // mesh vertex `a` and the last run touches `b`. An INTERIOR run boundary
-      // is an HLR crossing — a real occlusion break — and never welds. Visible
-      // and hidden (dashed) runs weld in separate classes: they are different
-      // ink, and a dashed far-side stretch must not prop up a visible crumb.
-      // Only runs that will actually be emitted take part, so an edge whose
-      // hidden treatment is 'remove' cannot anchor anything.
+      //   A CLIPPING FRAGMENT — a run on an edge the clipper had to CUT, so one
+      //   of its ends is an HLR crossing rather than a mesh vertex — keeps the
+      //   per-run floor. That is the floor's original job, and hlr.js's own
+      //   bisection comment names it: "corner whiskers collapse below the
+      //   emission floor". A whisker is the 0.02mm sliver of an otherwise
+      //   occluded crease that survives at a silhouette corner. Dropping it
+      //   trims the outline where it ENTERS occlusion; it cannot open a hole,
+      //   because a fragment always sits at an occlusion boundary and never in
+      //   the interior of a drawn stretch. This trim also SHRINKS as Fidelity
+      //   rises (it is bounded by one edge length), so it converges.
+      //
+      //   A WHOLE EDGE — the clipper returned it uncut — is never a whisker,
+      //   however short it is at high Fidelity. It is judged by the WELDED
+      //   CHAIN it belongs to, exactly as the border pass judges its stitched
+      //   run. A short edge continuing a longer contiguous outline survives; a
+      //   genuinely isolated speck, whose ENTIRE chain is under the floor, is
+      //   still dropped.
+      //
+      // Runs are welded on INTEGER MESH VERTEX INDICES, never on screen
+      // coordinates, so contiguity cannot depend on float equality and cannot
+      // depend on tessellation. Runs come back from the clipper ordered along
+      // a→b, so run 0 touches mesh vertex `a` and the last run touches `b`; a
+      // single run means the edge was never cut. Visible and hidden (dashed)
+      // runs weld in separate classes: they are different ink, and a dashed
+      // far-side stretch must not prop up a visible crumb. Only runs that will
+      // actually be emitted take part, so an edge whose hidden treatment is
+      // 'remove' cannot anchor anything.
       //
       // Returns the Set of runs that clear the floor; the caller passes the
       // filtered runs to `emitRuns` with `chained: true`.
@@ -824,10 +838,16 @@
         plan.forEach((item) => {
           const runs = item.runs || [];
           const last = runs.length - 1;
+          // >1 run ⇒ the clipper CUT this edge, so every run on it is a
+          // fragment with an HLR crossing for at least one end.
+          const cut = runs.length > 1;
           runs.forEach((run, r) => {
             if (!run || !Array.isArray(run.pts) || run.pts.length < 2) return;
             const willEmit = run.visible ? !item.hiddenOnly : item.hidden === 'dash';
             if (!willEmit) return;
+            // Sub-floor clipping fragment: a whisker. Dropped outright, and it
+            // does not anchor — a whisker must not weld two stretches together.
+            if (cut && runLength(run.pts) < MIN_RUN_MM) return;
             const id = runsById.length;
             runsById.push(run);
             lens.push(runLength(run.pts));
