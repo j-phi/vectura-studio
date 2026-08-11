@@ -402,9 +402,16 @@ describe('scene3d tone goldens', () => {
         .not.toEqual(summaryFor('box-bands-3-specular-off'));
     });
 
-    test('highlightSensitivity is INERT under the default perFace mode', () => {
+    // CONTRACT INVERTED — on purpose, and for the same reason as the one above.
+    // This used to pin `highlightSensitivity` as inert outside lightDriven, which
+    // was the O9 defect written down as a contract: the dial did nothing at all
+    // in the mode the app actually ships as the default. Under perFace it is now
+    // the angular tightness of the specular ACCEPTANCE CONE (design spec §5.4
+    // #4), so tightening it shrinks the glint facet set — these two MUST differ,
+    // and this failing is the fix working.
+    test('highlightSensitivity is LIVE under the default perFace mode', () => {
       expect(summaryFor('box-highlight-perface-sens1'))
-        .toEqual(summaryFor('box-highlight-perface-sens6'));
+        .not.toEqual(summaryFor('box-highlight-perface-sens6'));
     });
 
     test('highlightSensitivity is LIVE under lightDriven mode', () => {

@@ -159,14 +159,29 @@ describe('Scene3D light-driven highlight + direction unify (I8 / I27)', () => {
   });
 
   test('lightDriven perFace vs lightDriven: perFace tags a WHOLE face, lightDriven a sub-region', () => {
-    // Same corner light. perFace (default mode) with a keep highlight tags whole
-    // top-band faces; lightDriven tags only the compact glint → smaller bbox.
-    const per = hlFills(gen({ highlightTreatment: 'dashed' }));                                   // perFace (default)
-    const ld = hlFills(gen({ highlightMode: 'lightDriven', highlightTreatment: 'dashed', highlightSensitivity: 1 }));
+    // Same corner light. perFace tags WHOLE facets (§5.5.2 — the H zone on a
+    // facet is a set of facets, and the blocky facet-edged result is the right
+    // answer); lightDriven carves a sub-region out of the facets it crosses.
+    //
+    // This used to be measured as bbox(lightDriven) < bbox(perFace), which was
+    // only ever a proxy — and a fragile one. perFace now places its highlight by
+    // the SPECULAR glint facet set rather than by "the top tone band" (O14), so
+    // the facet it lands on is a different, better-aimed one and the two bboxes
+    // are no longer ordered. The structural claim is asserted directly instead:
+    // a perFace-tagged facet carries NO plain base fill (the whole facet went to
+    // the highlight), where a lightDriven-tagged facet carries both.
+    const perAll = gen({ highlightTreatment: 'dashed' });                                         // perFace (default)
+    const ldAll = gen({ highlightMode: 'lightDriven', highlightTreatment: 'dashed', highlightSensitivity: 1 });
+    const per = hlFills(perAll);
+    const ld = hlFills(ldAll);
     expect(ld.length).toBeGreaterThan(0);
-    if (per.length > 0) {
-      expect(bboxArea(ld)).toBeLessThan(bboxArea(per));
-    }
+    expect(per.length).toBeGreaterThan(0);
+    const sharedWith = (all, hl) => {
+      const baseFaces = new Set(baseFills(all).map(faceKey));
+      return [...new Set(hl.map(faceKey))].filter((k) => baseFaces.has(k));
+    };
+    expect(sharedWith(ldAll, ld).length).toBeGreaterThanOrEqual(1);   // sub-region
+    expect(sharedWith(perAll, per).length).toBe(0);                   // whole facet
   });
 
   // On a smooth curved surface (no face creases to fragment the clip), the
@@ -232,9 +247,19 @@ describe('Scene3D light-driven highlight + direction unify (I8 / I27)', () => {
   // ── REGRESSION GUARD — the default is a strict no-op. ───────────────────────
   test('default (perFace, sensitivity 1) is byte-identical to no I8 params', () => {
     const bare = JSON.stringify(gen({}));
-    // highlightSensitivity is inert in perFace mode; shadowSensitivity 1 is the
-    // no-op default → carrying them explicitly changes nothing.
-    const withParams = JSON.stringify(gen({ highlightMode: 'perFace', highlightSensitivity: 6, shadowSensitivity: 1 }));
+    // Restating the DEFAULTS changes nothing. This assertion used to carry
+    // `highlightSensitivity: 6` on the reasoning that the dial "is inert in
+    // perFace mode" — which was the O9 defect itself, pinned as a contract. The
+    // dial is now the perFace specular acceptance cone's angular tightness, so
+    // only sensitivity 1 (its default) is a no-op.
+    const withParams = JSON.stringify(gen({ highlightMode: 'perFace', highlightSensitivity: 1, shadowSensitivity: 1 }));
     expect(withParams).toBe(bare);
+  });
+
+  // ── O9 — and the dial must be LIVE in perFace, which is the whole point. ────
+  test('highlightSensitivity is live in perFace mode and tightens the cone', () => {
+    const loose = JSON.stringify(gen({ highlightMode: 'perFace', highlightSensitivity: 1 }));
+    const tight = JSON.stringify(gen({ highlightMode: 'perFace', highlightSensitivity: 6 }));
+    expect(tight).not.toBe(loose);
   });
 });
