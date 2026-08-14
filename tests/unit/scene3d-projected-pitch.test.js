@@ -153,3 +153,91 @@ describe('a foreshortened facet lands the tone it asked for (C15, O20)', () => {
     facets.forEach((f) => { expect(f.coverage).toBeLessThanOrEqual(OBJECT_DARK_CEIL); });
   });
 });
+
+// ── O20 — three values, in the right order, on BOTH cube fixtures ────────────
+//
+// §5.5.1: a facet whose value is out of order with its neighbours' N.L is a BUG.
+// Round 8 measured `R2-cube` OUT OF ORDER at all three band counts — `+X` at
+// N.L 0.053 was the darkest face in the drawing while `+Z` at N.L 0.000 was
+// three times lighter. It is in order now, and this is what keeps it so.
+//
+// The second clause is the one Round 7's review separated out and Round 8 did
+// not land: O20 is about the two LIT faces differing from EACH OTHER. The max/min
+// spread is dominated by the unlit face and reads as a pass while the two lit
+// faces sit 0.005 apart. Scored here as the clause, never the ratio.
+describe('a cube reads as three values, ordered by how nearly each face meets the light (O20)', () => {
+  const litOrdered = (viewId) => {
+    const np = FIX.buildParams(V, viewId);
+    const G3 = V.Geometry3D;
+    const scn = V.Scene3D.Scene.assembleScene(np, FIX.BOUNDS);
+    const built = (scn.objects || []).find((o) => o.id === np.objects[0].id);
+    const byId = {};
+    facetCoverage(viewId).forEach((f) => { byId[f.id] = f.coverage; });
+    const N = built.world.length;
+    const oc = built.world.reduce(
+      (a, p) => ({ x: a.x + p.x / N, y: a.y + p.y / N, z: a.z + p.z / N }), { x: 0, y: 0, z: 0 },
+    );
+    const rows = [];
+    built.faces.forEach((f, idx) => {
+      const id = f.faceId || `face:${idx}`;
+      if (byId[id] === undefined) return;
+      const world = (f.indices || []).map((i) => built.world[i]).filter(Boolean);
+      const n0 = G3.cross(G3.sub(world[1], world[0]), G3.sub(world[2], world[0]));
+      const L = Math.hypot(n0.x, n0.y, n0.z);
+      let nrm = G3.mul(n0, 1 / L);
+      const M = world.length;
+      const cen = world.reduce(
+        (a, p) => ({ x: a.x + p.x / M, y: a.y + p.y / M, z: a.z + p.z / M }), { x: 0, y: 0, z: 0 },
+      );
+      if (G3.dot(nrm, G3.sub(cen, oc)) < 0) nrm = G3.mul(nrm, -1);
+      rows.push({
+        id,
+        NL: Math.max(0, V.Scene3D.Regions.signedLambert(nrm, cen, np.lights)),
+        coverage: byId[id],
+      });
+    });
+    return rows.sort((a, b) => b.NL - a.NL);
+  };
+
+  ['R-cube', 'R2-cube'].forEach((fixture) => {
+    [2, 3, 4].forEach((bands) => {
+      const view = `${fixture}-bands${bands}`;
+
+      test(`${view} — the better-lit face carries the lighter ink, with no exception`, () => {
+        const rows = litOrdered(view);
+        expect(rows.length).toBe(3);
+        for (let i = 1; i < rows.length; i++) {
+          expect(`${rows[i - 1].id} ${rows[i - 1].coverage.toFixed(3)}`
+            + ` must be lighter than ${rows[i].id} ${rows[i].coverage.toFixed(3)}`)
+            .toBe(`${rows[i - 1].id} ${rows[i - 1].coverage.toFixed(3)}`
+              + ` must be lighter than ${rows[i].id} ${Math.max(rows[i].coverage, rows[i - 1].coverage).toFixed(3)}`);
+        }
+      });
+
+      // RATCHETED, and the spec's bar is 0.03. NOT MET, and the numbers say so.
+      // Projected coverage between the two LIT faces, at bands 2 / 3 / 4:
+      //
+      //             75b97a5              HEAD
+      //   R-cube    0.034 0.017 0.035    0.027 0.019 0.036
+      //   R2-cube   0.945 0.976 1.019    0.096 0.090 0.121
+      //
+      // R2-cube's "difference" at 75b97a5 was the flood — its brightest face was
+      // nearly solid black — so only the R-cube column is a like-for-like read,
+      // and there bands 3 has sat under the bar through two rounds (0.017, now
+      // 0.019) while bands 2 fell 0.034 -> 0.027. THE FIX DID NOT BUY THIS
+      // CLAUSE and it is not claimed. It is pinned so it cannot silently sit at
+      // 0.005 for a third round.
+      //
+      // The raster-D instrument reads the same clause on R-cube as
+      // 0.021 / 0.005 / 0.030 before and 0.027 / 0.021 / 0.025 after — it agrees
+      // on bands 2 and 3 improving and disagrees on bands 4. The two instruments
+      // differ by more than the margin being measured, which is itself a reason
+      // the criterion cannot yet be closed.
+      test(`${view} — the two LIT faces differ from each other (spec bar 0.03; ratcheted)`, () => {
+        const lit = litOrdered(view).filter((r) => r.NL > 0.02);
+        expect(lit.length).toBeGreaterThanOrEqual(2);
+        expect(Math.abs(lit[0].coverage - lit[1].coverage)).toBeGreaterThanOrEqual(0.015);
+      });
+    });
+  });
+});
