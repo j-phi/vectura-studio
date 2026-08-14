@@ -34,7 +34,8 @@ Playwright's chromium to rasterise.
 |---|---|
 | `render.js [outDir]` | renders **all 120 views** to SVG + `metrics.json`. The only writer of the view set. |
 | `r8lad.js <outDir> [views…]` | fast inner loop: renders + rasterises the given views (default: the four ladder fixtures), writes `density.json` and PNGs, prints the four-fixture ladder and the **O17 screen crossing angle** read off the drawing. |
-| `facets.js <viewDir> [views…]` | per-**facet** D on a faceted object: zone, N·L, projected area, window count, D. Prints O20 / O21 / O22 / O23. Needs a `density.json` from `r8lad.js`. |
+| `facets.js <viewDir> [views…]` | per-**facet** D on a faceted object: zone, **band index**, N·L, projected area, **fill ink**, window count, D. Two tables — scored, then the sub-window facets it used to drop — plus a **ZERO-FILL** headline (facets carrying no fill ink at all, read off the emitted `sceneFill` paths) and the **O3/O21 arrangement** counter (same-zone connected components over the renderer's own `built.edges`). Prints O20 / O21 / O22 / O23. `density.json` from `r8lad.js` is optional: without it D and `n` are unmeasured and everything else still prints. |
+| `facets.js [viewDir] --o28 <viewA> <viewB>` | **O28**: band index per `objectId/faceId` across two orbit views, for **every** object in the view. Answers YES/NO with the count and ids that moved. Needs **no raster** — band index is `Regions.band(combinedIntensity(n, p, lights), tone)` and no camera term enters that chain. |
 | `r9pitch.js [views…]` | **projected pitch**: per facet, the SCREEN pitch of each hatch family, read off the drawing, against the 1.2 × pen plot floor — plus geometric projected coverage. This is the instrument that located the `+X` flood. |
 | `r9zone.js [views…]` | intercepts `Regions.formZone` on the live call path and prints the zone the **renderer** gave each facet. Nothing to reconstruct. |
 | `r8audit-protected.js` | the protected list at HEAD, with a mutation check. |
@@ -49,7 +50,8 @@ cd scripts/shadow-anatomy
 
 node r8lad.js ./out                      # the four-fixture ladder + O17
 node r8lad.js ./out R2-cube-bands4 …     # any views you need a density.json for
-node facets.js ./out R2-cube-bands4      # per-facet D, O20/O21/O22/O23
+node facets.js ./out R2-cube-bands4      # per-facet D, ZERO-FILL, arrangement, O20/O21/O22/O23
+node facets.js --o28 Gp-yaw-30 Gp-yaw-18 # O28: band index per facet across the orbit (no raster)
 node r9pitch.js R2-cube-bands4           # the pitch that actually lands on paper
 node r8audit-protected.js                # the protected list
 node render.js ./all                     # all 120 views, before any merge
