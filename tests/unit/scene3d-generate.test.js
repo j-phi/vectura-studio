@@ -243,7 +243,14 @@ describe('scene3d generate (CONTRACT A/B)', () => {
       })]);
       // A tilted camera so the three visible faces project to distinct planes.
       params.camera = { projection: 'orthographic', yaw: -25, pitch: 20, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
-      params.styleTable.byObject['obj-1'] = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 55 } };
+      // fillDensity 100, not 55 (Round 9). At 55 this scene's `+X` face asks for
+      // a 6.6 mm surface pitch and its projected extent cannot hold one ruling,
+      // so the face carried fill ONLY because the foreshortening compensation
+      // was under-correcting it by 6.6x — the flood fixed in this round. The
+      // assertion here is about the ANGLE the rulings run at, so it needs a
+      // density at which every visible face genuinely carries rulings; it must
+      // not be satisfied by a face that is over-inked.
+      params.styleTable.byObject['obj-1'] = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 100 } };
       const paths = algo.generate(params, null, null, BOUNDS) || [];
       const fills = paths.filter((p) => p.meta.kind === 'sceneFill' && p.length >= 2);
       const angleByFace = {};
@@ -269,7 +276,8 @@ describe('scene3d generate (CONTRACT A/B)', () => {
           transform: { x: 0, y: 0, z: 0, yaw: 22, pitch: 0, roll: 0, scale: 1 },
         })]);
         params.camera = { projection: 'orthographic', yaw: -25, pitch: 20, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
-        params.styleTable.byObject['obj-1'] = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 55 } };
+        // fillDensity 100 — see the note on the previous test.
+        params.styleTable.byObject['obj-1'] = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 100 } };
         return params;
       };
       const faceAngles = (paths) => {

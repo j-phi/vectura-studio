@@ -892,19 +892,37 @@
       // crossW. T spends a full family (1.00), F four tenths of one (0.40), and
       // everything lighter spends none. Passing a weight rather than a boolean
       // is what puts the faceted path on the curved path's recipe.
-      const crossFamilies = (target, angleDeg, spacing, styleParams, crossPass, crossW, push) => {
-        push(hatchPolygon(target, { angleDeg, spacing }));
+      //
+      // ── EVERY FAMILY IS SPACED IN ITS OWN FRAME (Round 9, C15/O20) ──────────
+      //
+      // `planeFor(angleDeg, screenPitch)` converts a family's desired SCREEN
+      // pitch into the spacing to ask for in the surface's own plane, using THAT
+      // family's own foreshortening. Omitted ⇒ `spacing` is already the spacing
+      // to use verbatim, which is what the untoned path, the screen-space
+      // fallback and the ground all want, and keeps them byte-identical.
+      //
+      // Before this, family B was handed family A's compensation and then scaled
+      // in the plane. On a face turned nearly edge-on the two families' factors
+      // differ by 1.7x or more, so B landed that much tighter on paper than the
+      // recipe asked for — and the plot floor, which is also stated per family,
+      // never saw it.
+      const crossFamilies = (target, angleDeg, spacing, styleParams, crossPass, crossW, push, planeFor) => {
+        const plane = (deg, screenPitch) => (planeFor ? planeFor(deg, screenPitch) : screenPitch);
+        push(hatchPolygon(target, { angleDeg, spacing: plane(angleDeg, spacing) }));
         const w = clamp(finite(crossW, 0), 0, 1);
         if (crossPass) {
           const delta = clamp(finite(styleParams.crossAngleDelta, 90), 10, 170);
           const ratio = clamp(finite(styleParams.crossDensityRatio, 1), 0.25, 2);
-          push(hatchPolygon(target, { angleDeg: angleDeg + delta, spacing: spacing * ratio }));
+          push(hatchPolygon(target, { angleDeg: angleDeg + delta, spacing: plane(angleDeg + delta, spacing * ratio) }));
           if (styleParams.tripleHatch === true && w >= 1) {
             // §2.3 — the tone-driven third pass sits at +32°, not +45°. With
             // family B already at the user's delta, +45 lands close enough to A
             // or B to beat against it. Reserved for the core shadow, the only
             // zone whose recipe asks for a whole extra family.
-            push(hatchPolygon(target, { angleDeg: angleDeg + CROSS_OBJ_DEG_C, spacing: spacing * ratio }));
+            push(hatchPolygon(target, {
+              angleDeg: angleDeg + CROSS_OBJ_DEG_C,
+              spacing: plane(angleDeg + CROSS_OBJ_DEG_C, spacing * ratio),
+            }));
           }
         } else if (w > 0) {
           // The dark side's second DIRECTION. Two Round-2 defects, both fixed
@@ -917,7 +935,10 @@
           //         two directions the core shadow did and T could never out-ink
           //         F. The weight now comes from formInk, so T's family and F's
           //         lighter one differ by construction and the dip stays open.
-          push(hatchPolygon(target, { angleDeg: angleDeg + CROSS_OBJ_DEG_B, spacing: spacing / w }));
+          push(hatchPolygon(target, {
+            angleDeg: angleDeg + CROSS_OBJ_DEG_B,
+            spacing: plane(angleDeg + CROSS_OBJ_DEG_B, spacing / w),
+          }));
         }
       };
       // Zone → second-family weight, with the faceted path's one exemption: the
@@ -934,21 +955,51 @@
       const maybeLink = (segs, styleParams) =>
         (styleParams.linkFill === true && !draft ? linkBoustrophedon(segs) : segs);
 
-      // Screen-space compression of one unit measured ACROSS the rulings, under
-      // the current projection. 1 = face-on, → 0 as the face turns edge-on.
-      // Sampled numerically from the scaffold's own uv→screen map so it is exact
-      // for every projection mode (orthographic and perspective alike).
-      const uvCompression = (scaf, acrossAngleDeg) => {
+      // ── PLANE PITCH → PAPER PITCH, FOR ONE FAMILY (C15, O20) ────────────────
+      //
+      // How much of one mm of in-plane spacing survives to paper, measured the
+      // way the eye reads it: PERPENDICULAR to the ruling, after the projection.
+      // 1 = face-on, → 0 as the face turns edge-on.
+      //
+      // This used to measure the LENGTH of one unit ACROSS the rulings, i.e.
+      // |M·a| for the across-direction a. That is not the pitch. Rulings spaced
+      // `s` apart in the plane sweep a strip of area `s × 1` per unit of ruling
+      // length; the map takes that to `s × |det M|`, and the mapped ruling has
+      // length |M·d|, so the perpendicular distance between neighbours on paper
+      // is
+      //                    s × |det M| / |M · d|.
+      //
+      // The two agree only when the map has no shear. As a facet turns edge-on
+      // the shear grows without bound and they diverge — on `R2-cube`'s `+X`
+      // face the old measure read 0.848 where the truth is 0.165, so the fill
+      // was compensated 5.1x too little and the face flooded to a projected
+      // coverage of 1.046 (harness D 0.891, past every ceiling in the document
+      // and past the plot floor it was supposed to be enforcing). Its sibling
+      // `+Z` — same zone, same light, same recipe, 9.5x the projected area —
+      // measured 0.179. A cap stated on a proxy one transform away from the
+      // metric, for the fourth time in this workstream.
+      //
+      // Sampled numerically from the scaffold's own uv→screen map, so it is
+      // exact for orthographic and perspective alike.
+      const uvPitchFactor = (scaf, alongAngleDeg) => {
         if (!scaf || typeof scaf.toScreen !== 'function') return 1;
-        const a = finite(acrossAngleDeg, 0) * Math.PI / 180;
-        const nx = Math.cos(a); const ny = Math.sin(a);
-        const D = 1; // one world mm across the rulings
         const o = scaf.uv[0] || { x: 0, y: 0 };
         const p0 = scaf.toScreen({ x: o.x, y: o.y });
-        const p1 = scaf.toScreen({ x: o.x + nx * D, y: o.y + ny * D });
-        if (!p0 || !p1 || !Number.isFinite(p0.x) || !Number.isFinite(p1.x)) return 1;
-        const k = Math.hypot(p1.x - p0.x, p1.y - p0.y) / D;
-        return clamp(k, 0.12, 4); // floored: an edge-on face must not ask for infinity
+        const px = scaf.toScreen({ x: o.x + 1, y: o.y });
+        const py = scaf.toScreen({ x: o.x, y: o.y + 1 });
+        if (!p0 || !px || !py || !Number.isFinite(p0.x) || !Number.isFinite(px.x) || !Number.isFinite(py.x)) return 1;
+        const m00 = px.x - p0.x; const m10 = px.y - p0.y;
+        const m01 = py.x - p0.x; const m11 = py.y - p0.y;
+        const det = Math.abs(m00 * m11 - m01 * m10);
+        const a = finite(alongAngleDeg, 0) * Math.PI / 180;
+        const dx = Math.cos(a); const dy = Math.sin(a);
+        const along = Math.hypot(m00 * dx + m01 * dy, m10 * dx + m11 * dy);
+        if (!(along > 1e-9) || !Number.isFinite(det)) return 1;
+        // Floored well below the old 0.12: a facet at 0.02 is asking for a
+        // spacing 50x its plane extent, which draws no line at all — the correct
+        // outcome for a face with no projected area — and the floor only has to
+        // keep the arithmetic finite.
+        return clamp(det / along, 0.02, 4);
       };
       // §0 / C15 — no single family may rule below 1.2 x pen width ON PAPER.
       const PLOT_FLOOR_MULT_OBJ = 1.2;
@@ -994,27 +1045,37 @@
         // to D = 1.000 — solid black, well under the 1.2 x pen floor, and a wet
         // blown-out plot.
         //
-        // So measure how much one unit ACROSS the rulings compresses under the
-        // projection and divide it back out. The tone ladder then lands in SCREEN
-        // space, where the eye reads it, and the plot-safe floor is enforced there
-        // too. `kFloor` stops a near-edge-on face from asking for infinite spacing.
+        // So measure how much of one mm of in-plane spacing survives to paper —
+        // PERPENDICULAR to the ruling, which is the only place a pitch can be
+        // read — and divide it back out. The tone ladder then lands in SCREEN
+        // space, where the eye reads it, and the plot-safe floor is enforced
+        // there too.
+        //
+        // ROUND 9. Two halves of this were wrong and both flooded the same face.
+        // (a) The measure was the LENGTH of one unit across the rulings, not
+        //     their perpendicular spacing after the map — see `uvPitchFactor`.
+        // (b) Only family A's factor was computed, and family B was then scaled
+        //     in the PLANE, so B was compensated with A's foreshortening. The
+        //     conversion is now handed to `crossFamilies` as a function of the
+        //     family's own angle, and the plot floor is applied per family, in
+        //     screen mm, where the floor is stated.
         //
         // Gated on `toneOn`. An UNTONED fill makes no tonal claim — its spacing
         // is the user's Density, read in the face plane, and every existing
         // untoned scene (and every byte-identical golden that pins one) must
         // stay exactly as it was. The defect being fixed is a TONE-ordering
         // defect, so it is corrected where tone is doing the talking.
-        const compress = toneOn ? uvCompression(scaf, baseAngle + 90) : 1;
-        const screenSpacing = toneOn ? Math.max(spacing, PLOT_FLOOR_MULT_OBJ * penWidth) : spacing;
-        const planeSpacing = screenSpacing / compress;
+        const planeFor = toneOn
+          ? (deg, screenPitch) => Math.max(screenPitch, PLOT_FLOOR_MULT_OBJ * penWidth) / uvPitchFactor(scaf, deg)
+          : null;
         // The dark side crosses a second family: the ladder tops out at 1.6x
         // gain, so the core shadow is unreachable by spacing alone (§5.0). The
         // weight is the zone's own formInk.cross — a whole family for T, 0.40 of
         // one for F — so the dip between them is a property of the recipe, not
         // of how tightly the carrier happens to run at the limb.
-        crossFamilies(scaf.uv, baseAngle, planeSpacing, styleParams, crossPass,
+        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass,
           crossWeightFor(zone, glint),
-          (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)));
+          (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)), planeFor);
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
 
