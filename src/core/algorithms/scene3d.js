@@ -155,6 +155,50 @@
   const SURFACE_FILL = new Set(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
   const REGION_MAPPERS = new Set(['contour', 'spiral', 'stipple']);
 
+  // ── THE OBJECT PLOT FLOOR (§0 / C15) ───────────────────────────────────────
+  //
+  // No single OBJECT hatch family may rule closer than this multiple of the pen
+  // width ON PAPER. Two different bounds want a say here and the floor has to
+  // satisfy both; only one of them binds.
+  //
+  //   THE CRAFT RULE (§0). "Past roughly 1.2 x pen width you do not get darker
+  //   by ruling closer, you get a flooded blob." That is a statement about wet
+  //   ink, and it is where the constant's old value of 1.2 came from.
+  //
+  //   C15, which the old comment CITED but could not enforce. A single family
+  //   at `mult x pen` covers `pen / (mult x pen)` = `1 / mult` of the paper, so
+  //   at 1.2 its coverage is 0.8333 — and C15's clause is "a run of windows at
+  //   D >= 0.80 is a breach". The floor legalised, by construction, a single
+  //   family that breaches the criterion named on the line above it. (Round 9
+  //   scorecard §4.2. Round 9 fixed WHERE the floor is measured; this fixes that
+  //   its VALUE could not bind the thing it names.)
+  //
+  // THE VALUE. `1 / mult < 0.80` needs `mult > 1.25` STRICTLY — at exactly 1.25
+  // the coverage is exactly 0.80, which is the breach threshold and not under
+  // it, so the review's ">= 1.25" is off by the relation. And `criteria.md` §0
+  // requires a bar to name its instrument: `pen / pitch` is an ideal quantity
+  // closest to the boolean grid, and the browser raster reads 8-12 % higher on
+  // the same drawing. C15's 0.80 names no instrument, so the floor clears it on
+  // the worse one:
+  //
+  //     1 / 1.25 = 0.8000   breach outright
+  //     1 / 1.40 = 0.7143   x 1.12 = 0.800  — lands ON the bar, no margin
+  //     1 / 1.50 = 0.6667   x 1.12 = 0.747  — clear on both instruments
+  //
+  // 1.5 also satisfies the craft rule with room, since it is strictly wider than
+  // 1.2. It enters as `Math.max(requestedPitch, mult x pen)`, so it can only
+  // WIDEN a pitch: raising it can remove ink, never add it. At the shadow-
+  // anatomy pen of 0.3 mm the floor is 0.45 mm against requested pitches of
+  // ~2 mm, so it binds on nothing in this workstream and the change measures
+  // zero — which is the point. A floor is not there to bind today; it is there
+  // so that no scene CAN reach the breach.
+  //
+  // NOT to be confused with `PLOT_FLOOR_MULT` in `src/core/scene3d/shadows.js`,
+  // which is the CAST SHADOW's floor and is explicitly protected.
+  const PLOT_FLOOR_MULT_OBJ = 1.5;
+  // Coverage of a single family at a given pen-width multiple. Pen-independent.
+  const singleFamilyCoverage = (mult) => 1 / mult;
+
   const makeStyleResolver = (styleTable) => {
     const cascade = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
     const cache = new Map();
@@ -991,8 +1035,7 @@
         // keep the arithmetic finite.
         return clamp(det / along, 0.02, 4);
       };
-      // §0 / C15 — no single family may rule below 1.2 x pen width ON PAPER.
-      const PLOT_FLOOR_MULT_OBJ = 1.2;
+      // §0 / C15 — the object plot floor. Module scope; see its derivation there.
 
       const faceHatchLines = (face, styleParams, normalWorld, crossPass, record, hlOpts) => {
         // angleRef (Phase 2): 'face' (default) measures the hatch angle in the
@@ -1676,21 +1719,12 @@
         // but no longer steers the hatch path.
 
         // Edge classification (silhouette | crease | boundary | interior),
-        // computed ONCE per record and shared by the face-outline pass (below,
-        // to know which face segments are the object outline vs interior creases)
-        // and the structural edge pass (further down). edgeClsById maps the
-        // canonical vertex-pair key → class.
+        // computed ONCE per record. Round 10 removed its second consumer: the
+        // face-outline pass used to re-derive "is this face segment part of the
+        // object outline?" from the same table the structural edge pass consults,
+        // which is exactly why the two drew the same segments (§5.7). The
+        // structural edge pass (further down) is now the sole reader.
         const classified = Edges.classifyEdges(record, {});
-        const edgeClsById = new Map();
-        classified.forEach((e) => edgeClsById.set(e.edgeId, e.cls));
-        // A faceted face-edge is part of the object OUTLINE (drawn for 'none')
-        // when it is NOT an interior crease/interior edge. edgeKey canonicalises
-        // the vertex-index pair the same way classifyEdges does.
-        const edgeKey3 = G3.edgeKey;
-        const isOutlineFaceEdge = (va, vb) => {
-          const cls = edgeClsById.get(edgeKey3(va, vb));
-          return cls !== 'crease' && cls !== 'interior';
-        };
 
         // ── Faces: outlines (closed when fully visible) + hatch fills.
         record.faces.forEach((face) => {
@@ -1713,41 +1747,41 @@
           const segCtx = { ownerKeys: [face.key], objectId: record.id };
           const target = sceneTargetMeta(record.id, face, null, face.centroidZ, false);
           const pickPolygon = face.polygon.map((pt) => ({ x: pt.x, y: pt.y }));
-          const baseMeta = {
-            algorithm: 'scene3d',
-            kind: 'sceneFace',
-            sceneTarget: target,
-            ...(style.penId ? { penId: style.penId } : {}),
-          };
-          // Curved (tessellated) primitives with mapper 'none' must NOT emit a
-          // per-face outline for every triangle — that draws the whole mesh.
-          // "None" shows just the object OUTLINE, which the silhouette/boundary
-          // edges (Edges pass below) already provide. Faceted prims (box, plane,
-          // polyhedra, ground) also show only their OUTLINE for 'none': each face
-          // draws just its silhouette/boundary edges, so a cube reads as its outer
-          // hexagon — the interior crease edges (the near-corner Y) are the
-          // WIREFRAME look and are skipped here (I5). Every drawn segment carries
-          // the full face polygon as pickPolygon, so face-mode point-in-poly
-          // picking still resolves. (The structural edge pass below draws the same
-          // outline — documented double-draw.)
-          const suppressMeshOutline = !faceted && !surfaceFill;
-          if (!surfaceFill && !suppressMeshOutline) {
-            const idx = face.indices || [];
-            const poly = face.polygon;
-            const n = poly.length;
-            const hasIdx = idx.length === n;
-            const outlineMeta = { ...baseMeta, sceneTarget: { ...target, pickPolygon } };
-            if (faceTreat.dash) outlineMeta.strokeDash = faceTreat.dash.slice();
-            const dashTreat = dashOnly(faceTreat);
-            for (let i = 0; i < n; i++) {
-              // Skip only edges we can positively classify as interior creases.
-              // Missing/mismatched indices ⇒ draw the segment (safe fallback to the
-              // full outline, e.g. the ground plate whose edges are all boundary).
-              if (hasIdx && !isOutlineFaceEdge(idx[i], idx[(i + 1) % n])) continue;
-              const segClip = clipper.clipPath([poly[i], poly[(i + 1) % n]], segCtx);
-              emitRuns(segClip.runs, outlineMeta, hiddenTreatment, null, dashTreat);
-            }
-          }
+          // NO per-face outline pass. "None" shows just the object OUTLINE, and
+          // the structural edge pass below is its sole owner — for curved
+          // (tessellated) prims it always was, and as of Round 10 for faceted
+          // prims (box, plane, polyhedra, ground) too.
+          //
+          // THE GROUND DOUBLE-PLOT (Round 9 scorecard §5.7, Round 10 P0).
+          // This used to be `!faceted && !surfaceFill`, so a FACETED prim under a
+          // non-surface-fill mapper ran a face-outline pass that walked each front
+          // face's edges and drew the ones that are neither `crease` nor
+          // `interior` — that is, exactly the silhouette + boundary set. The
+          // structural edge pass drops `interior` and (for a non-wireframe)
+          // `crease` and draws exactly the same set. The two therefore emitted
+          // byte-identical coordinates, and the old comment here said so out loud
+          // ("documented double-draw"). Documenting a defect does not discharge
+          // it: on the shadow-anatomy fixture's `mapper: 'none'` ground that is 4
+          // paths / 1520.96 mm of pen retracing the same four long lines, doubling
+          // ink and pen wear for no visual gain. Every D-based measurement was
+          // blind to it (a raster counts a pixel inked twice as one dark pixel),
+          // which is why it survived nine rounds.
+          //
+          // WHY THE EDGE PASS IS THE ONE THAT SURVIVES. It is strictly richer: it
+          // owns per-edge-class EdgeStyles, border emphasis, the per-object hidden
+          // treatment, the x-ray hidden-only crease, and `kind: 'sceneEdge'`, which
+          // is what edge-mode picking keys on. The face pass owned none of that.
+          //
+          // WHY PICKING SURVIVES. `pickPolygon` is only consulted by the renderer
+          // for `sceneFace`/`sceneFill` point-in-poly, and a faceted 'none' face is
+          // covered without it by the renderer's real projected-face pass
+          // (`_scenePickFaces` → `_scenePolyDepthAt`), which re-derives front faces
+          // from the scene assembly and needs the object merely to be PRESENT in
+          // the emitted paths — the structural edges keep it present. That pass
+          // exists precisely for "a 'none'-mapper box (no emitted face) and the
+          // ground plane", and it supplies a truer per-pixel depth than the face
+          // centroid this pass stamped. `pickPolygon` is still built and attached
+          // to the surface-FILL metas below, which do rely on it.
 
           // coreBlank (emissive self-render): leave the emitter's own surface
           // fill blank so the core reads as bright/glowing. Outlines + edges still
@@ -2704,5 +2738,15 @@
       const projection = (p.camera && p.camera.projection) === 'perspective' ? 'perspective' : 'orthographic';
       return `3D scene: ${count} object${count === 1 ? '' : 's'} assembled, projected (${projection}) and hidden-line resolved into styled face, edge, and fill targets.`;
     },
+    // Test seam (§4.2). The object plot floor is a claim about every legal
+    // configuration, not about any one drawing — composed coverage is not
+    // observable from the emitted paths (see `scene3d-plot-safety.test.js` on
+    // why measuring drawn spacing reports the clipping, not the ladder). This
+    // publishes the floor the emitter ACTUALLY uses so the criterion can be
+    // asserted where the implementation cannot re-bless its own arithmetic.
+    __plotFloorForTest: () => ({
+      mult: PLOT_FLOOR_MULT_OBJ,
+      coverage: singleFamilyCoverage(PLOT_FLOOR_MULT_OBJ),
+    }),
   };
 })();

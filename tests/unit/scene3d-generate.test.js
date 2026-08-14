@@ -117,20 +117,37 @@ describe('scene3d generate (CONTRACT A/B)', () => {
     });
   });
 
-  test("faceted 'none' faces emit open OUTLINE segments (silhouette/boundary) carrying a face pickPolygon", () => {
-    // I5: 'none' shows just the object OUTLINE, so a faceted face no longer emits
-    // a closed mesh loop (that drew the interior crease Y). It emits the face's
-    // silhouette/boundary edge segments as OPEN sceneFace runs, each carrying the
-    // full face polygon as pickPolygon so face-mode point-in-poly picking resolves.
+  test("faceted 'none' draws its OUTLINE exactly ONCE, from the structural edge pass", () => {
+    // I5: 'none' shows just the object OUTLINE — a faceted face emits no closed
+    // mesh loop (that drew the interior crease Y).
+    //
+    // ROUND 10 amends the rest of it. This test used to assert that the outline
+    // arrived as OPEN `sceneFace` runs carrying a `pickPolygon`. It did — and the
+    // structural edge pass emitted the identical silhouette/boundary set at the
+    // identical coordinates, which is the ground double-plot (Round 9 scorecard
+    // §5.7): 4 paths / 1520.96 mm of pen retracing the same four lines on the
+    // shadow-anatomy ground. The face-outline pass is gone; the structural edge
+    // pass is the sole owner of the outline, as it already was for curved prims.
+    // Face picking does not depend on the removed pass — the renderer's real
+    // projected-face pass (`_scenePickFaces`) covers a 'none' box and the ground
+    // plane, which is exactly what it was written for.
+    //
+    // The assertion is now the CONTRACT and not the mechanism: a cube's outer
+    // hexagon is drawn, and no coordinate is drawn twice.
     const p = sceneParams([box('obj-1', 40, 0)]);
     p.styleTable = { scene: { penId: null, mapper: 'none', params: {} }, byObject: {}, byFace: {} };
     const paths = algo.generate(p, null, null, BOUNDS) || [];
-    const faceOutlines = paths.filter((q) => q.meta && q.meta.kind === 'sceneFace');
-    expect(faceOutlines.length).toBeGreaterThan(0);
-    faceOutlines.forEach((face) => {
-      expect(face.meta.closed).toBeFalsy(); // no closed mesh loop
-      expect(Array.isArray(face.meta.sceneTarget.pickPolygon)).toBe(true);
-    });
+    expect(paths.filter((q) => q.meta && q.meta.kind === 'sceneFace').length).toBe(0);
+    const edges = paths.filter((q) => q.meta && q.meta.kind === 'sceneEdge');
+    expect(edges.length).toBeGreaterThan(0);
+    edges.forEach((e) => expect(['silhouette', 'boundary']).toContain(e.meta.sceneTarget.edgeClass));
+    const key = (path) => {
+      const fwd = path.map((pt) => `${pt.x.toFixed(6)},${pt.y.toFixed(6)}`).join(' ');
+      const rev = path.map((pt) => `${pt.x.toFixed(6)},${pt.y.toFixed(6)}`).reverse().join(' ');
+      return fwd <= rev ? fwd : rev;
+    };
+    const keys = paths.filter((q) => Array.isArray(q) && q.length > 1).map(key);
+    expect(new Set(keys).size).toBe(keys.length); // nothing drawn twice
   });
 
   test('same params → byte-identical output (determinism)', () => {
@@ -197,16 +214,24 @@ describe('scene3d generate (CONTRACT A/B)', () => {
       params.styleTable.byObject['obj-3'] = { penId: 'pen-9', mapper: 'none', params: {} };
       params.styleTable.byFace['obj-3/face:+Z'] = { penId: 'pen-2', mapper: 'none', params: {} };
       const paths = algo.generate(params, null, null, BOUNDS) || [];
-      const zFaces = paths.filter((p) =>
-        p.meta.kind === 'sceneFace' &&
+      // ROUND 10: a faceted 'none' object no longer emits `sceneFace` outlines
+      // (§5.7 — they duplicated the structural edge pass byte for byte). The
+      // per-FACE pen routing is unchanged and is read where it now lands: each
+      // structural edge resolves its style from its own FRONT face, so the
+      // +Z face's outline edges still carry `pen-2` and its siblings `pen-9`.
+      const outlineOf = (faceId, eq) => paths.filter((p) =>
+        p.meta.kind === 'sceneEdge' &&
         p.meta.sceneTarget.objectId === 'obj-3' &&
-        p.meta.sceneTarget.faceId === 'face:+Z');
+        (eq ? p.meta.sceneTarget.faceId === faceId : p.meta.sceneTarget.faceId !== faceId));
+      const zFaces = outlineOf('face:+Z', true);
       expect(zFaces.length).toBeGreaterThan(0);
       zFaces.forEach((p) => expect(p.meta.penId).toBe('pen-2'));
-      const otherFaces = paths.filter((p) =>
-        p.meta.kind === 'sceneFace' &&
-        p.meta.sceneTarget.objectId === 'obj-3' &&
-        p.meta.sceneTarget.faceId !== 'face:+Z');
+      // NOTE, since it is easy to misread as coverage: `sixBoxes` is viewed
+      // head-on, so +Z is the ONLY front face and this second list is empty —
+      // it was empty (and this assertion vacuous) before Round 10 too. The
+      // claim the test actually proves is the one above: the +Z outline carries
+      // `pen-2`, i.e. byFace beat byObject's `pen-9`.
+      const otherFaces = outlineOf('face:+Z', false);
       otherFaces.forEach((p) => expect(p.meta.penId).toBe('pen-9'));
     });
 
