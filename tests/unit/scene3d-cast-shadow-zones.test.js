@@ -28,71 +28,30 @@
  *   C3   the contact collar is ANCHORED         Z0 identical at every layer count
  *   C6   the umbra recedes                      Z2 carves 2 -> 3 -> 4
  *
- * The fixture is the shadow-anatomy harness's own A-view: a 46 mm ball plus an
- * upright box. The box matters — a sphere's contact set is a POINT, so a 4 mm
- * window can never be pure collar, which is why C2/C3/C4/C15 were unscoreable
- * for three rounds. It is restated here ONLY because tests/ cannot import from a
- * scratch directory; the values below were produced by `render.js` and agree
- * with it to the hundredth.
+ * THE FIXTURE IS NOT RESTATED HERE ANY MORE (Round 9).
+ *
+ * It was, and the Round 8 review named that the standing risk: this file is the
+ * SOLE enforcement of the protected cast shadow, so a restated A-view meant that
+ * if `render.js`'s A-view ever moved, the test would keep passing on a scene
+ * nobody renders. The A-view now lives in `tests/fixtures/scene3d-shadow-anatomy.js`
+ * and both the harness and this file import it. The scene below is
+ * `VIEWS['A-off'|'A-2'|'A-3'|'A-4']` and nothing else.
+ *
+ * The fixture is a 46 mm ball plus an upright box. The box matters — a sphere's
+ * contact set is a POINT, so a 4 mm window can never be pure collar, which is
+ * why C2/C3/C4/C15 were unscoreable for three rounds.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
-const clone = (v) => JSON.parse(JSON.stringify(v));
-
-const BOUNDS = {
-  width: 320, height: 220, m: 10, dW: 300, dH: 200,
-  penWidth: 0.3, truncate: 4, fastPreview: false, preview3dQuality: 'high',
-};
-const SEED = 0;
-const CAMERA = { projection: 'orthographic', yaw: -30, pitch: 32, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
-const SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 28, intensity: 1, castShadows: true };
-const TONE4 = {
-  enabled: true, bands: 4, thresholds: [0.25, 0.5, 0.75], ladder: [0.15, 0.4, 0.65, 0.9],
-  specular: { enabled: true, size: 1 },
-};
-const BALL = {
-  id: 'ball', name: 'Ball', primitive: 'sphere', params: { radius: 46, detail: 26 },
-  transform: {
-    x: 0, y: 46, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1,
-  },
-  visibility: 'solid',
-};
-const POST = {
-  id: 'post', name: 'Post', primitive: 'box', params: { sx: 30, sy: 70, sz: 30 },
-  transform: {
-    x: 95, y: 35, z: 20, yaw: 0, pitch: 0, roll: 0, scale: 1,
-  },
-  visibility: 'solid',
-};
+const FIX = require('../fixtures/scene3d-shadow-anatomy');
 
 let runtime; let V;
 beforeAll(async () => { runtime = await loadVecturaRuntime(); V = runtime.window.Vectura; });
 afterAll(() => { if (runtime) runtime.cleanup(); });
 
-const build = (layers) => {
-  const p = clone(V.ALGO_DEFAULTS.scene3d);
-  p.seed = SEED;
-  p.camera = clone(CAMERA);
-  p.ground = { enabled: true };
-  p.backdrop = { enabled: false };
-  p.objects = [clone(BALL), clone(POST)];
-  p.lights = [clone(SUN)];
-  p.tone = clone(TONE4);
-  p.shadow = {
-    ...p.shadow,
-    ...(layers === 'off' ? { shadowLayers: false } : { shadowLayers: true, shadowLayerCount: layers }),
-  };
-  const base = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 85 } };
-  p.styleTable = {
-    scene: clone(base),
-    byObject: { ball: clone(base), post: clone(base), ground: { penId: null, mapper: 'none', params: {} } },
-    byFace: {},
-  };
-  const np = V.Scene3D.Params.normalizeParams(p);
-  return V.AlgorithmRegistry.scene3d.generate(
-    V.Scene3D.Params.collectSceneParams(np, []), new V.SeededRNG(SEED), new V.SimpleNoise(SEED), BOUNDS,
-  ) || [];
-};
+// A-off / A-2 / A-3 / A-4 — the harness's own protected views, read from the
+// shared fixture. No camera, sun, object or tone table is written in this file.
+const build = (layers) => FIX.buildPaths(V, layers === 'off' ? 'A-off' : `A-${layers}`);
 
 const inkOf = (p) => {
   let s = 0;
