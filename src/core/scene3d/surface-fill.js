@@ -135,7 +135,35 @@
     const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
     return (R && Number.isFinite(R.DARKEST_WEIGHT)) ? R.DARKEST_WEIGHT : 2.0;
   };
-  const LIT_MAX_PITCH_PEN = 12;  // §5.4 #1 / O6 — the centre light may never be blanker
+  // ROUND 10 — §5.4 #1 / O6, and it MOVED for the same reason the two above
+  // did. `LIT_MAX_PITCH_PEN` was declared here and used only for two SPARSE-END
+  // clamps on the master grid (`o6Pitch`, `litFloorCov`). Round 9 swept it at
+  // 12 / 10 / 8 / 6 and Round 10 added 4: the two binding ladder fixtures are
+  // bit-identical from 12 down to 6, and at 4 D(L) goes DOWN and the protected
+  // F/M range breaks. It named O6 in its own comment and did not control it.
+  // It now lives in `regions.js`, where it floors `formCeiling('L')` — the one
+  // quantity that actually bounds D(L) — and the ladder test reads its O6 bar
+  // from the same constant. The clamps below keep their job (they are the real
+  // sparse-end clamps, and they bind when Density is genuinely too thin to
+  // carry a ladder), but they are no longer what enforces O6.
+  // Resolved lazily for the same reason as the two ceiling constants: exactly
+  // ONE definition, and `regions.js` may register after this file.
+  const litMaxPitchPen = () => {
+    const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
+    return (R && Number.isFinite(R.LIT_MAX_PITCH_PEN)) ? R.LIT_MAX_PITCH_PEN : 12;
+  };
+  // The composed ceiling, read not restated. `82789c4` moved the two constants
+  // to `regions.js` but left this file computing the ceiling from them by hand,
+  // so `formCeiling` was the single expression on the faceted path only and a
+  // second copy of the law survived here — which is how the L-zone floor above
+  // would have been enforced on one path and not the other.
+  const zoneCeiling = (zone) => {
+    const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
+    if (R && typeof R.formCeiling === 'function') return R.formCeiling(zone);
+    const ink = Regions.formInk(zone);
+    const weight = clamp(finite(ink.coverage, 0) + finite(ink.cross, 0), 0, 4);
+    return darkCeilConst() * clamp(weight / darkestWeightConst(), 0, 1);
+  };
   const MASTER_MAX_LINES = 420;  // pathological-input guard (steps × lines)
 
   // Radical inverse base 2, scaled off the index — the classic ordered-dither
@@ -329,10 +357,21 @@
       });
     };
     // Zone → family-A coverage, with the two floors §5.4 #1 demands. The glint
-    // cap may lighten the centre light, but never past LIT_MAX_PITCH_PEN — a
+    // cap may lighten the centre light, but never past `litMaxPitchPen()` — a
     // highlight is defined by the ink AROUND it, and a surround at 17 × pen has
     // no ink to be defined by. `litFloorCov` is the coverage at which family A's
-    // spacing is exactly 6 × pen, so the floor is stated in the spec's units.
+    // spacing is exactly `litMaxPitchPen()` × pen, so the floor is stated in the
+    // spec's units. (The comment used to say "6 × pen"; the constant has read 12
+    // for several rounds and the two had drifted.)
+    //
+    // ROUND 10 — WHAT THIS FLOOR IS AND IS NOT. It is the SPARSE-END clamp: it
+    // binds when Density is genuinely too thin to carry a ladder. It is NOT what
+    // enforces O6. Measured on the four-fixture ladder, the requested coverage
+    // here sits well ABOVE the composed ceiling on the binding fixtures, so it
+    // is clamped downstream and neither this floor nor GLINT_KEEP reaches the
+    // paper — GLINT_KEEP 0.6 → 0.8 → 1.0 is bit-identical on two of four. O6 is
+    // bounded by `Regions.formCeiling('L')`, and that is where §5.4 #1's pitch
+    // statement is now wired.
     let litFloorCov = LIT_FLOOR; // assigned once the master pitch is known, below
     let floorPitch = 0;          // ditto: the plot-safe local pitch (C15)
     // ── THE FORM SHADOW'S CROSS COMES OFF THE SILHOUETTE (§5.1, O3) ───────────
@@ -528,7 +567,7 @@
         //   do with it and what keeps Density live at the top of its range.
         const tonePitch = Math.max(0.05, finite(opts.tonePitch, 3) / TONE_SUBDIV);
         const litCov = clamp(Regions.formInk('L').coverage, 0.05, 1);
-        const o6Pitch = LIT_MAX_PITCH_PEN * penWidth * litCov;
+        const o6Pitch = litMaxPitchPen() * penWidth * litCov;
         const floorPen = PLOT_FLOOR_PEN * penWidth;
         masterPitch = Math.min(tonePitch, o6Pitch);
         if (masterPitch < floorPen) {
@@ -542,7 +581,7 @@
     // Coverage at which family A's spacing is exactly LIT_MAX_PITCH_PEN × pen —
     // the floor under the centre light, stated in §5.4's own units.
     litFloorCov = masterPitch > 0
-      ? clamp(masterPitch / (LIT_MAX_PITCH_PEN * penWidth), 0.05, 1)
+      ? clamp(masterPitch / (litMaxPitchPen() * penWidth), 0.05, 1)
       : LIT_FLOOR;
     floorPitch = PLOT_FLOOR_PEN * penWidth;
     const steps = Math.max(28, Math.round(finite(opts.detail, 24) * 2)); // samples along each line
@@ -758,8 +797,7 @@
               // reaches it onto one value — T and F both crossed, both
               // saturated, T/F 0.98, and the dip closed again.
               const ink = Regions.formInk(zone);
-              const weight = clamp(ink.coverage + ink.cross, 0, 4);
-              const ceil = darkCeilConst() * clamp(weight / darkestWeightConst(), 0, 1);
+              const ceil = zoneCeiling(zone);
               // Every family that will land on this sample, and what each is
               // for. The Density overflow is a THIRD direction and has to be in
               // the denominator or it spends budget nobody accounted for.

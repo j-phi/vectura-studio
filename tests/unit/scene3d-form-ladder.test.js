@@ -27,6 +27,25 @@
  * --------------------
  * At `0b32ee5` F/M measures 2.25 against a 1.70 ceiling and the F/M assertion
  * fails. T/F, T>F>R and R/F pass there and must keep passing.
+ *
+ * ROUND 10 — O6's BAR CHANGED, AND IT WAS CHANGED HERE FIRST.
+ * ----------------------------------------------------------
+ *   O6  D(L) >= 1 / LIT_MAX_PITCH_PEN = 0.083   (boolean grid, this file's
+ *                                                instrument, the one CI gates on)
+ *
+ * The old bar was 0.10. It was RETIRED by the Round 9 reviewer (the visual
+ * designer scoring Round 9, ruling §1.4 of
+ * `docs/shadow-anatomy/round9-scorecard-and-round10-plan.md`, at branch
+ * `shadow-anatomy` HEAD `8c0f249`) as a mis-statement of §5.4 #1, which states
+ * the same clause in pen widths — and 12 x pen is a dark fraction of 1/12 =
+ * 0.083, not 0.10. The pen-width form wins because it is in the medium's own
+ * units and is checkable with a ruler; the raster fraction is instrument-
+ * dependent by ~8-12 %. See the long note on the O6 test below for the ruling's
+ * own words, and for what Round 10 measured against the lever it prescribed.
+ *
+ * The bar landed here BEFORE any source moved (Round 10 plan item 5), so the
+ * round is measured against the ruling and not against the number it replaced.
+ * `criteria.md` O6 is owed the same edit and is written by another hand.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -173,6 +192,63 @@ const ladder = ({ np, paths, radius }) => {
   };
 };
 
+// ── §5.4 #1 / O6 / plan item 16 — ONE CONSTANT, NOT TWO STATEMENTS ──────────
+//
+// Round 9's second-order ruling: "`LIT_MAX_PITCH_PEN` is, at every value from 6
+// to 12, inert with respect to the criterion it cites in its own comment. It is
+// not a lever; it is a comment. Either wire it to `ceil(L)` so the two
+// statements of §5.4 #1 cannot drift apart again, or delete it."
+//
+// I re-swept it and the inertness is worse than reported. Four-fixture D(L),
+// boolean grid, `FORM_INK.L.coverage` 0.42, `GLINT_KEEP` 0.6:
+//
+//   LIT_MAX_PITCH_PEN   E-b4    V-E45   W-bb    W-45    worst
+//        12            .0694   .0678   .0762   .0865   .0678
+//        10            .0694   .0678   .0762   .0865   .0678   bit-identical
+//         8            .0694   .0678   .0762   .0865   .0678   bit-identical
+//         6            .0694   .0678   .0785   .0918   .0678   worst unmoved
+//         4            .0684   .0657   .0740   .0857   .0657   WORSE, and F/M
+//                                                              1.719 breaches
+//                                                              the protected
+//                                                              [1.45, 1.70]
+//
+// At 4 the constant does not merely fail to help — it drives D(L) DOWN and
+// breaches a protected item, because `o6Pitch` then falls under `PLOT_FLOOR_PEN`
+// and the surplus spills into a third direction that dilutes every zone. A
+// constant whose comment names O6 and whose only measurable effect on O6 is
+// negative is the thing the ruling forbids surviving Round 10.
+//
+// WIRED, not deleted. `LIT_MAX_PITCH_PEN` now lives in `regions.js` beside
+// `FORM_INK` and floors `formCeiling('L')` at `1 / LIT_MAX_PITCH_PEN`, and this
+// test file reads its O6 bar from the same constant. The floor is L-only —
+// §5.4 #1 is about the centre light, and a global floor would give the glint
+// zone H a ceiling, which it must not have.
+//
+// It is SLACK AT 12 and that is stated rather than hidden: the weight term
+// gives 0.47 x 0.42 / 2.0 = 0.0987 against a floor of 0.0833, so the wiring is
+// output-neutral at the shipped value and every protected number is unchanged.
+// What it buys is that the ceiling can never again be put UNDER the bar by a
+// coverage edit made somewhere else — which is precisely how O6 came to be
+// unreachable by construction in the first place.
+describe('§5.4 #1 — O6\'s bar and the ceiling that permits it are one constant', () => {
+  test('LIT_MAX_PITCH_PEN is published by Regions and is the bar\'s only source', () => {
+    const R = V.Scene3D.Regions;
+    expect(R.LIT_MAX_PITCH_PEN).toBe(12);
+    expect(1 / R.LIT_MAX_PITCH_PEN).toBeCloseTo(0.0833, 4);
+  });
+
+  test('formCeiling(L) may never sit below the bar it has to permit', () => {
+    const R = V.Scene3D.Regions;
+    expect(R.formCeiling('L')).toBeGreaterThanOrEqual(1 / R.LIT_MAX_PITCH_PEN);
+    // ...and the floor is L-only: H is the glint, and it carries no ink at all.
+    expect(R.formCeiling('H')).toBe(0);
+    // Slack at the shipped value, so the wiring moves nothing: the weight term
+    // still wins on L, and every other zone is untouched arithmetic.
+    expect(R.formCeiling('L')).toBeCloseTo(0.47 * R.formInk('L').coverage / 2.0, 6);
+    expect(R.formCeiling('T')).toBeCloseTo(0.47, 6);
+  });
+});
+
 describe('the form ladder holds its ratios (O1 / O2 / O3 / O6)', () => {
   FIXTURES.forEach((fx) => {
     describe(fx.view, () => {
@@ -197,41 +273,86 @@ describe('the form ladder holds its ratios (O1 / O2 / O3 / O6)', () => {
         expect(m.F / m.M).toBeLessThanOrEqual(1.70);
       });
 
-      // ── O6 — RATCHETED, NOT MET. The spec asks D(L) >= 0.10. ───────────────
+      // ── O6 — THE BAR IS 0.083, AND IT IS STILL NOT MET. ────────────────────
       //
-      // Round 8 showed O6 is arithmetically UNREACHABLE inside the current law:
-      // the lit zone's composed ceiling is TOTAL_DARK_CEIL x L.coverage /
-      // DARKEST_WEIGHT = 0.47 x 0.42 / 2.0 = 0.0987, under the spec's own 0.10
-      // before a line is drawn. The Round 8 review ruled that the fix is a FLOOR
-      // on the L zone's ceiling, and that it "cannot touch max(object)".
+      // THE RULING (Round 9 reviewer, `round9-scorecard-and-round10-plan.md`
+      // §1.4, landed here before any source moved, per Round 10 plan item 5):
       //
-      // ROUND 9 MEASURED ALL OF THAT, AND THE PROPOSED LEVER IS DISPROVED.
-      // Four-fixture D(L), on this instrument, one lever at a time:
+      //   "O6's 0.10 gives. The bar becomes D(L) >= 0.083, i.e.
+      //    1 / LIT_MAX_PITCH_PEN."
       //
-      //   baseline                                   0.069 0.068 0.076 0.086
-      //   L's composed ceiling REMOVED ENTIRELY      0.075 0.076 0.077 0.087
-      //   LIT_MAX_PITCH_PEN 12 -> 10, and -> 8       0.069 0.068 0.076 0.086
-      //   L ceiling floored at 0.16                  0.075 0.076 0.077 0.087
-      //   + L's specular damping removed             0.100 0.095 0.099 0.106
+      // O6 and §5.4 #1 are ONE CLAUSE IN TWO UNITS — "the centre light carries
+      // visible tone", stated once as a raster fraction (0.10) and once as a
+      // pitch in pen widths (12 x pen). They disagreed by 20 %. The pen-width
+      // statement is the real one: it is in the medium's own units, it survives
+      // a pen change, and a plotter operator can check it with a ruler. The
+      // raster fraction is instrument-dependent — the boolean grid and the
+      // browser raster differ by ~8-12 % on the same drawing, which is most of
+      // the gap that was being argued about. And 0.10 is the only one of the
+      // three numbers with no derivation on record.
       //
-      // Removing L's ceiling outright buys +0.007. The ceiling is not the
-      // binder: L's own coverage is, at raw x GLINT_KEEP = 0.42 x 0.6 = 0.252
-      // after the specular cap halves it. `LIT_MAX_PITCH_PEN` — the mechanism
-      // written for O6 — is dead at 12, at 10 and at 8, because the coverage cap
-      // dominates it at every value.
+      // So the bar below is not written as a literal. It is READ FROM
+      // `Regions.LIT_MAX_PITCH_PEN`, which is also what floors `formCeiling('L')`.
+      // The two statements of §5.4 #1 are now one constant and cannot drift
+      // apart again — which was the second-order ruling (plan item 16).
       //
-      // AND THE ONLY LEVER THAT REACHES 0.10 COSTS THE STEP ABOVE IT: L/M goes
-      // 0.52-0.72 to 0.73-0.92, i.e. the lit band and the halftone converge.
-      // Raising M instead to reopen the step takes F/M from 1.53-1.66 to ~1.20,
-      // through the protected [1.45, 1.70] floor; raising F to compensate walks
-      // max(object) at the T end toward the protected 0.56, whose worst-of-four
-      // margin is already 3.8 %. The ladder is fully constrained: O6 at 0.10
-      // cannot be bought without breaking a protected item, and that is a ruling
-      // for the spec, not a number to tune toward.
+      // ROUND 10 MEASURED THE PRESCRIBED LEVER AND IT IS DISPROVED TOO.
+      // Four-fixture D(L), this instrument (boolean grid, 0.1 mm), each row a
+      // full re-run, worst-of-four in the last column:
       //
-      // So O6 is RATCHETED here at what it actually measures. It may not fall.
-      test('O6 — the centre light carries tone (spec bar 0.10; ratcheted at the measured level)', () => {
-        expect(m.L).toBeGreaterThanOrEqual(0.065);
+      //   FORM_INK.L.coverage / GLINT_KEEP        E-b4   V-E45  W-bb   W-45   worst   L/M worst
+      //   0.42 / 0.6  (HEAD)                     .0694  .0678  .0762  .0865   .0678    0.723
+      //   0.42 / 0.8                             .0694  .0678  .0785  .0918   .0678    0.767  X O4
+      //   0.42 / 1.0                             .0694  .0678  .0785  .0918   .0678    0.767  X O4
+      //   0.50 / 0.6  <- THE PRESCRIBED LEVER    .0746  .0736  .0793  .0898   .0736    0.751  X O4
+      //   0.50 / 0.8                             .0783  .0744  .0803  .0926   .0744    0.775  X O4
+      //   0.50 / 1.0                             .0783  .0744  .0803  .0926   .0744    0.775  X O4
+      //   0.46 / 0.6                             .0746  .0717  .0770  .0873   .0717    0.731
+      //   0.48 / 0.6                             .0746  .0736  .0793  .0898   .0736    0.751  X O4
+      //   0.55 / 0.6                             .0810  .0782  .0839  .0974   .0782    0.814  X O4
+      //   0.60 / 0.6                             .0941  .0872  .0897  .1012   .0872    0.846  X O4
+      //   0.60 / 0.6, M.coverage 0.62 -> 0.656   .0942  .0872  .0897  .1012   .0872    0.810  X O4
+      //                                          (and F/M down to 1.474, 1.7 % off its floor)
+      //
+      // Three findings, and the first two are against the ruling that sent them:
+      //
+      //  1. `GLINT_KEEP` NEVER BECOMES LIVE. The ruling says raise L.coverage
+      //     "and THEN, and only then, GLINT_KEEP becomes live". It does not. At
+      //     coverage 0.50, GLINT_KEEP 0.8 and 1.0 are BIT-IDENTICAL on all four
+      //     fixtures, and 0.6 -> 0.8 buys +0.0008 on the binding fixture while
+      //     spending 0.024 of the O4 margin. The composed ceiling binds below
+      //     the requested coverage at every GLINT_KEEP, so there is one live
+      //     ceiling here, not two in series.
+      //
+      //  2. `L.coverage` 0.42 -> 0.50 DOES NOT REACH THE BAR, AND ALREADY
+      //     BREACHES O4. It lands the worst fixture at 0.0736 (11 % short of
+      //     0.083) and takes L/M to 0.7510 against the 0.75 floor. The largest
+      //     coverage that keeps O4 green is ~0.47, worth D(L) ~0.072.
+      //
+      //  3. THE COST MODEL IN THE RULING ASSUMED A PER-FIXTURE LEVER. Its
+      //     predicted L/M of 0.634/0.679/0.725/0.723 is each fixture's own M
+      //     divided into 0.083 — i.e. every fixture landing exactly ON the bar.
+      //     `FORM_INK.L.coverage` is global, and the four fixtures span
+      //     0.0678-0.0865 (a 28 % spread). Lifting the minimum to 0.083 lifts
+      //     the maximum to ~0.106, and O4 is scored on THAT fixture. Measured
+      //     at coverage 0.60: L/M 0.846. Spending the WHOLE remaining F/M
+      //     margin on M (0.62 -> 0.656, F/M floor 1.45 reached at 1.474) only
+      //     brings it to 0.810. It does not fit.
+      //
+      // So O6 at 0.083 and O4 at `L <= 0.75 x M` are two-way unsatisfiable
+      // through the ladder's coverage rows, exactly as O6 at 0.10 was. Nothing
+      // is tuned toward the bar here: no `FORM_INK` row moved, and the ratchet
+      // below is tightened only to what HEAD actually measures.
+      //
+      // Note for whoever rules next: O4 is marked [inferred] in `criteria.md`,
+      // was invented in Round 9 and pinned in the same round. It is now the
+      // BINDING constraint on O6. That is exactly the near-circularity the
+      // Round 9 reviewer flagged when they pinned it, and it should be ruled on
+      // before another round spends itself on the L zone.
+      test('O6 — the centre light carries tone (bar 1/LIT_MAX_PITCH_PEN = 0.083; ratcheted at the measured level)', () => {
+        const bar = 1 / V.Scene3D.Regions.LIT_MAX_PITCH_PEN;
+        expect(bar).toBeCloseTo(0.0833, 4);
+        expect(m.L).toBeGreaterThanOrEqual(0.067); // ratchet: measured worst 0.0678
       });
 
       // O4/O7 — and the step above it stays open. This is the bar the only

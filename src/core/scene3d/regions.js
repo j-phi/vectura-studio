@@ -689,10 +689,40 @@
   // proportional share of it.
   const TOTAL_DARK_CEIL = 0.47;
   const DARKEST_WEIGHT = 2.0;
+
+  // ── §5.4 #1 / O6 — THE CENTRE LIGHT'S FLOOR, IN THE MEDIUM'S OWN UNITS ─────
+  //
+  // "The centre light may never be blanker than LIT_MAX_PITCH_PEN (12) x pen."
+  // A single family at 12 x pen has a dark fraction of exactly 1/12 = 0.0833,
+  // so this constant IS O6's bar — Round 9's reviewer retired O6's separate
+  // 0.10 as a mis-statement of this same clause in a second, instrument-
+  // dependent unit (`round9-scorecard-and-round10-plan.md` §1.4).
+  //
+  // IT LIVES HERE BECAUSE IT HAD TO BE WIRED TO SOMETHING. It lived in
+  // `surface-fill.js`, where it capped the master grid's pitch and set a
+  // per-sample coverage floor — and Round 9 measured, and Round 10 re-measured
+  // and extended, that neither use moves D(L) at all: 12 / 10 / 8 are
+  // bit-identical on all four ladder fixtures, 6 moves only the two that were
+  // not ceiling-bound, and 4 makes D(L) WORSE while breaching the protected
+  // F/M range. The constant named O6 in its own comment and did not control it.
+  //
+  // So it now floors L's composed ceiling. A ceiling below the criterion's own
+  // bar FORBIDS the criterion before a line is drawn, which is exactly how O6
+  // became unreachable by construction and survived three rounds of levers
+  // aimed underneath it. The floor is L-ONLY: §5.4 #1 is about the centre
+  // light, and H (the glint) must keep a ceiling of 0 — it carries no ink.
+  //
+  // At the shipped values the floor is SLACK and the wiring is output-neutral:
+  // the weight term gives 0.47 x 0.42 / 2.0 = 0.0987 against a floor of 0.0833.
+  // What it buys is that no future coverage edit can silently put the ceiling
+  // back under the bar. `scene3d-form-ladder.test.js` reads its O6 bar from
+  // this same constant, so the two statements of §5.4 #1 cannot drift apart.
+  const LIT_MAX_PITCH_PEN = 12;
   const formCeiling = (zone) => {
     const ink = formInk(zone);
     const weight = clamp(finite(ink.coverage, 0) + finite(ink.cross, 0), 0, 4);
-    return TOTAL_DARK_CEIL * clamp(weight / DARKEST_WEIGHT, 0, 1);
+    const ceil = TOTAL_DARK_CEIL * clamp(weight / DARKEST_WEIGHT, 0, 1);
+    return zone === 'L' ? Math.max(ceil, 1 / LIT_MAX_PITCH_PEN) : ceil;
   };
 
   // Specular exponent for a highlight `size` (bigger size → broader/softer glint
@@ -766,6 +796,7 @@
     formInk,
     TOTAL_DARK_CEIL,
     DARKEST_WEIGHT,
+    LIT_MAX_PITCH_PEN,
     formCeiling,
   };
 
