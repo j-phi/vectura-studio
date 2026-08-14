@@ -228,6 +228,72 @@
     return clamp(idx, 0, nB - 1);
   };
 
+  // ── RANK QUANTIZATION (O20) ────────────────────────────────────────────────
+  //
+  // `band` above is a THRESHOLD quantizer, and a threshold quantizer is
+  // calibrated for a CONTINUUM of normals. A faceted object does not have one.
+  // A cube has three orientations, and on the design fixture its best-lit face
+  // landed at band 2 of 4 with the next at band 1: the object occupied the dark
+  // two thirds of the ladder, its two lit faces came out 0.012 apart in measured
+  // density, and at bands 3 they fell in the SAME band and the order inverted —
+  // the brighter face drew darker. No amount of fill tuning reaches that,
+  // because the two faces were being handed one rung.
+  //
+  // So re-quantize by RANK. An object's distinct facet intensities are ranked
+  // and spread across the ladder, which is exactly the "the thresholds are the
+  // wrong tool for this object" case and nothing else:
+  //
+  //   ENGAGE ONLY when the object's own facets leave the TOP of the ladder
+  //   unused (`maxBand < nB-1`) and span more than RANK_MIN_SPREAD in
+  //   intensity. An object whose facets already reach both ends — a low-poly
+  //   sphere, a tessellated solid, anything with a real gradient — is left
+  //   exactly as the thresholds put it. This is not a blanket re-grade.
+  //
+  //   NEVER DARKEN. The result is max(thresholdBand, rankBand), so the stretch
+  //   can only lift the light end toward the top of the ladder. A one-sided
+  //   stretch cannot invert an order (the max of two non-decreasing sequences
+  //   is non-decreasing) and cannot drag a uniformly bright object into the
+  //   dark bands, which a two-sided histogram stretch would.
+  //
+  // The result is a band INDEX, so the emitted value stays a function of the
+  // BAND COUNT by construction — bands 2/3/4 read three different ladders and
+  // emit three different ink totals. That is the contract a naive per-facet
+  // gain tilt broke, and why the tilt was reverted rather than shipped.
+  //
+  // Callers must pass EVERY facet of the object, front and back. Ranking only
+  // the visible ones would re-grade the object on every camera orbit step,
+  // which is the view-dependence O28 forbids.
+  const RANK_MIN_SPREAD = 0.15;
+  const rankBands = (intensities, tone) => {
+    const src = Array.isArray(intensities)
+      ? intensities.map((I) => clamp(finite(I, 0), 0, 1))
+      : [];
+    const base = src.map((I) => band(I, tone));
+    const nB = validLadder(tone).length;
+    if (nB < 2 || src.length < 2) return base;
+    let lo = Infinity; let hi = -Infinity; let top = 0;
+    src.forEach((I, i) => {
+      if (I < lo) lo = I;
+      if (I > hi) hi = I;
+      if (base[i] > top) top = base[i];
+    });
+    if (!(hi - lo > RANK_MIN_SPREAD)) return base;  // one orientation, nothing to spread
+    if (top >= nB - 1) return base;                 // the ladder is already fully used
+    // Distinct levels, ascending. Quantized to 1e-3 so floating-point noise on
+    // two copies of the same orientation cannot invent a rank between them.
+    const keyOf = (I) => Math.round(I * 1000);
+    const levels = Array.from(new Set(src.map(keyOf))).sort((a, b) => a - b);
+    const R = levels.length;
+    if (R < 2) return base;
+    const rankOf = new Map();
+    levels.forEach((v, i) => rankOf.set(v, i));
+    return src.map((I, i) => {
+      const r = rankOf.get(keyOf(I));
+      const stretched = Math.floor((r * (nB - 1)) / (R - 1));
+      return clamp(Math.max(base[i], stretched), 0, nB - 1);
+    });
+  };
+
   // Coverage fraction (0..1) for a band index, dark→light along the ladder.
   const coverageFor = (bandIndex, tone) => {
     const ladder = validLadder(tone);
@@ -269,6 +335,10 @@
   const specularHotspot = (record, camAngles, toneSpec, light) => {
     const spec = toneSpec || {};
     const size = Math.max(0, finite(spec.size, 0));
+    // O16 — `specular.enabled: false` must really disable it. The hotspot used to
+    // ignore the flag so `burst` and `altFill` kept firing after specular was
+    // switched off, which reads as a broken toggle.
+    if (spec.enabled === false) return null;
     if (!record || !Array.isArray(record.faces) || !rotatePoint) return null;
     const Lcam = normalize(rotatePoint(towardLight(light), camAngles || { yaw: 0, pitch: 0, roll: 0 }));
     const H = normalize(v(Lcam.x, Lcam.y, Lcam.z + 1)); // + view direction (+z)
@@ -378,6 +448,158 @@
     return clamp(best, 0, 1);
   };
 
+  // ── FORM ZONES (design spec §5.1–§5.3) ─────────────────────────────────────
+  //
+  // The object's own shading is a SIX-zone ladder, and its defining feature is
+  // that the ladder is NOT monotonic in "how far the surface has turned from the
+  // light":
+  //
+  //     H(0)   L(light)   M(halftone)   T(terminator)   F(form)   R(reflected)
+  //                                          ▲             ▼          ▼
+  //                                       DARKEST       LIGHTER   LIGHTER STILL
+  //
+  // T > F > R is the whole effect. A naive "darker as it turns away" ramp gives
+  // T ≤ F ≤ R and the form reads as a flat disc with a dirty edge.
+  //
+  // Two facts make the dip impossible to express with `band()` alone:
+  //
+  //   - Lambert is CLAMPED (`max(0, n·L)`), so every surface past the terminator
+  //     collapses onto I = 0 → band 0. T, F and R are all the same number and no
+  //     threshold can separate them. The SIGNED lambert has to be recovered.
+  //   - Nothing in the codebase ever produced a reflected/bounce term, so the
+  //     away-facing rim fell to a hard 0 with no floor. The one 'ambient' light
+  //     type lifts every normal EQUALLY, so it cannot make a rim by construction.
+  //
+  // So this classifier keeps `band()` untouched for the LIT gradation and
+  // subdivides the darkest band by signed lambert + a bounce term. Both fill
+  // implementations call it, which is what keeps a cube and a sphere under one
+  // light in the same zones (the I27 parity contract, §5.5.3).
+  const FORM_ZONES = ['H', 'L', 'M', 'T', 'F', 'R'];
+
+  // SIGNED lambert against whichever light dominates: > 0 lit, < 0 past the
+  // terminator, and — unlike `intensity()` — it keeps going negative so "how far
+  // past the terminator" is measurable. Ambient lights are skipped (they have no
+  // direction and therefore no terminator).
+  const signedLambert = (normalWorld, worldPoint, lights) => {
+    const list = Array.isArray(lights) ? lights : (lights ? [lights] : []);
+    const n = normalize(normalWorld || v(0, 0, 1));
+    const P = worldPoint && Number.isFinite(worldPoint.x) ? worldPoint : v(0, 0, 0);
+    let best = -1;
+    let any = false;
+    for (let i = 0; i < list.length; i++) {
+      const light = list[i];
+      if (!light || light.type === 'ambient') continue;
+      let L;
+      if (light.type === 'point' || light.type === 'spot' || light.type === 'area') {
+        const pos = light.position || v(0, 0, 0);
+        const to = sub(pos, P);
+        const d = Math.hypot(to.x, to.y, to.z);
+        L = d > 1e-9 ? mul(to, 1 / d) : v(0, 1, 0);
+      } else {
+        L = towardLight(light);
+      }
+      const d = dot(n, L);
+      if (!any || d > best) { best = d; any = true; }
+    }
+    return any ? clamp(best, -1, 1) : 0;
+  };
+
+  // Reflected/bounce lift (§5.2). Bounce comes UP off the ground, so the
+  // surfaces that catch it are the ones facing DOWN (−N.y), and it dies off over
+  // roughly one object height. `ground` = { y0, height } in world units — the
+  // object's own footing, so a floating object does not collect bounce it cannot
+  // physically receive. Returns 0..1; the caller gates it to the unlit side.
+  const reflectedLift = (normalWorld, worldPoint, ground) => {
+    const n = normalize(normalWorld || v(0, 1, 0));
+    const down = Math.max(0, -n.y);
+    if (down <= 0) return 0;
+    const g = ground || {};
+    const h = Math.max(1e-6, finite(g.height, 0));
+    if (!(h > 1e-6)) return down;
+    const P = worldPoint && Number.isFinite(worldPoint.y) ? worldPoint : v(0, 0, 0);
+    const prox = clamp(1 - (P.y - finite(g.y0, 0)) / h, 0, 1);
+    return down * prox;
+  };
+
+  // Terminator half-width, expressed in SIGNED-LAMBERT units. Near the
+  // terminator of a curved form nl ≈ −Δθ and the screen arc ≈ R·Δθ, so a band
+  // 8–14% of the form's screen width (2R) is nl ∈ [−0.28, 0). 0.22 sits inside
+  // that window and is deliberately a constant: it is a property of how a
+  // terminator looks, not a dial (§5.1).
+  const TERMINATOR_NL = 0.22;
+  // A rim only reads as reflected light once it is decisively down-facing AND
+  // close to the ground; below this the facet stays in the form shadow.
+  const REFLECT_TH = 0.30;
+
+  // formZone(normalWorld, worldPoint, ctx) → one of FORM_ZONES.
+  //   ctx: { tone, lights, ground:{y0,height}, terminator (bool override),
+  //          terminatorNL, highlight (bool: this sample carries the glint) }
+  // `terminator` is the FACETED override: on a facet the terminator is
+  // topological (unlit + shares a SMOOTH edge with a lit facet, §5.5.2) and the
+  // dihedral gate is what stops a cube from growing a bogus core shadow, so the
+  // faceted caller decides and this function must not second-guess it.
+  //
+  // §5.3 — T and R only exist at bands = 4. That is what `bands = 4` is FOR, and
+  // it is how "2 → 3 → 4 adds bands" stays legible: 2 gives L∪M / T∪F, 3 splits
+  // L from M, 4 opens the dip and the reflected rim.
+  const formZone = (normalWorld, worldPoint, ctx) => {
+    const c = ctx || {};
+    const tone = c.tone || null;
+    const nB = validLadder(tone).length;
+    if (c.highlight === true) return 'H';
+    const I = combinedIntensity(normalWorld, worldPoint, c.lights);
+    const b = band(I, tone);
+    if (b > 0) return b >= nB - 1 ? 'L' : 'M';
+    if (nB < 4) return 'F';                       // no room in the ladder for the dip
+    if (c.terminator === true) return 'T';
+    if (c.terminator === false) {
+      // Facet path: the dihedral gate already ruled this facet out of T. It may
+      // still catch bounce.
+      return reflectedLift(normalWorld, worldPoint, c.ground) >= REFLECT_TH ? 'R' : 'F';
+    }
+    const nl = signedLambert(normalWorld, worldPoint, c.lights);
+    const w = clamp(finite(c.terminatorNL, TERMINATOR_NL), 0.02, 0.9);
+    if (nl >= -w) return 'T';
+    return reflectedLift(normalWorld, worldPoint, c.ground) >= REFLECT_TH ? 'R' : 'F';
+  };
+
+  // Zone → INK RECIPE, in units of "one full family at the master pitch".
+  //
+  //   coverage  fraction of the master grid family A keeps (0..1)
+  //   cross     coverage of a SECOND family, at +65° (0 = none)
+  //   duty      dash duty cycle on family A (1 = solid)
+  //
+  // §5.0 states the ceiling plainly: the ladder alone tops out at 1.6× gain and
+  // the span this design needs is ~8:1, so **the dark end has to gain a crossed
+  // family**. That is the only way T clears F, and it is the same craft rule as
+  // §0 — past the spacing floor, density spills into another DIRECTION.
+  //
+  // +65°, never +90°: an orthogonal second family reads as a square grid / wire
+  // mesh and beats against the raster (§2.3).
+  const CROSS_OBJ_DEG = 65;
+  //
+  // ROUND 4 — the form shadow gets its OWN value, via a family rather than via
+  // coverage. Measured, F came out at 0.199 against M's 0.213: the form shadow
+  // was fractionally LIGHTER than the halftone, so the sphere read as one mid
+  // grey with a stripe in it. F was already at coverage 1.00, so there was
+  // nothing left to give it — and worse, F lives where the carrier crowds (the
+  // turning limb), which is exactly where the plot-safe cap takes the most away.
+  // Pushing its coverage could not have worked; it was already at the ceiling.
+  //
+  // So F crosses too, at half the terminator's weight. That is the same §0 move
+  // the terminator already makes, and it decouples F's value from how tightly
+  // the carrier happens to run at the limb. T keeps a clear margin above it.
+  // M comes down a little to open the M→F step from the other side.
+  const FORM_INK = {
+    H: { coverage: 0.00, cross: 0, duty: 1 },
+    L: { coverage: 0.42, cross: 0, duty: 1 },
+    M: { coverage: 0.62, cross: 0, duty: 1 },
+    F: { coverage: 1.00, cross: 0.40, duty: 1 },
+    T: { coverage: 1.00, cross: 1.00, duty: 1 },
+    R: { coverage: 0.45, cross: 0, duty: 0.7 },
+  };
+  const formInk = (zone) => FORM_INK[zone] || FORM_INK.M;
+
   // Specular exponent for a highlight `size` (bigger size → broader/softer glint
   // → lower exponent → the lit region spans more of the surface). Deliberately
   // soft (size 1 → ~6) so the light-driven glint reads as a semicircular REGION
@@ -424,6 +646,8 @@
     intensity,
     combinedIntensity,
     band,
+    rankBands,
+    RANK_MIN_SPREAD,
     coverageFor,
     coverageToSpacing,
     spacingFor,
@@ -435,6 +659,14 @@
     shininessForSize,
     highlightStage,
     shadowStage,
+    FORM_ZONES,
+    CROSS_OBJ_DEG,
+    TERMINATOR_NL,
+    REFLECT_TH,
+    signedLambert,
+    reflectedLift,
+    formZone,
+    formInk,
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Lighting, Regions });

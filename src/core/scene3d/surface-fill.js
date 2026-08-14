@@ -71,6 +71,89 @@
     return AROUND_IS_U.has(mode) ? (a, b) => raw(b, a) : raw;
   };
 
+  // O6 — CENTRE-LIGHT FLOOR (see coverageForSample). Module scope so the test
+  // seam at the bottom of the file reads the same constant the fill does.
+  // The cap may never remove more than this fraction of the lit band's own
+  // ladder coverage, and never take it under LIT_FLOOR outright.
+  const GLINT_KEEP = 0.6;
+  const LIT_FLOOR = 0.12;
+
+  // ── The tone MASTER GRID (design spec §5.0/§5.4) ────────────────────────────
+  //
+  // Round 2 shipped a curved fill that did not shade: `bands` 2/3/4 produced
+  // pixel-identical drawings. Two faults, and the first one hid the second.
+  //
+  // FAULT 1 — the dither rank WAS the family coordinate. Every family emitted
+  // line i with the ordered-dither threshold `(i+0.5)/count`, and line i sits at
+  // parameter b = `(i+0.5)/count`. Rank and position were the SAME NUMBER. So
+  // "keep the fraction `cov` of the lines" did not thin the family — it cut it
+  // at a LONGITUDE. Worse, on a lit form the light also varies with longitude,
+  // so rank and coverage were correlated and the gate collapsed into a single
+  // hard edge: full family on one side, bare paper on the other, no intermediate
+  // density anywhere. Measured: a flat D ≈ 0.08 across the whole sphere at every
+  // band count. `rankOf` replaces the coordinate with a bit-reversed (van der
+  // Corput) permutation, which is spatially well-distributed at EVERY prefix
+  // length — so keeping the first `cov·N` ranks keeps an evenly spread subset,
+  // and coverage finally means density.
+  //
+  // FAULT 2 — nothing to be blank against. At the shipped line budget a FULL
+  // family already sits at ~17 × pen width, so the lit band (a fraction of that)
+  // was near-bare paper and blanking a sub-region of it — which is what every
+  // highlight treatment does — was invisible. §5.4 states the rule directly:
+  // floor the centre light so its spacing never exceeds 6 × pen. That is only
+  // possible if the family the ladder subsets is itself dense enough, so when
+  // the ladder is active the line budget is FLOORED at a master pitch measured
+  // in pen widths. Density still rules above the floor.
+  // A tone grid is the FINE grid the ladder subsets, not the finished spacing —
+  // `hatchSpacing(density)` is the latter, so it is subdivided to become the
+  // former. Chosen so the shipped default Density lands the ladder where Round 3
+  // measured it well.
+  const TONE_SUBDIV = 5;
+  // §0 / C15 / designer item #5 — "cap TOTAL coverage, not just per-family
+  // pitch: ~0.75 dark-fraction ceiling above the 1.2 x pen floor". 1.2 x pen is
+  // the plot floor, but a SINGLE family ruling at 1.2 x pen already measures
+  // D ~ 0.83 — and then the terminator's crossed family lands on top of it and
+  // the form hits 0.946, darker than the contact shadow under it (C2/O13 fail:
+  // the object stops sitting on the ground). So family A is floored where it
+  // measures ~0.45, leaving the cross the room it needs to make T read, and the
+  // COMBINED perceived coverage is ceilinged outright.
+  const PLOT_FLOOR_PEN = 2.2;
+  const TOTAL_DARK_CEIL = 0.47;
+  const DARKEST_WEIGHT = 2.0;    // T's coverage + cross — the ladder's top rung
+  const LIT_MAX_PITCH_PEN = 12;  // §5.4 #1 / O6 — the centre light may never be blanker
+  const MASTER_MAX_LINES = 420;  // pathological-input guard (steps × lines)
+
+  // Radical inverse base 2, scaled off the index — the classic ordered-dither
+  // permutation. vdc(0,1,2,3,…) = 0, .5, .25, .75, .125, … so any prefix is
+  // spread across [0,1) instead of clustered at one end.
+  const rankOf = (i) => {
+    let n = (i >>> 0) + 1;
+    let rev = 0;
+    let denom = 1;
+    while (n > 0) { rev = rev * 2 + (n & 1); n >>>= 1; denom *= 2; }
+    return (rev / denom) % 1;
+  };
+
+  // Zone-boundary FEATHER (§4, and O26 — a curved form must show NO banding
+  // between tone bands). Coverage is piecewise-constant across a zone boundary,
+  // so without this every line in the family flips state at the same place and
+  // the flips line up into a contour. The comparison is dithered by a hash of
+  // (line index, a COARSE bucket of the along-line parameter), which moves each
+  // line's flip point independently by up to ±FEATHER_AMPL of rank — i.e.
+  // stochastic line-end termination, the burin's own answer, at zero extra
+  // pen-up cost. The bucket is coarse so the result is a ragged interdigitated
+  // boundary, not per-sample speckle.
+  // ROUND 4 (O26). The first cut hashed a QUANTIZED bucket of the along-line
+  // parameter, so the offset was piecewise CONSTANT — every ruling flipped at one
+  // of a handful of shared positions and the boundary came out as traceable right
+  // angles in parameter space. A blocky staircase is exactly the artefact the
+  // feather exists to prevent, and on the ground (C9/C10) the same idea reads as
+  // the best artefact in the set because THERE it is continuous. So the offset is
+  // now interpolated between adjacent hash samples: it wanders smoothly along
+  // each ruling, and independently per ruling, which is what interdigitates.
+  const FEATHER_AMPL = 0.30;
+  const FEATHER_BUCKET = 5;
+
   // Line count from the density slider (1..100 → ~6..40 wrap lines).
   const lineCountFor = (density) => Math.max(4, Math.round(6 + clamp(density, 0, 100) * 0.34));
 
@@ -146,7 +229,16 @@
     // disabled it keeps the ladder coverage. This is the live wiring of the Tone
     // section's Specular On/Off + size (they were previously dead), and doubles
     // as the "dark specular" fix — the bright band reads LIGHTER, never denser.
-    const specOn = Boolean(useLadder && tone.specular && tone.specular.enabled !== false);
+    // `none` — the total highlight/specular BYPASS (Jay, 2026-08-09: "none
+    // should represent no highlighting being present at all. This means the
+    // lines must not break"). It kills the glint cap outright, which is the
+    // confirmed cause of the "chunks simply missing from my rings with
+    // highlights off" report: the cap fired on the brightest band regardless of
+    // whether any highlight was switched on. Under `none` there is no H zone, no
+    // cap, no highlight channel and no highlight pen — the fill is exactly what
+    // the tone ladder made.
+    const noHL = opts.noHighlight === true;
+    const specOn = Boolean(useLadder && !noHL && tone.specular && tone.specular.enabled !== false);
     const specSize = specOn ? clamp(finite(tone.specular.size, 1), 0, 3) : 0;
     const nB = ladderLen;
     // I8 — shadow SENSITIVITY: graded darkening on the dark end (stage count).
@@ -156,10 +248,98 @@
     const shadowGrades = Boolean(useLadder && shadowSens > 1 && Regions && typeof Regions.shadowStage === 'function');
     // Ink line-fraction (0..1) for a sample: how many of the N wrap lines draw at
     // this local intensity. Dark → high, lit cap → low.
+    // O6 — THE GLINT CAP IS BOUNDED. Unbounded, `cov *= (1 - 0.5*specSize)` took
+    // a default-ish lit coverage of ~0.2 down to ~0.1, i.e. fewer than one wrap
+    // line in ten. Two things went wrong with that, and they are the same thing
+    // seen from two sides:
+    //
+    //   - The centre light was ALREADY near-bare paper, so blanking a sub-region
+    //     of it — which is what every highlight treatment does — was invisible.
+    //     That is why highlights "don't work": there was no surround to contrast
+    //     against. A highlight is defined by the ink around it.
+    //   - It fires on the BRIGHTEST BAND regardless of whether any highlight is
+    //     switched on, so with highlights disabled a contour/parallel fill came
+    //     out with chunks simply missing from its rings. Reported from the app on
+    //     a capsule, and it is the same defect.
+    //
+    // So the cap now lightens the lit band by at most 1 - GLINT_KEEP of its own
+    // ladder coverage, never below LIT_FLOOR outright. It still reads as a glint
+    // (specular on is measurably lighter than specular off, and the ladder's
+    // ordering is untouched) without gouging the fill.
     const coverageForSample = (I) => {
-      const b = Regions.band(I, tone);            // 0..nB-1, bright = HIGH
+      const b = Regions.band(I, tone);
+      // b: 0..nB-1, bright = HIGH
       let cov = Regions.coverageFor(nB - 1 - b, tone); // complement → dark = dense
-      if (specOn && b === nB - 1) cov *= clamp(1 - 0.5 * specSize, 0, 1); // glint cap
+      if (b === nB - 1) {
+        const raw = cov;
+        if (specOn) cov *= clamp(1 - 0.5 * specSize, 0, 1); // glint cap
+        cov = Math.max(cov, raw * GLINT_KEEP, LIT_FLOOR);
+      }
+      return clamp(cov, 0, 1);
+    };
+
+    // ── FORM ZONES on the curved path ──────────────────────────────────────────
+    // The ladder's own coverage numbers cannot express T > F > R (Lambert is
+    // clamped, so T, F and R are all I = 0), so the zone classifier in Regions
+    // owns the dark end and the ladder's coverage keeps owning the lit end. Both
+    // fill implementations call the SAME classifier — that is the I27 parity
+    // contract, and it is why a cube, a low-poly sphere and this capsule under
+    // one light now land in the same zones.
+    const zoneCtx = opts.formZone || null;
+    const zonesOn = Boolean(useLadder && zoneCtx && typeof Regions.formZone === 'function');
+    // The blank highlight is placed by the SPECULAR term, not by "the top tone
+    // band". That is what makes it sit offset toward the light (O7), shrink to a
+    // few percent of the silhouette instead of a quarter of it (O4/O5), respond
+    // to `tone.specular` on the curved path at all (O24) and vanish outright
+    // when specular is switched off (O16). The exponent is tighter than the
+    // light-driven glint's: this one has to land inside the ≤8%-of-silhouette
+    // window of §5.4 #8, where the lightDriven region deliberately spans faces.
+    const hlSpecFn = (specOn && typeof opts.specularFn === 'function') ? opts.specularFn : null;
+    const HL_EXP = clamp(30 / Math.max(0.2, specSize || 1), 10, 120);
+    const HL_TH = 0.35;
+    const isGlint = (wN, world) => {
+      if (!hlSpecFn) return false;
+      // specularFn is authored at the lightDriven shininess; re-sharpen it to the
+      // blank-highlight exponent by re-exponentiating the cosine it encodes.
+      const s = clamp(hlSpecFn(wN, world), 0, 1);
+      if (s <= 0) return false;
+      const cosH = Math.pow(s, 1 / Math.max(1, finite(opts.specShininess, 6)));
+      return Math.pow(cosH, HL_EXP) >= HL_TH;
+    };
+    const zoneOf = (smp) => {
+      if (!zonesOn) return null;
+      return Regions.formZone(smp.wN, smp.world, {
+        tone,
+        lights: zoneCtx.lights,
+        ground: zoneCtx.ground,
+        terminatorNL: zoneCtx.terminatorNL,
+        highlight: isGlint(smp.wN, smp.world),
+      });
+    };
+    // Zone → family-A coverage, with the two floors §5.4 #1 demands. The glint
+    // cap may lighten the centre light, but never past LIT_MAX_PITCH_PEN — a
+    // highlight is defined by the ink AROUND it, and a surround at 17 × pen has
+    // no ink to be defined by. `litFloorCov` is the coverage at which family A's
+    // spacing is exactly 6 × pen, so the floor is stated in the spec's units.
+    let litFloorCov = LIT_FLOOR; // assigned once the master pitch is known, below
+    let floorPitch = 0;          // ditto: the plot-safe local pitch (C15)
+    const zoneCoverage = (zone, isCross, isDensityCross) => {
+      const ink = Regions.formInk(zone);
+      if (isCross) return clamp(ink.cross, 0, 1);
+      if (isDensityCross) {
+        // §0's craft rule made operational: Density past the plot floor spends
+        // itself on a second DIRECTION, never on a tighter pitch. Weighted by the
+        // zone's own coverage so the ladder's ORDER survives the spill — the
+        // highlight gets none of it and the centre light barely any, which is
+        // what keeps the blank readable while the form darkens.
+        return clamp(ink.coverage * densityOverflow, 0, 1);
+      }
+      let cov = clamp(ink.coverage, 0, 1);
+      if (zone === 'L') {
+        const raw = cov;
+        if (specOn) cov *= clamp(1 - 0.5 * specSize, 0, 1);
+        cov = Math.max(cov, raw * GLINT_KEEP, litFloorCov);
+      }
       return clamp(cov, 0, 1);
     };
     const SHADOW_TH = 0.5; // intensity below which the dark-grading infill engages
@@ -198,13 +378,129 @@
       const camN = rotatePoint(wN, cam);
       const scr = projectWorld(world);
       if (!scr || !Number.isFinite(scr.x) || !Number.isFinite(scr.y)) return null;
+      // Screen-space derivatives of the parameter square. A wrapped family's
+      // pitch is NOT uniform — meridians converge to nothing at a sphere's poles
+      // — so the only way to know what a family actually rules at HERE is to
+      // measure it here. See the plot-safe cap in emitLine (C15).
+      let dA = null; let dB = null;
+      if (useLadder) {
+        const sa = projectWorld(applyTransform(pa, t));
+        const sb = projectWorld(applyTransform(pb, t));
+        if (sa && sb && Number.isFinite(sa.x) && Number.isFinite(sb.x)) {
+          dA = { x: (sa.x - scr.x) / EPS, y: (sa.y - scr.y) / EPS };
+          dB = { x: (sb.x - scr.x) / EPS, y: (sb.y - scr.y) / EPS };
+        }
+      }
       const I = toneOn ? clamp(intensityFn(wN, world), 0, 1) : 1;
       // I8 — per-sample specular term for light-driven highlight (0 when off).
       const S = (ldOn && typeof specularFn === 'function') ? clamp(specularFn(wN, world), 0, 1) : 0;
-      return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, I, S };
+      return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, I, S, wN, world, dA, dB };
     };
 
-    const N = lineCountFor(finite(opts.fillDensity, 50));
+    // PERPENDICULAR screen pitch between adjacent rulings at this sample.
+    //
+    // The offset between two adjacent lines in PARAMETER space projects to a
+    // screen vector, but that vector's LENGTH is not the spacing the eye (or the
+    // pen) sees: near a silhouette the projection shears hard and the offset
+    // ends up nearly parallel to the rulings themselves, so the true
+    // perpendicular gap is a fraction of it. Measuring the magnitude instead of
+    // the perpendicular component under-reported crowding by 2x exactly where it
+    // mattered, and the form's core shadow flooded to D = 0.81 — darker than the
+    // contact shadow beneath it, which is C2/O13 and means the object floats.
+    // The cross product with the ruling's own screen direction is the fix.
+    const perpPitch = (smp, pitchStep, lineDir) => {
+      if (!pitchStep || !lineDir || !smp.dA || !smp.dB) return null;
+      const ox = smp.dA.x * pitchStep.a + smp.dB.x * pitchStep.b;
+      const oy = smp.dA.y * pitchStep.a + smp.dB.y * pitchStep.b;
+      const lx = smp.dA.x * lineDir.a + smp.dB.x * lineDir.b;
+      const ly = smp.dA.y * lineDir.a + smp.dB.y * lineDir.b;
+      const ll = Math.hypot(lx, ly);
+      if (ll < 1e-9) return Math.hypot(ox, oy);
+      const perp = Math.abs(ox * (ly / ll) - oy * (lx / ll));
+      return perp > 1e-6 ? perp : 1e-6;
+    };
+
+    // ── Line budget ────────────────────────────────────────────────────────────
+    // Density owns the count, exactly as before, EXCEPT that an active tone
+    // ladder floors it: the ladder is a set of subsets of this family, so if the
+    // family itself rules at 17 × pen there is no room below it for a centre
+    // light and no room above it for anything but bare paper. The floor is
+    // computed from the object's own PROJECTED size so it holds at any zoom and
+    // for any primitive, and it only ever RAISES the count — Density is fully
+    // live above it. With tone off, `N` is bit-for-bit `lineCountFor(density)`.
+    let N = lineCountFor(finite(opts.fillDensity, 50));
+    let masterPitch = 0;
+    let densityOverflow = 0; // Density past the plot floor, spent on a 2nd direction
+    const penWidth = Math.max(0.02, finite(opts.penWidth, 0.3));
+    if (useLadder && opts.penWidth != null) {
+      // Calibrate off the MEDIAN local pitch the family will actually rule at,
+      // not off a bounding box. A wrapped family's pitch is wildly non-uniform —
+      // on a sphere the meridians converge to nothing at the poles and crowd at
+      // the silhouette — and a bbox estimate gets it wrong by about 2x. When the
+      // budget is too dense EVERY zone hits the plot floor and the whole ladder
+      // flattens into one value: measured L/M/T/F all landing within 0.05 of each
+      // other at an effective pitch of 0.75-0.79mm. Calibrating on the median
+      // puts the darkest zone at the target pitch and leaves the lit end room.
+      const rad = (finite(opts.fillAngle, 0) * Math.PI) / 180;
+      // Across the primary family, in parameter space. 'contour' rules the other
+      // axis; every other mapper's family runs along (cos, sin) of fillAngle.
+      const acr = opts.mapper === 'contour'
+        ? { a: 1, b: 0 }
+        : { a: -Math.sin(rad), b: Math.cos(rad) };
+      const widths = [];
+      for (let i = 0; i <= 16; i++) {
+        for (let j = 0; j <= 16; j++) {
+          const smp = sampleAt(i / 16, j / 16);
+          if (!smp || !smp.front || !smp.dA || !smp.dB) continue;
+          const w = perpPitch(smp, acr, { a: -acr.b, b: acr.a });
+          if (w != null && w > 1e-6) widths.push(w);
+        }
+      }
+      if (widths.length >= 8) {
+        widths.sort((x, y) => x - y);
+        const median = widths[widths.length >> 1];
+        // ── DENSITY IS THE DIAL; THE FLOOR ONLY CATCHES THE SPARSE END ────────
+        //
+        // Round 3 sized the grid at a FIXED master pitch, and I claimed "Density
+        // is fully live above it". It is not: `lineCountFor(100)` is 40 lines and
+        // the floor wants ~150 for a 92mm ball at a 0.3mm pen, so N sat AT the
+        // floor for every Density value and the ball emitted byte-identical
+        // geometry at Density 10 and at 100. There was no Density setting left.
+        //
+        // So Density sets the pitch, through the SAME `hatchSpacing` law the
+        // faceted path uses (subdivided: a tone grid is the fine grid the ladder
+        // subsets, not the finished spacing). Two clamps sit on it, and each has
+        // a reason rather than a number:
+        //
+        //   SPARSE END — the centre light must still carry ink, or the highlight
+        //   has nothing to be blank against (O6, §5.4 #1). Derived from the LIT
+        //   band's own requirement: L rules at `pitch / cov_L`, and that may not
+        //   exceed LIT_MAX_PITCH. This is the only floor, and it binds only when
+        //   Density is genuinely too sparse to carry a ladder.
+        //
+        //   DENSE END — past the plot floor you do not get darker by ruling
+        //   closer, you get a flooded blob (§0). The excess is NOT discarded: it
+        //   spills into a second DIRECTION, which is what the craft rule says to
+        //   do with it and what keeps Density live at the top of its range.
+        const tonePitch = Math.max(0.05, finite(opts.tonePitch, 3) / TONE_SUBDIV);
+        const litCov = clamp(Regions.formInk('L').coverage, 0.05, 1);
+        const o6Pitch = LIT_MAX_PITCH_PEN * penWidth * litCov;
+        const floorPen = PLOT_FLOOR_PEN * penWidth;
+        masterPitch = Math.min(tonePitch, o6Pitch);
+        if (masterPitch < floorPen) {
+          densityOverflow = clamp(floorPen / masterPitch - 1, 0, 1);
+          masterPitch = floorPen;
+        }
+        N = clamp(Math.max(4, Math.round(median / masterPitch)), 4, MASTER_MAX_LINES);
+        masterPitch = median / N; // what the family ACTUALLY rules at, typically
+      }
+    }
+    // Coverage at which family A's spacing is exactly LIT_MAX_PITCH_PEN × pen —
+    // the floor under the centre light, stated in §5.4's own units.
+    litFloorCov = masterPitch > 0
+      ? clamp(masterPitch / (LIT_MAX_PITCH_PEN * penWidth), 0.05, 1)
+      : LIT_FLOOR;
+    floorPitch = PLOT_FLOOR_PEN * penWidth;
     // Samples along each fill line. The MESH's tessellation `detail` sets the
     // base; the Style tab's own Fidelity (`fillFidelity`) scales it.
     //
@@ -218,6 +514,14 @@
     // Default 1 ⇒ Math.round(base × 1) === base ⇒ byte-identical. The upper
     // clamp keeps the spiral's `steps × turns` budget bounded (turns is already
     // capped at SPIRAL_MAX_TURNS).
+    //
+    // MERGE NOTE (round7-accepted → 3d-scene/p4). This is the SAMPLES-ALONG-A-
+    // RULING axis; the tone master grid computed just above owns the NUMBER OF
+    // RULINGS (`N`). They are orthogonal and neither reads the other — the
+    // grid's median-pitch calibration walks its own fixed 17×17 `sampleAt`
+    // lattice, not `steps`. The one real coupling is the budget: `N` may now
+    // reach MASTER_MAX_LINES (420) where it used to cap at 40, so the product
+    // `steps × N` is bounded by 220 × 420. See the plot-safety perf pin.
     const baseSteps = Math.max(28, Math.round(finite(opts.detail, 24) * 2));
     const fillFidelity = clamp(finite(opts.fillFidelity, 1), 0.25, 3);
     const steps = fillFidelity === 1
@@ -247,11 +551,25 @@
       ? opts.highlight : null;
     const hlIsHL = (hl && typeof hl.isHL === 'function') ? hl.isHL : () => false;
     const hlDensity = hl ? clamp(finite(hl.density, 25), 1, 100) : 25;
+    const ldDensity = ldOn ? clamp(finite(hlCfg.density, 25), 1, 100) : 25;
     // Deterministic 2D hash (mirrors geometry3d strokeHash) for stippleOut.
     const sfHash = (a, b) => {
       let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
       h ^= h >>> 13; h = Math.imul(h, 1274126177); h ^= h >>> 16;
       return (h >>> 0) / 4294967296;
+    };
+
+    // Smoothly-varying per-ruling feather offset in [-0.5, 0.5]. Deterministic:
+    // same ruling, same position, same value, frame to frame (the "swim" contract).
+    const featherAt = (lineIndex, step) => {
+      const u = step / FEATHER_BUCKET;
+      const k = Math.floor(u);
+      const f = u - k;
+      const seed = (lineIndex | 0) * 2654435761;
+      const a = sfHash(seed, k);
+      const b = sfHash(seed, k + 1);
+      const t = f * f * (3 - 2 * f); // smoothstep — no corners at the sample joins
+      return (a + (b - a) * t) - 0.5;
     };
 
     // Push a run to `out`, tagging the array when it belongs to the back family.
@@ -269,8 +587,15 @@
     // the sample draws only where the local shade (1 − I) meets it, so lines
     // vanish toward the lit highlight and pile up in shadow. `back` selects the
     // FAR side (camN.z < 0) instead of the visible front side, and tags the run.
-    const emitLine = (paramAt, threshold, back, lineIndex, count) => {
+    // `ladderRank` is the line's position in the dither PERMUTATION (see rankOf)
+    // — decoupled from `threshold`, which stays the geometric rank the legacy
+    // no-ladder callers compare shade against. `zoneGate`, when set, restricts
+    // the line to a single form zone: that is how the terminator's crossed
+    // family is spent on T alone instead of being sprayed over the whole dark
+    // band (O17 — Round 2 crossed ALL of band 0, at 0/90, and it read as wire mesh).
+    const emitLine = (paramAt, threshold, back, lineIndex, count, ladderRank, zoneGate, pitchStep, lineDir, densityCross) => {
       const wantFront = !back;
+      const rank = Number.isFinite(ladderRank) ? ladderRank : threshold;
       let run = [];
       let hlRun = [];
       const flush = () => { pushRun(run, back); run = []; };
@@ -281,8 +606,13 @@
         hlRun = [];
       };
       // sparse: is THIS line kept in the highlight band? (every Nth by density).
-      const sparseStep = hl ? Math.max(1, Math.round(100 / hlDensity)) : 1;
-      const lineKept = !hl || (lineIndex % sparseStep === 0);
+      // Under lightDriven `hl` is null, so the perFace density is unavailable —
+      // read the same density off the lightDriven config, otherwise `sparse`
+      // keeps every line and collapses onto `keep` (O15).
+      const sparseDensity = hl ? hlDensity : ldDensity;
+      const sparseOwner = hl || ld;
+      const sparseStep = sparseOwner ? Math.max(1, Math.round(100 / sparseDensity)) : 1;
+      const lineKept = !sparseOwner || (lineIndex % sparseStep === 0);
       for (let s = 0; s <= steps; s++) {
         const tt = s / steps;
         const pr = paramAt(tt);
@@ -305,39 +635,154 @@
               // run. sensitivity 1 → whole region treated (binary); N → graded.
               const treated = sfHash(Math.round(smp.x * 4), Math.round(smp.y * 4)) < stg.openness;
               const tr = ld.treatment;
-              if (tr === 'keep' || tr === 'dashed' || tr === 'dotted') {
+              if (tr === 'dashed' || tr === 'dotted') {
                 if (treated) { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); }
                 else { flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); }
+              } else if (tr === 'sparse' || tr === 'stippleOut') {
+                // O15 — these two used to fall into the `blank` arm below, so
+                // switching highlightMode to lightDriven silently turned a sparse
+                // or stippled highlight into a hole. They now thin on the
+                // highlight channel here exactly as they do under perFace.
+                if (!treated) { flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); }
+                else if (tr === 'sparse'
+                  ? lineKept
+                  : sfHash(Math.round(smp.x * 4), Math.round(smp.y * 4)) < clamp((ldDensity / 100) * (0.3 + shade * 2), 0, 1)) {
+                  flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z });
+                } else { flush(); flushHL(); }
               } else if (treated) { flush(); flushHL(); }        // blank glint
               else { flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); }
               continue;
             }
           }
-          // `threshold` is this line's ordered-dither rank (i+0.5)/count. With the
-          // ladder, the sample draws where the rank is below the band's coverage
-          // (dark bands cover more ranks → dense; the lit cap covers few → sparse).
+          // The sample draws where this line's PERMUTED rank sits below the local
+          // coverage — dark zones cover more ranks (dense), the centre light few
+          // (sparse), the glint none (blank). The comparison is feathered so the
+          // flips do not line up into a contour at a zone boundary (O26).
           // Without a ladder (other callers) it degrades to the legacy shade<rank.
-          const dropZone = useLadder ? (threshold >= coverageForSample(smp.I)) : (shade < threshold);
+          let dropZone;
+          if (useLadder) {
+            const zone = zoneOf(smp);
+            if (zoneGate && zone !== zoneGate) { flush(); flushHL(); continue; }
+            const cov = zone
+              ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true)
+              : coverageForSample(smp.I);
+            // §0, restated as arithmetic, and C15: past ~1.2 x pen width you do
+            // not get darker by ruling closer — you get a flooded blob and a wet
+            // plot. On a wrapped surface that limit is reached LOCALLY long
+            // before it is reached globally: a sphere's meridians converge to
+            // zero pitch at the poles, so the pole caps flooded solid (measured
+            // D = 1.000) while the equator was still legible. Capping coverage by
+            // the LOCAL pitch spends the excess the only way the craft rule
+            // allows — by dropping rulings — and it is what keeps the lit end of
+            // the ladder separable instead of saturating into the dark end.
+            let cap = 1;
+            const localPitch = perpPitch(smp, pitchStep, lineDir);
+            if (localPitch != null) {
+              // Effective pitch is localPitch / coverage and must stay at or above
+              // the floor, so the darkest zone may not exceed localPitch/floor.
+              // Applied MULTIPLICATIVELY, not as a clamp: where the geometry
+              // crowds, every zone thins by the same factor, so the ladder's
+              // ratios survive intact instead of the whole ramp collapsing onto
+              // the floor together (which is exactly what a clamp did — L, M, T
+              // and F all landed at the same effective pitch and the form went
+              // flat).
+              if (localPitch > 1e-6 && floorPitch > 1e-6) cap = clamp(localPitch / floorPitch, 0, 1);
+            }
+            let covCapped = cov * cap;
+            // Perceived coverage composes as 1 - PROD(1 - c_i): the crossed
+            // family overlaps family A, so treating them as additive over-reports
+            // and lets the pair flood. Solve for the most the CROSS may lay down
+            // without the pair passing the ceiling.
+            // ── ONE COMPOSED BUDGET, SPLIT ACROSS EVERY PASS ─────────────────
+            //
+            // ROUND 7 (C2 / O13 / C15-on-the-object). Two faults, one cause.
+            //
+            // (a) The BASE pass had no composed budget at all. It was limited
+            //     only by the multiplicative `cap = localPitch / floorPitch`,
+            //     a per-family PITCH rule — so the ceiling was enforced purely
+            //     by WITHHOLDING the cross, and where family A alone busted it
+            //     the composed total simply stayed at whatever A had done.
+            //     Measured at the peak: one family, alone, at an effective
+            //     0.466 mm = 1.55 x pen, coverage 0.644 — inside C15's literal
+            //     1.2 x bar, 1.4x past this path's own family-A floor, and
+            //     carrying the object's maximum D.
+            //
+            // (b) The cross pass modelled family A's already-laid coverage as
+            //     `penWidth * primary / localPitch` — using the CROSS family's
+            //     local pitch, because that is the only one in scope. Family A
+            //     runs at a different angle and therefore a different pitch, so
+            //     the term was evaluated on the wrong quantity: where the cross
+            //     ran sparser than A, `cA` came out too low, `room` too
+            //     generous, and the pair composed to 0.642 against a 0.47
+            //     ceiling. Measured at the peak window: family A 0.497,
+            //     crossed family 0.289.
+            //
+            // Both are the same error the collar took three rounds to shed — a
+            // cap stated on a proxy one transform away from the metric. So the
+            // budget is no longer modelled at all. Each pass is handed a SHARE
+            // of the zone's composed ceiling, in proportion to the ink that
+            // pass is meant to contribute, and enforces only its own share
+            // against its own pitch — which is the one pitch it actually knows.
+            // Because 1 - PROD(1 - c_i) with c_i = 1 - (1-ceil)^(w_i/W) is
+            // exactly `ceil` when every pass saturates, the composed total is
+            // bounded by construction and no pass needs to know about any
+            // other.
+            if (zone && localPitch != null && localPitch > 1e-6) {
+              // The ceiling stays PROPORTIONAL to the zone's intended weight,
+              // never a flat clamp. A flat clamp collapses every zone that
+              // reaches it onto one value — T and F both crossed, both
+              // saturated, T/F 0.98, and the dip closed again.
+              const ink = Regions.formInk(zone);
+              const weight = clamp(ink.coverage + ink.cross, 0, 4);
+              const ceil = TOTAL_DARK_CEIL * clamp(weight / DARKEST_WEIGHT, 0, 1);
+              // Every family that will land on this sample, and what each is
+              // for. The Density overflow is a THIRD direction and has to be in
+              // the denominator or it spends budget nobody accounted for.
+              const wBase = Math.max(0, ink.coverage);
+              const wCross = Math.max(0, ink.cross);
+              const wOver = densityOverflow > 0 ? Math.max(0, ink.coverage * densityOverflow) : 0;
+              const W = wBase + wCross + wOver;
+              let share = 1;
+              if (W > 1e-6) {
+                if (densityCross) share = wOver / W;
+                else if (zoneGate) share = wCross / W;
+                else share = wBase / W;
+              }
+              const myCeil = share >= 1 ? ceil : 1 - Math.pow(1 - ceil, clamp(share, 0, 1));
+              covCapped = Math.min(covCapped, (myCeil * localPitch) / penWidth);
+            }
+            const jit = featherAt(lineIndex, s) * FEATHER_AMPL;
+            dropZone = rank >= covCapped + jit;
+            // Dash duty — the reflected rim breaks its rulings rather than
+            // tightening them (§5.1: widened spacing + duty 0.7).
+            if (!dropZone && zone) {
+              const duty = clamp(finite(Regions.formInk(zone).duty, 1), 0, 1);
+              if (duty < 1 && sfHash(lineIndex + 7717, Math.round(s / 2)) >= duty) dropZone = true;
+            }
+          } else {
+            dropZone = shade < threshold;
+          }
           if (dropZone) {
             // Ordered-dither drop zone. Legacy (no highlight, or not the
             // highlight band): drop = bare paper (byte-identical to pre-Phase-4).
             if (!hl || !hlIsHL(smp.I)) { flush(); flushHL(); continue; }
             const t = hl.treatment;
-            // keep: re-emit the highlight-band lines on the highlight CHANNEL
-            // (tagged + highlight pen) instead of the base run, so keep is a
-            // VISIBLE highlight — not indistinguishable from plain full hatch.
-            if (t === 'keep') { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); continue; }
             if (t === 'dashed' || t === 'dotted') { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); continue; }
+            // O11/O14 — `sparse` and `stippleOut` used to push their survivors
+            // into the BASE run, untagged: they came out in the object pen and
+            // read as slightly thinner fill rather than as a highlight, and the
+            // highlight pen never reached them. They belong on the highlight
+            // channel, like keep/dashed/dotted.
             if (t === 'sparse') {
               if (!lineKept) { flush(); flushHL(); continue; }
-              flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); continue;
+              flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); continue;
             }
             if (t === 'stippleOut') {
               // Thin toward the hotspot: keep-probability rises with shade (away
               // from the glint), deterministic on the quantized screen point.
               const keepProb = clamp((hlDensity / 100) * (0.3 + shade * 2), 0, 1);
               if (sfHash(Math.round(smp.x * 4), Math.round(smp.y * 4)) >= keepProb) { flush(); flushHL(); continue; }
-              flushHL(); run.push({ x: smp.x, y: smp.y, z: smp.z }); continue;
+              flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); continue;
             }
             // altFill / burst: base fill drops here; a region pass fills it.
             flush(); flushHL(); continue;
@@ -350,10 +795,12 @@
       flushHL();
     };
 
-    const emitFamily = (fixAxis, count, back) => {
+    const emitFamily = (fixAxis, count, back, zoneGate) => {
       for (let i = 0; i < count; i++) {
         const fixVal = (i + 0.5) / count;
-        emitLine(axisLine(fixAxis, fixVal), (i + 0.5) / count, back, i, count); // dark→dense ordered dither
+        emitLine(axisLine(fixAxis, fixVal), (i + 0.5) / count, back, i, count, rankOf(i), zoneGate,
+          fixAxis === 'b' ? { a: 0, b: 1 / count } : { a: 1 / count, b: 0 },
+          fixAxis === 'b' ? { a: 1, b: 0 } : { a: 0, b: 1 });
       }
     };
 
@@ -408,18 +855,21 @@
           return { a: clamp(a0 + t * da, 0, 1), b: clamp(b0 + t * db, 0, 1) };
         };
       };
-      return { span, lineAt };
+      return { span, lineAt, na, nb, da, db };
     };
 
-    const emitAngledFamily = (angleDeg, count, back) => {
+    const emitAngledFamily = (angleDeg, count, back, zoneGate, densityCross) => {
       const fam = angleFamily(angleDeg);
       // Keep the LINE SPACING (not the line count) constant as the family
       // rotates, so Density reads the same at every angle. span = 1 on an axis.
       const n = Math.max(2, Math.round(count * fam.span));
       for (let i = 0; i < n; i++) {
         const at = fam.lineAt((i + 0.5) / n);
-        // Same dark→dense ordered-dither rank the axis families use.
-        if (at) emitLine(at, (i + 0.5) / n, back, i, n);
+        // Same dark→dense ordered-dither rank the axis families use. Adjacent
+        // lines are span/n apart ALONG the family normal, in parameter space.
+        const step = fam.span / n;
+        if (at) emitLine(at, (i + 0.5) / n, back, i, n, rankOf(i), zoneGate,
+          { a: fam.na * step, b: fam.nb * step }, { a: fam.da, b: fam.db }, densityCross);
       }
     };
 
@@ -490,12 +940,31 @@
         else if (a180 === 90) emitFamily('a', count, back);
         else emitAngledFamily(angleDeg, count, back);
       };
+      // §5.0's hard ceiling, discharged: the ladder cannot reach a core shadow
+      // by coverage alone (it runs out at full family), so the TERMINATOR — and
+      // only the terminator — gains a second family, at +65°. Never +90°: an
+      // orthogonal pair reads as a square grid and beats against the raster
+      // (§2.3). This is what makes T out-ink F, which is the whole dip.
+      const emitTerminatorCross = (count, back) => {
+        if (!zonesOn) return;
+        emitAngledFamily(finite(opts.fillAngle, 0) + Regions.CROSS_OBJ_DEG, count, back, 'T');
+        emitAngledFamily(finite(opts.fillAngle, 0) + Regions.CROSS_OBJ_DEG, count, back, 'F');
+        // The Density overflow (see the line budget): everything Density asked
+        // for past the plot floor, laid down in a second direction instead of a
+        // tighter pitch. Zero at and below the floor, so it is inert until it is
+        // needed.
+        if (densityOverflow > 0) {
+          emitAngledFamily(finite(opts.fillAngle, 0) + Regions.CROSS_OBJ_DEG, count, back, null, true);
+        }
+      };
       if (mapper === 'hatch') {
         if (onMeridianAxis) {
           emitFamily('b', count, back); // meridians wrap top-to-bottom
+          emitTerminatorCross(count, back);
           emitShadowInfill(meridianAt, count, back);
         } else {
           emitAngledFamily(hatchAngle, count, back);
+          emitTerminatorCross(count, back);
           emitShadowInfill(angleFamily(hatchAngle).lineAt, count, back);
         }
       } else if (mapper === 'crosshatch') {
@@ -505,10 +974,14 @@
         if (onMeridianAxis) emitFamily('b', count, back);
         else emitAngledFamily(hatchAngle, count, back);
         emitSecondary(hatchAngle + crossDelta, countB, back);      // the crossing family
-        if (crossTriple) emitSecondary(hatchAngle + 45, countB, back); // darkest-band third pass
+        // §2.3 — the tone-driven third pass goes to +32°, not +45°: with family B
+        // already at the user's delta, +45 lands close enough to A or B to beat.
+        if (crossTriple) emitSecondary(hatchAngle + 32, countB, back); // darkest-band third pass
+        emitTerminatorCross(count, back);
         emitShadowInfill(onMeridianAxis ? meridianAt : angleFamily(hatchAngle).lineAt, count, back);
       } else if (mapper === 'contour') {
         emitFamily('a', count, back); // latitude rings following the form
+        emitTerminatorCross(count, back);
         emitShadowInfill((frac) => axisLine('a', frac), count, back);
       } else if (mapper === 'spiral') {
         // One continuous helix: the ALONG-axis coordinate sweeps 0→1 while the
@@ -534,7 +1007,21 @@
           const wind = (f * turns + phase) % 1;
           const smp = snap ? sampleAt(wind, sweep) : sampleAt(sweep, wind);
           if (!smp || smp.front !== wantFront) { flush(); continue; }
-          if (toneOn) { const shade = clamp(1 - smp.I, 0, 1); if (shade < 0.12) { flush(); continue; } }
+          if (toneOn) {
+            // O18 — the spiral used to gate on a hardcoded `shade < 0.12` and
+            // ignored `ladder[]` outright, so `bands` did nothing at all on a
+            // spiral-filled object. A helix has no family index, so its rank is
+            // the TURN it is on: whole loops drop out toward the light, which
+            // keeps the arcs continuous instead of speckling the helix.
+            if (useLadder) {
+              const zone = zoneOf(smp);
+              const cov = zone ? zoneCoverage(zone, false) : coverageForSample(smp.I);
+              if (rankOf(Math.floor(f * turns)) >= cov) { flush(); continue; }
+            } else {
+              const shade = clamp(1 - smp.I, 0, 1);
+              if (shade < 0.12) { flush(); continue; }
+            }
+          }
           run.push({ x: smp.x, y: smp.y, z: smp.z });
         }
         flush();
@@ -559,9 +1046,19 @@
             const smp = sampleAt((r + 0.5) / rows, (c + 0.5) / colsPer);
             if (!smp || smp.front !== wantFront) continue;
             if (toneOn) {
-              const shade = clamp(1 - smp.I, 0, 1);
-              const th = ((r * colsPer + c) % 7) / 7; // scattered dither
-              if (shade < th) continue;
+              // O18 — stipple used a hardcoded `(…%7)/7` dither and never read
+              // `ladder[]`, so a stippled object showed no tone bands at all.
+              // The dot's rank is now the same bit-reversed permutation the line
+              // families use, compared against the local zone coverage.
+              if (useLadder) {
+                const zone = zoneOf(smp);
+                const cov = zone ? zoneCoverage(zone, false) : coverageForSample(smp.I);
+                if (rankOf(r * colsPer + c) >= cov) continue;
+              } else {
+                const shade = clamp(1 - smp.I, 0, 1);
+                const th = ((r * colsPer + c) % 7) / 7; // scattered dither
+                if (shade < th) continue;
+              }
             }
             if (legacy || !Marks || typeof Marks.stippleMark !== 'function') {
               const ring = [];
@@ -592,9 +1089,21 @@
     return out;
   };
 
-  Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { SurfaceFill: { buildObject, chartFor, lineCountFor } });
+  // Test seam for O6: the lit-band floor is applied deep inside a per-sample
+  // dither, so its effect on the emitted paths is diluted by everything else in
+  // the pipeline. `rawCoverage` is the brightest band's ladder coverage,
+  // `specSize` the glint size (0 = specular off).
+  const __litFloorForTest = (rawCoverage, specSize) => {
+    const capped = specSize > 0
+      ? rawCoverage * clamp(1 - 0.5 * specSize, 0, 1)
+      : rawCoverage;
+    return clamp(Math.max(capped, rawCoverage * GLINT_KEEP, LIT_FLOOR), 0, 1);
+  };
+
+  Vectura.Scene3D = Object.assign(Vectura.Scene3D || {},
+    { SurfaceFill: { buildObject, chartFor, lineCountFor, __litFloorForTest, __rankForTest: rankOf } });
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { buildObject, chartFor, lineCountFor };
+    module.exports = { buildObject, chartFor, lineCountFor, __litFloorForTest, __rankForTest: rankOf };
   }
 })();

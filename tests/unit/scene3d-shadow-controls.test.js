@@ -116,15 +116,41 @@ describe('Scene3D.Shadows controls (Phase 5)', () => {
     expect(sPaths(solid).some((p) => Array.isArray(p.meta.strokeDash) && p.meta.strokeDash.length)).toBe(false);
   });
 
-  test('shadowLayers:true emits nested inset sub-regions, densest toward the core', () => {
+  // CONTRACT CHANGED — deliberately, and this assertion moved with it.
+  //
+  // `shadowLayers` used to nest Mappers.insetPasses: concentric offsets of the
+  // footprint, hatched at the same angle, each at its own spacing. Three faults
+  // followed. Concentric insets of an ELONGATED cast footprint centre on its
+  // centroid, so the densest ink sat mid-shadow with nothing at the base — a
+  // bullseye, which is why "more layers" read as a flat blob with no structure.
+  // Same-angle rulings at incommensurate spacings then overlapped, so the extra
+  // strokes added travel without adding tone. And there was no contact band at
+  // all — the single most structurally important value in a shaded drawing.
+  //
+  // Layers is now a ZONE anatomy driven by two scalar fields over the footprint
+  // (distance from the ground-contact set, and distance in from the outline).
+  // So: the old expectations are gone on purpose. More ink is NOT the contract
+  // (C11 caps the swing at ±25%), and neither is a shrinking mean radius —
+  // that was the bullseye. What must hold is that the ink moves TOWARD THE BASE.
+  test('shadowLayers:true anchors the shadow at the base, not at the centroid', () => {
     const flat = buildShadows([boxObj('obj-1', 0, 20, 50)], { shadowLayers: false });
     const layered = buildShadows([boxObj('obj-1', 0, 20, 50)], { shadowLayers: true, shadowLayerCount: 3 });
-    // More distinct pick polygons than the single flat hull.
-    expect(regionCount(layered)).toBeGreaterThan(regionCount(flat));
-    // More total ink (nested overlapping rings) …
-    expect(totalLen(layered)).toBeGreaterThan(totalLen(flat));
-    // … and that ink concentrates toward the core (mean radius shrinks).
-    expect(meanRadial(layered)).toBeLessThan(meanRadial(flat));
+    expect(sPaths(layered).length).toBeGreaterThan(0);
+    // The contact family tags its ink with shadowLayer 0. Nothing emitted it
+    // before; its presence IS the occlusion band existing at all.
+    const contact = sPaths(layered).filter((p) => p.meta.sceneTarget
+      && p.meta.sceneTarget.shadowLayer === 0);
+    expect(contact.length).toBeGreaterThan(0);
+    expect(sPaths(flat).some((p) => p.meta.sceneTarget
+      && p.meta.sceneTarget.shadowLayer != null)).toBe(false);
+    // C11 — Layers adds STRUCTURE, not ink, and it is stated ACROSS the Layers
+    // settings, not against Off. Against Off there is no such contract: Off is a
+    // flat graphic shadow with no occlusion band at all, and the contact accent
+    // is ink that legitimately did not exist before.
+    const l2 = totalLen(buildShadows([boxObj('obj-1', 0, 20, 50)], { shadowLayers: true, shadowLayerCount: 2 }));
+    const l3 = totalLen(layered);
+    const l4 = totalLen(buildShadows([boxObj('obj-1', 0, 20, 50)], { shadowLayers: true, shadowLayerCount: 4 }));
+    expect(Math.max(l2, l3, l4) / Math.min(l2, l3, l4)).toBeLessThan(1.25 / 0.75);
   });
 
   test('per-object shadow.enabled:false removes that object cast shadow; others remain', () => {

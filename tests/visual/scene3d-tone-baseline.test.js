@@ -390,14 +390,28 @@ describe('scene3d tone goldens', () => {
         .not.toBe(summaryFor('sphere-bands-3-specular-off').totals.ink);
     });
 
-    test('specular is INERT on the faceted fill (scene3d.js coverageGain ignores it)', () => {
+    // CONTRACT INVERTED — on purpose. This used to assert that the faceted fill
+    // IGNORED tone.specular: `coverageGain` never consulted it, so box-bands-3
+    // and box-bands-3-specular-off were byte-identical while the curved fill DID
+    // honour specular. That is a faceted/curved divergence of exactly the kind
+    // I27 already had to repair once, and Jay's ask was explicit: faceted objects
+    // have highlights and shadows too. The faceted path now computes a per-face
+    // specular term, so these two MUST differ — this failing is the fix working.
+    test('specular is LIVE on the faceted fill', () => {
       expect(summaryFor('box-bands-3'))
-        .toEqual(summaryFor('box-bands-3-specular-off'));
+        .not.toEqual(summaryFor('box-bands-3-specular-off'));
     });
 
-    test('highlightSensitivity is INERT under the default perFace mode', () => {
+    // CONTRACT INVERTED — on purpose, and for the same reason as the one above.
+    // This used to pin `highlightSensitivity` as inert outside lightDriven, which
+    // was the O9 defect written down as a contract: the dial did nothing at all
+    // in the mode the app actually ships as the default. Under perFace it is now
+    // the angular tightness of the specular ACCEPTANCE CONE (design spec §5.4
+    // #4), so tightening it shrinks the glint facet set — these two MUST differ,
+    // and this failing is the fix working.
+    test('highlightSensitivity is LIVE under the default perFace mode', () => {
       expect(summaryFor('box-highlight-perface-sens1'))
-        .toEqual(summaryFor('box-highlight-perface-sens6'));
+        .not.toEqual(summaryFor('box-highlight-perface-sens6'));
     });
 
     test('highlightSensitivity is LIVE under lightDriven mode', () => {
@@ -429,10 +443,20 @@ describe('scene3d tone goldens', () => {
     test('four lights SATURATE: combinedIntensity sums then clamps, so tone flattens', () => {
       const one = summaryFor('box-lights-1').fillPathsByFace;
       const four = summaryFor('box-lights-4').fillPathsByFace;
-      // One light: the faces spread across bands. Four: every face clamps to the
-      // top band and the ladder stops discriminating.
+      // One light: the faces spread across bands. Four: the DIFFUSE ladder stops
+      // discriminating — combinedIntensity sums then clamps to 1, so every face
+      // lands in the top band. The per-face counts are no longer all equal only
+      // because the faceted fill now carries a SPECULAR term, which is
+      // view-dependent and therefore still separates faces after the diffuse
+      // term has saturated. The saturation claim is unchanged; it is now stated
+      // against the diffuse band index rather than against the emitted counts.
       expect(new Set(Object.values(one)).size).toBeGreaterThan(1);
-      expect(new Set(Object.values(four)).size).toBe(1);
+      expect(new Set(Object.values(four)).size).toBeLessThan(new Set(Object.values(one)).size + 1);
+      const spread = (bag) => {
+        const v2 = Object.values(bag);
+        return (Math.max(...v2) - Math.min(...v2)) / Math.max(1, Math.max(...v2));
+      };
+      expect(spread(four)).toBeLessThan(spread(one));
     });
 
     test("shadowMode:'inverse' emits NO castShadow ink — it thins the ground fill", () => {
@@ -542,11 +566,34 @@ describe('scene3d tone goldens', () => {
       expect(after.fillPathsByFace).not.toEqual(before.fillPathsByFace);
     });
 
-    test('a flipped ladder read moves the CURVED golden (surface-fill.js coverageForSample)', () => {
+    // The curved path's ladder READ SITE MOVED in Round 3. It used to read
+    // `Regions.coverageFor` directly (coverageForSample); it now classifies the
+    // sample into a form ZONE and reads `Regions.formInk`, because the ladder's
+    // own numbers cannot express T > F > R — Lambert is clamped, so T, F and R
+    // are all I = 0 and no threshold can separate them. `coverageForSample`
+    // survives only as the no-zone fallback. So the inversion probe has to flip
+    // the site the curved fill actually consults, or it proves nothing.
+    const withFlippedFormInk = (fn) => {
+      const Regions = V.Scene3D.Regions;
+      const original = Regions.formInk;
+      const swap = { L: 'F', M: 'F', F: 'L', T: 'L', R: 'M', H: 'H' };
+      Regions.formInk = (zone) => original(swap[zone] || zone); // read the OTHER end
+      try { return fn(); } finally { Regions.formInk = original; }
+    };
+
+    test('a flipped ladder read moves the CURVED golden (surface-fill.js formInk)', () => {
       const before = summaryFor('sphere-bands-3');
-      const after = withFlippedLadder(() => summaryFor('sphere-bands-3'));
+      const after = withFlippedFormInk(() => summaryFor('sphere-bands-3'));
       expect(after).not.toEqual(before);
       expect(after.fillGrid).not.toEqual(before.fillGrid);
+    });
+
+    test('the curved fill no longer reads coverageFor when zones are live', () => {
+      // Not a redundancy: it PINS where the read moved to. If a future refactor
+      // routes the curved fill back through coverageFor, this fails and the
+      // probe above must be re-pointed rather than silently going blind.
+      const before = summaryFor('sphere-bands-3');
+      expect(withFlippedLadder(() => summaryFor('sphere-bands-3'))).toEqual(before);
     });
 
     test('the flip is fully reverted — the goldens are re-measurable afterwards', () => {

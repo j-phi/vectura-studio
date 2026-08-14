@@ -455,6 +455,29 @@
         return c ? { x: x / c, y: y / c, z: z / c } : null;
       };
 
+      // The object's own FOOTING — world-Y floor and height — for the reflected
+      // (bounce) term of §5.2. Bounce comes up off the ground and dies over
+      // roughly one object height, so a floating object must not collect light
+      // it cannot physically receive. Cached per record: every sample of a
+      // curved fill asks for it.
+      const groundCache = new Map();
+      const recordGround = (record) => {
+        if (!record) return null;
+        if (groundCache.has(record)) return groundCache.get(record);
+        let lo = Infinity; let hi = -Infinity;
+        ((record && record.faces) || []).forEach((f) => {
+          ((f && f.worldVerts) || []).forEach((pw) => {
+            if (pw && Number.isFinite(pw.y)) {
+              if (pw.y < lo) lo = pw.y;
+              if (pw.y > hi) hi = pw.y;
+            }
+          });
+        });
+        const g = (Number.isFinite(lo) && hi > lo) ? { y0: lo, height: hi - lo } : null;
+        groundCache.set(record, g);
+        return g;
+      };
+
       // Hatch a flat face IN ITS OWN PLANE and project the result to screen, so
       // the strokes lie on the surface and foreshorten with it — a cube reads as
       // three distinct 3D planes, not one flat screen field. The hatch angle is
@@ -476,16 +499,294 @@
       // of a sphere in the same scene. We now read the COMPLEMENT band's coverage
       // (nBands-1-bandIdx), matching SurfaceFill.coverageForSample, so a cube and
       // a sphere lit alike shade alike.
+      // ── O20 — the cube's three orientations, three readable values ────────
+      //
+      // This was a QUANTIZER defect, not a fill defect, and four rounds of fill
+      // tuning could not reach it. A cube's lit faces fall high in the
+      // thresholds' range but not at the top of it: measured, the best-lit face
+      // sat at band 2 of 4 and the next at band 1, so the object used the dark
+      // two thirds of the ladder and its two lit faces came out 0.012 apart in
+      // density. At bands 3 they shared a band outright and the order inverted.
+      //
+      // `Regions.rankBands` re-quantizes an object's own facet orientations by
+      // RANK when — and only when — the thresholds leave the top of the ladder
+      // unused. See regions.js for the two guards that keep it honest (it never
+      // darkens, and it never touches an object that already spans the ladder).
+      //
+      // Sub-band gain gradation was the other candidate and is the wrong route:
+      // tilting the gain across a band's own width collapses the faceted
+      // band-COUNT contract in tests/visual/scene3d-tone-baseline.test.js (a
+      // cube at bands 3 and bands 4 emits identical ink under the tilt). Rank
+      // quantization emits a band INDEX, so the value it produces is still read
+      // off that band count's own ladder and the contract survives.
       const toneBandCount = () => (p.tone && Array.isArray(p.tone.ladder) && p.tone.ladder.length) ? p.tone.ladder.length : 3;
       const coverageGain = (bandIdx) => {
         const nb = toneBandCount();
         return 0.5 + clamp(Regions.coverageFor(nb - 1 - bandIdx, p.tone), 0, 1) * 1.1;
       };
-      const spacingBand = (normalWorld, styleParams, worldPoint) => {
+      // ── Faceted TERMINATOR — a dihedral ELIGIBILITY gate (O21, O22) ─────────
+      //
+      // A cube has no terminator. It has an EDGE. The terminator is a curvature
+      // phenomenon, so a facet can only carry one when it belongs to a
+      // SMOOTH-SHADED region — one whose facets meet at a dihedral below
+      // TERMINATOR_SMOOTH_DEG, the same intrinsic world-space measure
+      // Edges.classifyEdges uses for crease. A low-poly sphere's facets sit
+      // inside that angle and produce a discrete ring; a cube's 90-degree edges
+      // never do, and a cylinder's flat cap (whose only edge is its sharp rim)
+      // never does either while its barrel does.
+      //
+      // WHAT WAS WRONG (O21 measured 0.91x — the terminator ring came out
+      // LIGHTER than the form shadow below it, inverted):
+      //
+      // The ring itself used to be located topologically, "unlit facet sharing a
+      // smooth edge with a lit one", against a hard-coded `I >= 0.5` light test.
+      // But `Regions.formZone` hands T out only in band 0 (`if (b > 0) return
+      // 'M'`), and under the default thresholds a facet at I just under 0.5 is
+      // in band 1. So every facet the topological rule could flag was
+      // intercepted before the terminator branch, the T zone was UNREACHABLE on
+      // a faceted object, and its crossed family never drew. T and F measured
+      // identical because they WERE identical.
+      //
+      // So the gate stays and the LOCATION goes back to the one classifier both
+      // paths share: inside a smooth region, `formZone`'s own signed-Lambert
+      // rule places the ring, exactly as it does on a curved surface. That is
+      // the §5.5.3 / I27 parity contract stated properly — a cube and a sphere
+      // lit alike land in the same zones — instead of two rules that disagreed
+      // about where the dark side starts.
+      const TERMINATOR_SMOOTH_DEG = 40;
+      // Where `shadowSensitivity` starts staging the dark side. Half-lit is the
+      // curved fill's own split point, and it is deliberately NOT the terminator
+      // (which lives at band 0): the stages grade everything below mid-light.
+      const SHADOW_STAGE_TH = 0.5;
+      const smoothCache = new Map();
+      const smoothShadedFaces = (record) => {
+        if (smoothCache.has(record)) return smoothCache.get(record);
+        const set = new Set();
+        const faces = (record && record.faces) || [];
+        const edges = (record && record.edges) || [];
+        if (faces.length && edges.length) {
+          const cosSmooth = Math.cos(TERMINATOR_SMOOTH_DEG * Math.PI / 180);
+          edges.forEach((edge) => {
+            const idx = edge && edge.faces;
+            if (!idx || idx.length !== 2) return;
+            const [i, j] = idx;
+            const fi = faces[i]; const fj = faces[j];
+            if (!fi || !fj || !fi.normalWorld || !fj.normalWorld) return;
+            const d = clamp(dot(normalize(fi.normalWorld), normalize(fj.normalWorld)), -1, 1);
+            if (d < cosSmooth) return;                  // hard edge: an edge, not a terminator
+            set.add(fi); set.add(fj);
+          });
+        }
+        smoothCache.set(record, set);
+        return set;
+      };
+
+      // ── The object's own tone grade (O20) ───────────────────────────────────
+      //
+      // Ranked over EVERY facet of the record, front and back, so the grade is a
+      // property of the object and the light and never of where the camera
+      // happens to be (O28). Cached per record: every face asks for it.
+      const rankBandCache = new Map();
+      const recordBands = (record) => {
+        if (rankBandCache.has(record)) return rankBandCache.get(record);
+        let map = null;
+        const faces = (record && record.faces) || [];
+        if (faces.length && Regions && typeof Regions.rankBands === 'function') {
+          const I = faces.map((f) => (f && f.normalWorld
+            ? intensityFn(f.normalWorld, faceWorldCentroid(f)) : 0));
+          const bands = Regions.rankBands(I, p.tone);
+          map = new Map();
+          faces.forEach((f, i) => map.set(f, bands[i]));
+        }
+        rankBandCache.set(record, map);
+        return map;
+      };
+
+      // I8 parity — per-FACE specular. A facet either catches the glint or it does
+      // not, so Regions.specularTerm evaluates once per face. That discreteness IS
+      // flat shading (a low-poly sphere pops one or two facets; a cube often none)
+      // and must not be smoothed into a fake hotspot. Before this the faceted path
+      // ignored tone.specular entirely while the curved fill honoured it — the same
+      // class of divergence I27 already had to repair once.
+      const specOnFaceted = Boolean(toneOn && p.tone && p.tone.specular && p.tone.specular.enabled !== false);
+      const specSizeFaceted = specOnFaceted ? clamp(finite(p.tone.specular.size, 1), 0, 3) : 0;
+      const faceSpecular = (normalWorld, worldPoint) => {
+        if (!specOnFaceted || !Regions || typeof Regions.specularTerm !== 'function') return 0;
+        return clamp(Regions.specularTerm(normalWorld, worldPoint, activeLights, scene.camera, specShininess), 0, 1);
+      };
+
+      // ── The H zone on a FACETED object (§5.5.2) ──────────────────────────────
+      //
+      // "Facets whose specular term clears the threshold." The curved fill can
+      // use a fixed ~15-degree cone because a wrapped surface always contains a
+      // normal that close to the half-vector. A facet set does not: measured on
+      // the design fixture, the cube's BEST facet sits 43.8 degrees off the
+      // half-vector, so a fixed cone hands a cube nothing at all — and with no H
+      // facet the whole treatment dispatch below was dead code. `blank`,
+      // `sparse`, `stippleOut` and `altFill` rendered byte-identically (O14),
+      // `highlightPenId` reached no ink (O11), and `highlightSensitivity` was
+      // inert outside lightDriven (O9).
+      //
+      // The faceted reading of the same rule is the DISCRETE one: a facet
+      // catches the glint when it is the record's best mirror, or close enough
+      // to the best one to belong to the same glint. Two gates:
+      //
+      //   GLINT_ABS — the cone's outer edge, on the sharpened term. Tighten it
+      //     far enough and even the best facet falls outside, which is §5.5.2's
+      //     "on a cube, often none — a legitimate result, not a failure".
+      //   GLINT_REL — and it must be within this fraction of the record's best
+      //     facet, which is what keeps the highlight to the 1-3 facets §5.5.2
+      //     describes instead of the whole lit side.
+      //
+      // `highlightSensitivity` is the cone's ANGULAR TIGHTNESS (O9). The term is
+      // S = cos(N,H)^shininess, so raising S to the sensitivity re-exponentiates
+      // that cosine and closes the cone: at specular size 1 the acceptance angle
+      // runs ~73 deg (1) → ~49 deg (3) → ~36 deg (6). Sensitivity 1 returns the
+      // term exactly as specularTerm reports it, so the default is unchanged.
+      // Bigger tone.specular.size lowers the shininess and therefore OPENS the
+      // cone — the same direction the curved path moves in (§5.5.3 parity).
+      const GLINT_ABS = 0.002;
+      const GLINT_REL = 0.6;
+      // Zone-H coverage for a glint facet, as a MULTIPLIER on the band's own
+      // gain. Two properties matter and both come from it being a multiplier:
+      //
+      //   - Capped, not emptied. A cube shows three faces, and emptying one reads
+      //     as a hole rather than as a highlight (§5.4 #1 — a highlight is
+      //     defined by the ink AROUND it). The step lands on the facet boundary,
+      //     which is the blocky polygon-edged highlight §5.5.1 calls right.
+      //   - The tone ladder still shows THROUGH it. An absolute floor made the
+      //     glint facet's spacing independent of the band count, which collapses
+      //     the faceted band-COUNT contract pinned in
+      //     tests/visual/scene3d-tone-baseline.test.js.
+      const GLINT_GAIN_MULT = 0.45;
+      const glintSensitivity = (styleParams) => clamp(
+        Math.round(finite(styleParams && styleParams.highlightSensitivity, 1)), 1, 6,
+      );
+      const perFaceHighlight = (styleParams) => !styleParams || styleParams.highlightMode !== 'lightDriven';
+      const faceGlintTerm = (normalWorld, worldPoint, sens) => {
+        const S = faceSpecular(normalWorld, worldPoint);
+        if (!(S > 0)) return 0;
+        return sens <= 1 ? S : clamp(Math.pow(S, sens), 0, 1);
+      };
+      // Brightest sharpened term across a record's facets, memoized per
+      // (record, sensitivity). Read while that record's `activeLights` binding is
+      // in force, exactly like faceSpecular.
+      const glintMaxCache = new Map();
+      const recordGlintMax = (record, sens) => {
+        let bySens = glintMaxCache.get(record);
+        if (!bySens) { bySens = new Map(); glintMaxCache.set(record, bySens); }
+        if (bySens.has(sens)) return bySens.get(sens);
+        let best = 0;
+        ((record && record.faces) || []).forEach((f) => {
+          const t = faceGlintTerm(f.normalWorld, faceWorldCentroid(f), sens);
+          if (t > best) best = t;
+        });
+        bySens.set(sens, best);
+        return best;
+      };
+      const faceIsGlint = (normalWorld, worldPoint, record, styleParams) => {
+        // O24 — the glint must EXTINGUISH as tone.specular.size → 0, exactly as
+        // the coverage multiplier below does, so size 0 and enabled:false agree.
+        if (!specOnFaceted || !(specSizeFaceted > 0)) return false;
+        // The H zone is the OBJECT's own shading (§5.5). The ground plate is one
+        // enormous facet, so it is always its own best mirror and would take the
+        // glint across the whole floor — the highlight region pass already
+        // excludes it for the same reason.
+        if (!record || record.id === 'ground') return false;
+        const sens = glintSensitivity(styleParams);
+        const t = faceGlintTerm(normalWorld, worldPoint, sens);
+        if (!(t >= GLINT_ABS)) return false;
+        const best = recordGlintMax(record, sens);
+        return best > 0 && t >= GLINT_REL * best;
+      };
+
+      // FORM ZONE for a facet — the faceted twin of the curved classifier, and
+      // the same function, which is what keeps a cube and a sphere in the same
+      // zones under one light (§5.5.3, the I27 contract). The one difference is
+      // that ELIGIBILITY is decided HERE and handed in: the dihedral gate (a
+      // cube has an edge, not a terminator) is the thing formZone must not be
+      // allowed to second-guess.
+      const faceZone = (normalWorld, worldPoint, face, record) => {
+        if (!Regions || typeof Regions.formZone !== 'function') return null;
+        const ctx = {
+          tone: p.tone,
+          lights: activeLights,
+          ground: recordGround(record),
+        };
+        // Only a facet in a smooth-shaded region is ELIGIBLE for a terminator.
+        // Ineligible ⇒ `terminator: false`, which is formZone's explicit "this
+        // caller has ruled T out, do not second-guess it" contract; eligible ⇒
+        // the key is absent and formZone places the ring itself, on the same
+        // signed-Lambert rule the curved fill uses.
+        if (!(record && face && smoothShadedFaces(record).has(face))) ctx.terminator = false;
+        return Regions.formZone(normalWorld, worldPoint, ctx);
+      };
+
+      const spacingBand = (normalWorld, styleParams, worldPoint, face, record, opts) => {
         const s0 = hatchSpacing(styleParams.fillDensity);
-        if (!toneOn) return { spacing: s0, bandIdx: -1 };
-        const bandIdx = Regions.band(intensityFn(normalWorld, worldPoint), p.tone);
-        return { spacing: Math.max(penWidth, s0 / coverageGain(bandIdx)), bandIdx };
+        if (!toneOn) return { spacing: s0, bandIdx: -1, terminator: false };
+        // `none` — the total highlight/specular bypass (Jay, 2026-08-09). Nothing
+        // below may thin, re-space or re-tag this facet's ink on a highlight's
+        // account, so the specular gain multiplier is skipped outright.
+        const hlOff = styleParams.highlightTreatment === 'none' || styleParams.highlightTreatment === 'keep';
+        const I = intensityFn(normalWorld, worldPoint);
+        // O20 — the object's own rank grade when the thresholds under-use the
+        // ladder, the plain threshold band otherwise (and always, for a caller
+        // with no face/record to grade against).
+        const graded = (record && face) ? recordBands(record) : null;
+        const bandIdx = (graded && graded.has(face)) ? graded.get(face) : Regions.band(I, p.tone);
+        let gain = coverageGain(bandIdx);
+        // shadowStage parity: the dark-side coverage boost was curved-path only, so
+        // faceted objects got no grading below the terminator and read flat.
+        const shadowSens = clamp(Math.round(finite(styleParams.shadowSensitivity, 1)), 1, 8);
+        if (shadowSens > 1 && typeof Regions.shadowStage === 'function') {
+          const stg = Regions.shadowStage(I, shadowSens, SHADOW_STAGE_TH);
+          if (stg && Number.isFinite(stg.boost)) gain *= clamp(stg.boost, 0.5, 2);
+        }
+        // Specular: the glint facet reads LIGHTER, never denser — the highlight is
+        // negative space bounded by the surrounding hatch, never a drawn disc.
+        // O24: the response must EXTINGUISH as tone.specular.size → 0, so the
+        // size multiplies straight through with no floor under it.
+        // O9 — the response reads the SHARPENED term, so highlightSensitivity is
+        // live in the default perFace mode. At sensitivity 1 the sharpened term
+        // IS the raw term, so the default response is unchanged.
+        const S = hlOff ? 0 : faceGlintTerm(normalWorld, worldPoint, glintSensitivity(styleParams));
+        if (S > 0 && specSizeFaceted > 0) gain *= clamp(1 - 0.55 * specSizeFaceted * S, 0.25, 1);
+        // ── The form-zone ladder on facets (§5.1) ──────────────────────────────
+        //
+        // Round 2 wrote `if (terminator) gain = max(gain, coverageGain(0))`, which
+        // made a terminator facet IDENTICAL to a band-0 facet: T could never
+        // exceed F by construction, so O1/O3/O21 were unreachable no matter what
+        // the ladder said. The ceiling is real — gain tops out at 1.6 — so the
+        // excess has to go into a second DIRECTION (§5.0), which `faceHatchLines`
+        // spends through `Regions.formInk(zone).cross` — T's full family against
+        // F's 0.40 of one, the same recipe the curved fill spends.
+        //
+        // R (reflected) is the other half of the dip: the away-facing rim was
+        // falling to a hard Lambert 0 with nothing under it, so a low-poly
+        // sphere's LOWEST facets came out its darkest. R lightens them back.
+        const zone = faceZone(normalWorld, worldPoint, face, record);
+        if (zone === 'T') gain = Math.max(gain, coverageGain(0));
+        else if (zone === 'R') gain = Math.min(gain, coverageGain(0) * 0.55);
+        // ── H (§5.5.2): the glint FACET set. Its coverage is capped to a single
+        // discrete step so the highlight reads as a blocky, polygon-edged
+        // lightening of whole facets.
+        //
+        // The cap IS the `blank` treatment, so it fires only for `blank` — every
+        // other treatment REPLACES the H drop with its own mark and must be
+        // handed the facet's full ladder fill to thin, exactly as SurfaceFill
+        // dispatches inside its drop zone. Stacking the two made `sparse`
+        // indistinguishable from `blank` on a low-poly sphere, whose facets carry
+        // one ruling each once the cap has been applied.
+        //
+        // perFace only: lightDriven places its glint per SAMPLE and would
+        // otherwise double-lighten the facet it sits on. `none` (hlOff) is a
+        // total bypass and never reaches here.
+        const glint = !hlOff && perFaceHighlight(styleParams)
+          && highlightCfg(styleParams).treatment === 'blank'
+          && faceIsGlint(normalWorld, worldPoint, record, styleParams);
+        if (glint) gain *= GLINT_GAIN_MULT;
+        return { spacing: Math.max(penWidth, s0 / gain), bandIdx, terminator: zone === 'T', zone, glint };
       };
 
       // In-plane basis for a flat face: its world verts expressed in a 2D (u,v)
@@ -497,7 +798,46 @@
         const wv = face.worldVerts;
         if (draft || !scene.projectWorld || !Array.isArray(wv) || wv.length < 3) return null;
         const origin = wv[0];
-        const U = normalize(sub(wv[1], origin));
+        // ── THE FACE FRAME IS ANCHORED TO THE WORLD, NOT TO EDGE 0 ────────────
+        //
+        // U used to be `normalize(wv[1] - origin)` — the face's FIRST EDGE. On a
+        // box that is stable enough to look deliberate, but on a geodesic
+        // polyhedron every triangle's first edge points somewhere arbitrary, so
+        // every facet's hatch ran at an effectively random angle. Neighbouring
+        // facets' rulings met at nonsense angles, no tonal ordering was legible
+        // across the form, and the low-poly sphere read as decoration rather than
+        // as a lit solid. It was the single largest reason faceted geometry
+        // looked wrong, and it was never a tone problem at all.
+        //
+        // So the in-plane frame is anchored to a WORLD axis projected onto the
+        // face: adjacent facets of a curved approximation now carry near-parallel
+        // rulings that flow across the form, and the ladder can finally be read.
+        // World UP is the reference (it is what an engraver would use); a face
+        // whose normal is near-parallel to it falls back to world +X, and only a
+        // degenerate face falls back to the old first-edge behaviour.
+        // Gated on `toneOn`, for two separate reasons. Untoned faceted output must
+        // stay byte-identical (six x-ray goldens pin it). And `angleRef` is a
+        // user-facing control whose 'face' setting is DOCUMENTED as "0 = along the
+        // face's first edge" — silently making it world-anchored everywhere would
+        // collapse 'face' and 'worldUp' into the same thing and quietly remove a
+        // dial. Tone is where the defect lives: a ladder can only be read across a
+        // form if adjacent facets' rulings are comparable.
+        const axisFor = () => {
+          if (!toneOn) return normalize(sub(wv[1], origin));
+          // World +X first, NOT +Y: `angleRef:'worldUp'` already anchors to world
+          // up, and anchoring the toned default to the same axis would make the
+          // two settings produce identical line directions — collapsing a dial
+          // instead of fixing a defect. Both are stable across facets; they just
+          // are not the same stabilization.
+          const cand = [{ x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }];
+          for (let i = 0; i < cand.length; i++) {
+            const a = cand[i];
+            const proj = sub(a, mul(normalWorld, dot(a, normalWorld)));
+            if (Math.hypot(proj.x, proj.y, proj.z) > 1e-3) return normalize(proj);
+          }
+          return normalize(sub(wv[1], origin));
+        };
+        const U = axisFor();
         const V = normalize(cross(normalWorld, U)); // in-plane, ⟂ U
         const uv = wv.map((pw) => { const d = sub(pw, origin); return { x: dot(d, U), y: dot(d, V) }; });
         // uv → WORLD (for per-sample lighting, I8) and uv → SCREEN.
@@ -544,20 +884,47 @@
       // hatch at fillAngle; family-B (crosshatch only) is at fillAngle +
       // crossAngleDelta with spacing × crossDensityRatio (ratio > 1 ⇒ sparser
       // B); tripleHatch adds a third pass at +45° in the darkest tone band only.
-      const crossFamilies = (target, angleDeg, spacing, styleParams, crossPass, darkBand, push) => {
+      // §2.3 — object-side crossed families are +65° / +32°, NEVER +90°.
+      const CROSS_OBJ_DEG_B = (Regions && Regions.CROSS_OBJ_DEG) || 65;
+      const CROSS_OBJ_DEG_C = 32;
+      // `crossW` is the zone's own `Regions.formInk(zone).cross` — the coverage
+      // of the SECOND family in units of the first, so its pitch is spacing /
+      // crossW. T spends a full family (1.00), F four tenths of one (0.40), and
+      // everything lighter spends none. Passing a weight rather than a boolean
+      // is what puts the faceted path on the curved path's recipe.
+      const crossFamilies = (target, angleDeg, spacing, styleParams, crossPass, crossW, push) => {
         push(hatchPolygon(target, { angleDeg, spacing }));
+        const w = clamp(finite(crossW, 0), 0, 1);
         if (crossPass) {
           const delta = clamp(finite(styleParams.crossAngleDelta, 90), 10, 170);
           const ratio = clamp(finite(styleParams.crossDensityRatio, 1), 0.25, 2);
           push(hatchPolygon(target, { angleDeg: angleDeg + delta, spacing: spacing * ratio }));
-          if (styleParams.tripleHatch === true && darkBand) {
-            push(hatchPolygon(target, { angleDeg: angleDeg + 45, spacing: spacing * ratio }));
+          if (styleParams.tripleHatch === true && w >= 1) {
+            // §2.3 — the tone-driven third pass sits at +32°, not +45°. With
+            // family B already at the user's delta, +45 lands close enough to A
+            // or B to beat against it. Reserved for the core shadow, the only
+            // zone whose recipe asks for a whole extra family.
+            push(hatchPolygon(target, { angleDeg: angleDeg + CROSS_OBJ_DEG_C, spacing: spacing * ratio }));
           }
-        } else if (darkBand) {
-          // Plain hatch densifies the darkest band with a perpendicular pass
-          // (extra ink where the surface is unlit) — NOT the crosshatch family.
-          push(hatchPolygon(target, { angleDeg: angleDeg + 90, spacing }));
+        } else if (w > 0) {
+          // The dark side's second DIRECTION. Two Round-2 defects, both fixed
+          // here:
+          //
+          //   O17 — it ruled at +90°, which is a square grid. On a faceted object
+          //         that reads as wire mesh, and it beats against the raster.
+          //         §2.3 bans +90 outright; +65 is the engraver's answer.
+          //   O1  — it fired on ALL of band 0, so the form shadow got the same
+          //         two directions the core shadow did and T could never out-ink
+          //         F. The weight now comes from formInk, so T's family and F's
+          //         lighter one differ by construction and the dip stays open.
+          push(hatchPolygon(target, { angleDeg: angleDeg + CROSS_OBJ_DEG_B, spacing: spacing / w }));
         }
+      };
+      // Zone → second-family weight, with the faceted path's one exemption: the
+      // GLINT facet is negative space and must never gain a direction.
+      const crossWeightFor = (zone, glint) => {
+        if (!toneOn || glint || !zone || !Regions || typeof Regions.formInk !== 'function') return 0;
+        return clamp(finite(Regions.formInk(zone).cross, 0), 0, 1);
       };
 
       // linkFill (Phase 2): boustrophedon-chain each hatch family into one pen
@@ -567,7 +934,26 @@
       const maybeLink = (segs, styleParams) =>
         (styleParams.linkFill === true && !draft ? linkBoustrophedon(segs) : segs);
 
-      const faceHatchLines = (face, styleParams, normalWorld, crossPass) => {
+      // Screen-space compression of one unit measured ACROSS the rulings, under
+      // the current projection. 1 = face-on, → 0 as the face turns edge-on.
+      // Sampled numerically from the scaffold's own uv→screen map so it is exact
+      // for every projection mode (orthographic and perspective alike).
+      const uvCompression = (scaf, acrossAngleDeg) => {
+        if (!scaf || typeof scaf.toScreen !== 'function') return 1;
+        const a = finite(acrossAngleDeg, 0) * Math.PI / 180;
+        const nx = Math.cos(a); const ny = Math.sin(a);
+        const D = 1; // one world mm across the rulings
+        const o = scaf.uv[0] || { x: 0, y: 0 };
+        const p0 = scaf.toScreen({ x: o.x, y: o.y });
+        const p1 = scaf.toScreen({ x: o.x + nx * D, y: o.y + ny * D });
+        if (!p0 || !p1 || !Number.isFinite(p0.x) || !Number.isFinite(p1.x)) return 1;
+        const k = Math.hypot(p1.x - p0.x, p1.y - p0.y) / D;
+        return clamp(k, 0.12, 4); // floored: an edge-on face must not ask for infinity
+      };
+      // §0 / C15 — no single family may rule below 1.2 x pen width ON PAPER.
+      const PLOT_FLOOR_MULT_OBJ = 1.2;
+
+      const faceHatchLines = (face, styleParams, normalWorld, crossPass, record, hlOpts) => {
         // angleRef (Phase 2): 'face' (default) measures the hatch angle in the
         // face plane; 'screen' engraves flat in screen space regardless of the
         // face; 'worldUp' keeps the lines upright (world vertical projected onto
@@ -581,18 +967,53 @@
         if (!scaf) {
           // Cheap screen-space hatch (draft / no world verts / angleRef:'screen')
           // — snaps back to the surface-oriented hatch on release.
-          const { spacing, bandIdx } = spacingBand(normalWorld, styleParams, worldPoint);
+          const sb = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
           const lines = [];
-          crossFamilies(face.polygon, userAngle, spacing, styleParams, crossPass, bandIdx === 0,
+          crossFamilies(face.polygon, userAngle, sb.spacing, styleParams, crossPass,
+            crossWeightFor(sb.zone, sb.glint),
             (segs) => maybeLink(segs, styleParams).forEach((l) => lines.push(l)));
           return lines;
         }
-        const { spacing, bandIdx } = spacingBand(normalWorld, styleParams, worldPoint);
+        const { spacing, zone, glint } = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
         // worldUp rotates the in-plane base angle so the lines follow world
         // vertical; 'face' leaves the user angle measured in the face frame.
         const baseAngle = angleRef === 'worldUp' ? worldUpAngleInUV(scaf) + userAngle : userAngle;
         const uvLines = [];
-        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, bandIdx === 0,
+        // ── FORESHORTENING COMPENSATION (O20, and half of C15) ─────────────────
+        //
+        // The fill is generated in the face's OWN plane in world mm and then
+        // projected, which is what makes a cube read as three 3D planes. But it
+        // also means a grazing face's spacing is COMPRESSED on paper: the tone
+        // the ladder asked for is not the tone that lands.
+        //
+        // The cube proved it. Top face N·L = 0.707, near side N·L = 0.5 — the top
+        // is the better-lit face and must be the lighter one. Measured, the top
+        // came out D = 0.22 against the side's 0.125: 1.76x DARKER, purely
+        // because the top is seen at 22 degrees and its rulings piled up. The cube
+        // read side-lit. At a steeper grazing angle the same effect flooded a face
+        // to D = 1.000 — solid black, well under the 1.2 x pen floor, and a wet
+        // blown-out plot.
+        //
+        // So measure how much one unit ACROSS the rulings compresses under the
+        // projection and divide it back out. The tone ladder then lands in SCREEN
+        // space, where the eye reads it, and the plot-safe floor is enforced there
+        // too. `kFloor` stops a near-edge-on face from asking for infinite spacing.
+        //
+        // Gated on `toneOn`. An UNTONED fill makes no tonal claim — its spacing
+        // is the user's Density, read in the face plane, and every existing
+        // untoned scene (and every byte-identical golden that pins one) must
+        // stay exactly as it was. The defect being fixed is a TONE-ordering
+        // defect, so it is corrected where tone is doing the talking.
+        const compress = toneOn ? uvCompression(scaf, baseAngle + 90) : 1;
+        const screenSpacing = toneOn ? Math.max(spacing, PLOT_FLOOR_MULT_OBJ * penWidth) : spacing;
+        const planeSpacing = screenSpacing / compress;
+        // The dark side crosses a second family: the ladder tops out at 1.6x
+        // gain, so the core shadow is unreachable by spacing alone (§5.0). The
+        // weight is the zone's own formInk.cross — a whole family for T, 0.40 of
+        // one for F — so the dip between them is a property of the recipe, not
+        // of how tightly the carrier happens to run at the limb.
+        crossFamilies(scaf.uv, baseAngle, planeSpacing, styleParams, crossPass,
+          crossWeightFor(zone, glint),
           (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)));
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
@@ -603,6 +1024,64 @@
         let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
         h ^= h >>> 13; h = Math.imul(h, 1274126177); h ^= h >>> 16;
         return (h >>> 0) / 4294967296;
+      };
+
+      // ── sparse / stippleOut on a GLINT FACET (§5.4 #3, O14) ──────────────────
+      //
+      // The faceted path used to implement both by scaling the facet's Density
+      // down, which made them the SAME drawing — a slightly thinner hatch — and
+      // is the collapse O14 measured. They are two different marks, and the
+      // curved fill already distinguishes them:
+      //
+      //   sparse     — keep every Nth RULING (a thinner grating; the surviving
+      //                lines stay whole).
+      //   stippleOut — thin the ruling itself, per sample, with a keep
+      //                probability that RISES with shade, so the ink dissolves
+      //                toward the glint and re-forms away from it.
+      //
+      // Both are deterministic (the same quantized screen point always gives the
+      // same hash) and both operate on the SCREEN-space lines, which is the same
+      // space SurfaceFill's per-sample dither works in.
+      const sparseStepFor = (density) => Math.max(1, Math.round(100 / clamp(finite(density, 25), 1, 100)));
+      const STIPPLE_STEP_MM = 2.5;
+      const stippleOutLines = (lines, density, shade) => {
+        const keepProb = clamp((clamp(finite(density, 25), 1, 100) / 100) * (0.3 + shade * 2), 0, 1);
+        const out = [];
+        lines.forEach((line) => {
+          let run = [];
+          let lastDir = null;
+          let lastStep = STIPPLE_STEP_MM;
+          const flush = () => {
+            // A LONE surviving sample is still a stipple mark. Requiring two in a
+            // row erased the treatment outright on small facets — a low-poly
+            // sphere's glint facets carry only a few short rulings, so every mark
+            // (and with it the whole highlight channel and its pen) vanished.
+            if (run.length === 1 && lastDir) {
+              const h = lastStep * 0.4;
+              out.push([
+                { x: run[0].x - lastDir.x * h, y: run[0].y - lastDir.y * h },
+                { x: run[0].x + lastDir.x * h, y: run[0].y + lastDir.y * h },
+              ]);
+            } else if (run.length >= 2) out.push(run);
+            run = [];
+          };
+          for (let seg = 0; seg + 1 < line.length; seg++) {
+            const a = line[seg]; const b = line[seg + 1];
+            const dx = b.x - a.x; const dy = b.y - a.y;
+            const len = Math.hypot(dx, dy) || 1e-6;
+            const steps = Math.max(1, Math.round(len / STIPPLE_STEP_MM));
+            lastDir = { x: dx / len, y: dy / len };
+            lastStep = len / steps;
+            for (let s = seg === 0 ? 0 : 1; s <= steps; s++) {
+              const tt = s / steps;
+              const pt = { x: a.x + dx * tt, y: a.y + dy * tt };
+              if (ldHash(Math.round(pt.x * 4), Math.round(pt.y * 4)) < keepProb) run.push(pt);
+              else flush();
+            }
+          }
+          flush();
+        });
+        return out;
       };
 
       // I8 — LIGHT-DRIVEN faceted fill. The base tone hatch (dark=dense) still
@@ -624,15 +1103,27 @@
         const userAngle = finite(styleParams.fillAngle, 45);
         const baseAngle = angleRef === 'worldUp' ? worldUpAngleInUV(scaf) + userAngle : userAngle;
         const uvLines = [];
-        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, bandIdx === 0,
+        // lightDriven places the glint per SAMPLE, so it has no face zone to
+        // read; the darkest band buys the same whole second family T does.
+        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, bandIdx === 0 ? 1 : 0,
           (segs) => uvLines.push(...segs));
         const SREG = 0.025;
         const N = hlCfg.sensitivity;
         const treat = hlCfg.treatment;
-        const routeHL = treat === 'keep' || treat === 'dashed' || treat === 'dotted';
+        const routeHL = treat === 'dashed' || treat === 'dotted';
+        // O15 — `sparse` and `stippleOut` used to fall into the `blank` arm
+        // below, so switching highlightMode to lightDriven silently turned a
+        // sparse or stippled highlight into a hole. They now thin ON the
+        // highlight channel here, exactly as they do under perFace (and exactly
+        // as SurfaceFill already does on the curved path).
+        const thinHL = treat === 'sparse' || treat === 'stippleOut';
+        const sparseStep = sparseStepFor(hlCfg.density);
+        const shade = clamp(1 - finite(intensityFn ? intensityFn(normalWorld, worldPoint) : 0, 0), 0, 1);
+        const stippleKeep = clamp((clamp(finite(hlCfg.density, 25), 1, 100) / 100) * (0.3 + shade * 2), 0, 1);
         const STEP_MM = 2.5;                         // resample so S varies smoothly across a big face
         const base = []; const hl = [];
-        uvLines.forEach((line) => {
+        uvLines.forEach((line, lineIndex) => {
+          const lineKept = lineIndex % sparseStep === 0;
           let baseRun = []; let hlRun = [];
           const flushBase = () => { if (baseRun.length >= 2) base.push(baseRun); baseRun = []; };
           const flushHL = () => { if (hlRun.length >= 2) hl.push(hlRun); hlRun = []; };
@@ -658,6 +1149,16 @@
               if (routeHL) {
                 if (treated) { flushBase(); hlRun.push({ x: scr.x, y: scr.y }); }
                 else { flushHL(); baseRun.push({ x: scr.x, y: scr.y }); }
+              } else if (thinHL) {
+                // Untreated samples stay on the base run; treated ones survive
+                // only on the HIGHLIGHT channel, sparse by ruling and stippleOut
+                // by a shade-weighted per-sample probability.
+                if (!treated) { flushHL(); baseRun.push({ x: scr.x, y: scr.y }); }
+                else if (treat === 'sparse'
+                  ? lineKept
+                  : ldHash(Math.round(scr.x * 4) ^ 0x5f3a, Math.round(scr.y * 4)) < stippleKeep) {
+                  flushBase(); hlRun.push({ x: scr.x, y: scr.y });
+                } else { flushBase(); flushHL(); }
               } else if (treated) { flushBase(); flushHL(); }        // blank glint
               else { flushHL(); baseRun.push({ x: scr.x, y: scr.y }); }
             }
@@ -1144,11 +1645,15 @@
       // style.params bag. `blank` (default) is a strict no-op — every highlight
       // branch below is gated on treatment !== 'blank', so toned output with the
       // default is byte-identical to pre-Phase-4.
-      const HIGHLIGHT_TREATMENTS = ['blank', 'keep', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
+      // 'none' (formerly 'keep') is a TOTAL bypass, not a subtle treatment — see
+      // the note on HIGHLIGHT_TREATMENTS in params.js. `keep` is accepted as a
+      // silent alias so saved documents render identically.
+      const HIGHLIGHT_TREATMENTS = ['blank', 'none', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
       const ALT_FILL_MAPPERS = new Set(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
       const highlightCfg = (sp) => {
         const s = sp || {};
-        const treatment = HIGHLIGHT_TREATMENTS.includes(s.highlightTreatment) ? s.highlightTreatment : 'blank';
+        const raw = s.highlightTreatment === 'keep' ? 'none' : s.highlightTreatment;
+        const treatment = HIGHLIGHT_TREATMENTS.includes(raw) ? raw : 'blank';
         return {
           treatment,
           // I8 — light-driven highlight/shadow. mode 'lightDriven' places the
@@ -1354,7 +1859,10 @@
               // (hatch/crosshatch) with tone on and not a draft frame; region
               // mappers fall through to the perFace path. burst/altFill keep using
               // the region pass (the base fill is suppressed as before).
+              // `none` is a total bypass — not even lightDriven may re-route this
+              // face's ink (Jay, 2026-08-09).
               const faceLD = toneOn && !draft && faceHL.mode === 'lightDriven'
+                && faceHL.treatment !== 'none'
                 && !REGION_MAPPERS.has(style.mapper)
                 && faceHL.treatment !== 'burst' && faceHL.treatment !== 'altFill';
               if (faceLD) {
@@ -1389,14 +1897,16 @@
                   return; // lightDriven handled this face
                 }
               }
-              const faceIsHL = toneOn && faceHL.treatment !== 'blank'
-                && isHighlightBand(intensityFn(face.normalWorld, faceWorldCentroid(face)), faceHL.bands);
+              // O14 — the H zone is the SPECULAR GLINT FACET SET (§5.5.2), not
+              // "is this face in the top tone band". Under an ordinary sun no
+              // face of a cube ever reached the top band, so this predicate was
+              // false for every face and every treatment fell through to the
+              // same untreated hatch.
+              const faceIsHL = toneOn && faceHL.treatment !== 'blank' && faceHL.treatment !== 'none'
+                && faceIsGlint(face.normalWorld, faceWorldCentroid(face), record, styleParams);
               const suppressFill = faceIsHL && (faceHL.treatment === 'burst' || faceHL.treatment === 'altFill');
               if (!suppressFill) {
-                const thin = faceIsHL && (faceHL.treatment === 'sparse' || faceHL.treatment === 'stippleOut');
-                const fillParams = thin
-                  ? { ...styleParams, fillDensity: finite(styleParams.fillDensity, 50) * (faceHL.density / 100) }
-                  : styleParams;
+                const fillParams = styleParams;
                 // Draft (live drag) always renders the cheap screen-space hatch so
                 // a coalesced frame stays responsive; full quality dispatches the
                 // real mapper. Line fills (hatch/crosshatch) hatch IN-PLANE for the
@@ -1404,9 +1914,23 @@
                 // face polygon and are mapped back onto the plane below.
                 let lines;
                 if (draft || !REGION_MAPPERS.has(style.mapper)) {
-                  lines = faceHatchLines(face, fillParams, face.normalWorld, style.mapper === 'crosshatch');
+                  // The former `keep` branch (render the highlight face at FULL
+                  // density instead of the ladder's cap) is gone with the
+                  // treatment: `none` must leave the fill exactly as the ladder
+                  // made it, which means not overriding the spacing either.
+                  lines = faceHatchLines(face, fillParams, face.normalWorld, style.mapper === 'crosshatch', record, null);
                 } else {
                   lines = faceRegionLines(face, style.mapper, face.normalWorld, fillParams);
+                }
+                // The glint facet's own treatment. `blank` needs nothing here —
+                // spacingBand already capped its coverage to the H step.
+                if (faceIsHL && faceHL.treatment === 'sparse') {
+                  const step = sparseStepFor(faceHL.density);
+                  lines = lines.filter((_, i) => i % step === 0);
+                } else if (faceIsHL && faceHL.treatment === 'stippleOut') {
+                  const shade = clamp(1 - finite(intensityFn
+                    ? intensityFn(face.normalWorld, faceWorldCentroid(face)) : 0, 0), 0, 1);
+                  lines = stippleOutLines(lines, faceHL.density, shade);
                 }
                 const dashHL = faceIsHL && (faceHL.treatment === 'dashed' || faceHL.treatment === 'dotted');
                 const emitTreat = dashHL
@@ -1418,7 +1942,11 @@
                   // Face pick surface: with the outline suppressed, the hatch
                   // lines carry the face outline so a click still resolves.
                   sceneTarget: { ...target, pickPolygon, ...(faceIsHL ? { highlight: true } : {}) },
-                  ...(dashHL && faceHL.penId ? { penId: faceHL.penId } : (style.penId ? { penId: style.penId } : {})),
+                  // O11 — the highlight pen used to be gated on dashed/dotted only,
+                  // so `keep` / `sparse` / `stippleOut` ink came out in the object
+                  // pen and read as ordinary (slightly thinner) fill. Any treated
+                  // highlight face now carries the highlight pen.
+                  ...(faceIsHL && faceHL.penId ? { penId: faceHL.penId } : (style.penId ? { penId: style.penId } : {})),
                 };
                 lines.forEach((line) => {
                   const pts = line.map((pt) => ({
@@ -1618,8 +2146,13 @@
             // I8 — lightDriven engages the highlight path even with the 'blank'
             // treatment (blank in lightDriven = a graded blank glint), and adds
             // per-sample shadow grading. perFace + blank stays the no-op.
-            const grpLD = toneOn && grpHL.mode === 'lightDriven';
-            const hlActive = toneOn && (grpHL.treatment !== 'blank' || grpLD);
+            // `none` — the total highlight bypass (Jay, 2026-08-09): no ink may
+            // be removed, thinned, re-spaced, dashed, re-penned or re-tagged on a
+            // highlight's account, and the glint cap must not fire. It outranks
+            // lightDriven, which is a highlight PLACEMENT mode, not a treatment.
+            const grpHLOff = grpHL.treatment === 'none';
+            const grpLD = toneOn && !grpHLOff && grpHL.mode === 'lightDriven';
+            const hlActive = toneOn && !grpHLOff && (grpHL.treatment !== 'blank' || grpLD);
             // Shadow sensitivity applies in BOTH modes (default 1 = no-op).
             const grpShadowSens = toneOn ? grpHL.shadowSensitivity : 1;
             if (chartParams) {
@@ -1673,11 +2206,30 @@
                 // cap all steer the curved fill (items 1+2). Directionally the
                 // fill stays dark→dense / bright→sparse (blank cap = highlight).
                 tone: p.tone,
+                // The FORM-ZONE context (§5.1–§5.3). Handing the curved fill the
+                // lights and the object's own footing lets it classify H/L/M/T/F/R
+                // through the SAME Regions.formZone the faceted path uses — which
+                // is the only reason a cube, a low-poly sphere and a capsule under
+                // one light now agree (the I27 parity contract).
+                formZone: toneOn ? { lights: activeLights, ground: recordGround(record) } : null,
+                // The line budget is floored off the pen so the ladder has a grid
+                // to stand on (§5.4 #1); without a pen width it stays exactly
+                // `lineCountFor(density)`.
+                penWidth,
+                // Density, in the SAME law the faceted path uses, so the dial
+                // means the same thing on both (the O27 parity contract).
+                tonePitch: hatchSpacing(finite(sp.fillDensity, 50)),
                 // I8 — shadow sensitivity (stage count) graded darkening on the
                 // dark end; default 1 = no-op. Per-sample specular fn drives the
                 // lightDriven highlight region.
                 shadowSensitivity: grpShadowSens,
-                specularFn: grpLD ? specularFn : null,
+                // The blank highlight is placed by the specular term in BOTH
+                // modes now — under perFace it was previously placed by "the top
+                // tone band", which is why it covered a quarter of the silhouette
+                // and ignored `tone.specular` entirely (O4/O5/O24).
+                specularFn: grpHLOff ? null : specularFn,
+                specShininess,
+                noHighlight: grpHLOff,
                 xray: (grpXray && grpXray.backFaces)
                   ? { backFaces: true, backDensity: grpCueDensity ? 1 : grpXray.backDensity } : null,
                 highlight: hlActive ? {
@@ -1961,7 +2513,13 @@
                   const a = (k / SEG) * Math.PI * 2;
                   circle.push({ x: cx + Math.cos(a) * hs.radius, y: cy + Math.sin(a) * hs.radius });
                 }
-                const spacing = hatchSpacing(hcfg.density);
+                // The hotspot disc is SMALL (a few mm), and hatchSpacing(density)
+                // is a whole-object pitch — at the default density it came out
+                // wider than the disc's diameter, so the alternate mapper landed
+                // ZERO marks and altFill silently degenerated into "blank, but
+                // with the whole facet removed". Cap the pitch at the disc so the
+                // treatment always draws the mark it promises.
+                const spacing = Math.max(penWidth, Math.min(hatchSpacing(hcfg.density), hs.radius / 2));
                 let alines = [];
                 if (REGION_MAPPERS.has(hcfg.altFillMapper) && Mappers && typeof Mappers.regionFill === 'function') {
                   alines = Mappers.regionFill(hcfg.altFillMapper, [circle], { spacing }) || [];

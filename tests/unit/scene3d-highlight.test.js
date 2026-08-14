@@ -52,6 +52,15 @@ describe('Scene3D highlight treatments (Phase 4)', () => {
   const gen = (primitive, styleParams) => algo.generate(scene(primitive, styleParams), null, null, BOUNDS) || [];
   const fills = (paths) => paths.filter((pp) => pp.meta && pp.meta.kind === 'sceneFill');
   const hlFills = (paths) => fills(paths).filter((pp) => pp.meta.sceneTarget && pp.meta.sceneTarget.highlight === true);
+  // "How much is drawn" is INK LENGTH. A path COUNT is not a proxy for it: the
+  // treatments that thin a surface do so by BREAKING rulings, so they raise the
+  // path count while lowering the ink — `blank` measured 114 paths against
+  // `none`'s 112 while drawing strictly less.
+  const inkOf = (paths) => paths.reduce((sum, pp) => {
+    let L = 0;
+    for (let i = 1; i < pp.length; i += 1) L += Math.hypot(pp[i].x - pp[i - 1].x, pp[i].y - pp[i - 1].y);
+    return sum + L;
+  }, 0);
 
   // ── HEADLINE (RGR): dashed keeps highlight-band lines but stamps strokeDash,
   // where blank drops them entirely. ─────────────────────────────────────────
@@ -83,28 +92,44 @@ describe('Scene3D highlight treatments (Phase 4)', () => {
     expect(many).toBeGreaterThan(few);
   });
 
-  // ── HEADLINE: sparse keeps fewer lines than keep but more than blank. ───────
-  test('sparse: fewer total fills than keep, more than blank', () => {
-    const blank = fills(gen('sphere', { highlightTreatment: 'blank' })).length;
-    const sparse = fills(gen('sphere', { highlightTreatment: 'sparse', highlightDensity: 25 })).length;
-    const keep = fills(gen('sphere', { highlightTreatment: 'keep' })).length;
+  // ── HEADLINE: sparse keeps fewer lines than an untreated surface, more than
+  // blank. The upper anchor used to be `keep`; that treatment was retired in
+  // favour of `none` (Jay, 2026-08-09), which is a TOTAL bypass rather than a
+  // treatment — so it is the natural "untreated" anchor. ─────────────────────
+  //
+  // The upper anchor is no longer a total. It used to be `keep`, and `none`
+  // cannot stand in for it: `none` switches the whole specular path off, so its
+  // centre light carries MORE ink than any treated surface's does, and the
+  // comparison stops being about `sparse` at all. What `sparse` actually
+  // promises is that it THINS the highlight band rather than removing it, so
+  // that is what is measured — against `blank`, which removes it, and against
+  // its own density dial.
+  test('sparse: thins the highlight band rather than removing it', () => {
+    const blank = inkOf(fills(gen('sphere', { highlightTreatment: 'blank' })));
+    const sparse = inkOf(fills(gen('sphere', { highlightTreatment: 'sparse', highlightDensity: 25 })));
+    const dense = inkOf(fills(gen('sphere', { highlightTreatment: 'sparse', highlightDensity: 100 })));
     expect(sparse).toBeGreaterThan(blank);
-    expect(sparse).toBeLessThan(keep);
+    // The band survives on the highlight CHANNEL; blank leaves nothing there.
+    expect(hlFills(gen('sphere', { highlightTreatment: 'sparse', highlightDensity: 25 })).length)
+      .toBeGreaterThan(0);
+    expect(hlFills(gen('sphere', { highlightTreatment: 'blank' })).length).toBe(0);
+    // ...and the density dial is live: keeping every line draws more than
+    // keeping every fourth.
+    expect(dense).toBeGreaterThan(sparse);
   });
 
-  // ── Item 2 (fix-map): `keep` is no longer a no-op indistinguishable from full
-  // hatch — the highlight-band lines render on the highlight CHANNEL (tagged +
-  // highlight pen), so keep is visibly a highlight, not plain hatch. ──────────
-  test('keep: highlight-band lines render on the highlight channel (distinguishable from full hatch)', () => {
-    const keep = hlFills(gen('sphere', { highlightTreatment: 'keep' }));
+  // ── `none` (formerly `keep`) is the OPPOSITE of a highlight: no ink may be
+  // removed, thinned, re-penned, dashed or re-tagged, and the glint cap must
+  // not fire. Jay's screenshot showed `Keep` selected with the capsule's rulings
+  // still visibly breaking, which is what retired the treatment. ─────────────
+  test('none: emits no highlight-channel ink at all, and keeps more fill than blank', () => {
+    const none = hlFills(gen('sphere', { highlightTreatment: 'none' }));
     const blank = hlFills(gen('sphere', { highlightTreatment: 'blank' }));
-    // keep now emits highlight-tagged fills; a plain full-hatch surface (blank,
-    // which drops the band) emits none — so the two are distinguishable.
-    expect(keep.length).toBeGreaterThan(0);
+    expect(none.length).toBe(0);
     expect(blank.length).toBe(0);
-    // keep still keeps the lines (no fewer total fills than the blank drop).
-    expect(fills(gen('sphere', { highlightTreatment: 'keep' })).length)
-      .toBeGreaterThan(fills(gen('sphere', { highlightTreatment: 'blank' })).length);
+    // ...and it keeps its lines: blank drops the highlight band to bare paper.
+    expect(inkOf(fills(gen('sphere', { highlightTreatment: 'none' }))))
+      .toBeGreaterThan(inkOf(fills(gen('sphere', { highlightTreatment: 'blank' }))));
   });
 
   test('altFill: fills the highlight sub-region with the alternate mapper', () => {

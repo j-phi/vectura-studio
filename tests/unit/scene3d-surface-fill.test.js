@@ -58,9 +58,19 @@ describe('Scene3D.SurfaceFill — curved fills wrap the form (D/I/F)', () => {
       let minX = 1e9; let maxX = -1e9;
       paths.forEach((pp) => pp.forEach((pt) => { minX = Math.min(minX, pt.x); maxX = Math.max(maxX, pt.x); }));
       const cx = (minX + maxX) / 2;
+      // INK, not points: the tone ladder splits rulings, and a split adds points
+      // without adding ink — so a point count reads a feathered boundary as
+      // "denser" and washes the lit/dark asymmetry out. (Same trap as the I27
+      // measurement in scene3d-light-driven-highlight.test.js.)
       let l = 0; let r = 0;
-      paths.forEach((pp) => pp.forEach((pt) => { if (pt.x < cx) l += 1; else r += 1; }));
-      return Math.abs(l - r) / Math.max(1, l + r);
+      paths.forEach((pp) => {
+        for (let i = 1; i < pp.length; i += 1) {
+          const mx = (pp[i - 1].x + pp[i].x) / 2;
+          const len = Math.hypot(pp[i].x - pp[i - 1].x, pp[i].y - pp[i - 1].y);
+          if (mx < cx) l += len; else r += len;
+        }
+      });
+      return Math.abs(l - r) / Math.max(1e-9, l + r);
     };
     // Tone introduces a clear lit/shadow density asymmetry the flat (no-tone) fill
     // doesn't have — the bright side is left blank.
