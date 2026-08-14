@@ -667,6 +667,34 @@
   };
   const formInk = (zone) => FORM_INK[zone] || FORM_INK.M;
 
+  // ── THE COMPOSED INK CEILING, STATED ONCE (§0, C15, O13) ───────────────────
+  //
+  // Past the plot floor you do not get darker by ruling closer, you get a
+  // flooded blob — so every zone has a ceiling on the ink that may compose on
+  // one sample, and it is PROPORTIONAL to that zone's intended weight rather
+  // than a flat clamp. A flat clamp collapses every zone that reaches it onto
+  // one value: T and F both crossed, both saturated, T/F 0.98, and the dip that
+  // O1/O3 are about closes again.
+  //
+  // ROUND 10. `TOTAL_DARK_CEIL` and `DARKEST_WEIGHT` lived in `surface-fill.js`,
+  // so the CURVED path enforced this law and the FACETED path had no counterpart
+  // at all — which is why a faceted family could ask for a pitch wider than its
+  // own facet and simply draw nothing, with nothing to tell it whether one
+  // ruling would have been legal (see `scene3d.js` → `fitToFacet`). They live
+  // here, beside `FORM_INK`, because the ceiling is a property of the RECIPE:
+  // `weight` is the zone's own `coverage + cross`.
+  //
+  // `DARKEST_WEIGHT = 2.0` is T's `coverage + cross`, the ladder's top rung, so
+  // T saturates at `TOTAL_DARK_CEIL` exactly and every lighter zone gets a
+  // proportional share of it.
+  const TOTAL_DARK_CEIL = 0.47;
+  const DARKEST_WEIGHT = 2.0;
+  const formCeiling = (zone) => {
+    const ink = formInk(zone);
+    const weight = clamp(finite(ink.coverage, 0) + finite(ink.cross, 0), 0, 4);
+    return TOTAL_DARK_CEIL * clamp(weight / DARKEST_WEIGHT, 0, 1);
+  };
+
   // Specular exponent for a highlight `size` (bigger size → broader/softer glint
   // → lower exponent → the lit region spans more of the surface). Deliberately
   // soft (size 1 → ~6) so the light-driven glint reads as a semicircular REGION
@@ -736,6 +764,9 @@
     reflectedLift,
     formZone,
     formInk,
+    TOTAL_DARK_CEIL,
+    DARKEST_WEIGHT,
+    formCeiling,
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Lighting, Regions });

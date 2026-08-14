@@ -1055,16 +1055,155 @@
         // untoned scene (and every byte-identical golden that pins one) must
         // stay exactly as it was. The defect being fixed is a TONE-ordering
         // defect, so it is corrected where tone is doing the talking.
+        //
+        // ── A FAMILY WIDER THAN ITS OWN FACET DRAWS NOTHING (ROUND 10) ────────
+        //
+        // `hatchPolygon` places rulings at `pMin + i·spacing` for
+        // `i = 1 … floor(extent / spacing)`. A spacing wider than the facet's own
+        // in-plane extent across the rulings therefore yields count = 0: the
+        // facet is dropped from the drawing entirely, at whatever tone it was
+        // asked for, and no instrument in this workstream could see it because
+        // `facets.js` omitted its own sub-window table.
+        //
+        // Measured on `W-lp-sun45`, nine visible facets carried NO fill, five of
+        // them zone L — the CENTRE LIGHT — and the two largest of those are
+        // 202.5 mm² at N·L 0.898 and 188.8 mm² at N·L 0.950. This is the same
+        // defect §4.4 of the Round 9 scorecard found from the other side (two
+        // facets at N·L 0.746 and 0.744 measuring D 0.000 and D 0.163), and it is
+        // one half of why the tone ladder does not read as a ladder in the app.
+        //
+        // Two distinct causes, both landing here:
+        //   (a) the TONE asked for a pitch wider than the facet — zone L at a
+        //       screen pitch of 15.9 mm on a facet 14 mm across;
+        //   (b) `uvPitchFactor` on a near-edge-on facet (k 0.02–0.09) blew a
+        //       4.7 mm screen pitch up to a 54–213 mm plane pitch.
+        //
+        // THE RULE. Draw ONE ruling instead of none — but only when the facet's
+        // own width ON PAPER can absorb one ruling inside the zone's composed
+        // ceiling. One ruling across a convex facet covers about
+        // `pen / widthOnPaper` (its length is ≈ area / width), so the test is
+        // exact enough to make without drawing it.
+        //
+        // The ceiling gate is what keeps this from being a flood, and it is the
+        // reason the fix is not simply "lower the k floor". On the 9 mm² sliver
+        // `face:21` one ruling lands ≈ 0.20 coverage against zone L's ceiling of
+        // 0.0987 — three times over — so that facet stays bare, correctly. On the
+        // 202 mm² `face:26` it lands ≈ 0.021 against the same ceiling and is
+        // drawn. The ceiling is `Regions.formCeiling`, the same law the curved
+        // path has always enforced; until Round 10 the faceted path had no copy
+        // of it at all.
+        //
+        // The budget is composed across families, family A first, so a second
+        // direction can only be granted with what family A left — which is §5.3's
+        // ruling on the narrow facet stated as arithmetic.
+        const perpExtentUV = (deg) => {
+          const a = finite(deg, 0) * Math.PI / 180;
+          const nx = -Math.sin(a); const ny = Math.cos(a);
+          let lo = Infinity; let hi = -Infinity;
+          for (let i = 0; i < scaf.uv.length; i++) {
+            const p = scaf.uv[i];
+            if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+            const t = p.x * nx + p.y * ny;
+            if (t < lo) lo = t;
+            if (t > hi) hi = t;
+          }
+          return (Number.isFinite(lo) && hi > lo) ? hi - lo : 0;
+        };
+        // Wider than any facet: `hatchPolygon` yields count = 0, i.e. the
+        // pre-Round-10 behaviour, for a family the ceiling refuses.
+        const DRAW_NOTHING = 1e6;
+        const zoneCeil = (Regions && typeof Regions.formCeiling === 'function')
+          ? Regions.formCeiling(zone) : 0;
+        const crossW = crossWeightFor(zone, glint);
+        // ── PASS 1: what is this facet's recipe actually asking for? ──────────
+        //
+        // `crossFamilies` owns which families exist (the user's crosshatch, the
+        // tone-driven cross at +65, the triple pass at +32) and Round 10 must not
+        // restate that decision — restating a rule the renderer owns is this
+        // workstream's signature bug. So the families are COLLECTED by running
+        // `crossFamilies` once with a no-op push and a plane function that asks
+        // for a pitch no facet can hold, which makes `hatchPolygon` emit nothing
+        // and cost nothing.
+        const asks = [];
+        if (toneOn) {
+          crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, crossW,
+            () => {}, (deg, screenPitch) => { asks.push({ deg, screenPitch }); return DRAW_NOTHING; });
+        }
+        // ── The plan, in coverage rather than in pitch ────────────────────────
+        //
+        // §5.3's ruling on the narrow facet is "give it its second direction and
+        // the total D must not move", and the second half is the hard half:
+        // measured, simply granting `R2-cube`'s `+X` sliver its missing crossed
+        // family takes it from 0.155 to 0.206 while its sibling `+Z` sits at
+        // 0.183 — which re-breaks the very O20 ordering Round 9 bought. (I
+        // predicted 0.201 from `pen / facetWidth` before running it and measured
+        // 0.206; the model is good to 2.5 %.)
+        //
+        // So the direction is paid for out of the CARRIER. Each family's asked-for
+        // coverage is `pen / screenPitch`; a family too wide for its own facet is
+        // granted exactly one ruling at `pen / widthOnPaper`, and family A's pitch
+        // is then widened by whatever that grant overspent, so the composed total
+        // is the total the recipe asked for — see the withdrawal note below.
+
+        const plan = asks.map((q) => {
+          const k = uvPitchFactor(scaf, q.deg);
+          const screen = Math.max(q.screenPitch, PLOT_FLOOR_MULT_OBJ * penWidth);
+          const ext = perpExtentUV(q.deg);
+          return {
+            k,
+            ext,
+            plane: screen / k,
+            covWant: penWidth / screen,
+            covOne: (ext > 0) ? penWidth / Math.max(1e-6, ext * k) : Infinity,
+            fits: !(ext > 0) || (screen / k) <= ext,
+          };
+        });
+        plan.forEach((f, i) => {
+          if (f.fits) return;
+          // ── §5.3's SECOND DIRECTION IS MEASURED AND NOT LANDED (Round 10) ────
+          //
+          // The grant is restricted to the CARRIER. Granting it to a crossed
+          // family as well — with the carrier widened to pay for it, so the
+          // composed total is exactly what the recipe asked for — was built,
+          // measured, and withdrawn:
+          //
+          //   R2-cube  face:+X  0.1515 (A) + 0.0303 (B) intended = 0.1818
+          //            granted  0.1358 (A) + 0.0460 (B) landed   = 0.1771
+          //            sibling  face:+Z, same zone, same recipe  = 0.1699
+          //
+          // Both faces are aiming at 0.1818 and both fall short by integer ruling
+          // counts; `+X` lands CLOSER to the recipe than `+Z` does, and O20's
+          // ordering clause then reads that as `+X` out of order by 0.0072 — a
+          // quarter of O20's own 0.03 readability bar. The clause cannot
+          // adjudicate two facets of one zone whose intended tone is identical.
+          // Rather than prescribe a lever that fails its own criterion, the grant
+          // stops at the carrier and the finding goes to the reviewer.
+          if (i > 0) return;
+          // A family wider than its own facet draws NOTHING — `hatchPolygon`
+          // places rulings at `pMin + i*spacing` for `i = 1 … floor(ext/spacing)`.
+          // Grant one ruling if the facet's own width on paper can absorb it
+          // inside the zone's composed ceiling; otherwise leave it bare, which is
+          // a decision with arithmetic behind it rather than the residue of a
+          // k-floor chosen to keep the arithmetic finite.
+          if (!(zoneCeil > 0) || f.covOne > zoneCeil) { f.plane = DRAW_NOTHING; return; }
+          // ext / 1.5 ⇒ floor(ext / spacing) = 1 exactly: one ruling, placed two
+          // thirds of the way across rather than on the boundary.
+          f.plane = f.ext / 1.5;
+        });
+        let served = 0;
         const planeFor = toneOn
-          ? (deg, screenPitch) => Math.max(screenPitch, PLOT_FLOOR_MULT_OBJ * penWidth) / uvPitchFactor(scaf, deg)
+          ? (deg, screenPitch) => {
+            const f = plan[served++];
+            return f ? f.plane
+              : Math.max(screenPitch, PLOT_FLOOR_MULT_OBJ * penWidth) / uvPitchFactor(scaf, deg);
+          }
           : null;
         // The dark side crosses a second family: the ladder tops out at 1.6x
         // gain, so the core shadow is unreachable by spacing alone (§5.0). The
         // weight is the zone's own formInk.cross — a whole family for T, 0.40 of
         // one for F — so the dip between them is a property of the recipe, not
         // of how tightly the carrier happens to run at the limb.
-        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass,
-          crossWeightFor(zone, glint),
+        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, crossW,
           (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)), planeFor);
         return uvLines.map((line) => line.map(scaf.toScreen));
       };

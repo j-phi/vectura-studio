@@ -118,8 +118,23 @@
   // measures ~0.45, leaving the cross the room it needs to make T read, and the
   // COMBINED perceived coverage is ceilinged outright.
   const PLOT_FLOOR_PEN = 2.2;
-  const TOTAL_DARK_CEIL = 0.47;
-  const DARKEST_WEIGHT = 2.0;    // T's coverage + cross — the ladder's top rung
+  // ROUND 10 — READ, NOT RESTATED. These two lived here and the faceted path had
+  // no copy at all, so the composed ceiling was a law of the curved path only.
+  // They now live beside `FORM_INK` in `regions.js`, which is where the weight
+  // they divide by comes from, and both fill paths read the one definition.
+  // Values unchanged: 0.47 and 2.0, so every drawing stays byte-identical.
+  // Resolved lazily: `regions.js` may register after this file, and the point of
+  // the move is that there is exactly ONE definition, so a stale snapshot taken
+  // at load time would defeat it. The literals are the fallback for a runtime
+  // that somehow has no Regions, and they are the same 0.47 / 2.0.
+  const darkCeilConst = () => {
+    const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
+    return (R && Number.isFinite(R.TOTAL_DARK_CEIL)) ? R.TOTAL_DARK_CEIL : 0.47;
+  };
+  const darkestWeightConst = () => {
+    const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
+    return (R && Number.isFinite(R.DARKEST_WEIGHT)) ? R.DARKEST_WEIGHT : 2.0;
+  };
   const LIT_MAX_PITCH_PEN = 12;  // §5.4 #1 / O6 — the centre light may never be blanker
   const MASTER_MAX_LINES = 420;  // pathological-input guard (steps × lines)
 
@@ -744,7 +759,7 @@
               // saturated, T/F 0.98, and the dip closed again.
               const ink = Regions.formInk(zone);
               const weight = clamp(ink.coverage + ink.cross, 0, 4);
-              const ceil = TOTAL_DARK_CEIL * clamp(weight / DARKEST_WEIGHT, 0, 1);
+              const ceil = darkCeilConst() * clamp(weight / darkestWeightConst(), 0, 1);
               // Every family that will land on this sample, and what each is
               // for. The Density overflow is a THIRD direction and has to be in
               // the denominator or it spends budget nobody accounted for.
