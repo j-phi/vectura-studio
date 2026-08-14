@@ -94,6 +94,16 @@ or completes.
   and the toolbar group in `ui-petal-designer.js` / `shell/toolbar.js`.
 
 ## Later
+- **In-app help guide has no 3D Scene Studio content.** `src/ui/modals/help-shortcuts.js` contains
+  zero occurrences of `3D`, `scene`, `shadow`, `highlight`, `hatch`, `fidelity`, `x-ray` or
+  `border`. The Algorithms tab's table stops at SVG Distort, so 3D Scene Studio — plus spirograph,
+  spiralizer, polyhedron, topoform and raster-plane — is absent from it, and the scene-scoped
+  keyboard shortcuts in `src/ui/shortcuts.js` (`getSceneShortcutLayer`,
+  `dropSceneSelectionToGround`) are documented nowhere, in the app or the README. Nothing in the
+  guide is *stale*; the whole subsystem is simply missing. Scope: add the algorithm rows, a 3D
+  group under Tools or a Scene tab (Object vs Style tab split, Border lines vs Fill lines,
+  Geometry, Shadow Layers/Softness, Highlight, X-ray), and the scene shortcuts. This is a `src/`
+  change with integration coverage, so it did not belong in the v1.3.83 docs-only commit.
 - **3D Scene: exact smooth curved−curved CSG cut curves.** CSG booleans that involve a curved
   primitive ship a **tessellation approximation** — curved children are detail-capped (~16 tris)
   and share the triangle budget, so a box−cylinder bore fills cleanly but the cut rim is faceted,
@@ -218,6 +228,81 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **v1.3.83 — border/silhouette contiguity, line output split by role, and seven rounds of
+  shadow/tone anatomy (`3d-scene/p4`, `25fb800`..`e66c692`).** Six merges, documented as one
+  release. The through-line on the geometry half: **structural edges are emitted one projected
+  mesh edge per path**, and every defect below is a consequence of treating that stick as if it
+  were a finished path.
+  - **Border contiguity (`0ff4962` RED → `25bca1d`).** Border offset each two-point stick along
+    its *own* screen normal, so a shared mesh vertex landed at two screen points — a gap at every
+    vertex, widening with Fidelity. Endpoint chaining matched nothing: 104 of 112 border paths
+    stayed two-point `meta.straight` sticks even at Smoothing 1.00, and a two-point path *is* a
+    straight line, so the fitter was structurally unable to smooth it (the "lumpy border"). Now
+    chained on **integer mesh vertex indices** (topological, hence Fidelity-invariant), HLR runs
+    stitched in traversal order, offset as a whole loop-aware polyline. RED 216 dangling endpoints
+    at Fidelity 22 / 88 at 12 → 0. Multi-loop silhouettes (torus face-on) keep every loop. Border
+    defaults OFF and the off path was untouched, so no golden moved.
+  - **Plain silhouette, Border OFF (`bec3334` RED → `d9b67cb` → `5823104`).** Same root cause,
+    other door — `MIN_RUN_MM` (0.6 mm) was applied per stick, so raising Fidelity shortened every
+    stick until stick after stick fell under the floor. Sphere dangling 0/0/8/36/92 at Fidelity
+    8/12/22/40/60; capsule outline shattered into 1/1/1/14/18 components. Floor now judges the
+    **welded chain** (union-find over integer vertex indices; visible and hidden runs weld in
+    separate classes). `5823104` restores the floor's original job: a run on an edge the **clipper
+    cut** keeps the per-run floor (that is a sub-floor whisker, ~0.02 mm at a silhouette corner,
+    and must not weld two stretches together); a whole uncut edge is judged by its chain. Sweep of
+    42 scenes: unchanged 16/42 → 24/42. With Border ON the two passes overprint at ±0.12 mm and
+    had been **masking** this.
+  - **Style-less child inherits the scene (`ee91289`).** `collectSceneParams` unconditionally
+    republished `byObject[id] = normalizeStyle(child.params.style)`, and `normalizeStyle(undefined)`
+    yields `mapper:'none'` — which *beats* scene scope in the whole-style-wins cascade. User-facing
+    through `importState`: a `.vectura` with a style-less `object3d` child loaded unfilled (0 →
+    32 `sceneFill` measured). Same shape as `5cfdbeb` (monolith expansion, 72 fill → 0), reached
+    through a second door. An unstyled child now leaves the slot **absent**.
+  - **Line output split by role (`1eb4c3f` → `74d149e` → `5b45891`).** Curves / Smoothing /
+    Simplify were one object-level set governing silhouette *and* fill together. Now: Object tab
+    **Border lines** (object bag) vs Style tab **Fill lines** (`fillCurves` / `fillSmoothing` /
+    `fillSimplify` / `fillFidelity` in style params, riding the existing StyleCascade — not a
+    third scoping model). `meta.kind === 'sceneFill'` is the whole dividing line; chaining is
+    border work and is gated on the border side alone. **Style Fidelity is sampling density along
+    a fill line**, not tessellation: it scales `SurfaceFill.steps` (clamped 6–220; slider
+    0.25–3×, default 1), while mesh Fidelity (`params.detail`) stays on the Object tab. Gating is
+    *absent*, not inert — stipple gets no group, and Fidelity additionally requires the
+    chart-sampled fill, so region contours and flat-clip spirals drop that row. Defaults
+    byte-identical; visual 111/111.
+  - **Shadow + tone anatomy, rounds 1–7 (merged from tag `round7-accepted`).** **Shadow ▸ Layers**
+    (Off / 2 / 3 / 4) replaced nested inset rings — which put the dense core on the footprint
+    *centroid*, hatched every layer at the same angle so added rulings landed on existing ink, and
+    had no contact band at all — with contact collar / umbra wedge / penumbra zones over one
+    phase-anchored master grid. Layers **redistributes** ink (C11: ±25% across 2/3/4). Also:
+    reflected light and a terminator dip; Density live again on curved objects (ball fill ink
+    3001 → 6618 across Density 10→100); one composed density budget split across every pass (peak
+    object coverage 0.636 → 0.531 against 0.56); rank-quantized faceted tone (cube face spread
+    1.32× → 6.09×, the 3-band **inversion** fixed); a working faceted highlight dispatch (blank /
+    sparse / stippleOut / altFill had been byte-identical, `highlightSensitivity` inert in
+    perFace). **Cast shadow scores 15/15 (C1–C15). The object-shading half is NOT done** — open
+    O-items remain and T/F moved during `2823321` and was deliberately reported rather than tuned.
+    Layers Off keeps the legacy flat path.
+  - **Label truth.** Shadow "Falloff" → **Softness** (`a6fff9b`; label only, key/clamp/default
+    untouched — and `src/config/context-bar.js` lost its stale pre-RC1 sun copy). Highlight
+    "Keep" → **None** (`0188e01`; a total bypass, Strength/Pen *removed* not disabled; persisted
+    value still `'keep'`, with `'none'` folded onto the same option). Geometry rows now name the
+    quantity they show (`0a2239b`; display/edit layer only — torus Diameter/Thickness, torusKnot
+    Span/Thickness, full-extent Height/Base, capsule Length, ellipsoid/superellipsoid Radius
+    X/Y/Z. An sx-80 torus is 125 mm across).
+  - **Buckyball radius (`a26379d` → `1e5476a`).** `scaleMeshToRadius` divided by a
+    `Math.max(1, …)`-floored bounds measure; the truncated icosahedron is the only solid whose
+    pre-scale circumradius (0.8685) sits under that floor, so a buckyball built **13.1% under**
+    its stated Radius. Now measures the true circumradius; `SCENE_MIGRATIONS[3]` rescales saved
+    documents.
+  - **Ctxbar dropdown direction (`1f422db`).** One shared `refreshMenuDirection()` pass on the bar
+    replaces seven per-menu call sites (only three of which flipped at all, and closed carets
+    lied). Rule is "away from the nearest viewport edge"; overflow is handled by a
+    `--ctxbar-menu-space` height cap folded into each flyout's `max-height: min()`, not a second
+    branch. Direction freezes mid-drag and settles on pointerup.
+  - **Open / deliberately not carried.** The in-app help guide (`src/ui/modals/help-shortcuts.js`)
+    still has **no 3D Scene Studio content at all** — not in the Algorithms table, not in Tools or
+    Canvas, and the scene-scoped shortcuts in `src/ui/shortcuts.js` are undocumented. Logged under
+    `Later` rather than folded into this docs commit, which is docs-only by class.
 - **Unreleased — scene-tree reachability batch: gizmo, geometry, hatch angle, shadows, tone
   goldens (`3d-scene/p4`, commits `edf8242`, `686eacf`/`57d699a`/`7c82597`, `8e94090`,
   `eee11eb`).** Seven units built in parallel isolated worktrees, cherry-picked in, gated

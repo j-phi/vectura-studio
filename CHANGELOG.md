@@ -6,6 +6,137 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added
+- **3D Scene — line output is split by role: the Object tab draws the border, the Style tab draws
+  the fill.** Curves / Smoothing / Simplify used to be one set of object-level controls governing
+  every path a curved object emitted — silhouette and internal fill lines together — so a crisp
+  outline over softly fitted hatching was not expressible. They are now two independent groups.
+  **Object tab ▸ Border lines** governs the silhouette, creases and face outlines.
+  **Style tab ▸ Fill lines** governs the internal fill only. The fill-line settings live in style
+  params, so they inherit the same scene → object → face cascade every other Style-tab field
+  already has. There is no override toggle and no cascade between the two halves.
+- **3D Scene — Style ▸ Fidelity, a sampling-density control for fill lines.** It sets how many
+  places each fill line re-evaluates the surface it is drawn on (0.25×–3×, default 1×; the
+  underlying sample count is clamped to 6–220). A dense line follows the form; a coarse one cuts
+  across it in chords. This is **not** the Object tab's Fidelity, which sets mesh tessellation —
+  Style Fidelity costs points, not facets. The row is offered only where the fill is actually
+  sampled along the surface, so a region contour and a flat-clip spiral hide it and keep the other
+  three; stipple gets no Fill lines group at all, because it draws dots rather than lines.
+- **3D Scene — shadow anatomy: contact collar, umbra wedge, and penumbra zones.** The **Shadow ▸
+  Layers** control (Off / 2 / 3 / 4) previously drew nested inset rings, which made a flat
+  elongated blob — concentric insets put the dense core on the footprint's centroid rather than at
+  the object's base, and every layer hatched at the same angle, so the added rulings landed on
+  existing ink and added no tone. Layers now build classical shading anatomy in stages: an
+  occlusion accent where the object meets the ground, a retreating umbra wedge, graded penumbra
+  zones, and a dissolving tail. Every zone rules a subset of one shared, phase-anchored master
+  grid, so lines cannot double up or break phase at a zone edge, and extra density spills into a
+  crossed family rather than into a spacing below plot safety. Layers redistributes ink instead of
+  adding it — total cast-shadow ink holds within ±25% across Layers 2/3/4. **Layers Off is
+  unchanged.**
+- **3D Scene — reflected light and a terminator dip on shaded surfaces.** The terminator now gets
+  its own crossed family, so it can read darker than the form shadow behind it, and reflected
+  light lifts the lowest facets, which were previously the darkest part of a low-poly sphere.
+
+### Changed
+- **3D Scene — the shadow slider "Falloff" is now "Softness".** `shadowFalloff` was repurposed
+  from "density drop per layer" to penumbra softness — it sets how far the umbra core extends down
+  the throw — but the label still described behaviour the control no longer had. Label only: the
+  stored key, its range, and its default are untouched, so no saved document changes.
+- **3D Scene — the highlight treatment "Keep" is now "None", and it offers no Strength or Pen.**
+  "Keep" read as a treatment; it is the *absence* of one. It is now a total bypass — no highlight
+  channel and no highlight pen — and the rows that configure highlight ink (Strength, Pen, Bands,
+  HL density, Alt fill, Burst) are **removed** rather than shown inert. The stored value is
+  unchanged, so saved documents keep reading as None.
+- **3D Scene — the Geometry rows name the quantity they actually show.** A torus "Diameter" showed
+  a half-extent, so an 80 mm torus measured 125 mm across; the same lie ran through cylinder / cone
+  "Height", pyramid "Base" and "Height", capsule "Length", and both torus-knot rows, while
+  ellipsoid and superellipsoid "X / Y / Z" named no quantity at all. Torus now reads **Diameter**
+  (true outer extent) and **Thickness** (tube diameter), the torus knot reads **Span** and
+  **Thickness**, height and base rows read the full extent, and the semi-axis rows read **Radius
+  X / Y / Z**. This is a display-and-edit layer only — no stored param, mesh builder or
+  normalization step changed, so every saved document renders byte-identically.
+- **Contextual task bar — every dropdown opens away from the nearest viewport edge.** Menus open
+  downward near the top of the screen and upward near the bottom, and the caret always points the
+  way its menu will go, whether it is open or closed. Previously only three of the bar's seven
+  dropdown paths flipped at all, so Shape, Presets, the algorithm switcher, text weight and align
+  never participated. Each flyout is also height-capped to the room on its open side. The pivot
+  settles on drag release rather than tracking the pointer, because flipping every frame the bar
+  crossed the midline read as thrash.
+
+### Fixed
+- **3D Scene — Style ▸ Border is a contiguous silhouette outline, and stays one at any Fidelity.**
+  Border offset each two-point mesh-edge segment along its own screen normal, so the mesh vertex
+  two adjacent segments share landed at two different screen points — a gap at every vertex.
+  Raising Fidelity only shortened the segments, so more of them fell under the emission floor and
+  punched more holes. Endpoint chaining then matched nothing: **104 of 112 border paths stayed
+  two-point straight sticks** even with Curves on and Smoothing at 1.00, and a two-point path *is*
+  a straight line, so no curve fitter could ever have smoothed it — hence the lumpy crown. The
+  border is now chained on integer mesh vertex indices (so contiguity is topological, not a float
+  comparison, and the loop count cannot change with Fidelity), its hidden-line runs are stitched in
+  traversal order, and the stitched polyline is offset as a whole. Measured before the fix: 216
+  dangling border endpoints at Fidelity 22 and 88 at Fidelity 12; zero after. Hidden-line removal
+  is bit-for-bit unchanged, so a genuinely occluded stretch still breaks the outline — correctly —
+  and a multi-loop silhouette (a torus seen face-on) keeps every loop, each unbroken.
+- **3D Scene — the plain silhouette (Border off) no longer fragments at high Fidelity.** The same
+  root cause on the other path: the 0.6 mm emission floor was applied to each two-point segment
+  rather than to the outline it belongs to, so raising Fidelity shortened every segment until
+  segment after segment fell under the floor. A sphere went from 0 to 8 to 36 to 92 dangling
+  endpoints across Fidelity 12 / 22 / 40 / 60, and a capsule outline shattered into 18 disconnected
+  pieces. The floor now judges a welded chain by its total length: zero dangling endpoints and one
+  connected component at every Fidelity. Sub-floor whiskers — the 0.02 mm slivers a clipper leaves
+  at a silhouette corner, which is what the floor was written for — are still culled, because a run
+  the clipper cut keeps the per-run floor while a whole, uncut edge is judged by its chain. With
+  Border on, the two passes overprinted within ±0.12 mm and masked this.
+- **3D Scene — Density is live again on curved objects.** The tone grid was sized at a fixed
+  pitch, so a ball emitted byte-identical geometry at Density 10 and Density 100. Density now sets
+  the pitch through the same law the faceted path uses: ball fill ink moves 3001 mm → 6618 mm
+  across Density 10 → 100.
+- **3D Scene — a cube's faces now order correctly by how much light they catch.** Tone was
+  quantized by threshold, which is calibrated for a continuum of surface normals; a cube does not
+  have one, so two differently lit faces landed in the same band and everything downstream was
+  incidental. The two lit faces measured 0.012 apart, and at 3 bands the order **inverted** — the
+  brighter face drew darker. Faceted tone is now re-quantized by rank, but only where thresholds
+  are the wrong tool (the object leaves the top of the ladder unused *and* spans more than 0.15 in
+  intensity), so anything with a real gradient is untouched. Re-quantizing never darkens, so it
+  cannot invert an order it was meant to fix. Cube face spread at 4 bands: 1.32× → 6.09×, and the
+  3-band ordering is correct.
+- **3D Scene — the faceted highlight treatments are different marks again.** On faceted geometry
+  the highlight was placed by "is this face in the top tone band", and under an ordinary sun no
+  cube face ever reaches the top band — so the whole treatment dispatch was dead code there. Blank,
+  Sparse, Stipple-out and Alt fill rendered identically, the highlight pen reached no ink, and
+  Sensitivity did nothing in the default per-face mode. The highlight zone on a facet is now the
+  specular glint set, Sensitivity tightens the acceptance cone (about 73° at 1 to 36° at 6, with 1
+  unchanged from before), Sparse and Stipple-out are two distinct marks, and the highlight pen
+  reaches Sparse, Stipple-out and Dashed ink. Alt fill drew nothing at the default density, because
+  its hotspot pitch was wider than the hotspot; it is now capped to the disc.
+- **3D Scene — one ink budget, shared across every pass.** The base fill pass had no composed
+  density ceiling at all — it was limited only by a per-family pitch rule, so where one family
+  alone busted the ceiling the crossing family was simply withheld and the total stayed wherever
+  the first family had left it. The crossing pass, in turn, modelled the first family's ink using
+  the *crossing* family's spacing, which was too generous wherever the crossing ran sparser. Each
+  pass now takes a share of the zone's composed ceiling in proportion to the ink it is meant to
+  contribute. Peak object coverage 0.636 → 0.531 against a 0.56 target, and the contact collar no
+  longer floods. Cast-shadow ink is unchanged to the digit.
+- **3D Scene — a Buckyball is built at the Radius it states.** The mesh scaler divided by a bounds
+  measure that was floored at 1, and the truncated icosahedron is the only solid whose pre-scale
+  circumradius sits below that floor — so a buckyball came out 13.1% under its stated Radius. The
+  scaler now measures the true circumradius, and a migration rescales saved documents so they
+  render byte-identically.
+- **3D Scene — expanding a scene monolith no longer drops a scene-scoped fill.** Expansion copied
+  a child's style only when the style table already held an entry for it, but the collect step
+  republishes that entry from the child's own params on every compose — so a child with no style of
+  its own published the object default (wireframe), and that entry then beat the group's scene
+  style in the whole-style-wins cascade. A monolith styled only at scene scope therefore expanded
+  into a tree with its entire surface fill gone: measured, 72 fill paths before and 0 after.
+  Expansion runs automatically when a pre-tree document is opened, so this was data loss on open.
+  The effective object-scope style is now resolved at expansion time and materialized whole onto
+  each child.
+
+**Where the shadow work stands.** Cast shadows meet all fifteen of the design spec's acceptance
+criteria. Object shading is substantially improved but **not finished** — several of its
+acceptance items are still open and under active review, and the tone-to-form ratio moved during
+the ink-budget fix and has not been re-tuned.
+
 ### Fixed
 - **3D Scene — a scene-tree object with no style of its own now inherits the scene, instead of
   rendering as a bare unfilled outline.** The collect step republished
