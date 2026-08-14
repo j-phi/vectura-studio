@@ -30,19 +30,9 @@
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
-const clone = (v) => JSON.parse(JSON.stringify(v));
+const FIX = require('../fixtures/scene3d-shadow-anatomy');
 
-const BOUNDS = {
-  width: 320, height: 220, m: 10, dW: 300, dH: 200,
-  penWidth: 0.3, truncate: 4, fastPreview: false, preview3dQuality: 'high',
-};
-const SEED = 0;
-const CAMERA = { projection: 'orthographic', yaw: -30, pitch: 32, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
-const SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 28, intensity: 1, castShadows: true };
-const TONE4 = {
-  enabled: true, bands: 4, thresholds: [0.25, 0.5, 0.75], ladder: [0.15, 0.4, 0.65, 0.9],
-  specular: { enabled: true, size: 1 },
-};
+const { BOUNDS } = FIX;
 const PATCH = 4;
 const CELL = 0.1;
 
@@ -50,29 +40,19 @@ let runtime; let V;
 beforeAll(async () => { runtime = await loadVecturaRuntime(); V = runtime.window.Vectura; });
 afterAll(() => { if (runtime) runtime.cleanup(); });
 
-const build = (radius) => {
-  const p = clone(V.ALGO_DEFAULTS.scene3d);
-  p.seed = SEED;
-  p.camera = clone(CAMERA);
-  p.ground = { enabled: false };
-  p.backdrop = { enabled: false };
-  p.objects = [{
-    id: 'ball', name: 'Ball', primitive: 'sphere', params: { radius, detail: 26 },
-    transform: {
-      x: 0, y: radius, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1,
-    },
-    visibility: 'solid',
-  }];
-  p.lights = [clone(SUN)];
-  p.tone = clone(TONE4);
-  const base = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 85 } };
-  p.styleTable = { scene: clone(base), byObject: { ball: clone(base) }, byFace: {} };
-  const np = V.Scene3D.Params.normalizeParams(p);
-  const paths = V.AlgorithmRegistry.scene3d.generate(
-    V.Scene3D.Params.collectSceneParams(np, []), new V.SeededRNG(SEED), new V.SimpleNoise(SEED), BOUNDS,
-  ) || [];
-  return { np, paths, radius };
-};
+// ROUND 9 — the fixture is no longer restated here either. These four views are
+// the harness's own ladder set, and "the four-fixture ladder is the unit of
+// report" is a protected item: a ratio that survives one fixture is an anecdote.
+const FIXTURES = [
+  { view: 'E-bands4', radius: 46 },
+  { view: 'V-E-bands4-sun45', radius: 46 },
+  { view: 'W-bigball-bands4', radius: 92 },
+  { view: 'W-bigball-sun45', radius: 92 },
+];
+
+const build = ({ view, radius }) => ({
+  np: FIX.buildParams(V, view), paths: FIX.buildPaths(V, view), radius,
+});
 
 // Boolean-grid rasteriser: D(window) = filled fraction. Same quantity as the
 // designer's dark-pixel instrument, no browser required, immune to overlap.
@@ -186,16 +166,18 @@ const ladder = ({ np, paths, radius }) => {
     (acc[dom[0]] = acc[dom[0]] || []).push(D);
   });
   const mean = (a) => (a && a.length ? a.reduce((s, v) => s + v, 0) / a.length : NaN);
+  const all = Object.values(acc).flat();
   return {
-    L: mean(acc.L), M: mean(acc.M), T: mean(acc.T), F: mean(acc.F), R: mean(acc.R), n: acc,
+    L: mean(acc.L), M: mean(acc.M), T: mean(acc.T), F: mean(acc.F), R: mean(acc.R),
+    max: all.length ? Math.max(...all) : NaN, n: acc,
   };
 };
 
-describe('the form ladder holds its ratios (O1 / O2 / O3)', () => {
-  [46, 92].forEach((radius) => {
-    describe(`r=${radius}`, () => {
+describe('the form ladder holds its ratios (O1 / O2 / O3 / O6)', () => {
+  FIXTURES.forEach((fx) => {
+    describe(fx.view, () => {
       let m;
-      beforeAll(() => { m = ladder(build(radius)); });
+      beforeAll(() => { m = ladder(build(fx)); });
 
       test('O3 — the dip is a shape: T > F > R', () => {
         expect(m.T).toBeGreaterThan(m.F);
@@ -213,6 +195,59 @@ describe('the form ladder holds its ratios (O1 / O2 / O3)', () => {
       test('the form shadow sits in its own band above the halftone: F/M in [1.45, 1.70]', () => {
         expect(m.F / m.M).toBeGreaterThanOrEqual(1.45);
         expect(m.F / m.M).toBeLessThanOrEqual(1.70);
+      });
+
+      // ── O6 — RATCHETED, NOT MET. The spec asks D(L) >= 0.10. ───────────────
+      //
+      // Round 8 showed O6 is arithmetically UNREACHABLE inside the current law:
+      // the lit zone's composed ceiling is TOTAL_DARK_CEIL x L.coverage /
+      // DARKEST_WEIGHT = 0.47 x 0.42 / 2.0 = 0.0987, under the spec's own 0.10
+      // before a line is drawn. The Round 8 review ruled that the fix is a FLOOR
+      // on the L zone's ceiling, and that it "cannot touch max(object)".
+      //
+      // ROUND 9 MEASURED ALL OF THAT, AND THE PROPOSED LEVER IS DISPROVED.
+      // Four-fixture D(L), on this instrument, one lever at a time:
+      //
+      //   baseline                                   0.069 0.068 0.076 0.086
+      //   L's composed ceiling REMOVED ENTIRELY      0.075 0.076 0.077 0.087
+      //   LIT_MAX_PITCH_PEN 12 -> 10, and -> 8       0.069 0.068 0.076 0.086
+      //   L ceiling floored at 0.16                  0.075 0.076 0.077 0.087
+      //   + L's specular damping removed             0.100 0.095 0.099 0.106
+      //
+      // Removing L's ceiling outright buys +0.007. The ceiling is not the
+      // binder: L's own coverage is, at raw x GLINT_KEEP = 0.42 x 0.6 = 0.252
+      // after the specular cap halves it. `LIT_MAX_PITCH_PEN` — the mechanism
+      // written for O6 — is dead at 12, at 10 and at 8, because the coverage cap
+      // dominates it at every value.
+      //
+      // AND THE ONLY LEVER THAT REACHES 0.10 COSTS THE STEP ABOVE IT: L/M goes
+      // 0.52-0.72 to 0.73-0.92, i.e. the lit band and the halftone converge.
+      // Raising M instead to reopen the step takes F/M from 1.53-1.66 to ~1.20,
+      // through the protected [1.45, 1.70] floor; raising F to compensate walks
+      // max(object) at the T end toward the protected 0.56, whose worst-of-four
+      // margin is already 3.8 %. The ladder is fully constrained: O6 at 0.10
+      // cannot be bought without breaking a protected item, and that is a ruling
+      // for the spec, not a number to tune toward.
+      //
+      // So O6 is RATCHETED here at what it actually measures. It may not fall.
+      test('O6 — the centre light carries tone (spec bar 0.10; ratcheted at the measured level)', () => {
+        expect(m.L).toBeGreaterThanOrEqual(0.065);
+      });
+
+      // O4/O7 — and the step above it stays open. This is the bar the only
+      // working O6 lever would breach, so it is pinned before anyone spends it.
+      test('O4/O7 — the lit -> halftone step stays open: L <= 0.75 x M', () => {
+        expect(m.L / m.M).toBeLessThanOrEqual(0.75);
+      });
+
+      // O13 / C2 — the object's darkest patch, ON EVERY FIXTURE. Round 7
+      // protected `max(object) <= 0.56` and Round 8 protected "the four-fixture
+      // ladder is the unit of report" precisely because Round 8 reported this
+      // number from the single fixture where it had improved while the
+      // worst-of-four went the other way. Asserting it per fixture is what makes
+      // "worst of four" a fact rather than a reporting convention.
+      test('O13 — the object never out-inks the contact collar: max(object) <= 0.56', () => {
+        expect(m.max).toBeLessThanOrEqual(0.56);
       });
     });
   });
