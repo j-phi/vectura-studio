@@ -391,7 +391,10 @@
       const I = toneOn ? clamp(intensityFn(wN, world), 0, 1) : 1;
       // I8 — per-sample specular term for light-driven highlight (0 when off).
       const S = (ldOn && typeof specularFn === 'function') ? clamp(specularFn(wN, world), 0, 1) : 0;
-      return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, I, S, wN, world, dA, dB };
+      // `nz` = the camera-space normal's z. It is 1 facing the camera and 0 ON
+      // the silhouette, so it is the exact, projection-correct measure of "how
+      // close to the contour is this sample" — used by the limb taper below.
+      return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, nz: camN.z, I, S, wN, world, dA, dB };
     };
 
     // PERPENDICULAR screen pitch between adjacent rulings at this sample.
@@ -648,7 +651,13 @@
             // allows — by dropping rulings — and it is what keeps the lit end of
             // the ladder separable instead of saturating into the dark end.
             let cap = 1;
-            const localPitch = perpPitch(smp, pitchStep, lineDir);
+            // `pitchStep` / `lineDir` are constants for a straight parameter-
+            // space family and FUNCTIONS OF tt for the screen-frame crossed
+            // family, whose direction — and therefore whose neighbour offset —
+            // varies along the line. Everything downstream is unchanged.
+            const stepHere = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
+            const dirHere = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
+            const localPitch = perpPitch(smp, stepHere, dirHere);
             if (localPitch != null) {
               // Effective pitch is localPitch / coverage and must stay at or above
               // the floor, so the darkest zone may not exceed localPitch/floor.
@@ -845,6 +854,211 @@
       }
     };
 
+    // ── THE CROSSED FAMILY IS MEASURED ON SCREEN, NOT IN THE CHART ────────────
+    //
+    // §2.3 states the rule as a statement about the EYE: crossed families sit at
+    // +65°, "never +90°, which produces a visible square grid and moirés against
+    // the raster". Until Round 8 that +65° was added to `fillAngle` inside the
+    // (a,b) PARAMETER square and only then pushed through the chart, so what the
+    // eye actually saw was the pushforward of 65°, which is 65° only where the
+    // chart happens to be conformal and isotropic. On a sphere it is neither: the
+    // pushforward metric is (R·cos v · du, R · dv), so as cos v → 0 toward the
+    // pole the u-component collapses and any family carrying a dv component
+    // swings toward 90° ON SCREEN against the parallels. Measured on the drawing
+    // (length-weighted orientation histogram per 4 mm window): the terminator's
+    // crossing ran a median 70° with a p90 of 85° and 13 % of windows at or past
+    // 80° — the lit pole read as a clean square grid while the source said 65 the
+    // whole time. It is also why O26's band boundaries were traceable: the flips
+    // lined up along parameter-space isolines rather than along anything the
+    // viewer can see.
+    //
+    // So the crossed family is now built the other way round. At every sample we
+    // take family A's SCREEN direction (its own pushforward), rotate THAT by 65°
+    // in screen space, and pull the result back through the inverse Jacobian to
+    // get the parameter-space direction to march in. The family is therefore a
+    // set of integral curves of a direction field rather than straight lines in
+    // the chart — it CURVES in parameter space precisely so that it stays
+    // straight-angled on screen, which is the frame the criterion is written in.
+    //
+    // Two things are deliberately NOT changed:
+    //   - the crosshatch mapper's own family B (`cross.angleDelta`) keeps its
+    //     parameter-frame semantics, because that dial is documented as matching
+    //     the faceted path's `crossFamilies` exactly and is a user-facing angle;
+    //   - the LINE BUDGET. The streamlines are seeded at the nominal family's own
+    //     line positions, so `count` and the seeding pitch are untouched and the
+    //     ladder's ink weights carry over unchanged.
+    const CROSS_MIN_DET = 1e-9;
+
+    // Pull an on-screen direction (tx,ty) back into the parameter square through
+    // the inverse of J = [dA dB]. Returns null where J is degenerate — at a pole
+    // or on the silhouette, where the surface has no two independent screen
+    // directions to speak of and the question has no answer.
+    const pullbackDir = (smp, tx, ty) => {
+      if (!smp || !smp.dA || !smp.dB) return null;
+      const det = smp.dA.x * smp.dB.y - smp.dB.x * smp.dA.y;
+      const scale = Math.hypot(smp.dA.x, smp.dA.y) * Math.hypot(smp.dB.x, smp.dB.y);
+      if (!(Math.abs(det) > CROSS_MIN_DET * Math.max(1e-12, scale))) return null;
+      const a = (smp.dB.y * tx - smp.dB.x * ty) / det;
+      const b = (smp.dA.x * ty - smp.dA.y * tx) / det;
+      const n = Math.hypot(a, b);
+      if (!(n > 1e-12)) return null;
+      return { a: a / n, b: b / n };
+    };
+
+    // The parameter direction whose screen pushforward sits `deg` from family
+    // A's, with the rotation SENSE (+1/−1) fixed once per family so the whole
+    // family crosses the same way round.
+    const screenCrossDir = (smp, aDir, deg, sense) => {
+      if (!smp || !smp.dA || !smp.dB) return null;
+      const sx = smp.dA.x * aDir.a + smp.dB.x * aDir.b;
+      const sy = smp.dA.y * aDir.a + smp.dB.y * aDir.b;
+      const L = Math.hypot(sx, sy);
+      if (!(L > 1e-9)) return null;
+      const rad = (sense * finite(deg, 65) * Math.PI) / 180;
+      const c = Math.cos(rad); const s = Math.sin(rad);
+      return pullbackDir(smp, (sx * c - sy * s) / L, (sx * s + sy * c) / L);
+    };
+
+    const alignTo = (d, ref) => (ref && (d.a * ref.a + d.b * ref.b) < 0 ? { a: -d.a, b: -d.b } : d);
+    const inSquare = (p) => p.a >= 0 && p.a <= 1 && p.b >= 0 && p.b <= 1;
+
+    // Build the whole screen-frame crossed family once, and cache it: the T
+    // gate, the F gate and the Density-overflow pass all emit the SAME geometry
+    // and differ only in which zone they are allowed to draw in, so tracing once
+    // makes the new family cheaper than the three straight ones it replaces.
+    const crossFamilyCache = new Map();
+    const buildCrossFamily = (baseAngleDeg, deg, count) => {
+      const key = `${baseAngleDeg}|${deg}|${count}`;
+      if (crossFamilyCache.has(key)) return crossFamilyCache.get(key);
+      const nominal = angleFamily(finite(baseAngleDeg, 0) + finite(deg, 65));
+      const n = Math.max(2, Math.round(count * nominal.span));
+      const step = nominal.span / n;
+      const nomOff = { a: nominal.na * step, b: nominal.nb * step };
+      const nomDir = { a: nominal.da, b: nominal.db };
+      // Family A's parameter direction — the frame everything is measured from.
+      const aRad = (finite(baseAngleDeg, 0) * Math.PI) / 180;
+      const aDir = opts.mapper === 'contour'
+        ? { a: 0, b: 1 }
+        : { a: Math.cos(aRad), b: Math.sin(aRad) };
+      // Fix the rotation sense once, at the first sample that has a frame: pick
+      // whichever of ±deg lands closer to where the parameter-frame family used
+      // to run, so the drawing keeps the same handedness it always had.
+      let sense = 1;
+      for (let i = 0; i < n && sense === 1; i++) {
+        const at = nominal.lineAt((i + 0.5) / n);
+        if (!at) continue;
+        const seed = at(0.5);
+        const smp = sampleAt(seed.a, seed.b);
+        if (!smp || !smp.dA || !smp.dB) continue;
+        const plus = screenCrossDir(smp, aDir, deg, 1);
+        const minus = screenCrossDir(smp, aDir, deg, -1);
+        if (!plus || !minus) continue;
+        const dp = Math.abs(plus.a * nomDir.a + plus.b * nomDir.b);
+        const dm = Math.abs(minus.a * nomDir.a + minus.b * nomDir.b);
+        sense = dm > dp ? -1 : 1;
+        break;
+      }
+      const dirField = (p, ref) => {
+        const smp = sampleAt(p.a, p.b);
+        const d = smp ? screenCrossDir(smp, aDir, deg, sense) : null;
+        // Degenerate frame (pole / silhouette): fall back to the nominal
+        // parameter direction rather than stopping the line dead.
+        return alignTo(d || nomDir, ref || nomDir);
+      };
+      // EACH STREAMLINE CARRIES ITS NOMINAL COUNTERPART'S ARC LENGTH, centred on
+      // the same seed. This is not cosmetic. A streamline is free to stay inside
+      // the parameter square much longer than the straight chord it replaces, and
+      // an unbounded trace put ~2x the ink on every ruling: the worst window on
+      // the 92 mm ball went from 30 mm of ink to 66 mm and D from 0.529 to 0.669,
+      // straight through the 0.56 object ceiling. Binding the arc length keeps
+      // ink-per-ruling equal to the budget the ladder actually allocated, and it
+      // keeps the k-th point of line i and the k-th point of line i+1 at the same
+      // arc length from their seeds — which is what makes the neighbour offset
+      // below an honest measurement of the local spacing rather than a guess.
+      const halfSteps = Math.max(4, Math.round(steps / 2));
+      const trace = (seed, nomLen) => {
+        const h = Math.max(1e-4, nomLen / 2) / halfSteps;
+        const fwd = []; const bwd = [];
+        const walk = (sign, into) => {
+          let cur = { a: seed.a, b: seed.b };
+          let ref = null;
+          for (let k = 0; k < halfSteps; k++) {
+            let d = dirField(cur, ref);
+            if (ref == null && sign < 0) d = { a: -d.a, b: -d.b };
+            const mid = { a: cur.a + d.a * h * 0.5, b: cur.b + d.b * h * 0.5 };
+            if (!inSquare(mid)) break;
+            const d2 = dirField(mid, d);
+            const nx = { a: cur.a + d2.a * h, b: cur.b + d2.b * h };
+            if (!inSquare(nx)) break;
+            cur = nx; ref = d2;
+            into.push({ a: cur.a, b: cur.b, da: d2.a, db: d2.b });
+          }
+        };
+        walk(1, fwd);
+        walk(-1, bwd);
+        const d0 = dirField(seed, null);
+        const pts = [];
+        for (let i = bwd.length - 1; i >= 0; i--) pts.push(bwd[i]);
+        pts.push({ a: seed.a, b: seed.b, da: d0.a, db: d0.b });
+        for (let i = 0; i < fwd.length; i++) pts.push(fwd[i]);
+        return { pts, seedIndex: bwd.length };
+      };
+      const lines = [];
+      for (let i = 0; i < n; i++) {
+        const at = nominal.lineAt((i + 0.5) / n);
+        if (!at) { lines.push(null); continue; }
+        lines.push(trace(at(0.5)));
+      }
+      // NEIGHBOUR OFFSET, measured rather than assumed. Every streamline is
+      // marched with the same step from a seed on the nominal family's own
+      // normal, so index k is the same arc length along every line: the vector
+      // from line i's k-th point to line i+1's k-th point IS the local offset to
+      // the neighbouring ruling, which is the quantity the plot-safe cap needs.
+      // Where the neighbour has already run off the square we fall back to the
+      // nominal seeding offset.
+      lines.forEach((L, i) => {
+        if (!L) return;
+        const other = lines[i + 1] || lines[i - 1] || null;
+        L.off = L.pts.map((p, k) => {
+          if (!other) return nomOff;
+          const kk = k - L.seedIndex + other.seedIndex;
+          const q = other.pts[kk];
+          if (!q) return nomOff;
+          const off = { a: q.a - p.a, b: q.b - p.b };
+          const m = Math.hypot(off.a, off.b);
+          if (!(m > 1e-9) || m > 4 * step) return nomOff;
+          return off;
+        });
+      });
+      const fam = { n, lines, step, nomOff };
+      crossFamilyCache.set(key, fam);
+      return fam;
+    };
+
+    // Emit the screen-frame crossed family. Same signature role as
+    // emitAngledFamily, same line budget, same ladder ranks.
+    const emitScreenCross = (baseAngleDeg, deg, count, back, zoneGate, densityCross) => {
+      const fam = buildCrossFamily(baseAngleDeg, deg, count);
+      for (let i = 0; i < fam.n; i++) {
+        const L = fam.lines[i];
+        if (!L || L.pts.length < 2) continue;
+        const last = L.pts.length - 1;
+        const idxAt = (tt) => clamp(tt, 0, 1) * last;
+        const paramAt = (tt) => {
+          const f = idxAt(tt);
+          const k = Math.min(last - 1, Math.floor(f));
+          const u = f - k;
+          const p = L.pts[k]; const q = L.pts[k + 1];
+          return { a: clamp(p.a + (q.a - p.a) * u, 0, 1), b: clamp(p.b + (q.b - p.b) * u, 0, 1) };
+        };
+        const dirAt = (tt) => L.pts[Math.round(idxAt(tt))] || L.pts[0];
+        const lineDir = (tt) => { const p = dirAt(tt); return { a: p.da, b: p.db }; };
+        const pitchStep = (tt) => L.off[Math.round(idxAt(tt))] || fam.nomOff;
+        emitLine(paramAt, (i + 0.5) / fam.n, back, i, fam.n, rankOf(i), zoneGate,
+          pitchStep, lineDir, densityCross);
+      }
+    };
+
     // I8 — SHADOW SENSITIVITY infill. The base dither can't densify shadow past a
     // meridian's own length (its rank is tied to its longitude), so graded
     // darkening is added as EXTRA lines confined to the dark region: a sample
@@ -917,16 +1131,19 @@
       // only the terminator — gains a second family, at +65°. Never +90°: an
       // orthogonal pair reads as a square grid and beats against the raster
       // (§2.3). This is what makes T out-ink F, which is the whole dip.
+      // ROUND 8: the +65° is now measured in the SCREEN frame (see
+      // emitScreenCross). One traced family serves all three passes.
       const emitTerminatorCross = (count, back) => {
         if (!zonesOn) return;
-        emitAngledFamily(finite(opts.fillAngle, 0) + Regions.CROSS_OBJ_DEG, count, back, 'T');
-        emitAngledFamily(finite(opts.fillAngle, 0) + Regions.CROSS_OBJ_DEG, count, back, 'F');
+        const base = finite(opts.fillAngle, 0);
+        emitScreenCross(base, Regions.CROSS_OBJ_DEG, count, back, 'T');
+        emitScreenCross(base, Regions.CROSS_OBJ_DEG, count, back, 'F');
         // The Density overflow (see the line budget): everything Density asked
         // for past the plot floor, laid down in a second direction instead of a
         // tighter pitch. Zero at and below the floor, so it is inert until it is
         // needed.
         if (densityOverflow > 0) {
-          emitAngledFamily(finite(opts.fillAngle, 0) + Regions.CROSS_OBJ_DEG, count, back, null, true);
+          emitScreenCross(base, Regions.CROSS_OBJ_DEG, count, back, null, true);
         }
       };
       if (mapper === 'hatch') {
