@@ -888,6 +888,9 @@
     //     line positions, so `count` and the seeding pitch are untouched and the
     //     ladder's ink weights carry over unchanged.
     const CROSS_MIN_DET = 1e-9;
+    // Fraction of the plot floor at which a traced ruling is treated as having
+    // collapsed onto another (see sepDist below).
+    const CROSS_SEP_FRAC = 0.5;
 
     // Pull an on-screen direction (tx,ty) back into the parameter square through
     // the inverse of J = [dA dB]. Returns null where J is degenerate — at a pole
@@ -965,6 +968,59 @@
         // parameter direction rather than stopping the line dead.
         return alignTo(d || nomDir, ref || nomDir);
       };
+
+      // ── THE RULINGS ARE SPACED IN SCREEN SPACE, NOT LEFT TO THE FIELD ────────
+      //
+      // Integral curves of a direction field are NOT an evenly-spaced family.
+      // Where the field folds they run together onto a caustic, and every ruling
+      // that reaches it lands on the same locus. That is not a modelling
+      // subtlety — it is plainly visible: the first cut of this family drew a
+      // solid black curve across the lit pole of the 92 mm ball, and the
+      // window there went from D 0.433 to D 0.688 against a 0.56 object
+      // ceiling. No per-ruling pitch estimate can catch it, because the rulings
+      // that collide are not adjacent in the family; measuring the offset to
+      // line i±1 more conservatively made it WORSE (0.644 → 0.688), which is
+      // the measurement that ruled the estimate out as the cause.
+      //
+      // So spacing is enforced where the criterion is stated — on screen. A
+      // ruling stops the moment it comes within the plot floor of a ruling
+      // already laid down (Jobard–Lefebvre evenly-spaced streamlines). This is
+      // §0 verbatim, applied to a curved family: past the floor you do not get
+      // darker by ruling closer, so the ruling ends. Ending a stroke is also the
+      // idiom the rest of this fill already speaks — the dither terminates
+      // rulings everywhere.
+      //
+      // Occupancy is a sparse screen-space hash at the separation distance.
+      // Back-facing samples are neither stamped nor tested: they project on top
+      // of the front surface and would block rulings against geometry that is
+      // not drawn.
+      // WHAT SEPARATION, EXACTLY. The traced family is the FINE grid the ladder
+      // subsets — the dither drops whole rulings by rank, so the geometry is laid
+      // at the master pitch and only a fraction of it is ever drawn. Separating
+      // at the master pitch itself therefore destroys the family before the
+      // ladder gets to choose from it: measured, T fell 0.420 → 0.323 and T/F
+      // went under the spec's own 1.25 on the big ball. The separation exists to
+      // catch COLLAPSE — the caustic, where spacing goes to zero — not to space
+      // the family, which the seeding already did. So it sits at a fraction of
+      // the plot floor, low enough that an ordinary ruling never trips it.
+      const sepDist = Math.max(1e-3, floorPitch * CROSS_SEP_FRAC);
+      const CELL = sepDist * 0.7;
+      const occ = new Map();
+      const cellKey = (x, y) => ((Math.floor(x / CELL) + 8192) * 65536) + (Math.floor(y / CELL) + 8192);
+      const occupiedByOther = (x, y, self) => {
+        const ix = Math.floor(x / CELL); const iy = Math.floor(y / CELL);
+        for (let j = -1; j <= 1; j++) {
+          for (let i = -1; i <= 1; i++) {
+            const v2 = occ.get(((ix + i + 8192) * 65536) + (iy + j + 8192));
+            if (v2 !== undefined && v2 !== self) return true;
+          }
+        }
+        return false;
+      };
+      const stamp = (x, y, self) => {
+        const k = cellKey(x, y);
+        if (!occ.has(k)) occ.set(k, self);
+      };
       // EACH STREAMLINE CARRIES ITS NOMINAL COUNTERPART'S ARC LENGTH, centred on
       // the same seed. This is not cosmetic. A streamline is free to stay inside
       // the parameter square much longer than the straight chord it replaces, and
@@ -976,7 +1032,7 @@
       // arc length from their seeds — which is what makes the neighbour offset
       // below an honest measurement of the local spacing rather than a guess.
       const halfSteps = Math.max(4, Math.round(steps / 2));
-      const trace = (seed, nomLen) => {
+      const trace = (seed, nomLen, self) => {
         const h = Math.max(1e-4, nomLen / 2) / halfSteps;
         const fwd = []; const bwd = [];
         const walk = (sign, into) => {
@@ -990,6 +1046,25 @@
             const d2 = dirField(mid, d);
             const nx = { a: cur.a + d2.a * h, b: cur.b + d2.b * h };
             if (!inSquare(nx)) break;
+            // Screen-space separation: walk the new step at sub-cell resolution
+            // and stop the ruling the moment it enters another ruling's floor.
+            const s0 = sampleAt(cur.a, cur.b);
+            const s1 = sampleAt(nx.a, nx.b);
+            if (s0 && s1 && s0.front && s1.front) {
+              const segLen = Math.hypot(s1.x - s0.x, s1.y - s0.y);
+              const sub = Math.max(1, Math.ceil(segLen / (CELL * 0.5)));
+              let blocked = false;
+              for (let q = 1; q <= sub; q++) {
+                const u = q / sub;
+                const px = s0.x + (s1.x - s0.x) * u; const py = s0.y + (s1.y - s0.y) * u;
+                if (occupiedByOther(px, py, self)) { blocked = true; break; }
+              }
+              if (blocked) break;
+              for (let q = 0; q <= sub; q++) {
+                const u = q / sub;
+                stamp(s0.x + (s1.x - s0.x) * u, s0.y + (s1.y - s0.y) * u, self);
+              }
+            }
             cur = nx; ref = d2;
             into.push({ a: cur.a, b: cur.b, da: d2.a, db: d2.b });
           }
@@ -1007,7 +1082,11 @@
       for (let i = 0; i < n; i++) {
         const at = nominal.lineAt((i + 0.5) / n);
         if (!at) { lines.push(null); continue; }
-        lines.push(trace(at(0.5)));
+        // The nominal chord's own length through the parameter square — the arc
+        // budget this ruling is entitled to.
+        const p0 = at(0); const p1 = at(1);
+        const nomLen = Math.hypot(p1.a - p0.a, p1.b - p0.b);
+        lines.push(trace(at(0.5), nomLen, i));
       }
       // NEIGHBOUR OFFSET, measured rather than assumed. Every streamline is
       // marched with the same step from a seed on the nominal family's own
@@ -1016,19 +1095,37 @@
       // the neighbouring ruling, which is the quantity the plot-safe cap needs.
       // Where the neighbour has already run off the square we fall back to the
       // nominal seeding offset.
+      // BOTH neighbours, and the TIGHTER of the two — a ruling is as crowded as
+      // its closest neighbour, not as its average one. Where neither neighbour
+      // reaches this arc length (the family is running off the surface, which on
+      // a sphere is exactly the pole) the last measured offset is carried
+      // forward rather than reverting to the nominal seeding offset: the nominal
+      // is an UPPER bound on the spacing, and handing an upper bound to a cap
+      // whose whole job is to catch crowding licences the flood it exists to
+      // prevent.
       lines.forEach((L, i) => {
         if (!L) return;
-        const other = lines[i + 1] || lines[i - 1] || null;
-        L.off = L.pts.map((p, k) => {
-          if (!other) return nomOff;
-          const kk = k - L.seedIndex + other.seedIndex;
-          const q = other.pts[kk];
-          if (!q) return nomOff;
-          const off = { a: q.a - p.a, b: q.b - p.b };
-          const m = Math.hypot(off.a, off.b);
-          if (!(m > 1e-9) || m > 4 * step) return nomOff;
-          return off;
+        const sides = [lines[i - 1] || null, lines[i + 1] || null];
+        const raw = L.pts.map((p, k) => {
+          let best = null;
+          sides.forEach((o) => {
+            if (!o) return;
+            const q = o.pts[k - L.seedIndex + o.seedIndex];
+            if (!q) return;
+            const off = { a: q.a - p.a, b: q.b - p.b };
+            const m = Math.hypot(off.a, off.b);
+            if (!(m > 1e-9)) return;
+            if (!best || m < best.m) best = { off, m };
+          });
+          // Diverging past the seeding pitch is legitimate but unbounded, so it
+          // is clamped back to nominal: extra room is never spent, only crowding
+          // is ever acted on.
+          return best ? (best.m > step ? nomOff : best.off) : null;
         });
+        let carry = nomOff;
+        for (let k = 0; k < raw.length; k++) { if (raw[k]) carry = raw[k]; else raw[k] = carry; }
+        for (let k = raw.length - 1; k >= 0; k--) { if (raw[k] === nomOff && raw[k + 1]) raw[k] = raw[k + 1]; else break; }
+        L.off = raw;
       });
       const fam = { n, lines, step, nomOff };
       crossFamilyCache.set(key, fam);
