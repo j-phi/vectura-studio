@@ -43,27 +43,19 @@
  * 92 mm ball measures 6 % at ≥ 80°. Both assertions below fail there.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const FIX = require('../fixtures/scene3d-shadow-anatomy');
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
-const BOUNDS = {
-  width: 320, height: 220, m: 10, dW: 300, dH: 200,
-  penWidth: 0.3, truncate: 4, fastPreview: false, preview3dQuality: 'high',
-};
-const SEED = 0;
-const CAMERA = { projection: 'orthographic', yaw: -30, pitch: 32, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
-const SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 28, intensity: 1, castShadows: true };
-const TONE4 = {
-  enabled: true, bands: 4, thresholds: [0.25, 0.5, 0.75], ladder: [0.15, 0.4, 0.65, 0.9],
-  specular: { enabled: true, size: 1 },
-};
-const ballAt = (radius) => ({
-  id: 'ball', name: 'Ball', primitive: 'sphere', params: { radius, detail: 26 },
-  transform: {
-    x: 0, y: radius, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1,
-  },
-  visibility: 'solid',
-});
+// ROUND 10 — nothing restated. This file used to declare its own BOUNDS, SEED,
+// CAMERA, SUN, TONE4 and ball builder. They MATCHED the fixture to the digit,
+// which is precisely why the review called them latent: the O17 result quoted as
+// the round's headline was pinned against a copy that nothing kept in step. The
+// namesake test's copy had already drifted to pitch 22 / elevation 45.
+const {
+  BOUNDS, SEED, CAMERA, SUN, BALL_LADDER, toneBands, styleTable,
+} = FIX;
+const TONE4 = toneBands(4);
 
 const PATCH = 4;      // mm — the design's own measurement window (§6.1)
 const BINS = 36;      // 5° orientation bins, mod 180
@@ -79,17 +71,16 @@ beforeAll(async () => {
 });
 afterAll(() => { if (runtime) runtime.cleanup(); });
 
-const build = (radius) => {
+const build = (ball) => {
   const p = clone(V.ALGO_DEFAULTS.scene3d);
   p.seed = SEED;
   p.camera = clone(CAMERA);
   p.ground = { enabled: false };
   p.backdrop = { enabled: false };
-  p.objects = [ballAt(radius)];
+  p.objects = [clone(ball)];
   p.lights = [clone(SUN)];
   p.tone = clone(TONE4);
-  const base = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 85 } };
-  p.styleTable = { scene: clone(base), byObject: { ball: clone(base) }, byFace: {} };
+  p.styleTable = styleTable(p.objects);
   const np = V.Scene3D.Params.normalizeParams(p);
   const paths = V.AlgorithmRegistry.scene3d.generate(
     V.Scene3D.Params.collectSceneParams(np, []), new V.SeededRNG(SEED), new V.SimpleNoise(SEED), BOUNDS,
@@ -181,20 +172,23 @@ const separations = (paths, objectId, zones, want) => {
 const NOMINAL = 65;
 
 describe('O17 — the crossed family holds ~65° ON SCREEN, on both ball fixtures', () => {
-  [46, 92].forEach((radius) => {
+  // The two-fixture ladder, read off the fixture module rather than restated as
+  // `[46, 92]` — so a harness cannot score one ball and call it the pair.
+  BALL_LADDER.forEach((ball) => {
+    const radius = ball.params.radius;
     test(`r=${radius}: no square grid in the terminator — <5% of crossed windows reach 80°`, () => {
-      const { np, paths } = build(radius);
+      const { np, paths } = build(ball);
       const zones = zoneGrid(np, radius);
-      const seps = separations(paths, 'ball', zones, 'T');
+      const seps = separations(paths, ball.id, zones, 'T');
       expect(seps.length).toBeGreaterThan(20);
       const n80 = seps.filter((x) => x >= 80).length;
       expect(n80 / seps.length).toBeLessThan(0.05);
     });
 
     test(`r=${radius}: the terminator's crossing angle is centred on 65°, not drifting`, () => {
-      const { np, paths } = build(radius);
+      const { np, paths } = build(ball);
       const zones = zoneGrid(np, radius);
-      const seps = separations(paths, 'ball', zones, 'T');
+      const seps = separations(paths, ball.id, zones, 'T');
       const med = seps[Math.floor(seps.length / 2)];
       expect(Math.abs(med - NOMINAL)).toBeLessThanOrEqual(10);
       const inBand = seps.filter((x) => Math.abs(x - NOMINAL) <= 15).length;
@@ -203,9 +197,10 @@ describe('O17 — the crossed family holds ~65° ON SCREEN, on both ball fixture
   });
 
   test('the form shadow crosses at the same angle as the terminator (one frame, one rule)', () => {
-    const { np, paths } = build(46);
-    const zones = zoneGrid(np, 46);
-    const F = separations(paths, 'ball', zones, 'F');
+    const [SMALL] = BALL_LADDER;
+    const { np, paths } = build(SMALL);
+    const zones = zoneGrid(np, SMALL.params.radius);
+    const F = separations(paths, SMALL.id, zones, 'F');
     expect(F.length).toBeGreaterThan(10);
     const med = F[Math.floor(F.length / 2)];
     expect(Math.abs(med - NOMINAL)).toBeLessThanOrEqual(10);

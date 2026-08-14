@@ -29,20 +29,16 @@
  * and 54 % on the 92 mm ball. Both assertions below fail there.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const FIX = require('../fixtures/scene3d-shadow-anatomy');
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
-const BOUNDS = {
-  width: 320, height: 220, m: 10, dW: 300, dH: 200,
-  penWidth: 0.3, truncate: 4, fastPreview: false, preview3dQuality: 'high',
-};
-const SEED = 0;
-const CAMERA = { projection: 'orthographic', yaw: -30, pitch: 32, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
-const SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 28, intensity: 1, castShadows: true };
-const TONE4 = {
-  enabled: true, bands: 4, thresholds: [0.25, 0.5, 0.75], ladder: [0.15, 0.4, 0.65, 0.9],
-  specular: { enabled: true, size: 1 },
-};
+// ROUND 10 — nothing restated. The protected limb taper is quoted off this file,
+// so its rig must be the rendered one by construction, not by coincidence.
+const {
+  BOUNDS, SEED, CAMERA, SUN, BALL_LADDER, toneBands, styleTable,
+} = FIX;
+const TONE4 = toneBands(4);
 
 const PATCH = 4; const BINS = 36; const MIN_SEP = 20; const MIN_INK = 6; const SECOND_REL = 0.25;
 const LIMB_NZ = 0.30;   // outer ~5 % of the projected radius
@@ -51,28 +47,21 @@ let runtime; let V;
 beforeAll(async () => { runtime = await loadVecturaRuntime(); V = runtime.window.Vectura; });
 afterAll(() => { if (runtime) runtime.cleanup(); });
 
-const build = (radius) => {
+const build = (ball) => {
   const p = clone(V.ALGO_DEFAULTS.scene3d);
   p.seed = SEED;
   p.camera = clone(CAMERA);
   p.ground = { enabled: false };
   p.backdrop = { enabled: false };
-  p.objects = [{
-    id: 'ball', name: 'Ball', primitive: 'sphere', params: { radius, detail: 26 },
-    transform: {
-      x: 0, y: radius, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1,
-    },
-    visibility: 'solid',
-  }];
+  p.objects = [clone(ball)];
   p.lights = [clone(SUN)];
   p.tone = clone(TONE4);
-  const base = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 85 } };
-  p.styleTable = { scene: clone(base), byObject: { ball: clone(base) }, byFace: {} };
+  p.styleTable = styleTable(p.objects);
   const np = V.Scene3D.Params.normalizeParams(p);
   const paths = V.AlgorithmRegistry.scene3d.generate(
     V.Scene3D.Params.collectSceneParams(np, []), new V.SeededRNG(SEED), new V.SimpleNoise(SEED), BOUNDS,
   ) || [];
-  return { np, paths, radius };
+  return { np, paths, radius: ball.params.radius, id: ball.id };
 };
 
 // Window → { zone, nz }, sampled analytically off the chart.
@@ -160,20 +149,22 @@ const crossedFraction = (info, two, pred) => {
 };
 
 describe("O3 — the form shadow's cross does not run to the contour", () => {
-  [46, 92].forEach((radius) => {
+  // The two-fixture ladder, off the fixture module — never restated as [46, 92].
+  BALL_LADDER.forEach((ball) => {
+    const radius = ball.params.radius;
     test(`r=${radius}: the outermost band of the form shadow is a single family`, () => {
-      const b = build(radius);
+      const b = build(ball);
       const info = windowInfo(b);
-      const two = twoFamilyGrid(b.paths, 'ball');
+      const two = twoFamilyGrid(b.paths, b.id);
       const limb = crossedFraction(info, two, (nz) => nz < LIMB_NZ);
       expect(limb.n).toBeGreaterThan(8);
       expect(limb.frac).toBeLessThan(0.15);
     });
 
     test(`r=${radius}: the cross is still there away from the contour (not simply deleted)`, () => {
-      const b = build(radius);
+      const b = build(ball);
       const info = windowInfo(b);
-      const two = twoFamilyGrid(b.paths, 'ball');
+      const two = twoFamilyGrid(b.paths, b.id);
       const limb = crossedFraction(info, two, (nz) => nz < LIMB_NZ);
       const inner = crossedFraction(info, two, (nz) => nz >= 0.55);
       expect(inner.n).toBeGreaterThan(8);

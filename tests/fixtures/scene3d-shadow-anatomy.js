@@ -2,24 +2,39 @@
  * THE SHADOW-ANATOMY FIXTURE — ONE DEFINITION, IN THE REPOSITORY.
  *
  * Every camera, light, object, tone table and named view the shadow-anatomy
- * workstream measures lives here and nowhere else. Both consumers import it:
+ * workstream measures lives here and nowhere else. Its consumers import it:
  *
- *   - the offline view harness (`scratchpad/shadowanatomy/render.js`), which
- *     renders SVG/PNG and drives the measurement probes, and
- *   - `tests/unit/scene3d-*.test.js`, which pin the protected numbers.
+ *   - the offline view harness (`scratchpad/shadowanatomy/render.js`) and the
+ *     measurement scripts under `scripts/shadow-anatomy/`, which render SVG/PNG
+ *     and drive the probes; and
+ *   - the shadow-anatomy UNIT HARNESSES, which pin the protected numbers. That
+ *     set is named explicitly — and enforced — in
+ *     `tests/unit/scene3d-fixture-single-source.test.js`. It is NOT every
+ *     `tests/unit/scene3d-*.test.js`: most scene3d unit tests build small scenes
+ *     of their own that have nothing to do with this workstream, and pulling
+ *     them under the rule would make it noise. The rule binds the harnesses that
+ *     measure a shadow-anatomy criterion.
+ *
+ * ROUND 10: the header used to claim `tests/unit/scene3d-*.test.js` wholesale
+ * when only three of the nine shadow-anatomy harnesses actually imported this
+ * file. Six restated their own camera, sun, tone ladder and objects, and one of
+ * the six — `scene3d-shadow-anatomy.test.js`, the workstream's namesake — had
+ * already DRIFTED to `pitch: 22 / elevation: 45`, so it measured a camera and a
+ * sun no rendered view uses. All six now import, and the guard test above fails
+ * if a new one restates.
  *
  * WHY IT IS HERE AND NOT IN THE SCRATCHPAD.
  *
  * "A harness reads its fixture from the fixture module and never restates one"
- * has been broken four times in this workstream, each time producing a silent
+ * has been broken five times in this workstream, each time producing a silent
  * scoring corruption: a hardcoded camera in Round 4; `[BALL]` measured against a
  * rendered `[BALL, POST]` in Round 6; a hardcoded `2 * 46` ball radius inside
- * the faceted instrument in Round 7; and in Round 8 the cast-shadow test
- * restating the A-view because `tests/` could not import from a scratch
- * directory. The Round 8 review named that last one the round's standing risk:
- * the restated test is now the SOLE enforcement of the protected cast shadow, so
- * if `render.js`'s A-view ever moved, the test would keep passing on a scene
- * nobody renders.
+ * the faceted instrument in Round 7; in Round 8 the cast-shadow test restating
+ * the A-view because `tests/` could not import from a scratch directory; and in
+ * Round 9 the ladder test. The Round 8 review named the fourth one the round's
+ * standing risk: the restated test is now the SOLE enforcement of the protected
+ * cast shadow, so if `render.js`'s A-view ever moved, the test would keep
+ * passing on a scene nobody renders.
  *
  * It is also durability. The scratchpad lives under `/private/tmp`, which is
  * pruned between sessions — that is how the design spec and the Round 2-5
@@ -352,9 +367,17 @@ const buildPaths = (V, viewId, bounds) => {
 // wrong for every A-view.
 const objectsOf = (V, viewId) => buildParams(V, viewId).objects.map((o) => ({ ...o }));
 
+// THE TWO-FIXTURE BALL LADDER (ruling iii, R7 protected item 4): "a number that
+// survives one fixture is an anecdote". The 46 mm ball and its 92 mm twin are the
+// pair every curved criterion is scored on, so the PAIR is exported rather than
+// the radii — a harness that iterates this list cannot restate a radius, and it
+// cannot silently score only one of the two.
+const BALL_LADDER = [BALL, BIGBALL];
+
 module.exports = {
   BOUNDS, SEED, CAMERA, CAMERA_ORBIT, SUN, SUN45, SUN2,
   BALL, POST, CUBE, CUBE2, LOWPOLY, BIGLP, BIGBALL, CAPSULE, JAYBOX, AOBJ,
+  BALL_LADDER,
   DENSITY_STOPS, toneBands, styleTable, scene, at, shadowLayers, trio,
   VIEWS, VIEW_BY_ID, buildParams, buildPaths, objectsOf,
 };
