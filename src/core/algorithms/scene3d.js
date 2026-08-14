@@ -553,30 +553,20 @@
       // the §5.5.3 / I27 parity contract stated properly — a cube and a sphere
       // lit alike land in the same zones — instead of two rules that disagreed
       // about where the dark side starts.
-      const TERMINATOR_SMOOTH_DEG = 40;
       // Where `shadowSensitivity` starts staging the dark side. Half-lit is the
       // curved fill's own split point, and it is deliberately NOT the terminator
       // (which lives at band 0): the stages grade everything below mid-light.
       const SHADOW_STAGE_TH = 0.5;
+      // ROUND 9 — the gate itself now lives in `Regions`, beside `formZone`, so
+      // the renderer and the shadow-anatomy instrument decide it with the same
+      // code and the same threshold instead of two edge maps that happen to
+      // agree. Cached per record; every face asks for it.
       const smoothCache = new Map();
       const smoothShadedFaces = (record) => {
         if (smoothCache.has(record)) return smoothCache.get(record);
-        const set = new Set();
-        const faces = (record && record.faces) || [];
-        const edges = (record && record.edges) || [];
-        if (faces.length && edges.length) {
-          const cosSmooth = Math.cos(TERMINATOR_SMOOTH_DEG * Math.PI / 180);
-          edges.forEach((edge) => {
-            const idx = edge && edge.faces;
-            if (!idx || idx.length !== 2) return;
-            const [i, j] = idx;
-            const fi = faces[i]; const fj = faces[j];
-            if (!fi || !fj || !fi.normalWorld || !fj.normalWorld) return;
-            const d = clamp(dot(normalize(fi.normalWorld), normalize(fj.normalWorld)), -1, 1);
-            if (d < cosSmooth) return;                  // hard edge: an edge, not a terminator
-            set.add(fi); set.add(fj);
-          });
-        }
+        const set = (Regions && typeof Regions.smoothShadedFaces === 'function')
+          ? Regions.smoothShadedFaces((record && record.faces) || [], (record && record.edges) || [])
+          : new Set();
         smoothCache.set(record, set);
         return set;
       };

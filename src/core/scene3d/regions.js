@@ -577,6 +577,47 @@
   // +65°, never +90°: an orthogonal second family reads as a square grid / wire
   // mesh and beats against the raster (§2.3).
   const CROSS_OBJ_DEG = 65;
+
+  // ── THE DIHEDRAL GATE (§5.5.2, O22) — ONE DEFINITION ───────────────────────
+  //
+  // A facet is eligible for a TERMINATOR only inside a smooth-shaded region:
+  // two faces sharing an edge whose normals are within TERMINATOR_SMOOTH_DEG are
+  // smooth-shaded, and a harder edge is an edge, not a terminator. It is what
+  // stops a cube growing a bogus core shadow.
+  //
+  // It lives HERE, beside `formZone`, because both the renderer and the
+  // shadow-anatomy instrument must decide it the same way. Round 8's instrument
+  // mirrored the threshold with the comment "scene3d.js:556 — mirrored, not
+  // guessed", and built its own edge map over `face.indices` while the renderer
+  // built one from `record.edges`. Honest, and inert on those fixtures — but a
+  // mirrored constant is a restated fixture with extra steps, and two edge maps
+  // that agree today are not the same code path. Both now call this.
+  const TERMINATOR_SMOOTH_DEG = 40;
+  const smoothShadedFaces = (faces, edges, degrees) => {
+    const set = new Set();
+    const F = faces || [];
+    const E = edges || [];
+    if (!F.length || !E.length) return set;
+    const deg = Number.isFinite(degrees) ? degrees : TERMINATOR_SMOOTH_DEG;
+    const cosSmooth = Math.cos((deg * Math.PI) / 180);
+    const norm = (n) => {
+      if (!n) return null;
+      const L = Math.hypot(n.x, n.y, n.z);
+      return L > 1e-9 ? { x: n.x / L, y: n.y / L, z: n.z / L } : null;
+    };
+    E.forEach((edge) => {
+      const idx = edge && edge.faces;
+      if (!idx || idx.length !== 2) return;
+      const fi = F[idx[0]]; const fj = F[idx[1]];
+      if (!fi || !fj) return;
+      const a = norm(fi.normalWorld); const b = norm(fj.normalWorld);
+      if (!a || !b) return;
+      const d = Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y + a.z * b.z));
+      if (d < cosSmooth) return;                  // hard edge: an edge, not a terminator
+      set.add(fi); set.add(fj);
+    });
+    return set;
+  };
   //
   // ROUND 4 — the form shadow gets its OWN value, via a family rather than via
   // coverage. Measured, F came out at 0.199 against M's 0.213: the form shadow
@@ -687,6 +728,8 @@
     shadowStage,
     FORM_ZONES,
     CROSS_OBJ_DEG,
+    TERMINATOR_SMOOTH_DEG,
+    smoothShadedFaces,
     TERMINATOR_NL,
     REFLECT_TH,
     signedLambert,

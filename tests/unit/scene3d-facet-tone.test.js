@@ -112,6 +112,22 @@ describe('faceted tone — cube face ordering (O20) and the low-poly terminator 
     ) || [];
   };
 
+  // The assembled record (faces + edge adjacency) for one object — what the
+  // renderer's dihedral gate actually reads.
+  const built = (objects, objectId) => {
+    const p = clone(V.ALGO_DEFAULTS.scene3d);
+    p.seed = SEED;
+    p.camera = clone(CAMERA);
+    p.ground = { enabled: false };
+    p.backdrop = { enabled: false };
+    p.objects = clone(objects);
+    p.lights = [clone(SUN)];
+    p.tone = clone(TONE[4]);
+    const np = Params.normalizeParams(p);
+    const scn = V.Scene3D.Scene.assembleScene(np, BOUNDS);
+    return (scn.objects || []).find((o) => o.id === objectId);
+  };
+
   // Per visible face: fill ink, projected area, world normal, and the fill's
   // own DIRECTION SPECTRUM (ink length bucketed by segment angle mod 180).
   const facesOf = (paths, objectId) => {
@@ -362,6 +378,29 @@ describe('faceted tone — cube face ordering (O20) and the low-poly terminator 
       expect(ratio(F)).toBeLessThan(0.75);
       expect(ratio(F)).toBeGreaterThan(0.15);
       expect(ratio(T)).toBeGreaterThan(ratio(F) * 1.5);
+    });
+
+    // ROUND 9 — the gate is exported and SHARED, not mirrored.
+    //
+    // The shadow-anatomy instrument used to copy `TERMINATOR_SMOOTH_DEG = 40`
+    // with the comment "scene3d.js:556 — mirrored, not guessed", and built its
+    // own edge map over `face.indices` while the renderer built one from
+    // `record.edges`. Two code paths that agree on today's fixtures are not one
+    // code path: change the renderer's threshold and the instrument diverges
+    // while still printing a number. `Regions.smoothShadedFaces` is now the only
+    // definition, and this is what stops it drifting from the behaviour above.
+    it('the dihedral gate is one exported predicate: a cube has none, a geodesic is all of it (O22)', () => {
+      expect(Regions.TERMINATOR_SMOOTH_DEG).toBe(40);
+      const cube = built([CUBE], 'cube');
+      const lp = built([LOWPOLY], 'lowpoly');
+      const gate = (rec) => Regions.smoothShadedFaces(rec.faces, rec.edges).size;
+      expect(gate(cube)).toBe(0);
+      expect(gate(lp)).toBe(lp.faces.length);
+      expect(lp.faces.length).toBeGreaterThan(0);
+      // and the threshold is live: widen it past a cube's 90 deg dihedral and
+      // every face becomes smooth-shaded, which is what proves the number is
+      // read rather than incidental.
+      expect(Regions.smoothShadedFaces(cube.faces, cube.edges, 95).size).toBe(cube.faces.length);
     });
 
     it('a CUBE still grows no core shadow — an edge is not a terminator (O22)', () => {
