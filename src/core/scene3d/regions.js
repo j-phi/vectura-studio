@@ -590,11 +590,37 @@
   // the terminator already makes, and it decouples F's value from how tightly
   // the carrier happens to run at the limb. T keeps a clear margin above it.
   // M comes down a little to open the M→F step from the other side.
+  // ROUND 8 — F was rebuilt in Round 4 because it was LIGHTER than the halftone;
+  // it then overshot. Round 7 measured F/M at 2.02–2.23 against a 1.45 target,
+  // and the cost was visible rather than numerical: F ran as dark as it could
+  // everywhere, so the terminator stopped separating as a band and the ball read
+  // as one woven mesh from limb to terminator (O3 — "the dip is visible as a
+  // shape").
+  //
+  // WHERE THE NUMBER COMES FROM, so the next round does not have to guess. Both
+  // F and M saturate their composed ceilings (measured at ~90 % of each), and
+  // that ceiling is `TOTAL_DARK_CEIL x weight / DARKEST_WEIGHT` with
+  // `weight = coverage + cross`. So the ratio the drawing lands on is very
+  // nearly the ratio of the weights:
+  //
+  //     F/M  ~=  (F.coverage + F.cross) / M.coverage
+  //
+  // At 1.40 / 0.62 that predicts 2.26 and the drawing measured 2.25 — so the
+  // model is right and the lever is F's TOTAL weight, not either term alone.
+  // For F/M in [1.45, 1.70] with M untouched, F's weight must sit in
+  // [0.90, 1.05]. 0.82 + 0.20 = 1.02 predicts 1.65.
+  //
+  // The split keeps a real crossed family rather than spending the whole cut on
+  // it: F's cross is what gives the form shadow a value that does not depend on
+  // how tightly the carrier happens to run at the limb (the Round 4 finding), and
+  // O17 is scored on F as well as T. What comes off instead is F's base coverage,
+  // which is the ladder's own mechanism and the one term that was pinned at 1.00
+  // for no reason other than that it had nowhere else to go.
   const FORM_INK = {
     H: { coverage: 0.00, cross: 0, duty: 1 },
     L: { coverage: 0.42, cross: 0, duty: 1 },
     M: { coverage: 0.62, cross: 0, duty: 1 },
-    F: { coverage: 1.00, cross: 0.40, duty: 1 },
+    F: { coverage: 0.82, cross: 0.20, duty: 1 },
     T: { coverage: 1.00, cross: 1.00, duty: 1 },
     R: { coverage: 0.45, cross: 0, duty: 0.7 },
   };

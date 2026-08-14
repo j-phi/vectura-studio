@@ -320,9 +320,38 @@
     // spacing is exactly 6 × pen, so the floor is stated in the spec's units.
     let litFloorCov = LIT_FLOOR; // assigned once the master pitch is known, below
     let floorPitch = 0;          // ditto: the plot-safe local pitch (C15)
-    const zoneCoverage = (zone, isCross, isDensityCross) => {
+    // ── THE FORM SHADOW'S CROSS COMES OFF THE SILHOUETTE (§5.1, O3) ───────────
+    // §5.1 gives F a single family whose rulings compress toward the limb; the
+    // crossed family belongs to the terminator and F borrows a half-weight share
+    // of it so it can hold a value of its own. What F must not do is carry that
+    // second direction out to the contour. Family A already crowds hard there —
+    // a sphere's meridians converge AT the silhouette — so a second direction on
+    // top of it turns the outer rim into a woven mesh, and then the terminator
+    // stops reading as a band, which is O3's own clause. Measured before this:
+    // 46 % (r 46) and 54 % (r 92) of the outermost F windows carried two
+    // families.
+    // `nz` is the camera-space normal's z: 1 facing the camera, exactly 0 ON the
+    // silhouette. So the taper is stated in the geometry's own terms and needs no
+    // radius, no bbox and no projection assumption. Smoothstepped, so there is no
+    // edge where it engages — an abrupt one would be a contour line, which is the
+    // artefact O26 forbids.
+    const LIMB_CROSS_LO = 0.30;
+    const LIMB_CROSS_HI = 0.65;
+    const limbCrossTaper = (smp) => {
+      if (!smp || !Number.isFinite(smp.nz)) return 1;
+      const u = clamp((Math.abs(smp.nz) - LIMB_CROSS_LO) / (LIMB_CROSS_HI - LIMB_CROSS_LO), 0, 1);
+      return u * u * (3 - 2 * u);
+    };
+    // How much of `zone`'s crossed family actually lands on this sample. Only F
+    // tapers: T's cross is the terminator's own band and must stay whole, and no
+    // other zone crosses at all.
+    const crossWeightAt = (zone, smp) => {
+      const c = clamp(Regions.formInk(zone).cross, 0, 1);
+      return zone === 'F' ? c * limbCrossTaper(smp) : c;
+    };
+    const zoneCoverage = (zone, isCross, isDensityCross, smp) => {
       const ink = Regions.formInk(zone);
-      if (isCross) return clamp(ink.cross, 0, 1);
+      if (isCross) return clamp(crossWeightAt(zone, smp), 0, 1);
       if (isDensityCross) {
         // §0's craft rule made operational: Density past the plot floor spends
         // itself on a second DIRECTION, never on a tighter pitch. Weighted by the
@@ -639,7 +668,7 @@
             const zone = zoneOf(smp);
             if (zoneGate && zone !== zoneGate) { flush(); flushHL(); continue; }
             const cov = zone
-              ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true)
+              ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true, smp)
               : coverageForSample(smp.I);
             // §0, restated as arithmetic, and C15: past ~1.2 x pen width you do
             // not get darker by ruling closer — you get a flooded blob and a wet
@@ -720,7 +749,9 @@
               // for. The Density overflow is a THIRD direction and has to be in
               // the denominator or it spends budget nobody accounted for.
               const wBase = Math.max(0, ink.coverage);
-              const wCross = Math.max(0, ink.cross);
+              // The cross's weight is what will ACTUALLY land here, tapered and
+              // all — a family that is not drawn must not hold budget.
+              const wCross = Math.max(0, crossWeightAt(zone, smp));
               const wOver = densityOverflow > 0 ? Math.max(0, ink.coverage * densityOverflow) : 0;
               const W = wBase + wCross + wOver;
               let share = 1;
