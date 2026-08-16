@@ -462,6 +462,49 @@
     return (table && table[primitive]) ? { ...table[primitive] } : null;
   };
 
+  // Line-finish creation seed — a NEW object with a rounded contour is born with
+  // Border Curves (`params.curves`) and Fill Curves (`style.params.fillCurves`)
+  // ON. Both are otherwise opt-in, and both resolve "absent ⇒ off" in
+  // _applySceneCurveFinish; those fallbacks stay put, because they are how every
+  // already-saved document is read. Materializing the default at CREATION is
+  // what makes "only newly created objects are affected" true by construction —
+  // no sceneVersion migration, and a `.vectura` that never wrote these keys
+  // still renders byte-identically.
+  //
+  // `Scene3D.Params.hasRoundedContour` is the one gate (CURVED_FILL_PRIMITIVES
+  // minus the flat-faced charts), read live so the engine and the panel can
+  // never disagree about what a rounded shape is.
+  //
+  // INVARIANT: the two keys exist exactly while the primitive is rounded.
+  //   faceted → rounded   seed both ON   (a fresh add, or a swap that gains a
+  //                                       rounded contour)
+  //   rounded → faceted   REMOVE both    (a cube must never be fitted; on a
+  //                                       STANDALONE object3d leaf a stale
+  //                                       `curves:true` would also drive the
+  //                                       generic layer curve stage)
+  //   rounded → rounded   LEAVE ALONE    (an explicit user Off survives the
+  //                                       swap — the seed is a default, not a
+  //                                       re-imposition)
+  // `prevPrimitive` is undefined on a fresh create, which reads as "was not
+  // rounded" and therefore seeds.
+  const seedLineFinishDefaults = (layerParams, primitive, prevPrimitive) => {
+    const P = sceneParams();
+    if (!P || typeof P.hasRoundedContour !== 'function' || !layerParams) return;
+    const now = P.hasRoundedContour(primitive);
+    const before = P.hasRoundedContour(prevPrimitive);
+    if (now === before) return;
+    const style = layerParams.style && typeof layerParams.style === 'object' ? layerParams.style : null;
+    const styleParams = style && style.params && typeof style.params === 'object' ? style.params : null;
+    if (now) {
+      const seed = P.LINE_FINISH_CREATE_DEFAULTS || { curves: true, fillCurves: true };
+      layerParams.curves = seed.curves;
+      if (styleParams) styleParams.fillCurves = seed.fillCurves;
+      return;
+    }
+    delete layerParams.curves;
+    if (styleParams) delete styleParams.fillCurves;
+  };
+
   // 3D model import — the on-ground size a freshly imported OBJ/STL mesh gets.
   // The mesh is unit-normalised (longest half-extent = 1) and `radius` scales it
   // back up; 40 puts it in the same size class as the default `box` primitive
@@ -1045,6 +1088,12 @@
           },
         };
       }
+      // A LIVE topoform conversion can land on a rounded chart primitive
+      // (ellipsoid / torus / capsule / …), and that object is brand new, so it
+      // gets the same line-finish seed the add shelf gives. Runs AFTER the style
+      // is assigned above — the seed writes into `style.params`. A baked mesh
+      // converts to `solid`, which is faceted and gets nothing.
+      seedLineFinishDefaults(child.params, child.params.primitive);
       if (src.penId) child.penId = src.penId;
       if (typeof src.color === 'string') child.color = src.color;
       if (Number.isFinite(src.strokeWidth)) child.strokeWidth = src.strokeWidth;
@@ -1393,6 +1442,9 @@
       const prim = named ? primitive : 'box';
       layer.params.primitive = prim;
       layer.params.params = named || objectPrimitiveDefaults('box') || {};
+      // A rounded contour is born with Border + Fill Curves on (see
+      // seedLineFinishDefaults). A box / plane / polyhedron gets neither key.
+      seedLineFinishDefaults(layer.params, prim);
       layer.parentId = sceneGroupId;
       // A boolean-group parent already implies an operand — seed the role.
       if (parent.type === 'booleanGroup3d') this.applyObject3dBooleanRole(layer, null, parent);
@@ -1429,6 +1481,12 @@
       if (!next) return false;
       params.primitive = primitive;
       params.params = next;
+      // Swapping IS how a user changes shape, so the line-finish default has to
+      // land here too — a default that applies on add but not on swap is a half
+      // fix. Only a change in ROUNDEDNESS moves the keys, so a rounded → rounded
+      // swap preserves whatever the user chose (matching how this method
+      // preserves the transform, style, pen, visibility and role).
+      seedLineFinishDefaults(params, primitive, prevPrim);
       if (opts.recompute !== false) this.computeAllDisplayGeometry();
       return true;
     }
