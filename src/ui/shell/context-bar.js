@@ -1639,6 +1639,25 @@
       onChange: (v) => { setObj('visibility', v); rebuild(); },
     });
     if (!xrayOn) { flyNote(fly, C.disabledHint); return; }
+    // Back-face ink is FILL ink. scene3d.js emits the far-surface family only
+    // for a SURFACE-FILL mapper (SURFACE_FILL = hatch / crosshatch / contour /
+    // spiral / stipple) on BOTH the faceted and the curved path — the faceted
+    // block bails on `!SURFACE_FILL.has(style.mapper)` and the curved block only
+    // tags `line.back` inside SurfaceFill. Under None / Wireframe / Contour
+    // slice there is no surface to see through, and x-ray output is byte-
+    // identical to solid (measured on box + capsule).
+    //
+    // That is what Jay hit (2026-08-16): a WIREFRAME capsule with X-ray on,
+    // Back faces On, density 0.40, Dashed, Object pen — five controls set, no
+    // back-face ink possible. The four rows are removed and the reason is
+    // stated, exactly as Shadow ▸ Angle is replaced by a note under Follow
+    // light. The Solid | X-ray segment above stays: `visibility` is a real
+    // persisted object field that takes effect the moment a fill is chosen.
+    const fillMappers = (FLY().style && FLY().style.fillMappers) || [];
+    const isFill = (m) => fillMappers.indexOf(m) !== -1;
+    // Multi-select: keep the rows if ANY selected object can render back faces —
+    // the write reaches all of them and unifies on rebuild.
+    if (!sc.ids.some((id) => isFill(rs(id).mapper))) { flyNote(fly, C.needsFillHint); return; }
     flyMixedSeg(flyRow(fly, C.backFaces.label), {
       options: C.onOff, value: params.xrayBackFaces !== false ? 'on' : 'off', ariaLabel: C.backFaces.aria,
       mixed: sceneAgree(sc, (id) => ((rs(id).params || {}).xrayBackFaces !== false ? 'on' : 'off')).mixed,

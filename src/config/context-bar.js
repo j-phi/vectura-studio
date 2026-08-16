@@ -287,6 +287,12 @@
         ],
         onOff: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
         disabledHint: 'Set X-ray on to edit',
+        // X-ray shows the FAR SURFACE through the near one, so it needs a
+        // surface fill to show. scene3d.js emits the back-face family only for a
+        // fill mapper (style.fillMappers above); under None / Wireframe the
+        // x-ray output is identical to solid, so the back-face rows are removed
+        // and this says why instead of leaving four dead controls on screen.
+        needsFillHint: 'Back faces need a surface fill — set Style ▸ Fill.',
       },
     },
 

@@ -13299,6 +13299,16 @@ body.mobile-layout .hud-bar {
   text-transform: uppercase;
   color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
 }
+/* X-ray group note — shown in place of the back-face rows when the object's
+   mapper renders no surface fill (None / Wireframe / Contour slice), where
+   x-ray output is identical to solid. Rows are removed, not disabled. */
+.vs3-xray-note {
+  margin: 4px 0 2px;
+  font-size: 10px;
+  line-height: 1.4;
+  font-style: italic;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+}
 /* Edge Styles (C-06) — per-edge-class sub-label between the section header and
    that class's Pen / Weight / Dash rows. Lighter than the section header. */
 .vs3-edge-cls {

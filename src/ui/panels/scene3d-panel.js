@@ -3636,7 +3636,28 @@
       // the far surface shows through: back-face fills (THE FIX), their density /
       // line / pen, the dashed hidden edges, and the near-surface fade.
       const xrayObj = getObject(scope.target.objectId);
-      if (xrayObj && xrayObj.visibility === 'xray') {
+      // X-ray shows the FAR SURFACE through the near one, so every control in
+      // this group is FILL ink: scene3d.js emits the back-face family only for a
+      // SURFACE-FILL mapper (the faceted path bails on
+      // `!SURFACE_FILL.has(style.mapper)`; the curved path only tags `line.back`
+      // inside SurfaceFill). Under None / Wireframe / Contour slice the object
+      // has no surface to see through and x-ray output is byte-identical to
+      // solid — the six rows below would all be dead. Show the header and say
+      // why instead, mirroring the ctxbar X-ray flyout's needsFillHint and
+      // Shadow ▸ Angle under Follow light. Rows removed, never disabled.
+      const xrayOnHere = Boolean(xrayObj && xrayObj.visibility === 'xray');
+      const xrayHasFill = FILL_MAPPERS.has(resolved.mapper);
+      if (xrayOnHere && !xrayHasFill) {
+        const hdr = document.createElement('div');
+        hdr.className = 'vs3-xray-hdr';
+        hdr.textContent = 'X-ray';
+        styleHost.appendChild(hdr);
+        const note = document.createElement('div');
+        note.className = 'vs3-xray-note';
+        note.textContent = 'Back faces need a surface fill — set Fill above.';
+        styleHost.appendChild(note);
+      }
+      if (xrayOnHere && xrayHasFill) {
         const sp = () => clone(resolved.params || {});
         const rp = resolved.params || {};
 

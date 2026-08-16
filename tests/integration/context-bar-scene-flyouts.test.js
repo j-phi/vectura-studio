@@ -155,6 +155,14 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
 
   test('X-ray ▾ on/off flips object visibility', async () => {
     const scene = addSelectScene();
+    // The back-face rows are FILL controls and are now shown only for a
+    // surface-fill mapper — under this fixture's default 'none' the object has
+    // no surface to see through and x-ray output is identical to solid, so the
+    // rows are removed and a note explains why (scene-xray-reachable.test.js
+    // owns that case). Give the object a fill so this test keeps asserting what
+    // it was written to assert: the rows appear the moment x-ray goes on.
+    app.renderer.setSceneObjectStyle(scene.id, ['obj-1'], { mapper: 'hatch' });
+    CB.restoreState();
     pillByLabel('X-ray').click();
     const fly = openFly();
     rowCtl(fly, 'X-ray').querySelector('.seg-opt[data-value="xray"]').click();
