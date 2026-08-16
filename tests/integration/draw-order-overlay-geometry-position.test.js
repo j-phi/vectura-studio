@@ -15,7 +15,7 @@
  * on ORDER (sequence of paths) and none asserted on POSITION (where the ink
  * lands). This file closes that hole.
  *
- * Two independent guards:
+ * Three independent guards:
  *
  *   1. IDENTITY. Every overlay item's `path` must be a member of its own
  *      `item.layer`'s renderable set. The overlay traces items with
@@ -25,13 +25,18 @@
  *      as another (e.g. a scene GROUP's composed scenePaths attributed to a
  *      child object3d layer).
  *
- *   2. PIXEL-SPACE SUBSET. Capture every coordinate the renderer hands to the
- *      2D context during a real `renderer.draw()` with the overlay OFF, then
- *      again with it ON. The overlay may only re-trace coordinates the base
- *      draw already emitted — the set difference must be EMPTY. An offset ghost
- *      or a stray corner segment introduces coordinates that were never in the
- *      base draw, so this catches misplacement no matter which code path
- *      introduced it.
+ *   2. ON-INK. Capture every coordinate the renderer hands to the 2D context
+ *      during a real `renderer.draw()` with the overlay OFF, then again with it
+ *      ON. Every overlay vertex must land within TOL_MM of the densely-sampled
+ *      base stroke. Exact coordinate equality is NOT the contract: the overlay
+ *      splits paths into gradient chunks and re-smooths them, so its vertices
+ *      fall legitimately anywhere along the drawn line. Stray segments in an
+ *      otherwise empty corner are what this catches.
+ *
+ *   3. EXTENT. Enabling the overlay must not grow the inked bounding box in any
+ *      direction. Guard 2 alone is not enough — a dense hatch field absorbs a
+ *      translated ghost point-for-point, because a shifted line lands on its
+ *      neighbour. A bodily displacement always moves an edge of the ink.
  *
  * Also pinned here: a 3D SCENE group contributes no preview items at all.
  * Scenes have no draw order (engine.optimizeLayers filters `!layer.isGroup`, so
