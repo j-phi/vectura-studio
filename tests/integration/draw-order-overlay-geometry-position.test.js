@@ -38,12 +38,13 @@
  *      translated ghost point-for-point, because a shifted line lands on its
  *      neighbour. A bodily displacement always moves an edge of the ink.
  *
- * Also pinned here: a 3D SCENE group contributes no preview items at all.
- * Scenes have no draw order (engine.optimizeLayers filters `!layer.isGroup`, so
- * no group path ever carries meta.lineSortOrder), and colouring composition
- * order as if it were plot order is a lie. That is a documented, separately
- * queued gap — this test freezes the honest behaviour so nobody "fixes" it by
- * dropping group geometry into the overlay in the wrong space again.
+ * Also pinned here: the same three guards over a 3D SCENE document. A scene
+ * group now DOES carry a draw order — its composed ink is an optimization
+ * target, so `scenePaths` are sorted and the overlay colours them — which is
+ * exactly the configuration the reverted attempt got wrong. The scene block
+ * below therefore runs identity, on-ink and extent over group geometry: the
+ * overlay must colour the scene, and every coloured line must sit on the
+ * capsule the canvas actually drew.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -365,49 +366,70 @@ describe('Draw Order: the overlay sits exactly on the drawn geometry', () => {
       renderer.drawProgress = 1;
     });
 
-    test('the composed scene ink lives on the GROUP and carries no draw order', () => {
+    test('the composed scene ink lives on the GROUP and carries a draw order', () => {
       const group = engine.getLayerById(groupId);
       expect(Array.isArray(group.scenePaths)).toBe(true);
       expect(group.scenePaths.length).toBeGreaterThan(0);
-      // engine.optimizeLayers filters `!layer.isGroup`, so a group never gets
-      // optimizedPaths and no scene path ever carries meta.lineSortOrder.
-      expect(group.optimizedPaths == null || group.optimizedPaths.length === 0).toBe(true);
-      const withOrder = group.scenePaths.filter(
+      // The group is an optimization target now, so its composed pass is sorted
+      // and every emitted path knows where it sits in the plot.
+      expect(Array.isArray(group.optimizedPaths)).toBe(true);
+      expect(group.optimizedPaths.length).toBeGreaterThan(0);
+      const withOrder = group.optimizedPaths.filter(
         (p) => p && p.meta && Number.isFinite(p.meta.lineSortOrder)
       );
-      expect(withOrder.length).toBe(0);
+      expect(withOrder.length).toBe(group.optimizedPaths.length);
     });
 
     test('the reveal still times the scene ink (playback never flashes it in whole)', () => {
       const records = renderer.buildPlotRecords();
       const group = engine.getLayerById(groupId);
+      const targetIds = renderer.getOptimizationTargetIds();
+      const drawn = engine.getRenderablePaths(group, { useOptimized: targetIds.has(groupId) });
       const groupRecords = records.filter((r) => r.layerId === groupId);
       // The base draw draws the group's composed paths, so the plot records —
       // which feed the playback reveal — must cover them.
-      expect(groupRecords.length).toBe(group.scenePaths.length);
+      expect(groupRecords.length).toBe(drawn.length);
       groupRecords.forEach((r) => expect(r.layer).toBe(group));
     });
 
-    test('the colour overlay claims no scene geometry (scenes have no draw order)', () => {
+    test('every overlay item belongs to the layer it is drawn as', () => {
+      const targetIds = renderer.getOptimizationTargetIds();
       const { items } = renderer.getDrawOrderPreviewItems();
-      // REGRESSION GUARD: the reverted attempt put the group's composed
-      // scenePaths into the preview. A group is not an optimization target, so
-      // the honest preview here is empty — and, critically, no overlay item may
-      // ever be attributed to a group.
-      expect(items.some((it) => it.layer.isGroup)).toBe(false);
-      expect(items.length).toBe(0);
+      // The overlay must actually colour the scene — an empty preview would
+      // make the two guards below vacuous.
+      expect(items.length).toBeGreaterThan(10);
+      expect(items.every((it) => it.layer.id === groupId)).toBe(true);
+      const owned = new Map();
+      items.forEach(({ layer, path }) => {
+        if (!owned.has(layer.id)) {
+          owned.set(layer.id, new Set(
+            engine.getRenderablePaths(layer, { useOptimized: targetIds.has(layer.id) }) || []
+          ));
+        }
+        // REGRESSION GUARD: the reverted attempt handed the group's composed
+        // scenePaths to a consumer that stroked them under a CHILD layer's
+        // transform — the ghost capsule offset up and to the left. A path
+        // stroked as `layer` must be one of `layer`'s own renderable paths.
+        expect(owned.get(layer.id).has(path)).toBe(true);
+      });
     });
 
-    test('turning the overlay on adds no ink anywhere on the canvas', () => {
-      const { base, strays, straySample, withOverlay } = drawWithAndWithoutOverlay();
-      expect(base.length).toBeGreaterThan(0);
+    test('the overlay re-traces the scene ink and never lands ink off it', () => {
+      const r = drawWithAndWithoutOverlay();
+      expect(r.base.length).toBeGreaterThan(0);
+      // Non-vacuous: the overlay really did stroke the scene this draw.
+      expect(r.withOverlay.length).toBeGreaterThan(r.base.length);
       // REGRESSION GUARD: the misplaced ghost capsule + the stray diagonal
       // segments in the empty corners were exactly this — overlay ink where the
       // scene laid none.
-      expect({ count: strays.length, at: straySample }).toEqual({ count: 0, at: [] });
-      // The scene contributes no preview items, so the overlay is a strict
-      // no-op here: the draw emits exactly the same coordinate stream.
-      expect(withOverlay.length).toBe(base.length);
+      expect({ count: r.strays.length, at: r.straySample }).toEqual({ count: 0, at: [] });
+      // REGRESSION GUARD (the one the other two miss): a dense hatch field
+      // absorbs a translated ghost point-for-point, but a bodily displacement
+      // always moves an edge of the inked area.
+      const grow = boundsGrowth(r.baseBounds, r.overlayBounds);
+      Object.entries(grow).forEach(([side, mm]) => {
+        expect([side, mm <= 0.001]).toEqual([side, true]);
+      });
     });
   });
 });
