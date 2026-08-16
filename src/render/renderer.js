@@ -1018,12 +1018,35 @@
     // colours them (first item = gradient start). Returns
     // [{ layer, path, useCurves }]. Ordered through getDrawOrderSequence so the
     // colours describe the SAME plot order playback follows and export emits.
+    //
+    // POSITION CONTRACT (pinned by
+    // tests/integration/draw-order-overlay-geometry-position.test.js): every
+    // item's `path` must be a member of `item.layer`'s OWN renderable set. The
+    // overlay traces each item with `traceLayerPath(path, item.layer, …)`, so a
+    // path attributed to the wrong layer is drawn under the wrong transform —
+    // that is how an earlier attempt at this fix put a coloured ghost capsule
+    // beside the real one. The `eligible` map is keyed by layer id and the paths
+    // come from buildPlotRecords (which builds each record FROM that layer's
+    // getRenderablePaths), so ownership is preserved by construction.
+    //
+    // GROUPS ARE DELIBERATELY EXCLUDED — see the guard below.
     getDrawOrderPreviewItems(optimizationTargetIds) {
       const targetIds = optimizationTargetIds || this.getOptimizationTargetIds();
       const eligible = new Map();
       const targetLayers = [];
       this.engine.layers.forEach((l) => {
         if (this.shouldSkipLayerForMaskPreview(l)) return;
+        // A GROUP is never an optimization target: engine.optimizeLayers filters
+        // `!layer.isGroup`, so a group has no optimizedPaths and none of its
+        // paths ever carry meta.lineSortOrder. Colouring a group would therefore
+        // fabricate a draw order the plotter has no notion of — a 3D scene
+        // group's composed scenePaths are ordered by COMPOSITION, not by any
+        // line sort. Giving scenes a real draw order is a separate unit; until
+        // then the honest preview for a scene is empty. This guard is explicit
+        // (not merely implied by targetIds) so a future widening of
+        // getOptimizationTargetIds cannot silently pull group geometry into the
+        // colour overlay.
+        if (l.isGroup) return;
         if (!targetIds.has(l.id)) return;
         targetLayers.push(l);
         if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer)) return;
