@@ -422,7 +422,11 @@
   const getRawExportPaths = (layer, options = {}) => {
     if (!layer) return [];
     if (isMaskLayerGeometryHidden(layer)) return [];
-    if (layer._morphConsumed) return [];
+    // A consumed child emits nothing — the owning group exports its composed
+    // ink for it. `_sceneConsumed` mirrors `_morphConsumed`, matching
+    // engine.getRenderablePaths; without it an object3d child that still held
+    // stale `layer.paths` would export a second, unwanted copy of itself.
+    if (layer._morphConsumed || layer._sceneConsumed) return [];
     // Stroke-division fragments are the final geometry stage (post-optimization,
     // post-mask) and take top precedence, matching engine.getRenderablePaths.
     // An empty-but-present array (all-gap cycle) exports as zero paths — never
@@ -453,7 +457,7 @@
   const getVisibleExportPaths = (layer, options = {}) => {
     if (!layer) return [];
     if (isMaskLayerGeometryHidden(layer)) return [];
-    if (layer._morphConsumed) return [];
+    if (layer._morphConsumed || layer._sceneConsumed) return [];
     if (Array.isArray(layer.dividedPaths)) return clonePathsWithMeta(layer.dividedPaths);
     if (layer.displayMaskActive && Array.isArray(layer.displayPaths) && layer.displayPaths.length) return clonePathsWithMeta(layer.displayPaths);
     return getRawExportPaths(layer, options);

@@ -159,12 +159,44 @@ describe('A 3D scene exports its ink and obeys the configured draw order', () =>
       expect(items.every((it) => it.layer.id === groupId)).toBe(true);
     });
 
-    test('the emitted SVG contains drawable geometry', () => {
-      const svg = ui.buildExportSvgString
-        ? ui.buildExportSvgString()
-        : null;
-      if (svg == null) return; // no string builder exposed — snapshot test covers it
-      expect(svg).toMatch(/<path[\s>]/);
+    test('the file the user actually downloads is not blank', () => {
+      // The real exportSVG path, captured at the Blob the download is built
+      // from — the snapshot above could be right while emission still dropped
+      // the geometry.
+      let svg = null;
+      window.URL.createObjectURL = window.URL.createObjectURL || (() => 'blob:stub');
+      const OrigBlob = window.Blob;
+      window.Blob = function (parts, opts) {
+        if (opts && opts.type === 'image/svg+xml' && svg == null) svg = String(parts[0]);
+        return new OrigBlob(parts, opts);
+      };
+      try {
+        ui.exportSVG();
+      } finally {
+        window.Blob = OrigBlob;
+      }
+      expect(svg).toBeTruthy();
+      expect(svg).toContain('<svg');
+      // REGRESSION: this document exported a valid but EMPTY <svg> — a header,
+      // a viewBox, and not one line of ink.
+      const pathCount = (svg.match(/<path[\s>]/g) || []).length;
+      expect(pathCount).toBeGreaterThan(50);
+    });
+
+    test('a consumed child never exports a second copy of itself', () => {
+      const child = engine.getLayerDescendants(groupId).find((l) => l.type === 'object3d');
+      const stale = [[{ x: 5, y: 5 }, { x: 90, y: 90 }]];
+      const had = child.paths;
+      child.paths = stale;
+      try {
+        // REGRESSION GUARD: the export walk admits leaves unconditionally, so
+        // the `_sceneConsumed` check is the only thing standing between a stale
+        // per-object path array and a duplicated object in the plot.
+        const items = ui.getExportSnapshot().groups.flatMap((g) => g.items);
+        expect(items.some((it) => it.layer.id === child.id)).toBe(false);
+      } finally {
+        child.paths = had;
+      }
     });
 
     test('a hidden scene group still exports nothing', () => {
