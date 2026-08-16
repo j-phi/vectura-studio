@@ -955,6 +955,90 @@
       return new Set(ids);
     }
 
+    // Build the plot records for the whole document — one record per path the
+    // plotter will lay down, in raw layer/stack order. `Renderer.buildPlotSequence`
+    // turns these into the actual print order.
+    //
+    // The path SOURCE is engine.getRenderablePaths (not layer.optimizedPaths):
+    // that is what the base draw, the reveal and the SVG export all consume, so
+    // stroke-division fragments / mask display geometry / composed group geometry
+    // are the objects that end up in the sequence. Keying the colour preview off
+    // layer.optimizedPaths instead used to hand it path objects that were never
+    // in the reveal map at all, so the preview stopped revealing in lock-step.
+    //
+    // Effective-pen rule, matching UI.getExportSnapshot: a known per-path
+    // meta.penId wins, unknown ids fall back to the layer pen.
+    buildPlotRecords(optimizationTargetIds) {
+      const targetIds = optimizationTargetIds || this.getOptimizationTargetIds();
+      const PU = window.Vectura?.OptimizationUtils;
+      const pathEnds = (path) => (PU?.pathEndpoints
+        ? PU.pathEndpoints(path)
+        : (Array.isArray(path) && path.length
+          ? { start: path[0], end: path[path.length - 1] }
+          : { start: { x: 0, y: 0 }, end: { x: 0, y: 0 } }));
+      const knownPenIds = new Set((SETTINGS.pens || []).map((p) => p.id));
+      const records = [];
+      this.engine.layers.forEach((l, layerSeq) => {
+        if (!l.visible || this.shouldSkipLayerForMaskPreview(l) || this.engine.hasCompoundAncestor?.(l)) return;
+        const optimized = targetIds.has(l.id);
+        const lp = this.engine.getRenderablePaths
+          ? this.engine.getRenderablePaths(l, { useOptimized: optimized })
+          : l.paths;
+        (lp || []).forEach((path, pathIndex) => {
+          const ends = pathEnds(path);
+          records.push({
+            path,
+            layer: l,
+            layerId: l.id,
+            penKey: (path && path.meta && path.meta.penId && knownPenIds.has(path.meta.penId)
+              ? path.meta.penId
+              : l.penId) || 'default',
+            layerSeq,
+            pathIndex,
+            length: Renderer.revealPathLength(path),
+            start: ends.start,
+            end: ends.end,
+            lineSortOrder: path && path.meta ? path.meta.lineSortOrder : undefined,
+            lineSortGrouping: path && path.meta ? path.meta.lineSortGrouping : undefined,
+            optimized,
+          });
+        });
+      });
+      return records;
+    }
+
+    // The document's plot order, as an array of plot records. Exposed so the
+    // draw-order colour preview, the playback reveal and any test can assert on
+    // the SAME sequence the SVG export emits.
+    getDrawOrderSequence(optimizationTargetIds) {
+      return Renderer.buildPlotSequence(this.buildPlotRecords(optimizationTargetIds));
+    }
+
+    // The items the on-canvas Draw Order colour overlay paints, in the order it
+    // colours them (first item = gradient start). Returns
+    // [{ layer, path, useCurves }]. Ordered through getDrawOrderSequence so the
+    // colours describe the SAME plot order playback follows and export emits.
+    getDrawOrderPreviewItems(optimizationTargetIds) {
+      const targetIds = optimizationTargetIds || this.getOptimizationTargetIds();
+      const eligible = new Map();
+      const targetLayers = [];
+      this.engine.layers.forEach((l) => {
+        if (this.shouldSkipLayerForMaskPreview(l)) return;
+        if (!targetIds.has(l.id)) return;
+        targetLayers.push(l);
+        if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer)) return;
+        if (!l.optimizedPaths || !l.optimizedPaths.length) return;
+        eligible.set(l.id, { layer: l, useCurves: Boolean(l.params && l.params.curves) });
+      });
+      const items = [];
+      this.getDrawOrderSequence(targetIds).forEach((rec) => {
+        const slot = eligible.get(rec.layerId);
+        if (!slot) return;
+        items.push({ layer: slot.layer, path: rec.path, useCurves: slot.useCurves });
+      });
+      return { items, targetLayers };
+    }
+
     setTool(tool) {
       if (!tool) return;
       // 3D Scene Studio (§5.4): pressing A while the direct tool is already
@@ -4847,13 +4931,6 @@
       // a faithful "watch the plotter draw" preview rather than a vertex-count
       // sweep. drawProgress == 1 (or unset) disables it.
       const revealActive = this.drawProgress != null && this.drawProgress < 1;
-      const PU = window.Vectura?.OptimizationUtils;
-      const pathLen = (path) => (PU?.pathLength ? PU.pathLength(path) : 0);
-      const pathEnds = (path) => (PU?.pathEndpoints
-        ? PU.pathEndpoints(path)
-        : (Array.isArray(path) && path.length
-          ? { start: path[0], end: path[path.length - 1] }
-          : { start: { x: 0, y: 0 }, end: { x: 0, y: 0 } }));
       // While the reveal is engaged, draw the OPTIMIZED (export) geometry for
       // every optimization target — that is what the plotter actually lays down,
       // and it carries the lineSortOrder the print order depends on. Outside the
@@ -4866,35 +4943,9 @@
       // both the base layer draw AND the line-sort overlay reveal in lock-step.
       let reveal = null;
       if (revealActive) {
-        const records = [];
-        // Effective-pen rule, matching getExportSnapshot: a known per-path
-        // meta.penId wins, unknown ids fall back to the layer pen — so the
-        // reveal slider walks pen groups in the export's actual print order.
-        const knownPenIds = new Set((SETTINGS.pens || []).map((p) => p.id));
-        this.engine.layers.forEach((l, layerSeq) => {
-          if (!l.visible || this.shouldSkipLayerForMaskPreview(l) || this.engine.hasCompoundAncestor?.(l)) return;
-          const optimized = layerDrawOptimized(l);
-          const lp = this.engine.getRenderablePaths
-            ? this.engine.getRenderablePaths(l, { useOptimized: optimized })
-            : l.paths;
-          (lp || []).forEach((path, pathIndex) => {
-            const ends = pathEnds(path);
-            records.push({
-              path,
-              penKey: (path && path.meta && path.meta.penId && knownPenIds.has(path.meta.penId)
-                ? path.meta.penId
-                : l.penId) || 'default',
-              layerSeq,
-              pathIndex,
-              length: Renderer.revealPathLength(path),
-              start: ends.start,
-              end: ends.end,
-              lineSortOrder: path && path.meta ? path.meta.lineSortOrder : undefined,
-              lineSortGrouping: path && path.meta ? path.meta.lineSortGrouping : undefined,
-              optimized,
-            });
-          });
-        });
+        // Same records the colour preview orders by (buildPlotRecords), so the
+        // reveal and the overlay can never walk two different sequences.
+        const records = this.buildPlotRecords(optimizationTargetIds);
         reveal = Renderer.computePlotRevealOrder(records, {
           drawProgress: this.drawProgress,
           drawSpeed: SETTINGS.speedDown,
@@ -5107,21 +5158,9 @@
         if (!showOptimizedOverlay || this.exportModalOpen) return;
         const overlayColor = SETTINGS.optimizationOverlayColor || '#38bdf8';
         const overlayWidth = Math.max(0.05, SETTINGS.optimizationOverlayWidth ?? 0.2);
-        const overlayItems = [];
-        const targetLayers = [];
-        this.engine.layers.forEach((l) => {
-          if (this.shouldSkipLayerForMaskPreview(l)) return;
-          if (!optimizationTargetIds.has(l.id)) return;
-          targetLayers.push(l);
-          if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer) || !l.optimizedPaths || !l.optimizedPaths.length) return;
-          const useCurves = Boolean(l.params && l.params.curves);
-          l.optimizedPaths.forEach((path) => overlayItems.push({ layer: l, path, useCurves }));
-        });
-        overlayItems.sort((a, b) => {
-          const aOrder = Number.isFinite(a?.path?.meta?.lineSortOrder) ? a.path.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
-          const bOrder = Number.isFinite(b?.path?.meta?.lineSortOrder) ? b.path.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
-          return aOrder - bOrder;
-        });
+        // Preview order == playback order == export order: all three read the
+        // one plot sequence (pen groups first, then the line-sort interleave).
+        const { items: overlayItems, targetLayers } = this.getDrawOrderPreviewItems(optimizationTargetIds);
         const hasLineSort = overlayItems.some((item) => this.hasLineSortOrderMetadata(item.path));
         const secondaryOverride = (SETTINGS.optimizationOverlaySecondaryColor || '').trim();
         const lineSortSecondary = secondaryOverride || this.getLineSortOverlaySecondaryColor(targetLayers);
@@ -15365,10 +15404,19 @@
   // Pure and reference-keyed so the caller can decouple the reveal from its
   // layer-by-layer draw loop. Each record is
   // { path, penKey, layerSeq, pathIndex, length, start, end, lineSortOrder, lineSortGrouping, optimized }.
-  Renderer.computePlotRevealOrder = function computePlotRevealOrder(records, opts) {
-    const o = opts || {};
-    const drawSpeed = o.drawSpeed > 0 ? o.drawSpeed : 1;
-    const travelSpeed = o.travelSpeed > 0 ? o.travelSpeed : drawSpeed;
+  // THE plot order. Single source of truth for "what order does the pen visit
+  // these paths" — the draw-order colour preview, the draw-order playback reveal
+  // and the SVG export all order through this one function, so the three can no
+  // longer disagree about what will actually be plotted (a bug the user saw as
+  // "the colours say top-to-bottom but playback starts at the bottom").
+  //
+  // Pen grouping is the OUTER key and legitimately outranks the line-sort
+  // direction: a plotter must finish a pen before it can be swapped, so a
+  // "Combined" line sort can only interleave WITHIN a pen group, never across
+  // pens. `records` are the { path, penKey, layerSeq, pathIndex, lineSortOrder,
+  // lineSortGrouping, optimized, ... } records buildPlotRecords produces.
+  // Returns a new flat array; the input array is not mutated.
+  Renderer.buildPlotSequence = function buildPlotSequence(records) {
     const groupOrder = [];
     const groups = new Map();
     (records || []).forEach((rec) => {
@@ -15379,7 +15427,6 @@
       }
       groups.get(penKey).push(rec);
     });
-    // Flatten the pen groups into one print-order sequence.
     const seq = [];
     groupOrder.forEach((penKey) => {
       const items = groups.get(penKey);
@@ -15396,6 +15443,15 @@
       }
       items.forEach((it) => seq.push(it));
     });
+    return seq;
+  };
+
+  Renderer.computePlotRevealOrder = function computePlotRevealOrder(records, opts) {
+    const o = opts || {};
+    const drawSpeed = o.drawSpeed > 0 ? o.drawSpeed : 1;
+    const travelSpeed = o.travelSpeed > 0 ? o.travelSpeed : drawSpeed;
+    // Flatten the pen groups into one print-order sequence.
+    const seq = Renderer.buildPlotSequence(records);
     // Walk the sequence to build the time line: pen-up travel, then pen-down draw.
     const info = new Map();
     let cursor = 0;
