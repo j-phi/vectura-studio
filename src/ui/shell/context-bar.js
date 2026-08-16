@@ -963,6 +963,33 @@
   const sceneSel = (ctx) => ctx.sceneSelection
     || (ctx.renderer && ctx.renderer.getSceneSelection && ctx.renderer.getSceneSelection()) || null;
 
+  // ── The GROUND QUAD is a pseudo-object, not an object record ───────────────
+  // A canvas pick on the ground plane sets sceneSelection.objectIds = ['ground']
+  // — a fixed sentinel id, NOT a layer id (renderer `_sceneDownSelect`;
+  // `_sceneChildLayerFor` and five other renderer sites refuse it by name). No
+  // object3d child layer stands behind it, so every bridge that mutates an
+  // object DEF refuses it: setSceneObjectField, setSceneObjectPrimitive,
+  // duplicateSceneObjects, dropSceneObjectsToGround, setSceneObjectVisibility
+  // and deleteSceneObjects all return false/[] and write nothing.
+  //
+  // The X-ray flyout was the visible casualty (Jay, 2026-08-16): with the ground
+  // picked it offered a live-looking Solid | X-ray segment, and clicking X-ray
+  // did nothing at all — setSceneObjectField found no target and the rebuild
+  // re-read 'Solid'. The controls below are therefore ABSENT on a ground-only
+  // selection rather than present-and-inert, matching the `none` highlight
+  // treatment and Dash-length-under-solid-line-type.
+  //
+  // Its STYLE is real and stays: styleTable.byObject.ground resolves and the
+  // quad repaints, so the pen chip and the Style / Highlight flyouts keep
+  // working untouched. Only object-DEF controls are gated.
+  const SCENE_GROUND_ID = 'ground';
+  // True when the selection holds at least one REAL object record. A mixed
+  // ground+object selection keeps the controls: the bridges already skip the
+  // ground id and write the rest.
+  const sceneSelHasObjectDef = (sel) => Boolean(sel) && sel.mode === 'object'
+    && Array.isArray(sel.objectIds)
+    && sel.objectIds.some((id) => id !== SCENE_GROUND_ID);
+
   const sceneObjectName = (ctx, layer, id) => {
     const objects = (layer && layer.params && layer.params.objects) || [];
     const o = objects.find((x) => x && x.id === id);
@@ -971,7 +998,18 @@
     // display name is the child layer's name, not an inline object.
     const engine = ctx && ctx.renderer && ctx.renderer.engine;
     const child = engine && engine.getLayerById ? engine.getLayerById(id) : null;
-    return (child && child.name) || id;
+    if (child && child.name) return child.name;
+    // The ground quad's id is the 'ground' sentinel, not a layer id, so the
+    // lookup above misses and the bar used to read a bare lowercase `ground`
+    // — indistinguishable from an object the user had named that. Resolve the
+    // scene's sceneGround3d child so the summary names what is really selected.
+    if (id === SCENE_GROUND_ID) {
+      const kids = (engine && engine.getLayerChildren && layer)
+        ? (engine.getLayerChildren(layer.id) || []) : [];
+      const g = kids.find((l) => l && l.type === 'sceneGround3d');
+      return (g && g.name) || 'Ground';
+    }
+    return id;
   };
 
   // Selection summary copy: 'Box 1', '2 objects', '3 faces · Box 1', …
@@ -1110,6 +1148,9 @@
     const layer = ctx.primaryLayer;
     const sel = sceneSel(ctx);
     if (!r || typeof r.setSceneObjectPrimitive !== 'function' || !layer || !sel || sel.mode !== 'object' || !sel.objectIds.length) return;
+    // The ground quad has no primitive to swap (setSceneObjectPrimitive refuses
+    // the sentinel id) — the picker is absent, not inert.
+    if (!sceneSelHasObjectDef(sel)) return;
     const b = B();
     const C = (cfg().sceneFlyouts && cfg().sceneFlyouts.shape) || {};
     const prims = C.primitives || [];
@@ -1143,6 +1184,10 @@
     // Persistent Style / Shadow / Highlight / X-ray dropdown pills (ask #8) —
     // between the pen chip and the one-shot verbs.
     appendSceneFlyouts(ctx);
+    // Duplicate / Drop / Solid-X-ray / Delete all mutate an object DEF, so a
+    // ground-only selection has nothing for them to act on (see
+    // sceneSelHasObjectDef) — they are omitted rather than left to no-op.
+    if (!sceneSelHasObjectDef(sel)) return;
     els.content.appendChild(makeBtn({
       icon: ic.sceneDuplicate, label: (b.sceneDuplicate && b.sceneDuplicate.label),
       tooltip: (b.sceneDuplicate && b.sceneDuplicate.tooltip),
@@ -1452,12 +1497,17 @@
     const castVal = castOf(obj);
     // Cast is the only per-object control here; the sun/style/pen/density/layers
     // rows below are scene-wide (per-layer) so they never differ across a
-    // same-layer multi-selection.
-    flyMixedSeg(flyRow(fly, C.cast.label), {
-      options: C.castOptions, value: castVal, ariaLabel: C.cast.aria,
-      mixed: sceneAgree(sc, (id) => castOf(sc.r.getSceneObjectRecord(sc.layerId, id) || {})).mixed,
-      onChange: (v) => setObj('shadow.enabled', v === 'on' ? true : (v === 'off' ? false : null)),
-    });
+    // same-layer multi-selection. It writes the object DEF (`shadow.enabled`),
+    // so a ground-only selection — which has no object def, and which RECEIVES
+    // shadows rather than casting them — omits the row rather than showing an
+    // "Auto" segment that writes nothing. See sceneSelHasObjectDef.
+    if (sceneSelHasObjectDef({ mode: 'object', objectIds: sc.ids })) {
+      flyMixedSeg(flyRow(fly, C.cast.label), {
+        options: C.castOptions, value: castVal, ariaLabel: C.cast.aria,
+        mixed: sceneAgree(sc, (id) => castOf(sc.r.getSceneObjectRecord(sc.layerId, id) || {})).mixed,
+        onChange: (v) => setObj('shadow.enabled', v === 'on' ? true : (v === 'off' ? false : null)),
+      });
+    }
     // I26 — additive hatch vs inverse (thin the ground's own fill inside the
     // footprint). Scene-wide, like the style/pen/density rows below.
     if (C.mode) {
@@ -1630,7 +1680,12 @@
     pill('sceneStyle', buildStyleBody, 'ctxbar-scene-style');
     pill('sceneShadow', buildShadowBody, 'ctxbar-scene-shadow');
     pill('sceneHighlight', buildHighlightBody, 'ctxbar-scene-highlight');
-    pill('sceneXray', buildXrayBody, 'ctxbar-scene-xray');
+    // X-ray writes the object DEF (`visibility`), which the ground quad does not
+    // have — the pill is absent on a ground-only selection instead of opening a
+    // flyout whose Solid | X-ray segment writes nothing. Style / Shadow /
+    // Highlight above write the STYLE TABLE, which the ground does have, so they
+    // stay. See sceneSelHasObjectDef.
+    if (sceneSelHasObjectDef(sceneSel(ctx))) pill('sceneXray', buildXrayBody, 'ctxbar-scene-xray');
   };
 
   const renderContext = (ctx) => {
