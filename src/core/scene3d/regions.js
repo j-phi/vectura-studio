@@ -577,6 +577,47 @@
   // +65°, never +90°: an orthogonal second family reads as a square grid / wire
   // mesh and beats against the raster (§2.3).
   const CROSS_OBJ_DEG = 65;
+
+  // ── THE DIHEDRAL GATE (§5.5.2, O22) — ONE DEFINITION ───────────────────────
+  //
+  // A facet is eligible for a TERMINATOR only inside a smooth-shaded region:
+  // two faces sharing an edge whose normals are within TERMINATOR_SMOOTH_DEG are
+  // smooth-shaded, and a harder edge is an edge, not a terminator. It is what
+  // stops a cube growing a bogus core shadow.
+  //
+  // It lives HERE, beside `formZone`, because both the renderer and the
+  // shadow-anatomy instrument must decide it the same way. Round 8's instrument
+  // mirrored the threshold with the comment "scene3d.js:556 — mirrored, not
+  // guessed", and built its own edge map over `face.indices` while the renderer
+  // built one from `record.edges`. Honest, and inert on those fixtures — but a
+  // mirrored constant is a restated fixture with extra steps, and two edge maps
+  // that agree today are not the same code path. Both now call this.
+  const TERMINATOR_SMOOTH_DEG = 40;
+  const smoothShadedFaces = (faces, edges, degrees) => {
+    const set = new Set();
+    const F = faces || [];
+    const E = edges || [];
+    if (!F.length || !E.length) return set;
+    const deg = Number.isFinite(degrees) ? degrees : TERMINATOR_SMOOTH_DEG;
+    const cosSmooth = Math.cos((deg * Math.PI) / 180);
+    const norm = (n) => {
+      if (!n) return null;
+      const L = Math.hypot(n.x, n.y, n.z);
+      return L > 1e-9 ? { x: n.x / L, y: n.y / L, z: n.z / L } : null;
+    };
+    E.forEach((edge) => {
+      const idx = edge && edge.faces;
+      if (!idx || idx.length !== 2) return;
+      const fi = F[idx[0]]; const fj = F[idx[1]];
+      if (!fi || !fj) return;
+      const a = norm(fi.normalWorld); const b = norm(fj.normalWorld);
+      if (!a || !b) return;
+      const d = Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y + a.z * b.z));
+      if (d < cosSmooth) return;                  // hard edge: an edge, not a terminator
+      set.add(fi); set.add(fj);
+    });
+    return set;
+  };
   //
   // ROUND 4 — the form shadow gets its OWN value, via a family rather than via
   // coverage. Measured, F came out at 0.199 against M's 0.213: the form shadow
@@ -590,15 +631,99 @@
   // the terminator already makes, and it decouples F's value from how tightly
   // the carrier happens to run at the limb. T keeps a clear margin above it.
   // M comes down a little to open the M→F step from the other side.
+  // ROUND 8 — F was rebuilt in Round 4 because it was LIGHTER than the halftone;
+  // it then overshot. Round 7 measured F/M at 2.02–2.23 against a 1.45 target,
+  // and the cost was visible rather than numerical: F ran as dark as it could
+  // everywhere, so the terminator stopped separating as a band and the ball read
+  // as one woven mesh from limb to terminator (O3 — "the dip is visible as a
+  // shape").
+  //
+  // WHERE THE NUMBER COMES FROM, so the next round does not have to guess. Both
+  // F and M saturate their composed ceilings (measured at ~90 % of each), and
+  // that ceiling is `TOTAL_DARK_CEIL x weight / DARKEST_WEIGHT` with
+  // `weight = coverage + cross`. So the ratio the drawing lands on is very
+  // nearly the ratio of the weights:
+  //
+  //     F/M  ~=  (F.coverage + F.cross) / M.coverage
+  //
+  // At 1.40 / 0.62 that predicts 2.26 and the drawing measured 2.25 — so the
+  // model is right and the lever is F's TOTAL weight, not either term alone.
+  // For F/M in [1.45, 1.70] with M untouched, F's weight must sit in
+  // [0.90, 1.05]. 0.82 + 0.20 = 1.02 predicts 1.65.
+  //
+  // The split keeps a real crossed family rather than spending the whole cut on
+  // it: F's cross is what gives the form shadow a value that does not depend on
+  // how tightly the carrier happens to run at the limb (the Round 4 finding), and
+  // O17 is scored on F as well as T. What comes off instead is F's base coverage,
+  // which is the ladder's own mechanism and the one term that was pinned at 1.00
+  // for no reason other than that it had nowhere else to go.
   const FORM_INK = {
     H: { coverage: 0.00, cross: 0, duty: 1 },
     L: { coverage: 0.42, cross: 0, duty: 1 },
     M: { coverage: 0.62, cross: 0, duty: 1 },
-    F: { coverage: 1.00, cross: 0.40, duty: 1 },
+    F: { coverage: 0.82, cross: 0.20, duty: 1 },
     T: { coverage: 1.00, cross: 1.00, duty: 1 },
     R: { coverage: 0.45, cross: 0, duty: 0.7 },
   };
   const formInk = (zone) => FORM_INK[zone] || FORM_INK.M;
+
+  // ── THE COMPOSED INK CEILING, STATED ONCE (§0, C15, O13) ───────────────────
+  //
+  // Past the plot floor you do not get darker by ruling closer, you get a
+  // flooded blob — so every zone has a ceiling on the ink that may compose on
+  // one sample, and it is PROPORTIONAL to that zone's intended weight rather
+  // than a flat clamp. A flat clamp collapses every zone that reaches it onto
+  // one value: T and F both crossed, both saturated, T/F 0.98, and the dip that
+  // O1/O3 are about closes again.
+  //
+  // ROUND 10. `TOTAL_DARK_CEIL` and `DARKEST_WEIGHT` lived in `surface-fill.js`,
+  // so the CURVED path enforced this law and the FACETED path had no counterpart
+  // at all — which is why a faceted family could ask for a pitch wider than its
+  // own facet and simply draw nothing, with nothing to tell it whether one
+  // ruling would have been legal (see `scene3d.js` → `fitToFacet`). They live
+  // here, beside `FORM_INK`, because the ceiling is a property of the RECIPE:
+  // `weight` is the zone's own `coverage + cross`.
+  //
+  // `DARKEST_WEIGHT = 2.0` is T's `coverage + cross`, the ladder's top rung, so
+  // T saturates at `TOTAL_DARK_CEIL` exactly and every lighter zone gets a
+  // proportional share of it.
+  const TOTAL_DARK_CEIL = 0.47;
+  const DARKEST_WEIGHT = 2.0;
+
+  // ── §5.4 #1 / O6 — THE CENTRE LIGHT'S FLOOR, IN THE MEDIUM'S OWN UNITS ─────
+  //
+  // "The centre light may never be blanker than LIT_MAX_PITCH_PEN (12) x pen."
+  // A single family at 12 x pen has a dark fraction of exactly 1/12 = 0.0833,
+  // so this constant IS O6's bar — Round 9's reviewer retired O6's separate
+  // 0.10 as a mis-statement of this same clause in a second, instrument-
+  // dependent unit (`round9-scorecard-and-round10-plan.md` §1.4).
+  //
+  // IT LIVES HERE BECAUSE IT HAD TO BE WIRED TO SOMETHING. It lived in
+  // `surface-fill.js`, where it capped the master grid's pitch and set a
+  // per-sample coverage floor — and Round 9 measured, and Round 10 re-measured
+  // and extended, that neither use moves D(L) at all: 12 / 10 / 8 are
+  // bit-identical on all four ladder fixtures, 6 moves only the two that were
+  // not ceiling-bound, and 4 makes D(L) WORSE while breaching the protected
+  // F/M range. The constant named O6 in its own comment and did not control it.
+  //
+  // So it now floors L's composed ceiling. A ceiling below the criterion's own
+  // bar FORBIDS the criterion before a line is drawn, which is exactly how O6
+  // became unreachable by construction and survived three rounds of levers
+  // aimed underneath it. The floor is L-ONLY: §5.4 #1 is about the centre
+  // light, and H (the glint) must keep a ceiling of 0 — it carries no ink.
+  //
+  // At the shipped values the floor is SLACK and the wiring is output-neutral:
+  // the weight term gives 0.47 x 0.42 / 2.0 = 0.0987 against a floor of 0.0833.
+  // What it buys is that no future coverage edit can silently put the ceiling
+  // back under the bar. `scene3d-form-ladder.test.js` reads its O6 bar from
+  // this same constant, so the two statements of §5.4 #1 cannot drift apart.
+  const LIT_MAX_PITCH_PEN = 12;
+  const formCeiling = (zone) => {
+    const ink = formInk(zone);
+    const weight = clamp(finite(ink.coverage, 0) + finite(ink.cross, 0), 0, 4);
+    const ceil = TOTAL_DARK_CEIL * clamp(weight / DARKEST_WEIGHT, 0, 1);
+    return zone === 'L' ? Math.max(ceil, 1 / LIT_MAX_PITCH_PEN) : ceil;
+  };
 
   // Specular exponent for a highlight `size` (bigger size → broader/softer glint
   // → lower exponent → the lit region spans more of the surface). Deliberately
@@ -661,12 +786,18 @@
     shadowStage,
     FORM_ZONES,
     CROSS_OBJ_DEG,
+    TERMINATOR_SMOOTH_DEG,
+    smoothShadedFaces,
     TERMINATOR_NL,
     REFLECT_TH,
     signedLambert,
     reflectedLift,
     formZone,
     formInk,
+    TOTAL_DARK_CEIL,
+    DARKEST_WEIGHT,
+    LIT_MAX_PITCH_PEN,
+    formCeiling,
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Lighting, Regions });

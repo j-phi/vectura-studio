@@ -839,9 +839,32 @@
   //
   // So the crossed families take a ruling-subset stride of their own. It is the
   // same keep-every-k-th rule on the same shared grid, so no new line can appear
-  // and the subset architecture is untouched. At every shipped pen and density
-  // it evaluates to 1 and the emitted geometry is byte-identical; it engages
-  // only in the regime that was flooding.
+  // and the subset architecture is untouched.
+  //
+  // WHEN IT ENGAGES — corrected in Round 8, and worth stating exactly, because
+  // the claim that stood here through Round 7 was false. It read: "At every
+  // shipped pen and density it evaluates to 1 and the emitted geometry is
+  // byte-identical." It is not 1 at every shipped pen and density. Driving
+  // `__collarForTest` across the whole grid gives `crossStride = 2` at:
+  //
+  //     pen 0.3   sBase <= 0.36
+  //     pen 0.4   sBase <= 0.50
+  //     pen 0.5   sBase <= 0.60
+  //     pen 0.6   sBase <= 0.75
+  //     pen 0.8   sBase <= 1.00
+  //     pen 1.0   sBase <= 1.25
+  //
+  // i.e. at EVERY pen, over a band of densities that widens with the pen — not
+  // in a corner of the parameter space. What IS true, and is the claim that
+  // matters, is narrower: it is inert on every fixture in the shadow-anatomy
+  // harness. `Z0` is bit-identical at 1318.44 mm / 211 paths across Layers
+  // 2/3/4 with and without it.
+  //
+  // UNTESTED REGIME, recorded rather than left to be rediscovered: wherever the
+  // stride engages, composed coverage lands at 0.480-0.498 against the 0.80
+  // ceiling, so the collar spends about 62 % of its budget. C1 and C2 require
+  // the collar to be the darkest thing in the drawing, and neither has ever been
+  // measured at pen >= 0.5.
   const collarCrossStrideFor = (pitchA, crossPitch, penWidth, withThird) => {
     for (let cs = 1; cs <= 8; cs++) {
       const fams = withThird

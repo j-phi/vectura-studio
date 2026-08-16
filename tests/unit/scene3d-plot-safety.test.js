@@ -43,24 +43,17 @@
  * below fails. Against `628fb5f` and after, it passes at 0.664.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const FIX = require('../fixtures/scene3d-shadow-anatomy');
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
-const BOUNDS = {
-  width: 320, height: 220, m: 10, dW: 300, dH: 200,
-  penWidth: 0.3, truncate: 4, fastPreview: false, preview3dQuality: 'high',
-};
-const SEED = 0;
-const CAMERA = { projection: 'orthographic', yaw: -30, pitch: 32, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
-const SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 28, intensity: 1, castShadows: true };
-const TONE4 = {
-  enabled: true, bands: 4, thresholds: [0.25, 0.5, 0.75], ladder: [0.15, 0.4, 0.65, 0.9],
-  specular: { enabled: true, size: 1 },
-};
-const BALL = {
-  id: 'ball', name: 'Ball', primitive: 'sphere', params: { radius: 46, detail: 26 },
-  transform: { x: 0, y: 46, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
-};
+// ROUND 10 — nothing restated. `max <= 0.56` is the object's protected ceiling
+// and is quoted from this file; a copy of the rig here could have moved the
+// scene the ceiling is measured on without moving the ceiling.
+const {
+  BOUNDS, SEED, CAMERA, SUN, BALL, toneBands, styleTable,
+} = FIX;
+const TONE4 = toneBands(4);
 
 // Perceived coverage of N overlapping families, each ruling at spacing s with a
 // pen of width w. One family covers w/s of the area; families are independent,
@@ -152,8 +145,7 @@ describe('C15 on the OBJECT — the same rule, the half it was never measured on
     p.objects = [clone(BALL)];
     p.lights = [clone(SUN)];
     p.tone = clone(TONE4);
-    const base = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 85 } };
-    p.styleTable = { scene: clone(base), byObject: { ball: clone(base) }, byFace: {} };
+    p.styleTable = styleTable(p.objects);
     const np = V.Scene3D.Params.normalizeParams(p);
     return V.AlgorithmRegistry.scene3d.generate(
       V.Scene3D.Params.collectSceneParams(np, []), new V.SeededRNG(SEED), new V.SimpleNoise(SEED), BOUNDS,
