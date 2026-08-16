@@ -64,6 +64,30 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   crossed the midline read as thrash.
 
 ### Fixed
+- **Draw Order — the colour preview, the playback reveal and the SVG export now describe one plot
+  order.** The canvas overlay coloured `layer.optimizedPaths` sorted globally by
+  `meta.lineSortOrder` with no pen grouping, while playback and export both group by pen first and
+  only interleave by line-sort order inside a pen group. Export is authoritative — a plotter must
+  finish a pen before it can be swapped — so the preview was the liar: with more than one effective
+  pen the gradient promised a sweep the pen would never make. Three divergences, one contract now:
+  ordering routes through a single `Renderer.buildPlotSequence`; the path source is a single
+  `Renderer.buildPlotRecords` (the overlay previously read a different set of path objects than the
+  reveal did, so with stroke divisions on *no* previewed path was in the reveal map and the whole
+  gradient stayed on screen at every progress value); and `optimizeLayers` called without an
+  explicit config no longer runs one layer at a time, which had silently degraded "Combined" and
+  "Per Pen" grouping to per-layer. Verified live at Line Sort = Nearest / Vertical / Combined: ink
+  accumulates strictly top→bottom (leading edge 74 → 129 → 190 → 215mm while the top edge stays
+  pinned).
+- **Draw Order — the overlay's geometry is pinned to the drawn geometry, not just its order.** An
+  earlier attempt at the above shipped a coloured ghost offset from the real artwork with stray
+  segments in empty canvas corners, and nothing in the suite noticed, because every draw-order test
+  asserted on the sequence of paths and none on where the ink lands. A new regression test captures
+  every coordinate the renderer hands the canvas with the overlay off and then on, and requires the
+  overlay to re-trace only ink the base draw already laid, without extending the inked bounds in
+  any direction. 3D scene groups are explicitly excluded from the colour preview: a group is never
+  an optimization target, so no composed scene path carries a line-sort order, and colouring
+  composition order as if it were plot order would fabricate a draw order the plotter has no notion
+  of. Scene draw order remains a known, separately tracked gap.
 - **3D Scene — Style ▸ Border is a contiguous silhouette outline, and stays one at any Fidelity.**
   Border offset each two-point mesh-edge segment along its own screen normal, so the mesh vertex
   two adjacent segments share landed at two different screen points — a gap at every vertex.

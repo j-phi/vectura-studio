@@ -228,6 +228,37 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **v1.3.84 — Draw Order: one plot order, and an overlay pinned to the drawn geometry
+  (`fix/draw-order-playback-v2`, `19c1149`..`ddd3905`).** Restores the order-agreement fix that was
+  reverted in `1dc1e53`, and adds the contract that was missing when it shipped a visible
+  regression.
+  - **Order (`19c1149`).** Preview / playback / export were three implementations of "plot order".
+    The overlay sorted `layer.optimizedPaths` globally by `meta.lineSortOrder` with no pen grouping;
+    the reveal and the SVG export both group by pen first. Export is authoritative, so the preview
+    was wrong. Unified on `Renderer.buildPlotSequence` + `Renderer.buildPlotRecords`, and
+    `optimizeLayers` without an explicit config no longer degrades Combined/Per-Pen grouping to
+    per-layer. RGR is behavioural, not API-absence: 5/5 green, 3/5 red with the old preview
+    ordering restored, 1/5 red with the old per-layer dispatch restored.
+  - **Position (`0a89fc5`).** The reverted attempt's follow-up drew a coloured ghost offset from the
+    real capsule plus stray segments in empty corners; every existing test asserted on path
+    sequence, none on ink position. New test captures the canvas coordinate stream with the overlay
+    off vs on and requires the overlay to re-trace only existing ink without extending the inked
+    bounds. Red proven by injecting a −15mm overlay offset and by pushing group `scenePaths` into
+    the preview.
+  - **Decision — scene groups stay OUT of the colour preview.** `engine.optimizeLayers` filters
+    `!layer.isGroup`, so a group never gets `optimizedPaths` and no composed scene path carries
+    `meta.lineSortOrder` (measured live: 966 scene paths, 0 with an order). Colouring composition
+    order as plot order would fabricate a draw order. The guard is now explicit in
+    `getDrawOrderPreviewItems` rather than implied by `getOptimizationTargetIds`.
+  - **Archaeology (`ddd3905`).** Re-verified before re-applying: `19c1149` renders byte-identical
+    canvases to `1dc1e53` on a scene-only document at every reveal value, and the naive
+    groups-in-preview follow-up draws in the correct place in that configuration too — so the exact
+    document that misplaced was not reproduced. Said plainly rather than claimed fixed; the
+    position test guards the defect class regardless of which edit introduced it.
+  - **Known gap, unchanged and out of scope here.** A 3D scene still has no draw order: at Line Sort
+    Nearest/Vertical the reveal shows the whole capsule at 25% and 50%, then the ground and shadow
+    arrive together at 75% — composition order, not a vertical sweep. A scene-only document also
+    still exports an empty SVG (Impact Preview reads PATHS 0). Tracked separately.
 - **v1.3.83 — border/silhouette contiguity, line output split by role, and seven rounds of
   shadow/tone anatomy (`3d-scene/p4`, `25fb800`..`e66c692`).** Six merges, documented as one
   release. The through-line on the geometry half: **structural edges are emitted one projected

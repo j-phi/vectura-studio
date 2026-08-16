@@ -597,6 +597,27 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.3.84
+- **Draw Order: the colours, the playback and the exported SVG finally agree.** The on-canvas
+  gradient sorted every optimized path globally by its line-sort order and ignored pen grouping,
+  while both playback and export finish one pen before swapping to the next. Export is the
+  authority — a plotter cannot swap pens mid-sweep — so the gradient had been promising a
+  top-to-bottom pass the pen would never make. All three now read one plot sequence. Two related
+  faults went with it: with stroke divisions on, the overlay and the reveal were looking at
+  different path objects, so the gradient never revealed in lock-step; and the optimizer ran one
+  layer at a time when no explicit config was passed, quietly demoting "Combined" and "Per Pen"
+  grouping to per-layer.
+- **Draw Order: the overlay is pinned to where the ink actually lands.** A previous attempt at the
+  fix drew the coloured preview offset from the real artwork, with stray segments in empty corners
+  of the canvas, and the test suite never noticed — every draw-order test checked the *order* of
+  paths, none checked their *position*. There is now a regression test that records what the canvas
+  draws with the overlay off and on, and fails if the overlay puts ink anywhere the artwork did
+  not.
+- **Known gap: 3D scenes still have no draw order.** A scene's composed geometry lives on the group,
+  which is never an optimization target, so no scene path carries a line-sort order. Rather than
+  colour composition order as if it were plot order, the Draw Order overlay leaves scenes alone.
+  Giving scenes a real draw order (and a non-empty SVG export) is tracked separately.
+
 ### 1.3.83
 - **3D Scene: the border is a real outline again.** Style ▸ Border drew each mesh edge as its own
   two-point segment and offset it along its own screen normal, so the outline broke at every shared
