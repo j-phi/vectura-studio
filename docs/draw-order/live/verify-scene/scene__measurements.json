@@ -1,0 +1,68 @@
+{
+  "uiSet": {
+    "method": "nearest",
+    "direction": "vertical",
+    "grouping": "combined",
+    "found": {
+      "method": true,
+      "direction": true,
+      "grouping": true
+    }
+  },
+  "frame": {
+    "y0": -63.73196245535593,
+    "y1": 283.7319624553559
+  },
+  "rows": [
+    {
+      "pct": 0,
+      "sliderValue": "0",
+      "label": "0%",
+      "drawProgress": 0,
+      "pathsShown": 0,
+      "pathsTotal": 966,
+      "inkTop": null,
+      "inkBottom": null
+    },
+    {
+      "pct": 25,
+      "sliderValue": "25",
+      "label": "25%",
+      "drawProgress": 0.25,
+      "pathsShown": 82,
+      "pathsTotal": 966,
+      "inkTop": 5.75,
+      "inkBottom": 136.43
+    },
+    {
+      "pct": 50,
+      "sliderValue": "50",
+      "label": "50%",
+      "drawProgress": 0.5,
+      "pathsShown": 303,
+      "pathsTotal": 966,
+      "inkTop": 5.75,
+      "inkBottom": 136.43
+    },
+    {
+      "pct": 75,
+      "sliderValue": "75",
+      "label": "75%",
+      "drawProgress": 0.75,
+      "pathsShown": 493,
+      "pathsTotal": 966,
+      "inkTop": -63.73,
+      "inkBottom": 283.73
+    },
+    {
+      "pct": 100,
+      "sliderValue": "100",
+      "label": "100%",
+      "drawProgress": 1,
+      "pathsShown": 966,
+      "pathsTotal": 966,
+      "inkTop": -63.73,
+      "inkBottom": 283.73
+    }
+  ]
+}
