@@ -725,10 +725,12 @@
       let hlRun = [];
       // The base channel goes through the shared run sink (see makeSink).
       const sink = makeSink(back, lineIndex, currentFam);
-      const flush = () => { sink.flush(); drawing = false; };
+      // A hard cut ends the continuous span, so both trigger flags reset.
+      const flush = () => { sink.flush(); drawing = false; everDrew = false; };
       const softDrop = sink.softDrop;
       const addPt = sink.addPt;
-      let drawing = false;     // hysteresis state: is this ruling currently laying ink?
+      let drawing = false;     // is this ruling currently laying ink?
+      let everDrew = false;    // has it laid any within the current continuous span?
       // Highlight runs are tagged so the caller draws them dashed/dotted on the
       // highlight pen (dashed/dotted treatments).
       const flushHL = () => {
@@ -908,7 +910,12 @@
             //     entering the terminator, say. Inside a uniform zone, where the
             //     feather was the only thing talking, it stays stopped. That is
             //     the chatter, gone, with the shading left intact.
-            dropZone = drawing
+            //   - The margin applies to a RE-start only. A ruling's FIRST start
+            //     inside a continuous span keeps the legacy test, so a ruling
+            //     stock would have drawn is still drawn: charging the margin on
+            //     every start instead cost 13-20% of the fill ink across the
+            //     tone goldens, which is a tone change, not a continuity fix.
+            dropZone = (drawing || !everDrew)
               ? rank >= covCapped + jit
               : rank >= covCapped + jit - HYST_RANK;
             // Dash duty — the reflected rim breaks its rulings rather than
@@ -957,7 +964,7 @@
           }
         }
         flushHL();
-        drawing = true;
+        drawing = true; everDrew = true;
         addPt({ x: smp.x, y: smp.y, z: smp.z });
       }
       flush();
