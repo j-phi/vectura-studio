@@ -3938,10 +3938,27 @@
         return result;
       }
 
+      // No explicit config: every layer runs under its OWN optimization config.
+      // Layers that share a config must still go through ONE pipeline pass
+      // together, or the line sort's "Combined" / "Per Pen" grouping silently
+      // degrades to per-layer — which is how the canvas ended up previewing a
+      // different draw order than the SVG export, whose caller always passes a
+      // single shared config for the whole scope.
       const combined = new Map();
+      const configOrder = [];
+      const configGroups = new Map();
       targetLayers.forEach((layer) => {
         const config = this.ensureLayerOptimization(layer);
-        const map = runPipeline([layer], config);
+        const key = JSON.stringify(config);
+        if (!configGroups.has(key)) {
+          configGroups.set(key, { config, layers: [] });
+          configOrder.push(key);
+        }
+        configGroups.get(key).layers.push(layer);
+      });
+      configOrder.forEach((key) => {
+        const group = configGroups.get(key);
+        const map = runPipeline(group.layers, group.config);
         map.forEach((paths, id) => {
           combined.set(id, paths);
         });
