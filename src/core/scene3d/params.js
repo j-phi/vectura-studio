@@ -127,6 +127,46 @@
     solid: { ...PRIMITIVE_PARAM_DEFAULTS.solid },
   };
 
+  // ── Rounded contour — which shapes are BORN with curved line output ───────
+  // "Is this shape curved?" already has ONE answer in this repo:
+  // `CURVED_FILL_PRIMITIVES` (defined below), the chart-wrapped set that routes
+  // through SurfaceFill, gates the panel's Curves rows and gates
+  // `Engine._applySceneCurveFinish`. This reads that set LIVE — never a copy —
+  // and subtracts the one member whose CONTOUR is not actually round:
+  //
+  //   • `pyramid` is chart-wrapped (topoPyramid) but every face is FLAT and its
+  //     base is a polygon, so its silhouette and its constant-height fill lines
+  //     are made of real corners. Fitting them would round a corner that the
+  //     mesh states exactly — the same regression a curved cube would be. It
+  //     stays in the GATE (a user who asks for curves on a pyramid still gets
+  //     them) and stays out of the DEFAULT.
+  //   • `cylinder` and `cone` keep flat caps but their silhouettes and cap rims
+  //     are circles, so they are rounded for this purpose.
+  //   • A low-poly `sphere`/`ellipsoid` is faceted in the mesh but reads round;
+  //     that is exactly what the fit is for.
+  //
+  // ONE set serves BOTH roles (Object tab ▸ Border lines, Style tab ▸ Fill
+  // lines): the two exclusions above are properties of the SURFACE, not of the
+  // kind of line drawn on it, so splitting them would only invite drift.
+  const FLAT_FACED_CHART_PRIMITIVES = new Set(['pyramid']);
+  const hasRoundedContour = (primitive) => (
+    CURVED_FILL_PRIMITIVES.has(primitive) && !FLAT_FACED_CHART_PRIMITIVES.has(primitive)
+  );
+
+  // The line-finish keys a NEWLY CREATED rounded object is seeded with, and the
+  // only two this seed ever writes. `curves` lives on the object3d leaf bag
+  // (Border lines); `fillCurves` in that leaf's own `style.params` (Fill lines,
+  // carried by StyleCascade). Smoothing / Simplify / Fidelity are deliberately
+  // absent — a fit is exact, whereas those three trade the model away, so they
+  // stay opt-in.
+  //
+  // This is a CREATION contract, exactly like PRIMITIVE_CREATE_DEFAULTS above:
+  // nothing here is read while DESERIALIZING, and the resolution fallbacks in
+  // Engine._applySceneCurveFinish still treat an absent key as off. A saved
+  // document that never wrote these keys is therefore read exactly as it is
+  // today, which is why this default needs no sceneVersion migration.
+  const LINE_FINISH_CREATE_DEFAULTS = { curves: true, fillCurves: true };
+
   // Keys that carry SIZE (document mm) per primitive — the ones a swap scales.
   // Everything else (detail, solidType, sideCount, frequency, taper, starRatio,
   // the deformers, importedMesh) describes shape or quality, not size, and is
@@ -1443,6 +1483,11 @@
     // The chart-wrapped (SurfaceFill) primitives — the set the v2→v3 fill-angle
     // migration owns, and the one place that answers "is this shape curved?".
     CURVED_FILL_PRIMITIVES,
+    // "Does this shape have a ROUNDED CONTOUR?" — CURVED_FILL_PRIMITIVES minus
+    // the flat-faced charts, and the one gate on the line-finish creation seed.
+    FLAT_FACED_CHART_PRIMITIVES,
+    hasRoundedContour,
+    LINE_FINISH_CREATE_DEFAULTS,
     MAPPERS,
     GROUP_OPS,
     PRIMITIVE_PARAM_DEFAULTS,
