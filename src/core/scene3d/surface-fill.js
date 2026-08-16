@@ -139,7 +139,6 @@
   // Those are not tone at any density; they are a pen-down/pen-up dot. 2 x pen
   // reproduces the existing 0.6 mm at the shipped 0.3 mm pen.
   const MIN_MARK_PEN = 2;
-  const TUNE = () => (typeof globalThis !== 'undefined' && globalThis.__SF_TUNE) || null;
 
   // Radical inverse base 2, scaled off the index — the classic ordered-dither
   // permutation. vdc(0,1,2,3,…) = 0, .5, .25, .75, .125, … so any prefix is
@@ -171,12 +170,12 @@
   // each ruling, and independently per ruling, which is what interdigitates.
   const FEATHER_AMPL = 0.30;
   const FEATHER_BUCKET = 5;
-  // Schmitt-trigger half-width on the dither comparison, in units of `rank`.
-  // DERIVED, not tuned: `featherAt` returns [-0.5, 0.5], so the feather moves
-  // the comparison by at most ±FEATHER_AMPL/2. A hysteresis band of exactly
-  // that half-amplitude is the smallest one that cannot be crossed twice by the
-  // feather alone — i.e. the feather can still move WHERE a ruling stops (its
-  // documented job) but can no longer switch a ruling off and back on again
+  // Re-start margin on the dither comparison, in units of `rank` (see the
+  // one-sided hysteresis in emitLine). DERIVED, not tuned: `featherAt` returns
+  // [-0.5, 0.5], so the feather moves the comparison by at most
+  // ±FEATHER_AMPL/2. A margin of exactly that half-amplitude is the smallest
+  // one the feather cannot fake — so the feather can still move WHERE a ruling
+  // stops (its documented job) but can no longer switch a ruling back on again
   // mid-form (which was never its job).
   const HYST_RANK = FEATHER_AMPL / 2;
 
@@ -527,11 +526,9 @@
       ? clamp(masterPitch / (LIT_MAX_PITCH_PEN * penWidth), 0.05, 1)
       : LIT_FLOOR;
     floorPitch = PLOT_FLOOR_PEN * penWidth;
-    const __t = TUNE();
-    const BRIDGE_MM = (__t && __t.bridge != null ? __t.bridge : BRIDGE_PEN) * penWidth;
-    const SPECK_MM = (__t && __t.speck != null ? __t.speck : SPECK_PEN) * penWidth;
-    const HYST = __t && __t.hyst != null ? __t.hyst : HYST_RANK;
-    const MIN_MARK_MM = (__t && __t.minMark != null ? __t.minMark : MIN_MARK_PEN) * penWidth;
+    const BRIDGE_MM = BRIDGE_PEN * penWidth;
+    const SPECK_MM = SPECK_PEN * penWidth;
+    const MIN_MARK_MM = MIN_MARK_PEN * penWidth;
     // Samples along each fill line. The MESH's tessellation `detail` sets the
     // base; the Style tab's own Fidelity (`fillFidelity`) scales it.
     //
@@ -624,6 +621,93 @@
       ? (tt) => ({ a: tt, b: fixVal })
       : (tt) => ({ a: fixVal, b: tt }));
 
+    // ── RULING CONTINUITY: the run sink ──────────────────────────────────────
+    // Jay, 2026-08-16, on a hatched capsule with Highlight = None: "with no
+    // highlights and hatched fill, I would not expect all of these partial fill
+    // lines."
+    //
+    // The tone drop test is evaluated PER SAMPLE, and every quantity it reads
+    // moves CONTINUOUSLY along a ruling on a wrapped surface: `cap =
+    // localPitch / floorPitch` tracks the chart's foreshortening, the composed-
+    // budget ceiling divides by that same local pitch, and the feather adds
+    // ±FEATHER_AMPL/2 of rank on top. So a ruling whose rank sits anywhere near
+    // the local coverage does not cut ONCE — it chatters, and arrives as a row
+    // of stubs. Measured on Jay's capsule, family A emitted 28 runs at a MEDIAN
+    // LENGTH OF 3 mm, ten of them under 1 mm and four under 0.2 mm, on a form
+    // ~70 mm across. A FACETED face has a constant local pitch and a
+    // near-constant zone, which is why a cube measures zero mid-form endpoints
+    // and every chart-wrapped primitive is riddled with them. Highlight
+    // treatment is NOT implicated: `none` and `blank` measure identically, so
+    // the `0188e01` glint-cap bypass holds — the cut fires upstream of every
+    // highlight branch, which is why no Highlight setting could ever have met
+    // the "lines must not break" contract.
+    //
+    // TONE IS NOT TOUCHED. Dropping a whole ruling, and terminating a ruling
+    // where the surface genuinely changes zone, are how this engine shades and
+    // both still happen — `gateT`/`gateF`, the zone-confined crossed families,
+    // are deliberately short and are left exactly as authored. What this sink
+    // removes is sub-stroke chatter: a break too short to read as a break, and
+    // a mark too short to read as a stroke.
+    //
+    // Only a DITHER drop is bridgeable (`softDrop`). A break because the
+    // surface ended, because a zone-gated family left its zone, because a
+    // highlight treatment re-routed the ink, or because `FORM_INK.R` asked for
+    // a dashed rim (duty < 1) is DELIBERATE and calls `flush` — the rim's
+    // dashes survive exactly as authored.
+    // Each FAMILY gets its own id. `lineIndex` is only unique WITHIN a family —
+    // crosshatch's A and B families both index from 0 — so a per-ruling test
+    // that keyed on lineIndex alone would merge two different rulings into one
+    // and read the pair as a fragmented line.
+    let famSeq = 0;
+    let currentFam = 'A';
+    const nextFam = (kind) => { currentFam = `${kind}#${famSeq}`; famSeq += 1; return currentFam; };
+    const makeSink = (back, lineIndex, fam) => {
+      let run = [];
+      let runLen = 0;
+      let gapPts = [];
+      let gapLen = 0;
+      let softStart = false;   // this run began after a dither drop, not at a boundary
+      let sawSoftDrop = false;
+      const emitRun = (softEnd) => {
+        // A mark bounded by the SURFACE at both ends is legitimate however short
+        // (a ruling clipped by a narrow neck, or by the poles), so only a mark
+        // the dither carved out of the MIDDLE of a ruling can be a speck. The
+        // sub-pen-width floor applies to every run regardless — that one is a
+        // pen-down dot, not tone, at any density.
+        const speck = softStart && softEnd && runLen < SPECK_MM;
+        if (run.length >= 2 && runLen >= MIN_MARK_MM && !speck) {
+          run.fam = fam;
+          pushRun(run, back, lineIndex);
+        }
+        run = []; runLen = 0; softStart = false;
+      };
+      return {
+        flush: () => { emitRun(false); gapPts = []; gapLen = 0; sawSoftDrop = false; },
+        softDrop: (pt) => {
+          sawSoftDrop = true;
+          if (!run.length) return;           // nothing open yet — a leading drop
+          const prev = gapPts.length ? gapPts[gapPts.length - 1] : run[run.length - 1];
+          gapLen += Math.hypot(pt.x - prev.x, pt.y - prev.y);
+          gapPts.push(pt);
+          if (gapLen > BRIDGE_MM) { emitRun(true); gapPts = []; gapLen = 0; }
+        },
+        addPt: (pt) => {
+          if (run.length && gapPts.length) {
+            // Bridge. The skipped samples lie ON the surface, so re-adding them
+            // keeps the ruling on the form instead of chording across it.
+            gapPts.forEach((g) => {
+              runLen += Math.hypot(g.x - run[run.length - 1].x, g.y - run[run.length - 1].y);
+              run.push(g);
+            });
+          }
+          gapPts = []; gapLen = 0;
+          if (!run.length) softStart = sawSoftDrop;
+          else runLen += Math.hypot(pt.x - run[run.length - 1].x, pt.y - run[run.length - 1].y);
+          run.push(pt);
+        },
+      };
+    };
+
     // Emit one iso-line. `paramAt(tt)` walks the line through the (a,b)
     // parameter square. `threshold` is this line's ordered-dither cut (0..1) —
     // the sample draws only where the local shade (1 − I) meets it, so lines
@@ -638,81 +722,13 @@
     const emitLine = (paramAt, threshold, back, lineIndex, count, ladderRank, zoneGate, pitchStep, lineDir, densityCross) => {
       const wantFront = !back;
       const rank = Number.isFinite(ladderRank) ? ladderRank : threshold;
-      let run = [];
       let hlRun = [];
-      // ── RULING CONTINUITY ────────────────────────────────────────────────
-      // Jay, 2026-08-16, on a hatched capsule with Highlight = None: "with no
-      // highlights and hatched fill, I would not expect all of these partial
-      // fill lines."
-      //
-      // The drop test below is evaluated PER SAMPLE, and every quantity it
-      // reads moves CONTINUOUSLY along a ruling on a wrapped surface:
-      // `cap = localPitch / floorPitch` tracks the chart's foreshortening, the
-      // composed-budget ceiling divides by that same local pitch, and the
-      // feather adds ±FEATHER_AMPL of rank on top. So a ruling whose rank sits
-      // anywhere near the local coverage does not cut ONCE — it chatters, and
-      // arrives as a row of stubs. Measured on Jay's capsule: half of all fill
-      // endpoints landed more than 2 mm from any silhouette, crease or
-      // occlusion boundary, i.e. floating in open surface. A FACETED face has a
-      // constant local pitch and a near-constant zone, which is exactly why a
-      // cube measures zero such endpoints and every chart-wrapped primitive
-      // measures ~50%. Highlight treatment is NOT implicated — `none` and
-      // `blank` measure identically, so the `0188e01` glint-cap bypass holds;
-      // the cut fires upstream of every highlight branch.
-      //
-      // TONE IS NOT TOUCHED. Dropping a whole ruling, and terminating a ruling
-      // where the surface genuinely changes zone, are how this engine shades
-      // and both still happen. What is removed is sub-stroke chatter: a break
-      // too short to read as a break, and a mark too short to read as a stroke.
-      // Both are stated in pen widths — the plot-safety unit §0/C15 already use
-      // — because that is the scale at which a nick stops being a break and
-      // starts being a wobble in one line.
-      //
-      // Only the DITHER drop is bridgeable. A break because the surface ended
-      // (back-face, off-chart), because a zone-gated family left its zone,
-      // because a highlight treatment re-routed the ink, or because
-      // `FORM_INK.R` asked for a dashed rim (duty < 1) is DELIBERATE and cuts
-      // hard — the rim's dashes survive exactly as authored.
-      let runLen = 0;
-      let gapPts = [];
-      let gapLen = 0;
-      let softStart = false;   // this run began after a dither drop, not at a boundary
-      let sawSoftDrop = false;
+      // The base channel goes through the shared run sink (see makeSink).
+      const sink = makeSink(back, lineIndex, currentFam);
+      const flush = () => { sink.flush(); drawing = false; };
+      const softDrop = sink.softDrop;
+      const addPt = sink.addPt;
       let drawing = false;     // hysteresis state: is this ruling currently laying ink?
-      const emitRun = (softEnd) => {
-        // A mark bounded by the SURFACE at both ends is legitimate however
-        // short (a ruling clipped by a narrow neck, or by the poles). Only a
-        // mark the dither carved out of the middle of a ruling — soft at both
-        // ends — can be a speck, and only that one is culled.
-        const speck = softStart && softEnd && runLen < SPECK_MM;
-        if (run.length >= 2 && runLen >= MIN_MARK_MM && !speck) {
-          run.fam = densityCross ? 'over' : (zoneGate ? `gate${zoneGate}` : 'A');
-          pushRun(run, back, lineIndex);
-        }
-        run = []; runLen = 0; softStart = false;
-      };
-      // A hard cut means the SURFACE ended (or a deliberate treatment took the
-      // ink), so the hysteresis trigger restarts with the next continuous span.
-      const flush = () => { emitRun(false); gapPts = []; gapLen = 0; sawSoftDrop = false; drawing = false; };
-      const softDrop = (pt) => {
-        sawSoftDrop = true;
-        if (!run.length) return;             // nothing open yet — a leading drop
-        const prev = gapPts.length ? gapPts[gapPts.length - 1] : run[run.length - 1];
-        gapLen += Math.hypot(pt.x - prev.x, pt.y - prev.y);
-        gapPts.push(pt);
-        if (gapLen > BRIDGE_MM) { emitRun(true); gapPts = []; gapLen = 0; }
-      };
-      const addPt = (pt) => {
-        if (run.length && gapPts.length) {
-          // Bridge. The skipped samples lie ON the surface, so re-adding them
-          // keeps the ruling on the form instead of chording across it.
-          gapPts.forEach((g) => { runLen += Math.hypot(g.x - run[run.length - 1].x, g.y - run[run.length - 1].y); run.push(g); });
-        }
-        gapPts = []; gapLen = 0;
-        if (!run.length) softStart = sawSoftDrop;
-        else runLen += Math.hypot(pt.x - run[run.length - 1].x, pt.y - run[run.length - 1].y);
-        run.push(pt);
-      };
       // Highlight runs are tagged so the caller draws them dashed/dotted on the
       // highlight pen (dashed/dotted treatments).
       const flushHL = () => {
@@ -871,24 +887,30 @@
               covCapped = Math.min(covCapped, (myCeil * localPitch) / penWidth);
             }
             const jit = featherAt(lineIndex, s) * FEATHER_AMPL;
-            // HYSTERESIS. The bare comparison `rank >= covCapped + jit` is a
-            // per-sample verdict on a quantity that WANDERS along the ruling
-            // (foreshortening, the composed-budget ceiling, and ±FEATHER_AMPL of
-            // feather on top). A ruling whose rank sits anywhere near the local
-            // coverage therefore starts and stops repeatedly, which is what puts
-            // a ruling's ends in open surface instead of on the silhouette.
-            // A Schmitt trigger makes the decision STICKY: a ruling must clear
-            // the coverage by a margin to START, and fall short of it by the
-            // same margin to STOP. Marginal rulings resolve to fully-drawn or
-            // fully-absent instead of partial, which is exactly "tone decides
-            // WHETHER a ruling is drawn, not where it is chopped". A ruling that
-            // crosses a genuine zone step (T at 1.00 → L at 0.42, far wider than
-            // the band) still terminates there, so the form's shading is intact.
-            // The band is the feather's own amplitude: below that, a flip is the
-            // feather talking, not the surface.
+            // HYSTERESIS, ONE-SIDED. The bare comparison `rank >= covCapped +
+            // jit` is a per-sample verdict on a quantity that WANDERS along the
+            // ruling (foreshortening, the composed-budget ceiling, and
+            // ±FEATHER_AMPL/2 of feather on top). A ruling whose rank sits near
+            // the local coverage therefore stops and RESTARTS repeatedly, and
+            // those restarts are what strew a form with stubs.
+            //
+            // So STARTING is what gets the margin, and STOPPING keeps the exact
+            // legacy test. That asymmetry is deliberate and load-bearing:
+            //
+            //   - Raising the bar to START can only ever REMOVE ink, so the
+            //     composed C15/§0 budget that `covCapped` enforces is untouched
+            //     — the object cannot flood. A symmetric trigger, which also
+            //     made a ruling harder to STOP, let rulings run on past their
+            //     coverage and pushed a 4 mm window to 0.571 against the 0.56
+            //     ceiling (scene3d-plot-safety). Plot safety outranks tidiness.
+            //   - A ruling that has stopped can still resume, but only where
+            //     coverage genuinely RISES by more than the feather can fake —
+            //     entering the terminator, say. Inside a uniform zone, where the
+            //     feather was the only thing talking, it stays stopped. That is
+            //     the chatter, gone, with the shading left intact.
             dropZone = drawing
-              ? rank >= covCapped + jit + HYST
-              : rank >= covCapped + jit - HYST;
+              ? rank >= covCapped + jit
+              : rank >= covCapped + jit - HYST_RANK;
             // Dash duty — the reflected rim breaks its rulings rather than
             // tightening them (§5.1: widened spacing + duty 0.7). A duty break
             // is DELIBERATE, so it cuts hard and is never bridged.
@@ -943,6 +965,7 @@
     };
 
     const emitFamily = (fixAxis, count, back, zoneGate) => {
+      nextFam(zoneGate ? `gate${zoneGate}` : 'A');
       for (let i = 0; i < count; i++) {
         const fixVal = (i + 0.5) / count;
         emitLine(axisLine(fixAxis, fixVal), (i + 0.5) / count, back, i, count, rankOf(i), zoneGate,
@@ -1006,6 +1029,7 @@
     };
 
     const emitAngledFamily = (angleDeg, count, back, zoneGate, densityCross) => {
+      nextFam(densityCross ? 'over' : (zoneGate ? `gate${zoneGate}` : 'A'));
       const fam = angleFamily(angleDeg);
       // Keep the LINE SPACING (not the line count) constant as the family
       // rotates, so Density reads the same at every angle. span = 1 on an axis.
@@ -1143,8 +1167,12 @@
         const symmetric = sp.center === 'bboxCenter';          // double helix from the middle
         const snap = sp.axisSnap === true;                     // wind the OTHER parametric axis
         const turns = Math.max(4, Math.min(SPIRAL_MAX_TURNS, Math.round(count * SPIRAL_TURN_GAIN)));
-        let run = [];
-        const flush = () => { pushRun(run, back); run = []; };
+        // Same run sink as emitLine: a helix loop is a ruling too, and its rank
+        // (the turn it is on) is compared against a coverage that varies along
+        // the loop, so it chattered in exactly the same way — just less often,
+        // because a whole turn shares one rank.
+        const sink = makeSink(back, null, nextFam('spiral'));
+        const flush = sink.flush;
         const total = steps * turns;
         for (let s = 0; s <= total; s++) {
           const f = s / total;
@@ -1164,13 +1192,13 @@
             if (useLadder) {
               const zone = zoneOf(smp);
               const cov = zone ? zoneCoverage(zone, false) : coverageForSample(smp.I);
-              if (rankOf(Math.floor(f * turns)) >= cov) { flush(); continue; }
+              if (rankOf(Math.floor(f * turns)) >= cov) { sink.softDrop({ x: smp.x, y: smp.y }); continue; }
             } else {
               const shade = clamp(1 - smp.I, 0, 1);
               if (shade < 0.12) { flush(); continue; }
             }
           }
-          run.push({ x: smp.x, y: smp.y, z: smp.z });
+          sink.addPt({ x: smp.x, y: smp.y, z: smp.z });
         }
         flush();
       } else if (mapper === 'stipple') {
