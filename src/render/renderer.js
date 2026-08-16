@@ -933,22 +933,27 @@
 
     getOptimizationTargetIds() {
       const scope = SETTINGS.optimizationScope || 'all';
+      // Membership rule shared with engine.optimizeLayers and the SVG export:
+      // every leaf, plus a group that publishes composed ink (a morph blend, a
+      // 3D scene's composed pass). A scene group used to fail `!layer.isGroup`
+      // here, so a scene-only document had no optimization target at all.
+      const owns = (layer) => Boolean(window.Vectura?.LayerInk?.layerOwnsInk(layer));
       let ids = [];
       if (scope === 'selected') {
         ids = Array.from(this.selectedLayerIds || []).filter((id) =>
-          this.engine.layers.some((layer) => layer && !layer.isGroup && layer.id === id)
+          this.engine.layers.some((layer) => owns(layer) && layer.id === id)
         );
       } else if (scope === 'active') {
         const activeId = this.engine.activeLayerId;
-        if (activeId && this.engine.layers.some((layer) => layer && !layer.isGroup && layer.id === activeId)) {
+        if (activeId && this.engine.layers.some((layer) => owns(layer) && layer.id === activeId)) {
           ids = [activeId];
         }
       } else {
-        ids = this.engine.layers.filter((layer) => layer && !layer.isGroup).map((layer) => layer.id);
+        ids = this.engine.layers.filter((layer) => owns(layer)).map((layer) => layer.id);
       }
       if (!ids.length) {
         const activeId = this.engine.activeLayerId;
-        if (activeId && this.engine.layers.some((layer) => layer && !layer.isGroup && layer.id === activeId)) {
+        if (activeId && this.engine.layers.some((layer) => owns(layer) && layer.id === activeId)) {
           ids = [activeId];
         }
       }
@@ -1029,24 +1034,26 @@
     // come from buildPlotRecords (which builds each record FROM that layer's
     // getRenderablePaths), so ownership is preserved by construction.
     //
-    // GROUPS ARE DELIBERATELY EXCLUDED — see the guard below.
+    // A GROUP IS INCLUDED ONLY WHEN IT OWNS ITS INK — see the guard below.
     getDrawOrderPreviewItems(optimizationTargetIds) {
       const targetIds = optimizationTargetIds || this.getOptimizationTargetIds();
       const eligible = new Map();
       const targetLayers = [];
       this.engine.layers.forEach((l) => {
         if (this.shouldSkipLayerForMaskPreview(l)) return;
-        // A GROUP is never an optimization target: engine.optimizeLayers filters
-        // `!layer.isGroup`, so a group has no optimizedPaths and none of its
-        // paths ever carry meta.lineSortOrder. Colouring a group would therefore
-        // fabricate a draw order the plotter has no notion of — a 3D scene
-        // group's composed scenePaths are ordered by COMPOSITION, not by any
-        // line sort. Giving scenes a real draw order is a separate unit; until
-        // then the honest preview for a scene is empty. This guard is explicit
-        // (not merely implied by targetIds) so a future widening of
-        // getOptimizationTargetIds cannot silently pull group geometry into the
-        // colour overlay.
-        if (l.isGroup) return;
+        // A group is admitted only if it PUBLISHES its own composed ink (a morph
+        // blend, a 3D scene's composed pass). Such a group is a real
+        // optimization target now, so its paths carry meta.lineSortOrder and
+        // colouring them describes an order the plotter really follows.
+        //
+        // The guard stays explicit rather than leaning on targetIds alone,
+        // because the failure it prevents is a POSITION bug, not an order bug:
+        // a container group that does NOT own its ink (children draw
+        // themselves) would hand the overlay paths belonging to another layer,
+        // and `traceLayerPath(path, item.layer, …)` would stroke them under the
+        // wrong transform — the ghost capsule offset up-and-left of the real
+        // one, pinned by draw-order-overlay-geometry-position.test.js.
+        if (l.isGroup && !window.Vectura?.LayerInk?.layerOwnsInk(l)) return;
         if (!targetIds.has(l.id)) return;
         targetLayers.push(l);
         if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer)) return;

@@ -1307,11 +1307,16 @@
   function getOptimizationTargets() {
     const SETTINGS = (DEPS && DEPS.SETTINGS) || (G.Vectura && G.Vectura.SETTINGS) || {};
     const scope = SETTINGS.optimizationScope || 'all';
+    // Same membership rule as engine.optimizeLayers / the draw-order preview:
+    // leaves, plus groups that publish composed ink (morph blend, 3D scene
+    // pass). Excluding every group here meant a scene-only document had no
+    // optimization target, so the Line Sort panel wrote its config nowhere.
+    const owns = (layer) => Boolean(G.Vectura?.LayerInk?.layerOwnsInk(layer));
     let targets = [];
     if (scope === 'selected') {
       targets = this.app.getSelectedLayers();
     } else if (scope === 'all') {
-      targets = this.app.engine.layers.filter((layer) => !layer.isGroup);
+      targets = this.app.engine.layers.filter((layer) => owns(layer));
     } else {
       const active = this.app.engine.getActiveLayer?.();
       if (active) targets = [active];
@@ -1320,7 +1325,7 @@
       const active = this.app.engine.getActiveLayer?.();
       if (active) targets = [active];
     }
-    return targets.filter((layer) => layer && !layer.isGroup);
+    return targets.filter((layer) => owns(layer));
   }
 
   function getOptimizationTargetIds() {

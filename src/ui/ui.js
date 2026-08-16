@@ -428,8 +428,19 @@
     // An empty-but-present array (all-gap cycle) exports as zero paths — never
     // fall through to the undivided geometry the canvas is not drawing.
     if (Array.isArray(layer.dividedPaths)) return clonePathsWithMeta(layer.dividedPaths);
-    if (layer.isGroup && Array.isArray(layer.morphedPaths)) return clonePathsWithMeta(layer.morphedPaths);
     const { useOptimized = false } = options;
+    // COMPOSED GROUP INK (morph blend / 3D scene pass). A group has no
+    // `layer.paths`, so reading the leaf chain below would export NOTHING —
+    // that is how a document containing only a 3D scene exported a blank file.
+    // Mirrors engine.getRenderablePaths, including the optimized preference:
+    // the group is a real optimization target, so its sorted geometry is what
+    // the plotter lays down.
+    const groupInk = window.Vectura.LayerInk.groupInkPaths(layer);
+    if (groupInk) {
+      return clonePathsWithMeta(
+        useOptimized && Array.isArray(layer.optimizedPaths) ? layer.optimizedPaths : groupInk
+      );
+    }
     const source =
       useOptimized && Array.isArray(layer.optimizedPaths)
         ? layer.optimizedPaths

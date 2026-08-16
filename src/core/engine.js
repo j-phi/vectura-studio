@@ -78,6 +78,33 @@
     return out;
   };
 
+  // COMPOSED GROUP INK — the single definition every consumer shares.
+  //
+  // A container GROUP owns no `paths` of its own: its ink is composed from its
+  // (consumed) children and published on the group. A morph group's blend lives
+  // on `morphedPaths`; a 3D scene group's one composed HLR pass lives on
+  // `scenePaths`. Any consumer that walks `engine.layers` and reads
+  // `layer.paths` therefore sees NOTHING for such a group — which is how a
+  // document containing only a 3D scene exported a blank SVG, and how line sort
+  // never reached a scene's 966 composed paths.
+  //
+  // Returns the composed array, or null for a layer whose geometry is its own
+  // (every leaf, and a compound group — a compound bakes its silhouette into
+  // `layer.paths`, so it needs no special case here).
+  const groupInkPaths = (layer) => {
+    if (!layer || !layer.isGroup) return null;
+    if (Array.isArray(layer.morphedPaths)) return layer.morphedPaths;
+    if (Array.isArray(layer.scenePaths)) return layer.scenePaths;
+    return null;
+  };
+
+  // A layer that contributes ink of its own: every non-group layer, plus a
+  // group whose composed ink is published (above). This is the membership rule
+  // for optimization targets, the SVG export walk and the draw-order preview —
+  // one predicate, so the three consumers cannot drift into describing
+  // different documents.
+  const layerOwnsInk = (layer) => Boolean(layer) && (!layer.isGroup || groupInkPaths(layer) !== null);
+
   const PRIMITIVE_SHAPE_KINDS = new Set(['circle', 'rect', 'oval', 'polygon', 'star']);
   const isFreeformShapePath = (path) => {
     if (!Array.isArray(path)) return false;
@@ -2428,12 +2455,21 @@
     getRenderablePaths(layer, options = {}) {
       if (!layer) return [];
       if (layer._morphConsumed) return [];
-      if (layer.isGroup && Array.isArray(layer.morphedPaths)) return layer.morphedPaths;
       // Scene-tree Increment B: a consumed object3d/booleanGroup3d child emits
       // nothing (the owning scene group emits its paths); a scene group serves
-      // the single composed pass. Mirrors the morph checks above.
+      // the single composed pass. Mirrors the morph check.
       if (layer._sceneConsumed) return [];
-      if (layer.isGroup && Array.isArray(layer.scenePaths)) return layer.scenePaths;
+      // COMPOSED GROUP INK (morph blend / 3D scene pass). It is a real plot
+      // subject like any leaf's geometry, so it runs through optimization too:
+      // serve optimizedPaths when the caller asked for the optimized geometry,
+      // exactly as the leaf branch below does. Before this, a group had no
+      // optimizedPaths at all, so no scene path ever carried meta.lineSortOrder
+      // and a scene had no draw order.
+      const groupInk = groupInkPaths(layer);
+      if (groupInk) {
+        if (options.useOptimized && Array.isArray(layer.optimizedPaths)) return layer.optimizedPaths;
+        return groupInk;
+      }
       if (layer.mask?.enabled && layer.mask?.hideLayer) return [];
       // Stroke division (P0-B): divided fragments are the FINAL renderable
       // geometry — canvas, export, and stats all consume them. Null whenever
@@ -2566,6 +2602,15 @@
       });
     }
 
+    // Drop the optimization cache derived from a group's PREVIOUS composed ink.
+    // Called by every recompose site, so `layer.optimizedPaths` on a group is
+    // either current or absent — never a stale copy the canvas could draw.
+    _invalidateGroupOptimization(group) {
+      if (!group) return;
+      group.optimizedPaths = null;
+      group.optimizedStats = null;
+    }
+
     // Scene-tree Increment B — compose every scene GROUP once. A scene group is
     // a scene3d layer flagged isGroup + containerRole 'scene'; it COLLECTS its
     // descendant object3d/booleanGroup3d layers back into one assembled scene
@@ -2662,6 +2707,14 @@
       // layer's own `curves` flag, which _applyObjectDivisions already reads).
       const finished = this._applySceneCurveFinish(paths, assembled, objectLayers, group);
       group.scenePaths = this._applyObjectDivisions(finished, objectLayers);
+      // The composed ink is the source of truth; anything derived from the
+      // PREVIOUS compose is now stale. generate() recomposes a scene group
+      // outside the optimize pass (Increment D — scene-object drags), so
+      // without this the canvas would keep drawing the previous pass's
+      // optimizedPaths: a ghost scene frozen at the drag's start position.
+      // computeAllDisplayGeometry re-runs optimizeLayers immediately after its
+      // own compose pass, so nothing is lost there.
+      this._invalidateGroupOptimization(group);
     }
 
     /**
@@ -3145,6 +3198,9 @@
       });
       const morphed = multiFn(pathsPerChild, group.modifier, b) || [];
       group.morphedPaths = morphed;
+      // Same staleness rule as the scene compose: refoldMorphGroupsForLayers
+      // runs on the live-drag hot path, outside the optimize sweep.
+      this._invalidateGroupOptimization(group);
       // transient pen/style fallback for renderer/export/stats
       const first = visibleLeaves[0];
       if (first) {
@@ -3584,7 +3640,13 @@
     }
 
     optimizeLayers(layers, options = {}) {
-      const targetLayers = (layers || this.layers).filter((layer) => layer && !layer.isGroup);
+      // Ink-owning GROUPS optimize too (layerOwnsInk): a morph blend and a 3D
+      // scene's composed pass are plotted geometry, so line sort / simplify /
+      // filter must reach them. Filtering `!layer.isGroup` here is why a scene
+      // had no draw order at all — the composed paths never carried
+      // meta.lineSortOrder, so preview, playback and export all fell back to
+      // composition order.
+      const targetLayers = (layers || this.layers).filter((layer) => layerOwnsInk(layer));
       if (!targetLayers.length) return new Map();
       const includePlotterOptimize = Boolean(options.includePlotterOptimize);
       const runPipeline = (layersToProcess, config) => {
@@ -3601,7 +3663,12 @@
 
         const working = new Map();
         layersToProcess.forEach((layer) => {
-          const sourcePaths = this.getAncestorModifiers(layer).length
+          // A group's source is its COMPOSED ink — `layer.paths` is empty on a
+          // morph/scene group, so reading it would optimize nothing.
+          const groupInk = groupInkPaths(layer);
+          const sourcePaths = groupInk
+            ? groupInk
+            : this.getAncestorModifiers(layer).length
             ? Array.isArray(layer.effectivePaths) && layer.effectivePaths.length
               ? layer.effectivePaths
               : layer.paths || []
@@ -4207,6 +4274,9 @@
 
   const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.VectorEngine = VectorEngine;
+  // Composed-group-ink rules, shared with the renderer (draw-order preview) and
+  // the UI (SVG export walk) so all three consumers agree on which layers plot.
+  window.Vectura.LayerInk = { groupInkPaths, layerOwnsInk };
   // AUD-02: the current `.vectura` engine-state schema version, exposed so the
   // file-open UI can warn when a file comes from a newer build than this one.
   window.Vectura.VECTURA_FORMAT_VERSION = VECTURA_FORMAT_VERSION;

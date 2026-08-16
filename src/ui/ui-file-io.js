@@ -620,7 +620,7 @@
       const optimizationTargetIds = useOptimized
         ? (typeof this.optimizeTargetsForCurrentScope === 'function'
           ? this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true }).targetIds
-          : new Set((this.app.engine.layers || []).filter((layer) => layer && !(layer.isGroup && layer.type !== 'compound') && !this.app.engine.hasCompoundAncestor(layer)).map((layer) => layer.id)))
+          : new Set((this.app.engine.layers || []).filter((layer) => layer && (layer.type === 'compound' || window.Vectura.LayerInk.layerOwnsInk(layer)) && !this.app.engine.hasCompoundAncestor(layer)).map((layer) => layer.id)))
         : new Set();
 
       const penMap = new Map((SETTINGS.pens || []).map((pen) => [pen.id, pen]));
@@ -657,8 +657,14 @@
       // identical geometry across different pens, and let pen-grouped line
       // sort interleave pens. The canvas renderer is the reference behavior.
       (this.app.engine.layers || []).forEach((layer, layerIndex) => {
-        const isMorphGroup = layer.isGroup && Array.isArray(layer.morphedPaths) && layer.morphedPaths.length > 0;
-        if (!layer?.visible || (layer.isGroup && layer.type !== 'compound' && !isMorphGroup) || isMaskLayerGeometryHidden(layer) || (this.app.engine.hasCompoundAncestor && this.app.engine.hasCompoundAncestor(layer))) return;
+        // A GROUP exports when it owns its ink: a compound bakes a silhouette
+        // into layer.paths, a morph group publishes morphedPaths, and a 3D
+        // scene group publishes its one composed pass on scenePaths. Skipping
+        // every non-compound group is what made a scene-only document export a
+        // blank SVG — its children are all `_sceneConsumed`, so nothing was
+        // left to emit.
+        const ownsInk = layer && (layer.type === 'compound' || window.Vectura.LayerInk.layerOwnsInk(layer));
+        if (!layer?.visible || !ownsInk || isMaskLayerGeometryHidden(layer) || (this.app.engine.hasCompoundAncestor && this.app.engine.hasCompoundAncestor(layer))) return;
         const layerPen = penMap.get(layer.penId) || fallbackPen;
         const ancestorMasks = this.app.engine.getAncestorMaskLayers ? this.app.engine.getAncestorMaskLayers(layer) : [];
         const forceLinear = destructiveMarginCrop || (removeHiddenGeometry && ancestorMasks.length);
