@@ -169,6 +169,72 @@ describe('Scene X-ray — back-face controls need a surface fill', () => {
     });
   });
 
+  // ── the 3D panel's X-ray group carries the same gate ──────────────────────
+  // Driven on an inline MONOLITH scene, because that is the only shape whose
+  // panel reaches this block: `getObject()` reads the inline params.objects
+  // array, which a scene TREE deliberately leaves empty (its objects are child
+  // layers), so on a tree the panel's whole X-ray group renders for nobody.
+  // That reachability gap is a separate defect in the same family as the
+  // booleanGroup3d Cast row and is NOT fixed here — this test pins the gate on
+  // the path that does run, so the two surfaces cannot drift.
+  describe('3D panel', () => {
+    const buildMonolithPanel = (mapper) => {
+      const mono = new window.Vectura.Layer(`mono-${engine.layers.length}`, 'scene3d', 'Scene');
+      mono.params = {
+        ...mono.params,
+        sceneVersion: 1,
+        seed: 0,
+        objects: [{
+          id: 'obj-1', name: 'Box 1', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 },
+          transform: { x: 0, y: 20, z: 0, yaw: 20, pitch: 12, roll: 0, scale: 1 },
+          visibility: 'xray',
+        }],
+        lights: [{ id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true }],
+        ground: { enabled: false },
+        backdrop: { enabled: false },
+        camera: { projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 },
+        groups: [],
+        assets: {},
+        styleTable: { scene: { penId: null, mapper: 'none', params: {} }, byObject: {}, byFace: {} },
+      };
+      engine.layers.push(mono);
+      engine.generate(mono.id);
+      renderer.setSelection([mono.id], mono.id);
+      renderer.setSceneSelection({ layerId: mono.id, mode: 'object', objectIds: ['obj-1'], faceKeys: [], edgeKeys: [] });
+      renderer.setSceneObjectStyle(mono.id, ['obj-1'], { mapper, params: {} });
+
+      const panelHost = document.createElement('div');
+      document.body.appendChild(panelHost);
+      window.Vectura.UI.Scene3DPanel.build(app.ui, mono, panelHost);
+      // The panel opens on the Object tab; the X-ray group lives on Style.
+      const styleTab = Array.from(panelHost.querySelectorAll('button,[role="tab"]'))
+        .find((b) => (b.textContent || '').trim() === 'Style');
+      if (styleTab) styleTab.click();
+      return {
+        headers: panelHost.querySelectorAll('.vs3-xray-hdr').length,
+        notes: Array.from(panelHost.querySelectorAll('.vs3-xray-note')).map((n) => n.textContent),
+        backRows: Array.from(panelHost.querySelectorAll('.vs3-lbl'))
+          .map((l) => l.textContent)
+          .filter((t) => /^(Back |Front$|Depth cue$)/.test(t)),
+      };
+    };
+
+    test('a fill mapper renders the full X-ray group', () => {
+      const p = buildMonolithPanel('hatch');
+      expect(p.headers).toBe(1);
+      expect(p.notes).toEqual([]);
+      expect(p.backRows).toEqual(['Back faces', 'Back density', 'Back line', 'Depth cue', 'Back pen', 'Front']);
+    });
+
+    test('a WIREFRAME mapper keeps the header, drops every row, and says why', () => {
+      const p = buildMonolithPanel('wireframe');
+      expect(p.headers).toBe(1);
+      expect(p.backRows).toEqual([]);
+      expect(p.notes).toHaveLength(1);
+      expect(p.notes[0]).toMatch(/surface fill/i);
+    });
+  });
+
   // ── the controls are genuinely bound (this was NOT a dead binding) ────────
   describe('under a fill mapper, every back-face control reaches the engine', () => {
     test('Back faces on/off gates the far-surface family', () => {
