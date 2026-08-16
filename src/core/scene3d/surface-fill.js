@@ -1425,6 +1425,20 @@
     // Emit the screen-frame crossed family. Same signature role as
     // emitAngledFamily, same line budget, same ladder ranks.
     const emitScreenCross = (baseAngleDeg, deg, count, back, zoneGate, densityCross) => {
+      // MERGE FIX (shadow-anatomy × p4). This function is shadow-anatomy's
+      // screen-frame replacement for the `emitAngledFamily` calls that used to
+      // draw the terminator cross; p4 independently added `nextFam` family
+      // tagging to `emitFamily` and `emitAngledFamily`, the only two emitLine
+      // callers that existed when it was written. The two changes touch no
+      // common line, so the merge was textually clean and silently produced a
+      // third emitLine caller that never opens a family — every cross ruling
+      // inherited the PREVIOUS family's id ('A#n'). That is not cosmetic:
+      // `run.fam` is the key p4's continuity contract groups rulings by, so the
+      // cross lines landed in family A's per-ruling buckets and made whole
+      // rulings read as 3+ fragments, while `gate*` matched nothing at all.
+      // Tag identically to `emitAngledFamily` — same argument names, same
+      // precedence — so the cross is once again its own family.
+      nextFam(densityCross ? 'over' : (zoneGate ? `gate${zoneGate}` : 'A'));
       const fam = buildCrossFamily(baseAngleDeg, deg, count);
       for (let i = 0; i < fam.n; i++) {
         const L = fam.lines[i];

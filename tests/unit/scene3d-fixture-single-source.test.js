@@ -132,8 +132,15 @@ describe('§0 — the shadow-anatomy fixture is the single source, and it is enf
       { what: 'an inline primitive object', re: /\bprimitive:\s*['"](sphere|box|capsule|solid)['"]/ },
       { what: 'an inline solid definition', re: /\bsolidType:\s*['"]/ },
     ];
-    // Empty. An entry here needs its justification on the same line.
-    const ALLOW = {};
+    // An entry here needs its justification on the same line.
+    const ALLOW = {
+      // Not a shadow-anatomy harness: it imports the fixture ONLY for the rig
+      // (camera + sun) so rule A has one source, but its SUBJECT is its own —
+      // the capsule Jay reported ruling fragmentation on, at its own tone
+      // ladder. Pinning it to the fixture's ball would stop it reproducing the
+      // defect it exists to catch. Rig shared, subject owned.
+      'scene3d-fill-ruling-continuity.test.js': ['an inline primitive object', 'an inline tone ladder'],
+    };
 
     RESTATEMENTS.forEach(({ what, re }) => {
       test(`no fixture consumer contains ${what}`, () => {
