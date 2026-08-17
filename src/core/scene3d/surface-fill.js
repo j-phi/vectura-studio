@@ -221,6 +221,58 @@
   // stops (its documented job) but can no longer switch a ruling back on again
   // mid-form (which was never its job).
   const HYST_RANK = FEATHER_AMPL / 2;
+  // ...AND IT IS A SHARE OF THE LOCAL COVERAGE, NOT AN ABSOLUTE RANK OFFSET.
+  //
+  // The paragraph above derives the SIZE of the margin correctly and then states
+  // it in the wrong units, which made it a ban rather than a margin everywhere
+  // the form is sparse.
+  //
+  // A zone's usable rank budget IS its coverage: only rulings whose rank sits
+  // below `covCapped` ever draw there. Subtracting a flat 0.15 therefore means
+  // something different in every zone. At the dark ceiling (`TOTAL_DARK_CEIL`
+  // 0.47) it is about a third of the budget and reads as "you need a real rise",
+  // which is the documented intent. At the centre light, whose composed
+  // coverage measures ~0.08 on the ladder fixtures, it is TWICE the whole
+  // budget: `covCapped - HYST_RANK` is negative, no rank can satisfy it, and a
+  // ruling that stops anywhere in L can never restart. That is not "harder to
+  // restart", it is "cannot", and it deletes the sparse marks §5.4 #1 requires
+  // the centre light to carry.
+  //
+  // So the margin is charged as a SHARE OF THE LOCAL COVERAGE. It keeps its
+  // meaning in every zone — "a re-start needs a rise worth this much of what
+  // the zone can lay down" — instead of meaning "a real rise" in the dark and
+  // "never" in the light.
+  //
+  // MEASURED. `f` is margin ÷ coverage (the flat rule is f = 0.15/cov, which
+  // is where it blows up). Four-fixture ladder, `scene3d-form-ladder`'s boolean
+  // grid, with the L-zone speck exemption below held on throughout:
+  //
+  //   f        D(L) per fixture           worst    worst F/M   O12 2->3  C15 caustic
+  //   flat     .0638 .0587 .0692 .0750    .0587 X  1.7300 X    .0346 X   demoted X
+  //   0.05  <- .0725 .0702 .0762 .0865    .0702    1.6841      pass      1.069 both
+  //   0.075                    (ladder unchanged)                pass    1.069 both
+  //   0.10     .0725 .0702 .0762 .0865    .0702    1.6915      pass      demoted X
+  //   0.15     .0725 .0702 .0762 .0865    .0702    1.6915      pass      demoted X
+  //   0.20     .0684 .0698 .0736 .0840    .0684    1.6942      pass      demoted X
+  //   0.32     .0684 .0690 .0714 .0798    .0684    1.6904      .0431 X   demoted X
+  //   (Round 10, pre-p4)
+  //            .0694 .0678 .0762 .0865    .0678    1.6601      .0465     1.069 both
+  //
+  // Bars, for reading the table: O6 ratchet D(L) >= 0.067, F/M <= 1.70, O12's
+  // bands 2 -> 3 ratchet > 0.046.
+  //
+  // "demoted" is the C15 sub-window clause losing its own subject: above
+  // f = 0.075 the pole caustic on `W-bigball-bands4` falls from 1.069 to 0.888
+  // and stops being that drawing's worst point, so the global argmax moves to an
+  // ordinary lighting-driven dark patch that DOES follow the sun — which is
+  // exactly what `scene3d-subwindow-density`'s light-independence test reports.
+  //
+  // Every criterion is met across the plateau f ∈ (0, 0.075], and every one is
+  // met at least as well as it was pre-p4. Pinned in the middle of the plateau
+  // rather than at either edge: the flat rule failed in the first place because
+  // it sat where a small change in the drawing flips a verdict.
+  const HYST_COV_SHARE = HYST_RANK / 3;   // 0.05
+  const hystFor = (covCapped) => HYST_COV_SHARE * clamp(covCapped, 0, 1);
 
   // Line count from the density slider (1..100 → ~6..40 wrap lines).
   const lineCountFor = (density) => Math.max(4, Math.round(6 + clamp(density, 0, 100) * 0.34));
@@ -754,18 +806,38 @@
       let gapLen = 0;
       let softStart = false;   // this run began after a dither drop, not at a boundary
       let sawSoftDrop = false;
+      // Is this run WHOLLY inside the centre light? `null` until the first
+      // sample lands; latches false as soon as a non-L sample is added. Read
+      // only by the L-zone speck exemption below.
+      let runLit = null;
       const emitRun = (softEnd) => {
         // A mark bounded by the SURFACE at both ends is legitimate however short
         // (a ruling clipped by a narrow neck, or by the poles), so only a mark
         // the dither carved out of the MIDDLE of a ruling can be a speck. The
         // sub-pen-width floor applies to every run regardless — that one is a
         // pen-down dot, not tone, at any density.
-        const speck = softStart && softEnd && runLen < SPECK_MM;
+        //
+        // ...AND NOT IN THE CENTRE LIGHT. The cull's premise is "a mark this
+        // short is chatter, not tone". That premise is zone-relative and it is
+        // false in L: `formCeiling('L')` is the smallest non-zero ceiling in the
+        // ladder and §5.4 #1 caps the zone's pitch at LIT_MAX_PITCH_PEN (12) x
+        // pen, so the intended drawing there IS a scatter of short, widely
+        // spaced marks — and SPECK_PEN is also 12, i.e. the cull's threshold and
+        // the zone's own design pitch are the same number. Worth +0.003 of
+        // D(L) on the binding ladder fixture (`V-E-bands4-sun45`), measured with
+        // the proportional re-start margin in place.
+        //
+        // Tightest exemption that does the job: a run is exempt only if EVERY
+        // sample in it classified as L. A run that so much as touches M, T, F, R
+        // or H is culled exactly as before, so the limb/terminator chatter this
+        // sink was built to remove is untouched. `MIN_MARK_MM` still applies in
+        // L — a sub-pen-width fragment is a pen-down dot in any zone.
+        const speck = softStart && softEnd && runLen < SPECK_MM && runLit !== true;
         if (run.length >= 2 && runLen >= MIN_MARK_MM && !speck) {
           run.fam = fam;
           pushRun(run, back, lineIndex);
         }
-        run = []; runLen = 0; softStart = false;
+        run = []; runLen = 0; softStart = false; runLit = null;
       };
       return {
         flush: () => { emitRun(false); gapPts = []; gapLen = 0; sawSoftDrop = false; },
@@ -777,7 +849,8 @@
           gapPts.push(pt);
           if (gapLen > BRIDGE_MM) { emitRun(true); gapPts = []; gapLen = 0; }
         },
-        addPt: (pt) => {
+        addPt: (pt, zone) => {
+          runLit = (runLit === null) ? (zone === 'L') : (runLit && zone === 'L');
           if (run.length && gapPts.length) {
             // Bridge. The skipped samples lie ON the surface, so re-adding them
             // keeps the ruling on the form instead of chording across it.
@@ -835,10 +908,12 @@
       const sparseOwner = hl || ld;
       const sparseStep = sparseOwner ? Math.max(1, Math.round(100 / sparseDensity)) : 1;
       const lineKept = !sparseOwner || (lineIndex % sparseStep === 0);
+      let sampleZone = null;
       for (let s = 0; s <= steps; s++) {
         const tt = s / steps;
         const pr = paramAt(tt);
         const smp = sampleAt(pr.a, pr.b);
+        sampleZone = null;
         if (!smp || smp.front !== wantFront) { flush(); flushHL(); continue; }
         if (toneOn) {
           const shade = clamp(1 - smp.I, 0, 1);
@@ -885,6 +960,7 @@
           let dutyBreak = false;
           if (useLadder) {
             const zone = zoneOf(smp);
+            sampleZone = zone;
             if (zoneGate && zone !== zoneGate) { flush(); flushHL(); continue; }
             const cov = zone
               ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true, smp)
@@ -1008,9 +1084,12 @@
             //     stock would have drawn is still drawn: charging the margin on
             //     every start instead cost 13-20% of the fill ink across the
             //     tone goldens, which is a tone change, not a continuity fix.
+            //   - The margin is charged AGAINST THE LOCAL COVERAGE (see
+            //     `hystFor`), because that is the rank budget the zone actually
+            //     has. Flat, it was a ban in every sparse zone.
             dropZone = (drawing || !everDrew)
               ? rank >= covCapped + jit
-              : rank >= covCapped + jit - HYST_RANK;
+              : rank >= covCapped + jit - hystFor(covCapped);
             // Dash duty — the reflected rim breaks its rulings rather than
             // tightening them (§5.1: widened spacing + duty 0.7). A duty break
             // is DELIBERATE, so it cuts hard and is never bridged.
@@ -1058,7 +1137,7 @@
         }
         flushHL();
         drawing = true; everDrew = true;
-        addPt({ x: smp.x, y: smp.y, z: smp.z });
+        addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone);
       }
       flush();
       flushHL();
@@ -1602,6 +1681,10 @@
           const wind = (f * turns + phase) % 1;
           const smp = snap ? sampleAt(wind, sweep) : sampleAt(sweep, wind);
           if (!smp || smp.front !== wantFront) { flush(); continue; }
+          // Same hoist as emitLine's `sampleZone`: the sink's L-zone speck
+          // exemption has to hold on EVERY path that feeds it, or the law is
+          // enforced on the line families and not on the helix.
+          let sampleZone = null;
           if (toneOn) {
             // O18 — the spiral used to gate on a hardcoded `shade < 0.12` and
             // ignored `ladder[]` outright, so `bands` did nothing at all on a
@@ -1610,6 +1693,7 @@
             // keeps the arcs continuous instead of speckling the helix.
             if (useLadder) {
               const zone = zoneOf(smp);
+              sampleZone = zone;
               const cov = zone ? zoneCoverage(zone, false) : coverageForSample(smp.I);
               if (rankOf(Math.floor(f * turns)) >= cov) { sink.softDrop({ x: smp.x, y: smp.y }); continue; }
             } else {
@@ -1617,7 +1701,7 @@
               if (shade < 0.12) { flush(); continue; }
             }
           }
-          sink.addPt({ x: smp.x, y: smp.y, z: smp.z });
+          sink.addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone);
         }
         flush();
       } else if (mapper === 'stipple') {
