@@ -268,20 +268,21 @@ describe('the form ladder holds its ratios (O1 / O2 / O3 / O6)', () => {
         expect(m.R / m.F).toBeLessThanOrEqual(0.60);
       });
 
-      // ⚑ RED SINCE THE p4 MERGE, DELIBERATELY LEFT RED. `E-bands4` measures
-      // F/M = 1.7300 against this 1.70 ceiling. The bar is NOT moved here: the
-      // merge integrator's job was to explain the movement, not to rule on the
-      // criterion. Mechanism, established by ABLATION (zero p4's BRIDGE_PEN /
-      // SPECK_PEN / MIN_MARK_PEN / HYST_RANK in surface-fill.js and every one of
-      // the six post-merge criteria failures goes green, so p4's ruling-continuity
-      // machinery is the whole cause and the merge resolution is not):
-      //   p4 bridges dither gaps shorter than 12 x pen, which re-inks skipped
-      //   samples. Chatter — and therefore bridging — is worst where the local
-      //   coverage sits near the ruling's rank, which on a curved limb is the F
-      //   zone. M is flatter and chatters less, so F gains more ink than M and
-      //   the ratio rises. F/M overshoots the TOP of its separation band, i.e.
-      //   the form shadow reads slightly MORE separated from the halftone than
-      //   spec, not less. Round 11 to rule: widen to 1.75, or re-tune the sink.
+      // WAS RED FOR THE p4 MERGE, FIXED AT THE SOURCE — the bar did not move.
+      // `E-bands4` measured F/M = 1.7300 against this 1.70 ceiling immediately
+      // after the merge; it now measures 1.6542, and the worst of the four
+      // fixtures is 1.6841.
+      //
+      // The merge's own ablation (zero all four of p4's fill-continuity
+      // constants and every post-merge failure goes green) named the run sink
+      // but not which constant. Measured one at a time, the answer was
+      // `HYST_RANK` alone: the one-sided hysteresis charged its re-start margin
+      // as a FLAT 0.15 of rank, which is a third of the dark ceiling's budget
+      // and TWICE the centre light's, so it starved the sparse zones in
+      // proportion to how sparse they were. M is sparser than F, lost more ink,
+      // and the ratio rose. The margin is now a share of the local coverage
+      // (`hystFor` in `surface-fill.js`, with the sweep table), so the rule
+      // means the same thing in every zone and the band holds.
       test('the form shadow sits in its own band above the halftone: F/M in [1.45, 1.70]', () => {
         expect(m.F / m.M).toBeGreaterThanOrEqual(1.45);
         expect(m.F / m.M).toBeLessThanOrEqual(1.70);
@@ -363,27 +364,27 @@ describe('the form ladder holds its ratios (O1 / O2 / O3 / O6)', () => {
       // BINDING constraint on O6. That is exactly the near-circularity the
       // Round 9 reviewer flagged when they pinned it, and it should be ruled on
       // before another round spends itself on the L zone.
-      // ⚑ RED SINCE THE p4 MERGE, AND THIS ONE IS A REGRESSION — LEFT RED ON
-      // PURPOSE. Post-merge D(L) measures 0.0638 (`E-bands4`) and 0.0587
-      // (`V-E-bands4-sun45`) against this 0.067 ratchet, so the centre light
-      // carries LESS tone than before, moving O6 AWAY from its 0.083 bar.
+      // WAS RED FOR THE p4 MERGE, FIXED AT THE SOURCE — the ratchet did not
+      // move, and it is still 0.067. Post-merge D(L) measured 0.0638
+      // (`E-bands4`) and 0.0587 (`V-E-bands4-sun45`); the four fixtures now read
+      // .0725 / .0702 / .0762 / .0865, worst-of-four 0.0702, which is above the
+      // pre-p4 worst of 0.0678 as well as above the ratchet. Still short of the
+      // 0.083 bar: O6 remains the workstream's hardest open criterion, and the
+      // O4 collision documented above is untouched by this.
       //
-      // Mechanism, established by ablation (see the F/M note above): p4's
-      // unconditional 2 x pen emission floor and its 12 x pen speck cull delete
-      // short runs. The L zone is by construction the sparsest and shortest-
-      // marked zone in the ladder, so it is exactly where those two culls bite
-      // hardest — they remove the very ink O6 is trying to buy.
-      //
-      // LOWERING THIS RATCHET WOULD ERASE THE SIGNAL IT EXISTS TO RAISE. Two
-      // rounds have been spent on the L zone; O6 is the workstream's hardest
-      // open criterion. So the number stays where Round 10 left it and the miss
-      // is visible. Round 11 owns the ruling, and it now has a third option
-      // beside "move O4" and "ratify 0.75": exempt the L zone from the speck
-      // cull, which is a p4 constant and not a criteria change at all.
+      // The merge integrator's hypothesis was that p4's 2 x pen emission floor
+      // and 12 x pen speck cull were eating the L zone's short marks. MEASURED,
+      // and that is not what happened: the speck cull fires on 4-8 runs per
+      // fixture and at most ONE of those is in L; zeroing MIN_MARK_PEN changes
+      // nothing at all. The whole effect was `HYST_RANK` — a flat 0.15-of-rank
+      // re-start margin subtracted from a zone whose entire coverage is ~0.08,
+      // i.e. a permanent ban on re-starting anywhere in the centre light. See
+      // `hystFor` in `surface-fill.js`. (The L-zone speck exemption landed too,
+      // and is worth +0.003 on the binding fixture.)
       test('O6 — the centre light carries tone (bar 1/LIT_MAX_PITCH_PEN = 0.083; ratcheted at the measured level)', () => {
         const bar = 1 / V.Scene3D.Regions.LIT_MAX_PITCH_PEN;
         expect(bar).toBeCloseTo(0.0833, 4);
-        expect(m.L).toBeGreaterThanOrEqual(0.067); // ratchet: measured worst 0.0678
+        expect(m.L).toBeGreaterThanOrEqual(0.067); // ratchet: measured worst 0.0702
       });
 
       // O4/O7 — and the step above it stays open. This is the bar the only
