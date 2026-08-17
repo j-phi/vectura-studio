@@ -1,4 +1,5 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const FIX = require('../fixtures/scene3d-shadow-anatomy');
 
 /*
  * Scene3D — the FACETED highlight dispatch (design spec §5.4 #2/#3/#4/#7,
@@ -20,11 +21,18 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  */
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
-const BOUNDS = { width: 320, height: 220, m: 10, dW: 300, dH: 200, penWidth: 0.3, truncate: 4 };
-// Mirrors the design harness fixture: an ordinary 28-degree sun, which is
-// exactly the case where no cube face reaches the top tone band.
-const CAMERA = { projection: 'orthographic', yaw: -30, pitch: 32, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
-const SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 28, intensity: 1, castShadows: false };
+
+// ROUND 10 — nothing restated. This file used to say its rig "mirrors the design
+// harness fixture", and TWO of the mirrored values were already wrong: its
+// BOUNDS omitted `fastPreview` and `preview3dQuality`, and its sun carried
+// `castShadows: false` against the fixture's `true`. Neither changes any
+// assertion here (the ground is off, so there is no receiver for a cast shadow,
+// and O9/O11/O14/O15 are all statements about distinctness and pen routing) —
+// but "mirrors the fixture" was not true of the file that said it, which is the
+// whole reason the rule is now enforced by a test rather than by a comment.
+const {
+  BOUNDS, CAMERA, SUN, CUBE, LOWPOLY, toneBands,
+} = FIX;
 
 describe('Scene3D faceted highlight dispatch (O9 / O11 / O14 / O15)', () => {
   let runtime; let V; let algo; let defaults;
@@ -37,31 +45,21 @@ describe('Scene3D faceted highlight dispatch (O9 / O11 / O14 / O15)', () => {
   });
   afterAll(() => runtime.cleanup());
 
-  const CUBE = {
-    id: 'cube', name: 'Cube', primitive: 'box', params: { sx: 62, sy: 62, sz: 62 },
-    transform: { x: 0, y: 31, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
-  };
-  // A geodesic polyhedron goes through the FACETED path; primitive:'sphere' is
-  // chart-wrapped and would exercise the curved fill instead.
-  const LOWPOLY = {
-    id: 'lowpoly', name: 'LowPoly', primitive: 'solid', params: { solidType: 'geodesic', radius: 40, frequency: 2 },
-    transform: { x: 0, y: 42, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
-  };
-
+  // CUBE and LOWPOLY come from the fixture. The geodesic polyhedron goes through
+  // the FACETED path; primitive:'sphere' is chart-wrapped and would exercise the
+  // curved fill instead.
   const scene = (object, styleParams) => {
     const p = clone(defaults);
     p.objects = [clone(object)];
     p.ground = { enabled: false };
     p.camera = clone(CAMERA);
     p.lights = [clone(SUN)];
-    p.tone = {
-      ...clone(defaults).tone,
-      enabled: true,
-      bands: 4,
-      thresholds: [0.25, 0.5, 0.75],
-      ladder: [0.15, 0.4, 0.65, 0.9],
-      specular: { enabled: true, size: 1 },
-    };
+    p.tone = { ...clone(defaults).tone, ...toneBands(4) };
+    // NOT the fixture's style base. `fillAngle: 45 / fillDensity: 50` is this
+    // file's own deliberate deviation — a 45-degree carrier at half density
+    // leaves room on a cube face for a treatment to be visibly distinct, which
+    // is the thing O14/O15 measure. It is a STYLE choice, not a scene value, so
+    // it does not belong in the shared rig.
     p.styleTable = {
       scene: { penId: null, mapper: 'hatch', params: {} },
       byObject: { [object.id]: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: 50, ...(styleParams || {}) } } },

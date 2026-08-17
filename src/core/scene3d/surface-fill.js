@@ -118,9 +118,52 @@
   // measures ~0.45, leaving the cross the room it needs to make T read, and the
   // COMBINED perceived coverage is ceilinged outright.
   const PLOT_FLOOR_PEN = 2.2;
-  const TOTAL_DARK_CEIL = 0.47;
-  const DARKEST_WEIGHT = 2.0;    // T's coverage + cross — the ladder's top rung
-  const LIT_MAX_PITCH_PEN = 12;  // §5.4 #1 / O6 — the centre light may never be blanker
+  // ROUND 10 — READ, NOT RESTATED. These two lived here and the faceted path had
+  // no copy at all, so the composed ceiling was a law of the curved path only.
+  // They now live beside `FORM_INK` in `regions.js`, which is where the weight
+  // they divide by comes from, and both fill paths read the one definition.
+  // Values unchanged: 0.47 and 2.0, so every drawing stays byte-identical.
+  // Resolved lazily: `regions.js` may register after this file, and the point of
+  // the move is that there is exactly ONE definition, so a stale snapshot taken
+  // at load time would defeat it. The literals are the fallback for a runtime
+  // that somehow has no Regions, and they are the same 0.47 / 2.0.
+  const darkCeilConst = () => {
+    const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
+    return (R && Number.isFinite(R.TOTAL_DARK_CEIL)) ? R.TOTAL_DARK_CEIL : 0.47;
+  };
+  const darkestWeightConst = () => {
+    const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
+    return (R && Number.isFinite(R.DARKEST_WEIGHT)) ? R.DARKEST_WEIGHT : 2.0;
+  };
+  // ROUND 10 — §5.4 #1 / O6, and it MOVED for the same reason the two above
+  // did. `LIT_MAX_PITCH_PEN` was declared here and used only for two SPARSE-END
+  // clamps on the master grid (`o6Pitch`, `litFloorCov`). Round 9 swept it at
+  // 12 / 10 / 8 / 6 and Round 10 added 4: the two binding ladder fixtures are
+  // bit-identical from 12 down to 6, and at 4 D(L) goes DOWN and the protected
+  // F/M range breaks. It named O6 in its own comment and did not control it.
+  // It now lives in `regions.js`, where it floors `formCeiling('L')` — the one
+  // quantity that actually bounds D(L) — and the ladder test reads its O6 bar
+  // from the same constant. The clamps below keep their job (they are the real
+  // sparse-end clamps, and they bind when Density is genuinely too thin to
+  // carry a ladder), but they are no longer what enforces O6.
+  // Resolved lazily for the same reason as the two ceiling constants: exactly
+  // ONE definition, and `regions.js` may register after this file.
+  const litMaxPitchPen = () => {
+    const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
+    return (R && Number.isFinite(R.LIT_MAX_PITCH_PEN)) ? R.LIT_MAX_PITCH_PEN : 12;
+  };
+  // The composed ceiling, read not restated. `82789c4` moved the two constants
+  // to `regions.js` but left this file computing the ceiling from them by hand,
+  // so `formCeiling` was the single expression on the faceted path only and a
+  // second copy of the law survived here — which is how the L-zone floor above
+  // would have been enforced on one path and not the other.
+  const zoneCeiling = (zone) => {
+    const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
+    if (R && typeof R.formCeiling === 'function') return R.formCeiling(zone);
+    const ink = Regions.formInk(zone);
+    const weight = clamp(finite(ink.coverage, 0) + finite(ink.cross, 0), 0, 4);
+    return darkCeilConst() * clamp(weight / darkestWeightConst(), 0, 1);
+  };
   const MASTER_MAX_LINES = 420;  // pathological-input guard (steps × lines)
   // RULING CONTINUITY (see emitLine). The scale at which a break stops reading
   // as a break and starts reading as a wobble in one line, and at which a mark
@@ -178,6 +221,58 @@
   // stops (its documented job) but can no longer switch a ruling back on again
   // mid-form (which was never its job).
   const HYST_RANK = FEATHER_AMPL / 2;
+  // ...AND IT IS A SHARE OF THE LOCAL COVERAGE, NOT AN ABSOLUTE RANK OFFSET.
+  //
+  // The paragraph above derives the SIZE of the margin correctly and then states
+  // it in the wrong units, which made it a ban rather than a margin everywhere
+  // the form is sparse.
+  //
+  // A zone's usable rank budget IS its coverage: only rulings whose rank sits
+  // below `covCapped` ever draw there. Subtracting a flat 0.15 therefore means
+  // something different in every zone. At the dark ceiling (`TOTAL_DARK_CEIL`
+  // 0.47) it is about a third of the budget and reads as "you need a real rise",
+  // which is the documented intent. At the centre light, whose composed
+  // coverage measures ~0.08 on the ladder fixtures, it is TWICE the whole
+  // budget: `covCapped - HYST_RANK` is negative, no rank can satisfy it, and a
+  // ruling that stops anywhere in L can never restart. That is not "harder to
+  // restart", it is "cannot", and it deletes the sparse marks §5.4 #1 requires
+  // the centre light to carry.
+  //
+  // So the margin is charged as a SHARE OF THE LOCAL COVERAGE. It keeps its
+  // meaning in every zone — "a re-start needs a rise worth this much of what
+  // the zone can lay down" — instead of meaning "a real rise" in the dark and
+  // "never" in the light.
+  //
+  // MEASURED. `f` is margin ÷ coverage (the flat rule is f = 0.15/cov, which
+  // is where it blows up). Four-fixture ladder, `scene3d-form-ladder`'s boolean
+  // grid, with the L-zone speck exemption below held on throughout:
+  //
+  //   f        D(L) per fixture           worst    worst F/M   O12 2->3  C15 caustic
+  //   flat     .0638 .0587 .0692 .0750    .0587 X  1.7300 X    .0346 X   demoted X
+  //   0.05  <- .0725 .0702 .0762 .0865    .0702    1.6841      pass      1.069 both
+  //   0.075                    (ladder unchanged)                pass    1.069 both
+  //   0.10     .0725 .0702 .0762 .0865    .0702    1.6915      pass      demoted X
+  //   0.15     .0725 .0702 .0762 .0865    .0702    1.6915      pass      demoted X
+  //   0.20     .0684 .0698 .0736 .0840    .0684    1.6942      pass      demoted X
+  //   0.32     .0684 .0690 .0714 .0798    .0684    1.6904      .0431 X   demoted X
+  //   (Round 10, pre-p4)
+  //            .0694 .0678 .0762 .0865    .0678    1.6601      .0465     1.069 both
+  //
+  // Bars, for reading the table: O6 ratchet D(L) >= 0.067, F/M <= 1.70, O12's
+  // bands 2 -> 3 ratchet > 0.046.
+  //
+  // "demoted" is the C15 sub-window clause losing its own subject: above
+  // f = 0.075 the pole caustic on `W-bigball-bands4` falls from 1.069 to 0.888
+  // and stops being that drawing's worst point, so the global argmax moves to an
+  // ordinary lighting-driven dark patch that DOES follow the sun — which is
+  // exactly what `scene3d-subwindow-density`'s light-independence test reports.
+  //
+  // Every criterion is met across the plateau f ∈ (0, 0.075], and every one is
+  // met at least as well as it was pre-p4. Pinned in the middle of the plateau
+  // rather than at either edge: the flat rule failed in the first place because
+  // it sat where a small change in the drawing flips a verdict.
+  const HYST_COV_SHARE = HYST_RANK / 3;   // 0.05
+  const hystFor = (covCapped) => HYST_COV_SHARE * clamp(covCapped, 0, 1);
 
   // Line count from the density slider (1..100 → ~6..40 wrap lines).
   const lineCountFor = (density) => Math.max(4, Math.round(6 + clamp(density, 0, 100) * 0.34));
@@ -342,15 +437,55 @@
       });
     };
     // Zone → family-A coverage, with the two floors §5.4 #1 demands. The glint
-    // cap may lighten the centre light, but never past LIT_MAX_PITCH_PEN — a
+    // cap may lighten the centre light, but never past `litMaxPitchPen()` — a
     // highlight is defined by the ink AROUND it, and a surround at 17 × pen has
     // no ink to be defined by. `litFloorCov` is the coverage at which family A's
-    // spacing is exactly 6 × pen, so the floor is stated in the spec's units.
+    // spacing is exactly `litMaxPitchPen()` × pen, so the floor is stated in the
+    // spec's units. (The comment used to say "6 × pen"; the constant has read 12
+    // for several rounds and the two had drifted.)
+    //
+    // ROUND 10 — WHAT THIS FLOOR IS AND IS NOT. It is the SPARSE-END clamp: it
+    // binds when Density is genuinely too thin to carry a ladder. It is NOT what
+    // enforces O6. Measured on the four-fixture ladder, the requested coverage
+    // here sits well ABOVE the composed ceiling on the binding fixtures, so it
+    // is clamped downstream and neither this floor nor GLINT_KEEP reaches the
+    // paper — GLINT_KEEP 0.6 → 0.8 → 1.0 is bit-identical on two of four. O6 is
+    // bounded by `Regions.formCeiling('L')`, and that is where §5.4 #1's pitch
+    // statement is now wired.
     let litFloorCov = LIT_FLOOR; // assigned once the master pitch is known, below
     let floorPitch = 0;          // ditto: the plot-safe local pitch (C15)
-    const zoneCoverage = (zone, isCross, isDensityCross) => {
+    // ── THE FORM SHADOW'S CROSS COMES OFF THE SILHOUETTE (§5.1, O3) ───────────
+    // §5.1 gives F a single family whose rulings compress toward the limb; the
+    // crossed family belongs to the terminator and F borrows a half-weight share
+    // of it so it can hold a value of its own. What F must not do is carry that
+    // second direction out to the contour. Family A already crowds hard there —
+    // a sphere's meridians converge AT the silhouette — so a second direction on
+    // top of it turns the outer rim into a woven mesh, and then the terminator
+    // stops reading as a band, which is O3's own clause. Measured before this:
+    // 46 % (r 46) and 54 % (r 92) of the outermost F windows carried two
+    // families.
+    // `nz` is the camera-space normal's z: 1 facing the camera, exactly 0 ON the
+    // silhouette. So the taper is stated in the geometry's own terms and needs no
+    // radius, no bbox and no projection assumption. Smoothstepped, so there is no
+    // edge where it engages — an abrupt one would be a contour line, which is the
+    // artefact O26 forbids.
+    const LIMB_CROSS_LO = 0.30;
+    const LIMB_CROSS_HI = 0.65;
+    const limbCrossTaper = (smp) => {
+      if (!smp || !Number.isFinite(smp.nz)) return 1;
+      const u = clamp((Math.abs(smp.nz) - LIMB_CROSS_LO) / (LIMB_CROSS_HI - LIMB_CROSS_LO), 0, 1);
+      return u * u * (3 - 2 * u);
+    };
+    // How much of `zone`'s crossed family actually lands on this sample. Only F
+    // tapers: T's cross is the terminator's own band and must stay whole, and no
+    // other zone crosses at all.
+    const crossWeightAt = (zone, smp) => {
+      const c = clamp(Regions.formInk(zone).cross, 0, 1);
+      return zone === 'F' ? c * limbCrossTaper(smp) : c;
+    };
+    const zoneCoverage = (zone, isCross, isDensityCross, smp) => {
       const ink = Regions.formInk(zone);
-      if (isCross) return clamp(ink.cross, 0, 1);
+      if (isCross) return clamp(crossWeightAt(zone, smp), 0, 1);
       if (isDensityCross) {
         // §0's craft rule made operational: Density past the plot floor spends
         // itself on a second DIRECTION, never on a tighter pitch. Weighted by the
@@ -419,7 +554,10 @@
       const I = toneOn ? clamp(intensityFn(wN, world), 0, 1) : 1;
       // I8 — per-sample specular term for light-driven highlight (0 when off).
       const S = (ldOn && typeof specularFn === 'function') ? clamp(specularFn(wN, world), 0, 1) : 0;
-      return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, I, S, wN, world, dA, dB };
+      // `nz` = the camera-space normal's z. It is 1 facing the camera and 0 ON
+      // the silhouette, so it is the exact, projection-correct measure of "how
+      // close to the contour is this sample" — used by the limb taper below.
+      return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, nz: camN.z, I, S, wN, world, dA, dB };
     };
 
     // PERPENDICULAR screen pitch between adjacent rulings at this sample.
@@ -509,7 +647,7 @@
         //   do with it and what keeps Density live at the top of its range.
         const tonePitch = Math.max(0.05, finite(opts.tonePitch, 3) / TONE_SUBDIV);
         const litCov = clamp(Regions.formInk('L').coverage, 0.05, 1);
-        const o6Pitch = LIT_MAX_PITCH_PEN * penWidth * litCov;
+        const o6Pitch = litMaxPitchPen() * penWidth * litCov;
         const floorPen = PLOT_FLOOR_PEN * penWidth;
         masterPitch = Math.min(tonePitch, o6Pitch);
         if (masterPitch < floorPen) {
@@ -523,7 +661,7 @@
     // Coverage at which family A's spacing is exactly LIT_MAX_PITCH_PEN × pen —
     // the floor under the centre light, stated in §5.4's own units.
     litFloorCov = masterPitch > 0
-      ? clamp(masterPitch / (LIT_MAX_PITCH_PEN * penWidth), 0.05, 1)
+      ? clamp(masterPitch / (litMaxPitchPen() * penWidth), 0.05, 1)
       : LIT_FLOOR;
     floorPitch = PLOT_FLOOR_PEN * penWidth;
     const BRIDGE_MM = BRIDGE_PEN * penWidth;
@@ -668,18 +806,38 @@
       let gapLen = 0;
       let softStart = false;   // this run began after a dither drop, not at a boundary
       let sawSoftDrop = false;
+      // Is this run WHOLLY inside the centre light? `null` until the first
+      // sample lands; latches false as soon as a non-L sample is added. Read
+      // only by the L-zone speck exemption below.
+      let runLit = null;
       const emitRun = (softEnd) => {
         // A mark bounded by the SURFACE at both ends is legitimate however short
         // (a ruling clipped by a narrow neck, or by the poles), so only a mark
         // the dither carved out of the MIDDLE of a ruling can be a speck. The
         // sub-pen-width floor applies to every run regardless — that one is a
         // pen-down dot, not tone, at any density.
-        const speck = softStart && softEnd && runLen < SPECK_MM;
+        //
+        // ...AND NOT IN THE CENTRE LIGHT. The cull's premise is "a mark this
+        // short is chatter, not tone". That premise is zone-relative and it is
+        // false in L: `formCeiling('L')` is the smallest non-zero ceiling in the
+        // ladder and §5.4 #1 caps the zone's pitch at LIT_MAX_PITCH_PEN (12) x
+        // pen, so the intended drawing there IS a scatter of short, widely
+        // spaced marks — and SPECK_PEN is also 12, i.e. the cull's threshold and
+        // the zone's own design pitch are the same number. Worth +0.003 of
+        // D(L) on the binding ladder fixture (`V-E-bands4-sun45`), measured with
+        // the proportional re-start margin in place.
+        //
+        // Tightest exemption that does the job: a run is exempt only if EVERY
+        // sample in it classified as L. A run that so much as touches M, T, F, R
+        // or H is culled exactly as before, so the limb/terminator chatter this
+        // sink was built to remove is untouched. `MIN_MARK_MM` still applies in
+        // L — a sub-pen-width fragment is a pen-down dot in any zone.
+        const speck = softStart && softEnd && runLen < SPECK_MM && runLit !== true;
         if (run.length >= 2 && runLen >= MIN_MARK_MM && !speck) {
           run.fam = fam;
           pushRun(run, back, lineIndex);
         }
-        run = []; runLen = 0; softStart = false;
+        run = []; runLen = 0; softStart = false; runLit = null;
       };
       return {
         flush: () => { emitRun(false); gapPts = []; gapLen = 0; sawSoftDrop = false; },
@@ -691,7 +849,8 @@
           gapPts.push(pt);
           if (gapLen > BRIDGE_MM) { emitRun(true); gapPts = []; gapLen = 0; }
         },
-        addPt: (pt) => {
+        addPt: (pt, zone) => {
+          runLit = (runLit === null) ? (zone === 'L') : (runLit && zone === 'L');
           if (run.length && gapPts.length) {
             // Bridge. The skipped samples lie ON the surface, so re-adding them
             // keeps the ruling on the form instead of chording across it.
@@ -749,10 +908,12 @@
       const sparseOwner = hl || ld;
       const sparseStep = sparseOwner ? Math.max(1, Math.round(100 / sparseDensity)) : 1;
       const lineKept = !sparseOwner || (lineIndex % sparseStep === 0);
+      let sampleZone = null;
       for (let s = 0; s <= steps; s++) {
         const tt = s / steps;
         const pr = paramAt(tt);
         const smp = sampleAt(pr.a, pr.b);
+        sampleZone = null;
         if (!smp || smp.front !== wantFront) { flush(); flushHL(); continue; }
         if (toneOn) {
           const shade = clamp(1 - smp.I, 0, 1);
@@ -799,9 +960,10 @@
           let dutyBreak = false;
           if (useLadder) {
             const zone = zoneOf(smp);
+            sampleZone = zone;
             if (zoneGate && zone !== zoneGate) { flush(); flushHL(); continue; }
             const cov = zone
-              ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true)
+              ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true, smp)
               : coverageForSample(smp.I);
             // §0, restated as arithmetic, and C15: past ~1.2 x pen width you do
             // not get darker by ruling closer — you get a flooded blob and a wet
@@ -813,7 +975,13 @@
             // allows — by dropping rulings — and it is what keeps the lit end of
             // the ladder separable instead of saturating into the dark end.
             let cap = 1;
-            const localPitch = perpPitch(smp, pitchStep, lineDir);
+            // `pitchStep` / `lineDir` are constants for a straight parameter-
+            // space family and FUNCTIONS OF tt for the screen-frame crossed
+            // family, whose direction — and therefore whose neighbour offset —
+            // varies along the line. Everything downstream is unchanged.
+            const stepHere = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
+            const dirHere = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
+            const localPitch = perpPitch(smp, stepHere, dirHere);
             if (localPitch != null) {
               // Effective pitch is localPitch / coverage and must stay at or above
               // the floor, so the darkest zone may not exceed localPitch/floor.
@@ -870,13 +1038,14 @@
               // reaches it onto one value — T and F both crossed, both
               // saturated, T/F 0.98, and the dip closed again.
               const ink = Regions.formInk(zone);
-              const weight = clamp(ink.coverage + ink.cross, 0, 4);
-              const ceil = TOTAL_DARK_CEIL * clamp(weight / DARKEST_WEIGHT, 0, 1);
+              const ceil = zoneCeiling(zone);
               // Every family that will land on this sample, and what each is
               // for. The Density overflow is a THIRD direction and has to be in
               // the denominator or it spends budget nobody accounted for.
               const wBase = Math.max(0, ink.coverage);
-              const wCross = Math.max(0, ink.cross);
+              // The cross's weight is what will ACTUALLY land here, tapered and
+              // all — a family that is not drawn must not hold budget.
+              const wCross = Math.max(0, crossWeightAt(zone, smp));
               const wOver = densityOverflow > 0 ? Math.max(0, ink.coverage * densityOverflow) : 0;
               const W = wBase + wCross + wOver;
               let share = 1;
@@ -915,9 +1084,12 @@
             //     stock would have drawn is still drawn: charging the margin on
             //     every start instead cost 13-20% of the fill ink across the
             //     tone goldens, which is a tone change, not a continuity fix.
+            //   - The margin is charged AGAINST THE LOCAL COVERAGE (see
+            //     `hystFor`), because that is the rank budget the zone actually
+            //     has. Flat, it was a ban in every sparse zone.
             dropZone = (drawing || !everDrew)
               ? rank >= covCapped + jit
-              : rank >= covCapped + jit - HYST_RANK;
+              : rank >= covCapped + jit - hystFor(covCapped);
             // Dash duty — the reflected rim breaks its rulings rather than
             // tightening them (§5.1: widened spacing + duty 0.7). A duty break
             // is DELIBERATE, so it cuts hard and is never bridged.
@@ -965,7 +1137,7 @@
         }
         flushHL();
         drawing = true; everDrew = true;
-        addPt({ x: smp.x, y: smp.y, z: smp.z });
+        addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone);
       }
       flush();
       flushHL();
@@ -1051,6 +1223,322 @@
       }
     };
 
+    // ── THE CROSSED FAMILY IS MEASURED ON SCREEN, NOT IN THE CHART ────────────
+    //
+    // §2.3 states the rule as a statement about the EYE: crossed families sit at
+    // +65°, "never +90°, which produces a visible square grid and moirés against
+    // the raster". Until Round 8 that +65° was added to `fillAngle` inside the
+    // (a,b) PARAMETER square and only then pushed through the chart, so what the
+    // eye actually saw was the pushforward of 65°, which is 65° only where the
+    // chart happens to be conformal and isotropic. On a sphere it is neither: the
+    // pushforward metric is (R·cos v · du, R · dv), so as cos v → 0 toward the
+    // pole the u-component collapses and any family carrying a dv component
+    // swings toward 90° ON SCREEN against the parallels. Measured on the drawing
+    // (length-weighted orientation histogram per 4 mm window): the terminator's
+    // crossing ran a median 70° with a p90 of 85° and 13 % of windows at or past
+    // 80° — the lit pole read as a clean square grid while the source said 65 the
+    // whole time. It is also why O26's band boundaries were traceable: the flips
+    // lined up along parameter-space isolines rather than along anything the
+    // viewer can see.
+    //
+    // So the crossed family is now built the other way round. At every sample we
+    // take family A's SCREEN direction (its own pushforward), rotate THAT by 65°
+    // in screen space, and pull the result back through the inverse Jacobian to
+    // get the parameter-space direction to march in. The family is therefore a
+    // set of integral curves of a direction field rather than straight lines in
+    // the chart — it CURVES in parameter space precisely so that it stays
+    // straight-angled on screen, which is the frame the criterion is written in.
+    //
+    // Two things are deliberately NOT changed:
+    //   - the crosshatch mapper's own family B (`cross.angleDelta`) keeps its
+    //     parameter-frame semantics, because that dial is documented as matching
+    //     the faceted path's `crossFamilies` exactly and is a user-facing angle;
+    //   - the LINE BUDGET. The streamlines are seeded at the nominal family's own
+    //     line positions, so `count` and the seeding pitch are untouched and the
+    //     ladder's ink weights carry over unchanged.
+    const CROSS_MIN_DET = 1e-9;
+    // Fraction of the plot floor at which a traced ruling is treated as having
+    // collapsed onto another (see sepDist below).
+    const CROSS_SEP_FRAC = 0.5;
+
+    // Pull an on-screen direction (tx,ty) back into the parameter square through
+    // the inverse of J = [dA dB]. Returns null where J is degenerate — at a pole
+    // or on the silhouette, where the surface has no two independent screen
+    // directions to speak of and the question has no answer.
+    const pullbackDir = (smp, tx, ty) => {
+      if (!smp || !smp.dA || !smp.dB) return null;
+      const det = smp.dA.x * smp.dB.y - smp.dB.x * smp.dA.y;
+      const scale = Math.hypot(smp.dA.x, smp.dA.y) * Math.hypot(smp.dB.x, smp.dB.y);
+      if (!(Math.abs(det) > CROSS_MIN_DET * Math.max(1e-12, scale))) return null;
+      const a = (smp.dB.y * tx - smp.dB.x * ty) / det;
+      const b = (smp.dA.x * ty - smp.dA.y * tx) / det;
+      const n = Math.hypot(a, b);
+      if (!(n > 1e-12)) return null;
+      return { a: a / n, b: b / n };
+    };
+
+    // The parameter direction whose screen pushforward sits `deg` from family
+    // A's, with the rotation SENSE (+1/−1) fixed once per family so the whole
+    // family crosses the same way round.
+    const screenCrossDir = (smp, aDir, deg, sense) => {
+      if (!smp || !smp.dA || !smp.dB) return null;
+      const sx = smp.dA.x * aDir.a + smp.dB.x * aDir.b;
+      const sy = smp.dA.y * aDir.a + smp.dB.y * aDir.b;
+      const L = Math.hypot(sx, sy);
+      if (!(L > 1e-9)) return null;
+      const rad = (sense * finite(deg, 65) * Math.PI) / 180;
+      const c = Math.cos(rad); const s = Math.sin(rad);
+      return pullbackDir(smp, (sx * c - sy * s) / L, (sx * s + sy * c) / L);
+    };
+
+    const alignTo = (d, ref) => (ref && (d.a * ref.a + d.b * ref.b) < 0 ? { a: -d.a, b: -d.b } : d);
+    const inSquare = (p) => p.a >= 0 && p.a <= 1 && p.b >= 0 && p.b <= 1;
+
+    // Build the whole screen-frame crossed family once, and cache it: the T
+    // gate, the F gate and the Density-overflow pass all emit the SAME geometry
+    // and differ only in which zone they are allowed to draw in, so tracing once
+    // makes the new family cheaper than the three straight ones it replaces.
+    const crossFamilyCache = new Map();
+    const buildCrossFamily = (baseAngleDeg, deg, count) => {
+      const key = `${baseAngleDeg}|${deg}|${count}`;
+      if (crossFamilyCache.has(key)) return crossFamilyCache.get(key);
+      const nominal = angleFamily(finite(baseAngleDeg, 0) + finite(deg, 65));
+      const n = Math.max(2, Math.round(count * nominal.span));
+      const step = nominal.span / n;
+      const nomOff = { a: nominal.na * step, b: nominal.nb * step };
+      const nomDir = { a: nominal.da, b: nominal.db };
+      // Family A's parameter direction — the frame everything is measured from.
+      const aRad = (finite(baseAngleDeg, 0) * Math.PI) / 180;
+      const aDir = opts.mapper === 'contour'
+        ? { a: 0, b: 1 }
+        : { a: Math.cos(aRad), b: Math.sin(aRad) };
+      // Fix the rotation sense once, at the first sample that has a frame: pick
+      // whichever of ±deg lands closer to where the parameter-frame family used
+      // to run, so the drawing keeps the same handedness it always had.
+      let sense = 1;
+      for (let i = 0; i < n && sense === 1; i++) {
+        const at = nominal.lineAt((i + 0.5) / n);
+        if (!at) continue;
+        const seed = at(0.5);
+        const smp = sampleAt(seed.a, seed.b);
+        if (!smp || !smp.dA || !smp.dB) continue;
+        const plus = screenCrossDir(smp, aDir, deg, 1);
+        const minus = screenCrossDir(smp, aDir, deg, -1);
+        if (!plus || !minus) continue;
+        const dp = Math.abs(plus.a * nomDir.a + plus.b * nomDir.b);
+        const dm = Math.abs(minus.a * nomDir.a + minus.b * nomDir.b);
+        sense = dm > dp ? -1 : 1;
+        break;
+      }
+      const dirField = (p, ref) => {
+        const smp = sampleAt(p.a, p.b);
+        const d = smp ? screenCrossDir(smp, aDir, deg, sense) : null;
+        // Degenerate frame (pole / silhouette): fall back to the nominal
+        // parameter direction rather than stopping the line dead.
+        return alignTo(d || nomDir, ref || nomDir);
+      };
+
+      // ── THE RULINGS ARE SPACED IN SCREEN SPACE, NOT LEFT TO THE FIELD ────────
+      //
+      // Integral curves of a direction field are NOT an evenly-spaced family.
+      // Where the field folds they run together onto a caustic, and every ruling
+      // that reaches it lands on the same locus. That is not a modelling
+      // subtlety — it is plainly visible: the first cut of this family drew a
+      // solid black curve across the lit pole of the 92 mm ball, and the
+      // window there went from D 0.433 to D 0.688 against a 0.56 object
+      // ceiling. No per-ruling pitch estimate can catch it, because the rulings
+      // that collide are not adjacent in the family; measuring the offset to
+      // line i±1 more conservatively made it WORSE (0.644 → 0.688), which is
+      // the measurement that ruled the estimate out as the cause.
+      //
+      // So spacing is enforced where the criterion is stated — on screen. A
+      // ruling stops the moment it comes within the plot floor of a ruling
+      // already laid down (Jobard–Lefebvre evenly-spaced streamlines). This is
+      // §0 verbatim, applied to a curved family: past the floor you do not get
+      // darker by ruling closer, so the ruling ends. Ending a stroke is also the
+      // idiom the rest of this fill already speaks — the dither terminates
+      // rulings everywhere.
+      //
+      // Occupancy is a sparse screen-space hash at the separation distance.
+      // Back-facing samples are neither stamped nor tested: they project on top
+      // of the front surface and would block rulings against geometry that is
+      // not drawn.
+      // WHAT SEPARATION, EXACTLY. The traced family is the FINE grid the ladder
+      // subsets — the dither drops whole rulings by rank, so the geometry is laid
+      // at the master pitch and only a fraction of it is ever drawn. Separating
+      // at the master pitch itself therefore destroys the family before the
+      // ladder gets to choose from it: measured, T fell 0.420 → 0.323 and T/F
+      // went under the spec's own 1.25 on the big ball. The separation exists to
+      // catch COLLAPSE — the caustic, where spacing goes to zero — not to space
+      // the family, which the seeding already did. So it sits at a fraction of
+      // the plot floor, low enough that an ordinary ruling never trips it.
+      const sepDist = Math.max(1e-3, floorPitch * CROSS_SEP_FRAC);
+      const CELL = sepDist * 0.7;
+      const occ = new Map();
+      const cellKey = (x, y) => ((Math.floor(x / CELL) + 8192) * 65536) + (Math.floor(y / CELL) + 8192);
+      const occupiedByOther = (x, y, self) => {
+        const ix = Math.floor(x / CELL); const iy = Math.floor(y / CELL);
+        for (let j = -1; j <= 1; j++) {
+          for (let i = -1; i <= 1; i++) {
+            const v2 = occ.get(((ix + i + 8192) * 65536) + (iy + j + 8192));
+            if (v2 !== undefined && v2 !== self) return true;
+          }
+        }
+        return false;
+      };
+      const stamp = (x, y, self) => {
+        const k = cellKey(x, y);
+        if (!occ.has(k)) occ.set(k, self);
+      };
+      // EACH STREAMLINE CARRIES ITS NOMINAL COUNTERPART'S ARC LENGTH, centred on
+      // the same seed. This is not cosmetic. A streamline is free to stay inside
+      // the parameter square much longer than the straight chord it replaces, and
+      // an unbounded trace put ~2x the ink on every ruling: the worst window on
+      // the 92 mm ball went from 30 mm of ink to 66 mm and D from 0.529 to 0.669,
+      // straight through the 0.56 object ceiling. Binding the arc length keeps
+      // ink-per-ruling equal to the budget the ladder actually allocated, and it
+      // keeps the k-th point of line i and the k-th point of line i+1 at the same
+      // arc length from their seeds — which is what makes the neighbour offset
+      // below an honest measurement of the local spacing rather than a guess.
+      const halfSteps = Math.max(4, Math.round(steps / 2));
+      const trace = (seed, nomLen, self) => {
+        const h = Math.max(1e-4, nomLen / 2) / halfSteps;
+        const fwd = []; const bwd = [];
+        const walk = (sign, into) => {
+          let cur = { a: seed.a, b: seed.b };
+          let ref = null;
+          for (let k = 0; k < halfSteps; k++) {
+            let d = dirField(cur, ref);
+            if (ref == null && sign < 0) d = { a: -d.a, b: -d.b };
+            const mid = { a: cur.a + d.a * h * 0.5, b: cur.b + d.b * h * 0.5 };
+            if (!inSquare(mid)) break;
+            const d2 = dirField(mid, d);
+            const nx = { a: cur.a + d2.a * h, b: cur.b + d2.b * h };
+            if (!inSquare(nx)) break;
+            // Screen-space separation: walk the new step at sub-cell resolution
+            // and stop the ruling the moment it enters another ruling's floor.
+            const s0 = sampleAt(cur.a, cur.b);
+            const s1 = sampleAt(nx.a, nx.b);
+            if (s0 && s1 && s0.front && s1.front) {
+              const segLen = Math.hypot(s1.x - s0.x, s1.y - s0.y);
+              const sub = Math.max(1, Math.ceil(segLen / (CELL * 0.5)));
+              let blocked = false;
+              for (let q = 1; q <= sub; q++) {
+                const u = q / sub;
+                const px = s0.x + (s1.x - s0.x) * u; const py = s0.y + (s1.y - s0.y) * u;
+                if (occupiedByOther(px, py, self)) { blocked = true; break; }
+              }
+              if (blocked) break;
+              for (let q = 0; q <= sub; q++) {
+                const u = q / sub;
+                stamp(s0.x + (s1.x - s0.x) * u, s0.y + (s1.y - s0.y) * u, self);
+              }
+            }
+            cur = nx; ref = d2;
+            into.push({ a: cur.a, b: cur.b, da: d2.a, db: d2.b });
+          }
+        };
+        walk(1, fwd);
+        walk(-1, bwd);
+        const d0 = dirField(seed, null);
+        const pts = [];
+        for (let i = bwd.length - 1; i >= 0; i--) pts.push(bwd[i]);
+        pts.push({ a: seed.a, b: seed.b, da: d0.a, db: d0.b });
+        for (let i = 0; i < fwd.length; i++) pts.push(fwd[i]);
+        return { pts, seedIndex: bwd.length };
+      };
+      const lines = [];
+      for (let i = 0; i < n; i++) {
+        const at = nominal.lineAt((i + 0.5) / n);
+        if (!at) { lines.push(null); continue; }
+        // The nominal chord's own length through the parameter square — the arc
+        // budget this ruling is entitled to.
+        const p0 = at(0); const p1 = at(1);
+        const nomLen = Math.hypot(p1.a - p0.a, p1.b - p0.b);
+        lines.push(trace(at(0.5), nomLen, i));
+      }
+      // NEIGHBOUR OFFSET, measured rather than assumed. Every streamline is
+      // marched with the same step from a seed on the nominal family's own
+      // normal, so index k is the same arc length along every line: the vector
+      // from line i's k-th point to line i+1's k-th point IS the local offset to
+      // the neighbouring ruling, which is the quantity the plot-safe cap needs.
+      // Where the neighbour has already run off the square we fall back to the
+      // nominal seeding offset.
+      // BOTH neighbours, and the TIGHTER of the two — a ruling is as crowded as
+      // its closest neighbour, not as its average one. Where neither neighbour
+      // reaches this arc length (the family is running off the surface, which on
+      // a sphere is exactly the pole) the last measured offset is carried
+      // forward rather than reverting to the nominal seeding offset: the nominal
+      // is an UPPER bound on the spacing, and handing an upper bound to a cap
+      // whose whole job is to catch crowding licences the flood it exists to
+      // prevent.
+      lines.forEach((L, i) => {
+        if (!L) return;
+        const sides = [lines[i - 1] || null, lines[i + 1] || null];
+        const raw = L.pts.map((p, k) => {
+          let best = null;
+          sides.forEach((o) => {
+            if (!o) return;
+            const q = o.pts[k - L.seedIndex + o.seedIndex];
+            if (!q) return;
+            const off = { a: q.a - p.a, b: q.b - p.b };
+            const m = Math.hypot(off.a, off.b);
+            if (!(m > 1e-9)) return;
+            if (!best || m < best.m) best = { off, m };
+          });
+          // Diverging past the seeding pitch is legitimate but unbounded, so it
+          // is clamped back to nominal: extra room is never spent, only crowding
+          // is ever acted on.
+          return best ? (best.m > step ? nomOff : best.off) : null;
+        });
+        let carry = nomOff;
+        for (let k = 0; k < raw.length; k++) { if (raw[k]) carry = raw[k]; else raw[k] = carry; }
+        for (let k = raw.length - 1; k >= 0; k--) { if (raw[k] === nomOff && raw[k + 1]) raw[k] = raw[k + 1]; else break; }
+        L.off = raw;
+      });
+      const fam = { n, lines, step, nomOff };
+      crossFamilyCache.set(key, fam);
+      return fam;
+    };
+
+    // Emit the screen-frame crossed family. Same signature role as
+    // emitAngledFamily, same line budget, same ladder ranks.
+    const emitScreenCross = (baseAngleDeg, deg, count, back, zoneGate, densityCross) => {
+      // MERGE FIX (shadow-anatomy × p4). This function is shadow-anatomy's
+      // screen-frame replacement for the `emitAngledFamily` calls that used to
+      // draw the terminator cross; p4 independently added `nextFam` family
+      // tagging to `emitFamily` and `emitAngledFamily`, the only two emitLine
+      // callers that existed when it was written. The two changes touch no
+      // common line, so the merge was textually clean and silently produced a
+      // third emitLine caller that never opens a family — every cross ruling
+      // inherited the PREVIOUS family's id ('A#n'). That is not cosmetic:
+      // `run.fam` is the key p4's continuity contract groups rulings by, so the
+      // cross lines landed in family A's per-ruling buckets and made whole
+      // rulings read as 3+ fragments, while `gate*` matched nothing at all.
+      // Tag identically to `emitAngledFamily` — same argument names, same
+      // precedence — so the cross is once again its own family.
+      nextFam(densityCross ? 'over' : (zoneGate ? `gate${zoneGate}` : 'A'));
+      const fam = buildCrossFamily(baseAngleDeg, deg, count);
+      for (let i = 0; i < fam.n; i++) {
+        const L = fam.lines[i];
+        if (!L || L.pts.length < 2) continue;
+        const last = L.pts.length - 1;
+        const idxAt = (tt) => clamp(tt, 0, 1) * last;
+        const paramAt = (tt) => {
+          const f = idxAt(tt);
+          const k = Math.min(last - 1, Math.floor(f));
+          const u = f - k;
+          const p = L.pts[k]; const q = L.pts[k + 1];
+          return { a: clamp(p.a + (q.a - p.a) * u, 0, 1), b: clamp(p.b + (q.b - p.b) * u, 0, 1) };
+        };
+        const dirAt = (tt) => L.pts[Math.round(idxAt(tt))] || L.pts[0];
+        const lineDir = (tt) => { const p = dirAt(tt); return { a: p.da, b: p.db }; };
+        const pitchStep = (tt) => L.off[Math.round(idxAt(tt))] || fam.nomOff;
+        emitLine(paramAt, (i + 0.5) / fam.n, back, i, fam.n, rankOf(i), zoneGate,
+          pitchStep, lineDir, densityCross);
+      }
+    };
+
     // I8 — SHADOW SENSITIVITY infill. The base dither can't densify shadow past a
     // meridian's own length (its rank is tied to its longitude), so graded
     // darkening is added as EXTRA lines confined to the dark region: a sample
@@ -1123,17 +1611,20 @@
       // only the terminator — gains a second family, at +65°. Never +90°: an
       // orthogonal pair reads as a square grid and beats against the raster
       // (§2.3). This is what makes T out-ink F, which is the whole dip.
+      // ROUND 8: the +65° is now measured in the SCREEN frame (see
+      // emitScreenCross). One traced family serves all three passes.
       const emitTerminatorCross = (count, back) => {
       if (typeof globalThis !== 'undefined') globalThis.__SF_FAM = 'cross';
         if (!zonesOn) return;
-        emitAngledFamily(finite(opts.fillAngle, 0) + Regions.CROSS_OBJ_DEG, count, back, 'T');
-        emitAngledFamily(finite(opts.fillAngle, 0) + Regions.CROSS_OBJ_DEG, count, back, 'F');
+        const base = finite(opts.fillAngle, 0);
+        emitScreenCross(base, Regions.CROSS_OBJ_DEG, count, back, 'T');
+        emitScreenCross(base, Regions.CROSS_OBJ_DEG, count, back, 'F');
         // The Density overflow (see the line budget): everything Density asked
         // for past the plot floor, laid down in a second direction instead of a
         // tighter pitch. Zero at and below the floor, so it is inert until it is
         // needed.
         if (densityOverflow > 0) {
-          emitAngledFamily(finite(opts.fillAngle, 0) + Regions.CROSS_OBJ_DEG, count, back, null, true);
+          emitScreenCross(base, Regions.CROSS_OBJ_DEG, count, back, null, true);
         }
       };
       if (mapper === 'hatch') {
@@ -1190,6 +1681,10 @@
           const wind = (f * turns + phase) % 1;
           const smp = snap ? sampleAt(wind, sweep) : sampleAt(sweep, wind);
           if (!smp || smp.front !== wantFront) { flush(); continue; }
+          // Same hoist as emitLine's `sampleZone`: the sink's L-zone speck
+          // exemption has to hold on EVERY path that feeds it, or the law is
+          // enforced on the line families and not on the helix.
+          let sampleZone = null;
           if (toneOn) {
             // O18 — the spiral used to gate on a hardcoded `shade < 0.12` and
             // ignored `ladder[]` outright, so `bands` did nothing at all on a
@@ -1198,6 +1693,7 @@
             // keeps the arcs continuous instead of speckling the helix.
             if (useLadder) {
               const zone = zoneOf(smp);
+              sampleZone = zone;
               const cov = zone ? zoneCoverage(zone, false) : coverageForSample(smp.I);
               if (rankOf(Math.floor(f * turns)) >= cov) { sink.softDrop({ x: smp.x, y: smp.y }); continue; }
             } else {
@@ -1205,7 +1701,7 @@
               if (shade < 0.12) { flush(); continue; }
             }
           }
-          sink.addPt({ x: smp.x, y: smp.y, z: smp.z });
+          sink.addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone);
         }
         flush();
       } else if (mapper === 'stipple') {

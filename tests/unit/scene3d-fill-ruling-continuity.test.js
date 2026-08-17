@@ -40,8 +40,14 @@ const BOUNDS = {
   width: 320, height: 220, m: 10, dW: 300, dH: 200,
   penWidth: PEN, truncate: 4, fastPreview: false, preview3dQuality: 'high',
 };
-const SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 28, intensity: 1, castShadows: true };
-const CAMERA = { projection: 'orthographic', yaw: -30, pitch: 32, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
+// THE RIG IS IMPORTED, NOT COPIED (scene3d-fixture-single-source, rule A).
+// This file used to restate the shadow-anatomy camera and sun inline, and its
+// two literals were byte-identical to the fixture's — so this is a pure
+// re-pointing at the single source and changes no measured number. The SUBJECT
+// below (the capsule and its tone ladder) is this suite's own and deliberately
+// stays inline: it is the geometry Jay reported the fragmentation on, not the
+// shadow-anatomy ball, and it is allow-listed under rule B for exactly that.
+const { CAMERA, SUN } = require('../fixtures/scene3d-shadow-anatomy');
 
 const runLength = (p) => {
   let L = 0;

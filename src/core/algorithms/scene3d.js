@@ -155,6 +155,50 @@
   const SURFACE_FILL = new Set(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
   const REGION_MAPPERS = new Set(['contour', 'spiral', 'stipple']);
 
+  // ── THE OBJECT PLOT FLOOR (§0 / C15) ───────────────────────────────────────
+  //
+  // No single OBJECT hatch family may rule closer than this multiple of the pen
+  // width ON PAPER. Two different bounds want a say here and the floor has to
+  // satisfy both; only one of them binds.
+  //
+  //   THE CRAFT RULE (§0). "Past roughly 1.2 x pen width you do not get darker
+  //   by ruling closer, you get a flooded blob." That is a statement about wet
+  //   ink, and it is where the constant's old value of 1.2 came from.
+  //
+  //   C15, which the old comment CITED but could not enforce. A single family
+  //   at `mult x pen` covers `pen / (mult x pen)` = `1 / mult` of the paper, so
+  //   at 1.2 its coverage is 0.8333 — and C15's clause is "a run of windows at
+  //   D >= 0.80 is a breach". The floor legalised, by construction, a single
+  //   family that breaches the criterion named on the line above it. (Round 9
+  //   scorecard §4.2. Round 9 fixed WHERE the floor is measured; this fixes that
+  //   its VALUE could not bind the thing it names.)
+  //
+  // THE VALUE. `1 / mult < 0.80` needs `mult > 1.25` STRICTLY — at exactly 1.25
+  // the coverage is exactly 0.80, which is the breach threshold and not under
+  // it, so the review's ">= 1.25" is off by the relation. And `criteria.md` §0
+  // requires a bar to name its instrument: `pen / pitch` is an ideal quantity
+  // closest to the boolean grid, and the browser raster reads 8-12 % higher on
+  // the same drawing. C15's 0.80 names no instrument, so the floor clears it on
+  // the worse one:
+  //
+  //     1 / 1.25 = 0.8000   breach outright
+  //     1 / 1.40 = 0.7143   x 1.12 = 0.800  — lands ON the bar, no margin
+  //     1 / 1.50 = 0.6667   x 1.12 = 0.747  — clear on both instruments
+  //
+  // 1.5 also satisfies the craft rule with room, since it is strictly wider than
+  // 1.2. It enters as `Math.max(requestedPitch, mult x pen)`, so it can only
+  // WIDEN a pitch: raising it can remove ink, never add it. At the shadow-
+  // anatomy pen of 0.3 mm the floor is 0.45 mm against requested pitches of
+  // ~2 mm, so it binds on nothing in this workstream and the change measures
+  // zero — which is the point. A floor is not there to bind today; it is there
+  // so that no scene CAN reach the breach.
+  //
+  // NOT to be confused with `PLOT_FLOOR_MULT` in `src/core/scene3d/shadows.js`,
+  // which is the CAST SHADOW's floor and is explicitly protected.
+  const PLOT_FLOOR_MULT_OBJ = 1.5;
+  // Coverage of a single family at a given pen-width multiple. Pen-independent.
+  const singleFamilyCoverage = (mult) => 1 / mult;
+
   const makeStyleResolver = (styleTable) => {
     const cascade = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
     const cache = new Map();
@@ -553,30 +597,20 @@
       // the §5.5.3 / I27 parity contract stated properly — a cube and a sphere
       // lit alike land in the same zones — instead of two rules that disagreed
       // about where the dark side starts.
-      const TERMINATOR_SMOOTH_DEG = 40;
       // Where `shadowSensitivity` starts staging the dark side. Half-lit is the
       // curved fill's own split point, and it is deliberately NOT the terminator
       // (which lives at band 0): the stages grade everything below mid-light.
       const SHADOW_STAGE_TH = 0.5;
+      // ROUND 9 — the gate itself now lives in `Regions`, beside `formZone`, so
+      // the renderer and the shadow-anatomy instrument decide it with the same
+      // code and the same threshold instead of two edge maps that happen to
+      // agree. Cached per record; every face asks for it.
       const smoothCache = new Map();
       const smoothShadedFaces = (record) => {
         if (smoothCache.has(record)) return smoothCache.get(record);
-        const set = new Set();
-        const faces = (record && record.faces) || [];
-        const edges = (record && record.edges) || [];
-        if (faces.length && edges.length) {
-          const cosSmooth = Math.cos(TERMINATOR_SMOOTH_DEG * Math.PI / 180);
-          edges.forEach((edge) => {
-            const idx = edge && edge.faces;
-            if (!idx || idx.length !== 2) return;
-            const [i, j] = idx;
-            const fi = faces[i]; const fj = faces[j];
-            if (!fi || !fj || !fi.normalWorld || !fj.normalWorld) return;
-            const d = clamp(dot(normalize(fi.normalWorld), normalize(fj.normalWorld)), -1, 1);
-            if (d < cosSmooth) return;                  // hard edge: an edge, not a terminator
-            set.add(fi); set.add(fj);
-          });
-        }
+        const set = (Regions && typeof Regions.smoothShadedFaces === 'function')
+          ? Regions.smoothShadedFaces((record && record.faces) || [], (record && record.edges) || [])
+          : new Set();
         smoothCache.set(record, set);
         return set;
       };
@@ -892,19 +926,37 @@
       // crossW. T spends a full family (1.00), F four tenths of one (0.40), and
       // everything lighter spends none. Passing a weight rather than a boolean
       // is what puts the faceted path on the curved path's recipe.
-      const crossFamilies = (target, angleDeg, spacing, styleParams, crossPass, crossW, push) => {
-        push(hatchPolygon(target, { angleDeg, spacing }));
+      //
+      // ── EVERY FAMILY IS SPACED IN ITS OWN FRAME (Round 9, C15/O20) ──────────
+      //
+      // `planeFor(angleDeg, screenPitch)` converts a family's desired SCREEN
+      // pitch into the spacing to ask for in the surface's own plane, using THAT
+      // family's own foreshortening. Omitted ⇒ `spacing` is already the spacing
+      // to use verbatim, which is what the untoned path, the screen-space
+      // fallback and the ground all want, and keeps them byte-identical.
+      //
+      // Before this, family B was handed family A's compensation and then scaled
+      // in the plane. On a face turned nearly edge-on the two families' factors
+      // differ by 1.7x or more, so B landed that much tighter on paper than the
+      // recipe asked for — and the plot floor, which is also stated per family,
+      // never saw it.
+      const crossFamilies = (target, angleDeg, spacing, styleParams, crossPass, crossW, push, planeFor) => {
+        const plane = (deg, screenPitch) => (planeFor ? planeFor(deg, screenPitch) : screenPitch);
+        push(hatchPolygon(target, { angleDeg, spacing: plane(angleDeg, spacing) }));
         const w = clamp(finite(crossW, 0), 0, 1);
         if (crossPass) {
           const delta = clamp(finite(styleParams.crossAngleDelta, 90), 10, 170);
           const ratio = clamp(finite(styleParams.crossDensityRatio, 1), 0.25, 2);
-          push(hatchPolygon(target, { angleDeg: angleDeg + delta, spacing: spacing * ratio }));
+          push(hatchPolygon(target, { angleDeg: angleDeg + delta, spacing: plane(angleDeg + delta, spacing * ratio) }));
           if (styleParams.tripleHatch === true && w >= 1) {
             // §2.3 — the tone-driven third pass sits at +32°, not +45°. With
             // family B already at the user's delta, +45 lands close enough to A
             // or B to beat against it. Reserved for the core shadow, the only
             // zone whose recipe asks for a whole extra family.
-            push(hatchPolygon(target, { angleDeg: angleDeg + CROSS_OBJ_DEG_C, spacing: spacing * ratio }));
+            push(hatchPolygon(target, {
+              angleDeg: angleDeg + CROSS_OBJ_DEG_C,
+              spacing: plane(angleDeg + CROSS_OBJ_DEG_C, spacing * ratio),
+            }));
           }
         } else if (w > 0) {
           // The dark side's second DIRECTION. Two Round-2 defects, both fixed
@@ -917,7 +969,10 @@
           //         two directions the core shadow did and T could never out-ink
           //         F. The weight now comes from formInk, so T's family and F's
           //         lighter one differ by construction and the dip stays open.
-          push(hatchPolygon(target, { angleDeg: angleDeg + CROSS_OBJ_DEG_B, spacing: spacing / w }));
+          push(hatchPolygon(target, {
+            angleDeg: angleDeg + CROSS_OBJ_DEG_B,
+            spacing: plane(angleDeg + CROSS_OBJ_DEG_B, spacing / w),
+          }));
         }
       };
       // Zone → second-family weight, with the faceted path's one exemption: the
@@ -934,24 +989,53 @@
       const maybeLink = (segs, styleParams) =>
         (styleParams.linkFill === true && !draft ? linkBoustrophedon(segs) : segs);
 
-      // Screen-space compression of one unit measured ACROSS the rulings, under
-      // the current projection. 1 = face-on, → 0 as the face turns edge-on.
-      // Sampled numerically from the scaffold's own uv→screen map so it is exact
-      // for every projection mode (orthographic and perspective alike).
-      const uvCompression = (scaf, acrossAngleDeg) => {
+      // ── PLANE PITCH → PAPER PITCH, FOR ONE FAMILY (C15, O20) ────────────────
+      //
+      // How much of one mm of in-plane spacing survives to paper, measured the
+      // way the eye reads it: PERPENDICULAR to the ruling, after the projection.
+      // 1 = face-on, → 0 as the face turns edge-on.
+      //
+      // This used to measure the LENGTH of one unit ACROSS the rulings, i.e.
+      // |M·a| for the across-direction a. That is not the pitch. Rulings spaced
+      // `s` apart in the plane sweep a strip of area `s × 1` per unit of ruling
+      // length; the map takes that to `s × |det M|`, and the mapped ruling has
+      // length |M·d|, so the perpendicular distance between neighbours on paper
+      // is
+      //                    s × |det M| / |M · d|.
+      //
+      // The two agree only when the map has no shear. As a facet turns edge-on
+      // the shear grows without bound and they diverge — on `R2-cube`'s `+X`
+      // face the old measure read 0.848 where the truth is 0.165, so the fill
+      // was compensated 5.1x too little and the face flooded to a projected
+      // coverage of 1.046 (harness D 0.891, past every ceiling in the document
+      // and past the plot floor it was supposed to be enforcing). Its sibling
+      // `+Z` — same zone, same light, same recipe, 9.5x the projected area —
+      // measured 0.179. A cap stated on a proxy one transform away from the
+      // metric, for the fourth time in this workstream.
+      //
+      // Sampled numerically from the scaffold's own uv→screen map, so it is
+      // exact for orthographic and perspective alike.
+      const uvPitchFactor = (scaf, alongAngleDeg) => {
         if (!scaf || typeof scaf.toScreen !== 'function') return 1;
-        const a = finite(acrossAngleDeg, 0) * Math.PI / 180;
-        const nx = Math.cos(a); const ny = Math.sin(a);
-        const D = 1; // one world mm across the rulings
         const o = scaf.uv[0] || { x: 0, y: 0 };
         const p0 = scaf.toScreen({ x: o.x, y: o.y });
-        const p1 = scaf.toScreen({ x: o.x + nx * D, y: o.y + ny * D });
-        if (!p0 || !p1 || !Number.isFinite(p0.x) || !Number.isFinite(p1.x)) return 1;
-        const k = Math.hypot(p1.x - p0.x, p1.y - p0.y) / D;
-        return clamp(k, 0.12, 4); // floored: an edge-on face must not ask for infinity
+        const px = scaf.toScreen({ x: o.x + 1, y: o.y });
+        const py = scaf.toScreen({ x: o.x, y: o.y + 1 });
+        if (!p0 || !px || !py || !Number.isFinite(p0.x) || !Number.isFinite(px.x) || !Number.isFinite(py.x)) return 1;
+        const m00 = px.x - p0.x; const m10 = px.y - p0.y;
+        const m01 = py.x - p0.x; const m11 = py.y - p0.y;
+        const det = Math.abs(m00 * m11 - m01 * m10);
+        const a = finite(alongAngleDeg, 0) * Math.PI / 180;
+        const dx = Math.cos(a); const dy = Math.sin(a);
+        const along = Math.hypot(m00 * dx + m01 * dy, m10 * dx + m11 * dy);
+        if (!(along > 1e-9) || !Number.isFinite(det)) return 1;
+        // Floored well below the old 0.12: a facet at 0.02 is asking for a
+        // spacing 50x its plane extent, which draws no line at all — the correct
+        // outcome for a face with no projected area — and the floor only has to
+        // keep the arithmetic finite.
+        return clamp(det / along, 0.02, 4);
       };
-      // §0 / C15 — no single family may rule below 1.2 x pen width ON PAPER.
-      const PLOT_FLOOR_MULT_OBJ = 1.2;
+      // §0 / C15 — the object plot floor. Module scope; see its derivation there.
 
       const faceHatchLines = (face, styleParams, normalWorld, crossPass, record, hlOpts) => {
         // angleRef (Phase 2): 'face' (default) measures the hatch angle in the
@@ -994,27 +1078,176 @@
         // to D = 1.000 — solid black, well under the 1.2 x pen floor, and a wet
         // blown-out plot.
         //
-        // So measure how much one unit ACROSS the rulings compresses under the
-        // projection and divide it back out. The tone ladder then lands in SCREEN
-        // space, where the eye reads it, and the plot-safe floor is enforced there
-        // too. `kFloor` stops a near-edge-on face from asking for infinite spacing.
+        // So measure how much of one mm of in-plane spacing survives to paper —
+        // PERPENDICULAR to the ruling, which is the only place a pitch can be
+        // read — and divide it back out. The tone ladder then lands in SCREEN
+        // space, where the eye reads it, and the plot-safe floor is enforced
+        // there too.
+        //
+        // ROUND 9. Two halves of this were wrong and both flooded the same face.
+        // (a) The measure was the LENGTH of one unit across the rulings, not
+        //     their perpendicular spacing after the map — see `uvPitchFactor`.
+        // (b) Only family A's factor was computed, and family B was then scaled
+        //     in the PLANE, so B was compensated with A's foreshortening. The
+        //     conversion is now handed to `crossFamilies` as a function of the
+        //     family's own angle, and the plot floor is applied per family, in
+        //     screen mm, where the floor is stated.
         //
         // Gated on `toneOn`. An UNTONED fill makes no tonal claim — its spacing
         // is the user's Density, read in the face plane, and every existing
         // untoned scene (and every byte-identical golden that pins one) must
         // stay exactly as it was. The defect being fixed is a TONE-ordering
         // defect, so it is corrected where tone is doing the talking.
-        const compress = toneOn ? uvCompression(scaf, baseAngle + 90) : 1;
-        const screenSpacing = toneOn ? Math.max(spacing, PLOT_FLOOR_MULT_OBJ * penWidth) : spacing;
-        const planeSpacing = screenSpacing / compress;
+        //
+        // ── A FAMILY WIDER THAN ITS OWN FACET DRAWS NOTHING (ROUND 10) ────────
+        //
+        // `hatchPolygon` places rulings at `pMin + i·spacing` for
+        // `i = 1 … floor(extent / spacing)`. A spacing wider than the facet's own
+        // in-plane extent across the rulings therefore yields count = 0: the
+        // facet is dropped from the drawing entirely, at whatever tone it was
+        // asked for, and no instrument in this workstream could see it because
+        // `facets.js` omitted its own sub-window table.
+        //
+        // Measured on `W-lp-sun45`, nine visible facets carried NO fill, five of
+        // them zone L — the CENTRE LIGHT — and the two largest of those are
+        // 202.5 mm² at N·L 0.898 and 188.8 mm² at N·L 0.950. This is the same
+        // defect §4.4 of the Round 9 scorecard found from the other side (two
+        // facets at N·L 0.746 and 0.744 measuring D 0.000 and D 0.163), and it is
+        // one half of why the tone ladder does not read as a ladder in the app.
+        //
+        // Two distinct causes, both landing here:
+        //   (a) the TONE asked for a pitch wider than the facet — zone L at a
+        //       screen pitch of 15.9 mm on a facet 14 mm across;
+        //   (b) `uvPitchFactor` on a near-edge-on facet (k 0.02–0.09) blew a
+        //       4.7 mm screen pitch up to a 54–213 mm plane pitch.
+        //
+        // THE RULE. Draw ONE ruling instead of none — but only when the facet's
+        // own width ON PAPER can absorb one ruling inside the zone's composed
+        // ceiling. One ruling across a convex facet covers about
+        // `pen / widthOnPaper` (its length is ≈ area / width), so the test is
+        // exact enough to make without drawing it.
+        //
+        // The ceiling gate is what keeps this from being a flood, and it is the
+        // reason the fix is not simply "lower the k floor". On the 9 mm² sliver
+        // `face:21` one ruling lands ≈ 0.20 coverage against zone L's ceiling of
+        // 0.0987 — three times over — so that facet stays bare, correctly. On the
+        // 202 mm² `face:26` it lands ≈ 0.021 against the same ceiling and is
+        // drawn. The ceiling is `Regions.formCeiling`, the same law the curved
+        // path has always enforced; until Round 10 the faceted path had no copy
+        // of it at all.
+        //
+        // The budget is composed across families, family A first, so a second
+        // direction can only be granted with what family A left — which is §5.3's
+        // ruling on the narrow facet stated as arithmetic.
+        const perpExtentUV = (deg) => {
+          const a = finite(deg, 0) * Math.PI / 180;
+          const nx = -Math.sin(a); const ny = Math.cos(a);
+          let lo = Infinity; let hi = -Infinity;
+          for (let i = 0; i < scaf.uv.length; i++) {
+            const p = scaf.uv[i];
+            if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+            const t = p.x * nx + p.y * ny;
+            if (t < lo) lo = t;
+            if (t > hi) hi = t;
+          }
+          return (Number.isFinite(lo) && hi > lo) ? hi - lo : 0;
+        };
+        // Wider than any facet: `hatchPolygon` yields count = 0, i.e. the
+        // pre-Round-10 behaviour, for a family the ceiling refuses.
+        const DRAW_NOTHING = 1e6;
+        const zoneCeil = (Regions && typeof Regions.formCeiling === 'function')
+          ? Regions.formCeiling(zone) : 0;
+        const crossW = crossWeightFor(zone, glint);
+        // ── PASS 1: what is this facet's recipe actually asking for? ──────────
+        //
+        // `crossFamilies` owns which families exist (the user's crosshatch, the
+        // tone-driven cross at +65, the triple pass at +32) and Round 10 must not
+        // restate that decision — restating a rule the renderer owns is this
+        // workstream's signature bug. So the families are COLLECTED by running
+        // `crossFamilies` once with a no-op push and a plane function that asks
+        // for a pitch no facet can hold, which makes `hatchPolygon` emit nothing
+        // and cost nothing.
+        const asks = [];
+        if (toneOn) {
+          crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, crossW,
+            () => {}, (deg, screenPitch) => { asks.push({ deg, screenPitch }); return DRAW_NOTHING; });
+        }
+        // ── The plan, in coverage rather than in pitch ────────────────────────
+        //
+        // §5.3's ruling on the narrow facet is "give it its second direction and
+        // the total D must not move", and the second half is the hard half:
+        // measured, simply granting `R2-cube`'s `+X` sliver its missing crossed
+        // family takes it from 0.155 to 0.206 while its sibling `+Z` sits at
+        // 0.183 — which re-breaks the very O20 ordering Round 9 bought. (I
+        // predicted 0.201 from `pen / facetWidth` before running it and measured
+        // 0.206; the model is good to 2.5 %.)
+        //
+        // So the direction is paid for out of the CARRIER. Each family's asked-for
+        // coverage is `pen / screenPitch`; a family too wide for its own facet is
+        // granted exactly one ruling at `pen / widthOnPaper`, and family A's pitch
+        // is then widened by whatever that grant overspent, so the composed total
+        // is the total the recipe asked for — see the withdrawal note below.
+
+        const plan = asks.map((q) => {
+          const k = uvPitchFactor(scaf, q.deg);
+          const screen = Math.max(q.screenPitch, PLOT_FLOOR_MULT_OBJ * penWidth);
+          const ext = perpExtentUV(q.deg);
+          return {
+            k,
+            ext,
+            plane: screen / k,
+            covWant: penWidth / screen,
+            covOne: (ext > 0) ? penWidth / Math.max(1e-6, ext * k) : Infinity,
+            fits: !(ext > 0) || (screen / k) <= ext,
+          };
+        });
+        plan.forEach((f, i) => {
+          if (f.fits) return;
+          // ── §5.3's SECOND DIRECTION IS MEASURED AND NOT LANDED (Round 10) ────
+          //
+          // The grant is restricted to the CARRIER. Granting it to a crossed
+          // family as well — with the carrier widened to pay for it, so the
+          // composed total is exactly what the recipe asked for — was built,
+          // measured, and withdrawn:
+          //
+          //   R2-cube  face:+X  0.1515 (A) + 0.0303 (B) intended = 0.1818
+          //            granted  0.1358 (A) + 0.0460 (B) landed   = 0.1771
+          //            sibling  face:+Z, same zone, same recipe  = 0.1699
+          //
+          // Both faces are aiming at 0.1818 and both fall short by integer ruling
+          // counts; `+X` lands CLOSER to the recipe than `+Z` does, and O20's
+          // ordering clause then reads that as `+X` out of order by 0.0072 — a
+          // quarter of O20's own 0.03 readability bar. The clause cannot
+          // adjudicate two facets of one zone whose intended tone is identical.
+          // Rather than prescribe a lever that fails its own criterion, the grant
+          // stops at the carrier and the finding goes to the reviewer.
+          if (i > 0) return;
+          // A family wider than its own facet draws NOTHING — `hatchPolygon`
+          // places rulings at `pMin + i*spacing` for `i = 1 … floor(ext/spacing)`.
+          // Grant one ruling if the facet's own width on paper can absorb it
+          // inside the zone's composed ceiling; otherwise leave it bare, which is
+          // a decision with arithmetic behind it rather than the residue of a
+          // k-floor chosen to keep the arithmetic finite.
+          if (!(zoneCeil > 0) || f.covOne > zoneCeil) { f.plane = DRAW_NOTHING; return; }
+          // ext / 1.5 ⇒ floor(ext / spacing) = 1 exactly: one ruling, placed two
+          // thirds of the way across rather than on the boundary.
+          f.plane = f.ext / 1.5;
+        });
+        let served = 0;
+        const planeFor = toneOn
+          ? (deg, screenPitch) => {
+            const f = plan[served++];
+            return f ? f.plane
+              : Math.max(screenPitch, PLOT_FLOOR_MULT_OBJ * penWidth) / uvPitchFactor(scaf, deg);
+          }
+          : null;
         // The dark side crosses a second family: the ladder tops out at 1.6x
         // gain, so the core shadow is unreachable by spacing alone (§5.0). The
         // weight is the zone's own formInk.cross — a whole family for T, 0.40 of
         // one for F — so the dip between them is a property of the recipe, not
         // of how tightly the carrier happens to run at the limb.
-        crossFamilies(scaf.uv, baseAngle, planeSpacing, styleParams, crossPass,
-          crossWeightFor(zone, glint),
-          (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)));
+        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, crossW,
+          (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)), planeFor);
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
 
@@ -1755,11 +1988,28 @@
         // but no longer steers the hatch path.
 
         // Edge classification (silhouette | crease | boundary | interior),
-        // computed ONCE per record and shared by the face-outline pass (below,
-        // to know which face segments are the object outline vs interior creases)
-        // and the structural edge pass (further down). edgeClsById maps the
-        // canonical vertex-pair key → class.
+        // computed ONCE per record. Round 10 removed its second consumer: the
+        // face-outline pass used to re-derive "is this face segment part of the
+        // object outline?" from the same table the structural edge pass consults,
+        // which is exactly why the two drew the same segments (§5.7). The
+        // structural edge pass (further down) is now the sole reader.
         const classified = Edges.classifyEdges(record, {});
+        // MERGE NOTE (shadow-anatomy R8-10 × p4). Both branches edited this block
+        // and they are complementary, not rival, answers to "who owns the object
+        // outline". shadow-anatomy retired the per-face outline pass; p4 made the
+        // surviving structural edge pass CONTIGUOUS. Composed, the outline has
+        // exactly one owner and that owner is unbroken:
+        //   • shadow-anatomy deleted the face-outline pass and with it the ONLY
+        //     consumer of the `edgeClsById` / `edgeKey3` / `isOutlineFaceEdge`
+        //     lookup, so those three are dropped here as dead code.
+        //   • p4's `borderEdges` / `edgePlan` never read that lookup. They key on
+        //     the RAW `entry.cls` inside the `classified.forEach` edge loop below,
+        //     so they are wholly independent of the deletion and are kept verbatim.
+        // Net: a faceted 'none' prim no longer double-plots its outline (the face
+        // pass and the edge pass used to emit byte-identical coordinates), and the
+        // single remaining pass is the chained/welded one, so the silhouette it
+        // draws is contiguous at every Fidelity.
+
         // Border emphasis buffer: the object's silhouette/boundary edges plus
         // their HLR runs, chained + emitted once after the edge loop below.
         const borderWanted = Boolean(borderCfg(record));
@@ -1771,16 +2021,6 @@
         // anything — the entries emit in edge order, still ahead of the border
         // pass — so `out` keeps the order it always had.
         const edgePlan = [];
-        const edgeClsById = new Map();
-        classified.forEach((e) => edgeClsById.set(e.edgeId, e.cls));
-        // A faceted face-edge is part of the object OUTLINE (drawn for 'none')
-        // when it is NOT an interior crease/interior edge. edgeKey canonicalises
-        // the vertex-index pair the same way classifyEdges does.
-        const edgeKey3 = G3.edgeKey;
-        const isOutlineFaceEdge = (va, vb) => {
-          const cls = edgeClsById.get(edgeKey3(va, vb));
-          return cls !== 'crease' && cls !== 'interior';
-        };
 
         // ── Faces: outlines (closed when fully visible) + hatch fills.
         record.faces.forEach((face) => {
@@ -1803,41 +2043,41 @@
           const segCtx = { ownerKeys: [face.key], objectId: record.id };
           const target = sceneTargetMeta(record.id, face, null, face.centroidZ, false);
           const pickPolygon = face.polygon.map((pt) => ({ x: pt.x, y: pt.y }));
-          const baseMeta = {
-            algorithm: 'scene3d',
-            kind: 'sceneFace',
-            sceneTarget: target,
-            ...(style.penId ? { penId: style.penId } : {}),
-          };
-          // Curved (tessellated) primitives with mapper 'none' must NOT emit a
-          // per-face outline for every triangle — that draws the whole mesh.
-          // "None" shows just the object OUTLINE, which the silhouette/boundary
-          // edges (Edges pass below) already provide. Faceted prims (box, plane,
-          // polyhedra, ground) also show only their OUTLINE for 'none': each face
-          // draws just its silhouette/boundary edges, so a cube reads as its outer
-          // hexagon — the interior crease edges (the near-corner Y) are the
-          // WIREFRAME look and are skipped here (I5). Every drawn segment carries
-          // the full face polygon as pickPolygon, so face-mode point-in-poly
-          // picking still resolves. (The structural edge pass below draws the same
-          // outline — documented double-draw.)
-          const suppressMeshOutline = !faceted && !surfaceFill;
-          if (!surfaceFill && !suppressMeshOutline) {
-            const idx = face.indices || [];
-            const poly = face.polygon;
-            const n = poly.length;
-            const hasIdx = idx.length === n;
-            const outlineMeta = { ...baseMeta, sceneTarget: { ...target, pickPolygon } };
-            if (faceTreat.dash) outlineMeta.strokeDash = faceTreat.dash.slice();
-            const dashTreat = dashOnly(faceTreat);
-            for (let i = 0; i < n; i++) {
-              // Skip only edges we can positively classify as interior creases.
-              // Missing/mismatched indices ⇒ draw the segment (safe fallback to the
-              // full outline, e.g. the ground plate whose edges are all boundary).
-              if (hasIdx && !isOutlineFaceEdge(idx[i], idx[(i + 1) % n])) continue;
-              const segClip = clipper.clipPath([poly[i], poly[(i + 1) % n]], segCtx);
-              emitRuns(segClip.runs, outlineMeta, hiddenTreatment, null, dashTreat);
-            }
-          }
+          // NO per-face outline pass. "None" shows just the object OUTLINE, and
+          // the structural edge pass below is its sole owner — for curved
+          // (tessellated) prims it always was, and as of Round 10 for faceted
+          // prims (box, plane, polyhedra, ground) too.
+          //
+          // THE GROUND DOUBLE-PLOT (Round 9 scorecard §5.7, Round 10 P0).
+          // This used to be `!faceted && !surfaceFill`, so a FACETED prim under a
+          // non-surface-fill mapper ran a face-outline pass that walked each front
+          // face's edges and drew the ones that are neither `crease` nor
+          // `interior` — that is, exactly the silhouette + boundary set. The
+          // structural edge pass drops `interior` and (for a non-wireframe)
+          // `crease` and draws exactly the same set. The two therefore emitted
+          // byte-identical coordinates, and the old comment here said so out loud
+          // ("documented double-draw"). Documenting a defect does not discharge
+          // it: on the shadow-anatomy fixture's `mapper: 'none'` ground that is 4
+          // paths / 1520.96 mm of pen retracing the same four long lines, doubling
+          // ink and pen wear for no visual gain. Every D-based measurement was
+          // blind to it (a raster counts a pixel inked twice as one dark pixel),
+          // which is why it survived nine rounds.
+          //
+          // WHY THE EDGE PASS IS THE ONE THAT SURVIVES. It is strictly richer: it
+          // owns per-edge-class EdgeStyles, border emphasis, the per-object hidden
+          // treatment, the x-ray hidden-only crease, and `kind: 'sceneEdge'`, which
+          // is what edge-mode picking keys on. The face pass owned none of that.
+          //
+          // WHY PICKING SURVIVES. `pickPolygon` is only consulted by the renderer
+          // for `sceneFace`/`sceneFill` point-in-poly, and a faceted 'none' face is
+          // covered without it by the renderer's real projected-face pass
+          // (`_scenePickFaces` → `_scenePolyDepthAt`), which re-derives front faces
+          // from the scene assembly and needs the object merely to be PRESENT in
+          // the emitted paths — the structural edges keep it present. That pass
+          // exists precisely for "a 'none'-mapper box (no emitted face) and the
+          // ground plane", and it supplies a truer per-pixel depth than the face
+          // centroid this pass stamped. `pickPolygon` is still built and attached
+          // to the surface-FILL metas below, which do rely on it.
 
           // coreBlank (emissive self-render): leave the emitter's own surface
           // fill blank so the core reads as bright/glowing. Outlines + edges still
@@ -2821,5 +3061,15 @@
       const projection = (p.camera && p.camera.projection) === 'perspective' ? 'perspective' : 'orthographic';
       return `3D scene: ${count} object${count === 1 ? '' : 's'} assembled, projected (${projection}) and hidden-line resolved into styled face, edge, and fill targets.`;
     },
+    // Test seam (§4.2). The object plot floor is a claim about every legal
+    // configuration, not about any one drawing — composed coverage is not
+    // observable from the emitted paths (see `scene3d-plot-safety.test.js` on
+    // why measuring drawn spacing reports the clipping, not the ladder). This
+    // publishes the floor the emitter ACTUALLY uses so the criterion can be
+    // asserted where the implementation cannot re-bless its own arithmetic.
+    __plotFloorForTest: () => ({
+      mult: PLOT_FLOOR_MULT_OBJ,
+      coverage: singleFamilyCoverage(PLOT_FLOOR_MULT_OBJ),
+    }),
   };
 })();

@@ -1,0 +1,114 @@
+[
+  {
+    "id": "sliver-r2-cube-bands4",
+    "file": "docs/shadow-anatomy/merge-verify/p4-before__sliver-r2-cube-bands4.png",
+    "total": {
+      "paths": 89,
+      "ink": 4134.34
+    },
+    "fill": {
+      "paths": 83,
+      "ink": 3839.05
+    },
+    "edge": {
+      "paths": 6,
+      "ink": 295.29
+    }
+  },
+  {
+    "id": "sphere-bands4",
+    "file": "docs/shadow-anatomy/merge-verify/p4-before__sphere-bands4.png",
+    "total": {
+      "paths": 278,
+      "ink": 6090.94
+    },
+    "fill": {
+      "paths": 184,
+      "ink": 5802.41
+    },
+    "edge": {
+      "paths": 94,
+      "ink": 288.53
+    }
+  },
+  {
+    "id": "capsule-fill",
+    "file": "docs/shadow-anatomy/merge-verify/p4-before__capsule-fill.png",
+    "total": {
+      "paths": 123,
+      "ink": 1131.13
+    },
+    "fill": {
+      "paths": 67,
+      "ink": 1009.7
+    },
+    "edge": {
+      "paths": 56,
+      "ink": 121.43
+    }
+  },
+  {
+    "id": "layers-off",
+    "file": "docs/shadow-anatomy/merge-verify/p4-before__layers-off.png",
+    "total": {
+      "paths": 580,
+      "ink": 20066.18
+    },
+    "fill": {
+      "paths": 478,
+      "ink": 17125.48
+    },
+    "edge": {
+      "paths": 98,
+      "ink": 1614.62
+    }
+  },
+  {
+    "id": "layers-2",
+    "file": "docs/shadow-anatomy/merge-verify/p4-before__layers-2.png",
+    "total": {
+      "paths": 467,
+      "ink": 13551.18
+    },
+    "fill": {
+      "paths": 365,
+      "ink": 10610.47
+    },
+    "edge": {
+      "paths": 98,
+      "ink": 1614.62
+    }
+  },
+  {
+    "id": "layers-3",
+    "file": "docs/shadow-anatomy/merge-verify/p4-before__layers-3.png",
+    "total": {
+      "paths": 797,
+      "ink": 14461.5
+    },
+    "fill": {
+      "paths": 695,
+      "ink": 11520.79
+    },
+    "edge": {
+      "paths": 98,
+      "ink": 1614.62
+    }
+  },
+  {
+    "id": "layers-4",
+    "file": "docs/shadow-anatomy/merge-verify/p4-before__layers-4.png",
+    "total": {
+      "paths": 989,
+      "ink": 13478
+    },
+    "fill": {
+      "paths": 887,
+      "ink": 10537.29
+    },
+    "edge": {
+      "paths": 98,
+      "ink": 1614.62
+    }
+  }
+]

@@ -38,35 +38,20 @@
  *   checkable in the same breath.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const FIX = require('../fixtures/scene3d-shadow-anatomy');
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
-const BOUNDS = {
-  width: 320, height: 220, m: 10, dW: 300, dH: 200,
-  penWidth: 0.3, truncate: 4, fastPreview: false, preview3dQuality: 'high',
-};
-const SEED = 0;
-// Camera and light are the DESIGN FIXTURE's (docs/design-shadow-anatomy.md, and
-// the per-facet instrument that scored O20/O21), so a number here and a number
-// off the rasterised drawing are talking about the same picture.
-const CAMERA = { projection: 'orthographic', yaw: -30, pitch: 32, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
-const SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 28, intensity: 1, castShadows: true };
-const TONE = {
-  2: { enabled: true, bands: 2, thresholds: [0.5], ladder: [0.25, 0.8], specular: { enabled: true, size: 1 } },
-  3: { enabled: true, bands: 3, thresholds: [0.33, 0.66], ladder: [0.2, 0.5, 0.85], specular: { enabled: true, size: 1 } },
-  4: { enabled: true, bands: 4, thresholds: [0.25, 0.5, 0.75], ladder: [0.15, 0.4, 0.65, 0.9], specular: { enabled: true, size: 1 } },
-};
-
-const CUBE = {
-  id: 'cube', name: 'Cube', primitive: 'box', params: { sx: 62, sy: 62, sz: 62 },
-  transform: { x: 0, y: 31, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
-};
-// A geodesic polyhedron goes through the FACETED fill path; primitive:'sphere'
-// is chart-wrapped and would exercise SurfaceFill instead.
-const LOWPOLY = {
-  id: 'lowpoly', name: 'LowPoly', primitive: 'solid', params: { solidType: 'geodesic', radius: 40, frequency: 2 },
-  transform: { x: 0, y: 42, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
-};
+// ROUND 10 — nothing restated. The comment this replaces said the camera and
+// light "are the DESIGN FIXTURE's ... so a number here and a number off the
+// rasterised drawing are talking about the same picture". That was true only
+// while somebody kept the copy in step by hand, which is exactly the thing §0
+// forbids and exactly what the namesake test stopped doing. Now it is true by
+// construction: the picture and the number come from the same module.
+const {
+  BOUNDS, SEED, CAMERA, SUN, CUBE, LOWPOLY, toneBands, styleTable,
+} = FIX;
+const TONE = { 2: toneBands(2), 3: toneBands(3), 4: toneBands(4) };
 
 const inkOf = (path) => {
   let L = 0;
@@ -101,15 +86,28 @@ describe('faceted tone — cube face ordering (O20) and the low-poly terminator 
     p.objects = clone(objects);
     p.lights = [clone(SUN)];
     p.tone = clone(tone);
-    const base = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 85 } };
-    const byObject = {};
-    p.objects.forEach((o) => { byObject[o.id] = clone(base); });
-    p.styleTable = { scene: clone(base), byObject, byFace: {} };
+    p.styleTable = styleTable(p.objects);
     const np = Params.normalizeParams(p);
     return algo.generate(
       Params.collectSceneParams(np, []),
       new V.SeededRNG(SEED), new V.SimpleNoise(SEED), BOUNDS,
     ) || [];
+  };
+
+  // The assembled record (faces + edge adjacency) for one object — what the
+  // renderer's dihedral gate actually reads.
+  const built = (objects, objectId) => {
+    const p = clone(V.ALGO_DEFAULTS.scene3d);
+    p.seed = SEED;
+    p.camera = clone(CAMERA);
+    p.ground = { enabled: false };
+    p.backdrop = { enabled: false };
+    p.objects = clone(objects);
+    p.lights = [clone(SUN)];
+    p.tone = clone(TONE[4]);
+    const np = Params.normalizeParams(p);
+    const scn = V.Scene3D.Scene.assembleScene(np, BOUNDS);
+    return (scn.objects || []).find((o) => o.id === objectId);
   };
 
   // Per visible face: fill ink, projected area, world normal, and the fill's
@@ -287,14 +285,13 @@ describe('faceted tone — cube face ordering (O20) and the low-poly terminator 
         // Specular OFF: the glint is placed off the HALF-VECTOR and therefore
         // moves with the camera by design. Leaving it on would let a moving
         // highlight masquerade as the diffuse leak O28 is actually about.
-        p.tone = { ...clone(TONE[4]), ladder, specular: { enabled: false, size: 1 } };
-        const base = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 85 } };
-        p.styleTable = { scene: clone(base), byObject: { cube: clone(base) }, byFace: {} };
+        p.tone = { ...toneBands(4, false, 1), ladder };
+        p.styleTable = styleTable(p.objects);
         const np = Params.normalizeParams(p);
         const paths = algo.generate(Params.collectSceneParams(np, []),
           new V.SeededRNG(SEED), new V.SimpleNoise(SEED), BOUNDS) || [];
         const out = {};
-        facesOf(paths, 'cube').forEach((r) => { out[r.id] = r.ink; });
+        facesOf(paths, CUBE.id).forEach((r) => { out[r.id] = r.ink; });
         return out;
       };
       const FLAT = [0.5, 0.5, 0.5, 0.5];
@@ -362,6 +359,29 @@ describe('faceted tone — cube face ordering (O20) and the low-poly terminator 
       expect(ratio(F)).toBeLessThan(0.75);
       expect(ratio(F)).toBeGreaterThan(0.15);
       expect(ratio(T)).toBeGreaterThan(ratio(F) * 1.5);
+    });
+
+    // ROUND 9 — the gate is exported and SHARED, not mirrored.
+    //
+    // The shadow-anatomy instrument used to copy `TERMINATOR_SMOOTH_DEG = 40`
+    // with the comment "scene3d.js:556 — mirrored, not guessed", and built its
+    // own edge map over `face.indices` while the renderer built one from
+    // `record.edges`. Two code paths that agree on today's fixtures are not one
+    // code path: change the renderer's threshold and the instrument diverges
+    // while still printing a number. `Regions.smoothShadedFaces` is now the only
+    // definition, and this is what stops it drifting from the behaviour above.
+    it('the dihedral gate is one exported predicate: a cube has none, a geodesic is all of it (O22)', () => {
+      expect(Regions.TERMINATOR_SMOOTH_DEG).toBe(40);
+      const cube = built([CUBE], 'cube');
+      const lp = built([LOWPOLY], 'lowpoly');
+      const gate = (rec) => Regions.smoothShadedFaces(rec.faces, rec.edges).size;
+      expect(gate(cube)).toBe(0);
+      expect(gate(lp)).toBe(lp.faces.length);
+      expect(lp.faces.length).toBeGreaterThan(0);
+      // and the threshold is live: widen it past a cube's 90 deg dihedral and
+      // every face becomes smooth-shaded, which is what proves the number is
+      // read rather than incidental.
+      expect(Regions.smoothShadedFaces(cube.faces, cube.edges, 95).size).toBe(cube.faces.length);
     });
 
     it('a CUBE still grows no core shadow — an edge is not a terminator (O22)', () => {
