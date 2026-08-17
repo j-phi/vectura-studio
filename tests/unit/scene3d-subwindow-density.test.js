@@ -175,6 +175,34 @@ describe('the sub-window instrument is calibrated before it is quoted (§0)', ()
   });
 });
 
+// ⚑ BOTH TESTS BELOW ARE RED SINCE THE p4 MERGE, AND THEY ARE RED BECAUSE THE
+// DRAWING GOT BETTER. Left red on purpose: their PREMISE has changed, so
+// re-pinning the numbers would be wrong — the instrument needs re-scoping, and
+// that is Round 11's engineering, not the merge integrator's.
+//
+// WHAT MOVED. Worst-of-four local coverage at pen scale:
+//     Round 10        merged
+//     1.069           0.950        (`W-bigball-bands4`, and it is now the worst)
+//     past SOLID      below SOLID  — `r10local.js` reports 0.00 % of probes at
+//                                    or past 1.000, on both W fixtures.
+//   `W-bigball-sun45` reads 0.894, just under this file's per-fixture 0.90 line.
+//
+// MECHANISM, established by ablation (zero p4's BRIDGE_PEN / SPECK_PEN /
+// MIN_MARK_PEN / HYST_RANK and both tests go green): the pole starburst is a
+// knot of very short, very crowded rulings converging on the chart's UV
+// singularity — precisely the shape p4's 12 x pen speck cull and 2 x pen
+// emission floor are built to delete. p4's fill-continuity work therefore
+// PARTIALLY FIXES the Round 9 §5.4 caustic as a side effect, without anyone
+// aiming at it.
+//
+// WHY THE SECOND TEST FAILS BY 30 mm RATHER THAN A LITTLE. It asserts the worst
+// point is light-INDEPENDENT, on the reasoning that a parameterisation artefact
+// does not move when the sun does. That held while the knot dominated the
+// drawing "by a wide margin". Now that the knot is suppressed, the global argmax
+// is no longer the knot at all — it is an ordinary lighting-driven dark
+// neighbourhood, which legitimately DOES move with the sun (30.19 mm). The
+// assertion has not detected a regression; its subject has been demoted.
+// Re-scoping it means probing AT the pole rather than at the global maximum.
 describe('C15 sub-window clause — RECORDING A MISS, not asserting a pass', () => {
   // The four-fixture ladder is the unit of report and worst-of-four is the rule.
   const LADDER = ['E-bands4', 'V-E-bands4-sun45', 'W-bigball-bands4', 'W-bigball-sun45'];

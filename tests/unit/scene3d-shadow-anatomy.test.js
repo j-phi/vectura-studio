@@ -483,6 +483,22 @@ describe('scene3d shadow & highlight anatomy', () => {
     const BANDS23_SPEC_BAR = 0.05;      // O12's bar. NOT MET on the fixture rig.
     const BANDS23_RATCHET = 0.046;      // HEAD measures 0.0465. Do not lower.
 
+    // ⚑ RED SINCE THE p4 MERGE, LEFT RED ON PURPOSE. The bands 2 -> 3 step
+    // measures profileDist 0.0346 against this 0.046 ratchet — the density grid
+    // still MOVES between band counts (Round 2's defect was 0, i.e. identical
+    // grids), but it moves less than Round 10 measured.
+    //
+    // Mechanism, established by ablation (zero p4's BRIDGE_PEN / SPECK_PEN /
+    // MIN_MARK_PEN / HYST_RANK in surface-fill.js and this goes green): p4's run
+    // sink both bridges short dither gaps and culls short runs. Both operations
+    // are homogenising — they push the emitted ink toward "long continuous
+    // rulings" regardless of which band a sample fell in, which compresses the
+    // difference between two band partitions of the same form.
+    //
+    // The ratchet is NOT lowered here. It is O12's record of how live the band
+    // control is, and quietly moving it would hide a real loss of expressive
+    // range in the Bands slider. Round 11 to rule alongside O6 — both misses
+    // have the same root (the sink's culls), so both may have the same fix.
     it('band count re-partitions the curved fill (the density grid MOVES)', () => {
       const prof = [2, 3, 4].map((n) => inkProfile(compose({ objects: [CAPSULE], tone: toneN(n) }), CAPSULE.id));
       const ink = [2, 3, 4].map((n) => fillInk(compose({ objects: [CAPSULE], tone: toneN(n) }), CAPSULE.id));
