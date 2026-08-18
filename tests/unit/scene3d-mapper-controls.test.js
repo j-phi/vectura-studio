@@ -130,8 +130,19 @@ describe('3D Scene Studio Phase 2 — per-mapper controls', () => {
       expect(surface.length).toBeGreaterThan(0);
       expect(region.length).toBeGreaterThan(0);
       const closed = (ls) => ls.filter((p) => Math.hypot(p[0].x - p[p.length - 1].x, p[0].y - p[p.length - 1].y) < 1e-3).length;
-      // Region = concentric CLOSED inset rings; surface = OPEN parametric parallels.
-      expect(closed(region)).toBeGreaterThan(closed(surface));
+      // Region = concentric CLOSED inset rings, every one of them. Surface = the
+      // chart's own parallels, most of which the form CUTS and which therefore
+      // come back open.
+      //
+      // This used to read `closed(region) > closed(surface)`, which was only ever
+      // true because the emitter dropped the b = 1 sample of every sweep: a
+      // latitude ring the silhouette does not touch is a CLOSED loop and always
+      // was one, and it arrived open by exactly one sample step. With the seam
+      // fixed the two counts tie at 3, so the structural claim is now stated as
+      // what actually separates the two styles — region is closed THROUGHOUT,
+      // surface is not.
+      expect(closed(region)).toBe(region.length);
+      expect(closed(surface)).toBeLessThan(surface.length);
       expect(JSON.stringify(region)).not.toBe(JSON.stringify(surface));
     });
   });

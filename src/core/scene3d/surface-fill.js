@@ -183,6 +183,16 @@
   // reproduces the existing 0.6 mm at the shipped 0.3 mm pen.
   const MIN_MARK_PEN = 2;
 
+  // A closed sweep's two ends meet ON the parameter seam, so they land on the
+  // SAME sampled point — this is a floating-point tolerance, not a bridge. It is
+  // deliberately far below MIN_MARK (2 x pen = 0.6 mm at the shipped pen): two
+  // ends this close are one point, and nothing else can pass it.
+  const SEAM_JOIN_MM = 1e-6;
+  // Upper bound on a single ruling's sample count. A wrapped helix asks for more
+  // samples than an axis line (see angleFamily); this is the same ceiling the
+  // Fidelity control already carries, so `steps x N` stays bounded.
+  const MAX_LINE_STEPS = 220;
+
   // STAGED RE-WIRING of the tone/highlight apparatus. All false => every ruling
   // emits continuously end-to-end; only back-face culling, HLR and MIN_RUN_MM
   // may cut it. Flip ONE at a time. See the dependency notes:
@@ -553,12 +563,45 @@
       const aa = clamp(a, 0, 1);
       const bb = clamp(b, 0, 1);
       const p0 = chart(aa, bb);
-      const pa = chart(clamp(aa + EPS, 0, 1), bb);
-      const pb = chart(aa, clamp(bb + EPS, 0, 1));
+      // FORWARD DIFFERENCE, WITH A BACKWARD FALLBACK ON THE DOMAIN EDGE.
+      //
+      // The partner samples used to be `chart(clamp(aa + EPS, 0, 1), …)`. At
+      // aa = 1 (or bb = 1) the clamp puts the partner ON TOP OF p0, the cross
+      // product collapses, and the whole sample returned null — so the LAST
+      // sample of every sweep was silently dropped. On a chart whose `b` is the
+      // periodic wind seam that is a hole exactly one step wide, on the seam,
+      // at every ruling: a contour ring lost its closing segment and came back
+      // as two pieces with a visible notch at longitude 0 (screen right on a
+      // yaw-0 camera). Stepping BACKWARD off the edge measures the same tangent
+      // (the sign is restored below), so the seam sample is a real sample again.
+      const aFwd = aa + EPS <= 1;
+      const bFwd = bb + EPS <= 1;
+      const sgnA = aFwd ? 1 : -1;
+      const sgnB = bFwd ? 1 : -1;
+      const pa = chart(aFwd ? aa + EPS : aa - EPS, bb);
+      const pb = chart(aa, bFwd ? bb + EPS : bb - EPS);
       if (!p0 || !pa || !pb) return null;
-      let nLocal = cross(sub(pa, p0), sub(pb, p0));
-      const nl = Math.hypot(nLocal.x, nLocal.y, nLocal.z);
-      if (nl < 1e-9) return null;
+      let dPa = mul(sub(pa, p0), sgnA);
+      let dPb = mul(sub(pb, p0), sgnB);
+      let nLocal = cross(dPa, dPb);
+      let nl = Math.hypot(nLocal.x, nLocal.y, nLocal.z);
+      if (nl < 1e-9) {
+        // A GENUINE CHART SINGULARITY, not an edge artefact: at a sphere's pole
+        // every `b` names the same point, so the b-tangent is zero there however
+        // it is measured. The POINT is still valid and the surface still has a
+        // normal — take the frame a hair inside the domain and keep p0 where it
+        // is, so meridians close on the pole instead of stopping a step short.
+        const ai = clamp(aa, EPS * 2, 1 - EPS * 2);
+        const bi = clamp(bb, EPS * 2, 1 - EPS * 2);
+        const q0 = chart(ai, bi);
+        const qa = chart(clamp(ai + EPS, 0, 1), bi);
+        const qb = chart(ai, clamp(bi + EPS, 0, 1));
+        if (!q0 || !qa || !qb) return null;
+        dPa = sub(qa, q0); dPb = sub(qb, q0);
+        nLocal = cross(dPa, dPb);
+        nl = Math.hypot(nLocal.x, nLocal.y, nLocal.z);
+        if (nl < 1e-9) return null;
+      }
       nLocal = mul(nLocal, 1 / nl);
       if (dot(nLocal, p0) < 0) nLocal = mul(nLocal, -1); // outward (charts centre near origin)
       const world = applyTransform(p0, t);
@@ -575,8 +618,11 @@
         const sa = projectWorld(applyTransform(pa, t));
         const sb = projectWorld(applyTransform(pb, t));
         if (sa && sb && Number.isFinite(sa.x) && Number.isFinite(sb.x)) {
-          dA = { x: (sa.x - scr.x) / EPS, y: (sa.y - scr.y) / EPS };
-          dB = { x: (sb.x - scr.x) / EPS, y: (sb.y - scr.y) / EPS };
+          // Same backward-step sign restoration as the tangents above, so the
+          // pitch this feeds (perpPitch, C15) keeps pointing the way the family
+          // actually advances on the domain edge.
+          dA = { x: ((sa.x - scr.x) / EPS) * sgnA, y: ((sa.y - scr.y) / EPS) * sgnA };
+          dB = { x: ((sb.x - scr.x) / EPS) * sgnB, y: ((sb.y - scr.y) / EPS) * sgnB };
         }
       }
       const I = toneOn ? clamp(intensityFn(wN, world), 0, 1) : 1;
@@ -834,6 +880,13 @@
       let gapLen = 0;
       let softStart = false;   // this run began after a dither drop, not at a boundary
       let sawSoftDrop = false;
+      // Sweep parameter at the run's first and last sample, and every run this
+      // sink pushed, in order. Read only by emitLine's seam join (below): a
+      // ruling whose sweep is CLOSED and which came back as a tail + a head is
+      // one stroke that happened to be cut at the parameter seam.
+      let runTT0 = null;
+      let runTT1 = null;
+      const mine = [];
       // Is this run WHOLLY inside the centre light? `null` until the first
       // sample lands; latches false as soon as a non-L sample is added. Read
       // only by the L-zone speck exemption below.
@@ -863,11 +916,15 @@
         const speck = HL_STAGE.continuitySink && softStart && softEnd && runLen < SPECK_MM && runLit !== true;
         if (run.length >= 2 && runLen >= MIN_MARK_MM && !speck) {
           run.fam = fam;
+          run.tt0 = runTT0; run.tt1 = runTT1;
+          mine.push(run);
           pushRun(run, back, lineIndex);
         }
         run = []; runLen = 0; softStart = false; runLit = null;
+        runTT0 = null; runTT1 = null;
       };
       return {
+        emitted: () => mine,
         flush: () => { emitRun(false); gapPts = []; gapLen = 0; sawSoftDrop = false; },
         softDrop: (pt) => {
           sawSoftDrop = true;
@@ -877,8 +934,10 @@
           gapPts.push(pt);
           if (gapLen > BRIDGE_MM) { emitRun(true); gapPts = []; gapLen = 0; }
         },
-        addPt: (pt, zone) => {
+        addPt: (pt, zone, tt) => {
           runLit = (runLit === null) ? (zone === 'L') : (runLit && zone === 'L');
+          if (!run.length) runTT0 = tt;
+          runTT1 = tt;
           if (run.length && gapPts.length) {
             // Bridge. The skipped samples lie ON the surface, so re-adding them
             // keeps the ruling on the form instead of chording across it.
@@ -937,8 +996,13 @@
       const sparseStep = sparseOwner ? Math.max(1, Math.round(100 / sparseDensity)) : 1;
       const lineKept = !sparseOwner || (lineIndex % sparseStep === 0);
       let sampleZone = null;
-      for (let s = 0; s <= steps; s++) {
-        const tt = s / steps;
+      // A family may ask for its own sample count (see angleFamily: a wrapped
+      // helix is longer in the parameter square than an axis line, so it needs
+      // proportionally more samples to stay on the form). Default is `steps`.
+      const nSteps = Math.max(2, Math.min(MAX_LINE_STEPS,
+        Number.isFinite(paramAt.steps) ? Math.round(paramAt.steps) : steps));
+      for (let s = 0; s <= nSteps; s++) {
+        const tt = s / nSteps;
         const pr = paramAt(tt);
         const smp = sampleAt(pr.a, pr.b);
         sampleZone = null;
@@ -962,20 +1026,20 @@
               const tr = ld.treatment;
               if (tr === 'dashed' || tr === 'dotted') {
                 if (treated) { flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z }); }
-                else { flushHL(); addPt({ x: smp.x, y: smp.y, z: smp.z }); }
+                else { flushHL(); addPt({ x: smp.x, y: smp.y, z: smp.z }, null, tt); }
               } else if (tr === 'sparse' || tr === 'stippleOut') {
                 // O15 — these two used to fall into the `blank` arm below, so
                 // switching highlightMode to lightDriven silently turned a sparse
                 // or stippled highlight into a hole. They now thin on the
                 // highlight channel here exactly as they do under perFace.
-                if (!treated) { flushHL(); addPt({ x: smp.x, y: smp.y, z: smp.z }); }
+                if (!treated) { flushHL(); addPt({ x: smp.x, y: smp.y, z: smp.z }, null, tt); }
                 else if (tr === 'sparse'
                   ? lineKept
                   : sfHash(Math.round(smp.x * 4), Math.round(smp.y * 4)) < clamp((ldDensity / 100) * (0.3 + shade * 2), 0, 1)) {
                   flush(); hlRun.push({ x: smp.x, y: smp.y, z: smp.z });
                 } else { flush(); flushHL(); }
               } else if (treated) { flush(); flushHL(); }        // blank glint
-              else { flushHL(); addPt({ x: smp.x, y: smp.y, z: smp.z }); }
+              else { flushHL(); addPt({ x: smp.x, y: smp.y, z: smp.z }, null, tt); }
               continue;
             }
           }
@@ -1170,10 +1234,34 @@
         }
         flushHL();
         drawing = true; everDrew = true;
-        addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone);
+        addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
       }
       flush();
       flushHL();
+      // ── THE SEAM JOIN ────────────────────────────────────────────────────────
+      // A CLOSED sweep (a contour ring: `b` runs the full wind and b = 1 IS
+      // b = 0) has no start and no end on the form — only a bookkeeping seam at
+      // tt = 0/1. When the far side of the form cuts such a sweep, the loop
+      // hands back a HEAD (from tt = 0) and a TAIL (to tt = 1) that are the two
+      // ends of ONE stroke, meeting exactly on the seam. Left apart they plot as
+      // two pens-down and read as a break in the ring. Stitch tail→head back
+      // into one polyline. Nothing is added or removed: the join is only made
+      // when the two endpoints are the SAME point, which is what "closed" means.
+      const mine = sink.emitted();
+      if (mine.length >= 2) {
+        const head = mine[0];
+        const tail = mine[mine.length - 1];
+        if (head !== tail && head.tt0 === 0 && tail.tt1 === 1) {
+          const h0 = head[0];
+          const t1 = tail[tail.length - 1];
+          if (Math.hypot(t1.x - h0.x, t1.y - h0.y) < SEAM_JOIN_MM) {
+            for (let i = 1; i < head.length; i++) tail.push(head[i]);
+            tail.tt1 = head.tt1;
+            const at = out.indexOf(head);
+            if (at >= 0) out.splice(at, 1);
+          }
+        }
+      }
     };
 
     const emitFamily = (fixAxis, count, back, zoneGate) => {
@@ -1213,6 +1301,51 @@
       const rad = (finite(angleDeg, 0) * Math.PI) / 180;
       const da = Math.cos(rad); const db = Math.sin(rad);   // along the line
       const na = -db; const nb = da;                        // across the family
+      // ── THE WIND SEAM IS NOT A WALL ──────────────────────────────────────────
+      //
+      // The comment above always claimed "`b` is periodic (the wind seam), so a
+      // line clipped at b=0/b=1 continues as its neighbour with no visible
+      // break." IT DOES NOT. The clip below is a slab clip against the unit
+      // SQUARE, so an angled ruling stops dead on the b = 1 meridian — and on a
+      // yaw-0 sphere that meridian projects INSIDE the visible disc, running
+      // from the right-hand equator point (at the silhouette) up to the pole (at
+      // 0.87 R). The lune between it and the right silhouette is real, visible,
+      // front-facing surface, and it was reached only by the residual corner
+      // segments: measured on a 62 mm sphere, a ragged crescent up to 8 mm deep
+      // — 13% of the radius — on the RIGHT limb only, with the left limb clean.
+      // The asymmetry is the tell: b = 0.5 (the left limb) has no seam.
+      //
+      // The domain is a CYLINDER, not a square: a ∈ [0,1] with genuine ends (the
+      // poles) and b ∈ R/Z with none. So clip against `a` alone and let `b` wrap.
+      // Shifting b by one period shifts the family offset c by `nb`, so c ∈
+      // [0, |nb|) already enumerates every distinct ruling — which makes the
+      // line budget `count x span` land on exactly the same perpendicular
+      // spacing (1/count) the axis families use, with no extra bookkeeping.
+      //
+      // Not used within WRAP_MIN_DA of the parallels direction: there `da` → 0,
+      // a ruling would wind the seam many times per unit of `a`, and `steps`
+      // could not follow it. That neighbourhood of 90° is the latitude family,
+      // whose lines already span a whole wind and so have no seam to cross.
+      const WRAP_MIN_DA = 0.2;
+      if (Math.abs(da) >= WRAP_MIN_DA) {
+        const period = Math.abs(nb);
+        const wrap01 = (v) => { const w = v % 1; return w < 0 ? w + 1 : w; };
+        const lineAtWrapped = (frac) => {
+          const c = frac * period;
+          const a0 = c * na; const b0 = c * nb;
+          const ta = (0 - a0) / da; const tb = (1 - a0) / da;
+          const t0 = Math.min(ta, tb); const t1 = Math.max(ta, tb);
+          const len = t1 - t0;                     // = 1/|da|, the ruling's own length
+          const at = (tt) => {
+            const t = t0 + len * tt;
+            return { a: clamp(a0 + t * da, 0, 1), b: wrap01(b0 + t * db) };
+          };
+          // Sample density per unit of parameter length matches an axis line's.
+          at.steps = steps * len;
+          return at;
+        };
+        return { span: period, lineAt: lineAtWrapped, na, nb, da, db };
+      }
       // Perpendicular extent of the unit square → the offsets to sweep through.
       const projs = [0, na, nb, na + nb];
       const cMin = Math.min.apply(null, projs);
