@@ -1,5 +1,5 @@
 /**
- * 3D Scene Studio — I5 (none vs wireframe must differ) + I11 (default = wireframe).
+ * 3D Scene Studio — I5 (none vs wireframe must differ) + the fresh-insert default.
  *
  * I5 taxonomy contract:
  *   none      = the object OUTLINE only  → silhouette + boundary edges.
@@ -12,9 +12,14 @@
  * the structural edge pass), so none and wireframe were byte-identical — the
  * crease-count and edge-count assertions below FAIL before the fix, pass after.
  *
- * I11: a brand-new scene3d layer, born through the real engine add path
- * (engine.addLayer -> new Layer -> factoryParams -> ALGO_DEFAULTS), resolves to
- * the wireframe mapper. Pre-fix the default was 'none' → the assertion FAILS.
+ * Fresh-insert default: a brand-new scene3d layer, born through the real engine
+ * add path (engine.addLayer -> addSceneTree -> new Layer -> factoryParams ->
+ * ALGO_DEFAULTS), resolves to the HATCH mapper on a SPHERE. This supersedes I11
+ * (which seeded wireframe): wireframe returns false from Scene3D.SurfaceFill and
+ * takes the flat/edge path instead, so a wireframe object emits structural edges
+ * and ZERO surface ink — on the old default box that was nine straight lines, and
+ * a freshly dropped scene read as an empty cube outline. Wireframe itself is not
+ * broken and is still asserted below (I5, and the explicit-pick case).
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -108,29 +113,50 @@ describe('3D Scene Studio — none vs wireframe (I5) + default mapper (I11)', ()
     });
   });
 
-  describe('I11 — a freshly added scene tree defaults to wireframe', () => {
+  describe('a freshly added scene tree defaults to a hatched sphere', () => {
     // Scene-tree Increment D — Add Layer now builds a scene GROUP + one default
-    // object3d child; the group's scene-scope mapper resolves to wireframe.
-    test('engine.addLayer(scene3d) builds a scene group whose scene mapper is wireframe', () => {
+    // object3d child; the group's scene-scope mapper resolves to hatch.
+    test('engine.addLayer(scene3d) seeds a hatched sphere child under a wireframe scene scope', () => {
       const engine = new V.VectorEngine();
       const id = engine.addLayer('scene3d');
       const group = engine.getLayerById(id);
       expect(group).toBeTruthy();
       expect(group.type).toBe('scene3d');
       expect(group.isGroup).toBe(true);
+      // The SCENE scope stays wireframe (it is what the ground resolves to).
       expect(group.params.styleTable.scene.mapper).toBe('wireframe');
-      // The default object child is itself wireframe (I11 per-object default).
+      // The default object child carries its OWN hatch style, and that is what
+      // wins — the cascade is whole-style-wins, object scope over scene scope.
       const child = engine.getLayerChildren(id).find((l) => l.type === 'object3d');
       expect(child).toBeTruthy();
-      expect(child.params.style.mapper).toBe('wireframe');
+      expect(child.params.style.mapper).toBe('hatch');
+      expect(child.params.primitive).toBe('sphere');
     });
 
-    test('the default scene tree renders as wireframe (interior edges present, no sceneFace)', () => {
+    test('the default scene tree puts real SURFACE ink on the object, not just edges', () => {
       const engine = new V.VectorEngine();
       const id = engine.addLayer('scene3d');
       engine.computeAllDisplayGeometry();
       const group = engine.getLayerById(id);
       const paths = engine.getRenderablePaths(group);
+      const child = engine.getLayerChildren(id).find((l) => l.type === 'object3d');
+      // Fill that belongs to the OBJECT — not the ground quad, not the cast
+      // shadow dropped onto it. Under the old wireframe seed this was zero.
+      const surface = paths.filter((p) => {
+        if (!p.meta || p.meta.kind !== 'sceneFill') return false;
+        const t = p.meta.sceneTarget || {};
+        return t.objectId === child.id && t.regionClass !== 'castShadow';
+      });
+      expect(surface.length).toBeGreaterThan(0);
+    });
+
+    test('switching that scene tree back to wireframe still emits structural edges', () => {
+      const engine = new V.VectorEngine();
+      const id = engine.addLayer('scene3d');
+      const child = engine.getLayerChildren(id).find((l) => l.type === 'object3d');
+      child.params.style = { penId: null, mapper: 'wireframe', params: {} };
+      engine.computeAllDisplayGeometry();
+      const paths = engine.getRenderablePaths(engine.getLayerById(id));
       const es = edges(paths);
       expect(clsCount(es, 'crease') + clsCount(es, 'interior')).toBeGreaterThan(0);
       // wireframe faces emit edges only — no per-face outline fills.

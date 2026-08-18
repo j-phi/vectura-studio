@@ -213,6 +213,11 @@ describe('curve baselines (real display pipeline + production exporter)', () => 
       const { VectorEngine, _UIExportUtil } = runtime.window.Vectura;
       const engine = new VectorEngine();
       const groupId = engine.addLayer('scene3d');
+      // addSceneTree seeds a default object child (a hatched sphere). Drop it so
+      // ONLY the object under test emits — otherwise the seed's curved fill
+      // lands in the "faceted geometry is inert" comparison.
+      const seeded = engine.getLayerChildren(groupId).find((l) => l.type === 'object3d');
+      if (seeded) engine.removeLayer(seeded.id);
       const group = engine.layers.find((l) => l.id === groupId);
       group.isGroup = true;
       group.containerRole = 'scene';

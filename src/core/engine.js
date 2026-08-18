@@ -891,11 +891,11 @@
 
     // Scene-tree Increment D — the user-facing CREATION entry. Build a whole
     // scene TREE in one gesture: a scene group + ONE default object3d child (a
-    // box). Returns the SCENE GROUP id (the group is what "Add Layer → 3D Scene"
-    // adds), and leaves the group active so the panel shows scene controls.
+    // sphere). Returns the SCENE GROUP id (the group is what "Add Layer → 3D
+    // Scene" adds), and leaves the group active so the panel shows scene controls.
     addSceneTree() {
       const groupId = this.addSceneGroup();
-      // Scene-tree Increment E — the whole scene reads as ONE tree: a default box
+      // Scene-tree Increment E — the whole scene reads as ONE tree: a default
       // object, the sun (a directional light child) and the ground child. Empty
       // the group's inline lights + pre-set inline ground OFF so the CHILDREN are
       // the single source of truth (deleting the ground child turns it off; the
@@ -905,7 +905,22 @@
         grp.params.lights = [];
         grp.params.ground = { enabled: false };
       }
-      this.addObjectToScene(groupId, 'box');
+      // The seed object is a SPHERE, matching ALGO_DEFAULTS.object3d. A box under
+      // the (former) wireframe default emitted nine straight edges and no surface
+      // ink at all, so a freshly dropped scene read as an empty cube outline; a
+      // hatched sphere shows the light/tone pipeline the instant it appears.
+      const seedPrimitive = (ALGO_DEFAULTS && ALGO_DEFAULTS.object3d && ALGO_DEFAULTS.object3d.primitive) || 'box';
+      const objectId = this.addObjectToScene(groupId, seedPrimitive);
+      // Rest the seed sphere ON the ground (centre at y = radius). The shared
+      // object3d transform seed is a fixed y = 20, which only lands on the ground
+      // for a 40 mm box / a radius-20 sphere — the add-shelf create defaults give
+      // a fresh sphere radius 25, so pin the height off the bag that was actually
+      // built rather than trusting the literal.
+      const seeded = objectId ? this.getLayerById(objectId) : null;
+      if (seeded && seeded.params && seeded.params.transform) {
+        const radius = Number(seeded.params.params && seeded.params.params.radius);
+        if (Number.isFinite(radius) && radius > 0) seeded.params.transform.y = radius;
+      }
       this.addLightToScene(groupId, 'directional');
       this.addGroundToScene(groupId);
       this.activeLayerId = groupId;
