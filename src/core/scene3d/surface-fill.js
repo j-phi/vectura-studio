@@ -183,6 +183,34 @@
   // reproduces the existing 0.6 mm at the shipped 0.3 mm pen.
   const MIN_MARK_PEN = 2;
 
+  // STAGED RE-WIRING of the tone/highlight apparatus. All false => every ruling
+  // emits continuously end-to-end; only back-face culling, HLR and MIN_RUN_MM
+  // may cut it. Flip ONE at a time. See the dependency notes:
+  //   - `masterGrid` and `dither` are a PAIR (masterGrid on + dither off = ~5x
+  //     the line count with nothing dropped = a solid black form).
+  //   - `coverageCap` / `feather` / `hysteresis` / `treatment` / `dashDuty` only
+  //     touch quantities INSIDE the dither block, so each is a strict no-op
+  //     while `dither` is off.
+  //   - `hysteresis` is meaningless without `feather` OR `coverageCap`.
+  //   - `dashDuty` needs `toneZones` (it reads FORM_INK[zone].duty).
+  //   - `specular` is a total no-op at Highlight = None regardless (`noHL`).
+  //   - `lightDriven` and `treatment` are mutually exclusive by construction.
+  const HL_STAGE = {
+    masterGrid:     false, // the ladder's line budget (N, masterPitch, densityOverflow)
+    toneZones:      false, // Regions.formZone + FORM_INK + the T/F cross families
+    dither:         false, // the rank-vs-coverage drop verdict itself
+    coverageCap:    false, // cap = localPitch/floorPitch  AND  the myCeil ceiling
+    feather:        false, // featherAt jitter on the comparison
+    hysteresis:     false, // the one-sided re-start margin
+    specular:       false, // glint cap + the blank H zone
+    lightDriven:    false, // the per-sample specular highlight branch
+    treatment:      false, // keep/dashed/dotted/sparse/stippleOut dispatch
+    dashDuty:       false, // FORM_INK.duty dash breaks (the R rim)
+    shadowGrade:    false, // emitShadowInfill
+    continuitySink: true,  // bridge + speck cull. LEAVE ON: it only ever removes
+                           // ink the dither made; it is the mitigation, not the disease.
+  };
+
   // Radical inverse base 2, scaled off the index — the classic ordered-dither
   // permutation. vdc(0,1,2,3,…) = 0, .5, .25, .75, .125, … so any prefix is
   // spread across [0,1) instead of clustered at one end.
@@ -358,14 +386,14 @@
     // cap, no highlight channel and no highlight pen — the fill is exactly what
     // the tone ladder made.
     const noHL = opts.noHighlight === true;
-    const specOn = Boolean(useLadder && !noHL && tone.specular && tone.specular.enabled !== false);
+    const specOn = Boolean(HL_STAGE.specular && useLadder && !noHL && tone.specular && tone.specular.enabled !== false);
     const specSize = specOn ? clamp(finite(tone.specular.size, 1), 0, 3) : 0;
     const nB = ladderLen;
     // I8 — shadow SENSITIVITY: graded darkening on the dark end (stage count).
     // Default 1 = strict no-op; N quantizes low intensity into N darkening stages
     // (more coverage → denser shadow), a smoother dark gradient as N rises.
     const shadowSens = clamp(Math.round(finite(opts.shadowSensitivity, 1)), 1, 8);
-    const shadowGrades = Boolean(useLadder && shadowSens > 1 && Regions && typeof Regions.shadowStage === 'function');
+    const shadowGrades = Boolean(HL_STAGE.shadowGrade && useLadder && shadowSens > 1 && Regions && typeof Regions.shadowStage === 'function');
     // Ink line-fraction (0..1) for a sample: how many of the N wrap lines draw at
     // this local intensity. Dark → high, lit cap → low.
     // O6 — THE GLINT CAP IS BOUNDED. Unbounded, `cov *= (1 - 0.5*specSize)` took
@@ -406,7 +434,7 @@
     // contract, and it is why a cube, a low-poly sphere and this capsule under
     // one light now land in the same zones.
     const zoneCtx = opts.formZone || null;
-    const zonesOn = Boolean(useLadder && zoneCtx && typeof Regions.formZone === 'function');
+    const zonesOn = Boolean(HL_STAGE.toneZones && useLadder && zoneCtx && typeof Regions.formZone === 'function');
     // The blank highlight is placed by the SPECULAR term, not by "the top tone
     // band". That is what makes it sit offset toward the light (O7), shrink to a
     // few percent of the silhouette instead of a quarter of it (O4/O5), respond
@@ -512,7 +540,7 @@
     // exclusive within one fill). Default off ⇒ every branch below is inert.
     const hlCfg = opts.highlight || null;
     const specularFn = opts.specularFn || null;
-    const ldOn = Boolean(hlCfg && hlCfg.lightDriven && typeof specularFn === 'function' && Regions
+    const ldOn = Boolean(HL_STAGE.lightDriven && hlCfg && hlCfg.lightDriven && typeof specularFn === 'function' && Regions
       && typeof Regions.highlightStage === 'function');
     const ld = ldOn ? {
       treatment: hlCfg.treatment || 'blank',
@@ -595,7 +623,7 @@
     let masterPitch = 0;
     let densityOverflow = 0; // Density past the plot floor, spent on a 2nd direction
     const penWidth = Math.max(0.02, finite(opts.penWidth, 0.3));
-    if (useLadder && opts.penWidth != null) {
+    if (HL_STAGE.masterGrid && useLadder && opts.penWidth != null) {
       // Calibrate off the MEDIAN local pitch the family will actually rule at,
       // not off a bounding box. A wrapped family's pitch is wildly non-uniform —
       // on a sphere the meridians converge to nothing at the poles and crowd at
@@ -713,7 +741,7 @@
     // dedicated specular-region pass in the caller.
     // perFace band-treatment dispatch — DISABLED when lightDriven owns the
     // highlight (the two are mutually exclusive within one fill).
-    const hl = (!ldOn && opts.highlight && opts.highlight.treatment && opts.highlight.treatment !== 'blank')
+    const hl = (HL_STAGE.treatment && !ldOn && opts.highlight && opts.highlight.treatment && opts.highlight.treatment !== 'blank')
       ? opts.highlight : null;
     const hlIsHL = (hl && typeof hl.isHL === 'function') ? hl.isHL : () => false;
     const hlDensity = hl ? clamp(finite(hl.density, 25), 1, 100) : 25;
@@ -832,7 +860,7 @@
         // or H is culled exactly as before, so the limb/terminator chatter this
         // sink was built to remove is untouched. `MIN_MARK_MM` still applies in
         // L — a sub-pen-width fragment is a pen-down dot in any zone.
-        const speck = softStart && softEnd && runLen < SPECK_MM && runLit !== true;
+        const speck = HL_STAGE.continuitySink && softStart && softEnd && runLen < SPECK_MM && runLit !== true;
         if (run.length >= 2 && runLen >= MIN_MARK_MM && !speck) {
           run.fam = fam;
           pushRun(run, back, lineIndex);
@@ -956,12 +984,16 @@
           // (sparse), the glint none (blank). The comparison is feathered so the
           // flips do not line up into a contour at a zone boundary (O26).
           // Without a ladder (other callers) it degrades to the legacy shade<rank.
-          let dropZone;
+          // HOISTED out of the `dither` block (staged unwire, E3). The zone-gate
+          // is a HARD cut that confines a crossed family to its own zone; it has
+          // to keep firing when `toneZones` is on but `dither` is off, otherwise
+          // the T/F cross families spray over the whole object.
+          const zone = zoneOf(smp);
+          sampleZone = zone;
+          if (zoneGate && zone !== zoneGate) { flush(); flushHL(); continue; }
+          let dropZone = false;
           let dutyBreak = false;
-          if (useLadder) {
-            const zone = zoneOf(smp);
-            sampleZone = zone;
-            if (zoneGate && zone !== zoneGate) { flush(); flushHL(); continue; }
+          if (HL_STAGE.dither && useLadder) {
             const cov = zone
               ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true, smp)
               : coverageForSample(smp.I);
@@ -982,7 +1014,7 @@
             const stepHere = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
             const dirHere = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
             const localPitch = perpPitch(smp, stepHere, dirHere);
-            if (localPitch != null) {
+            if (HL_STAGE.coverageCap && localPitch != null) {
               // Effective pitch is localPitch / coverage and must stay at or above
               // the floor, so the darkest zone may not exceed localPitch/floor.
               // Applied MULTIPLICATIVELY, not as a clamp: where the geometry
@@ -1032,7 +1064,7 @@
             // exactly `ceil` when every pass saturates, the composed total is
             // bounded by construction and no pass needs to know about any
             // other.
-            if (zone && localPitch != null && localPitch > 1e-6) {
+            if (HL_STAGE.coverageCap && zone && localPitch != null && localPitch > 1e-6) {
               // The ceiling stays PROPORTIONAL to the zone's intended weight,
               // never a flat clamp. A flat clamp collapses every zone that
               // reaches it onto one value — T and F both crossed, both
@@ -1057,7 +1089,7 @@
               const myCeil = share >= 1 ? ceil : 1 - Math.pow(1 - ceil, clamp(share, 0, 1));
               covCapped = Math.min(covCapped, (myCeil * localPitch) / penWidth);
             }
-            const jit = featherAt(lineIndex, s) * FEATHER_AMPL;
+            const jit = HL_STAGE.feather ? featherAt(lineIndex, s) * FEATHER_AMPL : 0;
             // HYSTERESIS, ONE-SIDED. The bare comparison `rank >= covCapped +
             // jit` is a per-sample verdict on a quantity that WANDERS along the
             // ruling (foreshortening, the composed-budget ceiling, and
@@ -1087,17 +1119,18 @@
             //   - The margin is charged AGAINST THE LOCAL COVERAGE (see
             //     `hystFor`), because that is the rank budget the zone actually
             //     has. Flat, it was a ban in every sparse zone.
+            const margin = HL_STAGE.hysteresis ? hystFor(covCapped) : 0;
             dropZone = (drawing || !everDrew)
               ? rank >= covCapped + jit
-              : rank >= covCapped + jit - hystFor(covCapped);
+              : rank >= covCapped + jit - margin;
             // Dash duty — the reflected rim breaks its rulings rather than
             // tightening them (§5.1: widened spacing + duty 0.7). A duty break
             // is DELIBERATE, so it cuts hard and is never bridged.
-            if (!dropZone && zone) {
+            if (HL_STAGE.dashDuty && !dropZone && zone) {
               const duty = clamp(finite(Regions.formInk(zone).duty, 1), 0, 1);
               if (duty < 1 && sfHash(lineIndex + 7717, Math.round(s / 2)) >= duty) { dropZone = true; dutyBreak = true; }
             }
-          } else {
+          } else if (HL_STAGE.dither) {
             dropZone = shade < threshold;
           }
           if (dropZone) {
@@ -1691,14 +1724,14 @@
             // spiral-filled object. A helix has no family index, so its rank is
             // the TURN it is on: whole loops drop out toward the light, which
             // keeps the arcs continuous instead of speckling the helix.
-            if (useLadder) {
+            if (HL_STAGE.dither && useLadder) {
               const zone = zoneOf(smp);
               sampleZone = zone;
               const cov = zone ? zoneCoverage(zone, false) : coverageForSample(smp.I);
               if (rankOf(Math.floor(f * turns)) >= cov) { sink.softDrop({ x: smp.x, y: smp.y }); continue; }
             } else {
               const shade = clamp(1 - smp.I, 0, 1);
-              if (shade < 0.12) { flush(); continue; }
+              if (HL_STAGE.dither && shade < 0.12) { flush(); continue; }
             }
           }
           sink.addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone);
@@ -1729,11 +1762,11 @@
               // `ladder[]`, so a stippled object showed no tone bands at all.
               // The dot's rank is now the same bit-reversed permutation the line
               // families use, compared against the local zone coverage.
-              if (useLadder) {
+              if (HL_STAGE.dither && useLadder) {
                 const zone = zoneOf(smp);
                 const cov = zone ? zoneCoverage(zone, false) : coverageForSample(smp.I);
                 if (rankOf(r * colsPer + c) >= cov) continue;
-              } else {
+              } else if (HL_STAGE.dither) {
                 const shade = clamp(1 - smp.I, 0, 1);
                 const th = ((r * colsPer + c) % 7) / 7; // scattered dither
                 if (shade < th) continue;
