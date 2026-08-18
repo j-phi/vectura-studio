@@ -42,15 +42,19 @@ describe('Scene-tree Increment A — object3d + booleanGroup3d types', () => {
     test('object3d mirrors one scene3d object entry', () => {
       const d = ALGO.object3d;
       expect(d).toBeTruthy();
-      expect(d.primitive).toBe('box');
-      expect(d.params).toEqual({ sx: 40, sy: 40, sz: 40 });
+      // A fresh 3D object is a hatched SPHERE (a box under the old wireframe
+      // seed emitted structural edges and zero surface ink). Kept in lockstep
+      // with ALGO_DEFAULTS.scene3d.objects[0] — the delegation test below is
+      // what enforces that the two blocks describe the same object.
+      expect(d.primitive).toBe('sphere');
+      expect(d.params).toEqual({ radius: 20, detail: 28 });
       expect(d.transform).toMatchObject({ x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 });
       expect(d.visibility).toBe('solid');
       expect(d.role).toBe('solid');
       expect(d.shadow).toEqual({ enabled: null });
       expect(d.border).toMatchObject({ enabled: false });
       expect(d.emissive).toMatchObject({ enabled: false });
-      expect(d.style).toEqual({ penId: null, mapper: 'wireframe', params: {} });
+      expect(d.style).toEqual({ penId: null, mapper: 'hatch', params: {} });
       expect(d.faceStyles).toEqual({});
     });
 
@@ -78,9 +82,32 @@ describe('Scene-tree Increment A — object3d + booleanGroup3d types', () => {
 
   // (b) ── standalone object3d ≡ one-object scene3d ────────────────────────────
   describe('standalone object3d delegates to the scene3d pipeline', () => {
-    test('default object3d output equals the one-object scene3d default output', () => {
+    // The factory OBJECT ENTRY is in lockstep with ALGO_DEFAULTS.scene3d.objects[0]
+    // (same primitive, bag and transform), so the default leaf and the default
+    // monolith describe the same object. Their STYLES are deliberately NOT in
+    // lockstep: a leaf carries an explicit per-object style (hatch), while the
+    // scene-scope fallback stays wireframe because that is what the GROUND
+    // fixture resolves to and a hatched scene scope floods the ground quad.
+    // The delegation contract is therefore stated the way object3d.js actually
+    // builds it — the leaf's style becomes the one-object scene's scene scope.
+    test('the default object entry is in lockstep with the default scene object', () => {
+      const leaf = ALGO.object3d;
+      const inline = ALGO.scene3d.objects[0];
+      expect(inline.primitive).toBe(leaf.primitive);
+      expect(inline.params).toEqual(leaf.params);
+      expect(inline.transform).toEqual(leaf.transform);
+      expect(inline.visibility).toBe(leaf.visibility);
+    });
+
+    test('default object3d output equals the one-object scene3d scene it delegates to', () => {
       const objOut = object3d.generate(clone(ALGO.object3d), null, null, clone(BOUNDS));
-      const sceneOut = scene3d.generate(clone(ALGO.scene3d), null, null, clone(BOUNDS));
+      const norm = Params.normalizeObjectLayerParams(clone(ALGO.object3d));
+      const { style, faceStyles, ...object } = norm;
+      const sceneOut = scene3d.generate({
+        ...clone(ALGO.scene3d),
+        objects: [object],
+        styleTable: { scene: style, byObject: {}, byFace: faceStyles },
+      }, null, null, clone(BOUNDS));
       expect(objOut.length).toBeGreaterThan(0);
       expect(objOut).toEqual(sceneOut);
     });

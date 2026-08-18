@@ -597,6 +597,17 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.3.85
+- **3D Scene: a new scene arrives with ink on it.** Inserting a 3D Scene seeded a **box** under the
+  **wireframe** mapper, and that pair puts no ink on the object at all — wireframe never reaches the
+  surface-fill emitter, so the object drew only its structural edges, nine straight lines on a cube.
+  A freshly dropped scene composed 113 paths of which **zero** were the object's surface (100 were
+  the ground's cast shadow, 4 the ground quad), and on canvas it read as an empty cube outline. The
+  seed is now a **sphere** under **hatch**, resting on the ground, so lighting, tone and the mapper
+  are visible the instant the object appears. Box and wireframe are unchanged and stay one click
+  away — the Add Objects shelf and the object Style flyout. The scene-scope fallback deliberately
+  stays wireframe: it is what the ground fixture resolves to, and hatching it floods the ground quad.
+
 ### 1.3.84
 - **Draw Order: the colours, the playback and the exported SVG finally agree.** The on-canvas
   gradient sorted every optimized path globally by its line-sort order and ignored pen grouping,

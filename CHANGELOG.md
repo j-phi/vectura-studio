@@ -38,6 +38,17 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   light lifts the lowest facets, which were previously the darkest part of a low-poly sphere.
 
 ### Changed
+- **3D Scene — a newly inserted scene is a hatched sphere, not a wireframe cube.** Inserting a 3D
+  Scene (Add Layer, or the canvas draw tool) used to seed a **box** under the **wireframe** mapper,
+  and that combination puts *no ink on the object at all*: wireframe never reaches the surface-fill
+  emitter — it takes the flat/edge path instead — so the object emitted only its structural edges,
+  which on a box is nine straight lines. A dropped scene therefore composed 113 paths of which
+  **zero** belonged to the object's surface (100 were the ground's cast shadow, 4 the ground quad),
+  and it read on canvas as an empty cube outline. The seed is now a **sphere** under **hatch**,
+  resting on the ground, so the light, tone and mapper pipeline is visible the moment the object
+  appears. The **scene-scope** fallback stays wireframe on purpose — it is what the ground fixture
+  resolves to, and a hatched scene scope floods the whole ground quad. Box and wireframe are
+  unchanged and remain one click away (Add Objects shelf, and the object Style flyout).
 - **3D Scene — the shadow slider "Falloff" is now "Softness".** `shadowFalloff` was repurposed
   from "density drop per layer" to penumbra softness — it sets how far the umbra core extends down
   the throw — but the label still described behaviour the control no longer had. Label only: the

@@ -2078,13 +2078,17 @@
       objects: [
         {
           id: 'obj-1',
-          name: 'Box 1',
-          primitive: 'box',
+          name: 'Sphere 1',
+          // Kept in exact lockstep with ALGO_DEFAULTS.object3d below — the
+          // standalone leaf renders by delegating to this pipeline with a
+          // one-object scene, so the two factory blocks must describe the same
+          // object or the two paths diverge.
+          primitive: 'sphere',
           // per-primitive params bag; box: { sx, sy, sz }; sphere: { radius, detail }; etc.
-          params: { sx: 40, sy: 40, sz: 40 },
-          // Rest the box ON the ground (base at y=0, so y = sy/2): the cast
+          params: { radius: 20, detail: 28 },
+          // Rest the object ON the ground (base at y=0, so y = radius): the cast
           // shadow then pools from the base and reads as a real cast shadow,
-          // instead of a small wedge from a half-buried, origin-centred box.
+          // instead of a small wedge from a half-buried, origin-centred object.
           transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
           visibility: 'solid', // 'solid' | 'xray'
         },
@@ -2131,9 +2135,13 @@
       groups: [], // Phase 3C reserve
       assets: {}, // content-hashed asset table; cloneLayerParams ref-skips it
       styleTable: { // CONTRACT C shape
-        // I11 — new 3D objects come up as WIREFRAME (all structural edges), the
-        // most legible read of a fresh mesh. 'none' (outline only) and the surface
-        // fills are opt-in via the object style flyout.
+        // I11 — the SCENE-scope fallback stays WIREFRAME. It is what anything
+        // without a style of its own resolves to, and that includes the GROUND
+        // fixture: a hatched scene scope floods the whole ground quad with
+        // rulings and buries the subject. The per-object default is what makes a
+        // new object inked — see ALGO_DEFAULTS.object3d.style below, which every
+        // object3d leaf carries explicitly (creation-time, so this fallback is
+        // only ever reached by the ground and by styleless legacy entries).
         scene: { penId: null, mapper: 'wireframe', params: {} },
         byObject: {}, // objectId -> Style
         byFace: {}, // 'objectId/faceId' -> Style
@@ -2160,18 +2168,33 @@
       // old leaf still arrives without a sceneVersion and still migrates.
       // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
       sceneVersion: 4,
-      primitive: 'box',
+      // A fresh 3D object is a SPHERE, not a box. A box under the wireframe
+      // mapper emits nine straight edges and nothing else — the object carries
+      // no surface ink at all, so a freshly inserted scene reads as a bare cube
+      // outline (see the style default below). A sphere shows the tone/mapper
+      // work immediately, and it is the shape the surface-fill emitter was
+      // built around. `box` stays one click away on the Add Objects shelf.
+      primitive: 'sphere',
       // per-primitive params bag (box: { sx, sy, sz }; sphere: { radius, detail }; …).
-      params: { sx: 40, sy: 40, sz: 40 },
-      // Rest ON the ground (base at y=0 ⇒ y = sy/2), matching the scene3d box.
+      // radius 20 keeps the transform below a true ground rest (y = radius).
+      params: { radius: 20, detail: 28 },
+      // Rest ON the ground (base at y=0 ⇒ y = radius, formerly sy/2 for the box).
       transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
       visibility: 'solid', // 'solid' | 'xray'
       role: 'solid',       // 'solid' | 'hole' (a hole subtracts inside a boolean group)
       shadow: { enabled: null }, // per-object cast override: null = inherit (casts)
       border: { enabled: false, strength: 1, penId: null }, // silhouette emphasis (off)
       emissive: { enabled: false, intensity: 1, penId: null, halo: 'burst', haloCount: 16, haloRings: 3, coreBlank: true },
-      // I11 — a fresh 3D object comes up as WIREFRAME (all structural edges).
-      style: { penId: null, mapper: 'wireframe', params: {} },
+      // A fresh 3D object comes up under the HATCH mapper (supersedes I11's
+      // wireframe seed). `wireframe` and `contourSlice` return false from
+      // Scene3D.SurfaceFill and take the flat/edge path in algorithms/scene3d.js
+      // instead — they never reach the surface-fill emitter, so a wireframe
+      // object contributes ONLY its structural edges and zero surface ink. On a
+      // box that is nine straight lines, which is why a freshly inserted scene
+      // looked like an empty cube outline. Hatch puts real ink on the surface
+      // the moment the object appears. Every mapper (wireframe included) is
+      // still one pick away in the object Style flyout.
+      style: { penId: null, mapper: 'hatch', params: {} },
       faceStyles: {}, // faceId -> Style (per-face overrides)
     },
     // Scene-tree Increment A — booleanGroup3d: a CONTAINER stub for the fused

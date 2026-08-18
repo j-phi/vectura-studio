@@ -155,9 +155,19 @@ describe('collectSceneParams — a style-less object3d child inherits the scene 
     expect(countKind(ink, 'sceneEdge')).toBeGreaterThan(0);
   });
 
-  // ── (7) REGRESSION PIN — the UI-created default is untouched ──────────────
-  test("a child carrying the factory default style still renders wireframe", () => {
+  // ── (7) REGRESSION PIN — the UI-created default puts ink on the surface ────
+  // The factory child style is HATCH (it used to be wireframe, which reaches no
+  // surface-fill emitter at all and so left the object with edges only).
+  test('a child carrying the factory default style renders surface fill', () => {
     const { grp } = buildTree(clone(V.ALGO_DEFAULTS.object3d.style));
+    const ink = sceneInk(grp);
+    expect(countKind(ink, 'sceneFill')).toBeGreaterThan(0);
+    expect(countKind(ink, 'sceneEdge')).toBeGreaterThan(0);
+  });
+
+  // An explicit wireframe pick is still honoured, and still emits edges only.
+  test('an explicit wireframe child renders edges and no surface fill', () => {
+    const { grp } = buildTree({ penId: null, mapper: 'wireframe', params: {} });
     const ink = sceneInk(grp);
     expect(countKind(ink, 'sceneFill')).toBe(0);
     expect(countKind(ink, 'sceneEdge')).toBeGreaterThan(0);

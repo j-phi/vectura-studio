@@ -147,14 +147,16 @@ describe('Scene3D panel — buildControls dispatch', () => {
     expect(host.querySelector('.vs3-panel')).toBeTruthy();
     const posX = host.querySelector('input.ctrl-slider[aria-label="Position X (mm)"]');
     expect(posX).toBeTruthy();
-    // Editing a dimension writes the child layer's params and regenerates.
-    const before = child.params.params.sx;
-    const widthSlider = host.querySelector('input.ctrl-slider[aria-label="box width"]');
-    expect(widthSlider).toBeTruthy();
-    widthSlider.value = String((before || 40) + 12);
-    widthSlider.dispatchEvent(new window.Event('input', { bubbles: true }));
-    widthSlider.dispatchEvent(new window.Event('change', { bubbles: true }));
-    expect(child.params.params.sx).not.toBe(before);
+    // Editing a dimension writes the child layer's params and regenerates. The
+    // seeded child is a SPHERE, so its one dimension row is Radius.
+    expect(child.params.primitive).toBe('sphere');
+    const before = child.params.params.radius;
+    const radiusSlider = host.querySelector('input.ctrl-slider[aria-label="sphere radius"]');
+    expect(radiusSlider).toBeTruthy();
+    radiusSlider.value = String((before || 25) + 12);
+    radiusSlider.dispatchEvent(new window.Event('input', { bubbles: true }));
+    radiusSlider.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(child.params.params.radius).not.toBe(before);
   });
 });
 

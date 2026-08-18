@@ -75,7 +75,7 @@ describe('scene3d generate (CONTRACT A/B)', () => {
     // walks a migration step (see defaults.js).
     expect(defaults.sceneVersion).toBe(V.Scene3D.Params.SCENE_VERSION);
     expect(Array.isArray(defaults.objects)).toBe(true);
-    expect(defaults.objects[0].primitive).toBe('box');
+    expect(defaults.objects[0].primitive).toBe('sphere');
     expect(defaults.objects[0].id).toBe('obj-1');
     expect(Array.isArray(defaults.lights)).toBe(true);
     expect(defaults.lights[0].type).toBe('directional');
@@ -84,7 +84,9 @@ describe('scene3d generate (CONTRACT A/B)', () => {
     expect(defaults.camera.projection).toBe('orthographic');
     expect(defaults.assets).toEqual({});
     expect(defaults.styleTable).toEqual({
-      // I11 — new objects default to the wireframe mapper.
+      // I11 — the SCENE-scope fallback is wireframe (it is what the ground
+      // fixture resolves to; a hatched scene scope floods the ground quad). The
+      // per-object default is hatch — see ALGO_DEFAULTS.object3d.style.
       scene: { penId: null, mapper: 'wireframe', params: {} },
       byObject: {},
       byFace: {},

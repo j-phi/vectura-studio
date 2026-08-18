@@ -228,6 +228,26 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Unreleased — 3D Scene: a fresh insert is a hatched sphere, and it actually has ink
+  (`3d-scene/scene-defaults`).** Reported as "dropping a 3D scene gives an object with no lines,
+  just a cube outline". Measured through the real insert path (`engine.addLayer('scene3d')` →
+  `addSceneTree`, ink read off `group.scenePaths`, never `layer.paths`): the scene was never
+  literally empty — it composed 113 paths — but **zero** of them were the object's surface. The
+  seed was a **box** under **wireframe**, and `wireframe` (like `contourSlice`) returns false from
+  `Scene3D.SurfaceFill` and takes the flat/edge path in `algorithms/scene3d.js`, so it never
+  reaches the surface-fill emitter. The object contributed 9 structural edges; the other 104 paths
+  were the ground quad (4) and its cast-shadow hatch (100). Wireframe itself is not broken — it is
+  bypassing by design. Fix: the fresh-object default is now a **sphere** under **hatch**
+  (`ALGO_DEFAULTS.object3d.primitive` / `.params` / `.style.mapper`, mirrored by
+  `ALGO_DEFAULTS.scene3d.objects[0]`), and `addSceneTree` seeds that primitive from config and
+  rests it on the ground (`transform.y = radius`). The **scene-scope** style stays `wireframe`
+  deliberately: it is the fallback the ground fixture resolves to, and hatching it floods the whole
+  ground quad. Box and wireframe stay explicitly choosable (Add Objects shelf; object Style
+  flyout), pinned by tests. RGR: `tests/unit/scene3d-insert-default-ink.test.js` drives the real
+  insert and asserts object-owned `sceneFill` on `group.scenePaths` (a bare `scenePaths.length > 0`
+  check would have passed before the fix too). Two test fixtures that built a scene tree and then
+  forgot to drop the auto-seeded child were repaired in the same pass (`scene3d-curves`,
+  `visual/curve-baseline`).
 - **v1.3.84 — Draw Order: one plot order, and an overlay pinned to the drawn geometry
   (`fix/draw-order-playback-v2`, `19c1149`..`ddd3905`).** Restores the order-agreement fix that was
   reverted in `1dc1e53`, and adds the contract that was missing when it shipped a visible

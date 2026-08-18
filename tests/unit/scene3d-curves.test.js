@@ -71,6 +71,11 @@ describe('scene3d Curves / Simplify', () => {
   const composeObject = (primitive, objParams, curveParams) => {
     const engine = new Vectura.VectorEngine();
     const groupId = engine.addLayer('scene3d');
+    // addSceneTree seeds a default object child (a hatched sphere). Drop it so
+    // ONLY the object under test emits — otherwise the seed's curved silhouette
+    // shows up in a "this primitive is never curved" count.
+    const seeded = engine.getLayerChildren(groupId).find((l) => l.type === 'object3d');
+    if (seeded) engine.removeLayer(seeded.id);
     const group = engine.layers.find((l) => l.id === groupId);
     group.isGroup = true;
     group.containerRole = 'scene';
@@ -227,6 +232,11 @@ describe('scene3d Curves / Simplify', () => {
     // stretch: the clipped end no longer coincides with its neighbour's vertex.
     const engine = new Vectura.VectorEngine();
     const groupId = engine.addLayer('scene3d');
+    // addSceneTree seeds a default object child (a hatched sphere). Drop it so
+    // ONLY the object under test emits — otherwise the seed's curved silhouette
+    // shows up in a "this primitive is never curved" count.
+    const seeded = engine.getLayerChildren(groupId).find((l) => l.type === 'object3d');
+    if (seeded) engine.removeLayer(seeded.id);
     const group = engine.layers.find((l) => l.id === groupId);
     group.isGroup = true;
     group.containerRole = 'scene';
