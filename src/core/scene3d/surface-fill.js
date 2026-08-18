@@ -206,9 +206,9 @@
   //   - `specular` is a total no-op at Highlight = None regardless (`noHL`).
   //   - `lightDriven` and `treatment` are mutually exclusive by construction.
   const HL_STAGE = {
-    masterGrid:     false, // the ladder's line budget (N, masterPitch, densityOverflow)
+    masterGrid:     true,  // the ladder's line budget (N, masterPitch, densityOverflow)
     toneZones:      false, // Regions.formZone + FORM_INK + the T/F cross families
-    dither:         false, // the rank-vs-coverage drop verdict itself
+    dither:         true,  // the rank-vs-coverage drop verdict itself
     coverageCap:    false, // cap = localPitch/floorPitch  AND  the myCeil ceiling
     feather:        false, // featherAt jitter on the comparison
     hysteresis:     false, // the one-sided re-start margin
