@@ -954,6 +954,113 @@
       };
     };
 
+    // ── THE DRAW/SKIP VERDICT IS A WHOLE-SPAN PROPERTY ───────────────────────
+    // Measured on the Stage-1 (masterGrid + dither) emitter, 71 front rulings of
+    // a lit sphere: `rank` is CONSTANT per ruling (71 rulings, 71 distinct
+    // values) — it is the ruling's place in the bit-reversed permutation, a
+    // whole-line quantity. The coverage it was compared against was
+    // `coverageForSample(smp.I)`, a PER-SAMPLE function of surface intensity
+    // that swings 0.35 (median) to 0.65 (max) along ONE ruling as a curved form
+    // turns toward and away from the light. Comparing a per-line number against
+    // a per-sample one is a category error, and it showed: 35 of 71 rulings
+    // flipped verdict along their own length, and the deepest free end sat 47.6 %
+    // of the sphere's radius inside the silhouette — a line stopping halfway
+    // across open, unbroken, front-facing surface. `feather`, `coverageCap` and
+    // `hysteresis` were all OFF, so this was never jitter.
+    //
+    // THE LAW (tests/unit/scene3d-fill-seam-continuity.test.js). On a lone convex
+    // primitive a front ruling may end in exactly three places: the silhouette, a
+    // chart pole, or nowhere (a closed ring). So the verdict is taken ONCE per
+    // SPAN, where a span is a maximal run of consecutive samples that are (a) on
+    // the wanted side of the surface and (b) in the same tone zone. Those two are
+    // precisely the hard cuts the emitter already made — back-face culling and
+    // the zone gate — so a span boundary is always a place a ruling was already
+    // allowed to end, and a span interior never contains one.
+    //
+    // TONE IS NOT LOST. Dropping WHOLE rulings by rank is how this engine shades
+    // (the file has said so since the ladder was written, and the seam tests
+    // deliberately assert nothing about ink totals so that it stays free to). The
+    // span's representative coverage is the MEAN over its own samples, so a
+    // ruling that crosses mostly-dark surface still reads a high coverage and
+    // draws, and one that crosses mostly-lit surface reads a low one and drops.
+    // Taking the FIRST sample instead (a pure latch) was measured and rejected.
+    // The first sample of a span sits ON the silhouette or the zone boundary,
+    // where the intensity is extreme and unrepresentative of the span, so the
+    // latch throws ink away: on one lit sphere, against the per-sample emitter,
+    // the MEAN holds ink to within 3 % on every mapper (hatch -2.3 %, contour
+    // -2.7 %, crosshatch -1.5 %, spiral -1.3 %) while the latch loses 12 % to
+    // 42 % (contour 6533 -> 3790 mm). And it does not lose it evenly: the latch's
+    // contour density read 0.140 / 0.126 / 0.066 / 0.222 / 0.421 across five bins
+    // from the light, i.e. a hole in the middle of the form that is LIGHTER than
+    // the lit end. Both stop the breaks; only one of them still draws the light.
+    //
+    // WHAT THIS COSTS, stated plainly. A ruling that runs FROM the light INTO the
+    // shadow can no longer fade out along its own length — under the law it must
+    // draw whole or not at all, so tone reads ACROSS the family, not along a
+    // ruling. Where the light gradient runs along the rulings (a side-lit sphere
+    // filled with contour rings) that removes an asymmetry the per-sample verdict
+    // had: `scene3d-surface-fill`'s "the lit side thins" measures 0.033 where it
+    // wants 0.114. It comes back with `toneZones` (Stage 2), which makes a zone
+    // boundary a real span boundary — a ring crossing L -> M -> T -> F then takes
+    // a verdict per zone, and ends where the surface genuinely changes, which is
+    // the one mid-form end this design has always sanctioned.
+    //
+    // `valueAt(smp, index)` is the per-sample quantity the verdict reads;
+    // `verdict(mean, midIndex, restarting)` returns true to DROP. `restarting`
+    // is true once this ruling has drawn a span AND dropped a later one — the
+    // one-sided hysteresis margin (Stage 5) is charged there and nowhere else,
+    // which is the same asymmetry it always had, moved to the scale the verdict
+    // is now taken at. Returns one boolean per sample index, so the emit loop
+    // stays a single pass.
+    const spanDrops = (smps, zones, valueAt, verdict, wrap) => {
+      const n = smps.length;
+      const drop = new Array(n).fill(false);
+      // Segment first, so a CLOSED sweep's two ends can be recognised as one
+      // span before any verdict is taken.
+      const spans = [];
+      let s = 0;
+      while (s < n) {
+        if (!smps[s]) { s += 1; continue; }
+        const z = zones ? zones[s] : null;
+        let e = s;
+        while (e + 1 < n && smps[e + 1] && (zones ? zones[e + 1] : null) === z) e += 1;
+        spans.push([s, e]);
+        s = e + 1;
+      }
+      // THE PARAMETER SEAM IS NOT A SPAN BOUNDARY. A closed sweep (a contour
+      // ring: b = 1 IS b = 0) is handed to this loop as an array, so its two
+      // ends arrive as the FIRST and LAST spans — but on the form they are one
+      // continuous piece of surface with no boundary between them. Left apart
+      // they took two verdicts, and where the two disagreed the ring stopped
+      // dead on the wind meridian: measured 8.1 % of the radius inside the
+      // silhouette on a lit sphere, on open front-facing surface. This is the
+      // verdict-side statement of the same law `a5a8b63` fixed on the geometry
+      // side, and it is decided the same way — the two ends are ONE point.
+      if (wrap && spans.length > 1) {
+        const first = spans[0];
+        const last = spans[spans.length - 1];
+        const sameZone = (zones ? zones[first[0]] : null) === (zones ? zones[last[0]] : null);
+        if (first[0] === 0 && last[1] === n - 1 && sameZone) {
+          spans.pop();
+          spans[0] = [last[0], last[1], first[0], first[1]];   // tail + head, one span
+        }
+      }
+      let drew = false;
+      let stopped = false;
+      spans.forEach((span) => {
+        const idx = [];
+        for (let i = 0; i < span.length; i += 2) {
+          for (let k = span[i]; k <= span[i + 1]; k++) idx.push(k);
+        }
+        let sum = 0;
+        idx.forEach((k) => { sum += valueAt(smps[k], k); });
+        const d = verdict(sum / idx.length, idx[idx.length >> 1], drew && stopped);
+        idx.forEach((k) => { drop[k] = d; });
+        if (d) { if (drew) stopped = true; } else drew = true;
+      });
+      return drop;
+    };
+
     // Emit one iso-line. `paramAt(tt)` walks the line through the (a,b)
     // parameter square. `threshold` is this line's ordered-dither cut (0..1) —
     // the sample draws only where the local shade (1 − I) meets it, so lines
@@ -972,11 +1079,9 @@
       // The base channel goes through the shared run sink (see makeSink).
       const sink = makeSink(back, lineIndex, currentFam);
       // A hard cut ends the continuous span, so both trigger flags reset.
-      const flush = () => { sink.flush(); drawing = false; everDrew = false; };
+      const flush = () => { sink.flush(); };
       const softDrop = sink.softDrop;
       const addPt = sink.addPt;
-      let drawing = false;     // is this ruling currently laying ink?
-      let everDrew = false;    // has it laid any within the current continuous span?
       // Highlight runs are tagged so the caller draws them dashed/dotted on the
       // highlight pen (dashed/dotted treatments).
       const flushHL = () => {
@@ -1001,12 +1106,167 @@
       // proportionally more samples to stay on the form). Default is `steps`.
       const nSteps = Math.max(2, Math.min(MAX_LINE_STEPS,
         Number.isFinite(paramAt.steps) ? Math.round(paramAt.steps) : steps));
+
+      // ── SAMPLE THE RULING ONCE, THEN DECIDE ONCE PER SPAN ────────────────────
+      // Exactly the same sampleAt calls the emit loop used to make, hoisted so
+      // the verdict can see the whole ruling before the first point is laid.
+      // See `spanDrops` above for why the verdict has to be taken at this scale.
+      const smps = new Array(nSteps + 1);
+      const zones = new Array(nSteps + 1);
+      for (let s = 0; s <= nSteps; s++) {
+        const pr = paramAt(s / nSteps);
+        const smp = sampleAt(pr.a, pr.b);
+        const on = Boolean(smp && smp.front === wantFront);
+        smps[s] = on ? smp : null;
+        // The zone gate is a HARD cut, so a gated-out sample is not part of any
+        // span; folding it in here keeps the span segmentation and the emit
+        // loop's cut in step.
+        if (on && toneOn) {
+          const z = zoneOf(smp);
+          zones[s] = z;
+          if (zoneGate && z !== zoneGate) smps[s] = null;
+        } else {
+          zones[s] = null;
+        }
+      }
+      // The composed coverage AT ONE SAMPLE — the exact arithmetic the per-sample
+      // verdict used, factored out unchanged so the span verdict reads the same
+      // number. `cap` and `myCeil` are Stage-3 (`coverageCap`) and are inert
+      // while that flag is off; when it returns they vary continuously along a
+      // ruling, and averaging them over the span is precisely what stops that
+      // variation from cutting the ruling again.
+      const covAtSample = (smp, s, zone) => {
+        const tt = s / nSteps;
+        const cov = zone
+          ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true, smp)
+          : coverageForSample(smp.I);
+        // §0, restated as arithmetic, and C15: past ~1.2 x pen width you do
+        // not get darker by ruling closer — you get a flooded blob and a wet
+        // plot. On a wrapped surface that limit is reached LOCALLY long
+        // before it is reached globally: a sphere's meridians converge to
+        // zero pitch at the poles, so the pole caps flooded solid (measured
+        // D = 1.000) while the equator was still legible. Capping coverage by
+        // the LOCAL pitch spends the excess the only way the craft rule
+        // allows — by dropping rulings — and it is what keeps the lit end of
+        // the ladder separable instead of saturating into the dark end.
+        let cap = 1;
+        // `pitchStep` / `lineDir` are constants for a straight parameter-
+        // space family and FUNCTIONS OF tt for the screen-frame crossed
+        // family, whose direction — and therefore whose neighbour offset —
+        // varies along the line. Everything downstream is unchanged.
+        const stepHere = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
+        const dirHere = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
+        const localPitch = perpPitch(smp, stepHere, dirHere);
+        if (HL_STAGE.coverageCap && localPitch != null) {
+          // Effective pitch is localPitch / coverage and must stay at or above
+          // the floor, so the darkest zone may not exceed localPitch/floor.
+          // Applied MULTIPLICATIVELY, not as a clamp: where the geometry
+          // crowds, every zone thins by the same factor, so the ladder's
+          // ratios survive intact instead of the whole ramp collapsing onto
+          // the floor together (which is exactly what a clamp did — L, M, T
+          // and F all landed at the same effective pitch and the form went
+          // flat).
+          if (localPitch > 1e-6 && floorPitch > 1e-6) cap = clamp(localPitch / floorPitch, 0, 1);
+        }
+        let covCapped = cov * cap;
+        // Perceived coverage composes as 1 - PROD(1 - c_i): the crossed
+        // family overlaps family A, so treating them as additive over-reports
+        // and lets the pair flood. Solve for the most the CROSS may lay down
+        // without the pair passing the ceiling.
+        // ── ONE COMPOSED BUDGET, SPLIT ACROSS EVERY PASS ─────────────────
+        //
+        // ROUND 7 (C2 / O13 / C15-on-the-object). Two faults, one cause.
+        //
+        // (a) The BASE pass had no composed budget at all. It was limited
+        //     only by the multiplicative `cap = localPitch / floorPitch`,
+        //     a per-family PITCH rule — so the ceiling was enforced purely
+        //     by WITHHOLDING the cross, and where family A alone busted it
+        //     the composed total simply stayed at whatever A had done.
+        //     Measured at the peak: one family, alone, at an effective
+        //     0.466 mm = 1.55 x pen, coverage 0.644 — inside C15's literal
+        //     1.2 x bar, 1.4x past this path's own family-A floor, and
+        //     carrying the object's maximum D.
+        //
+        // (b) The cross pass modelled family A's already-laid coverage as
+        //     `penWidth * primary / localPitch` — using the CROSS family's
+        //     local pitch, because that is the only one in scope. Family A
+        //     runs at a different angle and therefore a different pitch, so
+        //     the term was evaluated on the wrong quantity: where the cross
+        //     ran sparser than A, `cA` came out too low, `room` too
+        //     generous, and the pair composed to 0.642 against a 0.47
+        //     ceiling. Measured at the peak window: family A 0.497,
+        //     crossed family 0.289.
+        //
+        // Both are the same error the collar took three rounds to shed — a
+        // cap stated on a proxy one transform away from the metric. So the
+        // budget is no longer modelled at all. Each pass is handed a SHARE
+        // of the zone's composed ceiling, in proportion to the ink that
+        // pass is meant to contribute, and enforces only its own share
+        // against its own pitch — which is the one pitch it actually knows.
+        // Because 1 - PROD(1 - c_i) with c_i = 1 - (1-ceil)^(w_i/W) is
+        // exactly `ceil` when every pass saturates, the composed total is
+        // bounded by construction and no pass needs to know about any
+        // other.
+        if (HL_STAGE.coverageCap && zone && localPitch != null && localPitch > 1e-6) {
+          // The ceiling stays PROPORTIONAL to the zone's intended weight,
+          // never a flat clamp. A flat clamp collapses every zone that
+          // reaches it onto one value — T and F both crossed, both
+          // saturated, T/F 0.98, and the dip closed again.
+          const ink = Regions.formInk(zone);
+          const ceil = zoneCeiling(zone);
+          // Every family that will land on this sample, and what each is
+          // for. The Density overflow is a THIRD direction and has to be in
+          // the denominator or it spends budget nobody accounted for.
+          const wBase = Math.max(0, ink.coverage);
+          // The cross's weight is what will ACTUALLY land here, tapered and
+          // all — a family that is not drawn must not hold budget.
+          const wCross = Math.max(0, crossWeightAt(zone, smp));
+          const wOver = densityOverflow > 0 ? Math.max(0, ink.coverage * densityOverflow) : 0;
+          const W = wBase + wCross + wOver;
+          let share = 1;
+          if (W > 1e-6) {
+            if (densityCross) share = wOver / W;
+            else if (zoneGate) share = wCross / W;
+            else share = wBase / W;
+          }
+          const myCeil = share >= 1 ? ceil : 1 - Math.pow(1 - ceil, clamp(share, 0, 1));
+          covCapped = Math.min(covCapped, (myCeil * localPitch) / penWidth);
+        }
+        return covCapped;
+      };
+      // Is this sweep CLOSED? Exactly the test the seam join below uses: the two
+      // ends land on the same point, which is what "closed" means. A ring's
+      // first and last spans are therefore one span, not two.
+      const closedSweep = Boolean(smps[0] && smps[nSteps]
+        && Math.hypot(smps[0].x - smps[nSteps].x, smps[0].y - smps[nSteps].y) < SEAM_JOIN_MM);
+      // One verdict per span, for the whole ruling, computed before any ink is
+      // laid. `null` when the dither is off — every sample then draws.
+      let spanDrop = null;
+      if (HL_STAGE.dither && toneOn) {
+        spanDrop = useLadder
+          ? spanDrops(smps, zones, (smp, s) => covAtSample(smp, s, zones[s]), (cov, mid, restarting) => {
+            // The feather (Stage 4) is evaluated ONCE for the span, at its
+            // midpoint, rather than per sample. It keeps its full amplitude —
+            // so it still decorrelates WHICH rulings drop at a band edge, which
+            // is what stops the edge reading as a traceable contour — but it can
+            // no longer move a ruling's state mid-span, which was never its job.
+            const jit = HL_STAGE.feather ? featherAt(lineIndex, mid) * FEATHER_AMPL : 0;
+            // ...and the re-start margin (Stage 5) is charged on a span that
+            // resumes a ruling which already drew and then stopped, which is the
+            // only kind of re-start that is left. Raising the bar to start can
+            // only ever REMOVE ink, so the composed C15/§0 budget is untouched.
+            const margin = (HL_STAGE.hysteresis && restarting) ? hystFor(cov) : 0;
+            return rank >= cov + jit - margin;
+          }, closedSweep)
+          // Legacy, no-ladder callers: the same law, on the same quantity they
+          // always compared (local shade against the line's geometric rank).
+          : spanDrops(smps, zones, (smp) => clamp(1 - smp.I, 0, 1), (shade) => shade < threshold, closedSweep);
+      }
       for (let s = 0; s <= nSteps; s++) {
         const tt = s / nSteps;
-        const pr = paramAt(tt);
-        const smp = sampleAt(pr.a, pr.b);
+        const smp = smps[s];
         sampleZone = null;
-        if (!smp || smp.front !== wantFront) { flush(); flushHL(); continue; }
+        if (!smp) { flush(); flushHL(); continue; }
         if (toneOn) {
           const shade = clamp(1 - smp.I, 0, 1);
           // I8 — LIGHT-DRIVEN glint: the per-sample specular term overrides the
@@ -1043,159 +1303,31 @@
               continue;
             }
           }
-          // The sample draws where this line's PERMUTED rank sits below the local
-          // coverage — dark zones cover more ranks (dense), the centre light few
-          // (sparse), the glint none (blank). The comparison is feathered so the
-          // flips do not line up into a contour at a zone boundary (O26).
-          // Without a ladder (other callers) it degrades to the legacy shade<rank.
-          // HOISTED out of the `dither` block (staged unwire, E3). The zone-gate
-          // is a HARD cut that confines a crossed family to its own zone; it has
-          // to keep firing when `toneZones` is on but `dither` is off, otherwise
-          // the T/F cross families spray over the whole object.
-          const zone = zoneOf(smp);
+          // The sample draws where this ruling's PERMUTED rank sits below the
+          // SPAN's coverage — dark spans cover more ranks (dense), the centre
+          // light few (sparse), the glint none (blank). The verdict was taken
+          // once, above, for this whole continuous span; see `spanDrops`.
+          // Without a ladder (other callers) it degrades to the legacy shade
+          // vs. threshold test, taken at the same scale.
+          //
+          // The zone gate is a HARD cut that confines a crossed family to its
+          // own zone; it has to keep firing when `toneZones` is on but `dither`
+          // is off, otherwise the T/F cross families spray over the whole
+          // object. It is applied in the pre-pass (a gated-out sample is not on
+          // any span) and repeated here so the run is actually flushed.
+          const zone = zones[s];
           sampleZone = zone;
           if (zoneGate && zone !== zoneGate) { flush(); flushHL(); continue; }
-          let dropZone = false;
+          let dropZone = spanDrop ? spanDrop[s] : false;
           let dutyBreak = false;
-          if (HL_STAGE.dither && useLadder) {
-            const cov = zone
-              ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true, smp)
-              : coverageForSample(smp.I);
-            // §0, restated as arithmetic, and C15: past ~1.2 x pen width you do
-            // not get darker by ruling closer — you get a flooded blob and a wet
-            // plot. On a wrapped surface that limit is reached LOCALLY long
-            // before it is reached globally: a sphere's meridians converge to
-            // zero pitch at the poles, so the pole caps flooded solid (measured
-            // D = 1.000) while the equator was still legible. Capping coverage by
-            // the LOCAL pitch spends the excess the only way the craft rule
-            // allows — by dropping rulings — and it is what keeps the lit end of
-            // the ladder separable instead of saturating into the dark end.
-            let cap = 1;
-            // `pitchStep` / `lineDir` are constants for a straight parameter-
-            // space family and FUNCTIONS OF tt for the screen-frame crossed
-            // family, whose direction — and therefore whose neighbour offset —
-            // varies along the line. Everything downstream is unchanged.
-            const stepHere = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
-            const dirHere = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
-            const localPitch = perpPitch(smp, stepHere, dirHere);
-            if (HL_STAGE.coverageCap && localPitch != null) {
-              // Effective pitch is localPitch / coverage and must stay at or above
-              // the floor, so the darkest zone may not exceed localPitch/floor.
-              // Applied MULTIPLICATIVELY, not as a clamp: where the geometry
-              // crowds, every zone thins by the same factor, so the ladder's
-              // ratios survive intact instead of the whole ramp collapsing onto
-              // the floor together (which is exactly what a clamp did — L, M, T
-              // and F all landed at the same effective pitch and the form went
-              // flat).
-              if (localPitch > 1e-6 && floorPitch > 1e-6) cap = clamp(localPitch / floorPitch, 0, 1);
-            }
-            let covCapped = cov * cap;
-            // Perceived coverage composes as 1 - PROD(1 - c_i): the crossed
-            // family overlaps family A, so treating them as additive over-reports
-            // and lets the pair flood. Solve for the most the CROSS may lay down
-            // without the pair passing the ceiling.
-            // ── ONE COMPOSED BUDGET, SPLIT ACROSS EVERY PASS ─────────────────
-            //
-            // ROUND 7 (C2 / O13 / C15-on-the-object). Two faults, one cause.
-            //
-            // (a) The BASE pass had no composed budget at all. It was limited
-            //     only by the multiplicative `cap = localPitch / floorPitch`,
-            //     a per-family PITCH rule — so the ceiling was enforced purely
-            //     by WITHHOLDING the cross, and where family A alone busted it
-            //     the composed total simply stayed at whatever A had done.
-            //     Measured at the peak: one family, alone, at an effective
-            //     0.466 mm = 1.55 x pen, coverage 0.644 — inside C15's literal
-            //     1.2 x bar, 1.4x past this path's own family-A floor, and
-            //     carrying the object's maximum D.
-            //
-            // (b) The cross pass modelled family A's already-laid coverage as
-            //     `penWidth * primary / localPitch` — using the CROSS family's
-            //     local pitch, because that is the only one in scope. Family A
-            //     runs at a different angle and therefore a different pitch, so
-            //     the term was evaluated on the wrong quantity: where the cross
-            //     ran sparser than A, `cA` came out too low, `room` too
-            //     generous, and the pair composed to 0.642 against a 0.47
-            //     ceiling. Measured at the peak window: family A 0.497,
-            //     crossed family 0.289.
-            //
-            // Both are the same error the collar took three rounds to shed — a
-            // cap stated on a proxy one transform away from the metric. So the
-            // budget is no longer modelled at all. Each pass is handed a SHARE
-            // of the zone's composed ceiling, in proportion to the ink that
-            // pass is meant to contribute, and enforces only its own share
-            // against its own pitch — which is the one pitch it actually knows.
-            // Because 1 - PROD(1 - c_i) with c_i = 1 - (1-ceil)^(w_i/W) is
-            // exactly `ceil` when every pass saturates, the composed total is
-            // bounded by construction and no pass needs to know about any
-            // other.
-            if (HL_STAGE.coverageCap && zone && localPitch != null && localPitch > 1e-6) {
-              // The ceiling stays PROPORTIONAL to the zone's intended weight,
-              // never a flat clamp. A flat clamp collapses every zone that
-              // reaches it onto one value — T and F both crossed, both
-              // saturated, T/F 0.98, and the dip closed again.
-              const ink = Regions.formInk(zone);
-              const ceil = zoneCeiling(zone);
-              // Every family that will land on this sample, and what each is
-              // for. The Density overflow is a THIRD direction and has to be in
-              // the denominator or it spends budget nobody accounted for.
-              const wBase = Math.max(0, ink.coverage);
-              // The cross's weight is what will ACTUALLY land here, tapered and
-              // all — a family that is not drawn must not hold budget.
-              const wCross = Math.max(0, crossWeightAt(zone, smp));
-              const wOver = densityOverflow > 0 ? Math.max(0, ink.coverage * densityOverflow) : 0;
-              const W = wBase + wCross + wOver;
-              let share = 1;
-              if (W > 1e-6) {
-                if (densityCross) share = wOver / W;
-                else if (zoneGate) share = wCross / W;
-                else share = wBase / W;
-              }
-              const myCeil = share >= 1 ? ceil : 1 - Math.pow(1 - ceil, clamp(share, 0, 1));
-              covCapped = Math.min(covCapped, (myCeil * localPitch) / penWidth);
-            }
-            const jit = HL_STAGE.feather ? featherAt(lineIndex, s) * FEATHER_AMPL : 0;
-            // HYSTERESIS, ONE-SIDED. The bare comparison `rank >= covCapped +
-            // jit` is a per-sample verdict on a quantity that WANDERS along the
-            // ruling (foreshortening, the composed-budget ceiling, and
-            // ±FEATHER_AMPL/2 of feather on top). A ruling whose rank sits near
-            // the local coverage therefore stops and RESTARTS repeatedly, and
-            // those restarts are what strew a form with stubs.
-            //
-            // So STARTING is what gets the margin, and STOPPING keeps the exact
-            // legacy test. That asymmetry is deliberate and load-bearing:
-            //
-            //   - Raising the bar to START can only ever REMOVE ink, so the
-            //     composed C15/§0 budget that `covCapped` enforces is untouched
-            //     — the object cannot flood. A symmetric trigger, which also
-            //     made a ruling harder to STOP, let rulings run on past their
-            //     coverage and pushed a 4 mm window to 0.571 against the 0.56
-            //     ceiling (scene3d-plot-safety). Plot safety outranks tidiness.
-            //   - A ruling that has stopped can still resume, but only where
-            //     coverage genuinely RISES by more than the feather can fake —
-            //     entering the terminator, say. Inside a uniform zone, where the
-            //     feather was the only thing talking, it stays stopped. That is
-            //     the chatter, gone, with the shading left intact.
-            //   - The margin applies to a RE-start only. A ruling's FIRST start
-            //     inside a continuous span keeps the legacy test, so a ruling
-            //     stock would have drawn is still drawn: charging the margin on
-            //     every start instead cost 13-20% of the fill ink across the
-            //     tone goldens, which is a tone change, not a continuity fix.
-            //   - The margin is charged AGAINST THE LOCAL COVERAGE (see
-            //     `hystFor`), because that is the rank budget the zone actually
-            //     has. Flat, it was a ban in every sparse zone.
-            const margin = HL_STAGE.hysteresis ? hystFor(covCapped) : 0;
-            dropZone = (drawing || !everDrew)
-              ? rank >= covCapped + jit
-              : rank >= covCapped + jit - margin;
-            // Dash duty — the reflected rim breaks its rulings rather than
-            // tightening them (§5.1: widened spacing + duty 0.7). A duty break
-            // is DELIBERATE, so it cuts hard and is never bridged.
-            if (HL_STAGE.dashDuty && !dropZone && zone) {
-              const duty = clamp(finite(Regions.formInk(zone).duty, 1), 0, 1);
-              if (duty < 1 && sfHash(lineIndex + 7717, Math.round(s / 2)) >= duty) { dropZone = true; dutyBreak = true; }
-            }
-          } else if (HL_STAGE.dither) {
-            dropZone = shade < threshold;
+          // Dash duty — the reflected rim breaks its rulings rather than
+          // tightening them (§5.1: widened spacing + duty 0.7). A duty break
+          // is DELIBERATE, so it cuts hard, is never bridged, and stays a
+          // PER-SAMPLE decision: it is the one mid-surface end this emitter is
+          // supposed to make. (Stage 6 / `dashDuty`, and it needs `toneZones`.)
+          if (HL_STAGE.dashDuty && !dropZone && zone) {
+            const duty = clamp(finite(Regions.formInk(zone).duty, 1), 0, 1);
+            if (duty < 1 && sfHash(lineIndex + 7717, Math.round(s / 2)) >= duty) { dropZone = true; dutyBreak = true; }
           }
           if (dropZone) {
             // Ordered-dither drop zone. Legacy (no highlight, or not the
@@ -1203,7 +1335,6 @@
             // break: it is the dither's per-sample verdict, and on a wrapped
             // surface it chatters (see RULING CONTINUITY above). A duty break
             // is deliberate and still cuts hard.
-            drawing = false;
             if (!hl || !hlIsHL(smp.I)) {
               flushHL();
               if (dutyBreak) flush();
@@ -1233,7 +1364,6 @@
           }
         }
         flushHL();
-        drawing = true; everDrew = true;
         addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
       }
       flush();
@@ -1838,34 +1968,69 @@
         const sink = makeSink(back, null, nextFam('spiral'));
         const flush = sink.flush;
         const total = steps * turns;
-        for (let s = 0; s <= total; s++) {
-          const f = s / total;
-          // Along-axis sweep (0..1). bboxCenter folds it into a symmetric up-and-
-          // down double helix; eccentricity eases where the loops bunch.
+        // Sample the whole helix first, exactly as emitLine does, so the same
+        // whole-span verdict can be taken here. A helix has no family index, so
+        // its rank is the TURN it is on — and a turn's rank is as constant along
+        // that turn as a ruling's is along itself, so comparing it against a
+        // per-SAMPLE coverage cut turns in half in open surface for the very
+        // same reason. Spans are delimited by the TURN as well as by the
+        // surface: consecutive turns are different rulings and must be free to
+        // take different verdicts.
+        const sSmps = new Array(total + 1);
+        const sZones = new Array(total + 1);
+        const sTurn = new Array(total + 1);
+        const sweepAt = (f) => {
           let sweep = symmetric ? (f < 0.5 ? f * 2 : (1 - f) * 2) : f;
           if (gamma !== 1) sweep = Math.pow(sweep, gamma);
+          return sweep;
+        };
+        for (let s = 0; s <= total; s++) {
+          const f = s / total;
+          const sweep = sweepAt(f);
           const wind = (f * turns + phase) % 1;
           const smp = snap ? sampleAt(wind, sweep) : sampleAt(sweep, wind);
-          if (!smp || smp.front !== wantFront) { flush(); continue; }
+          const on = Boolean(smp && smp.front === wantFront);
+          sSmps[s] = on ? smp : null;
+          sZones[s] = (on && toneOn) ? zoneOf(smp) : null;
+          sTurn[s] = Math.floor(f * turns);
+        }
+        // Span key = (turn, zone). THE TURN HAS TO BE IN THE KEY, and this was
+        // measured both ways. A helix's rank IS the turn it is on, so the turn is
+        // the unit the verdict is taken over — the same relationship a ruling has
+        // to its own rank. Keying the span on the ZONE ALONE (so a span is the
+        // visible arc, and the arc's rank is the turn it is mostly on) does take
+        // the helix's deepest free end from 13.3 % of the radius to 0.1 %, but a
+        // sphere's helix stays front-facing straight across the wind seam, so the
+        // whole visible face came back as ONE span with ONE verdict: ink rose
+        // from 8190 mm to 9281 mm, the density ramp across the form collapsed
+        // from 2.06x to 1.04x, and the lit end came back DENSER than mid-form.
+        // That is a drawing that no longer shades, which is a worse defect than
+        // the one being fixed. So the turn stays, and the residual free ends —
+        // the ends of a loop whose neighbour dropped — stay with it. See the
+        // report note: they land on the wind meridian, not scattered over the
+        // form, because that is where every loop begins and ends.
+        const sKeys = sZones.map((z, i) => `${sTurn[i]}|${z}`);
+        let sDrop = null;
+        if (HL_STAGE.dither && toneOn) {
+          sDrop = useLadder
+            ? spanDrops(sSmps, sKeys,
+              (smp, k) => (sZones[k] ? zoneCoverage(sZones[k], false) : coverageForSample(smp.I)),
+              (cov, mid) => rankOf(sTurn[mid]) >= cov)
+            : spanDrops(sSmps, sKeys, (smp) => clamp(1 - smp.I, 0, 1), (shade) => shade < 0.12);
+        }
+        for (let s = 0; s <= total; s++) {
+          const smp = sSmps[s];
+          if (!smp) { flush(); continue; }
           // Same hoist as emitLine's `sampleZone`: the sink's L-zone speck
           // exemption has to hold on EVERY path that feeds it, or the law is
           // enforced on the line families and not on the helix.
-          let sampleZone = null;
-          if (toneOn) {
-            // O18 — the spiral used to gate on a hardcoded `shade < 0.12` and
-            // ignored `ladder[]` outright, so `bands` did nothing at all on a
-            // spiral-filled object. A helix has no family index, so its rank is
-            // the TURN it is on: whole loops drop out toward the light, which
-            // keeps the arcs continuous instead of speckling the helix.
-            if (HL_STAGE.dither && useLadder) {
-              const zone = zoneOf(smp);
-              sampleZone = zone;
-              const cov = zone ? zoneCoverage(zone, false) : coverageForSample(smp.I);
-              if (rankOf(Math.floor(f * turns)) >= cov) { sink.softDrop({ x: smp.x, y: smp.y }); continue; }
-            } else {
-              const shade = clamp(1 - smp.I, 0, 1);
-              if (HL_STAGE.dither && shade < 0.12) { flush(); continue; }
-            }
+          // O18 — the spiral used to gate on a hardcoded `shade < 0.12` and
+          // ignored `ladder[]` outright, so `bands` did nothing at all on a
+          // spiral-filled object.
+          const sampleZone = sZones[s];
+          if (sDrop && sDrop[s]) {
+            if (useLadder) { sink.softDrop({ x: smp.x, y: smp.y }); } else { flush(); }
+            continue;
           }
           sink.addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone);
         }
