@@ -32,6 +32,14 @@
   // Emission floor (document mm): visibility crumbs shorter than this draw as
   // dots at best on a plotter and are usually corner-transition artifacts.
   const MIN_RUN_MM = 0.6;
+  // ── §0 — A FACET IS RULED, NOT MERELY MARKED ───────────────────────────────
+  // The fewest rulings that read as a FILL rather than as bare paper with a line
+  // on it. Two parallel lines are a stripe; the third is the first that gives
+  // the facet an interior. Consumed only by the carrier-family grant in
+  // `faceHatchLines`, and always bounded above by the facet's own
+  // `Regions.formCeiling(zone)`, so it can lighten no zone past a darker one and
+  // can never fire on a facet Density has already ruled. See the grant.
+  const FACET_MIN_RULINGS = 3;
 
   const runLength = (pts) => {
     let len = 0;
@@ -718,6 +726,33 @@
         bySens.set(sens, best);
         return best;
       };
+      // ── A ONE-FACET RECORD CANNOT HAVE A GLINT (§5.4 #1) ─────────────────────
+      //
+      // `GLINT_REL` is a RELATIVE gate — "is this facet within 60 % of the
+      // record's best mirror?" — and on a record with exactly ONE visible facet
+      // that facet IS the best mirror, so `t >= GLINT_REL * t` is a tautology and
+      // the whole surface is declared the highlight. `GLINT_ABS` cannot save it:
+      // at 0.002 it sits two orders of magnitude below any term a facet produces.
+      //
+      // The `ground` plate is excluded by id for exactly this reason ("one
+      // enormous facet, always its own best mirror"). The `plane` PRIMITIVE is
+      // the same one-quad geometry and was never covered by it. MEASURED on the
+      // APP DEFAULT plane (60 x 60 mm, the app's own sun, tone on): the single
+      // face was 100 % glint, its coverage multiplied by GLINT_GAIN_MULT, and it
+      // drew ONE ruling — 77.2 % of the face bare paper, widest gap 35.3 mm on a
+      // fill whose Density asked for 7.5 mm.
+      //
+      // So state §5.4 #1 — "a highlight is defined by the ink AROUND it" — as the
+      // precondition it is: with one visible facet there is no around, so there
+      // is no highlight. This is the degenerate case only; a record with two or
+      // more visible facets is classified exactly as before, which is what keeps
+      // O9/O11/O14/O15's cube and low-poly dispatch untouched.
+      const GLINT_MIN_FRONT_FACETS = 2;
+      const recordFrontFacets = (record) => {
+        let n = 0;
+        ((record && record.faces) || []).forEach((f) => { if (f && f.front) n += 1; });
+        return n;
+      };
       const faceIsGlint = (normalWorld, worldPoint, record, styleParams) => {
         // O24 — the glint must EXTINGUISH as tone.specular.size → 0, exactly as
         // the coverage multiplier below does, so size 0 and enabled:false agree.
@@ -727,6 +762,7 @@
         // glint across the whole floor — the highlight region pass already
         // excludes it for the same reason.
         if (!record || record.id === 'ground') return false;
+        if (recordFrontFacets(record) < GLINT_MIN_FRONT_FACETS) return false;
         const sens = glintSensitivity(styleParams);
         const t = faceGlintTerm(normalWorld, worldPoint, sens);
         if (!(t >= GLINT_ABS)) return false;
@@ -1202,10 +1238,62 @@
           };
         });
         plan.forEach((f, i) => {
+          // ── A FACET IS RULED, NOT MERELY MARKED (the ceiling's missing twin) ──
+          //
+          // Round 10 gave this path a copy of `Regions.formCeiling` — the law
+          // that says how much ink a zone may carry AT MOST — and nothing that
+          // says how little it may carry at all. So a facet could legally come
+          // out with one ruling across it, and on the APP DEFAULT it did:
+          //
+          //   box  face:+Y  40 x 40 mm, zone L   1 ruling   16.3 % bare, gap 12.5 mm
+          //   box  face:+X  40 x 40 mm, zone M   2 rulings  19.8 % bare, gap 15.6 mm
+          //   plane face:+Y 60 x 60 mm, zone L   1 ruling   77.2 % bare, gap 35.3 mm
+          //
+          // A stripe or two is not a fill; the facet reads as bare paper with a
+          // line on it. The grant below already existed for the count = 0 case
+          // ("draw ONE ruling instead of none") — the count is simply wrong. One
+          // was never the answer; the answer is whatever the facet's OWN zone
+          // ceiling can pay for, up to the point where the facet is ruled.
+          //
+          // WHY THIS CANNOT FLATTEN THE LADDER. Every grant is bounded above by
+          // `zoneCeil / covOne` — the number of rulings the facet's own zone
+          // ceiling permits — and the ceilings are ordered F > M > L by
+          // construction, so a lighter zone can never be granted its way past a
+          // darker one. And the grant only fires on a facet ASKING for fewer
+          // than `FACET_MIN_RULINGS`; a facet already ruled is left exactly
+          // where Density put it, which is what keeps Density authoritative.
+          //
+          // Gated on `toneOn` with the rest of the plan machinery, so every
+          // untoned golden is byte-identical.
+          if (i > 0) return; // carrier only — the §5.3 withdrawal below stands
+          if (f.ext > 0 && zoneCeil > 0 && f.covOne > 0 && f.covOne <= zoneCeil) {
+            // A GLINT facet gets the SAME floor. §5.5.2 states the cap as
+            // "capped, not emptied" — a single ruling across a whole facet is
+            // the hole it forbids — and the cap survives the floor because it
+            // still sets the PITCH everywhere the facet is wide enough to hold
+            // more than the floor. O9 (ink rises as the cone tightens) is read
+            // off exactly that and stays green.
+            const want = Math.min(Math.floor(zoneCeil / f.covOne), FACET_MIN_RULINGS);
+            if (want >= 1) {
+              // A MAXIMUM PITCH, not a count top-up. `hatchPolygon` rules at
+              // `pMin + i*spacing`, so a pitch that merely DIVIDES into the
+              // extent puts its last ruling on the facet's own edge, where it
+              // has almost no length. Stating the floor as a pitch — ext/(n+0.5),
+              // which yields exactly n rulings, inset off both boundaries —
+              // makes the granted and ungranted cases agree at equal n. Stating
+              // it as "top up the count when it falls short" did not: a facet
+              // granted 3 well-placed rulings out-inked the same facet drawing 3
+              // of its own with the last one hugging the edge, and the object's
+              // total ink then fell as `highlightSensitivity` rose (O9, -0.16 %).
+              const target = f.ext / (want + 0.5);
+              if (target < f.plane) { f.plane = target; f.fits = true; return; }
+            }
+          }
           if (f.fits) return;
           // ── §5.3's SECOND DIRECTION IS MEASURED AND NOT LANDED (Round 10) ────
           //
-          // The grant is restricted to the CARRIER. Granting it to a crossed
+          // (The `i > 0` guard above is this clause.) The grant is restricted to
+          // the CARRIER. Granting it to a crossed
           // family as well — with the carrier widened to pay for it, so the
           // composed total is exactly what the recipe asked for — was built,
           // measured, and withdrawn:
@@ -1221,17 +1309,14 @@
           // adjudicate two facets of one zone whose intended tone is identical.
           // Rather than prescribe a lever that fails its own criterion, the grant
           // stops at the carrier and the finding goes to the reviewer.
-          if (i > 0) return;
           // A family wider than its own facet draws NOTHING — `hatchPolygon`
           // places rulings at `pMin + i*spacing` for `i = 1 … floor(ext/spacing)`.
-          // Grant one ruling if the facet's own width on paper can absorb it
-          // inside the zone's composed ceiling; otherwise leave it bare, which is
-          // a decision with arithmetic behind it rather than the residue of a
+          // Reaching here means the grant above could NOT pay for even one ruling
+          // inside the zone's composed ceiling (`covOne > zoneCeil`, the 9 mm²
+          // sliver at three times its ceiling), so the facet stays bare — a
+          // decision with arithmetic behind it rather than the residue of a
           // k-floor chosen to keep the arithmetic finite.
-          if (!(zoneCeil > 0) || f.covOne > zoneCeil) { f.plane = DRAW_NOTHING; return; }
-          // ext / 1.5 ⇒ floor(ext / spacing) = 1 exactly: one ruling, placed two
-          // thirds of the way across rather than on the boundary.
-          f.plane = f.ext / 1.5;
+          f.plane = DRAW_NOTHING;
         });
         let served = 0;
         const planeFor = toneOn
