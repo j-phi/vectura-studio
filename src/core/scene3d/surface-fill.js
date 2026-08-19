@@ -1132,10 +1132,15 @@
       // See `spanDrops` above for why the verdict has to be taken at this scale.
       const smps = new Array(nSteps + 1);
       const zones = new Array(nSteps + 1);
+      // Geometric visibility, recorded BEFORE the zone gate nulls a sample: the
+      // boundary refinement below is about where the SURFACE turns away, and a
+      // zone edge is not that.
+      const onSurf = new Array(nSteps + 1);
       for (let s = 0; s <= nSteps; s++) {
         const pr = paramAt(s / nSteps);
         const smp = sampleAt(pr.a, pr.b);
         const on = Boolean(smp && smp.front === wantFront);
+        onSurf[s] = on;
         smps[s] = on ? smp : null;
         // The zone gate is a HARD cut, so a gated-out sample is not part of any
         // span; folding it in here keeps the span segmentation and the emit
@@ -1252,6 +1257,44 @@
           covCapped = Math.min(covCapped, (myCeil * localPitch) / penWidth);
         }
         return covCapped;
+      };
+      // ── A RULING ENDS ON THE BOUNDARY, NOT ONE SAMPLE SHORT OF IT ───────────
+      //
+      // The span verdict says WHETHER a ruling draws; this says WHERE it stops.
+      // The emit loop keeps the samples whose camera-space normal faces the
+      // camera and cuts at the first one that does not, so a ruling ends at the
+      // last sample that happened to test front-facing — up to one whole sample
+      // step inside the silhouette.
+      //
+      // On a SMOOTH chart that costs nothing: `nz` decays to zero AT the
+      // silhouette, so the last front sample already sits a fraction of a
+      // millimetre from it (sphere, ellipsoid, cylinder, cone, capsule and
+      // superellipsoid all measured 0.00 mm on the app-default scene). On a
+      // chart with CREASES `nz` jumps, and the whole sample step is lost: the
+      // shipped pyramid (`detail: 8`, so a 45° wrapped ruling is sampled every
+      // 3.4 mm) ended its rulings 3.43 mm (hatch/crosshatch) and 4.85 mm
+      // (contour) inside open front-facing surface — a bare wedge along both
+      // lower slant edges. The thin-tube charts lose the same step at their own
+      // scale: torus 0.96-1.99 mm and torusKnot 1.06-1.25 mm on a tube whose
+      // radius is only 2.24 mm / 1.20 mm.
+      //
+      // So the crossing is BISECTED. `edgeAt` returns the last point that is
+      // still on the wanted side, to within 1/4096 of a sample step. It can
+      // only ever extend a run onto surface the emitter already proved visible
+      // — it never relaxes the front test, never bridges a gap, and never adds
+      // a point where there was no adjacent off-surface sample to refine
+      // against, so a ruling that was already flush with the silhouette is
+      // untouched.
+      const EDGE_BISECT = 12;
+      const edgeAt = (sIn, sOut) => {
+        let lo = sIn / nSteps; let hi = sOut / nSteps; let best = null;
+        for (let k = 0; k < EDGE_BISECT; k++) {
+          const mid = (lo + hi) / 2;
+          const pr = paramAt(mid);
+          const smp = sampleAt(pr.a, pr.b);
+          if (smp && smp.front === wantFront) { lo = mid; best = smp; } else hi = mid;
+        }
+        return best ? { x: best.x, y: best.y, z: best.z } : null;
       };
       // Is this sweep CLOSED? Exactly the test the seam join below uses: the two
       // ends land on the same point, which is what "closed" means. A ring's
@@ -1413,7 +1456,12 @@
           }
         }
         flushHL();
+        // Meet the boundary on the way in, and again on the way out. Both are
+        // no-ops unless the neighbouring sample is off the wanted side of the
+        // surface, which is the only place a refinement is defined.
+        if (s > 0 && !onSurf[s - 1]) { const e = edgeAt(s, s - 1); if (e) addPt(e, sampleZone, tt); }
         addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
+        if (s < nSteps && !onSurf[s + 1]) { const e = edgeAt(s, s + 1); if (e) addPt(e, sampleZone, tt); }
       }
       flush();
       flushHL();
@@ -1959,7 +2007,6 @@
       // ROUND 8: the +65° is now measured in the SCREEN frame (see
       // emitScreenCross). One traced family serves all three passes.
       const emitTerminatorCross = (count, back) => {
-      if (typeof globalThis !== 'undefined') globalThis.__SF_FAM = 'cross';
         if (!zonesOn) return;
         const base = finite(opts.fillAngle, 0);
         emitScreenCross(base, Regions.CROSS_OBJ_DEG, count, back, 'T');
