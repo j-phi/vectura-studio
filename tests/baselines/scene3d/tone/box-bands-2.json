@@ -1,8 +1,8 @@
 {
   "totals": {
-    "paths": 24,
-    "points": 48,
-    "ink": 1418.4395
+    "paths": 26,
+    "points": 52,
+    "ink": 1543.24
   },
   "byKind": {
     "sceneEdge": {
@@ -10,37 +10,37 @@
       "ink": 338.4333
     },
     "sceneFill": {
-      "paths": 18,
-      "ink": 1080.0062
+      "paths": 20,
+      "ink": 1204.8067
     }
   },
   "byRegionClass": {
     "<none>": {
-      "paths": 24,
-      "ink": 1418.4395
+      "paths": 26,
+      "ink": 1543.24
     }
   },
   "byObject": {
     "obj-1": {
-      "paths": 24,
-      "ink": 1418.4395
+      "paths": 26,
+      "ink": 1543.24
     }
   },
   "byPen": {
     "<inherit>": {
-      "paths": 24,
-      "ink": 1418.4395
+      "paths": 26,
+      "ink": 1543.24
     }
   },
   "byDash": {
     "<solid>": {
-      "paths": 24,
-      "ink": 1418.4395
+      "paths": 26,
+      "ink": 1543.24
     }
   },
   "fillPathsByFace": {
     "obj-1/face:+X": 3,
-    "obj-1/face:+Y": 1,
+    "obj-1/face:+Y": 3,
     "obj-1/face:+Z": 14
   },
   "flags": {
@@ -82,8 +82,8 @@
     0,
     0,
     17.1,
+    124.801,
     62.4,
-    0,
     0,
     0,
     0,
@@ -184,8 +184,8 @@
     0,
     0,
     17.1,
+    124.801,
     62.4,
-    0,
     0,
     0,
     0,
