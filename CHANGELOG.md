@@ -7,6 +7,26 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — five more tone algorithms, and an uncapped comparison mode that takes the line
+  budget off.** The first round's renders were shaped as much by the budget as by the tone law, so
+  `TONE_UNCAPPED` (comparison only; committed `false`, and pinned by
+  `tests/unit/scene3d-tone-algo-default.test.js`) lifts `MASTER_MAX_LINES` from 420 to 4000,
+  bypasses the `masterPitch` clamp so the master grid rules at the plot floor itself
+  (`PLOT_FLOOR_PEN` × pen = 0.66 mm on the shipped 0.3 mm nib), and calibrates the grid on the p90
+  local pitch rather than the median — on the median, coverage cannot exceed 1 and half the surface
+  therefore cannot reach the darkest target pitch at all. Exactly one physical limit is left
+  standing, the plot floor, applied per sample as `cov ≤ localPitch / floorPitch` and counted, with
+  the count published as `SurfaceFill.lastFloorStats`. The five new laws are `perceptualRamp` (the
+  intensity→coverage map goes through Murray-Davies ink area → CIE L* and is inverted, so apparent
+  darkness is linear in scene radiance, then divided by the measured local pitch so projection
+  leaves the answer), `crossFade` (layeredCross's three layers with the zone gates removed — they
+  fade in by continuous density instead, so no family has a traceable edge and no ruling ends in
+  open surface), `contourFlow` (the rulings are streamlines of the LIGHTING rather than of the
+  chart: iso-intensity curves or their screen-space orthogonals), `errorDiffused` (the same target,
+  placed by a two-tap error carry rather than a phase accumulator — aperiodic, at the cost of the
+  Sturmian two-consecutive-gaps guarantee) and `fullLightingModel` (highlight, mid-tone,
+  terminator, core shadow and ground bounce as separate terms, with specular kept apart from
+  diffuse). Nothing changes for an existing drawing: `TONE_ALGO` stays committed on `ladder`.
 - **3D Scene — five tone algorithms are implemented side by side behind one selector, for
   comparison.** Making each coverage level internally even exposed the next problem: the tone
   ladder has only as many rungs as `tone.ladder` has entries (three on the shipped default,

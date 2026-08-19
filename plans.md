@@ -22,6 +22,31 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
+- **3D Scene: pick a tone algorithm — round 2, ten laws, no line budget.** Jay: "do these again
+  but with no limit on the number of lines you may use — focus on nailing the lighting." A
+  `TONE_UNCAPPED` mode (comparison only; committed `false`) lifts `MASTER_MAX_LINES` 420 → 4000,
+  bypasses the `masterPitch` clamp so the master grid rules at the plot floor itself
+  (`PLOT_FLOOR_PEN` 2.2 × pen = 0.66 mm), and calibrates the grid on the p90 local pitch instead
+  of the median. The plot floor is the only limit left and every clamp is counted
+  (`SurfaceFill.lastFloorStats`). Five more laws join the original five: `perceptualRamp`
+  (Murray-Davies ink area → CIE L*, inverted, then divided by the measured LOCAL pitch so the
+  chart's foreshortening leaves the answer), `crossFade` (layeredCross's three layers un-gated and
+  faded in by continuous density), `contourFlow` (rulings are streamlines of the lighting — iso
+  curves or their screen orthogonals), `errorDiffused` (the same target, two-tap error carry) and
+  `fullLightingModel` (diffuse + terminator + core shadow + ground bounce + a separate specular
+  term). The new metric is APPARENT-TONE LINEARITY: apparent tone (CIE L* from ink area in a 3 mm
+  window) fitted against scene radiance, measured on the render.
+  **THE RESULT, and it is a structural finding, not a ranking.** Nine of the ten sit at R² 0.00–0.14
+  on the sphere and capsule however the coverage law is written, because the dither takes ONE
+  verdict per RULING: a drawing whose rulings run along the chart can only vary its tone
+  perpendicular to the chart, and the light does not run that way. Only `contourFlow` escapes it,
+  by making the ruling direction the light's — sphere · hatch R² 0.444 and L* span 16.5 against
+  `ladder`'s 0.037 / 8.1 — at the cost of streamline separation that leaves 10.6 mm free ends and
+  10.2 mm bare gaps. `crossFade` is the strongest where the chart happens to agree with the light
+  (cylinder R² 0.397, L* span 48.9, zero free ends) and is a strict improvement on `layeredCross`
+  everywhere (which ends rulings 13–19 mm inside open surface on every cell). Renders in
+  `scratchpad/fillcmp/tonealgo2-*.png`, side-by-side sheet `tonealgo2-lighting-compare.png`, full
+  table `tonealgo2-table.tsv`. Needs Jay's pick before the staged unwire moves past Stage 1.
 - **3D Scene: pick a tone algorithm.** Five laws are implemented side by side in
   `src/core/scene3d/surface-fill.js` behind `TONE_ALGO`, which is committed on `ladder` (no change
   to any existing drawing). Measured on the app-default scene across sphere/capsule/cylinder hatch,
