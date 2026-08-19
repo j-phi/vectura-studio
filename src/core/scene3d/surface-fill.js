@@ -734,10 +734,17 @@
       return 'X0';                 // light — one family
     };
     // The one entry point the emitter asks. `ladder` never reaches it.
-    const algoCoverage = (I) => {
+    // `isCross` is true on a zone-gated pass, which only 'layeredCross' emits.
+    // Those passes draw FULLY: an added family is the tone, so laddering it
+    // would thin the very thing that is supposed to darken the zone. Measured
+    // before this: the +65° family builds 13 rulings over the object, the gate
+    // keeps the ones that reach the zone and the ladder at 0.41 then took the
+    // survivors to ZERO — the mid-tone cross did not appear at all.
+    const algoCoverage = (I, isCross) => {
       if (TONE_ALGO === 'continuousPitch') return contPitchCov(I);
       if (TONE_ALGO === 'fineLadder') return fineLadderCov(I);
-      if (TONE_ALGO === 'weightModulated' || TONE_ALGO === 'layeredCross') return flatCov();
+      if (TONE_ALGO === 'layeredCross') return isCross ? 1 : flatCov();
+      if (TONE_ALGO === 'weightModulated') return flatCov();
       return coverageForSample(I);
     };
 
@@ -1503,7 +1510,7 @@
         // name ('X1,X2'), not a FORM_INK row, and asking Regions for its ink
         // would be a category error. `ladder` takes the branch it always took.
         const cov = (TONE_ALGO !== 'ladder')
-          ? algoCoverage(smp.I)
+          ? algoCoverage(smp.I, Boolean(zoneGate))
           : (zone
             ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true, smp)
             : coverageForSample(smp.I));
@@ -2387,10 +2394,18 @@
       // +65° and +32° are the angles this file already uses for a second and
       // third direction, and for the reason stated at `emitTerminatorCross`
       // below: +90° reads as a square grid and beats against the raster.
+      // NOT `emitScreenCross`. That one traces streamlines of a screen-frame
+      // direction field and stops a ruling the moment it comes within the plot
+      // floor of one already laid — which is right for the terminator ACCENT it
+      // was built for, and wrong here: measured, it built only 13 rulings across
+      // the whole object for the +65° pass, so the added family read as four
+      // stray arcs rather than as a second layer of tone. A plain angled family
+      // is the same construction family A itself uses, so the added layers are
+      // as even and as complete as the base one.
       const emitLayeredCross = (count, back) => {
         const base = finite(opts.fillAngle, 0);
-        emitScreenCross(base, 65, count, back, ['X1', 'X2']);
-        emitScreenCross(base, 32, count, back, ['X2']);
+        emitAngledFamily(base + 65, count, back, ['X1', 'X2']);
+        emitAngledFamily(base + 32, count, back, ['X2']);
       };
       const emitTerminatorCross = (count, back) => {
         if (TONE_ALGO === 'layeredCross') { if (toneOn) emitLayeredCross(count, back); return; }
