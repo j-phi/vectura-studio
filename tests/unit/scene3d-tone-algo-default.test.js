@@ -1,4 +1,8 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+// THE RIG IS IMPORTED, NOT COPIED (scene3d-fixture-single-source, rule A): the
+// whole scene comes from the fixture's own builder, so this file carries no
+// inline camera, ladder, bounds or primitive of its own.
+const FX = require('../fixtures/scene3d-shadow-anatomy');
 
 /*
  * THE COMMITTED TONE LAW, PINNED.
@@ -29,10 +33,12 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 describe('Scene3D.SurfaceFill — the committed tone law is the control', () => {
   let runtime;
   let SF;
+  let V;
 
   beforeAll(async () => {
     runtime = await loadVecturaRuntime();
-    SF = runtime.window.Vectura.Scene3D.SurfaceFill;
+    V = runtime.window.Vectura;
+    SF = V.Scene3D.SurfaceFill;
   });
   afterAll(() => runtime.cleanup());
 
@@ -58,5 +64,43 @@ describe('Scene3D.SurfaceFill — the committed tone law is the control', () => 
 
   test("the flow mode is a valid one even though it is inert", () => {
     expect(['iso', 'grad']).toContain(SF.flowMode);
+  });
+
+  /*
+   * THE WEIGHT LAWS, PINNED ON THE EMITTER RATHER THAN ON THE FLAG.
+   *
+   * Six more prototypes now vary the STROKE WIDTH instead of the placement, and
+   * four of them additionally cut every ruling into abutting pieces so the width
+   * can change along it. That is a much larger change to the emitted geometry
+   * than a coverage law is — measured on the app-default sphere, `weightDeepDark`
+   * turns 25 fill paths into 502 and 884 mm of ink into 1290 mm — and it is
+   * invisible to a flag assertion if a later edit reaches the emitter without
+   * touching TONE_ALGO. So the guard is on the OUTPUT: at the committed default
+   * no fill run may carry a per-run pen weight at all.
+   *
+   * Red: set TONE_ALGO to any of 'weightModulated', 'weightAlongLine',
+   * 'weightDeepDark', 'weightPlusSpacing', 'weightMultiPass', 'weightSmoothstep'
+   * or 'weightCrossHandoff' and this fails (measured: 25 of 25 runs carry
+   * weightScale under weightAlongLine). Green on the committed source.
+   */
+  test('emits no per-run pen weight at the committed default', () => {
+    const p = FX.scene({ styleParams: { mapper: 'hatch' } })(V);
+    const orig = SF.buildObject;
+    const raw = [];
+    SF.buildObject = function wrapped(opts) {
+      const r = orig.call(this, opts);
+      if (r) r.forEach((q) => raw.push(q));
+      return r;
+    };
+    try {
+      V.AlgorithmRegistry.scene3d.generate(
+        p, new V.SeededRNG(FX.SEED), new V.SimpleNoise(FX.SEED), FX.BOUNDS,
+      );
+    } finally {
+      SF.buildObject = orig;
+    }
+
+    expect(raw.length).toBeGreaterThan(0);
+    expect(raw.filter((r) => r && r.weightScale !== undefined)).toEqual([]);
   });
 });

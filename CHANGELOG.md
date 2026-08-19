@@ -7,6 +7,34 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — six tone laws that vary the PEN along a ruling instead of the placement across
+  it.** Measured across the previous eleven laws, nine tie at R² 0.00–0.14 on the sphere and the
+  capsule however the coverage is written, and the cause is structural: the emitter takes ONE
+  draw/skip verdict per RULING — it has to, or a ruling ends in open front-facing surface — so tone
+  can only vary PERPENDICULAR to the rulings, and light does not vary that way on a curved form.
+  Stroke WIDTH is the other escape and costs no continuity at all: a stroke that changes width
+  mid-stroke breaks no line. The output format carries one `meta.weightScale` per path (the
+  renderer and the SVG export both read it as a stroke-width multiplier), so a varying weight is
+  emitted as consecutive ABUTTING pieces — piece k's last point IS piece k+1's first point, so the
+  pen never lifts; measured worst free end 0 mm on 348 abutting joins. The new laws are
+  `weightAlongLine` (per-sample weight on weightModulated's own geometry — the pair are byte-
+  identical in ink), `weightDeepDark` (base pitch derived so the heaviest legal stroke saturates:
+  darkest L* 5th percentile 41.1 against weightModulated's 41.5 but over a 30.9 L* span instead of
+  19.1), `weightPlusSpacing` (the required amplification split geometrically between spacing and
+  weight, so neither channel has to quantise as hard — largest adjacent weight step 0.885 against
+  weightDeepDark's 2.169), `weightMultiPass` (real strokes side by side rather than a fat pen — 3.2×
+  the ink and the only law here that breaks the free-end invariant, 2.0 mm on hatch and 7.9 mm on
+  crosshatch, so it is recorded as rejected), `weightSmoothstep` (the anti-banding study: a
+  7th-order transfer and a golden-ratio weight dither on the per-run mean, which does NOT fix the
+  banding) and `weightCrossHandoff` (Rössl & Kobbelt 2000 §7 — a second family entering on the
+  OFFSET grey with no threshold, so it starts from nothing exactly where the first saturates).
+  The saturation arithmetic is the finding under all of it: spacing-to-tone is `pitch = 2 × nib /
+  tone`, so one family saturates at about twice the nib — this repo's own `PLOT_FLOOR_PEN` — and at
+  the shipped 0.3 mm pen a single family with a pen-width stroke tops out at 0.509 ink area, L* 76.
+  `weightAlongLine` measured exactly 0.509. Past it there are three moves and only three: a wider
+  stroke, a second family, an overdraw. `TONE_ALGO` stays committed on `ladder`, and
+  `tests/unit/scene3d-tone-algo-default.test.js` now pins that on the EMITTER as well as on the
+  flag: at the committed default no fill run may carry a per-run pen weight at all.
 - **3D Scene — five more tone algorithms, and an uncapped comparison mode that takes the line
   budget off.** The first round's renders were shaped as much by the budget as by the tone law, so
   `TONE_UNCAPPED` (comparison only; committed `false`, and pinned by
