@@ -2389,6 +2389,18 @@
 
     const alignTo = (d, ref) => (ref && (d.a * ref.a + d.b * ref.b) < 0 ? { a: -d.a, b: -d.b } : d);
     const inSquare = (p) => p.a >= 0 && p.a <= 1 && p.b >= 0 && p.b <= 1;
+    // ── THE DOMAIN IS A CYLINDER, FOR A STREAMLINE TOO ────────────────────────
+    // `angleFamily` learned this the hard way ("THE WIND SEAM IS NOT A WALL"):
+    // `a` has genuine ends (the poles) and `b` is periodic, so a family clipped
+    // against the unit SQUARE stops dead on a meridian that is ordinary visible
+    // surface. A traced streamline hit exactly the same wall — measured on the
+    // first contourFlow cut, the sphere came back as 50 fragments averaging half
+    // a chord each, with an 18.35 mm free end and a 12.98 mm bare gap. So a flow
+    // trace is bounded on `a` only, keeps `b` UNWRAPPED in its point list (so
+    // the interpolation between two points never runs backwards across the
+    // seam), and wraps only when it samples or emits.
+    const wrapB = (v) => { const w = v % 1; return w < 0 ? w + 1 : w; };
+    const inCylinder = (p) => p.a >= 0 && p.a <= 1;
 
     // Build the whole screen-frame crossed family once, and cache it: the T
     // gate, the F gate and the Density-overflow pass all emit the SAME geometry
@@ -2556,25 +2568,39 @@
       // keeps the k-th point of line i and the k-th point of line i+1 at the same
       // arc length from their seeds — which is what makes the neighbour offset
       // below an honest measurement of the local spacing rather than a guess.
-      const halfSteps = Math.max(4, Math.round(steps / 2));
+      // A FLOW RULING IS NOT BUDGETED BY A CHORD. The arc bound above exists to
+      // stop a +65° streamline spending twice the ink the ladder allocated to
+      // the straight ruling it replaces. contourFlow has no straight ruling to
+      // replace — the streamline IS the family — and binding it to the nominal
+      // chord is what cut the sphere into 50 half-length fragments. So a flow
+      // trace is given a full traversal of the domain and stops where the domain
+      // does, which is what "edge to edge" means, with proportionally more steps
+      // so the step SIZE is unchanged.
+      const halfSteps = Math.max(4, Math.round(flow ? steps : steps / 2));
+      const FLOW_ARC = 2.6;
       const trace = (seed, nomLen, self) => {
         const h = Math.max(1e-4, nomLen / 2) / halfSteps;
         const fwd = []; const bwd = [];
+        // On a flow family the domain is a cylinder and `b` is not a wall (see
+        // `inCylinder`); everywhere else the square clip is what it always was.
+        const inDom = flow ? inCylinder : inSquare;
+        const at = flow ? ((p) => ({ a: p.a, b: wrapB(p.b) })) : ((p) => p);
         const walk = (sign, into) => {
           let cur = { a: seed.a, b: seed.b };
           let ref = null;
           for (let k = 0; k < halfSteps; k++) {
-            let d = dirField(cur, ref);
+            let d = dirField(at(cur), ref);
             if (ref == null && sign < 0) d = { a: -d.a, b: -d.b };
             const mid = { a: cur.a + d.a * h * 0.5, b: cur.b + d.b * h * 0.5 };
-            if (!inSquare(mid)) break;
-            const d2 = dirField(mid, d);
+            if (!inDom(mid)) break;
+            const d2 = dirField(at(mid), d);
             const nx = { a: cur.a + d2.a * h, b: cur.b + d2.b * h };
-            if (!inSquare(nx)) break;
+            if (!inDom(nx)) break;
             // Screen-space separation: walk the new step at sub-cell resolution
             // and stop the ruling the moment it enters another ruling's floor.
-            const s0 = sampleAt(cur.a, cur.b);
-            const s1 = sampleAt(nx.a, nx.b);
+            const c0 = at(cur); const c1 = at(nx);
+            const s0 = sampleAt(c0.a, c0.b);
+            const s1 = sampleAt(c1.a, c1.b);
             if (s0 && s1 && s0.front && s1.front) {
               const segLen = Math.hypot(s1.x - s0.x, s1.y - s0.y);
               const sub = Math.max(1, Math.ceil(segLen / (CELL * 0.5)));
@@ -2596,7 +2622,7 @@
         };
         walk(1, fwd);
         walk(-1, bwd);
-        const d0 = dirField(seed, null);
+        const d0 = dirField(at(seed), null);
         const pts = [];
         for (let i = bwd.length - 1; i >= 0; i--) pts.push(bwd[i]);
         pts.push({ a: seed.a, b: seed.b, da: d0.a, db: d0.b });
@@ -2610,7 +2636,7 @@
         // The nominal chord's own length through the parameter square — the arc
         // budget this ruling is entitled to.
         const p0 = at(0); const p1 = at(1);
-        const nomLen = Math.hypot(p1.a - p0.a, p1.b - p0.b);
+        const nomLen = flow ? FLOW_ARC : Math.hypot(p1.a - p0.a, p1.b - p0.b);
         lines.push(trace(at(0.5), nomLen, i));
       }
       // NEIGHBOUR OFFSET, measured rather than assumed. Every streamline is
@@ -2652,7 +2678,7 @@
         for (let k = raw.length - 1; k >= 0; k--) { if (raw[k] === nomOff && raw[k + 1]) raw[k] = raw[k + 1]; else break; }
         L.off = raw;
       });
-      const fam = { n, lines, step, nomOff };
+      const fam = { n, lines, step, nomOff, wrap: Boolean(flow) };
       crossFamilyCache.set(key, fam);
       return fam;
     };
@@ -2685,7 +2711,11 @@
           const k = Math.min(last - 1, Math.floor(f));
           const u = f - k;
           const p = L.pts[k]; const q = L.pts[k + 1];
-          return { a: clamp(p.a + (q.a - p.a) * u, 0, 1), b: clamp(p.b + (q.b - p.b) * u, 0, 1) };
+          const bb = p.b + (q.b - p.b) * u;
+          // `b` is stored UNWRAPPED on a flow family, precisely so this
+          // interpolation cannot run backwards across the wind seam; it is
+          // wrapped here, once, at the point it becomes a chart coordinate.
+          return { a: clamp(p.a + (q.a - p.a) * u, 0, 1), b: fam.wrap ? wrapB(bb) : clamp(bb, 0, 1) };
         };
         const dirAt = (tt) => L.pts[Math.round(idxAt(tt))] || L.pts[0];
         const lineDir = (tt) => { const p = dirAt(tt); return { a: p.da, b: p.db }; };
