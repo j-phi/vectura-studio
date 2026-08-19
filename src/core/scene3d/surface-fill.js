@@ -364,6 +364,50 @@
   //                       term, with specular kept separate from diffuse, and
   //                       the composed darkness is then run through the same
   //                       calibrated response perceptualRamp inverts.
+  //
+  // ── FIVE MORE, ON THE OTHER AXIS: WEIGHT ALONG THE RULING ───────────────────
+  //
+  // Measured across the eleven above: nine tie at R² 0.00-0.14 on the sphere and
+  // the capsule however the coverage law is written, because the emitter takes
+  // ONE draw/skip verdict per RULING — it has to, or a ruling ends in open
+  // front-facing surface. Tone can therefore only vary PERPENDICULAR to the
+  // rulings, and light does not vary that way on a curved form. `contourFlow`
+  // escaped by re-aiming the rulings along the light, at the cost of 10.6 mm
+  // free ends and collapsed spacing.
+  //
+  // WEIGHT IS THE OTHER ESCAPE, AND IT COSTS NO CONTINUITY AT ALL: a stroke that
+  // changes width mid-stroke breaks no line. The output format carries ONE
+  // `meta.weightScale` per path (the renderer and the SVG export both read it as
+  // a stroke-width multiplier), so a weight that varies along a ruling is
+  // expressed as CONSECUTIVE ABUTTING PIECES — piece k's last point IS piece
+  // k+1's first point, so the pen never lifts and nothing ends in open surface.
+  // `splitByWeight` is the whole mechanism, and it never drops a short piece
+  // (that would be the one thing this construction may not do — leave a hole);
+  // it merges it into its neighbour instead.
+  //
+  //   'weightAlongLine'   the idea, minimal: geometry perfectly even at
+  //                       weightModulated's own pitch, weight taken PER SAMPLE
+  //                       from the local radiance and from the local pitch, so
+  //                       the chart's foreshortening comes out of the tone too.
+  //                       Same weight RANGE as weightModulated, so the pair
+  //                       differ only in per-sample vs per-run.
+  //   'weightDeepDark'    the darks the user says are missing. The base pitch is
+  //                       chosen so the HEAVIEST legal stroke saturates it
+  //                       (W_DEEP_AREA), and the transfer is the same L*-linear
+  //                       response laws 6-10 invert, so the light end stays
+  //                       delicate while the shadow runs to near-solid.
+  //   'weightPlusSpacing' both channels at once — spacing concentrates toward
+  //                       the shadow AND weight ramps, the required
+  //                       amplification split geometrically between them, so
+  //                       NEITHER has to quantise as hard.
+  //   'weightMultiPass'   the plotter-honest deep dark: instead of asking for a
+  //                       pen N times as wide, lay N real strokes of the actual
+  //                       pen, offset perpendicular by one ink width and centred
+  //                       on the ruling. Costs plot time; reports it.
+  //   'weightSmoothstep'  the anti-banding study. weightModulated's per-run mean
+  //                       weight exactly, but through a 7th-order smoothstep and
+  //                       with a golden-ratio dither on the weight, so residual
+  //                       quantisation is broken up rather than aligned.
   const TONE_ALGO = 'ladder';
   // 'contourFlow' only: which streamline family the rulings follow.
   //   'iso'  along the iso-intensity curves
@@ -959,6 +1003,152 @@
       return covForArea(areaForTone(1 - flmDarkness(smp), e.aDark, e.aLight), localPitch);
     };
 
+    // ── LAWS 12-16: THE TONE RIDES ON THE PEN, NOT ON THE PLACEMENT ────────────
+    //
+    // See the header block. These five hold the ruling's CONTINUITY absolutely —
+    // the verdict is still one per ruling — and vary the stroke WIDTH instead,
+    // which is a continuous quantity and cannot break a line.
+    const W_MIN = 1;            // a plotter cannot draw thinner than its own pen
+    const W_MAX = 6;            // scene3d.js clamps meta.weightScale to [0.1, 6]
+    const W_LEVEL = 0.12;       // weight quantum at which a piece boundary opens
+    const W_DEEP_AREA = 0.93;   // "near solid" — the deep-dark target ink area
+    const W_FLOOD_AREA = 0.95;  // past this the ink is a blob; counted, not hidden
+    const W_DITHER = 0.06;      // weightSmoothstep's low-discrepancy weight jitter
+    const MP_MAX = 5;           // weightMultiPass — most strokes in one band
+    const WEIGHT_LAWS = {
+      weightAlongLine: 1, weightDeepDark: 1, weightPlusSpacing: 1,
+      weightMultiPass: 1, weightSmoothstep: 1,
+    };
+    const isWeightLaw = () => WEIGHT_LAWS[TONE_ALGO] === 1;
+    // Which of them vary the weight ALONG the ruling, and therefore split it into
+    // abutting pieces. `weightSmoothstep` deliberately does not: it is the
+    // anti-banding study ON weightModulated's own per-run mean, and splitting it
+    // would confound the two questions.
+    const splitsAlongLine = () => TONE_ALGO === 'weightAlongLine'
+      || TONE_ALGO === 'weightDeepDark' || TONE_ALGO === 'weightPlusSpacing'
+      || TONE_ALGO === 'weightMultiPass';
+    // WHERE THE WEIGHT LAWS ACTUALLY LANDED — the counterpart to `floorStat`.
+    // The weight range is bounded at both ends by physics (you cannot draw
+    // thinner than the pen, and past W_FLOOD_AREA the ink is a blob), so "did
+    // the law reach the dark it asked for" is a measurement, not an assertion.
+    const weightStat = {
+      samples: 0, floods: 0, atMax: 0, wMin: Infinity, wMax: 0,
+      askMax: 0, aMin: 1, aMax: 0, wSum: 0,
+    };
+    // The base coverage each weight law rules its even grid at.
+    //   weightAlongLine / weightSmoothstep  weightModulated's own sparse end, so
+    //     the three are directly comparable.
+    //   weightDeepDark / weightMultiPass    the pitch at which the heaviest legal
+    //     stroke saturates. Derived, not chosen: any wider and no legal pen can
+    //     reach W_DEEP_AREA; any tighter and the light end stops being delicate.
+    //   weightPlusSpacing                   varies with radiance — see `wpsCov`.
+    const deepFlatCov = () => {
+      const env = toneEnvelope();
+      const c = (W_DEEP_AREA * masterPitch) / (W_MAX * inkWidth());
+      return clamp(finite(c, env.covLight), env.covLight, env.covDark);
+    };
+    const weightBaseCov = () => ((TONE_ALGO === 'weightDeepDark' || TONE_ALGO === 'weightMultiPass')
+      ? deepFlatCov() : flatCov());
+    // The light end never moves: weight 1 on the base grid. That is what "the
+    // light end stays delicate" means arithmetically.
+    const wLightArea = () => {
+      const p = masterPitch > 1e-6
+        ? masterPitch / Math.max(1e-6, weightBaseCov())
+        : litMaxPitchPen() * penWidth;
+      return areaAt(p);
+    };
+    const wDarkArea = () => {
+      if (TONE_ALGO === 'weightAlongLine' || TONE_ALGO === 'weightSmoothstep') {
+        const env = toneEnvelope();
+        const top = clamp(env.covDark / Math.max(1e-6, env.covLight), 1, W_MAX);
+        return clamp(wLightArea() * top, 0, 0.98);
+      }
+      return W_DEEP_AREA;
+    };
+    // The tone target, on the SAME perceptual response laws 6-10 invert: L* is
+    // linear in scene radiance between the two ends.
+    const wTargetArea = (I) => areaForTone(I, wDarkArea(), wLightArea());
+    // How much more ink than the light end this radiance asks for.
+    const wAmp = (I) => {
+      const aL = wLightArea();
+      return aL > 1e-9 ? Math.max(1, wTargetArea(I) / aL) : 1;
+    };
+    // 'weightPlusSpacing' — the amplification split geometrically between the two
+    // channels. kappa = 0.5 is the even split: spacing carries sqrt(A) and weight
+    // carries sqrt(A), so a channel that would have had to quantise a 4x range
+    // now quantises a 2x one, and the product still lands exactly on A.
+    const WPS_KAPPA = 0.5;
+    const wpsCov = (I) => {
+      const env = toneEnvelope();
+      const base = flatCov();
+      return clamp(base * Math.pow(wAmp(I), WPS_KAPPA), base, Math.min(1, env.covDark));
+    };
+    // The coverage a weight law is ruling at, at this radiance — the divisor the
+    // weight has to be stated against.
+    const weightCovAt = (I) => (TONE_ALGO === 'weightPlusSpacing' ? wpsCov(I) : weightBaseCov());
+    // ...AND THE COVERAGE THE FLOOR ACTUALLY LEFT. `covAtSample` clamps coverage
+    // to `localPitch / floorPitch` wherever the geometry crowds (a sphere's
+    // meridians converge to nothing at the poles), so the grid that is really on
+    // the paper there is SPARSER than the law asked for. A weight stated against
+    // the nominal coverage is then wrong by exactly that factor, and it is wrong
+    // in the worst direction: measured without this, the poles took weight 5x on
+    // a grid the floor had already thinned, and flooded to L* 4.5 — a black cap
+    // on a lit sphere. Same clamp, same expression, one place later.
+    const weightCovEff = (I, localPitch) => {
+      const c = weightCovAt(I);
+      if (!(TONE_UNCAPPED && Number.isFinite(localPitch) && localPitch > 1e-6 && floorPitch > 1e-6)) return c;
+      return Math.min(c, clamp(localPitch / floorPitch, 0.005, 1));
+    };
+    // Weight that lays `area` at this sample. area = w x cov x inkWidth /
+    // localPitch: `cov` is in it because the ladder keeps only that fraction of
+    // the master grid, so the pitch the stroke actually sits at is
+    // localPitch / cov. Dividing by the LOCAL pitch is what takes the chart's
+    // foreshortening out of the tone, exactly as `covForArea` does for laws 6-10
+    // — and it is why a weight law can be pitch-correct where a coverage law
+    // could only be pitch-correct on average.
+    const weightForArea = (area, localPitch, cov) => {
+      const p = (Number.isFinite(localPitch) && localPitch > 1e-6) ? localPitch : masterPitch;
+      const c = clamp(finite(cov, 1), 1e-6, 1);
+      if (!(p > 1e-6)) return W_MIN;
+      const ask = (clamp(finite(area, 0), 0, 0.995) * p) / (c * inkWidth());
+      const w = clamp(ask, W_MIN, W_MAX);
+      const got = (w * c * inkWidth()) / p;
+      weightStat.samples += 1;
+      weightStat.wSum += w;
+      if (ask > weightStat.askMax) weightStat.askMax = ask;
+      if (w < weightStat.wMin) weightStat.wMin = w;
+      if (w > weightStat.wMax) weightStat.wMax = w;
+      if (got < weightStat.aMin) weightStat.aMin = got;
+      if (got > weightStat.aMax) weightStat.aMax = got;
+      if (w >= W_MAX - 1e-9) weightStat.atMax += 1;
+      if (got > W_FLOOD_AREA) weightStat.floods += 1;
+      return w;
+    };
+    // 7th-order smoothstep — zero first, second AND third derivative at both
+    // ends. `weightSmoothstep`'s whole hypothesis is that the visible step is in
+    // the TRANSFER and not in the quantisation.
+    const ease7 = (t) => {
+      const u = clamp(t, 0, 1); const u2 = u * u;
+      return u2 * u2 * (35 - 84 * u + 70 * u2 - 20 * u2 * u);
+    };
+    // Golden-ratio (low-discrepancy) dither on the WEIGHT, keyed on the ruling.
+    // A quantisation step that lands on the same value for every neighbouring
+    // ruling is what reads as a band; one that walks is a texture.
+    const wDithered = (w, lineIndex) => {
+      const u = ((Number(lineIndex) || 0) * 0.6180339887498949) % 1;
+      return clamp(w * (1 + W_DITHER * (u - 0.5) * 2), W_MIN, W_MAX);
+    };
+    // The per-sample weight the emitter records.
+    const weightAtSample = (smp, localPitch) => {
+      const I = clamp(finite(smp && smp.I, 0), 0, 1);
+      if (TONE_ALGO === 'weightSmoothstep') {
+        const env = toneEnvelope();
+        const top = clamp(env.covDark / Math.max(1e-6, env.covLight), 1, W_MAX);
+        return clamp(top + (1 - top) * ease7(I), W_MIN, W_MAX);
+      }
+      return weightForArea(wTargetArea(I), localPitch, weightCovEff(I, localPitch));
+    };
+
     // The one entry point the emitter asks. `ladder` never reaches it.
     // `isCross` is true on a zone-gated pass, which only 'layeredCross' emits.
     // Those passes draw FULLY: an added family is the tone, so laddering it
@@ -980,6 +1170,10 @@
       }
       if (TONE_ALGO === 'crossFade') return crossFadeCov(I, localPitch);
       if (TONE_ALGO === 'fullLightingModel') return flmCov(smp, localPitch);
+      // The weight laws state their tone on the pen, so the coverage they hand
+      // back is the GEOMETRY they want and nothing else — flat for four of them,
+      // and the spacing half of the split for `weightPlusSpacing`.
+      if (isWeightLaw()) return weightCovAt(clamp(finite(I, 0), 0, 1));
       return coverageForSample(I);
     };
 
@@ -1515,6 +1709,72 @@
       ladderPhase.set(key, r.phase);
       return r.keep;
     };
+    // ── WEIGHT ALONG ONE RULING, AS ABUTTING PIECES ──────────────────────────
+    // The output format carries one weight per path, so a ruling whose weight
+    // varies is emitted as consecutive pieces that SHARE their endpoints: piece
+    // k's last point IS piece k+1's first point (the same object), so the pen
+    // never lifts between them and no piece ends in open surface. A cut only
+    // opens where the quantized weight has moved AND the piece so far is already
+    // at least MIN_MARK_MM long, and a trailing stub is folded back into its
+    // neighbour rather than dropped — dropping it is the one thing this
+    // construction may not do, because that would leave a hole in the ruling.
+    const meanW = (wPts, a, b) => {
+      let s = 0; let n = 0;
+      for (let i = a; i <= b; i++) { const v = Number(wPts[i]); if (Number.isFinite(v)) { s += v; n += 1; } }
+      return n ? s / n : 1;
+    };
+    const splitByWeight = (run, wPts, ttPts, fam) => {
+      const n = run.length;
+      if (n < 2) { run.weightScale = meanW(wPts, 0, n - 1); return [run]; }
+      const lvl = (w) => Math.round(clamp(finite(w, 1), W_MIN, W_MAX) / W_LEVEL);
+      const cuts = [];
+      let acc = 0;
+      let cur = lvl(wPts[0]);
+      for (let i = 1; i < n; i++) {
+        acc += Math.hypot(run[i].x - run[i - 1].x, run[i].y - run[i - 1].y);
+        // `cur` is NOT advanced when the piece is still too short, so a slow
+        // ramp still cuts — it just cuts once, two levels on, instead of never.
+        if (lvl(wPts[i]) !== cur && acc >= MIN_MARK_MM) { cuts.push(i); acc = 0; cur = lvl(wPts[i]); }
+      }
+      if (cuts.length && acc < MIN_MARK_MM) cuts.pop();   // fold the trailing stub back
+      if (!cuts.length) { run.weightScale = meanW(wPts, 0, n - 1); return [run]; }
+      const bounds = [0].concat(cuts, [n - 1]);
+      const pieces = [];
+      for (let k = 0; k + 1 < bounds.length; k++) {
+        const a = bounds[k]; const b = bounds[k + 1];
+        const pc = run.slice(a, b + 1);   // shares the boundary POINT with its neighbour
+        pc.fam = fam;
+        pc.tt0 = ttPts[a]; pc.tt1 = ttPts[b];
+        pc.weightScale = meanW(wPts, a, b);
+        pieces.push(pc);
+      }
+      return pieces;
+    };
+    // 'weightMultiPass' — the plotter-honest heavy line. Instead of asking for a
+    // pen `w` times as wide, lay ROUND(w) real strokes of the actual pen, offset
+    // perpendicular by one ink width and centred on the ruling. The piece itself
+    // stays on the ruling and the extras sit alternately either side of it, so
+    // the band grows symmetrically. Nothing ends anywhere new: every pass spans
+    // exactly the parameter range of the piece it copies. Returned SEPARATELY
+    // from the piece so the seam join still sees only the centre line.
+    const extraPasses = (pc) => {
+      const n = clamp(Math.round(finite(pc.weightScale, 1)), 1, MP_MAX);
+      pc.weightScale = 1;
+      if (n <= 1 || pc.length < 2) return [];
+      const outp = [];
+      for (let j = 1; j < n; j++) {
+        const d = (j % 2 ? 1 : -1) * Math.ceil(j / 2) * inkWidth();
+        const cp = pc.map((q, i) => {
+          const p0 = pc[Math.max(0, i - 1)]; const p1 = pc[Math.min(pc.length - 1, i + 1)];
+          const dx = p1.x - p0.x; const dy = p1.y - p0.y;
+          const L = Math.hypot(dx, dy) || 1;
+          return { x: q.x + (-dy / L) * d, y: q.y + (dx / L) * d, z: q.z };
+        });
+        cp.fam = pc.fam; cp.tt0 = pc.tt0; cp.tt1 = pc.tt1; cp.weightScale = 1;
+        outp.push(cp);
+      }
+      return outp;
+    };
     const makeSink = (back, lineIndex, fam) => {
       let run = [];
       let runLen = 0;
@@ -1534,6 +1794,13 @@
       // weight and is what lets a hatch line darken as it enters the shadow.
       let wSum = 0;
       let wCnt = 0;
+      // Laws 12-16 (the weight laws) additionally keep the weight and the sweep
+      // parameter PER POINT, parallel to `run`, which is what lets `splitByWeight`
+      // cut the finished run into abutting pieces after every existing cull has
+      // already had its say on the run as a whole.
+      let wPts = [];
+      let ttPts = [];
+      let wPend = 1;
       const mine = [];
       // Is this run WHOLLY inside the centre light? `null` until the first
       // sample lands; latches false as soon as a non-L sample is added. Read
@@ -1566,11 +1833,21 @@
           run.fam = fam;
           run.tt0 = runTT0; run.tt1 = runTT1;
           if (TONE_ALGO === 'weightModulated' && wCnt > 0) run.weightScale = wSum / wCnt;
-          mine.push(run);
-          pushRun(run, back, lineIndex);
+          if (TONE_ALGO === 'weightSmoothstep' && wCnt > 0) run.weightScale = wDithered(wSum / wCnt, lineIndex);
+          const pieces = (splitsAlongLine() && wCnt > 0)
+            ? splitByWeight(run, wPts, ttPts, fam)
+            : [run];
+          pieces.forEach((pc) => {
+            mine.push(pc);
+            pushRun(pc, back, lineIndex);
+            if (TONE_ALGO === 'weightMultiPass') {
+              extraPasses(pc).forEach((xp) => pushRun(xp, back, lineIndex));
+            }
+          });
         }
         run = []; runLen = 0; softStart = false; runLit = null;
         runTT0 = null; runTT1 = null; wSum = 0; wCnt = 0;
+        wPts = []; ttPts = [];
       };
       return {
         emitted: () => mine,
@@ -1583,7 +1860,7 @@
           gapPts.push(pt);
           if (gapLen > BRIDGE_MM) { emitRun(true); gapPts = []; gapLen = 0; }
         },
-        noteW: (w) => { wSum += w; wCnt += 1; },
+        noteW: (w) => { wSum += w; wCnt += 1; wPend = w; },
         addPt: (pt, zone, tt) => {
           runLit = (runLit === null) ? (zone === 'L') : (runLit && zone === 'L');
           if (!run.length) runTT0 = tt;
@@ -1593,13 +1870,13 @@
             // keeps the ruling on the form instead of chording across it.
             gapPts.forEach((g) => {
               runLen += Math.hypot(g.x - run[run.length - 1].x, g.y - run[run.length - 1].y);
-              run.push(g);
+              run.push(g); wPts.push(wPend); ttPts.push(tt);
             });
           }
           gapPts = []; gapLen = 0;
           if (!run.length) softStart = sawSoftDrop;
           else runLen += Math.hypot(pt.x - run[run.length - 1].x, pt.y - run[run.length - 1].y);
-          run.push(pt);
+          run.push(pt); wPts.push(wPend); ttPts.push(tt);
         },
       };
     };
@@ -1804,8 +2081,16 @@
       // while that flag is off; when it returns they vary continuously along a
       // ruling, and averaging them over the span is precisely what stops that
       // variation from cutting the ruling again.
-      const covAtSample = (smp, s, zone) => {
+      // The perpendicular gap between adjacent MASTER-GRID rulings at this
+      // sample. Hoisted out of `covAtSample` because the weight laws need the
+      // same number in the emit loop, where no coverage is being computed.
+      const pitchAtStep = (smp, s) => {
         const tt = s / nSteps;
+        const stepHere = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
+        const dirHere = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
+        return perpPitch(smp, stepHere, dirHere);
+      };
+      const covAtSample = (smp, s, zone) => {
         // THE LOCAL PITCH IS MEASURED FIRST. Laws 6-10 are stated in APPARENT
         // AREA, not in coverage, so they need the pitch that actually lands here
         // in order to say what coverage buys that area (see `covForArea`). The
@@ -1816,9 +2101,7 @@
         // space family and FUNCTIONS OF tt for the screen-frame crossed
         // family, whose direction — and therefore whose neighbour offset —
         // varies along the line. Everything downstream is unchanged.
-        const stepHere = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
-        const dirHere = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
-        const localPitch = perpPitch(smp, stepHere, dirHere);
+        const localPitch = pitchAtStep(smp, s);
         // The four alternatives own the coverage outright. They never route
         // through `zoneCoverage`: under 'layeredCross' the zone label is a gate
         // name ('X1,X2'), not a FORM_INK row, and asking Regions for its ink
@@ -2162,7 +2445,8 @@
         // no-ops unless the neighbouring sample is off the wanted side of the
         // surface, which is the only place a refinement is defined.
         if (s > 0 && !onSurf[s - 1]) { const e = edgeAt(s, s - 1); if (e) addPt(e, sampleZone, tt); }
-        if (TONE_ALGO === 'weightModulated' && toneOn) sink.noteW(weightAt(smp.I));
+        if (toneOn && TONE_ALGO === 'weightModulated') sink.noteW(weightAt(smp.I));
+        else if (toneOn && isWeightLaw()) sink.noteW(weightAtSample(smp, pitchAtStep(smp, s)));
         addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
         if (s < nSteps && !onSurf[s + 1]) { const e = edgeAt(s, s + 1); if (e) addPt(e, sampleZone, tt); }
       }
@@ -3089,6 +3373,21 @@
       rulingsTouched: floorStat.touched.size,
       rulingsClamped: floorStat.rulings.size,
       worstAsk: Math.round(floorStat.worst * 100) / 100,
+      // ...and, for laws 12-16, where the WEIGHT range bound. Both ends of it
+      // are physical (W_MIN is the pen itself, W_FLOOD_AREA is a wet blob), so
+      // "did the law reach the dark it asked for" has to be reported.
+      weight: weightStat.samples ? {
+        samples: weightStat.samples,
+        wMin: Math.round(weightStat.wMin * 100) / 100,
+        wMax: Math.round(weightStat.wMax * 100) / 100,
+        wMean: Math.round((weightStat.wSum / weightStat.samples) * 100) / 100,
+        askMax: Math.round(weightStat.askMax * 100) / 100,
+        atMax: weightStat.atMax,
+        floods: weightStat.floods,
+        areaMin: Math.round(weightStat.aMin * 1000) / 1000,
+        areaMax: Math.round(weightStat.aMax * 1000) / 1000,
+        baseCov: Math.round(weightBaseCov() * 1000) / 1000,
+      } : null,
     } : null;
     return out;
   };
