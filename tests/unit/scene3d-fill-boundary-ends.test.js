@@ -272,6 +272,50 @@ describe('Scene3D.SurfaceFill — a ruling ends on the boundary, not a sample sh
     expect(CASES.length - Object.keys(ALLOW).length).toBe(34);
   });
 
+  // ── THE FLAT CAPS ───────────────────────────────────────────────────────
+  // `Charts.topoCylinder` is an open tube and `Charts.topoCone` is a lateral
+  // cone, so before `chartFor` capped them the curved fill could not reach the
+  // disc the MESH builds and the border pass rims: the app-default cylinder
+  // rendered with a completely bare top cap, measured as a 15.1 mm ink-free
+  // hole — six times the widest gap anywhere else in the matrix, and the only
+  // one that reads as a hole rather than as tone.
+  describe('the chart reaches the flat caps', () => {
+    test('a cylinder chart closes on BOTH cap centres, a cone on its base only', () => {
+      const SF = V.Scene3D.SurfaceFill;
+      const sizes = { sx: 22.5, sy: 25, sz: 22.5 };
+      const cyl = SF.chartFor('cylinder', sizes);
+      // a = 0 and a = 1 are now the cap CENTRES (radius 0), not the rims.
+      [0, 0.25, 0.5, 0.75].forEach((b) => {
+        expect(Math.hypot(cyl(0, b).x, cyl(0, b).z)).toBeLessThan(0.01);
+        expect(Math.hypot(cyl(1, b).x, cyl(1, b).z)).toBeLessThan(0.01);
+      });
+      expect(cyl(0, 0).y).toBeCloseTo(-25, 5);
+      expect(cyl(1, 0).y).toBeCloseTo(25, 5);
+      // The rim is still reached, at the arc-length split.
+      const f = 22.5 / (50 + 2 * 22.5);
+      expect(Math.hypot(cyl(f, 0).x, cyl(f, 0).z)).toBeCloseTo(22.5, 5);
+      // The cone tapers to a point on its own, so only its BASE is capped.
+      const cone = SF.chartFor('cone', sizes);
+      expect(Math.hypot(cone(0, 0).x, cone(0, 0).z)).toBeLessThan(0.01);
+      expect(Math.hypot(cone(1, 0).x, cone(1, 0).z)).toBeLessThan(0.01);   // the apex
+      expect(cone(0, 0).y).toBeCloseTo(-25, 5);
+    });
+
+    test('the app-default cylinder puts ink on its top cap', () => {
+      const { opts, fill } = build('cylinder', 'hatch');
+      const chart = V.Scene3D.SurfaceFill.chartFor(opts.mode, opts.sizes);
+      const centre = opts.projectWorld(opts.applyTransform(chart(1, 0), opts.transform || {}));
+      let best = Infinity;
+      fill.forEach((p) => p.forEach((q) => {
+        const d = Math.hypot(q.x - centre.x, q.y - centre.y);
+        if (d < best) best = d;
+      }));
+      // Before the cap existed the nearest fill ink was the rim, a full cap
+      // radius away (22.5 mm of world, ~20 mm on screen).
+      expect(best).toBeLessThan(5);
+    }, 40000);
+  });
+
   test('the bar is tighter than the defect it replaces, and is stated in pen widths', () => {
     expect(TOL_MM).toBeLessThan(3.43);          // the measured hatch/crosshatch pyramid defect
     expect(TOL_MM / 0.3).toBeGreaterThanOrEqual(3);

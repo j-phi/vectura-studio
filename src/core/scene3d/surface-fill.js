@@ -52,6 +52,47 @@
   // and the charts-parity golden are untouched.
   const AROUND_IS_U = new Set(['cylinder', 'capsule', 'superellipsoid', 'pyramid']);
 
+  // ── A CYLINDER'S AND A CONE'S FLAT CAPS ARE NOT IN THE CHART ───────────────
+  //
+  // `Charts.topoCylinder` is an OPEN TUBE and `Charts.topoCone` is a lateral
+  // cone. Neither includes the flat cap the MESH builds and the border pass
+  // rims, so the curved fill could not reach it: the app-default cylinder
+  // rendered with a completely bare top disc, measured as a 15.1 mm ink-free
+  // hole — by a factor of six the largest bare region anywhere in the
+  // primitive x mapper matrix, and the only one visible as a hole rather than
+  // as tone.
+  //
+  // The ends of the ALONG-AXIS coordinate are spent on the caps, exactly as
+  // `topoCapsule` spends its ends on the hemispheres, and the split is placed
+  // by ARC LENGTH (centre -> rim is `capR` of a meridian that is `capR + h +
+  // capR` long) so the ruling pitch stays even across the rim instead of
+  // jumping at it. The cap centre is a chart singularity like a sphere's pole
+  // and `sampleAt` already handles one.
+  //
+  // Added HERE, in the fill's own chart wrapper, and NOT in `charts.js`: the
+  // MESH calls `Charts.topo*` directly, so `tests/baselines/scene3d/*.json`,
+  // the charts-parity golden and every silhouette are untouched by this.
+  const cappedChart = (raw, sizes, mode) => {
+    // topoCylinder/topoCone place the along-axis extent at +-sy, so the side is
+    // 2*sy long; the cap's radial extent is the rim radius.
+    const alongLen = 2 * Math.max(1e-6, finite(sizes && sizes.sy, 1));
+    const capR = Math.max(1e-6, Math.max(finite(sizes && sizes.sx, 1), finite(sizes && sizes.sz, 1)));
+    // The cylinder is capped at BOTH ends; the cone tapers to a point at a = 1
+    // and so has only a base.
+    const both = mode === 'cylinder';
+    const totalLen = alongLen + (both ? 2 * capR : capR);
+    const f = capR / totalLen;
+    if (!(f > 1e-6) || f > 0.49) return raw;
+    const lo = f;
+    const hi = both ? 1 - f : 1;
+    const spanA = hi - lo;
+    return (a, b) => {
+      if (a < lo) { const t = a / lo; const p = raw(0, b); return { x: p.x * t, y: p.y, z: p.z * t }; }
+      if (both && a > hi) { const t = (1 - a) / f; const p = raw(1, b); return { x: p.x * t, y: p.y, z: p.z * t }; }
+      return raw(clamp((a - lo) / spanA, 0, 1), b);
+    };
+  };
+
   const chartFor = (mode, sizes) => {
     const C = Vectura.Scene3D && Vectura.Scene3D.Charts;
     if (!C) return null;
@@ -68,7 +109,8 @@
       default: raw = null;
     }
     if (typeof raw !== 'function') return null;
-    return AROUND_IS_U.has(mode) ? (a, b) => raw(b, a) : raw;
+    const norm = AROUND_IS_U.has(mode) ? (a, b) => raw(b, a) : raw;
+    return (mode === 'cylinder' || mode === 'cone') ? cappedChart(norm, sizes, mode) : norm;
   };
 
   // O6 — CENTRE-LIGHT FLOOR (see coverageForSample). Module scope so the test
