@@ -1017,7 +1017,7 @@
     const MP_MAX = 5;           // weightMultiPass — most strokes in one band
     const WEIGHT_LAWS = {
       weightAlongLine: 1, weightDeepDark: 1, weightPlusSpacing: 1,
-      weightMultiPass: 1, weightSmoothstep: 1,
+      weightMultiPass: 1, weightSmoothstep: 1, weightCrossHandoff: 1,
     };
     const isWeightLaw = () => WEIGHT_LAWS[TONE_ALGO] === 1;
     // Which of them vary the weight ALONG the ruling, and therefore split it into
@@ -1026,7 +1026,7 @@
     // would confound the two questions.
     const splitsAlongLine = () => TONE_ALGO === 'weightAlongLine'
       || TONE_ALGO === 'weightDeepDark' || TONE_ALGO === 'weightPlusSpacing'
-      || TONE_ALGO === 'weightMultiPass';
+      || TONE_ALGO === 'weightMultiPass' || TONE_ALGO === 'weightCrossHandoff';
     // WHERE THE WEIGHT LAWS ACTUALLY LANDED — the counterpart to `floorStat`.
     // The weight range is bounded at both ends by physics (you cannot draw
     // thinner than the pen, and past W_FLOOD_AREA the ink is a blob), so "did
@@ -1083,9 +1083,60 @@
       const base = flatCov();
       return clamp(base * Math.pow(wAmp(I), WPS_KAPPA), base, Math.min(1, env.covDark));
     };
+    // ── 'weightCrossHandoff' — THE C0 CROSS-HATCH HANDOFF ON OFFSET GREY ───────
+    //
+    // Rössl & Kobbelt (Pacific Graphics 2000), §7. THE ARITHMETIC FIRST, because
+    // it is what makes every other weight law's dark end a foregone conclusion:
+    // spacing-to-tone is `pitch = 2 x nib / tone`, so ONE ruling family saturates
+    // at a spacing of about twice the nib — which is this repo's own
+    // PLOT_FLOOR_PEN (2.2 x pen). At the shipped 0.3 mm pen a single family with
+    // a pen-width stroke therefore tops out at inkWidth/floorPitch = 0.509 ink
+    // area, L* 76, and NO spacing law can go darker. Measured: weightAlongLine
+    // hit 0.509 exactly. Past it there are only three moves — a wider stroke
+    // (weightDeepDark), a second family (this), or an overdraw (weightMultiPass).
+    //
+    // The second family is added WITHOUT a threshold, which is the whole point.
+    // It is computed on the OFFSET grey — the tone left over once family A has
+    // laid all it can — so it enters at zero exactly where A saturates and grows
+    // from there. No cut, no traceable band edge. A pen cannot enter at zero
+    // WIDTH (W_MIN is the pen itself), so it enters at zero DENSITY instead:
+    // family B's coverage ramps up from nothing, and only once that coverage has
+    // reached the base grid does its weight start to climb.
+    const XH_CMIN = 0.30;       // Rössl's minimum white band, as a share of the pitch
+    // MEASURED, NOT DERIVED (Salisbury et al. 1997's "lightening factor", and the
+    // reason it has to be measured): where strokes CROSS, the analytic
+    // Murray-Davies area double-counts the overlap in the opposite direction from
+    // a single family — one family measured 0.408 against a predicted 0.509 (it
+    // under-delivers, the nib spread not withstanding), but a crossed PAIR
+    // measured solid black over 5 % of the form against a predicted 0.85 (it
+    // over-delivers). 0.72 is the value that lands; it is also `XF_MAX_AREA`,
+    // which crossFade arrived at from the same direction.
+    const XH_DEEP_AREA = 0.72;
+    const xhPitchA = () => (masterPitch > 1e-6
+      ? masterPitch / Math.max(1e-6, flatCov()) : litMaxPitchPen() * penWidth);
+    // The most family A alone may lay: its stroke may fill its own pitch only up
+    // to the minimum white band, and it may not exceed the heaviest legal pen.
+    const xhCapA = () => clamp(Math.min(1 - XH_CMIN, (W_MAX * inkWidth()) / xhPitchA()), 0.02, 0.98);
+    const xhTotal = (I) => areaForTone(I, XH_DEEP_AREA, wLightArea());
+    const xhAreaA = (I) => Math.min(xhTotal(I), xhCapA());
+    // COMPOSITION, NOT SUBTRACTION. The two families overlap, so the pair reads
+    // 1 − (1 − aA)(1 − aB); solving that for aB is what makes them land exactly
+    // on the target instead of a third short of it.
+    const xhAreaB = (I) => {
+      const t = clamp(xhTotal(I), 0, 0.98);
+      const aA = xhAreaA(I);
+      return clamp(1 - (1 - t) / Math.max(1e-6, 1 - aA), 0, 0.98);
+    };
+    const xhCovB = (I, localPitch) => clamp(covForArea(xhAreaB(I), localPitch), 0.001, flatCov());
     // The coverage a weight law is ruling at, at this radiance — the divisor the
     // weight has to be stated against.
-    const weightCovAt = (I) => (TONE_ALGO === 'weightPlusSpacing' ? wpsCov(I) : weightBaseCov());
+    const weightCovAt = (I, localPitch) => {
+      if (TONE_ALGO === 'weightPlusSpacing') return wpsCov(I);
+      if (TONE_ALGO === 'weightCrossHandoff') {
+        return xfLayer === 0 ? flatCov() : xhCovB(clamp(finite(I, 0), 0, 1), localPitch);
+      }
+      return weightBaseCov();
+    };
     // ...AND THE COVERAGE THE FLOOR ACTUALLY LEFT. `covAtSample` clamps coverage
     // to `localPitch / floorPitch` wherever the geometry crowds (a sphere's
     // meridians converge to nothing at the poles), so the grid that is really on
@@ -1095,7 +1146,7 @@
     // a grid the floor had already thinned, and flooded to L* 4.5 — a black cap
     // on a lit sphere. Same clamp, same expression, one place later.
     const weightCovEff = (I, localPitch) => {
-      const c = weightCovAt(I);
+      const c = weightCovAt(I, localPitch);
       if (!(TONE_UNCAPPED && Number.isFinite(localPitch) && localPitch > 1e-6 && floorPitch > 1e-6)) return c;
       return Math.min(c, clamp(localPitch / floorPitch, 0.005, 1));
     };
@@ -1146,6 +1197,12 @@
         const top = clamp(env.covDark / Math.max(1e-6, env.covLight), 1, W_MAX);
         return clamp(top + (1 - top) * ease7(I), W_MIN, W_MAX);
       }
+      if (TONE_ALGO === 'weightCrossHandoff') {
+        // Each family is stated against its OWN area and its own coverage, so
+        // neither is asked to carry the other's share.
+        return weightForArea(xfLayer === 0 ? xhAreaA(I) : xhAreaB(I), localPitch,
+          weightCovEff(I, localPitch));
+      }
       return weightForArea(wTargetArea(I), localPitch, weightCovEff(I, localPitch));
     };
 
@@ -1173,7 +1230,7 @@
       // The weight laws state their tone on the pen, so the coverage they hand
       // back is the GEOMETRY they want and nothing else — flat for four of them,
       // and the spacing half of the split for `weightPlusSpacing`.
-      if (isWeightLaw()) return weightCovAt(clamp(finite(I, 0), 0, 1));
+      if (isWeightLaw()) return weightCovAt(clamp(finite(I, 0), 0, 1), localPitch);
       return coverageForSample(I);
     };
 
@@ -3125,6 +3182,18 @@
       const emitTerminatorCross = (count, back) => {
         if (TONE_ALGO === 'layeredCross') { if (toneOn) emitLayeredCross(count, back); return; }
         if (TONE_ALGO === 'crossFade') { if (toneOn) emitCrossFade(count, back); return; }
+        // 'weightCrossHandoff' — ONE added family, entering by density from
+        // nothing on the offset grey (see xhAreaB). Un-gated, exactly as
+        // crossFade's are, so every ruling of it runs the full width of the form
+        // and none can terminate in open surface.
+        if (TONE_ALGO === 'weightCrossHandoff') {
+          if (toneOn) {
+            xfLayer = 1;
+            emitAngledFamily(finite(opts.fillAngle, 0) + 65, count, back);
+            xfLayer = 0;
+          }
+          return;
+        }
         // 'contourFlow' replaces family A outright (see the mapper dispatch) and
         // adds nothing on top: the direction IS the tone statement.
         if (TONE_ALGO === 'contourFlow') return;
