@@ -6,6 +6,19 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed
+- **3D Scene — the tone ladder no longer leaves unexpected gaps in a curved fill.** Which rulings
+  survive at a given coverage was chosen by a van der Corput (bit-reversed) rank. A bit-reversed
+  prefix is spread, but it is not evenly spaced — it is a binary refinement, so the surviving
+  rulings were always separated by a power-of-two pair of gaps (measured: 1 and 2 at coverage 0.62,
+  2 and 4 at 0.42, 4 and 8 at 0.20). A gap twice as wide as its neighbours reads as a white band the
+  drawing did not ask for, on hatch, crosshatch, contour, spiral and stipple alike. The ladder is
+  now phase-stepped (Bresenham): it carries a running coverage total per family and keeps a ruling
+  when the total crosses an integer, so at any coverage the surviving rulings sit at
+  `floor(1/coverage)` and `ceil(1/coverage)` apart — two consecutive integers, the most even a
+  subset of an integer grid can be. Tone is unaffected: the kept count still equals the coverage,
+  so the drawing still thins toward the light.
+
 ### Added
 - **3D Scene — line output is split by role: the Object tab draws the border, the Style tab draws
   the fill.** Curves / Smoothing / Simplify used to be one set of object-level controls governing

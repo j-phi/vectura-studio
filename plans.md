@@ -211,8 +211,32 @@ or completes.
   `tests/unit/text-outline-ops.test.js`).
 
 ## Blocked on Jay
-Seven audit decisions (full options in `docs/audit-remediation-todo.md`) plus one design
-question. Do not start these without a decision:
+Seven audit decisions (full options in `docs/audit-remediation-todo.md`) plus two design
+questions. Do not start these without a decision:
+- **`torus/crosshatch` needs the boundary-ends exception the sibling cell already has**
+  (`3d-scene/unwire-highlight`). With the phase-stepped tone ladder, `scene3d-fill-boundary-ends`
+  reports one free end of 1.48 mm on `torus · crosshatch`. That end is at x 122.6 — the exact
+  coordinate, on the exact latitude ring, that the file's own `ALLOW` table already names and
+  permits at 2.0 mm for `torus · contour` ("the near and far sheets meet TANGENTIALLY, so a
+  0.35 mm raster cannot separate them"). Crosshatch's second family IS the contour family
+  (`emitSecondary(+90)` → `emitFamily('a')`), so the exception belongs to the (primitive, family)
+  pair and the table is keyed on (primitive, mapper). The even ladder now keeps that ring at every
+  phase origin tried (0, 0.25, 0.35, 0.4, 0.5, 0.6, 0.65), which is expected: even spacing covers
+  the whole index range where a bit-reversed subset could skip it. Decide: add
+  `'torus/crosshatch': 2.0` to `ALLOW` (and let the meta-test's exception count follow), or ask for
+  a different remedy. The test was left RED rather than edited.
+- **The lit-cap pitch bar is stated in parameter space, measured in projection**
+  (`3d-scene/unwire-highlight`). `scene3d-appdefault-lit-floor`'s "no gap wider than
+  litMaxPitchPen × pen" now measures 5.60 mm against a 4.68 mm bar (was 4.47 mm). Its `QUANT = 1.3`
+  slack was granted, in the test's own words, "because the ordered dither's rank quantization
+  legitimately leaves the occasional DOUBLE step" — i.e. it was calibrated to the mechanism that
+  has been replaced. With an evenly spaced family the parameter-space pitch is exactly
+  `1/litFloorCov`, but equally spaced meridians do NOT project equally: on a sphere their projected
+  pitch is widest at the centre of the disc, so the widest lit-cap gap is now the uniform pitch seen
+  at its widest point. Stage 0 (every ruling drawn, perfectly even by construction) measures the
+  same effect: worst bare gap 2.25 mm against a p50 nearest-ink of 0.99 mm. Honouring the bar in
+  PROJECTION means raising `litFloorCov` ~1.5×, which is a tone change, not a spacing fix. Decide:
+  restate the bar in projected millimetres, lift the lit floor, or accept and re-baseline.
 - **AUD-07** — revive vs delete the orphaned Playwright screenshot suite (baselines ~3 months
   stale, runs in no CI job); either way, `mask-shift-drag.spec.js` must join `test:e2e`.
 - **AUD-10** — delete vs adopt the dead 16-component "Phase 1" library kept green by 16 tests.
