@@ -22,7 +22,18 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
-*(empty — promote the top of Next when picking up new work)*
+- **3D Scene: pick a tone algorithm.** Five laws are implemented side by side in
+  `src/core/scene3d/surface-fill.js` behind `TONE_ALGO`, which is committed on `ladder` (no change
+  to any existing drawing). Measured on the app-default scene across sphere/capsule/cylinder hatch,
+  sphere crosshatch and ellipsoid contour: `continuousPitch` is the only one whose kept-ruling gaps
+  collapse to a single consecutive pair {1,2} at every cell, with no free ends and the narrowest
+  bare gaps; `fineLadder` measures within 0.01 of `ladder` (the residual coarseness is the master
+  grid, not the rung size); `weightModulated` is the most even geometry possible (one pitch, CoV
+  0.20) but moves the tone onto stroke width, which is a plotter/pen decision as much as a drawing
+  one; `layeredCross` gives by far the strongest tone (ramp 3.5x) and the most even spacing (CoV
+  0.10) but its zone boundaries are traceable edges and its confined families end 19 mm inside open
+  surface. Renders in `scratchpad/fillcmp/tonealgo-*.png`. Needs Jay's pick before the staged
+  unwire moves past Stage 1.
 
 ## Next
 - **3D Scene: parentKey/pathKey quantization coherence (before the Phase 4A divisions

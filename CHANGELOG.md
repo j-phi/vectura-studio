@@ -6,6 +6,23 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added
+- **3D Scene — five tone algorithms are implemented side by side behind one selector, for
+  comparison.** Making each coverage level internally even exposed the next problem: the tone
+  ladder has only as many rungs as `tone.ladder` has entries (three on the shipped default,
+  coverages 0.85 / 0.50 / 0.20 read dark to light), so the ruling pitch JUMPS between rungs in the
+  ratio 1 : 1.7 : 4.25 instead of ramping. Two adjacent rungs inside one view read as clusters of
+  two or three rulings with a wider gap between the clusters. `TONE_ALGO` in
+  `src/core/scene3d/surface-fill.js` selects between: `ladder` (the shipped behaviour, and the
+  committed default — nothing changes for any existing drawing), `continuousPitch` (no bands at
+  all; ruling pitch is a smootherstep-eased function of surface intensity, tight in shadow easing
+  wider toward the light), `fineLadder` (the same rung mechanism with the rung count derived from
+  the ladder's own coverage range at ~0.02 per rung), `weightModulated` (one pitch everywhere, tone
+  carried by pen weight instead of by line density) and `layeredCross` (tone by adding families —
+  one in the light, a second crossed family through the mid-tones, a third in the darks). All four
+  alternatives share the ladder's own envelope: the dark end is its densest rung, the sparse end is
+  the same O6 pitch bar the discrete ladder charges.
+
 ### Fixed
 - **3D Scene — the tone ladder no longer leaves unexpected gaps in a curved fill.** Which rulings
   survive at a given coverage was chosen by a van der Corput (bit-reversed) rank. A bit-reversed
