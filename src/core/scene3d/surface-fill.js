@@ -265,6 +265,43 @@
                            // ink the dither made; it is the mitigation, not the disease.
   };
 
+  // ── FIVE TONE ALGORITHMS, SIDE BY SIDE ──────────────────────────────────────
+  //
+  // Jay, on the phase-stepped Stage-1 render: the rulings "sit in visible
+  // clusters of two or three with wider gaps between the clusters". Each
+  // coverage LEVEL is internally even now (that is what the phase ladder buys),
+  // but the ladder itself has only `tone.ladder.length` rungs — 3 on the shipped
+  // default, coverages 0.85 / 0.50 / 0.20 read dark→light. Pitch is masterPitch
+  // divided by coverage, so those three rungs are three pitches in the ratio
+  // 1 : 1.7 : 4.25. Two adjacent rungs inside one crop read exactly as
+  // "two or three tight, then a wide gap": the clustering is the BAND STEP.
+  //
+  // This is a comparison exercise, not a migration. All five laws live here at
+  // once and the selector picks one. `ladder` is the committed default and is
+  // byte-identical to the behaviour before this block existed.
+  //
+  //   'ladder'          the control — discrete rungs, phase-stepped selection.
+  //   'continuousPitch' no bands at all. Local pitch is a smoothly EASED
+  //                     function of intensity: tight in shadow, easing wider
+  //                     toward the light. Rulings are placed by integrating that
+  //                     pitch field (which is what the phase accumulator already
+  //                     is) rather than by selecting from a rung.
+  //   'fineLadder'      the minimal change: the same rung mechanism, but the
+  //                     rung count is derived from the ladder's own coverage
+  //                     RANGE at ~0.02 per rung, so the step falls below the
+  //                     visual threshold instead of being removed.
+  //   'weightModulated' perfectly even spacing EVERYWHERE — one pitch, the
+  //                     sparse-end pitch — with tone carried by pen weight
+  //                     instead of by line density. The plotter-real answer
+  //                     (heavier pen / doubled pass in shadow) and the strongest
+  //                     possible answer to "100 % even".
+  //   'layeredCross'    tone by ADDING families: one in the light, a second
+  //                     crossed family through the mid-tones, a third in the
+  //                     darks. Each family internally even and continuous. The
+  //                     classic engraving answer. Its zones come from intensity
+  //                     directly — `HL_STAGE.toneZones` stays off.
+  const TONE_ALGO = 'ladder';
+
   // ── THE LADDER IS PHASE-STEPPED, NOT BIT-REVERSED ───────────────────────────
   //
   // The ladder decides WHICH rulings of a family survive at a given coverage.
@@ -562,6 +599,148 @@
       return clamp(cov, 0, 1);
     };
 
+    // ── THE FOUR ALTERNATIVE TONE LAWS ─────────────────────────────────────────
+    //
+    // Every one of them is a function of surface intensity `I` returning the
+    // same quantity `coverageForSample` returns: the FRACTION of the master grid
+    // that draws here. The phase accumulator turns that fraction into placement,
+    // so a coverage field IS a pitch field — local pitch = masterPitch / cov —
+    // and integrating it is exactly what `ladderStep` already does. That is why
+    // none of these needs a second placement mechanism.
+    //
+    // THE ENVELOPE, and where its two ends come from. Neither end is invented:
+    //   dark end  = the ladder's own densest rung. Going denser than the author
+    //               asked is not this exercise's business.
+    //   light end = `litFloorCov`, the coverage at which family A rules at
+    //               exactly `litMaxPitchPen() × pen`. That is §5.4 #1 / O6's
+    //               sparse-end floor, and it is the SAME bar `litSpanFloor`
+    //               charges on the discrete ladder — so all five laws share one
+    //               sparse end and the comparison is fair.
+    // The plot floor needs no clamp here and cannot be reached: the master grid
+    // already floors `masterPitch` at `PLOT_FLOOR_PEN × pen`, and coverage ≤ 1,
+    // so the emitted pitch masterPitch/cov is ≥ masterPitch ≥ the floor. Stated
+    // as a clamp anyway, because a floor you only argue for is not a floor.
+    let toneEnv = null;
+    const toneEnvelope = () => {
+      if (toneEnv) return toneEnv;
+      const covs = [];
+      for (let b = 0; b < nB; b++) covs.push(clamp(finite(Regions.coverageFor(b, tone), 0.5), 0, 1));
+      const covDark = clamp(covs.length ? Math.max.apply(null, covs) : 0.85, 0.05, 1);
+      const rawLight = covs.length ? Math.min.apply(null, covs) : 0.2;
+      // The sparse end never goes BELOW the O6 pitch bar, and never above the
+      // dark end (a degenerate one-rung ladder collapses to a flat field, which
+      // is honest: there is no ramp to draw).
+      const covLight = clamp(Math.max(rawLight, litFloorCov > 0 ? litFloorCov : rawLight), 0.02, covDark);
+      // Plot floor, restated as the clamp it is.
+      const capByFloor = (masterPitch > 1e-6 && floorPitch > 1e-6)
+        ? clamp(masterPitch / floorPitch, 0.02, 1) : 1;
+      toneEnv = { covDark: Math.min(covDark, capByFloor), covLight: Math.min(covLight, capByFloor) };
+      return toneEnv;
+    };
+    // Smootherstep. The user asked for an EASE, not a linear ramp: this one has
+    // zero first AND second derivative at both ends, so the ramp leaves the
+    // shadow and arrives at the highlight without a visible knee.
+    const ease = (t) => { const u = clamp(t, 0, 1); return u * u * u * (u * (6 * u - 15) + 10); };
+    // 'continuousPitch' — the eased pitch field, no bands anywhere. The EASE is
+    // applied in PITCH space, not in coverage space, because pitch is the thing
+    // the eye measures: an eased coverage would still bunch the wide gaps at the
+    // light end (coverage is a reciprocal). Reciprocating back at the end is
+    // what hands the phase accumulator a density it can integrate.
+    const contPitchCov = (I) => {
+      const env = toneEnvelope();
+      const uDark = 1 / Math.max(1e-6, env.covDark);    // pitch, in master-grid units
+      const uLight = 1 / Math.max(1e-6, env.covLight);
+      const u = uDark + (uLight - uDark) * ease(clamp(finite(I, 0), 0, 1));
+      return clamp(1 / Math.max(1e-6, u), 0.02, 1);
+    };
+    // The ladder's own SHAPE as a continuous curve: piecewise-linear through the
+    // authored rungs at their band centres. `fineLadder` re-quantizes this, so
+    // it keeps the author's tone curve and only removes the step size.
+    const bandCentre = (b) => {
+      const th = (tone && Array.isArray(tone.thresholds))
+        ? tone.thresholds.filter((t) => Number.isFinite(t)) : [];
+      const lo = b === 0 ? 0 : clamp(finite(th[b - 1], b / nB), 0, 1);
+      const hi = b >= nB - 1 ? 1 : clamp(finite(th[b], (b + 1) / nB), 0, 1);
+      return (lo + hi) / 2;
+    };
+    const ladderCurve = (I) => {
+      const x = clamp(finite(I, 0), 0, 1);
+      if (nB <= 1) return coverageForSample(x);
+      // Coverage read dark→dense, exactly as `coverageForSample` reads it.
+      const covAtBand = (b) => clamp(finite(Regions.coverageFor(nB - 1 - b, tone), 0.5), 0, 1);
+      if (x <= bandCentre(0)) return covAtBand(0);
+      for (let b = 1; b < nB; b++) {
+        const c0 = bandCentre(b - 1); const c1 = bandCentre(b);
+        if (x <= c1) {
+          const t = c1 > c0 + 1e-9 ? (x - c0) / (c1 - c0) : 1;
+          return covAtBand(b - 1) + (covAtBand(b) - covAtBand(b - 1)) * t;
+        }
+      }
+      return covAtBand(nB - 1);
+    };
+    // 'fineLadder' — rungs, still, but MANY. The count is derived, not chosen:
+    // one rung per 0.02 of the ladder's own coverage range (0.85 → 0.41 on the
+    // shipped default = 22 rungs), bounded so a degenerate ladder cannot ask for
+    // one rung or a thousand.
+    const FINE_RUNG_COV = 0.02;
+    let fineRungs = 0;
+    const fineRungCount = () => {
+      if (fineRungs) return fineRungs;
+      const env = toneEnvelope();
+      fineRungs = clamp(Math.round((env.covDark - env.covLight) / FINE_RUNG_COV), 8, 32);
+      return fineRungs;
+    };
+    const fineLadderCov = (I) => {
+      const env = toneEnvelope();
+      const n = fineRungCount();
+      const span = env.covDark - env.covLight;
+      if (span <= 1e-6 || n < 2) return env.covDark;
+      const c = clamp(ladderCurve(I), env.covLight, env.covDark);
+      const k = clamp(Math.round(((c - env.covLight) / span) * (n - 1)), 0, n - 1);
+      return clamp(env.covLight + (k / (n - 1)) * span, 0.02, 1);
+    };
+    // 'weightModulated' and 'layeredCross' both hold the GEOMETRY constant and
+    // put the tone somewhere else, so both read one coverage everywhere: the
+    // sparse end, i.e. the widest even pitch the sparse-end floor allows. It has
+    // to be the sparse end — a heavier pen or a second family can only ever ADD
+    // ink, so the even base must be the lightest value the drawing needs.
+    const flatCov = () => toneEnvelope().covLight;
+    // 'weightModulated' — the tone the geometry no longer carries, restated as
+    // pen weight. 1.0 in the light, up to covDark/covLight in the shadow, on the
+    // same ease. That ratio is chosen so the WEIGHTED ink density (length × pen
+    // width) traces the same dark/light ramp the ladder draws, which is what
+    // makes the two comparable at all.
+    const weightAt = (I) => {
+      const env = toneEnvelope();
+      const top = clamp(env.covDark / Math.max(1e-6, env.covLight), 1, 6);
+      return clamp(top + (1 - top) * ease(clamp(finite(I, 0), 0, 1)), 1, 6);
+    };
+    // 'layeredCross' — the engraver's zones, off intensity alone. No call into
+    // `Regions.formZone`, no `HL_STAGE.toneZones`: two cuts on I, placed at the
+    // ladder's own thresholds when it has them so the three families change over
+    // where the author said the tone does.
+    const xcCuts = () => {
+      const th = (tone && Array.isArray(tone.thresholds))
+        ? tone.thresholds.filter((t) => Number.isFinite(t)).slice().sort((a, b) => a - b) : [];
+      const lo = clamp(finite(th[0], 0.33), 0.02, 0.95);
+      const hi = clamp(finite(th[th.length - 1], 0.66), lo + 0.02, 0.98);
+      return { lo, hi };
+    };
+    const xcZoneOf = (smp) => {
+      const c = xcCuts();
+      const I = clamp(finite(smp && smp.I, 0), 0, 1);
+      if (I < c.lo) return 'X2';   // darks — three families
+      if (I < c.hi) return 'X1';   // mid-tones — two families
+      return 'X0';                 // light — one family
+    };
+    // The one entry point the emitter asks. `ladder` never reaches it.
+    const algoCoverage = (I) => {
+      if (TONE_ALGO === 'continuousPitch') return contPitchCov(I);
+      if (TONE_ALGO === 'fineLadder') return fineLadderCov(I);
+      if (TONE_ALGO === 'weightModulated' || TONE_ALGO === 'layeredCross') return flatCov();
+      return coverageForSample(I);
+    };
+
     // ── FORM ZONES on the curved path ──────────────────────────────────────────
     // The ladder's own coverage numbers cannot express T > F > R (Lambert is
     // clamped, so T, F and R are all I = 0), so the zone classifier in Regions
@@ -591,6 +770,11 @@
       return Math.pow(cosH, HL_EXP) >= HL_TH;
     };
     const zoneOf = (smp) => {
+      // 'layeredCross' owns the zone channel outright: its three families need a
+      // per-sample gate and this is the gate the emitter already has. Derived
+      // from intensity (see `xcZoneOf`) — `HL_STAGE.toneZones` stays off and
+      // `Regions.formZone` is never called, so nothing of Stage 2 leaks in.
+      if (TONE_ALGO === 'layeredCross' && toneOn) return xcZoneOf(smp);
       if (!zonesOn) return null;
       return Regions.formZone(smp.wN, smp.world, {
         tone,
@@ -666,6 +850,13 @@
       }
       return clamp(cov, 0, 1);
     };
+    // A zone gate is one zone name, as it always was. 'layeredCross' needs a
+    // family to span TWO zones (its mid-tone cross also runs through the darks),
+    // and splitting that into two gated families would re-phase the ladder at
+    // the zone edge and put a seam exactly where the tone is smoothest. So a
+    // gate may also be a LIST. A string gate takes the identical branch it
+    // always took, so the committed default is byte-identical.
+    const gateAllows = (g, z) => (Array.isArray(g) ? g.indexOf(z) >= 0 : z === g);
     const SHADOW_TH = 0.5; // intensity below which the dark-grading infill engages
 
     // I8 — LIGHT-DRIVEN highlight: the highlight region is where the per-sample
@@ -1029,6 +1220,12 @@
       // one stroke that happened to be cut at the parameter seam.
       let runTT0 = null;
       let runTT1 = null;
+      // 'weightModulated' only. The geometry is uniform, so the tone has to
+      // ride on the pen: this accumulates the run's own mean weight from the
+      // samples that actually joined it, which is finer than a per-ruling
+      // weight and is what lets a hatch line darken as it enters the shadow.
+      let wSum = 0;
+      let wCnt = 0;
       const mine = [];
       // Is this run WHOLLY inside the centre light? `null` until the first
       // sample lands; latches false as soon as a non-L sample is added. Read
@@ -1060,11 +1257,12 @@
         if (run.length >= 2 && runLen >= MIN_MARK_MM && !speck) {
           run.fam = fam;
           run.tt0 = runTT0; run.tt1 = runTT1;
+          if (TONE_ALGO === 'weightModulated' && wCnt > 0) run.weightScale = wSum / wCnt;
           mine.push(run);
           pushRun(run, back, lineIndex);
         }
         run = []; runLen = 0; softStart = false; runLit = null;
-        runTT0 = null; runTT1 = null;
+        runTT0 = null; runTT1 = null; wSum = 0; wCnt = 0;
       };
       return {
         emitted: () => mine,
@@ -1077,6 +1275,7 @@
           gapPts.push(pt);
           if (gapLen > BRIDGE_MM) { emitRun(true); gapPts = []; gapLen = 0; }
         },
+        noteW: (w) => { wSum += w; wCnt += 1; },
         addPt: (pt, zone, tt) => {
           runLit = (runLit === null) ? (zone === 'L') : (runLit && zone === 'L');
           if (!run.length) runTT0 = tt;
@@ -1279,8 +1478,14 @@
         // loop's cut in step.
         if (on && toneOn) {
           const z = zoneOf(smp);
-          zones[s] = z;
-          if (zoneGate && z !== zoneGate) smps[s] = null;
+          // 'layeredCross' uses the zone ONLY as a gate. If the zone label
+          // reached the span segmenter, family A — which is gated to nothing and
+          // must run the whole form — would be cut into one span per zone and
+          // could draw in the light and stop in the mid-tones, in open surface.
+          // So the label a surviving sample carries is the GATE it passed, not
+          // the zone it is in: one label per family ⇒ one span ⇒ one verdict.
+          zones[s] = (TONE_ALGO === 'layeredCross') ? (zoneGate ? String(zoneGate) : null) : z;
+          if (zoneGate && !gateAllows(zoneGate, z)) smps[s] = null;
         } else {
           zones[s] = null;
         }
@@ -1293,9 +1498,15 @@
       // variation from cutting the ruling again.
       const covAtSample = (smp, s, zone) => {
         const tt = s / nSteps;
-        const cov = zone
-          ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true, smp)
-          : coverageForSample(smp.I);
+        // The four alternatives own the coverage outright. They never route
+        // through `zoneCoverage`: under 'layeredCross' the zone label is a gate
+        // name ('X1,X2'), not a FORM_INK row, and asking Regions for its ink
+        // would be a category error. `ladder` takes the branch it always took.
+        const cov = (TONE_ALGO !== 'ladder')
+          ? algoCoverage(smp.I)
+          : (zone
+            ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true, smp)
+            : coverageForSample(smp.I));
         // §0, restated as arithmetic, and C15: past ~1.2 x pen width you do
         // not get darker by ruling closer — you get a flooded blob and a wet
         // plot. On a wrapped surface that limit is reached LOCALLY long
@@ -1567,7 +1778,7 @@
           // any span) and repeated here so the run is actually flushed.
           const zone = zones[s];
           sampleZone = zone;
-          if (zoneGate && zone !== zoneGate) { flush(); flushHL(); continue; }
+          if (zoneGate && !gateAllows(zoneGate, zone)) { flush(); flushHL(); continue; }
           let dropZone = spanDrop ? spanDrop[s] : false;
           let dutyBreak = false;
           // Dash duty — the reflected rim breaks its rulings rather than
@@ -1618,6 +1829,7 @@
         // no-ops unless the neighbouring sample is off the wanted side of the
         // surface, which is the only place a refinement is defined.
         if (s > 0 && !onSurf[s - 1]) { const e = edgeAt(s, s - 1); if (e) addPt(e, sampleZone, tt); }
+        if (TONE_ALGO === 'weightModulated' && toneOn) sink.noteW(weightAt(smp.I));
         addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
         if (s < nSteps && !onSurf[s + 1]) { const e = edgeAt(s, s + 1); if (e) addPt(e, sampleZone, tt); }
       }
@@ -2164,7 +2376,24 @@
       // (§2.3). This is what makes T out-ink F, which is the whole dip.
       // ROUND 8: the +65° is now measured in the SCREEN frame (see
       // emitScreenCross). One traced family serves all three passes.
+      // 'layeredCross' — tone by ADDING families, the engraver's answer.
+      // Family A (already emitted, at the flat sparse-end pitch) runs the whole
+      // form. A second family crosses it wherever the surface is at or below the
+      // mid-tone cut, and a third crosses both in the darks. Every family is
+      // internally even and continuous, because each is a full phase-ladder pass
+      // at ONE coverage; the tone is the COUNT of families over a point, not the
+      // spacing of any of them.
+      //
+      // +65° and +32° are the angles this file already uses for a second and
+      // third direction, and for the reason stated at `emitTerminatorCross`
+      // below: +90° reads as a square grid and beats against the raster.
+      const emitLayeredCross = (count, back) => {
+        const base = finite(opts.fillAngle, 0);
+        emitScreenCross(base, 65, count, back, ['X1', 'X2']);
+        emitScreenCross(base, 32, count, back, ['X2']);
+      };
       const emitTerminatorCross = (count, back) => {
+        if (TONE_ALGO === 'layeredCross') { if (toneOn) emitLayeredCross(count, back); return; }
         if (!zonesOn) return;
         const base = finite(opts.fillAngle, 0);
         emitScreenCross(base, Regions.CROSS_OBJ_DEG, count, back, 'T');
@@ -2246,7 +2475,9 @@
           const smp = snap ? sampleAt(wind, sweep) : sampleAt(sweep, wind);
           const on = Boolean(smp && smp.front === wantFront);
           sSmps[s] = on ? smp : null;
-          sZones[s] = (on && toneOn) ? zoneOf(smp) : null;
+          // 'layeredCross' has no gated family on the helix, so its intensity
+          // zones would only cut the spiral into per-zone spans for nothing.
+          sZones[s] = (on && toneOn && TONE_ALGO !== 'layeredCross') ? zoneOf(smp) : null;
           sTurn[s] = Math.floor(f * turns);
         }
         // Span key = (turn, zone). THE TURN HAS TO BE IN THE KEY, and this was
@@ -2271,7 +2502,9 @@
         if (HL_STAGE.dither && toneOn) {
           sDrop = useLadder
             ? spanDrops(sSmps, sKeys,
-              (smp, k) => (sZones[k] ? zoneCoverage(sZones[k], false) : coverageForSample(smp.I)),
+              (smp, k) => (TONE_ALGO !== 'ladder'
+                ? algoCoverage(smp.I)
+                : (sZones[k] ? zoneCoverage(sZones[k], false) : coverageForSample(smp.I))),
               // The helix's ruling index is the TURN, so the phase advances once
               // per turn (see ladderStep) and consecutive loops end up evenly
               // spaced instead of dropping in the power-of-two pattern a
@@ -2339,8 +2572,10 @@
               // starts a golden-ratio step further on than the row above, which
               // is the cheapest way to stop the rows lining up into columns.
               if (HL_STAGE.dither && useLadder) {
-                const zone = zoneOf(smp);
-                const cov = zone ? zoneCoverage(zone, false) : coverageForSample(smp.I);
+                const zone = TONE_ALGO === 'layeredCross' ? null : zoneOf(smp);
+                const cov = TONE_ALGO !== 'ladder'
+                  ? algoCoverage(smp.I)
+                  : (zone ? zoneCoverage(zone, false) : coverageForSample(smp.I));
                 if (!ladderKeeps(`stipple|${back ? 'B' : 'F'}|${r}`, clamp(cov, 0, 1),
                   (r * GOLDEN_STEP) % 1)) continue;
               } else if (HL_STAGE.dither) {

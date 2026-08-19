@@ -2674,7 +2674,16 @@
               } else if (isHL) {
                 emitRuns(clip.runs, hlMeta, hiddenTreatment, null, hlTreat);
               } else {
-                emitRuns(clip.runs, fillMeta, hiddenTreatment, null, frontTreat);
+                // A curved-fill line may carry its OWN pen weight — the
+                // 'weightModulated' tone law in surface-fill.js holds the ruling
+                // geometry uniform and states the tone as stroke width instead.
+                // Absent (every other law), the meta is untouched and the output
+                // is byte-identical.
+                const rawW = Number(line.weightScale);
+                const lineMeta = (Number.isFinite(rawW) && rawW !== 1)
+                  ? { ...fillMeta, weightScale: round3(clamp(rawW, 0.1, 6)) }
+                  : fillMeta;
+                emitRuns(clip.runs, lineMeta, hiddenTreatment, null, frontTreat);
               }
             });
           });
