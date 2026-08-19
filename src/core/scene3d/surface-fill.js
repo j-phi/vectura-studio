@@ -424,6 +424,25 @@
     // ladder coverage, never below LIT_FLOOR outright. It still reads as a glint
     // (specular on is measurably lighter than specular off, and the ladder's
     // ordering is untouched) without gouging the fill.
+    //
+    // THE SPARSE-END FLOOR IS A PITCH, NOT A CONSTANT — AND IT IS NOT APPLIED
+    // HERE. `zoneCoverage` below floors the lit band at `litFloorCov`, derived
+    // from the master pitch so the lit band's SPACING can never exceed
+    // `litMaxPitchPen() × pen` (3.6 mm at a 0.3 mm pen). This function floors it
+    // at the bare constant `LIT_FLOOR`, which cannot know what pitch it buys.
+    //
+    // That is deliberate, and the reason is the scale it is applied at. This is
+    // a PER-SAMPLE coverage: the span verdict averages it over a whole ruling,
+    // so raising it here lifts every ruling that so much as clips the centre
+    // light. Measured: floored here at `litFloorCov`, the app-default sphere's
+    // lit cap went from 0.425 to 0.739 mm of ink per mm² — DENSER than its own
+    // core shadow (0.567) — and the 62 mm contour ramp fell from 1.87x to 1.72x,
+    // under the 1.8x bar `scene3d-fill-span-verdict` sets for "the drawing still
+    // shades". The bar is right and the floor is right; the SCALE was wrong.
+    //
+    // So the pitch bar is charged once per SPAN, in the verdict itself (see
+    // `litSpanFloor` in emitLine), on the rulings that actually lie in the
+    // centre light. See there for the numbers.
     const coverageForSample = (I) => {
       const b = Regions.band(I, tone);
       // b: 0..nB-1, bright = HIGH
@@ -1239,6 +1258,36 @@
       // first and last spans are therefore one span, not two.
       const closedSweep = Boolean(smps[0] && smps[nSteps]
         && Math.hypot(smps[0].x - smps[nSteps].x, smps[0].y - smps[nSteps].y) < SEAM_JOIN_MM);
+      // ── THE CENTRE LIGHT'S PITCH BAR, CHARGED ONCE PER SPAN ─────────────────
+      // §5.4 #1 / O6: the lit band must still carry ink, because a highlight is
+      // defined by the ink AROUND it and a surround ruling at 17 × pen has none.
+      // The emitter states that bar in millimetres — `litMaxPitchPen() × pen` —
+      // and `litFloorCov` is the coverage that buys exactly that pitch off the
+      // master grid. `zoneCoverage` charges it; `coverageForSample` cannot,
+      // because it is per-sample and the verdict is per-span.
+      //
+      // Since HL_STAGE Stage 0 turned `toneZones` off, `zoneOf` returns null for
+      // every sample, so the whole object runs on the ladder path — and the bar
+      // went with the zones. Measured on the app-default scene (sphere r 25,
+      // detail 28, pen 0.3, Density 50, hatch): masterPitch 1.491 mm, so the
+      // ladder's top rung (coverage 0.20) rules the centre light at 7.46 mm
+      // against a 3.6 mm bar. On a 50 mm ball that is a bare wedge running from
+      // the pole to the silhouette — reported from the app, and invisible on the
+      // 62 mm test rig because the defect is a fixed number of MILLIMETRES and
+      // that fixture is 2.5x wider.
+      //
+      // A span whose midpoint sits in the top tone band is a ruling that lies in
+      // the centre light, so it is the one the bar is about. Charging it here
+      // rather than in `coverageForSample` is what keeps the ladder intact:
+      // per-sample it also lifted every ruling that merely clips the lit cap,
+      // which drove the cap denser than the core shadow and took the 62 mm
+      // contour ramp under its 1.8x bar (see coverageForSample).
+      const litBand = nB - 1;
+      const litSpanFloor = (cov, mid) => {
+        const smp = smps[mid];
+        if (!smp || zones[mid]) return cov;        // zones own their own floor
+        return Regions.band(smp.I, tone) === litBand ? Math.max(cov, litFloorCov) : cov;
+      };
       // One verdict per span, for the whole ruling, computed before any ink is
       // laid. `null` when the dither is off — every sample then draws.
       let spanDrop = null;
@@ -1256,7 +1305,7 @@
             // only kind of re-start that is left. Raising the bar to start can
             // only ever REMOVE ink, so the composed C15/§0 budget is untouched.
             const margin = (HL_STAGE.hysteresis && restarting) ? hystFor(cov) : 0;
-            return rank >= cov + jit - margin;
+            return rank >= litSpanFloor(cov, mid) + jit - margin;
           }, closedSweep)
           // Legacy, no-ladder callers: the same law, on the same quantity they
           // always compared (local shade against the line's geometric rank).
