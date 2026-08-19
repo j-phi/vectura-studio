@@ -209,6 +209,30 @@
     return darkCeilConst() * clamp(weight / darkestWeightConst(), 0, 1);
   };
   const MASTER_MAX_LINES = 420;  // pathological-input guard (steps × lines)
+  // ── UNCAPPED MODE — comparison only, NEVER the committed default ────────────
+  //
+  // Jay, on the ten-law comparison: "no limit on the number of lines you may use
+  // — focus on nailing the lighting." The last round's renders were shaped as
+  // much by the line budget as by the tone law, so the budget comes off and
+  // exactly ONE physical limit is left standing: the PLOT FLOOR. Below ~1.2 x
+  // pen width real ink floods and the plot comes off the bed wet; this repo has
+  // always stated that bar as `PLOT_FLOOR_PEN` = 2.2 x pen, which is stricter,
+  // and it is NOT relaxed here.
+  //
+  // What is lifted, and where:
+  //   - MASTER_MAX_LINES        → `maxLines()`, 4000 instead of 420
+  //   - the masterPitch clamp   → the master grid is ruled AT the plot floor, so
+  //                               a tone law may ask for any pitch down to it
+  //   - the density-derived N   → follows from the pitch above
+  // What replaces them: a per-sample clamp `cov ≤ localPitch / floorPitch`, so
+  // the floor is enforced where the geometry actually crowds (a sphere's
+  // meridians converge to nothing at the poles) rather than on a global average.
+  // Every clamp is counted and reported — see `floorStat` / `lastFloorStats`.
+  const TONE_UNCAPPED = false;
+  const UNCAPPED_MAX_LINES = 4000;
+  const maxLines = () => (TONE_UNCAPPED ? UNCAPPED_MAX_LINES : MASTER_MAX_LINES);
+  // The last uncapped build's floor report. `null` in the committed build.
+  let lastFloorStats = null;
   // RULING CONTINUITY (see emitLine). The scale at which a break stops reading
   // as a break and starts reading as a wobble in one line, and at which a mark
   // stops reading as a stroke and starts reading as a speck. Stated in pen
@@ -300,7 +324,51 @@
   //                     darks. Each family internally even and continuous. The
   //                     classic engraving answer. Its zones come from intensity
   //                     directly — `HL_STAGE.toneZones` stays off.
+  //
+  // ── FIVE MORE, AIMED AT THE LIGHTING RATHER THAN AT THE SPACING ─────────────
+  //
+  // The first five are TONE-TRANSFER laws: they differ in how a coverage number
+  // becomes placement. These five differ in what the coverage number MEANS.
+  //
+  //   'perceptualRamp'    the literal reading of "nail the lighting". Line
+  //                       density does not map linearly to perceived grey, so
+  //                       the intensity→coverage map goes through a calibrated
+  //                       tone response (Murray-Davies ink area → CIE L*) and is
+  //                       INVERTED, so apparent darkness on paper is linear in
+  //                       scene radiance. It also divides by the LOCAL screen
+  //                       pitch, which takes the chart's foreshortening out of
+  //                       the answer: the grey then tracks the light and only
+  //                       the light.
+  //   'crossFade'         layeredCross's tonal strength without its two fatal
+  //                       flaws. The second and third families are NOT zone
+  //                       confined and are never gated: they fade in by
+  //                       CONTINUOUS density, starting sparse and thickening, so
+  //                       there is no traceable band edge and no ruling ever
+  //                       terminates mid-surface. The composed target is split
+  //                       across the families by 1 − Π(1 − a_k), so the three
+  //                       together hit the target exactly instead of stacking.
+  //   'contourFlow'       the rulings follow the LIGHTING instead of the chart.
+  //                       Streamlines of the intensity field: 'iso' runs along
+  //                       the iso-intensity curves, 'grad' runs down the
+  //                       gradient (their orthogonals). The drawing's line
+  //                       DIRECTION then describes the light, which is what a
+  //                       hand engraver does. Coverage is perceptualRamp's.
+  //   'errorDiffused'     perceptualRamp's target, placed by 1-D error diffusion
+  //                       with a two-tap carry instead of by a phase
+  //                       accumulator. Aperiodic by construction, so no banding
+  //                       and no moiré against the raster, at the cost of the
+  //                       Sturmian word's two-consecutive-gaps guarantee.
+  //   'fullLightingModel' not a tone-transfer law at all — a SHADING MODEL.
+  //                       Highlight, mid-tone, terminator, core shadow and
+  //                       reflected/bounce light are each rendered as their own
+  //                       term, with specular kept separate from diffuse, and
+  //                       the composed darkness is then run through the same
+  //                       calibrated response perceptualRamp inverts.
   const TONE_ALGO = 'ladder';
+  // 'contourFlow' only: which streamline family the rulings follow.
+  //   'iso'  along the iso-intensity curves
+  //   'grad' down the intensity gradient (their orthogonals)
+  const FLOW_MODE = 'iso';
 
   // ── THE LADDER IS PHASE-STEPPED, NOT BIT-REVERSED ───────────────────────────
   //
@@ -625,7 +693,13 @@
       if (toneEnv) return toneEnv;
       const covs = [];
       for (let b = 0; b < nB; b++) covs.push(clamp(finite(Regions.coverageFor(b, tone), 0.5), 0, 1));
-      const covDark = clamp(covs.length ? Math.max.apply(null, covs) : 0.85, 0.05, 1);
+      // UNCAPPED: the dark end is the PLOT FLOOR itself, not the ladder's densest
+      // rung. The rung is a budget decision ("going denser than the author asked
+      // is not this exercise's business") and the budget is exactly what has
+      // been lifted; with the master grid ruled AT the floor, coverage 1 is the
+      // floor, and that is the darkest legal tone rather than an authored one.
+      const covDark = TONE_UNCAPPED ? 1
+        : clamp(covs.length ? Math.max.apply(null, covs) : 0.85, 0.05, 1);
       const rawLight = covs.length ? Math.min.apply(null, covs) : 0.2;
       // The sparse end never goes BELOW the O6 pitch bar, and never above the
       // dark end (a degenerate one-rung ladder collapses to a flat field, which
@@ -733,6 +807,158 @@
       if (I < c.hi) return 'X1';   // mid-tones — two families
       return 'X0';                 // light — one family
     };
+    // ── LAWS 6–10: THE LIGHTING, NOT THE SPACING ───────────────────────────────
+    //
+    // THE TONE RESPONSE, AND WHY IT HAS TO BE INVERTED.
+    //
+    // Line density does NOT map linearly onto perceived grey, and it fails in
+    // two separate places:
+    //
+    //   (1) INK AREA is linear in density but perceived LIGHTNESS is not linear
+    //       in ink area. Parallel rulings of width w at screen pitch p lay down
+    //       an area fraction a = w/p (Murray-Davies; they do not overlap, which
+    //       is what the plot floor guarantees). Paper reflectance is Y = 1 − a,
+    //       and the eye reads Y through a cube root — CIE L*. So a drawing whose
+    //       DENSITY ramps linearly has a GREY that crowds into the darks: half
+    //       the ink is nowhere near half the apparent tone.
+    //
+    //   (2) THE CHART FORESHORTENS. `masterPitch` is a median over the form; the
+    //       pitch that actually lands at a sample is `localPitch`, and on a
+    //       sphere that varies by an order of magnitude between the equator and
+    //       the pole. A law stated in coverage alone therefore draws the CHART's
+    //       geometry as tone on top of the light's.
+    //
+    // Laws 6–10 all correct both: they name a target APPARENT AREA as a function
+    // of the light, and then divide by the pitch that is actually here. What is
+    // left is a drawing whose grey is a function of scene radiance and of
+    // nothing else — which is the whole of "nail the lighting".
+    const Lstar = (Y) => { const t = clamp(finite(Y, 1), 0, 1); return t > 0.008856 ? 116 * Math.cbrt(t) - 16 : 903.3 * t; };
+    const invLstar = (L) => { const l = Math.max(0, finite(L, 100)); return l > 8 ? Math.pow((l + 16) / 116, 3) : l / 903.3; };
+    // The nib lays a line wider than its nominal width — ink spreads into the
+    // paper. One fitted constant, and the only one: it is measured back out of
+    // the render by the apparent-tone metric, so a wrong value shows up as a
+    // bowed response rather than hiding.
+    const INK_SPREAD = 0.12;
+    const inkWidth = () => penWidth * (1 + INK_SPREAD);
+    const areaAt = (pitch) => clamp(inkWidth() / Math.max(1e-6, pitch), 0, 0.98);
+    // The apparent-tone envelope. BOTH ENDS ARE PHYSICAL and neither is chosen:
+    // darkest = the plot floor, lightest = the O6 sparse bar (`litMaxPitchPen()`
+    // x pen, the pitch past which the centre light has no ink for a highlight to
+    // be blank against). On the shipped 0.3 mm pen that is 0.66 mm → 3.6 mm, so
+    // the widest tone ramp any law can draw is 5.45 : 1 in pitch. Every ramp
+    // number below should be read against that ceiling, not against infinity.
+    let toneAmp = null;
+    const apparentEnvelope = () => {
+      if (toneAmp) return toneAmp;
+      const env = toneEnvelope();
+      const pDark = masterPitch > 1e-6 ? masterPitch / Math.max(1e-6, env.covDark) : floorPitch;
+      const pLight = masterPitch > 1e-6 ? masterPitch / Math.max(1e-6, env.covLight) : litMaxPitchPen() * penWidth;
+      toneAmp = { aDark: areaAt(pDark), aLight: areaAt(pLight), pDark, pLight };
+      return toneAmp;
+    };
+    // Radiance → target ink area, such that PERCEIVED grey is linear in radiance.
+    // Interpolate in L* (which is the perceptual axis), then invert back through
+    // Y = 1 − a to get the area a ruling field must actually lay down.
+    const areaForTone = (I, aDark, aLight) => {
+      const Ld = Lstar(1 - clamp(aDark, 0, 0.98));
+      const Ll = Lstar(1 - clamp(aLight, 0, 0.98));
+      const L = Ld + (Ll - Ld) * clamp(finite(I, 0), 0, 1);
+      return clamp(1 - invLstar(L), 0, 0.98);
+    };
+    const targetArea = (I) => { const e = apparentEnvelope(); return areaForTone(I, e.aDark, e.aLight); };
+    // Target area → coverage AT THIS SAMPLE. Dividing by the measured local
+    // pitch is what removes the projection from the answer (see (2) above).
+    // Falls back to the master pitch where the frame is degenerate — a pole or
+    // the silhouette, where "the pitch between adjacent rulings" has no answer.
+    const covForArea = (area, localPitch) => {
+      const p = (Number.isFinite(localPitch) && localPitch > 1e-6) ? localPitch : masterPitch;
+      if (!(p > 1e-6)) return clamp(finite(area, 0), 0, 1);
+      return clamp((clamp(finite(area, 0), 0, 0.98) * p) / inkWidth(), 0.005, 1);
+    };
+    // 'perceptualRamp'
+    const perceptualCov = (I, localPitch) => covForArea(targetArea(I), localPitch);
+
+    // 'crossFade' — layeredCross's three layers, un-gated and continuous.
+    //
+    // Which of the three families is emitting. Set by `emitCrossFade`; family A
+    // is layer 0 and is the default, so a build that never reaches the cross
+    // emitter behaves exactly as one family.
+    let xfLayer = 0;
+    // The composed ceiling in the deepest shadow. Three families each at the
+    // plot floor would compose to solid black, so the DARK end of crossFade's
+    // envelope is stated as an area and split, never as three independent
+    // floors. 0.72 is `Regions.TOTAL_DARK_CEIL`-shaped: dark enough to read as
+    // the darkest tone on the form, short of a flooded blob.
+    const XF_MAX_AREA = 0.72;
+    // Each layer's WEIGHT at this radiance. Layer 0 runs everywhere; layer 1
+    // fades in from just off the highlight; layer 2 from the mid-tones. The
+    // fades are smootherstepped, so no layer has an edge anywhere — that is the
+    // whole point, and it is what layeredCross's zone cuts could not do.
+    const xfWeights = (I) => {
+      const s = 1 - clamp(finite(I, 0), 0, 1);
+      return [1, ease(clamp((s - 0.10) / 0.90, 0, 1)), ease(clamp((s - 0.45) / 0.55, 0, 1))];
+    };
+    const crossFadeCov = (I, localPitch) => {
+      const e = apparentEnvelope();
+      const total = areaForTone(I, XF_MAX_AREA, e.aLight);
+      const w = xfWeights(I);
+      const W = w[0] + w[1] + w[2];
+      const share = W > 1e-9 ? clamp(w[clamp(Math.round(xfLayer), 0, 2)] / W, 0, 1) : 1;
+      // Perceived coverage composes as 1 − Π(1 − a_k), so a_k = 1 − (1 − total)^share
+      // makes the three families compose to EXACTLY `total`. Additive shares
+      // would undershoot by a third; independent floors would flood.
+      const a = 1 - Math.pow(1 - clamp(total, 0, 0.98), share);
+      return covForArea(a, localPitch);
+    };
+
+    // 'fullLightingModel' — the whole shading anatomy, five terms, each its own.
+    //
+    // Everything above ramps DIFFUSE. This one renders the parts a draughtsman
+    // actually names, so each reads distinctly on the page:
+    //   (a) diffuse mid-tone       — plain Lambert
+    //   (b) terminator             — the tone turns over fast HERE, so the ramp
+    //                                steepens across the band where n·L ≈ 0
+    //   (c) core shadow            — the darkest tone on the form sits just PAST
+    //                                the terminator, not at the silhouette
+    //   (d) reflected / bounce     — ground light lifting the shadow's far edge,
+    //                                which is what stops a shadow reading as a
+    //                                hole cut in the form
+    //   (e) specular               — its own term with its own much tighter
+    //                                falloff, SUBTRACTED from the diffuse tone
+    //                                rather than folded into it
+    // The signed (unclamped) Lambert is what makes (b), (c) and (d) separable at
+    // all: `smp.I` is clamped, so the entire dark side of the form is I = 0 and
+    // has no anatomy left in it.
+    const FLM_CORE_AMPL = 0.30;
+    const FLM_TERM_AMPL = 0.10;
+    const FLM_BOUNCE_AMPL = 0.34;
+    const FLM_SPEC_AMPL = 0.85;
+    const FLM_SHININESS = 42;
+    const flmDarkness = (smp) => {
+      if (!smp) return 0.5;
+      const I = clamp(finite(smp.I, 0), 0, 1);
+      let D = 1 - I;                                   // (a) DIFFUSE
+      const lights = zoneCtx ? zoneCtx.lights : null;
+      const nl = (lights && typeof Regions.signedLambert === 'function')
+        ? clamp(finite(Regions.signedLambert(smp.wN, smp.world, lights), 0), -1, 1)
+        : (I > 0 ? I : -0.5);
+      const w = clamp(finite(zoneCtx && zoneCtx.terminatorNL, finite(Regions.TERMINATOR_NL, 0.22)), 0.05, 0.6);
+      D += FLM_TERM_AMPL * (1 - Math.abs(clamp(nl / w, -1, 1)));   // (b) TERMINATOR
+      const u = (nl + 1.35 * w) / (0.85 * w);                      // (c) CORE SHADOW
+      D += FLM_CORE_AMPL * Math.exp(-u * u);
+      const lift = (typeof Regions.reflectedLift === 'function')   // (d) BOUNCE
+        ? clamp(finite(Regions.reflectedLift(smp.wN, smp.world, zoneCtx && zoneCtx.ground), 0), 0, 1) : 0;
+      D -= FLM_BOUNCE_AMPL * lift * ease(clamp((-nl - 2 * w) / Math.max(1e-6, 1 - 2 * w), 0, 1));
+      if (lights && typeof Regions.specularTerm === 'function') {  // (e) SPECULAR
+        D -= FLM_SPEC_AMPL * clamp(finite(Regions.specularTerm(smp.wN, smp.world, lights, opts.camAngles, FLM_SHININESS), 0), 0, 1);
+      }
+      return clamp(D, 0, 1);
+    };
+    const flmCov = (smp, localPitch) => {
+      const e = apparentEnvelope();
+      return covForArea(areaForTone(1 - flmDarkness(smp), e.aDark, e.aLight), localPitch);
+    };
+
     // The one entry point the emitter asks. `ladder` never reaches it.
     // `isCross` is true on a zone-gated pass, which only 'layeredCross' emits.
     // Those passes draw FULLY: an added family is the tone, so laddering it
@@ -740,11 +966,20 @@
     // before this: the +65° family builds 13 rulings over the object, the gate
     // keeps the ones that reach the zone and the ladder at 0.41 then took the
     // survivors to ZERO — the mid-tone cross did not appear at all.
-    const algoCoverage = (I, isCross) => {
+    const algoCoverage = (I, isCross, smp, localPitch) => {
       if (TONE_ALGO === 'continuousPitch') return contPitchCov(I);
       if (TONE_ALGO === 'fineLadder') return fineLadderCov(I);
       if (TONE_ALGO === 'layeredCross') return isCross ? 1 : flatCov();
       if (TONE_ALGO === 'weightModulated') return flatCov();
+      // 6, 8 and 9 share ONE tone target and differ only in placement —
+      // perceptualRamp rules straight families, contourFlow rules streamlines of
+      // the light, errorDiffused changes the selection rule. Holding the target
+      // fixed is what makes the three comparable at all.
+      if (TONE_ALGO === 'perceptualRamp' || TONE_ALGO === 'contourFlow' || TONE_ALGO === 'errorDiffused') {
+        return perceptualCov(I, localPitch);
+      }
+      if (TONE_ALGO === 'crossFade') return crossFadeCov(I, localPitch);
+      if (TONE_ALGO === 'fullLightingModel') return flmCov(smp, localPitch);
       return coverageForSample(I);
     };
 
@@ -992,6 +1227,12 @@
     let N = lineCountFor(finite(opts.fillDensity, 50));
     let masterPitch = 0;
     let densityOverflow = 0; // Density past the plot floor, spent on a 2nd direction
+    // WHERE THE PLOT FLOOR BINDS. In uncapped mode the floor is the only limit
+    // left, so it is the only thing standing between the tone law and the
+    // lighting — and it has to be reported, not assumed. Counted per sample and
+    // per ruling; `worst` is the deepest overdraw the law asked for, as a
+    // multiple of the coverage the floor allowed.
+    const floorStat = { samples: 0, clamped: 0, rulings: new Set(), touched: new Set(), worst: 1 };
     const penWidth = Math.max(0.02, finite(opts.penWidth, 0.3));
     if (HL_STAGE.masterGrid && useLadder && opts.penWidth != null) {
       // Calibrate off the MEDIAN local pitch the family will actually rule at,
@@ -1020,6 +1261,29 @@
       if (widths.length >= 8) {
         widths.sort((x, y) => x - y);
         const median = widths[widths.length >> 1];
+        // ── WHERE THE GRID IS CALIBRATED, AND WHY UNCAPPED MOVES IT ───────────
+        //
+        // The capped build calibrates on the MEDIAN local pitch, for the reason
+        // stated above: a budgeted grid sized off the crowded end would put the
+        // whole ladder on the plot floor and flatten it.
+        //
+        // With the budget lifted that trade is gone, and the median becomes the
+        // thing standing between the law and the lighting. A tone law asks for a
+        // spacing; it gets `localPitch / cov`, and coverage cannot exceed 1 — so
+        // the DARKEST tone is reachable only where `localPitch` is at or below
+        // the darkest target pitch. Calibrated on the median, that is half the
+        // surface, and the other half saturates at coverage 1 and simply cannot
+        // go darker. Measured, first cut: the perceptual ramp came back with an
+        // apparent-tone span of 6.1 L* against a designed 16, and an R² of
+        // 0.008 — the drawing had no ramp in it at all, and the law was not the
+        // reason.
+        //
+        // So uncapped calibrates on the 90th percentile: the grid is fine enough
+        // that 90 % of the surface can reach the floor, and the crowded tenth is
+        // handled where crowding belongs — by the floor clamp, which is counted.
+        const calib = TONE_UNCAPPED
+          ? widths[Math.min(widths.length - 1, Math.floor(widths.length * 0.9))]
+          : median;
         // ── DENSITY IS THE DIAL; THE FLOOR ONLY CATCHES THE SPARSE END ────────
         //
         // Round 3 sized the grid at a FIXED master pitch, and I claimed "Density
@@ -1047,13 +1311,25 @@
         const litCov = clamp(Regions.formInk('L').coverage, 0.05, 1);
         const o6Pitch = litMaxPitchPen() * penWidth * litCov;
         const floorPen = PLOT_FLOOR_PEN * penWidth;
-        masterPitch = Math.min(tonePitch, o6Pitch);
-        if (masterPitch < floorPen) {
-          densityOverflow = clamp(floorPen / masterPitch - 1, 0, 1);
+        if (TONE_UNCAPPED) {
+          // THE BUDGET IS OFF. The master grid is ruled at the plot floor
+          // itself, which is the finest grid ink allows, so the tone law can ask
+          // for any pitch from the floor upward and get it. Density's own pitch
+          // (`tonePitch`) and the O6 sparse-end pitch no longer choose the grid
+          // — the first is a budget, the second is a bar the LAW must clear and
+          // still does, through `litFloorCov` at the sparse end of the envelope.
+          // No overflow: there is no excess to spill when the grid IS the floor.
           masterPitch = floorPen;
+          densityOverflow = 0;
+        } else {
+          masterPitch = Math.min(tonePitch, o6Pitch);
+          if (masterPitch < floorPen) {
+            densityOverflow = clamp(floorPen / masterPitch - 1, 0, 1);
+            masterPitch = floorPen;
+          }
         }
-        N = clamp(Math.max(4, Math.round(median / masterPitch)), 4, MASTER_MAX_LINES);
-        masterPitch = median / N; // what the family ACTUALLY rules at, typically
+        N = clamp(Math.max(4, Math.round(calib / masterPitch)), 4, maxLines());
+        masterPitch = calib / N; // what the family ACTUALLY rules at, typically
       }
     }
     // Coverage at which family A's spacing is exactly LIT_MAX_PITCH_PEN × pen —
@@ -1206,7 +1482,32 @@
     // successive rulings are the ones that neighbour each other on the form, so
     // they are the ones that must be evenly spaced against each other).
     const ladderPhase = new Map();
+    // 'errorDiffused' — the SAME target density, placed by 1-D error diffusion
+    // instead of by a phase accumulator.
+    //
+    // A phase accumulator is already the degenerate case of error diffusion: one
+    // tap, all of the residual carried to the very next ruling. That is what
+    // makes it Sturmian — at a constant coverage the gaps are exactly
+    // floor(1/c) and ceil(1/c), the most even a subset of an integer grid can
+    // be, and also perfectly PERIODIC, which is what beats against a regular
+    // form and against the raster. Splitting the carry two ways (2/3 to i+1, 1/3
+    // to i+2) keeps the running error bounded — so the field is still locally
+    // even by construction, and still exactly hits the requested density over
+    // any long run — while destroying the period. No banding, no moiré, and no
+    // guarantee that the gap set is two consecutive integers: that guarantee is
+    // exactly what is being traded away, and the measured gap set shows it.
+    const edState = new Map();
+    const edKeeps = (key, cov, seed) => {
+      const st = edState.get(key)
+        || { e1: Number.isFinite(seed) ? seed - 0.5 : 0, e2: 0 };
+      const v = clamp(finite(cov, 0), 0, 1) + st.e1;
+      const keep = v >= 0.5;
+      const err = v - (keep ? 1 : 0);
+      edState.set(key, { e1: st.e2 + err * (2 / 3), e2: err * (1 / 3) });
+      return keep;
+    };
     const ladderKeeps = (key, cov, seed) => {
+      if (TONE_ALGO === 'errorDiffused') return edKeeps(key, cov, seed);
       const prev = ladderPhase.has(key)
         ? ladderPhase.get(key)
         : (Number.isFinite(seed) ? seed : LADDER_PHASE0);
@@ -1505,15 +1806,47 @@
       // variation from cutting the ruling again.
       const covAtSample = (smp, s, zone) => {
         const tt = s / nSteps;
+        // THE LOCAL PITCH IS MEASURED FIRST. Laws 6-10 are stated in APPARENT
+        // AREA, not in coverage, so they need the pitch that actually lands here
+        // in order to say what coverage buys that area (see `covForArea`). The
+        // hoist is pure — `localPitch` never depended on `cov` — and `ladder`
+        // and laws 1-5 read exactly the value they always did.
+        //
+        // `pitchStep` / `lineDir` are constants for a straight parameter-
+        // space family and FUNCTIONS OF tt for the screen-frame crossed
+        // family, whose direction — and therefore whose neighbour offset —
+        // varies along the line. Everything downstream is unchanged.
+        const stepHere = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
+        const dirHere = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
+        const localPitch = perpPitch(smp, stepHere, dirHere);
         // The four alternatives own the coverage outright. They never route
         // through `zoneCoverage`: under 'layeredCross' the zone label is a gate
         // name ('X1,X2'), not a FORM_INK row, and asking Regions for its ink
         // would be a category error. `ladder` takes the branch it always took.
-        const cov = (TONE_ALGO !== 'ladder')
-          ? algoCoverage(smp.I, Boolean(zoneGate))
+        let cov = (TONE_ALGO !== 'ladder')
+          ? algoCoverage(smp.I, Boolean(zoneGate), smp, localPitch)
           : (zone
             ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true, smp)
             : coverageForSample(smp.I));
+        // ── THE ONE PHYSICAL LIMIT LEFT IN UNCAPPED MODE ──────────────────────
+        // Budget off, floor on. `HL_STAGE.coverageCap` is a different law (a
+        // composed DARKNESS ceiling, `myCeil`) and stays off; this is the craft
+        // rule and nothing else — a family may not rule closer than
+        // `PLOT_FLOOR_PEN x pen`, measured where the geometry actually crowds.
+        // Counted, because "where does the floor bind" is now the only question
+        // standing between the law and the lighting.
+        if (TONE_UNCAPPED && localPitch != null && localPitch > 1e-6 && floorPitch > 1e-6) {
+          const capF = clamp(localPitch / floorPitch, 0, 1);
+          const rk = `${ladderKey}|${lineIndex}`;
+          floorStat.samples += 1;
+          floorStat.touched.add(rk);
+          if (cov > capF + 1e-9) {
+            floorStat.clamped += 1;
+            floorStat.rulings.add(rk);
+            if (capF > 1e-9 && cov / capF > floorStat.worst) floorStat.worst = cov / capF;
+            cov = capF;
+          }
+        }
         // §0, restated as arithmetic, and C15: past ~1.2 x pen width you do
         // not get darker by ruling closer — you get a flooded blob and a wet
         // plot. On a wrapped surface that limit is reached LOCALLY long
@@ -1524,13 +1857,6 @@
         // allows — by dropping rulings — and it is what keeps the lit end of
         // the ladder separable instead of saturating into the dark end.
         let cap = 1;
-        // `pitchStep` / `lineDir` are constants for a straight parameter-
-        // space family and FUNCTIONS OF tt for the screen-frame crossed
-        // family, whose direction — and therefore whose neighbour offset —
-        // varies along the line. Everything downstream is unchanged.
-        const stepHere = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
-        const dirHere = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
-        const localPitch = perpPitch(smp, stepHere, dirHere);
         if (HL_STAGE.coverageCap && localPitch != null) {
           // Effective pitch is localPitch / coverage and must stay at or above
           // the floor, so the darkest zone may not exceed localPitch/floor.
@@ -2068,9 +2394,60 @@
     // gate, the F gate and the Density-overflow pass all emit the SAME geometry
     // and differ only in which zone they are allowed to draw in, so tracing once
     // makes the new family cheaper than the three straight ones it replaces.
+    // ── 'contourFlow' — THE RULING DIRECTION IS THE LIGHT ──────────────────────
+    //
+    // Every other law here rules along the chart and varies the SPACING. This
+    // one rules along the LIGHTING and lets the direction carry it, which is
+    // what a hand engraver does: the strokes wrap a sphere because the light
+    // wraps it, not because the parameterisation does.
+    //
+    // The intensity used is the SIGNED (unclamped) Lambert wherever the lights
+    // are in scope. `smp.I` is clamped, so the whole dark side of a form is
+    // I = 0 and its gradient vanishes — the field would have no direction at all
+    // over exactly the half of the object this is supposed to describe.
+    //
+    //   'iso'  the level-set tangent, (−I_b, I_a) in the parameter square. This
+    //          is coordinate-covariant: the level set of I is the same curve
+    //          whatever chart names it, so no pullback is needed and none is
+    //          done.
+    //   'grad' the steepest-descent direction ON SCREEN, which is the honest
+    //          orthogonal — perpendicularity is a screen property and the chart
+    //          is not conformal. ∇_screen I = J^-T ∇_param I, then pulled back
+    //          through `pullbackDir` exactly as the +65° family is.
+    const FLOW_H = 1 / 256;
+    const flowIntensity = (smp) => {
+      if (!smp) return null;
+      const lights = zoneCtx ? zoneCtx.lights : null;
+      if (lights && typeof Regions.signedLambert === 'function') {
+        return finite(Regions.signedLambert(smp.wN, smp.world, lights), finite(smp.I, 0));
+      }
+      return finite(smp.I, 0);
+    };
+    const flowDir = (p, mode) => {
+      const smp = sampleAt(p.a, p.b);
+      if (!smp) return null;
+      const sA1 = sampleAt(clamp(p.a + FLOW_H, 0, 1), p.b);
+      const sA0 = sampleAt(clamp(p.a - FLOW_H, 0, 1), p.b);
+      const sB1 = sampleAt(p.a, clamp(p.b + FLOW_H, 0, 1));
+      const sB0 = sampleAt(p.a, clamp(p.b - FLOW_H, 0, 1));
+      if (!sA1 || !sA0 || !sB1 || !sB0) return null;
+      const Ia = flowIntensity(sA1) - flowIntensity(sA0);
+      const Ib = flowIntensity(sB1) - flowIntensity(sB0);
+      const m = Math.hypot(Ia, Ib);
+      if (!(m > 1e-12)) return null;   // the light is flat here; caller falls back
+      if (mode !== 'grad') return { a: -Ib / m, b: Ia / m };
+      if (!smp.dA || !smp.dB) return null;
+      const det = smp.dA.x * smp.dB.y - smp.dB.x * smp.dA.y;
+      const scale = Math.hypot(smp.dA.x, smp.dA.y) * Math.hypot(smp.dB.x, smp.dB.y);
+      if (!(Math.abs(det) > CROSS_MIN_DET * Math.max(1e-12, scale))) return null;
+      return pullbackDir(smp,
+        (smp.dB.y * Ia - smp.dA.y * Ib) / det,
+        (smp.dA.x * Ib - smp.dB.x * Ia) / det);
+    };
+
     const crossFamilyCache = new Map();
-    const buildCrossFamily = (baseAngleDeg, deg, count) => {
-      const key = `${baseAngleDeg}|${deg}|${count}`;
+    const buildCrossFamily = (baseAngleDeg, deg, count, flow) => {
+      const key = `${baseAngleDeg}|${deg}|${count}|${flow || ''}`;
       if (crossFamilyCache.has(key)) return crossFamilyCache.get(key);
       const nominal = angleFamily(finite(baseAngleDeg, 0) + finite(deg, 65));
       const n = Math.max(2, Math.round(count * nominal.span));
@@ -2101,8 +2478,17 @@
         break;
       }
       const dirField = (p, ref) => {
+        let d = null;
+        if (flow) {
+          // The lighting field. Where it is degenerate — a flat-lit patch, the
+          // pole of the light — the last direction the ruling had is a better
+          // continuation than the chart's, so `ref` leads and nominal is the
+          // last resort.
+          d = flowDir(p, flow);
+          return alignTo(d || ref || nomDir, ref || nomDir);
+        }
         const smp = sampleAt(p.a, p.b);
-        const d = smp ? screenCrossDir(smp, aDir, deg, sense) : null;
+        d = smp ? screenCrossDir(smp, aDir, deg, sense) : null;
         // Degenerate frame (pole / silhouette): fall back to the nominal
         // parameter direction rather than stopping the line dead.
         return alignTo(d || nomDir, ref || nomDir);
@@ -2273,7 +2659,7 @@
 
     // Emit the screen-frame crossed family. Same signature role as
     // emitAngledFamily, same line budget, same ladder ranks.
-    const emitScreenCross = (baseAngleDeg, deg, count, back, zoneGate, densityCross) => {
+    const emitScreenCross = (baseAngleDeg, deg, count, back, zoneGate, densityCross, flow) => {
       // MERGE FIX (shadow-anatomy × p4). This function is shadow-anatomy's
       // screen-frame replacement for the `emitAngledFamily` calls that used to
       // draw the terminator cross; p4 independently added `nextFam` family
@@ -2288,7 +2674,7 @@
       // Tag identically to `emitAngledFamily` — same argument names, same
       // precedence — so the cross is once again its own family.
       nextFam(densityCross ? 'over' : (zoneGate ? `gate${zoneGate}` : 'A'));
-      const fam = buildCrossFamily(baseAngleDeg, deg, count);
+      const fam = buildCrossFamily(baseAngleDeg, deg, count, flow);
       for (let i = 0; i < fam.n; i++) {
         const L = fam.lines[i];
         if (!L || L.pts.length < 2) continue;
@@ -2407,8 +2793,27 @@
         emitAngledFamily(base + 65, count, back, ['X1', 'X2']);
         emitAngledFamily(base + 32, count, back, ['X2']);
       };
+      // 'crossFade' — layeredCross's three layers with the gates taken OFF.
+      //
+      // The two flaws being removed are both in the argument list. `zoneGate` is
+      // gone, so no family is confined to a zone and therefore no family has an
+      // edge to trace; and because every ruling is un-gated, every ruling runs
+      // the full width of the form, so none of them can terminate in open
+      // surface. The fade is carried entirely by `crossFadeCov` through
+      // `xfLayer` — density, continuously, exactly as the eye reads a wash
+      // thickening. Family A is layer 0 and was already emitted by the mapper.
+      const emitCrossFade = (count, back) => {
+        const base = finite(opts.fillAngle, 0);
+        xfLayer = 1; emitAngledFamily(base + 65, count, back);
+        xfLayer = 2; emitAngledFamily(base + 32, count, back);
+        xfLayer = 0;
+      };
       const emitTerminatorCross = (count, back) => {
         if (TONE_ALGO === 'layeredCross') { if (toneOn) emitLayeredCross(count, back); return; }
+        if (TONE_ALGO === 'crossFade') { if (toneOn) emitCrossFade(count, back); return; }
+        // 'contourFlow' replaces family A outright (see the mapper dispatch) and
+        // adds nothing on top: the direction IS the tone statement.
+        if (TONE_ALGO === 'contourFlow') return;
         if (!zonesOn) return;
         const base = finite(opts.fillAngle, 0);
         emitScreenCross(base, Regions.CROSS_OBJ_DEG, count, back, 'T');
@@ -2421,7 +2826,21 @@
           emitScreenCross(base, Regions.CROSS_OBJ_DEG, count, back, null, true);
         }
       };
-      if (mapper === 'hatch') {
+      // 'contourFlow' owns family A itself on every line mapper: the rulings are
+      // streamlines of the lighting field, seeded at the nominal family's own
+      // line positions so the LINE BUDGET and the ladder's ranks are untouched
+      // and only the direction changes. 'crosshatch' gets the orthogonal partner
+      // — iso curves crossed by gradient curves, which is the engraver's pair.
+      const flowMapper = TONE_ALGO === 'contourFlow' && toneOn
+        && (mapper === 'hatch' || mapper === 'crosshatch' || mapper === 'contour');
+      if (flowMapper) {
+        const fBase = finite(opts.fillAngle, 0);
+        emitScreenCross(fBase, 0, count, back, null, false, FLOW_MODE);
+        if (mapper === 'crosshatch') {
+          emitScreenCross(fBase, 0, count, back, null, false, FLOW_MODE === 'iso' ? 'grad' : 'iso');
+        }
+        emitShadowInfill(angleFamily(hatchAngle).lineAt, count, back);
+      } else if (mapper === 'hatch') {
         if (onMeridianAxis) {
           emitFamily('b', count, back); // meridians wrap top-to-bottom
           emitTerminatorCross(count, back);
@@ -2518,7 +2937,7 @@
           sDrop = useLadder
             ? spanDrops(sSmps, sKeys,
               (smp, k) => (TONE_ALGO !== 'ladder'
-                ? algoCoverage(smp.I)
+                ? algoCoverage(smp.I, false, smp, null)
                 : (sZones[k] ? zoneCoverage(sZones[k], false) : coverageForSample(smp.I))),
               // The helix's ruling index is the TURN, so the phase advances once
               // per turn (see ladderStep) and consecutive loops end up evenly
@@ -2589,7 +3008,7 @@
               if (HL_STAGE.dither && useLadder) {
                 const zone = TONE_ALGO === 'layeredCross' ? null : zoneOf(smp);
                 const cov = TONE_ALGO !== 'ladder'
-                  ? algoCoverage(smp.I)
+                  ? algoCoverage(smp.I, false, smp, null)
                   : (zone ? zoneCoverage(zone, false) : coverageForSample(smp.I));
                 if (!ladderKeeps(`stipple|${back ? 'B' : 'F'}|${r}`, clamp(cov, 0, 1),
                   (r * GOLDEN_STEP) % 1)) continue;
@@ -2625,6 +3044,22 @@
     if (!runMapper(N, false)) return null; // front surface (unchanged when no x-ray)
     // X-ray back surface: sparser (count × backDensity) far-side family, tagged.
     if (xray) runMapper(Math.max(2, Math.round(N * backDensity)), true);
+    // WHERE THE PLOT FLOOR BOUND, published for the comparison harness. Written
+    // only in uncapped mode, so the committed build never allocates or exposes
+    // it — `lastFloorStats` stays null and nothing downstream can read a number
+    // that only exists for a prototype.
+    lastFloorStats = TONE_UNCAPPED ? {
+      algo: TONE_ALGO,
+      penWidth,
+      masterPitch: Math.round(masterPitch * 1000) / 1000,
+      floorPitch: Math.round(floorPitch * 1000) / 1000,
+      N,
+      samples: floorStat.samples,
+      clamped: floorStat.clamped,
+      rulingsTouched: floorStat.touched.size,
+      rulingsClamped: floorStat.rulings.size,
+      worstAsk: Math.round(floorStat.worst * 100) / 100,
+    } : null;
     return out;
   };
 
@@ -2640,7 +3075,15 @@
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {},
-    { SurfaceFill: { buildObject, chartFor, lineCountFor, __litFloorForTest, __ladderForTest: ladderKeep } });
+    {
+      SurfaceFill: {
+        buildObject, chartFor, lineCountFor, __litFloorForTest, __ladderForTest: ladderKeep,
+        get lastFloorStats() { return lastFloorStats; },
+        get toneAlgo() { return TONE_ALGO; },
+        get uncapped() { return TONE_UNCAPPED; },
+        get flowMode() { return FLOW_MODE; },
+      },
+    });
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = { buildObject, chartFor, lineCountFor, __litFloorForTest, __ladderForTest: ladderKeep };
