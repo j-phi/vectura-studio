@@ -512,26 +512,42 @@ describe('scene3d shadow & highlight anatomy', () => {
       expect(profileDist(prof[1], prof[2])).toBeGreaterThan(profileDist(prof[0], prof[1]));
     });
 
-    it('the dither rank is decorrelated from the family coordinate', () => {
+    it('the dither selection is decorrelated from the family coordinate', () => {
       // THE root cause. Every family emitted line i with dither threshold
       // (i+0.5)/count, and line i sits at parameter b = (i+0.5)/count — rank and
       // position were the same number, so "keep the fraction cov" cut the family
       // at a LONGITUDE instead of thinning it. A monotonic rank cannot produce an
-      // evenly spread subset; a bit-reversed one can.
+      // evenly spread subset.
+      //
+      // RESTATED ON THE MECHANISM THAT NOW DOES THE JOB. The first fix was a
+      // bit-reversed (van der Corput) per-line rank, and this test read it via
+      // `__rankForTest`. That rank has been replaced by a phase-stepped ladder
+      // (`__ladderForTest`) because a bit-reversed prefix is SPREAD but not
+      // EVENLY SPACED — its kept-index gaps are always a power-of-two pair, and
+      // a gap twice its neighbour's width is a white band the drawing did not
+      // ask for. The property THIS test exists to protect is unchanged and is
+      // asserted below on the replacement, strictly more tightly: the survivors
+      // are not a prefix of the coordinate, and they cover BOTH halves of the
+      // parameter range — plus, now, evenly.
       const { lineCountFor } = V.Scene3D.SurfaceFill;
       expect(typeof lineCountFor).toBe('function');
-      const rank = V.Scene3D.SurfaceFill.__rankForTest;
-      expect(typeof rank).toBe('function');
+      const ladder = V.Scene3D.SurfaceFill.__ladderForTest;
+      expect(typeof ladder).toBe('function');
       const N = 32;
-      const ranks = Array.from({ length: N }, (_, i) => rank(i));
-      // Not monotonic — the fatal property of (i+0.5)/count.
-      const monotonic = ranks.every((r, i) => i === 0 || r > ranks[i - 1]);
-      expect(monotonic).toBe(false);
-      // Any PREFIX is evenly spread, which is what makes coverage mean density:
-      // taking the first half must cover both halves of the parameter range.
-      const half = ranks.slice(0, N / 2);
-      expect(half.filter((r) => r < 0.5).length).toBeGreaterThan(N / 8);
-      expect(half.filter((r) => r >= 0.5).length).toBeGreaterThan(N / 8);
+      const keep = ladder(new Array(N).fill(0.5));
+      const kept = [];
+      keep.forEach((k, i) => { if (k) kept.push(i); });
+      // Not a prefix of the coordinate — the fatal property of (i+0.5)/count.
+      const prefix = kept.every((i, k) => i === k);
+      expect(prefix).toBe(false);
+      // Spread across BOTH halves of the parameter range, which is what makes
+      // coverage mean density.
+      expect(kept.filter((i) => i < N / 2).length).toBeGreaterThan(N / 8);
+      expect(kept.filter((i) => i >= N / 2).length).toBeGreaterThan(N / 8);
+      // ...and EVENLY: at coverage 0.5 every surviving ruling is exactly two
+      // apart. The bit-reversed rank could not state this.
+      const gaps = kept.slice(1).map((v, i) => v - kept[i]);
+      expect([...new Set(gaps)]).toEqual([2]);
     });
   });
 

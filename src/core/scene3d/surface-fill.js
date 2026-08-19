@@ -133,10 +133,12 @@
   // so rank and coverage were correlated and the gate collapsed into a single
   // hard edge: full family on one side, bare paper on the other, no intermediate
   // density anywhere. Measured: a flat D ≈ 0.08 across the whole sphere at every
-  // band count. `rankOf` replaces the coordinate with a bit-reversed (van der
-  // Corput) permutation, which is spatially well-distributed at EVERY prefix
-  // length — so keeping the first `cov·N` ranks keeps an evenly spread subset,
-  // and coverage finally means density.
+  // band count. The fix is to decouple the selection from the coordinate
+  // entirely: see `ladderStep` below, whose phase accumulator keeps a subset
+  // that is EVENLY SPACED at every coverage, so coverage means density. (The
+  // first fix was a bit-reversed van der Corput rank, which decoupled the two
+  // but spaced the survivors in power-of-two gaps — that is the defect
+  // `ladderStep` replaces, and its measurements are recorded there.)
   //
   // FAULT 2 — nothing to be blank against. At the shipped line budget a FULL
   // family already sits at ~17 × pen width, so the lit band (a fraction of that)
@@ -263,15 +265,78 @@
                            // ink the dither made; it is the mitigation, not the disease.
   };
 
-  // Radical inverse base 2, scaled off the index — the classic ordered-dither
-  // permutation. vdc(0,1,2,3,…) = 0, .5, .25, .75, .125, … so any prefix is
-  // spread across [0,1) instead of clustered at one end.
-  const rankOf = (i) => {
-    let n = (i >>> 0) + 1;
-    let rev = 0;
-    let denom = 1;
-    while (n > 0) { rev = rev * 2 + (n & 1); n >>>= 1; denom *= 2; }
-    return (rev / denom) % 1;
+  // ── THE LADDER IS PHASE-STEPPED, NOT BIT-REVERSED ───────────────────────────
+  //
+  // The ladder decides WHICH rulings of a family survive at a given coverage.
+  // Until now that was a threshold on a per-line rank drawn from the radical
+  // inverse base 2 (van der Corput): keep line i iff `vdc(i) < cov`, with
+  // vdc(0,1,2,3,…) = .5, .25, .75, .125, … A bit-reversed prefix is SPREAD —
+  // that is what fixed the original "the rank WAS the family coordinate" fault
+  // (see the master-grid note above, FAULT 1) — but spread is not the same
+  // thing as EVENLY SPACED. vdc is a binary refinement, so the kept-index gaps
+  // are always a POWER-OF-TWO pair. Measured on the app default at Stage 1:
+  //   cov 0.62 → 11 gaps of 1 line and 18 of 2
+  //   cov 0.42 → 17 gaps of 2 and 3 of 4
+  //   cov 0.20 → gaps of 4 and 8
+  // A gap twice as wide as its neighbours, in an otherwise regular field, reads
+  // as a white band that should not be there. That is the "hatch, crosshatch,
+  // spiral etc. on curved surfaces seem to have unexpected gaps" report, and it
+  // is a property of the PERMUTATION, not of the geometry.
+  //
+  // The even selection is Bresenham's, i.e. a phase accumulator: carry a
+  // running coverage total and keep a ruling exactly when the total crosses an
+  // integer. At a CONSTANT coverage that is the Sturmian word of density cov,
+  // whose gaps are exactly floor(1/cov) and ceil(1/cov) — two CONSECUTIVE
+  // integers, which is the most even a subset of an integer grid can be.
+  // Swept over cov 0.02…0.99 at N = 40/64/120/200 it produces a two-consecutive-
+  // value gap set at every coverage (0 exceptions) against vdc's 81/194, and a
+  // mean spacing CoV of 0.19 against vdc's 0.26.
+  //
+  // IT HAS TO BE AN ACCUMULATOR, not the closed form `frac((i+1)·cov) < cov`.
+  // The two agree only while cov is the same for every ruling, and it is not —
+  // every ruling reads its own span mean (see spanDrops). Where cov drifts by
+  // cov' per ruling the closed form's phase advances by cov + i·cov', so the
+  // kept density comes out as cov + i·cov': on the app-default sphere (cov ~0.2
+  // lit to ~0.6 dark across ~100 rulings) that is a 50 % density error halfway
+  // down the form — it would trade the gaps for a broken tone ramp. Adding each
+  // ruling's OWN coverage advances the phase by exactly cov per ruling, so the
+  // local density is the local coverage and the spacing stays even THROUGH the
+  // ramp. `ladderPhase` (declared per buildObject call, beside `famSeq`) keys
+  // one accumulator per family and span ordinal, so each family is phased
+  // independently and rulings are visited in spatial order.
+  //
+  // WHAT IT COSTS, stated plainly: the kept sets are no longer NESTED. A rank
+  // threshold is nested by construction (rank(i) < c1 < c2 ⇒ kept at both), so
+  // a tone step used to ADD rulings where a phase-stepped set re-phases them.
+  // That is not a preference — the two properties are provably incompatible.
+  // Exhaustively (scratchpad `even/nested-proof.mjs`): for N = 6, 8, 9, 10, 11
+  // and 12 there is NO nested chain whose every prefix keeps a gap set of at
+  // most two consecutive values past m = 2, and vdc is already the best a
+  // nested scheme can do (its gap ratio never exceeds 2). Nesting is not
+  // load-bearing here: the verdict is taken ONCE PER SPAN, so a ruling still
+  // draws its whole span or none of it, and ruling continuity — the thing the
+  // seam/span/boundary tests protect — does not depend on it.
+  //
+  // The phase starts at 0.5 (not 0) for the same reason every family indexes at
+  // (i + 0.5)/count: it centres the first kept ruling in its own gap instead of
+  // pushing a whole gap in front of it.
+  const LADDER_PHASE0 = 0.5;
+  // Golden-ratio conjugate. Used to offset one phase track from the next where
+  // the tracks are PARALLEL rather than sequential (the stipple raster's rows):
+  // it is the step that stays furthest from lining up with itself at every
+  // count, so no small number of rows ever falls into phase.
+  const GOLDEN_STEP = 0.6180339887498949;
+  // One step of the ladder: fold this ruling's coverage into the phase and read
+  // off the verdict. Pure, so the test can drive it directly.
+  const ladderStep = (phase, cov) => {
+    const next = finite(phase, LADDER_PHASE0) + clamp(finite(cov, 0), 0, 1);
+    return next >= 1 ? { phase: next - 1, keep: true } : { phase: next, keep: false };
+  };
+  // Drive the ladder over a whole family in one call — the sequence form of
+  // `ladderStep`, exported for the spacing-regularity test.
+  const ladderKeep = (covs, phase0) => {
+    let phase = Number.isFinite(phase0) ? phase0 : LADDER_PHASE0;
+    return (covs || []).map((c) => { const r = ladderStep(phase, c); phase = r.phase; return r.keep; });
   };
 
   // Zone-boundary FEATHER (§4, and O26 — a curved form must show NO banding
@@ -934,6 +999,23 @@
     let famSeq = 0;
     let currentFam = 'A';
     const nextFam = (kind) => { currentFam = `${kind}#${famSeq}`; famSeq += 1; return currentFam; };
+    // THE LADDER'S PHASE, one accumulator per selection track (see ladderStep).
+    // Declared HERE, per buildObject call, so a build is a pure function of its
+    // opts — a module-scope phase would make the second drawing depend on the
+    // first and break the byte-identity contracts. The key names the track a
+    // ruling belongs to: its family, and its ordinal WITHIN the ruling for the
+    // rare ruling that comes back as more than one span (the k-th spans of
+    // successive rulings are the ones that neighbour each other on the form, so
+    // they are the ones that must be evenly spaced against each other).
+    const ladderPhase = new Map();
+    const ladderKeeps = (key, cov, seed) => {
+      const prev = ladderPhase.has(key)
+        ? ladderPhase.get(key)
+        : (Number.isFinite(seed) ? seed : LADDER_PHASE0);
+      const r = ladderStep(prev, cov);
+      ladderPhase.set(key, r.phase);
+      return r.keep;
+    };
     const makeSink = (back, lineIndex, fam) => {
       let run = [];
       let runLen = 0;
@@ -1067,7 +1149,12 @@
     // the one mid-form end this design has always sanctioned.
     //
     // `valueAt(smp, index)` is the per-sample quantity the verdict reads;
-    // `verdict(mean, midIndex, restarting)` returns true to DROP. `restarting`
+    // `verdict(mean, midIndex, restarting, spanOrdinal)` returns true to DROP.
+    // `spanOrdinal` is this span's position in the ruling (0 for the usual
+    // single-span ruling); the ladder keys its phase on it so the k-th spans of
+    // successive rulings — the pieces that actually neighbour each other on the
+    // form — are spaced against each other and not against a different piece.
+    // `restarting`
     // is true once this ruling has drawn a span AND dropped a later one — the
     // one-sided hysteresis margin (Stage 5) is charged there and nowhere else,
     // which is the same asymmetry it always had, moved to the scale the verdict
@@ -1108,14 +1195,14 @@
       }
       let drew = false;
       let stopped = false;
-      spans.forEach((span) => {
+      spans.forEach((span, spanOrd) => {
         const idx = [];
         for (let i = 0; i < span.length; i += 2) {
           for (let k = span[i]; k <= span[i + 1]; k++) idx.push(k);
         }
         let sum = 0;
         idx.forEach((k) => { sum += valueAt(smps[k], k); });
-        const d = verdict(sum / idx.length, idx[idx.length >> 1], drew && stopped);
+        const d = verdict(sum / idx.length, idx[idx.length >> 1], drew && stopped, spanOrd);
         idx.forEach((k) => { drop[k] = d; });
         if (d) { if (drew) stopped = true; } else drew = true;
       });
@@ -1127,15 +1214,18 @@
     // the sample draws only where the local shade (1 − I) meets it, so lines
     // vanish toward the lit highlight and pile up in shadow. `back` selects the
     // FAR side (camN.z < 0) instead of the visible front side, and tags the run.
-    // `ladderRank` is the line's position in the dither PERMUTATION (see rankOf)
-    // — decoupled from `threshold`, which stays the geometric rank the legacy
-    // no-ladder callers compare shade against. `zoneGate`, when set, restricts
+    // The ladder's own selection is NOT a per-line number any more (see
+    // `ladderStep`): the ruling's coverage is folded into its family's phase and
+    // the verdict falls out of that, which is why there is no `ladderRank`
+    // argument. `threshold` stays the geometric rank the legacy no-ladder
+    // callers compare shade against. `zoneGate`, when set, restricts
     // the line to a single form zone: that is how the terminator's crossed
     // family is spent on T alone instead of being sprayed over the whole dark
     // band (O17 — Round 2 crossed ALL of band 0, at 0/90, and it read as wire mesh).
-    const emitLine = (paramAt, threshold, back, lineIndex, count, ladderRank, zoneGate, pitchStep, lineDir, densityCross) => {
+    const emitLine = (paramAt, threshold, back, lineIndex, count, zoneGate, pitchStep, lineDir, densityCross) => {
       const wantFront = !back;
-      const rank = Number.isFinite(ladderRank) ? ladderRank : threshold;
+      // Every ruling of one family shares one phase track (see ladderPhase).
+      const ladderKey = currentFam;
       let hlRun = [];
       // The base channel goes through the shared run sink (see makeSink).
       const sink = makeSink(back, lineIndex, currentFam);
@@ -1376,9 +1466,10 @@
       // One verdict per span, for the whole ruling, computed before any ink is
       // laid. `null` when the dither is off — every sample then draws.
       let spanDrop = null;
+      const rulingDrop = new Map();   // zone → this ruling's verdict in that zone
       if (HL_STAGE.dither && toneOn) {
         spanDrop = useLadder
-          ? spanDrops(smps, zones, (smp, s) => covAtSample(smp, s, zones[s]), (cov, mid, restarting) => {
+          ? spanDrops(smps, zones, (smp, s) => covAtSample(smp, s, zones[s]), (cov, mid, restarting, spanOrd) => {
             // The feather (Stage 4) is evaluated ONCE for the span, at its
             // midpoint, rather than per sample. It keeps its full amplitude —
             // so it still decorrelates WHICH rulings drop at a band edge, which
@@ -1390,7 +1481,32 @@
             // only kind of re-start that is left. Raising the bar to start can
             // only ever REMOVE ink, so the composed C15/§0 budget is untouched.
             const margin = (HL_STAGE.hysteresis && restarting) ? hystFor(cov) : 0;
-            return rank >= litSpanFloor(cov, mid) + jit - margin;
+            // Both offsets were stated in RANK units against a fixed per-line
+            // rank; against a phase ladder the identical quantity is a shift of
+            // the EFFECTIVE COVERAGE, because `rank < cov + jit - margin` and
+            // `keep at coverage cov + jit - margin` are the same statement. Both
+            // are inert at this stage (feather and hysteresis are off) and the
+            // arithmetic is carried unchanged so they mean the same thing when
+            // they come back.
+            const eff = clamp(litSpanFloor(cov, mid) + jit - margin, 0, 1);
+            // ONE VERDICT PER RULING PER ZONE, and the span ordinal is
+            // deliberately NOT in the key. A rank threshold used to give this
+            // for free: every span of a ruling read the same per-line rank, so
+            // a ruling could not draw on one side of a fold and vanish on the
+            // other. A phase that steps per SPAN loses it — measured, it put
+            // one torusKnot contour ring's near sheet on the page without its
+            // far sheet and left a 1.54 mm end in open surface. The ladder
+            // selects RULINGS (that is how this engine shades), so the RULING
+            // is the unit that takes the step. The ZONE stays in the key,
+            // because a zone step is a genuine tone boundary and is entitled to
+            // its own verdict — that is what a zone-keyed span is for — whereas
+            // a fold is not. At this stage `zones` is all null, so this is one
+            // track per family.
+            const zk = String(zones ? zones[mid] : null);
+            if (rulingDrop.has(zk)) return rulingDrop.get(zk);
+            const d = !ladderKeeps(`${ladderKey}|${zk}`, eff);
+            rulingDrop.set(zk, d);
+            return d;
           }, closedSweep)
           // Legacy, no-ladder callers: the same law, on the same quantity they
           // always compared (local shade against the line's geometric rank).
@@ -1537,7 +1653,7 @@
       nextFam(zoneGate ? `gate${zoneGate}` : 'A');
       for (let i = 0; i < count; i++) {
         const fixVal = (i + 0.5) / count;
-        emitLine(axisLine(fixAxis, fixVal), (i + 0.5) / count, back, i, count, rankOf(i), zoneGate,
+        emitLine(axisLine(fixAxis, fixVal), (i + 0.5) / count, back, i, count, zoneGate,
           fixAxis === 'b' ? { a: 0, b: 1 / count } : { a: 1 / count, b: 0 },
           fixAxis === 'b' ? { a: 1, b: 0 } : { a: 0, b: 1 });
       }
@@ -1650,10 +1766,10 @@
       const n = Math.max(2, Math.round(count * fam.span));
       for (let i = 0; i < n; i++) {
         const at = fam.lineAt((i + 0.5) / n);
-        // Same dark→dense ordered-dither rank the axis families use. Adjacent
-        // lines are span/n apart ALONG the family normal, in parameter space.
+        // Same dark→dense ladder the axis families use. Adjacent lines are
+        // span/n apart ALONG the family normal, in parameter space.
         const step = fam.span / n;
-        if (at) emitLine(at, (i + 0.5) / n, back, i, n, rankOf(i), zoneGate,
+        if (at) emitLine(at, (i + 0.5) / n, back, i, n, zoneGate,
           { a: fam.na * step, b: fam.nb * step }, { a: fam.da, b: fam.db }, densityCross);
       }
     };
@@ -1969,7 +2085,7 @@
         const dirAt = (tt) => L.pts[Math.round(idxAt(tt))] || L.pts[0];
         const lineDir = (tt) => { const p = dirAt(tt); return { a: p.da, b: p.db }; };
         const pitchStep = (tt) => L.off[Math.round(idxAt(tt))] || fam.nomOff;
-        emitLine(paramAt, (i + 0.5) / fam.n, back, i, fam.n, rankOf(i), zoneGate,
+        emitLine(paramAt, (i + 0.5) / fam.n, back, i, fam.n, zoneGate,
           pitchStep, lineDir, densityCross);
       }
     };
@@ -2099,11 +2215,12 @@
         const symmetric = sp.center === 'bboxCenter';          // double helix from the middle
         const snap = sp.axisSnap === true;                     // wind the OTHER parametric axis
         const turns = Math.max(4, Math.min(SPIRAL_MAX_TURNS, Math.round(count * SPIRAL_TURN_GAIN)));
-        // Same run sink as emitLine: a helix loop is a ruling too, and its rank
-        // (the turn it is on) is compared against a coverage that varies along
-        // the loop, so it chattered in exactly the same way — just less often,
-        // because a whole turn shares one rank.
-        const sink = makeSink(back, null, nextFam('spiral'));
+        // Same run sink as emitLine: a helix loop is a ruling too, and its
+        // selection (by the turn it is on) is taken against a coverage that
+        // varies along the loop, so it chattered in exactly the same way — just
+        // less often, because a whole turn takes one verdict.
+        const spiralFam = nextFam('spiral');
+        const sink = makeSink(back, null, spiralFam);
         const flush = sink.flush;
         const total = steps * turns;
         // Sample the whole helix first, exactly as emitLine does, so the same
@@ -2148,12 +2265,25 @@
         // report note: they land on the wind meridian, not scattered over the
         // form, because that is where every loop begins and ends.
         const sKeys = sZones.map((z, i) => `${sTurn[i]}|${z}`);
+        let spTurn = -1;
+        let spArc = 0;
         let sDrop = null;
         if (HL_STAGE.dither && toneOn) {
           sDrop = useLadder
             ? spanDrops(sSmps, sKeys,
               (smp, k) => (sZones[k] ? zoneCoverage(sZones[k], false) : coverageForSample(smp.I)),
-              (cov, mid) => rankOf(sTurn[mid]) >= cov)
+              // The helix's ruling index is the TURN, so the phase advances once
+              // per turn (see ladderStep) and consecutive loops end up evenly
+              // spaced instead of dropping in the power-of-two pattern a
+              // bit-reversed rank on the turn number produced. `spanDrops`
+              // numbers spans over the WHOLE helix, so the track key cannot be
+              // that ordinal — it is the arc's ordinal WITHIN its turn, which is
+              // what makes the k-th arc of each turn a track of neighbours.
+              (cov, mid) => {
+                const turn = sTurn[mid];
+                if (turn !== spTurn) { spTurn = turn; spArc = 0; } else spArc += 1;
+                return !ladderKeeps(`${spiralFam}|${spArc}`, clamp(cov, 0, 1));
+              })
             : spanDrops(sSmps, sKeys, (smp) => clamp(1 - smp.I, 0, 1), (shade) => shade < 0.12);
         }
         for (let s = 0; s <= total; s++) {
@@ -2196,12 +2326,23 @@
             if (toneOn) {
               // O18 — stipple used a hardcoded `(…%7)/7` dither and never read
               // `ladder[]`, so a stippled object showed no tone bands at all.
-              // The dot's rank is now the same bit-reversed permutation the line
-              // families use, compared against the local zone coverage.
+              // The dot now rides the same phase ladder the line families use,
+              // against the local zone coverage.
+              //
+              // ONE TRACK PER ROW, and each row's phase OFFSET. A single track
+              // running the whole raster (r x colsPer + c, which is what the
+              // bit-reversed rank was indexed by) is even along the raster but
+              // that is not the axis the eye reads — keeping every k-th dot in
+              // raster order lands the survivors of consecutive rows at the same
+              // column offset and the field  reads as diagonal rulings. So each
+              // row is its own track, evenly spaced along itself, and its phase
+              // starts a golden-ratio step further on than the row above, which
+              // is the cheapest way to stop the rows lining up into columns.
               if (HL_STAGE.dither && useLadder) {
                 const zone = zoneOf(smp);
                 const cov = zone ? zoneCoverage(zone, false) : coverageForSample(smp.I);
-                if (rankOf(r * colsPer + c) >= cov) continue;
+                if (!ladderKeeps(`stipple|${back ? 'B' : 'F'}|${r}`, clamp(cov, 0, 1),
+                  (r * GOLDEN_STEP) % 1)) continue;
               } else if (HL_STAGE.dither) {
                 const shade = clamp(1 - smp.I, 0, 1);
                 const th = ((r * colsPer + c) % 7) / 7; // scattered dither
@@ -2249,9 +2390,9 @@
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {},
-    { SurfaceFill: { buildObject, chartFor, lineCountFor, __litFloorForTest, __rankForTest: rankOf } });
+    { SurfaceFill: { buildObject, chartFor, lineCountFor, __litFloorForTest, __ladderForTest: ladderKeep } });
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { buildObject, chartFor, lineCountFor, __litFloorForTest, __rankForTest: rankOf };
+    module.exports = { buildObject, chartFor, lineCountFor, __litFloorForTest, __ladderForTest: ladderKeep };
   }
 })();
