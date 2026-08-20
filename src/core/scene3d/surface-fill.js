@@ -597,6 +597,13 @@
   //                       perceptual response to hatching specifically:
   //                       f(x) = 1 / (1 + (1/a − 1)(1/x − 1)^b), a = 0.4753,
   //                       b = 1.5918. Their curve, on this file's pitch range.
+  //                       MEASURED, sphere-hatch: R² 0.232, span 16.0, darkest
+  //                       74.0, off the line 23.6 %, median step 1.02x, rho
+  //                       0.704, and 95.0 % of adjacent transitions moving with
+  //                       the light — the HIGHEST monotonicity of any law
+  //                       measured, this round or before. Their sigmoid is
+  //                       gentler than smootherstep in the mid-tones, which is
+  //                       exactly where a reversal was showing up.
   //   'contFieldMeasured' The tone response INVERTED FROM MEASUREMENT rather
   //                       than from theory. Pass 1 places with the baseline law
   //                       and records what ink area each radiance actually
