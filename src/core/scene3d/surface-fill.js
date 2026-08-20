@@ -674,6 +674,73 @@
   //     5th-percentile clearance is 0.18 mm against a 0.66 mm floor: it is dark
   //     because neighbouring rulings interpenetrate and overdraw the same
   //     paper. On a real plotter that is a wet blob, not a black.
+  //
+  // ── ROUND 6, MEASURED — sphere · hatch, app default, UNCAPPED ──────────────
+  //
+  //                      R²    off-line  L*span  dark   UNINTENDED  waviness   elong
+  //                                                p05  BARE AREA   retained   model/real
+  //   ampSpacing        0.188   11.7 %    22.0   49.8      3.3 %      252 %    1.068/1.050
+  //   ampClearance      0.184   11.7 %    22.0   49.0      3.2 %      265 %    1.049/1.035
+  //   ampLambda         0.186   22.2 %    25.1   48.6      3.1 %      239 %    1.008/1.007
+  //   ampPasses         0.299   10.2 %    32.0   35.9     25.4 %       66 %    1.440/1.439
+  //   ampPhaseWalk      0.188   11.1 %    21.8   49.8      3.3 %      252 %    1.068/1.050
+  //   weaveNestPerp     0.181   17.0 %    23.3   48.5      3.2 %      249 %    1.045/1.033
+  //   weaveDepth        0.185   18.0 %    23.5   47.7      3.0 %      152 %    1.028/1.025
+  //   weaveOctaveEase   0.209   13.9 %    23.7   48.5      3.2 %      227 %    1.031/1.022
+  //   weaveAmpEase      0.278   21.4 %    24.6   50.4      9.9 %       95 %    1.040/1.041
+  //   weaveJitter       0.177   16.0 %    22.7   49.7      3.0 %      262 %    1.034/1.024
+  //   ── the Round 5 bars ────────────────────────────────────────────────────
+  //   amplitudeOnly     0.005   48.8 %     7.2   80.1     11.7 %      0.3 %    1.121/1.117
+  //   interlockWeave    0.208   33.5 %    25.2   50.9     34.1 %      0.3 %    1.397/1.407
+  //   trochoidLoop      0.354   13.9 %    39.2   20.2     23.9 %      0.3 %    1.768/1.983
+  //   NO TONE (Stage 0)   —        —        —    92.6     58.4 %       —          —
+  //
+  // 1. THE WAVINESS SURVIVES, AND IT DID NOT BEFORE. All three Round 5 bars
+  //    retain 0.3 % of their form-mean amplitude in the lit region (I ≥ 0.55):
+  //    the wave is not faint there, it is GONE, because `k = wvRamp(I)` is zero
+  //    above WV_I0. All ten laws here retain 66–265 %. That is the round's
+  //    stated requirement and it is met on every cell of every law.
+  //
+  // 2. THE PERPENDICULAR REFRAMING CLOSED THE GAPS, AS PREDICTED. Unintended
+  //    bare area — form further than 0.6 mm from any ink where the light asks
+  //    for tone — falls from interlockWeave's 34.1 % to 3.0–3.3 % on the eight
+  //    in-phase / bounded-texture laws, an 11× reduction, and the widest bare
+  //    gap from 1.96 mm to 1.06–1.35 mm. The mechanism is not the spacing: it is
+  //    that an in-phase nest's perpendicular clearance is bounded by
+  //    lambda/(2·pi·f) = 1.16 mm HOWEVER wide the pitch gets.
+  //
+  // 3. THE ELONGATION MODEL NOW MATCHES THE PAPER. Modelled against realised
+  //    agrees within 1.5 % on all ten (worst 1.068 vs 1.050). `nestedOctaves`
+  //    and `hilbertDepth` were out by a third; `trochoidLoop` is still out by
+  //    12 % the other way (1.768 vs 1.983 — it UNDER-claims, so it runs dark).
+  //
+  // 4. WHAT IT COST, STATED PLAINLY. The spacing IS the tone channel, so the
+  //    spacing must vary: CoV 0.75–0.79 against interlockWeave's 0.28. The
+  //    largest adjacent spacing step is 2–3×, i.e. no better than the 2.4× this
+  //    round set out to fix — the ladder is a discrete keep/drop and at these
+  //    coverages its index gaps are small integers, so 2× is its floor. And the
+  //    darks do not go deeper: 47.7–50.4 against interlockWeave's 50.9. Only
+  //    `ampPasses` (35.9) improves on that, and only `trochoidLoop` (20.2) is
+  //    genuinely deep, partly below the plot floor.
+  //
+  // 5. THE HONEST LIMIT, AND IT IS PHYSICS. A dark made of touching strokes has
+  //    no room left for a visible excursion: where the spacing has closed to the
+  //    plot floor the clearance floor cuts the amplitude to ~0.004 mm, so the
+  //    eight spacing-tone laws are wavy everywhere EXCEPT the core shadow. That
+  //    is the opposite of the Round 5 failure (straight in the LIGHT) and it is
+  //    the better half of the trade, but it is not "wavy everywhere". The two
+  //    laws that keep a wave in the shadow — `ampPasses` and `weaveAmpEase` —
+  //    do it by refusing to close the spacing, and pay for it in bare area
+  //    (25.4 % and 9.9 %).
+  //
+  // 6. WHERE A SPACING-ONLY CHANNEL BREAKS. On cylinder·hatch the eight
+  //    spacing-tone laws collapse to R² ~0.00 with a 5th-percentile L* of 4.5 —
+  //    a solid black band. A cylinder has a WIDE region of near-constant low
+  //    radiance, so the spacing field drives the whole band to the plot floor at
+  //    once and the wave floods it. A sphere's core shadow is a small crescent
+  //    and never triggers it. `ampPasses` (R² 0.262, L* 38.8) and `weaveAmpEase`
+  //    (0.031, 42.7) do not collapse, because neither hands the whole ramp to
+  //    the spacing. This is a real limit of the channel, not a tuning miss.
   const TONE_ALGO = 'ladder';
   // 'contourFlow' only: which streamline family the rulings follow.
   //   'iso'  along the iso-intensity curves
