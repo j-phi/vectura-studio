@@ -686,6 +686,20 @@
   //                       would 128 levels do?" — `contFieldPitch`'s field with
   //                       the GAP quantised to CF_LEVELS steps. Run at 128 and
   //                       at 256 against the continuous original.
+  //                       MEASURED, sphere-hatch, levels sweep against the same
+  //                       field run continuously:
+  //                         levels   R²     span  darkest  off    medStep  mono
+  //                            16   0.112   14.2   71.9   23.2%   1.01x   56.7%
+  //                           128   0.103   13.8   71.6   25.1%   1.02x   80.0%
+  //                           256   0.102   13.7   72.3   25.4%   1.02x   90.0%
+  //                            ∞    0.100   13.7   71.9   25.7%   1.03x   86.7%
+  //                       The RAMP is settled by 16 levels — R² moves 0.012 over
+  //                       the whole sweep, which is noise. The EASE is not:
+  //                       monotonicity runs 56.7 → 80.0 → 90.0 %, and only at 256
+  //                       does a quantised field stop putting reversals into a
+  //                       spacing that is supposed to open smoothly. Webb et
+  //                       al.'s 64 levels answer the tone question; they do not
+  //                       answer this one.
   const TONE_ALGO = 'ladder';
   // 'contFieldQuant' only: how many discrete gap sizes the field may use.
   const CF_LEVELS = 128;
