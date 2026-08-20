@@ -3329,6 +3329,33 @@
       const n = clamp(Math.round(finite(pc.weightScale, 1)), 1, MP_MAX);
       pc.weightScale = 1;
       if (n <= 1 || pc.length < 2) return [];
+      // ── THE OFFSET HAS TO DIE BEFORE THE END OF THE PIECE ────────────────────
+      //
+      // Measured, and it is a HARD FAIL rather than a blemish: 'ampPasses' with
+      // a plain constant offset put 41 MARKS OUTSIDE THE SILHOUETTE on
+      // sphere·hatch and left a 13 mm free end. The reason is that this
+      // displacement is made ON SCREEN and — unlike the Round 5/6 wave, which
+      // displaces in the CHART and re-tests the sample for front-facing — it has
+      // no way of knowing it has walked off the form. At a limb the ruling's
+      // last sample is ON the silhouette, so ANY perpendicular offset there is
+      // off the object.
+      //
+      // Tapering the offset to zero over PASS_TAPER_MM of each end fixes both
+      // defects at once: the copy converges onto the piece it came from, so it
+      // cannot cross the limb, and its endpoints land exactly on the original's,
+      // so they register as abutting instead of as free ends. Arc length is
+      // accumulated along the piece rather than counted in samples, because a
+      // wave law's samples are not evenly spaced along the ruling.
+      const PASS_TAPER_MM = 2.0;
+      const tapered = TONE_ALGO === 'ampPasses';
+      const arc = new Array(pc.length).fill(0);
+      let arcTot = 0;
+      for (let i = 1; i < pc.length; i++) {
+        arcTot += Math.hypot(pc[i].x - pc[i - 1].x, pc[i].y - pc[i - 1].y);
+        arc[i] = arcTot;
+      }
+      const endFrac = (i) => (tapered
+        ? clamp(Math.min(arc[i], arcTot - arc[i]) / PASS_TAPER_MM, 0, 1) : 1);
       const outp = [];
       for (let j = 1; j < n; j++) {
         const d = (j % 2 ? 1 : -1) * Math.ceil(j / 2) * inkWidth();
@@ -3336,7 +3363,8 @@
           const p0 = pc[Math.max(0, i - 1)]; const p1 = pc[Math.min(pc.length - 1, i + 1)];
           const dx = p1.x - p0.x; const dy = p1.y - p0.y;
           const L = Math.hypot(dx, dy) || 1;
-          return { x: q.x + (-dy / L) * d, y: q.y + (dx / L) * d, z: q.z };
+          const dd = d * endFrac(i);
+          return { x: q.x + (-dy / L) * dd, y: q.y + (dx / L) * dd, z: q.z };
         });
         cp.fam = pc.fam; cp.tt0 = pc.tt0; cp.tt1 = pc.tt1; cp.weightScale = 1;
         outp.push(cp);
