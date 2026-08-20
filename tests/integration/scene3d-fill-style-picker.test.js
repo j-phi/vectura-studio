@@ -436,6 +436,68 @@ describe('Fill Style — docked 3D Scene panel', () => {
     expect(caveat.textContent.length).toBeGreaterThan(10);
   });
 
+  // ── The focused LEAF editors ─────────────────────────────────────────────
+  // A scene-tree object3d / booleanGroup3d child routes to its OWN panel, not
+  // to the scene editor above. This is what live verification caught: putting
+  // the row in MAPPER_CONTROLS alone left the leaf panel — the panel a user
+  // actually reaches by selecting a scene object — showing "Mapper" and no
+  // Fill Style at all.
+  const mountLeaf = (type, style) => {
+    const { UI } = window.Vectura;
+    const layer = {
+      id: `leaf-${type}`, type, name: 'Leaf', visible: true, parentId: 'grp-1',
+      params: {
+        primitive: 'sphere', params: { sx: 40, sy: 40, sz: 40, detail: 16 },
+        transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+        visibility: 'solid', op: 'subtract', style,
+      },
+    };
+    const ui = { app: { pushHistory: () => {}, regen: () => {} }, storeLayerParams: () => {} };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    UI.Scene3DPanel.build(ui, layer, container);
+    // The leaf panels build their Style page on tab entry.
+    const tab = Array.from(container.querySelectorAll('.tab-btn'))
+      .find((b) => b.dataset && b.dataset.value === 'style');
+    if (tab) fire(tab, 'click');
+    return { layer, container };
+  };
+  const leafRow = (c, label) => Array.from(c.querySelectorAll('.vs3-row'))
+    .find((r) => r.querySelector('.vs3-lbl') && r.querySelector('.vs3-lbl').textContent === label);
+
+  test('the focused object3d LEAF panel says Type and carries a Fill Style row', () => {
+    const { container } = mountLeaf('object3d', { penId: null, mapper: 'hatch', params: { fillCurves: true } });
+    expect(leafRow(container, 'Type')).toBeTruthy();
+    expect(leafRow(container, 'Mapper')).toBeUndefined();
+    const sel = leafRow(container, 'Fill Style').querySelector('select');
+    expect(sel.value).toBe('ladder');
+    expect(Array.from(sel.querySelectorAll('optgroup')).map((g) => g.label))
+      .toEqual(F.groups(false).map((g) => g.group));
+  });
+
+  test('the LEAF write lands on the leaf bag — the object-scope write, and the only one that reaches it', () => {
+    const { container, layer } = mountLeaf('object3d', { penId: null, mapper: 'hatch', params: { fillCurves: true } });
+    const sel = leafRow(container, 'Fill Style').querySelector('select');
+    sel.value = 'trochoidLoop';
+    fire(sel, 'change');
+    expect(layer.params.style.params.toneLaw).toBe('trochoidLoop');
+    expect(layer.params.style.params.fillCurves).toBe(true);
+  });
+
+  test('the LEAF panel hides the row on wireframe', () => {
+    const { container } = mountLeaf('object3d', { penId: null, mapper: 'wireframe', params: {} });
+    expect(leafRow(container, 'Fill Style')).toBeUndefined();
+  });
+
+  test('the fused booleanGroup3d panel gets Type + Fill Style too', () => {
+    const { container, layer } = mountLeaf('booleanGroup3d', { penId: null, mapper: 'hatch', params: {} });
+    expect(leafRow(container, 'Type')).toBeTruthy();
+    const sel = leafRow(container, 'Fill Style').querySelector('select');
+    sel.value = 'mkTick';
+    fire(sel, 'change');
+    expect(layer.params.style.params.toneLaw).toBe('mkTick');
+  });
+
   test('the Library row discloses the 11 demoted laws without persisting anything', () => {
     const { container, layer } = openStyle(hatchOn());
     const count = () => styleRow(container, 'Fill Style').querySelector('select').querySelectorAll('option').length;

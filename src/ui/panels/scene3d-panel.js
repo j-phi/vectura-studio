@@ -357,12 +357,6 @@
   // src/config/context-bar.js, which loads first): one option list and one
   // "is this treatment inert?" rule, so the two surfaces cannot drift.
   const SCENE_HIGHLIGHT = () => Vectura.SCENE_HIGHLIGHT;
-  // U9 — Fill Style copy. Owned by Vectura.SCENE_FILL_STYLES (declared in
-  // src/config/context-bar.js, which loads first) so this panel and the ctxbar
-  // Style flyout render the same words. Resolved lazily with a literal fallback
-  // for a runtime that loads the panel without the config module.
-  const LAW_LIBRARY_LABEL = (Vectura.SCENE_FILL_STYLES && Vectura.SCENE_FILL_STYLES.LIBRARY_LABEL) || 'Library';
-  const LAW_LIBRARY_ARIA = (Vectura.SCENE_FILL_STYLES && Vectura.SCENE_FILL_STYLES.LIBRARY_ARIA) || 'Show the measured library';
   const ALT_FILL_MAPPER_OPTIONS = [
     { value: 'stipple', label: 'Stipple' }, { value: 'hatch', label: 'Hatch' },
     { value: 'crosshatch', label: 'Crosshatch' }, { value: 'contour', label: 'Contour' },
@@ -479,6 +473,55 @@
   // moreLastPick, and deliberately never written into layer params: the 11
   // library-tier laws are demoted on measured grounds, not stored preferences.
   let fillStyleShowLibrary = false;
+
+  // U9 — the Fill Style (tone law) control. THREE style surfaces live in this
+  // file and every one of them has a mapper dropdown, so this is written once
+  // and called from all three:
+  //   1. the scene / object / face style editor (renderControl's 'lawpick'),
+  //   2. the focused object3d LEAF panel — the one a user actually reaches by
+  //      selecting a scene-tree object, and
+  //   3. the fused booleanGroup3d panel.
+  // Surface 2 was the live-verification catch: adding the row to the descriptor
+  // table alone left the leaf panel showing "Mapper" and no Fill Style at all.
+  //
+  // `o.row(label)` returns a control host; notes append to `host`. `o.write(v)`
+  // performs the surface's own commit; `o.rerender()` rebuilds it (the note
+  // block and the option list both depend on the current value).
+  const fillStyleControls = (host, comps, o) => {
+    const UI = Vectura.UI;
+    const FS = Vectura.SCENE_FILL_STYLES;
+    if (!UI || !FS) return;
+    const law = FS.resolve(o.value);
+    comps.push(UI.Select(o.row(FS.LABEL), {
+      options: FS.groups(fillStyleShowLibrary),
+      value: law,
+      ariaLabel: FS.ARIA,
+      onChange: (v) => o.write(v),
+    }));
+    const line = (text, warn) => {
+      if (!text) return;
+      const n = document.createElement('p');
+      n.className = warn ? 'vs3-lawnote is-caveat' : 'vs3-lawnote';
+      n.textContent = text;
+      host.appendChild(n);
+    };
+    const entry = FS.entry(law) || {};
+    const note = FS.note(law);
+    // Leads with the MARK CLASS, so what kind of mark this is stays legible
+    // once the select is closed.
+    line(note.text);
+    if (entry.mechanism) line(`How: ${entry.mechanism}`);
+    if (entry.strengths) line(`Strengths: ${entry.strengths}`);
+    if (entry.weaknesses) line(`Weaknesses: ${entry.weaknesses}`);
+    // The measured caveat of a demoted library law, in the warning colour.
+    line(note.caveat, true);
+    comps.push(UI.SegCtrl(o.row(FS.LIBRARY_LABEL), {
+      options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+      value: fillStyleShowLibrary ? 'on' : 'off',
+      ariaLabel: FS.LIBRARY_ARIA,
+      onChange: (v) => { fillStyleShowLibrary = (v === 'on'); o.rerender(); },
+    }));
+  };
 
   let CURRENT = null;
   // Set per build; tears the active panel down if its root has been detached
@@ -951,12 +994,25 @@
         ariaLabel: 'Style pen',
         onChange: (v) => { commit(() => { style.penId = v || null; }); },
       }));
-      comps.push(UI.Select(labeledRow(host, 'Mapper'), {
+      comps.push(UI.Select(labeledRow(host, 'Type'), {
         options: MAPPERS,
         value: style.mapper || 'wireframe',
-        ariaLabel: 'Style mapper',
+        ariaLabel: 'Fill type',
         onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); renderStyle(); },
       }));
+      // U9 — Fill Style, directly beneath Type. A LEAF publishes
+      // byObject[layerId], so this bag IS its resolved style: writing here is
+      // the object-scope write, which is the only scope that reaches an object
+      // declaring its own style under the whole-style-wins cascade.
+      if (FILL_MAPPERS.has(style.mapper)) {
+        if (!style.params || typeof style.params !== 'object') style.params = {};
+        fillStyleControls(host, comps, {
+          row: (lbl) => labeledRow(host, lbl),
+          value: style.params.toneLaw,
+          write: (v) => { commit(() => { style.params.toneLaw = v; }); renderStyle(); },
+          rerender: renderStyle,
+        });
+      }
       if (FILL_MAPPERS.has(style.mapper)) {
         if (!style.params || typeof style.params !== 'object') style.params = {};
         slider(host, 'Density', {
@@ -1203,22 +1259,37 @@
       : 'Drag object layers into this group in the Layers panel to add operands.';
     bHost.appendChild(note);
 
-    // Style tab.
+    // Style tab. Rebuildable in place (U9): the Fill Style row appears/hides
+    // with the fill type, and its note block + option list both depend on the
+    // current law, so a discrete change has to re-render the tab.
     const sHost = pages.style;
     const style = params.style;
-    const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
-    comps.push(UI.Select(labeledRow(sHost, 'Pen'), {
-      options: [{ value: '', label: 'Layer pen' }].concat(pens.map((p) => ({ value: p.id, label: p.name || p.id }))),
-      value: style.penId || '',
-      ariaLabel: 'Fused style pen',
-      onChange: (v) => { commit(() => { style.penId = v || null; }); },
-    }));
-    comps.push(UI.Select(labeledRow(sHost, 'Mapper'), {
-      options: MAPPERS,
-      value: style.mapper || 'wireframe',
-      ariaLabel: 'Fused style mapper',
-      onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); },
-    }));
+    const renderBoolStyle = () => {
+      sHost.textContent = '';
+      const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+      comps.push(UI.Select(labeledRow(sHost, 'Pen'), {
+        options: [{ value: '', label: 'Layer pen' }].concat(pens.map((p) => ({ value: p.id, label: p.name || p.id }))),
+        value: style.penId || '',
+        ariaLabel: 'Fused style pen',
+        onChange: (v) => { commit(() => { style.penId = v || null; }); },
+      }));
+      comps.push(UI.Select(labeledRow(sHost, 'Type'), {
+        options: MAPPERS,
+        value: style.mapper || 'wireframe',
+        ariaLabel: 'Fused fill type',
+        onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); renderBoolStyle(); },
+      }));
+      if (FILL_MAPPERS.has(style.mapper)) {
+        if (!style.params || typeof style.params !== 'object') style.params = {};
+        fillStyleControls(sHost, comps, {
+          row: (lbl) => labeledRow(sHost, lbl),
+          value: style.params.toneLaw,
+          write: (v) => { commit(() => { style.params.toneLaw = v; }); renderBoolStyle(); },
+          rerender: renderBoolStyle,
+        });
+      }
+    };
+    renderBoolStyle();
 
     mirrorChildToCanvas(ui, layer, null);
 
@@ -3375,17 +3446,6 @@
         styleHost.appendChild(row);
         return host;
       };
-      // A caption line under the Fill Style select. `warn: true` paints it in
-      // the danger colour — that is the measured caveat of a demoted library
-      // law, and it must not read as ordinary help text.
-      const lawNote = (text, warn) => {
-        if (!text) return null;
-        const n = document.createElement('p');
-        n.className = warn ? 'vs3-lawnote is-caveat' : 'vs3-lawnote';
-        n.textContent = text;
-        styleHost.appendChild(n);
-        return n;
-      };
       const renderControl = (d) => {
         const rp = resolved.params || {};
         const has = rp[d.key] !== undefined && rp[d.key] !== null;
@@ -3417,25 +3477,12 @@
           // whole-style write AT THE CURRENT SCOPE (scene / object / face), so
           // editing a face override edits the face and not the object it
           // belongs to.
-          const FS = Vectura.SCENE_FILL_STYLES;
-          if (!FS) return;
-          const law = FS.resolve(typeof raw === 'string' ? raw : d.default);
-          styleComps.push(UI.Select(labeledHost(d.label), {
-            options: FS.groups(fillStyleShowLibrary), value: law, ariaLabel: aria,
-            onChange: (v) => write(v),
-          }));
-          const entry = FS.entry(law) || {};
-          const note = FS.note(law);
-          lawNote(note.text);
-          if (entry.mechanism) lawNote(`How: ${entry.mechanism}`);
-          if (entry.strengths) lawNote(`Strengths: ${entry.strengths}`);
-          if (entry.weaknesses) lawNote(`Weaknesses: ${entry.weaknesses}`);
-          if (note.caveat) lawNote(note.caveat, true);
-          styleComps.push(UI.SegCtrl(labeledHost(LAW_LIBRARY_LABEL), {
-            options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
-            value: fillStyleShowLibrary ? 'on' : 'off', ariaLabel: LAW_LIBRARY_ARIA,
-            onChange: (v) => { fillStyleShowLibrary = (v === 'on'); renderStyle(); },
-          }));
+          fillStyleControls(styleHost, styleComps, {
+            row: labeledHost,
+            value: typeof raw === 'string' ? raw : d.default,
+            write: (v) => write(v),
+            rerender: renderStyle,
+          });
         } else if (d.kind === 'seg') {
           styleComps.push(UI.SegCtrl(labeledHost(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
         } else if (d.kind === 'toggle') {
