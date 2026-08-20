@@ -599,6 +599,81 @@
   //                       0.5 of the pitch with anti-phase neighbours and a
   //                       golden-ratio phase walk, so the waves interpenetrate
   //                       and never lattice. It floods by design; it is counted.
+  //
+  // ── ROUND 5, MEASURED (sphere·hatch, uncapped, app-default scene) ──────────
+  //
+  // The two standing bars: whiteBand R² 0.512, off the line 5.8 %, darkest
+  // (5th-pct) L* 51.4, 1192 mm, 450 pen-downs; transverseReserve darkest L*
+  // 23.6 but 21.5 mm of free end. MARKS OUTSIDE THE SILHOUETTE: 0 for all ten
+  // laws on all five cells — the chart-space construction holds.
+  //
+  //   law                R²     off-line  darkest  ink mm  pen-downs  clearance
+  //                                       L* p05             (median, darks)
+  //   nestedSerpentine   0.197   36.4 %    52.0    1330.5     811      1.05 mm
+  //   interlockWeave     0.208   33.5 %    50.9    1253.0     752      1.30 mm
+  //   amplitudeOnly      0.005   48.8 %    80.1    2113.1      61      0.70 mm
+  //   trochoidLoop       0.354   13.9 %    20.2    1779.7     866      0.94 mm
+  //   waveToRuling       0.144   37.2 %    52.0    1249.6     778      1.05 mm
+  //   nestedOctaves      0.036   79.9 %    69.5    1099.6     697      1.44 mm
+  //   onePenDown         0.249   16.5 %    48.2    1329.8      19      1.17 mm
+  //   hilbertDepth       0.039   78.4 %    69.9    1101.1     708      1.45 mm
+  //   sfcHalftone        0.169   21.1 %    53.7    1221.7     951      1.20 mm
+  //   tourScribble       0.440   14.9 %     4.5    2047.3     918      0.62 mm
+  //   whiteBand          0.512    5.8 %    51.4    1192.4     450      1.48 mm
+  //   transverseReserve  0.301   14.5 %    23.6    1292.3     483      1.39 mm
+  //
+  // THE THREE RESULTS WORTH KEEPING.
+  //
+  // 1. 'trochoidLoop' IS THE NEW DEEPEST DARK, and it is deeper honestly.
+  //    Darkest L* 20.2 against transverseReserve's 23.6, with a better tone fit
+  //    (R² 0.354 vs 0.301), less deviation (13.9 % vs 14.5 %), a wider L* span
+  //    (39.2 vs 37.3) and — the part that matters — ZERO free ends against
+  //    transverseReserve's 21.5 mm. It holds on four of five cells.
+  //    WHERE THE EXTRA INK COMES FROM, stated plainly: ARC LENGTH. It rules at
+  //    10 × pen where whiteBand rules at 7.06, so it lays 0.706 × whiteBand's
+  //    ruling count — about 842 mm of straight ruling — and delivers 1779.7 mm.
+  //    The other ~940 mm is path the rolling circle added; the pen genuinely
+  //    travels farther. Measured elongation 1.768 ×, against 1.0 for a ruling.
+  //    THE COST, equally plainly: the 5th-percentile clearance in the darks is
+  //    0.286 mm, under the 0.66 mm plot floor, and `wvElongCap` fired on 2165
+  //    samples. The deepest part of that dark is bought below the floor.
+  //
+  // 2. 'onePenDown' IS THE PLOTTER RESULT. 19 pen-downs for the whole sphere
+  //    against whiteBand's 450 — 24 × fewer — at 1329.8 mm of ink (+12 %), a
+  //    slightly deeper dark (48.2 vs 51.4), zero free ends on four of five
+  //    cells and zero marks outside the silhouette. Every bridge is a curve ON
+  //    the surface, so the saving costs no ink placed where the form is not.
+  //
+  // 3. THE OPEN SPACE DID CLOSE, and by a measurable amount: median neighbour
+  //    clearance in the darks 0.94–1.05 mm for the wave laws against
+  //    whiteBand's 1.48 mm — 29–36 % less open space at equal or deeper tone —
+  //    while the amplitude eases to exactly zero in the lights by construction.
+  //    AND THE INTUITION ABOUT PHASE IS BACKWARDS. In-phase nesting narrows the
+  //    PERPENDICULAR clearance by the elongation factor (two nested serpentines
+  //    are a pitch apart vertically but only pitch/e apart across the stroke),
+  //    so `nestedSerpentine` closes to 1.05 mm while the anti-phase
+  //    `interlockWeave` — capped at the floor — stays open at 1.30 mm. The nest
+  //    minimises open space; the interlock only looks as though it should.
+  //
+  // AND THE THREE THAT DID NOT WORK, named plainly.
+  //
+  //   'amplitudeOnly' is the control and it CONFIRMS THE PRIOR NEGATIVE RESULT.
+  //     At a fixed pen, arc length alone realised an elongation of 1.121 and an
+  //     L* span of 7.2 with R² 0.005. A space-filling curve cannot add ink at
+  //     the floor; it can only lengthen the path a WIDER pen is already laying.
+  //     That is the currency the other nine are spending, and it is small.
+  //   'nestedOctaves' / 'hilbertDepth' broke the tone (off the line 79.9 % and
+  //     78.4 %) for a reason already met once this round: the third octave has
+  //     a wavelength of λ/8 = 0.27 mm, which IS the sample spacing at
+  //     MAX_LINE_STEPS. The elongation model claims 1.77–1.83 ×, the drawn
+  //     polyline delivers nothing like it, the ask is divided by a number the
+  //     paper never saw, and the drawing comes back too light (darkest L* 69.5
+  //     / 69.9). Nesting depth needs its own sample budget, not the ruling's.
+  //   'tourScribble' reaches darkest L* 4.5 on every cell — the deepest number
+  //     in the whole comparison — and it should NOT be read as a win. Its
+  //     5th-percentile clearance is 0.18 mm against a 0.66 mm floor: it is dark
+  //     because neighbouring rulings interpenetrate and overdraw the same
+  //     paper. On a real plotter that is a wet blob, not a black.
   const TONE_ALGO = 'ladder';
   // 'contourFlow' only: which streamline family the rulings follow.
   //   'iso'  along the iso-intensity curves
