@@ -7,6 +7,30 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — ten more tone laws, each taken from a named primary source, and the re-test of the
+  nested-vs-phase selector.** `29fb99f` replaced a bit-reversed (van der Corput) NESTED rank
+  threshold with a phase accumulator, on the grounds that van der Corput's kept-index gaps are a
+  power-of-two pair. Three sources call the nested prefix THE anti-banding mechanism (Rössl &
+  Kobbelt PG 2000 §7, Praun et al. SIGGRAPH 2001 §3, Winkenbach & Salesin's prioritized stroke
+  texture), and Webb et al. NPAR 2002 §3.1 says a nested ladder bands only when the tone axis is
+  too coarse — they went from 6 levels to 64. That pairing had never been tested, so
+  `nestedFineLadder` (nested rank + 64 levels) and `phaseFineLadder` (the same 64-level target,
+  the shipped phase accumulator) were measured side by side, differing in the selector alone.
+  **Result: no revert.** Nested wins spacing regularity on 3 of 5 cells (sphere·hatch CoV 0.559
+  against 0.710) and its gap set is exactly {1,2,4,8} against the phase ladder's {1,2,3,4,5,7,10},
+  which is the power-of-two pair `29fb99f` predicted; it loses on the two cells whose coverage
+  field is flattest, and neither reaches a usable dark end (5th-percentile L* 79.7 / 78.6). The
+  banding the user reported is not in the selector. Also added: `whiteBand` (Rössl & Kobbelt §7 —
+  constant reserved width, per-sample black core, nothing ever dropped; the round's best law at
+  R² 0.512, L* span 29, darkest L* 51.4, worst bin only 5.8 % off the light, on 1192 mm of ink
+  against the ladder's 2308), `isophoteWidth` (Goodwin/Vollick/Hertzmann NPAR 2007 — thickness
+  from a real screen-space shading gradient), `strokesGrow` (Praun et al. §5's clamp(8t − 3.5)),
+  `evenStreamlines` (Jobard & Lefer placement on contourFlow's lighting field: widest bare gap
+  10.15 mm → 1.66 mm), `importanceGreedy` (Salisbury et al. SIGGRAPH 97 §3, the no-quantisation
+  reference), `lozengeStipple`, `deepFillTSP`, `forcedContrast` and `weightPlusSpacingTuned`
+  (kappa 0.35 — ink 2036 → 1598 mm and spacing CoV 0.561 → 0.449 against `weightPlusSpacing`).
+  Committed default is unchanged throughout: `TONE_ALGO 'ladder'`, `TONE_UNCAPPED false`,
+  `HL_STAGE` Stage 1.
 - **3D Scene — six tone laws that vary the PEN along a ruling instead of the placement across
   it.** Measured across the previous eleven laws, nine tie at R² 0.00–0.14 on the sphere and the
   capsule however the coverage is written, and the cause is structural: the emitter takes ONE
