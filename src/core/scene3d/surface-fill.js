@@ -643,12 +643,29 @@
   //                       SURFACE's own arc length, not on screen. The spacing
   //                       is then a property of the form and eases along it,
   //                       and the projection is deliberately left in.
+  //                       MEASURED, sphere-hatch: R² 0.067, darkest 47.0, off
+  //                       the line 52 %, gaps 0.10-1.32 mm, 144 flooded cells.
+  //                       FALSE LIMB-DARKENING, isolated and quantified: an even
+  //                       spacing ON THE SURFACE lands 0.10 mm on the paper at
+  //                       the limb — a sixth of the plot floor — and drives the
+  //                       darkest tone to L* 47 where the light asks for 72.
   //   'contFieldFore'     Its partner. Zander's foreshortening correction,
   //                       |proj_viewplane(cross(t, n))|, divides the wanted gap
   //                       so that a surface turning away from the camera does
   //                       NOT read as darker than the light says. That false
   //                       limb-darkening is a prime suspect for the off-the-line
   //                       error every chart-ruled law carries.
+  //                       MEASURED, sphere-hatch: R² 0.075, darkest 67.6, gaps
+  //                       0.27-1.64 mm, 84 flooded cells. It removes MOST of
+  //                       contFieldSurface's false darkening (min gap 0.10 →
+  //                       0.27 mm, darkest 47.0 → 67.6) and not all of it,
+  //                       because |proj(cross(t, n))| is not the screen
+  //                       clearance: it omits the SHEAR between the projected
+  //                       cross-direction and the projected ruling. `perpPitch`,
+  //                       which takes the cross product with the ruling's own
+  //                       screen direction, carries that term — which is why the
+  //                       plain screen metric (contFieldPitch) beats both, at
+  //                       0.63 mm minimum and L* 71.9.
   //   'contFieldTouch'    The sub-floor case, stated. Where the field asks for
   //                       zero clearance the lines TOUCH — that is the intended
   //                       black, not a fault — so the floor is lowered from the
