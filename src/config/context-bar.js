@@ -68,6 +68,190 @@
     SCENE_HIGHLIGHT.INERT.indexOf(SCENE_HIGHLIGHT.resolve(value)) === -1;
   Vectura.SCENE_HIGHLIGHT = SCENE_HIGHLIGHT;
 
+  // ── SCENE_FILL_STYLES — the Fill Style picker's presentation layer ────────
+  // Declared here, beside SCENE_HIGHLIGHT and for the same reason: two
+  // independent surfaces render the control (the ctxbar Style flyout in
+  // `src/ui/shell/context-bar.js` and the docked Style tab in
+  // `src/ui/panels/scene3d-panel.js`) and must not drift. One taxonomy, one
+  // option builder, one blurb table, read by both.
+  //
+  // The ROSTER — 47 laws, their labels, their measured mechanism/strengths/
+  // weaknesses/caveats, and the production/library tier split — is owned by
+  // `src/config/scene3d-tone-laws.js` and is NOT duplicated here. That file
+  // loads AFTER this one, so every read below is lazy (at render time).
+  //
+  // What this module adds on top of the roster is MARK CLASS. The roster's
+  // own `FAMILIES` group by tone MECHANISM (width-based / ladders / bundles /
+  // continuous fields …), which answers "how is the grey produced?" — a
+  // question a user picking a fill does not ask. Mark class answers "what will
+  // this look like?": parallel rulings, crossed rulings, dots, dashes, a
+  // scribble, a network. The two are genuinely different cuts: `penCross` and
+  // `penReserve` sit in the roster's `threePen` mechanism family but are
+  // CROSSHATCH marks, and crosshatched vs single-direction textures occupy
+  // separate perceptual clusters (Sterzik, Vollmer & Vollmer, IEEE TVCG 2024)
+  // — so they must not sit in one undifferentiated list.
+  const FILL_STYLE_DEFAULT = 'ladder';
+  // Ordered; this is the optgroup order the picker renders.
+  const FILL_STYLE_MARK_CLASSES = [
+    { id: 'ref', label: 'No tone', blurb: 'The tone apparatus off. Every ruling drawn at one pitch and one weight — a wire cage, not a shaded solid.' },
+    { id: 'hatch', label: 'Parallel hatching', blurb: 'One family of ruled lines, all running the same way.' },
+    { id: 'cross', label: 'Crosshatch & multi-angle', blurb: 'Marks that cross, or rulings whose direction changes across the form. A separate perceptual cluster from single-direction hatching — not interchangeable with it.' },
+    { id: 'flow', label: 'Flow lines', blurb: 'Lines that follow a direction field over the body rather than a fixed screen angle.' },
+    { id: 'wave', label: 'Wavy lines & scribble', blurb: 'Rulings carrying a lateral wave, or drawn as a continuous scribble.' },
+    { id: 'dash', label: 'Dashes & ticks', blurb: 'Broken rulings — short marks whose length, count or duty cycle carries the tone.' },
+    { id: 'dot', label: 'Dots & stipple', blurb: 'Discrete dots or flicks instead of continuous line.' },
+    { id: 'web', label: 'Networks & space-filling', blurb: 'One continuous path, or a network with no ruling direction anywhere.' },
+  ];
+  // lawId → mark-class id. Derived from each law's own measured `mechanism`
+  // string in the roster; every one of the 47 ids is present, and
+  // `assertComplete()` below is the test hook that keeps it that way when the
+  // roster grows.
+  const FILL_STYLE_MARK_OF = {
+    none: 'ref',
+    // Width-based, ladder, bundle, continuous-field and the even-grid pen laws
+    // all draw ONE family of parallel rulings; only what modulates them differs.
+    nibAngle: 'hatch', taperedEnds: 'hatch', weightModulated: 'hatch',
+    isophoteWidth: 'hatch', whiteBand: 'hatch', weightSmoothstep: 'hatch',
+    fineLadder: 'hatch', phaseFineLadder: 'hatch', perceptualRamp: 'hatch',
+    bundleCount: 'hatch', bundleSubNib: 'hatch', bundleEased: 'hatch',
+    bundleDither: 'hatch', bundleLozenge: 'hatch', bundleHandoff: 'hatch',
+    contFieldSigmoid: 'hatch', contFieldTouch: 'hatch', contFieldFore: 'hatch',
+    contFieldSurface: 'hatch', contFieldQuant: 'hatch',
+    penInterleave: 'hatch', penPitchMatch: 'hatch', penFacing: 'hatch',
+    endShorten: 'hatch',
+    // penCross draws medium x broad CROSSHATCH in the darks; penReserve cuts
+    // white reserves TRANSVERSE to the ruling and hatches inside them. Both
+    // put crossed marks on the surface. mezzoRegion gives every blue-noise
+    // region its own ruling angle (30-degree minimum separation), so the form
+    // carries many directions at once rather than one.
+    penCross: 'cross', penReserve: 'cross', mezzoRegion: 'cross',
+    // Direction/stripe fields: the ruling direction is solved over the body.
+    etfKang: 'flow', defectSplit: 'flow', turingStripe: 'flow',
+    mkScribble: 'wave', ampSpacing: 'wave', weaveDepth: 'wave',
+    interlockWeave: 'wave', trochoidLoop: 'wave', amplitudeOnly: 'wave',
+    mkTick: 'dash', mkDashRamp: 'dash', dutyConst: 'dash',
+    mkDotScreen: 'dot', lozengeStipple: 'dot', penStipple: 'dot',
+    voronoiWeb: 'web', mazeFill: 'web', originSpiral: 'web', deepFillTSP: 'web',
+  };
+  // The shipped default law. It is deliberately NOT in the roster's 47 (those
+  // are the laws the tone study MEASURED against it), but it IS the value
+  // `params.js clampStyleParam('toneLaw')` resolves an absent/unknown key to,
+  // and the value `surface-fill.js TONE_ALGO_DEFAULT` draws. Without an option
+  // carrying it the picker would show a value the drawing is not using.
+  const FILL_STYLE_DEFAULT_ENTRY = {
+    id: FILL_STYLE_DEFAULT,
+    label: 'Ladder (default)',
+    markClass: 'hatch',
+    mechanism: 'The shipped default: rulings are selected from a small set of discrete coverage rungs at one constant pen weight, so tone is carried by which rulings are drawn.',
+    strengths: 'The measured baseline every other fill style is judged against.',
+    weaknesses: 'One draw/skip verdict per ruling, so its coverage steps are visible and it cannot reach a deep shadow.',
+    chooseWhen: 'The default. Pick Fine Ladder for the same mechanism with the step pushed below the visible threshold.',
+    caveat: null,
+    simulated: false,
+    tier: 'production',
+  };
+  const SCENE_FILL_STYLES = {
+    // User-visible copy, owned here so the ctxbar flyout and the docked panel
+    // cannot drift. `sceneFlyouts.style.fillStyle` below re-exports these under
+    // the ctxbar's own row-copy shape rather than restating the strings.
+    LABEL: 'Fill Style',
+    ARIA: 'Fill style',
+    LIBRARY_LABEL: 'Library',
+    LIBRARY_ARIA: 'Show the measured library (11 more fill styles, with caveats)',
+    DEFAULT: FILL_STYLE_DEFAULT,
+    MARK_CLASSES: FILL_STYLE_MARK_CLASSES,
+    MARK_OF: FILL_STYLE_MARK_OF,
+    DEFAULT_ENTRY: FILL_STYLE_DEFAULT_ENTRY,
+    // Suffix stamped on a library-tier option so its tier is legible with the
+    // select CLOSED, not only inside the open list.
+    LIBRARY_SUFFIX: ' · library',
+    // Prefaces every caveat the six simulated pen laws show. They emit three
+    // stroke widths onto ONE pen layer because pen identity is carried per
+    // style group, not per run — three real nibs cannot be named in one fill.
+    SIMULATED_NOTE: 'Simulated — 3 nib widths on one pen layer.',
+  };
+  const fillStyleRoster = () => Vectura.SCENE3D_TONE_LAWS || null;
+  SCENE_FILL_STYLES.roster = fillStyleRoster;
+  SCENE_FILL_STYLES.markClass = (id) => {
+    if (id === FILL_STYLE_DEFAULT) return FILL_STYLE_DEFAULT_ENTRY.markClass;
+    return FILL_STYLE_MARK_OF[id] || 'hatch';
+  };
+  SCENE_FILL_STYLES.markClassLabel = (classId) => {
+    const c = FILL_STYLE_MARK_CLASSES.find((m) => m.id === classId);
+    return c ? c.label : '';
+  };
+  SCENE_FILL_STYLES.isLibrary = (id) => {
+    const R = fillStyleRoster();
+    return Boolean(R && R.LIBRARY.indexOf(id) !== -1);
+  };
+  // The full descriptor a surface renders: roster entry + mark class, or the
+  // synthesized default entry. Null for an id neither knows.
+  SCENE_FILL_STYLES.entry = (id) => {
+    if (id === FILL_STYLE_DEFAULT) return { ...FILL_STYLE_DEFAULT_ENTRY, markClassLabel: SCENE_FILL_STYLES.markClassLabel('hatch') };
+    const R = fillStyleRoster();
+    const law = R && R.BY_ID[id];
+    if (!law) return null;
+    const markClass = SCENE_FILL_STYLES.markClass(id);
+    return {
+      ...law,
+      markClass,
+      markClassLabel: SCENE_FILL_STYLES.markClassLabel(markClass),
+    };
+  };
+  // Map a stored value onto an option this picker actually offers. Anything
+  // unknown collapses onto the default, matching the engine's own clamp.
+  SCENE_FILL_STYLES.resolve = (value) => {
+    if (typeof value !== 'string' || !value) return FILL_STYLE_DEFAULT;
+    return SCENE_FILL_STYLES.entry(value) ? value : FILL_STYLE_DEFAULT;
+  };
+  // [{ group, options: [{ value, label }] }] for UI.Select, grouped by MARK
+  // CLASS. `includeLibrary` false = the 36 production laws + the default;
+  // true = all 47 + the default, each library row suffixed. Empty classes are
+  // dropped so the disclosure never leaves a headed, empty group behind.
+  SCENE_FILL_STYLES.groups = (includeLibrary) => {
+    const R = fillStyleRoster();
+    const ids = R ? R.IDS : [];
+    const inTier = (id) => includeLibrary || !R || R.PRODUCTION.indexOf(id) !== -1;
+    const out = [];
+    FILL_STYLE_MARK_CLASSES.forEach((cls) => {
+      const options = [];
+      // The default heads its own class so it is never buried mid-list.
+      if (cls.id === FILL_STYLE_DEFAULT_ENTRY.markClass) {
+        options.push({ value: FILL_STYLE_DEFAULT, label: FILL_STYLE_DEFAULT_ENTRY.label });
+      }
+      ids.forEach((id) => {
+        if (SCENE_FILL_STYLES.markClass(id) !== cls.id || !inTier(id)) return;
+        const label = R.BY_ID[id].label + (SCENE_FILL_STYLES.isLibrary(id) ? SCENE_FILL_STYLES.LIBRARY_SUFFIX : '');
+        options.push({ value: id, label });
+      });
+      if (options.length) out.push({ group: cls.label, options });
+    });
+    return out;
+  };
+  // The one-or-two lines a surface prints under the select. `text` always
+  // leads with the MARK CLASS, so the kind of mark stays visible once the
+  // select is closed; `caveat` is the measured warning, prefixed for the six
+  // simulated pen laws. Either may be ''.
+  SCENE_FILL_STYLES.note = (id) => {
+    const e = SCENE_FILL_STYLES.entry(id);
+    if (!e) return { text: '', caveat: '' };
+    const text = e.markClassLabel ? `${e.markClassLabel} — ${e.chooseWhen || ''}` : (e.chooseWhen || '');
+    let caveat = e.caveat || '';
+    if (e.simulated) caveat = caveat ? `${SCENE_FILL_STYLES.SIMULATED_NOTE} ${caveat}` : SCENE_FILL_STYLES.SIMULATED_NOTE;
+    return { text, caveat };
+  };
+  // Test hook: every roster id must have a mark class, and every mark class id
+  // used must exist. Returns the offending ids so a failure names them.
+  SCENE_FILL_STYLES.assertComplete = () => {
+    const R = fillStyleRoster();
+    const known = FILL_STYLE_MARK_CLASSES.map((c) => c.id);
+    const missing = R ? R.IDS.filter((id) => !FILL_STYLE_MARK_OF[id]) : [];
+    const unknown = Object.keys(FILL_STYLE_MARK_OF).filter((id) => known.indexOf(FILL_STYLE_MARK_OF[id]) === -1);
+    const stray = R ? Object.keys(FILL_STYLE_MARK_OF).filter((id) => R.IDS.indexOf(id) === -1) : [];
+    return { missing, unknown, stray };
+  };
+  Vectura.SCENE_FILL_STYLES = SCENE_FILL_STYLES;
+
   Vectura.CONTEXT_BAR = {
     // ── TB-1/8: timings & geometry (constant screen px; zoom-independent) ──
     timing: {
@@ -201,7 +385,17 @@
         ],
       },
       style: {
-        mapper: { label: 'Fill', aria: 'Fill style mapper' },
+        // U9 — the first dropdown picks the KIND of fill (hatch / crosshatch /
+        // contour / spiral / stipple / wireframe / none); the Fill Style row
+        // beneath it picks the tone law that KIND is drawn with. Calling the
+        // first one "Fill" made the second unnameable, so it is "Type".
+        mapper: { label: 'Type', aria: 'Fill type' },
+        fillStyle: {
+          label: SCENE_FILL_STYLES.LABEL,
+          aria: SCENE_FILL_STYLES.ARIA,
+          libraryLabel: SCENE_FILL_STYLES.LIBRARY_LABEL,
+          libraryAria: SCENE_FILL_STYLES.LIBRARY_ARIA,
+        },
         pen: { label: 'Pen', aria: 'Style pen', inherit: 'Layer pen' },
         angle: { label: 'Angle', aria: 'Hatch angle' },
         density: { label: 'Density', aria: 'Fill density' },

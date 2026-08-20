@@ -635,8 +635,10 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     // Hatch seeds the angle + density, its Phase-2 controls (angle ref + link
     // fill), AND the shared stroke-treatment defaults (Phase 1.1), so switching
     // between fill mappers carries the line tuning.
+    // U9 adds the Fill Style (tone law) to every fill mapper's seed set — that
+    // is what carries the user's law across a hatch → crosshatch switch.
     expect(stored.params).toEqual({
-      fillAngle: 45, fillDensity: 50, angleRef: 'face', linkFill: false,
+      fillAngle: 45, fillDensity: 50, toneLaw: 'ladder', angleRef: 'face', linkFill: false,
       lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false,
     });
 
@@ -664,7 +666,7 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     // + the shared stroke defaults.
     expect(layer.params.styleTable.byObject['obj-1'].mapper).toBe('contour');
     expect(layer.params.styleTable.byObject['obj-1'].params).toEqual({
-      fillDensity: 50, contourStyle: 'surface',
+      fillDensity: 50, toneLaw: 'ladder', contourStyle: 'surface',
       lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false,
     });
     // Density control present; Angle control absent for a region mapper.

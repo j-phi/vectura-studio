@@ -357,6 +357,12 @@
   // src/config/context-bar.js, which loads first): one option list and one
   // "is this treatment inert?" rule, so the two surfaces cannot drift.
   const SCENE_HIGHLIGHT = () => Vectura.SCENE_HIGHLIGHT;
+  // U9 — Fill Style copy. Owned by Vectura.SCENE_FILL_STYLES (declared in
+  // src/config/context-bar.js, which loads first) so this panel and the ctxbar
+  // Style flyout render the same words. Resolved lazily with a literal fallback
+  // for a runtime that loads the panel without the config module.
+  const LAW_LIBRARY_LABEL = (Vectura.SCENE_FILL_STYLES && Vectura.SCENE_FILL_STYLES.LIBRARY_LABEL) || 'Library';
+  const LAW_LIBRARY_ARIA = (Vectura.SCENE_FILL_STYLES && Vectura.SCENE_FILL_STYLES.LIBRARY_ARIA) || 'Show the measured library';
   const ALT_FILL_MAPPER_OPTIONS = [
     { value: 'stipple', label: 'Stipple' }, { value: 'hatch', label: 'Hatch' },
     { value: 'crosshatch', label: 'Crosshatch' }, { value: 'contour', label: 'Contour' },
@@ -390,20 +396,28 @@
   const D_DENSITY = { key: 'fillDensity', kind: 'slider', label: 'Density', ariaLabel: 'Fill density', min: 1, max: 100, step: 1, default: 50 };
   const D_ANGLEREF = { key: 'angleRef', kind: 'seg', label: 'Angle ref', ariaLabel: 'Hatch angle reference', default: 'face', options: ANGLE_REF_OPTS };
   const D_LINKFILL = { key: 'linkFill', kind: 'toggle', label: 'Link fill', ariaLabel: 'Connect scanlines (boustrophedon)', default: false };
+  // U9 — the FILL STYLE (tone law). `kind: 'lawpick'` is a Select grouped by
+  // MARK CLASS plus a description block; the roster and the taxonomy both come
+  // from Vectura.SCENE_FILL_STYLES so this surface and the ctxbar flyout
+  // cannot drift. Carried on EVERY fill mapper, which is also what puts it in
+  // `mapperDefaults`' carry set below — without that, switching hatch →
+  // crosshatch would silently reset the user's law (whole-style-wins makes
+  // that a real, easy-to-ship bug).
+  const D_TONELAW = { key: 'toneLaw', kind: 'lawpick', label: 'Fill Style', ariaLabel: 'Fill style', default: 'ladder' };
   const MAPPER_CONTROLS = {
-    hatch: [D_ANGLE, D_DENSITY, D_ANGLEREF, D_LINKFILL],
+    hatch: [D_ANGLE, D_DENSITY, D_TONELAW, D_ANGLEREF, D_LINKFILL],
     crosshatch: [
-      D_ANGLE, D_DENSITY, D_ANGLEREF, D_LINKFILL,
+      D_ANGLE, D_DENSITY, D_TONELAW, D_ANGLEREF, D_LINKFILL,
       { key: 'crossAngleDelta', kind: 'dial', label: 'Cross angle', ariaLabel: 'Crosshatch angle delta', min: 10, max: 170, step: 1, default: 90 },
       { key: 'crossDensityRatio', kind: 'slider', label: 'Cross density', ariaLabel: 'Second family density ratio', min: 0.25, max: 2, step: 0.05, default: 1 },
       { key: 'tripleHatch', kind: 'toggle', label: 'Triple hatch', ariaLabel: 'Triple hatch in darkest band', default: false },
     ],
     contour: [
-      D_DENSITY,
+      D_DENSITY, D_TONELAW,
       { key: 'contourStyle', kind: 'seg', label: 'Style', ariaLabel: 'Contour style', default: 'surface', options: [{ value: 'surface', label: 'Surface' }, { value: 'region', label: 'Region' }] },
     ],
     spiral: [
-      D_DENSITY,
+      D_DENSITY, D_TONELAW,
       { key: 'spiralAngleOffset', kind: 'dial', label: 'Angle offset', ariaLabel: 'Spiral start angle', min: 0, max: 360, step: 1, default: 0 },
       { key: 'spiralEccentricity', kind: 'slider', label: 'Eccentricity', ariaLabel: 'Spiral eccentricity', min: 0.3, max: 3, step: 0.05, default: 1, seed: false },
       { key: 'spiralCenter', kind: 'seg', label: 'Centre', ariaLabel: 'Spiral centre', default: 'centroid', options: [{ value: 'centroid', label: 'Centroid' }, { value: 'bboxCenter', label: 'Bounds' }] },
@@ -411,7 +425,7 @@
       { key: 'spiralMode', kind: 'seg', label: 'Mode', ariaLabel: 'Spiral mode', default: 'surfaceHelix', options: [{ value: 'surfaceHelix', label: 'Surface' }, { value: 'flatClip', label: 'Flat' }] },
     ],
     stipple: [
-      D_DENSITY,
+      D_DENSITY, D_TONELAW,
       { key: 'dotShape', kind: 'select', label: 'Dot', ariaLabel: 'Dot shape', default: 'dot', options: DOT_SHAPE_OPTS },
       { key: 'dotSize', kind: 'slider', label: 'Dot size', ariaLabel: 'Dot size', min: 0.1, max: 3, step: 0.05, default: 0.7, seed: false },
       { key: 'stippleJitter', kind: 'slider', label: 'Jitter', ariaLabel: 'Stipple jitter', min: 0, max: 100, step: 1, default: 40 },
@@ -461,6 +475,10 @@
   // Session-only last-pick memory for the More… flyout (Decision 3). Module
   // scope: survives panel rebuilds/layer switches, resets on reload.
   let moreLastPick = null;
+  // U9 — Fill Style library disclosure. VIEW state only, same lifetime rule as
+  // moreLastPick, and deliberately never written into layer params: the 11
+  // library-tier laws are demoted on measured grounds, not stored preferences.
+  let fillStyleShowLibrary = false;
 
   let CURRENT = null;
   // Set per build; tears the active panel down if its root has been detached
@@ -3324,7 +3342,9 @@
       mapRow.className = 'vs3-row';
       const mapLbl = document.createElement('label');
       mapLbl.className = 'vs3-lbl';
-      mapLbl.textContent = 'Mapper';
+      // U9 — this dropdown picks the KIND of fill; the Fill Style row it seeds
+      // picks the tone law that kind is drawn with. Named to match the ctxbar.
+      mapLbl.textContent = 'Type';
       mapRow.appendChild(mapLbl);
       const mapHost = document.createElement('div');
       mapHost.className = 'vs3-ctl';
@@ -3355,6 +3375,17 @@
         styleHost.appendChild(row);
         return host;
       };
+      // A caption line under the Fill Style select. `warn: true` paints it in
+      // the danger colour — that is the measured caveat of a demoted library
+      // law, and it must not read as ordinary help text.
+      const lawNote = (text, warn) => {
+        if (!text) return null;
+        const n = document.createElement('p');
+        n.className = warn ? 'vs3-lawnote is-caveat' : 'vs3-lawnote';
+        n.textContent = text;
+        styleHost.appendChild(n);
+        return n;
+      };
       const renderControl = (d) => {
         const rp = resolved.params || {};
         const has = rp[d.key] !== undefined && rp[d.key] !== null;
@@ -3378,6 +3409,33 @@
           }
         } else if (d.kind === 'select') {
           styleComps.push(UI.Select(labeledHost(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
+        } else if (d.kind === 'lawpick') {
+          // U9 — the Fill Style (tone law) picker. Options grouped by MARK
+          // CLASS, then a description block so this descriptive surface says
+          // what the law actually does and — for the 11 demoted library laws —
+          // why it is demoted. `write` routes through commitStyle, which is a
+          // whole-style write AT THE CURRENT SCOPE (scene / object / face), so
+          // editing a face override edits the face and not the object it
+          // belongs to.
+          const FS = Vectura.SCENE_FILL_STYLES;
+          if (!FS) return;
+          const law = FS.resolve(typeof raw === 'string' ? raw : d.default);
+          styleComps.push(UI.Select(labeledHost(d.label), {
+            options: FS.groups(fillStyleShowLibrary), value: law, ariaLabel: aria,
+            onChange: (v) => write(v),
+          }));
+          const entry = FS.entry(law) || {};
+          const note = FS.note(law);
+          lawNote(note.text);
+          if (entry.mechanism) lawNote(`How: ${entry.mechanism}`);
+          if (entry.strengths) lawNote(`Strengths: ${entry.strengths}`);
+          if (entry.weaknesses) lawNote(`Weaknesses: ${entry.weaknesses}`);
+          if (note.caveat) lawNote(note.caveat, true);
+          styleComps.push(UI.SegCtrl(labeledHost(LAW_LIBRARY_LABEL), {
+            options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+            value: fillStyleShowLibrary ? 'on' : 'off', ariaLabel: LAW_LIBRARY_ARIA,
+            onChange: (v) => { fillStyleShowLibrary = (v === 'on'); renderStyle(); },
+          }));
         } else if (d.kind === 'seg') {
           styleComps.push(UI.SegCtrl(labeledHost(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
         } else if (d.kind === 'toggle') {

@@ -229,7 +229,7 @@ describe('3D panel — Border lines (Object tab) vs Fill lines (Style tab)', () 
     });
     selectObject(container, 'obj-1');
     clickTab(container, 'style');
-    const mapperSel = styleRow(container, 'Mapper').querySelector('select');
+    const mapperSel = styleRow(container, 'Type').querySelector('select');
     mapperSel.value = 'contour';
     fire(mapperSel, 'change');
     const params = layer.params.styleTable.byObject['obj-1'].params;
