@@ -1246,6 +1246,9 @@
       // black core, white margins), so none of them can drop a ruling.
       nibAngle: 1, curvatureField: 1, screenAngles: 1,
       taperedEnds: 1, whiteLineInverse: 1, multiScale: 1,
+      // SWEEP 2 — the two pre-warps, the signed width, the second pen, and the
+      // transverse reserve that replaces the (no-op) parallel inversion.
+      equilibrated: 1, signedWidth: 1, wideShadowPen: 1, transverseReserve: 1,
     };
     const isWeightLaw = () => WEIGHT_LAWS[TONE_ALGO] === 1;
     // `weightPlusSpacingTuned` is `weightPlusSpacing` at a different kappa and
@@ -1261,7 +1264,9 @@
       || TONE_ALGO === 'whiteBand' || TONE_ALGO === 'isophoteWidth'
       || TONE_ALGO === 'nibAngle' || TONE_ALGO === 'curvatureField'
       || TONE_ALGO === 'screenAngles' || TONE_ALGO === 'taperedEnds'
-      || TONE_ALGO === 'whiteLineInverse' || TONE_ALGO === 'multiScale';
+      || TONE_ALGO === 'whiteLineInverse' || TONE_ALGO === 'multiScale'
+      || TONE_ALGO === 'equilibrated' || TONE_ALGO === 'signedWidth'
+      || TONE_ALGO === 'wideShadowPen' || TONE_ALGO === 'transverseReserve';
     // WHERE THE WEIGHT LAWS ACTUALLY LANDED — the counterpart to `floorStat`.
     // The weight range is bounded at both ends by physics (you cannot draw
     // thinner than the pen, and past W_FLOOD_AREA the ink is a blob), so "did
@@ -1345,10 +1350,12 @@
     const weightBaseCov = () => {
       if (TONE_ALGO === 'weightDeepDark' || TONE_ALGO === 'weightMultiPass') return deepFlatCov();
       if (TONE_ALGO === 'whiteLineInverse') return wliFlatCov();
+      if (TONE_ALGO === 'transverseReserve') return trFlatCov();
       if (TONE_ALGO === 'whiteBand' || TONE_ALGO === 'isophoteWidth'
         || TONE_ALGO === 'nibAngle' || TONE_ALGO === 'curvatureField'
         || TONE_ALGO === 'screenAngles' || TONE_ALGO === 'taperedEnds'
-        || TONE_ALGO === 'multiScale') return wbFlatCov();
+        || TONE_ALGO === 'multiScale' || TONE_ALGO === 'equilibrated'
+        || TONE_ALGO === 'signedWidth' || TONE_ALGO === 'wideShadowPen') return wbFlatCov();
       return flatCov();
     };
     // ── 'isophoteWidth' — GOODWIN, VOLLICK & HERTZMANN'S ISOPHOTE DISTANCE ────
@@ -1566,6 +1573,189 @@
     const saCovAt = (I, localPitch, layer) => (layer === 0
       ? weightBaseCov()
       : clamp(covForArea(saAreaAt(I, localPitch, layer), localPitch), 0.001, weightBaseCov()));
+
+    // ── SWEEP 2: THE PRE-WARPS. NO INK, NO PLOT TIME, EVERY LAW ──────────────
+    //
+    // 'equilibrated' = whiteBand, with two calibrations in front of it. Both are
+    // pure maps from radiance to the area asked for; neither adds a stroke, a
+    // pen-down or a millimetre of travel.
+    //
+    // (1) THE PERCEPTUAL SIGMOID. Sterzik, Meuschke, Cunningham & Lawonn, IEEE
+    //     TVCG 30(1) 2024, fit a psychometric curve to crowd-sourced pairwise
+    //     comparisons of illustrative textures:
+    //         f(x) = 1 / (1 + (1/a − 1)·(1/x − 1)^b)
+    //     with a = 0.4753, b = 1.5918 FOR HATCHING (stipple 0.5644/1.7361;
+    //     triangles 0.5859/1.8120 — different textures, different curves, which
+    //     is itself the finding). b > 1 and a < 0.5 mean perceived tone rises
+    //     FASTER than density in the lights and SATURATES in the darks — which
+    //     is the exact shape of the two complaints this branch keeps measuring
+    //     (the highlight stops too abruptly; the darks go flat). Every law here
+    //     so far has been uniform in INK AREA, which is not the axis the eye is
+    //     on. So the perceived darkness is made linear in radiance and the
+    //     DENSITY is the inverse curve's answer.
+    //
+    // (2) THE EQUILIBRATION TABLE. Ostromoukhov, "Digital Facial Engraving",
+    //     SIGGRAPH 1999, §2.3: dither → dot-gain → HVS low-pass → correct the
+    //     tone-to-parameter map LOCALLY at 16 levels → iterate. Explicitly not a
+    //     histogram equalisation, "because of its GLOBAL nature". This is the
+    //     standard fix for exactly the anomaly this branch measured and could
+    //     not explain — one family under-delivers (0.408 against a predicted
+    //     0.509) while a crossed pair over-delivers (XH_DEEP_AREA had to be
+    //     MEASURED at 0.72 against a predicted 0.85). Individually-linear layers
+    //     do not superpose linearly, and no amount of arithmetic in this file
+    //     will make them; the correction has to come back from the render.
+    //
+    //     EQ_TABLE is 16 gains on the asked ink area, indexed by radiance. The
+    //     identity table below is the UNCALIBRATED law; the harness runs the
+    //     loop (render → measure apparent L* per level → gain = area needed /
+    //     area delivered → rewrite this array → re-render) and each pass is
+    //     reported separately, so the correction is visible rather than baked.
+    const PS_A = 0.4753;
+    const PS_B = 1.5918;
+    const psInv = (y) => {
+      const t = clamp(finite(y, 0.5), 1e-4, 1 - 1e-4);
+      return clamp(1 / (1 + Math.pow((1 / t - 1) / (1 / PS_A - 1), 1 / PS_B)), 0, 1);
+    };
+    const EQ_TABLE = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    const eqGain = (I) => {
+      const n = EQ_TABLE.length;
+      const t = clamp(finite(I, 0), 0, 1) * (n - 1);
+      const i = Math.min(n - 2, Math.floor(t));
+      return clamp(EQ_TABLE[i] + (EQ_TABLE[i + 1] - EQ_TABLE[i]) * (t - i), 0.2, 5);
+    };
+    const eqArea = (I) => {
+      const aMin = wLightArea();
+      const aMax = 1 - WB_CMIN;
+      const u = psInv(1 - clamp(finite(I, 0), 0, 1));
+      return clamp((aMin + (aMax - aMin) * u) * eqGain(I), 0.01, 0.98);
+    };
+
+    // ── 'signedWidth' — ZANDER'S TAPER-THEN-SHORTEN ───────────────────────────
+    //
+    // Zander, Isenberg, Schlechtweg & Strothotte, "High Quality Hatching", CGF
+    // 23(3) 2004, §4.3: let the per-sample width be SIGNED. Positive, draw at
+    // that width; approaching zero, taper to a hairline; NEGATIVE, and the
+    // visible portion shortens — the stroke's end lands wherever the width
+    // crosses zero, which is in general MID-SEGMENT. "This decouples the visual
+    // occurrence of a line end from the positions of the individual stroke
+    // vertices."
+    //
+    // Under whiteBand the black core ALREADY is a per-sample width, so allowing
+    // it to go negative is a small change with a large payoff at the light end:
+    // the tone target is anchored BELOW the pen (SW_LIGHT_FRAC of what the pen
+    // alone would lay), so in the highlight the ask falls under SW_CUT and the
+    // stroke retracts along its own length instead of arriving at the pen floor
+    // and stopping dead. There is no cull decision anywhere and no quantised
+    // length ladder — the end is where the arithmetic says it is.
+    //
+    // THIS LAW DELIBERATELY BREACHES THE FREE-END INVARIANT, and it is the only
+    // one in this round that does. The ends it creates are in the HIGHLIGHT, by
+    // construction (the width only goes negative where the tone is nearly
+    // white), which is where Ostromoukhov's own MAX-merge argument says
+    // fragmentation belongs — "produces continuous lines in the dark areas, and
+    // discontinuous ones in highlights". The count is measured and reported, not
+    // hidden, and the law is offered as an EXTENSION to whiteBand's light end
+    // rather than as a replacement for it.
+    const SW_LIGHT_FRAC = 0.40;  // the light anchor, as a share of the pen's own floor
+    const SW_CUT = 0.72;         // pen units: below this the stroke is not on the paper
+    const swArea = (I) => areaForTone(I, 1 - WB_CMIN, wLightArea() * SW_LIGHT_FRAC);
+    // The width the tone asks for, in PEN UNITS, before any clamp — the signed
+    // quantity itself. `weightForArea` would clamp it at W_MIN, which is exactly
+    // the cliff this law exists to remove, so the ask is recomputed here.
+    const swAsk = (I, localPitch) => {
+      const p = (Number.isFinite(localPitch) && localPitch > 1e-6) ? localPitch : masterPitch;
+      if (!(p > 1e-6)) return W_MIN;
+      const c = clamp(weightCovEff(clamp(finite(I, 0), 0, 1), p), 1e-6, 1);
+      return (swArea(clamp(finite(I, 0), 0, 1)) * p) / (c * inkWidth());
+    };
+
+    // ── 'wideShadowPen' — THE CHEAPEST REAL BLACK ON THE LIST ─────────────────
+    //
+    // A two-pen plot. Lights and mids stay on the fine nib; the SHADOW family
+    // alone goes on a physically wider pen at its own spacing. A 0.9 mm nib
+    // reaches a given ink area with about a third the line count and a third the
+    // plot time of the 0.3 mm nib, and — the part that matters here — the
+    // engine's weightScale ceiling of 6 is a ceiling on the FINE pen, so a
+    // family drawn with a 3× nib clears the same ink area at a third the ask.
+    //
+    // The fine family is held to WSP_FINE_CAP and never asked to carry the
+    // shadow at all; the wide family enters BY DENSITY from nothing on the
+    // remainder, so there is no threshold and no traceable onset. Its weight is
+    // FLOORED at WSP_MUL, because a physically wider pen cannot draw thinner
+    // than itself — that is what makes this a two-pen plot and not a re-labelled
+    // weight law, and it is why the density ramp does the entering.
+    //
+    // The number to read is not darkest L* alone but darkest L* PER MILLIMETRE
+    // OF TRAVEL, which is what the harness's ink/paths columns carry.
+    const WSP_MUL = 3.0;            // the shadow nib, as a multiple of the fine one
+    const WSP_DEEP_AREA = 0.93;
+    const WSP_FINE_CAP = 0.42;      // the most the fine pen is ever asked for
+    const wspTotal = (I) => areaForTone(I, WSP_DEEP_AREA, wLightArea());
+    const wspAreaFine = (I) => Math.min(wspTotal(I), WSP_FINE_CAP);
+    const wspAreaWide = (I) => clamp(wspTotal(I) - wspAreaFine(I), 0, 0.98);
+    const wspCovWide = (I, localPitch) => clamp(
+      covForArea(wspAreaWide(I), localPitch), 0.001, weightBaseCov(),
+    );
+
+    // ── 'transverseReserve' — BEWICK'S WHITE LINE, DONE PROPERLY ──────────────
+    //
+    // THE CORRECTION THAT MADE THIS LAW NECESSARY. The obvious inversion —
+    // "whiteBand, but carve white out of a near-solid ground" — is not a new
+    // law at all. whiteBand IS the parallel white-line model: its white reserves
+    // already run ALONG the rulings, and changing which end the transfer is
+    // anchored at only re-parameterises it. Measured, exactly as predicted:
+    // `whiteLineInverse` on sphere·hatch is whiteBand with a tighter reserved
+    // pitch and a deeper anchor, and it moves darkest L* 51.4 → 31.3 purely
+    // because of that re-pitching, not because of any inversion.
+    //
+    // Bewick's tonal range did not come from parallel whites. It came from white
+    // lines that CROSS the black — cut ACROSS the burin's own strokes, so the
+    // reserve is TRANSVERSE. That is not reachable by any continuous width law,
+    // which is what makes it genuinely new here.
+    //
+    // Construction. The family rules at a pitch the heaviest legal pen can CLOSE
+    // (trFlatCov: pitch = W_MAX·ink, so weight 6 lays a solid field). Tone is
+    // then two axes, exactly as the engraver has: the black core's width, and
+    // the width of a transverse white ruling cut across it. The width axis
+    // carries the lights and mids alone; past TR_WCAP the core goes solid and
+    // the transverse reserve opens, so the two hand over continuously in
+    // DELIVERED AREA (aw·(1−d) is continuous through the crossover) while the
+    // texture changes from a hatch to an engraved field.
+    //
+    // PHASE ALIGNMENT IS THE ENTIRE TRICK. The gaps are cut symmetrically about
+    // the SAME sweep parameter on every ruling — the gate is |frac(tt/T) − ½| ≥
+    // d/2, so the reserve's centre is at a fixed tt regardless of how wide it is
+    // — which makes the whites line up into a coherent cross-ruling running
+    // perpendicular to the black family. Unaligned gaps read as a broken hatch,
+    // which is the failure mode this branch exists to prevent; aligned ones read
+    // as deliberate cuts, which is what an engraving is.
+    //
+    // FREE ENDS: two per reserve per ruling, by construction. Reported.
+    const TR_DARK_AREA = 0.92;
+    const TR_WCAP = 0.45;        // where the core stops widening and the white opens
+    const TR_TT_PERIOD = 1 / 13; // transverse reserves per sweep
+    const TR_DUTY_MAX = 0.88;
+    const trFlatCov = () => {
+      const env = toneEnvelope();
+      const c = masterPitch / (W_MAX * inkWidth());
+      return clamp(finite(c, env.covLight), env.covLight, env.covDark);
+    };
+    const trTotal = (I) => areaForTone(I, TR_DARK_AREA, wLightArea());
+    // The crossover, as a smootherstep on the area itself: 0 while the width
+    // axis can still carry the tone, 1 once the core has gone solid.
+    const trBlend = (A) => {
+      const t = clamp((A - TR_WCAP) / Math.max(1e-6, TR_DARK_AREA - TR_WCAP), 0, 1);
+      return t * t * t * (t * (6 * t - 15) + 10);
+    };
+    const trAreaWidth = (I) => {
+      const A = clamp(trTotal(I), 0, 0.98);
+      return clamp(A + (1 - A) * trBlend(A), 0.01, 1);
+    };
+    const trDuty = (I) => {
+      const A = clamp(trTotal(I), 0, 0.98);
+      const aw = trAreaWidth(I);
+      return clamp(1 - A / Math.max(1e-6, aw), 0, TR_DUTY_MAX);
+    };
     // How much more ink than the light end this radiance asks for.
     const wAmp = (I) => {
       const aL = wLightArea();
@@ -1646,6 +1836,13 @@
         return xfLayer === 0
           ? msCovFine(clamp(finite(I, 0), 0, 1), localPitch)
           : weightBaseCov();
+      }
+      // 'wideShadowPen' — layer 1 is the WIDE pen and enters by density on the
+      // remainder the fine pen is not allowed to carry.
+      if (TONE_ALGO === 'wideShadowPen') {
+        return xfLayer === 0
+          ? weightBaseCov()
+          : wspCovWide(clamp(finite(I, 0), 0, 1), localPitch);
       }
       // 'screenAngles' — family A runs full, B and C enter by density.
       if (TONE_ALGO === 'screenAngles') {
@@ -1750,6 +1947,29 @@
       }
       if (TONE_ALGO === 'screenAngles') {
         return weightForArea(saAreaAt(I, localPitch, xfLayer), localPitch, weightCovEff(I, localPitch));
+      }
+      // 'equilibrated' — whiteBand's core through the perceptual sigmoid and the
+      // 16-level equilibration table. No geometry change at all.
+      if (TONE_ALGO === 'equilibrated') {
+        return weightForArea(eqArea(I), localPitch, weightCovEff(I, localPitch));
+      }
+      // 'signedWidth' — the clamp at W_MIN is the cliff; the retraction that
+      // replaces it happens in the emit loop, so the width itself is ordinary.
+      if (TONE_ALGO === 'signedWidth') {
+        return weightForArea(swArea(I), localPitch, weightCovEff(I, localPitch));
+      }
+      // 'wideShadowPen' — the wide family's weight is FLOORED at its own nib: a
+      // 0.9 mm pen cannot draw a 0.3 mm line, and pretending otherwise would
+      // turn a two-pen plot back into a one-pen weight law.
+      if (TONE_ALGO === 'wideShadowPen') {
+        const w = weightForArea(xfLayer === 0 ? wspAreaFine(I) : wspAreaWide(I),
+          localPitch, weightCovEff(I, localPitch));
+        return xfLayer === 0 ? w : clamp(Math.max(WSP_MUL, w), WSP_MUL, W_MAX);
+      }
+      // 'transverseReserve' — the CORE's width only. The transverse white is cut
+      // by the emit loop's gate, not by the pen.
+      if (TONE_ALGO === 'transverseReserve') {
+        return weightForArea(trAreaWidth(I), localPitch, weightCovEff(I, localPitch));
       }
       // 'isophoteWidth' — the width comes from the SHADING GRADIENT, measured on
       // the ruling itself (see `isoWidthArea`); the sampler hands it in.
@@ -2854,6 +3074,62 @@
         const dirHere = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
         return perpPitch(smp, stepHere, dirHere);
       };
+      // ── WHERE THE STROKE IS NOT ON THE PAPER, AND EXACTLY WHERE IT LEAVES ──
+      //
+      // Two laws cut a run short, for opposite reasons, and both need the cut to
+      // land MID-SEGMENT rather than at whichever sample happened to be next.
+      //
+      //   'signedWidth'        Zander et al. §4.3. The width is signed; where it
+      //                        crosses zero the stroke has retracted, and the end
+      //                        is at the crossing — "this decouples the visual
+      //                        occurrence of a line end from the positions of the
+      //                        individual stroke vertices".
+      //   'transverseReserve'  Bewick's cross-ruling. The white is cut
+      //                        SYMMETRICALLY about a fixed sweep parameter on
+      //                        every ruling — the gate is |frac(tt/T) − ½| ≥ d/2
+      //                        — so its centre does not move as its width does,
+      //                        and the reserves line up across the family into a
+      //                        coherent transverse white line. That alignment is
+      //                        the whole mechanism; without it these are just
+      //                        broken rulings.
+      //
+      // Both are computed once, before any ink is laid, so the crossing points
+      // are available to the emit loop as ordinary samples.
+      let offPaper = null;
+      let exitPt = null;
+      let entryPt = null;
+      if (toneOn && (TONE_ALGO === 'signedWidth' || TONE_ALGO === 'transverseReserve')) {
+        offPaper = new Array(nSteps + 1).fill(false);
+        exitPt = new Array(nSteps + 1).fill(null);
+        entryPt = new Array(nSteps + 1).fill(null);
+        const vals = new Array(nSteps + 1).fill(0);
+        for (let s = 0; s <= nSteps; s++) {
+          const smp = smps[s];
+          if (!smp) continue;
+          const I = clamp(finite(smp.I, 0), 0, 1);
+          if (TONE_ALGO === 'signedWidth') {
+            vals[s] = swAsk(I, pitchAtStep(smp, s)) - SW_CUT;
+          } else {
+            const u = ((((s / nSteps) / TR_TT_PERIOD) % 1) + 1) % 1;
+            vals[s] = Math.abs(u - 0.5) - trDuty(I) / 2;
+          }
+          offPaper[s] = !(vals[s] >= 0);
+        }
+        const crossAt = (on, off) => {
+          const d = vals[on] - vals[off];
+          const f = Math.abs(d) > 1e-12 ? clamp(vals[on] / d, 0, 1) : 0;
+          return {
+            x: smps[on].x + (smps[off].x - smps[on].x) * f,
+            y: smps[on].y + (smps[off].y - smps[on].y) * f,
+            z: smps[on].z + (smps[off].z - smps[on].z) * f,
+          };
+        };
+        for (let s = 1; s <= nSteps; s++) {
+          if (!smps[s] || !smps[s - 1]) continue;
+          if (offPaper[s] && !offPaper[s - 1]) exitPt[s] = crossAt(s - 1, s);
+          else if (!offPaper[s] && offPaper[s - 1]) entryPt[s] = crossAt(s, s - 1);
+        }
+      }
       const covAtSample = (smp, s, zone) => {
         // THE LOCAL PITCH IS MEASURED FIRST. Laws 6-10 are stated in APPARENT
         // AREA, not in coverage, so they need the pitch that actually lands here
@@ -3411,6 +3687,14 @@
           }
         }
         flushHL();
+        // The stroke has retracted (signedWidth) or a transverse white is cut
+        // here (transverseReserve). The run ends at the CROSSING, not at the
+        // previous sample.
+        if (offPaper && offPaper[s]) {
+          if (exitPt[s]) addPt(exitPt[s], sampleZone, tt);
+          flush();
+          continue;
+        }
         // Meet the boundary on the way in, and again on the way out. Both are
         // no-ops unless the neighbouring sample is off the wanted side of the
         // surface, which is the only place a refinement is defined.
@@ -3420,6 +3704,7 @@
           sink.noteW(weightAtSample(smp, pitchAtStep(smp, s), gradIs ? gradIs[s] : 0,
             (thetas || endMM) ? { theta: thetas ? thetas[s] : null, endMM: endMM ? endMM[s] : null } : null));
         }
+        if (entryPt && entryPt[s]) addPt(entryPt[s], sampleZone, tt);
         addPt((toneOn && TONE_ALGO === 'deepFillTSP' && tspAt(smp, s))
           || { x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
         if (s < nSteps && !onSurf[s + 1]) { const e = edgeAt(s, s + 1); if (e) addPt(e, sampleZone, tt); }
@@ -4325,6 +4610,20 @@
             if (mapper === 'contour') emitFamily('a', nCoarse, back);
             else if (onMeridianAxis) emitFamily('b', nCoarse, back);
             else emitAngledFamily(hatchAngle, nCoarse, back);
+            xfLayer = 0;
+          }
+          return;
+        }
+        // 'wideShadowPen' — THE SECOND PEN. Same angle, half the line count (a
+        // 3x nib needs 3x the room), un-gated so no ruling of it can end in open
+        // surface, and entering purely by density off `wspCovWide`.
+        if (TONE_ALGO === 'wideShadowPen') {
+          if (toneOn) {
+            const nWide = Math.max(2, Math.round(count / 2));
+            xfLayer = 1;
+            if (mapper === 'contour') emitFamily('a', nWide, back);
+            else if (onMeridianAxis) emitFamily('b', nWide, back);
+            else emitAngledFamily(hatchAngle, nWide, back);
             xfLayer = 0;
           }
           return;
