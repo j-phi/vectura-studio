@@ -1090,6 +1090,13 @@
     const FC_LIMB_I = 0.5;        // which limb is "lit"
     const fcIntensity = (I) => clamp(0.5 + (clamp(finite(I, 0), 0, 1) - 0.5) * (1 + FC_GAIN), 0, 1);
 
+    // 'deepFillTSP' — how deep into the shadow the traverse has taken over.
+    // 0 at and above TSP_I (an ordinary ruled family), 1 at black (half the
+    // rulings, each filling the doubled gap). One definition, read by the
+    // coverage law and by the displacement.
+    const TSP_I = 0.18;       // the darkest ~15 % of the radiance range
+    const tspRamp = (I) => clamp((TSP_I - clamp(finite(I, 0), 0, 1)) / Math.max(1e-6, TSP_I), 0, 1);
+
     // 'crossFade' — layeredCross's three layers, un-gated and continuous.
     //
     // Which of the three families is emitting. Set by `emitCrossFade`; family A
@@ -1480,8 +1487,26 @@
       // point of running them against it.
       if (TONE_ALGO === 'nestedFineLadder' || TONE_ALGO === 'phaseFineLadder') return nestedCov(I, localPitch);
       if (TONE_ALGO === 'strokesGrow' || TONE_ALGO === 'lozengeStipple'
-        || TONE_ALGO === 'deepFillTSP' || TONE_ALGO === 'importanceGreedy') {
+        || TONE_ALGO === 'importanceGreedy') {
         return perceptualCov(I, localPitch);
+      }
+      // 'deepFillTSP' — THE RULINGS THIN SO THE TRAVERSE HAS A GAP TO FILL.
+      //
+      // MEASURED, AND IT IS WHY THIS LINE EXISTS. The first cut left the
+      // coverage alone and displaced the ruling laterally into "its own gap".
+      // At the plot floor there IS no gap: uncapped, the master grid rules AT
+      // `floorPitch` and `covAtSample` clamps coverage to `localPitch/floorPitch`
+      // wherever the geometry crowds, so the drawn pitch in the darkest zone is
+      // exactly the floor and the amplitude came out zero on every sample. The
+      // law measured byte-identical to `perceptualRamp` (ink 2341.3 against
+      // 2341.3) — a no-op dressed as a variant.
+      //
+      // A space-filling fill is not an ADDITION to a ruled family; it REPLACES
+      // it. So the darkest zone rules at HALF the density and the traverse
+      // spends the freed gap, which lands the same ink through one continuous
+      // aperiodic path instead of two straight ones.
+      if (TONE_ALGO === 'deepFillTSP') {
+        return clamp(perceptualCov(I, localPitch) / (1 + tspRamp(I)), 0.005, 1);
       }
       // 'forcedContrast' — the same target, on a tone field the draughtsman has
       // deliberately pushed apart (see `fcIntensity`).
@@ -1997,6 +2022,36 @@
     // successive rulings are the ones that neighbour each other on the form, so
     // they are the ones that must be evenly spaced against each other).
     const ladderPhase = new Map();
+    // ── 'importanceGreedy' — THE ACCUMULATED-DARKNESS GRID ────────────────────
+    //
+    // Salisbury, Wong, Hughes & Salesin, SIGGRAPH 97 §3, the one algorithm in
+    // the survey with NO tone quantisation anywhere, so banding cannot occur by
+    // construction. "We define the IMPORTANCE of a point as the FRACTION OF ITS
+    // INTENDED DARKNESS THAT HAS NOT YET BEEN ACCUMULATED at that point. By
+    // drawing in order of importance, we make all areas approach their target
+    // darkness AT THE SAME RATE."
+    //
+    // The load-bearing part is §3.2's ADAPTIVE BLUR: "the size INCREASING WITH
+    // THE TARGET LIGHTNESS… THE DIAMETER OF THE BLURRING FILTER IS THE SAME AS
+    // THE AVERAGE INTER-STROKE DISTANCE REQUIRED TO ACHIEVE THE TARGET
+    // LIGHTNESS", i.e. w = 2h/t. Spacing is then an EMERGENT property of a
+    // measurement kernel that is itself tone-dependent — no comb, no lattice, no
+    // thresholds — and it is why this is the quality ceiling rather than another
+    // placement rule. A stroke laid at spacing w contributes an area fraction
+    // inkWidth/w, so smearing that constant over a disc of diameter w is exactly
+    // the bookkeeping their blurred-line model performs.
+    //
+    // WHAT IS APPROXIMATED, NAMED. Their loop visits the GLOBAL argmax of
+    // importance (through a quadtree) and re-evaluates after every stroke; this
+    // emitter is a stream — `emitLine` is called once per ruling, by the family
+    // builder, in spatial order — so the greedy runs in VISIT order against the
+    // same grid. The kernel, the target and the termination rule are theirs; the
+    // ordering is not, and that is the gap between this and their figure.
+    const IMP_CELL = 0.8;      // mm
+    const IMP_MIN = 0.02;      // ink-area units — never driven to zero (§3.1)
+    const impGrid = new Map();
+    const impKey = (x, y) => `${Math.round(x / IMP_CELL)},${Math.round(y / IMP_CELL)}`;
+    const impRead = (x, y) => finite(impGrid.get(impKey(x, y)), 0);
     // 'errorDiffused' — the SAME target density, placed by 1-D error diffusion
     // instead of by a phase accumulator.
     //
@@ -2521,7 +2576,13 @@
         // `PLOT_FLOOR_PEN x pen`, measured where the geometry actually crowds.
         // Counted, because "where does the floor bind" is now the only question
         // standing between the law and the lighting.
-        if (TONE_UNCAPPED && localPitch != null && localPitch > 1e-6 && floorPitch > 1e-6) {
+        // 'evenStreamlines' enforces the floor ON SCREEN, per curve, at the
+        // point two curves actually approach each other — which is stricter
+        // than a cap derived from a nominal neighbour offset the re-seeded
+        // family no longer has. Charging both would drop curves the placement
+        // rule already proved plot-safe.
+        if (TONE_UNCAPPED && TONE_ALGO !== 'evenStreamlines'
+          && localPitch != null && localPitch > 1e-6 && floorPitch > 1e-6) {
           const capF = clamp(localPitch / floorPitch, 0, 1);
           const rk = `${ladderKey}|${lineIndex}`;
           floorStat.samples += 1;
@@ -2793,6 +2854,48 @@
           if (endMM[s] < FC_MACH_MM && clamp(finite(smps[s].I, 0), 0, 1) >= FC_LIMB_I) hardCut[s] = true;
         }
       }
+      // ── 'importanceGreedy' — THE VERDICT IS THE IMPORTANCE, NOT A LADDER ─────
+      // Replaces the span verdict outright: a ruling draws iff the darkness it
+      // is still owed, averaged over its own samples, is above the termination
+      // threshold — and if it draws, its contribution is smeared back into the
+      // grid through the tone-adaptive kernel so the next ruling sees it.
+      if (toneOn && TONE_ALGO === 'importanceGreedy') {
+        const live = [];
+        for (let s = 0; s <= nSteps; s++) if (smps[s]) live.push(s);
+        let imp = 0;
+        live.forEach((s) => { imp += targetArea(smps[s].I) - impRead(smps[s].x, smps[s].y); });
+        const keep = live.length > 1 && imp / live.length > IMP_MIN;
+        spanDrop = new Array(nSteps + 1).fill(!keep);
+        if (keep) {
+          live.forEach((s, li) => {
+            const t = clamp(targetArea(smps[s].I), 0.02, 0.98);
+            // w = the inter-stroke distance this tone needs, clamped to the two
+            // physical ends this file already owns.
+            const w = clamp(inkWidth() / t, floorPitch, litMaxPitchPen() * penWidth);
+            // PER UNIT LENGTH, not per sample. A cell on the line is reached by
+            // roughly w/dl of this ruling's samples, so a per-sample deposit of
+            // inkWidth·dl/w² sums to inkWidth/w — which is the area fraction a
+            // family at spacing w actually lays. Depositing inkWidth/w per
+            // SAMPLE would over-report the drawing by that same factor and stop
+            // the second ruling of every family before it started.
+            const prev = live[Math.max(0, li - 1)];
+            const dl = prev === s ? IMP_CELL
+              : Math.hypot(smps[s].x - smps[prev].x, smps[s].y - smps[prev].y);
+            const add = (inkWidth() * Math.max(1e-6, dl)) / Math.max(1e-6, w * w);
+            const r = Math.ceil((w / 2) / IMP_CELL);
+            const gx = Math.round(smps[s].x / IMP_CELL);
+            const gy = Math.round(smps[s].y / IMP_CELL);
+            for (let j = -r; j <= r; j++) {
+              for (let i = -r; i <= r; i++) {
+                if (Math.hypot(i, j) * IMP_CELL > w / 2) continue;
+                const k = `${gx + i},${gy + j}`;
+                impGrid.set(k, Math.min(0.98, finite(impGrid.get(k), 0) + add));
+              }
+            }
+          });
+        }
+      }
+
       // ── 'lozengeStipple' — THE RESIDUAL, SPENT AS FLICKS ─────────────────────
       //
       // A ladder can only place WHOLE rulings, so between "n rulings" and
@@ -2851,17 +2954,18 @@
       // a secondary lattice. The amplitude is bounded by the plot floor at one
       // end and by the ruling's own distance-to-its-end at the other, so a
       // displaced point can neither flood nor leave the surface.
-      const TSP_I = 0.18;       // the darkest ~15 % of the radiance range
       const TSP_PERIOD = 3.2;   // mm, one zig and one zag
       const tspAt = (smp, s) => {
         if (!arcMM || !endMM) return null;
-        const I = clamp(finite(smp.I, 0), 0, 1);
-        const k = clamp((TSP_I - I) / Math.max(1e-6, TSP_I), 0, 1);
+        const k = tspRamp(smp.I);
         if (!(k > 0)) return null;
         const p = pitchAtStep(smp, s);
         if (!(Number.isFinite(p) && p > 1e-6)) return null;
+        // The gap the thinned family left. Half of it either side of the ruling
+        // is exactly the excursion that restores the ink the thinning removed,
+        // and it is bounded below by the plot floor at the turns.
         const drawn = p / Math.max(1e-6, covAtSample(smp, s, zones[s]));
-        let amp = Math.max(0, (drawn - floorPitch) / 2) * k;
+        let amp = Math.max(0, (drawn - floorPitch) / 2);
         amp = Math.min(amp, endMM[s] / 2);
         if (!(amp > 1e-3)) return null;
         const a = smps[Math.max(0, s - 1)] || smp;
@@ -3395,6 +3499,65 @@
         const k = cellKey(x, y);
         if (!occ.has(k)) occ.set(k, self);
       };
+      // ── 'evenStreamlines' — JOBARD & LEFER, WITH d_sep TAKEN FROM THE TONE ──
+      //
+      // `contourFlow` read the light better than any other law measured (R²
+      // 0.444 on the sphere, against 0.003-0.11 for every family that rules
+      // along the chart) and had the worst craft of any: spacing CoV 2.32,
+      // 10.6 mm of free end, a 10.2 mm bare patch. Both defects have the same
+      // cause and it is stated in the note above — the separation above exists
+      // to catch COLLAPSE, deliberately sits at HALF the plot floor, and does
+      // nothing whatever to SPACE the family. Integral curves of a direction
+      // field are not an evenly-spaced family, and seeding them on the nominal
+      // comb does not make them one: where the field converges they pile up,
+      // where it diverges they leave a hole.
+      //
+      // Jobard & Lefer (1997) is the standard answer and it is two rules:
+      //   (1) a curve TERMINATES when it comes within d_test·d_sep of a curve
+      //       already laid down;
+      //   (2) new curves are SEEDED at d_sep from the ones already laid, until
+      //       no admissible seed remains.
+      // Applied here with d_sep taken from the LIGHT rather than from a
+      // constant — Salisbury's w = 2h/t, restated on this file's own tone target
+      // as inkWidth/targetArea(I) and clamped between the plot floor and the O6
+      // sparse bar. The spacing IS the tone, so no ladder, no threshold and no
+      // quantisation is involved anywhere in this law: it is the only one here
+      // that cannot band by construction.
+      //
+      // Seeding is a Hammersley candidate lattice over the parameter square,
+      // rejected on the same occupancy the termination rule reads. That is
+      // dart-throwing rather than their perpendicular-offset queue, and the
+      // difference is stated plainly: it fills the domain, but it does not
+      // guarantee the tightest packing their queue reaches.
+      const even = Boolean(flow) && TONE_ALGO === 'evenStreamlines';
+      const ES_TEST = 0.55;
+      const ES_CELL = Math.max(0.4, (litMaxPitchPen() * penWidth) / 3);
+      const esGrid = new Map();
+      const dSepAt = (smp) => clamp(inkWidth() / clamp(targetArea(smp ? smp.I : 0), 0.02, 0.98),
+        floorPitch, litMaxPitchPen() * penWidth);
+      const esStamp = (x, y, self) => {
+        const k = `${Math.floor(x / ES_CELL)},${Math.floor(y / ES_CELL)}`;
+        let arr = esGrid.get(k);
+        if (!arr) { arr = []; esGrid.set(k, arr); }
+        arr.push(x, y, self);
+      };
+      const esNear = (x, y, self, r) => {
+        const ix = Math.floor(x / ES_CELL); const iy = Math.floor(y / ES_CELL);
+        const R = Math.min(4, Math.ceil(r / ES_CELL));
+        const r2 = r * r;
+        for (let j = -R; j <= R; j++) {
+          for (let i = -R; i <= R; i++) {
+            const arr = esGrid.get(`${ix + i},${iy + j}`);
+            if (!arr) continue;
+            for (let q = 0; q < arr.length; q += 3) {
+              if (arr[q + 2] === self) continue;
+              const dx = arr[q] - x; const dy = arr[q + 1] - y;
+              if (dx * dx + dy * dy < r2) return true;
+            }
+          }
+        }
+        return false;
+      };
       // EACH STREAMLINE CARRIES ITS NOMINAL COUNTERPART'S ARC LENGTH, centred on
       // the same seed. This is not cosmetic. A streamline is free to stay inside
       // the parameter square much longer than the straight chord it replaces, and
@@ -3442,15 +3605,19 @@
               const segLen = Math.hypot(s1.x - s0.x, s1.y - s0.y);
               const sub = Math.max(1, Math.ceil(segLen / (CELL * 0.5)));
               let blocked = false;
+              // Rule (1): terminate at d_test x the LOCAL d_sep, which is the
+              // spacing this radiance asks for — not at a global constant.
+              const rTest = even ? dSepAt(s1) * ES_TEST : 0;
               for (let q = 1; q <= sub; q++) {
                 const u = q / sub;
                 const px = s0.x + (s1.x - s0.x) * u; const py = s0.y + (s1.y - s0.y) * u;
-                if (occupiedByOther(px, py, self)) { blocked = true; break; }
+                if (even ? esNear(px, py, self, rTest) : occupiedByOther(px, py, self)) { blocked = true; break; }
               }
               if (blocked) break;
               for (let q = 0; q <= sub; q++) {
                 const u = q / sub;
-                stamp(s0.x + (s1.x - s0.x) * u, s0.y + (s1.y - s0.y) * u, self);
+                const px = s0.x + (s1.x - s0.x) * u; const py = s0.y + (s1.y - s0.y) * u;
+                if (even) esStamp(px, py, self); else stamp(px, py, self);
               }
             }
             cur = nx; ref = d2;
@@ -3475,6 +3642,31 @@
         const p0 = at(0); const p1 = at(1);
         const nomLen = flow ? FLOW_ARC : Math.hypot(p1.a - p0.a, p1.b - p0.b);
         lines.push(trace(at(0.5), nomLen, i));
+      }
+      // Rule (2): KEEP SEEDING until the domain is full. Candidates come off a
+      // Hammersley lattice — stratified in `a`, bit-reversed in `b` — so the
+      // order in which the square is offered to the tracer is itself
+      // low-discrepancy and the family fills evenly rather than sweeping.
+      if (even) {
+        const CAND = 40;
+        const budget = Math.min(maxLines(), Math.max(n * 3, 64));
+        for (let c = 0; c < CAND * CAND && lines.length < budget; c++) {
+          const seed = { a: clamp((c % CAND + 0.5) / CAND, 0, 1), b: clamp(vdc2(Math.floor(c / CAND) * CAND + (c % CAND)), 0, 1) };
+          const smp = sampleAt(seed.a, seed.b);
+          if (!smp || !smp.front) continue;
+          if (esNear(smp.x, smp.y, -1, dSepAt(smp))) continue;
+          const L = trace(seed, FLOW_ARC, lines.length);
+          if (L && L.pts.length >= 2) lines.push(L); else lines.push(null);
+        }
+        // The measured neighbour offset below assumes lines[i±1] are the
+        // spatial neighbours, and after re-seeding they are not — the family is
+        // no longer a comb. The nominal offset is the honest fallback, and the
+        // quantity it feeds (the plot-floor cap) is superseded here anyway: this
+        // law enforces the floor on SCREEN, per curve, which is stricter.
+        lines.forEach((L) => { if (L) L.off = L.pts.map(() => nomOff); });
+        const famE = { n: lines.length, lines, step, nomOff, wrap: true, even: true };
+        crossFamilyCache.set(key, famE);
+        return famE;
       }
       // NEIGHBOUR OFFSET, measured rather than assumed. Every streamline is
       // marched with the same step from a seed on the nominal family's own
@@ -3692,7 +3884,8 @@
         }
         // 'contourFlow' replaces family A outright (see the mapper dispatch) and
         // adds nothing on top: the direction IS the tone statement.
-        if (TONE_ALGO === 'contourFlow') return;
+        // 'evenStreamlines' is the same family, placed by Jobard-Lefer.
+        if (TONE_ALGO === 'contourFlow' || TONE_ALGO === 'evenStreamlines') return;
         if (!zonesOn) return;
         const base = finite(opts.fillAngle, 0);
         emitScreenCross(base, Regions.CROSS_OBJ_DEG, count, back, 'T');
@@ -3710,7 +3903,7 @@
       // line positions so the LINE BUDGET and the ladder's ranks are untouched
       // and only the direction changes. 'crosshatch' gets the orthogonal partner
       // — iso curves crossed by gradient curves, which is the engraver's pair.
-      const flowMapper = TONE_ALGO === 'contourFlow' && toneOn
+      const flowMapper = (TONE_ALGO === 'contourFlow' || TONE_ALGO === 'evenStreamlines') && toneOn
         && (mapper === 'hatch' || mapper === 'crosshatch' || mapper === 'contour');
       if (flowMapper) {
         const fBase = finite(opts.fillAngle, 0);
