@@ -916,7 +916,10 @@
   //    and never triggers it. `ampPasses` (R² 0.262, L* 38.8) and `weaveAmpEase`
   //    (0.031, 42.7) do not collapse, because neither hands the whole ramp to
   //    the spacing. This is a real limit of the channel, not a tuning miss.
-  const TONE_ALGO = 'ladder';
+  // The committed default, and the fallback for any per-call law the running
+  // build does not implement (unknown / missing `opts.toneLaw` degrades here,
+  // never throws, never draws nothing — see `buildObject`'s local `TONE_ALGO`).
+  const TONE_ALGO_DEFAULT = 'ladder';
   // 'contFieldQuant' only: how many discrete gap sizes the field may use.
   const CF_LEVELS = 128;
   // ── ROUND 6 — TWELVE MARK LANGUAGES, ONE PEN WIDTH ─────────────────────────
@@ -1094,7 +1097,10 @@
     mkComma: 1, mkSFlick: 1, mkCrossPlus: 1, mkTriangle: 1, mkScribble: 1,
     mkDotLozenge: 1, mkRadialFlick: 1,
   };
-  const isMarkLaw = () => MARK_LAWS[TONE_ALGO] === 1;
+  // `isMarkLaw` moved inside `buildObject` (below its per-call `TONE_ALGO`) —
+  // this used to be a module-scope reader closing over the module constant,
+  // which is exactly the bug the per-call refactor must not reintroduce. See
+  // `buildObject`'s local `isMarkLaw` for the live definition.
   // 'contourFlow' only: which streamline family the rulings follow.
   //   'iso'  along the iso-intensity curves
   //   'grad' down the intensity gradient (their orthogonals)
@@ -1321,6 +1327,32 @@
     const projectWorld = opts.projectWorld;
     if (!chart || typeof applyTransform !== 'function' || typeof projectWorld !== 'function') return null;
 
+    // ── PER-CALL TONE LAW ────────────────────────────────────────────────────
+    // Shadows the module-level `TONE_ALGO_DEFAULT` for the whole closure below.
+    // Every in-closure reference to `TONE_ALGO` (179 of them) now reads the
+    // per-call law with no edit at the site. Unknown / absent `opts.toneLaw`
+    // (an old document, a law the running build does not implement, or no
+    // control wired to it yet) degrades to the committed default — it must
+    // never throw and never silently draw nothing.
+    const TONE_LAWS = (Vectura.SCENE3D_TONE_LAWS && Vectura.SCENE3D_TONE_LAWS.IDS) || null;
+    const askedLaw = typeof opts.toneLaw === 'string' ? opts.toneLaw : '';
+    const TONE_ALGO = (askedLaw && (!TONE_LAWS || TONE_LAWS.indexOf(askedLaw) !== -1)
+      && askedLaw !== 'none') ? askedLaw : TONE_ALGO_DEFAULT;
+    // Relocated from module scope (see the comment left at the old site) — this
+    // is THE highest-risk line in the per-call refactor. Left at module scope
+    // it would close over `TONE_ALGO_DEFAULT` forever and every mark law would
+    // silently mis-dispatch to `ladder`'s behaviour.
+    const isMarkLaw = () => MARK_LAWS[TONE_ALGO] === 1;
+
+    // `toneLaw: 'none'` is Stage 0 (`masterGrid` + `dither` both off, measured
+    // as "NO TONE" in docs/tone-laws/) — NOT the same as `opts.toneOn = false`,
+    // which this leaves untouched. `HL_STAGE` itself stays a module const;
+    // `STAGE` is the per-call view every HL_STAGE.* read below now uses.
+    const stage0 = askedLaw === 'none';
+    const STAGE = stage0
+      ? Object.assign({}, HL_STAGE, { masterGrid: false, dither: false })
+      : HL_STAGE;
+
     const t = opts.transform || { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
     const rot = { yaw: finite(t.yaw, 0), pitch: finite(t.pitch, 0), roll: finite(t.roll, 0) };
     const cam = opts.camAngles || { yaw: 0, pitch: 0, roll: 0 };
@@ -1362,14 +1394,14 @@
     // cap, no highlight channel and no highlight pen — the fill is exactly what
     // the tone ladder made.
     const noHL = opts.noHighlight === true;
-    const specOn = Boolean(HL_STAGE.specular && useLadder && !noHL && tone.specular && tone.specular.enabled !== false);
+    const specOn = Boolean(STAGE.specular && useLadder && !noHL && tone.specular && tone.specular.enabled !== false);
     const specSize = specOn ? clamp(finite(tone.specular.size, 1), 0, 3) : 0;
     const nB = ladderLen;
     // I8 — shadow SENSITIVITY: graded darkening on the dark end (stage count).
     // Default 1 = strict no-op; N quantizes low intensity into N darkening stages
     // (more coverage → denser shadow), a smoother dark gradient as N rises.
     const shadowSens = clamp(Math.round(finite(opts.shadowSensitivity, 1)), 1, 8);
-    const shadowGrades = Boolean(HL_STAGE.shadowGrade && useLadder && shadowSens > 1 && Regions && typeof Regions.shadowStage === 'function');
+    const shadowGrades = Boolean(STAGE.shadowGrade && useLadder && shadowSens > 1 && Regions && typeof Regions.shadowStage === 'function');
     // Ink line-fraction (0..1) for a sample: how many of the N wrap lines draw at
     // this local intensity. Dark → high, lit cap → low.
     // O6 — THE GLINT CAP IS BOUNDED. Unbounded, `cov *= (1 - 0.5*specSize)` took
@@ -4520,7 +4552,7 @@
     // contract, and it is why a cube, a low-poly sphere and this capsule under
     // one light now land in the same zones.
     const zoneCtx = opts.formZone || null;
-    const zonesOn = Boolean(HL_STAGE.toneZones && useLadder && zoneCtx && typeof Regions.formZone === 'function');
+    const zonesOn = Boolean(STAGE.toneZones && useLadder && zoneCtx && typeof Regions.formZone === 'function');
     // The blank highlight is placed by the SPECULAR term, not by "the top tone
     // band". That is what makes it sit offset toward the light (O7), shrink to a
     // few percent of the silhouette instead of a quarter of it (O4/O5), respond
@@ -4638,7 +4670,7 @@
     // exclusive within one fill). Default off ⇒ every branch below is inert.
     const hlCfg = opts.highlight || null;
     const specularFn = opts.specularFn || null;
-    const ldOn = Boolean(HL_STAGE.lightDriven && hlCfg && hlCfg.lightDriven && typeof specularFn === 'function' && Regions
+    const ldOn = Boolean(STAGE.lightDriven && hlCfg && hlCfg.lightDriven && typeof specularFn === 'function' && Regions
       && typeof Regions.highlightStage === 'function');
     const ld = ldOn ? {
       treatment: hlCfg.treatment || 'blank',
@@ -4763,7 +4795,7 @@
     // multiple of the coverage the floor allowed.
     const floorStat = { samples: 0, clamped: 0, rulings: new Set(), touched: new Set(), worst: 1 };
     const penWidth = Math.max(0.02, finite(opts.penWidth, 0.3));
-    if (HL_STAGE.masterGrid && useLadder && opts.penWidth != null) {
+    if (STAGE.masterGrid && useLadder && opts.penWidth != null) {
       // Calibrate off the MEDIAN local pitch the family will actually rule at,
       // not off a bounding box. A wrapped family's pitch is wildly non-uniform —
       // on a sphere the meridians converge to nothing at the poles and crowd at
@@ -4916,7 +4948,7 @@
     // dedicated specular-region pass in the caller.
     // perFace band-treatment dispatch — DISABLED when lightDriven owns the
     // highlight (the two are mutually exclusive within one fill).
-    const hl = (HL_STAGE.treatment && !ldOn && opts.highlight && opts.highlight.treatment && opts.highlight.treatment !== 'blank')
+    const hl = (STAGE.treatment && !ldOn && opts.highlight && opts.highlight.treatment && opts.highlight.treatment !== 'blank')
       ? opts.highlight : null;
     const hlIsHL = (hl && typeof hl.isHL === 'function') ? hl.isHL : () => false;
     const hlDensity = hl ? clamp(finite(hl.density, 25), 1, 100) : 25;
@@ -5645,7 +5677,7 @@
         // or H is culled exactly as before, so the limb/terminator chatter this
         // sink was built to remove is untouched. `MIN_MARK_MM` still applies in
         // L — a sub-pen-width fragment is a pen-down dot in any zone.
-        const speck = HL_STAGE.continuitySink && softStart && softEnd && runLen < SPECK_MM && runLit !== true;
+        const speck = STAGE.continuitySink && softStart && softEnd && runLen < SPECK_MM && runLit !== true;
         if (run.length >= 2 && runLen >= MIN_MARK_MM && !speck) {
           run.fam = fam;
           run.tt0 = runTT0; run.tt1 = runTT1;
@@ -6417,7 +6449,7 @@
         // allows — by dropping rulings — and it is what keeps the lit end of
         // the ladder separable instead of saturating into the dark end.
         let cap = 1;
-        if (HL_STAGE.coverageCap && localPitch != null) {
+        if (STAGE.coverageCap && localPitch != null) {
           // Effective pitch is localPitch / coverage and must stay at or above
           // the floor, so the darkest zone may not exceed localPitch/floor.
           // Applied MULTIPLICATIVELY, not as a clamp: where the geometry
@@ -6467,7 +6499,7 @@
         // exactly `ceil` when every pass saturates, the composed total is
         // bounded by construction and no pass needs to know about any
         // other.
-        if (HL_STAGE.coverageCap && zone && localPitch != null && localPitch > 1e-6) {
+        if (STAGE.coverageCap && zone && localPitch != null && localPitch > 1e-6) {
           // The ceiling stays PROPORTIONAL to the zone's intended weight,
           // never a flat clamp. A flat clamp collapses every zone that
           // reaches it onto one value — T and F both crossed, both
@@ -6571,7 +6603,7 @@
       // laid. `null` when the dither is off — every sample then draws.
       let spanDrop = null;
       const rulingDrop = new Map();   // zone → this ruling's verdict in that zone
-      if (HL_STAGE.dither && toneOn) {
+      if (STAGE.dither && toneOn) {
         spanDrop = useLadder
           ? spanDrops(smps, zones, (smp, s) => covAtSample(smp, s, zones[s]), (cov, mid, restarting, spanOrd) => {
             // The feather (Stage 4) is evaluated ONCE for the span, at its
@@ -6579,12 +6611,12 @@
             // so it still decorrelates WHICH rulings drop at a band edge, which
             // is what stops the edge reading as a traceable contour — but it can
             // no longer move a ruling's state mid-span, which was never its job.
-            const jit = HL_STAGE.feather ? featherAt(lineIndex, mid) * FEATHER_AMPL : 0;
+            const jit = STAGE.feather ? featherAt(lineIndex, mid) * FEATHER_AMPL : 0;
             // ...and the re-start margin (Stage 5) is charged on a span that
             // resumes a ruling which already drew and then stopped, which is the
             // only kind of re-start that is left. Raising the bar to start can
             // only ever REMOVE ink, so the composed C15/§0 budget is untouched.
-            const margin = (HL_STAGE.hysteresis && restarting) ? hystFor(cov) : 0;
+            const margin = (STAGE.hysteresis && restarting) ? hystFor(cov) : 0;
             // Both offsets were stated in RANK units against a fixed per-line
             // rank; against a phase ladder the identical quantity is a shift of
             // the EFFECTIVE COVERAGE, because `rank < cov + jit - margin` and
@@ -7151,7 +7183,7 @@
           // is DELIBERATE, so it cuts hard, is never bridged, and stays a
           // PER-SAMPLE decision: it is the one mid-surface end this emitter is
           // supposed to make. (Stage 6 / `dashDuty`, and it needs `toneZones`.)
-          if (HL_STAGE.dashDuty && !dropZone && zone) {
+          if (STAGE.dashDuty && !dropZone && zone) {
             const duty = clamp(finite(Regions.formInk(zone).duty, 1), 0, 1);
             if (duty < 1 && sfHash(lineIndex + 7717, Math.round(s / 2)) >= duty) { dropZone = true; dutyBreak = true; }
           }
@@ -7387,7 +7419,7 @@
       return true;
     };
     const emitLine = (paramAt, threshold, back, lineIndex, count, zoneGate, pitchStep, lineDir, densityCross) => {
-      if (!(toneOn && isAdjLaw() && HL_STAGE.masterGrid)) {
+      if (!(toneOn && isAdjLaw() && STAGE.masterGrid)) {
         emitLineOnce(paramAt, threshold, back, lineIndex, count, zoneGate, pitchStep, lineDir, densityCross, null);
         return;
       }
@@ -8946,7 +8978,7 @@
         let spTurn = -1;
         let spArc = 0;
         let sDrop = null;
-        if (HL_STAGE.dither && toneOn) {
+        if (STAGE.dither && toneOn) {
           sDrop = useLadder
             ? spanDrops(sSmps, sKeys,
               (smp, k) => (TONE_ALGO !== 'ladder'
@@ -9018,14 +9050,14 @@
               // row is its own track, evenly spaced along itself, and its phase
               // starts a golden-ratio step further on than the row above, which
               // is the cheapest way to stop the rows lining up into columns.
-              if (HL_STAGE.dither && useLadder) {
+              if (STAGE.dither && useLadder) {
                 const zone = TONE_ALGO === 'layeredCross' ? null : zoneOf(smp);
                 const cov = TONE_ALGO !== 'ladder'
                   ? algoCoverage(smp.I, false, smp, null)
                   : (zone ? zoneCoverage(zone, false) : coverageForSample(smp.I));
                 if (!ladderKeeps(`stipple|${back ? 'B' : 'F'}|${r}`, clamp(cov, 0, 1),
                   (r * GOLDEN_STEP) % 1)) continue;
-              } else if (HL_STAGE.dither) {
+              } else if (STAGE.dither) {
                 const shade = clamp(1 - smp.I, 0, 1);
                 const th = ((r * colsPer + c) % 7) / 7; // scattered dither
                 if (shade < th) continue;
@@ -9270,7 +9302,13 @@
       SurfaceFill: {
         buildObject, chartFor, lineCountFor, __litFloorForTest, __ladderForTest: ladderKeep,
         get lastFloorStats() { return lastFloorStats; },
-        get toneAlgo() { return TONE_ALGO; },
+        // Unchanged reading: the committed default, byte-identical to the
+        // pre-refactor module constant. `scene3d-tone-algo-default.test.js`
+        // pins this and must stay green unmodified.
+        get toneAlgo() { return TONE_ALGO_DEFAULT; },
+        get toneLawDefault() { return TONE_ALGO_DEFAULT; },
+        // A copy — no caller can mutate the module's live Stage-1 flags.
+        get hlStage() { return Object.assign({}, HL_STAGE); },
         get uncapped() { return TONE_UNCAPPED; },
         get flowMode() { return FLOW_MODE; },
       },
