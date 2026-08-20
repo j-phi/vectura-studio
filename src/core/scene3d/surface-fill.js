@@ -3244,6 +3244,12 @@
       // dI/dv costs one chart sample — so 'radial' points every mark straight up
       // the gradient (at the light) and 'iso' lays it along the tone contour.
       const thetaAt = (s, fr) => {
+        // The dot-and-lozenge's whole point is that no two neighbouring rows
+        // share a spatial frequency OR a direction, so its lozenge rows are
+        // turned 45 deg off the row — which is also what keeps it from being
+        // `mkLozenge` with every other row missing (measured: 83.3 % IoU before
+        // this turn, the highest pair on the board).
+        if (law.shape === 'altrow') return parity === 0 ? Math.PI / 4 : 0;
         if (law.or === 'along' || law.or === 'none') return 0;
         if (law.or === 'across') return Math.PI / 2;
         if (law.or === 'diag') return Math.PI / 4;
