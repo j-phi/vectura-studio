@@ -1760,13 +1760,13 @@
       mkDashRamp:    { shape: 'morph',    chan: 'elong', lat: 'row',     or: 'along',  P0: 1.25 },
       mkTick:        { shape: 'tick',     chan: 'count', lat: 'brick',   or: 'across', L0: 1.02 },
       mkChevron:     { shape: 'chevron',  chan: 'size',  lat: 'row',     or: 'iso',    P0: 1.20 },
-      mkComma:       { shape: 'comma',    chan: 'count', lat: 'blue',    or: 'along',  L0: 0.62 },
-      mkSFlick:      { shape: 'sflick',   chan: 'elong', lat: 'errdiff', or: 'along',  P0: 1.40 },
+      mkComma:       { shape: 'comma',    chan: 'count', lat: 'blue',    or: 'along',  L0: 1.30 },
+      mkSFlick:      { shape: 'sflick',   chan: 'elong', lat: 'errdiff', or: 'along',  P0: 0.95 },
       mkCrossPlus:   { shape: 'cross',    chan: 'size',  lat: 'jitter',  or: 'diag',   P0: 1.10 },
-      mkTriangle:    { shape: 'triangle', chan: 'size',  lat: 'poisson', or: 'iso',    P0: 1.30 },
+      mkTriangle:    { shape: 'triangle', chan: 'size',  lat: 'poisson', or: 'iso',    P0: 0.95 },
       mkScribble:    { shape: 'scribble', chan: 'amp',   lat: 'row',     or: 'along',  P0: 1.25 },
       mkDotLozenge:  { shape: 'altrow',   chan: 'alt',   lat: 'altrow',  or: 'along',  P0: 1.15 },
-      mkRadialFlick: { shape: 'dash',     chan: 'count', lat: 'blue',    or: 'radial', L0: 0.64 },
+      mkRadialFlick: { shape: 'dash',     chan: 'count', lat: 'blue',    or: 'radial', L0: 1.25 },
     };
 
     // ── THE MARK SHAPES ───────────────────────────────────────────────────────
@@ -1784,6 +1784,40 @@
       }
       return pts;
     };
+    // WHAT THE CELL CAN ACTUALLY HOLD. A shape that is asked for more ink than
+    // its own geometry can carry silently under-delivers, and — worse — an error
+    // diffusion that subtracts the ASK rather than the DELIVERY loses the ink for
+    // good. (Measured: `mkSFlick` at a 0.30 R arc radius came back at R² 0.062
+    // with a 38 L*/mm highlight falloff, which is that bug and nothing else.) So
+    // each shape states its capacity, the tone solve clamps to it, and a law that
+    // saturates saturates honestly — visibly, in the numbers — instead of lying.
+    const mkCap = (kind, R, w) => {
+      const nCap = Math.max(1, Math.floor((0.98 * R) / w));
+      if (kind === 'disc') { const r = 0.58 * R; return (Math.PI * r * r) / w; }
+      if (kind === 'lozenge') {
+        const k = 0.42; const A = (0.50 * R) / k; const per = 4 * Math.sqrt(1 + k * k);
+        let acc = 0;
+        for (let j = 0; j < nCap; j++) { const f = 1 - (j * w) / (k * A); if (f < 0.22) break; acc += per * A * f; }
+        return acc;
+      }
+      if (kind === 'tick') return 1.02 * R * Math.max(1, Math.floor(1.4 * nCap));
+      if (kind === 'chevron') return ((0.92 * R) / Math.cos((52 * Math.PI) / 180)) * nCap;
+      if (kind === 'comma') {
+        const SW = (100 * Math.PI) / 180; const r = 0.48 * R;
+        let acc = 0;
+        for (let j = 0; j < nCap; j++) { const rr = r - j * w; if (rr < 1.2 * w) break; acc += SW * rr; }
+        return acc;
+      }
+      if (kind === 'sflick') return 2 * Math.PI * 0.45 * R * Math.min(4, nCap);
+      if (kind === 'cross') return 1.15 * R * 6;
+      if (kind === 'triangle') {
+        const s = 1.35 * R; const inr = 0.2887 * s;
+        let acc = 0;
+        for (let j = 0; j < nCap; j++) { const f = 1 - (j * w) / inr; if (f < 0.25) break; acc += 3 * s * f; }
+        return acc;
+      }
+      return 1.30 * R * nCap;                       // 'dash' — parallel passes
+    };
     const mkShape = (kind, L, R, w) => {
       const polys = [];
       const nCap = Math.max(1, Math.floor((0.98 * R) / w));   // passes that fit the cell
@@ -1792,7 +1826,7 @@
         // FILLS. Length of the spiral to angle φ is w·φ²/(4π), so the radius the
         // tone asks for inverts in closed form; the cap is half the row pitch,
         // at which point neighbouring discs touch and the field is solid.
-        const rMax = 0.52 * R;
+        const rMax = 0.58 * R;
         let phi = Math.sqrt((4 * Math.PI * Math.max(0, L)) / w);
         if ((w * phi) / (2 * Math.PI) > rMax) phi = (2 * Math.PI * rMax) / w;
         if (phi < Math.PI) return [[[-L / 2, 0], [L / 2, 0]]];   // a dot, not a disc
@@ -1878,12 +1912,14 @@
       if (kind === 'sflick') {
         // Two opposed quarter arcs. Bundles into parallel S's when the tone asks
         // for more ink than one S of the cell's size can carry.
-        const rMax = 0.30 * R;
-        let r = L / Math.PI;
+        // TWO half-circles, so the S is 2*pi*r long — not pi*r. Getting this
+        // wrong laid double the ink the tone asked for and cost R^2 0.062.
+        const rMax = 0.45 * R;
+        let r = L / (2 * Math.PI);
         let n = 1;
-        if (r > rMax) { r = rMax; n = clamp(Math.round(L / (Math.PI * r)), 1, nCap); }
+        if (r > rMax) { r = rMax; n = clamp(Math.round(L / (2 * Math.PI * r)), 1, Math.min(4, nCap)); }
         for (let j = 0; j < n; j++) {
-          const off = (j - (n - 1) / 2) * w * 1.35;
+          const off = (j - (n - 1) / 2) * w;
           const a = mkArc(-r, off, r, -Math.PI / 2, Math.PI / 2, 6);
           const b = mkArc(r, off, r, Math.PI / 2, (3 * Math.PI) / 2, 6).reverse();
           polys.push(a.concat(b.slice(1)));
@@ -1905,7 +1941,7 @@
         return polys;
       }
       if (kind === 'triangle') {
-        const sMax = 1.05 * R;
+        const sMax = 1.35 * R;
         let s = L / 3;
         if (s <= sMax) {
           const h = s * 0.5774;
@@ -3241,14 +3277,19 @@
         const g = clamp((mkAsk(I) * R) / w, 0, 26);
         let P; let L;
         const countChan = law.chan === 'count' || (law.chan === 'alt' && parity === 1);
+        // The dash BAND's capacity is a function of the period, so it is stated
+        // here; every other shape's is a function of the cell alone.
+        const capOf = (per) => (law.shape === 'morph'
+          ? Math.max(1, Math.floor((1.12 * R) / w)) * per
+          : mkCap(shapeFor(), R, w));
         if (countChan) {
-          const L0 = law.chan === 'alt' ? 0.55 : law.L0;
-          L = L0 * R;
+          const L0 = law.chan === 'alt' ? 1.60 : law.L0;
+          L = Math.min(L0 * R, capOf(PMIN));
           P = clamp(L / Math.max(1e-6, g), PMIN, MK_PMAX);
-          if (P <= PMIN + 1e-9) L = g * P;      // crowded to the flood limit
+          if (P <= PMIN + 1e-9) L = Math.min(g * P, capOf(P));
         } else {
           P = clamp(law.P0 * R, PMIN, MK_PMAX);
-          L = g * P;
+          L = Math.min(g * P, capOf(P));
         }
         return { P, L, R, I, g };
       };
@@ -3262,7 +3303,7 @@
         x: fr.smp.x + fr.u.x * (a - arcMM[k]),
         y: fr.smp.y + fr.u.y * (a - arcMM[k]),
       });
-      const blocked = (fr, k, a, sep, aniso) => {
+      const blocked = (fr, k, a, sep, aniso, P0) => {
         const p = posAt(fr, k, a);
         const gx = Math.round(p.x / MK_CELL); const gy = Math.round(p.y / MK_CELL);
         const rr = Math.min(4, Math.ceil(sep / MK_CELL) + 1);
@@ -3279,7 +3320,8 @@
                 // the row, so marks may crowd along their own row (that is what
                 // a dissolving row IS) but may not line up with the row next
                 // door — which is what reads as a phantom column.
-                if ((al * al) / ((sep / 3) * (sep / 3)) + (pe * pe) / (sep * sep) < 1) return true;
+                const along = Math.min(sep / 3, 0.42 * P0);
+                if ((al * al) / (along * along) + (pe * pe) / (sep * sep) < 1) return true;
               } else if (al * al + pe * pe < sep * sep) return true;
             }
           }
@@ -3304,7 +3346,7 @@
           // L > P is that ruling thickened into a BAND of parallel passes an ink
           // width apart. Dot → dash → line → band, with no thresholds in it.
           const n0 = Math.max(1, Math.ceil(sv.L / Math.max(1e-6, sv.P)));
-          const nn = Math.min(n0, Math.max(1, Math.floor((0.98 * sv.R) / w)));
+          const nn = Math.min(n0, Math.max(1, Math.floor((1.12 * sv.R) / w)));
           const each = sv.L / nn;
           polys = [];
           for (let j = 0; j < nn; j++) {
@@ -3383,8 +3425,8 @@
               a += sv.P;
               continue;
             }
-            const A = clamp(0.55 * sv.R * Math.min(1, 0.28 + (sv.g - 1) / 3.4), 0.10 * sv.R, 0.55 * sv.R);
-            const lam = clamp((4 * A) / Math.sqrt(Math.max(1e-6, sv.g * sv.g - 1)), 2.2 * w, 3.4 * sv.R);
+            const A = clamp(0.62 * sv.R * Math.min(1, 0.28 + (sv.g - 1) / 3.4), 0.10 * sv.R, 0.62 * sv.R);
+            const lam = clamp((4 * A) / Math.sqrt(Math.max(1e-6, sv.g * sv.g - 1)), 1.8 * w, 3.4 * sv.R);
             const pp = fr.toParam(a - arcMM[k], side * A);
             let ok = pp.a >= 0 && pp.a <= 1;
             let bb = pp.b;
@@ -3452,12 +3494,12 @@
             const fr = frameAt(k);
             if (fr) {
               const aniso = law.lat === 'blue';
-              const sep = aniso ? 0.95 * sv.R : 0.80 * Math.min(1.7 * sv.P, sv.R);
+              const sep = aniso ? Math.min(0.95 * sv.R, 3.4 * sv.P) : 0.80 * Math.min(1.7 * sv.P, sv.R);
               let got = null;
               for (let t = 0; t < 6; t += 1) {
                 const cand = t === 0 ? a : a + ((t % 2 ? 1 : -1) * Math.ceil(t / 2) * sv.P) / 3.5;
                 if (cand < arcMM[s0] || cand > arcMM[s1]) continue;
-                if (!blocked(fr, idxAt(cand), cand, sep, aniso)) { got = cand; break; }
+                if (!blocked(fr, idxAt(cand), cand, sep, aniso, sv.P)) { got = cand; break; }
               }
               if (got == null) { a += sv.P; continue; }
               ao = got;
