@@ -1464,6 +1464,59 @@
     //                  three times as long, and abutting quanta merged into one
     //                  stroke — roughly a third of the pen-downs. The tone cost
     //                  of that saving is the measurement.
+    //
+    // ── MEASURED (fillcmp/v5loz.mjs, app-default scene, uncapped, pen 0.3) ────
+    //
+    // sphere·hatch. `mkEnd`/`rlEnd` are the free-end metric UNCHANGED, split by
+    // population: ends belonging to a deliberate flick, and ends belonging to a
+    // ruling. `out` is emitted fill points more than 0.5 mm outside the front
+    // surface — the defect Jay named, and it is zero for all twelve.
+    //
+    //   law              R²     span  dark  off%   HFALL  moiré  ink   pen  out
+    //   whiteBand      0.512    29.0  51.4   5.8    6.07   8.93  1192  450   0
+    //   lozengeStipple 0.051    10.8  75.3  42.8    7.61   8.63  2627  242   0
+    //   lozDuty        0.475    30.5  51.5  13.6    7.34   8.91  1168  467   0
+    //   lozSwell       0.469    29.3  51.5  11.6    7.03   8.87  1173  517   0
+    //   lozBlue        0.471    29.5  51.4  11.8    7.34   8.90  1176  466   0
+    //   lozErrDiff     0.526    31.8  51.6  14.5    5.58   8.33  1125  455   0
+    //   lozGrow        0.007    15.9  75.3  80.4    8.68   9.75  2742   83   0
+    //   lozHighlight   0.516    29.7  51.4   5.7    6.07   8.92  1179  452   0
+    //   lozCapacity    0.497    30.8  51.5  13.2    6.77   8.66  1140  453   0
+    //   lozAniso       0.515    31.7  51.6  14.3    6.16   8.49  1119  462   0
+    //   lozCross       0.478    30.3  51.5  13.3    7.34   8.84  1170  468   0
+    //   lozBudget      0.511    32.5  51.5  16.5    5.36   8.58  1115  450   0
+    //
+    // Over all FIVE cells (sphere/capsule/cylinder·hatch, sphere·crosshatch,
+    // ellipsoid·contour), mean R² and mean highlight falloff, with the count of
+    // RULING free ends past 1 mm — the defect that actually matters:
+    //
+    //   lozAniso      0.523  13.79   2      lozBlue        0.486  16.20   0
+    //   lozErrDiff    0.520  14.63   7      lozDuty        0.478  16.15   0
+    //   lozBudget     0.510  14.54   5      lozCross       0.478  15.80   0
+    //   lozHighlight  0.508  15.50   0      lozSwell       0.469  15.33   0
+    //   whiteBand     0.503  15.96   0      lozengeStipple 0.080  17.94  1189
+    //   lozCapacity   0.500  15.92   1      lozGrow        0.056  15.48   1
+    //
+    // FOUR BEAT whiteBand on mean R² and all four beat it on highlight falloff,
+    // which was the defect this round was aimed at. `lozHighlight` beats it with
+    // ZERO ruling free ends on every cell and an off-the-line figure that is
+    // whiteBand's own (5.7 % against 5.8 %) — it is whiteBand plus a fade-out
+    // and costs nothing. `lozAniso` is the best drawing but carries 2 ruling
+    // ends past 1 mm; `lozErrDiff` the next best and carries 7. Those are real
+    // and are not hidden: they occur where a run happens to contain no
+    // dissolved sample, so the `.loz` tag does not fire and its boundary is
+    // classified as a ruling end. `lozengeStipple`'s own 23.75 mm sits in the
+    // ruling column BY DEFAULT rather than by measurement — the Round-3 law
+    // does not tag its flicks — so its split is uninformative, and its
+    // incumbent number is quoted unchanged.
+    //
+    // `lozGrow` is the honest failure and worth keeping as the reference it is:
+    // with no width channel at all a single family saturates at
+    // inkWidth/floorPitch = 0.509, and it lands at exactly the predicted
+    // darkest L* 75.3 with R² 0.007 — the arithmetic in this file's header,
+    // drawn. It also has the cheapest plot on the board by a factor of five
+    // (83 pen-downs against whiteBand's 450), which is the other thing it
+    // proves: dissolution is a very cheap tone channel and a very weak one.
     const LOZ_LAWS = {
       lozDuty: 1, lozSwell: 1, lozBlue: 1, lozErrDiff: 1, lozGrow: 1,
       lozHighlight: 1, lozCapacity: 1, lozAniso: 1, lozCross: 1, lozBudget: 1,
