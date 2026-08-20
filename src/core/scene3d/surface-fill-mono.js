@@ -391,18 +391,39 @@
       if (!best) return null;
       let a = best.a; let b = best.b;
       let s = at(a, b);
+      // THE CLOSEST SAMPLE SEEN, not the last one. Newton's last iterate can be
+      // worse than its seed where the frame is a bad finite difference, and
+      // answering null with a valid surface sample already in hand is what left
+      // a further 5.5 % of the superellipsoid bare after the lattice was fixed.
+      let bestS = null; let bestD = Infinity;
+      const keep = (ss) => {
+        if (!ss) return;
+        const d = Math.hypot(x - ss.x, y - ss.y);
+        if (d < bestD) { bestD = d; bestS = ss; }
+      };
+      keep(s);
       for (let k = 0; k < 6 && s; k++) {
         const dx = x - s.x; const dy = y - s.y;
-        if (Math.hypot(dx, dy) < 0.02) return s;
+        const d0 = Math.hypot(dx, dy);
+        if (d0 < 0.02) return s;
         const q = solve(s, a, b, dx, dy);
         if (!q) break;
-        const na = a + q.da * 0.85;
-        if (!(na >= 0 && na <= 1)) break;
-        a = na; b += q.db * 0.85;
-        s = at(a, b);
+        // A LINE SEARCH on the Newton step. `frame` is a finite difference and
+        // near a chart degeneracy it is a poor one, so a full step can land
+        // further from the target than it started. Halve until it does not.
+        let f = 0.85; let took = false;
+        for (let t = 0; t < 3; t++) {
+          const na = a + q.da * f;
+          if (na >= 0 && na <= 1) {
+            const nb = b + q.db * f;
+            const ns = at(na, nb);
+            if (ns && Math.hypot(x - ns.x, y - ns.y) < d0) { a = na; b = nb; s = ns; keep(ns); took = true; break; }
+          }
+          f *= 0.5;
+        }
+        if (!took) break;
       }
-      if (!s) return null;
-      return Math.hypot(x - s.x, y - s.y) < 0.30 ? s : null;
+      return bestD < 0.30 ? bestS : null;
     };
 
     const emitScr = (pts) => {
@@ -2172,6 +2193,12 @@
     diag.emitted = C.emittedCount();
     diag.cut = C.cutCount();
     globalScope.__MONO_DIAG = diag;
+    // A measuring harness must be able to ask THIS substrate whether a screen
+    // point is on the visible surface — a harness that reimplements `inv` is
+    // measuring its own copy, and the copy is what went stale while the white
+    // cross was being diagnosed. Opt-in, so the shipped app retains nothing:
+    // the lattice is up to ninety thousand samples.
+    if (globalScope.__MONO_TRACE) globalScope.__MONO_CTX = C;
     return true;
   };
 
