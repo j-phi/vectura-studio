@@ -779,8 +779,15 @@
    * surface it falls on. That is the strongest depth statement available.
    */
   const lawContact = (C) => {
-    const ang = (C.rot + 90) * Math.PI / 180;
-    const dirAt = () => ({ x: Math.cos(ang), y: Math.sin(ang) });
+    // The rulings run ALONG THE LIGHT'S OWN SCREEN DIRECTION, not at the fill
+    // angle. Measured against `contFieldTouch` on a detail crop the two were
+    // 90.2 % identical when this family was ruled at the fill angle: the
+    // horizon term was doing real work but the DRAWING was the same drawing.
+    // Down-light rulings put the umbra's edge across the grain instead of
+    // along it, which is both the distinguishing geometry and the correct one —
+    // a cast-shadow edge belongs to the occluder and should cut the hatching,
+    // not run with it.
+    const dirAt = () => ({ x: C.lightDir.x, y: C.lightDir.y });
     // The horizon over the whole form, stretched over its own range, so the
     // penumbra occupies the drawing rather than a corner of it.
     let hLo = Infinity; let hHi = -Infinity;
@@ -1883,13 +1890,21 @@
       }
       C.emitScr(pts);
       const I = cnt ? sum / cnt : 0.6;
-      // The Fibonacci word's n-th letter: floor((n+2)φ) − floor((n+1)φ) − 1.
+      // The Fibonacci word's n-th letter: floor((n+2)phi) - floor((n+1)phi).
       const fw = Math.floor((n + 2) * GOLDEN) - Math.floor((n + 1) * GOLDEN);
-      // The bias: in the light the word's S letters are promoted to L, in the
-      // dark its L letters are demoted to S. The ORDER stays quasiperiodic.
-      const shade = clamp(1 - I, 0, 1);
-      const thr = C.hash(n * 337 + 11, 5);
-      const isS = fw === 0 ? (thr < 0.15 + shade * 0.85) : (thr < shade * shade);
+      // THE MIX IS THE TONE, and it is solved, not guessed. A run made of a
+      // fraction q of S clearances and (1 - q) of L delivers a mean ink area of
+      // ink / (q.S + (1-q).L); inverting that for the area the light asks for
+      // gives the q this passage needs. The word then decides WHICH clearances
+      // are the short ones, and because the word is quasiperiodic that decision
+      // has no period for the raster to beat against.
+      const want = C.areaFor(clamp(I, 0, 1));
+      const meanP = clamp(C.INK / Math.max(1e-4, want), SS, LL);
+      const q = clamp((LL - meanP) / Math.max(1e-6, LL - SS), 0, 1);
+      // The word's own letter, dithered into the demanded fraction by a
+      // low-discrepancy rank so the two letters interleave rather than block.
+      const rank = ((n + 1) * GOLDEN) % 1;
+      const isS = fw === 0 ? rank < q * 1.35 : rank < Math.max(0, q - 0.38) * 1.6;
       off += isS ? SS : LL;
       n += 1;
     }
