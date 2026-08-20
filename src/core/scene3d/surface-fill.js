@@ -408,6 +408,97 @@
   //                       weight exactly, but through a 7th-order smoothstep and
   //                       with a golden-ratio dither on the weight, so residual
   //                       quantisation is broken up rather than aligned.
+  //
+  // ── ROUND 3: NINE MORE, EACH TAKEN FROM A NAMED SOURCE ─────────────────────
+  //
+  // Jay: "avoid banding and concentrate lines in deep shadow and space in areas
+  // of highlighting." The literature survey behind these is in the scratchpad
+  // (`hatching-research.md`, 17 primary sources); each law below names its own.
+  //
+  //   'nestedFineLadder'  THE RE-TEST OF `29fb99f`. Three independent sources
+  //                       (Rössl & Kobbelt PG'00 §7; Praun et al. SIGGRAPH'01
+  //                       §3; Winkenbach & Salesin SIGGRAPH'94's prioritized
+  //                       stroke texture) say the anti-banding mechanism is a
+  //                       NESTED prefix of a bit-reversed (van der Corput)
+  //                       order: darkening may only ADD rulings, never re-lay
+  //                       them. `29fb99f` replaced exactly that with a phase
+  //                       accumulator, on the grounds that vdc's kept-index gaps
+  //                       are a power-of-two PAIR. But Webb et al. NPAR'02 §3.1
+  //                       says the reason a nested ladder bands is too FEW tone
+  //                       levels — they went from 6 to 64 — and the phase ladder
+  //                       was never compared against a nested one at 64 levels.
+  //                       This is that comparison. `phaseFineLadder` is its
+  //                       control: the same 64-level tone target, selected by
+  //                       the shipped phase accumulator, so the pair differ in
+  //                       the SELECTOR and in nothing else.
+  //   'phaseFineLadder'   the control for the above. Not a candidate.
+  //   'whiteBand'         Rössl & Kobbelt PG'00 §7. Every ruling reserves a
+  //                       CONSTANT width w and draws a black core of (1−c)·w
+  //                       with white bands of c·w/2 either side, c ∈ [c_min,
+  //                       c_max] being the local grey. Nothing is ever dropped,
+  //                       so no ruling can vanish and no gap can open; c_min
+  //                       guarantees white space (no flood), c_max guarantees a
+  //                       core (no hairline). Both ends of the range are clamped
+  //                       BY CONSTRUCTION rather than by a tuned curve.
+  //   'isophoteWidth'     Goodwin, Vollick & Hertzmann NPAR'07. Stroke thickness
+  //                       from how fast the shading FALLS OFF locally: the
+  //                       image-space distance from this sample to the chosen
+  //                       isophote, d = (I_iso − I)/‖∇I‖. Slow falloff ⇒ broad
+  //                       dark band ⇒ thick stroke. A physically-grounded width
+  //                       law, not a fitted response.
+  //   'strokesGrow'       Praun et al. SIGGRAPH'01 §5. Ink cannot fade in, so a
+  //                       new ruling enters as a SHORT black segment at its own
+  //                       darkest point and LENGTHENS as the tone deepens:
+  //                       clamp(8t − 3.5) on the blend. Needs two numbers per
+  //                       ruling, not a per-sample rewrite. IT ENDS RULINGS IN
+  //                       OPEN SURFACE BY CONSTRUCTION — that is the mechanism,
+  //                       and the number is reported, not hidden.
+  //   'evenStreamlines'   Jobard & Lefer 1997, applied to contourFlow's field.
+  //                       contourFlow read the light best of every law measured
+  //                       (R² 0.444) and had the worst craft (spacing CoV 2.32,
+  //                       10.6 mm free ends, 10.2 mm bare). The known fix is
+  //                       evenly-spaced streamline PLACEMENT: seed new curves at
+  //                       d_sep from the ones already laid, stop a curve when it
+  //                       comes within d_test·d_sep of another. d_sep is the
+  //                       Salisbury spacing law w = 2h/t evaluated on the LOCAL
+  //                       radiance, so the spacing IS the tone and no ladder,
+  //                       threshold or quantisation is involved anywhere.
+  //   'importanceGreedy'  Salisbury et al. SIGGRAPH'97 §3, the no-quantisation
+  //                       reference. importance(x) = the share of the intended
+  //                       darkness NOT YET accumulated; a ruling draws only
+  //                       where its own mean importance is still positive, and
+  //                       its contribution is then subtracted through a blur
+  //                       whose DIAMETER is the inter-stroke distance that tone
+  //                       needs (w = 2h/t). Spacing is emergent. The quality
+  //                       ceiling to measure the others against.
+  //   'lozengeStipple'    Copperplate engraving's own anti-banding, anti-moiré
+  //                       mark (Goltzius' dotted lozenge; RISD "The Brilliant
+  //                       Line"). Where the ladder drops a ruling it leaves a
+  //                       residual the next ruling cannot express; that residual
+  //                       is spent as short flicks along the dropped ruling,
+  //                       thickening toward shadow and tapering to bare paper in
+  //                       the light — "a gentle merging of the inscribed marks
+  //                       with the white of the paper".
+  //   'deepFillTSP'       Velho & Gomes SIGGRAPH'91 / Kaplan & Bosch 2005. In
+  //                       the darkest ~15 %, where a ruled family has already
+  //                       saturated (inkWidth/floorPitch = 0.509 ink area), the
+  //                       ruling is replaced by a boustrophedon space-filling
+  //                       traverse of its own gap: ONE continuous path, no extra
+  //                       pen lifts, aperiodic phase, and an effective pitch of
+  //                       half the ruled pitch without adding a ruling.
+  //   'forcedContrast'    Winkenbach & Salesin SIGGRAPH'94 §2.2 + Hertzmann &
+  //                       Zorin SIGGRAPH'00 §6.1/§6.3. Practitioners do NOT
+  //                       chase the true radiance: "it is sometimes important to
+  //                       FORCE TONE by enhancing contrast or inventing
+  //                       shadows", and Mach bands / undercuts are fabricated at
+  //                       silhouettes. Expect a WORSE apparent-tone R² and,
+  //                       possibly, the best-looking drawing. The disagreement
+  //                       is the point.
+  //   'weightPlusSpacingTuned'  weightPlusSpacing at kappa 0.35 instead of 0.50
+  //                       — the prior round's own recommendation, to recover its
+  //                       ink cost (2036 mm against weightDeepDark's 1290) and
+  //                       its spacing CoV (0.561 against 0.346) by moving
+  //                       amplification off the spacing channel and onto the pen.
   const TONE_ALGO = 'ladder';
   // 'contourFlow' only: which streamline family the rulings follow.
   //   'iso'  along the iso-intensity curves
@@ -480,6 +571,30 @@
   const ladderStep = (phase, cov) => {
     const next = finite(phase, LADDER_PHASE0) + clamp(finite(cov, 0), 0, 1);
     return next >= 1 ? { phase: next - 1, keep: true } : { phase: next, keep: false };
+  };
+  // ── THE BIT-REVERSED (VAN DER CORPUT) RANK, RESTORED FOR THE RE-TEST ───────
+  // rev(j) as a fraction: the radical inverse of j+1 in base 2. Any PREFIX of
+  // the order it induces is equidistributed — that is Rössl & Kobbelt's own
+  // statement of why it beats a sequential order, and it is what makes a tone
+  // ladder built on it NESTED (rank < c1 < c2 ⇒ kept at both coverages), so
+  // darkening only ever ADDS rulings and never re-lays them. Indexed from j+1
+  // so ruling 0 does not get rank 0 and draw at every coverage including zero.
+  const vdc2 = (i) => {
+    let n = (Math.max(0, Math.round(Number(i) || 0)) + 1) >>> 0;
+    let r = 0; let d = 0.5;
+    while (n) { r += (n & 1) * d; n >>>= 1; d *= 0.5; }
+    return r;
+  };
+  // Praun et al.'s ink transfer, clamp(8t − 3.5), with the blend `t` restated in
+  // COVERAGE units: a ruling whose rank sits `GROW_BAND/8` below the local
+  // coverage is fully drawn, one `GROW_BAND/8` above it is gone, and in between
+  // it is a black segment growing symmetrically out of its own darkest point.
+  // "New strokes appear as gradually LENGTHENING BLACK STROKES instead of
+  // gradually darkening grey strokes" — which is the only fade an ink pen has.
+  const GROW_BAND = 0.8;
+  const growLength = (cov, rank) => {
+    const t = 0.5 + (clamp(finite(cov, 0), 0, 1) - clamp(finite(rank, 0), 0, 1)) / GROW_BAND;
+    return clamp(8 * t - 3.5, 0, 1);
   };
   // Drive the ladder over a whole family in one call — the sequence form of
   // `ladderStep`, exported for the spacing-regularity test.
@@ -922,6 +1037,59 @@
     // 'perceptualRamp'
     const perceptualCov = (I, localPitch) => covForArea(targetArea(I), localPitch);
 
+    // ── 'nestedFineLadder' / 'phaseFineLadder' — 64 TONE LEVELS ──────────────
+    //
+    // Webb, Praun, Finkelstein & Hoppe, NPAR 2002 §3.1, on exactly this defect:
+    // "If the set of TAM images is SUFFICIENTLY DENSE, the resulting rendering
+    // will give the ILLUSION THAT STROKES ARE ADDED INDEPENDENTLY, RATHER THAN
+    // ADDED IN BLENDED GROUPS." They went from 6 tone levels to 64. Banding is
+    // the signature of too FEW levels, each of which switches a whole comb on —
+    // `fineLadder` derived 8-32 rungs from the ladder's own coverage RANGE,
+    // which is a different (and coarser) quantity.
+    //
+    // The tone TARGET is perceptualRamp's — L* linear in scene radiance, local
+    // pitch divided out — so this law differs from law 6 only in that its
+    // coverage is quantised and (for `nestedFineLadder`) selected by a nested
+    // bit-reversed rank instead of by the phase accumulator. That is what makes
+    // the three-way comparison read as one variable at a time.
+    const NESTED_LEVELS = 64;
+    const quantCov = (c) => {
+      const env = toneEnvelope();
+      const span = env.covDark - env.covLight;
+      if (!(span > 1e-6)) return env.covDark;
+      const x = clamp((clamp(finite(c, 0), env.covLight, env.covDark) - env.covLight) / span, 0, 1);
+      return env.covLight + (Math.round(x * (NESTED_LEVELS - 1)) / (NESTED_LEVELS - 1)) * span;
+    };
+    const nestedCov = (I, localPitch) => quantCov(perceptualCov(I, localPitch));
+
+    // ── 'forcedContrast' — THE DRAUGHTSMAN DOES NOT CHASE THE RADIANCE ────────
+    //
+    // Winkenbach & Salesin, SIGGRAPH 94 §2.2, surveying traditional practice:
+    // "It is not necessary to depict each individual tone accurately; however,
+    // presenting the correct ARRANGEMENT of tones among ADJACENT REGIONS is
+    // essential", and "to disambiguate objects, it is sometimes important to
+    // FORCE TONE by enhancing contrast or INVENTING SHADOWS." Hertzmann & Zorin
+    // §6.1/§6.3 do the same thing geometrically: a thin UNHATCHED strip on the
+    // near side of an overlap (a fabricated Mach band) and EXTRA-DENSE hatching
+    // on the far side (an undercut).
+    //
+    // Two departures from the light, both deliberate:
+    //   (a) a contrast stretch about the mid tone, so adjacent regions separate
+    //       further than the radiance separates them;
+    //   (b) at the SILHOUETTE, a bright halo on the lit limb and an undercut on
+    //       the dark limb — see `fcLimb` in emitLine, which is where the
+    //       distance to the ruling's own end is known.
+    //
+    // This law is EXPECTED to score worse on apparent-tone R² than the laws that
+    // invert the same response honestly. That is not a defect of the law; it is
+    // the measurement disagreeing with the practice, which is the thing worth
+    // knowing.
+    const FC_GAIN = 0.55;         // contrast stretch about the mid tone
+    const FC_MACH_MM = 1.8;       // halo width on the lit limb
+    const FC_UNDERCUT = 1.45;     // density multiplier on the dark limb
+    const FC_LIMB_I = 0.5;        // which limb is "lit"
+    const fcIntensity = (I) => clamp(0.5 + (clamp(finite(I, 0), 0, 1) - 0.5) * (1 + FC_GAIN), 0, 1);
+
     // 'crossFade' — layeredCross's three layers, un-gated and continuous.
     //
     // Which of the three families is emitting. Set by `emitCrossFade`; family A
@@ -1018,15 +1186,20 @@
     const WEIGHT_LAWS = {
       weightAlongLine: 1, weightDeepDark: 1, weightPlusSpacing: 1,
       weightMultiPass: 1, weightSmoothstep: 1, weightCrossHandoff: 1,
+      weightPlusSpacingTuned: 1, whiteBand: 1, isophoteWidth: 1,
     };
     const isWeightLaw = () => WEIGHT_LAWS[TONE_ALGO] === 1;
+    // `weightPlusSpacingTuned` is `weightPlusSpacing` at a different kappa and
+    // nothing else, so every site that names the one names the other.
+    const isWPS = () => TONE_ALGO === 'weightPlusSpacing' || TONE_ALGO === 'weightPlusSpacingTuned';
     // Which of them vary the weight ALONG the ruling, and therefore split it into
     // abutting pieces. `weightSmoothstep` deliberately does not: it is the
     // anti-banding study ON weightModulated's own per-run mean, and splitting it
     // would confound the two questions.
     const splitsAlongLine = () => TONE_ALGO === 'weightAlongLine'
-      || TONE_ALGO === 'weightDeepDark' || TONE_ALGO === 'weightPlusSpacing'
-      || TONE_ALGO === 'weightMultiPass' || TONE_ALGO === 'weightCrossHandoff';
+      || TONE_ALGO === 'weightDeepDark' || isWPS()
+      || TONE_ALGO === 'weightMultiPass' || TONE_ALGO === 'weightCrossHandoff'
+      || TONE_ALGO === 'whiteBand' || TONE_ALGO === 'isophoteWidth';
     // WHERE THE WEIGHT LAWS ACTUALLY LANDED — the counterpart to `floorStat`.
     // The weight range is bounded at both ends by physics (you cannot draw
     // thinner than the pen, and past W_FLOOD_AREA the ink is a blob), so "did
@@ -1047,8 +1220,68 @@
       const c = (W_DEEP_AREA * masterPitch) / (W_MAX * inkWidth());
       return clamp(finite(c, env.covLight), env.covLight, env.covDark);
     };
-    const weightBaseCov = () => ((TONE_ALGO === 'weightDeepDark' || TONE_ALGO === 'weightMultiPass')
-      ? deepFlatCov() : flatCov());
+    // ── 'whiteBand' — RÖSSL & KOBBELT'S CONSTANT RESERVED WIDTH ──────────────
+    //
+    // "Define strokes to have a CONSTANT width w but only a certain portion
+    // w' = (1−c)·w is drawn in black, where c ∈ [c_min, c_max] ⊂ [0,1] is the
+    // local grey value (0 = black). Restricting the grey values to the interval
+    // [c_min, c_max] GUARANTEES A MINIMUM WIDTH OF THE STROKES AND A MINIMUM
+    // WIDTH OF THE WHITE SPACE BETWEEN STROKES." (PG 2000, §7.)
+    //
+    // Both ends of the tone range are therefore clamped by CONSTRUCTION and not
+    // by a fitted curve, and — the property this law is really here for —
+    // NOTHING IS EVER DROPPED. The ladder never runs: the geometry is one even
+    // grid at the reserved pitch, and tone is entirely the black fraction of it.
+    // A ruling cannot vanish in the highlight (it thins to the pen and stops
+    // thinning) and a gap cannot close in the shadow (c_min holds it open), so
+    // the two failure modes the ladder trades between are both unreachable.
+    //
+    // Rössl's own density regulation is by ERASURE — where the family crowds,
+    // a later stroke's reserved band overpaints its neighbour's. A plotter has
+    // no eraser, so the same regulation arrives as the `weightCovEff` floor
+    // clamp: where the geometry crowds, the coverage the floor actually left is
+    // smaller, the reserved width is correspondingly smaller, and the core
+    // shrinks with it. Same effect, stated on the pen instead of on the paper.
+    const WB_CMIN = 0.15;   // minimum white band, as a share of the reserved width
+    const WB_CMAX = 0.85;   // minimum black core, ditto
+    const wbFlatCov = () => {
+      const env = toneEnvelope();
+      const c = ((1 - WB_CMIN) * masterPitch) / (W_MAX * inkWidth());
+      return clamp(finite(c, env.covLight), env.covLight, env.covDark);
+    };
+    const weightBaseCov = () => {
+      if (TONE_ALGO === 'weightDeepDark' || TONE_ALGO === 'weightMultiPass') return deepFlatCov();
+      if (TONE_ALGO === 'whiteBand' || TONE_ALGO === 'isophoteWidth') return wbFlatCov();
+      return flatCov();
+    };
+    // ── 'isophoteWidth' — GOODWIN, VOLLICK & HERTZMANN'S ISOPHOTE DISTANCE ────
+    //
+    // "Thickness can be determined as a function of HOW QUICKLY THE SHADING
+    // 'FALLS OFF' FROM THE CURVE" (NPAR 2007). The isophote distance d(p) is the
+    // image-space distance from p to the level set of the shading at a chosen
+    // threshold; the paper gives a closed form in radial curvature and depth,
+    // but the quantity it approximates is available directly here, because the
+    // emitter can measure ‖∇I‖ on the surface it is already sampling:
+    //
+    //     d = (I_iso − I) / ‖∇_screen I‖        millimetres to the isophote
+    //     T = α · d,  α = 0.4                    the paper's own alpha
+    //
+    // Slow falloff (a broad terminator, a large cylindrical part, a bulge) ⇒ a
+    // wide dark band ⇒ a thick stroke. Fast falloff ⇒ thin. Past the isophote,
+    // on the lit side, d = 0 and the stroke thins to the pen — so the highlight
+    // empties for a physical reason rather than by a tuned taper. This is the
+    // per-sample number Rössl's white band asks for, chosen by shading rather
+    // than fitted, which is why the two share a base grid.
+    const ISO_THRESH = 0.55;
+    const ISO_ALPHA = 0.4;
+    const isoReserve = () => (masterPitch > 1e-6
+      ? masterPitch / Math.max(1e-6, wbFlatCov()) : litMaxPitchPen() * penWidth);
+    const isoWidthArea = (I, gradI) => {
+      const w = Math.max(1e-6, isoReserve());
+      const below = clamp(ISO_THRESH - clamp(finite(I, 0), 0, 1), 0, 1);
+      const g = Math.max(1e-4, Math.abs(finite(gradI, 0)));
+      return clamp((ISO_ALPHA * (below / g)) / w, inkWidth() / w, 1 - WB_CMIN);
+    };
     // The light end never moves: weight 1 on the base grid. That is what "the
     // light end stays delicate" means arithmetically.
     const wLightArea = () => {
@@ -1077,7 +1310,13 @@
     // channels. kappa = 0.5 is the even split: spacing carries sqrt(A) and weight
     // carries sqrt(A), so a channel that would have had to quantise a 4x range
     // now quantises a 2x one, and the product still lands exactly on A.
-    const WPS_KAPPA = 0.5;
+    // ...AND `weightPlusSpacingTuned` MOVES THE SPLIT. Round 2 measured the even
+    // split spending 2036 mm of ink against weightDeepDark's 1290 for a DARKER
+    // 5th-percentile L* (49.2 against 41.1), and carrying a spacing CoV of 0.561
+    // against 0.346 — i.e. the spacing channel was buying the least and costing
+    // the most. kappa 0.35 pushes amplification off the spacing and onto the pen,
+    // which is the channel that costs no travel and cannot open a gap.
+    const WPS_KAPPA = TONE_ALGO === 'weightPlusSpacingTuned' ? 0.35 : 0.5;
     const wpsCov = (I) => {
       const env = toneEnvelope();
       const base = flatCov();
@@ -1131,7 +1370,7 @@
     // The coverage a weight law is ruling at, at this radiance — the divisor the
     // weight has to be stated against.
     const weightCovAt = (I, localPitch) => {
-      if (TONE_ALGO === 'weightPlusSpacing') return wpsCov(I);
+      if (isWPS()) return wpsCov(I);
       if (TONE_ALGO === 'weightCrossHandoff') {
         return xfLayer === 0 ? flatCov() : xhCovB(clamp(finite(I, 0), 0, 1), localPitch);
       }
@@ -1190,7 +1429,7 @@
       return clamp(w * (1 + W_DITHER * (u - 0.5) * 2), W_MIN, W_MAX);
     };
     // The per-sample weight the emitter records.
-    const weightAtSample = (smp, localPitch) => {
+    const weightAtSample = (smp, localPitch, gradI) => {
       const I = clamp(finite(smp && smp.I, 0), 0, 1);
       if (TONE_ALGO === 'weightSmoothstep') {
         const env = toneEnvelope();
@@ -1202,6 +1441,17 @@
         // neither is asked to carry the other's share.
         return weightForArea(xfLayer === 0 ? xhAreaA(I) : xhAreaB(I), localPitch,
           weightCovEff(I, localPitch));
+      }
+      // 'whiteBand' — the black FRACTION of the reserved width IS the ink area,
+      // because the reserved width is the pitch (nothing is dropped). So the
+      // area asked for is literally (1 − c), clamped at both ends.
+      if (TONE_ALGO === 'whiteBand') {
+        return weightForArea(1 - clamp(I, WB_CMIN, WB_CMAX), localPitch, weightCovEff(I, localPitch));
+      }
+      // 'isophoteWidth' — the width comes from the SHADING GRADIENT, measured on
+      // the ruling itself (see `isoWidthArea`); the sampler hands it in.
+      if (TONE_ALGO === 'isophoteWidth') {
+        return weightForArea(isoWidthArea(I, gradI), localPitch, weightCovEff(I, localPitch));
       }
       return weightForArea(wTargetArea(I), localPitch, weightCovEff(I, localPitch));
     };
@@ -1225,6 +1475,20 @@
       if (TONE_ALGO === 'perceptualRamp' || TONE_ALGO === 'contourFlow' || TONE_ALGO === 'errorDiffused') {
         return perceptualCov(I, localPitch);
       }
+      // The 64-level pair, and `strokesGrow`/`lozengeStipple`, all state the
+      // SAME target as law 6 — only the selection differs, which is the whole
+      // point of running them against it.
+      if (TONE_ALGO === 'nestedFineLadder' || TONE_ALGO === 'phaseFineLadder') return nestedCov(I, localPitch);
+      if (TONE_ALGO === 'strokesGrow' || TONE_ALGO === 'lozengeStipple'
+        || TONE_ALGO === 'deepFillTSP' || TONE_ALGO === 'importanceGreedy') {
+        return perceptualCov(I, localPitch);
+      }
+      // 'forcedContrast' — the same target, on a tone field the draughtsman has
+      // deliberately pushed apart (see `fcIntensity`).
+      if (TONE_ALGO === 'forcedContrast') return perceptualCov(fcIntensity(I), localPitch);
+      // 'evenStreamlines' places by spacing, so every traced curve draws whole:
+      // the ladder is handed 1 and takes no verdict at all.
+      if (TONE_ALGO === 'evenStreamlines') return 1;
       if (TONE_ALGO === 'crossFade') return crossFadeCov(I, localPitch);
       if (TONE_ALGO === 'fullLightingModel') return flmCov(smp, localPitch);
       // The weight laws state their tone on the pen, so the coverage they hand
@@ -1757,8 +2021,23 @@
       edState.set(key, { e1: st.e2 + err * (2 / 3), e2: err * (1 / 3) });
       return keep;
     };
-    const ladderKeeps = (key, cov, seed) => {
+    const ladderKeeps = (key, cov, seed, lineIndex) => {
       if (TONE_ALGO === 'errorDiffused') return edKeeps(key, cov, seed);
+      // ── THE NESTED SELECTOR, BACK FOR ITS RE-TEST ──────────────────────────
+      // A rank threshold is NESTED by construction: rank(i) < c1 < c2 ⇒ the
+      // ruling is kept at both coverages, so darkening only ever ADDS rulings
+      // and never re-lays them. That is the invariant `29fb99f` traded away for
+      // even gaps, and the three sources that name it (Rössl & Kobbelt §7, Praun
+      // et al. §3, Winkenbach & Salesin's prioritized stroke texture) all name
+      // it as THE anti-banding mechanism. It is paired here with a 64-level tone
+      // axis (see `nestedCov`), which is the condition Webb et al. showed a
+      // nested ladder needs and which the pre-`29fb99f` ladder never had.
+      if (TONE_ALGO === 'nestedFineLadder') return vdc2(lineIndex) < clamp(finite(cov, 0), 0, 1);
+      // 'strokesGrow' keeps the same nested rank, but a ruling enters slightly
+      // BEFORE its rank is reached and leaves slightly after — as a growing
+      // segment rather than as a whole line. `growLength` is the fraction of its
+      // own span it draws; > 0 is "keep it".
+      if (TONE_ALGO === 'strokesGrow') return growLength(cov, vdc2(lineIndex)) > 0.02;
       const prev = ladderPhase.has(key)
         ? ladderPhase.get(key)
         : (Number.isFinite(seed) ? seed : LADDER_PHASE0);
@@ -2109,11 +2388,33 @@
       // boundary refinement below is about where the SURFACE turns away, and a
       // zone edge is not that.
       const onSurf = new Array(nSteps + 1);
+      // 'isophoteWidth' — ‖∇I‖ ON SCREEN, in intensity per millimetre. Two
+      // independent chart displacements and their intensity differences
+      // determine the gradient exactly (a 2×2 solve). It has to be SOLVED and
+      // not averaged: the chart is not conformal, so the two parameter
+      // directions are neither orthogonal nor equally scaled on screen.
+      const gradIs = (toneOn && TONE_ALGO === 'isophoteWidth') ? new Array(nSteps + 1).fill(0) : null;
+      const GRAD_H = 1 / 512;
+      const gradIAt = (pr) => {
+        const a0 = sampleAt(clamp(pr.a - GRAD_H, 0, 1), pr.b);
+        const a1 = sampleAt(clamp(pr.a + GRAD_H, 0, 1), pr.b);
+        const b0 = sampleAt(pr.a, clamp(pr.b - GRAD_H, 0, 1));
+        const b1 = sampleAt(pr.a, clamp(pr.b + GRAD_H, 0, 1));
+        if (!a0 || !a1 || !b0 || !b1) return 0;
+        const ux = a1.x - a0.x; const uy = a1.y - a0.y;
+        const du = finite(a1.I, 0) - finite(a0.I, 0);
+        const vx = b1.x - b0.x; const vy = b1.y - b0.y;
+        const dv = finite(b1.I, 0) - finite(b0.I, 0);
+        const det = ux * vy - uy * vx;
+        if (!(Math.abs(det) > 1e-12)) return 0;
+        return Math.hypot((du * vy - dv * uy) / det, (ux * dv - vx * du) / det);
+      };
       for (let s = 0; s <= nSteps; s++) {
         const pr = paramAt(s / nSteps);
         const smp = sampleAt(pr.a, pr.b);
         const on = Boolean(smp && smp.front === wantFront);
         onSurf[s] = on;
+        if (gradIs && on) gradIs[s] = gradIAt(pr);
         smps[s] = on ? smp : null;
         // The zone gate is a HARD cut, so a gated-out sample is not part of any
         // span; folding it in here keeps the span segmentation and the emit
@@ -2141,6 +2442,41 @@
       // The perpendicular gap between adjacent MASTER-GRID rulings at this
       // sample. Hoisted out of `covAtSample` because the weight laws need the
       // same number in the emit loop, where no coverage is being computed.
+      // ── ARC LENGTH ALONG THIS RULING, AND THE DISTANCE TO ITS OWN END ───────
+      //
+      // Three laws need a quantity no single sample carries. `strokesGrow` grows
+      // a black segment symmetrically about the ruling's darkest point, so it
+      // needs the arc length. `forcedContrast` fabricates a Mach band a fixed
+      // number of MILLIMETRES inside the silhouette, so it needs the distance to
+      // the ruling's own end. `deepFillTSP` tapers its lateral excursion to zero
+      // at that same end, so a displaced point cannot leave the surface.
+      //
+      // A run of consecutive on-surface samples is exactly the piece of ruling
+      // bounded by the silhouette (or by a pole), so its two ends ARE the ends
+      // the limb rule is about — the same segmentation `spanDrops` makes, minus
+      // the zone split, which is not a silhouette.
+      const needsArc = toneOn && (TONE_ALGO === 'strokesGrow'
+        || TONE_ALGO === 'forcedContrast' || TONE_ALGO === 'deepFillTSP');
+      let arcMM = null;
+      let endMM = null;
+      if (needsArc) {
+        arcMM = new Array(nSteps + 1).fill(0);
+        endMM = new Array(nSteps + 1).fill(0);
+        let s0 = 0;
+        while (s0 <= nSteps) {
+          if (!smps[s0]) { s0 += 1; continue; }
+          let s1 = s0;
+          while (s1 + 1 <= nSteps && smps[s1 + 1]) s1 += 1;
+          let acc = 0;
+          arcMM[s0] = 0;
+          for (let k = s0 + 1; k <= s1; k++) {
+            acc += Math.hypot(smps[k].x - smps[k - 1].x, smps[k].y - smps[k - 1].y);
+            arcMM[k] = acc;
+          }
+          for (let k = s0; k <= s1; k++) endMM[k] = Math.min(arcMM[k], acc - arcMM[k]);
+          s0 = s1 + 1;
+        }
+      }
       const pitchAtStep = (smp, s) => {
         const tt = s / nSteps;
         const stepHere = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
@@ -2168,6 +2504,16 @@
           : (zone
             ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true, smp)
             : coverageForSample(smp.I));
+        // 'forcedContrast' — THE UNDERCUT. Hertzmann & Zorin §6.3: the strip on
+        // the far side of an overlap gets EXTRA-dense cross-hatching. Here the
+        // overlap is the silhouette itself and "far side" is the dark limb, so
+        // the last FC_MACH_MM of a ruling that ends in shadow is driven denser
+        // than the radiance asks. Its partner — the bright halo on the LIT limb
+        // — is a blank, so it is spent in `hardCut` below and not here.
+        if (TONE_ALGO === 'forcedContrast' && endMM
+          && endMM[s] < FC_MACH_MM && clamp(finite(smp.I, 0), 0, 1) < FC_LIMB_I) {
+          cov = clamp(cov * FC_UNDERCUT, 0, 1);
+        }
         // ── THE ONE PHYSICAL LIMIT LEFT IN UNCAPPED MODE ──────────────────────
         // Budget off, floor on. `HL_STAGE.coverageCap` is a different law (a
         // composed DARKNESS ceiling, `myCeil`) and stays off; this is the craft
@@ -2388,7 +2734,7 @@
             // track per family.
             const zk = String(zones ? zones[mid] : null);
             if (rulingDrop.has(zk)) return rulingDrop.get(zk);
-            const d = !ladderKeeps(`${ladderKey}|${zk}`, eff);
+            const d = !ladderKeeps(`${ladderKey}|${zk}`, eff, undefined, lineIndex);
             rulingDrop.set(zk, d);
             return d;
           }, closedSweep)
@@ -2396,11 +2742,148 @@
           // always compared (local shade against the line's geometric rank).
           : spanDrops(smps, zones, (smp) => clamp(1 - smp.I, 0, 1), (shade) => shade < threshold, closedSweep);
       }
+
+      // ── THE TWO LAWS THAT END A RULING ON PURPOSE ────────────────────────────
+      //
+      // Everything above decides whether a ruling draws. This decides how much of
+      // it draws, and it is the ONE place in this file where a ruling is allowed
+      // to stop in open front-facing surface. Both laws that use it do so as
+      // their MECHANISM, not as a side effect, and both report the depth.
+      //
+      //   'strokesGrow'     Praun et al.'s clamp(8t − 3.5): a ruling entering the
+      //                     drawing is a SHORT black segment centred on its own
+      //                     darkest sample, lengthening as the tone deepens. The
+      //                     two ends are in open surface by construction — that
+      //                     is what "the stroke grows" means on a pen plotter.
+      //   'forcedContrast'  Hertzmann & Zorin's Mach band: the last FC_MACH_MM of
+      //                     a ruling that ends on the LIT limb is left blank, so
+      //                     the silhouette reads against a fabricated halo. Also
+      //                     a deliberate free end, also reported.
+      //
+      // A hard cut, like the duty break: never bridged, never softened, so a
+      // trimmed ruling reads as a shorter stroke and not as a bridged wobble.
+      let hardCut = null;
+      if (toneOn && TONE_ALGO === 'strokesGrow' && arcMM) {
+        const rank = vdc2(lineIndex);
+        const live = [];
+        for (let s = 0; s <= nSteps; s++) if (smps[s] && !(spanDrop && spanDrop[s])) live.push(s);
+        if (live.length > 2) {
+          let cSum = 0;
+          let dark = live[0];
+          let dMin = Infinity;
+          live.forEach((s) => {
+            cSum += covAtSample(smps[s], s, zones[s]);
+            const I = clamp(finite(smps[s].I, 0), 0, 1);
+            if (I < dMin) { dMin = I; dark = s; }
+          });
+          const L = growLength(cSum / live.length, rank);
+          if (L < 0.999) {
+            const total = arcMM[live[live.length - 1]] - arcMM[live[0]];
+            const half = (L * Math.max(0, total)) / 2;
+            const c0 = arcMM[dark];
+            hardCut = new Array(nSteps + 1).fill(false);
+            live.forEach((s) => { if (Math.abs(arcMM[s] - c0) > half) hardCut[s] = true; });
+          }
+        }
+      }
+      if (toneOn && TONE_ALGO === 'forcedContrast' && endMM) {
+        hardCut = new Array(nSteps + 1).fill(false);
+        for (let s = 0; s <= nSteps; s++) {
+          if (!smps[s]) continue;
+          if (endMM[s] < FC_MACH_MM && clamp(finite(smps[s].I, 0), 0, 1) >= FC_LIMB_I) hardCut[s] = true;
+        }
+      }
+      // ── 'lozengeStipple' — THE RESIDUAL, SPENT AS FLICKS ─────────────────────
+      //
+      // A ladder can only place WHOLE rulings, so between "n rulings" and
+      // "n + 1 rulings" there is a tone it cannot express — and where it drops a
+      // ruling, that whole ruling's worth of tone is the residual. The
+      // copperplate engravers' answer (Goltzius' dotted lozenge; RISD's "The
+      // Brilliant Line") is to spend the residual as DOTS: "dots taper off
+      // gradually toward white paper, creating smooth gradations… a gentle
+      // merging of the inscribed marks with the white of the paper", and "dot
+      // placement disrupts MOIRÉ patterns that occur when cross-hatched lines
+      // create unwanted optical illusions."
+      //
+      // Here a dropped ruling is not erased — it is reduced to short flicks
+      // along its own path, at a density proportional to the coverage the ladder
+      // wanted there. The marks are therefore ON the surface by construction
+      // (they lie on a ruling the emitter already proved visible), they thicken
+      // toward the shadow and vanish into bare paper in the light, and they
+      // decorrelate the lattice because their phase is keyed on the ruling.
+      const LOZ_MM = 0.9;      // a flick, ~3 × pen — a mark, not a pen-down dot
+      const LOZ_GAIN = 0.35;   // flicks-per-sample at full coverage
+      let lozMark = null;
+      if (toneOn && TONE_ALGO === 'lozengeStipple' && spanDrop) {
+        lozMark = new Array(nSteps + 1).fill(false);
+        let s = 0;
+        while (s <= nSteps) {
+          if (!smps[s] || !spanDrop[s]) { s += 1; continue; }
+          const p = clamp(covAtSample(smps[s], s, zones[s]) * LOZ_GAIN, 0, 1);
+          if (sfHash(lineIndex * 977 + 31, s) >= p) { s += 1; continue; }
+          let acc = 0;
+          let k = s;
+          while (k < nSteps && acc < LOZ_MM && smps[k + 1] && spanDrop[k + 1]) {
+            acc += Math.hypot(smps[k + 1].x - smps[k].x, smps[k + 1].y - smps[k].y);
+            k += 1;
+          }
+          if (acc >= LOZ_MM * 0.6) for (let q = s; q <= k; q++) lozMark[q] = true;
+          s = k + 2;   // at least one clear sample between two flicks
+        }
+      }
+
+      // ── 'deepFillTSP' — A SPACE-FILLING TRAVERSE FOR THE DARKEST ZONE ────────
+      //
+      // Arithmetic first, because it is what makes this law necessary at all: a
+      // single ruled family with a pen-width stroke saturates at a spacing of
+      // about twice the nib (this repo's PLOT_FLOOR_PEN), i.e. an ink area of
+      // inkWidth/floorPitch = 0.509, L* 76. Below that there is nothing left to
+      // buy by ruling closer. Velho & Gomes (SIGGRAPH '91) and Kaplan & Bosch
+      // (TSP Art, 2005) both answer it the same way: in the darkest zone, stop
+      // ruling and lay ONE CONTINUOUS PATH that fills the area, whose traversal
+      // is APERIODIC so it cannot band or moiré.
+      //
+      // The plotter-legal form of that on a ruled family is a boustrophedon: the
+      // ruling keeps its own path and its own two ends, and acquires a lateral
+      // triangle-wave excursion into its own gap. One path, no extra pen lifts,
+      // an effective pitch of half the ruled pitch without adding a ruling, and
+      // a phase offset per ruling (golden ratio) so the zigs never line up into
+      // a secondary lattice. The amplitude is bounded by the plot floor at one
+      // end and by the ruling's own distance-to-its-end at the other, so a
+      // displaced point can neither flood nor leave the surface.
+      const TSP_I = 0.18;       // the darkest ~15 % of the radiance range
+      const TSP_PERIOD = 3.2;   // mm, one zig and one zag
+      const tspAt = (smp, s) => {
+        if (!arcMM || !endMM) return null;
+        const I = clamp(finite(smp.I, 0), 0, 1);
+        const k = clamp((TSP_I - I) / Math.max(1e-6, TSP_I), 0, 1);
+        if (!(k > 0)) return null;
+        const p = pitchAtStep(smp, s);
+        if (!(Number.isFinite(p) && p > 1e-6)) return null;
+        const drawn = p / Math.max(1e-6, covAtSample(smp, s, zones[s]));
+        let amp = Math.max(0, (drawn - floorPitch) / 2) * k;
+        amp = Math.min(amp, endMM[s] / 2);
+        if (!(amp > 1e-3)) return null;
+        const a = smps[Math.max(0, s - 1)] || smp;
+        const b = smps[Math.min(nSteps, s + 1)] || smp;
+        const dx = b.x - a.x; const dy = b.y - a.y;
+        const L = Math.hypot(dx, dy);
+        if (!(L > 1e-9)) return null;
+        const ph = (arcMM[s] / TSP_PERIOD + (Number(lineIndex) || 0) * GOLDEN_STEP) * Math.PI * 2;
+        // A TRIANGLE wave, not a sine: constant lateral speed is what makes the
+        // traverse fill its gap evenly instead of dwelling at the turns.
+        const tri = (2 / Math.PI) * Math.asin(Math.sin(ph));
+        return { x: smp.x + (-dy / L) * amp * tri, y: smp.y + (dx / L) * amp * tri, z: smp.z };
+      };
+
       for (let s = 0; s <= nSteps; s++) {
         const tt = s / nSteps;
         const smp = smps[s];
         sampleZone = null;
         if (!smp) { flush(); flushHL(); continue; }
+        // A deliberate trim (see `hardCut`). Cuts hard, exactly like the duty
+        // break, so it is never bridged back into one stroke.
+        if (hardCut && hardCut[s]) { flush(); flushHL(); continue; }
         if (toneOn) {
           const shade = clamp(1 - smp.I, 0, 1);
           // I8 — LIGHT-DRIVEN glint: the per-sample specular term overrides the
@@ -2469,6 +2952,16 @@
             // break: it is the dither's per-sample verdict, and on a wrapped
             // surface it chatters (see RULING CONTINUITY above). A duty break
             // is deliberate and still cuts hard.
+            // 'lozengeStipple' spends a dropped ruling as flicks rather than
+            // erasing it. A flick is bounded by a HARD flush at both ends, so
+            // the bridge cannot join two of them into a dotted line — which
+            // would be a dashed ruling, not a stipple.
+            if (lozMark) {
+              flushHL();
+              if (lozMark[s]) addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
+              else flush();
+              continue;
+            }
             if (!hl || !hlIsHL(smp.I)) {
               flushHL();
               if (dutyBreak) flush();
@@ -2503,8 +2996,11 @@
         // surface, which is the only place a refinement is defined.
         if (s > 0 && !onSurf[s - 1]) { const e = edgeAt(s, s - 1); if (e) addPt(e, sampleZone, tt); }
         if (toneOn && TONE_ALGO === 'weightModulated') sink.noteW(weightAt(smp.I));
-        else if (toneOn && isWeightLaw()) sink.noteW(weightAtSample(smp, pitchAtStep(smp, s)));
-        addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
+        else if (toneOn && isWeightLaw()) {
+          sink.noteW(weightAtSample(smp, pitchAtStep(smp, s), gradIs ? gradIs[s] : 0));
+        }
+        addPt((toneOn && TONE_ALGO === 'deepFillTSP' && tspAt(smp, s))
+          || { x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
         if (s < nSteps && !onSurf[s + 1]) { const e = edgeAt(s, s + 1); if (e) addPt(e, sampleZone, tt); }
       }
       flush();
