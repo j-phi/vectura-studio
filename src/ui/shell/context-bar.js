@@ -1434,13 +1434,15 @@
         mixed: sceneAgree(sc, (id) => FS.resolve((rs(id).params || {}).toneLaw)).mixed,
         onChange: (v) => { write({ params: { ...params, toneLaw: v } }); rebuild(); },
       });
-      const note = FS.note(law);
-      if (note.text) flyNote(fly, note.text);
-      if (note.caveat) flyNote(fly, note.caveat).classList.add('is-caveat');
+      // The disclosure sits directly under the select it modifies, before the
+      // note lines — otherwise the prose pushes the two controls apart.
       UI.SegCtrl(flyRow(fly, FSC.libraryLabel), {
         options: C.onOff, value: fillStyleShowLibrary ? 'on' : 'off', ariaLabel: FSC.libraryAria,
         onChange: (v) => { fillStyleShowLibrary = (v === 'on'); rebuild(); },
       });
+      const note = FS.note(law);
+      if (note.text) flyNote(fly, note.text);
+      if (note.caveat) flyNote(fly, note.caveat).classList.add('is-caveat');
     }
     flyMixedSelect(flyRow(fly, C.pen.label), {
       options: scenePens(C.pen.inherit), value: resolved.penId || '', ariaLabel: C.pen.aria,

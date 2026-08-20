@@ -505,6 +505,15 @@
       n.textContent = text;
       host.appendChild(n);
     };
+    // The disclosure sits directly under the select it modifies — the prose
+    // below would otherwise push the two controls apart and make the toggle
+    // read as belonging to the description.
+    comps.push(UI.SegCtrl(o.row(FS.LIBRARY_LABEL), {
+      options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+      value: fillStyleShowLibrary ? 'on' : 'off',
+      ariaLabel: FS.LIBRARY_ARIA,
+      onChange: (v) => { fillStyleShowLibrary = (v === 'on'); o.rerender(); },
+    }));
     const entry = FS.entry(law) || {};
     const note = FS.note(law);
     // Leads with the MARK CLASS, so what kind of mark this is stays legible
@@ -515,12 +524,6 @@
     if (entry.weaknesses) line(`Weaknesses: ${entry.weaknesses}`);
     // The measured caveat of a demoted library law, in the warning colour.
     line(note.caveat, true);
-    comps.push(UI.SegCtrl(o.row(FS.LIBRARY_LABEL), {
-      options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
-      value: fillStyleShowLibrary ? 'on' : 'off',
-      ariaLabel: FS.LIBRARY_ARIA,
-      onChange: (v) => { fillStyleShowLibrary = (v === 'on'); o.rerender(); },
-    }));
   };
 
   let CURRENT = null;
