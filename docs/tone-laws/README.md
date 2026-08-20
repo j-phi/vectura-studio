@@ -1295,8 +1295,8 @@ Four further checks:
   `gradP95` 0.124, 43 seam cells against `penCross`'s 881. High crossedness is not the
   problem. **A discontinuity in crossedness is.** The measure separates the two.
 - **No curvature false positives.** On `ellipsoid · contour`, the most strongly curved
-  cell in the roster, the seven non-crossing laws score `C` mean 0.031–0.055 and
-  `fracCrossed` 0.046–0.088. The bimodality gate holds where the fan risk is worst.
+  cell in the roster, the same seven non-crossing laws score `C` mean 0.031–0.048 and
+  `fracCrossed` 0.046–0.068. The bimodality gate holds where the fan risk is worst.
 - **`bundleEased` and `contFieldSurface` return `gradP95` exactly 0.000** — the field is
   not merely low, it is flat to the resolution of the measurement.
 
