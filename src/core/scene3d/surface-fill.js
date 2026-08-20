@@ -576,52 +576,74 @@
   // ruling then draws WHOLE — there is no drop decision left to take, which is
   // also why these laws cannot leave a free end.
   //
+  //
+  // EVERY `MEASURED` LINE BELOW IS POST-FIX (the walk's step ceiling, see
+  // `dfMax`), sphere-hatch unless another cell is named, app-default scene,
+  // uncapped. The two references it answers to, on the same cell and harness:
+  //   phaseFineLadder  R² 0.045  span  9.2  darkest 78.6  off 38.7%
+  //                    median adjacent spacing step 1.87x  ·  40 % monotone
+  //   whiteBand        R² 0.512  span 29.0  darkest 51.4  off  5.8%
+  //                    median adjacent spacing step 1.21x  ·  50 % monotone
+  //
   //   'contFieldPitch'    The baseline. Gap = inkWidth / targetArea(I), i.e.
   //                       the same L*-linear tone target `perceptualRamp` and
   //                       `phaseFineLadder` state, read as a SPACING instead of
   //                       as a probability. Integrated across the family, screen
   //                       metric, floored at the plot floor.
+  //                       MEASURED: R² 0.079, span 11.3, darkest 72.4, off the
+  //                       line 21.1 %, median adjacent step 1.03x (trimmed max
+  //                       1.21x), rho(gap, radiance) 0.897, 80.6 % of adjacent
+  //                       transitions with the light, 0 free ends, 0 marks
+  //                       outside, 58 flooded 1 mm cells — all at the pole, where
+  //                       a per-ruling MEAN pitch cannot see the convergence.
+  //                       On ellipsoid-contour, whose rings nearly follow the
+  //                       isophotes: R² 0.382, off the line 11.4 %, 90.9 %
+  //                       monotone, median step 1.02x.
   //   'contFieldEase'     Smootherstep between the darkest and lightest legal
   //                       pitch. The ease is applied in PITCH space, so the
   //                       clearance itself has zero first and second derivative
   //                       at both ends of the ramp.
-  //                       MEASURED, sphere-hatch: R² 0.237, L* span 16.6,
-  //                       darkest 72.6, off the line 21.8 %, median adjacent
-  //                       spacing step 1.01x (trimmed max 1.26x), Spearman
-  //                       rho(gap, radiance) 0.737, 86.4 % of transitions with
-  //                       the light, 0 free ends, 0 marks outside. Buys the best
-  //                       R² of the first three laws by spending gap range:
-  //                       0.62-4.23 mm against contFieldPitch's 0.63-2.03, at
-  //                       the cost of a 3.1 mm bare patch in the highlight.
+  //                       MEASURED: R² 0.150, span 11.3, darkest 73.0, off the
+  //                       line 44.0 %, median adjacent step 1.02x, rho 0.820,
+  //                       69.2 % monotone. Buys R² by spending gap RANGE
+  //                       (0.42-2.34 mm against the baseline's 0.42-1.69) and
+  //                       pays for it twice — the off-the-line error doubles and
+  //                       the ordering loses 11 points. Best ramp of the round on
+  //                       ellipsoid-contour, R² 0.431.
   //   'contFieldSigmoid'  Sterzik, Vollmer & Vollmer (CGF 2024) fitted a
   //                       perceptual response to hatching specifically:
   //                       f(x) = 1 / (1 + (1/a − 1)(1/x − 1)^b), a = 0.4753,
   //                       b = 1.5918. Their curve, on this file's pitch range.
-  //                       MEASURED, sphere-hatch: R² 0.232, span 16.0, darkest
-  //                       74.0, off the line 23.6 %, median step 1.02x, rho
-  //                       0.704, and 95.0 % of adjacent transitions moving with
-  //                       the light — the HIGHEST monotonicity of any law
-  //                       measured, this round or before. Their sigmoid is
-  //                       gentler than smootherstep in the mid-tones, which is
-  //                       exactly where a reversal was showing up.
+  //                       MEASURED: R² 0.144, span 10.7, darkest 72.9, off the
+  //                       line 47.7 %, median step 1.03x, rho 0.848, 72.0 %
+  //                       monotone. Their sigmoid beats smootherstep on ORDERING
+  //                       at the same ramp and the same cost; both wide-range
+  //                       laws trade off-the-line error for L* span. On
+  //                       ellipsoid-contour: R² 0.438, 92.0 % monotone — the
+  //                       best-ordered cell in the round.
   //   'contFieldMeasured' The tone response INVERTED FROM MEASUREMENT rather
   //                       than from theory. Pass 1 places with the baseline law
   //                       and records what ink area each radiance actually
   //                       received once foreshortening, the floor and the
   //                       silhouette had their say; pass 2 corrects the field by
   //                       the measured residual. Two passes, per family.
+  //                       MEASURED: R² 0.126, span 11.4, darkest 72.3, off the
+  //                       line 29.1 %, median step 1.03x, rho 0.820, 74.1 %
+  //                       monotone. Post-fix it no longer beats the plain
+  //                       baseline (29.1 % against 21.1 %): the residual it was
+  //                       correcting was largely the bare patch the old step
+  //                       ceiling left, and with that gone the LUT over-fits.
   //   'contFieldEquil'    Ostromoukhov (SIGGRAPH 2001) equilibration, on the
   //                       spacing field: rasterise the placed ink → apply dot
   //                       gain → low-pass with an HVS kernel → compare with the
   //                       target luminance → correct the local gap → iterate.
   //                       Three rounds, correction quantised to 16 levels.
-  //                       MEASURED, sphere-hatch: R² 0.104, span 13.8, darkest
-  //                       72.2, off the line 26.2 %, median step 1.02x, rho
-  //                       0.897, 90.0 % monotone. The LOCAL correction moves the
-  //                       ordering (rho 0.896 → 0.897, mono 86.7 → 90.0) and does
-  //                       NOT move the ramp: R² 0.100 → 0.104 is noise. Its cost
-  //                       is a coarser worst step (trimmed 1.18x → 1.52x), which
-  //                       is the 16-level table showing through.
+  //                       MEASURED: R² 0.072, span 10.8, darkest 72.5, off the
+  //                       line 20.8 % — the round's BEST off-the-line on
+  //                       sphere-hatch — median step 1.03x, rho 0.894, 80.0 %
+  //                       monotone. The local correction is worth about half a
+  //                       point of off-the-line over the plain baseline and
+  //                       nothing at all on the ramp.
   //   'contFieldAniso'    Zander, Isenberg, Schlechtweg & Strothotte (CGF 2004)
   //                       measure clearance ACROSS THE FLOW only. A gap chosen
   //                       from the seeding offset is right in the middle of a
@@ -629,10 +651,11 @@
   //                       family has already closed. So the step is corrected
   //                       against the MEASURED minimum across-flow distance to
   //                       the ruling already laid.
-  //                       MEASURED, sphere-hatch, and it is a NEGATIVE result
-  //                       worth keeping: R² 0.002, span 3.7, darkest 90.4, off
-  //                       the line 68.3 %, 899 mm of ink against the baseline's
-  //                       2994, 17 rulings against 53. The minimum works — the
+  //                       MEASURED, and it is a NEGATIVE result worth keeping:
+  //                       R² 0.028, span 7.5, darkest 88.5, off the line 48.7 %,
+  //                       median step 1.14x (the round's worst) and 33.3 %
+  //                       monotone (worse than phaseFineLadder's 40 %), 1225 mm
+  //                       of ink against the baseline's 3006, 37 rulings vs 54. The minimum works — the
   //                       pole flood is gone (7 flooded cells against 64) — but
   //                       a MINIMUM over a converging family is set by the point
   //                       of convergence, so the pole's clearance requirement
@@ -643,8 +666,8 @@
   //                       SURFACE's own arc length, not on screen. The spacing
   //                       is then a property of the form and eases along it,
   //                       and the projection is deliberately left in.
-  //                       MEASURED, sphere-hatch: R² 0.067, darkest 47.0, off
-  //                       the line 52 %, gaps 0.10-1.32 mm, 144 flooded cells.
+  //                       MEASURED: R² 0.067, darkest 47.0, off the line 52.1 %,
+  //                       gaps 0.10-1.32 mm, 146 flooded cells.
   //                       FALSE LIMB-DARKENING, isolated and quantified: an even
   //                       spacing ON THE SURFACE lands 0.10 mm on the paper at
   //                       the limb — a sixth of the plot floor — and drives the
@@ -655,8 +678,8 @@
   //                       NOT read as darker than the light says. That false
   //                       limb-darkening is a prime suspect for the off-the-line
   //                       error every chart-ruled law carries.
-  //                       MEASURED, sphere-hatch: R² 0.075, darkest 67.6, gaps
-  //                       0.27-1.64 mm, 84 flooded cells. It removes MOST of
+  //                       MEASURED: R² 0.070, darkest 68.1, gaps 0.27-1.62 mm,
+  //                       76 flooded cells. It removes MOST of
   //                       contFieldSurface's false darkening (min gap 0.10 →
   //                       0.27 mm, darkest 47.0 → 67.6) and not all of it,
   //                       because |proj(cross(t, n))| is not the screen
@@ -672,9 +695,8 @@
   //                       plot floor (2.2 × pen) to one ink width, at which
   //                       adjacent rulings abut and the area is solid. Flooding
   //                       is not hidden; it is counted and reported.
-  //                       MEASURED, sphere-hatch, and it is the DARK end this
-  //                       family could not otherwise reach: R² 0.310, L* span
-  //                       37.8, DARKEST L* 4.5 — black, against the 76 a single
+  //                       MEASURED, and it is the DARK end this family could not
+  //                       otherwise reach: R² 0.310, L* span 37.8, DARKEST L* 4.5 — black, against the 76 a single
   //                       family at the plot floor saturates at — off the line
   //                       21.7 %, median adjacent step 1.01x, 86.4 % monotone,
   //                       gaps 0.20-0.88 mm. It costs 6327 mm of ink (twice the
@@ -686,13 +708,13 @@
   //                       would 128 levels do?" — `contFieldPitch`'s field with
   //                       the GAP quantised to CF_LEVELS steps. Run at 128 and
   //                       at 256 against the continuous original.
-  //                       MEASURED, sphere-hatch, levels sweep against the same
-  //                       field run continuously:
+  //                       MEASURED, levels sweep against the same field run
+  //                       continuously:
   //                         levels   R²     span  darkest  off    medStep  mono
-  //                            16   0.112   14.2   71.9   23.2%   1.01x   56.7%
-  //                           128   0.103   13.8   71.6   25.1%   1.02x   80.0%
-  //                           256   0.102   13.7   72.3   25.4%   1.02x   90.0%
-  //                            ∞    0.100   13.7   71.9   25.7%   1.03x   86.7%
+  //                            16   0.084   11.8   71.9   18.9%   1.01x   53.1%
+  //                           128   0.077   11.1   71.9   20.9%   1.03x   71.0%
+  //                           256   0.079   11.3   72.4   20.7%   1.02x   83.9%
+  //                            ∞    0.079   11.3   72.4   21.1%   1.03x   80.6%
   //                       The RAMP is settled by 16 levels — R² moves 0.012 over
   //                       the whole sweep, which is noise. The EASE is not:
   //                       monotonicity runs 56.7 → 80.0 → 90.0 %, and only at 256
