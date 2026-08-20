@@ -658,6 +658,21 @@
       case 'sliceVisibility': return SLICE_VISIBILITIES.includes(value) ? value : 'visibleOnly';
       case 'burstCount': return clamp(Math.round(finite(value, 16)), 6, 48);
       case 'burstCenter': return BURST_CENTERS.includes(value) ? value : 'specular';
+      // Surface-fill TONE LAW. The roster is owned by src/config/scene3d-tone-laws.js
+      // so the UI, the generator and the normalizer cannot drift. Resolved lazily —
+      // config loads before core, but the test runtime may not have it. A document
+      // saved without `toneLaw` (an old scene, or a face override that predates the
+      // control) resolves to 'ladder' here at normalization time — the same
+      // silent-default reasoning HIGHLIGHT_TREATMENT_ALIASES uses above, and
+      // deliberately NOT a SCENE_MIGRATIONS step: no structural shape changed.
+      case 'toneLaw': {
+        const R = (Vectura.SCENE3D_TONE_LAWS && Vectura.SCENE3D_TONE_LAWS.IDS) || null;
+        return (typeof value === 'string' && (!R || R.indexOf(value) !== -1)) ? value : 'ladder';
+      }
+      // 'contFieldQuant' only — how many discrete gap sizes the field may use.
+      case 'toneQuantLevels': return clamp(Math.round(finite(value, 128)), 4, 256);
+      // 'contourFlow' only — which streamline family the rulings follow.
+      case 'toneFlowMode': return value === 'grad' ? 'grad' : 'iso';
       default: return undefined;
     }
   };
