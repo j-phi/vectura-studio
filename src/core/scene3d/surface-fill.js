@@ -1358,6 +1358,198 @@
         || TONE_ALGO === 'signedWidth' || TONE_ALGO === 'wideShadowPen') return wbFlatCov();
       return flatCov();
     };
+
+    // ── V5 — THE ADJACENT-PASS FAMILY. ONE PEN, ONE NIB, NO WIDTH LAW ─────────
+    //
+    // Jay's brief, verbatim: "ten unique ideas that do not vary stroke width but
+    // are safe to allow a pen to travel back and forth immediately adjacent to
+    // itself to give the perception of a wider stroke."
+    //
+    // So every path these ten emit carries weightScale 1 — they are NOT weight
+    // laws and they never touch `noteW` or `splitByWeight`. Apparent weight is
+    // physical: the pen retraces parallel passes about a nib apart, and two,
+    // three or six of them read as one heavier stroke. Tone is then (a) how many
+    // adjacent passes a ruling gets and (b) the white gap that leaves between
+    // one bundle and the next. This is what a ballpoint photorealist does by
+    // hand, and — the point of the family — it costs plot TIME, not pen changes.
+    //
+    // WHY NOTHING CAN LAND OFF THE FORM. Jay named "lines jutting out beyond the
+    // exterior of the sphere" as a judged defect, and a return pass at a bundle
+    // end is the obvious way to earn one. So a pass is NOT a screen-space offset
+    // of the finished polyline. Each pass is an ordinary ruling in its own
+    // right: `emitLine` is called once per pass with the family's own parameter
+    // step scaled to the offset that pass wants, so the pass is SAMPLED ON THE
+    // CHART and every guard already in this file — back-face culling, HLR, the
+    // boundary refinement, MIN_MARK_MM — applies to it unchanged. A pass that
+    // would leave the surface simply has no samples out there. The only
+    // screen-space geometry any of these ten adds is the serpentine connector,
+    // and that one is validated by re-sampling the chart along it (see
+    // `adjConnectorOk`) before it is allowed to exist.
+    const ADJ_LAWS = {
+      bundleCount: 1, bundleWhole: 1, bundleSerpentine: 1, bundleToShadow: 1,
+      bundleSubNib: 1, bundleEased: 1, bundleDither: 1, bundleLozenge: 1,
+      bundleHandoff: 1, bundleSnake: 1,
+    };
+    const isAdjLaw = () => ADJ_LAWS[TONE_ALGO] === 1;
+    // Passes are co-extensive with the ruling (one N for the whole span) in the
+    // laws that stitch, because a serpentine whose passes stop at different
+    // places would have to traverse the form to reach the next one.
+    const adjWholeRuling = () => TONE_ALGO === 'bundleWhole'
+      || TONE_ALGO === 'bundleSerpentine' || TONE_ALGO === 'bundleSnake';
+    const adjStitches = () => TONE_ALGO === 'bundleSerpentine' || TONE_ALGO === 'bundleSnake';
+    // Most passes any bundle may hold. DERIVED, not chosen. The bundle pitch is
+    // `stride x masterPitch` and the darkest legal ink area is ADJ_DARK_AREA, so
+    // the fullest bundle holds 1 + (ADJ_DARK_AREA x pitch − ink) / step passes,
+    // and the stride is in turn chosen from this ceiling — the two are solved
+    // together so that the deepest shadow lands ON the dark bar rather than just
+    // under it. At the shipped 0.3 mm pen the pair comes out stride 4 (a 2.65 mm
+    // bundle pitch) and 7 passes of the 8 allowed, for ink area 0.888.
+    // Measured with the ceiling at 6: the quantum was coarse enough that the
+    // darkest bundle could only reach area 0.846, and the shadow stopped 8 L*
+    // short of its own target.
+    // `bundleSubNib` needs far more of them because each of its steps buys only
+    // 0.55 of a nib — that is the whole demonstration, and its plot time is the
+    // price it pays for the extra 10 L* of black.
+    const ADJ_MAX = 8;
+    const ADJ_SUB_MAX = 13;
+    const adjMax = () => (TONE_ALGO === 'bundleSubNib' ? ADJ_SUB_MAX : ADJ_MAX);
+    // THE STEP. One ink width is the honest "immediately adjacent" — the two
+    // passes abut, the band is solid, and no ink is laid twice. `bundleSubNib`
+    // deliberately breaks that to close the ink gap and is reported as flooding
+    // for exactly as many samples as it does so.
+    const ADJ_SUB_STEP = 0.55;
+    const adjStep = () => inkWidth() * (TONE_ALGO === 'bundleSubNib' ? ADJ_SUB_STEP : 1);
+    // The black a bundle of n passes lays: the passes abut at step ≥ ink, and
+    // overlap (so buy less) below it. Both cases are the same expression.
+    const adjBandWidth = (n) => (Math.max(1, n) - 1) * adjStep() + inkWidth();
+    const ADJ_DARK_AREA = 0.93;      // the fullest bundle, still with a white gap
+    const ADJ_SUB_DARK_AREA = 0.97;  // sub-nib: the gap is what is left of it
+    const adjDarkArea = () => (TONE_ALGO === 'bundleSubNib' ? ADJ_SUB_DARK_AREA : ADJ_DARK_AREA);
+    // THE BASE GRID, AND IT IS THE ONLY GRID — AND IT IS NOT THE LADDER'S.
+    //
+    // Measured, and it is why this is a STRIDE and not a coverage. Handed a
+    // coverage the way the weight laws are, the phase ladder takes ONE VERDICT
+    // PER `emitLine` CALL — and a bundle is several of those. A six-pass bundle
+    // then had six independent 30 % coin-flips: two passes survived on average,
+    // and a ruling whose CENTRE pass lost the flip still drew its +1 nib pass,
+    // one ink width off the grid. Measured on sphere·hatch: 86 of 103 rulings
+    // drew instead of 31, spacing CoV 0.42 with adjacent gaps in the ratio 4:1,
+    // and the form went solid black (darkest L* 4.5). The ladder is a SELECTOR
+    // and this family has nothing for it to select.
+    //
+    // So the ladder is handed coverage 1 — keep everything you are given — and
+    // the decimation to the bundle pitch is done by the emitter itself, by
+    // taking every STRIDE-th ruling. Deterministic, so the gaps are all exactly
+    // equal: spacing regularity becomes a constant of the family rather than a
+    // result of it, which is what "the maximally even law" has to mean.
+    const adjStride = () => {
+      if (!(masterPitch > 1e-6)) return 1;
+      const m = adjBandWidth(adjMax()) / (adjDarkArea() * masterPitch);
+      return clamp(Math.round(finite(m, 1)), 1, 24);
+    };
+    const adjFlatCov = () => 1;
+    const adjNomPitch = () => (masterPitch > 1e-6
+      ? masterPitch * adjStride() : litMaxPitchPen() * penWidth);
+    // The light end is one pass on the base grid — the same anchor whiteBand
+    // uses, so the two are comparable at the delicate end.
+    const adjLightArea = () => areaAt(adjNomPitch());
+    const ADJ_GAP_MIN = 0.35;   // 'bundleEased' — the darkest gap, in ink widths
+    // Radiance → the ink area the bundle should lay, on the same L*-linear
+    // response every other law in this file states its target on.
+    const adjArea = (I) => {
+      const Ic = clamp(finite(I, 0), 0, 1);
+      // 'bundleEased' states the transfer on the WHITE GAP instead of on the
+      // ink, which is Jay's own sentence: lines sit right against each other for
+      // pure black, then the gaps open EVENLY and eased toward the highlight and
+      // close again into shadow on the far side. Smootherstep, so there is no
+      // knee at either end — and because the gap is what is eased, the thing the
+      // eye actually measures between two bundles is what moves smoothly.
+      if (TONE_ALGO === 'bundleEased') {
+        const P = adjNomPitch();
+        const gMin = ADJ_GAP_MIN * inkWidth();
+        const gMax = Math.max(gMin, P - inkWidth());
+        return clamp(1 - (gMin + (gMax - gMin) * ease(Ic)) / Math.max(1e-6, P), 0, 0.98);
+      }
+      return areaForTone(Ic, adjDarkArea(), adjLightArea());
+    };
+    // 'bundleHandoff' — the AM/FM allocation policy, stated as a cap rather than
+    // as a switch. Above the terminator the drawing is ONE pass at a constant
+    // pitch (the periodic family owning the mid-tones, which is what print
+    // practice reserves it for); below it the bundle ramps in by partial length,
+    // so the second pass enters as a lengthening mark and not as a new texture.
+    const ADJ_HANDOFF_I = 0.55;
+    // How many passes this sample is asking for, against the pitch the ruling is
+    // REALLY at here. Dividing by the local pitch is what takes the chart's
+    // foreshortening out of the answer, exactly as `covForArea` does; capping by
+    // it again is the plot floor, charged where the geometry actually crowds (a
+    // sphere's meridians converge to nothing at the poles) rather than on an
+    // average.
+    const adjAskN = (I, localPitch) => {
+      const Ic = clamp(finite(I, 0), 0, 1);
+      const P = (Number.isFinite(localPitch) && localPitch > 1e-6)
+        ? localPitch * adjStride() : adjNomPitch();
+      if (!(P > inkWidth())) return 1;
+      let a = adjArea(Ic);
+      if (TONE_ALGO === 'bundleHandoff' && Ic >= ADJ_HANDOFF_I) a = adjLightArea();
+      // The bundle may never grow past the white gap the base grid reserves for
+      // it, whatever the transfer asked for.
+      const band = Math.min(clamp(a, 0, 0.995) * P, adjDarkArea() * P);
+      const n = 1 + (band - inkWidth()) / Math.max(1e-9, adjStep());
+      return clamp(n, 1, adjMax());
+    };
+    // WHERE THE PASSES SIT. Pass 0 is the ruling itself and always draws, so the
+    // family cannot lose a line however light the tone gets. The rest alternate
+    // either side of it, so the band grows symmetrically about the ruling and
+    // the tonal centroid does not migrate.
+    //
+    // 'bundleToShadow' is the deliberate exception: every extra pass is laid on
+    // the SHADOW side, so the band grows out of the light and the centroid walks
+    // down-gradient. The sign is measured per ruling, not assumed — see
+    // `adjShadowSign`.
+    const adjOffsetMul = (k, shadowSign) => {
+      if (k <= 0) return 0;
+      if (TONE_ALGO === 'bundleToShadow') return k * (shadowSign || 1);
+      return (k % 2 ? 1 : -1) * Math.ceil(k / 2);
+    };
+    // THE LEVEL BOUNDARY — where pass k switches on. Plain rounding puts it at
+    // k + ½ and the boundary is then a smooth iso-radiance contour, which is the
+    // classic band. One of the ten moves it deliberately:
+    //   'bundleDither' rides the boundary on a smooth low-frequency wave in
+    //                  (ruling index, arc length) — the ruling index enters at
+    //                  the golden angle, so neighbouring rulings never share a
+    //                  phase and the N → N+1 contour is a ragged curve instead
+    //                  of a traceable one. Smooth, not hashed: a hashed
+    //                  threshold chatters the pass into specks.
+    const ADJ_DITHER_AMPL = 0.4;
+    const ADJ_DITHER_MM = 14;
+    const adjThreshold = (k, lineIndex, arc) => {
+      const base = k + 0.5;
+      if (TONE_ALGO !== 'bundleDither') return base;
+      const ph = (Number(lineIndex) || 0) * 0.6180339887498949
+        + (finite(arc, 0) / ADJ_DITHER_MM);
+      return base + ADJ_DITHER_AMPL * Math.sin(ph * Math.PI * 2);
+    };
+    // 'bundleLozenge' — the END geometry, made explicit. Pass k is inset k steps
+    // from BOTH ends of its ruling, so the bundle closes to the single centre
+    // line at each end instead of stopping square. Nothing can overshoot the
+    // ruling's own extent by construction, the free ends are staggered by a nib
+    // apiece rather than stacked on one contour, and the mark reads as the
+    // engraver's lozenge.
+    const adjEndInset = (k) => (TONE_ALGO === 'bundleLozenge' ? k * adjStep() : 0);
+    // Bundles that nearly touch may be stitched to their neighbour ('bundleSnake'):
+    // the connector is then short and lands in surface that is nearly solid
+    // anyway. Above this gap the traverse would be a visible line across white
+    // paper — ink the tone did not budget for — so it is not made.
+    const ADJ_SNAKE_GAP = 1.4;   // ink widths of white between bundles
+    const adjStat = {
+      bundles: 0, passes: 0, nMin: Infinity, nMax: 0, nSum: 0,
+      floodSamples: 0, samples: 0, stitches: 0, stitchRejects: 0, penDownSaved: 0,
+      askMax: 0, pitchMin: Infinity, pitchMax: 0, drew: 0,
+    };
+    // 'bundleSnake' only — the bundle the walk is currently inside, so the
+    // next ruling can be carried on into the same pen-down. Cleared whenever a
+    // new family opens: two families are two different walks.
+    let adjPrevSnake = null;
     // ── 'isophoteWidth' — GOODWIN, VOLLICK & HERTZMANN'S ISOPHOTE DISTANCE ────
     //
     // "Thickness can be determined as a function of HOW QUICKLY THE SHADING
@@ -2054,6 +2246,11 @@
       // back is the GEOMETRY they want and nothing else — flat for four of them,
       // and the spacing half of the split for `weightPlusSpacing`.
       if (isWeightLaw()) return weightCovAt(clamp(finite(I, 0), 0, 1), localPitch);
+      // The adjacent-pass family rules at ONE constant pitch and states its tone
+      // entirely on how many passes a bundle gets, so the coverage it hands back
+      // is a constant — the geometry, and nothing else. That is what makes
+      // spacing regularity a property of the family instead of a result of it.
+      if (isAdjLaw()) return adjFlatCov();   // 1 — see `adjStride`
       return coverageForSample(I);
     };
 
@@ -2546,7 +2743,7 @@
     // and read the pair as a fragmented line.
     let famSeq = 0;
     let currentFam = 'A';
-    const nextFam = (kind) => { currentFam = `${kind}#${famSeq}`; famSeq += 1; return currentFam; };
+    const nextFam = (kind) => { currentFam = `${kind}#${famSeq}`; famSeq += 1; adjPrevSnake = null; return currentFam; };
     // THE LADDER'S PHASE, one accumulator per selection track (see ladderStep).
     // Declared HERE, per buildObject call, so a build is a pure function of its
     // opts — a module-scope phase would make the second drawing depend on the
@@ -2931,7 +3128,7 @@
     // the line to a single form zone: that is how the terminator's crossed
     // family is spent on T alone instead of being sprayed over the whole dark
     // band (O17 — Round 2 crossed ALL of band 0, at 0/90, and it read as wire mesh).
-    const emitLine = (paramAt, threshold, back, lineIndex, count, zoneGate, pitchStep, lineDir, densityCross) => {
+    const emitLineOnce = (paramAt, threshold, back, lineIndex, count, zoneGate, pitchStep, lineDir, densityCross, adj) => {
       const wantFront = !back;
       // Every ruling of one family shares one phase track (see ladderPhase).
       const ladderKey = currentFam;
@@ -3000,7 +3197,11 @@
       };
       for (let s = 0; s <= nSteps; s++) {
         const pr = paramAt(s / nSteps);
-        const smp = sampleAt(pr.a, pr.b);
+        // A displaced adjacent pass (see `adjShift`) has NO parameter here when
+        // its offset has carried it off the end of the chart's non-periodic
+        // axis — the pass has left the surface, so there is nothing to sample
+        // and nothing to draw. Treated exactly as a back-facing sample is.
+        const smp = pr ? sampleAt(pr.a, pr.b) : null;
         const on = Boolean(smp && smp.front === wantFront);
         onSurf[s] = on;
         if (gradIs && on) gradIs[s] = gradIAt(pr);
@@ -3048,7 +3249,12 @@
         || TONE_ALGO === 'forcedContrast' || TONE_ALGO === 'deepFillTSP'
         // 'taperedEnds' needs the distance to the run's own end, in mm, to taper
         // the width into it — the same span segmentation the other three use.
-        || TONE_ALGO === 'taperedEnds');
+        || TONE_ALGO === 'taperedEnds'
+        // The adjacent-pass family: 'bundleDither' rides its level boundary on a
+        // wave in arc length, and 'bundleLozenge' insets pass k by k steps from
+        // the run's own two ends. Both are per-pass, so the arc is measured on
+        // the PASS's own samples, not on the centre ruling's.
+        || isAdjLaw());
       let arcMM = null;
       let endMM = null;
       if (needsArc) {
@@ -3116,7 +3322,17 @@
       let offPaper = null;
       let exitPt = null;
       let entryPt = null;
-      if (toneOn && (TONE_ALGO === 'signedWidth' || TONE_ALGO === 'transverseReserve')) {
+      //
+      //   the adjacent-pass family  Pass k of a bundle is on the paper only
+      //                        where the tone asks for at least k + 1 passes.
+      //                        Pass 0 is the ruling itself and its value can
+      //                        never go negative, so a ruling is never lost;
+      //                        every pass ABOVE it enters and leaves mid-ruling,
+      //                        at the crossing, which is what makes the bundle's
+      //                        width vary ALONG the stroke without the nib
+      //                        varying at all.
+      const adjGate = Boolean(toneOn && adj && (adj.k > 0 || adj.endInset > 0));
+      if (toneOn && (TONE_ALGO === 'signedWidth' || TONE_ALGO === 'transverseReserve' || adjGate)) {
         offPaper = new Array(nSteps + 1).fill(false);
         exitPt = new Array(nSteps + 1).fill(null);
         entryPt = new Array(nSteps + 1).fill(null);
@@ -3125,7 +3341,17 @@
           const smp = smps[s];
           if (!smp) continue;
           const I = clamp(finite(smp.I, 0), 0, 1);
-          if (TONE_ALGO === 'signedWidth') {
+          if (adjGate) {
+            // The whole-ruling laws already fixed N for the ruling, so their
+            // passes are unconditional along it; only the end inset can cut one.
+            const ask = adj.whole != null ? adj.whole : adjAskN(I, pitchAtStep(smp, s));
+            const v = ask - adjThreshold(adj.k, lineIndex, arcMM ? arcMM[s] : 0);
+            const inset = adj.endInset > 0 && endMM
+              ? (endMM[s] - adj.endInset) : Infinity;
+            vals[s] = Math.min(adj.whole != null ? 1 : v, inset);
+            if (adj.floods && vals[s] >= 0) adjStat.floodSamples += 1;
+            if (adj.k > 0) adjStat.samples += 1;
+          } else if (TONE_ALGO === 'signedWidth') {
             vals[s] = swAsk(I, pitchAtStep(smp, s)) - SW_CUT;
           } else {
             const u = ((((s / nSteps) / TR_TT_PERIOD) % 1) + 1) % 1;
@@ -3193,7 +3419,13 @@
         // rule already proved plot-safe.
         if (TONE_UNCAPPED && TONE_ALGO !== 'evenStreamlines'
           && localPitch != null && localPitch > 1e-6 && floorPitch > 1e-6) {
-          const capF = clamp(localPitch / floorPitch, 0, 1);
+          // The adjacent-pass family draws every STRIDE-th ruling of the master
+          // grid, so the gap between two rulings it actually plots is
+          // `stride x localPitch`. Charging the floor on the master pitch would
+          // condemn a family that is three master steps apart for crowding it
+          // never does — and would drop rulings out of a grid whose whole point
+          // is that its gaps are all equal.
+          const capF = clamp((localPitch * (isAdjLaw() ? adjStride() : 1)) / floorPitch, 0, 1);
           const rk = `${ladderKey}|${lineIndex}`;
           floorStat.samples += 1;
           floorStat.touched.add(rk);
@@ -3324,7 +3556,7 @@
         for (let k = 0; k < EDGE_BISECT; k++) {
           const mid = (lo + hi) / 2;
           const pr = paramAt(mid);
-          const smp = sampleAt(pr.a, pr.b);
+          const smp = pr ? sampleAt(pr.a, pr.b) : null;
           if (smp && smp.front === wantFront) { lo = mid; best = smp; } else hi = mid;
         }
         return best ? { x: best.x, y: best.y, z: best.z } : null;
@@ -3751,6 +3983,227 @@
             const at = out.indexOf(head);
             if (at >= 0) out.splice(at, 1);
           }
+        }
+      }
+      return mine;
+    };
+
+    // ── THE ADJACENT-PASS EMITTER ─────────────────────────────────────────────
+    //
+    // One ruling in, one BUNDLE of parallel passes out. Every caller of
+    // `emitLine` in this file goes through here, so the ten laws reach the axis
+    // families, the angled families, the screen cross and the mappers without
+    // any of them knowing about passes.
+    //
+    // A pass is a ruling. Its parameter walk is the caller's own `paramAt`
+    // displaced by the family's own `pitchStep`, scaled so the displacement
+    // measures `off` millimetres ACROSS the ruling on screen — `perpPitch` is
+    // exactly that conversion and it is already local, so the bundle keeps a
+    // constant screen width wherever the chart stretches. Because the pass is
+    // walked on the chart, every existing guard applies to it: it is culled on
+    // the far side, clipped by HLR, refined against the surface boundary, and
+    // dropped under MIN_MARK_MM, all unchanged. There is no path by which a pass
+    // can be drawn outside the silhouette.
+    const adjShift = (paramAt, pitchStep, lineDir, offMM, wrap) => (tt) => {
+      const p = paramAt(tt);
+      if (!p) return p;
+      if (!(Math.abs(offMM) > 1e-9)) return p;
+      const st = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
+      const dr = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
+      if (!st) return p;
+      const smp = sampleAt(p.a, p.b);
+      const pp = smp ? perpPitch(smp, st, dr) : null;
+      // WHERE THE FRAME COLLAPSES, THE PASS DOES NOT EXIST. `k` is
+      // offset ÷ local pitch, so at a pole — where a sphere's meridians converge
+      // to zero separation — it diverges, and a pass placed with it lands
+      // somewhere arbitrary on the far side of the form. Measured before this
+      // guard: the pole cap of every sphere went solid (5th-percentile L* 10.1
+      // against a 32 target) purely from scattered passes piling up there.
+      //
+      // Two limits, both physical. Below a fifth of the master pitch there is no
+      // room beside the ruling for anything, so the pass simply has none of
+      // itself here. And a pass may never travel far enough to land inside its
+      // NEIGHBOUR'S bundle — past that it is not "immediately adjacent" to
+      // anything. How far that is depends on which way the bundle grows: a
+      // bundle centred on its ruling owns half the pitch in each direction; a
+      // one-sided bundle ('bundleToShadow') owns the whole pitch on its own
+      // side and none on the other, which is the same room stated differently.
+      if (!(Number.isFinite(pp) && pp > masterPitch * 0.2)) return null;
+      const k = offMM / pp;
+      if (Math.abs(k) > adjStride() * (TONE_ALGO === 'bundleToShadow' ? 0.95 : 0.5)) return null;
+      const a = p.a + finite(st.a, 0) * k;
+      // `a` is the sweep along the axis and is NOT periodic: past either end the
+      // pass has left the chart, so it has no sample there and simply does not
+      // draw. `b` is the wind and is periodic on every primitive this fill
+      // wraps, so it is wrapped rather than clamped — clamping would pile the
+      // outermost pass of every bundle onto the seam.
+      if (!(a >= 0 && a <= 1)) return null;
+      const b = finite(p.b, 0) + finite(st.b, 0) * k;
+      return { a, b: wrap ? (((b % 1) + 1) % 1) : b };
+    };
+    // Which side of this ruling the shadow is on, MEASURED. Sampled at the
+    // ruling's own midpoint, one step either way; a tie (or a degenerate frame)
+    // takes +1, which is the symmetric law's own first offset.
+    const adjShadowSign = (paramAt, pitchStep, lineDir) => {
+      const plus = adjShift(paramAt, pitchStep, lineDir, adjStep() * 2, true)(0.5);
+      const minus = adjShift(paramAt, pitchStep, lineDir, -adjStep() * 2, true)(0.5);
+      const a = plus ? sampleAt(plus.a, plus.b) : null;
+      const b = minus ? sampleAt(minus.a, minus.b) : null;
+      if (!a || !b) return 1;
+      return finite(a.I, 0) <= finite(b.I, 0) ? 1 : -1;
+    };
+    // A serpentine connector is the ONLY screen-space geometry this family adds,
+    // so it is proved on the chart before it is allowed: walk the parameter
+    // segment between the two passes' endpoints and require every station to be
+    // on the same visible surface. A connector that would cut the corner off a
+    // silhouette fails here and the stitch is simply not made.
+    const adjConnectorOk = (pa, pb, wantFront) => {
+      if (!pa || !pb) return false;
+      for (let i = 1; i < 5; i++) {
+        const f = i / 5;
+        const smp = sampleAt(pa.a + (pb.a - pa.a) * f, pa.b + (pb.b - pa.b) * f);
+        if (!smp || smp.front !== wantFront) return false;
+      }
+      return true;
+    };
+    const emitLine = (paramAt, threshold, back, lineIndex, count, zoneGate, pitchStep, lineDir, densityCross) => {
+      if (!(toneOn && isAdjLaw() && HL_STAGE.masterGrid)) {
+        emitLineOnce(paramAt, threshold, back, lineIndex, count, zoneGate, pitchStep, lineDir, densityCross, null);
+        return;
+      }
+      // The decimation to the bundle pitch, done here rather than by the ladder
+      // (see `adjStride`). Every stride-th ruling of the master grid draws, so
+      // every gap is exactly equal and the spacing is even by construction.
+      const stride = adjStride();
+      if (stride > 1 && ((Number(lineIndex) || 0) % stride) !== 0) return;
+      // How many passes this ruling could possibly want. Sampling the ask
+      // coarsely first is what keeps the family affordable: a ruling lying
+      // wholly in the light runs ONE pass, not `adjMax()` of them each finding
+      // nothing to draw.
+      let wantMax = 1;
+      let sum = 0; let n = 0;
+      for (let i = 0; i <= 24; i++) {
+        const p = paramAt(i / 24);
+        const smp = p ? sampleAt(p.a, p.b) : null;
+        if (!smp || smp.front !== !back) continue;
+        const st = typeof pitchStep === 'function' ? pitchStep(i / 24) : pitchStep;
+        const dr = typeof lineDir === 'function' ? lineDir(i / 24) : lineDir;
+        const pp = perpPitch(smp, st, dr);
+        const ask = adjAskN(smp.I, pp);
+        if (ask > wantMax) wantMax = ask;
+        if (ask > adjStat.askMax) adjStat.askMax = ask;
+        if (Number.isFinite(pp)) {
+          if (pp < adjStat.pitchMin) adjStat.pitchMin = pp;
+          if (pp > adjStat.pitchMax) adjStat.pitchMax = pp;
+        }
+        sum += ask; n += 1;
+      }
+      // The whole-ruling laws take ONE count for the ruling, from the mean of
+      // its own on-surface samples, so every pass spans the ruling end to end
+      // and nothing stops in open surface. That is the maximally even reading of
+      // the brief, and it is also the precondition for stitching: a serpentine
+      // whose passes ended at different places would have to traverse the form.
+      const whole = adjWholeRuling() && n > 0 ? clamp(Math.round(sum / n), 1, adjMax()) : null;
+      const passes = whole != null ? whole : Math.min(adjMax(), Math.max(1, Math.round(wantMax)));
+      const sign = TONE_ALGO === 'bundleToShadow' ? adjShadowSign(paramAt, pitchStep, lineDir) : 1;
+      const emitted = [];
+      const params = [];
+      for (let k = 0; k < passes; k++) {
+        const off = adjOffsetMul(k, sign) * adjStep();
+        const pa = k === 0 ? paramAt : adjShift(paramAt, pitchStep, lineDir, off, true);
+        const adj = {
+          k,
+          whole,
+          endInset: adjEndInset(k),
+          // Sub-nib passes deliberately overlap the one before them, which is an
+          // ink flood by this repo's own bar (PLOT_FLOOR_PEN). Counted, not
+          // hidden — the brief asked for exactly where it would flood.
+          floods: k > 0 && adjStep() < inkWidth(),
+        };
+        const mine = emitLineOnce(pa, threshold, back, lineIndex, count, zoneGate, pitchStep, lineDir, densityCross, adj);
+        if (mine && mine.length) { emitted.push(mine); params.push(pa); }
+      }
+      adjStat.bundles += 1;
+      adjStat.passes += emitted.length;
+      if (emitted.length) adjStat.drew += 1;
+      if (emitted.length) {
+        if (emitted.length < adjStat.nMin) adjStat.nMin = emitted.length;
+        if (emitted.length > adjStat.nMax) adjStat.nMax = emitted.length;
+        adjStat.nSum += emitted.length;
+      }
+      if (!adjStitches() || emitted.length < 2) return;
+      // ── THE SERPENTINE ────────────────────────────────────────────────────
+      // Out along pass 0, U-turn, back along pass 1, U-turn, out along pass 2.
+      // One pen-down for the whole bundle, which is a real plotter saving and is
+      // measured as one. Only bundles whose passes came back as a SINGLE run
+      // each are stitched — a pass that HLR cut into two pieces has no single
+      // end to turn at, and forcing one would draw across the cut.
+      const single = emitted.every((m) => m.length === 1);
+      if (!single) return;
+      let head = emitted[0][0];
+      for (let k = 1; k < emitted.length; k++) {
+        const nxt = emitted[k][0];
+        const tail = head[head.length - 1];
+        // The turn is made at whichever end of the next pass is nearer, and the
+        // pass is reversed when it is the far one — that is what makes the walk
+        // boustrophedon instead of a comb with traverses.
+        const d0 = Math.hypot(nxt[0].x - tail.x, nxt[0].y - tail.y);
+        const d1 = Math.hypot(nxt[nxt.length - 1].x - tail.x, nxt[nxt.length - 1].y - tail.y);
+        const rev = d1 < d0;
+        const gap = Math.min(d0, d1);
+        const ttEnd = rev ? nxt.tt1 : nxt.tt0;
+        const pa = params[k - 1] ? params[k - 1](clamp(finite(head.tt1, 1), 0, 1)) : null;
+        const pb = params[k] ? params[k](clamp(finite(ttEnd, 0), 0, 1)) : null;
+        if (!(gap <= adjStep() * (adjMax() + 1)) || !adjConnectorOk(pa, pb, !back)) {
+          adjStat.stitchRejects += 1;
+          head = nxt;
+          continue;
+        }
+        const src = rev ? nxt.slice().reverse() : nxt;
+        for (let i = 0; i < src.length; i++) head.push(src[i]);
+        head.tt1 = rev ? nxt.tt0 : nxt.tt1;
+        const at = out.indexOf(nxt);
+        if (at >= 0) out.splice(at, 1);
+        adjStat.stitches += 1;
+        adjStat.penDownSaved += 1;
+      }
+      // ── AND ACROSS RULINGS ('bundleSnake') ────────────────────────────────
+      // "A continuous single path that snakes: out along a ruling, back
+      // adjacent, out again — covering a whole tonal region in one stroke."
+      // The bundle serpentine above does that WITHIN a bundle; this carries the
+      // walk on into the next bundle, so a whole tonal region comes off the
+      // plotter as one pen-down.
+      //
+      // It is allowed only where the two bundles have nearly closed the white
+      // between them, which is the deep shadow and nowhere else. Anywhere
+      // lighter the traverse would be a line drawn across bare paper — ink the
+      // tone did not budget for and the eye will read as a mark — so the gate
+      // is measured, not assumed: `gap` is the real screen distance between the
+      // two endpoints, and it must be inside ADJ_SNAKE_GAP nib widths.
+      const prev = adjPrevSnake;
+      adjPrevSnake = (TONE_ALGO === 'bundleSnake' && head && head.length >= 2 && out.indexOf(head) >= 0)
+        ? { path: head, param: params[emitted.length - 1] || params[0], tt: head.tt1, fam: currentFam, line: lineIndex }
+        : null;
+      if (TONE_ALGO === 'bundleSnake' && prev && adjPrevSnake
+        && prev.fam === currentFam && out.indexOf(prev.path) >= 0) {
+        const tail = prev.path[prev.path.length - 1];
+        const d0 = Math.hypot(head[0].x - tail.x, head[0].y - tail.y);
+        const d1 = Math.hypot(head[head.length - 1].x - tail.x, head[head.length - 1].y - tail.y);
+        const rev = d1 < d0;
+        const gap = Math.min(d0, d1);
+        const pa = prev.param ? prev.param(clamp(finite(prev.tt, 1), 0, 1)) : null;
+        const pb = params[0] ? params[0](clamp(finite(rev ? head.tt1 : head.tt0, 0), 0, 1)) : null;
+        if (gap <= ADJ_SNAKE_GAP * inkWidth() && adjConnectorOk(pa, pb, !back)) {
+          const src = rev ? head.slice().reverse() : head;
+          for (let i = 0; i < src.length; i++) prev.path.push(src[i]);
+          prev.path.tt1 = rev ? head.tt0 : head.tt1;
+          const at2 = out.indexOf(head);
+          if (at2 >= 0) out.splice(at2, 1);
+          adjStat.stitches += 1;
+          adjStat.penDownSaved += 1;
+          adjPrevSnake = { path: prev.path, param: prev.param, tt: prev.path.tt1, fam: currentFam, line: lineIndex };
+        } else {
+          adjStat.stitchRejects += 1;
         }
       }
     };
@@ -4940,6 +5393,34 @@
         areaMin: Math.round(weightStat.aMin * 1000) / 1000,
         areaMax: Math.round(weightStat.aMax * 1000) / 1000,
         baseCov: Math.round(weightBaseCov() * 1000) / 1000,
+      } : null,
+      // ...and, for the adjacent-pass family, HOW MANY PASSES A BUNDLE ACTUALLY
+      // GOT. That is the whole tonal channel of those ten laws, so its range is
+      // the counterpart of `weight.wMin–wMax` and is reported the same way —
+      // together with the stitch tally (pen-downs the serpentine saved) and the
+      // flood count (samples where a sub-nib pass overlapped the one before it,
+      // which is an ink flood by this repo's own PLOT_FLOOR_PEN bar).
+      adj: adjStat.bundles ? {
+        law: TONE_ALGO,
+        stepMM: Math.round(adjStep() * 1000) / 1000,
+        stepPen: Math.round((adjStep() / inkWidth()) * 100) / 100,
+        maxPasses: adjMax(),
+        bundles: adjStat.bundles,
+        passes: adjStat.passes,
+        nMin: Number.isFinite(adjStat.nMin) ? adjStat.nMin : 0,
+        nMax: adjStat.nMax,
+        nMean: adjStat.bundles ? Math.round((adjStat.nSum / adjStat.bundles) * 100) / 100 : 0,
+        askMax: Math.round(adjStat.askMax * 100) / 100,
+        pitchMin: Math.round(adjStat.pitchMin * 1000) / 1000,
+        pitchMax: Math.round(adjStat.pitchMax * 1000) / 1000,
+        drew: adjStat.drew,
+        gatedSamples: adjStat.samples,
+        floodSamples: adjStat.floodSamples,
+        stitches: adjStat.stitches,
+        stitchRejects: adjStat.stitchRejects,
+        penDownSaved: adjStat.penDownSaved,
+        stride: adjStride(),
+        nomPitch: Math.round(adjNomPitch() * 1000) / 1000,
       } : null,
       // 'curvatureField' only — HOW UMBILIC THE OBJECT TURNED OUT TO BE. The
       // principal-direction field does not exist at an umbilic point, and a
