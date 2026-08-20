@@ -722,6 +722,200 @@
   //                       spacing that is supposed to open smoothly. Webb et
   //                       al.'s 64 levels answer the tone question; they do not
   //                       answer this one.
+  //
+  // ── ROUND 5: TEN NESTED-SERPENTINE / SPACE-FILLING LAWS ────────────────────
+  //
+  // Jay's brief for this round, in his own words: "wavy lines nest within each
+  // other in the darkest areas of shadow to minimize open space, and the
+  // amplitude gradually lessens, creating more whitespace." All ten sit on
+  // whiteBand's chassis (one even grid, nothing dropped, tone on the pen) and
+  // add a CHART-SPACE lateral wave. Amplitude, wavelength, phase offset between
+  // neighbours and nesting depth are the tonal channels; the extra ink comes
+  // from ARC LENGTH, and is spent on a WIDER reserved pitch — see the WV_ block
+  // for the arithmetic and for the three guards that keep a crest inside the
+  // silhouette.
+  //
+  //   'nestedSerpentine'  The plain nest. Neighbours IN PHASE, so the two curves
+  //                       are translates and the clearance between them is the
+  //                       drawn pitch at every point. Amplitude eases from zero
+  //                       in the light to 0.42 of the pitch in the core shadow.
+  //   'interlockWeave'    The interlock. Neighbours ANTI-PHASE, each crest
+  //                       pointing into its neighbour's trough. Amplitude capped
+  //                       live at the clearance the plot floor allows, which is
+  //                       the "minimum open space" number the round reports.
+  //   'amplitudeOnly'     The control experiment. The pen never moves — every
+  //                       scrap of the tone ramp is arc length. It answers "how
+  //                       far can elongation alone carry a drawing", which is
+  //                       the currency the other nine are spending.
+  //   'trochoidLoop'      A circle of radius A rolling along the ruling. Past
+  //                       A = lambda/2pi the crests LOOP, laying a chain of
+  //                       near-circles that closes the band far faster than any
+  //                       single-valued wave can. The deepest-dark candidate.
+  //   'waveToRuling'      Amplitude AND wavelength ramp together, so the crests
+  //                       walk apart before they stop happening — the continuous
+  //                       transition from interlocked serpentine to plain
+  //                       ruling, with no switch anywhere in it.
+  //   'nestedOctaves'     Nesting DEPTH as the channel: one wave in the light,
+  //                       three nested (each half the wavelength and half the
+  //                       amplitude of its parent) in the core shadow.
+  //   'onePenDown'        One continuous path over the whole form. Rulings run
+  //                       boustrophedon and are bridged IN THE CHART, so the
+  //                       link is a curve on the surface and never a chord
+  //                       across the limb. Read the pen-down count.
+  //   'hilbertDepth'      The same refinement taken further — a Takagi/
+  //                       blancmange stack, which is the 1-D form of a Hilbert
+  //                       order increase, at a recursion depth that rises with
+  //                       darkness.
+  //   'sfcHalftone'       Velho & Gomes SIGGRAPH '91. Tone along a space-filling
+  //                       traverse is laid by CLUSTERING: two pen states, the
+  //                       error carried ALONG the curve, so the mean is exact
+  //                       and the cluster boundaries cannot line up.
+  //   'tourScribble'      Overdraw, in the deepest shadow only. Amplitude past
+  //                       0.5 of the pitch with anti-phase neighbours and a
+  //                       golden-ratio phase walk, so the waves interpenetrate
+  //                       and never lattice. It floods by design; it is counted.
+  //
+  // ── ROUND 5, MEASURED (sphere·hatch, uncapped, app-default scene) ──────────
+  //
+  // The two standing bars: whiteBand R² 0.512, off the line 5.8 %, darkest
+  // (5th-pct) L* 51.4, 1192 mm, 450 pen-downs; transverseReserve darkest L*
+  // 23.6 but 21.5 mm of free end. MARKS OUTSIDE THE SILHOUETTE: 0 for all ten
+  // laws on all five cells — the chart-space construction holds.
+  //
+  //   law                R²     off-line  darkest  ink mm  pen-downs  clearance
+  //                                       L* p05             (median, darks)
+  //   nestedSerpentine   0.197   36.4 %    52.0    1330.5     811      1.05 mm
+  //   interlockWeave     0.208   33.5 %    50.9    1253.0     752      1.30 mm
+  //   amplitudeOnly      0.005   48.8 %    80.1    2113.1      61      0.70 mm
+  //   trochoidLoop       0.354   13.9 %    20.2    1779.7     866      0.94 mm
+  //   waveToRuling       0.144   37.2 %    52.0    1249.6     778      1.05 mm
+  //   nestedOctaves      0.036   79.9 %    69.5    1099.6     697      1.44 mm
+  //   onePenDown         0.249   16.5 %    48.2    1329.8      19      1.17 mm
+  //   hilbertDepth       0.039   78.4 %    69.9    1101.1     708      1.45 mm
+  //   sfcHalftone        0.169   21.1 %    53.7    1221.7     951      1.20 mm
+  //   tourScribble       0.440   14.9 %     4.5    2047.3     918      0.62 mm
+  //   whiteBand          0.512    5.8 %    51.4    1192.4     450      1.48 mm
+  //   transverseReserve  0.301   14.5 %    23.6    1292.3     483      1.39 mm
+  //
+  // THE THREE RESULTS WORTH KEEPING.
+  //
+  // 1. 'trochoidLoop' IS THE NEW DEEPEST DARK, and it is deeper honestly.
+  //    Darkest L* 20.2 against transverseReserve's 23.6, with a better tone fit
+  //    (R² 0.354 vs 0.301), less deviation (13.9 % vs 14.5 %), a wider L* span
+  //    (39.2 vs 37.3) and — the part that matters — ZERO free ends against
+  //    transverseReserve's 21.5 mm. It holds on four of five cells.
+  //    WHERE THE EXTRA INK COMES FROM, stated plainly: ARC LENGTH. It rules at
+  //    10 × pen where whiteBand rules at 7.06, so it lays 0.706 × whiteBand's
+  //    ruling count — about 842 mm of straight ruling — and delivers 1779.7 mm.
+  //    The other ~940 mm is path the rolling circle added; the pen genuinely
+  //    travels farther. Measured elongation 1.768 ×, against 1.0 for a ruling.
+  //    THE COST, equally plainly: the 5th-percentile clearance in the darks is
+  //    0.286 mm, under the 0.66 mm plot floor, and `wvElongCap` fired on 2165
+  //    samples. The deepest part of that dark is bought below the floor.
+  //
+  // 2. 'onePenDown' IS THE PLOTTER RESULT. 19 pen-downs for the whole sphere
+  //    against whiteBand's 450 — 24 × fewer — at 1329.8 mm of ink (+12 %), a
+  //    slightly deeper dark (48.2 vs 51.4), zero free ends on four of five
+  //    cells and zero marks outside the silhouette. Every bridge is a curve ON
+  //    the surface, so the saving costs no ink placed where the form is not.
+  //
+  // 3. THE OPEN SPACE DID CLOSE, and by a measurable amount: median neighbour
+  //    clearance in the darks 0.94–1.05 mm for the wave laws against
+  //    whiteBand's 1.48 mm — 29–36 % less open space at equal or deeper tone —
+  //    while the amplitude eases to exactly zero in the lights by construction.
+  //    AND THE INTUITION ABOUT PHASE IS BACKWARDS. In-phase nesting narrows the
+  //    PERPENDICULAR clearance by the elongation factor (two nested serpentines
+  //    are a pitch apart vertically but only pitch/e apart across the stroke),
+  //    so `nestedSerpentine` closes to 1.05 mm while the anti-phase
+  //    `interlockWeave` — capped at the floor — stays open at 1.30 mm. The nest
+  //    minimises open space; the interlock only looks as though it should.
+  //
+  // AND THE THREE THAT DID NOT WORK, named plainly.
+  //
+  //   'amplitudeOnly' is the control and it CONFIRMS THE PRIOR NEGATIVE RESULT.
+  //     At a fixed pen, arc length alone realised an elongation of 1.121 and an
+  //     L* span of 7.2 with R² 0.005. A space-filling curve cannot add ink at
+  //     the floor; it can only lengthen the path a WIDER pen is already laying.
+  //     That is the currency the other nine are spending, and it is small.
+  //   'nestedOctaves' / 'hilbertDepth' broke the tone (off the line 79.9 % and
+  //     78.4 %) for a reason already met once this round: the third octave has
+  //     a wavelength of λ/8 = 0.27 mm, which IS the sample spacing at
+  //     MAX_LINE_STEPS. The elongation model claims 1.77–1.83 ×, the drawn
+  //     polyline delivers nothing like it, the ask is divided by a number the
+  //     paper never saw, and the drawing comes back too light (darkest L* 69.5
+  //     / 69.9). Nesting depth needs its own sample budget, not the ruling's.
+  //   'tourScribble' reaches darkest L* 4.5 on every cell — the deepest number
+  //     in the whole comparison — and it should NOT be read as a win. Its
+  //     5th-percentile clearance is 0.18 mm against a 0.66 mm floor: it is dark
+  //     because neighbouring rulings interpenetrate and overdraw the same
+  //     paper. On a real plotter that is a wet blob, not a black.
+  //
+  // ── ROUND 6, MEASURED — sphere · hatch, app default, UNCAPPED ──────────────
+  //
+  //                      R²    off-line  L*span  dark   UNINTENDED  waviness   elong
+  //                                                p05  BARE AREA   retained   model/real
+  //   ampSpacing        0.188   11.7 %    22.0   49.8      3.3 %      252 %    1.068/1.050
+  //   ampClearance      0.184   11.7 %    22.0   49.0      3.2 %      265 %    1.049/1.035
+  //   ampLambda         0.186   22.2 %    25.1   48.6      3.1 %      239 %    1.008/1.007
+  //   ampPasses         0.299   10.2 %    32.0   35.9     25.4 %       66 %    1.440/1.439
+  //   ampPhaseWalk      0.188   11.1 %    21.8   49.8      3.3 %      252 %    1.068/1.050
+  //   weaveNestPerp     0.181   17.0 %    23.3   48.5      3.2 %      249 %    1.045/1.033
+  //   weaveDepth        0.185   18.0 %    23.5   47.7      3.0 %      152 %    1.028/1.025
+  //   weaveOctaveEase   0.209   13.9 %    23.7   48.5      3.2 %      227 %    1.031/1.022
+  //   weaveAmpEase      0.278   21.4 %    24.6   50.4      9.9 %       95 %    1.040/1.041
+  //   weaveJitter       0.177   16.0 %    22.7   49.7      3.0 %      262 %    1.034/1.024
+  //   ── the Round 5 bars ────────────────────────────────────────────────────
+  //   amplitudeOnly     0.005   48.8 %     7.2   80.1     11.7 %      0.3 %    1.121/1.117
+  //   interlockWeave    0.208   33.5 %    25.2   50.9     34.1 %      0.3 %    1.397/1.407
+  //   trochoidLoop      0.354   13.9 %    39.2   20.2     23.9 %      0.3 %    1.768/1.983
+  //   NO TONE (Stage 0)   —        —        —    92.6     58.4 %       —          —
+  //
+  // 1. THE WAVINESS SURVIVES, AND IT DID NOT BEFORE. All three Round 5 bars
+  //    retain 0.3 % of their form-mean amplitude in the lit region (I ≥ 0.55):
+  //    the wave is not faint there, it is GONE, because `k = wvRamp(I)` is zero
+  //    above WV_I0. All ten laws here retain 66–265 %. That is the round's
+  //    stated requirement and it is met on every cell of every law.
+  //
+  // 2. THE PERPENDICULAR REFRAMING CLOSED THE GAPS, AS PREDICTED. Unintended
+  //    bare area — form further than 0.6 mm from any ink where the light asks
+  //    for tone — falls from interlockWeave's 34.1 % to 3.0–3.3 % on the eight
+  //    in-phase / bounded-texture laws, an 11× reduction, and the widest bare
+  //    gap from 1.96 mm to 1.06–1.35 mm. The mechanism is not the spacing: it is
+  //    that an in-phase nest's perpendicular clearance is bounded by
+  //    lambda/(2·pi·f) = 1.16 mm HOWEVER wide the pitch gets.
+  //
+  // 3. THE ELONGATION MODEL NOW MATCHES THE PAPER. Modelled against realised
+  //    agrees within 1.5 % on all ten (worst 1.068 vs 1.050). `nestedOctaves`
+  //    and `hilbertDepth` were out by a third; `trochoidLoop` is still out by
+  //    12 % the other way (1.768 vs 1.983 — it UNDER-claims, so it runs dark).
+  //
+  // 4. WHAT IT COST, STATED PLAINLY. The spacing IS the tone channel, so the
+  //    spacing must vary: CoV 0.75–0.79 against interlockWeave's 0.28. The
+  //    largest adjacent spacing step is 2–3×, i.e. no better than the 2.4× this
+  //    round set out to fix — the ladder is a discrete keep/drop and at these
+  //    coverages its index gaps are small integers, so 2× is its floor. And the
+  //    darks do not go deeper: 47.7–50.4 against interlockWeave's 50.9. Only
+  //    `ampPasses` (35.9) improves on that, and only `trochoidLoop` (20.2) is
+  //    genuinely deep, partly below the plot floor.
+  //
+  // 5. THE HONEST LIMIT, AND IT IS PHYSICS. A dark made of touching strokes has
+  //    no room left for a visible excursion: where the spacing has closed to the
+  //    plot floor the clearance floor cuts the amplitude to ~0.004 mm, so the
+  //    eight spacing-tone laws are wavy everywhere EXCEPT the core shadow. That
+  //    is the opposite of the Round 5 failure (straight in the LIGHT) and it is
+  //    the better half of the trade, but it is not "wavy everywhere". The two
+  //    laws that keep a wave in the shadow — `ampPasses` and `weaveAmpEase` —
+  //    do it by refusing to close the spacing, and pay for it in bare area
+  //    (25.4 % and 9.9 %).
+  //
+  // 6. WHERE A SPACING-ONLY CHANNEL BREAKS. On cylinder·hatch the eight
+  //    spacing-tone laws collapse to R² ~0.00 with a 5th-percentile L* of 4.5 —
+  //    a solid black band. A cylinder has a WIDE region of near-constant low
+  //    radiance, so the spacing field drives the whole band to the plot floor at
+  //    once and the wave floods it. A sphere's core shadow is a small crescent
+  //    and never triggers it. `ampPasses` (R² 0.262, L* 38.8) and `weaveAmpEase`
+  //    (0.031, 42.7) do not collapse, because neither hands the whole ramp to
+  //    the spacing. This is a real limit of the channel, not a tuning miss.
   const TONE_ALGO = 'ladder';
   // 'contFieldQuant' only: how many discrete gap sizes the field may use.
   const CF_LEVELS = 128;
@@ -1614,6 +1808,18 @@
       // spacing. See the THREE-PEN CHASSIS block.
       penTiers: 1, penScreen: 1, penInterleave: 1, penStipple: 1, penOctaves: 1,
       penFacing: 1, penReserve: 1, penCross: 1, penPitchMatch: 1, penDepth: 1,
+      // ROUND 5 — the nested-serpentine family. All ten are whiteBand-chassis
+      // width laws; what they add is a CHART-SPACE lateral wave whose amplitude,
+      // wavelength, phase and nesting depth are the tonal channels. See the
+      // WV_ block for where their extra ink comes from.
+      nestedSerpentine: 1, interlockWeave: 1, amplitudeOnly: 1, trochoidLoop: 1,
+      waveToRuling: 1, nestedOctaves: 1, onePenDown: 1, hilbertDepth: 1,
+      sfcHalftone: 1, tourScribble: 1,
+      // ROUND 6 — the same chassis again. What changed is WHICH CHANNEL carries
+      // the tone: never the amplitude. See the WV6 block.
+      ampSpacing: 1, ampClearance: 1, ampLambda: 1, ampPasses: 1, ampPhaseWalk: 1,
+      weaveNestPerp: 1, weaveDepth: 1, weaveOctaveEase: 1, weaveAmpEase: 1,
+      weaveJitter: 1,
     };
     // ROUND 5 — the ten lozenge laws are whiteBand's chassis with a dissolution
     // below the hairline floor, so every one of them IS a weight law (see
@@ -1639,7 +1845,11 @@
       // the width laws do: a pen CHANGE mid-ruling has to become a piece
       // boundary, because one path can carry one pen and no fewer.
       || isPenLaw()
-      || isLoz();
+      || isLoz()
+      // Round 5: every wave law varies width per sample EXCEPT 'onePenDown',
+      // whose whole claim is one continuous stroke — a chain of abutting
+      // sub-paths would be the exact opposite of it.
+      || (isWaveLaw() && TONE_ALGO !== 'onePenDown');
     // WHERE THE WEIGHT LAWS ACTUALLY LANDED — the counterpart to `floorStat`.
     // The weight range is bounded at both ends by physics (you cannot draw
     // thinner than the pen, and past W_FLOOD_AREA the ink is a blob), so "did
@@ -2208,6 +2418,10 @@
       if (TONE_ALGO === 'weightDeepDark' || TONE_ALGO === 'weightMultiPass') return deepFlatCov();
       if (TONE_ALGO === 'whiteLineInverse') return wliFlatCov();
       if (TONE_ALGO === 'transverseReserve') return trFlatCov();
+      // Round 5 rules WIDER than whiteBand on purpose — the elongation pays for
+      // it (see the WV_ block). `amplitudeOnly` rules tighter, because it has no
+      // pen to spend and only arc length to spend it with.
+      if (isWaveLaw()) return wvFlatCov();
       if (TONE_ALGO === 'whiteBand' || TONE_ALGO === 'isophoteWidth'
         || TONE_ALGO === 'nibAngle' || TONE_ALGO === 'curvatureField'
         || TONE_ALGO === 'screenAngles' || TONE_ALGO === 'taperedEnds'
@@ -3290,6 +3504,491 @@
       }
     };
 
+    // ── ROUND 5 — THE NESTED SERPENTINE, AND WHERE THE EXTRA INK COMES FROM ───
+    //
+    // Jay, in his own words: "wavy lines nest within each other in the darkest
+    // areas of shadow to minimize open space, and the amplitude gradually
+    // lessens, creating more whitespace."
+    //
+    // THE ARITHMETIC FIRST, because a previous round already proved the naive
+    // version is a no-op. `deepFillTSP` v1 displaced a ruling laterally into
+    // "its own gap" and measured BYTE-IDENTICAL to `perceptualRamp`: at the
+    // plot floor there is no gap to displace into. A space-filling curve
+    // REDISTRIBUTES ink; it cannot ADD it. So every law in this round has to
+    // say where its ink comes from, and this is the answer:
+    //
+    //   IT COMES FROM ARC LENGTH. A ruling that serpentines with peak-to-peak
+    //   2A at wavelength L is longer than the straight ruling it replaces by
+    //     e = sqrt(1 + (2*pi*A/L)^2 / 2)     (RMS over one period; exactly
+    //                                         sqrt(1 + (4A/L)^2) for a triangle)
+    //   and a pen lays ink per unit of PATH, not per unit of surface. At the
+    //   same reserved pitch and the same maximum pen — the engine clamps
+    //   weightScale at 6 — a serpentine family therefore delivers e times the
+    //   ink area of a straight one. The pen genuinely travels farther; this is
+    //   an addition, not a redistribution.
+    //
+    // AND IT IS BOUNDED, not free. The wave's own successive limbs are
+    // L / sqrt(1 + (4A/L)^2) apart; once THAT falls under the plot floor the
+    // band has gone solid and no further amplitude buys anything. `wvElongCap`
+    // enforces exactly that bound, so the elongation a law may claim is the
+    // elongation the paper will actually take.
+    //
+    // WHAT THE ELONGATION IS SPENT ON — and this is the design decision, not an
+    // accident. NOT a deeper black: `transverseReserve` already reaches darkest
+    // L* 23.6 by pitching so weight 6 lays solid, and no amount of waviness
+    // improves on solid. The elongation is spent on a WIDER RESERVED PITCH. At
+    // e ~ 1.5 the family can rule at 10 x pen and still reach ink area 0.92 in
+    // the core shadow, where `whiteBand` needs 7.06 x pen to do it. That extra
+    // 40 % of pitch IS the whitespace, and it lands exactly where Jay asked for
+    // it: in the lights, where the amplitude has eased to zero and the ruling is
+    // straight, wide apart and delicate.
+    //
+    // THE TONE IS STATED ON THE DELIVERED AREA, so elongation is DIVIDED OUT of
+    // the ask. `weightForArea` knows nothing about arc length, so asking it for
+    // area A on a path e times longer would deliver A*e and the drawing would
+    // darken wherever the wave deepens — a tone error keyed to the texture,
+    // which is the worst kind. Dividing keeps the response linear THROUGH the
+    // transition; the wave then shows up as headroom on the pen, not as tone.
+    //
+    // NOTHING LEAVES THE SILHOUETTE. The displacement is made in the CHART, not
+    // on the screen: a wave point is `sampleAt(a + da, b + db)`, i.e. a genuine
+    // point of the surface, re-tested for front-facing before it is used, and
+    // where that test fails the amplitude is zero and the ruling runs straight.
+    // A crest therefore cannot hang off the limb — the defect Jay named. On top
+    // of that the amplitude is tapered to nothing over WV_TAPER_MM of each run's
+    // own end, so the wave dies BEFORE the silhouette rather than at it.
+    const WV_PITCH_PEN = 10;      // reserved pitch, in pen widths (whiteBand: 7.06)
+    const WV_DARK_AREA = 0.92;    // the core shadow's delivered ink area
+    const WV_LAMBDA_PEN = 7.3;    // wavelength, in pen widths (2.2 mm at 0.3)
+    const WV_AMAX = 0.42;         // peak amplitude, as a share of the reserved pitch
+    const WV_I0 = 0.62;           // radiance above which the family is a plain ruling
+    const WV_TAPER_MM = 2.0;      // the wave eases to nothing this far from a run end
+    const WV_CLEAR_FLOOR = 1.0;   // interlock: minimum clearance, in plot floors
+    const WV_TROCH_AMAX = 0.48;   // trochoidLoop: the rolling circle's radius share
+    const WV_SCRIB_AMAX = 0.85;   // tourScribble: past 0.5 the neighbours interpenetrate
+    const WV_AO_PITCH_PEN = 4;    // amplitudeOnly rules tighter — it has no pen to spend
+    const WV_LINK_MAX_MM = 14;    // onePenDown: the longest bridge worth drawing
+    // ── ROUND 6 — WAVINESS EVERYWHERE, AND THE TONE FROM SOMEWHERE ELSE ───────
+    //
+    // Round 5 measured the fact that decides this round. `amplitudeOnly` — the
+    // pen pinned, every scrap of tone asked of arc length — came back R² 0.005
+    // over an L* span of 7.2 on 2113 mm of ink. A single-valued serpentine's
+    // elongation runs 1.0 to about 1.5, and at a fixed pen AND a fixed pitch the
+    // delivered area is e × inkWidth / pitch, so that 1.5× IS the whole range
+    // available. There is no ramp in it. The conclusion is not that the wave is
+    // wrong; it is that AMPLITUDE IS NOT A TONE CHANNEL — and asking it to be
+    // one is exactly what made Round 5's waves straighten in the light, because
+    // `k = wvRamp(I)` multiplies the amplitude to ZERO above WV_I0. A plain
+    // ruling in the highlight is the defect Jay named, not a feature.
+    //
+    // So all ten laws here separate the two jobs:
+    //
+    //   TEXTURE   the amplitude never leaves a FLOOR. `aFlo` is a share of the
+    //             DRAWN pitch, not a millimetre, so the wave stays proportionate
+    //             as the spacing opens: the light end is a wide lazy serpentine
+    //             rather than a straight rule, and the waviness survives across
+    //             the whole form. `waveStat.litAmpSum` counts what survived.
+    //
+    //   TONE      the SPACING FIELD, computed from the ordinary L*-linear tone
+    //             target and eased in pitch space, with the PEN picking up the
+    //             remainder — automatically, and with no branch, because
+    //             `weightCovEff` clamps coverage at the plot floor and
+    //             `weightForArea` then divides the same target by the CLAMPED
+    //             coverage. Where the spacing can carry the tone the weight
+    //             comes out at exactly 1; where the floor stops it, the pen
+    //             takes over continuously. That is `wideShadowPen`'s handover
+    //             (ecc85b6) restated on one pen instead of two.
+    //             Two laws take a different channel on purpose, as controls:
+    //             'ampPasses' (pass count) and 'weaveAmpEase' (a geometric
+    //             split between pen and spacing).
+    //
+    // AND THE CLEARANCE IS MEASURED PERPENDICULAR TO THE STROKE, which Round 5
+    // had backwards. Two neighbouring serpentines IN PHASE are vertical
+    // translates of one another, so the distance between them measured ACROSS
+    // the stroke is d·cos(theta) with theta the local slope — closest approach
+    // d / sqrt(1 + q²), NOT d. ANTI-PHASE the crest meets the trough where the
+    // slope is zero, so the closest approach is exactly d − 2A. Measured on the
+    // paper last round: the in-phase nest closed to 1.05 mm while the anti-phase
+    // weave stayed OPEN at 1.30 mm — the opposite of the intuition. The useful
+    // consequence falls straight out of the formula: an in-phase nest at a fixed
+    // amplitude SHARE can never open a perpendicular gap wider than
+    // lambda / (2·pi·f), however wide the ruling pitch gets. At the shipped
+    // lambda and f = 0.30 that ceiling is 1.16 mm — so the white the eye can
+    // find is bounded by the TEXTURE and not by the spacing, which is the whole
+    // mechanism behind "remove unintentional white gaps".
+    const WV6_JIT = 0.35;         // 'weaveJitter': the golden walk on top of anti-phase
+    const WV6_AFLOOR_MIN = 0.10;  // no law may straighten below this share, ever
+    // A TEXTURE HAS A FIXED VISUAL SCALE. Measured the other way first, and it
+    // is the round's worst trap: with the amplitude stated ONLY as a share of
+    // the drawn pitch, a spacing-tone law swings the pitch from the plot floor
+    // (0.66 mm) to 22 mm across one sphere, so the wave swings from 0.20 mm to
+    // 2.43 mm with it. The big end is the problem — a crest 2.4 mm off its own
+    // ruling samples a radiance 5 mm away from where the tone was read, and the
+    // drawing acquires a texture-keyed tone error it cannot recover from:
+    // sphere·crosshatch came back R² 0.115 with the worst bin 86.6 % off the
+    // line and 23.2 L* of moiré. Bounding the excursion in MILLIMETRES makes
+    // the serpentine the same size everywhere — which is what a texture is —
+    // and leaves the share to decide only how much of the band it uses.
+    const WV6_AMP_MAX_MM = 0.80;  // no crest wanders further than this from its ruling
+    const WV6_AMP_MIN_MM = 0.34;  // ...and none is smaller than this while there is room
+    const WV6 = {
+      // aFlo/aMax  amplitude share of the drawn pitch, at the light / dark end
+      // amp        'ramp' takes the radiance ramp; 'perp' solves the share from
+      //            the eased PERPENDICULAR clearance target
+      // tone       'space' | 'pass' | 'split'
+      // ph         'in' | 'anti' | 'jit' | 'walk'
+      // lam        1 = the wavelength eases instead of the amplitude
+      // dep        1 = nesting depth eases (1 wave in the light, 3 in the core)
+      // cFlo       clearance floor, in plot floors
+      // steps      samples per ruling — a law that shortens its wavelength MUST
+      //            raise this or the polyline corner-cuts the crests and the
+      //            elongation the tone paid for never arrives (nestedOctaves).
+      ampSpacing:      { aFlo: 0.30, aMax: 0.40, amp: 'ramp', tone: 'space', ph: 'in',   lam: 0, dep: 0, cFlo: 1.0, steps: 260 },
+      ampClearance:    { aFlo: 0.30, aMax: 0.30, amp: 'ramp', tone: 'space', ph: 'in',   lam: 0, dep: 0, cFlo: 1.4, steps: 260 },
+      ampLambda:       { aFlo: 0.26, aMax: 0.34, amp: 'ramp', tone: 'space', ph: 'in',   lam: 1, dep: 0, cFlo: 1.0, steps: 380 },
+      ampPasses:       { aFlo: 0.32, aMax: 0.32, amp: 'ramp', tone: 'pass',  ph: 'in',   lam: 0, dep: 0, cFlo: 1.0, steps: 260 },
+      ampPhaseWalk:    { aFlo: 0.30, aMax: 0.40, amp: 'ramp', tone: 'space', ph: 'walk', lam: 0, dep: 0, cFlo: 1.0, steps: 260 },
+      weaveNestPerp:   { aFlo: 0.22, aMax: 0.44, amp: 'perp', tone: 'space', ph: 'in',   lam: 0, dep: 0, cFlo: 1.0, steps: 300 },
+      weaveDepth:      { aFlo: 0.14, aMax: 0.46, amp: 'perp', tone: 'space', ph: 'anti', lam: 0, dep: 0, cFlo: 0.8, steps: 300 },
+      weaveOctaveEase: { aFlo: 0.22, aMax: 0.40, amp: 'ramp', tone: 'space', ph: 'anti', lam: 0, dep: 1, cFlo: 1.0, steps: 520 },
+      weaveAmpEase:    { aFlo: 0.18, aMax: 0.44, amp: 'ramp', tone: 'split', ph: 'anti', lam: 0, dep: 0, cFlo: 1.0, steps: 300 },
+      weaveJitter:     { aFlo: 0.24, aMax: 0.40, amp: 'ramp', tone: 'space', ph: 'jit',  lam: 0, dep: 0, cFlo: 1.0, steps: 320 },
+    };
+    const wv6 = () => WV6[TONE_ALGO] || null;
+    const isWv6 = () => WV6[TONE_ALGO] != null;
+    // 'jit' is anti-phase with a walk ON TOP, so its closest approach is still
+    // governed by the crest-into-trough geometry. Stated once, read everywhere.
+    const wv6Anti = () => { const c = wv6(); return !!c && (c.ph === 'anti' || c.ph === 'jit'); };
+    const wvOctaveLaw = () => TONE_ALGO === 'hilbertDepth' || TONE_ALGO === 'nestedOctaves'
+      || (isWv6() && wv6().dep === 1);
+    // 'onePenDown' does NOT split along the line — a chain of abutting sub-paths
+    // is the opposite of one pen-down — so it takes the run mean, like
+    // `weightModulated`. Every other wave law is a full per-sample width law.
+    const WV_LAWS = {
+      nestedSerpentine: 1, interlockWeave: 1, amplitudeOnly: 1, trochoidLoop: 1,
+      waveToRuling: 1, nestedOctaves: 1, onePenDown: 1, hilbertDepth: 1,
+      sfcHalftone: 1, tourScribble: 1,
+      ampSpacing: 1, ampClearance: 1, ampLambda: 1, ampPasses: 1, ampPhaseWalk: 1,
+      weaveNestPerp: 1, weaveDepth: 1, weaveOctaveEase: 1, weaveAmpEase: 1,
+      weaveJitter: 1,
+    };
+    const isWaveLaw = () => WV_LAWS[TONE_ALGO] === 1;
+    // WHERE THE WAVE ACTUALLY LANDED — the counterpart to `weightStat`. Both the
+    // amplitude range and the realised clearance are claims about the paper, so
+    // they are counted rather than asserted.
+    // ROUND 6 adds the three numbers this round is actually about:
+    //   lit*      the amplitude that SURVIVED into the lit region, as the raw
+    //             mean and (in the report) as a fraction of the shadow mean —
+    //             the "waviness throughout" number, which must not approach 0;
+    //   realLen / baseLen   the elongation the POLYLINE delivered against the
+    //             elongation the tone arithmetic already divided out. This is
+    //             the check `nestedOctaves` failed: its model claimed 1.8× and
+    //             the drawn path gave 1.13×, so the drawing came back a third
+    //             too light. Modelled/realised are reported side by side.
+    const waveStat = {
+      samples: 0, ampMin: Infinity, ampMax: 0, ampSum: 0,
+      elongMin: Infinity, elongMax: 0, elongSum: 0,
+      clearMin: Infinity, darkSamples: 0, darkClearMin: Infinity, darkAmpSum: 0,
+      offSurface: 0, elongCapped: 0, lambdaMin: Infinity, lambdaMax: 0,
+      litSamples: 0, litAmpSum: 0, litClearMin: Infinity, litClearSum: 0,
+      darkClearSum: 0, realLen: 0, baseLen: 0, floorBound: 0,
+    };
+    const wvPitchPen = () => (TONE_ALGO === 'amplitudeOnly' ? WV_AO_PITCH_PEN : WV_PITCH_PEN);
+    const wvFlatCov = () => {
+      const env = toneEnvelope();
+      const c = masterPitch / (wvPitchPen() * inkWidth());
+      return clamp(finite(c, env.covLight), env.covLight, env.covDark);
+    };
+    // 0 at and above WV_I0 (a plain ruling), 1 at black. One definition, read by
+    // the amplitude, by the wavelength ramp and by the octave count.
+    const wvRamp = (I) => {
+      const t = clamp((WV_I0 - clamp(finite(I, 0), 0, 1)) / WV_I0, 0, 1);
+      return t * t * (3 - 2 * t);
+    };
+    // 'waveToRuling' — the WAVELENGTH is a tonal channel too. Four times the base
+    // in the light and the base itself in the core shadow, so the serpentine does
+    // not merely flatten as it lightens, it also stretches: the crests walk
+    // apart before they stop happening. That is the continuous transition from an
+    // interlocked serpentine to a plain ruling, with no switch anywhere.
+    const wvLambda = (I) => {
+      const base = WV_LAMBDA_PEN * penWidth;
+      if (TONE_ALGO === 'waveToRuling') return base * (1 + 3 * (1 - wvRamp(I)));
+      // 'ampLambda' — the WAVELENGTH eases and the amplitude does not. A long
+      // lazy serpentine in the light tightening to the base wavelength in the
+      // core shadow: the wave is fully present at BOTH ends, only its rate
+      // changes. Unlike `waveToRuling` it never straightens, and unlike
+      // `nestedOctaves` it never goes below the base wavelength, so its sample
+      // budget (380) is comfortably above the corner-cutting threshold.
+      const c = wv6();
+      if (c && c.lam) return base * (1 + 1.6 * (1 - wvRamp(I)));
+      return base;
+    };
+    // The amplitude each law asks for, as a share of the DRAWN pitch. 0.5 would
+    // put a crest exactly on the neighbouring ruling's centreline.
+    const wvAmpAsk = (I) => {
+      const k = wvRamp(I);
+      // ROUND 6 — THE FLOOR. `k` is zero above WV_I0, so `k × const` is a plain
+      // ruling in the highlight. Interpolating from a FLOOR instead keeps the
+      // serpentine at aFlo of the drawn pitch wherever the light is, which is
+      // the whole of "keep waviness throughout the fill lines". ('perp' laws
+      // have this overridden by the clearance solve in the emitter, and are
+      // clamped back into [aFlo, aMax] there, so they too keep the floor.)
+      const c6 = wv6();
+      if (c6) return Math.max(WV6_AFLOOR_MIN, c6.aFlo + (c6.aMax - c6.aFlo) * k);
+      if (TONE_ALGO === 'interlockWeave') return k * WV_AMAX;
+      if (TONE_ALGO === 'trochoidLoop') return k * WV_TROCH_AMAX;
+      if (TONE_ALGO === 'tourScribble') return k * WV_SCRIB_AMAX;
+      if (TONE_ALGO === 'amplitudeOnly') return k * 0.46;
+      return k * WV_AMAX;
+    };
+    // ANTI-PHASE, OR IN PHASE — the difference between a weave and a nest.
+    //
+    // In phase, two neighbouring serpentines are TRANSLATES of one another, so
+    // the clearance between them is exactly the drawn pitch at every point: the
+    // waves nest, and the white between them is a constant-width ribbon that
+    // narrows only as the pen widens. Anti-phase, each crest points into its
+    // neighbour's trough — the interlock Jay described — and the clearance runs
+    // from pitch - 2A at the crests to pitch + 2A between them.
+    //
+    // The phase has to alternate per KEPT ruling, not per master-grid index: the
+    // ladder keeps roughly `baseCov` of the grid, so parity of `lineIndex` is
+    // not parity of what is drawn. `lineIndex * baseCov`, rounded, is the kept
+    // ordinal, and that is what the alternation is keyed on.
+    const wvLinePhase = (lineIndex) => {
+      const ord = Math.round((Number(lineIndex) || 0) * wvFlatCov());
+      const c6 = wv6();
+      if (c6) {
+        if (c6.ph === 'anti') return Math.PI * ord;
+        // 'weaveJitter' — anti-phase PLUS a bounded golden walk. Strict
+        // alternation makes the crest rows PERIODIC, and a periodic crest row
+        // is a periodic white lozenge between it and its neighbour: the eye
+        // finds a lattice even where no single gap is wide. The walk is capped
+        // at WV6_JIT of a period so the interlock survives it.
+        if (c6.ph === 'jit') return Math.PI * ord + 2 * Math.PI * WV6_JIT * ((ord * GOLDEN_STEP) % 1);
+        // 'ampPhaseWalk' — no alternation at all, only decorrelation. Every
+        // ruling starts somewhere else in the period, so neighbouring crests
+        // are never in register and the residual white cannot line up.
+        if (c6.ph === 'walk') return 2 * Math.PI * ((ord * GOLDEN_STEP) % 1);
+        return 0;
+      }
+      if (TONE_ALGO === 'interlockWeave') return Math.PI * ord;
+      // 'tourScribble' interpenetrates deliberately AND must never lattice, so
+      // it takes the anti-phase alternation plus a golden-ratio walk on top.
+      if (TONE_ALGO === 'tourScribble') return Math.PI * ord + 2 * Math.PI * ((ord * GOLDEN_STEP) % 1);
+      return 0;
+    };
+    // The waveform, as a SCREEN displacement in units of the amplitude:
+    // `n` across the ruling, `t` along it. Only the trochoid uses `t` — it is
+    // a circle of radius A rolling along the ruling, which is exactly what makes
+    // its crests LOOP once A exceeds L/2*pi, laying a chain of near-circles that
+    // closes the band far faster than any single-valued wave can.
+    const wvForm = (ph) => {
+      if (TONE_ALGO === 'trochoidLoop') return { n: -Math.cos(ph), t: -Math.sin(ph) };
+      if (TONE_ALGO === 'amplitudeOnly' || TONE_ALGO === 'sfcHalftone') {
+        // A TRIANGLE: constant lateral speed, so the traverse fills its band
+        // evenly instead of dwelling at the turns, and its elongation is exact.
+        return { n: (2 / Math.PI) * Math.asin(Math.sin(ph)), t: 0 };
+      }
+      if (wvOctaveLaw()) {
+        // NESTING DEPTH AS THE TONAL CHANNEL. Octave k has half the wavelength
+        // and half the amplitude of octave k-1, so each rides INSIDE its parent
+        // — a Takagi/blancmange refinement of the same curve, which is the
+        // 1-D form of a Hilbert order increase. `wvDepth` decides how many
+        // octaves are on at this radiance and fades the newest one in, so the
+        // depth rises continuously and never steps.
+        let v = 0; let nrm = 0;
+        for (let k = 0; k < 4; k++) {
+          const g = clamp(wvDepthGain(k), 0, 1);
+          if (g <= 0) break;
+          v += g * Math.sin(ph * Math.pow(2, k)) / Math.pow(2, k);
+          nrm += g / Math.pow(2, k);
+        }
+        // Round 5's two laws normalise by the FOUR-octave constant 1.875, so a
+        // 1-octave sample only reaches 0.53 of the amplitude it asked for — the
+        // wave visibly shallows in the light for a reason that has nothing to do
+        // with the design. 'weaveOctaveEase' normalises by the LIVE gain sum, so
+        // the envelope is the amplitude at every depth and only the ROUGHNESS
+        // changes. The two reference laws keep the constant they were measured on.
+        if (isWv6()) return { n: clamp(v / Math.max(1e-6, nrm), -1, 1), t: 0 };
+        return { n: clamp(v / 1.875, -1, 1), t: 0 };
+      }
+      return { n: Math.sin(ph), t: 0 };
+    };
+    // How much of octave k is on. Set per sample by `wvDepthAt` before `wvForm`
+    // is called — the octave count is a function of radiance and nothing else.
+    let wvDepthLevels = 0;
+    const wvDepthGain = (k) => clamp(wvDepthLevels - k, 0, 1);
+    const wvDepthAt = (I) => {
+      const k = wvRamp(I);
+      // 'weaveOctaveEase' — 1 wave in the light easing to 3 nested in the core.
+      // It stops at THREE, not four: the fourth octave's wavelength is
+      // lambda/8 = 0.27 mm, which at MAX_LINE_STEPS IS the sample spacing, and
+      // that is precisely how `nestedOctaves` and `hilbertDepth` came back a
+      // third too light. Three octaves bottom out at lambda/4 = 0.55 mm, and
+      // this law raises its own budget to 520 steps so even that is carried at
+      // four samples a period.
+      if (isWv6()) { wvDepthLevels = wv6().dep ? 1 + 2 * k : 1; return; }
+      // nestedOctaves: 1 wave in the light, 3 nested in the core shadow.
+      // hilbertDepth: 1 -> 4, i.e. one more level of refinement.
+      wvDepthLevels = (TONE_ALGO === 'hilbertDepth' ? 1 + 3 * k : 1 + 2 * k);
+    };
+    // The elongation the waveform delivers, and the elongation the PAPER will
+    // take. `q` is the classic waviness ratio 2*pi*A/L; the cap comes from the
+    // wave's own limb separation L/e falling to the plot floor.
+    const wvElongCap = (lam) => (floorPitch > 1e-6 ? Math.max(1, lam / floorPitch) : 8);
+    // Split in two so the ROUND 6 spacing solve can ask for the elongation
+    // without booking a cap event against a sample that was never drawn.
+    const wvElongRaw = (amp, lam) => {
+      if (!(lam > 1e-6) || !(amp > 1e-9)) return 1;
+      const q = (2 * Math.PI * amp) / lam;
+      if (TONE_ALGO === 'trochoidLoop') return Math.sqrt(1 + q * q);
+      if (TONE_ALGO === 'amplitudeOnly' || TONE_ALGO === 'sfcHalftone') {
+        const qt = (4 * amp) / lam;
+        return Math.sqrt(1 + qt * qt);
+      }
+      if (wvOctaveLaw()) {
+        // Each octave contributes its own (2*pi*A_k/L_k)^2 = (2q)^0 ... the
+        // halving of A and of L cancel, so every live octave adds the SAME q^2.
+        let s = 0;
+        for (let k = 0; k < 4; k++) { const g = wvDepthGain(k); if (g <= 0) break; s += g * q * q; }
+        return Math.sqrt(1 + s / 2);
+      }
+      return Math.sqrt(1 + (q * q) / 2);
+    };
+    const wvElong = (amp, lam) => {
+      const e = wvElongRaw(amp, lam);
+      const cap = wvElongCap(lam);
+      if (e > cap) { waveStat.elongCapped += 1; return cap; }
+      return e;
+    };
+    // The tone target. Same L*-linear response as every other law here; the wave
+    // laws differ only in that the ask is divided by the elongation.
+    const wvArea = (I) => areaForTone(I, WV_DARK_AREA, wLightArea());
+    // 'amplitudeOnly' — THE CONTROL EXPERIMENT. The pen is pinned at the width
+    // the LIGHT end needs and never moves, so every scrap of the tone ramp has to
+    // come from arc length. It is here to measure how far elongation alone can
+    // carry a drawing, which is the number the rest of the round is spending.
+    const wvAOArea = () => wLightArea();
+    // 'sfcHalftone' — VELHO & GOMES, SIGGRAPH '91. Tone along a space-filling
+    // traverse is laid by CLUSTERING, not by a continuous width: the curve is
+    // walked, the local target is accumulated, and the pen is switched between
+    // two states so the running mean is exact. The error is carried ALONG THE
+    // CURVE, which is what makes the texture aperiodic — the cluster boundaries
+    // cannot line up across the family because the curve visits them in a
+    // different phase every time. Reset per ruling by the emitter.
+    let sfcErr = 0;
+    const sfcArea = (I, e) => {
+      const aLo = wLightArea();
+      const aHi = clamp(WV_DARK_AREA / Math.max(1, e), aLo + 1e-3, 0.98);
+      const want = clamp(wvArea(I) / Math.max(1, e), 0, 0.98) + sfcErr;
+      const pick = (want >= (aLo + aHi) / 2) ? aHi : aLo;
+      sfcErr = clamp(want - pick, -0.4, 0.4);
+      return pick;
+    };
+    // The per-sample area every wave law asks `weightForArea` for. `e` is this
+    // sample's elongation, and dividing by it is what keeps the tone linear.
+    const wvAreaAsk = (I, e) => {
+      if (TONE_ALGO === 'amplitudeOnly') return wvAOArea();
+      if (TONE_ALGO === 'sfcHalftone') return sfcArea(I, e);
+      return clamp(wvArea(I) / Math.max(1, e), 0.005, 0.98);
+    };
+
+    // ── ROUND 6 — THE CLEARANCE GEOMETRY, AND THE SPACING FIELD ───────────────
+    //
+    // `wv6ClearAt` is the closest approach of two NEIGHBOURING rulings drawn at
+    // pitch `drawn` with amplitude share `f` and wavelength `lam`, measured
+    // PERPENDICULAR TO THE STROKE. `wv6ShareFor` is its inverse: the largest
+    // share that still leaves `C` open. Both are exact for the two phasings:
+    //
+    //   in phase    the curves are translates, so the perpendicular distance is
+    //               d·cos(theta); the minimum is at the steepest point, where
+    //               cos(theta) = 1/sqrt(1 + q²) and q = 2·pi·f·d / lam.
+    //   anti-phase  the crest meets the trough at a point where BOTH tangents
+    //               are along the ruling, so perpendicular = vertical there and
+    //               the closest approach is exactly d − 2A = d(1 − 2f).
+    //
+    // The ceiling this puts on an in-phase nest — C ≤ lam/(2·pi·f), independent
+    // of the pitch — is the reason the `in` laws close their gaps without any
+    // spacing help at all.
+    const wv6ClearAt = (drawn, lam, f) => {
+      const d = Math.max(1e-6, finite(drawn, 0));
+      const ff = clamp(finite(f, 0), 0, 0.49);
+      if (wv6Anti()) return d * (1 - 2 * ff);
+      const q = (2 * Math.PI * ff * d) / Math.max(1e-6, finite(lam, 1));
+      return d / Math.sqrt(1 + q * q);
+    };
+    const wv6ShareFor = (C, drawn, lam) => {
+      const d = Math.max(1e-6, finite(drawn, 0));
+      const c = Math.max(0, finite(C, 0));
+      if (wv6Anti()) return clamp(0.5 * (1 - Math.min(1, c / d)), 0, 0.49);
+      if (!(c > 1e-6)) return 0.49;
+      const r = (d / c) * (d / c) - 1;
+      if (!(r > 0)) return 0;
+      return clamp((finite(lam, 1) * Math.sqrt(r)) / (2 * Math.PI * d), 0, 0.49);
+    };
+    // The clearance floor this law will not knowingly go below: `cFlo` plot
+    // floors, and never tighter than a hair over one ink width (two strokes
+    // closer than their own nib are one stroke, not two).
+    const wv6ClearFloorMM = () => {
+      const c = wv6();
+      return Math.max((c ? c.cFlo : 1) * floorPitch, 1.05 * inkWidth());
+    };
+    // THE EASE, AND WHERE IT IS APPLIED. Smootherstep on radiance between the
+    // clearance a FLOOR-amplitude nest already gives at this pitch (the light
+    // end) and the plot floor (the dark end) — zero first AND second derivative
+    // at both ends, so neither the spacing field nor the wave shows a knee.
+    const wv6TargetClear = (I, drawn, lam) => {
+      const c = wv6(); if (!c) return 0;
+      const cD = wv6ClearFloorMM();
+      const cL = wv6ClearAt(drawn, lam, c.aFlo);
+      const t = ease(clamp(finite(I, 0), 0, 1) / Math.max(1e-6, WV_I0));
+      return cD + Math.max(0, cL - cD) * t;
+    };
+    // THE SPACING FIELD. The ordinary L*-linear tone target, divided by the
+    // elongation the wave will deliver here, turned into coverage by the same
+    // `covForArea` laws 6-10 use. Two fixed-point passes, because the amplitude
+    // is a share of the DRAWN pitch and the drawn pitch is what is being solved
+    // for; the second pass moves the answer by under a per cent.
+    //
+    // Nothing pins the pen. Where this coverage is achievable the pen comes out
+    // at exactly 1 (weightForArea divides the same target by the same
+    // coverage); where `weightCovEff` clamps it at the plot floor, the pen picks
+    // up precisely the shortfall. One continuous handover, no branch, no seam.
+    const wv6SpaceCov = (I, localPitch) => {
+      const lp = (Number.isFinite(localPitch) && localPitch > 1e-6) ? localPitch : masterPitch;
+      const flat = wvFlatCov();
+      if (!(lp > 1e-6)) return flat;
+      wvDepthAt(I);
+      const lam = wvLambda(I);
+      const cap = wvElongCap(lam);
+      const target = wvArea(I);
+      let cov = flat;
+      for (let it = 0; it < 2; it++) {
+        const f = wvAmpAsk(I);
+        const e = Math.min(cap, wvElongRaw(f * (lp / Math.max(1e-6, cov)), lam));
+        cov = clamp(covForArea(target / Math.max(1, e), lp), 0.005, 1);
+      }
+      return cov;
+    };
+    // 'weaveAmpEase' — THE CONTROL ON THE SPLIT. The amplification is shared
+    // geometrically between the pen and the spacing (kappa = 0.5), exactly as
+    // `weightPlusSpacing` does it, so the same amplitude law can be read against
+    // a spacing-only sibling and the difference attributed.
+    const wv6SplitCov = (I) => {
+      const flat = wvFlatCov();
+      const aL = wLightArea();
+      const amp = aL > 1e-9 ? Math.max(1, wvArea(I) / aL) : 1;
+      const env = toneEnvelope();
+      return clamp(flat * Math.sqrt(amp), flat, Math.max(flat, env.covDark));
+    };
+    const wv6Cov = (I, localPitch) => {
+      const c = wv6();
+      if (!c) return wvFlatCov();
+      if (c.tone === 'space') return wv6SpaceCov(I, localPitch);
+      if (c.tone === 'split') return wv6SplitCov(I);
+      return wvFlatCov();   // 'pass' rules an even grid; the tone is overdraw.
+    };
+
     // How much more ink than the light end this radiance asks for.
     const wAmp = (I) => {
       const aL = wLightArea();
@@ -3363,6 +4062,8 @@
       // actually going to draw it. `penPlan` is the single source for both.
       if (isPenLaw()) return penPlan(I, localPitch, smp).cov;
       if (isWPS()) return wpsCov(I);
+      // ROUND 6 — the tone lives HERE, in the spacing, and not in the amplitude.
+      if (isWv6()) return wv6Cov(clamp(finite(I, 0), 0, 1), localPitch);
       if (TONE_ALGO === 'weightCrossHandoff') {
         return xfLayer === 0 ? flatCov() : xhCovB(clamp(finite(I, 0), 0, 1), localPitch);
       }
@@ -3519,6 +4220,15 @@
       // by the emit loop's gate, not by the pen.
       if (TONE_ALGO === 'transverseReserve') {
         return weightForArea(trAreaWidth(I), localPitch, weightCovEff(I, localPitch));
+      }
+      // ── ROUND 5 — the wave laws ─────────────────────────────────────────────
+      // The width is whiteBand's, stated on the DELIVERED area: the ask is the
+      // tone target divided by this sample's own elongation, which the emitter
+      // measured when it displaced the point. Without that division the drawing
+      // would darken wherever the wave deepens — a tone error keyed to texture.
+      if (isWaveLaw()) {
+        return weightForArea(wvAreaAsk(I, (ctx && ctx.elong) || 1), localPitch,
+          weightCovEff(I, localPitch));
       }
       // 'isophoteWidth' — the width comes from the SHADING GRADIENT, measured on
       // the ruling itself (see `isoWidthArea`); the sampler hands it in.
@@ -4827,6 +5537,33 @@
       const n = clamp(Math.round(finite(pc.weightScale, 1)), 1, MP_MAX);
       pc.weightScale = 1;
       if (n <= 1 || pc.length < 2) return [];
+      // ── THE OFFSET HAS TO DIE BEFORE THE END OF THE PIECE ────────────────────
+      //
+      // Measured, and it is a HARD FAIL rather than a blemish: 'ampPasses' with
+      // a plain constant offset put 41 MARKS OUTSIDE THE SILHOUETTE on
+      // sphere·hatch and left a 13 mm free end. The reason is that this
+      // displacement is made ON SCREEN and — unlike the Round 5/6 wave, which
+      // displaces in the CHART and re-tests the sample for front-facing — it has
+      // no way of knowing it has walked off the form. At a limb the ruling's
+      // last sample is ON the silhouette, so ANY perpendicular offset there is
+      // off the object.
+      //
+      // Tapering the offset to zero over PASS_TAPER_MM of each end fixes both
+      // defects at once: the copy converges onto the piece it came from, so it
+      // cannot cross the limb, and its endpoints land exactly on the original's,
+      // so they register as abutting instead of as free ends. Arc length is
+      // accumulated along the piece rather than counted in samples, because a
+      // wave law's samples are not evenly spaced along the ruling.
+      const PASS_TAPER_MM = 2.0;
+      const tapered = TONE_ALGO === 'ampPasses';
+      const arc = new Array(pc.length).fill(0);
+      let arcTot = 0;
+      for (let i = 1; i < pc.length; i++) {
+        arcTot += Math.hypot(pc[i].x - pc[i - 1].x, pc[i].y - pc[i - 1].y);
+        arc[i] = arcTot;
+      }
+      const endFrac = (i) => (tapered
+        ? clamp(Math.min(arc[i], arcTot - arc[i]) / PASS_TAPER_MM, 0, 1) : 1);
       const outp = [];
       for (let j = 1; j < n; j++) {
         const d = (j % 2 ? 1 : -1) * Math.ceil(j / 2) * inkWidth();
@@ -4834,7 +5571,8 @@
           const p0 = pc[Math.max(0, i - 1)]; const p1 = pc[Math.min(pc.length - 1, i + 1)];
           const dx = p1.x - p0.x; const dy = p1.y - p0.y;
           const L = Math.hypot(dx, dy) || 1;
-          return { x: q.x + (-dy / L) * d, y: q.y + (dx / L) * d, z: q.z };
+          const dd = d * endFrac(i);
+          return { x: q.x + (-dy / L) * dd, y: q.y + (dx / L) * dd, z: q.z };
         });
         cp.fam = pc.fam; cp.tt0 = pc.tt0; cp.tt1 = pc.tt1; cp.weightScale = 1;
         outp.push(cp);
@@ -4906,14 +5644,24 @@
           run.tt0 = runTT0; run.tt1 = runTT1;
           if (TONE_ALGO === 'weightModulated' && wCnt > 0) run.weightScale = wSum / wCnt;
           if (TONE_ALGO === 'weightSmoothstep' && wCnt > 0) run.weightScale = wDithered(wSum / wCnt, lineIndex);
+          // 'onePenDown' takes the run mean for the same reason `weightModulated`
+          // does: it never splits, so there is one width for the whole stroke.
+          if (TONE_ALGO === 'onePenDown' && wCnt > 0) run.weightScale = wSum / wCnt;
           const pieces = (splitsAlongLine() && wCnt > 0)
             ? splitByWeight(run, wPts, ttPts, fam)
             : [run];
           pieces.forEach((pc) => {
             if (lozAny) pc.loz = true;
             mine.push(pc);
+            // 'ampPasses' — TONE FROM PASS COUNT, at a constant wave. The pen
+            // never widens and the spacing never moves; the shadow is built by
+            // laying the SAME serpentine two, three, four times, offset by one
+            // ink width. The count is an integer, so it quantises — the golden
+            // dither on the ruling index is what stops the quantisation landing
+            // on the same value for a whole band and reading as a contour.
+            if (TONE_ALGO === 'ampPasses') pc.weightScale = wDithered(finite(pc.weightScale, 1), lineIndex);
             pushRun(pc, back, lineIndex);
-            if (TONE_ALGO === 'weightMultiPass') {
+            if (TONE_ALGO === 'weightMultiPass' || TONE_ALGO === 'ampPasses') {
               extraPasses(pc).forEach((xp) => pushRun(xp, back, lineIndex));
             }
           });
@@ -5080,6 +5828,10 @@
     // the line to a single form zone: that is how the terminator's crossed
     // family is spent on T alone instead of being sprayed over the whole dark
     // band (O17 — Round 2 crossed ALL of band 0, at 0/90, and it read as wire mesh).
+    // 'onePenDown' — the open end of the chain being built, in CHART
+    // coordinates: `{ run, par, fam, back }`. One per buildObject call, so a new
+    // object never inherits a previous one's open path.
+    let wvChain = null;
     const emitLineOnce = (paramAt, threshold, back, lineIndex, count, zoneGate, pitchStep, lineDir, densityCross, adj) => {
       const wantFront = !back;
       // V5 — publish the ruling index for the three-pen laws' per-ruling pen
@@ -5116,8 +5868,26 @@
       // A family may ask for its own sample count (see angleFamily: a wrapped
       // helix is longer in the parameter square than an axis line, so it needs
       // proportionally more samples to stay on the form). Default is `steps`.
-      const nSteps = Math.max(2, Math.min(MAX_LINE_STEPS,
-        Number.isFinite(paramAt.steps) ? Math.round(paramAt.steps) : steps));
+      // ...AND ROUND 5 TAKES THE CEILING, ALWAYS. A serpentine is only as wavy
+      // as the polyline that carries it: at the default sample density a 62 mm
+      // ruling gets ~60 samples, i.e. ~1 mm apart, and a 2.2 mm wavelength then
+      // has TWO samples per period. The drawn path corner-cuts every crest, and
+      // the elongation the tone arithmetic paid for never arrives — measured,
+      // sphere·hatch delivered 1.13x arc length against the 1.48x the law had
+      // already divided out of the pen, so the drawing came back a third too
+      // light (5th-pct L* 66.8 against whiteBand's 51.4) with R² 0.031. At
+      // MAX_LINE_STEPS the same ruling gets ~8 samples per period, which carries
+      // a sine to within a per cent of its true length.
+      // ...AND ROUND 6 LETS A LAW RAISE ITS OWN BUDGET. MAX_LINE_STEPS is 220,
+      // i.e. about 0.28 mm between samples on a 62 mm ruling — which is exactly
+      // the wavelength of `nestedOctaves`' third octave, and exactly why that
+      // law's realised elongation (1.13x) fell a third short of the 1.8x its pen
+      // had already been divided by. Any law that shortens its wavelength or
+      // adds an octave states a bigger `steps` in the WV6 table and pays for it.
+      const nSteps = (toneOn && isWaveLaw())
+        ? (isWv6() ? Math.max(MAX_LINE_STEPS, wv6().steps) : MAX_LINE_STEPS)
+        : Math.max(2, Math.min(MAX_LINE_STEPS,
+          Number.isFinite(paramAt.steps) ? Math.round(paramAt.steps) : steps));
 
       // ── SAMPLE THE RULING ONCE, THEN DECIDE ONCE PER SPAN ────────────────────
       // Exactly the same sampleAt calls the emit loop used to make, hoisted so
@@ -5150,8 +5920,12 @@
         if (!(Math.abs(det) > 1e-12)) return 0;
         return Math.hypot((du * vy - dv * uy) / det, (ux * dv - vx * du) / det);
       };
+      // Round 5 displaces a sample IN THE CHART, so it needs the chart
+      // coordinate the sample came from, not just the point it produced.
+      const prs = (toneOn && isWaveLaw()) ? new Array(nSteps + 1) : null;
       for (let s = 0; s <= nSteps; s++) {
         const pr = paramAt(s / nSteps);
+        if (prs) prs[s] = pr;
         // A displaced adjacent pass (see `adjShift`) has NO parameter here when
         // its offset has carried it off the end of the chart's non-periodic
         // axis — the pass has left the surface, so there is nothing to sample
@@ -5216,12 +5990,25 @@
         || isLoz()
         // ROUND 6 — every mark law places by ARC LENGTH along the row (a period
         // is a length, a mark is a length, an ink debt is a length).
-        || isMarkLaw());
+        || isMarkLaw()
+        // Round 5 needs BOTH: `arcMM` is the wave's phase parameter (measured
+        // from the run's own midpoint, so the crests form a field symmetric
+        // about the form rather than about a chart seam), and `endMM` is what
+        // tapers the amplitude to nothing before the silhouette.
+        || isWaveLaw());
       let arcMM = null;
       let endMM = null;
+      // Signed arc length FROM THE RUN'S OWN MIDPOINT. Round 5 phases every wave
+      // on this rather than on `arcMM`, because arcMM restarts at 0 wherever the
+      // silhouette cut the ruling and two neighbouring rulings are cut at
+      // different places — phasing on it would drift the crests apart across the
+      // family and destroy the nesting. Measured from the midpoint, the crests
+      // form one coherent field, symmetric about the form.
+      let midMM = null;
       if (needsArc) {
         arcMM = new Array(nSteps + 1).fill(0);
         endMM = new Array(nSteps + 1).fill(0);
+        midMM = new Array(nSteps + 1).fill(0);
         let s0 = 0;
         while (s0 <= nSteps) {
           if (!smps[s0]) { s0 += 1; continue; }
@@ -5233,7 +6020,10 @@
             acc += Math.hypot(smps[k].x - smps[k - 1].x, smps[k].y - smps[k - 1].y);
             arcMM[k] = acc;
           }
-          for (let k = s0; k <= s1; k++) endMM[k] = Math.min(arcMM[k], acc - arcMM[k]);
+          for (let k = s0; k <= s1; k++) {
+            endMM[k] = Math.min(arcMM[k], acc - arcMM[k]);
+            midMM[k] = arcMM[k] - acc / 2;
+          }
           s0 = s1 + 1;
         }
       }
@@ -5260,6 +6050,181 @@
         const dirHere = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
         return perpPitch(smp, stepHere, dirHere);
       };
+
+      // ── ROUND 5 — THE WAVE, AND WHY IT IS MADE IN THE CHART ──────────────────
+      //
+      // The one hard requirement Jay stated for this round is that nothing may
+      // fall outside the silhouette — "lines jutting out beyond the exterior of
+      // the sphere" is a judged defect, and a wave's crest is the obvious risk.
+      // The previous round's `deepFillTSP` displaced points ON SCREEN and then
+      // fenced the excursion with `endMM`, which is a mitigation, not a proof.
+      //
+      // This one cannot leave the surface at all, because the displacement is
+      // applied to the CHART COORDINATE and the displaced point is then SAMPLED:
+      // `sampleAt(a + da, b + db)` returns a genuine point of the modelled
+      // surface or nothing. The sample is re-tested for front-facing, and where
+      // that test fails the amplitude is dropped to zero and the ruling runs
+      // straight through — so the wave fades out as it approaches a limb instead
+      // of crossing it. The requested displacement is stated in SCREEN
+      // millimetres and pushed back through the sample's own frame (dA, dB), so
+      // the amplitude is what the eye sees, correctly foreshortened, while the
+      // point that gets drawn is still on the form.
+      //
+      // Three further guards, in order of who binds first:
+      //   - `endMM` tapers the amplitude to nothing over WV_TAPER_MM of the
+      //     run's own end, so the wave dies BEFORE the silhouette;
+      //   - the anti-phase laws cap the amplitude at the clearance the plot
+      //     floor allows (see WV_CLEAR_FLOOR), which is the "minimum open space"
+      //     number the report asks for;
+      //   - `wvElongCap` caps the elongation any law may CLAIM at the point
+      //     where the wave's own limbs reach the plot floor, so the tone
+      //     arithmetic can never promise ink the paper will not take.
+      //
+      // Tangents, arc length, radiance and the phase are all read from the
+      // UNDISPLACED ruling (`base`), so the wave is a function of the form and
+      // not of itself — a self-referential frame would let the excursion
+      // compound along the ruling and walk off.
+      const wvElongs = (toneOn && isWaveLaw()) ? new Array(nSteps + 1).fill(1) : null;
+      const wvChainOn = Boolean(toneOn && TONE_ALGO === 'onePenDown');
+      let wvStartS = null;
+      let wvEndS = null;
+      // THE TONE IS READ OFF THE UNDISPLACED RULING. Measured the other way
+      // first, and it is a trap: with the width taken at the DISPLACED point,
+      // an amplitude of 1.4 mm across a sphere's terminator swings the radiance
+      // at the wave's own frequency, the pen pulses thick/thin twice per
+      // wavelength, and the drawing stops tracking the light — sphere·hatch came
+      // back with R² 0.032, a 2.71x weight step between abutting pieces and
+      // 10.1 L* of moiré. The wave is a TEXTURE; the tone is a function of the
+      // form. Keeping the two apart is what makes the pair legible.
+      const wvBase = wvElongs ? smps.slice() : null;
+      if (wvElongs) {
+        sfcErr = 0;
+        const base = wvBase;
+        const linePh = wvLinePhase(lineIndex);
+        const wrap01 = (v) => { const w = v % 1; return w < 0 ? w + 1 : w; };
+        for (let s = 0; s <= nSteps; s++) {
+          const smp = base[s];
+          if (!smp || !prs[s]) continue;
+          const I = clamp(finite(smp.I, 0), 0, 1);
+          wvDepthAt(I);
+          const lam = wvLambda(I);
+          const lp = pitchAtStep(smp, s);
+          if (!(Number.isFinite(lp) && lp > 1e-6)) continue;
+          const cov = clamp(weightCovEff(I, lp), 1e-6, 1);
+          const drawn = lp / cov;              // millimetres between DRAWN rulings
+          let f = wvAmpAsk(I);
+          // 'interlockWeave' — the crest points into the neighbour's trough, so
+          // the closest approach is drawn − 2A and the plot floor owns the cap.
+          // 'tourScribble' deliberately goes PAST it: that is what makes it an
+          // overdraw and not a weave, and the flooding is measured, not hidden.
+          if (TONE_ALGO === 'interlockWeave') {
+            const fMax = 0.5 * (1 - clamp((WV_CLEAR_FLOOR * floorPitch) / drawn, 0, 1));
+            f = Math.min(f, Math.max(0, fMax));
+          }
+          // ROUND 6 — THE CLEARANCE IS THE DESIGN VARIABLE, PERPENDICULAR TO THE
+          // STROKE. 'perp' laws SOLVE the share from the eased target and then
+          // clamp it back into [aFlo, aMax], so the clearance ramps smoothly and
+          // the wave still cannot straighten. The 'ramp' laws take the radiance
+          // ramp and are merely CAPPED at the floor — which, for the in-phase
+          // ones, never binds, because lam/(2·pi·f) is already under the pitch.
+          let floorBound = false;
+          if (isWv6() && wv6().amp === 'perp') {
+            f = clamp(wv6ShareFor(wv6TargetClear(I, drawn, lam), drawn, lam),
+              wv6().aFlo, wv6().aMax);
+          }
+          f *= clamp((endMM[s] || 0) / WV_TAPER_MM, 0, 1);
+          let amp = f * drawn;
+          if (isWv6()) {
+            // THE THREE BOUNDS, IN THE ORDER THEY OUTRANK EACH OTHER.
+            //   1. the texture scale — a crest is a fixed size on the paper;
+            //   2. the texture FLOOR — but only as far as the band has room for
+            //      it, so a wave can never be floored INTO its neighbour;
+            //   3. the clearance floor — which outranks both, because two
+            //      strokes closer than a plot floor are one wet stroke. Where it
+            //      binds the excursion is cut and the event is COUNTED, never
+            //      hidden. It binds in the DARKS, where the spacing has already
+            //      closed; the LIGHT — the side Jay is judging — has room to
+            //      spare and keeps its full wave.
+            const taper = clamp((endMM[s] || 0) / WV_TAPER_MM, 0, 1);
+            amp = Math.min(amp, WV6_AMP_MAX_MM * taper);
+            amp = Math.max(amp, Math.min(WV6_AMP_MIN_MM * taper, 0.42 * drawn * taper));
+            const ampClear = drawn * wv6ShareFor(wv6ClearFloorMM(), drawn, lam);
+            if (amp > ampClear) { amp = Math.max(0, ampClear); floorBound = true; }
+            f = drawn > 1e-6 ? amp / drawn : 0;
+          }
+          const e = wvElong(amp, lam);
+          wvElongs[s] = e;
+          const anti = TONE_ALGO === 'interlockWeave' || TONE_ALGO === 'tourScribble';
+          // The clearance is recorded the way it is DESIGNED — across the
+          // stroke — so the number in the report and the number in the solve are
+          // the same quantity. Round 5 recorded `drawn` for the in-phase laws,
+          // which is the vertical offset and overstates the open space by the
+          // elongation factor; that is the error being corrected.
+          const clear = isWv6() ? wv6ClearAt(drawn, lam, f)
+            : (anti ? drawn - 2 * amp : drawn);
+          if (floorBound) waveStat.floorBound += 1;
+          if (I >= 0.55) {
+            waveStat.litSamples += 1;
+            waveStat.litAmpSum += amp;
+            waveStat.litClearSum += clear;
+            if (clear < waveStat.litClearMin) waveStat.litClearMin = clear;
+          }
+          waveStat.samples += 1;
+          waveStat.ampSum += amp;
+          if (amp < waveStat.ampMin) waveStat.ampMin = amp;
+          if (amp > waveStat.ampMax) waveStat.ampMax = amp;
+          waveStat.elongSum += e;
+          if (e < waveStat.elongMin) waveStat.elongMin = e;
+          if (e > waveStat.elongMax) waveStat.elongMax = e;
+          if (lam < waveStat.lambdaMin) waveStat.lambdaMin = lam;
+          if (lam > waveStat.lambdaMax) waveStat.lambdaMax = lam;
+          if (clear < waveStat.clearMin) waveStat.clearMin = clear;
+          if (I <= 0.15) {
+            waveStat.darkSamples += 1;
+            waveStat.darkAmpSum += amp;
+            waveStat.darkClearSum += clear;
+            if (clear < waveStat.darkClearMin) waveStat.darkClearMin = clear;
+          }
+          if (!(amp > 1e-4)) continue;
+          const ph = (2 * Math.PI * (midMM[s] || 0)) / lam + linePh;
+          const wf = wvForm(ph);
+          const p1 = base[Math.min(nSteps, s + 1)] || smp;
+          const p0 = base[Math.max(0, s - 1)] || smp;
+          let tx = p1.x - p0.x; let ty = p1.y - p0.y;
+          const tl = Math.hypot(tx, ty);
+          if (!(tl > 1e-9)) continue;
+          tx /= tl; ty /= tl;
+          const vx = (-ty) * amp * wf.n + tx * amp * wf.t;
+          const vy = tx * amp * wf.n + ty * amp * wf.t;
+          if (!smp.dA || !smp.dB) continue;
+          const det = smp.dA.x * smp.dB.y - smp.dA.y * smp.dB.x;
+          if (!(Math.abs(det) > 1e-12)) continue;
+          const da = (vx * smp.dB.y - vy * smp.dB.x) / det;
+          const db = (smp.dA.x * vy - smp.dA.y * vx) / det;
+          const pa = clamp(prs[s].a + da, 0, 1);
+          const pb = wrap01(prs[s].b + db);
+          const cand = sampleAt(pa, pb);
+          if (!cand || cand.front !== wantFront) { waveStat.offSurface += 1; wvElongs[s] = 1; continue; }
+          smps[s] = cand;
+          prs[s] = { a: pa, b: pb };
+        }
+        // ── THE ELONGATION THE POLYLINE ACTUALLY DELIVERED ────────────────────
+        // The tone arithmetic has already DIVIDED the pen's ask by the modelled
+        // elongation, so if the drawn path is shorter than the model the drawing
+        // comes back light by exactly that ratio — which is how `nestedOctaves`
+        // and `hilbertDepth` lost a third of their ink (model 1.8x, polyline
+        // 1.13x, because the third octave's wavelength WAS the sample spacing).
+        // Both lengths are summed over the same span of the same ruling, so the
+        // ratio is directly comparable with `elongMean` and any law that shortens
+        // its wavelength is caught here rather than in the picture.
+        for (let s = 1; s <= nSteps; s++) {
+          const a0 = smps[s - 1]; const a1 = smps[s];
+          const b0 = base[s - 1]; const b1 = base[s];
+          if (!a0 || !a1 || !b0 || !b1) continue;
+          waveStat.realLen += Math.hypot(a1.x - a0.x, a1.y - a0.y);
+          waveStat.baseLen += Math.hypot(b1.x - b0.x, b1.y - b0.y);
+        }
+      }
       // ── WHERE THE STROKE IS NOT ON THE PAPER, AND EXACTLY WHERE IT LEAVES ──
       //
       // Two laws cut a run short, for opposite reasons, and both need the cut to
@@ -6242,13 +7207,24 @@
         if (s > 0 && !onSurf[s - 1]) { const e = edgeAt(s, s - 1); if (e) addPt(e, sampleZone, tt); }
         if (toneOn && TONE_ALGO === 'weightModulated') sink.noteW(weightAt(smp.I));
         else if (toneOn && isWeightLaw()) {
-          const wRaw = weightAtSample(smp, pitchAtStep(smp, s), gradIs ? gradIs[s] : 0,
-            (thetas || endMM) ? { theta: thetas ? thetas[s] : null, endMM: endMM ? endMM[s] : null } : null);
+          // THE TONE IS READ OFF THE UNDISPLACED RULING (`wvBase`); null under
+          // every non-wave law, so it falls through to `smp`.
+          const wRaw = weightAtSample((wvBase && wvBase[s]) || smp, pitchAtStep(smp, s), gradIs ? gradIs[s] : 0,
+            (thetas || endMM || wvElongs)
+              ? {
+                theta: thetas ? thetas[s] : null,
+                endMM: endMM ? endMM[s] : null,
+                elong: wvElongs ? wvElongs[s] : 1,
+              } : null);
           // 'lozSwell' shapes the flick; the profile is area-preserving, so this
           // multiply moves ink WITHIN the mark and never changes its total.
           sink.noteW(lozWMul ? clamp(wRaw * lozWMul[s], W_MIN, W_MAX) : wRaw);
         }
         if (entryPt && entryPt[s]) addPt(entryPt[s], sampleZone, tt);
+        // 'onePenDown' chains ruling to ruling, so it has to know which sample
+        // the emitted stroke actually started and stopped on — the ruling's own
+        // parameter ends are not it wherever the silhouette cut the run.
+        if (wvChainOn) { if (wvStartS == null) wvStartS = s; wvEndS = s; }
         addPt((lozDisp && lozDisp[s])
           || (toneOn && TONE_ALGO === 'deepFillTSP' && tspAt(smp, s))
           || { x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
@@ -6280,6 +7256,48 @@
           }
         }
       }
+      // ── 'onePenDown' — ONE CONTINUOUS PATH OVER THE WHOLE FORM ───────────────
+      //
+      // The real plotter advantage nobody spends: a pen-up is pure cost. It is
+      // travel time, it is a servo cycle, it is the one moment the ink can blob,
+      // and a ruled family spends one per ruling. A boustrophedon over the whole
+      // form spends ONE for the entire object.
+      //
+      // The bridge between two rulings is built IN THE CHART, exactly like the
+      // wave: a straight segment in (a, b) from where the previous ruling
+      // stopped to where this one starts, sampled, with every sample required to
+      // be on the surface and front-facing. So the link is a genuine curve ON
+      // the form — never a chord across the silhouette, which is what a
+      // screen-space link would be on a convex limb — and if any sample fails,
+      // the bridge is refused and the chain simply starts again here. The
+      // pen-down count is therefore an honest count of how often the surface
+      // itself made continuity impossible.
+      //
+      // `emitAngledFamily` reverses every other ruling for this law, so the two
+      // points being bridged are the two NEAR ends and the link is short.
+      // WV_LINK_MAX_MM refuses anything longer than a bridge worth drawing.
+      if (wvChainOn && wvStartS != null && wvEndS != null && prs) {
+        const mine2 = sink.emitted();
+        const run = mine2.length === 1 ? mine2[0] : null;
+        const p0 = prs[wvStartS];
+        const p1 = prs[wvEndS];
+        let linked = false;
+        if (run && p0 && p1 && wvChain && wvChain.fam === currentFam && wvChain.back === back) {
+          const bridge = wvBridge(wvChain.par, p0, wantFront);
+          if (bridge) {
+            bridge.forEach((q) => wvChain.run.push(q));
+            for (let i = 0; i < run.length; i++) wvChain.run.push(run[i]);
+            const at = out.indexOf(run);
+            if (at >= 0) out.splice(at, 1);
+            wvChain.par = p1;
+            linked = true;
+          }
+        }
+        if (!linked) {
+          wvChain = (run && p1) ? { run, par: p1, fam: currentFam, back } : null;
+        }
+      }
+
       return mine;
     };
 
@@ -6503,11 +7521,53 @@
       }
     };
 
+
+    // The chart-space bridge itself. Refuses on the first sample that is not on
+    // the wanted side of the surface, and refuses outright if the link is longer
+    // than WV_LINK_MAX_MM on screen — a long link is a leap across a neck or a
+    // pole, and drawing it would put ink where the form is not.
+    const WV_BRIDGE_STEPS = 14;
+    const wvBridge = (pA, pB, wantFront) => {
+      if (!pA || !pB) return null;
+      let db = pB.b - pA.b;
+      if (db > 0.5) db -= 1;
+      if (db < -0.5) db += 1;
+      const da = pB.a - pA.a;
+      const pts = [];
+      let L = 0;
+      let prev = null;
+      for (let k = 1; k <= WV_BRIDGE_STEPS; k++) {
+        const f = k / WV_BRIDGE_STEPS;
+        const bb = pA.b + db * f;
+        const smp = sampleAt(clamp(pA.a + da * f, 0, 1), bb - Math.floor(bb));
+        if (!smp || smp.front !== wantFront) return null;
+        if (prev) L += Math.hypot(smp.x - prev.x, smp.y - prev.y);
+        prev = smp;
+        pts.push({ x: smp.x, y: smp.y, z: smp.z });
+      }
+      if (!(L < WV_LINK_MAX_MM)) return null;
+      // The last bridge point IS this ruling's first point; drop it so the two
+      // are not laid twice.
+      pts.pop();
+      return pts;
+    };
+
+    // 'onePenDown' rules a BOUSTROPHEDON: every other ruling is traversed
+    // backwards, so consecutive rulings finish and start at the same end of the
+    // form and the bridge between them is short enough to be legal. Sample
+    // count and every other property are untouched — only the direction flips.
+    const boustro = (at, i) => {
+      if (!at || TONE_ALGO !== 'onePenDown' || (i % 2) === 0) return at;
+      const rev = (tt) => at(1 - tt);
+      if (Number.isFinite(at.steps)) rev.steps = at.steps;
+      return rev;
+    };
+
     const emitFamily = (fixAxis, count, back, zoneGate) => {
       nextFam(zoneGate ? `gate${zoneGate}` : 'A');
       for (let i = 0; i < count; i++) {
         const fixVal = (i + 0.5) / count;
-        emitLine(axisLine(fixAxis, fixVal), (i + 0.5) / count, back, i, count, zoneGate,
+        emitLine(boustro(axisLine(fixAxis, fixVal), i), (i + 0.5) / count, back, i, count, zoneGate,
           fixAxis === 'b' ? { a: 0, b: 1 / count } : { a: 1 / count, b: 0 },
           fixAxis === 'b' ? { a: 1, b: 0 } : { a: 0, b: 1 });
       }
@@ -6879,7 +7939,7 @@
         // Same dark→dense ladder the axis families use. Adjacent lines are
         // span/n apart ALONG the family normal, in parameter space.
         const step = fam.span / n;
-        if (at) emitLine(at, (i + 0.5) / n, back, i, n, zoneGate,
+        if (at) emitLine(boustro(at, i), (i + 0.5) / n, back, i, n, zoneGate,
           { a: fam.na * step, b: fam.nb * step }, { a: fam.da, b: fam.db }, densityCross);
       }
     };
@@ -8100,6 +9160,60 @@
       // sphere is umbilic everywhere, so the share of samples that fell back to
       // the lighting field is the honest answer to "what did the curvature
       // field actually contribute here".
+      // ROUND 5 — WHERE THE WAVE LANDED. The amplitude range and the realised
+      // clearance are the two numbers the nested-serpentine claim stands on
+      // ("open space minimised in the darks, whitespace opened in the lights"),
+      // and `elongCapped` / `offSurface` are the two ways the claim can fail:
+      // the paper refusing the arc length, and the surface refusing the crest.
+      wave: waveStat.samples ? {
+        samples: waveStat.samples,
+        ampMin: Math.round(waveStat.ampMin * 1000) / 1000,
+        ampMax: Math.round(waveStat.ampMax * 1000) / 1000,
+        ampMean: Math.round((waveStat.ampSum / waveStat.samples) * 1000) / 1000,
+        ampMeanDark: waveStat.darkSamples
+          ? Math.round((waveStat.darkAmpSum / waveStat.darkSamples) * 1000) / 1000 : null,
+        elongMin: Math.round(waveStat.elongMin * 1000) / 1000,
+        elongMax: Math.round(waveStat.elongMax * 1000) / 1000,
+        elongMean: Math.round((waveStat.elongSum / waveStat.samples) * 1000) / 1000,
+        elongCapped: waveStat.elongCapped,
+        lambdaMin: Math.round(waveStat.lambdaMin * 1000) / 1000,
+        lambdaMax: Math.round(waveStat.lambdaMax * 1000) / 1000,
+        clearMin: Math.round(waveStat.clearMin * 1000) / 1000,
+        clearMinDark: Number.isFinite(waveStat.darkClearMin)
+          ? Math.round(waveStat.darkClearMin * 1000) / 1000 : null,
+        darkSamples: waveStat.darkSamples,
+        offSurface: waveStat.offSurface,
+        // ROUND 6 — the three numbers this round is about.
+        // (a) the clearance PERPENDICULAR to the stroke, dark and light;
+        clearMeanDark: waveStat.darkSamples
+          ? Math.round((waveStat.darkClearSum / waveStat.darkSamples) * 1000) / 1000 : null,
+        clearMinLit: Number.isFinite(waveStat.litClearMin)
+          ? Math.round(waveStat.litClearMin * 1000) / 1000 : null,
+        clearMeanLit: waveStat.litSamples
+          ? Math.round((waveStat.litClearSum / waveStat.litSamples) * 1000) / 1000 : null,
+        // (b) the amplitude that SURVIVED into the light, as a fraction of the
+        //     shadow amplitude. "Waviness throughout" IS this number, and a law
+        //     that straightens in the highlight reports it near zero.
+        ampMeanLit: waveStat.litSamples
+          ? Math.round((waveStat.litAmpSum / waveStat.litSamples) * 1000) / 1000 : null,
+        litSamples: waveStat.litSamples,
+        // The denominator is the WHOLE-FORM mean, not the shadow mean. Measured
+        // against the shadow it is a useless ratio: a spacing-tone law rules the
+        // core shadow at the plot floor, the clearance floor then cuts the
+        // excursion to near nothing there, and dividing by ~0 reports
+        // "2 084 552 388× retained". Against the form mean the number says what
+        // it should — 1.0 is a wave of the same size everywhere, above 1.0 is
+        // MORE wave in the light than on average, and near 0 is the straightened
+        // highlight this round exists to prevent.
+        ampRetained: (waveStat.litSamples && waveStat.samples && waveStat.ampSum > 1e-9)
+          ? Math.round(((waveStat.litAmpSum / waveStat.litSamples)
+            / (waveStat.ampSum / waveStat.samples)) * 1000) / 1000 : null,
+        // (c) modelled elongation against the elongation the POLYLINE delivered.
+        elongReal: waveStat.baseLen > 1e-6
+          ? Math.round((waveStat.realLen / waveStat.baseLen) * 1000) / 1000 : null,
+        floorBound: waveStat.floorBound,
+        pitchPen: wvPitchPen(),
+      } : null,
       umbilic: umbStat.n ? {
         samples: umbStat.n,
         anisotropyMean: Math.round((umbStat.sum / umbStat.n) * 1000) / 1000,
