@@ -4018,13 +4018,15 @@
       //
       // Two limits, both physical. Below a fifth of the master pitch there is no
       // room beside the ruling for anything, so the pass simply has none of
-      // itself here. And a pass may never travel more than HALF the bundle
-      // pitch: past that it would be on the far side of the white gap, i.e.
-      // inside its neighbour's bundle, which is not "immediately adjacent" to
-      // anything.
+      // itself here. And a pass may never travel far enough to land inside its
+      // NEIGHBOUR'S bundle — past that it is not "immediately adjacent" to
+      // anything. How far that is depends on which way the bundle grows: a
+      // bundle centred on its ruling owns half the pitch in each direction; a
+      // one-sided bundle ('bundleToShadow') owns the whole pitch on its own
+      // side and none on the other, which is the same room stated differently.
       if (!(Number.isFinite(pp) && pp > masterPitch * 0.2)) return null;
       const k = offMM / pp;
-      if (Math.abs(k) > adjStride() * 0.5) return null;
+      if (Math.abs(k) > adjStride() * (TONE_ALGO === 'bundleToShadow' ? 0.95 : 0.5)) return null;
       const a = p.a + finite(st.a, 0) * k;
       // `a` is the sweep along the axis and is NOT periodic: past either end the
       // pass has left the chart, so it has no sample there and simply does not
