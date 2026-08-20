@@ -4376,7 +4376,19 @@
       // ── THE WALK ────────────────────────────────────────────────────────────
       const maxN = maxLines();
       const dfMin = 1 / Math.max(8, count * 40);
-      const dfMax = 1 / Math.max(2, count / 30);
+      // THE STEP CEILING IS SIX NOMINAL SPACINGS, AND IT HAD TO COME DOWN.
+      // `perpPitch` is a DERIVATIVE — the millimetres one unit of `frac` buys AT
+      // THIS POINT — so extrapolating a whole step from it is only sound while
+      // the step is small. Where the family converges (a chart pole, a contour
+      // ring approaching the axis) the derivative collapses, `want / mmPerFrac`
+      // blows up, and the walk takes the ceiling. At the old ceiling of
+      // count/30 that was a THIRD of the parameter domain per step: measured on
+      // ellipsoid-contour, three such steps ate the far half of the form and
+      // every `contField*` law left the same 6.12 mm bare patch across the
+      // bottom of the object. Six nominal spacings is wide enough for the
+      // sparse end (6 x the master pitch is past the O6 bar) and far too narrow
+      // to swallow a form.
+      const dfMax = 6 / Math.max(6, count);
       const creep = 1 / Math.max(8, count * 3);
       const walk = (fld) => {
         const placed = [];
