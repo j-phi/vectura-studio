@@ -585,6 +585,14 @@
   //                       pitch. The ease is applied in PITCH space, so the
   //                       clearance itself has zero first and second derivative
   //                       at both ends of the ramp.
+  //                       MEASURED, sphere-hatch: R² 0.237, L* span 16.6,
+  //                       darkest 72.6, off the line 21.8 %, median adjacent
+  //                       spacing step 1.01x (trimmed max 1.26x), Spearman
+  //                       rho(gap, radiance) 0.737, 86.4 % of transitions with
+  //                       the light, 0 free ends, 0 marks outside. Buys the best
+  //                       R² of the first three laws by spending gap range:
+  //                       0.62-4.23 mm against contFieldPitch's 0.63-2.03, at
+  //                       the cost of a 3.1 mm bare patch in the highlight.
   //   'contFieldSigmoid'  Sterzik, Vollmer & Vollmer (CGF 2024) fitted a
   //                       perceptual response to hatching specifically:
   //                       f(x) = 1 / (1 + (1/a − 1)(1/x − 1)^b), a = 0.4753,
