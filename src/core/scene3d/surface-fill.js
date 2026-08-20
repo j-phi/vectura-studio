@@ -1250,7 +1250,10 @@
       // transverse reserve that replaces the (no-op) parallel inversion.
       equilibrated: 1, signedWidth: 1, wideShadowPen: 1, transverseReserve: 1,
     };
-    const isWeightLaw = () => WEIGHT_LAWS[TONE_ALGO] === 1;
+    // ROUND 5 — the ten lozenge laws are whiteBand's chassis with a dissolution
+    // below the hairline floor, so every one of them IS a weight law (see
+    // `LOZ_LAWS`, declared below with the rest of the family's arithmetic).
+    const isWeightLaw = () => WEIGHT_LAWS[TONE_ALGO] === 1 || isLoz();
     // `weightPlusSpacingTuned` is `weightPlusSpacing` at a different kappa and
     // nothing else, so every site that names the one names the other.
     const isWPS = () => TONE_ALGO === 'weightPlusSpacing' || TONE_ALGO === 'weightPlusSpacingTuned';
@@ -1266,7 +1269,8 @@
       || TONE_ALGO === 'screenAngles' || TONE_ALGO === 'taperedEnds'
       || TONE_ALGO === 'whiteLineInverse' || TONE_ALGO === 'multiScale'
       || TONE_ALGO === 'equilibrated' || TONE_ALGO === 'signedWidth'
-      || TONE_ALGO === 'wideShadowPen' || TONE_ALGO === 'transverseReserve';
+      || TONE_ALGO === 'wideShadowPen' || TONE_ALGO === 'transverseReserve'
+      || isLoz();
     // WHERE THE WEIGHT LAWS ACTUALLY LANDED — the counterpart to `floorStat`.
     // The weight range is bounded at both ends by physics (you cannot draw
     // thinner than the pen, and past W_FLOOD_AREA the ink is a blob), so "did
@@ -1347,7 +1351,181 @@
       const c = (WLI_DARK_AREA * masterPitch) / (W_MAX * inkWidth());
       return clamp(finite(c, env.covLight), env.covLight, env.covDark);
     };
+    // ── ROUND 5: THE LOZENGE FAMILY — TEN WAYS TO SPEND A STIPPLE ─────────────
+    //
+    // WHY THE IDEA IS RIGHT AND THE FIRST EXECUTION WAS WRONG. Sterzik et al.
+    // (TVCG 2024, Fig. 8b) measure single-direction hatching, STIPPLING and
+    // triangles onto essentially ONE 1-D perceptual manifold (aligned by
+    // Kabsch), while crosshatch sits in a separate cluster. So stipple is the
+    // perceptually CONTINUOUS continuation of a hatch tone ramp, and a second
+    // family is not. `lozengeStipple` (Round 3) spent the LADDER's residual —
+    // it stippled the rulings the ladder had thrown away — and measured R²
+    // 0.051, L* span 10.8, darkest 75.3. The residual of a discrete drop is a
+    // coarse, lumpy quantity and the flicks inherited its lumpiness.
+    //
+    // THE CHASSIS IS whiteBand's, NOT THE LADDER'S. Rössl & Kobbelt's reserved
+    // width never drops a ruling, so there is no residual to chase: the grid is
+    // even everywhere and tone is the black core's share of it. That chassis has
+    // exactly one dead end, and it is arithmetic, not aesthetic —
+    //
+    //     a ruling cannot get lighter than ONE PEN WIDTH at the reserved pitch.
+    //
+    // At the shipped 0.3 mm pen, uncapped, the reserved pitch is
+    // masterPitch/wbFlatCov ≈ 2.37 mm and inkWidth is 0.336 mm, so the lightest
+    // ink area a solid ruling can lay is 0.336/2.37 = 0.142 — L* 94. whiteBand's
+    // own light clamp (WB_CMAX = 0.85 ⇒ area 0.15) sits within a whisker of it,
+    // which is precisely WHY whiteBand's highlight flat-lines and why its
+    // highlight falloff measured 6.07 L*/mm: the pen runs out of thinness before
+    // the light runs out of brightness, and the drawing stops tracking.
+    //
+    // BELOW THE HAIRLINE FLOOR THERE IS EXACTLY ONE PLOTTER-LEGAL MOVE: draw
+    // less of the ruling. Zander et al. (2004, §4.2-4.3): "real hatched drawings
+    // use monochrome lines with two properties: VARIABLE WIDTH and the
+    // possibility to DISSOLVE SOLID LINES INTO DOTS." So the whole family shares
+    // one transfer and one handoff, and differs ONLY in how the dissolution is
+    // placed and shaped:
+    //
+    //     aAsk(I)  = L*-linear from whiteBand's dark anchor to LZ_ALIGHT
+    //     aSolid   = the area one W_MIN ruling lays here  (the hairline floor)
+    //     weight   = aAsk / aSolid  where that is ≥ 1     (whiteBand, unchanged)
+    //     duty     = aAsk / aSolid  where that is < 1     (the dissolution)
+    //
+    // The handoff is C0 BY CONSTRUCTION — duty and weight are the same ratio,
+    // read on either side of 1 — so there is no seam to tune and no threshold to
+    // pick. That is the "continuous ramp along one perceptual manifold" the
+    // Sterzik result licenses, stated as arithmetic.
+    //
+    // AND EVERY MARK LIES ON A RULING. A dissolved mark is a SUB-RUN of a ruling
+    // the emitter already proved front-facing, clipped by the same silhouette
+    // bisection, so no mark can fall outside the silhouette by construction.
+    // ('lozCross' is the one law that leaves the ruling, and it re-verifies the
+    // displaced point against `sampleAt` before laying it — see there.)
+    //
+    // THE FREE-END NUMBER IS NOT REDEFINED. A flick has two ends in open
+    // surface; that is what a flick IS. The harness keeps the incumbent metric
+    // unchanged AND reports a second, separate number for whole-ruling ends, so
+    // "a deliberate isolated mark" and "a ruling that stops mid-surface" are
+    // told apart without either being hidden.
+    //
+    //   'lozDuty'      The family's minimal form. Fixed mark length, period
+    //                  modulated by duty (a Sturmian phase accumulator, golden
+    //                  phase per ruling). Zander B10, nothing added.
+    //   'lozSwell'     The engraver's own mark. Longer flicks whose weight
+    //                  follows an area-preserving raised sine — a TRUE lozenge:
+    //                  an elongated diamond aligned to the ruling, tapering to
+    //                  the pen at both tips. Callot's echoppe / Goltzius.
+    //   'lozBlue'      lozDuty with the mark's phase JITTERED inside its own
+    //                  period, keyed on ruling AND period index. Duty — and so
+    //                  tone — is untouched; only the lattice is destroyed.
+    //                  Deussen et al. "Floating Points" blue-noise property, at
+    //                  1-D cost.
+    //   'lozErrDiff'   Density from a REAL error-diffused target rather than
+    //                  from a phase. A greedy accumulator carries the ink debt
+    //                  along the ruling with exact residual carry, and pushes a
+    //                  share of the residual sideways into a screen-space grid
+    //                  the NEXT ruling consumes — Floyd-Steinberg's two-tap, on
+    //                  the surface. Aperiodic by construction.
+    //   'lozGrow'      Dissolution in reverse, and the only law here with NO
+    //                  width channel at all: constant pen, grid AT the plot
+    //                  floor, fixed period, and the mark GROWS from a dot to a
+    //                  dash to a continuous ruling as tone deepens. Its dark end
+    //                  is therefore capped at one family's saturation
+    //                  (inkWidth/floorPitch = 0.509, L* ≈ 76) and that is
+    //                  reported, not hidden — it is the physical fact the brief
+    //                  states, drawn.
+    //   'lozHighlight' Hatch carries the darks; stipple is the FADE-OUT and
+    //                  nothing else. whiteBand verbatim until its own weight
+    //                  reaches W_MIN, then a FIXED lattice whose mark SHRINKS
+    //                  (dot size carries tone — Agnew's blade-pressure stipple)
+    //                  instead of lozDuty's fixed mark at varying density. Same
+    //                  transfer, same handoff, opposite geometry: the matched
+    //                  pair that isolates "density vs size" in the highlight.
+    //   'lozCapacity'  Balzer, Schlömer & Deussen (SIGGRAPH 2009): each site
+    //                  owns an EQUAL-CAPACITY region. In 1-D along a ruling that
+    //                  is exactly solvable — mark centres at equal cumulative
+    //                  ink debt, each mark CENTRED on its interval rather than
+    //                  started at its edge, so the half-mark placement bias
+    //                  lozDuty carries is removed.
+    //   'lozAniso'     lozCapacity plus ANISOTROPIC blue noise: the exclusion
+    //                  disc is an ellipse elongated ALONG the ruling, so marks
+    //                  may crowd along a ruling but are pushed apart ACROSS
+    //                  rulings. Aimed squarely at scratchboard's named defect —
+    //                  "alternating directions to avoid distracting stripes"
+    //                  (Agnew) — i.e. dots lining up into phantom rows.
+    //   'lozCross'     Dot-and-lozenge proper (Goltzius; RISD "The Brilliant
+    //                  Line"). The flick is laid in the LOZENGE CENTRE — half a
+    //                  pitch off the ruling, in the residual between rulings —
+    //                  not on the ruling itself. The displaced point is
+    //                  re-sampled through the chart and dropped unless it is
+    //                  front-facing, so the "no mark outside the silhouette"
+    //                  rule survives the one law that leaves the line.
+    //   'lozBudget'    Pen-down cost, treated as the first-class constraint it
+    //                  is on a plotter. lozErrDiff's placement with a QUANTUM
+    //                  three times as long, and abutting quanta merged into one
+    //                  stroke — roughly a third of the pen-downs. The tone cost
+    //                  of that saving is the measurement.
+    const LOZ_LAWS = {
+      lozDuty: 1, lozSwell: 1, lozBlue: 1, lozErrDiff: 1, lozGrow: 1,
+      lozHighlight: 1, lozCapacity: 1, lozAniso: 1, lozCross: 1, lozBudget: 1,
+    };
+    const isLoz = () => LOZ_LAWS[TONE_ALGO] === 1;
+    // The light anchor the dissolution runs down to. Not zero: an ink area of
+    // 0.012 over a 3 mm perceptual window is about one 1 mm flick per 25 mm of
+    // ruling, which is the sparsest mark a viewer still reads as tone rather
+    // than as dirt. Below it the drawing should be bare paper, and is.
+    const LZ_ALIGHT = 0.012;
+    const LZ_MARK_MM = () => 3 * inkWidth();     // ~1.01 mm — a flick, not a dot
+    const LZ_SWELL_MM = () => 8 * inkWidth();    // ~2.69 mm — room for a swell
+    const LZ_PERIOD_MM = () => 7 * inkWidth();   // ~2.35 mm — the fixed lattice
+    const LZ_BUDGET_MM = () => 9 * inkWidth();   // ~3.02 mm — the coarse quantum
+    const LZ_SEP_MM = () => 5 * inkWidth();      // lozAniso's across-ruling disc
+    const LZ_ED_BETA = 0.4;                      // share of the residual pushed sideways
+    // A mark is a run bounded by two deliberate cuts, so `MIN_MARK_MM` (2 × pen)
+    // is its own floor: shorter than that and the plotter draws a pen-down dot,
+    // not a mark. Where the duty asks for less, the lattice cell is left EMPTY
+    // and the debt is carried — which is how the ramp reaches bare paper.
+    const lozAsk = (I) => areaForTone(I, 1 - WB_CMIN, LZ_ALIGHT);
+    const lozSolid = (localPitch, cov) => {
+      const p = (Number.isFinite(localPitch) && localPitch > 1e-6) ? localPitch : masterPitch;
+      return clamp((clamp(finite(cov, 1), 1e-6, 1) * inkWidth()) / Math.max(1e-6, p), 1e-6, 0.98);
+    };
+    // whiteBand's own ask, kept verbatim so 'lozHighlight' is whiteBand until
+    // the pen physically runs out of thinness.
+    const wbAskAt = (I) => 1 - clamp(finite(I, 0), WB_CMIN, WB_CMAX);
+    const lozDutyAt = (I, localPitch, cov) => {
+      const solid = lozSolid(localPitch, cov);
+      if (TONE_ALGO === 'lozHighlight' && wbAskAt(I) >= solid) return 1;
+      return clamp(lozAsk(I) / Math.max(1e-9, solid), 0, 1);
+    };
+    const lozWeightArea = (I, localPitch, cov) => {
+      const solid = lozSolid(localPitch, cov);
+      if (TONE_ALGO === 'lozGrow') return solid;            // constant pen, always
+      if (TONE_ALGO === 'lozHighlight') return Math.max(solid, wbAskAt(I));
+      return Math.max(solid, lozAsk(I));
+    };
+    // WHERE THE DISSOLUTION LANDED. Counted for the same reason `floorStat` and
+    // `weightStat` are: a stipple's cost is pen-downs and its risk is marks that
+    // fall below the legal minimum, and both are measurements.
+    const lozStat = {
+      samples: 0, dissolved: 0, marks: 0, dutySum: 0, dutyMin: 1,
+      tooShort: 0, offSurface: 0,
+    };
+    // THE TWO PIECES OF STATE THAT CROSS A RULING BOUNDARY, and the only ones.
+    //   `lozED`    'lozErrDiff' / 'lozBudget' — the share of each ruling's ink
+    //              residual pushed sideways for the NEXT ruling to consume.
+    //              Keyed on a screen cell so the carry lands where the two
+    //              rulings actually neighbour each other, not at an index.
+    //   `lozSites` 'lozAniso' — the marks already laid, for the anisotropic
+    //              exclusion test. Same cell key, so the lookup is O(1).
+    const LOZ_CELL = 1.0;                      // mm, both grids
+    const lozED = new Map();
+    const lozSites = new Map();
+    const lozKey = (x, y) => `${Math.round(x / LOZ_CELL)},${Math.round(y / LOZ_CELL)}`;
     const weightBaseCov = () => {
+      // 'lozGrow' has no width channel, so its grid must sit AT the plot floor —
+      // that is the only place a constant pen can reach a usable dark at all.
+      if (TONE_ALGO === 'lozGrow') return 1;
+      if (isLoz()) return wbFlatCov();
       if (TONE_ALGO === 'weightDeepDark' || TONE_ALGO === 'weightMultiPass') return deepFlatCov();
       if (TONE_ALGO === 'whiteLineInverse') return wliFlatCov();
       if (TONE_ALGO === 'transverseReserve') return trFlatCov();
@@ -1933,6 +2111,13 @@
         // neither is asked to carry the other's share.
         return weightForArea(xfLayer === 0 ? xhAreaA(I) : xhAreaB(I), localPitch,
           weightCovEff(I, localPitch));
+      }
+      // ROUND 5 — the lozenge family. The WIDTH half of the split only; the
+      // dissolution below the hairline floor is the emit loop's gate, because a
+      // width cannot express "draw less of the line".
+      if (isLoz()) {
+        const cv = weightCovEff(I, localPitch);
+        return weightForArea(lozWeightArea(I, localPitch, cv), localPitch, cv);
       }
       // 'whiteBand' — the black FRACTION of the reserved width IS the ink area,
       // because the reserved width is the pitch (nothing is dropped). So the
@@ -2726,6 +2911,12 @@
       let wPts = [];
       let ttPts = [];
       let wPend = 1;
+      // ROUND 5. Did this run come out of a DISSOLVED stretch of ruling — i.e.
+      // is it a deliberate flick rather than a piece of a continuous line? The
+      // free-end metric is not redefined by this; the tag simply lets the two
+      // populations be counted apart, which is the honest way to report a mark
+      // that is SUPPOSED to have two ends in open surface.
+      let lozAny = false;
       const mine = [];
       // Is this run WHOLLY inside the centre light? `null` until the first
       // sample lands; latches false as soon as a non-L sample is added. Read
@@ -2763,6 +2954,7 @@
             ? splitByWeight(run, wPts, ttPts, fam)
             : [run];
           pieces.forEach((pc) => {
+            if (lozAny) pc.loz = true;
             mine.push(pc);
             pushRun(pc, back, lineIndex);
             if (TONE_ALGO === 'weightMultiPass') {
@@ -2770,12 +2962,13 @@
             }
           });
         }
-        run = []; runLen = 0; softStart = false; runLit = null;
+        run = []; runLen = 0; softStart = false; runLit = null; lozAny = false;
         runTT0 = null; runTT1 = null; wSum = 0; wCnt = 0;
         wPts = []; ttPts = [];
       };
       return {
         emitted: () => mine,
+        noteLoz: () => { lozAny = true; },
         flush: () => { emitRun(false); gapPts = []; gapLen = 0; sawSoftDrop = false; },
         softDrop: (pt) => {
           sawSoftDrop = true;
@@ -3048,7 +3241,11 @@
         || TONE_ALGO === 'forcedContrast' || TONE_ALGO === 'deepFillTSP'
         // 'taperedEnds' needs the distance to the run's own end, in mm, to taper
         // the width into it — the same span segmentation the other three use.
-        || TONE_ALGO === 'taperedEnds');
+        || TONE_ALGO === 'taperedEnds'
+        // ROUND 5 — every lozenge law places its marks by ARC LENGTH along the
+        // ruling (a mark is a length, a period is a length, a capacity interval
+        // is a length), so all ten need the same two arrays.
+        || isLoz());
       let arcMM = null;
       let endMM = null;
       if (needsArc) {
@@ -3590,6 +3787,275 @@
         return { x: smp.x + (-dy / L) * amp * tri, y: smp.y + (dx / L) * amp * tri, z: smp.z };
       };
 
+      // ── ROUND 5 — WHERE THE RULING DISSOLVES, AND INTO WHAT ─────────────────
+      //
+      // One pass over the ruling's own spans, before a single point is laid. It
+      // produces three parallel arrays and nothing else:
+      //
+      //   lozOff[s]   this sample is in a GAP between marks. The emit loop cuts
+      //               HARD there — never `softDrop` — so the bridge cannot join
+      //               two flicks back into a dotted line, which would be a
+      //               dashed ruling and not a stipple.
+      //   lozWMul[s]  'lozSwell' only: the within-mark swell profile, an
+      //               area-preserving raised sine that makes the flick an
+      //               elongated diamond instead of a rectangle.
+      //   lozDisp[s]  'lozCross' only: the half-pitch displacement into the
+      //               lozenge centre, already re-verified against the chart.
+      //
+      // A span is a maximal run of on-surface samples — the same segmentation
+      // `arcMM` uses and `spanDrops` takes its verdict over — so a mark can
+      // never straddle the silhouette or a pole.
+      let lozOff = null;
+      let lozWMul = null;
+      let lozDisp = null;
+      let lozIsMark = null;
+      if (toneOn && isLoz() && arcMM) {
+        lozOff = new Array(nSteps + 1).fill(false);
+        lozWMul = new Array(nSteps + 1).fill(1);
+        lozIsMark = new Array(nSteps + 1).fill(false);
+        if (TONE_ALGO === 'lozCross') lozDisp = new Array(nSteps + 1).fill(null);
+        const duty = new Array(nSteps + 1).fill(1);
+        for (let s = 0; s <= nSteps; s++) {
+          const smp = smps[s];
+          if (!smp) continue;
+          const I = clamp(finite(smp.I, 0), 0, 1);
+          const lp = pitchAtStep(smp, s);
+          duty[s] = clamp(lozDutyAt(I, lp, weightCovEff(I, lp)), 0, 1);
+          lozStat.samples += 1;
+          lozStat.dutySum += duty[s];
+          if (duty[s] < lozStat.dutyMin) lozStat.dutyMin = duty[s];
+          if (duty[s] < 0.999) lozStat.dissolved += 1;
+        }
+        const phi0 = ((Number(lineIndex) || 0) * GOLDEN_STEP) % 1;
+        const MARK = (TONE_ALGO === 'lozSwell') ? LZ_SWELL_MM()
+          : (TONE_ALGO === 'lozBudget') ? LZ_BUDGET_MM() : LZ_MARK_MM();
+        const PERIOD = LZ_PERIOD_MM();
+        // The marks this span decided on, as [arcStart, arcEnd] pairs. Written
+        // by whichever placement law is in force, then rasterised onto the
+        // sample grid ONCE, at the bottom — so every law shares the same
+        // minimum-length rule, the same swell profile and the same statistics.
+        const ranges = [];
+        let s0 = 0;
+        while (s0 <= nSteps) {
+          if (!smps[s0]) { s0 += 1; continue; }
+          let s1 = s0;
+          while (s1 + 1 <= nSteps && smps[s1 + 1]) s1 += 1;
+          const spanLen = arcMM[s1];
+          const arcOf = (s) => arcMM[s];
+          // Sample index at a given arc position, by linear scan (the spans are
+          // a few hundred samples; a bisection would not pay for itself).
+          const atArc = (a) => {
+            let k = s0;
+            while (k < s1 && arcMM[k + 1] < a) k += 1;
+            return k;
+          };
+          const dutyAtArc = (a) => duty[atArc(a)];
+          if (TONE_ALGO === 'lozErrDiff' || TONE_ALGO === 'lozBudget') {
+            // ── ERROR DIFFUSION, WITH A REAL TWO-TAP CARRY ────────────────────
+            // The debt is INK LENGTH owed: a stretch of ruling at duty d owes
+            // d·dl of black. A mark of length MARK is laid the moment the debt
+            // reaches MARK, and exactly MARK is subtracted — so the ink laid
+            // tracks the ink owed with a bounded error, which is what an error
+            // diffusion is and what a phase accumulator only approximates.
+            // A share LZ_ED_BETA of the standing residual is pushed into the
+            // screen grid at that point; the neighbouring ruling picks it up and
+            // clears it, so the total ink is conserved and the pattern cannot
+            // lock to the raster.
+            let owed = 0;
+            for (let k = s0; k <= s1; k++) {
+              const dl = k > s0 ? Math.hypot(smps[k].x - smps[k - 1].x, smps[k].y - smps[k - 1].y) : 0;
+              owed += duty[k] * dl;
+              const ck = lozKey(smps[k].x, smps[k].y);
+              const carry = lozED.get(ck);
+              if (carry) { owed += carry; lozED.delete(ck); }
+              if (owed >= MARK) {
+                const a0 = arcOf(k);
+                const a1 = Math.min(spanLen, a0 + MARK);
+                // ABUTTING QUANTA MERGE INTO ONE STROKE. 'lozBudget' leans on
+                // this deliberately — it is where the pen-down saving comes
+                // from — but it is correct for both laws: two marks that touch
+                // are one mark on the paper and must be one pen-down.
+                const last = ranges[ranges.length - 1];
+                if (last && a0 <= last[1] + 1e-6) last[1] = Math.max(last[1], a1);
+                else ranges.push([a0, a1]);
+                owed -= MARK;
+                if (owed > 0) {
+                  const push = owed * LZ_ED_BETA;
+                  lozED.set(ck, finite(lozED.get(ck), 0) + push);
+                  owed -= push;
+                }
+              }
+            }
+            if (owed > 1e-6) {
+              const ce = lozKey(smps[s1].x, smps[s1].y);
+              lozED.set(ce, finite(lozED.get(ce), 0) + owed * LZ_ED_BETA);
+            }
+          } else if (TONE_ALGO === 'lozCapacity' || TONE_ALGO === 'lozAniso') {
+            // ── EQUAL CAPACITY, CENTRED (Balzer et al. 2009) ──────────────────
+            // Every mark owns an interval of EQUAL cumulative ink debt, and sits
+            // at that interval's centre rather than at its leading edge. In 1-D
+            // the capacity constraint has a closed form — walk the cumulative
+            // debt and cut it at equal increments — so this is the exact
+            // distribution, not a relaxation toward it.
+            const centres = [];
+            let cum = 0;
+            let next = (phi0 + 0.5) * MARK;   // the FIRST interval's centre
+            for (let k = s0; k <= s1; k++) {
+              const dl = k > s0 ? Math.hypot(smps[k].x - smps[k - 1].x, smps[k].y - smps[k - 1].y) : 0;
+              const prev = cum;
+              cum += duty[k] * dl;
+              while (cum >= next && next > prev) {
+                // Linear interpolation inside the sample step: the capacity
+                // centroid is a position on the ruling, not a sample index.
+                const f = (next - prev) / Math.max(1e-9, cum - prev);
+                centres.push(arcOf(k - 1 >= s0 ? k - 1 : k) + f * dl);
+                next += MARK;
+              }
+            }
+            centres.forEach((c) => {
+              let ctr = c;
+              if (TONE_ALGO === 'lozAniso') {
+                // ── ANISOTROPIC BLUE NOISE ──────────────────────────────────
+                // The exclusion region is an ELLIPSE elongated along the ruling:
+                // a mark may sit close to its own neighbours (that is what a
+                // dissolved ruling IS) but must not line up with a mark on an
+                // adjacent ruling, which is what reads as a phantom row. The
+                // escape is a slide ALONG the ruling, inside the mark's own
+                // capacity interval, so the equal-capacity property survives the
+                // rejection — this is CCVT's swap step, reduced to the one
+                // degree of freedom the geometry actually leaves free.
+                const R = LZ_SEP_MM();
+                const blocked = (a) => {
+                  const k = atArc(a);
+                  const p = smps[k];
+                  const q = smps[Math.min(s1, k + 1)] || p;
+                  const dx = q.x - p.x; const dy = q.y - p.y;
+                  const L = Math.hypot(dx, dy) || 1;
+                  const gx = Math.round(p.x / LOZ_CELL); const gy = Math.round(p.y / LOZ_CELL);
+                  for (let j = -2; j <= 2; j++) {
+                    for (let i = -2; i <= 2; i++) {
+                      const arr = lozSites.get(`${gx + i},${gy + j}`);
+                      if (!arr) continue;
+                      for (let n = 0; n < arr.length; n++) {
+                        const ex = arr[n].x - p.x; const ey = arr[n].y - p.y;
+                        const along = (ex * dx + ey * dy) / L;
+                        const perp = (ex * -dy + ey * dx) / L;
+                        // Ellipse with semi-axes R/3 along and R across: only a
+                        // neighbour that is ACROSS the ruling can block.
+                        if ((along * along) / ((R / 3) * (R / 3)) + (perp * perp) / (R * R) < 1) return true;
+                      }
+                    }
+                  }
+                  return false;
+                };
+                const half = MARK / 2;
+                for (let t = 0; t < 6 && blocked(ctr); t++) {
+                  ctr = c + ((t % 2 ? 1 : -1) * Math.ceil((t + 1) / 2) * half) / 3;
+                  if (ctr < 0 || ctr > spanLen) { ctr = c; break; }
+                }
+                const kk = atArc(ctr);
+                const key = lozKey(smps[kk].x, smps[kk].y);
+                const arr = lozSites.get(key) || [];
+                arr.push({ x: smps[kk].x, y: smps[kk].y });
+                lozSites.set(key, arr);
+              }
+              const a0 = Math.max(0, ctr - MARK / 2);
+              const a1 = Math.min(spanLen, ctr + MARK / 2);
+              const last = ranges[ranges.length - 1];
+              if (last && a0 <= last[1] + 1e-6) last[1] = Math.max(last[1], a1);
+              else ranges.push([a0, a1]);
+            });
+          } else {
+            // ── THE PHASE ACCUMULATOR (Sturmian) ──────────────────────────────
+            // `u` counts MARK PERIODS, so the mark is the first `duty` fraction
+            // of each period and its length is duty × period. Two geometries
+            // fall out of the same accumulator, and they are the matched pair
+            // this round is really asking about:
+            //   fixed MARK, period = MARK/duty   — density carries tone
+            //   fixed PERIOD, mark = duty·PERIOD — mark SIZE carries tone
+            const fixedPeriod = (TONE_ALGO === 'lozGrow' || TONE_ALGO === 'lozHighlight');
+            let u = 0;
+            let open = null;
+            for (let k = s0; k <= s1; k++) {
+              const dl = k > s0 ? Math.hypot(smps[k].x - smps[k - 1].x, smps[k].y - smps[k - 1].y) : 0;
+              const d = duty[k];
+              u += fixedPeriod ? (dl / PERIOD) : ((dl * d) / Math.max(1e-6, MARK));
+              const f = ((u + phi0) % 1 + 1) % 1;
+              let on;
+              if (d >= 0.999) on = true;
+              else if (TONE_ALGO === 'lozBlue') {
+                // The mark keeps its DUTY — and therefore its tone — but its
+                // phase inside the period is jittered, keyed on the ruling AND
+                // on the period index, so no two neighbouring rulings put their
+                // flicks at the same place and the lattice never forms.
+                const per = Math.floor(u + phi0);
+                const j = sfHash(lineIndex * 131 + 17, per) * (1 - d);
+                on = f >= j && f < j + d;
+              } else on = f < d;
+              if (on && open === null) open = arcOf(k);
+              else if (!on && open !== null) { ranges.push([open, arcOf(k)]); open = null; }
+            }
+            if (open !== null) ranges.push([open, spanLen]);
+          }
+          s0 = s1 + 1;
+        }
+        // ── RASTERISE THE MARKS ONTO THE SAMPLE GRID ─────────────────────────
+        // Everything below is shared by all ten laws. A mark shorter than
+        // `MIN_MARK_MM` is DROPPED, not shortened: a sub-two-pen mark is a
+        // pen-down dot, and dropping it is exactly how the ramp reaches bare
+        // paper at the light end instead of degenerating into speckle.
+        const keep = new Array(nSteps + 1).fill(false);
+        ranges.forEach((r) => {
+          if (r[1] - r[0] < MIN_MARK_MM) { lozStat.tooShort += 1; return; }
+          lozStat.marks += 1;
+          for (let s = 0; s <= nSteps; s++) {
+            if (!smps[s]) continue;
+            if (arcMM[s] >= r[0] - 1e-9 && arcMM[s] <= r[1] + 1e-9) {
+              keep[s] = true;
+              if (TONE_ALGO === 'lozSwell') {
+                // THE ENGRAVER'S LOZENGE. An area-preserving raised sine —
+                // mean(π/2 · sin πp) over [0,1] is exactly 1 — so the flick is
+                // an elongated diamond tapering to the pen at both tips and the
+                // TONE is untouched by the shaping. `splitByWeight` cuts it into
+                // abutting pieces at W_LEVEL, which is why LZ_SWELL_MM is long
+                // enough to hold four of them.
+                const p = clamp((arcMM[s] - r[0]) / Math.max(1e-6, r[1] - r[0]), 0, 1);
+                lozWMul[s] = (Math.PI / 2) * Math.sin(Math.PI * p);
+              }
+            }
+          }
+        });
+        for (let s = 0; s <= nSteps; s++) {
+          if (!smps[s]) continue;
+          if (duty[s] >= 0.999) { keep[s] = true; lozWMul[s] = 1; }
+          else lozIsMark[s] = true;
+          lozOff[s] = !keep[s];
+        }
+        // ── 'lozCross' — THE FLICK GOES IN THE LOZENGE, NOT ON THE LINE ───────
+        // Half a pitch off the ruling, in the residual between rulings, which is
+        // where the engraver actually put it. The offset is taken in PARAMETER
+        // space (the family's own neighbour step), then pushed back through
+        // `sampleAt`: a displaced point is laid ONLY if the chart says it is
+        // front-facing there. That is what keeps the one law that leaves the
+        // ruling from putting a mark outside the silhouette — and the rejects
+        // are counted, not silently dropped.
+        if (lozDisp) {
+          for (let s = 0; s <= nSteps; s++) {
+            if (!smps[s] || lozOff[s] || duty[s] >= 0.999) continue;
+            const tt2 = s / nSteps;
+            const st = typeof pitchStep === 'function' ? pitchStep(tt2) : pitchStep;
+            if (!st) continue;
+            const pr = paramAt(tt2);
+            const a2 = pr.a + st.a * 0.5;
+            const b2 = pr.b + st.b * 0.5;
+            if (a2 < 0 || a2 > 1 || b2 < 0 || b2 > 1) { lozStat.offSurface += 1; lozOff[s] = true; continue; }
+            const alt = sampleAt(a2, b2);
+            if (!alt || alt.front !== wantFront) { lozStat.offSurface += 1; lozOff[s] = true; continue; }
+            lozDisp[s] = { x: alt.x, y: alt.y, z: alt.z };
+          }
+        }
+      }
+
       for (let s = 0; s <= nSteps; s++) {
         const tt = s / nSteps;
         const smp = smps[s];
@@ -3598,6 +4064,16 @@
         // A deliberate trim (see `hardCut`). Cuts hard, exactly like the duty
         // break, so it is never bridged back into one stroke.
         if (hardCut && hardCut[s]) { flush(); flushHL(); continue; }
+        // ROUND 5 — the gap between two lozenges. A HARD cut, exactly like the
+        // duty break: a flick must be bounded at both ends or the bridge would
+        // stitch a row of them back into one dotted ruling, which is a dashed
+        // line and not a stipple.
+        if (lozOff && lozOff[s]) { flush(); flushHL(); continue; }
+        // Tag the run as a MARK if the ruling was dissolving where it was laid.
+        // This is what lets the harness measure a deliberate isolated flick
+        // separately from a ruling that stopped in open surface, WITHOUT
+        // redefining the free-end metric for either of them.
+        if (lozIsMark && lozIsMark[s]) sink.noteLoz();
         if (toneOn) {
           const shade = clamp(1 - smp.I, 0, 1);
           // I8 — LIGHT-DRIVEN glint: the per-sample specular term overrides the
@@ -3719,11 +4195,15 @@
         if (s > 0 && !onSurf[s - 1]) { const e = edgeAt(s, s - 1); if (e) addPt(e, sampleZone, tt); }
         if (toneOn && TONE_ALGO === 'weightModulated') sink.noteW(weightAt(smp.I));
         else if (toneOn && isWeightLaw()) {
-          sink.noteW(weightAtSample(smp, pitchAtStep(smp, s), gradIs ? gradIs[s] : 0,
-            (thetas || endMM) ? { theta: thetas ? thetas[s] : null, endMM: endMM ? endMM[s] : null } : null));
+          const wRaw = weightAtSample(smp, pitchAtStep(smp, s), gradIs ? gradIs[s] : 0,
+            (thetas || endMM) ? { theta: thetas ? thetas[s] : null, endMM: endMM ? endMM[s] : null } : null);
+          // 'lozSwell' shapes the flick; the profile is area-preserving, so this
+          // multiply moves ink WITHIN the mark and never changes its total.
+          sink.noteW(lozWMul ? clamp(wRaw * lozWMul[s], W_MIN, W_MAX) : wRaw);
         }
         if (entryPt && entryPt[s]) addPt(entryPt[s], sampleZone, tt);
-        addPt((toneOn && TONE_ALGO === 'deepFillTSP' && tspAt(smp, s))
+        addPt((lozDisp && lozDisp[s])
+          || (toneOn && TONE_ALGO === 'deepFillTSP' && tspAt(smp, s))
           || { x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
         if (s < nSteps && !onSurf[s + 1]) { const e = edgeAt(s, s + 1); if (e) addPt(e, sampleZone, tt); }
       }
@@ -4940,6 +5420,22 @@
         areaMin: Math.round(weightStat.aMin * 1000) / 1000,
         areaMax: Math.round(weightStat.aMax * 1000) / 1000,
         baseCov: Math.round(weightBaseCov() * 1000) / 1000,
+      } : null,
+      // ROUND 5 — WHERE THE DISSOLUTION LANDED, AND WHAT IT COST. A stipple's
+      // price on a plotter is pen-downs and its risk is marks below the legal
+      // minimum, so both are counted rather than asserted. `offSurface` is
+      // 'lozCross' only: displaced flicks the chart refused, which is the count
+      // that has to stay equal to the number of marks NOT laid outside the
+      // silhouette.
+      loz: lozStat.samples ? {
+        samples: lozStat.samples,
+        dissolved: lozStat.dissolved,
+        dissolvedFrac: Math.round((lozStat.dissolved / lozStat.samples) * 1000) / 1000,
+        marks: lozStat.marks,
+        tooShort: lozStat.tooShort,
+        offSurface: lozStat.offSurface,
+        dutyMean: Math.round((lozStat.dutySum / lozStat.samples) * 1000) / 1000,
+        dutyMin: Math.round(lozStat.dutyMin * 1000) / 1000,
       } : null,
       // 'curvatureField' only — HOW UMBILIC THE OBJECT TURNED OUT TO BE. The
       // principal-direction field does not exist at an umbilic point, and a
