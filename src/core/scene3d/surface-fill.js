@@ -615,6 +615,13 @@
   //                       gain → low-pass with an HVS kernel → compare with the
   //                       target luminance → correct the local gap → iterate.
   //                       Three rounds, correction quantised to 16 levels.
+  //                       MEASURED, sphere-hatch: R² 0.104, span 13.8, darkest
+  //                       72.2, off the line 26.2 %, median step 1.02x, rho
+  //                       0.897, 90.0 % monotone. The LOCAL correction moves the
+  //                       ordering (rho 0.896 → 0.897, mono 86.7 → 90.0) and does
+  //                       NOT move the ramp: R² 0.100 → 0.104 is noise. Its cost
+  //                       is a coarser worst step (trimmed 1.18x → 1.52x), which
+  //                       is the 16-level table showing through.
   //   'contFieldAniso'    Zander, Isenberg, Schlechtweg & Strothotte (CGF 2004)
   //                       measure clearance ACROSS THE FLOW only. A gap chosen
   //                       from the seeding offset is right in the middle of a
