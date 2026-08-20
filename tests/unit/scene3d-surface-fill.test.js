@@ -1,4 +1,14 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { readHlStageSync } = require('../helpers/read-hl-stage-sync');
+
+// DORMANT UNDER HL_STAGE STAGE 1 (surface-fill.js:276, toneZones / specular:
+// false). These two assertions are correct and unmodified. Flip the named flag
+// and the test re-arms automatically. See docs/pre-release-hardening-log.md
+// PRH-027 and tests/unit/scene3d-hl-stage-roster.test.js, which pins this
+// roster.
+const STAGE = readHlStageSync();
+const whenZones = STAGE.toneZones ? test : test.skip;
+const whenSpecular = STAGE.specular ? test : test.skip;
 
 /*
  * Scene3D.SurfaceFill — curved-surface fills that WRAP the 3D form (Jay live-test
@@ -51,7 +61,7 @@ describe('Scene3D.SurfaceFill — curved fills wrap the form (D/I/F)', () => {
     expect(multi).toBeGreaterThan(paths.length * 0.5);
   });
 
-  test('tone reads across the surface: the lit side thins (highlight left blank)', () => {
+  whenZones('tone reads across the surface: the lit side thins (highlight left blank)', () => {
     const light = { id: 'sun', type: 'directional', azimuth: 270, elevation: 10, castShadows: false };
     const asym = (toneOn) => {
       const paths = fills(algo.generate(sphereScene('contour', light, toneOn), null, null, BOUNDS) || []);
@@ -113,7 +123,7 @@ describe('Scene3D.SurfaceFill — curved fills wrap the form (D/I/F)', () => {
     expect(totalPts(b2)).not.toBe(totalPts(b4));
   });
 
-  test('specular toggle changes the curved fill (gates the blank glint cap)', () => {
+  whenSpecular('specular toggle changes the curved fill (gates the blank glint cap)', () => {
     // Low top threshold so the lit cap reliably reaches the brightest band.
     const on = { enabled: true, bands: 3, thresholds: [0.2, 0.4], ladder: [0.2, 0.5, 0.85], specular: { enabled: true, size: 2 } };
     const off = { ...on, specular: { enabled: false, size: 0 } };

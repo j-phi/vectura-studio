@@ -43,7 +43,16 @@
  * below fails. Against `628fb5f` and after, it passes at 0.664.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { readHlStageSync } = require('../helpers/read-hl-stage-sync');
 const FIX = require('../fixtures/scene3d-shadow-anatomy');
+
+// DORMANT UNDER HL_STAGE STAGE 1 (surface-fill.js:276, coverageCap: false).
+// This assertion is correct and unmodified; the composed-coverage ceiling it
+// measures on the object is switched off. Flip `coverageCap` to true and it
+// re-arms automatically. See docs/pre-release-hardening-log.md PRH-027 and
+// tests/unit/scene3d-hl-stage-roster.test.js, which pins this roster.
+const STAGE = readHlStageSync();
+const whenCoverageCap = STAGE.coverageCap ? test : test.skip;
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
@@ -208,7 +217,7 @@ describe('C15 on the OBJECT — the same rule, the half it was never measured on
     return out;
   };
 
-  test('no 4 mm window on the object floods', () => {
+  whenCoverageCap('no 4 mm window on the object floods', () => {
     const cov = windowCoverage(build(), BOUNDS.penWidth);
     expect(cov.length).toBeGreaterThan(100);
     const max = Math.max(...cov);

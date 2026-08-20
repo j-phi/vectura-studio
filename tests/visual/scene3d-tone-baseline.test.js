@@ -61,6 +61,33 @@
 const fs = require('fs');
 const path = require('path');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { readHlStageSync } = require('../helpers/read-hl-stage-sync');
+
+// DORMANT UNDER HL_STAGE STAGE 1 (surface-fill.js:276, toneZones: false). Every
+// one of the 13 assertions gated below is correct and unmodified; they all
+// measure the curved-fill zone apparatus (Regions.formZone / Regions.formInk),
+// which is switched off. `feather` is not involved — every failure here traces
+// to `toneZones` alone, which is why EVERY failing golden is `sphere-*` (the
+// curved path) and every `box-*` golden (the faceted path, which has no
+// HL_STAGE gate at all) passes. Flip `toneZones` to true and all 13 re-arm
+// automatically. See docs/pre-release-hardening-log.md PRH-027 and
+// tests/unit/scene3d-hl-stage-roster.test.js, which pins this roster.
+const STAGE = readHlStageSync();
+const whenZones = STAGE.toneZones ? test : test.skip;
+// The 10 golden scenario ids dormant under Stage 1 — every `sphere-*` scenario
+// plus `parity-box-and-sphere` (its sphere half is the curved path).
+const DORMANT_GOLDEN_IDS = new Set([
+  'sphere-tone-off',
+  'sphere-bands-2',
+  'sphere-bands-3',
+  'sphere-bands-4',
+  'sphere-bands-3-specular-off',
+  'parity-box-and-sphere',
+  'sphere-highlight-lightdriven-sens6',
+  'sphere-highlight-stippleout',
+  'sphere-lights-1',
+  'sphere-lights-4',
+]);
 
 const UPDATE_BASELINES = process.env.VECTURA_UPDATE_BASELINES === '1';
 const BASELINE_DIR = path.resolve(__dirname, '../baselines/scene3d/tone');
@@ -351,7 +378,8 @@ describe('scene3d tone goldens', () => {
 
   describe('goldens', () => {
     SCENARIOS.forEach(({ id, build }) => {
-      test(`${id} matches its golden (and regenerates identically 3x)`, () => {
+      const t = DORMANT_GOLDEN_IDS.has(id) ? whenZones : test;
+      t(`${id} matches its golden (and regenerates identically 3x)`, () => {
         const summary = stableSummary(build);
         expect(summary.totals.paths).toBeGreaterThan(0);
         compare(id, summary);
@@ -385,7 +413,7 @@ describe('scene3d tone goldens', () => {
     // `coverageGain` never consults tone.specular at all. That asymmetry is a
     // live divergence between the faceted and curved paths — pinned here so a
     // tone/material change either preserves it deliberately or is caught.
-    test('specular is LIVE on the curved fill (surface-fill.js sparsens the bright band)', () => {
+    whenZones('specular is LIVE on the curved fill (surface-fill.js sparsens the bright band)', () => {
       expect(summaryFor('sphere-bands-3').totals.ink)
         .not.toBe(summaryFor('sphere-bands-3-specular-off').totals.ink);
     });
@@ -581,14 +609,14 @@ describe('scene3d tone goldens', () => {
       try { return fn(); } finally { Regions.formInk = original; }
     };
 
-    test('a flipped ladder read moves the CURVED golden (surface-fill.js formInk)', () => {
+    whenZones('a flipped ladder read moves the CURVED golden (surface-fill.js formInk)', () => {
       const before = summaryFor('sphere-bands-3');
       const after = withFlippedFormInk(() => summaryFor('sphere-bands-3'));
       expect(after).not.toEqual(before);
       expect(after.fillGrid).not.toEqual(before.fillGrid);
     });
 
-    test('the curved fill no longer reads coverageFor when zones are live', () => {
+    whenZones('the curved fill no longer reads coverageFor when zones are live', () => {
       // Not a redundancy: it PINS where the read moved to. If a future refactor
       // routes the curved fill back through coverageFor, this fails and the
       // probe above must be re-pointed rather than silently going blind.

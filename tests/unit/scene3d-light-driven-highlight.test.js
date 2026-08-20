@@ -1,4 +1,15 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { readHlStageSync } = require('../helpers/read-hl-stage-sync');
+
+// DORMANT UNDER HL_STAGE STAGE 1 (surface-fill.js:276, lightDriven /
+// shadowGrade: false). These two assertions are correct and unmodified; the
+// per-sample lightDriven glint gradient and the graded shadowSensitivity
+// darkening they exercise are switched off. Flip the named flag and the test
+// re-arms automatically. See docs/pre-release-hardening-log.md PRH-027 and
+// tests/unit/scene3d-hl-stage-roster.test.js, which pins this roster.
+const STAGE = readHlStageSync();
+const whenLightDriven = STAGE.lightDriven ? test : test.skip;
+const whenShadowGrade = STAGE.shadowGrade ? test : test.skip;
 
 /*
  * Scene3D light-driven highlight/shadow (I8) + faceted/curved direction unify (I27).
@@ -205,7 +216,7 @@ describe('Scene3D light-driven highlight + direction unify (I8 / I27)', () => {
     return algo.generate(p, null, null, BOUNDS) || [];
   };
 
-  test('sensitivity: 1 = binary (whole region) → MORE highlight ink than a graded N', () => {
+  whenLightDriven('sensitivity: 1 = binary (whole region) → MORE highlight ink than a graded N', () => {
     const s1 = pointCount(hlFills(ldSphere(1)));
     const s4 = pointCount(hlFills(ldSphere(4)));
     const s6 = pointCount(hlFills(ldSphere(6)));
@@ -237,7 +248,7 @@ describe('Scene3D light-driven highlight + direction unify (I8 / I27)', () => {
     return p;
   };
 
-  test('shadowSensitivity: more stages → MORE ink on the dark side (graded darkening)', () => {
+  whenShadowGrade('shadowSensitivity: more stages → MORE ink on the dark side (graded darkening)', () => {
     const one = pointCount(fills(algo.generate(litSphere(1), null, null, BOUNDS) || []));
     const four = pointCount(fills(algo.generate(litSphere(4), null, null, BOUNDS) || []));
     expect(one).toBeGreaterThan(0);

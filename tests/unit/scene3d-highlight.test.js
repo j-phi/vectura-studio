@@ -1,4 +1,14 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { readHlStageSync } = require('../helpers/read-hl-stage-sync');
+
+// DORMANT UNDER HL_STAGE STAGE 1 (surface-fill.js:276, treatment: false). These
+// three assertions are correct and unmodified; the highlight-band treatment
+// dispatch (dashed / sparse / none) they exercise is switched off. Flip
+// `treatment` to true and they re-arm automatically. See
+// docs/pre-release-hardening-log.md PRH-027 and
+// tests/unit/scene3d-hl-stage-roster.test.js, which pins this roster.
+const STAGE = readHlStageSync();
+const whenTreatment = STAGE.treatment ? test : test.skip;
 
 /*
  * Scene3D highlight treatments (Phase 4) — the specular/highlight band is no
@@ -64,7 +74,7 @@ describe('Scene3D highlight treatments (Phase 4)', () => {
 
   // ── HEADLINE (RGR): dashed keeps highlight-band lines but stamps strokeDash,
   // where blank drops them entirely. ─────────────────────────────────────────
-  test('dashed: highlight-band fills exist and carry strokeDash (blank drops them)', () => {
+  whenTreatment('dashed: highlight-band fills exist and carry strokeDash (blank drops them)', () => {
     const dashed = hlFills(gen('sphere', { highlightTreatment: 'dashed' }));
     const blank = hlFills(gen('sphere', { highlightTreatment: 'blank' }));
     expect(dashed.length).toBeGreaterThan(0);
@@ -104,7 +114,7 @@ describe('Scene3D highlight treatments (Phase 4)', () => {
   // promises is that it THINS the highlight band rather than removing it, so
   // that is what is measured — against `blank`, which removes it, and against
   // its own density dial.
-  test('sparse: thins the highlight band rather than removing it', () => {
+  whenTreatment('sparse: thins the highlight band rather than removing it', () => {
     const blank = inkOf(fills(gen('sphere', { highlightTreatment: 'blank' })));
     const sparse = inkOf(fills(gen('sphere', { highlightTreatment: 'sparse', highlightDensity: 25 })));
     const dense = inkOf(fills(gen('sphere', { highlightTreatment: 'sparse', highlightDensity: 100 })));
@@ -122,7 +132,7 @@ describe('Scene3D highlight treatments (Phase 4)', () => {
   // removed, thinned, re-penned, dashed or re-tagged, and the glint cap must
   // not fire. Jay's screenshot showed `Keep` selected with the capsule's rulings
   // still visibly breaking, which is what retired the treatment. ─────────────
-  test('none: emits no highlight-channel ink at all, and keeps more fill than blank', () => {
+  whenTreatment('none: emits no highlight-channel ink at all, and keeps more fill than blank', () => {
     const none = hlFills(gen('sphere', { highlightTreatment: 'none' }));
     const blank = hlFills(gen('sphere', { highlightTreatment: 'blank' }));
     expect(none.length).toBe(0);

@@ -48,8 +48,20 @@
  * `criteria.md` O6 is owed the same edit and is written by another hand.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { readHlStageSync } = require('../helpers/read-hl-stage-sync');
 
 const FIX = require('../fixtures/scene3d-shadow-anatomy');
+
+// DORMANT UNDER HL_STAGE STAGE 1 (surface-fill.js:276, toneZones: false). These
+// assertions are correct and unmodified — the zone apparatus (Regions.formZone
+// consumed by the emitter itself, not just by this file's own classifier) is
+// switched off, so the ink ratios between zones it depends on are not held.
+// Flip `toneZones` to true and O1/O2/O3/F-M/O4-O7/O13 re-arm automatically. See
+// docs/pre-release-hardening-log.md PRH-027 and
+// tests/unit/scene3d-hl-stage-roster.test.js, which pins this roster. O6 (below)
+// is a structural constant check and is unaffected — it stays green.
+const STAGE = readHlStageSync();
+const whenZones = STAGE.toneZones ? test : test.skip;
 
 const { BOUNDS } = FIX;
 const PATCH = 4;
@@ -255,16 +267,16 @@ describe('the form ladder holds its ratios (O1 / O2 / O3 / O6)', () => {
       let m;
       beforeAll(() => { m = ladder(build(fx)); });
 
-      test('O3 — the dip is a shape: T > F > R', () => {
+      whenZones('O3 — the dip is a shape: T > F > R', () => {
         expect(m.T).toBeGreaterThan(m.F);
         expect(m.F).toBeGreaterThan(m.R);
       });
 
-      test('O1 — the terminator out-inks the form shadow by >= 1.25x', () => {
+      whenZones('O1 — the terminator out-inks the form shadow by >= 1.25x', () => {
         expect(m.T / m.F).toBeGreaterThanOrEqual(1.25);
       });
 
-      test('O2 — the reflected rim lifts: R <= 0.60 x F', () => {
+      whenZones('O2 — the reflected rim lifts: R <= 0.60 x F', () => {
         expect(m.R / m.F).toBeLessThanOrEqual(0.60);
       });
 
@@ -283,7 +295,7 @@ describe('the form ladder holds its ratios (O1 / O2 / O3 / O6)', () => {
       // and the ratio rose. The margin is now a share of the local coverage
       // (`hystFor` in `surface-fill.js`, with the sweep table), so the rule
       // means the same thing in every zone and the band holds.
-      test('the form shadow sits in its own band above the halftone: F/M in [1.45, 1.70]', () => {
+      whenZones('the form shadow sits in its own band above the halftone: F/M in [1.45, 1.70]', () => {
         expect(m.F / m.M).toBeGreaterThanOrEqual(1.45);
         expect(m.F / m.M).toBeLessThanOrEqual(1.70);
       });
@@ -389,7 +401,7 @@ describe('the form ladder holds its ratios (O1 / O2 / O3 / O6)', () => {
 
       // O4/O7 — and the step above it stays open. This is the bar the only
       // working O6 lever would breach, so it is pinned before anyone spends it.
-      test('O4/O7 — the lit -> halftone step stays open: L <= 0.75 x M', () => {
+      whenZones('O4/O7 — the lit -> halftone step stays open: L <= 0.75 x M', () => {
         expect(m.L / m.M).toBeLessThanOrEqual(0.75);
       });
 
@@ -399,7 +411,7 @@ describe('the form ladder holds its ratios (O1 / O2 / O3 / O6)', () => {
       // number from the single fixture where it had improved while the
       // worst-of-four went the other way. Asserting it per fixture is what makes
       // "worst of four" a fact rather than a reporting convention.
-      test('O13 — the object never out-inks the contact collar: max(object) <= 0.56', () => {
+      whenZones('O13 — the object never out-inks the contact collar: max(object) <= 0.56', () => {
         expect(m.max).toBeLessThanOrEqual(0.56);
       });
     });

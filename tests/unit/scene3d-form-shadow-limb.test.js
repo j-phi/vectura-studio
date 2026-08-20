@@ -29,7 +29,19 @@
  * and 54 % on the 92 mm ball. Both assertions below fail there.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { readHlStageSync } = require('../helpers/read-hl-stage-sync');
 const FIX = require('../fixtures/scene3d-shadow-anatomy');
+
+// DORMANT UNDER HL_STAGE STAGE 1 (surface-fill.js:276, toneZones: false). This
+// assertion is correct and unmodified; the zone apparatus it depends on
+// (F carrying its crossed family away from the contour, per Regions.formZone
+// classification consumed by the emitter) is switched off. Flip `toneZones` to
+// true and it re-arms automatically. The sibling assertion in this describe
+// ("the outermost band ... is a single family") does not depend on the same
+// mechanism and stays green. See docs/pre-release-hardening-log.md PRH-027 and
+// tests/unit/scene3d-hl-stage-roster.test.js, which pins this roster.
+const STAGE = readHlStageSync();
+const whenZones = STAGE.toneZones ? test : test.skip;
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
@@ -161,7 +173,7 @@ describe("O3 — the form shadow's cross does not run to the contour", () => {
       expect(limb.frac).toBeLessThan(0.15);
     });
 
-    test(`r=${radius}: the cross is still there away from the contour (not simply deleted)`, () => {
+    whenZones(`r=${radius}: the cross is still there away from the contour (not simply deleted)`, () => {
       const b = build(ball);
       const info = windowInfo(b);
       const two = twoFamilyGrid(b.paths, b.id);
