@@ -1546,6 +1546,10 @@
       floodSamples: 0, samples: 0, stitches: 0, stitchRejects: 0, penDownSaved: 0,
       askMax: 0, pitchMin: Infinity, pitchMax: 0, drew: 0,
     };
+    // 'bundleSnake' only — the bundle the walk is currently inside, so the
+    // next ruling can be carried on into the same pen-down. Cleared whenever a
+    // new family opens: two families are two different walks.
+    let adjPrevSnake = null;
     // ── 'isophoteWidth' — GOODWIN, VOLLICK & HERTZMANN'S ISOPHOTE DISTANCE ────
     //
     // "Thickness can be determined as a function of HOW QUICKLY THE SHADING
@@ -2739,7 +2743,7 @@
     // and read the pair as a fragmented line.
     let famSeq = 0;
     let currentFam = 'A';
-    const nextFam = (kind) => { currentFam = `${kind}#${famSeq}`; famSeq += 1; return currentFam; };
+    const nextFam = (kind) => { currentFam = `${kind}#${famSeq}`; famSeq += 1; adjPrevSnake = null; return currentFam; };
     // THE LADDER'S PHASE, one accumulator per selection track (see ladderStep).
     // Declared HERE, per buildObject call, so a build is a pure function of its
     // opts — a module-scope phase would make the second drawing depend on the
@@ -4162,6 +4166,45 @@
         if (at >= 0) out.splice(at, 1);
         adjStat.stitches += 1;
         adjStat.penDownSaved += 1;
+      }
+      // ── AND ACROSS RULINGS ('bundleSnake') ────────────────────────────────
+      // "A continuous single path that snakes: out along a ruling, back
+      // adjacent, out again — covering a whole tonal region in one stroke."
+      // The bundle serpentine above does that WITHIN a bundle; this carries the
+      // walk on into the next bundle, so a whole tonal region comes off the
+      // plotter as one pen-down.
+      //
+      // It is allowed only where the two bundles have nearly closed the white
+      // between them, which is the deep shadow and nowhere else. Anywhere
+      // lighter the traverse would be a line drawn across bare paper — ink the
+      // tone did not budget for and the eye will read as a mark — so the gate
+      // is measured, not assumed: `gap` is the real screen distance between the
+      // two endpoints, and it must be inside ADJ_SNAKE_GAP nib widths.
+      const prev = adjPrevSnake;
+      adjPrevSnake = (TONE_ALGO === 'bundleSnake' && head && head.length >= 2 && out.indexOf(head) >= 0)
+        ? { path: head, param: params[emitted.length - 1] || params[0], tt: head.tt1, fam: currentFam, line: lineIndex }
+        : null;
+      if (TONE_ALGO === 'bundleSnake' && prev && adjPrevSnake
+        && prev.fam === currentFam && out.indexOf(prev.path) >= 0) {
+        const tail = prev.path[prev.path.length - 1];
+        const d0 = Math.hypot(head[0].x - tail.x, head[0].y - tail.y);
+        const d1 = Math.hypot(head[head.length - 1].x - tail.x, head[head.length - 1].y - tail.y);
+        const rev = d1 < d0;
+        const gap = Math.min(d0, d1);
+        const pa = prev.param ? prev.param(clamp(finite(prev.tt, 1), 0, 1)) : null;
+        const pb = params[0] ? params[0](clamp(finite(rev ? head.tt1 : head.tt0, 0), 0, 1)) : null;
+        if (gap <= ADJ_SNAKE_GAP * inkWidth() && adjConnectorOk(pa, pb, !back)) {
+          const src = rev ? head.slice().reverse() : head;
+          for (let i = 0; i < src.length; i++) prev.path.push(src[i]);
+          prev.path.tt1 = rev ? head.tt0 : head.tt1;
+          const at2 = out.indexOf(head);
+          if (at2 >= 0) out.splice(at2, 1);
+          adjStat.stitches += 1;
+          adjStat.penDownSaved += 1;
+          adjPrevSnake = { path: prev.path, param: prev.param, tt: prev.path.tt1, fam: currentFam, line: lineIndex };
+        } else {
+          adjStat.stitchRejects += 1;
+        }
       }
     };
 
