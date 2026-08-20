@@ -629,6 +629,16 @@
   //                       family has already closed. So the step is corrected
   //                       against the MEASURED minimum across-flow distance to
   //                       the ruling already laid.
+  //                       MEASURED, sphere-hatch, and it is a NEGATIVE result
+  //                       worth keeping: R² 0.002, span 3.7, darkest 90.4, off
+  //                       the line 68.3 %, 899 mm of ink against the baseline's
+  //                       2994, 17 rulings against 53. The minimum works — the
+  //                       pole flood is gone (7 flooded cells against 64) — but
+  //                       a MINIMUM over a converging family is set by the point
+  //                       of convergence, so the pole's clearance requirement
+  //                       propagates outward and opens the whole family. On a
+  //                       chart whose rulings meet at a singularity, across-flow
+  //                       minimum clearance and even tone are not compatible.
   //   'contFieldSurface'  Contour-following: the field is integrated in the
   //                       SURFACE's own arc length, not on screen. The spacing
   //                       is then a property of the form and eases along it,
