@@ -672,6 +672,16 @@
   //                       plot floor (2.2 × pen) to one ink width, at which
   //                       adjacent rulings abut and the area is solid. Flooding
   //                       is not hidden; it is counted and reported.
+  //                       MEASURED, sphere-hatch, and it is the DARK end this
+  //                       family could not otherwise reach: R² 0.310, L* span
+  //                       37.8, DARKEST L* 4.5 — black, against the 76 a single
+  //                       family at the plot floor saturates at — off the line
+  //                       21.7 %, median adjacent step 1.01x, 86.4 % monotone,
+  //                       gaps 0.20-0.88 mm. It costs 6327 mm of ink (twice the
+  //                       baseline) and 286 flooded 1 mm cells of 1928 (15 % of
+  //                       the form). On CROSSHATCH it floods completely — 1928
+  //                       of 1928, moiré RMS 4.9, i.e. no structure left at all
+  //                       — so the touching floor is a HATCH-ONLY licence.
   //   'contFieldQuant'    The control for "is continuity worth anything, or
   //                       would 128 levels do?" — `contFieldPitch`'s field with
   //                       the GAP quantised to CF_LEVELS steps. Run at 128 and
