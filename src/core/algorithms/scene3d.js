@@ -792,9 +792,57 @@
         return Regions.formZone(normalWorld, worldPoint, ctx);
       };
 
+      // ── THE TONE LAW ON FACETED GEOMETRY (box / plane / solid) ──────────────
+      //
+      // `SurfaceFill.chartFor` resolves a parametric chart for nine primitives
+      // and returns null for `box`, `plane` and `solid`, so those three fall
+      // through to THIS faceted planar fill — which, until this round, never
+      // read `style.params.toneLaw` at all. Measured at the byte level while
+      // building `docs/tone-laws/`: for those three primitives the rendered
+      // output was MD5-IDENTICAL across all 47 laws, while `sphere` differed for
+      // every one. The gallery labelled those columns "no law", correctly.
+      //
+      // WHAT A FLAT FACE CAN AND CANNOT CARRY. A face has a CONSTANT normal, so
+      // under a directional light every sample on it has the same Lambert
+      // intensity. Any law whose tone varies with per-sample intensity is
+      // therefore uniform ACROSS one face by construction, and all faceted
+      // shading comes from face-to-face variation — which is what `coverageGain`
+      // below already carries, and what each law's own tone map re-derives from
+      // the per-sample `I` it is handed. Point and spot lights DO vary across a
+      // face (their direction depends on the world point) and grade within one.
+      //
+      // WHICH LAWS ARE REACHABLE FROM HERE. `Scene3D.SurfaceFillMono.emit` is a
+      // public, caller-parameterised entry point: it takes a chart SUBSTRATE
+      // (`sampleAt` / `pushRun` / the pitch bars) rather than a primitive, so a
+      // face's own planar (u,v) frame can be handed to it and the nine `mono`
+      // laws' REAL implementations run here unmodified — see `faceMonoLines`.
+      // The other 37 laws live INSIDE `buildObject`'s closure in
+      // `surface-fill.js` and are reachable only through `chartFor`, whose
+      // switch has no planar mode. They are reported unsupported here rather
+      // than approximated: an arbitrary faceted stand-in for a named law is
+      // worse than an honest gap, and nothing in this file re-implements one.
+      const MonoFill = () => (Vectura.Scene3D && Vectura.Scene3D.SurfaceFillMono) || null;
+      // The style's tone law, VALIDATED exactly as `buildObject` validates it:
+      // an id the running build does not carry degrades to "no law asked" rather
+      // than throwing or silently drawing nothing.
+      const facetedToneLaw = (styleParams) => {
+        const asked = typeof (styleParams && styleParams.toneLaw) === 'string' ? styleParams.toneLaw : '';
+        if (!asked) return '';
+        const IDS = (Vectura.SCENE3D_TONE_LAWS && Vectura.SCENE3D_TONE_LAWS.IDS) || null;
+        return (!IDS || IDS.indexOf(asked) !== -1) ? asked : '';
+      };
       const spacingBand = (normalWorld, styleParams, worldPoint, face, record, opts) => {
         const s0 = hatchSpacing(styleParams.fillDensity);
         if (!toneOn) return { spacing: s0, bandIdx: -1, terminator: false };
+        // `toneLaw: 'none'` is STAGE 0 — the tone apparatus switched off — and it
+        // is NOT the same thing as `tone.enabled = false`, which the line above
+        // handles. The curved path implements Stage 0 by clearing `masterGrid` +
+        // `dither`; the faceted path's whole tone apparatus IS this function, so
+        // Stage 0 here is this early return: every ruling of the density grid
+        // draws, at one pitch, with no band, no zone, no cross family and no
+        // glint cap. Returning no `zone` is what withholds the cross family —
+        // `crossWeightFor(undefined, …)` is 0, the same as the untoned path.
+        if (facetedToneLaw(styleParams) === 'none') return { spacing: s0, bandIdx: -1, terminator: false };
         // `none` — the total highlight/specular bypass (Jay, 2026-08-09). Nothing
         // below may thin, re-space or re-tag this facet's ink on a highlight's
         // account, so the specular gain multiplier is skipped outright.
@@ -1400,6 +1448,194 @@
           flush();
         });
         return out;
+      };
+
+      // ── A FACE IS A CHART. The planar substrate the tone laws run on ────────
+      //
+      // The laws in `surface-fill.js` / `surface-fill-mono.js` are written
+      // against a PARAMETRIC CHART: they sample `(a, b)` and are handed a
+      // position, a normal, an intensity and the local screen pitch. A flat face
+      // has no such chart — but `faceUVScaffold` already gives it the exact
+      // planar parameterisation one would synthesise: an in-plane (u, v) frame
+      // in world millimetres, anchored to a world axis (so adjacent facets carry
+      // comparable rulings), with a uv→world and a uv→screen map. Wrapping that
+      // frame in `SurfaceFillMono.emit`'s substrate contract — the same
+      // `{ sampleAt, pushRun, penWidth, inkWidth, floorPitch, litMaxPitch,
+      // minMarkMM, hash, angleDeg }` object `buildObject` builds for a sphere —
+      // runs the mono laws' real implementations on faceted geometry with no
+      // faceted variant of any law existing anywhere.
+      //
+      // THE DOMAIN IS THE FACE'S OWN uv BOX, PADDED. Two things follow from the
+      // padding and both are load-bearing:
+      //
+      //   (1) `makeCtx` treats `b` as PERIODIC — right for a chart whose second
+      //       coordinate is a wind, wrong for a planar patch. A law stepping off
+      //       the right edge would wrap to the left one and keep drawing a
+      //       single stroke straight across the face. With the face's polygon
+      //       strictly INSIDE the domain, a wrapped `b` lands in the pad, fails
+      //       the polygon test and reads as off-surface — which is what the edge
+      //       of a face is.
+      //   (2) `sampleAt` returning null outside the face polygon is the ONLY
+      //       silhouette guard the substrate needs: `emitPts` / `emitScr` bisect
+      //       the crossing back onto the boundary, exactly as they do at a
+      //       sphere's limb. Marks outside the face are impossible by
+      //       construction, not by a post-clip.
+      //
+      // COST. `makeCtx` builds a 97 x 96 lattice per emit, so a dense imported
+      // mesh must not take this path — it falls back to the ordinary faceted
+      // hatch above this cap. Boxes (6), planes (1) and every polyhedron in the
+      // solid library sit far below it.
+      const MONO_MAX_FACES = 48;
+      // `surface-fill.js` states these three as INK_SPREAD 0.12, PLOT_FLOOR_PEN
+      // 2.2 and LIT_MAX_PITCH_PEN 12. They are the envelope a law's own tone map
+      // interpolates between, so the faceted substrate must hand over the same
+      // numbers or the same law would land on a different ramp on the two paths.
+      const MONO_INK_SPREAD = 0.12;
+      const MONO_PLOT_FLOOR_PEN = 2.2;
+      const monoLitMaxPitch = () => {
+        const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
+        const pen = (R && Number.isFinite(R.LIT_MAX_PITCH_PEN)) ? R.LIT_MAX_PITCH_PEN : 12;
+        return pen * penWidth;
+      };
+      const uvInPoly = (poly, x, y) => {
+        let inside = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          const a = poly[i]; const b = poly[j];
+          if (!a || !b) continue;
+          if ((a.y > y) !== (b.y > y)
+            && x < ((b.x - a.x) * (y - a.y)) / ((b.y - a.y) || 1e-12) + a.x) inside = !inside;
+        }
+        return inside;
+      };
+      // Returns SCREEN polylines for this face under the asked mono law, or null
+      // when the law is not one this path can run — in which case the caller
+      // draws the ordinary faceted hatch, unchanged, exactly as before.
+      const faceMonoLines = (face, styleParams, normalWorld, mapper, record) => {
+        const M = MonoFill();
+        const algo = facetedToneLaw(styleParams);
+        if (!algo || !M || typeof M.isMono !== 'function' || typeof M.emit !== 'function') return null;
+        if (!M.isMono(algo)) return null;
+        // Tone off / a draft frame / no lighting to read: the law has nothing to
+        // shade with, and a live drag must stay on the cheap hatch.
+        if (!toneOn || draft || typeof intensityFn !== 'function') return null;
+        if (mapper !== 'hatch' && mapper !== 'crosshatch') return null;
+        if (record && Array.isArray(record.faces) && record.faces.length > MONO_MAX_FACES) return null;
+        const scaf = faceUVScaffold(face, normalWorld);
+        if (!scaf || !Array.isArray(scaf.uv) || scaf.uv.length < 3) return null;
+        let uLo = Infinity; let uHi = -Infinity; let vLo = Infinity; let vHi = -Infinity;
+        for (let i = 0; i < scaf.uv.length; i++) {
+          const pt = scaf.uv[i];
+          if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
+          if (pt.x < uLo) uLo = pt.x;
+          if (pt.x > uHi) uHi = pt.x;
+          if (pt.y < vLo) vLo = pt.y;
+          if (pt.y > vHi) vHi = pt.y;
+        }
+        if (!(uHi - uLo > 1e-6) || !(vHi - vLo > 1e-6)) return null;
+        const PAD = 0.10;
+        const u0 = uLo - (uHi - uLo) * PAD; const uSpan = (uHi - uLo) * (1 + 2 * PAD);
+        const v0 = vLo - (vHi - vLo) * PAD; const vSpan = (vHi - vLo) * (1 + 2 * PAD);
+        const uvAt = (a, b) => ({ x: u0 + a * uSpan, y: v0 + b * vSpan });
+        const scrAt = (a, b) => scene.projectWorld(scaf.toWorld(uvAt(a, b)));
+        // `nz` is the camera-space normal's z — the "how close to the contour is
+        // this sample" measure. On a flat face it is CONSTANT, which is the whole
+        // point: a facet has no limb of its own, and the laws that taper at one
+        // correctly do nothing here.
+        const camNz = (() => {
+          if (!G3 || typeof G3.rotatePoint !== 'function' || !scene || !scene.camera) return 1;
+          const n = G3.rotatePoint(normalWorld, scene.camera);
+          return (n && Number.isFinite(n.z)) ? n.z : 1;
+        })();
+        const EPSP = 1 / 4096;
+        const sampleAt = (a, b) => {
+          if (!(a >= 0 && a <= 1) || !(b >= 0 && b <= 1)) return null;
+          const uv = uvAt(a, b);
+          if (!uvInPoly(scaf.uv, uv.x, uv.y)) return null;
+          const world = scaf.toWorld(uv);
+          const scr = scene.projectWorld(world);
+          if (!scr || !Number.isFinite(scr.x) || !Number.isFinite(scr.y)) return null;
+          // The screen derivatives are PUBLISHED, not left to be measured.
+          // `makeCtx.frame` falls back to two extra `sampleAt` calls, and within
+          // one step of a face edge those land outside the polygon and return
+          // null — which would strand every law along the whole boundary. They
+          // are lazy (getters) because the 9 312-point lattice pass reads only
+          // x / y / I / nz and would otherwise pay for them 9 312 times.
+          const aFwd = a + EPSP <= 1; const bFwd = b + EPSP <= 1;
+          return {
+            x: scr.x, y: scr.y, z: scr.z,
+            front: true,
+            nz: camNz,
+            I: clamp(finite(intensityFn(normalWorld, world), 0), 0, 1),
+            S: (typeof specularFn === 'function')
+              ? clamp(finite(specularFn(normalWorld, world), 0), 0, 1) : 0,
+            wN: normalWorld,
+            world,
+            get dA() {
+              const s = scrAt(aFwd ? a + EPSP : a - EPSP, b);
+              if (!s || !Number.isFinite(s.x)) return null;
+              const g = aFwd ? 1 : -1;
+              return { x: ((s.x - scr.x) / EPSP) * g, y: ((s.y - scr.y) / EPSP) * g };
+            },
+            get dB() {
+              const s = scrAt(a, bFwd ? b + EPSP : b - EPSP);
+              if (!s || !Number.isFinite(s.x)) return null;
+              const g = bFwd ? 1 : -1;
+              return { x: ((s.x - scr.x) / EPSP) * g, y: ((s.y - scr.y) / EPSP) * g };
+            },
+          };
+        };
+        // The law's base direction, stated on PAPER. The mono laws rotate in
+        // screen space (`C.rot = o.angleDeg + deg`), so handing them the raw
+        // in-plane angle would let a grazing face's fill run visibly off the
+        // direction every other family on that face uses. Project the in-plane
+        // direction and measure it where it lands.
+        const userAngle = finite(styleParams.fillAngle, 45);
+        const baseAngle = (styleParams.angleRef === 'worldUp' ? worldUpAngleInUV(scaf) : 0) + userAngle;
+        const screenAngleDeg = (() => {
+          const r = baseAngle * Math.PI / 180;
+          const L = Math.max(uSpan, vSpan) * 0.2;
+          const c = uvAt(0.5, 0.5);
+          const p0 = scene.projectWorld(scaf.toWorld(c));
+          const p1 = scene.projectWorld(scaf.toWorld({ x: c.x + Math.cos(r) * L, y: c.y + Math.sin(r) * L }));
+          if (!p0 || !p1 || !Number.isFinite(p0.x) || !Number.isFinite(p1.x)) return baseAngle;
+          return Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI;
+        })();
+        const out = [];
+        const sb = spacingBand(normalWorld, styleParams, faceWorldCentroid(face), face, record, null);
+        let handled = false;
+        try {
+          handled = M.emit({
+            algo,
+            back: false,
+            count: 0,
+            mapper: mapper === 'crosshatch' ? 'crosshatch' : 'hatch',
+            sampleAt,
+            pushRun: (run) => {
+              if (Array.isArray(run) && run.length >= 2) out.push(run.map((pt) => ({ x: pt.x, y: pt.y })));
+            },
+            penWidth,
+            inkWidth: penWidth * (1 + MONO_INK_SPREAD),
+            floorPitch: MONO_PLOT_FLOOR_PEN * penWidth,
+            // What the facet's own ladder rung asked for, so Density and the
+            // tone band still set the scale the law works at.
+            masterPitch: Math.max(penWidth, finite(sb.spacing, hatchSpacing(styleParams.fillDensity))),
+            litMaxPitch: monoLitMaxPitch(),
+            targetArea: null,
+            // Never below the structural emission floor this file has carried
+            // since Phase 1 — a sub-pen-width fragment is a pen-down dot, not a
+            // mark, on the faceted path exactly as on the curved one.
+            minMarkMM: Math.max(MIN_RUN_MM, 2 * penWidth),
+            hash: ldHash,
+            angleDeg: screenAngleDeg,
+          });
+        } catch (e) {
+          return null; // a law that throws must not take the facet with it
+        }
+        // `emit` returns true for a law it knows even when the substrate was too
+        // small to draw on. An empty result falls back rather than leaving the
+        // facet bare — a blank face is the one failure mode this cannot tell
+        // apart from a law that legitimately drew nothing.
+        return (handled && out.length) ? out : null;
       };
 
       // I8 — LIGHT-DRIVEN faceted fill. The base tone hatch (dark=dense) still
@@ -2243,7 +2479,16 @@
                   // density instead of the ladder's cap) is gone with the
                   // treatment: `none` must leave the fill exactly as the ladder
                   // made it, which means not overriding the spacing either.
-                  lines = faceHatchLines(face, fillParams, face.normalWorld, style.mapper === 'crosshatch', record, null);
+                  // THE TONE LAW GETS FAMILY A FIRST. A mono law owns the whole
+                  // of this facet's fill — the same contract it has on the
+                  // curved path, where `monoMapper` short-circuits the family /
+                  // terminator-cross / shadow-infill schedule outright, because
+                  // its spacing IS the complete tone statement and a second
+                  // family would put marks at a clearance the law did not
+                  // choose. `null` ⇒ the law is not one this path can run, and
+                  // the ordinary faceted hatch below is untouched.
+                  lines = faceMonoLines(face, fillParams, face.normalWorld, style.mapper, record)
+                    || faceHatchLines(face, fillParams, face.normalWorld, style.mapper === 'crosshatch', record, null);
                 } else {
                   lines = faceRegionLines(face, style.mapper, face.normalWorld, fillParams);
                 }
