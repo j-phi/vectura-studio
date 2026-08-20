@@ -320,8 +320,15 @@
     const invL = (Lv) => (Lv > 8 ? Math.pow((Lv + 16) / 116, 3) : Lv / 903.3);
     const A_LIGHT = clamp(INK / PMAX, 0.02, 0.5);
     const L_LIGHT = Lstar(1 - A_LIGHT);
-    const areaFor = (I) => clamp(1 - invL(L_LIGHT * clamp(finite(I, 0), 0, 1)), 0.02, 1);
-    const pitchFor = (I) => clamp(INK / areaFor(I), INK * 0.98, PMAX);
+    // The dark end is capped at 0.90 rather than at 1.0. At one pen width the
+    // apparent-tone curve is brutal — area 0.5 is L* 76 and area 0.9 is L* 33 —
+    // so an uncapped map puts the whole shadow side of a sphere at solid and
+    // the drawing stops being a drawing. 0.90 is a clearance of 0.37 mm: below
+    // the plot floor, deliberately, and still two distinguishable rulings.
+    // The laws that go all the way to solid do it in their own bodies and say so.
+    const A_DARK = 0.90;
+    const areaFor = (I) => clamp(1 - invL(L_LIGHT * clamp(finite(I, 0), 0, 1)), 0.02, A_DARK);
+    const pitchFor = (I) => clamp(INK / areaFor(I), INK / A_DARK, PMAX);
     // The same map with the plot floor honoured, for the laws whose identity is
     // that they never crowd past legibility.
     const pitchLegible = (I) => Math.max(FLOOR, pitchFor(I));
@@ -1032,13 +1039,18 @@
       const perp = Math.abs(ox * ly - oy * lx);
       if (!(perp > 1e-6)) return want;
       // Scale the step so the PERPENDICULAR part is what the tone asked for.
-      return clamp(want * (want / perp), C.FLOOR, C.PMAX * 1.4);
+      // The factor is BOUNDED: at the silhouette the shear diverges, and an
+      // unbounded correction there swamps the whole ruling's mean and flattens
+      // the drawing (measured: L* span 1.3).
+      const f = clamp(want / perp, 1, 2.2);
+      return clamp(want * f, C.INK, C.PMAX);
     };
     let off = -half;
     let guard = 0;
     while (off < half && guard < 2000) {
       guard += 1;
       const pts = [];
+      const probe = [];
       let sum = 0; let cnt = 0;
       for (let k = 0; k <= NS; k++) {
         const t = -half + (2 * half) * (k / NS);
@@ -1046,12 +1058,13 @@
         const y = cy + vy * off + uy * t;
         const s = C.inv(x, y);
         pts.push({ x, y });
-        if (s && k % 3 === 0) {
-          sum += clearAt(s, s._a, s._b); cnt += 1;
-        }
+        if (s && k % 3 === 0) { probe.push(clearAt(s, s._a, s._b)); }
       }
       C.emitScr(pts);
-      off += cnt ? clamp(sum / cnt, C.FLOOR, C.PMAX * 1.4) : C.PMAX;
+      probe.sort((u, w) => u - w);
+      const med = probe.length ? probe[Math.floor(probe.length / 2)] : C.PMAX;
+      void sum; void cnt;
+      off += clamp(med, C.INK, C.PMAX);
     }
   };
 
