@@ -1151,6 +1151,12 @@
     // is layer 0 and is the default, so a build that never reaches the cross
     // emitter behaves exactly as one family.
     let xfLayer = 0;
+    // WHICH RULING IS BEING EMITTED. The three-pen laws substitute one pen for
+    // the next across a handoff band, and the substitution has to be decided PER
+    // RULING (a pen change mid-ruling is a pen lift) rather than per sample. The
+    // sample-time functions do not receive the ruling index, so `emitLine`
+    // publishes it here. Read only under a pen law; inert otherwise.
+    let penLineIdx = 0;
     // The composed ceiling in the deepest shadow. Three families each at the
     // plot floor would compose to solid black, so the DARK end of crossFade's
     // envelope is stated as an area and split, never as three independent
@@ -1249,6 +1255,12 @@
       // SWEEP 2 — the two pre-warps, the signed width, the second pen, and the
       // transverse reserve that replaces the (no-op) parallel inversion.
       equilibrated: 1, signedWidth: 1, wideShadowPen: 1, transverseReserve: 1,
+      // V5 — THE THREE-PEN LAWS. They are weight laws only in the mechanical
+      // sense that the per-run width is where a pen assignment can be expressed;
+      // every one of them emits exactly three widths and carries tone on
+      // spacing. See the THREE-PEN CHASSIS block.
+      penTiers: 1, penScreen: 1, penInterleave: 1, penStipple: 1, penOctaves: 1,
+      penFacing: 1, penReserve: 1, penCross: 1, penPitchMatch: 1, penDepth: 1,
     };
     const isWeightLaw = () => WEIGHT_LAWS[TONE_ALGO] === 1;
     // `weightPlusSpacingTuned` is `weightPlusSpacing` at a different kappa and
@@ -1266,7 +1278,11 @@
       || TONE_ALGO === 'screenAngles' || TONE_ALGO === 'taperedEnds'
       || TONE_ALGO === 'whiteLineInverse' || TONE_ALGO === 'multiScale'
       || TONE_ALGO === 'equilibrated' || TONE_ALGO === 'signedWidth'
-      || TONE_ALGO === 'wideShadowPen' || TONE_ALGO === 'transverseReserve';
+      || TONE_ALGO === 'wideShadowPen' || TONE_ALGO === 'transverseReserve'
+      // The three-pen laws split along the ruling for a different reason than
+      // the width laws do: a pen CHANGE mid-ruling has to become a piece
+      // boundary, because one path can carry one pen and no fewer.
+      || isPenLaw();
     // WHERE THE WEIGHT LAWS ACTUALLY LANDED — the counterpart to `floorStat`.
     // The weight range is bounded at both ends by physics (you cannot draw
     // thinner than the pen, and past W_FLOOD_AREA the ink is a blob), so "did
@@ -1773,6 +1789,339 @@
       const aw = trAreaWidth(I);
       return clamp(1 - A / Math.max(1e-6, aw), 0, TR_DUTY_MAX);
     };
+    // ═══ V5: THREE PENS, THREE REAL NIB WIDTHS ═══════════════════════════════
+    //
+    // Jay: "Give me ten unique ideas that allow for three separate pens and
+    // therefore three separate pen thicknesses."
+    //
+    // THE PEN SET, AND THE FACT THAT A NIB WIDTH IS A MEASUREMENT. The barrel
+    // says 0.25 / 0.5 / 0.9; what those nibs actually lay on plotter paper is
+    // about 0.26 / 0.52 / 0.93 mm. The measured numbers are the ones used here;
+    // the labels are only labels, and every quantity below is stated against the
+    // measurement. `INK_SPREAD` is applied on top, exactly as it is for the
+    // document pen, so `penInk(k)` is the width of the mark, not of the nib.
+    const PEN_MM = [0.26, 0.52, 0.93];
+    const PEN_LABEL = ['0.25 fine', '0.5 medium', '0.9 broad'];
+    //
+    // WHAT A REAL PEN CANNOT DO IS VARY ITS WIDTH. That single fact is what
+    // separates this round from every weight law before it. `weightAtSample`
+    // returns one of exactly three multipliers and `splitByWeight`'s output is
+    // SNAPPED back onto that set, so no run can leave here at 1.7× a nib that
+    // does not exist. Tone therefore has to be carried by SPACING and by WHICH
+    // PEN — which is precisely the direction Jay asked for in the same breath:
+    // lines touching for pure black, the gaps opening evenly and eased along the
+    // form's contour toward the highlight, closing again into shadow beyond.
+    const penIdx = (k) => clamp(Math.round(finite(k, 0)), 0, 2);
+    const penMul = (k) => PEN_MM[penIdx(k)] / Math.max(1e-6, penWidth);
+    const penInk = (k) => PEN_MM[penIdx(k)] * (1 + INK_SPREAD);
+    //
+    // EACH PEN HAS ITS OWN PLOT FLOOR, AND THAT IS THE WHOLE OPPORTUNITY.
+    // `PLOT_FLOOR_PEN` is 2.2 × the nib, so the three own-floors are 0.57 /
+    // 1.14 / 2.05 mm, and the pitch at which a nib's marks TOUCH — pure black,
+    // no overlap — is its ink width: 0.29 / 0.58 / 1.04 mm. The engine's floor
+    // is stated against the DOCUMENT pen (2.2 × 0.3 = 0.66 mm) and is enforced
+    // downstream in `covAtSample`; nothing here relaxes it. The consequences are
+    // worth stating plainly, because they are the reason a three-pen plot
+    // reaches a black a one-pen plot cannot:
+    //   · the FINE nib can NEVER touch — 0.66 mm is 2.3 × its ink width — so it
+    //     is floor-bound at area 0.44, and that is its darkest possible tone;
+    //   · the MEDIUM nib touches at 0.58 mm, just inside the engine floor, so at
+    //     the floor it reaches area 0.88;
+    //   · the BROAD nib's marks OVERLAP at 0.66 mm (area 1.58) — it is solid
+    //     black there, and its useful pitch range starts ABOVE the engine floor.
+    // So "respect each pen's own floor" is a real, asymmetric constraint: it
+    // binds the fine pen everywhere and the broad pen nowhere. Both are counted.
+    const penOwnFloor = (k) => PLOT_FLOOR_PEN * PEN_MM[penIdx(k)];
+    const penTouchPitch = (k) => penInk(k);
+    // The tightest pitch this pen may rule at: its own touch pitch (Jay's "lines
+    // may touch for pure black") or the engine's floor, whichever is WIDER.
+    // Nothing here can rule tighter than the engine already allows.
+    const penMinPitch = (k) => Math.max(penTouchPitch(k), floorPitch > 1e-6 ? floorPitch : 0);
+    const penMaxArea = (k) => clamp(penInk(k) / Math.max(1e-6, penMinPitch(k)), 0.02, 0.98);
+    // WHERE EACH PEN BOUND, published for the harness. Three counters, because
+    // "the floor binds" means something different for each nib.
+    const penStat = {
+      samples: 0,
+      floorBound: [0, 0, 0],   // asked to rule tighter than this pen's own floor
+      ownFloorBound: [0, 0, 0], // ...tighter than 2.2 × its own nib (the conservative bar)
+      flood: [0, 0, 0],        // asked for more area than its marks can lay without overlap
+      picks: [0, 0, 0],
+    };
+    // Coverage that lays `area` with pen k on a grid of this local pitch, capped
+    // by that pen's own minimum pitch. Same arithmetic as `covForArea`, with the
+    // pen's ink width in place of the document pen's.
+    const penCov = (area, localPitch, k) => {
+      const kk = penIdx(k);
+      const p = (Number.isFinite(localPitch) && localPitch > 1e-6) ? localPitch : masterPitch;
+      const a = clamp(finite(area, 0), 0, 0.98);
+      if (!(p > 1e-6)) return clamp(a, 0.005, 1);
+      const c = (a * p) / penInk(kk);
+      const cap = clamp(p / Math.max(1e-6, penMinPitch(kk)), 0.005, 1);
+      const capOwn = clamp(p / Math.max(1e-6, penOwnFloor(kk)), 0.005, 1);
+      penStat.samples += 1;
+      penStat.picks[kk] += 1;
+      if (c > cap + 1e-9) penStat.floorBound[kk] += 1;
+      if (c > capOwn + 1e-9) penStat.ownFloorBound[kk] += 1;
+      if (a > penMaxArea(kk) + 1e-9) penStat.flood[kk] += 1;
+      return clamp(Math.min(c, cap), 0.005, 1);
+    };
+    // THE TONE ENVELOPE, IN PEN TERMS. Both ends physical, neither chosen:
+    // lightest is the FINE nib at the O6 sparse bar (`litMaxPitchPen` × pen =
+    // 3.6 mm, the pitch past which the centre light has no ink for a highlight
+    // to be blank against); darkest is the BROAD nib with its marks touching.
+    // The transfer between them is `areaForTone` — L* linear in radiance — which
+    // is what makes the gaps open EVENLY and eased along the form rather than in
+    // proportion to ink.
+    const penLightArea = () => clamp(penInk(0) / Math.max(1e-6, litMaxPitchPen() * penWidth), 0.005, 0.98);
+    const penDarkArea = () => clamp(penMaxArea(2), 0.02, 0.98);
+    const penTarget = (I) => areaForTone(I, penDarkArea(), penLightArea());
+    //
+    // THE TIER COORDINATE, AND WHY IT IS REAL-VALUED. `penTierU` returns a
+    // continuous 0…2: 0 = fine alone, 1 = medium alone, 2 = broad alone, and the
+    // fractional part is the SHARE OF RULINGS that take the next pen up. A hard
+    // switch at a threshold is a texture-family change with a step the coverage
+    // match cannot remove (the perceptual literature is explicit about this, and
+    // it is the failure mode Jay named). Substituting one ruling in five, then
+    // two in five, then three, spreads that change over a band of the form
+    // instead of putting it on a line. The window is the last PEN_BLEND of each
+    // pen's usable range, so the handoff happens where the outgoing pen is
+    // already at its own floor and has nothing left to give.
+    const PEN_BLEND = 0.30;
+    const smooth5 = (t) => { const u = clamp(t, 0, 1); return u * u * u * (u * (6 * u - 15) + 10); };
+    const penTierU = (A) => {
+      const a = clamp(finite(A, 0), 0, 0.99);
+      const h0 = penMaxArea(0);
+      const h1 = penMaxArea(1);
+      if (a <= h0) return smooth5((a - h0 * (1 - PEN_BLEND)) / Math.max(1e-6, h0 * PEN_BLEND));
+      if (a <= h1) return 1 + smooth5((a - h1 * (1 - PEN_BLEND)) / Math.max(1e-6, (h1 - h0) * PEN_BLEND + 1e-6));
+      return 2;
+    };
+    // Which ruling takes the substitution. A golden-ratio phase on the ruling
+    // index is the sequence that stays furthest from lining up with itself at
+    // every count, so no small run of rulings ever falls into phase and the
+    // substitution reads as a mix rather than as a stripe.
+    const penDitherTier = (u) => {
+      const uu = clamp(finite(u, 0), 0, 2);
+      const base = Math.floor(uu);
+      const frac = uu - base;
+      const ph = ((((Number(penLineIdx) || 0) + 1) * GOLDEN_STEP) % 1 + 1) % 1;
+      return penIdx(base + (ph < frac ? 1 : 0));
+    };
+    // The SMALLEST pen that can deliver this area without breaching its own
+    // floor. The hard switch — the control against which the eased handoffs are
+    // measured. ('penPitchMatch'.)
+    const penExact = (A) => {
+      const a = clamp(finite(A, 0), 0, 0.99);
+      if (a <= penMaxArea(0)) return 0;
+      if (a <= penMaxArea(1)) return 1;
+      return 2;
+    };
+    // Snap a mean weight back onto the pen set. `splitByWeight` averages the
+    // per-sample weights over a piece, and a piece that straddles a pen change
+    // would otherwise come out at a width no nib in the tray can draw. Every run
+    // this file emits under a pen law leaves at EXACTLY one of three widths.
+    const penSnap = (w) => {
+      let best = 0; let bd = Infinity;
+      for (let k = 0; k < 3; k++) {
+        const d = Math.abs(penMul(k) - finite(w, 1));
+        if (d < bd) { bd = d; best = k; }
+      }
+      return best;
+    };
+    // Composition across layers, each layer capped by ITS OWN pen. Layer k+1
+    // enters at zero exactly where layer k saturates, so a family appears by
+    // density from nothing and there is no threshold to trace.
+    const penLayerArea = (A, layer, tierOf) => {
+      let rest = clamp(finite(A, 0), 0, 0.98);
+      let a = 0;
+      for (let k = 0; k <= clamp(Math.round(finite(layer, 0)), 0, 2); k++) {
+        a = Math.min(rest, penMaxArea(tierOf(k)));
+        rest = clamp(1 - (1 - rest) / Math.max(1e-6, 1 - a), 0, 0.98);
+      }
+      return a;
+    };
+    // The object's own camera-depth range, for 'penDepth'. Sampled once from the
+    // chart on a coarse grid, so it is deterministic and costs 121 projections.
+    let penZR = null;
+    const penZRange = () => {
+      if (penZR) return penZR;
+      let lo = Infinity; let hi = -Infinity;
+      for (let i = 0; i <= 10; i++) {
+        for (let j = 0; j <= 10; j++) {
+          const smp = sampleAt(i / 10, j / 10);
+          if (!smp || !Number.isFinite(smp.z)) continue;
+          if (smp.z < lo) lo = smp.z;
+          if (smp.z > hi) hi = smp.z;
+        }
+      }
+      penZR = Number.isFinite(lo) && hi > lo ? { lo, hi } : { lo: 0, hi: 1 };
+      return penZR;
+    };
+    // 'penStipple' — the fine nib's duty cycle in the highlight fade. The ruled
+    // grid stays put and the MARKS shorten, which is the hatch→stipple move the
+    // perceptual work says is free (hatch and stipple share one manifold; it is
+    // CROSSHATCH that sits in a separate cluster, which is why 'penCross' puts
+    // its register change in the darks and this one does not).
+    const PSTIP_REF = 4;         // the fine tier's reference density, in light-areas
+    const PSTIP_PERIOD = 1 / 26; // marks per sweep
+    const pstipCov = (p) => penCov(clamp(penLightArea() * PSTIP_REF, 0.01, 0.98), p, 0);
+    const pstipDuty = (A, p) => {
+      const c = pstipCov(p);
+      const laid = (c * penInk(0)) / Math.max(1e-6, (Number.isFinite(p) && p > 1e-6) ? p : masterPitch);
+      return clamp(clamp(finite(A, 0), 0, 0.98) / Math.max(1e-6, laid), 0.05, 1);
+    };
+    // 'penReserve' — Bewick's transverse white, cut across a broad-pen ground.
+    // The reserve's centre sits at a FIXED sweep parameter on every ruling
+    // (|frac(tt/T) − ½| ≥ d/2), so the whites line up into a coherent
+    // cross-ruling instead of reading as a broken hatch. The FINE pen then rules
+    // a crossing family INSIDE those reserves — which is the part a width law
+    // cannot reach, and the reason this needs three pens rather than two.
+    const PRES_PERIOD = 1 / 12;
+    const PRES_DUTY_MAX = 0.6;
+    const presDuty = (A) => {
+      const h1 = penMaxArea(1);
+      const t = clamp((clamp(finite(A, 0), 0, 0.99) - h1) / Math.max(1e-6, penMaxArea(2) - h1), 0, 1);
+      // Darkest ⇒ narrowest white. The reserve opens as the broad ground lightens.
+      return clamp(PRES_DUTY_MAX * (1 - smooth5(t)), 0, PRES_DUTY_MAX);
+    };
+    //
+    // ── THE TEN ───────────────────────────────────────────────────────────────
+    // Each changes ONE thing about how three nibs are assigned. Every one of
+    // them emits three widths and only three.
+    //
+    //  1 'penTiers'      Tone tiers. Broad carries the darks, medium the mids,
+    //                    fine the highlights, one family and one angle, with the
+    //                    handoffs eased by per-ruling pen substitution.
+    //  2 'penScreen'     Three families at 0/60/120 — the LINE-screen angles
+    //                    (line screens have 180° symmetry, so three families
+    //                    want 60° apart, not the CMYK 30°) — one pen per family,
+    //                    composed. No tier boundary exists: all three families
+    //                    are present everywhere and only the mix changes.
+    //  3 'penInterleave' ONE even grid at the medium pen's own floor; tone is
+    //                    carried by the pen MIX alone. A broad and a fine
+    //                    alternating give an intermediate apparent weight with
+    //                    no width variation anywhere.
+    //  4 'penStipple'    Broad ruled darks, medium hatch mid, and the FINE nib
+    //                    stippling the highlight fade by shortening its marks.
+    //  5 'penOctaves'    Three tonal octaves of a pyramid: broad at 4× pitch,
+    //                    medium at 2×, fine at 1×, each entering by density as
+    //                    the octave above it saturates.
+    //  6 'penFacing'     Pen per SURFACE REGION, not per tone: the facing ratio
+    //                    nz (1 at the centre, 0 on the silhouette) picks the nib,
+    //                    so the limb is broad and the crown is fine whatever the
+    //                    light is doing. Tone stays entirely on spacing.
+    //  7 'penReserve'    The darkest region drawn by the BROAD pen at its own
+    //                    floor, with transverse white reserves cut across it and
+    //                    the FINE pen ruling detail inside them.
+    //  8 'penCross'      The register change is put where the perceptual
+    //                    clusters already separate: fine hatch in the lights,
+    //                    medium hatch through the mids, and medium × broad
+    //                    CROSSHATCH in the darks.
+    //  9 'penPitchMatch' One eased pitch field; the pen is simply the smallest
+    //                    that can deliver the local area without breaching its
+    //                    own floor. The HARD switch — the control for 1 and 3.
+    // 10 'penDepth'      Pen by camera DEPTH over the object's own z range:
+    //                    near = fine, far = broad, independent of both tone and
+    //                    silhouette. Tone stays on spacing.
+    const PEN_LAWS = {
+      penTiers: 1, penScreen: 1, penInterleave: 1, penStipple: 1, penOctaves: 1,
+      penFacing: 1, penReserve: 1, penCross: 1, penPitchMatch: 1, penDepth: 1,
+    };
+    const isPenLaw = () => PEN_LAWS[TONE_ALGO] === 1;
+    // The extra families each law emits, beyond family A (which the mapper
+    // already emits at the full line count). `div` divides the line count, so a
+    // family at div 2 rules at twice the pitch and every pitch-correct quantity
+    // downstream follows without being told.
+    const PEN_FAMILIES = {
+      penScreen: [{ layer: 1, deg: 60, div: 1 }, { layer: 2, deg: 120, div: 1 }],
+      penOctaves: [{ layer: 1, deg: 0, div: 2 }, { layer: 2, deg: 0, div: 4 }],
+      penCross: [{ layer: 1, deg: 60, div: 2 }],
+      penReserve: [{ layer: 1, deg: 90, div: 1 }],
+    };
+    // The pen each LAYER of a multi-family law draws with.
+    const penLayerTier = (layer) => {
+      const l = clamp(Math.round(finite(layer, 0)), 0, 2);
+      if (TONE_ALGO === 'penScreen') return l;             // fine / medium / broad
+      if (TONE_ALGO === 'penOctaves') return l;            // fine 1× / medium 2× / broad 4×
+      if (TONE_ALGO === 'penCross') return l === 0 ? 1 : 2; // medium base, broad cross
+      if (TONE_ALGO === 'penReserve') return l === 0 ? 2 : 0; // broad ground, fine detail
+      return 0;
+    };
+    // ONE PLAN PER SAMPLE: which nib, and what coverage that nib rules at here.
+    // Both `weightCovAt` (the geometry) and `weightAtSample` (the width) read
+    // this same function, so the two can never disagree about which pen is in
+    // the holder — a disagreement would state the tone against one nib and draw
+    // it with another, which is how a "pen law" quietly becomes a weight law.
+    const penPlan = (I, localPitch, smp) => {
+      const Ic = clamp(finite(I, 0), 0, 1);
+      const A = penTarget(Ic);
+      const p = (Number.isFinite(localPitch) && localPitch > 1e-6) ? localPitch : masterPitch;
+      const layer = clamp(Math.round(finite(xfLayer, 0)), 0, 2);
+      switch (TONE_ALGO) {
+        case 'penScreen':
+        case 'penOctaves':
+        case 'penCross': {
+          const tier = penLayerTier(layer);
+          const a = penLayerArea(A, layer, (k) => penLayerTier(k));
+          return { tier, cov: penCov(a, p, tier) };
+        }
+        case 'penReserve': {
+          if (layer === 1) {
+            // The fine detail family lives only where the broad ground has gone
+            // solid and the transverse reserves have opened. It enters by
+            // density on the reserve's own width, so it appears from nothing.
+            const d = presDuty(A);
+            return { tier: 0, cov: penCov(clamp(penLightArea() * 6 * d, 0.005, 0.6), p, 0) };
+          }
+          const tier = penDitherTier(penTierU(A));
+          return { tier, cov: penCov(A, p, tier) };
+        }
+        case 'penInterleave': {
+          // ONE EVEN GRID, at the medium nib's own plot floor. Tone is the pen
+          // mix and nothing else — until the mix runs out of range at the light
+          // end, where the fine nib is alone and the grid has to open. That
+          // crossover is stated here rather than hidden: below `penInk(0)` of
+          // required mark width there is no mix left to thin, so the law falls
+          // back to opening the pitch, exactly as every other law does.
+          const covE = clamp(p / Math.max(1e-6, penOwnFloor(1)), 0.005, 1);
+          const need = (A * p) / Math.max(1e-6, covE);
+          if (need <= penInk(0)) return { tier: 0, cov: penCov(A, p, 0) };
+          let u;
+          if (need <= penInk(1)) u = (need - penInk(0)) / Math.max(1e-6, penInk(1) - penInk(0));
+          else u = 1 + clamp((need - penInk(1)) / Math.max(1e-6, penInk(2) - penInk(1)), 0, 1);
+          return { tier: penDitherTier(u), cov: covE };
+        }
+        case 'penStipple': {
+          const tier = penDitherTier(penTierU(A));
+          if (tier === 0) return { tier: 0, cov: pstipCov(p) };
+          return { tier, cov: penCov(A, p, tier) };
+        }
+        case 'penFacing': {
+          const nz = clamp(finite(smp && smp.nz, 1), 0, 1);
+          // Eased across the two region boundaries by the same per-ruling
+          // substitution the tone tiers use, so the region change is a band and
+          // not a contour line.
+          const u = 2 - 2 * smooth5(clamp((nz - 0.10) / 0.75, 0, 1));
+          const tier = penDitherTier(u);
+          return { tier, cov: penCov(A, p, tier) };
+        }
+        case 'penDepth': {
+          const zr = penZRange();
+          const t = clamp((finite(smp && smp.z, zr.hi) - zr.lo) / Math.max(1e-6, zr.hi - zr.lo), 0, 1);
+          const tier = penDitherTier(2 - 2 * smooth5(t));  // near (large z) ⇒ fine
+          return { tier, cov: penCov(A, p, tier) };
+        }
+        case 'penPitchMatch': {
+          const tier = penExact(A);
+          return { tier, cov: penCov(A, p, tier) };
+        }
+        default: {
+          const tier = penDitherTier(penTierU(A));
+          return { tier, cov: penCov(A, p, tier) };
+        }
+      }
+    };
+
     // How much more ink than the light end this radiance asks for.
     const wAmp = (I) => {
       const aL = wLightArea();
@@ -1841,7 +2190,10 @@
     const xhCovB = (I, localPitch) => clamp(covForArea(xhAreaB(I), localPitch), 0.001, flatCov());
     // The coverage a weight law is ruling at, at this radiance — the divisor the
     // weight has to be stated against.
-    const weightCovAt = (I, localPitch) => {
+    const weightCovAt = (I, localPitch, smp) => {
+      // V5 — the three-pen laws state the geometry against the nib that is
+      // actually going to draw it. `penPlan` is the single source for both.
+      if (isPenLaw()) return penPlan(I, localPitch, smp).cov;
       if (isWPS()) return wpsCov(I);
       if (TONE_ALGO === 'weightCrossHandoff') {
         return xfLayer === 0 ? flatCov() : xhCovB(clamp(finite(I, 0), 0, 1), localPitch);
@@ -1923,6 +2275,10 @@
     // The per-sample weight the emitter records.
     const weightAtSample = (smp, localPitch, gradI, ctx) => {
       const I = clamp(finite(smp && smp.I, 0), 0, 1);
+      // V5 — A REAL PEN HAS ONE WIDTH. The three-pen laws return one of exactly
+      // three multipliers and never anything between them; `weightForArea` (and
+      // its continuous clamp) is deliberately not on this path.
+      if (isPenLaw()) return penMul(penPlan(I, localPitch, smp).tier);
       if (TONE_ALGO === 'weightSmoothstep') {
         const env = toneEnvelope();
         const top = clamp(env.covDark / Math.max(1e-6, env.covLight), 1, W_MAX);
@@ -2053,7 +2409,7 @@
       // The weight laws state their tone on the pen, so the coverage they hand
       // back is the GEOMETRY they want and nothing else — flat for four of them,
       // and the spacing half of the split for `weightPlusSpacing`.
-      if (isWeightLaw()) return weightCovAt(clamp(finite(I, 0), 0, 1), localPitch);
+      if (isWeightLaw()) return weightCovAt(clamp(finite(I, 0), 0, 1), localPitch, smp);
       return coverageForSample(I);
     };
 
@@ -2648,9 +3004,21 @@
       for (let i = a; i <= b; i++) { const v = Number(wPts[i]); if (Number.isFinite(v)) { s += v; n += 1; } }
       return n ? s / n : 1;
     };
+    // V5 — a piece that straddles a pen change comes out of `meanW` at a width
+    // no nib in the tray can draw. Snapping is what makes the claim "this plot
+    // uses three pens" literally true of the output rather than nearly true.
+    // `penTier` is recorded on the run so the harness can count pen changes and
+    // per-pen travel; it is a diagnostic tag, exactly like `.fam`/`.lineIndex`.
+    const penFinish = (pc) => {
+      if (!isPenLaw()) return pc;
+      const k = penSnap(pc.weightScale);
+      pc.weightScale = penMul(k);
+      pc.penTier = k;
+      return pc;
+    };
     const splitByWeight = (run, wPts, ttPts, fam) => {
       const n = run.length;
-      if (n < 2) { run.weightScale = meanW(wPts, 0, n - 1); return [run]; }
+      if (n < 2) { run.weightScale = meanW(wPts, 0, n - 1); return [penFinish(run)]; }
       const lvl = (w) => Math.round(clamp(finite(w, 1), W_MIN, W_MAX) / W_LEVEL);
       const cuts = [];
       let acc = 0;
@@ -2662,7 +3030,7 @@
         if (lvl(wPts[i]) !== cur && acc >= MIN_MARK_MM) { cuts.push(i); acc = 0; cur = lvl(wPts[i]); }
       }
       if (cuts.length && acc < MIN_MARK_MM) cuts.pop();   // fold the trailing stub back
-      if (!cuts.length) { run.weightScale = meanW(wPts, 0, n - 1); return [run]; }
+      if (!cuts.length) { run.weightScale = meanW(wPts, 0, n - 1); return [penFinish(run)]; }
       const bounds = [0].concat(cuts, [n - 1]);
       const pieces = [];
       for (let k = 0; k + 1 < bounds.length; k++) {
@@ -2671,7 +3039,7 @@
         pc.fam = fam;
         pc.tt0 = ttPts[a]; pc.tt1 = ttPts[b];
         pc.weightScale = meanW(wPts, a, b);
-        pieces.push(pc);
+        pieces.push(penFinish(pc));
       }
       return pieces;
     };
@@ -2933,6 +3301,9 @@
     // band (O17 — Round 2 crossed ALL of band 0, at 0/90, and it read as wire mesh).
     const emitLine = (paramAt, threshold, back, lineIndex, count, zoneGate, pitchStep, lineDir, densityCross) => {
       const wantFront = !back;
+      // V5 — publish the ruling index for the three-pen laws' per-ruling pen
+      // substitution (see `penDitherTier`). Inert under every other law.
+      penLineIdx = Number(lineIndex) || 0;
       // Every ruling of one family shares one phase track (see ladderPhase).
       const ladderKey = currentFam;
       let hlRun = [];
@@ -3116,7 +3487,13 @@
       let offPaper = null;
       let exitPt = null;
       let entryPt = null;
-      if (toneOn && (TONE_ALGO === 'signedWidth' || TONE_ALGO === 'transverseReserve')) {
+      // V5 — two of the three-pen laws cut along the ruling as well:
+      //   'penStipple' shortens the FINE nib's marks in the highlight fade
+      //     (hatch → stipple, the move the perceptual work says is free), and
+      //   'penReserve' cuts Bewick's transverse whites across the BROAD ground.
+      // Both reuse the machinery below verbatim; only `vals[s]` differs.
+      const penGate = toneOn && (TONE_ALGO === 'penStipple' || TONE_ALGO === 'penReserve');
+      if (toneOn && (TONE_ALGO === 'signedWidth' || TONE_ALGO === 'transverseReserve' || penGate)) {
         offPaper = new Array(nSteps + 1).fill(false);
         exitPt = new Array(nSteps + 1).fill(null);
         entryPt = new Array(nSteps + 1).fill(null);
@@ -3125,6 +3502,29 @@
           const smp = smps[s];
           if (!smp) continue;
           const I = clamp(finite(smp.I, 0), 0, 1);
+          if (penGate) {
+            const p = pitchAtStep(smp, s);
+            const A = penTarget(I);
+            if (TONE_ALGO === 'penStipple') {
+              // Only the FINE tier stipples. Where the medium or broad nib is in
+              // the holder the ruling is continuous, so `vals` stays positive.
+              penLineIdx = Number(lineIndex) || 0;
+              const tier = penDitherTier(penTierU(A));
+              if (tier !== 0) { vals[s] = 1; offPaper[s] = false; continue; }
+              const u = ((((s / nSteps) / PSTIP_PERIOD) % 1) + 1) % 1;
+              vals[s] = pstipDuty(A, p) / 2 - Math.abs(u - 0.5);
+            } else {
+              // 'penReserve' — the white is cut at a FIXED sweep parameter on
+              // every ruling, which is what makes the reserves line up into a
+              // coherent transverse cross-ruling instead of a broken hatch. The
+              // FINE detail family (layer 1) is never cut.
+              const d = (xfLayer === 1) ? 0 : presDuty(A);
+              const u = ((((s / nSteps) / PRES_PERIOD) % 1) + 1) % 1;
+              vals[s] = Math.abs(u - 0.5) - d / 2;
+            }
+            offPaper[s] = !(vals[s] >= 0);
+            continue;
+          }
           if (TONE_ALGO === 'signedWidth') {
             vals[s] = swAsk(I, pitchAtStep(smp, s)) - SW_CUT;
           } else {
@@ -4601,6 +5001,29 @@
         xfLayer = 0;
       };
       const emitTerminatorCross = (count, back) => {
+        // V5 — THE THREE-PEN LAWS' EXTRA FAMILIES. Family A is already emitted
+        // by the mapper at the full line count; these are the partners, each at
+        // its own angle and its own line count, each drawn with ONE nib. All are
+        // un-gated, so no ruling of any of them can terminate in open surface,
+        // and all enter by density off `penPlan` (no threshold, no traceable
+        // onset). A law with no entry in PEN_FAMILIES is a single-family law and
+        // adds nothing here.
+        if (isPenLaw()) {
+          const plan = PEN_FAMILIES[TONE_ALGO];
+          if (toneOn && plan) {
+            const base = finite(opts.fillAngle, 0);
+            plan.forEach((f) => {
+              const n = Math.max(2, Math.round(count / Math.max(1, f.div)));
+              xfLayer = clamp(Math.round(f.layer), 0, 2);
+              if (f.deg) { emitAngledFamily(base + f.deg, n, back); return; }
+              if (mapper === 'contour') emitFamily('a', n, back);
+              else if (onMeridianAxis) emitFamily('b', n, back);
+              else emitAngledFamily(hatchAngle, n, back);
+            });
+            xfLayer = 0;
+          }
+          return;
+        }
         if (TONE_ALGO === 'layeredCross') { if (toneOn) emitLayeredCross(count, back); return; }
         if (TONE_ALGO === 'crossFade') { if (toneOn) emitCrossFade(count, back); return; }
         // 'weightCrossHandoff' — ONE added family, entering by density from
@@ -4940,6 +5363,23 @@
         areaMin: Math.round(weightStat.aMin * 1000) / 1000,
         areaMax: Math.round(weightStat.aMax * 1000) / 1000,
         baseCov: Math.round(weightBaseCov() * 1000) / 1000,
+      } : null,
+      // V5 — WHERE EACH NIB BOUND. Three separate floors, so "the floor binds"
+      // has three separate answers, and a flood is a flood on ONE pen.
+      pens: (isPenLaw() && penStat.samples) ? {
+        mm: PEN_MM.slice(),
+        label: PEN_LABEL.slice(),
+        mul: [penMul(0), penMul(1), penMul(2)].map((v) => Math.round(v * 1000) / 1000),
+        ownFloorMM: [penOwnFloor(0), penOwnFloor(1), penOwnFloor(2)].map((v) => Math.round(v * 100) / 100),
+        touchMM: [penTouchPitch(0), penTouchPitch(1), penTouchPitch(2)].map((v) => Math.round(v * 100) / 100),
+        maxArea: [penMaxArea(0), penMaxArea(1), penMaxArea(2)].map((v) => Math.round(v * 1000) / 1000),
+        samples: penStat.samples,
+        picks: penStat.picks.slice(),
+        floorBound: penStat.floorBound.slice(),
+        ownFloorBound: penStat.ownFloorBound.slice(),
+        flood: penStat.flood.slice(),
+        lightArea: Math.round(penLightArea() * 1000) / 1000,
+        darkArea: Math.round(penDarkArea() * 1000) / 1000,
       } : null,
       // 'curvatureField' only — HOW UMBILIC THE OBJECT TURNED OUT TO BE. The
       // principal-direction field does not exist at an umbilic point, and a
