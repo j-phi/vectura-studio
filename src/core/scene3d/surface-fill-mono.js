@@ -327,7 +327,14 @@
     // the plot floor, deliberately, and still two distinguishable rulings.
     // The laws that go all the way to solid do it in their own bodies and say so.
     const A_DARK = 0.90;
-    const areaFor = (I) => clamp(1 - invL(L_LIGHT * clamp(finite(I, 0), 0, 1)), 0.02, A_DARK);
+    const L_DARK = Lstar(1 - A_DARK);
+    // Interpolate BETWEEN the two ends. Anchoring the dark end at L* 0 and
+    // clamping the area afterwards is not the same ramp: it pins everything
+    // below radiance 0.39 at the cap, and every field law measured a median
+    // paper gap of 0.4 mm — the cap — over most of the form.
+    const areaFor = (I) => clamp(
+      1 - invL(L_DARK + (L_LIGHT - L_DARK) * clamp(finite(I, 0), 0, 1)), 0.02, A_DARK,
+    );
     const pitchFor = (I) => clamp(INK / areaFor(I), INK / A_DARK, PMAX);
     // The same map with the plot floor honoured, for the laws whose identity is
     // that they never crowd past legibility.
@@ -403,7 +410,13 @@
         // A stop is a free end, so a walk must have run at least a few
         // millimetres before it is allowed to take one, and the test radius is
         // tight enough that a line prefers the silhouette to a neighbour.
-        if (i > 22 && tooClose(nx.x, nx.y, clearAt(nx) * 0.42)) break;
+        // Jobard & Lefer's d_test. It was set to 0.42 to reduce free ends and
+        // that DOUBLED the density: a new line could run parallel to an
+        // existing one at half a separation for its whole length, and every
+        // field law measured a median paper gap of 0.3 mm against a requested
+        // 0.9. 0.80 is the value that makes the placed spacing the requested
+        // one; the free ends it costs are reported, split out, in the table.
+        if (i > 14 && tooClose(nx.x, nx.y, clearAt(nx) * 0.80)) break;
         cur = nx;
       }
       return pts;
@@ -432,7 +445,7 @@
       else break;
       if (!s) continue;
       const sep = clearAt(s);
-      if (tooClose(s.x, s.y, sep * 0.9)) continue;
+      if (tooClose(s.x, s.y, sep * 0.95)) continue;
       const fwd = walk(s, 1);
       const bwd = walk(s, -1);
       bwd.reverse();
@@ -456,7 +469,7 @@
           const nx = line[i].x + (-ty / tl) * d * sg;
           const ny = line[i].y + (tx / tl) * d * sg;
           const ns = C.inv(nx, ny);
-          if (ns && !tooClose(nx, ny, d * 0.9)) grown.push(ns);
+          if (ns && !tooClose(nx, ny, d * 0.95)) grown.push(ns);
         });
       }
     }
@@ -1061,10 +1074,16 @@
         if (s && k % 3 === 0) { probe.push(clearAt(s, s._a, s._b)); }
       }
       C.emitScr(pts);
-      probe.sort((u, w) => u - w);
-      const med = probe.length ? probe[Math.floor(probe.length / 2)] : C.PMAX;
+      // The MEAN, not the median. A straight ruling across a sphere spends more
+      // than half its length below the terminator, so the median sample sits at
+      // the dark cap on EVERY ruling and the family comes out at one uniform
+      // spacing (measured: L* span 0.1). This is the known cost of a straight
+      // ruling chassis on a curved body — the continuous-field family answers
+      // it by integrating the position along the sweep, which curves the ruling.
+      let sm = 0;
+      probe.forEach((v2) => { sm += v2; });
       void sum; void cnt;
-      off += clamp(med, C.INK, C.PMAX);
+      off += clamp(probe.length ? sm / probe.length : C.PMAX, C.INK, C.PMAX);
     }
   };
 
