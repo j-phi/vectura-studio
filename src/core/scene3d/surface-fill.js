@@ -2870,6 +2870,13 @@
       contFieldSurface: 1, contFieldFore: 1, contFieldTouch: 1, contFieldQuant: 1,
     };
     const isContField = () => CONT_LAWS[TONE_ALGO] === 1;
+    // ── THE TWENTY MONOLINE LAWS (v7) ────────────────────────────────────────
+    // They live in `surface-fill-mono.js` and own family A on every line mapper.
+    // NONE of them appears in WEIGHT_LAWS, ADJ_LAWS, PEN_LAWS or CONT_LAWS, and
+    // none of them sets `weightScale`, so `isWeightLaw()` and `splitsAlongLine()`
+    // are FALSE for every one of them and the width path is never entered.
+    const MonoFill = () => (Vectura.Scene3D && Vectura.Scene3D.SurfaceFillMono) || null;
+    const isMonoLaw = () => { const M = MonoFill(); return Boolean(M && M.isMono(TONE_ALGO)); };
     // Sterzik, Vollmer & Vollmer, CGF 2024 — the perceptual transfer they FITTED
     // to hatching (not to dots, not to greys): the two constants are theirs.
     const CF_STERZIK_A = 0.4753;
@@ -6353,9 +6360,32 @@
       // No terminator cross, no shadow infill: both of those ADD ink on top of a
       // family whose spacing is already the complete tone statement, and both
       // would put marks at a clearance the field did not choose.
+      // The mono family owns family A outright on every line mapper, and adds
+      // no terminator cross and no shadow infill: both of those would put marks
+      // at a clearance the law did not choose.
+      const monoMapper = isMonoLaw() && toneOn
+        && (mapper === 'hatch' || mapper === 'crosshatch' || mapper === 'contour');
       const contMapper = isContField() && toneOn
         && (mapper === 'hatch' || mapper === 'crosshatch' || mapper === 'contour');
-      if (contMapper) {
+      if (monoMapper) {
+        MonoFill().emit({
+          algo: TONE_ALGO,
+          back,
+          count,
+          mapper,
+          sampleAt,
+          pushRun,
+          penWidth,
+          inkWidth: inkWidth(),
+          floorPitch,
+          masterPitch,
+          litMaxPitch: litMaxPitchPen() * penWidth,
+          targetArea,
+          minMarkMM: MIN_MARK_MM,
+          hash: sfHash,
+          angleDeg: finite(opts.fillAngle, 0),
+        });
+      } else if (contMapper) {
         if (mapper === 'contour') {
           emitContFamily('a', 0, count, back);
         } else if (onMeridianAxis) {
