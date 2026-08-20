@@ -1995,6 +1995,38 @@
       }
       return best;
     };
+    // EQUAL SHARES, NOT A CASCADE — MEASURED. The cascade (layer k fills to its
+    // own pen's cap and hands the remainder on) is right when the layers are a
+    // handoff, and wrong when they are a SCREEN. Family A is the finest-pitched
+    // family and was therefore dealt the fine nib; under the cascade it filled
+    // to that nib's cap of 0.441 EVERYWHERE, which is 2773 mm of 0.26 mm ink on
+    // one sphere — 3797 mm total against whiteBand's 1192 — while the broad nib
+    // drew 9 paths and 200 mm. Tone flattened with it: R² 0.003, 76 % off the
+    // line, and the whole cost argument for a broad nib inverted.
+    //
+    // Three screens compose as 1 − (1 − a)³, so the share that lands each family
+    // on the target is a = 1 − (1 − A)^(1/n). Every family then carries the same
+    // tonal responsibility and differs only in the nib that draws it — which is
+    // what a screen IS, and it is the construction the 0/60/120 separation was
+    // chosen for. Capped by each pen's own maximum, so a nib is never asked for
+    // more area than its floor allows.
+    // ...AND THE PROBABILISTIC UNION IS THE WRONG COMPOSITION FOR RULED
+    // FAMILIES. MEASURED, TWICE. 1 − (1 − a)^n assumes the layers overlap at
+    // random; crossed RULINGS do not — this file already had to measure
+    // `XH_DEEP_AREA` at 0.72 against a predicted 0.85 for exactly that reason.
+    // Sharing by the union put every multi-family pen law solid: penScreen,
+    // penOctaves and penCross all came back with a 5th-percentile L* of 4.5 (a
+    // black ball), 4216 / 4565 / 2485 mm of ink, and R² 0.003 / 0.385 / 0.127.
+    // Additive shares with a composed ceiling is the model that lands: the
+    // families are sparse at the shares involved, their bands abut far more
+    // often than they overlap, and the ceiling is the same measured 0.85 the
+    // crossed laws use rather than a predicted union.
+    const PEN_MULTI_CEIL = 0.85;
+    const penShareArea = (A, n, tier) => {
+      const a = Math.min(clamp(finite(A, 0), 0, 0.98), PEN_MULTI_CEIL);
+      const k = Math.max(1, Math.round(finite(n, 1)));
+      return clamp(Math.min(a / k, penMaxArea(tier)), 0.005, 0.98);
+    };
     // Composition across layers, each layer capped by ITS OWN pen. Layer k+1
     // enters at zero exactly where layer k saturates, so a family appears by
     // density from nothing and there is no threshold to trace.
@@ -2129,8 +2161,8 @@
         case 'penOctaves':
         case 'penCross': {
           const tier = penLayerTier(layer);
-          const a = penLayerArea(A, layer, (k) => penLayerTier(k));
-          return { tier, cov: penCov(a, p, tier) };
+          const n = (PEN_FAMILIES[TONE_ALGO] || []).length + 1;
+          return { tier, cov: penCov(penShareArea(A, n, tier), p, tier) };
         }
         case 'penReserve': {
           if (layer === 1) {
