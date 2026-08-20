@@ -2496,6 +2496,14 @@
                 mapper: g.style.mapper,
                 fillAngle: angleDeg,
                 fillDensity: finite(sp.fillDensity, 50),
+                // The surface-fill TONE LAW, per style group. `undefined` (an old
+                // document, or a face override that predates the control) leaves
+                // buildObject on its committed default — see surface-fill.js's
+                // per-call TONE_ALGO resolution. Not clamped here on purpose:
+                // buildObject owns validation against Vectura.SCENE3D_TONE_LAWS.
+                toneLaw: sp.toneLaw,
+                toneQuantLevels: sp.toneQuantLevels,
+                toneFlowMode: sp.toneFlowMode,
                 // Crosshatch family-B controls. They were already live on faceted
                 // geometry and on the flat silhouette fallback below, but were
                 // never handed to the curved fill — so on every chart-wrapped
