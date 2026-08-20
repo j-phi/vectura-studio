@@ -2122,6 +2122,42 @@
     // 10 'penDepth'      Pen by camera DEPTH over the object's own z range:
     //                    near = fine, far = broad, independent of both tone and
     //                    silhouette. Tone stays on spacing.
+    // ── WHAT THE TEN MEASURED, sphere-hatch, uncapped, against whiteBand ─────
+    //
+    // whiteBand (the reference, and NOT a pen plot — 439 of its 450 paths are at
+    // a width no nib in the tray can draw):
+    //   R² 0.512 · off-line 5.8 % · L* span 29 · darkest L* 51.4 · CoV 0.31 ·
+    //   step 1.67x · ink 1192 mm · 450 paths
+    //
+    //   law             R²     off-line  span  darkest  CoV    step   seam   ink   paths  chg
+    //   penPitchMatch   0.229   22.0 %   32.1   41.2    0.724  3.25x   9.3   1893   119    2
+    //   penTiers        0.187   28.8 %   30.4   44.6    0.703  3.5x   10.4   1675   127    2
+    //   penStipple      0.170   31.4 %   31.7   42.3    0.659  4.33x   9.9   1685   134    2
+    //   penInterleave   0.154   36.5 %   29.2   41.7    0.677  3.5x   11.4   1634   273    2
+    //   penReserve      0.100   34.4 %   14.3   48.4    0.513  3.5x   28.2   2249   254    2
+    //   penOctaves      0.035   39.6 %   15.3   46.0    0.426  2.17x  40.5   2884    96    2
+    //   penScreen       0.023   37.7 %   12.1   36.4    0.528  2.8x   37.6   2908    74    2
+    //   penCross        0.003   67.0 %    6.6   62.2    0.552  2.8x   53.8   1652    65    1
+    //   penDepth        0.001   79.7 %    8.7   77.8    0.767  2.33x  29.3   2692   546    1
+    //   penFacing       0.000   64.4 %    4.4   43.1    0.876  2.8x   43.1   2332   438    2
+    //
+    // ALL TEN: zero marks outside the silhouette, zero off-pen widths, and 2 pen
+    // changes when the work is grouped by nib (a pen law that is plotted in
+    // EMISSION order costs 60–450 changes — the grouping is worth two orders of
+    // magnitude and costs nothing, because a pen assignment is per-run).
+    //
+    // NONE OF THEM BEATS whiteBand ON LINEARITY, and the reason is structural
+    // rather than tuning. whiteBand rules ONE even grid and never drops a
+    // ruling; its tone is entirely the black fraction of a constant reserved
+    // width, so the chart's foreshortening — a sphere's meridians converging to
+    // nothing at the poles — cannot touch it. A three-pen plot may not vary its
+    // width, so its ONLY tone channel is spacing, and spacing is exactly the
+    // quantity the chart is already distorting. That is the price of the
+    // request, and it is visible as the spacing CoV: 0.31 for whiteBand against
+    // 0.65–0.88 here. Every one of the ten is nonetheless DARKER than whiteBand
+    // (41–48 against 51.4) at a comparable or lower ink cost, which is the
+    // broad nib's actual contribution: the same ink area for a third of the
+    // travel.
     const PEN_LAWS = {
       penTiers: 1, penScreen: 1, penInterleave: 1, penStipple: 1, penOctaves: 1,
       penFacing: 1, penReserve: 1, penCross: 1, penPitchMatch: 1, penDepth: 1,
