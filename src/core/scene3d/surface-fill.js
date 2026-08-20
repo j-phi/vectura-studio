@@ -1872,8 +1872,19 @@
     // The transfer between them is `areaForTone` — L* linear in radiance — which
     // is what makes the gaps open EVENLY and eased along the form rather than in
     // proportion to ink.
+    // MEASURED, AND IT IS THE DEPTH-VERSUS-LINEARITY TRADE STATED AS ONE
+    // NUMBER. The first cut anchored the dark end at the broad nib's true touch
+    // pitch — area 0.98, solid black. Under an L*-linear transfer that puts the
+    // whole lower half of the form into near-black, where the delivered tone
+    // CANNOT vary because it is already solid: sphere-hatch came back with the
+    // bottom of its response flat, R² 0.153 and 37.6 % off the line. 0.93 is the
+    // same "near solid, short of a flooded blob" bar `W_DEEP_AREA` uses; the
+    // broad nib reaches it at a 1.12 mm pitch, which is inside the engine floor
+    // and inside its own ink width, so the marks still touch — they just are not
+    // asked to overlap.
+    const PEN_DEEP_AREA = 0.93;
     const penLightArea = () => clamp(penInk(0) / Math.max(1e-6, litMaxPitchPen() * penWidth), 0.005, 0.98);
-    const penDarkArea = () => clamp(penMaxArea(2), 0.02, 0.98);
+    const penDarkArea = () => clamp(Math.min(penMaxArea(2), PEN_DEEP_AREA), 0.02, 0.98);
     const penTarget = (I) => areaForTone(I, penDarkArea(), penLightArea());
     //
     // THE TIER COORDINATE, AND WHY IT IS REAL-VALUED. `penTierU` returns a
@@ -1886,7 +1897,7 @@
     // instead of putting it on a line. The window is the last PEN_BLEND of each
     // pen's usable range, so the handoff happens where the outgoing pen is
     // already at its own floor and has nothing left to give.
-    const PEN_BLEND = 0.30;
+    const PEN_BLEND = 0.18;
     const smooth5 = (t) => { const u = clamp(t, 0, 1); return u * u * u * (u * (6 * u - 15) + 10); };
     const penTierU = (A) => {
       const a = clamp(finite(A, 0), 0, 0.99);
@@ -1900,12 +1911,68 @@
     // index is the sequence that stays furthest from lining up with itself at
     // every count, so no small run of rulings ever falls into phase and the
     // substitution reads as a mix rather than as a stripe.
+    // MEASURED. The first cut used the golden-ratio phase, which is the right
+    // choice for a sequence that must never fall into step with itself — but the
+    // substitution is not that problem. Two adjacent rulings drawn with nibs
+    // 3.6x apart in ink is a large local swing whatever order they come in, so
+    // what matters is that the substituted rulings are as EVENLY SPREAD as an
+    // integer subset can be. That is Bresenham's rule (the Sturmian word of
+    // density f), the same construction the ladder itself uses, and its gaps are
+    // exactly floor(1/f) and ceil(1/f) — two consecutive integers, never a run.
+    // Golden-phase substitution measured a moire RMS of 0.322 ink-area on
+    // sphere-hatch against Bresenham's; the pairs it happened to put together
+    // were what the eye was reading.
     const penDitherTier = (u) => {
       const uu = clamp(finite(u, 0), 0, 2);
       const base = Math.floor(uu);
-      const frac = uu - base;
-      const ph = ((((Number(penLineIdx) || 0) + 1) * GOLDEN_STEP) % 1 + 1) % 1;
-      return penIdx(base + (ph < frac ? 1 : 0));
+      const f = uu - base;
+      const i = Number(penLineIdx) || 0;
+      const up = Math.floor((i + 1) * f) > Math.floor(i * f);
+      return penIdx(base + (up ? 1 : 0));
+    };
+    // ── THE GRID MUST NOT KNOW ABOUT THE SUBSTITUTION ────────────────────────
+    //
+    // MEASURED, AND IT IS THE WHOLE LESSON OF THIS ROUND. The first cut stated
+    // each ruling's coverage against the pen that ruling had been dealt —
+    // `penCov(A, p, penDitherTier(u))`. The broad nib's ink is 3.6× the fine
+    // one's, so two neighbouring rulings on either side of a substitution asked
+    // for coverages 3.6× apart, the ladder's phase accumulator duly kept them at
+    // 3.6× the spacing, and the field came out with a spacing CoV of 0.641 and a
+    // largest adjacent step of 3.25× (whiteBand: 0.31 and 1.67×). R² collapsed
+    // to 0.122. The substitution had been allowed to move the GEOMETRY.
+    //
+    // The fix is to state the grid against the MIX and the width against the
+    // draw. `penInkU` is the ink width of the blend — what a field of these
+    // rulings lays per unit length ON AVERAGE — so the coverage, and therefore
+    // the spacing, is CONTINUOUS in u even though the pen in the holder is not.
+    // The pen substitution then rides on an even field and changes only which
+    // nib draws each already-placed ruling. That is what "a broad and a fine
+    // alternating give an intermediate apparent weight with no width variation"
+    // has to mean arithmetically.
+    const penInkU = (u) => {
+      const uu = clamp(finite(u, 0), 0, 2);
+      const b = Math.floor(uu);
+      if (b >= 2) return penInk(2);
+      return penInk(b) + (penInk(b + 1) - penInk(b)) * (uu - b);
+    };
+    // Coverage for the blended field, floored by the pen that will actually
+    // carry the darkest share of it (the wider nib of the pair — it is the one
+    // that floods first, so it owns the floor).
+    const penCovU = (area, localPitch, u) => {
+      const uu = clamp(finite(u, 0), 0, 2);
+      const kFloor = penIdx(Math.ceil(uu - 1e-9));
+      const p = (Number.isFinite(localPitch) && localPitch > 1e-6) ? localPitch : masterPitch;
+      const a = clamp(finite(area, 0), 0, 0.98);
+      if (!(p > 1e-6)) return clamp(a, 0.005, 1);
+      const c = (a * p) / Math.max(1e-6, penInkU(uu));
+      const cap = clamp(p / Math.max(1e-6, penMinPitch(kFloor)), 0.005, 1);
+      const capOwn = clamp(p / Math.max(1e-6, penOwnFloor(kFloor)), 0.005, 1);
+      penStat.samples += 1;
+      penStat.picks[kFloor] += 1;
+      if (c > cap + 1e-9) penStat.floorBound[kFloor] += 1;
+      if (c > capOwn + 1e-9) penStat.ownFloorBound[kFloor] += 1;
+      if (a > penMaxArea(kFloor) + 1e-9) penStat.flood[kFloor] += 1;
+      return clamp(Math.min(c, cap), 0.005, 1);
     };
     // The SMALLEST pen that can deliver this area without breaching its own
     // floor. The hard switch — the control against which the eased handoffs are
@@ -2073,8 +2140,8 @@
             const d = presDuty(A);
             return { tier: 0, cov: penCov(clamp(penLightArea() * 6 * d, 0.005, 0.6), p, 0) };
           }
-          const tier = penDitherTier(penTierU(A));
-          return { tier, cov: penCov(A, p, tier) };
+          const u = penTierU(A);
+          return { tier: penDitherTier(u), cov: penCovU(A, p, u) };
         }
         case 'penInterleave': {
           // ONE EVEN GRID, at the medium nib's own plot floor. Tone is the pen
@@ -2092,9 +2159,10 @@
           return { tier: penDitherTier(u), cov: covE };
         }
         case 'penStipple': {
-          const tier = penDitherTier(penTierU(A));
+          const u = penTierU(A);
+          const tier = penDitherTier(u);
           if (tier === 0) return { tier: 0, cov: pstipCov(p) };
-          return { tier, cov: penCov(A, p, tier) };
+          return { tier, cov: penCovU(A, p, u) };
         }
         case 'penFacing': {
           const nz = clamp(finite(smp && smp.nz, 1), 0, 1);
@@ -2102,22 +2170,21 @@
           // substitution the tone tiers use, so the region change is a band and
           // not a contour line.
           const u = 2 - 2 * smooth5(clamp((nz - 0.10) / 0.75, 0, 1));
-          const tier = penDitherTier(u);
-          return { tier, cov: penCov(A, p, tier) };
+          return { tier: penDitherTier(u), cov: penCovU(A, p, u) };
         }
         case 'penDepth': {
           const zr = penZRange();
           const t = clamp((finite(smp && smp.z, zr.hi) - zr.lo) / Math.max(1e-6, zr.hi - zr.lo), 0, 1);
-          const tier = penDitherTier(2 - 2 * smooth5(t));  // near (large z) ⇒ fine
-          return { tier, cov: penCov(A, p, tier) };
+          const u = 2 - 2 * smooth5(t);                    // near (large z) ⇒ fine
+          return { tier: penDitherTier(u), cov: penCovU(A, p, u) };
         }
         case 'penPitchMatch': {
           const tier = penExact(A);
           return { tier, cov: penCov(A, p, tier) };
         }
         default: {
-          const tier = penDitherTier(penTierU(A));
-          return { tier, cov: penCov(A, p, tier) };
+          const u = penTierU(A);
+          return { tier: penDitherTier(u), cov: penCovU(A, p, u) };
         }
       }
     };
