@@ -2034,6 +2034,19 @@
     // mechanism behind "remove unintentional white gaps".
     const WV6_JIT = 0.35;         // 'weaveJitter': the golden walk on top of anti-phase
     const WV6_AFLOOR_MIN = 0.10;  // no law may straighten below this share, ever
+    // A TEXTURE HAS A FIXED VISUAL SCALE. Measured the other way first, and it
+    // is the round's worst trap: with the amplitude stated ONLY as a share of
+    // the drawn pitch, a spacing-tone law swings the pitch from the plot floor
+    // (0.66 mm) to 22 mm across one sphere, so the wave swings from 0.20 mm to
+    // 2.43 mm with it. The big end is the problem — a crest 2.4 mm off its own
+    // ruling samples a radiance 5 mm away from where the tone was read, and the
+    // drawing acquires a texture-keyed tone error it cannot recover from:
+    // sphere·crosshatch came back R² 0.115 with the worst bin 86.6 % off the
+    // line and 23.2 L* of moiré. Bounding the excursion in MILLIMETRES makes
+    // the serpentine the same size everywhere — which is what a texture is —
+    // and leaves the share to decide only how much of the band it uses.
+    const WV6_AMP_MAX_MM = 0.80;  // no crest wanders further than this from its ruling
+    const WV6_AMP_MIN_MM = 0.34;  // ...and none is smaller than this while there is room
     const WV6 = {
       // aFlo/aMax  amplitude share of the drawn pitch, at the light / dark end
       // amp        'ramp' takes the radiance ramp; 'perp' solves the share from
@@ -3852,26 +3865,30 @@
           // ramp and are merely CAPPED at the floor — which, for the in-phase
           // ones, never binds, because lam/(2·pi·f) is already under the pitch.
           let floorBound = false;
-          if (isWv6()) {
-            const c6 = wv6();
-            const cFloor = wv6ClearFloorMM();
-            if (c6.amp === 'perp') {
-              f = clamp(wv6ShareFor(wv6TargetClear(I, drawn, lam), drawn, lam), c6.aFlo, c6.aMax);
-            }
-            const fCap = wv6ShareFor(cFloor, drawn, lam);
-            if (f > fCap) {
-              // The floor binds. The amplitude is NOT taken below the floor
-              // share, because a straightened highlight is the defect this round
-              // exists to remove — so the excursion is held at aFlo and the
-              // event is COUNTED rather than hidden. (`trochoidLoop` bought its
-              // L* 20.2 partly below the floor too; the difference is that this
-              // says so, and says how often.)
-              f = Math.max(fCap, c6.aFlo);
-              floorBound = true;
-            }
+          if (isWv6() && wv6().amp === 'perp') {
+            f = clamp(wv6ShareFor(wv6TargetClear(I, drawn, lam), drawn, lam),
+              wv6().aFlo, wv6().aMax);
           }
           f *= clamp((endMM[s] || 0) / WV_TAPER_MM, 0, 1);
-          const amp = f * drawn;
+          let amp = f * drawn;
+          if (isWv6()) {
+            // THE THREE BOUNDS, IN THE ORDER THEY OUTRANK EACH OTHER.
+            //   1. the texture scale — a crest is a fixed size on the paper;
+            //   2. the texture FLOOR — but only as far as the band has room for
+            //      it, so a wave can never be floored INTO its neighbour;
+            //   3. the clearance floor — which outranks both, because two
+            //      strokes closer than a plot floor are one wet stroke. Where it
+            //      binds the excursion is cut and the event is COUNTED, never
+            //      hidden. It binds in the DARKS, where the spacing has already
+            //      closed; the LIGHT — the side Jay is judging — has room to
+            //      spare and keeps its full wave.
+            const taper = clamp((endMM[s] || 0) / WV_TAPER_MM, 0, 1);
+            amp = Math.min(amp, WV6_AMP_MAX_MM * taper);
+            amp = Math.max(amp, Math.min(WV6_AMP_MIN_MM * taper, 0.42 * drawn * taper));
+            const ampClear = drawn * wv6ShareFor(wv6ClearFloorMM(), drawn, lam);
+            if (amp > ampClear) { amp = Math.max(0, ampClear); floorBound = true; }
+            f = drawn > 1e-6 ? amp / drawn : 0;
+          }
           const e = wvElong(amp, lam);
           wvElongs[s] = e;
           const anti = TONE_ALGO === 'interlockWeave' || TONE_ALGO === 'tourScribble';
@@ -5928,10 +5945,17 @@
         ampMeanLit: waveStat.litSamples
           ? Math.round((waveStat.litAmpSum / waveStat.litSamples) * 1000) / 1000 : null,
         litSamples: waveStat.litSamples,
-        ampRetained: (waveStat.litSamples && waveStat.darkSamples
-          && waveStat.darkAmpSum > 1e-9)
+        // The denominator is the WHOLE-FORM mean, not the shadow mean. Measured
+        // against the shadow it is a useless ratio: a spacing-tone law rules the
+        // core shadow at the plot floor, the clearance floor then cuts the
+        // excursion to near nothing there, and dividing by ~0 reports
+        // "2 084 552 388× retained". Against the form mean the number says what
+        // it should — 1.0 is a wave of the same size everywhere, above 1.0 is
+        // MORE wave in the light than on average, and near 0 is the straightened
+        // highlight this round exists to prevent.
+        ampRetained: (waveStat.litSamples && waveStat.samples && waveStat.ampSum > 1e-9)
           ? Math.round(((waveStat.litAmpSum / waveStat.litSamples)
-            / (waveStat.darkAmpSum / waveStat.darkSamples)) * 1000) / 1000 : null,
+            / (waveStat.ampSum / waveStat.samples)) * 1000) / 1000 : null,
         // (c) modelled elongation against the elongation the POLYLINE delivered.
         elongReal: waveStat.baseLen > 1e-6
           ? Math.round((waveStat.realLen / waveStat.baseLen) * 1000) / 1000 : null,
