@@ -672,6 +672,52 @@
   //                   around the highlight like iron filings. Tone is COUNT on a
   //                   blue-noise lattice. Black by abutment once the flicks
   //                   crowd below their own length.
+  // ── MEASURED (fillcmp/v6mark.mjs, app-default scene, uncapped, pen 0.3) ────
+  //
+  // sphere·hatch. `pen` is PEN-DOWNS — a stipple's whole cost on a plotter.
+  // `out` is emitted fill points more than 0.5 mm outside the front surface: it
+  // is ZERO for all twelve, by construction rather than by luck. `rEnd` is the
+  // worst free end belonging to a RULING (as opposed to a deliberate mark): it
+  // is zero for all twelve, because these laws emit nothing BUT marks.
+  //
+  //   law            weight   R²    span  dark  HFALL moiré  ink   pen   out rEnd
+  //   whiteBand      1–6.0×  0.512  29.0  51.4  6.07   8.93  1192   450   0   0
+  //   lozengeStipple 1–1×    0.051  10.8  75.3  7.61   8.63  2627   242   0  23.8
+  //   mkScribble     1–1×    0.714  37.9  46.2  6.70   6.77  4007    58   0   0
+  //   mkDashRamp     1–1×    0.640  36.6  46.0  6.39   7.59  3912  2246   0   0
+  //   mkDotScreen    1–1×    0.616  36.3  44.9  6.58   8.06  3915   844   0   0
+  //   mkRadialFlick  1–1×    0.568  40.3  40.1  5.63   9.90  4030  2173   0   0
+  //   mkDotLozenge   1–1×    0.510  49.3  21.5  6.92  14.18  4392  1252   0   0
+  //   mkLozenge      1–1×    0.505  65.1   4.5  6.78  20.41  4835   931   0   0
+  //   mkTriangle     1–1×    0.468  60.5   4.5  6.84  18.87  4578  1112   0   0
+  //   mkChevron      1–1×    0.444  42.9   4.5  6.40  15.03  4135  1798   0   0
+  //   mkTick         1–1×    0.436  40.2  35.4  8.19  12.83  3975  2484   0   0
+  //   mkCrossPlus    1–1×    0.416  38.3  34.1  7.16  13.10  3788  2355   0   0
+  //   mkComma        1–1×    0.373  38.2  36.2  7.42  12.60  3751  3128   0   0
+  //   mkSFlick       1–1×    0.256  53.8   4.5  8.26  22.97  4183   831   0   0
+  //
+  // SEVEN of the twelve beat whiteBand's L* SPAN and all twelve beat it on the
+  // worst adjacent tone step in the highlight (whiteBand 79.4, the twelve
+  // 9.5–31.4) — that step is whiteBand's hard clamp, the place where the pen
+  // runs out of thinness and the drawing stops tracking the light. Four beat it
+  // on R². The price is ink and pen-downs: whiteBand draws the same sphere in
+  // 1192 mm and 450 pen-downs because a width channel is free, and a
+  // single-weight drawing has to lay every unit of tone as LENGTH.
+  //
+  // WHAT THE MEASUREMENT ALSO SHOWS. Laws whose mark is a CLOSED OUTLINE that
+  // nests (lozenge, triangle, dot-and-lozenge) reach the deepest black — 4.5,
+  // the metric's own floor, over a region — but pay for it in moiré (14–20 L*
+  // RMS against whiteBand's 8.9): a nested outline is a strong periodic texture
+  // and the eye reads that texture as tone the light does not explain. Laws
+  // whose mark is a single open stroke (scribble, dash ramp, dot screen) sit at
+  // 6.8–8.1 moiré — as clean as whiteBand — but saturate lighter, because an
+  // open stroke's capacity in its own cell is smaller.
+  //
+  // THE PAIRWISE VISUAL DIFFERENCE MATRIX (fillcmp/v6mark-diffmatrix.json).
+  // Ink-mask IoU between every pair, over the twelve: median 62 %, worst pair
+  // 83 %. Against whiteBand: 31–58 %. The previous round's ten sat at
+  // 97.8–99.9 % identical inked pixels against whiteBand — which is what "they
+  // all look alike" was, measured. Removing the width channel is what moved it.
   const MARK_LAWS = {
     mkDotScreen: 1, mkLozenge: 1, mkDashRamp: 1, mkTick: 1, mkChevron: 1,
     mkComma: 1, mkSFlick: 1, mkCrossPlus: 1, mkTriangle: 1, mkScribble: 1,
