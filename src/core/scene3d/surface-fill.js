@@ -547,7 +547,89 @@
   //                       family enters by density from nothing where the coarse
   //                       one runs out of legal pen. Two octaves, each internally
   //                       even, neither anywhere near the plot floor.
+  //
+  // ── ROUND 5: THE CONTINUOUS SPACING FIELD (`contField*`) ────────────────────
+  //
+  // Jay, on what the spacing is actually supposed to do:
+  //   "it's absolutely fine for lines to be right up against each other to
+  //    render pure black, and then EVENLY gradually introduce gaps to add white
+  //    — this spacing must be thoughtfully eased along the contour of the
+  //    object … two curves on a sphere are stacked with no gap in an area of
+  //    total shadow but gradually open up over an area of highlight and then
+  //    return to touching where there's shadow on another side."
+  //
+  // Every law above this line — `ladder`, `phaseFineLadder`, `perceptualRamp`,
+  // all of them — places rulings on a MASTER GRID and decides which ones to
+  // draw. The realised pitch is therefore always an INTEGER MULTIPLE of the
+  // master pitch: 1×, 2×, 3×. There is no such thing as a 1.4× gap, so "evenly
+  // gradually introduce gaps" is not something the chassis can express. That is
+  // the whole of `phaseFineLadder`'s 0.710 spacing CoV and its 2× largest
+  // adjacent step, and no amount of extra tone LEVELS can fix it: the levels
+  // quantise the tone, the grid quantises the SPACING, and it is the second one
+  // the eye reads as a step.
+  //
+  // These ten laws throw the grid away. A ruling's position is not chosen from
+  // a comb; it is INTEGRATED. Walk the family's cross-direction from one edge of
+  // the form to the other, and at each point ask the tone what gap it wants
+  // there, in millimetres, then step by exactly that. The gap is a continuous
+  // function of position with no quantisation anywhere, so it can ease. Every
+  // ruling then draws WHOLE — there is no drop decision left to take, which is
+  // also why these laws cannot leave a free end.
+  //
+  //   'contFieldPitch'    The baseline. Gap = inkWidth / targetArea(I), i.e.
+  //                       the same L*-linear tone target `perceptualRamp` and
+  //                       `phaseFineLadder` state, read as a SPACING instead of
+  //                       as a probability. Integrated across the family, screen
+  //                       metric, floored at the plot floor.
+  //   'contFieldEase'     Smootherstep between the darkest and lightest legal
+  //                       pitch. The ease is applied in PITCH space, so the
+  //                       clearance itself has zero first and second derivative
+  //                       at both ends of the ramp.
+  //   'contFieldSigmoid'  Sterzik, Vollmer & Vollmer (CGF 2024) fitted a
+  //                       perceptual response to hatching specifically:
+  //                       f(x) = 1 / (1 + (1/a − 1)(1/x − 1)^b), a = 0.4753,
+  //                       b = 1.5918. Their curve, on this file's pitch range.
+  //   'contFieldMeasured' The tone response INVERTED FROM MEASUREMENT rather
+  //                       than from theory. Pass 1 places with the baseline law
+  //                       and records what ink area each radiance actually
+  //                       received once foreshortening, the floor and the
+  //                       silhouette had their say; pass 2 corrects the field by
+  //                       the measured residual. Two passes, per family.
+  //   'contFieldEquil'    Ostromoukhov (SIGGRAPH 2001) equilibration, on the
+  //                       spacing field: rasterise the placed ink → apply dot
+  //                       gain → low-pass with an HVS kernel → compare with the
+  //                       target luminance → correct the local gap → iterate.
+  //                       Three rounds, correction quantised to 16 levels.
+  //   'contFieldAniso'    Zander, Isenberg, Schlechtweg & Strothotte (CGF 2004)
+  //                       measure clearance ACROSS THE FLOW only. A gap chosen
+  //                       from the seeding offset is right in the middle of a
+  //                       ruling and wrong at its tips, where a converging
+  //                       family has already closed. So the step is corrected
+  //                       against the MEASURED minimum across-flow distance to
+  //                       the ruling already laid.
+  //   'contFieldSurface'  Contour-following: the field is integrated in the
+  //                       SURFACE's own arc length, not on screen. The spacing
+  //                       is then a property of the form and eases along it,
+  //                       and the projection is deliberately left in.
+  //   'contFieldFore'     Its partner. Zander's foreshortening correction,
+  //                       |proj_viewplane(cross(t, n))|, divides the wanted gap
+  //                       so that a surface turning away from the camera does
+  //                       NOT read as darker than the light says. That false
+  //                       limb-darkening is a prime suspect for the off-the-line
+  //                       error every chart-ruled law carries.
+  //   'contFieldTouch'    The sub-floor case, stated. Where the field asks for
+  //                       zero clearance the lines TOUCH — that is the intended
+  //                       black, not a fault — so the floor is lowered from the
+  //                       plot floor (2.2 × pen) to one ink width, at which
+  //                       adjacent rulings abut and the area is solid. Flooding
+  //                       is not hidden; it is counted and reported.
+  //   'contFieldQuant'    The control for "is continuity worth anything, or
+  //                       would 128 levels do?" — `contFieldPitch`'s field with
+  //                       the GAP quantised to CF_LEVELS steps. Run at 128 and
+  //                       at 256 against the continuous original.
   const TONE_ALGO = 'ladder';
+  // 'contFieldQuant' only: how many discrete gap sizes the field may use.
+  const CF_LEVELS = 128;
   // 'contourFlow' only: which streamline family the rulings follow.
   //   'iso'  along the iso-intensity curves
   //   'grad' down the intensity gradient (their orthogonals)
@@ -1997,6 +2079,196 @@
       return weightForArea(wTargetArea(I), localPitch, weightCovEff(I, localPitch));
     };
 
+    // ── ROUND 5 — THE CONTINUOUS SPACING FIELD ────────────────────────────────
+    //
+    // See the header block. Everything here answers ONE question: at this point
+    // on the form, how many millimetres of clearance does the light want between
+    // this ruling and the next? Nothing here decides whether a ruling is drawn —
+    // every ruling of a `contField*` family is drawn WHOLE — so none of it can
+    // band, chatter, or leave a free end. The spacing is the entire tone.
+    const CONT_LAWS = {
+      contFieldPitch: 1, contFieldEase: 1, contFieldSigmoid: 1,
+      contFieldMeasured: 1, contFieldEquil: 1, contFieldAniso: 1,
+      contFieldSurface: 1, contFieldFore: 1, contFieldTouch: 1, contFieldQuant: 1,
+    };
+    const isContField = () => CONT_LAWS[TONE_ALGO] === 1;
+    // Sterzik, Vollmer & Vollmer, CGF 2024 — the perceptual transfer they FITTED
+    // to hatching (not to dots, not to greys): the two constants are theirs.
+    const CF_STERZIK_A = 0.4753;
+    const CF_STERZIK_B = 1.5918;
+    const sterzik = (x) => {
+      const u = clamp(finite(x, 0), 1e-4, 1 - 1e-4);
+      return clamp(1 / (1 + (1 / CF_STERZIK_A - 1) * Math.pow(1 / u - 1, CF_STERZIK_B)), 0, 1);
+    };
+    // THE TWO ENDS OF THE CLEARANCE RANGE.
+    //   tight end — the plot floor (2.2 × pen), EXCEPT under 'contFieldTouch',
+    //               where Jay's "right up against each other to render pure
+    //               black" is taken literally: one ink width, at which adjacent
+    //               rulings abut and the area is solid. That is the intended
+    //               black; the flood counter reports where it lands.
+    //   open end  — the O6 sparse bar, the widest pitch that still reads as a
+    //               hatched surface rather than as stray lines on paper.
+    const cfTightPitch = () => (TONE_ALGO === 'contFieldTouch'
+      ? inkWidth()
+      : Math.max(floorPitch > 1e-6 ? floorPitch : PLOT_FLOOR_PEN * penWidth, inkWidth()));
+    const cfOpenPitch = () => Math.max(cfTightPitch() * 1.05, litMaxPitchPen() * penWidth);
+    // The same L*-linear inversion `areaForTone` states, with the 0.98 area clamp
+    // lifted: 'contFieldTouch' has to be able to ASK for a solid, or the whole
+    // point of it is clamped away one line before it is measured.
+    const cfAreaForTone = (I, aDark, aLight) => {
+      const Ld = Lstar(1 - clamp(aDark, 0, 0.999));
+      const Ll = Lstar(1 - clamp(aLight, 0, 0.999));
+      const L = Ld + (Ll - Ld) * clamp(finite(I, 0), 0, 1);
+      return clamp(1 - invLstar(L), 0.002, 0.999);
+    };
+    // THE FIELD ITSELF: radiance → wanted clearance, in millimetres of screen.
+    // Continuous everywhere, monotone in I by construction (every branch is a
+    // monotone map of a monotone map), and it is the ONLY place tone is decided.
+    const cfWantedPitch = (I) => {
+      const pMin = cfTightPitch();
+      const pMax = cfOpenPitch();
+      const x = clamp(finite(I, 0), 0, 1);
+      if (TONE_ALGO === 'contFieldEase') return pMin + (pMax - pMin) * ease(x);
+      if (TONE_ALGO === 'contFieldSigmoid') return pMin + (pMax - pMin) * sterzik(x);
+      const a = cfAreaForTone(x, inkWidth() / pMin, inkWidth() / pMax);
+      return clamp(inkWidth() / Math.max(1e-6, a), pMin, pMax);
+    };
+    // 'contFieldQuant' — the control. The SAME field, with the gap allowed only
+    // CF_LEVELS distinct values. Quantised in pitch (which is what the eye
+    // measures), not in coverage.
+    const cfQuantise = (p) => {
+      const pMin = cfTightPitch(); const pMax = cfOpenPitch();
+      const n = Math.max(2, Math.round(CF_LEVELS));
+      const u = clamp((p - pMin) / Math.max(1e-6, pMax - pMin), 0, 1);
+      return pMin + (Math.round(u * (n - 1)) / (n - 1)) * (pMax - pMin);
+    };
+    // ── THE TWO CALIBRATED LAWS ──────────────────────────────────────────────
+    // Both need to know what the LAST pass actually put on the paper, so both
+    // rasterise it. One 0.75 mm screen grid, ink stamped along every placed
+    // ruling, then two smoothing passes: DOT GAIN (the nib is wider than the
+    // path — a 3 × 3 box at this cell size is one ink width) and the HVS
+    // low-pass (a 3 mm window, the scale at which the eye stops resolving
+    // rulings and starts reading a grey).
+    const CF_CELL = 0.75;
+    const CF_HVS = 3.0;
+    const cfMakeField = () => ({ ink: new Map(), rad: new Map(), n: new Map() });
+    const cfKey = (x, y) => `${Math.round(x / CF_CELL)},${Math.round(y / CF_CELL)}`;
+    const cfAddInk = (fld, x0, y0, x1, y1) => {
+      const L = Math.hypot(x1 - x0, y1 - y0);
+      if (!(L > 1e-9)) return;
+      const m = Math.max(1, Math.ceil(L / (CF_CELL * 0.5)));
+      for (let k = 0; k < m; k++) {
+        const u = (k + 0.5) / m;
+        const key = cfKey(x0 + (x1 - x0) * u, y0 + (y1 - y0) * u);
+        fld.ink.set(key, finite(fld.ink.get(key), 0) + L / m);
+      }
+    };
+    const cfAddRad = (fld, x, y, I) => {
+      const key = cfKey(x, y);
+      fld.rad.set(key, finite(fld.rad.get(key), 0) + clamp(finite(I, 0), 0, 1));
+      fld.n.set(key, finite(fld.n.get(key), 0) + 1);
+    };
+    // Box-blur a sparse cell map by `r` cells. Two passes of a box is a good
+    // enough Gaussian for a low-pass whose only job is to stop the measurement
+    // seeing individual rulings.
+    const cfBlur = (map, r) => {
+      let cur = map;
+      for (let pass = 0; pass < 2; pass++) {
+        const nxt = new Map();
+        cur.forEach((v, key) => {
+          const parts = key.split(',');
+          const cx = Number(parts[0]); const cy = Number(parts[1]);
+          for (let j = -r; j <= r; j++) {
+            for (let i = -r; i <= r; i++) {
+              const k2 = `${cx + i},${cy + j}`;
+              nxt.set(k2, finite(nxt.get(k2), 0) + v / ((2 * r + 1) * (2 * r + 1)));
+            }
+          }
+        });
+        cur = nxt;
+      }
+      return cur;
+    };
+    // achieved ink area vs the area the light asked for, cell by cell.
+    const cfResidual = (fld) => {
+      const r = Math.max(1, Math.round(CF_HVS / CF_CELL / 2));
+      const inkB = cfBlur(fld.ink, r);
+      const radB = cfBlur(fld.rad, r);
+      const cntB = cfBlur(fld.n, r);
+      const cellA = CF_CELL * CF_CELL;
+      const out = new Map();
+      const byBin = [];
+      for (let b = 0; b < 8; b++) byBin.push({ want: 0, got: 0, n: 0 });
+      cntB.forEach((cnt, key) => {
+        if (!(cnt > 0.25)) return;
+        const I = clamp(finite(radB.get(key), 0) / cnt, 0, 1);
+        const got = clamp((finite(inkB.get(key), 0) * inkWidth()) / cellA, 1e-4, 1.2);
+        const want = clamp(inkWidth() / Math.max(1e-6, cfWantedPitch(I)), 1e-4, 1.2);
+        out.set(key, { want, got, I });
+        const bi = clamp(Math.floor(I * 8), 0, 7);
+        byBin[bi].want += want; byBin[bi].got += got; byBin[bi].n += 1;
+      });
+      return { cells: out, byBin };
+    };
+    // 'contFieldMeasured' — ONE global LUT over radiance, inverted from the
+    // measurement. If the drawing came out lighter than the light asked at this
+    // radiance, the field tightens there next pass, and vice versa.
+    let cfLut = null;
+    const cfLutGain = (I) => {
+      if (!cfLut) return 1;
+      const x = clamp(finite(I, 0), 0, 1) * (cfLut.length - 1);
+      const k = Math.min(cfLut.length - 2, Math.floor(x));
+      const u = x - k;
+      return cfLut[k] + (cfLut[k + 1] - cfLut[k]) * u;
+    };
+    const cfBuildLut = (res) => {
+      const g = res.byBin.map((b) => (b.n >= 3 && b.got > 1e-9
+        ? clamp(b.want / b.got, 0.55, 1.8) : 1));
+      // Smooth the LUT — a per-bin gain with a step in it would put a step
+      // straight back into the field this law exists to keep step-free.
+      const s = g.map((v, i) => {
+        const a = g[Math.max(0, i - 1)]; const c = g[Math.min(g.length - 1, i + 1)];
+        return (a + 2 * v + c) / 4;
+      });
+      cfLut = s;
+    };
+    // 'contFieldEquil' — Ostromoukhov's LOCAL correction. Same residual, kept
+    // per cell instead of collapsed onto radiance, and quantised to 16 levels
+    // (his table size) so the correction is a discrete equilibration rather than
+    // an unbounded feedback term.
+    const CF_EQ_LEVELS = 16;
+    let cfCorr = null;
+    const cfBuildCorr = (res) => {
+      const m = new Map();
+      res.cells.forEach((v, key) => {
+        const raw = clamp(v.want / Math.max(1e-6, v.got), 0.6, 1.7);
+        const u = clamp((raw - 0.6) / 1.1, 0, 1);
+        m.set(key, 0.6 + (Math.round(u * (CF_EQ_LEVELS - 1)) / (CF_EQ_LEVELS - 1)) * 1.1);
+      });
+      cfCorr = cfBlur(m, 2);
+      // cfBlur normalises by the kernel, so a cell with no neighbours reads low;
+      // re-scale against a blurred indicator so the correction stays a RATIO.
+      const ind = new Map(); m.forEach((v, key) => ind.set(key, 1));
+      const indB = cfBlur(ind, 2);
+      const fixed = new Map();
+      cfCorr.forEach((v, key) => {
+        const w = finite(indB.get(key), 0);
+        if (w > 1e-3) fixed.set(key, clamp(v / w, 0.6, 1.7));
+      });
+      cfCorr = fixed;
+    };
+    const cfCorrAt = (x, y) => (cfCorr ? clamp(finite(cfCorr.get(cfKey(x, y)), 1), 0.6, 1.7) : 1);
+    // How many placement passes this law takes. One is the plain field; the
+    // calibrated laws re-place with what they measured.
+    const cfPasses = () => {
+      if (TONE_ALGO === 'contFieldMeasured') return 2;
+      if (TONE_ALGO === 'contFieldEquil') return 3;
+      return 1;
+    };
+    // The floor and flood counters. `contFieldTouch` is EXPECTED to flood; the
+    // number is the report, not a failure.
+    const cfStat = { placed: 0, atFloor: 0, flooded: 0, minPitch: Infinity, maxPitch: 0 };
+
     // The one entry point the emitter asks. `ladder` never reaches it.
     // `isCross` is true on a zone-gated pass, which only 'layeredCross' emits.
     // Those passes draw FULLY: an added family is the tone, so laddering it
@@ -2048,6 +2320,11 @@
       // 'evenStreamlines' places by spacing, so every traced curve draws whole:
       // the ladder is handed 1 and takes no verdict at all.
       if (TONE_ALGO === 'evenStreamlines') return 1;
+      // The `contField*` family likewise. The spacing IS the tone and it was
+      // already spent when the ruling was PLACED, so there is nothing left for a
+      // selection rule to decide and handing the ladder anything below 1 would
+      // charge the tone twice — once as a gap, once as a drop.
+      if (isContField()) return 1;
       if (TONE_ALGO === 'crossFade') return crossFadeCov(I, localPitch);
       if (TONE_ALGO === 'fullLightingModel') return flmCov(smp, localPitch);
       // The weight laws state their tone on the pen, so the coverage they hand
@@ -3191,7 +3468,12 @@
         // than a cap derived from a nominal neighbour offset the re-seeded
         // family no longer has. Charging both would drop curves the placement
         // rule already proved plot-safe.
-        if (TONE_UNCAPPED && TONE_ALGO !== 'evenStreamlines'
+        // The `contField*` family is exempt for the same reason `evenStreamlines`
+        // is, and for one more: this cap turns crowding into a DROPPED RULING,
+        // which is precisely the quantised step those laws exist to remove. They
+        // enforce their own floor where it belongs — at PLACEMENT, on the gap
+        // itself — and `cfStat` counts every ruling that landed on it.
+        if (TONE_UNCAPPED && TONE_ALGO !== 'evenStreamlines' && !isContField()
           && localPitch != null && localPitch > 1e-6 && floorPitch > 1e-6) {
           const capF = clamp(localPitch / floorPitch, 0, 1);
           const rk = `${ladderKey}|${lineIndex}`;
@@ -3862,6 +4144,250 @@
         };
       };
       return { span, lineAt, na, nb, da, db };
+    };
+
+    // ── THE CONTINUOUS FAMILY ────────────────────────────────────────────────
+    //
+    // Not a comb with a selection rule on top — an INTEGRATION. Walk across the
+    // family from one edge of the parameter domain to the other; at each point
+    // ask the field how much clearance the light wants here, in millimetres of
+    // paper; step by exactly that much and place a ruling. The gap between two
+    // adjacent rulings is therefore a continuous function of where they are, so
+    // it can close to nothing in shadow, open smoothly across the highlight and
+    // close again on the far side — with no step anywhere, because there is no
+    // grid left for a step to be a multiple of.
+    //
+    // Every ruling placed is drawn WHOLE (`algoCoverage` hands the ladder 1), so
+    // this construction cannot produce a free end, a chattered stub, or a
+    // dropped ruling. Nothing is placed outside the parameter domain and every
+    // sample is still back-face culled and HLR-clipped by `emitLine`, so nothing
+    // can land outside the silhouette either.
+    const emitContFamily = (kind, angleDeg, count, back) => {
+      const wantFront = !back;
+      const fam = (kind === 'angle') ? angleFamily(angleDeg) : null;
+      const span = fam ? fam.span : 1;
+      const lineAt = fam ? fam.lineAt : ((frac) => axisLine(kind, frac));
+      // The parameter offset one unit of `frac` moves ACROSS the family, and the
+      // direction the ruling itself runs. Together these are what turns a
+      // parameter step into millimetres of screen (see `perpPitch`).
+      const unitOff = fam ? { a: fam.na * span, b: fam.nb * span }
+        : (kind === 'b' ? { a: 0, b: 1 } : { a: 1, b: 0 });
+      const dirOf = fam ? { a: fam.da, b: fam.db }
+        : (kind === 'b' ? { a: 1, b: 0 } : { a: 0, b: 1 });
+      // The projection's own scale, measured once. Orthographic and uniform, so
+      // one number converts world millimetres to screen millimetres — which is
+      // what `contFieldSurface` and `contFieldFore` need in order to state a
+      // spacing in the SURFACE's units and still land a known tone on paper.
+      const projScale = (() => {
+        const o = { x: 0, y: 0, z: 0 };
+        const p0 = projectWorld(o);
+        if (!p0) return 1;
+        let best = 0;
+        [['x', 1], ['y', 1], ['z', 1]].forEach(([ax]) => {
+          const q = { x: 0, y: 0, z: 0 }; q[ax] = 10;
+          const p1 = projectWorld(q);
+          if (p1) best = Math.max(best, Math.hypot(p1.x - p0.x, p1.y - p0.y) / 10);
+        });
+        return best > 1e-6 ? best : 1;
+      })();
+      const worldAt = (a, b) => {
+        const p = chart(clamp(a, 0, 1), clamp(b, 0, 1));
+        return p ? applyTransform(p, t) : null;
+      };
+      // ZANDER, ISENBERG, SCHLECHTWEG & STROTHOTTE (CGF 2004) — the
+      // foreshortening factor. `cross(t, n)` is the unit surface direction
+      // ACROSS the ruling; the length of its projection into the view plane is
+      // how much of a millimetre of surface survives as a millimetre of paper.
+      // Without it a surface turning away from the camera reads darker than the
+      // light says, which is false limb-darkening.
+      const foreAt = (smp, tanW) => {
+        if (!smp || !smp.wN || !tanW) return 1;
+        const c = {
+          x: tanW.y * smp.wN.z - tanW.z * smp.wN.y,
+          y: tanW.z * smp.wN.x - tanW.x * smp.wN.z,
+          z: tanW.x * smp.wN.y - tanW.y * smp.wN.x,
+        };
+        const m = Math.hypot(c.x, c.y, c.z);
+        if (!(m > 1e-9)) return 1;
+        const v = rotatePoint({ x: c.x / m, y: c.y / m, z: c.z / m }, cam);
+        return clamp(Math.hypot(v.x, v.y), 0.02, 1);
+      };
+      // ── PROBE ONE CANDIDATE RULING ──────────────────────────────────────────
+      // Returns the ruling's screen polyline, the radiance the field should read
+      // for it, and the metric: how many millimetres one unit of `frac` buys
+      // across the family here. Radiance is weighted by the screen AREA each
+      // sample stands for (arc length along × clearance across), because that is
+      // what the eye integrates — a parameter-weighted mean would let a
+      // foreshortened pole outvote the whole lit face.
+      const probe = (frac) => {
+        const at = lineAt(clamp(frac, 0, 1));
+        if (!at) return null;
+        const st = Math.max(8, Math.round(at.steps || steps));
+        const pts = [];
+        let iSum = 0; let wSum = 0;
+        let mmSum = 0; let mmW = 0;
+        let prevW = null; let prevS = null;
+        for (let s = 0; s <= st; s++) {
+          const pr = at(s / st);
+          const smp = sampleAt(pr.a, pr.b);
+          if (!smp || smp.front !== wantFront) { pts.push(null); prevW = null; prevS = null; continue; }
+          const scr = { x: smp.x, y: smp.y, I: smp.I };
+          pts.push(scr);
+          // The ruling's own world tangent, from the step just taken.
+          let tanW = null;
+          if (prevW && smp.world) {
+            const d = { x: smp.world.x - prevW.x, y: smp.world.y - prevW.y, z: smp.world.z - prevW.z };
+            const m = Math.hypot(d.x, d.y, d.z);
+            if (m > 1e-9) tanW = { x: d.x / m, y: d.y / m, z: d.z / m };
+          }
+          let mm;
+          if (TONE_ALGO === 'contFieldSurface' || TONE_ALGO === 'contFieldFore') {
+            // World-space clearance for one unit of `frac`, perpendicular to the
+            // ruling — the spacing measured ON THE FORM.
+            const w1 = worldAt(pr.a + unitOff.a * 1e-3, pr.b + unitOff.b * 1e-3);
+            if (w1 && smp.world) {
+              const o = { x: (w1.x - smp.world.x) / 1e-3, y: (w1.y - smp.world.y) / 1e-3, z: (w1.z - smp.world.z) / 1e-3 };
+              let perp = Math.hypot(o.x, o.y, o.z);
+              if (tanW) {
+                const dt = o.x * tanW.x + o.y * tanW.y + o.z * tanW.z;
+                perp = Math.hypot(o.x - dt * tanW.x, o.y - dt * tanW.y, o.z - dt * tanW.z);
+              }
+              mm = perp * projScale * (TONE_ALGO === 'contFieldFore' ? foreAt(smp, tanW) : 1);
+            }
+          }
+          if (!(mm > 1e-6)) mm = perpPitch(smp, unitOff, dirOf);
+          const segLen = prevS ? Math.hypot(scr.x - prevS.x, scr.y - prevS.y) : 0;
+          const area = Math.max(1e-4, segLen) * Math.max(1e-3, finite(mm, 1));
+          iSum += clamp(finite(smp.I, 0), 0, 1) * area; wSum += area;
+          if (mm > 1e-6) { mmSum += mm * area; mmW += area; }
+          prevW = smp.world; prevS = scr;
+        }
+        if (!(wSum > 0) || !(mmW > 0)) return { on: false, pts };
+        return { on: true, pts, I: iSum / wSum, mmPerFrac: mmSum / mmW };
+      };
+      // ── ACROSS-FLOW CLEARANCE, MEASURED (Zander §4) ─────────────────────────
+      // The seeding offset is the clearance in the MIDDLE of a ruling and a lie
+      // at its tips, where a converging family has already closed and a
+      // diverging one has already opened. So `contFieldAniso` shoots a probe
+      // along the candidate ruling's own NORMAL at every sample and takes the
+      // smallest crossing — clearance measured across the flow and nowhere else,
+      // which is the only direction the eye reads a gap in.
+      const acrossClear = (cur, prev, cap) => {
+        if (!cur || !prev) return null;
+        let best = Infinity;
+        for (let k = 1; k < cur.length - 1; k++) {
+          const p = cur[k]; const a = cur[k - 1]; const b = cur[k + 1];
+          if (!p || !a || !b) continue;
+          const tx = b.x - a.x; const ty = b.y - a.y;
+          const tl = Math.hypot(tx, ty);
+          if (!(tl > 1e-9)) continue;
+          const nx = -ty / tl; const ny = tx / tl;
+          const x0 = p.x - nx * cap; const y0 = p.y - ny * cap;
+          const x1 = p.x + nx * cap; const y1 = p.y + ny * cap;
+          for (let j = 1; j < prev.length; j++) {
+            const q0 = prev[j - 1]; const q1 = prev[j];
+            if (!q0 || !q1) continue;
+            const rx = x1 - x0; const ry = y1 - y0;
+            const sx = q1.x - q0.x; const sy = q1.y - q0.y;
+            const den = rx * sy - ry * sx;
+            if (Math.abs(den) < 1e-12) continue;
+            const u = ((q0.x - x0) * sy - (q0.y - y0) * sx) / den;
+            const v = ((q0.x - x0) * ry - (q0.y - y0) * rx) / den;
+            if (u < 0 || u > 1 || v < 0 || v > 1) continue;
+            const d = Math.abs(u - 0.5) * 2 * cap;
+            if (d < best) best = d;
+          }
+        }
+        return Number.isFinite(best) ? best : null;
+      };
+      // ── THE WALK ────────────────────────────────────────────────────────────
+      const maxN = maxLines();
+      const dfMin = 1 / Math.max(8, count * 40);
+      const dfMax = 1 / Math.max(2, count / 30);
+      const creep = 1 / Math.max(8, count * 3);
+      const walk = (fld) => {
+        const placed = [];
+        let f = 0;
+        let guard = 0;
+        let prevPts = null;
+        while (f <= 1 + 1e-9 && placed.length < maxN && guard < maxN * 12) {
+          guard += 1;
+          const pb = probe(f);
+          if (!pb || !pb.on) { f += creep; continue; }
+          let want = cfWantedPitch(pb.I);
+          // 'contFieldMeasured' — the global response inversion, from pass 1.
+          if (TONE_ALGO === 'contFieldMeasured' && cfLut) {
+            want = clamp(inkWidth() / Math.max(1e-6,
+              clamp((inkWidth() / want) * cfLutGain(pb.I), 1e-4, 0.999)), cfTightPitch(), cfOpenPitch());
+          }
+          // 'contFieldEquil' — Ostromoukhov's LOCAL correction, averaged over
+          // this ruling's own samples so the correction cannot introduce a
+          // discontinuity along the line it is applied to.
+          if (TONE_ALGO === 'contFieldEquil' && cfCorr) {
+            let cs = 0; let cn = 0;
+            pb.pts.forEach((q) => { if (q) { cs += cfCorrAt(q.x, q.y); cn += 1; } });
+            if (cn) want = clamp(want / clamp(cs / cn, 0.6, 1.7), cfTightPitch(), cfOpenPitch());
+          }
+          if (TONE_ALGO === 'contFieldQuant') want = cfQuantise(want);
+          let df = clamp(want / Math.max(1e-6, pb.mmPerFrac), dfMin, dfMax);
+          if (TONE_ALGO === 'contFieldAniso' && prevPts) {
+            // Two corrections, never more: this is a fixed-point step, not a
+            // solve, and a third pass moves the answer by under a per cent.
+            for (let it = 0; it < 2; it++) {
+              const cand = probe(f + df);
+              if (!cand || !cand.on) break;
+              const got = acrossClear(cand.pts, prevPts, want * 3);
+              if (!(got > 1e-4)) break;
+              df = clamp(df * clamp(want / got, 0.5, 2), dfMin, dfMax);
+            }
+          }
+          cfStat.placed += 1;
+          if (want <= cfTightPitch() * 1.002) cfStat.atFloor += 1;
+          if (want <= inkWidth() * 1.02) cfStat.flooded += 1;
+          if (want < cfStat.minPitch) cfStat.minPitch = want;
+          if (want > cfStat.maxPitch) cfStat.maxPitch = want;
+          if (fld) {
+            for (let k = 1; k < pb.pts.length; k++) {
+              const a = pb.pts[k - 1]; const b = pb.pts[k];
+              if (a && b) cfAddInk(fld, a.x, a.y, b.x, b.y);
+              if (b) cfAddRad(fld, b.x, b.y, b.I);
+            }
+          }
+          placed.push({ frac: f, df, I: pb.I, want });
+          prevPts = pb.pts;
+          f += df;
+        }
+        return placed;
+      };
+      // The calibrated laws place, measure, and place again. Only the LAST pass
+      // is emitted — the earlier ones exist purely to find out what the paper
+      // actually received.
+      const P = cfPasses();
+      let placed = null;
+      for (let pass = 0; pass < P; pass++) {
+        const last = pass === P - 1;
+        const fld = last ? null : cfMakeField();
+        const at0 = cfStat.placed;
+        placed = walk(fld);
+        if (!last) {
+          // A measuring pass is not a drawing; roll its counters back.
+          cfStat.placed = at0;
+          const res = cfResidual(fld);
+          if (TONE_ALGO === 'contFieldMeasured') cfBuildLut(res);
+          else if (TONE_ALGO === 'contFieldEquil') cfBuildCorr(res);
+        }
+      }
+      if (!placed || !placed.length) return;
+      nextFam('A');
+      placed.forEach((p, i) => {
+        const at = lineAt(p.frac);
+        if (!at) return;
+        // `pitchStep` is the ruling's OWN gap, not a family constant — which is
+        // the whole difference between this family and every other one here, and
+        // it is what makes every pitch-derived quantity downstream honest.
+        emitLine(at, p.frac, back, i, placed.length, null,
+          { a: unitOff.a * p.df, b: unitOff.b * p.df }, dirOf, false);
+      });
     };
 
     const emitAngledFamily = (angleDeg, count, back, zoneGate, densityCross) => {
@@ -4674,6 +5200,11 @@
         // 'curvatureField' likewise owns family A and adds nothing.
         if (TONE_ALGO === 'contourFlow' || TONE_ALGO === 'evenStreamlines'
           || TONE_ALGO === 'curvatureField') return;
+        // The `contField*` family owns family A and adds nothing on top. A
+        // crossed pass would put a second, differently-spaced grid over a field
+        // whose whole claim is that its spacing IS the tone, and the composed
+        // clearance would no longer be the one the field placed.
+        if (isContField()) return;
         if (!zonesOn) return;
         const base = finite(opts.fillAngle, 0);
         emitScreenCross(base, Regions.CROSS_OBJ_DEG, count, back, 'T');
@@ -4694,7 +5225,31 @@
       const flowMapper = (TONE_ALGO === 'contourFlow' || TONE_ALGO === 'evenStreamlines'
         || TONE_ALGO === 'curvatureField') && toneOn
         && (mapper === 'hatch' || mapper === 'crosshatch' || mapper === 'contour');
-      if (flowMapper) {
+      // ── ROUND 5: the continuous field owns family A on every line mapper ─────
+      // No terminator cross, no shadow infill: both of those ADD ink on top of a
+      // family whose spacing is already the complete tone statement, and both
+      // would put marks at a clearance the field did not choose.
+      const contMapper = isContField() && toneOn
+        && (mapper === 'hatch' || mapper === 'crosshatch' || mapper === 'contour');
+      if (contMapper) {
+        if (mapper === 'contour') {
+          emitContFamily('a', 0, count, back);
+        } else if (onMeridianAxis) {
+          emitContFamily('b', 0, count, back);
+        } else {
+          emitContFamily('angle', hatchAngle, count, back);
+        }
+        // Crosshatch keeps its second family, placed by the SAME field — the
+        // mapper is a crossed pair by definition and dropping the pair would
+        // make the cell measure a hatch under a crosshatch label.
+        if (mapper === 'crosshatch') {
+          const aB = hatchAngle + crossDelta;
+          const a180 = (((aB % 180) + 180) % 180);
+          if (onMeridianAxis && a180 === 0) emitContFamily('b', 0, Math.max(2, Math.round(count / crossRatio)), back);
+          else if (onMeridianAxis && a180 === 90) emitContFamily('a', 0, Math.max(2, Math.round(count / crossRatio)), back);
+          else emitContFamily('angle', aB, Math.max(2, Math.round(count / crossRatio)), back);
+        }
+      } else if (flowMapper) {
         const fBase = finite(opts.fillAngle, 0);
         // 'curvatureField' rules along the WEAK principal direction (so the
         // strokes cross the strongest bending, which is what makes the form
@@ -4926,6 +5481,19 @@
       rulingsTouched: floorStat.touched.size,
       rulingsClamped: floorStat.rulings.size,
       worstAsk: Math.round(floorStat.worst * 100) / 100,
+      // ROUND 5 — where the CONTINUOUS FIELD's own floor bound, and where it
+      // asked for a gap so tight the rulings abut. `contFieldTouch` is supposed
+      // to reach the second one; every other law is supposed not to.
+      cont: isContField() ? {
+        placed: cfStat.placed,
+        atFloor: cfStat.atFloor,
+        flooded: cfStat.flooded,
+        tightPitch: Math.round(cfTightPitch() * 1000) / 1000,
+        openPitch: Math.round(cfOpenPitch() * 1000) / 1000,
+        minPitch: Number.isFinite(cfStat.minPitch) ? Math.round(cfStat.minPitch * 1000) / 1000 : null,
+        maxPitch: Math.round(cfStat.maxPitch * 1000) / 1000,
+        levels: TONE_ALGO === 'contFieldQuant' ? CF_LEVELS : null,
+      } : null,
       // ...and, for laws 12-16, where the WEIGHT range bound. Both ends of it
       // are physical (W_MIN is the pen itself, W_FLOOD_AREA is a wet blob), so
       // "did the law reach the dark it asked for" has to be reported.
