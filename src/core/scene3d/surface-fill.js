@@ -1687,11 +1687,28 @@
     //
     // The number to read is not darkest L* alone but darkest L* PER MILLIMETRE
     // OF TRAVEL, which is what the harness's ink/paths columns carry.
+    // MEASURED, AND THE REASON THIS IS A HANDOVER AND NOT AN ADDITION. The first
+    // cut had the fine family HOLD its cap while the wide pen added on top. Both
+    // families then crowd together wherever the chart does (a sphere's meridians
+    // converge to nothing at the poles) and the pair composed past solid:
+    // sphere-hatch came back with a 5th-percentile L* of 4.5 — a black cap on a
+    // lit ball — R² 0.076, and 1792 mm of ink against whiteBand's 1192. It also
+    // threw away the whole point, which is COST: two families drawn everywhere
+    // is more travel, not less.
+    //
+    // A two-pen plot is a HANDOVER. The fine pen carries the lights and mids and
+    // then FADES OUT by density as the wide pen comes in, so the core shadow is
+    // drawn by the wide pen essentially alone — a third of the line count for
+    // the same ink area, which is B14's actual claim.
     const WSP_MUL = 3.0;            // the shadow nib, as a multiple of the fine one
-    const WSP_DEEP_AREA = 0.93;
-    const WSP_FINE_CAP = 0.42;      // the most the fine pen is ever asked for
+    const WSP_DEEP_AREA = 0.90;
+    const WSP_FINE_CAP = 0.40;      // the most the fine pen is ever asked for
     const wspTotal = (I) => areaForTone(I, WSP_DEEP_AREA, wLightArea());
-    const wspAreaFine = (I) => Math.min(wspTotal(I), WSP_FINE_CAP);
+    const wspHand = (I) => {
+      const t = clamp((wspTotal(I) - WSP_FINE_CAP) / Math.max(1e-6, WSP_DEEP_AREA - WSP_FINE_CAP), 0, 1);
+      return t * t * t * (t * (6 * t - 15) + 10);
+    };
+    const wspAreaFine = (I) => clamp(Math.min(wspTotal(I), WSP_FINE_CAP) * (1 - wspHand(I)), 0, 0.98);
     const wspAreaWide = (I) => clamp(wspTotal(I) - wspAreaFine(I), 0, 0.98);
     const wspCovWide = (I, localPitch) => clamp(
       covForArea(wspAreaWide(I), localPitch), 0.001, weightBaseCov(),
@@ -1840,9 +1857,10 @@
       // 'wideShadowPen' — layer 1 is the WIDE pen and enters by density on the
       // remainder the fine pen is not allowed to carry.
       if (TONE_ALGO === 'wideShadowPen') {
+        const Ic = clamp(finite(I, 0), 0, 1);
         return xfLayer === 0
-          ? weightBaseCov()
-          : wspCovWide(clamp(finite(I, 0), 0, 1), localPitch);
+          ? clamp(covForArea(wspAreaFine(Ic), localPitch), 0.001, weightBaseCov())
+          : wspCovWide(Ic, localPitch);
       }
       // 'screenAngles' — family A runs full, B and C enter by density.
       if (TONE_ALGO === 'screenAngles') {
