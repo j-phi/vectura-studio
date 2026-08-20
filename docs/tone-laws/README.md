@@ -1164,29 +1164,268 @@ be the best-behaved law overall, and it lost the crosshatch cell to a three-pen 
 
 ---
 
-## Known limitation: the perceptual cluster gap
+## The perceptual cluster gap: what it is, what we measured, what stays unmeasurable
 
-Sterzik, Meuschke, Cunningham & Lawonn (IEEE TVCG 30(1), 2024) fitted psychometric curves
-to crowd-sourced pairwise comparisons of illustrative textures. They report that
-**crosshatched and single-direction textures occupy separated perceptual clusters** — and
-that each texture family has its own response curve (hatching a = 0.4753, b = 1.5918;
-stipple a = 0.5644, b = 1.7361; triangles a = 0.5859, b = 1.8120).
+### 1. What Sterzik et al. actually gives us
 
-The consequence is structural. **Any ramp that crosses between a single-direction texture
-and a crossed one carries a perceptual step that no coverage match removes.** Matching ink
-area across the transition — which is what every law here does, and what
-`weightCrossHandoff`'s C⁰ handoff is built to do exactly — makes the two sides equal in
-ink and still unequal to a viewer.
+Sterzik, Meuschke, Cunningham & Lawonn, *Perceptually Uniform Construction of Illustrative
+Textures*, IEEE TVCG 30(1) 2024 ([arXiv:2308.03644](https://arxiv.org/abs/2308.03644)).
+Three crowd-sourced studies, **60 participants (20 per texture type)**, pairwise
+difference ratings on a **1–9 scale**, **16 260 rated tasks** in total. The hatching study
+used a 6 × 6 grid of horizontal × vertical densities, minus the 11 saturated cells,
+**N = 26 stimuli → 351 comparisons per participant**. Analysis is weighted MDS (INDSCAL) in
+two dimensions, Kruskal stress-1.
 
-**Our rig is blind to this.** Every metric in `keepers-table.tsv` is computed from ink area
-in a perceptual window. Ink area is the very quantity that is matched across the boundary,
-so the residual step falls exactly in the rig's null space. A law can score a clean R² and
-a low moiré residual and still show a visible seam where its second family enters.
+**It gives us three things.**
 
-Two things follow. First, do not use the numbers alone to judge a law that changes texture
-family mid-ramp; look at the render. Second, closing this gap needs a *per-family* response
-curve — Sterzik's a and b differ by family — applied before the coverage is composed, not
-after. That work is not done.
+1. **A categorical finding.** In the 2-D perceptual space of hatching, "*the textures are
+   divided into two groups. One group consists of all crosshatched textures and the other
+   group of all textures with only one hatching direction … The perceived distances at a
+   jump from one cluster to the other would be very high.*" One-direction hatching,
+   stippling and triangles lie on essentially the same 1-D manifold (aligned by Kabsch), so
+   hatch ↔ stipple is smooth where hatch ↔ crosshatch is not.
+2. **A fitted density mapping, per texture type** (their Table 1):
+   `f(x) = 1 / (1 + (1/a − 1)(1/x − 1)^b)`, hatching **a = 0.4753, b = 1.5918, RMSE 0.0225**;
+   stippling 0.5644 / 1.7361 / 0.0233; triangles 0.5859 / 1.8120 / 0.0089. The author's
+   correction note (Dec 2025) matters: the axis labels of Figs. 12–13 were swapped in the
+   IEEE version, so **`f` maps perceived value → density and its inverse maps density →
+   perceived value**. Their "density" is the fraction of pixels covered by primitives —
+   "*similar to 1 − mean gray value*" — which is our ink area `a`, so the two scales are
+   directly comparable with nothing invented in between.
+3. **Seven perceptually uniform density levels** (their Table 2). For hatching:
+   0, 0.096, 0.191, 0.477, 0.768, 0.894, 1.
+
+**It does not give us four things, and each absence is load-bearing.**
+
+- **No numeric cross-cluster distance.** "Rather large" and "very high" are the only
+  quantifications in the paper. MDS coordinates are unitless and rotation-invariant, and
+  the paper states the space is only *locally* perceptually uniform and **not additive**
+  (`d_ac ≠ d_ab + d_bc`). There is no scalar to import.
+- **No conversion to any perceptual unit.** The authors chose MDS "*instead of a JND-based
+  approach*" deliberately. Nothing in the paper turns an MDS distance into a JND count, a
+  ΔL\*, or a rating-scale magnitude.
+- **No density → perceived curve for crosshatching at all.** The reparameterisation is done
+  for stippling, **horizontal (one-direction) hatching** and triangles only — "*We will
+  create uniform levels for horizontal hatching only*". A crossed patch cannot be placed on
+  the perceptual axis, because no axis was fitted for it.
+- **No transfer to our stimulus.** Their stimuli are flat square patches, 3 px dashes,
+  horizontal and vertical only, 0.2 density steps, on a medium-grey ground. Nothing about
+  curved rulings on a shaded solid, non-orthogonal crossing angles, or a density that ramps
+  continuously across a form.
+
+**Consequence.** The sigmoid is usable, inside one cluster. The cluster gap is usable only
+as a categorical warning. Those two facts set the ceiling on everything below.
+
+### 2. What we built
+
+**Crossedness `C`, a per-window texture-family field.** The axis the two clusters separate
+along is not a tone — it is *how many hatching directions are locally present*. That is a
+geometric property of the emitted ink, so it can be measured even though the perceptual
+size of the jump cannot.
+
+On the **same 3 × 3 mm windows the apparent-tone metric reads a grey in**, a
+length-and-pen-weight-weighted orientation histogram is built over 180 one-degree bins
+(mod 180°) from the emitted fill segments. Its peaks are the ruling families a viewer sees
+at that spot, and
+
+> `C = 2·m₂ / (m₁ + m₂)`  — `m₁, m₂` the ink mass of the two strongest families, `m₁ ≥ m₂`
+
+so `C = 0` is one direction (Sterzik's single-direction cluster) and `C = 1` is two
+families of equal ink (his crosshatch cluster). Windows that hang over the silhouette are
+dropped, exactly as the tone block drops them.
+
+**The false-positive that had to be designed out.** A *curving* single family fans its
+orientation across a window and would fake a second peak. So two peaks only count when the
+histogram is genuinely **bimodal**: peaks must stand ≥ 15° apart (the same separation the
+whole-cell orientation metric already uses) and **the shallower of the two valleys between
+them must fall to ≤ 60 % of the weaker peak**. A fan has a plateau, not a valley, and
+scores `C = 0`.
+
+**The number that matters is not `C` but its discontinuity.** Three derived figures:
+
+| Figure | Meaning |
+|---|---|
+| `fracSingle` / `fracCrossed` | share of on-surface windows at `C ≤ 0.10` / `C ≥ 0.35` |
+| **`CROSSES`** | `min(fracSingle, fracCrossed) ≥ 0.15` — *both* clusters present, so the boundary lies **on the drawing** |
+| **`gradP95`** | 95th percentile of \|∇C\| per mm — the seam itself, in crossedness per millimetre |
+| **`handoff ΔL*`** | the L\* interval over which `C` climbs through 10 %→90 % of its own range. Small = abrupt |
+
+The full field, for 13 laws × 5 cells, is in **`crossedness.tsv`** beside this file.
+
+### 3. Validation
+
+The measurement is run on **`sphere · hatch`**, where the mapper supplies exactly **one**
+family — so any crossedness there is the *law's* doing and nothing else's. Same frozen
+tree, same five cells, same provenance gate as the main sweep; the run reproduces
+`whiteBand · sphere · hatch` **digit-for-digit against the published table** (R² 0.512,
+L\* span 29.0, darkest 51.4, off the line 5.8 %, spacing CoV 0.31), which is what licenses
+the new column to sit beside the old ones.
+
+| Law | `C` mean | `fracCrossed` | `gradP95` | verdict |
+|---|---|---|---|---|
+| **Known to cross** | | | | |
+| `crossFade` | 0.616 | 0.831 | **0.467** | **CROSSES** |
+| `penCross` | 0.487 | 0.562 | **0.624** | **CROSSES** |
+| `penReserve` | 0.395 | 0.538 | **0.571** | **CROSSES** |
+| `layeredCross` | 0.348 | 0.451 | **0.583** | **CROSSES** |
+| `weightCrossHandoff` | 0.182 | 0.266 | **0.462** | **CROSSES** |
+| **Known not to cross** | | | | |
+| `contFieldSurface` | 0.015 | 0.018 | 0.000 | quiet |
+| `bundleEased` | 0.024 | 0.030 | 0.000 | quiet |
+| `continuousPitch` | 0.029 | 0.037 | 0.062 | quiet |
+| `NO TONE` (Stage 0) | 0.039 | 0.048 | 0.131 | quiet |
+| `whiteBand` | 0.037 | 0.047 | 0.161 | quiet |
+| `multiScale` | 0.036 | 0.045 | 0.167 | quiet |
+| `taperedEnds` | 0.036 | 0.046 | 0.176 | quiet |
+| **Crossed everywhere, but never crossing** | | | | |
+| `mkScribble` | 0.924 | 0.967 | 0.124 | quiet |
+
+**The separation is clean with no overlap.** Every crossing law scores `gradP95` ≥ 0.462;
+every non-crossing law scores ≤ 0.176 — a **2.6× margin** with nothing in between.
+
+Four further checks:
+
+- **It finds a threshold written in the source.** `layeredCross`'s crossedness against
+  scene radiance runs 0.472 / 0.514 / 0.475 / **0.242** / 0.084 / 0.092 / 0.048 / 0.029 /
+  0.010 / 0 across ten radiance bins. The collapse sits at **I ≈ 0.3–0.4**, bracketing
+  `xcCuts()`'s own lower zone cut (default 0.33) — the detector localises a number that
+  exists only in the law's implementation.
+- **`mkScribble` is the discriminating control.** A squiggle is locally two-directional
+  *everywhere*, so its `C` is the highest in the table (0.924) — and it is flat:
+  `gradP95` 0.124, 43 seam cells against `penCross`'s 881. High crossedness is not the
+  problem. **A discontinuity in crossedness is.** The measure separates the two.
+- **No curvature false positives.** On `ellipsoid · contour`, the most strongly curved
+  cell in the roster, the same seven non-crossing laws score `C` mean 0.031–0.048 and
+  `fracCrossed` 0.046–0.068. The bimodality gate holds where the fan risk is worst.
+- **`bundleEased` and `contFieldSurface` return `gradP95` exactly 0.000** — the field is
+  not merely low, it is flat to the resolution of the measurement.
+
+### 4. What the measure shows, law by law
+
+Measured on `sphere · hatch` unless noted. `handoff ΔL*` is quoted only where the boundary
+is on the form; the law's own L\* span is given for scale, because a 4 L\* handoff inside a
+7 L\* ramp is the whole drawing.
+
+| Law | Where the crossing is | `gradP95` | handoff ΔL\* | own L\* span | Also crosses on |
+|---|---|---|---|---|---|
+| `penCross` | crossed from black to L\* ≈ 80, collapses 0.61 → 0.36 → 0.10 over **L\* 80→86** | 0.624 | 28.0 | 6.6 | cylinder·hatch |
+| `layeredCross` | zone edge at scene radiance **I ≈ 0.3–0.4**; `C` 0.62 → 0.02 over **L\* 92→96** | 0.583 | 6.8 | 7.0 | cylinder·hatch |
+| `penReserve` | a *band*: `C` 0.28 (dark) → 0.19 → 0.71 (mid) → 0.16 (light); two edges, not one | 0.571 | 10.4 | 14.3 | cylinder·hatch, ellipsoid·contour |
+| `crossFade` | crossed across most of the ramp, then 0.53 → 0.33 → 0.02 over **L\* 86→91** | 0.467 | 18.4 | 7.6 | — (crossed everywhere on cylinder·hatch) |
+| `weightCrossHandoff` | the gentlest: `C` 0.46 in the darkest bin decaying to 0.03 at the lightest | 0.462 | **60.2** | 22.3 | cylinder·hatch |
+| `screenAngles` | **not** on `sphere · hatch` (`C` 0.058) — its three-family angle set engages only where the mapper already crosses; fires on cylinder·hatch and ellipsoid·contour | 0.301 | — | 31.8 | cylinder·hatch, ellipsoid·contour |
+| `multiScale` | **does not cross.** Its two octaves share one angle, so both lie in the same cluster | 0.167 | — | 32.7 | — |
+| `whiteBand` | **does not cross** on the hatch cell, confirming the claim made for it | 0.161 | — | 29.0 | — |
+
+Three findings correct the previous version of this section:
+
+1. **`multiScale` and `whiteBand` were on the affected list and should not have been.**
+   `multiScale`'s pyramid is two octaves at one angle — a density change inside one
+   cluster, not a jump between two. `whiteBand` drops nothing, so on the hatch cell it
+   never acquires a second family (`C` mean 0.037), and on `sphere · crosshatch` it is
+   crossed almost everywhere (`fracCrossed` 0.931, `fracSingle` 0.069) — it sits on **one**
+   side of the boundary rather than straddling it.
+2. **`weightCrossHandoff`'s C⁰ handoff works, by this measure.** It crosses — but over
+   **60.2 L\***, the most gradual handoff of the five, against `layeredCross`'s 6.8. If the
+   remedy for the cluster step is to spread it (Sterzik's own advice, and the
+   width-ramp proposal in the research sweep), `weightCrossHandoff` is the law already
+   doing it, and `layeredCross` is the worst case.
+3. **The `crosshatch` mapper puts a cluster boundary on the form before any law runs.** On
+   `sphere · crosshatch` the **Stage-0 NO-TONE reference itself** scores `fracSingle` 0.277,
+   `fracCrossed` 0.722, `gradP95` 0.638 — one family thins out near the limb and pole in the
+   unmodulated build. So the crosshatch cell cannot cleanly attribute a crossing to a law;
+   `sphere · hatch` is the instrument, and that is why the table above uses it.
+
+### 5. The tone axis itself is wrong for hatching — and that part *is* fixable
+
+Sterzik's inverse sigmoid is a valid pre-warp **inside the single-direction cluster**, and
+it says our L\* axis is not the perceptual one. His seven perceptually uniform hatching
+levels, pushed through the same Murray-Davies → CIE L\* chain the rig uses:
+
+| density `a` | 0 | 0.096 | 0.191 | 0.477 | 0.768 | 0.894 | 1 |
+|---|---|---|---|---|---|---|---|
+| apparent L\* | 100.0 | 96.2 | 92.1 | 77.5 | 55.3 | 38.9 | 0 |
+| step in L\* | — | **3.8** | **4.1** | **14.6** | **22.2** | **16.4** | **38.9** |
+
+If L\* were the perceptual axis for hatching those steps would be equal. They run **3.8 to
+38.9 — a factor of ten.** The two axes disagree most at ink area ≈ 0.515, where Sterzik's
+perceived value is 0.525 and the L\*-normalised value is 0.249: **27.6 points of a 0–100
+scale.** `perceptualRamp` inverts a Murray-Davies response; it does not invert this one.
+
+This is a real, cheap, verified improvement available to any single-direction law — and it
+does **nothing** for the cluster gap, because no such curve exists for crosshatching.
+The arithmetic and the round-trip check are in `<scratchpad>/fillcmp/blindspot-sterzik.mjs`.
+
+### 6. What remains genuinely unmeasurable
+
+**We can now say where a law crosses the cluster boundary, how much of the form each side
+occupies, and how abruptly the handoff happens in L\* and in crossedness per millimetre.
+We still cannot say how big the resulting step looks.** That is not a gap in the rig; it is
+a gap in the literature. To convert "the texture family changes over 6.8 L\*" into "that
+reads as a step of *n*" you need a number the paper does not contain and could not contain:
+its MDS space is unitless, non-additive, and has no fitted axis on the crosshatch side at
+all. **`gradP95` is a geometric proxy, not a perceptual magnitude, and must not be read as
+one.** Two laws with the same `gradP95` are not thereby equally seamy.
+
+**The experiment that would settle it.** It is a small one, and it is specified against
+Sterzik's own instrument so the results land on the same scale.
+
+- **Stimuli.** For each affected law, sample its own ramp at **11 points spaced equally in
+  L\*** and cut a 20 mm patch from the render at each — a ladder of ten adjacent pairs,
+  one of which straddles the handoff. Beside it, a **control ladder at the same eleven
+  L\* values built by a non-crossing law** (`whiteBand` on the hatch mapper), so the two
+  ladders are ink-area-matched rung for rung and differ only in whether the texture family
+  changes.
+- **Task.** Sterzik's exact instrument: rate the difference between the two patches of a
+  pair, **1 (very similar) to 9 (very different)**, no further instruction. Each
+  participant rates 10 crossing-ladder pairs + 10 control pairs + 10 identical-patch catch
+  pairs (expected rating 1), fully randomised.
+- **Size.** Between-subject SD on a 1–9 difference rating runs ≈ 1.8. Detecting a
+  **1.0-point** elevation at the handoff rung, paired within participant, α = 0.05,
+  80 % power, needs n ≈ 8(σ/δ)² ≈ 26 → **30 participants per law**. Thirty pairs each is
+  **900 ratings per law; 8 laws = 7 200 ratings** — under half the 16 260 tasks of
+  Sterzik's three studies, and a routine crowdsourced run.
+- **What it returns.** Regress rating against ΔL\* on the *control* ladder, then read the
+  crossing pair's mean rating off that line. The answer is **the handoff step expressed in
+  L\*-equivalents** — the one number this section is missing, in the units the rest of the
+  table already uses.
+- **Worth adding in the same run.** A third ladder in which the second family enters as a
+  **width ramp** rather than a switch. That tests the only proposed remedy and costs one
+  more condition.
+
+Until that runs: **do not judge a texture-family-changing law on the ink-area numbers
+alone.** The crossedness column tells you *whether* and *where*; the render tells you the
+rest.
+
+### Reproducing the crossedness measurement
+
+```bash
+export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm use 20
+cd <scratchpad>/fillcmp
+
+node blindspot-run.mjs --freeze <scratchpad>/tonealgo/bs-frozen
+for L in whiteBand layeredCross crossFade weightCrossHandoff screenAngles multiScale \
+         penCross penReserve mkScribble bundleEased continuousPitch taperedEnds \
+         contFieldSurface; do
+  node blindspot-run.mjs --repo <scratchpad>/tonealgo/bs-frozen \
+                         --prefix bs --portbase 9720 --algo "$L"
+done
+node blindspot-report.mjs --tsv docs/tone-laws/crossedness.tsv
+node blindspot-sterzik.mjs
+```
+
+**`blindspot-run.mjs` is not `keepers-run.mjs` with a column added.** `keepers-run.mjs`
+selected the law by rewriting a module-level `const TONE_ALGO = 'ladder';`. **That constant
+no longer exists** — the law is now per-call, read from `opts.toneLaw` and validated against
+`src/config/scene3d-tone-laws.js`. The old regex matches nothing, and because the old guard
+only checked that *some* patch applied, the run still succeeds and silently measures the
+default law for every algo. **This was hit here: the first sweep returned digit-identical
+numbers for twelve different laws.** `blindspot-run.mjs` pins `askedLaw` at its source,
+drops the roster-membership test so off-roster laws (`layeredCross`, `crossFade`,
+`weightCrossHandoff`, `screenAngles`, `multiScale`, `continuousPitch`) resolve to themselves
+instead of degrading, uses the canonical `toneLaw: 'none'` for Stage 0, and **asserts every
+substitution individually**. Any re-run of the older sweep on the current build needs the
+same repair.
 
 ---
 
