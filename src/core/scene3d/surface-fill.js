@@ -499,6 +499,54 @@
   //                       ink cost (2036 mm against weightDeepDark's 1290) and
   //                       its spacing CoV (0.561 against 0.346) by moving
   //                       amplification off the spacing channel and onto the pen.
+  //
+  // ── ROUND 4: SIX MORE, ALL ON whiteBand's CHASSIS ──────────────────────────
+  //
+  // Round 3's winner was `whiteBand` (Rössl & Kobbelt PG'00 §7) — constant
+  // reserved width, per-sample black core, white margins, nothing ever dropped.
+  // sphere·hatch: R² 0.512, off-the-line 5.8 %, L* span 29, darkest L* 51.4,
+  // spacing CoV 0.31, zero free ends, 1192 mm of ink. These six each change ONE
+  // thing about it, so every comparison is against a single variable.
+  //
+  //   'whiteLineInverse'  Bewick's white-line engraving, and mezzotint. Lay a
+  //                       near-solid ground and CARVE the light out of it by
+  //                       widening the white margin. Mechanically: whiteBand
+  //                       with the base pitch chosen so the heaviest legal pen
+  //                       SATURATES it (6·ink/0.94) instead of leaving a 15 %
+  //                       margin (6·ink/0.85), and the transfer stated on the
+  //                       white rather than on the ink. The dark end is the
+  //                       whole point; the ink cost is high and is reported.
+  //   'nibAngle'          A broad/calligraphic nib held at a fixed SCREEN angle.
+  //                       The mark's width is w·|sin(θ_stroke − θ_nib)|, so on a
+  //                       curved form — where the ruling direction rotates
+  //                       continuously — tone varies from DIRECTION alone, with
+  //                       no coverage decision taken anywhere. Mean-normalised,
+  //                       so the average tone is still whiteBand's and the
+  //                       difference between them is purely directional.
+  //   'taperedEnds'       No stroke starts or stops at full width. Two tapers:
+  //                       one into each end of a run (smootherstep over
+  //                       TAPER_MM), and one on the TRANSFER — whiteBand's hard
+  //                       [c_min, c_max] clamp is replaced by a soft one, so the
+  //                       approach to the pen at the lit end has no knee. Aimed
+  //                       squarely at the highlight boundary every law so far
+  //                       leaves visible.
+  //   'curvatureField'    Hertzmann & Zorin SIGGRAPH'00. Rulings follow the
+  //                       principal-curvature directions of the SURFACE rather
+  //                       than the chart's parameterisation. The singularity is
+  //                       handled explicitly and reported: at an umbilic every
+  //                       direction is principal, a sphere is umbilic at every
+  //                       point, so the field is BLENDED toward the light's own
+  //                       iso-tangent by the curvature anisotropy.
+  //   'screenAngles'      Halftone screen-angle theory instead of this file's
+  //                       +65°/+32°. A dot screen has 90° symmetry (hence
+  //                       15/45/75, 30° apart); a LINE screen has 180°, so three
+  //                       families go 60° apart. Worst pair separation 33° → 60°.
+  //   'multiScale'        A hatching pyramid. A coarse family at twice the
+  //                       reserved pitch carries broad form and lightens the
+  //                       highlight below any single family's floor; a fine
+  //                       family enters by density from nothing where the coarse
+  //                       one runs out of legal pen. Two octaves, each internally
+  //                       even, neither anywhere near the plot floor.
   const TONE_ALGO = 'ladder';
   // 'contourFlow' only: which streamline family the rulings follow.
   //   'iso'  along the iso-intensity curves
@@ -1194,6 +1242,10 @@
       weightAlongLine: 1, weightDeepDark: 1, weightPlusSpacing: 1,
       weightMultiPass: 1, weightSmoothstep: 1, weightCrossHandoff: 1,
       weightPlusSpacingTuned: 1, whiteBand: 1, isophoteWidth: 1,
+      // ROUND 4 — all six sit on whiteBand's chassis (constant reserved width,
+      // black core, white margins), so none of them can drop a ruling.
+      nibAngle: 1, curvatureField: 1, screenAngles: 1,
+      taperedEnds: 1, whiteLineInverse: 1, multiScale: 1,
     };
     const isWeightLaw = () => WEIGHT_LAWS[TONE_ALGO] === 1;
     // `weightPlusSpacingTuned` is `weightPlusSpacing` at a different kappa and
@@ -1206,7 +1258,10 @@
     const splitsAlongLine = () => TONE_ALGO === 'weightAlongLine'
       || TONE_ALGO === 'weightDeepDark' || isWPS()
       || TONE_ALGO === 'weightMultiPass' || TONE_ALGO === 'weightCrossHandoff'
-      || TONE_ALGO === 'whiteBand' || TONE_ALGO === 'isophoteWidth';
+      || TONE_ALGO === 'whiteBand' || TONE_ALGO === 'isophoteWidth'
+      || TONE_ALGO === 'nibAngle' || TONE_ALGO === 'curvatureField'
+      || TONE_ALGO === 'screenAngles' || TONE_ALGO === 'taperedEnds'
+      || TONE_ALGO === 'whiteLineInverse' || TONE_ALGO === 'multiScale';
     // WHERE THE WEIGHT LAWS ACTUALLY LANDED — the counterpart to `floorStat`.
     // The weight range is bounded at both ends by physics (you cannot draw
     // thinner than the pen, and past W_FLOOD_AREA the ink is a blob), so "did
@@ -1256,9 +1311,44 @@
       const c = ((1 - WB_CMIN) * masterPitch) / (W_MAX * inkWidth());
       return clamp(finite(c, env.covLight), env.covLight, env.covDark);
     };
+    // ── ROUND 4 — THE SIX ────────────────────────────────────────────────────
+    //
+    // Every one of them keeps whiteBand's chassis: one even grid at a reserved
+    // pitch, nothing ever dropped, tone carried by the black core's share of the
+    // reserved width. What each changes is stated at its own constant block.
+    //
+    // 'whiteLineInverse' — BEWICK'S WHITE LINE. Rössl's band, run from the other
+    // end. Instead of a base pitch chosen so the HEAVIEST legal pen leaves a
+    // 15 % white margin (whiteBand: pitch = 6·ink/0.85 = 7.06·ink, so the darkest
+    // tone any weight can reach is area 0.85), the base pitch is chosen so the
+    // heaviest legal pen SATURATES it — pitch = 6·ink/0.94 = 6.38·ink — and the
+    // transfer is stated on the WHITE, not on the ink: the margin opens from
+    // WLI_MMIN in the core shadow to WLI_MMAX in the light. Mechanically it is
+    // whiteBand with the core/margin relation inverted and the field near
+    // saturation; it is the engraver carving light out of a laid ground rather
+    // than adding ink to paper. Ink cost is high by construction and is reported.
+    const WLI_DARK_AREA = 0.94;  // the laid ground: near-solid, just under flood
+    const WLI_MMIN = 0.06;       // narrowest white margin (the core shadow)
+    // THE WIDEST MARGIN IS NOT A CHOICE. On a ground pitched at 6·ink/0.94 the
+    // narrowest mark any plotter can make is the pen itself, so the most white
+    // the carver can open is 1 − 0.94/6 = 0.843 of the reserved width. Asking
+    // for more than that does not lighten the drawing — it just parks the whole
+    // lit half on the weight clamp, where tone stops tracking radiance
+    // altogether. Measured with WLI_MMAX pinned at 0.86 (a hair past reach):
+    // sphere·hatch R² 0.288, worst bin 17.4 % off the line. So the light anchor
+    // is taken from `wLightArea()`, which IS that number, computed.
+    const wliFlatCov = () => {
+      const env = toneEnvelope();
+      const c = (WLI_DARK_AREA * masterPitch) / (W_MAX * inkWidth());
+      return clamp(finite(c, env.covLight), env.covLight, env.covDark);
+    };
     const weightBaseCov = () => {
       if (TONE_ALGO === 'weightDeepDark' || TONE_ALGO === 'weightMultiPass') return deepFlatCov();
-      if (TONE_ALGO === 'whiteBand' || TONE_ALGO === 'isophoteWidth') return wbFlatCov();
+      if (TONE_ALGO === 'whiteLineInverse') return wliFlatCov();
+      if (TONE_ALGO === 'whiteBand' || TONE_ALGO === 'isophoteWidth'
+        || TONE_ALGO === 'nibAngle' || TONE_ALGO === 'curvatureField'
+        || TONE_ALGO === 'screenAngles' || TONE_ALGO === 'taperedEnds'
+        || TONE_ALGO === 'multiScale') return wbFlatCov();
       return flatCov();
     };
     // ── 'isophoteWidth' — GOODWIN, VOLLICK & HERTZMANN'S ISOPHOTE DISTANCE ────
@@ -1308,6 +1398,174 @@
     // The tone target, on the SAME perceptual response laws 6-10 invert: L* is
     // linear in scene radiance between the two ends.
     const wTargetArea = (I) => areaForTone(I, wDarkArea(), wLightArea());
+
+    // ── ROUND 4, THE ARITHMETIC ───────────────────────────────────────────────
+
+    // 'whiteLineInverse'. The transfer is on the WHITE: margin m(I) opens from
+    // WLI_MMIN to WLI_MMAX on the same L*-linear response every other law here
+    // uses, and the ink area is what is left. Written as an area so it goes
+    // through `weightForArea` unchanged — the inversion is in the ANCHORS, which
+    // is the whole of it.
+    const wliArea = (I) => areaForTone(I, 1 - WLI_MMIN, wLightArea());
+
+    // 'nibAngle' — A BROAD NIB, AND THE TONE THE DIRECTION GIVES FOR FREE.
+    //
+    // A calligraphic nib is a straight edge held at a fixed angle. The mark it
+    // leaves is widest when the stroke runs across the edge and narrowest when
+    // it runs along it: w_eff = w · |sin(θ_stroke − θ_nib)|, floored at
+    // NIB_FLOOR (a real nib has a corner, so it never vanishes entirely).
+    //
+    // On a curved form the ruling's SCREEN direction rotates continuously — a
+    // sphere's meridians fan from the pole, a capsule's rulings shear round the
+    // cap — so the nib modulates tone with the form's own turning, at no
+    // coverage cost and with no decision taken anywhere. That is the claim being
+    // tested: a tone channel that is free.
+    //
+    // It is MEAN-NORMALISED. |sin| averages 2/π over a half-turn, so dividing by
+    // (NIB_FLOOR + (1−NIB_FLOOR)·2/π) leaves the law's average tone exactly
+    // whiteBand's and makes the difference between them purely directional. An
+    // un-normalised nib would just be whiteBand a third lighter, which measures
+    // as a worse whiteBand and says nothing about direction.
+    const NIB_DEG = 45;          // the nib axis, in SCREEN space (the calligraphic 45°)
+    const NIB_FLOOR = 0.35;      // the nib's corner: the narrowest mark it can make
+    const NIB_MEAN = NIB_FLOOR + (1 - NIB_FLOOR) * (2 / Math.PI);
+    const nibFactor = (theta) => {
+      if (!Number.isFinite(theta)) return 1;
+      const d = theta - (NIB_DEG * Math.PI) / 180;
+      const f = NIB_FLOOR + (1 - NIB_FLOOR) * Math.abs(Math.sin(d));
+      return clamp(f / NIB_MEAN, 0.2, 2.2);
+    };
+
+    // 'taperedEnds' — NO STROKE STARTS OR STOPS AT FULL WIDTH.
+    //
+    // Two tapers, and they are aimed at two different hard edges.
+    //
+    //   THE END TAPER. Within TAPER_MM of a run's own end the width eases to
+    //   TAPER_FLOOR of what the tone asked for, on a smootherstep (zero first
+    //   AND second derivative at both ends). A run ends at the silhouette or at
+    //   a pole — both legal places — but it ends there at full width in every
+    //   other law, which is the blunt stop the eye reads as a cut edge.
+    //
+    //   THE LIGHT TAPER. whiteBand HARD-CLAMPS the grey to [WB_CMIN, WB_CMAX];
+    //   at the lit end that clamp is a corner in the transfer, so the width
+    //   stops shrinking abruptly and the drawing shows a boundary where the
+    //   rulings "arrive" at the pen. Here the same clamp is made SOFT — a
+    //   log-sum-exp min/max whose derivative is continuous — so the approach to
+    //   the pen has no knee at all. This is the one the highlight-falloff metric
+    //   is measuring.
+    //
+    // Nothing is dropped and no run is shortened: a taper is a width, so the
+    // ruling still runs end to end and the free-end count stays at zero.
+    const TAPER_MM = 3.5;        // how far in from a run's own end the taper reaches
+    const TAPER_FLOOR = 0.42;    // width at the very end, as a share of the tone's ask
+    const TAPER_SOFT = 0.09;     // softness of the light-end clamp, in grey units
+    const softClamp = (v, lo, hi) => {
+      // Smooth max then smooth min, both by the log-sum-exp softening. k is in
+      // grey units, so the corner is rounded over TAPER_SOFT of the range.
+      const k = Math.max(1e-4, TAPER_SOFT);
+      const smax = lo + k * Math.log(1 + Math.exp((v - lo) / k));
+      return hi - k * Math.log(1 + Math.exp((hi - smax) / k));
+    };
+    const taperFactor = (endMM) => {
+      if (!Number.isFinite(endMM) || endMM >= TAPER_MM) return 1;
+      const u = clamp(endMM / TAPER_MM, 0, 1);
+      const e = u * u * u * (u * (6 * u - 15) + 10);
+      return TAPER_FLOOR + (1 - TAPER_FLOOR) * e;
+    };
+    const taperArea = (I, endMM) => {
+      const c = softClamp(clamp(finite(I, 0), 0, 1), WB_CMIN, WB_CMAX);
+      return clamp((1 - c) * taperFactor(endMM), 0.01, 1 - WB_CMIN);
+    };
+
+    // 'multiScale' — A HATCHING PYRAMID, TWO OCTAVES.
+    //
+    // The COARSE family rules at twice the reserved pitch (it is emitted with
+    // half the line count, so its own `localPitch` is 2× and every downstream
+    // pitch-correct quantity follows automatically). It carries the broad form
+    // and is present everywhere, so the LIGHT end gets lighter than any single
+    // family can manage: at the pen's own weight it lays ink/(2p), half a single
+    // family's floor.
+    //
+    // The FINE family rules at the reserved pitch and enters BY DENSITY from
+    // nothing, exactly where the coarse family runs out of legal pen. No
+    // threshold, no traceable edge — the same construction weightCrossHandoff
+    // uses for its second direction, applied to SCALE instead.
+    //
+    // The two are composed ADDITIVELY, not by 1−(1−a)(1−b). They run at the same
+    // angle, so where both are heavy their bands abut rather than overlap, and
+    // the multiplicative form would under-report the ink by exactly the overlap
+    // that does not happen. The additive total is capped at MS_DEEP_AREA, which
+    // is under the flood bar; floods are counted, as always.
+    const MS_DEEP_AREA = 0.93;
+    const msTotal = (I) => areaForTone(I, MS_DEEP_AREA, wLightArea() / 2);
+    // The most the coarse family alone may lay: heaviest legal pen on ITS pitch,
+    // held to a minimum white margin so the coarse band never closes.
+    const msCoarseCap = (localPitch) => {
+      const p = (Number.isFinite(localPitch) && localPitch > 1e-6) ? localPitch : masterPitch;
+      const drawn = p / Math.max(1e-6, weightBaseCov());
+      return clamp(Math.min(1 - WB_CMIN, (W_MAX * inkWidth()) / drawn), 0.02, 0.98);
+    };
+    const msAreaCoarse = (I, localPitch) => Math.min(msTotal(I), msCoarseCap(localPitch));
+    const msAreaFine = (I, localPitch) => {
+      // The coarse pitch is twice the fine one, so the coarse family's own cap
+      // has to be restated on ITS pitch, not on the fine family's.
+      const cap = msCoarseCap(localPitch * 2);
+      return clamp(msTotal(I) - Math.min(msTotal(I), cap), 0, 0.98);
+    };
+    const msCovFine = (I, localPitch) => clamp(
+      covForArea(msAreaFine(I, localPitch), localPitch), 0.001, weightBaseCov(),
+    );
+
+    // 'screenAngles' — THE ANGLES COME FROM HALFTONE SCREEN THEORY.
+    //
+    // This file's crossed families sit at +65° and +32° (separations 65°, 33°,
+    // 82°) — three numbers picked for "not 90°, which reads as a square grid".
+    // Screen-angle theory gives the number instead of guessing it.
+    //
+    // A HALFTONE DOT screen has 90° rotational symmetry, so three screens are
+    // maximally separated at 30° apart, which is where 15° / 45° / 75° comes
+    // from (45° is given to the strongest ink because a 45° screen is the least
+    // visible to the eye, and 0°/90° is left to the weakest, yellow).
+    //
+    // A LINE screen — which is what a ruled hatch family is — has 180°
+    // symmetry, not 90°: rotating a set of parallel lines by 90° gives a
+    // genuinely different screen, while rotating a dot lattice by 90° gives the
+    // same one. So the line-screen analogue of "30° apart under 90° symmetry" is
+    // 60° APART UNDER 180° SYMMETRY, and the three families go to base+0°,
+    // base+60°, base+120°. The pairwise separations are 60/60/60 against the
+    // current 65/33/82, and the worst pair goes from 33° to 60° — the beat
+    // wavelength of a pair scales as 1/sin(Δθ/2) at equal pitch, so the worst
+    // pair's beat shortens by sin(30°)/sin(16.5°) = 1.76×, i.e. the coarsest
+    // interference pattern in the drawing is 1.76× finer and correspondingly
+    // less visible. That is the prediction; the harness measures it.
+    //
+    // The angles are taken in the SCREEN frame (`emitScreenCross`), because a
+    // screen angle is a statement about what the eye sees, and a parameter-frame
+    // angle is only equal to it where the chart happens to be conformal.
+    const SA_DEEP_AREA = 0.85;
+    const SA_SEP_DEG = 60;
+    const saTotal = (I) => areaForTone(I, SA_DEEP_AREA, wLightArea());
+    const saCap = (localPitch) => {
+      const p = (Number.isFinite(localPitch) && localPitch > 1e-6) ? localPitch : masterPitch;
+      const drawn = p / Math.max(1e-6, weightBaseCov());
+      return clamp(Math.min(1 - WB_CMIN, (W_MAX * inkWidth()) / drawn), 0.02, 0.98);
+    };
+    // Layer k's share, by composition: each family fills to its own cap and hands
+    // the rest on, so family k+1 enters at zero exactly where family k saturates.
+    const saAreaAt = (I, localPitch, layer) => {
+      const t = clamp(saTotal(I), 0, 0.98);
+      const cap = saCap(localPitch);
+      let rest = t;
+      let a = 0;
+      for (let k = 0; k <= clamp(Math.round(layer), 0, 2); k++) {
+        a = Math.min(rest, cap);
+        rest = clamp(1 - (1 - rest) / Math.max(1e-6, 1 - a), 0, 0.98);
+      }
+      return a;
+    };
+    const saCovAt = (I, localPitch, layer) => (layer === 0
+      ? weightBaseCov()
+      : clamp(covForArea(saAreaAt(I, localPitch, layer), localPitch), 0.001, weightBaseCov()));
     // How much more ink than the light end this radiance asks for.
     const wAmp = (I) => {
       const aL = wLightArea();
@@ -1381,6 +1639,18 @@
       if (TONE_ALGO === 'weightCrossHandoff') {
         return xfLayer === 0 ? flatCov() : xhCovB(clamp(finite(I, 0), 0, 1), localPitch);
       }
+      // 'multiScale' — layer 1 is the COARSE family and runs full (its pitch is
+      // already twice the reserved one, because it is emitted at half the line
+      // count); layer 0 is the FINE family and enters by density from nothing.
+      if (TONE_ALGO === 'multiScale') {
+        return xfLayer === 0
+          ? msCovFine(clamp(finite(I, 0), 0, 1), localPitch)
+          : weightBaseCov();
+      }
+      // 'screenAngles' — family A runs full, B and C enter by density.
+      if (TONE_ALGO === 'screenAngles') {
+        return saCovAt(clamp(finite(I, 0), 0, 1), localPitch, xfLayer);
+      }
       return weightBaseCov();
     };
     // ...AND THE COVERAGE THE FLOOR ACTUALLY LEFT. `covAtSample` clamps coverage
@@ -1436,7 +1706,7 @@
       return clamp(w * (1 + W_DITHER * (u - 0.5) * 2), W_MIN, W_MAX);
     };
     // The per-sample weight the emitter records.
-    const weightAtSample = (smp, localPitch, gradI) => {
+    const weightAtSample = (smp, localPitch, gradI, ctx) => {
       const I = clamp(finite(smp && smp.I, 0), 0, 1);
       if (TONE_ALGO === 'weightSmoothstep') {
         const env = toneEnvelope();
@@ -1454,6 +1724,32 @@
       // area asked for is literally (1 − c), clamped at both ends.
       if (TONE_ALGO === 'whiteBand') {
         return weightForArea(1 - clamp(I, WB_CMIN, WB_CMAX), localPitch, weightCovEff(I, localPitch));
+      }
+      // ── ROUND 4 ─────────────────────────────────────────────────────────────
+      // 'curvatureField' is whiteBand's WIDTH law on a different DIRECTION field
+      // (see `curvDir`), so it shares this branch verbatim — the comparison is
+      // then purely about where the rulings run.
+      if (TONE_ALGO === 'curvatureField') {
+        return weightForArea(1 - clamp(I, WB_CMIN, WB_CMAX), localPitch, weightCovEff(I, localPitch));
+      }
+      // 'nibAngle' — whiteBand's core, times the broad nib's directional factor.
+      if (TONE_ALGO === 'nibAngle') {
+        const a = (1 - clamp(I, WB_CMIN, WB_CMAX)) * nibFactor(ctx && ctx.theta);
+        return weightForArea(clamp(a, 0.01, 0.98), localPitch, weightCovEff(I, localPitch));
+      }
+      // 'taperedEnds' — whiteBand's core through a soft clamp, tapered at ends.
+      if (TONE_ALGO === 'taperedEnds') {
+        return weightForArea(taperArea(I, ctx && ctx.endMM), localPitch, weightCovEff(I, localPitch));
+      }
+      if (TONE_ALGO === 'whiteLineInverse') {
+        return weightForArea(wliArea(I), localPitch, weightCovEff(I, localPitch));
+      }
+      if (TONE_ALGO === 'multiScale') {
+        return weightForArea(xfLayer === 0 ? msAreaFine(I, localPitch) : msAreaCoarse(I, localPitch),
+          localPitch, weightCovEff(I, localPitch));
+      }
+      if (TONE_ALGO === 'screenAngles') {
+        return weightForArea(saAreaAt(I, localPitch, xfLayer), localPitch, weightCovEff(I, localPitch));
       }
       // 'isophoteWidth' — the width comes from the SHADING GRADIENT, measured on
       // the ruling itself (see `isoWidthArea`); the sampler hands it in.
@@ -2511,7 +2807,10 @@
       // the limb rule is about — the same segmentation `spanDrops` makes, minus
       // the zone split, which is not a silhouette.
       const needsArc = toneOn && (TONE_ALGO === 'strokesGrow'
-        || TONE_ALGO === 'forcedContrast' || TONE_ALGO === 'deepFillTSP');
+        || TONE_ALGO === 'forcedContrast' || TONE_ALGO === 'deepFillTSP'
+        // 'taperedEnds' needs the distance to the run's own end, in mm, to taper
+        // the width into it — the same span segmentation the other three use.
+        || TONE_ALGO === 'taperedEnds');
       let arcMM = null;
       let endMM = null;
       if (needsArc) {
@@ -2530,6 +2829,23 @@
           }
           for (let k = s0; k <= s1; k++) endMM[k] = Math.min(arcMM[k], acc - arcMM[k]);
           s0 = s1 + 1;
+        }
+      }
+      // ── THE RULING'S OWN DIRECTION, ON SCREEN ────────────────────────────────
+      // 'nibAngle' only. The nib's mark width is a function of the angle between
+      // the stroke and the nib's fixed axis, and that axis is fixed IN SCREEN
+      // SPACE (it is the draughtsman's hand, not the chart's), so the stroke
+      // direction has to be measured there too. Central difference over the
+      // ruling's own on-surface samples; a lone sample with no on-surface
+      // neighbour has no direction and takes the neutral factor.
+      const thetas = (toneOn && TONE_ALGO === 'nibAngle') ? new Array(nSteps + 1).fill(NaN) : null;
+      if (thetas) {
+        for (let s = 0; s <= nSteps; s++) {
+          if (!smps[s]) continue;
+          const p = (s > 0 && smps[s - 1]) ? smps[s - 1] : smps[s];
+          const q = (s < nSteps && smps[s + 1]) ? smps[s + 1] : smps[s];
+          const dx = q.x - p.x; const dy = q.y - p.y;
+          if (Math.hypot(dx, dy) > 1e-9) thetas[s] = Math.atan2(dy, dx);
         }
       }
       const pitchAtStep = (smp, s) => {
@@ -3101,7 +3417,8 @@
         if (s > 0 && !onSurf[s - 1]) { const e = edgeAt(s, s - 1); if (e) addPt(e, sampleZone, tt); }
         if (toneOn && TONE_ALGO === 'weightModulated') sink.noteW(weightAt(smp.I));
         else if (toneOn && isWeightLaw()) {
-          sink.noteW(weightAtSample(smp, pitchAtStep(smp, s), gradIs ? gradIs[s] : 0));
+          sink.noteW(weightAtSample(smp, pitchAtStep(smp, s), gradIs ? gradIs[s] : 0,
+            (thetas || endMM) ? { theta: thetas ? thetas[s] : null, endMM: endMM ? endMM[s] : null } : null));
         }
         addPt((toneOn && TONE_ALGO === 'deepFillTSP' && tspAt(smp, s))
           || { x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
@@ -3398,6 +3715,117 @@
         (smp.dA.x * Ib - smp.dB.x * Ia) / det);
     };
 
+    // ── 'curvatureField' — THE RULINGS FOLLOW THE PRINCIPAL CURVATURES ────────
+    //
+    // Hertzmann & Zorin, SIGGRAPH 2000: hatching along the principal curvature
+    // directions reads as FORM far more strongly than hatching along whatever
+    // the parameterisation happens to be, because the direction field is a
+    // property of the SURFACE and not of the chart that names it.
+    //
+    // The field is the shape operator's eigenvectors, computed on the chart the
+    // fill is already sampling. Second-order central differences give the two
+    // fundamental forms directly:
+    //     I  = [[E,F],[F,G]]   E = r_u·r_u, F = r_u·r_v, G = r_v·r_v
+    //     II = [[L,M],[M,N]]   L = r_uu·n,  M = r_uv·n,  N = r_vv·n
+    //     S  = I⁻¹ II          eigenvectors = principal directions in (du,dv)
+    // and the eigenvector of the LARGER |κ| is the direction of strongest
+    // bending — the one an engraver rules ACROSS, so the family runs along its
+    // partner. (`curv` is that partner; `curv2` is the strong direction itself,
+    // and is what the crosshatch mapper's second family gets.)
+    //
+    // ── THE SINGULARITY, HANDLED EXPLICITLY ───────────────────────────────────
+    //
+    // At an UMBILIC point κ₁ = κ₂ and every tangent direction is principal — the
+    // field is not merely hard to compute there, it does not exist. A sphere is
+    // umbilic AT EVERY POINT, so on the primary test primitive the curvature
+    // field is undefined everywhere, not just at isolated poles. An ellipsoid
+    // has four isolated umbilics; a capsule's hemispherical caps are umbilic
+    // over their whole area and its barrel is not.
+    //
+    // So the field is BLENDED, not switched. `u` is the normalised curvature
+    // anisotropy |κ₁−κ₂| / (|κ₁|+|κ₂|), which is 0 at an umbilic and 1 on a
+    // cylinder. Where u ≥ UMB_HI the principal direction is taken outright;
+    // where u ≤ UMB_LO it is discarded entirely and the ruling follows the LIGHT
+    // — the iso-intensity tangent, which is defined wherever the shading has a
+    // gradient and is the field `contourFlow` measured best of any law. In
+    // between the two are blended on a smootherstep, with the principal
+    // direction sign-aligned to the light direction first so the blend cannot
+    // cancel. There is no discontinuity anywhere in the transition, which is the
+    // reason for blending rather than thresholding.
+    //
+    // ON A SPHERE THIS DEGENERATES TO contourFlow's ISO FIELD BY CONSTRUCTION.
+    // That is the correct answer and it is reported as such: the curvature field
+    // has nothing to say about a sphere, so the light is allowed to say it.
+    const CURV_H = 1 / 192;
+    const UMB_LO = 0.06;
+    const UMB_HI = 0.30;
+    const dot3 = (u, v) => u.x * v.x + u.y * v.y + u.z * v.z;
+    const curvDir = (p, mode) => {
+      const h = CURV_H;
+      const a = clamp(p.a, h, 1 - h);
+      const b = clamp(p.b, h, 1 - h);
+      const r = (u, v) => chart(clamp(u, 0, 1), clamp(v, 0, 1));
+      const c0 = r(a, b);
+      const ap = r(a + h, b); const am = r(a - h, b);
+      const bp = r(a, b + h); const bm = r(a, b - h);
+      const pp = r(a + h, b + h); const pm = r(a + h, b - h);
+      const mp = r(a - h, b + h); const mm = r(a - h, b - h);
+      if (!c0 || !ap || !am || !bp || !bm || !pp || !pm || !mp || !mm) return null;
+      const ru = { x: (ap.x - am.x) / (2 * h), y: (ap.y - am.y) / (2 * h), z: (ap.z - am.z) / (2 * h) };
+      const rv = { x: (bp.x - bm.x) / (2 * h), y: (bp.y - bm.y) / (2 * h), z: (bp.z - bm.z) / (2 * h) };
+      const ruu = { x: (ap.x - 2 * c0.x + am.x) / (h * h), y: (ap.y - 2 * c0.y + am.y) / (h * h), z: (ap.z - 2 * c0.z + am.z) / (h * h) };
+      const rvv = { x: (bp.x - 2 * c0.x + bm.x) / (h * h), y: (bp.y - 2 * c0.y + bm.y) / (h * h), z: (bp.z - 2 * c0.z + bm.z) / (h * h) };
+      const q = 4 * h * h;
+      const ruv = { x: (pp.x - pm.x - mp.x + mm.x) / q, y: (pp.y - pm.y - mp.y + mm.y) / q, z: (pp.z - pm.z - mp.z + mm.z) / q };
+      const nn = cross(ru, rv);
+      const nl = Math.hypot(nn.x, nn.y, nn.z);
+      if (!(nl > 1e-12)) return null;                    // a chart singularity (a pole)
+      const n = { x: nn.x / nl, y: nn.y / nl, z: nn.z / nl };
+      const E = dot3(ru, ru); const F = dot3(ru, rv); const G = dot3(rv, rv);
+      const det = E * G - F * F;
+      if (!(Math.abs(det) > 1e-14)) return null;
+      const L = dot3(ruu, n); const M = dot3(ruv, n); const N = dot3(rvv, n);
+      // S = I⁻¹ II, written out.
+      const s11 = (G * L - F * M) / det;
+      const s12 = (G * M - F * N) / det;
+      const s21 = (E * M - F * L) / det;
+      const s22 = (E * N - F * M) / det;
+      const tr = s11 + s22;
+      const dt = s11 * s22 - s12 * s21;
+      const disc = tr * tr / 4 - dt;
+      if (!(disc >= 0)) return null;
+      const rt = Math.sqrt(Math.max(0, disc));
+      const k1 = tr / 2 + rt;                            // the larger principal curvature
+      const k2 = tr / 2 - rt;
+      const umb = clamp(Math.abs(k1 - k2) / Math.max(1e-12, Math.abs(k1) + Math.abs(k2)), 0, 1);
+      umbStat.n += 1; umbStat.sum += umb;
+      if (umb <= UMB_LO) umbStat.degenerate += 1;
+      // Eigenvector for the requested curvature, in (du,dv).
+      const kk = (mode === 'curv2') ? k1 : k2;
+      let du; let dv;
+      if (Math.abs(s12) > 1e-14) { du = s12; dv = kk - s11; }
+      else if (Math.abs(s21) > 1e-14) { du = kk - s22; dv = s21; }
+      else { du = (mode === 'curv2') ? 1 : 0; dv = (mode === 'curv2') ? 0 : 1; }
+      const dl = Math.hypot(du, dv);
+      if (!(dl > 1e-12)) return null;
+      let pdir = { a: du / dl, b: dv / dl };
+      // THE BLEND. `iso` is the light's own level-set tangent; where the
+      // curvature field is umbilic it takes over completely.
+      const iso = flowDir(p, 'iso');
+      if (!iso) return pdir;
+      const t = clamp((umb - UMB_LO) / Math.max(1e-6, UMB_HI - UMB_LO), 0, 1);
+      const w = t * t * t * (t * (6 * t - 15) + 10);
+      if (w >= 0.999) return pdir;
+      if (w <= 0.001) return iso;
+      pdir = alignTo(pdir, iso);
+      const ba = w * pdir.a + (1 - w) * iso.a;
+      const bb2 = w * pdir.b + (1 - w) * iso.b;
+      const bl = Math.hypot(ba, bb2);
+      return bl > 1e-12 ? { a: ba / bl, b: bb2 / bl } : iso;
+    };
+    // How umbilic the object turned out to be — reported, not assumed.
+    const umbStat = { n: 0, sum: 0, degenerate: 0 };
+
     const crossFamilyCache = new Map();
     const buildCrossFamily = (baseAngleDeg, deg, count, flow) => {
       const key = `${baseAngleDeg}|${deg}|${count}|${flow || ''}`;
@@ -3437,7 +3865,9 @@
           // pole of the light — the last direction the ruling had is a better
           // continuation than the chart's, so `ref` leads and nominal is the
           // last resort.
-          d = flowDir(p, flow);
+          // 'curv'/'curv2' are the principal-curvature fields, which fall back
+          // to the lighting field themselves wherever the surface is umbilic.
+          d = (flow === 'curv' || flow === 'curv2') ? curvDir(p, flow) : flowDir(p, flow);
           return alignTo(d || ref || nomDir, ref || nomDir);
         }
         const smp = sampleAt(p.a, p.b);
@@ -3882,10 +4312,51 @@
           }
           return;
         }
+        // 'multiScale' — THE COARSE OCTAVE. Family A (already emitted by the
+        // mapper) is the FINE one at the reserved pitch; this is its partner at
+        // HALF the line count, so its own `localPitch` is twice the reserved one
+        // and every pitch-correct quantity downstream follows without being told.
+        // Same angle, same construction, one octave apart — a pyramid, not a
+        // cross. Un-gated, so every coarse ruling runs the full width of the form.
+        if (TONE_ALGO === 'multiScale') {
+          if (toneOn) {
+            const nCoarse = Math.max(2, Math.round(count / 2));
+            xfLayer = 1;
+            if (mapper === 'contour') emitFamily('a', nCoarse, back);
+            else if (onMeridianAxis) emitFamily('b', nCoarse, back);
+            else emitAngledFamily(hatchAngle, nCoarse, back);
+            xfLayer = 0;
+          }
+          return;
+        }
+        // 'screenAngles' — TWO MORE FAMILIES AT THE SCREEN-THEORY SEPARATION.
+        // 60° and 120° off family A instead of the file's own 65° and 32°; see
+        // the constant block for why 60 is the line-screen analogue of the
+        // 15/45/75 dot screen. Both enter by density from nothing (saCovAt), so
+        // there is no threshold and no traceable band edge, and both are
+        // un-gated, so no ruling of either can terminate in open surface.
+        //
+        // NOT `emitScreenCross`. That traces integral curves of a screen-frame
+        // direction field and STOPS a ruling the moment it comes within the plot
+        // floor of one already laid — which would breach this branch's own
+        // invariant for the sake of the frame the angle is measured in. So the
+        // families are plain angled ones and the harness measures the SCREEN
+        // separations that actually landed, rather than this file asserting them.
+        if (TONE_ALGO === 'screenAngles') {
+          if (toneOn) {
+            const base = finite(opts.fillAngle, 0);
+            xfLayer = 1; emitAngledFamily(base + SA_SEP_DEG, count, back);
+            xfLayer = 2; emitAngledFamily(base + SA_SEP_DEG * 2, count, back);
+            xfLayer = 0;
+          }
+          return;
+        }
         // 'contourFlow' replaces family A outright (see the mapper dispatch) and
         // adds nothing on top: the direction IS the tone statement.
         // 'evenStreamlines' is the same family, placed by Jobard-Lefer.
-        if (TONE_ALGO === 'contourFlow' || TONE_ALGO === 'evenStreamlines') return;
+        // 'curvatureField' likewise owns family A and adds nothing.
+        if (TONE_ALGO === 'contourFlow' || TONE_ALGO === 'evenStreamlines'
+          || TONE_ALGO === 'curvatureField') return;
         if (!zonesOn) return;
         const base = finite(opts.fillAngle, 0);
         emitScreenCross(base, Regions.CROSS_OBJ_DEG, count, back, 'T');
@@ -3903,13 +4374,20 @@
       // line positions so the LINE BUDGET and the ladder's ranks are untouched
       // and only the direction changes. 'crosshatch' gets the orthogonal partner
       // — iso curves crossed by gradient curves, which is the engraver's pair.
-      const flowMapper = (TONE_ALGO === 'contourFlow' || TONE_ALGO === 'evenStreamlines') && toneOn
+      const flowMapper = (TONE_ALGO === 'contourFlow' || TONE_ALGO === 'evenStreamlines'
+        || TONE_ALGO === 'curvatureField') && toneOn
         && (mapper === 'hatch' || mapper === 'crosshatch' || mapper === 'contour');
       if (flowMapper) {
         const fBase = finite(opts.fillAngle, 0);
-        emitScreenCross(fBase, 0, count, back, null, false, FLOW_MODE);
+        // 'curvatureField' rules along the WEAK principal direction (so the
+        // strokes cross the strongest bending, which is what makes the form
+        // read); its crosshatch partner takes the strong one, which is the
+        // engraver's orthogonal pair on a surface rather than on a chart.
+        const fMode = TONE_ALGO === 'curvatureField' ? 'curv' : FLOW_MODE;
+        emitScreenCross(fBase, 0, count, back, null, false, fMode);
         if (mapper === 'crosshatch') {
-          emitScreenCross(fBase, 0, count, back, null, false, FLOW_MODE === 'iso' ? 'grad' : 'iso');
+          emitScreenCross(fBase, 0, count, back, null, false,
+            TONE_ALGO === 'curvatureField' ? 'curv2' : (FLOW_MODE === 'iso' ? 'grad' : 'iso'));
         }
         emitShadowInfill(angleFamily(hatchAngle).lineAt, count, back);
       } else if (mapper === 'hatch') {
@@ -4145,6 +4623,17 @@
         areaMin: Math.round(weightStat.aMin * 1000) / 1000,
         areaMax: Math.round(weightStat.aMax * 1000) / 1000,
         baseCov: Math.round(weightBaseCov() * 1000) / 1000,
+      } : null,
+      // 'curvatureField' only — HOW UMBILIC THE OBJECT TURNED OUT TO BE. The
+      // principal-direction field does not exist at an umbilic point, and a
+      // sphere is umbilic everywhere, so the share of samples that fell back to
+      // the lighting field is the honest answer to "what did the curvature
+      // field actually contribute here".
+      umbilic: umbStat.n ? {
+        samples: umbStat.n,
+        anisotropyMean: Math.round((umbStat.sum / umbStat.n) * 1000) / 1000,
+        degenerate: umbStat.degenerate,
+        degenerateFrac: Math.round((umbStat.degenerate / umbStat.n) * 1000) / 1000,
       } : null,
     } : null;
     return out;
