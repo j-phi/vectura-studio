@@ -48,6 +48,16 @@ const BOUNDS = {
 // stays inline: it is the geometry Jay reported the fragmentation on, not the
 // shadow-anatomy ball, and it is allow-listed under rule B for exactly that.
 const { CAMERA, SUN } = require('../fixtures/scene3d-shadow-anatomy');
+const { readHlStageSync } = require('../helpers/read-hl-stage-sync');
+
+// DORMANT UNDER HL_STAGE STAGE 1 (surface-fill.js:276, toneZones: false). This
+// assertion is correct and unmodified — the zone-confined crossed family
+// ("gate*") it checks does not exist until the zone apparatus is on. Flip
+// `toneZones` to true and it re-arms automatically. See
+// docs/pre-release-hardening-log.md PRH-027 and
+// tests/unit/scene3d-hl-stage-roster.test.js, which pins this roster.
+const STAGE = readHlStageSync();
+const whenZones = STAGE.toneZones ? test : test.skip;
 
 const runLength = (p) => {
   let L = 0;
@@ -194,7 +204,7 @@ describe('Scene3D.SurfaceFill — a drawn ruling is not chopped into stubs', () 
     expect(median / span).toBeGreaterThan(0.1);
   });
 
-  test('the deliberate mechanisms survive: zone-confined crossed families still stop at their zone', () => {
+  whenZones('the deliberate mechanisms survive: zone-confined crossed families still stop at their zone', () => {
     const raw = emittedRuns('hatch');
     const gated = raw.filter((p) => typeof p.fam === 'string' && p.fam.startsWith('gate'));
     // O17 — the terminator gains its own crossing family, confined to that zone.
