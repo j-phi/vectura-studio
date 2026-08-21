@@ -1074,3 +1074,256 @@ describe('Fill Style — docked 3D Scene panel', () => {
     expect(alive.length).toBeGreaterThan(2);
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════
+// 4. fs-e3 — Fill Style on the shadow's flat hatch (shadow.shadowToneLaw).
+//
+// An engine agent already wired `shadow.shadowToneLaw` + Shadows.build to
+// honor it (tests/unit/scene3d-shadow-tone-law.test.js pins the geometry).
+// This batch is the UI: a picker in BOTH surfaces, filtered through
+// Shadows.toneLawApplies so it never offers flow/web — the two mark classes
+// that would silently redraw as plain hatch under a different name on a
+// flat, ground-projected footprint.
+//
+// UNLIKE the object Style row above, shadow.* lives on the LAYER (the
+// `shadow` bag), not per-object — every id in a same-layer selection reads
+// the identical value, so there is no "Mixed" state to test here (asserting
+// one would pin a UI affordance that can never actually fire, which is
+// exactly the defect class this whole batch removes). What both suites below
+// verify instead: a 2-object selection resolves to the SAME single value a
+// 1-object selection does (no accidental per-object misread), mirroring how
+// the Shadow flyout's other scene-wide rows (Mode/Pen/Density/Line/Layers)
+// already behave.
+// ══════════════════════════════════════════════════════════════════════════
+
+describe('Shadow Fill Style — the shared toneLawApplies filter', () => {
+  let runtime, window, F, Shadows;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    ({ window } = runtime);
+    F = window.Vectura.SCENE_FILL_STYLES;
+    Shadows = window.Vectura.Scene3D.Shadows;
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  // Programmatic sweep — not a spot check — over the FULL offered list (the
+  // default entry heading its class + all 47 roster laws with the library
+  // disclosure on), matching what both UI surfaces actually pass through.
+  const offeredIds = () => F.groups(true, null, null, null)
+    .reduce((acc, g) => acc.concat(g.options.map((o) => o.value)), [])
+    .filter((id) => Shadows.toneLawApplies(id));
+
+  test('every id the shadow picker groups/filter produces satisfies Shadows.toneLawApplies', () => {
+    const ids = offeredIds();
+    expect(ids.length).toBeGreaterThan(0);
+    ids.forEach((id) => expect(Shadows.toneLawApplies(id)).toBe(true));
+  });
+
+  test('no flow or web law is ever offered', () => {
+    const ids = offeredIds();
+    const FLOW_AND_WEB = ['etfKang', 'defectSplit', 'voronoiWeb', 'mazeFill', 'originSpiral', 'deepFillTSP', 'turingStripe'];
+    FLOW_AND_WEB.forEach((id) => expect(ids).not.toContain(id));
+  });
+
+  test('the offered count is the full roster + default, minus exactly the 7 flow/web ids', () => {
+    const full = F.groups(true, null, null, null).reduce((a, g) => a + g.options.length, 0);
+    expect(full).toBe(48); // default (ladder) + 47 roster laws
+    expect(offeredIds().length).toBe(full - 7);
+  });
+});
+
+describe('Shadow Fill Style — context-bar Shadow flyout', () => {
+  let runtime, window, document, app, CB, F, Shadows;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    ({ window, document } = runtime);
+    window.app = new window.Vectura.App();
+    app = window.app;
+    app.maxHistory = 100000;
+    CB = window.Vectura.UI.ContextBar;
+    F = window.Vectura.SCENE_FILL_STYLES;
+    Shadows = window.Vectura.Scene3D.Shadows;
+    await nextFrames();
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  const host = () => CB.getContentHost();
+  const addSelectScene = (objectIds, overrides = {}) => {
+    app.engine.layers = app.engine.layers.filter((l) => l.type !== 'scene3d');
+    const scene = new window.Vectura.Layer(`scene-shfs-${app.engine.layers.length}`, 'scene3d', 'Scene');
+    scene.params = { ...scene.params, ...fixtureParams(overrides) };
+    app.engine.layers.push(scene);
+    app.engine.activeLayerId = scene.id;
+    app.engine.generate(scene.id);
+    app.renderer.setSelection([scene.id], scene.id);
+    app.renderer.setSceneSelection({ layerId: scene.id, mode: 'object', objectIds, faceKeys: [], edgeKeys: [] });
+    CB.restoreState();
+    return scene;
+  };
+  const pills = () => Array.from(host().querySelectorAll('.ctxbar-scene-field'));
+  const pillByLabel = (t) => pills().find((f) => (f.querySelector('.ctxbar-text-fieldlabel') || {}).textContent === t);
+  const openFly = () => document.querySelector('.ctxbar-scene-flyout.is-open');
+  const rowCtl = (fly, label) => {
+    const row = Array.from(fly.querySelectorAll('.ctxbar-fly-row'))
+      .find((r) => (r.querySelector('.ctxbar-fly-label') || {}).textContent === label);
+    return row ? row.querySelector('.ctxbar-fly-ctl') : null;
+  };
+  const openShadow = (objectIds = ['obj-1'], overrides) => {
+    const scene = addSelectScene(objectIds, overrides);
+    pillByLabel('Shadow').click();
+    return { scene, fly: openFly() };
+  };
+  const fire = (el, type) => el.dispatchEvent(new window.Event(type, { bubbles: true }));
+
+  test('a Fill Style row exists beneath Mode, grouped by mark class', () => {
+    const { fly } = openShadow();
+    const labels = Array.from(fly.querySelectorAll('.ctxbar-fly-label')).map((l) => l.textContent);
+    expect(labels.indexOf('Fill Style')).toBe(labels.indexOf('Mode') + 1);
+    const sel = rowCtl(fly, 'Fill Style').querySelector('select');
+    expect(sel).toBeTruthy();
+    const groups = Array.from(sel.querySelectorAll('optgroup')).map((g) => g.label);
+    expect(groups).not.toContain(F.markClassLabel('flow'));
+    expect(groups).not.toContain(F.markClassLabel('web'));
+  });
+
+  test('every option in the rendered select satisfies Shadows.toneLawApplies', () => {
+    const { fly } = openShadow();
+    const options = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option'));
+    expect(options.length).toBeGreaterThan(0);
+    options.forEach((o) => expect(Shadows.toneLawApplies(o.value)).toBe(true));
+  });
+
+  test('defaults to the shipped default (ladder)', () => {
+    const { fly } = openShadow();
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('ladder');
+  });
+
+  test('the explanatory note about flow/web renders', () => {
+    const { fly } = openShadow();
+    const notes = Array.from(fly.querySelectorAll('.ctxbar-fly-note')).map((n) => n.textContent);
+    expect(notes).toContain(window.Vectura.CONTEXT_BAR.sceneFlyouts.shadow.toneLawNote);
+    expect(window.Vectura.CONTEXT_BAR.sceneFlyouts.shadow.toneLawNote).toMatch(/flow/i);
+    expect(window.Vectura.CONTEXT_BAR.sceneFlyouts.shadow.toneLawNote).toMatch(/web/i);
+  });
+
+  test('choosing a law writes shadow.shadowToneLaw on the scene layer', () => {
+    const { scene, fly } = openShadow();
+    const sel = rowCtl(fly, 'Fill Style').querySelector('select');
+    sel.value = 'penCross';
+    fire(sel, 'change');
+    expect(scene.params.shadow.shadowToneLaw).toBe('penCross');
+  });
+
+  test('an unknown shadowToneLaw id resolves to the default (ladder), not a blank/invalid select', () => {
+    const { fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'not-a-real-law' } });
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('ladder');
+  });
+
+  // Structural "fails open" proof: shadow.* is scene-wide (the layer's own
+  // `shadow` bag), never per-object, so a 2-object selection on the SAME
+  // layer must resolve to the identical single value a 1-object selection
+  // does — never a false "Mixed" state (which would be an option that can
+  // never fire, the exact defect this batch removes).
+  test('mixed selection fails open: a 2-object selection shows the same single value, never a phantom Mixed state', () => {
+    const single = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'mkTick' } });
+    expect(rowCtl(single.fly, 'Fill Style').querySelector('select').value).toBe('mkTick');
+    expect(rowCtl(single.fly, 'Fill Style').classList.contains('ctxbar-fly-mixed')).toBe(false);
+
+    const pair = openShadow(['obj-1', 'obj-2'], {
+      objects: [
+        { id: 'obj-1', name: 'A', primitive: 'sphere', params: { sx: 40, sy: 40, sz: 40, detail: 12 }, transform: { x: -40, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' },
+        { id: 'obj-2', name: 'B', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 }, transform: { x: 40, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' },
+      ],
+      shadow: { shadowToneLaw: 'mkTick' },
+    });
+    const ctl = rowCtl(pair.fly, 'Fill Style');
+    expect(ctl.querySelector('select').value).toBe('mkTick');
+    expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(false);
+    expect(Array.from(ctl.querySelectorAll('option')).map((o) => o.textContent)).not.toContain('Mixed');
+  });
+});
+
+describe('Shadow Fill Style — docked 3D Scene panel', () => {
+  let runtime, window, document, F, Shadows;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    ({ window, document } = runtime);
+    F = window.Vectura.SCENE_FILL_STYLES;
+    Shadows = window.Vectura.Scene3D.Shadows;
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  const fire = (el, type) => el.dispatchEvent(new window.Event(type, { bubbles: true }));
+  const mount = (overrides = {}) => {
+    const { UI } = window.Vectura;
+    const layer = { id: 's3d-shfs', type: 'scene3d', name: 'Scene 1', visible: true, penId: 'pen-1', params: fixtureParams(overrides) };
+    const ui = { app: { pushHistory: () => {}, regen: () => {} }, storeLayerParams: () => {} };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    UI.Scene3DPanel.build(ui, layer, container);
+    return { ui, layer, container };
+  };
+  const scenePage = (c) => c.querySelector('.vs3-page[data-page="scene"]');
+  const sectionByTitle = (c, title) => Array.from(scenePage(c).querySelectorAll('.sect'))
+    .find((s) => (s.querySelector('.sect-hdr-title') || {}).textContent === title) || null;
+  const shadowHost = (c) => {
+    const s = sectionByTitle(c, 'Shadow');
+    return s ? s.querySelector('.vs3-shadow') : null;
+  };
+  const rowCtl = (host2, label) => {
+    const row = Array.from(host2.querySelectorAll('.vs3-row'))
+      .find((r) => (r.querySelector('.vs3-lbl') || {}).textContent === label);
+    return row ? row.querySelector('.vs3-ctl') : null;
+  };
+
+  test('a Fill Style row exists beside the other shadow controls, beneath Mode', () => {
+    const { container } = mount();
+    const host2 = shadowHost(container);
+    expect(host2).toBeTruthy();
+    ['Mode', 'Fill Style', 'Follow light', 'Density', 'Pen', 'Line', 'Layers'].forEach((label) => {
+      expect(rowCtl(host2, label)).toBeTruthy();
+    });
+    const labels = Array.from(host2.querySelectorAll('.vs3-lbl')).map((l) => l.textContent);
+    expect(labels.indexOf('Fill Style')).toBe(labels.indexOf('Mode') + 1);
+  });
+
+  test('every option in the rendered select satisfies Shadows.toneLawApplies; no flow/web group', () => {
+    const { container } = mount();
+    const sel = rowCtl(shadowHost(container), 'Fill Style').querySelector('select');
+    const options = Array.from(sel.querySelectorAll('option'));
+    expect(options.length).toBeGreaterThan(0);
+    options.forEach((o) => expect(Shadows.toneLawApplies(o.value)).toBe(true));
+    const groups = Array.from(sel.querySelectorAll('optgroup')).map((g) => g.label);
+    expect(groups).not.toContain(F.markClassLabel('flow'));
+    expect(groups).not.toContain(F.markClassLabel('web'));
+  });
+
+  test('defaults to the shipped default (ladder)', () => {
+    const { container } = mount();
+    expect(rowCtl(shadowHost(container), 'Fill Style').querySelector('select').value).toBe('ladder');
+  });
+
+  test('the explanatory note about flow/web renders beneath the row', () => {
+    const { container } = mount();
+    const notes = Array.from(shadowHost(container).querySelectorAll('.vs3-empty')).map((n) => n.textContent);
+    expect(notes).toContain(F.SHADOW_NOTE);
+    expect(F.SHADOW_NOTE).toMatch(/flow/i);
+    expect(F.SHADOW_NOTE).toMatch(/web/i);
+  });
+
+  test('choosing a law writes shadow.shadowToneLaw on the layer', () => {
+    const { container, layer } = mount();
+    const sel = rowCtl(shadowHost(container), 'Fill Style').querySelector('select');
+    sel.value = 'mkDotScreen';
+    fire(sel, 'change');
+    expect(layer.params.shadow.shadowToneLaw).toBe('mkDotScreen');
+  });
+
+  test('an unknown shadowToneLaw id resolves to the default (ladder), not a blank/invalid select', () => {
+    const { container } = mount({ shadow: { shadowToneLaw: 'not-a-real-law' } });
+    expect(rowCtl(shadowHost(container), 'Fill Style').querySelector('select').value).toBe('ladder');
+  });
+});

@@ -1631,6 +1631,37 @@
         onChange: (v) => setScene('shadow.shadowMode', v === 'inverse' ? 'inverse' : 'additive'),
       });
     }
+    // fs-e3 — Fill Style (tone-law) on the shadow's flat hatch, directly
+    // beneath Mode (mirrors Type → Fill Style in the Style flyout). Scene-wide
+    // like every other row here (shadow.* lives on the LAYER, not the object),
+    // so — unlike the Style flyout's per-object Fill Style row — there is no
+    // per-object disagreement this can ever show: a plain UI.Select bound to
+    // the layer's shadow bag, exactly like Mode/Style/Pen/Density/Layers below,
+    // is the honest rendering, not a "Mixed" state that could never actually
+    // fire (the same defect class this whole batch exists to remove).
+    //
+    // Only 6 of the 8 mark classes draw distinct geometry on a flat,
+    // ground-projected footprint (Shadows.toneLawApplies) — flow and web are
+    // filtered OUT of the offered list, never merely disabled, and SHADOW_NOTE
+    // explains why. `FS.groups(true, null, null, null)` asks for the full
+    // (library-included) roster with no primitive/mapper reachability context
+    // (shadows have neither), so nothing there gates anything; the only filter
+    // active is toneLawApplies.
+    if (C.toneLaw) {
+      const FS = Vectura.SCENE_FILL_STYLES;
+      const Shadows = Vectura.Scene3D && Vectura.Scene3D.Shadows;
+      if (FS && Shadows && typeof Shadows.toneLawApplies === 'function') {
+        const law = FS.resolve(bag.shadowToneLaw);
+        const groups = FS.groups(true, null, null, null)
+          .map((g) => ({ group: g.group, options: g.options.filter((opt) => Shadows.toneLawApplies(opt.value)) }))
+          .filter((g) => g.options.length);
+        UI.Select(flyRow(fly, C.toneLaw.label), {
+          options: groups, value: law, ariaLabel: C.toneLaw.aria,
+          onChange: (v) => setScene('shadow.shadowToneLaw', v),
+        });
+        if (C.toneLawNote) flyNote(fly, C.toneLawNote);
+      }
+    }
     // Follow light — shadows.js derives the hatch bearing from the light travel
     // direction when this is on, so the manual Angle below is INERT then and is
     // replaced by a note rather than shown as a dial that does nothing.

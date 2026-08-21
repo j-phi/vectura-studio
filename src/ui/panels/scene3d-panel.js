@@ -1691,6 +1691,7 @@
       shadowMode: 'additive',
       shadowAngle: 45, shadowDensity: 50, shadowPenId: null, shadowLineType: 'solid',
       shadowLayers: false, shadowLayerCount: 3, shadowFalloff: 0.5, shadowAngleFollowsLight: false,
+      shadowToneLaw: 'ladder',
     });
     const ensureShadow = () => {
       if (!params.shadow || typeof params.shadow !== 'object') params.shadow = shadowDefault();
@@ -1705,6 +1706,13 @@
       if (![2, 3, 4].includes(s.shadowLayerCount)) s.shadowLayerCount = 3;
       if (!Number.isFinite(s.shadowFalloff)) s.shadowFalloff = d.shadowFalloff;
       if (typeof s.shadowAngleFollowsLight !== 'boolean') s.shadowAngleFollowsLight = false;
+      // fs-e3 — Fill Style (tone-law), same roster/id space as style.params.
+      // toneLaw. Unknown ids are left as-is here (the row below resolves them
+      // through SCENE_FILL_STYLES.resolve for display, matching how the row
+      // reads style.params.toneLaw elsewhere in this file) rather than
+      // silently rewritten, so a round-tripped unknown id is still visible to
+      // debugging rather than quietly laundered into 'ladder'.
+      if (typeof s.shadowToneLaw !== 'string' || !s.shadowToneLaw) s.shadowToneLaw = d.shadowToneLaw;
       return s;
     };
 
@@ -2764,6 +2772,47 @@
         ariaLabel: 'Shadow mode (additive hatch or inverse ground-fill thinning)',
         onChange: (v) => { commit(() => { ensureShadow().shadowMode = v === 'inverse' ? 'inverse' : 'additive'; }); },
       }));
+
+      // fs-e3 — Fill Style (tone-law) on the shadow's flat hatch, directly
+      // beneath Mode (mirrors Type → Fill Style on the object Style tab).
+      // Shares the SCENE_FILL_STYLES roster/copy with that row so the two
+      // surfaces cannot drift. Only 6 of the 8 mark classes draw distinct
+      // geometry on a flat, ground-projected footprint — flow and web are
+      // filtered OUT of the offered list (never merely disabled) via
+      // Shadows.toneLawApplies; SCENE_FILL_STYLES.SHADOW_NOTE explains why.
+      // `FS.groups(true, null, null, null)` asks for the full roster with no
+      // primitive/mapper reachability context (shadows have neither), so
+      // nothing there gates anything — toneLawApplies is the only filter.
+      const FS = Vectura.SCENE_FILL_STYLES;
+      const ShadowsMod = Vectura.Scene3D && Vectura.Scene3D.Shadows;
+      if (FS && ShadowsMod && typeof ShadowsMod.toneLawApplies === 'function') {
+        const lawRow = document.createElement('div');
+        lawRow.className = 'vs3-row';
+        const lawLbl = document.createElement('label');
+        lawLbl.className = 'vs3-lbl';
+        lawLbl.textContent = FS.LABEL;
+        lawRow.appendChild(lawLbl);
+        const lawHost = document.createElement('div');
+        lawHost.className = 'vs3-ctl';
+        lawRow.appendChild(lawHost);
+        host.appendChild(lawRow);
+        const law = FS.resolve(s.shadowToneLaw);
+        const groups = FS.groups(true, null, null, null)
+          .map((g) => ({ group: g.group, options: g.options.filter((opt) => ShadowsMod.toneLawApplies(opt.value)) }))
+          .filter((g) => g.options.length);
+        comps.push(UI.Select(lawHost, {
+          options: groups,
+          value: law,
+          ariaLabel: FS.SHADOW_ARIA,
+          onChange: (v) => { commit(() => { ensureShadow().shadowToneLaw = v; }); },
+        }));
+        if (FS.SHADOW_NOTE) {
+          const note = document.createElement('p');
+          note.className = 'vs3-empty';
+          note.textContent = FS.SHADOW_NOTE;
+          host.appendChild(note);
+        }
+      }
 
       // Follow light — shadows.js derives the hatch bearing from the light travel
       // direction when this is on, which makes the manual Angle below INERT. Show

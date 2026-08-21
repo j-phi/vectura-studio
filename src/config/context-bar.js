@@ -192,6 +192,16 @@
     // stroke widths onto ONE pen layer because pen identity is carried per
     // style group, not per run — three real nibs cannot be named in one fill.
     SIMULATED_NOTE: 'Simulated — 3 nib widths on one pen layer.',
+    // fs-e3 — the shadow Fill Style row (ctxbar Shadow flyout + docked panel)
+    // reuses LABEL/aria/note from here rather than restating them. The offered
+    // list is additionally filtered through Vectura.Scene3D.Shadows.
+    // toneLawApplies: only 6 of the 8 mark classes draw distinct geometry on a
+    // flat, ground-projected shadow footprint — flow needs a surface direction
+    // field, web needs a full 2D domain-fill solve, and neither exists for a
+    // flat coverage-only projection (see shadows.js's own "Fill Style (tone-law
+    // mark class) on shadow hatch" comment for the full reasoning).
+    SHADOW_ARIA: 'Shadow fill style',
+    SHADOW_NOTE: 'Flow and web styles aren’t offered here: a flat cast shadow has no surface direction field for them to follow.',
   };
   const fillStyleRoster = () => Vectura.SCENE3D_TONE_LAWS || null;
   SCENE_FILL_STYLES.roster = fillStyleRoster;
@@ -636,6 +646,12 @@
         density: { label: 'Density', aria: 'Shadow density' },
         layers: { label: 'Layers', aria: 'Shadow penumbra layers' },
         layerOptions: [{ value: 'off', label: 'Off' }, { value: '2', label: '2' }, { value: '3', label: '3' }, { value: '4', label: '4' }],
+        // fs-e3 — Fill Style (tone-law) on the shadow's flat hatch. Shares the
+        // SCENE_FILL_STYLES roster/copy so the ctxbar flyout and the docked
+        // panel cannot drift; the offered list is filtered through
+        // Shadows.toneLawApplies (see SHADOW_NOTE above for why).
+        toneLaw: { label: SCENE_FILL_STYLES.LABEL, aria: SCENE_FILL_STYLES.SHADOW_ARIA },
+        toneLawNote: SCENE_FILL_STYLES.SHADOW_NOTE,
       },
       highlight: {
         treatment: { label: 'Treatment', aria: 'Highlight treatment' },
