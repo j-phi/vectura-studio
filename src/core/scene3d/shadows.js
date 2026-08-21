@@ -442,6 +442,188 @@
     return Math.max(pw, pw / clamp(finite(coverage, 0.5), 0.02, 1));
   };
 
+  // ── Fill Style (tone-law mark class) on shadow hatch ────────────────────────
+  // Scene3D face fills expose a Fill Style / tone-law picker: `style.params.
+  // toneLaw`, one of 47 ids grouped into 8 perceptual MARK CLASSES (roster +
+  // grouping owned by src/config/scene3d-tone-laws.js + src/config/context-
+  // bar.js:94-141). Shadows had no such concept: every shadow was one family of
+  // parallel rulings regardless of what toneLaw said elsewhere in the scene.
+  // `shadowToneLaw` (params.js DEFAULT_SHADOW) closes that gap for the FLAT
+  // hatch path — the single-family ground fill used whenever `shadowLayers` is
+  // off (the default) or the zone-anatomy field build degrades (`emitShadow
+  // Region`'s `flat()`). The Z_CONTACT..Z_OUTER zone-anatomy family system
+  // above is deliberately UNTOUCHED: it is a separate, already-tuned apparatus
+  // (see the "Shadow ANATOMY" block) and folding tone-law mark generation into
+  // it is out of scope for this contract.
+  //
+  // Not every mark class is honest on a flat, ground-projected, coverage-driven
+  // field — a shadow footprint carries a bearing + a coverage number, nothing
+  // resembling a surface normal, curvature, or a solved direction field. See
+  // `TONE_MARK_APPLICABLE` below for which classes get real, distinct geometry
+  // and `toneLawApplies` for the predicate the UI is expected to gate its
+  // picker on. A law whose class is NOT in that set still renders — it falls
+  // back to plain parallel hatch — rather than silently doing nothing; that
+  // fallback is a documented, deliberate degrade, not the bug this batch fixes
+  // (which was toneLaw being accepted and having NO effect on ANY shadow, ever).
+  const clampToneLawId = (value) => {
+    const R = (Vectura.SCENE3D_TONE_LAWS && Vectura.SCENE3D_TONE_LAWS.IDS) || null;
+    return (typeof value === 'string' && (!R || R.indexOf(value) !== -1)) ? value : 'ladder';
+  };
+  // markClass lookup is owned by src/config/context-bar.js (Vectura.SCENE_
+  // FILL_STYLES.markClass) — the one roster→mark-class map every consumer (the
+  // UI picker, this file) must share, never duplicated. Absent (a bare test
+  // process, or a stripped runtime) degrades to 'hatch': the shipped default
+  // ('ladder') IS 'hatch', so that fallback is byte-identical on a stock scene.
+  const toneLawMarkClass = (lawId) => {
+    const SFS = Vectura.SCENE_FILL_STYLES;
+    if (SFS && typeof SFS.markClass === 'function') {
+      const mc = SFS.markClass(lawId);
+      if (typeof mc === 'string' && mc) return mc;
+    }
+    return 'hatch';
+  };
+  // Mark classes judged genuinely meaningful on a flat coverage-driven field:
+  //   ref   — "no tone, one pitch/weight" IS what the flat hatch already is.
+  //   hatch — one family of parallel rulings: the literal existing mechanism.
+  //   cross — crosshatching is a purely 2D density technique (two ruled
+  //           families), no surface normal/curvature involved anywhere.
+  //   wave  — a lateral sinusoid on a ruling is a 2D perturbation of the line
+  //           geometry only; needs no body parameterization.
+  //   dash  — duty-cycle breaks of a ruling are exactly what the zone-anatomy
+  //           outer-penumbra dash logic above already does; purely geometric.
+  //   dot   — stipple/flick placement over an area needs only an inside/outside
+  //           test against the footprint rings (`pointInRingsEvenOdd`, already
+  //           used by the I26 inverse-mode code above).
+  // Excluded:
+  //   flow  — flow lines follow a direction FIELD solved over a body's surface
+  //           parameterization/curvature. A flat ground projection carries no
+  //           such field (only a bearing + a coverage number), so "flow" would
+  //           just redraw 'hatch' under a different name — not honest.
+  //   web   — space-filling networks (maze / voronoi / TSP tour) solve a full
+  //           2D domain-filling problem; that is surface-fill.js's own
+  //           standalone engine, not something this file's coverage-only
+  //           contract can reproduce honestly without duplicating it.
+  const TONE_MARK_APPLICABLE = new Set(['ref', 'hatch', 'cross', 'wave', 'dash', 'dot']);
+  // Exported predicate (see tail of file): lets the UI hide toneLaw options
+  // whose mark class does not change shadow geometry, instead of offering a
+  // choice that quietly does nothing.
+  const toneLawApplies = (lawId) => TONE_MARK_APPLICABLE.has(toneLawMarkClass(lawId));
+
+  const CROSS_MARK_DEG = 60;      // avoid a 90° square-grid moiré (mirrors CROSS_B_DEG's reasoning above)
+  const CROSS_MARK_SPACING_MULT = 1.5; // wider pitch per crossed family so total ink stays comparable to plain hatch
+  const DASH_PERIOD_MULT = 6;     // dash period scales with the ruling pitch, not a fixed screen-space stipple
+  const DASH_DUTY = 0.5;
+  const DOT_FLICK_LEN_MULT = 2.5; // a "dot" is drawn as a short flick — a bare vertex would fail MIN_RUN_MM below
+  const WAVE_STEP_MM = 2.5;
+  const WAVE_WAVELEN_MM = 7;
+
+  // dash: break one ruling segment into fixed-duty dashes.
+  const dashSegment = (a, b, period, duty) => {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (!(len > MIN_RUN_MM)) return [];
+    const ux = (b.x - a.x) / len; const uy = (b.y - a.y) / len;
+    const out = [];
+    for (let s = 0; s < len; s += period) {
+      const e = Math.min(len, s + period * duty);
+      if (e - s > MIN_RUN_MM) {
+        out.push([{ x: a.x + ux * s, y: a.y + uy * s }, { x: a.x + ux * e, y: a.y + uy * e }]);
+      }
+    }
+    return out;
+  };
+
+  // wave: resample one ruling segment into a polyline carrying a lateral
+  // sinusoid. Amplitude is capped to a fraction of the pitch so neighbouring
+  // rulings cannot cross (a wavy hatch that self-intersects reads as noise).
+  const waveSegment = (a, b, spacing) => {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (!(len > MIN_RUN_MM)) return null;
+    const ux = (b.x - a.x) / len; const uy = (b.y - a.y) / len;
+    const px = -uy; const py = ux;
+    const amp = clamp(0.3 * spacing, 0.2, 1.5);
+    const n = Math.max(2, Math.ceil(len / WAVE_STEP_MM));
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const s = (i / n) * len;
+      const off = amp * Math.sin((2 * Math.PI * s) / WAVE_WAVELEN_MM);
+      pts.push({ x: a.x + ux * s + px * off, y: a.y + uy * s + py * off });
+    }
+    return pts;
+  };
+
+  // dot: a jittered lattice over the footprint's bounding box, kept where the
+  // jittered sample lands inside the rings (even-odd — holes stay empty, same
+  // test the I26 inverse mode uses). Each kept sample becomes a short FLICK
+  // rather than a bare point: `emitHatchLines` drops any run under MIN_RUN_MM,
+  // so a true zero-length dot would be silently discarded downstream. The cell
+  // count is capped exactly like `buildShadowFields`'s lattice above — a huge,
+  // grazing-light footprint at a fine density must degrade, never hang.
+  const dotMarks = (rings, spacing) => {
+    const box = ringsBBox([rings]);
+    if (!box) return [];
+    const MAX_CELLS = 20000;
+    let pitch = Math.max(0.6, spacing);
+    const w = Math.max(1e-6, box.maxX - box.minX);
+    const h = Math.max(1e-6, box.maxY - box.minY);
+    while (((w / pitch) + 1) * ((h / pitch) + 1) > MAX_CELLS) pitch *= 1.5;
+    const flickLen = MIN_RUN_MM * DOT_FLICK_LEN_MULT;
+    const out = [];
+    let row = 0;
+    for (let y = box.minY; y <= box.maxY; y += pitch) {
+      const jx = (hash01(row, 11) - 0.5) * pitch * 0.6;
+      const jy = (hash01(row, 13) - 0.5) * pitch * 0.3;
+      let col = 0;
+      for (let x = box.minX; x <= box.maxX; x += pitch) {
+        const key = row * 977 + col;
+        const px = x + jx + (hash01(key, 17) - 0.5) * pitch * 0.4;
+        const py = y + jy + (hash01(key, 19) - 0.5) * pitch * 0.4;
+        if (pointInRingsEvenOdd(rings, px, py)) {
+          const ang = hash01(key, 23) * Math.PI;
+          const hl = flickLen / 2;
+          out.push([
+            { x: px - Math.cos(ang) * hl, y: py - Math.sin(ang) * hl },
+            { x: px + Math.cos(ang) * hl, y: py + Math.sin(ang) * hl },
+          ]);
+        }
+        col += 1;
+      }
+      row += 1;
+    }
+    return out;
+  };
+
+  // The chokepoint: rings + the shadow's own hatch angle/spacing (exactly what
+  // the flat hatch already computes) → an array of polylines in the SAME shape
+  // `hatchRingsEvenOdd` returns ([[a,b], …] or, for 'wave', longer polylines),
+  // ready for the unchanged `emitHatchLines`.
+  const shadowMarkLines = (rings, angleDeg, spacing, markClass) => {
+    switch (markClass) {
+      case 'cross': {
+        const spCross = spacing * CROSS_MARK_SPACING_MULT;
+        return hatchRingsEvenOdd(rings, angleDeg, spCross)
+          .concat(hatchRingsEvenOdd(rings, angleDeg + CROSS_MARK_DEG, spCross));
+      }
+      case 'dash': {
+        const period = Math.max(spacing * DASH_PERIOD_MULT, 2 * MIN_RUN_MM);
+        const out = [];
+        hatchRingsEvenOdd(rings, angleDeg, spacing).forEach(([a, b]) => {
+          dashSegment(a, b, period, DASH_DUTY).forEach((seg) => out.push(seg));
+        });
+        return out;
+      }
+      case 'dot':
+        return dotMarks(rings, spacing);
+      case 'wave':
+        return hatchRingsEvenOdd(rings, angleDeg, spacing)
+          .map(([a, b]) => waveSegment(a, b, spacing))
+          .filter(Boolean);
+      case 'ref':
+      case 'hatch':
+      default:
+        return hatchRingsEvenOdd(rings, angleDeg, spacing);
+    }
+  };
+
   // Stamp a set of even-odd hatch lines onto the ground plane, clip against the
   // occluders (ground never occludes; object faces do), and push visible runs.
   const emitHatchLines = (lines, groundPlane, clipper, out, meta, tr, draft) => {
@@ -1109,7 +1291,13 @@
     if (!Array.isArray(rings) || !rings.length || !Array.isArray(rings[0]) || rings[0].length < 3) return;
     const { angle, coverage, penWidth, layers, layerCount, falloff } = cfg;
     const sBase = coverageToSpacing(coverage, penWidth);
-    const flat = () => emitHatchLines(hatchRingsEvenOdd(rings, angle, sBase), groundPlane, clipper, out, meta, treat, draft);
+    // Fill Style on the flat hatch: a law whose mark class isn't judged
+    // applicable to a shadow (see TONE_MARK_APPLICABLE) falls back to plain
+    // 'hatch' — the default toneLaw ('ladder') IS 'hatch', so this keeps the
+    // Off/draft byte-identical compatibility contract intact untouched.
+    const toneLawId = clampToneLawId(cfg.toneLaw);
+    const markClass = toneLawApplies(toneLawId) ? toneLawMarkClass(toneLawId) : 'hatch';
+    const flat = () => emitHatchLines(shadowMarkLines(rings, angle, sBase, markClass), groundPlane, clipper, out, meta, treat, draft);
     if (!layers || draft) { flat(); return; }
 
     // Edge field excludes the rim that hugs the caster's body: the base of a
@@ -1494,7 +1682,12 @@
     const layerCount = clamp(Math.round(finite(shadowBag.shadowLayerCount, 3)), 2, 4);
     const falloff = clamp(finite(shadowBag.shadowFalloff, 0.5), 0.2, 1);
     const penOverride = (typeof shadowBag.shadowPenId === 'string' && shadowBag.shadowPenId) ? shadowBag.shadowPenId : null;
-    const cfg = { angle: hatchAngle, coverage, penWidth, layers: shadowLayers, layerCount, falloff, Mappers };
+    // Defensively clamped here too (not just in params.js normalizeShadow) —
+    // every other shadowBag field in this file re-clamps at the read site so a
+    // caller that skips normalizeParams still degrades safely; toneLaw follows
+    // the same convention.
+    const toneLaw = clampToneLawId(shadowBag.shadowToneLaw);
+    const cfg = { angle: hatchAngle, coverage, penWidth, layers: shadowLayers, layerCount, falloff, Mappers, toneLaw };
     // ── I26 shadow MODE. 'additive' (default) EMITS shadow hatch; 'inverse'
     // instead THINS the ground layer's own fill inside the footprint (dark-paper
     // shadow). Inverse needs the accumulated scene output (opts.groundFillPaths)
@@ -1851,10 +2044,23 @@
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, {
-    Shadows: { build, __ladderForTest, __collarForTest },
+    Shadows: {
+      build,
+      // Fill Style (tone-law) on shadow hatch: `toneLawApplies(lawId)` is the
+      // predicate a UI picker should gate on (hide ids whose mark class does
+      // not change shadow geometry); `toneLawMarkClass` is the underlying
+      // classifier it is built from, exposed for anything that wants the raw
+      // class instead of a boolean.
+      toneLawApplies,
+      toneLawMarkClass,
+      __ladderForTest,
+      __collarForTest,
+    },
   });
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { build, __ladderForTest, __collarForTest };
+    module.exports = {
+      build, toneLawApplies, toneLawMarkClass, __ladderForTest, __collarForTest,
+    };
   }
 })();
