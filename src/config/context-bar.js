@@ -163,8 +163,13 @@
     // the ctxbar's own row-copy shape rather than restating the strings.
     LABEL: 'Fill Style',
     ARIA: 'Fill style',
-    LIBRARY_LABEL: 'Library',
-    LIBRARY_ARIA: 'Show the measured library (11 more fill styles, with caveats)',
+    // U9 follow-up — "Library" told a user nothing about what flipping it
+    // does. "Experimental" is self-evident on its own; LIBRARY_NOTE spells out
+    // the count and the caveat so the flyout row + its note read as one
+    // sentence without needing a hover.
+    LIBRARY_LABEL: 'Experimental',
+    LIBRARY_ARIA: 'Show 11 additional experimental fill styles, each with measured caveats',
+    LIBRARY_NOTE: 'Adds 11 more fill styles, each flagged with its measured caveats.',
     DEFAULT: FILL_STYLE_DEFAULT,
     MARK_CLASSES: FILL_STYLE_MARK_CLASSES,
     MARK_OF: FILL_STYLE_MARK_OF,
@@ -451,6 +456,11 @@
       // I22: swap the selected object(s) primitive. Option list in
       // CONTEXT_BAR.sceneFlyouts.shape below.
       sceneShape: { label: 'Shape', tooltip: 'Change primitive shape' },
+      // Scene-wide VIEW toggle (not a per-object param) for non-print helper
+      // decoration — transform gizmo, selection outline, bbox handles, light
+      // helpers, hover hints, orbit pad. Ground geometry/fill is real print
+      // output and is unaffected. Backs SETTINGS.sceneHelpersVisible.
+      sceneHelpers: { tooltipOn: 'Hide viewport helpers', tooltipOff: 'Show viewport helpers' },
     },
 
     // ── Scene-object flyout copy + option lists (ask #8) ───────────────────
@@ -497,6 +507,7 @@
           aria: SCENE_FILL_STYLES.ARIA,
           libraryLabel: SCENE_FILL_STYLES.LIBRARY_LABEL,
           libraryAria: SCENE_FILL_STYLES.LIBRARY_ARIA,
+          libraryNote: SCENE_FILL_STYLES.LIBRARY_NOTE,
         },
         pen: { label: 'Pen', aria: 'Style pen', inherit: 'Layer pen' },
         angle: { label: 'Angle', aria: 'Hatch angle' },
@@ -507,6 +518,9 @@
         borderHead: 'Border',
         border: { label: 'Border', aria: 'Silhouette border' },
         borderStrength: { label: 'Weight', aria: 'Border strength' },
+        // Offset shifts the border ring in/out of the silhouette: negative
+        // pulls it inward, positive pushes it outward. mm; obj.border.offset.
+        borderOffset: { label: 'Offset', aria: 'Border offset in millimetres — negative inward, positive outward' },
         borderPen: { label: 'Pen', aria: 'Border pen', inherit: 'Edge pen' },
         onOff: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
         mappers: [
@@ -718,6 +732,10 @@
       sceneVisibility: svg('<rect x="4" y="6" width="12" height="9" rx="1" stroke-dasharray="2.4 1.8"/><path d="M4 6l3-2.5h12l-3 2.5"/>'),
       sceneSelectFaces: svg('<path d="M10 2.8l6.2 3.6v7.2L10 17.2 3.8 13.6V6.4Z"/><path d="M3.8 6.4L10 10l6.2-3.6M10 10v7.2"/>'),
       sceneClearStyle: svg('<rect x="4" y="4" width="9" height="9" rx="1"/><path d="M12 12l4.5 4.5M16.5 12L12 16.5"/>'),
+      // Transform-gizmo crosshair — stands for the non-print helper decoration
+      // the toggle hides/shows (gizmo, selection outline, bbox handles, light
+      // helpers, orbit pad).
+      sceneHelpers: svg('<circle cx="10" cy="10" r="2.2"/><path d="M10 2.5v3.5M10 14v3.5M2.5 10h3.5M14 10h3.5"/>'),
     },
   };
 })();

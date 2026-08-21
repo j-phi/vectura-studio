@@ -481,4 +481,64 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     expect(obj(scene).primitive).toBe('sphere');
     expect(app.history.length).toBe(before + 1);
   });
+
+  // ── C4 Job 1 — Helpers visibility toggle (scene-wide VIEW pref, not an ──
+  // object param). The renderer half is built by another agent; this only
+  // pins the control + the SETTINGS write.
+  const helpersBtn = () => Array.from(host().querySelectorAll('.ctxbar-btn'))
+    .find((b) => /viewport helpers/i.test(b.title || ''));
+
+  test('C4/Job1: Helpers toggle is present, defaults to visible, and flipping writes SETTINGS.sceneHelpersVisible — never layer.params', async () => {
+    delete window.Vectura.SETTINGS.sceneHelpersVisible; // simulate an unset default
+    const scene = addSelectScene();
+    let btn = helpersBtn();
+    expect(btn).toBeTruthy();
+    // Default ON: the tooltip offers to hide (current state is visible).
+    expect(btn.title).toMatch(/^Hide/);
+    const paramsBefore = JSON.stringify(scene.params);
+    btn.click();
+    expect(window.Vectura.SETTINGS.sceneHelpersVisible).toBe(false);
+    expect(JSON.stringify(scene.params)).toBe(paramsBefore); // untouched — not a layer param
+    btn = helpersBtn();
+    expect(btn.title).toMatch(/^Show/);
+    btn.click();
+    expect(window.Vectura.SETTINGS.sceneHelpersVisible).toBe(true);
+  });
+
+  // ── C4 Job 3 — Density max raised to 200 (context-bar side only). ──────
+  test('C4/Job3: Style ▾ Density slider declares max 200', async () => {
+    const scene = addSelectScene();
+    app.renderer.setSceneObjectStyle(scene.id, ['obj-1'], { mapper: 'hatch' });
+    CB.restoreState();
+    pillByLabel('Style').click();
+    const range = rowCtl(openFly(), 'Density').querySelector('input[type="range"]');
+    expect(range).toBeTruthy();
+    expect(range.max).toBe('200');
+  });
+
+  // ── C4 Job 4 — Border Offset control (obj.border.offset). ──────────────
+  test('C4/Job4: Style ▾ Border Offset control has the contract range/default/step and writes border.offset', async () => {
+    const scene = addSelectScene();
+    pillByLabel('Style').click();
+    rowCtl(openFly(), 'Border').querySelector('.seg-opt[data-value="on"]').click();
+    const offCtl = rowCtl(openFly(), 'Offset');
+    expect(offCtl).toBeTruthy();
+    const range = offCtl.querySelector('input[type="range"]');
+    expect(range.min).toBe('-2');
+    expect(range.max).toBe('2');
+    expect(range.step).toBe('0.05');
+    expect(Number(range.value)).toBe(0); // default
+    const before = app.history.length;
+    range.value = '-0.5';
+    range.dispatchEvent(new window.Event('input', { bubbles: true }));
+    range.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(obj(scene).border.offset).toBeCloseTo(-0.5);
+    expect(app.history.length).toBe(before + 1);
+    // Negative = inward, positive = outward — both directions are writable.
+    const range2 = rowCtl(openFly(), 'Offset').querySelector('input[type="range"]');
+    range2.value = '1.25';
+    range2.dispatchEvent(new window.Event('input', { bubbles: true }));
+    range2.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(obj(scene).border.offset).toBeCloseTo(1.25);
+  });
 });
