@@ -33,6 +33,12 @@
   const PLANAR_RESIDUAL_TOL = 0.05;
   // Sample pitch (document mm) along tested paths.
   const SAMPLE_STEP = 2.5;
+  // Draft-only coarser sample pitch (P5). Gated STRICTLY on opts.draft being
+  // truthy at createClipper() time (never inferred, never defaulted true) —
+  // the settled/full-quality render must stay byte-identical to today, and
+  // this multiplier is the one part of this batch allowed to move what gets
+  // drawn (fewer, coarser samples along a clipped path during a live drag).
+  const DRAFT_SAMPLE_STEP_MULT = 2.4;
   // Perpendicular-distance floor for the collinear decimation of sampled runs.
   const COLLINEAR_EPS = 1e-6;
 
@@ -159,6 +165,86 @@
   const planeDepthAt = (occluder, x, y) =>
     occluder.plane.A * x + occluder.plane.B * y + occluder.plane.C;
 
+  // ── Occluder spatial index (perf) ───────────────────────────────────────
+  // hiddenAt used to linear-scan every occluder for every one of up to 400
+  // samples per clipped path — O(paths × samples × occluders). Profiling a
+  // 12→24 object draft frame showed that scan at 88-96% of total draft
+  // regen time, scaling ~360× over a 24× increase in occluder×sample work
+  // (quadratic, since both occluder count and sample count grow with scene
+  // size). This is a UNIFORM GRID over occluder screen-space bboxes: build
+  // once per createClipper() call (one clip batch = one frame), then every
+  // hiddenAt() query looks up only the occluders whose bbox could possibly
+  // cover the query point via O(1) cell math, instead of the whole set.
+  //
+  // A uniform grid (not a BVH/quadtree) was chosen because scene3d occluder
+  // bboxes are all roughly similar in scale within one frame (one camera,
+  // one set of comparably-sized primitives) — the pathological case a grid
+  // handles badly (wildly different bbox sizes clustering into few cells)
+  // does not arise here, and a flat grid is the cheapest structure to build
+  // fresh every frame (no tree balancing) and to query (integer div, no
+  // recursion) on the hot path.
+  //
+  // Correctness (byte-identity): every occluder is inserted into every grid
+  // cell its bbox overlaps, so for any query point p, every occluder whose
+  // bbox contains p is guaranteed present in p's cell list — cellXOf/cellYOf
+  // are monotonic non-decreasing in x/y, so p's cell index always falls
+  // within [cellOf(bbox.min), cellOf(bbox.max)]. The per-occluder bbox/plane/
+  // polygon checks inside hiddenAt are UNCHANGED and still run on every
+  // candidate — the index only shrinks the candidate set, it never changes
+  // which occluders are considered "in range" at a given point, and it never
+  // reorders relative to the original occluders array (insertion is a single
+  // ascending pass), so the first-match short-circuit in hiddenAt behaves
+  // identically to the plain linear scan.
+  const GRID_MAX_AXIS_CELLS = 128;
+  const GRID_TARGET_PER_CELL = 2;
+
+  const buildOccluderIndex = (occluders) => {
+    const n = occluders.length;
+    if (!n) return null;
+    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const b = occluders[i].bbox;
+      if (!Number.isFinite(b.minX) || !Number.isFinite(b.minY) ||
+          !Number.isFinite(b.maxX) || !Number.isFinite(b.maxY)) continue;
+      if (b.minX < minX) minX = b.minX;
+      if (b.minY < minY) minY = b.minY;
+      if (b.maxX > maxX) maxX = b.maxX;
+      if (b.maxY > maxY) maxY = b.maxY;
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) ||
+        !Number.isFinite(maxX) || !Number.isFinite(maxY)) return null;
+    const width = Math.max(maxX - minX, EPS);
+    const height = Math.max(maxY - minY, EPS);
+    const targetCells = Math.max(1, Math.ceil(n / GRID_TARGET_PER_CELL));
+    const aspect = width / height;
+    let cols = clamp(Math.round(Math.sqrt(targetCells * aspect)), 1, GRID_MAX_AXIS_CELLS);
+    let rows = clamp(Math.round(targetCells / cols), 1, GRID_MAX_AXIS_CELLS);
+    const cellW = width / cols;
+    const cellH = height / rows;
+    const cellXOf = (x) => clamp(Math.floor((x - minX) / cellW), 0, cols - 1);
+    const cellYOf = (y) => clamp(Math.floor((y - minY) / cellH), 0, rows - 1);
+    const grid = new Array(cols * rows).fill(null);
+    for (let i = 0; i < n; i++) {
+      const b = occluders[i].bbox;
+      const cx0 = cellXOf(b.minX); const cx1 = cellXOf(b.maxX);
+      const cy0 = cellYOf(b.minY); const cy1 = cellYOf(b.maxY);
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const rowBase = cy * cols;
+        for (let cx = cx0; cx <= cx1; cx++) {
+          const idx = rowBase + cx;
+          const cell = grid[idx];
+          if (cell) cell.push(i); else grid[idx] = [i];
+        }
+      }
+    }
+    return {
+      query: (x, y) => {
+        if (x < minX || x > maxX || y < minY || y > maxY) return null;
+        return grid[cellYOf(y) * cols + cellXOf(x)];
+      },
+    };
+  };
+
   // Greedy 3-point collinearity filter (same class as geometry3d.js's
   // allowlisted floating-horizon decimator — NOT an RDP/Visvalingam
   // simplifier, so it does not route through GeometryUtils.simplifyPath):
@@ -209,6 +295,12 @@
         buffer = Depth.build(tris, opts.depthBuffer || {});
       }
     }
+    // Built once per clipper (one clip batch = one frame) and reused across
+    // every clipPath()/hiddenAt() call the caller makes with this clipper —
+    // including shadows.js's per-hatch-line clipPath calls, which reuse this
+    // SAME clipper instance (it is handed to Shadows.build as `clipper`), so
+    // shadow generation gets the identical speedup with no code of its own.
+    const index = buffer ? null : buildOccluderIndex(occluders);
 
     // seg: { ownerKeys: [faceKey…], objectId } — context for owner exclusion.
     const hiddenAt = (x, y, z, seg) => {
@@ -224,8 +316,15 @@
         const owner = seg.ownerKeys && seg.ownerKeys.length ? seg.ownerKeys[0] : undefined;
         return buffer.depthAt(x, y, owner) > z + Math.max(bias, 0.5);
       }
-      for (let k = 0; k < occluders.length; k++) {
-        const occ = occluders[k];
+      // Candidate set from the spatial index (every occluder whose bbox could
+      // contain (x,y) — see buildOccluderIndex's correctness note); falls
+      // back to the full occluders array when there is no index (e.g. a
+      // degenerate/empty scene). The per-candidate checks below are UNCHANGED
+      // from the plain linear scan.
+      const candidates = index ? index.query(x, y) : occluders;
+      if (!candidates) return false;
+      for (let k = 0; k < candidates.length; k++) {
+        const occ = index ? occluders[candidates[k]] : candidates[k];
         if (seg.ownerKeys && seg.ownerKeys.indexOf(occ.id) !== -1) continue; // own face
         // Continuous surface hatch: the object never occludes its own fill (it
         // lies ON the front surface). Other objects still occlude it.
@@ -237,6 +336,13 @@
       }
       return false;
     };
+
+    // P5: coarser sample pitch, draft ONLY. `opts.draft` defaults falsy, and
+    // today's one real caller (scene3d.js's createClipper(faces, { bias })
+    // call) never sets it — so this is dormant on the live app until that
+    // call site opts in; every scene below keeps SAMPLE_STEP exactly as
+    // before.
+    const sampleStep = opts.draft ? SAMPLE_STEP * DRAFT_SAMPLE_STEP_MULT : SAMPLE_STEP;
 
     // Split a polyline (points carry {x, y, z}) into visible/hidden runs.
     // Returns { fullyVisible, runs: [{ visible, pts }] }; run points are
@@ -292,7 +398,7 @@
         const za = finite(a.z, 0);
         const zb = finite(b.z, 0);
         const len = Math.hypot(b.x - a.x, b.y - a.y);
-        const steps = clamp(Math.round(len / SAMPLE_STEP) + 1, 2, 400);
+        const steps = clamp(Math.round(len / sampleStep) + 1, 2, 400);
         for (let i = (s === 0 ? 0 : 1); i <= steps; i++) {
           const t = i / steps;
           push(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(za, zb, t));
@@ -328,6 +434,11 @@
 
   const api = {
     PLANAR_RESIDUAL_TOL,
+    // Test seam (P5): the draft-only coarser sample pitch is not otherwise
+    // observable except through the resulting geometry, so unit tests can
+    // derive expected sample spacing directly instead of hardcoding it.
+    SAMPLE_STEP,
+    DRAFT_SAMPLE_STEP_MULT,
     buildOccluders,
     fitSupportPlane,
     planeDepthAt,

@@ -240,4 +240,85 @@ describe('scene3d flat-face HLR', () => {
       expect(Math.max(...xs)).toBeGreaterThan(89);
     });
   });
+
+  // FS-F1 P5: draft-only coarser sampling. clipPath samples a segment at
+  // fixed steps (x_i = a.x + len*i/steps); a hidden zone entirely between two
+  // consecutive samples is invisible to the algorithm by construction (no
+  // sampled point ever lands inside it, so no visible/hidden flip is ever
+  // observed). This test derives the EXACT settled and draft sample
+  // positions from the exported SAMPLE_STEP/DRAFT_SAMPLE_STEP_MULT constants
+  // (no hardcoded magic numbers) and places one narrow occluder squarely
+  // inside a gap between two consecutive DRAFT samples while a SETTLED
+  // sample is guaranteed to land inside it (settled spacing < draft spacing)
+  // — so settled must detect the hidden zone and draft must not.
+  describe('draft-only coarser sampling (P5)', () => {
+    const LEN = 200;
+    let gapLo = null;
+    let gapHi = null;
+
+    beforeAll(() => {
+      const stepsFor = (sampleStep) => Math.min(400, Math.max(2, Math.round(LEN / sampleStep) + 1));
+      const settledSteps = stepsFor(HLR.SAMPLE_STEP);
+      const draftSteps = stepsFor(HLR.SAMPLE_STEP * HLR.DRAFT_SAMPLE_STEP_MULT);
+      const draftSampleX = (i) => (LEN * i) / draftSteps;
+      // Find a draft sample index whose gap to the next draft sample also
+      // contains a settled sample strictly inside it (guaranteed to exist
+      // since settled spacing is smaller — draft spacing / mult — than draft
+      // spacing, so on average DRAFT_SAMPLE_STEP_MULT settled samples fall in
+      // every draft gap).
+      const settledSampleXs = Array.from({ length: settledSteps + 1 }, (_, i) => (LEN * i) / settledSteps);
+      for (let j = 0; j < draftSteps && gapLo === null; j++) {
+        const lo = draftSampleX(j); const hi = draftSampleX(j + 1);
+        const margin = (hi - lo) * 0.15; // stay off the draft sample points themselves
+        const innerLo = lo + margin; const innerHi = hi - margin;
+        if (innerHi <= innerLo) continue;
+        const hasSettled = settledSampleXs.some((sx) => sx > innerLo && sx < innerHi);
+        // Also stay comfortably inside the segment body (away from x=0/LEN
+        // endpoints, which are always sampled regardless of step).
+        if (hasSettled && innerLo > 10 && innerHi < LEN - 10) { gapLo = innerLo; gapHi = innerHi; }
+      }
+    });
+
+    const picketFace = () => [{
+      id: 'P/face:0',
+      objectId: 'P',
+      polygon: [
+        { x: gapLo, y: 0, z: 40 },
+        { x: gapHi, y: 0, z: 40 },
+        { x: gapHi, y: 100, z: 40 },
+        { x: gapLo, y: 100, z: 40 },
+      ],
+    }];
+    const crossingSegment = () => [{
+      a: { x: 0, y: 50, z: 0 }, b: { x: LEN, y: 50, z: 0 },
+      ownerKeys: [], objectId: 'S', mode: 'remove',
+    }];
+
+    test('a hidden zone that fits inside one draft sample gap is found at settled quality', () => {
+      expect(gapLo).not.toBeNull(); // sanity: the derived fixture is well-formed
+      const settledRuns = HLR.occludeSegments(crossingSegment(), picketFace(), { bias: 0.5 });
+      // Settled samples the interior of [gapLo, gapHi] → detects the near
+      // picket → splits the single visible run into two.
+      expect(settledRuns.length).toBe(2);
+    });
+
+    test('draft:true measurably coarsens sampling vs. the default (no opts.draft)', () => {
+      const settledRuns = HLR.occludeSegments(crossingSegment(), picketFace(), { bias: 0.5 }).length;
+      const draftRuns = HLR.occludeSegments(crossingSegment(), picketFace(), { bias: 0.5, draft: true }).length;
+      // Draft never samples inside [gapLo, gapHi] by construction → the
+      // narrow occluder is invisible to it → one unbroken visible run.
+      expect(draftRuns).toBe(1);
+      expect(draftRuns).toBeLessThan(settledRuns);
+    });
+
+    test('omitting opts.draft (today\'s real scene3d.js call shape) is untouched', () => {
+      // scene3d.js:447 calls HLR.createClipper(occluderFaces, { bias: HLR_BIAS })
+      // — no draft key at all. That exact opts shape must behave identically
+      // to an explicit draft:false, proving the settled path never moves
+      // just because a caller elsewhere in the app runs in draft mode.
+      const withoutKey = HLR.occludeSegments(crossingSegment(), picketFace(), { bias: 0.5 });
+      const explicitFalse = HLR.occludeSegments(crossingSegment(), picketFace(), { bias: 0.5, draft: false });
+      expect(JSON.stringify(withoutKey)).toBe(JSON.stringify(explicitFalse));
+    });
+  });
 });
