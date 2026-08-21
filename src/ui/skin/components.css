@@ -12084,6 +12084,16 @@ body.mobile-layout .hud-bar {
   border-left: 2px solid color-mix(in srgb, var(--ui-danger) 45%, transparent);
   padding-left: 6px;
 }
+/* U12 D1/D2 — the faceted-primitive orientation line: box/plane/solid have no
+   chart, so most Fill Style options are no-ops there (greyed out above). A
+   different colour from .is-caveat (which is a measured law caveat) so the two
+   do not read as the same kind of warning. */
+.ctxbar-fly-note.is-faceted {
+  color: var(--ui-warning, #d29922);
+  font-style: normal;
+  border-left: 2px solid color-mix(in srgb, var(--ui-warning, #d29922) 45%, transparent);
+  padding-left: 6px;
+}
 .ctxbar-fly-reset { width: 100%; justify-content: center; }
 .ctxbar-scene-menu-wrap .ctxbar-scene-field { max-width: 140px; }
 /* I20 scoped scene pen chip + its pen-list flyout (writes byObject/byFace, never
@@ -13308,6 +13318,14 @@ body.mobile-layout .hud-bar {
 .vs3-lawnote.is-caveat {
   color: var(--ui-danger);
   border-left: 2px solid color-mix(in srgb, var(--ui-danger) 45%, transparent);
+  padding-left: 6px;
+}
+/* U12 D1/D2 — the faceted-primitive orientation line, same rule as the ctxbar
+   flyout's `.ctxbar-fly-note.is-faceted`: a different colour from `.is-caveat`
+   (a measured law caveat) so the two do not read as the same warning kind. */
+.vs3-lawnote.is-faceted {
+  color: var(--ui-warning, #d29922);
+  border-left: 2px solid color-mix(in srgb, var(--ui-warning, #d29922) 45%, transparent);
   padding-left: 6px;
 }
 /* X-ray control group header (scene3d Style tab, Phase 6). */

@@ -487,21 +487,28 @@
   // `o.row(label)` returns a control host; notes append to `host`. `o.write(v)`
   // performs the surface's own commit; `o.rerender()` rebuilds it (the note
   // block and the option list both depend on the current value).
+  // `o.primitiveMode` (optional) — the edited object's `primitive`. U12 D1/D2:
+  // box/plane/solid have no chart, so most laws are silent no-ops there (see
+  // SCENE_FILL_STYLES.isReachableOn); each caller below resolves its own best
+  // guess at the object currently being edited and passes it through.
+  // `o.solidType` (optional) — only meaningful when primitiveMode === 'solid';
+  // see SCENE_FILL_STYLES.isCapLimited for why the SOLID primitive needs this
+  // second signal that box/plane do not.
   const fillStyleControls = (host, comps, o) => {
     const UI = Vectura.UI;
     const FS = Vectura.SCENE_FILL_STYLES;
     if (!UI || !FS) return;
     const law = FS.resolve(o.value);
     comps.push(UI.Select(o.row(FS.LABEL), {
-      options: FS.groups(fillStyleShowLibrary),
+      options: FS.groups(fillStyleShowLibrary, o.primitiveMode, o.solidType),
       value: law,
       ariaLabel: FS.ARIA,
       onChange: (v) => o.write(v),
     }));
-    const line = (text, warn) => {
+    const line = (text, kind) => {
       if (!text) return;
       const n = document.createElement('p');
-      n.className = warn ? 'vs3-lawnote is-caveat' : 'vs3-lawnote';
+      n.className = kind ? `vs3-lawnote is-${kind}` : 'vs3-lawnote';
       n.textContent = text;
       host.appendChild(n);
     };
@@ -516,6 +523,9 @@
     }));
     const entry = FS.entry(law) || {};
     const note = FS.note(law);
+    // The faceted-shape orientation line leads everything else — a user must
+    // know THIS before reading what the currently-picked law does.
+    line(FS.facetedNote ? FS.facetedNote(o.primitiveMode, o.solidType) : '', 'faceted');
     // Leads with the MARK CLASS, so what kind of mark this is stays legible
     // once the select is closed.
     line(note.text);
@@ -523,7 +533,7 @@
     if (entry.strengths) line(`Strengths: ${entry.strengths}`);
     if (entry.weaknesses) line(`Weaknesses: ${entry.weaknesses}`);
     // The measured caveat of a demoted library law, in the warning colour.
-    line(note.caveat, true);
+    line(note.caveat, 'caveat');
   };
 
   let CURRENT = null;
@@ -1014,6 +1024,8 @@
           value: style.params.toneLaw,
           write: (v) => { commit(() => { style.params.toneLaw = v; }); renderStyle(); },
           rerender: renderStyle,
+          primitiveMode: params.primitive,
+          solidType: params.params && params.params.solidType,
         });
       }
       if (FILL_MAPPERS.has(style.mapper)) {
@@ -1284,11 +1296,16 @@
       }));
       if (FILL_MAPPERS.has(style.mapper)) {
         if (!style.params || typeof style.params !== 'object') style.params = {};
+        // The fused fill draws over the primary (first, "Solid" role) operand's
+        // geometry, so ITS primitive is what gates reachability here.
+        const primary = children[0];
         fillStyleControls(sHost, comps, {
           row: (lbl) => labeledRow(sHost, lbl),
           value: style.params.toneLaw,
           write: (v) => { commit(() => { style.params.toneLaw = v; }); renderBoolStyle(); },
           rerender: renderBoolStyle,
+          primitiveMode: primary && primary.params && primary.params.primitive,
+          solidType: primary && primary.params && primary.params.params && primary.params.params.solidType,
         });
       }
     };
@@ -1686,7 +1703,35 @@
       }
     }
 
-    const getObject = (id) => params.objects.find((o) => o && o.id === id) || null;
+    // U12 D5 — child-aware: on a scene TREE an object's def lives on its own
+    // child layer (`params.objects` is empty there), so a lookup restricted to
+    // the inline array missed every scene-tree object and fell through to the
+    // raw uuid at the call site (`scopeDisplayName`). `renderer
+    // .getSceneObjectRecord` already resolves both shapes (see its own
+    // "child-layer aware" doc comment) — read through it first, falling back
+    // to the inline monolith array for a renderer-less test harness.
+    //
+    // The record it returns for a scene-tree child is `child.params` (see
+    // `_sceneObjectById`) — the object DEF, which carries `primitive`/
+    // `transform`/etc but never `.name`: a child's display name lives on the
+    // LAYER itself (`child.name`, the same field the focused leaf panel's own
+    // rename field writes — see `buildObjectPanel`'s "Name → layer.name"). An
+    // inline monolith object already carries `.name` on the record itself, so
+    // this only ever ADDS the field when the record is missing it.
+    const getObject = (id) => {
+      if (renderer && typeof renderer.getSceneObjectRecord === 'function') {
+        const rec = renderer.getSceneObjectRecord(layer.id, id);
+        if (rec) {
+          if (rec.name === undefined) {
+            const engine = ui && ui.app && ui.app.engine;
+            const childLayer = engine && typeof engine.getLayerById === 'function' ? engine.getLayerById(id) : null;
+            if (childLayer && childLayer.name) return { ...rec, name: childLayer.name };
+          }
+          return rec;
+        }
+      }
+      return params.objects.find((o) => o && o.id === id) || null;
+    };
 
     // ── CSG groups (Increment 1 minimal): role (solid/hole) + subtract pairing.
     // The full grouping tree (union/intersect, group rows, nested groups,
@@ -3322,6 +3367,24 @@
       return { scope: 'scene', key: null, target: {} };
     };
 
+    // U12 D1/D2 — the object (or face's owning object) the CURRENT scope
+    // edits, so the Fill Style picker can gate reachability by ITS primitive.
+    // Scene scope has no single object (may cover many shapes) — returns
+    // undefined there, and `SCENE_FILL_STYLES.isReachableOn` fails OPEN
+    // (treats everything as reachable) on an undefined primitiveMode.
+    const scopePrimitiveMode = (scope) => {
+      if (scope.scope === 'scene') return undefined;
+      const obj = getObject(scope.target.objectId);
+      return obj ? obj.primitive : undefined;
+    };
+    // Only meaningful when scopePrimitiveMode(scope) === 'solid' — see
+    // SCENE_FILL_STYLES.isCapLimited for why solid needs a second signal.
+    const scopeSolidType = (scope) => {
+      if (scope.scope === 'scene') return undefined;
+      const obj = getObject(scope.target.objectId);
+      return obj && obj.params ? obj.params.solidType : undefined;
+    };
+
     const scopeDisplayName = (scope) => {
       if (scope.scope === 'scene') return 'Scene';
       const obj = getObject(scope.target.objectId);
@@ -3485,6 +3548,8 @@
             value: typeof raw === 'string' ? raw : d.default,
             write: (v) => write(v),
             rerender: renderStyle,
+            primitiveMode: scopePrimitiveMode(scope),
+            solidType: scopeSolidType(scope),
           });
         } else if (d.kind === 'seg') {
           styleComps.push(UI.SegCtrl(labeledHost(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));

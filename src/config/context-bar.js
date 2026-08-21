@@ -126,12 +126,19 @@
     // carries many directions at once rather than one.
     penCross: 'cross', penReserve: 'cross', mezzoRegion: 'cross',
     // Direction/stripe fields: the ruling direction is solved over the body.
-    etfKang: 'flow', defectSplit: 'flow', turingStripe: 'flow',
+    // `turingStripe` is NOT here (U12 audit D3) — its own gallery mechanism
+    // text says the opposite of the flow blurb ("Lines that follow a
+    // direction field"): "The stripes are not placed, they emerge … no
+    // periodic lattice". It is a labyrinth, the same KIND of mark as
+    // `mazeFill`/`voronoiWeb` below, and belongs with them under Networks &
+    // space-filling ("a network with no ruling direction anywhere").
+    etfKang: 'flow', defectSplit: 'flow',
     mkScribble: 'wave', ampSpacing: 'wave', weaveDepth: 'wave',
     interlockWeave: 'wave', trochoidLoop: 'wave', amplitudeOnly: 'wave',
     mkTick: 'dash', mkDashRamp: 'dash', dutyConst: 'dash',
     mkDotScreen: 'dot', lozengeStipple: 'dot', penStipple: 'dot',
     voronoiWeb: 'web', mazeFill: 'web', originSpiral: 'web', deepFillTSP: 'web',
+    turingStripe: 'web',
   };
   // The shipped default law. It is deliberately NOT in the roster's 47 (those
   // are the laws the tone study MEASURED against it), but it IS the value
@@ -204,11 +211,21 @@
     if (typeof value !== 'string' || !value) return FILL_STYLE_DEFAULT;
     return SCENE_FILL_STYLES.entry(value) ? value : FILL_STYLE_DEFAULT;
   };
-  // [{ group, options: [{ value, label }] }] for UI.Select, grouped by MARK
-  // CLASS. `includeLibrary` false = the 36 production laws + the default;
-  // true = all 47 + the default, each library row suffixed. Empty classes are
-  // dropped so the disclosure never leaves a headed, empty group behind.
-  SCENE_FILL_STYLES.groups = (includeLibrary) => {
+  // [{ group, options: [{ value, label, disabled? }] }] for UI.Select, grouped
+  // by MARK CLASS. `includeLibrary` false = the 36 production laws + the
+  // default; true = all 47 + the default, each library row suffixed. Empty
+  // classes are dropped so the disclosure never leaves a headed, empty group
+  // behind.
+  //
+  // `primitiveMode` (optional — the selected object's `primitive`, e.g.
+  // 'box'/'sphere') and `solidType` (optional — only meaningful when
+  // `primitiveMode === 'solid'`) gate each option through `isReachableOn`: on
+  // a faceted primitive an option that would draw no differently from Ladder
+  // is disabled AND its label is suffixed, so the "before choosing" legibility
+  // bar (U12 D2) is met without a hover or a pick-and-see-nothing. Omitted
+  // primitiveMode ⇒ every option reachable, unchanged from before this
+  // parameter existed.
+  SCENE_FILL_STYLES.groups = (includeLibrary, primitiveMode, solidType) => {
     const R = fillStyleRoster();
     const ids = R ? R.IDS : [];
     const inTier = (id) => includeLibrary || !R || R.PRODUCTION.indexOf(id) !== -1;
@@ -221,8 +238,11 @@
       }
       ids.forEach((id) => {
         if (SCENE_FILL_STYLES.markClass(id) !== cls.id || !inTier(id)) return;
-        const label = R.BY_ID[id].label + (SCENE_FILL_STYLES.isLibrary(id) ? SCENE_FILL_STYLES.LIBRARY_SUFFIX : '');
-        options.push({ value: id, label });
+        const reachable = SCENE_FILL_STYLES.isReachableOn(id, primitiveMode, solidType);
+        const label = R.BY_ID[id].label
+          + (SCENE_FILL_STYLES.isLibrary(id) ? SCENE_FILL_STYLES.LIBRARY_SUFFIX : '')
+          + (reachable ? '' : SCENE_FILL_STYLES.NO_EFFECT_SUFFIX);
+        options.push({ value: id, label, disabled: !reachable });
       });
       if (options.length) out.push({ group: cls.label, options });
     });
@@ -249,6 +269,88 @@
     const unknown = Object.keys(FILL_STYLE_MARK_OF).filter((id) => known.indexOf(FILL_STYLE_MARK_OF[id]) === -1);
     const stray = R ? Object.keys(FILL_STYLE_MARK_OF).filter((id) => R.IDS.indexOf(id) === -1) : [];
     return { missing, unknown, stray };
+  };
+
+  // ── FACETED-PRIMITIVE REACHABILITY (U12 audit D1/D2) ──────────────────────
+  // `box`, `plane` and `solid` have no parametric chart (`SurfaceFill.chartFor`
+  // returns null for them — see `scene3d.js`'s own "THE TONE LAW ON FACETED
+  // GEOMETRY" comment) and fall through to the faceted planar fill, which only
+  // reaches the laws `Scene3D.SurfaceFillMono.isMono` recognises, plus the
+  // Stage-0 bypass `none` and the base `ladder` drawing (the no-law state
+  // itself, never a law that could fail to apply). Every other law offered
+  // here is a silent no-op on box/plane — measured 37 of 48 in the audit.
+  //
+  // `solid` carries a SECOND, independent restriction. `faceMonoLines`
+  // (`scene3d.js`) additionally caps itself at a per-object FRONT-FACE budget
+  // — a mono law owns one chart and budgets itself for the whole object, so a
+  // high-poly body pays that cost per face and would read as N independent
+  // mazes rather than one shaded form; over the cap every mono law falls back
+  // to the ordinary faceted hatch, unchanged. The shipped default solid (a
+  // 32-face buckyball) sits OVER that cap; a low-poly named solid (a
+  // dodecahedron and smaller — `tests/unit/scene3d-faceted-tone-law.test.js`
+  // already measures this) sits under it and behaves exactly like box/plane.
+  // `none` is NOT part of this second restriction: Stage 0 is an unconditional
+  // early return in `spacingBand`, never routed through `faceMonoLines`'s cap
+  // at all, so it stays live on a capped solid — verified against the running
+  // engine, not asserted (`tests/unit/scene3d-solid-cap-reachability.test.js`).
+  //
+  // This reads the SAME sources the engine's own faceted dispatch reads —
+  // `scene3d.js`'s `faceMonoLines`, gated by `SurfaceFillMono.isMono`,
+  // `Scene3D.Params.CURVED_FILL_PRIMITIVES` (chart-wrapped or not), and
+  // `Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS.solid.solidType` (which named
+  // solid actually ships as the default) — rather than restating the
+  // reachable ids as a hardcoded literal array, so this can never rot out of
+  // sync with the engine. The one fact this file cannot read live is WHETHER
+  // the default solid sits over the front-face cap (that requires a live
+  // camera-facing mesh record `faceMonoLines` computes mid-render, which this
+  // config has no channel to) — that one boolean is pinned here and guarded by
+  // `tests/unit/scene3d-solid-cap-reachability.test.js`, which fails the
+  // moment the engine's own measured behaviour disagrees with it.
+  SCENE_FILL_STYLES.isFaceted = (primitiveMode) => {
+    const P = Vectura.Scene3D && Vectura.Scene3D.Params;
+    const curved = P && P.CURVED_FILL_PRIMITIVES;
+    if (!primitiveMode || !curved || typeof curved.has !== 'function') return false;
+    // A string that is not one of the twelve real primitives (a typo, a future
+    // 13th primitive this file has not been told about) is UNKNOWN, not
+    // faceted — fails open exactly like an absent primitiveMode, rather than
+    // guessing it belongs on the more-restrictive side.
+    if (!Array.isArray(P.PRIMITIVES) || P.PRIMITIVES.indexOf(primitiveMode) === -1) return false;
+    return !curved.has(primitiveMode);
+  };
+  // True only for `solid` AND a solidType that is (or defaults to) the
+  // shipped default — the one body confirmed over the mono path's front-face
+  // budget. `solidType` omitted ⇒ treated as the default (an absent key IS
+  // the default primitive param, same convention `PRIMITIVE_PARAM_DEFAULTS`
+  // itself uses). Any OTHER named solid is assumed under the cap — matching
+  // the one low-poly solid this repo has actually measured (a dodecahedron) —
+  // rather than guessed at without evidence.
+  SCENE_FILL_STYLES.isCapLimited = (primitiveMode, solidType) => {
+    if (primitiveMode !== 'solid') return false;
+    const P = Vectura.Scene3D && Vectura.Scene3D.Params;
+    const dflt = (P && P.PRIMITIVE_PARAM_DEFAULTS && P.PRIMITIVE_PARAM_DEFAULTS.solid
+      && P.PRIMITIVE_PARAM_DEFAULTS.solid.solidType) || 'buckyball';
+    return (solidType || dflt) === dflt;
+  };
+  // Never lies in either direction: with no shape context (mixed/scene-scope
+  // selection, or a build missing either source above) it FAILS OPEN and
+  // treats every law as reachable, rather than guessing one is dead when it
+  // might not be.
+  SCENE_FILL_STYLES.isReachableOn = (id, primitiveMode, solidType) => {
+    if (id === FILL_STYLE_DEFAULT || id === 'none') return true;
+    if (!SCENE_FILL_STYLES.isFaceted(primitiveMode)) return true;
+    const M = Vectura.Scene3D && Vectura.Scene3D.SurfaceFillMono;
+    if (!M || typeof M.isMono !== 'function') return true;
+    if (!M.isMono(id)) return false;
+    // A mono law has a real planar implementation — reachable on box/plane,
+    // and on a solid UNLESS that solid's own front-face budget is exceeded.
+    return !SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType);
+  };
+  SCENE_FILL_STYLES.NO_EFFECT_SUFFIX = ' — no effect here';
+  SCENE_FILL_STYLES.FACETED_NOTE = 'This shape is faceted: fill styles greyed out above draw exactly like Ladder here, whichever one is picked.';
+  SCENE_FILL_STYLES.FACETED_CAP_NOTE = 'This solid has no planar fill support, and its body exceeds the fill engine’s per-object face budget — so even the styles that work on a box/plane fall back to Ladder here. Only NO TONE still differs. A simpler solid (fewer faces) can restore the rest.';
+  SCENE_FILL_STYLES.facetedNote = (primitiveMode, solidType) => {
+    if (SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType)) return SCENE_FILL_STYLES.FACETED_CAP_NOTE;
+    return SCENE_FILL_STYLES.isFaceted(primitiveMode) ? SCENE_FILL_STYLES.FACETED_NOTE : '';
   };
   Vectura.SCENE_FILL_STYLES = SCENE_FILL_STYLES;
 

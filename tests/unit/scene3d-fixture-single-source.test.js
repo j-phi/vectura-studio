@@ -150,6 +150,14 @@ describe('§0 — the shadow-anatomy fixture is the single source, and it is enf
       // is the smallest polyhedron inside the front-face cap. Rig shared,
       // subject owned. (LOWPOLY is still imported, as the fallback fixture.)
       'scene3d-faceted-tone-law.test.js': ['an inline primitive object', 'an inline solid definition'],
+      // Same shape of exemption, same reason (U12 audit correction). It
+      // imports the fixture for the rig (CAMERA + SUN) so rule A has one
+      // source; what it owns is `solid`'s two named solidTypes — the shipped
+      // default (buckyball, over the faceted mono path's front-face budget)
+      // and a low-poly one (dodecahedron, under it) — which is exactly the
+      // axis `scene3d-faceted-tone-law.test.js` does not vary. Rig shared,
+      // subject owned.
+      'scene3d-solid-cap-reachability.test.js': ['an inline primitive object', 'an inline solid definition'],
     };
 
     RESTATEMENTS.forEach(({ what, re }) => {

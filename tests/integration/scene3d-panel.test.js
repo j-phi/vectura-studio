@@ -158,6 +158,38 @@ describe('Scene3D panel — buildControls dispatch', () => {
     radiusSlider.dispatchEvent(new window.Event('change', { bubbles: true }));
     expect(child.params.params.radius).not.toBe(before);
   });
+
+  // U12 D5 — the Style tab's face-scope label must show the object's NAME,
+  // not its raw uuid. The regression: `scopeDisplayName`'s `getObject()`
+  // looked only at the monolith's inline `params.objects` array, which is
+  // EMPTY on a scene TREE (the child's def lives on its own layer) — so on a
+  // tree the lookup always missed and the raw uuid printed instead of the name.
+  test('(e) the Style tab face-scope label shows the CHILD object NAME, not its raw uuid', () => {
+    const gid = app.engine.addLayer('scene3d');
+    const child = app.engine.getLayerChildren(gid).find((l) => l.type === 'object3d');
+    expect(child).toBeTruthy();
+    // The child's display name lives on the LAYER itself (`child.name` — the
+    // same field the focused leaf panel's own rename input writes), never on
+    // `child.params`, which only carries the object DEF (primitive/transform/…).
+    const objName = child.name;
+    expect(objName).toBeTruthy();
+    // A raw uuid never happens to equal the seeded display name.
+    expect(objName).not.toBe(child.id);
+
+    app.engine.activeLayerId = gid;
+    app.renderer.setSceneSelection({
+      layerId: gid, mode: 'face', objectIds: [child.id], faceKeys: [`${child.id}/f-0`], edgeKeys: [],
+    });
+    app.ui.buildControls();
+    const host = controlsHost();
+    const styleTab = Array.from(host.querySelectorAll('.tab-btn')).find((b) => b.dataset.value === 'style');
+    expect(styleTab).toBeTruthy();
+    styleTab.dispatchEvent(new window.Event('click', { bubbles: true }));
+    const scopeLine = host.querySelector('.vs3-style-scope');
+    expect(scopeLine).toBeTruthy();
+    expect(scopeLine.textContent).toContain(objName);
+    expect(scopeLine.textContent).not.toContain(child.id);
+  });
 });
 
 // ---------------------------------------------------------------------------

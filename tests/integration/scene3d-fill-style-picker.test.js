@@ -146,6 +146,166 @@ describe('Fill Style — the shared mark-class config', () => {
     const values = F.groups(false).reduce((a, x) => a.concat(x.options.map((o) => o.value)), []);
     expect(values).toContain('ladder');
   });
+
+  // ── U12 D3 — turingStripe was mis-classed as "Flow lines" ─────────────────
+  // Its own gallery mechanism text says the opposite of the flow blurb ("Lines
+  // that follow a direction field"): "The stripes are not placed, they
+  // emerge … no periodic lattice". It is the same KIND of mark as
+  // mazeFill/voronoiWeb — a labyrinth — and belongs under Networks &
+  // space-filling with them.
+  test('turingStripe is classed as Networks & space-filling, not Flow lines (U12 D3)', () => {
+    expect(F.markClass('turingStripe')).toBe('web');
+    const groups = F.groups(true);
+    const webGroup = groups.find((g) => g.group === F.markClassLabel('web'));
+    const flowGroup = groups.find((g) => g.group === F.markClassLabel('flow'));
+    expect(webGroup.options.map((o) => o.value)).toContain('turingStripe');
+    expect((flowGroup ? flowGroup.options.map((o) => o.value) : [])).not.toContain('turingStripe');
+    // mazeFill / voronoiWeb are its new groupmates, exactly as the audit named.
+    expect(webGroup.options.map((o) => o.value)).toEqual(
+      expect.arrayContaining(['mazeFill', 'voronoiWeb', 'originSpiral', 'deepFillTSP']),
+    );
+  });
+
+  // ── U12 D1/D2 — faceted-primitive (box/plane/solid) reachability ──────────
+  // box/plane/solid have no parametric chart and fall through to the faceted
+  // planar fill, which only reaches SurfaceFillMono's laws (plus `none` and
+  // the base `ladder` drawing). Every other offered law is a silent no-op
+  // there. This section pins the DATA-DERIVED set the picker gates on, not a
+  // restated literal list — see the "does not rot" test at the end, which
+  // swaps out the two live sources and proves the verdict follows them.
+  describe('faceted-primitive reachability (U12 D1/D2)', () => {
+    let M;
+    beforeAll(() => { M = window.Vectura.Scene3D.SurfaceFillMono; });
+
+    test('a curved (chart-wrapped) primitive reaches every law — sphere and pyramid', () => {
+      ['sphere', 'pyramid', 'torus', 'cylinder'].forEach((mode) => {
+        expect(F.isFaceted(mode)).toBe(false);
+        R.IDS.concat(['ladder', 'none']).forEach((id) => {
+          expect(F.isReachableOn(id, mode)).toBe(true);
+        });
+      });
+    });
+
+    test('box/plane are faceted, and only none/ladder/mono laws reach them', () => {
+      ['box', 'plane'].forEach((mode) => {
+        expect(F.isFaceted(mode)).toBe(true);
+        expect(F.isCapLimited(mode)).toBe(false);
+        R.IDS.forEach((id) => {
+          if (id === 'none') { expect(F.isReachableOn(id, mode)).toBe(true); return; }
+          expect(F.isReachableOn(id, mode)).toBe(M.isMono(id));
+        });
+        expect(F.isReachableOn('ladder', mode)).toBe(true);
+      });
+    });
+
+    // ── The `solid` correction ────────────────────────────────────────────
+    // `solid` is ALSO faceted (no chart) like box/plane, but its default body
+    // (a 32-face buckyball) ADDITIONALLY exceeds the faceted mono path's own
+    // front-face budget, so even the 9 laws that reach box/plane fall back
+    // there too — verified against the running engine, not asserted, in
+    // scene3d-solid-cap-reachability.test.js. `none` is the one law that
+    // survives regardless: Stage 0 is never routed through the capped
+    // dispatch. A low-poly named solid (this repo's own
+    // scene3d-faceted-tone-law.test.js measures a dodecahedron) sits under
+    // the cap and behaves exactly like box/plane.
+    test('solid: the DEFAULT body is cap-limited (only none/ladder reach it)', () => {
+      expect(F.isFaceted('solid')).toBe(true);
+      expect(F.isCapLimited('solid')).toBe(true);
+      expect(F.isCapLimited('solid', 'buckyball')).toBe(true);
+      expect(F.isCapLimited('solid', undefined)).toBe(true);
+      R.IDS.forEach((id) => {
+        const expected = id === 'none';
+        expect(F.isReachableOn(id, 'solid')).toBe(expected);
+      });
+      expect(F.isReachableOn('ladder', 'solid')).toBe(true);
+    });
+
+    test('solid: a low-poly named solid is NOT cap-limited — behaves like box/plane', () => {
+      ['dodecahedron', 'tetrahedron', 'octahedron', 'icosahedron'].forEach((solidType) => {
+        expect(F.isCapLimited('solid', solidType)).toBe(false);
+        R.IDS.forEach((id) => {
+          if (id === 'none') { expect(F.isReachableOn(id, 'solid', solidType)).toBe(true); return; }
+          expect(F.isReachableOn(id, 'solid', solidType)).toBe(M.isMono(id));
+        });
+      });
+    });
+
+    test('an absent/unknown primitiveMode fails OPEN — never disables a law it cannot verify', () => {
+      expect(F.isFaceted(undefined)).toBe(false);
+      expect(F.isFaceted(null)).toBe(false);
+      expect(F.isFaceted('notAPrimitive')).toBe(false);
+      R.IDS.forEach((id) => expect(F.isReachableOn(id, undefined)).toBe(true));
+    });
+
+    test('groups(includeLibrary, mode) disables the dead options and suffixes their label', () => {
+      const g = F.groups(true, 'box');
+      const opts = g.reduce((a, x) => a.concat(x.options), []);
+      const dead = opts.filter((o) => o.value !== 'ladder' && !M.isMono(o.value) && o.value !== 'none');
+      const alive = opts.filter((o) => o.value === 'ladder' || o.value === 'none' || M.isMono(o.value));
+      expect(dead.length).toBeGreaterThan(0);
+      expect(alive.length).toBeGreaterThan(0);
+      dead.forEach((o) => {
+        expect(o.disabled).toBe(true);
+        expect(o.label).toContain(F.NO_EFFECT_SUFFIX);
+      });
+      alive.forEach((o) => {
+        expect(o.disabled).toBeFalsy();
+        expect(o.label).not.toContain(F.NO_EFFECT_SUFFIX);
+      });
+      // The measured count from the U12 audit: 37 of 48 do nothing on box
+      // (none/ladder/the 9 mono laws are the 11 that remain reachable).
+      expect(alive.length).toBe(11);
+      expect(dead.length).toBe(37);
+      // Group STRUCTURE (count, membership) is unaffected — only reachability.
+      expect(g.length).toBe(F.groups(true, 'sphere').length);
+    });
+
+    test('facetedNote names the shape limitation, with a DIFFERENT reason for the cap-limited solid', () => {
+      expect(F.facetedNote('box')).toBe(F.FACETED_NOTE);
+      expect(F.facetedNote('plane')).toBe(F.FACETED_NOTE);
+      // The default solid gets the CAP note (a different reason: not "no
+      // planar support" but "body too complex for the budget"), never the
+      // plain box/plane note — the two must not read as the same warning.
+      expect(F.facetedNote('solid')).toBe(F.FACETED_CAP_NOTE);
+      expect(F.facetedNote('solid')).not.toBe(F.FACETED_NOTE);
+      // A low-poly named solid is NOT cap-limited, so it gets the ordinary
+      // box/plane note instead.
+      expect(F.facetedNote('solid', 'dodecahedron')).toBe(F.FACETED_NOTE);
+      expect(F.facetedNote('sphere')).toBe('');
+      expect(F.facetedNote(undefined)).toBe('');
+    });
+
+    // ── THE ANTI-ROT PROOF ────────────────────────────────────────────────
+    // The brief explicitly warns against a hardcoded ten-name array that will
+    // rot. Prove this is NOT that: swap the two live sources
+    // (SurfaceFillMono.isMono and Scene3D.Params.CURVED_FILL_PRIMITIVES) for
+    // fakes and confirm the verdict follows them, not a baked-in list.
+    test('the reachable set is DERIVED — swapping the live sources changes the verdict', () => {
+      const Scene3D = window.Vectura.Scene3D;
+      const realMono = Scene3D.SurfaceFillMono;
+      const realParams = Scene3D.Params;
+      try {
+        // Fake #1: isMono now recognises only a law nowhere in the real roster.
+        Scene3D.SurfaceFillMono = { ...realMono, isMono: (id) => id === 'zzzNotARealLaw' };
+        expect(F.isReachableOn('zzzNotARealLaw', 'box')).toBe(true);
+        // A law the REAL substrate recognises is now reported unreachable —
+        // proof this reads isMono live, not a copy taken at load time.
+        expect(F.isReachableOn('mazeFill', 'box')).toBe(false);
+
+        // Fake #2: 'box' is now reported as a CURVED (chart-wrapped) primitive.
+        Scene3D.Params = { ...realParams, CURVED_FILL_PRIMITIVES: new Set(['box']) };
+        expect(F.isFaceted('box')).toBe(false);
+        expect(F.isReachableOn('mazeFill', 'box')).toBe(true);
+        expect(F.isReachableOn('whiteBand', 'box')).toBe(true);
+      } finally {
+        Scene3D.SurfaceFillMono = realMono;
+        Scene3D.Params = realParams;
+      }
+      // Restored: back to the real, measured verdict.
+      expect(F.isReachableOn('mazeFill', 'box')).toBe(true);
+      expect(F.isReachableOn('whiteBand', 'box')).toBe(false);
+    });
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -317,6 +477,63 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(true);
     expect(Array.from(ctl.querySelectorAll('option')).map((o) => o.textContent)).toContain('Mixed');
   });
+
+  // ── U12 D1/D2 — a box selection must disable the dead options ─────────────
+  test('a box selection disables the dead options, suffixes their label, and shows the faceted note', () => {
+    const BOX = { id: 'obj-1', name: 'Box', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 }, transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
+    const { fly } = openStyle({ objects: [BOX], styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: {} } }) });
+    const M = window.Vectura.Scene3D.SurfaceFillMono;
+    const NO_EFFECT = window.Vectura.SCENE_FILL_STYLES.NO_EFFECT_SUFFIX;
+    const options = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option'));
+    const dead = options.filter((o) => o.value !== 'ladder' && o.value !== 'none' && !M.isMono(o.value));
+    const alive = options.filter((o) => !dead.includes(o));
+    expect(dead.length).toBeGreaterThan(0);
+    expect(alive.length).toBeGreaterThan(0);
+    dead.forEach((o) => { expect(o.disabled).toBe(true); expect(o.textContent).toContain(NO_EFFECT); });
+    alive.forEach((o) => { expect(o.disabled).toBe(false); expect(o.textContent).not.toContain(NO_EFFECT); });
+    const notes = Array.from(openFly().querySelectorAll('.ctxbar-fly-note')).map((n) => n.textContent);
+    expect(notes).toContain(window.Vectura.SCENE_FILL_STYLES.FACETED_NOTE);
+    expect(openFly().querySelector('.ctxbar-fly-note.is-faceted')).toBeTruthy();
+  });
+
+  // U12 correction — a DEFAULT solid (buckyball) is more restrictive than
+  // box/plane: it additionally exceeds the faceted mono path's front-face
+  // budget, so only `none` and `ladder` remain alive, and the note names the
+  // face-budget reason, not the plain "no planar support" one.
+  test('a default-solid selection is MORE restrictive than box (cap-limited): only none/ladder alive', () => {
+    const SOLID = { id: 'obj-1', name: 'Solid', primitive: 'solid', params: { solidType: 'buckyball', radius: 30 }, transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
+    const { fly } = openStyle({ objects: [SOLID], styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: {} } }) });
+    const options = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option'));
+    const alive = options.filter((o) => o.value === 'ladder' || o.value === 'none');
+    const dead = options.filter((o) => o.value !== 'ladder' && o.value !== 'none');
+    expect(dead.length).toBe(options.length - 2);
+    dead.forEach((o) => expect(o.disabled).toBe(true));
+    alive.forEach((o) => expect(o.disabled).toBe(false));
+    const notes = Array.from(openFly().querySelectorAll('.ctxbar-fly-note')).map((n) => n.textContent);
+    expect(notes).toContain(window.Vectura.SCENE_FILL_STYLES.FACETED_CAP_NOTE);
+    expect(notes).not.toContain(window.Vectura.SCENE_FILL_STYLES.FACETED_NOTE);
+  });
+
+  test('a low-poly solid (dodecahedron) behaves like box, not like the capped default', () => {
+    const SOLID = { id: 'obj-1', name: 'Solid', primitive: 'solid', params: { solidType: 'dodecahedron', radius: 30 }, transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
+    const { fly } = openStyle({ objects: [SOLID], styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: {} } }) });
+    const M = window.Vectura.Scene3D.SurfaceFillMono;
+    const options = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option'));
+    const dead = options.filter((o) => o.value !== 'ladder' && o.value !== 'none' && !M.isMono(o.value));
+    const alive = options.filter((o) => !dead.includes(o));
+    expect(dead.length).toBeGreaterThan(0);
+    expect(alive.length).toBeGreaterThan(2); // more than just none/ladder — the mono laws are back
+    const notes = Array.from(openFly().querySelectorAll('.ctxbar-fly-note')).map((n) => n.textContent);
+    expect(notes).toContain(window.Vectura.SCENE_FILL_STYLES.FACETED_NOTE);
+    expect(notes).not.toContain(window.Vectura.SCENE_FILL_STYLES.FACETED_CAP_NOTE);
+  });
+
+  test('a sphere selection has no disabled options and no faceted note (regression guard)', () => {
+    const { fly } = openStyle({ styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: {} } }) });
+    const options = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option'));
+    options.forEach((o) => expect(o.disabled).toBe(false));
+    expect(openFly().querySelector('.ctxbar-fly-note.is-faceted')).toBeNull();
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -442,12 +659,12 @@ describe('Fill Style — docked 3D Scene panel', () => {
   // the row in MAPPER_CONTROLS alone left the leaf panel — the panel a user
   // actually reaches by selecting a scene object — showing "Mapper" and no
   // Fill Style at all.
-  const mountLeaf = (type, style) => {
+  const mountLeaf = (type, style, primitive = 'sphere') => {
     const { UI } = window.Vectura;
     const layer = {
       id: `leaf-${type}`, type, name: 'Leaf', visible: true, parentId: 'grp-1',
       params: {
-        primitive: 'sphere', params: { sx: 40, sy: 40, sz: 40, detail: 16 },
+        primitive, params: primitive === 'box' ? { sx: 40, sy: 40, sz: 40 } : { sx: 40, sy: 40, sz: 40, detail: 16 },
         transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
         visibility: 'solid', op: 'subtract', style,
       },
@@ -507,5 +724,56 @@ describe('Fill Style — docked 3D Scene panel', () => {
     fire(on, 'click');
     expect(count()).toBe(closed + window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.length);
     expect(layer.params.styleTable.byObject['obj-1'].params.library).toBeUndefined();
+  });
+
+  // ── U12 D1/D2 — faceted reachability on every surface this file covers ────
+  test('the scene Style tab disables dead options + shows the faceted note for a box, and not a sphere', () => {
+    const BOX = { id: 'obj-1', name: 'Box', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 }, transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
+    const M = window.Vectura.Scene3D.SurfaceFillMono;
+    const boxRun = openStyle({ objects: [BOX], ...hatchOn() });
+    const boxSel = styleRow(boxRun.container, 'Fill Style').querySelector('select');
+    const boxOpts = Array.from(boxSel.querySelectorAll('option'));
+    const dead = boxOpts.filter((o) => o.value !== 'ladder' && o.value !== 'none' && !M.isMono(o.value));
+    expect(dead.length).toBeGreaterThan(0);
+    dead.forEach((o) => { expect(o.disabled).toBe(true); expect(o.textContent).toContain(F.NO_EFFECT_SUFFIX); });
+    expect(stylePage(boxRun.container).querySelector('.vs3-lawnote.is-faceted')).toBeTruthy();
+
+    const sphereRun = openStyle(hatchOn());
+    const sphereOpts = Array.from(styleRow(sphereRun.container, 'Fill Style').querySelector('select').querySelectorAll('option'));
+    sphereOpts.forEach((o) => expect(o.disabled).toBe(false));
+    expect(stylePage(sphereRun.container).querySelector('.vs3-lawnote.is-faceted')).toBeNull();
+  });
+
+  test('the focused object3d LEAF panel disables dead options for a box', () => {
+    const { container } = mountLeaf('object3d', { penId: null, mapper: 'hatch', params: {} }, 'box');
+    const M = window.Vectura.Scene3D.SurfaceFillMono;
+    const opts = Array.from(leafRow(container, 'Fill Style').querySelector('select').querySelectorAll('option'));
+    const dead = opts.filter((o) => o.value !== 'ladder' && o.value !== 'none' && !M.isMono(o.value));
+    expect(dead.length).toBeGreaterThan(0);
+    dead.forEach((o) => expect(o.disabled).toBe(true));
+    // The note is a sibling of the row (appended to the page host), not a
+    // child of the Fill Style row itself.
+    expect(container.querySelector('.vs3-lawnote.is-faceted')).toBeTruthy();
+  });
+
+  test('the fused booleanGroup3d panel gates reachability by the PRIMARY (first, Solid-role) operand primitive', () => {
+    const { UI } = window.Vectura;
+    const layer = {
+      id: 'leaf-boolreach', type: 'booleanGroup3d', name: 'Leaf', visible: true, parentId: 'grp-1',
+      params: { op: 'subtract', visibility: 'solid', style: { penId: null, mapper: 'hatch', params: {} } },
+    };
+    const primaryChild = { id: 'child-solid', type: 'object3d', params: { primitive: 'box', params: { sx: 40, sy: 40, sz: 40 } } };
+    const engine = { getLayerChildren: (id) => (id === layer.id ? [primaryChild] : []) };
+    const ui = { app: { pushHistory: () => {}, regen: () => {}, engine }, storeLayerParams: () => {} };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    UI.Scene3DPanel.build(ui, layer, container);
+    const tab = Array.from(container.querySelectorAll('.tab-btn')).find((b) => b.dataset && b.dataset.value === 'style');
+    fire(tab, 'click');
+    const M = window.Vectura.Scene3D.SurfaceFillMono;
+    const opts = Array.from(leafRow(container, 'Fill Style').querySelector('select').querySelectorAll('option'));
+    const dead = opts.filter((o) => o.value !== 'ladder' && o.value !== 'none' && !M.isMono(o.value));
+    expect(dead.length).toBeGreaterThan(0);
+    dead.forEach((o) => expect(o.disabled).toBe(true));
   });
 });
