@@ -1466,16 +1466,26 @@
       // SCENE_FILL_STYLES.isReachableOn). Read through the child-aware bridge
       // so a scene-TREE object (a child object3d/booleanGroup3d layer) resolves
       // too, not only a monolith's inline `params.objects` entry.
-      const primaryRecord = (typeof sc.r.getSceneObjectRecord === 'function')
-        ? sc.r.getSceneObjectRecord(sc.layerId, sc.ids[0]) : null;
-      const primitiveMode = primaryRecord ? primaryRecord.primitive : null;
+      //
+      // fs-e1 item 4 — this used to read ONLY sc.ids[0], with no agreement
+      // check, unlike every sibling control in this row (which all use
+      // sceneAgree). A box-first mixed selection then greyed out laws that
+      // were live on a sphere elsewhere in the same selection. Guarded with
+      // sceneAgree now: on disagreement this passes `null`, and
+      // isReachableOn fails OPEN on an absent primitiveMode (the documented
+      // mixed-selection convention above).
+      const recordOf = (id) => ((typeof sc.r.getSceneObjectRecord === 'function')
+        ? sc.r.getSceneObjectRecord(sc.layerId, id) : null);
+      const primitiveAgree = sceneAgree(sc, (id) => { const rec = recordOf(id); return rec ? rec.primitive : null; });
+      const primitiveMode = primitiveAgree.mixed ? null : primitiveAgree.value;
       // Only meaningful when primitiveMode === 'solid': the default (32-face)
       // solid ADDITIONALLY exceeds the faceted mono path's front-face budget,
       // so even the box/plane-reachable laws fall back there — see
       // SCENE_FILL_STYLES.isCapLimited.
-      const solidType = primaryRecord && primaryRecord.params ? primaryRecord.params.solidType : null;
+      const solidTypeAgree = sceneAgree(sc, (id) => { const rec = recordOf(id); return (rec && rec.params) ? rec.params.solidType : null; });
+      const solidType = solidTypeAgree.mixed ? null : solidTypeAgree.value;
       flyMixedSelect(flyRow(fly, FSC.label), {
-        options: FS.groups(fillStyleShowLibrary, primitiveMode, solidType), value: law, ariaLabel: FSC.aria,
+        options: FS.groups(fillStyleShowLibrary, primitiveMode, solidType, mapper), value: law, ariaLabel: FSC.aria,
         mixed: sceneAgree(sc, (id) => FS.resolve((rs(id).params || {}).toneLaw)).mixed,
         onChange: (v) => { write({ params: { ...params, toneLaw: v } }); rebuild(); },
       });
@@ -1486,7 +1496,7 @@
         onChange: (v) => { fillStyleShowLibrary = (v === 'on'); rebuild(); },
       });
       if (FSC.libraryNote) flyNote(fly, FSC.libraryNote);
-      const facetedNote = FS.facetedNote ? FS.facetedNote(primitiveMode, solidType) : '';
+      const facetedNote = FS.facetedNote ? FS.facetedNote(primitiveMode, solidType, mapper) : '';
       if (facetedNote) flyNote(fly, facetedNote).classList.add('is-faceted');
       const note = FS.note(law);
       if (note.text) flyNote(fly, note.text);

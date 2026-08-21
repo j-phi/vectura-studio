@@ -168,15 +168,26 @@
     // the count and the caveat so the flyout row + its note read as one
     // sentence without needing a hover.
     LIBRARY_LABEL: 'Experimental',
-    LIBRARY_ARIA: 'Show 11 additional experimental fill styles, each with measured caveats',
-    LIBRARY_NOTE: 'Adds 11 more fill styles, each flagged with its measured caveats.',
+    // fs-e1 judge's ruling (item 6) — the prior copy claimed the per-option
+    // suffix "flagged" each of the 11 with its caveat, which does not
+    // distinguish them at all: the suffix is unconditional ` · experimental`
+    // (below), a caveat prints only for the SELECTED law (`FS.note`), and 8
+    // PRODUCTION laws (none, ampSpacing, weaveDepth, interlockWeave,
+    // trochoidLoop, mezzoRegion, dutyConst, endShorten) carry caveats too.
+    // Verified true before shipping: every one of the 11 LIBRARY laws has a
+    // non-empty `caveat` in the roster (`tests/integration/
+    // scene3d-fill-style-picker.test.js` "THE CLAIM IS TRUE").
+    LIBRARY_ARIA: 'Show 11 additional experimental fill styles — controls, negative results and simulated-pen laws',
+    LIBRARY_NOTE: 'Adds 11 more fill styles — controls, negative results and simulated-pen laws. Each shows its measured caveat when picked.',
     DEFAULT: FILL_STYLE_DEFAULT,
     MARK_CLASSES: FILL_STYLE_MARK_CLASSES,
     MARK_OF: FILL_STYLE_MARK_OF,
     DEFAULT_ENTRY: FILL_STYLE_DEFAULT_ENTRY,
     // Suffix stamped on a library-tier option so its tier is legible with the
-    // select CLOSED, not only inside the open list.
-    LIBRARY_SUFFIX: ' · library',
+    // select CLOSED, not only inside the open list. Matches the "Experimental"
+    // toggle label — it used to read ` · library`, a name the toggle no
+    // longer uses.
+    LIBRARY_SUFFIX: ' · experimental',
     // Prefaces every caveat the six simulated pen laws show. They emit three
     // stroke widths onto ONE pen layer because pen identity is carried per
     // style group, not per run — three real nibs cannot be named in one fill.
@@ -229,21 +240,35 @@
   // is disabled AND its label is suffixed, so the "before choosing" legibility
   // bar (U12 D2) is met without a hover or a pick-and-see-nothing. Omitted
   // primitiveMode ⇒ every option reachable, unchanged from before this
-  // parameter existed.
-  SCENE_FILL_STYLES.groups = (includeLibrary, primitiveMode, solidType) => {
+  // parameter existed. `mapper` (optional — the selected object's fill Type,
+  // e.g. 'hatch'/'contour') is fs-e1's addition: `isReachableOn` was mapper-
+  // blind, so a faceted primitive under Type=Contour/Spiral/Stipple showed
+  // eleven "live" options that are all silent no-ops there. See
+  // `isReachableOn` below.
+  SCENE_FILL_STYLES.groups = (includeLibrary, primitiveMode, solidType, mapper) => {
     const R = fillStyleRoster();
     const ids = R ? R.IDS : [];
     const inTier = (id) => includeLibrary || !R || R.PRODUCTION.indexOf(id) !== -1;
     const out = [];
     FILL_STYLE_MARK_CLASSES.forEach((cls) => {
       const options = [];
-      // The default heads its own class so it is never buried mid-list.
+      // The default heads its own class so it is never buried mid-list. It is
+      // routed through `isReachableOn` too (fs-e1 item 1): on a faceted
+      // primitive under Type=Contour/Spiral/Stipple, Ladder draws no
+      // differently from every other option either — there is no dispatch
+      // through the tone-law machinery at all — so it must grey out and
+      // suffix along with the rest, not stay silently exempt.
       if (cls.id === FILL_STYLE_DEFAULT_ENTRY.markClass) {
-        options.push({ value: FILL_STYLE_DEFAULT, label: FILL_STYLE_DEFAULT_ENTRY.label });
+        const defaultReachable = SCENE_FILL_STYLES.isReachableOn(FILL_STYLE_DEFAULT, primitiveMode, solidType, mapper);
+        options.push({
+          value: FILL_STYLE_DEFAULT,
+          label: FILL_STYLE_DEFAULT_ENTRY.label + (defaultReachable ? '' : SCENE_FILL_STYLES.NO_EFFECT_SUFFIX),
+          disabled: !defaultReachable,
+        });
       }
       ids.forEach((id) => {
         if (SCENE_FILL_STYLES.markClass(id) !== cls.id || !inTier(id)) return;
-        const reachable = SCENE_FILL_STYLES.isReachableOn(id, primitiveMode, solidType);
+        const reachable = SCENE_FILL_STYLES.isReachableOn(id, primitiveMode, solidType, mapper);
         const label = R.BY_ID[id].label
           + (SCENE_FILL_STYLES.isLibrary(id) ? SCENE_FILL_STYLES.LIBRARY_SUFFIX : '')
           + (reachable ? '' : SCENE_FILL_STYLES.NO_EFFECT_SUFFIX);
@@ -336,26 +361,72 @@
       && P.PRIMITIVE_PARAM_DEFAULTS.solid.solidType) || 'buckyball';
     return (solidType || dflt) === dflt;
   };
+  // fs-e1 judge's ruling, item 5 — measured byte-identical to Ladder across
+  // three independent parameter points on a CURVED (chart-wrapped) primitive
+  // under Type=Spiral/Stipple. Nothing else in the curved arm is gated by
+  // this list — see the paired negative in
+  // `scene3d-fill-style-picker.test.js` "curved (sphere) + hatch/crosshatch
+  // is unaffected by the spiral/stipple gate".
+  const CURVED_SPIRAL_STIPPLE_INERT = [
+    'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
+    'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
+  ];
+  SCENE_FILL_STYLES.CURVED_SPIRAL_STIPPLE_INERT = CURVED_SPIRAL_STIPPLE_INERT;
   // Never lies in either direction: with no shape context (mixed/scene-scope
   // selection, or a build missing either source above) it FAILS OPEN and
   // treats every law as reachable, rather than guessing one is dead when it
-  // might not be.
-  SCENE_FILL_STYLES.isReachableOn = (id, primitiveMode, solidType) => {
-    if (id === FILL_STYLE_DEFAULT || id === 'none') return true;
-    if (!SCENE_FILL_STYLES.isFaceted(primitiveMode)) return true;
-    const M = Vectura.Scene3D && Vectura.Scene3D.SurfaceFillMono;
-    if (!M || typeof M.isMono !== 'function') return true;
-    if (!M.isMono(id)) return false;
-    // A mono law has a real planar implementation — reachable on box/plane,
-    // and on a solid UNLESS that solid's own front-face budget is exceeded.
-    return !SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType);
+  // might not be. Same rule for `mapper`: an absent/unknown mapper never
+  // gates anything by itself — only a KNOWN, verified mapper value can
+  // disable an option.
+  //
+  // `mapper` (fs-e1 item 1) — `scene3d.js`'s `faceMonoLines` only ever
+  // dispatches for `hatch`/`crosshatch` (scene3d.js:1533); box/plane/solid
+  // under Contour/Spiral/Stipple never reach the tone-law machinery through
+  // ANY path, so on a faceted primitive with a non-hatch/crosshatch mapper
+  // EVERY option — including `none` and the shipped default `ladder` — draws
+  // no differently. This check runs before the default/none early-out so
+  // those two are not silently exempted.
+  SCENE_FILL_STYLES.isReachableOn = (id, primitiveMode, solidType, mapper) => {
+    const faceted = SCENE_FILL_STYLES.isFaceted(primitiveMode);
+    if (faceted) {
+      if (mapper && mapper !== 'hatch' && mapper !== 'crosshatch') return false;
+      if (id === FILL_STYLE_DEFAULT || id === 'none') return true;
+      const M = Vectura.Scene3D && Vectura.Scene3D.SurfaceFillMono;
+      if (!M || typeof M.isMono !== 'function') return true;
+      if (!M.isMono(id)) return false;
+      // A mono law has a real planar implementation — reachable on box/plane,
+      // and on a solid UNLESS that solid's own front-face budget is exceeded.
+      return !SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType);
+    }
+    // Curved (chart-wrapped) primitive.
+    if (mapper === 'spiral' || mapper === 'stipple') {
+      if (CURVED_SPIRAL_STIPPLE_INERT.indexOf(id) !== -1) return false;
+      // Measured: on `pyramid` specifically, `none` is ALSO byte-identical to
+      // a large cluster under spiral/stipple — unlike the other eight curved
+      // primitives, where `none` still differs. Pinned, not derived: no live
+      // source exposes this the way SurfaceFillMono/CURVED_FILL_PRIMITIVES do
+      // for the rest of this predicate.
+      if (primitiveMode === 'pyramid' && id === 'none') return false;
+    }
+    // Measured: `fineLadder` is inert on pyramid+hatch only — it is live on
+    // pyramid crosshatch AND contour (over-gating guard: do not gate those).
+    if (primitiveMode === 'pyramid' && mapper === 'hatch' && id === 'fineLadder') return false;
+    return true;
   };
   SCENE_FILL_STYLES.NO_EFFECT_SUFFIX = ' — no effect here';
   SCENE_FILL_STYLES.FACETED_NOTE = 'This shape is faceted: fill styles greyed out above draw exactly like Ladder here, whichever one is picked.';
   SCENE_FILL_STYLES.FACETED_CAP_NOTE = 'This solid has no planar fill support, and its body exceeds the fill engine’s per-object face budget — so even the styles that work on a box/plane fall back to Ladder here. Only NO TONE still differs. A simpler solid (fewer faces) can restore the rest.';
-  SCENE_FILL_STYLES.facetedNote = (primitiveMode, solidType) => {
+  // fs-e1 item 3 — the cap note's "Only NO TONE still differs" is FALSE for a
+  // faceted primitive under Type=Contour/Spiral/Stipple: those mappers never
+  // reach the tone-law machinery at all (see `isReachableOn` above), so
+  // NOTHING differs there, not even No Tone. Judge measured 1 distinct
+  // picture out of 48 on a default buckyball + Contour.
+  SCENE_FILL_STYLES.FACETED_OFF_AXIS_NOTE = 'This shape is faceted, and its Type (Contour, Spiral or Stipple) has no planar fill support here: no fill style — not even No Tone — draws any differently. Switch Type to Hatch or Crosshatch to use Fill Style.';
+  SCENE_FILL_STYLES.facetedNote = (primitiveMode, solidType, mapper) => {
+    if (!SCENE_FILL_STYLES.isFaceted(primitiveMode)) return '';
+    if (mapper && mapper !== 'hatch' && mapper !== 'crosshatch') return SCENE_FILL_STYLES.FACETED_OFF_AXIS_NOTE;
     if (SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType)) return SCENE_FILL_STYLES.FACETED_CAP_NOTE;
-    return SCENE_FILL_STYLES.isFaceted(primitiveMode) ? SCENE_FILL_STYLES.FACETED_NOTE : '';
+    return SCENE_FILL_STYLES.FACETED_NOTE;
   };
   Vectura.SCENE_FILL_STYLES = SCENE_FILL_STYLES;
 

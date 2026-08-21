@@ -306,6 +306,181 @@ describe('Fill Style — the shared mark-class config', () => {
       expect(F.isReachableOn('whiteBand', 'box')).toBe(false);
     });
   });
+
+  // ── fs-e1 gating — `isReachableOn` gains a MAPPER argument ─────────────────
+  // Judge's ruling, items 1/5/3/6: `isReachableOn` was mapper-blind, so a
+  // faceted primitive under Type=Contour/Spiral/Stipple showed eleven "live"
+  // options that are all provably inert (faceMonoLines only dispatches for
+  // hatch/crosshatch — scene3d.js:1533). And on a CURVED primitive, nine mono
+  // laws are byte-identical to Ladder under Type=Spiral/Stipple.
+  describe('mapper-aware reachability (fs-e1 gating: item 1 / item 5)', () => {
+    const ALL_IDS = () => R.IDS.concat(['ladder']);
+    const CURVED_SPIRAL_STIPPLE_INERT = [
+      'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
+      'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
+    ];
+
+    // ── Item 1 — faceted + non-hatch/crosshatch disables EVERYTHING ─────────
+    test('faceted (box) + Contour/Spiral/Stipple disables every option, including None and Ladder', () => {
+      ['contour', 'spiral', 'stipple'].forEach((mapper) => {
+        ALL_IDS().forEach((id) => {
+          expect(F.isReachableOn(id, 'box', undefined, mapper)).toBe(false);
+        });
+      });
+    });
+
+    test('faceted (solid, default buckyball) + Contour/Spiral/Stipple ALSO disables None and Ladder (not just the mono set)', () => {
+      // Regression trap: before this fix, `id === 'none' || id === FILL_STYLE_
+      // DEFAULT` short-circuited to `true` before the faceted check ran, so a
+      // capped solid under a non-hatch Type still showed None/Ladder as live.
+      ['contour', 'spiral', 'stipple'].forEach((mapper) => {
+        expect(F.isReachableOn('none', 'solid', 'buckyball', mapper)).toBe(false);
+        expect(F.isReachableOn('ladder', 'solid', 'buckyball', mapper)).toBe(false);
+      });
+    });
+
+    // ── Paired negative — regression guard: faceted + hatch/crosshatch is
+    // UNCHANGED from the pre-fix behavior (over-gating is as much a defect).
+    test('faceted (box/plane) + hatch/crosshatch is byte-identical to the un-mapper-aware call (regression guard)', () => {
+      ['box', 'plane'].forEach((mode) => {
+        ['hatch', 'crosshatch'].forEach((mapper) => {
+          ALL_IDS().forEach((id) => {
+            expect(F.isReachableOn(id, mode, undefined, mapper)).toBe(F.isReachableOn(id, mode));
+          });
+        });
+      });
+      // And the capped default solid keeps exactly none/ladder alive under
+      // hatch/crosshatch — the cap note's own scenario is untouched.
+      ['hatch', 'crosshatch'].forEach((mapper) => {
+        expect(F.isReachableOn('none', 'solid', 'buckyball', mapper)).toBe(true);
+        expect(F.isReachableOn('ladder', 'solid', 'buckyball', mapper)).toBe(true);
+        expect(F.isReachableOn('mazeFill', 'solid', 'buckyball', mapper)).toBe(false);
+      });
+    });
+
+    test('groups(includeLibrary, mode, solidType, mapper) threads the mapper through to every option', () => {
+      const g = F.groups(true, 'box', undefined, 'contour');
+      const opts = g.reduce((a, x) => a.concat(x.options), []);
+      expect(opts.length).toBeGreaterThan(0);
+      opts.forEach((o) => {
+        expect(o.disabled).toBe(true);
+        expect(o.label).toContain(F.NO_EFFECT_SUFFIX);
+      });
+      // Regression: hatch on a box is unchanged from the pre-mapper call.
+      expect(F.groups(false, 'box', undefined, 'hatch')).toEqual(F.groups(false, 'box'));
+    });
+
+    // ── Item 5 — curved primitive + spiral/stipple: exactly 9 mono laws ─────
+    test('curved (sphere) + spiral disables exactly the 9 measured mono laws, and nothing else', () => {
+      R.IDS.forEach((id) => {
+        const expected = CURVED_SPIRAL_STIPPLE_INERT.indexOf(id) === -1;
+        expect(F.isReachableOn(id, 'sphere', undefined, 'spiral')).toBe(expected);
+      });
+      expect(F.isReachableOn('ladder', 'sphere', undefined, 'spiral')).toBe(true);
+      expect(F.isReachableOn('none', 'sphere', undefined, 'spiral')).toBe(true);
+    });
+
+    test('curved (sphere) + stipple disables the SAME 9 laws as spiral', () => {
+      R.IDS.forEach((id) => {
+        const expected = CURVED_SPIRAL_STIPPLE_INERT.indexOf(id) === -1;
+        expect(F.isReachableOn(id, 'sphere', undefined, 'stipple')).toBe(expected);
+      });
+    });
+
+    // ── Paired negative — a curved primitive under hatch/crosshatch is
+    // untouched by the new spiral/stipple rule (over-gating guard).
+    test('curved (sphere) + hatch/crosshatch is unaffected by the spiral/stipple gate', () => {
+      ['hatch', 'crosshatch'].forEach((mapper) => {
+        CURVED_SPIRAL_STIPPLE_INERT.forEach((id) => {
+          expect(F.isReachableOn(id, 'sphere', undefined, mapper)).toBe(true);
+        });
+      });
+    });
+
+    // ── pyramid special cases ────────────────────────────────────────────────
+    test('pyramid: fineLadder is inert on hatch only — live on crosshatch AND contour (do not over-gate)', () => {
+      expect(F.isReachableOn('fineLadder', 'pyramid', undefined, 'hatch')).toBe(false);
+      expect(F.isReachableOn('fineLadder', 'pyramid', undefined, 'crosshatch')).toBe(true);
+      expect(F.isReachableOn('fineLadder', 'pyramid', undefined, 'contour')).toBe(true);
+    });
+
+    test('pyramid: None is ALSO gated on spiral/stipple (byte-identical to a large cluster there)', () => {
+      expect(F.isReachableOn('none', 'pyramid', undefined, 'spiral')).toBe(false);
+      expect(F.isReachableOn('none', 'pyramid', undefined, 'stipple')).toBe(false);
+      // ...but not elsewhere — None still differs on pyramid hatch/crosshatch/contour.
+      expect(F.isReachableOn('none', 'pyramid', undefined, 'hatch')).toBe(true);
+      expect(F.isReachableOn('none', 'pyramid', undefined, 'crosshatch')).toBe(true);
+      expect(F.isReachableOn('none', 'pyramid', undefined, 'contour')).toBe(true);
+      // And None is untouched on a NON-pyramid curved primitive under spiral.
+      expect(F.isReachableOn('none', 'sphere', undefined, 'spiral')).toBe(true);
+    });
+
+    // ── Item 3 — facetedNote is mapper-aware ─────────────────────────────────
+    test('facetedNote says NOTHING differs (not even None) for faceted + contour/spiral/stipple', () => {
+      ['contour', 'spiral', 'stipple'].forEach((mapper) => {
+        const note = F.facetedNote('box', undefined, mapper);
+        expect(note).toBeTruthy();
+        expect(note).not.toBe(F.FACETED_NOTE);
+        expect(note).not.toBe(F.FACETED_CAP_NOTE);
+        // The old cap note's false claim ("Only NO TONE still differs") must
+        // not survive into the new copy — nothing differs here, not even None.
+        expect(note).not.toMatch(/Only NO TONE still differs/);
+      });
+    });
+
+    test('facetedNote keeps the existing sentence for faceted + hatch/crosshatch (regression guard)', () => {
+      expect(F.facetedNote('box', undefined, 'hatch')).toBe(F.FACETED_NOTE);
+      expect(F.facetedNote('box', undefined, 'crosshatch')).toBe(F.FACETED_NOTE);
+      expect(F.facetedNote('solid', 'buckyball', 'hatch')).toBe(F.FACETED_CAP_NOTE);
+      expect(F.facetedNote('solid', 'buckyball', 'crosshatch')).toBe(F.FACETED_CAP_NOTE);
+      // Omitting mapper altogether is still the pre-existing behavior.
+      expect(F.facetedNote('box')).toBe(F.FACETED_NOTE);
+      expect(F.facetedNote('solid', 'buckyball')).toBe(F.FACETED_CAP_NOTE);
+    });
+
+    test('facetedNote on the capped solid ALSO switches to the off-axis note under contour/spiral/stipple', () => {
+      ['contour', 'spiral', 'stipple'].forEach((mapper) => {
+        const note = F.facetedNote('solid', 'buckyball', mapper);
+        expect(note).not.toBe(F.FACETED_CAP_NOTE);
+        expect(note).not.toBe(F.FACETED_NOTE);
+      });
+    });
+
+    test('facetedNote on a curved primitive is always empty, regardless of mapper (regression guard)', () => {
+      ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'].forEach((mapper) => {
+        expect(F.facetedNote('sphere', undefined, mapper)).toBe('');
+        expect(F.facetedNote('pyramid', undefined, mapper)).toBe('');
+      });
+    });
+  });
+
+  // ── Item 6 — the Experimental copy told a provable falsehood ───────────────
+  describe('Experimental disclosure copy (fs-e1 gating: item 6)', () => {
+    test('the suffix reads " · experimental", matching the "Experimental" toggle label', () => {
+      expect(F.LIBRARY_SUFFIX).toBe(' · experimental');
+      expect(F.LIBRARY_LABEL).toBe('Experimental');
+    });
+
+    test('the corrected note ships the judge-specified copy', () => {
+      expect(F.LIBRARY_NOTE).toBe(
+        'Adds 11 more fill styles — controls, negative results and simulated-pen laws. Each shows its measured caveat when picked.',
+      );
+    });
+
+    // The whole point of item 6: verify the shipped claim is actually true.
+    test('THE CLAIM IS TRUE — every one of the 11 library laws has a non-empty measured caveat', () => {
+      expect(R.LIBRARY.length).toBe(11);
+      R.LIBRARY.forEach((id) => {
+        const caveat = R.BY_ID[id] && R.BY_ID[id].caveat;
+        expect(typeof caveat).toBe('string');
+        expect(caveat.length).toBeGreaterThan(0);
+      });
+    });
+
+    test('the old "each flagged with its measured caveats" note is gone (it did not distinguish the 11)', () => {
+      expect(F.LIBRARY_NOTE).not.toBe('Adds 11 more fill styles, each flagged with its measured caveats.');
+    });
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -546,6 +721,93 @@ describe('Fill Style — context-bar Style flyout', () => {
     const options = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option'));
     options.forEach((o) => expect(o.disabled).toBe(false));
     expect(openFly().querySelector('.ctxbar-fly-note.is-faceted')).toBeNull();
+  });
+
+  // ── fs-e1 gating — end to end through the ctxbar surface ──────────────────
+  test('item 1 — a box selection with Type=Contour disables EVERY option, including None/Ladder, and shows the off-axis note', () => {
+    const BOX = { id: 'obj-1', name: 'Box', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 }, transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
+    const { fly } = openStyle({ objects: [BOX], styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'contour', params: {} } }) });
+    const options = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option'));
+    expect(options.length).toBeGreaterThan(0);
+    options.forEach((o) => {
+      expect(o.disabled).toBe(true);
+      expect(o.textContent).toContain(F.NO_EFFECT_SUFFIX);
+    });
+    const notes = Array.from(openFly().querySelectorAll('.ctxbar-fly-note')).map((n) => n.textContent);
+    expect(notes).not.toContain(F.FACETED_NOTE);
+    expect(notes).not.toContain(F.FACETED_CAP_NOTE);
+    expect(notes.some((t) => t && t.length > 0 && t !== F.LIBRARY_NOTE)).toBe(true);
+  });
+
+  // Paired negative — the SAME box, still on Type=Hatch, keeps its live laws
+  // (over-gating guard: item 1's fix must not bleed into the hatch case).
+  test('item 1 negative — the same box with Type=Hatch still offers its live laws (regression guard)', () => {
+    const BOX = { id: 'obj-1', name: 'Box', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 }, transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
+    const { fly } = openStyle({ objects: [BOX], styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: {} } }) });
+    const options = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option'));
+    const alive = options.filter((o) => !o.disabled);
+    expect(alive.length).toBeGreaterThan(2);
+  });
+
+  test('item 5 — a sphere selection with Type=Spiral disables exactly the 9 curved mono laws', () => {
+    const SPHERE = { id: 'obj-1', name: 'Sphere', primitive: 'sphere', params: { sx: 40, sy: 40, sz: 40, detail: 16 }, transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
+    const { fly } = openStyle({ objects: [SPHERE], styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'spiral', params: {} } }) });
+    const CURVED_SPIRAL_STIPPLE_INERT = [
+      'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
+      'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
+    ];
+    const options = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option'));
+    const dead = options.filter((o) => o.disabled).map((o) => o.value);
+    expect(dead.sort()).toEqual([...CURVED_SPIRAL_STIPPLE_INERT].sort());
+    const laddOpt = options.find((o) => o.value === 'ladder');
+    expect(laddOpt.disabled).toBe(false);
+  });
+
+  // ── Item 4 — multi-select must not read only the FIRST object's primitive ─
+  describe('item 4 — mixed multi-select fails open on reachability', () => {
+    test('a box-first + sphere selection does NOT grey out laws that are live on the sphere', () => {
+      const BOX = { id: 'obj-1', name: 'Box', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 }, transform: { x: -40, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
+      const SPHERE = { id: 'obj-2', name: 'Sphere', primitive: 'sphere', params: { sx: 40, sy: 40, sz: 40, detail: 12 }, transform: { x: 40, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
+      const scene = addSelectScene({
+        objects: [BOX, SPHERE],
+        styleTable: styleTable({
+          'obj-1': { penId: null, mapper: 'hatch', params: {} },
+          'obj-2': { penId: null, mapper: 'hatch', params: {} },
+        }),
+      });
+      app.renderer.setSceneSelection({ layerId: scene.id, mode: 'object', objectIds: ['obj-1', 'obj-2'], faceKeys: [], edgeKeys: [] });
+      CB.restoreState();
+      pillByLabel('Style').click();
+      const options = Array.from(rowCtl(openFly(), 'Fill Style').querySelector('select').querySelectorAll('option'))
+        .filter((o) => o.value !== window.Vectura.CONTEXT_BAR.sceneFlyouts.mixed.sentinel);
+      // Fails OPEN: with the primitives disagreeing, nothing is disabled —
+      // matching the documented mixed-selection convention (absent primitive
+      // context never disables a law it cannot verify).
+      options.forEach((o) => expect(o.disabled).toBe(false));
+      expect(openFly().querySelector('.ctxbar-fly-note.is-faceted')).toBeNull();
+    });
+
+    // Paired negative — TWO boxes (agreeing) must still gate normally; the
+    // sceneAgree guard must only fail open on genuine DISAGREEMENT.
+    test('a box + box selection (same primitive) still gates normally (agreement is not broken by the guard)', () => {
+      const BOX1 = { id: 'obj-1', name: 'Box 1', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 }, transform: { x: -40, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
+      const BOX2 = { id: 'obj-2', name: 'Box 2', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 }, transform: { x: 40, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
+      const scene = addSelectScene({
+        objects: [BOX1, BOX2],
+        styleTable: styleTable({
+          'obj-1': { penId: null, mapper: 'hatch', params: {} },
+          'obj-2': { penId: null, mapper: 'hatch', params: {} },
+        }),
+      });
+      app.renderer.setSceneSelection({ layerId: scene.id, mode: 'object', objectIds: ['obj-1', 'obj-2'], faceKeys: [], edgeKeys: [] });
+      CB.restoreState();
+      pillByLabel('Style').click();
+      const options = Array.from(rowCtl(openFly(), 'Fill Style').querySelector('select').querySelectorAll('option'))
+        .filter((o) => o.value !== window.Vectura.CONTEXT_BAR.sceneFlyouts.mixed.sentinel);
+      const dead = options.filter((o) => o.disabled);
+      expect(dead.length).toBeGreaterThan(0);
+      expect(openFly().querySelector('.ctxbar-fly-note.is-faceted')).toBeTruthy();
+    });
   });
 });
 
@@ -790,5 +1052,25 @@ describe('Fill Style — docked 3D Scene panel', () => {
     const dead = opts.filter((o) => o.value !== 'ladder' && o.value !== 'none' && !M.isMono(o.value));
     expect(dead.length).toBeGreaterThan(0);
     dead.forEach((o) => expect(o.disabled).toBe(true));
+  });
+
+  // ── fs-e1 gating, item 1 — the docked panel threads `mapper` too ──────────
+  test('item 1 — the docked Style tab disables EVERY option (incl. None/Ladder) for a box on Type=Contour', () => {
+    const BOX = { id: 'obj-1', name: 'Box', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 }, transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
+    const run = openStyle({ objects: [BOX], styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'contour', params: {} } }) });
+    const opts = Array.from(styleRow(run.container, 'Fill Style').querySelector('select').querySelectorAll('option'));
+    expect(opts.length).toBeGreaterThan(0);
+    opts.forEach((o) => expect(o.disabled).toBe(true));
+    const notes = Array.from(stylePage(run.container).querySelectorAll('.vs3-lawnote')).map((n) => n.textContent);
+    expect(notes).not.toContain(F.FACETED_NOTE);
+    expect(notes).not.toContain(F.FACETED_CAP_NOTE);
+  });
+
+  test('item 1 negative — the same box on Type=Hatch keeps its live laws (regression guard)', () => {
+    const BOX = { id: 'obj-1', name: 'Box', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 }, transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
+    const run = openStyle({ objects: [BOX], ...hatchOn() });
+    const opts = Array.from(styleRow(run.container, 'Fill Style').querySelector('select').querySelectorAll('option'));
+    const alive = opts.filter((o) => !o.disabled);
+    expect(alive.length).toBeGreaterThan(2);
   });
 });

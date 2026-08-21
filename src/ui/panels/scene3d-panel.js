@@ -494,13 +494,18 @@
   // `o.solidType` (optional) — only meaningful when primitiveMode === 'solid';
   // see SCENE_FILL_STYLES.isCapLimited for why the SOLID primitive needs this
   // second signal that box/plane do not.
+  // `o.mapper` (fs-e1 item 1) — the edited object's fill Type (hatch/contour/
+  // spiral/…). SCENE_FILL_STYLES.isReachableOn is mapper-aware: a faceted
+  // primitive under Contour/Spiral/Stipple never dispatches through the
+  // tone-law machinery at all, so every option (including None/Ladder) is
+  // inert there — see isReachableOn for the full rule.
   const fillStyleControls = (host, comps, o) => {
     const UI = Vectura.UI;
     const FS = Vectura.SCENE_FILL_STYLES;
     if (!UI || !FS) return;
     const law = FS.resolve(o.value);
     comps.push(UI.Select(o.row(FS.LABEL), {
-      options: FS.groups(fillStyleShowLibrary, o.primitiveMode, o.solidType),
+      options: FS.groups(fillStyleShowLibrary, o.primitiveMode, o.solidType, o.mapper),
       value: law,
       ariaLabel: FS.ARIA,
       onChange: (v) => o.write(v),
@@ -525,7 +530,7 @@
     const note = FS.note(law);
     // The faceted-shape orientation line leads everything else — a user must
     // know THIS before reading what the currently-picked law does.
-    line(FS.facetedNote ? FS.facetedNote(o.primitiveMode, o.solidType) : '', 'faceted');
+    line(FS.facetedNote ? FS.facetedNote(o.primitiveMode, o.solidType, o.mapper) : '', 'faceted');
     // Leads with the MARK CLASS, so what kind of mark this is stays legible
     // once the select is closed.
     line(note.text);
@@ -1026,6 +1031,7 @@
           rerender: renderStyle,
           primitiveMode: params.primitive,
           solidType: params.params && params.params.solidType,
+          mapper: style.mapper,
         });
       }
       if (FILL_MAPPERS.has(style.mapper)) {
@@ -1372,6 +1378,7 @@
           rerender: renderBoolStyle,
           primitiveMode: primary && primary.params && primary.params.primitive,
           solidType: primary && primary.params && primary.params.params && primary.params.params.solidType,
+          mapper: style.mapper,
         });
       }
     };
@@ -3616,6 +3623,7 @@
             rerender: renderStyle,
             primitiveMode: scopePrimitiveMode(scope),
             solidType: scopeSolidType(scope),
+            mapper: resolved.mapper,
           });
         } else if (d.kind === 'seg') {
           styleComps.push(UI.SegCtrl(labeledHost(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
