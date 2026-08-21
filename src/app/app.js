@@ -452,6 +452,11 @@
         selectionOutlineColor: SETTINGS.selectionOutlineColor,
         selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
         selectionOutlineHide3d: SETTINGS.selectionOutlineHide3d !== false,
+        // Master switch for every non-print 3D-scene helper overlay (gizmos,
+        // selection outline, handles, orbit pad — see Renderer#_sceneHelpersVisible).
+        // Default true; `!== false` so an absent/undefined SETTINGS value
+        // (e.g. before src/config/defaults.js grows this key) still reads true.
+        sceneHelpersVisible: SETTINGS.sceneHelpersVisible !== false,
         gridType: SETTINGS.gridType,
         gridOpacity: SETTINGS.gridOpacity,
         gridStyle: SETTINGS.gridStyle,
@@ -624,6 +629,9 @@
       SETTINGS.selectionOutlineHide3d = snapshot.selectionOutlineHide3d === undefined
         ? SETTINGS.selectionOutlineHide3d
         : snapshot.selectionOutlineHide3d === true;
+      SETTINGS.sceneHelpersVisible = snapshot.sceneHelpersVisible === undefined
+        ? SETTINGS.sceneHelpersVisible
+        : snapshot.sceneHelpersVisible === true;
       // gridType: legacy `gridOverlay` boolean upgrade still honored.
       const GRID_TYPES = ['none', 'standard', 'graph', 'iso', 'polar', 'dots'];
       const gridFallback = snapshot.gridOverlay ? 'standard' : SETTINGS.gridType;
