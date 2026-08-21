@@ -246,9 +246,28 @@
     return { ...src, byFace: { ...(src.byFace || {}), ...extra } };
   };
 
-  // fillDensity (0–100) → hatch spacing in document mm. Monotonic: denser in,
-  // tighter lines out; hatchPolygon floors spacing at 1.
-  const hatchSpacing = (density) => Math.max(1, 14 - 0.13 * clamp(finite(density, 50), 0, 100));
+  // fillDensity (0–200; UI sliders raised past the old 100 cap on a sibling
+  // branch) → hatch spacing in document mm. Monotonic: denser in, tighter
+  // lines out.
+  //
+  // 0-100 is BYTE-IDENTICAL to the pre-rescale formula
+  // (`Math.max(1, 14 - 0.13 * clamp(d, 0, 100))`) — existing saved artwork
+  // must render unchanged, so that arm is untouched, just re-clamped at its
+  // own boundary. It already floors at exactly 1mm at d=100 (14 - 0.13*100 =
+  // 1), so the `Math.max(1, …)` there never actually engages within 0-100.
+  //
+  // 100-200 is new territory: linearly continues the descent from 1mm down to
+  // HATCH_SPACING_FLOOR_MM at d=200. The floor is 0.3mm — below a typical
+  // plotter nib/fineliner width (≈0.3-0.5mm), so tighter spacing only
+  // multiplies path count and draw time without adding visible density; ink
+  // just re-covers the same groove.
+  const HATCH_SPACING_FLOOR_MM = 0.3;
+  const hatchSpacing = (density) => {
+    const d = clamp(finite(density, 50), 0, 200);
+    if (d <= 100) return Math.max(1, 14 - 0.13 * d);
+    const t = (d - 100) / 100; // 0..1 across the new 100→200 span
+    return 1 - t * (1 - HATCH_SPACING_FLOOR_MM);
+  };
 
   // Strip the geometry-mutating part of a treatment, keeping only the line-type
   // dash. Edges and per-face outlines are DOUBLE-DRAWN (the face outline loop and
@@ -2013,6 +2032,27 @@
       // byte-identical.
       const BORDER_STEP_MM = 0.12;
       const BORDER_WELD_EPS = 1e-9; // exact-endpoint weld: these ARE the same projected vertex
+      // `border.offset` (mm, [-2, 2], negative = inward / positive = outward)
+      // shifts the WHOLE multi-pass band by that many mm while preserving the
+      // passes' relative spread — read defensively off the raw record (rather
+      // than assumed pre-clamped) since `normalizeObjectBorder`
+      // (src/core/scene3d/params.js, not owned here) does not yet carry this
+      // field through on this branch; it is declared on a sibling branch not
+      // merged into this one. Re-clamped here so this stays correct once that
+      // merge lands. Default 0 ⇒ byte-identical to today's output.
+      //
+      // Sign empirically determined (not assumed from the offsetRun literal):
+      // generated a border on a sphere's smooth convex silhouette (many
+      // vertices, no sharp-corner artifacts) and measured the offset pass's
+      // bbox against the un-offset silhouette's. offsetRun's `d` runs OUTWARD
+      // when POSITIVE (bbox grows) and INWARD when NEGATIVE (bbox shrinks) for
+      // this codebase's chain winding — so `offset` is added directly below to
+      // match the outward-positive param contract. (An earlier box-silhouette
+      // probe using average-distance-from-centroid suggested the opposite
+      // sign, but that metric was unreliable: a box wireframe's visible edges
+      // do not form one simple closed loop, and hidden/crease edges skew the
+      // centroid off the true silhouette center. The sphere bbox measurement,
+      // matching this task's prescribed method, is the trustworthy one.)
       const borderCfg = (record) => {
         const border = record && record.border;
         if (!border || !border.enabled || draft) return null;
@@ -2020,6 +2060,7 @@
         return {
           passes: Math.max(1, Math.round(strength * 2)),
           penId: border.penId || null,
+          offset: clamp(finite(border.offset, 0), -2, 2),
         };
       };
 
@@ -2137,7 +2178,11 @@
                 && Math.abs(pts[0].y - pts[pts.length - 1].y) <= BORDER_WELD_EPS;
               for (let k = 1; k <= cfg.passes; k++) {
                 const sign = (k % 2 === 0) ? 1 : -1;
-                const mag = sign * BORDER_STEP_MM * Math.ceil(k / 2);
+                // Shift the whole band by `offset`, spread between passes
+                // untouched. offsetRun's `d` runs outward when POSITIVE (see
+                // borderCfg), matching the outward-positive param contract, so
+                // `offset` is added directly.
+                const mag = sign * BORDER_STEP_MM * Math.ceil(k / 2) + cfg.offset;
                 const meta = {
                   ...src,
                   sceneTarget: { ...src.sceneTarget },
@@ -3459,5 +3504,10 @@
       mult: PLOT_FLOOR_MULT_OBJ,
       coverage: singleFamilyCoverage(PLOT_FLOOR_MULT_OBJ),
     }),
+    // Test seam (§4.2). Publishes the fillDensity -> hatch-spacing mapping so
+    // the 0-100 backward-compat contract and the 100-200 rescale can be
+    // asserted exactly, without the float noise of measuring spacing off
+    // projected geometry.
+    __hatchSpacingForTest: (density) => hatchSpacing(density),
   };
 })();
