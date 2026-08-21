@@ -9663,6 +9663,20 @@
 
     // ——— CONTRACT D API ————————————————————————————————————————————————
 
+    // Master switch for every non-print 3D-scene helper overlay (transform
+    // gizmos, the red scene selection outline, resize/face-pull handles,
+    // light gizmos/widgets, the hover hint, and the orbit/rotation pad).
+    // Consulted by each helper's draw fn AND its matching hit-test/drag-begin
+    // (routed through the same handful of shared geometry accessors — see
+    // getSceneObjectGizmo, getSceneLightGizmo, getSceneLightControl, and
+    // get3DRotationControl — so a hidden helper can never stay hit-testable).
+    // Default true (visible); SETTINGS.sceneHelpersVisible persists like any
+    // other boolean view preference. Never gates real print geometry (the
+    // ground quad / sceneFill paths) — those are emitted by scene3d itself.
+    _sceneHelpersVisible() {
+      return SETTINGS.sceneHelpersVisible !== false;
+    }
+
     getSceneSelection() {
       // Self-heal against stale references: undo/redo, layer delete, or a type
       // change can leave sceneSelection pointing at a layer that no longer
@@ -10578,6 +10592,7 @@
     // Full screen-projected bbox of the single selected scene object (or null),
     // with named corners — the anchor for the scale gizmo.
     _sceneResizeBBox(layer) {
+      if (!this._sceneHelpersVisible()) return null;
       if (!this._isSceneLayerEditable(layer)) return null;
       const sel = this.getSceneSelection();
       if (!sel || sel.layerId !== layer.id || sel.mode !== 'object' || sel.objectIds.length !== 1) return null;
@@ -10766,6 +10781,7 @@
     // the same self-calibrating distance ratio as the scale gizmo, applied to
     // ONE dimension — pull the face twice as far from centre → dimension doubles.
     _sceneFacePull(layer) {
+      if (!this._sceneHelpersVisible()) return null;
       if (!this._isSceneLayerEditable(layer)) return null;
       const sel = this.getSceneSelection();
       if (!sel || sel.layerId !== layer.id || sel.mode !== 'face'
@@ -11171,6 +11187,7 @@
     // Handle geometry (world coords) for the current sun, or null when the
     // scene has no anchor. baseR scales with the scene so the handle stays close.
     getSceneLightControl(layer) {
+      if (!this._sceneHelpersVisible()) return null;
       const target = layer || this._sceneLightLayer();
       if (!target) return null;
       // Scene-tree Increment E — a scene group whose lights live on CHILD layers
@@ -11223,6 +11240,7 @@
     }
 
     getSceneObjectGizmo(layer) {
+      if (!this._sceneHelpersVisible()) return null;
       const target = layer || this._sceneLightLayer();
       if (!target || target.type !== 'scene3d') return null;
       const sel = this.getSceneSelection();
@@ -11839,6 +11857,7 @@
     // the directional sun sits at its projected handle. Axes are world X/Y/Z
     // rotated through the camera (orientation-only, matching the object gizmo).
     getSceneLightGizmo(layer) {
+      if (!this._sceneHelpersVisible()) return null;
       const target = layer || this._sceneLightLayer();
       if (!target || target.type !== 'scene3d') return null;
       const light = this._selectedSceneLight(target);
@@ -12675,6 +12694,7 @@
     // every face/edge path of the selected objects; face/edge modes stroke
     // (and faintly fill, for faces) just the selected components.
     drawSceneSelectionOverlay() {
+      if (!this._sceneHelpersVisible()) return;
       const sel = this.sceneSelection;
       if (!sel) return;
       const layer = this.engine.layers.find((l) => l.id === sel.layerId);
@@ -12801,6 +12821,7 @@
     // expand-to-layers. A face with no emitted outline ('none'-mapper box) falls
     // back to its real projected face polygon (still overlay-only geometry).
     drawSceneHoverHint() {
+      if (!this._sceneHelpersVisible()) return;
       const hover = this.sceneHoverPick;
       if (!hover) return;
       const layer = this.engine.layers.find((l) => l.id === hover.layerId);
@@ -14102,6 +14123,12 @@
       // scene anchor overrides center/target), so the child's bounds are fine.
       const owner = this._sceneRotationOwner(layer);
       if (owner && owner !== layer) layer = owner;
+      // This control is shared with non-scene algorithms (spiralizer, topoform,
+      // terrain, polyhedron, raster-plane, …) whose own pseudo-3D rotation
+      // gizmo is NOT a "3D-scene helper" and must stay visible regardless of
+      // sceneHelpersVisible — only the scene3d orbit pad (and its object3d/
+      // booleanGroup3d children, resolved to their owning group above) is gated.
+      if (layer.type === 'scene3d' && !this._sceneHelpersVisible()) return null;
       const spec = this.get3DRotationSpec(layer);
       if (!spec) return null;
       // Scene layers anchor the gizmo to the SELECTED OBJECT's top-right (or the

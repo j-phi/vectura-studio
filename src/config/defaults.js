@@ -2443,6 +2443,11 @@
     selectionOutlineColor: '#ef4444',
     selectionOutlineWidth: 0.15,
     selectionOutlineHide3d: true,
+    // Master switch for every non-print 3D-scene helper overlay (transform
+    // gizmos, red scene selection outline, bounding boxes/handles, light
+    // helpers, hover hints, orbit pad). Default visible. Toggled from the
+    // toolbar; gated in src/render/renderer.js via Renderer#_sceneHelpersVisible().
+    sceneHelpersVisible: true,
     gridType: 'none',
     gridOpacity: 0.2,
     gridStyle: 'cartesian',
