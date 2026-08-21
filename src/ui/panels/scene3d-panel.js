@@ -390,20 +390,28 @@
   const D_DENSITY = { key: 'fillDensity', kind: 'slider', label: 'Density', ariaLabel: 'Fill density', min: 1, max: 100, step: 1, default: 50 };
   const D_ANGLEREF = { key: 'angleRef', kind: 'seg', label: 'Angle ref', ariaLabel: 'Hatch angle reference', default: 'face', options: ANGLE_REF_OPTS };
   const D_LINKFILL = { key: 'linkFill', kind: 'toggle', label: 'Link fill', ariaLabel: 'Connect scanlines (boustrophedon)', default: false };
+  // U9 — the FILL STYLE (tone law). `kind: 'lawpick'` is a Select grouped by
+  // MARK CLASS plus a description block; the roster and the taxonomy both come
+  // from Vectura.SCENE_FILL_STYLES so this surface and the ctxbar flyout
+  // cannot drift. Carried on EVERY fill mapper, which is also what puts it in
+  // `mapperDefaults`' carry set below — without that, switching hatch →
+  // crosshatch would silently reset the user's law (whole-style-wins makes
+  // that a real, easy-to-ship bug).
+  const D_TONELAW = { key: 'toneLaw', kind: 'lawpick', label: 'Fill Style', ariaLabel: 'Fill style', default: 'ladder' };
   const MAPPER_CONTROLS = {
-    hatch: [D_ANGLE, D_DENSITY, D_ANGLEREF, D_LINKFILL],
+    hatch: [D_ANGLE, D_DENSITY, D_TONELAW, D_ANGLEREF, D_LINKFILL],
     crosshatch: [
-      D_ANGLE, D_DENSITY, D_ANGLEREF, D_LINKFILL,
+      D_ANGLE, D_DENSITY, D_TONELAW, D_ANGLEREF, D_LINKFILL,
       { key: 'crossAngleDelta', kind: 'dial', label: 'Cross angle', ariaLabel: 'Crosshatch angle delta', min: 10, max: 170, step: 1, default: 90 },
       { key: 'crossDensityRatio', kind: 'slider', label: 'Cross density', ariaLabel: 'Second family density ratio', min: 0.25, max: 2, step: 0.05, default: 1 },
       { key: 'tripleHatch', kind: 'toggle', label: 'Triple hatch', ariaLabel: 'Triple hatch in darkest band', default: false },
     ],
     contour: [
-      D_DENSITY,
+      D_DENSITY, D_TONELAW,
       { key: 'contourStyle', kind: 'seg', label: 'Style', ariaLabel: 'Contour style', default: 'surface', options: [{ value: 'surface', label: 'Surface' }, { value: 'region', label: 'Region' }] },
     ],
     spiral: [
-      D_DENSITY,
+      D_DENSITY, D_TONELAW,
       { key: 'spiralAngleOffset', kind: 'dial', label: 'Angle offset', ariaLabel: 'Spiral start angle', min: 0, max: 360, step: 1, default: 0 },
       { key: 'spiralEccentricity', kind: 'slider', label: 'Eccentricity', ariaLabel: 'Spiral eccentricity', min: 0.3, max: 3, step: 0.05, default: 1, seed: false },
       { key: 'spiralCenter', kind: 'seg', label: 'Centre', ariaLabel: 'Spiral centre', default: 'centroid', options: [{ value: 'centroid', label: 'Centroid' }, { value: 'bboxCenter', label: 'Bounds' }] },
@@ -411,7 +419,7 @@
       { key: 'spiralMode', kind: 'seg', label: 'Mode', ariaLabel: 'Spiral mode', default: 'surfaceHelix', options: [{ value: 'surfaceHelix', label: 'Surface' }, { value: 'flatClip', label: 'Flat' }] },
     ],
     stipple: [
-      D_DENSITY,
+      D_DENSITY, D_TONELAW,
       { key: 'dotShape', kind: 'select', label: 'Dot', ariaLabel: 'Dot shape', default: 'dot', options: DOT_SHAPE_OPTS },
       { key: 'dotSize', kind: 'slider', label: 'Dot size', ariaLabel: 'Dot size', min: 0.1, max: 3, step: 0.05, default: 0.7, seed: false },
       { key: 'stippleJitter', kind: 'slider', label: 'Jitter', ariaLabel: 'Stipple jitter', min: 0, max: 100, step: 1, default: 40 },
@@ -461,6 +469,62 @@
   // Session-only last-pick memory for the More… flyout (Decision 3). Module
   // scope: survives panel rebuilds/layer switches, resets on reload.
   let moreLastPick = null;
+  // U9 — Fill Style library disclosure. VIEW state only, same lifetime rule as
+  // moreLastPick, and deliberately never written into layer params: the 11
+  // library-tier laws are demoted on measured grounds, not stored preferences.
+  let fillStyleShowLibrary = false;
+
+  // U9 — the Fill Style (tone law) control. THREE style surfaces live in this
+  // file and every one of them has a mapper dropdown, so this is written once
+  // and called from all three:
+  //   1. the scene / object / face style editor (renderControl's 'lawpick'),
+  //   2. the focused object3d LEAF panel — the one a user actually reaches by
+  //      selecting a scene-tree object, and
+  //   3. the fused booleanGroup3d panel.
+  // Surface 2 was the live-verification catch: adding the row to the descriptor
+  // table alone left the leaf panel showing "Mapper" and no Fill Style at all.
+  //
+  // `o.row(label)` returns a control host; notes append to `host`. `o.write(v)`
+  // performs the surface's own commit; `o.rerender()` rebuilds it (the note
+  // block and the option list both depend on the current value).
+  const fillStyleControls = (host, comps, o) => {
+    const UI = Vectura.UI;
+    const FS = Vectura.SCENE_FILL_STYLES;
+    if (!UI || !FS) return;
+    const law = FS.resolve(o.value);
+    comps.push(UI.Select(o.row(FS.LABEL), {
+      options: FS.groups(fillStyleShowLibrary),
+      value: law,
+      ariaLabel: FS.ARIA,
+      onChange: (v) => o.write(v),
+    }));
+    const line = (text, warn) => {
+      if (!text) return;
+      const n = document.createElement('p');
+      n.className = warn ? 'vs3-lawnote is-caveat' : 'vs3-lawnote';
+      n.textContent = text;
+      host.appendChild(n);
+    };
+    // The disclosure sits directly under the select it modifies — the prose
+    // below would otherwise push the two controls apart and make the toggle
+    // read as belonging to the description.
+    comps.push(UI.SegCtrl(o.row(FS.LIBRARY_LABEL), {
+      options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+      value: fillStyleShowLibrary ? 'on' : 'off',
+      ariaLabel: FS.LIBRARY_ARIA,
+      onChange: (v) => { fillStyleShowLibrary = (v === 'on'); o.rerender(); },
+    }));
+    const entry = FS.entry(law) || {};
+    const note = FS.note(law);
+    // Leads with the MARK CLASS, so what kind of mark this is stays legible
+    // once the select is closed.
+    line(note.text);
+    if (entry.mechanism) line(`How: ${entry.mechanism}`);
+    if (entry.strengths) line(`Strengths: ${entry.strengths}`);
+    if (entry.weaknesses) line(`Weaknesses: ${entry.weaknesses}`);
+    // The measured caveat of a demoted library law, in the warning colour.
+    line(note.caveat, true);
+  };
 
   let CURRENT = null;
   // Set per build; tears the active panel down if its root has been detached
@@ -933,12 +997,25 @@
         ariaLabel: 'Style pen',
         onChange: (v) => { commit(() => { style.penId = v || null; }); },
       }));
-      comps.push(UI.Select(labeledRow(host, 'Mapper'), {
+      comps.push(UI.Select(labeledRow(host, 'Type'), {
         options: MAPPERS,
         value: style.mapper || 'wireframe',
-        ariaLabel: 'Style mapper',
+        ariaLabel: 'Fill type',
         onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); renderStyle(); },
       }));
+      // U9 — Fill Style, directly beneath Type. A LEAF publishes
+      // byObject[layerId], so this bag IS its resolved style: writing here is
+      // the object-scope write, which is the only scope that reaches an object
+      // declaring its own style under the whole-style-wins cascade.
+      if (FILL_MAPPERS.has(style.mapper)) {
+        if (!style.params || typeof style.params !== 'object') style.params = {};
+        fillStyleControls(host, comps, {
+          row: (lbl) => labeledRow(host, lbl),
+          value: style.params.toneLaw,
+          write: (v) => { commit(() => { style.params.toneLaw = v; }); renderStyle(); },
+          rerender: renderStyle,
+        });
+      }
       if (FILL_MAPPERS.has(style.mapper)) {
         if (!style.params || typeof style.params !== 'object') style.params = {};
         slider(host, 'Density', {
@@ -1185,22 +1262,37 @@
       : 'Drag object layers into this group in the Layers panel to add operands.';
     bHost.appendChild(note);
 
-    // Style tab.
+    // Style tab. Rebuildable in place (U9): the Fill Style row appears/hides
+    // with the fill type, and its note block + option list both depend on the
+    // current law, so a discrete change has to re-render the tab.
     const sHost = pages.style;
     const style = params.style;
-    const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
-    comps.push(UI.Select(labeledRow(sHost, 'Pen'), {
-      options: [{ value: '', label: 'Layer pen' }].concat(pens.map((p) => ({ value: p.id, label: p.name || p.id }))),
-      value: style.penId || '',
-      ariaLabel: 'Fused style pen',
-      onChange: (v) => { commit(() => { style.penId = v || null; }); },
-    }));
-    comps.push(UI.Select(labeledRow(sHost, 'Mapper'), {
-      options: MAPPERS,
-      value: style.mapper || 'wireframe',
-      ariaLabel: 'Fused style mapper',
-      onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); },
-    }));
+    const renderBoolStyle = () => {
+      sHost.textContent = '';
+      const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+      comps.push(UI.Select(labeledRow(sHost, 'Pen'), {
+        options: [{ value: '', label: 'Layer pen' }].concat(pens.map((p) => ({ value: p.id, label: p.name || p.id }))),
+        value: style.penId || '',
+        ariaLabel: 'Fused style pen',
+        onChange: (v) => { commit(() => { style.penId = v || null; }); },
+      }));
+      comps.push(UI.Select(labeledRow(sHost, 'Type'), {
+        options: MAPPERS,
+        value: style.mapper || 'wireframe',
+        ariaLabel: 'Fused fill type',
+        onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); renderBoolStyle(); },
+      }));
+      if (FILL_MAPPERS.has(style.mapper)) {
+        if (!style.params || typeof style.params !== 'object') style.params = {};
+        fillStyleControls(sHost, comps, {
+          row: (lbl) => labeledRow(sHost, lbl),
+          value: style.params.toneLaw,
+          write: (v) => { commit(() => { style.params.toneLaw = v; }); renderBoolStyle(); },
+          rerender: renderBoolStyle,
+        });
+      }
+    };
+    renderBoolStyle();
 
     mirrorChildToCanvas(ui, layer, null);
 
@@ -3324,7 +3416,9 @@
       mapRow.className = 'vs3-row';
       const mapLbl = document.createElement('label');
       mapLbl.className = 'vs3-lbl';
-      mapLbl.textContent = 'Mapper';
+      // U9 — this dropdown picks the KIND of fill; the Fill Style row it seeds
+      // picks the tone law that kind is drawn with. Named to match the ctxbar.
+      mapLbl.textContent = 'Type';
       mapRow.appendChild(mapLbl);
       const mapHost = document.createElement('div');
       mapHost.className = 'vs3-ctl';
@@ -3378,6 +3472,20 @@
           }
         } else if (d.kind === 'select') {
           styleComps.push(UI.Select(labeledHost(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
+        } else if (d.kind === 'lawpick') {
+          // U9 — the Fill Style (tone law) picker. Options grouped by MARK
+          // CLASS, then a description block so this descriptive surface says
+          // what the law actually does and — for the 11 demoted library laws —
+          // why it is demoted. `write` routes through commitStyle, which is a
+          // whole-style write AT THE CURRENT SCOPE (scene / object / face), so
+          // editing a face override edits the face and not the object it
+          // belongs to.
+          fillStyleControls(styleHost, styleComps, {
+            row: labeledHost,
+            value: typeof raw === 'string' ? raw : d.default,
+            write: (v) => write(v),
+            rerender: renderStyle,
+          });
         } else if (d.kind === 'seg') {
           styleComps.push(UI.SegCtrl(labeledHost(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
         } else if (d.kind === 'toggle') {

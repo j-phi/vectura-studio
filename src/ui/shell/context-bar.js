@@ -1356,7 +1356,17 @@
     return host;
   };
   const flySubhead = (fly, text) => { const h = el('div', 'ctxbar-fly-subhead'); h.textContent = text; fly.appendChild(h); };
-  const flyNote = (fly, text) => { const n = el('div', 'ctxbar-fly-note'); n.textContent = text; fly.appendChild(n); };
+  // Returns the node so a caller can qualify it (the Fill Style caveat adds
+  // `.is-caveat`, which paints it in the warning colour).
+  const flyNote = (fly, text) => { const n = el('div', 'ctxbar-fly-note'); n.textContent = text; fly.appendChild(n); return n; };
+
+  // ── Fill Style library disclosure (U9) ───────────────────────────────────
+  // VIEW state only, module-scoped: it survives a flyout rebuild and a
+  // reselection, resets on reload, and is NEVER written into layer params.
+  // The 11 library-tier laws are demoted on measured grounds (six simulated
+  // pen laws, two floods, two controls, one documented negative result), so
+  // they stay out of the default list until the user asks for them.
+  let fillStyleShowLibrary = false;
 
   // Shared persistent-flyout wrapper for the scene pills.
   const makeSceneFlyout = (label, tooltip, extraClass, buildBody) => {
@@ -1402,6 +1412,38 @@
       mixed: sceneAgree(sc, (id) => (rs(id).mapper || 'none')).mixed,
       onChange: (v) => { write({ mapper: v, params: { ...params } }); rebuild(); },
     });
+    // ── Fill Style (U9) — the TONE LAW, directly beneath Type ───────────────
+    // Type picks the KIND of fill; this picks HOW that kind is drawn. Grouped
+    // by MARK CLASS (Vectura.SCENE_FILL_STYLES), not by the roster's tone-
+    // mechanism families: crosshatched and single-direction textures are
+    // separate perceptual clusters and must not share one flat list.
+    //
+    // Absent on wireframe/none — a tone law has no meaning with no fill to
+    // modulate (the same ABSENT-not-inert rule the Density row follows).
+    //
+    // The write carries the FULL params bag: the cascade is whole-style-wins
+    // (src/core/scene3d/style-cascade.js), so any key left out of the patch is
+    // silently destroyed. `write` is setSceneObjectStyle → OBJECT scope, which
+    // is the scope that actually reaches an object declaring its own style.
+    const FS = Vectura.SCENE_FILL_STYLES;
+    const FSC = C.fillStyle;
+    if (FS && FSC && (C.fillMappers || []).indexOf(mapper) !== -1) {
+      const law = FS.resolve(params.toneLaw);
+      flyMixedSelect(flyRow(fly, FSC.label), {
+        options: FS.groups(fillStyleShowLibrary), value: law, ariaLabel: FSC.aria,
+        mixed: sceneAgree(sc, (id) => FS.resolve((rs(id).params || {}).toneLaw)).mixed,
+        onChange: (v) => { write({ params: { ...params, toneLaw: v } }); rebuild(); },
+      });
+      // The disclosure sits directly under the select it modifies, before the
+      // note lines — otherwise the prose pushes the two controls apart.
+      UI.SegCtrl(flyRow(fly, FSC.libraryLabel), {
+        options: C.onOff, value: fillStyleShowLibrary ? 'on' : 'off', ariaLabel: FSC.libraryAria,
+        onChange: (v) => { fillStyleShowLibrary = (v === 'on'); rebuild(); },
+      });
+      const note = FS.note(law);
+      if (note.text) flyNote(fly, note.text);
+      if (note.caveat) flyNote(fly, note.caveat).classList.add('is-caveat');
+    }
     flyMixedSelect(flyRow(fly, C.pen.label), {
       options: scenePens(C.pen.inherit), value: resolved.penId || '', ariaLabel: C.pen.aria,
       mixed: sceneAgree(sc, (id) => (rs(id).penId || '')).mixed,

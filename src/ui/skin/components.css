@@ -12076,6 +12076,14 @@ body.mobile-layout .hud-bar {
   color: var(--ui-muted, #686868);
   font-style: italic;
 }
+/* U9 — the Fill Style caveat: a measured warning on a demoted library law, not
+   ordinary help text. Token-coloured so both themes read it. */
+.ctxbar-fly-note.is-caveat {
+  color: var(--ui-danger);
+  font-style: normal;
+  border-left: 2px solid color-mix(in srgb, var(--ui-danger) 45%, transparent);
+  padding-left: 6px;
+}
 .ctxbar-fly-reset { width: 100%; justify-content: center; }
 .ctxbar-scene-menu-wrap .ctxbar-scene-field { max-width: 140px; }
 /* I20 scoped scene pen chip + its pen-list flyout (writes byObject/byFace, never
@@ -13286,6 +13294,21 @@ body.mobile-layout .hud-bar {
   font-size: 11px;
   font-weight: 600;
   color: var(--ui-text, #e0e0e0);
+}
+/* Fill Style (tone law) description block, scene3d Style tab — U9. Muted
+   caption lines under the picker; `.is-caveat` is the measured warning a
+   demoted library law carries and must not read as ordinary help text. Both
+   colours come from tokens, so both themes are covered. */
+.vs3-lawnote {
+  margin: 2px 0 4px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+}
+.vs3-lawnote.is-caveat {
+  color: var(--ui-danger);
+  border-left: 2px solid color-mix(in srgb, var(--ui-danger) 45%, transparent);
+  padding-left: 6px;
 }
 /* X-ray control group header (scene3d Style tab, Phase 6). */
 .vs3-xray-hdr,

@@ -109,11 +109,11 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     pillByLabel('Style').click();
     let fly = openFly();
     expect(fly).toBeTruthy();
-    expect(rowCtl(fly, 'Fill')).toBeTruthy();
+    expect(rowCtl(fly, 'Type')).toBeTruthy();
 
     // Change mapper → hatch: writes styleTable.byObject, one history entry.
     const before = app.history.length;
-    const mapSel = rowCtl(fly, 'Fill').querySelector('select');
+    const mapSel = rowCtl(fly, 'Type').querySelector('select');
     mapSel.value = 'hatch';
     mapSel.dispatchEvent(new window.Event('change', { bubbles: true }));
     expect(styleTable(scene).byObject['obj-1'].mapper).toBe('hatch');
@@ -353,7 +353,7 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
   test('Style ▾ shows MIXED when two objects have DIFFERENT mappers', async () => {
     addSelectMulti({ mapper: 'hatch', params: {} }, { mapper: 'stipple', params: {} });
     pillByLabel('Style').click();
-    const ctl = rowCtl(openFly(), 'Fill');
+    const ctl = rowCtl(openFly(), 'Type');
     expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(true);
     const sel = ctl.querySelector('select');
     expect(sel.value).toBe(MIXED().sentinel);
@@ -365,7 +365,7 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
   test('Style ▾ shows the SHARED value when two objects AGREE on the mapper', async () => {
     addSelectMulti({ mapper: 'hatch', params: {} }, { mapper: 'hatch', params: {} });
     pillByLabel('Style').click();
-    const ctl = rowCtl(openFly(), 'Fill');
+    const ctl = rowCtl(openFly(), 'Type');
     expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(false);
     expect(ctl.querySelector('select').value).toBe('hatch');
   });
@@ -374,7 +374,7 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     const scene = addSelectMulti({ mapper: 'hatch', params: {} }, { mapper: 'stipple', params: {} });
     pillByLabel('Style').click();
     const before = app.history.length;
-    const sel = rowCtl(openFly(), 'Fill').querySelector('select');
+    const sel = rowCtl(openFly(), 'Type').querySelector('select');
     sel.value = 'contour';
     sel.dispatchEvent(new window.Event('change', { bubbles: true }));
     // Both objects now carry the picked mapper.
@@ -382,7 +382,7 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     expect(styleTable(scene).byObject['obj-2'].mapper).toBe('contour');
     expect(app.history.length).toBe(before + 1);
     // The flyout rebuilt in place → the control now shows the unified value.
-    const ctl = rowCtl(openFly(), 'Fill');
+    const ctl = rowCtl(openFly(), 'Type');
     expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(false);
     expect(ctl.querySelector('select').value).toBe('contour');
   });
@@ -402,7 +402,7 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
   test('single-selection is NOT flagged mixed (regression guard)', async () => {
     addSelectScene();
     pillByLabel('Style').click();
-    const ctl = rowCtl(openFly(), 'Fill');
+    const ctl = rowCtl(openFly(), 'Type');
     expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(false);
     expect(ctl.querySelector('select').value).not.toBe(MIXED().sentinel);
   });
