@@ -431,7 +431,7 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(openFly().querySelector('.ctxbar-fly-note.is-caveat')).toBeNull();
 
     // Disclose the library, then pick a simulated pen law.
-    const libOn = Array.from(rowCtl(fly, 'Library').querySelectorAll('button'))
+    const libOn = Array.from(rowCtl(fly, 'Experimental').querySelectorAll('button'))
       .find((b) => b.textContent.trim() === 'On');
     libOn.click();
     const sel = rowCtl(openFly(), 'Fill Style').querySelector('select');
@@ -442,17 +442,30 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(caveat.textContent.startsWith(window.Vectura.SCENE_FILL_STYLES.SIMULATED_NOTE)).toBe(true);
   });
 
-  test('the Library toggle grows the option list by exactly the 11 demoted laws, and persists nothing', () => {
+  // C4 Job 2 — "Library" communicated nothing about what it does. Renamed to
+  // "Experimental" (self-evident) with a flyNote spelling out the count and
+  // the caveat; behavior (which 11 laws it admits, and that it never
+  // persists) is unchanged and still pinned here.
+  test('the Experimental toggle grows the option list by exactly the 11 demoted laws, and persists nothing', () => {
     const { scene, fly } = openStyle({ styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: {} } }) });
     const count = () => rowCtl(openFly(), 'Fill Style').querySelector('select').querySelectorAll('option').length;
-    const libBtn = (text) => Array.from(rowCtl(openFly(), 'Library').querySelectorAll('button'))
+    const libBtn = (text) => Array.from(rowCtl(openFly(), 'Experimental').querySelectorAll('button'))
       .find((b) => b.textContent.trim() === text);
     // The disclosure is module-scoped view state that survives a reselection,
     // so start from a known Off rather than from whatever ran before.
     libBtn('Off').click();
     const closed = count();
+    // Off admits none of the 11 library laws.
+    const closedValues = Array.from(rowCtl(openFly(), 'Fill Style').querySelector('select').querySelectorAll('option')).map((o) => o.value);
+    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => expect(closedValues).not.toContain(id));
     libBtn('On').click();
     expect(count()).toBe(closed + window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.length);
+    // On admits exactly the 11 library laws (not more, not fewer).
+    const openValues = Array.from(rowCtl(openFly(), 'Fill Style').querySelector('select').querySelectorAll('option')).map((o) => o.value);
+    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => expect(openValues).toContain(id));
+    // The new copy explains what the toggle does, without a hover.
+    const notes = Array.from(openFly().querySelectorAll('.ctxbar-fly-note')).map((n) => n.textContent);
+    expect(notes).toContain(window.Vectura.SCENE_FILL_STYLES.LIBRARY_NOTE);
     libBtn('Off').click();
     // View-only: it never reaches layer params.
     const p = scene.params.styleTable.byObject['obj-1'].params;
@@ -715,11 +728,13 @@ describe('Fill Style — docked 3D Scene panel', () => {
     expect(layer.params.style.params.toneLaw).toBe('mkTick');
   });
 
-  test('the Library row discloses the 11 demoted laws without persisting anything', () => {
+  // C4 Job 2 — label renamed "Library" → "Experimental" (shared config, so
+  // the docked panel picks it up too); behavior pinned here unchanged.
+  test('the Experimental row discloses the 11 demoted laws without persisting anything', () => {
     const { container, layer } = openStyle(hatchOn());
     const count = () => styleRow(container, 'Fill Style').querySelector('select').querySelectorAll('option').length;
     const closed = count();
-    const on = Array.from(styleRow(container, 'Library').querySelectorAll('button'))
+    const on = Array.from(styleRow(container, 'Experimental').querySelectorAll('button'))
       .find((b) => b.textContent.trim() === 'On');
     fire(on, 'click');
     expect(count()).toBe(closed + window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.length);

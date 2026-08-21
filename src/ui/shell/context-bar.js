@@ -102,12 +102,20 @@
     return s.contextBar;
   };
   const isEnabled = () => settings().contextBarEnabled !== false;
+  // Scene-wide VIEW preference (not a layer/object param) for non-print 3D
+  // helper decoration — gizmo, selection outline, bbox handles, light
+  // helpers, hover hints, orbit pad. Default ON. The renderer side (another
+  // agent) reads Vectura.SETTINGS.sceneHelpersVisible directly; this module
+  // only owns the control + its persistence, same bag/mechanism as the bar's
+  // own enabled/pinned prefs above.
+  const isHelpersVisible = () => settings().sceneHelpersVisible !== false;
 
   const loadPersisted = () => {
     const saved = readStore();
     if (!saved) return;
     const s = settings();
     if (typeof saved.enabled === 'boolean') s.contextBarEnabled = saved.enabled;
+    if (typeof saved.sceneHelpersVisible === 'boolean') s.sceneHelpersVisible = saved.sceneHelpersVisible;
     s.contextBar = {
       pinned: saved.pinned === true,
       x: Number.isFinite(saved.x) ? saved.x : null,
@@ -117,10 +125,14 @@
 
   const persist = () => {
     const p = prefs();
-    writeStore({ enabled: isEnabled(), pinned: p.pinned === true, x: p.x, y: p.y });
+    writeStore({
+      enabled: isEnabled(), pinned: p.pinned === true, x: p.x, y: p.y,
+      sceneHelpersVisible: isHelpersVisible(),
+    });
     const a = getApp();
     a?.persistPreferencesDebounced?.(); // canonical path once integrator folds keys in
   };
+  const setHelpersVisible = (v) => { settings().sceneHelpersVisible = v !== false; persist(); };
 
   // ── DOM construction ──────────────────────────────────────────────────
   const el = (tag, cls, attrs) => {
@@ -1184,6 +1196,26 @@
     // Persistent Style / Shadow / Highlight / X-ray dropdown pills (ask #8) —
     // between the pen chip and the one-shot verbs.
     appendSceneFlyouts(ctx);
+    // Helpers visibility — a scene-wide VIEW toggle (SETTINGS.sceneHelpersVisible),
+    // not a per-object param, so it renders for a ground-only selection too
+    // (unlike the object-def verbs below). Simple icon toggle, not a flyout —
+    // there is exactly one boolean here. The renderer side (another agent)
+    // reads the setting; this button only flips it, persists it, and re-renders.
+    {
+      const helpersVisible = isHelpersVisible();
+      const meta = b.sceneHelpers || {};
+      els.content.appendChild(makeBtn({
+        icon: ic.sceneHelpers,
+        tooltip: helpersVisible ? meta.tooltipOn : meta.tooltipOff,
+        extraClass: helpersVisible ? '' : 'is-active',
+        onClick: () => {
+          setHelpersVisible(!isHelpersVisible());
+          const a = getApp();
+          a?.render && a.render();
+          restoreState();
+        },
+      }));
+    }
     // Duplicate / Drop / Solid-X-ray / Delete all mutate an object DEF, so a
     // ground-only selection has nothing for them to act on (see
     // sceneSelHasObjectDef) — they are omitted rather than left to no-op.
@@ -1453,6 +1485,7 @@
         options: C.onOff, value: fillStyleShowLibrary ? 'on' : 'off', ariaLabel: FSC.libraryAria,
         onChange: (v) => { fillStyleShowLibrary = (v === 'on'); rebuild(); },
       });
+      if (FSC.libraryNote) flyNote(fly, FSC.libraryNote);
       const facetedNote = FS.facetedNote ? FS.facetedNote(primitiveMode, solidType) : '';
       if (facetedNote) flyNote(fly, facetedNote).classList.add('is-faceted');
       const note = FS.note(law);
@@ -1480,7 +1513,10 @@
       flyMixedSlider(flyRow(fly, C.density.label), {
         mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.fillDensity) ? p.fillDensity : 50; }).mixed,
         props: {
-          value: dv, min: 1, max: 100, step: 1, defaultValue: 50, ariaLabel: C.density.aria,
+          // Max raised 100 → 200 (context-bar side only, C4 Job 3). The engine
+          // mapping in scene3d.js still clamps at 100 today — another wave
+          // rescales hatchSpacing() so 100-200 draws a visible difference.
+          value: dv, min: 1, max: 200, step: 1, defaultValue: 50, ariaLabel: C.density.aria,
           onChange: (v) => write({ params: { ...params, fillDensity: v } }, { gesture: true, preview: true }),
           onCommit: (v) => write({ params: { ...params, fillDensity: v } }),
         },
@@ -1506,6 +1542,17 @@
           defaultValue: 1, ariaLabel: C.borderStrength.aria,
           onChange: (v) => setObj('border.strength', v, { gesture: true, preview: true }),
           onCommit: (v) => setObj('border.strength', v),
+        },
+      });
+      // Offset shifts the border ring in/out of the silhouette (mm); negative
+      // inward, positive outward. Sibling to Weight above — same write shape.
+      flyMixedSlider(flyRow(fly, C.borderOffset.label), {
+        mixed: sceneAgree(sc, (id) => { const b = orec(id).border || {}; return Number.isFinite(b.offset) ? b.offset : 0; }).mixed,
+        props: {
+          value: Number.isFinite(border.offset) ? border.offset : 0, min: -2, max: 2, step: 0.05,
+          defaultValue: 0, ariaLabel: C.borderOffset.aria,
+          onChange: (v) => setObj('border.offset', v, { gesture: true, preview: true }),
+          onCommit: (v) => setObj('border.offset', v),
         },
       });
       flyMixedSelect(flyRow(fly, C.borderPen.label), {
