@@ -470,6 +470,11 @@
                                  // 0.2 = hard sun, umbra reaches the tip; 1.0 =
                                  // broad source, umbra dies inside the first third.
     shadowAngleFollowsLight: false, // orient hatch perpendicular to the light bearing
+    shadowToneLaw: 'ladder',     // Fill Style (tone-law) applied to the shadow's
+                                 // flat hatch — same roster/id space as
+                                 // style.params.toneLaw, same 'ladder' fallback.
+                                 // See shadows.js Shadows.toneLawApplies for which
+                                 // mark classes actually change shadow geometry.
   };
   // CONTRACT L3 — light-driven tone. `enabled: false` ⇒ EXACT Phase 1 flat look.
   // bands is a soft hint (2|3|4); the tone READER (Scene3D.Regions) trusts the
@@ -785,6 +790,11 @@
       enabled: src.enabled === true,
       strength: clamp(finite(src.strength, 1), 0.25, 4),
       penId: (typeof src.penId === 'string' && src.penId) ? src.penId : null,
+      // Border OFFSET (mm): how far the outline is drawn from the silhouette.
+      // Negative = inward, positive = outward, 0 = ON the silhouette (legacy).
+      // Declaration only — geometry/UI land elsewhere; this key merely
+      // normalizes and clamps so downstream consumers can rely on its shape.
+      offset: clamp(finite(src.offset, 0), -2, 2),
     };
   };
 
@@ -826,6 +836,9 @@
       shadowLayerCount: clamp(Math.round(finite(src.shadowLayerCount, DEFAULT_SHADOW.shadowLayerCount)), 2, 4),
       shadowFalloff: clamp(finite(src.shadowFalloff, DEFAULT_SHADOW.shadowFalloff), 0.2, 1),
       shadowAngleFollowsLight: src.shadowAngleFollowsLight === true,
+      // Reuses the exact `toneLaw` clamp `style.params.toneLaw` goes through
+      // (single choke point, no drift) — unknown/absent id resolves to 'ladder'.
+      shadowToneLaw: clampStyleParam('toneLaw', src.shadowToneLaw),
     };
   };
 

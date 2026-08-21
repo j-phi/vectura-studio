@@ -70,6 +70,8 @@ describe('Scene3D per-object border (ask #8)', () => {
 
   test('normalizeObject back-fills a default-off border block', () => {
     const p = V.Scene3D.Params.normalizeParams({ objects: [{ primitive: 'box' }] });
-    expect(p.objects[0].border).toEqual({ enabled: false, strength: 1, penId: null });
+    // `offset` (mm, [-2, 2]) added alongside enabled/strength/penId — declaration
+    // only (fs-c2-shadow Job 2); geometry/UI for it land in a separate effort.
+    expect(p.objects[0].border).toEqual({ enabled: false, strength: 1, penId: null, offset: 0 });
   });
 });
