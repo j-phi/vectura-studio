@@ -820,6 +820,12 @@
     // The primitive the object page was last drawn for — see the drift guard on
     // `root` below.
     let renderedPrim = null;
+    let objectRenderCount = 0;
+    // The style snapshot the Style page was last drawn for — same drift
+    // guard, widened to cover everything the ctxbar Style flyout can write
+    // (see syncLive below).
+    let renderedStyleSig = null;
+    let styleRenderCount = 0;
 
     let renderObject = () => {};
     renderObject = () => {
@@ -832,6 +838,8 @@
       const prim = GEOMETRY_ORDER.indexOf(params.primitive) !== -1 ? params.primitive : 'box';
       const primDefaults = (PRIMITIVES[prim] && PRIMITIVES[prim].defaults()) || {};
       renderedPrim = prim;
+      objectRenderCount += 1;
+      pages.object.dataset.renderCount = String(objectRenderCount);
 
       // Name → layer.name (the tree label).
       const nameCtl = labeledRow(host, 'Name');
@@ -1005,6 +1013,9 @@
       pages.style.textContent = '';
       const host = pages.style;
       const style = params.style;
+      renderedStyleSig = JSON.stringify(style);
+      styleRenderCount += 1;
+      pages.style.dataset.renderCount = String(styleRenderCount);
       const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
       comps.push(UI.Select(labeledRow(host, 'Pen'), {
         options: [{ value: '', label: 'Layer pen' }].concat(pens.map((p) => ({ value: p.id, label: p.name || p.id }))),
@@ -1270,17 +1281,40 @@
 
     // Panel ↔ context-bar sync. A swap made HERE rebuilds the bar (see
     // refreshContextBar). The other direction has no signal to listen for — the
-    // ctxbar "Shape" pill writes through renderer.setSceneObjectPrimitive, which
-    // emits no event and rebuilds only itself, so the panel used to keep showing
-    // the OLD geometry's sliders until the layer was reselected. Re-check on the
-    // next interaction the panel can actually observe: the pointer entering it,
-    // or focus arriving in it. Cheap (one string compare) and no timers.
-    const syncPrimitive = () => {
-      const now = GEOMETRY_ORDER.indexOf(params.primitive) !== -1 ? params.primitive : 'box';
-      if (now !== renderedPrim && pages.object.classList.contains('active')) renderObject();
+    // ctxbar "Shape" pill writes through renderer.setSceneObjectPrimitive, and
+    // the ctxbar Style flyout writes through renderer.setSceneObjectStyle;
+    // both emit no event and rebuild only themselves, so the panel used to
+    // keep showing STALE values (geometry sliders, or mapper/pen/toneLaw/
+    // density/angle on the Style page) until the layer was reselected.
+    // Re-check on the next interaction the panel can actually observe: the
+    // pointer entering it, or focus arriving in it. Cheap (a couple of
+    // comparisons, no timers) and gated on an actual value change, so it never
+    // fires a gratuitous rebuild.
+    //
+    // A rebuild must not clobber a control that is mid-edit. `focusin` firing
+    // is normally "focus just arrived", which is safe to rebuild through, but
+    // `pointerenter` can re-fire on `root` mid-gesture (the pointer dipping
+    // outside the panel's bounds during a drag and re-entering) while a
+    // control still holds focus from BEFORE this event — so skip the rebuild
+    // whenever the page in question currently holds focus at all. The drift
+    // resolves on the next check after focus leaves.
+    const isEditingWithin = (pageEl) => {
+      const ae = document.activeElement;
+      return !!(ae && pageEl && ae !== document.body && pageEl.contains(ae));
     };
-    root.addEventListener('pointerenter', syncPrimitive);
-    root.addEventListener('focusin', syncPrimitive);
+    const styleSignature = () => JSON.stringify(params.style);
+    const syncLive = () => {
+      const now = GEOMETRY_ORDER.indexOf(params.primitive) !== -1 ? params.primitive : 'box';
+      if (now !== renderedPrim && pages.object.classList.contains('active') && !isEditingWithin(pages.object)) {
+        renderObject();
+      }
+      const styleNow = styleSignature();
+      if (styleNow !== renderedStyleSig && pages.style.classList.contains('active') && !isEditingWithin(pages.style)) {
+        renderStyle();
+      }
+    };
+    root.addEventListener('pointerenter', syncLive);
+    root.addEventListener('focusin', syncLive);
 
     mirrorChildToCanvas(ui, layer, layer.id);
 
