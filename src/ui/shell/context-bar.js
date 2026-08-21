@@ -1429,8 +1429,21 @@
     const FSC = C.fillStyle;
     if (FS && FSC && (C.fillMappers || []).indexOf(mapper) !== -1) {
       const law = FS.resolve(params.toneLaw);
+      // U12 D1/D2 — the primary object's `primitive` (box/plane/solid have no
+      // chart, so most laws are silent no-ops there; see
+      // SCENE_FILL_STYLES.isReachableOn). Read through the child-aware bridge
+      // so a scene-TREE object (a child object3d/booleanGroup3d layer) resolves
+      // too, not only a monolith's inline `params.objects` entry.
+      const primaryRecord = (typeof sc.r.getSceneObjectRecord === 'function')
+        ? sc.r.getSceneObjectRecord(sc.layerId, sc.ids[0]) : null;
+      const primitiveMode = primaryRecord ? primaryRecord.primitive : null;
+      // Only meaningful when primitiveMode === 'solid': the default (32-face)
+      // solid ADDITIONALLY exceeds the faceted mono path's front-face budget,
+      // so even the box/plane-reachable laws fall back there — see
+      // SCENE_FILL_STYLES.isCapLimited.
+      const solidType = primaryRecord && primaryRecord.params ? primaryRecord.params.solidType : null;
       flyMixedSelect(flyRow(fly, FSC.label), {
-        options: FS.groups(fillStyleShowLibrary), value: law, ariaLabel: FSC.aria,
+        options: FS.groups(fillStyleShowLibrary, primitiveMode, solidType), value: law, ariaLabel: FSC.aria,
         mixed: sceneAgree(sc, (id) => FS.resolve((rs(id).params || {}).toneLaw)).mixed,
         onChange: (v) => { write({ params: { ...params, toneLaw: v } }); rebuild(); },
       });
@@ -1440,6 +1453,8 @@
         options: C.onOff, value: fillStyleShowLibrary ? 'on' : 'off', ariaLabel: FSC.libraryAria,
         onChange: (v) => { fillStyleShowLibrary = (v === 'on'); rebuild(); },
       });
+      const facetedNote = FS.facetedNote ? FS.facetedNote(primitiveMode, solidType) : '';
+      if (facetedNote) flyNote(fly, facetedNote).classList.add('is-faceted');
       const note = FS.note(law);
       if (note.text) flyNote(fly, note.text);
       if (note.caveat) flyNote(fly, note.caveat).classList.add('is-caveat');
