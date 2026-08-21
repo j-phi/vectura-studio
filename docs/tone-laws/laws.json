@@ -463,8 +463,8 @@
       "singleWeight": true,
       "mechanism": "Builds a genuine direction field over the body rather than picking a fixed or scheduled ruling angle: the initial tangent is perpendicular to the screen gradient of camera depth, then smoothed by Kang's unsigned rule (the neighbour's contribution is signed by phi = sign(t.t') and weighted by wd = |t.t'|), which stops a plain vector diffusion from manufacturing swirl at a degenerate point. Confidence is the field's own anisotropy, so a place with no preferred direction is dominated by its neighbours. Rulings are then placed as the field's own depth isocontours, at an evenly-spaced separation driven by the tone.",
       "source": "Kang, Lee & Chui's edge tangent flow, built here on the body's own depth field rather than on an image.",
-      "strengths": "The first law in the mono roster to construct a genuine direction field rather than a fixed or scheduled angle; on sphere·hatch it posts R2 0.388 with a wide span (32.4) and the lowest deviation of the direction-field group (9.8%), and it reaches its darkest at the plot floor.",
-      "weaknesses": "Confidence weighting can still be dominated by neighbours at a degenerate point, and on sphere·crosshatch deviation rises sharply to 25.6% once a second family is composed on top of the flow.",
+      "strengths": "The first law in the mono roster to construct a genuine direction field rather than a fixed or scheduled angle; on sphere·hatch it posts R2 0.470 with a wide span (33.6), and it reaches its darkest at the plot floor on every cell.",
+      "weaknesses": "Confidence weighting can still be dominated by neighbours at a degenerate point; it carries the highest off-the-line deviation of the direction-field group on sphere·hatch (14.0%, against defectSplit’s and mezzoRegion’s 2.1%), and on sphere·crosshatch that rises to 23.1% once a second family is composed on top of the flow.",
       "chooseWhen": "Choose it when the body's own depth field should visibly steer the ruling curvature — a form where direction itself should read as shape, not just density.",
       "caveat": null
     },
@@ -475,8 +475,8 @@
       "singleWeight": true,
       "mechanism": "A line field on a closed body must carry a total winding index of +2 and cannot be combed flat; every hatching law leaves the unavoidable singularities wherever the parameterisation happened to put them, typically the chart's poles. This law designs them instead: the +2 is split into four +1/2 defects, two driven onto the silhouette and two buried in the deepest shadow where the ink is closing up anyway, realised as the argument sum theta(p) = sum k_i * arg(p - d_i), with rulings its integral curves at a tone-driven separation.",
       "source": null,
-      "strengths": "Lowest deviation of the whole mono roster on sphere·hatch (4.2%) and the best R2 of the direction-field group (0.527), because the unavoidable topological defect is placed deliberately rather than left wherever the chart's parameterisation puts it.",
-      "weaknesses": "Still a direction-field law with the ordinary hatch ceiling — the plot floor is only reached in isolated pockets — and on sphere·crosshatch deviation still climbs to 30.4% once a second family is added.",
+      "strengths": "Joint lowest deviation of the whole mono roster on sphere·hatch (2.1%, tied with mezzoRegion) and the best R2 of the direction-field group (0.497), because the unavoidable topological defect is placed deliberately rather than left wherever the chart's parameterisation puts it.",
+      "weaknesses": "Still a direction-field law with the ordinary hatch ceiling — the plot floor is only reached in isolated pockets — and on sphere·crosshatch deviation still climbs to 29.6% once a second family is added.",
       "chooseWhen": "Choose it whenever a hatched sphere, or a similarly closed body, would otherwise show a visible whorl at the chart's pole — it designs the singularity out of sight instead.",
       "caveat": null
     },
@@ -487,10 +487,10 @@
       "singleWeight": true,
       "mechanism": "The mezzotint route. Instead of a scheduled second and third family at fixed angles, the form is partitioned into irregular regions by a blue-noise scatter, and each region takes its own ruling angle drawn from a set with a 30-degree minimum separation. There is no global direction anywhere, so there is no global period and no lattice for the eye to lock onto — the whole drawing is one texture at one clearance whose orientation decorrelates every few millimetres, with tone carried entirely by the clearance inside each region.",
       "source": "The mezzotint route, applied to ruling direction rather than to dot removal.",
-      "strengths": "Widest L* span of the mono direction-field group (61.4) and reaches the plot floor in the darks on every cell measured, because there is no scheduled global angle for the tone to run out of room against.",
-      "weaknesses": "Highest moire of the direction-field group (21.39 RMS) — decorrelating the angle every few millimetres removes the classic lattice beat but replaces it with region-boundary noise — and the highest highlight falloff among the four.",
+      "strengths": "Widest L* span of the mono direction-field group (63.3) and reaches the plot floor in the darks on every cell measured, because there is no scheduled global angle for the tone to run out of room against.",
+      "weaknesses": "Highest moire of the direction-field group (20.95 RMS) — decorrelating the angle every few millimetres removes the classic lattice beat but replaces it with region-boundary noise — and the highest highlight falloff among the four.",
       "chooseWhen": "Choose it for a hatched form where a single global ruling angle would produce a visible period, and a mezzotint-like irregular grain is acceptable in its place.",
-      "caveat": null
+      "caveat": "One 3.2 mm bare spot survives on superellipsoid, where a region boundary lands on the chart seam. It is the only mezzoRegion cell over 2.3 mm and it is not the white-gap defect the monoline fix closed — superellipsoid’s unreachable area is 0.00%."
     },
     {
       "id": "originSpiral",
@@ -499,8 +499,8 @@
       "singleWeight": true,
       "mechanism": "One continuous line for the whole body. It starts at the brightest point on the form — the specular origin — and winds outward, with its radial pitch integrated turn by turn from the radiance it is passing through, so the turns squeeze together into the shadow and open out toward the light. Because there is exactly one origin and the turns are concentric about it, the spiral itself reads as the shading.",
       "source": null,
-      "strengths": "The only law in the roster that draws the entire body as one continuous line from a single specular origin, with pen-down counts as low as 41-61 across the five cells, and its turns squeeze into the shadow and open toward the light by construction.",
-      "weaknesses": "Weak linear fit against radiance (R2 0.004-0.187) and a narrow span, because a single spiral's radial pitch is a slow, smoothed integral of everything it has already passed through rather than a local response to the tone at each point; the plot floor binds only in isolated pockets.",
+      "strengths": "The only law in the roster that draws the entire body as one continuous line from a single specular origin, with pen-down counts as low as 41-62 across the five cells, and its turns squeeze into the shadow and open toward the light by construction.",
+      "weaknesses": "Weak linear fit against radiance (R2 0.010-0.187) and a narrow span, because a single spiral's radial pitch is a slow, smoothed integral of everything it has already passed through rather than a local response to the tone at each point; the plot floor binds only in isolated pockets.",
       "chooseWhen": "Choose it for a single rounded hero object where \"one continuous line describes the whole form\" is itself the desired effect, not for tonal accuracy.",
       "caveat": null
     },
@@ -512,9 +512,9 @@
       "mechanism": "Constant mark count. Every ruling carries the same number of marks wherever it runs, and only the ratio of mark to gap moves — no mark is ever born or killed as tone changes. The period is fixed in screen millimetres and the duty runs from a fifth to unity, so marks lengthen into the shadow until they meet their neighbours (the ruling becomes continuous) and shorten into the light until they are pen-down dots.",
       "source": null,
       "strengths": "No mark is ever born or killed as tone changes, so there is no locus where a mark \"appears\" for the eye to trace — its texture frequency is exactly the same everywhere and only the duty cycle moves.",
-      "weaknesses": "Narrow span (about 18 L* on the light cells) and R2 only 0.396-0.654, because the fixed period caps how dark the drawing can get before neighbouring marks must literally merge into a continuous ruling.",
+      "weaknesses": "Narrow span (about 18 L* on the light cells) and R2 only 0.393-0.620, because the fixed period caps how dark the drawing can get before neighbouring marks must literally merge into a continuous ruling.",
       "chooseWhen": "Choose it where a perfectly steady mark frequency (a fixed dots-per-millimetre grain) matters more than reaching a deep shadow.",
-      "caveat": null
+      "caveat": "Its widest bare gaps — 4.5 mm on sphere, 3.9 mm on capsule, 2.6 mm on ellipsoid — are the highlight dots, not holes. At low duty the mark shortens until it is a pen-down dot, so open paper between dots in the light is the duty cycle doing its job. Read the widest-bare-gap row for this law as mark spacing."
     },
     {
       "id": "endShorten",
@@ -523,10 +523,10 @@
       "singleWeight": true,
       "mechanism": "Shorten-only ends, at one width. Every ruling of the family exists over the whole form and is never dropped; tone is carried by how far each ruling's two ends are pulled back from the silhouette, continuously, as a smooth function of the local tone at the end itself. Neighbouring rulings' ends are staggered by a low-discrepancy offset so the retraction reads as a soft envelope rather than a row of stops.",
       "source": null,
-      "strengths": "Highest R2 of the whole mono roster on the hatch cells (0.848-0.874) — a per-ruling free-end retraction that is a smooth function of the local tone at the end fits the light better than any full-field direction or spacing law measured here — and zero highlight-falloff residual, because the end simply is not there rather than fading.",
+      "strengths": "Highest R2 of the whole mono roster on the hatch and contour cells (0.826-0.875) — a per-ruling free-end retraction that is a smooth function of the local tone at the end fits the light better than any full-field direction or spacing law measured here — and zero highlight-falloff residual, because the end simply is not there rather than fading.",
       "weaknesses": "Narrowest span of any usable mono law (about 17.8-17.9 on the light cells) — the mechanism can only ever remove ink at the ends, so it never reaches a real shadow (darkest L* 81) — and it produces real, deliberate free ends, the opposite of the roster's usual zero-free-end guarantee.",
       "chooseWhen": "Choose it when the highlight boundary — a form's shoulder rolling out of the light — is what needs to read convincingly, and a deep shadow is not required.",
-      "caveat": null
+      "caveat": "Its 21.6-30.7% bare interior area, and bare gaps up to 19.2 mm, are the mechanism and not a defect: the law shades by pulling each ruling’s ends back from the silhouette, so bare paper at the ends is exactly what it is for. It is also the one mono law that produces real, deliberate free ends. Do not read either figure as the white gap the monoline fix closed."
     },
     {
       "id": "turingStripe",
@@ -536,7 +536,7 @@
       "mechanism": "The stripes are not placed, they emerge. A two-species reaction-diffusion field is relaxed on a screen raster whose local wavelength is set by the tone, and the drawing is the zero-crossing set of the settled field. Density changes through DISLOCATIONS — a stripe forks where the pattern needs one more of them — so density can double across the form with no step, no band edge and no periodic lattice to moire against. An anisotropy term aligned to the screen gradient of radiance keeps the stripes running across the form's shading, a cross-contour cue.",
       "source": null,
       "strengths": "Its density changes by dislocation — a stripe forks where the pattern needs one more — so it is the one law in the roster that can double its own frequency with no band edge, no step and nothing periodic to moire against.",
-      "weaknesses": "Very poor fit to the measured radiance (R2 0.000-0.010 across every cell) and a tiny span, because the relaxed field settles to whatever local wavelength the reaction-diffusion equilibrium finds rather than tracking the requested tone precisely, and the widest adjacent gap ratio of the roster (up to about 2.16x).",
+      "weaknesses": "Very poor fit to the measured radiance (R2 0.000-0.009 across every cell) and a tiny span, because the relaxed field settles to whatever local wavelength the reaction-diffusion equilibrium finds rather than tracking the requested tone precisely, and the widest adjacent gap ratio of the roster (up to about 2.09x).",
       "chooseWhen": "Choose it as a texture-emergence demonstration, or where an aperiodic, dislocation-based stripe field is itself the desired look, not where tonal accuracy is required.",
       "caveat": null
     },
@@ -548,7 +548,7 @@
       "mechanism": "The drawing is a network, not a set of rulings: the Voronoi edges of a seed set whose density is the tone. Dark means many seeds means small cells means more edge length per square millimetre. There is no ruling direction anywhere, so there is nothing to moire against and no lattice for a band edge to run along; depth comes from the cell-size gradient, which shrinks smoothly toward the terminator and the limb as a real surface texture would foreshorten. It reaches black where the cell diameter falls to about two ink widths and the cell walls abut.",
       "source": null,
       "strengths": "No ruling direction anywhere in the drawing, so there is no lattice for a band edge to run along and nothing for a fixed spacing to moire against; the cell-size gradient recedes toward the limb the way a real surface texture would foreshorten.",
-      "weaknesses": "Weak fit (R2 0.06-0.11) and a narrow span, with by far the highest path count in the mono roster (thousands of seeds/edges per cell) — an isotropic network is expensive to plot and slow to converge toward a deep, even shadow.",
+      "weaknesses": "Weak fit (R2 0.07-0.12) and a narrow span, with by far the highest path count in the mono roster (thousands of seeds/edges per cell) — an isotropic network is expensive to plot and slow to converge toward a deep, even shadow.",
       "chooseWhen": "Choose it where a non-directional, cellular texture is wanted instead of any ruled hatch — a stone, coral, or cracked-earth read.",
       "caveat": null
     },
@@ -560,7 +560,7 @@
       "mechanism": "A perfect maze, carved on a grid whose cell size is the tone, and the maze's walls are the drawing. A perfect maze has exactly one path between any two cells, so its wall set is a connected, dead-end-free network that fills its region completely and evenly with no periodicity at all, because the spanning tree is randomised. Depth comes from the cell-size gradient, which recedes with the surface; it reaches black where the cell drops to about two ink widths and the walls of adjacent cells abut into a solid.",
       "source": null,
       "strengths": "Like voronoiWeb, lays a connected, dead-end-free network with no periodicity at all because the spanning tree is randomised — a measurable ink area with no direction and no lattice to moire against, and the cell-size gradient alone recedes with the surface.",
-      "weaknesses": "Weakest R2 of the entire mono roster in the sweep (0.000-0.039) and the smallest span — the maze-carving mechanism is far more sensitive to overall cell budget than to the local tone target, so it barely tracks the light at all — and among the highest path counts alongside voronoiWeb.",
+      "weaknesses": "Weakest R2 of the entire mono roster in the sweep (0.000-0.027) and the smallest span — the maze-carving mechanism is far more sensitive to overall cell budget than to the local tone target, so it barely tracks the light at all — and among the highest path counts alongside voronoiWeb.",
       "chooseWhen": "Choose it purely for the aperiodic, labyrinthine texture itself — a decorative or puzzle-like fill — not where the drawing needs to track the light.",
       "caveat": null
     }
@@ -600,7 +600,7 @@
     },
     "mono": {
       "label": "Monoline depth",
-      "idea": "One constant-width pen line law per depth or perceptual mechanism (direction fields, real black at one pen, diagnosed holes, aperiodic non-lattice fills) rather than a scheduled multi-family texture."
+      "idea": "One constant-width pen line law per depth or perceptual mechanism (direction fields, real black at one pen, diagnosed holes, aperiodic non-lattice fills) rather than a scheduled multi-family texture. These plates and numbers were re-made after the fix to surface-fill-mono.js. The chart inverse used to seed Newton from a lattice uniform in the parameter square, which refused 17.63% of the visible surface on superellipsoid and left white gaps; it now seeds from a screen-uniform lattice, keeps the closest sample it saw and line-searches, and every walk step is verified against the chart, so a walk can no longer jump the parameter square and draw a chord between two valid but non-adjacent points. Ink outside the silhouette is 0.00 mm across all 81 charted cells, where it was 165.4 mm, and superellipsoid’s unreachable area is 0.00%, where etfKang’s was 11.38%. What is left is real and is not a gap: a sub-millimetre seam on superellipsoid, about 0.96 mm wide, along the one curve where the chart’s derivative genuinely does not exist."
     }
   },
   "notes": {
