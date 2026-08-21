@@ -140,6 +140,16 @@ describe('§0 — the shadow-anatomy fixture is the single source, and it is enf
       // ladder. Pinning it to the fixture's ball would stop it reproducing the
       // defect it exists to catch. Rig shared, subject owned.
       'scene3d-fill-ruling-continuity.test.js': ['an inline primitive object', 'an inline tone ladder'],
+      // Same shape of exemption, same reason. It imports the fixture for the
+      // rig AND for its cube, so rule A still has one source; what it owns is
+      // the other two FACETED primitives, which the fixture does not carry in a
+      // usable form. `plane` has no entry there at all, and the fixture's only
+      // faceted solid is the 40-front-face geodesic LOWPOLY — which this unit's
+      // own contract requires to fall BACK to the ordinary hatch, so it cannot
+      // double as the subject of a test about the law running. A dodecahedron
+      // is the smallest polyhedron inside the front-face cap. Rig shared,
+      // subject owned. (LOWPOLY is still imported, as the fallback fixture.)
+      'scene3d-faceted-tone-law.test.js': ['an inline primitive object', 'an inline solid definition'],
     };
 
     RESTATEMENTS.forEach(({ what, re }) => {
