@@ -1481,11 +1481,23 @@
       //       sphere's limb. Marks outside the face are impossible by
       //       construction, not by a post-clip.
       //
-      // COST. `makeCtx` builds a 97 x 96 lattice per emit, so a dense imported
-      // mesh must not take this path — it falls back to the ordinary faceted
-      // hatch above this cap. Boxes (6), planes (1) and every polyhedron in the
-      // solid library sit far below it.
-      const MONO_MAX_FACES = 48;
+      // COST, AND WHY THE CAP IS ALSO THE RIGHT VISUAL CALL. A mono law owns one
+      // chart and budgets itself for a whole object — `voronoiWeb` throws a
+      // fixed 26 000 darts, `mazeFill` walks a spanning tree, `turingStripe`
+      // runs a reaction — so the work does NOT shrink with the patch. Measured
+      // on the shadow-anatomy fixture at the shipped 0.3 mm pen: one chart-
+      // wrapped sphere costs 3.5 s (mazeFill) to 13.1 s (turingStripe), and one
+      // BOX FACE costs about the same, so the faceted path pays that per front
+      // face. A geodesic solid with 40 front faces would therefore cost minutes.
+      //
+      // It would also look wrong. This file already refuses to hatch a fine
+      // tessellation per face ("faces too small to hatch individually") and
+      // routes it through the continuous region pass instead; forty independent
+      // mazes, one per triangle, is that same defect in a louder form. So the
+      // cap is stated on FRONT faces — the ones that would actually be filled —
+      // and a record above it draws the ordinary faceted hatch, unchanged.
+      // Every platonic solid, every box and every plane sits below it.
+      const MONO_MAX_FRONT_FACES = 12;
       // `surface-fill.js` states these three as INK_SPREAD 0.12, PLOT_FLOOR_PEN
       // 2.2 and LIT_MAX_PITCH_PEN 12. They are the envelope a law's own tone map
       // interpolates between, so the faceted substrate must hand over the same
@@ -1519,7 +1531,11 @@
         // shade with, and a live drag must stay on the cheap hatch.
         if (!toneOn || draft || typeof intensityFn !== 'function') return null;
         if (mapper !== 'hatch' && mapper !== 'crosshatch') return null;
-        if (record && Array.isArray(record.faces) && record.faces.length > MONO_MAX_FACES) return null;
+        if (record && Array.isArray(record.faces)) {
+          let front = 0;
+          for (let i = 0; i < record.faces.length; i++) if (record.faces[i] && record.faces[i].front) front += 1;
+          if (front > MONO_MAX_FRONT_FACES) return null;
+        }
         const scaf = faceUVScaffold(face, normalWorld);
         if (!scaf || !Array.isArray(scaf.uv) || scaf.uv.length < 3) return null;
         let uLo = Infinity; let uHi = -Infinity; let vLo = Infinity; let vHi = -Infinity;

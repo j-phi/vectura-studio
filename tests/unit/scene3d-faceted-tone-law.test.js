@@ -35,14 +35,23 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const FIX = require('../fixtures/scene3d-shadow-anatomy');
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
-const { BOUNDS, SEED, CAMERA, SUN, CUBE, LOWPOLY, toneBands, styleTable } = FIX;
+const { BOUNDS, SEED, CAMERA, SUN, CUBE, toneBands, styleTable } = FIX;
 
 // A single-face primitive, tilted so it is neither edge-on nor flat to camera.
 const PLANE = {
-  id: 'plane', name: 'Plane', primitive: 'plane', params: { sx: 70, sz: 70 },
-  transform: { x: 0, y: 30, z: 0, yaw: 0, pitch: -60, roll: 0, scale: 1 }, visibility: 'solid',
+  id: 'plane', name: 'Plane', primitive: 'plane', params: { sx: 90, sz: 90 },
+  transform: { x: 0, y: 30, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
 };
-const PRIMS = { box: CUBE, plane: PLANE, solid: LOWPOLY };
+// A polyhedron, not the geodesic low-poly sphere: a mono law budgets itself
+// for a whole object, so the faceted path runs it per front face and caps out
+// at MONO_MAX_FRONT_FACES. A dodecahedron (6 front faces) is inside that cap;
+// a 40-front-face geodesic is not, and falls back to the ordinary hatch — a
+// contract this file pins explicitly below.
+const SOLID = {
+  id: 'solid', name: 'Solid', primitive: 'solid', params: { solidType: 'dodecahedron', radius: 46 },
+  transform: { x: 0, y: 48, z: 0, yaw: 12, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+};
+const PRIMS = { box: CUBE, plane: PLANE, solid: SOLID };
 
 // A mono law (a real implementation, run through the planar substrate) and a
 // second one, so "the law is read" is not a single-law accident.
@@ -72,8 +81,11 @@ const inPoly = (poly, x, y) => {
 describe('faceted tone laws — box / plane / solid read style.params.toneLaw', () => {
   let runtime; let V; const cache = new Map();
 
-  const render = (primKey, law) => {
-    const key = `${primKey}::${law}`;
+  // `elev` is the sun's elevation, and it is a TEST VARIABLE rather than a
+  // constant because the mono laws' tone map ends at the plot floor: see the
+  // saturation test below, which is the whole reason this parameter exists.
+  const render = (primKey, law, elev) => {
+    const key = `${primKey}::${law}::${elev || 'fixture'}`;
     if (cache.has(key)) return cache.get(key);
     const Params = V.Scene3D.Params;
     const p = clone(V.ALGO_DEFAULTS.scene3d);
@@ -82,7 +94,7 @@ describe('faceted tone laws — box / plane / solid read style.params.toneLaw', 
     p.ground = { enabled: false };
     p.backdrop = { enabled: false };
     p.objects = [clone(PRIMS[primKey])];
-    p.lights = [clone(SUN)];
+    p.lights = [elev ? { ...clone(SUN), elevation: elev } : clone(SUN)];
     p.tone = clone(toneBands(4));
     p.styleTable = styleTable(p.objects, law === null ? {} : { toneLaw: law });
     const np = Params.normalizeParams(p);
@@ -155,18 +167,25 @@ describe('faceted tone laws — box / plane / solid read style.params.toneLaw', 
       expect(off.md5).not.toBe(base.md5);
     }, 120000);
 
+    // ── THE RAMP, AND THE ONE THING THAT LEGITIMATELY FLATTENS IT ────────────
+    //
+    // A flat face has a CONSTANT normal, so all faceted shading is face-to-face
+    // and the ramp is the only tone measurement there is. It must survive the
+    // law taking over family A — with one exception that is arithmetic, not a
+    // defect, and is pinned separately below.
     it(`${primKey}: the per-face tone ramp survives the law taking over`, () => {
-      const base = render(primKey, null);
-      const law = render(primKey, MONO_A);
+      // A high sun, so the object HAS a bright face. See the saturation test.
+      const base = render(primKey, null, 62);
+      const law = render(primKey, MONO_A, 62);
       // A single-face `plane` has no face-to-face ramp to measure — that is a
       // property of the primitive, not of the law, so it is asserted as such.
       if (base.faceCount < 2) {
         expect(law.faceCount).toBe(base.faceCount);
         return;
       }
-      expect(base.ramp).toBeGreaterThan(1.05);
-      expect(law.ramp).toBeGreaterThan(1.05);
-    }, 120000);
+      expect(base.ramp).toBeGreaterThan(1.5);
+      expect(law.ramp).toBeGreaterThan(1.5);
+    }, 180000);
 
     it(`${primKey}: no mark escapes its own face`, () => {
       const law = render(primKey, MONO_A);
@@ -187,6 +206,43 @@ describe('faceted tone laws — box / plane / solid read style.params.toneLaw', 
       expect(outside).toBe(0);
     }, 120000);
   });
+
+  // ── WHY A LOW SUN FLATTENS A MONO LAW'S RAMP, AND WHY THAT IS CORRECT ──────
+  //
+  // The mono tone map runs radiance → ink area → PITCH, and then refuses to
+  // crowd past the plot floor (2.2 x pen = 0.66 mm). Under the fixture's own
+  // sun (elevation 28) the cube's three visible faces sit at radiance 0.00 /
+  // 0.47 / 0.62, and the map asks for a sub-plot-floor pitch for every radiance
+  // below about 0.66 — so all three clamp to the SAME pitch and the ramp is 1.0
+  // by construction. That is the law declining to flood the paper, not the
+  // substrate failing to shade: raise the sun so a face gets real headroom and
+  // the ramp opens (asserted above). Both halves are pinned so a future change
+  // cannot quietly turn one into the other.
+  it('a mono law flattens where its own tone map hits the plot floor — and deepens anyway', () => {
+    const base = render('box', null);
+    const law = render('box', MONO_A);
+    // Flat, at the floor, under the fixture's low sun …
+    expect(law.ramp).toBeLessThan(1.1);
+    // … and still a far deeper tone than the ladder it replaced, which is what
+    // "every face is at the plot floor" means. Ink is the direct measure.
+    expect(law.ink).toBeGreaterThan(base.ink * 2);
+    // Raising the sun re-opens it — the same law, the same object, more light.
+    expect(render('box', MONO_A, 62).ramp).toBeGreaterThan(law.ramp * 1.5);
+  }, 180000);
+
+  it('a record above the front-face cap falls back to the ordinary faceted hatch', () => {
+    // A mono law budgets itself for a WHOLE OBJECT — voronoiWeb throws a fixed
+    // 26 000 darts, mazeFill walks a spanning tree — so the work does not shrink
+    // with the patch and the faceted path pays it per front face. A geodesic
+    // sphere at 40 front faces would cost minutes AND would read as forty
+    // independent mazes rather than as one shaded form, so it stays on the
+    // hatch. This is a DECLARED limit, pinned so it cannot rot into a hang.
+    PRIMS.dense = FIX.LOWPOLY;
+    const base = render('dense', null);
+    const law = render('dense', MONO_A);
+    expect(base.paths).toBeGreaterThan(0);
+    expect(law.md5).toBe(base.md5);
+  }, 120000);
 
   it('an unknown tone law degrades to the committed default, silently', () => {
     const base = render('box', null);
