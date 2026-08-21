@@ -2359,6 +2359,103 @@
         // pass — so `out` keeps the order it always had.
         const edgePlan = [];
 
+        // ── X-ray back-face fills (faceted prims, Phase 6): the FAR planar
+        // faces, hatched at reduced density and dashed so the near surface is
+        // seen through. Emitted via forceHidden (the object never occludes its
+        // own fill, so these read as dashed "seen-through" lines). Gated strictly
+        // on x-ray + fastPreview-off so solid output is byte-identical and live
+        // drags stay cheap.
+        //
+        // PAINT-ORDER FIX (fs-b2): this block runs BEFORE the front-face fill
+        // loop below, not after. `out` is array-order paint order for the
+        // canvas (Renderer.drawLayers has no z-sort) AND determines the SVG
+        // export's first-seen pen-group order (UI.getExportSnapshot buckets
+        // by effective pen in the order each pen key is first encountered
+        // walking this same array). Emitting back-face fills first makes them
+        // BEHIND the front fill on canvas and puts a distinct back pen's <g>
+        // ahead of the front pen's <g> in the export — the far/see-through
+        // surface no longer paints or plots on top of the near one. Nothing
+        // here reads state the front-face loop builds (clipper occlusion is a
+        // static precomputed structure, independent of emission order), so
+        // the move changes only ordering, not geometry.
+        if (faceted && xrayOn && recXray.backFaces && !draft) {
+          // Depth-cue reference (interpretation A): the object's screen-depth
+          // extent and the frontmost FRONT support plane covering a screen point.
+          const bounds = objDepthBounds(record);
+          const frontPlanes = [];
+          record.faces.forEach((f) => {
+            if (!f.front) return;
+            const pl = HLR.fitSupportPlane(f.polygon);
+            if (pl) frontPlanes.push({ poly: f.polygon, plane: pl });
+          });
+          const frontDepthAt = (x, y) => {
+            let best = -Infinity;
+            for (let i = 0; i < frontPlanes.length; i++) {
+              const fp = frontPlanes[i];
+              if (!pipXY(x, y, fp.poly)) continue;
+              const d = fp.plane.A * x + fp.plane.B * y + fp.plane.C;
+              if (d > best) best = d; // frontmost = largest depth (nearest)
+            }
+            return best === -Infinity ? bounds.zMax : best; // fallback: object near bound
+          };
+          record.faces.forEach((face) => {
+            if (face.front) return; // back faces only
+            const style = styleOf(face);
+            if (!SURFACE_FILL.has(style.mapper)) return;
+            const plane = HLR.fitSupportPlane(face.polygon);
+            if (!plane) return;
+            const sp = style.params || {};
+            const xr = xrayCfg(sp);
+            if (!xr.backFaces) return;
+            const cue = xr.depthCue;
+            const cueDensity = cue === 'density' || cue === 'both';
+            const cueWeight = cue === 'weight' || cue === 'both';
+            // Density-cued fills are generated at FULL density and thinned per-line
+            // by depth (deep keeps more); off/weight keep today's uniform reduced
+            // density = a scaled-down Density slider (lower ⇒ wider spacing).
+            const genDensity = cueDensity
+              ? finite(sp.fillDensity, 50)
+              : finite(sp.fillDensity, 50) * xr.backDensity;
+            const backParams = { ...sp, fillDensity: genDensity };
+            const lines = REGION_MAPPERS.has(style.mapper)
+              ? faceRegionLines(face, style.mapper, face.normalWorld, backParams)
+              : faceHatchLines(face, backParams, face.normalWorld, style.mapper === 'crosshatch');
+            const backTreat = strokeTreatment({ ...sp, lineType: xr.backLineType, wobble: 0, overstroke: false });
+            const target = sceneTargetMeta(record.id, face, null, face.centroidZ, false);
+            const backMeta = {
+              algorithm: 'scene3d',
+              kind: 'sceneFill',
+              sceneTarget: { ...target, xrayBack: true },
+              ...(xr.backPenId ? { penId: xr.backPenId } : (style.penId ? { penId: style.penId } : {})),
+            };
+            const backCtx = { objectId: record.id, selfObject: true };
+            let backLineIdx = 0;
+            lines.forEach((line) => {
+              const pts = line.map((pt) => ({
+                x: pt.x, y: pt.y, z: plane.A * pt.x + plane.B * pt.y + plane.C,
+              }));
+              if (cue === 'off') {
+                const fillClip = clipper.clipPath(pts, backCtx);
+                emitRuns(fillClip.runs, backMeta, 'dash', null, backTreat, { forceHidden: true });
+                return;
+              }
+              // Depth gap at the line midpoint: how far this back sample sits
+              // BEHIND the nearest front surface, normalized over the object depth.
+              const mid = pts[(pts.length / 2) | 0] || pts[0];
+              const norm = clamp((frontDepthAt(mid.x, mid.y) - mid.z) / bounds.extent, 0, 1);
+              const idx = backLineIdx++;
+              if (cueDensity && !cueDitherKeep(idx, cueKeepFraction(norm))) return; // thinned (shallow)
+              const lineMeta = {
+                ...backMeta,
+                sceneTarget: { ...backMeta.sceneTarget, xrayDepth: round3(norm) },
+                ...(cueWeight ? { weightScale: round3(cueWeightScale(norm)) } : {}),
+              };
+              const fillClip = clipper.clipPath(pts, backCtx);
+              emitRuns(fillClip.runs, lineMeta, 'dash', null, backTreat, { forceHidden: true });
+            });
+          });
+        }
+
         // ── Faces: outlines (closed when fully visible) + hatch fills.
         record.faces.forEach((face) => {
           if (!face.front) return;
@@ -2547,90 +2644,6 @@
             }
           }
         });
-
-        // ── X-ray back-face fills (faceted prims, Phase 6): the FAR planar
-        // faces, hatched at reduced density and dashed so the near surface is
-        // seen through. Emitted via forceHidden (the object never occludes its
-        // own fill, so these read as dashed "seen-through" lines). Gated strictly
-        // on x-ray + fastPreview-off so solid output is byte-identical and live
-        // drags stay cheap.
-        if (faceted && xrayOn && recXray.backFaces && !draft) {
-          // Depth-cue reference (interpretation A): the object's screen-depth
-          // extent and the frontmost FRONT support plane covering a screen point.
-          const bounds = objDepthBounds(record);
-          const frontPlanes = [];
-          record.faces.forEach((f) => {
-            if (!f.front) return;
-            const pl = HLR.fitSupportPlane(f.polygon);
-            if (pl) frontPlanes.push({ poly: f.polygon, plane: pl });
-          });
-          const frontDepthAt = (x, y) => {
-            let best = -Infinity;
-            for (let i = 0; i < frontPlanes.length; i++) {
-              const fp = frontPlanes[i];
-              if (!pipXY(x, y, fp.poly)) continue;
-              const d = fp.plane.A * x + fp.plane.B * y + fp.plane.C;
-              if (d > best) best = d; // frontmost = largest depth (nearest)
-            }
-            return best === -Infinity ? bounds.zMax : best; // fallback: object near bound
-          };
-          record.faces.forEach((face) => {
-            if (face.front) return; // back faces only
-            const style = styleOf(face);
-            if (!SURFACE_FILL.has(style.mapper)) return;
-            const plane = HLR.fitSupportPlane(face.polygon);
-            if (!plane) return;
-            const sp = style.params || {};
-            const xr = xrayCfg(sp);
-            if (!xr.backFaces) return;
-            const cue = xr.depthCue;
-            const cueDensity = cue === 'density' || cue === 'both';
-            const cueWeight = cue === 'weight' || cue === 'both';
-            // Density-cued fills are generated at FULL density and thinned per-line
-            // by depth (deep keeps more); off/weight keep today's uniform reduced
-            // density = a scaled-down Density slider (lower ⇒ wider spacing).
-            const genDensity = cueDensity
-              ? finite(sp.fillDensity, 50)
-              : finite(sp.fillDensity, 50) * xr.backDensity;
-            const backParams = { ...sp, fillDensity: genDensity };
-            const lines = REGION_MAPPERS.has(style.mapper)
-              ? faceRegionLines(face, style.mapper, face.normalWorld, backParams)
-              : faceHatchLines(face, backParams, face.normalWorld, style.mapper === 'crosshatch');
-            const backTreat = strokeTreatment({ ...sp, lineType: xr.backLineType, wobble: 0, overstroke: false });
-            const target = sceneTargetMeta(record.id, face, null, face.centroidZ, false);
-            const backMeta = {
-              algorithm: 'scene3d',
-              kind: 'sceneFill',
-              sceneTarget: { ...target, xrayBack: true },
-              ...(xr.backPenId ? { penId: xr.backPenId } : (style.penId ? { penId: style.penId } : {})),
-            };
-            const backCtx = { objectId: record.id, selfObject: true };
-            let backLineIdx = 0;
-            lines.forEach((line) => {
-              const pts = line.map((pt) => ({
-                x: pt.x, y: pt.y, z: plane.A * pt.x + plane.B * pt.y + plane.C,
-              }));
-              if (cue === 'off') {
-                const fillClip = clipper.clipPath(pts, backCtx);
-                emitRuns(fillClip.runs, backMeta, 'dash', null, backTreat, { forceHidden: true });
-                return;
-              }
-              // Depth gap at the line midpoint: how far this back sample sits
-              // BEHIND the nearest front surface, normalized over the object depth.
-              const mid = pts[(pts.length / 2) | 0] || pts[0];
-              const norm = clamp((frontDepthAt(mid.x, mid.y) - mid.z) / bounds.extent, 0, 1);
-              const idx = backLineIdx++;
-              if (cueDensity && !cueDitherKeep(idx, cueKeepFraction(norm))) return; // thinned (shallow)
-              const lineMeta = {
-                ...backMeta,
-                sceneTarget: { ...backMeta.sceneTarget, xrayDepth: round3(norm) },
-                ...(cueWeight ? { weightScale: round3(cueWeightScale(norm)) } : {}),
-              };
-              const fillClip = clipper.clipPath(pts, backCtx);
-              emitRuns(fillClip.runs, lineMeta, 'dash', null, backTreat, { forceHidden: true });
-            });
-          });
-        }
 
         // ── Curved-surface hatch: one continuous fill over the visible
         // front-face region (the silhouette boundary), grouped by hatch style.
@@ -2913,34 +2926,46 @@
               ...(grpHL.penId ? { penId: grpHL.penId } : (g.style.penId ? { penId: g.style.penId } : {})),
             };
             let backLineIdx = 0;
+            // PAINT-ORDER FIX (fs-b2): TWO passes over `lines`, back family
+            // first, front/highlight second — `lines` interleaves back/front
+            // samples in whatever order SurfaceFill (or the flat fallback)
+            // produced them, but `out` IS paint order (canvas has no z-sort)
+            // and drives the export's first-seen pen-group order, so the back
+            // family must land in `out` before the front family regardless of
+            // `lines`' own order. `backLineIdx` still only increments while
+            // walking back lines, so the depth-cue dither is byte-identical.
             lines.forEach((line) => {
               // SurfaceFill lines carry per-sample camera-depth (they wrap the
               // form); flat-fill lines don't → fall back to the group's nearZ.
-              const isBack = line.back === true;
+              if (line.back !== true) return;
+              const pts = line.map((pt) => ({ x: pt.x, y: pt.y, z: Number.isFinite(pt.z) ? pt.z : nearZ }));
+              const clip = clipper.clipPath(pts, segCtx);
+              // Far surface: force the dashed/occluded treatment so it reads as
+              // "seen through" even where self-occlusion is skipped (selfObject).
+              if (grpCue !== 'off') {
+                // Depth cue (interpretation A): gap = how far this back sample
+                // sits behind the object's near bound, normalized over its depth.
+                const mid = pts[(pts.length / 2) | 0] || pts[0];
+                const midZ = mid ? mid.z : curveBounds.zMax;
+                const norm = clamp((curveBounds.zMax - midZ) / curveBounds.extent, 0, 1);
+                const idx = backLineIdx++;
+                if (grpCueDensity && !cueDitherKeep(idx, cueKeepFraction(norm))) return; // thinned (shallow)
+                const backMetaCued = {
+                  ...backMeta,
+                  sceneTarget: { ...backMeta.sceneTarget, xrayDepth: round3(norm) },
+                  ...(grpCueWeight ? { weightScale: round3(cueWeightScale(norm)) } : {}),
+                };
+                emitRuns(clip.runs, backMetaCued, 'dash', null, backTreat, { forceHidden: true });
+              } else {
+                emitRuns(clip.runs, backMeta, 'dash', null, backTreat, { forceHidden: true });
+              }
+            });
+            lines.forEach((line) => {
+              if (line.back === true) return;
               const isHL = line.highlight === true;
               const pts = line.map((pt) => ({ x: pt.x, y: pt.y, z: Number.isFinite(pt.z) ? pt.z : nearZ }));
               const clip = clipper.clipPath(pts, segCtx);
-              if (isBack) {
-                // Far surface: force the dashed/occluded treatment so it reads as
-                // "seen through" even where self-occlusion is skipped (selfObject).
-                if (grpCue !== 'off') {
-                  // Depth cue (interpretation A): gap = how far this back sample
-                  // sits behind the object's near bound, normalized over its depth.
-                  const mid = pts[(pts.length / 2) | 0] || pts[0];
-                  const midZ = mid ? mid.z : curveBounds.zMax;
-                  const norm = clamp((curveBounds.zMax - midZ) / curveBounds.extent, 0, 1);
-                  const idx = backLineIdx++;
-                  if (grpCueDensity && !cueDitherKeep(idx, cueKeepFraction(norm))) return; // thinned (shallow)
-                  const backMetaCued = {
-                    ...backMeta,
-                    sceneTarget: { ...backMeta.sceneTarget, xrayDepth: round3(norm) },
-                    ...(grpCueWeight ? { weightScale: round3(cueWeightScale(norm)) } : {}),
-                  };
-                  emitRuns(clip.runs, backMetaCued, 'dash', null, backTreat, { forceHidden: true });
-                } else {
-                  emitRuns(clip.runs, backMeta, 'dash', null, backTreat, { forceHidden: true });
-                }
-              } else if (isHL) {
+              if (isHL) {
                 emitRuns(clip.runs, hlMeta, hiddenTreatment, null, hlTreat);
               } else {
                 // A curved-fill line may carry its OWN pen weight — the
