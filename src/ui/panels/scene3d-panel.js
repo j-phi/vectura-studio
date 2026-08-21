@@ -387,7 +387,7 @@
     { value: 'crease', label: 'Crease' }, { value: 'interior', label: 'Interior' },
   ];
   const D_ANGLE = { key: 'fillAngle', kind: 'dial', label: 'Angle', ariaLabel: 'Hatch angle', min: 0, max: 360, step: 1, default: 45 };
-  const D_DENSITY = { key: 'fillDensity', kind: 'slider', label: 'Density', ariaLabel: 'Fill density', min: 1, max: 100, step: 1, default: 50 };
+  const D_DENSITY = { key: 'fillDensity', kind: 'slider', label: 'Density', ariaLabel: 'Fill density', min: 1, max: 200, step: 1, default: 50 };
   const D_ANGLEREF = { key: 'angleRef', kind: 'seg', label: 'Angle ref', ariaLabel: 'Hatch angle reference', default: 'face', options: ANGLE_REF_OPTS };
   const D_LINKFILL = { key: 'linkFill', kind: 'toggle', label: 'Link fill', ariaLabel: 'Connect scanlines (boustrophedon)', default: false };
   // U9 — the FILL STYLE (tone law). `kind: 'lawpick'` is a Select grouped by
@@ -1031,15 +1031,32 @@
       if (FILL_MAPPERS.has(style.mapper)) {
         if (!style.params || typeof style.params !== 'object') style.params = {};
         slider(host, 'Density', {
-          value: Number.isFinite(style.params.fillDensity) ? style.params.fillDensity : 50, min: 5, max: 100, step: 1, defaultValue: 50,
+          value: Number.isFinite(style.params.fillDensity) ? style.params.fillDensity : 50, min: 1, max: 200, step: 1, defaultValue: 50,
           ariaLabel: 'Fill density',
           ...liveSlider((v) => { style.params.fillDensity = Math.round(v); }),
         });
-        slider(host, 'Angle', {
-          value: Number.isFinite(style.params.fillAngle) ? style.params.fillAngle : 45, min: 0, max: 180, step: 1, defaultValue: 45,
+        // fs-c3-panel Job 1 — circular dial, matching D_ANGLE (the same
+        // `fillAngle` control the scene/object/face style editor already
+        // offers). fillAngle is stored screen-atan2 style (0deg = east,
+        // growing clockwise — see hatchPolygon in geometry3d.js: dirX=cos,
+        // dirY=sin), while UI.AngleDial is dial-space (0deg = up, clockwise).
+        // dial = param + 90 — same offset documented at
+        // fill-control-surface.js:467-500's bindAngle. Domain 0-360 (not the
+        // old leaf's 0-180): one stored param, one convention, every surface
+        // that offers it.
+        const angleHost = labeledRow(host, 'Angle');
+        const wrapDeg360 = (deg) => ((deg % 360) + 360) % 360;
+        const paramToDial = (v) => wrapDeg360(v + 90);
+        const dialToParam = (d) => wrapDeg360(d - 90);
+        const storedAngle = Number.isFinite(style.params.fillAngle) ? style.params.fillAngle : 45;
+        const angleKit = liveSlider((v) => { style.params.fillAngle = Math.round(v); });
+        comps.push(UI.AngleDial(angleHost, {
+          value: paramToDial(storedAngle),
           ariaLabel: 'Fill angle',
-          ...liveSlider((v) => { style.params.fillAngle = Math.round(v); }),
-        });
+          defaultValue: paramToDial(45),
+          onChange: (d) => angleKit.onChange(dialToParam(d)),
+          onCommit: (d) => angleKit.onCommit(dialToParam(d)),
+        }));
       }
       // CtS I5 — depth-slice ('contourSlice') controls on a converted/native
       // topoform-contours object: slice count, visibility, and plane orientation.
@@ -1079,6 +1096,55 @@
         params: style.params,
         write: (key, value) => { commit(() => { style.params[key] = value; }); },
       });
+
+      // ── Border (fs-c3-panel Job 3a) — per-object silhouette outline. Mirrors
+      // the scene/object/face style editor's Border group (same obj.border.*
+      // bag: for a scene-tree LEAF, `getObject()` resolves to this very
+      // `layer.params`, so `params.border` here IS `o.border` there — see the
+      // U9 catch above buildObjectPanel: this surface does NOT read
+      // MAPPER_CONTROLS, so a focused leaf previously had no route to it at
+      // all. Offset ships beside Weight — mm, negative = inward, positive =
+      // outward; the geometry consumer for obj.border.offset lands in a later
+      // wave (contract fixed: [-2, 2], step 0.05, default 0).
+      if (!params.border || typeof params.border !== 'object') params.border = {};
+      {
+        const border = params.border;
+        const writeBorder = (key, value) => {
+          commit(() => {
+            if (!params.border || typeof params.border !== 'object') params.border = {};
+            params.border[key] = value;
+          });
+        };
+        subhead(host, 'Border');
+        comps.push(UI.SegCtrl(labeledRow(host, 'Border'), {
+          options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+          value: border.enabled ? 'on' : 'off',
+          ariaLabel: 'Silhouette border',
+          onChange: (v) => { writeBorder('enabled', v === 'on'); renderStyle(); },
+        }));
+        if (border.enabled) {
+          slider(host, 'Weight', {
+            value: Number.isFinite(border.strength) ? border.strength : 1,
+            min: 0.25, max: 4, step: 0.05, defaultValue: 1,
+            ariaLabel: 'Border strength',
+            ...liveSlider((v) => { params.border.strength = v; }),
+          });
+          slider(host, 'Offset', {
+            value: Number.isFinite(border.offset) ? border.offset : 0,
+            min: -2, max: 2, step: 0.05, defaultValue: 0,
+            ariaLabel: 'Border offset (mm)',
+            ...liveSlider((v) => { params.border.offset = v; }),
+          });
+          comps.push(UI.Select(labeledRow(host, 'Pen'), {
+            options: [{ value: '', label: 'Edge pen' }].concat(
+              pens.map((pn) => ({ value: pn.id, label: pn.name || pn.id })),
+            ),
+            value: border.penId || '',
+            ariaLabel: 'Border pen',
+            onChange: (v) => writeBorder('penId', v || null),
+          }));
+        }
+      }
 
       // ── Edge Styles override (Polish P-B) — this object's OWN edge classes.
       // Each row defaults to "Inherit (scene)"; switching a class to Override
@@ -3690,6 +3756,16 @@
             defaultValue: 1,
             ariaLabel: 'Border strength',
             onCommit: (v) => writeBorder('strength', v),
+          });
+          // fs-c3-panel Job 3(b) — Offset beside Weight. mm, negative = inward,
+          // positive = outward; the geometry consumer for obj.border.offset
+          // lands in a later wave (contract fixed: [-2, 2], step 0.05, default 0).
+          sliderRow(styleHost, styleComps, 'Offset', {
+            value: Number.isFinite(border.offset) ? border.offset : 0,
+            min: -2, max: 2, step: 0.05,
+            defaultValue: 0,
+            ariaLabel: 'Border offset (mm)',
+            onCommit: (v) => writeBorder('offset', v),
           });
           styleComps.push(UI.Select(labeledHost('Pen'), {
             options: [{ value: '', label: 'Edge pen' }].concat(
