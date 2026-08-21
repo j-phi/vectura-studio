@@ -118,6 +118,42 @@
       return { da: (dx * f.by - dy * f.bx) / det, db: (f.ax * dy - f.ay * dx) / det };
     };
 
+    /* A VERIFIED chart step. `solve` is a LINEARISATION of the chart, and every
+     * law that walks the body integrates with it. Where the chart degenerates —
+     * a cone's apex, an ellipsoid's umbilic pole, the four face-centre meridians
+     * of a superellipsoid, the inner ring of a torus — the determinant is small
+     * but not small enough to be rejected, and the solved (da, db) lands
+     * somewhere else entirely on the parameter square. `at` then returns a
+     * perfectly valid front-facing sample THERE, the walk pushes it, and the
+     * polyline draws a straight chord between two legitimate but non-adjacent
+     * points. Measured on the gallery build: `defectSplit` laid a 42.3 mm chord
+     * across the ellipsoid, ten chords totalling 111 mm on the cone, and thirty
+     * on the torus of which six crossed the hole — ink outside the silhouette,
+     * which invariant 1 forbids.
+     *
+     * So a step is not taken on trust. The realised SCREEN distance must be
+     * within tolerance of the one asked for; a step that is not is retried at
+     * half the size, and a step that cannot be trusted at a sixteenth is not
+     * taken at all — the walk ends there, which is a stop the caller already
+     * knows how to handle. */
+    const STEP_TOL = 2.5;
+    const stepTo = (s, a, b, dx, dy) => {
+      let fx = dx; let fy = dy;
+      for (let k = 0; k < 5; k++) {
+        const q = solve(s, a, b, fx, fy);
+        if (q && Number.isFinite(q.da) && Number.isFinite(q.db)) {
+          const na = a + q.da; const nb = b + q.db;
+          const ns = at(na, nb);
+          if (ns) {
+            const got = Math.hypot(ns.x - s.x, ns.y - s.y);
+            if (got <= Math.hypot(fx, fy) * STEP_TOL) return { a: na, b: nb, s: ns };
+          }
+        }
+        fx *= 0.5; fy *= 0.5;
+      }
+      return null;
+    };
+
     // The crossing of the visible surface's edge, to seven bisections.
     const edgeBetween = (p0, p1) => {
       let lo = p0; let hi = p1; let best = null;
@@ -130,6 +166,28 @@
     };
 
     let famIdx = 0;
+    /* THE SEGMENT GUARD, and why it is structural rather than per-law.
+     * Invariant 1 says no ink leaves the silhouette, and the emitters enforce it
+     * one VERTEX at a time: every vertex is a sample that came back front-facing.
+     * A vertex test is not a segment test. Two vertices can both be on the form
+     * with the straight line between them crossing open paper — the torus's hole
+     * is the plain case — and that line is what the plotter draws. So a segment
+     * longer than anything a law's own sampling produces is not trusted: its
+     * midpoint is asked, and a segment whose midpoint is off the visible surface
+     * BREAKS the run instead of being drawn. Every caller samples at 0.5 mm or
+     * finer, so the threshold never fires on ordinary geometry. */
+    const SEG_MAX = Math.max(1.2, FLOOR * 2);
+    let cutSegs = 0;
+    const spans = (p, q) => {
+      const dx = q.x - p.x; const dy = q.y - p.y;
+      if (dx * dx + dy * dy <= SEG_MAX * SEG_MAX) return false;
+      // Three probes, not one: a chord can re-enter the form at its midpoint.
+      for (let k = 1; k <= 3; k++) {
+        const f = k / 4;
+        if (!inv(p.x + dx * f, p.y + dy * f)) { cutSegs += 1; return true; }
+      }
+      return false;
+    };
     const emitPts = (pts) => {
       if (!pts || pts.length < 2) return;
       let run = [];
@@ -150,6 +208,7 @@
           flush(); prev = null; continue;
         }
         if (!prev && i > 0) { const e = edgeBetween(pts[i], pts[i - 1]); if (e) push(e); }
+        if (run.length && spans(run[run.length - 1], s)) flush();
         push({ x: s.x, y: s.y, z: s.z });
         prev = pts[i];
       }
@@ -176,9 +235,9 @@
         const L = Math.hypot(dx, dy);
         if (!(L > 1e-9)) break;
         px = dx / L; py = dy / L;
-        const q = solve(s, a, b, px * stepMM, py * stepMM);
+        const q = stepTo(s, a, b, px * stepMM, py * stepMM);
         if (!q) break;
-        a += q.da; b += q.db;
+        a = q.a; b = q.b;
       }
       return pts;
     };
@@ -196,31 +255,99 @@
       return { x: (du * vy - dv * uy) / det, y: (ux * dv - vx * du) / det };
     };
 
-    /* ── the screen substrate: a lattice, a bucket index, and Newton ──────── */
+    /* ── the screen substrate: a SCREEN-UNIFORM lattice, a bucket index, and
+     * Newton ───────────────────────────────────────────────────────────────
+     * The lattice is what `inv` seeds Newton from and what every law scans for
+     * its darkest / brightest point, so its spacing has to be even ON THE PAPER.
+     * A uniform (a, b) grid is only the same thing when the chart's parameter
+     * speed is uniform, and on two of the twelve primitives it is nowhere near:
+     *
+     *   superellipsoid  the chart is sgn(cos t)|cos t|^0.4 in both angles. At
+     *                   t = 0 the PARTNER coordinate's derivative goes as
+     *                   |sin t|^-0.6, i.e. to infinity, so one 1/96 step of the
+     *                   parameter at a face centre moves the sample a quarter of
+     *                   the body across. A uniform lattice therefore has NO
+     *                   point at all over a wide band on the four face-centre
+     *                   meridians and on the equator, `inv` answers null there,
+     *                   and every screen-space law leaves it bare. Measured on
+     *                   the gallery build: nearest-lattice-point distance 3.48 mm
+     *                   at the 99th percentile against 0.5-0.85 mm on every
+     *                   other primitive, and 17.6 % of the visible front surface
+     *                   with `inv` returning null. That is the white cross.
+     *   torusKnot       the sweep bunches where the knot doubles back: 14.4 %.
+     *
+     * So the grid is refined where it is coarse ON SCREEN. Each row and each
+     * column of the base grid is walked and any interval whose two ends land
+     * further apart than LAT_MM is bisected until they do not. The refinement is
+     * anisotropic — only the parameter direction that is actually too long gets
+     * cut — and both the depth and the total are budgeted, so a chart with a
+     * genuine singularity cannot run the sampler away.
+     */
     const LG = 96;
+    const LAT_MM = 0.75;
+    const LAT_MAX = 90000;
     const lat = [];
     let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
     let hiI = -Infinity; let hiA = 0.5; let hiB = 0.5; let hiX = 0; let hiY = 0;
     let faceA = 0.5; let faceB = 0.5; let faceNz = -Infinity; let faceX = 0; let faceY = 0;
+    const addLat = (a, b, s) => {
+      lat.push({ a, b, x: s.x, y: s.y });
+      if (s.x < minX) minX = s.x; if (s.x > maxX) maxX = s.x;
+      if (s.y < minY) minY = s.y; if (s.y > maxY) maxY = s.y;
+      const ii = finite(s.I, 0);
+      if (ii > hiI) { hiI = ii; hiA = a; hiB = b; hiX = s.x; hiY = s.y; }
+      const nz = Math.abs(finite(s.nz, 0));
+      if (nz > faceNz) { faceNz = nz; faceA = a; faceB = b; faceX = s.x; faceY = s.y; }
+    };
+    // The base grid. `b` is the periodic wind, so column LG is column 0 read
+    // again — keeping it makes the last interval refinable like every other one
+    // without entering the same point twice into the lattice.
+    const base = [];
     for (let i = 0; i <= LG; i++) {
-      for (let j = 0; j < LG; j++) {
+      const row = [];
+      for (let j = 0; j <= LG; j++) {
         const a = i / LG; const b = j / LG;
         const s = at(a, b);
-        if (!s) continue;
-        lat.push({ a, b, x: s.x, y: s.y });
-        if (s.x < minX) minX = s.x; if (s.x > maxX) maxX = s.x;
-        if (s.y < minY) minY = s.y; if (s.y > maxY) maxY = s.y;
-        const ii = finite(s.I, 0);
-        if (ii > hiI) { hiI = ii; hiA = a; hiB = b; hiX = s.x; hiY = s.y; }
-        const nz = Math.abs(finite(s.nz, 0));
-        if (nz > faceNz) { faceNz = nz; faceA = a; faceB = b; faceX = s.x; faceY = s.y; }
+        row.push(s ? { x: s.x, y: s.y } : null);
+        if (s && j < LG) addLat(a, b, s);
+      }
+      base.push(row);
+    }
+    // Bisect one interval of the parameter square until its ends are within
+    // LAT_MM of each other on the paper. An interval with an end off the visible
+    // surface is the silhouette running through it, which is not a coarseness to
+    // fix: `inv` is entitled to refuse a point that is half off the form.
+    const refineSpan = (a0, b0, p0, a1, b1, p1, depth) => {
+      if (depth <= 0 || !p0 || !p1 || lat.length >= LAT_MAX) return;
+      const dx = p1.x - p0.x; const dy = p1.y - p0.y;
+      if (dx * dx + dy * dy <= LAT_MM * LAT_MM) return;
+      const am = (a0 + a1) / 2; const bm = (b0 + b1) / 2;
+      const sm = at(am, bm);
+      if (!sm) return;
+      addLat(am, bm, sm);
+      const pm = { x: sm.x, y: sm.y };
+      refineSpan(a0, b0, p0, am, bm, pm, depth - 1);
+      refineSpan(am, bm, pm, a1, b1, p1, depth - 1);
+    };
+    const LAT_DEPTH = 9;
+    for (let i = 0; i <= LG; i++) {
+      for (let j = 0; j < LG; j++) {
+        refineSpan(i / LG, j / LG, base[i][j], i / LG, (j + 1) / LG, base[i][j + 1], LAT_DEPTH);
+      }
+    }
+    for (let j = 0; j <= LG; j++) {
+      for (let i = 0; i < LG; i++) {
+        refineSpan(i / LG, j / LG, base[i][j], (i + 1) / LG, j / LG, base[i + 1][j], LAT_DEPTH);
       }
     }
     const ok = lat.length > 32 && Number.isFinite(minX);
     const W = ok ? Math.max(1e-3, maxX - minX) : 1;
     const Hh = ok ? Math.max(1e-3, maxY - minY) : 1;
     const R = Math.min(W, Hh) / 2;
-    const BC = 48;
+    // The bucket grid tracks the lattice's size, so the 3x3 seed search costs
+    // the same however much the refinement above added. 48 stays the floor: it
+    // is the grid every unrefined primitive already indexed at.
+    const BC = ok ? clamp(Math.round(Math.sqrt(lat.length / 4)), 48, 128) : 48;
     const cw = W / BC; const ch = Hh / BC;
     const buckets = new Map();
     if (ok) {
@@ -240,31 +367,63 @@
       const gx = clamp(Math.floor((x - minX) / cw), 0, BC - 1);
       const gy = clamp(Math.floor((y - minY) / ch), 0, BC - 1);
       let best = null; let bd = Infinity;
-      for (let j = -1; j <= 1; j++) {
-        for (let i = -1; i <= 1; i++) {
-          const arr = buckets.get((gy + j) * BC + (gx + i));
-          if (!arr) continue;
-          for (let k = 0; k < arr.length; k++) {
-            const d = (arr[k].x - x) * (arr[k].x - x) + (arr[k].y - y) * (arr[k].y - y);
-            if (d < bd) { bd = d; best = arr[k]; }
+      // The ring widens ONLY when the tight one found nothing. The index was
+      // also reading across its own row edge (gx + i was never bounds-checked),
+      // which could seed Newton from the far side of the shape.
+      const scan = (ring) => {
+        for (let j = -ring; j <= ring; j++) {
+          const yy = gy + j;
+          if (yy < 0 || yy >= BC) continue;
+          for (let i = -ring; i <= ring; i++) {
+            const xx = gx + i;
+            if (xx < 0 || xx >= BC) continue;
+            const arr = buckets.get(yy * BC + xx);
+            if (!arr) continue;
+            for (let k = 0; k < arr.length; k++) {
+              const d = (arr[k].x - x) * (arr[k].x - x) + (arr[k].y - y) * (arr[k].y - y);
+              if (d < bd) { bd = d; best = arr[k]; }
+            }
           }
         }
-      }
+      };
+      scan(1);
+      if (!best) scan(3);
       if (!best) return null;
       let a = best.a; let b = best.b;
       let s = at(a, b);
+      // THE CLOSEST SAMPLE SEEN, not the last one. Newton's last iterate can be
+      // worse than its seed where the frame is a bad finite difference, and
+      // answering null with a valid surface sample already in hand is what left
+      // a further 5.5 % of the superellipsoid bare after the lattice was fixed.
+      let bestS = null; let bestD = Infinity;
+      const keep = (ss) => {
+        if (!ss) return;
+        const d = Math.hypot(x - ss.x, y - ss.y);
+        if (d < bestD) { bestD = d; bestS = ss; }
+      };
+      keep(s);
       for (let k = 0; k < 6 && s; k++) {
         const dx = x - s.x; const dy = y - s.y;
-        if (Math.hypot(dx, dy) < 0.02) return s;
+        const d0 = Math.hypot(dx, dy);
+        if (d0 < 0.02) return s;
         const q = solve(s, a, b, dx, dy);
         if (!q) break;
-        const na = a + q.da * 0.85;
-        if (!(na >= 0 && na <= 1)) break;
-        a = na; b += q.db * 0.85;
-        s = at(a, b);
+        // A LINE SEARCH on the Newton step. `frame` is a finite difference and
+        // near a chart degeneracy it is a poor one, so a full step can land
+        // further from the target than it started. Halve until it does not.
+        let f = 0.85; let took = false;
+        for (let t = 0; t < 3; t++) {
+          const na = a + q.da * f;
+          if (na >= 0 && na <= 1) {
+            const nb = b + q.db * f;
+            const ns = at(na, nb);
+            if (ns && Math.hypot(x - ns.x, y - ns.y) < d0) { a = na; b = nb; s = ns; keep(ns); took = true; break; }
+          }
+          f *= 0.5;
+        }
+        if (!took) break;
       }
-      if (!s) return null;
-      return Math.hypot(x - s.x, y - s.y) < 0.30 ? s : null;
+      return bestD < 0.30 ? bestS : null;
     };
 
     const emitScr = (pts) => {
@@ -296,6 +455,7 @@
           flush(); prev = null; continue;
         }
         if (!prev && i > 0) { const e = bis(pts[i], pts[i - 1]); if (e) push({ x: e.x, y: e.y, z: e.z }); }
+        if (run.length && spans(run[run.length - 1], s)) flush();
         push({ x: s.x, y: s.y, z: s.z });
         prev = pts[i];
       }
@@ -343,10 +503,11 @@
     const shadeAt = (x, y) => { const s = inv(x, y); return s ? clamp(1 - finite(s.I, 0), 0, 1) : null; };
 
     return {
-      WF, PEN, INK, FLOOR, PMAX, MINMARK, hash, wrapB, at, solve, frame,
+      WF, PEN, INK, FLOOR, PMAX, MINMARK, hash, wrapB, at, solve, stepTo, frame,
       edgeBetween, emitPts, trace, gradOf, inv, emitScr, pitchFor, pitchLegible,
       areaFor, shadeAt,
       emittedCount: () => famIdx,
+      cutCount: () => cutSegs,
       lat, ok, minX, minY, maxX, maxY, W, H: Hh, R,
       hiA, hiB, hiX, hiY, faceA, faceB, faceX, faceY,
       targetArea: o.targetArea, back: o.back, mapper: o.mapper,
@@ -401,11 +562,13 @@
         // A LINE field, not a vector field: keep the walk going the same way.
         if (i > 0 && (dx * px + dy * py) < 0) { dx = -dx; dy = -dy; }
         px = dx; py = dy;
-        const q = C.solve(cur, a, b, dx * STEP, dy * STEP);
+        // A VERIFIED step. Unverified, the walk jumps the chart wherever the
+        // Jacobian degenerates and the line draws as a chord across the body —
+        // see `stepTo`. `defectSplit` laid 42 mm of it on the ellipsoid.
+        const q = C.stepTo(cur, a, b, dx * STEP, dy * STEP);
         if (!q) break;
-        a += q.da; b += q.db;
-        const nx = C.at(a, b);
-        if (!nx) break;
+        a = q.a; b = q.b;
+        const nx = q.s;
         // The separation test. The immediate past of this same line is exempt.
         // A stop is a free end, so a walk must have run at least a few
         // millimetres before it is allowed to take one, and the test radius is
@@ -1978,9 +2141,9 @@
           if (r < RANKS - 1 && zOf(ss) <= stop) break;
           const d = dirDown(a, b);
           if (!d) break;
-          const q = C.solve(ss, a, b, d.x * 0.3, d.y * 0.3);
+          const q = C.stepTo(ss, a, b, d.x * 0.3, d.y * 0.3);
           if (!q) break;
-          a += q.da; b += q.db;
+          a = q.a; b = q.b;
         }
         C.emitPts(h);
       }
@@ -2022,13 +2185,20 @@
     // A law that throws must not take the whole fill with it, and the reason
     // has to survive to the harness — a silently empty cell is the one failure
     // mode this rig cannot tell apart from a law that draws nothing.
-    const diag = { algo: o.algo, lat: C.lat.length, ok: C.ok, R: C.R, emitted: 0, error: null };
+    const diag = { algo: o.algo, lat: C.lat.length, ok: C.ok, R: C.R, emitted: 0, cut: 0, error: null };
     passes.forEach((deg) => {
       C.rot = o.angleDeg + deg;
       try { fn(C); } catch (e) { diag.error = String(e && e.message ? e.message : e); }
     });
     diag.emitted = C.emittedCount();
+    diag.cut = C.cutCount();
     globalScope.__MONO_DIAG = diag;
+    // A measuring harness must be able to ask THIS substrate whether a screen
+    // point is on the visible surface — a harness that reimplements `inv` is
+    // measuring its own copy, and the copy is what went stale while the white
+    // cross was being diagnosed. Opt-in, so the shipped app retains nothing:
+    // the lattice is up to ninety thousand samples.
+    if (globalScope.__MONO_TRACE) globalScope.__MONO_CTX = C;
     return true;
   };
 
