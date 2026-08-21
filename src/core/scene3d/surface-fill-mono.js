@@ -1906,7 +1906,26 @@
           const along = ax * du + ay * dv2;
           const wl = clamp(lam[k] / Math.max(1e-6, dx), 2.2, 26);
           const Du = 0.18;
-          const Dv = Du * (wl * wl) / 9;
+          // `wl` tracks the TONE correctly (small in shadow, large in light —
+          // see `lam` above and the shared `pitchLegible` convention every
+          // sibling law honours). But this activator/inhibitor pair's own
+          // dispersion relation (Murray, critical wavenumber
+          // k_c^2 = 1/(2*Du) - reactionRate/(2*Dv)) means a LARGER Dv drives a
+          // SHORTER settled wavelength, not a longer one — Dv only ever pulls
+          // the pattern toward the short-wave floor set by Du; it is Dv
+          // shrinking toward the Turing threshold that stretches the
+          // wavelength out. Feeding `wl` straight into `Dv = Du*wl^2/9`
+          // therefore inverted the law outright: light cells (large `wl`) got
+          // the driven-toward-dense high-Dv end and shadow cells (small `wl`)
+          // got the driven-toward-sparse low-Dv end — measured and confirmed
+          // both numerically (tests/unit/scene3d-turing-polarity.test.js) and
+          // visually (a dense RD cluster sitting on the lit hemisphere).
+          // Reflecting `wl` within its own clamp range before squaring hands
+          // Dv the value that actually produces the requested wavelength: a
+          // light cell now gets the LOW-Dv (long-wavelength, sparse) end and a
+          // shadow cell gets the HIGH-Dv (short-wavelength, dense) end.
+          const wlDv = 2.2 + 26 - wl;
+          const Dv = Du * (wlDv * wlDv) / 9;
           un[k] = clamp(u[k] + 0.22 * (Du * lu + 0.9 * along * 0.0 + (u[k] - u[k] * u[k] * u[k]) - v[k]), -2, 2);
           vn[k] = clamp(v[k] + 0.22 * (Dv * lv * 0.06 + 0.32 * (u[k] - v[k])), -2, 2);
         }
