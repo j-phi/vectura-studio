@@ -135,6 +135,30 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     expect(styleTable(scene).byObject['obj-1'].params.fillDensity).toBe(80);
   });
 
+  // fs-m2 Job 4 — the ctxbar Style flyout's Type switch already writes the
+  // FULL current params bag (`params: { ...params }`), not a per-mapper
+  // seeded subset, so a detour through Wireframe (which has no Density row)
+  // must not lose fillDensity the way the docked panel's mapperDefaults once
+  // did. Locking this in as regression coverage now that both surfaces agree.
+  test('Style ▾ — fillDensity/fillAngle SURVIVE a detour through Wireframe and back to Hatch', async () => {
+    const scene = addSelectScene();
+    scene.params.styleTable.byObject['obj-1'] = { penId: null, mapper: 'hatch', params: { fillDensity: 137, fillAngle: 187 } };
+    CB.restoreState();
+    pillByLabel('Style').click();
+    let fly = openFly();
+    const mapSel = () => rowCtl(fly, 'Type').querySelector('select');
+    mapSel().value = 'wireframe';
+    mapSel().dispatchEvent(new window.Event('change', { bubbles: true }));
+    fly = openFly();
+    expect(rowCtl(fly, 'Density')).toBeFalsy();
+    mapSel().value = 'hatch';
+    mapSel().dispatchEvent(new window.Event('change', { bubbles: true }));
+    fly = openFly();
+    const p = styleTable(scene).byObject['obj-1'].params;
+    expect(p.fillDensity).toBe(137);
+    expect(p.fillAngle).toBe(187);
+  });
+
   test('clicking outside closes the open flyout', async () => {
     addSelectScene();
     pillByLabel('Style').click();

@@ -440,6 +440,20 @@
   };
   const carry = (cur, key, dflt) => (cur[key] !== undefined && cur[key] !== null ? cur[key] : dflt);
   const cloneDefault = (d) => (d && typeof d === 'object' ? JSON.parse(JSON.stringify(d)) : d);
+  // fs-m2 Job 4 — keys whose value must survive ANY mapper detour, even a hop
+  // through a mapper that declares no matching descriptor (wireframe /
+  // contourSlice / none have no Density / Angle / Fill Style row at all).
+  // Without this, mapperDefaults' descs.forEach below only ever seeds a key
+  // the TARGET mapper's own descriptor list names, so `out` for wireframe has
+  // no fillDensity/fillAngle/toneLaw — the value isn't overwritten, it is
+  // simply never copied forward, and is gone once wireframe is committed.
+  // Switching back to a fill mapper then has nothing in `cur` to carry FROM,
+  // so `carry()` falls through to the shipped default — a live-verification
+  // catch: density silently reset to 50 after "hatch → wireframe → hatch".
+  // Carried unconditionally (present in `cur` or not) so any number of
+  // detours round-trips the user's value; harmless on a mapper that doesn't
+  // read the key (wireframe never consumes fillDensity).
+  const PERSISTENT_STYLE_KEYS = ['fillDensity', 'fillAngle', 'toneLaw'];
   // Params a mapper is seeded with when selected. Every descriptor default is
   // seeded (carrying the user's current value where present) so switching
   // hatch→contour→stipple keeps the shared Density/Angle/line tuning; `seed:false`
@@ -451,6 +465,9 @@
     if (!descs) return {};
     const out = {};
     descs.forEach((d) => { if (d.seed !== false) out[d.key] = carry(cur, d.key, cloneDefault(d.default)); });
+    PERSISTENT_STYLE_KEYS.forEach((k) => {
+      if (out[k] === undefined && cur[k] !== undefined && cur[k] !== null) out[k] = cur[k];
+    });
     if (FILL_MAPPERS.has(mapper)) {
       Object.keys(STROKE_DEFAULTS).forEach((k) => { out[k] = carry(cur, k, STROKE_DEFAULTS[k]); });
     }
