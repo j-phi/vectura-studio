@@ -47,6 +47,10 @@
   // the pre-Phase-5 look — 45° hatch at coverage 0.5, solid, single flat hull.
   const SHADOW_ANGLE = 45;
   const SHADOW_COVERAGE = 0.5; // shadow tone: moderately dense hatch
+  // Mirrors params.js DEFAULT_SHADOW.shadowToneDepth — defensive fallback only
+  // (a caller that skips normalizeParams still degrades to the shipped value,
+  // same convention as SHADOW_COVERAGE/SHADOW_ANGLE above).
+  const SHADOW_TONE_DEPTH_DEFAULT = 0.75;
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
   const runLength = (pts) => {
@@ -440,6 +444,19 @@
     }
     const pw = Math.max(0.05, finite(penWidth, 0.3));
     return Math.max(pw, pw / clamp(finite(coverage, 0.5), 0.02, 1));
+  };
+
+  // The OBJECT's own tone ladder — Regions.band + Regions.coverageFor, the same
+  // pair surface-fill.js's coverageForSample calls — reused verbatim so the
+  // shadow gradient (shadowToneDepth, below) is literally the object's ladder,
+  // not a lookalike ramp. Returns null (not a guessed number) when Regions or a
+  // usable ladder isn't loaded, so a caller can tell "no gradient available"
+  // apart from "gradient computed to a low value".
+  const ladderCoverageAt = (I, tone) => {
+    const Regions = Vectura.Scene3D && Vectura.Scene3D.Regions;
+    if (!Regions || typeof Regions.band !== 'function' || typeof Regions.coverageFor !== 'function') return null;
+    const b = Regions.band(clamp(finite(I, 0), 0, 1), tone);
+    return Regions.coverageFor(b, tone);
   };
 
   // ── Fill Style (tone-law mark class) on shadow hatch ────────────────────────
@@ -1591,10 +1608,69 @@
     if (sink) sink.push(lines.length);
   };
 
+  // ── Stage 1 flat-path tone gradient (shadowToneDepth) ──────────────────────
+  // Local ink density on the FLAT shadow, driven by distance from the caster's
+  // contact point through the OBJECT's own ladder (ladderCoverageAt, above):
+  // t = distContact/L (0 at contact, 1 at the far tip); pseudo-intensity
+  // I = 1 - t so NEAR reads as the ladder's brightest-mapped (densest, darkest
+  // on paper) rung and FAR as its darkest-mapped (sparsest, lightest) rung —
+  // "closest to the object is darkest shadow". Verified empirically (not
+  // assumed): Regions.band/coverageFor is an ASCENDING ladder, I=1 -> the
+  // highest coverage number, so the near/far mapping must invert t, not pass
+  // it straight through.
+  //
+  // shadowToneDepth (0..1) blends the flat scalar spacing every shadow has
+  // always used (0) toward this pure ladder ramp (1) via a per-chunk KEEP
+  // duty — each mark is cut into short chunks and each chunk survives a
+  // deterministic hash test against `duty = coverage(t) / coverage(I=1)`. This
+  // is class-agnostic (applied after shadowMarkLines, whatever markClass
+  // produced) — the engine half. S2 replaces it with a per-recipe covAt()
+  // lever (pitch for hatch/cross, duty for dash, stipple rate for dot,
+  // amplitude for wave) so each Fill Style expresses the ramp on its own terms.
+  // Chunk length is a plot-time lever, not just a resolution one: every DROPPED
+  // chunk between two KEPT ones is an extra pen-up/pen-down, and halving this
+  // value on the shadow-anatomy A-off fixture roughly doubled path count for a
+  // near-identical ink total and near/far ratio (2mm: 5966 paths/11455.75 ink;
+  // 4mm: 3144/11564.67; 6mm: 2174/11583.00 — chosen). 6mm keeps the ramp
+  // clearly readable while not flooding the plot queue with short strokes.
+  const TONE_CHUNK_MM = 6;
+  const applyShadowToneGradient = (lines, fields, tone, depth) => {
+    if (!fields || !(fields.L > 1e-6) || !(depth > 0) || !tone || tone.enabled === false) return lines;
+    const maxCov = ladderCoverageAt(1, tone);
+    if (maxCov == null || !(maxCov > 0)) return lines;
+    const L = fields.L;
+    const out = [];
+    lines.forEach((line, li) => {
+      if (!Array.isArray(line) || line.length < 2) { if (line) out.push(line); return; }
+      let chunkIdx = 0;
+      for (let i = 0; i + 1 < line.length; i++) {
+        const a = line[i]; const b = line[i + 1];
+        if (!isFinitePt(a) || !isFinitePt(b)) continue;
+        const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+        if (!(segLen > 1e-6)) continue;
+        const steps = Math.max(1, Math.ceil(segLen / TONE_CHUNK_MM));
+        for (let s = 0; s < steps; s++) {
+          const u0 = s / steps; const u1 = (s + 1) / steps;
+          const p0 = { x: a.x + (b.x - a.x) * u0, y: a.y + (b.y - a.y) * u0 };
+          const p1 = { x: a.x + (b.x - a.x) * u1, y: a.y + (b.y - a.y) * u1 };
+          const mx = (p0.x + p1.x) * 0.5; const my = (p0.y + p1.y) * 0.5;
+          const t = clamp(fields.distContact(mx, my) / L, 0, 1);
+          const cov = ladderCoverageAt(1 - t, tone);
+          const duty = clamp((cov == null ? maxCov : cov) / maxCov, 0.02, 1);
+          const keepProb = 1 - depth * (1 - duty);
+          if (hash01(li, chunkIdx) < keepProb) out.push([p0, p1]);
+          chunkIdx++;
+        }
+      }
+    });
+    return out;
+  };
+
   // Hatch a shadow polygon (rings = [outer, hole…]).
-  //   layers off / draft / no fields → single flat hatch (the legacy path, and the
-  //   Off compatibility contract — this must stay byte-identical);
-  //   layers on → the zone anatomy above.
+  //   layers off / draft / no fields → single flat hatch (the legacy path, and
+  //   the Off/shadowToneDepth:0 compatibility contract — that combination must
+  //   stay byte-identical to the pre-gradient renderer);
+  //   layers on → the zone anatomy above (Stage 1 does not touch this path).
   const emitShadowRegion = (rings, groundPlane, clipper, out, meta, treat, draft, cfg) => {
     if (!Array.isArray(rings) || !rings.length || !Array.isArray(rings[0]) || rings[0].length < 3) return;
     const { angle, coverage, penWidth, layers, layerCount, falloff } = cfg;
@@ -1605,13 +1681,22 @@
     // Off/draft byte-identical compatibility contract intact untouched.
     const toneLawId = clampToneLawId(cfg.toneLaw);
     const markClass = toneLawApplies(toneLawId) ? toneLawMarkClass(toneLawId) : 'hatch';
-    const flat = () => emitHatchLines(shadowMarkLines(rings, angle, sBase, markClass, toneLawId), groundPlane, clipper, out, meta, treat, draft);
+    const contactSegs = (cfg.contactSegs && cfg.contactSegs.length) ? cfg.contactSegs : [];
+    const toneDepth = clamp(finite(cfg.toneDepth, 0), 0, 1);
+    const flat = () => {
+      const marks = shadowMarkLines(rings, angle, sBase, markClass, toneLawId);
+      let graded = marks;
+      if (toneDepth > 0 && contactSegs.length) {
+        const flatFields = buildShadowFields(rings, contactSegs, []);
+        if (flatFields) graded = applyShadowToneGradient(marks, flatFields, cfg.tone, toneDepth);
+      }
+      emitHatchLines(graded, groundPlane, clipper, out, meta, treat, draft);
+    };
     if (!layers || draft) { flat(); return; }
 
     // Edge field excludes the rim that hugs the caster's body: the base of a
     // shadow is not an "edge" of it, and counting it would push the darkest zone
     // into the lightest one exactly where the contact band belongs.
-    const contactSegs = (cfg.contactSegs && cfg.contactSegs.length) ? cfg.contactSegs : [];
     let contactWidth = contactWidthOf(contactSegs);
     const edgeSegs = ringsToSegs(rings).filter(([a, b]) => {
       if (!contactSegs.length) return true;
@@ -1995,7 +2080,11 @@
     // caller that skips normalizeParams still degrades safely; toneLaw follows
     // the same convention.
     const toneLaw = clampToneLawId(shadowBag.shadowToneLaw);
-    const cfg = { angle: hatchAngle, coverage, penWidth, layers: shadowLayers, layerCount, falloff, Mappers, toneLaw };
+    const toneDepth = clamp(finite(shadowBag.shadowToneDepth, SHADOW_TONE_DEPTH_DEFAULT), 0, 1);
+    const cfg = {
+      angle: hatchAngle, coverage, penWidth, layers: shadowLayers, layerCount, falloff, Mappers, toneLaw,
+      toneDepth, tone: params && params.tone,
+    };
     // ── I26 shadow MODE. 'additive' (default) EMITS shadow hatch; 'inverse'
     // instead THINS the ground layer's own fill inside the footprint (dark-paper
     // shadow). Inverse needs the accumulated scene output (opts.groundFillPaths)
@@ -2351,6 +2440,18 @@
     };
   };
 
+  // Test seam #3 (shadowToneDepth, S1). The flat-path tone gradient is not
+  // cleanly observable from a real scene's emitted paths — the shadow
+  // footprint's own WEDGE SHAPE (narrow near the caster, wide at the far tip
+  // for most light angles) confounds a raw near-third-vs-far-third ink
+  // comparison with the actual tone effect. These seams let a test build the
+  // distance field and run the gradient directly against SYNTHETIC, known
+  // rings (e.g. a plain rectangle) so the ratio it measures is the mechanism's
+  // alone. Read-only, prefixed so it reads as a seam, not API.
+  const __shadowFieldsForTest = (rings, contactSegs) => buildShadowFields(rings, contactSegs || [], []);
+  const __toneGradientForTest = (lines, fields, tone, depth) => applyShadowToneGradient(lines, fields, tone, depth);
+  const __ladderCoverageForTest = (I, tone) => ladderCoverageAt(I, tone);
+
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, {
     Shadows: {
       build,
@@ -2366,12 +2467,16 @@
       shadowFillStyleApplies,
       __ladderForTest,
       __collarForTest,
+      __shadowFieldsForTest,
+      __toneGradientForTest,
+      __ladderCoverageForTest,
     },
   });
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
       build, toneLawApplies, toneLawMarkClass, shadowFillStyleApplies, __ladderForTest, __collarForTest,
+      __shadowFieldsForTest, __toneGradientForTest, __ladderCoverageForTest,
     };
   }
 })();

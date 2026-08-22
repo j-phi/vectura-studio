@@ -494,6 +494,29 @@
                                  // style.params.toneLaw, same 'ladder' fallback.
                                  // See shadows.js Shadows.toneLawApplies for which
                                  // mark classes actually change shadow geometry.
+    shadowToneDepth: 0.75,       // 0..1. Blends the FLAT shadow's local ink density
+                                 // from today's single scalar spacing (0) toward the
+                                 // OBJECT's own tone ladder (Regions.band/coverageFor,
+                                 // 1) keyed off distance from the caster's contact
+                                 // point — nearest the object is darkest. Shipped ON
+                                 // (0.75, not 0): the owner explicitly accepted that
+                                 // every scene with a shadow changes appearance.
+                                 // shadows.js's applyShadowToneGradient thins marks
+                                 // via a keep-duty capped at 1 — the near-contact zone
+                                 // can therefore never exceed today's density (no
+                                 // flooding is possible at ANY depth), so 0.75 was
+                                 // picked for a strongly-readable ramp (near/far ink
+                                 // ratio ~2.3x measured on a clean synthetic footprint,
+                                 // ~4.2-4.5x at 1.0) while keeping some margin below
+                                 // the 1.0 extreme for the 40 non-hatch Fill Style
+                                 // recipes this same thinning is applied to uniformly
+                                 // in Stage 1 (S2 gives each its own class-honest
+                                 // lever). Total ink at depth 0.75 is LOWER than at
+                                 // depth 0 (thinning only ever removes ink), so this
+                                 // default reduces plot time, it does not add to it.
+                                 // See tests/unit/scene3d-shadow-tone-gradient.test.js.
+                                 // 0 stays provably byte-identical to the pre-gradient
+                                 // flat shadow (the explicit escape hatch).
   };
   // CONTRACT L3 — light-driven tone. `enabled: false` ⇒ EXACT Phase 1 flat look.
   // bands is a soft hint (2|3|4); the tone READER (Scene3D.Regions) trusts the
@@ -863,6 +886,7 @@
       // Reuses the exact `toneLaw` clamp `style.params.toneLaw` goes through
       // (single choke point, no drift) — unknown/absent id resolves to 'ladder'.
       shadowToneLaw: clampStyleParam('toneLaw', src.shadowToneLaw),
+      shadowToneDepth: clamp(finite(src.shadowToneDepth, DEFAULT_SHADOW.shadowToneDepth), 0, 1),
     };
   };
 
