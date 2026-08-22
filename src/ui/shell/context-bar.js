@@ -1903,9 +1903,9 @@
     const SC = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
     if (!r || !SC || typeof r.setSceneObjectStyle !== 'function') return;
     const b = B(); const ic = IC();
-    // fs-s1 — Style/Shadow/Highlight go icon-only (an `iconHtml` collapses the
-    // visible label but keeps the name as an explicit aria-label); X-ray is
-    // deliberately NOT in that list and keeps its visible "X-ray" text.
+    // fs-s1/fs-u1 — Style/Shadow/Highlight/X-ray go icon-only (an `iconHtml`
+    // collapses the visible label but keeps the name as an explicit
+    // aria-label).
     const pill = (key, builder, extraClass, iconHtml) => {
       const meta = b[key] || {};
       const visibleLabel = iconHtml ? '' : (meta.label || '');
@@ -1919,7 +1919,7 @@
     // flyout whose Solid | X-ray segment writes nothing. Style / Shadow /
     // Highlight above write the STYLE TABLE, which the ground does have, so they
     // stay. See sceneSelHasObjectDef.
-    if (sceneSelHasObjectDef(sceneSel(ctx))) pill('sceneXray', buildXrayBody, 'ctxbar-scene-xray');
+    if (sceneSelHasObjectDef(sceneSel(ctx))) pill('sceneXray', buildXrayBody, 'ctxbar-scene-xray', ic.sceneXray);
   };
 
   const renderContext = (ctx) => {

@@ -830,6 +830,9 @@
       sceneStyle: lucide('<path d="M11 5h2" /><path d="M15 12h6" /><path d="M19 5h2" /><path d="M3 12h6" /><path d="M3 19h18" /><path d="M3 5h2" />'),
       sceneShadow: lucide('<path d="M12.5 11.134 18.196 21" /><path d="M20.425 5.299a10 10 0 0 0-16.941 9.78c.183.563.843.774 1.355.478L20.16 6.711c.512-.296.66-.973.264-1.413" /><path d="M21 21H3" />'),
       sceneHighlight: lucide('<circle cx="12" cy="12" r="10" /><path d="M12 2a7 7 0 1 0 10 10" />'),
+      // fs-u1 — lucide 'mirror-rectangular'. Completes the icon-only conversion
+      // of the persistent Shape/Style/Shadow/Highlight/X-ray pill row.
+      sceneXray: lucide('<path d="M11 6 8 9" /><path d="m16 7-8 8" /><rect x="4" y="2" width="16" height="20" rx="2" />'),
     },
   };
 })();

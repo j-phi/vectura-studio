@@ -67,11 +67,10 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
   };
 
   const pills = () => Array.from(host().querySelectorAll('.ctxbar-scene-field'));
-  // fs-s1 — Shape/Style/Shadow/Highlight are icon-only (no visible label text
-  // any more), so lookup goes through aria-label — their accessible name —
-  // rather than the now-absent `.ctxbar-text-fieldlabel` text node. X-ray
-  // keeps its visible text but also carries the same aria-label, so this one
-  // selector covers all five pills unchanged.
+  // fs-s1/fs-u1 — Shape/Style/Shadow/Highlight/X-ray are all icon-only (no
+  // visible label text), so lookup goes through aria-label — their
+  // accessible name — rather than the now-absent `.ctxbar-text-fieldlabel`
+  // text node.
   const pillByLabel = (text) => pills().find((f) => f.getAttribute('aria-label') === text);
   const openFly = () => document.querySelector('.ctxbar-scene-flyout.is-open');
   const rowCtl = (fly, label) => {
@@ -112,19 +111,15 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
   });
 
   // ── fs-s1 — icon-only conversion of the 3D contextual bar ────────────────
-  test('fs-s1: Shape/Style/Shadow/Highlight pills carry no visible label text but keep a real accessible name', async () => {
+  test('fs-u1: Shape/Style/Shadow/Highlight/X-ray pills carry no visible label text but keep a real accessible name', async () => {
     addSelectScene();
-    ['Shape', 'Style', 'Shadow', 'Highlight'].forEach((name) => {
+    ['Shape', 'Style', 'Shadow', 'Highlight', 'X-ray'].forEach((name) => {
       const field = pillByLabel(name);
       expect(field).toBeTruthy();
       expect(field.querySelector('.ctxbar-text-fieldlabel')).toBeFalsy();
       expect(field.querySelector('.lvl-algo-sub-ico')).toBeTruthy();
       expect(field.getAttribute('aria-label')).toBe(name);
     });
-    // X-ray is deliberately excluded from the icon-only conversion — it keeps
-    // its visible text.
-    const xray = pillByLabel('X-ray');
-    expect(xray.querySelector('.ctxbar-text-fieldlabel')?.textContent).toBe('X-ray');
   });
 
   test('fs-s1: Duplicate/Drop/Trash/Helpers action buttons carry no visible label text but keep a real accessible name', async () => {
