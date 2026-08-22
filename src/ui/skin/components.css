@@ -12107,6 +12107,23 @@ body.mobile-layout .hud-bar {
   border-left: 2px solid color-mix(in srgb, var(--ui-warning, #d29922) 45%, transparent);
   padding-left: 6px;
 }
+/* fs-y1 Job 1 — the ctxbar Style/Shadow flyouts' Fill Style (i). The docked
+   panel's `.vs3-lawinfo-pop` floats a positioned popover, which does not work
+   in a 232px-wide flyout: `.ctxbar-scene-flyout` sets `overflow-y: auto`,
+   which per spec also computes `overflow-x` to `auto` (not `visible`), so a
+   floating popover would get clipped/scrolled instead of shown. This box
+   renders INLINE in the flyout's own vertical flow instead — display swaps
+   on `.is-open` (JS-toggled by the (i) click) so it always fits the column
+   and never needs its own positioning. Its paragraphs reuse `.vs3-lawnote`
+   (same look as the docked panel's popover text) — one visual language for
+   the info panel across both surfaces, only the container differs. The `i`
+   button itself reuses `.vs3-lawinfo-btn` (components.css, above) verbatim.*/
+.ctxbar-fly-lawinfo {
+  display: none;
+  margin: 2px 0 4px;
+}
+.ctxbar-fly-lawinfo.is-open { display: block; }
+.ctxbar-fly-lawinfo .vs3-lawnote:last-child { margin-bottom: 0; }
 .ctxbar-fly-reset { width: 100%; justify-content: center; }
 .ctxbar-scene-menu-wrap .ctxbar-scene-field { max-width: 140px; }
 /* fs-s1 — Style/Shadow/Highlight pills went icon-only (no visible label):
