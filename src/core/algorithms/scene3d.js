@@ -286,6 +286,33 @@
     const t = (d - 200) / 300; // 0..1 across the new 200→500 span
     return HATCH_SPACING_FLOOR_MM - t * (HATCH_SPACING_FLOOR_MM - HATCH_SPACING_FLOOR_EXT_MM);
   };
+  // fs-v2-facetedangle — the automatic tone-zone cross family's OWN floor.
+  // `crossFamilies`'s dark-side second direction (`spacing / w`, w<=1) kept
+  // the historic unconditional 1mm floor while family A above it got
+  // `minSpacing` relief, so above Density 100 family A tightened past 1mm
+  // while the cross family could not — the ink ratio between the two
+  // families shifted with density and the AGGREGATE rendered bearing
+  // drifted even though `fillAngle` never changed (11.0deg at d50, 4.1deg at
+  // d150 on a box, fillAngle 20).
+  //
+  // Naively threading `hatchFloorFor` in unconditionally is NOT safe: unlike
+  // family B's `crossDensityRatio` (which is the only thing that risks going
+  // sub-1mm at d<=100, the reason THAT branch stays floored), this family's
+  // `spacing` already comes out of `spacingBand` as `Math.max(penWidth,
+  // s0/gain)`, and `gain` can exceed 1 (T-zone `coverageGain(0)`, up to
+  // ~1.6) even at density <= 100 — so `spacing / w` can already sit under
+  // 1mm in an EXISTING saved document at low density, same trap `minSpacing`
+  // dodges elsewhere. So this is gated exactly like `curvedMasterFloorPen`
+  // above (the curved path's analogous relief, same density boundary, same
+  // reasoning): `undefined` for d<=100, so the option is OMITTED and
+  // `hatchPolygon`'s own untouched 1mm default applies — byte-identical to
+  // today, by construction. Only above 100 does it relax, and only to the
+  // SAME floor family A already uses, so the two families move together and
+  // the ratio stops drifting.
+  const crossFloorFor = (density) => {
+    const d = clamp(finite(density, 50), 0, 500);
+    return d <= 100 ? undefined : hatchFloorFor(d);
+  };
   const hatchSpacing = (density) => {
     const d = clamp(finite(density, 50), 0, 500);
     if (d <= 100) return Math.max(1, 14 - 0.13 * d);
@@ -1147,13 +1174,18 @@
       // never saw it.
       // `minSpacing` (last, optional) lowers hatchPolygon's hard 1mm floor —
       // but ONLY on family A, the direct density→spacing ruling. Family B (the
-      // user's crosshatch, spacing × crossDensityRatio) and the zone-driven
-      // dark-side second direction (spacing / w) keep the historic floor of 1
-      // unconditionally: crossDensityRatio can already push spacing below 1 in
-      // an existing saved document (ratio as low as 0.25 against a density-100
-      // base of exactly 1mm), and that path must stay byte-identical. Omitted
-      // (undefined) ⇒ hatchPolygon's own default (1) applies — every call site
-      // that doesn't pass it is untouched.
+      // user's crosshatch, spacing × crossDensityRatio) keeps the historic
+      // floor of 1 unconditionally: crossDensityRatio can already push spacing
+      // below 1 in an existing saved document (ratio as low as 0.25 against a
+      // density-100 base of exactly 1mm), and that path must stay
+      // byte-identical. Omitted (undefined) ⇒ hatchPolygon's own default (1)
+      // applies — every call site that doesn't pass it is untouched.
+      //
+      // The zone-driven dark-side second direction (spacing / w) gets its OWN
+      // relief via `crossFloorFor` (fs-v2-facetedangle, defined above) rather
+      // than reusing `minSpacing` verbatim: it is gated to d<=100 ⇒ undefined
+      // for the same byte-identity reason, then matches family A's floor
+      // above 100 so the two families' ink ratio stops drifting with density.
       const crossFamilies = (target, angleDeg, spacing, styleParams, crossPass, crossW, push, planeFor, minSpacing) => {
         const plane = (deg, screenPitch) => (planeFor ? planeFor(deg, screenPitch) : screenPitch);
         push(hatchPolygon(target, { angleDeg, spacing: plane(angleDeg, spacing), minSpacing }));
@@ -1186,6 +1218,7 @@
           push(hatchPolygon(target, {
             angleDeg: angleDeg + CROSS_OBJ_DEG_B,
             spacing: plane(angleDeg + CROSS_OBJ_DEG_B, spacing / w),
+            minSpacing: crossFloorFor(styleParams.fillDensity),
           }));
         }
       };
@@ -3664,5 +3697,10 @@
     // floor mapping (`curvedMasterFloorPen`) that fixes SurfaceFill going
     // flat above ~Density 100 on curved primitives, mirroring the seam above.
     __curvedMasterFloorPenForTest: (density) => curvedMasterFloorPen(density),
+    // Test seam (fs-v2-facetedangle). Publishes the density -> automatic
+    // tone-zone cross-family floor gate (`crossFloorFor`) that stops the
+    // faceted hatch's aggregate bearing drifting with Density above 100,
+    // mirroring the two seams above.
+    __crossFloorForTest: (density) => crossFloorFor(density),
   };
 })();
