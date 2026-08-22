@@ -326,6 +326,9 @@
   const ICON_IMPORT =svg('<path d="M12 3v10M8.5 9.5 12 13l3.5-3.5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>');
   const ICON_LIGHT = svg('<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 1 3.6 10.8c-.7.6-1.1 1.3-1.1 2.2h-5c0-.9-.4-1.6-1.1-2.2A6 6 0 0 1 12 3z"/>');
   const ICON_MORE = svg('<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>');
+  // fs-y1 Job 2 — a flat floor plane, distinct from the Plane primitive's
+  // upright rectangle: a horizon line + a receding perspective grid.
+  const ICON_GROUND = svg('<path d="M3 15h18"/><path d="M3 15 9 6h6l6 9"/><path d="M8.2 15 11 9M15.8 15 13 9"/>');
 
   const MAPPERS = [
     { value: 'none', label: 'None' },
@@ -2199,6 +2202,38 @@
       renderInspector();
     };
 
+    // fs-y1 Job 2 — Ground on the shelf. It is NOT a primitive: it is a
+    // scene-level plane with its own leaf type (sceneGround3d) and its own
+    // panel (buildGroundPanel above), so it does not go through addPrimitive
+    // at all. Only meaningful for a real scene-tree GROUP (a legacy monolith
+    // already carries its ground inline as `params.ground`, shown as its own
+    // always-present tree row above — nothing to "add" there). Routes through
+    // `engine.addGroundToScene`, the SAME call the layer context menu
+    // (layer-context-menu.js) and the canvas context menu
+    // (canvas-context-menu.js) already use — and mirrors their duplicate
+    // guard: `engine.getLayerDescendants(layer.id)` for an existing
+    // `sceneGround3d` child. `addGroundToScene` itself also no-ops on a
+    // duplicate (belt + suspenders), so a stale shelf button can never
+    // actually create a second ground.
+    const hasGroundChild = () => {
+      const engine = ui && ui.app && ui.app.engine;
+      return !!(engine && typeof engine.getLayerDescendants === 'function'
+        && engine.getLayerDescendants(layer.id).some((l) => l && l.type === 'sceneGround3d'));
+    };
+    const addGround = () => {
+      const engine = ui && ui.app && ui.app.engine;
+      if (!engine || typeof engine.addGroundToScene !== 'function') return null;
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      const gid = engine.addGroundToScene(layer.id);
+      if (gid) {
+        if (ui.app.setSelection) ui.app.setSelection([gid], gid);
+        if (engine.setActiveLayerId) engine.setActiveLayerId(gid);
+      }
+      if (ui.renderLayers) ui.renderLayers();
+      if (ui.app.render) ui.app.render();
+      return gid;
+    };
+
     // The flyout is portaled to <body> and positioned with position:fixed, so
     // it escapes the Add Objects Section body's overflow:hidden clip (which
     // otherwise hides it behind the Scene Tree section). It flips above the
@@ -2296,6 +2331,25 @@
           onClick: () => addPrimitive(prim),
         });
       });
+
+      // fs-y1 Job 2 — Ground on the shelf, scene-GROUP only (a legacy
+      // monolith's ground is the inline `params.ground` tree row above,
+      // always present, nothing to "add"). Hidden once a `sceneGround3d`
+      // child already exists — the same guard the layer/canvas context
+      // menus use — and the click handler additionally hides ITSELF on a
+      // successful add, since (unlike a primitive) Ground is a singleton and
+      // this shelf is not otherwise rebuilt after one is placed.
+      if (isSceneGroup && !hasGroundChild()) {
+        buildShelfButton(shelf, {
+          icon: ICON_GROUND, label: 'Ground',
+          title: 'Add ground plane', dataset: { ground: 'add' },
+          onClick: (e) => {
+            const gid = addGround();
+            const btn = e.currentTarget;
+            if (gid && btn) { btn.disabled = true; btn.style.display = 'none'; }
+          },
+        });
+      }
 
       // Monolith-only rungs. A scene GROUP imports meshes through File ▸ Import
       // 3D Model… and adds lights as LAYER children (the "+ Sun / + Point / …"

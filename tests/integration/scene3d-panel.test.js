@@ -135,6 +135,74 @@ describe('Scene3D panel — buildControls dispatch', () => {
     expect(host.querySelector('.vs3-shelf-btn[data-light="add"]')).toBeFalsy();
   });
 
+  // fs-y1 Job 2 — Ground was addable from the layer context menu and the
+  // canvas context menu, but the audit found it absent from THIS shelf.
+  // Ground routes through engine.addGroundToScene (a distinct leaf type,
+  // sceneGround3d), not addPrimitive.
+  describe('fs-y1 Job 2 — Ground on the Add Objects shelf', () => {
+    // "Add Layer → 3D Scene" seeds a ground child automatically (addSceneTree
+    // calls addGroundToScene) — the gap this job closes only shows up once
+    // the user has REMOVED it (the layers-panel trash icon, same as any other
+    // scene-tree child) and has no way back to it from this shelf. Mirror
+    // that by deleting the auto-seeded ground before each assertion.
+    const groundChildId = (gid) => {
+      const g = app.engine.getLayerDescendants(gid).find((l) => l && l.type === 'sceneGround3d');
+      return g ? g.id : null;
+    };
+    const freshGroupWithoutGround = () => {
+      const gid = app.engine.addLayer('scene3d');
+      const existingGround = groundChildId(gid);
+      if (existingGround) app.engine.removeLayer(existingGround);
+      app.engine.setActiveLayer ? app.engine.setActiveLayer(gid) : (app.engine.activeLayerId = gid);
+      return gid;
+    };
+
+    test('the shelf offers a Ground button for a scene GROUP with no ground child', () => {
+      freshGroupWithoutGround();
+      app.ui.buildControls();
+      const host = controlsHost();
+      const btn = host.querySelector('.vs3-shelf-btn[data-ground="add"]');
+      expect(btn).toBeTruthy();
+      expect(btn.style.display).not.toBe('none');
+    });
+
+    test('clicking Ground creates a working sceneGround3d child and hides the button (no duplicate)', () => {
+      const gid = freshGroupWithoutGround();
+      app.ui.buildControls();
+      const host = controlsHost();
+      const btn = host.querySelector('.vs3-shelf-btn[data-ground="add"]');
+      btn.dispatchEvent(new window.Event('click', { bubbles: true }));
+
+      const ground = app.engine.getLayerDescendants(gid).find((l) => l && l.type === 'sceneGround3d');
+      expect(ground).toBeTruthy();
+      expect(ground.params.enabled).toBe(true);
+      // The engine is now the active layer's own selection (a real, working
+      // sceneGround3d leaf, addressable like any other layer).
+      expect(app.engine.activeLayerId).toBe(ground.id);
+      // Prevented from this shelf directly: either the click's ui.renderLayers()
+      // triggered a full panel rebuild (the fresh shelf correctly omits the
+      // button, hasGroundChild() now true) or, on a lighter host, the button
+      // hid itself in place — either way, no live "Add Ground" affordance
+      // remains once one exists.
+      const after = document.getElementById('dynamic-controls')?.querySelector('.vs3-shelf-btn[data-ground="add"]')
+        || host.querySelector('.vs3-shelf-btn[data-ground="add"]');
+      expect(!after || after.style.display === 'none').toBe(true);
+    });
+
+    test('a scene GROUP that already has a ground child does not offer the shelf button (mirrors the layer/canvas context-menu guard)', () => {
+      // "Add Layer → 3D Scene" already seeded one — the default, common case.
+      const gid = app.engine.addLayer('scene3d');
+      app.engine.setActiveLayer ? app.engine.setActiveLayer(gid) : (app.engine.activeLayerId = gid);
+      app.ui.buildControls();
+      const host = controlsHost();
+      expect(host.querySelector('.vs3-shelf-btn[data-ground="add"]')).toBeFalsy();
+      // Same guard the engine itself enforces — belt + suspenders, not
+      // relying on the UI alone to prevent a second ground.
+      expect(app.engine.addGroundToScene(gid)).toBeNull();
+      expect(app.engine.getLayerDescendants(gid).filter((l) => l.type === 'sceneGround3d').length).toBe(1);
+    });
+  });
+
   test('(c) selecting an object3d CHILD routes the Inspector to that layer and edits re-render', () => {
     const gid = app.engine.addLayer('scene3d');
     const child = app.engine.getLayerChildren(gid).find((l) => l.type === 'object3d');
