@@ -516,7 +516,21 @@
   // there is nothing to substitute it with that is not simply invented, so
   // this is the one id judged to have nothing honest to express here (option
   // (b): narrow the roster) rather than option (a).
-  const TONE_LAW_NOT_DISTINGUISHABLE = new Set(['isophoteWidth']);
+  //
+  // `onePenDown` (fs-t1): its own mechanism text is explicit that the bridge
+  // between rulings is built IN THE CHART and walked sample-by-sample against
+  // the actual surface (`sampleAt`, on-surface + front-facing checks) — see
+  // surface-fill.js's "'onePenDown' — ONE CONTINUOUS PATH OVER THE WHOLE
+  // FORM" block, which spells out the reason directly: "a straight segment
+  // in (a, b)… sampled, with every sample required to be on the surface and
+  // front-facing… never a chord across the silhouette, WHICH IS WHAT A
+  // SCREEN-SPACE LINK WOULD BE on a convex limb." A cast shadow's footprint
+  // has no chart and no `sampleAt` to walk — it is already flat screen-space
+  // rings, exactly the case that quote names as unsafe. Bridging there could
+  // only be a straight screen-space link (an invented technique, not this
+  // law's own verified-on-the-surface one), so — like isophoteWidth — this is
+  // narrowed rather than given fabricated geometry.
+  const TONE_LAW_NOT_DISTINGUISHABLE = new Set(['isophoteWidth', 'onePenDown']);
   // Exported predicate (see tail of file): lets the UI hide toneLaw options
   // whose mark class does not change shadow geometry, instead of offering a
   // choice that quietly does nothing.

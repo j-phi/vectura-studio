@@ -90,6 +90,7 @@ describe('Scene3D.Shadows — offered Fill Style options render distinct geometr
     expect(offered).not.toContain('etfKang'); // flow, excluded by mark class
     expect(offered).not.toContain('mazeFill'); // web, excluded by mark class
     expect(offered).not.toContain('isophoteWidth'); // hatch, excluded per-id (fs-n2 Stage 1)
+    expect(offered).not.toContain('onePenDown'); // wave, excluded per-id (fs-t1) — chart-space-verified bridge, nothing to walk on a flat footprint
   });
 
   test('HEADLINE — no two offered Fill Style options render byte-identical shadow geometry', () => {

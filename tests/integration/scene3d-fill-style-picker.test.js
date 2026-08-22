@@ -1284,10 +1284,30 @@ describe('Shadow Fill Style — the shared toneLawApplies filter', () => {
     FLOW_AND_WEB.forEach((id) => expect(ids).not.toContain(id));
   });
 
-  test('the offered count is the full roster + default, minus exactly the 7 flow/web ids', () => {
+  // Self-describing (fs-t1): the old version hardcoded "- 7" for the
+  // flow/web mark-class gate. That arithmetic went stale the moment
+  // isophoteWidth was narrowed per-id on top of the mark-class gate (making
+  // it 8, silently), and again when onePenDown followed (9) — a magic count
+  // rots exactly where an exclusion set can grow without anyone touching this
+  // assertion. This version derives the expected offered count from the live
+  // predicate/mark-class sources instead of restating a number.
+  test('the offered count is the full roster + default, minus the flow/web mark-class laws and any per-id narrowing', () => {
     const full = F.groups(null, null, null).reduce((a, g) => a + g.options.length, 0);
     expect(full).toBe(49); // default (ladder) + 48 roster laws
-    expect(offeredIds().length).toBe(full - 7);
+    const allIds = F.groups(null, null, null).reduce((acc, g) => acc.concat(g.options.map((o) => o.value)), []);
+    // Flow/web is a fact about the roster's own mark-class assignment
+    // (independent of shadows.js) — fixed today at 7 ids, verified against
+    // the live predicate rather than asserted by name.
+    const markClassExcluded = allIds.filter((id) => ['flow', 'web'].includes(F.markClass(id)));
+    expect(markClassExcluded.length).toBe(7);
+    markClassExcluded.forEach((id) => expect(Shadows.toneLawApplies(id)).toBe(false));
+    // Everything else the predicate excludes is per-id narrowing on top of an
+    // otherwise-applicable class (isophoteWidth, onePenDown, and whatever
+    // follows) — read off the live predicate, not restated as a literal
+    // count, so this test does not need to change when that set changes.
+    const perIdExcluded = allIds.filter((id) => !markClassExcluded.includes(id) && !Shadows.toneLawApplies(id));
+    expect(offeredIds().length).toBe(full - markClassExcluded.length - perIdExcluded.length);
+    offeredIds().forEach((id) => expect(Shadows.toneLawApplies(id)).toBe(true));
   });
 });
 
