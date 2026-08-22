@@ -166,26 +166,30 @@ describe('fs-c3-panel — left-hand 3D panel: angle dial / density domain / leaf
   });
 
   // ── Job 2 — fillDensity domain ────────────────────────────────────────────
-  // fs-m2 Job 3 — UI-side max raised 200 -> 500 (engine-side ramps above 200
-  // are a sibling branch's job; this only asserts the declared UI domain).
-  describe('Job 2 — fillDensity UI max is 500 (consistent min) everywhere declared', () => {
-    test('shared scene/object/face style editor (D_DENSITY) declares min 1 / max 500', () => {
+  // fs-m2 Job 3 — UI-side max raised 200 -> 220 (owner decision: the engine
+  // ramp a sibling branch extended to 500 measurably saturates by ~200-220 —
+  // hatchSpacing hits the module's own 0.3mm plotter-nib floor at d=200, and
+  // 350 vs 500 are visually indistinguishable — so the slider stops where the
+  // output stops changing, not where the engine happens to still accept a
+  // number). This only asserts the declared UI domain.
+  describe('Job 2 — fillDensity UI max is 220 (consistent min) everywhere declared', () => {
+    test('shared scene/object/face style editor (D_DENSITY) declares min 1 / max 220', () => {
       const { container } = mountGroupObjectScope();
       clickTab(container, 'style');
       setHatchMapper(container);
       const density = container.querySelector('input.ctrl-slider[aria-label="Fill density"]');
       expect(density).toBeTruthy();
       expect(density.min).toBe('1');
-      expect(density.max).toBe('500');
+      expect(density.max).toBe('220');
     });
 
-    test('leaf panel Density slider declares min 1 / max 500 (was min 5 / max 100)', () => {
+    test('leaf panel Density slider declares min 1 / max 220 (was min 5 / max 100)', () => {
       const { container } = mountLeaf('hatch');
       clickTab(container, 'style');
       const density = container.querySelector('input.ctrl-slider[aria-label="Fill density"]');
       expect(density).toBeTruthy();
       expect(density.min).toBe('1');
-      expect(density.max).toBe('500');
+      expect(density.max).toBe('220');
     });
   });
 
