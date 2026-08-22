@@ -6,7 +6,7 @@
           {
             "type": "command",
             "command": "/Users/jayphi/Documents/github/vectura-studio/scripts/hooks/claude-session-awareness.sh start",
-            "statusMessage": "Checking for parallel sessions…"
+            "statusMessage": "Checking for parallel sessions\u2026"
           }
         ]
       }
@@ -35,8 +35,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cmd=$(jq -r '.tool_input.command'); if echo \"$cmd\" | grep -qE 'git +reset( +--hard| +[^-]|$)|git +clean +.*-[a-z]*f|git +checkout +(--|\\.)|git +restore( +[^-]|$)|git +stash +(drop|clear)|git +rebase|git +push +.*(--force|-f)'; then cd /Users/jayphi/Documents/github/vectura-studio; if [ -n \"$(git status --porcelain)\" ]; then now=$(date +%s); s=$(git stash list --format='%cd' --date=unix 2>/dev/null | sort -rn | head -1); t=$(git for-each-ref --format='%(creatordate:unix)' 'refs/tags/recover-*' 2>/dev/null | sort -rn | head -1); newest=0; if [ -n \"$s\" ] && [ \"$s\" -gt \"$newest\" ]; then newest=$s; fi; if [ -n \"$t\" ] && [ \"$t\" -gt \"$newest\" ]; then newest=$t; fi; if [ \"$newest\" -eq 0 ] || [ $((now - newest)) -gt 1800 ]; then echo \"BLOCKED: destructive git op on a dirty working tree with no recent recovery checkpoint (stale checkpoints don't count — create a fresh one). First create one — git tag recover-<slug> \\$(git stash create) or a WIP commit — delete stale recover-* tags after use, then get explicit user approval naming this operation. See CLAUDE.md > Concurrent Development & Working-Tree Safety.\" >&2; exit 2; fi; fi; fi; exit 0",
-            "statusMessage": "Checking working-tree safety…"
+            "command": "cmd=$(jq -r '.tool_input.command'); if echo \"$cmd\" | grep -qE 'git +reset( +--hard| +[^-]|$)|git +clean +.*-[a-z]*f|git +checkout +(--|\\.)|git +restore( +[^-]|$)|git +stash +(drop|clear)|git +rebase|git +push +.*(--force|-f)'; then cd /Users/jayphi/Documents/github/vectura-studio; if [ -n \"$(git status --porcelain)\" ]; then now=$(date +%s); s=$(git stash list --format='%cd' --date=unix 2>/dev/null | sort -rn | head -1); t=$(git for-each-ref --format='%(creatordate:unix)' 'refs/tags/recover-*' 2>/dev/null | sort -rn | head -1); newest=0; if [ -n \"$s\" ] && [ \"$s\" -gt \"$newest\" ]; then newest=$s; fi; if [ -n \"$t\" ] && [ \"$t\" -gt \"$newest\" ]; then newest=$t; fi; if [ \"$newest\" -eq 0 ] || [ $((now - newest)) -gt 1800 ]; then echo \"BLOCKED: destructive git op on a dirty working tree with no recent recovery checkpoint (stale checkpoints don't count \u2014 create a fresh one). First create one \u2014 git tag recover-<slug> \\$(git stash create) or a WIP commit \u2014 delete stale recover-* tags after use, then get explicit user approval naming this operation. See CLAUDE.md > Concurrent Development & Working-Tree Safety.\" >&2; exit 2; fi; fi; fi; exit 0",
+            "statusMessage": "Checking working-tree safety\u2026"
           }
         ]
       },
@@ -45,8 +45,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cmd=$(jq -r '.tool_input.command'); if echo \"$cmd\" | grep -q 'git commit' && ! echo \"$cmd\" | grep -q -- '--amend'; then ( cd /Users/jayphi/Documents/github/vectura-studio && staged=$(git diff --cached --name-only); if echo \"$staged\" | grep -qx 'package.json'; then exit 0; fi; if ! echo \"$staged\" | grep -qE '^(src/|index\\.html|styles\\.css|tests/)'; then exit 0; fi && node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));const v=p.version.split('.');v[2]=String(Number(v[2])+1);p.version=v.join('.');fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n');\" && npm run version:sync --silent && git add package.json src/config/version.js index.html ) > /dev/null 2>&1; fi",
-            "statusMessage": "Bumping patch version…"
+            "command": "input=$(cat); cmd=$(echo \"$input\" | jq -r '.tool_input.command // empty'); hcwd=$(echo \"$input\" | jq -r '.cwd // empty'); if echo \"$cmd\" | grep -q 'git commit' && ! echo \"$cmd\" | grep -q -- '--amend'; then ( if [ -n \"$hcwd\" ] && [ -d \"$hcwd\" ]; then cd \"$hcwd\" || exit 0; else cd /Users/jayphi/Documents/github/vectura-studio || exit 0; fi; root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -f \"$root/package.json\" ] || exit 0; grep -q '\"name\": *\"vectura-studio\"' \"$root/package.json\" || exit 0; cd \"$root\" || exit 0; staged=$(git diff --cached --name-only); if echo \"$staged\" | grep -qx 'package.json'; then exit 0; fi; if ! echo \"$staged\" | grep -qE '^(src/|index\\.html|tests/)'; then exit 0; fi && node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));const v=p.version.split('.');v[2]=String(Number(v[2])+1);p.version=v.join('.');fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n');\" && npm run version:sync --silent && git add package.json src/config/version.js index.html ) > /dev/null 2>&1; fi",
+            "statusMessage": "Bumping patch version\u2026"
           }
         ]
       }
