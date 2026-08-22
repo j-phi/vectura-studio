@@ -195,4 +195,63 @@ describe('CTX-1 — canvas context menu', () => {
     expect(action).toBe('btn-undo');
     app.ui.triggerTopMenuAction = orig;
   });
+
+  // ── sceneCanvas parity: "Add Ground" (Half 2 of the picker-hiding change) ──
+  // sceneGround3d is now hidden from the primary algorithm picker
+  // (ALGO_DEFAULTS.sceneGround3d.hidden), so this right-click surface — the
+  // OTHER place scene objects get added from besides the layer-list context
+  // menu — needs its own route to Ground. Unlike box/sphere/cylinder (which
+  // use the CONTRACT A renderer.addSceneObject inline-array path and work on
+  // both monoliths and tree groups), Ground is tree-only: it is offered only
+  // on a real scene GROUP (isGroup + containerRole 'scene'), via
+  // engine.addGroundToScene directly, with the same one-ground guard as the
+  // layer-list menu.
+  test('sceneCanvas items include "Add Ground" for a tree scene group with no ground yet', async () => {
+    await boot();
+    const gid = app.engine.addSceneTree(); // seeds a light + a ground already
+    const group = app.engine.getLayerById(gid);
+    // Strip the seeded ground so the "no ground yet" branch is exercised.
+    app.engine.layers = app.engine.layers.filter((l) => l.type !== 'sceneGround3d');
+    const items = CM.buildItems({ kind: 'sceneCanvas', layer: group });
+    expect(idsOf(items)).toContain('sceneAddGround');
+  });
+
+  test('sceneCanvas items omit "Add Ground" once the scene already has a ground child', async () => {
+    await boot();
+    const gid = app.engine.addSceneTree(); // seeded ground included
+    const group = app.engine.getLayerById(gid);
+    const items = CM.buildItems({ kind: 'sceneCanvas', layer: group });
+    expect(idsOf(items)).not.toContain('sceneAddGround');
+  });
+
+  test('sceneCanvas items omit "Add Ground" for a legacy monolith (non-group) scene3d layer', async () => {
+    await boot();
+    // A plain (non-tree) monolith: isGroup is falsy, unlike addSceneTree()'s
+    // scene group — exactly the pre-Increment-D on-disk shape.
+    const monolith = new window.Vectura.Layer('mono-1', 'scene3d', 'Legacy Scene');
+    monolith.params = { ...window.Vectura.ALGO_DEFAULTS.scene3d };
+    app.engine.layers.push(monolith);
+    const items = CM.buildItems({ kind: 'sceneCanvas', layer: monolith });
+    expect(idsOf(items)).not.toContain('sceneAddGround');
+    // Sanity: the primitive-add entries are unaffected either way.
+    expect(idsOf(items)).toContain('sceneAddBox');
+  });
+
+  test('choosing "Add Ground" creates a working ground child and re-renders', async () => {
+    await boot();
+    const gid = app.engine.addSceneTree();
+    app.engine.layers = app.engine.layers.filter((l) => l.type !== 'sceneGround3d');
+    const group = app.engine.getLayerById(gid);
+    let rendered = false;
+    const origRender = app.render.bind(app);
+    app.render = () => { rendered = true; origRender(); };
+    const items = CM.buildItems({ kind: 'sceneCanvas', layer: group });
+    const groundItem = item(items, 'sceneAddGround');
+    expect(groundItem).toBeTruthy();
+    groundItem.run();
+    const groundKids = app.engine.getLayerDescendants(gid).filter((l) => l.type === 'sceneGround3d');
+    expect(groundKids.length).toBe(1);
+    expect(rendered).toBe(true);
+    app.render = origRender;
+  });
 });

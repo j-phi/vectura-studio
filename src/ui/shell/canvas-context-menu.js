@@ -189,6 +189,33 @@
             run: run(() => renderer.addSceneObject?.(layer.id, primitive)),
           });
         });
+      // Scene-tree Increment E parity: Ground has no CONTRACT A equivalent — it
+      // is a tree-only child (sceneGround3d) that must land under a real scene
+      // GROUP via engine.addGroundToScene, not the inline params.objects[]
+      // array the primitives above use on a monolith. Offered only when `layer`
+      // is a tree scene group (isGroup + containerRole 'scene', mirroring
+      // layer-context-menu.js's `_isSceneGroup`) and only when it has no ground
+      // child yet — one ground max, same guard as the layer-menu entry.
+      const engine = getEngine();
+      if (layer.isGroup && layer.containerRole === 'scene' && engine
+        && typeof engine.addGroundToScene === 'function') {
+        const hasGround = typeof engine.getLayerDescendants === 'function'
+          && engine.getLayerDescendants(layer.id).some((l) => l && l.type === 'sceneGround3d');
+        if (!hasGround) {
+          items.push({
+            id: 'sceneAddGround',
+            label: L.sceneAddGround || 'Add Ground',
+            enabled: true,
+            run: run(() => {
+              const app = getApp();
+              app?.pushHistory?.();
+              const gid = engine.addGroundToScene(layer.id);
+              if (gid) engine.setActiveLayerId?.(gid);
+              app?.render?.();
+            }),
+          });
+        }
+      }
       return items;
     }
 

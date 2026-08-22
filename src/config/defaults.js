@@ -2156,6 +2156,17 @@
     // `_sceneConsumed` and emits the object's paths itself.
     object3d: {
       label: 'Object 3D',
+      // Scene-child leaf: only meaningful as a child of a 3D Scene group (added
+      // via the scene group's own "Add shape" buttons / addObjectToScene), not
+      // as a standalone top-level pick. `hidden` suppresses it from every
+      // primary-picker surface (header module dropdown, LVL add menu, algo-draw
+      // toolbar picker, ctxbar switchers — all route through ALGO_DEFAULTS[type]
+      // .hidden via src/ui/utils.js getDrawableAlgorithmOptions or an equivalent
+      // local filter). UI-visibility only: engine.addLayer('object3d') and
+      // programmatic scene-group construction are unaffected — see
+      // resolveDrawableLayerType/isValidDrawableLayerType in src/core/engine.js,
+      // which never consult `hidden`.
+      hidden: true,
       is3d: true,
       preset: 'object3d-default',
       // A fresh leaf is born at the current SCENE_VERSION, exactly as a fresh
@@ -2203,6 +2214,14 @@
     // group (Increment B). generate() emits nothing itself (algorithms/booleanGroup3d.js).
     booleanGroup3d: {
       label: 'Boolean Group 3D',
+      // Scene-child leaf, same class as object3d/sceneLight3d/sceneGround3d: a
+      // container stub whose generate() always returns [] standalone (see
+      // tests/unit/object3d-boolean-group.test.js). Reachable in-scene via
+      // "Create boolean group" (engine.createBooleanGroupFromSelection, wired
+      // in src/ui/menus/layer-context-menu.js) on 2+ selected object3d
+      // siblings — hiding it from the primary picker does not remove the
+      // feature. UI-visibility only; see the object3d note above.
+      hidden: true,
       is3d: true,
       preset: 'booleangroup3d-default',
       op: 'subtract', // 'union' | 'subtract' | 'intersect'
@@ -2226,6 +2245,9 @@
     // Factory defaults mirror the directional sun (Scene3D.Params.DEFAULT_LIGHT).
     sceneLight3d: {
       label: 'Light',
+      // Scene-child leaf; see the object3d note above (same suppression
+      // mechanism, same UI-visibility-only guarantee).
+      hidden: true,
       is3d: true,
       preset: 'scenelight3d-default',
       type: 'directional', // 'directional' | 'point' | 'spot' | 'area' | 'ambient'
@@ -2241,6 +2263,11 @@
     // (algorithms/sceneGround3d.js).
     sceneGround3d: {
       label: 'Ground',
+      // Scene-child leaf; see the object3d note above (same suppression
+      // mechanism, same UI-visibility-only guarantee). Still addable from the
+      // scene's own menu — see layer-context-menu.js "Add ground" and
+      // canvas-context-menu.js's sceneCanvas "Add Ground" item.
+      hidden: true,
       is3d: true,
       preset: 'sceneground3d-default',
       enabled: true,
