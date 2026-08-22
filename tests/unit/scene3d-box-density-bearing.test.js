@@ -139,18 +139,24 @@ describe('Scene3D — how a BOX\'s rendered fill bearing responds to Density', (
     });
   });
 
-  // ── CHARACTERIZATION — documents mechanism (1), an OPEN defect ───────────
+  // ── ACCEPTED BEHAVIOUR — mechanism (1), pinned by owner decision ─────────
+  // Jay ruled 2026-08-22: keep the minimum-rulings guarantee and accept the
+  // apparent drift. No line ever rotates; only the ink balance between facets
+  // moves. Removing the guarantee would cut drift 12.3deg -> 2.4deg but make a
+  // facet render as BARE PAPER at Density 50, which is the defect the grant
+  // exists to prevent. These tests pin the accepted trade so a future change
+  // is detected — they are NOT a to-do.
   // INVERT THIS TEST when the family set is made Density-independent: the
   // dark facet's automatic cross family should be present at Density 10 too.
-  test('CHARACTERIZATION (open defect): the dark facet gains a second direction between Density 20 and 30', () => {
+  test('ACCEPTED: the dark facet gains a second direction between Density 20 and 30', () => {
     expect([...families(20).keys()].sort()).toEqual(['face:+X@78', 'face:+Y@3', 'face:+Z@169']);
     expect([...families(30).keys()].sort()).toEqual(['face:+X@78', 'face:+Y@3', 'face:+Z@169', 'face:+Z@95']);
   });
 
-  // ── CHARACTERIZATION — documents mechanism (2), an OPEN defect ───────────
+  // ── ACCEPTED BEHAVIOUR — mechanism (2), pinned by owner decision ─────────
   // INVERT THIS TEST when the carrier floor is made proportional: the lit
   // facets' ink should respond to Density instead of being flat across it.
-  test('CHARACTERIZATION (open defect): Density is inert on the lit facets over most of its range', () => {
+  test('ACCEPTED: Density is inert on the lit facets over most of its range', () => {
     const ink = (d, fam) => Math.round(families(d).get(fam) || 0);
     // face:+X — identical from Density 5 to Density 70.
     expect([ink(5, 'face:+X@78'), ink(50, 'face:+X@78'), ink(70, 'face:+X@78')]).toEqual([86, 86, 86]);
