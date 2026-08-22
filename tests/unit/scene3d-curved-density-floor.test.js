@@ -99,10 +99,19 @@ describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches d
       }
     });
 
-    test('values above 200 clamp to the density-200 floor', () => {
+    test('300 no longer clamps to the density-200 floor (ceiling extended 200→500, fs-m1)', () => {
+      // Stale assertion under the old 0-200 ceiling. See
+      // `scene3d-hatch-density-500.test.js` for the full 200-500 mapping and
+      // the physical-floor rationale for taking it past 1.2x pen.
       const f200 = algo.__curvedMasterFloorPenForTest(200);
-      expect(algo.__curvedMasterFloorPenForTest(300)).toBe(f200);
-      expect(algo.__curvedMasterFloorPenForTest(9999)).toBe(f200);
+      const f300 = algo.__curvedMasterFloorPenForTest(300);
+      expect(f300).toBeLessThan(f200);
+    });
+
+    test('values above 500 clamp to the density-500 floor', () => {
+      const f500 = algo.__curvedMasterFloorPenForTest(500);
+      expect(algo.__curvedMasterFloorPenForTest(600)).toBe(f500);
+      expect(algo.__curvedMasterFloorPenForTest(9999)).toBe(f500);
     });
   });
 

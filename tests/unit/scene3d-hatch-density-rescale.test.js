@@ -72,10 +72,20 @@ describe('scene3d fillDensity -> hatch spacing rescale (100-200)', () => {
     expect(s200).toBeLessThan(1);
   });
 
-  test('values above 200 clamp to the density-200 floor (upper clamp raised from 100 to 200)', () => {
+  test('300 no longer clamps to the density-200 floor (ceiling extended 200→500, fs-m1)', () => {
+    // Stale assertion under the old 0-200 ceiling — extending the ceiling to
+    // 500 (fs-m1) is exactly the "silent no-op past the old cap" defect this
+    // file's own header describes, just one round later. See
+    // `scene3d-hatch-density-500.test.js` for the full 200-500 mapping.
     const s200 = algo.__hatchSpacingForTest(200);
-    expect(algo.__hatchSpacingForTest(300)).toBe(s200);
-    expect(algo.__hatchSpacingForTest(9999)).toBe(s200);
+    const s300 = algo.__hatchSpacingForTest(300);
+    expect(s300).toBeLessThan(s200);
+  });
+
+  test('values above 500 clamp to the density-500 floor (upper clamp raised from 200 to 500)', () => {
+    const s500 = algo.__hatchSpacingForTest(500);
+    expect(algo.__hatchSpacingForTest(600)).toBe(s500);
+    expect(algo.__hatchSpacingForTest(9999)).toBe(s500);
   });
 
   test('negative / non-finite density still falls back safely (no NaN, no negative spacing)', () => {

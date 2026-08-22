@@ -246,9 +246,8 @@
     return { ...src, byFace: { ...(src.byFace || {}), ...extra } };
   };
 
-  // fillDensity (0–200; UI sliders raised past the old 100 cap on a sibling
-  // branch) → hatch spacing in document mm. Monotonic: denser in, tighter
-  // lines out.
+  // fillDensity (0–500; UI ceiling raised 100→200→500 across three rounds)
+  // → hatch spacing in document mm. Monotonic: denser in, tighter lines out.
   //
   // 0-100 is BYTE-IDENTICAL to the pre-rescale formula
   // (`Math.max(1, 14 - 0.13 * clamp(d, 0, 100))`) — existing saved artwork
@@ -256,17 +255,45 @@
   // own boundary. It already floors at exactly 1mm at d=100 (14 - 0.13*100 =
   // 1), so the `Math.max(1, …)` there never actually engages within 0-100.
   //
-  // 100-200 is new territory: linearly continues the descent from 1mm down to
-  // HATCH_SPACING_FLOOR_MM at d=200. The floor is 0.3mm — below a typical
-  // plotter nib/fineliner width (≈0.3-0.5mm), so tighter spacing only
-  // multiplies path count and draw time without adding visible density; ink
-  // just re-covers the same groove.
+  // 100-200 is untouched from the prior round: linearly continues the
+  // descent from 1mm down to HATCH_SPACING_FLOOR_MM at d=200. That floor is
+  // 0.3mm — below a typical plotter nib/fineliner width (≈0.3-0.5mm), so
+  // tighter spacing only multiplies path count and draw time without adding
+  // visible density; ink just re-covers the same groove. This is the honest
+  // "meaningful" ceiling: past d≈200-220 the spacing is already finer than
+  // most pens can resolve.
+  //
+  // 200-500 is new: the raised ceiling asks for more headroom than the
+  // meaningful bound above actually has. Rather than silently plateau again
+  // (the exact defect the two floors above were built to fix) OR pretend
+  // sub-nib spacing is meaningful, this arm continues the SAME taper shape
+  // one notch further, from 0.3mm down to HATCH_SPACING_FLOOR_EXT_MM
+  // (0.18mm) at d=500. That is honestly a path-count/plot-time knob, not a
+  // visible-tone knob — see the report this shipped with for the measured
+  // density beyond which the drawing stops changing. `hatchPolygon`
+  // (geometry3d.js) already hard-caps at 2000 lines per polygon regardless,
+  // so this arm cannot runaway even at the extreme end.
   const HATCH_SPACING_FLOOR_MM = 0.3;
+  const HATCH_SPACING_FLOOR_EXT_MM = 0.18;
+  // The minSpacing floor to hand `hatchPolygon` for a given density: flat at
+  // HATCH_SPACING_FLOOR_MM through the whole 0-200 range (unchanged — this is
+  // what protects every existing d<=200 document), then follows the SAME
+  // 200-500 taper `hatchSpacing` itself uses, so the floor never re-clamps
+  // the value `hatchSpacing` just computed back upward.
+  const hatchFloorFor = (density) => {
+    const d = clamp(finite(density, 50), 0, 500);
+    if (d <= 200) return HATCH_SPACING_FLOOR_MM;
+    const t = (d - 200) / 300; // 0..1 across the new 200→500 span
+    return HATCH_SPACING_FLOOR_MM - t * (HATCH_SPACING_FLOOR_MM - HATCH_SPACING_FLOOR_EXT_MM);
+  };
   const hatchSpacing = (density) => {
-    const d = clamp(finite(density, 50), 0, 200);
+    const d = clamp(finite(density, 50), 0, 500);
     if (d <= 100) return Math.max(1, 14 - 0.13 * d);
-    const t = (d - 100) / 100; // 0..1 across the new 100→200 span
-    return 1 - t * (1 - HATCH_SPACING_FLOOR_MM);
+    if (d <= 200) {
+      const t = (d - 100) / 100; // 0..1 across the 100→200 span
+      return 1 - t * (1 - HATCH_SPACING_FLOOR_MM);
+    }
+    return hatchFloorFor(d); // 200-500: the floor function IS the formula here
   };
 
   // ── CURVED-PATH DENSITY HEADROOM (I5 follow-up) ─────────────────────────────
@@ -306,11 +333,25 @@
   // `minSpacing` has to for the faceted path's `spacing × crossDensityRatio`.
   const CURVED_FLOOR_PEN_MAX = 2.2; // == surface-fill.js's PLOT_FLOOR_PEN
   const CURVED_FLOOR_PEN_MIN = 1.2; // the "ink floods" bound, not the conservative one
+  // 200-500 (fs-m1, ceiling raised again): 1.2x pen is ALREADY the point
+  // surface-fill.js's own comment names as where real ink floods, so pushing
+  // the master-grid floor lower still is past the honest physical limit —
+  // it is not a tone knob any more, only a path-count knob, exactly like
+  // `HATCH_SPACING_FLOOR_EXT_MM` above. Kept small (1.2 → 0.7x pen) and, same
+  // as before, TAPERED rather than swapped to a single lower constant, so N
+  // keeps climbing instead of re-flattening at a new plateau. `masterGrid`'s
+  // own MASTER_MAX_LINES (420, surface-fill.js) is the hard backstop that
+  // keeps this bounded regardless of how far density pushes.
+  const CURVED_FLOOR_PEN_EXT_MIN = 0.7;
   const curvedMasterFloorPen = (density) => {
-    const d = clamp(finite(density, 50), 0, 200);
+    const d = clamp(finite(density, 50), 0, 500);
     if (d <= 100) return undefined;
-    const t = (d - 100) / 100;
-    return CURVED_FLOOR_PEN_MAX - t * (CURVED_FLOOR_PEN_MAX - CURVED_FLOOR_PEN_MIN);
+    if (d <= 200) {
+      const t = (d - 100) / 100;
+      return CURVED_FLOOR_PEN_MAX - t * (CURVED_FLOOR_PEN_MAX - CURVED_FLOOR_PEN_MIN);
+    }
+    const t = (d - 200) / 300; // 0..1 across the new 200→500 span
+    return CURVED_FLOOR_PEN_MIN - t * (CURVED_FLOOR_PEN_MIN - CURVED_FLOOR_PEN_EXT_MIN);
   };
 
   // Strip the geometry-mutating part of a treatment, keeping only the line-type
@@ -1216,7 +1257,7 @@
           crossFamilies(face.polygon, userAngle, sb.spacing, styleParams, crossPass,
             crossWeightFor(sb.zone, sb.glint),
             (segs) => maybeLink(segs, styleParams).forEach((l) => lines.push(l)),
-            undefined, HATCH_SPACING_FLOOR_MM);
+            undefined, hatchFloorFor(styleParams.fillDensity));
           return lines;
         }
         const { spacing, zone, glint } = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
@@ -1458,7 +1499,7 @@
         // of how tightly the carrier happens to run at the limb.
         crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, crossW,
           (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)), planeFor,
-          HATCH_SPACING_FLOOR_MM);
+          hatchFloorFor(styleParams.fillDensity));
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
 
@@ -1754,7 +1795,7 @@
         // lightDriven places the glint per SAMPLE, so it has no face zone to
         // read; the darkest band buys the same whole second family T does.
         crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, bandIdx === 0 ? 1 : 0,
-          (segs) => uvLines.push(...segs), undefined, HATCH_SPACING_FLOOR_MM);
+          (segs) => uvLines.push(...segs), undefined, hatchFloorFor(styleParams.fillDensity));
         const SREG = 0.025;
         const N = hlCfg.sensitivity;
         const treat = hlCfg.treatment;
@@ -2970,7 +3011,7 @@
                 // header. Family B below (× crossDensityRatio) keeps the old
                 // floor of 1 unconditionally: an existing document at density
                 // 100 with ratio 0.25 already relied on being clamped to 1mm.
-                lines = hatchSegments(boundary, angleDeg, spacing, HATCH_SPACING_FLOOR_MM);
+                lines = hatchSegments(boundary, angleDeg, spacing, hatchFloorFor(sp.fillDensity));
                 if (g.style.mapper === 'crosshatch') {
                   // Independent family-B (Phase 1.3): +crossAngleDelta, ×ratio.
                   const delta = clamp(finite(sp.crossAngleDelta, 90), 10, 170);
