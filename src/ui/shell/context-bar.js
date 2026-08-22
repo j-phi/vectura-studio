@@ -1392,6 +1392,54 @@
   // `.is-caveat`, which paints it in the warning colour).
   const flyNote = (fly, text) => { const n = el('div', 'ctxbar-fly-note'); n.textContent = text; fly.appendChild(n); return n; };
 
+  // fs-m2 Job 1 — a discrete change inside a scene flyout (Type / Fill
+  // Style / border-enable / …) commits through `rebuild()` below, which
+  // clears the flyout body and rebuilds it — a discrete pick can reveal or
+  // hide sibling rows, so the whole body has to be re-run. That destroys and
+  // replaces every control, including the <select> the user just drove, so
+  // focus silently falls to <body> and the next arrow key does nothing — the
+  // friction reported when auditioning the 48 Fill Style laws by arrowing
+  // through them. Captures which <select> (if any) inside `host` currently
+  // has focus before the teardown, then refocuses the FRESH element carrying
+  // the same aria-label afterward. A no-op whenever focus wasn't on a select.
+  // fs-m2 Job 1 (judge correction) — on macOS, a focused CLOSED <select>
+  // OPENS its native listbox on ArrowDown/ArrowUp instead of stepping the
+  // value (Windows/Linux Chrome steps immediately and fires 'change'; macOS
+  // does not). Intercepting just ArrowUp/ArrowDown and stepping
+  // `selectedIndex` ourselves makes every platform behave the same: the
+  // control never opens a popup, it moves to the adjacent option and
+  // applies live — the 48-law auditioning workflow this job exists for.
+  // Every other key stays native, so UI.Select's whole reason to exist
+  // (platform keyboard nav / type-ahead / the mobile picker — see
+  // src/ui/components/select.js:4-6) is preserved, not replaced.
+  const attachSelectArrowStep = (selectEl) => {
+    if (!selectEl || selectEl.__vs3ArrowStep) return;
+    selectEl.__vs3ArrowStep = true;
+    selectEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const opts = Array.from(selectEl.options).filter((o) => !o.disabled);
+      if (opts.length < 2) return;
+      const curIdx = opts.indexOf(selectEl.selectedOptions[0]);
+      const nextIdx = curIdx + (e.key === 'ArrowDown' ? 1 : -1);
+      if (nextIdx < 0 || nextIdx >= opts.length) return;
+      e.preventDefault();
+      selectEl.value = opts[nextIdx].value;
+      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+  const selectElOf = (comp) => comp && comp.el && comp.el.querySelector && comp.el.querySelector('select');
+
+  const withSelectFocusKept = (host, rerender) => {
+    const doc = (host && host.ownerDocument) || document;
+    const active = doc.activeElement;
+    const wasSelect = !!(active && active.tagName === 'SELECT' && host && host.contains(active));
+    const aria = wasSelect ? active.getAttribute('aria-label') : null;
+    rerender();
+    if (!aria || !host) return;
+    const next = Array.from(host.querySelectorAll('select')).find((s) => s.getAttribute('aria-label') === aria);
+    if (next) { attachSelectArrowStep(next); next.focus({ preventScroll: true }); }
+  };
+
   // Shared persistent-flyout wrapper for the scene pills.
   const makeSceneFlyout = (label, tooltip, extraClass, buildBody) => {
     const field = makeDropField(`ctxbar-scene-field ${extraClass || ''}`.trim(), label, tooltip);
@@ -1404,8 +1452,13 @@
       field.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
       noteFlyoutClosed(fly);
     };
-    // Re-render the body without closing (a discrete change revealed/hid a row).
-    const rebuild = () => { fly.textContent = ''; try { buildBody(fly, rebuild); } catch (_e) { /* body guarded */ } if (open) reposition(); };
+    // Re-render the body without closing (a discrete change revealed/hid a
+    // row) — keeping select focus across the rebuild (fs-m2 Job 1).
+    const rebuild = () => withSelectFocusKept(fly, () => {
+      fly.textContent = '';
+      try { buildBody(fly, rebuild); } catch (_e) { /* body guarded */ }
+      if (open) reposition();
+    });
     const openFn = () => {
       if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout(); // mutual exclusion
       open = true; rebuild();
@@ -1431,11 +1484,11 @@
     const params = resolved.params || {};
     const mapper = resolved.mapper || 'none';
     const write = (patch, opts) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, patch, opts);
-    flyMixedSelect(flyRow(fly, C.mapper.label), {
+    attachSelectArrowStep(selectElOf(flyMixedSelect(flyRow(fly, C.mapper.label), {
       options: C.mappers, value: mapper, ariaLabel: C.mapper.aria,
       mixed: sceneAgree(sc, (id) => (rs(id).mapper || 'none')).mixed,
       onChange: (v) => { write({ mapper: v, params: { ...params } }); rebuild(); },
-    });
+    })));
     // ── Fill Style (U9) — the TONE LAW, directly beneath Type ───────────────
     // Type picks the KIND of fill; this picks HOW that kind is drawn. Grouped
     // by MARK CLASS (Vectura.SCENE_FILL_STYLES), not by the roster's tone-
@@ -1476,11 +1529,11 @@
       // SCENE_FILL_STYLES.isCapLimited.
       const solidTypeAgree = sceneAgree(sc, (id) => { const rec = recordOf(id); return (rec && rec.params) ? rec.params.solidType : null; });
       const solidType = solidTypeAgree.mixed ? null : solidTypeAgree.value;
-      flyMixedSelect(flyRow(fly, FSC.label), {
+      attachSelectArrowStep(selectElOf(flyMixedSelect(flyRow(fly, FSC.label), {
         options: FS.groups(primitiveMode, solidType, mapper), value: law, ariaLabel: FSC.aria,
         mixed: sceneAgree(sc, (id) => FS.resolve((rs(id).params || {}).toneLaw)).mixed,
         onChange: (v) => { write({ params: { ...params, toneLaw: v } }); rebuild(); },
-      });
+      })));
       const facetedNote = FS.facetedNote ? FS.facetedNote(primitiveMode, solidType, mapper) : '';
       if (facetedNote) flyNote(fly, facetedNote).classList.add('is-faceted');
       const note = FS.note(law);
@@ -1508,10 +1561,8 @@
       flyMixedSlider(flyRow(fly, C.density.label), {
         mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.fillDensity) ? p.fillDensity : 50; }).mixed,
         props: {
-          // Max raised 100 → 200 (context-bar side only, C4 Job 3). The engine
-          // mapping in scene3d.js still clamps at 100 today — another wave
-          // rescales hatchSpacing() so 100-200 draws a visible difference.
-          value: dv, min: 1, max: 200, step: 1, defaultValue: 50, ariaLabel: C.density.aria,
+          // Max raised 200 → 220 (context-bar side only, fs-m2 Job 3).
+          value: dv, min: 1, max: 220, step: 1, defaultValue: 50, ariaLabel: C.density.aria,
           onChange: (v) => write({ params: { ...params, fillDensity: v } }, { gesture: true, preview: true }),
           onCommit: (v) => write({ params: { ...params, fillDensity: v } }),
         },

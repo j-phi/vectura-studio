@@ -387,7 +387,7 @@
     { value: 'crease', label: 'Crease' }, { value: 'interior', label: 'Interior' },
   ];
   const D_ANGLE = { key: 'fillAngle', kind: 'dial', label: 'Angle', ariaLabel: 'Hatch angle', min: 0, max: 360, step: 1, default: 45 };
-  const D_DENSITY = { key: 'fillDensity', kind: 'slider', label: 'Density', ariaLabel: 'Fill density', min: 1, max: 200, step: 1, default: 50 };
+  const D_DENSITY = { key: 'fillDensity', kind: 'slider', label: 'Density', ariaLabel: 'Fill density', min: 1, max: 220, step: 1, default: 50 };
   const D_ANGLEREF = { key: 'angleRef', kind: 'seg', label: 'Angle ref', ariaLabel: 'Hatch angle reference', default: 'face', options: ANGLE_REF_OPTS };
   const D_LINKFILL = { key: 'linkFill', kind: 'toggle', label: 'Link fill', ariaLabel: 'Connect scanlines (boustrophedon)', default: false };
   // U9 — the FILL STYLE (tone law). `kind: 'lawpick'` is a Select grouped by
@@ -440,6 +440,20 @@
   };
   const carry = (cur, key, dflt) => (cur[key] !== undefined && cur[key] !== null ? cur[key] : dflt);
   const cloneDefault = (d) => (d && typeof d === 'object' ? JSON.parse(JSON.stringify(d)) : d);
+  // fs-m2 Job 4 — keys whose value must survive ANY mapper detour, even a hop
+  // through a mapper that declares no matching descriptor (wireframe /
+  // contourSlice / none have no Density / Angle / Fill Style row at all).
+  // Without this, mapperDefaults' descs.forEach below only ever seeds a key
+  // the TARGET mapper's own descriptor list names, so `out` for wireframe has
+  // no fillDensity/fillAngle/toneLaw — the value isn't overwritten, it is
+  // simply never copied forward, and is gone once wireframe is committed.
+  // Switching back to a fill mapper then has nothing in `cur` to carry FROM,
+  // so `carry()` falls through to the shipped default — a live-verification
+  // catch: density silently reset to 50 after "hatch → wireframe → hatch".
+  // Carried unconditionally (present in `cur` or not) so any number of
+  // detours round-trips the user's value; harmless on a mapper that doesn't
+  // read the key (wireframe never consumes fillDensity).
+  const PERSISTENT_STYLE_KEYS = ['fillDensity', 'fillAngle', 'toneLaw'];
   // Params a mapper is seeded with when selected. Every descriptor default is
   // seeded (carrying the user's current value where present) so switching
   // hatch→contour→stipple keeps the shared Density/Angle/line tuning; `seed:false`
@@ -451,6 +465,9 @@
     if (!descs) return {};
     const out = {};
     descs.forEach((d) => { if (d.seed !== false) out[d.key] = carry(cur, d.key, cloneDefault(d.default)); });
+    PERSISTENT_STYLE_KEYS.forEach((k) => {
+      if (out[k] === undefined && cur[k] !== undefined && cur[k] !== null) out[k] = cur[k];
+    });
     if (FILL_MAPPERS.has(mapper)) {
       Object.keys(STROKE_DEFAULTS).forEach((k) => { out[k] = carry(cur, k, STROKE_DEFAULTS[k]); });
     }
@@ -469,6 +486,11 @@
   // Session-only last-pick memory for the More… flyout (Decision 3). Module
   // scope: survives panel rebuilds/layer switches, resets on reload.
   let moreLastPick = null;
+
+  // fs-m2 Job 2 — unique id counter for the Fill Style (i) popover
+  // (aria-describedby needs a real, non-colliding id per rendered row; three
+  // surfaces + a scene/object/face rerender can all mount one at once).
+  let lawInfoSeq = 0;
 
   // U9 — the Fill Style (tone law) control. THREE style surfaces live in this
   // file and every one of them has a mapper dropdown, so this is written once
@@ -500,34 +522,88 @@
     const FS = Vectura.SCENE_FILL_STYLES;
     if (!UI || !FS) return;
     const law = FS.resolve(o.value);
-    comps.push(UI.Select(o.row(FS.LABEL), {
+    const ctl = o.row(FS.LABEL);
+    const lawSelect = UI.Select(ctl, {
       options: FS.groups(o.primitiveMode, o.solidType, o.mapper),
       value: law,
       ariaLabel: FS.ARIA,
       onChange: (v) => o.write(v),
-    }));
+    });
+    comps.push(lawSelect);
+    attachSelectArrowStep(selectElOf(lawSelect));
+    const entry = FS.entry(law) || {};
+    const note = FS.note(law);
+    const facetedText = FS.facetedNote ? FS.facetedNote(o.primitiveMode, o.solidType, o.mapper) : '';
+
+    // fs-m2 Job 2 — mechanism/strengths/weaknesses/mark-class blurb used to
+    // print as an always-on paragraph block that dominated the panel (a user
+    // comparing 48 laws had to scroll past it for every pick). It now lives
+    // in a compact (i) popover, revealed on hover OR keyboard focus — the
+    // same `:hover`/`:focus-within` idiom `.ctrl-sel-wrap`'s own dropdown
+    // caret already uses elsewhere in this file — and always announced to
+    // screen readers via aria-describedby regardless of visual state, so it
+    // is never mouse-hover-only.
+    const pop = document.createElement('div');
+    pop.className = 'vs3-lawinfo-pop';
+    pop.setAttribute('role', 'tooltip');
     const line = (text, kind) => {
       if (!text) return;
       const n = document.createElement('p');
       n.className = kind ? `vs3-lawnote is-${kind}` : 'vs3-lawnote';
       n.textContent = text;
-      host.appendChild(n);
+      pop.appendChild(n);
     };
-    const entry = FS.entry(law) || {};
-    const note = FS.note(law);
     // The faceted-shape orientation line leads everything else — a user must
     // know THIS before reading what the currently-picked law does.
-    line(FS.facetedNote ? FS.facetedNote(o.primitiveMode, o.solidType, o.mapper) : '', 'faceted');
+    line(facetedText, 'faceted');
     // Leads with the MARK CLASS, so what kind of mark this is stays legible
     // once the select is closed.
     line(note.text);
     if (entry.mechanism) line(`How: ${entry.mechanism}`);
     if (entry.strengths) line(`Strengths: ${entry.strengths}`);
     if (entry.weaknesses) line(`Weaknesses: ${entry.weaknesses}`);
-    // The measured caveat of a demoted law, in the warning colour. Every law
-    // is offered now (no Off/On disclosure), but the caveat still prints only
-    // for the SELECTED one.
-    line(note.caveat, 'caveat');
+
+    if (pop.childNodes.length) {
+      lawInfoSeq += 1;
+      const infoId = `vs3-lawinfo-${lawInfoSeq}`;
+      pop.id = infoId;
+      const wrap = document.createElement('span');
+      wrap.className = 'vs3-lawinfo-wrap';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'vs3-lawinfo-btn';
+      btn.textContent = 'i';
+      btn.setAttribute('aria-label', `About ${entry.label || FS.LABEL}`);
+      btn.setAttribute('aria-describedby', infoId);
+      btn.setAttribute('aria-expanded', 'false');
+      const openPop = () => { pop.classList.add('is-open'); btn.setAttribute('aria-expanded', 'true'); };
+      const closePop = () => { pop.classList.remove('is-open'); btn.setAttribute('aria-expanded', 'false'); };
+      btn.addEventListener('mouseenter', openPop);
+      btn.addEventListener('mouseleave', closePop);
+      btn.addEventListener('focus', openPop);
+      btn.addEventListener('blur', closePop);
+      btn.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closePop(); btn.blur(); } });
+      wrap.appendChild(btn);
+      wrap.appendChild(pop);
+      // A THIRD flex child of the row (label + select + info), not nested
+      // inside `ctl` — `.vs3-row` is already `display:flex`, so this sits
+      // compactly beside the picker instead of stacking under a block-level
+      // select.
+      (ctl.parentNode || ctl).appendChild(wrap);
+    }
+
+    // The measured caveat of a demoted law stays OUTSIDE the hover popover,
+    // in the warning colour, directly under the row — relocated out of the
+    // long paragraph, not lost: a caveat is a warning a user comparing laws
+    // must not have to hover to discover. Every law is offered now (no
+    // Off/On disclosure), but the caveat still prints only for the SELECTED
+    // one.
+    if (note.caveat) {
+      const caveatLine = document.createElement('p');
+      caveatLine.className = 'vs3-lawnote is-caveat';
+      caveatLine.textContent = note.caveat;
+      host.appendChild(caveatLine);
+    }
   };
 
   let CURRENT = null;
@@ -617,6 +693,61 @@
     row.appendChild(ctl);
     host.appendChild(row);
     return ctl;
+  };
+
+  // fs-m2 Job 1 — every Style-tab control commits through a full re-render
+  // (CONTRACT C: a whole-style write always rebuilds the row list, since a
+  // picked value can change which sibling rows apply). That destroys and
+  // replaces every control including the <select> the user just drove, so
+  // focus silently falls back to <body> and the next arrow key does nothing
+  // — the friction reported when auditioning the 48 Fill Style laws by
+  // arrowing through them one at a time. A native <select> already supports
+  // "arrow to the next option, applies live" once it HAS focus, so the fix is
+  // just to keep it focused across the rebuild.
+  //
+  // Captures which <select> (if any) inside `host` currently has focus
+  // before `rerender()` tears the DOM down, then refocuses the FRESH element
+  // carrying the same aria-label afterward. A no-op whenever focus wasn't on
+  // a select (sliders/dials/toggles are untouched — out of this job's scope).
+  // fs-m2 Job 1 (judge correction) — on macOS, a focused CLOSED <select>
+  // OPENS its native listbox on ArrowDown/ArrowUp instead of stepping the
+  // value (Windows/Linux Chrome steps immediately and fires 'change'; macOS
+  // does not). Keeping focus alone isn't enough there. Intercepting just
+  // ArrowUp/ArrowDown and stepping `selectedIndex` ourselves makes every
+  // platform behave the same: the control never opens a popup, it moves to
+  // the adjacent option and applies live — exactly the 48-law auditioning
+  // workflow this job exists for. Every other key (Space to open, type-
+  // ahead, Home/End) stays untouched, so UI.Select's whole reason to exist
+  // (native platform keyboard nav / type-ahead / the mobile picker — see
+  // src/ui/components/select.js:4-6) is preserved, not replaced.
+  const attachSelectArrowStep = (selectEl) => {
+    if (!selectEl || selectEl.__vs3ArrowStep) return;
+    selectEl.__vs3ArrowStep = true;
+    selectEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const opts = Array.from(selectEl.options).filter((o) => !o.disabled);
+      if (opts.length < 2) return;
+      const curIdx = opts.indexOf(selectEl.selectedOptions[0]);
+      const nextIdx = curIdx + (e.key === 'ArrowDown' ? 1 : -1);
+      if (nextIdx < 0 || nextIdx >= opts.length) return; // at the boundary — let native handle it (no-op/beep)
+      e.preventDefault();
+      selectEl.value = opts[nextIdx].value;
+      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+  // Pulls the native <select> out of a UI.Select component's root (a
+  // `.ctrl-sel-wrap` housing `select.ctrl-sel`).
+  const selectElOf = (comp) => comp && comp.el && comp.el.querySelector && comp.el.querySelector('select');
+
+  const withSelectFocusKept = (host, rerender) => {
+    const doc = (host && host.ownerDocument) || document;
+    const active = doc.activeElement;
+    const wasSelect = !!(active && active.tagName === 'SELECT' && host && host.contains(active));
+    const aria = wasSelect ? active.getAttribute('aria-label') : null;
+    rerender();
+    if (!aria || !host) return;
+    const next = Array.from(host.querySelectorAll('select')).find((s) => s.getAttribute('aria-label') === aria);
+    if (next) { attachSelectArrowStep(next); next.focus({ preventScroll: true }); }
   };
 
   /**
@@ -997,7 +1128,12 @@
     };
 
     let renderStyle = () => {};
-    renderStyle = () => {
+    // fs-m2 Job 1 — renderStyle rebuilds the whole Style page on every commit
+    // (Type / Fill Style / any select-kind row), which would otherwise drop
+    // focus off the <select> the user just drove. The real body is
+    // renderStyleImpl; `renderStyle` itself (called everywhere below,
+    // including recursively) is the focus-preserving wrapper.
+    const renderStyleImpl = () => {
       destroyComps();
       pages.style.textContent = '';
       const host = pages.style;
@@ -1012,12 +1148,14 @@
         ariaLabel: 'Style pen',
         onChange: (v) => { commit(() => { style.penId = v || null; }); },
       }));
-      comps.push(UI.Select(labeledRow(host, 'Type'), {
+      const leafTypeSelect = UI.Select(labeledRow(host, 'Type'), {
         options: MAPPERS,
         value: style.mapper || 'wireframe',
         ariaLabel: 'Fill type',
         onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); renderStyle(); },
-      }));
+      });
+      comps.push(leafTypeSelect);
+      attachSelectArrowStep(selectElOf(leafTypeSelect));
       // U9 — Fill Style, directly beneath Type. A LEAF publishes
       // byObject[layerId], so this bag IS its resolved style: writing here is
       // the object-scope write, which is the only scope that reaches an object
@@ -1037,7 +1175,7 @@
       if (FILL_MAPPERS.has(style.mapper)) {
         if (!style.params || typeof style.params !== 'object') style.params = {};
         slider(host, 'Density', {
-          value: Number.isFinite(style.params.fillDensity) ? style.params.fillDensity : 50, min: 1, max: 200, step: 1, defaultValue: 50,
+          value: Number.isFinite(style.params.fillDensity) ? style.params.fillDensity : 50, min: 1, max: 220, step: 1, defaultValue: 50,
           ariaLabel: 'Fill density',
           ...liveSlider((v) => { style.params.fillDensity = Math.round(v); }),
         });
@@ -1159,6 +1297,7 @@
       // object with no overrides keeps NO edgeStyles key ⇒ byte-identical render.
       renderObjectEdgeStyles(host);
     };
+    renderStyle = () => withSelectFocusKept(pages.style, renderStyleImpl);
 
     // Per-object EdgeStyle override editor. Kept as its own function so renderStyle
     // stays legible; mounts onto the Style tab host beneath the mapper controls.
@@ -1374,7 +1513,7 @@
     // current law, so a discrete change has to re-render the tab.
     const sHost = pages.style;
     const style = params.style;
-    const renderBoolStyle = () => {
+    const renderBoolStyleImpl = () => {
       sHost.textContent = '';
       const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
       comps.push(UI.Select(labeledRow(sHost, 'Pen'), {
@@ -1383,12 +1522,14 @@
         ariaLabel: 'Fused style pen',
         onChange: (v) => { commit(() => { style.penId = v || null; }); },
       }));
-      comps.push(UI.Select(labeledRow(sHost, 'Type'), {
+      const boolTypeSelect = UI.Select(labeledRow(sHost, 'Type'), {
         options: MAPPERS,
         value: style.mapper || 'wireframe',
         ariaLabel: 'Fused fill type',
         onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); renderBoolStyle(); },
-      }));
+      });
+      comps.push(boolTypeSelect);
+      attachSelectArrowStep(selectElOf(boolTypeSelect));
       if (FILL_MAPPERS.has(style.mapper)) {
         if (!style.params || typeof style.params !== 'object') style.params = {};
         // The fused fill draws over the primary (first, "Solid" role) operand's
@@ -1405,6 +1546,7 @@
         });
       }
     };
+    const renderBoolStyle = () => withSelectFocusKept(sHost, renderBoolStyleImpl);
     renderBoolStyle();
 
     mirrorChildToCanvas(ui, layer, null);
@@ -3538,7 +3680,7 @@
       return objName;
     };
 
-    const renderStyle = () => {
+    const renderStyleImpl = () => {
       if (!styleHost) return;
       destroyComps(styleComps);
       styleHost.textContent = '';
@@ -3632,12 +3774,14 @@
       mapHost.className = 'vs3-ctl';
       mapRow.appendChild(mapHost);
       styleHost.appendChild(mapRow);
-      styleComps.push(UI.Select(mapHost, {
+      const mainTypeSelect = UI.Select(mapHost, {
         options: MAPPERS,
         value: resolved.mapper || 'none',
         ariaLabel: 'Style mapper',
         onChange: (v) => commitStyle({ mapper: v, params: mapperDefaults(v, resolved.params) }),
-      }));
+      });
+      styleComps.push(mainTypeSelect);
+      attachSelectArrowStep(selectElOf(mainTypeSelect));
 
       // ── Mapper-specific controls (Phase 2) — driven by the MAPPER_CONTROLS
       // descriptor table, one control per descriptor, wired to the whole-style
@@ -4173,6 +4317,7 @@
         });
       }
     };
+    const renderStyle = () => withSelectFocusKept(styleHost, renderStyleImpl);
 
     // ── Tone-band editor (CONTRACT L3) ──────────────────────────────────────
     // Light-driven tone quantization: band count → thresholds → coverage

@@ -13335,6 +13335,41 @@ body.mobile-layout .hud-bar {
   border-left: 2px solid color-mix(in srgb, var(--ui-warning, #d29922) 45%, transparent);
   padding-left: 6px;
 }
+/* fs-m2 Job 2 — the Fill Style (i) info affordance. The mechanism/strengths/
+   weaknesses paragraph used to always print under the picker and dominated
+   the panel; it now lives in `.vs3-lawinfo-pop`, revealed on hover OR
+   keyboard focus via `:hover`/`:focus-within` — the same idiom
+   `.ctrl-sel-wrap`'s dropdown caret already uses above. The caveat is
+   deliberately NOT in here (see `.vs3-lawnote.is-caveat`, appended as a
+   sibling of the row) — a demoted law's warning must stay visible without a
+   hover. `aria-describedby` on the button keeps the popover screen-reader
+   reachable independent of its visual state. */
+.vs3-lawinfo-wrap { position: relative; display: inline-flex; flex: 0 0 auto; }
+.vs3-lawinfo-btn {
+  font-size: 9px; color: var(--ui-muted); background: none;
+  border: 1px solid var(--ui-border); border-radius: 50%;
+  width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; padding: 0; line-height: 1; font-family: var(--font-mono);
+  transition: color 0.1s, border-color 0.1s;
+}
+.vs3-lawinfo-btn:hover, .vs3-lawinfo-btn:focus-visible {
+  color: var(--ui-accent); border-color: var(--ui-accent);
+}
+.vs3-lawinfo-pop {
+  position: absolute; top: 100%; right: 0; z-index: 40; margin-top: 4px;
+  width: 240px; max-width: 70vw;
+  background: var(--ui-panel, #252525); border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm); padding: var(--spacing-sm);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 0.12s, visibility 0s linear 0.12s;
+}
+.vs3-lawinfo-wrap:hover .vs3-lawinfo-pop,
+.vs3-lawinfo-wrap:focus-within .vs3-lawinfo-pop,
+.vs3-lawinfo-pop.is-open {
+  opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s;
+}
+.vs3-lawinfo-pop .vs3-lawnote:last-child { margin-bottom: 0; }
 /* X-ray control group header (scene3d Style tab, Phase 6). */
 .vs3-xray-hdr,
 .vs3-hl-hdr {

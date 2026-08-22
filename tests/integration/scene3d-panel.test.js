@@ -706,6 +706,43 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     expect(container.querySelector('[aria-label="Hatch angle"]')).toBeFalsy();
   });
 
+  // fs-m2 Job 4 — a live-verification catch: Wireframe (and contourSlice/none)
+  // declare no Density/Angle/Fill Style descriptor in MAPPER_CONTROLS, so the
+  // OLD mapperDefaults dropped fillDensity/fillAngle/toneLaw from `params`
+  // entirely on a fill→wireframe switch. Switching back to a fill mapper then
+  // had nothing to carry FROM and silently reseeded the shipped defaults
+  // (density 50, angle 45, law 'ladder') — erasing a user's dialed-in value
+  // with no warning. mapperDefaults now carries these three keys forward
+  // unconditionally (PERSISTENT_STYLE_KEYS) so any number of mapper detours
+  // round-trips them intact.
+  test('Style tab · Density/Angle/Fill Style SURVIVE a detour through Wireframe (no Density control there)', () => {
+    const { container, layer } = mount({
+      objects: [fixtureObject(1)],
+      styleTable: {
+        scene: { penId: null, mapper: 'none', params: {} },
+        byObject: { 'obj-1': { penId: null, mapper: 'hatch', params: { fillDensity: 137, fillAngle: 187, toneLaw: 'etfKang' } } },
+        byFace: {},
+      },
+    });
+    fire(container.querySelector('.vs3-tree-row'), 'click');
+    clickTab(container, 'style');
+    const mapSel = () => [...container.querySelectorAll('select')]
+      .find((s) => [...(s.options || [])].some((o) => o.value === 'wireframe'));
+    mapSel().value = 'wireframe';
+    fire(mapSel(), 'change');
+    expect(layer.params.styleTable.byObject['obj-1'].mapper).toBe('wireframe');
+    // No Density/Fill Style row while on Wireframe...
+    expect(container.querySelector('input.ctrl-slider[aria-label="Fill density"]')).toBeFalsy();
+    // ...but switching back to hatch recovers the ORIGINAL values, not the
+    // shipped defaults.
+    mapSel().value = 'hatch';
+    fire(mapSel(), 'change');
+    const p = layer.params.styleTable.byObject['obj-1'].params;
+    expect(p.fillDensity).toBe(137);
+    expect(p.fillAngle).toBe(187);
+    expect(p.toneLaw).toBe('etfKang');
+  });
+
   // I15 — Dash-length (renamed from "Dash scale") is hidden when Line = solid
   // and appears only for dashed / dash-dot / dotted line types.
   test('Style tab · Dash length is hidden for a solid line and appears when dashed (I15)', () => {
