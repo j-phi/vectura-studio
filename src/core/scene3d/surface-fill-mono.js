@@ -39,6 +39,32 @@
   const finite = (val, f = 0) => (Number.isFinite(Number(val)) ? Number(val) : f);
   const GOLDEN = 0.6180339887498949;
 
+  /* THE WRAP TERM. `sampleAt` already publishes `nz` — the CAMERA-SPACE
+   * normal's z component, 1 dead-on to the camera and exactly 0 ON the
+   * silhouette — and `surface-fill.js` already reads it for the identical
+   * purpose (`limbCrossTaper`, surface-fill.js:3513-3524: "the taper is
+   * stated in the geometry's own terms and needs no radius, no bbox and no
+   * projection assumption"). `originSpiral` and `mazeFill` build their
+   * geometry in flat screen (x, y) — a ring radius, a grid column — with no
+   * awareness of how much surface a given screen millimetre actually
+   * represents, so a turn or a cell reads the same size whether it sits
+   * dead-centre on the form or is riding the limb where the real surface is
+   * foreshortening hard. `wrapPitch` spends the same `nz` signal as a
+   * multiplier on the tone-driven pitch: unchanged away from the limb,
+   * smoothstepped down toward `WRAP_FLOOR` as `nz` approaches 0, so pattern
+   * elements compress toward the silhouette the way a globe's own graticule
+   * does, independently of whatever the light is doing. `WRAP_FLOOR` keeps
+   * the compression from running away to zero pitch exactly at the limb,
+   * where cos/sin(nz) is at its least reliable.
+   */
+  const WRAP_LO = 0.02; const WRAP_HI = 0.38; const WRAP_FLOOR = 0.28;
+  const wrapPitch = (pitch, nz) => {
+    const a = Math.abs(finite(nz, 1));
+    const u = clamp((a - WRAP_LO) / (WRAP_HI - WRAP_LO), 0, 1);
+    const eased = u * u * (3 - 2 * u);
+    return pitch * (WRAP_FLOOR + (1 - WRAP_FLOOR) * eased);
+  };
+
   // The roster. Order is the order the sheets present them in.
   const LAWS = [
     // Tier 1 — the direction field and the depth terms. Slots S1-S5, S18:
@@ -1853,13 +1879,23 @@
     ySamples.sort((a, b) => a - b);
     const yFlat = ySamples.length < 4 || (ySamples[ySamples.length - 1] - ySamples[0]) < 1e-4;
 
+    // WRAP: a column/row's own screen position never says how much surface
+    // it stands for, so the grid otherwise reads as laid flat on the form
+    // rather than following it. The representative point already sampled for
+    // `avg` (`C.faceY`/`C.faceX` cross the column/row) carries `nz` for free
+    // — fold the local pitch tighter as that point rides the limb (nz -> 0),
+    // exactly `originSpiral`'s `wrapPitch`. A flat face has one constant
+    // normal, so `nz` is the same at every column/row there and this only
+    // ever applies a uniform scale — it cannot reintroduce the spread the
+    // flat-face rank-normalization guard exists to keep out.
     const xs = [];
     let x = C.minX;
     while (x < C.maxX && xs.length < 300) {
       xs.push(x);
       const avg = bandAvg(x, C.faceY, true);
       const t = avg == null ? 0.5 : (xFlat ? avg : rankOf(xSamples, avg));
-      x += C.pitchLegible(t) * 1.05;
+      const here = C.inv(x, C.faceY);
+      x += Math.max(C.FLOOR, wrapPitch(C.pitchLegible(t), here ? here.nz : 1)) * 1.05;
     }
     const ys = [];
     let y = C.minY;
@@ -1867,7 +1903,8 @@
       ys.push(y);
       const avg = bandAvg(C.faceX, y, false);
       const t = avg == null ? 0.5 : (yFlat ? avg : rankOf(ySamples, avg));
-      y += C.pitchLegible(t) * 1.05;
+      const here = C.inv(C.faceX, y);
+      y += Math.max(C.FLOOR, wrapPitch(C.pitchLegible(t), here ? here.nz : 1)) * 1.05;
     }
     const NX = xs.length - 1; const NY = ys.length - 1;
     if (NX < 3 || NY < 3) return;
@@ -2161,7 +2198,14 @@
         const th = (i / NANG) * Math.PI * 2;
         const x = ox + r0 * Math.cos(th); const y = oy + r0 * Math.sin(th);
         const s = C.inv(x, y);
-        const p = C.pitchFor(s ? finite(s.I, 0) : 0.85);
+        const p0 = C.pitchFor(s ? finite(s.I, 0) : 0.85);
+        // WRAP: fold the turn tighter as it rides the limb (nz -> 0), so the
+        // rings read as following the body's curvature and not as a flat
+        // disc of concentric circles laid on top of it. `wrapPitch` is a
+        // bounded fraction of `p0` (never below `p0 * WRAP_FLOOR`), so this
+        // does not reintroduce a legibility floor `pitchFor` deliberately
+        // does not have -- the law still reaches genuine black.
+        const p = wrapPitch(p0, s ? s.nz : 1);
         const r1 = r0 + p;
         next[i] = r1;
         if (r1 < rMax) anyGrowing = true;
