@@ -1770,28 +1770,91 @@
     // window instead (centred on the object's own most-front-facing point,
     // `C.faceX`/`C.faceY`) keeps each column's/row's clearance representative
     // of the tone actually near it.
+    // On a typical lit sphere the RAW local average sampled below almost
+    // never climbs high enough to push `pitchFor` above `FLOOR`: measured,
+    // only the brightest ~12% of the visible width crossed that threshold,
+    // so ~88% of the grid lines landed at the SAME floor pitch regardless of
+    // how dark the tone actually was there — a flat lit/shadow ink-density
+    // ratio of ~0.99 (tests/unit/scene3d-maze-tonal-range.test.js). Nor does
+    // a plain linear min/max stretch (the way `lawCrevice`'s AO term is
+    // stretched elsewhere in this file) fix it: the RAW local average is not
+    // uniformly spread over its own range on a sphere — the shading is
+    // concentrated near the light direction, so most of the width still sits
+    // in a compressed low band even after a linear rescale. The fix instead
+    // RANK-normalizes: it pre-samples the local average at 41 evenly-spaced
+    // columns/rows, sorts those samples, and maps each column's/row's own
+    // average to its PERCENTILE within that sample set rather than its
+    // linear position in [min, max]. That guarantees, by construction, an
+    // even spread across the full 0..1 `pitchFor` domain regardless of how
+    // skewed the underlying radiance curve is — genuinely dark columns/rows
+    // still bottom out at `FLOOR` (this law's own header's "reaches
+    // black... walls abut" is preserved), and the "more open" half of the
+    // form now actually opens up instead of collapsing onto the floor
+    // plateau.
+    //
+    // A FLAT FACE (the faceted box/plane/solid path in scene3d.js, which
+    // calls this same law once per front face) has a CONSTANT normal, so
+    // every sample the pre-scan takes on it is the identical radiance — the
+    // pre-scan's own min and max collapse to the same number. Ranking a
+    // degenerate all-equal sample set is undefined (every value ties for
+    // rank 0) and would flatten EVERY face to the darkest possible pitch
+    // regardless of its real radiance — the exact regression
+    // tests/unit/scene3d-faceted-tone-law.test.js caught. So the rank
+    // normalization is skipped whenever the pre-scan carries no real spread,
+    // and the RAW local average is used unchanged in that case — exactly
+    // the pre-existing per-face behaviour (a constant radiance per face
+    // legitimately floors at `FLOOR` under a low sun; see that test file's
+    // own "declining to flood the paper" comment) is left untouched.
     const LOCAL = Math.max(C.R * 0.22, C.FLOOR * 3);
+    const bandAvg = (cx0, cy0, alongX) => {
+      let sum = 0; let n = 0;
+      for (let k = 0; k <= 10; k++) {
+        const s = alongX
+          ? C.inv(cx0, cy0 - LOCAL + (k / 10) * (2 * LOCAL))
+          : C.inv(cx0 - LOCAL + (k / 10) * (2 * LOCAL), cy0);
+        if (s) { sum += finite(s.I, 0); n += 1; }
+      }
+      return n ? sum / n : null;
+    };
+    const rankOf = (sorted, v) => {
+      if (!sorted.length) return 0.5;
+      let lo = 0; let hi = sorted.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (sorted[mid] < v) lo = mid + 1; else hi = mid;
+      }
+      return sorted.length > 1 ? lo / (sorted.length - 1) : 0.5;
+    };
+    const xSamples = [];
+    for (let k = 0; k <= 40; k++) {
+      const v = bandAvg(C.minX + (C.maxX - C.minX) * (k / 40), C.faceY, true);
+      if (v != null) xSamples.push(v);
+    }
+    xSamples.sort((a, b) => a - b);
+    const xFlat = xSamples.length < 4 || (xSamples[xSamples.length - 1] - xSamples[0]) < 1e-4;
+    const ySamples = [];
+    for (let k = 0; k <= 40; k++) {
+      const v = bandAvg(C.faceX, C.minY + (C.maxY - C.minY) * (k / 40), false);
+      if (v != null) ySamples.push(v);
+    }
+    ySamples.sort((a, b) => a - b);
+    const yFlat = ySamples.length < 4 || (ySamples[ySamples.length - 1] - ySamples[0]) < 1e-4;
+
     const xs = [];
     let x = C.minX;
     while (x < C.maxX && xs.length < 300) {
       xs.push(x);
-      let sum = 0; let n = 0;
-      for (let k = 0; k <= 10; k++) {
-        const s = C.inv(x, C.faceY - LOCAL + (k / 10) * (2 * LOCAL));
-        if (s) { sum += finite(s.I, 0); n += 1; }
-      }
-      x += C.pitchLegible(n ? sum / n : 0.6) * 1.05;
+      const avg = bandAvg(x, C.faceY, true);
+      const t = avg == null ? 0.5 : (xFlat ? avg : rankOf(xSamples, avg));
+      x += C.pitchLegible(t) * 1.05;
     }
     const ys = [];
     let y = C.minY;
     while (y < C.maxY && ys.length < 300) {
       ys.push(y);
-      let sum = 0; let n = 0;
-      for (let k = 0; k <= 10; k++) {
-        const s = C.inv(C.faceX - LOCAL + (k / 10) * (2 * LOCAL), y);
-        if (s) { sum += finite(s.I, 0); n += 1; }
-      }
-      y += C.pitchLegible(n ? sum / n : 0.6) * 1.05;
+      const avg = bandAvg(C.faceX, y, false);
+      const t = avg == null ? 0.5 : (yFlat ? avg : rankOf(ySamples, avg));
+      y += C.pitchLegible(t) * 1.05;
     }
     const NX = xs.length - 1; const NY = ys.length - 1;
     if (NX < 3 || NY < 3) return;
