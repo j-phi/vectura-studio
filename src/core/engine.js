@@ -2743,18 +2743,24 @@
     //
     // The child's true rendered ink already exists: it is the slice of the
     // owning scene GROUP's composed `scenePaths` tagged with
-    // `meta.sceneTarget.objectId === childId` (cast shadows are stamped with
-    // the caster-independent id `'ground'`, so a ground expand also picks up
-    // its own shadow — exactly what was on canvas). Returns `null` when
-    // `layerId` is not a scene-tree child type or has no owning scene group
-    // (caller falls back to ordinary `layer.paths` handling); returns an array
-    // (possibly empty, e.g. a light — lights stamp no geometry of their own)
-    // when it is.
+    // `meta.sceneTarget.objectId === childId`. EXCEPT the ground: unlike
+    // lights/objects, Scene3D.Params.collectSceneParams does NOT carry the
+    // sceneGround3d child's own layer id into the assembled scene input — the
+    // ground is always the single fixed sentinel id `'ground'` inside
+    // scene3d.js (`record.id === 'ground'`), and cast shadows are stamped
+    // with that same caster-independent sentinel. So a ground child is keyed
+    // by the literal string `'ground'`, not by its own layer id (a ground
+    // expand still picks up its own shadow — exactly what was on canvas).
+    // Returns `null` when `layerId` is not a scene-tree child type or has no
+    // owning scene group (caller falls back to ordinary `layer.paths`
+    // handling); returns an array (possibly empty, e.g. a light — lights
+    // stamp no geometry of their own) when it is.
     getSceneChildRenderPaths(layerId) {
       const layer = this.getLayerById(layerId);
       if (!layer) return null;
       const SCENE_CHILD_TYPES = new Set(['object3d', 'sceneGround3d', 'sceneLight3d', 'booleanGroup3d']);
       if (!SCENE_CHILD_TYPES.has(layer.type)) return null;
+      const targetId = layer.type === 'sceneGround3d' ? 'ground' : layerId;
       let group = layer.parentId ? this.getLayerById(layer.parentId) : null;
       while (group && !(group.isGroup && group.type === 'scene3d' && group.containerRole === 'scene')) {
         group = group.parentId ? this.getLayerById(group.parentId) : null;
@@ -2764,7 +2770,7 @@
         this.generate(group.id);
       }
       const scenePaths = Array.isArray(group.scenePaths) ? group.scenePaths : [];
-      return scenePaths.filter((p) => p && p.meta && p.meta.sceneTarget && p.meta.sceneTarget.objectId === layerId);
+      return scenePaths.filter((p) => p && p.meta && p.meta.sceneTarget && p.meta.sceneTarget.objectId === targetId);
     }
 
     /**
