@@ -2201,6 +2201,11 @@
     }
     const root = els.content || els.bar;
     root.querySelectorAll('.ctxbar-align-flyout').forEach((f) => f.classList.toggle('ctxbar-flyout-up', up));
+    // The overflow (...) menu lives outside `content` (it's a sibling of it on
+    // the bar), so the querySelectorAll above never reaches it — stamp it here
+    // with the SAME class the pill flyouts use, so it opens the same direction
+    // as everything else on the bar, live, without a second direction system.
+    if (els.menu) els.menu.classList.toggle('ctxbar-flyout-up', up);
     // Both caret flavours: the pill carets built by makeDropField/dropField,
     // and the standalone size-presets chevron. Selecting on class rather than
     // per-dropdown registration is the point — a menu added later is covered

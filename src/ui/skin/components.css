@@ -11976,9 +11976,15 @@ body.mobile-layout .hud-bar {
    chance of being seen in its entirety. `ctxbar-flyout-up` is stamped on each
    flyout by the bar's shared direction pass; the `.ctxbar-menus-up` bar-level
    rule below covers content rebuilt between ticks so nothing can flash the
-   wrong way for a frame. Both set the same geometry, so order is immaterial. */
+   wrong way for a frame. Both set the same geometry, so order is immaterial.
+   The overflow (...) menu (`.ctxbar-menu`) shares this exact rule — it is
+   stamped with the same `ctxbar-flyout-up` class by the same JS pass, so it
+   always opens the same direction as the bar's other menus instead of being
+   pinned open in a fixed direction of its own. */
 .ctxbar-align-flyout.ctxbar-flyout-up,
-.ctxbar.ctxbar-menus-up .ctxbar-align-flyout {
+.ctxbar-menu.ctxbar-flyout-up,
+.ctxbar.ctxbar-menus-up .ctxbar-align-flyout,
+.ctxbar.ctxbar-menus-up .ctxbar-menu {
   top: auto;
   bottom: calc(100% + 6px);
 }
@@ -11987,7 +11993,8 @@ body.mobile-layout .hud-bar {
    and each flyout caps itself to it. The per-type caps below fold it into their
    own `min()` rather than relying on a separate rule — a later same-specificity
    `max-height` would otherwise win the cascade and silently drop the clamp. */
-.ctxbar-align-flyout {
+.ctxbar-align-flyout,
+.ctxbar-menu {
   max-height: var(--ctxbar-menu-space, 100vh);
   overflow-y: auto;
 }

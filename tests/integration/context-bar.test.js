@@ -400,6 +400,53 @@ describe('Contextual Task Bar (Lane G — TB-1…8)', () => {
       expect(fly.classList.contains('ctxbar-flyout-up')).toBe(true);
     });
 
+    // Regression: the "..." overflow menu ("Hide bar" / "Reset bar position")
+    // always opened downward, even while every pill flyout on the same bar
+    // opened upward. It must reuse the SAME direction decision as the pill
+    // flyouts (the shared refreshMenuDirection()/applyMenuDirection() pass),
+    // not a hardcoded direction of its own — the bar is draggable, so a fixed
+    // "up" would push the overflow menu off-screen when the bar sits near the
+    // top of the viewport.
+    test('overflow (...) menu resolves to the SAME direction as a pill flyout on the same bar', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+      placeBar(VIEW_H - 120); // nearest edge is the bottom → menus open up
+      await nextFrames();
+
+      const presetField = host().querySelector('.ctxbar-preset-field');
+      const pillFly = presetField.closest('.ctxbar-align-wrap').querySelector('.ctxbar-align-flyout');
+      expect(pillFly.classList.contains('ctxbar-flyout-up')).toBe(true);
+
+      const overflowMenu = document.querySelector('.ctxbar-menu');
+      expect(overflowMenu.classList.contains('ctxbar-flyout-up')).toBe(true);
+    });
+
+    test('overflow (...) menu flips together with the pill flyouts when the bar is dragged near the top', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+
+      // Start near the bottom — both open up.
+      placeBar(VIEW_H - 120);
+      await nextFrames();
+      const presetField = host().querySelector('.ctxbar-preset-field');
+      const pillFly = presetField.closest('.ctxbar-align-wrap').querySelector('.ctxbar-align-flyout');
+      const overflowMenu = document.querySelector('.ctxbar-menu');
+      expect(pillFly.classList.contains('ctxbar-flyout-up')).toBe(true);
+      expect(overflowMenu.classList.contains('ctxbar-flyout-up')).toBe(true);
+
+      // Drag the bar to the top — no room above, both must flip to down
+      // TOGETHER so neither renders off-screen.
+      placeBar(20);
+      await nextFrames();
+      expect(pillFly.classList.contains('ctxbar-flyout-up')).toBe(false);
+      expect(overflowMenu.classList.contains('ctxbar-flyout-up')).toBe(false);
+      expect(bar().classList.contains('ctxbar-menus-up')).toBe(false);
+    });
+
     test('direction re-evaluates when the bar moves without a hand drag (selection/pan/zoom auto-anchor)', async () => {
       await reset('select');
       const layer = addLayer('wavetable');
