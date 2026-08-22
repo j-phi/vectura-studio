@@ -1393,6 +1393,47 @@
   // `.is-caveat`, which paints it in the warning colour).
   const flyNote = (fly, text) => { const n = el('div', 'ctxbar-fly-note'); n.textContent = text; fly.appendChild(n); return n; };
 
+  // fs-y1 Job 1 — the Fill Style (i) info panel, mirrored into the ctxbar
+  // Style/Shadow flyouts (the docked Style/Shadow tabs already have one —
+  // see scene3d-panel.js's buildLawInfoAffordance). The docked panel's
+  // affordance floats a positioned popover; that does NOT work here:
+  // `.ctxbar-scene-flyout` is only 232px wide and sets `overflow-y: auto`,
+  // which per spec also computes `overflow-x` to `auto` (not `visible`), so
+  // a floating popover would get clipped/scrolled instead of shown. This
+  // renders INLINE in the flyout's own vertical flow instead — click toggles
+  // it into view directly under the row, so it always fits the column and
+  // never needs its own positioning. Degrade, not omission.
+  //
+  // `rowHost` is the `.ctxbar-fly-ctl` a flyRow(...) call returned — the (i)
+  // button is appended as a third flex child of `rowHost.parentNode` (the
+  // `.ctxbar-fly-row`), mirroring the docked panel's "beside the picker, not
+  // nested inside it" placement. `lines` is `[{ text, kind? }]`; a falsy
+  // `text` is dropped, and nothing renders if every line is empty.
+  let flyLawInfoSeq = 0;
+  const flyLawInfo = (fly, rowHost, lines, ariaLabel) => {
+    const filled = (lines || []).filter((l) => l && l.text);
+    if (!filled.length) return;
+    flyLawInfoSeq += 1;
+    const infoId = `ctxbar-lawinfo-${flyLawInfoSeq}`;
+    const box = el('div', 'ctxbar-fly-lawinfo', { id: infoId, role: 'note' });
+    filled.forEach(({ text, kind }) => {
+      const p = el('p', kind ? `vs3-lawnote is-${kind}` : 'vs3-lawnote');
+      p.textContent = text;
+      box.appendChild(p);
+    });
+    const btn = el('button', 'vs3-lawinfo-btn', {
+      type: 'button', 'aria-label': ariaLabel, 'aria-describedby': infoId, 'aria-expanded': 'false',
+    });
+    btn.textContent = 'i';
+    let open = false;
+    const setOpen = (v) => { open = v; box.classList.toggle('is-open', v); btn.setAttribute('aria-expanded', String(v)); };
+    btn.addEventListener('click', (e) => { e.stopPropagation(); setOpen(!open); });
+    btn.addEventListener('keydown', (e) => { if (e.key === 'Escape' && open) { setOpen(false); btn.blur(); } });
+    const anchor = rowHost.parentNode || rowHost;
+    anchor.appendChild(btn);
+    fly.appendChild(box);
+  };
+
   // fs-m2 Job 1 — a discrete change inside a scene flyout (Type / Fill
   // Style / border-enable / …) commits through `rebuild()` below, which
   // clears the flyout body and rebuilds it — a discrete pick can reveal or
@@ -1532,7 +1573,8 @@
       // SCENE_FILL_STYLES.isCapLimited.
       const solidTypeAgree = sceneAgree(sc, (id) => { const rec = recordOf(id); return (rec && rec.params) ? rec.params.solidType : null; });
       const solidType = solidTypeAgree.mixed ? null : solidTypeAgree.value;
-      attachSelectArrowStep(selectElOf(flyMixedSelect(flyRow(fly, FSC.label), {
+      const fsHost = flyRow(fly, FSC.label);
+      attachSelectArrowStep(selectElOf(flyMixedSelect(fsHost, {
         options: FS.groups(primitiveMode, solidType, mapper), value: law, ariaLabel: FSC.aria,
         mixed: sceneAgree(sc, (id) => FS.resolve((rs(id).params || {}).toneLaw)).mixed,
         onChange: (v) => { write({ params: { ...params, toneLaw: v } }); rebuild(); },
@@ -1541,6 +1583,18 @@
       if (facetedNote) flyNote(fly, facetedNote).classList.add('is-faceted');
       const note = FS.note(law);
       if (note.text) flyNote(fly, note.text);
+      // fs-y1 Job 1 — the (i): mechanism/strengths/weaknesses, the SAME
+      // per-law paragraphs the docked panel's popover holds (kept out of
+      // this always-on note above, unlike the docked panel, only because
+      // `note.text`/`facetedNote`/caveat here are an established contract
+      // other tests already read as always-visible — see the shared
+      // SCENE_FILL_STYLES.entry() this reads from).
+      const entry = FS.entry(law) || {};
+      flyLawInfo(fly, fsHost, [
+        { text: entry.mechanism ? `How: ${entry.mechanism}` : '' },
+        { text: entry.strengths ? `Strengths: ${entry.strengths}` : '' },
+        { text: entry.weaknesses ? `Weaknesses: ${entry.weaknesses}` : '' },
+      ], `About ${entry.label || FSC.label}`);
       if (note.caveat) flyNote(fly, note.caveat).classList.add('is-caveat');
     }
     flyMixedSelect(flyRow(fly, C.pen.label), {
@@ -1719,10 +1773,19 @@
         const groups = FS.groups(null, null, null)
           .map((g) => ({ group: g.group, options: g.options.filter((opt) => Shadows.toneLawApplies(opt.value)) }))
           .filter((g) => g.options.length);
-        UI.Select(flyRow(fly, C.toneLaw.label), {
+        const toneLawHost = flyRow(fly, C.toneLaw.label);
+        UI.Select(toneLawHost, {
           options: groups, value: law, ariaLabel: C.toneLaw.aria,
           onChange: (v) => setScene('shadow.shadowToneLaw', v),
         });
+        // fs-y1 Job 1 — "for all fill styles": the shadow tone-law picker is
+        // a Fill Style control too.
+        const shadowEntry = FS.entry(law) || {};
+        flyLawInfo(fly, toneLawHost, [
+          { text: shadowEntry.mechanism ? `How: ${shadowEntry.mechanism}` : '' },
+          { text: shadowEntry.strengths ? `Strengths: ${shadowEntry.strengths}` : '' },
+          { text: shadowEntry.weaknesses ? `Weaknesses: ${shadowEntry.weaknesses}` : '' },
+        ], `About ${shadowEntry.label || C.toneLaw.label}`);
         if (C.toneLawNote) flyNote(fly, C.toneLawNote);
       } else if (FS && Shadows && !isLive && C.toneLawInertNote) {
         flyNote(fly, C.toneLawInertNote);

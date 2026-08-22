@@ -626,6 +626,63 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(caveat.textContent.startsWith(window.Vectura.SCENE_FILL_STYLES.SIMULATED_NOTE)).toBe(true);
   });
 
+  // fs-y1 Job 1 — the audit found NO (i) at all here, only an always-on
+  // note. The docked panel already has a click-driven (i); this pins the
+  // ctxbar Style flyout carrying the same affordance, degraded to an INLINE
+  // block (not a floating popover) because the flyout is only 232px wide.
+  describe('fs-y1 Job 1 — the ctxbar Style flyout Fill Style row carries a click-driven (i)', () => {
+    const lawRowOf = (fly) => rowCtl(fly, 'Fill Style').parentNode;
+
+    test('an (i) button exists beside the Fill Style row and is closed by default', () => {
+      const { fly } = openStyle({
+        styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'etfKang' } } }),
+      });
+      const btn = lawRowOf(fly).querySelector('.vs3-lawinfo-btn');
+      expect(btn).toBeTruthy();
+      expect(btn.tagName).toBe('BUTTON');
+      expect(btn.getAttribute('aria-label')).toMatch(/\S/);
+      const box = openFly().querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      expect(box).toBeTruthy();
+      expect(box.classList.contains('is-open')).toBe(false);
+      expect(box.textContent).toContain(window.Vectura.SCENE_FILL_STYLES.entry('etfKang').mechanism);
+    });
+
+    test('clicking the (i) opens the inline panel; a second click closes it', () => {
+      const { fly } = openStyle({
+        styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'etfKang' } } }),
+      });
+      const btn = lawRowOf(fly).querySelector('.vs3-lawinfo-btn');
+      const box = openFly().querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      fire(btn, 'click');
+      expect(box.classList.contains('is-open')).toBe(true);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+      fire(btn, 'click');
+      expect(box.classList.contains('is-open')).toBe(false);
+    });
+
+    test('the panel never widens past the 232px flyout — it renders inline, not as a floating popover', () => {
+      const { fly } = openStyle({
+        styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'etfKang' } } }),
+      });
+      const btn = lawRowOf(fly).querySelector('.vs3-lawinfo-btn');
+      const box = openFly().querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      fire(btn, 'click');
+      // Inline flow, not absolutely positioned — a direct child of the
+      // flyout body, siblings with the row rather than floating off it.
+      expect(box.parentNode).toBe(fly);
+      expect(box.classList.contains('vs3-lawinfo-pop')).toBe(false);
+    });
+
+    test('the caveat and mark-class note stay reachable without opening the (i)', () => {
+      const { fly } = openStyle({
+        styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'bundleDither' } } }),
+      });
+      const notes = Array.from(openFly().querySelectorAll('.ctxbar-fly-note')).map((n) => n.textContent);
+      expect(notes.some((t) => t.startsWith('Parallel hatching —') || t.startsWith('Crosshatch'))).toBe(true);
+      expect(openFly().querySelector('.ctxbar-fly-note.is-caveat')).toBeTruthy();
+    });
+  });
+
   // The owner's decision retired the Off/On "Experimental" toggle: every law
   // is offered all the time, on both surfaces, with no per-option suffix and
   // no view-state to persist. This test used to prove the toggle grew the
@@ -966,6 +1023,74 @@ describe('Fill Style — docked 3D Scene panel', () => {
       expect(caveat).toBeTruthy();
       const pop = page.querySelector('.vs3-lawinfo-pop');
       expect(pop.contains(caveat)).toBe(false);
+    });
+  });
+
+  // fs-y1 Job 1 — the owner asked twice for CLICK to open the info panel; an
+  // earlier pass only wired hover/focus. These pin the regression: a click
+  // must open it, and — unlike hover — the popover must SURVIVE the pointer
+  // leaving the button (a genuine "held open" panel, not a bigger tooltip).
+  describe('fs-y1 Job 1 — the (i) is CLICK-driven, not hover-only', () => {
+    test('clicking the (i) opens the popover even with no prior hover/focus', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
+      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      expect(pop.classList.contains('is-open')).toBe(false);
+      fire(btn, 'click');
+      expect(pop.classList.contains('is-open')).toBe(true);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    test('a click-opened popover stays open after mouseleave/blur (pinned), then a second click closes it', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
+      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      fire(btn, 'click');
+      expect(pop.classList.contains('is-open')).toBe(true);
+      fire(btn, 'mouseleave');
+      fire(btn, 'blur');
+      expect(pop.classList.contains('is-open')).toBe(true);
+      fire(btn, 'click');
+      expect(pop.classList.contains('is-open')).toBe(false);
+    });
+
+    test('a click outside the popover closes a pinned-open one', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
+      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      fire(btn, 'click');
+      expect(pop.classList.contains('is-open')).toBe(true);
+      document.body.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+      expect(pop.classList.contains('is-open')).toBe(false);
+    });
+
+    test('Escape un-pins and closes a click-opened popover', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
+      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      fire(btn, 'click');
+      expect(pop.classList.contains('is-open')).toBe(true);
+      btn.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(pop.classList.contains('is-open')).toBe(false);
+    });
+  });
+
+  // fs-y1 Job 1 — "for all fill styles": the Shadow tab's own tone-law row is
+  // a Fill Style picker too, so it gets the same (i).
+  describe('fs-y1 Job 1 — the Shadow tab Fill Style row also carries a click-driven (i)', () => {
+    const shadowPage = (c) => c.querySelector('.vs3-page[data-page="scene"]');
+    test('an (i) exists beside the shadow Fill Style row and opens its own popover on click', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'ladder' }));
+      const page = shadowPage(container);
+      const buttons = Array.from(page.querySelectorAll('.vs3-lawinfo-btn'));
+      // At least one belongs to the shadow row (the Style-tab one lives on
+      // a different tab page and is not mounted here).
+      expect(buttons.length).toBeGreaterThan(0);
+      const btn = buttons[buttons.length - 1];
+      const pop = page.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      expect(pop.classList.contains('is-open')).toBe(false);
+      fire(btn, 'click');
+      expect(pop.classList.contains('is-open')).toBe(true);
     });
   });
 
@@ -1384,6 +1509,20 @@ describe('Shadow Fill Style — context-bar Shadow flyout', () => {
     expect(notes).toContain(window.Vectura.CONTEXT_BAR.sceneFlyouts.shadow.toneLawNote);
     expect(window.Vectura.CONTEXT_BAR.sceneFlyouts.shadow.toneLawNote).toMatch(/flow/i);
     expect(window.Vectura.CONTEXT_BAR.sceneFlyouts.shadow.toneLawNote).toMatch(/web/i);
+  });
+
+  // fs-y1 Job 1 — "for all fill styles": the shadow Fill Style row is a Fill
+  // Style picker too, and gets the same click-driven inline (i).
+  test('fs-y1 Job 1 — the shadow Fill Style row also carries a click-driven inline (i)', () => {
+    const { fly } = openShadow();
+    const row = rowCtl(fly, 'Fill Style').parentNode;
+    const btn = row.querySelector('.vs3-lawinfo-btn');
+    expect(btn).toBeTruthy();
+    const box = fly.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+    expect(box.classList.contains('is-open')).toBe(false);
+    fire(btn, 'click');
+    expect(box.classList.contains('is-open')).toBe(true);
+    expect(box.parentNode).toBe(fly);
   });
 
   test('choosing a law writes shadow.shadowToneLaw on the scene layer', () => {
