@@ -140,7 +140,18 @@ describe('Scene X-ray — a ground-quad selection omits object-DEF controls', ()
 
       select(gid, ['ground']);
       expect(pillLabels()).not.toContain('Shape');
-      expect(host().querySelectorAll('.ctxbar-btn').length).toBe(0);
+      // The object-DEF VERBS must go. Scene-wide view controls legitimately
+      // stay — the viewport-helpers toggle backs SETTINGS.sceneHelpersVisible,
+      // which is a whole-scene preference, not a property of the selection,
+      // exactly like Style/Shadow/Highlight survive in the next test. Assert
+      // the verbs are gone rather than counting every button, so adding a
+      // scene-wide control never silently reads as a regression here.
+      const btnNames = [...host().querySelectorAll('.ctxbar-btn')]
+        .map((b) => b.getAttribute('aria-label') || '');
+      const sceneWide = btnNames.filter((n) => /viewport helpers/i.test(n));
+      const verbs = btnNames.filter((n) => !/viewport helpers/i.test(n));
+      expect(verbs).toEqual([]);
+      expect(sceneWide.length).toBe(1);
     });
 
     test('Style / Shadow / Highlight and the pen chip SURVIVE (they write the style table)', () => {
