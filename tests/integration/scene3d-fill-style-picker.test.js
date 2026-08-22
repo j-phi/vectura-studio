@@ -81,8 +81,8 @@ describe('Fill Style — the shared mark-class config', () => {
     expect(F.DEFAULT).toBe('ladder');
   });
 
-  test('every one of the 47 roster laws has a mark class, and no stray ids', () => {
-    expect(R.IDS.length).toBe(47);
+  test('every one of the 48 roster laws has a mark class, and no stray ids', () => {
+    expect(R.IDS.length).toBe(48);
     expect(F.assertComplete()).toEqual({ missing: [], unknown: [], stray: [] });
   });
 
@@ -264,10 +264,10 @@ describe('Fill Style — the shared mark-class config', () => {
         expect(o.disabled).toBeFalsy();
         expect(o.label).not.toContain(F.NO_EFFECT_SUFFIX);
       });
-      // The measured count from the U12 audit: 37 of 48 do nothing on box
+      // The measured count from the U12 audit: 38 of 49 do nothing on box (onePenDown is a wave law, dead on faceted)
       // (none/ladder/the 9 mono laws are the 11 that remain reachable).
       expect(alive.length).toBe(11);
-      expect(dead.length).toBe(37);
+      expect(dead.length).toBe(38);
       // Group STRUCTURE (count, membership) is unaffected — only reachability.
       expect(g.length).toBe(F.groups('sphere').length);
     });
@@ -1286,7 +1286,7 @@ describe('Shadow Fill Style — the shared toneLawApplies filter', () => {
 
   test('the offered count is the full roster + default, minus exactly the 7 flow/web ids', () => {
     const full = F.groups(null, null, null).reduce((a, g) => a + g.options.length, 0);
-    expect(full).toBe(48); // default (ladder) + 47 roster laws
+    expect(full).toBe(49); // default (ladder) + 48 roster laws
     expect(offeredIds().length).toBe(full - 7);
   });
 });
