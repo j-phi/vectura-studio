@@ -969,6 +969,95 @@ describe('Fill Style — docked 3D Scene panel', () => {
     });
   });
 
+  // fs-m2 Job 1 — a dropdown pick used to commit through a full re-render
+  // that destroyed and replaced the <select> the user just drove, dropping
+  // focus to <body> so the next arrow key did nothing (the friction reported
+  // when auditioning 48 Fill Style laws by arrowing through them). The FRESH
+  // select carrying the same aria-label must end up focused after the
+  // rebuild, both for Type and for Fill Style.
+  describe('fs-m2 Job 1 — a Select keeps focus across its own rebuild (arrow-key auditioning)', () => {
+    test('Type select: after picking a value, the NEW select (post-rebuild) holds focus', () => {
+      const { container } = openStyle(hatchOn());
+      const mapSel = styleRow(container, 'Type').querySelector('select');
+      mapSel.focus();
+      mapSel.value = 'crosshatch';
+      fire(mapSel, 'change');
+      const active = container.ownerDocument.activeElement;
+      expect(active.tagName).toBe('SELECT');
+      expect(active.getAttribute('aria-label')).toBe('Style mapper');
+      // Proves it is genuinely the POST-rebuild element, not a stale
+      // reference: the row was torn down and rebuilt, so the DOM node
+      // identity changed even though the aria-label did not.
+      expect(active).toBe(styleRow(container, 'Type').querySelector('select'));
+      expect(active).not.toBe(mapSel);
+    });
+
+    test('Fill Style select: after picking a law, the NEW select holds focus', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'ladder' }));
+      const lawSel = styleRow(container, 'Fill Style').querySelector('select');
+      lawSel.focus();
+      lawSel.value = 'etfKang';
+      fire(lawSel, 'change');
+      const active = container.ownerDocument.activeElement;
+      expect(active.tagName).toBe('SELECT');
+      expect(active.getAttribute('aria-label')).toBe(window.Vectura.SCENE_FILL_STYLES.ARIA);
+      expect(active).toBe(styleRow(container, 'Fill Style').querySelector('select'));
+      expect(active).not.toBe(lawSel);
+    });
+
+    test('a Select whose change did NOT come from a focused select is unaffected (no stray focus steal)', () => {
+      const { container } = openStyle(hatchOn());
+      container.ownerDocument.activeElement && container.ownerDocument.activeElement.blur
+        && container.ownerDocument.activeElement.blur();
+      const mapSel = styleRow(container, 'Type').querySelector('select');
+      // Programmatic change without focusing first (e.g. driven by a test or
+      // another surface) must not silently grab focus onto the rebuilt row.
+      mapSel.value = 'contour';
+      fire(mapSel, 'change');
+      expect(container.ownerDocument.activeElement).not.toBe(styleRow(container, 'Type').querySelector('select'));
+    });
+
+    // fs-m2 Job 1 (judge correction) — on macOS, a focused CLOSED <select>
+    // opens its native listbox on ArrowDown/ArrowUp instead of stepping the
+    // value. ArrowDown/ArrowUp must be intercepted so the control steps to
+    // the adjacent option and fires 'change' WITHOUT the browser ever
+    // deciding to open a popup — jsdom doesn't simulate that native open
+    // behavior, but the keydown handler must still preventDefault and step
+    // selectedIndex itself so real Chrome/Safari on macOS gets the same
+    // outcome as every other platform.
+    test('ArrowDown on the Fill Style select steps to the next reachable option and fires change live', () => {
+      const { container, layer } = openStyle(hatchOn({ toneLaw: 'ladder' }));
+      const lawSel = styleRow(container, 'Fill Style').querySelector('select');
+      const opts = Array.from(lawSel.options).filter((o) => !o.disabled).map((o) => o.value);
+      const startIdx = opts.indexOf('ladder');
+      expect(startIdx).toBeGreaterThanOrEqual(0);
+      expect(lawSel.value).toBe('ladder');
+      const ev = new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+      lawSel.dispatchEvent(ev);
+      expect(ev.defaultPrevented).toBe(true);
+      expect(lawSel.value).toBe(opts[startIdx + 1]);
+      expect(layer.params.styleTable.byObject['obj-1'].params.toneLaw).toBe(opts[startIdx + 1]);
+    });
+
+    test('ArrowUp steps backward; the keydown handler leaves every other key untouched', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'ladder' }));
+      let lawSel = styleRow(container, 'Fill Style').querySelector('select');
+      const opts = Array.from(lawSel.options).filter((o) => !o.disabled).map((o) => o.value);
+      const startIdx = opts.indexOf('ladder');
+      lawSel.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+      lawSel = styleRow(container, 'Fill Style').querySelector('select');
+      const upEv = new window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true });
+      lawSel.dispatchEvent(upEv);
+      expect(upEv.defaultPrevented).toBe(true);
+      expect(lawSel.value).toBe(opts[startIdx]);
+      // A non-arrow key (e.g. Enter, used to close the native popup) is
+      // never intercepted — type-ahead / open-on-Space stay fully native.
+      const enterEv = new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      lawSel.dispatchEvent(enterEv);
+      expect(enterEv.defaultPrevented).toBe(false);
+    });
+  });
+
   // ── The focused LEAF editors ─────────────────────────────────────────────
   // A scene-tree object3d / booleanGroup3d child routes to its OWN panel, not
   // to the scene editor above. This is what live verification caught: putting
@@ -1020,6 +1109,34 @@ describe('Fill Style — docked 3D Scene panel', () => {
   test('the LEAF panel hides the row on wireframe', () => {
     const { container } = mountLeaf('object3d', { penId: null, mapper: 'wireframe', params: {} });
     expect(leafRow(container, 'Fill Style')).toBeUndefined();
+  });
+
+  // fs-m2 Job 1 — same focus-retention contract as the scene/object/face
+  // editor, on the LEAF surface (the panel a user actually reaches by
+  // selecting a scene object).
+  test('fs-m2 Job 1 · LEAF Fill Style select keeps focus (on the post-rebuild element) after a pick', () => {
+    const { container } = mountLeaf('object3d', { penId: null, mapper: 'hatch', params: {} });
+    const sel = leafRow(container, 'Fill Style').querySelector('select');
+    sel.focus();
+    sel.value = 'trochoidLoop';
+    fire(sel, 'change');
+    const active = container.ownerDocument.activeElement;
+    expect(active.tagName).toBe('SELECT');
+    expect(active.getAttribute('aria-label')).toBe(F.ARIA);
+    expect(active).toBe(leafRow(container, 'Fill Style').querySelector('select'));
+    expect(active).not.toBe(sel);
+  });
+
+  test('fs-m2 Job 1 · LEAF Type select keeps focus after a pick', () => {
+    const { container } = mountLeaf('object3d', { penId: null, mapper: 'hatch', params: {} });
+    const sel = leafRow(container, 'Type').querySelector('select');
+    sel.focus();
+    sel.value = 'wireframe';
+    fire(sel, 'change');
+    const active = container.ownerDocument.activeElement;
+    expect(active.tagName).toBe('SELECT');
+    expect(active.getAttribute('aria-label')).toBe('Fill type');
+    expect(active).toBe(leafRow(container, 'Type').querySelector('select'));
   });
 
   test('the fused booleanGroup3d panel gets Type + Fill Style too', () => {

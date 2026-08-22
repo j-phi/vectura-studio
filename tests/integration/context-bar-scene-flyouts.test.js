@@ -135,6 +135,63 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     expect(styleTable(scene).byObject['obj-1'].params.fillDensity).toBe(80);
   });
 
+  // fs-m2 Job 1 — a dropdown pick used to commit through a full rebuild
+  // (rebuild() clears fly.textContent) that destroyed and replaced the
+  // <select> the user just drove, dropping focus to <body> so the next
+  // arrow key did nothing — the friction reported when auditioning the 48
+  // Fill Style laws by arrowing through them. The FRESH select carrying the
+  // same aria-label must hold focus after the rebuild.
+  test('Style ▾ — Type select keeps focus on the post-rebuild element after a pick', async () => {
+    addSelectScene();
+    pillByLabel('Style').click();
+    const fly = openFly();
+    const mapSel = rowCtl(fly, 'Type').querySelector('select');
+    mapSel.focus();
+    mapSel.value = 'hatch';
+    mapSel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    const active = document.activeElement;
+    expect(active.tagName).toBe('SELECT');
+    expect(active.getAttribute('aria-label')).toBe(window.Vectura.CONTEXT_BAR.sceneFlyouts.style.mapper.aria);
+    expect(active).toBe(rowCtl(openFly(), 'Type').querySelector('select'));
+    expect(active).not.toBe(mapSel);
+  });
+
+  test('Style ▾ — Fill Style select keeps focus on the post-rebuild element after a pick', async () => {
+    const scene = addSelectScene();
+    scene.params.styleTable.byObject['obj-1'] = { penId: null, mapper: 'hatch', params: { toneLaw: 'ladder' } };
+    CB.restoreState();
+    pillByLabel('Style').click();
+    const fly = openFly();
+    const lawSel = rowCtl(fly, 'Fill Style').querySelector('select');
+    lawSel.focus();
+    lawSel.value = 'etfKang';
+    lawSel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    const active = document.activeElement;
+    expect(active.tagName).toBe('SELECT');
+    expect(active).toBe(rowCtl(openFly(), 'Fill Style').querySelector('select'));
+    expect(active).not.toBe(lawSel);
+  });
+
+  // fs-m2 Job 1 (judge correction) — on macOS, a focused CLOSED <select>
+  // opens its native listbox on ArrowDown instead of stepping the value.
+  // ArrowDown/ArrowUp must be intercepted so the control steps to the
+  // adjacent option and applies live without ever opening a popup.
+  test('Style ▾ — ArrowDown on the Fill Style select steps to the next option and applies live', async () => {
+    const scene = addSelectScene();
+    scene.params.styleTable.byObject['obj-1'] = { penId: null, mapper: 'hatch', params: { toneLaw: 'ladder' } };
+    CB.restoreState();
+    pillByLabel('Style').click();
+    const fly = openFly();
+    const lawSel = rowCtl(fly, 'Fill Style').querySelector('select');
+    const opts = Array.from(lawSel.options).filter((o) => !o.disabled).map((o) => o.value);
+    const startIdx = opts.indexOf('ladder');
+    expect(startIdx).toBeGreaterThanOrEqual(0);
+    const ev = new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+    lawSel.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    expect(styleTable(scene).byObject['obj-1'].params.toneLaw).toBe(opts[startIdx + 1]);
+  });
+
   // fs-m2 Job 4 — the ctxbar Style flyout's Type switch already writes the
   // FULL current params bag (`params: { ...params }`), not a per-mapper
   // seeded subset, so a detour through Wireframe (which has no Density row)

@@ -523,12 +523,14 @@
     if (!UI || !FS) return;
     const law = FS.resolve(o.value);
     const ctl = o.row(FS.LABEL);
-    comps.push(UI.Select(ctl, {
+    const lawSelect = UI.Select(ctl, {
       options: FS.groups(o.primitiveMode, o.solidType, o.mapper),
       value: law,
       ariaLabel: FS.ARIA,
       onChange: (v) => o.write(v),
-    }));
+    });
+    comps.push(lawSelect);
+    attachSelectArrowStep(selectElOf(lawSelect));
     const entry = FS.entry(law) || {};
     const note = FS.note(law);
     const facetedText = FS.facetedNote ? FS.facetedNote(o.primitiveMode, o.solidType, o.mapper) : '';
@@ -691,6 +693,61 @@
     row.appendChild(ctl);
     host.appendChild(row);
     return ctl;
+  };
+
+  // fs-m2 Job 1 — every Style-tab control commits through a full re-render
+  // (CONTRACT C: a whole-style write always rebuilds the row list, since a
+  // picked value can change which sibling rows apply). That destroys and
+  // replaces every control including the <select> the user just drove, so
+  // focus silently falls back to <body> and the next arrow key does nothing
+  // — the friction reported when auditioning the 48 Fill Style laws by
+  // arrowing through them one at a time. A native <select> already supports
+  // "arrow to the next option, applies live" once it HAS focus, so the fix is
+  // just to keep it focused across the rebuild.
+  //
+  // Captures which <select> (if any) inside `host` currently has focus
+  // before `rerender()` tears the DOM down, then refocuses the FRESH element
+  // carrying the same aria-label afterward. A no-op whenever focus wasn't on
+  // a select (sliders/dials/toggles are untouched — out of this job's scope).
+  // fs-m2 Job 1 (judge correction) — on macOS, a focused CLOSED <select>
+  // OPENS its native listbox on ArrowDown/ArrowUp instead of stepping the
+  // value (Windows/Linux Chrome steps immediately and fires 'change'; macOS
+  // does not). Keeping focus alone isn't enough there. Intercepting just
+  // ArrowUp/ArrowDown and stepping `selectedIndex` ourselves makes every
+  // platform behave the same: the control never opens a popup, it moves to
+  // the adjacent option and applies live — exactly the 48-law auditioning
+  // workflow this job exists for. Every other key (Space to open, type-
+  // ahead, Home/End) stays untouched, so UI.Select's whole reason to exist
+  // (native platform keyboard nav / type-ahead / the mobile picker — see
+  // src/ui/components/select.js:4-6) is preserved, not replaced.
+  const attachSelectArrowStep = (selectEl) => {
+    if (!selectEl || selectEl.__vs3ArrowStep) return;
+    selectEl.__vs3ArrowStep = true;
+    selectEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const opts = Array.from(selectEl.options).filter((o) => !o.disabled);
+      if (opts.length < 2) return;
+      const curIdx = opts.indexOf(selectEl.selectedOptions[0]);
+      const nextIdx = curIdx + (e.key === 'ArrowDown' ? 1 : -1);
+      if (nextIdx < 0 || nextIdx >= opts.length) return; // at the boundary — let native handle it (no-op/beep)
+      e.preventDefault();
+      selectEl.value = opts[nextIdx].value;
+      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+  // Pulls the native <select> out of a UI.Select component's root (a
+  // `.ctrl-sel-wrap` housing `select.ctrl-sel`).
+  const selectElOf = (comp) => comp && comp.el && comp.el.querySelector && comp.el.querySelector('select');
+
+  const withSelectFocusKept = (host, rerender) => {
+    const doc = (host && host.ownerDocument) || document;
+    const active = doc.activeElement;
+    const wasSelect = !!(active && active.tagName === 'SELECT' && host && host.contains(active));
+    const aria = wasSelect ? active.getAttribute('aria-label') : null;
+    rerender();
+    if (!aria || !host) return;
+    const next = Array.from(host.querySelectorAll('select')).find((s) => s.getAttribute('aria-label') === aria);
+    if (next) { attachSelectArrowStep(next); next.focus({ preventScroll: true }); }
   };
 
   /**
@@ -1071,7 +1128,12 @@
     };
 
     let renderStyle = () => {};
-    renderStyle = () => {
+    // fs-m2 Job 1 — renderStyle rebuilds the whole Style page on every commit
+    // (Type / Fill Style / any select-kind row), which would otherwise drop
+    // focus off the <select> the user just drove. The real body is
+    // renderStyleImpl; `renderStyle` itself (called everywhere below,
+    // including recursively) is the focus-preserving wrapper.
+    const renderStyleImpl = () => {
       destroyComps();
       pages.style.textContent = '';
       const host = pages.style;
@@ -1086,12 +1148,14 @@
         ariaLabel: 'Style pen',
         onChange: (v) => { commit(() => { style.penId = v || null; }); },
       }));
-      comps.push(UI.Select(labeledRow(host, 'Type'), {
+      const leafTypeSelect = UI.Select(labeledRow(host, 'Type'), {
         options: MAPPERS,
         value: style.mapper || 'wireframe',
         ariaLabel: 'Fill type',
         onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); renderStyle(); },
-      }));
+      });
+      comps.push(leafTypeSelect);
+      attachSelectArrowStep(selectElOf(leafTypeSelect));
       // U9 — Fill Style, directly beneath Type. A LEAF publishes
       // byObject[layerId], so this bag IS its resolved style: writing here is
       // the object-scope write, which is the only scope that reaches an object
@@ -1233,6 +1297,7 @@
       // object with no overrides keeps NO edgeStyles key ⇒ byte-identical render.
       renderObjectEdgeStyles(host);
     };
+    renderStyle = () => withSelectFocusKept(pages.style, renderStyleImpl);
 
     // Per-object EdgeStyle override editor. Kept as its own function so renderStyle
     // stays legible; mounts onto the Style tab host beneath the mapper controls.
@@ -1448,7 +1513,7 @@
     // current law, so a discrete change has to re-render the tab.
     const sHost = pages.style;
     const style = params.style;
-    const renderBoolStyle = () => {
+    const renderBoolStyleImpl = () => {
       sHost.textContent = '';
       const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
       comps.push(UI.Select(labeledRow(sHost, 'Pen'), {
@@ -1457,12 +1522,14 @@
         ariaLabel: 'Fused style pen',
         onChange: (v) => { commit(() => { style.penId = v || null; }); },
       }));
-      comps.push(UI.Select(labeledRow(sHost, 'Type'), {
+      const boolTypeSelect = UI.Select(labeledRow(sHost, 'Type'), {
         options: MAPPERS,
         value: style.mapper || 'wireframe',
         ariaLabel: 'Fused fill type',
         onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); renderBoolStyle(); },
-      }));
+      });
+      comps.push(boolTypeSelect);
+      attachSelectArrowStep(selectElOf(boolTypeSelect));
       if (FILL_MAPPERS.has(style.mapper)) {
         if (!style.params || typeof style.params !== 'object') style.params = {};
         // The fused fill draws over the primary (first, "Solid" role) operand's
@@ -1479,6 +1546,7 @@
         });
       }
     };
+    const renderBoolStyle = () => withSelectFocusKept(sHost, renderBoolStyleImpl);
     renderBoolStyle();
 
     mirrorChildToCanvas(ui, layer, null);
@@ -3612,7 +3680,7 @@
       return objName;
     };
 
-    const renderStyle = () => {
+    const renderStyleImpl = () => {
       if (!styleHost) return;
       destroyComps(styleComps);
       styleHost.textContent = '';
@@ -3706,12 +3774,14 @@
       mapHost.className = 'vs3-ctl';
       mapRow.appendChild(mapHost);
       styleHost.appendChild(mapRow);
-      styleComps.push(UI.Select(mapHost, {
+      const mainTypeSelect = UI.Select(mapHost, {
         options: MAPPERS,
         value: resolved.mapper || 'none',
         ariaLabel: 'Style mapper',
         onChange: (v) => commitStyle({ mapper: v, params: mapperDefaults(v, resolved.params) }),
-      }));
+      });
+      styleComps.push(mainTypeSelect);
+      attachSelectArrowStep(selectElOf(mainTypeSelect));
 
       // ── Mapper-specific controls (Phase 2) — driven by the MAPPER_CONTROLS
       // descriptor table, one control per descriptor, wired to the whole-style
@@ -4247,6 +4317,7 @@
         });
       }
     };
+    const renderStyle = () => withSelectFocusKept(styleHost, renderStyleImpl);
 
     // ── Tone-band editor (CONTRACT L3) ──────────────────────────────────────
     // Light-driven tone quantization: band count → thresholds → coverage
