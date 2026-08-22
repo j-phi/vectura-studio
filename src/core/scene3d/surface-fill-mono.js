@@ -39,6 +39,32 @@
   const finite = (val, f = 0) => (Number.isFinite(Number(val)) ? Number(val) : f);
   const GOLDEN = 0.6180339887498949;
 
+  /* THE WRAP TERM. `sampleAt` already publishes `nz` — the CAMERA-SPACE
+   * normal's z component, 1 dead-on to the camera and exactly 0 ON the
+   * silhouette — and `surface-fill.js` already reads it for the identical
+   * purpose (`limbCrossTaper`, surface-fill.js:3513-3524: "the taper is
+   * stated in the geometry's own terms and needs no radius, no bbox and no
+   * projection assumption"). `originSpiral` and `mazeFill` build their
+   * geometry in flat screen (x, y) — a ring radius, a grid column — with no
+   * awareness of how much surface a given screen millimetre actually
+   * represents, so a turn or a cell reads the same size whether it sits
+   * dead-centre on the form or is riding the limb where the real surface is
+   * foreshortening hard. `wrapPitch` spends the same `nz` signal as a
+   * multiplier on the tone-driven pitch: unchanged away from the limb,
+   * smoothstepped down toward `WRAP_FLOOR` as `nz` approaches 0, so pattern
+   * elements compress toward the silhouette the way a globe's own graticule
+   * does, independently of whatever the light is doing. `WRAP_FLOOR` keeps
+   * the compression from running away to zero pitch exactly at the limb,
+   * where cos/sin(nz) is at its least reliable.
+   */
+  const WRAP_LO = 0.02; const WRAP_HI = 0.38; const WRAP_FLOOR = 0.28;
+  const wrapPitch = (pitch, nz) => {
+    const a = Math.abs(finite(nz, 1));
+    const u = clamp((a - WRAP_LO) / (WRAP_HI - WRAP_LO), 0, 1);
+    const eased = u * u * (3 - 2 * u);
+    return pitch * (WRAP_FLOOR + (1 - WRAP_FLOOR) * eased);
+  };
+
   // The roster. Order is the order the sheets present them in.
   const LAWS = [
     // Tier 1 — the direction field and the depth terms. Slots S1-S5, S18:
@@ -1853,13 +1879,23 @@
     ySamples.sort((a, b) => a - b);
     const yFlat = ySamples.length < 4 || (ySamples[ySamples.length - 1] - ySamples[0]) < 1e-4;
 
+    // WRAP: a column/row's own screen position never says how much surface
+    // it stands for, so the grid otherwise reads as laid flat on the form
+    // rather than following it. The representative point already sampled for
+    // `avg` (`C.faceY`/`C.faceX` cross the column/row) carries `nz` for free
+    // — fold the local pitch tighter as that point rides the limb (nz -> 0),
+    // exactly `originSpiral`'s `wrapPitch`. A flat face has one constant
+    // normal, so `nz` is the same at every column/row there and this only
+    // ever applies a uniform scale — it cannot reintroduce the spread the
+    // flat-face rank-normalization guard exists to keep out.
     const xs = [];
     let x = C.minX;
     while (x < C.maxX && xs.length < 300) {
       xs.push(x);
       const avg = bandAvg(x, C.faceY, true);
       const t = avg == null ? 0.5 : (xFlat ? avg : rankOf(xSamples, avg));
-      x += C.pitchLegible(t) * 1.05;
+      const here = C.inv(x, C.faceY);
+      x += Math.max(C.FLOOR, wrapPitch(C.pitchLegible(t), here ? here.nz : 1)) * 1.05;
     }
     const ys = [];
     let y = C.minY;
@@ -1867,7 +1903,8 @@
       ys.push(y);
       const avg = bandAvg(C.faceX, y, false);
       const t = avg == null ? 0.5 : (yFlat ? avg : rankOf(ySamples, avg));
-      y += C.pitchLegible(t) * 1.05;
+      const here = C.inv(C.faceX, y);
+      y += Math.max(C.FLOOR, wrapPitch(C.pitchLegible(t), here ? here.nz : 1)) * 1.05;
     }
     const NX = xs.length - 1; const NY = ys.length - 1;
     if (NX < 3 || NY < 3) return;
@@ -2090,32 +2127,91 @@
 
   /* ── 03 · originSpiral ──────────────────────────────────────────────────────
    * ONE continuous line for the whole body. It starts at the brightest point on
-   * the form — the specular origin — and winds outward, and its radial pitch is
-   * integrated turn by turn from the radiance it is passing through, so the
-   * turns squeeze together as the line walks into the shadow and open out as it
-   * comes back into the light. Because there is exactly one origin and the
-   * turns are concentric about it, the eye reads a single curved surface lit
-   * from one place: the spiral IS the shading and the shading IS the form.
-   * Reaches its darkest where consecutive turns close to the plot floor.
+   * the form — the specular origin — and winds outward, ring by ring, and each
+   * new ring is the PREVIOUS ring pushed out by the local radial pitch AT THAT
+   * ANGLE, so the turns squeeze together as the line passes through the shadow
+   * and open out as it passes back through the light. Because there is exactly
+   * one origin and the turns are concentric about it, the eye reads a single
+   * curved surface lit from one place: the spiral IS the shading and the
+   * shading IS the form. Reaches its darkest where consecutive turns close to
+   * the plot floor.
+   *
+   * WHY A RING RECURRENCE AND NOT A PLAIN dr/dphi INTEGRAL. The obvious way to
+   * write this law integrates r monotonically against a single, ever-advancing
+   * phi: r(phi) = r0 + INTEGRAL(pitch(phi')/(2*pi)) dphi' from 0 to phi. That
+   * was this law's original form, and it is mathematically incapable of
+   * carrying tone: the spacing between turn K and turn K+1 AT A FIXED ANGLE
+   * theta is the integral of pitch over the window [theta, theta + 2*pi] --
+   * exactly one full period -- and the integral of a 2*pi-periodic function
+   * over any window of EXACTLY one period is the SAME constant regardless of
+   * where the window starts. So the ring-to-ring spacing at every angle
+   * converges to the same silhouette-wide average pitch no matter how sharply
+   * `pitch(theta)` itself varies locally -- confirmed by measurement, not just
+   * derivation: shadow/lit ink density ratio 0.975, flat, even though the
+   * per-sample target pitch driving the walk measured a real ~2x swing (0.373
+   * shadow vs 0.722 lit average) that never showed up as real spacing. Fixing
+   * the guard budget instead (an earlier attempt here, since reverted) helped
+   * the walk reach the far side but left the ratio at 0.98 -- proof the
+   * flatness was structural, not a coverage bug.
+   * The fix breaks that degeneracy by defining ring K+1's radius AT ANGLE
+   * theta directly from ring K's OWN radius and tone AT THAT SAME theta:
+   * r_{k+1}(theta) = r_k(theta) + pitchFor(I(r_k(theta), theta)). Spacing
+   * between consecutive rings at a given angle is then exactly the local
+   * pitch there, with no averaging across the rest of the form. The rings are
+   * walked out together and stitched into one continuous polyline through a
+   * seam at theta = 0, so the drawing is still the single wound line the law
+   * is named for -- just built as a stack of tone-graded offset contours
+   * rather than an integral that could not see past its own period.
    */
   const lawSpiral = (C) => {
     const ox = C.hiX; const oy = C.hiY;
     const rMax = Math.hypot(C.W, C.H);
-    let r = C.pitchFor(0.9) * 0.5;
-    let phi = 0;
+    const R0 = C.pitchFor(0.9) * 0.5;
+    // Angular resolution fine enough that even the OUTERMOST ring's chord
+    // stays comfortably under the segment guard's cut threshold; smaller
+    // rings are automatically finer still since the same NANG covers less
+    // circumference.
+    const NANG = clamp(Math.round((2 * Math.PI * rMax) / 1.8), 96, 480);
+    let ring = new Float64Array(NANG).fill(R0);
     const pts = [];
+    const pushRing = (radii) => {
+      for (let i = 0; i <= NANG; i += 1) {
+        const th = ((i % NANG) / NANG) * Math.PI * 2;
+        const r = radii[i % NANG];
+        pts.push({ x: ox + r * Math.cos(th), y: oy + r * Math.sin(th) });
+      }
+    };
+    pushRing(ring);
     let guard = 0;
-    while (r < rMax && guard < 90000) {
+    let anyGrowing = true;
+    // A guard of 400 rings comfortably covers the slowest (densest-shadow)
+    // direction on every primitive measured: reaching `rMax` at the plot
+    // floor pitch (~2 ink widths) takes on the order of rMax / floor rings,
+    // and floor is never smaller than a fraction of a millimetre.
+    while (anyGrowing && guard < 400) {
       guard += 1;
-      const x = ox + r * Math.cos(phi);
-      const y = oy + r * Math.sin(phi);
-      pts.push({ x, y });
-      const s = C.inv(x, y);
-      const p = C.pitchFor(s ? finite(s.I, 0) : 0.85);
-      // Constant ARC step so the spiral is evenly sampled at every radius.
-      const dphi = clamp(0.34 / Math.max(0.3, r), 0.004, 0.35);
-      phi += dphi;
-      r += (p * dphi) / (Math.PI * 2);
+      anyGrowing = false;
+      const next = new Float64Array(NANG);
+      for (let i = 0; i < NANG; i += 1) {
+        const r0 = ring[i];
+        if (r0 >= rMax) { next[i] = r0; continue; }
+        const th = (i / NANG) * Math.PI * 2;
+        const x = ox + r0 * Math.cos(th); const y = oy + r0 * Math.sin(th);
+        const s = C.inv(x, y);
+        const p0 = C.pitchFor(s ? finite(s.I, 0) : 0.85);
+        // WRAP: fold the turn tighter as it rides the limb (nz -> 0), so the
+        // rings read as following the body's curvature and not as a flat
+        // disc of concentric circles laid on top of it. `wrapPitch` is a
+        // bounded fraction of `p0` (never below `p0 * WRAP_FLOOR`), so this
+        // does not reintroduce a legibility floor `pitchFor` deliberately
+        // does not have -- the law still reaches genuine black.
+        const p = wrapPitch(p0, s ? s.nz : 1);
+        const r1 = r0 + p;
+        next[i] = r1;
+        if (r1 < rMax) anyGrowing = true;
+      }
+      ring = next;
+      pushRing(ring);
     }
     C.emitScr(pts);
   };
