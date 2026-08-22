@@ -66,10 +66,17 @@
  * ladder, not in this number.
  *
  * ONE MARGIN ALSO NARROWED, recorded rather than smoothed over: C7's weakest
- * clause, `share01(l2) > share01(off)`, held by +0.0449 on the drifted rig and
- * holds by only +0.0086 on the real one. It still passes on the scene that is
- * actually drawn, but by a fifth of the headroom the old number advertised. If
- * C7 regresses, this is the clause that will go first.
+ * clause, `share01(l2) > share01(<flat control>)`, held by +0.0449 on the
+ * drifted rig and holds by only +0.0086 on the real one. It still passes on the
+ * scene that is actually drawn, but by a fifth of the headroom the old number
+ * advertised. If C7 regresses, this is the clause that will go first.
+ *
+ * ROUND 11 — C7's CONTROL IS NOW NAMED. `shadowToneDepth` (shipped ON at 0.75)
+ * gave the FLAT shadow its own contact-concentrated ramp, so a plain
+ * `shadowLayers:false` render is a second treatment, not a control. C7's flat
+ * baseline is now built explicitly at `shadowToneDepth: 0` — the same code and
+ * the same 0.2753 the clause was always measured against. Full reasoning sits
+ * on the assertion; the `off` in the table above means that depth-0 control.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const FIX = require('../fixtures/scene3d-shadow-anatomy');
@@ -218,19 +225,58 @@ describe('scene3d shadow & highlight anatomy', () => {
     // C7 — the dense core is anchored to the BASE, not to the footprint centroid.
     // The pre-anatomy build inset concentric rings off the centroid and produced a
     // bullseye: the densest bin sat mid-shadow with lighter ink at the base.
-    // Stated as a SHARE, against the flat shadow, on one shared anchor. Absolute
-    // per-bin ink is confounded by bin area and by the object occluding its own
-    // near shadow; the share is not, and it is exactly the claim being made:
-    // switching Layers on moves ink toward the base.
-    it('every Layers step moves ink TOWARD the base (C7)', () => {
-      const share01 = (paths) => {
+    // Stated as a SHARE, on one shared anchor, against a UNIFORM-DENSITY hatch of
+    // the SAME footprint. Absolute per-bin ink is confounded by bin area and by
+    // the object occluding its own near shadow; a share against a same-footprint
+    // control is not, and it is exactly the claim being made: switching Layers on
+    // puts ink at the base.
+    //
+    // WHY THE BASELINE MOVED (fs-w1-shadowtone, e34cae04) — read before widening
+    // anything here. This clause used to read `share01(l2) > share01(off)`, with
+    // `off` the plain `shadowLayers:false` render, and it held only because the
+    // flat path was UNIFORM. `shadowToneDepth` (params.js DEFAULT_SHADOW, shipped
+    // ON at 0.75 by the product owner: "all fill styles for shadows should
+    // leverage the same tone functionality as the 3D object") gave the flat path
+    // its own contact-concentrated ramp. Plain `off` now scores share01 0.354 —
+    // it concentrates about as hard as Layers 3 — so it is a second treatment,
+    // not a control, and the old comparison measures nothing.
+    //
+    // The control is therefore NAMED rather than assumed: `shadowLayers:false,
+    // shadowToneDepth:0`. That is the same code and the same number (0.2753) the
+    // clause was originally written against — depth 0 is pinned byte-identical to
+    // the pre-gradient flat renderer in scene3d-shadow-tone-gradient.test.js — so
+    // the bar is not lowered by a millimetre, only re-pointed at the uniform
+    // hatch it always meant. Measured share01: uniform 0.2753, l2 0.2839,
+    // l3 0.3602, l4 0.3837; contact bin alone 0.077 vs 0.096/0.117/0.118.
+    //
+    // The Layers ON path is untouched by shadowToneDepth — verified: Layers 2
+    // renders identically at depth 0 and at 0.75 — so the two paths now state
+    // "darkest at contact" through different mechanisms tuned to different
+    // strengths. That flat@0.75 currently out-concentrates Layers 2 on this axis
+    // is a real, deliberate consequence of the owner's default, recorded here and
+    // asserted in NEITHER direction; S2 (the per-recipe covAt lever) is where the
+    // layered path picks the same ramp up.
+    it('every Layers step concentrates ink at the BASE (C7)', () => {
+      const shares = (paths) => {
         const bins = prof(paths);
         const total = bins.reduce((a, b) => a + b, 0) || 1;
-        return (bins[0] + bins[1]) / total;
+        return bins.map((v2) => v2 / total);
       };
-      expect(share01(l2)).toBeGreaterThan(share01(off));
-      expect(share01(l3)).toBeGreaterThan(share01(l2));
-      expect(share01(l4)).toBeGreaterThan(share01(l2));
+      const share01 = (b) => b[0] + b[1];
+      // The control: same footprint, same anchor, ink spread at ONE density.
+      const flat = shares(compose({ shadow: { shadowLayers: false, shadowToneDepth: 0 } }));
+      const b2 = shares(l2); const b3 = shares(l3); const b4 = shares(l4);
+      // The contact bin itself — the sharpest statement of "the dense core sits
+      // at the base", and the clause with real headroom (+25%/+52%/+53%).
+      [b2, b3, b4].forEach((b) => expect(b[0]).toBeGreaterThan(flat[0]));
+      // The near-half share, the quantity this criterion has always reported.
+      // l2 clears the control by +0.0086 — thin, flagged in this file's header as
+      // the clause that will go first, and deliberately not padded to look safer.
+      [b2, b3, b4].forEach((b) => expect(share01(b)).toBeGreaterThan(share01(flat)));
+      // ...and the ladder keeps deepening as layers are added (layered-internal,
+      // never touched by the flat path's gradient).
+      expect(share01(b3)).toBeGreaterThan(share01(b2));
+      expect(share01(b4)).toBeGreaterThan(share01(b2));
     });
 
     // C11 — Layers adds STRUCTURE, not ink. Measured as ink LENGTH inside the
