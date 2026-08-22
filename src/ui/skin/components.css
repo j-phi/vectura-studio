@@ -12025,6 +12025,12 @@ body.mobile-layout .hud-bar {
 .ctxbar-algo-flyout .algo-group-div:first-child { margin-top: 0; }
 .ctxbar-algo-menu-wrap .ctxbar-text-field { max-width: 150px; }
 .ctxbar-algo-field .lvl-algo-sub-ico { margin-right: 5px; }
+/* fs-s1 — the Shape pill went icon-only (no visible label): drop the wide
+   label-sized max-width/padding built for text and match .ctxbar-btn's tight
+   icon padding instead. Same specificity + later in source than the rule
+   above, so it wins. */
+.ctxbar-algo-menu-wrap .ctxbar-scene-shape { max-width: none; padding: 0 7px; }
+.ctxbar-scene-shape .lvl-algo-sub-ico { margin-right: 4px; }
 /* Scene-object persistent flyouts (ask #8): Style / Shadow / Highlight / X-ray.
    A vertical stack of label + control rows; reuses the align-flyout box (open
    state, up/down flip inherited). Scrolls when tall so it never clips. */
@@ -12103,6 +12109,20 @@ body.mobile-layout .hud-bar {
 }
 .ctxbar-fly-reset { width: 100%; justify-content: center; }
 .ctxbar-scene-menu-wrap .ctxbar-scene-field { max-width: 140px; }
+/* fs-s1 — Style/Shadow/Highlight pills went icon-only (no visible label):
+   drop the label-sized max-width/padding for .ctxbar-btn's tight icon
+   padding. Same specificity + later in source than the rule above, wins. */
+.ctxbar-scene-menu-wrap .ctxbar-scene-style,
+.ctxbar-scene-menu-wrap .ctxbar-scene-shadow,
+.ctxbar-scene-menu-wrap .ctxbar-scene-highlight {
+  max-width: none;
+  padding: 0 7px;
+}
+.ctxbar-scene-style .lvl-algo-sub-ico,
+.ctxbar-scene-shadow .lvl-algo-sub-ico,
+.ctxbar-scene-highlight .lvl-algo-sub-ico {
+  margin-right: 4px;
+}
 /* I20 scoped scene pen chip + its pen-list flyout (writes byObject/byFace, never
    the layer pen). The chip reuses the shared .pen-chip look; the flyout reuses
    the scene-flyout box with compact swatch rows. */

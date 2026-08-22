@@ -19,11 +19,24 @@
   const G = (typeof window !== 'undefined' ? window : globalThis);
   const Vectura = G.Vectura = G.Vectura || {};
 
-  // Minimal stroke-icon SVG factory (20×20 viewBox, currentColor, 1.6 stroke)
-  // matching the floating tool rail's icon family.
-  const svg = (inner) =>
-    `<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" ` +
-    `stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+  // Minimal stroke-icon SVG factory (20×20 viewBox, currentColor, 1.6 stroke
+  // by default) matching the floating tool rail's icon family. `opts.viewBox`
+  // / `opts.strokeWidth` let a caller paste in verbatim icon sets authored on
+  // a different grid (Lucide ships 24×24 @ stroke-width 2) without having to
+  // hand-rescale their path coordinates onto this app's 20×20 grid — every
+  // existing call site is unchanged (no opts) and stays byte-identical.
+  const svg = (inner, opts) => {
+    const o = opts || {};
+    const viewBox = o.viewBox || '0 0 20 20';
+    const strokeWidth = o.strokeWidth != null ? o.strokeWidth : 1.6;
+    return `<svg viewBox="${viewBox}" width="16" height="16" fill="none" stroke="currentColor" ` +
+      `stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+  };
+  // Lucide icons (fs-s1 3D contextual-bar icon conversion) are authored on a
+  // 24×24 viewBox at stroke-width 2; pasted verbatim via this helper rather
+  // than hand-converted onto the 20×20 grid. 1.75 (not Lucide's native 2)
+  // reads closer to the 20-grid family's optical weight at 16px.
+  const lucide = (inner) => svg(inner, { viewBox: '0 0 24 24', strokeWidth: 1.75 });
 
   // ── Scene 3D highlight treatments (shared by BOTH surfaces) ──────────────
   // Deliberately hung off Vectura directly rather than nested under
@@ -135,6 +148,12 @@
     etfKang: 'flow', defectSplit: 'flow',
     mkScribble: 'wave', ampSpacing: 'wave', weaveDepth: 'wave',
     interlockWeave: 'wave', trochoidLoop: 'wave', amplitudeOnly: 'wave',
+    // onePenDown — bridges rulings in chart space into one continuous stroke
+    // (9 pen-downs vs ladder's 36). Not yet in this branch's roster; inert
+    // here until the sibling roster-adding branch merges, at which point
+    // markClass() stops defaulting it to 'hatch' (which made shadowMarkLines
+    // fall back to plain hatch, byte-identical to ladder on shadows).
+    onePenDown: 'wave',
     mkTick: 'dash', mkDashRamp: 'dash', dutyConst: 'dash',
     mkDotScreen: 'dot', lozengeStipple: 'dot', penStipple: 'dot',
     voronoiWeb: 'web', mazeFill: 'web', originSpiral: 'web', deepFillTSP: 'web',
@@ -496,9 +515,9 @@
       outlineText: { label: 'Outline the text', tooltip: 'Convert text to outlines' },
       // 3D Scene Studio (Phase 1C) — scene-object / scene-face / scene-edge
       // contexts (kinds 'scene-object' | 'scene-face' | 'scene-edge').
-      sceneDuplicate: { label: 'Duplicate', tooltip: 'Duplicate object' },
+      sceneDuplicate: { tooltip: 'Duplicate object' },
       sceneDelete: { tooltip: 'Delete object' },
-      sceneDrop: { label: 'Drop', tooltip: 'Drop to ground (D)' },
+      sceneDrop: { tooltip: 'Drop to ground (D)' },
       sceneVisibility: { tooltipSolid: 'Show solid', tooltipXray: 'Show X-ray' },
       sceneSelectFaces: { label: 'All Faces', tooltip: 'Select all faces of this object' },
       sceneClearStyle: {
@@ -792,16 +811,25 @@
       distributeH: svg('<rect x="3" y="6" width="3" height="8" rx="0.6"/><rect x="8.5" y="6" width="3" height="8" rx="0.6"/><rect x="14" y="6" width="3" height="8" rx="0.6"/>'),
       distributeV: svg('<rect x="6" y="3" width="8" height="3" rx="0.6"/><rect x="6" y="8.5" width="8" height="3" rx="0.6"/><rect x="6" y="14" width="8" height="3" rx="0.6"/>'),
       // 3D Scene Studio scene-context glyphs.
-      sceneDuplicate: svg('<rect x="3.5" y="3.5" width="9" height="9" rx="1"/><rect x="7.5" y="7.5" width="9" height="9" rx="1"/>'),
-      sceneDelete: svg('<path d="M5 6h10M8 6V4.5h4V6M6.5 6l0.7 9.5h5.6L13.5 6"/>'),
+      // fs-s1 — lucide 'copy' (paste verbatim via lucide(), 24-grid).
+      sceneDuplicate: lucide('<rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />'),
+      // fs-s1 — lucide 'trash'.
+      sceneDelete: lucide('<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />'),
       sceneDrop: svg('<path d="M10 3v8M6.8 8l3.2 3 3.2-3"/><path d="M3.5 15.5h13"/>'),
       sceneVisibility: svg('<rect x="4" y="6" width="12" height="9" rx="1" stroke-dasharray="2.4 1.8"/><path d="M4 6l3-2.5h12l-3 2.5"/>'),
       sceneSelectFaces: svg('<path d="M10 2.8l6.2 3.6v7.2L10 17.2 3.8 13.6V6.4Z"/><path d="M3.8 6.4L10 10l6.2-3.6M10 10v7.2"/>'),
       sceneClearStyle: svg('<rect x="4" y="4" width="9" height="9" rx="1"/><path d="M12 12l4.5 4.5M16.5 12L12 16.5"/>'),
-      // Transform-gizmo crosshair — stands for the non-print helper decoration
-      // the toggle hides/shows (gizmo, selection outline, bbox handles, light
-      // helpers, orbit pad).
-      sceneHelpers: svg('<circle cx="10" cy="10" r="2.2"/><path d="M10 2.5v3.5M10 14v3.5M2.5 10h3.5M14 10h3.5"/>'),
+      // fs-s1 — lucide 'rotate-3d'. Transform-gizmo stand-in for the non-print
+      // helper decoration the toggle hides/shows (gizmo, selection outline,
+      // bbox handles, light helpers, orbit pad).
+      sceneHelpers: lucide('<path d="m15.194 13.707 3.814 1.86-1.86 3.814" /><path d="M16.47214 7.52786 A 5 10 0 1 0 13 21.79796" /><path d="M21.79796 11 A 10 5 0 1 0 19 15.57071" />'),
+      // fs-s1 — icon-only Shape/Style/Shadow/Highlight pills (persistent
+      // scene-object dropdowns, ask #8). Lucide 'scan-box', 'line-style',
+      // 'parasol', 'eclipse' respectively, pasted verbatim.
+      sceneShape: lucide('<path d="M12 12v5.5" /><path d="M17 3h2a2 2 0 012 2v2" /><path d="M21 17v2a2 2 0 01-2 2h-2" /><path d="M3 7V5a2 2 0 012-2h2" /><path d="M7 21H5a2 2 0 01-2-2v-2" /><path d="M7.264 9.252 12 12l4.737-2.748" /><path d="M7.995 8.514A2 2 0 007 10.244v3.516a2 2 0 00.996 1.73l3 1.74a2 2 0 002.008 0l3-1.74A2 2 0 0017 13.76v-3.517a2 2 0 00-.995-1.73l-3-1.742a2 2 0 00-1.892-.064z" />'),
+      sceneStyle: lucide('<path d="M11 5h2" /><path d="M15 12h6" /><path d="M19 5h2" /><path d="M3 12h6" /><path d="M3 19h18" /><path d="M3 5h2" />'),
+      sceneShadow: lucide('<path d="M12.5 11.134 18.196 21" /><path d="M20.425 5.299a10 10 0 0 0-16.941 9.78c.183.563.843.774 1.355.478L20.16 6.711c.512-.296.66-.973.264-1.413" /><path d="M21 21H3" />'),
+      sceneHighlight: lucide('<circle cx="12" cy="12" r="10" /><path d="M12 2a7 7 0 1 0 10 10" />'),
     },
   };
 })();

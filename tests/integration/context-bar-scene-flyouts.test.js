@@ -67,7 +67,12 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
   };
 
   const pills = () => Array.from(host().querySelectorAll('.ctxbar-scene-field'));
-  const pillByLabel = (text) => pills().find((f) => (f.querySelector('.ctxbar-text-fieldlabel') || {}).textContent === text);
+  // fs-s1 — Shape/Style/Shadow/Highlight are icon-only (no visible label text
+  // any more), so lookup goes through aria-label — their accessible name —
+  // rather than the now-absent `.ctxbar-text-fieldlabel` text node. X-ray
+  // keeps its visible text but also carries the same aria-label, so this one
+  // selector covers all five pills unchanged.
+  const pillByLabel = (text) => pills().find((f) => f.getAttribute('aria-label') === text);
   const openFly = () => document.querySelector('.ctxbar-scene-flyout.is-open');
   const rowCtl = (fly, label) => {
     const row = Array.from(fly.querySelectorAll('.ctxbar-fly-row'))
@@ -99,9 +104,66 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
   test('selecting a scene object renders the four flyout pills', async () => {
     addSelectScene();
     expect(CB.getContext().kind).toBe('scene-object');
-    const labels = pills().map((f) => f.querySelector('.ctxbar-text-fieldlabel').textContent);
+    // fs-s1 — Shape/Style/Shadow/Highlight went icon-only; identify pills by
+    // aria-label (their accessible name) rather than visible text.
+    const labels = pills().map((f) => f.getAttribute('aria-label'));
     // I22 adds the leading 'Shape' primitive-swap pill.
     expect(labels).toEqual(['Shape', 'Style', 'Shadow', 'Highlight', 'X-ray']);
+  });
+
+  // ── fs-s1 — icon-only conversion of the 3D contextual bar ────────────────
+  test('fs-s1: Shape/Style/Shadow/Highlight pills carry no visible label text but keep a real accessible name', async () => {
+    addSelectScene();
+    ['Shape', 'Style', 'Shadow', 'Highlight'].forEach((name) => {
+      const field = pillByLabel(name);
+      expect(field).toBeTruthy();
+      expect(field.querySelector('.ctxbar-text-fieldlabel')).toBeFalsy();
+      expect(field.querySelector('.lvl-algo-sub-ico')).toBeTruthy();
+      expect(field.getAttribute('aria-label')).toBe(name);
+    });
+    // X-ray is deliberately excluded from the icon-only conversion — it keeps
+    // its visible text.
+    const xray = pillByLabel('X-ray');
+    expect(xray.querySelector('.ctxbar-text-fieldlabel')?.textContent).toBe('X-ray');
+  });
+
+  test('fs-s1: Duplicate/Drop/Trash/Helpers action buttons carry no visible label text but keep a real accessible name', async () => {
+    addSelectScene();
+    const btns = () => Array.from(host().querySelectorAll('.ctxbar-btn'));
+    const b = window.Vectura.CONTEXT_BAR.buttons;
+    const dup = btns().find((x) => x.getAttribute('aria-label') === b.sceneDuplicate.tooltip);
+    const drop = btns().find((x) => x.getAttribute('aria-label') === b.sceneDrop.tooltip);
+    const del = btns().find((x) => x.getAttribute('aria-label') === b.sceneDelete.tooltip);
+    [dup, drop, del].forEach((btn) => {
+      expect(btn).toBeTruthy();
+      expect(btn.querySelector('.ctxbar-label')).toBeFalsy();
+      expect(btn.getAttribute('aria-label')).toBeTruthy();
+    });
+  });
+
+  test('fs-s1: the standalone Solid|X-ray toggle button is gone, but the X-ray flyout pill still writes visibility', async () => {
+    const scene = addSelectScene();
+    const btns = () => Array.from(host().querySelectorAll('.ctxbar-btn'));
+    // The old standalone button's tooltip text lived on CONTEXT_BAR.buttons.sceneVisibility.
+    const legacy = window.Vectura.CONTEXT_BAR.buttons.sceneVisibility || {};
+    expect(btns().some((x) => x.getAttribute('aria-label') === legacy.tooltipSolid
+      || x.getAttribute('aria-label') === legacy.tooltipXray)).toBe(false);
+    // The X-ray pill is still there and still functional (writes visibility).
+    pillByLabel('X-ray').click();
+    const fly = openFly();
+    expect(fly).toBeTruthy();
+    rowCtl(fly, 'X-ray').querySelector('.seg-opt[data-value="xray"]').click();
+    expect(obj(scene).visibility).toBe('xray');
+  });
+
+  test('fs-s1 paired negative: the accessible name (title/aria-label) is still shown on hover for a pill and an action button', async () => {
+    addSelectScene();
+    const stylePill = pillByLabel('Style');
+    expect(stylePill.title).toBe(window.Vectura.CONTEXT_BAR.buttons.sceneStyle.tooltip);
+    expect(stylePill.getAttribute('aria-label')).toBe('Style');
+    const helpers = helpersBtn();
+    expect(helpers.title).toMatch(/viewport helpers/i);
+    expect(helpers.getAttribute('aria-label')).toBe(helpers.title);
   });
 
   test('Style ▾ opens, changes mapper (writes byObject + one undo), and STAYS OPEN through a slider edit', async () => {
@@ -584,6 +646,21 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     expect(btn.title).toMatch(/^Show/);
     btn.click();
     expect(window.Vectura.SETTINGS.sceneHelpersVisible).toBe(true);
+  });
+
+  // fs-s1 — this was backwards: the border (`.ctxbar-btn.is-active`) rendered
+  // when helpers were OFF, not ON. The owner wants it lit while helpers are ON
+  // (matching the tooltip, which reads "Hide viewport helpers" in that state).
+  test('fs-s1: Helpers button border (.is-active) is present while helpers are ON and absent while OFF', async () => {
+    window.Vectura.SETTINGS.sceneHelpersVisible = true;
+    addSelectScene();
+    let btn = helpersBtn();
+    expect(btn.title).toMatch(/^Hide/); // helpers ON
+    expect(btn.classList.contains('is-active')).toBe(true);
+    btn.click(); // flips to OFF
+    btn = helpersBtn();
+    expect(btn.title).toMatch(/^Show/); // helpers OFF
+    expect(btn.classList.contains('is-active')).toBe(false);
   });
 
   // ── C4 Job 3 / fs-m2 Job 3 — Density max raised 200 -> 500 (context-bar

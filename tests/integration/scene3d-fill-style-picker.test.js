@@ -527,7 +527,7 @@ describe('Fill Style — context-bar Style flyout', () => {
     return scene;
   };
   const pills = () => Array.from(host().querySelectorAll('.ctxbar-scene-field'));
-  const pillByLabel = (t) => pills().find((f) => (f.querySelector('.ctxbar-text-fieldlabel') || {}).textContent === t);
+  const pillByLabel = (t) => pills().find((f) => f.getAttribute('aria-label') === t);
   const openFly = () => document.querySelector('.ctxbar-scene-flyout.is-open');
   const rowCtl = (fly, label) => {
     const row = Array.from(fly.querySelectorAll('.ctxbar-fly-row'))
@@ -1321,7 +1321,7 @@ describe('Shadow Fill Style — context-bar Shadow flyout', () => {
     return scene;
   };
   const pills = () => Array.from(host().querySelectorAll('.ctxbar-scene-field'));
-  const pillByLabel = (t) => pills().find((f) => (f.querySelector('.ctxbar-text-fieldlabel') || {}).textContent === t);
+  const pillByLabel = (t) => pills().find((f) => f.getAttribute('aria-label') === t);
   const openFly = () => document.querySelector('.ctxbar-scene-flyout.is-open');
   const rowCtl = (fly, label) => {
     const row = Array.from(fly.querySelectorAll('.ctxbar-fly-row'))
@@ -1622,7 +1622,7 @@ describe('Shadow Fill Style — hidden whenever inert (context-bar Shadow flyout
     return scene;
   };
   const pills = () => Array.from(host().querySelectorAll('.ctxbar-scene-field'));
-  const pillByLabel = (t) => pills().find((f) => (f.querySelector('.ctxbar-text-fieldlabel') || {}).textContent === t);
+  const pillByLabel = (t) => pills().find((f) => f.getAttribute('aria-label') === t);
   const openFly = () => document.querySelector('.ctxbar-scene-flyout.is-open');
   const rowCtl = (fly, label) => {
     const row = Array.from(fly.querySelectorAll('.ctxbar-fly-row'))

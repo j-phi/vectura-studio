@@ -1163,7 +1163,7 @@
     // The ground quad has no primitive to swap (setSceneObjectPrimitive refuses
     // the sentinel id) — the picker is absent, not inert.
     if (!sceneSelHasObjectDef(sel)) return;
-    const b = B();
+    const b = B(); const ic = IC();
     const C = (cfg().sceneFlyouts && cfg().sceneFlyouts.shape) || {};
     const prims = C.primitives || [];
     if (!prims.length) return;
@@ -1174,7 +1174,9 @@
       && r.getSceneObjectRecord(layer.id, sel.objectIds[0])) || {};
     const cur = first.primitive;
     const meta = b.sceneShape || {};
-    const field = makeDropField('ctxbar-scene-field ctxbar-scene-shape', meta.label || 'Shape', meta.tooltip || '');
+    // fs-s1 — icon-only: no visible label text, but an explicit aria-label so
+    // the accessible name survives losing it (makeDropField's 6th param).
+    const field = makeDropField('ctxbar-scene-field ctxbar-scene-shape', '', meta.tooltip || '', ic.sceneShape, null, meta.label || 'Shape');
     const items = prims.map((opt) => ({
       label: opt.label,
       active: cur === opt.value,
@@ -1207,7 +1209,7 @@
       els.content.appendChild(makeBtn({
         icon: ic.sceneHelpers,
         tooltip: helpersVisible ? meta.tooltipOn : meta.tooltipOff,
-        extraClass: helpersVisible ? '' : 'is-active',
+        extraClass: helpersVisible ? 'is-active' : '',
         onClick: () => {
           setHelpersVisible(!isHelpersVisible());
           const a = getApp();
@@ -1221,27 +1223,20 @@
     // sceneSelHasObjectDef) — they are omitted rather than left to no-op.
     if (!sceneSelHasObjectDef(sel)) return;
     els.content.appendChild(makeBtn({
-      icon: ic.sceneDuplicate, label: (b.sceneDuplicate && b.sceneDuplicate.label),
+      icon: ic.sceneDuplicate,
       tooltip: (b.sceneDuplicate && b.sceneDuplicate.tooltip),
       onClick: () => { r.duplicateSceneObjects?.(layer.id, ids); restoreState(); },
     }));
     els.content.appendChild(makeBtn({
-      icon: ic.sceneDrop, label: (b.sceneDrop && b.sceneDrop.label),
+      icon: ic.sceneDrop,
       tooltip: (b.sceneDrop && b.sceneDrop.tooltip),
       onClick: () => { r.dropSceneObjectsToGround?.(layer.id, ids); restoreState(); },
     }));
-    // Read the x-ray state through the child-aware record so a scene TREE (whose
-    // objects live on child object3d layers) reports correctly, not just an
-    // inline monolith. getSceneObjectRecord returns the live object def either way.
-    const first = r.getSceneObjectRecord ? r.getSceneObjectRecord(layer.id, ids[0]) : null;
-    const xray = Boolean(first && first.visibility === 'xray');
-    els.content.appendChild(makeBtn({
-      icon: ic.sceneVisibility,
-      tooltip: xray
-        ? (b.sceneVisibility && b.sceneVisibility.tooltipSolid)
-        : (b.sceneVisibility && b.sceneVisibility.tooltipXray),
-      onClick: () => { r.setSceneObjectVisibility?.(layer.id, ids); restoreState(); },
-    }));
+    // fs-s1 — the standalone Solid|X-ray toggle button (ic.sceneVisibility) was
+    // removed here: the X-ray flyout pill (appendSceneFlyouts → buildXrayBody)
+    // renders the identical Solid|X-ray segmented control writing the same
+    // `visibility` field, plus back-face density/line-type/pen controls a
+    // one-shot toggle button never exposed. Strict superset — nothing lost.
     els.content.appendChild(makeBtn({
       icon: ic.sceneDelete, tooltip: (b.sceneDelete && b.sceneDelete.tooltip),
       onClick: () => { r.deleteSceneObjects?.(layer.id, ids); restoreState(); },
@@ -1440,9 +1435,11 @@
     if (next) { attachSelectArrowStep(next); next.focus({ preventScroll: true }); }
   };
 
-  // Shared persistent-flyout wrapper for the scene pills.
-  const makeSceneFlyout = (label, tooltip, extraClass, buildBody) => {
-    const field = makeDropField(`ctxbar-scene-field ${extraClass || ''}`.trim(), label, tooltip);
+  // Shared persistent-flyout wrapper for the scene pills. `iconHtml`/`ariaLabel`
+  // (fs-s1) let a caller go icon-only: pass `label: ''` with an iconHtml and an
+  // explicit ariaLabel so the accessible name survives losing the visible text.
+  const makeSceneFlyout = (label, tooltip, extraClass, buildBody, iconHtml, ariaLabel) => {
+    const field = makeDropField(`ctxbar-scene-field ${extraClass || ''}`.trim(), label, tooltip, iconHtml, null, ariaLabel);
     const wrap = el('span', 'ctxbar-align-wrap ctxbar-scene-menu-wrap');
     const fly = el('div', 'ctxbar-align-flyout ctxbar-scene-flyout', { role: 'menu', 'aria-hidden': 'true' });
     let open = false;
@@ -1905,14 +1902,18 @@
     const r = ctx.renderer;
     const SC = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
     if (!r || !SC || typeof r.setSceneObjectStyle !== 'function') return;
-    const b = B();
-    const pill = (key, builder, extraClass) => {
+    const b = B(); const ic = IC();
+    // fs-s1 — Style/Shadow/Highlight go icon-only (an `iconHtml` collapses the
+    // visible label but keeps the name as an explicit aria-label); X-ray is
+    // deliberately NOT in that list and keeps its visible "X-ray" text.
+    const pill = (key, builder, extraClass, iconHtml) => {
       const meta = b[key] || {};
-      els.content.appendChild(makeSceneFlyout(meta.label || '', meta.tooltip || '', extraClass, builder));
+      const visibleLabel = iconHtml ? '' : (meta.label || '');
+      els.content.appendChild(makeSceneFlyout(visibleLabel, meta.tooltip || '', extraClass, builder, iconHtml, meta.label || ''));
     };
-    pill('sceneStyle', buildStyleBody, 'ctxbar-scene-style');
-    pill('sceneShadow', buildShadowBody, 'ctxbar-scene-shadow');
-    pill('sceneHighlight', buildHighlightBody, 'ctxbar-scene-highlight');
+    pill('sceneStyle', buildStyleBody, 'ctxbar-scene-style', ic.sceneStyle);
+    pill('sceneShadow', buildShadowBody, 'ctxbar-scene-shadow', ic.sceneShadow);
+    pill('sceneHighlight', buildHighlightBody, 'ctxbar-scene-highlight', ic.sceneHighlight);
     // X-ray writes the object DEF (`visibility`), which the ground quad does not
     // have — the pill is absent on a ground-only selection instead of opening a
     // flyout whose Solid | X-ray segment writes nothing. Style / Shadow /
@@ -2134,19 +2135,29 @@
   // A labeled dropdown pill (reuses the text-field chip styling). Caret + label
   // (+ optional leading icon, used by the algorithm switcher), no bound picker
   // — the caller wires the toggle via makeMenuFlyout/makeAlgoFlyout.
-  const makeDropField = (extraClass, text, title, iconHtml, iconColor) => {
+  // `ariaLabel` (fs-s1) — explicit accessible name, independent of the visible
+  // `text`. Every existing caller omits it and keeps working unchanged: the
+  // accessible name falls back to `text` (then `title`), same as before this
+  // param existed. It exists for icon-only pills (Shape/Style/Shadow/Highlight)
+  // that pass `text: ''` — without it their accessible name would silently
+  // fall through to `title` alone, which callers should not have to rely on.
+  const makeDropField = (extraClass, text, title, iconHtml, iconColor, ariaLabel) => {
     const field = el('span', `ctxbar-text-field ${extraClass}`);
     field.setAttribute('tabindex', '-1'); field.setAttribute('data-ctxbar-roving', '');
     field.setAttribute('role', 'button'); field.setAttribute('aria-haspopup', 'menu');
     field.setAttribute('aria-expanded', 'false');
     if (title) field.title = title;
+    const accessibleName = ariaLabel || text || title;
+    if (accessibleName) field.setAttribute('aria-label', accessibleName);
     if (iconHtml) {
       const ico = el('span', 'lvl-algo-sub-ico');
       ico.style.color = iconColor || '';
       ico.innerHTML = iconHtml;
       field.appendChild(ico);
     }
-    const lbl = el('span', 'ctxbar-text-fieldlabel'); lbl.textContent = text; field.appendChild(lbl);
+    if (text) {
+      const lbl = el('span', 'ctxbar-text-fieldlabel'); lbl.textContent = text; field.appendChild(lbl);
+    }
     const caret = el('span', 'ctxbar-text-caret'); caret.textContent = '▾'; caret.setAttribute('aria-hidden', 'true');
     field.appendChild(caret);
     return field;
