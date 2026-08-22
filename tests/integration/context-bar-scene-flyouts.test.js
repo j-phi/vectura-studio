@@ -529,15 +529,16 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     expect(window.Vectura.SETTINGS.sceneHelpersVisible).toBe(true);
   });
 
-  // ── C4 Job 3 — Density max raised to 200 (context-bar side only). ──────
-  test('C4/Job3: Style ▾ Density slider declares max 200', async () => {
+  // ── C4 Job 3 / fs-m2 Job 3 — Density max raised 200 -> 500 (context-bar
+  // side only; engine-side ramps above 200 are a sibling branch's job). ────
+  test('C4/Job3: Style ▾ Density slider declares max 500', async () => {
     const scene = addSelectScene();
     app.renderer.setSceneObjectStyle(scene.id, ['obj-1'], { mapper: 'hatch' });
     CB.restoreState();
     pillByLabel('Style').click();
     const range = rowCtl(openFly(), 'Density').querySelector('input[type="range"]');
     expect(range).toBeTruthy();
-    expect(range.max).toBe('200');
+    expect(range.max).toBe('500');
   });
 
   // ── C4 Job 4 — Border Offset control (obj.border.offset). ──────────────

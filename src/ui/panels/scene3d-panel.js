@@ -387,7 +387,7 @@
     { value: 'crease', label: 'Crease' }, { value: 'interior', label: 'Interior' },
   ];
   const D_ANGLE = { key: 'fillAngle', kind: 'dial', label: 'Angle', ariaLabel: 'Hatch angle', min: 0, max: 360, step: 1, default: 45 };
-  const D_DENSITY = { key: 'fillDensity', kind: 'slider', label: 'Density', ariaLabel: 'Fill density', min: 1, max: 200, step: 1, default: 50 };
+  const D_DENSITY = { key: 'fillDensity', kind: 'slider', label: 'Density', ariaLabel: 'Fill density', min: 1, max: 500, step: 1, default: 50 };
   const D_ANGLEREF = { key: 'angleRef', kind: 'seg', label: 'Angle ref', ariaLabel: 'Hatch angle reference', default: 'face', options: ANGLE_REF_OPTS };
   const D_LINKFILL = { key: 'linkFill', kind: 'toggle', label: 'Link fill', ariaLabel: 'Connect scanlines (boustrophedon)', default: false };
   // U9 — the FILL STYLE (tone law). `kind: 'lawpick'` is a Select grouped by
@@ -1054,7 +1054,7 @@
       if (FILL_MAPPERS.has(style.mapper)) {
         if (!style.params || typeof style.params !== 'object') style.params = {};
         slider(host, 'Density', {
-          value: Number.isFinite(style.params.fillDensity) ? style.params.fillDensity : 50, min: 1, max: 200, step: 1, defaultValue: 50,
+          value: Number.isFinite(style.params.fillDensity) ? style.params.fillDensity : 50, min: 1, max: 500, step: 1, defaultValue: 50,
           ariaLabel: 'Fill density',
           ...liveSlider((v) => { style.params.fillDensity = Math.round(v); }),
         });
