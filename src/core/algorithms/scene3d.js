@@ -533,7 +533,17 @@
           });
         });
       });
-      const clipper = HLR.createClipper(occluderFaces, { bias: HLR_BIAS });
+      // P5 (draft-only coarser HLR sampling): `bounds.fastPreview` is a
+      // `generate()` argument, set once by its caller and never reassigned
+      // before this point (verified — the only other `bounds` identifier in
+      // this file is an unrelated `const` inside a nested per-face closure
+      // far below), so it is safe to read here, ahead of the `draft` const
+      // used later for tone/specular gating. Threading it into
+      // HLR.createClipper is what actually activates hlr.js's SAMPLE_STEP
+      // multiplier during a live drag — see scene3d-hlr-draft-flag-wiring
+      // .test.js for the RGR proof that this reaches the clipper.
+      const draftHLR = Boolean(bounds && bounds.fastPreview);
+      const clipper = HLR.createClipper(occluderFaces, { bias: HLR_BIAS, draft: draftHLR });
 
       // ── Phase 2 lighting: light-made tone + cast shadows (streams 2A). ──────
       const Lighting = Vectura.Scene3D.Lighting;
@@ -573,7 +583,10 @@
       // Draft previews (live drag) SKIP tone banding and the specular hotspot —
       // the same responsiveness contract that makes shadows skip booleans (L4).
       // The drag shows flat Phase-1 hatch; full tone returns on release.
-      const draft = Boolean(bounds && bounds.fastPreview);
+      // (draftHLR, hoisted above the clipper build, is the single source of
+      // truth for "this is a live-drag preview frame" — reused here rather
+      // than recomputed so the two draft-gated behaviors can't drift apart.)
+      const draft = draftHLR;
       const toneOn = Boolean(!draft && p.tone && p.tone.enabled && Regions && lightDir);
       // Multi-light shading: intensity at a world normal + world POINT is
       // ambient + every directional Lambert term + every positional (point/spot)

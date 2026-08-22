@@ -152,13 +152,22 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   // implementation on this machine/runtime. Any change to these values means
   // the visible/hidden classification changed — a correctness regression,
   // not an acceptable side effect of an acceleration structure.
+  // NOTE (FS-R2): the `|draft` rows below were recaptured when scene3d.js
+  // was fixed to actually thread bounds.fastPreview into HLR.createClipper
+  // as opts.draft — previously a wiring bug meant draft frames silently
+  // fell through to full-quality (settled) sampling, so the old `|draft`
+  // hashes were really settled-sampling hashes in disguise. The P5 draft
+  // coarser-sampling behavior is EXPECTED to change draft-mode geometry
+  // (that is the feature); the `|settled` rows are untouched and still
+  // match the pre-spatial-index baseline exactly, proving settled output
+  // stayed byte-identical.
   const EXPECTED = {
     'facetedOverlap-orthographic-hatch|settled': { hash: '96e5e0f732b09b4ab57c546e94dcd3d71cb5c917c8fb4d34c5cc071810ce9d59', pathCount: 132, pointCount: 264 },
-    'facetedOverlap-orthographic-hatch|draft': { hash: 'a37f836311ba5eb4588ce7fe9940d1906191488a2a4a0b5ea334b6ec56c19ab8', pathCount: 201, pointCount: 402 },
+    'facetedOverlap-orthographic-hatch|draft': { hash: 'c89e3d735e2b53f3c1d154e7f3567d53a1e6053159b9ffa25a5853f7973d6a76', pathCount: 200, pointCount: 400 },
     'curvedOverlap-perspective-mixed-xray|settled': { hash: '98c456f3f08ead41305f0dcdfc46dece0319692cd63905157f1dc2f862bfe865', pathCount: 343, pointCount: 1135 },
-    'curvedOverlap-perspective-mixed-xray|draft': { hash: '63b62782a81fe67fa253b93ecd8a5b17a2f8666cbf07f8498770caa0a5a55757', pathCount: 302, pointCount: 604 },
+    'curvedOverlap-perspective-mixed-xray|draft': { hash: '83aebf997a1e39aed36e2893fb18e7e7ea386755a9493e4868c53c51c80ee2f9', pathCount: 302, pointCount: 604 },
     'denseMixed-8obj-shadows|settled': { hash: 'c369bbc5ffdcf9fdedebc4b47ce61d1794e484679ebe7f0c79ec23ae0abac96b', pathCount: 471, pointCount: 2130 },
-    'denseMixed-8obj-shadows|draft': { hash: '5c0c16e74f6188cf2687d59dbcdbf2f9630f0ed036ef6fa1ddb386a017dde0b3', pathCount: 467, pointCount: 934 },
+    'denseMixed-8obj-shadows|draft': { hash: '9c3de29b1f268348208ebe1395268ad1f099ffdfc1b58d5759e3dc7eba7f4486', pathCount: 466, pointCount: 932 },
   };
 
   scenarios.forEach(({ name, objects, extra }) => {
