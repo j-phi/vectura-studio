@@ -208,14 +208,17 @@ describe('3D Scene Studio 1C — scene context menu', () => {
     expect(app.renderer.getSceneSelection().objectIds).toEqual(['obj-2']);
   });
 
-  test('Drop to Ground zeroes transform.y through the menu', () => {
+  // fs-u1 — drop-to-ground v2 rests the box's TRUE bottom on the ground
+  // (y = half-height = 20 for this 40mm box on ground y = 0), not
+  // transform.y = 0 (which would sink half the box below the ground).
+  test('Drop to Ground rests transform.y at the true contact height through the menu', () => {
     const scene = addScene();
     expect(scene.params.objects[0].transform.y).toBe(7);
     rightClick(30, 30);
     const menu = CM.getElement();
     Array.from(menu.querySelectorAll('.canvas-ctx-item'))
       .find((b) => b.dataset.ctxId === 'sceneDropToGround').click();
-    expect(scene.params.objects[0].transform.y).toBe(0);
+    expect(scene.params.objects[0].transform.y).toBe(20);
   });
 
   test('regression: without a scene layer the menu keeps the existing 2D verb set', () => {

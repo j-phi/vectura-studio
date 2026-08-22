@@ -311,13 +311,16 @@ describe('3D Scene Studio 1C — scene selection + canvas interactions', () => {
       expect(sel.faceKeys.sort()).toEqual(['obj-1/face:+Z', 'obj-1/face:-Z', 'obj-2/face:+Z'].sort());
     });
 
-    test('scene verbs: drop-to-ground zeroes transform.y; duplicate/delete/visibility maintain objects + history', async () => {
+    // fs-u1 — drop-to-ground v2 rests the box's TRUE bottom on the ground
+    // (y = half-height = 20 for this 40mm box on ground y = 0), not
+    // transform.y = 0 (which would sink half the box below the ground).
+    test('scene verbs: drop-to-ground rests transform.y on the true contact height; duplicate/delete/visibility maintain objects + history', async () => {
       const { renderer, scene, app } = await setup();
       const obj2 = scene.params.objects[1];
       expect(obj2.transform.y).toBe(5);
       renderer.setSceneSelection({ layerId: scene.id, mode: 'object', objectIds: ['obj-2'] });
       expect(renderer.dropSceneSelectionToGround()).toBe(true);
-      expect(obj2.transform.y).toBe(0);
+      expect(obj2.transform.y).toBe(20);
       expect(app.history.length).toBe(2);
 
       restorePaths(scene);
@@ -434,12 +437,13 @@ describe('3D Scene Studio 1C — scene selection + canvas interactions', () => {
       key({ key: 'Tab' });
       expect(app.renderer.activeTool).toBe('select');
 
-      // D = drop-to-ground on the scene selection.
+      // D = drop-to-ground on the scene selection. fs-u1 — rests the box's
+      // true bottom on the ground (y = half-height = 20), not y = 0.
       const obj2 = scene.params.objects[1];
       expect(obj2.transform.y).toBe(5);
       app.renderer.setSceneSelection({ layerId: scene.id, mode: 'object', objectIds: ['obj-2'] });
       key({ key: 'd' });
-      expect(obj2.transform.y).toBe(0);
+      expect(obj2.transform.y).toBe(20);
 
       // Without a scene layer active, Tab does NOT switch tools (no new
       // global bindings).

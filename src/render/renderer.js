@@ -9727,8 +9727,15 @@
       const sel = this.sceneSelection;
       if (!sel) return '';
       const cand = this.sceneCandidateStack;
+      // fs-u1 — fold ground presence into the signature. Adding/removing the
+      // ground layer never touches the 3D object selection itself, so without
+      // this the RAF ticker's change-detection would see an identical
+      // signature and skip re-rendering the bar — the Drop button would stay
+      // stale (visible/hidden) until something else forced a reselect. This
+      // makes the button's visibility reactive on the very next tick instead.
+      const ground = this.sceneHasGround(sel.layerId) ? '1' : '0';
       return `${sel.layerId}|${sel.mode}|${sel.objectIds.join(',')}|${sel.faceKeys.join(',')}|`
-        + `${sel.edgeKeys.join(',')}|${cand ? `${cand.index}/${cand.total}` : ''}`;
+        + `${sel.edgeKeys.join(',')}|${cand ? `${cand.index}/${cand.total}` : ''}|g:${ground}`;
     }
 
     // {index, total} for the context bar's "2 of 3" alt-cycle readout (1-based;
@@ -12255,23 +12262,120 @@
       return `obj-${max + 1}`;
     }
 
-    // Drop-to-ground v1 (documented simplification): CONTRACT A defines the
-    // ground plane at y = 0 with objects resting on it at transform.y = 0.
-    // Computing the true world min-y needs the mesh (1A-owned), so v1 sets
-    // transform.y = 0 directly.
+    // True when `layerId` names a scene3d layer with an ENABLED ground plane —
+    // a monolith reads its own params.ground; a scene TREE reads the composed
+    // params the compositor last published to `_sceneAssembled` (a ground
+    // CHILD layer wins over the group's own inline ground; see
+    // Scene3D.Params.collectSceneParams). Normalized through
+    // Scene3D.Params.normalizeParams so an absent `ground` key on a legacy
+    // monolith still defaults true, matching every other ground read in this
+    // codebase (engine.js's `groundEnabled` check). Exposed so the context bar
+    // gates the Drop button on this instead of re-deriving engine rules itself.
+    sceneHasGround(layerId) {
+      const layer = this.engine.layers.find((l) => l.id === layerId);
+      if (!layer || layer.type !== 'scene3d') return false;
+      const S3 = window.Vectura && window.Vectura.Scene3D;
+      const Params = S3 && S3.Params;
+      const source = layer._sceneAssembled || layer.params;
+      const norm = (Params && typeof Params.normalizeParams === 'function')
+        ? Params.normalizeParams(source) : source;
+      return !!(norm && norm.ground && norm.ground.enabled !== false);
+    }
+
+    // The ground quad's world height. scene.js's buildGroundRecord hardcodes
+    // it at world y = 0 (see "The ground plane: a large world quad at y = 0")
+    // — there is no ground height/offset param today, so this always returns
+    // 0. Centralized here (rather than a literal 0 inline below) so the one
+    // call site that needs updating is obvious if a configurable ground
+    // height/offset is ever added.
+    _sceneGroundY(_layer) { return 0; }
+
+    // The TRUE lowest world-space Y of one object's rendered geometry — its
+    // full transform (per-axis scale, then yaw/pitch/roll, then translate)
+    // applied to every mesh vertex, not the origin/transform.y and not an
+    // untransformed bbox. Reuses Scene3D.Scene's own mesh builder + transform
+    // function (scene.js `buildPrimitiveMesh` / `applyObjectTransform`) — the
+    // exact math the renderer uses to draw the object — so a rotated box's
+    // lowest CORNER is what gets measured, matching what actually gets drawn.
+    // detailScale 1 = full published fidelity (the live-drag preview throttle
+    // does not apply to a discrete Drop click). Returns null on any failure
+    // (missing Scene3D.Scene, malformed params) so callers can skip safely.
+    _sceneObjectWorldMinY(obj) {
+      if (!obj) return null;
+      const S3 = window.Vectura && window.Vectura.Scene3D;
+      const Scene = S3 && S3.Scene;
+      if (!Scene || typeof Scene.buildPrimitiveMesh !== 'function'
+        || typeof Scene.applyObjectTransform !== 'function') return null;
+      let meshData;
+      try { meshData = Scene.buildPrimitiveMesh(obj, 1); } catch (_e) { return null; }
+      if (!meshData || !Array.isArray(meshData.vertices) || !meshData.vertices.length) return null;
+      const t = obj.transform || {};
+      let minY = Infinity;
+      meshData.vertices.forEach((pt) => {
+        const w = Scene.applyObjectTransform(pt, t);
+        if (w && Number.isFinite(w.y) && w.y < minY) minY = w.y;
+      });
+      return Number.isFinite(minY) ? minY : null;
+    }
+
+    // Drop-to-ground v2 (fs-u1). Snaps each requested id to true ground
+    // contact — raising OR lowering it, since "drop until it touches" means
+    // exact contact in both directions (an object embedded below the ground
+    // is just as wrong as one floating above it). No-ops (false) when the
+    // scene has no ground: there is nothing to drop onto.
+    //
+    // Multi-select: each id drops INDEPENDENTLY to its own contact point —
+    // mirrors this app's existing "Align Bottom" (src/core/align-ops.js
+    // `alignBottom`), which moves each selected layer's own bbox edge to the
+    // target line rather than treating the selection as one rigid block.
+    //
+    // Boolean groups: a booleanGroup3d id carries NO transform of its own —
+    // its position lives entirely on its object3d OPERAND children (see the
+    // note on duplicateSceneObjects above). Its operands ARE dropped, but
+    // rigidly as ONE unit (one shared delta over the union of their own
+    // vertices) — shifting them independently would pull the carved solid
+    // apart, changing the CSG result. This mirrors duplicateSceneObjects'
+    // own handling of the same case (both operands nudged by the same delta).
     dropSceneObjectsToGround(layerId, objectIds) {
       const layer = this.engine.layers.find((l) => l.id === layerId);
       if (!layer || layer.type !== 'scene3d') return false;
-      // Scene-tree — resolve each target through _sceneObjectById so the drop
-      // reaches a CHILD object3d layer's transform (params live at child.params);
-      // a monolith returns its inline object. Mutating the view writes through.
-      const targets = (objectIds || [])
-        .map((id) => this._sceneObjectById(layer, id))
-        .filter(Boolean);
-      if (!targets.length) return false;
+      if (!this.sceneHasGround(layerId)) return false;
+      const groundY = this._sceneGroundY(layer);
+
+      // Resolve each requested id to a drop UNIT: a booleanGroup3d id expands
+      // to ALL its object3d operand children (dropped together); everything
+      // else resolves through the child-aware _sceneObjectById (tree child or
+      // monolith inline object).
+      const seen = new Set();
+      const units = [];
+      (objectIds || []).forEach((id) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        const childLayer = this.engine.getLayerById ? this.engine.getLayerById(id) : null;
+        if (childLayer && childLayer.type === 'booleanGroup3d') {
+          const operands = (this.engine.getLayerChildren ? this.engine.getLayerChildren(id) : [])
+            .filter((c) => c && c.type === 'object3d' && c.params);
+          if (operands.length) units.push(operands.map((o) => o.params));
+          return;
+        }
+        const rec = this._sceneObjectById(layer, id);
+        if (rec) units.push([rec]);
+      });
+      if (!units.length) return false;
+
       this._scenePushHistory();
-      targets.forEach((o) => {
-        (o.transform || (o.transform = {})).y = 0;
+      units.forEach((objs) => {
+        let minY = Infinity;
+        objs.forEach((obj) => {
+          const y = this._sceneObjectWorldMinY(obj);
+          if (Number.isFinite(y) && y < minY) minY = y;
+        });
+        if (!Number.isFinite(minY)) return; // no readable geometry — skip this unit safely
+        const delta = groundY - minY;
+        objs.forEach((obj) => {
+          const t = obj.transform || (obj.transform = {});
+          t.y = (Number(t.y) || 0) + delta;
+        });
       });
       this._sceneRegen(layer);
       return true;

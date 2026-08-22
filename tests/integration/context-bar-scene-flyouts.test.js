@@ -123,7 +123,12 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
   });
 
   test('fs-s1: Duplicate/Drop/Trash/Helpers action buttons carry no visible label text but keep a real accessible name', async () => {
-    addSelectScene();
+    // fs-u1 — Drop only renders when the scene HAS a ground; the shared
+    // fixture starts groundless (for the unrelated X-ray tests below), so
+    // turn it on here to exercise Drop's own accessible-name contract.
+    const scene = addSelectScene();
+    scene.params.ground = { enabled: true };
+    CB.restoreState();
     const btns = () => Array.from(host().querySelectorAll('.ctxbar-btn'));
     const b = window.Vectura.CONTEXT_BAR.buttons;
     const dup = btns().find((x) => x.getAttribute('aria-label') === b.sceneDuplicate.tooltip);
@@ -134,6 +139,41 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
       expect(btn.querySelector('.ctxbar-label')).toBeFalsy();
       expect(btn.getAttribute('aria-label')).toBeTruthy();
     });
+  });
+
+  // ── fs-u1 — Drop button existence gated on ground presence ─────────────
+  test('fs-u1: the Drop button is absent when the scene has no ground, present when it does', async () => {
+    const scene = addSelectScene(); // fixture ground: { enabled: false }
+    const b = window.Vectura.CONTEXT_BAR.buttons;
+    const dropBtn = () => Array.from(host().querySelectorAll('.ctxbar-btn'))
+      .find((x) => x.getAttribute('aria-label') === b.sceneDrop.tooltip);
+    expect(dropBtn()).toBeFalsy();
+
+    scene.params.ground = { enabled: true };
+    CB.restoreState();
+    expect(dropBtn()).toBeTruthy();
+  });
+
+  test('fs-u1: adding/removing ground toggles the Drop button LIVE on the RAF ticker, without a reselect', async () => {
+    const scene = addSelectScene(); // fixture ground: { enabled: false }
+    const b = window.Vectura.CONTEXT_BAR.buttons;
+    const dropBtn = () => Array.from(host().querySelectorAll('.ctxbar-btn'))
+      .find((x) => x.getAttribute('aria-label') === b.sceneDrop.tooltip);
+    expect(dropBtn()).toBeFalsy();
+
+    // Mutate ground state directly (as an "Add ground" layers-panel action
+    // would) WITHOUT touching the 3D object selection or calling
+    // restoreState() ourselves — only the background ticker (`_refresh`,
+    // what the real RAF loop calls) should pick it up, proving the button's
+    // visibility is reactive rather than dependent on the mutating call site
+    // remembering to force a render (the Shadow Fill Style bug this mirrors).
+    scene.params.ground = { enabled: true };
+    CB._refresh();
+    expect(dropBtn()).toBeTruthy();
+
+    scene.params.ground = { enabled: false };
+    CB._refresh();
+    expect(dropBtn()).toBeFalsy();
   });
 
   test('fs-s1: the standalone Solid|X-ray toggle button is gone, but the X-ray flyout pill still writes visibility', async () => {

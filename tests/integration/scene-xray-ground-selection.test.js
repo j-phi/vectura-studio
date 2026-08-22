@@ -70,8 +70,11 @@ describe('Scene X-ray — a ground-quad selection omits object-DEF controls', ()
 
   const host = () => CB.getContentHost();
   const pills = () => Array.from(host().querySelectorAll('.ctxbar-scene-field'));
-  const pillLabels = () => pills().map((f) => (f.querySelector('.ctxbar-text-fieldlabel') || {}).textContent);
-  const pillByLabel = (t) => pills().find((f) => (f.querySelector('.ctxbar-text-fieldlabel') || {}).textContent === t);
+  // fs-s1/fs-u1 — Shape/Style/Shadow/Highlight/X-ray are all icon-only (no
+  // visible label text), so lookup goes through aria-label, their accessible
+  // name.
+  const pillLabels = () => pills().map((f) => f.getAttribute('aria-label'));
+  const pillByLabel = (t) => pills().find((f) => f.getAttribute('aria-label') === t);
   const openFly = () => document.querySelector('.ctxbar-scene-flyout.is-open');
   const rowCtl = (fly, label) => {
     const row = Array.from(fly.querySelectorAll('.ctxbar-fly-row'))

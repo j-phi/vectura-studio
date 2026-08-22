@@ -1227,11 +1227,17 @@
       tooltip: (b.sceneDuplicate && b.sceneDuplicate.tooltip),
       onClick: () => { r.duplicateSceneObjects?.(layer.id, ids); restoreState(); },
     }));
-    els.content.appendChild(makeBtn({
-      icon: ic.sceneDrop,
-      tooltip: (b.sceneDrop && b.sceneDrop.tooltip),
-      onClick: () => { r.dropSceneObjectsToGround?.(layer.id, ids); restoreState(); },
-    }));
+    // fs-u1 — Drop only makes sense (and only appears) when the scene actually
+    // HAS a ground to drop onto. `getSceneSelectionSignature` folds ground
+    // presence into its signature, so the RAF ticker re-renders this row the
+    // moment a ground layer is added/removed — no reselect needed.
+    if (r.sceneHasGround?.(layer.id)) {
+      els.content.appendChild(makeBtn({
+        icon: ic.sceneDrop,
+        tooltip: (b.sceneDrop && b.sceneDrop.tooltip),
+        onClick: () => { r.dropSceneObjectsToGround?.(layer.id, ids); restoreState(); },
+      }));
+    }
     // fs-s1 — the standalone Solid|X-ray toggle button (ic.sceneVisibility) was
     // removed here: the X-ray flyout pill (appendSceneFlyouts → buildXrayBody)
     // renders the identical Solid|X-ray segmented control writing the same
