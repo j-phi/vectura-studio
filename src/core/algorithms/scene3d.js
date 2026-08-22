@@ -2147,25 +2147,7 @@
       const BORDER_WELD_EPS = 1e-9; // exact-endpoint weld: these ARE the same projected vertex
       // `border.offset` (mm, [-2, 2], negative = inward / positive = outward)
       // shifts the WHOLE multi-pass band by that many mm while preserving the
-      // passes' relative spread — read defensively off the raw record (rather
-      // than assumed pre-clamped) since `normalizeObjectBorder`
-      // (src/core/scene3d/params.js, not owned here) does not yet carry this
-      // field through on this branch; it is declared on a sibling branch not
-      // merged into this one. Re-clamped here so this stays correct once that
-      // merge lands. Default 0 ⇒ byte-identical to today's output.
-      //
-      // Sign empirically determined (not assumed from the offsetRun literal):
-      // generated a border on a sphere's smooth convex silhouette (many
-      // vertices, no sharp-corner artifacts) and measured the offset pass's
-      // bbox against the un-offset silhouette's. offsetRun's `d` runs OUTWARD
-      // when POSITIVE (bbox grows) and INWARD when NEGATIVE (bbox shrinks) for
-      // this codebase's chain winding — so `offset` is added directly below to
-      // match the outward-positive param contract. (An earlier box-silhouette
-      // probe using average-distance-from-centroid suggested the opposite
-      // sign, but that metric was unreliable: a box wireframe's visible edges
-      // do not form one simple closed loop, and hidden/crease edges skew the
-      // centroid off the true silhouette center. The sphere bbox measurement,
-      // matching this task's prescribed method, is the trustworthy one.)
+      // passes' relative spread. Default 0 ⇒ byte-identical to today's output.
       const borderCfg = (record) => {
         const border = record && record.border;
         if (!border || !border.enabled || draft) return null;
@@ -2175,6 +2157,47 @@
           penId: border.penId || null,
           offset: clamp(finite(border.offset, 0), -2, 2),
         };
+      };
+
+      // SIGN. A prior pass here hard-coded a single fixed sign, "empirically
+      // determined" from one sphere at one fixed camera angle (yaw 0 / pitch
+      // 0). That was wrong: offsetRun's per-vertex normal is the LEFT side of
+      // the chain's travel direction, and which screen-space winding a
+      // silhouette chain gets (CW vs CCW) depends on the camera view and on
+      // which edge happens to seed `chainBorderEdges` — it is NOT a fixed
+      // property of the codebase. Proof: the exact same sphere at the app's
+      // actual default scene camera (yaw -30 / pitch 20 — what every new 3D
+      // Scene layer ships with) offset OUTWARD (grows the bbox) at NEGATIVE
+      // offset and INWARD at POSITIVE — precisely inverted from the fixed-sign
+      // assumption, and reproducible again at yaw 90 (see
+      // tests/unit/scene3d-border-offset-geometry.test.js "positive offset
+      // stays outward across camera angles (winding-independent)").
+      //
+      // Fix: determine polarity PER STRIP, not globally. Probe a tiny
+      // offsetRun(pts, PROBE_D, loop) and compare each point's distance from
+      // the object's projected centroid (avg of record.projected — the WHOLE
+      // object's vertices, not just this strip's, so a partial/occluded
+      // silhouette segment still reads against the true object center) before
+      // vs after the probe nudge. If the probe average distance did not grow,
+      // the strip's chain wound the "wrong" way for this view — flip.
+      const PROBE_D = 1; // mm; offsetRun is linear in d, so sign is magnitude-independent
+      const objectCentroid = (record) => {
+        const pts = (record && record.projected) || [];
+        let sx = 0; let sy = 0; let n = 0;
+        pts.forEach((p) => {
+          if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) { sx += p.x; sy += p.y; n += 1; }
+        });
+        return n ? { x: sx / n, y: sy / n } : { x: 0, y: 0 };
+      };
+      const stripPolarity = (record, pts, loop, centroid) => {
+        if (pts.length < 2) return 1;
+        const probe = offsetRun(pts, PROBE_D, loop);
+        let before = 0; let after = 0;
+        for (let i = 0; i < pts.length; i++) {
+          before += Math.hypot(pts[i].x - centroid.x, pts[i].y - centroid.y);
+          after += Math.hypot(probe[i].x - centroid.x, probe[i].y - centroid.y);
+        }
+        return after >= before ? 1 : -1;
       };
 
       // Chain `items` ({ a, b } integer vertex indices) into maximal runs.
@@ -2271,6 +2294,7 @@
       const emitBorderChains = (record, collected) => {
         const cfg = borderCfg(record);
         if (!cfg || !collected.length) return;
+        const centroid = objectCentroid(record);
         // Partition by the pen the emphasis will actually draw with, so a chain
         // can never silently recolour halfway round. With an explicit border pen
         // every edge lands in one bucket, which is the common case.
@@ -2289,13 +2313,16 @@
               const loop = pts.length > 2
                 && Math.abs(pts[0].x - pts[pts.length - 1].x) <= BORDER_WELD_EPS
                 && Math.abs(pts[0].y - pts[pts.length - 1].y) <= BORDER_WELD_EPS;
+              // Polarity is per-STRIP: this chain's own screen-space winding
+              // (camera- and topology-dependent) decides which raw sign of
+              // offsetRun's `d` reads as "outward" for it. See stripPolarity.
+              const polarity = stripPolarity(record, pts, loop, centroid);
               for (let k = 1; k <= cfg.passes; k++) {
                 const sign = (k % 2 === 0) ? 1 : -1;
                 // Shift the whole band by `offset`, spread between passes
-                // untouched. offsetRun's `d` runs outward when POSITIVE (see
-                // borderCfg), matching the outward-positive param contract, so
-                // `offset` is added directly.
-                const mag = sign * BORDER_STEP_MM * Math.ceil(k / 2) + cfg.offset;
+                // untouched. `polarity` corrects offsetRun's raw `d` so
+                // POSITIVE here always means outward regardless of winding.
+                const mag = polarity * (sign * BORDER_STEP_MM * Math.ceil(k / 2) + cfg.offset);
                 const meta = {
                   ...src,
                   sceneTarget: { ...src.sceneTarget },

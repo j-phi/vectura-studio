@@ -3,33 +3,36 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 /*
  * Job 2 (fs-d1-engine) — consume obj.border.offset in the border geometry.
  *
- * Another agent declared the normalized field `obj.border.offset` (mm,
- * default 0, clamped [-2, 2], negative = inward / positive = outward) on a
- * SIBLING branch (3d-scene/fs-c2-shadow, commit 01a5753e) that has not been
- * merged into this branch's base (3d-scene/fs-b2-xray) — so on THIS branch,
- * `src/core/scene3d/params.js`'s `normalizeObjectBorder` does not carry
- * `offset` through yet (verified: it normalizes to `{enabled, strength,
- * penId}` only here). That file is out of scope for this task (owned by the
- * params agent) and is not edited here.
+ * `obj.border.offset` (mm, default 0, clamped [-2, 2], negative = inward /
+ * positive = outward) is normalized by `src/core/scene3d/params.js`'s
+ * `normalizeObjectBorder` (the sibling branch that declared it has since
+ * merged — see the "border.offset is normalized" test below, which replaced
+ * a stale test documenting the pre-merge gap). The `normalizeParams` splice
+ * in `beforeEach` below is now redundant with the real normalizer but is kept
+ * as a harmless no-op-equivalent boundary shim rather than touched, since
+ * this file does not own params.js.
  *
- * scene3d.js's job is the GEOMETRY consumption: once `record.border.offset`
- * IS present (as it will be the moment the branches merge), the border's
- * multi-pass band must shift by that many mm, inward for negative / outward
- * for positive, keeping the passes' relative spread.
+ * scene3d.js's job is the GEOMETRY consumption: the border's multi-pass band
+ * must shift by `offset` mm, inward for negative / outward for positive,
+ * keeping the passes' relative spread — for EVERY camera angle, not just one.
  *
- * To prove that consumption logic in isolation from the params-side gap,
- * these tests wrap `Vectura.Scene3D.Params.normalizeParams` for the duration
- * of the test to splice `offset` onto the normalized border block exactly as
- * the real normalizer will once merged (clamped [-2, 2], default 0) — a
- * boundary mock of a dependency this file does not own, not an edit to it.
- *
- * SIGN. offsetRun's `d` sign was determined empirically (per this task's
- * instructions), not assumed from the literal, using a SPHERE's smooth
- * convex silhouette (many vertices, no sharp-corner artifacts — a box
- * wireframe's edges do not form one simple closed loop and were found to give
- * an unreliable reading) and measuring the offset pass's bbox against the
- * un-offset silhouette's: positive `d` grows the bbox (outward), negative
- * shrinks it (inward). These tests use the same bbox method.
+ * SIGN / WINDING (fs-u2-borderdir fix). A prior pass picked a single fixed
+ * sign for offsetRun's `d`, "empirically determined" from one sphere at one
+ * fixed camera (yaw 0 / pitch 0, this file's default `scene()` camera). That
+ * was the actual bug the product owner reported ("increasing the offset
+ * doesn't make the border larger"): offsetRun's normal is the LEFT side of
+ * the chain's screen-space travel direction, and which way a silhouette
+ * chain winds (CW vs CCW) depends on the camera view, not on the codebase's
+ * geometry in general. Proof: the SAME sphere at the app's actual default
+ * scene camera (yaw -30 / pitch 20 — what every new 3D Scene layer ships
+ * with) grew OUTWARD at NEGATIVE offset and shrank at POSITIVE under the old
+ * fixed-sign code — exactly inverted. The fix in `emitBorderChains` computes
+ * polarity PER STRIP (a tiny probe offset compared against the object's
+ * projected-vertex centroid), so positive `offset` reads as outward
+ * regardless of camera/winding. The "winding-independent" test below pins
+ * this at the app's real default camera in addition to the original yaw
+ * 0/pitch 0 tests, which stay on the original camera and therefore keep
+ * proving the fix didn't disturb the already-correct case.
  */
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -68,9 +71,15 @@ describe('Scene3D border.offset geometry consumption (Job 2)', () => {
     V.Scene3D.Params.normalizeParams = realNormalize;
   });
 
+  const DEFAULT_CAMERA = { projection: 'orthographic', yaw: 0, pitch: 0, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
+  // The app's ACTUAL default 3D Scene camera (Engine.addSceneTree /
+  // scene3d-panel's factory) — every new scene ships at this angle, not at
+  // the yaw0/pitch0 head-on view the original tests used.
+  const APP_DEFAULT_CAMERA = { projection: 'orthographic', yaw: -30, pitch: 20, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
+
   // A sphere head-on: a smooth, many-vertex, single-loop convex silhouette
   // with no sharp corners to distort a per-vertex tangent-based offset.
-  const scene = (border) => {
+  const scene = (border, camera = DEFAULT_CAMERA) => {
     const p = clone(defaults);
     p.objects = [{
       id: 'o1', name: 'Sphere', primitive: 'sphere', params: { radius: 40, detail: 24 },
@@ -78,7 +87,7 @@ describe('Scene3D border.offset geometry consumption (Job 2)', () => {
       visibility: 'solid', ...(border !== undefined ? { border } : {}),
     }];
     p.ground = { enabled: false };
-    p.camera = { projection: 'orthographic', yaw: 0, pitch: 0, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
+    p.camera = camera;
     p.styleTable = { scene: { penId: null, mapper: 'wireframe', params: {} }, byObject: {}, byFace: {} };
     p.tone = { ...clone(defaults).tone, enabled: false };
     return p;
@@ -98,15 +107,35 @@ describe('Scene3D border.offset geometry consumption (Job 2)', () => {
   // Border-off silhouette edge count is the fixed baseline every `on` run
   // appends its extra pass(es) AFTER (append order is deterministic), so the
   // tail of an `on` run's edge list is exactly the border-emitted geometry.
-  const borderOnlyPaths = (border) => {
-    const off = edgesOf(algo.generate(scene({ enabled: false }), null, null, BOUNDS));
-    const on = edgesOf(algo.generate(scene(border), null, null, BOUNDS));
+  const borderOnlyPaths = (border, camera = DEFAULT_CAMERA) => {
+    const off = edgesOf(algo.generate(scene({ enabled: false }, camera), null, null, BOUNDS));
+    const on = edgesOf(algo.generate(scene(border, camera), null, null, BOUNDS));
     return on.slice(off.length);
   };
 
-  test('offset field is not yet normalized on this branch (documents the sibling-branch gap)', () => {
-    const p = realNormalize({ objects: [{ primitive: 'box', border: { enabled: true, offset: 1.5 } }] });
-    expect(p.objects[0].border.offset).toBeUndefined();
+  test('border.offset is normalized and clamped to [-2, 2] (sibling branch merged)', () => {
+    expect(realNormalize({ objects: [{ primitive: 'box', border: { enabled: true, offset: 1.5 } }] })
+      .objects[0].border.offset).toBe(1.5);
+    expect(realNormalize({ objects: [{ primitive: 'box', border: { enabled: true, offset: 5 } }] })
+      .objects[0].border.offset).toBe(2);
+    expect(realNormalize({ objects: [{ primitive: 'box', border: { enabled: true, offset: -5 } }] })
+      .objects[0].border.offset).toBe(-2);
+    expect(realNormalize({ objects: [{ primitive: 'box', border: { enabled: true } }] })
+      .objects[0].border.offset).toBe(0);
+  });
+
+  // RGR pin for the fs-u2-borderdir fix: at the app's real default camera,
+  // positive offset must still grow the bbox and negative must still shrink
+  // it — this FAILED before the per-strip polarity fix (grew at negative,
+  // shrank at positive; the exact inversion the product owner reported).
+  test('positive offset stays outward across camera angles (winding-independent)', () => {
+    const zero = bbox(borderOnlyPaths({ enabled: true, strength: 0.25, offset: 0 }, APP_DEFAULT_CAMERA));
+    const out = bbox(borderOnlyPaths({ enabled: true, strength: 0.25, offset: 1.5 }, APP_DEFAULT_CAMERA));
+    const inw = bbox(borderOnlyPaths({ enabled: true, strength: 0.25, offset: -1.5 }, APP_DEFAULT_CAMERA));
+    expect(out.w).toBeGreaterThan(zero.w);
+    expect(out.h).toBeGreaterThan(zero.h);
+    expect(inw.w).toBeLessThan(zero.w);
+    expect(inw.h).toBeLessThan(zero.h);
   });
 
   test('positive offset (outward) GROWS the border pass bbox vs. offset 0', () => {
