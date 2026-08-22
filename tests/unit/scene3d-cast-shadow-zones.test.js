@@ -23,10 +23,23 @@
  *
  * WHAT IS PINNED, and why each number is here rather than in a review document:
  *
- *   C12  Layers Off is unchanged                16109.77 mm / 535 paths
+ *   C12  Layers Off is unchanged                11583.00 mm / 2174 paths
  *   C11  Layers adds structure, not ink         2/3/4 within +-25% of their mean
  *   C3   the contact collar is ANCHORED         Z0 identical at every layer count
  *   C6   the umbra recedes                      Z2 carves 2 -> 3 -> 4
+ *
+ * C12 MOVED in shadowToneDepth (fs-w1-shadowtone, Stage 1 of the shadow tone
+ * gradient): 16109.77mm/535 paths -> 11583.00mm/2174 paths. "Layers Off" IS
+ * the flat() path in shadows.js, and shadowToneDepth's new default (0.75,
+ * SHIPPED ON — src/core/scene3d/params.js DEFAULT_SHADOW.shadowToneDepth) now
+ * applies there: total ink drops (thinning-only, never adds a line — see
+ * shadows.js applyShadowToneGradient) but path count rises ~4x because each
+ * mark is cut into ~6mm chunks so a spatially-varying keep/drop duty can be
+ * applied at all. This IS the change working as intended, not a regression —
+ * see tests/unit/scene3d-shadow-tone-gradient.test.js for its own RGR proof,
+ * including a byte-identical pin at explicit `shadowToneDepth: 0`. The old
+ * 16109.77/535 pin is still reachable (and still exactly this file's old
+ * number) by building with `shadow: { shadowToneDepth: 0 }`.
  *
  * THE FIXTURE IS NOT RESTATED HERE ANY MORE (Round 9).
  *
@@ -81,7 +94,8 @@ const round2 = (x) => Math.round(x * 100) / 100;
 
 describe('the cast shadow is protected — per zone, at every layer count', () => {
   const EXPECT = {
-    off: { ink: 16109.77, n: 535 },
+    // shadowToneDepth default (0.75) moved this — see the file header.
+    off: { ink: 11583.00, n: 2174 },
     2: {
       ink: 7840.20,
       n: 428,
@@ -101,7 +115,7 @@ describe('the cast shadow is protected — per zone, at every layer count', () =
     },
   };
 
-  test('C12 — Layers Off is unchanged: 16109.77 mm / 535 paths', () => {
+  test('C12 — Layers Off is unchanged (at the shadowToneDepth default): 11583.00 mm / 2174 paths', () => {
     const c = castOf(build('off'));
     expect(c.n).toBe(EXPECT.off.n);
     expect(round2(c.ink)).toBe(EXPECT.off.ink);
