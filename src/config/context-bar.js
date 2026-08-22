@@ -181,6 +181,12 @@
     // mark class) on shadow hatch" comment for the full reasoning).
     SHADOW_ARIA: 'Shadow fill style',
     SHADOW_NOTE: 'Flow and web styles aren’t offered here: a flat cast shadow has no surface direction field for them to follow.',
+    // fs-q1 — shown INSTEAD of the whole Fill Style row (ctxbar flyout + docked
+    // panel) whenever Shadows.shadowFillStyleApplies says it would do nothing:
+    // Shadow Layers on, or any area light in the scene (area lights force the
+    // same layered build even with the toggle off). See the predicate's own
+    // comment in shadows.js for the empirical basis.
+    SHADOW_LAYERS_NOTE: 'Fill Style only shapes an unlayered shadow — turn Layers off to pick one.',
   };
   const fillStyleRoster = () => Vectura.SCENE3D_TONE_LAWS || null;
   SCENE_FILL_STYLES.roster = fillStyleRoster;
@@ -622,6 +628,9 @@
         // Shadows.toneLawApplies (see SHADOW_NOTE above for why).
         toneLaw: { label: SCENE_FILL_STYLES.LABEL, aria: SCENE_FILL_STYLES.SHADOW_ARIA },
         toneLawNote: SCENE_FILL_STYLES.SHADOW_NOTE,
+        // fs-q1 — replaces the toneLaw row entirely (see buildShadowBody) when
+        // Shadows.shadowFillStyleApplies says the row would do nothing.
+        toneLawInertNote: SCENE_FILL_STYLES.SHADOW_LAYERS_NOTE,
       },
       highlight: {
         treatment: { label: 'Treatment', aria: 'Highlight treatment' },

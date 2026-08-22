@@ -523,6 +523,40 @@
   const toneLawApplies = (lawId) =>
     TONE_MARK_APPLICABLE.has(toneLawMarkClass(lawId)) && !TONE_LAW_NOT_DISTINGUISHABLE.has(lawId);
 
+  // Exported predicate #2 (fs-q1) — lets the UI hide the ENTIRE Fill Style row
+  // (not just narrow its options, as toneLawApplies does) when Shadow Layers
+  // routes every caster onto the zone-anatomy path (see emitShadowRegion
+  // below), where toneLaw is read once but the zone build never receives the
+  // mark class — a diagnosed, deliberately out-of-scope gap (folding toneLaw
+  // into that already-tuned pipeline is a large, separate change).
+  //
+  // Empirically verified (fs-q1 probe, 6 scenarios incl. a mixed light set and
+  // a 1mm/extreme-range degenerate caster): the flat-vs-zone fork is exactly
+  // `!layers || draft` where `layers = shadowBag.shadowLayers === true ||
+  // light.type === 'area'` (see `isArea` below, ~line 1941 at time of writing —
+  // AREA lights force the softer zone build even with the Layers TOGGLE off).
+  // `draft` is a transient interaction-time render mode, not a settled UI
+  // state, so this predicate ignores it — a row shown here is live at rest; it
+  // may ALSO be live for one extra frame mid-drag, never the reverse. The
+  // buildShadowFields-null degenerate fallback (a zero-area footprint bbox) is
+  // real in the code but was not reproducible with any tested real caster
+  // geometry, so it is documented rather than modeled.
+  // FAILURE MODE: in that unreached degenerate case the row would read hidden
+  // while the control briefly still worked — an over-hide, never a lie the
+  // other way (a shown row is always genuinely live at rest).
+  //
+  // Scene-wide (one row covers every light): shown when AT LEAST ONE
+  // shadow-casting light is NOT on the zone-anatomy path, since hiding then
+  // would remove real control over that light's shadow. No shadow-casting
+  // light at all → nothing to prove inert → default to shown.
+  const shadowFillStyleApplies = (shadowBag, lights) => {
+    const casters = (Array.isArray(lights) ? lights : [])
+      .filter((l) => l && l.type !== 'ambient' && l.castShadows !== false);
+    if (!casters.length) return true;
+    const explicitLayers = !!(shadowBag && shadowBag.shadowLayers === true);
+    return casters.some((l) => !(explicitLayers || l.type === 'area'));
+  };
+
   const CROSS_MARK_DEG = 60;      // avoid a 90° square-grid moiré (mirrors CROSS_B_DEG's reasoning above)
   const CROSS_MARK_SPACING_MULT = 1.5; // wider pitch per crossed family so total ink stays comparable to plain hatch
   const DASH_PERIOD_MULT = 6;     // dash period scales with the ruling pitch, not a fixed screen-space stipple
@@ -2313,6 +2347,9 @@
       // class instead of a boolean.
       toneLawApplies,
       toneLawMarkClass,
+      // fs-q1 — whole-row visibility gate (Layers ON, or any area light,
+      // makes the row inert). See the comment above its definition.
+      shadowFillStyleApplies,
       __ladderForTest,
       __collarForTest,
     },
@@ -2320,7 +2357,7 @@
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-      build, toneLawApplies, toneLawMarkClass, __ladderForTest, __collarForTest,
+      build, toneLawApplies, toneLawMarkClass, shadowFillStyleApplies, __ladderForTest, __collarForTest,
     };
   }
 })();

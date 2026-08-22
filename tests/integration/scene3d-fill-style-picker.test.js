@@ -1485,3 +1485,312 @@ describe('Shadow Fill Style — docked 3D Scene panel', () => {
     expect(rowCtl(shadowHost(container), 'Fill Style').querySelector('select').value).toBe('ladder');
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════
+// 5. fs-q1 — hide the WHOLE Fill Style row when it would do nothing.
+//
+// DIAGNOSIS (owner decision, deliberately out of scope to fix properly):
+// `toneLaw` is read inside shadows.js's `flat()` closure, but Shadow Layers ON
+// routes every caster to the separate zone-anatomy build, which never reads
+// it — so with Layers on, EVERY law renders byte-identical geometry. Rather
+// than fix that pipeline (large, risky, already-tuned), the control itself is
+// hidden whenever it cannot change output, replaced by a short note.
+//
+// PREDICATE, established empirically (not assumed): `Shadows.
+// shadowFillStyleApplies(shadowBag, lights)` — false when every shadow-
+// casting light is on the zone-anatomy path, true if at least one is not.
+// A light is on that path when `shadowBag.shadowLayers === true` OR the
+// light's own `type === 'area'` (shadows.js forces the same soft build for
+// an area light regardless of the Layers toggle — verified directly against
+// Shadows.build below, not assumed from the toggle alone: an area light with
+// the toggle OFF still renders every law byte-identical, and a non-area
+// (point) light with the toggle off still renders each law distinctly).
+// ══════════════════════════════════════════════════════════════════════════
+
+describe('Shadow Fill Style — Shadows.shadowFillStyleApplies (the inertness predicate itself)', () => {
+  let runtime, window, Shadows, HLR, Lighting, defaults;
+
+  const boxObj = (id, x, y, size = 40) => ({
+    id, name: id, primitive: 'box', params: { sx: size, sy: size, sz: size },
+    transform: { x, y, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+  });
+  const BOUNDS = { width: 320, height: 220, penWidth: 0.3 };
+  const sPaths = (paths) => paths.filter((pp) => pp.meta && pp.meta.sceneTarget && pp.meta.sceneTarget.regionClass === 'castShadow');
+  const geomSignature = (paths) => JSON.stringify(sPaths(paths).map((pp) => pp.map((pt) => [
+    Math.round(pt.x * 1000) / 1000, Math.round(pt.y * 1000) / 1000,
+  ])));
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    ({ window } = runtime);
+    Shadows = window.Vectura.Scene3D.Shadows;
+    HLR = window.Vectura.Scene3D.HLR;
+    Lighting = window.Vectura.Scene3D.Lighting;
+    defaults = window.Vectura.ALGO_DEFAULTS.scene3d;
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  const buildShadows = (lightRec, shadowBag) => {
+    const p = window.Vectura.Scene3D.Params.normalizeParams({
+      ...JSON.parse(JSON.stringify(defaults)),
+      objects: [boxObj('obj-1', 0, 20, 40)],
+      ground: { enabled: true },
+      lights: [lightRec],
+      camera: { projection: 'orthographic', yaw: 0, pitch: 55, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 },
+      shadow: shadowBag,
+    });
+    const scene = window.Vectura.Scene3D.Scene.assembleScene(p, BOUNDS);
+    const clipper = HLR.createClipper([], { bias: 0.05 });
+    const light = p.lights[0];
+    const positional = light.type === 'point' || light.type === 'spot' || light.type === 'area';
+    const dir = positional ? null : Lighting.lightWorldDir(light);
+    const opts = { shadow: p.shadow, light };
+    if (positional) opts.lightPosition = light.position;
+    return Shadows.build(scene, p, BOUNDS, clipper, dir, opts);
+  };
+
+  test('RED PROOF, ground truth — directional light + Layers ON renders every law byte-identical (the bug this batch hides, not fixes)', () => {
+    const light = { id: 'sun', type: 'directional', castShadows: true, azimuth: 160, elevation: 45 };
+    const a = buildShadows(light, { shadowLayers: true, shadowToneLaw: 'ladder' });
+    const b = buildShadows(light, { shadowLayers: true, shadowToneLaw: 'penCross' });
+    expect(geomSignature(a)).toBe(geomSignature(b));
+    expect(Shadows.shadowFillStyleApplies({ shadowLayers: true }, [light])).toBe(false);
+  });
+
+  test('directional light + Layers OFF: the control genuinely works, and the predicate says so', () => {
+    const light = { id: 'sun', type: 'directional', castShadows: true, azimuth: 160, elevation: 45 };
+    const a = buildShadows(light, { shadowLayers: false, shadowToneLaw: 'ladder' });
+    const b = buildShadows(light, { shadowLayers: false, shadowToneLaw: 'penCross' });
+    expect(geomSignature(a)).not.toBe(geomSignature(b));
+    expect(Shadows.shadowFillStyleApplies({ shadowLayers: false }, [light])).toBe(true);
+  });
+
+  test('AREA light forces the inert path even with the Layers TOGGLE off — the known subtlety this batch must not miss', () => {
+    const light = { id: 'sun', type: 'area', castShadows: true, position: { x: 120, y: 200, z: 120 }, size: 120, samples: 6 };
+    const a = buildShadows(light, { shadowLayers: false, shadowToneLaw: 'ladder' });
+    const b = buildShadows(light, { shadowLayers: false, shadowToneLaw: 'penCross' });
+    expect(geomSignature(a)).toBe(geomSignature(b));
+    expect(Shadows.shadowFillStyleApplies({ shadowLayers: false }, [light])).toBe(false);
+  });
+
+  test('PAIRED NEGATIVE — a POINT light (positional, but not area) with Layers off is NOT forced inert: predicate must not over-hide', () => {
+    const light = { id: 'p1', type: 'point', castShadows: true, position: { x: 120, y: 200, z: 120 }, range: 400 };
+    const a = buildShadows(light, { shadowLayers: false, shadowToneLaw: 'ladder' });
+    const b = buildShadows(light, { shadowLayers: false, shadowToneLaw: 'penCross' });
+    expect(geomSignature(a)).not.toBe(geomSignature(b));
+    expect(Shadows.shadowFillStyleApplies({ shadowLayers: false }, [light])).toBe(true);
+  });
+
+  test('no shadow-casting light at all: default to shown (nothing to prove inert)', () => {
+    expect(Shadows.shadowFillStyleApplies({ shadowLayers: true }, [])).toBe(true);
+    expect(Shadows.shadowFillStyleApplies({ shadowLayers: true }, [{ id: 'a1', type: 'ambient' }])).toBe(true);
+  });
+
+  test('a mixed light set is live if ANY caster is not on the zone-anatomy path', () => {
+    const area = { id: 'sun', type: 'area' };
+    const point = { id: 'p1', type: 'point' };
+    expect(Shadows.shadowFillStyleApplies({ shadowLayers: false }, [area, point])).toBe(true);
+    expect(Shadows.shadowFillStyleApplies({ shadowLayers: false }, [area])).toBe(false);
+  });
+});
+
+describe('Shadow Fill Style — hidden whenever inert (context-bar Shadow flyout)', () => {
+  let runtime, window, document, app, CB;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    ({ window, document } = runtime);
+    window.app = new window.Vectura.App();
+    app = window.app;
+    app.maxHistory = 100000;
+    CB = window.Vectura.UI.ContextBar;
+    await nextFrames();
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  const host = () => CB.getContentHost();
+  const addSelectScene = (objectIds, overrides = {}) => {
+    app.engine.layers = app.engine.layers.filter((l) => l.type !== 'scene3d');
+    const scene = new window.Vectura.Layer(`scene-shfs-hide-${app.engine.layers.length}`, 'scene3d', 'Scene');
+    scene.params = { ...scene.params, ...fixtureParams(overrides) };
+    app.engine.layers.push(scene);
+    app.engine.activeLayerId = scene.id;
+    app.engine.generate(scene.id);
+    app.renderer.setSelection([scene.id], scene.id);
+    app.renderer.setSceneSelection({ layerId: scene.id, mode: 'object', objectIds, faceKeys: [], edgeKeys: [] });
+    CB.restoreState();
+    return scene;
+  };
+  const pills = () => Array.from(host().querySelectorAll('.ctxbar-scene-field'));
+  const pillByLabel = (t) => pills().find((f) => (f.querySelector('.ctxbar-text-fieldlabel') || {}).textContent === t);
+  const openFly = () => document.querySelector('.ctxbar-scene-flyout.is-open');
+  const rowCtl = (fly, label) => {
+    const row = Array.from(fly.querySelectorAll('.ctxbar-fly-row'))
+      .find((r) => (r.querySelector('.ctxbar-fly-label') || {}).textContent === label);
+    return row ? row.querySelector('.ctxbar-fly-ctl') : null;
+  };
+  const fillStyleLabelExists = (fly) => Array.from(fly.querySelectorAll('.ctxbar-fly-label')).some((l) => l.textContent === 'Fill Style');
+  const notes = (fly) => Array.from(fly.querySelectorAll('.ctxbar-fly-note')).map((n) => n.textContent);
+  const openShadow = (objectIds = ['obj-1'], overrides) => {
+    const scene = addSelectScene(objectIds, overrides);
+    pillByLabel('Shadow').click();
+    return { scene, fly: openFly() };
+  };
+  const fire = (el, type) => el.dispatchEvent(new window.Event(type, { bubbles: true }));
+
+  // Paired negative FIRST: confirm the row is present in the default (Layers
+  // off, directional light) case, so the tests below prove a genuine hide,
+  // not a row that was never rendering.
+  test('PAIRED NEGATIVE — Layers off, directional light: row is present and writable (control genuinely works)', () => {
+    const { scene, fly } = openShadow();
+    expect(fillStyleLabelExists(fly)).toBe(true);
+    const sel = rowCtl(fly, 'Fill Style').querySelector('select');
+    sel.value = 'penCross';
+    fire(sel, 'change');
+    expect(scene.params.shadow.shadowToneLaw).toBe('penCross');
+  });
+
+  test('RED → GREEN — Layers ON: the Fill Style row is absent, replaced by the inert note', () => {
+    const { fly } = openShadow(['obj-1'], { shadow: { shadowLayers: true, shadowToneLaw: 'penCross' } });
+    expect(fillStyleLabelExists(fly)).toBe(false);
+    expect(notes(fly)).toContain(window.Vectura.CONTEXT_BAR.sceneFlyouts.shadow.toneLawInertNote);
+    expect(window.Vectura.CONTEXT_BAR.sceneFlyouts.shadow.toneLawInertNote).toMatch(/layer/i);
+  });
+
+  test('an AREA light hides the row even with the Layers TOGGLE left off', () => {
+    const { fly } = openShadow(['obj-1'], {
+      lights: [{ id: 'sun', type: 'area', position: { x: 120, y: 200, z: 120 }, size: 120, samples: 6, castShadows: true }],
+      shadow: { shadowLayers: false },
+    });
+    expect(fillStyleLabelExists(fly)).toBe(false);
+    expect(notes(fly)).toContain(window.Vectura.CONTEXT_BAR.sceneFlyouts.shadow.toneLawInertNote);
+  });
+
+  test('a POINT light (positional, non-area) with Layers off does NOT hide the row', () => {
+    const { fly } = openShadow(['obj-1'], {
+      lights: [{ id: 'p1', type: 'point', position: { x: 120, y: 200, z: 120 }, range: 400, castShadows: true }],
+      shadow: { shadowLayers: false },
+    });
+    expect(fillStyleLabelExists(fly)).toBe(true);
+  });
+
+  test('ROUND TRIP — the stored shadowToneLaw survives Layers on → off, unreset', () => {
+    const scene = addSelectScene(['obj-1'], { shadow: { shadowLayers: false, shadowToneLaw: 'mkTick' } });
+    pillByLabel('Shadow').click();
+    const fly = openFly();
+    // Pick the law, then drive the REAL Layers seg-ctrl (not a param mutation
+    // + restoreState, which closes the flyout) — this also proves the
+    // onChange handler live-rebuilds the row rather than only catching up the
+    // next time the flyout is reopened.
+    const sel = rowCtl(fly, 'Fill Style').querySelector('select');
+    expect(sel.value).toBe('mkTick');
+    const layersCtl = rowCtl(fly, 'Layers');
+    const seg3 = layersCtl.querySelector('.seg-opt[data-value="3"]');
+    expect(seg3).toBeTruthy();
+    seg3.click();
+    expect(fillStyleLabelExists(fly)).toBe(false);
+    expect(notes(fly)).toContain(window.Vectura.CONTEXT_BAR.sceneFlyouts.shadow.toneLawInertNote);
+    expect(scene.params.shadow.shadowToneLaw).toBe('mkTick');
+
+    const offSeg = rowCtl(fly, 'Layers').querySelector('.seg-opt[data-value="off"]');
+    expect(offSeg).toBeTruthy();
+    offSeg.click();
+    expect(fillStyleLabelExists(fly)).toBe(true);
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('mkTick');
+    expect(scene.params.shadow.shadowToneLaw).toBe('mkTick');
+  });
+});
+
+describe('Shadow Fill Style — hidden whenever inert (docked 3D Scene panel)', () => {
+  let runtime, window, document;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    ({ window, document } = runtime);
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  const mount = (overrides = {}) => {
+    const { UI } = window.Vectura;
+    const layer = { id: 's3d-shfs-hide', type: 'scene3d', name: 'Scene 1', visible: true, penId: 'pen-1', params: fixtureParams(overrides) };
+    const ui = { app: { pushHistory: () => {}, regen: () => {} }, storeLayerParams: () => {} };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    UI.Scene3DPanel.build(ui, layer, container);
+    return { ui, layer, container };
+  };
+  const scenePage = (c) => c.querySelector('.vs3-page[data-page="scene"]');
+  const sectionByTitle = (c, title) => Array.from(scenePage(c).querySelectorAll('.sect'))
+    .find((s) => (s.querySelector('.sect-hdr-title') || {}).textContent === title) || null;
+  const shadowHost = (c) => {
+    const s = sectionByTitle(c, 'Shadow');
+    return s ? s.querySelector('.vs3-shadow') : null;
+  };
+  const rowCtl = (host2, label) => {
+    const row = Array.from(host2.querySelectorAll('.vs3-row'))
+      .find((r) => (r.querySelector('.vs3-lbl') || {}).textContent === label);
+    return row ? row.querySelector('.vs3-ctl') : null;
+  };
+  const labelExists = (host2, label) => Array.from(host2.querySelectorAll('.vs3-lbl')).some((l) => l.textContent === label);
+  const notes = (host2) => Array.from(host2.querySelectorAll('.vs3-empty')).map((n) => n.textContent);
+  const fire = (el, type) => el.dispatchEvent(new window.Event(type, { bubbles: true }));
+
+  test('PAIRED NEGATIVE — Layers off, directional light (default): row present and writable', () => {
+    const { container, layer } = mount();
+    const host2 = shadowHost(container);
+    expect(labelExists(host2, 'Fill Style')).toBe(true);
+    const sel = rowCtl(host2, 'Fill Style').querySelector('select');
+    sel.value = 'mkDotScreen';
+    fire(sel, 'change');
+    expect(layer.params.shadow.shadowToneLaw).toBe('mkDotScreen');
+  });
+
+  test('RED → GREEN — Layers ON: row is absent, note explains why', () => {
+    const { container } = mount({ shadow: { shadowLayers: true, shadowToneLaw: 'penCross' } });
+    const host2 = shadowHost(container);
+    expect(labelExists(host2, 'Fill Style')).toBe(false);
+    expect(notes(host2)).toContain(window.Vectura.SCENE_FILL_STYLES.SHADOW_LAYERS_NOTE);
+    expect(window.Vectura.SCENE_FILL_STYLES.SHADOW_LAYERS_NOTE).toMatch(/layer/i);
+  });
+
+  test('an AREA light hides the row with the Layers toggle left off', () => {
+    const { container } = mount({
+      lights: [{ id: 'sun', type: 'area', position: { x: 120, y: 200, z: 120 }, size: 120, samples: 6, castShadows: true }],
+      shadow: { shadowLayers: false },
+    });
+    const host2 = shadowHost(container);
+    expect(labelExists(host2, 'Fill Style')).toBe(false);
+    expect(notes(host2)).toContain(window.Vectura.SCENE_FILL_STYLES.SHADOW_LAYERS_NOTE);
+  });
+
+  test('a POINT light (non-area) with Layers off does not hide the row', () => {
+    const { container } = mount({
+      lights: [{ id: 'p1', type: 'point', position: { x: 120, y: 200, z: 120 }, range: 400, castShadows: true }],
+      shadow: { shadowLayers: false },
+    });
+    const host2 = shadowHost(container);
+    expect(labelExists(host2, 'Fill Style')).toBe(true);
+  });
+
+  test('ROUND TRIP — the stored shadowToneLaw survives Layers on → off, unreset', () => {
+    const { container, layer } = mount({ shadow: { shadowLayers: false, shadowToneLaw: 'mkScribble' } });
+    let host2 = shadowHost(container);
+    expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('mkScribble');
+
+    const layersCtl = rowCtl(host2, 'Layers');
+    const onBtn = Array.from(layersCtl.querySelectorAll('button')).find((b) => /^on$/i.test((b.textContent || '').trim()));
+    expect(onBtn).toBeTruthy();
+    fire(onBtn, 'click');
+    host2 = shadowHost(container);
+    expect(labelExists(host2, 'Fill Style')).toBe(false);
+    expect(layer.params.shadow.shadowToneLaw).toBe('mkScribble');
+
+    const offBtn = Array.from(rowCtl(host2, 'Layers').querySelectorAll('button')).find((b) => /^off$/i.test((b.textContent || '').trim()));
+    expect(offBtn).toBeTruthy();
+    fire(offBtn, 'click');
+    host2 = shadowHost(container);
+    expect(labelExists(host2, 'Fill Style')).toBe(true);
+    expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('mkScribble');
+    expect(layer.params.shadow.shadowToneLaw).toBe('mkScribble');
+  });
+});
