@@ -969,6 +969,74 @@ describe('Fill Style — docked 3D Scene panel', () => {
     });
   });
 
+  // fs-y1 Job 1 — the owner asked twice for CLICK to open the info panel; an
+  // earlier pass only wired hover/focus. These pin the regression: a click
+  // must open it, and — unlike hover — the popover must SURVIVE the pointer
+  // leaving the button (a genuine "held open" panel, not a bigger tooltip).
+  describe('fs-y1 Job 1 — the (i) is CLICK-driven, not hover-only', () => {
+    test('clicking the (i) opens the popover even with no prior hover/focus', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
+      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      expect(pop.classList.contains('is-open')).toBe(false);
+      fire(btn, 'click');
+      expect(pop.classList.contains('is-open')).toBe(true);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    test('a click-opened popover stays open after mouseleave/blur (pinned), then a second click closes it', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
+      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      fire(btn, 'click');
+      expect(pop.classList.contains('is-open')).toBe(true);
+      fire(btn, 'mouseleave');
+      fire(btn, 'blur');
+      expect(pop.classList.contains('is-open')).toBe(true);
+      fire(btn, 'click');
+      expect(pop.classList.contains('is-open')).toBe(false);
+    });
+
+    test('a click outside the popover closes a pinned-open one', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
+      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      fire(btn, 'click');
+      expect(pop.classList.contains('is-open')).toBe(true);
+      document.body.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+      expect(pop.classList.contains('is-open')).toBe(false);
+    });
+
+    test('Escape un-pins and closes a click-opened popover', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
+      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      fire(btn, 'click');
+      expect(pop.classList.contains('is-open')).toBe(true);
+      btn.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(pop.classList.contains('is-open')).toBe(false);
+    });
+  });
+
+  // fs-y1 Job 1 — "for all fill styles": the Shadow tab's own tone-law row is
+  // a Fill Style picker too, so it gets the same (i).
+  describe('fs-y1 Job 1 — the Shadow tab Fill Style row also carries a click-driven (i)', () => {
+    const shadowPage = (c) => c.querySelector('.vs3-page[data-page="scene"]');
+    test('an (i) exists beside the shadow Fill Style row and opens its own popover on click', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'ladder' }));
+      const page = shadowPage(container);
+      const buttons = Array.from(page.querySelectorAll('.vs3-lawinfo-btn'));
+      // At least one belongs to the shadow row (the Style-tab one lives on
+      // a different tab page and is not mounted here).
+      expect(buttons.length).toBeGreaterThan(0);
+      const btn = buttons[buttons.length - 1];
+      const pop = page.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      expect(pop.classList.contains('is-open')).toBe(false);
+      fire(btn, 'click');
+      expect(pop.classList.contains('is-open')).toBe(true);
+    });
+  });
+
   // fs-m2 Job 1 — a dropdown pick used to commit through a full re-render
   // that destroyed and replaced the <select> the user just drove, dropping
   // focus to <body> so the next arrow key did nothing (the friction reported

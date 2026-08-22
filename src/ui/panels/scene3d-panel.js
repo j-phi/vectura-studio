@@ -492,6 +492,75 @@
   // surfaces + a scene/object/face rerender can all mount one at once).
   let lawInfoSeq = 0;
 
+  // fs-y1 Job 1 — the shared click-driven (i) info popover for a Fill Style
+  // row. Used by `fillStyleControls` (scene/object/face Style tab + the leaf
+  // + booleanGroup3d panels — one function, three call sites) AND the Shadow
+  // tab's own tone-law row below, so both docked surfaces share one
+  // interaction. `lines` is an ordered `[{ text, kind? }]` array; falsy
+  // `text` entries are dropped, and an empty result renders nothing.
+  //
+  // The product owner asked for CLICK to open it (an earlier pass only wired
+  // hover/focus). Click now PINS the popover open — it survives the pointer
+  // leaving the button/blur — until a second click, Escape, or an outside
+  // click un-pins it. Hover/focus keep working as an unpinned "peek" (CLAUDE.md:
+  // "Keep hover/focus working if you like, but click must open it"). The
+  // popover's content is always in the DOM (only opacity/visibility gate it —
+  // see `.vs3-lawinfo-pop` in components.css), so `aria-describedby` keeps it
+  // screen-reader reachable independent of open/closed state.
+  const buildLawInfoAffordance = (anchorEl, lines, ariaLabel) => {
+    const pop = document.createElement('div');
+    pop.className = 'vs3-lawinfo-pop';
+    pop.setAttribute('role', 'tooltip');
+    (lines || []).forEach(({ text, kind } = {}) => {
+      if (!text) return;
+      const n = document.createElement('p');
+      n.className = kind ? `vs3-lawnote is-${kind}` : 'vs3-lawnote';
+      n.textContent = text;
+      pop.appendChild(n);
+    });
+    if (!pop.childNodes.length) return null;
+
+    lawInfoSeq += 1;
+    const infoId = `vs3-lawinfo-${lawInfoSeq}`;
+    pop.id = infoId;
+    const wrap = document.createElement('span');
+    wrap.className = 'vs3-lawinfo-wrap';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'vs3-lawinfo-btn';
+    btn.textContent = 'i';
+    btn.setAttribute('aria-label', ariaLabel);
+    btn.setAttribute('aria-describedby', infoId);
+    btn.setAttribute('aria-expanded', 'false');
+    let pinned = false;
+    const openPop = () => { pop.classList.add('is-open'); btn.setAttribute('aria-expanded', 'true'); };
+    const closePop = () => { pop.classList.remove('is-open'); btn.setAttribute('aria-expanded', 'false'); };
+    btn.addEventListener('mouseenter', () => { if (!pinned) openPop(); });
+    btn.addEventListener('mouseleave', () => { if (!pinned) closePop(); });
+    btn.addEventListener('focus', () => { if (!pinned) openPop(); });
+    btn.addEventListener('blur', () => { if (!pinned) closePop(); });
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      pinned = !pinned;
+      if (pinned) openPop(); else closePop();
+    });
+    btn.addEventListener('keydown', (e) => { if (e.key === 'Escape') { pinned = false; closePop(); btn.blur(); } });
+    // Click-outside un-pins. Self-cleans the first time it fires after the
+    // row has been unmounted (a fresh popover is built on every rebuild, so
+    // this must not accumulate one live listener per rebuild forever).
+    const onDocPointerDown = (e) => {
+      if (!wrap.isConnected) { document.removeEventListener('pointerdown', onDocPointerDown); return; }
+      if (!pinned) return;
+      if (wrap.contains(e.target)) return;
+      pinned = false; closePop();
+    };
+    document.addEventListener('pointerdown', onDocPointerDown);
+    wrap.appendChild(btn);
+    wrap.appendChild(pop);
+    anchorEl.appendChild(wrap);
+    return wrap;
+  };
+
   // U9 — the Fill Style (tone law) control. THREE style surfaces live in this
   // file and every one of them has a mapper dropdown, so this is written once
   // and called from all three:
@@ -538,59 +607,25 @@
     // fs-m2 Job 2 — mechanism/strengths/weaknesses/mark-class blurb used to
     // print as an always-on paragraph block that dominated the panel (a user
     // comparing 48 laws had to scroll past it for every pick). It now lives
-    // in a compact (i) popover, revealed on hover OR keyboard focus — the
-    // same `:hover`/`:focus-within` idiom `.ctrl-sel-wrap`'s own dropdown
-    // caret already uses elsewhere in this file — and always announced to
-    // screen readers via aria-describedby regardless of visual state, so it
-    // is never mouse-hover-only.
-    const pop = document.createElement('div');
-    pop.className = 'vs3-lawinfo-pop';
-    pop.setAttribute('role', 'tooltip');
-    const line = (text, kind) => {
-      if (!text) return;
-      const n = document.createElement('p');
-      n.className = kind ? `vs3-lawnote is-${kind}` : 'vs3-lawnote';
-      n.textContent = text;
-      pop.appendChild(n);
-    };
+    // in a compact (i) popover — fs-y1 Job 1 made it CLICK-driven (pinned
+    // open), not just hover/focus. Always announced to screen readers via
+    // aria-describedby regardless of visual state, so it is never
+    // mouse-hover-only.
     // The faceted-shape orientation line leads everything else — a user must
-    // know THIS before reading what the currently-picked law does.
-    line(facetedText, 'faceted');
-    // Leads with the MARK CLASS, so what kind of mark this is stays legible
-    // once the select is closed.
-    line(note.text);
-    if (entry.mechanism) line(`How: ${entry.mechanism}`);
-    if (entry.strengths) line(`Strengths: ${entry.strengths}`);
-    if (entry.weaknesses) line(`Weaknesses: ${entry.weaknesses}`);
-
-    if (pop.childNodes.length) {
-      lawInfoSeq += 1;
-      const infoId = `vs3-lawinfo-${lawInfoSeq}`;
-      pop.id = infoId;
-      const wrap = document.createElement('span');
-      wrap.className = 'vs3-lawinfo-wrap';
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'vs3-lawinfo-btn';
-      btn.textContent = 'i';
-      btn.setAttribute('aria-label', `About ${entry.label || FS.LABEL}`);
-      btn.setAttribute('aria-describedby', infoId);
-      btn.setAttribute('aria-expanded', 'false');
-      const openPop = () => { pop.classList.add('is-open'); btn.setAttribute('aria-expanded', 'true'); };
-      const closePop = () => { pop.classList.remove('is-open'); btn.setAttribute('aria-expanded', 'false'); };
-      btn.addEventListener('mouseenter', openPop);
-      btn.addEventListener('mouseleave', closePop);
-      btn.addEventListener('focus', openPop);
-      btn.addEventListener('blur', closePop);
-      btn.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closePop(); btn.blur(); } });
-      wrap.appendChild(btn);
-      wrap.appendChild(pop);
-      // A THIRD flex child of the row (label + select + info), not nested
-      // inside `ctl` — `.vs3-row` is already `display:flex`, so this sits
-      // compactly beside the picker instead of stacking under a block-level
-      // select.
-      (ctl.parentNode || ctl).appendChild(wrap);
-    }
+    // know THIS before reading what the currently-picked law does. Leads with
+    // the MARK CLASS next, so what kind of mark this is stays legible once
+    // the select is closed.
+    // A THIRD flex child of the row (label + select + info), not nested
+    // inside `ctl` — `.vs3-row` is already `display:flex`, so this sits
+    // compactly beside the picker instead of stacking under a block-level
+    // select.
+    buildLawInfoAffordance(ctl.parentNode || ctl, [
+      { text: facetedText, kind: 'faceted' },
+      { text: note.text },
+      { text: entry.mechanism ? `How: ${entry.mechanism}` : '' },
+      { text: entry.strengths ? `Strengths: ${entry.strengths}` : '' },
+      { text: entry.weaknesses ? `Weaknesses: ${entry.weaknesses}` : '' },
+    ], `About ${entry.label || FS.LABEL}`);
 
     // The measured caveat of a demoted law stays OUTSIDE the hover popover,
     // in the warning colour, directly under the row — relocated out of the
@@ -2995,6 +3030,19 @@
           ariaLabel: FS.SHADOW_ARIA,
           onChange: (v) => { commit(() => { ensureShadow().shadowToneLaw = v; }); },
         }));
+        // fs-y1 Job 1 — "for all fill styles": the shadow tone-law picker is
+        // a Fill Style control too, so it gets the same click-driven (i) as
+        // the Style tab's row, holding this law's mechanism/strengths/
+        // weaknesses. SHADOW_NOTE (flow/web unavailable here) stays its own
+        // always-visible line below, unchanged.
+        const shadowLawEntry = FS.entry(law) || {};
+        const shadowLawNote = FS.note(law);
+        buildLawInfoAffordance(lawRow, [
+          { text: shadowLawNote.text },
+          { text: shadowLawEntry.mechanism ? `How: ${shadowLawEntry.mechanism}` : '' },
+          { text: shadowLawEntry.strengths ? `Strengths: ${shadowLawEntry.strengths}` : '' },
+          { text: shadowLawEntry.weaknesses ? `Weaknesses: ${shadowLawEntry.weaknesses}` : '' },
+        ], `About ${shadowLawEntry.label || FS.LABEL}`);
         if (FS.SHADOW_NOTE) {
           const note = document.createElement('p');
           note.className = 'vs3-empty';
