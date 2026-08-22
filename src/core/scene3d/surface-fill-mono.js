@@ -1442,7 +1442,20 @@
     // Dart throwing with a tone-driven exclusion radius.
     const cells = new Map();
     const cellOf = (x, y, r) => `${Math.floor(x / r)},${Math.floor(y / r)}`;
-    const GRID = C.pitchLegible(0.0) * 1.2;
+    // The exclusion radius below was built from `pitchLegible`, the "never
+    // crowd past legibility" variant that floors at `FLOOR` (~2 ink widths).
+    // That caps how small a shadow cell can get well above what the network
+    // is capable of, so the dark end reads only a little busier than the
+    // light end (measured edge-density ratio ~1.17 — weak, given the
+    // direction is already right). `pitchFor` is the flooring-capable
+    // variant this file's other "reaches black" laws use (`lawEtf`,
+    // `lawDefect`, `lawMezzo`) and is IDENTICAL to `pitchLegible` for any `I`
+    // whose natural pitch already clears `FLOOR` — so the lit end (which the
+    // owner asked to keep exactly as-is) is unaffected by this swap. Only
+    // the dark end, previously clamped up to `FLOOR`, can now shrink toward
+    // `INK / A_DARK`, delivering the "busier/smaller cells near shadow" the
+    // owner asked for (tests/unit/scene3d-voronoi-dark-end.test.js).
+    const GRID = C.pitchFor(0.0) * 1.2;
     const put = (p) => {
       const k = cellOf(p.x, p.y, GRID);
       if (!cells.has(k)) cells.set(k, []);
@@ -1468,7 +1481,7 @@
       if (!s) continue;
       // Cell diameter = the clearance a monoline family would need for this
       // tone; the network then lays the same ink area in an isotropic form.
-      const rad = C.pitchLegible(finite(s.I, 0)) * 1.15;
+      const rad = C.pitchFor(finite(s.I, 0)) * 1.15;
       let clash = false;
       const nb = near(x, y, rad);
       for (let k = 0; k < nb.length; k++) {
