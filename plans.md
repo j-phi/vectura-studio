@@ -130,6 +130,29 @@ or completes.
   and the toolbar group in `ui-petal-designer.js` / `shell/toolbar.js`.
 
 ## Later
+- **3D Scene: object-on-object shadow receiving.** Today shadows are **ground-only** — objects
+  occlude shadow ink via the HLR clipper but never *receive* it. Measured 2026-08-21: a sphere
+  floating directly above a slab casts through it onto the floor; all 180 `castShadow` paths carry
+  `sceneTarget.objectId:'ground'` and zero carry the slab. `src/core/scene3d/shadows.js:1493`
+  hardcodes the receiver (`objectId:'ground'`, `faceId:'face:ground'`, normal `{0,1,0}`); there is
+  no receiver-selection code at all, and `:1630-1633` builds a single `groundFace`/`groundPlane`
+  used by every emit. Jay confirmed 2026-08-21 that shadows stay floor-only for now, and that a
+  per-object "receives shadow" toggle must NOT ship meanwhile — with no receiver logic it would
+  change zero emitted paths, i.e. a false affordance of exactly the kind the fill-style audit
+  removed. Scope if picked up: replace the closed-form `y=0` drop (`G = P - (P.y/d.y)*d`) with
+  per-receiver-face ray-plane intersection, clip the projected silhouette to the receiver polygon,
+  add caster/receiver ordering and self-shadow suppression, and reconcile with the receiving
+  face's own mapper fill (the `inverse` problem, per face). Receiver count goes 1 -> O(3000) faces
+  per object, so it needs a receiver-granularity decision (per-object plane = only correct for
+  flat/boxy receivers; per-face = correct but combinatorial) plus a bbox prefilter to hold draft
+  responsiveness. Estimate 3-5 days, ~800-1500 lines across `shadows.js` + `scene3d.js` + perf
+  gating. When it lands, the param is `obj.shadow.receives` (extend `normalizeObjectShadow`,
+  `src/core/scene3d/params.js:775-779`, default true) with the receiver filter beside `objectCasts`
+  at `shadows.js:1740-1746`; the ground itself is layer-scoped (`params.ground`) and must omit the
+  row, per the precedent already documented at `src/ui/shell/context-bar.js:1615-1617`. Red test
+  must assert emitted geometry (>=1 path with `sceneTarget.objectId==='table' && regionClass===
+  'castShadow'` on, 0 off) — it fails 0-vs-0 today, which is the proof the toggle would be inert.
+  Full evidence: `scratchpad/recv/findings.md`.
 - **In-app help guide has no 3D Scene Studio content.** `src/ui/modals/help-shortcuts.js` contains
   zero occurrences of `3D`, `scene`, `shadow`, `highlight`, `hatch`, `fidelity`, `x-ray` or
   `border`. The Algorithms tab's table stops at SVG Distort, so 3D Scene Studio — plus spirograph,
