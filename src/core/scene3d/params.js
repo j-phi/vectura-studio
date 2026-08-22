@@ -47,6 +47,25 @@
   // Keyed by SOURCE version: SCENE_MIGRATIONS[n] upgrades an n payload to n+1.
   const SCENE_MIGRATIONS = {};
 
+  // An unrecognized toneLaw id (a roster entry deleted after a document saved
+  // it, or a hand-edited/corrupted file) is silently rewritten to 'ladder' by
+  // clampStyleParam below — deliberately, so a document never fails to load.
+  // But "silent" previously meant NO record at all: a future roster change
+  // could quietly re-render every saved document carrying a since-removed id
+  // with no way to notice. Warn ONCE per unknown id per session (not per path/
+  // per frame — clampStyleParam runs on every style resolution) so a real
+  // instance is observable without spamming the console.
+  const WARNED_UNKNOWN_TONE_LAWS = new Set();
+  const warnUnknownToneLaw = (id) => {
+    if (WARNED_UNKNOWN_TONE_LAWS.has(id)) return;
+    WARNED_UNKNOWN_TONE_LAWS.add(id);
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn(`Vectura Scene3D: unknown toneLaw "${id}" — falling back to "ladder". `
+        + 'This id is not in the current SCENE3D_TONE_LAWS roster (a saved document may '
+        + 'predate a roster change, or the id may be hand-edited/corrupted).');
+    }
+  };
+
   const PRIMITIVES = [
     'box', 'plane', 'sphere', 'ellipsoid', 'cylinder', 'cone', 'torus',
     'torusKnot', 'capsule', 'superellipsoid', 'pyramid', 'solid',
@@ -672,7 +691,12 @@
       // deliberately NOT a SCENE_MIGRATIONS step: no structural shape changed.
       case 'toneLaw': {
         const R = (Vectura.SCENE3D_TONE_LAWS && Vectura.SCENE3D_TONE_LAWS.IDS) || null;
-        return (typeof value === 'string' && (!R || R.indexOf(value) !== -1)) ? value : 'ladder';
+        if (typeof value === 'string' && (!R || R.indexOf(value) !== -1)) return value;
+        // Warn only for a genuinely unrecognized id — not for the common
+        // "no toneLaw set at all" case (undefined/''), which is the ordinary
+        // default path for most layers and would spam every style resolution.
+        if (typeof value === 'string' && value && R) warnUnknownToneLaw(value);
+        return 'ladder';
       }
       // 'contFieldQuant' only — how many discrete gap sizes the field may use.
       case 'toneQuantLevels': return clamp(Math.round(finite(value, 128)), 4, 256);

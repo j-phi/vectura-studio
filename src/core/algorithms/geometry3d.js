@@ -1140,11 +1140,16 @@
   };
 
   // Enhancement #5 primitive — clip parallel scan lines to a closed screen
-  // polygon. Lines run at opts.angleDeg, spaced opts.spacing (hard floor 1). Each
-  // returned path is a 2-point segment with meta {hatch:true, straight:true}.
+  // polygon. Lines run at opts.angleDeg, spaced opts.spacing, floored at
+  // opts.minSpacing (default 1 — the historic hard floor). Every existing
+  // caller omits minSpacing, so it stays byte-identical; only a caller that
+  // knows it wants sub-1mm spacing (the fillDensity 100-200 range) passes a
+  // lower value. Each returned path is a 2-point segment with meta
+  // {hatch:true, straight:true}.
   const hatchPolygon = (polygon, opts = {}) => {
     if (!Array.isArray(polygon) || polygon.length < 3) return [];
-    const spacing = Math.max(1, finite(opts.spacing, 6));
+    const floor = Math.max(0, finite(opts.minSpacing, 1));
+    const spacing = Math.max(floor, finite(opts.spacing, 6));
     const angle = degToRad(finite(opts.angleDeg, 45));
     const dirX = Math.cos(angle);
     const dirY = Math.sin(angle);
