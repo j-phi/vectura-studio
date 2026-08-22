@@ -11283,9 +11283,36 @@
           tip: { x: center.x + u.x * R, y: center.y + u.y * R },
           scaleBox: { x: center.x + u.x * R * 1.16, y: center.y + u.y * R * 1.16 },
           ring,
+          // Raw (unnormalized) projections of the ring's own local basis
+          // vectors — lets a drag reconstruct the exact ring-parameter angle
+          // (theta) under the cursor instead of a generic screen angle
+          // around the shared gizmo center. Ring point at theta = center +
+          // (basis.p0*cos(theta) + basis.p1*sin(theta)) * ringR (see the
+          // ring-building loop above, which uses the identical formula).
+          basis: { p0: project(ax.perp[0]), p1: project(ax.perp[1]) },
         };
       });
       return { objId, center, R, ringR, unit, axes };
+    }
+
+    // Reconstructs the ring-local parameter angle (radians) for a world-space
+    // point, by inverting the same linear map the ring was drawn with:
+    // (worldPt - center)/ringR = basis.p0*cos(theta) + basis.p1*sin(theta).
+    // This is exact (not an approximation) because getSceneObjectGizmo's
+    // camera projection is purely linear (orientation-only, no perspective),
+    // so distinct axes' rings each keep their own, generally different,
+    // angle-to-screen-direction mapping — a single shared "angle around the
+    // gizmo center" cannot stand in for all three without picking up sign
+    // errors on whichever axis's ring isn't aligned with that shared circle.
+    _sceneGizmoRingAngle(basis, ringR, worldPt, center) {
+      const dx = (worldPt.x - center.x) / (ringR || 1e-6);
+      const dy = (worldPt.y - center.y) / (ringR || 1e-6);
+      const { p0, p1 } = basis;
+      const det = p0.x * p1.y - p1.x * p0.y;
+      if (!det) return 0;
+      const cosT = (dx * p1.y - p1.x * dy) / det;
+      const sinT = (p0.x * dy - dx * p0.y) / det;
+      return Math.atan2(sinT, cosT);
     }
 
     hitSceneObjectGizmo(sx, sy, layer) {
@@ -11300,11 +11327,22 @@
         if (near(ax.tip)) return { type: 'move', axis: ax.key };
         if (this._gizmoSegDist(world, giz.center, ax.tip) <= tol * 0.8) return { type: 'move', axis: ax.key };
       }
+      // The 3 projected rotate rings overlap heavily on screen at this camera
+      // angle — picking the FIRST axis (x, then y, then z) within tolerance
+      // routinely grabbed a farther ring's segment over a nearer one (e.g. a
+      // point sitting exactly on the z-ring resolved to 'y' because y was
+      // checked first). Score every axis and take the globally closest ring
+      // segment so the ring the cursor is actually nearest to — the one the
+      // user visually sees under the pointer — is the one that wins.
+      let best = null;
+      let bestDist = Infinity;
       for (const ax of giz.axes) {
         for (let i = 1; i < ax.ring.length; i++) {
-          if (this._gizmoSegDist(world, ax.ring[i - 1], ax.ring[i]) <= tol * 0.8) return { type: 'rotate', axis: ax.key };
+          const d = this._gizmoSegDist(world, ax.ring[i - 1], ax.ring[i]);
+          if (d < bestDist) { bestDist = d; best = ax.key; }
         }
       }
+      if (best !== null && bestDist <= tol * 0.8) return { type: 'rotate', axis: best };
       return null;
     }
 
@@ -11318,14 +11356,31 @@
       const t = obj.transform || (obj.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 });
       const rect = this.canvas.getBoundingClientRect();
       const world = this.screenToWorld((e.clientX ?? 0) - rect.left, (e.clientY ?? 0) - rect.top);
+      // For a rotate grab, use the GRABBED ring's own local parameterization
+      // (see _sceneGizmoRingAngle) — not a generic angle around the shared
+      // gizmo center — so the delta is signed correctly for whichever axis
+      // was actually grabbed, regardless of where along its ring.
+      const grabbedAx = hit.type === 'rotate' ? giz.axes.find((a) => a.key === hit.axis) : null;
+      const startAngle = grabbedAx
+        ? this._sceneGizmoRingAngle(grabbedAx.basis, giz.ringR, world, giz.center)
+        : Math.atan2(world.y - giz.center.y, world.x - giz.center.x);
       this._sceneObjectGizmoDrag = {
         layerId: layer.id,
         objectId: giz.objId,
         type: hit.type,
         axis: hit.axis,
         center: { ...giz.center },
+        ringR: giz.ringR,
+        ringBasis: grabbedAx ? grabbedAx.basis : null,
         startWorld: { x: world.x, y: world.y },
-        startAngle: Math.atan2(world.y - giz.center.y, world.x - giz.center.x),
+        startAngle,
+        // Rotate-only: running UNWRAPPED sweep total (degrees), built by
+        // unwrapping each frame's small step from the previous frame's ring
+        // angle (see _applySceneObjectGizmoDrag) — atan2 alone can't tell a
+        // 370° sweep from a 10° one, so a multi-revolution drag needs this
+        // running accumulator rather than a single ang-minus-start diff.
+        lastRingAngle: startAngle,
+        accumDeg: 0,
         startDist: Math.max(1e-3, Math.hypot(world.x - giz.center.x, world.y - giz.center.y)),
         camYaw: ((layer.params && layer.params.camera && layer.params.camera.yaw) || 0) * Math.PI / 180,
         start: {
@@ -11388,8 +11443,21 @@
         else if (drag.axis === 'z') t.z = round2(s.z + (-dx * sy + dy * cy));
         else t.y = round2(s.y - dy); // screen up = world +y
       } else if (drag.type === 'rotate') {
-        const ang = Math.atan2(world.y - drag.center.y, world.x - drag.center.x);
-        const dDeg = (ang - drag.startAngle) * 180 / Math.PI;
+        const ang = drag.ringBasis
+          ? this._sceneGizmoRingAngle(drag.ringBasis, drag.ringR, world, drag.center)
+          : Math.atan2(world.y - drag.center.y, world.x - drag.center.x);
+        // Unwrap this frame's step from the PREVIOUS frame's angle (not the
+        // drag start) and add it to a running total. A continuous drag never
+        // moves more than a few degrees between two consecutive pointermove
+        // events, so the shortest-path unwrap below is always the true step —
+        // this is what lets a multi-revolution spin keep accumulating instead
+        // of folding back into a single atan2 period.
+        let step = (ang - drag.lastRingAngle) * 180 / Math.PI;
+        while (step > 180) step -= 360;
+        while (step <= -180) step += 360;
+        drag.accumDeg += step;
+        drag.lastRingAngle = ang;
+        const dDeg = drag.accumDeg;
         const modifiers = this.getModifierState(e);
         const apply = (base) => {
           let val = base + dDeg;
@@ -11443,6 +11511,20 @@
       if (!drag) return;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
       if (layer && drag.moved) {
+        if (drag.type === 'rotate') {
+          // Job 2 — normalize to [0, 360) ONLY on release. Mid-drag the value
+          // is left unwrapped (see accumDeg above) so a continuous spin never
+          // fights the user; a stored 400°/-464° is otherwise indistinguishable
+          // from 40° in a static plotter tool, so there is no reason to keep
+          // an unbounded winding count once the gesture ends.
+          const obj = this._sceneObjectById(layer, drag.objectId);
+          if (obj?.transform) {
+            const wrap360 = (deg) => { const v = deg % 360; return v < 0 ? v + 360 : v; };
+            if (drag.axis === 'y') obj.transform.yaw = wrap360(obj.transform.yaw);
+            else if (drag.axis === 'x') obj.transform.pitch = wrap360(obj.transform.pitch);
+            else obj.transform.roll = wrap360(obj.transform.roll);
+          }
+        }
         this.engine.generate(layer.id);
         this.app?.ui?.updateFormula?.();
         this.app?.ui?.buildControls?.(layer);
