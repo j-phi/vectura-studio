@@ -487,6 +487,11 @@
   // scope: survives panel rebuilds/layer switches, resets on reload.
   let moreLastPick = null;
 
+  // fs-m2 Job 2 — unique id counter for the Fill Style (i) popover
+  // (aria-describedby needs a real, non-colliding id per rendered row; three
+  // surfaces + a scene/object/face rerender can all mount one at once).
+  let lawInfoSeq = 0;
+
   // U9 — the Fill Style (tone law) control. THREE style surfaces live in this
   // file and every one of them has a mapper dropdown, so this is written once
   // and called from all three:
@@ -517,34 +522,86 @@
     const FS = Vectura.SCENE_FILL_STYLES;
     if (!UI || !FS) return;
     const law = FS.resolve(o.value);
-    comps.push(UI.Select(o.row(FS.LABEL), {
+    const ctl = o.row(FS.LABEL);
+    comps.push(UI.Select(ctl, {
       options: FS.groups(o.primitiveMode, o.solidType, o.mapper),
       value: law,
       ariaLabel: FS.ARIA,
       onChange: (v) => o.write(v),
     }));
+    const entry = FS.entry(law) || {};
+    const note = FS.note(law);
+    const facetedText = FS.facetedNote ? FS.facetedNote(o.primitiveMode, o.solidType, o.mapper) : '';
+
+    // fs-m2 Job 2 — mechanism/strengths/weaknesses/mark-class blurb used to
+    // print as an always-on paragraph block that dominated the panel (a user
+    // comparing 48 laws had to scroll past it for every pick). It now lives
+    // in a compact (i) popover, revealed on hover OR keyboard focus — the
+    // same `:hover`/`:focus-within` idiom `.ctrl-sel-wrap`'s own dropdown
+    // caret already uses elsewhere in this file — and always announced to
+    // screen readers via aria-describedby regardless of visual state, so it
+    // is never mouse-hover-only.
+    const pop = document.createElement('div');
+    pop.className = 'vs3-lawinfo-pop';
+    pop.setAttribute('role', 'tooltip');
     const line = (text, kind) => {
       if (!text) return;
       const n = document.createElement('p');
       n.className = kind ? `vs3-lawnote is-${kind}` : 'vs3-lawnote';
       n.textContent = text;
-      host.appendChild(n);
+      pop.appendChild(n);
     };
-    const entry = FS.entry(law) || {};
-    const note = FS.note(law);
     // The faceted-shape orientation line leads everything else — a user must
     // know THIS before reading what the currently-picked law does.
-    line(FS.facetedNote ? FS.facetedNote(o.primitiveMode, o.solidType, o.mapper) : '', 'faceted');
+    line(facetedText, 'faceted');
     // Leads with the MARK CLASS, so what kind of mark this is stays legible
     // once the select is closed.
     line(note.text);
     if (entry.mechanism) line(`How: ${entry.mechanism}`);
     if (entry.strengths) line(`Strengths: ${entry.strengths}`);
     if (entry.weaknesses) line(`Weaknesses: ${entry.weaknesses}`);
-    // The measured caveat of a demoted law, in the warning colour. Every law
-    // is offered now (no Off/On disclosure), but the caveat still prints only
-    // for the SELECTED one.
-    line(note.caveat, 'caveat');
+
+    if (pop.childNodes.length) {
+      lawInfoSeq += 1;
+      const infoId = `vs3-lawinfo-${lawInfoSeq}`;
+      pop.id = infoId;
+      const wrap = document.createElement('span');
+      wrap.className = 'vs3-lawinfo-wrap';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'vs3-lawinfo-btn';
+      btn.textContent = 'i';
+      btn.setAttribute('aria-label', `About ${entry.label || FS.LABEL}`);
+      btn.setAttribute('aria-describedby', infoId);
+      btn.setAttribute('aria-expanded', 'false');
+      const openPop = () => { pop.classList.add('is-open'); btn.setAttribute('aria-expanded', 'true'); };
+      const closePop = () => { pop.classList.remove('is-open'); btn.setAttribute('aria-expanded', 'false'); };
+      btn.addEventListener('mouseenter', openPop);
+      btn.addEventListener('mouseleave', closePop);
+      btn.addEventListener('focus', openPop);
+      btn.addEventListener('blur', closePop);
+      btn.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closePop(); btn.blur(); } });
+      wrap.appendChild(btn);
+      wrap.appendChild(pop);
+      // A THIRD flex child of the row (label + select + info), not nested
+      // inside `ctl` — `.vs3-row` is already `display:flex`, so this sits
+      // compactly beside the picker instead of stacking under a block-level
+      // select.
+      (ctl.parentNode || ctl).appendChild(wrap);
+    }
+
+    // The measured caveat of a demoted law stays OUTSIDE the hover popover,
+    // in the warning colour, directly under the row — relocated out of the
+    // long paragraph, not lost: a caveat is a warning a user comparing laws
+    // must not have to hover to discover. Every law is offered now (no
+    // Off/On disclosure), but the caveat still prints only for the SELECTED
+    // one.
+    if (note.caveat) {
+      const caveatLine = document.createElement('p');
+      caveatLine.className = 'vs3-lawnote is-caveat';
+      caveatLine.textContent = note.caveat;
+      host.appendChild(caveatLine);
+    }
   };
 
   let CURRENT = null;

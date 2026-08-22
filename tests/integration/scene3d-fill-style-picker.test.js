@@ -923,6 +923,52 @@ describe('Fill Style — docked 3D Scene panel', () => {
     expect(caveat.textContent.length).toBeGreaterThan(10);
   });
 
+  // fs-m2 Job 2 — the mechanism/strengths/weaknesses paragraph dominated the
+  // panel; it now lives behind a compact (i) info affordance revealed on
+  // hover OR keyboard focus, while the caveat (a genuinely useful warning)
+  // stays OUTSIDE the popover, always visible — relocated, not lost.
+  describe('fs-m2 Job 2 — Fill Style description behind an (i) info popover', () => {
+    test('an (i) button exists, aria-describedby-linked to a popover holding mechanism/strengths', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
+      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      expect(btn).toBeTruthy();
+      expect(btn.tagName).toBe('BUTTON');
+      expect(btn.getAttribute('aria-label')).toMatch(/\S/);
+      const describedId = btn.getAttribute('aria-describedby');
+      expect(describedId).toBeTruthy();
+      const pop = stylePage(container).querySelector(`#${describedId}`);
+      expect(pop).toBeTruthy();
+      expect(pop.classList.contains('vs3-lawinfo-pop')).toBe(true);
+      expect(pop.getAttribute('role')).toBe('tooltip');
+      // The mechanism/strengths text lives INSIDE the popover now, not as a
+      // bare top-level paragraph.
+      expect(pop.textContent).toContain('Voronoi');
+    });
+
+    test('focusing the (i) button opens the popover (keyboard-reachable, not hover-only); blur closes it', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
+      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
+      expect(pop.classList.contains('is-open')).toBe(false);
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      fire(btn, 'focus');
+      expect(pop.classList.contains('is-open')).toBe(true);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+      fire(btn, 'blur');
+      expect(pop.classList.contains('is-open')).toBe(false);
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    test('the caveat stays OUTSIDE the popover — reachable without opening the (i)', () => {
+      const { container } = openStyle(hatchOn({ toneLaw: 'bundleDither' }));
+      const page = stylePage(container);
+      const caveat = page.querySelector('.vs3-lawnote.is-caveat');
+      expect(caveat).toBeTruthy();
+      const pop = page.querySelector('.vs3-lawinfo-pop');
+      expect(pop.contains(caveat)).toBe(false);
+    });
+  });
+
   // ── The focused LEAF editors ─────────────────────────────────────────────
   // A scene-tree object3d / booleanGroup3d child routes to its OWN panel, not
   // to the scene editor above. This is what live verification caught: putting
