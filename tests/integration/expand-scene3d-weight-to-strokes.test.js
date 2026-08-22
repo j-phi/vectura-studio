@@ -151,4 +151,84 @@ describe('expandLayer turns meta.weightScale into real overlapping strokes', () 
       expect(path.meta && ('weightScale' in path.meta)).toBeFalsy();
     });
   });
+
+  /*
+   * Defect 4 (this batch) — the multi-pass offset used ONE global chord
+   * normal (a rigid translation of the whole path), not a per-vertex
+   * perpendicular. On a curved path the passes converge and diverge instead
+   * of holding a constant band width. RGR: this test measures the band
+   * width (projected onto the LOCAL segment normal, not the global chord
+   * normal used by the old rigid translate) at several points along a
+   * curved arc and fails without a per-vertex offset, passes with it.
+   */
+  describe('curved paths hold a constant band width (per-vertex offset, not a rigid translate)', () => {
+    // A quarter-circle arc (7 points, 90 deg over 6 segments): the local
+    // tangent rotates ~90 deg end to end, while the chord (start->end) sits
+    // at a fixed ~45 deg — exactly the scenario where a single global chord
+    // normal drifts far from the true local perpendicular.
+    const arcPath = (childId) => {
+      const R = 20;
+      const n = 6;
+      const pts = [];
+      for (let i = 0; i <= n; i++) {
+        const a = (Math.PI / 2) * (i / n);
+        pts.push({ x: R * Math.sin(a), y: R * (1 - Math.cos(a)) });
+      }
+      pts.meta = { kind: 'sceneEdge', sceneTarget: { objectId: childId }, weightScale: 3.4 };
+      return pts;
+    };
+
+    // Local unit normal at vertex i via central difference — an
+    // implementation-INDEPENDENT reference for "which way is perpendicular
+    // to the curve here", distinct from the fixed global chord normal the
+    // old rigid-translate code used.
+    const localNormalAt = (path, i) => {
+      const prev = path[i - 1] || path[i];
+      const next = path[i + 1] || path[i];
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const mag = Math.hypot(dx, dy) || 1;
+      return { x: -dy / mag, y: dx / mag };
+    };
+
+    test('band width (pass 0 to last pass, projected onto the LOCAL normal) stays within tolerance at several points along the arc', () => {
+      const { engine, group, child } = buildSceneWithSyntheticChild();
+      const penWidth = 0.3;
+      const spacing = penWidth * (1 - 0.15);
+      const path = arcPath(child.id);
+      group.scenePaths = [path];
+
+      const children = expand(engine, child, { returnChildren: true, suppressRender: true });
+      const passes = children.length;
+      expect(passes).toBeGreaterThanOrEqual(4); // sanity: genuinely multi-pass
+
+      const first = children[0].sourcePaths[0];
+      const last = children[children.length - 1].sourcePaths[0];
+      const expectedWidth = (passes - 1) * spacing;
+
+      // Sample interior vertices spread across the arc (skip the very
+      // endpoints, where a butt-cap/single-edge normal is expected on both
+      // implementations and isn't the interesting case).
+      const sampleIdx = [1, 2, 3, 4, 5];
+      const widths = sampleIdx.map((i) => {
+        const n = localNormalAt(path, i);
+        const dx = last[i].x - first[i].x;
+        const dy = last[i].y - first[i].y;
+        return Math.abs(dx * n.x + dy * n.y);
+      });
+
+      widths.forEach((w) => {
+        expect(w).toBeGreaterThan(0);
+        expect(w).toBeCloseTo(expectedWidth, 1); // within ~0.05mm of nominal at every sampled point
+      });
+
+      // The band must not merely be non-zero everywhere — it must be
+      // CONSTANT: the spread between the widest and narrowest sample stays
+      // small relative to the nominal width (a rigid-translate offset drifts
+      // by tens of percent across a 90 deg arc; a true per-vertex offset
+      // stays essentially flat).
+      const spread = Math.max(...widths) - Math.min(...widths);
+      expect(spread / expectedWidth).toBeLessThan(0.1);
+    });
+  });
 });
