@@ -305,8 +305,11 @@ describe('Shadow configuration is reachable and means "restyle", not "move" (RC1
     app.renderer.setSelection([gid], gid);
     app.renderer.setSceneSelection({ layerId: gid, mode: 'object', objectIds: [objId], faceKeys: [], edgeKeys: [] });
     CB.restoreState();
+    // fs-s1 made the Shadow pill icon-only (no visible `.ctxbar-text-fieldlabel`
+    // span) — select it by its accessible name (aria-label), which
+    // makeDropField always sets, rather than by visible text.
     const pill = Array.from(CB.getContentHost().querySelectorAll('.ctxbar-scene-field'))
-      .find((f) => (f.querySelector('.ctxbar-text-fieldlabel') || {}).textContent === 'Shadow');
+      .find((f) => f.getAttribute('aria-label') === 'Shadow');
     expect(pill).toBeTruthy();
     pill.click();
     const fly = document.querySelector('.ctxbar-scene-flyout.is-open');
