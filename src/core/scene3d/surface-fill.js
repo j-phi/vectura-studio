@@ -162,6 +162,14 @@
   // measures ~0.45, leaving the cross the room it needs to make T read, and the
   // COMBINED perceived coverage is ceilinged outright.
   const PLOT_FLOOR_PEN = 2.2;
+  // I5 follow-up — this is the DEFAULT for the master grid's line-count
+  // floor (see `floorPen` inside the `STAGE.masterGrid` block below), and
+  // remains the ONLY value `floorPitch` (the module-scope plot-safety floor
+  // used everywhere else in this closure) ever reads. `opts.masterFloorPen`
+  // is an opt-in, pen-multiple override of `floorPen` alone, consumed only
+  // by the one call scene3d.js's `curvedMasterFloorPen` makes past Density
+  // 100 — see the comment at `floorPen`'s computation for why it can't just
+  // be a lower constant.
   // ROUND 10 — READ, NOT RESTATED. These two lived here and the faceted path had
   // no copy at all, so the composed ceiling was a law of the curved path only.
   // They now live beside `FORM_INK` in `regions.js`, which is where the weight
@@ -1320,6 +1328,9 @@
   //   specularFn(worldNormal, worldPoint) → per-sample specular S, and
   //   highlight.{lightDriven, sensitivity} place a per-sample glint. All default
   //   off ⇒ byte-identical to the pre-I8 fill.
+  //   masterFloorPen (I5 follow-up): opt-in pen-multiple override of the
+  //   master grid's line-count floor (default PLOT_FLOOR_PEN = 2.2). Omitted
+  //   ⇒ byte-identical. See the constant's own comment for why it exists.
   const buildObject = (opts) => {
     if (!opts || !rotatePoint) return null;
     const chart = chartFor(opts.mode, opts.sizes);
@@ -4871,7 +4882,19 @@
         const tonePitch = Math.max(0.05, finite(opts.tonePitch, 3) / TONE_SUBDIV);
         const litCov = clamp(Regions.formInk('L').coverage, 0.05, 1);
         const o6Pitch = litMaxPitchPen() * penWidth * litCov;
-        const floorPen = PLOT_FLOOR_PEN * penWidth;
+        // `opts.masterFloorPen` (opt-in, pen-multiple) lets the ONE direct
+        // density→line-count caller relax this master-grid floor below the
+        // conservative PLOT_FLOOR_PEN default (scene3d.js's
+        // `curvedMasterFloorPen`, threaded only past Density 100 so every
+        // d<=100 document — and every other caller, which never passes this
+        // option at all — keeps PLOT_FLOOR_PEN and stays byte-identical).
+        // This does NOT touch `floorPitch` below: that is the module-scope
+        // plot-safety floor read throughout the rest of this closure (per-
+        // sample coverage capping, crosshatch separation, mark-length
+        // safety, …) and it always reads PLOT_FLOOR_PEN, unrelaxed.
+        const floorPenMult = Number.isFinite(opts.masterFloorPen) && opts.masterFloorPen > 0
+          ? opts.masterFloorPen : PLOT_FLOOR_PEN;
+        const floorPen = floorPenMult * penWidth;
         if (TONE_UNCAPPED) {
           // THE BUDGET IS OFF. The master grid is ruled at the plot floor
           // itself, which is the finest grid ink allows, so the tone law can ask

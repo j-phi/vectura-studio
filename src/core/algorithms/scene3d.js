@@ -269,6 +269,50 @@
     return 1 - t * (1 - HATCH_SPACING_FLOOR_MM);
   };
 
+  // ── CURVED-PATH DENSITY HEADROOM (I5 follow-up) ─────────────────────────────
+  // `hatchSpacing` above fixed Density > 100 on FACETED primitives. Curved
+  // primitives (sphere/torus/capsule/…) route through SurfaceFill's own
+  // parametric master grid instead, and that grid floors its line-count pitch
+  // at a SEPARATE constant, `PLOT_FLOOR_PEN` (2.2 × pen, declared in
+  // surface-fill.js and duplicated here as CURVED_FLOOR_PEN_MAX for the same
+  // "read together, not import" reason `MONO_PLOT_FLOOR_PEN` below is).
+  // Measured: a sphere's line count went 27/61/61/61 across d=50/100/150/200
+  // — flat above 100, because `tonePitch` (density's own signal) keeps
+  // shrinking past d=100 while the floor it's clamped against does not, so
+  // every Density above ~100 collapses onto the identical clamped pitch.
+  //
+  // The fix mirrors `hatchSpacing`'s own two-arm shape rather than just
+  // swapping the constant for a lower one:
+  //   0-100  → returns `undefined`, so SurfaceFill's `masterFloorPen` option
+  //            is OMITTED and its committed 2.2×-pen default applies exactly
+  //            as before. That floor ALREADY binds at d=100 today (tonePitch
+  //            there is well under it), so lowering it for d<=100 would move
+  //            existing saved artwork — the same trap `minSpacing` above
+  //            dodges for the faceted crosshatch family.
+  //   100-200 → linearly relaxes the multiplier down to CURVED_FLOOR_PEN_MIN
+  //            = 1.2× pen, the bound surface-fill.js's own PLOT_FLOOR_PEN
+  //            comment names as the point real ink floods (2.2× was always
+  //            the STRICTER, conservative bar chosen there; 1.2× is the
+  //            honest physical one). TAPERING the floor itself — not just
+  //            lowering it once — is what keeps the line count strictly
+  //            increasing all the way to d=200: a fixed lower floor, however
+  //            low, still goes flat again the moment tonePitch dips under it
+  //            a second time.
+  // Threaded only into the ONE direct density→line-count SurfaceFill call
+  // below. The curved crosshatch family-B count derives from family A's own
+  // N by ratio (`count / crossRatio` in surface-fill.js), not by an
+  // independent spacing/floor comparison, so there is no equivalent
+  // "already-sub-floor in a saved document" risk to dodge for it the way
+  // `minSpacing` has to for the faceted path's `spacing × crossDensityRatio`.
+  const CURVED_FLOOR_PEN_MAX = 2.2; // == surface-fill.js's PLOT_FLOOR_PEN
+  const CURVED_FLOOR_PEN_MIN = 1.2; // the "ink floods" bound, not the conservative one
+  const curvedMasterFloorPen = (density) => {
+    const d = clamp(finite(density, 50), 0, 200);
+    if (d <= 100) return undefined;
+    const t = (d - 100) / 100;
+    return CURVED_FLOOR_PEN_MAX - t * (CURVED_FLOOR_PEN_MAX - CURVED_FLOOR_PEN_MIN);
+  };
+
   // Strip the geometry-mutating part of a treatment, keeping only the line-type
   // dash. Edges and per-face outlines are DOUBLE-DRAWN (the face outline loop and
   // the silhouette/crease/boundary edge pass both emit the same structural edge);
@@ -2886,6 +2930,13 @@
                 // Density, in the SAME law the faceted path uses, so the dial
                 // means the same thing on both (the O27 parity contract).
                 tonePitch: hatchSpacing(finite(sp.fillDensity, 50)),
+                // Density > 100 (I5 follow-up): relax SurfaceFill's own
+                // master-grid line-count floor in step, so the curved fill
+                // keeps getting denser past ~d=100 instead of going flat (the
+                // sphere fixture measured 61/61/61). `undefined` for d<=100,
+                // so those documents render byte-identical — see the helper's
+                // own comment above.
+                masterFloorPen: curvedMasterFloorPen(finite(sp.fillDensity, 50)),
                 // I8 — shadow sensitivity (stage count) graded darkening on the
                 // dark end; default 1 = no-op. Per-sample specular fn drives the
                 // lightDriven highlight region.
@@ -3528,5 +3579,9 @@
     // asserted exactly, without the float noise of measuring spacing off
     // projected geometry.
     __hatchSpacingForTest: (density) => hatchSpacing(density),
+    // Test seam (I5 follow-up). Publishes the density -> curved master-grid
+    // floor mapping (`curvedMasterFloorPen`) that fixes SurfaceFill going
+    // flat above ~Density 100 on curved primitives, mirroring the seam above.
+    __curvedMasterFloorPenForTest: (density) => curvedMasterFloorPen(density),
   };
 })();
