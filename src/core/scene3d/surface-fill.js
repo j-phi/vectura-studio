@@ -929,7 +929,10 @@
   // never throws, never draws nothing — see `buildObject`'s local `TONE_ALGO`).
   const TONE_ALGO_DEFAULT = 'ladder';
   // 'contFieldQuant' only: how many discrete gap sizes the field may use.
-  const CF_LEVELS = 128;
+  // Module-level FALLBACK only — `opts.toneQuantLevels` absent/invalid.
+  // The live per-call value is `CF_LEVELS`, shadowed inside `buildObject`
+  // right next to the per-call `TONE_ALGO` (same pattern, same reasoning).
+  const CF_LEVELS_DEFAULT = 128;
   // ── ROUND 6 — TWELVE MARK LANGUAGES, ONE PEN WIDTH ─────────────────────────
   //
   // Jay, on the ten lozenge laws: "I'm seeing some subtle differences ... I
@@ -1112,7 +1115,9 @@
   // 'contourFlow' only: which streamline family the rulings follow.
   //   'iso'  along the iso-intensity curves
   //   'grad' down the intensity gradient (their orthogonals)
-  const FLOW_MODE = 'iso';
+  // Module-level FALLBACK only — `opts.toneFlowMode` absent/invalid. The live
+  // per-call value is `FLOW_MODE`, shadowed inside `buildObject`.
+  const FLOW_MODE_DEFAULT = 'iso';
 
   // ── THE LADDER IS PHASE-STEPPED, NOT BIT-REVERSED ───────────────────────────
   //
@@ -1354,6 +1359,18 @@
     // it would close over `TONE_ALGO_DEFAULT` forever and every mark law would
     // silently mis-dispatch to `ladder`'s behaviour.
     const isMarkLaw = () => MARK_LAWS[TONE_ALGO] === 1;
+
+    // Per-call `contFieldQuant` gap-quantisation level count — same shadow
+    // pattern as `TONE_ALGO` above. `opts.toneQuantLevels` absent/non-finite
+    // degrades to `CF_LEVELS_DEFAULT` (128), byte-identical to the pre-wire
+    // build. Clamped [4, 256] — the same bound `params.js`'s `clampStyleParam`
+    // enforces on the way in, re-asserted here because `buildObject` is a
+    // public boundary a test (or a future caller) can hit directly.
+    const CF_LEVELS = clamp(Math.round(finite(opts.toneQuantLevels, CF_LEVELS_DEFAULT)), 4, 256);
+    // Per-call `contourFlow` streamline family. `opts.toneFlowMode` anything
+    // other than the literal 'grad' degrades to `FLOW_MODE_DEFAULT` ('iso') —
+    // same rule `params.js` uses.
+    const FLOW_MODE = opts.toneFlowMode === 'grad' ? 'grad' : FLOW_MODE_DEFAULT;
 
     // `toneLaw: 'none'` is Stage 0 (`masterGrid` + `dither` both off, measured
     // as "NO TONE" in docs/tone-laws/) — NOT the same as `opts.toneOn = false`,
@@ -9333,7 +9350,10 @@
         // A copy — no caller can mutate the module's live Stage-1 flags.
         get hlStage() { return Object.assign({}, HL_STAGE); },
         get uncapped() { return TONE_UNCAPPED; },
-        get flowMode() { return FLOW_MODE; },
+        // The committed default, byte-identical to the pre-wire module
+        // constant — NOT the per-call value (that shadow lives inside
+        // `buildObject`, keyed off `opts.toneFlowMode`; see its own comment).
+        get flowMode() { return FLOW_MODE_DEFAULT; },
       },
     });
 
