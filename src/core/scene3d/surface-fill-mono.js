@@ -1757,13 +1757,27 @@
   const lawMaze = (C) => {
     // A graded grid: rows and columns are laid at the local tone's clearance,
     // so the maze is finer in the shadow.
+    //
+    // The clearance at a column/row used to come from an 11-point average
+    // spanning the WHOLE opposite axis (pole to pole). For a body whose tone
+    // varies across BOTH screen axes (any light that is not purely vertical
+    // or purely horizontal), integrating all the way across the orthogonal
+    // axis mixes bright and dark samples into one number for every column —
+    // and for a radially-symmetric body like a sphere that average converges
+    // toward roughly the same figure for every column, which is why the law
+    // measured flat (lit/shadow ink density ratio 0.987 — see
+    // tests/unit/scene3d-maze-tonal-range.test.js). Sampling a narrow LOCAL
+    // window instead (centred on the object's own most-front-facing point,
+    // `C.faceX`/`C.faceY`) keeps each column's/row's clearance representative
+    // of the tone actually near it.
+    const LOCAL = Math.max(C.R * 0.22, C.FLOOR * 3);
     const xs = [];
     let x = C.minX;
     while (x < C.maxX && xs.length < 300) {
       xs.push(x);
       let sum = 0; let n = 0;
       for (let k = 0; k <= 10; k++) {
-        const s = C.inv(x, C.minY + (k / 10) * C.H);
+        const s = C.inv(x, C.faceY - LOCAL + (k / 10) * (2 * LOCAL));
         if (s) { sum += finite(s.I, 0); n += 1; }
       }
       x += C.pitchLegible(n ? sum / n : 0.6) * 1.05;
@@ -1774,7 +1788,7 @@
       ys.push(y);
       let sum = 0; let n = 0;
       for (let k = 0; k <= 10; k++) {
-        const s = C.inv(C.minX + (k / 10) * C.W, y);
+        const s = C.inv(C.faceX - LOCAL + (k / 10) * (2 * LOCAL), y);
         if (s) { sum += finite(s.I, 0); n += 1; }
       }
       y += C.pitchLegible(n ? sum / n : 0.6) * 1.05;
