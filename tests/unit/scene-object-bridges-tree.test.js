@@ -128,20 +128,28 @@ describe('scene-tree object bridges', () => {
   });
 
   // ── 4. drop-to-ground ───────────────────────────────────────────────────
-  test('TREE: dropSceneObjectsToGround writes child.params.transform.y = 0', () => {
+  // fs-u1 — drop-to-ground v2 computes the TRUE transformed lowest point
+  // (mesh vertices through the object's full transform), not transform.y = 0.
+  // The scene fixtures here have no ground, so sceneHasGround must be forced
+  // true (a monolith default-includes ground:{enabled:true}; buildTree's
+  // group needs it set explicitly) — matches the box's own default default
+  // rest position (y = half-height = 20 for a 40mm box on ground y = 0).
+  test('TREE: dropSceneObjectsToGround rests the box on the ground (y = half-height)', () => {
     const { engine, renderer, gid, childIds } = buildTree(1);
+    engine.getLayerById(gid).params.ground = { enabled: true };
     const child = engine.getLayerById(childIds[0]);
     child.params.transform = { x: 3, y: 42, z: 7 };
     const ok = renderer.dropSceneObjectsToGround(gid, [childIds[0]]);
     expect(ok).toBe(true);
-    expect(engine.getLayerById(childIds[0]).params.transform.y).toBe(0);
+    expect(engine.getLayerById(childIds[0]).params.transform.y).toBe(20);
   });
 
   test('MONOLITH: dropSceneObjectsToGround writes the inline transform (parity)', () => {
     const { renderer, layer } = buildMonolith();
+    layer.params.ground = { enabled: true };
     const ok = renderer.dropSceneObjectsToGround(layer.id, ['obj-1']);
     expect(ok).toBe(true);
-    expect(layer.params.objects[0].transform.y).toBe(0);
+    expect(layer.params.objects[0].transform.y).toBe(20);
   });
 
   // ── 5. ground-drag apply ────────────────────────────────────────────────

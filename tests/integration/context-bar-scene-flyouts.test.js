@@ -67,11 +67,10 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
   };
 
   const pills = () => Array.from(host().querySelectorAll('.ctxbar-scene-field'));
-  // fs-s1 — Shape/Style/Shadow/Highlight are icon-only (no visible label text
-  // any more), so lookup goes through aria-label — their accessible name —
-  // rather than the now-absent `.ctxbar-text-fieldlabel` text node. X-ray
-  // keeps its visible text but also carries the same aria-label, so this one
-  // selector covers all five pills unchanged.
+  // fs-s1/fs-u1 — Shape/Style/Shadow/Highlight/X-ray are all icon-only (no
+  // visible label text), so lookup goes through aria-label — their
+  // accessible name — rather than the now-absent `.ctxbar-text-fieldlabel`
+  // text node.
   const pillByLabel = (text) => pills().find((f) => f.getAttribute('aria-label') === text);
   const openFly = () => document.querySelector('.ctxbar-scene-flyout.is-open');
   const rowCtl = (fly, label) => {
@@ -112,23 +111,24 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
   });
 
   // ── fs-s1 — icon-only conversion of the 3D contextual bar ────────────────
-  test('fs-s1: Shape/Style/Shadow/Highlight pills carry no visible label text but keep a real accessible name', async () => {
+  test('fs-u1: Shape/Style/Shadow/Highlight/X-ray pills carry no visible label text but keep a real accessible name', async () => {
     addSelectScene();
-    ['Shape', 'Style', 'Shadow', 'Highlight'].forEach((name) => {
+    ['Shape', 'Style', 'Shadow', 'Highlight', 'X-ray'].forEach((name) => {
       const field = pillByLabel(name);
       expect(field).toBeTruthy();
       expect(field.querySelector('.ctxbar-text-fieldlabel')).toBeFalsy();
       expect(field.querySelector('.lvl-algo-sub-ico')).toBeTruthy();
       expect(field.getAttribute('aria-label')).toBe(name);
     });
-    // X-ray is deliberately excluded from the icon-only conversion — it keeps
-    // its visible text.
-    const xray = pillByLabel('X-ray');
-    expect(xray.querySelector('.ctxbar-text-fieldlabel')?.textContent).toBe('X-ray');
   });
 
   test('fs-s1: Duplicate/Drop/Trash/Helpers action buttons carry no visible label text but keep a real accessible name', async () => {
-    addSelectScene();
+    // fs-u1 — Drop only renders when the scene HAS a ground; the shared
+    // fixture starts groundless (for the unrelated X-ray tests below), so
+    // turn it on here to exercise Drop's own accessible-name contract.
+    const scene = addSelectScene();
+    scene.params.ground = { enabled: true };
+    CB.restoreState();
     const btns = () => Array.from(host().querySelectorAll('.ctxbar-btn'));
     const b = window.Vectura.CONTEXT_BAR.buttons;
     const dup = btns().find((x) => x.getAttribute('aria-label') === b.sceneDuplicate.tooltip);
@@ -139,6 +139,41 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
       expect(btn.querySelector('.ctxbar-label')).toBeFalsy();
       expect(btn.getAttribute('aria-label')).toBeTruthy();
     });
+  });
+
+  // ── fs-u1 — Drop button existence gated on ground presence ─────────────
+  test('fs-u1: the Drop button is absent when the scene has no ground, present when it does', async () => {
+    const scene = addSelectScene(); // fixture ground: { enabled: false }
+    const b = window.Vectura.CONTEXT_BAR.buttons;
+    const dropBtn = () => Array.from(host().querySelectorAll('.ctxbar-btn'))
+      .find((x) => x.getAttribute('aria-label') === b.sceneDrop.tooltip);
+    expect(dropBtn()).toBeFalsy();
+
+    scene.params.ground = { enabled: true };
+    CB.restoreState();
+    expect(dropBtn()).toBeTruthy();
+  });
+
+  test('fs-u1: adding/removing ground toggles the Drop button LIVE on the RAF ticker, without a reselect', async () => {
+    const scene = addSelectScene(); // fixture ground: { enabled: false }
+    const b = window.Vectura.CONTEXT_BAR.buttons;
+    const dropBtn = () => Array.from(host().querySelectorAll('.ctxbar-btn'))
+      .find((x) => x.getAttribute('aria-label') === b.sceneDrop.tooltip);
+    expect(dropBtn()).toBeFalsy();
+
+    // Mutate ground state directly (as an "Add ground" layers-panel action
+    // would) WITHOUT touching the 3D object selection or calling
+    // restoreState() ourselves — only the background ticker (`_refresh`,
+    // what the real RAF loop calls) should pick it up, proving the button's
+    // visibility is reactive rather than dependent on the mutating call site
+    // remembering to force a render (the Shadow Fill Style bug this mirrors).
+    scene.params.ground = { enabled: true };
+    CB._refresh();
+    expect(dropBtn()).toBeTruthy();
+
+    scene.params.ground = { enabled: false };
+    CB._refresh();
+    expect(dropBtn()).toBeFalsy();
   });
 
   test('fs-s1: the standalone Solid|X-ray toggle button is gone, but the X-ray flyout pill still writes visibility', async () => {
