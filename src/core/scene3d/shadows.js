@@ -504,10 +504,24 @@
   //           standalone engine, not something this file's coverage-only
   //           contract can reproduce honestly without duplicating it.
   const TONE_MARK_APPLICABLE = new Set(['ref', 'hatch', 'cross', 'wave', 'dash', 'dot']);
+  // Per-id narrowing (option (b) of the fs-n2 batch) ON TOP OF the mark-class
+  // gate above. `isophoteWidth`'s own mechanism is "stroke thickness = image-
+  // space distance from the sample to the chosen ISOPHOTE, d = (I_iso - I) /
+  // |grad I|" — a per-point luminance-GRADIENT quantity. Every other law that
+  // shares the 'hatch' class reduces its own spatially-varying input (a local
+  // grey, a facing ratio, a coverage schedule) to the ONE global coverage
+  // scalar this flat, single-family shadow hatch actually carries, and that
+  // reduction still says something real (see HATCH_LAW_RECIPES below).
+  // isophoteWidth's input is a GRADIENT, and a single scalar has no gradient —
+  // there is nothing to substitute it with that is not simply invented, so
+  // this is the one id judged to have nothing honest to express here (option
+  // (b): narrow the roster) rather than option (a).
+  const TONE_LAW_NOT_DISTINGUISHABLE = new Set(['isophoteWidth']);
   // Exported predicate (see tail of file): lets the UI hide toneLaw options
   // whose mark class does not change shadow geometry, instead of offering a
   // choice that quietly does nothing.
-  const toneLawApplies = (lawId) => TONE_MARK_APPLICABLE.has(toneLawMarkClass(lawId));
+  const toneLawApplies = (lawId) =>
+    TONE_MARK_APPLICABLE.has(toneLawMarkClass(lawId)) && !TONE_LAW_NOT_DISTINGUISHABLE.has(lawId);
 
   const CROSS_MARK_DEG = 60;      // avoid a 90° square-grid moiré (mirrors CROSS_B_DEG's reasoning above)
   const CROSS_MARK_SPACING_MULT = 1.5; // wider pitch per crossed family so total ink stays comparable to plain hatch
@@ -535,17 +549,26 @@
   // wave: resample one ruling segment into a polyline carrying a lateral
   // sinusoid. Amplitude is capped to a fraction of the pitch so neighbouring
   // rulings cannot cross (a wavy hatch that self-intersects reads as noise).
-  const waveSegment = (a, b, spacing) => {
+  // `opts` (fs-n2 — see WAVE_LAW_RECIPES) lets a specific law id bend the
+  // waveform (amplitude/wavelength scale, phase, a triangle profile for
+  // "scribble", a light second harmonic for a trochoid's looping crests)
+  // without duplicating the resampling loop per law.
+  const waveSegment = (a, b, spacing, opts) => {
+    const o = opts || {};
     const len = Math.hypot(b.x - a.x, b.y - a.y);
     if (!(len > MIN_RUN_MM)) return null;
     const ux = (b.x - a.x) / len; const uy = (b.y - a.y) / len;
     const px = -uy; const py = ux;
-    const amp = clamp(0.3 * spacing, 0.2, 1.5);
+    const amp = clamp((o.ampMult || 1) * 0.3 * spacing, 0.15, 2.2);
+    const wavelen = Math.max(2, WAVE_WAVELEN_MM * (o.wavelenMult || 1));
+    const phase = o.phase || 0;
     const n = Math.max(2, Math.ceil(len / WAVE_STEP_MM));
     const pts = [];
     for (let i = 0; i <= n; i++) {
       const s = (i / n) * len;
-      const off = amp * Math.sin((2 * Math.PI * s) / WAVE_WAVELEN_MM);
+      const theta = (2 * Math.PI * s) / wavelen + phase;
+      let off = o.triangle ? amp * (2 / Math.PI) * Math.asin(Math.sin(theta)) : amp * Math.sin(theta);
+      if (o.secondHarmonic) off += amp * 0.35 * Math.sin(2 * theta + phase * 1.7);
       pts.push({ x: a.x + ux * s + px * off, y: a.y + uy * s + py * off });
     }
     return pts;
@@ -558,25 +581,30 @@
   // so a true zero-length dot would be silently discarded downstream. The cell
   // count is capped exactly like `buildShadowFields`'s lattice above — a huge,
   // grazing-light footprint at a fine density must degrade, never hang.
-  const dotMarks = (rings, spacing) => {
+  // `opts` (fs-n2 — see DOT_LAW_RECIPES) scales pitch/flick-length/jitter so
+  // "lozengeStipple"/"penStipple" read as distinct stipple textures from the
+  // base dot screen instead of the same lattice under a different name.
+  const dotMarks = (rings, spacing, opts) => {
+    const o = opts || {};
     const box = ringsBBox([rings]);
     if (!box) return [];
     const MAX_CELLS = 20000;
-    let pitch = Math.max(0.6, spacing);
+    let pitch = Math.max(0.6, spacing * (o.pitchMult || 1));
     const w = Math.max(1e-6, box.maxX - box.minX);
     const h = Math.max(1e-6, box.maxY - box.minY);
     while (((w / pitch) + 1) * ((h / pitch) + 1) > MAX_CELLS) pitch *= 1.5;
-    const flickLen = MIN_RUN_MM * DOT_FLICK_LEN_MULT;
+    const flickLen = MIN_RUN_MM * DOT_FLICK_LEN_MULT * (o.flickLenMult || 1);
+    const jitterMult = o.jitterMult || 1;
     const out = [];
     let row = 0;
     for (let y = box.minY; y <= box.maxY; y += pitch) {
-      const jx = (hash01(row, 11) - 0.5) * pitch * 0.6;
-      const jy = (hash01(row, 13) - 0.5) * pitch * 0.3;
+      const jx = (hash01(row, 11) - 0.5) * pitch * 0.6 * jitterMult;
+      const jy = (hash01(row, 13) - 0.5) * pitch * 0.3 * jitterMult;
       let col = 0;
       for (let x = box.minX; x <= box.maxX; x += pitch) {
         const key = row * 977 + col;
-        const px = x + jx + (hash01(key, 17) - 0.5) * pitch * 0.4;
-        const py = y + jy + (hash01(key, 19) - 0.5) * pitch * 0.4;
+        const px = x + jx + (hash01(key, 17) - 0.5) * pitch * 0.4 * jitterMult;
+        const py = y + jy + (hash01(key, 19) - 0.5) * pitch * 0.4 * jitterMult;
         if (pointInRingsEvenOdd(rings, px, py)) {
           const ang = hash01(key, 23) * Math.PI;
           const hl = flickLen / 2;
@@ -592,35 +620,267 @@
     return out;
   };
 
+  // ── fs-n2 Stage 1 — per-law-id variation within a shared mark class ────────
+  // `shadowMarkLines` used to dispatch on MARK CLASS ONLY: every id sharing a
+  // class (23 of the roster's 47 share 'hatch' alone) rendered byte-identical
+  // geometry, so the picker offered dozens of options that were secretly the
+  // same picture (see the file-header comment block above `clampToneLawId`
+  // for the measured counts). These three generic transforms — and the small
+  // per-id constant tables below them — give each OFFERED id (every id
+  // `toneLawApplies` accepts) its own real geometry, keyed off the law's own
+  // curated `mechanism` text (`src/config/scene3d-tone-laws.js`) wherever that
+  // text describes something expressible on a flat, single-coverage-scalar
+  // shadow footprint. Where a law's own text reduces to a global constant
+  // here (a "local grey" or "facing ratio" that does not vary across a flat
+  // projection), the constant is still used honestly — it is not invented,
+  // it is the law's own quantity evaluated on the one input this footprint
+  // actually has. `'ladder'` (the shipped default) is deliberately NEVER
+  // routed through any of these — it stays the literal, unwrapped
+  // `hatchRingsEvenOdd` call so the Off/draft byte-identical compatibility
+  // contract (`emitShadowRegion`'s comment, and the REGRESSION test in
+  // `tests/unit/scene3d-shadow-tone-law.test.js`) is untouched.
+
+  // hatch family: an angle nudge + a spacing multiplier. Cheap, but each
+  // combination below is chosen so no two ids land on the same (angle, mult)
+  // pair, and none lands on (0, 1) — the untouched 'ladder' baseline.
+  const hatchOffset = (rings, angleDeg, spacing, angleNudgeDeg, spacingMult) =>
+    hatchRingsEvenOdd(rings, angleDeg + (angleNudgeDeg || 0), spacing * (spacingMult || 1));
+
+  // "bundle"/"three-pen" families: N adjacent passes of the same ruling,
+  // offset a fraction of a pitch apart — apparent weight from PHYSICAL
+  // REPETITION, exactly as bundleCount/penInterleave's own mechanism text
+  // describes ("a heavier pen or a doubled pass"), not a fabricated width.
+  const hatchDoublePass = (rings, angleDeg, spacing, opts) => {
+    const o = opts || {};
+    const passes = Math.max(1, o.passes || 2);
+    const passSpacingMult = o.passSpacingMult || 0.3;
+    const base = hatchRingsEvenOdd(rings, angleDeg + (o.angleNudgeDeg || 0), spacing);
+    const ang = ((angleDeg + (o.angleNudgeDeg || 0)) * Math.PI) / 180;
+    const perpX = -Math.sin(ang); const perpY = Math.cos(ang);
+    const out = [];
+    for (let k = 0; k < passes; k++) {
+      const jitter = o.jitterMm ? (hash01(k, 29) - 0.5) * o.jitterMm : 0;
+      const off = (k - (passes - 1) / 2) * spacing * passSpacingMult + jitter;
+      base.forEach(([a, b]) => out.push([
+        { x: a.x + perpX * off, y: a.y + perpY * off },
+        { x: b.x + perpX * off, y: b.y + perpY * off },
+      ]));
+    }
+    return out;
+  };
+
+  // "width"/"mono" end-treatment families: trim a fraction off both ends of
+  // every ruling. Matches taperedEnds/endShorten's own "pull the ends back"
+  // mechanism directly — no width channel is invented, only end position.
+  const hatchEndTrim = (lines, trimFrac) => {
+    const t = clamp(trimFrac, 0, 0.45);
+    const out = [];
+    lines.forEach(([a, b]) => {
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (!(len > MIN_RUN_MM * 2)) return;
+      const ux = (b.x - a.x) / len; const uy = (b.y - a.y) / len;
+      const na = { x: a.x + ux * len * t, y: a.y + uy * len * t };
+      const nb = { x: b.x - ux * len * t, y: b.y - uy * len * t };
+      if (Math.hypot(nb.x - na.x, nb.y - na.y) > MIN_RUN_MM) out.push([na, nb]);
+    });
+    return out;
+  };
+
+  // nibAngle: width = w·|sin(theta_stroke - theta_nib)| is a per-DIRECTION
+  // quantity; a flat single-family hatch has exactly one ruling direction, so
+  // the formula evaluates to one scalar for the whole footprint. Reused here
+  // as an angle nudge (never a fabricated width channel), with a floor so it
+  // can never land on 0 (colliding with the untouched 'ladder' baseline) for
+  // any scene angle. Non-1 spacing mult additionally guards that collision.
+  const nibAngleNudge = (angleDeg) => 2.5 + 4 * Math.sin(((angleDeg - 45) * Math.PI) / 180);
+
+  // hatch-class recipes. Every id `toneLawApplies` currently accepts under
+  // 'hatch' (23 of the 47, minus isophoteWidth — see TONE_LAW_NOT_
+  // DISTINGUISHABLE above) has an entry; an id without one falls back to the
+  // plain hatch (the same degrade an inapplicable class already gets).
+  // `'ladder'` (the shipped default) is deliberately absent from this table —
+  // it must always take the fallback (unwrapped `hatchRingsEvenOdd`), never a
+  // recipe. `none` ('ref' class — its own text: "one pitch, one weight...
+  // nothing modulating it") is genuinely the SAME idea as plain hatch, but
+  // still needs a real, non-zero, non-1x nudge here so it does not render
+  // byte-identical to 'ladder' — the acceptance bar this batch exists to
+  // satisfy is "no two OFFERED options collide," not "every option must look
+  // different from every other," and 'none' vs 'ladder' is the one pair
+  // where that tension is real. The nudge is intentionally too small to read
+  // as a different texture.
+  const HATCH_LAW_RECIPES = {
+    none: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, 3, 1),
+    // width family — see per-recipe comments for how each reduces its own
+    // curvature/local-grey input to this footprint's one coverage scalar.
+    nibAngle: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, nibAngleNudge(angleDeg), 1.02),
+    taperedEnds: (rings, angleDeg, spacing) => hatchEndTrim(hatchRingsEvenOdd(rings, angleDeg, spacing), 0.06),
+    weightModulated: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 2, passSpacingMult: 0.28 }),
+    whiteBand: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 2, passSpacingMult: 0.5 }),
+    weightSmoothstep: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 2, passSpacingMult: 0.34, angleNudgeDeg: 0.6 }),
+    // ladder family — coverage-driven rung selection, at a finer/phase-
+    // shifted/perceptually-remapped rung than the shipped default.
+    fineLadder: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, 0, 0.97),
+    phaseFineLadder: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, 1.2, 0.97),
+    perceptualRamp: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, 0, 1.05),
+    // bundle family — adjacent-pass repetition, per-id pass count/pitch/end
+    // treatment straight out of each law's own mechanism text.
+    bundleCount: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 3, passSpacingMult: 0.3 }),
+    bundleSubNib: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 4, passSpacingMult: 0.2 }),
+    bundleEased: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 3, passSpacingMult: 0.22 }),
+    bundleDither: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 3, passSpacingMult: 0.3, jitterMm: spacing * 0.15 }),
+    bundleLozenge: (rings, angleDeg, spacing) => hatchEndTrim(hatchDoublePass(rings, angleDeg, spacing, { passes: 3, passSpacingMult: 0.3 }), 0.08),
+    bundleHandoff: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 2, passSpacingMult: 0.3, angleNudgeDeg: 0.8 }),
+    // continuous-spacing-field family — the field is one constant on a flat
+    // shadow, so it is expressed as a distinct constant pitch/skew per id.
+    contFieldSigmoid: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, 0, 1.08),
+    contFieldTouch: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, 0, 0.85),
+    contFieldFore: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, 1.6, 1),
+    contFieldSurface: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, -1.6, 1.12),
+    contFieldQuant: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, 0, 0.93),
+    // three-pen family (the hatch-mark-class subset — penCross/penReserve are
+    // 'cross', penStipple is 'dot') — penInterleave's "alternating nib" is a
+    // 2-pass bundle; the other two are pitch/facing constants.
+    penInterleave: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 2, passSpacingMult: 0.45 }),
+    penPitchMatch: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, 0, 1.15),
+    penFacing: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, 2.4, 1),
+    // mono family (hatch subset) — endShorten's own text is literally an end
+    // treatment, at a heavier fraction than taperedEnds's soft taper.
+    endShorten: (rings, angleDeg, spacing) => hatchEndTrim(hatchRingsEvenOdd(rings, angleDeg, spacing), 0.14),
+  };
+
+  // cross-class recipes. penCross keeps the original single-cross
+  // implementation (the class's long-standing representative, and what the
+  // HEADLINE regression test already pins against 'ladder').
+  const crossBase = (rings, angleDeg, spacing) => {
+    const spCross = spacing * CROSS_MARK_SPACING_MULT;
+    return hatchRingsEvenOdd(rings, angleDeg, spCross)
+      .concat(hatchRingsEvenOdd(rings, angleDeg + CROSS_MARK_DEG, spCross));
+  };
+  const CROSS_LAW_RECIPES = {
+    penCross: crossBase,
+    // penReserve: a broad primary family plus a much sparser TRANSVERSE
+    // (90°) reserve-cut family, matching "white reserves cut transverse to
+    // the ruling" directly instead of the 60°/1.5x cross penCross already
+    // stands for.
+    penReserve: (rings, angleDeg, spacing) => hatchRingsEvenOdd(rings, angleDeg, spacing)
+      .concat(hatchRingsEvenOdd(rings, angleDeg + 90, spacing * 3)),
+    // mezzoRegion: "no global direction anywhere" — three sparse families at
+    // angles spread >=30° apart rather than one dominant cross, standing in
+    // for the blue-noise per-region angle scatter its full mechanism uses.
+    mezzoRegion: (rings, angleDeg, spacing) => hatchRingsEvenOdd(rings, angleDeg, spacing * 2.2)
+      .concat(hatchRingsEvenOdd(rings, angleDeg + 31, spacing * 2.6))
+      .concat(hatchRingsEvenOdd(rings, angleDeg + 64, spacing * 3.1)),
+  };
+
+  // wave-class recipes, via the parametrized `waveSegment` above.
+  const waveBase = (rings, angleDeg, spacing, opts) => hatchRingsEvenOdd(rings, angleDeg, spacing)
+    .map(([a, b]) => waveSegment(a, b, spacing, opts))
+    .filter(Boolean);
+  const WAVE_LAW_RECIPES = {
+    // amplitudeOnly: "the control experiment for the whole wave family" — the
+    // plain sinusoid, unmodified.
+    amplitudeOnly: (rings, angleDeg, spacing) => waveBase(rings, angleDeg, spacing, {}),
+    ampSpacing: (rings, angleDeg, spacing) => waveBase(rings, angleDeg, spacing, { ampMult: 0.85, wavelenMult: 1.25 }),
+    // weaveDepth: a nested (anti-phase) pair of waves — two calls appended
+    // rather than one.
+    weaveDepth: (rings, angleDeg, spacing) => hatchRingsEvenOdd(rings, angleDeg, spacing)
+      .flatMap(([a, b]) => [waveSegment(a, b, spacing, { ampMult: 0.6, phase: 0 }), waveSegment(a, b, spacing, { ampMult: 0.6, phase: Math.PI })])
+      .filter(Boolean),
+    // interlockWeave: neighbouring rulings alternate phase (even/odd index)
+    // instead of overlaying two families on the same ruling.
+    interlockWeave: (rings, angleDeg, spacing) => hatchRingsEvenOdd(rings, angleDeg, spacing)
+      .map(([a, b], i) => waveSegment(a, b, spacing, { ampMult: 0.75, wavelenMult: 0.9, phase: (i % 2) ? Math.PI : 0 }))
+      .filter(Boolean),
+    trochoidLoop: (rings, angleDeg, spacing) => waveBase(rings, angleDeg, spacing, { ampMult: 1.1, wavelenMult: 0.55, secondHarmonic: true }),
+    mkScribble: (rings, angleDeg, spacing) => waveBase(rings, angleDeg, spacing, { ampMult: 1.2, wavelenMult: 0.7, triangle: true }),
+  };
+
+  // dash-class recipes.
+  const DASH_LAW_RECIPES = {
+    // dutyConst: "the period is fixed... duty runs" — the original constant-
+    // duty dash, unmodified.
+    dutyConst: (rings, angleDeg, spacing) => {
+      const period = Math.max(spacing * DASH_PERIOD_MULT, 2 * MIN_RUN_MM);
+      const out = [];
+      hatchRingsEvenOdd(rings, angleDeg, spacing).forEach(([a, b]) => {
+        dashSegment(a, b, period, DASH_DUTY).forEach((seg) => out.push(seg));
+      });
+      return out;
+    },
+    // mkTick: "short dashes drawn PERPENDICULAR to the ruling" — a comb of
+    // cross-ticks along each ruling, not a broken ruling.
+    mkTick: (rings, angleDeg, spacing) => {
+      const period = Math.max(spacing * 3, 2 * MIN_RUN_MM);
+      const tickLen = Math.max(spacing * 0.8, MIN_RUN_MM * 1.5);
+      const out = [];
+      hatchRingsEvenOdd(rings, angleDeg, spacing).forEach(([a, b]) => {
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        if (!(len > MIN_RUN_MM)) return;
+        const ux = (b.x - a.x) / len; const uy = (b.y - a.y) / len;
+        const px = -uy; const py = ux;
+        for (let s = 0; s < len; s += period) {
+          const cx = a.x + ux * s; const cy = a.y + uy * s;
+          out.push([
+            { x: cx - px * tickLen / 2, y: cy - py * tickLen / 2 },
+            { x: cx + px * tickLen / 2, y: cy + py * tickLen / 2 },
+          ]);
+        }
+      });
+      return out;
+    },
+    // mkDashRamp: "only the mark's own extent changes" as tone ramps — duty
+    // ramps continuously along each ruling instead of holding constant.
+    mkDashRamp: (rings, angleDeg, spacing) => {
+      const period = Math.max(spacing * DASH_PERIOD_MULT, 2 * MIN_RUN_MM);
+      const out = [];
+      hatchRingsEvenOdd(rings, angleDeg, spacing).forEach(([a, b]) => {
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        if (!(len > MIN_RUN_MM)) return;
+        const ux = (b.x - a.x) / len; const uy = (b.y - a.y) / len;
+        for (let s = 0; s < len; s += period) {
+          const duty = 0.2 + 0.7 * (s / len);
+          const e = Math.min(len, s + period * duty);
+          if (e - s > MIN_RUN_MM) out.push([{ x: a.x + ux * s, y: a.y + uy * s }, { x: a.x + ux * e, y: a.y + uy * e }]);
+        }
+      });
+      return out;
+    },
+  };
+
+  // dot-class recipes, via the parametrized `dotMarks` above.
+  const DOT_LAW_RECIPES = {
+    // mkDotScreen: the original dot lattice, unmodified.
+    mkDotScreen: (rings, angleDeg, spacing) => dotMarks(rings, spacing),
+    // lozengeStipple: "thickening toward the shadow" — a denser lattice of
+    // longer flicks.
+    lozengeStipple: (rings, angleDeg, spacing) => dotMarks(rings, spacing, { pitchMult: 0.75, flickLenMult: 1.6, jitterMult: 0.5 }),
+    // penStipple: "the fine nib stippling... by shortening its marks" — a
+    // sparser lattice of short, more jittered flicks.
+    penStipple: (rings, angleDeg, spacing) => dotMarks(rings, spacing, { pitchMult: 1.3, flickLenMult: 0.5, jitterMult: 1.4 }),
+  };
+
   // The chokepoint: rings + the shadow's own hatch angle/spacing (exactly what
-  // the flat hatch already computes) → an array of polylines in the SAME shape
-  // `hatchRingsEvenOdd` returns ([[a,b], …] or, for 'wave', longer polylines),
-  // ready for the unchanged `emitHatchLines`.
-  const shadowMarkLines = (rings, angleDeg, spacing, markClass) => {
+  // the flat hatch already computes) + the resolved mark class + the raw law
+  // id → an array of polylines in the SAME shape `hatchRingsEvenOdd` returns
+  // ([[a,b], …] or, for 'wave'/'dot', longer/short polylines), ready for the
+  // unchanged `emitHatchLines`. `lawId` selects a per-id recipe within the
+  // class (see the *_LAW_RECIPES tables above); an id with no recipe —
+  // including `'ladder'`, which must never get one — falls back to the plain
+  // per-class base, exactly as before this batch.
+  const shadowMarkLines = (rings, angleDeg, spacing, markClass, lawId) => {
     switch (markClass) {
-      case 'cross': {
-        const spCross = spacing * CROSS_MARK_SPACING_MULT;
-        return hatchRingsEvenOdd(rings, angleDeg, spCross)
-          .concat(hatchRingsEvenOdd(rings, angleDeg + CROSS_MARK_DEG, spCross));
-      }
-      case 'dash': {
-        const period = Math.max(spacing * DASH_PERIOD_MULT, 2 * MIN_RUN_MM);
-        const out = [];
-        hatchRingsEvenOdd(rings, angleDeg, spacing).forEach(([a, b]) => {
-          dashSegment(a, b, period, DASH_DUTY).forEach((seg) => out.push(seg));
-        });
-        return out;
-      }
+      case 'cross':
+        return (CROSS_LAW_RECIPES[lawId] || crossBase)(rings, angleDeg, spacing);
+      case 'dash':
+        return (DASH_LAW_RECIPES[lawId] || DASH_LAW_RECIPES.dutyConst)(rings, angleDeg, spacing);
       case 'dot':
-        return dotMarks(rings, spacing);
+        return (DOT_LAW_RECIPES[lawId] || DOT_LAW_RECIPES.mkDotScreen)(rings, angleDeg, spacing);
       case 'wave':
-        return hatchRingsEvenOdd(rings, angleDeg, spacing)
-          .map(([a, b]) => waveSegment(a, b, spacing))
-          .filter(Boolean);
+        return (WAVE_LAW_RECIPES[lawId] || WAVE_LAW_RECIPES.amplitudeOnly)(rings, angleDeg, spacing);
       case 'ref':
       case 'hatch':
       default:
-        return hatchRingsEvenOdd(rings, angleDeg, spacing);
+        return (HATCH_LAW_RECIPES[lawId] || hatchRingsEvenOdd)(rings, angleDeg, spacing);
     }
   };
 
@@ -1297,7 +1557,7 @@
     // Off/draft byte-identical compatibility contract intact untouched.
     const toneLawId = clampToneLawId(cfg.toneLaw);
     const markClass = toneLawApplies(toneLawId) ? toneLawMarkClass(toneLawId) : 'hatch';
-    const flat = () => emitHatchLines(shadowMarkLines(rings, angle, sBase, markClass), groundPlane, clipper, out, meta, treat, draft);
+    const flat = () => emitHatchLines(shadowMarkLines(rings, angle, sBase, markClass, toneLawId), groundPlane, clipper, out, meta, treat, draft);
     if (!layers || draft) { flat(); return; }
 
     // Edge field excludes the rim that hugs the caster's body: the base of a
