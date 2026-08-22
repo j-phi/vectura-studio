@@ -2,12 +2,12 @@
 /**
  * Regenerates src/config/scene3d-tone-laws.js — the SINGLE source of truth
  * for the Scene 3D tone-law catalog consumed by (future) UI surfaces that
- * let a user pick among the 47 measured tone laws.
+ * let a user pick among the 48 measured tone laws.
  *
  * Usage: node scripts/build-tone-laws.js
  *
- * Source of truth for the DATA: docs/tone-laws/laws.json (47 entries under
- * `.laws`, keyed 0-46; `.families` gives {label, idea} for the 9 family ids).
+ * Source of truth for the DATA: docs/tone-laws/laws.json (48 entries under
+ * `.laws`, keyed 0-47; `.families` gives {label, idea} for the 9 family ids).
  * That directory is tracked in git but is not served by index.html, and is
  * NOT read at runtime — this script snapshots it into a committed .js file so
  * the app never depends on docs/ existing. VERSION below records the git blob
@@ -103,6 +103,7 @@ const LABELS = {
   interlockWeave: 'Interlock Weave',
   trochoidLoop: 'Trochoid Loop',
   amplitudeOnly: 'Amplitude Only',
+  onePenDown: 'One Pen Down',
 
   // mono
   etfKang: 'ETF Direction Field (Kang)',
@@ -116,8 +117,8 @@ const LABELS = {
   mazeFill: 'Maze Fill',
 };
 
-// ── 3. Tier split — §2.1 of the tone-integration plan: 36 production, 11 library.
-// Demotion is LABELLING, not removal: all 47 stay selectable and keep their
+// ── 3. Tier split — §2.1 of the tone-integration plan: 37 production, 11 library.
+// Demotion is LABELLING, not removal: all 48 stay selectable and keep their
 // full measured description; the 11 below just render behind a disclosure
 // with their `caveat` shown inline. Reasons (see plan §2.1 for the source
 // measurements):
@@ -190,11 +191,11 @@ const IDS = FAMILIES.reduce((acc, fam) => acc.concat(fam.laws), []);
 const PRODUCTION = IDS.filter((id) => BY_ID[id].tier === 'production');
 const LIBRARY = IDS.filter((id) => BY_ID[id].tier === 'library');
 
-if (IDS.length !== 47) {
-  throw new Error(`[build-tone-laws] Expected 47 law ids, got ${IDS.length}.`);
+if (IDS.length !== 48) {
+  throw new Error(`[build-tone-laws] Expected 48 law ids, got ${IDS.length}.`);
 }
-if (PRODUCTION.length !== 36 || LIBRARY.length !== 11) {
-  throw new Error(`[build-tone-laws] Expected 36 production / 11 library, got ${PRODUCTION.length}/${LIBRARY.length}.`);
+if (PRODUCTION.length !== 37 || LIBRARY.length !== 11) {
+  throw new Error(`[build-tone-laws] Expected 37 production / 11 library, got ${PRODUCTION.length}/${LIBRARY.length}.`);
 }
 
 // ── 6. VERSION — the git blob sha of laws.json at generation time, so a

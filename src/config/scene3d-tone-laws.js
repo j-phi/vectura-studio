@@ -105,7 +105,8 @@
       "weaveDepth",
       "interlockWeave",
       "trochoidLoop",
-      "amplitudeOnly"
+      "amplitudeOnly",
+      "onePenDown"
     ]
   },
   {
@@ -621,6 +622,19 @@
     "simulated": false,
     "tier": "library"
   },
+  "onePenDown": {
+    "id": "onePenDown",
+    "label": "One Pen Down",
+    "family": "wave",
+    "singleWeight": false,
+    "mechanism": "The same chart-space lateral-wave chassis as the rest of the wave family, but the rulings are never emitted as separate strokes: they are traversed boustrophedon (every other ruling reversed) and bridged, IN CHART SPACE, across the gap to the next ruling, so the whole lit region comes out as ONE continuous path. Because a bridge is built in the same undisplaced-chart space as the ruling itself, it can never chord across a limb or land outside the silhouette. The path never splits along its length (splitsAlongLine() names it as the one wave-family exception), so weight is set once per continuous stroke from that stroke's own mean sampled weight, the same reasoning weightModulated uses for its per-run weight.",
+    "strengths": "Its whole claim is pen-lift economy, and it holds it under independent re-measurement: on a hatch-filled default-camera sphere (fillDensity 60) it produced 9 continuous paths against 36 for the ladder default and 263 for whiteBand in the identical fixture — 4x and 29x fewer pen-downs respectively — while still emitting finite, non-empty geometry that is visibly distinct from ladder's ruling pattern. A prior measurement on a different (higher-resolution) sphere cell recorded 19 pen-downs against whiteBand's 450, the same direction at a larger scale. Every pen-down removed is a lift-and-drop the plotter does not spend time on and a registration error it cannot introduce.",
+    "weaknesses": "The saving is bought in ink, not free: the same re-measurement fixture spent 3316.5 mm against ladder's 2117.4 mm (+56.6%) and whiteBand's 1690.2 mm (+96.2%), because a chart-space bridge is still arc length the pen has to travel. It also inherits the wave family's historical Round 5 softness on tone fit (R2 0.249, off-line 16.5%, clearance 1.17 mm) — it is not a contender for the deepest or most linear dark, only for the fewest lifts.",
+    "chooseWhen": "Choose it when plot time and registration drift from repeated pen-lifts matter more than raw ink economy or tone linearity — a large, mostly-lit curved form (a sphere, a dome) on a machine where every pen-down carries real overhead.",
+    "caveat": "Like the rest of the wave family it is not single-weight — it varies weight stroke to stroke — but unlike every other member it deliberately does NOT split along the line: splitsAlongLine() excludes it by name, because a chain of abutting sub-paths would be the exact opposite of its one-continuous-stroke premise.",
+    "simulated": false,
+    "tier": "production"
+  },
   "etfKang": {
     "id": "etfKang",
     "label": "ETF Direction Field (Kang)",
@@ -779,6 +793,7 @@
   "interlockWeave",
   "trochoidLoop",
   "amplitudeOnly",
+  "onePenDown",
   "etfKang",
   "defectSplit",
   "mezzoRegion",
@@ -817,6 +832,7 @@
   "weaveDepth",
   "interlockWeave",
   "trochoidLoop",
+  "onePenDown",
   "etfKang",
   "defectSplit",
   "mezzoRegion",
@@ -854,7 +870,7 @@
   }
 
   Vectura.SCENE3D_TONE_LAWS = {
-    VERSION: "d7654698959686072c12c3f21be1506aacc8c43c",
+    VERSION: "54df77a4d2b1f40c7d4f3f0e86210461fcde3856",
     DEFAULT: 'ladder',
     IDS,
     PRODUCTION,

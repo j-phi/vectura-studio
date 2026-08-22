@@ -5,11 +5,15 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
 /*
  * Unit 1 of the tone-integration plan: `src/config/scene3d-tone-laws.js` is
- * the generated, committed catalog of all 47 measured Scene 3D tone laws.
+ * the generated, committed catalog of all 48 measured Scene 3D tone laws.
  * Nothing consumes it yet (Wave 1 is foundations-only, no user-visible
  * change) — this file guards the CONTRACT the later waves are written
  * against: `window.Vectura.SCENE3D_TONE_LAWS` with IDS/PRODUCTION/LIBRARY/
  * FAMILIES/BY_ID/selectGroups() exactly as documented in the plan.
+ *
+ * `onePenDown` (fs-r1) was promoted from implemented-but-unreachable to the
+ * 48th roster entry — production tier, `wave` family — so the counts below
+ * moved 47→48 and PRODUCTION 36→37; LIBRARY (11) is untouched.
  */
 describe('Vectura.SCENE3D_TONE_LAWS — the generated tone-law config module', () => {
   let runtime;
@@ -21,15 +25,15 @@ describe('Vectura.SCENE3D_TONE_LAWS — the generated tone-law config module', (
   });
   afterAll(() => runtime.cleanup());
 
-  test('exists and has exactly 47 unique ids', () => {
+  test('exists and has exactly 48 unique ids', () => {
     expect(LAWS).toBeTruthy();
     expect(Array.isArray(LAWS.IDS)).toBe(true);
-    expect(LAWS.IDS.length).toBe(47);
-    expect(new Set(LAWS.IDS).size).toBe(47);
+    expect(LAWS.IDS.length).toBe(48);
+    expect(new Set(LAWS.IDS).size).toBe(48);
   });
 
-  test('PRODUCTION (36) and LIBRARY (11) are disjoint and union to IDS', () => {
-    expect(LAWS.PRODUCTION.length).toBe(36);
+  test('PRODUCTION (37) and LIBRARY (11) are disjoint and union to IDS', () => {
+    expect(LAWS.PRODUCTION.length).toBe(37);
     expect(LAWS.LIBRARY.length).toBe(11);
 
     const prod = new Set(LAWS.PRODUCTION);
@@ -37,7 +41,7 @@ describe('Vectura.SCENE3D_TONE_LAWS — the generated tone-law config module', (
     for (const id of prod) expect(lib.has(id)).toBe(false);
 
     const union = new Set([...LAWS.PRODUCTION, ...LAWS.LIBRARY]);
-    expect(union.size).toBe(47);
+    expect(union.size).toBe(48);
     expect([...union].sort()).toEqual([...LAWS.IDS].sort());
   });
 
@@ -81,16 +85,16 @@ describe('Vectura.SCENE3D_TONE_LAWS — the generated tone-law config module', (
     );
   });
 
-  test('selectGroups(false) yields 9 groups totalling 36 options; selectGroups(true) totals 47', () => {
+  test('selectGroups(false) yields 9 groups totalling 37 options; selectGroups(true) totals 48', () => {
     const production = LAWS.selectGroups(false);
     expect(production.length).toBe(9);
     const prodCount = production.reduce((n, g) => n + g.options.length, 0);
-    expect(prodCount).toBe(36);
+    expect(prodCount).toBe(37);
 
     const all = LAWS.selectGroups(true);
     expect(all.length).toBe(9);
     const allCount = all.reduce((n, g) => n + g.options.length, 0);
-    expect(allCount).toBe(47);
+    expect(allCount).toBe(48);
   });
 
   test('regenerating the module from docs/tone-laws/laws.json is a byte-identical no-op', () => {
