@@ -281,5 +281,64 @@ describe('scene3d object Y-rotation — drag direction contract', () => {
       expect(child.params.transform.yaw).toBeGreaterThanOrEqual(0);
       expect(child.params.transform.yaw).toBeLessThan(360);
     });
+
+    // The owner's actual complaint: the on-canvas READOUT (drag tooltip),
+    // not just the eventually-saved value, showed "Y -464°" WHILE dragging.
+    // A fix that only wraps on pointerup (the two tests above) leaves this
+    // failing, because the tooltip reads the live unwrapped accumulator.
+    test('the drag tooltip readout stays within [0, 360) at every step of a >360° sweep, while the underlying accumulator stays unwrapped and never reverses', () => {
+      const { engine, renderer, gid, child } = build();
+      const group = engine.getLayerById(gid);
+      child.params.transform.yaw = 0;
+      child.params.transform.pitch = 0;
+      child.params.transform.roll = 0;
+
+      const tooltips = [];
+      renderer.showDragTooltip = (text) => tooltips.push(text);
+      renderer.hideDragTooltip = () => {};
+
+      const giz = renderer.getSceneObjectGizmo(group);
+      const yAx = giz.axes.find((a) => a.key === 'y');
+      const N = yAx.ring.length - 1;
+      const start = yAx.ring[3];
+      const hit = renderer.hitSceneObjectGizmo(start.x, start.y, group);
+      expect(hit.axis).toBe('y');
+      expect(renderer.beginSceneObjectGizmoDrag(hit, { clientX: start.x, clientY: start.y })).toBe(true);
+
+      const steps = Math.round(N * 1.5); // one and a half revolutions
+      const accumSamples = [];
+      let sawPast360 = false;
+      for (let k = 1; k <= steps; k++) {
+        const idx = (3 + k) % N;
+        const p = yAx.ring[idx];
+        renderer._applySceneObjectGizmoDrag({ clientX: p.x, clientY: p.y });
+        if (Math.abs(child.params.transform.yaw) > 360) sawPast360 = true;
+        accumSamples.push(child.params.transform.yaw);
+      }
+      expect(sawPast360).toBe(true); // accumulator (not the readout) really did wind past a full turn
+
+      // Every mid-drag tooltip's Y reading is a normalized [0, 360) value —
+      // never the raw unwrapped accumulator (e.g. never "464" or "-464").
+      expect(tooltips.length).toBeGreaterThan(0);
+      for (const text of tooltips) {
+        const m = text.match(/\bY (-?\d+)°/);
+        expect(m).toBeTruthy();
+        const y = Number(m[1]);
+        expect(y).toBeGreaterThanOrEqual(0);
+        expect(y).toBeLessThan(360);
+      }
+
+      // Anti-fighting guarantee: the accumulator that drives the actual
+      // rotation never reverses or snaps back mid-drag — it is monotonically
+      // non-decreasing for this rightward sweep, exactly because wrapping is
+      // display-only and the stored/accumulated value stays unwrapped.
+      for (let i = 1; i < accumSamples.length; i++) {
+        expect(accumSamples[i]).toBeGreaterThanOrEqual(accumSamples[i - 1]);
+      }
+
+      renderer._endSceneObjectGizmoDrag();
+      expect(child.params.transform.yaw).toBeGreaterThanOrEqual(0);
+      expect(child.params.transform.yaw).toBeLessThan(360);
+    });
   });
 });

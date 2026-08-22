@@ -11412,7 +11412,21 @@
 
     _gizmoTooltip(type, t) {
       if (type === 'move') return `X ${Math.round(t.x)}  Y ${Math.round(t.y)}  Z ${Math.round(t.z)}`;
-      if (type === 'rotate') return `X ${Math.round(t.pitch)}°  Y ${Math.round(t.yaw)}°  Z ${Math.round(t.roll)}°`;
+      if (type === 'rotate') {
+        // The stored pitch/yaw/roll stay an UNWRAPPED running accumulator
+        // for the whole drag (see _applySceneObjectGizmoDrag) so a
+        // multi-revolution spin never fights the user by snapping back over
+        // a wrap boundary mid-gesture. But that raw number ("Y -464°") is
+        // exactly what the owner complained about seeing on-screen — so the
+        // READOUT wraps into the conventional [0, 360) range on every frame,
+        // independent of the unwrapped value actually being accumulated.
+        const wrapDisplay = (deg) => {
+          let v = Math.round(deg) % 360;
+          if (v < 0) v += 360;
+          return v;
+        };
+        return `X ${wrapDisplay(t.pitch)}°  Y ${wrapDisplay(t.yaw)}°  Z ${wrapDisplay(t.roll)}°`;
+      }
       // Scale: show one figure when uniform, per-axis figures when stretched.
       const s = Number.isFinite(t.scale) ? t.scale : 1;
       const sx = Number.isFinite(t.sx) ? t.sx : s;
