@@ -2470,7 +2470,7 @@
   }
 
   function expandLayer(layer, options = {}) {
-    const { Layer, clone } = requireDeps('expandLayer');
+    const { Layer, clone, SETTINGS } = requireDeps('expandLayer');
     if (!layer || layer.isGroup) return;
     // Local isPrimitiveShapeLayer (matches legacy IIFE-local predicate).
     const isPrimitive = (l) => {
@@ -2494,17 +2494,33 @@
     if (!Layer) return;
     const { skipHistory = false, returnChildren = false, suppressRender = false, selectChildren = true } = options;
     if (!skipHistory && this.app.pushHistory) this.app.pushHistory();
-    // Expand bakes the parent's cached `layer.paths` into standalone children.
-    // Regenerate first when the cache is empty OR came from a fastPreview/DRAFT
-    // frame (engine sets layer._pathsFromDraft): a draft renders scene3d region
-    // fills as a cheap screen-space hatch and skips shadow booleans, so freezing
-    // it would give children that diverge from the settled full-quality viewport.
-    if (!layer.paths || !layer.paths.length) {
-      this.app.engine.generate(layer.id);
-    } else if (layer._pathsFromDraft) {
-      this.app.engine.generate(layer.id, { fastPreview: false });
+
+    // A scene-tree CHILD (object3d / sceneGround3d / sceneLight3d /
+    // booleanGroup3d) owns no `.paths` of its own — its real rendered ink is a
+    // tagged slice of the owning scene group's composed `scenePaths` (see
+    // engine.getSceneChildRenderPaths). Regenerating such a child directly
+    // would hit generate()'s `Algorithms[layer.type] || Algorithms.flowfield`
+    // fallback (there is no `Algorithms.object3d`/etc.) and bake an unrelated
+    // flowfield hatch — the "expanded ground gained hatching that wasn't
+    // there, and doesn't align with the real ground" fidelity bug. Non-null
+    // here means `layer` IS such a child; use that slice (possibly empty —
+    // e.g. a light stamps no geometry) instead of `layer.paths`.
+    const sceneChildPaths = this.app.engine.getSceneChildRenderPaths?.(layer.id);
+    const isSceneChild = Array.isArray(sceneChildPaths);
+    if (!isSceneChild) {
+      // Expand bakes the parent's cached `layer.paths` into standalone children.
+      // Regenerate first when the cache is empty OR came from a fastPreview/DRAFT
+      // frame (engine sets layer._pathsFromDraft): a draft renders scene3d region
+      // fills as a cheap screen-space hatch and skips shadow booleans, so freezing
+      // it would give children that diverge from the settled full-quality viewport.
+      if (!layer.paths || !layer.paths.length) {
+        this.app.engine.generate(layer.id);
+      } else if (layer._pathsFromDraft) {
+        this.app.engine.generate(layer.id, { fastPreview: false });
+      }
     }
-    if (!layer.paths || !layer.paths.length) return;
+    const rawSourcePaths = isSceneChild ? sceneChildPaths : layer.paths;
+    if (!rawSourcePaths || !rawSourcePaths.length) return;
 
     // Local clonePath (matches legacy IIFE-local helper).
     const clonePath = (path) => {
@@ -2514,10 +2530,80 @@
       return next;
     };
 
+    // A plotter pen has a fixed physical width. A path carrying
+    // `meta.weightScale` (scene3d's per-path width channel — silhouette /
+    // crease-emphasis lines rendered at `strokeWidth * weightScale`, clamped
+    // to 6x by the renderer/SVG export) must not survive expand as a single
+    // stroke that merely CLAIMS a wider width. Split it into N parallel
+    // overlapping passes instead — real strokes a pen can actually draw —
+    // and drop the attribute so nothing downstream reads it for weight.
+    // Pass spacing mirrors the established banded-fill convention elsewhere
+    // in the codebase (text.js's built-in-bold concentric fill: spacing =
+    // penWidth * (1 - inkOverlap), inkOverlap 15%) rather than an arbitrary
+    // constant, so passes overlap enough to read as one thick line.
+    const pens = Array.isArray(SETTINGS?.pens) ? SETTINGS.pens : [];
+    const INK_OVERLAP = 0.15;
+    const MAX_WEIGHT_SCALE = 6; // matches the renderer/export clamp
+    const resolvePenWidth = (path) => {
+      const pathPenId = (path && path.meta && path.meta.penId) || layer.penId;
+      const pen = pens.find((pn) => pn && pn.id === pathPenId)
+        || pens.find((pn) => pn && pn.id === layer.penId)
+        || pens[0];
+      if (pen && Number(pen.width) > 0) return Number(pen.width);
+      if (Number(layer.strokeWidth) > 0) return Number(layer.strokeWidth);
+      return 0.35;
+    };
+    const stripWeightScale = (path) => {
+      if (!path || !path.meta || !('weightScale' in path.meta)) return path;
+      const next = Array.isArray(path) ? path.map((pt) => ({ ...pt })) : path;
+      next.meta = { ...path.meta };
+      delete next.meta.weightScale;
+      return next;
+    };
+    const offsetPathFn = G.Vectura?.OptimizationUtils?.offsetPath;
+    const expandWeightToPasses = (path) => {
+      const raw = Number(path && path.meta && path.meta.weightScale);
+      if (!Array.isArray(path) || path.length < 2 || !Number.isFinite(raw) || raw <= 1 || !offsetPathFn) {
+        return [stripWeightScale(path)];
+      }
+      const penWidth = resolvePenWidth(path);
+      const spacing = penWidth * (1 - INK_OVERLAP);
+      if (!(spacing > 0)) return [stripWeightScale(path)];
+      const desiredWidth = penWidth * Math.min(MAX_WEIGHT_SCALE, raw);
+      const passes = Math.max(1, 1 + Math.ceil((desiredWidth - penWidth) / spacing));
+      if (passes <= 1) return [stripWeightScale(path)];
+      const a = path[0];
+      let b = path[path.length - 1];
+      if (Math.abs(b.x - a.x) < 1e-6 && Math.abs(b.y - a.y) < 1e-6) {
+        const alt = path.find((pt) => Math.abs(pt.x - a.x) > 1e-6 || Math.abs(pt.y - a.y) > 1e-6);
+        if (alt) b = alt;
+      }
+      const dx0 = b.x - a.x;
+      const dy0 = b.y - a.y;
+      const runLen = Math.hypot(dx0, dy0);
+      if (!(runLen > 1e-6)) return [stripWeightScale(path)];
+      const nx = -dy0 / runLen;
+      const ny = dx0 / runLen;
+      const out = [];
+      for (let i = 0; i < passes; i++) {
+        const t = i - (passes - 1) / 2;
+        const dx = nx * spacing * t;
+        const dy = ny * spacing * t;
+        const pass = (dx === 0 && dy === 0) ? path : offsetPathFn(path, dx, dy);
+        out.push(stripWeightScale(pass));
+      }
+      return out;
+    };
+    const sourcePaths = [];
+    rawSourcePaths.forEach((path) => {
+      expandWeightToPasses(path).forEach((p) => sourcePaths.push(p));
+    });
+    if (!sourcePaths.length) return;
+
     const groupId = layer.id;
     const baseName = layer.name;
-    const pad = String(layer.paths.length).length;
-    const pathMeta = layer.paths.map((path, index) => {
+    const pad = String(sourcePaths.length).length;
+    const pathMeta = sourcePaths.map((path, index) => {
       let minX = Infinity;
       let minY = Infinity;
       const metaGroup = path?.meta?.group;
