@@ -211,6 +211,194 @@ describe('Scene3D.Shadows — shadowToneDepth on a real scene (byte-identity + d
     const b = buildShadows({ shadowToneDepth: 0.75 });
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
+
+  // fs-z2 Defect 1 fix, observed end-to-end: the chunk-and-thin gradient
+  // (fs-w1-shadowtone) chopped every ruling into ~6mm pieces to show a
+  // near/far falloff, which on a real scene ~4x'd the path count for LESS
+  // ink (16109.77mm/535 -> 11583.00mm/2174 in the protected shadow-anatomy
+  // fixture — tests/unit/scene3d-cast-shadow-zones.test.js C12). The RGR
+  // proof for THAT regression: before this fix, the default's path count on
+  // this scene explodes well past the depth-0 baseline; after it (spacing
+  // re-expression), it stays close.
+  test('DEFECT 1 — the default (0.75) does not explode path count the way the retired chunker did', () => {
+    const withDefault = summarize(buildShadows({}));
+    const explicitZero = summarize(buildShadows({ shadowToneDepth: 0 }));
+    // The chunker's signature failure was ~4x the depth-0 path count for less
+    // ink. The spacing re-expression only ever WIDENS gaps (never adds a
+    // line), so path count at depth 0.75 must stay at or below the depth-0
+    // baseline — never balloon past it.
+    expect(withDefault.n).toBeLessThanOrEqual(explicitZero.n);
+  });
+});
+
+// fs-z2 (Stage 1.1) — the SPACING re-expression mechanism itself, isolated
+// against the same synthetic, unconfounded rectangle fixture the retired
+// chunker's own tests use above (contact edge at x=0, throw axis along x,
+// 0..100). `__gradedHatchForTest` drives the real `hatchRingsEvenOdd` marching
+// scan (shadows.js) at a chosen ruling ANGLE, so both orientations that
+// matter are directly testable:
+//   angle=90  — rulings run crosswise to the throw (perpendicular to it), so
+//               sweeping the perpendicular axis (parallel to the throw here)
+//               IS sweeping through t. This is the case a spacing gradient
+//               can actually express, and it must show up as WIDENING gaps
+//               with fully continuous rulings (no chopping).
+//   angle=0   — rulings run PARALLEL to the throw (the retired chunker's own
+//               "worst case" fixture, reused verbatim here). Sweeping the
+//               perpendicular axis in this orientation sweeps ACROSS the
+//               throw, not along it — every scanline crosses the whole
+//               footprint, so there is no scan-axis position whose average
+//               distance-to-contact differs from any other. A spacing
+//               gradient is mathematically incapable of expressing a
+//               near/far falloff here (this is the "genuinely impractical"
+//               case named in the task, evidenced by this very test): the
+//               honest degrade is near-uniform spacing, not fabricating a
+//               gradient and not falling back to fragmentation.
+describe('Scene3D.Shadows — applyShadowToneGradient spacing re-expression (fs-z2 Stage 1.1)', () => {
+  let runtime;
+  let V;
+  let Shadows;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    Shadows = V.Scene3D.Shadows;
+  });
+
+  afterAll(() => runtime.cleanup());
+
+  const rings = [[{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 20 }, { x: 0, y: 20 }]];
+  const contactSegs = [[{ x: 0, y: 0 }, { x: 0, y: 20 }]];
+  const tone = { enabled: true, bands: 3, thresholds: [0.33, 0.66], ladder: [0.2, 0.5, 0.85] };
+  const penWidth = 0.3;
+  const sBase = 2; // a plot-plausible base pitch, independent of the tone ladder's own scale
+
+  test('angle=90 (crosswise to the throw): every ruling stays a single, unbroken full-height line', () => {
+    const fields = Shadows.__shadowFieldsForTest(rings, contactSegs);
+    const marks = Shadows.__gradedHatchForTest(rings, 90, sBase, fields, tone, 1, penWidth);
+    expect(marks.length).toBeGreaterThan(5);
+    marks.forEach(([a, b]) => {
+      // The rectangle is 20mm tall; a continuous ruling crossing it end to
+      // end measures ~20mm. A fragmenting mechanism would emit many pieces
+      // well under that.
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      expect(len).toBeGreaterThan(19);
+      expect(len).toBeLessThan(20.1);
+    });
+  });
+
+  test('angle=90: ruling spacing packs tighter near contact (x=0) than toward the far tip (x=100)', () => {
+    const fields = Shadows.__shadowFieldsForTest(rings, contactSegs);
+    const marks = Shadows.__gradedHatchForTest(rings, 90, sBase, fields, tone, 1, penWidth);
+    const xs = marks.map(([a, b]) => (a.x + b.x) / 2).sort((p, q) => p - q);
+    const gaps = [];
+    for (let i = 1; i < xs.length; i++) gaps.push(xs[i] - xs[i - 1]);
+    const thirdLen = Math.floor(gaps.length / 3) || 1;
+    const nearGaps = gaps.slice(0, thirdLen);
+    const farGaps = gaps.slice(-thirdLen);
+    const avg = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
+    const nearAvg = avg(nearGaps);
+    const farAvg = avg(farGaps);
+    expect(farAvg).toBeGreaterThan(nearAvg * 1.5);
+  });
+
+  test('depth 0 collapses angle=90 back to plain uniform spacing (the byte-identity escape hatch, expressed as spacing)', () => {
+    const fields = Shadows.__shadowFieldsForTest(rings, contactSegs);
+    const graded0 = Shadows.__gradedHatchForTest(rings, 90, sBase, fields, tone, 0, penWidth);
+    const xs = graded0.map(([a, b]) => (a.x + b.x) / 2).sort((p, q) => p - q);
+    const gaps = [];
+    for (let i = 1; i < xs.length; i++) gaps.push(xs[i] - xs[i - 1]);
+    const avg = gaps.reduce((s, v) => s + v, 0) / gaps.length;
+    gaps.forEach((g) => expect(Math.abs(g - avg)).toBeLessThan(0.05));
+    expect(Math.abs(avg - sBase)).toBeLessThan(0.05);
+  });
+
+  test('angle=0 (parallel to the throw, the adversarial case): spacing cannot express a gradient — degrades to near-uniform, still fully continuous (no fragmentation)', () => {
+    const fields = Shadows.__shadowFieldsForTest(rings, contactSegs);
+    const marks = Shadows.__gradedHatchForTest(rings, 0, sBase, fields, tone, 1, penWidth);
+    // Still continuous — every ruling spans the full 100mm throw, never chopped.
+    marks.forEach(([a, b]) => {
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      expect(len).toBeGreaterThan(99);
+    });
+    // But honestly uniform: consecutive rulings (stacked along y here) sit at
+    // a near-constant pitch, because a scanline's own representative point
+    // does not systematically drift toward or away from contact as the scan
+    // advances in this orientation. This is the "genuinely impractical" case
+    // acknowledged rather than papered over with fragmentation.
+    const ys = marks.map(([a, b]) => (a.y + b.y) / 2).sort((p, q) => p - q);
+    const gaps = [];
+    for (let i = 1; i < ys.length; i++) gaps.push(ys[i] - ys[i - 1]);
+    const avg = gaps.reduce((s, v) => s + v, 0) / gaps.length;
+    const maxDelta = Math.max(...gaps.map((g) => Math.abs(g - avg)));
+    expect(maxDelta).toBeLessThan(avg * 0.5);
+  });
+});
+
+// fs-z2 Defect 2 — "No Tone" (shadowToneLaw: 'none') must force the gradient
+// off, mirroring the object-side Stage-0 sentinel (surface-fill.js:
+// `askedLaw === 'none'` -> masterGrid/dither both off). Before this fix,
+// shadowToneDepth was read independently of shadowToneLaw, so a shadow with
+// Fill Style "No Tone" still rendered a toned (in the old mechanism,
+// fragmenting) gradient — the owner's exact reported repro.
+describe('Scene3D.Shadows — shadowToneLaw "none" disables shadowToneDepth (fs-z2 Defect 2)', () => {
+  let V;
+  let HLR;
+  let Lighting;
+  let defaults;
+  let runtime;
+
+  const BOUNDS = { width: 320, height: 220, penWidth: 0.3 };
+  const boxObj = (id, x, y, size = 40) => ({
+    id, name: id, primitive: 'box', params: { sx: size, sy: size, sz: size },
+    transform: { x, y, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+  });
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    HLR = V.Scene3D.HLR;
+    Lighting = V.Scene3D.Lighting;
+    defaults = V.ALGO_DEFAULTS.scene3d;
+  });
+
+  afterAll(() => runtime.cleanup());
+
+  const buildShadows = (shadowBag) => {
+    const p = V.Scene3D.Params.normalizeParams({
+      ...clone(defaults),
+      objects: [boxObj('obj-1', 0, 20, 40)],
+      ground: { enabled: true },
+      lights: [{ id: 'sun', type: 'directional', castShadows: true, azimuth: 160, elevation: 45 }],
+      camera: { projection: 'orthographic', yaw: 0, pitch: 55, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 },
+      shadow: shadowBag,
+    });
+    const scene = V.Scene3D.Scene.assembleScene(p, BOUNDS);
+    const clipper = HLR.createClipper([], { bias: 0.05 });
+    const dir = Lighting.lightWorldDir(p.lights[0]);
+    return V.Scene3D.Shadows.build(scene, p, BOUNDS, clipper, dir, { shadow: p.shadow });
+  };
+
+  const sPaths = (paths) => paths.filter((pp) => pp.meta && pp.meta.sceneTarget && pp.meta.sceneTarget.regionClass === 'castShadow');
+
+  test('HEADLINE — toneLaw: "none" at the shipped default depth (0.75) is byte-identical to shadowToneDepth: 0', () => {
+    const withNoneDefault = sPaths(buildShadows({ shadowToneLaw: 'none' }));
+    const withNoneZero = sPaths(buildShadows({ shadowToneLaw: 'none', shadowToneDepth: 0 }));
+    expect(JSON.stringify(withNoneDefault)).toBe(JSON.stringify(withNoneZero));
+  });
+
+  test('toneLaw: "none" stays byte-identical across every shadowToneDepth value — depth is inert once No Tone is selected', () => {
+    const base = JSON.stringify(sPaths(buildShadows({ shadowToneLaw: 'none', shadowToneDepth: 0 })));
+    [0.25, 0.5, 0.75, 1].forEach((depth) => {
+      const withDepth = JSON.stringify(sPaths(buildShadows({ shadowToneLaw: 'none', shadowToneDepth: depth })));
+      expect(withDepth).toBe(base);
+    });
+  });
+
+  test('control — the same depth sweep DOES change output for the default toneLaw ("ladder"), proving the coupling is specific to "none"', () => {
+    const zero = JSON.stringify(sPaths(buildShadows({ shadowToneDepth: 0 })));
+    const shipped = JSON.stringify(sPaths(buildShadows({ shadowToneDepth: 0.75 })));
+    expect(shipped).not.toBe(zero);
+  });
 });
 
 /*

@@ -150,6 +150,30 @@ describe('Scene3D.Shadows — shadowToneLaw (Fill Style on shadow hatch)', () =>
       expect(Shadows.toneLawApplies('not-a-real-law-id')).toBe(true);
     });
   });
+
+  // fs-z2 Cycle 2 — Fill Style "No Tone" (roster id 'none', the Stage-0
+  // reference law) must disable the shadow tone gradient, not just pick a
+  // mark class. Before the fix, 'none' at the default shadowToneDepth (0.75)
+  // still rendered the full graded gradient — the Fill Style and the tone
+  // depth control silently contradicted each other.
+  describe('Fill Style "No Tone" gates the shadow tone gradient (fs-z2 Cycle 2)', () => {
+    const summarize = geomSignature;
+
+    test('Fill Style "No Tone" switches the shadow tone gradient OFF', () => {
+      expect(summarize(buildShadows({ shadowToneLaw: 'none' })))
+        .toBe(summarize(buildShadows({ shadowToneLaw: 'none', shadowToneDepth: 0 })));
+    });
+
+    test('...and the gate is doing real work — "No Tone" differs from the default law at the default depth', () => {
+      expect(summarize(buildShadows({ shadowToneLaw: 'none' })))
+        .not.toBe(summarize(buildShadows({ shadowToneLaw: 'ladder' })));
+    });
+
+    test('the Stage-0 id the gate names is still the roster\'s only "ref" law', () => {
+      const ref = V.SCENE3D_TONE_LAWS.FAMILIES.find((f) => f.id === 'ref');
+      expect(ref.laws).toEqual(['none']); // pins NO_TONE_LAW_ID against roster drift
+    });
+  });
 });
 
 /*

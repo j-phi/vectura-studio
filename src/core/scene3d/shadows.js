@@ -51,6 +51,10 @@
   // (a caller that skips normalizeParams still degrades to the shipped value,
   // same convention as SHADOW_COVERAGE/SHADOW_ANGLE above).
   const SHADOW_TONE_DEPTH_DEFAULT = 0.75;
+  // "No Tone" (fs-z2 Cycle 2) — the Stage-0 reference law (roster family
+  // 'ref', laws: ['none']): the tone apparatus switched OFF. src/core/
+  // scene3d/surface-fill.js's own `askedLaw === 'none'` reads the same way.
+  const NO_TONE_LAW_ID = 'none';
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
   const runLength = (pts) => {
@@ -169,6 +173,17 @@
   // Even-odd scanline hatch of a polygon-with-holes (rings = [outer, hole…],
   // each ring an array of {x,y}). Holes stay empty — the shadow of a ring-shaped
   // region, or a footprint carved by caster-bound subtraction, reads correctly.
+  //
+  // `spacing` is either the legacy NUMBER (uniform pitch, byte-identical to the
+  // pre-gradient code below) or a FUNCTION `(x, y) => spacingMm` (fs-z2,
+  // shadowToneDepth Stage 1.1 re-expression): the scan then marches the
+  // perpendicular offset by a locally-varying step instead of a fixed one, so
+  // tone becomes RULING SPACING — fewer, full-length lines near the far tip —
+  // rather than chopping each ruling into keep/drop chunks (the fragmenting
+  // defect this replaces). Every emitted line is still one unbroken hit-pair;
+  // only the GAP between rulings changes. A function spacing may carry a
+  // `.baseHint` (a representative numeric pitch) used only as a last-resort
+  // fallback when a scanline misses the polygon entirely (nothing to sample).
   const hatchRingsEvenOdd = (rings, angleDeg, spacing) => {
     const segs = [];
     rings.forEach((ring) => {
@@ -181,19 +196,19 @@
     const dirX = Math.cos(ang); const dirY = Math.sin(ang);
     const perpX = -dirY; const perpY = dirX;
     let pMin = Infinity; let pMax = -Infinity;
+    let dMin = Infinity; let dMax = -Infinity;
     segs.forEach(([a, b]) => {
       [a, b].forEach((pt) => {
         const pr = pt.x * perpX + pt.y * perpY;
         if (pr < pMin) pMin = pr;
         if (pr > pMax) pMax = pr;
+        const dr = pt.x * dirX + pt.y * dirY;
+        if (dr < dMin) dMin = dr;
+        if (dr > dMax) dMax = dr;
       });
     });
     if (!Number.isFinite(pMin)) return [];
-    const sp = Math.max(0.05, spacing);
-    const count = Math.min(4000, Math.floor((pMax - pMin) / sp));
-    const out = [];
-    for (let i = 1; i <= count; i++) {
-      const offset = pMin + i * sp;
+    const scanAt = (offset) => {
       const hits = [];
       segs.forEach(([a, b]) => {
         const pa = a.x * perpX + a.y * perpY;
@@ -205,6 +220,47 @@
         hits.push({ s: x * dirX + y * dirY, x, y });
       });
       hits.sort((p, q) => p.s - q.s);
+      return hits;
+    };
+    const out = [];
+    if (typeof spacing === 'function') {
+      const dMid = (Number.isFinite(dMin) && Number.isFinite(dMax)) ? (dMin + dMax) / 2 : 0;
+      const MAX_ITERS = 4000;
+      const stepAt = (offset, hits) => {
+        let step = null;
+        for (let k = 0; k + 1 < hits.length; k += 2) {
+          const mx = (hits[k].x + hits[k + 1].x) / 2; const my = (hits[k].y + hits[k + 1].y) / 2;
+          const sp = spacing(mx, my);
+          if (Number.isFinite(sp) && (step == null || sp < step)) step = sp;
+        }
+        if (step == null) {
+          // No hit at this offset (outside the footprint, or a hole) — sample
+          // a reference point along the ruling direction so the march still
+          // advances at a plausible pitch instead of stalling or guessing 0.
+          const refX = perpX * offset + dirX * dMid;
+          const refY = perpY * offset + dirY * dMid;
+          const sp = spacing(refX, refY);
+          step = Number.isFinite(sp) ? sp : (spacing.baseHint || 1);
+        }
+        return Math.max(0.05, step);
+      };
+      let offset = pMin + stepAt(pMin, scanAt(pMin));
+      let iters = 0;
+      while (offset <= pMax && iters < MAX_ITERS) {
+        iters++;
+        const hits = scanAt(offset);
+        for (let k = 0; k + 1 < hits.length; k += 2) {
+          out.push([{ x: hits[k].x, y: hits[k].y }, { x: hits[k + 1].x, y: hits[k + 1].y }]);
+        }
+        offset += stepAt(offset, hits);
+      }
+      return out;
+    }
+    const sp = Math.max(0.05, spacing);
+    const count = Math.min(4000, Math.floor((pMax - pMin) / sp));
+    for (let i = 1; i <= count; i++) {
+      const offset = pMin + i * sp;
+      const hits = scanAt(offset);
       for (let k = 0; k + 1 < hits.length; k += 2) {
         out.push([{ x: hits[k].x, y: hits[k].y }, { x: hits[k + 1].x, y: hits[k + 1].y }]);
       }
@@ -483,7 +539,15 @@
   // fallback is a documented, deliberate degrade, not the bug this batch fixes
   // (which was toneLaw being accepted and having NO effect on ANY shadow, ever).
   const clampToneLawId = (value) => {
-    const R = (Vectura.SCENE3D_TONE_LAWS && Vectura.SCENE3D_TONE_LAWS.IDS) || null;
+    const roster = Vectura.SCENE3D_TONE_LAWS || null;
+    const R = (roster && roster.IDS) || null;
+    // Same reasoning as params.js clampStyleParam('toneLaw') (fs-z2 Cycle 0):
+    // the shipped default is deliberately NOT in the roster's IDS (context-
+    // bar.js:162-164), so it must be accepted explicitly before the IDS
+    // membership test — otherwise this is correct today only by coincidence
+    // of its own fallback value being the same string.
+    const DEF = (roster && roster.DEFAULT) || 'ladder';
+    if (typeof value === 'string' && value === DEF) return DEF;
     return (typeof value === 'string' && (!R || R.indexOf(value) !== -1)) ? value : 'ladder';
   };
   // markClass lookup is owned by src/config/context-bar.js (Vectura.SCENE_
@@ -705,11 +769,26 @@
   // contract (`emitShadowRegion`'s comment, and the REGRESSION test in
   // `tests/unit/scene3d-shadow-tone-law.test.js`) is untouched.
 
+  // `spacing` may now be the legacy number or a graded (x,y)=>mm function (see
+  // hatchRingsEvenOdd). These two helpers let every recipe below keep doing
+  // plain arithmetic on it either way, so the fs-z2 spacing-gradient reaches
+  // every hatch/cross recipe for free instead of just the unwrapped default.
+  const scaleSpacing = (spacing, mult) => {
+    const m = mult || 1;
+    if (typeof spacing !== 'function') return spacing * m;
+    const fn = (x, y) => spacing(x, y) * m;
+    fn.baseHint = (spacing.baseHint != null ? spacing.baseHint : 1) * m;
+    return fn;
+  };
+  const numericHint = (spacing) => (typeof spacing === 'function'
+    ? (spacing.baseHint != null ? spacing.baseHint : 1)
+    : spacing);
+
   // hatch family: an angle nudge + a spacing multiplier. Cheap, but each
   // combination below is chosen so no two ids land on the same (angle, mult)
   // pair, and none lands on (0, 1) — the untouched 'ladder' baseline.
   const hatchOffset = (rings, angleDeg, spacing, angleNudgeDeg, spacingMult) =>
-    hatchRingsEvenOdd(rings, angleDeg + (angleNudgeDeg || 0), spacing * (spacingMult || 1));
+    hatchRingsEvenOdd(rings, angleDeg + (angleNudgeDeg || 0), scaleSpacing(spacing, spacingMult));
 
   // "bundle"/"three-pen" families: N adjacent passes of the same ruling,
   // offset a fraction of a pitch apart — apparent weight from PHYSICAL
@@ -725,7 +804,7 @@
     const out = [];
     for (let k = 0; k < passes; k++) {
       const jitter = o.jitterMm ? (hash01(k, 29) - 0.5) * o.jitterMm : 0;
-      const off = (k - (passes - 1) / 2) * spacing * passSpacingMult + jitter;
+      const off = (k - (passes - 1) / 2) * numericHint(spacing) * passSpacingMult + jitter;
       base.forEach(([a, b]) => out.push([
         { x: a.x + perpX * off, y: a.y + perpY * off },
         { x: b.x + perpX * off, y: b.y + perpY * off },
@@ -792,7 +871,7 @@
     bundleCount: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 3, passSpacingMult: 0.3 }),
     bundleSubNib: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 4, passSpacingMult: 0.2 }),
     bundleEased: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 3, passSpacingMult: 0.22 }),
-    bundleDither: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 3, passSpacingMult: 0.3, jitterMm: spacing * 0.15 }),
+    bundleDither: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 3, passSpacingMult: 0.3, jitterMm: numericHint(spacing) * 0.15 }),
     bundleLozenge: (rings, angleDeg, spacing) => hatchEndTrim(hatchDoublePass(rings, angleDeg, spacing, { passes: 3, passSpacingMult: 0.3 }), 0.08),
     bundleHandoff: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 2, passSpacingMult: 0.3, angleNudgeDeg: 0.8 }),
     // continuous-spacing-field family — the field is one constant on a flat
@@ -1666,6 +1745,52 @@
     return out;
   };
 
+  // ── Stage 1.1 (fs-z2) — spacing gradient, replacing the chunker above for
+  // continuous-ruling mark classes ────────────────────────────────────────────
+  // The chunker's fragmentation cost was measured directly (path 535 -> 2174,
+  // ink 16110mm -> 11583mm on a real scene at the default): each ruling was
+  // being cut into ~6mm pieces and thinned piece-by-piece, so tone read as
+  // scattered stubs, not a graceful falloff. Tone in a hatch belongs in the
+  // GAP between rulings, not inside them, so this builds a spacing FUNCTION
+  // (x, y) => mm for `hatchRingsEvenOdd`'s marching scan (above) instead of a
+  // per-chunk survival probability — every emitted line stays one unbroken
+  // hit-pair; only the pitch between lines changes.
+  //
+  // Reuses `coverageToSpacing` (the same primitive the uniform baseline
+  // already calls, one scope up) at both ends of the ratio so the "no
+  // flooding" contract carries over exactly: duty = sMin/sTarget is 1.0 at
+  // t=0 (the ladder's own densest rung, by construction) and falls toward
+  // minCov/maxCov at the far tip, then blends 0..depth exactly like the
+  // retired per-chunk `duty = cov(t)/maxCov` did — same shape, applied to a
+  // continuous pitch instead of a discrete keep/drop.
+  const buildGradedSpacing = (sBase, fields, tone, depth, penWidth) => {
+    if (!fields || !(fields.L > 1e-6) || !(depth > 0) || !tone || tone.enabled === false) return null;
+    const maxCov = ladderCoverageAt(1, tone);
+    if (maxCov == null || !(maxCov > 0)) return null;
+    const sMin = coverageToSpacing(maxCov, penWidth);
+    const L = fields.L;
+    const spacingAt = (x, y) => {
+      const t = clamp(fields.distContact(x, y) / L, 0, 1);
+      const cov = ladderCoverageAt(1 - t, tone);
+      const sTarget = coverageToSpacing(cov == null ? maxCov : cov, penWidth);
+      const duty = clamp(sMin / sTarget, 0.02, 1);
+      const keepProb = clamp(1 - depth * (1 - duty), 0.02, 1);
+      return sBase / keepProb;
+    };
+    spacingAt.baseHint = sBase;
+    return spacingAt;
+  };
+
+  // Mark classes whose marks are a family of continuous parallel rulings built
+  // purely from `hatchRingsEvenOdd` (see shadowMarkLines/HATCH_LAW_RECIPES) —
+  // for these, tone is expressed as ruling spacing (buildGradedSpacing, above).
+  // 'dash'/'dot' marks are already discontinuous BY DESIGN (a dash is short
+  // segments, a dot is discrete flicks), and 'cross'/'wave' still use the
+  // retired per-chunk gradient below — narrowing the fix to what the reported
+  // regression and its default Fill Style ('ladder', 'none') actually exercise
+  // rather than rewriting every mark class's geometry in one pass.
+  const GRADEABLE_MARK_CLASSES = new Set(['hatch', 'ref']);
+
   // Hatch a shadow polygon (rings = [outer, hole…]).
   //   layers off / draft / no fields → single flat hatch (the legacy path, and
   //   the Off/shadowToneDepth:0 compatibility contract — that combination must
@@ -1682,12 +1807,30 @@
     const toneLawId = clampToneLawId(cfg.toneLaw);
     const markClass = toneLawApplies(toneLawId) ? toneLawMarkClass(toneLawId) : 'hatch';
     const contactSegs = (cfg.contactSegs && cfg.contactSegs.length) ? cfg.contactSegs : [];
+    // Defect 2 (fs-z2 Cycle 2): "No Tone" (`NO_TONE_LAW_ID`) already forced
+    // `cfg.toneDepth` to 0 upstream in `build()` (tested against the RAW
+    // `shadowBag.shadowToneLaw`, never a clamped id — see that comment for
+    // why). Re-clamped here defensively, same convention every other cfg
+    // field in this function already follows.
     const toneDepth = clamp(finite(cfg.toneDepth, 0), 0, 1);
     const flat = () => {
-      const marks = shadowMarkLines(rings, angle, sBase, markClass, toneLawId);
+      const canGrade = toneDepth > 0 && contactSegs.length && GRADEABLE_MARK_CLASSES.has(markClass);
+      let flatFields = null;
+      let spacingArg = sBase;
+      if (canGrade) {
+        flatFields = buildShadowFields(rings, contactSegs, []);
+        if (flatFields) {
+          const graded = buildGradedSpacing(sBase, flatFields, cfg.tone, toneDepth, penWidth);
+          if (graded) spacingArg = graded;
+        }
+      }
+      const marks = shadowMarkLines(rings, angle, spacingArg, markClass, toneLawId);
       let graded = marks;
-      if (toneDepth > 0 && contactSegs.length) {
-        const flatFields = buildShadowFields(rings, contactSegs, []);
+      // Legacy per-chunk fallback: only for mark classes NOT covered by the
+      // spacing re-expression above (cross/wave — dash/dot don't reach here,
+      // see TONE_MARK_APPLICABLE/toneLawApplies).
+      if (toneDepth > 0 && contactSegs.length && typeof spacingArg !== 'function') {
+        if (!flatFields) flatFields = buildShadowFields(rings, contactSegs, []);
         if (flatFields) graded = applyShadowToneGradient(marks, flatFields, cfg.tone, toneDepth);
       }
       emitHatchLines(graded, groundPlane, clipper, out, meta, treat, draft);
@@ -2080,7 +2223,11 @@
     // caller that skips normalizeParams still degrades safely; toneLaw follows
     // the same convention.
     const toneLaw = clampToneLawId(shadowBag.shadowToneLaw);
-    const toneDepth = clamp(finite(shadowBag.shadowToneDepth, SHADOW_TONE_DEPTH_DEFAULT), 0, 1);
+    // "No Tone" is the Stage-0 reference: the tone apparatus OFF. Tested on the RAW
+    // bag value, never on a clamped id — a clamp can only launder an unknown id INTO
+    // something, never out of 'none'. Same test surface-fill.js:1379 uses.
+    const noTone = shadowBag.shadowToneLaw === NO_TONE_LAW_ID;
+    const toneDepth = noTone ? 0 : clamp(finite(shadowBag.shadowToneDepth, SHADOW_TONE_DEPTH_DEFAULT), 0, 1);
     const cfg = {
       angle: hatchAngle, coverage, penWidth, layers: shadowLayers, layerCount, falloff, Mappers, toneLaw,
       toneDepth, tone: params && params.tone,
@@ -2451,6 +2598,18 @@
   const __shadowFieldsForTest = (rings, contactSegs) => buildShadowFields(rings, contactSegs || [], []);
   const __toneGradientForTest = (lines, fields, tone, depth) => applyShadowToneGradient(lines, fields, tone, depth);
   const __ladderCoverageForTest = (I, tone) => ladderCoverageAt(I, tone);
+  // Test seam #4 (fs-z2, shadowToneDepth Stage 1.1). Exercises the SPACING
+  // re-expression directly against the same synthetic-rectangle fixture #3
+  // uses, at a chosen ruling angle — so a test can drive both the "good"
+  // orientation (rulings crosswise to the throw, where spacing modulation
+  // maps cleanly onto the near/far gradient) and the adversarial one (rulings
+  // parallel to the throw, where no scan-axis spacing can express a gradient
+  // at all — see the mechanism comment above `buildGradedSpacing`) without
+  // going through a full scene build.
+  const __gradedHatchForTest = (rings, angleDeg, sBase, fields, tone, depth, penWidth) => {
+    const spacing = buildGradedSpacing(sBase, fields, tone, depth, penWidth) || sBase;
+    return hatchRingsEvenOdd(rings, angleDeg, spacing);
+  };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, {
     Shadows: {
@@ -2470,13 +2629,14 @@
       __shadowFieldsForTest,
       __toneGradientForTest,
       __ladderCoverageForTest,
+      __gradedHatchForTest,
     },
   });
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
       build, toneLawApplies, toneLawMarkClass, shadowFillStyleApplies, __ladderForTest, __collarForTest,
-      __shadowFieldsForTest, __toneGradientForTest, __ladderCoverageForTest,
+      __shadowFieldsForTest, __toneGradientForTest, __ladderCoverageForTest, __gradedHatchForTest,
     };
   }
 })();

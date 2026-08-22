@@ -713,7 +713,19 @@
       // silent-default reasoning HIGHLIGHT_TREATMENT_ALIASES uses above, and
       // deliberately NOT a SCENE_MIGRATIONS step: no structural shape changed.
       case 'toneLaw': {
-        const R = (Vectura.SCENE3D_TONE_LAWS && Vectura.SCENE3D_TONE_LAWS.IDS) || null;
+        const roster = Vectura.SCENE3D_TONE_LAWS || null;
+        const R = (roster && roster.IDS) || null;
+        // The shipped default is deliberately NOT one of the roster's 47 ids
+        // (src/config/context-bar.js:162-164 — those are the laws the tone
+        // study measured AGAINST it), so a membership-only test against IDS
+        // fails the default on its own validity check. Accept the roster's
+        // own DEFAULT explicitly before the IDS membership test (fs-z2
+        // Cycle 0 — this used to fire a false "unknown toneLaw" warning for
+        // the shipped default on every shadow build, which also interned it
+        // into WARNED_UNKNOWN_TONE_LAWS and muted the channel for a
+        // genuinely unknown id).
+        const DEF = (roster && roster.DEFAULT) || 'ladder';
+        if (typeof value === 'string' && value === DEF) return DEF;
         if (typeof value === 'string' && (!R || R.indexOf(value) !== -1)) return value;
         // Warn only for a genuinely unrecognized id — not for the common
         // "no toneLaw set at all" case (undefined/''), which is the ordinary

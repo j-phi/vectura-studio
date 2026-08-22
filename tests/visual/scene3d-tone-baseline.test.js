@@ -317,17 +317,21 @@ const SCENARIOS = [
   // ── G. Shadow tone. 'additive' emits a cast-shadow hatch; 'inverse' (I26)
   //      THINS the ground's own fill instead of adding ink.
   //
-  // 'shadow-additive-default' MOVED in shadowToneDepth (fs-w1-shadowtone,
-  // Stage 1): 191 paths / 4248.7242 ink -> 669 paths / 3639.1337 ink. This
-  // scene builds `shadow: {}` beyond mode/pen, so it now picks up
-  // shadowToneDepth's new default (0.75, SHIPPED ON — params.js
-  // DEFAULT_SHADOW.shadowToneDepth). Total ink drops (the gradient only ever
-  // THINS marks relative to the flat baseline, never adds one — see
-  // shadows.js applyShadowToneGradient) while path count rises ~3.5x because
-  // marks are cut into ~6mm chunks so a spatially-varying keep/drop duty can
-  // be expressed at all — see tests/unit/scene3d-shadow-tone-gradient.test.js
-  // for the RGR proof, including a byte-identical pin at explicit
-  // `shadowToneDepth: 0`. Regenerated via `npm run test:update`, not by hand.
+  // 'shadow-additive-default' MOVED TWICE. First in shadowToneDepth (fs-w1-
+  // shadowtone, Stage 1): 191 paths / 4248.7242 ink -> 669 paths / 3639.1337
+  // ink (castShadow region only) — marks were cut into ~6mm chunks so a
+  // spatially-varying keep/drop duty could be expressed, which quadrupled
+  // path count on the plotted page for barely-lower ink and read as scattered
+  // stubs, a real regression the product owner reported from the running
+  // app. fs-z2 (Stage 1.1) re-expresses the SAME gradient as ruling SPACING
+  // instead of chopping (`buildGradedSpacing` in shadows.js, driven by
+  // `Regions.coverageToSpacing` — see tests/unit/scene3d-shadow-tone-
+  // gradient.test.js for the RGR proof, including the byte-identical pin at
+  // explicit `shadowToneDepth: 0`): 669 paths / 3639.1337 ink -> 162 paths /
+  // 3694.9292 ink. Path count is back down near the ORIGINAL pre-gradient
+  // baseline instead of 3.5x it; ink is essentially unchanged (same
+  // gradient, expressed as continuous full-length rulings rather than
+  // dashed fragments). Regenerated via `npm run test:update`, not by hand.
   { id: 'shadow-additive-default', build: scene({ ground: { enabled: true }, shadow: { shadowMode: 'additive', shadowPenId: 'pen-shadow' } }) },
   { id: 'shadow-inverse', build: scene({ ground: { enabled: true }, shadow: { shadowMode: 'inverse', shadowPenId: 'pen-shadow' } }) },
 ];

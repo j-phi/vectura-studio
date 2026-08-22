@@ -31,6 +31,7 @@
  */
 const Params = require('../../src/core/scene3d/params.js');
 const StyleCascade = require('../../src/core/scene3d/style-cascade.js');
+const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
 describe('Scene3D.Params — toneLaw whitelist', () => {
   test('a plausible toneLaw string survives normalizeStyle unchanged', () => {
@@ -117,7 +118,12 @@ describe('Scene3D.Params — toneLaw whitelist', () => {
     beforeEach(() => {
       warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       prior = globalScope.Vectura.SCENE3D_TONE_LAWS;
-      globalScope.Vectura.SCENE3D_TONE_LAWS = { IDS: ['ladder', 'etfKang', 'none'] };
+      // The real roster deliberately omits the shipped default ('ladder') from
+      // IDS (see context-bar.js:162-164 — it is the value the roster's 47 laws
+      // are measured AGAINST, not one of them) and carries it as its own
+      // DEFAULT field instead. The fixture used to invent 'ladder' into IDS,
+      // papering over that omission — this shape matches the real roster.
+      globalScope.Vectura.SCENE3D_TONE_LAWS = { IDS: ['etfKang', 'none'], DEFAULT: 'ladder' };
     });
     afterEach(() => {
       warnSpy.mockRestore();
@@ -151,5 +157,37 @@ describe('Scene3D.Params — toneLaw whitelist', () => {
       expect(out.params.toneLaw).toBe('ladder');
       expect(warnSpy).not.toHaveBeenCalled();
     });
+  });
+});
+
+// fs-z2 Cycle 0 — the REAL roster (src/config/scene3d-tone-laws.js), not the
+// invented stub above. `Vectura.SCENE3D_TONE_LAWS.DEFAULT` is 'ladder', but
+// 'ladder' is deliberately NOT in the roster's IDS (context-bar.js:162-164),
+// so `clampStyleParam('toneLaw')`'s membership-only test fails the shipped
+// default against its own validity check and fires a false "unknown toneLaw"
+// warning — which also interns 'ladder' into the one-time-warn set, muting
+// the channel for a genuinely unknown id. A fresh runtime per test is
+// mandatory here: WARNED_UNKNOWN_TONE_LAWS is module-level and one-shot per
+// id, so reusing a runtime across tests would let an earlier test's warning
+// paper over this one (spurious green for the wrong reason).
+describe('Scene3D.Params — the shipped default toneLaw against the REAL roster (fs-z2 Cycle 0)', () => {
+  let runtime;
+  let Vectura;
+  let ParamsRT;
+
+  beforeEach(async () => {
+    runtime = await loadVecturaRuntime();
+    Vectura = runtime.window.Vectura;
+    ParamsRT = Vectura.Scene3D.Params;
+  });
+
+  afterEach(() => runtime.cleanup());
+
+  test('the shipped default id is accepted by its own roster — no false "unknown" warning', () => {
+    expect(Vectura.SCENE3D_TONE_LAWS.DEFAULT).toBe('ladder');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    ParamsRT.normalizeShadow({ shadowToneLaw: 'ladder' });
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });

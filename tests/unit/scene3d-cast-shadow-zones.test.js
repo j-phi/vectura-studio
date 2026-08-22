@@ -23,23 +23,30 @@
  *
  * WHAT IS PINNED, and why each number is here rather than in a review document:
  *
- *   C12  Layers Off is unchanged                11583.00 mm / 2174 paths
+ *   C12  Layers Off is unchanged                11529.18 mm / 389 paths
  *   C11  Layers adds structure, not ink         2/3/4 within +-25% of their mean
  *   C3   the contact collar is ANCHORED         Z0 identical at every layer count
  *   C6   the umbra recedes                      Z2 carves 2 -> 3 -> 4
  *
- * C12 MOVED in shadowToneDepth (fs-w1-shadowtone, Stage 1 of the shadow tone
- * gradient): 16109.77mm/535 paths -> 11583.00mm/2174 paths. "Layers Off" IS
- * the flat() path in shadows.js, and shadowToneDepth's new default (0.75,
- * SHIPPED ON — src/core/scene3d/params.js DEFAULT_SHADOW.shadowToneDepth) now
- * applies there: total ink drops (thinning-only, never adds a line — see
- * shadows.js applyShadowToneGradient) but path count rises ~4x because each
- * mark is cut into ~6mm chunks so a spatially-varying keep/drop duty can be
- * applied at all. This IS the change working as intended, not a regression —
- * see tests/unit/scene3d-shadow-tone-gradient.test.js for its own RGR proof,
- * including a byte-identical pin at explicit `shadowToneDepth: 0`. The old
- * 16109.77/535 pin is still reachable (and still exactly this file's old
- * number) by building with `shadow: { shadowToneDepth: 0 }`.
+ * C12 MOVED TWICE. First in shadowToneDepth (fs-w1-shadowtone, Stage 1 of the
+ * shadow tone gradient): 16109.77mm/535 paths -> 11583.00mm/2174 paths —
+ * "Layers Off" IS the flat() path in shadows.js, and shadowToneDepth's new
+ * default (0.75, SHIPPED ON) applied there via a per-~6mm-chunk keep/drop
+ * duty. That mechanism was itself a regression the product owner reported
+ * from the running app: chopping every ruling into short pieces reads as
+ * scattered stubs on the plotted page, and the 4x path-count jump for LESS
+ * ink is real pen-lift cost, not "structure." fs-z2 (Stage 1.1) re-expresses
+ * the SAME gradient as ruling SPACING instead of chopping — variable pitch
+ * via `buildGradedSpacing` in shadows.js (the object's own tone ladder run
+ * back through `Regions.coverageToSpacing`, the same primitive the uniform
+ * baseline already uses) — so every emitted ruling stays one unbroken line;
+ * only the gap between rulings widens toward the far tip. Moved again:
+ * 11583.00mm/2174 paths -> 11529.18mm/389 paths — ink is essentially
+ * unchanged (same gradient), path count is back down near the pre-gradient
+ * 535 instead of 4x it. See tests/unit/scene3d-shadow-tone-gradient.test.js
+ * for the RGR proof, including a byte-identical pin at explicit
+ * `shadowToneDepth: 0`. The original pre-gradient 16109.77/535 pin is still
+ * reachable by building with `shadow: { shadowToneDepth: 0 }`.
  *
  * THE FIXTURE IS NOT RESTATED HERE ANY MORE (Round 9).
  *
@@ -94,8 +101,16 @@ const round2 = (x) => Math.round(x * 100) / 100;
 
 describe('the cast shadow is protected — per zone, at every layer count', () => {
   const EXPECT = {
-    // shadowToneDepth default (0.75) moved this — see the file header.
-    off: { ink: 11583.00, n: 2174 },
+    // shadowToneDepth default (0.75) moved this — see the file header. Moved
+    // AGAIN in fs-z2 (Stage 1.1): the chunk-and-thin gradient (16109.77/535 ->
+    // 11583.00/2174, comment below) fragmented every ruling into ~6mm pieces,
+    // which read as scattered stubs on the plotted page and quadrupled the
+    // pen-lift count for LESS ink. Re-expressed as ruling SPACING instead
+    // (buildGradedSpacing in shadows.js — variable pitch via the object's own
+    // coverageToSpacing ladder, no chopping): 11529.18/389. Ink is essentially
+    // unchanged (the same gradient), but path count is back down near the
+    // pre-gradient baseline instead of 4x it.
+    off: { ink: 11529.18, n: 389 },
     2: {
       ink: 7840.20,
       n: 428,
@@ -115,7 +130,7 @@ describe('the cast shadow is protected — per zone, at every layer count', () =
     },
   };
 
-  test('C12 — Layers Off is unchanged (at the shadowToneDepth default): 11583.00 mm / 2174 paths', () => {
+  test('C12 — Layers Off is unchanged (at the shadowToneDepth default): 11529.18 mm / 389 paths', () => {
     const c = castOf(build('off'));
     expect(c.n).toBe(EXPECT.off.n);
     expect(round2(c.ink)).toBe(EXPECT.off.ink);
