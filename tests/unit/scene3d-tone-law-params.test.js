@@ -103,4 +103,53 @@ describe('Scene3D.Params — toneLaw whitelist', () => {
     expect(Params.normalizeStyle({ params: { toneFlowMode: 'bogus' } }).params.toneFlowMode).toBe('iso');
     expect(Params.normalizeStyle({ params: { toneFlowMode: null } }).params.toneFlowMode).toBe('iso');
   });
+
+  // fs-e2 Job 2 (P2) — an unrecognized toneLaw id used to be rewritten to
+  // 'ladder' with NO record at all. A future roster change (an id deleted
+  // from src/config/scene3d-tone-laws.js) could then silently re-render a
+  // saved document with no way to notice. `warnUnknownToneLaw` adds a
+  // one-time-per-id console.warn — observability only, behavior unchanged.
+  describe('unknown toneLaw — one-time console warning (observability only, behavior unchanged)', () => {
+    const globalScope = typeof window !== 'undefined' ? window : globalThis;
+    let warnSpy;
+    let prior;
+
+    beforeEach(() => {
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      prior = globalScope.Vectura.SCENE3D_TONE_LAWS;
+      globalScope.Vectura.SCENE3D_TONE_LAWS = { IDS: ['ladder', 'etfKang', 'none'] };
+    });
+    afterEach(() => {
+      warnSpy.mockRestore();
+      globalScope.Vectura.SCENE3D_TONE_LAWS = prior;
+    });
+
+    test('fires once for an unknown id, names the id and the fallback', () => {
+      const out = Params.normalizeStyle({ params: { toneLaw: 'totallyMadeUp' } });
+      expect(out.params.toneLaw).toBe('ladder'); // clamp behavior unchanged
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const msg = warnSpy.mock.calls[0].join(' ');
+      expect(msg).toContain('totallyMadeUp');
+      expect(msg).toContain('ladder');
+    });
+
+    test('does NOT fire again for the SAME unknown id (one-time, not per-call/per-path/per-frame)', () => {
+      Params.normalizeStyle({ params: { toneLaw: 'repeatOffender' } });
+      Params.normalizeStyle({ params: { toneLaw: 'repeatOffender' } });
+      Params.normalizeStyle({ params: { toneLaw: 'repeatOffender' } });
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('does NOT fire for a known id', () => {
+      const out = Params.normalizeStyle({ params: { toneLaw: 'etfKang' } });
+      expect(out.params.toneLaw).toBe('etfKang');
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    test('does NOT fire for an absent/undefined toneLaw (the ordinary no-op default path)', () => {
+      const out = Params.normalizeStyle({ params: { toneLaw: undefined } });
+      expect(out.params.toneLaw).toBe('ladder');
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+  });
 });

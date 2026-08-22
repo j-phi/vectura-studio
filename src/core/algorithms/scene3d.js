@@ -315,7 +315,11 @@
   // 2D edges forming one or more closed loops), even-odd rule so holes stay
   // empty. Returns [[p0,p1],…]. Continuous across the whole surface, unlike
   // per-face hatching of a fine tessellation.
-  const hatchSegments = (segments, angleDeg, spacing) => {
+  //
+  // `minSpacing` (optional, default 1 — the historic hard floor) lets a
+  // density-driven caller ask for sub-1mm spacing. Every existing call site
+  // omits it, so behavior is byte-identical unless a caller opts in.
+  const hatchSegments = (segments, angleDeg, spacing, minSpacing) => {
     if (!segments.length) return [];
     const ang = finite(angleDeg, 45) * Math.PI / 180;
     const dirX = Math.cos(ang); const dirY = Math.sin(ang);
@@ -329,7 +333,7 @@
       });
     });
     if (!Number.isFinite(pMin)) return [];
-    const sp = Math.max(1, spacing);
+    const sp = Math.max(Math.max(0, finite(minSpacing, 1)), spacing);
     const count = Math.min(3000, Math.floor((pMax - pMin) / sp));
     const out = [];
     for (let i = 1; i <= count; i++) {
@@ -1043,9 +1047,18 @@
       // differ by 1.7x or more, so B landed that much tighter on paper than the
       // recipe asked for — and the plot floor, which is also stated per family,
       // never saw it.
-      const crossFamilies = (target, angleDeg, spacing, styleParams, crossPass, crossW, push, planeFor) => {
+      // `minSpacing` (last, optional) lowers hatchPolygon's hard 1mm floor —
+      // but ONLY on family A, the direct density→spacing ruling. Family B (the
+      // user's crosshatch, spacing × crossDensityRatio) and the zone-driven
+      // dark-side second direction (spacing / w) keep the historic floor of 1
+      // unconditionally: crossDensityRatio can already push spacing below 1 in
+      // an existing saved document (ratio as low as 0.25 against a density-100
+      // base of exactly 1mm), and that path must stay byte-identical. Omitted
+      // (undefined) ⇒ hatchPolygon's own default (1) applies — every call site
+      // that doesn't pass it is untouched.
+      const crossFamilies = (target, angleDeg, spacing, styleParams, crossPass, crossW, push, planeFor, minSpacing) => {
         const plane = (deg, screenPitch) => (planeFor ? planeFor(deg, screenPitch) : screenPitch);
-        push(hatchPolygon(target, { angleDeg, spacing: plane(angleDeg, spacing) }));
+        push(hatchPolygon(target, { angleDeg, spacing: plane(angleDeg, spacing), minSpacing }));
         const w = clamp(finite(crossW, 0), 0, 1);
         if (crossPass) {
           const delta = clamp(finite(styleParams.crossAngleDelta, 90), 10, 170);
@@ -1158,7 +1171,8 @@
           const lines = [];
           crossFamilies(face.polygon, userAngle, sb.spacing, styleParams, crossPass,
             crossWeightFor(sb.zone, sb.glint),
-            (segs) => maybeLink(segs, styleParams).forEach((l) => lines.push(l)));
+            (segs) => maybeLink(segs, styleParams).forEach((l) => lines.push(l)),
+            undefined, HATCH_SPACING_FLOOR_MM);
           return lines;
         }
         const { spacing, zone, glint } = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
@@ -1399,7 +1413,8 @@
         // one for F — so the dip between them is a property of the recipe, not
         // of how tightly the carrier happens to run at the limb.
         crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, crossW,
-          (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)), planeFor);
+          (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)), planeFor,
+          HATCH_SPACING_FLOOR_MM);
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
 
@@ -1695,7 +1710,7 @@
         // lightDriven places the glint per SAMPLE, so it has no face zone to
         // read; the darkest band buys the same whole second family T does.
         crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, bandIdx === 0 ? 1 : 0,
-          (segs) => uvLines.push(...segs));
+          (segs) => uvLines.push(...segs), undefined, HATCH_SPACING_FLOOR_MM);
         const SREG = 0.025;
         const N = hlCfg.sensitivity;
         const treat = hlCfg.treatment;
@@ -2900,7 +2915,11 @@
               // line mappers scanline-fill. Plain hatch is NOT auto-crossed in
               // the dark band any more (that made hatch look like crosshatch).
               if (draft || !REGION_MAPPERS.has(g.style.mapper)) {
-                lines = hatchSegments(boundary, angleDeg, spacing);
+                // Family A only gets the lower floor — see hatchSegments'
+                // header. Family B below (× crossDensityRatio) keeps the old
+                // floor of 1 unconditionally: an existing document at density
+                // 100 with ratio 0.25 already relied on being clamped to 1mm.
+                lines = hatchSegments(boundary, angleDeg, spacing, HATCH_SPACING_FLOOR_MM);
                 if (g.style.mapper === 'crosshatch') {
                   // Independent family-B (Phase 1.3): +crossAngleDelta, ×ratio.
                   const delta = clamp(finite(sp.crossAngleDelta, 90), 10, 170);

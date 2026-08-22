@@ -95,6 +95,35 @@ describe('Geometry3D shared enhancement helpers', () => {
       const b = G.hatchPolygon(square, { angleDeg: 30, spacing: 7 });
       expect(JSON.stringify(a)).toBe(JSON.stringify(b));
     });
+
+    // fs-e2 P0 — fillDensity 100-200 needs sub-1mm spacing to actually reach
+    // the page (scene3d's hatchSpacing() already computes it), but
+    // hatchPolygon's own hard `Math.max(1, …)` re-floored it back up before
+    // any caller could opt out. `opts.minSpacing` is the opt-in escape hatch;
+    // every existing caller omits it, so the historic floor of 1 is unchanged.
+    describe('opts.minSpacing', () => {
+      it('BYTE-IDENTICAL REGRESSION GUARD: omitting minSpacing still floors at 1, even for a sub-1 spacing that models an existing document\'s crosshatch family B (density 100 × ratio 0.25 = 0.25mm asked, 1mm drawn)', () => {
+        const askedBelowOne = G.hatchPolygon(square, { angleDeg: 0, spacing: 0.25 });
+        const flooredAtOne = G.hatchPolygon(square, { angleDeg: 0, spacing: 1 });
+        expect(askedBelowOne.length).toBe(flooredAtOne.length);
+        expect(JSON.stringify(askedBelowOne)).toBe(JSON.stringify(flooredAtOne));
+      });
+
+      it('a caller that opts into a lower minSpacing gets the finer spacing it asked for', () => {
+        const capped = G.hatchPolygon(square, { angleDeg: 0, spacing: 0.25 });
+        const opted = G.hatchPolygon(square, { angleDeg: 0, spacing: 0.25, minSpacing: 0.25 });
+        expect(opted.length).toBeGreaterThan(capped.length);
+        // floor(100/0.25) = 400 candidate offsets, well above the old floor's ~100.
+        expect(opted.length).toBeGreaterThan(300);
+      });
+
+      it('minSpacing never raises the floor above the historic 1 unless spacing itself is below minSpacing', () => {
+        // A minSpacing LOWER than the requested spacing is a no-op (spacing wins).
+        const a = G.hatchPolygon(square, { angleDeg: 0, spacing: 10, minSpacing: 0.3 });
+        const b = G.hatchPolygon(square, { angleDeg: 0, spacing: 10 });
+        expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+      });
+    });
   });
 
   describe('lambertHatch', () => {
