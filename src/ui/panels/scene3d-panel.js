@@ -469,10 +469,6 @@
   // Session-only last-pick memory for the More… flyout (Decision 3). Module
   // scope: survives panel rebuilds/layer switches, resets on reload.
   let moreLastPick = null;
-  // U9 — Fill Style library disclosure. VIEW state only, same lifetime rule as
-  // moreLastPick, and deliberately never written into layer params: the 11
-  // library-tier laws are demoted on measured grounds, not stored preferences.
-  let fillStyleShowLibrary = false;
 
   // U9 — the Fill Style (tone law) control. THREE style surfaces live in this
   // file and every one of them has a mapper dropdown, so this is written once
@@ -505,7 +501,7 @@
     if (!UI || !FS) return;
     const law = FS.resolve(o.value);
     comps.push(UI.Select(o.row(FS.LABEL), {
-      options: FS.groups(fillStyleShowLibrary, o.primitiveMode, o.solidType, o.mapper),
+      options: FS.groups(o.primitiveMode, o.solidType, o.mapper),
       value: law,
       ariaLabel: FS.ARIA,
       onChange: (v) => o.write(v),
@@ -517,15 +513,6 @@
       n.textContent = text;
       host.appendChild(n);
     };
-    // The disclosure sits directly under the select it modifies — the prose
-    // below would otherwise push the two controls apart and make the toggle
-    // read as belonging to the description.
-    comps.push(UI.SegCtrl(o.row(FS.LIBRARY_LABEL), {
-      options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
-      value: fillStyleShowLibrary ? 'on' : 'off',
-      ariaLabel: FS.LIBRARY_ARIA,
-      onChange: (v) => { fillStyleShowLibrary = (v === 'on'); o.rerender(); },
-    }));
     const entry = FS.entry(law) || {};
     const note = FS.note(law);
     // The faceted-shape orientation line leads everything else — a user must
@@ -537,7 +524,9 @@
     if (entry.mechanism) line(`How: ${entry.mechanism}`);
     if (entry.strengths) line(`Strengths: ${entry.strengths}`);
     if (entry.weaknesses) line(`Weaknesses: ${entry.weaknesses}`);
-    // The measured caveat of a demoted library law, in the warning colour.
+    // The measured caveat of a demoted law, in the warning colour. Every law
+    // is offered now (no Off/On disclosure), but the caveat still prints only
+    // for the SELECTED one.
     line(note.caveat, 'caveat');
   };
 
@@ -2780,7 +2769,7 @@
       // geometry on a flat, ground-projected footprint — flow and web are
       // filtered OUT of the offered list (never merely disabled) via
       // Shadows.toneLawApplies; SCENE_FILL_STYLES.SHADOW_NOTE explains why.
-      // `FS.groups(true, null, null, null)` asks for the full roster with no
+      // `FS.groups(null, null, null)` asks for the full roster with no
       // primitive/mapper reachability context (shadows have neither), so
       // nothing there gates anything — toneLawApplies is the only filter.
       const FS = Vectura.SCENE_FILL_STYLES;
@@ -2797,7 +2786,7 @@
         lawRow.appendChild(lawHost);
         host.appendChild(lawRow);
         const law = FS.resolve(s.shadowToneLaw);
-        const groups = FS.groups(true, null, null, null)
+        const groups = FS.groups(null, null, null)
           .map((g) => ({ group: g.group, options: g.options.filter((opt) => ShadowsMod.toneLawApplies(opt.value)) }))
           .filter((g) => g.options.length);
         comps.push(UI.Select(lawHost, {

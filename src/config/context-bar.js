@@ -163,31 +163,10 @@
     // the ctxbar's own row-copy shape rather than restating the strings.
     LABEL: 'Fill Style',
     ARIA: 'Fill style',
-    // U9 follow-up — "Library" told a user nothing about what flipping it
-    // does. "Experimental" is self-evident on its own; LIBRARY_NOTE spells out
-    // the count and the caveat so the flyout row + its note read as one
-    // sentence without needing a hover.
-    LIBRARY_LABEL: 'Experimental',
-    // fs-e1 judge's ruling (item 6) — the prior copy claimed the per-option
-    // suffix "flagged" each of the 11 with its caveat, which does not
-    // distinguish them at all: the suffix is unconditional ` · experimental`
-    // (below), a caveat prints only for the SELECTED law (`FS.note`), and 8
-    // PRODUCTION laws (none, ampSpacing, weaveDepth, interlockWeave,
-    // trochoidLoop, mezzoRegion, dutyConst, endShorten) carry caveats too.
-    // Verified true before shipping: every one of the 11 LIBRARY laws has a
-    // non-empty `caveat` in the roster (`tests/integration/
-    // scene3d-fill-style-picker.test.js` "THE CLAIM IS TRUE").
-    LIBRARY_ARIA: 'Show 11 additional experimental fill styles — controls, negative results and simulated-pen laws',
-    LIBRARY_NOTE: 'Adds 11 more fill styles — controls, negative results and simulated-pen laws. Each shows its measured caveat when picked.',
     DEFAULT: FILL_STYLE_DEFAULT,
     MARK_CLASSES: FILL_STYLE_MARK_CLASSES,
     MARK_OF: FILL_STYLE_MARK_OF,
     DEFAULT_ENTRY: FILL_STYLE_DEFAULT_ENTRY,
-    // Suffix stamped on a library-tier option so its tier is legible with the
-    // select CLOSED, not only inside the open list. Matches the "Experimental"
-    // toggle label — it used to read ` · library`, a name the toggle no
-    // longer uses.
-    LIBRARY_SUFFIX: ' · experimental',
     // Prefaces every caveat the six simulated pen laws show. They emit three
     // stroke widths onto ONE pen layer because pen identity is carried per
     // style group, not per run — three real nibs cannot be named in one fill.
@@ -213,10 +192,6 @@
     const c = FILL_STYLE_MARK_CLASSES.find((m) => m.id === classId);
     return c ? c.label : '';
   };
-  SCENE_FILL_STYLES.isLibrary = (id) => {
-    const R = fillStyleRoster();
-    return Boolean(R && R.LIBRARY.indexOf(id) !== -1);
-  };
   // The full descriptor a surface renders: roster entry + mark class, or the
   // synthesized default entry. Null for an id neither knows.
   SCENE_FILL_STYLES.entry = (id) => {
@@ -238,10 +213,11 @@
     return SCENE_FILL_STYLES.entry(value) ? value : FILL_STYLE_DEFAULT;
   };
   // [{ group, options: [{ value, label, disabled? }] }] for UI.Select, grouped
-  // by MARK CLASS. `includeLibrary` false = the 36 production laws + the
-  // default; true = all 47 + the default, each library row suffixed. Empty
-  // classes are dropped so the disclosure never leaves a headed, empty group
-  // behind.
+  // by MARK CLASS. Every law the roster knows is always offered — all 47 plus
+  // the shipped default — with no tier gate and no per-option suffix; the
+  // owner's ruling retired the Off/On "Experimental" disclosure that used to
+  // hide 11 of them. Empty classes are dropped so a mark class with no member
+  // never renders a headed, empty group.
   //
   // `primitiveMode` (optional — the selected object's `primitive`, e.g.
   // 'box'/'sphere') and `solidType` (optional — only meaningful when
@@ -255,10 +231,9 @@
   // blind, so a faceted primitive under Type=Contour/Spiral/Stipple showed
   // eleven "live" options that are all silent no-ops there. See
   // `isReachableOn` below.
-  SCENE_FILL_STYLES.groups = (includeLibrary, primitiveMode, solidType, mapper) => {
+  SCENE_FILL_STYLES.groups = (primitiveMode, solidType, mapper) => {
     const R = fillStyleRoster();
     const ids = R ? R.IDS : [];
-    const inTier = (id) => includeLibrary || !R || R.PRODUCTION.indexOf(id) !== -1;
     const out = [];
     FILL_STYLE_MARK_CLASSES.forEach((cls) => {
       const options = [];
@@ -277,11 +252,9 @@
         });
       }
       ids.forEach((id) => {
-        if (SCENE_FILL_STYLES.markClass(id) !== cls.id || !inTier(id)) return;
+        if (SCENE_FILL_STYLES.markClass(id) !== cls.id) return;
         const reachable = SCENE_FILL_STYLES.isReachableOn(id, primitiveMode, solidType, mapper);
-        const label = R.BY_ID[id].label
-          + (SCENE_FILL_STYLES.isLibrary(id) ? SCENE_FILL_STYLES.LIBRARY_SUFFIX : '')
-          + (reachable ? '' : SCENE_FILL_STYLES.NO_EFFECT_SUFFIX);
+        const label = R.BY_ID[id].label + (reachable ? '' : SCENE_FILL_STYLES.NO_EFFECT_SUFFIX);
         options.push({ value: id, label, disabled: !reachable });
       });
       if (options.length) out.push({ group: cls.label, options });
@@ -586,9 +559,6 @@
         fillStyle: {
           label: SCENE_FILL_STYLES.LABEL,
           aria: SCENE_FILL_STYLES.ARIA,
-          libraryLabel: SCENE_FILL_STYLES.LIBRARY_LABEL,
-          libraryAria: SCENE_FILL_STYLES.LIBRARY_ARIA,
-          libraryNote: SCENE_FILL_STYLES.LIBRARY_NOTE,
         },
         pen: { label: 'Pen', aria: 'Style pen', inherit: 'Layer pen' },
         angle: { label: 'Angle', aria: 'Hatch angle' },

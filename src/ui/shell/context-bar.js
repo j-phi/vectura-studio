@@ -1392,14 +1392,6 @@
   // `.is-caveat`, which paints it in the warning colour).
   const flyNote = (fly, text) => { const n = el('div', 'ctxbar-fly-note'); n.textContent = text; fly.appendChild(n); return n; };
 
-  // ── Fill Style library disclosure (U9) ───────────────────────────────────
-  // VIEW state only, module-scoped: it survives a flyout rebuild and a
-  // reselection, resets on reload, and is NEVER written into layer params.
-  // The 11 library-tier laws are demoted on measured grounds (six simulated
-  // pen laws, two floods, two controls, one documented negative result), so
-  // they stay out of the default list until the user asks for them.
-  let fillStyleShowLibrary = false;
-
   // Shared persistent-flyout wrapper for the scene pills.
   const makeSceneFlyout = (label, tooltip, extraClass, buildBody) => {
     const field = makeDropField(`ctxbar-scene-field ${extraClass || ''}`.trim(), label, tooltip);
@@ -1485,17 +1477,10 @@
       const solidTypeAgree = sceneAgree(sc, (id) => { const rec = recordOf(id); return (rec && rec.params) ? rec.params.solidType : null; });
       const solidType = solidTypeAgree.mixed ? null : solidTypeAgree.value;
       flyMixedSelect(flyRow(fly, FSC.label), {
-        options: FS.groups(fillStyleShowLibrary, primitiveMode, solidType, mapper), value: law, ariaLabel: FSC.aria,
+        options: FS.groups(primitiveMode, solidType, mapper), value: law, ariaLabel: FSC.aria,
         mixed: sceneAgree(sc, (id) => FS.resolve((rs(id).params || {}).toneLaw)).mixed,
         onChange: (v) => { write({ params: { ...params, toneLaw: v } }); rebuild(); },
       });
-      // The disclosure sits directly under the select it modifies, before the
-      // note lines — otherwise the prose pushes the two controls apart.
-      UI.SegCtrl(flyRow(fly, FSC.libraryLabel), {
-        options: C.onOff, value: fillStyleShowLibrary ? 'on' : 'off', ariaLabel: FSC.libraryAria,
-        onChange: (v) => { fillStyleShowLibrary = (v === 'on'); rebuild(); },
-      });
-      if (FSC.libraryNote) flyNote(fly, FSC.libraryNote);
       const facetedNote = FS.facetedNote ? FS.facetedNote(primitiveMode, solidType, mapper) : '';
       if (facetedNote) flyNote(fly, facetedNote).classList.add('is-faceted');
       const note = FS.note(law);
@@ -1643,16 +1628,16 @@
     // Only 6 of the 8 mark classes draw distinct geometry on a flat,
     // ground-projected footprint (Shadows.toneLawApplies) — flow and web are
     // filtered OUT of the offered list, never merely disabled, and SHADOW_NOTE
-    // explains why. `FS.groups(true, null, null, null)` asks for the full
-    // (library-included) roster with no primitive/mapper reachability context
-    // (shadows have neither), so nothing there gates anything; the only filter
-    // active is toneLawApplies.
+    // explains why. `FS.groups(null, null, null)` asks for the full roster
+    // with no primitive/mapper reachability context (shadows have neither),
+    // so nothing there gates anything; the only filter active is
+    // toneLawApplies.
     if (C.toneLaw) {
       const FS = Vectura.SCENE_FILL_STYLES;
       const Shadows = Vectura.Scene3D && Vectura.Scene3D.Shadows;
       if (FS && Shadows && typeof Shadows.toneLawApplies === 'function') {
         const law = FS.resolve(bag.shadowToneLaw);
-        const groups = FS.groups(true, null, null, null)
+        const groups = FS.groups(null, null, null)
           .map((g) => ({ group: g.group, options: g.options.filter((opt) => Shadows.toneLawApplies(opt.value)) }))
           .filter((g) => g.options.length);
         UI.Select(flyRow(fly, C.toneLaw.label), {

@@ -97,30 +97,42 @@ describe('Fill Style — the shared mark-class config', () => {
     expect(F.markClass('nibAngle')).toBe('hatch');
   });
 
-  test('the production list is the 36 laws plus the shipped default, grouped by mark class', () => {
-    const g = F.groups(false);
+  // The owner's ruling (Fill Style picker, fs-j1) retired the Off/On
+  // "Experimental" disclosure that used to gate 11 of the 47 roster laws
+  // behind a toggle: every law is now permanently offered, with no per-option
+  // tier suffix. `groups()` dropped its `includeLibrary` first argument
+  // entirely rather than keeping a vestigial always-true parameter — see
+  // every call site below and in src/ui/shell/context-bar.js +
+  // src/ui/panels/scene3d-panel.js.
+  test('groups() returns every roster law plus the shipped default, grouped by mark class — no tier gate', () => {
+    const g = F.groups();
     const opts = g.reduce((a, x) => a.concat(x.options), []);
-    expect(opts.length).toBe(R.PRODUCTION.length + 1);
+    expect(opts.length).toBe(R.IDS.length + 1);
     expect(opts.map((o) => o.value)).toContain('ladder');
+    // Every one of the 11 previously-demoted laws is present, unconditionally.
+    R.LIBRARY.forEach((id) => expect(opts.map((o) => o.value)).toContain(id));
     // No headed-but-empty group is ever rendered.
     g.forEach((grp) => expect(grp.options.length).toBeGreaterThan(0));
     // Groups are mark classes, not tone-mechanism families.
     expect(g.map((x) => x.group)).not.toContain('Three-pen');
   });
 
-  test('the library disclosure adds exactly the 11 demoted laws, each tier-suffixed', () => {
-    const prod = F.groups(false).reduce((a, x) => a.concat(x.options), []);
-    const all = F.groups(true).reduce((a, x) => a.concat(x.options), []);
-    expect(all.length).toBe(prod.length + R.LIBRARY.length);
-    const added = all.filter((o) => !prod.some((p) => p.value === o.value)).map((o) => o.value);
-    expect(added.sort()).toEqual([...R.LIBRARY].sort());
-    all.filter((o) => R.LIBRARY.indexOf(o.value) !== -1)
-      .forEach((o) => expect(o.label).toContain(F.LIBRARY_SUFFIX));
-    // The crosshatch group is where the disclosure actually pays: it holds ONE
-    // production law and grows to three once the two pen crosshatches appear.
-    const crossOf = (groups) => groups.find((x) => x.group === F.markClassLabel('cross'));
-    expect(crossOf(F.groups(false)).options.length).toBe(1);
-    expect(crossOf(F.groups(true)).options.map((o) => o.value)).toContain('penCross');
+  test('no option label carries a tier suffix ("library"/"experimental") — the disclosure is gone', () => {
+    const opts = F.groups().reduce((a, x) => a.concat(x.options), []);
+    opts.forEach((o) => {
+      expect(o.label.toLowerCase()).not.toMatch(/library/);
+      expect(o.label.toLowerCase()).not.toMatch(/experimental/);
+    });
+    expect(F.LIBRARY_SUFFIX).toBeUndefined();
+    expect(F.LIBRARY_LABEL).toBeUndefined();
+    expect(F.LIBRARY_ARIA).toBeUndefined();
+    expect(F.LIBRARY_NOTE).toBeUndefined();
+    // The crosshatch group previously required the disclosure to reach three
+    // members (one production law + two pen crosshatches); it now always
+    // holds all three.
+    const crossOf = F.groups().find((x) => x.group === F.markClassLabel('cross'));
+    expect(crossOf.options.map((o) => o.value)).toContain('penCross');
+    expect(crossOf.options.length).toBeGreaterThanOrEqual(3);
   });
 
   test('the note leads with the mark class; simulated laws are prefixed; caveats survive', () => {
@@ -143,7 +155,7 @@ describe('Fill Style — the shared mark-class config', () => {
     // without a synthesized option the select would display a law the drawing
     // is not using.
     expect(R.IDS).not.toContain('ladder');
-    const values = F.groups(false).reduce((a, x) => a.concat(x.options.map((o) => o.value)), []);
+    const values = F.groups().reduce((a, x) => a.concat(x.options.map((o) => o.value)), []);
     expect(values).toContain('ladder');
   });
 
@@ -155,7 +167,7 @@ describe('Fill Style — the shared mark-class config', () => {
   // space-filling with them.
   test('turingStripe is classed as Networks & space-filling, not Flow lines (U12 D3)', () => {
     expect(F.markClass('turingStripe')).toBe('web');
-    const groups = F.groups(true);
+    const groups = F.groups();
     const webGroup = groups.find((g) => g.group === F.markClassLabel('web'));
     const flowGroup = groups.find((g) => g.group === F.markClassLabel('flow'));
     expect(webGroup.options.map((o) => o.value)).toContain('turingStripe');
@@ -237,8 +249,8 @@ describe('Fill Style — the shared mark-class config', () => {
       R.IDS.forEach((id) => expect(F.isReachableOn(id, undefined)).toBe(true));
     });
 
-    test('groups(includeLibrary, mode) disables the dead options and suffixes their label', () => {
-      const g = F.groups(true, 'box');
+    test('groups(mode) disables the dead options and suffixes their label', () => {
+      const g = F.groups('box');
       const opts = g.reduce((a, x) => a.concat(x.options), []);
       const dead = opts.filter((o) => o.value !== 'ladder' && !M.isMono(o.value) && o.value !== 'none');
       const alive = opts.filter((o) => o.value === 'ladder' || o.value === 'none' || M.isMono(o.value));
@@ -257,7 +269,7 @@ describe('Fill Style — the shared mark-class config', () => {
       expect(alive.length).toBe(11);
       expect(dead.length).toBe(37);
       // Group STRUCTURE (count, membership) is unaffected — only reachability.
-      expect(g.length).toBe(F.groups(true, 'sphere').length);
+      expect(g.length).toBe(F.groups('sphere').length);
     });
 
     test('facetedNote names the shape limitation, with a DIFFERENT reason for the cap-limited solid', () => {
@@ -358,8 +370,8 @@ describe('Fill Style — the shared mark-class config', () => {
       });
     });
 
-    test('groups(includeLibrary, mode, solidType, mapper) threads the mapper through to every option', () => {
-      const g = F.groups(true, 'box', undefined, 'contour');
+    test('groups(mode, solidType, mapper) threads the mapper through to every option', () => {
+      const g = F.groups('box', undefined, 'contour');
       const opts = g.reduce((a, x) => a.concat(x.options), []);
       expect(opts.length).toBeGreaterThan(0);
       opts.forEach((o) => {
@@ -367,7 +379,7 @@ describe('Fill Style — the shared mark-class config', () => {
         expect(o.label).toContain(F.NO_EFFECT_SUFFIX);
       });
       // Regression: hatch on a box is unchanged from the pre-mapper call.
-      expect(F.groups(false, 'box', undefined, 'hatch')).toEqual(F.groups(false, 'box'));
+      expect(F.groups('box', undefined, 'hatch')).toEqual(F.groups('box'));
     });
 
     // ── Item 5 — curved primitive + spiral/stipple: exactly 9 mono laws ─────
@@ -454,21 +466,19 @@ describe('Fill Style — the shared mark-class config', () => {
     });
   });
 
-  // ── Item 6 — the Experimental copy told a provable falsehood ───────────────
-  describe('Experimental disclosure copy (fs-e1 gating: item 6)', () => {
-    test('the suffix reads " · experimental", matching the "Experimental" toggle label', () => {
-      expect(F.LIBRARY_SUFFIX).toBe(' · experimental');
-      expect(F.LIBRARY_LABEL).toBe('Experimental');
-    });
-
-    test('the corrected note ships the judge-specified copy', () => {
-      expect(F.LIBRARY_NOTE).toBe(
-        'Adds 11 more fill styles — controls, negative results and simulated-pen laws. Each shows its measured caveat when picked.',
-      );
-    });
-
-    // The whole point of item 6: verify the shipped claim is actually true.
-    test('THE CLAIM IS TRUE — every one of the 11 library laws has a non-empty measured caveat', () => {
+  // ── The Fill Style picker no longer has a library/experimental tier gate ──
+  // The owner's decision retired the Off/On "Experimental" disclosure
+  // (LIBRARY_LABEL/LIBRARY_ARIA/LIBRARY_NOTE/LIBRARY_SUFFIX all removed from
+  // src/config/context-bar.js — asserted undefined in the "no option label
+  // carries a tier suffix" test above). `tier`/`LIBRARY`/`PRODUCTION` stay in
+  // the generated roster as curatorial provenance even though no UI code
+  // reads them for gating anymore — the per-law `caveat` display survives
+  // and is what this block now pins.
+  describe('per-law caveats survive the disclosure removal', () => {
+    // Every previously-"library"-tier law still has a caveat, and `FS.note`
+    // (kept — see CLAUDE.md scope) still renders it for the SELECTED law
+    // regardless of whether the id is one of the 11 or one of the 36.
+    test('every one of the 11 previously-demoted laws has a non-empty measured caveat', () => {
       expect(R.LIBRARY.length).toBe(11);
       R.LIBRARY.forEach((id) => {
         const caveat = R.BY_ID[id] && R.BY_ID[id].caveat;
@@ -477,8 +487,9 @@ describe('Fill Style — the shared mark-class config', () => {
       });
     });
 
-    test('the old "each flagged with its measured caveats" note is gone (it did not distinguish the 11)', () => {
-      expect(F.LIBRARY_NOTE).not.toBe('Adds 11 more fill styles, each flagged with its measured caveats.');
+    test('a production law with a caveat (e.g. ampSpacing) still renders one — caveats are not library-exclusive', () => {
+      const n = F.note('ampSpacing');
+      expect(n.caveat.length).toBeGreaterThan(0);
     });
   });
 });
@@ -542,10 +553,10 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(labels.indexOf('Fill Style')).toBe(labels.indexOf('Type') + 1);
     const sel = rowCtl(fly, 'Fill Style').querySelector('select');
     const groups = Array.from(sel.querySelectorAll('optgroup'));
-    expect(groups.length).toBe(F.groups(false).length);
+    expect(groups.length).toBe(F.groups().length);
     expect(groups.map((g) => g.label)).toContain(F.markClassLabel('cross'));
     expect(sel.querySelectorAll('option').length).toBe(
-      F.groups(false).reduce((a, x) => a + x.options.length, 0),
+      F.groups().reduce((a, x) => a + x.options.length, 0),
     );
   });
 
@@ -597,7 +608,7 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(scene.params.styleTable.scene.params.toneLaw).toBe('mkTick');
   });
 
-  test('the note names the mark class, and a library law renders its caveat', () => {
+  test('the note names the mark class, and a previously-demoted law renders its caveat', () => {
     const { fly } = openStyle({
       styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'etfKang' } } }),
     });
@@ -605,11 +616,9 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(notes().some((t) => t.startsWith('Flow lines —'))).toBe(true);
     expect(openFly().querySelector('.ctxbar-fly-note.is-caveat')).toBeNull();
 
-    // Disclose the library, then pick a simulated pen law.
-    const libOn = Array.from(rowCtl(fly, 'Experimental').querySelectorAll('button'))
-      .find((b) => b.textContent.trim() === 'On');
-    libOn.click();
-    const sel = rowCtl(openFly(), 'Fill Style').querySelector('select');
+    // The picker offers every law permanently now — no disclosure to open
+    // before a previously-demoted (simulated pen) law is selectable.
+    const sel = rowCtl(fly, 'Fill Style').querySelector('select');
     sel.value = 'penStipple';
     fire(sel, 'change');
     const caveat = openFly().querySelector('.ctxbar-fly-note.is-caveat');
@@ -617,32 +626,18 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(caveat.textContent.startsWith(window.Vectura.SCENE_FILL_STYLES.SIMULATED_NOTE)).toBe(true);
   });
 
-  // C4 Job 2 — "Library" communicated nothing about what it does. Renamed to
-  // "Experimental" (self-evident) with a flyNote spelling out the count and
-  // the caveat; behavior (which 11 laws it admits, and that it never
-  // persists) is unchanged and still pinned here.
-  test('the Experimental toggle grows the option list by exactly the 11 demoted laws, and persists nothing', () => {
+  // The owner's decision retired the Off/On "Experimental" toggle: every law
+  // is offered all the time, on both surfaces, with no per-option suffix and
+  // no view-state to persist. This test used to prove the toggle grew the
+  // list by exactly 11 and never wrote to params; it now proves the toggle
+  // is simply gone and the 11 are unconditionally present.
+  test('there is no Experimental/Library toggle — the select already offers all 11 previously-demoted laws', () => {
     const { scene, fly } = openStyle({ styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: {} } }) });
-    const count = () => rowCtl(openFly(), 'Fill Style').querySelector('select').querySelectorAll('option').length;
-    const libBtn = (text) => Array.from(rowCtl(openFly(), 'Experimental').querySelectorAll('button'))
-      .find((b) => b.textContent.trim() === text);
-    // The disclosure is module-scoped view state that survives a reselection,
-    // so start from a known Off rather than from whatever ran before.
-    libBtn('Off').click();
-    const closed = count();
-    // Off admits none of the 11 library laws.
-    const closedValues = Array.from(rowCtl(openFly(), 'Fill Style').querySelector('select').querySelectorAll('option')).map((o) => o.value);
-    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => expect(closedValues).not.toContain(id));
-    libBtn('On').click();
-    expect(count()).toBe(closed + window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.length);
-    // On admits exactly the 11 library laws (not more, not fewer).
-    const openValues = Array.from(rowCtl(openFly(), 'Fill Style').querySelector('select').querySelectorAll('option')).map((o) => o.value);
-    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => expect(openValues).toContain(id));
-    // The new copy explains what the toggle does, without a hover.
-    const notes = Array.from(openFly().querySelectorAll('.ctxbar-fly-note')).map((n) => n.textContent);
-    expect(notes).toContain(window.Vectura.SCENE_FILL_STYLES.LIBRARY_NOTE);
-    libBtn('Off').click();
-    // View-only: it never reaches layer params.
+    expect(rowCtl(fly, 'Experimental')).toBeNull();
+    expect(rowCtl(fly, 'Library')).toBeNull();
+    const values = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option')).map((o) => o.value);
+    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => expect(values).toContain(id));
+    // Still never written to layer params — there is no toggle state to leak.
     const p = scene.params.styleTable.byObject['obj-1'].params;
     expect(Object.keys(p).some((k) => /library/i.test(k))).toBe(false);
   });
@@ -860,7 +855,7 @@ describe('Fill Style — docked 3D Scene panel', () => {
     const sel = styleRow(container, 'Fill Style').querySelector('select');
     expect(sel.value).toBe('ladder');
     const groups = Array.from(sel.querySelectorAll('optgroup')).map((g) => g.label);
-    expect(groups).toEqual(F.groups(false).map((g) => g.group));
+    expect(groups).toEqual(F.groups().map((g) => g.group));
     expect(groups).toContain(F.markClassLabel('cross'));
   });
 
@@ -964,7 +959,7 @@ describe('Fill Style — docked 3D Scene panel', () => {
     const sel = leafRow(container, 'Fill Style').querySelector('select');
     expect(sel.value).toBe('ladder');
     expect(Array.from(sel.querySelectorAll('optgroup')).map((g) => g.label))
-      .toEqual(F.groups(false).map((g) => g.group));
+      .toEqual(F.groups().map((g) => g.group));
   });
 
   test('the LEAF write lands on the leaf bag — the object-scope write, and the only one that reaches it', () => {
@@ -990,16 +985,15 @@ describe('Fill Style — docked 3D Scene panel', () => {
     expect(layer.params.style.params.toneLaw).toBe('mkTick');
   });
 
-  // C4 Job 2 — label renamed "Library" → "Experimental" (shared config, so
-  // the docked panel picks it up too); behavior pinned here unchanged.
-  test('the Experimental row discloses the 11 demoted laws without persisting anything', () => {
+  // The owner's decision retired the Off/On "Experimental" toggle on the
+  // docked panel too (shared config with the ctxbar flyout): no row, no view
+  // state, and the 11 previously-demoted laws are unconditionally present.
+  test('there is no Experimental/Library row — the select already offers all 11 previously-demoted laws', () => {
     const { container, layer } = openStyle(hatchOn());
-    const count = () => styleRow(container, 'Fill Style').querySelector('select').querySelectorAll('option').length;
-    const closed = count();
-    const on = Array.from(styleRow(container, 'Experimental').querySelectorAll('button'))
-      .find((b) => b.textContent.trim() === 'On');
-    fire(on, 'click');
-    expect(count()).toBe(closed + window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.length);
+    expect(styleRow(container, 'Experimental')).toBeUndefined();
+    expect(styleRow(container, 'Library')).toBeUndefined();
+    const values = Array.from(styleRow(container, 'Fill Style').querySelector('select').querySelectorAll('option')).map((o) => o.value);
+    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => expect(values).toContain(id));
     expect(layer.params.styleTable.byObject['obj-1'].params.library).toBeUndefined();
   });
 
@@ -1108,9 +1102,10 @@ describe('Shadow Fill Style — the shared toneLawApplies filter', () => {
   afterAll(() => { runtime?.cleanup?.(); runtime = null; });
 
   // Programmatic sweep — not a spot check — over the FULL offered list (the
-  // default entry heading its class + all 47 roster laws with the library
-  // disclosure on), matching what both UI surfaces actually pass through.
-  const offeredIds = () => F.groups(true, null, null, null)
+  // default entry heading its class + all 47 roster laws — there is no
+  // library/experimental tier gate anymore), matching what both UI surfaces
+  // actually pass through.
+  const offeredIds = () => F.groups(null, null, null)
     .reduce((acc, g) => acc.concat(g.options.map((o) => o.value)), [])
     .filter((id) => Shadows.toneLawApplies(id));
 
@@ -1127,7 +1122,7 @@ describe('Shadow Fill Style — the shared toneLawApplies filter', () => {
   });
 
   test('the offered count is the full roster + default, minus exactly the 7 flow/web ids', () => {
-    const full = F.groups(true, null, null, null).reduce((a, g) => a + g.options.length, 0);
+    const full = F.groups(null, null, null).reduce((a, g) => a + g.options.length, 0);
     expect(full).toBe(48); // default (ladder) + 47 roster laws
     expect(offeredIds().length).toBe(full - 7);
   });
