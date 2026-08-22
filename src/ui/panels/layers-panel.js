@@ -2560,10 +2560,21 @@
       delete next.meta.weightScale;
       return next;
     };
-    const offsetPathFn = G.Vectura?.OptimizationUtils?.offsetPath;
+    // Per-vertex miter offset (not a single global chord normal — see
+    // thickenPathsUniform's own header comment for why the miter vector is
+    // required at bends). A rigid translate offsets every point by the SAME
+    // vector, which is only truly perpendicular to a STRAIGHT run; on a
+    // curved silhouette/crease line the local tangent rotates away from that
+    // fixed direction, so the passes visibly converge and diverge instead of
+    // holding a constant band width. thickenPathsUniform already solves
+    // exactly this for text.js's built-in-bold fill (uniform-width parallel
+    // passes around bends, with a miterLimit clamp so a needle-acute apex
+    // bevels flat instead of spiking to infinity on tight/self-intersecting
+    // curves) — reused here rather than re-deriving the same maths.
+    const thickenUniformFn = G.Vectura?.GeometryUtils?.thickenPathsUniform;
     const expandWeightToPasses = (path) => {
       const raw = Number(path && path.meta && path.meta.weightScale);
-      if (!Array.isArray(path) || path.length < 2 || !Number.isFinite(raw) || raw <= 1 || !offsetPathFn) {
+      if (!Array.isArray(path) || path.length < 2 || !Number.isFinite(raw) || raw <= 1 || !thickenUniformFn) {
         return [stripWeightScale(path)];
       }
       const penWidth = resolvePenWidth(path);
@@ -2572,27 +2583,9 @@
       const desiredWidth = penWidth * Math.min(MAX_WEIGHT_SCALE, raw);
       const passes = Math.max(1, 1 + Math.ceil((desiredWidth - penWidth) / spacing));
       if (passes <= 1) return [stripWeightScale(path)];
-      const a = path[0];
-      let b = path[path.length - 1];
-      if (Math.abs(b.x - a.x) < 1e-6 && Math.abs(b.y - a.y) < 1e-6) {
-        const alt = path.find((pt) => Math.abs(pt.x - a.x) > 1e-6 || Math.abs(pt.y - a.y) > 1e-6);
-        if (alt) b = alt;
-      }
-      const dx0 = b.x - a.x;
-      const dy0 = b.y - a.y;
-      const runLen = Math.hypot(dx0, dy0);
-      if (!(runLen > 1e-6)) return [stripWeightScale(path)];
-      const nx = -dy0 / runLen;
-      const ny = dx0 / runLen;
-      const out = [];
-      for (let i = 0; i < passes; i++) {
-        const t = i - (passes - 1) / 2;
-        const dx = nx * spacing * t;
-        const dy = ny * spacing * t;
-        const pass = (dx === 0 && dy === 0) ? path : offsetPathFn(path, dx, dy);
-        out.push(stripWeightScale(pass));
-      }
-      return out;
+      const offsetPasses = thickenUniformFn([path], { width: passes, spacing });
+      if (!Array.isArray(offsetPasses) || offsetPasses.length !== passes) return [stripWeightScale(path)];
+      return offsetPasses.map((pass) => stripWeightScale(pass));
     };
     const sourcePaths = [];
     rawSourcePaths.forEach((path) => {
