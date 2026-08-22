@@ -1881,6 +1881,18 @@
       return s;
     };
 
+    // fs-q1 — same tree-vs-monolith union as sceneObjects() below: a scene
+    // TREE empties `params.lights` (lights live on sceneLight3d CHILD layers;
+    // collectSceneParams re-unions them into `layer._sceneAssembled.lights` at
+    // compose time), so that assembled list is the live light set once the
+    // engine has composed the scene; `params.lights` is the pass-through
+    // fallback pre-compose or on a monolith.
+    const sceneLightsForShadow = () => {
+      const assembled = layer._sceneAssembled;
+      if (assembled && Array.isArray(assembled.lights) && assembled.lights.length) return assembled.lights;
+      return Array.isArray(params.lights) ? params.lights : [];
+    };
+
     // Host commit pattern — ONE undo step per gesture.
     const pushHist = () => { try { ui.app && ui.app.pushHistory && ui.app.pushHistory(); } catch (_) { /* */ } };
     const store = () => { try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ } };
@@ -2948,9 +2960,21 @@
       // `FS.groups(null, null, null)` asks for the full roster with no
       // primitive/mapper reachability context (shadows have neither), so
       // nothing there gates anything — toneLawApplies is the only filter.
+      //
+      // fs-q1 — that filter alone is not enough: with Shadow Layers on (or any
+      // area light, which forces the same build even with the toggle off) the
+      // WHOLE row is inert — toneLaw is read but the zone-anatomy build never
+      // receives the mark class (diagnosed, deliberately out of scope for this
+      // batch; see shadows.js's shadowFillStyleApplies comment for the
+      // empirical basis). So the row is hidden entirely then, replaced by
+      // SHADOW_LAYERS_NOTE, rather than offered as a picker with no effect.
+      // The stored shadowToneLaw is untouched — the row just stops rendering
+      // (and writing), so Layers off restores whatever law was last picked.
       const FS = Vectura.SCENE_FILL_STYLES;
       const ShadowsMod = Vectura.Scene3D && Vectura.Scene3D.Shadows;
-      if (FS && ShadowsMod && typeof ShadowsMod.toneLawApplies === 'function') {
+      const toneLawIsLive = !ShadowsMod || typeof ShadowsMod.shadowFillStyleApplies !== 'function'
+        || ShadowsMod.shadowFillStyleApplies(s, sceneLightsForShadow());
+      if (FS && ShadowsMod && typeof ShadowsMod.toneLawApplies === 'function' && toneLawIsLive) {
         const lawRow = document.createElement('div');
         lawRow.className = 'vs3-row';
         const lawLbl = document.createElement('label');
@@ -2977,6 +3001,11 @@
           note.textContent = FS.SHADOW_NOTE;
           host.appendChild(note);
         }
+      } else if (FS && ShadowsMod && !toneLawIsLive && FS.SHADOW_LAYERS_NOTE) {
+        const note = document.createElement('p');
+        note.className = 'vs3-empty';
+        note.textContent = FS.SHADOW_LAYERS_NOTE;
+        host.appendChild(note);
       }
 
       // Follow light — shadows.js derives the hatch bearing from the light travel

@@ -1634,6 +1634,19 @@
   // reaches it on both. Sun steering lives on the light itself: the Sun child
   // layer's panel (azimuth/elevation), the on-canvas light gizmo, and the
   // shadow-drag re-aim.
+  //
+  // fs-q1 — same tree-vs-monolith split as the comment above: a scene TREE
+  // empties `params.lights` (lights live on sceneLight3d CHILD layers), so the
+  // live light list is `layer._sceneAssembled.lights` once the engine has
+  // composed the scene (mirrors scene3d-panel.js's sceneObjects() pattern for
+  // the same tree/monolith union). Falls back to `params.lights` pre-compose
+  // or on a monolith, where the union is a pass-through.
+  const sceneLightsForShadow = (layer) => {
+    const assembled = layer && layer._sceneAssembled;
+    if (assembled && Array.isArray(assembled.lights) && assembled.lights.length) return assembled.lights;
+    return (layer && layer.params && Array.isArray(layer.params.lights)) ? layer.params.lights : [];
+  };
+
   const buildShadowBody = (fly, rebuild) => {
     const sc = sceneFlyCtx(); if (!sc) return;
     const C = (FLY().shadow) || {};
@@ -1683,10 +1696,22 @@
     // with no primitive/mapper reachability context (shadows have neither),
     // so nothing there gates anything; the only filter active is
     // toneLawApplies.
+    // fs-q1 — the row above is completely inert once Shadows.shadowFillStyle
+    // Applies says every shadow-casting light is on the zone-anatomy path
+    // (Layers on, or any area light forcing it): toneLaw is read there but the
+    // zone build never receives the mark class (diagnosed, deliberately out of
+    // scope for this batch — see the comment above shadowFillStyleApplies in
+    // shadows.js). HIDE the row then — not merely narrow it, which is all
+    // toneLawApplies above already does — so this control never offers a
+    // choice with no effect. The stored `shadow.shadowToneLaw` is untouched:
+    // the row just stops rendering (and writing), so switching Layers back off
+    // restores whatever law was last picked.
     if (C.toneLaw) {
       const FS = Vectura.SCENE_FILL_STYLES;
       const Shadows = Vectura.Scene3D && Vectura.Scene3D.Shadows;
-      if (FS && Shadows && typeof Shadows.toneLawApplies === 'function') {
+      const isLive = !Shadows || typeof Shadows.shadowFillStyleApplies !== 'function'
+        || Shadows.shadowFillStyleApplies(bag, sceneLightsForShadow(sc.layer));
+      if (FS && Shadows && typeof Shadows.toneLawApplies === 'function' && isLive) {
         const law = FS.resolve(bag.shadowToneLaw);
         const groups = FS.groups(null, null, null)
           .map((g) => ({ group: g.group, options: g.options.filter((opt) => Shadows.toneLawApplies(opt.value)) }))
@@ -1696,6 +1721,8 @@
           onChange: (v) => setScene('shadow.shadowToneLaw', v),
         });
         if (C.toneLawNote) flyNote(fly, C.toneLawNote);
+      } else if (FS && Shadows && !isLive && C.toneLawInertNote) {
+        flyNote(fly, C.toneLawInertNote);
       }
     }
     // Follow light — shadows.js derives the hatch bearing from the light travel
@@ -1741,10 +1768,16 @@
     UI.SegCtrl(flyRow(fly, C.layers.label), {
       options: C.layerOptions, value: layVal, ariaLabel: C.layers.aria,
       onChange: (v) => {
-        if (v === 'off') { setScene('shadow.shadowLayers', false); return; }
+        // fs-q1 — this toggle now ALSO decides whether the Fill Style row
+        // above is live or hidden (shadowFillStyleApplies), so it needs the
+        // same live rebuild() the Follow-light toggle already uses to swap
+        // its Angle dial for a note — without it the row would only catch up
+        // the next time the flyout is closed and reopened.
+        if (v === 'off') { setScene('shadow.shadowLayers', false); rebuild(); return; }
         // Two writes bundled into ONE undo via the gesture flag (begin, commit).
         setScene('shadow.shadowLayers', true, { gesture: true });
         setScene('shadow.shadowLayerCount', parseInt(v, 10));
+        rebuild();
       },
     });
   };
