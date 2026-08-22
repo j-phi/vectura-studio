@@ -12485,7 +12485,7 @@
       const layer = this.engine.layers.find((l) => l.id === layerId);
       const SC = window.Vectura?.Scene3D?.StyleCascade;
       if (!layer || layer.type !== 'scene3d' || !SC) return null;
-      return SC.resolve(this._sceneStyleTable(layer), { objectId });
+      return SC.resolve(this._sceneStyleResolveTable(layer, objectId), { objectId });
     }
 
     // Where an object's STYLE actually lives — the child-aware sibling of
@@ -12505,6 +12505,40 @@
       if (this._sceneObjects(layer).some((o) => o && o.id === objectId)) return null;
       const child = this._sceneChildLayerFor(layer, objectId);
       return (child && child.params) ? child : null;
+    }
+
+    // Build the styleTable used to RESOLVE a specific object/face, patched with
+    // the owner child layer's LIVE style — the read-side fix for the same gap
+    // _sceneStyleOwnerLayer documents on the write side. Without this, every
+    // resolve (panel-agnostic: the ctxbar flyout AND setSceneObjectStyle's own
+    // "current style" read before a patch) went through the group's
+    // styleTable.byObject mirror, which is populated ONLY by a prior ctxbar
+    // write — never by the object panel's Style tab, which writes
+    // `child.params.style` directly. A tree object styled only via the panel
+    // therefore resolved as the (empty) scene default, and any ctxbar
+    // single-field write (e.g. Pen) rebuilt "current style" from that wrong
+    // resolve and clobbered every other field (Type reverted to Wireframe).
+    // Mirrors Scene3D.Params.collectSceneParams' declaresStyle-gated
+    // byObject/byFace publish exactly, so this preview matches what actually
+    // renders. Returns the GROUP table unchanged for a legacy inline monolith
+    // object (no owner layer) — that path is untouched by design.
+    _sceneStyleResolveTable(layer, objectId) {
+      const table = this._sceneStyleTable(layer);
+      const owner = this._sceneStyleOwnerLayer(layer, objectId);
+      if (!owner) return table;
+      const style = owner.params && owner.params.style;
+      const declaresStyle = !!(style && typeof style === 'object' && typeof style.mapper === 'string' && style.mapper);
+      const byObject = { ...(table.byObject || {}) };
+      if (declaresStyle) byObject[objectId] = style;
+      const byFace = { ...(table.byFace || {}) };
+      const faceStyles = owner.params && owner.params.faceStyles;
+      if (faceStyles && typeof faceStyles === 'object') {
+        Object.keys(faceStyles).forEach((fid) => {
+          const full = fid.indexOf('/') >= 0 ? fid : `${objectId}/${fid}`;
+          byFace[full] = faceStyles[fid];
+        });
+      }
+      return { scene: table.scene, byObject, byFace };
     }
 
     // Whole-style write at object scope (CONTRACT C — no per-field merge across
@@ -12540,7 +12574,7 @@
           if (owner) owner.params.style = plain(SC.resolve(table, {}));
           return;
         }
-        const cur = SC.resolve(table, { objectId: id });
+        const cur = SC.resolve(this._sceneStyleResolveTable(layer, id), { objectId: id });
         const style = { penId: cur.penId, mapper: cur.mapper, params: { ...(cur.params || {}) } };
         Object.keys(patch || {}).forEach((k) => { style[k] = patch[k]; });
         SC.setStyle(table, 'object', id, style);
@@ -12560,7 +12594,7 @@
       const slash = key.indexOf('/');
       const objectId = slash >= 0 ? key.slice(0, slash) : key;
       const faceId = slash >= 0 ? key.slice(slash + 1) : null;
-      return SC.resolve(this._sceneStyleTable(layer), { objectId, faceId });
+      return SC.resolve(this._sceneStyleResolveTable(layer, objectId), { objectId, faceId });
     }
 
     // Whole-style write at FACE scope (I20 — pen/style from the ctxbar must
@@ -12582,7 +12616,7 @@
         const slash = key.indexOf('/');
         const objectId = slash >= 0 ? key.slice(0, slash) : key;
         const faceId = slash >= 0 ? key.slice(slash + 1) : null;
-        const cur = SC.resolve(table, { objectId, faceId });
+        const cur = SC.resolve(this._sceneStyleResolveTable(layer, objectId), { objectId, faceId });
         const style = { penId: cur.penId, mapper: cur.mapper, params: { ...(cur.params || {}) } };
         Object.keys(patch || {}).forEach((k) => { style[k] = patch[k]; });
         SC.setStyle(table, 'face', key, style);
