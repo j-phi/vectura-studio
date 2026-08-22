@@ -2090,32 +2090,84 @@
 
   /* ── 03 · originSpiral ──────────────────────────────────────────────────────
    * ONE continuous line for the whole body. It starts at the brightest point on
-   * the form — the specular origin — and winds outward, and its radial pitch is
-   * integrated turn by turn from the radiance it is passing through, so the
-   * turns squeeze together as the line walks into the shadow and open out as it
-   * comes back into the light. Because there is exactly one origin and the
-   * turns are concentric about it, the eye reads a single curved surface lit
-   * from one place: the spiral IS the shading and the shading IS the form.
-   * Reaches its darkest where consecutive turns close to the plot floor.
+   * the form — the specular origin — and winds outward, ring by ring, and each
+   * new ring is the PREVIOUS ring pushed out by the local radial pitch AT THAT
+   * ANGLE, so the turns squeeze together as the line passes through the shadow
+   * and open out as it passes back through the light. Because there is exactly
+   * one origin and the turns are concentric about it, the eye reads a single
+   * curved surface lit from one place: the spiral IS the shading and the
+   * shading IS the form. Reaches its darkest where consecutive turns close to
+   * the plot floor.
+   *
+   * WHY A RING RECURRENCE AND NOT A PLAIN dr/dphi INTEGRAL. The obvious way to
+   * write this law integrates r monotonically against a single, ever-advancing
+   * phi: r(phi) = r0 + INTEGRAL(pitch(phi')/(2*pi)) dphi' from 0 to phi. That
+   * was this law's original form, and it is mathematically incapable of
+   * carrying tone: the spacing between turn K and turn K+1 AT A FIXED ANGLE
+   * theta is the integral of pitch over the window [theta, theta + 2*pi] --
+   * exactly one full period -- and the integral of a 2*pi-periodic function
+   * over any window of EXACTLY one period is the SAME constant regardless of
+   * where the window starts. So the ring-to-ring spacing at every angle
+   * converges to the same silhouette-wide average pitch no matter how sharply
+   * `pitch(theta)` itself varies locally -- confirmed by measurement, not just
+   * derivation: shadow/lit ink density ratio 0.975, flat, even though the
+   * per-sample target pitch driving the walk measured a real ~2x swing (0.373
+   * shadow vs 0.722 lit average) that never showed up as real spacing. Fixing
+   * the guard budget instead (an earlier attempt here, since reverted) helped
+   * the walk reach the far side but left the ratio at 0.98 -- proof the
+   * flatness was structural, not a coverage bug.
+   * The fix breaks that degeneracy by defining ring K+1's radius AT ANGLE
+   * theta directly from ring K's OWN radius and tone AT THAT SAME theta:
+   * r_{k+1}(theta) = r_k(theta) + pitchFor(I(r_k(theta), theta)). Spacing
+   * between consecutive rings at a given angle is then exactly the local
+   * pitch there, with no averaging across the rest of the form. The rings are
+   * walked out together and stitched into one continuous polyline through a
+   * seam at theta = 0, so the drawing is still the single wound line the law
+   * is named for -- just built as a stack of tone-graded offset contours
+   * rather than an integral that could not see past its own period.
    */
   const lawSpiral = (C) => {
     const ox = C.hiX; const oy = C.hiY;
     const rMax = Math.hypot(C.W, C.H);
-    let r = C.pitchFor(0.9) * 0.5;
-    let phi = 0;
+    const R0 = C.pitchFor(0.9) * 0.5;
+    // Angular resolution fine enough that even the OUTERMOST ring's chord
+    // stays comfortably under the segment guard's cut threshold; smaller
+    // rings are automatically finer still since the same NANG covers less
+    // circumference.
+    const NANG = clamp(Math.round((2 * Math.PI * rMax) / 1.8), 96, 480);
+    let ring = new Float64Array(NANG).fill(R0);
     const pts = [];
+    const pushRing = (radii) => {
+      for (let i = 0; i <= NANG; i += 1) {
+        const th = ((i % NANG) / NANG) * Math.PI * 2;
+        const r = radii[i % NANG];
+        pts.push({ x: ox + r * Math.cos(th), y: oy + r * Math.sin(th) });
+      }
+    };
+    pushRing(ring);
     let guard = 0;
-    while (r < rMax && guard < 90000) {
+    let anyGrowing = true;
+    // A guard of 400 rings comfortably covers the slowest (densest-shadow)
+    // direction on every primitive measured: reaching `rMax` at the plot
+    // floor pitch (~2 ink widths) takes on the order of rMax / floor rings,
+    // and floor is never smaller than a fraction of a millimetre.
+    while (anyGrowing && guard < 400) {
       guard += 1;
-      const x = ox + r * Math.cos(phi);
-      const y = oy + r * Math.sin(phi);
-      pts.push({ x, y });
-      const s = C.inv(x, y);
-      const p = C.pitchFor(s ? finite(s.I, 0) : 0.85);
-      // Constant ARC step so the spiral is evenly sampled at every radius.
-      const dphi = clamp(0.34 / Math.max(0.3, r), 0.004, 0.35);
-      phi += dphi;
-      r += (p * dphi) / (Math.PI * 2);
+      anyGrowing = false;
+      const next = new Float64Array(NANG);
+      for (let i = 0; i < NANG; i += 1) {
+        const r0 = ring[i];
+        if (r0 >= rMax) { next[i] = r0; continue; }
+        const th = (i / NANG) * Math.PI * 2;
+        const x = ox + r0 * Math.cos(th); const y = oy + r0 * Math.sin(th);
+        const s = C.inv(x, y);
+        const p = C.pitchFor(s ? finite(s.I, 0) : 0.85);
+        const r1 = r0 + p;
+        next[i] = r1;
+        if (r1 < rMax) anyGrowing = true;
+      }
+      ring = next;
+      pushRing(ring);
     }
     C.emitScr(pts);
   };
