@@ -2074,6 +2074,14 @@
       //        saved scenes get their stored radius scaled back down to match.
       // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
       sceneVersion: 4,
+      // sf-w4/C4 — Stroke Fill Style. A variable-width fill style draws its
+      // ruling as a real ribbon OUTLINE stroked with the real pen, then fills
+      // that outline with a pen-width-pitched continuous stroke; this picks the
+      // pattern that fill uses ('spiral' | 'concentric' | 'serpentine' |
+      // 'contourParallel'). Vocabulary + the bucket gate live in
+      // Vectura.STROKE_FILL_STYLES (src/config/context-bar.js). Inert on the
+      // monowidth and three-pen fill styles, which never build a ribbon.
+      strokeFillStyle: 'spiral',
       seed: 0,
       objects: [
         {
@@ -2184,6 +2192,11 @@
       // old leaf still arrives without a sceneVersion and still migrates.
       // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
       sceneVersion: 4,
+      // sf-w4/C4 — kept in lockstep with ALGO_DEFAULTS.scene3d above: a
+      // standalone object3d leaf delegates to the same scene3d pipeline, so it
+      // must resolve the same Stroke Fill Style. Vocabulary + the bucket gate
+      // live in Vectura.STROKE_FILL_STYLES (src/config/context-bar.js).
+      strokeFillStyle: 'spiral',
       // A fresh 3D object is a SPHERE, not a box. A box under the wireframe
       // mapper emits nine straight edges and nothing else — the object carries
       // no surface ink at all, so a freshly inserted scene reads as a bare cube
