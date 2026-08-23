@@ -300,7 +300,16 @@
     // including shadows.js's per-hatch-line clipPath calls, which reuse this
     // SAME clipper instance (it is handed to Shadows.build as `clipper`), so
     // shadow generation gets the identical speedup with no code of its own.
-    const index = buffer ? null : buildOccluderIndex(occluders);
+    //
+    // Test seam: opts.disableIndex (or the module-level api.__forceLinearScan
+    // flag below) forces the pre-index linear scan even when a valid index
+    // could be built. Nothing in production code sets either — it exists so
+    // a test can compute indexed-vs-brute-force output in the SAME run and
+    // assert they are identical, instead of only comparing against a static
+    // fingerprint that goes stale whenever scene geometry legitimately
+    // changes. See scene3d-hlr-spatial-index-identity.test.js.
+    const forceLinearScan = Boolean(opts.disableIndex || api.__forceLinearScan);
+    const index = (buffer || forceLinearScan) ? null : buildOccluderIndex(occluders);
 
     // seg: { ownerKeys: [faceKey…], objectId } — context for owner exclusion.
     const hiddenAt = (x, y, z, seg) => {
@@ -439,6 +448,10 @@
     // derive expected sample spacing directly instead of hardcoding it.
     SAMPLE_STEP,
     DRAFT_SAMPLE_STEP_MULT,
+    // Test seam: when true, createClipper always falls back to the linear
+    // occluder scan (see forceLinearScan above), even where an index would
+    // normally be built. Defaults false; production code never sets this.
+    __forceLinearScan: false,
     buildOccluders,
     fitSupportPlane,
     planeDepthAt,

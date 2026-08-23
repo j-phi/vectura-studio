@@ -161,12 +161,36 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   // (that is the feature); the `|settled` rows are untouched and still
   // match the pre-spatial-index baseline exactly, proving settled output
   // stayed byte-identical.
+  //
+  // NOTE (FS-Z2): the two `|settled` rows below moved AGAIN, for a reason
+  // unrelated to the spatial index. These fingerprints are a PROXY for an
+  // indexed-vs-brute-force identity invariant, not an end in themselves —
+  // and that invariant was independently re-verified intact for this change:
+  // a private patched copy of hlr.js (createClipper's
+  // `const index = buffer ? null : buildOccluderIndex(occluders)` forced to
+  // `const index = null`) was diffed against the unpatched indexed runtime
+  // across all 6 scenario×mode combinations here, on this tree and on clean
+  // 421d4ac3 and 443b4800 — byte-identical every time, and hlr.js itself has
+  // no diff anywhere across that chain. So the index is sound; only the
+  // hard-coded fingerprints are stale, because shadow geometry legitimately
+  // changed (ruling-fragmentation was replaced by ruling-spacing, which
+  // changes emitted path/point counts for scenes with cast shadows):
+  //   facetedOverlap|settled pathCount: 124 (421d4ac3) -> 122 (443b4800) -> 129 (here)
+  //   denseMixed|settled     pathCount: 546 (421d4ac3) -> 466 (443b4800) -> 467 (here)
+  // The `identity` describe block below now also asserts the invariant
+  // DIRECTLY (indexed vs. brute-force output computed in the same run, via
+  // the api.__forceLinearScan test seam in hlr.js) so this file no longer
+  // depends solely on a human re-diagnosing "did the numbers move for a
+  // legitimate reason" every time scene geometry changes. Keep BOTH: the
+  // absolute fingerprints below still catch unintended geometry drift that
+  // the identity check alone would miss (e.g. a bug that changes indexed
+  // AND brute-force output identically).
   const EXPECTED = {
-    'facetedOverlap-orthographic-hatch|settled': { hash: '96e5e0f732b09b4ab57c546e94dcd3d71cb5c917c8fb4d34c5cc071810ce9d59', pathCount: 132, pointCount: 264 },
+    'facetedOverlap-orthographic-hatch|settled': { hash: 'edb852cb0986dcbb6a12958f2a539b67f558948fa6dd5428b5cc0548ececc829', pathCount: 129, pointCount: 258 },
     'facetedOverlap-orthographic-hatch|draft': { hash: 'c89e3d735e2b53f3c1d154e7f3567d53a1e6053159b9ffa25a5853f7973d6a76', pathCount: 200, pointCount: 400 },
     'curvedOverlap-perspective-mixed-xray|settled': { hash: '98c456f3f08ead41305f0dcdfc46dece0319692cd63905157f1dc2f862bfe865', pathCount: 343, pointCount: 1135 },
     'curvedOverlap-perspective-mixed-xray|draft': { hash: '83aebf997a1e39aed36e2893fb18e7e7ea386755a9493e4868c53c51c80ee2f9', pathCount: 302, pointCount: 604 },
-    'denseMixed-8obj-shadows|settled': { hash: 'c369bbc5ffdcf9fdedebc4b47ce61d1794e484679ebe7f0c79ec23ae0abac96b', pathCount: 471, pointCount: 2130 },
+    'denseMixed-8obj-shadows|settled': { hash: 'ddb7f98fb9a3cd063eb75fdcf5138406ce4595506f3176b32c9909ab12560650', pathCount: 467, pointCount: 2122 },
     'denseMixed-8obj-shadows|draft': { hash: '9c3de29b1f268348208ebe1395268ad1f099ffdfc1b58d5759e3dc7eba7f4486', pathCount: 466, pointCount: 932 },
   };
 
@@ -200,6 +224,51 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
       expect(fpSettled).toEqual(expectedSettled);
       expect(fpDraft.pathCount).toBeGreaterThan(0);
       expect(fpDraft).toEqual(expectedDraft);
+    });
+  });
+
+  // Direct invariant check: instead of relying only on a static fingerprint
+  // (which legitimately goes stale whenever scene geometry changes for
+  // unrelated reasons — see the FS-Z2 note above), compute BOTH the indexed
+  // and the brute-force-linear-scan output in the SAME test run and assert
+  // they are identical. hlr.js exposes a test-only seam for this
+  // (`HLR.__forceLinearScan`) that forces createClipper to skip building the
+  // spatial index and fall back to the original linear occluder scan — it is
+  // never set by production code (see hlr.js for the seam's own doc comment).
+  scenarios.forEach(({ name, objects, extra }) => {
+    test(`${name}: indexed output matches brute-force linear-scan output (same run)`, () => {
+      const HLR = V.Scene3D.HLR;
+      try {
+        const paramsIndexedSettled = sceneParams(objects, extra);
+        HLR.__forceLinearScan = false;
+        const pathsIndexedSettled = algo.generate(paramsIndexedSettled, null, null, BOUNDS_SETTLED) || [];
+        const fpIndexedSettled = fingerprint(pathsIndexedSettled);
+
+        const paramsBruteSettled = sceneParams(objects, extra);
+        HLR.__forceLinearScan = true;
+        const pathsBruteSettled = algo.generate(paramsBruteSettled, null, null, BOUNDS_SETTLED) || [];
+        const fpBruteSettled = fingerprint(pathsBruteSettled);
+
+        const paramsIndexedDraft = sceneParams(objects, extra);
+        HLR.__forceLinearScan = false;
+        const pathsIndexedDraft = algo.generate(paramsIndexedDraft, null, null, BOUNDS_DRAFT) || [];
+        const fpIndexedDraft = fingerprint(pathsIndexedDraft);
+
+        const paramsBruteDraft = sceneParams(objects, extra);
+        HLR.__forceLinearScan = true;
+        const pathsBruteDraft = algo.generate(paramsBruteDraft, null, null, BOUNDS_DRAFT) || [];
+        const fpBruteDraft = fingerprint(pathsBruteDraft);
+
+        expect(fpIndexedSettled.pathCount).toBeGreaterThan(0);
+        expect(fpIndexedSettled).toEqual(fpBruteSettled);
+        expect(fpIndexedDraft.pathCount).toBeGreaterThan(0);
+        expect(fpIndexedDraft).toEqual(fpBruteDraft);
+      } finally {
+        // Never leave the shared module-level flag flipped for later tests
+        // (this file's own remaining scenarios, or any other suite that
+        // shares this jsdom runtime instance).
+        V.Scene3D.HLR.__forceLinearScan = false;
+      }
     });
   });
 });
