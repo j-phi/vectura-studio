@@ -1082,6 +1082,16 @@ the ink-budget fix and has not been re-tuned.
   `specs/review-2026-05/` (A4/B3/C2/S1 verified done; A3-C1/A5/B1-A6 remainders carried).
   `docs/audit-remediation-todo.md` remains as the AUD-## spec appendix.
 
+### Fixed
+- **3D Scene — cast shadow tone gradients render as continuous, correctly-spaced hatching
+  instead of broken stubs.** The near→far tone gradient on a cast shadow (`shadowToneDepth`)
+  used to chop each ruling into short chunks and drop them by duty cycle, so the far end read
+  as scattered stubs rather than a thinning hatch. Rulings now stay unbroken; only the gap
+  between them widens toward the far tip. This also fixed **crosshatch** and **scribble**
+  shadow fill styles, which shredded the same way and were still user-reachable after the
+  first pass. **"No Tone" now actually turns the gradient off** — previously it stayed on
+  regardless of the selected Fill Style.
+
 ## 1.3.0 - 2026-07-18
 
 ### Added

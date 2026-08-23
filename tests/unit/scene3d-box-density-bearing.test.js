@@ -167,19 +167,47 @@ describe('Scene3D — how a BOX\'s rendered fill bearing responds to Density', (
   });
 
   // ── BYTE-IDENTITY GUARD ─────────────────────────────────────────────────
-  // Nothing in this commit touches source, so this pins the faceted fill path
-  // exactly as it stands across the whole Density range — including the entire
-  // d<=100 band saved artwork lives in — for the next attempt to work against.
+  // RE-PINNED 2026-08-22 (fs-z2-shadowfrag). `fingerprint()` hashes EVERY
+  // scenePaths entry, not just this object's fill (unlike `families()`,
+  // which filters to `sceneTarget.objectId === obj.id`) — so it also covers
+  // the ground's cast-shadow rulings (`sceneTarget.regionClass ===
+  // 'castShadow'`, `objectId: 'ground'`). Commit 443b4800 re-expressed those
+  // rulings from fixed-length ("6mm") chunking to varied ruling spacing, and
+  // the current working tree extends that to the `cross`/`wave` mark classes
+  // plus a parallel-to-throw pitch clamp and a NaN guard — none of which
+  // touches this object's own faceted fill. Chunking produced many short
+  // path fragments per shadow region; spacing-variation produces far fewer,
+  // longer ones for the same region, so the digits below moved even though
+  // this file never mentions "shadow".
+  //
+  // Verified, not assumed, on clean extracts of 421d4ac3 (pre-shadow-work,
+  // where the previous digits reproduce byte-for-byte) vs this working tree:
+  //   - box, Density 10/24/50: the sceneFill paths owned by this object
+  //     (`objectId === obj.id`, unoccluded — exactly what `families()` reads)
+  //     and the sceneEdge paths are BYTE-IDENTICAL between the two trees.
+  //     Only the ground's castShadow path COUNT changed: 281/281/281 ->
+  //     119/119/119 fragments for the same three densities (fewer, longer
+  //     rulings, same coverage).
+  //   - solid (D50/150), plane (D50), sphere (D50/150): same result — each
+  //     primitive's own sceneFill+sceneEdge fingerprint is byte-identical
+  //     across trees; only the ground castShadow fragment count drops
+  //     (e.g. sphere: 209 -> 77 fragments; plane: 364 -> 96).
+  // That is (a) the three behaviour tests above still pass unchanged, and
+  // (b) is the geometric proof: nothing about this box's (or any tested
+  // primitive's) faceted fill moved — only the ground shadow's fragmentation
+  // did. The guarded bearing/Density behaviour this file exists to pin is
+  // intact; this guard's job is only to catch the NEXT unrelated drift, so
+  // it is re-pinned to the current (legitimate) numbers.
   test('BYTE-IDENTITY GUARD: box / solid / plane / sphere fingerprints across Density', () => {
-    expect(fingerprint(10)).toBe('f5481328:10699');
-    expect(fingerprint(24)).toBe('c0415ee9:10767');
-    expect(fingerprint(50)).toBe('9175f4b7:10872');
-    expect(fingerprint(100)).toBe('b4b73f02:13750');
-    expect(fingerprint(150)).toBe('da066577:15622');
-    expect(fingerprint(50, 'solid')).toBe('6b8bc276:7073');
-    expect(fingerprint(150, 'solid')).toBe('e82c4c3:14147');
-    expect(fingerprint(50, 'plane')).toBe('b6177b4d:13293');
-    expect(fingerprint(50, 'sphere')).toBe('99d07ed8:20640');
-    expect(fingerprint(150, 'sphere')).toBe('df193b63:40006');
+    expect(fingerprint(10)).toBe('4db89b89:4955');
+    expect(fingerprint(24)).toBe('1168154a:5023');
+    expect(fingerprint(50)).toBe('ccccaf18:5128');
+    expect(fingerprint(100)).toBe('60fff363:8006');
+    expect(fingerprint(150)).toBe('4cbf9fd8:9878');
+    expect(fingerprint(50, 'solid')).toBe('5d8296ce:4060');
+    expect(fingerprint(150, 'solid')).toBe('650b0061:11134');
+    expect(fingerprint(50, 'plane')).toBe('44270f5b:3738');
+    expect(fingerprint(50, 'sphere')).toBe('2f4dae00:15919');
+    expect(fingerprint(150, 'sphere')).toBe('bd627a15:35285');
   });
 });

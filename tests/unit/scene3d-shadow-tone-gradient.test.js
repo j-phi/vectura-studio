@@ -312,7 +312,26 @@ describe('Scene3D.Shadows — applyShadowToneGradient spacing re-expression (fs-
     expect(Math.abs(avg - sBase)).toBeLessThan(0.05);
   });
 
-  test('angle=0 (parallel to the throw, the adversarial case): spacing cannot express a gradient — degrades to near-uniform, still fully continuous (no fragmentation)', () => {
+  // fs-z2 Cycle 3 (Defect 2, adversarial review of 443b4800): this test used
+  // to assert only `maxDelta < avg * 0.5`, which a uniform pitch of 3.40
+  // (1.7x sBase — the tone of the FOOTPRINT'S MIDPOINT, since every
+  // scanline's own hit-pair midpoint sits near t=0.5 in this orientation)
+  // satisfies exactly as happily as a correct uniform 2.00 (=sBase) does. That
+  // is not an honest degrade: it pays the shadow's full ink budget (every
+  // ruling is exactly as far apart as an ungraded shadow's densest setting
+  // would allow) while rendering ZERO near/far gradient — measured on a
+  // footprint angle sweep (100x100, contact x=0, throw +x, sBase=2, depth 1),
+  // angle=0 loses 44% of its ink for no gradient at all, and even the
+  // everyday 45 degree case (`shadowAngle`'s own default) only reached ~62%
+  // of achievable contrast. `buildGradedSpacing` now derives the shadow's
+  // throw axis from the contact segments (`fields.throwAngleDeg`, built in
+  // `buildShadowFields`) and clamps the computed pitch back toward `sBase`
+  // whenever the ruling bearing sits within ~30 degrees of that axis
+  // (blended smoothly out to 60 degrees, so the pitch cannot visibly pop as a
+  // light orbits through that band) — so the honest degrade is near-uniform
+  // spacing AT sBase, i.e. the shadow UNCHANGED from its ungraded pitch, not
+  // a uniform pitch at some other, wrongly-lightened value.
+  test('angle=0 (parallel to the throw, the adversarial case): spacing cannot express a gradient — clamps to near-uniform AT sBase (not merely uniform), still fully continuous (no fragmentation)', () => {
     const fields = Shadows.__shadowFieldsForTest(rings, contactSegs);
     const marks = Shadows.__gradedHatchForTest(rings, 0, sBase, fields, tone, 1, penWidth);
     // Still continuous — every ruling spans the full 100mm throw, never chopped.
@@ -320,17 +339,77 @@ describe('Scene3D.Shadows — applyShadowToneGradient spacing re-expression (fs-
       const len = Math.hypot(b.x - a.x, b.y - a.y);
       expect(len).toBeGreaterThan(99);
     });
-    // But honestly uniform: consecutive rulings (stacked along y here) sit at
-    // a near-constant pitch, because a scanline's own representative point
-    // does not systematically drift toward or away from contact as the scan
-    // advances in this orientation. This is the "genuinely impractical" case
-    // acknowledged rather than papered over with fragmentation.
+    // Uniform AND pinned at sBase — the shadow's ink budget is not spent on a
+    // gradient this orientation cannot express.
     const ys = marks.map(([a, b]) => (a.y + b.y) / 2).sort((p, q) => p - q);
     const gaps = [];
     for (let i = 1; i < ys.length; i++) gaps.push(ys[i] - ys[i - 1]);
     const avg = gaps.reduce((s, v) => s + v, 0) / gaps.length;
     const maxDelta = Math.max(...gaps.map((g) => Math.abs(g - avg)));
     expect(maxDelta).toBeLessThan(avg * 0.5);
+    // THE contract this test used to miss entirely (RED against the pre-fix
+    // 443b4800 code: avg measured ~3.40, not ~2.00 — see the comment above).
+    expect(avg).toBeCloseTo(sBase, 1);
+  });
+
+  // fs-z2 Cycle 3 (Defect 2) — the throw-axis clamp derived directly, at every
+  // angle in the reported sweep. `__buildGradedSpacingForTest` exposes
+  // `spacingAt(x,y)` itself so the clamped pitch can be read at an exact
+  // point instead of inferred from marching-scan gap statistics.
+  describe('throw-axis clamp — pitch at the near-contact sample point, swept across the reported angle range', () => {
+    test('throwAngleDeg is derived correctly for this fixture (contact x=0, throw along +x)', () => {
+      const fields = Shadows.__shadowFieldsForTest(rings, contactSegs);
+      expect(fields.throwAngleDeg).toBeCloseTo(0, 5);
+    });
+
+    test('angle=0 (parallel): spacingAt is EXACTLY sBase everywhere — full clamp, zero gradient spend', () => {
+      const fields = Shadows.__shadowFieldsForTest(rings, contactSegs);
+      const spacingAt = Shadows.__buildGradedSpacingForTest(sBase, fields, tone, 1, penWidth, 0);
+      expect(spacingAt(0, 10)).toBeCloseTo(sBase, 6);
+      expect(spacingAt(50, 10)).toBeCloseTo(sBase, 6);
+      expect(spacingAt(100, 10)).toBeCloseTo(sBase, 6);
+    });
+
+    test('angle=90 (crosswise): spacingAt is UNCLAMPED — the far tip pitch matches the un-blended graded formula', () => {
+      const fields = Shadows.__shadowFieldsForTest(rings, contactSegs);
+      const spacingAt = Shadows.__buildGradedSpacingForTest(sBase, fields, tone, 1, penWidth, 90);
+      expect(spacingAt(0, 10)).toBeCloseTo(sBase, 6); // t=0: duty=1 regardless of clamp
+      expect(spacingAt(100, 10)).toBeGreaterThan(sBase * 3); // far tip: full, unclamped gradient
+    });
+
+    test('angle=45 (mid-band): spacingAt is a 50/50 BLEND of the clamped and unclamped pitch, not a hard switch', () => {
+      const fields = Shadows.__shadowFieldsForTest(rings, contactSegs);
+      const at45 = Shadows.__buildGradedSpacingForTest(sBase, fields, tone, 1, penWidth, 45)(100, 10);
+      const at90 = Shadows.__buildGradedSpacingForTest(sBase, fields, tone, 1, penWidth, 90)(100, 10);
+      const expectedBlend = sBase * 0.5 + at90 * 0.5;
+      expect(at45).toBeCloseTo(expectedBlend, 4);
+      // strictly between the fully-clamped and fully-graded pitch
+      expect(at45).toBeGreaterThan(sBase);
+      expect(at45).toBeLessThan(at90);
+    });
+
+    test('the clamp band has no hard pop: pitch is monotonically non-decreasing as angle sweeps 0 -> 90', () => {
+      const fields = Shadows.__shadowFieldsForTest(rings, contactSegs);
+      const angles = [0, 10, 20, 30, 40, 45, 50, 60, 70, 80, 90];
+      const pitches = angles.map((a) => Shadows.__buildGradedSpacingForTest(sBase, fields, tone, 1, penWidth, a)(100, 10));
+      for (let i = 1; i < pitches.length; i++) expect(pitches[i]).toBeGreaterThanOrEqual(pitches[i - 1] - 1e-9);
+    });
+  });
+
+  // fs-z2 Cycle 3 (Defect 3.1) — NaN laundering. `fields.distContact` can, in
+  // principle, return a non-finite sample (an unsupported/degenerate field);
+  // before this fix `clamp(NaN, 0, 1)` silently returns NaN (this file's
+  // `clamp` is a plain `v < lo ? lo : v > hi ? hi : v`, which passes NaN
+  // through untouched since every comparison against NaN is false), and
+  // `ladderCoverageAt(NaN, tone)` absorbed that into its sparsest rung rather
+  // than surfacing a defect. A synthetic `fields` stub is the only way to
+  // force this — a real `buildShadowFields` lattice never emits NaN.
+  test('a non-finite distContact sample fails safe to sBase, not NaN/garbage', () => {
+    const fakeFields = { L: 100, throwAngleDeg: 90, distContact: () => NaN };
+    const spacingAt = Shadows.__buildGradedSpacingForTest(sBase, fakeFields, tone, 1, penWidth, 90);
+    const sp = spacingAt(50, 10);
+    expect(Number.isFinite(sp)).toBe(true);
+    expect(sp).toBeCloseTo(sBase, 6);
   });
 });
 
