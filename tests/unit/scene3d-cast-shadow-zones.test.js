@@ -23,23 +23,30 @@
  *
  * WHAT IS PINNED, and why each number is here rather than in a review document:
  *
- *   C12  Layers Off is unchanged                11583.00 mm / 2174 paths
+ *   C12  Layers Off is unchanged                11529.18 mm / 389 paths
  *   C11  Layers adds structure, not ink         2/3/4 within +-25% of their mean
  *   C3   the contact collar is ANCHORED         Z0 identical at every layer count
  *   C6   the umbra recedes                      Z2 carves 2 -> 3 -> 4
  *
- * C12 MOVED in shadowToneDepth (fs-w1-shadowtone, Stage 1 of the shadow tone
- * gradient): 16109.77mm/535 paths -> 11583.00mm/2174 paths. "Layers Off" IS
- * the flat() path in shadows.js, and shadowToneDepth's new default (0.75,
- * SHIPPED ON — src/core/scene3d/params.js DEFAULT_SHADOW.shadowToneDepth) now
- * applies there: total ink drops (thinning-only, never adds a line — see
- * shadows.js applyShadowToneGradient) but path count rises ~4x because each
- * mark is cut into ~6mm chunks so a spatially-varying keep/drop duty can be
- * applied at all. This IS the change working as intended, not a regression —
- * see tests/unit/scene3d-shadow-tone-gradient.test.js for its own RGR proof,
- * including a byte-identical pin at explicit `shadowToneDepth: 0`. The old
- * 16109.77/535 pin is still reachable (and still exactly this file's old
- * number) by building with `shadow: { shadowToneDepth: 0 }`.
+ * C12 MOVED TWICE. First in shadowToneDepth (fs-w1-shadowtone, Stage 1 of the
+ * shadow tone gradient): 16109.77mm/535 paths -> 11583.00mm/2174 paths —
+ * "Layers Off" IS the flat() path in shadows.js, and shadowToneDepth's new
+ * default (0.75, SHIPPED ON) applied there via a per-~6mm-chunk keep/drop
+ * duty. That mechanism was itself a regression the product owner reported
+ * from the running app: chopping every ruling into short pieces reads as
+ * scattered stubs on the plotted page, and the 4x path-count jump for LESS
+ * ink is real pen-lift cost, not "structure." fs-z2 (Stage 1.1) re-expresses
+ * the SAME gradient as ruling SPACING instead of chopping — variable pitch
+ * via `buildGradedSpacing` in shadows.js (the object's own tone ladder run
+ * back through `Regions.coverageToSpacing`, the same primitive the uniform
+ * baseline already uses) — so every emitted ruling stays one unbroken line;
+ * only the gap between rulings widens toward the far tip. Moved again:
+ * 11583.00mm/2174 paths -> 11529.18mm/389 paths — ink is essentially
+ * unchanged (same gradient), path count is back down near the pre-gradient
+ * 535 instead of 4x it. See tests/unit/scene3d-shadow-tone-gradient.test.js
+ * for the RGR proof, including a byte-identical pin at explicit
+ * `shadowToneDepth: 0`. The original pre-gradient 16109.77/535 pin is still
+ * reachable by building with `shadow: { shadowToneDepth: 0 }`.
  *
  * THE FIXTURE IS NOT RESTATED HERE ANY MORE (Round 9).
  *
@@ -94,28 +101,81 @@ const round2 = (x) => Math.round(x * 100) / 100;
 
 describe('the cast shadow is protected — per zone, at every layer count', () => {
   const EXPECT = {
-    // shadowToneDepth default (0.75) moved this — see the file header.
-    off: { ink: 11583.00, n: 2174 },
+    // shadowToneDepth default (0.75) moved this — see the file header. Moved
+    // AGAIN in fs-z2 (Stage 1.1): the chunk-and-thin gradient (16109.77/535 ->
+    // 11583.00/2174, comment below) fragmented every ruling into ~6mm pieces,
+    // which read as scattered stubs on the plotted page and quadrupled the
+    // pen-lift count for LESS ink. Re-expressed as ruling SPACING instead
+    // (buildGradedSpacing in shadows.js — variable pitch via the object's own
+    // coverageToSpacing ladder, no chopping): 11529.18/389. Ink is essentially
+    // unchanged (the same gradient), but path count is back down near the
+    // pre-gradient baseline instead of 4x it.
+    //
+    // MOVED AGAIN — fs-z3 (the Layers=4 "mottled stubs / ragged outline"
+    // owner report). `off` did NOT move (the flat path is byte-identical,
+    // untouched by this batch — see the REGRESSION pin in
+    // scene3d-shadow-tone-gradient.test.js). Layers 2/3/4 all moved, for four
+    // DELIBERATE, EVIDENCED reasons in `src/core/scene3d/shadows.js`:
+    //
+    //   1. `outerMargin` (Z3's rim width) was 30% of the local inradius —
+    //      23-37% of the shadow's AREA at every caster size measured, not a
+    //      rim. Bounded to 10% of Rin instead.
+    //   2. Z3 stacked BOTH rim retraction and dash duty on the same band,
+    //      double-shortening every rim mark. Retraction is now scoped off
+    //      Z_OUTER; dash duty (already the documented, tuned lever for that
+    //      zone) is the one mechanism left.
+    //   3. `contactWidthOf` scaled off the contact ring's own minor extent,
+    //      which is degenerate by construction for any round caster (a
+    //      sphere's near-ground slice is a thin annulus) — the collar was
+    //      pinned to its 1.2mm floor regardless of caster size. Rescaled to
+    //      4.5% of the shadow's own throw length L (floored 1.2mm, capped at
+    //      the existing 6%-of-L clamp) — the one quantity every caster shape
+    //      produces a non-degenerate value for. (4.5%, not the diagnosis's
+    //      illustrative 3%: at 3% a near-prism caster — the box fixture in
+    //      scene3d-shadow-controls.test.js — lost enough collar ink to push
+    //      its OWN C11 ratio from 1.552 to 1.703, over the 1.667 ceiling; 4.5%
+    //      recovers that margin while still lifting a sphere's collar well off
+    //      its floor.) Z0 is smaller everywhere as a direct, deliberate
+    //      consequence (1318.44 -> 1165.22mm on this fixture) — it is still
+    //      IDENTICAL across Layers 2/3/4 (C3), still the darkest zone, and no
+    //      longer a fixed 1.2mm regardless of what caster produced it.
+    //   4. Ruling-vs-zone-span mismatch: `zoneSpans` cut a ruling wherever the
+    //      classified zone changed, with no floor on how short a resulting
+    //      span could be — on a compact caster this fragmented every ruling
+    //      into slivers a `keepFor`/`dashFor` stride then dropped piecemeal,
+    //      leaving isolated stubs (median emitted mark 2.34mm, 40% of marks
+    //      under 2mm, against the flat shadow's own 13.27mm median). A span
+    //      shorter than 6x its family's own ruling pitch is now coalesced
+    //      into its larger neighbour instead of surviving as its own sliver
+    //      (`coalesceSpans`, `SPAN_COALESCE_PITCH_MULT`) — see
+    //      `tests/unit/scene3d-shadow-zone-fragmentation.test.js` for the RGR
+    //      proof of items 1-4, with the RED numbers this fix moved from.
+    //
+    // Every number below was re-measured on this exact fixture after the fix;
+    // C3 (Z0 anchored across Layers 2/3/4), C6 (Z2 recedes 2->3->4) and C11
+    // (Layers 2/3/4 within +-25% of their mean) all still hold — see the
+    // dedicated tests below, unchanged in shape, only in the digits they pin.
+    off: { ink: 11529.18, n: 389 },
     2: {
-      ink: 7840.20,
-      n: 428,
-      zones: { 0: [1318.44, 211], 2: [6521.76, 217] },
+      ink: 7735.82,
+      n: 445,
+      zones: { 0: [1165.22, 205], 2: [6570.61, 240] },
     },
     3: {
-      ink: 8896.92,
-      n: 835,
-      zones: { 0: [1318.44, 211], 1: [1776.09, 355], 2: [5802.40, 269] },
+      ink: 8929.16,
+      n: 869,
+      zones: { 0: [1165.22, 205], 1: [2018.28, 387], 2: [5745.67, 277] },
     },
     4: {
-      ink: 7448.60,
-      n: 1199,
+      ink: 8181.55,
+      n: 1069,
       zones: {
-        0: [1318.44, 211], 1: [1750.32, 348], 2: [3735.33, 239], 3: [644.51, 401],
+        0: [1165.22, 205], 1: [1949.86, 363], 2: [4674.44, 247], 3: [392.03, 254],
       },
     },
   };
 
-  test('C12 — Layers Off is unchanged (at the shadowToneDepth default): 11583.00 mm / 2174 paths', () => {
+  test('C12 — Layers Off is unchanged (at the shadowToneDepth default): 11529.18 mm / 389 paths', () => {
     const c = castOf(build('off'));
     expect(c.n).toBe(EXPECT.off.n);
     expect(round2(c.ink)).toBe(EXPECT.off.ink);
@@ -138,7 +198,7 @@ describe('the cast shadow is protected — per zone, at every layer count', () =
       const c = castOf(build(n));
       return [round2(c.byZone[0].ink), c.byZone[0].n];
     });
-    expect(z0).toEqual([[1318.44, 211], [1318.44, 211], [1318.44, 211]]);
+    expect(z0).toEqual([[1165.22, 205], [1165.22, 205], [1165.22, 205]]);
   });
 
   test('C11 — Layers adds structure, not ink: 2/3/4 stay within +-25% of their mean', () => {

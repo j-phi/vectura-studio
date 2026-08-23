@@ -1888,12 +1888,36 @@
     // normal, so `nz` is the same at every column/row there and this only
     // ever applies a uniform scale — it cannot reintroduce the spread the
     // flat-face rank-normalization guard exists to keep out.
+    // A flat face's pre-scan is a degenerate all-equal set (see above) — that
+    // SAME constant is the face's one true intensity everywhere on it. Use it
+    // directly for every column/row rather than re-sampling `bandAvg` per
+    // column: the LOCAL window is narrow (`LOCAL` above), and under a
+    // rotated/tilted CAMERA a flat face projects to a skewed parallelogram on
+    // screen, not an axis-aligned rectangle — so a window centred at a FIXED
+    // `C.faceY` (for columns) or `C.faceX` (for rows) routinely falls outside
+    // the actual face silhouette near the face's own corners, and `bandAvg`
+    // answers null there. Falling back to a hardcoded 0.5 in that case (as
+    // the non-flat branch below does, correctly, for a genuine "no data"
+    // gap) silently overwrites a KNOWN constant tone with an unrelated
+    // mid-tone for a large fraction of columns/rows on a tilted face —
+    // observed 30-90% null on this file's own box fixture — which corrupts
+    // the grid spacing unevenly per face and was the source of a measured
+    // faceted-tone-ramp regression (tests/unit/scene3d-faceted-tone-law.test
+    // .js, introduced alongside the LOCAL-window change in 4ef71fb7 and left
+    // unfixed by 2fe5c68e, which only addressed the sphere/rank-normalize
+    // path). Using the pre-scan constant instead removes that noise entirely
+    // for the one case where it is provably safe: the face is flat, so there
+    // is no real variation to lose.
+    const xConst = xFlat && xSamples.length ? xSamples[0] : null;
+    const yConst = yFlat && ySamples.length ? ySamples[0] : null;
     const xs = [];
     let x = C.minX;
     while (x < C.maxX && xs.length < 300) {
       xs.push(x);
-      const avg = bandAvg(x, C.faceY, true);
-      const t = avg == null ? 0.5 : (xFlat ? avg : rankOf(xSamples, avg));
+      const t = xConst != null ? xConst : (() => {
+        const avg = bandAvg(x, C.faceY, true);
+        return avg == null ? 0.5 : rankOf(xSamples, avg);
+      })();
       const here = C.inv(x, C.faceY);
       x += Math.max(C.FLOOR, wrapPitch(C.pitchLegible(t), here ? here.nz : 1)) * 1.05;
     }
@@ -1901,8 +1925,10 @@
     let y = C.minY;
     while (y < C.maxY && ys.length < 300) {
       ys.push(y);
-      const avg = bandAvg(C.faceX, y, false);
-      const t = avg == null ? 0.5 : (yFlat ? avg : rankOf(ySamples, avg));
+      const t = yConst != null ? yConst : (() => {
+        const avg = bandAvg(C.faceX, y, false);
+        return avg == null ? 0.5 : rankOf(ySamples, avg);
+      })();
       const here = C.inv(C.faceX, y);
       y += Math.max(C.FLOOR, wrapPitch(C.pitchLegible(t), here ? here.nz : 1)) * 1.05;
     }

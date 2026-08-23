@@ -2120,6 +2120,11 @@
         shadowLayerCount: 3,
         shadowFalloff: 0.5,
         shadowAngleFollowsLight: false,
+        // fs-z2 Cycle 2 — aligns this default source with normalizeShadow's
+        // SHADOW_TONE_DEPTH_DEFAULT (params.js) and the panel's shadowDefault()
+        // so all three shadowToneDepth origins agree; previously only
+        // normalizeShadow supplied this value.
+        shadowToneDepth: 0.75,
       },
       ground: { enabled: true },
       backdrop: { enabled: false },

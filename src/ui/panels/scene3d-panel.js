@@ -1895,6 +1895,10 @@
       shadowAngle: 45, shadowDensity: 50, shadowPenId: null, shadowLineType: 'solid',
       shadowLayers: false, shadowLayerCount: 3, shadowFalloff: 0.5, shadowAngleFollowsLight: false,
       shadowToneLaw: 'ladder',
+      // fs-z2 Cycle 2 — mirrors params.js normalizeShadow's SHADOW_TONE_DEPTH_
+      // DEFAULT / shadows.js SHADOW_TONE_DEPTH_DEFAULT so a scene backfilled
+      // through the panel agrees with a scene normalized through params.js.
+      shadowToneDepth: 0.75,
     });
     const ensureShadow = () => {
       if (!params.shadow || typeof params.shadow !== 'object') params.shadow = shadowDefault();

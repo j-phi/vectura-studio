@@ -6,6 +6,32 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed
+- **3D Scene — the layered (zone-anatomy) cast shadow no longer mottles into stubs at Layers 4.**
+  Owner report: a sphere resting on the ground under the default scene (Sun az135/el45, Additive,
+  Layers 4, angle 45, Density 50, pen 0.3) read as broken, scattered marks near the caster instead
+  of a solid contact band, with a ragged/scalloped outline — 156 paths for 449.1mm of ink (2.6x the
+  paths of Layers Off for 34% less ink), median mark 2.32mm against Layers Off's own 13.27mm, 40%
+  of marks under 2mm. Layers 2 and 3 already read cleanly; only Layers 4 was broken. Four bounded
+  defects in `src/core/scene3d/shadows.js`, all inside the zone-anatomy build (the flat/Off path is
+  untouched, byte-identical): (1) `outerMargin`, the outer-penumbra rim's width, was bounded to 30%
+  of the local inradius — 23-37% of the shadow's AREA at every caster size measured, not a rim;
+  bounded to 10% of Rin instead. (2) the outer zone stacked BOTH rim retraction and dash duty on
+  the same band, double-shortening every rim mark; retraction is now scoped off that zone, leaving
+  dash duty as the one lever. (3) `contactWidthOf` (the contact collar's half-width) scaled off the
+  contact ring's own minor extent, which is degenerate by construction for any round caster (a
+  sphere's near-ground slice is a thin annulus) — the collar sat at its 1.2mm floor regardless of
+  caster size; rescaled to a fraction of the shadow's own throw length instead. (4) a ruling could
+  be zone-split into slivers a few mm long with no floor, which a per-zone stride/dash decision then
+  kept or dropped piecemeal, leaving isolated stubs; a span shorter than 6x its family's own ruling
+  pitch is now coalesced into its larger neighbour, with the contact collar kept as a hard boundary
+  it never merges across. Layers 4 on the owner's own scene now measures 123 paths / 537.35mm,
+  median mark 3.59mm, 17.07% of marks under 2mm. Density's response under Layers is not fully
+  monotonic (one documented dip, Density 50→60, traced to a discontinuity in the pre-existing
+  headroom/collar system this batch did not touch) and is left for a separate pass. RGR proof:
+  `tests/unit/scene3d-shadow-zone-fragmentation.test.js` (new) and the re-baselined
+  `tests/unit/scene3d-cast-shadow-zones.test.js`.
+
 ### Added
 - **3D Scene — ten more tone laws, each taken from a named primary source, and the re-test of the
   nested-vs-phase selector.** `29fb99f` replaced a bit-reversed (van der Corput) NESTED rank
@@ -1081,6 +1107,16 @@ the ink-budget fix and has not been re-tuned.
   `docs/todo-universal-preset-system.md` (fully done — no residue), and
   `specs/review-2026-05/` (A4/B3/C2/S1 verified done; A3-C1/A5/B1-A6 remainders carried).
   `docs/audit-remediation-todo.md` remains as the AUD-## spec appendix.
+
+### Fixed
+- **3D Scene — cast shadow tone gradients render as continuous, correctly-spaced hatching
+  instead of broken stubs.** The near→far tone gradient on a cast shadow (`shadowToneDepth`)
+  used to chop each ruling into short chunks and drop them by duty cycle, so the far end read
+  as scattered stubs rather than a thinning hatch. Rulings now stay unbroken; only the gap
+  between them widens toward the far tip. This also fixed **crosshatch** and **scribble**
+  shadow fill styles, which shredded the same way and were still user-reachable after the
+  first pass. **"No Tone" now actually turns the gradient off** — previously it stayed on
+  regardless of the selected Fill Style.
 
 ## 1.3.0 - 2026-07-18
 

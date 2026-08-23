@@ -130,6 +130,13 @@ or completes.
   and the toolbar group in `ui-petal-designer.js` / `shell/toolbar.js`.
 
 ## Later
+- **3D Scene: shadow tone gradient still renders flat when the hatch bearing runs parallel to
+  the shadow's throw axis.** Spacing is a transverse quantity, so when the hatch bearing runs
+  parallel to the throw axis no pitch can express a gradient. The parallel-to-throw fix (see
+  Done) correctly stopped stripping ink in that regime, but the shadow still shows zero gradient
+  there. Proper fix: express tone as ruling **termination**, with feathered per-ruling cut
+  points — the pattern `emitFamily` already uses in `shadows.js` (~lines 1500-1535). This is
+  design work inside a tuned file, not a quick fix.
 - **3D Scene: object-on-object shadow receiving.** Today shadows are **ground-only** — objects
   occlude shadow ink via the HLR clipper but never *receive* it. Measured 2026-08-21: a sphere
   floating directly above a slab casts through it onto the floor; all 180 `castShadow` paths carry
@@ -311,6 +318,65 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **3D Scene — layered cast shadow: Layers 4 mottled-stubs/ragged-outline fixed
+  (`3d-scene/fs-z3-zoneanatomy`, v1.3.90, not merged).** Owner's default-scene sphere at Layers 4
+  measured 156 paths / 449.1mm ink / median mark 2.32mm (Layers Off: 61 paths / 683.4mm / median
+  13.27mm) — 2.6x the paths for 34% less ink, 40% of marks under 2mm. Layers 2/3 already read
+  clean; only Layers 4 broke. Four bounded fixes in `shadows.js`'s zone-anatomy build (flat/Off
+  path untouched): `outerMargin` (Z3 rim width) bounded to 10% of Rin instead of 30% (was 23-37%
+  of the shadow's AREA, not a rim); Z3 no longer stacks rim retraction AND dash duty on the same
+  band (retraction scoped off it, dash duty is the one lever); `contactWidthOf` (collar half-width)
+  scaled off the shadow's own throw length instead of the contact ring's own minor extent, which
+  is degenerate for any round caster (pinned at its 1.2mm floor regardless of caster size); a
+  ruling is no longer zone-split into slivers shorter than 6x its family's own pitch — such spans
+  now coalesce into their larger neighbour, with the contact collar (C3) kept as a hard boundary.
+  Layers 4 now measures 123 paths / 537.35mm / median 3.59mm, 17.07% under 2mm. Density's response
+  under Layers is NOT fully monotonic — one documented dip (Density 50→60), root-caused to a
+  pre-existing discontinuity in `headroomScale`/`strideLadder` this batch did not touch — and is
+  deliberately deferred with evidence rather than risking that already-tuned system. RGR:
+  `tests/unit/scene3d-shadow-zone-fragmentation.test.js` (new, 12 tests) + re-baselined
+  `tests/unit/scene3d-cast-shadow-zones.test.js`. Full unit/integration/visual suites green
+  (4 pre-existing failures in `scene3d-faceted-tone-law.test.js` /
+  `scene3d-hlr-spatial-index-identity.test.js` confirmed unrelated — reproduce identically on
+  unmodified `b0f600e8`, in subsystems this batch never touched).
+- **3D Scene — cast shadow tone gradients: shredded rulings fixed, "No Tone" now works,
+  crosshatch/scribble covered too (`443b4800` + follow-ups, `3d-scene/fs-z2-shadowfrag`, not
+  merged).** `applyShadowToneGradient` used to chop each ruling into ~6mm chunks and hash-drop
+  them by duty cycle, so the far end read as scattered stubs. Path count rose 535 → 2174 while
+  ink *fell* 16110mm → 11583mm. Re-expressed as ruling **spacing**: `buildGradedSpacing` returns
+  a `spacingAt(x,y) => mm` function that `hatchRingsEvenOdd`'s marching scan consumes, driven by
+  the scene tone ladder through `Regions.coverageToSpacing` — the same primitive the uniform
+  baseline already used. Result: 389 paths / 11529mm ink, path count now monotone *decreasing*
+  in depth (535/487/438/389/342 at depth 0/.25/.5/.75/1), median ruling length constant at
+  24.33mm across all depths, draft frames ~17% faster than the chunker. An audit found the first
+  pass covered only the `hatch` mark class: the Fill Style picker filters on `toneLawApplies`,
+  which knows nothing about the private `GRADEABLE_MARK_CLASSES` the fix introduced, so 9 laws
+  in `cross` (`penReserve`, `penCross`, `mezzoRegion`) and `wave` (`mkScribble`, `ampSpacing`,
+  `weaveDepth`, `interlockWeave`, `trochoidLoop`, `amplitudeOnly`) were still shredding and still
+  user-reachable. Root cause: those recipes did raw `spacing * N` arithmetic, which is `NaN`
+  once `spacing` is a function — wave silently dropped every mark. Fixed by routing `cross`
+  through `scaleSpacing` and `wave` through `numericHint(spacing)` for amplitude only, leaving
+  pitch to the graded scan; `GRADEABLE_MARK_CLASSES` is now `hatch`/`cross`/`wave`. Three more
+  defects fixed in the same pass: **"No Tone" now disables the gradient** (gated in `build()` on
+  the raw `shadowBag.shadowToneLaw === 'none'`, deliberately above the clamp, mirroring
+  `surface-fill.js`'s Stage-0 sentinel); a **false warning** that was muting real unknown-toneLaw
+  reports (`clampStyleParam`/`clampToneLawId` now accept the roster's own `DEFAULT`, `'ladder'`,
+  which the roster deliberately excludes from `IDS` — every scene had been interning `'ladder'`
+  into the warned-set and silencing the one channel meant to catch a genuinely unknown id); and
+  **parallel-to-throw**, where pitch was pinned at 1.7×`sBase` and stripped 44% of the shadow's
+  ink for zero gradient — now clamped to `sBase` within 30° of the throw axis, blending smoothly
+  to unclamped by 60°. Test state at handoff: unit 4393 passed / 4 failed / 44 skipped,
+  integration 1826/1826, visual 99 passed / 0 failed. The 4 unit failures are pre-existing and
+  independently verified as such: 2 in `scene3d-faceted-tone-law` (it disables the ground, and
+  `Shadows.build` returns empty with no ground, so shadow code never runs there) and 2 in
+  `scene3d-hlr-spatial-index-identity` (the guarded invariant is intact — forcing the brute-force
+  path by nulling the occluder index gives byte-identical output to the indexed path on all 6
+  scenario×mode combinations, on this tree and on clean `421d4ac3`/`443b4800`; only the
+  hard-coded fingerprints are stale). Verified in the running app: Ladder and Crosshatch show
+  continuous rulings with widening gaps, No Tone is a uniform hatch, no `unknown toneLaw`
+  warning in the console. **Known gap, deliberately not fixed here:** in the parallel-to-throw
+  regime the shadow is now correctly left un-lightened, but it still renders no gradient at all —
+  see Later.
 - **Unreleased — 3D Scene: a fresh insert is a hatched sphere, and it actually has ink
   (`3d-scene/scene-defaults`).** Reported as "dropping a 3D scene gives an object with no lines,
   just a cube outline". Measured through the real insert path (`engine.addLayer('scene3d')` →

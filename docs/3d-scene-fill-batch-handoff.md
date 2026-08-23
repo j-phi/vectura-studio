@@ -65,15 +65,45 @@ actually reaches the clipper (it was built 40 lines before the flag existed).
 
 ## Open issues
 
-1. **Shadow gradient renders shredded.** It chops each ruling into ~6mm chunks
-   and keeps/drops them by duty, so the far end is scattered stubs, not a
-   thinning hatch. Same cause as the cost: paths 535 → 2174 while ink *fell*
-   16110mm → 11583mm. Tone in a hatch belongs in ruling **spacing**
-   (`Regions.coverageToSpacing`, already imported by `shadows.js`), not in
-   fragmenting lines. A fix was in flight at handoff on `3d-scene/fs-z2-shadowfrag`.
-2. **"No Tone" does not disable the shadow gradient** — `shadowToneDepth` is
-   independent of the selected Fill Style, so the two controls contradict.
-   Same in-flight branch.
+1. **RESOLVED — shadow gradient renders shredded.** *Was:* it chopped each
+   ruling into ~6mm chunks and kept/dropped them by duty, so the far end read
+   as scattered stubs, not a thinning hatch — paths rose 535 → 2174 while ink
+   *fell* 16110mm → 11583mm. *Fix (`443b4800`, `3d-scene/fs-z2-shadowfrag`):*
+   tone is now expressed as ruling **spacing**, not fragmentation.
+   `buildGradedSpacing` returns a `spacingAt(x,y) => mm` function that
+   `hatchRingsEvenOdd`'s marching scan consumes, driven by the scene tone
+   ladder through `Regions.coverageToSpacing` — the same primitive the
+   uniform baseline already used. Rulings stay unbroken; only the gap widens
+   toward the far tip. Result: 389 paths / 11529mm ink, with path count now
+   monotone *decreasing* in depth (535/487/438/389/342 at depth 0/.25/.5/.75/1)
+   and median ruling length constant at 24.33mm across all depths. Draft
+   frames also came out ~17% faster than the chunker. See the cautionary note
+   below — the first pass on this fix covered only 1 of 3 affected mark
+   classes.
+2. **RESOLVED — "No Tone" does not disable the shadow gradient.** *Was:*
+   `shadowToneDepth` was independent of the selected Fill Style, so picking
+   "No Tone" still rendered a gradient. *Fix:* gated in `build()` on the
+   **raw** `shadowBag.shadowToneLaw === 'none'`, deliberately above the
+   clamp (a clamp can launder an unknown id *into* `ladder` but never *out
+   of* `none`), mirroring `surface-fill.js`'s Stage-0 sentinel.
+
+**Cautionary note — the Issue 1 fix looked complete but wasn't.** The shadow
+Fill Style picker filters options by `toneLawApplies`, which knows nothing
+about the private `GRADEABLE_MARK_CLASSES` the spacing fix introduced. An
+audit found 9 laws were still shredding and still user-reachable: `cross`
+(`penReserve`, `penCross`, `mezzoRegion`) and `wave` (`mkScribble`,
+`ampSpacing`, `weaveDepth`, `interlockWeave`, `trochoidLoop`,
+`amplitudeOnly`). `penCross` was byte-identical before and after the first
+fix (2856 paths, median ruling 30.65 → 5.51mm); `mkScribble` ran at 8.9× the
+flat baseline. Root cause: the `cross`/`wave` recipes did raw `spacing * N`
+arithmetic, which yields `NaN` once `spacing` is a function — wave silently
+dropped every mark. Fixed by routing cross recipes through `scaleSpacing` and
+wave recipes through `numericHint(spacing)` for amplitude only, leaving pitch
+to the graded scan. `GRADEABLE_MARK_CLASSES` is now `hatch`/`cross`/`wave`.
+Lesson: the picker's reachability predicate and the renderer's grading set
+were two independent sources of truth over the same question — a fix that
+satisfied one silently missed the other.
+
 3. **Fill Method (the big one) is barely started.** Stage 0 landed —
    `toneQuantLevels`/`toneFlowMode` genuinely drive the engine and survive
    save/load — but **no UI writes either**, so from a user's seat nothing
@@ -151,6 +181,13 @@ re-renders saved documents. Gate in the picker instead.
   expand rendering flowfield, unknown tone laws clamping to `ladder`,
   `onePenDown` silently rendering as `amplitudeOnly`. Each turned "unsupported"
   into "confidently wrong output". Worth a sweep for other such sites.
+- **Same hazard family, a fourth instance: silent `NaN`, not a wrong
+  default.** The `cross`/`wave` shadow recipes computed `spacing * N`
+  directly; once `spacing` became a function (the ruling-spacing gradient
+  fix), that arithmetic produced `NaN` and wave marks vanished with no error
+  or console warning. An untyped assumption about a parameter's shape is the
+  same class of hazard as an unhandled id — both convert "unsupported" into
+  "silently wrong" instead of a loud failure.
 - **Tests can pass on a camera the app never ships.** The border-offset suite
   was green at yaw 0/pitch 0 while the default scene camera is yaw −30/pitch 20,
   where the behaviour was inverted.
