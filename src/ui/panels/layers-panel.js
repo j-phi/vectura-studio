@@ -2530,17 +2530,41 @@
       return next;
     };
 
-    // A plotter pen has a fixed physical width. A path carrying
-    // `meta.weightScale` (scene3d's per-path width channel — silhouette /
-    // crease-emphasis lines rendered at `strokeWidth * weightScale`, clamped
-    // to 6x by the renderer/SVG export) must not survive expand as a single
-    // stroke that merely CLAIMS a wider width. Split it into N parallel
-    // overlapping passes instead — real strokes a pen can actually draw —
-    // and drop the attribute so nothing downstream reads it for weight.
-    // Pass spacing mirrors the established banded-fill convention elsewhere
-    // in the codebase (text.js's built-in-bold concentric fill: spacing =
-    // penWidth * (1 - inkOverlap), inkOverlap 15%) rather than an arbitrary
-    // constant, so passes overlap enough to read as one thick line.
+    // ── WHAT EXPAND DOES WITH `meta.weightScale` ────────────────────────────
+    // `meta.weightScale` is a per-path width multiplier the canvas render, the
+    // export preview and the emitted SVG all apply as `strokeWidth * scale`
+    // (clamped to [0.1, 6] — Renderer.resolvePathWeightScale). Expand has to
+    // decide what a CHILD LAYER made from that path should be, and the answer
+    // is not the same for the two things the channel is used for:
+    //
+    //  1. A WIDTH CLAIM ON ONE PEN — silhouette / crease emphasis
+    //     (geometry3d.extractSilhouette / extractCreases, scene3d's
+    //     `kind: 'sceneEdge'` EdgeStyle weightMm, spiralizer's outlineWeight).
+    //     There is ONE pen and it cannot grow on command, so the claim is
+    //     un-plottable as written. Expand realizes it as N real parallel
+    //     overlapping passes and DROPS the attribute, so nothing downstream
+    //     falls back to a width the machine does not have. Pass spacing reuses
+    //     the codebase's banded-fill convention (text.js built-in-bold
+    //     concentric fill: spacing = penWidth * (1 - inkOverlap), 15%).
+    //
+    //  2. A REAL PEN WIDTH — scene3d surface fills (`kind: 'sceneFill'`), and
+    //     any path the engine tags with `meta.penTier`. The six three-pen tone
+    //     laws (penInterleave, penStipple, penReserve, penCross, penPitchMatch,
+    //     penFacing) snap every run's weight to an actual nib in the tray
+    //     (surface-fill.js `penFinish`/`penSnap`), so the width is a statement
+    //     about WHICH PEN draws this line, not a claim. Faking it with parallel
+    //     passes of the fine pen is wrong twice over: it misrepresents the plot,
+    //     and — this is the bug the user screenshotted — parallel offset copies
+    //     of a curve near a sphere's limb land OUTSIDE the silhouette, so the
+    //     expanded group grows thick blobby bands with stepped ends that were
+    //     never on canvas. So expand PRESERVES `meta.weightScale` on these and
+    //     emits exactly one child per path: the expanded group is then the same
+    //     geometry the canvas drew, by construction.
+    //
+    // The variable-width fill laws are moving to real ribbon outline + pen-width
+    // fill geometry, after which every `sceneFill` path they emit carries
+    // weightScale 1 and rule 2 is a plain pass-through. Rule 2 is written so it
+    // is already correct today (preserve, don't fake) and stays correct then.
     const pens = Array.isArray(SETTINGS?.pens) ? SETTINGS.pens : [];
     const INK_OVERLAP = 0.15;
     const MAX_WEIGHT_SCALE = 6; // matches the renderer/export clamp
@@ -2560,6 +2584,29 @@
       delete next.meta.weightScale;
       return next;
     };
+    // THE definition of the width a path is actually drawn at — shared with the
+    // canvas render, the export preview and the emitted SVG. The inline
+    // fallback exists for the lean test runtime (renderer.js not loaded) and
+    // must stay byte-identical to Renderer.resolvePathWeightScale.
+    const resolveWeightScale = (path) => {
+      if (G.Vectura?.Renderer?.resolvePathWeightScale) {
+        return G.Vectura.Renderer.resolvePathWeightScale(path);
+      }
+      const raw = Number(path && path.meta && path.meta.weightScale);
+      if (!Number.isFinite(raw) || raw === 1) return 1;
+      return Math.max(0.1, Math.min(MAX_WEIGHT_SCALE, raw));
+    };
+    // Rule 2 above: is this path's width a REAL pen rather than a claim?
+    // `meta.penTier` is the engine's explicit tag; `kind: 'sceneFill'` covers
+    // every scene3d surface-fill law (the three-pen ones snap to real nibs, and
+    // the variable-width ones become weightScale-1 ribbon geometry, so neither
+    // may be re-expressed as parallel offset copies).
+    const isRealPenWidthPath = (path) => {
+      const meta = path && path.meta;
+      if (!meta) return false;
+      if (meta.penTier !== undefined && meta.penTier !== null) return true;
+      return meta.kind === 'sceneFill';
+    };
     // Per-vertex miter offset (not a single global chord normal — see
     // thickenPathsUniform's own header comment for why the miter vector is
     // required at bends). A rigid translate offsets every point by the SAME
@@ -2574,13 +2621,17 @@
     const thickenUniformFn = G.Vectura?.GeometryUtils?.thickenPathsUniform;
     const expandWeightToPasses = (path) => {
       const raw = Number(path && path.meta && path.meta.weightScale);
+      // Rule 2: a real pen width survives expand untouched — one child, same
+      // geometry, same weightScale, so the expanded group renders and exports
+      // identically to what was on canvas a moment earlier.
+      if (Number.isFinite(raw) && raw !== 1 && isRealPenWidthPath(path)) return [path];
       if (!Array.isArray(path) || path.length < 2 || !Number.isFinite(raw) || raw <= 1 || !thickenUniformFn) {
         return [stripWeightScale(path)];
       }
       const penWidth = resolvePenWidth(path);
       const spacing = penWidth * (1 - INK_OVERLAP);
       if (!(spacing > 0)) return [stripWeightScale(path)];
-      const desiredWidth = penWidth * Math.min(MAX_WEIGHT_SCALE, raw);
+      const desiredWidth = penWidth * resolveWeightScale(path);
       const passes = Math.max(1, 1 + Math.ceil((desiredWidth - penWidth) / spacing));
       if (passes <= 1) return [stripWeightScale(path)];
       const offsetPasses = thickenUniformFn([path], { width: passes, spacing });
@@ -2644,7 +2695,13 @@
       child.penId = layer.penId;
       child.color = layer.color;
       child.strokeWidth = layer.strokeWidth;
-      child.lineCap = layer.lineCap;
+      // A per-path cap override (`meta.strokeCap` — butt-ended ribbon outline
+      // and fill passes) has to become the CHILD's own cap, or the expanded
+      // layer advertises a round cap it is not drawn with. Renderer/export keep
+      // honoring the meta either way; this just makes the child self-describing.
+      child.lineCap = G.Vectura?.Renderer?.resolvePathLineCap
+        ? G.Vectura.Renderer.resolvePathLineCap(entry.path, layer.lineCap)
+        : layer.lineCap;
       child.visible = layer.visible;
       if (entry.group) {
         let groupNode = groupNodes.get(entry.group);
