@@ -1454,118 +1454,445 @@
 
   /* ── 04 · voronoiWeb ────────────────────────────────────────────────────────
    * The drawing is a NETWORK, not a set of rulings: the Voronoi edges of a seed
-   * set whose density is the tone. Dark ⇒ many seeds ⇒ small cells ⇒ more edge
-   * length per square millimetre. There is no ruling direction anywhere, so
-   * there is nothing to moiré against and no lattice for a band edge to run
-   * along. Depth comes from the CELL-SIZE GRADIENT: cells shrink smoothly
-   * toward the terminator and toward the limb exactly as a real surface texture
-   * would foreshorten, and the eye takes that gradient as recession.
-   * Reaches black where the cell diameter falls to about two ink widths and the
-   * cell walls abut.
+   * set whose density is the tone. Dark ⇒ many seeds ⇒ small cells; light ⇒ few
+   * seeds ⇒ large cells. There is no ruling direction anywhere, so there is
+   * nothing to moiré against and no lattice for a band edge to run along. Depth
+   * comes from the CELL-SIZE GRADIENT: cells shrink smoothly toward the
+   * terminator and toward the limb exactly as a real surface texture would
+   * foreshorten, and the eye takes that gradient as recession.
+   *
+   * TWO THINGS THIS LAW MAY NOT DO, both of which the first version did.
+   *
+   *   IT MAY NOT SPEND EDGES ON TONE. A Voronoi diagram is a connected planar
+   *   graph — every wall is shared by exactly two cells and three walls meet at
+   *   every vertex. Delete a wall and the web tears; that is the one failure the
+   *   eye reads as "this is not a Voronoi". The first version emitted each wall
+   *   as its OWN path through `emitScr`, and `emitScr` refuses a run shorter
+   *   than `MINMARK` (2 × pen), so every short wall was silently deleted:
+   *   measured on the sphere, 3987 connected components and 8229 interior
+   *   degree-1 stubs. So the walls are CHAINED here — the graph is decomposed
+   *   into long continuous strokes before anything is emitted — and a chain is
+   *   never short enough for the `MINMARK` guard to reach. Nothing is dropped
+   *   for being small.
+   *
+   *   IT MAY NOT LET A CELL CLOSE BELOW THE PEN. Tone is cell SIZE, and the
+   *   first version drove it straight off `pitchFor`, whose dark end is
+   *   `INK / A_DARK` — 0.43 mm at a 0.3 mm pen, a cell with a 0.13 mm hole in
+   *   it. That is not a web, it is a solid. Cell size is therefore remapped
+   *   onto an explicit clamped range (below), keeping the L*-linear SHAPE of
+   *   this file's tone map — which is what makes the ramp perceptually even —
+   *   while pinning both of its ends where the web stays legible.
+   *
+   * THE GEOMETRY IS BUILT ON THE CHART. Every seed is the chart sample that
+   * `inv` returned for a dart, so a seed is front-facing by construction — the
+   * same test every ruling in this file passes — and every emitted vertex goes
+   * back through `emitScr`, which cuts the stroke on the silhouette by
+   * bisection. Nothing screen-space escapes the form.
    */
   const lawVoronoi = (C) => {
-    const seeds = [];
-    // Dart throwing with a tone-driven exclusion radius.
-    const cells = new Map();
-    const cellOf = (x, y, r) => `${Math.floor(x / r)},${Math.floor(y / r)}`;
-    // The exclusion radius below was built from `pitchLegible`, the "never
-    // crowd past legibility" variant that floors at `FLOOR` (~2 ink widths).
-    // That caps how small a shadow cell can get well above what the network
-    // is capable of, so the dark end reads only a little busier than the
-    // light end (measured edge-density ratio ~1.17 — weak, given the
-    // direction is already right). `pitchFor` is the flooring-capable
-    // variant this file's other "reaches black" laws use (`lawEtf`,
-    // `lawDefect`, `lawMezzo`) and is IDENTICAL to `pitchLegible` for any `I`
-    // whose natural pitch already clears `FLOOR` — so the lit end (which the
-    // owner asked to keep exactly as-is) is unaffected by this swap. Only
-    // the dark end, previously clamped up to `FLOOR`, can now shrink toward
-    // `INK / A_DARK`, delivering the "busier/smaller cells near shadow" the
-    // owner asked for (tests/unit/scene3d-voronoi-dark-end.test.js).
-    const GRID = C.pitchFor(0.0) * 1.2;
+    /* ── THE CELL-SIZE LAW ───────────────────────────────────────────────────
+     * FLOOR. A cell drawn with a pen of width `PEN` loses half a pen off each
+     * side, so a cell of diameter D shows an OPENING of D − PEN. The owner's
+     * floor is an opening wider than 2 × PEN, so D > 3 × PEN; 3.25 is that with
+     * a margin, giving a 2.25 × PEN opening at the darkest end. It is also a
+     * structural clamp rather than a hope: a Voronoi cell always contains the
+     * disc of radius (nearest-neighbour distance / 2), so pinning the minimum
+     * SEED SEPARATION at `CELL_MIN` pins the minimum cell width at `CELL_MIN`.
+     *
+     * CEILING. "Small enough to read as a cell rather than as empty paper" is a
+     * statement about the FORM, so it is anchored to the form's own screen
+     * radius `R` — R × 0.14 puts roughly fourteen cells across the body — and
+     * intersected with the app's own lightest pitch (`PMAX`, the O6 sparse bar)
+     * so that changing the pen or the density still moves the drawing. The
+     * bracket keeps the ramp from collapsing on a tiny object or running away
+     * on a huge one.
+     */
+    const CELL_MIN = C.PEN * 3.25;
+    const CELL_MAX = clamp(
+      Math.min(C.R * 0.14, C.PMAX * 1.25), CELL_MIN * 3, CELL_MIN * 14,
+    );
+    /* AND THE RAMP BETWEEN THEM IS THE TONE MAP, not a renormalisation of it.
+     * A web of cells `D` across lays 2.31 / D millimetres of wall per square
+     * millimetre — the hexagonal identity, edge length per unit area
+     * = 2 / (sqrt(3) . s) for circumradius s = D / 2 — so it inks an area
+     * fraction of 2.31 . PEN / D. Setting that equal to the area this file's
+     * own L*-linear map asks for (`areaFor`, i.e. `INK / pitchFor`) and solving
+     * for D gives the diameter below. The web therefore carries the SAME
+     * apparent tone as every ruling law in this file at the same radiance, and
+     * carries it purely as cell size; the clamps are the only departure, and
+     * they are the owner's two legibility limits, not a taste setting.
+     */
+    const WEB_K = 2.31 * (C.PEN / C.INK);
+    const cellFor = (I) => clamp(
+      WEB_K * C.pitchFor(clamp(finite(I, 0), 0, 1)), CELL_MIN, CELL_MAX,
+    );
+
+    /* ── THE SEED SET ────────────────────────────────────────────────────────
+     * A density-warped low-discrepancy sequence, rejected against a
+     * variable-radius disc test, then Lloyd-relaxed. The sequence is R2 (the
+     * plastic number's two-dimensional analogue of the golden ratio): it fills
+     * the plane far more evenly than uniform random at every prefix length, so
+     * the dart pass reaches a given local density in a fraction of the throws
+     * pure random needs, and the point set is already well-spaced before Lloyd
+     * touches it. The pair test is the MEAN of the two radii, which is what
+     * lets density change smoothly across the form instead of stepping.
+     */
+    const R2_A = 0.7548776662466927;   // 1 / plastic number
+    const R2_B = 0.5698402909980532;   // 1 / plastic number²
+    const TRIES = 45000;
+    const GRID = CELL_MIN;
+    const buckets = new Map();
+    let seeds = [];
+    const bkey = (x, y) => `${Math.floor(x / GRID)},${Math.floor(y / GRID)}`;
     const put = (p) => {
-      const k = cellOf(p.x, p.y, GRID);
-      if (!cells.has(k)) cells.set(k, []);
-      cells.get(k).push(p);
+      const k = bkey(p.x, p.y);
+      let a = buckets.get(k);
+      if (!a) { a = []; buckets.set(k, a); }
+      a.push(p);
     };
-    const near = (x, y, rad) => {
+    const reindex = () => { buckets.clear(); seeds.forEach(put); };
+    const gather = (x, y, rad) => {
       const out = [];
       const g = Math.ceil(rad / GRID);
       const cx = Math.floor(x / GRID); const cy = Math.floor(y / GRID);
       for (let j = -g; j <= g; j++) {
         for (let i = -g; i <= g; i++) {
-          const arr = cells.get(`${cx + i},${cy + j}`);
-          if (arr) for (let k = 0; k < arr.length; k++) out.push(arr[k]);
+          const a = buckets.get(`${cx + i},${cy + j}`);
+          if (a) for (let k = 0; k < a.length; k++) out.push(a[k]);
         }
       }
       return out;
     };
-    const TRIES = 26000;
-    for (let t = 0; t < TRIES; t++) {
-      const x = C.minX + C.hash(t * 3 + 11, 5) * C.W;
-      const y = C.minY + C.hash(t * 3 + 12, 7) * C.H;
+
+    const ox = C.hash(1, 3); const oy = C.hash(2, 5);
+    // The widest pair threshold anything can have, plus the slack `inv` is
+    // allowed to move a dart by when it snaps it onto the chart.
+    const SEARCH = (CELL_MAX + CELL_MIN) / 2 + 0.5;
+    let offSurface = 0;
+    for (let t = 1; t <= TRIES; t++) {
+      const x = C.minX + ((ox + R2_A * t) % 1) * C.W;
+      const y = C.minY + ((oy + R2_B * t) % 1) * C.H;
+      const nb = gather(x, y, SEARCH);
+      // CHEAP REJECT FIRST. `(q.r + CELL_MIN) / 2` is a lower bound on the true
+      // pair threshold, since no seed's radius is below CELL_MIN — so anything
+      // this rejects is genuinely too close, and the expensive Newton inversion
+      // is never spent on it. Most darts in a dark region die here.
+      let blocked = false;
+      for (let k = 0; k < nb.length; k++) {
+        const q = nb[k];
+        const lim = (q.r + CELL_MIN) / 2;
+        const dx = q.x - x; const dy = q.y - y;
+        if (dx * dx + dy * dy < lim * lim) { blocked = true; break; }
+      }
+      if (blocked) continue;
+      // THE FRONT-FACING TEST, the same one every ruling passes: the seed IS
+      // the chart sample, not the dart that found it.
       const s = C.inv(x, y);
       if (!s) continue;
-      // Cell diameter = the clearance a monoline family would need for this
-      // tone; the network then lays the same ink area in an isotropic form.
-      const rad = C.pitchFor(finite(s.I, 0)) * 1.15;
+      const r = cellFor(finite(s.I, 0));
       let clash = false;
-      const nb = near(x, y, rad);
       for (let k = 0; k < nb.length; k++) {
-        if (Math.hypot(nb[k].x - x, nb[k].y - y) < Math.min(rad, nb[k].r)) { clash = true; break; }
+        const q = nb[k];
+        const lim = (q.r + r) / 2;
+        const dx = q.x - s.x; const dy = q.y - s.y;
+        if (dx * dx + dy * dy < lim * lim) { clash = true; break; }
       }
       if (clash) continue;
-      const p = { x, y, r: rad };
+      const p = { x: s.x, y: s.y, r, i: seeds.length };
       seeds.push(p); put(p);
     }
-    // Edges by the perpendicular-bisector clip of each seed's neighbourhood.
+    if (seeds.length < 8) return;
+
+    /* ── THE CELL POLYGON ────────────────────────────────────────────────────
+     * Half-plane clipping of a scaffold square by each neighbour's
+     * perpendicular bisector (Sutherland–Hodgman). Every polygon edge carries
+     * the INDEX of the seed whose bisector cut it, so an edge has an identity
+     * — the unordered pair of the two cells that share it — and does not need
+     * the "which seed owns this wall" tie-break the first version guessed at.
+     * Edges left over from the scaffold square carry −1 and are not walls.
+     */
+    const SNAP = 0.002;                       // mm; welds shared vertices exactly
+    const snap = (v) => Math.round(v / SNAP) * SNAP;
+    const K = 20;
+    const kNear = (p) => {
+      // Start the ring at this seed's OWN scale: a lit cell is four times the
+      // bucket size of a shadow cell and must not be searched at shadow scale.
+      let ring = Math.max(1, Math.ceil((p.r * 2.4) / GRID));
+      let found = [];
+      for (let pass = 0; pass < 4; pass++) {
+        found = gather(p.x, p.y, ring * GRID).filter((q) => q !== p);
+        if (found.length >= K) break;
+        ring = Math.ceil(ring * 1.9) + 1;
+      }
+      found.sort((a, b) => (
+        ((a.x - p.x) * (a.x - p.x) + (a.y - p.y) * (a.y - p.y))
+        - ((b.x - p.x) * (b.x - p.x) + (b.y - p.y) * (b.y - p.y))));
+      return found.slice(0, K);
+    };
+    /* SYMMETRY IS WHAT KEEPS THE WEB WHOLE. If cell p clips by q's bisector but
+     * cell q — sitting in a denser patch, with twenty closer neighbours — never
+     * clips by p's, the two cells disagree about their shared wall and the edge
+     * is seen once instead of twice. That asymmetry, inherited from a
+     * neighbourhood radius derived from the seed's own cell size, is how the
+     * first version tore the web across every density gradient. The
+     * neighbourhood is therefore closed under symmetry before any clipping. */
+    const nbrs = seeds.map(() => new Set());
     seeds.forEach((p) => {
-      const nb = near(p.x, p.y, p.r * 3.2).filter((q) => q !== p);
-      if (nb.length < 3) return;
-      // Start from a big square and clip by each bisector.
-      const S = p.r * 3.4;
+      kNear(p).forEach((q) => { nbrs[p.i].add(q.i); nbrs[q.i].add(p.i); });
+    });
+    const cellPoly = (p) => {
+      const ns = [...nbrs[p.i]];
+      if (ns.length < 3) return null;
+      let far = p.r * 3;
+      ns.forEach((j) => {
+        const d = Math.hypot(seeds[j].x - p.x, seeds[j].y - p.y);
+        if (d > far) far = d;
+      });
+      const S = far;
       let poly = [
-        { x: p.x - S, y: p.y - S }, { x: p.x + S, y: p.y - S },
-        { x: p.x + S, y: p.y + S }, { x: p.x - S, y: p.y + S },
+        { x: p.x - S, y: p.y - S, e: -1 },
+        { x: p.x + S, y: p.y - S, e: -1 },
+        { x: p.x + S, y: p.y + S, e: -1 },
+        { x: p.x - S, y: p.y + S, e: -1 },
       ];
-      nb.forEach((q) => {
+      for (let n = 0; n < ns.length; n++) {
+        const q = seeds[ns[n]];
         const mx = (p.x + q.x) / 2; const my = (p.y + q.y) / 2;
         const nx = q.x - p.x; const ny = q.y - p.y;
-        const side = (v) => (v.x - mx) * nx + (v.y - my) * ny;
         const next = [];
         for (let i = 0; i < poly.length; i++) {
           const A = poly[i]; const B = poly[(i + 1) % poly.length];
-          const sa = side(A); const sb = side(B);
-          if (sa <= 0) next.push(A);
-          if ((sa <= 0) !== (sb <= 0)) {
-            const t = sa / (sa - sb);
-            next.push({ x: A.x + (B.x - A.x) * t, y: A.y + (B.y - A.y) * t });
+          const sa = (A.x - mx) * nx + (A.y - my) * ny;
+          const sb = (B.x - mx) * nx + (B.y - my) * ny;
+          const ina = sa <= 0; const inb = sb <= 0;
+          if (ina) next.push(A);
+          if (ina !== inb) {
+            const tt = sa / (sa - sb);
+            // Going OUT, the new edge runs along this bisector, so it is q's.
+            // Coming IN, the fragment still belongs to the edge A was on.
+            next.push({
+              x: A.x + (B.x - A.x) * tt,
+              y: A.y + (B.y - A.y) * tt,
+              e: ina ? q.i : A.e,
+            });
           }
         }
         poly = next;
-      });
-      if (poly.length < 3) return;
-      // Draw each wall ONCE: the seed with the lower key owns it.
+        if (poly.length < 3) return null;
+      }
+      return poly;
+    };
+    const centroid = (poly) => {
+      let a2 = 0; let cx = 0; let cy = 0;
       for (let i = 0; i < poly.length; i++) {
         const A = poly[i]; const B = poly[(i + 1) % poly.length];
-        const mx = (A.x + B.x) / 2; const my = (A.y + B.y) / 2;
-        // Ownership test: the wall belongs to whichever of the two adjacent
-        // seeds is first in scan order, so no wall is drawn twice.
-        let owner = p; let od = Math.hypot(p.x - mx, p.y - my);
-        near(mx, my, p.r * 3.2).forEach((q) => {
-          const d = Math.hypot(q.x - mx, q.y - my);
-          if (d < od - 1e-6 || (Math.abs(d - od) < 1e-6 && (q.y < owner.y || (q.y === owner.y && q.x < owner.x)))) {
-            owner = q; od = d;
-          }
+        const cr = A.x * B.y - B.x * A.y;
+        a2 += cr; cx += (A.x + B.x) * cr; cy += (A.y + B.y) * cr;
+      }
+      if (!(Math.abs(a2) > 1e-9)) return null;
+      return { x: cx / (3 * a2), y: cy / (3 * a2) };
+    };
+
+    /* ── LLOYD, DAMPED ───────────────────────────────────────────────────────
+     * Two passes at 0.45. Lloyd's fixed point is a centroidal tessellation,
+     * which on a UNIFORM density equalises cell areas — run to convergence it
+     * would flatten exactly the density gradient that carries the tone here. Two
+     * damped passes are far from that fixed point: they remove the local
+     * spacing irregularity a dart pass always leaves (the slivered, non-convex
+     * cells the owner asked to be rid of) and leave the gradient standing. The
+     * gradient's survival is not assumed — it is the monotonicity assertion in
+     * `tests/unit/scene3d-voronoi-web-integrity.test.js`.
+     *
+     * A move is REFUSED when the relaxed position is not on the visible
+     * surface, so relaxation can never walk a seed off the form.
+     */
+    const relax = () => {
+      const moved = new Array(seeds.length);
+      for (let i = 0; i < seeds.length; i++) {
+        const p = seeds[i];
+        const poly = cellPoly(p);
+        const c = poly ? centroid(poly) : null;
+        if (!c) { moved[i] = p; continue; }
+        const s = C.inv(p.x + (c.x - p.x) * 0.45, p.y + (c.y - p.y) * 0.45);
+        if (!s) { moved[i] = p; continue; }
+        moved[i] = {
+          x: s.x, y: s.y, r: cellFor(finite(s.I, 0)), i,
+        };
+      }
+      seeds = moved;
+      reindex();
+      nbrs.forEach((s) => s.clear());
+      seeds.forEach((p) => { kNear(p).forEach((q) => { nbrs[p.i].add(q.i); nbrs[q.i].add(p.i); }); });
+    };
+    relax();
+    relax();
+
+    /* THE FLOOR, ENFORCED. Relaxation moves a seed inside its own cell, so it
+     * cannot cross a bisector, but two seeds can still drift toward the wall
+     * between them. A pair that ends up closer than `CELL_MIN` would open a
+     * cell narrower than the clamp allows, so the later of the two is dropped —
+     * a handful of seeds, and it makes "no cell is narrower than CELL_MIN" a
+     * property of the geometry rather than of the tuning. */
+    const keep = [];
+    seeds.forEach((p) => {
+      const nb = gather(p.x, p.y, CELL_MIN * 1.2);
+      let tooNear = false;
+      for (let k = 0; k < nb.length; k++) {
+        const q = nb[k];
+        if (q.i >= p.i) continue;
+        const dx = q.x - p.x; const dy = q.y - p.y;
+        if (dx * dx + dy * dy < CELL_MIN * CELL_MIN) { tooNear = true; break; }
+      }
+      if (!tooNear) keep.push(p);
+    });
+    if (keep.length !== seeds.length) {
+      seeds = keep.map((p, i) => ({
+        x: p.x, y: p.y, r: p.r, i,
+      }));
+      reindex();
+      nbrs.length = 0;
+      seeds.forEach(() => nbrs.push(new Set()));
+      seeds.forEach((p) => { kNear(p).forEach((q) => { nbrs[p.i].add(q.i); nbrs[q.i].add(p.i); }); });
+    }
+    if (seeds.length < 8) return;
+
+    /* ── THE EDGE SET ────────────────────────────────────────────────────────
+     * Every wall is collected from BOTH of the cells that share it and kept
+     * only when both agree it exists — that is what a Voronoi edge is, and it
+     * also discards the scaffold square and the unbounded rays of the outermost
+     * cells in one test, with no boundary special case. Vertex coordinates are
+     * snapped to `SNAP` on the way in: the point where three cells meet is the
+     * circumcentre of their three seeds and all three compute it from the same
+     * two bisectors, so they agree to floating-point noise and the snap welds
+     * them into ONE graph vertex. That weld is the whole reason the web comes
+     * out connected.
+     */
+    const edges = new Map();
+    seeds.forEach((p) => {
+      const poly = cellPoly(p);
+      if (!poly || poly.length < 3) return;
+      for (let i = 0; i < poly.length; i++) {
+        const A = poly[i]; const B = poly[(i + 1) % poly.length];
+        if (A.e < 0) continue;
+        const ax = snap(A.x); const ay = snap(A.y);
+        const bx = snap(B.x); const by = snap(B.y);
+        if (Math.abs(ax - bx) < SNAP && Math.abs(ay - by) < SNAP) continue;
+        const k = p.i < A.e ? `${p.i}|${A.e}` : `${A.e}|${p.i}`;
+        const rec = edges.get(k);
+        if (rec) { rec.n += 1; continue; }
+        edges.set(k, {
+          ax, ay, bx, by, n: 1,
         });
-        if (owner !== p) continue;
-        const n = Math.max(2, Math.round(Math.hypot(B.x - A.x, B.y - A.y) / 0.4));
-        const seg = [];
-        for (let k = 0; k <= n; k++) {
-          seg.push({ x: A.x + (B.x - A.x) * (k / n), y: A.y + (B.y - A.y) * (k / n) });
-        }
-        C.emitScr(seg);
       }
     });
+    const walls = [];
+    edges.forEach((e) => { if (e.n >= 2) walls.push(e); });
+    if (!walls.length) return;
+
+    /* ── CHAINING ────────────────────────────────────────────────────────────
+     * The graph is decomposed into long strokes: from a vertex, take the unused
+     * wall that continues straightest, and keep going until there is none. Two
+     * things come out of it. The plotter puts the pen down far fewer times, and
+     * — the reason it is here — no individual wall is ever handed to `emitScr`
+     * on its own, so the `MINMARK` guard that used to delete short walls can
+     * never see one. Junctions are started first so that the chains that pass
+     * through them are the long ones.
+     */
+    const vpos = new Map();
+    const vinc = new Map();
+    const vkey = (x, y) => `${Math.round(x / SNAP)},${Math.round(y / SNAP)}`;
+    walls.forEach((e, idx) => {
+      e.ka = vkey(e.ax, e.ay);
+      e.kb = vkey(e.bx, e.by);
+      if (!vpos.has(e.ka)) { vpos.set(e.ka, { x: e.ax, y: e.ay }); vinc.set(e.ka, []); }
+      if (!vpos.has(e.kb)) { vpos.set(e.kb, { x: e.bx, y: e.by }); vinc.set(e.kb, []); }
+      vinc.get(e.ka).push(idx);
+      vinc.get(e.kb).push(idx);
+    });
+    const used = new Uint8Array(walls.length);
+    const chains = [];
+    const walkFrom = (start) => {
+      let cur = start;
+      let dirx = 0; let diry = 0;
+      let has = false;
+      const pts = [vpos.get(cur)];
+      for (;;) {
+        const inc = vinc.get(cur);
+        let best = -1; let bestDot = -Infinity;
+        for (let k = 0; k < inc.length; k++) {
+          const ei = inc[k];
+          if (used[ei]) continue;
+          const e = walls[ei];
+          const ok = e.ka === cur ? e.kb : e.ka;
+          const o = vpos.get(ok); const c = vpos.get(cur);
+          const dx = o.x - c.x; const dy = o.y - c.y;
+          const L = Math.hypot(dx, dy) || 1;
+          const dot = has ? (dx / L) * dirx + (dy / L) * diry : 0;
+          if (dot > bestDot) { bestDot = dot; best = ei; }
+        }
+        if (best < 0) break;
+        used[best] = 1;
+        const e = walls[best];
+        const ok = e.ka === cur ? e.kb : e.ka;
+        const o = vpos.get(ok); const c = vpos.get(cur);
+        const L = Math.hypot(o.x - c.x, o.y - c.y) || 1;
+        dirx = (o.x - c.x) / L; diry = (o.y - c.y) / L; has = true;
+        pts.push(o);
+        cur = ok;
+      }
+      if (pts.length >= 2) chains.push(pts);
+    };
+    const keys = [...vpos.keys()];
+    keys.forEach((k) => { if (vinc.get(k).length !== 2) walkFrom(k); });
+    keys.forEach((k) => { if (vinc.get(k).some((ei) => !used[ei])) walkFrom(k); });
+
+    /* THE EMISSION. Each chain is resampled at `STEP` before it goes out, for
+     * the same reason every other law in this file samples finely: `emitScr`'s
+     * segment guard refuses to trust a straight hop longer than `SEG_MAX`, and
+     * a lit cell's wall is several millimetres long. `emitScr` then does the
+     * rest — every vertex inverted onto the visible surface, the stroke cut and
+     * refined by bisection where it reaches the silhouette. */
+    const STEP = 0.4;
+    chains.forEach((pts) => {
+      const out = [{ x: pts[0].x, y: pts[0].y }];
+      for (let i = 1; i < pts.length; i++) {
+        const A = pts[i - 1]; const B = pts[i];
+        const L = Math.hypot(B.x - A.x, B.y - A.y);
+        const n = Math.max(1, Math.round(L / STEP));
+        for (let k = 1; k <= n; k++) {
+          out.push({ x: A.x + (B.x - A.x) * (k / n), y: A.y + (B.y - A.y) * (k / n) });
+        }
+      }
+      C.emitScr(out);
+    });
+
+    /* WHAT THE HARNESS NEEDS TO SEE. The clamps are a claim about the seed set,
+     * and a claim about the seed set cannot be measured from the emitted ink
+     * alone — the ink is what is left after the silhouette has cut it. These
+     * are the numbers the integrity test asserts on. */
+    let minSep = Infinity; let maxSep = 0;
+    seeds.forEach((p) => {
+      const nb = gather(p.x, p.y, CELL_MAX * 1.6);
+      let d = Infinity;
+      for (let k = 0; k < nb.length; k++) {
+        const q = nb[k];
+        if (q === p) continue;
+        const dd = Math.hypot(q.x - p.x, q.y - p.y);
+        if (dd < d) d = dd;
+      }
+      if (Number.isFinite(d)) { if (d < minSep) minSep = d; if (d > maxSep) maxSep = d; }
+      if (!C.inv(p.x, p.y)) offSurface += 1;
+    });
+    C.voronoiDiag = {
+      cellMin: CELL_MIN,
+      cellMax: CELL_MAX,
+      seeds: seeds.length,
+      walls: walls.length,
+      chains: chains.length,
+      minSep: Number.isFinite(minSep) ? minSep : 0,
+      maxSep,
+      seedsOffSurface: offSurface,
+    };
   };
 
   /* ── 06 · diffGrowth ────────────────────────────────────────────────────────
@@ -2423,6 +2750,10 @@
     });
     diag.emitted = C.emittedCount();
     diag.cut = C.cutCount();
+    // A law may publish its own numbers. `voronoiWeb`'s clamps are a claim
+    // about its SEED SET, and the seed set is not recoverable from the emitted
+    // ink — the ink is what survived the silhouette cut.
+    if (C.voronoiDiag) diag.voronoi = C.voronoiDiag;
     globalScope.__MONO_DIAG = diag;
     // A measuring harness must be able to ask THIS substrate whether a screen
     // point is on the visible surface — a harness that reimplements `inv` is
