@@ -1164,11 +1164,35 @@
 
   // Contact-collar half-width. Thin by construction: a wide "contact" band is
   // just a second umbra, and the accent stops reading as contact.
-  const contactWidthOf = (contactSegs) => {
-    const pts = [];
-    (contactSegs || []).forEach(([a, b]) => { pts.push(a, b); });
-    return Math.max(1.2, 0.12 * ringMinExtent(pts));
-  };
+  //
+  // fs-z3 (item 3). Scaled off the RING'S OWN minor extent, this degenerates to
+  // its 1.2mm floor on any round caster: a sphere's near-ground slice projects
+  // to a thin annulus (e.g. 13.17 x 4.51mm), so 0.12 x 4.51 = 0.54mm never beats
+  // the floor — the collar occupied only ~6% of the shadow's area regardless of
+  // caster size, and its share FELL as the caster grew (10.3% -> 6.2% -> 4.0% ->
+  // 4.0% across r10/20/46/92). The contact ring's minor extent is degenerate BY
+  // CONSTRUCTION for anything that is not a prism (see nadirContact's own
+  // comment), so scaling off it can never track the shadow it is meant to
+  // accent. Scaled off the shadow's own throw length L instead — the one
+  // quantity every caster shape actually produces a non-degenerate value for —
+  // floored at 1.2mm and capped at 6% of L so a short throw cannot blow the
+  // collar out past the C3 width clamp already applied at the call site (which
+  // restates the same 0.06*L ceiling; kept there too as a belt-and-braces clamp
+  // once L is known there).
+  //
+  // Target 4.5% of L, not the first-cut 3%: at 3% the box fixture in
+  // `scene3d-shadow-controls.test.js` (a 50mm cube half-buried at y=20, a
+  // near-prism where the OLD ring-extent-based width was never degenerate —
+  // measured 560.27mm of Z0 ink) dropped to 280.67mm, and because Z0 is
+  // IDENTICAL across Layers 2/3/4 (C3) that flat mm loss is a much bigger
+  // fraction of Layers 2's smaller total than of Layers 3/4's larger one,
+  // pushing that fixture's C11 ratio from 1.552 to 1.703 (over the 1.667
+  // ceiling) — a real regression on a caster this fix was never meant to
+  // touch. 4.5% recovers most of that margin (measured Z0 421mm, ratio 1.60,
+  // comment/table below) while still lifting the sphere well off its 1.2mm
+  // floor: r20's L=40.6mm now gives a target of 1.83mm against the 1.2mm
+  // floor, versus 1.22mm (barely off the floor) at 3%.
+  const contactWidthOf = (L) => clamp(0.045 * finite(L, 0), 1.2, Math.max(1.2, 0.06 * finite(L, 0)));
 
   const ringsToSegs = (rings) => {
     const segs = [];
@@ -1633,6 +1657,79 @@
     return spans;
   };
 
+  // fs-z3, item 4 — refuse to zone-split a ruling into slivers.
+  //
+  // `zoneSpans` cuts a ruling wherever the sampled zone changes, with no floor
+  // on how short a resulting span can be. That is fine when zones are wide
+  // relative to a ruling (the design assumption spelled out above `emitFamily`)
+  // but on a compact caster it is routinely violated: measured on the owner's
+  // default sphere at Layers 4, 197 rulings averaging 11.0mm produced 643 zone
+  // spans (3.26 per ruling, median 2.15-2.47mm) — median span 4.5x SHORTER than
+  // the ruling it came from. Because `keepFor`/`dashFor` are applied PER SPAN,
+  // a ruling kept in one zone and dropped in the next leaves an isolated stub
+  // rather than a coherent line: only 25% of those spans survived their zone's
+  // stride, so what should read as "fewer, longer marks" read as scattered
+  // noise instead (median emitted mark 2.34mm against the flat shadow's
+  // 13.27mm, 40% of marks under 2mm).
+  //
+  // The fix is a floor on span length, in multiples of the ruling PITCH (the
+  // `spacing` a family rules at) — the natural unit for "is this span wide
+  // enough to carry its own zone's texture" is how many rulings of THIS
+  // family's own grid would fit across it, not an absolute mm figure. A span
+  // under the floor is not dropped (that would just move the fragmentation to
+  // a different failure) — it is MERGED into whichever neighbour is longer,
+  // adopting that neighbour's zone. Merging into the bigger neighbour (rather
+  // than always left or always right) keeps the merge deterministic and
+  // unbiased with respect to ruling direction. A final pass then coalesces any
+  // now-adjacent spans that ended up sharing a zone (two large same-zone spans
+  // that had a sliver of a third zone between them, once that sliver is
+  // absorbed into one side, are one span, not two).
+  const SPAN_COALESCE_PITCH_MULT = 6;
+  // C3 — the contact collar is a HARD boundary (see the feathering loop above,
+  // which already excludes Z_CONTACT from interdigitation for the same
+  // reason) and it must be ANCHORED: identical at every Layers setting,
+  // because it does not depend on `nZones` at all. Coalescing must not touch
+  // it either way: a short Z_CONTACT sliver must never be merged AWAY (that
+  // would erode the one value the whole drawing is anchored to), and a short
+  // NON-contact sliver must never be merged INTO a Z_CONTACT neighbour (that
+  // would let the collar's boundary drift with whatever nZones happens to
+  // classify next to it — precisely the coupling C3 forbids). A short span
+  // that cannot merge on either side because both its neighbours are (or one
+  // neighbour is Z_CONTACT and the other doesn't exist) is left as-is, same
+  // as a ruling that is one short span with no neighbour at all.
+  const coalesceSpans = (spans, minLen) => {
+    if (!spans || spans.length < 2) return spans || [];
+    let out = spans.map((s) => s.slice());
+    let changed = true;
+    while (changed && out.length > 1) {
+      changed = false;
+      for (let i = 0; i < out.length; i++) {
+        if (out[i][2] === Z_CONTACT) continue; // never merge the collar away
+        if (out[i][1] - out[i][0] >= minLen) continue;
+        const hasPrev = i > 0 && out[i - 1][2] !== Z_CONTACT;
+        const hasNext = i < out.length - 1 && out[i + 1][2] !== Z_CONTACT;
+        if (!hasPrev && !hasNext) continue; // only mergeable neighbour(s) are the collar — leave it
+        const prevLen = hasPrev ? out[i - 1][1] - out[i - 1][0] : -1;
+        const nextLen = hasNext ? out[i + 1][1] - out[i + 1][0] : -1;
+        if (nextLen > prevLen) {
+          out[i + 1][0] = out[i][0]; // extend the (larger) next span backward; its zone wins
+        } else {
+          out[i - 1][1] = out[i][1]; // extend the (larger) previous span forward; its zone wins
+        }
+        out.splice(i, 1);
+        changed = true;
+        break;
+      }
+    }
+    // Coalesce adjacent spans a merge above left sharing the same zone.
+    const merged = [];
+    out.forEach((s) => {
+      const last = merged[merged.length - 1];
+      if (last && last[2] === s[2]) last[1] = s[1]; else merged.push(s.slice());
+    });
+    return merged;
+  };
+
   // Emit one family over one region, ruling-subset by zone.
   //
   // FEATHERING. Where two zones of DIFFERENT density meet, the shared cut is
@@ -1650,17 +1747,27 @@
     const {
       rings, angle, spacing, keepFor, zoneAt, fields, dashFor, sink,
       groundPlane, clipper, out, meta, treat, draft, familyId,
+      // fs-z3 test seam: when present, every FINAL emitted mark (post-feather,
+      // post-keep, post-dash — i.e. exactly what would be drawn) is also
+      // recorded here as { familyId, ruling, zone, t0, t1 }, pre-ground-clip.
+      // Lets a test measure spans-per-ruling / mark length / boundary-gap
+      // statistics directly off the real emission logic instead of a
+      // restatement of it. See `__emitShadowRegionForTest` at the tail of the
+      // file.
+      rawSink,
     } = opts;
     const rulings = [];
     familyRulings(rings, angle, spacing, rulings);
     if (!rulings.length) return;
     const sampleStep = Math.max(0.5, Math.min(2.5, spacing));
+    // fs-z3, item 4 — see the comment above `coalesceSpans`.
+    const spanCoalesceMinLen = SPAN_COALESCE_PITCH_MULT * spacing;
     const lines = [];
     rulings.forEach((r) => {
       const len = Math.hypot(r.b.x - r.a.x, r.b.y - r.a.y);
       if (!(len > MIN_RUN_MM)) return;
       const ux = (r.b.x - r.a.x) / len; const uy = (r.b.y - r.a.y) / len;
-      const spans = zoneSpans(r.a, r.b, zoneAt, sampleStep);
+      const spans = coalesceSpans(zoneSpans(r.a, r.b, zoneAt, sampleStep), spanCoalesceMinLen);
       if (!spans.length) return;
       // Feather the internal cuts (shared endpoints), then the two rim ends.
       for (let c = 1; c < spans.length; c++) {
@@ -1692,7 +1799,18 @@
         // anchored to. Z0's edge is deliberately HARD anyway (§4) — a contact
         // accent with a feathered edge reads as a mistake, not as subtlety — so
         // there was never a case for retracting it.
-        if (zone !== Z_CONTACT) {
+        //
+        // NOT on Z_OUTER either (fs-z3, item 2). Z3 already has ITS OWN softening
+        // mechanism — the duty ramp in `dashA` (0.75 -> 0.35 across the throw,
+        // "the shadow dissolves into paper") — and stacking rim retraction on top
+        // of it was the second half of why Z3 read as mottled stubs rather than a
+        // soft edge: every mark in the rim was simultaneously shortened at BOTH
+        // ends by up to 1.2 x rimFeather AND chopped into dashes, so what should
+        // read as "fewer, shorter marks" instead read as noise. One mechanism
+        // wins; dash duty was already the deliberate, documented lever for this
+        // zone (see the comment on Z_OUTER's dashA branch), so retraction is
+        // scoped OFF it.
+        if (zone !== Z_CONTACT && zone !== Z_OUTER) {
           if (si === 0) s0 += hash01(r.i * 977 + familyId, 7) * 1.2 * fields.rimFeather;
           if (si === spans.length - 1) s1 -= hash01(r.i * 977 + familyId, 9) * 1.2 * fields.rimFeather;
         }
@@ -1705,6 +1823,7 @@
           ];
           seg.zone = zone;   // per-SPAN, see the emit grouping below
           lines.push(seg);
+          if (rawSink) rawSink.push({ familyId, ruling: r.i, zone, t0, t1 });
         };
         // Dash duty: the outer penumbra breaks its rulings so the shadow dissolves
         // into paper rather than ending on a tone step.
@@ -1907,6 +2026,113 @@
   // would be dead code, not a real coverage claim.
   const GRADEABLE_MARK_CLASSES = new Set(['hatch', 'cross', 'wave']);
 
+  // ── Zone model (fs-z3) ──────────────────────────────────────────────────────
+  // Everything downstream of `fields` in the zone-anatomy build — the contact
+  // half-width, the excluded-rim edge field, the umbra wedge law, and the
+  // classifier `zoneAt` itself — used to be inlined in `emitShadowRegion`.
+  // Factored out here so the same, single definition of "what zone is this
+  // point in" can also be driven by a TEST SEAM (`__zoneAreaShareForTest`,
+  // below): measuring Z3's AREA share (not just its ink share) needs to grid-
+  // sample `zoneAt` directly, and a restated copy of this logic in a test
+  // would be exactly the "harness restates and drifts from production" failure
+  // this codebase's own comments warn about repeatedly. Returns null on the
+  // same degenerate-footprint condition `buildShadowFields` already guards.
+  const buildZoneModel = (rings, contactSegs, penWidth, layerCount, falloff) => {
+    // contactWidthOf (item 3) is scaled off the throw length L, not the contact
+    // ring's own minor extent — but L itself comes from buildShadowFields, and
+    // the edge field it also returns needs contactWidth to exclude the rim
+    // that hugs the caster's body first. So L is fetched with a throwaway,
+    // edge-free pass (dE costs nothing when edgeSegs is empty — see
+    // buildShadowFields's own `edgeSegs.length ? … : 1e6` guard) before the
+    // real pass is built with the edge field properly excluded.
+    const fieldsForL = buildShadowFields(rings, contactSegs, []);
+    if (!fieldsForL) return null;
+    let contactWidth = contactWidthOf(fieldsForL.L);
+    // Edge field excludes the rim that hugs the caster's body: the base of a
+    // shadow is not an "edge" of it, and counting it would push the darkest zone
+    // into the lightest one exactly where the contact band belongs.
+    const edgeSegs = ringsToSegs(rings).filter(([a, b]) => {
+      if (!contactSegs.length) return true;
+      const mx = (a.x + b.x) * 0.5; const my = (a.y + b.y) * 0.5;
+      return distToSegs(mx, my, contactSegs) > contactWidth * 1.5;
+    });
+    const fields = buildShadowFields(rings, contactSegs, edgeSegs);
+    if (!fields) return null;
+
+    const L = fields.L;
+    // C3 as a hard clamp: the collar is an ACCENT and must stay thin relative to
+    // the throw. A wide contact band is just a second umbra, and it is what makes
+    // the dark end of the ladder flood.
+    // `contactWidth` is a HALF-width (the collar reaches that far on BOTH sides
+    // of the contact boundary), so C3's "width <= 12% of the throw" is a 0.06 L
+    // clamp here. Clamping at 0.12 L drew a collar twice the allowed width and
+    // was a large part of why the first cut read as a black worm.
+    contactWidth = Math.min(contactWidth, 0.06 * L);
+    // Penumbra retreat law. `shadowFalloff` is repurposed as SOFTNESS: at 0.2 the
+    // umbra survives nearly to the tip (hard sun); at 1.0 it dies inside the first
+    // third (broad source). The coefficient range is deliberately wide — the
+    // wedge's length has to change VISIBLY across the slider or the control has
+    // not earned its place.
+    const soft = clamp(finite(falloff, 0.5), 0.2, 1);
+    // ROUND 3 (C6). k was 0.03 + 1.2*soft — at the default softness that is 0.63,
+    // 2.25x the spec's law, so w(t) outgrew the footprint's local half-width by
+    // t = 0.24 and the umbra died there. Measured: "a fat contact smudge, not a
+    // wedge". The spec's own coefficients (§2.1) put the death at t ~ 0.55 at the
+    // default, which is what makes the wedge read as a SHAPE. `tUmbraMax` below
+    // remains the second lever, so C13's slider range is untouched.
+    const k = 0.06 + 0.44 * soft;
+    const w0 = Math.max(0.8, 0.02 * L, UMBRA_RIN * finite(fields.Rin, 0));
+    const wAt = (t) => w0 + k * t * L;
+    // The wedge also has to END, and `e > w(t)` alone does not end it. On a
+    // COMPACT footprint (a low object, a short throw) w stays small everywhere,
+    // so the umbra swallowed the whole shadow and Layers 3 emitted 2.3x the flat
+    // shadow's ink — C11 blown, and the "retreating wedge" invisible because
+    // there was nothing for it to retreat from. Terminating it at a softness-
+    // driven throw fraction bounds the area AND gives C13 its lever: this is the
+    // number the Softness slider actually moves.
+    const tUmbraMax = clamp(1.05 - 0.75 * soft, 0.25, 0.95);
+
+    const nZones = clamp(Math.round(finite(layerCount, 3)), 2, 4);
+    const wantUmbra = nZones >= 3;
+    const wantOuter = nZones >= 4;
+    const contactOn = contactSegs.length > 0;
+    // fs-z3 (item 1). Z3 is meant to be a RIM — a thin band plus the far tail —
+    // but bounding it at 30% of the local inradius made it 23-37% of the
+    // shadow's AREA at every caster size tested (34.8% at r10, 37.4% at r20/r46,
+    // 23.3% at r92), because a 45 deg sun guarantees the footprint is thin
+    // somewhere along its whole length, and 30% of a thin cross-section is most
+    // of it. Every mm^2 in there also carried BOTH rim retraction and dash duty
+    // (see item 2) at once, which is what turned it into mottled stubs rather
+    // than a soft edge. Bounded to 10% of Rin instead — a genuine rim margin,
+    // not a second zone eating the shadow from the outside in.
+    const outerMargin = clamp(Math.min(0.02 * L, 0.10 * finite(fields.Rin, L)), 0.8, 5);
+
+    const zoneAt = (x, y) => {
+      const dc = fields.distContact(x, y);
+      const t = L > 1e-6 ? dc / L : 0;
+      if (contactOn && dc <= contactWidth) return Z_CONTACT;
+      const e = fields.distEdge(x, y);
+      const w = wAt(t);
+      if (wantUmbra && t < tUmbraMax && e > w) return Z_UMBRA;
+      // Z3 is a RIM band plus the far tail. Deriving its margin from w(t) — as
+      // the first cut did — is a trap: w grows along the throw, so past mid-throw
+      // "the outer w/3" is the entire local width and Z3 swallows the shadow
+      // (Layers 4 lost 39% of its ink to it, blowing C11). The rim is a fixed
+      // fraction of the THROW instead, which is what the eye reads it as.
+      if (wantOuter && (e <= outerMargin || t > 0.9)) return Z_OUTER;
+      return Z_PENUMBRA;
+    };
+    fields.bandWidthAt = (x, y) => {
+      const t = L > 1e-6 ? fields.distContact(x, y) / L : 0;
+      return clamp(wAt(t) * 0.45, 1.2, Math.max(1.2, L * 0.08));
+    };
+    fields.rimFeather = wantOuter ? clamp(L * 0.03, 0.8, 6) : 0;
+
+    return {
+      fields, L, contactWidth, outerMargin, nZones, wantUmbra, wantOuter, zoneAt, w0, k, tUmbraMax,
+    };
+  };
+
   // Hatch a shadow polygon (rings = [outer, hole…]).
   //   layers off / draft / no fields → single flat hatch (the legacy path, and
   //   the Off/shadowToneDepth:0 compatibility contract — that combination must
@@ -1955,77 +2181,11 @@
     };
     if (!layers || draft) { flat(); return; }
 
-    // Edge field excludes the rim that hugs the caster's body: the base of a
-    // shadow is not an "edge" of it, and counting it would push the darkest zone
-    // into the lightest one exactly where the contact band belongs.
-    let contactWidth = contactWidthOf(contactSegs);
-    const edgeSegs = ringsToSegs(rings).filter(([a, b]) => {
-      if (!contactSegs.length) return true;
-      const mx = (a.x + b.x) * 0.5; const my = (a.y + b.y) * 0.5;
-      return distToSegs(mx, my, contactSegs) > contactWidth * 1.5;
-    });
-    const fields = buildShadowFields(rings, contactSegs, edgeSegs);
-    if (!fields) { flat(); return; }
-
-    const L = fields.L;
-    // C3 as a hard clamp: the collar is an ACCENT and must stay thin relative to
-    // the throw. A wide contact band is just a second umbra, and it is what makes
-    // the dark end of the ladder flood.
-    // `contactWidth` is a HALF-width (the collar reaches that far on BOTH sides
-    // of the contact boundary), so C3's "width <= 12% of the throw" is a 0.06 L
-    // clamp here. Clamping at 0.12 L drew a collar twice the allowed width and
-    // was a large part of why the first cut read as a black worm.
-    contactWidth = Math.min(contactWidth, 0.06 * L);
-    // Penumbra retreat law. `shadowFalloff` is repurposed as SOFTNESS: at 0.2 the
-    // umbra survives nearly to the tip (hard sun); at 1.0 it dies inside the first
-    // third (broad source). The coefficient range is deliberately wide — the
-    // wedge's length has to change VISIBLY across the slider or the control has
-    // not earned its place.
-    const soft = clamp(finite(falloff, 0.5), 0.2, 1);
-    // ROUND 3 (C6). k was 0.03 + 1.2*soft — at the default softness that is 0.63,
-    // 2.25x the spec's law, so w(t) outgrew the footprint's local half-width by
-    // t = 0.24 and the umbra died there. Measured: "a fat contact smudge, not a
-    // wedge". The spec's own coefficients (§2.1) put the death at t ~ 0.55 at the
-    // default, which is what makes the wedge read as a SHAPE. `tUmbraMax` below
-    // remains the second lever, so C13's slider range is untouched.
-    const k = 0.06 + 0.44 * soft;
-    const w0 = Math.max(0.8, 0.02 * L, UMBRA_RIN * finite(fields.Rin, 0));
-    const wAt = (t) => w0 + k * t * L;
-    // The wedge also has to END, and `e > w(t)` alone does not end it. On a
-    // COMPACT footprint (a low object, a short throw) w stays small everywhere,
-    // so the umbra swallowed the whole shadow and Layers 3 emitted 2.3x the flat
-    // shadow's ink — C11 blown, and the "retreating wedge" invisible because
-    // there was nothing for it to retreat from. Terminating it at a softness-
-    // driven throw fraction bounds the area AND gives C13 its lever: this is the
-    // number the Softness slider actually moves.
-    const tUmbraMax = clamp(1.05 - 0.75 * soft, 0.25, 0.95);
-
-    const nZones = clamp(Math.round(finite(layerCount, 3)), 2, 4);
-    const wantUmbra = nZones >= 3;
-    const wantOuter = nZones >= 4;
-    const contactOn = contactSegs.length > 0;
-    const outerMargin = clamp(Math.min(0.05 * L, 0.30 * finite(fields.Rin, L)), 0.8, 5);
-
-    const zoneAt = (x, y) => {
-      const dc = fields.distContact(x, y);
-      const t = L > 1e-6 ? dc / L : 0;
-      if (contactOn && dc <= contactWidth) return Z_CONTACT;
-      const e = fields.distEdge(x, y);
-      const w = wAt(t);
-      if (wantUmbra && t < tUmbraMax && e > w) return Z_UMBRA;
-      // Z3 is a RIM band plus the far tail. Deriving its margin from w(t) — as
-      // the first cut did — is a trap: w grows along the throw, so past mid-throw
-      // "the outer w/3" is the entire local width and Z3 swallows the shadow
-      // (Layers 4 lost 39% of its ink to it, blowing C11). The rim is a fixed
-      // fraction of the THROW instead, which is what the eye reads it as.
-      if (wantOuter && (e <= outerMargin || t > 0.9)) return Z_OUTER;
-      return Z_PENUMBRA;
-    };
-    fields.bandWidthAt = (x, y) => {
-      const t = L > 1e-6 ? fields.distContact(x, y) / L : 0;
-      return clamp(wAt(t) * 0.45, 1.2, Math.max(1.2, L * 0.08));
-    };
-    fields.rimFeather = wantOuter ? clamp(L * 0.03, 0.8, 6) : 0;
+    const model = buildZoneModel(rings, contactSegs, penWidth, layerCount, falloff);
+    if (!model) { flat(); return; }
+    const {
+      fields, L, contactWidth, outerMargin, nZones, wantUmbra, wantOuter, zoneAt,
+    } = model;
 
     // The headroom cap. This used to cite a criterion that does not exist and
     // assert that turning Layers ON must never weaken the penumbra. The spec has
@@ -2085,7 +2245,7 @@
     };
 
     const base = {
-      rings, zoneAt, fields, groundPlane, clipper, out, treat, draft,
+      rings, zoneAt, fields, groundPlane, clipper, out, treat, draft, rawSink: cfg.rawSink || null,
     };
     const zoneMeta = (zone) => {
       if (!meta.sceneTarget) return meta;
@@ -2134,7 +2294,7 @@
     // those carry the accent, and C1 depends on them.
     // The third direction joins only if the collar still has room for it AFTER
     // the stride has been chosen — otherwise it is the thing that floods.
-    const collarThird = contactOn && collar.withThird;
+    const collarThird = contactSegs.length > 0 && collar.withThird;
     if (collarThird) {
       emitFamily({
         ...base, angle: angle + CROSS_C_DEG, spacing: crossPitch, familyId: 2,
@@ -2736,6 +2896,69 @@
   // a real `buildShadowFields` field never produces on its own.
   const __buildGradedSpacingForTest = (sBase, fields, tone, depth, penWidth, angleDeg) => buildGradedSpacing(sBase, fields, tone, depth, penWidth, angleDeg);
 
+  // Test seam #5b (fs-z3). Exposes `buildZoneModel` directly (fields, L,
+  // Rin, contactWidth, outerMargin and the zoneAt closure itself) so a test
+  // can isolate ONE zone-law coefficient's effect (e.g. compare the outerMargin
+  // formula against the SAME real distContact/distEdge fields it would use in
+  // production) instead of only reading the aggregate area/ink shares.
+  const __zoneModelForTest = (rings, contactSegs, penWidth, layerCount, falloff) => buildZoneModel(rings, contactSegs || [], penWidth, layerCount, falloff);
+
+  // Test seam #6 (fs-z3, item 1). `zoneAt` classifies a POINT, not a region, so
+  // "what share of the shadow's AREA is Z3" is not observable from emitted ink
+  // at all — ink also carries the master grid's stride and Z3's own dash duty,
+  // both of which make a zone draw LESS densely without making it any smaller.
+  // That is exactly why the old outerMargin (30% of Rin) read as "only" an
+  // 11% ink share while still being 23-37% of the actual AREA. This grid-
+  // samples the real `zoneAt` from `buildZoneModel` (the same function
+  // `emitShadowRegion` calls) over the footprint, so the measurement cannot
+  // drift from what production actually classifies.
+  const __zoneAreaShareForTest = (rings, contactSegs, penWidth, layerCount, falloff) => {
+    const model = buildZoneModel(rings, contactSegs || [], penWidth, layerCount, falloff);
+    if (!model) return null;
+    const box = ringsBBox([rings]);
+    if (!box) return null;
+    const w = box.maxX - box.minX; const h = box.maxY - box.minY;
+    if (!(w > 0) || !(h > 0)) return null;
+    const MAX_SAMPLES = 250000;
+    let cell = 0.4;
+    while (((w / cell) + 1) * ((h / cell) + 1) > MAX_SAMPLES) cell *= 1.5;
+    const areas = {}; let total = 0;
+    for (let y = box.minY + cell / 2; y < box.maxY; y += cell) {
+      for (let x = box.minX + cell / 2; x < box.maxX; x += cell) {
+        if (!pointInRings(x, y, rings)) continue;
+        const z = model.zoneAt(x, y);
+        areas[z] = (areas[z] || 0) + 1;
+        total += 1;
+      }
+    }
+    const shares = {};
+    Object.keys(areas).forEach((z) => { shares[z] = areas[z] / (total || 1); });
+    return { areas, total, shares, cell, L: model.L, Rin: model.fields.Rin };
+  };
+
+  // Test seam #7 (fs-z3, items 2 & 4). Runs the REAL zone-anatomy emitter
+  // (`emitShadowRegion`, the exact function `build()` calls once a footprint
+  // is composed) against a caller-supplied footprint/contact set, through a
+  // pass-through clipper (every candidate segment survives — only the
+  // MIN_RUN_MM floor inside `emitHatchLines` can still drop one, same as
+  // production), and returns both the final emitted paths (`out`, with the
+  // usual `meta.sceneTarget.shadowLayer` tagging) and the pre-clip raw marks
+  // (`raw`, one entry per emitted mark: familyId/ruling/zone/t0/t1) captured
+  // via `rawSink`. `raw` is what a test needs for spans-per-ruling, mark
+  // length and boundary-gap statistics — measuring the emitter's own output,
+  // not a restatement of its internals.
+  const __passThroughClipper = { clipPath: (pts) => ({ runs: [{ visible: true, pts }] }) };
+  const __emitShadowRegionForTest = (rings, contactSegs, cfg) => {
+    const out = [];
+    const rawSink = [];
+    const meta = { sceneTarget: {} };
+    emitShadowRegion(
+      rings, null, __passThroughClipper, out, meta, NO_STROKE_TREATMENT, false,
+      { ...cfg, contactSegs: contactSegs || [], rawSink },
+    );
+    return { out, raw: rawSink };
+  };
+
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, {
     Shadows: {
       build,
@@ -2756,6 +2979,9 @@
       __ladderCoverageForTest,
       __gradedHatchForTest,
       __buildGradedSpacingForTest,
+      __zoneModelForTest,
+      __zoneAreaShareForTest,
+      __emitShadowRegionForTest,
     },
   });
 
@@ -2763,7 +2989,7 @@
     module.exports = {
       build, toneLawApplies, toneLawMarkClass, shadowFillStyleApplies, __ladderForTest, __collarForTest,
       __shadowFieldsForTest, __toneGradientForTest, __ladderCoverageForTest, __gradedHatchForTest,
-      __buildGradedSpacingForTest,
+      __buildGradedSpacingForTest, __zoneModelForTest, __zoneAreaShareForTest, __emitShadowRegionForTest,
     };
   }
 })();

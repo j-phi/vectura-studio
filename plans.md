@@ -318,6 +318,27 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **3D Scene — layered cast shadow: Layers 4 mottled-stubs/ragged-outline fixed
+  (`3d-scene/fs-z3-zoneanatomy`, v1.3.90, not merged).** Owner's default-scene sphere at Layers 4
+  measured 156 paths / 449.1mm ink / median mark 2.32mm (Layers Off: 61 paths / 683.4mm / median
+  13.27mm) — 2.6x the paths for 34% less ink, 40% of marks under 2mm. Layers 2/3 already read
+  clean; only Layers 4 broke. Four bounded fixes in `shadows.js`'s zone-anatomy build (flat/Off
+  path untouched): `outerMargin` (Z3 rim width) bounded to 10% of Rin instead of 30% (was 23-37%
+  of the shadow's AREA, not a rim); Z3 no longer stacks rim retraction AND dash duty on the same
+  band (retraction scoped off it, dash duty is the one lever); `contactWidthOf` (collar half-width)
+  scaled off the shadow's own throw length instead of the contact ring's own minor extent, which
+  is degenerate for any round caster (pinned at its 1.2mm floor regardless of caster size); a
+  ruling is no longer zone-split into slivers shorter than 6x its family's own pitch — such spans
+  now coalesce into their larger neighbour, with the contact collar (C3) kept as a hard boundary.
+  Layers 4 now measures 123 paths / 537.35mm / median 3.59mm, 17.07% under 2mm. Density's response
+  under Layers is NOT fully monotonic — one documented dip (Density 50→60), root-caused to a
+  pre-existing discontinuity in `headroomScale`/`strideLadder` this batch did not touch — and is
+  deliberately deferred with evidence rather than risking that already-tuned system. RGR:
+  `tests/unit/scene3d-shadow-zone-fragmentation.test.js` (new, 12 tests) + re-baselined
+  `tests/unit/scene3d-cast-shadow-zones.test.js`. Full unit/integration/visual suites green
+  (4 pre-existing failures in `scene3d-faceted-tone-law.test.js` /
+  `scene3d-hlr-spatial-index-identity.test.js` confirmed unrelated — reproduce identically on
+  unmodified `b0f600e8`, in subsystems this batch never touched).
 - **3D Scene — cast shadow tone gradients: shredded rulings fixed, "No Tone" now works,
   crosshatch/scribble covered too (`443b4800` + follow-ups, `3d-scene/fs-z2-shadowfrag`, not
   merged).** `applyShadowToneGradient` used to chop each ruling into ~6mm chunks and hash-drop

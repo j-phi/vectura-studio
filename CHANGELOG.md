@@ -6,6 +6,32 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed
+- **3D Scene — the layered (zone-anatomy) cast shadow no longer mottles into stubs at Layers 4.**
+  Owner report: a sphere resting on the ground under the default scene (Sun az135/el45, Additive,
+  Layers 4, angle 45, Density 50, pen 0.3) read as broken, scattered marks near the caster instead
+  of a solid contact band, with a ragged/scalloped outline — 156 paths for 449.1mm of ink (2.6x the
+  paths of Layers Off for 34% less ink), median mark 2.32mm against Layers Off's own 13.27mm, 40%
+  of marks under 2mm. Layers 2 and 3 already read cleanly; only Layers 4 was broken. Four bounded
+  defects in `src/core/scene3d/shadows.js`, all inside the zone-anatomy build (the flat/Off path is
+  untouched, byte-identical): (1) `outerMargin`, the outer-penumbra rim's width, was bounded to 30%
+  of the local inradius — 23-37% of the shadow's AREA at every caster size measured, not a rim;
+  bounded to 10% of Rin instead. (2) the outer zone stacked BOTH rim retraction and dash duty on
+  the same band, double-shortening every rim mark; retraction is now scoped off that zone, leaving
+  dash duty as the one lever. (3) `contactWidthOf` (the contact collar's half-width) scaled off the
+  contact ring's own minor extent, which is degenerate by construction for any round caster (a
+  sphere's near-ground slice is a thin annulus) — the collar sat at its 1.2mm floor regardless of
+  caster size; rescaled to a fraction of the shadow's own throw length instead. (4) a ruling could
+  be zone-split into slivers a few mm long with no floor, which a per-zone stride/dash decision then
+  kept or dropped piecemeal, leaving isolated stubs; a span shorter than 6x its family's own ruling
+  pitch is now coalesced into its larger neighbour, with the contact collar kept as a hard boundary
+  it never merges across. Layers 4 on the owner's own scene now measures 123 paths / 537.35mm,
+  median mark 3.59mm, 17.07% of marks under 2mm. Density's response under Layers is not fully
+  monotonic (one documented dip, Density 50→60, traced to a discontinuity in the pre-existing
+  headroom/collar system this batch did not touch) and is left for a separate pass. RGR proof:
+  `tests/unit/scene3d-shadow-zone-fragmentation.test.js` (new) and the re-baselined
+  `tests/unit/scene3d-cast-shadow-zones.test.js`.
+
 ### Added
 - **3D Scene — ten more tone laws, each taken from a named primary source, and the re-test of the
   nested-vs-phase selector.** `29fb99f` replaced a bit-reversed (van der Corput) NESTED rank
