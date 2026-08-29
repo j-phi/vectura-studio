@@ -156,6 +156,16 @@ const loadVecturaRuntime = async (options = {}) => {
     // resolving to a disk path — it's a browser cache key, not part of the filename.
     const normalized = src.replace(/^\.\//, '').replace(/\?.*$/, '');
     const absPath = path.join(rootDir, normalized);
+    // A script LISTED in index.html but not on disk is what a browser sees as a
+    // 404: it skips that file and keeps going. The harness has to behave the
+    // same way, because index.html is this repo's only module manifest and a
+    // module can legitimately be listed one commit before it lands (parallel
+    // work units land the tag and the file separately). Throwing here would
+    // take the ENTIRE suite down for one missing optional module, which hides
+    // every real failure behind an unrelated ENOENT. The module's own absence
+    // is still observable — its `window.Vectura.*` namespace is simply not
+    // registered, which is what the consuming code must already handle.
+    if (!fs.existsSync(absPath)) return;
     const code = fs.readFileSync(absPath, 'utf8');
     vm.runInContext(code, context, { filename: absPath });
   });

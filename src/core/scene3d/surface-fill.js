@@ -52,6 +52,29 @@
   // and the charts-parity golden are untouched.
   const AROUND_IS_U = new Set(['cylinder', 'capsule', 'superellipsoid', 'pyramid']);
 
+  // C4 — the roster PenFill implements, and the committed default. Exposed on
+  // the namespace so the UI control and src/config/defaults.js read the same
+  // list instead of restating it (AGENTS.md: defaults live in config, never
+  // hardcoded twice).
+  const STROKE_FILL_STYLES = ['spiral', 'concentric', 'serpentine', 'contourParallel'];
+  // The committed default. Owned by src/config/defaults.js as
+  // `window.Vectura.SCENE3D_STROKE_FILL_DEFAULT` (AGENTS.md: defaults live in
+  // config, not in the engine). Read at CALL time, not at load time — config
+  // loads before core in index.html, but a lean test runtime may not have it,
+  // and 'spiral' is the floor that keeps the path count flat either way.
+  const strokeFillDefault = () => {
+    const cfg = Vectura.SCENE3D_STROKE_FILL_DEFAULT;
+    return STROKE_FILL_STYLES.indexOf(cfg) !== -1 ? cfg : 'spiral';
+  };
+
+  // Bucket B — the twelve variable-width laws. See `isRibbonLaw` inside
+  // buildObject for why this set is written out rather than derived.
+  const RIBBON_LAWS = {
+    nibAngle: 1, taperedEnds: 1, weightModulated: 1, isophoteWidth: 1,
+    whiteBand: 1, weightSmoothstep: 1, ampSpacing: 1, weaveDepth: 1,
+    interlockWeave: 1, trochoidLoop: 1, amplitudeOnly: 1, onePenDown: 1,
+  };
+
   // ── A CYLINDER'S AND A CONE'S FLAT CAPS ARE NOT IN THE CHART ───────────────
   //
   // `Charts.topoCylinder` is an OPEN TUBE and `Charts.topoCone` is a lateral
@@ -241,6 +264,13 @@
   const maxLines = () => (TONE_UNCAPPED ? UNCAPPED_MAX_LINES : MASTER_MAX_LINES);
   // The last uncapped build's floor report. `null` in the committed build.
   let lastFloorStats = null;
+  // The last build's RIBBON report (see `ribbonize`). Unlike `lastFloorStats`
+  // this is always written, because it is the only way to tell the three ways a
+  // ribbon law can look identical from outside and be completely different
+  // inside: a real clipped ribbon, an unclipped one (defect D2 back), and a
+  // silent degrade to centrelines because a module was missing. Cheap — one
+  // small object per build — and read by the T2/T4 tests.
+  let lastRibbonStats = null;
   // RULING CONTINUITY (see emitLine). The scale at which a break stops reading
   // as a break and starts reading as a wobble in one line, and at which a mark
   // stops reading as a stroke and starts reading as a speck. Stated in pen
@@ -1372,6 +1402,19 @@
     // same rule `params.js` uses.
     const FLOW_MODE = opts.toneFlowMode === 'grad' ? 'grad' : FLOW_MODE_DEFAULT;
 
+    // ── C4 — THE RIBBON'S FILL STYLE ─────────────────────────────────────────
+    // How `ribbonize` fills a ribbon's interior once its outline is drawn.
+    // Validated HERE for the same reason `toneLaw` is: `buildObject` is a
+    // public boundary a saved document, a test, or a future caller can hit
+    // directly, and an unknown id must degrade rather than throw.
+    //
+    // The 'spiral' default is LOAD-BEARING, not cosmetic. A spiral is ONE
+    // unbroken stroke per region however wide the ribbon gets, so it holds the
+    // emitted path count flat; 'concentric' and 'contourParallel' legitimately
+    // emit many paths per ribbon and are a deliberate choice, never a default.
+    const STROKE_FILL_STYLE = STROKE_FILL_STYLES.indexOf(opts.strokeFillStyle) !== -1
+      ? opts.strokeFillStyle : strokeFillDefault();
+
     // `toneLaw: 'none'` is Stage 0 (`masterGrid` + `dither` both off, measured
     // as "NO TONE" in docs/tone-laws/) — NOT the same as `opts.toneOn = false`,
     // which this leaves untouched. `HL_STAGE` itself stays a module const;
@@ -1885,6 +1928,28 @@
     // below the hairline floor, so every one of them IS a weight law (see
     // `LOZ_LAWS`, declared below with the rest of the family's arithmetic).
     const isWeightLaw = () => WEIGHT_LAWS[TONE_ALGO] === 1 || isLoz();
+    // ── BUCKET B — THE RIBBON LAWS ───────────────────────────────────────────
+    //
+    // The twelve laws whose tone rides on VARIABLE STROKE WIDTH, and which are
+    // therefore delivered as a real pen-width RIBBON (outline + pen-pitched
+    // fill, every path at weightScale 1) rather than as a chain of abutting
+    // constant-width pieces. See `ribbonize`.
+    //
+    // THIS LIST IS EXPLICIT, AND IT IS DELIBERATELY NOT `isWeightLaw()`. Both
+    // failure modes are real and both are one character away:
+    //   1. 'weightModulated' is NOT in `WEIGHT_LAWS` — `isWeightLaw()` returns
+    //      false for it — yet it sets `run.weightScale` from the run mean in
+    //      `emitRun` below. Gating on `isWeightLaw()` would silently leave
+    //      behind the one law whose ENTIRE tone channel is stroke width.
+    //   2. `isWeightLaw()` is true for the ten THREE-PEN laws, whose whole
+    //      claim is three genuinely different nibs. Widening the predicate
+    //      would flatten exactly what they exist to prove.
+    // Neither `isWeightLaw()` nor `splitsAlongLine()` is the right set, so the
+    // set is written out.
+    // The dict itself lives at module scope (see RIBBON_LAWS) so the namespace
+    // can publish it to the UI; only the predicate is per-call, because
+    // TONE_ALGO is.
+    const isRibbonLaw = () => RIBBON_LAWS[TONE_ALGO] === 1;
     // `weightPlusSpacingTuned` is `weightPlusSpacing` at a different kappa and
     // nothing else, so every site that names the one names the other.
     const isWPS = () => TONE_ALGO === 'weightPlusSpacing' || TONE_ALGO === 'weightPlusSpacingTuned';
@@ -5027,6 +5092,185 @@
       out.push(run);
     };
 
+    // ═══ THE TRUE VISIBLE REGION, TRACED FROM THE FRONT TEST ITSELF ═══════════
+    //
+    // `ribbonize` (below) widens a ruling SIDEWAYS, and sideways is the one
+    // direction no existing guard covers. Every sample of a run has already been
+    // proved front-facing (`onSurf`), refined to 1/4096 of a step by `edgeAt` —
+    // but a HALF-WIDTH added at the limb lands off the form. That is defect D2,
+    // and it is exactly what the old round caps used to cause. So a ribbon has to
+    // be CLIPPED, and it has to be clipped against the same region the front test
+    // defines — not a bbox, not a convex hull, and not the MESH silhouette
+    // (`extractSilhouette` in geometry3d.js), which is a different discretisation
+    // of the same form and would be off by the mesh's own facet error.
+    //
+    // surface-fill emits no silhouette path: the silhouette here is a PREDICATE,
+    // `sampleAt(a, b).front === wantFront`, and `nz` (= camN.z) is its signed
+    // field — 1 facing the camera and exactly 0 ON the contour. So the region's
+    // rings are traced FROM THAT PREDICATE, by marching squares over the chart's
+    // own (a, b) square, with:
+    //   - every crossing BISECTED against the boolean `front` test, at the same
+    //     depth `edgeAt` bisects a ruling's end (EDGE_BISECT = 12);
+    //   - every contour vertex pushed back through `sampleAt`, so it reaches
+    //     screen through the same projection the rulings did;
+    //   - the DOMAIN EDGE treated as a real boundary on a NON-PERIODIC axis (a
+    //     cylinder's rim is not a silhouette, but it is still an edge of the
+    //     form and a ribbon may not cross it), and WRAPPED on a periodic one (a
+    //     sphere's wind seam is not an edge at all — cutting the region there
+    //     would drive a false slit through the middle of the clip).
+    //
+    // Same predicate, same refinement, same projection ⇒ the clip boundary and
+    // the run boundary are the same curve by construction. That is what makes
+    // "no ink outside the region" a structural property (T2's hard zero) rather
+    // than a tolerance that happened to pass.
+    const REGION_N = 72;          // marching-squares cells per chart axis
+    const REGION_BISECT = 12;     // the depth `edgeAt` uses — same refinement
+
+    // Does the chart close on itself along each axis?
+    let chartPeriodMemo = null;
+    const chartPeriod = () => {
+      if (chartPeriodMemo) return chartPeriodMemo;
+      const near = (p, q) => Boolean(p && q
+        && Math.abs(p.x - q.x) < 1e-6 && Math.abs(p.y - q.y) < 1e-6 && Math.abs(p.z - q.z) < 1e-6);
+      let perA = true; let perB = true;
+      for (let k = 0; k <= 4; k++) {
+        const u = k / 4;
+        if (!near(chart(0, u), chart(1, u))) perA = false;
+        if (!near(chart(u, 0), chart(u, 1))) perB = false;
+      }
+      chartPeriodMemo = { perA, perB };
+      return chartPeriodMemo;
+    };
+
+    const buildRegionRings = (wantFront) => {
+      const per = chartPeriod();
+      const N = REGION_N;
+      const paramOf = (idx, periodic) => {
+        if (periodic) return ((idx % N) + N) % N / N;
+        if (idx < 0 || idx > N) return null;    // OUTSIDE the domain — a sentinel
+        return idx / N;
+      };
+      const aOf = (i) => paramOf(i, per.perA);
+      const bOf = (j) => paramOf(j, per.perB);
+      const smpMemo = new Map();
+      const smpAtIdx = (i, j) => {
+        const k = `${i}|${j}`;
+        if (smpMemo.has(k)) return smpMemo.get(k);
+        const a = aOf(i); const b = bOf(j);
+        const s = (a == null || b == null) ? null : sampleAt(a, b);
+        smpMemo.set(k, s);
+        return s;
+      };
+      const inAt = (i, j) => {
+        const s = smpAtIdx(i, j);
+        return Boolean(s && s.front === wantFront);
+      };
+      // The boundary between one INSIDE and one OUTSIDE grid corner, in chart
+      // parameters. A sentinel neighbour means the crossing IS the domain edge,
+      // which the inside corner already sits on — exact, no bisection needed.
+      const crossParam = (aIn, bIn, aOut, bOut) => {
+        if (aOut == null || bOut == null) return { a: aIn, b: bIn };
+        let loA = aIn; let loB = bIn; let hiA = aOut; let hiB = bOut;
+        for (let k = 0; k < REGION_BISECT; k++) {
+          const mA = (loA + hiA) / 2; const mB = (loB + hiB) / 2;
+          const s = sampleAt(mA, mB);
+          if (s && s.front === wantFront) { loA = mA; loB = mB; } else { hiA = mA; hiB = mB; }
+        }
+        return { a: loA, b: loB };
+      };
+      const ptMemo = new Map();
+      // `ia/ja` is the INSIDE corner, `ib/jb` the OUTSIDE one.
+      const edgePt = (key, ia, ja, ib, jb) => {
+        if (ptMemo.has(key)) return ptMemo.get(key);
+        const pr = crossParam(aOf(ia), bOf(ja), aOf(ib), bOf(jb));
+        const s = sampleAt(pr.a, pr.b) || smpAtIdx(ia, ja);
+        const pt = s ? { x: s.x, y: s.y } : null;
+        ptMemo.set(key, pt);
+        return pt;
+      };
+
+      // Marching squares. Corners c0=(i,j) c1=(i2,j) c2=(i2,j2) c3=(i,j2);
+      // edges e0=c0c1 (bottom, key A|i|j), e1=c1c2 (right, B|i2|j),
+      // e2=c3c2 (top, A|i|j2), e3=c0c3 (left, B|i|j). Segments are oriented
+      // INSIDE-ON-THE-LEFT so the chains come out as consistently wound rings.
+      const CASES = {
+        1: [[0, 3]], 2: [[1, 0]], 4: [[2, 1]], 8: [[3, 2]],
+        3: [[1, 3]], 6: [[2, 0]], 12: [[3, 1]], 9: [[0, 2]],
+        7: [[2, 3]], 14: [[3, 0]], 13: [[0, 1]], 11: [[1, 2]],
+        5: [[0, 3], [2, 1]], 10: [[1, 0], [3, 2]],
+      };
+      const iFrom = per.perA ? 0 : -1;
+      const iTo = per.perA ? N - 1 : N;
+      const jFrom = per.perB ? 0 : -1;
+      const jTo = per.perB ? N - 1 : N;
+      const segs = [];
+      for (let i = iFrom; i <= iTo; i++) {
+        const i2 = per.perA ? (i + 1) % N : i + 1;
+        for (let j = jFrom; j <= jTo; j++) {
+          const j2 = per.perB ? (j + 1) % N : j + 1;
+          const c = [inAt(i, j), inAt(i2, j), inAt(i2, j2), inAt(i, j2)];
+          const code = (c[0] ? 1 : 0) | (c[1] ? 2 : 0) | (c[2] ? 4 : 0) | (c[3] ? 8 : 0);
+          const list = CASES[code];
+          if (!list) continue;
+          // Per-edge: which of its two corners is the inside one.
+          const eSpec = [
+            { key: `A|${i}|${j}`, in: c[0] ? [i, j] : [i2, j], out: c[0] ? [i2, j] : [i, j] },
+            { key: `B|${i2}|${j}`, in: c[1] ? [i2, j] : [i2, j2], out: c[1] ? [i2, j2] : [i2, j] },
+            { key: `A|${i}|${j2}`, in: c[3] ? [i, j2] : [i2, j2], out: c[3] ? [i2, j2] : [i, j2] },
+            { key: `B|${i}|${j}`, in: c[0] ? [i, j] : [i, j2], out: c[0] ? [i, j2] : [i, j] },
+          ];
+          list.forEach((pair) => {
+            const A = eSpec[pair[0]]; const B = eSpec[pair[1]];
+            const pA = edgePt(A.key, A.in[0], A.in[1], A.out[0], A.out[1]);
+            const pB = edgePt(B.key, B.in[0], B.in[1], B.out[0], B.out[1]);
+            if (pA && pB) segs.push({ from: A.key, to: B.key, a: pA, b: pB });
+          });
+        }
+      }
+      if (!segs.length) return [];
+      // Chain the segments into closed rings by shared grid-edge key. The keys
+      // are exact (they are grid indices, not floats), so a ring closes exactly
+      // or not at all — there is no join tolerance to tune.
+      const byFrom = new Map();
+      segs.forEach((s) => { if (!byFrom.has(s.from)) byFrom.set(s.from, []); byFrom.get(s.from).push(s); });
+      const used = new Set();
+      const rings = [];
+      segs.forEach((seed) => {
+        if (used.has(seed)) return;
+        const ring = [seed.a];
+        let cur = seed;
+        used.add(cur);
+        for (let guard = 0; guard < segs.length + 4; guard++) {
+          ring.push(cur.b);
+          const nexts = byFrom.get(cur.to);
+          const nxt = nexts && nexts.find((s) => !used.has(s));
+          if (!nxt) break;
+          used.add(nxt);
+          cur = nxt;
+          if (cur.from === seed.from) { used.delete(cur); break; }
+        }
+        // Drop the closing duplicate; the contract says first !== last.
+        if (ring.length >= 4) {
+          const f = ring[0]; const l = ring[ring.length - 1];
+          if (Math.abs(f.x - l.x) < 1e-9 && Math.abs(f.y - l.y) < 1e-9) ring.pop();
+        }
+        if (ring.length >= 3) rings.push(ring);
+      });
+      return rings;
+    };
+
+    const regionMemo = new Map();
+    // Lazy: the marching pass costs ~5k `sampleAt` calls, and no law that is not
+    // a ribbon law ever asks for it.
+    const visibleRegionRings = (wantFront) => {
+      const key = wantFront ? 'F' : 'B';
+      if (regionMemo.has(key)) return regionMemo.get(key);
+      let rings = [];
+      try { rings = buildRegionRings(wantFront) || []; } catch (err) { rings = []; }
+      regionMemo.set(key, rings);
+      return rings;
+    };
+
     // ── ROUND 6 — THE MARK EMITTER ────────────────────────────────────────────
     //
     // One call per ruling. It replaces the ruling outright: a mark law emits
@@ -5605,6 +5849,262 @@
       }
       return pieces;
     };
+
+    // ═══ C3 — RIBBONIZE: THE VARIABLE-WIDTH STROKE, DRAWN WITH A REAL PEN ═════
+    //
+    // `splitByWeight` above answers "how do I ask for a fatter pen?" — it cannot
+    // do better, because a path carries one width. Its answer quantises the width
+    // to W_LEVEL buckets and refuses a piece shorter than MIN_MARK_MM, so a 3.5 mm
+    // taper arrives as ~4 abutting capsules whose round caps bulge past their
+    // narrower neighbours. That is the STAIRCASE (D1) and half of the PROTRUSION
+    // (D2a), and no tuning of the bucket size fixes either: they are properties of
+    // asking for a width instead of drawing one.
+    //
+    // So stop asking. Build the true variable-width ribbon OUTLINE from the
+    // continuous width profile, clip it to the form, stroke that outline with the
+    // REAL pen, and fill its interior at a pen-width pitch. Every path out of here
+    // is at weightScale 1 — what the plotter draws IS what the screen shows, and
+    // "expand into group" becomes correct by construction rather than by a
+    // reconstruction step downstream.
+    //
+    // Bucket C (`isPenLaw()`) does NOT come here. A three-pen plot's entire claim
+    // is that it uses three genuinely different nibs; flattening it to one pen
+    // would destroy exactly the thing it exists to demonstrate.
+    const RIBBON_OVERLAP = 0.15;     // PenFill's pitch = penWidth * (1 - overlap)
+    const RIBBON_MAX_PATHS = 4096;   // a ceiling to NOTICE, never to silently apply
+    const ribbonStat = {
+      stretches: 0, wide: 0, narrow: 0, ribbons: 0, clipped: 0,
+      outlines: 0, fills: 0, degenerate: 0, noModule: 0, noRegion: 0, atMaxPaths: 0,
+    };
+    let ribbonWarned = false;
+
+    // ── EROSION, NOT MITER OFFSET ────────────────────────────────────────────
+    //
+    // MEASURED, and the reason this is not `miterOffsetClosedRing`: an inward
+    // MITER offset of a clipped ribbon SPIKES OUTWARD at every reflex vertex —
+    // and a clipped ribbon is full of reflex vertices, because the clip is what
+    // put them there. On the sphere fixture the miter version put 28 taperedEnds
+    // vertices and 36 weightSmoothstep vertices OUTSIDE the silhouette, up to
+    // 0.27 mm past it, with the clip itself working perfectly. That is defect D2
+    // reintroduced one step AFTER the step that exists to prevent it.
+    //
+    // `insetMultiPolygon` is the primitive that is immune: it SUBTRACTS a band
+    // of width 2·inset from the region instead of offsetting its boundary, so
+    // the result is a subset of its input by construction, and it splits or
+    // vanishes correctly where the ribbon is thinner than 2·inset. Its own
+    // header block documents exactly this failure mode ("makes the offset curve
+    // self-cross wildly … fabricates phantom lobes"). Chaining is documented as
+    // sound, so the fill's deeper inset is taken from the outline's result.
+    //
+    // Returns a normalized multipolygon — [[shell, hole, …], …], points as
+    // [x, y] pairs — or [] when the erosion consumed the ribbon.
+    const erode = (mp, d) => {
+      const GU = Vectura.GeometryUtils;
+      if (!GU || typeof GU.insetMultiPolygon !== 'function') return [];
+      try {
+        const res = GU.insetMultiPolygon(mp, Math.abs(d), { minArea: 0 });
+        return Array.isArray(res) ? res : [];
+      } catch (err) { return []; }
+    };
+    // One multipolygon ring -> the {x,y} list the rest of this file speaks.
+    const ringPts = (r) => {
+      const pts = [];
+      for (let i = 0; i < r.length; i++) {
+        const q = r[i];
+        const x = Array.isArray(q) ? q[0] : q.x;
+        const y = Array.isArray(q) ? q[1] : q.y;
+        if (Number.isFinite(x) && Number.isFinite(y)) pts.push({ x, y });
+      }
+      if (pts.length >= 2) {
+        const f = pts[0]; const l = pts[pts.length - 1];
+        if (Math.abs(f.x - l.x) < 1e-9 && Math.abs(f.y - l.y) < 1e-9) pts.pop();
+      }
+      return pts.length >= 3 ? pts : null;
+    };
+    const closePath = (ring, z) => {
+      const p = ring.map((q) => ({ x: q.x, y: q.y, z }));
+      p.push({ x: ring[0].x, y: ring[0].y, z });
+      return p;
+    };
+
+    const ribbonize = (run, wPts, ttPts, fam, back) => {
+      const n = run.length;
+      const tag = (path, t0, t1) => {
+        path.fam = fam;
+        path.tt0 = t0; path.tt1 = t1;
+        path.weightScale = 1;
+        return path;
+      };
+      // The DEGENERATE case, and the fallback for every refusal below: one real
+      // pen pass down the centreline. Never a sub-pen stroke, never a gap
+      // (C3 rule 5) — and never a protrusion, because the centreline's samples
+      // were each proved front-facing before they joined the run.
+      const centrePass = (a, b) => {
+        const pc = run.slice(a, b + 1);
+        return tag(pc, ttPts[a], ttPts[b]);
+      };
+      if (n < 2) return [tag(run, ttPts[0], ttPts[n - 1])];
+
+      // ── WHOSE WIDTH PROFILE? `splitsAlongLine()` ALREADY ANSWERED THIS ──────
+      //
+      // Three of the twelve ribbon laws — 'weightModulated', 'weightSmoothstep'
+      // and 'onePenDown' — are deliberately absent from `splitsAlongLine()`:
+      // their width is ONE number for the whole run (the run mean, set in
+      // `emitRun` immediately above), not a per-sample profile. `wPts` still
+      // carries per-sample values for them, but those values are NOT their
+      // width — reading them here would cut a law whose entire claim is that it
+      // never cuts. 'onePenDown' measured this the hard way: driven off `wPts`
+      // it fragmented from 9 continuous paths to 109, because every width
+      // wobble broke the chart bridge that chains one ruling into the next.
+      const perSample = splitsAlongLine();
+      const runW = clamp(finite(run.weightScale, meanW(wPts, 0, n - 1)), W_MIN, W_MAX);
+      const half = new Array(n);
+      for (let i = 0; i < n; i++) {
+        half[i] = penWidth * (perSample ? clamp(finite(wPts[i], 1), W_MIN, W_MAX) : runW) / 2;
+      }
+      const HALF_MIN = penWidth / 2;
+      // "Genuinely wider than the pen". Below 1.1 x pen an outline plus a fill is
+      // two near-coincident strokes — worse ink than one honest centreline.
+      const wideAt = (i) => half[i] > penWidth * 0.55;
+
+      // Split into maximal same-class stretches, sharing the boundary POINT so
+      // the pieces abut exactly (the same construction `splitByWeight` uses).
+      const stretches = [];
+      let s0 = 0; let cur = wideAt(0);
+      for (let i = 1; i < n; i++) {
+        if (wideAt(i) !== cur) { stretches.push({ a: s0, b: i, wide: cur }); s0 = i; cur = wideAt(i); }
+      }
+      stretches.push({ a: s0, b: n - 1, wide: cur });
+      // A stretch too short to be a mark is folded into its predecessor rather
+      // than dropped — dropping it would leave a hole in the ruling.
+      const arcOf = (a, b) => {
+        let L = 0;
+        for (let i = a + 1; i <= b; i++) L += Math.hypot(run[i].x - run[i - 1].x, run[i].y - run[i - 1].y);
+        return L;
+      };
+      const merged = [];
+      stretches.forEach((st) => {
+        if (merged.length && arcOf(st.a, st.b) < MIN_MARK_MM) { merged[merged.length - 1].b = st.b; return; }
+        merged.push(st);
+      });
+
+      const region = visibleRegionRings(!back);
+      const RGm = Vectura.RibbonGeometry;
+      const PFm = Vectura.PenFill;
+      const haveModules = Boolean(RGm && typeof RGm.buildRibbonRing === 'function'
+        && PFm && typeof PFm.fillRegion === 'function');
+      if (!haveModules) {
+        ribbonStat.noModule += 1;
+        if (!ribbonWarned && typeof console !== 'undefined' && console.warn) {
+          ribbonWarned = true;
+          console.warn('Vectura SurfaceFill: RibbonGeometry/PenFill unavailable — '
+            + `ribbon law "${TONE_ALGO}" is drawing single-pen centrelines, not ribbons.`);
+        }
+      }
+
+      const outp = [];
+      merged.forEach((st) => {
+        ribbonStat.stretches += 1;
+        if (!st.wide || !haveModules) {
+          ribbonStat[st.wide ? 'degenerate' : 'narrow'] += 1;
+          outp.push(centrePass(st.a, st.b));
+          return;
+        }
+        ribbonStat.wide += 1;
+        const centre = []; const hw = [];
+        for (let i = st.a; i <= st.b; i++) {
+          centre.push({ x: run[i].x, y: run[i].y });
+          hw.push(Math.max(half[i], HALF_MIN));
+        }
+        let ring = null;
+        try {
+          ring = RGm.buildRibbonRing(centre, hw, { cap: 'butt', joinLimit: 4, minHalfWidth: HALF_MIN });
+        } catch (err) { ring = null; }
+        if (!Array.isArray(ring) || ring.length < 3) {
+          ribbonStat.degenerate += 1; outp.push(centrePass(st.a, st.b)); return;
+        }
+        // ── THE CLIP. This is the step that kills D2. ─────────────────────────
+        //
+        // NO REGION, NO RIBBON. A ribbon is the one construction in this file
+        // that puts ink where no sample was ever proved to be, so it may ship
+        // only after it has been cut against the front test's own boundary. If
+        // the region is unavailable the honest output is the CENTRELINE — every
+        // point of which WAS proved on-surface — never an unclipped ribbon,
+        // which is defect D2 restored in full. W1 made the same call inside
+        // `clipRingToRegion` (no boolean library ⇒ return [], not the ring).
+        //
+        // The clip is UNCONDITIONAL. An earlier version skipped it when every
+        // ring VERTEX tested interior; that is only sound on a convex region,
+        // because a segment between two interior vertices of a CONCAVE region
+        // can still leave it — and "approximate clip" is precisely what the
+        // plan forbids. The boolean is needed for the erosion below anyway, so
+        // the saving was never worth the hole.
+        if (!region.length || typeof RGm.clipRingToRegion !== 'function') {
+          ribbonStat.noRegion += 1; outp.push(centrePass(st.a, st.b)); return;
+        }
+        let clipped = null;
+        try { clipped = RGm.clipRingToRegion(ring, region); } catch (err) { clipped = null; }
+        const rings = Array.isArray(clipped)
+          ? clipped.filter((r) => Array.isArray(r) && r.length >= 3) : [];
+        ribbonStat.clipped += 1;
+        if (!rings.length) { ribbonStat.degenerate += 1; outp.push(centrePass(st.a, st.b)); return; }
+        const t0 = ttPts[st.a]; const t1 = ttPts[st.b];
+        const z = run[st.a] ? run[st.a].z : undefined;
+        let any = false;
+        // The clip returns shells and holes in ONE flat array with opposite
+        // winding (W1's contract). `insetMultiPolygon` wants a multipolygon and
+        // resolves the nesting itself, so hand it every ring at once rather than
+        // sorting shells from holes here — a shell inside a hole would be lost
+        // by any hand-rolled pairing, and the boolean already knows the answer.
+        const clippedMP = [rings.map((r) => r.map((q) => [q.x, q.y]))];
+        // OUTLINE — the ribbon eroded by HALF a pen, so a real pen stroking it
+        // lands its OUTER edge exactly on the ribbon boundary.
+        const outlineMP = erode(clippedMP, penWidth / 2);
+        // FILL — half a pen deeper again (the outline already inks the first pen
+        // width in from the edge), pitched at penWidth * (1 - overlap). Chained
+        // off the outline because erode(R, a+b) === erode(erode(R, a), b) and
+        // two shallow cuts are much cheaper than one deep one.
+        const fillMP = outlineMP.length ? erode(outlineMP, penWidth / 2) : [];
+        outlineMP.forEach((poly) => {
+          poly.forEach((r) => {
+            const pts = ringPts(r);
+            if (!pts) return;
+            outp.push(tag(closePath(pts, z), t0, t1));
+            ribbonStat.outlines += 1; any = true;
+          });
+        });
+        fillMP.forEach((poly) => {
+          const regionRings = poly.map(ringPts).filter(Boolean);
+          if (!regionRings.length) return;
+          let res = null;
+          try {
+            res = PFm.fillRegion(regionRings, penWidth, STROKE_FILL_STYLE,
+              { overlap: RIBBON_OVERLAP, axis: null, maxPaths: RIBBON_MAX_PATHS });
+          } catch (err) { res = null; }
+          const paths = (res && Array.isArray(res.paths)) ? res.paths : [];
+          if (paths.length >= RIBBON_MAX_PATHS) ribbonStat.atMaxPaths += 1;
+          paths.forEach((p) => {
+            if (!Array.isArray(p) || p.length < 2) return;
+            outp.push(tag(p.map((q) => ({ x: q.x, y: q.y, z })), t0, t1));
+            ribbonStat.fills += 1; any = true;
+          });
+        });
+        if (!any) { ribbonStat.degenerate += 1; outp.push(centrePass(st.a, st.b)); return; }
+        ribbonStat.ribbons += 1;
+      });
+
+      // ── HARD ASSERT (C3 rule 6) ─────────────────────────────────────────────
+      // The whole point of this function is that nothing downstream ever again
+      // has to reconstruct a width from a multiplier. If that is ever untrue the
+      // build is wrong and must say so, not quietly emit a fat-pen path again.
+      for (let i = 0; i < outp.length; i++) {
+        if (outp[i].weightScale !== 1) {
+          throw new Error(`Vectura SurfaceFill.ribbonize: emitted weightScale ${outp[i].weightScale} `
+            + `for law "${TONE_ALGO}" — every ribbon path must be a real single-pen stroke.`);
+        }
+      }
+      return outp.length ? outp : [centrePass(0, n - 1)];
+    };
     // 'weightMultiPass' — the plotter-honest heavy line. Instead of asking for a
     // pen `w` times as wide, lay ROUND(w) real strokes of the actual pen, offset
     // perpendicular by one ink width and centred on the ruling. The piece itself
@@ -5726,9 +6226,24 @@
           // 'onePenDown' takes the run mean for the same reason `weightModulated`
           // does: it never splits, so there is one width for the whole stroke.
           if (TONE_ALGO === 'onePenDown' && wCnt > 0) run.weightScale = wSum / wCnt;
-          const pieces = (splitsAlongLine() && wCnt > 0)
-            ? splitByWeight(run, wPts, ttPts, fam)
-            : [run];
+          // ── C3 — THE EMISSION SWAP ────────────────────────────────────────
+          //
+          // Bucket B (`isRibbonLaw()`) leaves here as a real pen-width RIBBON.
+          // Bucket C (`isPenLaw()`) and everything else goes down
+          // `splitByWeight` UNCHANGED — that is not an oversight, it is the
+          // three-pen laws' entire point.
+          //
+          // The gate is NOT `splitsAlongLine()`: three of the twelve ribbon
+          // laws ('weightModulated', 'weightSmoothstep', 'onePenDown')
+          // deliberately do not split, and all three set `run.weightScale`
+          // from the run mean immediately above. They are ribbon laws too, and
+          // gating on the split predicate would leave all three at a fat-pen
+          // multiplier.
+          const pieces = (isRibbonLaw() && wCnt > 0)
+            ? ribbonize(run, wPts, ttPts, fam, back)
+            : ((splitsAlongLine() && wCnt > 0)
+              ? splitByWeight(run, wPts, ttPts, fam)
+              : [run]);
           pieces.forEach((pc) => {
             if (lozAny) pc.loz = true;
             mine.push(pc);
@@ -9126,9 +9641,22 @@
       return true;
     };
 
-    if (!runMapper(N, false)) return null; // front surface (unchanged when no x-ray)
+    // Written for EVERY build, ribbon law or not — a zeroed report on a
+    // non-ribbon law is itself the answer to "did this law widen anything?".
+    // `regionRings` is the load-bearing field: a ribbon may only ship CLIPPED,
+    // so 0 rings there means every stretch fell back to its centreline.
+    const publishRibbonStats = () => {
+      lastRibbonStats = {
+        algo: TONE_ALGO, ribbonLaw: isRibbonLaw(), penWidth,
+        regionRings: (regionMemo.get('F') || []).length,
+        regionRingsBack: (regionMemo.get('B') || []).length,
+        ...ribbonStat,
+      };
+    };
+    if (!runMapper(N, false)) { publishRibbonStats(); return null; } // front surface (unchanged when no x-ray)
     // X-ray back surface: sparser (count × backDensity) far-side family, tagged.
     if (xray) runMapper(Math.max(2, Math.round(N * backDensity)), true);
+    publishRibbonStats();
     // WHERE THE PLOT FLOOR BOUND, published for the comparison harness. Written
     // only in uncapped mode, so the committed build never allocates or exposes
     // it — `lastFloorStats` stays null and nothing downstream can read a number
@@ -9341,7 +9869,18 @@
     {
       SurfaceFill: {
         buildObject, chartFor, lineCountFor, __litFloorForTest, __ladderForTest: ladderKeep,
+        // C4 — the stroke-fill roster + committed default, so the UI control
+        // and the config default read one list rather than three copies.
+        get strokeFillStyles() { return STROKE_FILL_STYLES.slice(); },
+        get strokeFillDefault() { return strokeFillDefault(); },
+        // Bucket B, for the UI's enable/disable decision and for tests. A copy.
+        get ribbonLaws() { return Object.keys(RIBBON_LAWS); },
         get lastFloorStats() { return lastFloorStats; },
+        // The last build's ribbon report — see `lastRibbonStats`. The only way
+        // to distinguish a CLIPPED ribbon from an unclipped one or from a
+        // silent degrade to centrelines, all three of which look alike from
+        // outside. Read by the T2/T4 tests.
+        get lastRibbonStats() { return lastRibbonStats; },
         // Unchanged reading: the committed default, byte-identical to the
         // pre-refactor module constant. `scene3d-tone-algo-default.test.js`
         // pins this and must stay green unmodified.

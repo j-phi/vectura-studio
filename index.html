@@ -1017,6 +1017,13 @@
   <!-- Phase 3: surface-fill mappers (contour / spiral / stipple). Consumes
        GeometryUtils + PathBoolean + Geometry3D; scene3d.js below dispatches to it. -->
   <script src="./src/core/scene3d/mappers.js?v=1.3.91" defer></script>
+  <!-- Pen-width outline+fill for the variable-width (bucket B) tone laws.
+       ribbon-geometry.js builds the true variable-width ribbon OUTLINE from a
+       continuous width profile; pen-fill.js fills a region at a pitch DERIVED
+       from the pen width. Both must load BEFORE surface-fill.js, which calls
+       them from `ribbonize`. Neither has any dependency on surface-fill. -->
+  <script src="./src/core/scene3d/ribbon-geometry.js?v=1.3.91" defer></script>
+  <script src="./src/core/pen-fill.js?v=1.3.91" defer></script>
   <script src="./src/core/scene3d/surface-fill-mono.js?v=1.3.91" defer></script>
   <script src="./src/core/scene3d/surface-fill.js?v=1.3.91" defer></script>
   <script src="./src/core/algorithms/spiralizer.js?v=1.3.91" defer></script>

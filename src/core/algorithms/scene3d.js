@@ -2996,6 +2996,13 @@
                 toneLaw: sp.toneLaw,
                 toneQuantLevels: sp.toneQuantLevels,
                 toneFlowMode: sp.toneFlowMode,
+                // C4 — how a RIBBON LAW fills its ribbon's interior once the
+                // outline is drawn ('spiral' | 'concentric' | 'serpentine' |
+                // 'contourParallel'). Forwarded verbatim, for exactly the
+                // reason toneLaw is: buildObject owns validation against its
+                // own roster, so an old document or an unknown id degrades in
+                // ONE place instead of two. Inert under every non-ribbon law.
+                strokeFillStyle: sp.strokeFillStyle,
                 // Crosshatch family-B controls. They were already live on faceted
                 // geometry and on the flat silhouette fallback below, but were
                 // never handed to the curved fill — so on every chart-wrapped
