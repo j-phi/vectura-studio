@@ -62,6 +62,8 @@
   // Fraction of each ring spent morphing onto the next one — this is what makes
   // `spiral` a true spiral rather than stacked rings with a jump.
   const BLEND_FRACTION = 0.3;
+  // …and never longer than this many pitches of travel, whichever is shorter.
+  const BLEND_ARC_PITCHES = 8;
   // Bridged (pen-lifting) styles only hop this far before lifting.
   const BRIDGE_LIMIT_PITCHES = 6;
   // A connected component this small is what a scanline sheds at a sharp point,
@@ -697,6 +699,84 @@
     return pulled.slice(1, -1);
   };
 
+  // ── Piece order ───────────────────────────────────────────────────────────
+  /**
+   * Re-order pass pieces so consecutive ones are NEIGHBOURS, not merely the next
+   * rung of the ladder.
+   *
+   * `contourPieces` emits every loop of level 0, then every loop of level 1, and
+   * so on. That is the right ORDER for a lifting style and the wrong one for a
+   * continuous style: a region with more than one lobe per level (any region with
+   * a hole — the outer wall and each hole wall contour separately) makes the
+   * level-major walk cross the whole region between consecutive pieces, and
+   * `spiral` must ROUTE that crossing rather than lift, retracing ink already
+   * down. Measured on a disc with three holes: overdraw 2.51 against concentric's
+   * 1.22 from the very same rings.
+   *
+   * Greedy nearest-end, not containment nesting: in a distance field the level
+   * ladder runs INWARD from the outer wall and OUTWARD from every hole, so
+   * "the parent contains the child" is true on one side and false on the other.
+   * Proximity is the one relation that is correct on both, and it is exactly the
+   * quantity the connector pays for. Deterministic: ties break on the earlier
+   * index, and the walk always starts at the first piece of the first level.
+   */
+  const SAMPLES_PER_PIECE = 64;
+  const nearestOn = (pts, p) => {
+    let best = pts[0];
+    let bestD = Infinity;
+    for (const q of pts) {
+      const dx = q.x - p.x;
+      const dy = q.y - p.y;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = q; }
+    }
+    return { pt: best, d2: bestD };
+  };
+  const orderByProximity = (pieces) => {
+    const n = pieces.length;
+    if (n < 3) return pieces.slice();
+    // Sample each piece so the pairwise scan stays linear in PIECES, not in ring
+    // length: a pass ring can be thousands of points and the ranking only needs
+    // to know which piece is nearest. The scan is O(pieces² x samples), so the
+    // sample budget drops as the piece count climbs — a coarser sample changes
+    // which of two near-equal neighbours wins, never whether a far one does.
+    const per = n > 400 ? 8 : SAMPLES_PER_PIECE;
+    const samples = pieces.map((pc) => {
+      const pts = pc.pts;
+      const stride = Math.max(1, Math.floor(pts.length / per));
+      const out = [];
+      for (let i = 0; i < pts.length; i += stride) out.push(pts[i]);
+      out.push(pts[pts.length - 1]);
+      return out;
+    });
+    const used = new Uint8Array(n);
+    const order = [];
+    let cur = 0;
+    used[0] = 1;
+    order.push(pieces[0]);
+    let end = pieces[0].closed ? pieces[0].pts[0] : pieces[0].pts[pieces[0].pts.length - 1];
+    for (let step = 1; step < n; step += 1) {
+      let best = -1;
+      let bestD = Infinity;
+      for (let i = 0; i < n; i += 1) {
+        if (used[i]) continue;
+        const d = nearestOn(samples[i], end).d2;
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      if (best < 0) break;
+      used[best] = 1;
+      order.push(pieces[best]);
+      cur = best;
+      const pts = pieces[cur].pts;
+      // A closed piece is entered at its nearest vertex and left there again, so
+      // its exit point IS its entry point — found on the full ring, not on the
+      // ranking samples, because `chainPieces` will enter at the exact vertex.
+      end = pieces[cur].closed ? nearestOn(pts, end).pt : pts[pts.length - 1];
+    }
+    for (let i = 0; i < n; i += 1) if (!used[i]) order.push(pieces[i]);
+    return order;
+  };
+
   // ── Piece assembly ────────────────────────────────────────────────────────
   const rotateRing = (pts, at) => {
     if (at <= 0) return pts.slice();
@@ -726,10 +806,34 @@
    * A vertex that fails falls back to its un-morphed position, which is on a
    * contour and therefore inside by construction; the spiral simply tightens
    * onto the next ring a little later instead of leaving the paper.
+   *
+   * THE BLEND VACATES A STRIP, SO IT IS BOUNDED TWICE OVER.
+   * Morphing pulls the path up to one `pitch` off its own contour. Everywhere
+   * but the outermost pass that strip is already inked by the pass outside it,
+   * so it costs nothing. On the OUTERMOST pass the strip's outer neighbour is
+   * the region BOUNDARY, and vacating it leaves the region's own edge bare —
+   * which is why `spiral` was the only style with gaps despite sharing
+   * concentric's rings (measured 0.028 mm² against a 0.0225 mm² bar). The
+   * outermost pass is therefore never blended (see `chainPieces`), and the
+   * blend that does run is capped by ARC LENGTH rather than by a fraction of
+   * the ring, so a long thin pass does not spend hundreds of millimetres
+   * drifting off its contour.
    */
-  const applyBlend = (seq, nextPts, field, rings) => {
+  const applyBlend = (seq, nextPts, field, rings, arcCap) => {
     const n = seq.length;
-    const b = Math.max(2, Math.floor(n * BLEND_FRACTION));
+    let b = Math.max(2, Math.floor(n * BLEND_FRACTION));
+    if (arcCap > 0) {
+      let arc = 0;
+      let k = 0;
+      while (k < b && n - 1 - k > 0) {
+        const a = seq[n - 1 - k];
+        const c = seq[n - 2 - k];
+        arc += Math.hypot(a.x - c.x, a.y - c.y);
+        k += 1;
+        if (arc >= arcCap) break;
+      }
+      b = Math.max(2, Math.min(b, k));
+    }
     if (b >= n) return;
     let prev = seq[n - b - 1] || seq[0];
     for (let i = n - b; i < n; i += 1) {
@@ -761,7 +865,9 @@
       if (pc.closed) {
         seq = rotateRing(pc.pts, nearestIndex(pc.pts, anchor));
         const next = pieces[idx + 1];
-        if (cfg.blend && next && next.closed && next.pts.length > 3) applyBlend(seq, next.pts, field, rings);
+        // Never blend a pass that has the region BOUNDARY on its outer side.
+        const mayBlend = cfg.blend && !pc.outermost && next && next.closed && next.pts.length > 3;
+        if (mayBlend) applyBlend(seq, next.pts, field, rings, cfg.blendArc);
         else seq.push({ x: seq[0].x, y: seq[0].y });
       } else {
         seq = pc.pts.slice();
@@ -893,10 +999,13 @@
     const pieces = [];
     for (let li = 0; li < levels.length; li += 1) {
       for (const loop of contourLoops(field, levels[li], lab, comp, tol, buckets[li])) {
-        pieces.push({ pts: loop, closed: true, level: levels[li] });
+        // `outermost` is the OUTSIDE pass of the region — the one with no
+        // further pass between it and the boundary. `applyBlend` must leave it
+        // alone; see the comment there.
+        pieces.push({ pts: loop, closed: true, level: levels[li], outermost: li === 0 });
       }
     }
-    return pieces;
+    return orderByProximity(pieces);
   };
 
   // ── contourParallel: true polygon-offset passes ───────────────────────────
@@ -992,7 +1101,7 @@
           loop.pop();
           // Three points is a legitimate closed pass (a triangular offset of a
           // taper); demanding four silently dropped the whole outermost ring.
-          if (loop.length >= 3) pieces.push({ pts: loop, closed: true, level });
+          if (loop.length >= 3) pieces.push({ pts: loop, closed: true, level, outermost: level === levels[0] });
           continue;
         }
         if (runs.length > 1) {
@@ -1007,12 +1116,12 @@
           if (r.length < 2) continue;
           const simplified = simplifyRing(r, tol);
           if (simplified.length < 2) continue;
-          pieces.push({ pts: simplified, closed: false, level });
+          pieces.push({ pts: simplified, closed: false, level, outermost: level === levels[0] });
         }
       }
     }
     pieces.sort((a, b) => a.level - b.level);
-    return pieces;
+    return orderByProximity(pieces);
   };
 
   // ── serpentine: perimeter + boustrophedon ────────────────────────────────
@@ -1317,6 +1426,10 @@
     const cfg = {
       continuous,
       blend: mode === 'spiral',
+      // How far along a pass the morph onto the next one may run. Long enough
+      // that a `pitch` of lateral movement is a gentle drift, short enough that
+      // it cannot wander a whole ring off contour.
+      blendArc: pitch * BLEND_ARC_PITCHES,
       bridgeMax: pitch * BRIDGE_LIMIT_PITCHES,
     };
     const maxLevels = Math.max(1, Math.min(4000, maxPaths));
@@ -1355,14 +1468,51 @@
           for (const piece of repairPiecesFor(field, cellsOfBlob, pen, pitch, tol)) repair.push(piece);
         }
         if (!repair.length) break;
-        const added = chainPieces(repair, field, rings, lab, comp, { ...cfg, blend: false });
+        // The repair pass is chained WITHOUT continuous routing even for a
+        // continuous style: repair blobs are scattered residue, and routing
+        // between them is a walk across the whole region. They are spliced into
+        // the main stroke below instead, which is both shorter and still one
+        // pen-down.
+        const ordered = orderByProximity(repair);
+        const added = chainPieces(ordered, field, rings, lab, comp,
+          { ...cfg, blend: false, continuous: false });
         if (continuous && paths.length) {
-          // Stay a single stroke: hang the repair off the end of the existing path.
+          // STAY ONE STROKE, BUT PAY THE SHORT PRICE.
+          //
+          // Hanging each repair segment off the END of the path used to cost a
+          // routed walk from wherever the spiral finished to wherever the blob
+          // is — measured on a disc with three holes: 150 repair segments, 457 mm
+          // of connector against 1130 mm of actual passes. A repair blob is by
+          // construction within about one pitch of a pass that is ALREADY drawn,
+          // so splicing a there-and-back detour in at the nearest point of the
+          // existing stroke costs ~2 pitches instead of ~2 radii of the region,
+          // and the stroke stays a single unbroken path.
           for (const seg of added) {
-            const from = paths[paths.length - 1][paths[paths.length - 1].length - 1];
-            const link = routeInside(field, rings, lab, comp, from, seg[0], true);
-            if (link) paths[paths.length - 1] = paths[paths.length - 1].concat(link, seg);
-            else paths.push(seg);
+            let bi = -1;
+            let bj = -1;
+            let bd = Infinity;
+            for (let pi = 0; pi < paths.length; pi += 1) {
+              const pth = paths[pi];
+              for (let qi = 0; qi < pth.length; qi += 1) {
+                const dx = pth[qi].x - seg[0].x;
+                const dy = pth[qi].y - seg[0].y;
+                const dd = dx * dx + dy * dy;
+                if (dd < bd) { bd = dd; bi = pi; bj = qi; }
+              }
+            }
+            const host = bi >= 0 ? paths[bi] : null;
+            const anchor = host ? host[bj] : null;
+            const out2 = anchor ? routeInside(field, rings, lab, comp, anchor, seg[0], true) : null;
+            const back = anchor
+              ? routeInside(field, rings, lab, comp, seg[seg.length - 1], anchor, true) : null;
+            if (host && out2 && back) {
+              paths[bi] = host.slice(0, bj + 1).concat(out2, seg, back, host.slice(bj));
+            } else {
+              const from = paths[paths.length - 1][paths[paths.length - 1].length - 1];
+              const link = routeInside(field, rings, lab, comp, from, seg[0], true);
+              if (link) paths[paths.length - 1] = paths[paths.length - 1].concat(link, seg);
+              else paths.push(seg);
+            }
           }
         } else {
           paths = paths.concat(added);

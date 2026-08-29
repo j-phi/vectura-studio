@@ -184,8 +184,10 @@ describe('C4 — strokeFillStyle threading and the path-count budget', () => {
   });
 
   // ── C1/C2 stand-ins ────────────────────────────────────────────────────────
-  // buildRibbonRing: a per-vertex-normal ribbon (good enough to be a closed
-  // ring of the right size; the real miter-bisector construction is W1's).
+  // buildRibbonMultiPolygon: a per-vertex-normal ribbon (good enough to be a
+  // closed ring of the right size; the real miter-bisector construction, and the
+  // self-overlap resolution that gives a self-crossing centreline its loop
+  // HOLES, are W1's).
   // fillRegion: honours the ONE-PATH-PER-COMPONENT rule for spiral/serpentine
   // and the many-rings behaviour for concentric/contourParallel.
   // Saved so the stand-ins can be UNINSTALLED rather than deleted: once W1 and
@@ -195,9 +197,9 @@ describe('C4 — strokeFillStyle threading and the path-count budget', () => {
   const installStandIns = (log) => {
     if (!saved) { realRG = V.RibbonGeometry; realPF = V.PenFill; saved = true; }
     V.RibbonGeometry = {
-      buildRibbonRing(centerline, halfWidths) {
+      buildRibbonMultiPolygon(centerline, halfWidths) {
         if (log) log.push({ n: centerline ? centerline.length : 0, halfWidths: (halfWidths || []).slice() });
-        if (!Array.isArray(centerline) || centerline.length < 2) return null;
+        if (!Array.isArray(centerline) || centerline.length < 2) return [];
         const nrm = (i) => {
           const p0 = centerline[Math.max(0, i - 1)];
           const p1 = centerline[Math.min(centerline.length - 1, i + 1)];
@@ -211,9 +213,9 @@ describe('C4 — strokeFillStyle threading and the path-count budget', () => {
           left.push({ x: centerline[i].x + n.x * h, y: centerline[i].y + n.y * h });
           right.push({ x: centerline[i].x - n.x * h, y: centerline[i].y - n.y * h });
         }
-        return left.concat(right.reverse());
+        return [[left.concat(right.reverse())]];
       },
-      clipRingToRegion(ring) { return [ring]; },
+      clipMultiPolygonToRegion(mp) { return mp; },
     };
     V.PenFill = {
       fillRegion(region, penWidth, style) {
@@ -254,7 +256,7 @@ describe('C4 — strokeFillStyle threading and the path-count budget', () => {
    * The bucket-B weightScale assertion above CANNOT catch that on its own —
    * without the C1/C2 modules every law degrades to a weightScale-1 centreline
    * and the test passes green for the wrong reason. So this case asserts the
-   * MECHANISM: that `buildRibbonRing` is actually reached for a constant-width
+   * MECHANISM: that `buildRibbonMultiPolygon` is actually reached for a constant-width
    * law, and that it is handed a FLAT half-width array (A1's "synthesize the
    * flat halfWidths rather than adding a second construction"), while a
    * varying-width law is handed a varying one through the same code path.

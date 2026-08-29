@@ -22,6 +22,32 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
+- **DONE — 3D Scene pen-width stroke fill: judge C's two defects are fixed.** Branch
+  `sf/integration`. Evidence and reproduction commands in `docs/slab-fix-evidence/TABLE.md`.
+  - **D1 (blocker) — self-crossing centrelines collapsed into solid slabs.**
+    `RibbonGeometry` unioned a self-overlapping ribbon outline and then kept only
+    `largestShell(result)`. polygon-clipping had already returned the loop interiors CORRECTLY, as
+    holes; the shell-only view discarded every one, and `erode` + `PenFill` painted the swallowed
+    area solid. Five of the twelve ribbon laws rendered as a slab with a hollow black lens.
+    Fix: `buildRibbonMultiPolygon` / `buildRibbonRings` / `clipMultiPolygonToRegion` carry the whole
+    multipolygon through the clip, and `ribbonize` keeps that nesting into `insetMultiPolygon`.
+    Measured mid-band coverage (running app, reference sphere) — `onePenDown` 0.147 -> **0.6293**
+    against the pre-work build's 0.6293; `trochoidLoop` 0.473 -> **0.7707** against 0.7584;
+    `taperedEnds` (control, never crosses) unmoved.
+  - **D2 — `spiral` overdrew ~2x concentric and was the only style leaving gaps.** Both came from
+    `chainPieces`: pieces arrived LEVEL-major, so a holey region's lobes were walked in an order a
+    continuous style had to route between (measured: 457 mm of connector against 1130 mm of passes
+    on a three-holed disc, most of it the repair pass); and `applyBlend` morphed the OUTERMOST pass
+    inward, vacating a strip whose outer neighbour is the region boundary. Fix: `orderByProximity`,
+    repair segments SPLICED into the stroke at their nearest point, no blend on the outermost pass,
+    blend capped by arc length. Real-region overdraw `taperedEnds` 3.112 -> **1.704**,
+    `trochoidLoop` 2.401 -> **1.761**, `onePenDown` 2.151 -> **1.981** (concentric 1.53 / 1.46 /
+    1.77); spiral's two gap breaches are gone; still exactly one path per connected component.
+  - **Known residuals (recorded, not fixed):** one `onePenDown` region (308 mm², 13 holes) leaves a
+    0.13 mm² blob — `concentric` leaves the identical blob, so it is PenFill's coarsened distance
+    field, not the chain. `serpentine` still overdraws 4.1–12.0x and got worse on `onePenDown`
+    (3.53 -> 9.50) because the corrected region has real holes for its scanlines to turn around.
+    `onePenDown` build time is 12.6 s on the reference scene.
 - **DONE — 3D Scene pen-width stroke fill: the inert-ribbon blocker is fixed.** Branch
   `sf/integration`. Root cause was NOT in the ribbon modules: `buildRegionRings`
   (`src/core/scene3d/surface-fill.js`) bisected the front/back crossing the wrong way across a

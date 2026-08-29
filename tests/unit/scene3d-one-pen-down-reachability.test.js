@@ -139,13 +139,13 @@ describe('onePenDown — promoted from unreachable to the roster (fs-r1)', () =>
    * far fewer), and it is what carries the old 9-vs-36 comparison forward:
    * re-measured here at 10 chains against 36 ladder paths.
    *
-   * The DIRECTION of the original path-count check still holds and is kept
-   * (20 emitted paths vs 36). Only its 2x margin moved to the run count, because
-   * the emitted count now also reports how WIDE the ruling is — a ribbon is
-   * deliberately many strokes — and would otherwise punish the feature for
-   * working. The two paired checks keep it honest: the ribbon must genuinely be
-   * doing the widening (`ribbons > 0`), and onePenDown must still lay down far
-   * more INK than the ladder while doing it.
+   * The original path-count check has since become a BUDGET rather than a
+   * direction (see the comment at the assertion): a self-crossing centreline's
+   * swept region has a hole per loop, and each hole is an outline ring of its
+   * own, so the emitted count reports how many COUNTERS the ribbon has as well
+   * as how wide it is. The two paired checks keep it honest: the ribbon must
+   * genuinely be doing the widening (`ribbons > 0`), and onePenDown must still
+   * lay down far more INK than the ladder while doing it.
    */
   test('onePenDown chains rulings into far fewer continuous runs than the ladder default (its whole claim)', () => {
     const ladder = fills(scene('ladder'));
@@ -164,8 +164,25 @@ describe('onePenDown — promoted from unreachable to the roster (fs-r1)', () =>
     // of magnitude are what is under test.
     expect(stats.stretches).toBeLessThan(ladderPaths);
     expect(stats.stretches * 2).toBeLessThan(ladderPaths);
-    // ...and the original measurement's direction, unchanged.
-    expect(onePenDown.length).toBeLessThan(ladderPaths);
+    // eslint-disable-next-line no-console
+    console.log(`[onePenDown] chains=${stats.stretches} ribbons=${stats.ribbons} `
+      + `outlines=${stats.outlines} fills=${stats.fills} paths=${onePenDown.length} `
+      + `ladderPaths=${ladderPaths}`);
+    // A BUDGET, NOT A DIRECTION (updated 2026-08-29, self-crossing slab fix).
+    //
+    // This line used to read `onePenDown.length < ladderPaths` — 20 against 36.
+    // It measured the number of OUTLINE RINGS, and that number changed for a
+    // correct reason: onePenDown's chained centreline crosses itself constantly,
+    // and the swept region of a self-crossing centreline has a HOLE per loop.
+    // Those holes were being filled solid (the law rendered as a slab with a
+    // hollow black lens, mid-band coverage 0.629 -> 0.147); now each one is a
+    // real unfilled counter with an outline of its own, so the ring count rose
+    // to 99 while the CHAIN count — the law's actual claim — did not move.
+    // Asserting the old direction would mean asserting the slab back.
+    //
+    // The budget below is still a real guard: it fails if a ribbon stops being
+    // one outline plus one continuous spiral per counter and starts multiplying.
+    expect(onePenDown.length).toBeLessThan(ladderPaths * 4);
 
     const ink = (paths) => paths.reduce((t, pp) => {
       for (let i = 1; i < pp.length; i++) t += Math.hypot(pp[i].x - pp[i - 1].x, pp[i].y - pp[i - 1].y);

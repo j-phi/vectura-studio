@@ -5183,7 +5183,7 @@
       // Measured (2026-08-29, sphere r=46 seen down its own seam, camera yaw 0):
       // every seam-cell crossing came back on the LEFT limb, so the traced
       // region was the left half-circle walked out and back — 218 points of
-      // signed area -0.014 instead of a ~6650 mm2 disc. `clipRingToRegion` then
+      // signed area -0.014 instead of a ~6650 mm2 disc. The ribbon clip then
       // returned empty for every ribbon and the whole variable-width feature
       // silently degraded to bare centrelines. Unwrap first, wrap the answer
       // back into [0,1) last.
@@ -6039,7 +6039,8 @@
       const region = visibleRegionRings(!back);
       const RGm = Vectura.RibbonGeometry;
       const PFm = Vectura.PenFill;
-      const haveModules = Boolean(RGm && typeof RGm.buildRibbonRing === 'function'
+      const haveModules = Boolean(RGm && typeof RGm.buildRibbonMultiPolygon === 'function'
+        && typeof RGm.clipMultiPolygonToRegion === 'function'
         && PFm && typeof PFm.fillRegion === 'function');
       if (!haveModules) {
         ribbonStat.noModule += 1;
@@ -6064,11 +6065,17 @@
           centre.push({ x: run[i].x, y: run[i].y });
           hw.push(Math.max(half[i], HALF_MIN));
         }
-        let ring = null;
+        // A MULTIPOLYGON, not a ring. Where the centreline crosses itself the
+        // swept region has a HOLE per loop — that area was never swept — and a
+        // single ring cannot carry it. Taking the outline's largest shell here
+        // is what filled the loop interiors solid and turned `onePenDown`,
+        // `trochoidLoop`, `interlockWeave`, `weaveDepth` and `ampSpacing` into
+        // slabs (measured: onePenDown mid-band 0.629 -> 0.147).
+        let ribbonMP = null;
         try {
-          ring = RGm.buildRibbonRing(centre, hw, { cap: 'butt', joinLimit: 4, minHalfWidth: HALF_MIN });
-        } catch (err) { ring = null; }
-        if (!Array.isArray(ring) || ring.length < 3) {
+          ribbonMP = RGm.buildRibbonMultiPolygon(centre, hw, { cap: 'butt', joinLimit: 4, minHalfWidth: HALF_MIN });
+        } catch (err) { ribbonMP = null; }
+        if (!Array.isArray(ribbonMP) || !ribbonMP.length) {
           ribbonRefuse('noRing'); outp.push(centrePass(st.a, st.b)); return;
         }
         // ── THE CLIP. This is the step that kills D2. ─────────────────────────
@@ -6079,7 +6086,7 @@
         // the region is unavailable the honest output is the CENTRELINE — every
         // point of which WAS proved on-surface — never an unclipped ribbon,
         // which is defect D2 restored in full. W1 made the same call inside
-        // `clipRingToRegion` (no boolean library ⇒ return [], not the ring).
+        // `clipMultiPolygonToRegion` (no boolean library ⇒ return [], not the ribbon).
         //
         // The clip is UNCONDITIONAL. An earlier version skipped it when every
         // ring VERTEX tested interior; that is only sound on a convex region,
@@ -6087,24 +6094,24 @@
         // can still leave it — and "approximate clip" is precisely what the
         // plan forbids. The boolean is needed for the erosion below anyway, so
         // the saving was never worth the hole.
-        if (!region.length || typeof RGm.clipRingToRegion !== 'function') {
+        if (!region.length) {
           ribbonStat.noRegion += 1; outp.push(centrePass(st.a, st.b)); return;
         }
         let clipped = null;
-        try { clipped = RGm.clipRingToRegion(ring, region); } catch (err) { clipped = null; }
-        const rings = Array.isArray(clipped)
-          ? clipped.filter((r) => Array.isArray(r) && r.length >= 3) : [];
+        try { clipped = RGm.clipMultiPolygonToRegion(ribbonMP, region); } catch (err) { clipped = null; }
+        // W1 hands back polygons of [shell, ...holes]; keep that nesting all the
+        // way into `insetMultiPolygon`. Flattening it into one polygon would put
+        // a second shell in a hole slot and re-fill the loop interiors.
+        const clippedMP = (Array.isArray(clipped) ? clipped : [])
+          .map((poly) => (poly || [])
+            .filter((r) => Array.isArray(r) && r.length >= 3)
+            .map((r) => r.map((q) => [q.x, q.y])))
+          .filter((poly) => poly.length);
         ribbonStat.clipped += 1;
-        if (!rings.length) { ribbonRefuse('clipEmpty'); outp.push(centrePass(st.a, st.b)); return; }
+        if (!clippedMP.length) { ribbonRefuse('clipEmpty'); outp.push(centrePass(st.a, st.b)); return; }
         const t0 = ttPts[st.a]; const t1 = ttPts[st.b];
         const z = run[st.a] ? run[st.a].z : undefined;
         let any = false;
-        // The clip returns shells and holes in ONE flat array with opposite
-        // winding (W1's contract). `insetMultiPolygon` wants a multipolygon and
-        // resolves the nesting itself, so hand it every ring at once rather than
-        // sorting shells from holes here — a shell inside a hole would be lost
-        // by any hand-rolled pairing, and the boolean already knows the answer.
-        const clippedMP = [rings.map((r) => r.map((q) => [q.x, q.y]))];
         // OUTLINE — the ribbon eroded by HALF a pen, so a real pen stroking it
         // lands its OUTER edge exactly on the ribbon boundary.
         const outlineMP = erode(clippedMP, penWidth / 2);

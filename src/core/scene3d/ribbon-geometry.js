@@ -325,6 +325,24 @@
     return cleanRing(snapped);
   };
 
+  // Prepare an entire multipolygon for a boolean, ring by ring, keeping the
+  // polygon grouping intact. Returns the [x, y]-pair form polygon-clipping wants.
+  const prepareMultiPolygon = (mp, grid, tol, GU) => {
+    const out = [];
+    for (const polygon of mp || []) {
+      const rings = [];
+      for (const ring of polygon || []) {
+        const prepared = prepareRing(ring, grid, tol, GU);
+        if (!prepared) { if (!rings.length) break; continue; }
+        const pts = prepared.map((p) => [p.x, p.y]);
+        pts.push([prepared[0].x, prepared[0].y]);
+        rings.push(pts);
+      }
+      if (rings.length) out.push(rings);
+    }
+    return out;
+  };
+
   const multiPolygonToRings = (multiPolygon) => {
     const rings = [];
     for (const polygon of multiPolygon || []) {
@@ -344,13 +362,7 @@
         (pt) => (Array.isArray(pt) ? { x: pt[0], y: pt[1] } : pt)
       ));
       if (!shell) continue;
-      let s = 0;
-      for (let i = 0, n = shell.length; i < n; i += 1) {
-        const a = shell[i];
-        const b = shell[(i + 1) % n];
-        s += a.x * b.y - b.x * a.y;
-      }
-      const area = Math.abs(s / 2);
+      const area = Math.abs(ringSignedArea(shell));
       if (area > bestArea) {
         bestArea = area;
         best = shell;
@@ -359,14 +371,70 @@
     return best;
   };
 
-  // Dissolve a self-overlapping ribbon into one simple boundary. The escalating
-  // ladder is the one documented for `insetMultiPolygon` — snap coarsening first,
-  // then RDP — never a fresh invention. If every rung fails the raw ring is
-  // returned unchanged: a self-crossing outline still draws, a dropped one does
-  // not.
-  const resolveSelfIntersections = (ring, opts) => {
+  const ringSignedArea = (ring) => {
+    let s = 0;
+    for (let i = 0, n = ring.length; i < n; i += 1) {
+      const a = ring[i];
+      const b = ring[(i + 1) % n];
+      s += a.x * b.y - b.x * a.y;
+    }
+    return s / 2;
+  };
+
+  // A boolean result -> the normalized multipolygon this file speaks: closed
+  // rings of {x,y}, shell first. Polygons whose SHELL is a vanishing crumb
+  // relative to the biggest one are dropped (that is the only part of the old
+  // `largestShell` worth keeping — a sub-micron sliver is a sweep-line artifact,
+  // never a ribbon), and so are rings that cannot survive `cleanRing`.
+  const CRUMB_RATIO = 1e-6;
+  const normalizeMultiPolygon = (multiPolygon) => {
+    const polys = [];
+    let biggest = 0;
+    for (const polygon of multiPolygon || []) {
+      const rings = [];
+      for (const ring of polygon || []) {
+        const cleaned = cleanRing((ring || []).map((pt) => (Array.isArray(pt) ? { x: pt[0], y: pt[1] } : pt)));
+        if (cleaned) rings.push(cleaned);
+      }
+      if (!rings.length) continue;
+      const area = Math.abs(ringSignedArea(rings[0]));
+      if (area > biggest) biggest = area;
+      polys.push({ rings, area });
+    }
+    return polys
+      .filter((p) => p.area > biggest * CRUMB_RATIO)
+      .map((p) => p.rings);
+  };
+
+  const ringToPolygon = (ring) => [ring.map((p) => ({ x: p.x, y: p.y }))];
+
+  // ── SELF-OVERLAP: OVERLAP IS INK, THE LOOP INTERIOR IS NOT ───────────────────
+  //
+  // A ribbon whose centreline crosses itself sweeps the crossing TWICE — that
+  // area is genuinely inked — but the area ENCLOSED by the loop was never swept
+  // and must stay blank. Tracing the outline (left side forward, right side
+  // back) gives exactly that answer under the NONZERO rule: the loop interior
+  // picks up +1 from the outer boundary and -1 from the inner one and cancels,
+  // while the crossing accumulates. polygon-clipping's `union` already resolves
+  // a self-intersecting input this way and returns the loop interiors as HOLES.
+  //
+  // This function used to throw those holes away — it kept `largestShell`,
+  // polygon[0] of the biggest polygon, so every hole the boolean had correctly
+  // found was discarded. `erode` + `PenFill` then painted the swallowed area
+  // solid and five of the twelve ribbon laws (`onePenDown`, `trochoidLoop`,
+  // `interlockWeave`, `weaveDepth`, `ampSpacing`) rendered as a slab with a
+  // hollow black lens. Measured on the sphere fixture: onePenDown's mid-band
+  // coverage 0.629 -> 0.147 with both flanks saturated.
+  //
+  // The escalating ladder is the one documented for `insetMultiPolygon` — snap
+  // coarsening first, then RDP — never a fresh invention. If every rung fails
+  // the raw ring is returned as a single polygon: a self-crossing outline still
+  // draws, a dropped one does not.
+  const resolveSelfOverlap = (ring, opts) => {
     const FB = resolveBoolean(opts);
-    if (!FB || typeof FB.union !== 'function' || typeof FB.ringToMultiPolygon !== 'function') return ring;
+    if (!FB || typeof FB.union !== 'function' || typeof FB.ringToMultiPolygon !== 'function') {
+      return [ringToPolygon(ring)];
+    }
     const GU = resolveGeometry(opts);
     const ladder = [
       { grid: BASE_SNAP, tol: 0 },
@@ -381,26 +449,30 @@
       if (!mp.length) continue;
       const { ok, result } = runBooleanOp(FB, () => FB.union(mp));
       if (!ok) continue;
-      // Contract C1 returns ONE ring. A self-union of a ribbon yields a single
-      // shell in every non-pathological case; when it does not, the largest shell
-      // is the ribbon and the rest are boolean crumbs.
-      const shell = largestShell(result);
-      if (shell) return shell;
+      const norm = normalizeMultiPolygon(result);
+      if (norm.length) return norm;
     }
-    return ring;
+    return [ringToPolygon(ring)];
   };
 
   // ── public API ───────────────────────────────────────────────────────────────
   /**
-   * Build the closed outline of a variable-width ribbon.
+   * Build the swept region of a variable-width ribbon as a MULTIPOLYGON.
+   *
+   * This is the primitive; `buildRibbonRings` and `buildRibbonRing` are views of
+   * it. A ribbon is only ever ONE ring when its centreline never crosses itself.
+   * The moment it does, the swept region acquires a hole per loop, and a single
+   * ring cannot express that — see `resolveSelfOverlap`.
    *
    * @param {{x:number,y:number}[]} centerline  polyline, treated as OPEN
    * @param {number[]} halfWidths               index-aligned half-widths in mm, > 0
    * @param {object} [opts] { cap:'butt', joinLimit:4, minHalfWidth, arcTol,
    *                          boolean, geometry }
-   * @returns {{x:number,y:number}[]|null} closed ring, first !== last (caller closes)
+   * @returns {Array<Array<Array<{x:number,y:number}>>>} multipolygon — polygons of
+   *          [shell, ...holes], each a closed ring with first !== last. `[]` when
+   *          the centreline is unusable.
    */
-  const buildRibbonRing = (centerline, halfWidths, opts = {}) => {
+  const buildRibbonMultiPolygon = (centerline, halfWidths, opts = {}) => {
     const joinLimit = Number.isFinite(opts.joinLimit) && opts.joinLimit > 1
       ? opts.joinLimit : DEFAULT_JOIN_LIMIT;
     const minHalfWidth = Number.isFinite(opts.minHalfWidth) && opts.minHalfWidth > 0
@@ -408,39 +480,67 @@
     const arcTol = Number.isFinite(opts.arcTol) && opts.arcTol > 0 ? opts.arcTol : DEFAULT_ARC_TOL;
 
     const clean = sanitizeCenterline(centerline, halfWidths, minHalfWidth);
-    if (!clean) return null;
+    if (!clean) return [];
     const en = edgeNormals(clean.pts);
-    if (!en) return null;
+    if (!en) return [];
 
     const left = offsetSide(clean.pts, clean.half, en, 1, joinLimit, arcTol);
     const right = offsetSide(clean.pts, clean.half, en, -1, joinLimit, arcTol);
-    if (left.length < 2 || right.length < 2) return null;
+    if (left.length < 2 || right.length < 2) return [];
     right.reverse();
 
     const ring = cleanRing(left.concat(right));
-    if (!ring) return null;
-    return ringSelfIntersects(ring) ? resolveSelfIntersections(ring, opts) : ring;
+    if (!ring) return [];
+    return ringSelfIntersects(ring) ? resolveSelfOverlap(ring, opts) : [ringToPolygon(ring)];
   };
 
   /**
-   * Intersect a ribbon ring with the visible-form region.
+   * The ribbon's outline as a FLAT ring set — shells and holes together, with
+   * opposite winding (use FillBoolean.ringArea's sign to tell them apart).
+   *
+   * @returns {Array<Array<{x:number,y:number}>>}
+   */
+  const buildRibbonRings = (centerline, halfWidths, opts = {}) => multiPolygonToRings(
+    buildRibbonMultiPolygon(centerline, halfWidths, opts)
+  );
+
+  /**
+   * Contract C1's original single-ring view: the largest shell, holes discarded.
+   *
+   * KEPT ONLY FOR CALLERS THAT GENUINELY WANT ONE OUTLINE. Anything that FILLS
+   * the ribbon must use `buildRibbonMultiPolygon` / `buildRibbonRings` instead —
+   * discarding the holes here is what turned five self-crossing laws into solid
+   * slabs.
+   *
+   * @returns {{x:number,y:number}[]|null}
+   */
+  const buildRibbonRing = (centerline, halfWidths, opts = {}) => {
+    const mp = buildRibbonMultiPolygon(centerline, halfWidths, opts);
+    return mp.length ? largestShell(mp) : null;
+  };
+
+  /**
+   * Intersect a ribbon's swept region with the visible-form region.
    *
    * The clip is EXACT — the result is a boolean intersection, never an
    * approximation. That is what makes defect D2 unreachable: no ink can survive
    * outside the region, so nothing can protrude past the limb.
    *
-   * @param {{x:number,y:number}[]} ring   closed ring
+   * The SUBJECT is a multipolygon, not a ring, so a self-crossing ribbon's loop
+   * interiors survive the clip as holes instead of being flattened back into
+   * filled area on the way through.
+   *
+   * @param {Array<Array<Array<{x:number,y:number}>>>} subjectMP  ribbon multipolygon
    * @param {Array<Array<{x:number,y:number}>>} clipRings  region rings; nesting is
    *        classified by containment depth, so shell/hole winding does not matter
    * @param {object} [opts] { boolean, geometry }
-   * @returns {Array<Array<{x:number,y:number}>>} closed rings; a ribbon may be split
-   *        into several. Shells and holes carry opposite winding — use
-   *        FillBoolean.ringArea's sign to tell them apart.
+   * @returns {Array<Array<Array<{x:number,y:number}>>>} clipped multipolygon; a
+   *        ribbon may be split into several polygons by the clip.
    */
-  const clipRingToRegion = (ring, clipRings, opts = {}) => {
-    const subject = cleanRing(ring);
-    if (!subject) return [];
-    if (!Array.isArray(clipRings) || !clipRings.length) return [subject];
+  const clipMultiPolygonToRegion = (subjectMP, clipRings, opts = {}) => {
+    const subject = normalizeMultiPolygon(subjectMP);
+    if (!subject.length) return [];
+    if (!Array.isArray(clipRings) || !clipRings.length) return subject;
 
     const FB = resolveBoolean(opts);
     if (!FB || typeof FB.intersection !== 'function' || typeof FB.ringToMultiPolygon !== 'function') {
@@ -462,7 +562,7 @@
       }).filter(Boolean));
       if (cleaned) snappedClipRings.push(cleaned);
     }
-    if (!snappedClipRings.length) return [subject];
+    if (!snappedClipRings.length) return subject;
 
     let clipMP = [];
     if (typeof FB.nonZeroUnionByContainment === 'function') {
@@ -482,18 +582,54 @@
       { grid: BASE_SNAP * 10, tol: 1e-3 },
     ];
     for (const rung of ladder) {
-      const prepared = prepareRing(subject, rung.grid, rung.tol, GU);
-      if (!prepared) continue;
-      const subjectMP = FB.ringToMultiPolygon(prepared);
-      if (!subjectMP.length) continue;
-      const { ok, result } = runBooleanOp(FB, () => FB.intersection(subjectMP, clipMP));
+      // Every ring of every polygon escalates together, so a polygon's shell and
+      // its holes stay on the same grid — mixing grids is what would let a hole
+      // drift outside the shell that owns it.
+      const prepared = prepareMultiPolygon(subject, rung.grid, rung.tol, GU);
+      if (!prepared.length) continue;
+      const { ok, result } = runBooleanOp(FB, () => FB.intersection(prepared, clipMP));
       if (!ok) continue;
-      return multiPolygonToRings(result);
+      return normalizeMultiPolygon(result);
     }
     return [];
   };
 
-  const api = { buildRibbonRing, clipRingToRegion };
+  /**
+   * Flat-ring view of `clipMultiPolygonToRegion` for a ribbon supplied as rings.
+   *
+   * @param {Array<Array<{x:number,y:number}>>} rings  ribbon rings (shells + holes)
+   * @returns {Array<Array<{x:number,y:number}>>} clipped rings, shells and holes
+   *        with opposite winding
+   */
+  const clipRingsToRegion = (rings, clipRings, opts = {}) => {
+    const FB = resolveBoolean(opts);
+    const list = (rings || []).map(cleanRing).filter(Boolean);
+    if (!list.length) return [];
+    let mp;
+    if (list.length === 1) mp = [ringToPolygon(list[0])];
+    else if (FB && typeof FB.nonZeroUnionByContainment === 'function') {
+      const attempt = runBooleanOp(FB, () => FB.nonZeroUnionByContainment(list));
+      mp = attempt.ok ? normalizeMultiPolygon(attempt.result) : [];
+    } else mp = [];
+    if (!mp.length) return [];
+    return multiPolygonToRings(clipMultiPolygonToRegion(mp, clipRings, opts));
+  };
+
+  /**
+   * Contract C1's original single-ring clip. Callers that FILL the result must
+   * use the multipolygon or ring-set form instead — a lone ring cannot carry the
+   * loop interiors of a self-crossing ribbon.
+   */
+  const clipRingToRegion = (ring, clipRings, opts = {}) => clipRingsToRegion([ring], clipRings, opts);
+
+  const api = {
+    buildRibbonMultiPolygon,
+    buildRibbonRings,
+    buildRibbonRing,
+    clipMultiPolygonToRegion,
+    clipRingsToRegion,
+    clipRingToRegion,
+  };
 
   if (root) {
     root.Vectura = root.Vectura || {};

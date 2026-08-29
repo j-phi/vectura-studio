@@ -29,6 +29,32 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   tone — smaller in shadow, larger in the highlight (`src/core/scene3d/surface-fill-mono.js`).
 
 ### Fixed
+- **Five self-crossing tone laws rendered as a solid slab with a hollow black lens instead of a
+  ribbon.** `RibbonGeometry` resolved a self-overlapping ribbon outline through
+  `FillBoolean.union` and then kept only `largestShell(result)` — polygon[0] of the biggest
+  polygon. polygon-clipping had already returned the loop interiors CORRECTLY, as holes; keeping
+  the shell alone discarded every one of them, and `erode` + `PenFill` painted the swallowed area
+  solid. Where a centreline crosses itself the swept region genuinely overlaps, but the area
+  ENCLOSED by the loop was never swept and must stay unfilled. `buildRibbonMultiPolygon`,
+  `buildRibbonRings` and `clipMultiPolygonToRegion` now carry the whole multipolygon — shell and
+  holes — from the union through the clip and into `insetMultiPolygon`, and `ribbonize` keeps that
+  nesting instead of flattening it into a single polygon. Measured on the sphere fixture, mid-band
+  coverage against the pre-work reference build: `onePenDown` 0.147 -> **0.6293** (reference
+  0.6293), `trochoidLoop` 0.473 -> **0.7707** (reference 0.7584); `taperedEnds`, whose centreline
+  never crosses, does not move. Also affected: `interlockWeave`, `weaveDepth`, `ampSpacing`.
+  Evidence in `docs/slab-fix-evidence/`.
+- **`spiral` retraced its way around any region with more than one lobe, and was the only fill
+  style that left gaps.** Both came from `chainPieces`, which is handed the SAME contour rings for
+  `spiral` and `concentric`. (a) ORDER: `contourPieces` emitted every loop of level 0, then every
+  loop of level 1, so a region with holes was walked lobe-A-outer, lobe-B-outer, lobe-A-next, …
+  A lifting style hops; a continuous one must ROUTE that crossing, retracing ink already down.
+  Pieces are now ordered by proximity (`orderByProximity`), and a repair pass is SPLICED into the
+  stroke at its nearest point rather than hung off the far end. (b) BLEND: `applyBlend` morphed the
+  last 30% of every ring onto the next, including the OUTERMOST pass, whose vacated strip has the
+  region boundary on its outer side and nothing to cover it. The outermost pass is no longer
+  blended and the blend is capped by arc length. Measured on a disc with three holes: overdraw
+  2.51 -> **1.40** against concentric's 1.25, largest gap 0.028 mm² -> 0.011 mm² (bar is
+  0.0225 mm²), still exactly one path per connected component.
 - **The ribbon pipeline was INERT — every variable-width tone law drew a bare centreline. The
   chart's front/back boundary tracer bisected the wrong way across a PERIODIC seam.**
   `buildRegionRings` (`src/core/scene3d/surface-fill.js`) marches squares over the chart's (a, b)
