@@ -1597,6 +1597,83 @@
       ], `About ${entry.label || FSC.label}`);
       if (note.caveat) flyNote(fly, note.caveat).classList.add('is-caveat');
     }
+    // ── Stroke Fill (sf-w4) — directly beneath Fill Style ───────────────────
+    // A VARIABLE-WIDTH Fill Style no longer draws a fat pen: it builds the true
+    // ribbon OUTLINE from its continuous width profile, strokes that outline
+    // with the REAL pen, and fills the interior with a pen-width-pitched
+    // continuous stroke. This row picks the pattern that fill uses. Pitch is
+    // derived from the pen width, never chosen here — there is no density knob.
+    //
+    // `strokeFillStyle` is a LAYER param (CONTRACT C4 —
+    // ALGO_DEFAULTS.scene3d.strokeFillStyle), NOT a style-cascade param, so it
+    // is written straight onto the layer that OWNS it rather than through
+    // setSceneObjectStyle: a scene-TREE object is its own object3d /
+    // booleanGroup3d child layer and carries its own copy (identity contract:
+    // child layer id === scene object id), while a monolith's inline object
+    // reads the scene layer's. That is the same target the docked Style tab
+    // writes, so the two surfaces edit one value rather than two.
+    //
+    // Only the 12 variable-width Fill Styles build a ribbon. On the 31
+    // monowidth and the 6 three-pen styles the row renders DISABLED with the
+    // reason in its tooltip — hiding it would shift every row beneath it the
+    // instant the Fill Style changed.
+    const SFS = Vectura.STROKE_FILL_STYLES;
+    const SFC = C.strokeFill;
+    if (SFS && SFC && FS && (C.fillMappers || []).indexOf(mapper) !== -1) {
+      const disabledNote = SFS.disabledNote(FS.resolve(params.toneLaw));
+      // The layer carrying the param for a selected object id. Falls back to
+      // the scene layer for an inline monolith object and for the `ground`
+      // pseudo-object (no child layer stands behind either).
+      const ownerOf = (id) => {
+        const a = getApp();
+        const child = (a && a.engine && a.engine.getLayerById) ? a.engine.getLayerById(id) : null;
+        return (child && SFS.appliesToLayer(child)) ? child : sc.layer;
+      };
+      const owners = () => {
+        const seen = new Map();
+        sc.ids.forEach((id) => { const L = ownerOf(id); if (L) seen.set(L.id, L); });
+        return Array.from(seen.values());
+      };
+      const agree = sceneAgree(sc, (id) => {
+        const L = ownerOf(id);
+        return SFS.resolve(L && L.params ? L.params[SFS.PARAM] : undefined);
+      });
+      const sfHost = flyRow(fly, SFC.label);
+      if (agree.mixed) sfHost.classList.add('ctxbar-fly-mixed');
+      const sfComp = UI.Select(sfHost, {
+        options: agree.mixed
+          ? [{ value: mixedSentinel(), label: mixedLabel() }].concat(SFS.OPTIONS)
+          : SFS.OPTIONS,
+        value: agree.mixed ? mixedSentinel() : agree.value,
+        ariaLabel: SFC.aria,
+        disabled: Boolean(disabledNote),
+        onChange: (v) => {
+          if (v === mixedSentinel()) return;
+          // A greyed row must not write even if something drives the <select>
+          // directly: `disabled` stops a USER, it does not stop a programmatic
+          // change event, and this is the last word before the layer mutates.
+          if (disabledNote) return;
+          const a = getApp();
+          a?.pushHistory?.();
+          owners().forEach((L) => {
+            if (!L.params || typeof L.params !== 'object') L.params = {};
+            L.params[SFS.PARAM] = v;
+          });
+          // The ribbon interior fill is display geometry — a new pattern has to
+          // be BUILT before the repaint can show it. Regenerating the scene
+          // layer recomposes every child, so one generate covers the selection.
+          try { a?.engine?.generate?.(sc.layerId); } catch (_e) { /* guarded */ }
+          a?.render?.();
+        },
+      });
+      const sfRow = sfHost.parentNode;
+      if (sfRow && sfRow.classList) {
+        sfRow.classList.toggle('is-disabled', Boolean(disabledNote));
+        if (disabledNote) sfRow.setAttribute('title', disabledNote);
+        else sfRow.removeAttribute('title');
+      }
+      if (!disabledNote) attachSelectArrowStep(selectElOf(sfComp));
+    }
     flyMixedSelect(flyRow(fly, C.pen.label), {
       options: scenePens(C.pen.inherit), value: resolved.penId || '', ariaLabel: C.pen.aria,
       mixed: sceneAgree(sc, (id) => (rs(id).penId || '')).mixed,

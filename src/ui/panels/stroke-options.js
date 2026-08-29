@@ -275,6 +275,71 @@
       return section;
     };
 
+    // ── Stroke Fill Style (sf-w4) ───────────────────────────────────────────────
+    // A VARIABLE-WIDTH fill style draws its ruling as a real ribbon OUTLINE
+    // stroked with the real pen, then fills that outline with a pen-width-
+    // pitched continuous stroke. This picks the pattern that fill uses.
+    //
+    // Only a 3D layer can carry a ribbon, and only the 12 variable-width Fill
+    // Styles actually build one. Outside that set the row renders DISABLED
+    // with the reason in its tooltip rather than vanishing — hiding it would
+    // shift every row beneath it the instant the Fill Style changed. The
+    // vocabulary, the bucket gate and both tooltips live in
+    // Vectura.STROKE_FILL_STYLES (src/config/context-bar.js).
+    const buildStrokeFill = () => {
+      const SFS = Vectura.STROKE_FILL_STYLES;
+      if (!SFS || !SFS.appliesToLayer(primary())) return null;
+      const section = el('div', {
+        class: 'stroke-row stroke-row-strokefill', 'data-stroke-section': 'strokeFill',
+      });
+      section.appendChild(el('span', { class: 'stroke-row-label', text: SFS.LABEL }));
+      const group = el('div', { class: 'stroke-toggle-group', role: 'group', 'aria-label': SFS.ARIA });
+      const buttons = SFS.OPTIONS.map((opt) => {
+        // TEXT toggles, not icons: there is no icon vocabulary for a fill path
+        // pattern, and four unlabelled glyphs would be unreadable.
+        const btn = el('button', {
+          type: 'button', class: 'stroke-toggle is-text', 'aria-pressed': 'false', text: opt.label,
+        });
+        btn.setAttribute('data-stroke-fill-style', opt.value);
+        btn.addEventListener('click', () => {
+          if (btn.disabled) return;
+          // recompute: the ribbon interior fill is display geometry, so a new
+          // pattern has to be built before the repaint can show it.
+          writeAll((layer) => {
+            if (!layer.params || typeof layer.params !== 'object') layer.params = {};
+            layer.params[SFS.PARAM] = opt.value;
+          }, { recompute: true });
+          refresh();
+        });
+        group.appendChild(btn);
+        return btn;
+      });
+      section.appendChild(group);
+      refreshFns.push(() => {
+        const layer = primary();
+        const note = SFS.disabledNote(SFS.toneLawOf(layer));
+        const enabled = !note;
+        const active = SFS.resolve(layer && layer.params ? layer.params[SFS.PARAM] : undefined);
+        section.classList.toggle('is-disabled', !enabled);
+        if (note) section.setAttribute('title', note); else section.removeAttribute('title');
+        buttons.forEach((btn) => {
+          const value = btn.getAttribute('data-stroke-fill-style');
+          // The stored value stays visibly selected even while the row is
+          // disabled — a greyed control that shows nothing selected reads as
+          // "unset", and the value is still what the layer carries.
+          const on = value === active;
+          btn.classList.toggle('is-active', on);
+          btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+          btn.disabled = !enabled;
+          // A disabled toggle explains ITSELF — a user hovering the button
+          // must not have to find the row label to learn why nothing happens.
+          btn.title = note || SFS.TOOLTIPS[value] || value;
+          btn.setAttribute('aria-label', btn.title);
+        });
+      });
+      return section;
+    };
+
     // ── Dashed Line ─────────────────────────────────────────────────────────────
     const buildDash = () => {
       const section = el('div', { class: 'stroke-row stroke-row-dash', 'data-stroke-section': 'dash' });
@@ -369,6 +434,8 @@
       write: (layer, value) => { layer.strokeAlign = value; },
       recompute: true,
     }).section);
+    const strokeFillSection = buildStrokeFill();
+    if (strokeFillSection) host.appendChild(strokeFillSection);
     host.appendChild(buildDash());
 
     refresh();

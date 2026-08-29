@@ -438,6 +438,92 @@
   };
   Vectura.SCENE_FILL_STYLES = SCENE_FILL_STYLES;
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // STROKE FILL STYLE (sf-w4)
+  // ══════════════════════════════════════════════════════════════════════════
+  // A VARIABLE-WIDTH fill style no longer draws a fat pen. It builds the true
+  // ribbon OUTLINE from the continuous width profile, strokes that outline with
+  // the real pen, and FILLS the interior with a pen-width-pitched continuous
+  // stroke. This picks the path pattern that fill uses. Pitch is derived from
+  // the pen width, never chosen here — there is no density knob.
+  //
+  // The control is only MEANINGFUL for the 12 variable-width (ribbon) fill
+  // styles. Monowidth styles never set a width profile, and the six three-pen
+  // styles are deliberately exempt (they must keep genuinely different nib
+  // widths). On those it renders DISABLED with an explanatory tooltip rather
+  // than disappearing — hiding it moves every row beneath it the moment the
+  // Fill Style changes.
+  const STROKE_FILL_STYLE_DEFAULT = 'spiral';
+  // The 12 bucket-B ids. `weightModulated` is NOT in the engine's WEIGHT_LAWS
+  // dict yet still sets a weight scale, so this list is explicit rather than
+  // derived from that predicate.
+  const STROKE_FILL_RIBBON_LAWS = [
+    'nibAngle', 'taperedEnds', 'weightModulated', 'isophoteWidth', 'whiteBand',
+    'weightSmoothstep', 'ampSpacing', 'weaveDepth', 'interlockWeave',
+    'trochoidLoop', 'amplitudeOnly', 'onePenDown',
+  ];
+  // The 6 bucket-C ids (three-pen). Exempt by design, not by omission — they
+  // get their own tooltip so a user is told WHY, not just that it is off.
+  const STROKE_FILL_PEN_LAWS = [
+    'penInterleave', 'penStipple', 'penReserve', 'penCross', 'penPitchMatch', 'penFacing',
+  ];
+  const STROKE_FILL_STYLES = {
+    LABEL: 'Stroke Fill',
+    ARIA: 'Stroke fill style',
+    PARAM: 'strokeFillStyle',
+    DEFAULT: STROKE_FILL_STYLE_DEFAULT,
+    RIBBON_LAWS: STROKE_FILL_RIBBON_LAWS,
+    PEN_LAWS: STROKE_FILL_PEN_LAWS,
+    OPTIONS: [
+      { value: 'spiral', label: 'Spiral' },
+      { value: 'concentric', label: 'Concentric' },
+      { value: 'serpentine', label: 'Serpentine' },
+      { value: 'contourParallel', label: 'Contour-Parallel' },
+    ],
+    TOOLTIPS: {
+      spiral: 'Spiral — one continuous inward spiral. The pen never lifts.',
+      concentric: 'Concentric — nested rings following the ribbon outline, bridged into one stroke.',
+      serpentine: 'Serpentine — back-and-forth passes across the ribbon, turning at each edge.',
+      contourParallel: 'Contour-Parallel — passes parallel to the ribbon outline, offset inward.',
+    },
+    // The layer types that can carry a ribbon fill at all.
+    LAYER_TYPES: ['scene3d', 'object3d', 'booleanGroup3d'],
+    DISABLED_NOTE: 'Stroke Fill only shapes a variable-width fill style — this Fill Style draws at one constant pen width.',
+    PEN_DISABLED_NOTE: 'Three-pen fill styles draw with genuinely different nib widths, so there is no single ribbon to fill.',
+  };
+  // Map a stored value onto an option this picker actually offers; anything
+  // unknown collapses onto the shipped default, matching the engine's clamp.
+  STROKE_FILL_STYLES.resolve = (value) => (
+    STROKE_FILL_STYLES.OPTIONS.some((o) => o.value === value) ? value : STROKE_FILL_STYLE_DEFAULT
+  );
+  // Does this Fill Style (tone law) build a ribbon at all?
+  STROKE_FILL_STYLES.applies = (toneLawId) => STROKE_FILL_RIBBON_LAWS.indexOf(toneLawId) !== -1;
+  STROKE_FILL_STYLES.isPenLaw = (toneLawId) => STROKE_FILL_PEN_LAWS.indexOf(toneLawId) !== -1;
+  // '' when enabled; otherwise the reason it is greyed out.
+  STROKE_FILL_STYLES.disabledNote = (toneLawId) => {
+    if (STROKE_FILL_STYLES.applies(toneLawId)) return '';
+    return STROKE_FILL_STYLES.isPenLaw(toneLawId)
+      ? STROKE_FILL_STYLES.PEN_DISABLED_NOTE
+      : STROKE_FILL_STYLES.DISABLED_NOTE;
+  };
+  STROKE_FILL_STYLES.appliesToLayer = (layer) => (
+    !!layer && STROKE_FILL_STYLES.LAYER_TYPES.indexOf(layer.type) !== -1
+  );
+  // The tone law a LAYER is currently drawing with. An object3d / boolean leaf
+  // carries its own `style`; a scene group falls back to its scene-scope style
+  // (per-object overrides are edited on the object's own panel, which is where
+  // the docked Stroke Fill row lives). Unknown/absent ⇒ the shipped default.
+  STROKE_FILL_STYLES.toneLawOf = (layer) => {
+    const p = (layer && layer.params) || {};
+    const own = p.style && p.style.params && p.style.params.toneLaw;
+    if (typeof own === 'string' && own) return own;
+    const table = p.styleTable;
+    const scene = table && table.scene && table.scene.params && table.scene.params.toneLaw;
+    if (typeof scene === 'string' && scene) return scene;
+    return SCENE_FILL_STYLES.DEFAULT;
+  };
+  Vectura.STROKE_FILL_STYLES = STROKE_FILL_STYLES;
+
   Vectura.CONTEXT_BAR = {
     // ── TB-1/8: timings & geometry (constant screen px; zoom-independent) ──
     timing: {
@@ -584,6 +670,14 @@
         fillStyle: {
           label: SCENE_FILL_STYLES.LABEL,
           aria: SCENE_FILL_STYLES.ARIA,
+        },
+        // sf-w4 — Stroke Fill sits directly beneath Fill Style, on BOTH the
+        // contextual bar and the docked Style tab. Re-exported from
+        // STROKE_FILL_STYLES above so the two surfaces cannot drift apart,
+        // exactly as `fillStyle` re-exports SCENE_FILL_STYLES.
+        strokeFill: {
+          label: STROKE_FILL_STYLES.LABEL,
+          aria: STROKE_FILL_STYLES.ARIA,
         },
         pen: { label: 'Pen', aria: 'Style pen', inherit: 'Layer pen' },
         angle: { label: 'Angle', aria: 'Hatch angle' },

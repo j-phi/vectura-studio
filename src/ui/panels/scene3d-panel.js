@@ -642,6 +642,46 @@
       caveatLine.textContent = note.caveat;
       host.appendChild(caveatLine);
     }
+
+    // sf-w4 — STROKE FILL, directly beneath Fill Style. A variable-width fill
+    // style draws its ruling as a real ribbon OUTLINE stroked with the real
+    // pen and then FILLS that outline with a pen-width-pitched continuous
+    // stroke; this picks the pattern that fill uses. It is a LAYER param
+    // (CONTRACT C4: ALGO_DEFAULTS.scene3d.strokeFillStyle), not a style param,
+    // so it is written through `o.layerParams` rather than the whole-style
+    // commit the law above uses.
+    //
+    // Only the 12 variable-width fill styles build a ribbon. On the 31
+    // monowidth and the 6 three-pen styles the row renders DISABLED with the
+    // reason in its tooltip — hiding it would shift every row beneath it the
+    // instant the Fill Style changed.
+    const SFS = Vectura.STROKE_FILL_STYLES;
+    if (SFS && o.layerParams && typeof o.commit === 'function') {
+      const disabledNote = SFS.disabledNote(law);
+      const sfCtl = o.row(SFS.LABEL);
+      const sfSelect = UI.Select(sfCtl, {
+        options: SFS.OPTIONS,
+        value: SFS.resolve(o.layerParams[SFS.PARAM]),
+        ariaLabel: SFS.ARIA,
+        disabled: Boolean(disabledNote),
+        // A greyed row must not write even if something drives the <select>
+        // directly: `disabled` stops a USER, it does not stop a programmatic
+        // change event, and this is the last word before the layer mutates.
+        onChange: (v) => { if (disabledNote) return; o.commit(() => { o.layerParams[SFS.PARAM] = v; }); },
+      });
+      comps.push(sfSelect);
+      const sfRow = sfCtl.parentNode;
+      if (sfRow && sfRow.setAttribute) {
+        if (disabledNote) {
+          sfRow.setAttribute('title', disabledNote);
+          sfRow.classList.add('is-disabled');
+        } else {
+          sfRow.removeAttribute('title');
+          sfRow.classList.remove('is-disabled');
+        }
+      }
+      if (!disabledNote) attachSelectArrowStep(selectElOf(sfSelect));
+    }
   };
 
   let CURRENT = null;
@@ -1205,6 +1245,8 @@
           value: style.params.toneLaw,
           write: (v) => { commit(() => { style.params.toneLaw = v; }); renderStyle(); },
           rerender: renderStyle,
+          layerParams: params,
+          commit,
           primitiveMode: params.primitive,
           solidType: params.params && params.params.solidType,
           mapper: style.mapper,
@@ -1578,6 +1620,8 @@
           value: style.params.toneLaw,
           write: (v) => { commit(() => { style.params.toneLaw = v; }); renderBoolStyle(); },
           rerender: renderBoolStyle,
+          layerParams: params,
+          commit,
           primitiveMode: primary && primary.params && primary.params.primitive,
           solidType: primary && primary.params && primary.params.params && primary.params.params.solidType,
           mapper: style.mapper,
@@ -3972,6 +4016,8 @@
             value: typeof raw === 'string' ? raw : d.default,
             write: (v) => write(v),
             rerender: renderStyle,
+            layerParams: params,
+            commit,
             primitiveMode: scopePrimitiveMode(scope),
             solidType: scopeSolidType(scope),
             mapper: resolved.mapper,

@@ -11517,6 +11517,30 @@ body.vtp-is-scrubbing * { cursor: ew-resize !important; user-select: none !impor
   background: var(--ui-accent-2);
   color: var(--ui-accent);
 }
+/* sf-w4 — Stroke Fill Style row. Four TEXT toggles (there is no icon
+   vocabulary for a fill path pattern), so they size to their label and the
+   row wraps instead of overflowing the Stroke Options popover. Disabled is
+   the resting state for the 37 fill styles that build no ribbon, so it has to
+   read as clearly greyed rather than merely un-clickable. */
+.stroke-options .stroke-row-strokefill { flex-wrap: wrap; }
+.stroke-options .stroke-row-strokefill .stroke-toggle-group { flex-wrap: wrap; }
+.stroke-options .stroke-toggle.is-text {
+  width: auto;
+  min-width: 30px;
+  padding: 0 8px;
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.stroke-options .stroke-toggle:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+  /* Kills the :hover background above (which still fires on a disabled
+     button) AND lets the hover fall through to the ROW, so the row's
+     `title` — the reason the control is off — is what a user actually
+     sees. A disabled button never shows its own title. */
+  pointer-events: none;
+}
+.stroke-options .stroke-row.is-disabled .stroke-row-label { opacity: .4; }
 .stroke-options .stroke-limit {
   display: inline-flex;
   align-items: center;
@@ -12046,6 +12070,12 @@ body.mobile-layout .hud-bar {
   justify-content: space-between;
   gap: 8px;
 }
+/* sf-w4 — a flyout row whose control is inert for the current selection (e.g.
+   Stroke Fill under a monowidth or three-pen Fill Style). It STAYS in place so
+   nothing below it jumps; the row greys out and carries the reason as its
+   `title`. The control itself is `disabled`, so the row keeps the hover that
+   surfaces that tooltip. */
+.ctxbar-fly-row.is-disabled { opacity: .45; }
 .ctxbar-fly-label {
   font-size: var(--font-size-xs, 11px);
   color: var(--ui-muted, #9a9a9a);
@@ -13305,6 +13335,12 @@ body.mobile-layout .hud-bar {
   white-space: nowrap;
 }
 .vs3-ctl { flex: 1 1 auto; min-width: 0; }
+/* sf-w4 — an inspector row whose control is inert for the current selection
+   (e.g. Stroke Fill under a monowidth or three-pen Fill Style). It stays in
+   place so nothing below it jumps; the whole row greys out and carries the
+   reason as its tooltip. The control itself is `disabled`, so pointer-events
+   stay off it without disabling the row's own title. */
+.vs3-row.is-disabled { opacity: .45; }
 .vs3-ctl .slider-row { width: 100%; }
 /* Section sub-heading inside the inspector (e.g. the Phase 5 Shadow group). */
 .vs3-subhead {
