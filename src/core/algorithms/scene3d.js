@@ -3002,7 +3002,16 @@
                 // reason toneLaw is: buildObject owns validation against its
                 // own roster, so an old document or an unknown id degrades in
                 // ONE place instead of two. Inert under every non-ribbon law.
-                strokeFillStyle: sp.strokeFillStyle,
+                // ...and it is read off the LAYER (`p`), not the style cascade
+                // (`sp`). W4 writes it to ALGO_DEFAULTS.scene3d.strokeFillStyle
+                // — the context bar and the scene3d panel both say so in as many
+                // words — so `sp.strokeFillStyle` is a key nothing ever sets and
+                // every ribbon filled itself at the default. Measured in the app
+                // before this line changed: spiral and concentric produced
+                // byte-identical frames and identical ink (19294.0 mm). `sp`
+                // stays as an override for a future per-style reading; the
+                // layer's value is the one that exists today.
+                strokeFillStyle: sp.strokeFillStyle || p.strokeFillStyle,
                 // Crosshatch family-B controls. They were already live on faceted
                 // geometry and on the flat silhouette fallback below, but were
                 // never handed to the curved fill — so on every chart-wrapped

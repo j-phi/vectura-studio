@@ -22,36 +22,54 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
-- **BLOCKER — 3D Scene pen-width stroke fill: the ribbon pipeline is inert; every ribbon draws its
-  centreline.** Branch `sf/integration` merges the six work units (W1 ribbon geometry, W2 pen fill,
-  W3 emission swap, W4 `strokeFillStyle` UI, W5 expand fidelity, W6 voronoi web). The plumbing is
-  all present and the merge was clean, but nothing downstream of the clip survives. Measured in the
-  running app on the reference sphere (`SurfaceFill.lastRibbonStats`), all twelve ribbon laws:
-  `wide > 0`, `clipped == wide`, `outlines: 0`, `fills: 0`, `ribbons: 0`, `degenerate == wide`.
-  - **Root cause to fix first:** the visible-form region passed to `RibbonGeometry.clipRingToRegion`
-    is degenerate. Its rings measure area ~-0.01 while the ribbon rings measure ~85, so the exact
-    intersection returns zero-area 4-point rings and `erode`
-    (`GeometryUtils.insetMultiPolygon`) then returns empty for both the outline and the fill.
-    With `any` false, `surface-fill.js` emits `centrePass` for every stretch.
-  - **Follow-on symptoms, all explained by the same cause — do not chase separately:**
-    `PenFill.fillRegion` is never invoked (W2's module is dead code in the shipped path);
-    `strokeFillStyle` produces byte-identical output for all four styles, so W4's control is
-    unobservable; the `[FillBoolean] polygon union failed on degenerate geometry` warns originate
-    in `erode` → `insetMultiPolygon` → `strokeRingsToBand`, NOT in the ribbon module's retry
-    ladder, and are real failures rather than benign retries;
-    `tests/unit/scene3d-one-pen-down-reachability.test.js` fails (64 paths vs "fewer than 36")
-    because the centreline fallback fragments the chained run.
-  - **Test-coverage gap that let this through:** the weightScale invariant test (`T4`) asserts every
-    emitted fill path is at `weightScale 1`. Pure centrelines satisfy that trivially, so the suite
-    is green while the feature does nothing. Any fix must add a test that asserts
-    `lastRibbonStats.ribbons > 0` and `outlines > 0` for a ribbon law, and that two
-    `strokeFillStyle` values produce DIFFERENT ink.
-  - **Performance, measured on the integrated branch** (reference sphere, orthographic, tone on):
-    flat laws (`plainHatch`, `fineLadder`) 63 ms; `taperedEnds` 1.5 s; `ampSpacing` 7.4 s;
-    `weaveDepth` 8.6 s; three-pen `penCross` 107 ms. The ribbon laws pay for building and clipping
-    ~40–115 ribbons per frame and then discard all of it. Re-measure after the clip is fixed before
-    optimizing — the cost profile will change, and the coverage guarantee must not be traded away.
-  - Evidence (real app, Playwright): `docs/integration-evidence/`.
+- **DONE — 3D Scene pen-width stroke fill: the inert-ribbon blocker is fixed.** Branch
+  `sf/integration`. Root cause was NOT in the ribbon modules: `buildRegionRings`
+  (`src/core/scene3d/surface-fill.js`) bisected the front/back crossing the wrong way across a
+  PERIODIC chart seam. `paramOf` folds the wrap cell's far corner to 0 while its near corner is
+  (N-1)/N, so the bisection interval spanned the chart the long way round and converged on the
+  OPPOSITE limb. The reference sphere seen down its own seam (camera yaw 0) traced its left limb
+  twice and its right limb never — one 218-point ring of signed area **-0.014** where the visible
+  region is a ~6650 mm2 disc — so `clipRingToRegion` returned empty for every ribbon.
+  - **Fixes:** (1) `crossParam` unwraps a periodic crossing before bisecting and wraps the result
+    back into [0, 1). (2) `strokeFillStyle` is now read off the LAYER in
+    `src/core/algorithms/scene3d.js` — W4 writes it there, W3 was reading the style cascade, which
+    nothing writes; that alone kept spiral and concentric byte-identical. (3) `onePenDown`'s ribbon
+    is DEFERRED to the end of the build so the chart bridge can still chain its bare centrelines
+    first — a ribbon emits an outline plus a fill, and the bridge only chains a ruling that emitted
+    exactly one path.
+  - **Measured after (running app, reference sphere, `SurfaceFill.lastRibbonStats`):** region area
+    6645.484 mm2 (was 0.014); every one of the twelve ribbon laws builds real ribbons.
+    `taperedEnds` 39 wide / 37 ribbons / 37 outlines / 132 fills / 0 clipEmpty, ink 2425.8 mm ->
+    19294.0 mm. `penCross` untouched at weightScales [1.733, 3.1]. Expand bbox growth still 0 px on
+    all four sides.
+  - **Timings (running app, same sphere, `computeAllDisplayGeometry`):** `ladder` 10 ms,
+    `penCross` 14 ms, `weightSmoothstep` 1.4 s, `weightModulated` 1.6 s, `nibAngle` 3.0 s,
+    `taperedEnds` 3.1 s, `whiteBand` 3.2 s, `isophoteWidth` 3.4 s, `onePenDown` 3.7 s,
+    `trochoidLoop` 5.6 s, `amplitudeOnly` 6.2 s, `ampSpacing` 8.5 s, `interlockWeave` 10.1 s,
+    `weaveDepth` 10.2 s. The ribbon laws now KEEP the work they pay for — `taperedEnds` went 1.5 s
+    -> 3.1 s and `onePenDown` 11.5 s -> 3.7 s (deferring its ribbon to the chain is a large win).
+    The heavy end (8–10 s) is boolean cost in `insetMultiPolygon` and is the next optimization
+    target; the coverage guarantee must not be traded away for it.
+  - **Coverage guard:** `tests/integration/scene3d-ribbon-region-clip.test.js` (new) asserts
+    `regionArea`, `ribbons > 0`, `outlines > 0`, `fills > 0`, `noRing == 0`, `clipEmpty == 0`, that
+    the fallback is never wholesale, and that two `strokeFillStyle` values produce DIFFERENT ink.
+    All six cases fail with the seam unwrap alone removed.
+  - **Open, for the judges rather than for this fix:** bucket-B laws are now MUCH heavier than they
+    look on the base branch, because the width profile finally renders (`taperedEnds` inks 19294 mm
+    into a 6645 mm2 disc). Whether that weight is correctly calibrated against `ladder` is a tone
+    question, not a plumbing one, and nothing here changed a width profile. `concentric` inks
+    11568 mm where `spiral` inks 19294 mm for the same ribbons — worth checking against W2's
+    coverage contract (>= 0.995).
+  - **`tests/unit/scene3d-tone-law-dispatch.test.js` — measured, not flaky.** It walks all 46 laws
+    four times, and twelve of those are now real ribbon builds instead of microsecond centreline
+    fallbacks. Its two matrix tests came in at 143 s / 142 s under a full run — just past the 120 s
+    ceiling the file sets for itself — and timed out. The ceiling (`SLOW`) is raised to 600 s with
+    the measurement recorded beside it; the fixture is NOT cheapened, because this file's whole job
+    is to prove all 46 laws dispatch and a thinner fixture is how a law starts looking identical to
+    `ladder` for the wrong reason. Verified standalone after the raise: **7/7 pass in 346.8 s**
+    (test 2 135.4 s, test 3 134.0 s, test 7 75.8 s).
+  - Evidence (real app, Playwright): `docs/ribbon-fix-evidence/`. The pre-fix set is kept beside it
+    at `docs/integration-evidence/` for comparison.
 
 - **3D Scene: pick a tone algorithm — round 2, ten laws, no line budget.** Jay: "do these again
   but with no limit on the number of lines you may use — focus on nailing the lighting." A

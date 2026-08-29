@@ -120,15 +120,59 @@ describe('onePenDown — promoted from unreachable to the roster (fs-r1)', () =>
     expect(geomKey(onePenDown)).not.toBe(geomKey(ladder));
   });
 
-  test('onePenDown chains rulings into far fewer continuous paths than the ladder default (its whole claim)', () => {
+  /* WHERE THE CLAIM MOVED TO (stroke-fill integration, 2026-08-29).
+   *
+   * This test used to count EMITTED PATHS: 9 for onePenDown against 36 for
+   * ladder. That comparison stopped measuring chaining the moment onePenDown
+   * became a bucket-B RIBBON law. A ribbonized ruling is no longer one polyline
+   * — it is an outline ring plus a pen-pitched interior fill, deliberately many
+   * strokes — so the emitted count now reports how WIDE the ruling is, not how
+   * many times the pen lifted between rulings. Asserting on it would either
+   * fail forever or force the ribbon off onePenDown to keep a number green.
+   *
+   * The claim itself is unchanged and still exactly testable one level up.
+   * `surface-fill.js` defers this law's ribbon to the END of the build for
+   * exactly this reason: the chart bridge chains the bare centrelines first,
+   * and each finished CHAIN is ribbonized as one unit.
+   * `lastRibbonStats.stretches` is that chain count (onePenDown holds one width
+   * per ruling, so a chain of n rulings is at most n stretches and in practice
+   * far fewer), and it is what carries the old 9-vs-36 comparison forward:
+   * re-measured here at 10 chains against 36 ladder paths.
+   *
+   * The DIRECTION of the original path-count check still holds and is kept
+   * (20 emitted paths vs 36). Only its 2x margin moved to the run count, because
+   * the emitted count now also reports how WIDE the ruling is — a ribbon is
+   * deliberately many strokes — and would otherwise punish the feature for
+   * working. The two paired checks keep it honest: the ribbon must genuinely be
+   * doing the widening (`ribbons > 0`), and onePenDown must still lay down far
+   * more INK than the ladder while doing it.
+   */
+  test('onePenDown chains rulings into far fewer continuous runs than the ladder default (its whole claim)', () => {
     const ladder = fills(scene('ladder'));
+    const ladderPaths = ladder.length;
     const onePenDown = fills(scene('onePenDown'));
-    // Re-measured on this fixture (fs-r1): 9 onePenDown paths vs 36 for
-    // ladder — a real, large reduction, not a marginal one. The exact counts
-    // are fixture-specific; the direction and the order of magnitude are the
-    // claim under test.
-    expect(onePenDown.length).toBeLessThan(ladder.length);
-    expect(onePenDown.length * 2).toBeLessThan(ladder.length);
+    const stats = SurfaceFill.lastRibbonStats;
+
+    expect(onePenDown.length).toBeGreaterThan(0);
+    // The ribbon really ran — otherwise the run count below is measuring a
+    // bare-centreline fallback and the assertion is vacuous.
+    expect(stats.algo).toBe('onePenDown');
+    expect(stats.ribbons).toBeGreaterThan(0);
+
+    // THE CLAIM. Re-measured on this fixture: 10 chained runs against 36 ladder
+    // paths. The exact counts are fixture-specific; the direction and the order
+    // of magnitude are what is under test.
+    expect(stats.stretches).toBeLessThan(ladderPaths);
+    expect(stats.stretches * 2).toBeLessThan(ladderPaths);
+    // ...and the original measurement's direction, unchanged.
+    expect(onePenDown.length).toBeLessThan(ladderPaths);
+
+    const ink = (paths) => paths.reduce((t, pp) => {
+      for (let i = 1; i < pp.length; i++) t += Math.hypot(pp[i].x - pp[i - 1].x, pp[i].y - pp[i - 1].y);
+      return t;
+    }, 0);
+    // A few long heavy rulings, not many thin ones.
+    expect(ink(onePenDown)).toBeGreaterThan(ink(ladder));
   });
 
   test('SurfaceFill.buildObject is reachable with toneLaw: "onePenDown" directly (not just through algo.generate)', () => {

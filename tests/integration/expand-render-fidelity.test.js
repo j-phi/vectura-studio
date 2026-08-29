@@ -167,15 +167,44 @@ describe('T5 — "expand into group" reproduces the rendered ink exactly', () =>
     return { engine, group, child, penWidth: 0.3 };
   };
 
+  /* WHERE "VARIABLE WIDTH" IS NOW VISIBLE FROM (2026-08-29).
+   *
+   * This check used to look for fill paths at `meta.weightScale !== 1`. That is
+   * the one thing the pen-width stroke-fill work makes IMPOSSIBLE on this
+   * fixture: `nibAngle` is a bucket-B RIBBON law, and C3 rule 6 hard-asserts
+   * that every path a ribbon law emits is a real single-pen stroke at
+   * weightScale 1. The fixture is still variable-width — it is more genuinely
+   * so than before, because the width is now drawn as real geometry rather than
+   * claimed as a multiplier — so the sanity check reads it off the build report
+   * instead. (This assertion was already failing on `sf/integration` before the
+   * inert-ribbon fix, for the same reason.)
+   */
   test('the sphere really is variable-width (fixture sanity)', () => {
     const { engine, child } = buildVariableWidthSphere();
     const paths = engine.getSceneChildRenderPaths(child.id);
     const fills = paths.filter((p) => p.meta && p.meta.kind === 'sceneFill');
-    const weighted = fills.filter((p) => Number.isFinite(Number(p.meta.weightScale)) && Number(p.meta.weightScale) !== 1);
     expect(fills.length).toBeGreaterThan(50);
-    expect(weighted.length).toBeGreaterThan(20);
-    // More than one distinct width — a genuine width RAMP, not a flat offset.
-    expect(new Set(weighted.map((p) => Number(p.meta.weightScale).toFixed(3))).size).toBeGreaterThan(1);
+
+    const stats = V.Scene3D.SurfaceFill.lastRibbonStats;
+    expect(stats.algo).toBe('nibAngle');
+    expect(stats.ribbonLaw).toBe(true);
+    // Real ribbons, with real outlines and real interior fills — a genuine
+    // width RAMP built as geometry, not a flat offset and not a fallback to
+    // bare centrelines.
+    // 14 wide stretches on this fixture's default scene tree — a smaller sphere
+    // than the tone fixtures use. The number is fixture-specific; that there are
+    // plenty of them, and that they all became ribbons, is the claim.
+    expect(stats.wide).toBeGreaterThan(8);
+    expect(stats.ribbons).toBeGreaterThan(0);
+    expect(stats.outlines).toBeGreaterThan(0);
+    expect(stats.fills).toBeGreaterThan(0);
+    // ...and the ribbon really did carry a varying width: some stretches were
+    // wide enough to ribbonize and some were not.
+    expect(stats.narrow).toBeGreaterThan(0);
+    // C3 rule 6, restated where the old assertion used to sit: NOTHING here
+    // asks the renderer for a fatter pen any more.
+    const weighted = fills.filter((p) => Number.isFinite(Number(p.meta.weightScale)) && Number(p.meta.weightScale) !== 1);
+    expect(weighted.length).toBe(0);
   });
 
   test('rasterized ink before and after expand is the same shape (pixel diff below threshold)', () => {

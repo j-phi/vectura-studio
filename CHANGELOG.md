@@ -28,22 +28,39 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - **`voronoiWeb` tone law reworked** into a continuous, unbroken web whose cell openings scale with
   tone — smaller in shadow, larger in the highlight (`src/core/scene3d/surface-fill-mono.js`).
 
-### Known issues
-- **The ribbon pipeline is currently INERT in the running app: every ribbon falls back to its
-  centreline.** Measured on the reference sphere via `SurfaceFill.lastRibbonStats`, all twelve
-  ribbon laws report `wide > 0`, `clipped == wide`, and then `outlines: 0, fills: 0,
-  ribbons: 0, degenerate == wide`. The ribbon ring is built and clipped, but the erosion step
-  (`erode` -> `GeometryUtils.insetMultiPolygon`) returns empty, so `any` stays false and every
-  stretch emits `centrePass`. Root cause located: the visible-form region handed to the clip is
-  degenerate — its rings measure an area of about -0.01 against ribbon rings of area ~85 — so the
-  exact intersection yields zero-area 4-point rings. Consequences: `PenFill.fillRegion` is never
-  invoked, so `strokeFillStyle` has no observable effect (all four styles render byte-identical
-  output); the "every ribbon path is at weightScale 1" invariant passes for the WRONG REASON (there
-  are no ribbons, only centrelines); and `tests/unit/scene3d-one-pen-down-reachability.test.js`
-  fails because the fallback fragments `onePenDown` into 64 paths where it claims fewer than 36.
-  Do not treat the absence of stairstepping as proof the feature works.
-
 ### Fixed
+- **The ribbon pipeline was INERT — every variable-width tone law drew a bare centreline. The
+  chart's front/back boundary tracer bisected the wrong way across a PERIODIC seam.**
+  `buildRegionRings` (`src/core/scene3d/surface-fill.js`) marches squares over the chart's (a, b)
+  parameter square and bisects each grid edge whose two corners straddle the front test. On a
+  periodic axis `paramOf` folds the wrap cell's far corner back to 0 while its near corner is
+  (N-1)/N, so the bisection interval spanned the whole chart the LONG way round — and because the
+  front/back boundary is a closed curve, the walk still converged, onto the OPPOSITE crossing. A
+  sphere seen down its own seam (camera yaw 0) therefore traced its LEFT limb twice and its right
+  limb never: one 218-point ring of signed area **-0.014** where the true visible region is a
+  ~6650 mm2 disc. `RibbonGeometry.clipRingToRegion` returned empty for every ribbon and
+  `surface-fill.js` shipped `centrePass` for all of them. `crossParam` now unwraps a periodic
+  crossing before bisecting and wraps the answer back into [0, 1). Measured after: region area
+  **6645.484 mm2**, and all twelve ribbon laws build real ribbons (`taperedEnds`: 39 wide stretches,
+  37 ribbons, 37 outlines, 132 fills, ink 2425.8 mm -> 19294.0 mm).
+- **`strokeFillStyle` never reached the fill.** W4's UI writes it as a LAYER param
+  (`ALGO_DEFAULTS.scene3d.strokeFillStyle`); `src/core/algorithms/scene3d.js` read it off the STYLE
+  cascade (`g.style.params`), where nothing ever writes it. Every ribbon filled itself at the
+  default, and spiral / concentric rendered byte-identical frames with identical ink (19294.0 mm).
+  It now reads the layer value, with the style key kept as an override.
+- **A wholesale ribbon fallback is now LOUD, and its refusals are named.** `lastRibbonStats` gains
+  `regionArea` / `regionAreaBack` (ring COUNT cannot tell a real silhouette from a hairline walked
+  out and back — the exact shape of this bug) and splits `degenerate` into `noRing` / `clipEmpty` /
+  `erodeEmpty`, so a genuinely sub-pen ribbon degrading to its centreline (legitimate, contract C3
+  rule 5) is distinguishable from the machinery failing. A build where every wide stretch fell back
+  now emits a one-line `console.warn` naming the law, the counts and the region area.
+- **`onePenDown` keeps its chain.** It is both a ribbon law and the one law whose entire claim is
+  continuity, and the chart bridge can only chain a ruling that emitted EXACTLY ONE path — which a
+  ribbon (outline + fill) never does. Ribbonizing at emission silenced the bridge on every ruling
+  (48 unchained rulings where the fixture had 9 chains). Its ribbon is now DEFERRED: the bare
+  centrelines chain first, carrying their resolved half-widths across each bridge, and the finished
+  CHAIN is ribbonized as one unit (5 chains on the reference sphere; 15 emitted paths against the
+  ladder's 27, at 24375 mm of ink against 3263 mm). Also ~3x faster than ribbonizing per ruling.
 - **"Expand into group" now reproduces a 3D scene fill exactly, instead of growing blobby bands
   past the silhouette.** A scene-fill path carries its width as `meta.weightScale`, and expand
   realized any value > 1 as N parallel offset copies of the centerline

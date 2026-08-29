@@ -1,0 +1,116 @@
+{
+  "ver": "1.3.91",
+  "report": {
+    "a-taperedEnds": {
+      "law": "taperedEnds",
+      "styleExtra": null,
+      "layerId": "9c193ac9-e8f9-4cff-8753-f7d5c02b9573",
+      "strokeFillStyle": "spiral",
+      "total": 217,
+      "fillPaths": 113,
+      "fillInk": 19294,
+      "weightScales": [
+        1
+      ],
+      "bb": {
+        "minx": 114.33333333333333,
+        "miny": 96,
+        "maxx": 765.3333333333334,
+        "maxy": 746.6666666666666
+      }
+    },
+    "b-spiral": {
+      "law": "taperedEnds",
+      "styleExtra": {
+        "strokeFillStyle": "spiral"
+      },
+      "layerId": "a01d5b23-69d7-4151-8704-629216cfbd55",
+      "strokeFillStyle": "spiral",
+      "total": 217,
+      "fillPaths": 113,
+      "fillInk": 19294,
+      "weightScales": [
+        1
+      ],
+      "bb": {
+        "minx": 114.33333333333333,
+        "miny": 96,
+        "maxx": 765.3333333333334,
+        "maxy": 746.6666666666666
+      }
+    },
+    "b-concentric": {
+      "law": "taperedEnds",
+      "styleExtra": {
+        "strokeFillStyle": "concentric"
+      },
+      "layerId": "c8a157d7-b8f8-4b5b-839d-417202342500",
+      "strokeFillStyle": "concentric",
+      "total": 403,
+      "fillPaths": 299,
+      "fillInk": 11568.4,
+      "weightScales": [
+        1
+      ],
+      "bb": {
+        "minx": 114.33333333333333,
+        "miny": 96,
+        "maxx": 765.3333333333334,
+        "maxy": 746.6666666666666
+      }
+    },
+    "c-penCross": {
+      "law": "penCross",
+      "styleExtra": null,
+      "layerId": "6408c60a-d6b7-4c12-ae22-5caa1ebe158d",
+      "strokeFillStyle": "spiral",
+      "total": 159,
+      "fillPaths": 55,
+      "fillInk": 4164.6,
+      "weightScales": [
+        1.733,
+        3.1
+      ],
+      "bb": {
+        "minx": 112.33333333333333,
+        "miny": 93.66666666666667,
+        "maxx": 766.6666666666666,
+        "maxy": 749
+      }
+    },
+    "d-expand": {
+      "before": {
+        "layerId": "1f4f0e09-2e19-4fc7-a6d5-5e24a8d9eb87",
+        "strokeFillStyle": "spiral",
+        "total": 217,
+        "fillPaths": 113,
+        "fillInk": 19294,
+        "weightScales": [
+          1
+        ],
+        "bb": {
+          "minx": 114.33333333333333,
+          "miny": 96,
+          "maxx": 765.3333333333334,
+          "maxy": 746.6666666666666
+        }
+      },
+      "after": {
+        "layers": 1,
+        "children": 0,
+        "bb": {
+          "minx": 114.33333333333333,
+          "miny": 96,
+          "maxx": 765.3333333333334,
+          "maxy": 746.6666666666666
+        }
+      },
+      "bboxGrowthCssPx": {
+        "left": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0
+      }
+    }
+  }
+}

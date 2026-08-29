@@ -65,7 +65,21 @@ const ALL_LAWS = [
 // Slow: each law is a real buildObject() call over a sphere with real
 // sampling, and CI machines running this alongside sibling test files can be
 // heavily contended. Generous, not open-ended.
-const SLOW = 120000;
+//
+// RAISED 120 s -> 600 s (2026-08-29), and the reason is not contention. Twelve
+// of the 46 laws are bucket-B RIBBON laws, and until the inert-ribbon blocker
+// was fixed they were silently emitting bare centrelines — microseconds of work
+// each. Now they do what they claim: build a variable-width outline, clip it
+// against the traced visible region, erode it and fill the interior at a
+// pen-derived pitch, all through `polygon-clipping`. Measured in a full
+// unit+integration run right after the fix, tests 2 and 3 each walk all 46 laws
+// and took 143 s and 142 s — both just past the old ceiling, both timing out.
+// The cost is real work now being kept, not a hang, so the honest response is a
+// ceiling that fits it rather than a thinner fixture: this file's whole job is
+// to prove all 46 laws DISPATCH, and cheapening the fixture is how a law starts
+// looking identical to `ladder` for the wrong reason. Still bounded — a genuine
+// hang fails well inside 600 s.
+const SLOW = 600000;
 
 describe('Scene3D.SurfaceFill — per-call TONE_ALGO dispatch (46-way matrix)', () => {
   let runtime; let V; let algo; let defaults; let SF;

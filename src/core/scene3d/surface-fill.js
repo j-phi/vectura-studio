@@ -5165,18 +5165,39 @@
         const s = smpAtIdx(i, j);
         return Boolean(s && s.front === wantFront);
       };
+      const wrap01 = (v) => ((v % 1) + 1) % 1;
       // The boundary between one INSIDE and one OUTSIDE grid corner, in chart
       // parameters. A sentinel neighbour means the crossing IS the domain edge,
       // which the inside corner already sits on — exact, no bisection needed.
+      //
+      // ── THE SEAM UNWRAP. DO NOT REMOVE. ────────────────────────────────────
+      //
+      // On a PERIODIC axis `paramOf` folds the wrap cell's far corner back to 0,
+      // so the last cell of the row hands this function the pair (0.986, 0) when
+      // what it means is (0.986, 1.0). Bisected literally, that interval spans
+      // the WHOLE CHART the long way round — and since the front/back boundary
+      // is a closed curve, the walk still converges, but onto the OPPOSITE
+      // crossing. The returned point is then a real on-surface point sitting on
+      // the WRONG limb, which is undetectable downstream.
+      //
+      // Measured (2026-08-29, sphere r=46 seen down its own seam, camera yaw 0):
+      // every seam-cell crossing came back on the LEFT limb, so the traced
+      // region was the left half-circle walked out and back — 218 points of
+      // signed area -0.014 instead of a ~6650 mm2 disc. `clipRingToRegion` then
+      // returned empty for every ribbon and the whole variable-width feature
+      // silently degraded to bare centrelines. Unwrap first, wrap the answer
+      // back into [0,1) last.
       const crossParam = (aIn, bIn, aOut, bOut) => {
         if (aOut == null || bOut == null) return { a: aIn, b: bIn };
         let loA = aIn; let loB = bIn; let hiA = aOut; let hiB = bOut;
+        if (per.perA && Math.abs(hiA - loA) > 0.5) hiA += (hiA < loA ? 1 : -1);
+        if (per.perB && Math.abs(hiB - loB) > 0.5) hiB += (hiB < loB ? 1 : -1);
         for (let k = 0; k < REGION_BISECT; k++) {
           const mA = (loA + hiA) / 2; const mB = (loB + hiB) / 2;
-          const s = sampleAt(mA, mB);
+          const s = sampleAt(per.perA ? wrap01(mA) : mA, per.perB ? wrap01(mB) : mB);
           if (s && s.front === wantFront) { loA = mA; loB = mB; } else { hiA = mA; hiB = mB; }
         }
-        return { a: loA, b: loB };
+        return { a: per.perA ? wrap01(loA) : loA, b: per.perB ? wrap01(loB) : loB };
       };
       const ptMemo = new Map();
       // `ia/ja` is the INSIDE corner, `ib/jb` the OUTSIDE one.
@@ -5806,6 +5827,7 @@
     // neighbour rather than dropped — dropping it is the one thing this
     // construction may not do, because that would leave a hole in the ruling.
     const meanW = (wPts, a, b) => {
+      if (!Array.isArray(wPts)) return 1;   // the deferred path has no wPts
       let s = 0; let n = 0;
       for (let i = a; i <= b; i++) { const v = Number(wPts[i]); if (Number.isFinite(v)) { s += v; n += 1; } }
       return n ? s / n : 1;
@@ -5872,10 +5894,24 @@
     // would destroy exactly the thing it exists to demonstrate.
     const RIBBON_OVERLAP = 0.15;     // PenFill's pitch = penWidth * (1 - overlap)
     const RIBBON_MAX_PATHS = 4096;   // a ceiling to NOTICE, never to silently apply
+    // `degenerate` is the TOTAL of the three refusal buckets below it — one
+    // number to assert on, three to debug with. Splitting them is not cosmetic:
+    // the 2026-08-29 inert-ribbon blocker was 100% `clipEmpty`, and a single
+    // lumped counter could not tell that from a genuinely sub-pen ribbon.
     const ribbonStat = {
       stretches: 0, wide: 0, narrow: 0, ribbons: 0, clipped: 0,
-      outlines: 0, fills: 0, degenerate: 0, noModule: 0, noRegion: 0, atMaxPaths: 0,
+      outlines: 0, fills: 0, degenerate: 0,
+      noRing: 0, clipEmpty: 0, erodeEmpty: 0,
+      // A ribbon that got an OUTLINE but no interior fill. Not a refusal — the
+      // outline ships and the stretch counts as a ribbon — but it IS the second
+      // erosion coming back empty, and an erosion returning empty in silence is
+      // exactly how the inert-ribbon blocker hid. Counted, never swallowed.
+      outlineOnly: 0,
+      noModule: 0, noRegion: 0, atMaxPaths: 0,
     };
+    // Refuse a wide stretch and say WHY. Every `centrePass` fallback on a wide
+    // stretch goes through here, so no refusal can be silent again.
+    const ribbonRefuse = (why) => { ribbonStat[why] += 1; ribbonStat.degenerate += 1; };
     let ribbonWarned = false;
 
     // ── EROSION, NOT MITER OFFSET ────────────────────────────────────────────
@@ -5959,8 +5995,20 @@
       const perSample = splitsAlongLine();
       const runW = clamp(finite(run.weightScale, meanW(wPts, 0, n - 1)), W_MIN, W_MAX);
       const half = new Array(n);
+      // `halfIn` is the DEFERRED path (see `deferRibbon` / `flushDeferredRibbons`):
+      // a chained run's width profile is already resolved in millimetres, one
+      // value per point, because it was assembled from several rulings that each
+      // had their own single width. Everything below is identical either way.
+      const halfIn = Array.isArray(run.__hw) ? run.__hw : null;
+      let lastHalf = penWidth / 2;
       for (let i = 0; i < n; i++) {
-        half[i] = penWidth * (perSample ? clamp(finite(wPts[i], 1), W_MIN, W_MAX) : runW) / 2;
+        if (halfIn) {
+          const h = Number(halfIn[i]);
+          if (Number.isFinite(h) && h > 0) lastHalf = h;
+          half[i] = lastHalf;
+        } else {
+          half[i] = penWidth * (perSample ? clamp(finite(wPts[i], 1), W_MIN, W_MAX) : runW) / 2;
+        }
       }
       const HALF_MIN = penWidth / 2;
       // "Genuinely wider than the pen". Below 1.1 x pen an outline plus a fill is
@@ -6006,7 +6054,7 @@
       merged.forEach((st) => {
         ribbonStat.stretches += 1;
         if (!st.wide || !haveModules) {
-          ribbonStat[st.wide ? 'degenerate' : 'narrow'] += 1;
+          if (st.wide) ribbonRefuse('noRing'); else ribbonStat.narrow += 1;
           outp.push(centrePass(st.a, st.b));
           return;
         }
@@ -6021,7 +6069,7 @@
           ring = RGm.buildRibbonRing(centre, hw, { cap: 'butt', joinLimit: 4, minHalfWidth: HALF_MIN });
         } catch (err) { ring = null; }
         if (!Array.isArray(ring) || ring.length < 3) {
-          ribbonStat.degenerate += 1; outp.push(centrePass(st.a, st.b)); return;
+          ribbonRefuse('noRing'); outp.push(centrePass(st.a, st.b)); return;
         }
         // ── THE CLIP. This is the step that kills D2. ─────────────────────────
         //
@@ -6047,7 +6095,7 @@
         const rings = Array.isArray(clipped)
           ? clipped.filter((r) => Array.isArray(r) && r.length >= 3) : [];
         ribbonStat.clipped += 1;
-        if (!rings.length) { ribbonStat.degenerate += 1; outp.push(centrePass(st.a, st.b)); return; }
+        if (!rings.length) { ribbonRefuse('clipEmpty'); outp.push(centrePass(st.a, st.b)); return; }
         const t0 = ttPts[st.a]; const t1 = ttPts[st.b];
         const z = run[st.a] ? run[st.a].z : undefined;
         let any = false;
@@ -6089,7 +6137,8 @@
             ribbonStat.fills += 1; any = true;
           });
         });
-        if (!any) { ribbonStat.degenerate += 1; outp.push(centrePass(st.a, st.b)); return; }
+        if (!any) { ribbonRefuse('erodeEmpty'); outp.push(centrePass(st.a, st.b)); return; }
+        if (!fillMP.length) ribbonStat.outlineOnly += 1;
         ribbonStat.ribbons += 1;
       });
 
@@ -6104,6 +6153,83 @@
         }
       }
       return outp.length ? outp : [centrePass(0, n - 1)];
+    };
+
+    // ── DEFERRED RIBBONIZATION — 'onePenDown' ONLY ────────────────────────────
+    //
+    // 'onePenDown' is a bucket-B ribbon law AND the one law whose entire claim
+    // is continuity: it bridges ruling to ruling IN THE CHART so a whole form
+    // comes off the plotter as a handful of pen-downs. Those two facts fight,
+    // because the bridge (`wvChainOn`, below) can only chain a ruling that
+    // emitted EXACTLY ONE path — and a ribbon emits an outline plus a fill.
+    // Ribbonizing at `emitRun` therefore silences the bridge on every ruling:
+    // measured 48 unchained rulings where the law's own fixture had 9 chains.
+    //
+    // So for this law the ribbon WAITS. `emitRun` ships the bare centreline
+    // (weightScale 1 — it is a real pen line, never a fat-pen claim) carrying
+    // its resolved half-width per point in `__hw`; the bridge chains those
+    // centrelines exactly as it always did, appending the joined ruling's own
+    // widths across the link; and `flushDeferredRibbons` ribbonizes the CHAINED
+    // run at the end. One ribbon per chain, filled by one continuous stroke —
+    // which is what "one pen down, at width" actually means.
+    const deferRibbon = () => TONE_ALGO === 'onePenDown';
+    const pendRibbon = (run, fam) => {
+      const w = clamp(finite(run.weightScale, 1), W_MIN, W_MAX);
+      const h = penWidth * w / 2;
+      run.fam = fam;
+      run.weightScale = 1;
+      run.__hw = new Array(run.length).fill(h);
+      return run;
+    };
+    // Extend a chained run's width profile across a bridge and on through the
+    // ruling being joined. Called by the `wvChainOn` bridge, which is the only
+    // stitcher that fires for this law. A ramp across the link rather than a
+    // step: the bridge is real ink on the form and a width discontinuity there
+    // is exactly the stairstep this whole effort removes.
+    const extendPend = (chainRun, bridgeLen, joinRun) => {
+      const hwA = chainRun && chainRun.__hw;
+      const hwB = joinRun && joinRun.__hw;
+      if (!Array.isArray(hwA) || !Array.isArray(hwB) || !hwB.length) return;
+      const from = hwA.length ? hwA[hwA.length - 1] : hwB[0];
+      const to = hwB[0];
+      for (let k = 1; k <= bridgeLen; k++) hwA.push(from + (to - from) * (k / (bridgeLen + 1)));
+      for (let i = 0; i < hwB.length; i++) hwA.push(hwB[i]);
+    };
+    // The end-of-build pass. Replaces every pending centreline in `out` with its
+    // ribbon, in place, preserving the `back` / `lineIndex` tags the emitters
+    // wrote. A run whose ribbon refuses stays exactly what it already is — a
+    // real single-pen centreline — and is counted in `ribbonStat` like any other
+    // refusal, so a silent degrade is still impossible.
+    const flushDeferredRibbons = () => {
+      if (!deferRibbon()) return;
+      for (let i = out.length - 1; i >= 0; i--) {
+        const pth = out[i];
+        if (!pth || !Array.isArray(pth.__hw) || pth.length < 2) continue;
+        const hw = pth.__hw;
+        // A stitcher may have appended points without widths (none does for this
+        // law today, but the seam join and the adjacent-pass stitch both exist
+        // one scope away). Hold the last known width rather than dropping ink.
+        while (hw.length < pth.length) hw.push(hw[hw.length - 1] || penWidth / 2);
+        hw.length = pth.length;
+        // A chained run spans many rulings, so its own tt0/tt1 (the FIRST
+        // ruling's) is the only parameter span there is; hand every point the
+        // interpolated value so the pieces keep a monotone span.
+        const t0 = finite(pth.tt0, 0); const t1 = finite(pth.tt1, 1);
+        const tt = new Array(pth.length);
+        for (let k = 0; k < pth.length; k++) {
+          tt[k] = pth.length > 1 ? t0 + (t1 - t0) * (k / (pth.length - 1)) : t0;
+        }
+        let pieces = null;
+        try { pieces = ribbonize(pth, null, tt, pth.fam, Boolean(pth.back)); } catch (err) { pieces = null; }
+        delete pth.__hw;
+        if (!Array.isArray(pieces) || !pieces.length) continue;
+        pieces.forEach((pc) => {
+          if (pth.back) pc.back = true;
+          if (pth.lineIndex != null) pc.lineIndex = pth.lineIndex;
+          if (pth.loz) pc.loz = true;
+        });
+        out.splice(i, 1, ...pieces);
+      }
     };
     // 'weightMultiPass' — the plotter-honest heavy line. Instead of asking for a
     // pen `w` times as wide, lay ROUND(w) real strokes of the actual pen, offset
@@ -6240,7 +6366,7 @@
           // gating on the split predicate would leave all three at a fat-pen
           // multiplier.
           const pieces = (isRibbonLaw() && wCnt > 0)
-            ? ribbonize(run, wPts, ttPts, fam, back)
+            ? (deferRibbon() ? [pendRibbon(run, fam)] : ribbonize(run, wPts, ttPts, fam, back))
             : ((splitsAlongLine() && wCnt > 0)
               ? splitByWeight(run, wPts, ttPts, fam)
               : [run]);
@@ -7879,6 +8005,7 @@
         if (run && p0 && p1 && wvChain && wvChain.fam === currentFam && wvChain.back === back) {
           const bridge = wvBridge(wvChain.par, p0, wantFront);
           if (bridge) {
+            extendPend(wvChain.run, bridge.length, run);
             bridge.forEach((q) => wvChain.run.push(q));
             for (let i = 0; i < run.length; i++) wvChain.run.push(run[i]);
             const at = out.indexOf(run);
@@ -9641,21 +9768,60 @@
       return true;
     };
 
+    // Total |signed area| of a traced region, mm2. The load-bearing number:
+    // ring COUNT cannot tell a real silhouette from a hairline walked out and
+    // back, and that is exactly the shape the seam bug produced (1 ring, area
+    // 0.014, on a form whose disc is ~6650).
+    const regionAreaOf = (rings) => {
+      let tot = 0;
+      (rings || []).forEach((r) => {
+        let a = 0;
+        for (let i = 0; i < r.length; i++) {
+          const p0 = r[i]; const p1 = r[(i + 1) % r.length];
+          a += p0.x * p1.y - p1.x * p0.y;
+        }
+        tot += Math.abs(a) / 2;
+      });
+      return Math.round(tot * 1000) / 1000;
+    };
     // Written for EVERY build, ribbon law or not — a zeroed report on a
     // non-ribbon law is itself the answer to "did this law widen anything?".
-    // `regionRings` is the load-bearing field: a ribbon may only ship CLIPPED,
-    // so 0 rings there means every stretch fell back to its centreline.
+    // `regionArea` is the load-bearing field: a ribbon may only ship CLIPPED,
+    // so a region that is 0 rings — or a hairline pretending to be a region —
+    // means every stretch fell back to its centreline.
     const publishRibbonStats = () => {
       lastRibbonStats = {
         algo: TONE_ALGO, ribbonLaw: isRibbonLaw(), penWidth,
         regionRings: (regionMemo.get('F') || []).length,
         regionRingsBack: (regionMemo.get('B') || []).length,
+        regionArea: regionAreaOf(regionMemo.get('F')),
+        regionAreaBack: regionAreaOf(regionMemo.get('B')),
         ...ribbonStat,
       };
+      // ── A WHOLESALE FALLBACK IS AN ALARM, NOT A DEGRADATION ────────────────
+      //
+      // One sub-pen stretch dropping to its centreline is the contract (C3 rule
+      // 5). EVERY wide stretch doing so means the ribbon pipeline is switched
+      // off and the layer is drawing bare hairlines — which is visually quiet,
+      // passes the weightScale invariant trivially, and hid a dead feature
+      // behind a green suite for a whole integration round. Say it out loud,
+      // once per build.
+      if (isRibbonLaw() && ribbonStat.wide > 0 && ribbonStat.ribbons === 0
+        && typeof console !== 'undefined' && console.warn) {
+        console.warn(`Vectura SurfaceFill: ribbon law "${TONE_ALGO}" built NO ribbons — `
+          + `all ${ribbonStat.wide} wide stretches fell back to bare centrelines `
+          + `(noRing ${ribbonStat.noRing}, clipEmpty ${ribbonStat.clipEmpty}, `
+          + `erodeEmpty ${ribbonStat.erodeEmpty}, regionRings ${lastRibbonStats.regionRings}, `
+          + `regionArea ${lastRibbonStats.regionArea}). The variable-width feature is INERT.`);
+      }
     };
-    if (!runMapper(N, false)) { publishRibbonStats(); return null; } // front surface (unchanged when no x-ray)
+    if (!runMapper(N, false)) { flushDeferredRibbons(); publishRibbonStats(); return null; } // front surface (unchanged when no x-ray)
     // X-ray back surface: sparser (count × backDensity) far-side family, tagged.
     if (xray) runMapper(Math.max(2, Math.round(N * backDensity)), true);
+    // Every chain is closed by now, so the deferred ribbons can be built — and
+    // they must be built BEFORE the report, or the report describes a build that
+    // has not happened yet.
+    flushDeferredRibbons();
     publishRibbonStats();
     // WHERE THE PLOT FLOOR BOUND, published for the comparison harness. Written
     // only in uncapped mode, so the committed build never allocates or exposes
