@@ -6,6 +6,43 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added
+- **Pen-width stroke fill for the 3D scene's variable-width tone laws (integration of six work
+  units: ribbon geometry, pen fill, emission swap, UI control, expand fidelity, voronoi web).**
+  A variable-width tone law used to ask the renderer for a fatter pen — `meta.weightScale` up to
+  6x — which a plotter cannot draw and which every downstream consumer had to reconstruct
+  differently. The twelve RIBBON laws (`nibAngle`, `taperedEnds`, `weightModulated`,
+  `isophoteWidth`, `whiteBand`, `weightSmoothstep`, `ampSpacing`, `weaveDepth`, `interlockWeave`,
+  `trochoidLoop`, `amplitudeOnly`, `onePenDown`) now build the stroke's true variable-width
+  OUTLINE from a continuous width profile (`src/core/scene3d/ribbon-geometry.js`), clip it exactly
+  against the visible-form region so no ink can escape the silhouette, stroke that outline with the
+  REAL pen, and fill the interior at a pitch DERIVED from the pen width
+  (`src/core/pen-fill.js`). The six THREE-PEN laws (`penInterleave`, `penStipple`, `penReserve`,
+  `penCross`, `penPitchMatch`, `penFacing`) are deliberately EXEMPT and keep their genuinely
+  different nibs — that is the whole thing they exist to demonstrate.
+- **`strokeFillStyle` layer param and UI control** — `spiral` (default) / `concentric` /
+  `serpentine` / `contourParallel`, selecting how a ribbon's interior is filled once its outline is
+  drawn. Exposed on the scene3d context bar and the Style tab; a LAYER param
+  (`ALGO_DEFAULTS.scene3d.strokeFillStyle`), not a style-cascade param, and inert under every
+  non-ribbon law.
+- **`voronoiWeb` tone law reworked** into a continuous, unbroken web whose cell openings scale with
+  tone — smaller in shadow, larger in the highlight (`src/core/scene3d/surface-fill-mono.js`).
+
+### Known issues
+- **The ribbon pipeline is currently INERT in the running app: every ribbon falls back to its
+  centreline.** Measured on the reference sphere via `SurfaceFill.lastRibbonStats`, all twelve
+  ribbon laws report `wide > 0`, `clipped == wide`, and then `outlines: 0, fills: 0,
+  ribbons: 0, degenerate == wide`. The ribbon ring is built and clipped, but the erosion step
+  (`erode` -> `GeometryUtils.insetMultiPolygon`) returns empty, so `any` stays false and every
+  stretch emits `centrePass`. Root cause located: the visible-form region handed to the clip is
+  degenerate — its rings measure an area of about -0.01 against ribbon rings of area ~85 — so the
+  exact intersection yields zero-area 4-point rings. Consequences: `PenFill.fillRegion` is never
+  invoked, so `strokeFillStyle` has no observable effect (all four styles render byte-identical
+  output); the "every ribbon path is at weightScale 1" invariant passes for the WRONG REASON (there
+  are no ribbons, only centrelines); and `tests/unit/scene3d-one-pen-down-reachability.test.js`
+  fails because the fallback fragments `onePenDown` into 64 paths where it claims fewer than 36.
+  Do not treat the absence of stairstepping as proof the feature works.
+
 ### Fixed
 - **"Expand into group" now reproduces a 3D scene fill exactly, instead of growing blobby bands
   past the silhouette.** A scene-fill path carries its width as `meta.weightScale`, and expand

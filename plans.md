@@ -22,6 +22,37 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
+- **BLOCKER — 3D Scene pen-width stroke fill: the ribbon pipeline is inert; every ribbon draws its
+  centreline.** Branch `sf/integration` merges the six work units (W1 ribbon geometry, W2 pen fill,
+  W3 emission swap, W4 `strokeFillStyle` UI, W5 expand fidelity, W6 voronoi web). The plumbing is
+  all present and the merge was clean, but nothing downstream of the clip survives. Measured in the
+  running app on the reference sphere (`SurfaceFill.lastRibbonStats`), all twelve ribbon laws:
+  `wide > 0`, `clipped == wide`, `outlines: 0`, `fills: 0`, `ribbons: 0`, `degenerate == wide`.
+  - **Root cause to fix first:** the visible-form region passed to `RibbonGeometry.clipRingToRegion`
+    is degenerate. Its rings measure area ~-0.01 while the ribbon rings measure ~85, so the exact
+    intersection returns zero-area 4-point rings and `erode`
+    (`GeometryUtils.insetMultiPolygon`) then returns empty for both the outline and the fill.
+    With `any` false, `surface-fill.js` emits `centrePass` for every stretch.
+  - **Follow-on symptoms, all explained by the same cause — do not chase separately:**
+    `PenFill.fillRegion` is never invoked (W2's module is dead code in the shipped path);
+    `strokeFillStyle` produces byte-identical output for all four styles, so W4's control is
+    unobservable; the `[FillBoolean] polygon union failed on degenerate geometry` warns originate
+    in `erode` → `insetMultiPolygon` → `strokeRingsToBand`, NOT in the ribbon module's retry
+    ladder, and are real failures rather than benign retries;
+    `tests/unit/scene3d-one-pen-down-reachability.test.js` fails (64 paths vs "fewer than 36")
+    because the centreline fallback fragments the chained run.
+  - **Test-coverage gap that let this through:** the weightScale invariant test (`T4`) asserts every
+    emitted fill path is at `weightScale 1`. Pure centrelines satisfy that trivially, so the suite
+    is green while the feature does nothing. Any fix must add a test that asserts
+    `lastRibbonStats.ribbons > 0` and `outlines > 0` for a ribbon law, and that two
+    `strokeFillStyle` values produce DIFFERENT ink.
+  - **Performance, measured on the integrated branch** (reference sphere, orthographic, tone on):
+    flat laws (`plainHatch`, `fineLadder`) 63 ms; `taperedEnds` 1.5 s; `ampSpacing` 7.4 s;
+    `weaveDepth` 8.6 s; three-pen `penCross` 107 ms. The ribbon laws pay for building and clipping
+    ~40–115 ribbons per frame and then discard all of it. Re-measure after the clip is fixed before
+    optimizing — the cost profile will change, and the coverage guarantee must not be traded away.
+  - Evidence (real app, Playwright): `docs/integration-evidence/`.
+
 - **3D Scene: pick a tone algorithm — round 2, ten laws, no line budget.** Jay: "do these again
   but with no limit on the number of lines you may use — focus on nailing the lighting." A
   `TONE_UNCAPPED` mode (comparison only; committed `false`) lifts `MASTER_MAX_LINES` 420 → 4000,
