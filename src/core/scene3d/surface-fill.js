@@ -264,6 +264,13 @@
   const maxLines = () => (TONE_UNCAPPED ? UNCAPPED_MAX_LINES : MASTER_MAX_LINES);
   // The last uncapped build's floor report. `null` in the committed build.
   let lastFloorStats = null;
+  // The last build's RIBBON report (see `ribbonize`). Unlike `lastFloorStats`
+  // this is always written, because it is the only way to tell the three ways a
+  // ribbon law can look identical from outside and be completely different
+  // inside: a real clipped ribbon, an unclipped one (defect D2 back), and a
+  // silent degrade to centrelines because a module was missing. Cheap — one
+  // small object per build — and read by the T2/T4 tests.
+  let lastRibbonStats = null;
   // RULING CONTINUITY (see emitLine). The scale at which a break stops reading
   // as a break and starts reading as a wobble in one line, and at which a mark
   // stops reading as a stroke and starts reading as a speck. Stated in pen
@@ -5264,24 +5271,6 @@
       return rings;
     };
 
-    // Even-odd point test over the whole region (rings carry no orientation
-    // contract). Used only to SKIP the boolean clip for a ribbon that is wholly
-    // interior, which is most of them — the clip itself is W1's `clipRingToRegion`.
-    const pointInRegion = (pt, rings) => {
-      let inside = false;
-      for (let r = 0; r < rings.length; r++) {
-        const ring = rings[r];
-        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-          const yi = ring[i].y; const yj = ring[j].y;
-          if ((yi > pt.y) !== (yj > pt.y)) {
-            const xAt = ring[i].x + ((pt.y - yi) / (yj - yi)) * (ring[j].x - ring[i].x);
-            if (pt.x < xAt) inside = !inside;
-          }
-        }
-      }
-      return inside;
-    };
-
     // ── ROUND 6 — THE MARK EMITTER ────────────────────────────────────────────
     //
     // One call per ruling. It replaces the ruling outright: a mark law emits
@@ -5885,27 +5874,51 @@
     const RIBBON_MAX_PATHS = 4096;   // a ceiling to NOTICE, never to silently apply
     const ribbonStat = {
       stretches: 0, wide: 0, narrow: 0, ribbons: 0, clipped: 0,
-      outlines: 0, fills: 0, degenerate: 0, noModule: 0, atMaxPaths: 0,
+      outlines: 0, fills: 0, degenerate: 0, noModule: 0, noRegion: 0, atMaxPaths: 0,
     };
     let ribbonWarned = false;
 
-    // Wound counter-clockwise, so a NEGATIVE miter delta insets.
-    const ccw = (ring) => {
-      let s = 0;
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        s += (ring[j].x * ring[i].y) - (ring[i].x * ring[j].y);
-      }
-      return s >= 0 ? ring : ring.slice().reverse();
-    };
-    // A closed ring inset by `d` mm, as an open point list (first !== last).
-    const insetRing = (ring, d) => {
+    // ── EROSION, NOT MITER OFFSET ────────────────────────────────────────────
+    //
+    // MEASURED, and the reason this is not `miterOffsetClosedRing`: an inward
+    // MITER offset of a clipped ribbon SPIKES OUTWARD at every reflex vertex —
+    // and a clipped ribbon is full of reflex vertices, because the clip is what
+    // put them there. On the sphere fixture the miter version put 28 taperedEnds
+    // vertices and 36 weightSmoothstep vertices OUTSIDE the silhouette, up to
+    // 0.27 mm past it, with the clip itself working perfectly. That is defect D2
+    // reintroduced one step AFTER the step that exists to prevent it.
+    //
+    // `insetMultiPolygon` is the primitive that is immune: it SUBTRACTS a band
+    // of width 2·inset from the region instead of offsetting its boundary, so
+    // the result is a subset of its input by construction, and it splits or
+    // vanishes correctly where the ribbon is thinner than 2·inset. Its own
+    // header block documents exactly this failure mode ("makes the offset curve
+    // self-cross wildly … fabricates phantom lobes"). Chaining is documented as
+    // sound, so the fill's deeper inset is taken from the outline's result.
+    //
+    // Returns a normalized multipolygon — [[shell, hole, …], …], points as
+    // [x, y] pairs — or [] when the erosion consumed the ribbon.
+    const erode = (mp, d) => {
       const GU = Vectura.GeometryUtils;
-      if (!GU || typeof GU.miterOffsetClosedRing !== 'function') return null;
-      const res = GU.miterOffsetClosedRing(ccw(ring), -Math.abs(d), { miterLimit: 4 });
-      if (!Array.isArray(res) || res.length < 4) return null;
-      const pts = res.slice();
-      const f = pts[0]; const l = pts[pts.length - 1];
-      if (Math.abs(f.x - l.x) < 1e-9 && Math.abs(f.y - l.y) < 1e-9) pts.pop();
+      if (!GU || typeof GU.insetMultiPolygon !== 'function') return [];
+      try {
+        const res = GU.insetMultiPolygon(mp, Math.abs(d), { minArea: 0 });
+        return Array.isArray(res) ? res : [];
+      } catch (err) { return []; }
+    };
+    // One multipolygon ring -> the {x,y} list the rest of this file speaks.
+    const ringPts = (r) => {
+      const pts = [];
+      for (let i = 0; i < r.length; i++) {
+        const q = r[i];
+        const x = Array.isArray(q) ? q[0] : q.x;
+        const y = Array.isArray(q) ? q[1] : q.y;
+        if (Number.isFinite(x) && Number.isFinite(y)) pts.push({ x, y });
+      }
+      if (pts.length >= 2) {
+        const f = pts[0]; const l = pts[pts.length - 1];
+        if (Math.abs(f.x - l.x) < 1e-9 && Math.abs(f.y - l.y) < 1e-9) pts.pop();
+      }
       return pts.length >= 3 ? pts : null;
     };
     const closePath = (ring, z) => {
@@ -6010,43 +6023,62 @@
         if (!Array.isArray(ring) || ring.length < 3) {
           ribbonStat.degenerate += 1; outp.push(centrePass(st.a, st.b)); return;
         }
-        // ── THE CLIP. This is the step that kills D2. ───────────────────────────
-        // Skipped only when EVERY ring vertex is already interior — a pure
-        // saving, not a relaxation: a ribbon wholly inside the region is
-        // unchanged by clipping it.
-        let rings = [ring];
-        if (region.length && typeof RGm.clipRingToRegion === 'function') {
-          let anyOut = false;
-          for (let i = 0; i < ring.length; i++) {
-            if (!pointInRegion(ring[i], region)) { anyOut = true; break; }
-          }
-          if (anyOut) {
-            let clipped = null;
-            try { clipped = RGm.clipRingToRegion(ring, region); } catch (err) { clipped = null; }
-            rings = Array.isArray(clipped)
-              ? clipped.filter((r) => Array.isArray(r) && r.length >= 3) : [];
-            ribbonStat.clipped += 1;
-          }
+        // ── THE CLIP. This is the step that kills D2. ─────────────────────────
+        //
+        // NO REGION, NO RIBBON. A ribbon is the one construction in this file
+        // that puts ink where no sample was ever proved to be, so it may ship
+        // only after it has been cut against the front test's own boundary. If
+        // the region is unavailable the honest output is the CENTRELINE — every
+        // point of which WAS proved on-surface — never an unclipped ribbon,
+        // which is defect D2 restored in full. W1 made the same call inside
+        // `clipRingToRegion` (no boolean library ⇒ return [], not the ring).
+        //
+        // The clip is UNCONDITIONAL. An earlier version skipped it when every
+        // ring VERTEX tested interior; that is only sound on a convex region,
+        // because a segment between two interior vertices of a CONCAVE region
+        // can still leave it — and "approximate clip" is precisely what the
+        // plan forbids. The boolean is needed for the erosion below anyway, so
+        // the saving was never worth the hole.
+        if (!region.length || typeof RGm.clipRingToRegion !== 'function') {
+          ribbonStat.noRegion += 1; outp.push(centrePass(st.a, st.b)); return;
         }
+        let clipped = null;
+        try { clipped = RGm.clipRingToRegion(ring, region); } catch (err) { clipped = null; }
+        const rings = Array.isArray(clipped)
+          ? clipped.filter((r) => Array.isArray(r) && r.length >= 3) : [];
+        ribbonStat.clipped += 1;
         if (!rings.length) { ribbonStat.degenerate += 1; outp.push(centrePass(st.a, st.b)); return; }
         const t0 = ttPts[st.a]; const t1 = ttPts[st.b];
         const z = run[st.a] ? run[st.a].z : undefined;
         let any = false;
-        rings.forEach((rg) => {
-          // OUTLINE — the ring inset by HALF a pen, so a real pen stroking it
-          // lands its OUTER edge exactly on the ribbon boundary.
-          const outline = insetRing(rg, penWidth / 2);
-          if (outline) {
-            outp.push(tag(closePath(outline, z), t0, t1));
+        // The clip returns shells and holes in ONE flat array with opposite
+        // winding (W1's contract). `insetMultiPolygon` wants a multipolygon and
+        // resolves the nesting itself, so hand it every ring at once rather than
+        // sorting shells from holes here — a shell inside a hole would be lost
+        // by any hand-rolled pairing, and the boolean already knows the answer.
+        const clippedMP = [rings.map((r) => r.map((q) => [q.x, q.y]))];
+        // OUTLINE — the ribbon eroded by HALF a pen, so a real pen stroking it
+        // lands its OUTER edge exactly on the ribbon boundary.
+        const outlineMP = erode(clippedMP, penWidth / 2);
+        // FILL — half a pen deeper again (the outline already inks the first pen
+        // width in from the edge), pitched at penWidth * (1 - overlap). Chained
+        // off the outline because erode(R, a+b) === erode(erode(R, a), b) and
+        // two shallow cuts are much cheaper than one deep one.
+        const fillMP = outlineMP.length ? erode(outlineMP, penWidth / 2) : [];
+        outlineMP.forEach((poly) => {
+          poly.forEach((r) => {
+            const pts = ringPts(r);
+            if (!pts) return;
+            outp.push(tag(closePath(pts, z), t0, t1));
             ribbonStat.outlines += 1; any = true;
-          }
-          // FILL — the ring inset by a WHOLE pen (the outline already covers the
-          // first pen width in from the edge), pitched at penWidth * (1 - overlap).
-          const inner = insetRing(rg, penWidth);
-          if (!inner) return;
+          });
+        });
+        fillMP.forEach((poly) => {
+          const regionRings = poly.map(ringPts).filter(Boolean);
+          if (!regionRings.length) return;
           let res = null;
           try {
-            res = PFm.fillRegion([inner], penWidth, STROKE_FILL_STYLE,
+            res = PFm.fillRegion(regionRings, penWidth, STROKE_FILL_STYLE,
               { overlap: RIBBON_OVERLAP, axis: null, maxPaths: RIBBON_MAX_PATHS });
           } catch (err) { res = null; }
           const paths = (res && Array.isArray(res.paths)) ? res.paths : [];
@@ -9609,9 +9641,22 @@
       return true;
     };
 
-    if (!runMapper(N, false)) return null; // front surface (unchanged when no x-ray)
+    // Written for EVERY build, ribbon law or not — a zeroed report on a
+    // non-ribbon law is itself the answer to "did this law widen anything?".
+    // `regionRings` is the load-bearing field: a ribbon may only ship CLIPPED,
+    // so 0 rings there means every stretch fell back to its centreline.
+    const publishRibbonStats = () => {
+      lastRibbonStats = {
+        algo: TONE_ALGO, ribbonLaw: isRibbonLaw(), penWidth,
+        regionRings: (regionMemo.get('F') || []).length,
+        regionRingsBack: (regionMemo.get('B') || []).length,
+        ...ribbonStat,
+      };
+    };
+    if (!runMapper(N, false)) { publishRibbonStats(); return null; } // front surface (unchanged when no x-ray)
     // X-ray back surface: sparser (count × backDensity) far-side family, tagged.
     if (xray) runMapper(Math.max(2, Math.round(N * backDensity)), true);
+    publishRibbonStats();
     // WHERE THE PLOT FLOOR BOUND, published for the comparison harness. Written
     // only in uncapped mode, so the committed build never allocates or exposes
     // it — `lastFloorStats` stays null and nothing downstream can read a number
@@ -9831,6 +9876,11 @@
         // Bucket B, for the UI's enable/disable decision and for tests. A copy.
         get ribbonLaws() { return Object.keys(RIBBON_LAWS); },
         get lastFloorStats() { return lastFloorStats; },
+        // The last build's ribbon report — see `lastRibbonStats`. The only way
+        // to distinguish a CLIPPED ribbon from an unclipped one or from a
+        // silent degrade to centrelines, all three of which look alike from
+        // outside. Read by the T2/T4 tests.
+        get lastRibbonStats() { return lastRibbonStats; },
         // Unchanged reading: the committed default, byte-identical to the
         // pre-refactor module constant. `scene3d-tone-algo-default.test.js`
         // pins this and must stay green unmodified.

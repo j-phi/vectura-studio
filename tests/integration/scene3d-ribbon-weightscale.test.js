@@ -188,9 +188,15 @@ describe('C4 — strokeFillStyle threading and the path-count budget', () => {
   // ring of the right size; the real miter-bisector construction is W1's).
   // fillRegion: honours the ONE-PATH-PER-COMPONENT rule for spiral/serpentine
   // and the many-rings behaviour for concentric/contourParallel.
-  const installStandIns = () => {
+  // Saved so the stand-ins can be UNINSTALLED rather than deleted: once W1 and
+  // W2 are merged the real modules live on these same two keys, and a `delete`
+  // would strip them for every test that runs after this one in this runtime.
+  let realRG; let realPF; let saved = false;
+  const installStandIns = (log) => {
+    if (!saved) { realRG = V.RibbonGeometry; realPF = V.PenFill; saved = true; }
     V.RibbonGeometry = {
       buildRibbonRing(centerline, halfWidths) {
+        if (log) log.push({ n: centerline ? centerline.length : 0, halfWidths: (halfWidths || []).slice() });
         if (!Array.isArray(centerline) || centerline.length < 2) return null;
         const nrm = (i) => {
           const p0 = centerline[Math.max(0, i - 1)];
@@ -229,32 +235,134 @@ describe('C4 — strokeFillStyle threading and the path-count budget', () => {
       },
     };
   };
-  const removeStandIns = () => { delete V.RibbonGeometry; delete V.PenFill; };
+  const removeStandIns = () => {
+    if (realRG) V.RibbonGeometry = realRG; else delete V.RibbonGeometry;
+    if (realPF) V.PenFill = realPF; else delete V.PenFill;
+  };
 
-  test('through the REAL ribbon path, taperedEnds still emits only weightScale-1 paths', () => {
+  /*
+   * AMENDMENT A1 — CONSTANT-WIDTH RIBBON LAWS MUST BE RIBBONIZED TOO.
+   *
+   * The plan's contract C3 hooked `ribbonize` at the `splitByWeight` call site,
+   * which is gated by `splitsAlongLine() && wCnt > 0`. Three of the twelve
+   * ribbon laws — 'weightModulated', 'weightSmoothstep' and 'onePenDown' — are
+   * DELIBERATELY absent from `splitsAlongLine()`: their width is one number for
+   * the whole run. Under the original gate they never reached `ribbonize` at
+   * all, kept a constant `weightScale > 1`, and therefore kept the fat-pen
+   * claim: still one wide round-capped stroke, still protruding at the limb.
+   *
+   * The bucket-B weightScale assertion above CANNOT catch that on its own —
+   * without the C1/C2 modules every law degrades to a weightScale-1 centreline
+   * and the test passes green for the wrong reason. So this case asserts the
+   * MECHANISM: that `buildRibbonRing` is actually reached for a constant-width
+   * law, and that it is handed a FLAT half-width array (A1's "synthesize the
+   * flat halfWidths rather than adding a second construction"), while a
+   * varying-width law is handed a varying one through the same code path.
+   *
+   * RGR: gate `ribbonize` on `splitsAlongLine()` instead of `isRibbonLaw()` and
+   * the weightSmoothstep half of this test fails with zero calls recorded.
+   */
+  test('A1 — a constant-width ribbon law is ribbonized too, from a FLAT width profile', () => {
+    const varying = [];
+    const constant = [];
+    const spread = (a) => Math.max(...a) - Math.min(...a);
+
+    installStandIns(varying);
+    try { fills({ toneLaw: 'taperedEnds', strokeFillStyle: 'spiral' }); } finally { removeStandIns(); }
+    installStandIns(constant);
+    try { fills({ toneLaw: 'weightSmoothstep', strokeFillStyle: 'spiral' }); } finally { removeStandIns(); }
+
+    // Both laws must actually BUILD ribbons — not silently skip.
+    expect({ varying: varying.length > 0, constant: constant.length > 0 })
+      .toEqual({ varying: true, constant: true });
+    // 'weightSmoothstep' has ONE width per run, so every station of a stretch
+    // gets the same half-width. Exactly flat, not merely nearly so.
+    constant.forEach((call) => {
+      expect(call.halfWidths.length).toBe(call.n);
+      expect(spread(call.halfWidths)).toBe(0);
+    });
+    // 'taperedEnds' varies along the ruling, so at least one stretch must not
+    // be flat — otherwise the "same code path, two ways of filling the width
+    // array" claim would be vacuous.
+    expect(varying.some((call) => spread(call.halfWidths) > 0)).toBe(true);
+  });
+
+  /*
+   * THE CLIP IS UNCONDITIONAL, AND IT IS THE FRONT TEST'S OWN BOUNDARY.
+   *
+   * A ribbon is the only construction in surface-fill.js that puts ink where no
+   * sample was proved to be, so it may ship only after being cut against the
+   * visible region. Three failure modes look identical from outside — a clipped
+   * ribbon, an unclipped one, and a degrade to centrelines — so the assertion
+   * is on `lastRibbonStats`, which is the only place they differ.
+   */
+  test('every ribbon built is clipped, against a non-empty traced region', () => {
+    installStandIns();
+    let stats = null;
+    try {
+      fills({ toneLaw: 'taperedEnds', strokeFillStyle: 'spiral' });
+      stats = SurfaceFill.lastRibbonStats;
+    } finally { removeStandIns(); }
+    expect(stats.algo).toBe('taperedEnds');
+    expect(stats.ribbonLaw).toBe(true);
+    // The region was traced and is non-degenerate.
+    expect(stats.regionRings).toBeGreaterThan(0);
+    // Not one ribbon shipped without a region, and every wide stretch was clipped.
+    expect({ noRegion: stats.noRegion, clipped: stats.clipped, wide: stats.wide })
+      .toEqual({ noRegion: 0, clipped: stats.wide, wide: stats.wide });
+    expect(stats.wide).toBeGreaterThan(0);
+    // The budget ceiling is a thing to NOTICE, never something to apply silently.
+    expect(stats.atMaxPaths).toBe(0);
+  });
+
+  // The bucket-B sweep in the first describe runs with NO C1/C2 modules, where
+  // every law degrades to a weightScale-1 centreline — green for the wrong
+  // reason. Repeat it through the REAL ribbon path, where a law that failed to
+  // be routed would still be carrying its multiplier.
+  test.each(BUCKET_B)('through the REAL ribbon path, "%s" emits only weightScale-1 paths', (law) => {
     installStandIns();
     try {
-      const paths = fills({ toneLaw: 'taperedEnds', strokeFillStyle: 'spiral' });
+      const paths = fills({ toneLaw: law, strokeFillStyle: 'spiral' });
       expect(paths.length).toBeGreaterThan(0);
-      expect(paths.filter((pp) => effWeight(pp) !== 1)).toEqual([]);
+      const offenders = paths.filter((pp) => effWeight(pp) !== 1).map(effWeight);
+      expect({ law, offenders: offenders.slice(0, 8), count: offenders.length })
+        .toEqual({ law, offenders: [], count: 0 });
+      // …and it really went through `ribbonize`, rather than never reaching it.
+      const stats = SurfaceFill.lastRibbonStats;
+      expect({ law, ribbonLaw: stats.ribbonLaw, built: stats.wide > 0 })
+        .toEqual({ law, ribbonLaw: true, built: true });
     } finally { removeStandIns(); }
   });
 
   // The path count is a first-class requirement, not an efficiency footnote:
   // the reference scene already emits ~1075 lines and the fill may not multiply
   // that. MEASURED on this fixture (sphere r40, detail 20, hatch, density 60,
-  // pen 0.3), by disabling `isRibbonLaw()` and re-running:
+  // pen 0.3) against the REAL W1/W2 modules, with the before column taken by
+  // forcing `isRibbonLaw()` false and re-running. sceneFill paths:
   //
-  //   splitByWeight (before the swap) ....... 259 sceneFill paths
-  //   ribbonize, no C1/C2 modules ...........  69   (degrades to centrelines)
-  //   ribbonize + spiral .................... 88
-  //   ribbonize + concentric ................ 126
+  //   law                 splitByWeight   ribbon+spiral   ribbon+concentric
+  //   nibAngle                      252              96                 176
+  //   taperedEnds                   259              91                 168
+  //   weightModulated                22              30                  39
+  //   isophoteWidth                 211              89                 143
+  //   whiteBand                     263              92                 172
+  //   weightSmoothstep               22              30                  36
+  //   ampSpacing                   2226             208                 506
+  //   weaveDepth                   2266             139                 369
+  //   interlockWeave               1011             109                 398
+  //   trochoidLoop                 1171             240                 459
+  //   amplitudeOnly                1245             175                 475
+  //   onePenDown                      9              32                 269
   //
-  // Spiral BEATS the split it replaces because splitByWeight cut one ruling
-  // into ~4 quantized capsules where a ribbon is 1 outline + 1 continuous
-  // spiral. The ceiling below is a regression guard on that: it is far above
-  // the measured 88 and far below the 259 the old path produced, so it fails
-  // only if a fill style stops being one stroke per region.
+  // Spiral BEATS the split it replaces on nine of the twelve, because
+  // `splitByWeight` cut one ruling into ~4 quantized capsules where a ribbon is
+  // 1 outline + 1 continuous spiral. The three that RISE are exactly the
+  // constant-width laws of amendment A1 — they never split before, so their
+  // "before" number is a handful of fat strokes rather than a ribbon at all.
+  // The ceiling below is a regression guard, far above the measured spiral
+  // counts and far below what the old path produced: it fails only if a fill
+  // style stops being one stroke per region. (The test below measures
+  // `taperedEnds`, whose spiral count is 91 real / ~88 through the stand-ins.)
   const SPIRAL_PATH_CEILING = 200;
 
   test('PATH-COUNT BUDGET — spiral does not multiply the emitted path count', () => {
