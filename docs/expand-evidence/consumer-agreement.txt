@@ -1,0 +1,18 @@
+AGREE {
+  "svgBytes": 48154,
+  "exportItems": 227,
+  "expectedOverrides": 202,
+  "actualOverrides": 202,
+  "widthsAgree": true,
+  "expectedCapOverrides": 227,
+  "actualCapOverrides": 227,
+  "capsAgree": true,
+  "pathsCarryingStrokeCapMeta": 0,
+  "serializeRoundTrip": {
+    "pixels": 928720,
+    "differing": 0,
+    "maxDelta": 0
+  }
+}
+--- console ---
+

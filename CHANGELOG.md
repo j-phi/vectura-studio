@@ -7,6 +7,22 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Fixed
+- **"Expand into group" now reproduces a 3D scene fill exactly, instead of growing blobby bands
+  past the silhouette.** A scene-fill path carries its width as `meta.weightScale`, and expand
+  realized any value > 1 as N parallel offset copies of the centerline
+  (`GeometryUtils.thickenPathsUniform`). On a sphere that is wrong twice: parallel copies of a curve
+  near the limb sit OUTSIDE the form, and the pass count is a discrete `ceil()`, so a smooth width
+  ramp became a staircase of thick bands with stepped ends. A scene fill's weight is not a claim on
+  a pen that cannot grow — it names WHICH REAL PEN draws the line (the three-pen tone laws snap
+  every run to an actual nib) — so expand now passes it through untouched, one child per path.
+  Silhouette/crease EMPHASIS (`kind: 'sceneEdge'`, spiralizer `outlineWeight`) is the opposite case
+  and keeps its multi-pass realization. The four consumers that answer "how wide, and with what cap,
+  is this ONE path drawn?" — canvas render, export preview, emitted SVG, expand — had three
+  hand-copied clamp expressions between them and no cap channel at all; they now share
+  `Renderer.resolvePathWeightScale` / `Renderer.resolvePathLineCap`, and a per-path `meta.strokeCap`
+  override (used by the pen-width ribbon geometry to end flush on the clipped form) reaches all
+  four. RGR proof: `tests/integration/expand-render-fidelity.test.js` and
+  `tests/integration/renderer-per-path-cap.test.js` (both new).
 - **3D Scene — the layered (zone-anatomy) cast shadow no longer mottles into stubs at Layers 4.**
   Owner report: a sphere resting on the ground under the default scene (Sun az135/el45, Additive,
   Layers 4, angle 45, Density 50, pen 0.3) read as broken, scattered marks near the caster instead

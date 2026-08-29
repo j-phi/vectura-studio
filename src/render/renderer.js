@@ -5126,6 +5126,11 @@
               this.ctx.lineWidth = currentStrokeWidth;
               this.ctx.strokeStyle = currentStrokeStyle;
               this._applyLayerStrokeCtx(l);
+              // Same restatement the weight/dash branch needs below:
+              // _applyLayerStrokeCtx resets the cap to the LAYER's, so the batch
+              // cap has to be re-stated or the next batched path silently
+              // reverts to the layer cap mid-run.
+              this.ctx.lineCap = CANVAS_CAP[currentLineCap] || currentLineCap || 'round';
               return;
             }
             const dash = this.getPathStrokeDash(path);
