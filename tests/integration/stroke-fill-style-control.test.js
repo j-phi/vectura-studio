@@ -317,6 +317,15 @@ describe('Stroke Fill Style — docked 3D Scene panel', () => {
     expect(r.getAttribute('title')).toBe(S.PEN_DISABLED_NOTE);
   });
 
+  test('a greyed row refuses to write even if the <select> is driven directly', () => {
+    // `disabled` stops a USER; it does not stop a programmatic change event.
+    const { container, layer } = openStyle(BUCKET_A);
+    const sel = row(container, 'Stroke Fill').querySelector('select');
+    sel.value = 'serpentine';
+    fire(sel, 'change');
+    expect(layer.params.strokeFillStyle).toBeUndefined();
+  });
+
   test('the row count does not change between an enabled and a disabled Fill Style', () => {
     // The whole point of disabling rather than hiding: no layout jump.
     expect(rowLabels(openStyle(BUCKET_B).container).length)
@@ -347,5 +356,143 @@ describe('Stroke Fill Style — the defaults.js contract (C4)', () => {
   test('a freshly added scene3d layer carries it', () => {
     const layer = new window.Vectura.Layer('sf-new', 'scene3d', 'Scene');
     expect(layer.params.strokeFillStyle).toBe('spiral');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// 5. Surface A (the one a user actually reaches) — the CONTEXTUAL bar's
+//    Style flyout, where Fill Style lives.
+// ══════════════════════════════════════════════════════════════════════════
+// The Stroke Options popover in §2 is the STR-2 panel; its only entry point is
+// the stroke-weight sub-mode's "…" overflow, and that sub-mode has no live
+// caller any more (context-bar.js: "Stroke weight is now a per-pen property —
+// the standalone per-layer stroke-weight sub-mode was removed here"). For a 3D
+// object the CONTEXTUAL surface is the Style ▾ pill — the flyout that carries
+// Type / Fill Style / Pen / Angle / Density. Stroke Fill belongs directly
+// beneath Fill Style there, exactly as it does in the docked panel.
+//
+// `strokeFillStyle` is a LAYER param (contract C4), not a style-cascade param:
+// a scene-TREE object is its own object3d child layer and owns its own copy,
+// so the write must land on THAT layer, not on styleTable.
+
+describe('Stroke Fill Style — contextual bar Style flyout', () => {
+  const FULL_STACK = {
+    includeRenderer: true, includeUi: true, includeApp: true, includeMain: false, useIndexHtml: true,
+  };
+  const nextFrames = (ms = 80) => new Promise((r) => setTimeout(r, ms));
+  let runtime, window, document, app, CB;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    ({ window, document } = runtime);
+    window.app = new window.Vectura.App();
+    app = window.app;
+    app.maxHistory = 100000;
+    CB = window.Vectura.UI.ContextBar;
+    await nextFrames();
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  const host = () => CB.getContentHost();
+  const pillByLabel = (t) => Array.from(host().querySelectorAll('.ctxbar-scene-field'))
+    .find((f) => f.getAttribute('aria-label') === t);
+  const openFly = () => document.querySelector('.ctxbar-scene-flyout.is-open');
+  const flyRows = (fly) => Array.from(fly.querySelectorAll('.ctxbar-fly-row'));
+  const flyRow = (fly, label) => flyRows(fly)
+    .find((r) => (r.querySelector('.ctxbar-fly-label') || {}).textContent === label);
+  const rowLabels = (fly) => flyRows(fly)
+    .map((r) => (r.querySelector('.ctxbar-fly-label') || {}).textContent);
+
+  // Build the scene a USER builds, put `toneLaw` on the CHILD, select it the
+  // way both real entry points (canvas pick / layer-row click) do, and open
+  // the Style pill.
+  const openStyleFlyout = (toneLaw) => {
+    document.body.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+    app.engine.layers = [];
+    app.renderer.setSelection([], null);
+    app.renderer.setSceneSelection(null);
+    const gid = app.engine.addLayer('scene3d');
+    const child = app.engine.getLayerChildren(gid).find((l) => l.type === 'object3d');
+    child.params.style = { penId: null, mapper: 'hatch', params: { toneLaw } };
+    app.engine.computeAllDisplayGeometry();
+    app.renderer.setSelection([child.id], child.id);
+    app.renderer.setSceneSelection({
+      layerId: gid, mode: 'object', objectIds: [child.id], faceKeys: [], edgeKeys: [],
+    });
+    CB.restoreState();
+    const pill = pillByLabel('Style');
+    pill.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    return { gid, child, fly: openFly() };
+  };
+
+  test('a "Stroke Fill" row sits directly beneath "Fill Style"', () => {
+    const { fly } = openStyleFlyout(BUCKET_B);
+    const labels = rowLabels(fly);
+    expect(labels.indexOf('Stroke Fill')).toBe(labels.indexOf('Fill Style') + 1);
+  });
+
+  test('it offers the four options and shows the shipped default', () => {
+    const { fly } = openStyleFlyout(BUCKET_B);
+    const sel = flyRow(fly, 'Stroke Fill').querySelector('select');
+    expect(Array.from(sel.options).map((o) => o.value))
+      .toEqual(['spiral', 'concentric', 'serpentine', 'contourParallel']);
+    expect(Array.from(sel.options).map((o) => o.textContent))
+      .toEqual(['Spiral', 'Concentric', 'Serpentine', 'Contour-Parallel']);
+    expect(sel.value).toBe('spiral');
+    expect(sel.disabled).toBe(false);
+  });
+
+  test('choosing one writes strokeFillStyle onto the OBJECT\'s own child layer', () => {
+    const { child, fly } = openStyleFlyout(BUCKET_B);
+    const sel = flyRow(fly, 'Stroke Fill').querySelector('select');
+    sel.value = 'serpentine';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(child.params.strokeFillStyle).toBe('serpentine');
+  });
+
+  test('a stored value is read back, not silently reset to the default', () => {
+    const { child, gid } = openStyleFlyout(BUCKET_B);
+    child.params.strokeFillStyle = 'concentric';
+    CB.restoreState();
+    pillByLabel('Style').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(flyRow(openFly(), 'Stroke Fill').querySelector('select').value).toBe('concentric');
+    expect(gid).toBeTruthy();
+  });
+
+  test('a bucket-A (monowidth) style greys it out and says why, keeping the row', () => {
+    const { fly } = openStyleFlyout(BUCKET_A);
+    const S = window.Vectura.STROKE_FILL_STYLES;
+    const r = flyRow(fly, 'Stroke Fill');
+    expect(r).toBeTruthy();
+    expect(r.querySelector('select').disabled).toBe(true);
+    expect(r.getAttribute('title')).toBe(S.DISABLED_NOTE);
+  });
+
+  test('a bucket-C (three-pen) style greys it out with the exemption explanation', () => {
+    const { fly } = openStyleFlyout(BUCKET_C);
+    const S = window.Vectura.STROKE_FILL_STYLES;
+    const r = flyRow(fly, 'Stroke Fill');
+    expect(r).toBeTruthy();
+    expect(r.querySelector('select').disabled).toBe(true);
+    expect(r.getAttribute('title')).toBe(S.PEN_DISABLED_NOTE);
+  });
+
+  test('a disabled row still shows the stored value and refuses to write', () => {
+    // …the stored value STAYS shown: a greyed control with nothing selected
+    // reads as "unset", which is a different (and wrong) statement. And
+    // `disabled` stops a USER but not a programmatic change event, so the
+    // write is refused in the handler too.
+    const { child, fly } = openStyleFlyout(BUCKET_A);
+    const sel = flyRow(fly, 'Stroke Fill').querySelector('select');
+    expect(sel.value).toBe('spiral');
+    sel.value = 'concentric';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(child.params.strokeFillStyle).toBe('spiral');
+  });
+
+  test('the row count does not change between an enabled and a disabled Fill Style', () => {
+    const b = rowLabels(openStyleFlyout(BUCKET_B).fly).length;
+    const a = rowLabels(openStyleFlyout(BUCKET_A).fly).length;
+    expect(b).toBe(a);
   });
 });

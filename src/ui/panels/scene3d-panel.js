@@ -664,7 +664,10 @@
         value: SFS.resolve(o.layerParams[SFS.PARAM]),
         ariaLabel: SFS.ARIA,
         disabled: Boolean(disabledNote),
-        onChange: (v) => { o.commit(() => { o.layerParams[SFS.PARAM] = v; }); },
+        // A greyed row must not write even if something drives the <select>
+        // directly: `disabled` stops a USER, it does not stop a programmatic
+        // change event, and this is the last word before the layer mutates.
+        onChange: (v) => { if (disabledNote) return; o.commit(() => { o.layerParams[SFS.PARAM] = v; }); },
       });
       comps.push(sfSelect);
       const sfRow = sfCtl.parentNode;

@@ -671,6 +671,14 @@
           label: SCENE_FILL_STYLES.LABEL,
           aria: SCENE_FILL_STYLES.ARIA,
         },
+        // sf-w4 — Stroke Fill sits directly beneath Fill Style, on BOTH the
+        // contextual bar and the docked Style tab. Re-exported from
+        // STROKE_FILL_STYLES above so the two surfaces cannot drift apart,
+        // exactly as `fillStyle` re-exports SCENE_FILL_STYLES.
+        strokeFill: {
+          label: STROKE_FILL_STYLES.LABEL,
+          aria: STROKE_FILL_STYLES.ARIA,
+        },
         pen: { label: 'Pen', aria: 'Style pen', inherit: 'Layer pen' },
         angle: { label: 'Angle', aria: 'Hatch angle' },
         density: { label: 'Density', aria: 'Fill density' },

@@ -11534,6 +11534,11 @@ body.vtp-is-scrubbing * { cursor: ew-resize !important; user-select: none !impor
 .stroke-options .stroke-toggle:disabled {
   opacity: .4;
   cursor: not-allowed;
+  /* Kills the :hover background above (which still fires on a disabled
+     button) AND lets the hover fall through to the ROW, so the row's
+     `title` — the reason the control is off — is what a user actually
+     sees. A disabled button never shows its own title. */
+  pointer-events: none;
 }
 .stroke-options .stroke-row.is-disabled .stroke-row-label { opacity: .4; }
 .stroke-options .stroke-limit {
@@ -12065,6 +12070,12 @@ body.mobile-layout .hud-bar {
   justify-content: space-between;
   gap: 8px;
 }
+/* sf-w4 — a flyout row whose control is inert for the current selection (e.g.
+   Stroke Fill under a monowidth or three-pen Fill Style). It STAYS in place so
+   nothing below it jumps; the row greys out and carries the reason as its
+   `title`. The control itself is `disabled`, so the row keeps the hover that
+   surfaces that tooltip. */
+.ctxbar-fly-row.is-disabled { opacity: .45; }
 .ctxbar-fly-label {
   font-size: var(--font-size-xs, 11px);
   color: var(--ui-muted, #9a9a9a);
