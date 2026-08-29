@@ -53,6 +53,19 @@ const FIXTURES = {
   crescent: [circle(0, 0, 14), circle(4.5, 0, 11)],
 };
 
+// A five-pointed star: one connected region ending in five SHARP points. Real
+// ribbons taper to points exactly like this, which is why it guards the
+// single-stroke promise rather than coverage.
+const star = (n = 5, R = 14, r = 5.5) => {
+  const pts = [];
+  for (let i = 0; i < n * 2; i += 1) {
+    const t = (i / (n * 2)) * Math.PI * 2 - Math.PI / 2;
+    const rr = i % 2 ? r : R;
+    pts.push({ x: Math.cos(t) * rr, y: Math.sin(t) * rr });
+  }
+  return pts;
+};
+
 const STYLES = ['spiral', 'concentric', 'serpentine', 'contourParallel'];
 
 const totalLength = (paths) => paths.reduce((sum, p) => {
@@ -245,27 +258,38 @@ describe('PenFill.fillRegion — path-count budget', () => {
     }
   });
 
-  for (const pen of [1.2, 2, 3]) {
-    test(`spiral returns exactly one path on the disc at pen ${pen}`, () => {
-      const res = PenFill.fillRegion(FIXTURES.disc, pen, 'spiral');
-      expect(res.paths.length).toBe(1);
-    });
-    test(`spiral returns exactly one path on the taper at pen ${pen}`, () => {
-      const res = PenFill.fillRegion(FIXTURES.taper, pen, 'spiral');
-      expect(res.paths.length).toBe(1);
-    });
-  }
+  /*
+   * EXACTLY one — not "usually one". `spiral` is the default precisely because a
+   * scene already carries ~1075 lines and a ribbon fill must not multiply that,
+   * and `serpentine` carries the same promise. Both are pinned across a pen
+   * sweep and a ribbon-width sweep so a future change breaks loudly rather than
+   * quietly leaking paths.
+   */
+  for (const style of ['spiral', 'serpentine']) {
+    for (const pen of [0.8, 1.2, 2, 3]) {
+      test(`${style} returns exactly one path on the disc at pen ${pen}`, () => {
+        const res = PenFill.fillRegion(FIXTURES.disc, pen, style);
+        expect(res.components).toBe(1);
+        expect(res.paths.length).toBe(1);
+      });
+      test(`${style} returns exactly one path on the taper at pen ${pen}`, () => {
+        const res = PenFill.fillRegion(FIXTURES.taper, pen, style);
+        expect(res.components).toBe(1);
+        expect(res.paths.length).toBe(1);
+      });
+    }
 
-  // Several ribbon widths: a variable-width ribbon can be many pens wide or
-  // barely one pen wide, and spiral must stay a single unbroken stroke either way.
-  for (const [w0, w1] of [[12, 4], [6, 2], [3, 1.2]]) {
-    test(`spiral stays one stroke on a ${w0}->${w1} ribbon`, () => {
-      const rings = [taper(30, w0, w1)];
-      const res = PenFill.fillRegion(rings, 1.5, 'spiral');
-      expect(res.paths.length).toBe(1);
-      const m = measure(rings, res.paths, 1.5);
-      expect(m.coverage).toBeGreaterThanOrEqual(0.995);
-    });
+    // Several ribbon widths: a variable-width ribbon can be many pens wide or
+    // barely one pen wide, and it must stay a single unbroken stroke either way.
+    for (const [w0, w1] of [[12, 4], [6, 2], [3, 1.2], [2, 0.8]]) {
+      test(`${style} stays one stroke on a ${w0}->${w1} ribbon`, () => {
+        const rings = [taper(30, w0, w1)];
+        const res = PenFill.fillRegion(rings, 1.5, style);
+        expect(res.paths.length).toBe(1);
+        const m = measure(rings, res.paths, 1.5);
+        expect(m.coverage).toBeGreaterThanOrEqual(0.995);
+      });
+    }
   }
 
   for (const [name, rings] of Object.entries(FIXTURES)) {
@@ -277,6 +301,135 @@ describe('PenFill.fillRegion — path-count budget', () => {
       const res = PenFill.fillRegion(rings, 2, 'serpentine');
       expect(res.paths.length).toBeLessThanOrEqual(res.components);
     });
+  }
+});
+
+// ── Sharp points must not shed one-cell components (regression) ─────────────
+describe('PenFill.fillRegion — a sharp point is not its own component', () => {
+  /*
+   * The region mask is rasterized by scanline. At a sharp convex point the span
+   * narrows below one cell for a row or two before the tip, which severs the
+   * last cell or two of the tip from the body. Each orphan then labels as its
+   * own connected component and earns its own path — so a five-pointed star
+   * came back as THREE paths from `spiral`, whose whole promise is one.
+   *
+   * This is not academic: every tapered ribbon end in the scene is such a point,
+   * and the path count is the thing spiral exists to keep flat.
+   *
+   * A fleck that small cannot hold a mark — it is a fraction of the pen's own
+   * footprint, and it was severed by a sub-cell neck, so it sits well within a
+   * pen radius of the body's outermost pass and is inked over anyway.
+   */
+  const STAR = [star()];
+  for (const pen of [0.8, 1, 1.2, 1.5, 2, 3]) {
+    test(`spiral returns exactly one path on the star at pen ${pen}`, () => {
+      const res = PenFill.fillRegion(STAR, pen, 'spiral');
+      expect(res.components).toBe(1);
+      expect(res.paths.length).toBe(1);
+      const m = measure(STAR, res.paths, pen);
+      expect(m.coverage).toBeGreaterThanOrEqual(0.995);
+      expect(m.largestBlobArea).toBeLessThan((pen / 2) ** 2);
+    });
+    test(`serpentine returns exactly one path on the star at pen ${pen}`, () => {
+      const res = PenFill.fillRegion(STAR, pen, 'serpentine');
+      expect(res.paths.length).toBe(1);
+      const m = measure(STAR, res.paths, pen);
+      expect(m.coverage).toBeGreaterThanOrEqual(0.995);
+      expect(m.largestBlobArea).toBeLessThan((pen / 2) ** 2);
+    });
+  }
+});
+
+// ── Medial-axis spine (regression) ──────────────────────────────────────────
+describe('PenFill.fillRegion — the innermost pass reaches the medial axis', () => {
+  /*
+   * The pass ladder walks inward in whole `pitch` steps and stops at the last
+   * depth that still fits. When a lobe's half-width is not a whole number of
+   * pitches, the deepest point is left further than one pen RADIUS from the
+   * innermost pass, and a hairline of white survives right down the lobe's
+   * spine. It is invisible in the coverage ratio (it is a fraction of a
+   * percent) but it is a contiguous blob, which is exactly what T1's second
+   * assertion exists to catch.
+   *
+   * The `crescent` fixture is an even-odd symmetric difference, so besides the
+   * crescent proper it carries the small right-hand lune between x=14 (the
+   * outer circle) and x=15.5 (the offset circle). That lune is ~1.5 wide, and
+   * at pen 0.8 its ladder holds exactly one pass at depth 0.32 while the lune
+   * runs 0.75 deep — 0.43 away, against a 0.40 pen radius. `spiral` hid the
+   * gap because its interior connectors happened to ink over it; `concentric`
+   * lifts the pen there and left it bare.
+   */
+  test('concentric leaves no spine blob on the crescent at a fine pen', () => {
+    const pen = 0.8;
+    const res = PenFill.fillRegion(FIXTURES.crescent, pen, 'concentric');
+    const m = measure(FIXTURES.crescent, res.paths, pen);
+    expect(m.coverage).toBeGreaterThanOrEqual(0.995);
+    expect(m.largestBlobArea).toBeLessThan((pen / 2) ** 2);
+  });
+
+  // The same ladder feeds all four styles, so pin all four across a pen sweep
+  // that deliberately does NOT divide evenly into any fixture's half-width.
+  for (const style of STYLES) {
+    for (const pen of [0.8, 1.3, 2.7, 3.5]) {
+      test(`${style} leaves no spine blob on the crescent at pen ${pen}`, () => {
+        const res = PenFill.fillRegion(FIXTURES.crescent, pen, style);
+        const m = measure(FIXTURES.crescent, res.paths, pen);
+        expect(m.coverage).toBeGreaterThanOrEqual(0.995);
+        expect(m.largestBlobArea).toBeLessThan((pen / 2) ** 2);
+      });
+    }
+  }
+});
+
+// ── Nothing escapes the region (regression) ─────────────────────────────────
+describe('PenFill.fillRegion — no emitted vertex escapes the region', () => {
+  /*
+   * Contract C2 forbids emitting a connector that leaves the region — that is
+   * the protrusion defect (D2) the whole stroke-fill effort exists to kill, and
+   * it must not be reintroduced by the fill itself.
+   *
+   * `spiral` had a second, unguarded way to leave: the ring-to-ring MORPH. To
+   * be a spiral rather than stacked rings, the tail of each ring is lerped onto
+   * the nearest point of the next one. Both rings lie inside the region, but on
+   * a NON-CONVEX region the straight line between them need not — on the
+   * crescent a morphed vertex landed 0.556 mm outside, seven tenths of a pen
+   * width, with no validation anywhere in its path.
+   *
+   * The tolerance is one field cell (the field is built at penWidth/10). The
+   * outermost pass is deliberately seated a cell proud of penWidth/2 so the pen
+   * does not leave a rind of white around the rim, and the sampled distance
+   * field carries up to half a cell of its own bias, so a sub-cell excursion is
+   * inherent to a rasterized fill. Anything BEYOND a cell is a real escape.
+   */
+  const escapes = (rings, paths) => {
+    let worst = 0;
+    for (const path of paths) {
+      for (const q of path) {
+        if (pointInRegion(q.x, q.y, rings)) continue;
+        let best = Infinity;
+        for (const ring of rings) {
+          for (let i = 0; i < ring.length; i += 1) {
+            const a = ring[i];
+            const b = ring[(i + 1) % ring.length];
+            const d = distToSegment(q.x, q.y, a.x, a.y, b.x, b.y);
+            if (d < best) best = d;
+          }
+        }
+        if (best > worst) worst = best;
+      }
+    }
+    return worst;
+  };
+
+  for (const style of STYLES) {
+    for (const [name, rings] of Object.entries(FIXTURES)) {
+      for (const pen of [0.8, 1.5, 3]) {
+        test(`${style} stays inside the ${name} at pen ${pen}`, () => {
+          const res = PenFill.fillRegion(rings, pen, style);
+          expect(escapes(rings, res.paths)).toBeLessThanOrEqual(pen / 10 + 1e-9);
+        });
+      }
+    }
   }
 });
 

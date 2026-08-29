@@ -64,6 +64,9 @@
   const BLEND_FRACTION = 0.3;
   // Bridged (pen-lifting) styles only hop this far before lifting.
   const BRIDGE_LIMIT_PITCHES = 6;
+  // A connected component this small is what a scanline sheds at a sharp point,
+  // not geometry anyone asked to fill. See `mergeFlecks`.
+  const MAX_FLECK_CELLS = 6;
   const EPS = 1e-9;
 
   // ── Small helpers ─────────────────────────────────────────────────────────
@@ -285,9 +288,11 @@
   };
 
   // ── Connected components of the inside mask ───────────────────────────────
+  /** Labels each inside cell, and reports how many cells each component holds. */
   const labelComponents = (field) => {
     const { nx, ny, inside } = field;
     const lab = new Int32Array(nx * ny).fill(-1);
+    const areas = [];
     const stack = [];
     let count = 0;
     for (let k = 0; k < inside.length; k += 1) {
@@ -295,8 +300,10 @@
       lab[k] = count;
       stack.length = 0;
       stack.push(k);
+      let cells = 0;
       while (stack.length) {
         const c = stack.pop();
+        cells += 1;
         const ci = c % nx;
         const cj = (c - ci) / nx;
         const push = (ni, nj) => {
@@ -308,9 +315,85 @@
         };
         push(ci - 1, cj); push(ci + 1, cj); push(ci, cj - 1); push(ci, cj + 1);
       }
+      areas.push(cells);
       count += 1;
     }
-    return { lab, count };
+    return { lab, count, areas };
+  };
+
+  /**
+   * Fold rasterizer flecks into the body they were cut from, and report which
+   * components are left.
+   *
+   * At a sharp convex point the scanline span narrows below one cell for a row
+   * or two before the tip, which severs the tip's last cell from the body. Every
+   * such orphan labels as its own connected component and then earns its own
+   * path — a five-pointed star came back as THREE paths from `spiral`, whose
+   * entire promise is one. Each tapered ribbon end in a scene is such a point,
+   * so this is the difference between a flat path count and a creeping one.
+   *
+   * They are MERGED, not discarded. Discarding them also throws away the ink
+   * they carried, and at a broad nib a fleck's single dab covers real area
+   * around it — dropping four of them cost half a percent of coverage on the
+   * crescent. Merging relabels the cell onto its neighbour so the fleck stops
+   * being a component (no second path) while its cells stay in the region, still
+   * counted by coverage and still reachable by the repair pass.
+   *
+   * The bar is measured in CELLS because the question is about the rasterizer's
+   * own precision and nothing else. A pen-relative bar is the wrong instrument:
+   * it scales with the pen, and at a broad nib it starts swallowing real
+   * geometry such as a crescent's cusp.
+   */
+  const mergeFlecks = (field, lab, areas) => {
+    const { nx, ny, inside } = field;
+    const live = [];
+    const fleck = [];
+    for (let c = 0; c < areas.length; c += 1) {
+      if (areas[c] > MAX_FLECK_CELLS) live.push(c); else fleck.push(c);
+    }
+    // Nothing cleared the bar: the whole region is smaller than a few cells.
+    // Keep the largest so it still gets its centreline pass.
+    if (!live.length) {
+      if (!areas.length) return [];
+      let best = 0;
+      for (let c = 1; c < areas.length; c += 1) if (areas[c] > areas[best]) best = c;
+      return [best];
+    }
+    if (!fleck.length) return live;
+    const isFleck = new Uint8Array(areas.length);
+    for (const c of fleck) isFleck[c] = 1;
+    // A fleck that finds no body to rejoin is not a severed tip — it is a real,
+    // if tiny, island. Merging is only ever allowed to move ink, never to lose
+    // it, so an orphan keeps its own path rather than being dropped.
+    const orphan = new Uint8Array(areas.length);
+    for (const c of fleck) orphan[c] = 1;
+    for (let k = 0; k < inside.length; k += 1) {
+      if (!inside[k] || lab[k] < 0 || !isFleck[lab[k]]) continue;
+      const ci = k % nx;
+      const cj = (k - ci) / nx;
+      let host = -1;
+      for (let r = 1; r <= 3 && host < 0; r += 1) {
+        for (let dj = -r; dj <= r && host < 0; dj += 1) {
+          for (let di = -r; di <= r; di += 1) {
+            if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+            const ni = ci + di;
+            const nj = cj + dj;
+            if (ni < 0 || nj < 0 || ni >= nx || nj >= ny) continue;
+            const nk = nj * nx + ni;
+            if (!inside[nk] || lab[nk] < 0 || isFleck[lab[nk]]) continue;
+            host = lab[nk];
+            break;
+          }
+        }
+      }
+      if (host >= 0) {
+        orphan[lab[k]] = 0;
+        lab[k] = host;
+      }
+    }
+    for (const c of fleck) if (orphan[c]) live.push(c);
+    live.sort((a, b) => a - b);
+    return live;
   };
 
   // ── Marching squares over the signed field ────────────────────────────────
@@ -630,17 +713,34 @@
     return best;
   };
 
-  const applyBlend = (seq, nextPts) => {
+  /**
+   * Morph the tail of `seq` onto `nextPts`. This is what makes `spiral` a true
+   * spiral instead of stacked rings with a jump between them.
+   *
+   * EVERY morphed vertex is validated before it is kept. Both rings lie inside
+   * the region, but the straight line between them need not — on a non-convex
+   * region (a crescent) the lerp cuts the corner and leaves the form. That is
+   * the protrusion defect this module exists to kill, arriving by a side door
+   * that no connector check covered: a morphed vertex sat 0.556 mm outside the
+   * crescent, seven tenths of a pen width, having passed through nothing.
+   * A vertex that fails falls back to its un-morphed position, which is on a
+   * contour and therefore inside by construction; the spiral simply tightens
+   * onto the next ring a little later instead of leaving the paper.
+   */
+  const applyBlend = (seq, nextPts, field, rings) => {
     const n = seq.length;
     const b = Math.max(2, Math.floor(n * BLEND_FRACTION));
     if (b >= n) return;
+    let prev = seq[n - b - 1] || seq[0];
     for (let i = n - b; i < n; i += 1) {
       const w = (i - (n - b) + 1) / b;
       const np = nextPts[nearestIndex(nextPts, seq[i])];
-      seq[i] = {
+      const cand = {
         x: seq[i].x + (np.x - seq[i].x) * w,
         y: seq[i].y + (np.y - seq[i].y) * w,
       };
+      if (segmentStaysInside(field, rings, prev, cand, 0)) seq[i] = cand;
+      prev = seq[i];
     }
   };
 
@@ -661,7 +761,7 @@
       if (pc.closed) {
         seq = rotateRing(pc.pts, nearestIndex(pc.pts, anchor));
         const next = pieces[idx + 1];
-        if (cfg.blend && next && next.closed && next.pts.length > 3) applyBlend(seq, next.pts);
+        if (cfg.blend && next && next.closed && next.pts.length > 3) applyBlend(seq, next.pts, field, rings);
         else seq.push({ x: seq[0].x, y: seq[0].y });
       } else {
         seq = pc.pts.slice();
@@ -723,6 +823,20 @@
     while (level <= maxDepth + EPS && levels.length < maxLevels) {
       levels.push(level);
       level = level === first ? penWidth / 2 + pitch : level + pitch;
+    }
+    // The ladder walks inward in whole `pitch` steps and stops at the last depth
+    // that still fits, so whenever a lobe's half-width is not a whole number of
+    // pitches the deepest point is left further than one pen RADIUS from the
+    // innermost pass — a hairline of white straight down the lobe's spine. It
+    // barely moves the coverage ratio, but it is a contiguous blob, which is the
+    // thing T1's second assertion exists to catch. Add one terminal pass ON the
+    // medial axis when the ladder falls short. Pulled a cell back off the peak:
+    // marching squares needs a level the field actually straddles, and exactly
+    // at the maximum no cell does.
+    const last = levels[levels.length - 1];
+    if (levels.length && levels.length < maxLevels && maxDepth - last > penWidth / 2 - cs) {
+      const spine = Math.max(last + cs, maxDepth - cs);
+      if (spine > last + EPS) levels.push(spine);
     }
     return levels;
   };
@@ -1197,7 +1311,7 @@
     for (let k = 0; k < field.inside.length; k += 1) if (field.inside[k]) { anyInside = true; break; }
     if (!anyInside) return empty;
 
-    const { lab, count } = labelComponents(field);
+    const { lab, areas } = labelComponents(field);
     const tol = cs * 0.25;
     const continuous = mode === 'spiral' || mode === 'serpentine';
     const cfg = {
@@ -1207,10 +1321,19 @@
     };
     const maxLevels = Math.max(1, Math.min(4000, maxPaths));
     const repairPen = pen * REPAIR_PEN_SAFETY;
-    const minBlobArea = (pen * 0.22) ** 2;
+    // How small a hole the repair pass still bothers with. Tied to the CELL, not
+    // to the pen: a pen-relative floor scales up with the nib, and at a broad
+    // one it retired before the job was done — a 3.5 mm pen on the crescent left
+    // seven cells of cusp residue spread over blobs of four cells each, every
+    // one of them under a pen-relative floor, and the module's own coverage
+    // reported 99.69%. Anything the raster can actually resolve is worth a pass.
+    const minBlobArea = field.cs * field.cs * 1.5;
+    // Flecks shed by the rasterizer at sharp points are folded into the body
+    // they were cut from; see `mergeFlecks`.
+    const live = mergeFlecks(field, lab, areas);
 
     const out = [];
-    for (let comp = 0; comp < count; comp += 1) {
+    for (const comp of live) {
       let pieces;
       if (mode === 'serpentine') pieces = serpentinePieces(field, lab, comp, rings, pen, pitch, tol, opts);
       else if (mode === 'contourParallel') pieces = offsetPieces(field, lab, comp, rings, pen, pitch, maxLevels, tol, opts);
@@ -1253,9 +1376,11 @@
 
     const coverage = measureCoverage(field, out, pen / 2);
     // `components` is additive to contract C2's { paths, coverage }: it is the
-    // number of connected regions the clip left behind, and it is the number the
-    // single-stroke styles are allowed to return.
-    return { paths: out, coverage, components: count };
+    // number of connected regions worth filling that the clip left behind, and
+    // it is the number the single-stroke styles are allowed to return. Coverage
+    // is still measured over the WHOLE region, discarded flecks included, so
+    // dropping one can never flatter the number.
+    return { paths: out, coverage, components: live.length };
   };
 
   const api = { fillRegion, DEFAULT_OVERLAP, STYLES };
