@@ -116,6 +116,32 @@
     };
   };
 
+  // Shoelace on an implicitly closed {x,y} ring. The SIGN is load-bearing (see
+  // `resolveFoldRings`), so this never takes an absolute value.
+  const ringSignedArea = (ring) => {
+    if (!Array.isArray(ring) || ring.length < 3) return 0;
+    let a = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i]; const q = ring[(i + 1) % ring.length];
+      a += p.x * q.y - q.x * p.y;
+    }
+    return a / 2;
+  };
+
+  // Even-odd point-in-ring on an implicitly closed {x,y} ring. Module scope
+  // because both the region tracer and the region report need it and they sit
+  // ~4600 lines apart in the same closure.
+  const ptInRing = (p, ring) => {
+    if (!p || !Array.isArray(ring) || ring.length < 3) return false;
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[i]; const b = ring[j];
+      if ((a.y > p.y) !== (b.y > p.y)
+        && p.x < ((b.x - a.x) * (p.y - a.y)) / ((b.y - a.y) || 1e-12) + a.x) inside = !inside;
+    }
+    return inside;
+  };
+
   const chartFor = (mode, sizes) => {
     const C = Vectura.Scene3D && Vectura.Scene3D.Charts;
     if (!C) return null;
@@ -4771,6 +4797,59 @@
     } : null;
     const LD_REG = 0.025; // specular threshold for "in the glint" (matches faceted)
 
+    // ══ WHICH WAY IS OUT? DECIDED ONCE FOR THE CHART, NOT ONCE PER SAMPLE ══
+    //
+    // `cross(dPa, dPb)` gives the normal up to a sign, and that sign is a
+    // property of the CHART's parameter handedness — one constant for the whole
+    // surface. `sampleAt` used to recover it per sample with `dot(n, p0) < 0`
+    // ("charts centre near origin"), which is a statement about STAR-SHAPEDNESS,
+    // not about handedness. It holds for every convex chart here and fails on
+    // the first one that is not: on a torus
+    //
+    //     dot(n, p) = major·cos(2πv) + minor
+    //
+    // which goes NEGATIVE across the inner third of the tube. Measured on the
+    // factory torus: 6837 of 24779 samples (27.6%) came back with an INVERTED
+    // normal — sphere, capsule and cylinder: 0. So `front` flipped across the
+    // locus cos(2πv) = -minor/major (v = 0.294 / 0.705 there), the region tracer
+    // read that locus as two more silhouettes and traced them (signed areas
+    // -422.77 and -464.05 beside the true outer silhouette's +1282.37), and
+    // containment classified both as HOLES: the ribbon clip region collapsed
+    // from 1282.4 mm² to 399.6 mm², 12.6% of the fill vertices the front test
+    // had itself proved on-surface fell outside their own clip region, and every
+    // one of the twelve variable-width laws refused 40-58% of its wide stretches
+    // as `clipEmpty`/`erodeEmpty` and shipped bare centrelines.
+    //
+    // The handedness is recovered globally instead, by the divergence theorem:
+    // ∮ p · n dA is +6V for an outward normal and -6V for an inward one, so its
+    // SIGN is the answer for any closed chart, star-shaped or not. One coarse
+    // pass, memoized, and it agrees with the old per-sample test everywhere the
+    // old test was right (a convex chart has dot(n, p) > 0 at every sample, so
+    // its integral cannot disagree with any of them).
+    let chartOrientMemo = 0;
+    const chartOrientation = () => {
+      if (chartOrientMemo) return chartOrientMemo;
+      const M = 24;
+      let vol = 0;
+      for (let i = 0; i < M; i++) {
+        // Cell CENTRES: the forward difference below needs room, and a chart's
+        // domain edge is exactly where it has none.
+        const a = (i + 0.5) / M;
+        for (let j = 0; j < M; j++) {
+          const b = (j + 0.5) / M;
+          const q0 = chart(a, b);
+          const qa = chart(a + EPS, b);
+          const qb = chart(a, b + EPS);
+          if (!q0 || !qa || !qb) continue;
+          // No normalization: |cross| IS the area element, which is exactly the
+          // weight the surface integral wants.
+          vol += dot(q0, cross(sub(qa, q0), sub(qb, q0)));
+        }
+      }
+      chartOrientMemo = vol < 0 ? -1 : 1;
+      return chartOrientMemo;
+    };
+
     // Sample the surface at (a,b) → screen point + front flag + Lambert intensity.
     const sampleAt = (a, b) => {
       const aa = clamp(a, 0, 1);
@@ -4816,7 +4895,7 @@
         if (nl < 1e-9) return null;
       }
       nLocal = mul(nLocal, 1 / nl);
-      if (dot(nLocal, p0) < 0) nLocal = mul(nLocal, -1); // outward (charts centre near origin)
+      if (chartOrientation() < 0) nLocal = mul(nLocal, -1); // outward (see chartOrientation)
       const world = applyTransform(p0, t);
       const wN = normalize(rotatePoint(nLocal, rot));
       const camN = rotatePoint(wN, cam);
@@ -5277,7 +5356,65 @@
         }
         if (ring.length >= 3) rings.push(ring);
       });
-      return rings;
+      return resolveFoldRings(rings);
+    };
+
+    // ══ NESTED IS NOT THE SAME AS HOLLOW ═════════════════════════════════════
+    //
+    // `clipMultiPolygonToRegion` assembles these rings with
+    // `FillBoolean.nonZeroUnionByContainment`, which calls a ring a HOLE when an
+    // odd number of other rings enclose it. On a sphere that is unambiguous —
+    // there is one ring. It is NOT unambiguous the moment the front-facing sheet
+    // OVERLAPS ITSELF on screen, because then a contour lands inside the outer
+    // silhouette WITHOUT being an edge of the drawing: it is a fold, a crease
+    // where the surface turns over and covers itself twice.
+    //
+    // Containment alone cannot tell those apart. The WINDING can, and for a
+    // reason that is exact rather than heuristic. Marching squares orients every
+    // segment inside-on-the-left in CHART space, and the projection's Jacobian
+    // sign is `nz`, which is strictly positive across the front-facing set — so
+    // the projection preserves orientation on the whole region, and the winding
+    // number of the traced rings about a screen point is the NUMBER OF SHEETS
+    // over it. Normalise so the outermost ring counts +1 and:
+    //
+    //     outer only        1 sheet   ->  inner ring absent
+    //     genuine hole      0 sheets  ->  inner ring winds the OTHER way
+    //     fold / overlap    2 sheets  ->  inner ring winds the SAME way
+    //
+    // Measured on the factory torus across camera pitch (taperedEnds): the inner
+    // ring's signed area is +381.3 / +303.8 / +181.5 at pitch 2/5/10, where the
+    // hole is shut and the inner contour is a fold, and flips to -42.9 / -333.2 /
+    // -768.1 at pitch 20/35/70, where the hole is genuinely open. Containment
+    // carved in BOTH cases: at pitch 2 the region collapsed to 349 mm² of a
+    // 730 mm² silhouette and 6 wide stretches came back `erodeEmpty`.
+    //
+    // So a same-winding nested ring is dropped: it is a crease drawn ON the
+    // region, not an edge OF it. What survives is shells plus real holes, whose
+    // nesting and winding now agree, and the containment rule downstream gets
+    // the same answer the winding does. Re-derived each pass because dropping a
+    // ring re-parents everything inside it.
+    //
+    // A single-ring region — every primitive whose front-facing sheet is
+    // embedded: sphere, capsule, cylinder, cone — returns untouched.
+    const resolveFoldRings = (rings) => {
+      if (!Array.isArray(rings) || rings.length < 2) return rings;
+      let keep = rings;
+      for (let pass = 0; pass < rings.length; pass++) {
+        const signed = keep.map(ringSignedArea);
+        let big = 0;
+        for (let i = 1; i < keep.length; i++) if (Math.abs(signed[i]) > Math.abs(signed[big])) big = i;
+        const outward = signed[big] < 0 ? -1 : 1;
+        const next = keep.filter((r, i) => {
+          let depth = 0;
+          for (let j = 0; j < keep.length; j++) if (j !== i && ptInRing(r[0], keep[j])) depth += 1;
+          const sameWinding = (signed[i] < 0 ? -1 : 1) === outward;
+          return !(depth % 2 === 1 && sameWinding);
+        });
+        if (next.length === keep.length) break;
+        if (!next.length) break;
+        keep = next;
+      }
+      return keep;
     };
 
     const regionMemo = new Map();
@@ -9775,21 +9912,30 @@
       return true;
     };
 
-    // Total |signed area| of a traced region, mm2. The load-bearing number:
-    // ring COUNT cannot tell a real silhouette from a hairline walked out and
-    // back, and that is exactly the shape the seam bug produced (1 ring, area
-    // 0.014, on a form whose disc is ~6650).
-    const regionAreaOf = (rings) => {
-      let tot = 0;
-      (rings || []).forEach((r) => {
-        let a = 0;
-        for (let i = 0; i < r.length; i++) {
-          const p0 = r[i]; const p1 = r[(i + 1) % r.length];
-          a += p0.x * p1.y - p1.x * p0.y;
-        }
-        tot += Math.abs(a) / 2;
+    // The traced region's NET area in mm2 — shells minus holes, classified by
+    // the same containment-depth parity `FillBoolean.nonZeroUnionByContainment`
+    // applies when the clip is actually taken — plus the area its OUTER ring
+    // alone encloses. The load-bearing pair:
+    //   - ring COUNT cannot tell a real silhouette from a hairline walked out
+    //     and back, which is the shape the seam bug produced (1 ring, area
+    //     0.014, on a form whose disc is ~6650);
+    //   - the SUM of |areas| cannot tell a real region from one whose middle has
+    //     been carved away by a ring that was never a hole, which is the shape
+    //     the torus normal-flip produced (3 rings summing to 2169 over a region
+    //     that had collapsed to a 399.6 mm2 rim inside a 1282.4 mm2 silhouette).
+    // `net` is what the ribbon actually gets clipped against; `outer` is what it
+    // is entitled to expect, so the ratio is the collapse detector.
+    const regionMetrics = (rings) => {
+      const list = (rings || []).filter((r) => Array.isArray(r) && r.length >= 3);
+      const abs = list.map((r) => Math.abs(ringSignedArea(r)));
+      let net = 0;
+      list.forEach((r, i) => {
+        let depth = 0;
+        for (let j = 0; j < list.length; j++) if (j !== i && ptInRing(r[0], list[j])) depth += 1;
+        net += (depth % 2 === 0 ? 1 : -1) * abs[i];
       });
-      return Math.round(tot * 1000) / 1000;
+      const round = (v) => Math.round(v * 1000) / 1000;
+      return { net: round(Math.max(0, net)), outer: round(abs.length ? Math.max(...abs) : 0) };
     };
     // Written for EVERY build, ribbon law or not — a zeroed report on a
     // non-ribbon law is itself the answer to "did this law widen anything?".
@@ -9801,8 +9947,9 @@
         algo: TONE_ALGO, ribbonLaw: isRibbonLaw(), penWidth,
         regionRings: (regionMemo.get('F') || []).length,
         regionRingsBack: (regionMemo.get('B') || []).length,
-        regionArea: regionAreaOf(regionMemo.get('F')),
-        regionAreaBack: regionAreaOf(regionMemo.get('B')),
+        regionArea: regionMetrics(regionMemo.get('F')).net,
+        regionOuterArea: regionMetrics(regionMemo.get('F')).outer,
+        regionAreaBack: regionMetrics(regionMemo.get('B')).net,
         ...ribbonStat,
       };
       // ── A WHOLESALE FALLBACK IS AN ALARM, NOT A DEGRADATION ────────────────

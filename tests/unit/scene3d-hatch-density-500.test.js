@@ -189,7 +189,19 @@ describe('scene3d fillDensity ceiling 200→500 (fs-m1)', () => {
       for (let i = 1; i < results.length; i++) {
         expect(results[i].count).toBeGreaterThan(results[i - 1].count);
       }
-      expect(results.map((r) => r.count)).toEqual([63, 74, 90, 110]);
+      // [63, 74, 90, 110] until F2 (2026-08-29). `SurfaceFill.sampleAt` used to
+      // orient every normal on its own with `dot(n, p0) < 0`, which is a
+      // star-shapedness test rather than a handedness one, and a torus is the
+      // first chart here that is not star-shaped: `dot(n, p) = major·cos(2πv) +
+      // minor` goes negative across the inner third of the tube, so the torus
+      // was ruled on the sheet FACING AWAY from the camera and the rulings that
+      // resulted were then chopped up by hidden-line removal. The orientation is
+      // now decided once per chart from the sign of ∮ p·n dA, the torus draws
+      // the sheet the camera can see, and the same number of rulings survives as
+      // fewer, longer, unbroken paths. The PROPERTY under test — density buys
+      // strictly more paths — is asserted above and is unchanged; these absolute
+      // counts are the fixture's fingerprint, not its contract.
+      expect(results.map((r) => r.count)).toEqual([41, 48, 55, 70]);
     });
   });
 

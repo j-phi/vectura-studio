@@ -185,12 +185,27 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   // absolute fingerprints below still catch unintended geometry drift that
   // the identity check alone would miss (e.g. a bug that changes indexed
   // AND brute-force output identically).
+  //
+  // NOTE (F2, 2026-08-29): the two `|settled` rows that carry a TORUS moved
+  // again, and only those two — `facetedOverlap` (box only) and both `|draft`
+  // rows are bit-for-bit unchanged. `SurfaceFill.sampleAt` used to orient each
+  // surface normal on its own with `dot(n, p0) < 0` ("outward, charts centre
+  // near origin"), which is a star-shapedness test, not a handedness one. On a
+  // torus `dot(n, p) = major·cos(2πv) + minor` goes negative across the inner
+  // third of the tube, so 6837 of 24779 samples came back INVERTED and the
+  // torus was shaded, and ruled, off the wrong sheet. The orientation is now
+  // decided ONCE per chart by the sign of ∮ p·n dA, so the torus finally draws
+  // the surface that faces the camera. Every chart whose normal already pointed
+  // outward at every sample — sphere, capsule, cylinder, cone, box — is
+  // untouched by construction, which is why only the torus scenes moved:
+  //   curvedOverlap|settled pathCount: 343 -> 341
+  //   denseMixed|settled    pathCount: 467 -> 464
   const EXPECTED = {
     'facetedOverlap-orthographic-hatch|settled': { hash: 'edb852cb0986dcbb6a12958f2a539b67f558948fa6dd5428b5cc0548ececc829', pathCount: 129, pointCount: 258 },
     'facetedOverlap-orthographic-hatch|draft': { hash: 'c89e3d735e2b53f3c1d154e7f3567d53a1e6053159b9ffa25a5853f7973d6a76', pathCount: 200, pointCount: 400 },
-    'curvedOverlap-perspective-mixed-xray|settled': { hash: '98c456f3f08ead41305f0dcdfc46dece0319692cd63905157f1dc2f862bfe865', pathCount: 343, pointCount: 1135 },
+    'curvedOverlap-perspective-mixed-xray|settled': { hash: '63825ff0240d604e69225e58b764cda4ded49ea2d562fdb9f03e85f24fb5277e', pathCount: 341, pointCount: 1102 },
     'curvedOverlap-perspective-mixed-xray|draft': { hash: '83aebf997a1e39aed36e2893fb18e7e7ea386755a9493e4868c53c51c80ee2f9', pathCount: 302, pointCount: 604 },
-    'denseMixed-8obj-shadows|settled': { hash: 'ddb7f98fb9a3cd063eb75fdcf5138406ce4595506f3176b32c9909ab12560650', pathCount: 467, pointCount: 2122 },
+    'denseMixed-8obj-shadows|settled': { hash: 'd426c24dfec801c257c0ec55f682bfc3dba00fe40c420413a1772de01848b419', pathCount: 464, pointCount: 2111 },
     'denseMixed-8obj-shadows|draft': { hash: '9c3de29b1f268348208ebe1395268ad1f099ffdfc1b58d5759e3dc7eba7f4486', pathCount: 466, pointCount: 932 },
   };
 

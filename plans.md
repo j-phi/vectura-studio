@@ -22,6 +22,27 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
+- **DONE — 3D Scene pen-width stroke fill: judge A's F2 (torus collapse) is fixed.** Branch
+  `sf/integration`. Evidence and reproduction commands in `docs/torus-fix-evidence/TABLE.md`.
+  Changing nothing but `params.primitive` to `torus` made all twelve variable-width laws refuse
+  40-58% of their wide stretches and ship bare centrelines; sphere, capsule and cylinder were clean.
+  Cause: `SurfaceFill.sampleAt` oriented each normal per sample with `dot(nLocal, p0) < 0`, a
+  star-shapedness test standing in for the chart's handedness. On a torus
+  `dot(n, p) = major·cos(2πv) + minor` goes negative on the inner third of the tube — 6837 of 24779
+  samples (27.6%) inverted, 0 on the other three primitives — so `front` flipped across that locus,
+  the region tracer read it as two extra silhouettes, containment classified them as HOLES, and the
+  clip region collapsed from 1282.4 mm² to 399.6 mm². Fix: `chartOrientation()` decides the
+  handedness ONCE per chart from the sign of `∮ p·n dA`; and `resolveFoldRings()` keeps a nested
+  ring as a hole only when it WINDS THE OTHER WAY, since the projection preserves orientation on the
+  front-facing set and a same-winding nested ring is a fold across a doubly-covered sheet, not an
+  edge. Ribbons built / wide: `taperedEnds` 16/32 -> **18/18**, `ampSpacing` 44/82 -> **56/59**,
+  `whiteBand` 25/42 -> **19/20**, `amplitudeOnly` 24/57 -> **44/46**; the hole survives as a hole;
+  the sphere's rendered frame is byte-identical before and after. Regression matrix covers all four
+  curved primitives (`tests/unit/scene3d-ribbon-primitives.test.js`) — a sphere-only matrix is
+  exactly how this hid. Two stale absolute-fingerprint expectations that carry a torus were
+  rebaselined with the reason recorded in-file (`scene3d-hlr-spatial-index-identity`,
+  `scene3d-hatch-density-500`). Residual: 6 refusals of 143 on the torus, all at the two cusps of
+  its barely-open hole, each a sub-pen sliver degenerating to a centreline per contract C3 rule 5.
 - **DONE — 3D Scene pen-width stroke fill: judge C's two defects are fixed.** Branch
   `sf/integration`. Evidence and reproduction commands in `docs/slab-fix-evidence/TABLE.md`.
   - **D1 (blocker) — self-crossing centrelines collapsed into solid slabs.**

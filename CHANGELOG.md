@@ -29,6 +29,31 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   tone — smaller in shadow, larger in the highlight (`src/core/scene3d/surface-fill-mono.js`).
 
 ### Fixed
+- **Every variable-width tone law collapsed on a TORUS — 40-58% of its wide stretches refused, bare
+  centrelines shipped — because the surface normal was inverted on the inner third of the tube.**
+  `SurfaceFill.sampleAt` oriented each normal on its own with `dot(nLocal, p0) < 0`, "outward,
+  charts centre near origin". `cross(dPa, dPb)` already fixes the normal up to ONE sign, and that
+  sign is the chart's parameter handedness — a constant for the whole surface — so the per-sample
+  test was answering a question about star-shapedness instead. A torus is the first chart in
+  `chartFor` that is not star-shaped about the origin: `dot(n, p) = major·cos(2πv) + minor` goes
+  negative wherever `cos(2πv) < -minor/major`, and 6837 of 24779 samples (27.6%) came back INVERTED
+  (sphere, capsule, cylinder: 0). `front` therefore flipped across that locus, `buildRegionRings`
+  traced it as two extra "silhouettes" (signed areas -422.77 and -464.05 beside the real outer
+  silhouette's +1282.37), containment classified both as HOLES, and the ribbon clip region collapsed
+  from 1282.4 mm² to 399.6 mm² — 12.6% of the fill vertices the front test had itself proved
+  on-surface fell outside their own clip region. The handedness is now decided ONCE per chart from
+  the sign of `∮ p·n dA` (`chartOrientation`), which is correct for any closed chart and provably a
+  no-op wherever the old test was already right. Second, related fix: a traced ring nested inside
+  another is a HOLE only if it WINDS THE OTHER WAY (`resolveFoldRings`) — the projection preserves
+  orientation across the front-facing set, so the winding number is the sheet count, and a ring that
+  winds with the silhouette is a FOLD across a doubly-covered sheet, not an edge of the drawing.
+  Containment alone carved in both cases (measured at camera pitch 5: 515.1 mm² of an 818.9 mm²
+  silhouette, 4 stretches refused). Measured after, ribbons built / wide stretches: `taperedEnds`
+  16/32 -> **18/18**, `ampSpacing` 44/82 -> **56/59**, `whiteBand` 25/42 -> **19/20**,
+  `amplitudeOnly` 24/57 -> **44/46**, with the torus's hole surviving as a hole (2 rings,
+  1239.5 mm² net inside 1282.4 mm²). Sphere, capsule and cylinder are unchanged — the sphere's
+  rendered frame is byte-identical before and after. Evidence and reproduction in
+  `docs/torus-fix-evidence/TABLE.md`.
 - **Five self-crossing tone laws rendered as a solid slab with a hollow black lens instead of a
   ribbon.** `RibbonGeometry` resolved a self-overlapping ribbon outline through
   `FillBoolean.union` and then kept only `largestShell(result)` — polygon[0] of the biggest
