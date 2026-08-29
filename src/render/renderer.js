@@ -24,6 +24,9 @@
   });
   const TAU = Math.PI * 2;
   const ELLIPSE_KAPPA = 0.5522847498307936;
+  // Canvas/SVG spell the extended "projecting" cap as "square". One map, used
+  // by both the per-layer stroke context and the per-path cap batching.
+  const CANVAS_CAP = { butt: 'butt', round: 'round', projecting: 'square', square: 'square' };
   // Live Corners drag readout in document units (source units are mm), e.g.
   // "R: 12.50 mm" / "R: 0.49 in" — matches the dialog instead of hardcoding px.
   const cornerRadiusLabel = (valueMm) =>
@@ -5033,6 +5036,9 @@
           let currentPenId = defaultPenId;
           let currentStrokeWidth = layerPen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
           let currentStrokeStyle = layerPen?.color || l.color;
+          // Batch cap state, mirroring the pen/width/style batch state above.
+          const layerCap = l.lineCap || 'round';
+          let currentLineCap = layerCap;
 
           // L5: paper-color pen-true preview forces the raw pen color/width (no
           // display substitution). Guarded by a default-false flag — identical
@@ -5120,16 +5126,34 @@
               this.ctx.lineWidth = currentStrokeWidth;
               this.ctx.strokeStyle = currentStrokeStyle;
               this._applyLayerStrokeCtx(l);
+              // Same restatement the weight/dash branch needs below:
+              // _applyLayerStrokeCtx resets the cap to the LAYER's, so the batch
+              // cap has to be re-stated or the next batched path silently
+              // reverts to the layer cap mid-run.
+              this.ctx.lineCap = CANVAS_CAP[currentLineCap] || currentLineCap || 'round';
               return;
             }
             const dash = this.getPathStrokeDash(path);
             // Variable line weight (silhouette / crease emphasis). A path carrying
             // meta.weightScale != 1 is stroked in isolation at a scaled width
             // (clamped to 6x) so it doesn't disturb the batched pen-group stroke.
-            const rawWeight = Number(path?.meta?.weightScale);
-            const weightScale = Number.isFinite(rawWeight) && rawWeight !== 1
-              ? Math.max(0.1, Math.min(6, rawWeight))
-              : 1;
+            // Renderer.resolvePathWeightScale is THE definition — the export
+            // preview, the emitted SVG and expand-into-group all read the same
+            // one, so the four can no longer disagree about a path's width.
+            const weightScale = Renderer.resolvePathWeightScale(path);
+            // Per-path cap override (`meta.strokeCap`, set by the pen-width
+            // ribbon geometry so its butt-ended fill passes cannot bulge past
+            // the clipped form). Batched, not isolated: ribbon fills arrive as
+            // long contiguous runs, so flipping the batch cap once per run
+            // keeps the single-stroke batching intact instead of degrading to
+            // one ctx.stroke() per path.
+            const pathCap = Renderer.resolvePathLineCap(path, layerCap);
+            if (pathCap !== currentLineCap) {
+              this.ctx.stroke();
+              currentLineCap = pathCap;
+              this.ctx.beginPath();
+              this.ctx.lineCap = CANVAS_CAP[currentLineCap] || currentLineCap || 'round';
+            }
             if (dash || weightScale !== 1) {
               this.ctx.stroke();
               this.ctx.save();
@@ -5143,6 +5167,10 @@
               this.ctx.lineWidth = currentStrokeWidth;
               this.ctx.strokeStyle = currentStrokeStyle;
               this._applyLayerStrokeCtx(l);
+              // _applyLayerStrokeCtx just reset the cap to the LAYER's, so the
+              // batch cap has to be re-stated or the next batched path silently
+              // reverts to round.
+              this.ctx.lineCap = CANVAS_CAP[currentLineCap] || currentLineCap || 'round';
               return;
             }
             this.traceLayerPath(path, l, temp, useCurves);
@@ -13903,10 +13931,8 @@
     // to the historical `round`/`round`/10 defaults. Lane B owns the model &
     // serialization; the renderer only mirrors the fields at draw time.
     _applyLayerStrokeCtx(layer) {
-      // Canvas/SVG spell the extended "projecting" cap as "square".
-      const capMap = { butt: 'butt', round: 'round', projecting: 'square', square: 'square' };
       const cap = layer && layer.lineCap;
-      this.ctx.lineCap = capMap[cap] || cap || 'round';
+      this.ctx.lineCap = CANVAS_CAP[cap] || cap || 'round';
       this.ctx.lineJoin = (layer && layer.lineJoin) || 'round';
       const miter = layer && Number(layer.miterLimit);
       this.ctx.miterLimit = Number.isFinite(miter) && miter > 0 ? miter : 10;
@@ -15707,6 +15733,40 @@
   // pens. `records` are the { path, penKey, layerSeq, pathIndex, lineSortOrder,
   // lineSortGrouping, optimized, ... } records buildPlotRecords produces.
   // Returns a new flat array; the input array is not mutated.
+  // ── PER-PATH STROKE RESOLUTION — ONE definition, four consumers ──────────
+  // Canvas render (this file), the export preview canvas (ui/modals/export-svg.js),
+  // the emitted SVG (ui/ui-file-io.js) and "expand into group"
+  // (ui/panels/layers-panel.js) must all answer "how wide, and with what cap,
+  // is this ONE path actually drawn?" identically. They used to answer it with
+  // three hand-copied clamp expressions and no cap channel at all, which is how
+  // expand drifted away from what the canvas showed. These two statics are the
+  // single source of truth; every consumer either calls them or (in the lean
+  // test runtime, where renderer.js is not loaded) mirrors them behind the same
+  // optional-chain fallback idiom used for STROKE_STYLE elsewhere.
+
+  // A plotter pen has a fixed physical width, so `meta.weightScale` is clamped:
+  // below 0.1x the mark is not a mark, above 6x the claim is not plottable.
+  Renderer.WEIGHT_SCALE_MIN = 0.1;
+  Renderer.WEIGHT_SCALE_MAX = 6;
+  Renderer.resolvePathWeightScale = function resolvePathWeightScale(path) {
+    const raw = Number(path && path.meta && path.meta.weightScale);
+    if (!Number.isFinite(raw) || raw === 1) return 1;
+    return Math.max(Renderer.WEIGHT_SCALE_MIN, Math.min(Renderer.WEIGHT_SCALE_MAX, raw));
+  };
+
+  // Per-path cap override (`meta.strokeCap`). Introduced for the pen-width
+  // ribbon geometry: a ribbon's outline and its pen-pitched interior fill are
+  // REAL geometry whose ends sit exactly on the clipped form boundary, so a
+  // round cap would push half a pen width of ink PAST that boundary — the
+  // protrusion at a sphere's limb. Those paths ask for `butt`. Nothing else
+  // sets the field, so every other layer type keeps its layer-level cap
+  // untouched; this is deliberately NOT a global cap change.
+  Renderer.resolvePathLineCap = function resolvePathLineCap(path, layerCap) {
+    const cap = path && path.meta && path.meta.strokeCap;
+    if (cap === 'butt' || cap === 'round' || cap === 'square' || cap === 'projecting') return cap;
+    return layerCap;
+  };
+
   Renderer.buildPlotSequence = function buildPlotSequence(records) {
     const groupOrder = [];
     const groups = new Map();

@@ -816,6 +816,17 @@
           const layerDashAttr = item.dashArray ? ` stroke-dasharray="${formatDashArray(item.dashArray)}"` : '';
           svg += `<g id="${item.layerGroupId}-${itemIndex + 1}" stroke-width="${item.strokeWidth}" stroke-linecap="${svgLineCap(item.lineCap)}"${joinAttrs}${layerDashAttr}>`;
           let attrs = item.path?.meta?.exportClipped ? { 'stroke-linecap': 'butt' } : null;
+          // Per-path cap override (`meta.strokeCap`). The pen-width ribbon
+          // geometry sets butt so its outline/fill passes end exactly on the
+          // clipped form instead of bulging half a pen width past it — the SVG
+          // has to say so too, or the plot protrudes where the canvas didn't.
+          const itemCap = window.Vectura?.Renderer?.resolvePathLineCap
+            ? window.Vectura.Renderer.resolvePathLineCap(item.path, item.lineCap)
+            : item.lineCap;
+          if (itemCap && itemCap !== item.lineCap) {
+            attrs = attrs || {};
+            attrs['stroke-linecap'] = svgLineCap(itemCap);
+          }
           // No per-item stroke/width override here: items are bucketed by
           // EFFECTIVE pen in getExportSnapshot, so the enclosing pen group
           // already carries the right stroke color and pen width.
@@ -827,9 +838,14 @@
           // Variable line weight (silhouette / crease emphasis): emit a per-path
           // stroke-width override only when meta.weightScale differs from 1, so
           // default geometry keeps the group-level stroke-width untouched.
+          // Resolved through Renderer.resolvePathWeightScale (with a
+          // byte-identical lean-runtime fallback) so the emitted width cannot
+          // drift from the canvas render, the export preview or expand.
           const rawWeight = Number(item.path?.meta?.weightScale);
           if (Number.isFinite(rawWeight) && rawWeight !== 1) {
-            const weightScale = Math.max(0.1, Math.min(6, rawWeight));
+            const weightScale = window.Vectura?.Renderer?.resolvePathWeightScale
+              ? window.Vectura.Renderer.resolvePathWeightScale(item.path)
+              : Math.max(0.1, Math.min(6, rawWeight));
             const scaledWidth = (parseFloat(item.strokeWidth) || 0) * weightScale;
             if (Number.isFinite(scaledWidth) && scaledWidth > 0) {
               attrs = attrs || {};

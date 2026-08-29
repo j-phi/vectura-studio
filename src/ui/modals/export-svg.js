@@ -358,15 +358,24 @@
       return renderer.rgbToCss(mixed, 0.92);
     };
 
+    // Lean-runtime fallback: renderer.js is excluded from some test harnesses.
+    // MUST stay byte-identical to Renderer.resolvePathWeightScale.
+    const fallbackWeightScale = (path) => {
+      const raw = Number(path?.meta?.weightScale);
+      if (!Number.isFinite(raw) || raw === 1) return 1;
+      return Math.max(0.1, Math.min(6, raw));
+    };
+
     const drawItem = (item, strokeStyle, options = {}) => {
       const alpha = options.alpha ?? 1;
       const baseLineWidth = options.lineWidth ?? parseFloat(item.strokeWidth || SETTINGS.strokeWidth || 0.3);
       // Variable line weight (silhouette / crease emphasis): scale per-path,
-      // clamped to 6x. Absent or 1 → unchanged.
-      const rawWeight = Number(item?.path?.meta?.weightScale);
-      const weightScale = Number.isFinite(rawWeight) && rawWeight !== 1
-        ? Math.max(0.1, Math.min(6, rawWeight))
-        : 1;
+      // clamped to 6x. Absent or 1 → unchanged. Resolved through
+      // Renderer.resolvePathWeightScale so this preview cannot drift from the
+      // canvas render, the emitted SVG or expand-into-group.
+      const weightScale = window.Vectura?.Renderer?.resolvePathWeightScale
+        ? window.Vectura.Renderer.resolvePathWeightScale(item?.path)
+        : fallbackWeightScale(item?.path);
       const lineWidth = baseLineWidth * weightScale;
       const clipPolygons = (item.ancestorClipLayerIds || [])
         .flatMap((layerId) => snapshot.clipPolygonsByLayerId.get(layerId) || []);
@@ -384,9 +393,15 @@
       // Stroke style model (STR-1/STR-3): the preview draw mirrors the exact
       // values the SVG emission writes (cap mapping, join, miter limit,
       // layer-level dash) so screen matches export.
+      // Per-path cap override (`meta.strokeCap`) outranks the layer cap — see
+      // Renderer.resolvePathLineCap. Ribbon outline/fill passes ask for butt so
+      // they cannot bulge past the clipped form in the preview either.
+      const itemCap = window.Vectura?.Renderer?.resolvePathLineCap
+        ? window.Vectura.Renderer.resolvePathLineCap(item?.path, item.lineCap)
+        : item.lineCap;
       ctx.lineCap = window.Vectura?.STROKE_STYLE?.toCanvasCap
-        ? window.Vectura.STROKE_STYLE.toCanvasCap(item.lineCap)
-        : (item.lineCap === 'projecting' ? 'square' : (item.lineCap || 'round'));
+        ? window.Vectura.STROKE_STYLE.toCanvasCap(itemCap)
+        : (itemCap === 'projecting' ? 'square' : (itemCap || 'round'));
       ctx.lineJoin = item.lineJoin || 'round';
       if (item.lineJoin === 'miter' && Number.isFinite(item.miterLimit)) {
         ctx.miterLimit = item.miterLimit;
