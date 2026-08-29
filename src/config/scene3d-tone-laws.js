@@ -731,9 +731,9 @@
     "label": "Voronoi Web",
     "family": "mono",
     "singleWeight": true,
-    "mechanism": "The drawing is a network, not a set of rulings: the Voronoi edges of a seed set whose density is the tone. Dark means many seeds means small cells means more edge length per square millimetre. There is no ruling direction anywhere, so there is nothing to moire against and no lattice for a band edge to run along; depth comes from the cell-size gradient, which shrinks smoothly toward the terminator and the limb as a real surface texture would foreshorten. It reaches black where the cell diameter falls to about two ink widths and the cell walls abut.",
-    "strengths": "No ruling direction anywhere in the drawing, so there is no lattice for a band edge to run along and nothing for a fixed spacing to moire against; the cell-size gradient recedes toward the limb the way a real surface texture would foreshorten.",
-    "weaknesses": "Weak fit (R2 0.07-0.12) and a narrow span, with by far the highest path count in the mono roster (thousands of seeds/edges per cell) — an isotropic network is expensive to plot and slow to converge toward a deep, even shadow.",
+    "mechanism": "The drawing is a network, not a set of rulings: the Voronoi edges of a seed set whose density is the tone. Dark means many seeds means small cells; light means few seeds means large open cells. Every cell wall is drawn and the walls are chained into long continuous strokes before they are emitted, so the web stays a connected planar graph with no dropped edges and no dangling stubs - tone is never spent by deleting an edge. Seeds come from a density-warped low-discrepancy sequence, rejected on the mean of the two cells' radii and then Lloyd-relaxed twice, so the cells stay convex and well spaced at every local density. Cell diameter is clamped at both ends: never narrower than 3.25 pen widths, which leaves an opening wider than two pen widths so the darkest passage still reads as a web rather than as a solid, and never wider than the smaller of a seventh of the form's screen radius and 1.25 times the lightest pitch, so the most open passage still reads as a cell rather than as empty paper.",
+    "strengths": "No ruling direction anywhere in the drawing, so there is no lattice for a band edge to run along and nothing for a fixed spacing to moire against; the cell-size gradient recedes toward the limb the way a real surface texture would foreshorten. The web is unbroken and legible at both ends of the ramp, and chaining the walls cuts the pen lifts to about a third of the wall count.",
+    "weaknesses": "The two legibility clamps cap the tonal span: the darkest passages plateau at the minimum cell once the light has fallen far enough, so the law tracks the light well through the midtones and then flattens at the very dark end. An isotropic network also remains comparatively expensive to plot.",
     "chooseWhen": "Choose it where a non-directional, cellular texture is wanted instead of any ruled hatch — a stone, coral, or cracked-earth read.",
     "caveat": null,
     "simulated": false,
@@ -870,7 +870,7 @@
   }
 
   Vectura.SCENE3D_TONE_LAWS = {
-    VERSION: "54df77a4d2b1f40c7d4f3f0e86210461fcde3856",
+    VERSION: "363e6c556530e8d473563841aec8e06a4ae245c9",
     DEFAULT: 'ladder',
     IDS,
     PRODUCTION,

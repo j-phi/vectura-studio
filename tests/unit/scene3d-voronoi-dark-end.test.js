@@ -30,14 +30,19 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  * "busier/smaller cells near shadow" the owner asked for.
  *
  * THIS TEST measures real generated geometry with the identical
- * scene/harness `scene3d-turing-polarity.test.js` uses. Since a Voronoi
- * network's total edge length scales with sqrt(seed count) but its EDGE
- * COUNT (one path per wall) scales linearly with seed count, and seed count
- * is inversely proportional to cell AREA, edge-count-per-unit-area is a more
- * direct proxy for "1 / mean cell size" than ink length. The test partitions
- * emitted Voronoi wall paths into screen-X quintiles by midpoint and counts
- * PATHS per unit area (not ink length) in the shadow quintile vs the lit
- * quintile.
+ * scene/harness `scene3d-turing-polarity.test.js` uses, partitioned into
+ * screen-X quintiles by segment midpoint.
+ *
+ * IT USED TO COUNT PATHS. That was sound while the law emitted exactly one
+ * path per Voronoi wall. It does not any more: the web-integrity work
+ * (`scene3d-voronoi-web-integrity.test.js`) chains the walls into long
+ * continuous strokes before emission, because emitting a wall on its own put
+ * it in front of `emitScr`'s MINMARK guard, which deleted every short one and
+ * tore the web into 3987 pieces. Path count now measures the chainer, not the
+ * cells. The metric here is therefore INK LENGTH per unit area, which is
+ * proportional to 1 / sqrt(cell area) for any tessellation and is blind to how
+ * the walls were grouped into strokes. Both the pre-fix and post-fix numbers
+ * quoted below were re-measured on that metric.
  */
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -82,25 +87,35 @@ describe('Scene3D voronoiWeb dark-end cell size', () => {
 
   const fills = (paths) => paths.filter((pp) => pp.meta && pp.meta.kind === 'sceneFill');
 
-  // Edges (one path per Voronoi wall) per unit AREA in a screen-X quintile of
-  // the silhouette bbox, area-normalized the same way
-  // scene3d-turing-polarity.test.js's quintileDensity is. Quintile 0 =
-  // leftmost fifth (shadow, world -X); quintile 4 = rightmost fifth (lit,
-  // world +X). Edge count per area is proportional to 1 / mean cell area.
-  const quintileEdgeDensity = (paths) => {
+  // INK LENGTH per unit AREA in a screen-X quintile of the silhouette bbox,
+  // area-normalized the same way scene3d-turing-polarity.test.js's
+  // quintileDensity is. Quintile 0 = leftmost fifth (shadow, world -X);
+  // quintile 4 = rightmost fifth (lit, world +X).
+  //
+  // WHY LENGTH AND NOT PATH COUNT. This measure used to count PATHS, on the
+  // reasoning that the law emitted exactly one path per Voronoi wall. It no
+  // longer does: since the web-integrity work
+  // (`scene3d-voronoi-web-integrity.test.js`) the walls are CHAINED into long
+  // continuous strokes before emission — that is what stops `emitScr`'s
+  // MINMARK guard from deleting short walls and tearing the web — so path
+  // count now measures how the chainer happened to cut the graph, not how big
+  // the cells are. Ink length per unit area is proportional to
+  // 1 / sqrt(cell area) for ANY tessellation and does not care how the walls
+  // were grouped into strokes, so it survives the change.
+  const quintileDensity = (paths) => {
     const ff = fills(paths);
     let minX = 1e9; let maxX = -1e9;
     ff.forEach((pp) => pp.forEach((pt) => { minX = Math.min(minX, pt.x); maxX = Math.max(maxX, pt.x); }));
     const cx = (minX + maxX) / 2; const R = (maxX - minX) / 2;
     const span = Math.max(1e-6, maxX - minX); const binW = span / 5;
-    const counts = new Array(5).fill(0); const areas = new Array(5).fill(0);
+    const lens = new Array(5).fill(0); const areas = new Array(5).fill(0);
     ff.forEach((pp) => {
-      let sx = 0; let n = 0;
-      pp.forEach((pt) => { sx += pt.x; n += 1; });
-      const mx = n ? sx / n : 0;
-      let b = Math.floor(((mx - minX) / span) * 5);
-      b = Math.max(0, Math.min(4, b));
-      counts[b] += 1;
+      for (let i = 1; i < pp.length; i += 1) {
+        const mx = (pp[i - 1].x + pp[i].x) / 2;
+        let b = Math.floor(((mx - minX) / span) * 5);
+        b = Math.max(0, Math.min(4, b));
+        lens[b] += Math.hypot(pp[i].x - pp[i - 1].x, pp[i].y - pp[i - 1].y);
+      }
     });
     for (let b = 0; b < 5; b += 1) {
       const x0 = minX + b * binW; const x1 = x0 + binW;
@@ -112,35 +127,43 @@ describe('Scene3D voronoiWeb dark-end cell size', () => {
       }
       areas[b] = a;
     }
-    return counts.map((c, i) => c / Math.max(1e-6, areas[i]));
+    return lens.map((l, i) => l / Math.max(1e-6, areas[i]));
   };
 
   test('voronoiWeb: shadow (screen-left) has more, smaller cells than lit (screen-right)', () => {
     const paths = algo.generate(scene('voronoiWeb'), null, null, BOUNDS) || [];
     expect(paths.length).toBeGreaterThan(0);
-    const d = quintileEdgeDensity(paths);
+    const d = quintileDensity(paths);
     expect(d[0]).toBeGreaterThan(0);
     expect(d[4]).toBeGreaterThan(0);
-    // Pre-fix (rad from pitchLegible, floored at FLOOR for most of the dark
-    // range) measured edge-density ratio 1.171 — direction correct but weak.
-    // Post-fix (rad from pitchFor, allowed to crowd past FLOOR at the dark
-    // end) measured 1.304. 1.22 sits strictly between the two: it fails on
-    // the pre-fix behaviour and passes on the corrected one.
+    // On the INK-LENGTH metric this file now uses (see `quintileDensity`),
+    // the shipped-before-web-integrity law measured [1.549, 1.574, 1.547,
+    // 1.495, 1.370] — a shadow/lit ratio of 1.131. The clamped cell-size law
+    // measures [1.605, 1.623, 1.541, 1.385, 1.164] — 1.379. The original
+    // threshold of 1.22 still sits strictly between the two, so it fails on
+    // the old behaviour and passes on the corrected one.
+    //
+    // NOTE the screen-X quintile deliberately understates the effect. Both
+    // extreme quintiles are limb slivers where Lambert has already fallen, so
+    // neither is the true dark or true light end; the radiance-banded measure
+    // in `scene3d-voronoi-web-integrity.test.js` reads the same geometry as a
+    // 3.06x span. This test is kept as the coarse cross-check it always was.
     expect(d[0] / d[4]).toBeGreaterThan(1.22);
   }, 60000);
 
   test('voronoiWeb: lit-end character is preserved (unchanged within noise)', () => {
     const paths = algo.generate(scene('voronoiWeb'), null, null, BOUNDS) || [];
-    const d = quintileEdgeDensity(paths);
-    // Pre-fix measured lit-quintile (index 4) edge density: see this file's
-    // sibling table run. `pitchFor` is IDENTICAL to `pitchLegible` for any I
-    // whose natural pitch already clears FLOOR, so the lit end (which sits
-    // above that threshold) should be unaffected by the dark-end swap,
-    // within the seed-adjacency noise a shared dart-throwing pass can carry
-    // across the tone boundary.
-    const PRE_FIX_LIT_EDGE_DENSITY = 1.2863732808958204;
-    expect(d[4]).toBeGreaterThan(PRE_FIX_LIT_EDGE_DENSITY * 0.7);
-    expect(d[4]).toBeLessThan(PRE_FIX_LIT_EDGE_DENSITY * 1.3);
+    const d = quintileDensity(paths);
+    // The owner asked for the LIT end to keep its character while the shadow
+    // end got busier, and the web-integrity work had to be held to the same
+    // promise: the cell-size ceiling is deliberately pinned near the pitch the
+    // law already used there (`PMAX * 1.25` against the old `PMAX * 1.15`), so
+    // the open end of the drawing should look like itself. Measured on the
+    // ink-length metric before that work: 1.370. After: 1.164 — 15 % more
+    // open, inside the band below.
+    const PRE_FIX_LIT_INK_DENSITY = 1.3700153412206355;
+    expect(d[4]).toBeGreaterThan(PRE_FIX_LIT_INK_DENSITY * 0.7);
+    expect(d[4]).toBeLessThan(PRE_FIX_LIT_INK_DENSITY * 1.3);
   }, 60000);
 
   test('voronoiWeb: cell/segment count stays bounded (no dark-end explosion)', () => {
@@ -148,10 +171,12 @@ describe('Scene3D voronoiWeb dark-end cell size', () => {
     const ff = fills(paths);
     let segCount = 0;
     ff.forEach((pp) => { segCount += Math.max(0, pp.length - 1); });
-    // Today's (pre-fix) measured segment count is ~24100 and the dart-throw
-    // budget (TRIES = 26000) already bounds worst-case seed count. This
-    // guards against a future change quietly blowing past that by an order
-    // of magnitude.
+    // The dart-throw budget (`TRIES`) bounds the worst-case seed count and the
+    // `CELL_MIN` clamp bounds how tightly they can pack, so the geometry is
+    // doubly capped. Measured now: ~25700 segments across ~4000 chained
+    // strokes (against ~24100 segments across ~11800 one-wall paths before
+    // chaining — the same ink, a third of the pen lifts). This guards against
+    // a future change quietly blowing past that by an order of magnitude.
     expect(segCount).toBeLessThan(120000);
     expect(ff.length).toBeLessThan(26000);
   }, 60000);
