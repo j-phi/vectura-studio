@@ -5429,43 +5429,6 @@
       return rings;
     };
 
-    // The visible region pulled in by HALF A PEN — the clip target for anything
-    // that will be STROKED rather than filled. A path inside this region strokes
-    // its outer edge onto the silhouette and never past it, which is the same
-    // protrusion guarantee `ribbonize`'s RIBBON class gets by eroding after the
-    // clip, made available to the WALLS class, which cannot erode (its geometry
-    // is thinner than the erosion it would need). Built once per side per build:
-    // the silhouette is a fat region, so this erosion is nowhere near the
-    // hairline regime that makes the per-ribbon one unreliable.
-    const regionInsetMemo = new Map();
-    const visibleRegionInsetRings = (wantFront) => {
-      const key = wantFront ? 'F' : 'B';
-      if (regionInsetMemo.has(key)) return regionInsetMemo.get(key);
-      let out = [];
-      const rings = visibleRegionRings(wantFront);
-      const FB = Vectura.FillBoolean;
-      const GU = Vectura.GeometryUtils;
-      if (rings.length && FB && typeof FB.nonZeroUnionByContainment === 'function'
-        && GU && typeof GU.insetMultiPolygon === 'function') {
-        try {
-          const mp = FB.nonZeroUnionByContainment(rings) || [];
-          const inset = mp.length ? (GU.insetMultiPolygon(mp, penWidth / 2, { minArea: 0 }) || []) : [];
-          inset.forEach((poly) => (poly || []).forEach((r) => {
-            const pts = [];
-            for (let i = 0; i < r.length; i++) {
-              const q = r[i];
-              const x = Array.isArray(q) ? q[0] : q.x;
-              const y = Array.isArray(q) ? q[1] : q.y;
-              if (Number.isFinite(x) && Number.isFinite(y)) pts.push({ x, y });
-            }
-            if (pts.length >= 3) out.push(pts);
-          }));
-        } catch (err) { out = []; }
-      }
-      regionInsetMemo.set(key, out);
-      return out;
-    };
-
     // ── ROUND 6 — THE MARK EMITTER ────────────────────────────────────────────
     //
     // One call per ruling. It replaces the ruling outright: a mark law emits
@@ -6228,7 +6191,7 @@
       //                       duplicate.
       //   w <= 2.0p   WALLS   ONE closed ring built ANALYTICALLY at half - pen/2
       //                       (no boolean erosion at all) and clipped to the
-      //                       pen-inset region. Stroked with the real pen its two
+      //                       RAW region. Stroked with the real pen its two
       //                       walls are (w - p) <= p apart, so their ink MEETS —
       //                       there is no interior void to fill, and the ring
       //                       covers exactly w by construction.
@@ -6302,22 +6265,42 @@
           outp.push(centrePass(st.a, st.b));
           return;
         }
-        // ── WALLS — 1.1 to 2 pens wide, drawn WITHOUT a boolean erosion ───────
+        // ── WALLS — 1.1 to 2 pens wide, clip-then-erode LIKE THE RIBBON CLASS ──
         //
-        // The eroded ribbon of a ribbon IS a ribbon: erode(ribbon(c, h), d) is
-        // ribbon(c, h - d) along the width axis. Building it analytically skips
-        // the one operation that measured unreliable at these widths, and it
-        // degrades correctly — as `half` approaches pen/2 the two walls converge
-        // on the centreline instead of the erosion vanishing.
+        // F5 REGRESSION FIX. The wall ring is built ANALYTICALLY at the
+        // already-eroded half-width (half - pen/2) — no boolean erosion of
+        // its own (near-degenerate) geometry, unchanged from before. The bug
+        // was in what it clipped against: a whole-silhouette region that was
+        // ITSELF pre-eroded by pen/2 (`visibleRegionInsetRings`, removed).
+        // That pre-erosion ran `insetMultiPolygon` on the WHOLE fold-resolved,
+        // self-occluding silhouette union — exactly the shape its own header
+        // warns about ("offsets comparable to local feature size ... fabricate
+        // phantom lobes") — and at a torus's inner-hole fold cusp it did: the
+        // inset boundary bulged past the true occlusion cusp and let hidden
+        // geometry through (measured: inner-hole ROI white pixels +22% on
+        // `weightSmoothstep`).
         //
-        // The clip target is the region ALREADY PULLED IN by half a pen, so the
-        // pen stroking this ring lands its outer edge exactly on the silhouette
-        // and never past it. (The RIBBON class gets the same guarantee the other
-        // way round: it erodes AFTER clipping to the raw region.)
+        // Tried mirroring the RIBBON class literally (build at full width,
+        // clip to raw region, THEN erode the clipped wall polygon by pen/2)
+        // — measured regression: 6 of 12 bucket-B laws on a torus dropped
+        // ring-fill-rate below the 0.995 floor (weightModulated 0.965,
+        // weightSmoothstep 0.965, ampSpacing 0.986, weaveDepth 0.989,
+        // interlockWeave 0.994, amplitudeOnly 0.991). That is `erode(clip)`
+        // being asked to resolve a boundary less than one pen from itself —
+        // the exact hairline-erosion failure CLS_WALLS exists to avoid — so
+        // that construction was rejected.
+        //
+        // The actual fix: clip the analytic (already-narrow) wall ring
+        // straight to the RAW region — no erosion of the region, and no
+        // erosion of the wall geometry either. The wall's own analytic
+        // narrowing already supplies the pen/2 margin the RIBBON class gets
+        // from its post-clip erosion; clipping to the accurate, sampled RAW
+        // silhouette (rather than a boolean-eroded approximation of it) is
+        // what removes the phantom-lobe leak, without introducing any new
+        // boolean op on thin geometry.
         if (st.cls === CLS_WALLS) {
           ribbonStat.walls += 1;
-          const inset = visibleRegionInsetRings(!back);
-          if (!inset.length) {
+          if (!region.length) {
             ribbonStat.noRegion += 1; outp.push(centrePass(st.a, st.b)); return;
           }
           const wc = []; const wh = [];
@@ -6333,7 +6316,7 @@
           } catch (err) { wallMP = null; }
           let wallClipped = null;
           if (Array.isArray(wallMP) && wallMP.length) {
-            try { wallClipped = RGm.clipMultiPolygonToRegion(wallMP, inset); } catch (err) { wallClipped = null; }
+            try { wallClipped = RGm.clipMultiPolygonToRegion(wallMP, region); } catch (err) { wallClipped = null; }
           }
           const wt0 = ttPts[st.a]; const wt1 = ttPts[st.b];
           const wz = run[st.a] ? run[st.a].z : undefined;

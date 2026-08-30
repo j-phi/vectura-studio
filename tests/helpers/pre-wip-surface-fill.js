@@ -45,4 +45,44 @@ const preWipRuntimeOptions = () => (
     : {}
 );
 
-module.exports = { getPreWipSurfaceFillSource, preWipRuntimeOptions, PRE_WIP_SHA, REL_PATH };
+/**
+ * Generic version of the same RGR RED switch, parameterized by SHA and env
+ * var name, so a test proving RED against a DIFFERENT baseline than
+ * `PRE_WIP_SHA` doesn't have to fork this file. `preWipRuntimeOptions` above
+ * is unchanged (still pinned to `PRE_WIP_SHA` / `VECTURA_PRE_WIP`) — this only
+ * adds a way to build a sibling switch for another commit.
+ */
+const makePreShaRuntimeOptions = (sha, envVar) => {
+  let src = null;
+  const getSource = () => {
+    if (src) return src;
+    const rootDir = path.resolve(__dirname, '../..');
+    src = execFileSync('git', ['show', `${sha}:${REL_PATH}`], {
+      cwd: rootDir,
+      maxBuffer: 1024 * 1024 * 64,
+    }).toString('utf8');
+    return src;
+  };
+  return () => (
+    process.env[envVar] === '1'
+      ? { scriptOverrides: { [REL_PATH]: getSource() } }
+      : {}
+  );
+};
+
+// The F5 wall-clip regression's own buggy revision — CLS_WALLS existed here,
+// clipping against `visibleRegionInsetRings()` (the phantom-lobe-prone erode)
+// instead of the raw region. `PRE_WIP_SHA` (1b157bc6) predates CLS_WALLS
+// entirely and never had this bug, so it is the WRONG baseline for it.
+const PRE_WALLS_FIX_SHA = 'e047c9a7';
+const preWallsFixRuntimeOptions = makePreShaRuntimeOptions(PRE_WALLS_FIX_SHA, 'VECTURA_PRE_WALLS_FIX');
+
+module.exports = {
+  getPreWipSurfaceFillSource,
+  preWipRuntimeOptions,
+  preWallsFixRuntimeOptions,
+  makePreShaRuntimeOptions,
+  PRE_WIP_SHA,
+  PRE_WALLS_FIX_SHA,
+  REL_PATH,
+};
