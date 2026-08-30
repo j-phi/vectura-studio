@@ -165,6 +165,15 @@ const loadVecturaRuntime = async (options = {}) => {
     // every real failure behind an unrelated ENOENT. The module's own absence
     // is still observable — its `window.Vectura.*` namespace is simply not
     // registered, which is what the consuming code must already handle.
+    // `scriptOverrides` lets a test swap in a DIFFERENT source string for one
+    // module by its index.html-relative path — used to drive a pre-fix
+    // revision of a single file (e.g. `git show <sha>:path` for an RGR RED
+    // proof) without checking out another commit in a shared worktree.
+    const override = options.scriptOverrides && options.scriptOverrides[normalized];
+    if (override !== undefined) {
+      vm.runInContext(override, context, { filename: `${absPath} (override)` });
+      return;
+    }
     if (!fs.existsSync(absPath)) return;
     const code = fs.readFileSync(absPath, 'utf8');
     vm.runInContext(code, context, { filename: absPath });

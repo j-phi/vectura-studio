@@ -6146,6 +6146,18 @@
     };
 
     const ribbonize = (run, wPts, ttPts, fam, back) => {
+      // Snapshot the two counters this call is not allowed to invert. `wide`
+      // and `outlineOnly` are only ever touched together, in that order, by
+      // the CLS_RIBBON branch below — `outlineOnly` cannot fire for a stretch
+      // this very call did not also count as `wide`. That makes the relation
+      // a property of ONE INVOCATION, not just of the lifetime totals, so it
+      // is checked as a per-call DELTA: correct even when `ribbonize` is
+      // re-entered on already-processed data (the deferred 'onePenDown' flush
+      // at `flushDeferredRibbons`, which re-ribbonizes a chained/seam-joined
+      // path after the fact — the one call site where stale or duplicated
+      // width bookkeeping could otherwise slip past unnoticed).
+      const wideBefore = ribbonStat.wide;
+      const outlineOnlyBefore = ribbonStat.outlineOnly;
       const n = run.length;
       const tag = (path, t0, t1) => {
         path.fam = fam;
@@ -6475,6 +6487,22 @@
           throw new Error(`Vectura SurfaceFill.ribbonize: emitted weightScale ${outp[i].weightScale} `
             + `for law "${TONE_ALGO}" — every ribbon path must be a real single-pen stroke.`);
         }
+      }
+      // ── COUNTER INVARIANT (this call only) ──────────────────────────────────
+      // `outlineOnly` books "a ribbon shipped without a fill" and is therefore a
+      // SUBSET of `wide` ("a stretch reached the ribbon branch at all") by
+      // construction — both are incremented once per CLS_RIBBON stretch, wide
+      // first. A violation here means two different calls counted the same
+      // geometry inconsistently (the deferred-flush re-ribbonize is the one
+      // call site that revisits already-emitted data), which is exactly the
+      // "outlineOnly > wide" failure that made these counters unusable for
+      // judging. Fail loud rather than publish a number nobody can trust.
+      const wideDelta = ribbonStat.wide - wideBefore;
+      const outlineOnlyDelta = ribbonStat.outlineOnly - outlineOnlyBefore;
+      if (outlineOnlyDelta > wideDelta) {
+        throw new Error(`Vectura SurfaceFill.ribbonize: outlineOnly delta (${outlineOnlyDelta}) `
+          + `exceeded wide delta (${wideDelta}) for law "${TONE_ALGO}" — the ribbon counters have `
+          + 'gone inconsistent and can no longer be trusted.');
       }
       return outp.length ? outp : [centrePass(0, n - 1)];
     };
@@ -8293,6 +8321,24 @@
           const h0 = head[0];
           const t1 = tail[tail.length - 1];
           if (Math.hypot(t1.x - h0.x, t1.y - h0.y) < SEAM_JOIN_MM) {
+            // 'onePenDown' rides this same join wearing `__hw` (its deferred
+            // per-point half-width profile — see `pendRibbon` /
+            // `flushDeferredRibbons`). The point arrays are stitched in
+            // lockstep here, so `__hw` MUST be too: leaving it behind means
+            // `tail.length` grows by `head.length - 1` while `tail.__hw`
+            // does not, and `flushDeferredRibbons`'s own padding step (it
+            // holds the LAST known width open for exactly this "a stitcher
+            // appended points without widths" case) then re-inks the whole
+            // seam segment at `tail`'s width instead of `head`'s real one —
+            // a genuine width substitution, not a merge. Measured: a
+            // sphere/contour onePenDown chain crossing the seam carried
+            // head's true half-widths silently forward as a flat run of
+            // tail's last value, which is exactly the kind of stretch this
+            // effort's `wide`/`walls`/`outlineOnly` counters have to
+            // classify correctly to stay trustworthy.
+            if (Array.isArray(tail.__hw) && Array.isArray(head.__hw)) {
+              for (let i = 1; i < head.__hw.length; i++) tail.__hw.push(head.__hw[i]);
+            }
             for (let i = 1; i < head.length; i++) tail.push(head[i]);
             tail.tt1 = head.tt1;
             const at = out.indexOf(head);

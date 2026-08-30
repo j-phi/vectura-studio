@@ -65,10 +65,18 @@ describe('SurfaceFill ribbons — every bucket-B law, every curved primitive', (
 
   // Guard the guard: a build that never widened anything would pass every
   // assertion below trivially, which is exactly how an inert pipeline hides.
+  //
+  // STALE-ASSERTION UPDATE (F3 fix, 2026-08-30): `ribbonize` now classifies a
+  // stretch into one of THREE width classes instead of two — CLS_CENTRE
+  // (<=1 pen), CLS_WALLS (1-2 pen, built analytically), CLS_RIBBON (>2 pen,
+  // this file's original `wide`). Most of what this file measured as `wide`
+  // pre-fix is now `walls`: the "actually widened" question is answered by
+  // `wide + walls`, not `wide` alone — asserting `wide > 0` alone is exactly
+  // the kind of stale assertion that would hide the WALLS class going inert.
   test.each(CURVED)('%s — the laws actually widen something to ribbonize', (primitive) => {
     LAWS.forEach((law) => {
       expect(matrix[primitive][law].ribbonLaw).toBe(true);
-      expect(matrix[primitive][law].wide).toBeGreaterThan(0);
+      expect(matrix[primitive][law].wide + matrix[primitive][law].walls).toBeGreaterThan(0);
     });
   });
 
