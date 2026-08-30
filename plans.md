@@ -189,6 +189,12 @@ question. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **2026-08-30 — Fixed-context-tax trim (dev workflow, no product change).** Deduped
+  CLAUDE.md↔AGENTS.md (single source per topic with cross-pointers; all rules preserved);
+  session-awareness hook now skips re-injection on `/clear`/compact restarts, ignores foreign
+  (`~/.gemini/`) worktrees, and caps the dirty-worktree listing at 10; removed 139 clean
+  worktrees (branches untouched; 39 dirty worktrees left as-is); project settings disable 8
+  never-used plugins; graphify-out excluded from routine git status/diff by rule.
 - **Unreleased — Live Corner styles (Round / Inverted Round / Chamfer).**
   Corner widgets on parametric shapes and freeform hard corners carry a per-corner
   style: Alt/Option+click cycles it (selected set when 2+ corners selected), ↑/↓ cycles

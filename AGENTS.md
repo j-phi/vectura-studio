@@ -9,8 +9,7 @@
 - `plans.md` is the active repo punchlist. Keep `Inbox`, `In Progress`, `Done`, and `Decisions` current as work evolves.
 - `docs/agentic-harness-strategy.md` is the source-of-truth metadocument for agentic development workflow in this repo.
 - `src/ui/skin/` holds the multi-skin theme system: `tokens.css` + `motion.css` + `components.css` (skin-agnostic) plus per-skin palette files (`classic-dark.css`, `classic-light.css`, `classic-lark.css`, `meridian-dark.css`, `meridian-light.css`, `meridian-lark.css`). Adding a new skin: run `npm run skin:new -- <id>` to scaffold from `_template.css`, edit the palette, then add a manifest entry to `src/config/defaults.js` under `window.Vectura.THEMES`. Full guide at `docs/skin-authoring.md`. Skin authoring is **CSS + manifest only** — do not branch JavaScript on skin id; gate behavior on `manifest.capabilities` instead.
-- **Presets:** Presets are strictly file-based. Place `.vectura` files in `user-presets/<layer_type>/` — the directory name must exactly match the layer's `type` field, including camelCase (e.g. `shapePack`, `svgDistort`, `petalisDesigner`). Run `npm run user-presets:bundle` to regenerate `src/config/user-presets.js`. When adding a new algorithm, create its `user-presets/<layer_type>/` directory (with a `.gitkeep`) at the same time. The legacy `src/config/presets.js` shared registry has been retired.
-- Preset naming convention (required for new entries): the file name should be lowercase kebab-case and prefixed with its system as `<preset_system>-<preset-name>.vectura` (example: `petalis-camellia-pink-perfection.vectura`).
+- **Presets:** strictly file-based under `user-presets/<layer_type>/` — full rules (directory naming, bundler behavior, id naming convention, default-origins caveats) in `CLAUDE.md` → "Configuration".
 - `package.json` is the canonical version source. Run `npm run version:sync` whenever the version changes so `src/config/version.js` and the visible app badge stay aligned.
 - The in-app help guide and shortcut list must be kept current; update it whenever features or UI behaviors change.
 - Mermaid diagrams are the standard for architecture diagrams-as-code in repo documentation. Update them whenever architecture meaningfully changes.
@@ -26,7 +25,7 @@
 - Use vanilla JavaScript, IIFE modules, and the `window.Vectura` namespace pattern seen in `src/app/app.js`.
 - Naming: PascalCase for classes (`App`, `Renderer`), camelCase for methods/variables, lowercase file names (e.g., `engine.js`).
 - Keep semicolons and existing formatting consistent with nearby files.
-- **CSS placement:** all new CSS lands in `src/ui/skin/` — panel/component/feature rules go in `components.css`, motion/transition rules in `motion.css`, and design tokens / CSS variables in `tokens.css`. The legacy `styles.css` was deleted in v1.1.10; there is no other CSS surface to grow.
+- **CSS placement:** all new CSS lands in `src/ui/skin/` — placement map and layout rules in `CLAUDE.md` → "CSS & Layout Rules".
 
 ## Testing Guidelines
 - Automated tests are configured and required where applicable: Vitest (`test:unit`, `test:integration`, `test:visual`, `test:perf`) and Playwright (`test:e2e`).

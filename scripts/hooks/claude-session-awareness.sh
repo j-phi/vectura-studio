@@ -31,6 +31,12 @@ printf '%s\t%s\n' "$now" "$cwd" > "$dir/$sid" 2>/dev/null
 
 [ "$mode" = "beat" ] && exit 0
 
+# Only re-inject the warning block on true session boundaries. A /clear or a
+# compaction restart re-fires SessionStart, but the session already saw the
+# warning once — re-injecting it there is pure context cost.
+src="$(printf '%s' "$payload" | jq -r '.source // "startup"' 2>/dev/null)"
+case "$src" in clear|compact) exit 0;; esac
+
 TTL=1800   # a heartbeat older than 30 min is treated as dead and pruned
 warn=""
 
@@ -49,15 +55,26 @@ done
 [ -n "$others" ] && warn="${warn}\nOther live Claude sessions detected (you are not alone — coordinate before committing/pushing):${others}"
 
 # --- other worktrees holding uncommitted WIP ---
+# List at most WT_CAP entries; foreign tools' worktrees (e.g. Gemini/antigravity
+# scratch dirs under ~/.gemini/) are not ours to warn about.
+WT_CAP=10
 wt_warn=""
+wt_count=0
 while IFS= read -r line; do
   case "$line" in worktree\ *) wtp="${line#worktree }";; *) continue;; esac
   [ "$wtp" = "$cwd" ] && continue
+  case "$wtp" in */.gemini/*) continue;; esac
   n="$(git -C "$wtp" status --porcelain 2>/dev/null | grep -c . )"
   [ "$n" -gt 0 ] 2>/dev/null || continue
-  br="$(git -C "$wtp" rev-parse --abbrev-ref HEAD 2>/dev/null)"
-  wt_warn="${wt_warn}\n  - ${wtp} [${br}] — ${n} uncommitted file(s)"
+  wt_count=$((wt_count + 1))
+  if [ "$wt_count" -le "$WT_CAP" ]; then
+    br="$(git -C "$wtp" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    wt_warn="${wt_warn}\n  - ${wtp} [${br}] — ${n} uncommitted file(s)"
+  fi
 done < <(git -C "$cwd" worktree list --porcelain 2>/dev/null)
+if [ "$wt_count" -gt "$WT_CAP" ]; then
+  wt_warn="${wt_warn}\n  …and $((wt_count - WT_CAP)) more dirty worktree(s) — run \`git worktree list\` for the full set"
+fi
 [ -n "$wt_warn" ] && warn="${warn}\nOther worktrees hold uncommitted WIP (parallel development paths — do not assume they are idle, and never reset/rebase across them without a checkpoint):${wt_warn}"
 
 [ -z "$warn" ] && exit 0

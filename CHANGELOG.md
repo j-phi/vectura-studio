@@ -6,6 +6,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Changed
+- **Dev workflow: fixed-context-tax trim (no product change).** CLAUDE.md and AGENTS.md
+  deduplicated to a single source per topic (testing/RGR merged into one section, coding
+  style and preset rules cross-pointed); the session-awareness SessionStart hook no longer
+  re-injects its warning on `/clear`/compact restarts, ignores foreign worktrees, and caps
+  its dirty-worktree listing at 10 entries; 139 clean worktrees removed (all branches
+  retained); graphify-out is now excluded from routine `git status`/`git diff` invocations
+  by rule.
+
 ### Added
 - **industry-parity Live Corner styles: Round, Inverted Round, and Chamfer.**
   Corner widgets (parametric rect/polygon corners and freeform hard corners alike)

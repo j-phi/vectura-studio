@@ -6,13 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Always read `AGENTS.md` first.** It is the repository-level contributor guideline and takes precedence over this file. `docs/agentic-harness-strategy.md` is the source-of-truth for agentic workflow, testing matrix, and documentation contracts.
 
-## Testing Discipline
+## Non-Negotiable Work Discipline
 
-- Always run the full test suite before committing (target: all tests passing, e.g., 741/936/950 tests)
-- Use Red-Green-Refactor (RGR): write a failing regression test FIRST when fixing bugs, then verify it fails, fix the code, verify it passes
-- After any CSS or layout change, also run e2e/visual tests to catch z-index, media query, and specificity regressions
 - **No user-visible change is "done" until observed in the running app.** Passing tests are not visual verification (harness-clean ≠ app-clean) — screenshot or interact with the real app and check the actual result before reporting completion. If you genuinely cannot verify (e.g., no browser available), lead your report with "NOT visually verified" instead of claiming it works.
 - When the user sends a numbered/multi-item feedback list, track every item as an explicit checklist and account for each one in the final report — silently dropping items from multi-part lists is a recurring failure mode.
+- Testing rules live in [Testing & Pre-Commit Validation](#testing--pre-commit-validation-redgreenrefactor) below — RGR for every change, full suite only pre-commit.
 
 ## Commit Hygiene
 
@@ -76,15 +74,8 @@ Vectura Studio is a **no-build, browser-native** physics-inspired vector generat
 python -m http.server          # serve at http://localhost:8000
 # OR open index.html directly in a browser
 
-# Tests
-npm run test                   # unit + integration
-npm run test:unit              # Vitest unit tests
-npm run test:integration       # Vitest integration tests
-npm run test:e2e               # Playwright smoke (desktop + tablet)
-npm run test:visual            # SVG baseline regression
-npm run test:perf              # performance/stress tests
-npm run test:ci                # full PR-gating suite (unit + integration + e2e + visual + perf)
-npm run test:update            # regenerate SVG baselines
+# Tests: npm run test:{unit,integration,e2e,visual,perf,ci,update}
+# — suite purposes and CI policy in docs/testing.md; pick suites via the Testing Matrix below
 
 # Maintenance
 npm run version:sync           # sync package.json version → src/config/version.js + index.html badge
@@ -106,9 +97,9 @@ Node 18+ required. `package.json` is the canonical version source — run `versi
 | Docs-only | Link/path sanity review only |
 | Any PR / full confidence | `test:ci` (unit + integration + e2e + visual + perf) |
 
-## Pre-Commit Validation (Red–Green–Refactor)
+## Testing & Pre-Commit Validation (Red–Green–Refactor)
 
-**Before every commit, validate that every behavior change is covered by tests and that all tests pass.** This is non-negotiable — CI does not retroactively un-break a commit, and a green-locally-only refactor will silently regress a stale test.
+**Before every commit, validate that every behavior change is covered by tests and that all tests pass** (target: all tests passing, e.g., 741/936/950). This is non-negotiable — CI does not retroactively un-break a commit, and a green-locally-only refactor will silently regress a stale test.
 
 For every change, follow Red–Green–Refactor:
 
@@ -118,7 +109,7 @@ For every change, follow Red–Green–Refactor:
 
 **Mandatory pre-commit checklist** — run before `git commit`:
 
-- [ ] Run the suites required by the [Testing Matrix](#testing-matrix) for your change class. For anything non-trivial, run `npm run test:ci`.
+- [ ] Run the suites required by the [Testing Matrix](#testing-matrix) for your change class. For anything non-trivial, run `npm run test:ci`. After any CSS or layout change, also run e2e/visual tests to catch z-index, media query, and specificity regressions.
 - [ ] Every behavior change has at least one test that **fails without the change and passes with it** (RGR proof). UI-only changes get integration or e2e coverage; renderer/algorithm changes get unit coverage.
 - [ ] When a test fails after a refactor, decide deliberately:
   - **Stale assertion** (product behavior intentionally changed) → update the test to reflect the new contract; never delete coverage to "make it pass."
@@ -192,14 +183,11 @@ Consequences, learned the hard way (a stale Occlusion Bias survived being "fixed
 - The bundler **strips any key a `<type>-default` preset merely restates**, so a factory preset carries only its deliberate overrides (it prints them at build time) and `ALGO_DEFAULTS` is live for everything else. Named artworks that double as a default (`wavetable-rolling-hills`) are exempt — they stay self-contained snapshots.
 - A **cascade must pin every mode-critical param** (it is the last word, and legitimately overrides upstream). It must never restate a value it doesn't need to control — that is how a bad bias hides.
 
-**Preset naming:** `id` must be lowercase kebab-case prefixed by system: `<preset_system>-<preset-name>`.
+**Preset naming:** both the `id` and the file name are lowercase kebab-case prefixed by system: `<preset_system>-<preset-name>` / `<preset_system>-<preset-name>.vectura` (example: `petalis-camellia-pink-perfection.vectura`).
 
 ## Coding Style
 
-- 2-space indentation, LF line endings, trim trailing whitespace (`.editorconfig`)
-- Vanilla JS, IIFE modules, `window.Vectura` namespace pattern
-- PascalCase for classes, camelCase for methods/variables, lowercase filenames
-- Keep semicolons and formatting consistent with nearby files
+See `AGENTS.md` → "Coding Style & Naming Conventions" (single source: `.editorconfig` rules, IIFE/`window.Vectura` pattern, naming, CSS placement).
 
 ## Agent Delegation Rules
 
@@ -253,3 +241,4 @@ Rules:
 - Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
 - The pre-commit hook (`scripts/hooks/pre-commit`) auto-runs graphify AST update and stages output before every commit — no manual `graphify update .` needed
+- **Exclude graphify-out from routine git output** — its generated churn is noise. Use `git status -- . ':!graphify-out'` and `git diff [--cached] -- . ':!graphify-out'` for habitual checks; only look at it when diagnosing the graphify hooks themselves
