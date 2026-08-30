@@ -3,7 +3,8 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 /*
  * Scene3D.Shadows — cast shadows on the ground (Phase 2 stream 2A).
  *
- * - overlapping casters in one class → a single unioned region (no seam);
+ * - overlapping casters in one class → one footprint PARTITIONED by overlap
+ *   depth (the overlap slice is its own, denser region — sf/shadow-overlap);
  * - caster-bound subtraction removes the shadow under the caster body;
  * - HLR clips the shadow beneath an occluding object;
  * - styled-over-unstyled precedence carves the unstyled overlap;
@@ -138,12 +139,34 @@ describe('Scene3D.Shadows (CONTRACT L2/L4)', () => {
     expect(footprintHoleRatio(paths)).toBeLessThan(0.12);
   });
 
-  test('two overlapping casters in one class → single unioned region', () => {
+  // sf/shadow-overlap changed this contract deliberately. The class footprint
+  // is still ONE piece of geometry — it is now PARTITIONED by how many casters
+  // cover each part, so the overlap can be ruled at a tighter pitch (shadows
+  // that overlap read as one deeper shadow). The partition must be exact: the
+  // slices tile the same footprint the plain union produced, with no part
+  // covered twice (double coverage is the coincident-line trap — the same ink
+  // drawn again, no darker).
+  test('two overlapping casters in one class → one footprint split by overlap depth', () => {
     const light = { azimuth: 180, elevation: 40 };
     const overlap = runShadows([boxObj('obj-1', -12, 20), boxObj('obj-2', 12, 20)], light);
     const apart = runShadows([boxObj('obj-1', -90, 20), boxObj('obj-2', 90, 20)], light);
-    expect(regionCount(overlap)).toBe(1);         // merged, no internal seam
-    expect(regionCount(apart)).toBe(2);           // disjoint → two regions
+    const polys = (paths) => [...new Set(shadowPaths(paths).map((p) => JSON.stringify(p.meta.sceneTarget.pickPolygon)))]
+      .map((s) => JSON.parse(s));
+    const area = (poly) => { let a = 0; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) a += poly[j].x * poly[i].y - poly[i].x * poly[j].y; return Math.abs(a) / 2; };
+    const geomArea = (geom) => geom.reduce((sum, polygon) => polygon.reduce((s2, ring, k) => s2 + (k === 0 ? 1 : -1) * area(ring.map((pt) => ({ x: pt[0], y: pt[1] }))), sum), 0);
+
+    expect(regionCount(overlap)).toBeGreaterThan(1);  // split, not merged flat
+    expect(regionCount(apart)).toBe(2);               // disjoint → two regions
+    // Exactly one slice is tagged as the overlap, and it is denser by contract.
+    const depths = shadowPaths(overlap).map((p) => p.meta.sceneTarget.shadowOverlap || 1);
+    expect(Math.max(...depths)).toBe(2);
+    expect(shadowPaths(apart).every((p) => p.meta.sceneTarget.shadowOverlap === undefined)).toBe(true);
+    // The slices PARTITION the footprint: Σ areas == area of their union.
+    const FB = V.FillBoolean;
+    const parts = polys(overlap);
+    const sum = parts.reduce((s, poly) => s + area(poly), 0);
+    const merged = geomArea(FB.union(...parts.map((poly) => FB.ringToMultiPolygon(poly))));
+    expect(Math.abs(sum - merged) / merged).toBeLessThan(0.01);
     // merged region loses single-caster identity (CONTRACT L2 casterId null)
     shadowPaths(overlap).forEach((p) => expect(p.meta.sceneTarget.casterId).toBeNull());
   });
