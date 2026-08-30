@@ -5429,6 +5429,43 @@
       return rings;
     };
 
+    // The visible region pulled in by HALF A PEN — the clip target for anything
+    // that will be STROKED rather than filled. A path inside this region strokes
+    // its outer edge onto the silhouette and never past it, which is the same
+    // protrusion guarantee `ribbonize`'s RIBBON class gets by eroding after the
+    // clip, made available to the WALLS class, which cannot erode (its geometry
+    // is thinner than the erosion it would need). Built once per side per build:
+    // the silhouette is a fat region, so this erosion is nowhere near the
+    // hairline regime that makes the per-ribbon one unreliable.
+    const regionInsetMemo = new Map();
+    const visibleRegionInsetRings = (wantFront) => {
+      const key = wantFront ? 'F' : 'B';
+      if (regionInsetMemo.has(key)) return regionInsetMemo.get(key);
+      let out = [];
+      const rings = visibleRegionRings(wantFront);
+      const FB = Vectura.FillBoolean;
+      const GU = Vectura.GeometryUtils;
+      if (rings.length && FB && typeof FB.nonZeroUnionByContainment === 'function'
+        && GU && typeof GU.insetMultiPolygon === 'function') {
+        try {
+          const mp = FB.nonZeroUnionByContainment(rings) || [];
+          const inset = mp.length ? (GU.insetMultiPolygon(mp, penWidth / 2, { minArea: 0 }) || []) : [];
+          inset.forEach((poly) => (poly || []).forEach((r) => {
+            const pts = [];
+            for (let i = 0; i < r.length; i++) {
+              const q = r[i];
+              const x = Array.isArray(q) ? q[0] : q.x;
+              const y = Array.isArray(q) ? q[1] : q.y;
+              if (Number.isFinite(x) && Number.isFinite(y)) pts.push({ x, y });
+            }
+            if (pts.length >= 3) out.push(pts);
+          }));
+        } catch (err) { out = []; }
+      }
+      regionInsetMemo.set(key, out);
+      return out;
+    };
+
     // ── ROUND 6 — THE MARK EMITTER ────────────────────────────────────────────
     //
     // One call per ruling. It replaces the ruling outright: a mark law emits
@@ -6045,6 +6082,14 @@
       // exactly how the inert-ribbon blocker hid. Counted, never swallowed.
       outlineOnly: 0,
       noModule: 0, noRegion: 0, atMaxPaths: 0,
+      // The 1-to-2-pen WALLS class (see `ribbonize`). `walls` counts stretches
+      // that took it, `wallRings` the closed rings it shipped, `wallEmpty` the
+      // ones whose clip came back empty and fell back to a centreline. NONE of
+      // these is a refusal — a wall stretch is an inked ribbon, and a wall
+      // stretch that degenerates is C3 rule 5 working, not an erosion failing.
+      // They are kept out of `degenerate` deliberately: booking an intentional
+      // centreline as `erodeEmpty` is what made the old `onePenDown` numbers lie.
+      walls: 0, wallRings: 0, wallEmpty: 0, wallCentres: 0,
     };
     // Refuse a wide stretch and say WHY. Every `centrePass` fallback on a wide
     // stretch goes through here, so no refusal can be silent again.
@@ -6148,28 +6193,77 @@
         }
       }
       const HALF_MIN = penWidth / 2;
-      // "Genuinely wider than the pen". Below 1.1 x pen an outline plus a fill is
-      // two near-coincident strokes — worse ink than one honest centreline.
-      const wideAt = (i) => half[i] > penWidth * 0.55;
+      // ── THREE WIDTH CLASSES, NOT TWO ────────────────────────────────────────
+      //
+      // MEASURED (sphere, pen 0.30 mm, 2026-08-30). The old split was binary —
+      // "wider than 1.1 pen" got the boolean-eroded OUTLINE + PenFill, everything
+      // else got a centreline. That put every ribbon between 1 and 2 pens onto a
+      // path whose first step is `erode(region, pen/2)`, i.e. a boolean that has
+      // to resolve two offset curves LESS THAN ONE PEN apart. It does not survive
+      // that: a constant 1.58-pen weightSmoothstep ribbon eroded into THREE
+      // fragments with a 4.59 mm² hole and 0.824 coverage; taperedEnds lost both
+      // tapered ends outright (0.49 coverage) because below one pen the erosion
+      // is legitimately empty and nothing was emitted in its place. Above two
+      // pens the same code measured 0.9998. The erosion is not wrong — it is
+      // being asked for a hairline.
+      //
+      // So classify by LOCAL width w = 2·half, in pen widths, and cut the stretch
+      // at every class change:
+      //
+      //   w <= 1.0p   CENTRE  one centreline pass. C3 rule 5, verbatim: one pass
+      //                       inks exactly one pen, so at or below a pen it is
+      //                       already full coverage and a second pass would be a
+      //                       duplicate.
+      //   w <= 2.0p   WALLS   ONE closed ring built ANALYTICALLY at half - pen/2
+      //                       (no boolean erosion at all) and clipped to the
+      //                       pen-inset region. Stroked with the real pen its two
+      //                       walls are (w - p) <= p apart, so their ink MEETS —
+      //                       there is no interior void to fill, and the ring
+      //                       covers exactly w by construction.
+      //   else        RIBBON  today's clip + erode + PenFill, unchanged.
+      //
+      // The class boundaries are chosen from the stroke geometry, not by eye:
+      // one pen pass inks exactly p, so below 1.1p a second wall would be a
+      // coincident duplicate; two walls a distance d apart ink d + p, which is
+      // gap-free exactly while d <= p, i.e. while w <= 2p.
+      const W_CENTRE_PEN = 1.0;
+      const W_WALLS_PEN = 2.0;
+      // Keeps the analytic wall ring off the boolean's 1e-6 snap grid at the
+      // bottom of the WALLS class, where half - pen/2 goes to zero.
+      const WALL_FLOOR = penWidth * 0.05;
+      const CLS_CENTRE = 0; const CLS_WALLS = 1; const CLS_RIBBON = 2;
+      const classAt = (i) => {
+        const wPen = (2 * half[i]) / penWidth;
+        if (wPen <= W_CENTRE_PEN) return CLS_CENTRE;
+        if (wPen <= W_WALLS_PEN) return CLS_WALLS;
+        return CLS_RIBBON;
+      };
 
       // Split into maximal same-class stretches, sharing the boundary POINT so
       // the pieces abut exactly (the same construction `splitByWeight` uses).
       const stretches = [];
-      let s0 = 0; let cur = wideAt(0);
+      let s0 = 0; let cur = classAt(0);
       for (let i = 1; i < n; i++) {
-        if (wideAt(i) !== cur) { stretches.push({ a: s0, b: i, wide: cur }); s0 = i; cur = wideAt(i); }
+        const c = classAt(i);
+        if (c !== cur) { stretches.push({ a: s0, b: i, cls: cur }); s0 = i; cur = c; }
       }
-      stretches.push({ a: s0, b: n - 1, wide: cur });
-      // A stretch too short to be a mark is folded into its predecessor rather
-      // than dropped — dropping it would leave a hole in the ruling.
+      stretches.push({ a: s0, b: n - 1, cls: cur });
       const arcOf = (a, b) => {
         let L = 0;
         for (let i = a + 1; i <= b; i++) L += Math.hypot(run[i].x - run[i - 1].x, run[i].y - run[i - 1].y);
         return L;
       };
+      // A stretch too short to be a mark is folded into a neighbour rather than
+      // dropped — dropping it would leave a hole in the ruling. It may only be
+      // folded into a NARROWER neighbour, never a wider one: folding a sub-pen
+      // tail into a ribbon stretch is precisely what fed the erosion a hairline
+      // and lost the tail (taperedEnds, 20 stretches at 0.49 coverage). A short
+      // run with only wider neighbours keeps its own class and ships as a short
+      // mark, which is invisible because it abuts its neighbours on both sides.
       const merged = [];
       stretches.forEach((st) => {
-        if (merged.length && arcOf(st.a, st.b) < MIN_MARK_MM) { merged[merged.length - 1].b = st.b; return; }
+        const prev = merged[merged.length - 1];
+        if (prev && prev.cls <= st.cls && arcOf(st.a, st.b) < MIN_MARK_MM) { prev.b = st.b; return; }
         merged.push(st);
       });
 
@@ -6191,9 +6285,77 @@
       const outp = [];
       merged.forEach((st) => {
         ribbonStat.stretches += 1;
-        if (!st.wide || !haveModules) {
-          if (st.wide) ribbonRefuse('noRing'); else ribbonStat.narrow += 1;
+        if (st.cls === CLS_CENTRE || !haveModules) {
+          if (st.cls !== CLS_CENTRE) ribbonRefuse('noRing'); else ribbonStat.narrow += 1;
           outp.push(centrePass(st.a, st.b));
+          return;
+        }
+        // ── WALLS — 1.1 to 2 pens wide, drawn WITHOUT a boolean erosion ───────
+        //
+        // The eroded ribbon of a ribbon IS a ribbon: erode(ribbon(c, h), d) is
+        // ribbon(c, h - d) along the width axis. Building it analytically skips
+        // the one operation that measured unreliable at these widths, and it
+        // degrades correctly — as `half` approaches pen/2 the two walls converge
+        // on the centreline instead of the erosion vanishing.
+        //
+        // The clip target is the region ALREADY PULLED IN by half a pen, so the
+        // pen stroking this ring lands its outer edge exactly on the silhouette
+        // and never past it. (The RIBBON class gets the same guarantee the other
+        // way round: it erodes AFTER clipping to the raw region.)
+        if (st.cls === CLS_WALLS) {
+          ribbonStat.walls += 1;
+          const inset = visibleRegionInsetRings(!back);
+          if (!inset.length) {
+            ribbonStat.noRegion += 1; outp.push(centrePass(st.a, st.b)); return;
+          }
+          const wc = []; const wh = [];
+          for (let i = st.a; i <= st.b; i++) {
+            wc.push({ x: run[i].x, y: run[i].y });
+            // Clamped at pen/2: a short WIDER stretch folded in above may not
+            // push its walls more than one pen apart, or their ink would part.
+            wh.push(clamp(half[i] - penWidth / 2, WALL_FLOOR, penWidth / 2));
+          }
+          let wallMP = null;
+          try {
+            wallMP = RGm.buildRibbonMultiPolygon(wc, wh, { cap: 'butt', joinLimit: 4, minHalfWidth: WALL_FLOOR });
+          } catch (err) { wallMP = null; }
+          let wallClipped = null;
+          if (Array.isArray(wallMP) && wallMP.length) {
+            try { wallClipped = RGm.clipMultiPolygonToRegion(wallMP, inset); } catch (err) { wallClipped = null; }
+          }
+          const wt0 = ttPts[st.a]; const wt1 = ttPts[st.b];
+          const wz = run[st.a] ? run[st.a].z : undefined;
+          let wallAny = false;
+          (Array.isArray(wallClipped) ? wallClipped : []).forEach((poly) => {
+            (poly || []).forEach((r) => {
+              const pts = Array.isArray(r) ? ringPts(r) : null;
+              if (!pts) return;
+              outp.push(tag(closePath(pts, wz), wt0, wt1));
+              ribbonStat.wallRings += 1; wallAny = true;
+            });
+          });
+          // A refused wall is NOT a defect and must not be booked as one: just
+          // over one pen the honest output IS the centreline, and the counters
+          // have to say "intentional centreline", not "erosion came back empty".
+          if (!wallAny) { ribbonStat.wallEmpty += 1; outp.push(centrePass(st.a, st.b)); return; }
+          // ── THE CENTRE COMPANION ────────────────────────────────────────────
+          //
+          // Two walls a distance d apart ink d + pen, so they cover the ribbon
+          // for every d <= pen — but AT d = pen they merely abut, with no overlap
+          // at all, and an abutting seam is not a covered seam: the boolean's
+          // snap grid, its RDP escalation rungs and the renderer's own rasteriser
+          // each move an edge by a hair, and a hair is all it takes to open a
+          // lengthwise thread of bare paper down the middle of the band. That is
+          // the same seating defect the fill erosion below is backed off for, one
+          // class over. Once the walls are more than a `pitch` apart, put a pass
+          // between them — three passes at half-pitch spacing instead of two at
+          // touching distance.
+          let widest = 0;
+          for (let i = st.a; i <= st.b; i++) if (half[i] > widest) widest = half[i];
+          if ((2 * widest - penWidth) > penWidth * (1 - RIBBON_OVERLAP)) {
+            outp.push(centrePass(st.a, st.b));
+            ribbonStat.wallCentres += 1;
+          }
           return;
         }
         ribbonStat.wide += 1;
@@ -6252,11 +6414,29 @@
         // OUTLINE — the ribbon eroded by HALF a pen, so a real pen stroking it
         // lands its OUTER edge exactly on the ribbon boundary.
         const outlineMP = erode(clippedMP, penWidth / 2);
-        // FILL — half a pen deeper again (the outline already inks the first pen
-        // width in from the edge), pitched at penWidth * (1 - overlap). Chained
-        // off the outline because erode(R, a+b) === erode(erode(R, a), b) and
-        // two shallow cuts are much cheaper than one deep one.
-        const fillMP = outlineMP.length ? erode(outlineMP, penWidth / 2) : [];
+        // FILL — deeper again, chained off the outline because
+        // erode(R, a+b) === erode(erode(R, a), b) and two shallow cuts are much
+        // cheaper than one deep one.
+        //
+        // THE DEPTH IS A PITCH, NOT A PEN RADIUS. Eroding by a further pen/2 put
+        // the fill region's boundary exactly one pen in from the ribbon's, and
+        // PenFill lays its first pass a pen RADIUS inside whatever region it is
+        // given — so the outline's ink ([0, p] from the edge) and the first fill
+        // pass ([p, 2p]) met with ZERO designed overlap, and every tolerance in
+        // between them — the boolean's snap grid, its RDP escalation rungs, the
+        // distance field's half-cell bias — could open that seam into a hairline
+        // of bare paper running the LENGTH of the band. Measured on the torus
+        // before this line changed: coverage 0.997-0.9994 with contiguous voids
+        // up to 0.144 mm², i.e. ~0.05 x 3 mm streaks, in bands 3+ pens wide where
+        // the erosion itself is perfectly healthy. That is a seating defect, not
+        // the sub-pen erosion defect the WALLS class above fixes — two bugs.
+        //
+        // Backing the cut off by the overlap makes the outline the ladder's FIRST
+        // pass: the next pass then sits one `pitch` (= penWidth · (1 - overlap))
+        // further in, exactly like every pass after it, and the seam carries the
+        // same 15% overlap as the rest of the fill.
+        const fillMP = outlineMP.length
+          ? erode(outlineMP, penWidth * (0.5 - RIBBON_OVERLAP)) : [];
         outlineMP.forEach((poly) => {
           poly.forEach((r) => {
             const pts = ringPts(r);
@@ -9960,7 +10140,8 @@
       // passes the weightScale invariant trivially, and hid a dead feature
       // behind a green suite for a whole integration round. Say it out loud,
       // once per build.
-      if (isRibbonLaw() && ribbonStat.wide > 0 && ribbonStat.ribbons === 0
+      if (isRibbonLaw() && (ribbonStat.wide + ribbonStat.walls) > 0
+        && (ribbonStat.ribbons + ribbonStat.wallRings) === 0
         && typeof console !== 'undefined' && console.warn) {
         console.warn(`Vectura SurfaceFill: ribbon law "${TONE_ALGO}" built NO ribbons — `
           + `all ${ribbonStat.wide} wide stretches fell back to bare centrelines `
