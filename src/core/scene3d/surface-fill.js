@@ -142,6 +142,37 @@
     return inside;
   };
 
+  // Proper-crossing test between two closed segments (a,b) and (c,d) — used
+  // only to DETECT a self-intersecting region ring (F6), never to build
+  // geometry from it. Endpoint touches (t/u exactly 0 or 1) are excluded on
+  // purpose: two ring edges sharing a vertex, which every edge pair adjacent
+  // in the ring does, is not a crossing.
+  const segmentsCross = (a, b, c, d) => {
+    const d1x = b.x - a.x; const d1y = b.y - a.y;
+    const d2x = d.x - c.x; const d2y = d.y - c.y;
+    const denom = d1x * d2y - d1y * d2x;
+    if (Math.abs(denom) < 1e-12) return false;
+    const t = ((c.x - a.x) * d2y - (c.y - a.y) * d2x) / denom;
+    const u = ((c.x - a.x) * d1y - (c.y - a.y) * d1x) / denom;
+    return t > 1e-9 && t < 1 - 1e-9 && u > 1e-9 && u < 1 - 1e-9;
+  };
+
+  // Does this closed {x,y} ring cross itself anywhere? O(nA(C2, n)) — fine for
+  // the ~128-300-point rings `buildRegionRings` produces, called once per
+  // (memoized) region build, never per-sample.
+  const ringHasSelfIntersection = (ring) => {
+    if (!Array.isArray(ring) || ring.length < 4) return false;
+    const n = ring.length;
+    for (let i = 0; i < n; i++) {
+      const a = ring[i]; const b = ring[(i + 1) % n];
+      for (let j = i + 2; j < n; j++) {
+        if (i === 0 && j === n - 1) continue; // adjacent through the wrap
+        if (segmentsCross(a, b, ring[j], ring[(j + 1) % n])) return true;
+      }
+    }
+    return false;
+  };
+
   const chartFor = (mode, sizes) => {
     const C = Vectura.Scene3D && Vectura.Scene3D.Charts;
     if (!C) return null;
@@ -5356,7 +5387,9 @@
         }
         if (ring.length >= 3) rings.push(ring);
       });
-      return resolveFoldRings(rings);
+      const simpleRings = [];
+      rings.forEach((r) => resolveRingSelfIntersections(r).forEach((s) => simpleRings.push(s)));
+      return resolveFoldRings(simpleRings);
     };
 
     // ══ NESTED IS NOT THE SAME AS HOLLOW ═════════════════════════════════════
@@ -5396,6 +5429,86 @@
     //
     // A single-ring region — every primitive whose front-facing sheet is
     // embedded: sphere, capsule, cylinder, cone — returns untouched.
+    //
+    // ── F6 — A SINGLE RING CAN CROSS ITSELF, TOO ──────────────────────────────
+    //
+    // The classification above (same-ring-vs-other-ring winding/containment)
+    // assumes every ring it is handed is SIMPLE. At a torus's inner-hole fold
+    // cusp — where the inner rim and outer rim meet tangentially in the true
+    // 3-D silhouette — the marching-squares trace can fold back on itself for
+    // a few segments before continuing, producing ONE ring that crosses
+    // ITSELF instead of two clean rings. Measured on the factory torus
+    // (`taperedEnds`, default 3/4 view, pitch 20): the traced 128-point ring
+    // self-crosses 3 times within ~30mm of the object's centre — exactly
+    // where the reported wedge stubs (near 4/8 o'clock) and flank dashing
+    // (2-4 o'clock) appear.
+    //
+    // `RibbonGeometry.clipMultiPolygonToRegion` — a pure polygon-clipping
+    // boolean, like every consumer of a clip ring in this codebase — has no
+    // defined answer for a self-intersecting CLIP boundary; the library
+    // resolves it some way, but not a way anything here specified. That is
+    // the wedge/dash root cause, not the ribbon geometry the clip is applied
+    // to (confirmed: `buildRibbonMultiPolygon`'s own OWN centrelines never
+    // self-cross on this fixture — see the F6 handoff's suppression test).
+    //
+    // TRIED FIRST, REJECTED: a generic `FillBoolean.union` self-union (the
+    // rule `resolveSelfOverlap` uses for a self-crossing RIBBON ring). Applied
+    // to a self-crossing REGION ring in isolation it does resolve the
+    // crossing, but polygon-clipping normalises every ring it returns to a
+    // canonical winding — which silently DESTROYS the very signal
+    // `resolveFoldRings` classifies rings by (`ringSignedArea`'s sign relative
+    // to the outward ring). Measured: the torus's true inner-hole ring came
+    // back re-oriented to read as a same-winding fold, `resolveFoldRings`
+    // dropped it, and `regionArea` came back EQUAL to `regionOuterArea` — the
+    // hole had been erased outright, worse than the wedge it was meant to fix.
+    //
+    // The fix instead SPLITS the ring at its own crossing point(s) — cutting
+    // a figure-8 back into its constituent loops — rather than asking a
+    // boolean library to re-decide the whole shape. Each sub-loop keeps
+    // exactly the trace direction the marching squares gave it; nothing is
+    // ever re-oriented. A fold cusp's self-crossing is a near-tangency
+    // artefact, not a real second loop worth keeping, so only the loop(s)
+    // above `FOLD_SLIVER_AREA` survive — the tiny pinch loop(s) the crossing
+    // carves off are discarded, and the true silhouette ring is exactly what
+    // is left once they are gone.
+    const FOLD_SLIVER_AREA = 0.05; // mm^2 — the crossing's own snap/bisection
+                                    // noise floor; any real loop worth keeping
+                                    // on a plotter-scale primitive is orders
+                                    // of magnitude bigger (measured: the
+                                    // sliver loops this ring's cusp carves are
+                                    // < 1e-3 mm^2, the ring itself ~40 mm^2).
+    const splitRingAtSelfIntersections = (ring) => {
+      const n = ring.length;
+      for (let i = 0; i < n; i++) {
+        const a = ring[i]; const b = ring[(i + 1) % n];
+        for (let j = i + 2; j < n; j++) {
+          if (i === 0 && j === n - 1) continue;
+          const c = ring[j]; const d = ring[(j + 1) % n];
+          const d1x = b.x - a.x; const d1y = b.y - a.y;
+          const d2x = d.x - c.x; const d2y = d.y - c.y;
+          const denom = d1x * d2y - d1y * d2x;
+          if (Math.abs(denom) < 1e-12) continue;
+          const t = ((c.x - a.x) * d2y - (c.y - a.y) * d2x) / denom;
+          const u = ((c.x - a.x) * d1y - (c.y - a.y) * d1x) / denom;
+          if (!(t > 1e-9 && t < 1 - 1e-9 && u > 1e-9 && u < 1 - 1e-9)) continue;
+          const p = { x: a.x + t * d1x, y: a.y + t * d1y };
+          // loopA: crossing point -> b..c (ring[i+1..j]) -> back to the crossing.
+          const loopA = [p, ...ring.slice(i + 1, j + 1)];
+          // loopB: crossing point -> d..a, WRAPPING the array end -> back to it.
+          const loopB = [p, ...ring.slice(j + 1), ...ring.slice(0, i + 1)];
+          // Recurse: either half may still carry one of the OTHER crossings.
+          return [...splitRingAtSelfIntersections(loopA), ...splitRingAtSelfIntersections(loopB)];
+        }
+      }
+      return [ring];
+    };
+    const resolveRingSelfIntersections = (ring) => {
+      if (!ringHasSelfIntersection(ring)) return [ring];
+      const pieces = splitRingAtSelfIntersections(ring).filter((r) => r.length >= 3);
+      const kept = pieces.filter((r) => Math.abs(ringSignedArea(r)) > FOLD_SLIVER_AREA);
+      return kept.length ? kept : [ring];
+    };
+
     const resolveFoldRings = (rings) => {
       if (!Array.isArray(rings) || rings.length < 2) return rings;
       let keep = rings;

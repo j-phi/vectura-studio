@@ -101,9 +101,14 @@ describe('SurfaceFill CLS_WALLS — clip target must not fabricate a phantom lob
     const stats = V.Scene3D.SurfaceFill.lastRibbonStats;
     expect(stats).toBeTruthy();
     expect(stats.penWidth).toBe(PEN_WIDTH);
-    // Sanity: this is the genuinely-open-hole regime (a two-ring region), not
-    // the fully-shut fold (one ring) — the defect needs a hole to corrupt.
-    expect(stats.regionRings).toBe(2);
+    // Sanity: this is the genuinely-open-hole regime (a multi-ring region,
+    // outer shell plus one or more hole pieces), not the fully-shut fold (one
+    // ring) — the defect needs a hole to corrupt. F6 (`surface-fill.js`'s
+    // `resolveRingSelfIntersections`) can legitimately split what used to be
+    // one self-intersecting hole ring into two clean pieces at this exact
+    // pitch/law — so this no longer pins an exact count, only "more than
+    // just the outer shell".
+    expect(stats.regionRings).toBeGreaterThanOrEqual(2);
 
     const calls = cap.calls.filter((c) => c.minHalfWidth != null);
     const widths = [...new Set(calls.map((c) => c.minHalfWidth))].sort((a, b) => a - b);
@@ -121,14 +126,15 @@ describe('SurfaceFill CLS_WALLS — clip target must not fabricate a phantom lob
     expect(wallsWidth).toBeLessThan(wideWidth);
 
     // Ground truth: the raw region the WIDE class actually clipped against —
-    // untouched by the diff either side of the fix. Two rings: outer shell +
-    // inner hole. The hole is the smaller-area ring.
+    // untouched by the diff either side of the fix. Outer shell + one or more
+    // hole pieces (F6 may split one self-intersecting hole ring into several
+    // clean ones); the hole is everything that ISN'T the largest (outer) ring.
     const rawRegion = wideCalls[0].region;
-    expect(Array.isArray(rawRegion) && rawRegion.length).toBe(2);
-    const rawSorted = [...rawRegion].sort((a, b) => ringArea(a) - ringArea(b));
-    const rawHole = rawSorted[0];
-    const rawHoleArea = ringArea(rawHole);
-    const rawHolePerimeter = ringPerimeter(rawHole);
+    expect(Array.isArray(rawRegion) && rawRegion.length).toBeGreaterThanOrEqual(2);
+    const rawSorted = [...rawRegion].sort((a, b) => ringArea(b) - ringArea(a));
+    const rawHoleRings = rawSorted.slice(1);
+    const rawHoleArea = rawHoleRings.reduce((sum, r) => sum + ringArea(r), 0);
+    const rawHolePerimeter = rawHoleRings.reduce((sum, r) => sum + ringPerimeter(r), 0);
     // There must be a real hole to protect, or the ceiling below is vacuous.
     expect(rawHoleArea).toBeGreaterThan(0.5);
 
@@ -138,8 +144,8 @@ describe('SurfaceFill CLS_WALLS — clip target must not fabricate a phantom lob
     // `clipMultiPolygonToRegion` this build.
     const wallsRegion = wallsCalls[0].region;
     expect(Array.isArray(wallsRegion) && wallsRegion.length).toBeGreaterThanOrEqual(1);
-    const wallsSorted = [...wallsRegion].sort((a, b) => ringArea(a) - ringArea(b));
-    const wallsHoleArea = ringArea(wallsSorted[0]);
+    const wallsSorted = [...wallsRegion].sort((a, b) => ringArea(b) - ringArea(a));
+    const wallsHoleArea = wallsSorted.slice(1).reduce((sum, r) => sum + ringArea(r), 0);
 
     // THE CLAIM. CLS_WALLS's own clip-target hole may only have grown by a
     // legitimate erosion margin over the independently-sourced raw hole —
