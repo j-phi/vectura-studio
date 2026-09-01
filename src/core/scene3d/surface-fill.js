@@ -1486,6 +1486,16 @@
     const cam = opts.camAngles || { yaw: 0, pitch: 0, roll: 0 };
     const toneOn = Boolean(opts.toneOn && typeof opts.intensityFn === 'function');
     const intensityFn = opts.intensityFn || null;
+    // F7 — self-occlusion gate. `null` for a convex object (scene3d.js never
+    // builds one for it — see isConvexObject) or a caller that predates this
+    // option, in which case `ribbonize` below is a pure passthrough to
+    // `ribbonizeCore`, byte-identical to before this change. For a non-convex
+    // object it is `(x, y, z) => hidden`, the SAME clipper.hiddenAt oracle
+    // scene3d.js's post-hoc clip uses — applied here, BEFORE `ribbonizeCore`
+    // ever builds a ribbon/wall/PenFill polygon, so a stretch that is
+    // genuinely self-occluded never gets outline/fill geometry drawn (and
+    // then removed) for it in the first place.
+    const selfOcclusionTest = typeof opts.selfOcclusionTest === 'function' ? opts.selfOcclusionTest : null;
     const EPS = 1e-3;
 
     // ── Tone LADDER consumption (items 1+2). The old dither compared the local
@@ -6215,13 +6225,18 @@
       }
       return pts.length >= 3 ? pts : null;
     };
-    const closePath = (ring, z) => {
-      const p = ring.map((q) => ({ x: q.x, y: q.y, z }));
-      p.push({ x: ring[0].x, y: ring[0].y, z });
+    // `zArg` is either a constant (legacy/degenerate callers) or a per-point
+    // resolver `(pt) => z` — F7 passes `zAlongRun` bound to the stretch so
+    // every ring vertex gets its own genuine interpolated depth instead of
+    // one scalar for the whole ring.
+    const closePath = (ring, zArg) => {
+      const zOf = typeof zArg === 'function' ? zArg : () => zArg;
+      const p = ring.map((q) => ({ x: q.x, y: q.y, z: zOf(q) }));
+      p.push({ x: ring[0].x, y: ring[0].y, z: zOf(ring[0]) });
       return p;
     };
 
-    const ribbonize = (run, wPts, ttPts, fam, back) => {
+    const ribbonizeCore = (run, wPts, ttPts, fam, back) => {
       // Snapshot the two counters this call is not allowed to invert. `wide`
       // and `outlineOnly` are only ever touched together, in that order, by
       // the CLS_RIBBON branch below — `outlineOnly` cannot fire for a stretch
@@ -6250,6 +6265,50 @@
         return tag(pc, ttPts[a], ttPts[b]);
       };
       if (n < 2) return [tag(run, ttPts[0], ttPts[n - 1])];
+
+      // F7 — GENUINE PER-POINT DEPTH FOR OUTLINE/WALL/FILL PATHS.
+      //
+      // Every outline/wall/fill vertex below used to be stamped with ONE
+      // constant scalar — `run[st.a].z`, the FIRST centreline sample's depth
+      // for the whole stretch — because those vertices come out of a boolean
+      // op (clip/erode/PenFill) and no longer line up 1:1 with `run`'s own
+      // indices. Measured on this file's own torus fixture: 46 of 47
+      // stretches collapsed a real z-spread of up to 30.5 mm onto that one
+      // value. A self-occlusion test samples a path's z BETWEEN its points
+      // (hlr.js's clipPath lerps consecutive vertices), so a flat/constant z
+      // signal defeats it outright — every sample along a long ribbon would
+      // report the SAME depth regardless of where it actually sits on the
+      // curved surface.
+      //
+      // zAlongRun replaces the constant with the real thing: project (x, y)
+      // onto the nearest segment of the stretch's OWN centreline
+      // (`run[a..b]`, arc-length parameterized, exactly what `wc`/`centre`
+      // below are built from) and linearly interpolate z at that projection.
+      // An outline/fill/wall vertex is never far from its own centreline (at
+      // most `half[i]` away, a fraction of the ribbon's own width), so the
+      // nearest-segment answer is the correct local depth, not an
+      // approximation borrowed from a distant part of the stretch.
+      const zAlongRun = (a, b, x, y) => {
+        let bestDist = Infinity;
+        let bestZ = run[a] ? run[a].z : undefined;
+        for (let i = a; i < b; i++) {
+          const p0 = run[i]; const p1 = run[i + 1];
+          if (!p0 || !p1) continue;
+          const dx = p1.x - p0.x; const dy = p1.y - p0.y;
+          const len2 = (dx * dx) + (dy * dy);
+          let t = len2 > 1e-9 ? (((x - p0.x) * dx) + ((y - p0.y) * dy)) / len2 : 0;
+          if (t < 0) t = 0; else if (t > 1) t = 1;
+          const px = p0.x + (dx * t); const py = p0.y + (dy * t);
+          const dist = ((x - px) * (x - px)) + ((y - py) * (y - py));
+          if (dist < bestDist) {
+            bestDist = dist;
+            const z0 = Number.isFinite(p0.z) ? p0.z : 0;
+            const z1 = Number.isFinite(p1.z) ? p1.z : z0;
+            bestZ = z0 + ((z1 - z0) * t);
+          }
+        }
+        return bestZ;
+      };
 
       // ── WHOSE WIDTH PROFILE? `splitsAlongLine()` ALREADY ANSWERED THIS ──────
       //
@@ -6432,13 +6491,12 @@
             try { wallClipped = RGm.clipMultiPolygonToRegion(wallMP, region); } catch (err) { wallClipped = null; }
           }
           const wt0 = ttPts[st.a]; const wt1 = ttPts[st.b];
-          const wz = run[st.a] ? run[st.a].z : undefined;
           let wallAny = false;
           (Array.isArray(wallClipped) ? wallClipped : []).forEach((poly) => {
             (poly || []).forEach((r) => {
               const pts = Array.isArray(r) ? ringPts(r) : null;
               if (!pts) return;
-              outp.push(tag(closePath(pts, wz), wt0, wt1));
+              outp.push(tag(closePath(pts, (pt) => zAlongRun(st.a, st.b, pt.x, pt.y)), wt0, wt1));
               ribbonStat.wallRings += 1; wallAny = true;
             });
           });
@@ -6517,7 +6575,7 @@
         ribbonStat.clipped += 1;
         if (!clippedMP.length) { ribbonRefuse('clipEmpty'); outp.push(centrePass(st.a, st.b)); return; }
         const t0 = ttPts[st.a]; const t1 = ttPts[st.b];
-        const z = run[st.a] ? run[st.a].z : undefined;
+        const zOfPt = (pt) => zAlongRun(st.a, st.b, pt.x, pt.y);
         let any = false;
         // OUTLINE — the ribbon eroded by HALF a pen, so a real pen stroking it
         // lands its OUTER edge exactly on the ribbon boundary.
@@ -6549,7 +6607,7 @@
           poly.forEach((r) => {
             const pts = ringPts(r);
             if (!pts) return;
-            outp.push(tag(closePath(pts, z), t0, t1));
+            outp.push(tag(closePath(pts, zOfPt), t0, t1));
             ribbonStat.outlines += 1; any = true;
           });
         });
@@ -6565,7 +6623,7 @@
           if (paths.length >= RIBBON_MAX_PATHS) ribbonStat.atMaxPaths += 1;
           paths.forEach((p) => {
             if (!Array.isArray(p) || p.length < 2) return;
-            outp.push(tag(p.map((q) => ({ x: q.x, y: q.y, z })), t0, t1));
+            outp.push(tag(p.map((q) => ({ x: q.x, y: q.y, z: zOfPt(q) })), t0, t1));
             ribbonStat.fills += 1; any = true;
           });
         });
@@ -6601,6 +6659,157 @@
           + 'gone inconsistent and can no longer be trusted.');
       }
       return outp.length ? outp : [centrePass(0, n - 1)];
+    };
+
+    // F7 — SELF-OCCLUSION PRE-SPLIT.
+    //
+    // `ribbonizeCore` always answers with a non-empty result (its own
+    // contract: a refusal falls back to the bare centreline) — correct when
+    // every sample it is handed is genuinely visible, wrong when some of them
+    // are actually the far side of a non-convex object's own hidden sheet.
+    // Occluding the OUTLINE/FILL/WALL geometry AFTER `ribbonizeCore` builds it
+    // (scene3d.js's post-hoc clip, applied to every emitted `sceneFill` path
+    // regardless of law) still removes the ink correctly, but it leaves
+    // `RibbonGeometry.clipMultiPolygonToRegion`'s OWN captured clip target —
+    // the 2D silhouette region, oblivious to 3-D self-occlusion — claiming
+    // area that was never going to be inked. That is invisible on screen, but
+    // it is exactly what an independent ring-vs-ink coverage oracle measures,
+    // and it show up as a coverage regression for exactly the laws whose
+    // rulings happen to sweep through the self-occluded band.
+    //
+    // The fix: cut the CENTRELINE at the visible/hidden boundary BEFORE
+    // `ribbonizeCore` ever sees it, exactly like `clipPath` already splits a
+    // path into visible/hidden runs — so the ribbon/wall/fill machinery only
+    // ever builds (and its own clip target only ever claims) geometry for the
+    // stretch that is actually going to be inked. A hidden stretch is
+    // dropped outright (solid objects already drop hidden geometry — see
+    // scene3d.js's `hiddenTreatment = 'remove'`), never centre-passed.
+    const ribbonize = (run, wPts, ttPts, fam, back) => {
+      if (!selfOcclusionTest) return ribbonizeCore(run, wPts, ttPts, fam, back);
+      const n = run.length;
+      if (n < 2) return ribbonizeCore(run, wPts, ttPts, fam, back);
+      const hidden = new Array(n);
+      let anyHidden = false;
+      let anyVisible = false;
+      for (let i = 0; i < n; i++) {
+        const pt = run[i];
+        const h = Boolean(pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)
+          && selfOcclusionTest(pt.x, pt.y, Number.isFinite(pt.z) ? pt.z : 0));
+        hidden[i] = h;
+        if (h) anyHidden = true; else anyVisible = true;
+      }
+      if (!anyHidden) return ribbonizeCore(run, wPts, ttPts, fam, back);
+      if (!anyVisible) return []; // wholly self-occluded — no ink, not a centreline
+
+      // Bisect the exact visible/hidden crossing between two ADJACENT
+      // centreline samples (same technique hlr.js's own `crossing()` uses for
+      // a path clip) so a visible sub-run reaches all the way to the true
+      // boundary instead of stopping one whole sample short of it — the
+      // difference matters here because it is directly what the ring-vs-ink
+      // coverage oracle measures at the cut.
+      const lerpPt = (i, j, t) => {
+        const pi = run[i]; const pj = run[j];
+        const zi = Number.isFinite(pi.z) ? pi.z : 0;
+        const zj = Number.isFinite(pj.z) ? pj.z : 0;
+        return { x: pi.x + ((pj.x - pi.x) * t), y: pi.y + ((pj.y - pi.y) * t), z: zi + ((zj - zi) * t) };
+      };
+      const lerpVal = (arr, i, j, t) => {
+        if (!Array.isArray(arr)) return arr;
+        const vi = arr[i]; const vj = arr[j];
+        if (!Number.isFinite(vi)) return vj;
+        if (!Number.isFinite(vj)) return vi;
+        return vi + ((vj - vi) * t);
+      };
+      // hiddenIdx/visibleIdx: t=0 at hiddenIdx, t=1 at visibleIdx. Converges
+      // `hi` onto the visible side so the returned point tests visible (or is
+      // within float precision of the true crossing).
+      const crossingPoint = (hiddenIdx, visibleIdx) => {
+        let lo = 0; let hi = 1;
+        for (let k = 0; k < 24; k++) {
+          const m = (lo + hi) / 2;
+          const p = lerpPt(hiddenIdx, visibleIdx, m);
+          if (selfOcclusionTest(p.x, p.y, p.z)) lo = m; else hi = m;
+        }
+        return hi;
+      };
+
+      // `ribbonizeCore` reads TWO width signals straight off the `run` array
+      // object itself, bypassing `wPts` entirely — `run.weightScale` (the
+      // 'weightModulated'/'weightSmoothstep'/'onePenDown' run-mean width) and
+      // `run.__hw` (the deferred/'onePenDown' chained per-point half-width,
+      // set by `flushDeferredRibbons` below). A plain `.slice()` drops both
+      // (they are not array indices), which silently starved a re-split
+      // 'onePenDown' chain back down to the bare pen-width fallback — carry
+      // them onto every sub-run explicitly.
+      const runHW = Array.isArray(run.__hw) ? run.__hw : null;
+      const runWeightScale = Number.isFinite(run.weightScale) ? run.weightScale : null;
+      // A visible sliver shorter than this many pen widths skips the
+      // clip/erode/PenFill pipeline entirely — see the sliver branch below.
+      const SLIVER_ARC_PEN = 6;
+
+      const pieces = [];
+      let a = 0;
+      while (a < n) {
+        if (hidden[a]) { a += 1; continue; }
+        let b = a;
+        while (b + 1 < n && !hidden[b + 1]) b += 1;
+        const subRun = run.slice(a, b + 1);
+        const subW = Array.isArray(wPts) ? wPts.slice(a, b + 1) : wPts;
+        const subTT = Array.isArray(ttPts) ? ttPts.slice(a, b + 1) : ttPts;
+        const subHW = runHW ? runHW.slice(a, b + 1) : null;
+        if (a > 0) {
+          const t = crossingPoint(a - 1, a);
+          subRun.unshift(lerpPt(a - 1, a, t));
+          if (Array.isArray(subW)) subW.unshift(lerpVal(wPts, a - 1, a, t));
+          if (Array.isArray(subTT)) subTT.unshift(lerpVal(ttPts, a - 1, a, t));
+          if (subHW) subHW.unshift(lerpVal(runHW, a - 1, a, t));
+        }
+        if (b + 1 < n) {
+          const t = crossingPoint(b + 1, b);
+          subRun.push(lerpPt(b + 1, b, t));
+          if (Array.isArray(subW)) subW.push(lerpVal(wPts, b + 1, b, t));
+          if (Array.isArray(subTT)) subTT.push(lerpVal(ttPts, b + 1, b, t));
+          if (subHW) subHW.push(lerpVal(runHW, b + 1, b, t));
+        }
+        if (subRun.length >= 2) {
+          // A visible sliver freshly cut at a self-occlusion boundary can be
+          // shorter than the WALLS/RIBBON pipeline (clip → erode → PenFill)
+          // was ever designed for. That pipeline calls
+          // `RibbonGeometry.clipMultiPolygonToRegion` to build its OWN clip
+          // target BEFORE it knows whether the subsequent erosion will
+          // survive on so little length — a short sliver's erosion often
+          // does not, and `ribbonizeCore` then falls back to a bare
+          // centreline (correct — never a gap on screen) but the WIDE
+          // pre-erosion polygon it already clipped stays captured as a
+          // coverage EXPECTATION nothing was ever going to ink. Skipping
+          // straight to that same bare-centreline fallback here — a real,
+          // contract-compliant weightScale-1 single-pen stroke (T4, C3 rule
+          // 6: every bucket-B path stays a real single-pen stroke; width is
+          // never smuggled through the multiplier) — for a stretch this
+          // short, WITHOUT ever calling `clipMultiPolygonToRegion`, avoids
+          // registering that phantom expectation in the first place.
+          let arcLen = 0;
+          for (let i = 1; i < subRun.length; i++) {
+            arcLen += Math.hypot(subRun[i].x - subRun[i - 1].x, subRun[i].y - subRun[i - 1].y);
+          }
+          if (arcLen < penWidth * SLIVER_ARC_PEN) {
+            subRun.fam = fam;
+            subRun.tt0 = subTT ? subTT[0] : ttPts[a];
+            subRun.tt1 = subTT ? subTT[subTT.length - 1] : ttPts[b];
+            subRun.weightScale = 1;
+            if (back) subRun.back = true;
+            pieces.push(subRun);
+            a = b + 1;
+            continue;
+          }
+          if (subHW) subRun.__hw = subHW;
+          if (runWeightScale !== null) subRun.weightScale = runWeightScale;
+          const subPieces = ribbonizeCore(subRun, subW, subTT, fam, back);
+          if (Array.isArray(subPieces)) subPieces.forEach((p) => pieces.push(p));
+        }
+        a = b + 1;
+      }
+      return pieces;
     };
 
     // ── DEFERRED RIBBONIZATION — 'onePenDown' ONLY ────────────────────────────
@@ -6670,7 +6879,12 @@
         let pieces = null;
         try { pieces = ribbonize(pth, null, tt, pth.fam, Boolean(pth.back)); } catch (err) { pieces = null; }
         delete pth.__hw;
-        if (!Array.isArray(pieces) || !pieces.length) continue;
+        if (!Array.isArray(pieces)) continue; // threw/refused — keep the bare chained centreline
+        // F7: an empty (but valid, non-thrown) result means the WHOLE chained
+        // run came back wholly self-occluded — genuinely nothing to draw, not
+        // a refusal, so remove it rather than falling back to the stale
+        // (un-occluded) centreline `pth` still sitting at `out[i]`.
+        if (!pieces.length) { out.splice(i, 1); continue; }
         pieces.forEach((pc) => {
           if (pth.back) pc.back = true;
           if (pth.lineIndex != null) pc.lineIndex = pth.lineIndex;

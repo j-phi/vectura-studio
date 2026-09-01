@@ -32,6 +32,38 @@
   // Emission floor (document mm): visibility crumbs shorter than this draw as
   // dots at best on a plotter and are usually corner-transition artifacts.
   const MIN_RUN_MM = 0.6;
+  // F7 — analytic self-occlusion Z margin (document mm), torus only. The
+  // occluder here is `Scene3D.TorusOcclusion`'s exact closed-form surface
+  // (zero tessellation error), so this is NOT absorbing occluder noise the
+  // way `hlr.js`'s mesh-based `SELF_OCCLUDE_BIAS` (6mm) has to — it exists
+  // to reject a SHALLOW false positive: a self-crossing decorative law
+  // ('onePenDown') chains one long ribbon across most of the visible
+  // surface, and even a couple of millimetres of dilation-found "nearer"
+  // surface at ONE sample along that chain is enough to fragment its single
+  // CLS_WALLS-classified stretch into pieces too short to classify at all
+  // (`stats.wallRings` measured 0, "ribbons degenerated to bare
+  // centrelines" — a FAILURE dressed as a pass). Every GENUINE self-
+  // occlusion crossing measured on this fixture (the torus's near tube wall
+  // hiding its own far wall through the inner hole) has a real depth gap of
+  // 20mm or more — nowhere close to this margin — so raising it clears the
+  // shallow false positive without weakening real detection at all.
+  // Measured: `onePenDown` recovers `wallRings > 0` at margin >= ~10mm and
+  // stays recovered through 15; margins tried below that (0.5-6mm, matching
+  // `dilateRadiusMm` below) all measured `wallRings === 0` for `onePenDown`
+  // regardless of radius — see `scene3d-ribbon-wall-coverage.test.js`'s own
+  // header for the full margin/radius/survivors/coverage/wallRings curve.
+  const TORUS_SELF_OCCLUDE_ANALYTIC_MARGIN_MM = 15;
+  // 2D (screen mm) dilation radius for the SAME analytic test — see
+  // `Scene3D.TorusOcclusion.buildSelfOcclusionTest`'s own header for why a Z
+  // margin alone is not enough near the inner-hole cusp (steep local
+  // foreshortening there means a fraction-of-a-mm lateral shift can put a
+  // ray from "misses the near sheet entirely" to "30+ mm behind it"). This
+  // is the knob that actually governs F7 survivor detection (the margin
+  // above is deliberately decoupled and much larger); measured smallest
+  // value that still reaches 0/0 survivors on
+  // `scene3d-ribbon-f7-self-occlusion.test.js` — 1-2mm miss real survivors,
+  // 3mm is the first value that catches all of them.
+  const TORUS_SELF_OCCLUDE_DILATE_RADIUS_MM = 3;
   // ── §0 — A FACET IS RULED, NOT MERELY MARKED ───────────────────────────────
   // The fewest rulings that read as a FILL rather than as bare paper with a line
   // on it. Two parallel lines are a stripe; the third is the first that gives
@@ -481,6 +513,29 @@
       occluded: Boolean(occluded),
     };
   };
+
+  // NOTE (F6c, reverted): a closed-form ray/torus self-occlusion depth
+  // source (src/core/scene3d/ray-torus.js, kept — see its own test file) was
+  // wired in here and tried at two scopes:
+  //   1. Applied broadly (every `seg.selfOcclude` call, matching the mesh
+  //      bias's own reach): measurably reduced far-sheet survivors in the
+  //      independent oracle test but mass-misfired on ordinary ribbon OUTLINE
+  //      vertices (roughly a third of all sampled surface points), visibly
+  //      fragmenting the whole hatched surface — a regression.
+  //   2. Scoped to ONLY SurfaceFill's pre-split `selfOcclusionTest` callback
+  //      (exact chart centreline samples, where a tight epsilon is valid):
+  //      safe, zero test/visual regressions, but had NO measurable visual
+  //      effect on the reported stray dash — confirmed via matched-camera
+  //      before/after renders (pixel diff confined to antialiasing noise).
+  // Root cause of (1): a ribbon outline vertex sits OFF the true analytic
+  // surface by up to ~2.3mm (the ribbon's own half-width/rounding — not a
+  // defect), while a genuine cusp occlusion can be as small as ~0.05mm of
+  // depth margin on this fixture. Those ranges OVERLAP, so no single
+  // z-margin epsilon can separate "harmless outline offset" from "real
+  // self-occlusion" at the post-hoc-clip layer, and (2) alone isn't where
+  // the visible bug lives. Reverted per this task's own instruction: a
+  // disclosed non-fix beats a partial one left in the tree. See the report
+  // for the full diagnosis.
 
   window.Vectura.AlgorithmRegistry.scene3d = {
     generate: (params = {}, rng, noise, bounds = {}) => {
@@ -2513,6 +2568,21 @@
         const emCfg = (emSrc && emSrc.emissive && emSrc.emissive.enabled && record.id !== 'ground')
           ? emSrc.emissive : null;
         const emissiveCoreBlank = Boolean(emCfg && emCfg.coreBlank);
+        // F7b — analytic self-occlusion depth source (torus only; see
+        // `Scene3D.TorusOcclusion` and `hlr.js`'s `hiddenAt` for why the
+        // mesh-based test alone (SELF_OCCLUDE_BIAS) can miss a shallow cusp
+        // crossing). Built ONCE per record — cheap closures only, the actual
+        // per-vertex quartic solve happens lazily inside `hiddenAt` and only
+        // for a genuinely non-convex torus. `null` for every other primitive
+        // and for a convex torus-shaped edge case (never happens today, but
+        // keeps this strictly additive), so nothing else changes.
+        const torusChartSizes = (record.primitive === 'torus' && !record.convex)
+          ? (curvedChartParams(emSrc || {}) || {}).sizes : null;
+        const torusAnalyticHidden = (torusChartSizes && Vectura.Scene3D && Vectura.Scene3D.TorusOcclusion)
+          ? Vectura.Scene3D.TorusOcclusion.buildSelfOcclusionTest(
+            (emSrc || {}).transform, scene.camera, scene.projOpts, torusChartSizes,
+            { marginMm: TORUS_SELF_OCCLUDE_ANALYTIC_MARGIN_MM, dilateRadiusMm: TORUS_SELF_OCCLUDE_DILATE_RADIUS_MM })
+          : null;
         // X-ray fold: x-ray's SEE-THROUGH FILLS stay coupled to visibility — the
         // occluded BASE-FILL / face-outline dash is a fills concern (the far
         // surface reads through), independent of edgeStyles.hidden. Only the pure
@@ -2646,7 +2716,11 @@
               sceneTarget: { ...target, xrayBack: true },
               ...(xr.backPenId ? { penId: xr.backPenId } : (style.penId ? { penId: style.penId } : {})),
             };
-            const backCtx = { objectId: record.id, selfObject: true };
+            // F7: a non-convex object's own far/hidden faces can still hide
+            // BEHIND further faces of itself (record.convex gates this —
+            // see scene.js's isConvexObject); a convex one keeps the
+            // byte-identical "never self-occlude" fast path.
+            const backCtx = { objectId: record.id, selfObject: true, selfOcclude: !record.convex, analyticOccluder: torusAnalyticHidden };
             let backLineIdx = 0;
             lines.forEach((line) => {
               const pts = line.map((pt) => ({
@@ -2875,6 +2949,26 @@
           const groups = new Map();
           record.faces.forEach((face, idx) => {
             if (!face.front) return;
+            // A face whose SCREEN-SPACE projection is edge-on (zero width —
+            // e.g. a CSG carve's bore side-wall viewed exactly along its own
+            // plane, as in the straight-down-axis box-minus-box fixture) has
+            // no usable 2D footprint. It can still read `front === true` on
+            // floating-point sign noise around an exactly-perpendicular
+            // normal (normalCam.z landing at ~1e-16 instead of an exact 0),
+            // but folding it into this record's front-region GROUP corrupts
+            // frontRegionBoundary's even-odd edge count (a bogus interior
+            // sliver) and drags the group's `nearZ` down to this degenerate
+            // face's own centroidZ — which then reads as "behind" the
+            // object's real near faces once self-occlusion is armed (F7,
+            // record.convex === false), hiding the WHOLE region. HLR's own
+            // occluder builder already discards exactly this shape
+            // (buildOccluders: "edge-on: zero-width footprint, skip" —
+            // fitSupportPlane returns null); mirror that same test here so a
+            // face with no real screen footprint never joins the fill group
+            // either. Every ordinary (non-degenerate) face keeps its usable
+            // plane and is unaffected — byte-identical for every existing
+            // torus/sphere/box/CSG fixture that doesn't hit this knife-edge.
+            if (!HLR.fitSupportPlane(face.polygon)) return;
             const st = styleOf(face);
             if (!SURFACE_FILL.has(st.mapper)) return;
             const sp = st.params || {};
@@ -2977,6 +3071,15 @@
                 mode: chartParams.mode,
                 sizes: chartParams.sizes,
                 detail: chartParams.detail,
+                // F7 — let ribbonize (surface-fill.js) pre-split a ruling's
+                // centreline at the visible/self-occluded boundary BEFORE it
+                // builds outline/wall/PenFill geometry for it, using the SAME
+                // clipper.hiddenAt oracle the post-hoc clip below uses. `null`
+                // for a convex object (record.convex — see scene.js's
+                // isConvexObject): its own front surface can never occlude
+                // itself, so this is skipped outright, zero added cost.
+                selfOcclusionTest: record.convex ? null : (x, y, z) => clipper.hiddenAt(
+                  x, y, z, { objectId: record.id, selfOcclude: true, analyticOccluder: torusAnalyticHidden }),
                 // Style-tab Fidelity — SAMPLING DENSITY along each fill line
                 // (points), not mesh tessellation (facets, still `detail`).
                 // Default 1 ⇒ byte-identical.
@@ -3125,8 +3228,13 @@
               }
             }
             // Nearest front-face depth for the group: hatch draws over farther
-            // objects and is hidden behind nearer ones; the object never
-            // occludes its own fill (selfObject).
+            // objects and is hidden behind nearer ones; a CONVEX object never
+            // occludes its own fill (selfObject) — a non-convex one (F7:
+            // record.convex, see scene.js's isConvexObject) genuinely can,
+            // e.g. the torus's near tube wall hiding its own far wall through
+            // the hole, and that applies to every path this line's clip
+            // reaches: hatch/region fill AND the ribbon/wall/PenFill paths
+            // `SurfaceFill.buildObject` emits as plain entries in `lines`.
             let nearZ = Infinity;
             g.faces.forEach((fi) => {
               const z = record.faces[fi] && record.faces[fi].centroidZ;
@@ -3139,7 +3247,7 @@
               sceneTarget: sceneTargetMeta(record.id, null, null, nearZ, false),
               ...(g.style.penId ? { penId: g.style.penId } : {}),
             };
-            const segCtx = { objectId: record.id, selfObject: true };
+            const segCtx = { objectId: record.id, selfObject: true, selfOcclude: !record.convex, analyticOccluder: torusAnalyticHidden };
             const groupTreat = strokeTreatment(g.style.params);
             // X-ray front 'faded' reads the near surface as dotted (lighter); the
             // back family is dashed at the back line type, on the back pen.

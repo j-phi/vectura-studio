@@ -19,6 +19,14 @@
  * perspective) marks the clipper `ambiguous`; createClipper then routes every
  * visibility query through the Scene3D.Depth buffer (owner-aware) built from
  * the fan-triangulated occluder set. Depth convention: larger z = nearer.
+ *
+ * Self-occlusion (F7): `seg.selfObject` disarms same-object occluders
+ * entirely — correct for a CONVEX object (its own front-facing surface can
+ * never hide another front-facing patch of itself). `seg.selfOcclude` (set
+ * only for a non-convex object — see scene3d.js's segCtx / scene.js's
+ * `record.convex`) re-arms them, subject to SELF_OCCLUDE_BIAS so real
+ * self-occlusion crossings still register while same-surface tessellation
+ * noise doesn't.
  */
 (() => {
   const globalScope = typeof window !== 'undefined' ? window : globalThis;
@@ -31,6 +39,21 @@
   // Max |plane(x,y) − vertex depth| (mm) before a face is considered
   // non-planar in screen+depth space (→ depth-buffer fallback).
   const PLANAR_RESIDUAL_TOL = 0.05;
+  // F7 self-occlusion depth margin (mm). A fill/ribbon sample is taken from
+  // the object's exact ANALYTIC surface, while its own occluder faces are a
+  // flat-tessellated (chorded) approximation of that same surface — the two
+  // disagree by up to the tessellation's own sagitta at their shared patch.
+  // MEASURED on the torus fixture (default detail 24): a long, re-stitched
+  // ribbon chain ('onePenDown' — the one law whose rulings are CHAINED across
+  // most of the visible surface before self-occlusion is even tested, so it
+  // samples far more of the mesh's own chording than a single, short ruling
+  // does) threw up to ~5 mm of spurious same-surface "self-occlusion" at
+  // 1.5 mm bias; every OTHER bucket-B law's genuine self-occlusion (the
+  // torus's near tube wall hiding its own far wall through the hole) measured
+  // a real 3-D gap of 10 mm or more, never once falling below that. 6 mm sits
+  // comfortably above the former and comfortably below the latter, so it
+  // fires only on a real crossing, never on same-surface tessellation noise.
+  const SELF_OCCLUDE_BIAS = 6;
   // Sample pitch (document mm) along tested paths.
   const SAMPLE_STEP = 2.5;
   // Draft-only coarser sample pitch (P5). Gated STRICTLY on opts.draft being
@@ -313,6 +336,15 @@
 
     // seg: { ownerKeys: [faceKey…], objectId } — context for owner exclusion.
     const hiddenAt = (x, y, z, seg) => {
+      // F7b — optional ANALYTIC self-occlusion source (Scene3D.TorusOcclusion,
+      // built from a closed-form ray/torus intersection — see that module's
+      // header for why the mesh-based test below needs a wide tessellation-
+      // noise margin that makes it blind to a shallow cusp crossing, while an
+      // exact analytic surface has no such noise and can use a tight one).
+      // Purely additive (OR'd in): it can only make a sample MORE hidden than
+      // the mesh test alone would, never less, and is a no-op (undefined)
+      // for every object that doesn't supply one.
+      if (seg && typeof seg.analyticOccluder === 'function' && seg.analyticOccluder(x, y, z)) return true;
       if (buffer) {
         // Owner-aware buffer lookup: exclude the segment's primary face. The
         // secondary adjacent face agrees with the sample along the shared
@@ -320,10 +352,15 @@
         // regardless of the caller's bias — per-cell depth interpolation is
         // quantized, unlike the exact support-plane evaluation.
         // Continuous surface hatch lies ON the front surface, so in the rare
-        // buffer-fallback path treat it as visible rather than self-occluding.
-        if (seg.selfObject) return false;
+        // buffer-fallback path treat it as visible rather than self-occluding
+        // — UNLESS this is a non-convex object opted into real self-occlusion
+        // (seg.selfOcclude), in which case the owner-aware buffer lookup below
+        // already excludes only the segment's own face, so the normal
+        // (larger, tessellation-noise-safe) margin is used instead.
+        if (seg.selfObject && !seg.selfOcclude) return false;
         const owner = seg.ownerKeys && seg.ownerKeys.length ? seg.ownerKeys[0] : undefined;
-        return buffer.depthAt(x, y, owner) > z + Math.max(bias, 0.5);
+        const buf = seg.selfOcclude ? Math.max(bias, SELF_OCCLUDE_BIAS) : Math.max(bias, 0.5);
+        return buffer.depthAt(x, y, owner) > z + buf;
       }
       // Candidate set from the spatial index (every occluder whose bbox could
       // contain (x,y) — see buildOccluderIndex's correctness note); falls
@@ -335,12 +372,22 @@
       for (let k = 0; k < candidates.length; k++) {
         const occ = index ? occluders[candidates[k]] : candidates[k];
         if (seg.ownerKeys && seg.ownerKeys.indexOf(occ.id) !== -1) continue; // own face
-        // Continuous surface hatch: the object never occludes its own fill (it
-        // lies ON the front surface). Other objects still occlude it.
-        if (seg.selfObject && occ.objectId === seg.objectId) continue;
+        const sameObject = occ.objectId === seg.objectId;
+        // Continuous surface hatch: a CONVEX object never occludes its own
+        // fill (it lies ON the front surface, and a convex body can't have a
+        // second front-facing patch behind the first along one ray) — that
+        // stays the byte-identical fast path. F7: a non-convex object
+        // (seg.selfOcclude, set only for the torus/imported-mesh self-
+        // occlusion gate — see scene3d.js's segCtx construction) genuinely
+        // can, so it falls through to the real depth test below instead of
+        // being skipped outright.
+        if (seg.selfObject && sameObject && !seg.selfOcclude) continue;
         if (occ.limitToObject && occ.objectId !== seg.objectId) continue; // x-ray occluder
         if (x < occ.bbox.minX || x > occ.bbox.maxX || y < occ.bbox.minY || y > occ.bbox.maxY) continue;
-        if (planeDepthAt(occ, x, y) <= z + bias) continue; // not nearer here
+        // Self-occlusion needs a wider depth margin than cross-object
+        // occlusion — see SELF_OCCLUDE_BIAS above.
+        const effBias = (seg.selfOcclude && sameObject) ? Math.max(bias, SELF_OCCLUDE_BIAS) : bias;
+        if (planeDepthAt(occ, x, y) <= z + effBias) continue; // not nearer here
         if (pointInPolygon({ x, y }, occ.polygon)) return true;
       }
       return false;
@@ -417,7 +464,11 @@
       return { fullyVisible: !sawHidden, runs };
     };
 
-    return { ambiguous: Boolean(buffer), occluders, clipPath, bias };
+    // Exposed (F7) so a caller can pre-test a single point's visibility
+    // BEFORE building path geometry around it — see surface-fill.js's
+    // `selfOcclusionTest` / `ribbonize` pre-split. `clipPath` already used
+    // this internally; it just wasn't reachable from outside the closure.
+    return { ambiguous: Boolean(buffer), occluders, clipPath, hiddenAt, bias };
   };
 
   // Convenience wrapper (and the shape the unit tests exercise): clip 2-point

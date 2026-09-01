@@ -160,6 +160,72 @@
     return withIndexFaceIds(Mesh.createTopoformMesh(mode, sizes, detail));
   };
 
+  // ── Self-occlusion gate (F7) ─────────────────────────────────────────────
+  //
+  // A convex object can never occlude itself (every camera ray touches its
+  // surface at most once on the visible side), so letting HLR test a convex
+  // object's own faces against itself only costs time. A non-convex object —
+  // the torus's own far tube wall behind its near one, a concave imported
+  // mesh — genuinely can, and skipping that test is the F6/F7 bug itself.
+  //
+  // ALWAYS_CONVEX_PRIMITIVES is a plain primitive-kind allowlist (no mesh
+  // scan at all — zero added cost) for shapes that are convex BY
+  // CONSTRUCTION for every valid parameter value: box, plane, sphere,
+  // ellipsoid (a stretched sphere), cylinder, cone, capsule and pyramid.
+  // ALWAYS_NONCONVEX_PRIMITIVES is the mirror case for a genus-1 tube
+  // surface — a torus or torus knot cannot be convex for any positive
+  // ring/tube radii, so this is a mathematical fact, not a guess, and also
+  // costs nothing.
+  //
+  // Everything else (superellipsoid — concave for a sub-1 rounding exponent;
+  // solid — 16 polyhedra families plus an arbitrary imported OBJ/STL mesh;
+  // csg — a boolean carve, non-convex as soon as a hole is cut) is genuinely
+  // data-dependent, so it gets the real test: `isConvexMesh` below, the
+  // classic "convex iff every vertex sits on the non-outward side of every
+  // face's own support plane" check, evaluated once on the UNTRANSFORMED
+  // mesh (an affine object transform can't change convexity, so this never
+  // needs the camera pose or the live per-frame transform).
+  const ALWAYS_CONVEX_PRIMITIVES = new Set([
+    'box', 'plane', 'sphere', 'ellipsoid', 'cylinder', 'cone', 'capsule', 'pyramid',
+  ]);
+  const ALWAYS_NONCONVEX_PRIMITIVES = new Set(['torus', 'torusKnot']);
+  // Bounds the O(faces × vertices) cost of the real test. Past this, assume
+  // NON-convex: the wrong guess there only turns self-occlusion on for a body
+  // that didn't strictly need it (a time cost, never a correctness one), and
+  // it is the same direction a big imported/carved mesh needs anyway.
+  const CONVEXITY_CHECK_BUDGET = 3000000;
+  const CONVEXITY_EPS = 1e-6;
+  const isConvexMesh = (vertices, faces) => {
+    const V = Array.isArray(vertices) ? vertices.length : 0;
+    const F = Array.isArray(faces) ? faces.length : 0;
+    if (V < 4 || F < 2) return true; // degenerate/flat mesh (e.g. a lone quad)
+    if (V * F > CONVEXITY_CHECK_BUDGET) return false;
+    for (let fi = 0; fi < F; fi++) {
+      const face = faces[fi];
+      if (!Array.isArray(face) || face.length < 3) continue;
+      const poly = face.map((i) => vertices[i]).filter(Boolean);
+      if (poly.length < 3) continue;
+      const n = faceNormal(poly);
+      if (!n || (!n.x && !n.y && !n.z)) continue;
+      const base = poly[0];
+      for (let vi = 0; vi < V; vi++) {
+        const pt = vertices[vi];
+        if (!pt) continue;
+        const d = (n.x * (pt.x - base.x)) + (n.y * (pt.y - base.y)) + (n.z * (pt.z - base.z));
+        if (d > CONVEXITY_EPS) return false;
+      }
+    }
+    return true;
+  };
+  // obj.primitive is undefined for the synthetic ground record's stand-in
+  // object literal (buildGroundRecord) — falls through to the real mesh test,
+  // which correctly reads its single flat quad as convex via the V<4 guard.
+  const isConvexObject = (primitive, meshData) => {
+    if (ALWAYS_CONVEX_PRIMITIVES.has(primitive)) return true;
+    if (ALWAYS_NONCONVEX_PRIMITIVES.has(primitive)) return false;
+    return isConvexMesh(meshData.vertices, meshData.faces);
+  };
+
   // ── Assembly ───────────────────────────────────────────────────────────────
 
   // I23 — non-uniform scale. Each local axis stretches by its own factor; an
@@ -215,6 +281,11 @@
       id: obj.id,
       name: obj.name,
       primitive: obj.primitive,
+      // F7 — real self-occlusion gate (see isConvexObject above). Consumed by
+      // scene3d.js when it builds a fill/ribbon/wall segCtx: true keeps the
+      // existing "never self-occlude" fast path byte-identical; false lets a
+      // non-convex object's own far side hide behind its own near side.
+      convex: isConvexObject(obj.primitive, meshData),
       // A combined CSG unit whose children are ALL faceted hatches per-face like
       // a box (Scene3D.Boolean sets this); curved-involving carves fall back to
       // the continuous-region path. Plain objects leave it false.

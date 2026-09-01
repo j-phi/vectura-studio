@@ -70,6 +70,36 @@ const makePreShaRuntimeOptions = (sha, envVar) => {
   );
 };
 
+/**
+ * Multi-file version of `makePreShaRuntimeOptions`, for a fix that spans more
+ * than `surface-fill.js` (F7's self-occlusion gate touches `scene.js`,
+ * `hlr.js`, `surface-fill.js` AND `scene3d.js`) — pinning only one of those
+ * files to a pre-fix SHA would leave the OTHER three still carrying the fix,
+ * which is not a red baseline for the fix as a whole. Same env-var-gated
+ * RGR-RED-switch contract as `makePreShaRuntimeOptions`: without the env var
+ * this returns `{}` and the test runs the current working tree unchanged.
+ */
+const makeMultiFilePreShaRuntimeOptions = (sha, envVar, relPaths) => {
+  let cache = null;
+  const getSources = () => {
+    if (cache) return cache;
+    const rootDir = path.resolve(__dirname, '../..');
+    cache = {};
+    relPaths.forEach((relPath) => {
+      cache[relPath] = execFileSync('git', ['show', `${sha}:${relPath}`], {
+        cwd: rootDir,
+        maxBuffer: 1024 * 1024 * 64,
+      }).toString('utf8');
+    });
+    return cache;
+  };
+  return () => (
+    process.env[envVar] === '1'
+      ? { scriptOverrides: getSources() }
+      : {}
+  );
+};
+
 // The F5 wall-clip regression's own buggy revision — CLS_WALLS existed here,
 // clipping against `visibleRegionInsetRings()` (the phantom-lobe-prone erode)
 // instead of the raw region. `PRE_WIP_SHA` (1b157bc6) predates CLS_WALLS
@@ -82,6 +112,7 @@ module.exports = {
   preWipRuntimeOptions,
   preWallsFixRuntimeOptions,
   makePreShaRuntimeOptions,
+  makeMultiFilePreShaRuntimeOptions,
   PRE_WIP_SHA,
   PRE_WALLS_FIX_SHA,
   REL_PATH,

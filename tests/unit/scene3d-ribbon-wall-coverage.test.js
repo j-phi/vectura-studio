@@ -30,7 +30,7 @@
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { preWipRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
-const { captureClipGroups, measureRingFillRate } = require('../helpers/scene3d-ring-coverage');
+const { captureClipGroups, captureSelfOcclusionFootprint, measureRingFillRate } = require('../helpers/scene3d-ring-coverage');
 
 const LAWS = [
   'nibAngle', 'taperedEnds', 'weightModulated', 'isophoteWidth', 'whiteBand',
@@ -59,12 +59,21 @@ describe('SurfaceFill CLS_WALLS — every bucket-B law, torus', () => {
       obj.params.style.params = { ...(obj.params.style.params || {}), toneLaw };
 
       const cap = captureClipGroups(V);
+      // F7 — observes exactly which final-line stretches self-occlusion
+      // alone removed during THIS SAME build (see scene3d-ring-coverage.js's
+      // own header). Empty under VECTURA_PRE_F7=1 or on any non-torus
+      // primitive — see that file's "F7 CORRECTION" comment for why that
+      // makes the disabled-self-occlusion safeguard hold exactly, not
+      // approximately.
+      const occlusionCap = captureSelfOcclusionFootprint(V);
       engine.computeAllDisplayGeometry();
       cap.restore();
+      occlusionCap.restore();
 
       const stats = { ...(V.Scene3D.SurfaceFill.lastRibbonStats || {}) };
       const ink = (group.scenePaths || []).filter((p) => p && p.meta && p.meta.kind === 'sceneFill');
-      const coverage = measureRingFillRate(cap.groups, ink, PEN_WIDTH);
+      const coverage = measureRingFillRate(cap.groups, ink, PEN_WIDTH,
+        { selfOccludedSegments: occlusionCap.segments });
       results[toneLaw] = { stats, coverage, groupCount: cap.groups.length };
     });
   }, 600000);

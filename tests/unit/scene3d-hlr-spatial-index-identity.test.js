@@ -200,13 +200,28 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   // untouched by construction, which is why only the torus scenes moved:
   //   curvedOverlap|settled pathCount: 343 -> 341
   //   denseMixed|settled    pathCount: 467 -> 464
+  //
+  // NOTE (F7, 2026-09-01): exactly one row per torus-carrying scenario moved
+  // AGAIN, each by a handful of points — `curvedOverlap|settled` (1102 -> 1099
+  // pts) and `denseMixed|draft` (932 -> 926 pts); the OTHER mode of each
+  // scenario, and the box-only `facetedOverlap` scenario entirely, are
+  // bit-for-bit unchanged. This is the torus self-occlusion fix
+  // (`Scene3D.TorusOcclusion` — closed-form ray/torus intersection, see
+  // `tests/unit/scene3d-ribbon-f7-self-occlusion.test.js`): a non-convex
+  // object's own far tube wall can now be hidden by its own near tube wall
+  // through the inner hole, exactly the reported defect. `hiddenAt`'s new
+  // `seg.analyticOccluder` hook only fires for a torus (every other
+  // primitive here — box/sphere/cylinder/cone — is provably untouched, see
+  // `check-convex-byte-identical` in the F7 report), so only the two
+  // torus-carrying scenarios could move, and only the handful of points that
+  // sat in the object's own genuine near/far overlap moved.
   const EXPECTED = {
     'facetedOverlap-orthographic-hatch|settled': { hash: 'edb852cb0986dcbb6a12958f2a539b67f558948fa6dd5428b5cc0548ececc829', pathCount: 129, pointCount: 258 },
     'facetedOverlap-orthographic-hatch|draft': { hash: 'c89e3d735e2b53f3c1d154e7f3567d53a1e6053159b9ffa25a5853f7973d6a76', pathCount: 200, pointCount: 400 },
-    'curvedOverlap-perspective-mixed-xray|settled': { hash: '63825ff0240d604e69225e58b764cda4ded49ea2d562fdb9f03e85f24fb5277e', pathCount: 341, pointCount: 1102 },
+    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'b47a8383997457c45e0c95a323a09481a362997812958cf4094a427e2c99728f', pathCount: 341, pointCount: 1099 },
     'curvedOverlap-perspective-mixed-xray|draft': { hash: '83aebf997a1e39aed36e2893fb18e7e7ea386755a9493e4868c53c51c80ee2f9', pathCount: 302, pointCount: 604 },
     'denseMixed-8obj-shadows|settled': { hash: 'd426c24dfec801c257c0ec55f682bfc3dba00fe40c420413a1772de01848b419', pathCount: 464, pointCount: 2111 },
-    'denseMixed-8obj-shadows|draft': { hash: '9c3de29b1f268348208ebe1395268ad1f099ffdfc1b58d5759e3dc7eba7f4486', pathCount: 466, pointCount: 932 },
+    'denseMixed-8obj-shadows|draft': { hash: 'fdf84edf779e274c8334aff74707d5702e57bc9e73faee8bc1500ae6061aa360', pathCount: 463, pointCount: 926 },
   };
 
   scenarios.forEach(({ name, objects, extra }) => {
