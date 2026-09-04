@@ -202,26 +202,46 @@ naive path-count assertion.
 density / ruling pitch**, not path count, and a coincident-line implementation FAILS it; measured
 darker in the app with two overlapping casters, screenshotted.
 
-### D. Shadows falling onto other 3D objects  (NOT STARTED)
+### D. Shadows falling onto other 3D objects  (`3d-scene/handoff-c`) — **CLOSED**
 
-**Task.** A shadow must land on another object's surface and render in **that receiver's own fill
-style**. Settled architecture: per surface sample, ask "is this point in shadow?" and feed the answer
-into the intensity the tone laws already consume. No new region geometry. This also dodges the fact
-that a projected silhouette is only valid on a **plane** — a curved receiver (the cone) would need
-per-line sampling under the projection approach.
+**Resolved on `3d-scene/handoff-c`.** New `src/core/scene3d/shadow-receive.js`
+(`Vectura.Scene3D.ShadowReceive`): `pointInShadow(worldPoint, light, occluderSet, opts)`
+(Moller-Trumbore ray/triangle, self-shadow exclusion via `opts.excludeObjectId`) +
+`buildOccluderSet(records)` (every object's own world-space faces, `scene.js` `faceRecord.world-
+Verts`, flattened to triangles grouped per object with a bounding sphere). `Regions.combined-
+Intensity` gained an optional 4th `shadowFn` arg — an occluded light's own contribution drops to 0,
+ambient untouched; omitted, it is a strict no-op (every pre-existing call site byte-identical).
+`scene3d.js` builds one occluder set per frame and closes `shadowFn` over `currentReceiverObjectId`
+(reassigned per record, the same trick the existing emissive-light `activeLights` plumbing already
+uses). New flag `shadow.shadowReceiveOnObjects`, default **OFF** — every existing scene, including
+the `scene3d-hlr-spatial-index-identity` byte-identity fixtures, stays untouched.
 
-**Known cost.** There was no ray/triangle intersection anywhere in scene3d. There is now
-`src/core/scene3d/ray-torus.js` (closed-form ray/torus, 12 tests) and the self-occlusion plumbing in
-`hlr.js` — **start from those**, they did not exist when this item was written. World-space face
-polygons are at `scene.js:197-201`.
+**Task (as originally written, for context).** A shadow must land on another object's surface and
+render in **that receiver's own fill style**. Settled architecture: per surface sample, ask "is this
+point in shadow?" and feed the answer into the intensity the tone laws already consume. No new
+region geometry — this also dodges the fact that a projected silhouette is only valid on a
+**plane**; a curved receiver (the cone) needed per-sample testing, not projection.
 
-**Value.** The largest remaining capability gap. Multi-object scenes read as objects floating
-independently.
+**Performance.** A naive per-sample linear triangle scan measured 101->3739ms (a simple caster+cone
+scene) and 89->3835ms (an 8-object dense scene, 43x) — profiling showed almost every sample is
+unshadowed, so every one still paid for a full scan just to conclude "no hit." A per-object
+bounding-sphere early-out (mirroring `hlr.js:buildOccluderIndex`'s spirit) brought this to
+92->388ms (4.2x) / 89->428ms (4.8x) — real, measured, but still over the ~1.5x guidance. Per this
+item's own stop condition ("exceeds ~1.5x and needs a real BVH — a second unit"), that residual gap
+is reported, not force-fixed: it is O(objects^2) by design (every object tests every other as a
+candidate occluder) and needs a shared cross-object index/shadow-map to close further. Details:
+`docs/3d-audit/handoff/unit-d-notes.md`.
 
 **Done when.** `pointInShadow(worldPoint, light, occluders)` with unit tests (hit, miss, grazing,
-self-shadow exclusion); the shadow term feeds per-sample intensity, verified by the receiver's fill
-style changing the shadow's appearance; works on a **curved** receiver; performance measured and
-stated; two-object screenshot.
+self-shadow exclusion) — DONE, 10/10 green in `tests/unit/scene3d-shadow-receive.test.js`; the
+shadow term feeds per-sample intensity, verified by the receiver's fill style changing the shadow's
+appearance — DONE (an independent ray/sphere oracle proves a real intensity margin, and two
+different `toneLaw`s on the receiver emit different geometry with the shadow on); works on a
+**curved** receiver — DONE (the same oracle, adjacent points straddling the exact shadow boundary
+on a cone); performance measured and stated — DONE, see above (not fully within budget, reported);
+two-object screenshot — DONE, `docs/3d-audit/handoff/unit-d/` (a sphere caster onto a cone receiver,
+control 1: caster moved aside, control 2: receiver's own toneLaw changed — both provably NOT
+byte-identical to the shadowed shot).
 
 ### E. Expand fidelity on two laws  (plan F5, plus the lying counter)
 

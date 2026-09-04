@@ -494,6 +494,11 @@
                                  // style.params.toneLaw, same 'ladder' fallback.
                                  // See shadows.js Shadows.toneLawApplies for which
                                  // mark classes actually change shadow geometry.
+    shadowReceiveOnObjects: false, // Unit D — shadows falling on OTHER objects'
+                                 // own surfaces (per-sample Regions.combined-
+                                 // Intensity shadow term, Scene3D.ShadowReceive).
+                                 // Default OFF (byte-identity for every scene
+                                 // that doesn't opt in).
     shadowToneDepth: 0.75,       // 0..1. Blends the FLAT shadow's local ink density
                                  // from today's single scalar spacing (0) toward the
                                  // OBJECT's own tone ladder (Regions.band/coverageFor,
@@ -899,6 +904,7 @@
       // (single choke point, no drift) — unknown/absent id resolves to 'ladder'.
       shadowToneLaw: clampStyleParam('toneLaw', src.shadowToneLaw),
       shadowToneDepth: clamp(finite(src.shadowToneDepth, DEFAULT_SHADOW.shadowToneDepth), 0, 1),
+      shadowReceiveOnObjects: src.shadowReceiveOnObjects === true,
     };
   };
 

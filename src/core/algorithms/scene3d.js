@@ -683,7 +683,25 @@
       // live binding, so the per-record reassignment is picked up by every helper
       // (spacingBand, the curved pass, SurfaceFill) without re-plumbing them.
       let activeLights = p.lights;
-      const intensityFn = toneOn ? (nw, wp) => Regions.combinedIntensity(nw, wp, activeLights) : null;
+      // Unit D (stroke-fill handoff item D) — shadows falling on OTHER
+      // objects' own surfaces. `shadowReceiveOnObjects` (default OFF, see
+      // params.js DEFAULT_SHADOW) gates a per-frame occluder set built once
+      // from every object's own world-space faces (scene.js faceRecord).
+      // `currentReceiverObjectId` is REASSIGNED per record exactly like
+      // `activeLights` above (see the `records.forEach` below) so the SAME
+      // `shadowFn` closure excludes whichever object is CURRENTLY being
+      // shaded from its own occluder set (self-shadow exclusion) without
+      // rebuilding the function per object. Off by default ⇒ `shadowFn` stays
+      // null ⇒ `combinedIntensity`'s 4th arg is never passed ⇒ byte-identical
+      // to pre-Unit-D for every scene that doesn't opt in.
+      const ShadowReceive = Vectura.Scene3D.ShadowReceive;
+      let currentReceiverObjectId = null;
+      const shadowReceiveOn = Boolean(p.shadow && p.shadow.shadowReceiveOnObjects && ShadowReceive && lightDir);
+      const shadowOccluders = shadowReceiveOn ? ShadowReceive.buildOccluderSet(scene.objects) : null;
+      const shadowFn = shadowOccluders
+        ? (wp, lt) => ShadowReceive.pointInShadow(wp, lt, shadowOccluders, { excludeObjectId: currentReceiverObjectId })
+        : null;
+      const intensityFn = toneOn ? (nw, wp) => Regions.combinedIntensity(nw, wp, activeLights, shadowFn) : null;
       // I8 — per-sample specular term for light-driven highlight mode. Reads the
       // live `activeLights` binding (like intensityFn) so an emissive object's
       // co-located light is picked up. shininess derives from the tone Specular
@@ -2563,6 +2581,9 @@
         activeLights = emissiveLights.length
           ? p.lights.concat(emissiveLights.filter((e) => e._srcId !== record.id))
           : p.lights;
+        // Unit D — see shadowFn above: THIS record is the current receiver,
+        // so its own faces are excluded from its own occluder test.
+        currentReceiverObjectId = record.id;
         // Emissive self-render config for this object (never the ground).
         const emSrc = objById.get(record.id);
         const emCfg = (emSrc && emSrc.emissive && emSrc.emissive.enabled && record.id !== 'ground')

@@ -150,7 +150,18 @@
   // `intensity()` (Phase-2 regression safety). Unknown future light types shade
   // as directional in v1. `worldPoint` is only consulted by positional lights;
   // a missing point defaults to the origin (harmless for direction-only lights).
-  const combinedIntensity = (normalWorld, worldPoint, lights) => {
+  //
+  // `shadowFn` (Unit D, stroke-fill handoff item D — optional, 4th arg) is a
+  // `(worldPoint, light) => boolean` occlusion test — typically
+  // `Scene3D.ShadowReceive.pointInShadow` closed over a per-frame occluder
+  // set and the current receiver's own object id (self-shadow exclusion).
+  // When it reports a light occluded at this point, THAT light's own
+  // contribution drops to zero for this sample (ambient is never gated — a
+  // cast shadow attenuates direct light, not the scene's flat fill). Omitted
+  // (undefined), this is a strict no-op — every existing call site is
+  // byte-identical, which is how the F7/self-occlusion-style regression pins
+  // stay green with the feature OFF.
+  const combinedIntensity = (normalWorld, worldPoint, lights, shadowFn) => {
     const list = Array.isArray(lights) ? lights : (lights ? [lights] : []);
     const n = normalize(normalWorld || v(0, 0, 1));
     const P = worldPoint && Number.isFinite(worldPoint.x) && Number.isFinite(worldPoint.y) && Number.isFinite(worldPoint.z)
@@ -162,6 +173,7 @@
       const weight = finite(light.intensity, 1);
       const type = light.type;
       if (type === 'ambient') { total += weight; continue; }
+      if (typeof shadowFn === 'function' && shadowFn(P, light)) continue; // this light is blocked at P
       if (type === 'area') {
         // Average N deterministic point-light sub-samples spread across the
         // emitter's extent. No distance range (softness, not falloff) → each

@@ -2133,6 +2133,12 @@
         // so all three shadowToneDepth origins agree; previously only
         // normalizeShadow supplied this value.
         shadowToneDepth: 0.75,
+        // Unit D (stroke-fill handoff item D) — per-sample shadow term on
+        // OTHER objects' own surfaces (Regions.combinedIntensity's optional
+        // 4th arg). Default OFF: every existing scene, including the
+        // `scene3d-hlr-spatial-index-identity` byte-identity fixtures, stays
+        // untouched unless a scene opts in.
+        shadowReceiveOnObjects: false,
       },
       ground: { enabled: true },
       backdrop: { enabled: false },
