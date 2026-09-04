@@ -215,12 +215,40 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   // `check-convex-byte-identical` in the F7 report), so only the two
   // torus-carrying scenarios could move, and only the handful of points that
   // sat in the object's own genuine near/far overlap moved.
+  // NOTE (sf/shadow-overlap, 2026-09-04): `denseMixed-8obj-shadows|settled`
+  // moved AGAIN — 464 -> 560 paths, 2111 -> 2303 points — and this time it is
+  // the shadow-overlap darkening feature (`Shadows.build`'s `overlapLevels` /
+  // `overlapPitch`), verified deliberately rather than rubber-stamped:
+  //   - Of the +96 paths, 91 (70 depth-2 + 21 depth-3) carry the new
+  //     `sceneTarget.shadowOverlap` tag — they are exactly the regions the
+  //     8-caster class's intersection lattice found two/three footprints
+  //     deep, per `azimuth: 150, elevation: 42` with 8 objects packed on a
+  //     14-unit grid.
+  //   - Re-measuring this exact scene's emitted ink (sum of segment length /
+  //     polygon area, grouped by `shadowOverlap`) gives density 0.087 for the
+  //     untagged (depth-1) regions vs. 1.62-1.63 for the depth-2/3 regions —
+  //     ~19x denser, not the ~1x a coincident-line bug would produce. This is
+  //     the tighter-pitch mechanism working, not the documented "emit it
+  //     twice" trap.
+  //   - The residual +5 paths / +10 points outside the tagged regions come
+  //     from splitting the class's footprint into (overlap pieces) + (rest);
+  //     "rest" is now `geom` minus the overlap lattice rather than the raw
+  //     union, so its hatch clips against a newly-cut boundary — a required
+  //     side effect of not double-inking the overlap zone, not a defect.
+  //   - `|draft` for this same scenario is UNCHANGED (still 463 / 926,
+  //     confirmed byte-identical) — draft frames route through the flat
+  //     single-hatch legacy path this file's `emitShadowRegion` comment
+  //     already documents, which never sets `cfg.overlapDepth`.
+  //   - The other two scenarios in this file (no shadows) and the WIP's own
+  //     `tests/unit/scene3d-shadow-overlap.test.js` (single-caster and
+  //     non-overlapping-pair fixtures) are still byte-identical, which is
+  //     the control: the change is scoped to genuine multi-caster overlap.
   const EXPECTED = {
     'facetedOverlap-orthographic-hatch|settled': { hash: 'edb852cb0986dcbb6a12958f2a539b67f558948fa6dd5428b5cc0548ececc829', pathCount: 129, pointCount: 258 },
     'facetedOverlap-orthographic-hatch|draft': { hash: 'c89e3d735e2b53f3c1d154e7f3567d53a1e6053159b9ffa25a5853f7973d6a76', pathCount: 200, pointCount: 400 },
     'curvedOverlap-perspective-mixed-xray|settled': { hash: 'b47a8383997457c45e0c95a323a09481a362997812958cf4094a427e2c99728f', pathCount: 341, pointCount: 1099 },
     'curvedOverlap-perspective-mixed-xray|draft': { hash: '83aebf997a1e39aed36e2893fb18e7e7ea386755a9493e4868c53c51c80ee2f9', pathCount: 302, pointCount: 604 },
-    'denseMixed-8obj-shadows|settled': { hash: 'd426c24dfec801c257c0ec55f682bfc3dba00fe40c420413a1772de01848b419', pathCount: 464, pointCount: 2111 },
+    'denseMixed-8obj-shadows|settled': { hash: '47a37463e73f66365ccc570268da3f0f655bedcb8b1f79ecca810c544e60ec95', pathCount: 560, pointCount: 2303 },
     'denseMixed-8obj-shadows|draft': { hash: 'fdf84edf779e274c8334aff74707d5702e57bc9e73faee8bc1500ae6061aa360', pathCount: 463, pointCount: 926 },
   };
 
