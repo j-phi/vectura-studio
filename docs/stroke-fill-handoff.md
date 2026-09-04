@@ -1,219 +1,285 @@
 # Stroke-Fill + Shadow Effort — Handoff
 
-**Paused 2026-08-30.** Nothing pushed, nothing merged to main. Full plan with all contracts and
-open findings: `~/.claude/plans/stroke-fill-plan.md` (345+ lines). Read it before resuming.
+**Current as of 2026-09-04, commit `3c448457` on branch `sf/preview`.** Nothing pushed, nothing
+merged to `main`. Contracts and the original work-unit plan: `~/.claude/plans/stroke-fill-plan.md`
+(outside the repo — copy it in if you are handing this to someone who cannot read it).
+
+Preview: `cd .claude/worktrees/sf-preview && python3 -m http.server 8403`, add a 3D Scene layer,
+set primitive to torus.
+
+## Read this first — the three findings that cost the most to learn
+
+**1. Per-vertex depth testing CANNOT enforce occlusion on a ribbon.** A ribbon's outline vertices
+legitimately sit up to **2.3 mm** off the true surface — that is the ribbon's own half-width, by
+design, not a defect. Genuine cusp occlusion on a torus measures as little as **0.05 mm**. The
+ranges overlap by a factor of forty, so **no scalar depth epsilon separates "offset because it is a
+ribbon edge" from "behind the near sheet."** Four separate approaches died on this before it was
+understood. Occlusion here is a BOUNDARY problem: clip against the near sheet's projected
+silhouette, and classify using the originating CENTRELINE sample, which lies on the true surface.
+
+**2. `measureRingFillRate`'s denominator predates occlusion, and will mis-score any future fix.**
+`tests/helpers/scene3d-ring-coverage.js` builds its denominator from rings captured at
+`RibbonGeometry.clipMultiPolygonToRegion`, which fires BEFORE self-occlusion clips the final lines.
+Ring area that occlusion legitimately removes therefore counts as ink-that-should-exist while
+correctly receiving none. **Correctly hiding geometry scores as a coverage failure by
+construction.** This cost two attempts: a working fix that already reached zero violations was
+measured at 0.86 and thrown away. `captureSelfOcclusionFootprint` now excludes exactly what
+occlusion removed. **If you add any new geometry-removing feature, check this helper before you
+trust its verdict.**
+
+**3. Harness-clean is not app-clean.** An entire integration passed its full suite while the ribbon
+pipeline was INERT — every ribbon silently fell back to a bare centreline, so both defects
+"vanished" because the feature had stopped producing width at all. No test caught it; a screenshot
+did. A law emitting only bare centrelines, or `wallRings == 0`, is a FAILURE dressed as a pass.
+
+## Approaches that are DEAD — do not retry
+
+| Approach | Why it failed |
+|---|---|
+| Split ribbons at the fold cusp | Tidier polygons, adds no occlusion at all |
+| Mesh face depth + 6 mm bias | Cusp gap is ~3 mm; the tolerance is wider than the feature |
+| Analytic depth sampled on a (u,v) grid | Aliases at grazing angles; `wallRings` → 0, `onePenDown` → 0.155 |
+| Ray/torus intersection per outline vertex | The 2.3 mm vs 0.05 mm overlap above |
 
 ## What this was
 
-Two of your reports:
+Two user reports:
 1. Variable-width 3D fill styles rendered as a **staircase of constant-width capsules** with
    round-cap bulges, and **geometry protruding past the silhouette** after "Expand into group".
 2. Voronoi Web needed to read as an unbroken web with **cell size carrying tone**.
-Then, later: **shadows must darken where they overlap and fall onto other 3D objects.**
+Then: **shadows must darken where they overlap and fall onto other 3D objects.**
+Then, during review: **contour lines from the back of a torus must never break through the top edge
+of the front** — the user's own words, now the acceptance rule for self-occlusion.
 
 ## The fix, in one line
 
 Stop asking for a fat pen. Build the true variable-width **ribbon outline** from the continuous
-width profile, clip it to the form, stroke it with the real pen, and fill the interior at
-pen-width pitch. Every path then carries `weightScale === 1`, so what you see IS real pen lines and
+width profile, clip it to the form, stroke it with the real pen, and fill the interior at pen-width
+pitch. Every path then carries `weightScale === 1`, so what you see IS real pen lines and
 expand-into-group is correct by construction.
 
-## Branch state (all off `3d-scene/fs-batch` @ 5e92311b, v1.3.91)
+## Branch state
 
-| Branch | HEAD | State |
-|---|---|---|
-| `sf/integration` | **439319c0** | All 6 units + F1 + F2 merged. **WIP checkpoint on top (F3, unreviewed/untested).** |
-| `sf/shadow-overlap` | **bef636c6** | Shadow overlap darkening. **WIP checkpoint, suites never run.** |
-| `sf/w1-ribbon` … `sf/w6-voronoi` | various | Original six units, all merged into integration. Historical. |
+`sf/preview` is the single current branch — everything folded in, tree clean.
 
-Last fully-verified commit on `sf/integration` is **1b157bc6** (v1.3.94, torus fix) — suites green
-there: unit 4588, integration 1919, visual 99, perf 10. The two WIP commits after it are NOT verified.
+| Commit | |
+|---|---|
+| `3c448457` | this doc |
+| `eb32e616` | merge of `sf/shadow-overlap` (clean, zero file overlap) |
+| `da683934` | v1.3.98 — non-convex objects occlude themselves |
+| `57e86f48` | v1.3.97 — fold-cusp ribbon splitting |
+| `ecc50c16` | v1.3.96 — phantom-lobe clip regression removed |
+| `e047c9a7` | v1.3.95 — sub-pen hairlines + outline/fill seam |
+| `439319c0` | the original paused WIP checkpoint |
 
-Serve any worktree with `python3 -m http.server <port>`; nothing is running now.
+Historical: `sf/integration` (same work minus the merge), `sf/shadow-overlap`, `sf/w1-ribbon` …
+`sf/w6-voronoi`. Base was `3d-scene/fs-batch` @ `5e92311b`.
+
+Suites on `sf/preview`: unit 4669+, integration 1919, visual 99. Four RGR red proofs, each pinning
+a different baseline SHA via `tests/helpers/pre-wip-surface-fill.js`:
+
+    VECTURA_PRE_WIP=1         # 1b157bc6 — sub-pen fix, 34-36 of 36 red on wall-coverage
+    VECTURA_PRE_WALLS_FIX=1   # e047c9a7 — phantom lobe, 58.27 vs 28.74 mm² ceiling
+    VECTURA_PRE_F6=1          # ecc50c16 — fold-cusp splitting
+    VECTURA_PRE_F7=1          # 57e86f48 — self-occlusion, the user's red-line rule
 
 ## DONE and independently verified
 
-- **Stairstepping: GONE.** Judge B measured exactly (step = 0.3 x |delta weightScale|). Pre-fix
-  `nibAngle` had 357 distinct weightScales, 232 boundaries stepping >half a pen, max step 0.749 mm.
-  Post-fix: one weightScale, **max step 0.000**.
-- **Protrusion: GONE.** Pre-fix ink reached r=46.52; post-fix every law reads **46.267, identical to
-  the untouched monowidth control**, zero vertices outside r=46. Holds after expand too.
-- **Universality: PASS.** Judge A walked all **49** styles in the real app. 31 monowidth unchanged
-  (30 byte-identical), 12 variable-width ribbonized, 6 three-pen keep their real distinct pen
-  widths (0.867/1.733/3.1). Buckets derived from code, not from the plan.
-- **Voronoi Web: DONE.** 1 connected component, interior dangling stubs 8229 -> 0, 0/29689 vertices
-  outside the silhouette, cell size spans 2.5x shadow-to-highlight.
-- **Stroke Fill control** on both surfaces (ctxbar Style flyout + left panel Style tab), disabled
-  with a reason on non-applicable styles.
-- **Spiral keeps path count flat** — your requirement. 1 path per component, and LOWER than the old
-  splitByWeight on 9 of 12 laws (e.g. 2226 -> 208).
-- **Torus fixed** (F2): per-sample normal test was answering star-shapedness, not handedness; 27.6%
-  of torus normals inverted. Changes torus rendering for ALL 49 styles — you eyeballed and approved.
+- **Stairstepping: GONE.** Pre-fix `nibAngle` had 357 distinct weightScales, 232 boundaries stepping
+  >half a pen, max step 0.749 mm. Post-fix: one weightScale, max step **0.000**.
+- **Protrusion: GONE.** Pre-fix ink reached r=46.52; post-fix every law reads **46.267**, identical
+  to the untouched monowidth control, zero vertices outside r=46. Holds after expand.
+- **Universality: PASS.** All **49** styles walked in the real app. 31 monowidth unchanged (30
+  byte-identical), 12 ribbonized, 6 three-pen keep real distinct widths (0.867/1.733/3.1).
+- **Voronoi Web: DONE.** 1 connected component, interior stubs 8229 → 0, 0/29689 vertices outside
+  the silhouette, cell size spans 2.5x shadow-to-highlight.
+- **Sub-pen hollow doubled hairline: GONE.** `CLS_WALLS` builds 1-2 pen ribbons analytically instead
+  of through `erode(erode(region))`, which is unreliable below ~2 pens. `weightSmoothstep` ring-fill
+  0.9627 → 1.0000.
+- **Outline/fill seam: GONE.** Fill erosion `penWidth/2` → `penWidth*(0.5 - RIBBON_OVERLAP)`, giving
+  that junction the same 15% overlap every other pass has.
+- **Torus self-occlusion: the user's rule is ENFORCED.** 112 far-sheet crossings on `taperedEnds`
+  and 23 on `weightSmoothstep` → **0 and 0**. `isConvexObject` (`scene.js`) gates it: convex
+  primitives keep the zero-cost path and render **byte-identically**; only the torus and imported
+  meshes pay. `ray-torus.js` solves the quartic in closed form (Ferrari, near-zero-q routed to the
+  exact biquadratic, Newton polish — the naive form blew up to t~1e69 on an ordinary grazing ray).
+  Tuning is two DECOUPLED knobs: 15 mm z-margin rejecting shallow same-surface noise, 3 mm 2D
+  dilation radius (smallest reaching zero) absorbing foreshortening. A single coupled knob cannot
+  satisfy both.
+- **CSG carve regression, exposed and fixed here.** An edge-on BSP face projected screen-collinear
+  (`normalCam.z ~ 5.3e-16`) but sign-positive on fp noise, read front-facing, and dragged a fill
+  group's `nearZ` from 20 mm to 6.667 mm; once same-object occluders were really tested the object's
+  own faces read as nearer and hid every hatch line. Faces with no usable support plane are now
+  skipped before joining a fill group.
+- **Seam-join width substitution, found via a lying counter.** The `onePenDown` stitcher appended
+  points to `tail` without the matching `__hw` half-widths, so `flushDeferredRibbons` padded with
+  tail's LAST width and re-inked the whole seam at the wrong width.
+- **Shadow overlap tests pass 22/22** — run for the first time on `sf/preview`. The implementation
+  itself is still unreviewed and never visually verified.
 
 ## Measured, NOT defects (do not re-litigate)
 
-- **Tone is fine.** The "87% over-inked" figure I relayed was wrong — it double-counted overdraw
-  (2.211x). Real coverage **39.4% vs 39.1% on base**. Ink LENGTH went 8x because the old build drew
-  the same area as fat pen at mean weightScale 3.6; ribbonize decomposes it into real 0.3 mm passes.
-- **Coverage contract holds.** All four fill styles reach >= 0.9998 on real geometry. `concentric` is
-  NOT gappy — spiral is the wasteful one (overdraw 2.15-3.11 vs concentric 1.28-1.53) and the only
-  one that breaches the gap bar. **Do NOT switch the default off spiral** — that would trade your
-  path-count requirement for a metric. Fix spiral's turnaround pitch instead.
+- **Tone is fine.** The "87% over-inked" figure was wrong — it double-counted overdraw (2.211x).
+  Real coverage **39.4% vs 39.1% on base**. Ink LENGTH went 8x because the old build drew the same
+  area as a fat pen at mean weightScale 3.6; ribbonize decomposes it into real 0.3 mm passes.
+- **Coverage contract holds.** All four fill styles reach >= 0.9998 on real geometry. `concentric`
+  is NOT gappy — spiral is the wasteful one (overdraw 2.15-3.11 vs 1.28-1.53). **Do NOT switch the
+  default off spiral** — that trades the path-count requirement for a metric.
+- **`scene3d-ribbon-weightscale-invariant` proves nothing about these fixes.** It passes against
+  pre-fix code too. It is a T4 regression guard, not evidence.
 
 ## OPEN — the resume queue
 
-**Numbering warning.** The finding IDs drifted between this doc and the plan file. In
+**Numbering warning.** Finding IDs drifted between this doc and the plan file. In
 `~/.claude/plans/stroke-fill-plan.md`, **F4** is the sub-pen / hollow-hairline bug and **F5** is
-expand fidelity; this doc and the verbal handoff called the sub-pen bug "F3". The queue below uses
-NAMES, not numbers, so nobody fixes the wrong thing. When you read the plan's OPEN FINDINGS list,
-map by description.
+expand fidelity; this doc once called the sub-pen bug "F3". The queue below uses NAMES. Map by
+description, never by number.
 
-### Branch state at pause
-
-| Branch | HEAD | State |
-|---|---|---|
-| `sf/integration` | `439319c0` | WIP sub-pen fix: +198 lines in `surface-fill.js`. Unreviewed, untested, no RGR test. |
-| `sf/shadow-overlap` | `bef636c6` | WIP overlap darkening: +399 lines incl. `tests/unit/scene3d-shadow-overlap.test.js` + fixture. Suites never run. |
-| both | on `1b157bc6` | Last fully-verified commit (v1.3.94). Everything above it is unverified. |
+**Closed since the original queue:** items 1 (sub-pen ribbons + outline/fill seam) and 2 (torus
+self-occlusion) are DONE and verified — see "DONE and independently verified" above. They are
+replaced by items A and B below, which are what those two uncovered.
 
 ---
 
-### 1. Sub-pen ribbons + torus fill gapping  (plan F4 + F7)
+### A. F1 — residual streaks in the self-crossing laws  (REOPENED)
 
-**Task.** Two symptoms, possibly one root cause. (a) A ribbon about one pen wide emits only its
-outline, so it renders as a hollow **doubled hairline** instead of one solid stroke. Contract C3
-rule 5 requires a ribbon at or below one pen width to degenerate to **one centreline pass** at
-`weightScale = 1`. (b) Wide bands in the torus's upper-left quadrant show thin dark **streaks
-running lengthwise** — the interior fill is not solid. The judge saw the same "dark slivers inside
-wider bands" alongside (a), which is why they are bundled. The 198 uncommitted lines on
-`sf/integration` are a partial attempt at (a); review them before extending.
+**Task.** Thin lengthwise gaps remain inside wide bands on exactly five laws: `interlockWeave`
+2.4 mm², `onePenDown` 2.3, `trochoidLoop` 1.6, `ampSpacing` 1.4, `weaveDepth` 1.0 (uncovered
+interior area, torus). That is the F1 self-crossing slab-collapse list **verbatim**. F1 was believed
+closed by commit `2c9f37d6` ("self-crossing ribbons kept their loop holes"). It is not. Either that
+fix is incomplete or something new wears its fingerprint.
 
-**Value.** The most visible remaining defect. It makes the ribbon work look *worse* than the old
-fat-pen build on exactly the styles this effort exists to fix, and it breaches contract C2
-(coverage >= 0.995) on real geometry — which invalidates the coverage claim already banked.
+**Value.** The user's own words on this: *"Not close to zero just yet."* Ring-fill-rate clears the
+0.995 contract bar on all five, which is exactly why this needs a human eye rather than a metric —
+the contract passes and the render still reads wrong.
 
-**Done when.**
-- `w <= ~1 pen` emits exactly one centreline path — no outline pair, no sub-pen stroke.
-- `1-2 pens` has outline and fill meeting with zero interior void.
-- The gapping is **reproduced on a torus first**, then measured gone there — not on a sphere.
-- The report states explicitly whether the hairline and the gapping were one bug or two.
-- An RGR test fails on `1b157bc6` and passes after.
-- `npm run test:ci` green + a torus screenshot at the default 3/4 view showing solid bands.
+**Done when.** All five reach the same ≤0.18 mm² band as the other seven laws; reproduced on a
+torus first; RGR test red against `da683934`; the user confirms it by eye on the bench.
 
-### 2. Torus self-occlusion — ribbon stubs through the form  (plan F6)
+**Before you start:** re-read finding 2 at the top of this doc. If your fix removes geometry, the
+coverage helper may mis-score it exactly as it mis-scored self-occlusion.
 
-**Task.** At the torus inner hole (roughly 8-o'clock and 4-o'clock), short tapered ribbon fragments
-belonging to the **far** sheet of the tube are visible. The near sheet should occlude them. The
-torus is the first primitive that occludes ITSELF, so back-face culling is insufficient. Prime
-suspects: ribbon outline/fill paths bypass the HLR depth clip that plain centrelines pass through;
-or the `chartOrientation()` / `resolveFoldRings()` work from the torus normal fix (`32567e01`)
-emits a doubly-covered sheet the depth clip never tests.
+### B. Blunt band terminations at the clip boundary  (NEW, user-flagged)
 
-**Value.** Renders that read as broken. Also the one open item that could show the torus normal fix
-— which changed rendering for ALL 49 styles and was approved by eye — has a residual hole.
+**Task.** Since self-occlusion landed, bands terminate where the near sheet cuts them with slightly
+blunt, ragged ends. Geometrically correct — that IS the occlusion boundary — but it reads as a cut
+edge rather than a natural silhouette.
 
-**Done when.**
-- **Diagnosis precedes machinery.** Name which suspect it is, with evidence, before writing a fix.
-- Every ribbon path (centreline, outline, fill) provably goes through the same depth clip at the
-  correct per-sample depth.
-- Both stub instances gone in a screenshot at the default 3/4 view.
-- Verified on ALL FOUR primitives (sphere, capsule, cylinder, torus).
-- Regression test + `test:ci` green.
+**Value.** Cosmetic, but it is the visible signature of the newest feature, so it shapes how the
+whole effort reads. Awaiting the user's verdict on the bench before investing.
 
-### 3. Shadow overlap darkening  (`sf/shadow-overlap` WIP)
+**Done when.** The user says the terminations read acceptably, or they are softened without
+reintroducing any crossing of the red-line rule (F7 must stay at 0 survivors).
 
-**Task.** Where two shadows overlap the region must read darker. Chosen mechanism: **denser
-hatching at the same angle**. WIP implementation plus a test and fixture exist, none run or seen.
+### C. Shadow overlap darkening  (`sf/shadow-overlap`, merged into `sf/preview`)
 
-**TRAP (already cost us once).** The zone path phase-anchors its rulings to an **absolute origin**,
-so two overlapping shadows emitted independently draw **coincident lines** — pixel-identical to a
-single shadow. Darkening MUST come from a tighter pitch inside the overlap region. "Emit twice"
-produces nothing on screen while passing a naive path-count assertion.
+**Task.** Where two shadows overlap the region must read darker. Chosen mechanism: **denser hatching
+at the same angle**. Implementation, a test and a fixture exist and now pass 22/22 — but the
+implementation has never been reviewed and the result has never been seen in the app.
 
-**Value.** Overlapping shadows currently carry no depth information at all. Cheap, self-contained
-win compared with item 4.
+**TRAP.** The zone path phase-anchors rulings to an **absolute origin**, so two overlapping shadows
+emitted independently draw **coincident lines** — pixel-identical to one shadow. Darkening MUST come
+from a tighter pitch in the overlap region. "Emit twice" produces nothing on screen while passing a
+naive path-count assertion.
 
-**Done when.**
-- The WIP commit is reviewed as if written by someone else.
-- A test asserts the overlap region's **ink density / ruling pitch**, not path count — a
-  coincident-line implementation must FAIL it.
-- Measured darker in the real app with two overlapping casters, screenshotted.
-- Full suites run for the first time on this branch; `test:ci` green.
+**Done when.** The WIP commit is reviewed as if written by someone else; a test asserts overlap **ink
+density / ruling pitch**, not path count, and a coincident-line implementation FAILS it; measured
+darker in the app with two overlapping casters, screenshotted.
 
-### 4. Shadows falling onto other 3D objects  (NOT STARTED)
+### D. Shadows falling onto other 3D objects  (NOT STARTED)
 
 **Task.** A shadow must land on another object's surface and render in **that receiver's own fill
-style**. Settled architecture: per surface sample, ask "is this point in shadow?" and feed the
-answer into the intensity the tone laws already consume. No new region geometry. That also dodges
-the fact that a projected silhouette is only valid on a **plane** — a curved receiver (the cone)
-would need per-line sampling under the projection approach; per-sample handles it for free.
+style**. Settled architecture: per surface sample, ask "is this point in shadow?" and feed the answer
+into the intensity the tone laws already consume. No new region geometry. This also dodges the fact
+that a projected silhouette is only valid on a **plane** — a curved receiver (the cone) would need
+per-line sampling under the projection approach.
 
-**Known cost.** There is **no ray/triangle intersection anywhere in scene3d**; that helper is new
-(~80 lines). World-space face polygons are already available (`scene.js:197-201`).
+**Known cost.** There was no ray/triangle intersection anywhere in scene3d. There is now
+`src/core/scene3d/ray-torus.js` (closed-form ray/torus, 12 tests) and the self-occlusion plumbing in
+`hlr.js` — **start from those**, they did not exist when this item was written. World-space face
+polygons are at `scene.js:197-201`.
 
-**Value.** The largest remaining capability gap. Multi-object scenes currently read as objects
-floating independently.
+**Value.** The largest remaining capability gap. Multi-object scenes read as objects floating
+independently.
 
-**Done when.**
-- `pointInShadow(worldPoint, light, occluders)` exists with unit tests: hit, miss, grazing,
-  self-shadow exclusion.
-- The shadow term feeds the existing per-sample intensity — verified by the receiver's fill style
-  changing the shadow's appearance.
-- Works on a **curved** receiver (cone or sphere), not only a ground plane.
-- Performance measured and stated. This runs per sample; naive O(samples x faces) may be
-  unacceptable on the heavier laws (see "Cost you should know about" below).
-- Two-object scene screenshot; `test:ci` green.
+**Done when.** `pointInShadow(worldPoint, light, occluders)` with unit tests (hit, miss, grazing,
+self-shadow exclusion); the shadow term feeds per-sample intensity, verified by the receiver's fill
+style changing the shadow's appearance; works on a **curved** receiver; performance measured and
+stated; two-object screenshot.
 
-### 5. Expand fidelity on two laws  (plan F5, plus the lying counter)
+### E. Expand fidelity on two laws  (plan F5, plus the lying counter)
 
-**Task.** Two parts. **Fidelity:** after "Expand into group", `interlockWeave` differs from the live
-render on 6% of the frame and `amplitudeOnly` on 10%; the other ten bucket-B laws are 0.2-1%. Bbox
-does NOT grow and no child escapes the silhouette, so this is a fidelity gap, NOT a protrusion
-regression — the D2 fix holds. **Instrumentation:** `onePenDown` books 1-2 *legitimate* centreline
-degenerations as `erodeEmpty`; the counter reports failures that are not failures and will mislead
-the next judge.
+**Task.** After "Expand into group", `interlockWeave` differs from the live render on 6% of the frame
+and `amplitudeOnly` on 10%; the other ten bucket-B laws are 0.2-1%. Bbox does NOT grow and no child
+escapes the silhouette, so this is a fidelity gap, not a protrusion regression. Separately,
+`onePenDown` books legitimate centreline degenerations as `erodeEmpty` — the counter lies.
 
-**Value.** Lowest severity of the five — nothing is visibly broken and the headline contract holds.
-Its value is that expand-into-group is the plotter handoff path, so a 10% divergence means what you
-plot is not quite what you saw. The counter fix is small and protects future verification.
+**Value.** Lowest severity. Expand-into-group is the plotter handoff path, so a 10% divergence means
+what you plot is not quite what you saw.
 
-**Done when.**
-- Both laws land in the 0.2-1% band with the other ten.
-- Degenerations are counted as degenerations, not `erodeEmpty`; the sphere `degenerate == 0` bar is
-  re-measured against the corrected counter.
-- Expand evidence obeys the standing rule below: assert `after.children > 0` AND that before/after
-  images are NOT byte-identical.
+**Done when.** Both laws land in the 0.2-1% band; degenerations are counted as degenerations; expand
+evidence asserts `after.children > 0` AND that before/after images are NOT byte-identical.
+
+### F. Imported OBJ/STL meshes vs the red-line rule  (UNTESTED)
+
+**Task.** Self-occlusion for imported meshes keeps the older mesh-face path with its 6 mm bias,
+because they have no analytic silhouette to clip against. Whether they satisfy the user's rule is
+**unknown — never tested**.
+
+**Done when.** The F7-style test runs against an imported non-convex mesh and either passes or the
+gap is quantified and recorded here.
 
 ---
 
 ### Cross-cutting, applies to every item
 
-- **Harness-clean is not app-clean.** See "Process rules" below. Every item closes with a real
-  screenshot of the running app.
-- **Judges check for vacuous passes.** A style emitting only `weightScale 1` because it degenerated
-  is a FAILURE, not a pass.
-- **Serialize.** Items 1, 2 and 5 all touch `surface-fill.js` in the shared `sf-integration`
-  worktree — one agent at a time in that tree. Item 3 (`shadows.js`) and item 4 are disjoint and
-  may run in parallel with them.
-- **Settled, do not reopen.** Tone is fine (39.4% vs 39.1% base; the "87% over-inked" figure was
-  wrong — it double-counted overdraw). Coverage holds at >= 0.9998 on all four fills; `concentric`
-  is NOT gappy, spiral is the wasteful one. The default stays **spiral** — switching to concentric
-  would trade the path-count requirement for a metric.
+- **Harness-clean is not app-clean.** Every item closes with a real screenshot of the running app.
+  `wallRings == 0`, or a law emitting only bare centrelines, is a FAILURE, not a pass.
+- **Check the coverage oracle before trusting it** on anything that removes geometry. See finding 2.
+- **Serialize.** Items A, B, E and F all touch `surface-fill.js`. One agent at a time in a worktree.
+  C and D are disjoint and can run in parallel.
+- **Evidence rules, learned expensively.** Before and after must come from the SAME pipeline at the
+  SAME zoom, cropped to the object with app chrome hidden. Four evidence sets in this effort were
+  thrown away for violating one of those. A byte-identical pair means the run did nothing.
+- **Settled, do not reopen.** Tone (39.4% vs 39.1%), the coverage contract, and spiral as the
+  default.
 
 ## Cost you should know about
 
-Generation time for variable-width laws is now **1.4-10.2 s** (weaveDepth worst) against ~10 ms for
-monowidth. The ribbons are real, so the work is real. Not yet optimized; explicitly NOT to be fixed
-by reducing coverage.
+Generation for variable-width laws is **1.4-10.2 s** (weaveDepth worst) against ~10 ms for
+monowidth. The ribbons are real, so the work is real. Explicitly NOT to be fixed by reducing
+coverage.
+
+Self-occlusion adds **1.34x on the heaviest law** on top of that: `taperedEnds` 1154 -> 1550 ms,
+`weightSmoothstep` 240 -> 289 ms. The quartic solve was never the cost (~310 ms of it). The cost was
+`rotatePoint` recomputing `degToRad` plus six trig calls on every one of ~180,000 sub-calls for
+angles that never change; precomputing the rotator is bit-identical and recovered most of it. The
+remaining 34% is the occlusion test genuinely working. If you optimise further, profile first — the
+obvious suspect was wrong last time.
 
 ## Process rules that earned their keep
 
 - **Harness-clean is not app-clean.** An entire integration passed its suite while the ribbon
   pipeline was INERT (every ribbon fell back to a bare centreline). Both defects "vanished" because
-  the feature stopped producing width. Only a screenshot caught it.
-- **Judges must check for vacuous passes.** A style emitting only weightScale 1 because it degenerated
-  is a FAILURE, not a pass.
+  the feature had stopped producing width. Only a screenshot caught it.
+- **Check whether the METRIC is wrong before concluding the FIX is.** Five attempts at self-occlusion
+  failed, and the last two were correct implementations rejected by a coverage oracle whose
+  denominator predates the feature. When "correct behaviour" and "a passing metric" come into direct
+  conflict, interrogate the metric early, not after five attempts.
+- **A stale contract may be updated; a test may not be weakened.** The distinction is provable: the
+  corrected coverage oracle reproduces all twelve original values EXACTLY with occlusion disabled.
+  Demand that kind of proof before changing any assertion.
+- **Judges must check for vacuous passes.** A style emitting only weightScale 1 because it
+  degenerated is a FAILURE, not a pass.
 - **Expand evidence MUST assert `after.children > 0`** and that before/after images are NOT
   byte-identical. One agent's harness forced `isGroup=true`, so `expandLayer` returned immediately
-  and measured nothing — I relayed that vacuous result to you before it was caught.
-- **Test every primitive.** Sphere-only matrices hid the seam bug AND the torus bug.
+  and measured nothing.
+- **Evidence must come from ONE pipeline at ONE zoom, object-only.** Four evidence sets here were
+  discarded: two rendering pipelines compared as if alike; 268% vs 267% zoom; app chrome filling a
+  third of the frame; and a screen-region pixel proxy that could not resolve the defect on half the
+  laws.
+- **A disclosed failure beats a hidden fudge.** Several agents reverted cleanly and reported what
+  they learned rather than widening a tolerance to force a pass. Every one of those reports moved
+  the work forward; the fudges would not have.
+- **Test every primitive.** Sphere-only matrices hid the seam bug AND the torus bug. The torus is
+  the only primitive that occludes itself.
