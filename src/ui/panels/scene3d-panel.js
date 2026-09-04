@@ -1943,6 +1943,10 @@
       // DEFAULT / shadows.js SHADOW_TONE_DEPTH_DEFAULT so a scene backfilled
       // through the panel agrees with a scene normalized through params.js.
       shadowToneDepth: 0.75,
+      // Unit D — mirrors params.js normalizeShadow's shadowReceiveOnObjects
+      // default (OFF) so a scene backfilled through the panel agrees with one
+      // normalized through params.js.
+      shadowReceiveOnObjects: false,
     });
     const ensureShadow = () => {
       if (!params.shadow || typeof params.shadow !== 'object') params.shadow = shadowDefault();
@@ -1964,6 +1968,7 @@
       // silently rewritten, so a round-tripped unknown id is still visible to
       // debugging rather than quietly laundered into 'ladder'.
       if (typeof s.shadowToneLaw !== 'string' || !s.shadowToneLaw) s.shadowToneLaw = d.shadowToneLaw;
+      if (typeof s.shadowReceiveOnObjects !== 'boolean') s.shadowReceiveOnObjects = d.shadowReceiveOnObjects;
       return s;
     };
 
@@ -3157,6 +3162,33 @@
         note.textContent = FS.SHADOW_LAYERS_NOTE;
         host.appendChild(note);
       }
+
+      // Unit D (stroke-fill handoff item D) — shadows falling on OTHER
+      // objects' own surfaces (per-sample Regions.combinedIntensity shadow
+      // term, Scene3D.ShadowReceive). Off by default (params.js DEFAULT_
+      // SHADOW.shadowReceiveOnObjects) — it is O(objects^2) per frame (every
+      // object tests every other as a candidate occluder), so the (i) note
+      // below warns about render cost before a user opts in. Same click-
+      // driven (i) affordance as the Fill Style row above.
+      const recvRow = document.createElement('div');
+      recvRow.className = 'vs3-row';
+      const recvLbl = document.createElement('label');
+      recvLbl.className = 'vs3-lbl';
+      recvLbl.textContent = 'Shadows land on objects';
+      recvRow.appendChild(recvLbl);
+      const recvHost = document.createElement('div');
+      recvHost.className = 'vs3-ctl';
+      recvRow.appendChild(recvHost);
+      host.appendChild(recvRow);
+      comps.push(UI.SegCtrl(recvHost, {
+        options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+        value: s.shadowReceiveOnObjects ? 'on' : 'off',
+        ariaLabel: 'Shadows land on other 3D objects',
+        onChange: (v) => { commit(() => { ensureShadow().shadowReceiveOnObjects = v === 'on'; }); },
+      }));
+      buildLawInfoAffordance(recvRow, [
+        { text: 'Shadows attenuate light on other objects too, drawn in each object’s own fill style. Adds render cost, especially with many objects in the scene.' },
+      ], 'About Shadows land on objects');
 
       // Follow light — shadows.js derives the hatch bearing from the light travel
       // direction when this is on, which makes the manual Angle below INERT. Show

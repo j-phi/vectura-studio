@@ -243,6 +243,20 @@ two-object screenshot — DONE, `docs/3d-audit/handoff/unit-d/` (a sphere caster
 control 1: caster moved aside, control 2: receiver's own toneLaw changed — both provably NOT
 byte-identical to the shadowed shot).
 
+**Adversarial review follow-up (same branch, second commit).** Accepted with follow-up; three items
+addressed: (1) `shadow.shadowReceiveOnObjects` is now exposed in the UI (docked panel + context-bar
+Shadow flyout), beside the Fill Style row, with the same click-driven (i) affordance and a render-
+cost blurb, plus 10 new integration tests (row presence, the (i) note, and WHOLE-STYLE-WINS — the
+toggle writes the correct scope and never drops a sibling `shadow.*` key); (2) evidence re-shot with
+`toneLaw:'ladder'` instead of `mazeFill` — the law-changed control is dramatically, visibly
+different (confirms "renders in the receiver's own style"), but **the shadow itself is not clearly
+visible by eye** in the `ladder` crops at this light angle/density (stated plainly, not tuned away —
+see `docs/3d-audit/handoff/unit-d-notes.md`); (3) `unit-d-notes.md` corrected: point/spot shadow-
+receive is genuinely UNTESTED at the intensity/pipeline level (only an incidental module-level call
+existed), and area lights lose their entire N-sample softening under occlusion (the shadow gate in
+`combinedIntensity` runs before the area-light averaging loop) — both now stated as known gaps, not
+implemented here.
+
 ### E. Expand fidelity on two laws  (plan F5, plus the lying counter)
 
 **Task.** After "Expand into group", `interlockWeave` differs from the live render on 6% of the frame

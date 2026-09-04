@@ -215,7 +215,7 @@ const denseObjects = () => {
 
   // ── two-object scene: caster + cone receiver, shadow ON, receiver law A ──
   // This build sets the ONE view every other shot in this script reuses.
-  const on = await build([CASTER, RECEIVER], 'mazeFill', true);
+  const on = await build([CASTER, RECEIVER], 'ladder', true);
   await zoom(ZOOM);
   await page.waitForTimeout(300);
   let bb = await bbox();
@@ -235,7 +235,7 @@ const denseObjects = () => {
   stats.shadowOn = on;
 
   // ── control 1: caster moved aside — no shadow, same view/crop ───────────
-  const aside = await build([CASTER_ASIDE, RECEIVER], 'mazeFill', true);
+  const aside = await build([CASTER_ASIDE, RECEIVER], 'ladder', true);
   await applyView(VIEW);
   await page.waitForTimeout(300);
   bb = await bbox();
@@ -254,14 +254,14 @@ const denseObjects = () => {
   stats.control2LawB = lawB;
 
   // ── performance: caster+receiver, shadow off vs on ──────────────────────
-  const perfSimpleOff = await build([CASTER, RECEIVER], 'mazeFill', false);
-  const perfSimpleOn = await build([CASTER, RECEIVER], 'mazeFill', true);
+  const perfSimpleOff = await build([CASTER, RECEIVER], 'ladder', false);
+  const perfSimpleOn = await build([CASTER, RECEIVER], 'ladder', true);
   stats.perfSimple = { off: perfSimpleOff.computeMs, on: perfSimpleOn.computeMs };
 
   // ── performance: 8-object dense scene, shadow off vs on ─────────────────
   const dense = denseObjects();
-  const perfDenseOff = await build(dense, 'mazeFill', false);
-  const perfDenseOn = await build(dense, 'mazeFill', true);
+  const perfDenseOff = await build(dense, 'ladder', false);
+  const perfDenseOn = await build(dense, 'ladder', true);
   stats.perfDense = { off: perfDenseOff.computeMs, on: perfDenseOn.computeMs, ratio: perfDenseOn.computeMs / (perfDenseOff.computeMs || 1) };
 
   const summary = {

@@ -744,6 +744,14 @@
         // fs-q1 — replaces the toneLaw row entirely (see buildShadowBody) when
         // Shadows.shadowFillStyleApplies says the row would do nothing.
         toneLawInertNote: SCENE_FILL_STYLES.SHADOW_LAYERS_NOTE,
+        // Unit D (stroke-fill handoff item D) — shadows falling on OTHER
+        // objects' own surfaces (per-sample Regions.combinedIntensity shadow
+        // term, Scene3D.ShadowReceive). Off by default: it is O(objects^2)
+        // per frame (every object tests every other as a candidate
+        // occluder), so the (i) note below warns about render cost before a
+        // user opts in — same copy pattern as the Fill Style (i) above.
+        receiveOnObjects: { label: 'Shadows land on objects', aria: 'Shadows land on other 3D objects' },
+        receiveOnObjectsNote: 'Shadows attenuate light on other objects too, drawn in each object’s own fill style. Adds render cost, especially with many objects in the scene.',
       },
       highlight: {
         treatment: { label: 'Treatment', aria: 'Highlight treatment' },
