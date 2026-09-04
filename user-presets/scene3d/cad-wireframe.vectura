@@ -1,0 +1,60 @@
+{
+  "type": "vectura",
+  "name": "CAD Wireframe",
+  "meta": {
+    "presetId": "scene3d-cad-wireframe",
+    "group": "Classic",
+    "system": "scene3d",
+    "savedAt": 1785200000002
+  },
+  "layers": [
+    {
+      "type": "scene3d",
+      "params": {
+        "sceneVersion": 1,
+        "seed": 0,
+        "objects": [
+          {
+            "id": "obj-1",
+            "name": "Block",
+            "primitive": "box",
+            "params": { "sx": 58, "sy": 34, "sz": 58 },
+            "transform": { "x": -38, "y": 0, "z": 0, "yaw": 0, "pitch": 0, "roll": 0, "scale": 1 },
+            "visibility": "solid"
+          },
+          {
+            "id": "obj-2",
+            "name": "Shaft",
+            "primitive": "cylinder",
+            "params": { "sx": 18, "sy": 58, "sz": 18, "detail": 28 },
+            "transform": { "x": 40, "y": 0, "z": 0, "yaw": 0, "pitch": 0, "roll": 0, "scale": 1 },
+            "visibility": "solid"
+          }
+        ],
+        "lights": [],
+        "tone": { "enabled": false, "bands": 3, "thresholds": [0.33, 0.66], "ladder": [0.2, 0.5, 0.85], "specular": { "enabled": false, "size": 1 } },
+        "ground": { "enabled": false },
+        "backdrop": { "enabled": false },
+        "camera": {
+          "projection": "orthographic",
+          "yaw": -45,
+          "pitch": 30,
+          "roll": 0,
+          "cameraDistance": 620,
+          "focalLength": 520,
+          "zoom": 1.0
+        },
+        "groups": [],
+        "styleTable": {
+          "scene": {
+            "penId": null,
+            "mapper": "wireframe",
+            "params": { "showHidden": true, "edgeClasses": { "silhouette": true, "boundary": true, "crease": true, "interior": true } }
+          },
+          "byObject": {},
+          "byFace": {}
+        }
+      }
+    }
+  ]
+}

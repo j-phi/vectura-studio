@@ -355,14 +355,47 @@
           }
           this.app.render();
         };
-        // Pen width feeds generated GEOMETRY for text layers (the banded bold
-        // spaces its concentric passes by the physical pen), so a committed
-        // width change must regenerate — repaint alone would leave the band
-        // sized for the old pen. Commit-only: never during the live drag/type.
-        const regenPenTextLayers = () => {
-          const usesPen = (layer) => layer.type === 'text'
-            && ((layer.penId || null) === pen.id || (!layer.penId && SETTINGS.pens && SETTINGS.pens[0] && SETTINGS.pens[0].id === pen.id));
-          if (this.app.engine.layers.some(usesPen) && this.app.regen) this.app.regen();
+        // Pen width feeds generated GEOMETRY — not just the drawn stroke —
+        // for more than one layer type:
+        //   - 'text': the banded bold spaces its concentric passes by the
+        //     physical pen;
+        //   - 'scene3d' / 'object3d': the curved surface fill derives its
+        //     ruling pitch, its minimum mark, its speck floor AND (since the
+        //     pen-width ribbon work) the entire WIDTH of every variable-width
+        //     stroke from `bounds.penWidth` — see surface-fill.js's
+        //     `penWidth` / `ribbonize`. Repainting alone leaves the hatch
+        //     pitched for the old pen and every ribbon sized for it.
+        // Commit-only: never during the live drag/type.
+        //
+        // TWO fixes over the old text-only version, both measured: the type
+        // set, and regenerating EVERY affected layer instead of calling
+        // `app.regen()` — which regenerates `engine.activeLayerId` alone and
+        // silently left a second layer on the same pen stale.
+        const PEN_GEOMETRY_TYPES = new Set(['text', 'scene3d', 'object3d']);
+        const regenPenGeometryLayers = () => {
+          const engine = this.app.engine;
+          const fallbackPen = SETTINGS.pens && SETTINGS.pens[0] && SETTINGS.pens[0].id;
+          const usesPen = (layer) => PEN_GEOMETRY_TYPES.has(layer.type)
+            && ((layer.penId || null) === pen.id || (!layer.penId && fallbackPen === pen.id));
+          // A scene child does not emit its own paths — its GROUP composes
+          // them — so the regeneration has to be aimed at the outermost
+          // ancestor, exactly as the engine's own group paths do.
+          const rootOf = (layer) => {
+            let cur = layer;
+            let guard = 0;
+            while (cur && cur.parentId && guard < 64) {
+              const up = engine.getLayerById(cur.parentId);
+              if (!up) break;
+              cur = up; guard += 1;
+            }
+            return cur;
+          };
+          const ids = new Set();
+          engine.layers.forEach((layer) => { if (usesPen(layer)) ids.add(rootOf(layer).id); });
+          if (!ids.size) return;
+          ids.forEach((id) => engine.generate(id));
+          if (engine.computeAllDisplayGeometry) engine.computeAllDisplayGeometry();
+          this.app.render();
         };
         let preEditWidth = null;
         const beginWidthEdit = () => {
@@ -381,7 +414,7 @@
           // min/max on blur, so "5" (max 2) would otherwise keep reading "5"
           // while pen.width is really 2.
           widthValue.value = pen.width.toFixed(2);
-          regenPenTextLayers();
+          regenPenGeometryLayers();
         };
 
         widthInput.addEventListener('pointerdown', beginWidthEdit);

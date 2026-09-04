@@ -57,6 +57,8 @@
       'Draws polyhedral (or imported STL) face bands, edges, and vertex rings with front-face culling, opaque pruning, dashed hidden-line styling, and orthographic or perspective projection.',
     topoform:
       'Builds primitive 3D meshes — sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot, or an imported STL — and renders them as projected wireframes or plane-sliced topographic contours, with curve smoothing and orthographic or perspective view.',
+    scene3d:
+      'Composes a full 3D scene — parametric primitives on a ground plane under a shared camera — into plotter-ready line art with flat-face hidden-line removal, classified edges (silhouette, crease, boundary), and per-object or per-face style targets for pens and fills.',
     rasterPlane:
       'Samples a height source — a built-in relief, a preloaded noise image, an imported picture, or a canvas you paint by hand — and projects it as line relief, deformed mesh, raster topography, or extruded bars.',
   };

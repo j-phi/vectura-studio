@@ -16,6 +16,1043 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   by rule.
 
 ### Added
+- **Pen-width stroke fill for the 3D scene's variable-width tone laws (integration of six work
+  units: ribbon geometry, pen fill, emission swap, UI control, expand fidelity, voronoi web).**
+  A variable-width tone law used to ask the renderer for a fatter pen — `meta.weightScale` up to
+  6x — which a plotter cannot draw and which every downstream consumer had to reconstruct
+  differently. The twelve RIBBON laws (`nibAngle`, `taperedEnds`, `weightModulated`,
+  `isophoteWidth`, `whiteBand`, `weightSmoothstep`, `ampSpacing`, `weaveDepth`, `interlockWeave`,
+  `trochoidLoop`, `amplitudeOnly`, `onePenDown`) now build the stroke's true variable-width
+  OUTLINE from a continuous width profile (`src/core/scene3d/ribbon-geometry.js`), clip it exactly
+  against the visible-form region so no ink can escape the silhouette, stroke that outline with the
+  REAL pen, and fill the interior at a pitch DERIVED from the pen width
+  (`src/core/pen-fill.js`). The six THREE-PEN laws (`penInterleave`, `penStipple`, `penReserve`,
+  `penCross`, `penPitchMatch`, `penFacing`) are deliberately EXEMPT and keep their genuinely
+  different nibs — that is the whole thing they exist to demonstrate.
+- **`strokeFillStyle` layer param and UI control** — `spiral` (default) / `concentric` /
+  `serpentine` / `contourParallel`, selecting how a ribbon's interior is filled once its outline is
+  drawn. Exposed on the scene3d context bar and the Style tab; a LAYER param
+  (`ALGO_DEFAULTS.scene3d.strokeFillStyle`), not a style-cascade param, and inert under every
+  non-ribbon law.
+- **`voronoiWeb` tone law reworked** into a continuous, unbroken web whose cell openings scale with
+  tone — smaller in shadow, larger in the highlight (`src/core/scene3d/surface-fill-mono.js`).
+
+### Fixed
+- **Every variable-width tone law collapsed on a TORUS — 40-58% of its wide stretches refused, bare
+  centrelines shipped — because the surface normal was inverted on the inner third of the tube.**
+  `SurfaceFill.sampleAt` oriented each normal on its own with `dot(nLocal, p0) < 0`, "outward,
+  charts centre near origin". `cross(dPa, dPb)` already fixes the normal up to ONE sign, and that
+  sign is the chart's parameter handedness — a constant for the whole surface — so the per-sample
+  test was answering a question about star-shapedness instead. A torus is the first chart in
+  `chartFor` that is not star-shaped about the origin: `dot(n, p) = major·cos(2πv) + minor` goes
+  negative wherever `cos(2πv) < -minor/major`, and 6837 of 24779 samples (27.6%) came back INVERTED
+  (sphere, capsule, cylinder: 0). `front` therefore flipped across that locus, `buildRegionRings`
+  traced it as two extra "silhouettes" (signed areas -422.77 and -464.05 beside the real outer
+  silhouette's +1282.37), containment classified both as HOLES, and the ribbon clip region collapsed
+  from 1282.4 mm² to 399.6 mm² — 12.6% of the fill vertices the front test had itself proved
+  on-surface fell outside their own clip region. The handedness is now decided ONCE per chart from
+  the sign of `∮ p·n dA` (`chartOrientation`), which is correct for any closed chart and provably a
+  no-op wherever the old test was already right. Second, related fix: a traced ring nested inside
+  another is a HOLE only if it WINDS THE OTHER WAY (`resolveFoldRings`) — the projection preserves
+  orientation across the front-facing set, so the winding number is the sheet count, and a ring that
+  winds with the silhouette is a FOLD across a doubly-covered sheet, not an edge of the drawing.
+  Containment alone carved in both cases (measured at camera pitch 5: 515.1 mm² of an 818.9 mm²
+  silhouette, 4 stretches refused). Measured after, ribbons built / wide stretches: `taperedEnds`
+  16/32 -> **18/18**, `ampSpacing` 44/82 -> **56/59**, `whiteBand` 25/42 -> **19/20**,
+  `amplitudeOnly` 24/57 -> **44/46**, with the torus's hole surviving as a hole (2 rings,
+  1239.5 mm² net inside 1282.4 mm²). Sphere, capsule and cylinder are unchanged — the sphere's
+  rendered frame is byte-identical before and after. Evidence and reproduction in
+  `docs/torus-fix-evidence/TABLE.md`.
+- **Five self-crossing tone laws rendered as a solid slab with a hollow black lens instead of a
+  ribbon.** `RibbonGeometry` resolved a self-overlapping ribbon outline through
+  `FillBoolean.union` and then kept only `largestShell(result)` — polygon[0] of the biggest
+  polygon. polygon-clipping had already returned the loop interiors CORRECTLY, as holes; keeping
+  the shell alone discarded every one of them, and `erode` + `PenFill` painted the swallowed area
+  solid. Where a centreline crosses itself the swept region genuinely overlaps, but the area
+  ENCLOSED by the loop was never swept and must stay unfilled. `buildRibbonMultiPolygon`,
+  `buildRibbonRings` and `clipMultiPolygonToRegion` now carry the whole multipolygon — shell and
+  holes — from the union through the clip and into `insetMultiPolygon`, and `ribbonize` keeps that
+  nesting instead of flattening it into a single polygon. Measured on the sphere fixture, mid-band
+  coverage against the pre-work reference build: `onePenDown` 0.147 -> **0.6293** (reference
+  0.6293), `trochoidLoop` 0.473 -> **0.7707** (reference 0.7584); `taperedEnds`, whose centreline
+  never crosses, does not move. Also affected: `interlockWeave`, `weaveDepth`, `ampSpacing`.
+  Evidence in `docs/slab-fix-evidence/`.
+- **`spiral` retraced its way around any region with more than one lobe, and was the only fill
+  style that left gaps.** Both came from `chainPieces`, which is handed the SAME contour rings for
+  `spiral` and `concentric`. (a) ORDER: `contourPieces` emitted every loop of level 0, then every
+  loop of level 1, so a region with holes was walked lobe-A-outer, lobe-B-outer, lobe-A-next, …
+  A lifting style hops; a continuous one must ROUTE that crossing, retracing ink already down.
+  Pieces are now ordered by proximity (`orderByProximity`), and a repair pass is SPLICED into the
+  stroke at its nearest point rather than hung off the far end. (b) BLEND: `applyBlend` morphed the
+  last 30% of every ring onto the next, including the OUTERMOST pass, whose vacated strip has the
+  region boundary on its outer side and nothing to cover it. The outermost pass is no longer
+  blended and the blend is capped by arc length. Measured on a disc with three holes: overdraw
+  2.51 -> **1.40** against concentric's 1.25, largest gap 0.028 mm² -> 0.011 mm² (bar is
+  0.0225 mm²), still exactly one path per connected component.
+- **The ribbon pipeline was INERT — every variable-width tone law drew a bare centreline. The
+  chart's front/back boundary tracer bisected the wrong way across a PERIODIC seam.**
+  `buildRegionRings` (`src/core/scene3d/surface-fill.js`) marches squares over the chart's (a, b)
+  parameter square and bisects each grid edge whose two corners straddle the front test. On a
+  periodic axis `paramOf` folds the wrap cell's far corner back to 0 while its near corner is
+  (N-1)/N, so the bisection interval spanned the whole chart the LONG way round — and because the
+  front/back boundary is a closed curve, the walk still converged, onto the OPPOSITE crossing. A
+  sphere seen down its own seam (camera yaw 0) therefore traced its LEFT limb twice and its right
+  limb never: one 218-point ring of signed area **-0.014** where the true visible region is a
+  ~6650 mm2 disc. `RibbonGeometry.clipRingToRegion` returned empty for every ribbon and
+  `surface-fill.js` shipped `centrePass` for all of them. `crossParam` now unwraps a periodic
+  crossing before bisecting and wraps the answer back into [0, 1). Measured after: region area
+  **6645.484 mm2**, and all twelve ribbon laws build real ribbons (`taperedEnds`: 39 wide stretches,
+  37 ribbons, 37 outlines, 132 fills, ink 2425.8 mm -> 19294.0 mm).
+- **`strokeFillStyle` never reached the fill.** W4's UI writes it as a LAYER param
+  (`ALGO_DEFAULTS.scene3d.strokeFillStyle`); `src/core/algorithms/scene3d.js` read it off the STYLE
+  cascade (`g.style.params`), where nothing ever writes it. Every ribbon filled itself at the
+  default, and spiral / concentric rendered byte-identical frames with identical ink (19294.0 mm).
+  It now reads the layer value, with the style key kept as an override.
+- **A wholesale ribbon fallback is now LOUD, and its refusals are named.** `lastRibbonStats` gains
+  `regionArea` / `regionAreaBack` (ring COUNT cannot tell a real silhouette from a hairline walked
+  out and back — the exact shape of this bug) and splits `degenerate` into `noRing` / `clipEmpty` /
+  `erodeEmpty`, so a genuinely sub-pen ribbon degrading to its centreline (legitimate, contract C3
+  rule 5) is distinguishable from the machinery failing. A build where every wide stretch fell back
+  now emits a one-line `console.warn` naming the law, the counts and the region area.
+- **`onePenDown` keeps its chain.** It is both a ribbon law and the one law whose entire claim is
+  continuity, and the chart bridge can only chain a ruling that emitted EXACTLY ONE path — which a
+  ribbon (outline + fill) never does. Ribbonizing at emission silenced the bridge on every ruling
+  (48 unchained rulings where the fixture had 9 chains). Its ribbon is now DEFERRED: the bare
+  centrelines chain first, carrying their resolved half-widths across each bridge, and the finished
+  CHAIN is ribbonized as one unit (5 chains on the reference sphere; 15 emitted paths against the
+  ladder's 27, at 24375 mm of ink against 3263 mm). Also ~3x faster than ribbonizing per ruling.
+- **"Expand into group" now reproduces a 3D scene fill exactly, instead of growing blobby bands
+  past the silhouette.** A scene-fill path carries its width as `meta.weightScale`, and expand
+  realized any value > 1 as N parallel offset copies of the centerline
+  (`GeometryUtils.thickenPathsUniform`). On a sphere that is wrong twice: parallel copies of a curve
+  near the limb sit OUTSIDE the form, and the pass count is a discrete `ceil()`, so a smooth width
+  ramp became a staircase of thick bands with stepped ends. A scene fill's weight is not a claim on
+  a pen that cannot grow — it names WHICH REAL PEN draws the line (the three-pen tone laws snap
+  every run to an actual nib) — so expand now passes it through untouched, one child per path.
+  Silhouette/crease EMPHASIS (`kind: 'sceneEdge'`, spiralizer `outlineWeight`) is the opposite case
+  and keeps its multi-pass realization. The four consumers that answer "how wide, and with what cap,
+  is this ONE path drawn?" — canvas render, export preview, emitted SVG, expand — had three
+  hand-copied clamp expressions between them and no cap channel at all; they now share
+  `Renderer.resolvePathWeightScale` / `Renderer.resolvePathLineCap`, and a per-path `meta.strokeCap`
+  override (used by the pen-width ribbon geometry to end flush on the clipped form) reaches all
+  four. RGR proof: `tests/integration/expand-render-fidelity.test.js` and
+  `tests/integration/renderer-per-path-cap.test.js` (both new).
+- **3D Scene — the layered (zone-anatomy) cast shadow no longer mottles into stubs at Layers 4.**
+  Owner report: a sphere resting on the ground under the default scene (Sun az135/el45, Additive,
+  Layers 4, angle 45, Density 50, pen 0.3) read as broken, scattered marks near the caster instead
+  of a solid contact band, with a ragged/scalloped outline — 156 paths for 449.1mm of ink (2.6x the
+  paths of Layers Off for 34% less ink), median mark 2.32mm against Layers Off's own 13.27mm, 40%
+  of marks under 2mm. Layers 2 and 3 already read cleanly; only Layers 4 was broken. Four bounded
+  defects in `src/core/scene3d/shadows.js`, all inside the zone-anatomy build (the flat/Off path is
+  untouched, byte-identical): (1) `outerMargin`, the outer-penumbra rim's width, was bounded to 30%
+  of the local inradius — 23-37% of the shadow's AREA at every caster size measured, not a rim;
+  bounded to 10% of Rin instead. (2) the outer zone stacked BOTH rim retraction and dash duty on
+  the same band, double-shortening every rim mark; retraction is now scoped off that zone, leaving
+  dash duty as the one lever. (3) `contactWidthOf` (the contact collar's half-width) scaled off the
+  contact ring's own minor extent, which is degenerate by construction for any round caster (a
+  sphere's near-ground slice is a thin annulus) — the collar sat at its 1.2mm floor regardless of
+  caster size; rescaled to a fraction of the shadow's own throw length instead. (4) a ruling could
+  be zone-split into slivers a few mm long with no floor, which a per-zone stride/dash decision then
+  kept or dropped piecemeal, leaving isolated stubs; a span shorter than 6x its family's own ruling
+  pitch is now coalesced into its larger neighbour, with the contact collar kept as a hard boundary
+  it never merges across. Layers 4 on the owner's own scene now measures 123 paths / 537.35mm,
+  median mark 3.59mm, 17.07% of marks under 2mm. Density's response under Layers is not fully
+  monotonic (one documented dip, Density 50→60, traced to a discontinuity in the pre-existing
+  headroom/collar system this batch did not touch) and is left for a separate pass. RGR proof:
+  `tests/unit/scene3d-shadow-zone-fragmentation.test.js` (new) and the re-baselined
+  `tests/unit/scene3d-cast-shadow-zones.test.js`.
+
+### Added
+- **3D Scene — ten more tone laws, each taken from a named primary source, and the re-test of the
+  nested-vs-phase selector.** `29fb99f` replaced a bit-reversed (van der Corput) NESTED rank
+  threshold with a phase accumulator, on the grounds that van der Corput's kept-index gaps are a
+  power-of-two pair. Three sources call the nested prefix THE anti-banding mechanism (Rössl &
+  Kobbelt PG 2000 §7, Praun et al. SIGGRAPH 2001 §3, Winkenbach & Salesin's prioritized stroke
+  texture), and Webb et al. NPAR 2002 §3.1 says a nested ladder bands only when the tone axis is
+  too coarse — they went from 6 levels to 64. That pairing had never been tested, so
+  `nestedFineLadder` (nested rank + 64 levels) and `phaseFineLadder` (the same 64-level target,
+  the shipped phase accumulator) were measured side by side, differing in the selector alone.
+  **Result: no revert.** Nested wins spacing regularity on 3 of 5 cells (sphere·hatch CoV 0.559
+  against 0.710) and its gap set is exactly {1,2,4,8} against the phase ladder's {1,2,3,4,5,7,10},
+  which is the power-of-two pair `29fb99f` predicted; it loses on the two cells whose coverage
+  field is flattest, and neither reaches a usable dark end (5th-percentile L* 79.7 / 78.6). The
+  banding the user reported is not in the selector. Also added: `whiteBand` (Rössl & Kobbelt §7 —
+  constant reserved width, per-sample black core, nothing ever dropped; the round's best law at
+  R² 0.512, L* span 29, darkest L* 51.4, worst bin only 5.8 % off the light, on 1192 mm of ink
+  against the ladder's 2308), `isophoteWidth` (Goodwin/Vollick/Hertzmann NPAR 2007 — thickness
+  from a real screen-space shading gradient), `strokesGrow` (Praun et al. §5's clamp(8t − 3.5)),
+  `evenStreamlines` (Jobard & Lefer placement on contourFlow's lighting field: widest bare gap
+  10.15 mm → 1.66 mm), `importanceGreedy` (Salisbury et al. SIGGRAPH 97 §3, the no-quantisation
+  reference), `lozengeStipple`, `deepFillTSP`, `forcedContrast` and `weightPlusSpacingTuned`
+  (kappa 0.35 — ink 2036 → 1598 mm and spacing CoV 0.561 → 0.449 against `weightPlusSpacing`).
+  Committed default is unchanged throughout: `TONE_ALGO 'ladder'`, `TONE_UNCAPPED false`,
+  `HL_STAGE` Stage 1.
+- **3D Scene — six tone laws that vary the PEN along a ruling instead of the placement across
+  it.** Measured across the previous eleven laws, nine tie at R² 0.00–0.14 on the sphere and the
+  capsule however the coverage is written, and the cause is structural: the emitter takes ONE
+  draw/skip verdict per RULING — it has to, or a ruling ends in open front-facing surface — so tone
+  can only vary PERPENDICULAR to the rulings, and light does not vary that way on a curved form.
+  Stroke WIDTH is the other escape and costs no continuity at all: a stroke that changes width
+  mid-stroke breaks no line. The output format carries one `meta.weightScale` per path (the
+  renderer and the SVG export both read it as a stroke-width multiplier), so a varying weight is
+  emitted as consecutive ABUTTING pieces — piece k's last point IS piece k+1's first point, so the
+  pen never lifts; measured worst free end 0 mm on 348 abutting joins. The new laws are
+  `weightAlongLine` (per-sample weight on weightModulated's own geometry — the pair are byte-
+  identical in ink), `weightDeepDark` (base pitch derived so the heaviest legal stroke saturates:
+  darkest L* 5th percentile 41.1 against weightModulated's 41.5 but over a 30.9 L* span instead of
+  19.1), `weightPlusSpacing` (the required amplification split geometrically between spacing and
+  weight, so neither channel has to quantise as hard — largest adjacent weight step 0.885 against
+  weightDeepDark's 2.169), `weightMultiPass` (real strokes side by side rather than a fat pen — 3.2×
+  the ink and the only law here that breaks the free-end invariant, 2.0 mm on hatch and 7.9 mm on
+  crosshatch, so it is recorded as rejected), `weightSmoothstep` (the anti-banding study: a
+  7th-order transfer and a golden-ratio weight dither on the per-run mean, which does NOT fix the
+  banding) and `weightCrossHandoff` (Rössl & Kobbelt 2000 §7 — a second family entering on the
+  OFFSET grey with no threshold, so it starts from nothing exactly where the first saturates).
+  The saturation arithmetic is the finding under all of it: spacing-to-tone is `pitch = 2 × nib /
+  tone`, so one family saturates at about twice the nib — this repo's own `PLOT_FLOOR_PEN` — and at
+  the shipped 0.3 mm pen a single family with a pen-width stroke tops out at 0.509 ink area, L* 76.
+  `weightAlongLine` measured exactly 0.509. Past it there are three moves and only three: a wider
+  stroke, a second family, an overdraw. `TONE_ALGO` stays committed on `ladder`, and
+  `tests/unit/scene3d-tone-algo-default.test.js` now pins that on the EMITTER as well as on the
+  flag: at the committed default no fill run may carry a per-run pen weight at all.
+- **3D Scene — five more tone algorithms, and an uncapped comparison mode that takes the line
+  budget off.** The first round's renders were shaped as much by the budget as by the tone law, so
+  `TONE_UNCAPPED` (comparison only; committed `false`, and pinned by
+  `tests/unit/scene3d-tone-algo-default.test.js`) lifts `MASTER_MAX_LINES` from 420 to 4000,
+  bypasses the `masterPitch` clamp so the master grid rules at the plot floor itself
+  (`PLOT_FLOOR_PEN` × pen = 0.66 mm on the shipped 0.3 mm nib), and calibrates the grid on the p90
+  local pitch rather than the median — on the median, coverage cannot exceed 1 and half the surface
+  therefore cannot reach the darkest target pitch at all. Exactly one physical limit is left
+  standing, the plot floor, applied per sample as `cov ≤ localPitch / floorPitch` and counted, with
+  the count published as `SurfaceFill.lastFloorStats`. The five new laws are `perceptualRamp` (the
+  intensity→coverage map goes through Murray-Davies ink area → CIE L* and is inverted, so apparent
+  darkness is linear in scene radiance, then divided by the measured local pitch so projection
+  leaves the answer), `crossFade` (layeredCross's three layers with the zone gates removed — they
+  fade in by continuous density instead, so no family has a traceable edge and no ruling ends in
+  open surface), `contourFlow` (the rulings are streamlines of the LIGHTING rather than of the
+  chart: iso-intensity curves or their screen-space orthogonals), `errorDiffused` (the same target,
+  placed by a two-tap error carry rather than a phase accumulator — aperiodic, at the cost of the
+  Sturmian two-consecutive-gaps guarantee) and `fullLightingModel` (highlight, mid-tone,
+  terminator, core shadow and ground bounce as separate terms, with specular kept apart from
+  diffuse). Nothing changes for an existing drawing: `TONE_ALGO` stays committed on `ladder`.
+- **3D Scene — five tone algorithms are implemented side by side behind one selector, for
+  comparison.** Making each coverage level internally even exposed the next problem: the tone
+  ladder has only as many rungs as `tone.ladder` has entries (three on the shipped default,
+  coverages 0.85 / 0.50 / 0.20 read dark to light), so the ruling pitch JUMPS between rungs in the
+  ratio 1 : 1.7 : 4.25 instead of ramping. Two adjacent rungs inside one view read as clusters of
+  two or three rulings with a wider gap between the clusters. `TONE_ALGO` in
+  `src/core/scene3d/surface-fill.js` selects between: `ladder` (the shipped behaviour, and the
+  committed default — nothing changes for any existing drawing), `continuousPitch` (no bands at
+  all; ruling pitch is a smootherstep-eased function of surface intensity, tight in shadow easing
+  wider toward the light), `fineLadder` (the same rung mechanism with the rung count derived from
+  the ladder's own coverage range at ~0.02 per rung), `weightModulated` (one pitch everywhere, tone
+  carried by pen weight instead of by line density) and `layeredCross` (tone by adding families —
+  one in the light, a second crossed family through the mid-tones, a third in the darks). All four
+  alternatives share the ladder's own envelope: the dark end is its densest rung, the sparse end is
+  the same O6 pitch bar the discrete ladder charges.
+
+### Fixed
+- **3D Scene — the tone ladder no longer leaves unexpected gaps in a curved fill.** Which rulings
+  survive at a given coverage was chosen by a van der Corput (bit-reversed) rank. A bit-reversed
+  prefix is spread, but it is not evenly spaced — it is a binary refinement, so the surviving
+  rulings were always separated by a power-of-two pair of gaps (measured: 1 and 2 at coverage 0.62,
+  2 and 4 at 0.42, 4 and 8 at 0.20). A gap twice as wide as its neighbours reads as a white band the
+  drawing did not ask for, on hatch, crosshatch, contour, spiral and stipple alike. The ladder is
+  now phase-stepped (Bresenham): it carries a running coverage total per family and keeps a ruling
+  when the total crosses an integer, so at any coverage the surviving rulings sit at
+  `floor(1/coverage)` and `ceil(1/coverage)` apart — two consecutive integers, the most even a
+  subset of an integer grid can be. Tone is unaffected: the kept count still equals the coverage,
+  so the drawing still thins toward the light.
+
+### Added
+- **3D Scene — line output is split by role: the Object tab draws the border, the Style tab draws
+  the fill.** Curves / Smoothing / Simplify used to be one set of object-level controls governing
+  every path a curved object emitted — silhouette and internal fill lines together — so a crisp
+  outline over softly fitted hatching was not expressible. They are now two independent groups.
+  **Object tab ▸ Border lines** governs the silhouette, creases and face outlines.
+  **Style tab ▸ Fill lines** governs the internal fill only. The fill-line settings live in style
+  params, so they inherit the same scene → object → face cascade every other Style-tab field
+  already has. There is no override toggle and no cascade between the two halves.
+- **3D Scene — Style ▸ Fidelity, a sampling-density control for fill lines.** It sets how many
+  places each fill line re-evaluates the surface it is drawn on (0.25×–3×, default 1×; the
+  underlying sample count is clamped to 6–220). A dense line follows the form; a coarse one cuts
+  across it in chords. This is **not** the Object tab's Fidelity, which sets mesh tessellation —
+  Style Fidelity costs points, not facets. The row is offered only where the fill is actually
+  sampled along the surface, so a region contour and a flat-clip spiral hide it and keep the other
+  three; stipple gets no Fill lines group at all, because it draws dots rather than lines.
+- **3D Scene — shadow anatomy: contact collar, umbra wedge, and penumbra zones.** The **Shadow ▸
+  Layers** control (Off / 2 / 3 / 4) previously drew nested inset rings, which made a flat
+  elongated blob — concentric insets put the dense core on the footprint's centroid rather than at
+  the object's base, and every layer hatched at the same angle, so the added rulings landed on
+  existing ink and added no tone. Layers now build classical shading anatomy in stages: an
+  occlusion accent where the object meets the ground, a retreating umbra wedge, graded penumbra
+  zones, and a dissolving tail. Every zone rules a subset of one shared, phase-anchored master
+  grid, so lines cannot double up or break phase at a zone edge, and extra density spills into a
+  crossed family rather than into a spacing below plot safety. Layers redistributes ink instead of
+  adding it — total cast-shadow ink holds within ±25% across Layers 2/3/4. **Layers Off is
+  unchanged.**
+- **3D Scene — reflected light and a terminator dip on shaded surfaces.** The terminator now gets
+  its own crossed family, so it can read darker than the form shadow behind it, and reflected
+  light lifts the lowest facets, which were previously the darkest part of a low-poly sphere.
+
+### Changed
+- **3D Scene — a newly inserted scene is a hatched sphere, not a wireframe cube.** Inserting a 3D
+  Scene (Add Layer, or the canvas draw tool) used to seed a **box** under the **wireframe** mapper,
+  and that combination puts *no ink on the object at all*: wireframe never reaches the surface-fill
+  emitter — it takes the flat/edge path instead — so the object emitted only its structural edges,
+  which on a box is nine straight lines. A dropped scene therefore composed 113 paths of which
+  **zero** belonged to the object's surface (100 were the ground's cast shadow, 4 the ground quad),
+  and it read on canvas as an empty cube outline. The seed is now a **sphere** under **hatch**,
+  resting on the ground, so the light, tone and mapper pipeline is visible the moment the object
+  appears. The **scene-scope** fallback stays wireframe on purpose — it is what the ground fixture
+  resolves to, and a hatched scene scope floods the whole ground quad. Box and wireframe are
+  unchanged and remain one click away (Add Objects shelf, and the object Style flyout).
+- **3D Scene — the shadow slider "Falloff" is now "Softness".** `shadowFalloff` was repurposed
+  from "density drop per layer" to penumbra softness — it sets how far the umbra core extends down
+  the throw — but the label still described behaviour the control no longer had. Label only: the
+  stored key, its range, and its default are untouched, so no saved document changes.
+- **3D Scene — the highlight treatment "Keep" is now "None", and it offers no Strength or Pen.**
+  "Keep" read as a treatment; it is the *absence* of one. It is now a total bypass — no highlight
+  channel and no highlight pen — and the rows that configure highlight ink (Strength, Pen, Bands,
+  HL density, Alt fill, Burst) are **removed** rather than shown inert. The stored value is
+  unchanged, so saved documents keep reading as None.
+- **3D Scene — the Geometry rows name the quantity they actually show.** A torus "Diameter" showed
+  a half-extent, so an 80 mm torus measured 125 mm across; the same lie ran through cylinder / cone
+  "Height", pyramid "Base" and "Height", capsule "Length", and both torus-knot rows, while
+  ellipsoid and superellipsoid "X / Y / Z" named no quantity at all. Torus now reads **Diameter**
+  (true outer extent) and **Thickness** (tube diameter), the torus knot reads **Span** and
+  **Thickness**, height and base rows read the full extent, and the semi-axis rows read **Radius
+  X / Y / Z**. This is a display-and-edit layer only — no stored param, mesh builder or
+  normalization step changed, so every saved document renders byte-identically.
+- **Contextual task bar — every dropdown opens away from the nearest viewport edge.** Menus open
+  downward near the top of the screen and upward near the bottom, and the caret always points the
+  way its menu will go, whether it is open or closed. Previously only three of the bar's seven
+  dropdown paths flipped at all, so Shape, Presets, the algorithm switcher, text weight and align
+  never participated. Each flyout is also height-capped to the room on its open side. The pivot
+  settles on drag release rather than tracking the pointer, because flipping every frame the bar
+  crossed the midline read as thrash.
+
+### Fixed
+- **Draw Order — the colour preview, the playback reveal and the SVG export now describe one plot
+  order.** The canvas overlay coloured `layer.optimizedPaths` sorted globally by
+  `meta.lineSortOrder` with no pen grouping, while playback and export both group by pen first and
+  only interleave by line-sort order inside a pen group. Export is authoritative — a plotter must
+  finish a pen before it can be swapped — so the preview was the liar: with more than one effective
+  pen the gradient promised a sweep the pen would never make. Three divergences, one contract now:
+  ordering routes through a single `Renderer.buildPlotSequence`; the path source is a single
+  `Renderer.buildPlotRecords` (the overlay previously read a different set of path objects than the
+  reveal did, so with stroke divisions on *no* previewed path was in the reveal map and the whole
+  gradient stayed on screen at every progress value); and `optimizeLayers` called without an
+  explicit config no longer runs one layer at a time, which had silently degraded "Combined" and
+  "Per Pen" grouping to per-layer. Verified live at Line Sort = Nearest / Vertical / Combined: ink
+  accumulates strictly top→bottom (leading edge 74 → 129 → 190 → 215mm while the top edge stays
+  pinned).
+- **Draw Order — the overlay's geometry is pinned to the drawn geometry, not just its order.** An
+  earlier attempt at the above shipped a coloured ghost offset from the real artwork with stray
+  segments in empty canvas corners, and nothing in the suite noticed, because every draw-order test
+  asserted on the sequence of paths and none on where the ink lands. A new regression test captures
+  every coordinate the renderer hands the canvas with the overlay off and then on, and requires the
+  overlay to re-trace only ink the base draw already laid, without extending the inked bounds in
+  any direction. 3D scene groups are explicitly excluded from the colour preview: a group is never
+  an optimization target, so no composed scene path carries a line-sort order, and colouring
+  composition order as if it were plot order would fabricate a draw order the plotter has no notion
+  of. Scene draw order remains a known, separately tracked gap.
+- **3D Scene — Style ▸ Border is a contiguous silhouette outline, and stays one at any Fidelity.**
+  Border offset each two-point mesh-edge segment along its own screen normal, so the mesh vertex
+  two adjacent segments share landed at two different screen points — a gap at every vertex.
+  Raising Fidelity only shortened the segments, so more of them fell under the emission floor and
+  punched more holes. Endpoint chaining then matched nothing: **104 of 112 border paths stayed
+  two-point straight sticks** even with Curves on and Smoothing at 1.00, and a two-point path *is*
+  a straight line, so no curve fitter could ever have smoothed it — hence the lumpy crown. The
+  border is now chained on integer mesh vertex indices (so contiguity is topological, not a float
+  comparison, and the loop count cannot change with Fidelity), its hidden-line runs are stitched in
+  traversal order, and the stitched polyline is offset as a whole. Measured before the fix: 216
+  dangling border endpoints at Fidelity 22 and 88 at Fidelity 12; zero after. Hidden-line removal
+  is bit-for-bit unchanged, so a genuinely occluded stretch still breaks the outline — correctly —
+  and a multi-loop silhouette (a torus seen face-on) keeps every loop, each unbroken.
+- **3D Scene — the plain silhouette (Border off) no longer fragments at high Fidelity.** The same
+  root cause on the other path: the 0.6 mm emission floor was applied to each two-point segment
+  rather than to the outline it belongs to, so raising Fidelity shortened every segment until
+  segment after segment fell under the floor. A sphere went from 0 to 8 to 36 to 92 dangling
+  endpoints across Fidelity 12 / 22 / 40 / 60, and a capsule outline shattered into 18 disconnected
+  pieces. The floor now judges a welded chain by its total length: zero dangling endpoints and one
+  connected component at every Fidelity. Sub-floor whiskers — the 0.02 mm slivers a clipper leaves
+  at a silhouette corner, which is what the floor was written for — are still culled, because a run
+  the clipper cut keeps the per-run floor while a whole, uncut edge is judged by its chain. With
+  Border on, the two passes overprinted within ±0.12 mm and masked this.
+- **3D Scene — Density is live again on curved objects.** The tone grid was sized at a fixed
+  pitch, so a ball emitted byte-identical geometry at Density 10 and Density 100. Density now sets
+  the pitch through the same law the faceted path uses: ball fill ink moves 3001 mm → 6618 mm
+  across Density 10 → 100.
+- **3D Scene — a cube's faces now order correctly by how much light they catch.** Tone was
+  quantized by threshold, which is calibrated for a continuum of surface normals; a cube does not
+  have one, so two differently lit faces landed in the same band and everything downstream was
+  incidental. The two lit faces measured 0.012 apart, and at 3 bands the order **inverted** — the
+  brighter face drew darker. Faceted tone is now re-quantized by rank, but only where thresholds
+  are the wrong tool (the object leaves the top of the ladder unused *and* spans more than 0.15 in
+  intensity), so anything with a real gradient is untouched. Re-quantizing never darkens, so it
+  cannot invert an order it was meant to fix. Cube face spread at 4 bands: 1.32× → 6.09×, and the
+  3-band ordering is correct.
+- **3D Scene — the faceted highlight treatments are different marks again.** On faceted geometry
+  the highlight was placed by "is this face in the top tone band", and under an ordinary sun no
+  cube face ever reaches the top band — so the whole treatment dispatch was dead code there. Blank,
+  Sparse, Stipple-out and Alt fill rendered identically, the highlight pen reached no ink, and
+  Sensitivity did nothing in the default per-face mode. The highlight zone on a facet is now the
+  specular glint set, Sensitivity tightens the acceptance cone (about 73° at 1 to 36° at 6, with 1
+  unchanged from before), Sparse and Stipple-out are two distinct marks, and the highlight pen
+  reaches Sparse, Stipple-out and Dashed ink. Alt fill drew nothing at the default density, because
+  its hotspot pitch was wider than the hotspot; it is now capped to the disc.
+- **3D Scene — one ink budget, shared across every pass.** The base fill pass had no composed
+  density ceiling at all — it was limited only by a per-family pitch rule, so where one family
+  alone busted the ceiling the crossing family was simply withheld and the total stayed wherever
+  the first family had left it. The crossing pass, in turn, modelled the first family's ink using
+  the *crossing* family's spacing, which was too generous wherever the crossing ran sparser. Each
+  pass now takes a share of the zone's composed ceiling in proportion to the ink it is meant to
+  contribute. Peak object coverage 0.636 → 0.531 against a 0.56 target, and the contact collar no
+  longer floods. Cast-shadow ink is unchanged to the digit.
+- **3D Scene — a Buckyball is built at the Radius it states.** The mesh scaler divided by a bounds
+  measure that was floored at 1, and the truncated icosahedron is the only solid whose pre-scale
+  circumradius sits below that floor — so a buckyball came out 13.1% under its stated Radius. The
+  scaler now measures the true circumradius, and a migration rescales saved documents so they
+  render byte-identically.
+- **3D Scene — expanding a scene monolith no longer drops a scene-scoped fill.** Expansion copied
+  a child's style only when the style table already held an entry for it, but the collect step
+  republishes that entry from the child's own params on every compose — so a child with no style of
+  its own published the object default (wireframe), and that entry then beat the group's scene
+  style in the whole-style-wins cascade. A monolith styled only at scene scope therefore expanded
+  into a tree with its entire surface fill gone: measured, 72 fill paths before and 0 after.
+  Expansion runs automatically when a pre-tree document is opened, so this was data loss on open.
+  The effective object-scope style is now resolved at expansion time and materialized whole onto
+  each child.
+
+**Where the shadow work stands.** Cast shadows meet all fifteen of the design spec's acceptance
+criteria. Object shading is substantially improved but **not finished** — several of its
+acceptance items are still open and under active review, and the tone-to-form ratio moved during
+the ink-budget fix and has not been re-tuned.
+
+### Fixed
+- **3D Scene — a scene-tree object with no style of its own now inherits the scene, instead of
+  rendering as a bare unfilled outline.** The collect step republished
+  `styleTable.byObject[layerId]` for *every* object3d / booleanGroup3d child, even one carrying
+  no style bag — and a missing bag normalizes to `mapper:'none'`, which then **beat** the
+  group's scene style in the whole-style-wins cascade (`byFace > byObject > scene`, no per-field
+  merge). A scene styled Hatch therefore drew such a child as silhouette-only: face and edge
+  lines, zero fill, while ground cast shadows kept rendering (the shadow path never reads the
+  object's style), which is exactly how the defect presented. Same failure shape as the
+  monolith-expansion fix, reached through a different door — opening a `.vectura` whose
+  object3d child has no `style` (or `style:{}`, or a style with no `mapper`) landed straight in
+  it. An unstyled child now leaves the `byObject` slot absent so resolution falls through to the
+  scene style. **No scene you can build in the UI is affected** — every creation path already
+  seeds a mapper — and an explicit `mapper:'none'` is still honoured as the real user choice it is.
+- **3D Scene — the orbit gizmo no longer teleports off-canvas when you click it.** On a scene
+  tree the orbit/rotation gizmo was *drawn* without needing 2D bounds, but the pointer-down and
+  hover hit-tests still required them — and a scene group has none, so every click fell through
+  to object picking, selected the ground plane, and re-anchored the gizmo to the ground quad's
+  corner (measured: +917px on a 1336px canvas). A second click then landed on empty canvas and
+  cleared the selection. Picking now runs off the composed geometry, the anchor refuses a
+  `ground` selection like every other gizmo already did, and hovering gives a grab cursor again.
+- **3D Scene — Style edits from the context toolbar now reach a scene tree.** Toolbar style
+  writes landed in the scene group's style table, which the collect step overwrites from the
+  child layer on every compose — so on a tree they were silently discarded (the same edit from
+  the panel worked). Writes now route to the child layer. Legacy inline scenes are unchanged.
+- **3D Scene — Hatch Angle now rotates the fill on curved shapes.** `fillAngle` was listed in
+  the curved fill's options contract and passed by the caller, but the module never read it:
+  hatch was hard-wired to meridians on all nine chart-wrapped primitives (sphere, ellipsoid,
+  cylinder, cone, torus, capsule, superellipsoid, torus knot, pyramid), while boxes, planes,
+  polyhedra, imported meshes and CSG results always honoured it. Angle is now measured in the
+  surface's own tangent frame — 0° meridians, 90° parallels, in-between helical — with line
+  spacing held constant so Density reads the same at every angle. **Saved documents are
+  unaffected:** a scene migration pins pre-existing curved hatches to 0° so they keep today's
+  meridians, while newly created hatches use the panel's 45° seed. Curved **crosshatch** also
+  now honours Cross angle delta, Cross density ratio and Triple hatch, matching the faceted
+  path exactly.
+- **3D Scene — shadow configuration is reachable again, and Angle means the right thing.**
+  Shadow controls existed and worked but were unreachable on every scene a user can create:
+  the context toolbar required the scene *group* to be selected while both canvas picks and
+  layer-row clicks select the *child*, and the panel's shadow block hung off light rows that a
+  tree never renders. The toolbar pills are back, and shadow styling moved out of the light
+  inspector into its own always-mounted **Shadow** section (it is a scene-wide property, not a
+  property of one light). **Shadow ▸ Angle now rotates the lines *inside* the shadow instead of
+  moving the sun** — it was bound to the sun's azimuth, so it showed 135° while the actual
+  shadow angle was 45°. Steering the sun lives on the Sun layer, the light gizmo, and dragging
+  the shadow itself.
+
+### Added
+- **3D Scene — Geometry selector with per-shape controls.** The object inspector gained a
+  **Geometry** section: pick from twelve shapes and the controls beneath swap to that shape's
+  own set (Torus shows Diameter/Thickness/Fidelity, Box shows Width/Height/Depth, Polyhedron
+  reveals its family plus Sides/Frequency/Depth/Taper/Star-inset and the deformers). Previously
+  the panel had no primitive selector at all, and eight of the ten shapes — including sphere
+  and torus — could not be added or switched to from anywhere in the UI. Swapping preserves
+  position, style and pen, and rescales so the object keeps its size. `ellipsoid` and `pyramid`
+  are now fully supported rather than landing on a blank inspector, and Plane's Depth slider is
+  live for new planes. Imported meshes read truthfully as *Imported mesh* and survive a swap.
+- **3D Scene — tone goldens.** 26 deterministic JSON goldens (42 tests) now pin the tone
+  system — bands, specular, highlight modes, shadow modes, multi-light saturation and both the
+  faceted and curved fill implementations. Nothing previously pinned any of it; every existing
+  visual baseline renders a legacy algorithm. Regenerate deliberately with `npm run test:update`.
+- **3D Scene — Import OBJ / STL 3D models.** `File → Import 3D Model…` reads a `.obj` or `.stl`
+  mesh and drops it into the 3D scene compositor as a lit, shaded, selectable object (HLR,
+  lighting, shadows, and styles all apply). If a 3D scene is active the model is **added to it**;
+  otherwise a fresh scene (with a sun light and ground) is created. OBJ parsing handles `v`/`f`
+  records, n-gon fan-triangulation, `a/b/c` index forms, and negative indices (normals, UVs, and
+  materials are ignored for now); STL reuses the existing binary + ASCII loader. The mesh is
+  auto-centred and unit-normalised so it lands in view at a sensible size. One undo step.
+- **3D Scene — Quantitative X-ray (depth-cued see-through).** X-ray objects gain a **Depth cue**
+  option: instead of a flat see-through back-fill, the hidden interior is shaded by how deep it
+  sits behind the front surface — deeper material reads denser and/or heavier, turning x-ray into
+  a readable depth map. Modes: Off (default, unchanged), Density, Weight, Both. Pure line-art
+  (plottable); off by default so existing scenes are byte-identical.
+- **3D Scene — every shape is addable to a live scene.** The **Add Objects** shelf now appears
+  for a scene group (it was gated to the retired monolithic scene), and the layer right-click
+  menu gained **Add shape** and **Add light** categories. All ten primitives — box, sphere,
+  cylinder, torus, cone, plane, superellipsoid, torus knot, capsule, polyhedron — can now be
+  added to a scene from the UI; previously only `box` and `solid` could be, so sphere, torus and
+  six others were unreachable despite the engine supporting them. The Scene Tree empty state no
+  longer points at a shelf that isn't there.
+- **3D Scene — imported meshes read truthfully in the inspector.** The **Solid type** dropdown
+  gained an *Imported mesh* entry, so an imported model no longer displays a false "Buckyball".
+  The entry stays offered whenever a mesh payload is present, so switching to a parametric solid
+  and back round-trips instead of destroying the import with no route back.
+
+### Fixed
+- **3D Scene — the transform gizmo no longer vanishes when you click it.** On a scene tree the
+  per-pixel depth pick surface was rebuilt from the group's inline params, which are empty once
+  objects live on child layers — so the pick surface came back empty, the real-depth pass was
+  silently disabled, and the large ground plane's coarse depth won every pick. Clicking the gizmo
+  (or an object) selected the ground, and the gizmo hides for the ground. Picking now runs off
+  the geometry the compositor actually composed. Legacy inline scenes are unchanged.
+- **3D import — meshes are welded, budgeted, and rest on the ground.** Imported OBJ meshes were
+  not vertex-welded, so every internal triangle edge was drawn (~5× the ink and no shared-edge
+  connectivity for contours/silhouettes); the OBJ path had no face budget, so a normal 25k–58k
+  triangle model froze the tab for minutes with no progress feedback; and imported meshes were
+  centred on the origin, leaving them half-buried in the ground plane instead of resting on it.
+  Welding now reuses the shared STL welder, the face budget covers both inputs (and the
+  convert-to-scene bake, which could freeze a 120,000-face mesh), import shows progress, and a
+  mesh rests on the ground and *stays* there when Radius or Scale changes. Undo snapshots no
+  longer deep-clone the mesh payload. Tab-delimited OBJ files are accepted, malformed records
+  fail loudly instead of fabricating geometry, and a failed file read now reports.
+- **3D import — the mesh reducer spends its budget and keeps short-axis detail.** Over-budget
+  meshes were reduced by dropping every Nth face, which shredded a closed surface into
+  disconnected triangles — contours came out as unplottable two-point stubs. Reduction is now
+  connectivity-preserving vertex clustering, so contours plot as continuous rings. The grid is
+  binary-searched to land near the budget (a slender rod kept 37% of its allowance, now 98%) and
+  cells are sized per axis, so a 40:1 rod no longer collapses to a 20-sided cross-section.
+  Triangles inverted by clustering are re-wound, and STL imports now report when a mesh was
+  reduced.
+- **3D Scene — object manipulation on scene trees.** Three regressions where scene-object
+  controls only worked on the old monolithic scene and silently no-opped on a real scene tree
+  (the model every new/converted scene uses): (1) dragging an object onto a scene group now
+  **nests** it as a child instead of popping it outside; (2) changing a 3D object's shape from
+  the context toolbar now actually **swaps the primitive** (previously it was stuck on cube);
+  (3) the scene **rotation gizmo** no longer disappears once you select an object — it stays and
+  rotates the selected object (or the camera) as before. Saved legacy scenes are unaffected.
+- **3D Scene — the rest of the object context-toolbar actions now work on scene trees.** X-ray
+  toggle, delete, duplicate, drop-to-ground, ground dragging, and the Style/Shadow/Highlight/
+  X-ray flyouts all previously did nothing on a converted/tree scene (they only ever touched the
+  old inline object list). They now act on the actual scene objects — including duplicating a
+  boolean group, which produces a visibly offset copy instead of one stacked on the original.
+  Deleting a boolean group removes its operands too. Legacy inline scenes are unchanged.
+
+### Added
+- **3D Scene — Convert to Scene.** A standalone Polyhedron or Topoform layer can now be turned
+  into a real 3D scene tree via a "Convert to Scene" item on its layer context menu. The
+  algorithm's current geometry (including any active polyhedron deformers) becomes a scene group
+  holding one solid object, a Sun light, and a Ground plane, so it is immediately lit, occluded,
+  and shadowed by the shared compositor and gains per-object Style/Tone/Edge/Divisions controls.
+  A converted **parametric polyhedron becomes a live-editable solid** — its deformers (expand,
+  twist, explode, extrude, shard) re-evaluate through the scene compositor, so you can keep
+  tuning them after converting; topoform and STL/imported meshes convert as a baked mesh. The
+  source layer's view angle migrates onto the scene camera and its pen/style migrate onto the
+  object. Topoform's contours render mode is not convertible yet — converting it shows a message
+  instead (that treatment lands in a later increment).
+- **3D Scene — add and tune Polyhedron solids in a scene.** You can now add a solid (polyhedron
+  family) object directly to a scene from the layer context menu ("Add solid (polyhedron)"), and
+  a selected solid object's inspector exposes its Solid-type (16 parametric families) plus the
+  five live deformers — expand, twist, explode, extrude, shard — so a converted or added solid
+  is fully editable in the scene, matching the standalone Polyhedron controls. (Bulge and Face
+  Bands are line-art-only and don't apply to a scene solid, so they're hidden there.)
+- **3D Scene — parametric Topoform converts to a live scene object.** Converting a Topoform
+  layer in a parametric render mode (wireframe / triangle mesh) now produces a live, editable
+  scene object (sphere/ellipsoid/cylinder/cone/torus/torus-knot/capsule/superellipsoid/pyramid)
+  that re-evaluates through the compositor — adjust its size or detail after converting and the
+  geometry updates. Cube-source and STL/imported topoforms still convert as a baked mesh, and
+  the contours render mode still shows a message (its scene treatment is the next increment).
+- **3D Scene — Topoform contours convert to real depth-slice contour lines.** Converting a
+  Topoform layer in *contours* mode now produces true depth-plane cross-section lines in the
+  scene (a new **Contour Slice** object style), lit and occluded by the shared compositor —
+  slices are hidden behind other objects and behind the object's own near surface, with x-ray
+  dashing the far runs. Slice count, plane orientation, and visible-only vs full contour carry
+  over from the Topoform layer. The slice pass is budget-aware (it caps plane count on very
+  dense meshes) so converting or editing never hangs. This completes the Convert-to-Scene chain:
+  a standalone Polyhedron or Topoform — in any render mode — is now a first-class scene object.
+- **3D Scene — x-ray is now see-through fills; Edge Styles own hidden edges.** X-ray no
+  longer forces hidden edges to dash — that's now controlled entirely by the per-class Edge
+  Styles (Hidden → Drop/Dash), while x-ray keeps its unique job of making back-face fills
+  see-through. So you can now have see-through fills with *dropped* hidden edges, or dashed
+  hidden edges without x-ray. Saved x-ray scenes migrate automatically and render identically.
+- **3D Scene — per-object Edge Styles and Divisions.** Inside a scene, a selected object can
+  now override the scene-wide edge styles for its own edges (each class defaults to "inherit
+  scene"), and can carry its own stroke divisions applied only to its strokes. Overrides are
+  isolated — styling or dividing one object leaves the others untouched — and a scene with no
+  overrides renders identically. Per-object divisions reuse the same division engine (so the
+  pen grammar and double-ink dedup apply), and are split per object by the scene compositor.
+- **Plot-physics readout.** The Document Overview now shows a per-pen breakdown of the plot:
+  pen lifts, pen-up travel distance, total draw length, and an estimated plot time (from the
+  machine's pen-up/pen-down speeds and a per-lift time), plus an "all pens" total. A K-05
+  guard flags any drawn segments or pen-up gaps shorter than a minimum threshold (the
+  sub-resolution moves that make a plotter stutter) as a count + warning. Measured on the real
+  post-line-sort / deduped plot order per resolved pen, so the numbers match the exported file.
+- **3D Scene — per-class Edge Styles.** The scene's Style controls gain an **Edge Styles**
+  section: silhouette, crease, boundary, interior, and hidden edges can each take their own
+  pen, weight, and dash, and hidden (occluded) edges can be **dropped or dashed** scene-wide
+  (the x-ray see-through look, now available without per-object x-ray). Defaults inherit the
+  object's pen/weight/line type, so existing scenes render identically; per-object x-ray
+  toggles still win where set. (A future CSG "seam" edge class slots into the same table.)
+- **Stroke Divisions — pen grammar.** The Divisions editor gains a **pen mode** (Cycle /
+  Weighted) and a **phase mode** (Fixed / Per-path / Jitter). In Weighted mode each segment's
+  pen is chosen by weight, so one stroke scatters across pens by a set ratio; Per-path and
+  Jitter vary the dash phase per path (Jitter by a seeded offset). Everything is fully
+  deterministic — the same document always plots identically, and a seed makes the weighted /
+  jitter pattern reproducible. In Fixed mode a stroke split across sub-paths now dashes as one
+  continuous ruler. Existing divisions are unchanged (Cycle + Fixed defaults).
+- **Stroke Divisions editor.** The Stroke Options popover (⋯ → Open Stroke Options) gains a
+  **Divisions** section: enable division of a layer's strokes, set the phase, and edit a list
+  of classes — each with a run length, a per-class pen (or the layer's own pen), and a gap
+  toggle — with add / remove / reorder. Turning it on chops each stroke into alternating
+  segments assigned to the chosen pens, so a single path plots as a multi-pen or dashed run.
+  Edits update the preview and plot stats live. (Per-object divisions inside a 3D scene are a
+  planned follow-up.)
+- **3D Scene — saved scenes upgrade to the tree automatically.** Opening a 3D scene saved
+  before this change now loads it as the new layer tree (objects, boolean groups, lights,
+  and ground each as their own rows) instead of a single opaque layer — while rendering
+  exactly as it did before (verified byte-for-byte). The document format version moved to 2;
+  older files migrate on load, and save/reload is stable. Presets keep working unchanged.
+- **3D Scene — ground and lights are tree children.** The ground plane and each light
+  (the sun and any added point/spot/area lights) now appear as their own rows under the
+  scene group, so the whole scene is one tree. Selecting the sun arms its 3-axis gizmo and
+  routes its controls; right-click the scene group to add a light or the ground; deleting
+  the ground row turns the ground off. The renderer still composes them into the single
+  shared pass, so nothing about the rendered result changes.
+- **3D Scene — click-to-select objects + per-object editing; scenes are trees by default.**
+  Adding a 3D Scene now creates a tree (a scene group with one object) instead of a single
+  monolithic layer. Clicking an object in the canvas selects its layer in the tree and shows
+  the transform gizmo, and the Inspector / Style / Tone panel now edits the selected object,
+  boolean group, or the scene itself (camera, lights, ground). A "convert to scene tree"
+  path (`expandMonolithToTree`) promotes an older single-layer scene in place. Saved
+  single-layer scenes still load and render unchanged.
+- **3D Scene — layers-panel scene tree.** A 3D scene can now be built as a tree in the
+  Layers panel: a scene-group folder holding one object per layer, with boolean (CSG)
+  groups as their own nested layers containing their operand objects. Add objects from a
+  "+ object" button or the scene group's right-click menu; multi-select objects and
+  right-click "Create boolean group" to fuse them; drag objects in/out of a boolean group
+  to set their solid/hole role. Renders through the shared scene compositor from the
+  previous increment. (Canvas-click-to-select and per-object Inspector routing land next.)
+- **3D Scene — scene-group compositor (internal).** A `scene3d` layer can now act as a
+  container that collects child `object3d`/`booleanGroup3d` layers and renders them through
+  a single shared hidden-line/lighting/shadow pass (so occlusion between objects stays
+  correct). Child layers are consumed by the group; each object's paths keep its layer id
+  for selection. Fully back-compatible: a scene layer with inline objects and no child
+  layers renders byte-identically to before, so every saved `.vectura` and preset is
+  unaffected. No visible change yet — the tree UI lands next.
+- **3D Scene — `object3d` and `booleanGroup3d` layer types (foundation).** Two new
+  layer types that will let a 3D scene be edited as a tree of layers (one object per
+  layer, boolean groups as their own layer) instead of a single monolithic scene layer.
+  `object3d` renders one primitive by delegating to the existing scene renderer (no math
+  fork); `booleanGroup3d` is the CSG-group container. Data-only in this release — the
+  layers-panel tree, per-object routing, and migration land in follow-up increments;
+  existing single-layer 3D scenes are unaffected.
+- **3D Scene — reliable object picking + hover hint.** A click now selects the
+  FRONTMOST object under the cursor for every primitive (raycast against the real
+  surface, so a click anywhere on a cube's face selects it — no more missing the
+  interior of flat faces). As the cursor moves, a subtle accent silhouette outlines
+  just the object (or face, in face-edit mode) a click would select. The old crude
+  whole-layer hover highlight is suppressed for 3D scenes so only the precise
+  per-object hint shows. The hint is an overlay only — never exported or expanded.
+- **3D Scene — inverse / subtractive shadow mode (dark paper).** A new shadow **Mode**
+  (Additive / Inverse) in the shadow controls (panel + context-bar shadow flyout).
+  *Additive* (default, unchanged) lays hatch inside the shadow footprint. *Inverse* instead
+  THINS the ground's own fill inside the projected footprint, so more (dark) paper shows
+  through — physically correct for white ink on black paper, where a shadow means less ink.
+  Reuses the true-silhouette footprint (holes preserved: a torus keeps its annulus). Inverse
+  is a no-op when the ground has no fill. Default additive output is byte-identical (visual
+  baselines unchanged).
+- **3D Scene — configurable Highlight alt-fill.** With Highlight treatment set to
+  "alt fill," the context-bar Highlight flyout now exposes an alt-fill mapper picker
+  (hatch / crosshatch / contour / spiral / stipple), so the alternate fill used in the
+  highlight region is selectable per object (was a fixed default).
+- **3D Scene — light-driven highlight mode + sensitivity.** A new Highlight mode
+  (`lightDriven`, alongside the existing per-face mode) places the highlight by actual
+  lighting: a per-sample specular term makes the highlight cluster where the light
+  reflects, so a point light near a cube corner produces a highlight that spans both lit
+  faces. A **Sensitivity** slider runs from low (the highlight region's lines merely
+  differ — binary) to high (a gradient, most intense where brightest). A matching
+  **shadow sensitivity** grades the dark side with extra infill. Default per-face mode is
+  unchanged.
+
+### Fixed
+- **Stroke Divisions — division seed 1 is now distinct from the default.** Changing a
+  division's seed from 0 to 1 previously produced no change; seed 1 now yields its own
+  weighted/jitter pattern. The default seed (0) is unchanged, so existing saved documents plot
+  identically.
+- **Plot-physics readout — light pens are visible.** The per-pen colour swatch gained a
+  contrast border and inner ring so near-white pens read as a defined chip on the dark panel.
+- **Plotter — pen stats/grouping now match the exported file.** A path carrying a stale or
+  unknown pen id was counted and grouped under a phantom pen in the plot stats/preview while
+  the SVG export plotted it under a fallback pen — so the numbers disagreed with the artifact.
+  The engine now resolves each path's effective pen the same way export does (shared helper),
+  so stats, line-sorting, and export agree. Also hardened three 3D-scene modules to resolve
+  their sibling namespaces at call time so script load order can't strand them empty.
+- **Plotter — divided strokes no longer double-ink a coincident duplicate.** When a layer
+  with stroke divisions and an identical undivided layer sat on the same pen, the plotter
+  inked the shared path twice. Dedup now keys divided fragments to their parent geometry at
+  each consumer's own tolerance, so a coincident duplicate inks once — but only when the
+  division fully covers the parent: a **dashed** (gapped) or multi-pen division no longer
+  suppresses a coincident solid, so the gap regions still ink (a lost-ink regression caught
+  in review). Self-retracing fragments are disambiguated by index so every fragment survives,
+  and preview, plot stats, and SVG export now dedupe identically. Prerequisite for the
+  upcoming divisions editor.
+- **3D Scene — boolean (CSG) results no longer paint a triangulation fan.** A subtract/
+  union/intersect result mesh is fan-triangulated, so every flat face is split into many
+  coplanar triangles. Under the wireframe mapper those internal diagonals were relabelled
+  as crease edges and drawn — a fan of stray diagonal lines across the carved faces (e.g.
+  Box − Cylinder). The carve result now suppresses those interior coplanar diagonals even
+  under wireframe; only genuine features (silhouette, boundary, and the ~90° rim creases
+  where bore walls meet faces) draw. A regression test pins the drawn-edge count.
+- **3D Scene — non-planar occluders no longer leak hidden geometry.** Hidden-line
+  removal now fan-triangulates any occluder face whose vertices are non-planar
+  (n-gon faces from solids, CSG fragments, or imported meshes) so each occluder
+  clips on its exact support plane instead of tripping the whole clipper into the
+  coarse depth-buffer fallback. Planar/triangle/box scenes are byte-identical (the
+  fix only activates on genuinely non-planar occluders).
+- **3D Scene — faceted and curved surfaces now shade the same direction.** Flat faces
+  shaded bright=dense while curved surfaces shaded bright=sparse, so a cube and a sphere
+  in one scene read inverted. Both now shade dark=dense / bright=sparse (a regression test
+  pins the shared direction).
+- **3D Scene — per-axis object scale.** Dragging an individual scale handle on the
+  object gizmo now stretches only that axis (non-uniform `sx/sy/sz`); **Alt+drag** any
+  handle scales all axes uniformly. The Inspector gains Scale X/Y/Z alongside a uniform
+  Scale. Legacy uniform scale is byte-identical.
+
+### Fixed
+- **3D Scene — the cast-shadow shape stays put as you orbit.** The shadow silhouette was
+  classified from the camera, so a torus's shadow hole changed size as the camera moved.
+  It is now classified from the LIGHT (constant direction for the sun; per-face toward the
+  light for point/spot), so a fixed light casts a fixed shadow regardless of viewpoint —
+  the footprint only changes when the light moves.
+- **3D Scene — shadows show the object's real silhouette, holes and all.** A torus (or
+  any object with a hole/concavity) cast a solid elliptical shadow because the footprint
+  was a convex hull. Full-frame shadows now project the caster's actual silhouette loops
+  (outer + inner rims) and fill them even-odd, so a torus casts a proper annular shadow
+  with an open middle, while a box still casts a solid footprint. Only the small clean
+  loop set is projected (no dense boolean on the hot path); draft frames keep the cheap
+  convex approximation.
+- **Expand-to-Layers matches the viewport.** Expanding a layer whose cached geometry
+  came from a live-drag/draft frame (where 3D-scene region fills render as a cheap
+  screen-space hatch and shadows skip booleans) froze that draft into the flattened
+  children. Layers now record draft provenance (`_pathsFromDraft`) and force a
+  full-quality regen before expanding, so the children match what you see.
+- **3D Scene — cast shadows stay anchored during orbit; no stray canvas-wide lines.**
+  The draft/preview shadow path skipped the ground clip, so at a low sun its hatch ran
+  the full canvas along the light ray and the footprint swam as the camera orbited.
+  The draft path now analytically clips each footprint to the ground quad (cheap
+  Sutherland–Hodgman convex clip — no boolean, orbit stays responsive), and the shadow
+  hatch angle/spacing are derived in the world ground plane instead of screen space, so
+  the fill stays glued to the ground and rotates rigidly with it.
+- **3D Scene — no phantom sun on a lightless scene.** With the sun/all lights removed,
+  the interactive sun handle no longer draws or accepts hits.
+- **3D Scene — Tone/Highlight controls now actually work.** Curved (sphere/torus/…)
+  fills previously ignored the tone ladder entirely, so Bands 2 vs 4 looked identical,
+  Specular did nothing, and the "highlight" read as a dark band. SurfaceFill now
+  consumes `tone` — each sample is quantized by band and the band's coverage sets the
+  line density (dark = dense, bright = sparse), so band count, thresholds, coverage,
+  and the Specular toggle/size all drive the fill. Highlight "keep" now renders on a
+  distinct channel instead of matching the base hatch.
+- **3D Scene — tone/shading sliders update live.** Dragging a Tone threshold/coverage/
+  specular slider showed a static flat-diagonal preview and only rendered the real
+  toned wrap on release (the draft path disables tone). Those sliders now regenerate at
+  full quality each frame, so the shaded sphere updates continuously; geometry sliders
+  keep the cheap draft.
+- **3D Scene — Spiral fill works on all primitives.** The Spiral mapper rendered as
+  vertical stripes on superellipsoid/cylinder/capsule/pyramid because those charts
+  sample their `(u,v)` axes transposed vs the sphere convention, so the helix wound
+  latitude instead of longitude. The surface-fill chart is now transposed for those
+  modes (mesh untouched). Spiral **Angle-offset / Eccentricity / Centre / Axis-snap**
+  now actually affect the curved spiral (the surface-helix path was never handed the
+  options), and **Density 100 now means full overlap**. Added a 70-case mapper audit
+  covering every mapper × primitive.
+- **3D Scene — Border controls moved to Style; Dash control tidied.** Per-object Border
+  (enable + weight + pen) now lives in the Style section (context bar + docked panel)
+  instead of under Highlight. The dash-length slider is renamed **"Dash length"** and
+  only appears when the Line type is dashed/dash-dot/dotted.
+- **3D Scene — wireframe edge-class control no longer throws.** `index.html` now loads
+  `src/ui/components/tog-grp.js`, which registers `UI.TogGrp`; without it the wireframe
+  mapper's edge-class toggles threw in the running app (now hit by the new wireframe
+  default).
+
+### Added
+- **3D Scene — default object style is now Wireframe**, and `wireframe` and `none`
+  are finally distinct: `none` draws only the object outline (silhouette + boundary),
+  while `wireframe` also draws the interior crease edges (a cube's near-corner "Y").
+- **3D Scene — change a shape's primitive from the context bar.** A new "Shape" pill
+  on the object context bar swaps the selected object between box/sphere/torus/cone/
+  cylinder/capsule/pyramid/superellipsoid/torusKnot (one undo, params reset to the
+  new primitive's defaults).
+
+### Fixed
+- **3D Scene — context-bar pen/style edits now stay scoped to the selection.** Applying
+  a pen from the context bar wrote the whole layer's pen (repainting every object);
+  it now writes the styleTable at the selected scope — byObject for an object, byFace
+  for a face — leaving siblings untouched. Double-click still drills object→face so the
+  edit lands exactly where selected.
+
+- **3D Scene — remove ground & sun, plus file-based scene presets.** The ground
+  plane can be hidden (Ground row toggle) and the scene can now have zero lights
+  (the last light is deletable) — a lightless scene shades flat without crashing
+  and casts no shadows. Three starter presets ship under `user-presets/scene3d/`:
+  `studio-shadows` (a lit still-life), `shape-grid` (a specimen sheet of primitives,
+  no ground/sun), and `cad-wireframe` (a clean wireframe CAD look).
+
+### Fixed
+- **3D Scene — Delete key no longer nukes the whole layer.** With a scene object
+  or face selected, Backspace/Delete now removes just that object/face (a
+  capture-phase handler intercepts before the layer-delete shortcut); with no
+  scene-internal selection the normal layer delete still applies.
+- **3D Scene — a sphere is now selectable by clicking its body.** Object hit-testing
+  falls back to the object's projected silhouette hull, so a click anywhere inside
+  a sphere (which emits no interior face) selects it instead of the ground behind.
+
+- **3D Scene CSG — per-fragment by-face styling.** A carved/combined boolean unit
+  no longer flattens to the primary solid's style for every face. Each output
+  fragment is now attributed back to its ORIGINATING object + face: a solid keeps
+  its per-face (`byFace`) styles on its surviving faces, a hole's cut walls read
+  as the solid's interior (the solid's style), and a unioned sibling keeps its own
+  per-object style. Source identity threads through the BSP via each polygon's
+  `shared` slot (inherited on every split) and merges into a non-persistent
+  `byFace` clone at generate time. Gated + deterministic (no RNG): a unit with one
+  uniform style is byte-identical to before.
+- **3D Scene ctxbar — multi-select "Mixed" display.** When 2+ scene objects are
+  selected and they *disagree* on a contextual-toolbar control, the Style / Shadow /
+  Highlight / X-ray flyouts now show an explicit **Mixed** state instead of silently
+  showing the primary object's value. Selects and segmented controls gain a muted
+  "Mixed" marker; sliders and angle dials blank their numeric readout to a dash.
+  Editing from Mixed applies to every selected object (unchanged) and the display
+  resolves to the new shared value. Single-selection is untouched.
+- **3D Scene emissive objects.** The sixth and final light type: any scene object
+  can be made **Emissive** — it now both *glows* and *lights its neighbours*. As a
+  light it acts as a co-located point light at its own world centroid, brightening
+  every OTHER object (never itself); as a self-render it draws its own glow — an
+  outward radial **burst** of rays or concentric halo **rings**, with an optional
+  blank/bright core. The object inspector gains an Emissive group (enable, glow
+  strength, halo style, ray/ring count, blank-core toggle, glow pen). Deterministic
+  (no RNG); a scene with no emissive object renders byte-identically to before.
+- **3D Scene area light.** A new **Area** light type joins directional / ambient /
+  point / spot. An area light is a soft light: it shades with a gentler terminator
+  and casts a softer shadow than a hard point light, by averaging N deterministic
+  Fibonacci-sphere sub-samples spread across its physical extent (no RNG — the
+  result is byte-stable across regens). The lights panel gains a **+ Area** button
+  and Size / Samples controls, and the light reuses the 3-axis position gizmo. A
+  scene with no area light renders byte-identically to before.
+- **3D Scene boolean holes (CSG, box−box).** A scene object can now be a **Solid**
+  or a **Hole**, and pointing a hole at a solid ("Cut into") carves a real
+  rectangular hole — correct cut walls, silhouette, and shadow — through the
+  existing hidden-line pipeline. The carve is a mesh-level BSP boolean in world
+  space before projection (a new `Scene3D.CSG` engine), so the hole gets true
+  front-facing cut walls that hatch in-plane, a carved outline, and a single
+  carved ground shadow — not a 2D outline overlap. A subtract group borrows the
+  primary solid's style/visibility/border/shadow; the hole contributes geometry
+  only. Live drags and any CSG failure fall back to the uncarved children, and an
+  ungrouped scene renders byte-identically to before.
+- **3D Scene CSG — curved holes, union/intersect, and a full grouping UI.**
+  Booleans now admit **curved** children: a box drilled by a cylinder or sphere
+  carves round bore walls (curved children are detail-capped and budgeted, with
+  an uncarved fallback on overrun). Groups gained **Union** and **Intersect** ops
+  alongside Subtract, plus multi-solid unions (internal seams welded away),
+  multiple holes, and **nested groups** resolved depth-first. A new **Boolean
+  Groups** panel section lets you create a group, pick its op, add / remove /
+  reorder children (objects or nested groups), and set each child's Solid/Hole
+  role, with op badges in the scene tree. CSG units now hatch as one continuous
+  surface region (clean fills, no per-triangle seam confetti), and interior BSP
+  split-seam edges are no longer drawn as spurious solid lines.
+- **3D Scene light gizmo + point/spot controls.** Selecting a light now shows a
+  3-axis translate gizmo on the canvas. Point and spot lights drag their world
+  position along X/Y/Z (past the canvas edge — the light can sit anywhere); the
+  directional Sun re-derives azimuth/elevation as its handle moves; a spot draws
+  its cone-axis line toward the target. A restore handle (and a panel **Reset
+  light** button) returns the light to its default. The Lights strip gains
+  **+ Point** and **+ Spot**, and the light Inspector is now type-complete
+  (Position X/Y/Z, Range, Cone angle, Penumbra, Target X/Y/Z). Under the hood the
+  shading engine is now position-aware: a **point** light shades by its direction
+  to each surface point with linear distance falloff over its range; a **spot**
+  adds a cone gate (cone half-angle + soft penumbra edge); and both cast
+  **perspective** ground shadows (rays from the light position through each vertex
+  to the floor) rather than parallel projection. The scene's lighting is now a
+  multi-light system — directional, ambient, point, and spot — with area and
+  emissive light types deferred.
+- **3D Scene per-object context flyouts on the task bar.** Selecting a scene
+  object adds four persistent dropdown pills — **Style**, **Shadow**, **Highlight**,
+  and **X-ray** — to the contextual task bar, between the pen chip and the one-shot
+  verbs. Each flyout stays open while you edit (mapper switch, slider drag) and
+  closes only on an outside click or Escape; edits write straight through to the
+  object's existing params (one undo per gesture, live draft regen). Adds one new
+  render feature: a per-object **Border** — overstroke an object's silhouette and
+  boundary edges with a strength-scaled parallel offset on an optional accent pen
+  (off by default, so output is unchanged until enabled).
+- **3D Scene controllable cast shadows.** The formerly hardcoded 45°, half-density,
+  always-solid shadow is now a scene-level shadow bag plus a per-object cast
+  toggle. Controls: **angle** (or auto-follow the on-screen light bearing),
+  **density**, **pen**, and **line type** (solid / dashed / dotted / dash-dot), plus
+  a layered **penumbra** build-up (2–4 nested inset passes with a falloff, so the
+  overlapping core reads densest). Each object can opt out of casting (Auto / On /
+  Off). Defaults reproduce the previous shadow exactly.
+- **3D Scene selectable highlight treatments.** The specular/highlight tone band
+  is no longer only bare paper. A per-object **Highlight** treatment picks what the
+  brightest band(s) render as: **blank** (legacy default), **keep**, **dashed**,
+  **dotted**, **sparse**, **altFill** (an alternate mapper clipped to the specular
+  hotspot), **burst** (radial engraved glint), or **stippleOut**. Band count, pen,
+  and density are adjustable. Default `blank` leaves toned output byte-identical.
+- **3D Scene x-ray back-face fills.** X-ray mode now shows the *far* surface
+  through an object, not just its hidden edges — a hatched sphere's back wall reads
+  through the front as dashed, reduced-density fill. Controls (shown when an object
+  is x-ray): back-face fills on/off, back-face density, back-face pen and line
+  type, hidden-edge dashing, and a solid/faded front. Solid (non-x-ray) output is
+  byte-identical.
+- **3D Scene per-mapper control inventory.** Every fill mapper now exposes more
+  than density, driven by a single `MAPPER_CONTROLS` descriptor table:
+  **Hatch** — angle reference (face / screen / world-up) and a boustrophedon
+  *link fill* that chains scanlines into one pen path; **Contour** — surface vs.
+  region (flat inset-ring) style and a mm contour step; **Stipple** — mark shape
+  (dot / ring / cross / plus / tick), size, angle, and jitter; **Wireframe** —
+  per-edge-class visibility (silhouette / boundary / crease / interior) and a
+  show-hidden dashed-occluded toggle. Every new control is a no-op at its default,
+  so existing scenes are unchanged.
+- **3D Scene true Archimedean spiral fill.** The **Spiral** mapper on a cube (and
+  every faceted primitive) now draws one continuous Archimedean spiral clipped to
+  each face region — a real spiral — instead of stitched concentric inset rings.
+  New controls: pitch, angle offset, center (centroid / bbox), axis snap
+  (squared / rectilinear), spiral mode (flat-clip / surface-helix), and
+  eccentricity (auto-fits the region aspect). Curved primitives keep the wrapped
+  surface helix by default.
+- **3D Scene shared stroke treatment + density fix + crosshatch families.** Every
+  fill and shadow path can take a shared **line type** (solid / dashed / dotted /
+  dash-dot, with a dash scale) plus deterministic **hand-drawn wobble** and
+  **overstroke** for a sketched look (honored on canvas and in SVG export). Fixes
+  a density bug: with tone on, the **fill density** slider was discarded and
+  spacing came from coverage alone — density is now authoritative and tone a
+  multiplier. Crosshatch families are now independent: a **cross angle delta**
+  (was hardcoded +90°), a **cross density ratio** for the second family, and an
+  optional **triple hatch** (+45° pass in the darkest band).
+- **3D Scene Studio Phase 3 — surface mappers.** Four new fill styles join
+  None / Wireframe / Hatch on every scene surface (per scene, object, or face):
+  **Crosshatch** (hatch plus a perpendicular pass), **Contour** (concentric rings
+  that follow the shape, holes carved), **Spiral** (a continuous inward pen path;
+  see the true Archimedean spiral entry above), and **Stipple** (a deterministic
+  dot lattice). Each
+  works on flat *and* curved primitives, replaces the wireframe like Hatch does,
+  and has a Density control (Crosshatch also gets an Angle). Region fills read the
+  Density slider directly; live drags preview as flat hatch and resolve on release.
+- **3D Scene on-canvas resize.** Select a scene object and drag a **corner handle**
+  to scale it uniformly. Select a **box face** and drag its round push-pull knob to
+  resize just that dimension (the face's own width/height/depth). Both preview live
+  at draft quality, commit on release as one undo step, and cancel with Escape —
+  matching the sun-widget / ground-drag gesture model. (Curved primitives resize via
+  the corner handles + the inspector's per-dimension sliders.)
+- **3D Scene Studio Phase 2 — Light.** A single directional sun now drives the
+  scene. Surfaces render *light-made tone*: intensity (n̂·L̂) quantizes into bands,
+  each band maps to an ink coverage that sets hatch spacing, so faces turned toward
+  the sun read light and faces turned away read dark. Objects cast *shadows* on the
+  ground (silhouette projected to the floor, overlapping shadows unioned; grazing
+  light degrades safely). An on-canvas **sun widget** floats by the selected scene —
+  drag it to aim the light; a specular hotspot marks the brightest point. You can
+  also grab a **cast shadow** and drag it to aim the sun the other way. The panel
+  gains a **Tone** editor (band count, thresholds, per-band coverage, specular) and
+  a **Sun** inspector (azimuth, elevation, cast-shadows). A **pen-true paper preview**
+  toggle (Document Setup) renders on the true stock colour. Live drags preview at
+  draft quality (tone, shadows, and the surface hatch resolve on release) so a busy
+  scene stays responsive.
+- **3D Scene inspector — live preview + reset.** Inspector sliders (position, scale,
+  shape dimensions, fidelity, light, tone) now update the scene *on drag* instead of
+  on release, with one undo step per gesture. Double-click any slider handle to
+  restore its default (dimensions reset to the primitive's own default size).
+- **3D Scene surface hatch reads as 3D.** A faceted object hatches each face *in its
+  own plane* and projects the result to screen, so a cube reads as three foreshortened
+  planes rather than one flat field of parallel lines.
+- **3D Scene Studio Phase 1 polish** (live-testing round): hatch (and any surface
+  mapper) now *replaces* the wireframe on curved primitives — the surface hatches
+  as one continuous region bounded by the silhouette instead of confetti over the
+  tessellation mesh (flat primitives keep per-face hatch so each plane fills in its
+  own orientation). Per-object shape dimensions (torus diameter/thickness, cylinder
+  radius/height, etc.) are editable in the inspector. The orbit gizmo floats at the
+  selected object's top-right (or the whole scene's when orbiting the camera) rather
+  than the document corner. The ground plane is listed in the scene tree (show/hide
+  + styleable). Sparse-wireframe objects (boxes) get a wider edge-grab so they're
+  easier to click. Locked/hidden scene layers are inert; Escape cancels an object
+  drag; partially-occluded and surface-filled faces stay pickable.
+
+- **3D Scene Studio Phase 1 — core scene MVP** (per
+  `docs/3d-scene-studio-proposal-final.html` §8; the first user-visible scene):
+  - **`scene3d` algorithm + engine (1A).** A new layer type that assembles
+    multiple 3D objects (box · sphere · cylinder · cone · torus · torus-knot ·
+    capsule · superellipsoid · pyramid · plane · solids family) into one scene,
+    projects them through the shared ortho/perspective camera, and renders them as
+    flat-face solids: hidden-line-removed face outlines with per-sample
+    support-plane depth (`src/core/scene3d/hlr.js`), silhouette/crease/boundary
+    edge classification, an x-ray visibility mode (hidden edges dashed), and a
+    styleable ground plane that never occludes. New owner-aware scene depth-buffer
+    API (`depth.js`) backs the HLR fallback. Every emitted path carries
+    `meta.sceneTarget {objectId, faceId, edgeClass, depth, normal, occluded}` so
+    selection is pure metadata lookup.
+  - **Scene panel + style cascade (1B).** A bespoke three-tab Scene panel: a
+    primitive shelf (curated row + "More…" flyout that remembers its last pick),
+    an object tree (rename / visibility / delete), and an inspector (transform
+    sliders + a per-object **Fidelity** slider for curved-primitive tessellation,
+    one undo per gesture). Curved primitives ship at a detail level that reads as
+    the intended shape (a fresh sphere is a smooth globe, not a facet blob), and
+    the flyout is portaled above the panel so its extra primitives are reachable.
+    A `StyleCascade` resolver (face > object >
+    scene, whole-style-wins, provenance chips) drives per-object and per-face
+    pen + mapper (none / hatch / wireframe) styling, all serialized inside
+    `layer.params`.
+  - **Scene selection + canvas (1C).** The Select tool picks whole objects, the
+    Direct tool picks faces or edges (`a` again cycles the submode, `Tab` toggles
+    the tools) with nearest-depth resolution and Alt-cycling through overlapping
+    candidates; marquee selects faces; a ground-drag moves objects in the ground
+    plane (`Shift` lifts, `D` drops to ground) with grid + object-origin snapping;
+    the context bar gains scene-object / face / edge contexts and the canvas
+    right-click menu gains target-aware scene verbs. Live drag coalesces its
+    regeneration onto animation frames at draft detail (12-object scene: ~17ms per
+    move ≈ 60fps).
+  - Engine plumbing: `cloneLayerParams` now interns a per-scene asset table by
+    reference, and `duplicateLayer` routes through it (fixing meshes being
+    deep-copied into every undo snapshot).
+- **3D Scene Studio Phase 0 — four product-independent enablers** (per
+  `docs/3d-scene-studio-proposal-final.html` §8, no user-visible scene yet):
+  - **Effective-pen export (0A).** SVG export groups, dedupes, and pen-sorts by each
+    path's *effective* pen (`path.meta.penId || layer.penId`) instead of the layer pen —
+    per-path pen overrides now land in the correct `<g id="pen_…">` group, identical
+    geometry on different pens is never cross-deduped, and pen-grouped line sort can no
+    longer interleave pens. The canvas renderer was already the reference behavior.
+  - **Stroke division primitive (0B).** New `Vectura.StrokeDivide`
+    (`src/core/stroke-divide.js`): arc-length division of strokes into repeating pen/gap
+    class cycles (mm-accurate, butt-joined, phase-offsettable, chain-continuing,
+    deterministic; curve sources are flattened before measuring). A new engine stage
+    runs structurally downstream of optimization and serves `layer.dividedPaths` at top
+    precedence, so canvas, plot stats, and export all consume the same divided output;
+    divisions persist through save/load. Engine-side dedupe/stats/line-sort re-keyed to
+    effective pen with owner-map parent-granularity semantics. *Deferred to a later
+    stream (the divisions UI ships in Phase 4A): weighted-random pen choice and
+    per-path/jitter phase modes (G-02), pre-clip phase stamping (G-03a/b) — 
+    `divideChain`'s multi-path chain semantics are the intended implementation seam —
+    and parentKey/pathKey quantization coherence at plotterOptimize tolerances.*
+  - **SceneMesh extraction (0C).** Parametric surface samplers (`Scene3D.Charts`) and
+    mesh/solid builders (`Scene3D.Mesh`) extracted out of spiralizer/topoform/polyhedron
+    into `src/core/scene3d/`; the three legacy algorithms now consume the shared modules.
+    Byte-exact visual baselines unchanged; 136 new parity/invariant tests pin the
+    extraction against pre-extraction goldens.
+  - **Control-surface sections (0D).** `FillControlSurface.registerSection(name,
+    {build, caps, order})`: future hosts (the 3D scene panel) can register extra control
+    sections gated by capability flags. Hosts that opt into nothing render byte-identical
+    DOM (paint bucket + Text hosts regression-pinned).
 - **industry-parity Live Corner styles: Round, Inverted Round, and Chamfer.**
   Corner widgets (parametric rect/polygon corners and freeform hard corners alike)
   now carry a corner *style*, not just a radius. Option/Alt+click a widget cycles
@@ -43,7 +1080,99 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   through save/load and undo. In-app help (Selection & Direct Selection table) and
   the Direct Selection status-bar hint document the new shortcuts.
 
+### Added
+- **3D Scene — multi-light shading foundation (directional + ambient).** The
+  scene now shades from every light in `params.lights`, not just the first:
+  intensity at a surface = an **ambient** fill term plus each **directional**
+  light's weighted Lambert contribution, clamped to [0,1]
+  (`Regions.combinedIntensity`). Each light carries an `intensity` weight; an
+  ambient light softens the shadowed side (fills the darkest tone band) without
+  casting, and **every shadow-casting directional light drops its own footprint**.
+  A lone sun with no ambient stays byte-identical to before. The **scene tree now
+  manages lights**: every light is a selectable row, **+ Sun** / **+ Ambient** add
+  one, ✕ deletes it (never the last), and the Inspector is type-aware (directional
+  = azimuth / elevation / intensity / cast-shadows; ambient = intensity only).
+  (Positional point/spot lights — with a position gizmo and perspective shadow
+  projection — now ship; see the light gizmo entry near the top of Unreleased.)
+- **3D Scene — unified per-object transform gizmo (move · rotate · scale).** A
+  Cinema4D-style gizmo now appears on the selected scene object with all handles
+  shown at once: three colour-coded move arrows (X amber, Y violet, Z cyan), three
+  rotate rings, and three scale boxes at the axis tips. Drag an arrow to translate
+  along that world axis, a ring to rotate (yaw/pitch/roll), or a box to scale
+  uniformly — one undo entry per gesture, live draft preview during the drag, full
+  quality on release, Escape to cancel. It takes pointer precedence over object
+  re-pick and supersedes the legacy corner-scale handle for a single selected
+  object; the box face-pull knob still handles per-dimension resizing, and the
+  scene orbit gizmo still drives the camera.
+- **3D Scene — curved-surface fills wrap the 3D form (`Scene3D.SurfaceFill`).**
+  Hatch/crosshatch/contour/spiral/stipple on a sphere, torus, cylinder, cone,
+  capsule, superellipsoid, or torus-knot now follow the parametric surface and
+  foreshorten with it — a hatched sphere reads as a globe of meridians, a torus
+  crosshatch wraps the tube — instead of flat-filling the 2D silhouette with
+  parallel scanlines (which read as a flat disc). The fill re-evaluates the same
+  chart the mesh was built from, back-face-culls the hidden side, and projects
+  through the scene camera. **Tone reads across the surface:** each wrap line
+  carries an ordered-dither threshold, so lines pile up in shadow and thin toward
+  the light — and the **brightest band is left blank, which is the highlight**.
+  That retires the old solid-white specular disc (it obscured the form and read
+  as a pasted-on sphere). Hatch (meridians) and crosshatch (meridians + parallels)
+  are now visibly different; the dark-band auto-cross that made plain hatch look
+  like crosshatch is gone.
+
 ### Fixed
+- **3D Scene — positional-light polish (spot shadows, soft range, per-sample
+  curves).** Four refinements to point/spot lights: (1) a **spot** now casts a
+  ground shadow only within its illuminated cone and drops casters beyond its
+  range — no more full point-shaped shadow flung out the unlit side (a point
+  light stays omnidirectional); (2) a **soft falloff floor** replaces the hard
+  cut at `range` with a small smoothstep tail, so a still-lit surface just past
+  the range fades gracefully instead of snapping to a black back-face edge;
+  (3) a **large curved object under a near point/spot light** now shades with a
+  gradient across its surface rather than one flat band sampled at the region
+  centroid; and (4) the renderer's light-gizmo projection now reuses the shared
+  `Scene3D.Scene.projectWorldPoint` (the same `buildProjOpts` the mesh assembly
+  uses), so the gizmo and the mesh can no longer drift. Directional/ambient
+  scenes are byte-identical.
+- **3D Scene — cleaner, more robust cast shadows (convex-hull model).** Each
+  caster's ground footprint is now the 2D convex hull of its above-ground
+  vertices projected along the light (the light-lab reference model), instead of
+  a union of per-face rings. This removes the mixed-winding ring soup and the
+  FillBoolean union that occasionally failed (AUD-05), yielding one clean footprint
+  per object; class union + precedence + caster-bound subtraction + HLR occlusion
+  are unchanged. Trade-off: the hull fills a concave/torus hole — an accepted v1
+  approximation that matches the reference.
+- **3D Scene — sun elevation reads as on-screen height.** The sun handle now sits
+  where the sun actually is in the view: its toward-sun direction is projected
+  through the same camera as the scene, so a higher elevation puts the sun higher
+  on screen and a smaller elevation number puts it lower (foreshortened by camera
+  pitch). Previously elevation drove the handle's *radius*, which made "up/down"
+  depend on azimuth and read as inverted. The drag inverse round-trips exactly at
+  mid/high sun and follows the current elevation across the front/back ambiguity.
+- **3D Scene — "None" shows the object outline, not its mesh.** A curved primitive
+  (sphere/torus/…) with mapper None no longer draws a per-triangle outline for
+  every tessellation face (781 on a detail-20 sphere) — it shows just the clean
+  silhouette. Faceted primitives keep their face outlines (those are the real
+  cube/plane edges).
+- **3D Scene — deleting the last object no longer resurrects it.** An explicitly
+  emptied scene now stays empty: `normalizeParams` seeds a default box only when
+  the `objects` key is *absent* (legacy/migrated payloads), not when the array is
+  deliberately empty. Previously the tree showed "No objects yet" while the box
+  stayed on the canvas, because every regen re-normalized the empty array back to
+  Box 1.
+- **3D Scene — realistic cast shadows.** A caster is now clipped to the `y ≥ 0`
+  half-space before it projects to the ground, so an object straddling the ground
+  plane (the default box, centred on the origin) casts a single-sided footprint
+  instead of a mirrored bow-tie that flipped across the projection singularity.
+  The default box now rests **on** the ground (base at `y = 0`) so its shadow
+  pools from the base and reads as a real cast shadow. Shadows stay world-anchored
+  under camera orbit (they were never screen-space; the apparent "swim" was them
+  vanishing mid-drag — see below).
+- **3D Scene — objects and shadows keep rendering during the orbit gizmo.** The
+  camera-rotation drag now coalesces its regen on `requestAnimationFrame` at draft
+  detail (the same path the ground drag already used) instead of an uncoalesced
+  per-move full-quality regen that stalled the frame and dropped geometry. Cast
+  shadows now render on draft frames too (via the cheap boolean-free per-caster
+  path), so nothing flickers or vanishes while orbiting.
 - **Smooth is bezier-aware and anchor-preserving on drawn curves.** An anchor-described
   path (a pen dome) is now smoothed AT THE ANCHOR LEVEL: an already tangent-continuous
   anchor is never split or re-authored (the old flatten-and-refit split a smooth top
@@ -108,6 +1237,16 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   `docs/todo-universal-preset-system.md` (fully done — no residue), and
   `specs/review-2026-05/` (A4/B3/C2/S1 verified done; A3-C1/A5/B1-A6 remainders carried).
   `docs/audit-remediation-todo.md` remains as the AUD-## spec appendix.
+
+### Fixed
+- **3D Scene — cast shadow tone gradients render as continuous, correctly-spaced hatching
+  instead of broken stubs.** The near→far tone gradient on a cast shadow (`shadowToneDepth`)
+  used to chop each ruling into short chunks and drop them by duty cycle, so the far end read
+  as scattered stubs rather than a thinning hatch. Rulings now stay unbroken; only the gap
+  between them widens toward the far tip. This also fixed **crosshatch** and **scribble**
+  shadow fill styles, which shredded the same way and were still user-reachable after the
+  first pass. **"No Tone" now actually turns the gradient off** — previously it stayed on
+  regardless of the selected Fill Style.
 
 ## 1.3.0 - 2026-07-18
 

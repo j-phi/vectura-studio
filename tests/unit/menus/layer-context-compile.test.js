@@ -155,6 +155,199 @@ describe('UI.Menus.LayerContext (compile gate)', () => {
     expect(keys).toContain('sel');
   });
 
+  // ── Convert-to-Scene (I1) — the affordance shows only for polyhedron/topoform ─
+  test('_itemsFor() adds "Convert to Scene" for a polyhedron layer', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const ui = { app: { engine: { convertAlgoToScene: () => {}, layers: [] } }, layerLockedIds: new Set() };
+    const items = LC._itemsFor(ui, { id: 'L1', type: 'polyhedron', visible: true, isGroup: false });
+    expect(items.some((i) => i.key === 'convert-to-scene')).toBe(true);
+  });
+
+  test('_itemsFor() adds "Convert to Scene" for a topoform layer', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const ui = { app: { engine: { convertAlgoToScene: () => {}, layers: [] } }, layerLockedIds: new Set() };
+    const items = LC._itemsFor(ui, { id: 'L1', type: 'topoform', visible: true, isGroup: false });
+    expect(items.some((i) => i.key === 'convert-to-scene')).toBe(true);
+  });
+
+  test('_itemsFor() omits "Convert to Scene" for other algo layers', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const ui = { app: { engine: { convertAlgoToScene: () => {}, layers: [] } }, layerLockedIds: new Set() };
+    const items = LC._itemsFor(ui, { id: 'L1', type: 'wavetable', visible: true, isGroup: false });
+    expect(items.some((i) => i.key === 'convert-to-scene')).toBe(false);
+  });
+
+  test('_runAction(convert-to-scene) calls engine.convertAlgoToScene and selects the new group', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const calls = [];
+    const ui = {
+      app: {
+        engine: {
+          layers: [],
+          convertAlgoToScene: (id) => { calls.push(['convert', id]); return { ok: true, groupId: 'G1' }; },
+          setActiveLayerId: (id) => calls.push(['active', id]),
+        },
+        pushHistory: () => calls.push(['hist']),
+        setSelection: (ids, primary) => calls.push(['sel', ids, primary]),
+        render: () => {},
+      },
+      renderLayers: () => {},
+      layerLockedIds: new Set(),
+    };
+    LC._runAction(ui, { id: 'P1', type: 'polyhedron', visible: true }, 'convert-to-scene');
+    expect(calls).toEqual([['hist'], ['convert', 'P1'], ['sel', ['G1'], 'G1'], ['active', 'G1']]);
+  });
+
+  test('_runAction(convert-to-scene) on a blocked result surfaces a toast and leaves the layer', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const toasts = [];
+    runtime.window.Vectura.UI.overlays = runtime.window.Vectura.UI.overlays || {};
+    runtime.window.Vectura.UI.overlays.Toast = { show: (props) => toasts.push(props) };
+    const calls = [];
+    const ui = {
+      app: {
+        engine: {
+          layers: [],
+          convertAlgoToScene: () => ({ ok: false, reason: 'contours', message: "Contours mode isn't convertible yet" }),
+          setActiveLayerId: (id) => calls.push(['active', id]),
+        },
+        pushHistory: () => calls.push(['hist']),
+        setSelection: (ids, primary) => calls.push(['sel', ids, primary]),
+        render: () => {},
+      },
+      renderLayers: () => {},
+      layerLockedIds: new Set(),
+    };
+    LC._runAction(ui, { id: 'T1', type: 'topoform', visible: true }, 'convert-to-scene');
+    expect(toasts.length).toBe(1);
+    expect(toasts[0].message).toMatch(/Contours/);
+    // No selection change — the layer is untouched (only history was pushed).
+    expect(calls.some((c) => c[0] === 'sel')).toBe(false);
+  });
+
+  // ── Convert-to-Scene (I3) — "Add solid" on a scene group ────────────────────
+  test('_itemsFor() adds "Add solid" to a scene group (alongside Add object)', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const ui = { app: { engine: { addObjectToScene: () => {}, layers: [] } }, layerLockedIds: new Set() };
+    const layer = { id: 'G1', type: 'scene3d', isGroup: true, containerRole: 'scene', visible: true };
+    const items = LC._itemsFor(ui, layer);
+    const keys = items.filter((i) => i.key).map((i) => i.key);
+    expect(keys).toContain('scene-add-object');
+    expect(keys).toContain('scene-add-solid');
+  });
+
+  test('_itemsFor() omits "Add solid" for a non-scene group', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const ui = { app: { engine: { addObjectToScene: () => {}, layers: [] } }, layerLockedIds: new Set() };
+    const items = LC._itemsFor(ui, { id: 'L1', type: 'wavetable', visible: true, isGroup: false });
+    expect(items.some((i) => i.key === 'scene-add-solid')).toBe(false);
+  });
+
+  test('_runAction(scene-add-solid) calls engine.addObjectToScene(groupId, "solid")', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const calls = [];
+    const ui = {
+      app: {
+        engine: {
+          layers: [],
+          addObjectToScene: (gid, prim) => { calls.push(['add', gid, prim]); return 'obj-9'; },
+          setActiveLayerId: (id) => calls.push(['active', id]),
+        },
+        pushHistory: () => calls.push(['hist']),
+        setSelection: (ids, primary) => calls.push(['sel', ids, primary]),
+        render: () => {},
+      },
+      renderLayers: () => {},
+      layerLockedIds: new Set(),
+    };
+    const layer = { id: 'G1', type: 'scene3d', isGroup: true, containerRole: 'scene', visible: true };
+    LC._runAction(ui, layer, 'scene-add-solid');
+    expect(calls).toContainEqual(['add', 'G1', 'solid']);
+    expect(calls.some((c) => c[0] === 'hist')).toBe(true);
+    expect(calls).toContainEqual(['sel', ['obj-9'], 'obj-9']);
+  });
+
+  // ── Scene-tree Increment E — "Add ground" on a scene group ──────────────────
+  // sceneGround3d is a scene-child leaf hidden from the primary picker
+  // (src/config/defaults.js ALGO_DEFAULTS.sceneGround3d.hidden); this is its
+  // replacement affordance — reachable straight off the scene group's own
+  // context menu, with a duplicate-ground guard (max one ground per scene).
+  test('_itemsFor() offers "Add ground" on a scene group with no ground child yet', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const ui = {
+      app: {
+        engine: {
+          addObjectToScene: () => {},
+          addGroundToScene: () => {},
+          getLayerDescendants: () => [{ id: 'obj-1', type: 'object3d' }],
+          layers: [],
+        },
+      },
+      layerLockedIds: new Set(),
+    };
+    const layer = { id: 'G1', type: 'scene3d', isGroup: true, containerRole: 'scene', visible: true };
+    const items = LC._itemsFor(ui, layer);
+    const groundItem = items.find((i) => i.key === 'scene-add-ground');
+    expect(groundItem).toBeTruthy();
+    expect(groundItem.label).toMatch(/ground/i);
+  });
+
+  test('_itemsFor() omits "Add ground" once the scene already has a ground child (one ground max)', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const ui = {
+      app: {
+        engine: {
+          addObjectToScene: () => {},
+          addGroundToScene: () => {},
+          getLayerDescendants: () => [{ id: 'grd-1', type: 'sceneGround3d' }],
+          layers: [],
+        },
+      },
+      layerLockedIds: new Set(),
+    };
+    const layer = { id: 'G1', type: 'scene3d', isGroup: true, containerRole: 'scene', visible: true };
+    const items = LC._itemsFor(ui, layer);
+    expect(items.some((i) => i.key === 'scene-add-ground')).toBe(false);
+    // Guard against a vacuous pass: prove the scene-group block actually ran
+    // (the Add shape entries are present alongside the omitted ground entry).
+    expect(items.some((i) => i.key === 'scene-add-solid')).toBe(true);
+  });
+
+  test('_runAction(scene-add-ground) calls engine.addGroundToScene(groupId) and selects the new ground', () => {
+    const LC = runtime.window.Vectura.UI.Menus.LayerContext;
+    LC.bind({});
+    const calls = [];
+    const ui = {
+      app: {
+        engine: {
+          layers: [],
+          addGroundToScene: (gid) => { calls.push(['add-ground', gid]); return 'grd-9'; },
+          setActiveLayerId: (id) => calls.push(['active', id]),
+        },
+        pushHistory: () => calls.push(['hist']),
+        setSelection: (ids, primary) => calls.push(['sel', ids, primary]),
+        render: () => {},
+      },
+      renderLayers: () => {},
+      layerLockedIds: new Set(),
+    };
+    const layer = { id: 'G1', type: 'scene3d', isGroup: true, containerRole: 'scene', visible: true };
+    LC._runAction(ui, layer, 'scene-add-ground');
+    expect(calls).toContainEqual(['add-ground', 'G1']);
+    expect(calls.some((c) => c[0] === 'hist')).toBe(true);
+    expect(calls).toContainEqual(['sel', ['grd-9'], 'grd-9']);
+  });
+
   test('_runAction(toggle-lock) toggles the id in ui.layerLockedIds', () => {
     const LC = runtime.window.Vectura.UI.Menus.LayerContext;
     LC.bind({});

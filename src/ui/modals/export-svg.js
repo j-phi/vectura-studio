@@ -358,15 +358,24 @@
       return renderer.rgbToCss(mixed, 0.92);
     };
 
+    // Lean-runtime fallback: renderer.js is excluded from some test harnesses.
+    // MUST stay byte-identical to Renderer.resolvePathWeightScale.
+    const fallbackWeightScale = (path) => {
+      const raw = Number(path?.meta?.weightScale);
+      if (!Number.isFinite(raw) || raw === 1) return 1;
+      return Math.max(0.1, Math.min(6, raw));
+    };
+
     const drawItem = (item, strokeStyle, options = {}) => {
       const alpha = options.alpha ?? 1;
       const baseLineWidth = options.lineWidth ?? parseFloat(item.strokeWidth || SETTINGS.strokeWidth || 0.3);
       // Variable line weight (silhouette / crease emphasis): scale per-path,
-      // clamped to 6x. Absent or 1 → unchanged.
-      const rawWeight = Number(item?.path?.meta?.weightScale);
-      const weightScale = Number.isFinite(rawWeight) && rawWeight !== 1
-        ? Math.max(0.1, Math.min(6, rawWeight))
-        : 1;
+      // clamped to 6x. Absent or 1 → unchanged. Resolved through
+      // Renderer.resolvePathWeightScale so this preview cannot drift from the
+      // canvas render, the emitted SVG or expand-into-group.
+      const weightScale = window.Vectura?.Renderer?.resolvePathWeightScale
+        ? window.Vectura.Renderer.resolvePathWeightScale(item?.path)
+        : fallbackWeightScale(item?.path);
       const lineWidth = baseLineWidth * weightScale;
       const clipPolygons = (item.ancestorClipLayerIds || [])
         .flatMap((layerId) => snapshot.clipPolygonsByLayerId.get(layerId) || []);
@@ -384,9 +393,15 @@
       // Stroke style model (STR-1/STR-3): the preview draw mirrors the exact
       // values the SVG emission writes (cap mapping, join, miter limit,
       // layer-level dash) so screen matches export.
+      // Per-path cap override (`meta.strokeCap`) outranks the layer cap — see
+      // Renderer.resolvePathLineCap. Ribbon outline/fill passes ask for butt so
+      // they cannot bulge past the clipped form in the preview either.
+      const itemCap = window.Vectura?.Renderer?.resolvePathLineCap
+        ? window.Vectura.Renderer.resolvePathLineCap(item?.path, item.lineCap)
+        : item.lineCap;
       ctx.lineCap = window.Vectura?.STROKE_STYLE?.toCanvasCap
-        ? window.Vectura.STROKE_STYLE.toCanvasCap(item.lineCap)
-        : (item.lineCap === 'projecting' ? 'square' : (item.lineCap || 'round'));
+        ? window.Vectura.STROKE_STYLE.toCanvasCap(itemCap)
+        : (itemCap === 'projecting' ? 'square' : (itemCap || 'round'));
       ctx.lineJoin = item.lineJoin || 'round';
       if (item.lineJoin === 'miter' && Number.isFinite(item.miterLimit)) {
         ctx.miterLimit = item.miterLimit;
@@ -714,7 +729,7 @@
       root.querySelectorAll('[data-impact-delta]').forEach((el) => { el.textContent = ''; el.removeAttribute('data-trend'); });
       return;
     }
-    const before = engine.computeStats(targets, { useOptimized: false, includePlotterOptimize: false });
+    const before = engine.computeStats(targets, { useOptimized: false, includePlotterOptimize: false, preDivision: true });
     const after = engine.computeStats(targets, { useOptimized: true, includePlotterOptimize: true });
 
     const parseTimeSec = (t) => {
@@ -1307,11 +1322,16 @@
   function getOptimizationTargets() {
     const SETTINGS = (DEPS && DEPS.SETTINGS) || (G.Vectura && G.Vectura.SETTINGS) || {};
     const scope = SETTINGS.optimizationScope || 'all';
+    // Same membership rule as engine.optimizeLayers / the draw-order preview:
+    // leaves, plus groups that publish composed ink (morph blend, 3D scene
+    // pass). Excluding every group here meant a scene-only document had no
+    // optimization target, so the Line Sort panel wrote its config nowhere.
+    const owns = (layer) => Boolean(G.Vectura?.LayerInk?.layerOwnsInk(layer));
     let targets = [];
     if (scope === 'selected') {
       targets = this.app.getSelectedLayers();
     } else if (scope === 'all') {
-      targets = this.app.engine.layers.filter((layer) => !layer.isGroup);
+      targets = this.app.engine.layers.filter((layer) => owns(layer));
     } else {
       const active = this.app.engine.getActiveLayer?.();
       if (active) targets = [active];
@@ -1320,7 +1340,7 @@
       const active = this.app.engine.getActiveLayer?.();
       if (active) targets = [active];
     }
-    return targets.filter((layer) => layer && !layer.isGroup);
+    return targets.filter((layer) => owns(layer));
   }
 
   function getOptimizationTargetIds() {

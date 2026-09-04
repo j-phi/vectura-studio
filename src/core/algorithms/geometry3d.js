@@ -159,6 +159,113 @@
     return null;
   };
 
+  // ── Shared stroke treatment (scene3d Phase 1) ────────────────────────────
+  // Line-art hand treatment applied to EVERY emitted scene line at the emit
+  // chokepoint: line type (dash pattern), deterministic per-vertex wobble, and
+  // an optional double-strike (overstroke). Determinism is a hard contract
+  // (A-17) — all displacement is HASH-based (never RNG), so the same scene
+  // regenerates byte-identically.
+  const LINE_TYPES = ['solid', 'dashed', 'dotted', 'dashdot'];
+  const LINE_TYPE_DASH = {
+    solid: null,
+    dashed: [3, 2],
+    dotted: [0.4, 2],
+    dashdot: [3, 2, 0.4, 2],
+  };
+  // Deterministic 2D integer hash → [0,1) (mirrors mappers.js hash2 / halftone
+  // hash01 so wobble is stable across regenerations).
+  const strokeHash = (a, b) => {
+    let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
+    h ^= h >>> 13;
+    h = Math.imul(h, 1274126177);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  };
+  // Read a style.params bag → a normalized stroke-treatment descriptor. Values
+  // are re-clamped here so a hand-edited scene degrades gracefully.
+  const WOBBLE_MM_PER_UNIT = 1.2 / 100; // wobble 100 → ~1.2mm amplitude
+  const strokeTreatment = (styleParams) => {
+    const sp = styleParams || {};
+    const lineType = LINE_TYPES.includes(sp.lineType) ? sp.lineType : 'solid';
+    const dashScale = clamp(finite(sp.dashScale, 1), 0.25, 4);
+    const wobble = clamp(finite(sp.wobble, 0), 0, 100);
+    const wobbleScale = clamp(finite(sp.wobbleScale, 6), 1, 30);
+    const overstroke = sp.overstroke === true;
+    const base = LINE_TYPE_DASH[lineType];
+    const dash = base ? base.map((n) => Math.max(0.01, n * dashScale)) : null;
+    return {
+      lineType,
+      dash,
+      wobble,
+      wobbleScale,
+      overstroke,
+      // amplitude (document mm) of the per-vertex normal displacement
+      amp: wobble * WOBBLE_MM_PER_UNIT,
+      active: Boolean(dash) || wobble > 0 || overstroke,
+    };
+  };
+  // No-op treatment (shared singleton) so a call site with nothing to apply
+  // pays no allocation.
+  const NO_STROKE_TREATMENT = strokeTreatment(null);
+  // Apply the geometry side of a treatment (wobble) to a point run and stamp the
+  // dash onto `meta`. Returns a NEW point array when wobble runs, else the input.
+  //   pts       — [{x,y[,z]}…] SCREEN-space (document mm) points, post-projection
+  //   tr        — descriptor from strokeTreatment()
+  //   meta      — mutated in place: meta.strokeDash set when the line type dashes
+  //   skipGeom  — draft frames skip wobble (KEEP dash — it is free)
+  const applyStrokeTreatment = (pts, tr, meta, skipGeom) => {
+    if (tr && tr.dash && meta) meta.strokeDash = tr.dash.slice();
+    if (!tr || skipGeom || tr.wobble <= 0 || !Array.isArray(pts) || pts.length < 2) return pts;
+    const seg = Math.max(1, tr.wobbleScale);
+    const amp = tr.amp;
+    // 1) Resample long segments to ~wobbleScale mm so the wobble reads as a
+    //    smooth waver, not a single kink between distant vertices.
+    const rs = [{ x: pts[0].x, y: pts[0].y, z: pts[0].z }];
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.hypot(dx, dy);
+      const n = Math.max(1, Math.floor(len / seg));
+      for (let k = 1; k <= n; k++) {
+        const t = k / n;
+        rs.push({
+          x: a.x + dx * t,
+          y: a.y + dy * t,
+          z: Number.isFinite(a.z) && Number.isFinite(b.z) ? a.z + (b.z - a.z) * t : b.z,
+        });
+      }
+    }
+    // 2) Displace interior vertices along the local normal by a hash amount.
+    //    Endpoints stay put so adjacent lines still meet at shared vertices.
+    const out = new Array(rs.length);
+    out[0] = { x: rs[0].x, y: rs[0].y, z: rs[0].z };
+    out[rs.length - 1] = { x: rs[rs.length - 1].x, y: rs[rs.length - 1].y, z: rs[rs.length - 1].z };
+    for (let i = 1; i < rs.length - 1; i++) {
+      const p = rs[i];
+      const prev = rs[i - 1];
+      const next = rs[i + 1];
+      let tx = next.x - prev.x;
+      let ty = next.y - prev.y;
+      const tl = Math.hypot(tx, ty) || 1;
+      tx /= tl; ty /= tl;
+      // hash the quantized position (0.25mm grid) → symmetric [-1,1] displacement
+      const h = strokeHash(Math.round(p.x * 4), Math.round(p.y * 4));
+      const d = (h * 2 - 1) * amp;
+      out[i] = { x: p.x - ty * d, y: p.y + tx * d, z: p.z };
+    }
+    if (meta && meta.straight) delete meta.straight; // waver is no longer straight
+    return out;
+  };
+  // Overstroke: a second strike offset by a tiny deterministic hash amount so a
+  // doubled line reads as a heavier, slightly-imperfect pass.
+  const overstrokeCopy = (pts) => (pts || []).map((p) => {
+    const hx = strokeHash(Math.round(p.x * 4) + 1013, Math.round(p.y * 4) + 5077);
+    const hy = strokeHash(Math.round(p.x * 4) + 8191, Math.round(p.y * 4) + 2609);
+    return { x: p.x + (hx - 0.5) * 0.3, y: p.y + (hy - 0.5) * 0.3, z: p.z };
+  });
+
   const circlePath = (cx, cy, r, segments = 48, meta = null) => {
     const pts = [];
     const count = Math.max(8, Math.round(segments));
@@ -1033,11 +1140,16 @@
   };
 
   // Enhancement #5 primitive — clip parallel scan lines to a closed screen
-  // polygon. Lines run at opts.angleDeg, spaced opts.spacing (hard floor 1). Each
-  // returned path is a 2-point segment with meta {hatch:true, straight:true}.
+  // polygon. Lines run at opts.angleDeg, spaced opts.spacing, floored at
+  // opts.minSpacing (default 1 — the historic hard floor). Every existing
+  // caller omits minSpacing, so it stays byte-identical; only a caller that
+  // knows it wants sub-1mm spacing (the fillDensity 100-200 range) passes a
+  // lower value. Each returned path is a 2-point segment with meta
+  // {hatch:true, straight:true}.
   const hatchPolygon = (polygon, opts = {}) => {
     if (!Array.isArray(polygon) || polygon.length < 3) return [];
-    const spacing = Math.max(1, finite(opts.spacing, 6));
+    const floor = Math.max(0, finite(opts.minSpacing, 1));
+    const spacing = Math.max(floor, finite(opts.spacing, 6));
     const angle = degToRad(finite(opts.angleDeg, 45));
     const dirX = Math.cos(angle);
     const dirY = Math.sin(angle);
@@ -1144,6 +1256,10 @@
     closePath,
     markHidden,
     getPathStrokeDash,
+    strokeTreatment,
+    applyStrokeTreatment,
+    overstrokeCopy,
+    NO_STROKE_TREATMENT,
     circlePath,
     bezierCircle,
     faceNormal,

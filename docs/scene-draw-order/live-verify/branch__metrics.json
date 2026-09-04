@@ -1,0 +1,122 @@
+{
+  "provenance": {
+    "pkgVersion": "1.3.84",
+    "hasLayerInk": true,
+    "hasGroupInkPaths": true
+  },
+  "built": {
+    "gid": "63667231-cdf6-4583-ad1d-9336fdc77589",
+    "scenePaths": 1331,
+    "groundChild": true,
+    "layerPaths": 0
+  },
+  "uiSet": {
+    "ok": true,
+    "method": "nearest",
+    "direction": "vertical",
+    "grouping": "combined"
+  },
+  "configured": [
+    {
+      "name": "Capsule Scene",
+      "isGroup": true,
+      "linesort": {
+        "id": "linesort",
+        "enabled": true,
+        "bypass": false,
+        "method": "nearest",
+        "direction": "vertical",
+        "grouping": "combined"
+      }
+    },
+    {
+      "name": "Capsule",
+      "isGroup": false,
+      "linesort": {
+        "id": "linesort",
+        "enabled": true,
+        "bypass": false,
+        "method": "nearest",
+        "direction": "vertical",
+        "grouping": "combined"
+      }
+    },
+    {
+      "name": "Sun 03",
+      "isGroup": false,
+      "linesort": {
+        "id": "linesort",
+        "enabled": true,
+        "bypass": false,
+        "method": "nearest",
+        "direction": "vertical",
+        "grouping": "combined"
+      }
+    },
+    {
+      "name": "Ground 04",
+      "isGroup": false,
+      "linesort": {
+        "id": "linesort",
+        "enabled": true,
+        "bypass": false,
+        "method": "nearest",
+        "direction": "vertical",
+        "grouping": "combined"
+      }
+    }
+  ],
+  "frames": [
+    {
+      "pct": 0,
+      "inked": 0,
+      "total": 1331,
+      "frontY": null,
+      "topY": null
+    },
+    {
+      "pct": 25,
+      "inked": 436,
+      "total": 1331,
+      "frontY": 75.87796244078415,
+      "topY": 3.9511705452200303
+    },
+    {
+      "pct": 50,
+      "inked": 827,
+      "total": 1331,
+      "frontY": 115.14287968439497,
+      "topY": 3.9511705452200303
+    },
+    {
+      "pct": 75,
+      "inked": 1157,
+      "total": 1331,
+      "frontY": 126.85090583189233,
+      "topY": 3.9511705452200303
+    },
+    {
+      "pct": 100,
+      "inked": 1331,
+      "total": 1331,
+      "frontY": 204.0297517453644,
+      "topY": 3.9511705452200303
+    }
+  ],
+  "orderMatch": {
+    "canvasSequence": 1331,
+    "exportedItems": 1144,
+    "perGroup": [
+      {
+        "pen": "pen-1",
+        "items": 1144,
+        "ordered": 1144,
+        "inversions": 0,
+        "firstY": 20.1,
+        "lastY": 134.4
+      }
+    ]
+  },
+  "svgBytes": 189601,
+  "svgPaths": 1144
+}

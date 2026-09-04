@@ -405,7 +405,7 @@
         const scopedTargets = getTargets();
         if (!config || !scopedTargets.length) return;
         this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true });
-        const before = this.app.engine.computeStats(scopedTargets, { useOptimized: false, includePlotterOptimize: false });
+        const before = this.app.engine.computeStats(scopedTargets, { useOptimized: false, includePlotterOptimize: false, preDivision: true });
         const after = this.app.engine.computeStats(scopedTargets, { useOptimized: true, includePlotterOptimize: true });
         const beforeEl = panel.querySelector('[data-opt-stat="before"]');
         const afterEl = panel.querySelector('[data-opt-stat="after"]');
@@ -1404,7 +1404,12 @@
     const isStatic = Boolean(isGroup || isModifier);
     const algoSection = getEl('left-section-algorithm', { silent: true });
     const algoConfigSection = getEl('left-section-algorithm-configuration', { silent: true });
-    const hideAlgoPanels = isGroup && !isModifier;
+    // Scene-tree Increment D — a scene GROUP and a booleanGroup3d group are
+    // isGroup, but they own bespoke 3D Scene panels (routed below), so they must
+    // NOT be swallowed by the generic "select a sublayer" group early-return.
+    const isSceneTreeGroup = isGroup
+      && (layer.type === 'scene3d' || layer.type === 'booleanGroup3d');
+    const hideAlgoPanels = isGroup && !isModifier && !isSceneTreeGroup;
     if (algoSection) algoSection.style.display = hideAlgoPanels ? 'none' : '';
     if (algoConfigSection) algoConfigSection.style.display = hideAlgoPanels ? 'none' : '';
     if (hideAlgoPanels) {
@@ -1527,6 +1532,24 @@
       typeof window.Vectura.UI.TextPanel.build === 'function'
     ) {
       window.Vectura.UI.TextPanel.build(this, layer, container);
+      renderExportOptimizationIfOpen();
+      restoreLeftPanelScroll();
+      return;
+    }
+
+    // Bespoke tabbed 3D Scene panel (Phase 1). Same early-return escape hatch
+    // the Text/Mirror/Morph panels use. Inert until panels/scene3d-panel.js
+    // loads — non-scene3d layers fall through untouched.
+    // Scene-tree Increment D — route scene3d (monolith OR scene group), object3d
+    // leaves, and booleanGroup3d groups all to the bespoke 3D Scene panel, which
+    // re-keys its editors to the SELECTED layer's params.
+    if (
+      (layer.type === 'scene3d' || layer.type === 'object3d' || layer.type === 'booleanGroup3d'
+        || layer.type === 'sceneLight3d' || layer.type === 'sceneGround3d') &&
+      window.Vectura.UI.Scene3DPanel &&
+      typeof window.Vectura.UI.Scene3DPanel.build === 'function'
+    ) {
+      window.Vectura.UI.Scene3DPanel.build(this, layer, container);
       renderExportOptimizationIfOpen();
       restoreLeftPanelScroll();
       return;
@@ -1769,6 +1792,10 @@
     const EXTRA_PRESERVED = {
       rings: ['outerDiameter', 'centerDiameter'],
     };
+    // Layer types whose params carry a `sceneVersion` and therefore have to walk
+    // Scene3D.Params' migration chain when a preset (= a saved scene) is applied.
+    // Mirrors the set the engine's sanitizeImportedParams migrates.
+    const SCENE_MIGRATED_TYPES = new Set(['scene3d', 'object3d', 'sceneGroup3d', 'booleanGroup3d']);
     const lookupPreset = (type, presetId) => {
       const libs = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.PresetLibraries;
       const builtIn = (libs && libs[type]) || [];
@@ -1806,6 +1833,18 @@
       });
       nextParams.preset = presetId;
       layer.params = { ...layer.params, ...nextParams };
+      // A 3D-scene preset is a SAVED SCENE: its params carry their own
+      // `sceneVersion`, which overrides the current default on the merge above.
+      // Applying one therefore hands the layer a payload from an older schema —
+      // the same thing opening an old `.vectura` does — so it has to walk the
+      // same migration chain the engine's import branch walks, or a shipped
+      // preset silently renders under the new semantics (e.g. the curved
+      // fill-angle pin). Gated on sceneVersion, so a current-version preset is
+      // untouched, and a no-op for every non-scene layer type.
+      const sceneParams = window.Vectura?.Scene3D?.Params;
+      if (SCENE_MIGRATED_TYPES.has(layer.type) && typeof sceneParams?.migrateScene === 'function') {
+        layer.params = sceneParams.migrateScene(layer.params);
+      }
       this.storeLayerParams(layer);
       this.app.regen();
       this.buildControls();
@@ -2007,8 +2046,18 @@
         const nameEl = document.createElement('div');
         nameEl.className = 'text-[11px] text-vectura-muted mb-2';
         const loaded = layer.params.importedMesh;
+        // Report the STORED triangle count, and say when the face budget reduced
+        // it — quoting only the stored count on a reduced mesh reads as if the
+        // whole file were in the document. The File ▸ Import 3D Model… path
+        // already says this in its toast; this is the same story on the
+        // per-layer STL loader.
+        const storedTris = loaded && Number.isFinite(loaded.triangles) ? loaded.triangles : 0;
+        const sourceTris = loaded && Number.isFinite(loaded.sourceTriangles) ? loaded.sourceTriangles : storedTris;
+        const trisLabel = storedTris
+          ? ` · ${storedTris.toLocaleString()} tris${sourceTris > storedTris ? ` (reduced from ${sourceTris.toLocaleString()})` : ''}`
+          : '';
         nameEl.textContent = layer.params.meshName
-          ? `Loaded: ${layer.params.meshName}${loaded && loaded.triangles ? ` · ${loaded.triangles} tris` : ''}`
+          ? `Loaded: ${layer.params.meshName}${trisLabel}`
           : 'No STL loaded';
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -2042,6 +2091,23 @@
               this.buildControls();
               this.updateFormula();
               this.app.render();
+              // Same reduction story the File ▸ Import 3D Model… toast tells, so
+              // a budget-reduced mesh is never silently presented as the whole
+              // file on this (older) import path either.
+              const T = window.Vectura?.UI?.overlays?.Toast;
+              if (T && typeof T.show === 'function') {
+                const stored = Number.isFinite(mesh.triangles) ? mesh.triangles : mesh.faces.length;
+                const source = Number.isFinite(mesh.sourceTriangles) ? mesh.sourceTriangles : stored;
+                const reduced = source > stored;
+                try {
+                  T.show({
+                    message: `Imported ${mesh.name || file.name} · ${stored.toLocaleString()} tris`
+                      + (reduced ? ` · reduced from ${source.toLocaleString()}` : ''),
+                    variant: reduced ? 'warning' : 'success',
+                    duration: reduced ? 6000 : 3500,
+                  });
+                } catch (_) { /* noop */ }
+              }
             };
             reader.readAsArrayBuffer(file);
           };

@@ -25,6 +25,11 @@ const ALGO_TYPES = [
 // in the completeness test.
 const SKIP = {
   svgDistort: 'requires an imported SVG source; generates nothing headless',
+  scene3d: '3D scene graph params (objects[], styleTable) are structural, not scalar-interpolable; scene morphing is out of Phase 1 scope',
+  object3d: 'scene-tree leaf: structural 3D primitive params (primitive/transform/style), not scalar-interpolable; delegates to the scene3d pipeline (same non-morphable rationale as scene3d)',
+  booleanGroup3d: 'scene-tree container stub: emits [] (its fused mesh is assembled by the scene group), so there is nothing to morph',
+  sceneLight3d: 'scene-tree leaf: carries one lights[] entry (a light, not geometry); emits [] and is consumed by the scene group, so there is nothing to morph',
+  sceneGround3d: 'scene-tree leaf: the ground fixture flag (enabled); emits [] and is consumed by the scene group, so there is nothing to morph',
 };
 
 describe('morph modifier — every algorithm, transform-copy pair', () => {

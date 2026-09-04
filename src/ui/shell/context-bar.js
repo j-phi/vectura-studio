@@ -50,7 +50,8 @@
     handleDrag: null,          // { startX, startY, baseX, baseY, moved }
     menuOpen: false,
     closeFlyout: null,         // active align-flyout close fn (single handler)
-    repositionOpenFlyout: null, // re-flips the open flyout's up/down direction on bar move
+    menuUp: false,             // true when every dropdown in the bar opens upward
+    openFlyoutEl: null,        // the currently open flyout box (measured for fit)
     overflowExtra: null,       // optional sub-mode overflow item
     pulseTimer: 0,
     visible: false,
@@ -101,12 +102,20 @@
     return s.contextBar;
   };
   const isEnabled = () => settings().contextBarEnabled !== false;
+  // Scene-wide VIEW preference (not a layer/object param) for non-print 3D
+  // helper decoration — gizmo, selection outline, bbox handles, light
+  // helpers, hover hints, orbit pad. Default ON. The renderer side (another
+  // agent) reads Vectura.SETTINGS.sceneHelpersVisible directly; this module
+  // only owns the control + its persistence, same bag/mechanism as the bar's
+  // own enabled/pinned prefs above.
+  const isHelpersVisible = () => settings().sceneHelpersVisible !== false;
 
   const loadPersisted = () => {
     const saved = readStore();
     if (!saved) return;
     const s = settings();
     if (typeof saved.enabled === 'boolean') s.contextBarEnabled = saved.enabled;
+    if (typeof saved.sceneHelpersVisible === 'boolean') s.sceneHelpersVisible = saved.sceneHelpersVisible;
     s.contextBar = {
       pinned: saved.pinned === true,
       x: Number.isFinite(saved.x) ? saved.x : null,
@@ -116,10 +125,14 @@
 
   const persist = () => {
     const p = prefs();
-    writeStore({ enabled: isEnabled(), pinned: p.pinned === true, x: p.x, y: p.y });
+    writeStore({
+      enabled: isEnabled(), pinned: p.pinned === true, x: p.x, y: p.y,
+      sceneHelpersVisible: isHelpersVisible(),
+    });
     const a = getApp();
     a?.persistPreferencesDebounced?.(); // canonical path once integrator folds keys in
   };
+  const setHelpersVisible = (v) => { settings().sceneHelpersVisible = v !== false; persist(); };
 
   // ── DOM construction ──────────────────────────────────────────────────
   const el = (tag, cls, attrs) => {
@@ -250,7 +263,11 @@
       if (state.closeFlyout && els.content && !els.content.contains(e.target) && !onHandle) state.closeFlyout();
     }, true);
     G.document.addEventListener('keydown', (e) => {
-      if (state.menuOpen && e.key === 'Escape') { closeMenu(); }
+      if (e.key !== 'Escape') return;
+      if (state.menuOpen) closeMenu();
+      // Escape also dismisses any open persistent flyout (scene Style/Shadow/
+      // Highlight/X-ray, align, algo, add-layer) — mirrors outside-click.
+      if (state.closeFlyout) state.closeFlyout();
     });
   };
 
@@ -450,7 +467,9 @@
       const ny = clampBarTop(state.handleDrag.baseY + dy);
       els.bar.style.left = `${nx}px`;
       els.bar.style.top = `${ny}px`;
-      state.repositionOpenFlyout && state.repositionOpenFlyout();
+      // Deliberately NOT re-evaluating menu direction here: flipping the arrows
+      // every frame the bar crosses the midline reads as thrash. The pivot
+      // settles once, on release (see onUp).
     };
     const onUp = () => {
       G.removeEventListener('pointermove', onMove, true);
@@ -464,6 +483,9 @@
         persist();
       }
       state.handleDrag = null;
+      // Settle the arrows now the bar has come to rest — they pivot down→up
+      // when dropped low, and up→down when dropped back near the top.
+      refreshMenuDirection();
     };
     els.handle.addEventListener('pointerdown', onDown);
   };
@@ -546,7 +568,7 @@
     if (p.pinned && Number.isFinite(p.x) && Number.isFinite(p.y)) {
       els.bar.style.left = `${clampBarLeft(p.x)}px`;
       els.bar.style.top = `${clampBarTop(p.y)}px`;
-      state.repositionOpenFlyout && state.repositionOpenFlyout();
+      refreshMenuDirection();
       return;
     }
     const renderer = getRenderer();
@@ -561,7 +583,7 @@
     });
     els.bar.style.left = `${left}px`;
     els.bar.style.top = `${top}px`;
-    state.repositionOpenFlyout && state.repositionOpenFlyout();
+    refreshMenuDirection();
   };
 
   // ── TB-1: hide during canvas drag/draw (own listeners; renderer.js is
@@ -604,6 +626,18 @@
     const tool = renderer.activeTool || 'select';
     let kind;
     let primary = layers[0] || null;
+    // 3D Scene Studio (Phase 1C): a live scene selection (CONTRACT D) on a
+    // selected scene3d layer morphs the bar into a scene context. Gated on
+    // BOTH the selection API and the layer type so plain layer selection is
+    // untouched when the scene stack is absent.
+    const sceneSel = renderer.getSceneSelection ? renderer.getSceneSelection() : null;
+    const sceneLayer = sceneSel ? sceneSelectionOwner(app, layers, sceneSel) : null;
+    if (sceneSel && sceneLayer) {
+      const sceneKind = sceneSel.mode === 'face'
+        ? 'scene-face'
+        : sceneSel.mode === 'edge' ? 'scene-edge' : 'scene-object';
+      return { kind: sceneKind, layerIds: ids, primaryLayer: sceneLayer, app, renderer, sceneSelection: sceneSel };
+    }
     // A group container may be selected together with its descendants (the
     // grouping op selects [group, ...children]); treat that as the group state.
     const groupContainer = selectedGroupContainer(app, layers);
@@ -624,6 +658,43 @@
       kind = 'multi';
     }
     return { kind, layerIds: ids, primaryLayer: primary, app, renderer };
+  };
+
+  // The scene3d layer a live scene selection belongs to, or null when the
+  // current layer selection does not actually sit inside that scene.
+  //
+  // Two shapes reach here:
+  //   • MONOLITH — the scene3d leaf carries its objects inline and is itself the
+  //     selected layer. `layers` contains it; this is the original behavior.
+  //   • SCENE TREE — the scene is a GROUP (type 'scene3d', isGroup,
+  //     containerRole 'scene') whose objects live on child object3d /
+  //     booleanGroup3d layers. BOTH real entry points select the CHILD, never
+  //     the group: a canvas pick (renderer `_sceneDownSelect`, which resolves
+  //     `_sceneChildLayerFor` and calls selectLayer on it) and a layer-row click
+  //     (scene3d-panel `mirrorChildToCanvas`). Both then point
+  //     sceneSelection.layerId at the GROUP. Requiring the group to be IN the
+  //     selection therefore left every tree scene — i.e. every scene a user can
+  //     build today — without a scene context, and with it no Style / Shadow /
+  //     Highlight / X-ray pills.
+  //
+  // Conservatism matters: getContext() is the hub for EVERY task-bar state, and
+  // sceneSelection outlives the layer selection that produced it. So the tree
+  // branch demands a non-empty selection in which EVERY selected layer is the
+  // scene group or one of its descendants. A stale scene selection alongside an
+  // unrelated (or mixed) layer selection still falls through to the plain layer
+  // contexts, exactly as before.
+  const sceneSelectionOwner = (app, layers, sceneSel) => {
+    const direct = layers.find((l) => l && l.id === sceneSel.layerId && l.type === 'scene3d') || null;
+    if (direct) return direct;
+    const engine = app && app.engine;
+    if (!engine || typeof engine.getLayerById !== 'function'
+      || typeof engine.getLayerAncestors !== 'function') return null;
+    const group = engine.getLayerById(sceneSel.layerId);
+    if (!group || group.type !== 'scene3d' || !group.isGroup || group.containerRole !== 'scene') return null;
+    if (!layers.length) return null;
+    const insideScene = (l) => Boolean(l) && (l.id === group.id
+      || (engine.getLayerAncestors(l) || []).some((a) => a && a.id === group.id));
+    return layers.every(insideScene) ? group : null;
   };
 
   // Returns the sole selected group container when the selection is exactly one
@@ -900,6 +971,1103 @@
     verb('anchorSmooth', 'anchorSmooth', () => anchorOp('smooth'));
   };
 
+  // ── 3D Scene Studio scene contexts (Phase 1C) ─────────────────────────
+  const sceneSel = (ctx) => ctx.sceneSelection
+    || (ctx.renderer && ctx.renderer.getSceneSelection && ctx.renderer.getSceneSelection()) || null;
+
+  // ── The GROUND QUAD is a pseudo-object, not an object record ───────────────
+  // A canvas pick on the ground plane sets sceneSelection.objectIds = ['ground']
+  // — a fixed sentinel id, NOT a layer id (renderer `_sceneDownSelect`;
+  // `_sceneChildLayerFor` and five other renderer sites refuse it by name). No
+  // object3d child layer stands behind it, so every bridge that mutates an
+  // object DEF refuses it: setSceneObjectField, setSceneObjectPrimitive,
+  // duplicateSceneObjects, dropSceneObjectsToGround, setSceneObjectVisibility
+  // and deleteSceneObjects all return false/[] and write nothing.
+  //
+  // The X-ray flyout was the visible casualty (Jay, 2026-08-16): with the ground
+  // picked it offered a live-looking Solid | X-ray segment, and clicking X-ray
+  // did nothing at all — setSceneObjectField found no target and the rebuild
+  // re-read 'Solid'. The controls below are therefore ABSENT on a ground-only
+  // selection rather than present-and-inert, matching the `none` highlight
+  // treatment and Dash-length-under-solid-line-type.
+  //
+  // Its STYLE is real and stays: styleTable.byObject.ground resolves and the
+  // quad repaints, so the pen chip and the Style / Highlight flyouts keep
+  // working untouched. Only object-DEF controls are gated.
+  const SCENE_GROUND_ID = 'ground';
+  // True when the selection holds at least one REAL object record. A mixed
+  // ground+object selection keeps the controls: the bridges already skip the
+  // ground id and write the rest.
+  const sceneSelHasObjectDef = (sel) => Boolean(sel) && sel.mode === 'object'
+    && Array.isArray(sel.objectIds)
+    && sel.objectIds.some((id) => id !== SCENE_GROUND_ID);
+
+  const sceneObjectName = (ctx, layer, id) => {
+    const objects = (layer && layer.params && layer.params.objects) || [];
+    const o = objects.find((x) => x && x.id === id);
+    if (o && o.name) return o.name;
+    // Scene tree — the object lives on a CHILD layer (id === object id); its
+    // display name is the child layer's name, not an inline object.
+    const engine = ctx && ctx.renderer && ctx.renderer.engine;
+    const child = engine && engine.getLayerById ? engine.getLayerById(id) : null;
+    if (child && child.name) return child.name;
+    // The ground quad's id is the 'ground' sentinel, not a layer id, so the
+    // lookup above misses and the bar used to read a bare lowercase `ground`
+    // — indistinguishable from an object the user had named that. Resolve the
+    // scene's sceneGround3d child so the summary names what is really selected.
+    if (id === SCENE_GROUND_ID) {
+      const kids = (engine && engine.getLayerChildren && layer)
+        ? (engine.getLayerChildren(layer.id) || []) : [];
+      const g = kids.find((l) => l && l.type === 'sceneGround3d');
+      return (g && g.name) || 'Ground';
+    }
+    return id;
+  };
+
+  // Selection summary copy: 'Box 1', '2 objects', '3 faces · Box 1', …
+  const sceneSummaryText = (ctx) => {
+    const sel = sceneSel(ctx);
+    const layer = ctx.primaryLayer;
+    if (!sel || !layer) return '';
+    if (sel.mode === 'object') {
+      if (sel.objectIds.length === 1) return sceneObjectName(ctx, layer, sel.objectIds[0]);
+      return `${sel.objectIds.length} objects`;
+    }
+    const keys = sel.mode === 'edge' ? sel.edgeKeys : sel.faceKeys;
+    const noun = sel.mode === 'edge' ? 'edge' : 'face';
+    const owners = Array.from(new Set(keys.map((k) => String(k).split('/')[0])));
+    const owner = owners.length === 1 ? sceneObjectName(ctx, layer, owners[0]) : `${owners.length} objects`;
+    return `${keys.length} ${noun}${keys.length === 1 ? '' : 's'} · ${owner}`;
+  };
+
+  // Summary chip + the Alt-click candidate-cycle readout ('2 of 3').
+  const appendSceneReadouts = (ctx) => {
+    const summary = sceneSummaryText(ctx);
+    if (summary) {
+      const s = el('span', 'ctxbar-label ctxbar-scene-summary');
+      s.textContent = summary;
+      els.content.appendChild(s);
+    }
+    const r = ctx.renderer && ctx.renderer.getSceneCandidateReadout
+      ? ctx.renderer.getSceneCandidateReadout() : null;
+    if (r && r.total > 1) {
+      const c = el('span', 'ctxbar-label ctxbar-scene-cycle');
+      c.textContent = `${r.index} of ${r.total}`;
+      c.title = 'Alt-click cycles overlapping targets';
+      els.content.appendChild(c);
+    }
+  };
+
+  // I20 — a scene selection resolves to a STYLE-TABLE scope: byObject for an
+  // object selection, byFace for a face selection. Pen/style writes from the
+  // ctxbar must target exactly this scope — NEVER the layer pen (which is
+  // scene-wide and would repaint every object). Returns null for edge mode (no
+  // per-edge style) or an empty selection.
+  const sceneStyleWriteCtx = (ctx) => {
+    const r = ctx.renderer;
+    const layer = ctx.primaryLayer;
+    const sel = sceneSel(ctx);
+    if (!r || !layer || !sel) return null;
+    if (sel.mode === 'object' && sel.objectIds.length) {
+      return { r, layerId: layer.id, layer, scope: 'object', ids: sel.objectIds };
+    }
+    if (sel.mode === 'face' && sel.faceKeys.length) {
+      return { r, layerId: layer.id, layer, scope: 'face', keys: sel.faceKeys };
+    }
+    return null;
+  };
+  // Resolved pen id of the PRIMARY target in the selection (byFace/byObject).
+  const scenePenIdOf = (wc) => {
+    if (!wc) return null;
+    if (wc.scope === 'object') {
+      const rs = wc.r.getSceneObjectResolvedStyle(wc.layerId, wc.ids[0]);
+      return (rs && rs.penId) || null;
+    }
+    const rs = wc.r.getSceneFaceResolvedStyle && wc.r.getSceneFaceResolvedStyle(wc.layerId, wc.keys[0]);
+    return (rs && rs.penId) || null;
+  };
+  const writeScenePenScoped = (wc, penId) => {
+    if (!wc) return false;
+    if (wc.scope === 'object') return wc.r.setSceneObjectStyle(wc.layerId, wc.ids, { penId: penId || null });
+    return Boolean(wc.r.setSceneFaceStyle && wc.r.setSceneFaceStyle(wc.layerId, wc.keys, { penId: penId || null }));
+  };
+
+  // Scoped pen chip for scene contexts — replaces the generic, layer-writing pen
+  // chip (which repainted EVERY object, I20). Shows the primary target's resolved
+  // pen swatch; clicking opens a pen list whose picks write to the styleTable at
+  // the selection's own scope (byObject / byFace) via the renderer bridges. It
+  // NEVER touches layer.penId. Like the flyout pills it does not call
+  // restoreState() (that would tear the list down mid-open); it repaints in place.
+  const appendScenePenChip = (ctx) => {
+    const wc = sceneStyleWriteCtx(ctx);
+    if (!wc || typeof wc.r.getSceneObjectResolvedStyle !== 'function') return;
+    const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+    const chip = el('button', 'pen-chip ctxbar-scene-pen-chip', { type: 'button', tabindex: '-1', 'data-ctxbar-roving': '', 'aria-haspopup': 'menu', 'aria-expanded': 'false' });
+    chip.innerHTML = '<span class="pen-chip-swatch"><span class="pen-icon"></span></span>';
+    const icon = chip.querySelector('.pen-icon');
+    const paint = () => {
+      const penId = scenePenIdOf(wc);
+      const pen = pens.find((p) => p && p.id === penId) || null;
+      if (pen) { icon.style.background = pen.color || 'transparent'; chip.title = `Pen — ${pen.name || pen.id}`; }
+      else { icon.style.background = 'transparent'; chip.title = 'Pen — inherits layer pen'; }
+    };
+    paint();
+    const wrap = el('span', 'ctxbar-align-wrap ctxbar-scene-menu-wrap ctxbar-scene-pen-wrap');
+    const fly = el('div', 'ctxbar-align-flyout ctxbar-scene-flyout ctxbar-scene-pen-flyout', { role: 'menu', 'aria-hidden': 'true' });
+    let open = false;
+    const reposition = () => noteFlyoutOpened(fly);
+    const close = () => {
+      open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
+      chip.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
+      noteFlyoutClosed(fly);
+    };
+    const buildBody = () => {
+      fly.textContent = '';
+      const curPen = scenePenIdOf(wc) || '';
+      const row = (penId, label, color) => {
+        const b = el('button', 'ctxbar-menu-item ctxbar-scene-pen-row', { type: 'button', tabindex: '-1' });
+        const sw = el('span', 'ctxbar-scene-pen-sw'); sw.style.background = color || 'transparent'; b.appendChild(sw);
+        const nm = el('span', 'ctxbar-scene-pen-name'); nm.textContent = label; b.appendChild(nm);
+        if ((penId || '') === curPen) b.classList.add('is-active');
+        b.addEventListener('click', (e) => {
+          e.preventDefault(); e.stopPropagation();
+          writeScenePenScoped(wc, penId || null);
+          paint(); buildBody(); if (open) reposition();
+        });
+        fly.appendChild(b);
+      };
+      row('', 'Layer pen', null);
+      pens.forEach((p) => { if (p) row(p.id, p.name || p.id, p.color); });
+    };
+    const openFn = () => {
+      if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout();
+      open = true; buildBody();
+      fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false');
+      chip.setAttribute('aria-expanded', 'true'); state.closeFlyout = close;
+      reposition();
+    };
+    chip.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open ? close() : openFn(); });
+    fly.addEventListener('click', (e) => { e.stopPropagation(); });
+    wrap.appendChild(chip); wrap.appendChild(fly);
+    els.content.appendChild(wrap);
+  };
+
+  // I22 — swap the selected object(s) primitive from the ctxbar. A vertical
+  // menu of primitives; picking one mutates obj.primitive + regenerates in ONE
+  // undo via the renderer bridge, then rebuilds the bar.
+  const appendSceneShapePicker = (ctx) => {
+    const r = ctx.renderer;
+    const layer = ctx.primaryLayer;
+    const sel = sceneSel(ctx);
+    if (!r || typeof r.setSceneObjectPrimitive !== 'function' || !layer || !sel || sel.mode !== 'object' || !sel.objectIds.length) return;
+    // The ground quad has no primitive to swap (setSceneObjectPrimitive refuses
+    // the sentinel id) — the picker is absent, not inert.
+    if (!sceneSelHasObjectDef(sel)) return;
+    const b = B(); const ic = IC();
+    const C = (cfg().sceneFlyouts && cfg().sceneFlyouts.shape) || {};
+    const prims = C.primitives || [];
+    if (!prims.length) return;
+    // Scene-tree Increment D — read the CURRENT primitive through the renderer
+    // bridge (child-layer aware), not the legacy inline params.objects array
+    // (empty on a scene tree ⇒ the active checkmark never lit).
+    const first = (typeof r.getSceneObjectRecord === 'function'
+      && r.getSceneObjectRecord(layer.id, sel.objectIds[0])) || {};
+    const cur = first.primitive;
+    const meta = b.sceneShape || {};
+    // fs-s1 — icon-only: no visible label text, but an explicit aria-label so
+    // the accessible name survives losing it (makeDropField's 6th param).
+    const field = makeDropField('ctxbar-scene-field ctxbar-scene-shape', '', meta.tooltip || '', ic.sceneShape, null, meta.label || 'Shape');
+    const items = prims.map((opt) => ({
+      label: opt.label,
+      active: cur === opt.value,
+      onSelect: () => { r.setSceneObjectPrimitive(layer.id, sel.objectIds, opt.value); restoreState(); },
+    }));
+    els.content.appendChild(makeMenuFlyout(field, items, 'ctxbar-scene-shape-flyout'));
+  };
+
+  const renderSceneObject = (ctx) => {
+    const b = B(); const ic = IC();
+    const r = ctx.renderer;
+    const layer = ctx.primaryLayer;
+    const sel = sceneSel(ctx);
+    if (!r || !layer || !sel) return;
+    const ids = sel.objectIds;
+    appendSceneReadouts(ctx);
+    appendScenePenChip(ctx);
+    appendSceneShapePicker(ctx);
+    // Persistent Style / Shadow / Highlight / X-ray dropdown pills (ask #8) —
+    // between the pen chip and the one-shot verbs.
+    appendSceneFlyouts(ctx);
+    // Helpers visibility — a scene-wide VIEW toggle (SETTINGS.sceneHelpersVisible),
+    // not a per-object param, so it renders for a ground-only selection too
+    // (unlike the object-def verbs below). Simple icon toggle, not a flyout —
+    // there is exactly one boolean here. The renderer side (another agent)
+    // reads the setting; this button only flips it, persists it, and re-renders.
+    {
+      const helpersVisible = isHelpersVisible();
+      const meta = b.sceneHelpers || {};
+      els.content.appendChild(makeBtn({
+        icon: ic.sceneHelpers,
+        tooltip: helpersVisible ? meta.tooltipOn : meta.tooltipOff,
+        extraClass: helpersVisible ? 'is-active' : '',
+        onClick: () => {
+          setHelpersVisible(!isHelpersVisible());
+          const a = getApp();
+          a?.render && a.render();
+          restoreState();
+        },
+      }));
+    }
+    // Duplicate / Drop / Solid-X-ray / Delete all mutate an object DEF, so a
+    // ground-only selection has nothing for them to act on (see
+    // sceneSelHasObjectDef) — they are omitted rather than left to no-op.
+    if (!sceneSelHasObjectDef(sel)) return;
+    els.content.appendChild(makeBtn({
+      icon: ic.sceneDuplicate,
+      tooltip: (b.sceneDuplicate && b.sceneDuplicate.tooltip),
+      onClick: () => { r.duplicateSceneObjects?.(layer.id, ids); restoreState(); },
+    }));
+    // fs-u1 — Drop only makes sense (and only appears) when the scene actually
+    // HAS a ground to drop onto. `getSceneSelectionSignature` folds ground
+    // presence into its signature, so the RAF ticker re-renders this row the
+    // moment a ground layer is added/removed — no reselect needed.
+    if (r.sceneHasGround?.(layer.id)) {
+      els.content.appendChild(makeBtn({
+        icon: ic.sceneDrop,
+        tooltip: (b.sceneDrop && b.sceneDrop.tooltip),
+        onClick: () => { r.dropSceneObjectsToGround?.(layer.id, ids); restoreState(); },
+      }));
+    }
+    // fs-s1 — the standalone Solid|X-ray toggle button (ic.sceneVisibility) was
+    // removed here: the X-ray flyout pill (appendSceneFlyouts → buildXrayBody)
+    // renders the identical Solid|X-ray segmented control writing the same
+    // `visibility` field, plus back-face density/line-type/pen controls a
+    // one-shot toggle button never exposed. Strict superset — nothing lost.
+    els.content.appendChild(makeBtn({
+      icon: ic.sceneDelete, tooltip: (b.sceneDelete && b.sceneDelete.tooltip),
+      onClick: () => { r.deleteSceneObjects?.(layer.id, ids); restoreState(); },
+    }));
+  };
+
+  const renderSceneComponent = (ctx) => {
+    const b = B(); const ic = IC();
+    const r = ctx.renderer;
+    const layer = ctx.primaryLayer;
+    const sel = sceneSel(ctx);
+    if (!r || !layer || !sel) return;
+    appendSceneReadouts(ctx);
+    appendScenePenChip(ctx);
+    const keys = sel.mode === 'edge' ? sel.edgeKeys : sel.faceKeys;
+    const owners = Array.from(new Set(keys.map((k) => String(k).split('/')[0])));
+    els.content.appendChild(makeBtn({
+      icon: ic.sceneSelectFaces, label: (b.sceneSelectFaces && b.sceneSelectFaces.label),
+      tooltip: (b.sceneSelectFaces && b.sceneSelectFaces.tooltip),
+      disabled: owners.length !== 1,
+      onClick: () => { r.selectAllSceneFacesOfObject?.(layer.id, owners[0]); restoreState(); },
+    }));
+    // Clear Face Style — stub-disabled unless the 1B StyleCascade module (and
+    // a styleTable to write) is present.
+    const SC = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
+    const canClear = Boolean(SC && typeof SC.clearStyle === 'function'
+      && sel.mode === 'face' && sel.faceKeys.length && layer.params && layer.params.styleTable);
+    els.content.appendChild(makeBtn({
+      icon: ic.sceneClearStyle, label: (b.sceneClearStyle && b.sceneClearStyle.label),
+      tooltip: canClear
+        ? (b.sceneClearStyle && b.sceneClearStyle.tooltip)
+        : (b.sceneClearStyle && b.sceneClearStyle.tooltipOff),
+      disabled: !canClear,
+      onClick: () => {
+        const a = getApp();
+        a?.pushHistory?.();
+        sel.faceKeys.forEach((key) => { try { SC.clearStyle(layer.params.styleTable, 'face', key); } catch (_e) { /* guarded */ } });
+        a?.engine?.generate?.(layer.id);
+        a?.render?.();
+        restoreState();
+      },
+    }));
+  };
+
+  // ── Scene-object persistent flyouts (ask #8) ──────────────────────────
+  // Four dropdown pills — Style / Shadow / Highlight / X-ray — that stay open
+  // until you click elsewhere (or press Escape). They reuse the existing flyout
+  // plumbing: mutual exclusion via state.closeFlyout, the single global
+  // outside-click handler in bindOverflow, and the shared menu-direction pass's up/down
+  // flip. Edits write straight through the renderer bridges + regen; they NEVER
+  // call restoreState() (that rebuilds the bar and would close the flyout). The
+  // scene selection signature is style-independent, so the rAF refresh leaves an
+  // open flyout untouched mid-edit. `buildBody(fly, rebuild)` fills the flyout;
+  // `rebuild()` re-renders the body in place after a discrete change (mapper /
+  // treatment / on-off) that reveals or hides sub-controls — the flyout stays
+  // open. Slider drags must NOT call rebuild (that would destroy the live thumb).
+  const FLY = () => (cfg().sceneFlyouts || {});
+  const scenePens = (inheritLabel) => {
+    const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+    return [{ value: '', label: inheritLabel }].concat(pens.map((p) => ({ value: p.id, label: p.name || p.id })));
+  };
+  const clampNum = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const norm360 = (v) => ((Number(v) % 360) + 360) % 360;
+  // Current scene-object context for a flyout body (fresh each rebuild).
+  const sceneFlyCtx = () => {
+    const ctx = getContext();
+    const r = ctx.renderer;
+    const sel = sceneSel(ctx);
+    if (!r || !ctx.primaryLayer || !sel || sel.mode !== 'object' || !sel.objectIds.length) return null;
+    return { r, layerId: ctx.primaryLayer.id, layer: ctx.primaryLayer, ids: sel.objectIds };
+  };
+  // ── Multi-select mixed-value helpers (MSC-scene) ─────────────────────────
+  // When 2+ objects are selected the flyouts show the PRIMARY object's value but
+  // must not lie when the selection DISAGREES on a control. `sceneAgree` folds a
+  // per-id value extractor over sc.ids and reports whether they match; the
+  // flyMixed* wrappers then render an explicit "Mixed" state (a sentinel option
+  // for selects/segctrls, a blanked chip for sliders/dials). Applying any value
+  // writes through to ALL ids (unchanged) and unifies the display on rebuild.
+  const mixedCfg = () => (FLY().mixed) || {};
+  const mixedSentinel = () => mixedCfg().sentinel || '__scene-mixed__';
+  const mixedLabel = () => mixedCfg().label || 'Mixed';
+  const mixedDash = () => mixedCfg().dash || '—';
+  // { mixed, value } — value is the primary object's value (sc.ids[0]).
+  const sceneAgree = (sc, fn) => {
+    const ids = (sc && sc.ids) || [];
+    const prim = ids.length ? fn(ids[0]) : undefined;
+    if (ids.length < 2) return { mixed: false, value: prim };
+    const key = (v) => { try { return JSON.stringify(v === undefined ? null : v); } catch (_e) { return String(v); } };
+    const k0 = key(prim);
+    for (let i = 1; i < ids.length; i++) {
+      if (key(fn(ids[i])) !== k0) return { mixed: true, value: prim };
+    }
+    return { mixed: false, value: prim };
+  };
+  // Mixed-aware Select: prepends a "Mixed" sentinel option and swallows re-picks.
+  const flyMixedSelect = (host, o) => {
+    const options = o.mixed ? [{ value: mixedSentinel(), label: mixedLabel() }].concat(o.options || []) : (o.options || []);
+    if (o.mixed) host.classList.add('ctxbar-fly-mixed');
+    return UI.Select(host, {
+      options, value: o.mixed ? mixedSentinel() : o.value, ariaLabel: o.ariaLabel,
+      onChange: (v) => { if (v === mixedSentinel()) return; o.onChange(v); },
+    });
+  };
+  // Mixed-aware SegCtrl: appends a "Mixed" sentinel that reads active when mixed.
+  const flyMixedSeg = (host, o) => {
+    const options = o.mixed ? (o.options || []).concat([{ value: mixedSentinel(), label: mixedLabel() }]) : (o.options || []);
+    if (o.mixed) host.classList.add('ctxbar-fly-mixed');
+    return UI.SegCtrl(host, {
+      options, value: o.mixed ? mixedSentinel() : o.value, ariaLabel: o.ariaLabel,
+      onChange: (v) => { if (v === mixedSentinel()) return; o.onChange(v); },
+    });
+  };
+  // Mixed-aware Slider: thumb sits at the primary value (as MSC-1 stroke weight),
+  // but the numeric chip is blanked to an indeterminate dash.
+  const flyMixedSlider = (host, o) => {
+    const h = UI.Slider(host, o.props || {});
+    if (o.mixed) {
+      host.classList.add('ctxbar-fly-mixed');
+      const chip = host.querySelector('.slider-val, .pen-w');
+      if (chip) { chip.value = ''; chip.placeholder = mixedDash(); }
+    }
+    return h;
+  };
+  // Mixed-aware AngleDial: dial at the primary value, numeric readout blanked.
+  const flyMixedDial = (host, o) => {
+    const h = UI.AngleDial(host, o.props || {});
+    if (o.mixed) {
+      host.classList.add('ctxbar-fly-mixed');
+      const inp = host.querySelector('.angle-inp');
+      if (inp) { inp.value = ''; inp.placeholder = mixedDash(); }
+    }
+    return h;
+  };
+
+  // A label + control host row inside a flyout body.
+  const flyRow = (fly, labelText, note) => {
+    const row = el('div', 'ctxbar-fly-row');
+    const lbl = el('span', 'ctxbar-fly-label'); lbl.textContent = labelText;
+    row.appendChild(lbl);
+    const host = el('span', 'ctxbar-fly-ctl');
+    row.appendChild(host);
+    fly.appendChild(row);
+    if (note) { const n = el('div', 'ctxbar-fly-note'); n.textContent = note; fly.appendChild(n); }
+    return host;
+  };
+  const flySubhead = (fly, text) => { const h = el('div', 'ctxbar-fly-subhead'); h.textContent = text; fly.appendChild(h); };
+  // Returns the node so a caller can qualify it (the Fill Style caveat adds
+  // `.is-caveat`, which paints it in the warning colour).
+  const flyNote = (fly, text) => { const n = el('div', 'ctxbar-fly-note'); n.textContent = text; fly.appendChild(n); return n; };
+
+  // fs-y1 Job 1 — the Fill Style (i) info panel, mirrored into the ctxbar
+  // Style/Shadow flyouts (the docked Style/Shadow tabs already have one —
+  // see scene3d-panel.js's buildLawInfoAffordance). The docked panel's
+  // affordance floats a positioned popover; that does NOT work here:
+  // `.ctxbar-scene-flyout` is only 232px wide and sets `overflow-y: auto`,
+  // which per spec also computes `overflow-x` to `auto` (not `visible`), so
+  // a floating popover would get clipped/scrolled instead of shown. This
+  // renders INLINE in the flyout's own vertical flow instead — click toggles
+  // it into view directly under the row, so it always fits the column and
+  // never needs its own positioning. Degrade, not omission.
+  //
+  // `rowHost` is the `.ctxbar-fly-ctl` a flyRow(...) call returned — the (i)
+  // button is appended as a third flex child of `rowHost.parentNode` (the
+  // `.ctxbar-fly-row`), mirroring the docked panel's "beside the picker, not
+  // nested inside it" placement. `lines` is `[{ text, kind? }]`; a falsy
+  // `text` is dropped, and nothing renders if every line is empty.
+  let flyLawInfoSeq = 0;
+  const flyLawInfo = (fly, rowHost, lines, ariaLabel) => {
+    const filled = (lines || []).filter((l) => l && l.text);
+    if (!filled.length) return;
+    flyLawInfoSeq += 1;
+    const infoId = `ctxbar-lawinfo-${flyLawInfoSeq}`;
+    const box = el('div', 'ctxbar-fly-lawinfo', { id: infoId, role: 'note' });
+    filled.forEach(({ text, kind }) => {
+      const p = el('p', kind ? `vs3-lawnote is-${kind}` : 'vs3-lawnote');
+      p.textContent = text;
+      box.appendChild(p);
+    });
+    const btn = el('button', 'vs3-lawinfo-btn', {
+      type: 'button', 'aria-label': ariaLabel, 'aria-describedby': infoId, 'aria-expanded': 'false',
+    });
+    btn.textContent = 'i';
+    let open = false;
+    const setOpen = (v) => { open = v; box.classList.toggle('is-open', v); btn.setAttribute('aria-expanded', String(v)); };
+    btn.addEventListener('click', (e) => { e.stopPropagation(); setOpen(!open); });
+    btn.addEventListener('keydown', (e) => { if (e.key === 'Escape' && open) { setOpen(false); btn.blur(); } });
+    const anchor = rowHost.parentNode || rowHost;
+    anchor.appendChild(btn);
+    fly.appendChild(box);
+  };
+
+  // fs-m2 Job 1 — a discrete change inside a scene flyout (Type / Fill
+  // Style / border-enable / …) commits through `rebuild()` below, which
+  // clears the flyout body and rebuilds it — a discrete pick can reveal or
+  // hide sibling rows, so the whole body has to be re-run. That destroys and
+  // replaces every control, including the <select> the user just drove, so
+  // focus silently falls to <body> and the next arrow key does nothing — the
+  // friction reported when auditioning the 48 Fill Style laws by arrowing
+  // through them. Captures which <select> (if any) inside `host` currently
+  // has focus before the teardown, then refocuses the FRESH element carrying
+  // the same aria-label afterward. A no-op whenever focus wasn't on a select.
+  // fs-m2 Job 1 (judge correction) — on macOS, a focused CLOSED <select>
+  // OPENS its native listbox on ArrowDown/ArrowUp instead of stepping the
+  // value (Windows/Linux Chrome steps immediately and fires 'change'; macOS
+  // does not). Intercepting just ArrowUp/ArrowDown and stepping
+  // `selectedIndex` ourselves makes every platform behave the same: the
+  // control never opens a popup, it moves to the adjacent option and
+  // applies live — the 48-law auditioning workflow this job exists for.
+  // Every other key stays native, so UI.Select's whole reason to exist
+  // (platform keyboard nav / type-ahead / the mobile picker — see
+  // src/ui/components/select.js:4-6) is preserved, not replaced.
+  const attachSelectArrowStep = (selectEl) => {
+    if (!selectEl || selectEl.__vs3ArrowStep) return;
+    selectEl.__vs3ArrowStep = true;
+    selectEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const opts = Array.from(selectEl.options).filter((o) => !o.disabled);
+      if (opts.length < 2) return;
+      const curIdx = opts.indexOf(selectEl.selectedOptions[0]);
+      const nextIdx = curIdx + (e.key === 'ArrowDown' ? 1 : -1);
+      if (nextIdx < 0 || nextIdx >= opts.length) return;
+      e.preventDefault();
+      selectEl.value = opts[nextIdx].value;
+      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+  const selectElOf = (comp) => comp && comp.el && comp.el.querySelector && comp.el.querySelector('select');
+
+  const withSelectFocusKept = (host, rerender) => {
+    const doc = (host && host.ownerDocument) || document;
+    const active = doc.activeElement;
+    const wasSelect = !!(active && active.tagName === 'SELECT' && host && host.contains(active));
+    const aria = wasSelect ? active.getAttribute('aria-label') : null;
+    rerender();
+    if (!aria || !host) return;
+    const next = Array.from(host.querySelectorAll('select')).find((s) => s.getAttribute('aria-label') === aria);
+    if (next) { attachSelectArrowStep(next); next.focus({ preventScroll: true }); }
+  };
+
+  // Shared persistent-flyout wrapper for the scene pills. `iconHtml`/`ariaLabel`
+  // (fs-s1) let a caller go icon-only: pass `label: ''` with an iconHtml and an
+  // explicit ariaLabel so the accessible name survives losing the visible text.
+  const makeSceneFlyout = (label, tooltip, extraClass, buildBody, iconHtml, ariaLabel) => {
+    const field = makeDropField(`ctxbar-scene-field ${extraClass || ''}`.trim(), label, tooltip, iconHtml, null, ariaLabel);
+    const wrap = el('span', 'ctxbar-align-wrap ctxbar-scene-menu-wrap');
+    const fly = el('div', 'ctxbar-align-flyout ctxbar-scene-flyout', { role: 'menu', 'aria-hidden': 'true' });
+    let open = false;
+    const reposition = () => noteFlyoutOpened(fly);
+    const close = () => {
+      open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
+      field.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
+      noteFlyoutClosed(fly);
+    };
+    // Re-render the body without closing (a discrete change revealed/hid a
+    // row) — keeping select focus across the rebuild (fs-m2 Job 1).
+    const rebuild = () => withSelectFocusKept(fly, () => {
+      fly.textContent = '';
+      try { buildBody(fly, rebuild); } catch (_e) { /* body guarded */ }
+      if (open) reposition();
+    });
+    const openFn = () => {
+      if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout(); // mutual exclusion
+      open = true; rebuild();
+      fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false');
+      field.setAttribute('aria-expanded', 'true'); state.closeFlyout = close;
+      reposition();
+    };
+    field.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open ? close() : openFn(); });
+    // Clicks inside the flyout (control interaction) must not bubble to the
+    // field's toggle or the roving-key handler.
+    fly.addEventListener('click', (e) => { e.stopPropagation(); });
+    wrap.appendChild(field); wrap.appendChild(fly);
+    return wrap;
+  };
+
+  // ── Style ▾ — fill mapper, pen, angle (hatch families), density, reset. ──
+  const buildStyleBody = (fly, rebuild) => {
+    const sc = sceneFlyCtx(); if (!sc) return;
+    const C = (FLY().style) || {};
+    const rs = (id) => sc.r.getSceneObjectResolvedStyle(sc.layerId, id)
+      || { penId: null, mapper: 'none', params: {}, provenance: { scope: 'scene' } };
+    const resolved = rs(sc.ids[0]);
+    const params = resolved.params || {};
+    const mapper = resolved.mapper || 'none';
+    const write = (patch, opts) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, patch, opts);
+    attachSelectArrowStep(selectElOf(flyMixedSelect(flyRow(fly, C.mapper.label), {
+      options: C.mappers, value: mapper, ariaLabel: C.mapper.aria,
+      mixed: sceneAgree(sc, (id) => (rs(id).mapper || 'none')).mixed,
+      onChange: (v) => { write({ mapper: v, params: { ...params } }); rebuild(); },
+    })));
+    // ── Fill Style (U9) — the TONE LAW, directly beneath Type ───────────────
+    // Type picks the KIND of fill; this picks HOW that kind is drawn. Grouped
+    // by MARK CLASS (Vectura.SCENE_FILL_STYLES), not by the roster's tone-
+    // mechanism families: crosshatched and single-direction textures are
+    // separate perceptual clusters and must not share one flat list.
+    //
+    // Absent on wireframe/none — a tone law has no meaning with no fill to
+    // modulate (the same ABSENT-not-inert rule the Density row follows).
+    //
+    // The write carries the FULL params bag: the cascade is whole-style-wins
+    // (src/core/scene3d/style-cascade.js), so any key left out of the patch is
+    // silently destroyed. `write` is setSceneObjectStyle → OBJECT scope, which
+    // is the scope that actually reaches an object declaring its own style.
+    const FS = Vectura.SCENE_FILL_STYLES;
+    const FSC = C.fillStyle;
+    if (FS && FSC && (C.fillMappers || []).indexOf(mapper) !== -1) {
+      const law = FS.resolve(params.toneLaw);
+      // U12 D1/D2 — the primary object's `primitive` (box/plane/solid have no
+      // chart, so most laws are silent no-ops there; see
+      // SCENE_FILL_STYLES.isReachableOn). Read through the child-aware bridge
+      // so a scene-TREE object (a child object3d/booleanGroup3d layer) resolves
+      // too, not only a monolith's inline `params.objects` entry.
+      //
+      // fs-e1 item 4 — this used to read ONLY sc.ids[0], with no agreement
+      // check, unlike every sibling control in this row (which all use
+      // sceneAgree). A box-first mixed selection then greyed out laws that
+      // were live on a sphere elsewhere in the same selection. Guarded with
+      // sceneAgree now: on disagreement this passes `null`, and
+      // isReachableOn fails OPEN on an absent primitiveMode (the documented
+      // mixed-selection convention above).
+      const recordOf = (id) => ((typeof sc.r.getSceneObjectRecord === 'function')
+        ? sc.r.getSceneObjectRecord(sc.layerId, id) : null);
+      const primitiveAgree = sceneAgree(sc, (id) => { const rec = recordOf(id); return rec ? rec.primitive : null; });
+      const primitiveMode = primitiveAgree.mixed ? null : primitiveAgree.value;
+      // Only meaningful when primitiveMode === 'solid': the default (32-face)
+      // solid ADDITIONALLY exceeds the faceted mono path's front-face budget,
+      // so even the box/plane-reachable laws fall back there — see
+      // SCENE_FILL_STYLES.isCapLimited.
+      const solidTypeAgree = sceneAgree(sc, (id) => { const rec = recordOf(id); return (rec && rec.params) ? rec.params.solidType : null; });
+      const solidType = solidTypeAgree.mixed ? null : solidTypeAgree.value;
+      const fsHost = flyRow(fly, FSC.label);
+      attachSelectArrowStep(selectElOf(flyMixedSelect(fsHost, {
+        options: FS.groups(primitiveMode, solidType, mapper), value: law, ariaLabel: FSC.aria,
+        mixed: sceneAgree(sc, (id) => FS.resolve((rs(id).params || {}).toneLaw)).mixed,
+        onChange: (v) => { write({ params: { ...params, toneLaw: v } }); rebuild(); },
+      })));
+      const facetedNote = FS.facetedNote ? FS.facetedNote(primitiveMode, solidType, mapper) : '';
+      if (facetedNote) flyNote(fly, facetedNote).classList.add('is-faceted');
+      const note = FS.note(law);
+      if (note.text) flyNote(fly, note.text);
+      // fs-y1 Job 1 — the (i): mechanism/strengths/weaknesses, the SAME
+      // per-law paragraphs the docked panel's popover holds (kept out of
+      // this always-on note above, unlike the docked panel, only because
+      // `note.text`/`facetedNote`/caveat here are an established contract
+      // other tests already read as always-visible — see the shared
+      // SCENE_FILL_STYLES.entry() this reads from).
+      const entry = FS.entry(law) || {};
+      flyLawInfo(fly, fsHost, [
+        { text: entry.mechanism ? `How: ${entry.mechanism}` : '' },
+        { text: entry.strengths ? `Strengths: ${entry.strengths}` : '' },
+        { text: entry.weaknesses ? `Weaknesses: ${entry.weaknesses}` : '' },
+      ], `About ${entry.label || FSC.label}`);
+      if (note.caveat) flyNote(fly, note.caveat).classList.add('is-caveat');
+    }
+    // ── Stroke Fill (sf-w4) — directly beneath Fill Style ───────────────────
+    // A VARIABLE-WIDTH Fill Style no longer draws a fat pen: it builds the true
+    // ribbon OUTLINE from its continuous width profile, strokes that outline
+    // with the REAL pen, and fills the interior with a pen-width-pitched
+    // continuous stroke. This row picks the pattern that fill uses. Pitch is
+    // derived from the pen width, never chosen here — there is no density knob.
+    //
+    // `strokeFillStyle` is a LAYER param (CONTRACT C4 —
+    // ALGO_DEFAULTS.scene3d.strokeFillStyle), NOT a style-cascade param, so it
+    // is written straight onto the layer that OWNS it rather than through
+    // setSceneObjectStyle: a scene-TREE object is its own object3d /
+    // booleanGroup3d child layer and carries its own copy (identity contract:
+    // child layer id === scene object id), while a monolith's inline object
+    // reads the scene layer's. That is the same target the docked Style tab
+    // writes, so the two surfaces edit one value rather than two.
+    //
+    // Only the 12 variable-width Fill Styles build a ribbon. On the 31
+    // monowidth and the 6 three-pen styles the row renders DISABLED with the
+    // reason in its tooltip — hiding it would shift every row beneath it the
+    // instant the Fill Style changed.
+    const SFS = Vectura.STROKE_FILL_STYLES;
+    const SFC = C.strokeFill;
+    if (SFS && SFC && FS && (C.fillMappers || []).indexOf(mapper) !== -1) {
+      const disabledNote = SFS.disabledNote(FS.resolve(params.toneLaw));
+      // The layer carrying the param for a selected object id. Falls back to
+      // the scene layer for an inline monolith object and for the `ground`
+      // pseudo-object (no child layer stands behind either).
+      const ownerOf = (id) => {
+        const a = getApp();
+        const child = (a && a.engine && a.engine.getLayerById) ? a.engine.getLayerById(id) : null;
+        return (child && SFS.appliesToLayer(child)) ? child : sc.layer;
+      };
+      const owners = () => {
+        const seen = new Map();
+        sc.ids.forEach((id) => { const L = ownerOf(id); if (L) seen.set(L.id, L); });
+        return Array.from(seen.values());
+      };
+      const agree = sceneAgree(sc, (id) => {
+        const L = ownerOf(id);
+        return SFS.resolve(L && L.params ? L.params[SFS.PARAM] : undefined);
+      });
+      const sfHost = flyRow(fly, SFC.label);
+      if (agree.mixed) sfHost.classList.add('ctxbar-fly-mixed');
+      const sfComp = UI.Select(sfHost, {
+        options: agree.mixed
+          ? [{ value: mixedSentinel(), label: mixedLabel() }].concat(SFS.OPTIONS)
+          : SFS.OPTIONS,
+        value: agree.mixed ? mixedSentinel() : agree.value,
+        ariaLabel: SFC.aria,
+        disabled: Boolean(disabledNote),
+        onChange: (v) => {
+          if (v === mixedSentinel()) return;
+          // A greyed row must not write even if something drives the <select>
+          // directly: `disabled` stops a USER, it does not stop a programmatic
+          // change event, and this is the last word before the layer mutates.
+          if (disabledNote) return;
+          const a = getApp();
+          a?.pushHistory?.();
+          owners().forEach((L) => {
+            if (!L.params || typeof L.params !== 'object') L.params = {};
+            L.params[SFS.PARAM] = v;
+          });
+          // The ribbon interior fill is display geometry — a new pattern has to
+          // be BUILT before the repaint can show it. Regenerating the scene
+          // layer recomposes every child, so one generate covers the selection.
+          try { a?.engine?.generate?.(sc.layerId); } catch (_e) { /* guarded */ }
+          a?.render?.();
+        },
+      });
+      const sfRow = sfHost.parentNode;
+      if (sfRow && sfRow.classList) {
+        sfRow.classList.toggle('is-disabled', Boolean(disabledNote));
+        if (disabledNote) sfRow.setAttribute('title', disabledNote);
+        else sfRow.removeAttribute('title');
+      }
+      if (!disabledNote) attachSelectArrowStep(selectElOf(sfComp));
+    }
+    flyMixedSelect(flyRow(fly, C.pen.label), {
+      options: scenePens(C.pen.inherit), value: resolved.penId || '', ariaLabel: C.pen.aria,
+      mixed: sceneAgree(sc, (id) => (rs(id).penId || '')).mixed,
+      onChange: (v) => write({ penId: v || null }),
+    });
+    if ((C.angleMappers || []).indexOf(mapper) !== -1 && UI.AngleDial) {
+      const dv = Number.isFinite(params.fillAngle) ? params.fillAngle : 45;
+      flyMixedDial(flyRow(fly, C.angle.label), {
+        mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.fillAngle) ? p.fillAngle : 45; }).mixed,
+        props: {
+          value: dv, ariaLabel: C.angle.aria, defaultValue: 45,
+          onChange: (v) => write({ params: { ...params, fillAngle: norm360(v) } }, { gesture: true, preview: true }),
+          onCommit: (v) => write({ params: { ...params, fillAngle: norm360(v) } }),
+        },
+      });
+    }
+    if ((C.fillMappers || []).indexOf(mapper) !== -1) {
+      const dv = Number.isFinite(params.fillDensity) ? params.fillDensity : 50;
+      flyMixedSlider(flyRow(fly, C.density.label), {
+        mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.fillDensity) ? p.fillDensity : 50; }).mixed,
+        props: {
+          // Max raised 200 → 220 (context-bar side only, fs-m2 Job 3).
+          value: dv, min: 1, max: 220, step: 1, defaultValue: 50, ariaLabel: C.density.aria,
+          onChange: (v) => write({ params: { ...params, fillDensity: v } }, { gesture: true, preview: true }),
+          onCommit: (v) => write({ params: { ...params, fillDensity: v } }),
+        },
+      });
+    }
+    // ── Border sub-section (I6 — moved here from the Highlight flyout) →
+    // obj.border.* (a per-object field, not style.params).
+    flySubhead(fly, C.borderHead);
+    const orec = (id) => sc.r.getSceneObjectRecord(sc.layerId, id) || {};
+    const obj = orec(sc.ids[0]);
+    const border = obj.border || {};
+    const setObj = (path, value, opts) => sc.r.setSceneObjectField(sc.layerId, sc.ids, path, value, opts);
+    flyMixedSeg(flyRow(fly, C.border.label), {
+      options: C.onOff, value: border.enabled ? 'on' : 'off', ariaLabel: C.border.aria,
+      mixed: sceneAgree(sc, (id) => ((orec(id).border || {}).enabled ? 'on' : 'off')).mixed,
+      onChange: (v) => { setObj('border.enabled', v === 'on'); rebuild(); },
+    });
+    if (border.enabled) {
+      flyMixedSlider(flyRow(fly, C.borderStrength.label), {
+        mixed: sceneAgree(sc, (id) => { const b = orec(id).border || {}; return Number.isFinite(b.strength) ? b.strength : 1; }).mixed,
+        props: {
+          value: Number.isFinite(border.strength) ? border.strength : 1, min: 0.25, max: 4, step: 0.05,
+          defaultValue: 1, ariaLabel: C.borderStrength.aria,
+          onChange: (v) => setObj('border.strength', v, { gesture: true, preview: true }),
+          onCommit: (v) => setObj('border.strength', v),
+        },
+      });
+      // Offset shifts the border ring in/out of the silhouette (mm); negative
+      // inward, positive outward. Sibling to Weight above — same write shape.
+      flyMixedSlider(flyRow(fly, C.borderOffset.label), {
+        mixed: sceneAgree(sc, (id) => { const b = orec(id).border || {}; return Number.isFinite(b.offset) ? b.offset : 0; }).mixed,
+        props: {
+          value: Number.isFinite(border.offset) ? border.offset : 0, min: -2, max: 2, step: 0.05,
+          defaultValue: 0, ariaLabel: C.borderOffset.aria,
+          onChange: (v) => setObj('border.offset', v, { gesture: true, preview: true }),
+          onCommit: (v) => setObj('border.offset', v),
+        },
+      });
+      flyMixedSelect(flyRow(fly, C.borderPen.label), {
+        options: scenePens(C.borderPen.inherit), value: border.penId || '', ariaLabel: C.borderPen.aria,
+        mixed: sceneAgree(sc, (id) => (orec(id).border || {}).penId || '').mixed,
+        onChange: (v) => setObj('border.penId', v || null),
+      });
+    }
+
+    if (resolved.provenance && resolved.provenance.scope === 'object') {
+      const row = el('div', 'ctxbar-fly-row');
+      const btn = makeBtn({ label: C.reset.label, tooltip: C.reset.tooltip, onClick: () => { write(null, { clear: true }); rebuild(); } });
+      btn.classList.add('ctxbar-fly-reset');
+      row.appendChild(btn); fly.appendChild(row);
+    }
+  };
+
+  // ── Shadow ▾ — per-object cast + scene-wide shadow STYLING (fill angle /
+  // line style / pen / density / layers).
+  //
+  // RC1 — the Angle dial here used to drive `lights.0.azimuth` (the SUN bearing),
+  // so "shadow angle" MOVED the shadow instead of restyling it. Two problems:
+  //   1. Semantics. Aiming the sun is a LIGHTING concern; this surface styles the
+  //      ink drawn inside the shadow region. Angle now binds to the scene-wide
+  //      `shadow.shadowAngle` bag — the hatch bearing shadows.js reads — so it
+  //      rotates the fill lines and leaves the footprint exactly where it was.
+  //   2. It was dead on a scene TREE. A tree empties `params.lights` (the lights
+  //      live on sceneLight3d CHILD layers; collectSceneParams re-unions them at
+  //      compose time), so `lights[0]` was `{}` — the dial showed the 135°
+  //      fallback and every write landed on a phantom `params.lights[0]`.
+  // `shadow.*` lives on the scene layer's own params for a monolith AND a tree
+  // (collectSceneParams passes the bag straight through), so setSceneParam
+  // reaches it on both. Sun steering lives on the light itself: the Sun child
+  // layer's panel (azimuth/elevation), the on-canvas light gizmo, and the
+  // shadow-drag re-aim.
+  //
+  // fs-q1 — same tree-vs-monolith split as the comment above: a scene TREE
+  // empties `params.lights` (lights live on sceneLight3d CHILD layers), so the
+  // live light list is `layer._sceneAssembled.lights` once the engine has
+  // composed the scene (mirrors scene3d-panel.js's sceneObjects() pattern for
+  // the same tree/monolith union). Falls back to `params.lights` pre-compose
+  // or on a monolith, where the union is a pass-through.
+  const sceneLightsForShadow = (layer) => {
+    const assembled = layer && layer._sceneAssembled;
+    if (assembled && Array.isArray(assembled.lights) && assembled.lights.length) return assembled.lights;
+    return (layer && layer.params && Array.isArray(layer.params.lights)) ? layer.params.lights : [];
+  };
+
+  const buildShadowBody = (fly, rebuild) => {
+    const sc = sceneFlyCtx(); if (!sc) return;
+    const C = (FLY().shadow) || {};
+    const obj = sc.r.getSceneObjectRecord(sc.layerId, sc.ids[0]) || {};
+    const sp = (sc.layer.params) || {};
+    const bag = sp.shadow || {};
+    const setObj = (path, value, opts) => sc.r.setSceneObjectField(sc.layerId, sc.ids, path, value, opts);
+    const setScene = (path, value, opts) => sc.r.setSceneParam(sc.layerId, path, value, opts);
+    const castOf = (o) => (o.shadow && o.shadow.enabled === false ? 'off'
+      : (o.shadow && o.shadow.enabled === true ? 'on' : 'inherit'));
+    const castVal = castOf(obj);
+    // Cast is the only per-object control here; the sun/style/pen/density/layers
+    // rows below are scene-wide (per-layer) so they never differ across a
+    // same-layer multi-selection. It writes the object DEF (`shadow.enabled`),
+    // so a ground-only selection — which has no object def, and which RECEIVES
+    // shadows rather than casting them — omits the row rather than showing an
+    // "Auto" segment that writes nothing. See sceneSelHasObjectDef.
+    if (sceneSelHasObjectDef({ mode: 'object', objectIds: sc.ids })) {
+      flyMixedSeg(flyRow(fly, C.cast.label), {
+        options: C.castOptions, value: castVal, ariaLabel: C.cast.aria,
+        mixed: sceneAgree(sc, (id) => castOf(sc.r.getSceneObjectRecord(sc.layerId, id) || {})).mixed,
+        onChange: (v) => setObj('shadow.enabled', v === 'on' ? true : (v === 'off' ? false : null)),
+      });
+    }
+    // I26 — additive hatch vs inverse (thin the ground's own fill inside the
+    // footprint). Scene-wide, like the style/pen/density rows below.
+    if (C.mode) {
+      UI.SegCtrl(flyRow(fly, C.mode.label), {
+        options: C.modeOptions, value: bag.shadowMode === 'inverse' ? 'inverse' : 'additive',
+        ariaLabel: C.mode.aria,
+        onChange: (v) => setScene('shadow.shadowMode', v === 'inverse' ? 'inverse' : 'additive'),
+      });
+    }
+    // fs-e3 — Fill Style (tone-law) on the shadow's flat hatch, directly
+    // beneath Mode (mirrors Type → Fill Style in the Style flyout). Scene-wide
+    // like every other row here (shadow.* lives on the LAYER, not the object),
+    // so — unlike the Style flyout's per-object Fill Style row — there is no
+    // per-object disagreement this can ever show: a plain UI.Select bound to
+    // the layer's shadow bag, exactly like Mode/Style/Pen/Density/Layers below,
+    // is the honest rendering, not a "Mixed" state that could never actually
+    // fire (the same defect class this whole batch exists to remove).
+    //
+    // Only 6 of the 8 mark classes draw distinct geometry on a flat,
+    // ground-projected footprint (Shadows.toneLawApplies) — flow and web are
+    // filtered OUT of the offered list, never merely disabled, and SHADOW_NOTE
+    // explains why. `FS.groups(null, null, null)` asks for the full roster
+    // with no primitive/mapper reachability context (shadows have neither),
+    // so nothing there gates anything; the only filter active is
+    // toneLawApplies.
+    // fs-q1 — the row above is completely inert once Shadows.shadowFillStyle
+    // Applies says every shadow-casting light is on the zone-anatomy path
+    // (Layers on, or any area light forcing it): toneLaw is read there but the
+    // zone build never receives the mark class (diagnosed, deliberately out of
+    // scope for this batch — see the comment above shadowFillStyleApplies in
+    // shadows.js). HIDE the row then — not merely narrow it, which is all
+    // toneLawApplies above already does — so this control never offers a
+    // choice with no effect. The stored `shadow.shadowToneLaw` is untouched:
+    // the row just stops rendering (and writing), so switching Layers back off
+    // restores whatever law was last picked.
+    if (C.toneLaw) {
+      const FS = Vectura.SCENE_FILL_STYLES;
+      const Shadows = Vectura.Scene3D && Vectura.Scene3D.Shadows;
+      const isLive = !Shadows || typeof Shadows.shadowFillStyleApplies !== 'function'
+        || Shadows.shadowFillStyleApplies(bag, sceneLightsForShadow(sc.layer));
+      if (FS && Shadows && typeof Shadows.toneLawApplies === 'function' && isLive) {
+        const law = FS.resolve(bag.shadowToneLaw);
+        const groups = FS.groups(null, null, null)
+          .map((g) => ({ group: g.group, options: g.options.filter((opt) => Shadows.toneLawApplies(opt.value)) }))
+          .filter((g) => g.options.length);
+        const toneLawHost = flyRow(fly, C.toneLaw.label);
+        UI.Select(toneLawHost, {
+          options: groups, value: law, ariaLabel: C.toneLaw.aria,
+          onChange: (v) => setScene('shadow.shadowToneLaw', v),
+        });
+        // fs-y1 Job 1 — "for all fill styles": the shadow tone-law picker is
+        // a Fill Style control too.
+        const shadowEntry = FS.entry(law) || {};
+        flyLawInfo(fly, toneLawHost, [
+          { text: shadowEntry.mechanism ? `How: ${shadowEntry.mechanism}` : '' },
+          { text: shadowEntry.strengths ? `Strengths: ${shadowEntry.strengths}` : '' },
+          { text: shadowEntry.weaknesses ? `Weaknesses: ${shadowEntry.weaknesses}` : '' },
+        ], `About ${shadowEntry.label || C.toneLaw.label}`);
+        if (C.toneLawNote) flyNote(fly, C.toneLawNote);
+      } else if (FS && Shadows && !isLive && C.toneLawInertNote) {
+        flyNote(fly, C.toneLawInertNote);
+      }
+    }
+    // Follow light — shadows.js derives the hatch bearing from the light travel
+    // direction when this is on, so the manual Angle below is INERT then and is
+    // replaced by a note rather than shown as a dial that does nothing.
+    const follows = bag.shadowAngleFollowsLight === true;
+    // The shadow config block carries no on/off pair of its own (style/xray do),
+    // so fall back to the local literal rather than reach across namespaces.
+    const FOL = C.follow || {};
+    UI.SegCtrl(flyRow(fly, FOL.label || 'Follow light'), {
+      options: C.onOff || [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+      value: follows ? 'on' : 'off',
+      ariaLabel: FOL.aria,
+      onChange: (v) => { setScene('shadow.shadowAngleFollowsLight', v === 'on'); rebuild(); },
+    });
+    if (follows) {
+      flyNote(fly, FOL.derivedNote);
+    } else if (UI.AngleDial) {
+      // Label, aria AND note all come from config — its strings were corrected
+      // to describe the fill bearing, so there is nothing left to override here.
+      const ang = Number.isFinite(bag.shadowAngle) ? bag.shadowAngle : 45;
+      UI.AngleDial(flyRow(fly, C.angle.label, C.angle.note), {
+        value: ang, ariaLabel: C.angle.aria, defaultValue: 45,
+        onChange: (v) => setScene('shadow.shadowAngle', norm360(v), { gesture: true, preview: true }),
+        onCommit: (v) => setScene('shadow.shadowAngle', norm360(v)),
+      });
+    }
+    UI.Select(flyRow(fly, C.style.label), {
+      options: C.styleOptions, value: (typeof bag.shadowLineType === 'string' ? bag.shadowLineType : 'solid'),
+      ariaLabel: C.style.aria, onChange: (v) => setScene('shadow.shadowLineType', v),
+    });
+    UI.Select(flyRow(fly, C.pen.label), {
+      options: scenePens(C.pen.inherit), value: bag.shadowPenId || '', ariaLabel: C.pen.aria,
+      onChange: (v) => setScene('shadow.shadowPenId', v || null),
+    });
+    UI.Slider(flyRow(fly, C.density.label), {
+      value: Number.isFinite(bag.shadowDensity) ? bag.shadowDensity : 50, min: 1, max: 100, step: 1,
+      defaultValue: 50, ariaLabel: C.density.aria,
+      onChange: (v) => setScene('shadow.shadowDensity', v, { gesture: true, preview: true }),
+      onCommit: (v) => setScene('shadow.shadowDensity', v),
+    });
+    const layVal = bag.shadowLayers ? String(clampNum(Math.round(bag.shadowLayerCount || 3), 2, 4)) : 'off';
+    UI.SegCtrl(flyRow(fly, C.layers.label), {
+      options: C.layerOptions, value: layVal, ariaLabel: C.layers.aria,
+      onChange: (v) => {
+        // fs-q1 — this toggle now ALSO decides whether the Fill Style row
+        // above is live or hidden (shadowFillStyleApplies), so it needs the
+        // same live rebuild() the Follow-light toggle already uses to swap
+        // its Angle dial for a note — without it the row would only catch up
+        // the next time the flyout is closed and reopened.
+        if (v === 'off') { setScene('shadow.shadowLayers', false); rebuild(); return; }
+        // Two writes bundled into ONE undo via the gesture flag (begin, commit).
+        setScene('shadow.shadowLayers', true, { gesture: true });
+        setScene('shadow.shadowLayerCount', parseInt(v, 10));
+        rebuild();
+      },
+    });
+  };
+
+  // ── Highlight ▾ — treatment + strength/pen. (Border moved to Style, I6.) ──
+  const buildHighlightBody = (fly, rebuild) => {
+    const sc = sceneFlyCtx(); if (!sc) return;
+    const C = (FLY().highlight) || {};
+    const rs = (id) => sc.r.getSceneObjectResolvedStyle(sc.layerId, id) || { params: {} };
+    const resolved = rs(sc.ids[0]);
+    const params = resolved.params || {};
+    const write = (patch, opts) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, patch, opts);
+    // Shared with the 3D panel (src/config/context-bar.js SCENE_HIGHLIGHT):
+    // one option list, one "is this treatment inert?" rule. resolve() also folds
+    // any None spelling onto the single option the select actually offers.
+    const SH = Vectura.SCENE_HIGHLIGHT;
+    const treatOf = (id) => SH.resolve((rs(id).params || {}).highlightTreatment);
+    const treatment = treatOf(sc.ids[0]);
+    flyMixedSelect(flyRow(fly, C.treatment.label), {
+      options: C.treatments, value: treatment, ariaLabel: C.treatment.aria,
+      mixed: sceneAgree(sc, treatOf).mixed,
+      onChange: (v) => { write({ params: { ...params, highlightTreatment: v } }); rebuild(); },
+    });
+    if (treatment === 'altFill') {
+      // I7 — pick which mapper renders the alternate fill in the highlight
+      // region (consumed by scene3d.js highlight altFill path). Shown only for
+      // the altFill treatment, like burst's controls are burst-only.
+      const altMapper = C.altFillMappers.some((o) => o.value === params.altFillMapper) ? params.altFillMapper : 'stipple';
+      flyMixedSelect(flyRow(fly, C.altFill.label), {
+        options: C.altFillMappers, value: altMapper, ariaLabel: C.altFill.aria,
+        mixed: sceneAgree(sc, (id) => {
+          const p = rs(id).params || {};
+          return C.altFillMappers.some((o) => o.value === p.altFillMapper) ? p.altFillMapper : 'stipple';
+        }).mixed,
+        onChange: (v) => write({ params: { ...params, altFillMapper: v } }),
+      });
+    }
+    // Strength + Pen configure highlight ink. Under "None" (and "Blank") there
+    // is no highlight ink to configure, so the rows are REMOVED, not disabled.
+    if (SH.hasDetailControls(treatment)) {
+      flyMixedSlider(flyRow(fly, C.strength.label), {
+        mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.highlightDensity) ? p.highlightDensity : 25; }).mixed,
+        props: {
+          value: Number.isFinite(params.highlightDensity) ? params.highlightDensity : 25, min: 1, max: 100, step: 1,
+          defaultValue: 25, ariaLabel: C.strength.aria,
+          onChange: (v) => write({ params: { ...params, highlightDensity: v } }, { gesture: true, preview: true }),
+          onCommit: (v) => write({ params: { ...params, highlightDensity: v } }),
+        },
+      });
+      flyMixedSelect(flyRow(fly, C.pen.label), {
+        options: scenePens(C.pen.inherit), value: params.highlightPenId || '', ariaLabel: C.pen.aria,
+        mixed: sceneAgree(sc, (id) => (rs(id).params || {}).highlightPenId || '').mixed,
+        onChange: (v) => write({ params: { ...params, highlightPenId: v || null } }),
+      });
+    }
+  };
+
+  // ── X-ray ▾ — visibility on/off + back-face fill controls. ───────────────
+  const buildXrayBody = (fly, rebuild) => {
+    const sc = sceneFlyCtx(); if (!sc) return;
+    const C = (FLY().xray) || {};
+    const orec = (id) => sc.r.getSceneObjectRecord(sc.layerId, id) || {};
+    const rs = (id) => sc.r.getSceneObjectResolvedStyle(sc.layerId, id) || { params: {} };
+    const obj = orec(sc.ids[0]);
+    const xrayOn = obj.visibility === 'xray';
+    const resolved = rs(sc.ids[0]);
+    const params = resolved.params || {};
+    const write = (patch) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, patch);
+    const setObj = (path, value) => sc.r.setSceneObjectField(sc.layerId, sc.ids, path, value);
+    flyMixedSeg(flyRow(fly, C.mode.label), {
+      options: C.modeOptions, value: xrayOn ? 'xray' : 'solid', ariaLabel: C.mode.aria,
+      mixed: sceneAgree(sc, (id) => (orec(id).visibility === 'xray' ? 'xray' : 'solid')).mixed,
+      onChange: (v) => { setObj('visibility', v); rebuild(); },
+    });
+    if (!xrayOn) { flyNote(fly, C.disabledHint); return; }
+    // Back-face ink is FILL ink. scene3d.js emits the far-surface family only
+    // for a SURFACE-FILL mapper (SURFACE_FILL = hatch / crosshatch / contour /
+    // spiral / stipple) on BOTH the faceted and the curved path — the faceted
+    // block bails on `!SURFACE_FILL.has(style.mapper)` and the curved block only
+    // tags `line.back` inside SurfaceFill. Under None / Wireframe / Contour
+    // slice there is no surface to see through, and x-ray output is byte-
+    // identical to solid (measured on box + capsule).
+    //
+    // That is what Jay hit (2026-08-16): a WIREFRAME capsule with X-ray on,
+    // Back faces On, density 0.40, Dashed, Object pen — five controls set, no
+    // back-face ink possible. The four rows are removed and the reason is
+    // stated, exactly as Shadow ▸ Angle is replaced by a note under Follow
+    // light. The Solid | X-ray segment above stays: `visibility` is a real
+    // persisted object field that takes effect the moment a fill is chosen.
+    const fillMappers = (FLY().style && FLY().style.fillMappers) || [];
+    const isFill = (m) => fillMappers.indexOf(m) !== -1;
+    // Multi-select: keep the rows if ANY selected object can render back faces —
+    // the write reaches all of them and unifies on rebuild.
+    if (!sc.ids.some((id) => isFill(rs(id).mapper))) { flyNote(fly, C.needsFillHint); return; }
+    flyMixedSeg(flyRow(fly, C.backFaces.label), {
+      options: C.onOff, value: params.xrayBackFaces !== false ? 'on' : 'off', ariaLabel: C.backFaces.aria,
+      mixed: sceneAgree(sc, (id) => ((rs(id).params || {}).xrayBackFaces !== false ? 'on' : 'off')).mixed,
+      onChange: (v) => write({ params: { ...params, xrayBackFaces: v === 'on' } }),
+    });
+    flyMixedSlider(flyRow(fly, C.backDensity.label), {
+      mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.xrayBackDensity) ? p.xrayBackDensity : 0.4; }).mixed,
+      props: {
+        value: Number.isFinite(params.xrayBackDensity) ? params.xrayBackDensity : 0.4, min: 0.2, max: 1, step: 0.05,
+        defaultValue: 0.4, ariaLabel: C.backDensity.aria,
+        onChange: (v) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, { params: { ...params, xrayBackDensity: v } }, { gesture: true, preview: true }),
+        onCommit: (v) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, { params: { ...params, xrayBackDensity: v } }),
+      },
+    });
+    flyMixedSelect(flyRow(fly, C.backLine.label), {
+      options: C.lineOptions, value: (typeof params.xrayBackLineType === 'string' ? params.xrayBackLineType : 'dashed'),
+      ariaLabel: C.backLine.aria,
+      mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return typeof p.xrayBackLineType === 'string' ? p.xrayBackLineType : 'dashed'; }).mixed,
+      onChange: (v) => write({ params: { ...params, xrayBackLineType: v } }),
+    });
+    flyMixedSelect(flyRow(fly, C.pen.label), {
+      options: scenePens(C.pen.inherit), value: params.xrayBackPenId || '', ariaLabel: C.pen.aria,
+      mixed: sceneAgree(sc, (id) => (rs(id).params || {}).xrayBackPenId || '').mixed,
+      onChange: (v) => write({ params: { ...params, xrayBackPenId: v || null } }),
+    });
+  };
+
+  const appendSceneFlyouts = (ctx) => {
+    // Feature-detect the renderer bridges + StyleCascade; omit the pills (rather
+    // than render dead knobs) if the scene style stack isn't present.
+    const r = ctx.renderer;
+    const SC = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
+    if (!r || !SC || typeof r.setSceneObjectStyle !== 'function') return;
+    const b = B(); const ic = IC();
+    // fs-s1/fs-u1 — Style/Shadow/Highlight/X-ray go icon-only (an `iconHtml`
+    // collapses the visible label but keeps the name as an explicit
+    // aria-label).
+    const pill = (key, builder, extraClass, iconHtml) => {
+      const meta = b[key] || {};
+      const visibleLabel = iconHtml ? '' : (meta.label || '');
+      els.content.appendChild(makeSceneFlyout(visibleLabel, meta.tooltip || '', extraClass, builder, iconHtml, meta.label || ''));
+    };
+    pill('sceneStyle', buildStyleBody, 'ctxbar-scene-style', ic.sceneStyle);
+    pill('sceneShadow', buildShadowBody, 'ctxbar-scene-shadow', ic.sceneShadow);
+    pill('sceneHighlight', buildHighlightBody, 'ctxbar-scene-highlight', ic.sceneHighlight);
+    // X-ray writes the object DEF (`visibility`), which the ground quad does not
+    // have — the pill is absent on a ground-only selection instead of opening a
+    // flyout whose Solid | X-ray segment writes nothing. Style / Shadow /
+    // Highlight above write the STYLE TABLE, which the ground does have, so they
+    // stay. See sceneSelHasObjectDef.
+    if (sceneSelHasObjectDef(sceneSel(ctx))) pill('sceneXray', buildXrayBody, 'ctxbar-scene-xray', ic.sceneXray);
+  };
+
   const renderContext = (ctx) => {
     if (!els.content) return;
     els.content.textContent = '';
@@ -912,6 +2080,9 @@
       case 'single-path': renderSingle(ctx); break;
       case 'multi': renderMulti(ctx); break;
       case 'direct': renderDirect(ctx); break;
+      case 'scene-object': renderSceneObject(ctx); break;
+      case 'scene-face':
+      case 'scene-edge': renderSceneComponent(ctx); break;
       default: renderIdle();
     }
     updateRoving();
@@ -1085,8 +2256,8 @@
       gEl.appendChild(row);
       fly.appendChild(gEl);
     });
-    const openFly = () => { open = true; fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false'); btn.setAttribute('aria-expanded', 'true'); state.closeFlyout = closeFly; };
-    const closeFly = () => { open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true'); btn.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === closeFly) state.closeFlyout = null; };
+    const openFly = () => { open = true; fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false'); btn.setAttribute('aria-expanded', 'true'); state.closeFlyout = closeFly; noteFlyoutOpened(fly); };
+    const closeFly = () => { open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true'); btn.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === closeFly) state.closeFlyout = null; noteFlyoutClosed(fly); };
     btn.setAttribute('aria-haspopup', 'menu');
     btn.setAttribute('aria-expanded', 'false');
     btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open ? closeFly() : openFly(); });
@@ -1110,19 +2281,29 @@
   // A labeled dropdown pill (reuses the text-field chip styling). Caret + label
   // (+ optional leading icon, used by the algorithm switcher), no bound picker
   // — the caller wires the toggle via makeMenuFlyout/makeAlgoFlyout.
-  const makeDropField = (extraClass, text, title, iconHtml, iconColor) => {
+  // `ariaLabel` (fs-s1) — explicit accessible name, independent of the visible
+  // `text`. Every existing caller omits it and keeps working unchanged: the
+  // accessible name falls back to `text` (then `title`), same as before this
+  // param existed. It exists for icon-only pills (Shape/Style/Shadow/Highlight)
+  // that pass `text: ''` — without it their accessible name would silently
+  // fall through to `title` alone, which callers should not have to rely on.
+  const makeDropField = (extraClass, text, title, iconHtml, iconColor, ariaLabel) => {
     const field = el('span', `ctxbar-text-field ${extraClass}`);
     field.setAttribute('tabindex', '-1'); field.setAttribute('data-ctxbar-roving', '');
     field.setAttribute('role', 'button'); field.setAttribute('aria-haspopup', 'menu');
     field.setAttribute('aria-expanded', 'false');
     if (title) field.title = title;
+    const accessibleName = ariaLabel || text || title;
+    if (accessibleName) field.setAttribute('aria-label', accessibleName);
     if (iconHtml) {
       const ico = el('span', 'lvl-algo-sub-ico');
       ico.style.color = iconColor || '';
       ico.innerHTML = iconHtml;
       field.appendChild(ico);
     }
-    const lbl = el('span', 'ctxbar-text-fieldlabel'); lbl.textContent = text; field.appendChild(lbl);
+    if (text) {
+      const lbl = el('span', 'ctxbar-text-fieldlabel'); lbl.textContent = text; field.appendChild(lbl);
+    }
     const caret = el('span', 'ctxbar-text-caret'); caret.textContent = '▾'; caret.setAttribute('aria-hidden', 'true');
     field.appendChild(caret);
     return field;
@@ -1137,11 +2318,13 @@
     const close = () => {
       open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
       field.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
+      noteFlyoutClosed(fly);
     };
     const openFn = () => {
       if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout(); // close any other open flyout
       open = true; fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false');
       field.setAttribute('aria-expanded', 'true'); state.closeFlyout = close;
+      noteFlyoutOpened(fly);
     };
     (items || []).forEach((it) => {
       if (it.header) { const h = el('div', 'ctxbar-align-group-label'); h.textContent = it.header; fly.appendChild(h); return; }
@@ -1187,11 +2370,13 @@
     const close = () => {
       open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
       field.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
+      noteFlyoutClosed(fly);
     };
     const openFn = () => {
       if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout(); // close any other open flyout
       open = true; fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false');
       field.setAttribute('aria-expanded', 'true'); state.closeFlyout = close;
+      noteFlyoutOpened(fly);
     };
     fly.addEventListener('click', (e) => {
       const row = e.target.closest('[data-algo-type]');
@@ -1205,17 +2390,89 @@
     return wrap;
   };
 
-  // Flips `fly` to open upward (and rotates `caret` to match) when there's
-  // more room above `wrap` than below, so the flyout never clips at the
-  // viewport edge. Called once on open, and again whenever the bar itself
-  // moves (drag or auto-anchor) so the direction stays correct live.
-  const positionFlyoutForSpace = (wrap, fly, caret) => {
-    const r = wrap.getBoundingClientRect();
-    const viewH = G.innerHeight || (G.document && G.document.documentElement.clientHeight) || 0;
-    const openUp = r.top > (viewH - r.bottom);
-    fly.classList.toggle('ctxbar-flyout-up', openUp);
-    if (caret) caret.classList.toggle('ctxbar-caret-up', openUp);
+  // ── Direction-aware dropdowns ─────────────────────────────────────────
+  // Governing rule (Jay): a menu opens AWAY from whichever viewport edge the
+  // bar is nearest, so it has the best chance of being seen in its entirety.
+  // Near the top → down; near the bottom → up. That single rule subsumes the
+  // "bottom third opens upward" heuristic (the bottom third is inside the
+  // bottom half) and it also subsumes an explicit overflow test: a menu can
+  // only fit above when there is more room above than below, which is exactly
+  // when this rule already flips. What overflow protection actually needs is
+  // not a second branch but a height cap — see `--ctxbar-menu-space` below.
+  //
+  // The decision is applied to the WHOLE BAR, never per menu. Every dropdown
+  // the bar can render — through any of its construction paths, in any context,
+  // for any algorithm — is stamped from this one pass, so a dropdown added
+  // later inherits the behavior with no extra wiring.
+  const MENU_GAP_PX = 6;      // matches the flyout's `calc(100% + 6px)` offset
+  const MENU_EDGE_PAD_PX = 8; // keep a menu clear of the very viewport edge
+
+  const viewportH = () => G.innerHeight
+    || (G.document && G.document.documentElement && G.document.documentElement.clientHeight)
+    || 0;
+
+  // jsdom hands back an all-zero rect for anything it hasn't laid out.
+  const isDegenerateRect = (r) => !r || (!r.width && !r.height && !r.top && !r.bottom);
+
+  // The one rect the decision reads: the bar itself, since the bar is the thing
+  // that moves. Unit harnesses leave the bar unlaid-out and mock a dropdown
+  // wrapper instead, so fall back to the first wrapper with a real rect.
+  const menuRefRect = () => {
+    const barRect = (els.bar && els.bar.getBoundingClientRect) ? els.bar.getBoundingClientRect() : null;
+    if (!isDegenerateRect(barRect)) return barRect;
+    const wraps = els.content ? els.content.querySelectorAll('.ctxbar-align-wrap') : [];
+    for (let i = 0; i < wraps.length; i += 1) {
+      const r = wraps[i].getBoundingClientRect();
+      if (!isDegenerateRect(r)) return r;
+    }
+    return barRect;
   };
+
+  // Stamps the up/down state on the bar and on EVERY dropdown it hosts, so a
+  // closed menu's caret agrees with the open one (the bar reads as one object).
+  // `--ctxbar-menu-space` publishes the room available on the chosen side; CSS
+  // clamps each flyout's max-height to it so a tall menu scrolls instead of
+  // running off-screen. CSS owns the caret pivot animation.
+  const applyMenuDirection = (up, space) => {
+    if (!els.bar) return;
+    state.menuUp = up;
+    els.bar.classList.toggle('ctxbar-menus-up', up);
+    if (Number.isFinite(space) && space > 0) {
+      els.bar.style.setProperty('--ctxbar-menu-space', `${Math.round(space)}px`);
+    }
+    const root = els.content || els.bar;
+    root.querySelectorAll('.ctxbar-align-flyout').forEach((f) => f.classList.toggle('ctxbar-flyout-up', up));
+    // The overflow (...) menu lives outside `content` (it's a sibling of it on
+    // the bar), so the querySelectorAll above never reaches it — stamp it here
+    // with the SAME class the pill flyouts use, so it opens the same direction
+    // as everything else on the bar, live, without a second direction system.
+    if (els.menu) els.menu.classList.toggle('ctxbar-flyout-up', up);
+    // Both caret flavours: the pill carets built by makeDropField/dropField,
+    // and the standalone size-presets chevron. Selecting on class rather than
+    // per-dropdown registration is the point — a menu added later is covered
+    // the moment it renders a caret.
+    root.querySelectorAll('.ctxbar-text-caret, .ctxbar-text-size-caret')
+      .forEach((c) => c.classList.toggle('ctxbar-caret-up', up));
+  };
+
+  // Recompute + apply. Cheap enough to run on the RAF tick: two rect reads.
+  const refreshMenuDirection = () => {
+    if (!els.bar) return;
+    const r = menuRefRect();
+    const viewH = viewportH();
+    if (isDegenerateRect(r) || !viewH) return;
+    const roomAbove = r.top - MENU_GAP_PX - MENU_EDGE_PAD_PX;
+    const roomBelow = viewH - r.bottom - MENU_GAP_PX - MENU_EDGE_PAD_PX;
+    const up = roomAbove > roomBelow; // open away from the nearest edge
+    applyMenuDirection(up, up ? roomAbove : roomBelow);
+  };
+
+  // Every flyout's open/close path funnels through these two so the shared pass
+  // knows which box to measure. They deliberately do NOT rebuild the bar —
+  // restoreState()/buildControls() from inside a flyout would tear it down
+  // mid-interaction.
+  const noteFlyoutOpened = (fly) => { state.openFlyoutEl = fly || null; refreshMenuDirection(); };
+  const noteFlyoutClosed = (fly) => { if (state.openFlyoutEl === fly) state.openFlyoutEl = null; };
 
   // ── TB-3: idle "Add Layer" dropdown ────────────────────────────────────
   // Full parity with the sidebar's Add Layer menu (`#btn-add-layer`/
@@ -1236,7 +2493,6 @@
     );
     const wrap = el('span', 'ctxbar-align-wrap ctxbar-algo-menu-wrap');
     const fly = el('div', 'ctxbar-align-flyout ctxbar-algo-flyout ctxbar-add-layer-flyout', { role: 'menu', 'aria-hidden': 'true' });
-    const caret = field.querySelector('.ctxbar-text-caret');
     let open = false;
     // `ctxbar-add-layer-item`, not `ctxbar-menu-item` — the overflow ⋯ menu
     // queries `.ctxbar-menu-item` globally (unscoped) to manage its own rows,
@@ -1277,13 +2533,13 @@
       open = false; fly.classList.remove('is-open'); fly.setAttribute('aria-hidden', 'true');
       field.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === close) state.closeFlyout = null;
       renderRoot(); // reset to the top-level list for the next time it opens
+      noteFlyoutClosed(fly);
     };
-    const reposition = () => positionFlyoutForSpace(wrap, fly, caret);
     const openFn = () => {
       if (state.closeFlyout && state.closeFlyout !== close) state.closeFlyout();
       open = true; fly.classList.add('is-open'); fly.setAttribute('aria-hidden', 'false');
       field.setAttribute('aria-expanded', 'true'); state.closeFlyout = close;
-      reposition();
+      noteFlyoutOpened(fly);
     };
     // Delegated: rows in the algo drill-down list carry `data-algo-type`.
     fly.addEventListener('click', (e) => {
@@ -1296,16 +2552,12 @@
     renderRoot();
     field.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open ? close() : openFn(); });
     wrap.appendChild(field); wrap.appendChild(fly);
-    // The caret must hint the correct open direction even while closed (e.g.
-    // right after a hard refresh with the bar pinned near the bottom), so this
-    // registers unconditionally rather than only while open — `reanchor()`
-    // calls it every tick regardless of open/closed state. Calling `reposition()`
-    // here directly would be premature: `wrap` isn't attached to the document
-    // yet (the caller appends it right after this returns), so it would only
-    // measure a zero rect — `reanchor()` runs `state.repositionOpenFlyout()`
-    // synchronously right after this render completes, once attached, which is
-    // the earliest point an accurate measurement is possible.
-    state.repositionOpenFlyout = reposition;
+    // No per-dropdown registration is needed any more: `reanchor()` runs the
+    // shared `refreshMenuDirection()` every tick and stamps every caret in the
+    // bar, open or closed. That is what makes a hard refresh with the bar
+    // pinned near the bottom come up with the arrows already pointing up —
+    // measuring here would be premature anyway, since `wrap` is not attached
+    // to the document until the caller appends it just after this returns.
     return wrap;
   };
   const doAddAlgoLayer = (layerType) => {
@@ -1483,10 +2735,12 @@
     const closeWeight = () => {
       wOpen = false; wFly.classList.remove('is-open'); wFly.setAttribute('aria-hidden', 'true');
       wField.setAttribute('aria-expanded', 'false'); if (state.closeFlyout === closeWeight) state.closeFlyout = null;
+      noteFlyoutClosed(wFly);
     };
     const openWeight = () => {
       wOpen = true; wFly.classList.add('is-open'); wFly.setAttribute('aria-hidden', 'false');
       wField.setAttribute('aria-expanded', 'true'); state.closeFlyout = closeWeight;
+      noteFlyoutOpened(wFly);
     };
     const commitWeight = (label) => {
       const a = getApp();
@@ -1666,11 +2920,17 @@
     // the left Algorithm Configuration panel's own dropdown) — the layer id
     // stays the same, so only tracking `type` here catches the switch.
     const primaryParams = (ctx.primaryLayer && ctx.primaryLayer.params) || {};
+    const sceneRenderer = getRenderer();
     const paramSig = ctx.kind === 'single-text'
       ? `${primaryParams.font || ''}|${primaryParams.fontWeight || ''}|${primaryParams.fontSize || ''}`
       : ctx.kind === 'single-algo'
         ? (ctx.primaryLayer && ctx.primaryLayer.type) || ''
-        : '';
+        // Scene contexts re-render when the scene selection or the Alt-cycle
+        // readout changes within the same kind (renderer-owned signature).
+        : `${ctx.kind}`.startsWith('scene-')
+          && sceneRenderer && typeof sceneRenderer.getSceneSelectionSignature === 'function'
+          ? sceneRenderer.getSceneSelectionSignature()
+          : '';
     const changed = ctx.kind !== state.kind || primaryId !== state.primaryId || paramSig !== state.paramSig;
     // In edit-path (direct) mode the anchor verbs' enabled state depends on the
     // live anchor selection, which changes without the bar's `kind` changing.
@@ -1723,11 +2983,14 @@
     // treat this render as stale and re-render a second time.
     state.primaryId = (ctx.primaryLayer && ctx.primaryLayer.id) || null;
     const rp = (ctx.primaryLayer && ctx.primaryLayer.params) || {};
+    const rr = getRenderer();
     state.paramSig = ctx.kind === 'single-text'
       ? `${rp.font || ''}|${rp.fontWeight || ''}|${rp.fontSize || ''}`
       : ctx.kind === 'single-algo'
         ? (ctx.primaryLayer && ctx.primaryLayer.type) || ''
-        : '';
+        : `${ctx.kind}`.startsWith('scene-') && rr && typeof rr.getSceneSelectionSignature === 'function'
+          ? rr.getSceneSelectionSignature()
+          : '';
     const renderer = getRenderer();
     state.anchorSig = (ctx.kind === 'direct' && renderer && typeof renderer.getSelectedAnchorSignature === 'function')
       ? renderer.getSelectedAnchorSignature() : '';

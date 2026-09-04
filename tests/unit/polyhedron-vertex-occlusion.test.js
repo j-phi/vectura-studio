@@ -103,9 +103,20 @@ describe('Polyhedron — vertexOcclusionMode true face occlusion (audit D1)', ()
 
   it("baseline-neutral: default 'outline' signature is unchanged by the fix (pinned)", () => {
     // The 'outline' branch is untouched by the D1 wiring. This pins the exact
-    // pre-change signature of the default polyhedron so any accidental change to
-    // the outline path is caught. (Captured against the pre-fix generator.)
-    expect(signature(generate({ vertexOcclusionMode: 'outline' }))).toBe('159|1294|5975.2134');
+    // signature of the default polyhedron so any accidental change to the
+    // outline path is caught.
+    //
+    // The TOPOLOGY half of the pin (159 paths | 1294 points) is the original
+    // pre-D1 capture and must never move. The total-length half was re-pinned
+    // when the buckyball was corrected to build at its true circumradius: the
+    // default polyhedron IS a buckyball, so it grew 15.14% and the traced length
+    // went 5975.2134 → 6720.8148. (Not 15.14% more length, because the vertex
+    // glyphs are fixed-radius dots that do not scale with the solid.) Nothing
+    // about the outline path itself changed — the identical path/point counts
+    // are the proof. See scene3d-buckyball-radius-migration.test.js.
+    const sig = signature(generate({ vertexOcclusionMode: 'outline' }));
+    expect(sig.split('|').slice(0, 2).join('|')).toBe('159|1294');
+    expect(sig).toBe('159|1294|6720.8148');
   });
 
   it("'outline' is byte-identical between pre/post fix on the self-occluding fixture (occlude-off changes nothing)", () => {

@@ -221,6 +221,28 @@
 
       if (!e.metaKey && !e.ctrlKey) {
         const key = e.key.toLowerCase();
+        // 3D Scene Studio (§5.4) — scene-scoped keys, gated on an active
+        // scene3d layer (getSceneShortcutLayer). NO new global bindings: with
+        // no scene layer active these branches fall through untouched.
+        //   Tab  = toggle V <-> A (select <-> direct)
+        //   D    = drop selection to ground (plain 'd'; Cmd+D / Alt+D above
+        //          keep their duplicate meaning)
+        //   A-again (cycle face <-> edge submode) lives in renderer.setTool —
+        //   the plain 'a' branch below re-invokes setActiveTool('direct') and
+        //   the renderer detects the repeat on a scene layer.
+        const sceneShortcutLayer = !e.altKey && this.app.renderer?.getSceneShortcutLayer?.();
+        if (sceneShortcutLayer) {
+          if (e.key === 'Tab' && !e.shiftKey) {
+            e.preventDefault();
+            this.setActiveTool?.(this.activeTool === 'direct' ? 'select' : 'direct');
+            return;
+          }
+          if (key === 'd' && !e.shiftKey) {
+            e.preventDefault();
+            this.app.renderer?.dropSceneSelectionToGround?.();
+            return;
+          }
+        }
         if (key === 'v') {
           e.preventDefault();
           this.setActiveTool?.('select');

@@ -50,8 +50,100 @@
     return layers.find((l) => l && l.id === id) || null;
   };
 
+  // Scene-tree Increment C — is this layer a scene GROUP (the three container
+  // invariants Increment B gates on)?
+  const _isSceneGroup = (layer) =>
+    !!(layer && layer.type === 'scene3d' && layer.isGroup && layer.containerRole === 'scene');
+
+  // The shapes a scene group can add. Order + labels MIRROR the scene panel's
+  // PRIMITIVES shelf (src/ui/panels/scene3d-panel.js: SHELF_PRIMS + MORE_PRIMS);
+  // every value is a key of the engine's OBJECT3D_PRIMITIVE_DEFAULTS, which is
+  // what addObjectToScene seeds the new object3d child's param bag from. `box`
+  // and `solid` keep their original menu keys so existing callers/tests hold.
+  const SCENE_ADD_SHAPES = [
+    { prim: 'box', key: 'scene-add-object', label: 'Box' },
+    { prim: 'sphere', label: 'Sphere' },
+    { prim: 'cylinder', label: 'Cylinder' },
+    { prim: 'torus', label: 'Torus' },
+    { prim: 'cone', label: 'Cone' },
+    { prim: 'plane', label: 'Plane' },
+    // ellipsoid + pyramid have full creation defaults and inspector controls but
+    // were absent here, so the layer menu could not add them — the ctxbar Shape
+    // flyout and the panel shelf now list the same 12.
+    { prim: 'ellipsoid', label: 'Ellipsoid' },
+    { prim: 'superellipsoid', label: 'Superellipsoid' },
+    { prim: 'torusKnot', label: 'Torus Knot' },
+    { prim: 'capsule', label: 'Capsule' },
+    { prim: 'pyramid', label: 'Pyramid' },
+    { prim: 'solid', key: 'scene-add-solid', label: 'Polyhedron' },
+  ];
+  const _shapeKey = (entry) => entry.key || `scene-add-prim:${entry.prim}`;
+  // Resolve a menu key back to the primitive addObjectToScene should build.
+  const _primitiveForKey = (key) => {
+    const hit = SCENE_ADD_SHAPES.find((s) => _shapeKey(s) === key);
+    return hit ? hit.prim : null;
+  };
+
+  // The object3d leaves eligible to be fused into a boolean group: the current
+  // multi-selection (or the clicked row) restricted to plain object3d layers
+  // that share ONE scene-group parent (not already inside a boolean group —
+  // Increment B collects direct object3d children only, no boolean nesting yet).
+  const _booleanOperands = (ui, layer) => {
+    const engine = ui && ui.app && ui.app.engine;
+    if (!engine) return [];
+    const sel = (ui.app.renderer && ui.app.renderer.selectedLayerIds) || new Set();
+    let ids = Array.from(sel);
+    if (layer && layer.id && !ids.includes(layer.id)) ids = [layer.id];
+    const objs = ids
+      .map((id) => engine.getLayerById && engine.getLayerById(id))
+      .filter((l) => l && l.type === 'object3d');
+    if (objs.length < 2) return [];
+    const parentId = objs[0].parentId;
+    if (!objs.every((o) => o.parentId === parentId)) return [];
+    const parent = engine.getLayerById && engine.getLayerById(parentId);
+    if (!_isSceneGroup(parent)) return []; // operands must sit loose under a scene
+    return objs.map((o) => o.id);
+  };
+
   const _itemsFor = (ui, layer) => {
     const items = [];
+    // Scene-tree Increment C — scene / object actions lead the menu when the
+    // clicked row is part of a 3D scene tree.
+    if (_isSceneGroup(layer) && ui.app && ui.app.engine
+      && typeof ui.app.engine.addObjectToScene === 'function') {
+      // Every primitive the engine can seed, named. Previously this menu only
+      // offered a generic "Add object" (always a BOX) plus "Add solid
+      // (polyhedron)", so sphere / torus / cylinder / cone / plane and the three
+      // exotics could not be added to a scene tree from anywhere in the UI.
+      items.push({ category: 'Add shape' });
+      SCENE_ADD_SHAPES.forEach((s) => items.push({ key: _shapeKey(s), label: s.label }));
+      // Scene-tree Increment E — add lights (by type) + the ground (only when no
+      // ground child exists yet) straight from the scene group's context menu.
+      const engine = ui.app.engine;
+      if (typeof engine.addLightToScene === 'function') {
+        items.push({ category: 'Add light' });
+        items.push({ key: 'scene-add-light', label: 'Sun (directional)' });
+        items.push({ key: 'scene-add-light-point', label: 'Point' });
+        items.push({ key: 'scene-add-light-spot', label: 'Spot' });
+        items.push({ key: 'scene-add-light-area', label: 'Area' });
+        items.push({ key: 'scene-add-light-ambient', label: 'Ambient' });
+      }
+      if (typeof engine.addGroundToScene === 'function') {
+        const hasGround = typeof engine.getLayerDescendants === 'function'
+          && engine.getLayerDescendants(layer.id).some((l) => l && l.type === 'sceneGround3d');
+        if (!hasGround) {
+          items.push({ separator: true });
+          items.push({ key: 'scene-add-ground', label: 'Add ground' });
+        }
+      }
+      items.push({ separator: true });
+    }
+    const operands = layer && layer.type === 'object3d' ? _booleanOperands(ui, layer) : [];
+    if (operands.length >= 2 && ui.app && ui.app.engine
+      && typeof ui.app.engine.createBooleanGroupFromSelection === 'function') {
+      items.push({ key: 'scene-create-boolean', label: 'Create boolean group' });
+      items.push({ separator: true });
+    }
     items.push({ key: 'rename', label: 'Rename' });
     items.push({ key: 'duplicate', label: 'Duplicate', shortcut: '⌘D' });
     items.push({ key: 'delete', label: 'Delete', shortcut: 'Del' });
@@ -68,6 +160,13 @@
     if (layer && layer.type && layer.type !== 'shape' && !layer.isGroup) {
       items.push({ separator: true });
       items.push({ key: 'expand-into-group', label: 'Expand into group' });
+    }
+    // Convert-to-Scene (I1) — a standalone polyhedron/topoform layer can bake
+    // into a 3D scene tree so the shared compositor lights/occludes/shadows it.
+    if (layer && !layer.isGroup && (layer.type === 'polyhedron' || layer.type === 'topoform')
+      && ui.app && ui.app.engine && typeof ui.app.engine.convertAlgoToScene === 'function') {
+      items.push({ separator: true });
+      items.push({ key: 'convert-to-scene', label: 'Convert to Scene' });
     }
     const hasFills = layer && !layer.isGroup && Array.isArray(layer.fills) && layer.fills.length > 0;
     if (hasFills) {
@@ -87,6 +186,59 @@
     if (!ui || !layer) return;
     const engine = ui.app && ui.app.engine;
     if (!engine) return;
+    const addPrim = _primitiveForKey(key);
+    if (addPrim) {
+      if (typeof engine.addObjectToScene !== 'function') return;
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      const oid = engine.addObjectToScene(layer.id, addPrim);
+      if (oid) {
+        ui.app.setSelection && ui.app.setSelection([oid], oid);
+        engine.setActiveLayerId && engine.setActiveLayerId(oid);
+      }
+      ui.renderLayers && ui.renderLayers();
+      ui.app.render && ui.app.render();
+      return;
+    }
+    // Scene-tree Increment E — add a light / ground child to a scene group.
+    if (key === 'scene-add-light' || key.indexOf('scene-add-light-') === 0) {
+      if (typeof engine.addLightToScene !== 'function') return;
+      const type = key === 'scene-add-light' ? 'directional' : key.slice('scene-add-light-'.length);
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      const lid = engine.addLightToScene(layer.id, type);
+      if (lid) {
+        ui.app.setSelection && ui.app.setSelection([lid], lid);
+        engine.setActiveLayerId && engine.setActiveLayerId(lid);
+      }
+      ui.renderLayers && ui.renderLayers();
+      ui.app.render && ui.app.render();
+      return;
+    }
+    if (key === 'scene-add-ground') {
+      if (typeof engine.addGroundToScene !== 'function') return;
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      const gid = engine.addGroundToScene(layer.id);
+      if (gid) {
+        ui.app.setSelection && ui.app.setSelection([gid], gid);
+        engine.setActiveLayerId && engine.setActiveLayerId(gid);
+      }
+      ui.renderLayers && ui.renderLayers();
+      ui.app.render && ui.app.render();
+      return;
+    }
+    if (key === 'scene-create-boolean') {
+      if (typeof engine.createBooleanGroupFromSelection !== 'function') return;
+      const operands = _booleanOperands(ui, layer);
+      if (operands.length < 2) return;
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      const gid = engine.createBooleanGroupFromSelection(operands);
+      if (gid) {
+        ui.app.setSelection && ui.app.setSelection([gid], gid);
+        engine.setActiveLayerId && engine.setActiveLayerId(gid);
+      }
+      ui.renderLayers && ui.renderLayers();
+      ui.app.render && ui.app.render();
+      return;
+    }
     if (key === 'rename') {
       const card = document.querySelector(`[data-layer-id="${layer.id}"] .lvl-name, [data-lvl-id="${layer.id}"] .lvl-name`);
       if (card && typeof card.focus === 'function') {
@@ -131,6 +283,24 @@
       if (ui.layerLockedIds.has(layer.id)) ui.layerLockedIds.delete(layer.id);
       else ui.layerLockedIds.add(layer.id);
       ui.renderLayers && ui.renderLayers();
+      return;
+    }
+    if (key === 'convert-to-scene') {
+      if (typeof engine.convertAlgoToScene !== 'function') return;
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      const result = engine.convertAlgoToScene(layer.id);
+      if (!result || !result.ok) {
+        // Surface the block (contours) / failure reason; leave the layer intact.
+        const Toast = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.UI?.overlays?.Toast;
+        const msg = (result && result.message)
+          || (result && result.reason === 'unsupported' ? 'This layer type cannot be converted to a scene.' : null);
+        if (Toast && msg) Toast.show({ message: msg, variant: 'warning' });
+        return;
+      }
+      ui.app.setSelection && ui.app.setSelection([result.groupId], result.groupId);
+      engine.setActiveLayerId && engine.setActiveLayerId(result.groupId);
+      ui.renderLayers && ui.renderLayers();
+      ui.app.render && ui.app.render();
       return;
     }
     if (key === 'expand-into-group') {

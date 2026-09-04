@@ -452,6 +452,11 @@
         selectionOutlineColor: SETTINGS.selectionOutlineColor,
         selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
         selectionOutlineHide3d: SETTINGS.selectionOutlineHide3d !== false,
+        // Master switch for every non-print 3D-scene helper overlay (gizmos,
+        // selection outline, handles, orbit pad — see Renderer#_sceneHelpersVisible).
+        // Default true; `!== false` so an absent/undefined SETTINGS value
+        // (e.g. before src/config/defaults.js grows this key) still reads true.
+        sceneHelpersVisible: SETTINGS.sceneHelpersVisible !== false,
         gridType: SETTINGS.gridType,
         gridOpacity: SETTINGS.gridOpacity,
         gridStyle: SETTINGS.gridStyle,
@@ -624,6 +629,9 @@
       SETTINGS.selectionOutlineHide3d = snapshot.selectionOutlineHide3d === undefined
         ? SETTINGS.selectionOutlineHide3d
         : snapshot.selectionOutlineHide3d === true;
+      SETTINGS.sceneHelpersVisible = snapshot.sceneHelpersVisible === undefined
+        ? SETTINGS.sceneHelpersVisible
+        : snapshot.sceneHelpersVisible === true;
       // gridType: legacy `gridOverlay` boolean upgrade still honored.
       const GRID_TYPES = ['none', 'standard', 'graph', 'iso', 'polar', 'dots'];
       const gridFallback = snapshot.gridOverlay ? 'standard' : SETTINGS.gridType;
@@ -1309,7 +1317,21 @@
 
     updateStats() {
       const s = this.engine.getStats();
-      this.ui?.updateStats?.(s);
+      // Plot-physics readout (Phase 4A Inc-2, READ-ONLY): a per-pen lifts /
+      // travel / time breakdown measured on the real post-line-sort/dedup plot
+      // order. Kept as a separate call so the legacy global readout above is
+      // untouched; degrades to null if the engine build predates it.
+      let physics = null;
+      try {
+        physics = this.engine.computeStats(this.engine.layers, {
+          physics: true,
+          useOptimized: true,
+          includePlotterOptimize: true,
+        });
+      } catch (err) {
+        physics = null;
+      }
+      this.ui?.updateStats?.(s, physics);
     }
 
     computeDisplayGeometry() {

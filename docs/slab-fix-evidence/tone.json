@@ -1,0 +1,126 @@
+{
+  "newBuild": {
+    "onePenDown": {
+      "law": "onePenDown",
+      "buildMs": 12560,
+      "paths": 112,
+      "inkMm": 21916,
+      "left": 0.6944,
+      "mid": 0.6293,
+      "right": 0.3516,
+      "all": 0.5801
+    },
+    "trochoidLoop": {
+      "law": "trochoidLoop",
+      "buildMs": 8430,
+      "paths": 635,
+      "inkMm": 25871,
+      "left": 0.8583,
+      "mid": 0.7707,
+      "right": 0.4385,
+      "all": 0.7087
+    },
+    "interlockWeave": {
+      "law": "interlockWeave",
+      "buildMs": 9817,
+      "paths": 75,
+      "inkMm": 17490,
+      "left": 0.7158,
+      "mid": 0.5344,
+      "right": 0.28,
+      "all": 0.5286
+    },
+    "weaveDepth": {
+      "law": "weaveDepth",
+      "buildMs": 10511,
+      "paths": 143,
+      "inkMm": 17308,
+      "left": 0.5757,
+      "mid": 0.5926,
+      "right": 0.3567,
+      "all": 0.5287
+    },
+    "ampSpacing": {
+      "law": "ampSpacing",
+      "buildMs": 9298,
+      "paths": 245,
+      "inkMm": 16059,
+      "left": 0.6327,
+      "mid": 0.4597,
+      "right": 0.3888,
+      "all": 0.4977
+    },
+    "taperedEnds": {
+      "law": "taperedEnds",
+      "buildMs": 3130,
+      "paths": 106,
+      "inkMm": 12446,
+      "left": 0.4593,
+      "mid": 0.3307,
+      "right": 0.3244,
+      "all": 0.3706
+    }
+  },
+  "base": {
+    "onePenDown": {
+      "law": "onePenDown",
+      "buildMs": 39,
+      "paths": 5,
+      "inkMm": 4032,
+      "left": 0.721,
+      "mid": 0.6293,
+      "right": 0.2817,
+      "all": 0.5645
+    },
+    "trochoidLoop": {
+      "law": "trochoidLoop",
+      "buildMs": 47,
+      "paths": 1473,
+      "inkMm": 6232,
+      "left": 0.8473,
+      "mid": 0.7584,
+      "right": 0.4324,
+      "all": 0.6984
+    },
+    "interlockWeave": {
+      "law": "interlockWeave",
+      "buildMs": 35,
+      "paths": 1329,
+      "inkMm": 3965,
+      "left": 0.748,
+      "mid": 0.6877,
+      "right": 0.4108,
+      "all": 0.6329
+    },
+    "weaveDepth": {
+      "law": "weaveDepth",
+      "buildMs": 71,
+      "paths": 2433,
+      "inkMm": 4691,
+      "left": 0.6103,
+      "mid": 0.6372,
+      "right": 0.4398,
+      "all": 0.5805
+    },
+    "ampSpacing": {
+      "law": "ampSpacing",
+      "buildMs": 55,
+      "paths": 2739,
+      "inkMm": 5034,
+      "left": 0.6588,
+      "mid": 0.5914,
+      "right": 0.4098,
+      "all": 0.5672
+    },
+    "taperedEnds": {
+      "law": "taperedEnds",
+      "buildMs": 11,
+      "paths": 403,
+      "inkMm": 2426,
+      "left": 0.4564,
+      "mid": 0.3334,
+      "right": 0.3227,
+      "all": 0.3704
+    }
+  }
+}

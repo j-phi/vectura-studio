@@ -102,6 +102,38 @@ describe('Reduced-motion compliance', () => {
     expect(after).toMatch(/transition-duration:\s*0\.01ms/);
   });
 
+  // The contextual task bar's dropdown carets pivot (rotate 180°) between
+  // "menu opens down" and "menu opens up". The rotation is the state itself, so
+  // reduced motion must drop only the TRANSITION — never the transform, or a
+  // low-placed bar would show down-arrows over upward menus.
+  test('ctxbar caret pivot: reduced motion drops the transition but keeps the rotation', () => {
+    const componentsCss = fs.readFileSync(
+      path.join(repoRoot, 'src', 'ui', 'skin', 'components.css'), 'utf8',
+    );
+    // The pivot itself is a transform, declared unconditionally in components.css
+    // (state, not decoration) — driven from both the per-element stamp and the
+    // bar-level state, and covering both caret flavours.
+    const pivotRule = componentsCss.match(/([^}]*\.ctxbar-caret-up[^{}]*)\{([^}]*rotate\(180deg\)[^}]*)\}/);
+    expect(pivotRule).toBeTruthy();
+    const selectors = pivotRule[1];
+    expect(selectors).toMatch(/\.ctxbar-text-caret\.ctxbar-caret-up/);
+    expect(selectors).toMatch(/\.ctxbar-text-size-caret\.ctxbar-caret-up/);
+    expect(selectors).toMatch(/\.ctxbar-menus-up\s+\.ctxbar-text-caret/);
+    // …and the animation of it lives in motion.css as a transition, which a
+    // prefers-reduced-motion block neutralizes. motion.css carries several
+    // reduce blocks, so find the one that actually mentions the carets.
+    const reduceBlocks = motionCss.split('@media (prefers-reduced-motion: reduce)').slice(1);
+    const CARET_KILL = /(\.ctxbar-text-caret[\s\S]{0,120}?transition:\s*none[^;]*;)/;
+    const caretBlock = reduceBlocks.find((b) => CARET_KILL.test(b));
+    expect(caretBlock).toBeTruthy();
+    const rule = caretBlock.match(CARET_KILL)[1];
+    expect(rule).toMatch(/\.ctxbar-text-size-caret/); // both caret flavours
+    // The reduced-motion fallback must NOT cancel the rotation.
+    expect(rule).not.toMatch(/transform:\s*none/);
+    // The un-media'd transition that this cancels really does exist.
+    expect(motionCss).toMatch(/\.ctxbar-text-size-caret\s*\{[^}]*transition:\s*transform/);
+  });
+
   test('JS-driven motion (Vectura.UI.motion / SkinManager) gates on prefers-reduced-motion', () => {
     const motionJs = fs.readFileSync(path.join(repoRoot, 'src', 'ui', 'motion.js'), 'utf8');
     const utilsJs = fs.readFileSync(path.join(repoRoot, 'src', 'ui', 'utils.js'), 'utf8');

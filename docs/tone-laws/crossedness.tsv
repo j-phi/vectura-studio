@@ -1,0 +1,71 @@
+law	cell	wins	Cmean	Cp95	fracSingle	fracCrossed	CROSSES	gradP95	gradMax	seamCells	handoffDL	handoffLo	handoffHi	sepMed	Lspan	angles
+NO TONE (stage 0)	ellipsoid-contour	1054	0.048	0.581	0.932	0.068	no	0.358	0.676	65	1	96.1	95.2	18	1.9	2/17/166
+NO TONE (stage 0)	sphere-crosshatch	1717	0.602	0.99	0.277	0.722	YES	0.638	0.706	906	4.7	95	90.2	61	7.8	19/160/34
+NO TONE (stage 0)	cylinder-hatch	2411	0.083	0.814	0.892	0.107	no	0.459	0.692	288	16.2	100	83.8	17	6.1	31
+NO TONE (stage 0)	capsule-hatch	1544	0.068	0.748	0.909	0.089	no	0.442	0.686	178	13.1	99.5	86.4	15	4.3	23/39
+NO TONE (stage 0)	sphere-hatch	1717	0.039	0	0.951	0.048	no	0.131	0.654	62				17	4.3	19/34
+bundleEased	sphere-hatch	1717	0.024	0	0.97	0.03	no	0	0.639	50				18	42.1	20
+bundleEased	capsule-hatch	1544	0.049	0.642	0.937	0.063	no	0.369	0.682	93				17	41.8	24
+bundleEased	cylinder-hatch	2411	0.066	0.765	0.916	0.084	no	0.444	0.676	230	24.6	66.8	91.4	20	34.6	31
+bundleEased	sphere-crosshatch	1717	0.884	0.997	0.064	0.936	no	0.46	0.672	135	86.7	86.7	0	61	79.4	159/20
+bundleEased	ellipsoid-contour	1054	0.031	0	0.954	0.046	no	0.281	0.595	49	4.2	89.8	94	21	41.5	0/15
+contFieldSurface	sphere-hatch	1717	0.015	0	0.982	0.018	no	0	0.678	46				16	11.9	20
+contFieldSurface	capsule-hatch	1544	0.029	0	0.963	0.037	no	0.315	0.656	84				16	11.2	35/14
+contFieldSurface	cylinder-hatch	2411	0.049	0.685	0.94	0.06	no	0.438	0.683	210				22	40	30
+contFieldSurface	sphere-crosshatch	1717	0.78	0.985	0.064	0.936	no	0.21	0.684	78	0	0	0	61	16.2	159/20
+contFieldSurface	ellipsoid-contour	1054	0.041	0.497	0.94	0.058	no	0.307	0.644	55				15	12.4	2/17
+continuousPitch	sphere-hatch	1717	0.029	0	0.962	0.037	no	0.062	0.654	56				16	9.3	19
+continuousPitch	capsule-hatch	1544	0.034	0	0.957	0.043	no	0.376	0.646	98				17	9.5	23
+continuousPitch	cylinder-hatch	2411	0.065	0.748	0.916	0.084	no	0.425	0.66	223				21	28.4	31
+continuousPitch	sphere-crosshatch	1717	0.653	0.977	0.171	0.828	YES	0.425	0.699	283	9.2	78.3	69.1	63	8.2	19/159/37
+continuousPitch	ellipsoid-contour	1054	0.041	0.452	0.941	0.059	no	0.297	0.685	57	6.5	87.2	93.7	16	5.8	2/17/166
+crossFade	sphere-hatch	1717	0.616	0.961	0.168	0.831	YES	0.467	0.692	432	18.4	90.6	72.3	30	7.6	19/0
+crossFade	capsule-hatch	1544	0.661	0.971	0.116	0.883	no	0.465	0.701	335	28.7	90.6	61.8	29	10.8	23/0
+crossFade	cylinder-hatch	2411	0.788	0.986	0.099	0.9	no	0.448	0.698	237	67	0	67	24	48.9	30/1
+crossFade	sphere-crosshatch	1717	0.856	0.993	0.016	0.981	no	0.196	0.655	51	42.2	10.5	52.7	57	8.3	19/159/0
+crossFade	ellipsoid-contour	1054	0.097	0.732	0.854	0.146	no	0.418	0.668	140	1.3	81.5	82.8	16	5.7	2/19/167
+layeredCross	sphere-hatch	1717	0.348	0.961	0.549	0.451	YES	0.583	0.695	683	6.8	97.9	91.2	20	7	19/4/34
+layeredCross	capsule-hatch	1544	0.469	0.971	0.405	0.594	YES	0.558	0.706	580	6.7	97.4	90.7	21	8.8	19/2/38
+layeredCross	cylinder-hatch	2411	0.203	0.89	0.704	0.294	YES	0.504	0.694	841	42.1	79.9	37.8	23	19.8	2/29/45
+layeredCross	sphere-crosshatch	1717	0.706	0.988	0.129	0.871	no	0.507	0.692	420	38.7	51.6	90.3	48	7	18/2/34
+layeredCross	ellipsoid-contour	1054	0.048	0.56	0.928	0.071	no	0.323	0.668	63				16	8.6	2/18
+mkScribble	sphere-hatch	1717	0.924	0.998	0.033	0.967	no	0.124	0.664	43	50.5	92.9	42.4	25	37.9	122/99/143
+mkScribble	capsule-hatch	1544	0.912	0.997	0.03	0.97	no	0.174	0.7	39	51.6	93.2	41.6	27	38.8	124/101/147
+mkScribble	cylinder-hatch	2411	0.885	0.998	0.072	0.928	no	0.397	0.702	148	53.9	95.1	41.2	24	34.2	131/110
+mkScribble	sphere-crosshatch	1717	0.938	0.998	0.01	0.99	no	0.118	0.642	26				26	87.2	59/81/122
+mkScribble	ellipsoid-contour	1054	0.939	0.996	0.005	0.995	no	0.11	0.687	7				29	46.5	111/80/95
+multiScale	sphere-hatch	1717	0.036	0	0.953	0.045	no	0.167	0.648	64				16	32.7	20/35
+multiScale	capsule-hatch	1544	0.051	0.652	0.932	0.067	no	0.381	0.683	125				15	31.2	21
+multiScale	cylinder-hatch	2411	0.077	0.8	0.903	0.097	no	0.47	0.687	263				19	14.8	31
+multiScale	sphere-crosshatch	1717	0.272	0.925	0.618	0.377	YES	0.553	0.688	904				58	42.1	20/159/35
+multiScale	ellipsoid-contour	1054	0.035	0	0.95	0.048	no	0.322	0.57	54				16	29.2	2/17
+penCross	sphere-hatch	1717	0.487	0.984	0.437	0.562	YES	0.624	0.703	881	28	92.3	64.4	39	6.6	19/0
+penCross	capsule-hatch	1544	0.524	0.982	0.391	0.608	YES	0.616	0.7	848	30.1	92.4	62.4	40	7.5	23/0
+penCross	cylinder-hatch	2411	0.495	0.982	0.414	0.585	YES	0.622	0.701	1424	25.6	91.8	66.2	44	40.1	31/2/166
+penCross	sphere-crosshatch	1717	0.846	0.991	0.022	0.978	no	0.392	0.671	103	31.5	1.9	33.5	49	9.6	19/0/147
+penCross	ellipsoid-contour	1054	0.071	0.781	0.908	0.088	no	0.466	0.674	109				16	7	0/15
+penReserve	sphere-hatch	1717	0.395	0.945	0.455	0.538	YES	0.571	0.685	891	10.4	94.3	84	65	14.3	20/35/153
+penReserve	capsule-hatch	1544	0.358	0.936	0.499	0.499	YES	0.54	0.688	790	8	94	86	68	16.3	22/156/38
+penReserve	cylinder-hatch	2411	0.325	0.949	0.569	0.431	YES	0.581	0.693	1311	21.2	64.3	85.5	67	19.8	31/149
+penReserve	sphere-crosshatch	1717	0.67	0.98	0.174	0.823	YES	0.531	0.677	562	93.9	93.9	0	59	38.7	159/20
+penReserve	ellipsoid-contour	1054	0.301	0.941	0.6	0.398	YES	0.584	0.671	498	27.1	59	86.1	26	25.3	2/22
+screenAngles	sphere-hatch	1717	0.058	0.624	0.919	0.079	no	0.301	0.661	122				26	31.8	20/35
+screenAngles	capsule-hatch	1544	0.069	0.654	0.898	0.097	no	0.422	0.666	206				21	34.4	24
+screenAngles	cylinder-hatch	2411	0.134	0.906	0.834	0.165	YES	0.464	0.685	303	16.7	58.1	74.8	26	11.9	30
+screenAngles	sphere-crosshatch	1717	0.849	0.992	0.056	0.943	no	0.461	0.674	153	0	0	0	61	67.4	159/20
+screenAngles	ellipsoid-contour	1054	0.152	0.903	0.8	0.199	YES	0.581	0.699	251	78.4	78.4	0	55	44.5	2/17
+taperedEnds	sphere-hatch	1717	0.036	0	0.952	0.046	no	0.176	0.676	65				16	27.5	20/35
+taperedEnds	capsule-hatch	1544	0.052	0.597	0.929	0.069	no	0.429	0.665	150				15	29.4	24
+taperedEnds	cylinder-hatch	2411	0.062	0.723	0.919	0.08	no	0.421	0.679	226	13.2	76.8	90	20	21.9	30
+taperedEnds	sphere-crosshatch	1717	0.836	0.995	0.065	0.935	no	0.468	0.697	157	0	0	0	61	74.5	159/20
+taperedEnds	ellipsoid-contour	1054	0.047	0.549	0.932	0.065	no	0.382	0.689	67	13.3	80.8	94.1	18	37.4	2/17
+weightCrossHandoff	sphere-hatch	1717	0.182	0.841	0.733	0.266	YES	0.462	0.672	467	60.2	93.6	33.4	34	22.3	20
+weightCrossHandoff	capsule-hatch	1544	0.166	0.843	0.755	0.244	YES	0.43	0.642	331	55.3	93.5	38.2	36	19.8	24
+weightCrossHandoff	cylinder-hatch	2411	0.401	0.929	0.43	0.57	YES	0.56	0.705	1152	51.8	17.2	69	46	15.7	31
+weightCrossHandoff	sphere-crosshatch	1717	0.757	0.988	0.115	0.885	no	0.578	0.688	453	80.8	80.8	0	61	59.2	20/148
+weightCrossHandoff	ellipsoid-contour	1054	0.055	0.665	0.924	0.073	no	0.421	0.669	80	11.3	79.3	90.6	17	24.2	2/19
+whiteBand	sphere-hatch	1717	0.037	0	0.951	0.047	no	0.161	0.676	65				16	29	20/35
+whiteBand	capsule-hatch	1544	0.054	0.623	0.926	0.072	no	0.43	0.687	154				16	31	24
+whiteBand	cylinder-hatch	2411	0.065	0.726	0.915	0.085	no	0.423	0.664	239	11.5	78.5	90	20	23.1	30
+whiteBand	sphere-crosshatch	1717	0.832	0.992	0.069	0.931	no	0.467	0.701	157	83.3	83.3	0	61	75.1	159/20
+whiteBand	ellipsoid-contour	1054	0.048	0.539	0.931	0.066	no	0.387	0.691	71				16	39.3	2/17

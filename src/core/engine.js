@@ -45,12 +45,24 @@
   // shape changes incompatibly, and add a migration step below. Payloads
   // without the field are version 0 (legacy, pre-1.3.x) — identical to
   // version 1 except for the field itself.
-  const VECTURA_FORMAT_VERSION = 1;
+  //
+  // v2 (Scene-tree Increment F): a saved MONOLITH scene3d layer (inline
+  // params.objects/groups/lights/ground, not yet a scene group) expands into
+  // the canonical scene TREE on load. The payload SHAPE is unchanged (the
+  // expansion is a layer-graph rewrite done post-construction — see
+  // _migrateMonolithScenesToTree, gated on the source version so a v2 doc is
+  // left alone). Increment B's inline-union compositor keeps any un-expanded
+  // monolith rendering byte-identically, so this changes the layer TREE, not
+  // the emitted geometry.
+  const VECTURA_FORMAT_VERSION = 2;
 
   // Keyed by SOURCE version: STATE_MIGRATIONS[n] upgrades a version-n payload
   // to version n+1. importState walks the chain up to VECTURA_FORMAT_VERSION.
   const STATE_MIGRATIONS = {
     0: (state) => state, // 0 → 1: the field was added; the payload shape is unchanged.
+    1: (state) => state, // 1 → 2: payload shape unchanged; the monolith → tree
+    //                            expansion is a layer-graph rewrite applied on
+    //                            live layers (_migrateMonolithScenesToTree).
   };
 
   // Payloads NEWER than this build load as-is (best-effort forward compat);
@@ -65,6 +77,33 @@
     }
     return out;
   };
+
+  // COMPOSED GROUP INK — the single definition every consumer shares.
+  //
+  // A container GROUP owns no `paths` of its own: its ink is composed from its
+  // (consumed) children and published on the group. A morph group's blend lives
+  // on `morphedPaths`; a 3D scene group's one composed HLR pass lives on
+  // `scenePaths`. Any consumer that walks `engine.layers` and reads
+  // `layer.paths` therefore sees NOTHING for such a group — which is how a
+  // document containing only a 3D scene exported a blank SVG, and how line sort
+  // never reached a scene's 966 composed paths.
+  //
+  // Returns the composed array, or null for a layer whose geometry is its own
+  // (every leaf, and a compound group — a compound bakes its silhouette into
+  // `layer.paths`, so it needs no special case here).
+  const groupInkPaths = (layer) => {
+    if (!layer || !layer.isGroup) return null;
+    if (Array.isArray(layer.morphedPaths)) return layer.morphedPaths;
+    if (Array.isArray(layer.scenePaths)) return layer.scenePaths;
+    return null;
+  };
+
+  // A layer that contributes ink of its own: every non-group layer, plus a
+  // group whose composed ink is published (above). This is the membership rule
+  // for optimization targets, the SVG export walk and the draw-order preview —
+  // one predicate, so the three consumers cannot drift into describing
+  // different documents.
+  const layerOwnsInk = (layer) => Boolean(layer) && (!layer.isGroup || groupInkPaths(layer) !== null);
 
   const PRIMITIVE_SHAPE_KINDS = new Set(['circle', 'rect', 'oval', 'polygon', 'star']);
   const isFreeformShapePath = (path) => {
@@ -361,7 +400,29 @@
   const sanitizeImportedParams = (params, layerType) => {
     if (!params || typeof params !== 'object') return {};
     const defaults = (ALGO_DEFAULTS && ALGO_DEFAULTS[layerType]) || {};
-    return sanitizeParamTree(params, defaults, { key: null });
+    const sanitized = sanitizeParamTree(params, defaults, { key: null });
+    // CONTRACT E (3D Scene Studio): scene3d params carry a whole scene graph.
+    // After the generic numeric pass, run the scene-aware sanitizer — clamps
+    // scene numerics, restores objects/lights/camera/styleTable shapes, and
+    // applies the sceneVersion migration chain (Scene3D.Params owns both).
+    if (layerType === 'scene3d') {
+      const sceneParams = window.Vectura?.Scene3D?.Params;
+      if (sceneParams && typeof sceneParams.sanitizeSceneParams === 'function') {
+        return sceneParams.sanitizeSceneParams(sanitized);
+      }
+    }
+    // X-ray fold — scene-TREE layers carry x-ray objects too (an object3d leaf,
+    // or a group still holding legacy inline objects[]). Run the scene migration
+    // CHAIN (the seed only — these are not whole scenes, so no scene-level
+    // normalization) so a v1 x-ray object keeps its dashed hidden edges after
+    // the fold. booleanGroup3d has no x-ray object ⇒ the migration is a no-op.
+    if (layerType === 'object3d' || layerType === 'sceneGroup3d' || layerType === 'booleanGroup3d') {
+      const sceneParams = window.Vectura?.Scene3D?.Params;
+      if (sceneParams && typeof sceneParams.migrateScene === 'function') {
+        return sceneParams.migrateScene(sanitized);
+      }
+    }
+    return sanitized;
   };
 
   // Deep-clone params for history/serialization, but SHARE the (immutable,
@@ -370,12 +431,35 @@
   // ever replaced wholesale on re-import, never mutated in place, so sharing the
   // reference is safe and avoids hundreds of KB of JSON churn per interaction.
   // JSON.stringify on save still follows the reference, so .vectura round-trips.
+  //
+  // CONTRACT E (3D Scene Studio): `params.assets` — the scene3d content-hashed
+  // asset table — gets the same ref-skip treatment: history snapshots and
+  // duplicates clone references, never mesh blobs (spec A-11/A-16).
+  //
+  // The mesh lives at TWO depths and both must be skipped. A topoform/polyhedron
+  // layer keeps it at `params.importedMesh`, but a scene object3d child — what
+  // 3D model import and Convert-to-Scene produce — nests its primitive bag one
+  // level down, at `params.params.importedMesh`. Skipping only the top level let
+  // a 40k-face import deep-clone 4.84 MB into EVERY undo snapshot (×20 history
+  // slots, re-cloned on every interaction).
   const cloneLayerParams = (params) => {
     if (!params || typeof params !== 'object') return {};
     const mesh = params.importedMesh;
-    if (!mesh || typeof mesh !== 'object') return JSON.parse(JSON.stringify(params));
-    const rest = JSON.parse(JSON.stringify({ ...params, importedMesh: null }));
-    rest.importedMesh = mesh;
+    const assets = params.assets;
+    const nested = params.params;
+    const nestedMesh = (nested && typeof nested === 'object') ? nested.importedMesh : null;
+    const skipMesh = Boolean(mesh) && typeof mesh === 'object';
+    const skipAssets = Boolean(assets) && typeof assets === 'object';
+    const skipNested = Boolean(nestedMesh) && typeof nestedMesh === 'object';
+    if (!skipMesh && !skipAssets && !skipNested) return JSON.parse(JSON.stringify(params));
+    const shallow = { ...params };
+    if (skipMesh) shallow.importedMesh = null;
+    if (skipAssets) shallow.assets = null;
+    if (skipNested) shallow.params = { ...nested, importedMesh: null };
+    const rest = JSON.parse(JSON.stringify(shallow));
+    if (skipMesh) rest.importedMesh = mesh;
+    if (skipAssets) rest.assets = assets;
+    if (skipNested && rest.params) rest.params.importedMesh = nestedMesh;
     return rest;
   };
   const cloneParamStates = (states) => {
@@ -390,6 +474,174 @@
       return crypto.randomUUID();
     }
     return generateId() + generateId();
+  };
+
+  // Scene-tree Increment C — the params bag a fresh object3d child is born
+  // with. There used to be a copy of this table here, a second in the panel
+  // (PRIMITIVES.defaults()) and a THIRD in Scene3D.Params (the swap reset), and
+  // the three disagreed for 8 of 10 primitives. There is now exactly one:
+  // Scene3D.Params.PRIMITIVE_CREATE_DEFAULTS. Resolved lazily so engine.js
+  // survives any script-order shuffle around src/core/scene3d/params.js.
+  const sceneParams = () => (window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.Params) || null;
+  const objectPrimitiveDefaults = (primitive) => {
+    const P = sceneParams();
+    const table = P && P.PRIMITIVE_CREATE_DEFAULTS;
+    return (table && table[primitive]) ? { ...table[primitive] } : null;
+  };
+
+  // Line-finish creation seed — a NEW object with a rounded contour is born with
+  // Border Curves (`params.curves`) and Fill Curves (`style.params.fillCurves`)
+  // ON. Both are otherwise opt-in, and both resolve "absent ⇒ off" in
+  // _applySceneCurveFinish; those fallbacks stay put, because they are how every
+  // already-saved document is read. Materializing the default at CREATION is
+  // what makes "only newly created objects are affected" true by construction —
+  // no sceneVersion migration, and a `.vectura` that never wrote these keys
+  // still renders byte-identically.
+  //
+  // `Scene3D.Params.hasRoundedContour` is the one gate (CURVED_FILL_PRIMITIVES
+  // minus the flat-faced charts), read live so the engine and the panel can
+  // never disagree about what a rounded shape is.
+  //
+  // INVARIANT: the two keys exist exactly while the primitive is rounded.
+  //   faceted → rounded   seed both ON   (a fresh add, or a swap that gains a
+  //                                       rounded contour)
+  //   rounded → faceted   REMOVE both    (a cube must never be fitted; on a
+  //                                       STANDALONE object3d leaf a stale
+  //                                       `curves:true` would also drive the
+  //                                       generic layer curve stage)
+  //   rounded → rounded   LEAVE ALONE    (an explicit user Off survives the
+  //                                       swap — the seed is a default, not a
+  //                                       re-imposition)
+  // `prevPrimitive` is undefined on a fresh create, which reads as "was not
+  // rounded" and therefore seeds.
+  const seedLineFinishDefaults = (layerParams, primitive, prevPrimitive) => {
+    const P = sceneParams();
+    if (!P || typeof P.hasRoundedContour !== 'function' || !layerParams) return;
+    const now = P.hasRoundedContour(primitive);
+    const before = P.hasRoundedContour(prevPrimitive);
+    if (now === before) return;
+    const style = layerParams.style && typeof layerParams.style === 'object' ? layerParams.style : null;
+    const styleParams = style && style.params && typeof style.params === 'object' ? style.params : null;
+    if (now) {
+      const seed = P.LINE_FINISH_CREATE_DEFAULTS || { curves: true, fillCurves: true };
+      layerParams.curves = seed.curves;
+      if (styleParams) styleParams.fillCurves = seed.fillCurves;
+      return;
+    }
+    delete layerParams.curves;
+    if (styleParams) delete styleParams.fillCurves;
+  };
+
+  // 3D model import — the on-ground size a freshly imported OBJ/STL mesh gets.
+  // The mesh is unit-normalised (longest half-extent = 1) and `radius` scales it
+  // back up; 40 puts it in the same size class as the default `box` primitive
+  // (sx 40) so it lands clearly visible on the ground.
+  const IMPORT_MESH_RADIUS = 40;
+
+  // 3D model import — SHARED face budget. Both import paths funnel through
+  // buildImportedMeshParams, so capping HERE covers OBJ and STL alike (a mesh
+  // from StlParser.parse is already ≤ MAX_FACES, so the cap is a no-op for it and
+  // the STL/convert geometry is bit-for-bit unchanged). Without a cap an OBJ was
+  // stored whole: real downloads run 50k–500k tris, and a 40k-face unwelded mesh
+  // took 3.6 MINUTES of synchronous compose before the tab responded again.
+  // Reuses StlParser.downsample — one impl. Falls back to the mesh untouched if
+  // the STL module has not loaded (legacy load orders / headless harnesses).
+  const capMeshFaces = (mesh) => {
+    const helper = window.Vectura?.StlParser;
+    if (!helper || typeof helper.downsample !== 'function') return mesh;
+    return helper.downsample(mesh);
+  };
+
+  // 3D model import — SHARED wrap/normalize helper. Mirrors Convert-to-Scene's
+  // unit-normalisation (engine.convertAlgoToScene): centre the mesh on its
+  // bounding-box midpoint, divide by the max hypot-from-centre so the unit verts
+  // sit in a unit sphere, and let `radius` carry the real on-screen size — the
+  // scene's createSolidMesh importedMesh branch multiplies the unit verts back by
+  // `radius`. Convert assumes an already-centred baked mesh; an imported mesh may
+  // be anywhere, so this variant centres first. Returns the object3d `solid`
+  // params bag ({ solidType:'importedMesh', importedMesh:{vertices,faces}, radius })
+  // or null for an empty/invalid mesh.
+  const buildImportedMeshParams = (mesh, targetRadius) => {
+    if (!mesh || !Array.isArray(mesh.vertices) || !mesh.vertices.length
+      || !Array.isArray(mesh.faces) || !mesh.faces.length) return null;
+    // Cap first, so the bbox/normalisation below describe exactly the geometry
+    // that will be stored and drawn (downsample also prunes orphan vertices).
+    const capped = capMeshFaces(mesh);
+    const fin = (val) => (Number.isFinite(Number(val)) ? Number(val) : 0);
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    capped.vertices.forEach((vt) => {
+      const x = fin(vt.x), y = fin(vt.y), z = fin(vt.z);
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    });
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+    let maxExtent = 0;
+    capped.vertices.forEach((vt) => {
+      const d = Math.hypot(fin(vt.x) - cx, fin(vt.y) - cy, fin(vt.z) - cz);
+      if (d > maxExtent) maxExtent = d;
+    });
+    const k = maxExtent > 1e-6 ? 1 / maxExtent : 1;
+    const unit = capped.vertices.map((vt) => ({
+      x: Math.round((fin(vt.x) - cx) * k * 10000) / 10000,
+      y: Math.round((fin(vt.y) - cy) * k * 10000) / 10000,
+      z: Math.round((fin(vt.z) - cz) * k * 10000) / 10000,
+    }));
+    return {
+      solidType: 'importedMesh',
+      importedMesh: { vertices: unit, faces: capped.faces.map((f) => f.slice()) },
+      radius: Number.isFinite(targetRadius) && targetRadius > 0 ? targetRadius : IMPORT_MESH_RADIUS,
+    };
+  };
+
+  // 3D model import — keep an imported mesh RESTING on the ground across size
+  // changes. importMeshAsScene lifts a fresh mesh by its post-scale drop below
+  // the mesh centre (base at y=0, the convention defaults.js:2076-2080 states for
+  // the scene box), but that lift used to be baked ONCE at import time — so the
+  // first Radius or Scale drag left the object half-buried or floating.
+  //
+  // `transform.groundLift` records the lift currently folded into `transform.y`.
+  // This recomputes it from the CURRENT radius + vertical scale and applies only
+  // the DELTA, so a user's own vertical offset (shift-drag, drop-to-ground)
+  // rides along instead of being overwritten. Object ROTATION is deliberately
+  // outside the lift — the import-time value did not include it either, so a
+  // freshly imported mesh's transform is bit-for-bit what it was before.
+  // A no-op for every object without the marker (all pre-existing scenes).
+  const syncGroundRest = (layer) => {
+    const t = layer && layer.params && layer.params.transform;
+    if (!t || !Number.isFinite(t.groundLift)) return;
+    const solid = layer.params.params;
+    const mesh = (solid && solid.solidType === 'importedMesh') ? solid.importedMesh : null;
+    const verts = (mesh && Array.isArray(mesh.vertices)) ? mesh.vertices : null;
+    if (!verts || !verts.length) return;
+    let minY = 0;
+    for (let i = 0; i < verts.length; i += 1) {
+      const y = Number(verts[i].y);
+      if (Number.isFinite(y) && y < minY) minY = y;
+    }
+    const radius = (Number.isFinite(solid.radius) && solid.radius > 0) ? solid.radius : IMPORT_MESH_RADIUS;
+    // I23 non-uniform scale: `sy` when present, else the uniform `scale`.
+    const scaleY = Number.isFinite(t.sy) ? t.sy : (Number.isFinite(t.scale) ? t.scale : 1);
+    const lift = Math.round(-minY * radius * scaleY * 1000) / 1000;
+    if (lift === t.groundLift) return;
+    t.y = Math.round(((Number(t.y) || 0) + lift - t.groundLift) * 1000) / 1000;
+    t.groundLift = lift;
+  };
+
+  // Scene-tree Increment E — per-type light seeds for addLightToScene. Mirrors
+  // the scene3d panel's seedLight + Scene3D.Params.normalizeLight defaults so a
+  // freshly added light child is valid before the next compose. The `id` is set
+  // to the child LAYER id at compose time (identity contract) — omitted here.
+  const SCENE_LIGHT_SEED = {
+    directional: { type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: true },
+    point: { type: 'point', position: { x: 120, y: 200, z: 120 }, range: 400, intensity: 1, castShadows: true },
+    spot: {
+      type: 'spot', position: { x: 120, y: 200, z: 120 }, target: { x: 0, y: 0, z: 0 },
+      range: 400, coneAngle: 30, penumbra: 8, intensity: 1, castShadows: true,
+    },
+    area: { type: 'area', position: { x: 120, y: 200, z: 120 }, size: 120, samples: 6, intensity: 1, castShadows: true },
+    ambient: { type: 'ambient', intensity: 0.3, castShadows: false },
   };
 
   // ── Stroke style model (STR-1) ─────────────────────────────────────────────
@@ -545,6 +797,11 @@
 
     addLayer(type = 'wavetable') {
       type = resolveDrawableLayerType(type, 'wavetable');
+      // Scene-tree Increment D — the "3D Scene" Add-Layer entry now creates a
+      // scene TREE (a scene group seeded with one default object3d child), not a
+      // monolith. The monolith shape survives ONLY as a load-time form for saved
+      // docs (B's inline-union renders it byte-identically); new scenes are trees.
+      if (type === 'scene3d') return this.addSceneTree();
       const id = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const num = String(this._layerCounter).padStart(2, '0');
@@ -596,6 +853,808 @@
       this.activeLayerId = id;
       this.computeAllDisplayGeometry();
       return id;
+    }
+
+    // ── Scene-tree Increment C — scene-group tree construction ───────────────
+    // A scene GROUP is a scene3d layer flagged with the three container
+    // invariants Increment B's compositor gates on (type 'scene3d', isGroup,
+    // containerRole 'scene'). Mirrors addModifierLayer. Its inline (monolith)
+    // objects/groups arrays start EMPTY so the descendant object3d /
+    // booleanGroup3d child layers are the single source of truth; the scene
+    // envelope (camera / lights / tone / shadow / ground / backdrop /
+    // styleTable.scene) is kept from the scene3d factory defaults.
+    addSceneGroup() {
+      const id = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const layer = new Layer(id, 'scene3d', `3D Scene ${num}`);
+      layer.isGroup = true;
+      layer.containerRole = 'scene';
+      layer.groupType = 'scene';
+      layer.groupCollapsed = false;
+      layer.visible = true;
+      // Empty the inline scene graph — child layers provide objects/groups.
+      layer.params.objects = [];
+      layer.params.groups = [];
+      const st = (layer.params.styleTable && typeof layer.params.styleTable === 'object')
+        ? layer.params.styleTable : {};
+      layer.params.styleTable = {
+        scene: st.scene || { penId: null, mapper: 'wireframe', params: {} },
+        byObject: {},
+        byFace: {},
+      };
+      this.layers.push(layer);
+      this.activeLayerId = id;
+      this.computeAllDisplayGeometry();
+      return id;
+    }
+
+    // Scene-tree Increment D — the user-facing CREATION entry. Build a whole
+    // scene TREE in one gesture: a scene group + ONE default object3d child (a
+    // sphere). Returns the SCENE GROUP id (the group is what "Add Layer → 3D
+    // Scene" adds), and leaves the group active so the panel shows scene controls.
+    addSceneTree() {
+      const groupId = this.addSceneGroup();
+      // Scene-tree Increment E — the whole scene reads as ONE tree: a default
+      // object, the sun (a directional light child) and the ground child. Empty
+      // the group's inline lights + pre-set inline ground OFF so the CHILDREN are
+      // the single source of truth (deleting the ground child turns it off; the
+      // sun child owns the light).
+      const grp = this.getLayerById(groupId);
+      if (grp && grp.params) {
+        grp.params.lights = [];
+        grp.params.ground = { enabled: false };
+      }
+      // The seed object is a SPHERE, matching ALGO_DEFAULTS.object3d. A box under
+      // the (former) wireframe default emitted nine straight edges and no surface
+      // ink at all, so a freshly dropped scene read as an empty cube outline; a
+      // hatched sphere shows the light/tone pipeline the instant it appears.
+      const seedPrimitive = (ALGO_DEFAULTS && ALGO_DEFAULTS.object3d && ALGO_DEFAULTS.object3d.primitive) || 'box';
+      const objectId = this.addObjectToScene(groupId, seedPrimitive);
+      // Rest the seed sphere ON the ground (centre at y = radius). The shared
+      // object3d transform seed is a fixed y = 20, which only lands on the ground
+      // for a 40 mm box / a radius-20 sphere — the add-shelf create defaults give
+      // a fresh sphere radius 25, so pin the height off the bag that was actually
+      // built rather than trusting the literal.
+      const seeded = objectId ? this.getLayerById(objectId) : null;
+      if (seeded && seeded.params && seeded.params.transform) {
+        const radius = Number(seeded.params.params && seeded.params.params.radius);
+        if (Number.isFinite(radius) && radius > 0) seeded.params.transform.y = radius;
+      }
+      this.addLightToScene(groupId, 'directional');
+      this.addGroundToScene(groupId);
+      this.activeLayerId = groupId;
+      this.computeAllDisplayGeometry();
+      return groupId;
+    }
+
+    // Convert-to-Scene (I1) — turn a STANDALONE polyhedron/topoform layer into a
+    // scene TREE so the shared compositor lights/occludes/shadows it. The family
+    // generator bakes a FULLY-BUILT (deformed) index mesh; it rides the existing
+    // solid/importedMesh object3d path (no new mesh plumbing). A new scene group
+    // holds ONE object3d child carrying the mesh, plus a seeded light + ground so
+    // it lights immediately; the source layer's pen/style migrates onto the child
+    // (expandMonolithToTree's adoption pattern); the standalone view angles map
+    // onto the scene camera so the object faces the same way. Returns
+    // { ok:true, groupId, childId } on success, or { ok:false, reason[, message] }
+    // — 'unsupported' (wrong layer type), 'empty' (no mesh), or 'contours' (the
+    // topoform depth-slice mode has no scene analog yet, so it BLOCKS with a
+    // user-facing message rather than bake a look-destroying surface). Undo is
+    // the caller's responsibility (push history before calling).
+    convertAlgoToScene(layerId) {
+      const src = this.getLayerById(layerId);
+      if (!src) return { ok: false, reason: 'not-found' };
+      const type = src.type;
+      if (type !== 'polyhedron' && type !== 'topoform') return { ok: false, reason: 'unsupported' };
+      const p = (src.params && typeof src.params === 'object') ? src.params : {};
+      const fin = (val, dflt) => (Number.isFinite(Number(val)) ? Number(val) : dflt);
+
+      // Topoform contours (the default render mode) converts to a LIVE chart
+      // object styled with the depth-slice `contourSlice` mapper (CtS I5): the
+      // compositor slices the mesh with parallel planes and lights/occludes the
+      // cross-sections. The surface mesh bakes exactly as wireframe/triangleMesh
+      // do (I4 live chart, or the importedMesh fallback for cube/stlMesh); only
+      // the child style differs. See the style override below.
+      const topoContours = type === 'topoform' && (p.renderMode || 'contours') === 'contours';
+
+      const algo = Algorithms && Algorithms[type];
+      if (!algo || typeof algo.bakeMesh !== 'function') return { ok: false, reason: 'no-baker' };
+      const baked = algo.bakeMesh(p) || { vertices: [], faces: [] };
+      if (!Array.isArray(baked.vertices) || !baked.vertices.length
+        || !Array.isArray(baked.faces) || !baked.faces.length) {
+        return { ok: false, reason: 'empty' };
+      }
+
+      // Convert-to-Scene (I2) — a parametric polyhedron becomes a LIVE `solid`
+      // object carrying its solidType + deformer params, so the compositor
+      // re-evaluates the deformers (createSolidMesh + applyDeformers) and the
+      // object stays fully editable. A parametric topoform rides its own LIVE chart
+      // path (I4, below). Only a polyhedron whose source is already an
+      // STL/importedMesh, and a topoform whose source has no chart analog
+      // (`cube` / `stlMesh`), keep the I1 importedMesh bake (frozen index mesh).
+      const liveSolid = type === 'polyhedron' && (p.solidType || 'buckyball') !== 'importedMesh';
+
+      // Convert-to-Scene (I4) — a parametric topoform (renderMode wireframe /
+      // triangleMesh) becomes a LIVE object3d of the matching chart primitive, so
+      // the compositor re-evaluates Scene3D.Mesh.createTopoformMesh from its
+      // sizes/detail instead of freezing an importedMesh. Each topoform sourceMode
+      // maps to the object3d primitive whose chart mode matches AND whose sizes
+      // read sx/sy/sz independently (so a non-uniform-scaled topoform reproduces
+      // exactly): sphere/ellipsoid → `ellipsoid` (chart 'sphere' with true
+      // semi-axes), the rest map name-for-name. `cube` has no chart analog
+      // (object3d `box` is an 8-vert box, not the welded grid cube) and `stlMesh`
+      // is an imported mesh — both keep the I1 importedMesh bake fallback below.
+      const TOPOFORM_LIVE_PRIMITIVE = {
+        sphere: 'ellipsoid', ellipsoid: 'ellipsoid', cylinder: 'cylinder',
+        cone: 'cone', torus: 'torus', torusKnot: 'torusKnot', capsule: 'capsule',
+        superellipsoid: 'superellipsoid', pyramid: 'pyramid',
+      };
+      const topoLivePrim = type === 'topoform'
+        ? (TOPOFORM_LIVE_PRIMITIVE[p.sourceMode || 'sphere'] || null) : null;
+      const liveTopo = Boolean(topoLivePrim);
+
+      // Resolve topoform's sizes + post-simplify detail EXACTLY as bakeMesh /
+      // createPrimitiveMesh do (Math.max(1, scale); detail = round(rawDetail *
+      // (1 - simplify*0.65))), so the live chart mesh is byte-identical to the I1
+      // bake it replaces. Inert for a polyhedron convert (never read).
+      //
+      // The `ellipsoid` sourceMode is the one chart with COSMETIC, mode-dependent
+      // axis factors (topoSphereEllipsoid: rx=sx*1.18, ry=sy*0.72) that the
+      // object3d `ellipsoid` primitive — which runs the plain `sphere` chart with
+      // true semi-axes — does NOT apply. Baking those factors into the mapped
+      // sizes reproduces topoform's ellipsoid exactly; every other sourceMode maps
+      // its sizes through unchanged (the shared Charts builders are mode-agnostic).
+      const topoSimplify = Math.min(1, Math.max(0, fin(p.simplifyMesh, 0)));
+      const topoRawDetail = Math.min(100, Math.max(4, fin(p.primitiveDetail, 18)));
+      const ellipFx = (p.sourceMode === 'ellipsoid') ? 1.18 : 1;
+      const ellipFy = (p.sourceMode === 'ellipsoid') ? 0.72 : 1;
+      const liveTopoParams = {
+        sx: Math.max(1, fin(p.scaleX3d ?? p.primitiveScaleX, 63)) * ellipFx,
+        sy: Math.max(1, fin(p.scaleY3d ?? p.primitiveScaleY, 63)) * ellipFy,
+        sz: Math.max(1, fin(p.scaleZ3d ?? p.primitiveScaleZ, 63)),
+        detail: Math.max(4, Math.round(topoRawDetail * (1 - topoSimplify * 0.65))),
+      };
+
+      // Bake path only — normalize to unit max-extent; `radius` carries the real
+      // size. The scene's createSolidMesh importedMesh branch multiplies the unit
+      // verts back by `radius`, reproducing the baked coordinates exactly.
+      //
+      // The SAME face budget the import paths enforce (buildImportedMeshParams)
+      // applies here: a frozen bake is stored in layer.params exactly like an
+      // imported mesh, and a topoform `cube` at full detail bakes ~120k triangles
+      // — enough to stall the compositor for minutes. `downsample` returns the
+      // mesh object UNTOUCHED when it is already within budget, so every convert
+      // that was under the cap (all the parametric ones, and any already-capped
+      // STL source) is byte-identical.
+      const bakedCapped = capMeshFaces(baked);
+      let maxExtent = 0;
+      bakedCapped.vertices.forEach((vt) => {
+        const d = Math.hypot(fin(vt.x, 0), fin(vt.y, 0), fin(vt.z, 0));
+        if (d > maxExtent) maxExtent = d;
+      });
+      const radius = maxExtent > 1e-6 ? maxExtent : 1;
+      const unit = bakedCapped.vertices.map((vt) => ({
+        x: fin(vt.x, 0) / radius, y: fin(vt.y, 0) / radius, z: fin(vt.z, 0) / radius,
+      }));
+
+      // The LIVE solid params bag: the polyhedron's solidType + parametric size
+      // knobs + deformer params, copied straight off the source layer (defaults
+      // mirror Scene3D.Mesh.buildSolidBaseMesh / applyVertexEffects). Building the
+      // scene mesh from these reproduces bakeMesh(p) exactly, so a converted
+      // undeformed solid is geometrically identical to the I1 bake.
+      const liveSolidParams = {
+        solidType: p.solidType || 'buckyball',
+        radius: fin(p.radius, 76),
+        sideCount: fin(p.sideCount, 5),
+        depth: fin(p.depth, 94),
+        frequency: fin(p.frequency, 2),
+        taper: fin(p.taper, 55),
+        starRatio: fin(p.starRatio, 45),
+        expand: fin(p.expand, 100),
+        twist: fin(p.twist, 0),
+        explode: fin(p.explode, 0),
+        extrude: fin(p.extrude, 0),
+        shard: fin(p.shard, 0),
+      };
+
+      // Standalone view Euler angles → the scene camera, so the converted object
+      // faces the same way (the compositor rotates world→camera by these; an
+      // identity object transform leaves the mesh matching the standalone view).
+      const view = type === 'polyhedron'
+        ? { yaw: fin(p.rotate, -18), pitch: fin(p.tilt, 28), roll: fin(p.roll, 0) }
+        : { yaw: fin(p.yaw, -28), pitch: fin(p.pitch, 34), roll: fin(p.roll, 0) };
+
+      // New scene group (mirrors addSceneTree's tree seeding) carrying our child.
+      const groupId = this.addSceneGroup();
+      const group = this.getLayerById(groupId);
+      if (group && group.params) {
+        group.params.lights = [];
+        group.params.ground = { enabled: false };
+        const cam = (group.params.camera && typeof group.params.camera === 'object') ? group.params.camera : {};
+        group.params.camera = { ...cam, yaw: view.yaw, pitch: view.pitch, roll: view.roll };
+      }
+
+      // One object3d child holding the baked mesh. addObjectToScene can't name the
+      // 'solid' primitive, so build the child like expandMonolithToTree does.
+      const childId = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const child = new Layer(childId, 'object3d', src.name ? `${src.name} Mesh` : `Object ${num}`);
+      child.parentId = groupId;
+      if (liveSolid) {
+        child.params.primitive = 'solid';
+        child.params.params = liveSolidParams;
+      } else if (liveTopo) {
+        child.params.primitive = topoLivePrim;
+        child.params.params = liveTopoParams;
+      } else {
+        child.params.primitive = 'solid';
+        child.params.params = {
+          solidType: 'importedMesh',
+          importedMesh: { vertices: unit, faces: bakedCapped.faces.map((f) => f.slice()) },
+          radius,
+        };
+      }
+      child.params.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
+      child.params.visibility = 'solid';
+      child.params.role = 'solid';
+      // Migrate the source pen/style onto the child (adoption pattern). A 'hatch'
+      // mapper shows the Lambert shading the seeded light casts, matching the
+      // pre-I4 (I1) topoform bake — which also used 'hatch' — so the LIVE object
+      // reads identically to the frozen bake it replaces.
+      //
+      // Why NOT the scene 'wireframe' mapper (which would read closer to the
+      // standalone topoform's wireframe render): it draws + hidden-line-clips
+      // EVERY mesh face edge, which is intractable at the topoform's native
+      // density — the default is primitiveDetail 100 (~40k faces): 'wireframe'
+      // takes minutes (and hangs the app on convert), while 'hatch' composes the
+      // same mesh in ~1.5s. A faithful live wireframe treatment therefore waits on
+      // a compositor-perf pass (edge dedup / face-budget); it is NOT an I4 blocker
+      // because I1 already shipped topoform-convert as a shaded (hatch) object.
+      child.params.style = { penId: src.penId || null, mapper: 'hatch', params: {} };
+      // CtS I5 — a converted contours topoform renders as depth-slice
+      // cross-sections: the child uses the `contourSlice` mapper, mapping the
+      // standalone slicer's controls onto the scene treatment (lineCount →
+      // sliceCount, planeRotate/planeTilt → sliceRotate/sliceTilt,
+      // contourVisibility → sliceVisibility). The mesh is the same live/baked
+      // surface every other mode converts to.
+      if (topoContours) {
+        child.params.style = {
+          penId: src.penId || null,
+          mapper: 'contourSlice',
+          params: {
+            sliceCount: Math.max(2, Math.min(120, Math.round(fin(p.lineCount, 26)))),
+            sliceRotate: fin(p.planeRotate, 0),
+            sliceTilt: fin(p.planeTilt, 0),
+            sliceVisibility: p.contourVisibility === 'fullContour' ? 'fullContour' : 'visibleOnly',
+          },
+        };
+      }
+      // A LIVE topoform conversion can land on a rounded chart primitive
+      // (ellipsoid / torus / capsule / …), and that object is brand new, so it
+      // gets the same line-finish seed the add shelf gives. Runs AFTER the style
+      // is assigned above — the seed writes into `style.params`. A baked mesh
+      // converts to `solid`, which is faceted and gets nothing.
+      seedLineFinishDefaults(child.params, child.params.primitive);
+      if (src.penId) child.penId = src.penId;
+      if (typeof src.color === 'string') child.color = src.color;
+      if (Number.isFinite(src.strokeWidth)) child.strokeWidth = src.strokeWidth;
+      this._insertUnderParent(child, groupId);
+
+      // Seed a default light + ground so the converted object lights immediately.
+      this.addLightToScene(groupId, 'directional');
+      this.addGroundToScene(groupId);
+
+      // Replace the standalone layer with the scene group.
+      this.removeLayer(layerId);
+      this.activeLayerId = groupId;
+      this.computeAllDisplayGeometry();
+      return { ok: true, groupId, childId };
+    }
+
+    // Walk the parent chain of `layerId` (inclusive) and return the enclosing
+    // scene group (scene3d container) id, or null. Used by the 3D-model import to
+    // decide whether to drop the mesh into the active scene or start a new one.
+    _enclosingSceneGroupId(layerId) {
+      let cur = this.getLayerById(layerId);
+      let guard = 0;
+      while (cur && guard < 512) {
+        if (cur.type === 'scene3d' && cur.containerRole === 'scene' && cur.isGroup) return cur.id;
+        cur = cur.parentId ? this.getLayerById(cur.parentId) : null;
+        guard += 1;
+      }
+      return null;
+    }
+
+    // 3D model import — turn a parsed OBJ/STL mesh ({ vertices:[{x,y,z}],
+    // faces:[[i,…]], name? }) into a scene object3d `solid` whose solidType is
+    // `importedMesh`, so the shared compositor lights / occludes / shadows it with
+    // NO new mesh plumbing (this is the exact object the Convert-to-Scene
+    // importedMesh branch produces). Landing rule: if a scene group is active (or
+    // the active layer lives inside one), the mesh is ADDED as a child object3d of
+    // that scene (addObjectToScene idiom); otherwise a fresh scene TREE is created
+    // (group + seeded sun light + ground, convert idiom) so the object lights
+    // immediately. Undo is the caller's responsibility (push history first).
+    // Returns { ok:true, groupId, childId, addedToExisting } or { ok:false, reason }.
+    importMeshAsScene(mesh, name) {
+      const solidParams = buildImportedMeshParams(mesh, IMPORT_MESH_RADIUS);
+      if (!solidParams) return { ok: false, reason: 'empty' };
+
+      // Land in the active scene when there is one, else build a new tree.
+      const existingGroupId = this._enclosingSceneGroupId(this.activeLayerId);
+      let groupId = existingGroupId;
+      if (!groupId) {
+        groupId = this.addSceneGroup();
+        const group = this.getLayerById(groupId);
+        if (group && group.params) {
+          group.params.lights = [];
+          group.params.ground = { enabled: false };
+        }
+      }
+
+      // One object3d child holding the imported mesh (mirrors the convert child).
+      const childId = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const label = (typeof name === 'string' && name.trim()) ? name.trim() : `Object ${num}`;
+      const child = new Layer(childId, 'object3d', label);
+      child.parentId = groupId;
+      child.params.primitive = 'solid';
+      child.params.params = solidParams;
+      // Rest the mesh ON the ground, base at y=0. The verts are normalised about
+      // the mesh CENTRE and scaled by `radius`, so at transform.y=0 half the
+      // object sits below the ground quad (which is at y=0) — an imported cube
+      // spanned world Y [-23.1, +23.1]. Lifting by the post-scale drop below the
+      // centre matches the convention defaults.js states for the scene box: the
+      // cast shadow then pools from the base instead of a small wedge from a
+      // half-buried, origin-centred solid.
+      let minUnitY = 0;
+      solidParams.importedMesh.vertices.forEach((vt) => {
+        const y = Number(vt.y);
+        if (Number.isFinite(y) && y < minUnitY) minUnitY = y;
+      });
+      const groundLift = Math.round(-minUnitY * solidParams.radius * 1000) / 1000;
+      // `groundLift` records how much of `y` is the ground rest, so syncGroundRest
+      // can re-derive it when Radius/Scale changes instead of leaving the object
+      // half-buried at the first drag.
+      child.params.transform = { x: 0, y: groundLift, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1, groundLift };
+      child.params.visibility = 'solid';
+      child.params.role = 'solid';
+      child.params.style = { penId: child.penId || null, mapper: 'hatch', params: {} };
+      this._insertUnderParent(child, groupId);
+
+      // A fresh scene tree needs its sun + ground; an existing scene already has
+      // them (addGroundToScene is a no-op when a ground child is present).
+      if (!existingGroupId) {
+        this.addLightToScene(groupId, 'directional');
+        this.addGroundToScene(groupId);
+      }
+      const grp = this.getLayerById(groupId);
+      if (grp && grp.isGroup) grp.groupCollapsed = false;
+
+      this.activeLayerId = childId;
+      this.computeAllDisplayGeometry();
+      // `faces` is what was actually STORED (post face-budget); `sourceFaces` is
+      // what the file offered, so the caller can tell the user it was reduced.
+      return {
+        ok: true,
+        groupId,
+        childId,
+        addedToExisting: Boolean(existingGroupId),
+        faces: solidParams.importedMesh.faces.length,
+        sourceFaces: mesh.faces.length,
+        groundLift,
+      };
+    }
+
+    // Scene-tree Increment D/F — expand a MONOLITH scene3d layer (inline
+    // params.objects[] / params.groups[]) IN PLACE into a scene TREE: the layer
+    // becomes the scene group; each inline object becomes an object3d child and
+    // each inline group a booleanGroup3d child. This is the same decomposition
+    // Increment F runs on load, factored here so F can reuse it. Idempotent — a
+    // layer that is already a scene group (isGroup) is left untouched.
+    //
+    // IDENTITY CONTRACT (plan §4): each child LAYER adopts the inline entry's id
+    // (objects[i].id / groups[i].id) as its layer id, so meta.sceneTarget.objectId
+    // + styleTable keys stay valid. Inline arrays are CLEARED afterward so the
+    // compositor collects the children only (no double-union). Returns the scene
+    // group id, or null when the layer is not an expandable monolith.
+    expandMonolithToTree(monolithId) {
+      const group = this.getLayerById(monolithId);
+      if (!group || group.type !== 'scene3d' || group.isGroup) return null;
+      const Params = window.Vectura?.Scene3D?.Params;
+      // Normalize first so ids/styleTable are canonical before we split them out.
+      const src = (Params && typeof Params.normalizeParams === 'function')
+        ? Params.normalizeParams(group.params) : group.params;
+      const objects = Array.isArray(src.objects) ? src.objects : [];
+      const groups = Array.isArray(src.groups) ? src.groups : [];
+      // Scene-tree Increment E — lights + ground promote to children too.
+      const lights = Array.isArray(src.lights) ? src.lights : [];
+      const groundEnabled = !src.ground || src.ground.enabled !== false;
+      const styleTable = (src.styleTable && typeof src.styleTable === 'object') ? src.styleTable : {};
+      const byObject = (styleTable.byObject && typeof styleTable.byObject === 'object') ? styleTable.byObject : {};
+      const byFace = (styleTable.byFace && typeof styleTable.byFace === 'object') ? styleTable.byFace : {};
+      // Per-object EdgeStyle overrides (incl. the X-ray fold's migrated hidden=dash
+      // seed) live in edgeStylesByObject on the monolith; they must ride onto each
+      // object3d child or an expanded x-ray scene would lose its dashed hidden edges.
+      const edgeStylesByObject = (src.edgeStylesByObject && typeof src.edgeStylesByObject === 'object')
+        ? src.edgeStylesByObject : {};
+
+      // Promote the layer to a scene group (the three compositor invariants).
+      group.isGroup = true;
+      group.containerRole = 'scene';
+      group.groupType = 'scene';
+      group.groupCollapsed = false;
+
+      // STYLE RESOLUTION AT EXPANSION TIME (whole-style-wins).
+      //
+      // The cascade is byFace > byObject > scene with NO per-field merge (see
+      // Scene3D.StyleCascade.resolve), and `collectSceneParams` ALWAYS republishes
+      // `styleTable.byObject[layerId]` from each child's own `params.style`. So a
+      // child left without a style does not "inherit the scene" — it publishes the
+      // object3d DEFAULT (wireframe) into byObject, and that entry then WINS over
+      // the group's scene style. A monolith styled only at SCENE scope therefore
+      // expanded into a tree with its surface fill gone (sceneFill 0, edges only).
+      //
+      // Fix: resolve the EFFECTIVE object-scope style here and materialize it on
+      // the child. It must be a WHOLE clone — a partial/per-field copy would drop
+      // penId / mapper / params, which the cascade has no way to fill back in.
+      // Resolving at expansion time (rather than falling back to the group's scene
+      // table at render time) also keeps stale group-table entries out of the tree.
+      const sceneStyle = (styleTable.scene && typeof styleTable.scene === 'object')
+        ? styleTable.scene : null;
+      const resolveObjectStyle = (id) => {
+        const own = byObject[id];
+        if (own && typeof own === 'object') return clone(own);
+        return sceneStyle ? clone(sceneStyle) : null;
+      };
+
+      const groupIndex = this.layers.findIndex((l) => l.id === group.id);
+      let insertAt = groupIndex + 1;
+      const childIdFor = (entry, fallbackPrefix, i) => {
+        const raw = entry && typeof entry.id === 'string' && entry.id ? entry.id : `${fallbackPrefix}-${i + 1}`;
+        // Guard against a global id collision with an UNRELATED layer.
+        if (this.layers.some((l) => l.id === raw && l.id !== group.id)) return `${group.id}-${raw}`;
+        return raw;
+      };
+
+      // One object3d child per inline object. Face styles for this object move
+      // onto the child (byFace keys are `${objectId}/${faceId}`).
+      const objectLayerIds = {};
+      objects.forEach((obj, i) => {
+        if (!obj || typeof obj !== 'object') return;
+        const cid = childIdFor(obj, 'obj', i);
+        objectLayerIds[obj.id] = cid;
+        const child = new Layer(cid, 'object3d', obj.name || `Object ${i + 1}`);
+        child.parentId = group.id;
+        child.params.primitive = obj.primitive || 'box';
+        child.params.params = (obj.params && typeof obj.params === 'object') ? { ...obj.params } : {};
+        if (obj.transform && typeof obj.transform === 'object') child.params.transform = { ...obj.transform };
+        child.params.visibility = obj.visibility || 'solid';
+        child.params.role = obj.role || 'solid';
+        if (obj.shadow && typeof obj.shadow === 'object') child.params.shadow = { ...obj.shadow };
+        if (obj.border && typeof obj.border === 'object') child.params.border = { ...obj.border };
+        if (obj.emissive && typeof obj.emissive === 'object') child.params.emissive = { ...obj.emissive };
+        const objStyle = resolveObjectStyle(obj.id);
+        if (objStyle) child.params.style = objStyle;
+        if (edgeStylesByObject[obj.id]) child.params.edgeStyles = clone(edgeStylesByObject[obj.id]);
+        const fs = {};
+        Object.keys(byFace).forEach((key) => {
+          const slash = key.indexOf('/');
+          if (slash > 0 && key.slice(0, slash) === obj.id) fs[key.slice(slash + 1)] = clone(byFace[key]);
+        });
+        if (Object.keys(fs).length) child.params.faceStyles = fs;
+        this.layers.splice(insertAt, 0, child);
+        insertAt += 1;
+      });
+
+      // One booleanGroup3d child per inline group; its operand object3d children
+      // are reparented under it (order preserved for positional subtract).
+      groups.forEach((grp, i) => {
+        if (!grp || typeof grp !== 'object') return;
+        const gid = childIdFor(grp, 'grp', i);
+        const bl = new Layer(gid, 'booleanGroup3d', grp.name || `Boolean ${i + 1}`);
+        bl.isGroup = true;
+        bl.containerRole = 'boolean';
+        bl.groupType = 'boolean';
+        bl.groupCollapsed = false;
+        bl.parentId = group.id;
+        bl.params.op = grp.op || 'subtract';
+        // Same materialization as the object3d children — collectSceneParams
+        // republishes byObject[boolean layer id] from bl.params.style too.
+        const grpStyle = resolveObjectStyle(grp.id);
+        if (grpStyle) bl.params.style = grpStyle;
+        this.layers.splice(insertAt, 0, bl);
+        insertAt += 1;
+        // Reparent this group's operand object3d children (they were inserted as
+        // scene-group children above). First operand solid, the rest holes.
+        const childIds = Array.isArray(grp.children) ? grp.children : [];
+        childIds.forEach((rawChildId, ci) => {
+          const layerChildId = objectLayerIds[rawChildId] || rawChildId;
+          const operand = this.getLayerById(layerChildId);
+          if (operand && operand.type === 'object3d') {
+            operand.parentId = gid;
+            operand.params.role = ci === 0 ? 'solid' : 'hole';
+          }
+        });
+      });
+
+      // Scene-tree Increment E — one sceneLight3d child per inline light (the
+      // child LAYER id adopts the light's id so the identity contract holds), and
+      // a single sceneGround3d child when the inline ground was enabled. Names
+      // mirror the panel's light display names.
+      const lightNameFor = (light, i) => {
+        if (!light) return `Light ${i + 1}`;
+        if (light.type === 'ambient') return 'Ambient';
+        if (light.type === 'point') return `Point ${i + 1}`;
+        if (light.type === 'spot') return `Spot ${i + 1}`;
+        if (light.type === 'area') return `Area ${i + 1}`;
+        return (light.id === 'sun' || i === 0) ? 'Sun' : `Light ${i + 1}`;
+      };
+      lights.forEach((light, i) => {
+        if (!light || typeof light !== 'object') return;
+        const cid = childIdFor(light, 'light', i);
+        const ll = new Layer(cid, 'sceneLight3d', lightNameFor(light, i));
+        ll.parentId = group.id;
+        // The child params ARE the lights[] entry (minus id — the layer id is it).
+        const lp = clone(light);
+        delete lp.id;
+        Object.assign(ll.params, lp);
+        this.layers.splice(insertAt, 0, ll);
+        insertAt += 1;
+      });
+      if (groundEnabled) {
+        const gcid = childIdFor({ id: 'ground' }, 'ground', 0);
+        const gl = new Layer(gcid, 'sceneGround3d', 'Ground');
+        gl.parentId = group.id;
+        gl.params.enabled = true;
+        this.layers.splice(insertAt, 0, gl);
+        insertAt += 1;
+      }
+
+      // Clear the inline arrays — the child layers are now the source of truth
+      // (compositor unions inline + children; keeping both would double-render).
+      group.params.objects = [];
+      group.params.groups = [];
+      // Scene-tree Increment E — lights move to children; inline ground pre-set
+      // OFF so deleting the ground child turns the ground off (the child owns ON).
+      group.params.lights = [];
+      group.params.ground = { enabled: false };
+      // Keep the scene-scope style; drop the per-object/per-face entries that
+      // now live on the children.
+      if (group.params.styleTable && typeof group.params.styleTable === 'object') {
+        group.params.styleTable = {
+          scene: group.params.styleTable.scene || { penId: null, mapper: 'wireframe', params: {} },
+          byObject: {},
+          byFace: {},
+        };
+      }
+      this.activeLayerId = group.id;
+      this.computeAllDisplayGeometry();
+      return group.id;
+    }
+
+    // Scene-tree Increment F — the format v1 → v2 migration step. Walk every
+    // layer and expand each MONOLITH scene3d (type 'scene3d' && !isGroup) into a
+    // scene TREE via expandMonolithToTree. Snapshot the ids up front (that call
+    // mutates this.layers) and preserve the imported active layer.
+    //
+    // Idempotent: an already-expanded scene group is skipped (expandMonolithToTree
+    // guards on isGroup), and object3d / booleanGroup3d / light / ground children
+    // are never scene3d monoliths — so a second run (or a v2 doc) is a no-op.
+    // The gate lives at the call site (importState runs this only when the source
+    // payload predates v2); the pass itself is safe to run any number of times.
+    _migrateMonolithScenesToTree() {
+      const savedActive = this.activeLayerId;
+      const monolithIds = this.layers
+        .filter((l) => l && l.type === 'scene3d' && !l.isGroup)
+        .map((l) => l.id);
+      if (!monolithIds.length) return;
+      monolithIds.forEach((id) => this.expandMonolithToTree(id));
+      if (savedActive && this.getLayerById(savedActive)) this.activeLayerId = savedActive;
+    }
+
+    // Insert `layer` directly after `parentId` and any of its existing
+    // descendants, so array order matches the tree order the panel renders and
+    // the compositor walks. Returns the layer's new id.
+    _insertUnderParent(layer, parentId) {
+      const descIds = new Set(this.getLayerDescendants(parentId).map((l) => l.id));
+      let insertIdx = this.layers.findIndex((l) => l.id === parentId);
+      for (let i = 0; i < this.layers.length; i += 1) {
+        const l = this.layers[i];
+        if (l && (l.id === parentId || descIds.has(l.id))) insertIdx = i;
+      }
+      if (insertIdx < 0) this.layers.push(layer);
+      else this.layers.splice(insertIdx + 1, 0, layer);
+      return layer.id;
+    }
+
+    // Add a new object3d LEAF under a scene group (or a booleanGroup3d nested in
+    // one). `primitive` defaults to 'box'. The new Layer is born with a real
+    // penId (pen-1) via the Layer constructor, so the scene-group compositor
+    // derives correct hatch/fill spacing (risk #1 — a null pen breaks spacing).
+    addObjectToScene(sceneGroupId, primitive) {
+      const parent = this.getLayerById(sceneGroupId);
+      if (!parent) return null;
+      const id = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const layer = new Layer(id, 'object3d', `Object ${num}`);
+      const named = typeof primitive === 'string' ? objectPrimitiveDefaults(primitive) : null;
+      const prim = named ? primitive : 'box';
+      layer.params.primitive = prim;
+      layer.params.params = named || objectPrimitiveDefaults('box') || {};
+      // A rounded contour is born with Border + Fill Curves on (see
+      // seedLineFinishDefaults). A box / plane / polyhedron gets neither key.
+      seedLineFinishDefaults(layer.params, prim);
+      layer.parentId = sceneGroupId;
+      // A boolean-group parent already implies an operand — seed the role.
+      if (parent.type === 'booleanGroup3d') this.applyObject3dBooleanRole(layer, null, parent);
+      this._insertUnderParent(layer, sceneGroupId);
+      if (parent.isGroup) parent.groupCollapsed = false;
+      this.activeLayerId = id;
+      this.computeAllDisplayGeometry();
+      return id;
+    }
+
+    // Change the GEOMETRY of an object3d LEAF layer in place — the engine-side
+    // half of the object inspector's Geometry select (and the natural target for
+    // any other swap surface). Everything that is not geometry survives: the
+    // transform, style, pen, visibility, role, shadow, border and the layer name.
+    // The geometry-specific bag is rebuilt from the shared creation defaults
+    // (Scene3D.Params.buildPrimitiveParams) and uniformly rescaled so the object
+    // keeps roughly its previous overall size — swapping an 80 mm torus for a box
+    // gives an ~80 mm box, not a default 40 mm one. An imported-mesh payload is
+    // carried across the swap, so solid → box → solid is reversible.
+    //
+    // Returns false for a non-object3d layer, an unknown primitive name, or a
+    // no-op (same primitive) so a caller never records an empty undo step.
+    // `opts.recompute === false` skips the display-geometry pass for callers that
+    // regen themselves (the panel's commit path) — one compose per gesture.
+    setObjectPrimitive(layerId, primitive, opts = {}) {
+      const layer = this.getLayerById(layerId);
+      if (!layer || layer.type !== 'object3d') return false;
+      const P = sceneParams();
+      if (!P || !Array.isArray(P.PRIMITIVES) || P.PRIMITIVES.indexOf(primitive) === -1) return false;
+      const params = layer.params || (layer.params = {});
+      const prevPrim = params.primitive || 'box';
+      if (prevPrim === primitive) return false;
+      const next = P.buildPrimitiveParams(primitive, prevPrim, params.params);
+      if (!next) return false;
+      params.primitive = primitive;
+      params.params = next;
+      // Swapping IS how a user changes shape, so the line-finish default has to
+      // land here too — a default that applies on add but not on swap is a half
+      // fix. Only a change in ROUNDEDNESS moves the keys, so a rounded → rounded
+      // swap preserves whatever the user chose (matching how this method
+      // preserves the transform, style, pen, visibility and role).
+      seedLineFinishDefaults(params, primitive, prevPrim);
+      if (opts.recompute !== false) this.computeAllDisplayGeometry();
+      return true;
+    }
+
+    // Scene-tree Increment E — add a LIGHT child (sceneLight3d) under a scene
+    // group. `type` is 'directional' (default) | 'point' | 'spot' | 'area' |
+    // 'ambient'; the child's params carry ONE lights[] entry, seeded to match
+    // Scene3D.Params.normalizeLight so a fresh light looks right before the next
+    // compose. The child LAYER id is the light's stable id. Returns the id.
+    addLightToScene(sceneGroupId, type = 'directional') {
+      const parent = this.getLayerById(sceneGroupId);
+      if (!parent) return null;
+      const id = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const nameFor = { directional: 'Sun', point: 'Point', spot: 'Spot', area: 'Area', ambient: 'Ambient' };
+      const layer = new Layer(id, 'sceneLight3d', `${nameFor[type] || 'Light'} ${num}`);
+      const seed = SCENE_LIGHT_SEED[type] || SCENE_LIGHT_SEED.directional;
+      Object.assign(layer.params, JSON.parse(JSON.stringify(seed)));
+      layer.parentId = sceneGroupId;
+      this._insertUnderParent(layer, sceneGroupId);
+      if (parent.isGroup) parent.groupCollapsed = false;
+      this.activeLayerId = id;
+      this.computeAllDisplayGeometry();
+      return id;
+    }
+
+    // Scene-tree Increment E — add the GROUND child (sceneGround3d) under a scene
+    // group. Only ONE ground child is allowed: a second call is a no-op (returns
+    // null). Its presence turns the ground on; deleting it turns the ground off
+    // (the group's inline ground stays OFF once the tree owns it). Returns the id.
+    addGroundToScene(sceneGroupId) {
+      const parent = this.getLayerById(sceneGroupId);
+      if (!parent) return null;
+      const existing = this.getLayerDescendants(sceneGroupId)
+        .some((l) => l && l.type === 'sceneGround3d');
+      if (existing) return null;
+      const id = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const layer = new Layer(id, 'sceneGround3d', `Ground ${num}`);
+      layer.params.enabled = true;
+      layer.parentId = sceneGroupId;
+      // The group's inline ground defers to the child now (deleting it ⇒ off).
+      if (parent.params && typeof parent.params === 'object') parent.params.ground = { enabled: false };
+      this._insertUnderParent(layer, sceneGroupId);
+      if (parent.isGroup) parent.groupCollapsed = false;
+      this.activeLayerId = id;
+      this.computeAllDisplayGeometry();
+      return id;
+    }
+
+    // Seed / clear an object3d's boolean role from its parentage. Entering a
+    // booleanGroup3d makes it an operand (first operand solid, later ones hole —
+    // a meaningful subtract); leaving one restores the plain 'solid' role.
+    applyObject3dBooleanRole(obj, oldParent, newParent) {
+      if (!obj || obj.type !== 'object3d' || !obj.params) return;
+      if (newParent && newParent.type === 'booleanGroup3d') {
+        const others = this.getLayerChildren(newParent.id)
+          .filter((c) => c && c.type === 'object3d' && c.id !== obj.id);
+        obj.params.role = others.length === 0 ? 'solid' : 'hole';
+      } else if (oldParent && oldParent.type === 'booleanGroup3d') {
+        obj.params.role = 'solid';
+      }
+    }
+
+    // Reassign one object3d layer's parent, seeding / clearing its boolean role.
+    // This is the drag-drop reparent path — the layers-panel routes object3d
+    // moves through here so drag and tests share one code path. Reorders the
+    // layer to sit under its new parent (tree order === array order).
+    setObjectLayerParent(objectId, newParentId) {
+      const obj = this.getLayerById(objectId);
+      if (!obj || obj.type !== 'object3d') return false;
+      const oldParent = obj.parentId ? this.getLayerById(obj.parentId) : null;
+      const newParent = newParentId ? this.getLayerById(newParentId) : null;
+      // Pull the layer out of the array, retarget, then reinsert in tree order.
+      this.layers = this.layers.filter((l) => l.id !== objectId);
+      obj.parentId = newParentId ?? null;
+      this.applyObject3dBooleanRole(obj, oldParent, newParent);
+      if (newParentId && this.getLayerById(newParentId)) this._insertUnderParent(obj, newParentId);
+      else this.layers.push(obj);
+      if (newParent && newParent.isGroup) newParent.groupCollapsed = false;
+      this.computeAllDisplayGeometry();
+      return true;
+    }
+
+    // Fuse the selected object3d layers into a NEW booleanGroup3d under their
+    // shared scene group. Operands are reparented under the boolean group and
+    // seeded with roles (first solid, rest hole — a subtract out of the box).
+    // Requires at least two object3d operands; returns the new group id, or null.
+    createBooleanGroupFromSelection(objectLayerIds) {
+      const ids = Array.isArray(objectLayerIds) ? objectLayerIds : [];
+      const operands = ids
+        .map((id) => this.getLayerById(id))
+        .filter((l) => l && l.type === 'object3d');
+      if (operands.length < 2) return null;
+      // The boolean group inherits the first operand's parent (its scene group).
+      // Increment B collects only DIRECT object3d children of a booleanGroup3d,
+      // so operands must be plain object3d leaves (no boolean-in-boolean yet).
+      const parentId = operands[0].parentId ?? null;
+      const gid = generateId();
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const bl = new Layer(gid, 'booleanGroup3d', `Boolean ${num}`);
+      bl.isGroup = true;
+      bl.containerRole = 'boolean';
+      bl.groupType = 'boolean';
+      bl.groupCollapsed = false;
+      bl.visible = true;
+      bl.parentId = parentId;
+      bl.params.op = bl.params.op || 'subtract';
+      // Insert the boolean group after the last operand (keeps it in the scene
+      // subtree), then reparent operands under it and seed roles.
+      const lastOperandIdx = operands.reduce((acc, op) => {
+        const i = this.layers.findIndex((l) => l.id === op.id);
+        return i > acc ? i : acc;
+      }, this.layers.findIndex((l) => l.id === parentId));
+      if (lastOperandIdx < 0) this.layers.push(bl);
+      else this.layers.splice(lastOperandIdx + 1, 0, bl);
+      operands.forEach((op, i) => {
+        op.parentId = gid;
+        op.params.role = i === 0 ? 'solid' : 'hole';
+      });
+      this.activeLayerId = gid;
+      this.computeAllDisplayGeometry();
+      return gid;
     }
 
     expandModifierLayer(modifierId) {
@@ -829,6 +1888,7 @@
           miterLimit: layer.miterLimit,
           dash: layer.dash ? JSON.parse(JSON.stringify(layer.dash)) : null,
           strokeAlign: layer.strokeAlign,
+          divisions: layer.divisions ? JSON.parse(JSON.stringify(layer.divisions)) : null,
           visible: layer.visible,
           origin: layer.origin
             ? { x: Number(layer.origin.x) || 0, y: Number(layer.origin.y) || 0 }
@@ -841,6 +1901,12 @@
 
     importState(state) {
       if (!state) return;
+      // Capture the SOURCE format version before the shape-migration walk so the
+      // Increment F monolith → tree expansion (a layer-graph rewrite, run after
+      // Layer construction below) can be gated on it: only a payload that
+      // predates v2 is expanded; a v2 doc is already canonical and left alone.
+      const sourceFormatVersion = Number.isFinite(Number(state?.formatVersion))
+        ? Number(state.formatVersion) : 0;
       state = migrateEngineState(state);
       this.layers = (state.layers || []).map((data) => {
         // 'compound' is a synthetic type — Layer constructor doesn't know it.
@@ -918,6 +1984,13 @@
           ? sanitizeDashBag(data.dash)
           : (layer.dash || { enabled: false, pattern: [] });
         layer.strokeAlign = sanitizeStrokeAlign(data.strokeAlign, layer.strokeAlign);
+        // Stroke division (P0-B) — backward-compatible: legacy payloads
+        // without the field keep the constructor defaults; ensureLayerDivisions
+        // back-fills and sanitizes either way.
+        if (data.divisions !== undefined && data.divisions !== null) {
+          layer.divisions = JSON.parse(JSON.stringify(data.divisions));
+        }
+        this.ensureLayerDivisions(layer);
         layer.visible = data.visible !== false;
         if (data.origin && Number.isFinite(data.origin.x) && Number.isFinite(data.origin.y)) {
           layer.origin = { x: data.origin.x, y: data.origin.y };
@@ -937,6 +2010,17 @@
         return layer;
       });
       this.activeLayerId = state.activeLayerId || (this.layers[0] ? this.layers[0].id : null);
+      // Scene-tree Increment F — format v1 → v2: eagerly expand any saved
+      // MONOLITH scene3d layer into its canonical child tree so the tree is the
+      // single UI state. Runs BEFORE the generate loop below so the new object /
+      // boolean / light / ground children are generated + composed this pass.
+      // Gated on the source version — a doc already at v2 is left untouched — and
+      // idempotent besides. Increment B's inline-union render path stays as the
+      // permanent safety net for any monolith that is NOT expanded (v2 presets,
+      // forward-compat), so the render is unchanged either way.
+      if (sourceFormatVersion < VECTURA_FORMAT_VERSION) {
+        this._migrateMonolithScenesToTree();
+      }
       // Sync _layerCounter from SETTINGS after applyState has already restored globalLayerCount.
       this._layerCounter = SETTINGS.globalLayerCount ?? this._layerCounter;
       // Snapshot imported origins so generate() (which derives a fresh origin from path
@@ -966,8 +2050,11 @@
         count += 1;
       }
       const layer = new Layer(newId, source.type, dupName);
-      layer.params = JSON.parse(JSON.stringify(source.params));
-      layer.paramStates = JSON.parse(JSON.stringify(source.paramStates || {}));
+      // CONTRACT E: route through cloneLayerParams/cloneParamStates so large
+      // shared blobs (importedMesh, scene3d params.assets) are cloned by
+      // reference instead of deep-copied into every duplicate.
+      layer.params = cloneLayerParams(source.params);
+      layer.paramStates = cloneParamStates(source.paramStates || {});
       layer.parentId = state && state.parentId !== undefined ? state.parentId : (source.parentId ?? null);
       layer.isGroup = source.isGroup;
       layer.containerRole = source.containerRole ?? null;
@@ -985,6 +2072,7 @@
       layer.miterLimit = source.miterLimit;
       layer.dash = source.dash ? JSON.parse(JSON.stringify(source.dash)) : { enabled: false, pattern: [] };
       layer.strokeAlign = source.strokeAlign;
+      layer.divisions = source.divisions ? JSON.parse(JSON.stringify(source.divisions)) : layer.divisions;
       layer.visible = source.visible;
       layer.paths = clonePaths(source.paths);
       layer.displayPaths = clonePaths(source.displayPaths || source.paths || []);
@@ -1382,8 +2470,28 @@
     getRenderablePaths(layer, options = {}) {
       if (!layer) return [];
       if (layer._morphConsumed) return [];
-      if (layer.isGroup && Array.isArray(layer.morphedPaths)) return layer.morphedPaths;
+      // Scene-tree Increment B: a consumed object3d/booleanGroup3d child emits
+      // nothing (the owning scene group emits its paths); a scene group serves
+      // the single composed pass. Mirrors the morph check.
+      if (layer._sceneConsumed) return [];
+      // COMPOSED GROUP INK (morph blend / 3D scene pass). It is a real plot
+      // subject like any leaf's geometry, so it runs through optimization too:
+      // serve optimizedPaths when the caller asked for the optimized geometry,
+      // exactly as the leaf branch below does. Before this, a group had no
+      // optimizedPaths at all, so no scene path ever carried meta.lineSortOrder
+      // and a scene had no draw order.
+      const groupInk = groupInkPaths(layer);
+      if (groupInk) {
+        if (options.useOptimized && Array.isArray(layer.optimizedPaths)) return layer.optimizedPaths;
+        return groupInk;
+      }
       if (layer.mask?.enabled && layer.mask?.hideLayer) return [];
+      // Stroke division (P0-B): divided fragments are the FINAL renderable
+      // geometry — canvas, export, and stats all consume them. Null whenever
+      // divisions are disabled (applyStrokeDivision clears it). preDivision
+      // callers (before/after optimization stats, pre-optimization previews)
+      // opt out of fragments to see the undivided source chain.
+      if (!options.preDivision && Array.isArray(layer.dividedPaths)) return layer.dividedPaths;
       const { useOptimized = false } = options;
       if (layer.displayMaskActive && Array.isArray(layer.displayPaths)) return layer.displayPaths;
       if (useOptimized && Array.isArray(layer.optimizedPaths)) return layer.optimizedPaths;
@@ -1400,6 +2508,11 @@
         if (!layer) return;
         if (layer.morphedPaths) delete layer.morphedPaths;
         if (layer._morphConsumed) delete layer._morphConsumed;
+        // Scene-tree Increment B: clear last pass's scene compose flags so the
+        // consumed markers + composed paths are re-derived deterministically.
+        if (layer.scenePaths) delete layer.scenePaths;
+        if (layer._sceneConsumed) delete layer._sceneConsumed;
+        if (layer._sceneAssembled) delete layer._sceneAssembled;
         // Morph groups borrow the first child's pen/style as a render/export
         // fallback. Reset it each pass so a group with no visible children
         // doesn't serialize a stale child's style, and re-derivation is
@@ -1433,7 +2546,65 @@
         this.computeLayerDisplayGeometry(layer.id);
       });
       this._computeMorphGroups();
+      this._computeSceneGroups();
+      // optimizeLayers ends by recutting stroke divisions (the division stage
+      // is structurally downstream of optimization; see optimizeLayers tail).
       this.optimizeLayers(this.layers);
+    }
+
+    // Stroke division stage (P0-B): after optimization, divide each enabled
+    // leaf layer's post-optimization geometry into layer.dividedPaths.
+    // getRenderablePaths serves those fragments at top precedence, so the
+    // canvas renderer, export, and stats consume them automatically. v1:
+    // chain continuation applies WITHIN one parent path (each parent is its
+    // own chain) — no cross-path chain detection — but everything routes
+    // through divideChain so the continuation semantics exist.
+    applyStrokeDivision(layers) {
+      const StrokeDivide = window.Vectura?.StrokeDivide;
+      (layers || this.layers).forEach((layer) => {
+        if (!layer || layer.isGroup) return;
+        // Reset first so the source read below sees pre-division geometry.
+        layer.dividedPaths = null;
+        if (!StrokeDivide) return; // script tag missing — degrade to a no-op
+        const divisions = this.ensureLayerDivisions(layer);
+        if (!divisions || !divisions.enabled) return;
+        const source = this.getRenderablePaths(layer, { useOptimized: true });
+        // Whole-list division (Inc-3): the layer's sub-paths divide as ONE
+        // continuous arc-length domain, so a stroke stored as several sub-paths
+        // dashes as one ruler (fixed phaseMode) instead of restarting each
+        // sub-path. The whole-list call also gives weighted-pen + jitter modes a
+        // stable per-path index for their deterministic seeded hashes, and the
+        // fragment cap is shared natively across the list (a per-LAYER budget).
+        const divideOpts = {
+          // Layer curve context: curves-on layers smooth plain polylines at
+          // render time, so the divider must flatten them before measuring.
+          useCurves: Boolean(layer.params && layer.params.curves),
+          // Deterministic seed for weighted-pen + jitter: fold the layer's own
+          // stable, serialized seed into the division seed so two layers with
+          // identical divisions still vary, yet every run is reproducible. No
+          // live RNG — both operands are captured in the document.
+          seed: this._divisionSeed(layer, divisions),
+          maxFragments: StrokeDivide.MAX_FRAGMENTS,
+        };
+        layer.dividedPaths = StrokeDivide.divideChain(source || [], divisions, divideOpts);
+      });
+    }
+
+    // Deterministic division seed (Inc-3). Combines the layer's own serialized
+    // seed with the division-level seed via an integer mix, so weighted-pen +
+    // jitter vary per layer yet reproduce identically on every reload / export.
+    // Both operands live in the document — there is NO Math.random / Date.now.
+    _divisionSeed(layer, divisions) {
+      const layerSeed = Number.isFinite(layer?.params?.seed) ? (layer.params.seed | 0) : 0;
+      const divSeed = Number.isFinite(divisions?.seed) ? (divisions.seed | 0) : 0;
+      // Map the division seed to a mixing operand. The historical `divSeed || 1`
+      // aliased seed 1 onto seed 0 (both -> operand 1), so changing the default
+      // seed 0 -> 1 produced no visible change. Keep seed 0 on operand 1 (the
+      // default — saved docs stay byte-identical) but route seed 1 to the
+      // otherwise-unused 0 operand so it yields a distinct weighted/jitter
+      // sequence. Every other seed already maps to its own operand, untouched.
+      const mixSeed = divSeed === 1 ? 0 : (divSeed || 1);
+      return (layerSeed ^ Math.imul(mixSeed, 0x9e3779b1)) | 0;
     }
 
     _computeMorphGroups() {
@@ -1444,6 +2615,501 @@
         if (!isModifierLayer(group) || group.modifier?.type !== 'morph') return;
         this._refoldMorphGroup(group, bounds);
       });
+    }
+
+    // Drop the optimization cache derived from a group's PREVIOUS composed ink.
+    // Called by every recompose site, so `layer.optimizedPaths` on a group is
+    // either current or absent — never a stale copy the canvas could draw.
+    _invalidateGroupOptimization(group) {
+      if (!group) return;
+      group.optimizedPaths = null;
+      group.optimizedStats = null;
+    }
+
+    // Scene-tree Increment B — compose every scene GROUP once. A scene group is
+    // a scene3d layer flagged isGroup + containerRole 'scene'; it COLLECTS its
+    // descendant object3d/booleanGroup3d layers back into one assembled scene
+    // input and runs the shared compositor over the whole set (occlusion /
+    // lighting / shadow are cross-object, so one HLR pass owns every path).
+    // Mirrors _computeMorphGroups.
+    _computeSceneGroups() {
+      this.layers.forEach((group) => {
+        if (!group || !group.isGroup) return;
+        if (group.type !== 'scene3d' || group.containerRole !== 'scene') return;
+        this._composeSceneGroup(group);
+      });
+    }
+
+    // Compose ONE scene group: walk its descendants in tree order, mark each
+    // object3d/booleanGroup3d child _sceneConsumed (so it emits nothing on its
+    // own — mirrors morph's _morphConsumed), collect them + any INLINE arrays
+    // still on the group into the normalized scene input, and run scene3d's
+    // generate ONCE. The composed paths live on group.scenePaths, which
+    // getRenderablePaths serves for the group (mirrors group.morphedPaths). The
+    // compositor math is untouched — collection only reconstructs its input.
+    _composeSceneGroup(group) {
+      const Params = window.Vectura?.Scene3D?.Params;
+      const algo = Algorithms && Algorithms.scene3d;
+      if (!group || !Params || typeof Params.collectSceneParams !== 'function'
+        || !algo || typeof algo.generate !== 'function') return;
+
+      const collected = [];
+      // Polish P-B — object3d children by layer id, so the post-emit pass can
+      // read each one's own layer.divisions bag (an object3d IS a real layer).
+      const objectLayers = new Map();
+      this.getLayerDescendants(group.id).forEach((layer) => {
+        if (!layer) return;
+        if (layer.type === 'object3d') {
+          layer._sceneConsumed = true;
+          if (layer.visible === false) return; // hidden ⇒ contributes nothing
+          // Re-seat a ground-resting imported mesh before it is collected, so a
+          // Radius/Scale change keeps its base on the ground quad.
+          syncGroundRest(layer);
+          objectLayers.set(layer.id, layer);
+          collected.push({ kind: 'object', id: layer.id, params: layer.params });
+        } else if (layer.type === 'booleanGroup3d') {
+          layer._sceneConsumed = true;
+          if (layer.visible === false) return;
+          const children = this.getLayerChildren(layer.id)
+            .filter((c) => c && c.type === 'object3d')
+            .map((c) => c.id);
+          collected.push({ kind: 'boolean', id: layer.id, params: layer.params, children });
+        } else if (layer.type === 'sceneLight3d') {
+          // Scene-tree Increment E — a light child carries one lights[] entry.
+          layer._sceneConsumed = true;
+          if (layer.visible === false) return; // hidden ⇒ contributes no light
+          collected.push({ kind: 'light', id: layer.id, params: layer.params });
+        } else if (layer.type === 'sceneGround3d') {
+          // Scene-tree Increment E — a ground child enables the ground fixture.
+          layer._sceneConsumed = true;
+          if (layer.visible === false) return; // hidden ⇒ ground off (inline fallback)
+          collected.push({ kind: 'ground', id: layer.id, params: layer.params });
+        }
+      });
+
+      const assembled = Params.collectSceneParams(group.params, collected);
+      // Scene-tree — publish the COLLECTED input so consumers that need to
+      // re-derive the scene (the renderer's per-pixel pick-face pass) use the
+      // same objects/lights/ground the compositor drew, not the group's raw
+      // params (empty objects[] + disabled ground on a tree). Cleared and
+      // re-derived every computeAllDisplayGeometry pass; never serialized.
+      group._sceneAssembled = assembled;
+
+      // Bounds built EXACTLY like generate() (penWidth from the group pen), so a
+      // scene group renders byte-identically to the equivalent monolith leaf.
+      const { width, height } = this.currentProfile;
+      const m = SETTINGS.margin;
+      const pens = Array.isArray(SETTINGS.pens) ? SETTINGS.pens : [];
+      const layerPen = pens.find((pn) => pn && pn.id === group.penId) || pens[0];
+      const penWidth = Number(layerPen && layerPen.width) > 0 ? Number(layerPen.width) : 0.35;
+      const bounds = {
+        width, height, m, dW: width - m * 2, dH: height - m * 2, penWidth,
+        truncate: SETTINGS.truncate, fastPreview: false, preview3dQuality: SETTINGS.preview3dQuality,
+      };
+
+      const rng = new SeededRNG(group.params.seed);
+      const noise = new SimpleNoise(group.params.seed);
+      let paths = [];
+      try {
+        paths = algo.generate(assembled, rng, noise, bounds) || [];
+      } catch (err) {
+        console.error('[Engine] Scene group compose failed:', err);
+        paths = [];
+      }
+      // Universal output controls for 3D (Curves / Smoothing / Simplify). Runs
+      // BEFORE divisions, so a dashed object dashes along the true curve rather
+      // than along the chords it was fitted from (divideChain flattens via the
+      // layer's own `curves` flag, which _applyObjectDivisions already reads).
+      const finished = this._applySceneCurveFinish(paths, assembled, objectLayers, group);
+      group.scenePaths = this._applyObjectDivisions(finished, objectLayers);
+      // The composed ink is the source of truth; anything derived from the
+      // PREVIOUS compose is now stale. generate() recomposes a scene group
+      // outside the optimize pass (Increment D — scene-object drags), so
+      // without this the canvas would keep drawing the previous pass's
+      // optimizedPaths: a ghost scene frozen at the drag's start position.
+      // computeAllDisplayGeometry re-runs optimizeLayers immediately after its
+      // own compose pass, so nothing is lost there.
+      this._invalidateGroupOptimization(group);
+    }
+
+    // "Expand into group" fidelity for a scene-tree CHILD (object3d /
+    // sceneGround3d / sceneLight3d / booleanGroup3d). These children are
+    // `_sceneConsumed` — they own no `.paths` of their own, and there is no
+    // `Algorithms[type]` entry for any of them, so a naive `generate(child.id)`
+    // silently falls back to `Algorithms.flowfield` (the engine-wide default
+    // fallback in `generate()`), producing an unrelated hatch disconnected from
+    // the actual rendered scene. That was the root cause of an expanded ground
+    // gaining phantom hatching that didn't align with the real ground quad.
+    //
+    // The child's true rendered ink already exists: it is the slice of the
+    // owning scene GROUP's composed `scenePaths` tagged with
+    // `meta.sceneTarget.objectId === childId`. EXCEPT the ground: unlike
+    // lights/objects, Scene3D.Params.collectSceneParams does NOT carry the
+    // sceneGround3d child's own layer id into the assembled scene input — the
+    // ground is always the single fixed sentinel id `'ground'` inside
+    // scene3d.js (`record.id === 'ground'`), and cast shadows are stamped
+    // with that same caster-independent sentinel. So a ground child is keyed
+    // by the literal string `'ground'`, not by its own layer id (a ground
+    // expand still picks up its own shadow — exactly what was on canvas).
+    // Returns `null` when `layerId` is not a scene-tree child type or has no
+    // owning scene group (caller falls back to ordinary `layer.paths`
+    // handling); returns an array (possibly empty, e.g. a light — lights
+    // stamp no geometry of their own) when it is.
+    getSceneChildRenderPaths(layerId) {
+      const layer = this.getLayerById(layerId);
+      if (!layer) return null;
+      const SCENE_CHILD_TYPES = new Set(['object3d', 'sceneGround3d', 'sceneLight3d', 'booleanGroup3d']);
+      if (!SCENE_CHILD_TYPES.has(layer.type)) return null;
+      const targetId = layer.type === 'sceneGround3d' ? 'ground' : layerId;
+      let group = layer.parentId ? this.getLayerById(layer.parentId) : null;
+      while (group && !(group.isGroup && group.type === 'scene3d' && group.containerRole === 'scene')) {
+        group = group.parentId ? this.getLayerById(group.parentId) : null;
+      }
+      if (!group) return null;
+      if (!Array.isArray(group.scenePaths) || !group.scenePaths.length) {
+        this.generate(group.id);
+      }
+      const scenePaths = Array.isArray(group.scenePaths) ? group.scenePaths : [];
+      return scenePaths.filter((p) => p && p.meta && p.meta.sceneTarget && p.meta.sceneTarget.objectId === targetId);
+    }
+
+    /**
+     * Curves / Smoothing / Simplify for a composed 3D scene — the same three
+     * universal controls every other algorithm has, finally reaching scene3d.
+     *
+     * WHY THIS STAGE HAD TO BE BUILT RATHER THAN TURNED ON
+     * ----------------------------------------------------
+     * `computeLayerDisplayGeometry` (where `applyCurveFit` lives) runs only on
+     * non-group LEAVES, and a scene group's children are `_sceneConsumed`. So a
+     * scene's ink went from `Algorithms.scene3d.generate` to the canvas with the
+     * entire curve/simplify stage bypassed. There was no dead toggle to revive —
+     * the stage did not exist.
+     *
+     * THE TWO DEFECTS THIS FIXES (measured on a detail-16 capsule)
+     * -----------------------------------------------------------
+     *   silhouette — `sceneEdge` paths are emitted ONE PROJECTED MESH EDGE PER
+     *     PATH: 56 separate 2-point paths, each stamped `meta.straight`. A
+     *     2-point path is a straight line by definition, so no fitter could ever
+     *     have smoothed it. They must be CHAINED back into runs first. That is
+     *     the lumpy outline.
+     *   fill rings — `sceneFill` paths are honest multi-point polylines with no
+     *     `straight` flag (median turn 5.5 deg). They only ever needed the fit.
+     *
+     * SPLIT BY ROLE — two sets of controls, one kind of line each
+     * -----------------------------------------------------------
+     * Those two defects have two different cures, so they get two different
+     * controls. There is no cascade between them and no override checkbox:
+     *
+     *   BORDER  (`curves`/`smoothing`/`simplify` on the OBJECT bag, Object tab)
+     *     governs every path that is NOT a fill — the chained silhouette,
+     *     creases, and face outlines. It keeps its own scene → object
+     *     inheritance, because those keys live on the object bag.
+     *   FILL    (`fillCurves`/`fillSmoothing`/`fillSimplify` in STYLE PARAMS,
+     *     Style tab) governs `meta.kind === 'sceneFill'` only. Living in
+     *     style.params buys the scene → object → face cascade every other
+     *     Style-tab field already has (StyleCascade.resolve, whole-style-wins) —
+     *     NOT a third scoping model.
+     *
+     * `meta.kind === 'sceneFill'` is the whole dividing line. Chaining is a
+     * BORDER operation (it re-welds the per-edge sticks), so it is gated on the
+     * border side alone: a fill-only edit must never re-group the silhouette.
+     *
+     * The Style tab's fourth control, Fidelity, is NOT here — it is sampling
+     * density along a fill line, which only the generator can supply
+     * (Scene3D.SurfaceFill's `fillFidelity`). This stage cannot invent surface
+     * detail after the fact and does not pretend to.
+     *
+     * WHICH GEOMETRY GETS CURVES
+     * --------------------------
+     * Exactly `Scene3D.Params.CURVED_FILL_PRIMITIVES` — the chart-wrapped set
+     * that routes through SurfaceFill. Not a new parallel list: it is the same
+     * set scene3d.js already uses to decide what is a curved surface, so "is
+     * this surface curved?" has one answer in the repo. box / plane / solid
+     * (polyhedron) / imported meshes are faceted, their straight edges are
+     * EXACT, and rounding a cube's edges would be a serious regression. A CSG
+     * assembly borrows its primary object's id, so a carve whose primary is
+     * curved is treated as curved — matching the surface-fill rule it already
+     * follows.
+     *
+     * The fitter's own corner detection is the second net: within a curved
+     * primitive, turns past ~50 deg stay hard corners, so a cylinder's cap rims
+     * and a pyramid's apex survive even though those primitives are in the set.
+     *
+     * SMOOTHING vs HIDDEN-LINE CLIPPING — the order, and why
+     * ------------------------------------------------------
+     * Hidden-line removal happens INSIDE `scene3d.generate`; this pass runs
+     * strictly AFTER, on the already-clipped visible runs. That is the correct
+     * order, not merely the convenient one:
+     *
+     *   • A fit INTERPOLATES its endpoints, so every visible run keeps the exact
+     *     start/end the clipper gave it — an occlusion boundary cannot move.
+     *   • Chaining is EXACT-endpoint only. Two adjacent visible edges share a
+     *     mesh vertex and chain; a clipper-truncated run ends at an interpolated
+     *     interior point that coincides with nothing, so a hidden stretch can
+     *     never be bridged shut.
+     *   • The reverse order is not even expressible here: clipping a smoothed
+     *     path would have to flatten it first (the branch invariant), and the
+     *     clipper would then re-emit `baked` polylines — losing the curves again
+     *     at export. Fitting last is the only order that survives to the plot.
+     *
+     * The one accepted cost: a fitted span may bow off its chords by up to the
+     * fit tolerance (0.002 of the path's OWN bbox diagonal at Simplify 0 — sub
+     * pen-width at normal object sizes), so a curve can sit a hair proud of the
+     * occluder it was clipped against. That is a rendering nicety, not a
+     * correctness break, and it is why this is opt-in.
+     *
+     * DEFAULT IS OFF. No scene3d/object3d type declares `curves` in
+     * ALGO_DEFAULTS, so an untouched scene reaches the early return below and
+     * `paths` passes through BY REFERENCE — byte-identical, every golden intact.
+     */
+    _applySceneCurveFinish(paths, assembled, objectLayers, group) {
+      const GU = window.Vectura?.GeometryUtils;
+      const OU = window.Vectura?.OptimizationUtils;
+      const Params = window.Vectura?.Scene3D?.Params;
+      if (!GU || !OU || !Params || !Array.isArray(paths) || !paths.length) return paths;
+      const CURVED = Params.CURVED_FILL_PRIMITIVES;
+      if (!CURVED || typeof CURVED.has !== 'function') return paths;
+
+      // Scene-level settings act as the default for objects that have not set
+      // their own — one Curves switch for the whole scene, overridable per
+      // object, mirroring how every other per-object 3D control resolves.
+      const scenePar = (group && group.params) || {};
+      const inlineById = new Map();
+      (Array.isArray(scenePar.objects) ? scenePar.objects : []).forEach((o) => {
+        if (o && typeof o.id === 'string') inlineById.set(o.id, o);
+      });
+      const primitiveById = new Map();
+      (Array.isArray(assembled && assembled.objects) ? assembled.objects : []).forEach((o) => {
+        if (o && typeof o.id === 'string') primitiveById.set(o.id, o.primitive);
+      });
+
+      const unit = (val) => Math.max(0, Math.min(1, Number(val) || 0));
+      const wants = (s) => s.curves || s.smoothing > 0 || s.simplify > 0;
+
+      // BORDER settings — the object's own bag, falling back to the scene bag.
+      const resolveBorder = (oid) => {
+        const layer = objectLayers && objectLayers.get ? objectLayers.get(oid) : null;
+        const own = (layer && layer.params) || inlineById.get(oid) || {};
+        const pick = (key, dflt) => (own[key] !== undefined && own[key] !== null
+          ? own[key]
+          : (scenePar[key] !== undefined && scenePar[key] !== null ? scenePar[key] : dflt));
+        return {
+          curves: pick('curves', false) === true,
+          smoothing: unit(pick('smoothing', 0)),
+          simplify: unit(pick('simplify', 0)),
+        };
+      };
+
+      // FILL settings — the RESOLVED style's params, so face > object > scene
+      // falls out of the cascade the Style tab already uses. A curved fill is
+      // emitted per object (sceneTarget.faceId is null on a chart-wrapped fill),
+      // so the object target is the right question to ask.
+      const SC = window.Vectura?.Scene3D?.StyleCascade;
+      const styleTable = (assembled && assembled.styleTable) || null;
+      const resolveFill = (oid) => {
+        const sp = (SC && styleTable && typeof SC.resolve === 'function')
+          ? (SC.resolve(styleTable, { objectId: oid }).params || {}) : {};
+        return {
+          curves: sp.fillCurves === true,
+          smoothing: unit(sp.fillSmoothing),
+          simplify: unit(sp.fillSimplify),
+        };
+      };
+
+      // Which objects actually want work AND are allowed to have it.
+      const active = new Map();
+      const objectIds = new Set([...primitiveById.keys(), ...inlineById.keys()]);
+      objectIds.forEach((oid) => {
+        const primitive = primitiveById.get(oid)
+          || (inlineById.get(oid) && inlineById.get(oid).primitive);
+        if (!CURVED.has(primitive)) return; // faceted ⇒ its straight edges are exact
+        const border = resolveBorder(oid);
+        const fill = resolveFill(oid);
+        if (!wants(border) && !wants(fill)) return;
+        active.set(oid, { border, fill, borderActive: wants(border) });
+      });
+      if (!active.size) return paths; // untouched default ⇒ byte-identical passthrough
+
+      const ownerOf = (p) => {
+        const t = p && p.meta && p.meta.sceneTarget;
+        return t && typeof t.objectId === 'string' ? t.objectId : null;
+      };
+      const isFill = (p) => !!(p && p.meta && p.meta.kind === 'sceneFill');
+      // Chaining is BORDER work: an object whose only edit is on the fill side
+      // must leave its per-edge silhouette sticks exactly as emitted.
+      const chainableOwner = (p) => {
+        const oid = ownerOf(p);
+        const s = oid ? active.get(oid) : null;
+        return s && s.borderActive ? oid : null;
+      };
+
+      // ── 1. Chain the per-edge sticks back into runs ─────────────────────────
+      // Only the per-edge emitters (`sceneEdge` / `sceneFace`) are fragmented;
+      // fills already arrive as polylines and are left alone so a hatch can
+      // never weld to its neighbour. The key merges only paths that agree on
+      // owner, edge class, occlusion and EVERY styling field (pen, dash, edge
+      // style overlay) — so a chain is always one continuous, identically
+      // stroked run. Per-edge fields that legitimately vary along a run
+      // (faceId, depth, normal) are excluded from the key; the chain carries its
+      // first segment's values as the representative.
+      const CHAINABLE = new Set(['sceneEdge', 'sceneFace']);
+      const chainKey = (p, i) => {
+        const oid = chainableOwner(p);
+        const meta = (p && p.meta) || {};
+        if (!oid || !CHAINABLE.has(meta.kind)) return `x${i}`; // unique ⇒ never chained
+        const t = meta.sceneTarget || {};
+        const rest = {};
+        Object.keys(meta).sort().forEach((k) => {
+          if (k === 'sceneTarget' || k === 'anchors' || k === 'closed') return;
+          rest[k] = meta[k];
+        });
+        return `${oid}|${t.edgeClass}|${t.occluded}|${JSON.stringify(rest)}`;
+      };
+      const chained = OU.chainSegmentsByEndpoint(paths, { tolerance: 1e-6, keyOf: chainKey });
+
+      // ── 2. Fit / round, mirroring VectorEngine.generate's curve stage ───────
+      const { width, height } = this.currentProfile;
+      const m = SETTINGS.margin;
+      const dW = width - m * 2;
+      const dH = height - m * 2;
+
+      const fitOne = (path, s) => {
+        if (!Array.isArray(path) || path.length < 3) return path;
+        const meta = path.meta || {};
+        if (meta.kind === 'circle' || meta.baked === true) return path;
+        // Smoothing wins over the plain fit, exactly as generate() orders them.
+        const round = s.smoothing > 0 ? { t: s.smoothing, simplify: s.simplify } : null;
+        if (!round && !s.curves) return path;
+        const opts = round || { curves: true, smoothing: 0, simplify: s.simplify };
+        const apply = (p) => (round ? GU.applyCornerRounding(p, opts) : GU.applyCurveFit(p, opts));
+        if (meta.straight !== true) return apply(path);
+        // A CHAINED edge run is no longer a single straight segment, so the
+        // `straight` refusal no longer describes it. Offer it to the fitter
+        // without the flag, and put the flag back untouched if the fitter
+        // declines (all-corners geometry) — an un-fitted run must keep drawing
+        // verbatim.
+        const probe = path.map((pt) => ({ ...pt }));
+        probe.meta = { ...meta };
+        delete probe.meta.straight;
+        const fitted = apply(probe);
+        return fitted === probe ? path : fitted;
+      };
+
+      // Polyline Simplify for anything the fit did not claim — the same
+      // Visvalingam-when-curved / RDP-when-not split generate() uses.
+      const simplifyOne = (path, s) => {
+        if (!(s.simplify > 0) || !Array.isArray(path) || path.length < 3) return path;
+        const meta = path.meta || {};
+        if (meta.kind === 'circle') return path;
+        if (Array.isArray(meta.anchors) && meta.anchors.some((a) => a && (a.in || a.out))) return path;
+        const tol = s.simplify * Math.max(dW, dH) * 0.01;
+        return s.curves ? simplifyPathVisvalingam(path, tol) : simplifyPath(path, tol);
+      };
+
+      // Each path is finished by the set that OWNS its role — fill lines by the
+      // Style tab's fill settings, everything else by the Object tab's border
+      // settings. A path whose owning set is idle passes through by reference.
+      return chained.map((path) => {
+        const oid = ownerOf(path);
+        const s = oid ? active.get(oid) : null;
+        if (!s) return path;
+        const set = isFill(path) ? s.fill : s.border;
+        if (!wants(set)) return path;
+        return simplifyOne(fitOne(path, set), set);
+      });
+    }
+
+    // Polish P-B — per-object stroke divisions inside a scene group. A composed
+    // scene emits ALL paths on the group (its object3d children are
+    // _sceneConsumed, so their own division pass never runs); this reunites each
+    // object with its divisions by partitioning the group's paths on
+    // meta.sceneTarget.objectId and running the SHARED StrokeDivide.divideChain
+    // over that object's subset — NOT a forked divider, so Inc-0 gap-aware dedup
+    // + Inc-3 grammar (weighted pen, phase modes, seeded jitter) apply verbatim
+    // and a gapped object never suppresses a coincident undivided one. DEFAULT
+    // (no object3d child carries divisions.enabled) returns `paths` UNCHANGED by
+    // reference — byte-identical to pre-P-B.
+    _applyObjectDivisions(paths, objectLayers) {
+      const StrokeDivide = window.Vectura?.StrokeDivide;
+      if (!StrokeDivide || !Array.isArray(paths) || !paths.length || !objectLayers || !objectLayers.size) {
+        return paths;
+      }
+      const EPS = 1e-6;
+      // Objects that carry a NON-DEGENERATE enabled division. An enabled bag whose
+      // classes sum to < EPS total length makes divideChain a no-op — it returns
+      // its input array UNCHANGED (see divideChain's own `cycleLen < EPS` guard).
+      // Such an object must NOT be treated as active: otherwise the partition +
+      // regroup below would run for zero ink change, and the "byte-identical
+      // default" would only hold when every object is fully off. Mirroring the
+      // divider's emptiness check keeps enabled-but-degenerate identical to off.
+      const active = new Map();
+      objectLayers.forEach((layer, id) => {
+        const divisions = this.ensureLayerDivisions(layer);
+        if (!divisions || !divisions.enabled) return;
+        const cycleLen = typeof StrokeDivide.cycleLengthMm === 'function'
+          ? StrokeDivide.cycleLengthMm(divisions) : 0;
+        if (!(cycleLen > EPS)) return; // enabled but degenerate ⇒ a divideChain no-op
+        active.set(id, { layer, divisions });
+      });
+      if (!active.size) return paths; // no usable override ⇒ byte-identical passthrough
+
+      // CONTIGUITY CONTRACT: scene3d emits each object3d's paths CONTIGUOUSLY in
+      // group.scenePaths — one records.forEach emits that object's faces + edges
+      // together, and cast shadows stamp objectId 'ground' (not the caster). We
+      // therefore reserve a slot per CONTIGUOUS RUN of an active object and divide
+      // that run as ONE chain. In the normal (contiguous) case an object is a
+      // SINGLE run, so this is exactly a whole-object divideChain — seam-continuous
+      // phase + deterministic per-path fragment hashes, byte-identical to pre-P-B.
+      // A per-POSITION splice is NOT an option: divideChain needs the whole run in
+      // order for that seam-continuous phase, so fragments must pool at one slot.
+      // GUARD (latent-reorder defense): if a future emit change ever interleaves
+      // one object's paths with another's, that object appears in MORE THAN ONE
+      // run. Pooling all its fragments at the FIRST position would silently pull
+      // later blocks forward and corrupt painter's order for opaque fills — so we
+      // instead divide EACH contiguous run in place (a safe local fallback that
+      // preserves order) and warn. Cross-run phase continuity is the only thing
+      // sacrificed, which is meaningless once the runs are interleaved anyway.
+      const slots = [];           // [{ oid, paths } | path]  (result skeleton)
+      const runCount = new Map(); // oid -> number of contiguous runs seen
+      let openRun = null;         // the run slot currently being appended to
+      let openOid = null;
+      paths.forEach((path) => {
+        const oid = path && path.meta && path.meta.sceneTarget && path.meta.sceneTarget.objectId;
+        if (oid != null && active.has(oid)) {
+          if (openOid !== oid) {
+            openRun = { oid, paths: [] };
+            slots.push(openRun);
+            openOid = oid;
+            runCount.set(oid, (runCount.get(oid) || 0) + 1);
+          }
+          openRun.paths.push(path);
+        } else {
+          slots.push(path);
+          openRun = null;
+          openOid = null;
+        }
+      });
+      runCount.forEach((n, oid) => {
+        if (n > 1) {
+          console.warn(`[Engine] scene object ${oid} emitted non-contiguous paths (${n} runs); dividing each run separately to preserve paint order.`);
+        }
+      });
+
+      const out = [];
+      slots.forEach((item) => {
+        if (item && item.oid != null && Array.isArray(item.paths)) {
+          const { layer, divisions } = active.get(item.oid);
+          const divideOpts = {
+            useCurves: Boolean(layer.params && layer.params.curves),
+            seed: this._divisionSeed(layer, divisions),
+            maxFragments: StrokeDivide.MAX_FRAGMENTS,
+          };
+          StrokeDivide.divideChain(item.paths, divisions, divideOpts).forEach((f) => out.push(f));
+        } else {
+          out.push(item);
+        }
+      });
+      return out;
     }
 
     // Pure parameter-space regeneration for morph intermediates: run an
@@ -1588,6 +3254,9 @@
       });
       const morphed = multiFn(pathsPerChild, group.modifier, b) || [];
       group.morphedPaths = morphed;
+      // Same staleness rule as the scene compose: refoldMorphGroupsForLayers
+      // runs on the live-drag hot path, outside the optimize sweep.
+      this._invalidateGroupOptimization(group);
       // transient pen/style fallback for renderer/export/stats
       const first = visibleLeaves[0];
       if (first) {
@@ -1656,7 +3325,14 @@
     generate(layerId, options = {}) {
       const layer = this.layers.find((l) => l.id === layerId);
       if (!layer) return;
-      if (layer.isGroup) return;
+      if (layer.isGroup) {
+        // Scene-tree Increment D — a scene GROUP recomposes its scenePaths on
+        // generate() so scene-object drags (which call generate on the owning
+        // group) refresh the canvas. Idempotent with computeAllDisplayGeometry's
+        // own compose pass; the compositor math is untouched.
+        if (layer.type === 'scene3d' && layer.containerRole === 'scene') this._composeSceneGroup(layer);
+        return;
+      }
       if (layer.type === 'compound') {
         // Compound layers derive geometry from their children via PathfinderOps.
         // computeAllDisplayGeometry() re-runs the refresh once all primitives
@@ -1953,12 +3629,46 @@
         simplifiedPoints: simplifiedCounts.points,
       };
       layer.paths = finalPaths;
+      // Provenance: a fastPreview/DRAFT frame emits cheaper geometry — region
+      // mappers (spiral/contour/stipple) fall back to a screen-space hatch and
+      // scene3d shadows skip their booleans — for live-drag responsiveness.
+      // Record it so consumers that bake `layer.paths` into new geometry (the
+      // layers panel's expand/flatten) can force a full-quality regenerate
+      // rather than freezing the draft cache into their output.
+      layer._pathsFromDraft = fastPreview;
       layer.helperPaths = helperTransformed;
       layer.maskPolygons = transformedMaskPolygons;
       layer.glyphs = transformedGlyphs;
       layer.textFrame = frameSidecar ? frameSidecar.map((pt) => transform(pt)) : null;
       layer.textOverset = oversetSidecar;
       this.computeAllDisplayGeometry();
+    }
+
+    // Stroke division config normalizer — mirrors ensureLayerOptimization.
+    // Back-fills SETTINGS.divisionDefaults on layers that predate the field
+    // (legacy .vectura payloads) and sanitizes via StrokeDivide. Tolerates the
+    // StrokeDivide script being absent (returns the bag un-sanitized).
+    ensureLayerDivisions(layer) {
+      if (!layer) return null;
+      if (!layer.divisions || typeof layer.divisions !== 'object') {
+        layer.divisions = SETTINGS.divisionDefaults
+          ? clone(SETTINGS.divisionDefaults)
+          : { enabled: false, phaseMm: 0, classes: [] };
+      }
+      const StrokeDivide = window.Vectura?.StrokeDivide;
+      if (StrokeDivide?.sanitizeDivisions) {
+        const sanitized = StrokeDivide.sanitizeDivisions(layer.divisions);
+        layer.divisions.enabled = sanitized.enabled;
+        layer.divisions.phaseMm = sanitized.phaseMm;
+        // Deferred grammar (Phase 4A Inc-3) — accepted + defaulted in LOCKSTEP
+        // with StrokeDivide.sanitizeDivisions. Defaults are a no-op ('cycle',
+        // 'fixed', seed 0, per-class weight 1) so a legacy bag is unchanged.
+        layer.divisions.penMode = sanitized.penMode;
+        layer.divisions.phaseMode = sanitized.phaseMode;
+        layer.divisions.seed = sanitized.seed;
+        layer.divisions.classes = sanitized.classes;
+      }
+      return layer.divisions;
     }
 
     ensureLayerOptimization(layer) {
@@ -1986,7 +3696,13 @@
     }
 
     optimizeLayers(layers, options = {}) {
-      const targetLayers = (layers || this.layers).filter((layer) => layer && !layer.isGroup);
+      // Ink-owning GROUPS optimize too (layerOwnsInk): a morph blend and a 3D
+      // scene's composed pass are plotted geometry, so line sort / simplify /
+      // filter must reach them. Filtering `!layer.isGroup` here is why a scene
+      // had no draw order at all — the composed paths never carried
+      // meta.lineSortOrder, so preview, playback and export all fell back to
+      // composition order.
+      const targetLayers = (layers || this.layers).filter((layer) => layerOwnsInk(layer));
       if (!targetLayers.length) return new Map();
       const includePlotterOptimize = Boolean(options.includePlotterOptimize);
       const runPipeline = (layersToProcess, config) => {
@@ -2003,7 +3719,12 @@
 
         const working = new Map();
         layersToProcess.forEach((layer) => {
-          const sourcePaths = this.getAncestorModifiers(layer).length
+          // A group's source is its COMPOSED ink — `layer.paths` is empty on a
+          // morph/scene group, so reading it would optimize nothing.
+          const groupInk = groupInkPaths(layer);
+          const sourcePaths = groupInk
+            ? groupInk
+            : this.getAncestorModifiers(layer).length
             ? Array.isArray(layer.effectivePaths) && layer.effectivePaths.length
               ? layer.effectivePaths
               : layer.paths || []
@@ -2249,13 +3970,22 @@
           return nextMap;
         }
         if (grouping === 'pen') {
+          // Effective-pen re-key (P0-B): division fragments (and auto-colorized
+          // paths) carry their own meta.penId, so each PATH is bucketed by the
+          // pen it will actually plot with — not its layer's pen.
           const penGroups = new Map();
+          // Resolve each path's penId against the document pen SET the SAME way
+          // the SVG export does (PenValidate.resolveEffectivePenId), so a
+          // stale/unknown meta.penId buckets under the pen it will actually
+          // plot with instead of a phantom group.
+          const penSet = new Set((SETTINGS.pens || []).map((pn) => pn && pn.id));
+          const resolvePen = window.Vectura.PenValidate.resolveEffectivePenId;
           layersToProcess.forEach((layer) => {
-            const penId = layer.penId || 'default';
-            if (!penGroups.has(penId)) penGroups.set(penId, []);
-            (map.get(layer.id) || []).forEach((path) =>
-              penGroups.get(penId).push({ layerId: layer.id, path })
-            );
+            (map.get(layer.id) || []).forEach((path) => {
+              const penId = resolvePen(path && path.meta, layer.penId, penSet);
+              if (!penGroups.has(penId)) penGroups.set(penId, []);
+              penGroups.get(penId).push({ layerId: layer.id, path });
+            });
           });
           const nextMap = new Map(layersToProcess.map((layer) => [layer.id, []]));
           penGroups.forEach((items) => {
@@ -2339,16 +4069,32 @@
             const rev = tokens.slice().reverse().join('|');
             return fwd <= rev ? fwd : rev;
           };
-          const seenByPen = new Map();
+          // Effective-pen re-key (P0-B) + gap-aware division dedup (Fix-A): each
+          // path dedupes in the bucket of the pen it actually plots with. The
+          // shared two-pass StrokeDivide deduper keys division fragments at THIS
+          // pass's own tolerance (same namespace as pathKey) so a coincident
+          // undivided duplicate of a gapless single-pen retrace inks once
+          // (order-independent), while a gapped/multi-pen division never
+          // suppresses a coincident solid (the solid inks the gaps). All three
+          // consumers (here, computeStats, SVG export) drive the same deduper so
+          // their surviving sets agree.
+          const SD = window.Vectura?.StrokeDivide;
+          const deduper = SD ? SD.createPlotDeduper(quant, pathKey) : null;
+          // Resolve penId against the pen SET the same way export/computeStats
+          // do, so a stale meta.penId dedupes in the bucket it actually plots in.
+          const penSet = new Set((SETTINGS.pens || []).map((pn) => pn && pn.id));
+          const penOf = (layer, path) => window.Vectura.PenValidate.resolveEffectivePenId(path && path.meta, layer.penId, penSet);
+          if (deduper) {
+            layersToProcess.forEach((layer) => {
+              (current.get(layer.id) || []).forEach((path) => {
+                deduper.claim(penOf(layer, path), path && path.meta);
+              });
+            });
+          }
           layersToProcess.forEach((layer) => {
-            const penId = layer.penId || 'default';
-            if (!seenByPen.has(penId)) seenByPen.set(penId, new Set());
-            const seen = seenByPen.get(penId);
             const deduped = [];
             (current.get(layer.id) || []).forEach((path) => {
-              const key = pathKey(path);
-              if (key && seen.has(key)) return;
-              if (key) seen.add(key);
+              if (deduper && !deduper.keep(penOf(layer, path), layer.id, path && path.meta, path)) return;
               deduped.push(path);
             });
             current.set(layer.id, deduped);
@@ -2365,17 +4111,40 @@
       };
 
       if (options.config) {
-        return runPipeline(targetLayers, options.config);
+        const result = runPipeline(targetLayers, options.config);
+        // Division is structurally downstream of optimization: recut here so
+        // direct optimizeLayers callers (optimization panel, export preview)
+        // never serve fragments cut from stale optimizedPaths.
+        this.applyStrokeDivision(targetLayers);
+        return result;
       }
 
+      // No explicit config: every layer runs under its OWN optimization config.
+      // Layers that share a config must still go through ONE pipeline pass
+      // together, or the line sort's "Combined" / "Per Pen" grouping silently
+      // degrades to per-layer — which is how the canvas ended up previewing a
+      // different draw order than the SVG export, whose caller always passes a
+      // single shared config for the whole scope.
       const combined = new Map();
+      const configOrder = [];
+      const configGroups = new Map();
       targetLayers.forEach((layer) => {
         const config = this.ensureLayerOptimization(layer);
-        const map = runPipeline([layer], config);
+        const key = JSON.stringify(config);
+        if (!configGroups.has(key)) {
+          configGroups.set(key, { config, layers: [] });
+          configOrder.push(key);
+        }
+        configGroups.get(key).layers.push(layer);
+      });
+      configOrder.forEach((key) => {
+        const group = configGroups.get(key);
+        const map = runPipeline(group.layers, group.config);
         map.forEach((paths, id) => {
           combined.set(id, paths);
         });
       });
+      this.applyStrokeDivision(targetLayers);
       return combined;
     }
 
@@ -2404,7 +4173,6 @@
       let points = 0;
       const optimize = includePlotterOptimize ? Math.max(0, SETTINGS.plotterOptimize ?? 0) : 0;
       const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
-      const dedupe = optimize > 0 ? new Map() : null;
       const quant = (v) => (tol ? Math.round(v / tol) * tol : v);
       // Direction-agnostic hash — see runPipeline.pathKey for rationale.
       const pathKey = (path) => {
@@ -2420,23 +4188,35 @@
         const rev = tokens.slice().reverse().join('|');
         return fwd <= rev ? fwd : rev;
       };
-      target.forEach((l) => {
-        const penId = l.penId || 'default';
-        let seen = null;
-        if (dedupe) {
-          if (!dedupe.has(penId)) dedupe.set(penId, new Set());
-          seen = dedupe.get(penId);
-        }
-        const sourcePaths = this.getRenderablePaths(l, { useOptimized });
+      // Gap-aware division dedup (Fix-A): the SAME shared two-pass deduper the
+      // engine plotter-optimize pass and SVG export use, so reported stats match
+      // the emitted SVG (order-independent). Only active when plotter-optimize
+      // is on (optimize > 0).
+      const SD = window.Vectura?.StrokeDivide;
+      const deduper = (optimize > 0 && SD) ? SD.createPlotDeduper(quant, pathKey) : null;
+      // Resolve penId against the pen SET the same way the SVG export does, so
+      // reported stats never count a path under a phantom pen export coerces away.
+      const penSet = new Set((SETTINGS.pens || []).map((pn) => pn && pn.id));
+      const penOf = (l, p) => window.Vectura.PenValidate.resolveEffectivePenId(p && p.meta, l.penId, penSet);
+      const sources = target.map((l) => this.getRenderablePaths(l, {
+        useOptimized, preDivision: Boolean(options.preDivision),
+      }) || []);
+      if (deduper) {
+        target.forEach((l, li) => sources[li].forEach((p) => deduper.claim(penOf(l, p), p && p.meta)));
+      }
+      // Plot-physics readout (Phase 4A Inc-2, READ-ONLY): when requested, retain
+      // the SURVIVING paths — grouped by the same resolved effective pen the
+      // export/dedup path uses — so we can measure lifts/travel/time on the real
+      // plot order without a second, divergent stats pass.
+      const wantPhysics = Boolean(options.physics);
+      const survivors = wantPhysics ? [] : null;
+      target.forEach((l, li) => {
         const visiblePaths = [];
-        (sourcePaths || []).forEach((p) => {
-          if (seen) {
-            const key = pathKey(p);
-            if (key && seen.has(key)) return;
-            if (key) seen.add(key);
-          }
+        sources[li].forEach((p) => {
+          if (deduper && !deduper.keep(penOf(l, p), l.id, p && p.meta, p)) return;
           visiblePaths.push(p);
           dist += pathLength(p);
+          if (survivors) survivors.push({ penId: penOf(l, p), path: p });
         });
         const count = countPathPoints(visiblePaths);
         lines += count.lines;
@@ -2445,7 +4225,101 @@
       const timeSec = dist / 1000 / (SETTINGS.speedDown / 1000);
       const m = Math.floor(timeSec / 60);
       const s = Math.floor(timeSec % 60);
-      return { distance: Math.round(dist / 1000) + 'm', time: `${m}:${s.toString().padStart(2, '0')}`, lines, points };
+      const result = { distance: Math.round(dist / 1000) + 'm', time: `${m}:${s.toString().padStart(2, '0')}`, lines, points };
+      if (survivors) {
+        const phys = this.computePlotPhysicsFromSurvivors(survivors);
+        result.perPen = phys.perPen;
+        result.physics = phys.totals;
+      }
+      return result;
+    }
+
+    // Plot-physics reducer (Phase 4A Inc-2, K-05). Takes the surviving
+    // { penId, path } records computeStats already resolved + deduped and
+    // measures, per effective pen: pen lifts (pen-down stroke count), pen-down
+    // draw length, pen-up travel (end→start gap between consecutive strokes in
+    // plot order) and an estimated time = draw/speedDown + travel/speedUp +
+    // lifts·penLiftTime from the machine feed rates. The K-05 guard counts
+    // sub-resolution moves: drawn strokes shorter than minSegmentMm and pen-up
+    // gaps shorter than minGapMm. Order within a pen mirrors the SVG export:
+    // when line sort grouped by pen/combined, paths are re-ordered by
+    // meta.lineSortOrder so the travel number matches the emitted plot.
+    // READ-ONLY — it never mutates geometry.
+    computePlotPhysicsFromSurvivors(survivors) {
+      const drawSpeed = Math.max(1e-6, Number(SETTINGS.speedDown) || 250);
+      const travelSpeed = Math.max(1e-6, Number(SETTINGS.speedUp) || 300);
+      const liftTime = Math.max(0, Number.isFinite(SETTINGS.penLiftTime) ? SETTINGS.penLiftTime : 0.1);
+      const minSeg = Math.max(0, Number.isFinite(SETTINGS.minSegmentMm) ? SETTINGS.minSegmentMm : 0.1);
+      const minGap = Math.max(0, Number.isFinite(SETTINGS.minGapMm) ? SETTINGS.minGapMm : 0.1);
+
+      const penOrder = [];
+      const groups = new Map();
+      (survivors || []).forEach((rec) => {
+        if (!groups.has(rec.penId)) {
+          groups.set(rec.penId, []);
+          penOrder.push(rec.penId);
+        }
+        groups.get(rec.penId).push(rec.path);
+      });
+
+      const penMeta = new Map((SETTINGS.pens || []).map((pn) => [pn && pn.id, pn]));
+      const perPen = [];
+      const totals = { lifts: 0, draw: 0, travel: 0, total: 0, timeSec: 0, shortSegments: 0, shortGaps: 0 };
+
+      penOrder.forEach((penId) => {
+        let paths = groups.get(penId) || [];
+        // Match the export's per-pen interleave: only when line sort grouped by
+        // pen/combined does the plot order come from meta.lineSortOrder.
+        const interleave = paths.some((p) => p && p.meta && (p.meta.lineSortGrouping === 'pen' || p.meta.lineSortGrouping === 'combined'));
+        if (interleave) {
+          paths = paths.slice().sort((a, b) => {
+            const ao = Number.isFinite(a && a.meta && a.meta.lineSortOrder) ? a.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
+            const bo = Number.isFinite(b && b.meta && b.meta.lineSortOrder) ? b.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
+            return ao - bo;
+          });
+        }
+        let draw = 0;
+        let travel = 0;
+        let shortSegments = 0;
+        let shortGaps = 0;
+        let prevEnd = null;
+        paths.forEach((p) => {
+          const len = pathLength(p);
+          draw += len;
+          if (len > 0 && len < minSeg) shortSegments += 1;
+          const ep = pathEndpoints(p);
+          if (prevEnd) {
+            const gap = Math.hypot(ep.start.x - prevEnd.x, ep.start.y - prevEnd.y);
+            travel += gap;
+            if (gap > 0 && gap < minGap) shortGaps += 1;
+          }
+          prevEnd = ep.end;
+        });
+        const lifts = paths.length;
+        const timeSec = draw / drawSpeed + travel / travelSpeed + lifts * liftTime;
+        const pen = penMeta.get(penId);
+        perPen.push({
+          penId,
+          name: (pen && pen.name) || (penId === 'default' ? 'Default' : penId),
+          color: (pen && pen.color) || '#888888',
+          lifts,
+          draw,
+          travel,
+          total: draw + travel,
+          timeSec,
+          shortSegments,
+          shortGaps,
+        });
+        totals.lifts += lifts;
+        totals.draw += draw;
+        totals.travel += travel;
+        totals.total += draw + travel;
+        totals.timeSec += timeSec;
+        totals.shortSegments += shortSegments;
+        totals.shortGaps += shortGaps;
+      });
+
+      return { perPen, totals };
     }
 
     getStats(options = {}) {
@@ -2456,6 +4330,9 @@
 
   const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.VectorEngine = VectorEngine;
+  // Composed-group-ink rules, shared with the renderer (draw-order preview) and
+  // the UI (SVG export walk) so all three consumers agree on which layers plot.
+  window.Vectura.LayerInk = { groupInkPaths, layerOwnsInk };
   // AUD-02: the current `.vectura` engine-state schema version, exposed so the
   // file-open UI can warn when a file comes from a newer build than this one.
   window.Vectura.VECTURA_FORMAT_VERSION = VECTURA_FORMAT_VERSION;

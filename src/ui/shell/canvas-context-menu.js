@@ -151,14 +151,153 @@
     if (posX && typeof posX.focus === 'function') { try { posX.focus(); } catch (_e) { /* noop */ } }
   };
 
+  // ── 3D Scene Studio (Phase 1C): target-aware scene items ───────────────
+  // Resolve what the right-click actually hit on a scene3d layer via the
+  // renderer's CONTRACT-B hit test. Returns:
+  //   { kind:'object'|'face'|'edge', layer, objectId, faceId, … }  target hit
+  //   { kind:'sceneCanvas', layer }   scene layer active, empty point
+  //   null                            not a scene interaction
+  const resolveSceneHit = (clientX, clientY) => {
+    const renderer = getRenderer();
+    if (!renderer || typeof renderer._sceneHitAtPoint !== 'function') return null;
+    const canvas = state.canvas || findCanvas();
+    if (!canvas || typeof renderer.screenToWorld !== 'function') return null;
+    const rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+    const world = renderer.screenToWorld((clientX || 0) - (rect.left || 0), (clientY || 0) - (rect.top || 0));
+    const hit = renderer._sceneHitAtPoint(world);
+    if (hit) return hit;
+    const sceneLayer = renderer.getSceneShortcutLayer ? renderer.getSceneShortcutLayer() : null;
+    return sceneLayer ? { kind: 'sceneCanvas', layer: sceneLayer, world } : null;
+  };
+
+  const buildSceneItems = (hit) => {
+    const L = LABELS();
+    const R = REASONS();
+    const renderer = getRenderer();
+    const layer = hit.layer;
+    const items = [];
+    const run = (fn) => () => { try { fn(); } catch (_e) { /* command guarded */ } };
+
+    if (hit.kind === 'sceneCanvas') {
+      // Canvas verbs: append a CONTRACT A object (one history entry + regen).
+      [['sceneAddBox', 'box', 'Add Box'], ['sceneAddSphere', 'sphere', 'Add Sphere'], ['sceneAddCylinder', 'cylinder', 'Add Cylinder']]
+        .forEach(([id, primitive, fallback]) => {
+          items.push({
+            id,
+            label: L[id] || fallback,
+            enabled: true,
+            run: run(() => renderer.addSceneObject?.(layer.id, primitive)),
+          });
+        });
+      // Scene-tree Increment E parity: Ground has no CONTRACT A equivalent — it
+      // is a tree-only child (sceneGround3d) that must land under a real scene
+      // GROUP via engine.addGroundToScene, not the inline params.objects[]
+      // array the primitives above use on a monolith. Offered only when `layer`
+      // is a tree scene group (isGroup + containerRole 'scene', mirroring
+      // layer-context-menu.js's `_isSceneGroup`) and only when it has no ground
+      // child yet — one ground max, same guard as the layer-menu entry.
+      const engine = getEngine();
+      if (layer.isGroup && layer.containerRole === 'scene' && engine
+        && typeof engine.addGroundToScene === 'function') {
+        const hasGround = typeof engine.getLayerDescendants === 'function'
+          && engine.getLayerDescendants(layer.id).some((l) => l && l.type === 'sceneGround3d');
+        if (!hasGround) {
+          items.push({
+            id: 'sceneAddGround',
+            label: L.sceneAddGround || 'Add Ground',
+            enabled: true,
+            run: run(() => {
+              const app = getApp();
+              app?.pushHistory?.();
+              const gid = engine.addGroundToScene(layer.id);
+              if (gid) engine.setActiveLayerId?.(gid);
+              app?.render?.();
+            }),
+          });
+        }
+      }
+      return items;
+    }
+
+    const objectId = hit.objectId;
+    if (hit.kind === 'face' || hit.kind === 'edge') {
+      // Face/edge verbs first (component targets), object verbs beneath.
+      items.push({
+        id: 'sceneSelectAllFaces',
+        label: L.sceneSelectAllFaces || 'Select All Faces of Object',
+        enabled: true,
+        run: run(() => renderer.selectAllSceneFacesOfObject?.(layer.id, objectId)),
+      });
+      const SC = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
+      const canClear = Boolean(SC && typeof SC.clearStyle === 'function'
+        && hit.faceId && layer.params && layer.params.styleTable);
+      items.push({
+        id: 'sceneClearFaceStyle',
+        label: L.sceneClearFaceStyle || 'Clear Face Style',
+        enabled: canClear,
+        reason: canClear ? '' : (R.sceneClearFaceStyle || ''),
+        run: run(() => {
+          const app = getApp();
+          app?.pushHistory?.();
+          SC.clearStyle(layer.params.styleTable, 'face', `${objectId}/${hit.faceId}`);
+          getEngine()?.generate?.(layer.id);
+          app?.render?.();
+        }),
+      });
+      items.push(SEP);
+    }
+    items.push({
+      id: 'sceneDuplicateObject',
+      label: L.sceneDuplicateObject || 'Duplicate Object',
+      enabled: true,
+      run: run(() => renderer.duplicateSceneObjects?.(layer.id, [objectId])),
+    });
+    items.push({
+      id: 'sceneDeleteObject',
+      label: L.sceneDeleteObject || 'Delete Object',
+      enabled: true,
+      run: run(() => renderer.deleteSceneObjects?.(layer.id, [objectId])),
+    });
+    items.push(SEP);
+    items.push({
+      id: 'sceneDropToGround',
+      label: L.sceneDropToGround || 'Drop to Ground',
+      enabled: true,
+      run: run(() => renderer.dropSceneObjectsToGround?.(layer.id, [objectId])),
+    });
+    const obj = (layer.params && Array.isArray(layer.params.objects) ? layer.params.objects : [])
+      .find((o) => o && o.id === objectId);
+    const xray = Boolean(obj && obj.visibility === 'xray');
+    items.push({
+      id: 'sceneToggleVisibility',
+      label: xray ? (L.sceneShowSolid || 'Show Solid') : (L.sceneShowXray || 'Show X-ray'),
+      enabled: true,
+      run: run(() => renderer.setSceneObjectVisibility?.(layer.id, [objectId])),
+    });
+    return items;
+  };
+
   // ── item model ─────────────────────────────────────────────────────────
   const SEP = { separator: true };
 
-  const buildItems = () => {
+  const buildItems = (sceneHit = null) => {
     const s = readState();
     const L = LABELS();
     const R = REASONS();
     const items = [];
+
+    // 3D Scene Studio: a resolved scene hit replaces the 2D verb set with the
+    // target's scene verbs (object / face / canvas). Undo/Redo stay appended
+    // so the menu keeps its universal escape hatches.
+    if (sceneHit && sceneHit.layer) {
+      const sceneItems = buildSceneItems(sceneHit);
+      if (sceneItems.length) {
+        sceneItems.push(SEP);
+        sceneItems.push({ id: 'undo', label: L.undo || 'Undo', enabled: s.canUndo, reason: s.canUndo ? '' : (R.undo || ''), run: cmdUndo });
+        sceneItems.push({ id: 'redo', label: L.redo || 'Redo', enabled: s.canRedo, reason: s.canRedo ? '' : (R.redo || ''), run: cmdRedo });
+        return sceneItems;
+      }
+    }
 
     if (!s.hasSelection) {
       // Empty-selection subset: Undo / Redo only.
@@ -271,11 +410,11 @@
     menu.style.top = `${Math.round(top)}px`;
   };
 
-  const openAt = (x, y) => {
+  const openAt = (x, y, sceneHit = null) => {
     const d = doc();
     if (!d || !d.body) return null;
     close();
-    const items = buildItems();
+    const items = buildItems(sceneHit);
     if (!items.length) return null;
     const menu = renderMenu(items);
     menu.style.position = 'fixed';
@@ -308,7 +447,9 @@
     // through for any modifier-driven or non-canvas case.
     if (!getApp()) return;
     e.preventDefault();
-    openAt(e.clientX, e.clientY);
+    // 3D Scene Studio: target-aware scene menu when the click resolves to a
+    // scene3d target (or a scene layer is active over empty canvas).
+    openAt(e.clientX, e.clientY, resolveSceneHit(e.clientX, e.clientY));
   };
 
   const findCanvas = () => {

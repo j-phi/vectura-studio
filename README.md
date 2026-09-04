@@ -140,8 +140,9 @@ Select an object and a **Contextual Task Bar** floats just below it with the act
 <details>
 <summary>Full algorithm feature list</summary>
 
-- 19+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, pendula, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack, terrain, horizon, pattern, svgdistort, plus a 3D family — spirograph, spiralizer, polyhedron, topoform, raster-plane
+- 19+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, pendula, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack, terrain, horizon, pattern, svgdistort, plus a 3D family — spirograph, spiralizer, polyhedron, topoform, raster-plane, and the multi-object **3D Scene Studio**
 - **3D suite:** the mesh-rendering algorithms (Topoform, Polyhedron) import binary or ASCII **`.stl` meshes** and render them as wireframes, depth-plane contours, or face/edge/vertex art with hidden-line removal; Topoform ships 10 primitives (sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot) with detail up to 100. All four 3D algorithms support **orthographic or perspective projection**, full **Rotate X/Y/Z** view control via sliders or the on-canvas three-ring rotation gizmo (amber X, violet Y, cyan Z — drawn ring-only, with no backing disc over the artwork), and contour/line smoothing produces true bezier curves on screen and in export. The live preview fidelity while dragging a 3D shape is tunable in **Document Setup → Guides & Display → 3D move preview** (Draft / Balanced / High)
+- **3D Scene Studio:** a multi-object scene builder — assemble box · sphere · cylinder · cone · torus · torus-knot · capsule · superellipsoid · pyramid · plane · solids on a shared camera, select and move/rotate/scale objects (or push-pull box faces) with on-canvas gizmos, and light them with a **multi-light rig** (directional · ambient · point · spot, each draggable via a 3-axis gizmo). Surfaces render *light-made tone* through per-object/per-face **fill mappers** (hatch, crosshatch, contour, spiral, stipple, wireframe — each with its own control inventory), controllable **cast shadows** (angle / density / pen / line type / **Softness**, a **Layers** control — Off / 2 / 3 / 4 — that builds contact, umbra and penumbra zones in stages, and an **inverse** mode that thins a patterned ground for dark-paper plots), selectable **highlight treatments**, **x-ray** see-through back-face fills, a per-object **border** drawn as one contiguous silhouette outline, and a shared **stroke treatment** (line type, hand-drawn wobble, overstroke). Line output splits by role: the Object tab's **Border lines** (Curves / Smoothing / Simplify) govern the silhouette, creases and face outlines, while the Style tab's **Fill lines** (Curves / Smoothing / Simplify / Fidelity) govern the internal fill. Per-class **Edge Styles** give silhouette / crease / boundary / interior / hidden edges each their own pen, weight, and dash, with hidden edges drawn or dropped scene-wide. Per-object Style / Shadow / Highlight / X-ray flyouts live on the contextual task bar. Each scene is a **layer tree** — one object per layer, with boolean (CSG) groups, lights, and the ground as their own rows — so you build it object-by-object, click the canvas or the tree to select and edit a single object, and older saved scenes upgrade to the tree automatically
 - Universal **Noise Rack** with per-layer engine selection, blend modes, offsets, octave shaping — shared across flowfield, grid, phylla, rings, topo, wavetable, and petalis
 - Polygon Noise Rack layers now use intuitive zoom semantics: larger `Noise Zoom` / `Noise Scale` values create a larger polygon footprint, and vertical line-displacement systems treat positive amplitudes as upward motion
 - Seeded, repeatable generation; the `Transform & Seed` sub-panel (collapsed by default) exposes seed, position, scale, and rotation
@@ -181,6 +182,8 @@ The SVG export modal offers a large preview pane with zoom/pan inspection, plott
 - `Line Simplify` is applied by default for new layers with Mode set to `Curve`; `Line Sort` is off by default for new layers
 - One-click export with configurable precision and grouping by pen assignment
 - Plotter-first output stored in millimeters with machine profiles (A3, A4, AxiDraw V3) plus a document-level Metric/Imperial display toggle
+- **Stroke Divisions** (⋯ → Open Stroke Options): split a layer's strokes into alternating segments, each with its own run length, pen (or the layer pen), and gap — so a single path plots as a multi-pen or dashed run. A **pen mode** (Cycle / Weighted) and **phase mode** (Fixed / Per-path / Jitter) add grammar: Weighted scatters segments across pens by a set ratio, Jitter varies the dash phase per path. Everything is deterministic (a seed makes weighted/jitter patterns reproducible); a coincident undivided duplicate on the same pen is deduped so it never double-inks
+- **Plot-physics readout** in the Document Overview: per pen, the pen lifts, pen-up travel distance, draw length, and an estimated plot time (from the machine's pen speeds), with an all-pens total and a short-segment/gap warning — measured on the real deduped plot order so it matches the exported file
 
 </details>
 
@@ -205,6 +208,7 @@ Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar wit
 - **All Tools drawer:** a `…` overflow button on the tool rail opens a non-modal **All Tools** drawer listing every tool grouped by category (Select / Draw / Shapes / Type / Modify / Navigate) with a **grid/list** view toggle (remembered); clicking a tool activates it, hovering an entry highlights the rail slot it lives in
 - **Font hover-preview & size presets:** the Text panel's font picker live-previews a family on the canvas while you hover it (settling before it commits), and the font-size control offers a preset dropdown (6–72 mm); the Task Bar's text chips open these same pickers
 - `Save/Open` full projects via `.vectura` files; import SVGs as new layers
+- `File → Import 3D Model…` reads a `.obj` or `.stl` mesh and drops it into the 3D scene compositor as a lit, shaded, selectable object (added to the active scene, or a new scene with sun + ground); the mesh is auto-centred and unit-normalised
 - Pattern layers now include a custom-tile workflow: import SVG tiles, preview a live `3x3` repeat, flag seam/fill mismatches before save, save valid custom patterns to the runtime library, and carry those custom patterns inside `.vectura` project files
 - Petalis profile library loads from `src/config/petal-profiles` in both hosted and direct `file://` runs via a preloaded `library.js` bundle
 
@@ -261,6 +265,7 @@ Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom
 | **Polyhedron** | Platonic/Archimedean solids, a **swept-profile family** (flat polygon, prism, antiprism, bipyramid, cone, frustum, cupola, star prism — all driven by a side count, with taper/star-inset where it applies), **or imported STL meshes** — face bands, edges, and vertex rings with front-face culling, dashed hidden lines, extrude/explode/twist effects, and orthographic or perspective projection |
 | **Topoform** | Primitive 3D meshes (sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot) **or imported STL meshes**, rendered as projected wireframes or depth-plane topographic contours — with detail up to 100 on every primitive, bezier contour smoothing, dashed hidden lines, an optional Scene Lighting pass, and orthographic/perspective view |
 | **Raster-Plane** | A height source (built-in relief, preloaded noise, imported image, or hand-painted canvas) projected as line relief, deformed mesh, raster topography, or extruded bars — Bars take a **Bar Sides** count (3–8) that interlocks gap-free as triangles / squares / hexagons (other counts inscribe a regular polygon in each cell), a **Bar Rotate** dial to orient the footprints, and a **Corner Radius** that fillets the bar footprints into rounded columns. Plus a **Surface Noise** rack stack where each layer's own Blend Mode + Field Weight emboss the surface live, a **Base Height** lift and a **Plane Width** slider for "Lines as Planes" (100% = a solid extruded slab, lower widths = free-standing planes with real gaps between rows), **See-Through** for an x-ray render that dots in whatever the planes hide, clean hidden-line removal on opaque bars, and orthographic or perspective view |
+| **3D Scene Studio** | A multi-object scene: assemble box / sphere / cylinder / cone / torus / torus-knot / capsule / superellipsoid / pyramid / plane / solids on a shared camera and render them as hidden-line-removed solids with per-object and per-face styling. Select and **move / rotate / scale** objects (or push-pull box faces) with on-canvas gizmos, and light with a **multi-light rig** — directional / ambient / point / spot, each draggable via a 3-axis light gizmo, with position-aware shading and perspective ground shadows. Surfaces render **light-made tone** through per-object/per-face **fill mappers** (hatch, crosshatch, contour, true Archimedean spiral, stipple, wireframe — each with its own control inventory: hatch angle-reference + boustrophedon linking, contour surface/region, stipple mark shape/size/jitter, wireframe edge-class toggles). Plus controllable **cast shadows** (angle / density / pen / line type / Softness / per-object cast toggle, with a **Layers** control — Off / 2 / 3 / 4 — that builds contact, umbra and penumbra zones in stages instead of adding flat ink), selectable **highlight treatments** (none / blank / dashed / dotted / sparse / altFill / burst / stipple-out), **x-ray** see-through back-face fills, a per-object **border** drawn as one contiguous silhouette outline, a shared **stroke treatment** (line type, hand-drawn wobble, overstroke), a **Geometry** selector that swaps an object's primitive in place and reveals that shape's own controls, split line output (Object tab **Border lines**, Style tab **Fill lines** with its own Curves / Smoothing / Simplify / Fidelity), and Style / Shadow / Highlight / X-ray flyouts on the contextual task bar. Each scene is a **layer tree** (one object per layer; boolean groups, lights, and ground as their own rows) — build it object-by-object, click the canvas or a tree row to select and edit one object, and saved single-layer scenes migrate to the tree on load (rendering identically) |
 
 Algorithm defaults live in `src/config/defaults.js`, modifier defaults/descriptions in `src/config/modifiers.js`, and algorithm descriptions in `src/config/descriptions.js`.
 
@@ -592,6 +597,68 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.3.85
+- **3D Scene: a new scene arrives with ink on it.** Inserting a 3D Scene seeded a **box** under the
+  **wireframe** mapper, and that pair puts no ink on the object at all — wireframe never reaches the
+  surface-fill emitter, so the object drew only its structural edges, nine straight lines on a cube.
+  A freshly dropped scene composed 113 paths of which **zero** were the object's surface (100 were
+  the ground's cast shadow, 4 the ground quad), and on canvas it read as an empty cube outline. The
+  seed is now a **sphere** under **hatch**, resting on the ground, so lighting, tone and the mapper
+  are visible the instant the object appears. Box and wireframe are unchanged and stay one click
+  away — the Add Objects shelf and the object Style flyout. The scene-scope fallback deliberately
+  stays wireframe: it is what the ground fixture resolves to, and hatching it floods the ground quad.
+
+### 1.3.84
+- **Draw Order: the colours, the playback and the exported SVG finally agree.** The on-canvas
+  gradient sorted every optimized path globally by its line-sort order and ignored pen grouping,
+  while both playback and export finish one pen before swapping to the next. Export is the
+  authority — a plotter cannot swap pens mid-sweep — so the gradient had been promising a
+  top-to-bottom pass the pen would never make. All three now read one plot sequence. Two related
+  faults went with it: with stroke divisions on, the overlay and the reveal were looking at
+  different path objects, so the gradient never revealed in lock-step; and the optimizer ran one
+  layer at a time when no explicit config was passed, quietly demoting "Combined" and "Per Pen"
+  grouping to per-layer.
+- **Draw Order: the overlay is pinned to where the ink actually lands.** A previous attempt at the
+  fix drew the coloured preview offset from the real artwork, with stray segments in empty corners
+  of the canvas, and the test suite never noticed — every draw-order test checked the *order* of
+  paths, none checked their *position*. There is now a regression test that records what the canvas
+  draws with the overlay off and on, and fails if the overlay puts ink anywhere the artwork did
+  not.
+- **Known gap: 3D scenes still have no draw order.** A scene's composed geometry lives on the group,
+  which is never an optimization target, so no scene path carries a line-sort order. Rather than
+  colour composition order as if it were plot order, the Draw Order overlay leaves scenes alone.
+  Giving scenes a real draw order (and a non-empty SVG export) is tracked separately.
+
+### 1.3.83
+- **3D Scene: the border is a real outline again.** Style ▸ Border drew each mesh edge as its own
+  two-point segment and offset it along its own screen normal, so the outline broke at every shared
+  vertex — and raising Fidelity only made it worse. 104 of 112 border paths were two-point straight
+  sticks, which no curve fitter can smooth, so Curves and Smoothing had nothing to work on and the
+  border came out lumpy. The border is now chained on mesh topology and offset as one polyline, so
+  it is contiguous at every Fidelity and a torus seen face-on keeps both of its loops.
+- **3D Scene: the plain silhouette stops fragmenting.** Same cause on the Border-off path — the
+  0.6 mm emission floor judged each segment instead of the outline. A sphere lost 92 endpoints at
+  Fidelity 60 and a capsule outline shattered into 18 pieces; both are now unbroken at every
+  Fidelity, while the sub-millimetre whiskers the floor exists to cull are still culled.
+- **3D Scene: line output splits by role.** The Object tab's Curves / Smoothing / Simplify now
+  govern the **border** — silhouette, creases, face outlines — and a new **Fill lines** group on
+  the Style tab governs internal fill lines, so a crisp outline over softly fitted hatching is
+  finally expressible. A new **Style ▸ Fidelity** sets sampling density *along* each fill line; the
+  Object tab's Fidelity still sets mesh tessellation.
+- **3D Scene: shadows get anatomy.** Shadow ▸ Layers (Off / 2 / 3 / 4) built nested inset rings
+  that read as a flat blob. It now builds shading in stages — a contact accent at the base, a
+  retreating umbra wedge, graded penumbra, a dissolving tail — redistributing ink rather than
+  adding it. Cast shadows meet all fifteen of their design criteria; object shading is much
+  improved but still under review. Reflected light and a terminator dip are new, a cube's faces now
+  order correctly by incident light, the faceted highlight treatments are distinct marks again, and
+  Density is live on curved objects (ball fill ink 3001 → 6618 mm across Density 10 → 100).
+- **3D Scene: labels that tell the truth.** Shadow "Falloff" is now **Softness**, the highlight
+  "Keep" is now **None** (and hides the rows it never used), and the Geometry rows name the
+  quantity they show — an 80 mm torus was 125 mm across. No saved document changes.
+- Also fixed: a Buckyball is built at the Radius it states (it was 13.1% under), expanding a scene
+  monolith no longer drops a scene-scoped fill, and every contextual-task-bar dropdown now opens
+  away from the nearest viewport edge with its caret pointing the right way.
+
 ### 1.3.0
 - **Parameter-space morphing.** The Morph modifier now interpolates two same-algorithm children's
   *parameters* per step and regenerates real geometry instead of blending baked polylines — rotated
@@ -623,6 +690,9 @@ CI lives in `.github/workflows/test.yml`:
   vanishing points to the canvas edges, which flattened two-point mode into a rectangle with no
   perspective at all. The curated vanishing points are back, and a new guard stops any preset from
   pinning a value for a control it does not even show.
+
+<details>
+<summary>Older releases (1.2.68 and earlier)</summary>
 
 ### 1.2.68
 - **Raster-Plane: See-Through makes the planes see-through instead of deleting them.** With **Lines
@@ -808,9 +878,6 @@ CI lives in `.github/workflows/test.yml`:
 - Changed **onboarding tour rebuilt** around an extensible step engine with `When.*` completion factories, multi-phase steps, and a draggable popover (`movable: true`); content rewritten across all 7 steps.
 - Changed **disclosure chevrons unified** on the Lucide `chevron-down` glyph with directional rotation.
 - Internal: drained ~100 delegator stubs from `_ui-legacy.js` across panels, persistence, shell satellites, pens, pane-left, export-svg, modals, shortcuts, and grouping methods (continuation of the Meridian Blue UI architecture refactor).
-
-<details>
-<summary>Older releases (0.9.10 and earlier)</summary>
 
 ### 0.9.10
 - Added **Meridian Blue** skin family (Dark / Light / Lark) — fourth, fifth, and sixth shipping skins, sourced from `themes-mockup.html`. Space Grotesk + JetBrains Mono typography, tighter pane geometry, slider/dial release halos, indeterminate progress bar, and family-scoped petal/pattern designer chrome.

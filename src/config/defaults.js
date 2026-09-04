@@ -2053,6 +2053,243 @@
       simplify: 0,
       curves: false,
     },
+    // 3D Scene Studio (Phase 1) — CONTRACT A schema. The whole scene lives
+    // JSON-safe in layer.params and regenerates from it; sceneVersion keys the
+    // scene migration slot (Scene3D.Params). `assets` is the content-hashed
+    // asset table cloneLayerParams shares by reference across history clones.
+    scene3d: {
+      label: 'Scene 3D',
+      is3d: true,
+      preset: 'scene3d-default',
+      // A fresh scene is born at the current SCENE_VERSION so it is NOT subject
+      // to any migration step:
+      //   v2 — X-ray fold: a fresh x-ray object's hidden edges follow Edge
+      //        Styles (default drop), and that stays true across save/reload.
+      //        Only OLD (v1) saved scenes get the hidden-edge seed.
+      //   v3 — Curved fill angle: a fresh hatch keeps the panel's 45° seed on a
+      //        curved primitive (it now genuinely wraps helically). Only OLD
+      //        (pre-v3) saved scenes are pinned back to the meridian family.
+      //   v4 — Buckyball radius: a fresh `solid` buckyball is built at its TRUE
+      //        circumradius (it used to come out 13.1% small). Only OLD (pre-v4)
+      //        saved scenes get their stored radius scaled back down to match.
+      // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
+      sceneVersion: 4,
+      // sf-w4/C4 — Stroke Fill Style. A variable-width fill style draws its
+      // ruling as a real ribbon OUTLINE stroked with the real pen, then fills
+      // that outline with a pen-width-pitched continuous stroke; this picks the
+      // pattern that fill uses ('spiral' | 'concentric' | 'serpentine' |
+      // 'contourParallel'). Vocabulary + the bucket gate live in
+      // Vectura.STROKE_FILL_STYLES (src/config/context-bar.js). Inert on the
+      // monowidth and three-pen fill styles, which never build a ribbon.
+      strokeFillStyle: 'spiral',
+      seed: 0,
+      objects: [
+        {
+          id: 'obj-1',
+          name: 'Sphere 1',
+          // Kept in exact lockstep with ALGO_DEFAULTS.object3d below — the
+          // standalone leaf renders by delegating to this pipeline with a
+          // one-object scene, so the two factory blocks must describe the same
+          // object or the two paths diverge.
+          primitive: 'sphere',
+          // per-primitive params bag; box: { sx, sy, sz }; sphere: { radius, detail }; etc.
+          params: { radius: 20, detail: 28 },
+          // Rest the object ON the ground (base at y=0, so y = radius): the cast
+          // shadow then pools from the base and reads as a real cast shadow,
+          // instead of a small wedge from a half-buried, origin-centred object.
+          transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+          visibility: 'solid', // 'solid' | 'xray'
+        },
+      ],
+      // Rendered Phase 2; schema present now (A-15: typed so point/spot extend
+      // without a migration).
+      lights: [
+        { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true },
+      ],
+      // CONTRACT L3: light-driven tone banding. enabled:false ⇒ Phase 1 flat look.
+      tone: {
+        // 3 bands ⇒ 2 ascending cut points + 3 coverage rungs (length-consistent:
+        // thresholds = bands-1, ladder = bands). Regions trusts the ladder length.
+        enabled: true,
+        bands: 3,
+        thresholds: [0.33, 0.66],
+        ladder: [0.2, 0.5, 0.85],
+        specular: { enabled: true, size: 1 },
+      },
+      // Phase 5 — scene-level cast-shadow controls. Every value here reproduces
+      // the legacy hardcoded shadow (angle 45°, density 50 ⇔ coverage 0.5, solid,
+      // single flat hull, pen inherited from the caster).
+      shadow: {
+        shadowAngle: 45,
+        shadowDensity: 50,
+        shadowPenId: null,
+        shadowLineType: 'solid',
+        shadowLayers: false,
+        shadowLayerCount: 3,
+        shadowFalloff: 0.5,
+        shadowAngleFollowsLight: false,
+        // fs-z2 Cycle 2 — aligns this default source with normalizeShadow's
+        // SHADOW_TONE_DEPTH_DEFAULT (params.js) and the panel's shadowDefault()
+        // so all three shadowToneDepth origins agree; previously only
+        // normalizeShadow supplied this value.
+        shadowToneDepth: 0.75,
+      },
+      ground: { enabled: true },
+      backdrop: { enabled: false },
+      camera: {
+        projection: 'orthographic',
+        yaw: -30,
+        pitch: 20,
+        roll: 0,
+        cameraDistance: 620,
+        focalLength: 520,
+        zoom: 1,
+      },
+      groups: [], // Phase 3C reserve
+      assets: {}, // content-hashed asset table; cloneLayerParams ref-skips it
+      styleTable: { // CONTRACT C shape
+        // I11 — the SCENE-scope fallback stays WIREFRAME. It is what anything
+        // without a style of its own resolves to, and that includes the GROUND
+        // fixture: a hatched scene scope floods the whole ground quad with
+        // rulings and buries the subject. The per-object default is what makes a
+        // new object inked — see ALGO_DEFAULTS.object3d.style below, which every
+        // object3d leaf carries explicitly (creation-time, so this fallback is
+        // only ever reached by the ground and by styleless legacy entries).
+        scene: { penId: null, mapper: 'wireframe', params: {} },
+        byObject: {}, // objectId -> Style
+        byFace: {}, // 'objectId/faceId' -> Style
+      },
+    },
+    // Scene-tree Increment A — object3d: a LEAF layer holding ONE 3D primitive.
+    // Its factory block mirrors a single scene3d object entry EXACTLY (same
+    // shapes Scene3D.Params.normalizeObject / normalizeStyle define), plus the
+    // per-object Style + faceStyles the scene styleTable holds when composited.
+    // A standalone object3d renders by DELEGATING to the scene3d pipeline with a
+    // one-object scene (algorithms/object3d.js); a scene group (Increment B) sets
+    // `_sceneConsumed` and emits the object's paths itself.
+    object3d: {
+      label: 'Object 3D',
+      // Scene-child leaf: only meaningful as a child of a 3D Scene group (added
+      // via the scene group's own "Add shape" buttons / addObjectToScene), not
+      // as a standalone top-level pick. `hidden` suppresses it from every
+      // primary-picker surface (header module dropdown, LVL add menu, algo-draw
+      // toolbar picker, ctxbar switchers — all route through ALGO_DEFAULTS[type]
+      // .hidden via src/ui/utils.js getDrawableAlgorithmOptions or an equivalent
+      // local filter). UI-visibility only: engine.addLayer('object3d') and
+      // programmatic scene-group construction are unaffected — see
+      // resolveDrawableLayerType/isValidDrawableLayerType in src/core/engine.js,
+      // which never consult `hidden`.
+      hidden: true,
+      is3d: true,
+      preset: 'object3d-default',
+      // A fresh leaf is born at the current SCENE_VERSION, exactly as a fresh
+      // scene3d monolith is. Without this a brand-new object3d carried NO
+      // sceneVersion, so reopening its document made migrateScene read it as v1
+      // and re-run the whole chain on already-correct params — which would have
+      // shrunk a newly created buckyball by 13.1% the first time it was
+      // reloaded (v4). Legacy documents are unaffected: engine
+      // sanitizeParamTree only walks keys the saved payload actually has, so an
+      // old leaf still arrives without a sceneVersion and still migrates.
+      // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
+      sceneVersion: 4,
+      // sf-w4/C4 — kept in lockstep with ALGO_DEFAULTS.scene3d above: a
+      // standalone object3d leaf delegates to the same scene3d pipeline, so it
+      // must resolve the same Stroke Fill Style. Vocabulary + the bucket gate
+      // live in Vectura.STROKE_FILL_STYLES (src/config/context-bar.js).
+      strokeFillStyle: 'spiral',
+      // A fresh 3D object is a SPHERE, not a box. A box under the wireframe
+      // mapper emits nine straight edges and nothing else — the object carries
+      // no surface ink at all, so a freshly inserted scene reads as a bare cube
+      // outline (see the style default below). A sphere shows the tone/mapper
+      // work immediately, and it is the shape the surface-fill emitter was
+      // built around. `box` stays one click away on the Add Objects shelf.
+      primitive: 'sphere',
+      // per-primitive params bag (box: { sx, sy, sz }; sphere: { radius, detail }; …).
+      // radius 20 keeps the transform below a true ground rest (y = radius).
+      params: { radius: 20, detail: 28 },
+      // Rest ON the ground (base at y=0 ⇒ y = radius, formerly sy/2 for the box).
+      transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+      visibility: 'solid', // 'solid' | 'xray'
+      role: 'solid',       // 'solid' | 'hole' (a hole subtracts inside a boolean group)
+      shadow: { enabled: null }, // per-object cast override: null = inherit (casts)
+      border: { enabled: false, strength: 1, penId: null }, // silhouette emphasis (off)
+      emissive: { enabled: false, intensity: 1, penId: null, halo: 'burst', haloCount: 16, haloRings: 3, coreBlank: true },
+      // A fresh 3D object comes up under the HATCH mapper (supersedes I11's
+      // wireframe seed). `wireframe` and `contourSlice` return false from
+      // Scene3D.SurfaceFill and take the flat/edge path in algorithms/scene3d.js
+      // instead — they never reach the surface-fill emitter, so a wireframe
+      // object contributes ONLY its structural edges and zero surface ink. On a
+      // box that is nine straight lines, which is why a freshly inserted scene
+      // looked like an empty cube outline. Hatch puts real ink on the surface
+      // the moment the object appears. Every mapper (wireframe included) is
+      // still one pick away in the object Style flyout.
+      style: { penId: null, mapper: 'hatch', params: {} },
+      faceStyles: {}, // faceId -> Style (per-face overrides)
+    },
+    // Scene-tree Increment A — booleanGroup3d: a CONTAINER stub for the fused
+    // result of a CSG set. Owns the op + fused Style/Tone/Border/visibility; its
+    // children (object3d leaves with per-child role) are combined by the scene
+    // group (Increment B). generate() emits nothing itself (algorithms/booleanGroup3d.js).
+    booleanGroup3d: {
+      label: 'Boolean Group 3D',
+      // Scene-child leaf, same class as object3d/sceneLight3d/sceneGround3d: a
+      // container stub whose generate() always returns [] standalone (see
+      // tests/unit/object3d-boolean-group.test.js). Reachable in-scene via
+      // "Create boolean group" (engine.createBooleanGroupFromSelection, wired
+      // in src/ui/menus/layer-context-menu.js) on 2+ selected object3d
+      // siblings — hiding it from the primary picker does not remove the
+      // feature. UI-visibility only; see the object3d note above.
+      hidden: true,
+      is3d: true,
+      preset: 'booleangroup3d-default',
+      op: 'subtract', // 'union' | 'subtract' | 'intersect'
+      visibility: 'solid',
+      style: { penId: null, mapper: 'wireframe', params: {} },
+      // Fused-result tone (mirrors the scene3d default tone ladder).
+      tone: {
+        enabled: true,
+        bands: 3,
+        thresholds: [0.33, 0.66],
+        ladder: [0.2, 0.5, 0.85],
+        specular: { enabled: true, size: 1 },
+      },
+      border: { enabled: false, strength: 1, penId: null },
+    },
+    // Scene-tree Increment E — sceneLight3d: a thin LEAF layer carrying ONE
+    // lights[] entry (the sun / a point / spot / area / ambient). It owns no
+    // geometry — the scene group (Increment B/E) COLLECTS it back into
+    // params.lights and the shared compositor shades from it. generate()→[]
+    // (algorithms/sceneLight3d.js). The child LAYER id is the light's stable id.
+    // Factory defaults mirror the directional sun (Scene3D.Params.DEFAULT_LIGHT).
+    sceneLight3d: {
+      label: 'Light',
+      // Scene-child leaf; see the object3d note above (same suppression
+      // mechanism, same UI-visibility-only guarantee).
+      hidden: true,
+      is3d: true,
+      preset: 'scenelight3d-default',
+      type: 'directional', // 'directional' | 'point' | 'spot' | 'area' | 'ambient'
+      azimuth: 135,
+      elevation: 45,
+      intensity: 1,
+      castShadows: true,
+    },
+    // Scene-tree Increment E — sceneGround3d: a thin LEAF layer standing in for
+    // the scene GROUND fixture. Its presence (+ enabled) turns the ground on; a
+    // scene group with no ground child renders groundless. The scene group
+    // (Increment B/E) maps it back to params.ground. generate()→[]
+    // (algorithms/sceneGround3d.js).
+    sceneGround3d: {
+      label: 'Ground',
+      // Scene-child leaf; see the object3d note above (same suppression
+      // mechanism, same UI-visibility-only guarantee). Still addable from the
+      // scene's own menu — see layer-context-menu.js "Add ground" and
+      // canvas-context-menu.js's sceneCanvas "Add Ground" item.
+      hidden: true,
+      is3d: true,
+      preset: 'sceneground3d-default',
+      enabled: true,
+    },
     rasterPlane: {
       label: 'Raster-Plane',
       is3d: true,
@@ -2217,6 +2454,17 @@
     margin: 20,
     speedDown: 250,
     speedUp: 300,
+    // Plot-physics readout (Phase 4A Inc-2, K-05). speedDown/speedUp are the
+    // pen-down (draw) / pen-up (travel) feed rates in mm/s. penLiftTime is the
+    // per-stroke pen up-and-down cycle cost, in seconds, added once per pen
+    // lift in the time estimate. minSegmentMm / minGapMm flag sub-resolution
+    // moves — drawn strokes and pen-up gaps below plotter resolution that make
+    // a plotter stutter or over-ink; ~0.1mm sits just under typical 0.05–0.1mm
+    // plotter step resolution. These drive the readout only; they never alter
+    // emitted geometry.
+    penLiftTime: 0.1,
+    minSegmentMm: 0.1,
+    minGapMm: 0.1,
     precision: 3,
     strokeWidth: 0.3,
     strokeWidthOverride: false,
@@ -2240,6 +2488,11 @@
     selectionOutlineColor: '#ef4444',
     selectionOutlineWidth: 0.15,
     selectionOutlineHide3d: true,
+    // Master switch for every non-print 3D-scene helper overlay (transform
+    // gizmos, red scene selection outline, bounding boxes/handles, light
+    // helpers, hover hints, orbit pad). Default visible. Toggled from the
+    // toolbar; gated in src/render/renderer.js via Renderer#_sceneHelpersVisible().
+    sceneHelpersVisible: true,
     gridType: 'none',
     gridOpacity: 0.2,
     gridStyle: 'cartesian',
@@ -2280,6 +2533,11 @@
     // 'draft' = fastest/coarsest, 'high' = near-final. Consumed by the 3D
     // algorithms via bounds.preview3dQuality (see Geometry3D.previewDetailScale).
     preview3dQuality: 'balanced',
+    // CONTRACT L5: pen-true paper preview. When true the renderer paints the
+    // canvas at true pen.color/width with no display-contrast substitution, so
+    // dark-stock previews render honestly. 2B reads it in the draw loop and
+    // surfaces the toggle in document-setup.js. Default off (legacy behaviour).
+    paperPreview: false,
     optimizationScope: 'all',
     optimizationPreview: 'off',
     // Canvas line-sort overlay (the eye toggle on the Draw Order subpanel). Kept
@@ -2311,6 +2569,22 @@
         { id: 'linesort', enabled: true, bypass: false, method: 'asdrawn', direction: 'none', grouping: 'combined' },
         { id: 'filter', enabled: false, bypass: false, minLength: 0, maxLength: 800, removeTiny: true },
         { id: 'multipass', enabled: false, bypass: false, passes: 2, offset: 0.2, jitter: 0, seed: 0 },
+      ],
+    },
+    // Stroke division (P0-B): per-layer repeating class cycle that divides
+    // post-optimization strokes by arc length (mm). A null class penId means
+    // "inherit the layer pen"; gap classes plot nothing.
+    divisionDefaults: {
+      enabled: false,
+      phaseMm: 0,
+      // Deferred grammar (Phase 4A Inc-3). Defaults are no-ops: pens follow the
+      // strict class cycle, phase is one fixed global offset, seed 0.
+      penMode: 'cycle', // 'cycle' | 'weighted'
+      phaseMode: 'fixed', // 'fixed' | 'perPath' | 'jitter'
+      seed: 0,
+      classes: [
+        { lenMm: 10, penId: null },
+        { lenMm: 2, gap: true },
       ],
     },
     plotterOptimize: 0,
@@ -2372,6 +2646,7 @@
         pattern: '#2DD4BF', svgDistort: '#FCA5A5', terrain: '#86EFAC',
         horizon: '#93C5FD', spirograph: '#14B8A6', spiralizer: '#8B5CF6',
         polyhedron: '#F472B6', topoform: '#06B6D4', rasterPlane: '#F59E0B',
+        scene3d: '#0EA5E9',
         text: '#A3E635', halftone: '#FB7185', imageWeave: '#5EEAD4',
         _group: '#6B7280', _pen: '#9CA3AF', _default: '#A1A1AA',
       },
@@ -2389,6 +2664,7 @@
         pattern: '#1DE9B6', svgDistort: '#FF9100', terrain: '#B2FF59',
         horizon: '#40C4FF', spirograph: '#00FFCC', spiralizer: '#7C4DFF',
         polyhedron: '#FF00AA', topoform: '#00B8D4', rasterPlane: '#FFD600',
+        scene3d: '#536DFE',
         text: '#76FF03', halftone: '#FF4081', imageWeave: '#18FFFF',
         _group: '#78909C', _pen: '#B0BEC5', _default: '#BDBDBD',
       },
@@ -2406,6 +2682,7 @@
         pattern: '#99F6E4', svgDistort: '#FED7AA', terrain: '#D9F99D',
         horizon: '#E0E7FF', spirograph: '#5EEAD4', spiralizer: '#C4B5FD',
         polyhedron: '#F9A8D4', topoform: '#67E8F9', rasterPlane: '#FDE68A',
+        scene3d: '#7DD3FC',
         text: '#BEF264', halftone: '#FDA4AF', imageWeave: '#A5F3FC',
         _group: '#9CA3AF', _pen: '#D1D5DB', _default: '#E5E7EB',
       },
@@ -2423,6 +2700,7 @@
         pattern: '#0F766E', svgDistort: '#EA580C', terrain: '#65A30D',
         horizon: '#F59E0B', spirograph: '#2DD4BF', spiralizer: '#A855F7',
         polyhedron: '#E11D48', topoform: '#CA8A04', rasterPlane: '#FBBF24',
+        scene3d: '#64748B',
         text: '#A3E635', halftone: '#F43F5E', imageWeave: '#0D9488',
         _group: '#6B7280', _pen: '#9CA3AF', _default: '#78716C',
       },
@@ -2440,6 +2718,7 @@
         pattern: '#22D3EE', svgDistort: '#6366F1', terrain: '#4ADE80',
         horizon: '#BAE6FD', spirograph: '#2DD4BF', spiralizer: '#A78BFA',
         polyhedron: '#F472B6', topoform: '#06B6D4', rasterPlane: '#FACC15',
+        scene3d: '#1D4ED8',
         text: '#5EEAD4', halftone: '#C084FC', imageWeave: '#67E8F9',
         _group: '#64748B', _pen: '#94A3B8', _default: '#6366F1',
       },
@@ -2457,6 +2736,7 @@
         pattern: '#FB7185', svgDistort: '#FDBA74', terrain: '#86EFAC',
         horizon: '#FDE68A', spirograph: '#14B8A6', spiralizer: '#C084FC',
         polyhedron: '#FB7185', topoform: '#38BDF8', rasterPlane: '#F59E0B',
+        scene3d: '#60A5FA',
         text: '#FCD34D', halftone: '#F43F5E', imageWeave: '#22D3EE',
         _group: '#6B7280', _pen: '#9CA3AF', _default: '#F97316',
       },
@@ -2474,6 +2754,7 @@
         pattern: '#2DD4BF', svgDistort: '#D9F99D', terrain: '#854D0E',
         horizon: '#A7F3D0', spirograph: '#2DD4BF', spiralizer: '#A78BFA',
         polyhedron: '#F9A8D4', topoform: '#22D3EE', rasterPlane: '#BEF264',
+        scene3d: '#38BDF8',
         text: '#65A30D', halftone: '#FCD34D', imageWeave: '#5EEAD4',
         _group: '#6B7280', _pen: '#A1A1AA', _default: '#22C55E',
       },
@@ -2491,6 +2772,7 @@
         pattern: '#A1A1AA', svgDistort: '#71717A', terrain: '#52525B',
         horizon: '#FAFAFA', spirograph: '#D4D4D8', spiralizer: '#E4E4E7',
         polyhedron: '#A1A1AA', topoform: '#71717A', rasterPlane: '#F4F4F5',
+        scene3d: '#8E8E96',
         text: '#E4E4E7', halftone: '#D4D4D8', imageWeave: '#71717A',
         _group: '#6B7280', _pen: '#A1A1AA', _default: '#A1A1AA',
       },
@@ -2508,6 +2790,7 @@
         pattern: '#76FF03', svgDistort: '#FFAB40', terrain: '#00E676',
         horizon: '#64FFDA', spirograph: '#00E5CC', spiralizer: '#A855F7',
         polyhedron: '#FF6B9D', topoform: '#40C4FF', rasterPlane: '#FFD600',
+        scene3d: '#448AFF',
         text: '#76FF03', halftone: '#FF4081', imageWeave: '#18FFFF',
         _group: '#78909C', _pen: '#B0BEC5', _default: '#FF6B9D',
       },

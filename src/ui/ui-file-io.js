@@ -222,6 +222,106 @@
       reader.readAsText(file);
     },
 
+    // Import a .obj or .stl 3D model file and wrap it as a scene object3d
+    // (solidType:'importedMesh') via VectorEngine.importMeshAsScene — the mesh
+    // becomes a lit, shaded, selectable object in the 3D scene compositor. If a
+    // scene is active the object is added to it; otherwise a new scene tree is
+    // created. Binary STL needs an ArrayBuffer; OBJ / ASCII STL are text — the STL
+    // parser accepts either, so .stl is always read as an ArrayBuffer.
+    //
+    // Parsing + the engine's compose are SYNCHRONOUS and can run for seconds on a
+    // real download, so an indeterminate progress bar goes up first and the work
+    // is deferred one frame — otherwise the tab simply froze with no feedback
+    // (saveVecturaFile / exportSVG use the same startProgress idiom). The face
+    // budget in buildImportedMeshParams bounds how long that can be.
+    import3dModelFile(file) {
+      if (!file || !Layer) return;
+      const engine = this.app.engine;
+      const lower = (file.name || '').toLowerCase();
+      const isObj = lower.endsWith('.obj');
+
+      const failModal = (title, text, variant = 'danger') => {
+        toast(title, variant);
+        const errBody = document.createElement('p');
+        errBody.className = 'modal-text';
+        errBody.textContent = text;
+        this.openModal({ title, body: errBody });
+      };
+
+      const progress = startProgress(`Importing ${file.name}…`);
+      // Yield a frame so the progress bar actually paints before the blocking
+      // parse/compose. Falls back to a timeout under JSDOM / headless harnesses.
+      const defer = (fn) => {
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => setTimeout(fn, 0));
+        else setTimeout(fn, 0);
+      };
+
+      const reader = new FileReader();
+      reader.onerror = () => {
+        progress.done();
+        failModal('3D Import Failed', `Could not read "${file.name}" from disk. The file may be unreadable or was removed.`);
+      };
+      reader.onload = () => {
+        defer(() => {
+          try {
+            let mesh;
+            try {
+              mesh = isObj
+                ? window.Vectura.ObjImport.parse(reader.result, file.name)
+                : window.Vectura.StlParser.parse(reader.result, file.name);
+            } catch (err) {
+              // The parsers say "no faces"/"no triangles" when the file read fine
+              // but described no usable geometry — a different user story from a
+              // file we could not decode at all.
+              if (/no faces|no triangles/i.test(err?.message || '')) {
+                failModal('No Mesh Found',
+                  `"${file.name}" contained no faces to import. ${err.message.replace(/^\w+ parse:\s*/, '')}`,
+                  'warning');
+              } else {
+                failModal('3D Import Failed',
+                  `Could not read "${file.name}". Make sure it is a valid ${isObj ? 'OBJ' : 'binary or ASCII STL'} mesh.`);
+              }
+              return;
+            }
+            if (!mesh || !mesh.vertices?.length || !mesh.faces?.length) {
+              failModal('No Mesh Found', 'The 3D model contained no faces to import.', 'warning');
+              return;
+            }
+            if (this.app.pushHistory) this.app.pushHistory();
+            const result = engine.importMeshAsScene(mesh, mesh.name || file.name);
+            if (!result || !result.ok) {
+              toast('Could not import 3D model', 'danger');
+              return;
+            }
+            engine.activeLayerId = result.childId;
+            if (this.app.renderer) this.app.renderer.setSelection([result.childId], result.childId);
+            this.renderLayers();
+            this.buildControls();
+            this.updateFormula();
+            this.app.render();
+            // Report the STORED triangle count, and say so when the face budget
+            // reduced it — quoting the file's count would be a lie about what is
+            // in the document. Parser warnings (dropped faces / bad `v` records)
+            // ride along so a malformed file is never silently "fine".
+            const stored = Number.isFinite(result.faces) ? result.faces : mesh.faces.length;
+            const source = Number.isFinite(result.sourceFaces) ? result.sourceFaces : stored;
+            const notes = Array.isArray(mesh.warnings) ? mesh.warnings.slice() : [];
+            if (source > stored) notes.unshift(`reduced from ${source.toLocaleString()}`);
+            const suffix = notes.length ? ` · ${notes.join(' · ')}` : '';
+            toast(
+              `Imported ${mesh.name || file.name} · ${stored.toLocaleString()} tris${suffix}`,
+              notes.length ? 'warning' : 'success',
+              notes.length ? 6000 : 3500,
+            );
+          } finally {
+            progress.done();
+          }
+        });
+      };
+      if (isObj) reader.readAsText(file);
+      else reader.readAsArrayBuffer(file);
+    },
+
     parseSvgToLayerGroups(svgText) {
       if (!svgText) return [];
       const sanitizeSvg = window.Vectura?.SvgSanitize?.sanitize;
@@ -520,7 +620,7 @@
       const optimizationTargetIds = useOptimized
         ? (typeof this.optimizeTargetsForCurrentScope === 'function'
           ? this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true }).targetIds
-          : new Set((this.app.engine.layers || []).filter((layer) => layer && !(layer.isGroup && layer.type !== 'compound') && !this.app.engine.hasCompoundAncestor(layer)).map((layer) => layer.id)))
+          : new Set((this.app.engine.layers || []).filter((layer) => layer && (layer.type === 'compound' || window.Vectura.LayerInk.layerOwnsInk(layer)) && !this.app.engine.hasCompoundAncestor(layer)).map((layer) => layer.id)))
         : new Set();
 
       const penMap = new Map((SETTINGS.pens || []).map((pen) => [pen.id, pen]));
@@ -541,78 +641,94 @@
       }
 
       const groups = [];
-      const dedupe = optimize > 0 ? new Map() : null;
+      // Gap-aware division dedup (Fix-A): the SAME shared two-pass deduper the
+      // engine plotter-optimize pass and computeStats use, so the emitted SVG
+      // matches the reported stats regardless of stack order or line-sort
+      // interleave. Keyed per effective pen (the group key). Only active when
+      // plotter-optimize is on.
+      const SD = window.Vectura?.StrokeDivide;
+      const deduper = (optimize > 0 && SD) ? SD.createPlotDeduper(quant, pathKey) : null;
       const seenGroupOrder = [];
       const groupMap = new Map();
-      (this.app.engine.layers || []).forEach((layer) => {
-        const isMorphGroup = layer.isGroup && Array.isArray(layer.morphedPaths) && layer.morphedPaths.length > 0;
-        if (!layer?.visible || (layer.isGroup && layer.type !== 'compound' && !isMorphGroup) || isMaskLayerGeometryHidden(layer) || (this.app.engine.hasCompoundAncestor && this.app.engine.hasCompoundAncestor(layer))) return;
-        const pen = penMap.get(layer.penId) || fallbackPen;
-        const key = pen.id || fallbackPen.id;
-        if (!groupMap.has(key)) {
-          groupMap.set(key, { key, pen, layers: [] });
-          seenGroupOrder.push(key);
+      // Effective-pen grouping: expand every layer into path items first, then
+      // bucket each item by its EFFECTIVE pen (path.meta.penId || layer.penId;
+      // an unknown meta.penId falls back to the layer pen). Grouping by layer
+      // pen alone put per-path pen overrides in the wrong <g>, deduped
+      // identical geometry across different pens, and let pen-grouped line
+      // sort interleave pens. The canvas renderer is the reference behavior.
+      (this.app.engine.layers || []).forEach((layer, layerIndex) => {
+        // A GROUP exports when it owns its ink: a compound bakes a silhouette
+        // into layer.paths, a morph group publishes morphedPaths, and a 3D
+        // scene group publishes its one composed pass on scenePaths. Skipping
+        // every non-compound group is what made a scene-only document export a
+        // blank SVG — its children are all `_sceneConsumed`, so nothing was
+        // left to emit.
+        const ownsInk = layer && (layer.type === 'compound' || window.Vectura.LayerInk.layerOwnsInk(layer));
+        if (!layer?.visible || !ownsInk || isMaskLayerGeometryHidden(layer) || (this.app.engine.hasCompoundAncestor && this.app.engine.hasCompoundAncestor(layer))) return;
+        const layerPen = penMap.get(layer.penId) || fallbackPen;
+        const ancestorMasks = this.app.engine.getAncestorMaskLayers ? this.app.engine.getAncestorMaskLayers(layer) : [];
+        const forceLinear = destructiveMarginCrop || (removeHiddenGeometry && ancestorMasks.length);
+        const lineCap = forceLinear ? 'butt' : layer.lineCap || 'round';
+        // Stroke style model (STR-1/STR-3): join, miter limit and layer-level
+        // dash travel with each item so SVG emission and the export-preview
+        // canvas draw stay in lockstep.
+        const lineJoin = ['miter', 'round', 'bevel'].includes(layer.lineJoin) ? layer.lineJoin : 'round';
+        const miterLimit = Number.isFinite(layer.miterLimit) ? layer.miterLimit : 10;
+        const dashArray = window.Vectura.STROKE_STYLE?.getLayerDashPattern
+          ? window.Vectura.STROKE_STYLE.getLayerDashPattern(layer)
+          : (layer.dash?.enabled && Array.isArray(layer.dash.pattern)
+              && layer.dash.pattern.some((value) => Number(value) > 0)
+            ? layer.dash.pattern.slice(0, 6)
+            : null);
+        const useCurves = Boolean(layer.params && layer.params.curves);
+        const layerGroupId = window.Vectura._UIExportUtil.escapeXmlAttr(normalizeSvgId(layer.name || layer.id || 'Layer', 'layer'));
+        const useLayerOptimized = useOptimized && optimizationTargetIds.has(layer.id);
+        const ancestorClipLayerIds = removeHiddenGeometry ? [] : ancestorMasks.map((maskLayer) => maskLayer.id).filter(Boolean);
+        let paths = removeHiddenGeometry
+          ? window.Vectura._UIExportUtil.getVisibleExportPaths(layer, { useOptimized: useLayerOptimized })
+          : window.Vectura._UIExportUtil.getRawExportPaths(layer, { useOptimized: useLayerOptimized });
+        if (destructiveMarginCrop) {
+          paths = window.Vectura._UIExportUtil.hardClipExportPaths(paths, marginRect, {
+            useCurves: useCurves && !removeHiddenGeometry,
+          });
         }
-        groupMap.get(key).layers.push(layer);
+        (paths || []).forEach((path, pathIndex) => {
+          const pathPen = penMap.get(path?.meta?.penId) || layerPen;
+          // Group key comes from the shared effective-pen rule so the engine's
+          // per-pen grouping / dedup / stats bucket paths under the exact same
+          // pen this export plots them with (PenValidate.resolveEffectivePenId).
+          const key = window.Vectura.PenValidate.resolveEffectivePenId(path?.meta, layer.penId, penMap);
+          if (!groupMap.has(key)) {
+            groupMap.set(key, { key, pen: pathPen, items: [] });
+            seenGroupOrder.push(key);
+          }
+          groupMap.get(key).items.push({
+            layer,
+            layerIndex,
+            pathIndex,
+            path,
+            lineCap,
+            lineJoin,
+            miterLimit,
+            dashArray,
+            useCurves: forceLinear ? false : useCurves,
+            sharpEdges: !forceLinear && useCurves && layer.type === 'pattern' && !layer.params?.tileEdgeCurves,
+            layerGroupId,
+            ancestorClipLayerIds,
+            strokeWidth: (SETTINGS.strokeWidthOverride === true
+              ? (layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3)
+              : (pathPen.width ?? SETTINGS.strokeWidth ?? 0.3)).toFixed(3),
+            strokeColor: pathPen.color || layerPen.color || '#000000',
+            groupPenId: key,
+            pathPenId: pathPen.id,
+          });
+        });
       });
 
       seenGroupOrder.forEach((key) => {
         const group = groupMap.get(key);
         if (!group) return;
-        const pen = group.pen || fallbackPen;
-        const items = [];
-        group.layers.forEach((layer, layerIndex) => {
-          const ancestorMasks = this.app.engine.getAncestorMaskLayers ? this.app.engine.getAncestorMaskLayers(layer) : [];
-          const forceLinear = destructiveMarginCrop || (removeHiddenGeometry && ancestorMasks.length);
-          const lineCap = forceLinear ? 'butt' : layer.lineCap || 'round';
-          // Stroke style model (STR-1/STR-3): join, miter limit and layer-level
-          // dash travel with each item so SVG emission and the export-preview
-          // canvas draw stay in lockstep.
-          const lineJoin = ['miter', 'round', 'bevel'].includes(layer.lineJoin) ? layer.lineJoin : 'round';
-          const miterLimit = Number.isFinite(layer.miterLimit) ? layer.miterLimit : 10;
-          const dashArray = window.Vectura.STROKE_STYLE?.getLayerDashPattern
-            ? window.Vectura.STROKE_STYLE.getLayerDashPattern(layer)
-            : (layer.dash?.enabled && Array.isArray(layer.dash.pattern)
-                && layer.dash.pattern.some((value) => Number(value) > 0)
-              ? layer.dash.pattern.slice(0, 6)
-              : null);
-          const useCurves = Boolean(layer.params && layer.params.curves);
-          const layerGroupId = window.Vectura._UIExportUtil.escapeXmlAttr(normalizeSvgId(layer.name || layer.id || 'Layer', 'layer'));
-          const useLayerOptimized = useOptimized && optimizationTargetIds.has(layer.id);
-          const ancestorClipLayerIds = removeHiddenGeometry ? [] : ancestorMasks.map((maskLayer) => maskLayer.id).filter(Boolean);
-          let paths = removeHiddenGeometry
-            ? window.Vectura._UIExportUtil.getVisibleExportPaths(layer, { useOptimized: useLayerOptimized })
-            : window.Vectura._UIExportUtil.getRawExportPaths(layer, { useOptimized: useLayerOptimized });
-          if (destructiveMarginCrop) {
-            paths = window.Vectura._UIExportUtil.hardClipExportPaths(paths, marginRect, {
-              useCurves: useCurves && !removeHiddenGeometry,
-            });
-          }
-          (paths || []).forEach((path, pathIndex) => {
-            const pathPenId = path?.meta?.penId || pen.id;
-            const pathPen = penMap.get(pathPenId) || pen;
-            items.push({
-              layer,
-              layerIndex,
-              pathIndex,
-              path,
-              lineCap,
-              lineJoin,
-              miterLimit,
-              dashArray,
-              useCurves: forceLinear ? false : useCurves,
-              sharpEdges: !forceLinear && useCurves && layer.type === 'pattern' && !layer.params?.tileEdgeCurves,
-              layerGroupId,
-              ancestorClipLayerIds,
-              strokeWidth: (SETTINGS.strokeWidthOverride === true
-                ? (layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3)
-                : (pathPen.width ?? SETTINGS.strokeWidth ?? 0.3)).toFixed(3),
-              strokeColor: pathPen.color || pen.color || '#000000',
-              groupPenId: pen.id,
-              pathPenId,
-            });
-          });
-        });
+        const items = group.items;
 
         const shouldInterleave = useOptimized && items.some((item) => {
           const grouping = item?.path?.meta?.lineSortGrouping;
@@ -628,21 +744,20 @@
           });
         }
 
+        // Two passes over this pen group's items (already interleave-sorted):
+        // pass 1 registers every claiming fragment's parent so a coincident
+        // solid drops order-independently; pass 2 keeps or drops. A gapped or
+        // multi-pen division keys on its own geometry + index, so it never
+        // suppresses a coincident solid (the solid inks the gaps).
         const visibleItems = [];
-        let seen = null;
-        if (dedupe) {
-          if (!dedupe.has(key)) dedupe.set(key, new Set());
-          seen = dedupe.get(key);
+        if (deduper) {
+          items.forEach((item) => deduper.claim(key, item.path?.meta));
         }
         items.forEach((item) => {
-          const dedupeKey = seen ? pathKey(item.path) : '';
-          if (seen && dedupeKey) {
-            if (seen.has(dedupeKey)) return;
-            seen.add(dedupeKey);
-          }
+          if (deduper && !deduper.keep(key, item.layer.id, item.path?.meta, item.path)) return;
           visibleItems.push(item);
         });
-        groups.push({ key, pen, items: visibleItems });
+        groups.push({ key, pen: group.pen, items: visibleItems });
       });
 
       return {
@@ -701,11 +816,20 @@
           const layerDashAttr = item.dashArray ? ` stroke-dasharray="${formatDashArray(item.dashArray)}"` : '';
           svg += `<g id="${item.layerGroupId}-${itemIndex + 1}" stroke-width="${item.strokeWidth}" stroke-linecap="${svgLineCap(item.lineCap)}"${joinAttrs}${layerDashAttr}>`;
           let attrs = item.path?.meta?.exportClipped ? { 'stroke-linecap': 'butt' } : null;
-          if (item.pathPenId && item.pathPenId !== item.groupPenId) {
+          // Per-path cap override (`meta.strokeCap`). The pen-width ribbon
+          // geometry sets butt so its outline/fill passes end exactly on the
+          // clipped form instead of bulging half a pen width past it — the SVG
+          // has to say so too, or the plot protrudes where the canvas didn't.
+          const itemCap = window.Vectura?.Renderer?.resolvePathLineCap
+            ? window.Vectura.Renderer.resolvePathLineCap(item.path, item.lineCap)
+            : item.lineCap;
+          if (itemCap && itemCap !== item.lineCap) {
             attrs = attrs || {};
-            attrs.stroke = window.Vectura._UIExportUtil.escapeXmlAttr(item.strokeColor || 'black');
-            attrs['stroke-width'] = item.strokeWidth;
+            attrs['stroke-linecap'] = svgLineCap(itemCap);
           }
+          // No per-item stroke/width override here: items are bucketed by
+          // EFFECTIVE pen in getExportSnapshot, so the enclosing pen group
+          // already carries the right stroke color and pen width.
           const dash = window.Vectura._UIExportUtil.getPathStrokeDash?.(item.path);
           if (dash) {
             attrs = attrs || {};
@@ -714,9 +838,14 @@
           // Variable line weight (silhouette / crease emphasis): emit a per-path
           // stroke-width override only when meta.weightScale differs from 1, so
           // default geometry keeps the group-level stroke-width untouched.
+          // Resolved through Renderer.resolvePathWeightScale (with a
+          // byte-identical lean-runtime fallback) so the emitted width cannot
+          // drift from the canvas render, the export preview or expand.
           const rawWeight = Number(item.path?.meta?.weightScale);
           if (Number.isFinite(rawWeight) && rawWeight !== 1) {
-            const weightScale = Math.max(0.1, Math.min(6, rawWeight));
+            const weightScale = window.Vectura?.Renderer?.resolvePathWeightScale
+              ? window.Vectura.Renderer.resolvePathWeightScale(item.path)
+              : Math.max(0.1, Math.min(6, rawWeight));
             const scaledWidth = (parseFloat(item.strokeWidth) || 0) * weightScale;
             if (Number.isFinite(scaledWidth) && scaledWidth > 0) {
               attrs = attrs || {};
@@ -851,6 +980,8 @@
     const btnImportSvg = getEl('btn-import-svg', { silent: true });
     const fileOpenVectura = getEl('file-open-vectura', { silent: true });
     const fileImportSvg = getEl('file-import-svg', { silent: true });
+    const btnImport3d = getEl('btn-import-3d', { silent: true });
+    const fileImport3d = getEl('file-import-3d', { silent: true });
     if (btnSaveVectura) {
       btnSaveVectura.onclick = () => this.saveVecturaFile();
     }
@@ -868,6 +999,14 @@
         const file = fileImportSvg.files?.[0];
         if (file) this.importSvgFile(file);
         fileImportSvg.value = '';
+      };
+    }
+    if (btnImport3d && fileImport3d) {
+      btnImport3d.onclick = () => fileImport3d.click();
+      fileImport3d.onchange = () => {
+        const file = fileImport3d.files?.[0];
+        if (file) this.import3dModelFile(file);
+        fileImport3d.value = '';
       };
     }
   }

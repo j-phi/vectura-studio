@@ -259,7 +259,12 @@ describe('Contextual Task Bar (Lane G — TB-1…8)', () => {
       expect(caret.classList.contains('ctxbar-caret-up')).toBe(true);
       Object.defineProperty(window, 'innerHeight', { value: origH, configurable: true });
     });
-    test('Add Layer flyout direction updates live while the bar is dragged by its handle', async () => {
+    // Contract change (Jay, 2026-08): the pivot SETTLES ON RELEASE rather than
+    // tracking every pointermove. Thrashing the arrows mid-drag as the bar
+    // crosses the midline reads as noise; the bar should commit once, when the
+    // user lets go. Movement the user is NOT driving by hand (auto-anchor on
+    // selection change, pan/zoom, resize) still updates live via reanchor().
+    test('Add Layer flyout direction settles on drag RELEASE, not continuously during the drag', async () => {
       await reset('select');
       const origH = window.innerHeight;
       Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true });
@@ -275,9 +280,7 @@ describe('Contextual Task Bar (Lane G — TB-1…8)', () => {
       expect(fly.classList.contains('ctxbar-flyout-up')).toBe(false);
 
       // Grabbing the drag handle must NOT dismiss the open flyout (regression
-      // for treating the handle like any other "outside click"), and the
-      // pointermove handler that moves the bar must re-flip the still-open
-      // flyout live as the bar crosses toward the bottom of the viewport.
+      // for treating the handle like any other "outside click").
       const handle = document.querySelector('.ctxbar-handle');
       handle.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, clientX: 100, clientY: 30, button: 0 }));
       expect(fly.classList.contains('is-open')).toBe(true); // handle grab alone doesn't close it
@@ -286,12 +289,209 @@ describe('Contextual Task Bar (Lane G — TB-1…8)', () => {
       window.dispatchEvent(new window.MouseEvent('pointermove', { bubbles: true, clientX: 100, clientY: 570 }));
 
       expect(fly.classList.contains('is-open')).toBe(true); // still open, never closed
+      // Mid-drag the direction is FROZEN — the arrow must not flip yet.
+      expect(fly.classList.contains('ctxbar-flyout-up')).toBe(false);
+      expect(caret.classList.contains('ctxbar-caret-up')).toBe(false);
+
+      // …and on release it settles to the new position's direction.
+      window.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true }));
       expect(fly.classList.contains('ctxbar-flyout-up')).toBe(true);
       expect(caret.classList.contains('ctxbar-caret-up')).toBe(true);
 
-      window.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true }));
       closeAddLayerFlyout(field);
       Object.defineProperty(window, 'innerHeight', { value: origH, configurable: true });
+    });
+  });
+
+  // ── Direction-aware dropdowns (universal) ─────────────────────────────
+  // Jay's governing rule: a menu opens AWAY from whichever viewport edge the
+  // bar is closest to, so it has the best chance of being fully visible. This
+  // must hold for EVERY dropdown the bar can render, in every context and for
+  // every algorithm — not a per-menu opt-in. These tests assert the behavior
+  // over the whole bar (`querySelectorAll`), so a dropdown added later through
+  // any construction path is covered automatically.
+  describe('dropdown open direction — universal across every context', () => {
+    const VIEW_H = 900;
+    let origH;
+    // Pin the bar's own rect: it is the single reference the decision reads.
+    const placeBar = (top, height = 30) => {
+      const b = bar();
+      b.getBoundingClientRect = () => ({
+        top, bottom: top + height, left: 200, right: 600, width: 400, height,
+      });
+      return b;
+    };
+    const allCarets = () => Array.from(host().querySelectorAll('.ctxbar-text-caret'));
+    const allFlyouts = () => Array.from(host().querySelectorAll('.ctxbar-align-flyout'));
+
+    beforeEach(() => {
+      origH = window.innerHeight;
+      Object.defineProperty(window, 'innerHeight', { value: VIEW_H, configurable: true });
+    });
+    afterEach(() => {
+      Object.defineProperty(window, 'innerHeight', { value: origH, configurable: true });
+    });
+
+    test('bar low on screen: EVERY caret points up and EVERY flyout opens upward — including menus never opened', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+      placeBar(VIEW_H - 120); // nearest edge is the bottom
+      await nextFrames();     // RAF-driven reanchor() re-evaluates
+
+      const carets = allCarets();
+      const flyouts = allFlyouts();
+      expect(carets.length).toBeGreaterThan(1); // more than one dropdown present
+      expect(flyouts.length).toBeGreaterThan(1);
+      expect(carets.every((c) => c.classList.contains('ctxbar-caret-up'))).toBe(true);
+      expect(flyouts.every((f) => f.classList.contains('ctxbar-flyout-up'))).toBe(true);
+      expect(bar().classList.contains('ctxbar-menus-up')).toBe(true);
+    });
+
+    test('bar high on screen: EVERY caret points down and EVERY flyout opens downward', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+      placeBar(60); // nearest edge is the top
+      await nextFrames();
+
+      const carets = allCarets();
+      expect(carets.length).toBeGreaterThan(1);
+      expect(carets.every((c) => c.classList.contains('ctxbar-caret-up'))).toBe(false);
+      expect(allFlyouts().every((f) => f.classList.contains('ctxbar-flyout-up'))).toBe(false);
+      expect(bar().classList.contains('ctxbar-menus-up')).toBe(false);
+    });
+
+    test('the Presets menu — built by makeMenuFlyout, the same shared path as the 3D Shape menu — flips too', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+      placeBar(VIEW_H - 120);
+      await nextFrames();
+
+      const presetField = host().querySelector('.ctxbar-preset-field');
+      expect(presetField).toBeTruthy(); // guards the fixture, not the feature
+      const wrap = presetField.closest('.ctxbar-align-wrap');
+      const fly = wrap.querySelector('.ctxbar-align-flyout');
+      expect(presetField.querySelector('.ctxbar-text-caret').classList.contains('ctxbar-caret-up')).toBe(true);
+      expect(fly.classList.contains('ctxbar-flyout-up')).toBe(true);
+      // …and it still opens upward once actually clicked.
+      presetField.click();
+      expect(fly.classList.contains('is-open')).toBe(true);
+      expect(fly.classList.contains('ctxbar-flyout-up')).toBe(true);
+      presetField.click();
+    });
+
+    test('the algorithm switcher — built by makeAlgoFlyout, a different construction path — flips too', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+      placeBar(VIEW_H - 120);
+      await nextFrames();
+
+      const algoField = host().querySelector('.ctxbar-algo-field');
+      expect(algoField).toBeTruthy();
+      const fly = algoField.closest('.ctxbar-align-wrap').querySelector('.ctxbar-align-flyout');
+      expect(algoField.querySelector('.ctxbar-text-caret').classList.contains('ctxbar-caret-up')).toBe(true);
+      expect(fly.classList.contains('ctxbar-flyout-up')).toBe(true);
+    });
+
+    // Regression: the "..." overflow menu ("Hide bar" / "Reset bar position")
+    // always opened downward, even while every pill flyout on the same bar
+    // opened upward. It must reuse the SAME direction decision as the pill
+    // flyouts (the shared refreshMenuDirection()/applyMenuDirection() pass),
+    // not a hardcoded direction of its own — the bar is draggable, so a fixed
+    // "up" would push the overflow menu off-screen when the bar sits near the
+    // top of the viewport.
+    test('overflow (...) menu resolves to the SAME direction as a pill flyout on the same bar', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+      placeBar(VIEW_H - 120); // nearest edge is the bottom → menus open up
+      await nextFrames();
+
+      const presetField = host().querySelector('.ctxbar-preset-field');
+      const pillFly = presetField.closest('.ctxbar-align-wrap').querySelector('.ctxbar-align-flyout');
+      expect(pillFly.classList.contains('ctxbar-flyout-up')).toBe(true);
+
+      const overflowMenu = document.querySelector('.ctxbar-menu');
+      expect(overflowMenu.classList.contains('ctxbar-flyout-up')).toBe(true);
+    });
+
+    test('overflow (...) menu flips together with the pill flyouts when the bar is dragged near the top', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+
+      // Start near the bottom — both open up.
+      placeBar(VIEW_H - 120);
+      await nextFrames();
+      const presetField = host().querySelector('.ctxbar-preset-field');
+      const pillFly = presetField.closest('.ctxbar-align-wrap').querySelector('.ctxbar-align-flyout');
+      const overflowMenu = document.querySelector('.ctxbar-menu');
+      expect(pillFly.classList.contains('ctxbar-flyout-up')).toBe(true);
+      expect(overflowMenu.classList.contains('ctxbar-flyout-up')).toBe(true);
+
+      // Drag the bar to the top — no room above, both must flip to down
+      // TOGETHER so neither renders off-screen.
+      placeBar(20);
+      await nextFrames();
+      expect(pillFly.classList.contains('ctxbar-flyout-up')).toBe(false);
+      expect(overflowMenu.classList.contains('ctxbar-flyout-up')).toBe(false);
+      expect(bar().classList.contains('ctxbar-menus-up')).toBe(false);
+    });
+
+    test('direction re-evaluates when the bar moves without a hand drag (selection/pan/zoom auto-anchor)', async () => {
+      await reset('select');
+      const layer = addLayer('wavetable');
+      select([layer.id]);
+      await nextFrames();
+
+      placeBar(60);
+      await nextFrames();
+      expect(bar().classList.contains('ctxbar-menus-up')).toBe(false);
+
+      placeBar(VIEW_H - 120); // the bar moved under us — no click, no drag
+      await nextFrames();
+      expect(bar().classList.contains('ctxbar-menus-up')).toBe(true);
+      expect(allCarets().every((c) => c.classList.contains('ctxbar-caret-up'))).toBe(true);
+    });
+
+    test('an open menu is capped to the room on its open side so it can never run off-screen', async () => {
+      await reset('select');
+      placeBar(VIEW_H - 120);
+      await nextFrames();
+      // The bar publishes the available space for the side it opens toward;
+      // CSS clamps every flyout's max-height to it.
+      const space = parseFloat(bar().style.getPropertyValue('--ctxbar-menu-space'));
+      expect(Number.isFinite(space)).toBe(true);
+      expect(space).toBeGreaterThan(0);
+      // Opening upward from 120px off the bottom → room above, not below.
+      expect(space).toBeLessThanOrEqual(VIEW_H - 120);
+      expect(space).toBeGreaterThan(VIEW_H / 2);
+    });
+
+    test('non-3D contexts keep working: idle and multi-select both participate', async () => {
+      await reset('select');           // idle — Add Layer dropdown
+      placeBar(VIEW_H - 120);
+      await nextFrames();
+      expect(allCarets().every((c) => c.classList.contains('ctxbar-caret-up'))).toBe(true);
+
+      const a = addLayer('wavetable');
+      const b2 = addLayer('rings');
+      select([a.id, b2.id]);           // multi-select
+      await nextFrames();
+      placeBar(VIEW_H - 120);
+      await nextFrames();
+      expect(CB.getContext().kind).toBe('multi');
+      expect(allCarets().every((c) => c.classList.contains('ctxbar-caret-up'))).toBe(true);
+      expect(allFlyouts().every((f) => f.classList.contains('ctxbar-flyout-up'))).toBe(true);
     });
   });
 

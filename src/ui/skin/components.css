@@ -1448,6 +1448,97 @@
 [data-ui-skin] .draw-order-stat-sep {
   color: var(--ui-border);
 }
+/* Plot-physics readout (Phase 4A Inc-2, K-05): read-only per-pen lifts /
+   travel / est. time table in the Document Overview pane, plus a document
+   total and a sub-resolution (min-segment / min-gap) warning. Purely a
+   readout — it never affects emitted geometry. */
+[data-ui-skin] .plot-physics-readout {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+[data-ui-skin] .plot-physics-readout:empty {
+  display: none;
+}
+[data-ui-skin] .plot-physics-head {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ui-muted);
+  margin-bottom: 4px;
+}
+[data-ui-skin] .plot-physics-total {
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--ui-border);
+}
+[data-ui-skin] .plot-physics-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--ui-text);
+  padding: 1px 0;
+}
+[data-ui-skin] .plot-physics-pen {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+[data-ui-skin] .plot-physics-pen-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-ui-skin] .plot-physics-swatch {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  /* A brighter outer border (matches .pen-loupe-swatch) defines the chip
+     against the dark panel — the default palette's white pen was edgeless on
+     it — and an inset ring bounds light fills from within. */
+  border: 1px solid var(--ui-border-hi);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+[data-ui-skin] .plot-physics-swatch-total {
+  background: linear-gradient(90deg, #38bdf8 0%, #f59e0b 100%);
+}
+[data-ui-skin] .plot-physics-cell {
+  text-align: right;
+  white-space: nowrap;
+  color: var(--ui-accent);
+}
+[data-ui-skin] .plot-physics-cell small {
+  margin-left: 2px;
+  font-size: 8px;
+  color: var(--ui-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+[data-ui-skin] .plot-physics-warn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  font-size: 9px;
+  color: var(--ui-danger);
+}
+[data-ui-skin] .plot-physics-warn-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ui-danger);
+  color: var(--ui-on-danger);
+  font-weight: 700;
+  font-size: 9px;
+}
 /* Low-profile track carrying a vivid plot-progress gradient. The filled portion is
    painted with a left-anchored gradient via a CSS var the JS updates on input. */
 [data-ui-skin] .draw-order-slider {
@@ -11426,6 +11517,30 @@ body.vtp-is-scrubbing * { cursor: ew-resize !important; user-select: none !impor
   background: var(--ui-accent-2);
   color: var(--ui-accent);
 }
+/* sf-w4 — Stroke Fill Style row. Four TEXT toggles (there is no icon
+   vocabulary for a fill path pattern), so they size to their label and the
+   row wraps instead of overflowing the Stroke Options popover. Disabled is
+   the resting state for the 37 fill styles that build no ribbon, so it has to
+   read as clearly greyed rather than merely un-clickable. */
+.stroke-options .stroke-row-strokefill { flex-wrap: wrap; }
+.stroke-options .stroke-row-strokefill .stroke-toggle-group { flex-wrap: wrap; }
+.stroke-options .stroke-toggle.is-text {
+  width: auto;
+  min-width: 30px;
+  padding: 0 8px;
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.stroke-options .stroke-toggle:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+  /* Kills the :hover background above (which still fires on a disabled
+     button) AND lets the hover fall through to the ROW, so the row's
+     `title` — the reason the control is off — is what a user actually
+     sees. A disabled button never shows its own title. */
+  pointer-events: none;
+}
+.stroke-options .stroke-row.is-disabled .stroke-row-label { opacity: .4; }
 .stroke-options .stroke-limit {
   display: inline-flex;
   align-items: center;
@@ -11880,11 +11995,32 @@ body.mobile-layout .hud-bar {
   z-index: 6;
 }
 .ctxbar-align-flyout.is-open { display: flex; }
-/* Direction-aware flyout (Add Layer, TB-3): flips to open upward when the bar
-   has more room above than below, so it never clips at the viewport edge. */
-.ctxbar-align-flyout.ctxbar-flyout-up {
+/* Direction-aware flyouts. Every dropdown in the contextual task bar opens AWAY
+   from whichever viewport edge the bar is nearest, so the menu has the best
+   chance of being seen in its entirety. `ctxbar-flyout-up` is stamped on each
+   flyout by the bar's shared direction pass; the `.ctxbar-menus-up` bar-level
+   rule below covers content rebuilt between ticks so nothing can flash the
+   wrong way for a frame. Both set the same geometry, so order is immaterial.
+   The overflow (...) menu (`.ctxbar-menu`) shares this exact rule — it is
+   stamped with the same `ctxbar-flyout-up` class by the same JS pass, so it
+   always opens the same direction as the bar's other menus instead of being
+   pinned open in a fixed direction of its own. */
+.ctxbar-align-flyout.ctxbar-flyout-up,
+.ctxbar-menu.ctxbar-flyout-up,
+.ctxbar.ctxbar-menus-up .ctxbar-align-flyout,
+.ctxbar.ctxbar-menus-up .ctxbar-menu {
   top: auto;
   bottom: calc(100% + 6px);
+}
+/* Never let a menu run off-screen: the bar publishes the room available on the
+   side it opens toward as `--ctxbar-menu-space` (inherited by every flyout),
+   and each flyout caps itself to it. The per-type caps below fold it into their
+   own `min()` rather than relying on a separate rule — a later same-specificity
+   `max-height` would otherwise win the cascade and silently drop the clamp. */
+.ctxbar-align-flyout,
+.ctxbar-menu {
+  max-height: var(--ctxbar-menu-space, 100vh);
+  overflow-y: auto;
 }
 .ctxbar-align-group-label {
   font-size: var(--font-size-xs, 10px);
@@ -11900,7 +12036,7 @@ body.mobile-layout .hud-bar {
    box; items stretch full-width and left-align like a native menu. */
 .ctxbar-algo-flyout {
   gap: 1px;
-  max-height: 320px;
+  max-height: min(320px, var(--ctxbar-menu-space, 100vh));
   overflow-y: auto;
   min-width: 148px;
 }
@@ -11913,6 +12049,148 @@ body.mobile-layout .hud-bar {
 .ctxbar-algo-flyout .algo-group-div:first-child { margin-top: 0; }
 .ctxbar-algo-menu-wrap .ctxbar-text-field { max-width: 150px; }
 .ctxbar-algo-field .lvl-algo-sub-ico { margin-right: 5px; }
+/* fs-s1 — the Shape pill went icon-only (no visible label): drop the wide
+   label-sized max-width/padding built for text and match .ctxbar-btn's tight
+   icon padding instead. Same specificity + later in source than the rule
+   above, so it wins. */
+.ctxbar-algo-menu-wrap .ctxbar-scene-shape { max-width: none; padding: 0 7px; }
+.ctxbar-scene-shape .lvl-algo-sub-ico { margin-right: 4px; }
+/* Scene-object persistent flyouts (ask #8): Style / Shadow / Highlight / X-ray.
+   A vertical stack of label + control rows; reuses the align-flyout box (open
+   state, up/down flip inherited). Scrolls when tall so it never clips. */
+.ctxbar-scene-flyout {
+  gap: 6px;
+  min-width: 232px;
+  max-height: min(60vh, var(--ctxbar-menu-space, 100vh));
+  overflow-y: auto;
+}
+.ctxbar-fly-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* sf-w4 — a flyout row whose control is inert for the current selection (e.g.
+   Stroke Fill under a monowidth or three-pen Fill Style). It STAYS in place so
+   nothing below it jumps; the row greys out and carries the reason as its
+   `title`. The control itself is `disabled`, so the row keeps the hover that
+   surfaces that tooltip. */
+.ctxbar-fly-row.is-disabled { opacity: .45; }
+.ctxbar-fly-label {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--ui-muted, #9a9a9a);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.ctxbar-fly-ctl {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+.ctxbar-fly-ctl > * { max-width: 100%; }
+/* Multi-select "Mixed" state: the selected objects disagree on this control.
+   The sentinel option / blanked chip already communicate it; the muted italic
+   accent keeps the surface from reading as a real shared value. */
+.ctxbar-fly-ctl.ctxbar-fly-mixed .ctrl-sel,
+.ctxbar-fly-ctl.ctxbar-fly-mixed .seg-ctrl .seg-opt.active,
+.ctxbar-fly-ctl.ctxbar-fly-mixed .slider-val,
+.ctxbar-fly-ctl.ctxbar-fly-mixed .angle-inp {
+  color: var(--ui-muted, #9a9a9a);
+  font-style: italic;
+}
+.ctxbar-fly-ctl.ctxbar-fly-mixed .slider-val::placeholder,
+.ctxbar-fly-ctl.ctxbar-fly-mixed .angle-inp::placeholder {
+  color: var(--ui-muted, #9a9a9a);
+  font-style: italic;
+  opacity: 1;
+}
+.ctxbar-fly-subhead {
+  font-size: var(--font-size-xs, 10px);
+  color: var(--ui-muted, #686868);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--ui-border, #363636);
+}
+.ctxbar-fly-note {
+  font-size: var(--font-size-xs, 10px);
+  color: var(--ui-muted, #686868);
+  font-style: italic;
+}
+/* U9 — the Fill Style caveat: a measured warning on a demoted library law, not
+   ordinary help text. Token-coloured so both themes read it. */
+.ctxbar-fly-note.is-caveat {
+  color: var(--ui-danger);
+  font-style: normal;
+  border-left: 2px solid color-mix(in srgb, var(--ui-danger) 45%, transparent);
+  padding-left: 6px;
+}
+/* U12 D1/D2 — the faceted-primitive orientation line: box/plane/solid have no
+   chart, so most Fill Style options are no-ops there (greyed out above). A
+   different colour from .is-caveat (which is a measured law caveat) so the two
+   do not read as the same kind of warning. */
+.ctxbar-fly-note.is-faceted {
+  color: var(--ui-warning, #d29922);
+  font-style: normal;
+  border-left: 2px solid color-mix(in srgb, var(--ui-warning, #d29922) 45%, transparent);
+  padding-left: 6px;
+}
+/* fs-y1 Job 1 — the ctxbar Style/Shadow flyouts' Fill Style (i). The docked
+   panel's `.vs3-lawinfo-pop` floats a positioned popover, which does not work
+   in a 232px-wide flyout: `.ctxbar-scene-flyout` sets `overflow-y: auto`,
+   which per spec also computes `overflow-x` to `auto` (not `visible`), so a
+   floating popover would get clipped/scrolled instead of shown. This box
+   renders INLINE in the flyout's own vertical flow instead — display swaps
+   on `.is-open` (JS-toggled by the (i) click) so it always fits the column
+   and never needs its own positioning. Its paragraphs reuse `.vs3-lawnote`
+   (same look as the docked panel's popover text) — one visual language for
+   the info panel across both surfaces, only the container differs. The `i`
+   button itself reuses `.vs3-lawinfo-btn` (components.css, above) verbatim.*/
+.ctxbar-fly-lawinfo {
+  display: none;
+  margin: 2px 0 4px;
+}
+.ctxbar-fly-lawinfo.is-open { display: block; }
+.ctxbar-fly-lawinfo .vs3-lawnote:last-child { margin-bottom: 0; }
+.ctxbar-fly-reset { width: 100%; justify-content: center; }
+.ctxbar-scene-menu-wrap .ctxbar-scene-field { max-width: 140px; }
+/* fs-s1 — Style/Shadow/Highlight pills went icon-only (no visible label):
+   drop the label-sized max-width/padding for .ctxbar-btn's tight icon
+   padding. Same specificity + later in source than the rule above, wins. */
+.ctxbar-scene-menu-wrap .ctxbar-scene-style,
+.ctxbar-scene-menu-wrap .ctxbar-scene-shadow,
+.ctxbar-scene-menu-wrap .ctxbar-scene-highlight {
+  max-width: none;
+  padding: 0 7px;
+}
+.ctxbar-scene-style .lvl-algo-sub-ico,
+.ctxbar-scene-shadow .lvl-algo-sub-ico,
+.ctxbar-scene-highlight .lvl-algo-sub-ico {
+  margin-right: 4px;
+}
+/* I20 scoped scene pen chip + its pen-list flyout (writes byObject/byFace, never
+   the layer pen). The chip reuses the shared .pen-chip look; the flyout reuses
+   the scene-flyout box with compact swatch rows. */
+.ctxbar-scene-pen-flyout { min-width: 168px; padding: 4px; }
+.ctxbar-scene-pen-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+.ctxbar-scene-pen-sw {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--ui-border-hi, #4a4a4a);
+  background-clip: padding-box;
+}
+.ctxbar-scene-pen-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctxbar-scene-pen-row.is-active { color: var(--ui-accent, #4e9ee1); }
 /* Add Layer dropdown (idle TB-3) reuses the same field/flyout markup. */
 .ctxbar-add-layer-field .lvl-algo-sub-ico { margin-right: 5px; }
 /* Add Layer drill-down rows: distinct class from `.ctxbar-menu-item` so the
@@ -11961,11 +12239,25 @@ body.mobile-layout .hud-bar {
   font-size: 9px;
   line-height: 1;
   opacity: 0.7;
-  transition: transform 120ms ease;
 }
 .ctxbar-text-field:hover .ctxbar-text-caret { opacity: 1; }
-/* Points up when its flyout has flipped to open upward (`ctxbar-flyout-up`). */
-.ctxbar-text-caret.ctxbar-caret-up { transform: rotate(180deg); }
+/* The caret pivots (rotates through 180°) rather than swapping glyphs, so it
+   reads as the same arrow turning over. Applied to both caret flavours — the
+   pill carets and the standalone size-presets chevron — and driven from either
+   the per-element `ctxbar-caret-up` stamp or the bar-level `.ctxbar-menus-up`
+   state, whichever lands first. The rotation is the STATE, not decoration: it
+   is declared here unconditionally so reduced motion can drop the transition
+   (motion.css) without ever leaving an arrow pointing the wrong way. */
+.ctxbar-text-caret,
+.ctxbar-text-size-caret {
+  transform-origin: 50% 50%;
+}
+.ctxbar-text-caret.ctxbar-caret-up,
+.ctxbar-text-size-caret.ctxbar-caret-up,
+.ctxbar.ctxbar-menus-up .ctxbar-text-caret,
+.ctxbar.ctxbar-menus-up .ctxbar-text-size-caret {
+  transform: rotate(180deg);
+}
 .ctxbar-text-size {
   width: 58px;
   height: 26px;
@@ -12630,3 +12922,648 @@ body.mobile-layout .hud-bar {
 /* ============================================================================
    END P3-INT
    ============================================================================ */
+
+/* ============================================================================
+   VECTURA SCENE PANEL (vs3-*) — bespoke 3D Scene panel for scene3d layers
+   (src/ui/panels/scene3d-panel.js). Fluid inside the ~290px #dynamic-controls
+   pane; tokens only, light + dark safe. Shelf collapses to icon-only tiles at
+   narrow container widths (container-query precedent: text panel / left pane).
+   ============================================================================ */
+.vs3-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md, 12px);
+  min-width: 0;
+}
+.vs3-page { display: none; min-width: 0; }
+.vs3-page.active { display: flex; flex-direction: column; gap: var(--spacing-md, 12px); }
+.vs3-placeholder,
+.vs3-empty {
+  margin: 4px 0;
+  font-size: 11px;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+}
+.vs3-foot {
+  margin-top: 4px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-align: center;
+  color: var(--ui-text-2, var(--ui-muted, #6e6e6e));
+  opacity: 0.7;
+}
+
+/* ── Shelf ─────────────────────────────────────────────────────────────── */
+.vs3-shelf {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+  padding: 2px 0;
+}
+.vs3-shelf-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 4px 6px;
+  border: 1px solid var(--ui-border, #363636);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--ui-ctrl, #2c2c2c);
+  color: var(--ui-text, #e0e0e0);
+  font-size: 10px;
+  line-height: 1.1;
+  cursor: pointer;
+  min-width: 0;
+}
+.vs3-shelf-btn:hover:not(:disabled) {
+  border-color: var(--ui-accent, #4e9ee1);
+  color: var(--ui-accent, #4e9ee1);
+}
+.vs3-shelf-btn:focus-visible {
+  outline: 2px solid var(--ui-accent, #4e9ee1);
+  outline-offset: 1px;
+}
+.vs3-shelf-btn:disabled,
+.vs3-shelf-btn.is-stub {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.vs3-shelf-icon { display: inline-flex; width: 18px; height: 18px; }
+.vs3-shelf-icon svg { width: 100%; height: 100%; }
+.vs3-shelf-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Narrow pane: shelf tiles collapse to icon-only. */
+@container (max-width: 240px) {
+  .vs3-shelf-label { display: none; }
+  .vs3-shelf-btn { padding: 7px 2px; }
+}
+
+/* More… flyout (toolbar sub-tool pattern, panel-local) */
+.vs3-more { position: relative; display: flex; min-width: 0; }
+.vs3-more .vs3-more-btn { flex: 1 1 auto; border-radius: var(--radius-sm, 4px) 0 0 var(--radius-sm, 4px); }
+.vs3-more-caret {
+  flex: 0 0 auto;
+  width: 16px;
+  border: 1px solid var(--ui-border, #363636);
+  border-left: none;
+  border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+  background: var(--ui-ctrl, #2c2c2c);
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+  font-size: 8px;
+  cursor: pointer;
+  padding: 0;
+}
+.vs3-more-caret:hover { color: var(--ui-accent, #4e9ee1); }
+.vs3-more-caret:focus-visible {
+  outline: 2px solid var(--ui-accent, #4e9ee1);
+  outline-offset: 1px;
+}
+.vs3-more-menu {
+  /* Portaled to <body> and positioned with fixed coords in JS so it escapes the
+     Add Objects section's overflow:hidden clip. top/left are set inline. */
+  display: none;
+  position: fixed;
+  z-index: 4000;
+  min-width: 148px;
+  padding: 4px;
+  border: 1px solid var(--ui-border, #363636);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--ui-panel, #232323);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.vs3-more-menu.open { display: block; }
+.vs3-more-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ui-text, #e0e0e0);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.vs3-more-item:hover,
+.vs3-more-item:focus-visible {
+  background: var(--ui-accent, #2680eb);
+  color: var(--ui-on-accent, #fff);
+  outline: none;
+}
+
+/* ── Scene tree ────────────────────────────────────────────────────────── */
+.vs3-tree { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vs3-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  min-width: 0;
+}
+.vs3-tree-row:hover { background: var(--ui-ctrl, rgba(128, 128, 128, 0.12)); }
+.vs3-tree-row.selected {
+  border-color: var(--ui-accent, #4e9ee1);
+  background: color-mix(in srgb, var(--ui-accent, #4e9ee1) 14%, transparent);
+}
+.vs3-tree-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--ui-text, #e0e0e0);
+}
+/* CSG role badge on a scene-tree row (Increment 1). A wired hole reads accent;
+   an ungrouped (inert) hole is muted with a trailing '?' to flag it. */
+.vs3-tree-role {
+  flex: 0 0 auto;
+  margin: 0 4px;
+  padding: 0 5px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 7px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ui-accent, #4e9ee1);
+  background: color-mix(in srgb, var(--ui-accent, #4e9ee1) 16%, transparent);
+}
+.vs3-tree-role.vs3-tree-role-inert {
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+  background: var(--ui-ctrl, rgba(128, 128, 128, 0.14));
+}
+/* Group-membership badge in the object tree (op glyph of the owning group). */
+.vs3-tree-grp {
+  flex: 0 0 auto;
+  margin: 0 2px;
+  width: 16px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--ui-accent, #4e9ee1);
+  background: color-mix(in srgb, var(--ui-accent, #4e9ee1) 14%, transparent);
+}
+/* ── Boolean Groups section (Increment 3 grouping UI) ─────────────────────── */
+.vs3-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.vs3-grp-card {
+  border: 1px solid var(--ui-border, rgba(128, 128, 128, 0.35));
+  border-radius: 6px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: color-mix(in srgb, var(--ui-accent, #4e9ee1) 4%, transparent);
+}
+.vs3-grp-nested {
+  margin-left: 14px;
+  border-left: 2px solid color-mix(in srgb, var(--ui-accent, #4e9ee1) 40%, transparent);
+}
+.vs3-grp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vs3-grp-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 2px 5px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--ui-ctrl, rgba(128, 128, 128, 0.1));
+  color: var(--ui-text, inherit);
+  font-size: 12px;
+  font-weight: 600;
+}
+.vs3-grp-name:focus {
+  outline: none;
+  border-color: var(--ui-accent, #4e9ee1);
+}
+.vs3-grp-del {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+  font-size: 10px;
+  cursor: pointer;
+}
+.vs3-grp-del:hover { color: var(--ui-danger, #e5484d); }
+.vs3-grp-op {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vs3-grp-op-lbl {
+  flex: 0 0 auto;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+}
+.vs3-grp-op .vs3-ctl { flex: 1 1 auto; }
+.vs3-grp-kids {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vs3-grp-kid {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: var(--ui-ctrl, rgba(128, 128, 128, 0.08));
+}
+.vs3-grp-kid-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.vs3-grp-kid-role { flex: 0 0 auto; }
+.vs3-grp-kid-btn {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+  font-size: 11px;
+  cursor: pointer;
+}
+.vs3-grp-kid-btn:hover:not(:disabled) { color: var(--ui-accent, #4e9ee1); }
+.vs3-grp-kid-btn:disabled { opacity: 0.3; cursor: default; }
+.vs3-grp-kid-rm:hover:not(:disabled) { color: var(--ui-danger, #e5484d); }
+.vs3-grp-empty {
+  margin: 0;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+}
+.vs3-grp-add { margin-top: 2px; }
+.vs3-grp-new {
+  align-self: flex-start;
+  border: 1px dashed var(--ui-border, rgba(128, 128, 128, 0.35));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.vs3-grp-new:hover {
+  color: var(--ui-accent, #4e9ee1);
+  border-color: var(--ui-accent, #4e9ee1);
+}
+.vs3-tree-vis,
+.vs3-tree-del {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+  font-size: 10px;
+  cursor: pointer;
+  padding: 0;
+}
+.vs3-tree-vis:hover { color: var(--ui-accent, #4e9ee1); }
+.vs3-tree-vis[data-visibility="xray"] { color: var(--ui-accent, #4e9ee1); }
+.vs3-tree-del:hover { color: var(--ui-danger, #e5484d); }
+/* Add-light action strip (not a selectable row) — small ghost buttons. */
+.vs3-tree-addlight {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 6px 2px;
+}
+.vs3-tree-addbtn {
+  flex: 0 0 auto;
+  border: 1px dashed var(--ui-border, rgba(128, 128, 128, 0.35));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+.vs3-tree-addbtn:hover {
+  color: var(--ui-accent, #4e9ee1);
+  border-color: var(--ui-accent, #4e9ee1);
+}
+.vs3-light-reset-row {
+  justify-content: flex-end;
+}
+.vs3-light-reset {
+  border: 1px solid var(--ui-border, rgba(128, 128, 128, 0.35));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.vs3-light-reset:hover {
+  color: var(--ui-accent, #4e9ee1);
+  border-color: var(--ui-accent, #4e9ee1);
+}
+.vs3-rename {
+  width: 100%;
+  min-width: 0;
+  padding: 1px 4px;
+  border: 1px solid var(--ui-accent, #4e9ee1);
+  border-radius: 3px;
+  background: var(--ui-panel, #1e1e1e);
+  color: var(--ui-text, #e0e0e0);
+  font: inherit;
+  font-size: 11px;
+}
+
+/* ── Inspector + Style rows ────────────────────────────────────────────── */
+.vs3-inspector,
+.vs3-style { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.vs3-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.vs3-lbl {
+  flex: 0 0 58px;
+  font-size: 10px;
+  color: var(--ui-text-2, var(--ui-muted, #9a9a9a));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vs3-ctl { flex: 1 1 auto; min-width: 0; }
+/* sf-w4 — an inspector row whose control is inert for the current selection
+   (e.g. Stroke Fill under a monowidth or three-pen Fill Style). It stays in
+   place so nothing below it jumps; the whole row greys out and carries the
+   reason as its tooltip. The control itself is `disabled`, so pointer-events
+   stay off it without disabling the row's own title. */
+.vs3-row.is-disabled { opacity: .45; }
+.vs3-ctl .slider-row { width: 100%; }
+/* Section sub-heading inside the inspector (e.g. the Phase 5 Shadow group). */
+.vs3-subhead {
+  margin: 6px 0 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ui-text-2, var(--ui-muted, #9a9a9a));
+  border-top: 1px solid var(--ui-border, #363636);
+  padding-top: 8px;
+}
+/* Emissive sub-controls (Phase 7): the glow settings revealed when an object's
+   Emissive toggle is On — indented + rule to read as a nested group. */
+.vs3-emissive-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 2px;
+  padding-left: 8px;
+  border-left: 2px solid var(--ui-border, #363636);
+}
+.vs3-name-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--ui-border, #363636);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--ui-ctrl, #2c2c2c);
+  color: var(--ui-text, #e0e0e0);
+  font: inherit;
+  font-size: 11px;
+}
+.vs3-name-input:focus-visible {
+  outline: none;
+  border-color: var(--ui-accent, #4e9ee1);
+}
+
+/* ── Style tab chrome ──────────────────────────────────────────────────── */
+.vs3-style-scope {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ui-text, #e0e0e0);
+}
+/* Fill Style (tone law) description block, scene3d Style tab — U9. Muted
+   caption lines under the picker; `.is-caveat` is the measured warning a
+   demoted library law carries and must not read as ordinary help text. Both
+   colours come from tokens, so both themes are covered. */
+.vs3-lawnote {
+  margin: 2px 0 4px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+}
+.vs3-lawnote.is-caveat {
+  color: var(--ui-danger);
+  border-left: 2px solid color-mix(in srgb, var(--ui-danger) 45%, transparent);
+  padding-left: 6px;
+}
+/* U12 D1/D2 — the faceted-primitive orientation line, same rule as the ctxbar
+   flyout's `.ctxbar-fly-note.is-faceted`: a different colour from `.is-caveat`
+   (a measured law caveat) so the two do not read as the same warning kind. */
+.vs3-lawnote.is-faceted {
+  color: var(--ui-warning, #d29922);
+  border-left: 2px solid color-mix(in srgb, var(--ui-warning, #d29922) 45%, transparent);
+  padding-left: 6px;
+}
+/* fs-m2 Job 2 — the Fill Style (i) info affordance. The mechanism/strengths/
+   weaknesses paragraph used to always print under the picker and dominated
+   the panel; it now lives in `.vs3-lawinfo-pop`, revealed on hover OR
+   keyboard focus via `:hover`/`:focus-within` — the same idiom
+   `.ctrl-sel-wrap`'s dropdown caret already uses above. The caveat is
+   deliberately NOT in here (see `.vs3-lawnote.is-caveat`, appended as a
+   sibling of the row) — a demoted law's warning must stay visible without a
+   hover. `aria-describedby` on the button keeps the popover screen-reader
+   reachable independent of its visual state. */
+.vs3-lawinfo-wrap { position: relative; display: inline-flex; flex: 0 0 auto; }
+.vs3-lawinfo-btn {
+  font-size: 9px; color: var(--ui-muted); background: none;
+  border: 1px solid var(--ui-border); border-radius: 50%;
+  width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; padding: 0; line-height: 1; font-family: var(--font-mono);
+  transition: color 0.1s, border-color 0.1s;
+}
+.vs3-lawinfo-btn:hover, .vs3-lawinfo-btn:focus-visible {
+  color: var(--ui-accent); border-color: var(--ui-accent);
+}
+.vs3-lawinfo-pop {
+  position: absolute; top: 100%; right: 0; z-index: 40; margin-top: 4px;
+  width: 240px; max-width: 70vw;
+  background: var(--ui-panel, #252525); border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm); padding: var(--spacing-sm);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 0.12s, visibility 0s linear 0.12s;
+}
+.vs3-lawinfo-wrap:hover .vs3-lawinfo-pop,
+.vs3-lawinfo-wrap:focus-within .vs3-lawinfo-pop,
+.vs3-lawinfo-pop.is-open {
+  opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s;
+}
+.vs3-lawinfo-pop .vs3-lawnote:last-child { margin-bottom: 0; }
+/* X-ray control group header (scene3d Style tab, Phase 6). */
+.vs3-xray-hdr,
+.vs3-hl-hdr {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--ui-border, #3a3a3a);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+}
+/* X-ray group note — shown in place of the back-face rows when the object's
+   mapper renders no surface fill (None / Wireframe / Contour slice), where
+   x-ray output is identical to solid. Rows are removed, not disabled. */
+.vs3-xray-note {
+  margin: 4px 0 2px;
+  font-size: 10px;
+  line-height: 1.4;
+  font-style: italic;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+}
+/* Edge Styles (C-06) — per-edge-class sub-label between the section header and
+   that class's Pen / Weight / Dash rows. Lighter than the section header. */
+.vs3-edge-cls {
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+}
+.vs3-prov-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 2px 8px;
+  border: 1px solid var(--ui-accent, #4e9ee1);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-accent, #4e9ee1) 12%, transparent);
+  color: var(--ui-accent, #4e9ee1);
+  font-size: 10px;
+}
+.vs3-prov-chip.is-inherited {
+  border-color: var(--ui-border, #3a3a3a);
+  background: transparent;
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+}
+.vs3-prov-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 9px;
+  cursor: pointer;
+  padding: 0;
+}
+.vs3-prov-clear:hover { color: var(--ui-danger, #e5484d); }
+/* ============================================================================
+   END VECTURA SCENE PANEL (vs3-*)
+   ============================================================================ */
+
+/* ============================================================================
+   DIVISIONS EDITOR (Phase 4A Inc-1) — the FillControlSurface `divisions`
+   section. Mounted sectionsOnly in the ctxbar Stroke Options popover; scoped
+   so it never leaks into the fill-variant surface.
+   ============================================================================ */
+.fcs-divisions { display: flex; flex-direction: column; gap: 8px; }
+.fcs-divisions-head { display: flex; align-items: center; }
+.fcs-divisions-enable { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.fcs-divisions-title { font-weight: 600; font-size: 12px; letter-spacing: 0.02em; }
+.fcs-divisions-body { display: flex; flex-direction: column; gap: 8px; }
+.fcs-divisions-body.is-disabled { opacity: 0.5; }
+.fcs-divisions-row { display: flex; align-items: center; gap: 8px; }
+.fcs-divisions-label { flex: 0 0 auto; font-size: 11px; color: var(--ui-muted, #9aa0a6); }
+.fcs-divisions-num {
+  width: 68px; padding: 3px 6px; font-size: 12px;
+  background: var(--ui-input-bg, #1b1d21); color: var(--ui-fg, #e8eaed);
+  border: 1px solid var(--ui-border, #34363b); border-radius: 4px;
+}
+.fcs-divisions-classes { display: flex; flex-direction: column; gap: 6px; }
+.fcs-divisions-class {
+  padding: 6px; border: 1px solid var(--ui-border, #34363b); border-radius: 6px;
+  background: var(--ui-surface-2, rgba(255, 255, 255, 0.02));
+}
+.fcs-divisions-class .fcs-divisions-num { width: 56px; }
+.fcs-divisions-swatch {
+  flex: 0 0 auto; width: 14px; height: 14px; border-radius: 3px;
+  border: 1px solid var(--ui-border, #34363b);
+}
+.fcs-divisions-pen { flex: 1 1 auto; min-width: 70px; }
+.fcs-divisions-pen .ctrl-sel-wrap { width: 100%; }
+.fcs-divisions-gap { display: flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; }
+.fcs-divisions-acts { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.fcs-divisions-act {
+  width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; line-height: 1; background: transparent; color: var(--ui-fg, #e8eaed);
+  border: 1px solid var(--ui-border, #34363b); border-radius: 4px; cursor: pointer;
+}
+.fcs-divisions-act:disabled { opacity: 0.35; cursor: default; }
+.fcs-divisions-remove:hover:not(:disabled) { color: var(--ui-danger, #e5484d); border-color: var(--ui-danger, #e5484d); }
+.fcs-divisions-add {
+  align-self: flex-start; padding: 4px 10px; font-size: 11px;
+  background: transparent; color: var(--ui-accent, #6ea8fe);
+  border: 1px dashed var(--ui-border, #34363b); border-radius: 4px; cursor: pointer;
+}
+.fcs-divisions-add:disabled { opacity: 0.4; cursor: default; }
+.fcs-divisions-hint { font-size: 11px; color: var(--ui-muted, #9aa0a6); margin: 2px 0; }
+/* Deferred grammar (Inc-3): pen/phase mode selects, seed, per-class weight. */
+.fcs-divisions-modes-row { flex-wrap: wrap; }
+.fcs-divisions-select { flex: 1 1 90px; min-width: 80px; }
+.fcs-divisions-select .ctrl-sel-wrap,
+.fcs-divisions-select .ctrl-sel { width: 100%; }
+.fcs-divisions-seed-row .fcs-divisions-num { width: 72px; }
+.fcs-divisions-weight { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--ui-muted, #9aa0a6); }
+.fcs-divisions-weight .fcs-divisions-num { width: 42px; }
+.ctxbar-divisions-host {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ui-border, #34363b);
+}

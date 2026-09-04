@@ -173,6 +173,23 @@
           });
           this.renderLayers(); this.app.render(); return;
         }
+        // Scene-tree — an object3d dropped BEFORE/AFTER a scene member (the scene
+        // group header OR any of its child cards) NESTS into that scene container
+        // instead of popping out to root. Only the narrow header "into" band used
+        // to nest; every other drop left parentId untouched and the object never
+        // rendered in the scene. Reordering WITHIN the same container (parentId
+        // already matches) falls through to the normal reorder path below.
+        // assignLayersToParent reverts a booleanGroup3d operand's role to 'solid'.
+        if (src.type === 'object3d') {
+          const container = this.sceneNestContainerFor?.(tgt);
+          if (container && container.id !== src.parentId
+              && !this.isDescendant?.(container.id, srcId)) {
+            this.assignLayersToParent(container.id, [src], {
+              captureHistory: true, selectAssigned: true, primaryId: srcId,
+            });
+            this.renderLayers(); this.app.render(); return;
+          }
+        }
         const selectedSet = new Set([srcId]);
         const currentOrder = engine.layers.map((l) => l.id).reverse();
         const nextOrder = currentOrder.filter((id) => id !== srcId);
@@ -204,7 +221,13 @@
           // This preserves intermediate levels (e.g. mask → group → child).
           const newParentId = tgt?.parentId ?? null;
           if (this.app.pushHistory) this.app.pushHistory();
+          // Scene-tree Increment C — an object3d leaving a boolean group reverts
+          // to a plain 'solid' role.
+          const oldParent = src.parentId ? engine.getLayerById?.(src.parentId) : null;
           src.parentId = newParentId;
+          if (src.type === 'object3d' && src.params && oldParent?.type === 'booleanGroup3d') {
+            src.params.role = 'solid';
+          }
           engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
           this.normalizeGroupOrder?.();
           this.app.computeDisplayGeometry?.();
@@ -672,6 +695,11 @@
         const newParentId = grpLayer?.parentId ?? null;
         if (this.app.pushHistory) this.app.pushHistory();
         movers.forEach((m) => { m.parentId = newParentId; });
+        // Scene-tree Increment C — an object3d dragged OUT of a boolean group
+        // is no longer an operand; restore its plain 'solid' role.
+        if (grpLayer?.type === 'booleanGroup3d') {
+          movers.forEach((m) => { if (m.type === 'object3d' && m.params) m.params.role = 'solid'; });
+        }
         const layerMap = new Map(engine.layers.map((l) => [l.id, l]));
         engine.layers = engineIds.map((id) => layerMap.get(id)).filter(Boolean);
         this.normalizeGroupOrder?.();
@@ -1149,7 +1177,9 @@
         ai.innerHTML = (this._LVL_I[layer.type] ?? this._LVL_I.grid)?.() ?? '';
         r2.appendChild(ai);
         const al = document.createElement('span'); al.className = 'lvl-algo-label';
-        al.textContent = layer.type || ''; r2.appendChild(al);
+        // Scene-tree Increment E — friendlier labels for the thin 3D child kinds.
+        const LVL_TYPE_LABEL = { sceneLight3d: 'Light', sceneGround3d: 'Ground', object3d: 'Object 3D', booleanGroup3d: 'Boolean 3D' };
+        al.textContent = LVL_TYPE_LABEL[layer.type] || layer.type || ''; r2.appendChild(al);
 
         const acts = document.createElement('div'); acts.className = 'lvl-acts';
         const mkAb = (cls, iconFn, title, fn) => {
@@ -1194,7 +1224,10 @@
             ));
           }
         }
-        if (layer.type !== 'shape') {
+        // Scene-tree Increment E — the thin light/ground child leaves have no
+        // sub-geometry to expand into a group; skip the Expand affordance.
+        const isSceneChildLeaf = layer.type === 'sceneLight3d' || layer.type === 'sceneGround3d';
+        if (layer.type !== 'shape' && !isSceneChildLeaf) {
           acts.appendChild(mkAb('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
         }
         if (layer.type === 'shape' && Array.isArray(layer.fills) && layer.fills.length > 0) {
@@ -1270,9 +1303,15 @@
         gc.appendChild(_lvlMkEye(layer));
         gc.appendChild(_lvlMkLock(layer));
         const fi = document.createElement('span'); fi.className = 'lvl-aico';
-        fi.innerHTML = layer.groupType === 'layer'
-          ? (this._LVL_I.layer?.() ?? this._LVL_I.folder())
-          : this._LVL_I.folder();
+        // Scene-tree Increment C — scene / boolean groups get their own glyphs;
+        // everything else keeps the folder (layer-groups keep the layer icon).
+        fi.innerHTML = layer.groupType === 'scene'
+          ? (this._LVL_I.scene3d?.() ?? this._LVL_I.folder())
+          : layer.groupType === 'boolean'
+            ? (this._LVL_I.booleanGroup3d?.() ?? this._LVL_I.folder())
+            : layer.groupType === 'layer'
+              ? (this._LVL_I.layer?.() ?? this._LVL_I.folder())
+              : this._LVL_I.folder();
         gc.appendChild(fi);
         gc.appendChild(_lvlNameEl(layer, 'lvl-grp-name'));
 
@@ -1283,6 +1322,41 @@
           b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b;
         };
         const ga = document.createElement('div'); ga.className = 'lvl-grp-acts';
+        // Scene-tree Increment C — a scene group gets an inline "+ object"
+        // affordance that inserts a new object3d child (default primitive).
+        if (layer.groupType === 'scene' && typeof engine.addObjectToScene === 'function') {
+          // Quick-add: always a box. Right-clicking the scene row (or the Scene
+          // panel's Add Objects shelf) offers every other shape — say so, so the
+          // fastest affordance doesn't read as the ONLY one.
+          ga.appendChild(mkAb('lvl-add-object', () => this._LVL_I.grpPlus(), 'Add box (right-click for more shapes)', () => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            const oid = engine.addObjectToScene(layer.id);
+            if (oid) { renderer.setSelection?.([oid], oid); engine.setActiveLayerId?.(oid); }
+            this.renderLayers(); this.app.render();
+          }));
+          // Scene-tree Increment E — inline "+ light" / "+ ground" affordances
+          // (ground only when no ground child exists yet). A right-click menu on
+          // the header (below) offers the same, plus a light-type submenu.
+          if (typeof engine.addLightToScene === 'function') {
+            ga.appendChild(mkAb('lvl-add-light', () => this._LVL_I.sceneLight3d?.() ?? this._LVL_I.grpPlus(), 'Add light', () => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              const lid = engine.addLightToScene(layer.id, 'directional');
+              if (lid) { renderer.setSelection?.([lid], lid); engine.setActiveLayerId?.(lid); }
+              this.renderLayers(); this.app.render();
+            }));
+          }
+          if (typeof engine.addGroundToScene === 'function') {
+            const hasGround = engine.getLayerDescendants?.(layer.id)?.some((l) => l && l.type === 'sceneGround3d');
+            if (!hasGround) {
+              ga.appendChild(mkAb('lvl-add-ground', () => this._LVL_I.sceneGround3d?.() ?? this._LVL_I.grpPlus(), 'Add ground', () => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const gid = engine.addGroundToScene(layer.id);
+                if (gid) { renderer.setSelection?.([gid], gid); engine.setActiveLayerId?.(gid); }
+                this.renderLayers(); this.app.render();
+              }));
+            }
+          }
+        }
         if (layer.groupType === 'modifier') {
           ga.appendChild(mkAb('', () => this._LVL_I.expand(), 'Expand to folder', () => {
             if (this.app.pushHistory) this.app.pushHistory();
@@ -1315,6 +1389,8 @@
           if (this.armedPenId && this.applyArmedPenToLayers?.([layer])) return;
           _lvlDoSel(e, layer.id);
         });
+        // Scene-tree Increment E — right-click a scene group offers Add light /
+        // Add ground via the shared LayerContext menu (see layer-context-menu.js).
         if (!_lvlEffLocked(layer.id)) { bindCardDrag(hdr, layer); addGrpDropZone(hdr, layer); }
         return hdr;
       };
@@ -2069,10 +2145,35 @@
     const moveSet = new Set(moveIds);
     const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
     const remaining = this.app.engine.layers.filter((layer) => !moveSet.has(layer.id));
+    // Scene-tree Increment C — capture each mover's OLD parent so an object3d
+    // leaving a boolean group can be reset to a plain 'solid' role below.
+    const oldParentIds = new Map(moveIds.map((id) => [id, map.get(id)?.parentId ?? null]));
     moveIds.forEach((id) => {
       const layer = map.get(id);
       if (layer) layer.parentId = parentId;
     });
+    // Scene-tree Increment C — seed / clear object3d boolean roles on reparent.
+    if (parent.type === 'booleanGroup3d') {
+      // First operand of an EMPTY boolean is solid, the rest holes; if the
+      // boolean already held an operand, every new drop is a hole.
+      const preExisting = this.app.engine.getLayerChildren(parentId)
+        .filter((c) => c && c.type === 'object3d' && !moveSet.has(c.id)).length;
+      let haveSolid = preExisting > 0;
+      moveIds.forEach((id) => {
+        const l = map.get(id);
+        if (!l || l.type !== 'object3d' || !l.params) return;
+        l.params.role = haveSolid ? 'hole' : 'solid';
+        haveSolid = true;
+      });
+    } else {
+      moveIds.forEach((id) => {
+        const l = map.get(id);
+        if (!l || l.type !== 'object3d' || !l.params) return;
+        const op = oldParentIds.get(id);
+        const oldParent = op ? this.getLayerById(op) : null;
+        if (oldParent && oldParent.type === 'booleanGroup3d') l.params.role = 'solid';
+      });
+    }
     const insertIndex = remaining.findIndex((layer) => layer.id === parentId);
     const engineInsert = insertIndex === -1 ? remaining.length : insertIndex;
     const moveEngineOrder = moveIds.slice().reverse().map((id) => map.get(id)).filter(Boolean);
@@ -2128,6 +2229,26 @@
       current = this.getLayerById(current.parentId);
     }
     return false;
+  }
+
+  // Scene-tree — the scene container (a scene3d GROUP or a booleanGroup3d) that a
+  // drop target belongs to, walking UP from the target. Returns the container
+  // LAYER, or null when the target is not part of a scene tree. An object3d
+  // dropped before/after any scene member nests INTO this container (see
+  // _lvlDoMove) instead of popping out to root.
+  function sceneNestContainerFor(tgt) {
+    const engine = this.app && this.app.engine;
+    if (!engine || !engine.getLayerById) return null;
+    const isSceneContainer = (l) =>
+      l && (l.type === 'booleanGroup3d' || (l.type === 'scene3d' && l.isGroup));
+    let node = tgt;
+    const seen = new Set();
+    while (node && !seen.has(node.id)) {
+      seen.add(node.id);
+      if (isSceneContainer(node)) return node;
+      node = node.parentId ? engine.getLayerById(node.parentId) : null;
+    }
+    return null;
   }
 
   function normalizeGroupOrder() {
@@ -2349,7 +2470,7 @@
   }
 
   function expandLayer(layer, options = {}) {
-    const { Layer, clone } = requireDeps('expandLayer');
+    const { Layer, clone, SETTINGS } = requireDeps('expandLayer');
     if (!layer || layer.isGroup) return;
     // Local isPrimitiveShapeLayer (matches legacy IIFE-local predicate).
     const isPrimitive = (l) => {
@@ -2373,10 +2494,33 @@
     if (!Layer) return;
     const { skipHistory = false, returnChildren = false, suppressRender = false, selectChildren = true } = options;
     if (!skipHistory && this.app.pushHistory) this.app.pushHistory();
-    if (!layer.paths || !layer.paths.length) {
-      this.app.engine.generate(layer.id);
+
+    // A scene-tree CHILD (object3d / sceneGround3d / sceneLight3d /
+    // booleanGroup3d) owns no `.paths` of its own — its real rendered ink is a
+    // tagged slice of the owning scene group's composed `scenePaths` (see
+    // engine.getSceneChildRenderPaths). Regenerating such a child directly
+    // would hit generate()'s `Algorithms[layer.type] || Algorithms.flowfield`
+    // fallback (there is no `Algorithms.object3d`/etc.) and bake an unrelated
+    // flowfield hatch — the "expanded ground gained hatching that wasn't
+    // there, and doesn't align with the real ground" fidelity bug. Non-null
+    // here means `layer` IS such a child; use that slice (possibly empty —
+    // e.g. a light stamps no geometry) instead of `layer.paths`.
+    const sceneChildPaths = this.app.engine.getSceneChildRenderPaths?.(layer.id);
+    const isSceneChild = Array.isArray(sceneChildPaths);
+    if (!isSceneChild) {
+      // Expand bakes the parent's cached `layer.paths` into standalone children.
+      // Regenerate first when the cache is empty OR came from a fastPreview/DRAFT
+      // frame (engine sets layer._pathsFromDraft): a draft renders scene3d region
+      // fills as a cheap screen-space hatch and skips shadow booleans, so freezing
+      // it would give children that diverge from the settled full-quality viewport.
+      if (!layer.paths || !layer.paths.length) {
+        this.app.engine.generate(layer.id);
+      } else if (layer._pathsFromDraft) {
+        this.app.engine.generate(layer.id, { fastPreview: false });
+      }
     }
-    if (!layer.paths || !layer.paths.length) return;
+    const rawSourcePaths = isSceneChild ? sceneChildPaths : layer.paths;
+    if (!rawSourcePaths || !rawSourcePaths.length) return;
 
     // Local clonePath (matches legacy IIFE-local helper).
     const clonePath = (path) => {
@@ -2386,10 +2530,124 @@
       return next;
     };
 
+    // ── WHAT EXPAND DOES WITH `meta.weightScale` ────────────────────────────
+    // `meta.weightScale` is a per-path width multiplier the canvas render, the
+    // export preview and the emitted SVG all apply as `strokeWidth * scale`
+    // (clamped to [0.1, 6] — Renderer.resolvePathWeightScale). Expand has to
+    // decide what a CHILD LAYER made from that path should be, and the answer
+    // is not the same for the two things the channel is used for:
+    //
+    //  1. A WIDTH CLAIM ON ONE PEN — silhouette / crease emphasis
+    //     (geometry3d.extractSilhouette / extractCreases, scene3d's
+    //     `kind: 'sceneEdge'` EdgeStyle weightMm, spiralizer's outlineWeight).
+    //     There is ONE pen and it cannot grow on command, so the claim is
+    //     un-plottable as written. Expand realizes it as N real parallel
+    //     overlapping passes and DROPS the attribute, so nothing downstream
+    //     falls back to a width the machine does not have. Pass spacing reuses
+    //     the codebase's banded-fill convention (text.js built-in-bold
+    //     concentric fill: spacing = penWidth * (1 - inkOverlap), 15%).
+    //
+    //  2. A REAL PEN WIDTH — scene3d surface fills (`kind: 'sceneFill'`), and
+    //     any path the engine tags with `meta.penTier`. The six three-pen tone
+    //     laws (penInterleave, penStipple, penReserve, penCross, penPitchMatch,
+    //     penFacing) snap every run's weight to an actual nib in the tray
+    //     (surface-fill.js `penFinish`/`penSnap`), so the width is a statement
+    //     about WHICH PEN draws this line, not a claim. Faking it with parallel
+    //     passes of the fine pen is wrong twice over: it misrepresents the plot,
+    //     and — this is the bug the user screenshotted — parallel offset copies
+    //     of a curve near a sphere's limb land OUTSIDE the silhouette, so the
+    //     expanded group grows thick blobby bands with stepped ends that were
+    //     never on canvas. So expand PRESERVES `meta.weightScale` on these and
+    //     emits exactly one child per path: the expanded group is then the same
+    //     geometry the canvas drew, by construction.
+    //
+    // The variable-width fill laws are moving to real ribbon outline + pen-width
+    // fill geometry, after which every `sceneFill` path they emit carries
+    // weightScale 1 and rule 2 is a plain pass-through. Rule 2 is written so it
+    // is already correct today (preserve, don't fake) and stays correct then.
+    const pens = Array.isArray(SETTINGS?.pens) ? SETTINGS.pens : [];
+    const INK_OVERLAP = 0.15;
+    const MAX_WEIGHT_SCALE = 6; // matches the renderer/export clamp
+    const resolvePenWidth = (path) => {
+      const pathPenId = (path && path.meta && path.meta.penId) || layer.penId;
+      const pen = pens.find((pn) => pn && pn.id === pathPenId)
+        || pens.find((pn) => pn && pn.id === layer.penId)
+        || pens[0];
+      if (pen && Number(pen.width) > 0) return Number(pen.width);
+      if (Number(layer.strokeWidth) > 0) return Number(layer.strokeWidth);
+      return 0.35;
+    };
+    const stripWeightScale = (path) => {
+      if (!path || !path.meta || !('weightScale' in path.meta)) return path;
+      const next = Array.isArray(path) ? path.map((pt) => ({ ...pt })) : path;
+      next.meta = { ...path.meta };
+      delete next.meta.weightScale;
+      return next;
+    };
+    // THE definition of the width a path is actually drawn at — shared with the
+    // canvas render, the export preview and the emitted SVG. The inline
+    // fallback exists for the lean test runtime (renderer.js not loaded) and
+    // must stay byte-identical to Renderer.resolvePathWeightScale.
+    const resolveWeightScale = (path) => {
+      if (G.Vectura?.Renderer?.resolvePathWeightScale) {
+        return G.Vectura.Renderer.resolvePathWeightScale(path);
+      }
+      const raw = Number(path && path.meta && path.meta.weightScale);
+      if (!Number.isFinite(raw) || raw === 1) return 1;
+      return Math.max(0.1, Math.min(MAX_WEIGHT_SCALE, raw));
+    };
+    // Rule 2 above: is this path's width a REAL pen rather than a claim?
+    // `meta.penTier` is the engine's explicit tag; `kind: 'sceneFill'` covers
+    // every scene3d surface-fill law (the three-pen ones snap to real nibs, and
+    // the variable-width ones become weightScale-1 ribbon geometry, so neither
+    // may be re-expressed as parallel offset copies).
+    const isRealPenWidthPath = (path) => {
+      const meta = path && path.meta;
+      if (!meta) return false;
+      if (meta.penTier !== undefined && meta.penTier !== null) return true;
+      return meta.kind === 'sceneFill';
+    };
+    // Per-vertex miter offset (not a single global chord normal — see
+    // thickenPathsUniform's own header comment for why the miter vector is
+    // required at bends). A rigid translate offsets every point by the SAME
+    // vector, which is only truly perpendicular to a STRAIGHT run; on a
+    // curved silhouette/crease line the local tangent rotates away from that
+    // fixed direction, so the passes visibly converge and diverge instead of
+    // holding a constant band width. thickenPathsUniform already solves
+    // exactly this for text.js's built-in-bold fill (uniform-width parallel
+    // passes around bends, with a miterLimit clamp so a needle-acute apex
+    // bevels flat instead of spiking to infinity on tight/self-intersecting
+    // curves) — reused here rather than re-deriving the same maths.
+    const thickenUniformFn = G.Vectura?.GeometryUtils?.thickenPathsUniform;
+    const expandWeightToPasses = (path) => {
+      const raw = Number(path && path.meta && path.meta.weightScale);
+      // Rule 2: a real pen width survives expand untouched — one child, same
+      // geometry, same weightScale, so the expanded group renders and exports
+      // identically to what was on canvas a moment earlier.
+      if (Number.isFinite(raw) && raw !== 1 && isRealPenWidthPath(path)) return [path];
+      if (!Array.isArray(path) || path.length < 2 || !Number.isFinite(raw) || raw <= 1 || !thickenUniformFn) {
+        return [stripWeightScale(path)];
+      }
+      const penWidth = resolvePenWidth(path);
+      const spacing = penWidth * (1 - INK_OVERLAP);
+      if (!(spacing > 0)) return [stripWeightScale(path)];
+      const desiredWidth = penWidth * resolveWeightScale(path);
+      const passes = Math.max(1, 1 + Math.ceil((desiredWidth - penWidth) / spacing));
+      if (passes <= 1) return [stripWeightScale(path)];
+      const offsetPasses = thickenUniformFn([path], { width: passes, spacing });
+      if (!Array.isArray(offsetPasses) || offsetPasses.length !== passes) return [stripWeightScale(path)];
+      return offsetPasses.map((pass) => stripWeightScale(pass));
+    };
+    const sourcePaths = [];
+    rawSourcePaths.forEach((path) => {
+      expandWeightToPasses(path).forEach((p) => sourcePaths.push(p));
+    });
+    if (!sourcePaths.length) return;
+
     const groupId = layer.id;
     const baseName = layer.name;
-    const pad = String(layer.paths.length).length;
-    const pathMeta = layer.paths.map((path, index) => {
+    const pad = String(sourcePaths.length).length;
+    const pathMeta = sourcePaths.map((path, index) => {
       let minX = Infinity;
       let minY = Infinity;
       const metaGroup = path?.meta?.group;
@@ -2437,7 +2695,13 @@
       child.penId = layer.penId;
       child.color = layer.color;
       child.strokeWidth = layer.strokeWidth;
-      child.lineCap = layer.lineCap;
+      // A per-path cap override (`meta.strokeCap` — butt-ended ribbon outline
+      // and fill passes) has to become the CHILD's own cap, or the expanded
+      // layer advertises a round cap it is not drawn with. Renderer/export keep
+      // honoring the meta either way; this just makes the child self-describing.
+      child.lineCap = G.Vectura?.Renderer?.resolvePathLineCap
+        ? G.Vectura.Renderer.resolvePathLineCap(entry.path, layer.lineCap)
+        : layer.lineCap;
       child.visible = layer.visible;
       if (entry.group) {
         let groupNode = groupNodes.get(entry.group);
@@ -2468,6 +2732,10 @@
     layer.groupParams = clone(layer.params);
     layer.groupCollapsed = false;
     layer.type = 'group';
+    // Was a scene-tree child (isSceneChild branch above) — it no longer matches
+    // any type _composeSceneGroup collects, so drop the stale flag rather than
+    // leave a dead marker behind.
+    if (layer._sceneConsumed) delete layer._sceneConsumed;
     layer.paths = [];
     layer.sourcePaths = null;
     layer.paramStates = {};
@@ -2569,6 +2837,7 @@
     unlockMirrorChildrenOnDelete,
     shouldLeaveParentScope,
     isDescendant,
+    sceneNestContainerFor,
     normalizeGroupOrder,
     moveSelectedLayers,
     duplicateLayers,
@@ -2607,6 +2876,7 @@
       proto.unlockMirrorChildrenOnDelete = function(layerId) { return unlockMirrorChildrenOnDelete.call(this, layerId); };
       proto.shouldLeaveParentScope = function(...args) { return shouldLeaveParentScope.apply(this, args); };
       proto.isDescendant = function(targetId, ancestorId) { return isDescendant.call(this, targetId, ancestorId); };
+      proto.sceneNestContainerFor = function(tgt) { return sceneNestContainerFor.call(this, tgt); };
       proto.normalizeGroupOrder = function() { return normalizeGroupOrder.call(this); };
       proto.moveSelectedLayers = function(direction) { return moveSelectedLayers.call(this, direction); };
       proto.duplicateLayers = function(targetLayers, options) { return duplicateLayers.call(this, targetLayers, options); };

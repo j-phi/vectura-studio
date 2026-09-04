@@ -66,6 +66,11 @@
   --motion-modal-enter-dur: 220ms;
   --motion-toast-in-dur: 260ms;
   --motion-toast-out-dur: 200ms;
+  /* Contextual task bar: the dropdown carets pivot through 180° when the bar
+     crosses the midline and its menus swap between opening down and up. Eased
+     so the turn settles rather than snapping. */
+  --motion-ctxbar-caret-pivot-dur: 180ms;
+  --motion-ctxbar-caret-pivot-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
   /*
    * Foreground-on-accent tokens (CSS-5).

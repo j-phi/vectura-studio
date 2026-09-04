@@ -1,0 +1,42 @@
+{
+  "before-torus-taperedEnds": {
+    "wide": 32,
+    "ribbons": 16,
+    "degenerate": 16,
+    "noRing": 0,
+    "clipEmpty": 6,
+    "erodeEmpty": 10,
+    "regionRings": 3,
+    "regionArea": 2169.181
+  },
+  "before-torus-ampSpacing": {
+    "wide": 82,
+    "ribbons": 45,
+    "degenerate": 37,
+    "noRing": 0,
+    "clipEmpty": 18,
+    "erodeEmpty": 19,
+    "regionRings": 3,
+    "regionArea": 2169.181
+  },
+  "before-sphere-taperedEnds": {
+    "wide": 16,
+    "ribbons": 16,
+    "degenerate": 0,
+    "noRing": 0,
+    "clipEmpty": 0,
+    "erodeEmpty": 0,
+    "regionRings": 2,
+    "regionArea": 1962.88
+  },
+  "before-torus-open-hole": {
+    "wide": 0,
+    "ribbons": 0,
+    "degenerate": 0,
+    "noRing": 0,
+    "clipEmpty": 0,
+    "erodeEmpty": 0,
+    "regionRings": 0,
+    "regionArea": 0
+  }
+}

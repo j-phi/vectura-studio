@@ -237,14 +237,26 @@
   animation: ctxbar-pulse 500ms ease-in-out var(--ctxbar-pulse-count, 2);
   border-radius: inherit;
 }
+/* Dropdown caret pivot. The 180° rotation itself lives in components.css
+   because it encodes STATE (which way the menu opens); only the animation of
+   it belongs here, so the reduced-motion block below can remove the motion
+   without ever leaving an arrow pointing away from its menu. */
+.ctxbar-text-caret,
+.ctxbar-text-size-caret {
+  transition: transform var(--motion-ctxbar-caret-pivot-dur, 180ms)
+              var(--motion-ctxbar-caret-pivot-ease, ease);
+}
 @media (prefers-reduced-motion: reduce) {
   .ctxbar {
     transition: none;
     transform: translateY(0);
   }
   .ctxbar-pulse { animation: none; }
-  /* Add Layer dropdown's up/down caret flip (TB-3). */
-  .ctxbar-text-caret { transition: none; }
+  /* Dropdown caret up/down pivot: drop the TRANSITION only. The rotation is
+     the state, so it must survive — the arrow still points the way its menu
+     opens, it just gets there instantly. */
+  .ctxbar-text-caret,
+  .ctxbar-text-size-caret { transition: none; }
 }
 /* === END TB task-bar motion === */
 
