@@ -1,0 +1,85 @@
+{
+  "ver": "1.3.98",
+  "summary": {
+    "ver": "1.3.98",
+    "densityRatio": 3.059105615107416,
+    "overlapMeetsThreshold": true,
+    "apartOverlapRegionCount": 0,
+    "apartIsControl": true
+  },
+  "report": {
+    "overlap": {
+      "layerId": "8612d0f1-4ff7-4063-9eaf-45bb936f6fcc",
+      "total": 544,
+      "shadowPaths": 522,
+      "byDepth": {
+        "1": {
+          "area": 3234.549288399002,
+          "ink": 2028.9049221504085,
+          "regions": 3,
+          "density": 0.6272604747212405
+        },
+        "2": {
+          "area": 352.2814387010758,
+          "ink": 675.9773665563997,
+          "regions": 1,
+          "density": 1.91885604035469
+        }
+      },
+      "overlapRegionCount": 1,
+      "lensBB": {
+        "minx": 85.16479238471324,
+        "maxx": 99.5,
+        "miny": 95.71271933566513,
+        "maxy": 120.28728066433487
+      },
+      "singleBB": {
+        "minx": 93.60210528111926,
+        "maxx": 185.39789471888074,
+        "miny": 89.81482461678439,
+        "maxy": 126.18517538321561
+      },
+      "bb": {
+        "minx": 0,
+        "miny": 212.33333333333334,
+        "maxx": 764.6666666666666,
+        "maxy": 550.6666666666666
+      },
+      "cropCenterPx": {
+        "x": 107.29088066866603,
+        "y": 421.4999999999999
+      }
+    },
+    "apart": {
+      "layerId": "fb659570-7eb4-4d45-9a17-75cac81f1072",
+      "total": 768,
+      "shadowPaths": 746,
+      "byDepth": {
+        "1": {
+          "area": 4084.0503412803287,
+          "ink": 4687.209095806157,
+          "regions": 2,
+          "density": 1.1476864152308028
+        }
+      },
+      "overlapRegionCount": 0,
+      "lensBB": null,
+      "singleBB": {
+        "minx": 60.16479238471324,
+        "maxx": 160.39789471888074,
+        "miny": 126.676666609789,
+        "maxy": 163.04701737622025
+      },
+      "bb": {
+        "minx": 0,
+        "miny": 0,
+        "maxx": 588.3333333333334,
+        "maxy": 810.6666666666666
+      },
+      "cropCenterPx": {
+        "x": 233.89850935461104,
+        "y": 681.5147134130218
+      }
+    }
+  }
+}

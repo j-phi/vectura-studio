@@ -171,22 +171,27 @@ whole effort reads. Awaiting the user's verdict on the bench before investing.
 **Done when.** The user says the terminations read acceptably, or they are softened without
 reintroducing any crossing of the red-line rule (F7 must stay at 0 survivors).
 
-### C. Shadow overlap darkening  (`sf/shadow-overlap`, merged into `sf/preview`)
+### C. Shadow overlap darkening  (`sf/shadow-overlap`, merged into `sf/preview`) — **CLOSED**
 
-**⚑ KNOWN RED ON THIS BRANCH.** Merging this WIP makes
-`tests/unit/scene3d-hlr-spatial-index-identity.test.js > denseMixed-8obj-shadows` fail — the
-byte-identity guard for a shadows scenario. Unit on `sf/preview` is 4672 pass / **1 fail**; the same
-suite on `sf/integration` (without this merge) is 4669 / 0.
+**Resolved on `3d-scene/handoff-c`.** The `scene3d-hlr-spatial-index-identity.test.js` fingerprint
+this item warned about is already GREEN on this branch (6/6, including `denseMixed-8obj-shadows`) —
+`6c17709d` had already justified and recorded that move before this unit started; no fingerprint was
+touched here. The implementation was reviewed as if written by someone else
+(`docs/3d-audit/handoff/unit-c-review.md`): no defect found requiring a source change, only a
+low-severity observation (`overlapCfg()`'s `maxDepth`/`maxCasters` have no upper clamp, safe today
+only because `algorithm-tuning.js` freezes them and neither is UI-exposed).
 
-Read that failure as EVIDENCE, not noise: it proves the shadow code is live and genuinely changes
-shadow output, and equally that the change has never been validated. **Do not update the fingerprint
-to get green** — that certifies rendering nobody has reviewed. Resolve it as part of this item: once
-the overlap behaviour is reviewed and seen in the app, either the new fingerprint is justified and
-recorded with that justification, or the implementation is wrong and the guard caught it.
+The density test's non-vacuity was proven by mutation: patching `overlapFactor` to `return 1`
+(coincident-line behaviour) turns the ladder-monotonicity assertion AND the density assertion RED
+(density ratio drops to 1.15x, under the 1.25x bar); reverted, confirmed byte-identical to
+`d5af9e30` via `git diff`. Measured live in the app (`scripts/shadow-overlap-evidence.js`, two
+30mm boxes matching the test fixture, `shadowLayers: true`): overlap scene depth-2/depth-1 density
+ratio **3.06x** (threshold 1.25x); the `apart` control shows **zero** depth-2 regions. Screenshots
+and `stats.json` at `docs/3d-audit/handoff/unit-c/`.
 
-**Task.** Where two shadows overlap the region must read darker. Chosen mechanism: **denser hatching
-at the same angle**. Implementation, a test and a fixture exist and now pass 22/22 — but the
-implementation has never been reviewed and the result has never been seen in the app.
+**Task (as originally written, for context).** Where two shadows overlap the region must read darker.
+Chosen mechanism: **denser hatching at the same angle**. Implementation, a test and a fixture exist
+and pass 22/22.
 
 **TRAP.** The zone path phase-anchors rulings to an **absolute origin**, so two overlapping shadows
 emitted independently draw **coincident lines** — pixel-identical to one shadow. Darkening MUST come
