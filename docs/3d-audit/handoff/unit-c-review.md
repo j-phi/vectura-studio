@@ -138,3 +138,11 @@ darkening is measured and visible in the running app with real overlapping
 casters, against a control that shows no overlap and is not byte-identical
 to the overlap scene. Item C is closed with only the observation in point 3
 above logged for future attention (not a blocker).
+
+## Reviewer caveat (adversarial review, accepted)
+
+The evidence scenes run with `shadowLayers: true`, so both crops also carry the zone-anatomy
+crosshatch from each caster's own contact collar. `apart-crop.png` therefore shows crosshatch
+even though it has zero depth-2 regions. Do not read the pictures alone: the authoritative proof
+of overlap darkening is the density-by-depth grouping in `unit-c/stats.json` (depth-2/depth-1 =
+3.06x on the overlap scene, 0 depth-2 regions on the separated control).
