@@ -153,6 +153,13 @@ or completes.
   `parametricTube` (parallel-transport frames + depth occlusion); `perspectiveMesh`
   projection modes (polarTunnel, globeGrid, fisheye). Shared-infra prerequisites: an SDF
   library and a reusable glyph emitter.
+- **3D Scene Studio — discovery proposal complete; implementation not started.** Product
+  thesis, visual audit, detailed `SCE`/`SEL`/`STY`/`LGT`/`PEN`/`SYS` requirements, architecture,
+  and a phased parallel delivery plan live in
+  [`docs/3d-scene-studio-proposal.html`](docs/3d-scene-studio-proposal.html). Await product
+  approval before promoting Phase 0 (contracts, visual/export parity, and ownership
+  boundaries) into active work. Do not auto-migrate Spiralizer, Polyhedron, or Topoform;
+  require explicit conversion plus parity gates.
 - **Drag-to-mask layer assignment + richer silhouette providers** for currently open-line-only
   algorithms once their envelope rules are stable.
 - **Repo hygiene.** GitHub-side rulesets/branch protection, merge queue, Project fields once
