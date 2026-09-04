@@ -173,6 +173,17 @@ reintroducing any crossing of the red-line rule (F7 must stay at 0 survivors).
 
 ### C. Shadow overlap darkening  (`sf/shadow-overlap`, merged into `sf/preview`)
 
+**⚑ KNOWN RED ON THIS BRANCH.** Merging this WIP makes
+`tests/unit/scene3d-hlr-spatial-index-identity.test.js > denseMixed-8obj-shadows` fail — the
+byte-identity guard for a shadows scenario. Unit on `sf/preview` is 4672 pass / **1 fail**; the same
+suite on `sf/integration` (without this merge) is 4669 / 0.
+
+Read that failure as EVIDENCE, not noise: it proves the shadow code is live and genuinely changes
+shadow output, and equally that the change has never been validated. **Do not update the fingerprint
+to get green** — that certifies rendering nobody has reviewed. Resolve it as part of this item: once
+the overlap behaviour is reviewed and seen in the app, either the new fingerprint is justified and
+recorded with that justification, or the implementation is wrong and the guard caught it.
+
 **Task.** Where two shadows overlap the region must read darker. Chosen mechanism: **denser hatching
 at the same angle**. Implementation, a test and a fixture exist and now pass 22/22 — but the
 implementation has never been reviewed and the result has never been seen in the app.
