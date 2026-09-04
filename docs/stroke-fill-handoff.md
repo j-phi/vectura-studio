@@ -242,6 +242,25 @@ gap is quantified and recorded here.
 
 ---
 
+### G. Migration gates carried over from `plans.md`  (BINDING, not ours to waive)
+
+From the user's own `plans.md` entry on the 3D Scene Studio (commit `b7801f39` on `main`):
+
+> Do not auto-migrate **Spiralizer, Polyhedron, or Topoform**; require explicit conversion plus
+> parity gates.
+
+That constraint is still binding. Nothing in this effort touched those three algorithms, and nothing
+in it should be read as permission to fold them into the 3D scene system automatically. Any future
+"convert to scene" work on them needs explicit approval and a parity gate, not an inference from the
+fact that scene3d now exists.
+
+**One line of that same entry is now superseded by events:** it says the 3D Scene Studio proposal is
+"discovery proposal complete; implementation not started" and to "await product approval before
+promoting Phase 0 into active work." The implementation DID happen — 452 commits, merged to `main`
+in this round. The proposal document (`docs/3d-scene-studio-proposal.html`) remains the reference
+for intent. Left in place rather than deleted, because the migration constraint above sits in the
+same entry and must survive.
+
 ### Cross-cutting, applies to every item
 
 - **Harness-clean is not app-clean.** Every item closes with a real screenshot of the running app.
