@@ -159,6 +159,24 @@ torus first; RGR test red against `da683934`; the user confirms it by eye on the
 **Before you start:** re-read finding 2 at the top of this doc. If your fix removes geometry, the
 coverage helper may mis-score it exactly as it mis-scored self-occlusion.
 
+**Update (branch `3d-scene/handoff-b`, unit A session, `d5af9e30`): STILL OPEN, NOT a fill defect.**
+Reproduced (2.01 / 2.00 / 1.49 / 1.24 / 0.87 mm² of the same five, torus, this session's own
+measurement — RGR test `tests/unit/scene3d-ribbon-f1b-streaks.test.js`). The loop-hole-erosion
+working hypothesis this doc names above was tested with three separate, code-grounded fixes (a
+hole-boundary companion stroke, a fill-erosion depth fallback ladder, `PenFill.MAX_REPAIR_ROUNDS`
+4→16) — none moved the numbers by more than ~1%, and all were reverted. **Located instead** (raw
+`SurfaceFill.buildObject` output is fully inked at every streak location; `hlr.js`'s self-occlusion
+clip removes it as a FALSE POSITIVE — confirmed against the F7 test's own independent oracle,
+`scene3d-torus-hole-oracle.js`, which finds no genuine near/far overlap at those exact locations).
+One real, in-scope contributor was found and fixed (`zAlongRun` in `surface-fill.js` picking the
+wrong pass of a self-crossing centreline for a ring vertex's z, verified via `HLR.createClipper`
+hooking: 11→1 false-positive clip events at the two locations checked) but reverted anyway — it
+only reaches WITHIN-run self-crossings, and most of these five laws' "wide" stretches are
+**separate runs crossing each other in screen space**, which a per-run z fix cannot touch. Closing
+that residual, larger class needs `hlr.js`/`scene3d.js` changes to how occlusion is decided between
+independently emitted paths of the same object — explicitly out of scope for a `surface-fill.js`-
+only unit. Full trail: `docs/3d-audit/handoff/unit-a-notes.md`.
+
 ### B. Blunt band terminations at the clip boundary  (NEW, user-flagged)
 
 **Task.** Since self-occlusion landed, bands terminate where the near sheet cuts them with slightly
