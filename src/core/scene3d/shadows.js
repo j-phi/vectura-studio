@@ -2133,6 +2133,55 @@
     };
   };
 
+  // ── Overlapping shadows darken (sf/shadow-overlap) ────────────────────────
+  // Two casters whose footprints coincide used to lay EXACTLY the ink of one:
+  // `build()` unions every footprint in a style class, and union is idempotent.
+  // The fix is geometric, not tonal — the overlap is emitted as its OWN region
+  // (see `overlapLevels` in `build`) and ruled at a TIGHTER pitch in the SAME
+  // direction, so it reads as one deeper shadow rather than as crosshatch.
+  //
+  // WHY A TIGHTER PITCH AND NOT "EMIT IT TWICE"
+  // -------------------------------------------
+  // `familyRulings` phase-anchors every ruling to an ABSOLUTE origin
+  // (offset = idx * sp) precisely so neighbouring regions share one master
+  // grid. Two overlapping footprints emitted independently at the same angle
+  // and pitch therefore draw COINCIDENT lines — the same ink, no darker. Extra
+  // darkness can only come from a genuinely finer pitch.
+  //
+  // THE LADDER. pitch(n) = sBase / (1 + pitchStep*(n-1)), floored at the plot
+  // floor this file already enforces on every family (PLOT_FLOOR_MULT x
+  // penWidth = 1.2 x penWidth). The floor is what stops the densest overlap
+  // collapsing to solid black; past it, ruling closer floods the paper instead
+  // of darkening it (the §0 craft rule the zone ladder is built on). Constants
+  // live in src/config/algorithm-tuning.js -> scene3dShadowOverlap.
+  const OVERLAP_FALLBACK = { maxDepth: 3, pitchStep: 0.5, maxCasters: 8 };
+  const overlapCfg = () => {
+    const t = Vectura.AlgorithmTuning && Vectura.AlgorithmTuning.scene3dShadowOverlap;
+    if (!t) return OVERLAP_FALLBACK; // config not loaded — degrade, never guess wider
+    return {
+      maxDepth: Math.max(1, Math.round(finite(t.maxDepth, OVERLAP_FALLBACK.maxDepth))),
+      pitchStep: Math.max(0, finite(t.pitchStep, OVERLAP_FALLBACK.pitchStep)),
+      maxCasters: Math.max(1, Math.round(finite(t.maxCasters, OVERLAP_FALLBACK.maxCasters))),
+    };
+  };
+  // Density multiplier for an overlap of depth n (1 = a lone shadow). Clamped
+  // to the ladder's last rung so a pile of casters cannot run away.
+  const overlapFactor = (depth) => {
+    const n = Math.round(finite(depth, 1));
+    if (!(n > 1)) return 1;
+    const c = overlapCfg();
+    return 1 + c.pitchStep * (Math.min(n, c.maxDepth) - 1);
+  };
+  // The ladder itself. Returns `sp` UNCHANGED at depth <= 1 (identity, not a
+  // clamp) so a scene with no overlap is byte-identical to the pre-change
+  // renderer — including scenes whose base pitch already sits under the floor.
+  const overlapPitch = (sp, penWidth, depth) => {
+    const f = overlapFactor(depth);
+    if (!(f > 1)) return sp;
+    const floorSp = Math.max(0.05, PLOT_FLOOR_MULT * Math.max(0.05, finite(penWidth, 0.3)));
+    return Math.max(floorSp, sp / f);
+  };
+
   // Hatch a shadow polygon (rings = [outer, hole…]).
   //   layers off / draft / no fields → single flat hatch (the legacy path, and
   //   the Off/shadowToneDepth:0 compatibility contract — that combination must
@@ -2141,7 +2190,12 @@
   const emitShadowRegion = (rings, groundPlane, clipper, out, meta, treat, draft, cfg) => {
     if (!Array.isArray(rings) || !rings.length || !Array.isArray(rings[0]) || rings[0].length < 3) return;
     const { angle, coverage, penWidth, layers, layerCount, falloff } = cfg;
-    const sBase = coverageToSpacing(coverage, penWidth);
+    const sBase0 = coverageToSpacing(coverage, penWidth);
+    // Overlap darkening. `cfg.overlapDepth` is 1/absent everywhere except the
+    // pieces `build()` carved out of an intersection lattice, and `overlapPitch`
+    // is the identity there — so this line is inert on every single-caster and
+    // every non-overlapping scene.
+    const sBase = overlapPitch(sBase0, penWidth, cfg.overlapDepth);
     // Fill Style on the flat hatch: a law whose mark class isn't judged
     // applicable to a shadow (see TONE_MARK_APPLICABLE) falls back to plain
     // 'hatch' — the default toneLaw ('ladder') IS 'hatch', so this keeps the
@@ -2203,12 +2257,16 @@
     // compact footprint). Buying N = 2 costs at most the same headroom the cap
     // already budgets, so spend it there rather than leave the ladder flat.
     const floorSp = Math.max(0.05, PLOT_FLOOR_MULT * Math.max(0.05, penWidth));
-    const rungScale = sBase > 1e-6 ? (2 * floorSp) / sBase : 1;
+    const rungScale = sBase0 > 1e-6 ? (2 * floorSp) / sBase0 : 1;
     // The 1.25 ceiling was the old "Layers must never weaken the penumbra" rule.
     // That rule is what pinned Z2 at 0.44 and left the ladder no room; it is
     // deliberately relaxed here (see SATURATION) so the mid can come down.
-    const scale = clamp(Math.max(headroomScale(sBase, penWidth), rungScale), 1, 2.2);
-    const ladder = strideLadder(sBase * scale, penWidth);
+    const scale = clamp(Math.max(headroomScale(sBase0, penWidth), rungScale), 1, 2.2);
+    // The overlap step is applied AFTER the headroom/rung scale, never before:
+    // `rungScale` is 2*floorSp/sBase, i.e. inversely proportional to the pitch,
+    // so densifying sBase first is exactly cancelled by the scale it provokes
+    // (sBase*scale pins to 2*floorSp) and the zone ladder comes out identical.
+    const ladder = strideLadder(overlapPitch(sBase0 * scale, penWidth, cfg.overlapDepth), penWidth);
     const strideA = ladder.strideA;
     // C15 — the collar takes the tightest FAMILY PLAN that still leaves paper
     // showing: a stride on family A, and (only where A cannot discharge the
@@ -2304,7 +2362,10 @@
     }
   };
 
-  const shadowMeta = (rings, casterId, penId, depth) => ({
+  // `overlap` is the number of casters whose footprints cover this region (1
+  // for an ordinary shadow). Emitted into sceneTarget ONLY when it is > 1, so
+  // the meta of a non-overlapping shadow is byte-identical to before.
+  const shadowMeta = (rings, casterId, penId, depth, overlap) => ({
     algorithm: 'scene3d',
     kind: 'sceneFill',
     sceneTarget: {
@@ -2318,6 +2379,7 @@
       normal: { x: 0, y: 1, z: 0 },
       facingUp: true,
       occluded: false,
+      ...(overlap > 1 ? { shadowOverlap: overlap } : {}),
     },
     ...(penId ? { penId } : {}),
   });
@@ -2523,14 +2585,22 @@
     // Emit hatch (additive) OR thin the ground fill (inverse). One chokepoint so
     // every footprint path — draft hull, degrade fallback, full class union —
     // composes identically.
-    const compose = (rings, casterId, penId, contactSegs) => {
+    const compose = (rings, casterId, penId, contactSegs, overlapDepth) => {
+      const deep = overlapDepth > 1 ? overlapDepth : 1;
       if (inverse) {
-        if (groundFillSink) thinGroundFillInRings(groundFillSink, rings, invRemoveShare, invReplace, invAcc);
+        // Inverse (dark-paper) shadow thins the ground's OWN fill instead of
+        // adding hatch, so "darker" there means removing a larger share of it.
+        // Same ladder factor, so the two modes deepen by the same law.
+        const share = deep > 1 ? clamp(invRemoveShare * overlapFactor(deep), 0.02, 1) : invRemoveShare;
+        if (groundFillSink) thinGroundFillInRings(groundFillSink, rings, share, invReplace, invAcc);
         return;
       }
+      let regionCfg = cfg;
+      if (contactSegs && contactSegs.length) regionCfg = { ...regionCfg, contactSegs };
+      if (deep > 1) regionCfg = { ...regionCfg, overlapDepth: deep };
       emitShadowRegion(rings, groundPlane, clipper, out,
-        shadowMeta(rings, casterId, penFor(penId), groundDepth), shadowTreat, draftFrame,
-        contactSegs && contactSegs.length ? { ...cfg, contactSegs } : cfg);
+        shadowMeta(rings, casterId, penFor(penId), groundDepth, deep), shadowTreat, draftFrame,
+        regionCfg);
     };
     // Inverse mode erases the in-footprint portion of the chosen ground-fill
     // lines: splice each original out of the shared sink and splice its surviving
@@ -2768,6 +2838,50 @@
     const classList = [...classes.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     classList.forEach((cls) => { cls.geom = cls.geoms.length ? FillBoolean.union(...cls.geoms) : []; });
 
+    // ── Overlap lattice (sf/shadow-overlap) ───────────────────────────────────
+    // `cls.geom` above is the union, and union is IDEMPOTENT: two coincident
+    // footprints lay exactly the ink of one. So alongside it, build the
+    // MULTIPLICITY levels — `atLeast[n]` is the area covered by n or more of
+    // the class's casters — and hand each level's exact-n slice to `compose`
+    // with its depth, which rules it at a tighter pitch (`overlapPitch`).
+    //
+    // Built incrementally: for each caster geom g, atLeast[d] |= atLeast[d-1] & g
+    // walked DOWNWARD so a level is never intersected with the same caster
+    // twice. Cost is O(casters x maxDepth) booleans, and none of them run until
+    // a class actually holds two casters. `cls.geom` itself is left exactly as
+    // the n-ary union computed it — the level accumulator keeps its own copy —
+    // so the precedence subtraction and the collar see the same geometry they
+    // always did, bit for bit.
+    //
+    // Any boolean failure (FillBoolean.safeOp returns [] and latches the error)
+    // abandons the lattice for that class: it falls back to today's single
+    // union region rather than emitting a partial decomposition.
+    const OV = overlapCfg();
+    const boolOk = () => !(typeof FillBoolean.consumeLastOpError === 'function'
+      && FillBoolean.consumeLastOpError());
+    const overlapLevels = (geoms) => {
+      if (geoms.length < 2 || geoms.length > OV.maxCasters || OV.maxDepth < 2) return null;
+      const atLeast = [null, []];
+      for (let d = 2; d <= OV.maxDepth; d++) atLeast[d] = [];
+      for (let i = 0; i < geoms.length; i++) {
+        const g = geoms[i];
+        if (!g || !g.length) continue;
+        for (let d = OV.maxDepth; d >= 2; d--) {
+          const prev = atLeast[d - 1];
+          if (!prev || !prev.length) continue;
+          const hit = FillBoolean.intersection(prev, g);
+          if (!boolOk()) return null;
+          if (!hit.length) continue;
+          atLeast[d] = atLeast[d].length ? FillBoolean.union(atLeast[d], hit) : hit;
+          if (!boolOk()) return null;
+        }
+        atLeast[1] = atLeast[1].length ? FillBoolean.union(atLeast[1], g) : g;
+        if (!boolOk()) return null;
+      }
+      return (atLeast[2] && atLeast[2].length) ? atLeast : null;
+    };
+    classList.forEach((cls) => { cls.overlap = overlapLevels(cls.geoms); });
+
     // ── Occlusion collar (Layers ≥ 2 only) ────────────────────────────────────
     // A cast footprint only ever lies AWAY from the light, so on its own it can
     // never darken the lit side of the base — yet ambient occlusion does not care
@@ -2825,13 +2939,45 @@
         if (c && c.contact) contactSegs.push(...c.contact.segs);
       });
       // One region per polygon (outer + holes) so even-odd keeps holes empty.
-      geom.forEach((polygon) => {
-        const rings = (polygon || [])
-          .map((ring) => (ring || []).map((pt) => ({ x: pt[0], y: pt[1] })))
-          .filter((ring) => ring.length >= 3);
-        if (!rings.length) return;
-        compose(rings, casterId, cls.penId, contactSegs);
-      });
+      const emitGeom = (g, depth) => {
+        (g || []).forEach((polygon) => {
+          const rings = (polygon || [])
+            .map((ring) => (ring || []).map((pt) => ({ x: pt[0], y: pt[1] })))
+            .filter((ring) => ring.length >= 3);
+          if (!rings.length) return;
+          compose(rings, casterId, cls.penId, contactSegs, depth);
+        });
+      };
+      // Split the class footprint by overlap multiplicity, deepest rung first:
+      // atLeast[n] is nested (atLeast[n] contains atLeast[n+1]), so intersecting
+      // the running remainder with each level in descending order yields the
+      // EXACT-n slices, and whatever is left over is ordinary depth-1 shadow.
+      // The collar is unioned in above and is depth-1 wherever it falls outside
+      // the lattice, which is the honest reading: a contact collar is contact,
+      // not a second caster's shadow.
+      const levels = cls.overlap;
+      let split = false;
+      if (levels) {
+        const pieces = [];
+        let rest = geom;
+        for (let d = OV.maxDepth; d >= 2 && rest.length; d--) {
+          const lvl = levels[d];
+          if (!lvl || !lvl.length) continue;
+          const hit = FillBoolean.intersection(rest, lvl);
+          if (!boolOk()) { pieces.length = 0; break; }
+          if (!hit.length) continue;
+          const left = FillBoolean.difference(rest, lvl);
+          if (!boolOk()) { pieces.length = 0; break; }
+          pieces.push([hit, d]);
+          rest = left;
+        }
+        if (pieces.length) {
+          split = true;
+          pieces.forEach(([g, d]) => emitGeom(g, d));
+          if (rest.length) emitGeom(rest, 1);
+        }
+      }
+      if (!split) emitGeom(geom, 1);
     });
 
     return finalize();
@@ -2842,6 +2988,13 @@
   // paths (a pitch shows up as a spacing only where two rulings both survive
   // clipping). Exposed read-only, prefixed so it reads as a seam, not API.
   const __ladderForTest = (sBase, penWidth) => strideLadder(sBase, penWidth);
+
+  // Test seam #8 (sf/shadow-overlap). The overlap ladder is not observable from
+  // emitted paths either — a pitch only shows up as a spacing where two adjacent
+  // rulings both survive clipping, and the overlap slice is by construction a
+  // small, irregularly bounded piece. Exposed so a test can pin monotonicity and
+  // the plot floor directly instead of re-deriving the arithmetic.
+  const __overlapPitchForTest = (sBase, penWidth, depth) => overlapPitch(sBase, penWidth, depth);
 
   // Test seam #2 (C15, ROUND 7). The collar's plot-safety is a property of the
   // COMPOSED coverage of the families it actually emits — family A at its
@@ -2973,6 +3126,7 @@
       // makes the row inert). See the comment above its definition.
       shadowFillStyleApplies,
       __ladderForTest,
+      __overlapPitchForTest,
       __collarForTest,
       __shadowFieldsForTest,
       __toneGradientForTest,
@@ -2987,7 +3141,7 @@
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-      build, toneLawApplies, toneLawMarkClass, shadowFillStyleApplies, __ladderForTest, __collarForTest,
+      build, toneLawApplies, toneLawMarkClass, shadowFillStyleApplies, __ladderForTest, __overlapPitchForTest, __collarForTest,
       __shadowFieldsForTest, __toneGradientForTest, __ladderCoverageForTest, __gradedHatchForTest,
       __buildGradedSpacingForTest, __zoneModelForTest, __zoneAreaShareForTest, __emitShadowRegionForTest,
     };

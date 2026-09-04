@@ -1,0 +1,14 @@
+{
+  "single": {
+    "paths": 85,
+    "sha256": "3df5a408ccd890c13c07ddc1364ae1ff2677618f9e1c45a89bcddfdfb05aeb9c"
+  },
+  "apart": {
+    "paths": 170,
+    "sha256": "92d8162b11b03740c9fae315d47c58ae47c80af5498e0422687a1c3945b8eba5"
+  },
+  "overlap": {
+    "paths": 138,
+    "sha256": "f4cc6db445d9320be16cd406b92f113c900a952cf198350ad99d591046e1b21c"
+  }
+}
