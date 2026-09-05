@@ -194,6 +194,17 @@
   // region fills delegated to Scene3D.Mappers on the projected region polygon.
   const SURFACE_FILL = new Set(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
   const REGION_MAPPERS = new Set(['contour', 'spiral', 'stipple']);
+  // W-02 follow-up (drift guard) — the SAME five mappers are read by
+  // `SCENE_FILL_STYLES.isReachableOn` (src/config/context-bar.js) via
+  // `Vectura.Scene3D.Params.SURFACE_FILL_MAPPERS` (params.js), which used to be
+  // an independently hand-copied literal with nothing pinning the two lists
+  // equal. Exposing THIS Set (the engine's own dispatch gate, and now the
+  // file's only literal copy — see the highlightCfg altFillMapper clamp below,
+  // which used to declare a second one) gives params.js a live source to
+  // mirror instead of a floating duplicate. Read-only by convention (assigned
+  // once here, never reassigned) — not deep-frozen, since Set.prototype.add/
+  // delete are prototype methods Object.freeze does not intercept.
+  Scene3DNS.SURFACE_FILL_MAPPERS = SURFACE_FILL;
 
   // ── THE OBJECT PLOT FLOOR (§0 / C15) ───────────────────────────────────────
   //
@@ -2492,7 +2503,6 @@
       // the note on HIGHLIGHT_TREATMENTS in params.js. `keep` is accepted as a
       // silent alias so saved documents render identically.
       const HIGHLIGHT_TREATMENTS = ['blank', 'none', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
-      const ALT_FILL_MAPPERS = new Set(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
       const highlightCfg = (sp) => {
         const s = sp || {};
         const raw = s.highlightTreatment === 'keep' ? 'none' : s.highlightTreatment;
@@ -2508,7 +2518,14 @@
           bands: clamp(Math.round(finite(s.highlightBands, 1)), 1, 2),
           penId: (typeof s.highlightPenId === 'string' && s.highlightPenId) ? s.highlightPenId : null,
           density: clamp(finite(s.highlightDensity, 25), 1, 100),
-          altFillMapper: ALT_FILL_MAPPERS.has(s.altFillMapper) ? s.altFillMapper : 'stipple',
+          // W-02 follow-up (drift guard) — this used to be a SECOND literal
+          // Set([...same five mappers...]) alongside module-scope SURFACE_FILL
+          // (line ~195). Both answer "is this one of the five surface-fill
+          // mappers?"; reading SURFACE_FILL directly (same IIFE closure, in
+          // scope here) collapses the two to ONE literal, so they cannot drift
+          // apart. See SURFACE_FILL's own comment and the exported
+          // `Vectura.Scene3D.SURFACE_FILL_MAPPERS` mirror below.
+          altFillMapper: SURFACE_FILL.has(s.altFillMapper) ? s.altFillMapper : 'stipple',
           burstCount: clamp(Math.round(finite(s.burstCount, 16)), 6, 48),
           burstCenter: s.burstCenter === 'centroid' ? 'centroid' : 'specular',
         };

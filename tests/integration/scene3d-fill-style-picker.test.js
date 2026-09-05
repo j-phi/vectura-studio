@@ -619,6 +619,28 @@ describe('Fill Style — the shared mark-class config', () => {
         expect(F.isReachableOn('ladder', 'sphere', undefined, 'wireframe')).toBe(false);
         expect(F.isReachableOn('mkTick', 'sphere', undefined, 'hatch')).toBe(true);
       });
+
+      // ── Drift guard (W-02 reviewer follow-up) — params.js's
+      // SURFACE_FILL_MAPPERS (read by isReachableOn, proven live above) used to
+      // be an independently hand-copied literal with nothing pinning it equal
+      // to scene3d.js's own dispatch gate. scene3d.js now exposes that gate
+      // read-only as `Vectura.Scene3D.SURFACE_FILL_MAPPERS` (built from its
+      // single internal SURFACE_FILL const — the file's second, closure-local
+      // copy was deleted in favor of reading this same Set). This test is what
+      // actually catches a future drift: it fails the moment either list gains
+      // or loses a mapper without the other following.
+      test('scene3d.js\'s SURFACE_FILL_MAPPERS and params.js\'s SURFACE_FILL_MAPPERS name the same mappers', () => {
+        const engineGate = window.Vectura.Scene3D.SURFACE_FILL_MAPPERS;
+        const paramsGate = window.Vectura.Scene3D.Params.SURFACE_FILL_MAPPERS;
+        // Duck-typed, not `toBeInstanceOf(Set)` — the runtime is loaded into a
+        // jsdom window (a separate realm from this test file's own `Set`), so
+        // a same-shape Set built inside that window fails a bare `instanceof`
+        // check even though it is a genuine Set there.
+        expect(typeof engineGate.has).toBe('function');
+        expect(typeof paramsGate.has).toBe('function');
+        expect(engineGate.size).toBeGreaterThan(0);
+        expect([...engineGate].sort()).toEqual([...paramsGate].sort());
+      });
     });
   });
 
