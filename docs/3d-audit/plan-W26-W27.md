@@ -42,3 +42,9 @@ Stop if: refinement moves a point off the true surface >0.5 pen; HLR clip cost p
 
 ## Reviewer checklist
 1 uniform-field lemma asserted not assumed; 2 R1c + ink ±15% (no flattening); 3 vacuous pass guards + screenshot; 4 no weakened metric / fingerprint w/o proof; 5 W-26 must not touch :5084-5157; 6 tone transfer unchanged (same coverageForSample/zoneCoverage); 7 spiral: turn dropped vs pitch warped — 8.5/17.0 alternation gone; 8 coverage oracle check (handoff finding 2); 9 W-27 fitter gate untouched; 10 ring more accurate not just smoother; 11 evidence one pipeline one zoom 3.6 object-only; 12 settled items untouched (tone 39.4%, coverage contract, spiral default).
+
+## W-26 addendum (planner correction, 2026-09-05 evening)
+- Instrument `ladderKeeps` from a vitest file (wrap `SF.buildObject` as `scene3d-fill-even-spacing.test.js` does in its `emittedRuns` helper), NOT from a bare `node -e` (the runtime loader needs the harness).
+- Evidence gap: the coverages above (0.75 capsule barrel, 0.80 spiral) were INFERRED by matching pixel gap words to `ladderStep` run by hand from LADDER_PHASE0=0.5; shipped rungs are [0.2,0.5,0.85]. W-26's FIRST task: dump actual per-ruling `cov` and confirm (if the barrel reads 0.85 the mechanism is unchanged, the numbers differ).
+- `tests/unit/scene3d-fill-even-spacing.test.js` tolerates this defect by construction: it asserts |gap[i]−gap[i−1]| > 1 on KEPT-INDEX gaps (a 1 next to a 2 is allowed) and runs a light ladder [0.08,0.18,0.3,0.45] at Density 70, not the shipped default; its cylinder case passes even though the cylinder field is uniform (charts.js:89-95). W-26's red test supersedes that blind spot: pin the DRAWN projected gap ratio (max/min ≤ 1.15) on a proven-uniform field at the SHIPPED ladder and Density 50.
+- Reviewer checklist item 13: if the new test passes without `scene3d-fill-even-spacing` needing any edit, check it is measuring drawn spacing, not index gaps again.
