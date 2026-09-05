@@ -7,19 +7,19 @@
     "controlAsideDiffersFromShadowOn": true,
     "lawBDiffersFromLawAWithShadowOn": true,
     "perfSimpleMs": {
-      "off": 18.799999952316284,
-      "on": 81.40000009536743
+      "off": 20.899999856948853,
+      "on": 84.30000019073486
     },
     "perfDenseMs": {
-      "off": 22.699999809265137,
-      "on": 80.59999990463257,
-      "ratio": 3.5506608185844657
+      "off": 25.899999856948853,
+      "on": 84.79999995231628,
+      "ratio": 3.2741312903739197
     },
     "perfDenseWithinBudget": false
   },
   "stats": {
     "shadowOn": {
-      "layerId": "c6cff55f-b434-415e-8e8a-2f8bdd28d0b7",
+      "layerId": "bc0d11ce-29f3-46ef-960e-a9b8152c8214",
       "total": 238,
       "receiverFillCount": 27,
       "receiverInk": 1046.768168107767,
@@ -30,10 +30,10 @@
         "miny": 79.7157287525381,
         "maxy": 123.43085792293556
       },
-      "computeMs": 89.40000009536743
+      "computeMs": 93.79999995231628
     },
     "control1Aside": {
-      "layerId": "6c1ac31c-14a3-4c16-abed-fcdec8db4787",
+      "layerId": "d9e9d3e0-1053-4aa8-8a5c-1029c24508aa",
       "total": 233,
       "receiverFillCount": 22,
       "receiverInk": 871.1471433127934,
@@ -44,10 +44,10 @@
         "miny": 79.7157287525381,
         "maxy": 123.52896676442506
       },
-      "computeMs": 26.90000009536743
+      "computeMs": 27.5
     },
     "control2LawB": {
-      "layerId": "ab7d7a3e-e41b-4cd4-ac53-003ac55a7962",
+      "layerId": "34ba8c38-192c-453d-a71c-af9eb91af503",
       "total": 350,
       "receiverFillCount": 139,
       "receiverInk": 2204.004500148187,
@@ -58,16 +58,16 @@
         "miny": 79.7157287525381,
         "maxy": 122.89333661978534
       },
-      "computeMs": 822.4000000953674
+      "computeMs": 884.8999998569489
     },
     "perfSimple": {
-      "off": 18.799999952316284,
-      "on": 81.40000009536743
+      "off": 20.899999856948853,
+      "on": 84.30000019073486
     },
     "perfDense": {
-      "off": 22.699999809265137,
-      "on": 80.59999990463257,
-      "ratio": 3.5506608185844657
+      "off": 25.899999856948853,
+      "on": 84.79999995231628,
+      "ratio": 3.2741312903739197
     }
   }
 }

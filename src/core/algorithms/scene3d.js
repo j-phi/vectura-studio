@@ -1052,7 +1052,21 @@
         const IDS = (Vectura.SCENE3D_TONE_LAWS && Vectura.SCENE3D_TONE_LAWS.IDS) || null;
         return (!IDS || IDS.indexOf(asked) !== -1) ? asked : '';
       };
-      const spacingBand = (normalWorld, styleParams, worldPoint, face, record, opts) => {
+      // `perPointGrade` (Unit D judge follow-up, default false/undefined —
+      // every pre-existing call site is byte-identical): `recordBands` caches
+      // ONE band per face, sampled ONCE at that face's centroid, for the O20
+      // rank-spread mechanism (comparing a facet's intensity against its
+      // OBJECT'S OTHER FACETS — a discrete, per-facet concept that has no
+      // meaning for a continuous position WITHIN one face). Without this
+      // flag, that cache silently overrides whatever `worldPoint` this call
+      // passes — which is exactly why grading the shadow term by re-calling
+      // `spacingBand` at different points had NO effect until this was found:
+      // every call for a given face resolved to the SAME cached band no
+      // matter which point it asked about. `perPointGrade: true` skips the
+      // rank cache and always resolves the band from THIS point's own `I`
+      // via the plain threshold `Regions.band` — correct for a per-sample
+      // graded call, never for the ordinary one-sample-per-face path.
+      const spacingBand = (normalWorld, styleParams, worldPoint, face, record, opts, perPointGrade) => {
         const s0 = hatchSpacing(styleParams.fillDensity);
         if (!toneOn) return { spacing: s0, bandIdx: -1, terminator: false };
         // `toneLaw: 'none'` is STAGE 0 — the tone apparatus switched off — and it
@@ -1071,8 +1085,9 @@
         const I = intensityFn(normalWorld, worldPoint);
         // O20 — the object's own rank grade when the thresholds under-use the
         // ladder, the plain threshold band otherwise (and always, for a caller
-        // with no face/record to grade against).
-        const graded = (record && face) ? recordBands(record) : null;
+        // with no face/record to grade against). Skipped entirely under
+        // `perPointGrade` — see the comment on this function's signature.
+        const graded = (!perPointGrade && record && face) ? recordBands(record) : null;
         const bandIdx = (graded && graded.has(face)) ? graded.get(face) : Regions.band(I, p.tone);
         let gain = coverageGain(bandIdx);
         // shadowStage parity: the dark-side coverage boost was curved-path only, so
@@ -1616,9 +1631,76 @@
         // weight is the zone's own formInk.cross — a whole family for T, 0.40 of
         // one for F — so the dip between them is a property of the recipe, not
         // of how tightly the carrier happens to run at the limb.
-        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, crossW,
-          (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)), planeFor,
-          hatchFloorFor(styleParams.fillDensity));
+        //
+        // ── UNIT D JUDGE FOLLOW-UP — SPATIALLY RESOLVE THE SHADOW ON A FACE ────
+        //
+        // The judge's finding: `spacingBand` above samples `intensityFn` (and
+        // therefore the shadow term) ONCE at this face's centroid, so a big flat
+        // plane receiver got one uniform pitch shift over its ENTIRE surface —
+        // no localized patch, ON/OFF visually indistinguishable. Curved prims
+        // never had this bug (SurfaceFill.buildObject's sampleAt is per-sample);
+        // only this faceted per-region path did.
+        //
+        // Fix: when shadow-receive is live, re-derive each family's spacing as a
+        // FUNCTION of world position on this face's own plane (scaf.toWorld),
+        // fed to `Shadows.hatchRingsEvenOdd` — the exact marching-scan primitive
+        // the shadow's own tone gradient (buildGradedSpacing) already uses for
+        // this. Rulings stay unbroken; only the ruling-to-ruling PITCH tightens
+        // inside the shadow footprint, because the scan re-samples spacingBand
+        // at the true world point of each scanline crossing instead of once.
+        //
+        // This BYPASSES `planeFor`/`plan` (Round 10's "draw one ruling instead
+        // of none" narrow-facet grant): that grant bakes ONE scalar in-plane
+        // pitch per family from the DRY-RUN's scalar sample, which a per-point
+        // function cannot honor (planeFor would return the same f.plane for
+        // every point, silently flattening the grade straight back to uniform).
+        // Foreshortening compensation (`uvPitchFactor`) is applied directly
+        // instead — it is provably position-independent on a FLAT face (a pure
+        // function of angle + the scaffold), so dividing by it per family, once,
+        // is exact, not an approximation.
+        //
+        // Gated on `shadowReceiveOn` (default OFF) — every existing scene is
+        // byte-identical, unaffected by this branch entirely. Scope: family A
+        // (the carrier — always the dominant ink, and what a plain hatch/ladder
+        // law IS) and the automatic tone-driven second family (crosshatch's
+        // cross-pass, or the dark-zone extra direction) are both graded;
+        // tripleHatch's third pass reuses family B's grade (same ratio) rather
+        // than a fourth independent sample, an acceptable simplification for a
+        // rare combination. `faceMonoLines` (mono tone laws) and
+        // `faceLightDrivenLines` (I8 lightDriven highlight) are NOT graded —
+        // out of scope for this fix; they still sample once at the centroid.
+        const gradeShadow = shadowReceiveOn && toneOn && scaf
+          && Shadows && typeof Shadows.hatchRingsEvenOdd === 'function';
+        if (gradeShadow) {
+          const spacingAtWorld = (x, y) => spacingBand(
+            normalWorld, styleParams, scaf.toWorld({ x, y }), face, record, hlOpts, true,
+          ).spacing;
+          const gradedPush = (deg, screenAt, floor, baseHintScalar) => {
+            const k = uvPitchFactor(scaf, deg);
+            const fn = (x, y) => Math.max(finite(floor, 0.05) || 0.05, screenAt(x, y) / k);
+            fn.baseHint = Math.max(finite(floor, 0.05) || 0.05, baseHintScalar / k);
+            maybeLink(Shadows.hatchRingsEvenOdd([scaf.uv], deg, fn), styleParams)
+              .forEach((l) => uvLines.push(l));
+          };
+          gradedPush(baseAngle, spacingAtWorld, hatchFloorFor(styleParams.fillDensity), spacing);
+          const w = clamp(finite(crossW, 0), 0, 1);
+          if (crossPass) {
+            const delta = clamp(finite(styleParams.crossAngleDelta, 90), 10, 170);
+            const ratio = clamp(finite(styleParams.crossDensityRatio, 1), 0.25, 2);
+            const spacingAtRatio = (x, y) => spacingAtWorld(x, y) * ratio;
+            gradedPush(baseAngle + delta, spacingAtRatio, undefined, spacing * ratio);
+            if (styleParams.tripleHatch === true && w >= 1) {
+              gradedPush(baseAngle + CROSS_OBJ_DEG_C, spacingAtRatio, undefined, spacing * ratio);
+            }
+          } else if (w > 0) {
+            const spacingAtCross = (x, y) => spacingAtWorld(x, y) / w;
+            gradedPush(baseAngle + CROSS_OBJ_DEG_B, spacingAtCross, crossFloorFor(styleParams.fillDensity), spacing / w);
+          }
+        } else {
+          crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, crossW,
+            (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)), planeFor,
+            hatchFloorFor(styleParams.fillDensity));
+        }
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
 

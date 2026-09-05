@@ -1,0 +1,41 @@
+{
+  "ver": "1.3.98",
+  "stats": {
+    "on": {
+      "layerId": "21a390da-95e0-486f-a757-b9a91c24b7cc",
+      "total": 138,
+      "receiverFillCount": 102,
+      "computeMs": 3.6999998092651367,
+      "casterBB": {
+        "minx": 170.24730196492297,
+        "maxx": 221.51581252938604,
+        "miny": 47.078887252926584,
+        "maxy": 111.61546998185449
+      }
+    },
+    "aside": {
+      "layerId": "5da223cd-cbe3-4a2b-afce-aec6e223755c",
+      "total": 116,
+      "receiverFillCount": 80,
+      "computeMs": 2,
+      "casterBB": {
+        "minx": 489.74279303213183,
+        "maxx": 541.0113035965949,
+        "miny": -35.148332047385,
+        "maxy": 29.3882506815429
+      }
+    },
+    "off": {
+      "layerId": "a69eeb24-4669-4814-91a6-d15210880bc7",
+      "total": 132,
+      "receiverFillCount": 96,
+      "computeMs": 1.5999999046325684,
+      "casterBB": {
+        "minx": 170.24730196492297,
+        "maxx": 221.51581252938604,
+        "miny": 47.078887252926584,
+        "maxy": 111.61546998185449
+      }
+    }
+  }
+}

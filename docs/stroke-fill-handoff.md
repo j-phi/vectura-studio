@@ -257,6 +257,35 @@ existed), and area lights lose their entire N-sample softening under occlusion (
 `combinedIntensity` runs before the area-light averaging loop) — both now stated as known gaps, not
 implemented here.
 
+**Judge rejection + fix (third commit).** The judge REJECTED the above: a box caster over a big flat
+plane receiver (hatch/ladder, elevation 25) showed ink shifting UNIFORMLY across the whole plane,
+including far corners — no localized patch, ON/OFF visually indistinguishable. Root cause: the
+FACETED path's `spacingBand` (`scene3d.js`) samples `intensityFn` — and therefore `shadowFn` — ONCE
+at a face-region's centroid; a plane is one face, so its entire surface got one uniform shift. Fixed
+by feeding `Shadows.hatchRingsEvenOdd` (newly exported; the same marching-scan primitive
+`buildGradedSpacing` already uses) a per-point spacing function for the faceted hatch's carrier and
+automatic second family, bypassing the scalar `planeFor`/`plan` narrow-facet grant that cannot honor
+a per-point function. A SECOND, independent bug was found while verifying this: `recordBands`'s O20
+rank-grade cache also samples ONE band per face at its centroid and silently overrode any per-point
+value; fixed via a new `perPointGrade` flag on `spacingBand` that skips the cache (every existing
+call site is byte-identical). RGR: `tests/unit/scene3d-shadow-receive.test.js` gained a box+plane
+describe block — an independent ray/AABB oracle proves inside/outside density clears 1.5x with the
+flag ON (measured ~2.4x with a stark ladder) and stays uniform (0.7-1.3x) with it OFF; a second pin
+(`VECTURA_PRE_FACETGRADE=1` on `2893d842`) reproduces the judge's exact defect (ratio 0.84, RED).
+
+**Honest visual finding (not fully resolved).** Re-shot the judge's exact scene
+(`scripts/shadow-receive-plane-evidence.js`) and looked at the crops directly: with the SHIPPED
+DEFAULT tone ladder, **no visible dark patch, no visible straight edge** — the fix is numerically
+real (confirmed by the oracle and by a pixel count under a higher-contrast ladder, ~1.4x more ink in
+the same window) but reads as a diffuse density gradient along a band, not a crisp 2D footprint —
+`hatchRingsEvenOdd`'s marching scan varies spacing only along the perpendicular axis, uniformly
+across each ruling's full length, so a genuinely bounded patch would need the shadow's own silhouette
+clipped into the fill topology (a materially larger change, out of scope here). **The "visible dark
+patch with a straight-edged footprint" acceptance bar is therefore NOT met at default settings** —
+stated plainly rather than tuned away. See `docs/3d-audit/handoff/unit-d-notes.md` for the full
+writeup, pixel numbers, and re-measured performance (box+plane ~2.3x, dense scene ~3.3x, both still
+low-double-digit ms in absolute terms; flag stays OFF by default).
+
 ### E. Expand fidelity on two laws  (plan F5, plus the lying counter)
 
 **Task.** After "Expand into group", `interlockWeave` differs from the live render on 6% of the frame

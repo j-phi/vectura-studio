@@ -3115,6 +3115,14 @@
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, {
     Shadows: {
       build,
+      // Unit D judge follow-up — exported so scene3d.js's FACETED hatch path
+      // (faceHatchLines) can spatially resolve the shadow-receive term on a
+      // face-region (a box/plane/pyramid face, or a big flat ground plane)
+      // instead of sampling intensity once at the region's centroid. Same
+      // even-odd marching-scan primitive the shadow's own tone gradient
+      // already uses (buildGradedSpacing); zero behavior change for every
+      // existing caller of this module — this is a pure additional export.
+      hatchRingsEvenOdd,
       // Fill Style (tone-law) on shadow hatch: `toneLawApplies(lawId)` is the
       // predicate a UI picker should gate on (hide ids whose mark class does
       // not change shadow geometry); `toneLawMarkClass` is the underlying
