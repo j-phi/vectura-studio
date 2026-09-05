@@ -1,0 +1,46 @@
+{
+  "id": "W-19",
+  "title": "Flow-field singularity control for etfKang / defectSplit on torus and cone (F-18)",
+  "branch": "3d-scene/fill-audit-c",
+  "commit": "03783afe",
+  "before": [
+    "shots/B/torus__hatch__etfKang__med__a.webp",
+    "shots/B/torus__hatch__defectSplit__med__a.webp",
+    "shots/B/torus__hatch__etfKang__low__a.webp",
+    "shots/B/torus__hatch__etfKang__max__a.webp",
+    "shots/B/torus__hatch__defectSplit__low__a.webp",
+    "shots/B/torus__hatch__defectSplit__max__a.webp",
+    "shots/B/cone__hatch__etfKang__med__a.webp",
+    "shots/B/cone__hatch__etfKang__low__a.webp",
+    "shots/B/cone__hatch__etfKang__max__a.webp",
+    "shots/B/cone__hatch__defectSplit__med__a.webp",
+    "shots/B/cone__hatch__defectSplit__low__a.webp",
+    "shots/B/cone__hatch__defectSplit__max__a.webp",
+    "shots/B/sphere__hatch__etfKang__med__a.webp"
+  ],
+  "after": [
+    "after/W-19/shots/B/torus__hatch__etfKang__med__a.webp",
+    "after/W-19/shots/B/torus__hatch__defectSplit__med__a.webp",
+    "after/W-19/shots/B/torus__hatch__etfKang__low__a.webp",
+    "after/W-19/shots/B/torus__hatch__etfKang__max__a.webp",
+    "after/W-19/shots/B/torus__hatch__defectSplit__low__a.webp",
+    "after/W-19/shots/B/torus__hatch__defectSplit__max__a.webp",
+    "after/W-19/shots/B/cone__hatch__etfKang__med__a.webp",
+    "after/W-19/shots/B/cone__hatch__etfKang__low__a.webp",
+    "after/W-19/shots/B/cone__hatch__etfKang__max__a.webp",
+    "after/W-19/shots/B/cone__hatch__defectSplit__med__a.webp",
+    "after/W-19/shots/B/cone__hatch__defectSplit__low__a.webp",
+    "after/W-19/shots/B/cone__hatch__defectSplit__max__a.webp",
+    "after/W-19/shots/B/sphere__hatch__etfKang__med__a.webp"
+  ],
+  "notes": "PARTIAL fix — one of two defects resolved. defectSplit: lawDefect placed its two 'on the silhouette' defects at cx + nx*C.R*0.99, correct only when C.R approximates the body's screen footprint (true for sphere/ellipsoid, this law's design case). On a torus C.R measured 9.1 against a true footprint half-extent of 28, so the defects landed 9 units out on a body extending to 28 -- deep inside the visible tube, producing a visible target whorl (bottom) and X-saddle (top), confirmed in the before screenshot. Fixed by marching C.inv outward from centre to the TRUE edge (new edgeAt helper) instead of assuming a spherical radius. The after screenshot shows the swirl moved out to the rim and the tube now reads as a coherent wound pattern. etfKang: pre-fix torus measured 6 winding-number singularities (bar <=2); two attempts (more Kang smoothing passes; seeding from the chart's own tangent) were both tried and rejected (see commit body / surface-fill-mono.js's own comment) -- lawEtf ships unchanged, confirmed by byte-identical re-shoots on torus/cone/sphere. The whorl/saddle on torus and the central ridge on cone are both still visible in the after images, unchanged from before.",
+  "tests": {
+    "red": "defectSplit: torus singularities do not land inside the tube's central third -- 1 singularities landed in the central third: expected 1 to be +0",
+    "green": "tests/unit/scene3d-mono-substrate.test.js: Test Files 1 passed (1), Tests 12 passed (12) -- 4 new (3 defectSplit + 1 etfKang baseline) + 8 pre-existing",
+    "suites": "scene3d-mono-substrate.test.js 12/12; scene3d-origin-spiral-tonal-range.test.js 6/6; scene3d-mono-wrap-foreshorten.test.js 3/3; scene3d-hlr-spatial-index-identity.test.js 6/6 (byte-identity guard untouched)"
+  },
+  "byte_identical_pairs": [
+    "torus/cone/sphere__hatch__etfKang__{low,med,max}__a.webp: byte-identical before/after (confirmed via md5) -- lawEtf's algorithm is untouched by this pass; the two tuning attempts (more Kang passes, chart-tangent seeding) were both measured and rejected before shipping, documented in the commit body and in surface-fill-mono.js's own Kang-loop comment.",
+    "KNOWN OPEN: etfKang's torus whorl/saddle (still 4-6 winding-number singularities depending on tuning, none of which reads visibly different from the pre-fix screenshot) and its cone axis ridge (46.9 degrees of cross-axis direction change, bar 15) are NOT fixed by this pass. Recommending a follow-up finding for a from-scratch redesign of lawEtf's seed signal on non-simply-connected (torus) and uniformly-foreshortened (cone) silhouettes."
+  ]
+}
