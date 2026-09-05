@@ -211,18 +211,112 @@
   //
   // Refinement is ADAPTIVE, not a fixed round count: each round the max
   // exterior turning angle across the ring is re-measured, and another round
-  // of subdivision runs only if it still exceeds R2's 12° ceiling — so a
+  // of subdivision runs only if it still exceeds R2's 8° ceiling — so a
   // finely-tessellated equator ring (already smooth) does zero extra work and
   // a sparse pole ring gets exactly as many rounds as it needs, capped so a
   // pathological input can't hang.
-  const SLICE_REFINE_MAX_ANGLE_DEG = 12;
-  const SLICE_REFINE_MAX_ROUNDS = 6;
+  //
+  // W-27b — Catmull-Rom alone still reads as a rounded N-gon (interpolating
+  // MESH-CHORD points, which are themselves strictly inside the true surface,
+  // caps how circular the result can look no matter how many samples are
+  // inserted). Where the object's primitive has a known closed-form implicit
+  // surface (sphere/ellipsoid/cylinder/cone/torus), every point — original AND
+  // newly-inserted — is snapped onto that TRUE surface each round, then
+  // projected back onto the cutting plane (which is fixed in world space), by
+  // `sliceAnalyticProjector`. This turns "smoother polygon" into "the true
+  // curve": see its own comment below for the per-primitive correction and
+  // `refineSliceRing`'s `opts.analyticProject` for how it is threaded through
+  // subdivision. Primitives without an implemented closed form (capsule,
+  // superellipsoid, torusKnot) keep the Catmull-Rom-only behaviour.
+  const SLICE_REFINE_MAX_ANGLE_DEG = 8;
+  const SLICE_REFINE_MAX_ROUNDS = 8;
+
+  // Undo Scene.applyObjectTransform (scale → rotate(yaw,pitch,roll) → translate)
+  // to bring a WORLD point into the object's LOCAL space, where the primitive's
+  // implicit surface equation is simple. Non-uniform scale (sx/sy/sz, falling
+  // back to the uniform `scale`) mirrors applyObjectTransform exactly.
+  const sliceInverseObjectTransform = (worldPt, t) => {
+    const s = finite(t.scale, 1);
+    const sx = finite(t.sx, s) || 1;
+    const sy = finite(t.sy, s) || 1;
+    const sz = finite(t.sz, s) || 1;
+    const px = worldPt.x - finite(t.x, 0);
+    const py = worldPt.y - finite(t.y, 0);
+    const pz = worldPt.z - finite(t.z, 0);
+    // Inverse of rotatePoint's yaw→pitch→roll composition: undo roll, then
+    // pitch, then yaw (reverse order, negated angles).
+    const yaw = ((finite(t.yaw, 0) * Math.PI) / 180);
+    const pitch = ((finite(t.pitch, 0) * Math.PI) / 180);
+    const roll = ((finite(t.roll, 0) * Math.PI) / 180);
+    let x = px; let y = py; let z = pz;
+    let c = Math.cos(-roll); let s2 = Math.sin(-roll);
+    [x, y] = [x * c - y * s2, x * s2 + y * c];
+    c = Math.cos(-pitch); s2 = Math.sin(-pitch);
+    [y, z] = [y * c - z * s2, y * s2 + z * c];
+    c = Math.cos(-yaw); s2 = Math.sin(-yaw);
+    [x, z] = [x * c + z * s2, -x * s2 + z * c];
+    return { x: x / sx, y: y / sy, z: z / sz };
+  };
+
+  // Snap a LOCAL point near a chart-wrapped primitive's surface exactly ONTO
+  // that surface's implicit equation, changing it as little as possible.
+  // Returns null for primitives with no closed form implemented here (the
+  // caller then leaves the point as the Catmull-Rom subdivision produced it).
+  // Axis conventions match charts.js exactly (Y is the pole/height axis for
+  // every one of these primitives).
+  const sliceAnalyticProjectLocal = (mode, sizes, p) => {
+    const sx = sizes.sx || 1; const sy = sizes.sy || 1; const sz = sizes.sz || 1;
+    if (mode === 'sphere') {
+      // topoSphereEllipsoid: (x/sx)²+(y/sy)²+(z/sz)²=1 (sphere: sx=sy=sz=r).
+      // Hold LOCAL z fixed and solve x,y exactly on the ellipsoid at that z —
+      // for the default sliceRotate/Tilt=0 (world-Z-const planes) on an
+      // UNROTATED object, local z IS the cutting coordinate, so this lands
+      // exactly on the true plane∩surface curve with no plane-reclamp drift
+      // (unlike normalizing the full 3D vector, which moves z too and only
+      // approximately restores it afterward).
+      const rem = Math.max(0, 1 - (p.z / sz) ** 2);
+      const qx = p.x / sx; const qy = p.y / sy;
+      const cur = Math.hypot(qx, qy) || 1e-9;
+      const k = Math.sqrt(rem) / cur;
+      return { x: p.x * k, y: p.y * k, z: p.z };
+    }
+    if (mode === 'cylinder') {
+      // topoCylinder: (x/sx)²+(z/sz)²=1, y free (the axis).
+      const qx = p.x / sx; const qz = p.z / sz;
+      const n = Math.hypot(qx, qz) || 1e-9;
+      return { x: (qx / n) * sx, y: p.y, z: (qz / n) * sz };
+    }
+    if (mode === 'cone') {
+      // topoCone: y=(u-0.5)*sy*2, r(u)=sx*(1-u) ⇒ r(y) = sx*(0.5 - y/(2*sy)).
+      const r = Math.max(0, sx * (0.5 - p.y / (2 * sy)));
+      const cur = Math.hypot(p.x, p.z) || 1e-9;
+      const k = r / cur;
+      return { x: p.x * k, y: p.y, z: p.z * k };
+    }
+    if (mode === 'torus') {
+      // topoTorus: main-circle radius `major`, tube radius `minor`, tube
+      // cross-section (planarRadius-major)² + y² = minor² around the Y axis.
+      const major = Math.max(2, sx * 0.75);
+      const minor = Math.max(1, Math.min(sy, sz) * 0.28);
+      const a = Math.atan2(p.z, p.x);
+      const pr = Math.hypot(p.x, p.z);
+      const dx = pr - major; const dy = p.y;
+      const n = Math.hypot(dx, dy) || 1e-9;
+      const prC = major + (dx / n) * minor;
+      const yC = (dy / n) * minor;
+      return { x: Math.cos(a) * prC, y: yC, z: Math.sin(a) * prC };
+    }
+    return null; // ellipsoid handled by 'sphere' branch via TOPOFORM_MODES; others: no closed form yet
+  };
   // Deliberately NOT Params.CURVED_FILL_PRIMITIVES — see the pass's own comment
   // at its use site. `pyramid` is chart-wrapped but flat-faced (a real polygon
   // cross-section), so it stays excluded here exactly as it is excluded from
   // `hasRoundedContour`, without importing that set and its fill-routing
-  // coupling into this independent slicing pass.
-  const SLICE_SMOOTH_EXCLUDED = new Set(['box', 'plane', 'solid', 'pyramid']);
+  // coupling into this independent slicing pass. `solid` is NOT listed here —
+  // it covers both hand-picked FACETED polyhedra and solidType:'importedMesh'
+  // (an OBJ/STL import, possibly smooth), so that one is decided per-object
+  // at the pass's use site, not statically.
+  const SLICE_SMOOTH_EXCLUDED = new Set(['box', 'plane', 'pyramid']);
 
   const sliceRingTurnDeg = (a, b, c) => {
     const v1x = b.x - a.x; const v1y = b.y - a.y; const v1z = b.z - a.z;
@@ -304,12 +398,18 @@
   // Returns a NEW array; the input is never mutated. Gated by the caller on
   // surface smoothness — this function itself has no opinion about that.
   const refineSliceRing = (worldPts, opts = {}) => {
-    if (!Array.isArray(worldPts) || worldPts.length < 4) return worldPts;
+    // >=3, not >=4: a raw 3-vertex triangle (a real, if minimal, ring — the
+    // sparsest pole-adjacent case) still has a real angle to fix. Only an
+    // unusable 0/1/2-point input bails here; a 2-DISTINCT-point closed stub
+    // (seam artefact) is caught below, after dedup, where it belongs.
+    if (!Array.isArray(worldPts) || worldPts.length < 3) return worldPts;
     const maxAngle = Number.isFinite(opts.maxAngleDeg) ? opts.maxAngleDeg : SLICE_REFINE_MAX_ANGLE_DEG;
     const maxRounds = Number.isFinite(opts.maxRounds) ? opts.maxRounds : SLICE_REFINE_MAX_ROUNDS;
+    const analyticProject = typeof opts.analyticProject === 'function' ? opts.analyticProject : null;
     const first = worldPts[0];
     const last = worldPts[worldPts.length - 1];
-    const closed = Math.hypot(first.x - last.x, first.y - last.y, first.z - last.z) < 1e-6;
+    const closed = worldPts.length >= 4
+      && Math.hypot(first.x - last.x, first.y - last.y, first.z - last.z) < 1e-6;
     let base = closed ? worldPts.slice(0, -1) : worldPts.slice();
     // A mesh seam (e.g. a sphere's u=0/u=1 longitude fold) can hand linkSegments
     // two crossing points a fraction of a micron apart. The 4-point scheme is
@@ -332,9 +432,19 @@
     }
     base = deduped;
     if (base.length < 3) return worldPts;
+    // Snap the ORIGINAL vertices onto the true surface too — they are exact
+    // mesh-chord crossings (inside the surface), not on it, and a 3-point
+    // triangle needs this correction even more than a dense ring, since with
+    // so few points every one of them dominates the visible shape.
+    if (analyticProject) base = base.map((pt) => analyticProject(pt) || pt);
     let round = 0;
     while (round < maxRounds && sliceRingMaxTurn(base, closed) > maxAngle) {
       base = sliceRingSubdivideOnce(base, closed);
+      // Every newly-inserted midpoint is a Catmull-Rom interpolation between
+      // surface points, so it is only APPROXIMATELY on the true surface —
+      // snap it back each round so the ring converges to the true curve
+      // instead of to a smoother-but-still-approximate polygon.
+      if (analyticProject) base = base.map((pt) => analyticProject(pt) || pt);
       round += 1;
     }
     return closed ? [...base, { ...base[0] }] : base;
@@ -3548,11 +3658,49 @@
             });
             // W-27: is this object's SURFACE actually round? See
             // SLICE_SMOOTH_EXCLUDED above the pass for why this is deliberately
-            // a separate predicate from Params.CURVED_FILL_PRIMITIVES.
-            const smoothSurface = !SLICE_SMOOTH_EXCLUDED.has(record.primitive) && record.id !== 'ground';
+            // a separate predicate from Params.CURVED_FILL_PRIMITIVES. 'solid'
+            // covers both hand-picked FACETED polyhedra (buckyball, star, …
+            // real flat faces — stay excluded) and solidType:'importedMesh'
+            // (an OBJ/STL import or a baked Convert-to-Scene bake, which may be
+            // smooth) — only the former is actually faceted, so 'solid' is
+            // excluded HERE, per-object, rather than in the static set.
+            const chartObj = objById.get(record.id);
+            const solidFaceted = record.primitive === 'solid'
+              && (!chartObj || (chartObj.params && chartObj.params.solidType) !== 'importedMesh');
+            const smoothSurface = !SLICE_SMOOTH_EXCLUDED.has(record.primitive) && !solidFaceted
+              && record.id !== 'ground';
+            // W-27b — closed-form surface snap for the primitives it's
+            // implemented for (see sliceAnalyticProjectLocal); everything else
+            // (capsule/superellipsoid/torusKnot, and any 'solid' — imported
+            // meshes have no known implicit equation here) falls back to
+            // Catmull-Rom-only smoothing via a null analyticProject.
+            const chart = (smoothSurface && chartObj) ? curvedChartParams(chartObj) : null;
+            let analyticProject = null;
+            if (chart && chartObj && chartObj.transform) {
+              const t = chartObj.transform;
+              const ayr = (finite(sp.sliceRotate, 0) * Math.PI) / 180;
+              const apr = (finite(sp.sliceTilt, 0) * Math.PI) / 180;
+              const acy = Math.cos(ayr); const asy = Math.sin(ayr);
+              const acp = Math.cos(apr); const asp = Math.sin(apr);
+              const anx = -asy * acp; const any = asp; const anz = acy * acp;
+              analyticProject = (worldPt) => {
+                const local = sliceInverseObjectTransform(worldPt, t);
+                const correctedLocal = sliceAnalyticProjectLocal(chart.mode, chart.sizes, local);
+                if (!correctedLocal) return null;
+                const cw = Vectura.Scene3D.Scene.applyObjectTransform(correctedLocal, t);
+                // Re-clamp onto the cutting plane along its own normal — the
+                // surface snap moves the point off-plane by a tiny amount.
+                const d0 = worldPt.x * anx + worldPt.y * any + worldPt.z * anz;
+                const dc = cw.x * anx + cw.y * any + cw.z * anz;
+                const diff = dc - d0;
+                return { x: cw.x - diff * anx, y: cw.y - diff * any, z: cw.z - diff * anz };
+              };
+            }
             const linkPlane = (segs) => {
               const rings = linkSegments ? linkSegments(segs) : segs.map((e) => [e[0], e[1]]);
-              return smoothSurface ? rings.map((ring) => refineSliceRing(ring)) : rings;
+              return smoothSurface
+                ? rings.map((ring) => refineSliceRing(ring, analyticProject ? { analyticProject } : undefined))
+                : rings;
             };
             const projectPath = (worldPts) => {
               const proj = [];

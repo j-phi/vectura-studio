@@ -381,27 +381,47 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
     // worst case the plan measured at 45-60°.
     const poleRing = () => ringsByPlane.get(1)[0];
 
+    // W-27b: the closed-form sphere/ellipsoid correction actually wired into
+    // scene3d.js's contourSlice pass (sliceAnalyticProjectLocal, mode
+    // 'sphere') — holds z fixed, solves x,y exactly on the sphere at that z.
+    // Reproduced here (not re-exported) so this suite can drive
+    // `Slices.refineRing`'s public `analyticProject` option directly, the same
+    // way the pass does internally, for an identity (untransformed) sphere.
+    const sphereAnalyticProject = (pt) => {
+      const rem = Math.max(0, 1 - (pt.z / RADIUS) ** 2);
+      const cur = Math.hypot(pt.x / RADIUS, pt.y / RADIUS) || 1e-9;
+      const k = Math.sqrt(rem) / cur;
+      return { x: pt.x * k, y: pt.y * k, z: pt.z };
+    };
+    const REFINE_OPTS = { analyticProject: sphereAnalyticProject, maxAngleDeg: 8 };
+
     test('sanity: the RAW pole-adjacent ring is sparse and sharply polygonal (today\'s defect)', () => {
       const raw = poleRing();
       expect(raw.length).toBeGreaterThanOrEqual(4); // at least a closed triangle
-      expect(maxTurnDeg(raw)).toBeGreaterThan(20); // well above the 12° ceiling
+      expect(maxTurnDeg(raw)).toBeGreaterThan(20); // well above the 8° ceiling
     });
 
-    test('refineRing brings every REAL ring\'s max exterior turning angle to ≤12°', () => {
+    test('refineRing brings every REAL ring\'s max exterior turning angle to ≤8°', () => {
       const Slices = V.Scene3D.Slices;
       expect(typeof Slices.refineRing).toBe('function');
       let realRingsChecked = 0;
       ringsByPlane.forEach((rings) => {
         rings.forEach((ring) => {
-          // A 2-point entry is a degenerate seam stub (linkSegments closing a
+          // A 2-DISTINCT-point entry (ring.length===2 open, or 3 closed with a
+          // repeated point) is a degenerate seam stub (linkSegments closing a
           // single crossing back on itself at a mesh fold) — no interior angle
-          // to bound, and not a curve to round. Every genuine ring here (3+
-          // distinct vertices) must still meet the ceiling.
-          if (ring.length < 4) return;
+          // to bound, and not a curve to round. Every genuine ring — down to a
+          // raw 3-point triangle, the sparsest real pole case — must still meet
+          // the ceiling; refineRing itself now only bails below 3 points.
+          const distinct = ring.length >= 4
+            && Math.hypot(ring[0].x - ring[ring.length - 1].x, ring[0].y - ring[ring.length - 1].y,
+              ring[0].z - ring[ring.length - 1].z) < 1e-6
+            ? ring.length - 1 : ring.length;
+          if (distinct < 3) return;
           realRingsChecked += 1;
-          const refined = Slices.refineRing(ring);
+          const refined = Slices.refineRing(ring, REFINE_OPTS);
           expect(refined.length).toBeGreaterThanOrEqual(4);
-          expect(maxTurnDeg(refined)).toBeLessThanOrEqual(12);
+          expect(maxTurnDeg(refined)).toBeLessThanOrEqual(8);
         });
       });
       expect(realRingsChecked).toBeGreaterThan(20); // the sweep actually ran
@@ -417,7 +437,7 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
     test('the fitter still leaves hard corners in the raw ring; the refined ring has none', () => {
       const GU = V.GeometryUtils;
       const raw = poleRing();
-      const refined = V.Scene3D.Slices.refineRing(raw);
+      const refined = V.Scene3D.Slices.refineRing(raw, REFINE_OPTS);
       const to2D = (pts) => pts.map((p) => ({ x: p.x, y: p.y }));
       const cornerCount = (fit) => (Array.isArray(fit.anchors) ? fit.anchors.filter((a) => a && a.corner).length : 0);
       const rawFit = GU.toCurveAnchors(to2D(raw), { closed: true, curves: true });
@@ -426,24 +446,29 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
       expect(cornerCount(refinedFit)).toBe(0); // fully smoothed — no hard corners left
     });
 
-    test('the refined ring is a MORE accurate circle than the raw polyline, not just smoother', () => {
+    // W-27b hard bar: the refined ring must read as a CIRCLE, not a rounded
+    // N-gon — ≥48 points and within 0.1mm of the analytic radius (coordinator's
+    // acceptance criteria), not merely "smoother than the raw polyline".
+    test('the refined pole ring is a true circle: ≥48 points, <0.1mm from analytic radius', () => {
       const raw = poleRing();
-      const refined = V.Scene3D.Slices.refineRing(raw);
+      const refined = V.Scene3D.Slices.refineRing(raw, REFINE_OPTS);
       const z = raw[0].z; // every point in this ring shares one exact z (see header)
       const analyticR = analyticCircleRadius(RADIUS, z);
       const rawDev = maxRadialDeviation(raw, analyticR);
       const refinedDev = maxRadialDeviation(refined, analyticR);
-      expect(refinedDev).toBeLessThan(rawDev);
+      expect(refined.length).toBeGreaterThanOrEqual(48);
+      expect(refinedDev).toBeLessThan(rawDev); // more accurate, not just smoother
+      expect(refinedDev).toBeLessThan(0.1); // reads as a circle, not a rounded N-gon
     });
 
     // A mid-latitude ring is already densely tessellated (small exterior turns)
     // — refinement must be a no-op cost-wise there, not runaway subdivision.
     test('a well-tessellated equatorial ring needs no (or minimal) extra refinement rounds', () => {
       const mid = ringsByPlane.get(13)[0]; // near the equator (plane 13 of 26)
-      expect(maxTurnDeg(mid)).toBeLessThanOrEqual(12); // already fine before refining
-      const refined = V.Scene3D.Slices.refineRing(mid);
+      expect(maxTurnDeg(mid)).toBeLessThanOrEqual(8); // already fine before refining
+      const refined = V.Scene3D.Slices.refineRing(mid, REFINE_OPTS);
       // Refinement never REMOVES the property; still within the ceiling.
-      expect(maxTurnDeg(refined)).toBeLessThanOrEqual(12);
+      expect(maxTurnDeg(refined)).toBeLessThanOrEqual(8);
     });
 
     // R2 corner survival: a FACETED primitive's cross-section is a real polygon
