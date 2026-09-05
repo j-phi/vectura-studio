@@ -5759,10 +5759,18 @@
         const g = clamp((mkAsk(I) * R) / w, 0, 26);
         let P; let L;
         const countChan = law.chan === 'count' || (law.chan === 'alt' && parity === 1);
-        // The dash BAND's capacity is a function of the period, so it is stated
-        // here; every other shape's is a function of the cell alone.
+        // F-06 / W-06 — the dash BAND's capacity is a function of the period,
+        // so it is stated here; every other shape's is a function of the cell
+        // alone. `R` is the ROW pitch (the master pitch inflated by
+        // `1/MK_ROW_COV` so a mark law's row has room to carry a mark) — the
+        // finding's "several rulings wide" is this band sized off the ROW
+        // pitch, three master rulings' worth. Capped instead at 2x the TRUE
+        // master pitch (`lp`, uninflated), so a full-black dash dissolves into
+        // a band no wider than its own ruling's immediate neighbourhood, not
+        // the row scaffold's.
+        const truePitch = (Number.isFinite(lp) && lp > 1e-6) ? lp : masterPitch;
         const capOf = (per) => (law.shape === 'morph'
-          ? Math.max(1, Math.floor((1.12 * R) / w)) * per
+          ? Math.min(Math.max(1, Math.floor((1.12 * R) / w)) * per, 2 * truePitch)
           : mkCap(shapeFor(), R, w));
         if (countChan) {
           const L0 = law.chan === 'alt' ? 1.60 : law.L0;

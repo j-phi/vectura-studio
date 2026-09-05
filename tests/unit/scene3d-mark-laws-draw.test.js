@@ -141,4 +141,56 @@ describe('Scene3D.SurfaceFill — mark-law draw defects (fill-audit W-05/06/07)'
       expect(tickInk).toBeLessThan(ladderInk * 10);
     });
   });
+
+  describe('W-06 — mkDashRamp dashes lie on the rulings at low/med (F-06)', () => {
+    // THE RED PROOF (surface-fill.js `solveAt`, pre-fix). The 'morph' shape's
+    // band capacity was `floor(1.12*R/w) * P` where `R` is the ROW pitch
+    // (master pitch inflated 1/MK_ROW_COV = 3x, so a mark law's row has room
+    // to carry a mark) — so a full-black dash could dissolve into a band up
+    // to ~3.4 master-pitches wide, floating over several neighbouring
+    // rulings at once ("a tile several rulings wide", the finding's words).
+    // Fixed: capped at 2x the TRUE (uninflated) master pitch. Measured
+    // pre-fix on this fixture: sphere/hatch/mkDashRamp low and med both
+    // rendered the SAME 498 paths / 2699.9 mm ink — density had no effect at
+    // all, the other half of this defect.
+    test.each(['low', 'med'])('density=%s: every dash sits on a master ruling, none over 2x master pitch', (density) => {
+      const fillDensity = density === 'low' ? 1 : 50;
+      const ladderPaths = algo.generate(buildSceneParams('ladder', 'hatch', fillDensity), null, null, BOUNDS);
+      const dashPaths = algo.generate(buildSceneParams('mkDashRamp', 'hatch', fillDensity), null, null, BOUNDS);
+      const stat = SF.lastMarkStats;
+
+      expect(dashPaths.length).toBeGreaterThan(20);
+      expect(stat).toBeTruthy();
+
+      let checked = 0;
+      let maxLen = 0;
+      dashPaths.forEach((pp) => {
+        for (let i = 1; i < pp.length; i += 1) {
+          const a = pp[i - 1]; const b = pp[i];
+          const len = Math.hypot(b.x - a.x, b.y - a.y);
+          maxLen = Math.max(maxLen, len);
+        }
+        const mid = { x: (pp[0].x + pp[pp.length - 1].x) / 2, y: (pp[0].y + pp[pp.length - 1].y) / 2 };
+        const tangent = nearestRulingTangent(ladderPaths, mid, 2.5);
+        if (tangent) checked += 1;
+      });
+      // A dash whose midpoint has no master ruling within 2.5 mm is a dash
+      // floating disconnected from the ruling family — the F-06 picture.
+      expect(checked / dashPaths.length).toBeGreaterThan(0.85);
+      // stat.rows / master pitch aren't exposed per-path, so the ceiling is
+      // stated per density rather than as one constant: at fillDensity 1 the
+      // master pitch itself is wide (few rulings on the whole sphere), so
+      // 2x it is legitimately bigger than at 50 (measured 20.1 mm / 5.5 mm
+      // post-fix). Both stay far under the 26 mm `MK_PMAX` hard ceiling the
+      // old ROW-pitch-based (3x true pitch) formula could reach unbounded.
+      expect(maxLen).toBeLessThan(density === 'low' ? 25 : 15);
+    });
+
+    test('density carries tone: low and med no longer render byte-identically', () => {
+      const low = algo.generate(buildSceneParams('mkDashRamp', 'hatch', 1), null, null, BOUNDS);
+      const med = algo.generate(buildSceneParams('mkDashRamp', 'hatch', 50), null, null, BOUNDS);
+      expect(low.length).not.toBe(med.length);
+      expect(totalInk(low)).not.toBeCloseTo(totalInk(med), 1);
+    });
+  });
 });
