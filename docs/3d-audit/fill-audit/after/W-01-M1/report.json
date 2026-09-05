@@ -1,0 +1,47 @@
+{
+  "id": "W-01-M1",
+  "title": "Finalize W-01's M1 checkpoint (c861bf97) — torus x hatch x ladder no longer ties d=1 vs d=25",
+  "branch": "3d-scene/fill-audit-a",
+  "commit": "9fa159f0",
+  "before": [
+    "shots/A/sphere__hatch__ladder__low__a.webp",
+    "shots/A/sphere__hatch__ladder__med__a.webp",
+    "shots/A/torus__hatch__ladder__low__a.webp",
+    "shots/A/torus__hatch__ladder__med__a.webp",
+    "shots/A/torus__hatch__ladder__max__a.webp"
+  ],
+  "after": [
+    "after/W-01-M1/shots/A/sphere__hatch__ladder__low__a.webp",
+    "after/W-01-M1/shots/A/sphere__hatch__ladder__med__a.webp",
+    "after/W-01-M1/shots/A/torus__hatch__ladder__low__a.webp",
+    "after/W-01-M1/shots/A/torus__hatch__ladder__med__a.webp",
+    "after/W-01-M1/shots/A/torus__hatch__ladder__max__a.webp"
+  ],
+  "notes": "Finalizes the c861bf97 WIP checkpoint left mid-unit by a prior agent (session died at the API limit). No source change was needed on top of it -- verified correct as-is (see docs/3d-audit/fill-audit-fixes/W-01.json for the full root-cause writeup). M1 bar: torus x hatch x ladder must not tie at Density 1 vs 25 and both sphere/torus must be strictly monotone across the audit's own literal checkpoints 1/10/25/50. The reviewer's own boost=6 attempt (16c197d7) reintroduced the F-01 symptom AT those checkpoints (torus [4,3,4,10]: d=10 dips below d=1, d=25 TIES d=1). c861bf97 re-tunes CURVED_SPARSE_PITCH_BOOST to 4.1, verified by a new unit-test block ('literal checkpoints M1/M2') sweeping sphere/torus/cone x hatch x {ladder,fineLadder}: torus+hatch+ladder is now [3,5,7,10] (SF.buildObject master-grid path count at d=1/10/25/50) -- the named tie is gone and the sequence is strictly increasing. Real-app confirmation (this unit): captured sphere/torus x hatch x ladder x low/med/(max for torus, since torus's before/after/max triple in the main gallery uses low/med/max not low/med/max-plus-100) via scene3d-capture.js from the worktree (5 shots). Full-render pathCount (includes silhouette + pole lines the SF.buildObject unit count does not) is monotone too: sphere low=76 < med=92; torus low=67 < med=76 < max=114. inkMm likewise monotone: sphere 320.3 < 747.6; torus 383.9 < 705.1 < 2432.9. md5 of the med/max images is BYTE-IDENTICAL to the pre-fix gallery (sphere med 14b9a50dfe7a4a50b682cc434fb06439, torus med 810585366d4a931ffcb01572b02a3cfc, torus max 29eb6995e24700d6a95659e04a5c4b72 -- all three match shots/A/'s existing files exactly), confirming Density>=50 is structurally untouched as claimed. Low differs from med on both primitives (sphere 83ffdaf04d5214b528ec1d26c8e6f81f, torus 7c8a1297c31515d8baf98b0f7b157200 -- neither matches any pre-existing pinned md5), and LOOKING at the images: sphere/low shows ~3 spiral rulings meeting near the pole vs sphere/med's ~13-14 tightly-spaced rulings -- a real, visible density difference, not a rounding artifact. torus/low shows 2 sparse curves (one long open arc, one small ellipse near the hole) vs torus/med's ~7-8 concentric bands vs torus/max's ~30+ dense bands -- a clean 3-step density progression by eye.",
+  "tests": {
+    "red": "torus+hatch+ladder and sphere+hatch+ladder at Density 1/10/25/50 on the CURVED_SPARSE_PITCH_BOOST=6 tree (git-stashed, reproducing the reviewer's M1 finding): [4,3,4,10] and [5,4,9,23] -- both fail non-decreasing (d=10 dips below d=1 on both); torus additionally ties d=1 (4) with d=25 (4), the literal M1 defect.",
+    "green": "tests/unit/scene3d-curved-density-sparse-end.test.js 20/20 (14 original + 6 new); tests/unit/scene3d-curved-density-floor.test.js 12/12 (byte-identity guard for d>=50 unaffected; 2 pins updated for the new boost value, d=10 hatch 4->7, crosshatch 23,8->31,14)",
+    "suites": "Brief's targeted 8 files: 77 passed, 25 skipped (pre-existing), 0 failed. Broader sweep (15 files touching the same tonePitch/o6Pitch/hatchSpacing/masterGrid machinery plus scene3d-mark-laws-draw for the W-05/06/07 regression guard): 207 passed, 0 failed (1 unrelated vitest-worker RPC timeout logged under heavy concurrent-agent CPU load -- not a test failure, no assertion involved). Total: 23 files, 284 tests passed, 25 skipped, 0 failed."
+  },
+  "byte_identical_pairs": [
+    "shots/A/sphere__hatch__ladder__med__a.webp == after/W-01-M1/shots/A/sphere__hatch__ladder__med__a.webp (md5 14b9a50dfe7a4a50b682cc434fb06439, Density 50)",
+    "shots/A/torus__hatch__ladder__med__a.webp == after/W-01-M1/shots/A/torus__hatch__ladder__med__a.webp (md5 810585366d4a931ffcb01572b02a3cfc, Density 50)",
+    "shots/A/torus__hatch__ladder__max__a.webp == after/W-01-M1/shots/A/torus__hatch__ladder__max__a.webp (md5 29eb6995e24700d6a95659e04a5c4b72, Density 220)"
+  ],
+  "measured": {
+    "sphere_hatch_ladder_full_render_pathCount_inkMm": { "low": { "paths": 76, "inkMm": 320.3 }, "med": { "paths": 92, "inkMm": 747.6 } },
+    "torus_hatch_ladder_full_render_pathCount_inkMm": { "low": { "paths": 67, "inkMm": 383.9 }, "med": { "paths": 76, "inkMm": 705.1 }, "max": { "paths": 114, "inkMm": 2432.9 } },
+    "SF_buildObject_master_grid_count_1_10_25_50": {
+      "sphere_hatch_ladder": [4, 7, 13, 23],
+      "torus_hatch_ladder": [3, 5, 7, 10],
+      "cone_hatch_ladder": [8, 12, 17, 37],
+      "sphere_hatch_fineLadder": [6, 9, 13, 23],
+      "torus_hatch_fineLadder": [4, 6, 6, 9],
+      "cone_hatch_fineLadder": [11, 14, 21, 37]
+    }
+  },
+  "open_followups": [
+    "M2: single-integer non-monotonicity off the named checkpoints (e.g. d=8, d=10) remains OPEN per STILL-OPEN.md; this unit only guarantees monotonicity at 1/10/25/50.",
+    "torus+hatch+fineLadder ties path COUNT at d=10/25 (6==6, different ruling counts 7 vs 10 banding to the same segment count) -- ink differs (523.85 vs 648.2mm) so it is not a geometry duplicate, but it is not strictly-increasing-by-count either; flagged, not fixed, out of this unit's named scope (torus+hatch+ladder)."
+  ]
+}
