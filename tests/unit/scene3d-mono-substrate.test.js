@@ -406,6 +406,34 @@ describe('Scene3D flow-field singularity control — etfKang / defectSplit on to
     expect(r.central, `${r.central} singularities landed in the central third`).toBe(0);
   }, SLOW);
 
+  // CONE-SPECIFIC REGRESSION (added after review: the winding-number test
+  // above measures 0 central singularities on the cone with BOTH the old
+  // `C.R`-scaled placement and the fix, so it demonstrates no cone
+  // regression at all -- the cone's `C.R` (19.995) already approximated its
+  // true footprint half-extent (23.838) closely enough that the winding-
+  // number oracle cannot tell the two apart. This test reads the law's own
+  // placement directly instead of inferring it from field topology: the
+  // deep-shadow defect pair is placed `RR * 0.16` either side of the
+  // darkest point, where `RR` is the TRUE footprint half-extent, not `C.R`.
+  // Pre-fix that pair sat `2 * C.R * 0.16` apart = 6.4mm; post-fix
+  // `2 * RR * 0.16` = 7.6mm -- a real, deterministic difference for the cone
+  // this specific bug's own placement math produces, independent of any
+  // grid-alignment accident in a winding-number scan.
+  test('defectSplit: cone deep-shadow defect pair uses the TRUE footprint scale, not C.R', () => {
+    win.__MONO_TRACE = 1;
+    win.__MONO_CTX = null;
+    SF.buildObject({ ...optsFor.cone, toneLaw: 'defectSplit' });
+    const C = win.__MONO_CTX;
+    expect(C && C.__defects, 'cone/defectSplit did not publish its defects').toBeTruthy();
+    const RR = Math.max(C.W, C.H) / 2;
+    const [d2, d3] = [C.__defects[2], C.__defects[3]];
+    const sep = Math.hypot(d2.x - d3.x, d2.y - d3.y);
+    const expected = 2 * RR * 0.16;
+    // Pre-fix (C.R = 19.995): sep ~6.4mm. Post-fix (RR = 23.838): ~7.6mm.
+    expect(sep, `deep-shadow pair separation ${sep.toFixed(2)}mm vs RR-scaled ${expected.toFixed(2)}mm`)
+      .toBeGreaterThan(expected * 0.9);
+  }, SLOW);
+
   test('defectSplit: sphere is unaffected (still reads correctly)', () => {
     const r = singularities('sphere', 'defectSplit');
     expect(r.central).toBe(0);

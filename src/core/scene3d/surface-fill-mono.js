@@ -892,12 +892,27 @@
     // two on-silhouette defects land on the TRUE edge regardless of how
     // anisotropic or non-convex the silhouette is (the torus's hole and the
     // cone's apex included) -- no per-primitive scale assumed.
+    // BUG, CAUGHT BY REVIEW: the first version of `edgeAt` bisected between
+    // `(cx, cy)` (assumed on-surface) and the far point, but `(cx, cy)` is
+    // the BOUNDING-BOX centre, not a guaranteed on-surface point -- on a
+    // torus it sits in the hole, off-surface, so `C.inv(cx, cy)` failed and
+    // `edgeAt` degenerated to 0 for EVERY direction: both "on the
+    // silhouette" defects collapsed onto the centre itself, worse than the
+    // bug this was meant to fix. `edgeAt` now marches in from the FAR point
+    // instead, coarse step first, and returns the FARTHEST on-surface hit --
+    // the true outer silhouette in that direction -- with no assumption
+    // about what lies at the centre.
     const DIAG = Math.hypot(C.W, C.H);
+    const EDGE_STEPS = 40;
     const edgeAt = (dx, dy) => {
-      if (!C.inv(cx, cy)) return 0;
-      let lo = 0; let hi = DIAG;
-      if (C.inv(cx + dx * hi, cy + dy * hi)) return hi;
-      for (let i = 0; i < 20; i++) {
+      let best = 0;
+      for (let i = EDGE_STEPS; i >= 0; i -= 1) {
+        const t = (i / EDGE_STEPS) * DIAG;
+        if (C.inv(cx + dx * t, cy + dy * t)) { best = t; break; }
+      }
+      if (best <= 0) return 0; // this ray never touches the visible surface
+      let lo = best; let hi = Math.min(DIAG, best + DIAG / EDGE_STEPS);
+      for (let i = 0; i < 20; i += 1) {
         const mid = (lo + hi) / 2;
         if (C.inv(cx + dx * mid, cy + dy * mid)) lo = mid; else hi = mid;
       }
@@ -926,7 +941,17 @@
       }
       return { x: Math.cos(th), y: Math.sin(th) };
     };
-    if (globalScope.__MONO_TRACE) C.__dirAt = dirAt;
+    if (globalScope.__MONO_TRACE) {
+      C.__dirAt = dirAt;
+      // TEST-ONLY: the ACTUAL placed defects and the centre they are placed
+      // relative to, so a harness can assert the "on the silhouette" pair
+      // landed near the true edge directly, rather than inferring it from a
+      // winding-number scan (which a grid-alignment accident can miss on a
+      // primitive where the mis-scaled placement was a smaller fraction
+      // short of the edge, e.g. the cone).
+      C.__defects = defects;
+      C.__defectCentre = { x: cx, y: cy };
+    }
     streamFamily(C, dirAt, (s) => C.pitchFor(finite(s.I, 0)));
   };
 
