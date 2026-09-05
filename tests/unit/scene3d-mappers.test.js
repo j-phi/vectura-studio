@@ -247,6 +247,49 @@ describe('3D Scene Studio Phase 3 — surface-fill mappers', () => {
       expect(runAspect(auto)).toBeGreaterThan(runAspect(circ) * 1.5);
     });
 
+    // ── W-25 (fill-audit-d) ───────────────────────────────────────────────
+    // On a THIN SLIVER region far smaller than the density-derived pitch —
+    // the shape of a low-poly imported mesh's cusp faces (measured bw≈1.8mm,
+    // bh≈10mm on the Unit F torus fixture's cusp faces, 24x12 tessellation,
+    // tests/unit/scene3d-mesh-self-occlusion.test.js) — the raw parametric
+    // radius blows past rMax within well under one revolution, so pre-fix
+    // trueSpiral clipped its output down to a single near-straight radial
+    // stub instead of a genuine curl. Several adjacent cusp faces each
+    // drawing one such stub, all similarly oriented, is what reads on screen
+    // as a wedge of straight parallel lines cutting across the surrounding
+    // curved "comma" marks (docs/3d-audit/fill-audit/after/W-25/ before/
+    // after crops — the wedge is visibly gone after this fix). RED before
+    // the SPIRAL_MIN_TURNS floor: `npx vitest run tests/unit/scene3d-
+    // mappers.test.js -t "thin sliver"` on the pre-fix source measured
+    // winding ≈ 0.9 rad (well under a full curl) and arcLen/straightDist ≈
+    // 1.39 (nearly straight); this test pins both above a genuine-curl floor.
+    test('a thin sliver (bw/bh well outside the eccentricity clamp) still gets a genuine curl, not a near-straight stub (W-25)', () => {
+      const SLIVER = [{ x: 0, y: 0 }, { x: 1.8, y: 0 }, { x: 1.8, y: 10 }, { x: 0, y: 10 }];
+      const runs = V.Scene3D.Mappers.regionFill('spiral', [SLIVER], { pitch: 5.84 });
+      expect(runs.length).toBeGreaterThan(0);
+      const main = longest(runs);
+      expect(main.length).toBeGreaterThan(2);
+      const cx = 0.9; const cy = 5; // region centroid
+      // A near-straight radial stub winds under ~90° (Math.PI/2) about the
+      // centre; a genuine curl sweeps well past that.
+      expect(Math.abs(winding(main, cx, cy))).toBeGreaterThan(Math.PI);
+      const arcLen = main.reduce(
+        (d, p, i) => (i === 0 ? 0 : d + Math.hypot(p.x - main[i - 1].x, p.y - main[i - 1].y)), 0,
+      );
+      const straightDist = Math.hypot(main[main.length - 1].x - main[0].x, main[main.length - 1].y - main[0].y);
+      expect(arcLen / Math.max(1e-6, straightDist)).toBeGreaterThan(2);
+    });
+
+    test('a region at or above the normal working size is unaffected by the W-25 min-turns floor (no-op guard)', () => {
+      // BIG (200x200, rMax ≈141mm) sits far above any density-derived pitch
+      // (0.2–40mm), so `Math.min(pitch, rMax / SPIRAL_MIN_TURNS)` must select
+      // the UNMODIFIED pitch — pinning that the W-25 fix is a true no-op for
+      // ordinary primitive-sized regions (byte-identical to before the fix).
+      const runs = V.Scene3D.Mappers.regionFill('spiral', [BIG], { pitch: 10 });
+      const main = longest(runs);
+      expect(Math.abs(winding(main, CX, CY))).toBeGreaterThan(3 * 2 * Math.PI);
+    });
+
     test('deterministic — identical output for identical params', () => {
       const a = V.Scene3D.Mappers.regionFill('spiral', [BIG], { spacing: 7, axisSnap: false });
       const b = V.Scene3D.Mappers.regionFill('spiral', [BIG], { spacing: 7, axisSnap: false });

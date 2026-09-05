@@ -248,6 +248,13 @@
 
   const STEPS_PER_REV = 64; // smooth-spiral angular resolution
   const SPIRAL_MAX_STEPS = 24000; // pathological pitch/size guard (cannot hang)
+  // W-25 — the density-derived pitch is tuned for whole-primitive-sized
+  // regions; on a region far smaller than that (a thin sliver face from a
+  // low-poly imported mesh, e.g.) the raw parametric radius can blow past
+  // `rMax` within well under one revolution, so trueSpiral's output clips
+  // down to a single near-straight radial stub instead of a genuine curl —
+  // see `spiralMinTurnPitch` below.
+  const SPIRAL_MIN_TURNS = 2;
 
   // Even-odd point-in-region across all (closed) rings.
   const insideComposite = (rings, x, y) => {
@@ -359,15 +366,27 @@
     // Floor at 0.2mm (below a typical 0.3mm pen) so the Density-100 full-overlap
     // pitch reaches the paper; SPIRAL_MAX_STEPS still guards the sample count.
     const pitch = clamp(finite(opts.pitch, finite(opts.spacing, 3)), 0.2, 40);
+    // W-25 — tighten the EFFECTIVE pitch when the region is small enough that
+    // the requested pitch would not even complete SPIRAL_MIN_TURNS turns
+    // before r reaches rMax (an Archimedean spiral grows by exactly `pitch`
+    // per revolution, so `rMax / SPIRAL_MIN_TURNS` is the largest pitch that
+    // still guarantees that many turns). A region at or above the normal
+    // working size (rMax >= pitch * SPIRAL_MIN_TURNS) is completely
+    // unaffected — Math.min picks the unmodified pitch — so this only
+    // engages for genuinely small regions (a thin cusp face on a low-poly
+    // imported mesh; measured 0 change on every existing primitive fixture,
+    // whose faces sit far above this floor). Never widens the pitch, only
+    // narrows it, so it can only add curvature, never remove it.
+    const effPitch = Math.min(pitch, rMax / SPIRAL_MIN_TURNS);
     const axisSnap = Boolean(opts.axisSnap);
     // axisSnap: one straight segment per quadrant (a squared spiral). Offsetting
     // the start by 45° makes those segments axis-aligned (horizontal/vertical)
     // for a rectilinear read on cubes.
     const baseOffset = (finite(opts.offset, 0) * Math.PI) / 180 + (axisSnap ? Math.PI / 4 : 0);
     const dTheta = axisSnap ? Math.PI / 2 : (Math.PI * 2) / STEPS_PER_REV;
-    const dr = (pitch * dTheta) / (Math.PI * 2); // Archimedean: +pitch per full turn
+    const dr = (effPitch * dTheta) / (Math.PI * 2); // Archimedean: +effPitch per full turn
     // Sweep a bit past rMax so the outermost loop fully covers the corners.
-    const rEnd = rMax + pitch;
+    const rEnd = rMax + effPitch;
     const totalSteps = Math.min(SPIRAL_MAX_STEPS, Math.max(4, Math.ceil(rEnd / Math.max(1e-6, dr))));
     const raw = [];
     let theta = baseOffset;
