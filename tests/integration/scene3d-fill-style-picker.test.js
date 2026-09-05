@@ -323,14 +323,26 @@ describe('Fill Style — the shared mark-class config', () => {
   // Judge's ruling, items 1/5/3/6: `isReachableOn` was mapper-blind, so a
   // faceted primitive under Type=Contour/Spiral/Stipple showed eleven "live"
   // options that are all provably inert (faceMonoLines only dispatches for
-  // hatch/crosshatch — scene3d.js:1533). And on a CURVED primitive, nine mono
-  // laws are byte-identical to Ladder under Type=Spiral/Stipple.
-  describe('mapper-aware reachability (fs-e1 gating: item 1 / item 5)', () => {
+  // hatch/crosshatch — scene3d.js:1533). And on a CURVED primitive, W-03
+  // (F-03, C-09..C-13) measured that 45 of 48 roster laws collapse to a
+  // handful of rung-skipping pictures under Type=Spiral/Stipple — the
+  // original 9 mono laws (true no-ops) PLUS 36 more that "run" but fall back
+  // to bare centrelines or indistinguishable rung-skipping because the
+  // spiral/stipple sinks never publish a width profile. Only `none` /
+  // `ladder` / `fineLadder` / `phaseFineLadder` are the "honest" rung-
+  // skipping options left reachable.
+  describe('mapper-aware reachability (fs-e1 gating: item 1 / item 5; W-03 extends item 5)', () => {
     const ALL_IDS = () => R.IDS.concat(['ladder']);
-    const CURVED_SPIRAL_STIPPLE_INERT = [
-      'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
-      'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
-    ];
+    // The full W-03 inert-or-bare-centreline set — mirrors
+    // src/config/context-bar.js's CURVED_SPIRAL_STIPPLE_INERT exactly.
+    // Computed as "every roster law except the 3 honest rung-skippers"
+    // rather than retyped by hand, so a roster change cannot silently
+    // desync this test from the source it is pinning. A FUNCTION, not a
+    // top-level const: `R` is populated by the outer `beforeAll`, which has
+    // not run yet when this describe body itself executes at collection
+    // time (same reason `ALL_IDS` above is a function, not a value).
+    const CURVED_SPIRAL_STIPPLE_LIVE = new Set(['none', 'fineLadder', 'phaseFineLadder']);
+    const curvedSpiralStippleInert = () => R.IDS.filter((id) => !CURVED_SPIRAL_STIPPLE_LIVE.has(id));
 
     // ── Item 1 — faceted + non-hatch/crosshatch disables EVERYTHING ─────────
     test('faceted (box) + Contour/Spiral/Stipple disables every option, including None and Ladder', () => {
@@ -382,28 +394,69 @@ describe('Fill Style — the shared mark-class config', () => {
       expect(F.groups('box', undefined, 'hatch')).toEqual(F.groups('box'));
     });
 
-    // ── Item 5 — curved primitive + spiral/stipple: exactly 9 mono laws ─────
-    test('curved (sphere) + spiral disables exactly the 9 measured mono laws, and nothing else', () => {
+    // ── Item 5, extended by W-03 — curved primitive + spiral/stipple: only
+    // none/ladder/fineLadder/phaseFineLadder survive; everything else (the
+    // original 9 true no-ops PLUS 36 bare-centreline/rung-skipping laws,
+    // F-03 / C-09..C-13) is disabled — STALE ASSERTION UPDATE: this used to
+    // pin exactly the 9 mono laws; W-03 deliberately widened the gate.
+    test('curved (sphere) + spiral disables all but none/ladder/fineLadder/phaseFineLadder (W-03)', () => {
+      const inert = curvedSpiralStippleInert();
       R.IDS.forEach((id) => {
-        const expected = CURVED_SPIRAL_STIPPLE_INERT.indexOf(id) === -1;
+        const expected = inert.indexOf(id) === -1;
         expect(F.isReachableOn(id, 'sphere', undefined, 'spiral')).toBe(expected);
       });
       expect(F.isReachableOn('ladder', 'sphere', undefined, 'spiral')).toBe(true);
       expect(F.isReachableOn('none', 'sphere', undefined, 'spiral')).toBe(true);
+      expect(F.isReachableOn('fineLadder', 'sphere', undefined, 'spiral')).toBe(true);
+      expect(F.isReachableOn('phaseFineLadder', 'sphere', undefined, 'spiral')).toBe(true);
+      // The exact count W-03 measured: 45 of 48 roster laws gated (+ the 3
+      // kept: none/fineLadder/phaseFineLadder = 48; 'ladder' is the 49th
+      // total option and is not part of the roster's 48).
+      expect(inert.length).toBe(45);
     });
 
-    test('curved (sphere) + stipple disables the SAME 9 laws as spiral', () => {
+    test('curved (sphere) + stipple disables the SAME set as spiral (W-03)', () => {
+      const inert = curvedSpiralStippleInert();
       R.IDS.forEach((id) => {
-        const expected = CURVED_SPIRAL_STIPPLE_INERT.indexOf(id) === -1;
+        const expected = inert.indexOf(id) === -1;
         expect(F.isReachableOn(id, 'sphere', undefined, 'stipple')).toBe(expected);
       });
+      expect(F.isReachableOn('fineLadder', 'sphere', undefined, 'stipple')).toBe(true);
+      expect(F.isReachableOn('phaseFineLadder', 'sphere', undefined, 'stipple')).toBe(true);
+    });
+
+    // ── W-03 justification — the hide is not a guess. A sphere+spiral build
+    // with a ribbon law (taperedEnds) that this list now gates measurably
+    // ships ZERO ribbon rings: `ribbonLaw` is true (taperedEnds IS a
+    // variable-width law) but `wallRings` is 0 (nothing analytically walled
+    // either), proving every stretch fell back to its bare centreline — F-03's
+    // root cause (the spiral sink never calls `noteW`). This is a
+    // CHARACTERIZATION test, not a red→green proof of this commit's own
+    // change (it does not touch surface-fill.js): it stays true today and is
+    // EXPECTED to flip once W-13 (future work) wires a width profile into the
+    // spiral sink — at which point taperedEnds moves back out of
+    // CURVED_SPIRAL_STIPPLE_INERT and this assertion becomes W-13's own RED.
+    test('W-03 justification — sphere+spiral+taperedEnds ships zero ribbons (proves the hide, becomes the W-13 RED)', () => {
+      const V = window.Vectura;
+      const engine = new V.VectorEngine();
+      const groupId = engine.addLayer('scene3d');
+      const obj = engine.getLayerDescendants(groupId).find((l) => l && l.type === 'object3d');
+      obj.params.primitive = 'sphere';
+      obj.params.style = obj.params.style || { penId: null, mapper: 'spiral', params: {} };
+      obj.params.style.mapper = 'spiral';
+      obj.params.style.params = { ...(obj.params.style.params || {}), toneLaw: 'taperedEnds' };
+      engine.computeAllDisplayGeometry();
+      const stats = V.Scene3D.SurfaceFill.lastRibbonStats;
+      expect(stats).toBeTruthy();
+      expect(stats.ribbonLaw).toBe(true);
+      expect(stats.wallRings).toBe(0);
     });
 
     // ── Paired negative — a curved primitive under hatch/crosshatch is
     // untouched by the new spiral/stipple rule (over-gating guard).
     test('curved (sphere) + hatch/crosshatch is unaffected by the spiral/stipple gate', () => {
       ['hatch', 'crosshatch'].forEach((mapper) => {
-        CURVED_SPIRAL_STIPPLE_INERT.forEach((id) => {
+        curvedSpiralStippleInert().forEach((id) => {
           expect(F.isReachableOn(id, 'sphere', undefined, mapper)).toBe(true);
         });
       });
@@ -904,18 +957,23 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(alive.length).toBeGreaterThan(2);
   });
 
-  test('item 5 — a sphere selection with Type=Spiral disables exactly the 9 curved mono laws', () => {
+  // STALE ASSERTION UPDATE (W-03) — used to pin exactly the 9 mono laws;
+  // W-03 widened the spiral/stipple gate to inert-OR-bare-centreline (F-03).
+  test('item 5 — a sphere selection with Type=Spiral disables all but none/ladder/fineLadder/phaseFineLadder (W-03)', () => {
     const SPHERE = { id: 'obj-1', name: 'Sphere', primitive: 'sphere', params: { sx: 40, sy: 40, sz: 40, detail: 16 }, transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
     const { fly } = openStyle({ objects: [SPHERE], styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'spiral', params: {} } }) });
-    const CURVED_SPIRAL_STIPPLE_INERT = [
-      'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
-      'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
-    ];
+    const roster = window.Vectura.SCENE3D_TONE_LAWS.IDS;
+    const CURVED_SPIRAL_STIPPLE_LIVE = new Set(['none', 'fineLadder', 'phaseFineLadder']);
+    const CURVED_SPIRAL_STIPPLE_INERT = roster.filter((id) => !CURVED_SPIRAL_STIPPLE_LIVE.has(id));
     const options = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option'));
     const dead = options.filter((o) => o.disabled).map((o) => o.value);
     expect(dead.sort()).toEqual([...CURVED_SPIRAL_STIPPLE_INERT].sort());
     const laddOpt = options.find((o) => o.value === 'ladder');
     expect(laddOpt.disabled).toBe(false);
+    const fineOpt = options.find((o) => o.value === 'fineLadder');
+    expect(fineOpt.disabled).toBe(false);
+    const phaseOpt = options.find((o) => o.value === 'phaseFineLadder');
+    expect(phaseOpt.disabled).toBe(false);
   });
 
   // ── Item 4 — multi-select must not read only the FIRST object's primitive ─

@@ -369,15 +369,47 @@
       && P.PRIMITIVE_PARAM_DEFAULTS.solid.solidType) || 'buckyball';
     return (solidType || dflt) === dflt;
   };
-  // fs-e1 judge's ruling, item 5 — measured byte-identical to Ladder across
-  // three independent parameter points on a CURVED (chart-wrapped) primitive
-  // under Type=Spiral/Stipple. Nothing else in the curved arm is gated by
-  // this list — see the paired negative in
-  // `scene3d-fill-style-picker.test.js` "curved (sphere) + hatch/crosshatch
-  // is unaffected by the spiral/stipple gate".
+  // fs-e1 judge's ruling, item 5, EXTENDED by W-03 (F-03, clusters C-09..
+  // C-13) — this list is now INERT-OR-BARE-CENTRELINE, not just "byte-
+  // identical to Ladder". The original 9 (etfKang..mazeFill) are true
+  // no-ops: a mono law with no planar dispatch on the curved/spiral-stipple
+  // path at all. The other 36 are a DIFFERENT, later-measured failure: the
+  // spiral sink never calls `noteW` and stipple pushes dot rings with no
+  // run, so `wCnt === 0` and every width-modulated law's `ribbonize` step is
+  // skipped — the law still "runs", but every stretch degrades to its bare
+  // centreline (12 ribbon laws) or to plain rung-skipping indistinguishable
+  // from a handful of sibling laws (bundle x6, contField x5, pen x6, mk x4,
+  // and the remaining named laws below) — 18-19 distinct pictures across 39
+  // laws measured, 432 `bareCentrelinesOnly` shots. Keeping only `none` /
+  // `ladder` / `fineLadder` / `phaseFineLadder` reachable here is keeping
+  // exactly the "honest" rung-skipping options — the ones whose whole
+  // mechanism IS which rungs are drawn, so degrading to that is not a
+  // degradation at all. Nothing else in the curved arm is gated by this
+  // list — see the paired negative in `scene3d-fill-style-picker.test.js`
+  // "curved (sphere) + hatch/crosshatch is unaffected by the spiral/stipple
+  // gate". W-13 (future work) wires a real width profile into the spiral
+  // sink; when it lands, the 12 ribbon laws move back out of this list —
+  // see `SurfaceFill.lastRibbonStats` (ribbonLaw && wallRings === 0 on a
+  // sphere+spiral+taperedEnds build today) as the characterization proof
+  // that justifies the hide and the RED this list's shrink will satisfy.
   const CURVED_SPIRAL_STIPPLE_INERT = [
+    // The original 9 — true no-ops, no planar dispatch at all.
     'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
     'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
+    // C-09 — bare centrelines (ribbon laws with no width profile on this path).
+    'nibAngle', 'taperedEnds', 'isophoteWidth', 'whiteBand',
+    // C-12 — bare centrelines / rung-skipping (ribbon + wave laws).
+    'weightModulated', 'weightSmoothstep', 'interlockWeave', 'trochoidLoop',
+    'onePenDown', 'penInterleave', 'penReserve', 'penPitchMatch',
+    // C-13 — rung-skipping, indistinguishable from Ladder/Fine Ladder here.
+    'perceptualRamp', 'lozengeStipple', 'deepFillTSP', 'ampSpacing',
+    'weaveDepth', 'amplitudeOnly', 'penCross', 'penFacing',
+    // C-10 — bundle (6) + contField (5) + penStipple: every rung drawn, ~ No Tone.
+    'bundleCount', 'bundleSubNib', 'bundleEased', 'bundleDither',
+    'bundleLozenge', 'bundleHandoff', 'contFieldSigmoid', 'contFieldTouch',
+    'contFieldFore', 'contFieldSurface', 'contFieldQuant', 'penStipple',
+    // C-11 — the mark emitter is never reached.
+    'mkScribble', 'mkTick', 'mkDashRamp', 'mkDotScreen',
   ];
   SCENE_FILL_STYLES.CURVED_SPIRAL_STIPPLE_INERT = CURVED_SPIRAL_STIPPLE_INERT;
   // Never lies in either direction: with no shape context (mixed/scene-scope
