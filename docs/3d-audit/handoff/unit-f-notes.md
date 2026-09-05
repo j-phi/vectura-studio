@@ -46,5 +46,25 @@ occlusion holds at the same rate is a distinct, unmeasured question (likely a
 performance question for the per-face fill path generally, not specific to F7/
 self-occlusion) — flagged here, not chased.
 
-Evidence: `docs/3d-audit/handoff/unit-f/` (app screenshot). Full mechanism trail in the
-test file's own header comment.
+**Evidence, looked at directly** (`docs/3d-audit/handoff/unit-f/`, object-only canvas
+crops, no app chrome — `scripts/scene3d-mesh-self-occlusion-evidence.js`, same
+technique as unit-c/unit-d's evidence scripts): `F-hatch-full.png`'s inner-hole
+boundary reads as a single clean curve, matching its 0-survivor measurement.
+`F-spiral-full.png` and the `F-spiral-survivor-crop.png` close-up (centred on the exact
+measured survivor point) — **the gap IS visible**: a wedge of straight, parallel hatch
+lines cuts across the otherwise-curved spiral "comma" marks right at the inner-hole
+cusp, where the fallback-hatch produced by the failed polygon union in `Mappers.
+regionFill` (see root-cause paragraph above) shows through as a fill-STYLE
+inconsistency. It reads as a local rendering artifact, not a far-surface line breaking
+through the near silhouette the way the original torus-primitive F1/F7 streaks did —
+consistent with the root cause being a region-fill numerical failure, not a self-
+occlusion miss.
+
+**Sibling finding (reviewer, out of this unit's scope — for the picker/params lane, not
+fixed here):** `isCapLimited('solid', 'importedMesh')` returns `false`, so the mono
+laws (`mazeFill`/`voronoiWeb`/`turingStripe`) are offered in the UI for imported
+meshes, yet `MONO_MAX_FRONT_FACES = 12` means any real import (our 576-face fixture
+included) silently falls back to `Ladder` the moment one is selected — the picker
+advertises a capability the mesh path can't deliver.
+
+Full mechanism trail in the test file's own header comment.

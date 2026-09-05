@@ -219,11 +219,19 @@ describe('SurfaceFill (per-face fill) — Unit F: imported non-convex mesh vs th
     expect(Array.isArray(solid.importedMesh.vertices)).toBe(true);
     expect(Array.isArray(solid.importedMesh.faces)).toBe(true);
 
-    // Capture the exact pre-clip (x, y) points the PER-FACE fill hands to
-    // `clipper.clipPath` for THIS object (segCtx = { ownerKeys: [face.key],
-    // objectId }, scene3d.js ~2758/2932) — identified by `ownerKeys` being
-    // present, which the structural-edge pass's segCtx (~3381, objectId
-    // only) does not carry, so edges are excluded from this capture.
+    // Capture the exact pre-clip (x, y) points handed to `clipper.clipPath`
+    // for THIS object with an `ownerKeys` array present. That is NOT unique
+    // to the per-face FILL segCtx (`{ ownerKeys: [face.key], objectId }`,
+    // scene3d.js ~2758/2932) — the structural-edge pass (~3697) ALSO builds
+    // `ownerKeys` from `adjacentFaces` before its own `clipPath` call, so
+    // edge points are captured into `rawPositions`/`farPositions` here too
+    // (line 3381's `segCtx = { objectId: record.id }`, no ownerKeys, is the
+    // UNRELATED contourSlice path, not the edge pass). Edges are excluded
+    // where it actually matters: `inkPositions` below is built ONLY from
+    // `meta.kind === 'sceneFill'` paths, so an edge-pass point can only ever
+    // register as a "survivor" by coinciding, pixel-for-pixel, with real
+    // sceneFill ink — the measurement's correctness rests on that filter,
+    // not on any distinction made at capture time.
     // `VECTURA_SIMULATE_BLANKET_SKIP=1` additionally widens `ownerKeys` to
     // every face of the object before delegating — simulating the exact
     // "blanket same-object skip" defect class F7 fixed on the OTHER
