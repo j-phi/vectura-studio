@@ -2,7 +2,7 @@
   "id": "W-20",
   "title": "dutyConst / turingStripe / mazeFill / voronoiWeb read a light→dark gradient (F-19)",
   "branch": "3d-scene/fill-audit-c",
-  "commit": "PENDING",
+  "commit": "7d69292c",
   "before": [
     "shots/B/sphere__hatch__dutyConst__med__a.webp",
     "shots/B/torus__hatch__dutyConst__med__a.webp",
