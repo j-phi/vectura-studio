@@ -328,6 +328,15 @@
   // silent degrade to centrelines because a module was missing. Cheap — one
   // small object per build — and read by the T2/T4 tests.
   let lastRibbonStats = null;
+  // F-01 / W-01 test seam. The master grid's ruling count (`N`) is the
+  // quantity the sparse-end density defect actually lived in — the drawn
+  // path count downstream of it is diluted by the ladder's own per-band
+  // rounding (adjacent ruling counts can rank a shade out of the density
+  // order they came from once a ladder is stacked on very few rulings; see
+  // `scene3d-curved-density-sparse-end.test.js`'s own comment). `null` until
+  // the first `STAGE.masterGrid && useLadder` build; always overwritten
+  // (never reset) after, mirroring `lastRibbonStats`.
+  let lastMasterGridStats = null;
   // RULING CONTINUITY (see emitLine). The scale at which a break stops reading
   // as a break and starts reading as a wobble in one line, and at which a mark
   // stops reading as a stroke and starts reading as a speck. Stated in pen
@@ -5083,7 +5092,36 @@
         //   do with it and what keeps Density live at the top of its range.
         const tonePitch = Math.max(0.05, finite(opts.tonePitch, 3) / TONE_SUBDIV);
         const litCov = clamp(Regions.formInk('L').coverage, 0.05, 1);
-        const o6Pitch = litMaxPitchPen() * penWidth * litCov;
+        const o6Pitch0 = litMaxPitchPen() * penWidth * litCov;
+        // F-01 / W-01 — THE SPARSE END WAS DEAD FROM D=1 TO D~49.5.
+        //
+        // `o6Pitch0` is a density-FREE constant (the O6 "the centre light must
+        // still carry ink" bound). Below this fix, `masterPitch =
+        // min(tonePitch, o6Pitch0)` picked the constant for EVERY Density
+        // where `tonePitch` (which IS density-derived, via `hatchSpacing`)
+        // happened to be coarser than it — and on a default sphere/pen that is
+        // every Density from 1 up to ~49.5. The master grid — and therefore
+        // `N`, the ruling count — sat pinned at one value across that whole
+        // range: Density 1 and Density 49 rendered byte-identically (measured
+        // sphere+hatch+ladder: fill count 22 at every d in [1,49]).
+        //
+        // The bound's own job — never let the grid go SPARSER than the lit
+        // zone can carry — only needs to bind once tonePitch actually crosses
+        // it; it was never meant to flatten the whole approach to that
+        // crossing into one value. So scale it BY how much sparser tonePitch
+        // is asking to be past it: past the crossover the bound rises with
+        // tonePitch instead of clamping flat, and `masterPitch =
+        // min(tonePitch, o6Pitch)` degenerates to `tonePitch` itself — Density
+        // drives the grid continuously across the sparse end instead of
+        // pinning to the O6 floor for 49 values in a row.
+        //
+        // At and above the crossover (d >= ~49.5, unchanged today) `tonePitch
+        // <= o6Pitch0` already, so the multiplier is exactly 1 and `o6Pitch ==
+        // o6Pitch0` — `masterPitch = min(tonePitch, o6Pitch0)` is untouched,
+        // byte-identical from Density 50 up (and therefore at 220 too, whose
+        // own regime this never reaches). Verified: sphere+hatch+ladder fill
+        // count at d=50 is 23 before and after this change.
+        const o6Pitch = o6Pitch0 * Math.max(1, tonePitch / o6Pitch0);
         // `opts.masterFloorPen` (opt-in, pen-multiple) lets the ONE direct
         // density→line-count caller relax this master-grid floor below the
         // conservative PLOT_FLOOR_PEN default (scene3d.js's
@@ -5116,6 +5154,9 @@
         }
         N = clamp(Math.max(4, Math.round(calib / masterPitch)), 4, maxLines());
         masterPitch = calib / N; // what the family ACTUALLY rules at, typically
+        lastMasterGridStats = {
+          density: opts.fillDensity, calib, tonePitch, o6Pitch0, o6Pitch, N, masterPitch, floorPen,
+        };
       }
     }
     // Coverage at which family A's spacing is exactly LIT_MAX_PITCH_PEN × pen —
@@ -10738,6 +10779,7 @@
         // silent degrade to centrelines, all three of which look alike from
         // outside. Read by the T2/T4 tests.
         get lastRibbonStats() { return lastRibbonStats; },
+        get lastMasterGridStats() { return lastMasterGridStats; },
         // Unchanged reading: the committed default, byte-identical to the
         // pre-refactor module constant. `scene3d-tone-algo-default.test.js`
         // pins this and must stay green unmodified.

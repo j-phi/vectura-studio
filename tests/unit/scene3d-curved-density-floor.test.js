@@ -180,16 +180,27 @@ describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches d
     // is new behavior. Exact fill counts, not just "greater than 0", so a
     // future change that quietly starts engaging the floor differently at
     // d<=100 fails loudly here.
+    //
+    // STALE ASSERTION, updated (F-01 / W-01, fs-fillaudit-a). The d=10 values
+    // below were 22 (hatch) / 84 & 38 (crosshatch) — this is the F-01 defect
+    // itself: Density 1 through ~49 pinned to the SAME master-grid pitch (a
+    // density-free floor, `o6Pitch`, that stayed the binding constraint the
+    // whole way there), so d=10 rendered near-identically to d=1/d=25/d=49.
+    // The fix deliberately opens that dead zone — d=10 is now genuinely
+    // sparser than d=25/50 — so its pinned value MOVES here. d=50/75/100 are
+    // outside the fix's scope (tonePitch is already finer than the floor by
+    // then) and stay pinned to their pre-fix values, verified via `git stash`
+    // exactly as this guard's own header describes.
     test('hatch mapper: pinned fill counts at d=10/50/75/100', () => {
-      expect(runSphere(10, 'hatch').count).toBe(22);
+      expect(runSphere(10, 'hatch').count).toBe(4);
       expect(runSphere(50, 'hatch').count).toBe(23);
       expect(runSphere(75, 'hatch').count).toBe(39);
       expect(runSphere(100, 'hatch').count).toBe(50);
     });
 
     test('crosshatch mapper (ratio-scaled family B): pinned fill counts at d=10/100, ratio 0.25 and 1.0', () => {
-      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(84);
-      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(38);
+      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(23);
+      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(8);
       expect(runSphere(100, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(183);
       expect(runSphere(100, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(83);
     });

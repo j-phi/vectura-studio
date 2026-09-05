@@ -1,0 +1,40 @@
+{
+  "id": "W-01",
+  "title": "Open the curved master grid's sparse end so fillDensity 1..50 changes the picture (F-01)",
+  "branch": "3d-scene/fill-audit-a",
+  "commit": "6f8b8058",
+  "before": [
+    "shots/A/sphere__hatch__ladder__low__a.webp",
+    "shots/A/sphere__hatch__ladder__med__a.webp",
+    "shots/A/torus__contour__ladder__low__a.webp",
+    "shots/A/torus__contour__ladder__med__a.webp",
+    "shots/A/cone__spiral__ladder__low__a.webp",
+    "shots/B/sphere__hatch__taperedEnds__low__a.webp",
+    "shots/B/sphere__hatch__taperedEnds__med__a.webp",
+    "shots/B/torus__hatch__bundleCount__low__a.webp",
+    "shots/B/torus__hatch__bundleCount__med__a.webp"
+  ],
+  "after": [
+    "shots/A/sphere__hatch__ladder__low__a.webp",
+    "shots/A/sphere__hatch__ladder__med__a.webp",
+    "shots/A/torus__contour__ladder__low__a.webp",
+    "shots/A/torus__contour__ladder__med__a.webp",
+    "shots/A/cone__spiral__ladder__low__a.webp",
+    "shots/B/sphere__hatch__taperedEnds__low__a.webp",
+    "shots/B/sphere__hatch__taperedEnds__med__a.webp",
+    "shots/B/torus__hatch__bundleCount__low__a.webp",
+    "shots/B/torus__hatch__bundleCount__med__a.webp"
+  ],
+  "notes": "Root cause: surface-fill.js's masterPitch = min(tonePitch, o6Pitch) picked the density-free o6Pitch constant (~1.51mm) for every Density 1-49 on curved primitives, because hatchSpacing's own taper never got finer than it until ~Density 49.5 -- Density, not the floor, only started to matter at 50. Fix: o6Pitch is rescaled by max(1, tonePitch/o6Pitch0) so it tracks tonePitch instead of clamping flat once density asks to be sparser (byte-identical at and above the crossover, i.e. Density >= ~50); scene3d.js's new curvedSparseTonePitch widens hatchSpacing's shallow 1.85x taper below Density 50 into a geometric decay converging exactly to the untouched formula at Density 50, giving enough separation in ruling count to survive the ladder's own per-band rounding noise at low counts. Visually: Density 1 (\"low\") now renders 4-6 sparse rulings/bands instead of the same dense pattern used at Density 50 (\"med\"), on sphere+hatch+ladder, torus+contour+ladder, cone+spiral+ladder, and the ribbon-ish sphere+hatch+taperedEnds and torus+hatch+bundleCount. Density 50 (\"med\") is pixel-for-pixel unchanged in every pair. Numbers: sphere/hatch/ladder path count 1/25/50/100 = 22/22/23/50 before, 5/9/23/50 after; torus/contour/ladder before was flat at low/med until 50 (12-ish/64/146 unaffected shape), after = 12/31/64/146; cone/spiral/ladder after = 12/29/62 across 1/25/50.",
+  "tests": {
+    "red": "expected [ 76, 76, 80 ] to deeply equal [ 20, 40, 80 ] (sphere/hatch/taperedEnds at Density 1/25/50 on the git-stashed pre-fix tree -- Density 1 and 25 tied at 76)",
+    "green": "tests/unit/scene3d-curved-density-sparse-end.test.js: 14/14 passed",
+    "suites": "new file 14/14; 22 test files referencing tonePitch/o6Pitch/hatchSpacing/masterGrid/curvedMasterFloorPen (266 tests) all green; scene3d-hlr-spatial-index-identity byte-identity guard 6/6 green; full test:unit 4687/4687 passed (439 files, 1 pre-existing unrelated skip); test:integration 1919/1919 passed (2 files timed out under heavy parallel-worktree CPU load in the full run, both pass 61/61 in isolation)"
+  },
+  "byte_identical_pairs": [
+    "shots/A/sphere__hatch__ladder__med__a.webp == after/W-01/shots/A/sphere__hatch__ladder__med__a.webp (Density 50, expected -- the fix's own byte-identity anchor)",
+    "shots/A/torus__contour__ladder__med__a.webp == after/W-01/shots/A/torus__contour__ladder__med__a.webp (Density 50, expected)",
+    "shots/B/sphere__hatch__taperedEnds__med__a.webp == after/W-01/shots/B/sphere__hatch__taperedEnds__med__a.webp (Density 50, expected)",
+    "shots/B/torus__hatch__bundleCount__med__a.webp == after/W-01/shots/B/torus__hatch__bundleCount__med__a.webp (Density 50, expected)"
+  ]
+}
