@@ -236,18 +236,39 @@ self-shadow exclusion); the shadow term feeds per-sample intensity, verified by 
 style changing the shadow's appearance; works on a **curved** receiver; performance measured and
 stated; two-object screenshot.
 
-### E. Expand fidelity on two laws  (plan F5, plus the lying counter)
+### E. Expand fidelity on two laws  (plan F5, plus the lying counter) — CHECKED, does not reproduce
 
-**Task.** After "Expand into group", `interlockWeave` differs from the live render on 6% of the frame
-and `amplitudeOnly` on 10%; the other ten bucket-B laws are 0.2-1%. Bbox does NOT grow and no child
-escapes the silhouette, so this is a fidelity gap, not a protrusion regression. Separately,
+**Task (as written).** After "Expand into group", `interlockWeave` differs from the live render on 6%
+of the frame and `amplitudeOnly` on 10%; the other ten bucket-B laws are 0.2-1%. Separately,
 `onePenDown` books legitimate centreline degenerations as `erodeEmpty` — the counter lies.
 
-**Value.** Lowest severity. Expand-into-group is the plotter handoff path, so a 10% divergence means
-what you plot is not quite what you saw.
+**Measured against current HEAD (25e76b65) — neither reproduces.** `git diff d5af9e30 HEAD --
+src/ui/panels/layers-panel.js src/core/scene3d/surface-fill.js` is empty, so nothing on this branch
+could have changed either behavior; the state below is what this whole effort already merged.
 
-**Done when.** Both laws land in the 0.2-1% band; degenerations are counted as degenerations; expand
-evidence asserts `after.children > 0` AND that before/after images are NOT byte-identical.
+- Fidelity: the same in-process rasterized-ink oracle `expand-render-fidelity.test.js` uses reads
+  **0%** divergence for both `interlockWeave` and `amplitudeOnly` (and the `nibAngle`/`onePenDown`
+  controls) on the only route "Expand into group" is reachable from (`addSceneTree` object3d child) —
+  C3 rule 6's weightScale-1 guarantee makes expand a clone-and-strip no-op for every bucket-B path. A
+  real browser full-canvas diff shows ~8-10% for all four laws tested alike, not law-specific — a
+  render-order/AA floor common to any expand, not a per-law gap. Quantified, not chased.
+- Counter: `erodeEmpty` is 0 for all twelve bucket-B laws on both a sphere and a torus, `onePenDown`
+  included. `docs/torus-fix-evidence/stats-before.json` shows it WAS 10/19 pre-CLS_WALLS — the
+  mechanism the task describes was real, and is already fixed by that earlier, merged work
+  (`wallEmpty`/`wallCentres`).
+
+New regression coverage locking in the above (both green, no source change):
+`tests/integration/expand-scene3d-fidelity-two-laws.test.js`,
+`tests/unit/scene3d-ribbon-degeneration-counter.test.js`. Full writeup: `docs/3d-audit/handoff/unit-e-notes.md`;
+evidence: `docs/3d-audit/handoff/unit-e/`.
+
+**Value.** Lowest severity. Expand-into-group is the plotter handoff path — this item confirms the
+divergence it worried about is not currently present.
+
+**Done when.** Both laws land in the 0.2-1% band (measured: 0%); degenerations are counted as
+degenerations (measured: `erodeEmpty` 0 on both fixtures); expand evidence asserts
+`after.children > 0` AND that before/after images are NOT byte-identical — done via
+`docs/3d-audit/handoff/unit-e/` (real screenshots) plus the new tests' JSON-inequality guard.
 
 ### F. Imported OBJ/STL meshes vs the red-line rule  (UNTESTED)
 
