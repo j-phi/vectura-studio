@@ -96,11 +96,19 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
    fill-audit-a after W-01 M1. Touches `surface-fill.js` dispatch/emitContFamily only; never the master grid.
 4. **A3** (user's "not close to zero yet"): PenFill/boolean-erosion dropped geometry — brief in STILL-OPEN; lane handoff-c.
 5. **W-15c** (F-14 plane 3 rulings at d=50) — design C brief in STILL-OPEN; lane fill-audit.
-6. **W-07b, W-10c, W-27c items 2–4, W-06 sign-off, W-25 floor scope, W-28 face-count threshold, Unit D phase alignment.**
-7. **Slider collapses W-22/W-23/W-24 + W-18** (the audit's 13 duplicate clusters → ~24-law roster): one lane, serial,
+6. **W-05b mkTick (user request 2026-09-05, see `user-reports/8.png` = cone/hatch/mkTick before vs W-05 after):**
+   ticks must have VARIABLE LENGTH and must fill the form — the tick field must cover the whole shaded surface as a
+   continuous texture whose tick length (and density) carries the tone; the only gaps allowed are where highlights
+   are. Today's W-05 output leaves large un-ticked bands between rows and a hard-edged tick region on the cone.
+   Lane fill-audit-a (surface-fill.js `MK.tick` sink). RGR: coverage of the lit-but-not-highlight surface ≥ 0.9 of the
+   silhouette area at d=50, tick length monotone with darkness (≥3x range light→dark), no un-ticked band wider
+   than 2× the row pitch outside the highlight zone; sphere/torus/cone × hatch/contour; byte-identity for every
+   other law. Re-shoot cone/hatch/mkTick low/med/max and LOOK.
+7. **W-07b, W-10c, W-27c items 2–4, W-06 sign-off, W-25 floor scope, W-28 face-count threshold, Unit D phase alignment.**
+8. **Slider collapses W-22/W-23/W-24 + W-18** (the audit's 13 duplicate clusters → ~24-law roster): one lane, serial,
    after the P0/P1 items — the biggest product win still untouched.
-8. Reviewer/judge every landing; re-shoot evidence into `after/<W-id>/`; rebuild the gallery; update STILL-OPEN.
-9. Merge (see checklist below) only when the queue is exhausted or Jay says so.
+9. Reviewer/judge every landing; re-shoot evidence into `after/<W-id>/`; rebuild the gallery; update STILL-OPEN.
+10. Merge (see checklist below) only when the queue is exhausted or Jay says so.
 
 ## Process that earned its keep this round
 
