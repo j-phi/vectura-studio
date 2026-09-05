@@ -147,6 +147,53 @@ describe('3D Scene Studio Phase 3 — surface-fill mappers', () => {
       // Essentially no contour geometry lands inside the empty hole.
       expect(inHole / total).toBeLessThan(0.1);
     });
+
+    // ── W-21 (F-20) — Contour on a SMALL facet (a buckyball pentagon/hexagon
+    // is ~12-15mm across) must not collapse to the lone boundary ring at the
+    // default ("med", fillDensity 50 ⇒ spacing 7.5mm) density — that is byte-
+    // identical in shape to the plain face outline "none" already draws, so
+    // Type=Contour read as completely inert on the solid primitive. RED (pre-
+    // fix): `regionFill('contour', [SMALL_FACE], { spacing: 7.5 })` returned
+    // exactly 1 ring (measured directly against this module before the fix).
+    describe('W-21 (F-20) — small facets get a genuine inset, not just the boundary', () => {
+      // ~13x15mm — measured off a real default buckyball's face bounding box.
+      const SMALL_FACE = [{ x: 0, y: 0 }, { x: 13, y: 0 }, { x: 13, y: 15 }, { x: 0, y: 15 }];
+      const MED_DENSITY_SPACING = 7.5; // hatchSpacing(50) — scene3d.js's own formula
+
+      test('a small face gets at least 2 rings (boundary + a real inset) at med density', () => {
+        const rings = V.Scene3D.Mappers.regionFill('contour', [SMALL_FACE], { spacing: MED_DENSITY_SPACING });
+        expect(rings.length).toBeGreaterThanOrEqual(2);
+      });
+
+      test('ring count still grows with density on a small face (Density keeps driving the count)', () => {
+        const med = V.Scene3D.Mappers.regionFill('contour', [SMALL_FACE], { spacing: MED_DENSITY_SPACING });
+        const max = V.Scene3D.Mappers.regionFill('contour', [SMALL_FACE], { spacing: 0.5 }); // ~fillDensity 220
+        expect(max.length).toBeGreaterThan(med.length);
+      });
+
+      test('no small-face ring geometry lands outside the face silhouette', () => {
+        const rings = V.Scene3D.Mappers.regionFill('contour', [SMALL_FACE], { spacing: MED_DENSITY_SPACING });
+        const pip = V.PathBoolean.pointInPolygon;
+        const closed = SMALL_FACE.concat([SMALL_FACE[0]]);
+        rings.forEach((r) => r.forEach((p) => {
+          // Inside, or on the boundary itself (the outer ring re-touches it),
+          // with a tiny epsilon for the boundary's own vertices.
+          const inside = pip({ x: p.x, y: p.y }, closed);
+          const onBoundary = p.x <= 1e-6 || p.x >= 13 - 1e-6 || p.y <= 1e-6 || p.y >= 15 - 1e-6;
+          expect(inside || onBoundary).toBe(true);
+        }));
+      });
+
+      // Regression guard: an already-adequately-sized region (box-scale) must
+      // succeed on the FIRST attempt, so the adaptive retry never engages and
+      // its output is unchanged from a plain (non-retried) insetPasses call.
+      test('a box-scale region is unaffected (first attempt already succeeds, no retry)', () => {
+        const BOX_FACE = [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 40 }, { x: 0, y: 40 }];
+        const direct = V.Scene3D.Mappers.insetPasses([BOX_FACE], MED_DENSITY_SPACING).flat();
+        const viaRegionFill = V.Scene3D.Mappers.regionFill('contour', [BOX_FACE], { spacing: MED_DENSITY_SPACING });
+        expect(viaRegionFill.length).toBe(direct.length);
+      });
+    });
   });
 
   // ── Phase 3: true spiral (single clipped Archimedean spiral, not rings) ──────
