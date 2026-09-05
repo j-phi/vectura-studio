@@ -2673,13 +2673,44 @@
     // direction on every primitive measured: reaching `rMax` at the plot
     // floor pitch (~2 ink widths) takes on the order of rMax / floor rings,
     // and floor is never smaller than a fraction of a millimetre.
+    // THE PLOT FLOOR (F-10, W-10c: tone-by-omission). Two prior passes tried
+    // to buy back tone headroom by lowering the floor itself (0.5x pen: still
+    // an unplottable blob, torus/hatch pixel-indistinguishable from pre-fix;
+    // 0.8x pen: 10-12% of gaps still under 1.0x pen, and the orchestrator's
+    // own eye still read the torus lower-left fan as solid white wedges).
+    // The floor is now the FULL 1.0x pen (drawn rings never sit closer than
+    // one pen width, period) and the tone this costs is bought back a
+    // DIFFERENT way: `wrapPitch(pitchFor(I), nz)` still asks for whatever
+    // pitch tone wants (down to genuinely sub-floor, exactly as everywhere
+    // else in this file -- see areaFor's own A_DARK comment), but where that
+    // ask falls under the floor, the RING IS RETRACED -- at the SAME floor-
+    // safe radius, over just the ANGULAR ARC that asked for it -- instead of
+    // moved closer: `LOCAL_DUTY = floor / wanted` virtual close-packed turns
+    // would have fit in one floor-width band AT THAT ANGLE, so that arc is
+    // additionally emitted `round(LOCAL_DUTY) - 1` more times (a real,
+    // separate pass each time -- this file's own "no meta.weightScale"
+    // invariant is a PER-PATH constant-width contract, not a "trace it once"
+    // one; `onePenDown` elsewhere in this file already gets solid black the
+    // same way, real passes of one real pen). PER-ANGLE, not per-ring: a
+    // whole-ring retrace count (the first version of this fix) diluted the
+    // rim/core wrap contrast -- a small near-limb arc's high local duty
+    // dragged the WHOLE ring's single retrace count up, over-inking the
+    // bright core too, which measured 0.99 against the 1.05 bar. Restricting
+    // each retrace pass to just the flagged arc (its own `emitScr` call, not
+    // folded into the seam-joined `pts`) adds ink exactly where tone asked
+    // for it and nowhere else. Capped at DUTY_CAP so the guard/segment
+    // budget stays bounded; measured torus max wanted duty ~3.6, so a cap of
+    // 4 loses no observed case.
+    const PLOT_MIN_PEN = 1.0 * C.PEN;
+    const DUTY_CAP = 4;
     while (anyGrowing && guard < 400) {
       guard += 1;
       anyGrowing = false;
       const next = new Float64Array(NANG);
+      const localDuty = new Uint8Array(NANG);
       for (let i = 0; i < NANG; i += 1) {
         const r0 = ring[i];
-        if (r0 >= rMax) { next[i] = r0; continue; }
+        if (r0 >= rMax) { next[i] = r0; localDuty[i] = 1; continue; }
         const th = (i / NANG) * Math.PI * 2;
         const x = ox + r0 * Math.cos(th); const y = oy + r0 * Math.sin(th);
         const s = C.inv(x, y);
@@ -2690,36 +2721,9 @@
         // bounded fraction of `p0` (never below `p0 * WRAP_FLOOR`), so this
         // does not reintroduce a legibility floor `pitchFor` deliberately
         // does not have -- the law still reaches genuine black.
-        //
-        // THE PLOT FLOOR (F-10, reworked after review). `pitchFor` is
-        // entitled to flood past the FULL plot floor (`C.FLOOR`, 2.2x pen --
-        // this repo's own PLOT_FLOOR_PEN, `surface-fill.js:244`) at its dark
-        // end -- deliberate, everywhere in this file (areaFor's own A_DARK
-        // comment) -- and the tonal-range test's 1.5x shadow/lit contrast
-        // depends on that headroom, so this does NOT switch to
-        // `pitchLegible` (tried: collapsed the ratio to 1.05, below the 1.2
-        // bar). But a 0.5x-pen floor -- the first attempt here -- was
-        // cosmetic: half a pen's own width is still visually solid (a
-        // torus/hatch re-shoot at 0.5x was pixel-indistinguishable from
-        // pre-fix at normal viewing size) and 92-100% of samples were STILL
-        // under the full plot floor, i.e. still an unplottable blob by this
-        // file's own definition. `PLOT_MIN_PEN` is now 0.8x pen -- close to
-        // genuinely plot-safe while still passing the tonal-range (bar 1.2)
-        // and wrap-foreshorten rim/core (bar 1.05) tests with margin; 1.0x
-        // pen was tried too and clears tonal-range but fails rim/core
-        // (1.03 vs 1.05) -- the wrap term has less room than tone does.
-        // `wrapPitch` still COMPOUNDS an already sub-floor `p0` with the limb
-        // fold on a body whose foreshortened band is wide rather than a thin
-        // rim (a cone's whole lateral face, a torus's inner rim): pre-fix,
-        // measured 12.2% (torus) / 6.9% (cone) of on-surface ring-to-ring
-        // gaps under 0.8x pen width, against 6.5% on the sphere -- still
-        // real headroom over the sphere, unlike the old 0.5x floor where
-        // gaps under it were already 0% everywhere including sphere (the
-        // metric could not tell the fix from a no-op). `PLOT_MIN_PEN` is a
-        // hard floor under the fold ONLY, well below the FULL plot floor,
-        // so it clips exclusively the samples already crowding hardest.
-        const PLOT_MIN_PEN = 0.8 * C.PEN;
-        const p = Math.max(PLOT_MIN_PEN, wrapPitch(p0, s ? s.nz : 1));
+        const wanted = wrapPitch(p0, s ? s.nz : 1);
+        const p = Math.max(PLOT_MIN_PEN, wanted);
+        localDuty[i] = s ? clamp(Math.round(PLOT_MIN_PEN / wanted), 1, DUTY_CAP) : 1;
         // TEST-ONLY (opt-in via the same `__MONO_TRACE` flag `emit()` already
         // gates `__MONO_CTX` behind): the per-angle, ring-to-ring radial gap
         // in screen mm, on-surface only. This is exactly "the spacing between
@@ -2736,6 +2740,32 @@
       }
       ring = next;
       pushRing(ring);
+      // Extra retrace passes, restricted to the flagged arc(s) only. A run
+      // is a maximal contiguous stretch of angles whose `localDuty >= L`;
+      // each run is pushed as its OWN small polyline through `C.emitScr`
+      // (not folded into the shared seam-joined `pts`), one ring-radius
+      // point of context on either end so it reads as riding the same
+      // curve rather than a bare disconnected dash.
+      for (let L = 2; L <= DUTY_CAP; L += 1) {
+        let runStart = -1;
+        for (let i = 0; i <= NANG; i += 1) {
+          const flagged = i < NANG && localDuty[i] >= L;
+          if (flagged && runStart < 0) runStart = i;
+          if (!flagged && runStart >= 0) {
+            const a = Math.max(0, runStart - 1);
+            const b = Math.min(NANG, i);
+            const runPts = [];
+            for (let k = a; k <= b; k += 1) {
+              const idx = k % NANG;
+              const th = (idx / NANG) * Math.PI * 2;
+              const r = ring[idx];
+              runPts.push({ x: ox + r * Math.cos(th), y: oy + r * Math.sin(th) });
+            }
+            C.emitScr(runPts);
+            runStart = -1;
+          }
+        }
+      }
     }
     C.emitScr(pts);
   };

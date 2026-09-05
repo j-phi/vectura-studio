@@ -277,28 +277,27 @@ describe('Scene3D originSpiral respects the plot floor on torus / cone (F-10)', 
     expect(gaps.length, `${primitive}: no ring-to-ring gaps recorded`).toBeGreaterThan(200);
     const pen = C.PEN;
     let below08 = 0;
-    gaps.forEach((g) => { if (g < 0.8 * pen) below08 += 1; });
+    gaps.forEach((g) => { if (g < 1.0 * pen) below08 += 1; });
     return {
       n: gaps.length, below08, frac: below08 / gaps.length,
     };
   };
 
-  // Bar TIGHTENED after review from 0.5x to 0.8x pen — a 0.5x floor was
-  // cosmetic (see this file's header comment above for the re-shoot
-  // evidence and the tonal-contrast tradeoff that set 0.8x, not 1.0x).
-  test('torus: ring-to-ring gap stays at or above 0.8x pen width', () => {
+  // Bar TIGHTENED twice after review: 0.5x -> 0.8x -> now the FULL 1.0x pen
+  // (see this file's header comment above for the re-shoot evidence and the
+  // tone-by-omission mechanism that keeps the tonal-range/rim-core tests
+  // passing at the full floor).
+  test('torus: ring-to-ring gap stays at or above one full pen width', () => {
     const { frac, n, below08 } = gapStats('torus');
-    // Pre-fix (0.5x floor) measured 518/4246 = 12.2% under 0.5x pen; under
-    // the tighter 0.8x bar this test now checks, pre-fix measured 12.0%.
-    // Post-fix (0.8x floor) 0/n.
-    expect(frac, `${below08}/${n} (${(frac * 100).toFixed(1)}%) gaps under 0.8x pen on torus`).toBeLessThanOrEqual(0.01);
+    // Pre-fix (0.8x floor, no retrace) measured 10.0% of gaps under 1.0x
+    // pen. Post-fix (1.0x floor + per-angle retrace duty) 0/n.
+    expect(frac, `${below08}/${n} (${(frac * 100).toFixed(1)}%) gaps under 1.0x pen on torus`).toBeLessThanOrEqual(0.01);
   }, 120000);
 
-  test('cone: ring-to-ring gap stays at or above 0.8x pen width', () => {
+  test('cone: ring-to-ring gap stays at or above one full pen width', () => {
     const { frac, n, below08 } = gapStats('cone');
-    // Pre-fix (0.5x floor) measured 439/6344 = 6.9% under 0.5x pen; under
-    // the tighter 0.8x bar this test now checks, pre-fix measured 10.1%.
-    // Post-fix (0.8x floor) 0/n.
-    expect(frac, `${below08}/${n} (${(frac * 100).toFixed(1)}%) gaps under 0.8x pen on cone`).toBeLessThanOrEqual(0.01);
+    // Pre-fix (0.8x floor, no retrace) measured 10.4% of gaps under 1.0x
+    // pen. Post-fix (1.0x floor + per-angle retrace duty) 0/n.
+    expect(frac, `${below08}/${n} (${(frac * 100).toFixed(1)}%) gaps under 1.0x pen on cone`).toBeLessThanOrEqual(0.01);
   }, 120000);
 });
