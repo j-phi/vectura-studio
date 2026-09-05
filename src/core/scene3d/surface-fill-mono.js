@@ -1422,6 +1422,22 @@
     const PERIOD = C.FLOOR * 2.0;         // ONE fixed mark period
     const nLines = Math.ceil((2 * half) / P);
     const NS = Math.max(70, Math.round((2 * half) / 0.24));
+    // DUTY, NORMALIZED OVER THE FILE'S OWN L*-LINEAR RANGE (F-19/W-20). The
+    // duty used to be `want / (INK / P)` — a comparison against a FIXED
+    // reference area that has nothing to do with this law's own dark/light
+    // ends. With P pinned near FLOOR, that reference sits well inside
+    // `areaFor`'s true span (`areaFor(0)` down at the lightest end already
+    // exceeds it), so duty saturated to 1 for the whole shadow half of the
+    // form and floored at 0.18 for most of the lit half — only a narrow
+    // sliver of radiance in between ever moved the duty cycle at all
+    // (measured: sphere/hatch tonal-gradient ratio ~1.2, i.e. flat). Mapping
+    // `want` onto duty by where it falls between the law's own measured
+    // `areaFor(1)` (lightest) and `areaFor(0)` (darkest) — exactly how
+    // `voronoiWeb` drives its cell size off `pitchFor`'s own span — uses the
+    // WHOLE requested tone range instead of an arbitrary slice of it.
+    const aLight = C.areaFor(1);
+    const aDark = C.areaFor(0);
+    const DUTY_MIN = 0.18;
     for (let li = 0; li <= nLines; li++) {
       const off = -half + li * P;
       let pts = [];
@@ -1435,8 +1451,8 @@
         const s = C.inv(x, y);
         if (!s) { if (pts.length) { C.emitScr(pts); pts = []; } continue; }
         const want = C.areaFor(clamp(finite(s.I, 0), 0, 1));
-        const full = C.INK / P;
-        const duty = clamp(want / Math.max(1e-6, full), 0.18, 1);
+        const span = (want - aLight) / Math.max(1e-6, aDark - aLight);
+        const duty = clamp(DUTY_MIN + (1 - DUTY_MIN) * span, DUTY_MIN, 1);
         const ph = (((t + half) / PERIOD) + ph0) % 1;
         if (duty < 0.999 && Math.abs(ph - 0.5) > duty / 2) {
           if (pts.length) { C.emitScr(pts); pts = []; }
@@ -2408,12 +2424,42 @@
     const gy = new Float32Array(NX * NY);
     const px = (i) => C.minX + (i - 2) * dx;
     const py = (j) => C.minY + (j - 2) * dy;
+    // RANK-NORMALIZE THE INPUT RADIANCE (F-19/W-20), same technique `lawMaze`
+    // already uses for the identical reason: on a typical lit sphere the RAW
+    // `s.I` this raster samples is not evenly spread over 0..1 — it is
+    // concentrated near the shadow end, so feeding it straight into
+    // `pitchLegible` left most cells requesting nearly the same wavelength
+    // and only the brightest sliver ever reached toward `PMAX` (measured:
+    // sphere/hatch tonal-gradient ratio ~1.1-1.3, essentially flat). Mapping
+    // each cell's raw `I` to its PERCENTILE within this object's own visible
+    // samples spreads the requested wavelength evenly across the law's full
+    // `pitchLegible` range regardless of how skewed the underlying radiance
+    // curve is, before the (already-correct) reflected dispersion relation
+    // below turns that requested wavelength into a settled RD pattern.
+    const rawI = new Float32Array(NX * NY);
+    const sample = [];
     for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
       const s = C.inv(px(i), py(j));
       const k = j * NX + i;
-      if (!s) { lam[k] = C.PMAX * 2; continue; }
+      if (!s) { rawI[k] = -1; continue; }
       mask[k] = 1;
-      lam[k] = C.pitchLegible(finite(s.I, 0)) * 2;   // full wavelength = 2 x clearance
+      const val = clamp(finite(s.I, 0), 0, 1);
+      rawI[k] = val;
+      sample.push(val);
+    }
+    sample.sort((a, b) => a - b);
+    const rankOf = (v) => {
+      if (!sample.length) return 0.5;
+      let lo = 0; let hi = sample.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (sample[mid] < v) lo = mid + 1; else hi = mid;
+      }
+      return sample.length > 1 ? lo / (sample.length - 1) : 0.5;
+    };
+    for (let k = 0; k < mask.length; k++) {
+      if (!mask[k]) { lam[k] = C.PMAX * 2; continue; }
+      lam[k] = C.pitchLegible(rankOf(rawI[k])) * 2;   // full wavelength = 2 x clearance
     }
     // The direction the stripes should run: perpendicular to the tone gradient.
     for (let j = 1; j < NY - 1; j++) for (let i = 1; i < NX - 1; i++) {
