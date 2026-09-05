@@ -641,6 +641,26 @@ describe('Fill Style — the shared mark-class config', () => {
         expect(engineGate.size).toBeGreaterThan(0);
         expect([...engineGate].sort()).toEqual([...paramsGate].sort());
       });
+
+      // ── W-21 reviewer follow-up — the export used to be the LIVE `SURFACE_FILL`
+      // Set, "read-only by convention" only: `Object.freeze` on a Set does not
+      // intercept `.add`/`.delete` (they mutate an internal slot, not an own
+      // property), so an external `.add`/`.delete` on the export silently
+      // corrupted the same Set every one of scene3d.js's five dispatch sites
+      // reads via `SURFACE_FILL.has(...)`. The export is now a read-only VIEW —
+      // `.add`/`.delete` do not exist on it at all, so calling either throws
+      // instead of mutating dispatch, and a genuine mutation attempt cannot
+      // silently change what `isReachableOn` (or any dispatch site) sees.
+      test('the export cannot be mutated into corrupting dispatch (W-21 follow-up)', () => {
+        const engineGate = window.Vectura.Scene3D.SURFACE_FILL_MAPPERS;
+        const before = [...engineGate].sort();
+        expect(typeof engineGate.add).not.toBe('function');
+        expect(typeof engineGate.delete).not.toBe('function');
+        expect(() => { engineGate.add('wireframe'); }).toThrow();
+        expect(() => { engineGate.delete('hatch'); }).toThrow();
+        expect([...engineGate].sort()).toEqual(before);
+        expect(F.isReachableOn('mkTick', 'sphere', undefined, 'hatch')).toBe(true);
+      });
     });
   });
 

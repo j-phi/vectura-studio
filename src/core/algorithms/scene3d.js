@@ -201,10 +201,23 @@
   // equal. Exposing THIS Set (the engine's own dispatch gate, and now the
   // file's only literal copy — see the highlightCfg altFillMapper clamp below,
   // which used to declare a second one) gives params.js a live source to
-  // mirror instead of a floating duplicate. Read-only by convention (assigned
-  // once here, never reassigned) — not deep-frozen, since Set.prototype.add/
-  // delete are prototype methods Object.freeze does not intercept.
-  Scene3DNS.SURFACE_FILL_MAPPERS = SURFACE_FILL;
+  // mirror instead of a floating duplicate.
+  //
+  // W-21 reviewer follow-up — this used to hand out the LIVE `SURFACE_FILL`
+  // Set itself, "read-only by convention" only: `Object.freeze` on a Set does
+  // NOT intercept `.add`/`.delete` (they mutate an internal slot, not an own
+  // property), so any external `.add`/`.delete` on the exported value quietly
+  // corrupted every one of this file's five dispatch sites that read
+  // `SURFACE_FILL.has(...)` directly. A read-only VIEW closes that: it forwards
+  // `has`/`size`/iteration to the real Set but carries no `add`/`delete` of its
+  // own, so calling either on the export throws `TypeError: ... is not a
+  // function` instead of silently mutating engine dispatch.
+  const readonlySetView = (set) => {
+    const view = { has: (v) => set.has(v), get size() { return set.size; } };
+    view[Symbol.iterator] = () => set[Symbol.iterator]();
+    return Object.freeze(view);
+  };
+  Scene3DNS.SURFACE_FILL_MAPPERS = readonlySetView(SURFACE_FILL);
 
   // ── THE OBJECT PLOT FLOOR (§0 / C15) ───────────────────────────────────────
   //

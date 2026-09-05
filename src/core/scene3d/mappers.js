@@ -397,7 +397,15 @@
   // still drives ring count once an attempt succeeds — this only rescues the
   // too-sparse case rather than replacing the Density formula.
   const MIN_CONTOUR_PASSES = 2;
-  const CONTOUR_RETRY_FLOOR_MM = 0.3;
+  // W-21 reviewer follow-up — this used to read 0.3, but `insetPasses` (above)
+  // ALWAYS clamps its own `step` to `Math.max(0.5, spacing)`, so no value this
+  // retry loop ever passes it can go below 0.5mm regardless of what this
+  // constant says. Below 0.5 the loop was retrying at a spacing `insetPasses`
+  // silently rounded back up to 0.5 every time — dead iterations, not a finer
+  // retry. Set to the value that is actually live (0.5, `insetPasses`'s own
+  // floor) so the loop's exit condition (`sp > CONTOUR_RETRY_FLOOR_MM`) and
+  // its halving both mean what they say.
+  const CONTOUR_RETRY_FLOOR_MM = 0.5;
   const contourPassesAdaptive = (loops, spacing) => {
     let sp = spacing;
     let passes = insetPasses(loops, sp);
