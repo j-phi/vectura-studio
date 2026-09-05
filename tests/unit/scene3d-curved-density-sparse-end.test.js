@@ -39,10 +39,10 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  *      rulings, not something this fix introduces — see the note on the
  *      "not strictly monotone at every single Density" finding below).
  *      `curvedSparseTonePitch` widens the SAME taper below Density 50 (a
- *      geometric decay from 6x `hatchSpacing(50)` at Density 1 down to 1x at
- *      Density 50, converging there exactly) so the master grid actually
- *      opens up several rulings at a time between the audit's own checkpoint
- *      set, not one.
+ *      geometric decay from `CURVED_SPARSE_PITCH_BOOST`x `hatchSpacing(50)`
+ *      at Density 1 down to 1x at Density 50, converging there exactly) so
+ *      the master grid actually opens up several rulings at a time between
+ *      the audit's own checkpoint set, not one.
  *
  * WHY 1/25/50(/100), NOT EVERY INTEGER DENSITY. The ladder-banding rounding
  * above means the raw drawn path count is NOT perfectly monotone at every
@@ -52,6 +52,19 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  * throughout (asserted directly below via the `lastMasterGridStats` test
  * seam this fix adds), and the DRAWN count is monotone at the checkpoints
  * findings.json's F-01 names as the acceptance bar: 1 / 25 / 50 / 100.
+ *
+ * FOLLOW-UP (adversarial review, M1/M2): the audit's OWN literal checkpoint
+ * set is 1/10/25/50, not 1/25/50, and at that set `CURVED_SPARSE_PITCH_BOOST
+ * = 6` dipped sphere+hatch+ladder ([5,4,9,23], d=10 < d=1) and torus+hatch+
+ * ladder ([4,3,4,10], d=10 < d=1 < d=25 tie) — the literal F-01 symptom,
+ * reintroduced by the pitch curve landing an unlucky ruling count exactly at
+ * Density 10. Re-picking the boost to 4.1 (see the constant's own comment)
+ * makes drawn count non-decreasing AND total ink strictly increasing across
+ * 1/10/25/50 on sphere, torus AND cone x hatch x {ladder, fineLadder} — see
+ * "literal checkpoints (M1/M2)" below. This is NOT a claim that per-Density
+ * rounding noise is gone (it is not, see the paragraph above); it is a
+ * claim that the SPECIFIC four checkpoints the audit measures by are clear
+ * of it, verified by direct sweep rather than assumed from a wider spacing.
  */
 
 const BOUNDS = {
@@ -169,30 +182,76 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     // 1/25/50/100 — Density 1 and 25 were byte-identical to each other.
     test('sphere + hatch + ladder', () => {
       const counts = [1, 25, 50, 100].map((d) => runCount(d, 'hatch', 'ladder', defaults.objects[0]));
-      expect(counts).toEqual([5, 9, 23, 50]);
+      expect(counts).toEqual([4, 13, 23, 50]);
       for (let i = 1; i < counts.length; i++) expect(counts[i]).toBeGreaterThan(counts[i - 1]);
     });
 
     test('torus + contour + ladder', () => {
       const counts = [1, 25, 50, 100].map((d) => runCount(d, 'contour', 'ladder', torusObj));
-      expect(counts).toEqual([12, 31, 64, 146]);
+      expect(counts).toEqual([19, 35, 64, 146]);
       for (let i = 1; i < counts.length; i++) expect(counts[i]).toBeGreaterThan(counts[i - 1]);
     });
 
     test('cone + spiral + ladder (strictly increasing across the fix\'s own scope, 1/25/50)', () => {
       const counts = [1, 25, 50].map((d) => runCount(d, 'spiral', 'ladder', coneObj));
-      expect(counts).toEqual([12, 29, 62]);
+      expect(counts).toEqual([18, 35, 62]);
       for (let i = 1; i < counts.length; i++) expect(counts[i]).toBeGreaterThan(counts[i - 1]);
     });
 
     test('ribbon-ish ladder laws also open up: sphere/hatch/taperedEnds and torus/hatch/bundleCount', () => {
       const tapered = [1, 25, 50].map((d) => runCount(d, 'hatch', 'taperedEnds', defaults.objects[0]));
-      expect(tapered).toEqual([20, 40, 80]);
+      expect(tapered).toEqual([26, 49, 80]);
       for (let i = 1; i < tapered.length; i++) expect(tapered[i]).toBeGreaterThan(tapered[i - 1]);
 
       const bundle = [1, 25, 50].map((d) => runCount(d, 'hatch', 'bundleCount', torusObj));
-      expect(bundle).toEqual([39, 70, 84]);
+      expect(bundle).toEqual([43, 75, 84]);
       for (let i = 1; i < bundle.length; i++) expect(bundle[i]).toBeGreaterThan(bundle[i - 1]);
+    });
+  });
+
+  describe('literal checkpoints (M1/M2) — Density 1/10/25/50, the audit\'s own grid', () => {
+    // RED (git-stashed CURVED_SPARSE_PITCH_BOOST=6 tree, this suite's own
+    // proof): torus + hatch + ladder counts were [4, 3, 4, 10] (d=10 dips
+    // below d=1, d=25 ties d=1) and sphere + hatch + ladder was
+    // [5, 4, 9, 23] (d=10 dips below d=1) — the literal F-01 symptom,
+    // reintroduced at these specific checkpoints by the first follow-up's
+    // boost value. GREEN (boost 4.1): path count is non-decreasing on all
+    // six primitive x law combos, and total ink is STRICTLY increasing on
+    // all six — including torus + hatch + fineLadder, whose path COUNT ties
+    // at d=10/d=25 (6 == 6) but whose ink does not (different ruling counts,
+    // 7 vs 10, coincidentally close in segment count after ladder banding).
+    const pathLen = (p) => {
+      const pts = Object.keys(p).filter((k) => k !== 'meta').sort((a, b) => Number(a) - Number(b)).map((k) => p[k]);
+      let total = 0;
+      for (let i = 1; i < pts.length; i++) {
+        total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      }
+      return total;
+    };
+    const runInk = (...args) => Math.round(run(...args).reduce((s, p) => s + pathLen(p), 0) * 100) / 100;
+
+    const CHECKPOINTS = [1, 10, 25, 50];
+    const expectNonDecreasing = (arr) => {
+      for (let i = 1; i < arr.length; i++) expect(arr[i]).toBeGreaterThanOrEqual(arr[i - 1]);
+    };
+    const expectStrictlyIncreasing = (arr) => {
+      for (let i = 1; i < arr.length; i++) expect(arr[i]).toBeGreaterThan(arr[i - 1]);
+    };
+
+    test.each([
+      ['sphere + hatch + ladder', 'hatch', 'ladder', () => defaults.objects[0], [4, 7, 13, 23], [135.47, 192.84, 306.26, 626.36]],
+      ['torus + hatch + ladder', 'hatch', 'ladder', () => torusObj, [3, 5, 7, 10], [258.87, 488.75, 699.49, 1052.68]],
+      ['cone + hatch + ladder', 'hatch', 'ladder', () => coneObj, [8, 12, 17, 37], [431.95, 549, 851.77, 1748.73]],
+      ['sphere + hatch + fineLadder', 'hatch', 'fineLadder', () => defaults.objects[0], [6, 9, 13, 23], [139.94, 213.73, 364.75, 620.11]],
+      ['torus + hatch + fineLadder', 'hatch', 'fineLadder', () => torusObj, [4, 6, 6, 9], [430.8, 523.85, 648.2, 1033.21]],
+      ['cone + hatch + fineLadder', 'hatch', 'fineLadder', () => coneObj, [11, 14, 21, 37], [527.4, 670.66, 1025.79, 1821.11]],
+    ])('%s: count non-decreasing, ink strictly increasing', (label, mapper, style, obj, expectCounts, expectInk) => {
+      const counts = CHECKPOINTS.map((d) => runCount(d, mapper, style, obj()));
+      const ink = CHECKPOINTS.map((d) => runInk(d, mapper, style, obj()));
+      expect(counts).toEqual(expectCounts);
+      expect(ink).toEqual(expectInk);
+      expectNonDecreasing(counts);
+      expectStrictlyIncreasing(ink);
     });
   });
 

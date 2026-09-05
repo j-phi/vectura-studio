@@ -443,18 +443,28 @@
   // exactly, so every existing d>=50 document, including the O27 "same law"
   // parity direction, is untouched) the taper becomes GEOMETRIC rather than
   // `hatchSpacing`'s own linear shape, spanning `CURVED_SPARSE_PITCH_BOOST`x
-  // `hatchSpacing(50)` at Density 1 down to 1x at Density 50. That gives
-  // Density checkpoints spaced widely enough in ruling COUNT (not just
-  // pitch) to survive the banding rounding above, instead of the ~1-line
-  // steps the plain taper produced. `CURVED_SPARSE_PITCH_BOOST` (6) was
-  // picked empirically against the default sphere fixture: it opens the
-  // ruling count from single digits at Density 1 to its untouched Density-50
-  // count with several rulings of headroom at every checkpoint in between.
+  // `hatchSpacing(50)` at Density 1 down to 1x at Density 50.
+  //
+  // FOLLOW-UP (W-01 adversarial review, M1): 6 was NOT wide enough at the
+  // audit's own literal checkpoints (1/10/25/50) on every primitive — the
+  // banding-rounding property above is not monotone in ruling count, so
+  // WIDENING the pitch curve does not uniformly help; it only moves WHICH
+  // checkpoint lands on an unlucky ruling count (measured: boost 6 dipped
+  // sphere at d=10 and tied+dipped torus at d=10; boost 8-18 fixed sphere/
+  // cone but left torus's d=1 and d=10 both pinned to the absolute plot-
+  // safety floor, N=4 -- a legitimate tie, not a defect, but still short of
+  // "strictly increasing"). `CURVED_SPARSE_PITCH_BOOST` (4.1) was re-picked
+  // by sweeping against sphere/torus/cone x hatch x {ladder, fineLadder}
+  // simultaneously: it is the value where all six combos' drawn path count
+  // is non-decreasing AND every one of the six has strictly increasing
+  // total ink (path length) across Density 1/10/25/50 -- see
+  // `tests/unit/scene3d-curved-density-sparse-end.test.js`'s "literal
+  // checkpoints" describe block for the exact pinned numbers.
   //
   // Only threaded into the ONE direct density->tonePitch SurfaceFill call
   // (mirrors `curvedMasterFloorPen`'s own scope note) — no other caller reads
   // this, so nothing else moves.
-  const CURVED_SPARSE_PITCH_BOOST = 6;
+  const CURVED_SPARSE_PITCH_BOOST = 4.1;
   const curvedSparseTonePitch = (density) => {
     const d = clamp(finite(density, 50), 0, 500);
     if (d >= 50) return hatchSpacing(d); // byte-identical: untouched formula

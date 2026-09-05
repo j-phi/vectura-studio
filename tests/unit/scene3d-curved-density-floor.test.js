@@ -191,16 +191,23 @@ describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches d
     // outside the fix's scope (tonePitch is already finer than the floor by
     // then) and stay pinned to their pre-fix values, verified via `git stash`
     // exactly as this guard's own header describes.
+    //
+    // RE-PINNED AGAIN (adversarial review M1): the first pass at this fix
+    // (`CURVED_SPARSE_PITCH_BOOST = 6`, values 4 / 23,8 below) reintroduced
+    // the literal F-01 symptom AT Density 10 on other primitives (torus
+    // dipped [4,3,4,10] at 1/10/25/50) — see
+    // `scene3d-curved-density-sparse-end.test.js`'s "literal checkpoints"
+    // block. The re-picked boost (4.1) moves d=10 again, to 7 / 31,14.
     test('hatch mapper: pinned fill counts at d=10/50/75/100', () => {
-      expect(runSphere(10, 'hatch').count).toBe(4);
+      expect(runSphere(10, 'hatch').count).toBe(7);
       expect(runSphere(50, 'hatch').count).toBe(23);
       expect(runSphere(75, 'hatch').count).toBe(39);
       expect(runSphere(100, 'hatch').count).toBe(50);
     });
 
     test('crosshatch mapper (ratio-scaled family B): pinned fill counts at d=10/100, ratio 0.25 and 1.0', () => {
-      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(23);
-      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(8);
+      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(31);
+      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(14);
       expect(runSphere(100, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(183);
       expect(runSphere(100, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(83);
     });
