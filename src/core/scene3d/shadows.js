@@ -268,6 +268,37 @@
     return out;
   };
 
+  // General ray/plane intersection along the light TRAVEL direction — the
+  // generalization of the y=0 ground projector below to an ARBITRARY plane
+  // (a point on it + its unit normal). Returns the WORLD-space point where
+  // the ray P + s*d crosses the plane, or null when the ray is parallel to
+  // it or the plane sits "behind" P relative to the light's own travel
+  // (s <= 0 — no physically valid shadow reaches there). Unlike
+  // `projectShadowVertex` below, this does NOT camera-project — callers
+  // that need the point in a receiver's own local frame (e.g. scene3d.js's
+  // faceted-shadow-footprint, Unit D judge follow-up v2: a box/plane/pyramid
+  // FACE is itself a plane, so its shadow can be built with the SAME
+  // parallel-projection model the ground shadow already uses) do that
+  // themselves. Sanity: with planeAnchor.y=0 and planeNormal=(0,1,0) this
+  // reduces to the exact same s = -P.y/d.y the ground projector solves.
+  const projectAlongDirToPlane = (P, d, planeAnchor, planeNormal) => {
+    if (!P || !Number.isFinite(P.x) || !Number.isFinite(P.y) || !Number.isFinite(P.z)) return null;
+    if (!planeAnchor || !planeNormal) return null;
+    const denom = planeNormal.x * d.x + planeNormal.y * d.y + planeNormal.z * d.z;
+    if (Math.abs(denom) < 1e-9) return null;
+    const relx = planeAnchor.x - P.x; const rely = planeAnchor.y - P.y; const relz = planeAnchor.z - P.z;
+    const s = (planeNormal.x * relx + planeNormal.y * rely + planeNormal.z * relz) / denom;
+    // A vertex already ON (or fractionally behind, fp noise) the plane is a
+    // legitimate contact point — the caster's own base sits exactly here for
+    // an object resting on its receiver, matching the ground projector below
+    // (`projectShadowVertex`), which has NO sign guard at all beyond the
+    // denom epsilon. Only reject a vertex clearly on the wrong side.
+    if (!(s > -1e-3) || !Number.isFinite(s)) return null;
+    const x = P.x + s * d.x; const y = P.y + s * d.y; const z = P.z + s * d.z;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+    return { x, y, z };
+  };
+
   // Project a world vertex onto the y = 0 ground along the light travel dir,
   // then camera-project. Returns a screen {x,y,z} or null when non-finite.
   const projectShadowVertex = (P, d, camAngles, projOpts) => {
@@ -3123,6 +3154,14 @@
       // already uses (buildGradedSpacing); zero behavior change for every
       // existing caller of this module — this is a pure additional export.
       hatchRingsEvenOdd,
+      // Unit D judge follow-up v2 — the FLAT-face footprint-clip model
+      // (parametrize the plane rather than duplicate the ground-shadow
+      // projection): `projectAlongDirToPlane` generalizes the ground's
+      // y=0 ray/plane intersection to an arbitrary plane; `convexHull` is
+      // the same 2D hull the ground caster silhouette already reduces to
+      // for its draft footprint.
+      projectAlongDirToPlane,
+      convexHull,
       // Fill Style (tone-law) on shadow hatch: `toneLawApplies(lawId)` is the
       // predicate a UI picker should gate on (hide ids whose mark class does
       // not change shadow geometry); `toneLawMarkClass` is the underlying

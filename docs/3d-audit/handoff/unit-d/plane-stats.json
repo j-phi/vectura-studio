@@ -2,9 +2,9 @@
   "ver": "1.3.98",
   "stats": {
     "on": {
-      "layerId": "21a390da-95e0-486f-a757-b9a91c24b7cc",
-      "total": 138,
-      "receiverFillCount": 102,
+      "layerId": "e8acbc75-69f1-4ac2-86d2-0ccda0e43c85",
+      "total": 156,
+      "receiverFillCount": 120,
       "computeMs": 3.6999998092651367,
       "casterBB": {
         "minx": 170.24730196492297,
@@ -14,10 +14,10 @@
       }
     },
     "aside": {
-      "layerId": "5da223cd-cbe3-4a2b-afce-aec6e223755c",
+      "layerId": "a3e11266-8993-4adb-aa32-c0153be76977",
       "total": 116,
       "receiverFillCount": 80,
-      "computeMs": 2,
+      "computeMs": 2.8999998569488525,
       "casterBB": {
         "minx": 489.74279303213183,
         "maxx": 541.0113035965949,
@@ -26,7 +26,7 @@
       }
     },
     "off": {
-      "layerId": "a69eeb24-4669-4814-91a6-d15210880bc7",
+      "layerId": "b9d6421b-c3df-453c-974a-82173dadb5ba",
       "total": 132,
       "receiverFillCount": 96,
       "computeMs": 1.5999999046325684,

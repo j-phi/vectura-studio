@@ -286,6 +286,30 @@ stated plainly rather than tuned away. See `docs/3d-audit/handoff/unit-d-notes.m
 writeup, pixel numbers, and re-measured performance (box+plane ~2.3x, dense scene ~3.3x, both still
 low-double-digit ms in absolute terms; flag stays OFF by default).
 
+**v2 — footprint-clip model (this commit), replacing per-point sampling on flat faces.** Per the
+coordinator: reuse the ground-shadow model instead. `shadows.js` gained
+`projectAlongDirToPlane` (the ground's own y=0 ray/plane intersection, generalized to an arbitrary
+plane) and exports `convexHull`; `scene3d.js`'s `buildFaceFootprint` projects every OTHER object's
+world vertices onto THIS face's plane along the light, hulls them, and clips to the face's own
+outline (Sutherland-Hodgman, every faceted primitive's face is convex). The clipped footprint
+hatches at one scalar "inside" pitch (a directional hard shadow is binary, so one sample suffices);
+the rest of the face hatches at the "outside" pitch with the footprint as an even-odd hole. The
+boundary is now a real polygon clip edge. Two bugs found live while wiring this up, both fixed:
+`planeFor`'s memoized narrow-facet grant ignores the screen-pitch it's called with (collapsed
+inside/outside to the same value) — fixed with a direct `uvPitchFactor` conversion for the split
+family only; and the "outside" pitch was sampled at the face's own centroid, which can itself sit
+inside a caster's footprint — fixed with `spacingBand(..., noShadowBaseline: true)`. A third bug
+(caught by the full `test:unit` run: 19 x-ray-suite failures, `record` undefined at one pre-existing
+call site that never needed it before) was fixed by guarding the footprint call. New RGR:
+a footprint-EDGE test (two 5mm windows straddling the exact projected edge, >=2x required) — RED
+against `2893d842` (0.96), GREEN now; the existing 1.5x density test still passes. Looked at the
+crops directly: a clear, straight-edged quadrilateral patch is now visible (denser-packed hatch
+lines, not a solid wash — expected for plotter-style line rendering), absent in both the aside and
+OFF controls; a second scene (tall box onto a neighbouring box's side face) also shows it. Curved
+receivers (cone/sphere evidence) are byte-identical (md5) to before. Perf: box+plane ~2.4x
+(1.5-2.3ms -> 3.5-4.4ms), dense scene ~4.3x (23-27ms -> 100-120ms) — flag stays OFF by default,
+not force-fixed further. Full writeup: `docs/3d-audit/handoff/unit-d-notes.md`.
+
 ### E. Expand fidelity on two laws  (plan F5, plus the lying counter)
 
 **Task.** After "Expand into group", `interlockWeave` differs from the live render on 6% of the frame

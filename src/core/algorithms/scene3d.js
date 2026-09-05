@@ -702,6 +702,88 @@
         ? (wp, lt) => ShadowReceive.pointInShadow(wp, lt, shadowOccluders, { excludeObjectId: currentReceiverObjectId })
         : null;
       const intensityFn = toneOn ? (nw, wp) => Regions.combinedIntensity(nw, wp, activeLights, shadowFn) : null;
+
+      // ── Unit D judge follow-up v2 — FLAT-face footprint clip ────────────────
+      // (faceHatchLines, below, is the consumer.) "Parametrize the plane rather
+      // than duplicate" the ground-shadow model: `Shadows.projectAlongDirToPlane`
+      // is the ground's own y=0 ray/plane intersection, generalized to this
+      // face's own plane; `Shadows.convexHull` is the same 2D hull the ground
+      // caster silhouette already reduces to for its footprint.
+      const worldToUV = (scafArg, pt) => {
+        const dx = pt.x - scafArg.origin.x; const dy = pt.y - scafArg.origin.y; const dz = pt.z - scafArg.origin.z;
+        return {
+          x: dx * scafArg.U.x + dy * scafArg.U.y + dz * scafArg.U.z,
+          y: dx * scafArg.V.x + dy * scafArg.V.y + dz * scafArg.V.z,
+        };
+      };
+      const ringArea2 = (ring) => {
+        let a2 = 0;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) a2 += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
+        return a2;
+      };
+      const asCCW = (ring) => (ringArea2(ring) < 0 ? ring.slice().reverse() : ring);
+      // Sutherland-Hodgman: clip `subject` (any simple polygon) against the
+      // CONVEX polygon `clipCCW` (wound CCW) — every faceted primitive's face
+      // (box/plane/pyramid) is convex by construction, so this always applies.
+      // Returns the clipped polygon (possibly empty).
+      const clipToConvexCCW = (subject, clipCCW) => {
+        let output = subject;
+        for (let i = 0; i < clipCCW.length && output.length; i++) {
+          const a = clipCCW[i]; const b = clipCCW[(i + 1) % clipCCW.length];
+          const ex = b.x - a.x; const ey = b.y - a.y;
+          const inside = (pt) => (ex * (pt.y - a.y) - ey * (pt.x - a.x)) >= 0;
+          const edgeT = (p0, p1) => {
+            const dxp = p1.x - p0.x; const dyp = p1.y - p0.y;
+            const denom = ex * dyp - ey * dxp;
+            const t = denom ? ((a.x - p0.x) * ey - (a.y - p0.y) * ex) / denom : 0;
+            return { x: p0.x + t * dxp, y: p0.y + t * dyp };
+          };
+          const input = output;
+          output = [];
+          for (let j = 0; j < input.length; j++) {
+            const cur = input[j]; const prev = input[(j + input.length - 1) % input.length];
+            const curIn = inside(cur); const prevIn = inside(prev);
+            if (curIn) {
+              if (!prevIn) output.push(edgeT(prev, cur));
+              output.push(cur);
+            } else if (prevIn) {
+              output.push(edgeT(prev, cur));
+            }
+          }
+        }
+        return output;
+      };
+      // One footprint set per face scaffold (faceHatchLines calls this once
+      // per face it hatches) — every OTHER object's world vertices projected
+      // onto THIS face's own plane along the light travel direction, hulled,
+      // then clipped to the face's own visible outline. null when the flag is
+      // off, the light is absent/draft, or nothing lands on this face.
+      const faceFootprintCache = new Map();
+      const buildFaceFootprint = (scaf, normalWorldArg, selfId) => {
+        if (!(shadowReceiveOn && toneOn && scaf && lightDir && Shadows
+          && typeof Shadows.projectAlongDirToPlane === 'function'
+          && typeof Shadows.convexHull === 'function')) return null;
+        if (faceFootprintCache.has(scaf.uv)) return faceFootprintCache.get(scaf.uv);
+        const faceCCW = asCCW(scaf.uv);
+        const anchor = scaf.origin;
+        const polys = [];
+        scene.objects.forEach((otherRec) => {
+          if (!otherRec || otherRec.id === selfId) return;
+          const world = otherRec.world || [];
+          const uvPts = [];
+          for (let i = 0; i < world.length; i++) {
+            const wp = Shadows.projectAlongDirToPlane(world[i], lightDir, anchor, normalWorldArg);
+            if (wp) uvPts.push(worldToUV(scaf, wp));
+          }
+          const hull = Shadows.convexHull(uvPts);
+          if (hull.length < 3) return;
+          const clipped = clipToConvexCCW(hull, faceCCW);
+          if (clipped.length >= 3 && Math.abs(ringArea2(clipped)) > 1e-6) polys.push(clipped);
+        });
+        const result = polys.length ? polys : null;
+        faceFootprintCache.set(scaf.uv, result);
+        return result;
+      };
       // I8 — per-sample specular term for light-driven highlight mode. Reads the
       // live `activeLights` binding (like intensityFn) so an emissive object's
       // co-located light is picked up. shininess derives from the tone Specular
@@ -1066,7 +1148,18 @@
       // rank cache and always resolves the band from THIS point's own `I`
       // via the plain threshold `Regions.band` — correct for a per-sample
       // graded call, never for the ordinary one-sample-per-face path.
-      const spacingBand = (normalWorld, styleParams, worldPoint, face, record, opts, perPointGrade) => {
+      // `noShadowBaseline` (Unit D judge follow-up v2, default false — every
+      // pre-existing call site byte-identical): computes `I` via
+      // `Regions.combinedIntensity` WITHOUT the shadow term, i.e. the
+      // intensity this point would have with NOTHING occluding it. The
+      // footprint-split "outside" hatch needs this specifically — the face's
+      // own geometric CENTROID (what the ordinary unsplit call samples) can
+      // itself sit INSIDE a caster's footprint (found live: a 320x320 plane
+      // centred at the origin with a shadow footprint that happens to cover
+      // the origin), which would silently feed the "outside" pass an
+      // already-shadowed intensity and collapse it back onto the "inside"
+      // value — the exact confound this flag exists to rule out.
+      const spacingBand = (normalWorld, styleParams, worldPoint, face, record, opts, perPointGrade, noShadowBaseline) => {
         const s0 = hatchSpacing(styleParams.fillDensity);
         if (!toneOn) return { spacing: s0, bandIdx: -1, terminator: false };
         // `toneLaw: 'none'` is STAGE 0 — the tone apparatus switched off — and it
@@ -1082,7 +1175,10 @@
         // below may thin, re-space or re-tag this facet's ink on a highlight's
         // account, so the specular gain multiplier is skipped outright.
         const hlOff = styleParams.highlightTreatment === 'none' || styleParams.highlightTreatment === 'keep';
-        const I = intensityFn(normalWorld, worldPoint);
+        const I = noShadowBaseline
+          ? clamp(finite(Regions && typeof Regions.combinedIntensity === 'function'
+            ? Regions.combinedIntensity(normalWorld, worldPoint, activeLights) : 0, 0), 0, 1)
+          : intensityFn(normalWorld, worldPoint);
         // O20 — the object's own rank grade when the thresholds under-use the
         // ladder, the plain threshold band otherwise (and always, for a caller
         // with no face/record to grade against). Skipped entirely under
@@ -1632,74 +1728,92 @@
         // one for F — so the dip between them is a property of the recipe, not
         // of how tightly the carrier happens to run at the limb.
         //
-        // ── UNIT D JUDGE FOLLOW-UP — SPATIALLY RESOLVE THE SHADOW ON A FACE ────
+        // ── UNIT D JUDGE FOLLOW-UP v2 — FOOTPRINT-CLIPPED shadow on a FLAT face ──
         //
-        // The judge's finding: `spacingBand` above samples `intensityFn` (and
-        // therefore the shadow term) ONCE at this face's centroid, so a big flat
-        // plane receiver got one uniform pitch shift over its ENTIRE surface —
-        // no localized patch, ON/OFF visually indistinguishable. Curved prims
-        // never had this bug (SurfaceFill.buildObject's sampleAt is per-sample);
-        // only this faceted per-region path did.
-        //
-        // Fix: when shadow-receive is live, re-derive each family's spacing as a
-        // FUNCTION of world position on this face's own plane (scaf.toWorld),
-        // fed to `Shadows.hatchRingsEvenOdd` — the exact marching-scan primitive
-        // the shadow's own tone gradient (buildGradedSpacing) already uses for
-        // this. Rulings stay unbroken; only the ruling-to-ruling PITCH tightens
-        // inside the shadow footprint, because the scan re-samples spacingBand
-        // at the true world point of each scanline crossing instead of once.
-        //
-        // This BYPASSES `planeFor`/`plan` (Round 10's "draw one ruling instead
-        // of none" narrow-facet grant): that grant bakes ONE scalar in-plane
-        // pitch per family from the DRY-RUN's scalar sample, which a per-point
-        // function cannot honor (planeFor would return the same f.plane for
-        // every point, silently flattening the grade straight back to uniform).
-        // Foreshortening compensation (`uvPitchFactor`) is applied directly
-        // instead — it is provably position-independent on a FLAT face (a pure
-        // function of angle + the scaffold), so dividing by it per family, once,
-        // is exact, not an approximation.
-        //
-        // Gated on `shadowReceiveOn` (default OFF) — every existing scene is
-        // byte-identical, unaffected by this branch entirely. Scope: family A
-        // (the carrier — always the dominant ink, and what a plain hatch/ladder
-        // law IS) and the automatic tone-driven second family (crosshatch's
-        // cross-pass, or the dark-zone extra direction) are both graded;
-        // tripleHatch's third pass reuses family B's grade (same ratio) rather
-        // than a fourth independent sample, an acceptable simplification for a
-        // rare combination. `faceMonoLines` (mono tone laws) and
-        // `faceLightDrivenLines` (I8 lightDriven highlight) are NOT graded —
-        // out of scope for this fix; they still sample once at the centroid.
-        const gradeShadow = shadowReceiveOn && toneOn && scaf
-          && Shadows && typeof Shadows.hatchRingsEvenOdd === 'function';
-        if (gradeShadow) {
-          const spacingAtWorld = (x, y) => spacingBand(
-            normalWorld, styleParams, scaf.toWorld({ x, y }), face, record, hlOpts, true,
-          ).spacing;
-          const gradedPush = (deg, screenAt, floor, baseHintScalar) => {
-            const k = uvPitchFactor(scaf, deg);
-            const fn = (x, y) => Math.max(finite(floor, 0.05) || 0.05, screenAt(x, y) / k);
-            fn.baseHint = Math.max(finite(floor, 0.05) || 0.05, baseHintScalar / k);
-            maybeLink(Shadows.hatchRingsEvenOdd([scaf.uv], deg, fn), styleParams)
+        // v1 (per-point sampling, re-running spacingBand at each scanline
+        // crossing) fixed the uniform-shift defect but only ever produced a
+        // diffuse density GRADIENT: hatchRingsEvenOdd's marching scan can only
+        // vary spacing ALONG the perpendicular axis, uniformly across a
+        // ruling's whole length, so it can never draw a genuinely 2D-bounded
+        // patch. Per the coordinator: for a FLAT face, reuse the ground-shadow
+        // model instead (a face IS a plane, exactly what the handoff's own
+        // "projection is only valid on a plane" caveat allows) — project the
+        // OTHER objects' silhouettes onto THIS face's plane along the light,
+        // clip to the visible face region, and hatch inside/outside at two
+        // different SCALAR pitches, exactly like a ground shadow. The
+        // footprint boundary is then a real polygon clip edge, not a fade.
+        // Curved receivers are unaffected (still per-point, via SurfaceFill).
+        // `plane`/`push` mirror crossFamilies's own locals exactly (that
+        // function is bypassed here so family A can be footprint-split).
+        // `planeRaw` is the SAME foreshortening conversion (screenPitch /
+        // uvPitchFactor) WITHOUT `planeFor`'s memoized Round-10 narrow-facet
+        // grant: `planeFor` (built from a single dry-run "ask" per family)
+        // ignores whatever screenPitch it is handed once a plan entry exists
+        // — it always returns that one memoized `f.plane` regardless of the
+        // argument — so calling it with two DIFFERENT screen pitches
+        // (outside vs inside) would silently collapse back to ONE identical
+        // value (found live: both resolved to the exact same float). The
+        // footprint split needs two genuinely different in-plane pitches, so
+        // it computes the conversion directly instead.
+        const plane = (deg, screenPitch) => (planeFor ? planeFor(deg, screenPitch) : screenPitch);
+        const planeRaw = (deg, screenPitch) => screenPitch / uvPitchFactor(scaf, deg);
+        const push = (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l));
+        // `record` is omitted at one pre-existing call site (the x-ray
+        // back-face fill pass, which never needed it before this fix either)
+        // — guard rather than assume every caller supplies it.
+        const footprintPolys = record ? buildFaceFootprint(scaf, normalWorld, record.id) : null;
+        if (footprintPolys && footprintPolys.length) {
+          // NOT the top-of-function `spacing` (sampled at this face's own
+          // geometric centroid): that centroid can itself sit INSIDE a
+          // caster's footprint (a plane centred at the origin with a shadow
+          // that happens to cover the origin, for one), which would silently
+          // feed the "outside" pass an already-shadowed value. `noShadow-
+          // Baseline` asks for the true unshadowed intensity instead — the
+          // physically correct meaning of "the face's normal pitch".
+          const outsideSpacing = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts, true, true).spacing;
+          const outsideScreen = Math.max(hatchFloorFor(styleParams.fillDensity), planeRaw(baseAngle, outsideSpacing));
+          const outsideRings = [asCCW(scaf.uv)].concat(footprintPolys);
+          maybeLink(Shadows.hatchRingsEvenOdd(outsideRings, baseAngle, outsideScreen), styleParams)
+            .forEach((l) => uvLines.push(l));
+          // A directional hard shadow is BINARY — every point inside it shares
+          // the same occluded intensity, so ONE sample (the footprint's own
+          // centroid, world-mapped via scaf.toWorld) gives the exact shadowed
+          // spacing; `perPointGrade` (true) bypasses recordBands' per-FACE rank
+          // cache, which would otherwise silently override this single sample
+          // with the unshadowed centroid value (see v1's second bug).
+          footprintPolys.forEach((fp) => {
+            let cx = 0; let cy = 0;
+            fp.forEach((pt) => { cx += pt.x; cy += pt.y; });
+            const centroidWorld = scaf.toWorld({ x: cx / fp.length, y: cy / fp.length });
+            const insideSpacing = spacingBand(normalWorld, styleParams, centroidWorld, face, record, hlOpts, true).spacing;
+            const insideScreen = Math.max(hatchFloorFor(styleParams.fillDensity), planeRaw(baseAngle, insideSpacing));
+            maybeLink(Shadows.hatchRingsEvenOdd([fp], baseAngle, insideScreen), styleParams)
               .forEach((l) => uvLines.push(l));
-          };
-          gradedPush(baseAngle, spacingAtWorld, hatchFloorFor(styleParams.fillDensity), spacing);
-          const w = clamp(finite(crossW, 0), 0, 1);
-          if (crossPass) {
-            const delta = clamp(finite(styleParams.crossAngleDelta, 90), 10, 170);
-            const ratio = clamp(finite(styleParams.crossDensityRatio, 1), 0.25, 2);
-            const spacingAtRatio = (x, y) => spacingAtWorld(x, y) * ratio;
-            gradedPush(baseAngle + delta, spacingAtRatio, undefined, spacing * ratio);
-            if (styleParams.tripleHatch === true && w >= 1) {
-              gradedPush(baseAngle + CROSS_OBJ_DEG_C, spacingAtRatio, undefined, spacing * ratio);
-            }
-          } else if (w > 0) {
-            const spacingAtCross = (x, y) => spacingAtWorld(x, y) / w;
-            gradedPush(baseAngle + CROSS_OBJ_DEG_B, spacingAtCross, crossFloorFor(styleParams.fillDensity), spacing / w);
-          }
+          });
         } else {
-          crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, crossW,
-            (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)), planeFor,
-            hatchFloorFor(styleParams.fillDensity));
+          push(hatchPolygon(scaf.uv, { angleDeg: baseAngle, spacing: plane(baseAngle, spacing), minSpacing: hatchFloorFor(styleParams.fillDensity) }));
+        }
+        // Family B (crosshatch's own cross-pass, or the auto tone-driven
+        // dark-zone second direction) is NOT footprint-split — out of scope
+        // for this fix, unchanged from before: one scalar pass over the WHOLE
+        // face, exactly what `crossFamilies` already did for this family.
+        const wCross = clamp(finite(crossW, 0), 0, 1);
+        if (crossPass) {
+          const delta = clamp(finite(styleParams.crossAngleDelta, 90), 10, 170);
+          const ratio = clamp(finite(styleParams.crossDensityRatio, 1), 0.25, 2);
+          push(hatchPolygon(scaf.uv, { angleDeg: baseAngle + delta, spacing: plane(baseAngle + delta, spacing * ratio) }));
+          if (styleParams.tripleHatch === true && wCross >= 1) {
+            push(hatchPolygon(scaf.uv, {
+              angleDeg: baseAngle + CROSS_OBJ_DEG_C,
+              spacing: plane(baseAngle + CROSS_OBJ_DEG_C, spacing * ratio),
+            }));
+          }
+        } else if (wCross > 0) {
+          push(hatchPolygon(scaf.uv, {
+            angleDeg: baseAngle + CROSS_OBJ_DEG_B,
+            spacing: plane(baseAngle + CROSS_OBJ_DEG_B, spacing / wCross),
+            minSpacing: crossFloorFor(styleParams.fillDensity),
+          }));
         }
         return uvLines.map((line) => line.map(scaf.toScreen));
       };

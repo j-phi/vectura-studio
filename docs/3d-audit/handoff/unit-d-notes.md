@@ -1,70 +1,81 @@
 # Unit D — shadows falling onto other 3D objects
 
 **Design.** New `src/core/scene3d/shadow-receive.js` (`Vectura.Scene3D.ShadowReceive`):
-`pointInShadow(worldPoint, light, occluderSet, opts)` (Moller-Trumbore ray/triangle) +
-`buildOccluderSet(records)`. `Regions.combinedIntensity` gains an optional 4th `shadowFn` arg. New
-flag `shadow.shadowReceiveOnObjects`, default **OFF**. Exposed in the UI (docked panel + context-bar
-Shadow flyout), same (i) affordance pattern, render-cost blurb, WHOLE-STYLE-WINS tested.
+`pointInShadow`/`buildOccluderSet` for CURVED receivers (per-point, via SurfaceFill — unchanged,
+still correct). `Regions.combinedIntensity` gains an optional 4th `shadowFn` arg. Flag
+`shadow.shadowReceiveOnObjects`, default **OFF**. Exposed in the UI (docked panel + context-bar).
 
-## Judge rejection + fix (2893d842 -> this commit)
+## v2 — the FOOTPRINT-CLIP model (this commit)
 
-**Finding.** Box caster over a big flat PLANE receiver (hatch/ladder, elevation 25 deg): flag ON vs
-OFF shifted ink fraction UNIFORMLY across the whole receiver, including far corners. No localized
-patch. Root cause named: the FACETED path (`spacingBand` in `scene3d.js`) samples `intensityFn` —
-and therefore `shadowFn` — ONCE at a face-region's centroid; a plane is one face, so its whole
-surface got one uniform shift.
+**Judge rejection of v2-per-point (2893d842, then again on the per-point re-fix):** a box caster
+over a plane produced only a diffuse density gradient, never a visible patch — `hatchRingsEvenOdd`'s
+marching scan can only vary spacing along the perpendicular axis, uniformly across a ruling's whole
+length, so it can never draw a genuinely 2D-bounded region.
 
-**Fix.** When `shadowReceiveOnObjects` is on, `faceHatchLines` builds a per-point spacing function
-`spacingAtWorld(u,v)` (world point via `scaf.toWorld`, re-running `spacingBand` at that point) and
-feeds it to `Shadows.hatchRingsEvenOdd` (newly exported; the SAME marching-scan primitive
-`buildGradedSpacing` already uses) instead of `hatchPolygon`'s scalar spacing, for family A (the
-carrier) and the automatic tone-driven second family. Rulings stay unbroken; only ruling-to-ruling
-pitch varies. This bypasses `planeFor`/`plan` (Round 10's narrow-facet grant), which bakes ONE
-scalar plane-pitch from a dry-run and cannot honor a per-point function; foreshortening
-(`uvPitchFactor`, provably position-independent on a flat face) is applied directly instead.
+**Fix, per the coordinator's design.** For FLAT (faceted) receiver faces only: reuse the
+ground-shadow model instead of per-point sampling. `shadows.js` gained
+`projectAlongDirToPlane(P, d, planeAnchor, planeNormal)` — the ground projector's own y=0 ray/plane
+intersection, generalized to an arbitrary plane — and exports `convexHull` (already existed
+privately). `scene3d.js`'s `buildFaceFootprint` projects every OTHER object's world vertices onto
+THIS face's plane along the light travel direction, hulls them, and clips the hull to the face's
+own visible outline (Sutherland-Hodgman against a convex polygon — every faceted primitive's face
+is convex by construction). The clipped footprint is hatched at ONE scalar "inside" pitch (a
+directional hard shadow is binary — every point shares the same occluded intensity, so a single
+centroid sample suffices) via `Shadows.hatchRingsEvenOdd([footprint], ...)`; the rest of the face
+is hatched at the "outside" pitch with the footprint as an even-odd HOLE
+(`hatchRingsEvenOdd([face, footprint], ...)`). The boundary is therefore a real polygon clip edge.
 
-**Second, independent bug found while verifying the fix** (not named by the judge): even after the
-above, density stayed uniform. Instrumentation traced it to `recordBands` — the O20 rank-grade
-mechanism caches ONE band per face, sampled ONCE at that face's centroid, keyed by object identity
-for the WHOLE `generate()` call. Every re-invocation of `spacingBand` at a different per-point world
-position still resolved through this cache, silently discarding the point-varying intensity.
-Added `spacingBand(..., perPointGrade)`: when true, skips the rank cache and resolves the band
-directly via `Regions.band` (the rank-spread mechanism is a cross-facet concept and has no meaning
-within one continuous face anyway). Every pre-existing call site passes nothing here — byte-identical.
+**Two bugs found live while wiring this up (both fixed, both now covered by the RGR tests):**
+1. `planeFor`'s memoized Round-10 narrow-facet grant returns ONE cached `f.plane` regardless of the
+   screen-pitch argument it's called with — so calling it with two DIFFERENT pitches (inside vs
+   outside) silently collapsed both to the identical value. Fixed with `planeRaw` (a direct
+   `screenPitch / uvPitchFactor` conversion) used only for the footprint-split family A; the
+   unsplit fallback and family B keep using `planeFor` exactly as before (byte-identical).
+2. The "outside" pitch was sampled at the face's own geometric CENTROID — which can itself sit
+   INSIDE a caster's footprint (the 320x320 test plane is centred at the origin, and the shadow
+   happens to cover the origin), silently feeding the outside pass an already-shadowed value and
+   collapsing it back onto the inside one. Fixed with `spacingBand(..., noShadowBaseline: true)`,
+   which computes intensity via `Regions.combinedIntensity` WITHOUT the shadow term — the physically
+   correct meaning of "the face's normal pitch". Both flags default false/undefined; every
+   pre-existing `spacingBand` call site is untouched.
+3. A THIRD bug, caught by the full `test:unit` run before commit (19 failures across the x-ray
+   suite, all `TypeError: Cannot read properties of undefined (reading 'id')`): the x-ray back-face
+   fill pass calls `faceHatchLines(face, backParams, face.normalWorld, mapper==='crosshatch')` —
+   4 args only, `record` and `hlOpts` omitted, a pre-existing call site that never needed `record`
+   before. `buildFaceFootprint(scaf, normalWorld, record.id)` dereferenced it unconditionally.
+   Fixed by guarding the call (`record ? buildFaceFootprint(...) : null`) so a missing `record`
+   degrades to "no footprint" (the ordinary unsplit hatch), never a crash. Full `test:unit` re-run
+   clean afterward (4688 passed, 44 pre-existing skips, 0 failures).
 
-**RGR.** New describe block in `tests/unit/scene3d-shadow-receive.test.js`: box caster + 320x320
-plane, independent ray/AABB oracle (never calls ShadowReceive). Measured density inside the
-footprint vs 4 far corners: **ON ratio >= 1.5x (passes, ~2.4x with a stark 2-band ladder)**, OFF
-ratio 0.7-1.3 (uniform, matches the judge's own OFF observation). A separate pin
-(`VECTURA_PRE_FACETGRADE=1`, pins `scene3d.js`+`shadows.js` to `2893d842`) reproduces the judge's
-exact finding: ratio 0.84, correctly RED. 13/13 green unpinned.
+**RGR** (`tests/unit/scene3d-shadow-receive.test.js`, 15/15 green): the existing box+plane density
+test (>=1.5x) still passes; a NEW footprint-EDGE test samples two 5mm windows straddling the exact
+projected footprint edge and requires >=2x — a diffuse gradient cannot pass this (RED confirmed:
+the pinned `2893d842` baseline scores 0.96 on this exact assertion, and 0.84 on the original
+density test). Family B (crosshatch/dark-zone second direction) is NOT footprint-split — out of
+scope, unchanged, one scalar pass over the whole face.
 
-## App verification — honest visual finding
+## App verification
 
-Re-shot the judge's exact scene (box + 320x320 plane, elevation 25, `ladder`) via
-`scripts/shadow-receive-plane-evidence.js`: `plane-shadow-{on,off,aside}-{full,crop}.png`.
-**Looked at the crops directly.** With the SHIPPED DEFAULT tone ladder (3 bands, `[0.2,0.5,0.85]`):
-no visible dark patch, no visible straight edge — the hatch reads as uniform to the eye. A
-pixel-count comparison (same crop window, ON vs a stark-2-band-ladder variant,
-`plane-shadow-*-crop-starktone.png`) shows a REAL, substantial ink increase (61593 vs 44107 white
-px in the same window, ~1.4x) confirming the mechanism fires — but even at that contrast it reads
-as a diffuse density gradient across a band, not a crisp rectangular footprint. **This is an
-architectural limit of the fix, not a bug**: `hatchRingsEvenOdd`'s marching scan varies spacing only
-along the PERPENDICULAR axis, uniformly across each ruling's full length — a genuinely 2D-bounded
-patch would need the shadow's own silhouette clipped into the fill topology (out of scope here).
-**Verdict: the acceptance bar ("a visible dark patch with a straight-edged footprint") is NOT met
-visually at default settings**, even though the numeric mechanism is now spatially correct and
-independently verified. Kept one curved-receiver crop from the prior evidence set
-(`control1-aside-crop.png`, `control2-lawb-crop.png`, `two-object-crop.png` — cone receiver).
+`scripts/shadow-receive-plane-evidence.js` (box + 320x320 plane, elevation 25, `ladder`, shipped
+default tone ladder): `plane-shadow-{on,off,aside}-crop.png`. **Looked at the crops directly**: a
+clear, straight-edged quadrilateral region is now visible in the `on` crop — absent in `off` and
+`aside` (byte-different, confirmed). It reads as a denser-PACKED-lines texture rather than a solid
+dark wash (expected for plotter-style line hatching — "dark" in this medium IS tighter line
+spacing), with a crisp geometric boundary, a dramatic improvement over v1's invisible gradient.
+Measured: the footprint-edge density ratio at the real rendered geometry is >=2x (matching the new
+unit test). `scripts/shadow-receive-box-side-evidence.js`: a tall box casting onto a NEIGHBOURING
+box's own side face (`box-side-{on,off}.png`) — 101 paths (on) vs 73 (off), with visibly denser
+hatching appearing on the receiver's shadowed region in the `on` shot.
 
-**Perf** (judge's box+plane scene, averaged over 3 runs): flag OFF ~1.7-2ms, ON ~3.7-4.2ms (~2.3x).
-8-object dense scene (`shadow-receive-evidence.js`): OFF ~21-26ms, ON ~84-85ms (~3.3x) — essentially
-unchanged from the prior per-object-bounding-sphere measurement; the per-point grading adds modest
-cost on top but absolute times stay low-double-digit ms. Flag OFF by default; not force-fixed
-further per the brief's own stop condition.
+**Curved receivers unaffected**: `two-object-crop.png`, `control1-aside-crop.png`,
+`control2-lawb-crop.png` (cone/sphere) are BYTE-IDENTICAL (md5) to before this commit.
 
-## Known gaps (unchanged from prior review)
-- Point/spot lights: no integration-level proof through `combinedIntensity` (module-level only).
-- Area lights lose all N-sample softening when occluded (hard gate runs before averaging).
-- Closing the dense-scene perf ratio needs a real BVH/shadow-map.
-- `scene3d-hlr-spatial-index-identity.test.js` green; coverage-oracle denominator untouched.
+**Perf** (judge's box+plane scene, 3 runs): OFF ~1.5-2.3ms, ON ~3.5-4.4ms (~2.4x). 8-object dense
+scene: OFF ~23-27ms, ON ~100-120ms (~4.3x) — similar order to the prior per-point fix; flag stays
+OFF by default, not force-fixed further per the brief's own stop condition.
+
+## Known gaps (unchanged)
+- Point/spot lights: no integration-level proof through `combinedIntensity`.
+- Area lights lose all N-sample softening when occluded (hard gate before averaging).
+- Family B (crosshatch/dark-zone) is not footprint-split.
+- `scene3d-hlr-spatial-index-identity.test.js` green; flag OFF byte-identical to before.

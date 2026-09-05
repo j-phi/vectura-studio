@@ -565,6 +565,37 @@ describe('Scene3D.ShadowReceive — shadows landing on other objects (Unit D)', 
       expect(offRatio).toBeGreaterThan(0.7);
       expect(offRatio).toBeLessThan(1.3);
     });
+
+    // ── Unit D judge follow-up v2 — the CRISP EDGE, not a diffuse gradient ──
+    //
+    // v1 (per-point marching-scan grading) could only ever tighten spacing
+    // ALONG the perpendicular hatch axis, uniformly across a ruling's whole
+    // length — it had no mechanism for a genuine 2D boundary. This is the
+    // test v1 could never pass: ink density sampled in two 5mm windows
+    // immediately straddling the projected shadow footprint's OWN edge (not
+    // a coarse inside/outside sample, the geometric boundary itself) must
+    // differ by a hard >=2x. A diffuse gradient changes gradually across
+    // many mm; a real polygon clip changes almost entirely within 5mm.
+    test('footprint EDGE test — ink density in two 5mm windows straddling the projected edge differs by >=2x', () => {
+      const dir = lightToward();
+      // The shadow rectangle's left edge (BOX_MAX.y projected to the ground
+      // along the light) — same geometry the "sanity" test above verified.
+      const s = -BOX_MAX.y / dir.y;
+      const edgeX = BOX_MIN.x + s * dir.x;
+      const HALFEDGE = 2.5; // 5mm window half-size, one on each side of the edge
+      const insideCenter = { x: edgeX + HALFEDGE, z: 0 };
+      const outsideCenter = { x: edgeX - HALFEDGE, z: 0 };
+      // Confirm these two tiny windows really do straddle the edge (never
+      // trust a derived coordinate without checking it against the oracle).
+      expect(rayAabbHit({ x: insideCenter.x, y: 0, z: insideCenter.z }, dir, BOX_MIN, BOX_MAX)).toBe(true);
+      expect(rayAabbHit({ x: outsideCenter.x, y: 0, z: outsideCenter.z }, dir, BOX_MIN, BOX_MAX)).toBe(false);
+
+      const paths = receiverFills(render(true));
+      const insideD = inkInWindow(paths, toScreen(insideCenter), HALFEDGE) / ((HALFEDGE * 2) ** 2);
+      const outsideD = inkInWindow(paths, toScreen(outsideCenter), HALFEDGE) / ((HALFEDGE * 2) ** 2);
+      expect(outsideD).toBeGreaterThan(0); // anti-vacuity
+      expect(insideD / outsideD).toBeGreaterThanOrEqual(2);
+    });
   });
 });
 
@@ -631,6 +662,32 @@ describe('Unit D judge follow-up — RED-proof pin (2893d842)', () => {
   };
   const INSIDE = [{ x: 0, z: 0 }, { x: -20, z: 8 }, { x: 40, z: -8 }];
   const OUTSIDE = [{ x: 140, z: 140 }, { x: -140, z: -140 }, { x: 140, z: -140 }, { x: -140, z: 140 }];
+  const BOX_MIN = { x: 60 - 20, y: 20 - 20, z: 0 - 20 };
+  const BOX_MAX = { x: 60 + 20, y: 20 + 20, z: 0 + 20 };
+  const DEG = Math.PI / 180;
+  const lightToward = () => {
+    const az = SUN.azimuth * DEG; const el = SUN.elevation * DEG;
+    const cosEl = Math.cos(el);
+    const d = { x: -cosEl * Math.sin(az), y: -Math.sin(el), z: -cosEl * Math.cos(az) };
+    return { x: -d.x, y: -d.y, z: -d.z };
+  };
+  const rayAabbHit = (origin, dir, lo, hi) => {
+    let tmin = -Infinity; let tmax = Infinity;
+    const axes = ['x', 'y', 'z'];
+    for (let i = 0; i < 3; i++) {
+      const a = axes[i];
+      if (Math.abs(dir[a]) < 1e-12) {
+        if (origin[a] < lo[a] || origin[a] > hi[a]) return false;
+        continue;
+      }
+      let t1 = (lo[a] - origin[a]) / dir[a];
+      let t2 = (hi[a] - origin[a]) / dir[a];
+      if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+      tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+      if (tmin > tmax) return false;
+    }
+    return tmax > 1e-6;
+  };
 
   test('same assertion as the GREEN test above must FAIL here (RED)', () => {
     const Params = V2.Scene3D.Params;
@@ -658,5 +715,35 @@ describe('Unit D judge follow-up — RED-proof pin (2893d842)', () => {
     // On the pinned pre-fix code, the plane's single centroid sample makes
     // inside/outside read the SAME (no localized patch) — this must be RED.
     expect(insideD / outsideD).toBeGreaterThanOrEqual(1.5);
+  });
+
+  test('footprint EDGE test must also FAIL here (RED) — no boundary exists on the pinned code', () => {
+    const Params = V2.Scene3D.Params;
+    const p = clone(V2.ALGO_DEFAULTS.scene3d);
+    p.seed = 1;
+    p.camera = clone(CAMERA);
+    p.ground = { enabled: false };
+    p.backdrop = { enabled: false };
+    p.objects = [clone(caster), clone(receiver)];
+    p.lights = [clone(SUN)];
+    p.tone = { enabled: true, bands: 2, thresholds: [0.3], ladder: [0.1, 0.95] };
+    p.styleTable = styleTable();
+    p.shadow = { ...p.shadow, shadowReceiveOnObjects: true };
+    const np = Params.normalizeParams(p);
+    const paths = V2.AlgorithmRegistry.scene3d.generate(
+      Params.collectSceneParams(np, []), new V2.SeededRNG(1), new V2.SimpleNoise(1), BOUNDS,
+    ) || [];
+    const receiverFills = paths.filter((q) => q.meta && q.meta.kind === 'sceneFill'
+      && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'receiver');
+    const toScreen = (pt) => V2.Scene3D.Scene.projectWorldPoint({ x: pt.x, y: 0, z: pt.z }, CAMERA, BOUNDS);
+    const dir = lightToward();
+    const s = -BOX_MAX.y / dir.y;
+    const edgeX = BOX_MIN.x + s * dir.x;
+    const HALFEDGE = 2.5;
+    const insideCenter = { x: edgeX + HALFEDGE, z: 0 };
+    const outsideCenter = { x: edgeX - HALFEDGE, z: 0 };
+    const insideD = inkInWindow(receiverFills, toScreen(insideCenter), HALFEDGE) / ((HALFEDGE * 2) ** 2);
+    const outsideD = inkInWindow(receiverFills, toScreen(outsideCenter), HALFEDGE) / ((HALFEDGE * 2) ** 2);
+    expect(insideD / (outsideD || 1e-9)).toBeGreaterThanOrEqual(2);
   });
 });
