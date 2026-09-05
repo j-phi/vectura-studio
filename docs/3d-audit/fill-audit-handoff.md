@@ -92,6 +92,15 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
    fill-audit-d 2dc7b3aa): run the lane's targeted tests first; if red and not quickly fixable, `git revert` the WIP commit.
 2. **W-27c item 1**: on an idle machine, `npm run test:unit && npm run test:integration` at fill-audit-d — name the
    "contourSlice x-ray" failure the W-25 agent saw (never reproduced under load).
+   **W-27c item 0 (user, `user-reports/11.png`, torus contourSlice after W-27b — "MUCH better" but):** two residual
+   defects on the torus: (a) **angled points** — the inner-hole rings still show corners where they meet the hole's
+   near/far cusp (the ring is refined to the true surface but the HLR clip cuts it into segments whose ends meet at
+   an angle, and the innermost rings near the saddle still have visible vertices); (b) **micro-gaps** — short breaks
+   in the rings around the hole and a small gap in the lower-left ring (circled). Both are HLR-clip artefacts on the
+   refined ring, not tessellation: check `SLICE_CLIP_WORK`/clip sampling on the denser ring, collinear-segment merging
+   after the clip, and whether the analytic projection moves a point across the occluder boundary so a visible run is
+   split. Acceptance: no visible gap under 1 pen in any ring outside genuine occlusion, and no corner sharper than 8°
+   anywhere on the torus rings, verified on the re-shot image.
 3. **W-26 (user rule, P0)**: continuous ladder placement so gaps carry tone only — plan in `plan-W26-W27.md`; lane
    fill-audit-a after W-01 M1. Touches `surface-fill.js` dispatch/emitContFamily only; never the master grid.
 4. **A3** (user's "not close to zero yet"): PenFill/boolean-erosion dropped geometry — brief in STILL-OPEN; lane handoff-c.
