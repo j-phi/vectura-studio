@@ -70,6 +70,68 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  * forced to look at this file and decide deliberately, and a regression that
  * makes the plateau WORSE (e.g. losing the "low reads as a fill" floor) is
  * caught immediately.
+ *
+ * ── W-15b (SECOND WORKSTREAM, 2026-09-05) — TWO MORE DESIGNS BUILT, MEASURED,
+ * AND WITHDRAWN. STILL NO SOURCE FIX SHIPS. ─────────────────────────────────
+ * The instruction this time was explicit: split the grant's single constant
+ * into a FLOOR ("reads as a fill", ~FACET_MIN_RULINGS) and a TARGET that
+ * tracks Density via `hatchSpacing(d)` scaled by the facet's own extent, with
+ * the existing `zoneCeil/covOne` kept as the ceiling. Two designs were built
+ * on exactly that shape and both were measured, not assumed, against the
+ * SAME governing facets attempt 1 (above) broke — `R-cube`/`R2-cube` at
+ * Density 85 (`facetCoverage`'s O20 rows, `scene3d-facet-tone.test.js` /
+ * `scene3d-projected-pitch.test.js`) and the perFace highlight dispatch
+ * (`scene3d-faceted-highlight-dispatch.test.js` O9/O14):
+ *
+ *   A. `want = min(max(floor(ext/hatchSpacing(d)), FACET_MIN_RULINGS),
+ *      floor(zoneCeil/covOne))` — replace the grant's target outright, ceiling
+ *      unchanged. Fixes the plateau (plane 6,6,7,9,19,65 across
+ *      d=1/10/25/50/100/220 — Density-responsive from d=1, ratio d1/d50 =
+ *      0.67). But it engages the grant far MORE OFTEN than before: at Density
+ *      85 `R2-cube`'s `face:+X` (edge-on, k=0.165, `ceilCount=8`) now hits a
+ *      target the OLD grant would never have proposed (old target 17.71mm >
+ *      its own natural 12.96mm pitch, so the old grant never fired there at
+ *      all — the facet was already natural/Density-governed). The new,
+ *      denser target (7.29mm) DOES beat that natural pitch, so the grant
+ *      fires where it used to stay silent, overriding an ALREADY-CORRECTLY-
+ *      ORDERED facet. `scene3d-facet-tone.test.js` O20 bands 2-4 all invert
+ *      (0.579/0.484/0.484, was < 0.551/0.469/0.469); `scene3d-projected-
+ *      pitch.test.js` O20 breaks on `R-cube-bands2/3/4` and `R2-cube-bands2/
+ *      3/4` (e.g. `face:+X 0.235` vs `face:+Z` falling to 0.170, was tied at
+ *      0.235); `scene3d-faceted-highlight-dispatch.test.js` O14 loses a
+ *      distinct treatment (5 of 6, was 6) and O9 collapses two
+ *      `highlightSensitivity` steps to one signature.
+ *   B. Preserve the OLD firing decision exactly — gate on
+ *      `oldTarget = ext/(min(ceilCount,FACET_MIN_RULINGS)+0.5)` (byte-for-byte
+ *      the pre-fix expression) and only widen the TARGET once that old gate
+ *      already fires, using the same Density-driven `want` from (A), capped
+ *      so it can never exceed `oldTarget`'s pitch (i.e. `want >= oldWant`
+ *      always). This does leave every facet the old grant never touched
+ *      alone — `R2-cube`'s `face:+X`/`face:+Z` gate decision is unchanged —
+ *      yet the SAME suites still broke, on a DIFFERENT pair: `R-cube-bands2/
+ *      3/4`'s `face:+Y` (which the old grant DOES govern at Density 85) drops
+ *      from parity with `face:+X` (0.097) to 0.056 once its own ruling count
+ *      is allowed to grow with Density instead of pinning at the OLD fixed 3
+ *      — `scene3d-facet-tone.test.js` O20 bands 2-4 invert again (0.323/
+ *      0.484/0.484); `scene3d-faceted-highlight-dispatch.test.js` O9 (`ink(3)
+ *      > ink(1)`) breaks outright (1220.7 vs 1382.8). So "preserve the gate,
+ *      widen the target" does not isolate the fix either: the SAME facets the
+ *      floor exists to rescue (`R-cube face:+Y`, zone-ceiling-bound at
+ *      Density 85) are exactly the ones O20/O9 depend on staying pinned at
+ *      the OLD constant, not Density's own count.
+ *
+ * Both attempts reverted; `scene3d.js`'s faceted density path is byte-
+ * identical to branch HEAD (a83fae78). The trilemma restated with these two
+ * more data points: giving the carrier's floor ANY Density-sensitivity (via
+ * the natural request, via the zone ceiling, or via a gate-preserving hybrid
+ * of the two) reaches at least one facet the tone-ladder suites pin at the
+ * OLD constant, because those suites' governing facets are drawn from
+ * PRECISELY the low/mid-Density, ceiling-bound regime this floor occupies —
+ * there is no Density-responsive floor formula that both moves and leaves
+ * every currently-pinned facet's rendered count unchanged. Closing this
+ * needs the coordinated redesign the W-15 notes above already called for
+ * (decoupling "reads as a fill" from "tone ordering integrity" per-facet), not
+ * a narrower formula for the same single grant.
  */
 
 describe('Scene3D faceted density calibration — plane/box carrier grant (W-15/F-14, measurement)', () => {
