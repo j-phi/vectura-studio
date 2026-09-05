@@ -1,0 +1,35 @@
+{
+  "id": "W-07",
+  "title": "deepFillTSP fills the darks with a real traverse (F-07)",
+  "branch": "3d-scene/fill-audit-a",
+  "commit": "PENDING",
+  "before": [
+    "shots/B/sphere__hatch__deepFillTSP__med__a.webp",
+    "shots/B/sphere__hatch__deepFillTSP__max__a.webp",
+    "shots/B/torus__hatch__deepFillTSP__med__a.webp",
+    "shots/B/torus__crosshatch__deepFillTSP__med__a.webp",
+    "shots/B/torus__contour__deepFillTSP__med__a.webp"
+  ],
+  "after": [
+    "after/W-07/shots/B/sphere__hatch__deepFillTSP__med__a.webp",
+    "after/W-07/shots/B/sphere__hatch__deepFillTSP__max__a.webp",
+    "after/W-07/shots/B/torus__hatch__deepFillTSP__med__a.webp",
+    "after/W-07/shots/B/torus__crosshatch__deepFillTSP__med__a.webp",
+    "after/W-07/shots/B/torus__contour__deepFillTSP__med__a.webp"
+  ],
+  "notes": "Root cause: algoCoverage's deepFillTSP branch always halved coverage (base/(1+tspRamp(I))) once I crossed TSP_I, regardless of whether the resulting gap could hold a visible zig-zag, and tspAt measured its amplitude against the GLOBAL floorPitch ((drawn-floorPitch)/2) -- but at the pitch this bug fires at, drawn and floorPitch were already the same number (the master grid was already at the plot floor), so amp collapsed to ~0 on every sample: rulings got thinner with nothing to fill the gap. Also measured: sphere/hatch/deepFillTSP low and med rendered BYTE-IDENTICAL pre-fix (79 paths / 493.8mm both). Fix: (1) algoCoverage now computes the LOCAL gap the halving would open (drawnBase*ramp/2, from the pre-halving pitch, not floorPitch) and only applies the halving when that gap clears 0.5x pen -- otherwise it returns the unhalved coverage so the darks don't get thinner for nothing; (2) tspAt now derives amplitude from the exact algebraic identity drawnWithRamp = drawnWithoutRamp*(1+k) (so drawnBase = drawn/(1+k), computed directly from the SAME covAtSample call already made, no extra coverage evaluation), amp = (drawn-drawnBase)/2, additionally capped at 1.5x local pitch so the full zig-zag excursion (2x amplitude) never exceeds 3x pitch. Max density (already visually correct per the finding) stayed close to byte-identical as a natural consequence (the gate passes at max without changing the returned formula): 102 paths / 1222.8mm before vs 102 paths / 1225.2mm after.",
+  "tests": {
+    "red": "sphere/hatch/deepFillTSP low and med both rendered 79 paths / 493.8mm ink pre-fix (byte-identical, density had no effect)",
+    "green": "Tests: 10 passed, 10 total (scene3d-mark-laws-draw.test.js, full file incl. W-05/W-06); low now 71 paths/212.4mm vs med 79 paths/484.4mm (distinct); real lateral deviation from the ruling's own chord confirmed present; torus at d=220 generates in well under 2s",
+    "suites": "test:unit (this file) green"
+  },
+  "byte_identical_pairs": [
+    { "pair": "sphere__hatch__deepFillTSP__max__a", "note": "102 paths both before (1222.8mm) and after (1225.2mm) -- near-identical, not exact; the gate does not change behavior once localPitch already supports a real gap, which is already true at max density" }
+  ],
+  "measured": {
+    "sphere_hatch_low_d1": { "pre_fix": { "paths": 79, "inkMm": 493.8 }, "post_fix": { "paths": 71, "inkMm": 212.4 } },
+    "sphere_hatch_med_d50": { "pre_fix": { "paths": 79, "inkMm": 493.8 }, "post_fix": { "paths": 79, "inkMm": 484.4 } },
+    "sphere_hatch_max_d220": { "pre_fix": { "paths": 102, "inkMm": 1222.8 }, "post_fix": { "paths": 102, "inkMm": 1225.2 } },
+    "torus_hatch_max_d220_genMs": { "post_fix": "well under 2000ms (measured on sphere; torus fixture in test suite also asserts <2000ms and passes)" }
+  }
+}

@@ -4694,8 +4694,24 @@
       // it. So the darkest zone rules at HALF the density and the traverse
       // spends the freed gap, which lands the same ink through one continuous
       // aperiodic path instead of two straight ones.
+      //
+      // F-07 / W-07 — the SECOND way this thinned-for-nothing: at the med
+      // master pitch the gap `(1 + tspRamp)` opens is itself only a fraction
+      // of a millimetre, well under half a pen — too little for a zig-zag to
+      // read as anything but noise on top of an already-thinner ruling. Gate
+      // the halving itself on that gap actually clearing the floor, computed
+      // LOCALLY (`localPitch / base` before any global cap), not against
+      // `floorPitch`, which is why the first fix (see comment above) still
+      // measured a no-op: at the pitch this bug actually fires at, drawn and
+      // floorPitch were already the same number.
       if (TONE_ALGO === 'deepFillTSP') {
-        return clamp(perceptualCov(I, localPitch) / (1 + tspRamp(I)), 0.005, 1);
+        const base = clamp(perceptualCov(I, localPitch), 0.005, 1);
+        const ramp = tspRamp(I);
+        if (!(ramp > 0) || !(localPitch > 1e-6)) return base;
+        const drawnBase = localPitch / base;
+        const amp = (drawnBase * ramp) / 2;
+        if (!(amp > 0.5 * inkWidth())) return base; // not enough room to zig-zag — don't thin for nothing
+        return clamp(base / (1 + ramp), 0.005, 1);
       }
       // 'forcedContrast' — the same target, on a tone field the draughtsman has
       // deliberately pushed apart (see `fcIntensity`).
@@ -8225,12 +8241,24 @@
         if (!(k > 0)) return null;
         const p = pitchAtStep(smp, s);
         if (!(Number.isFinite(p) && p > 1e-6)) return null;
-        // The gap the thinned family left. Half of it either side of the ruling
-        // is exactly the excursion that restores the ink the thinning removed,
-        // and it is bounded below by the plot floor at the turns.
+        // F-07 / W-07 — THE LOCAL GAP THE HALVING OPENED, not the distance to
+        // the (global) plot floor. `algoCoverage`'s deepFillTSP branch draws
+        // at `base / (1 + k)`; every other cap it and `covAtSample` apply
+        // (the composed budget, the floor-crowding multiply) is the SAME
+        // factor with or without the ramp, so it cancels in the ratio:
+        // `drawn = drawnBase * (1 + k)` exactly, and `drawnBase` is what this
+        // ruling would have drawn WITHOUT deepFillTSP. Half that gap, split
+        // either side of the ruling, is exactly the excursion that spends the
+        // ink the thinning freed — this is the same quantity the coverage
+        // gate above already cleared, computed here against the pitch this
+        // sample actually drew at.
         const drawn = p / Math.max(1e-6, covAtSample(smp, s, zones[s]));
-        let amp = Math.max(0, (drawn - floorPitch) / 2);
-        amp = Math.min(amp, endMM[s] / 2);
+        const drawnBase = drawn / (1 + k);
+        let amp = Math.max(0, (drawn - drawnBase) / 2);
+        // Bounded by the ruling's own distance-to-its-end (unchanged) and by
+        // 1.5x the local pitch, so the full zig-zag excursion (2x amplitude)
+        // can never read as more than 3 pitches wide.
+        amp = Math.min(amp, endMM[s] / 2, 1.5 * p);
         if (!(amp > 1e-3)) return null;
         const a = smps[Math.max(0, s - 1)] || smp;
         const b = smps[Math.min(nSteps, s + 1)] || smp;

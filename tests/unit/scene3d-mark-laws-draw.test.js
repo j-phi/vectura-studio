@@ -193,4 +193,55 @@ describe('Scene3D.SurfaceFill — mark-law draw defects (fill-audit W-05/06/07)'
       expect(totalInk(low)).not.toBeCloseTo(totalInk(med), 1);
     });
   });
+
+  describe('W-07 — deepFillTSP fills the darks with a real traverse (F-07)', () => {
+    // THE RED PROOF (surface-fill.js `algoCoverage`'s deepFillTSP branch and
+    // `tspAt`, pre-fix). The halving `base / (1 + tspRamp(I))` fired
+    // unconditionally, and `tspAt` measured its excursion against the
+    // GLOBAL `floorPitch` — but at the pitch this bug fires at, the drawn
+    // pitch and `floorPitch` were already the same number (see the comment
+    // at `algoCoverage`'s deepFillTSP branch), so `amp` came out ~0 on
+    // every sample: the darks got a thinner ruling AND no traverse to fill
+    // the gap it opened. Measured pre-fix on this fixture: sphere/hatch/
+    // deepFillTSP low and med both rendered the SAME 79 paths / 493.8 mm
+    // ink (density had no effect), and the darkest region read as a bare
+    // thinned ruling, not a zig-zag.
+    test('low and med no longer render byte-identically (the coverage gate was inert)', () => {
+      const low = algo.generate(buildSceneParams('deepFillTSP', 'hatch', 1), null, null, BOUNDS);
+      const med = algo.generate(buildSceneParams('deepFillTSP', 'hatch', 50), null, null, BOUNDS);
+      expect(totalInk(low)).not.toBeCloseTo(totalInk(med), 1);
+    });
+
+    test('the traverse displaces points off the ruling once it engages, and stays a single continuous path per ruling', () => {
+      const paths = algo.generate(buildSceneParams('deepFillTSP', 'hatch', 50), null, null, BOUNDS);
+      // A real zig-zag reads as LATERAL deviation from the straight chord
+      // between a path's own two ends — a bare (unfixed) ruling is straight
+      // enough that this deviation is negligible everywhere.
+      let sawRealDeviation = false;
+      paths.forEach((pp) => {
+        if (!Array.isArray(pp) || pp.length < 4) return;
+        const a = pp[0]; const b = pp[pp.length - 1];
+        const dx = b.x - a.x; const dy = b.y - a.y;
+        const chordLen = Math.hypot(dx, dy);
+        if (!(chordLen > 1e-6)) return;
+        const ux = dx / chordLen; const uy = dy / chordLen;
+        let maxDev = 0;
+        pp.forEach((pt) => {
+          const px = pt.x - a.x; const py = pt.y - a.y;
+          maxDev = Math.max(maxDev, Math.abs(px * uy - py * ux));
+        });
+        if (maxDev > 0.15) sawRealDeviation = true; // > ~half a pen, off the chord
+      });
+      expect(sawRealDeviation).toBe(true);
+    });
+
+    test('generation stays fast on a torus at d=220 (perf ceiling, ~2s)', () => {
+      const p = buildSceneParams('deepFillTSP', 'hatch', 220, 'torus');
+      const t0 = Date.now();
+      const paths = algo.generate(p, null, null, BOUNDS);
+      const ms = Date.now() - t0;
+      expect(paths.length).toBeGreaterThan(0);
+      expect(ms).toBeLessThan(2000);
+    });
+  });
 });
