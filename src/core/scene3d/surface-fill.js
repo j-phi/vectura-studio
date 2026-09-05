@@ -328,6 +328,14 @@
   // silent degrade to centrelines because a module was missing. Cheap — one
   // small object per build — and read by the T2/T4 tests.
   let lastRibbonStats = null;
+  // F-05 / W-05 test seam. `lastFloorStats.mark` (below) carries the same
+  // counters but is gated behind `TONE_UNCAPPED` (a hardcoded `false`), so it
+  // never reaches a caller in the committed build. `lastMarkStats` is the
+  // unconditional twin — written for every mark-law build, `null` otherwise —
+  // so a test can see mark placement quality (count, rejections, and the
+  // dark/mid/light-third histogram the tone-carrying channel is supposed to
+  // move) without threading a debug flag through the closure.
+  let lastMarkStats = null;
   // F-01 / W-01 test seam. The master grid's ruling count (`N`) is the
   // quantity the sparse-end density defect actually lived in — the drawn
   // path count downstream of it is diluted by the ladder's own per-band
@@ -2389,6 +2397,10 @@
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
+      // F-05 / W-05 — placed marks by radiance third (dark/mid/light), so a
+      // caller can check the tone-carrying channel actually moves count
+      // rather than asserting on the picture.
+      byThird: [0, 0, 0],
     };
     const mkSites = new Map();          // blue-noise / Poisson occupancy
     const mkED = new Map();             // error-diffusion sideways carry
@@ -2408,7 +2420,7 @@
       mkDotScreen:   { shape: 'disc',     chan: 'size',  lat: 'hex',     or: 'none',   P0: 1.00 },
       mkLozenge:     { shape: 'lozenge',  chan: 'size',  lat: 'brick',   or: 'along',  P0: 1.15 },
       mkDashRamp:    { shape: 'morph',    chan: 'elong', lat: 'row',     or: 'along',  P0: 1.25 },
-      mkTick:        { shape: 'tick',     chan: 'count', lat: 'brick',   or: 'across', L0: 1.02 },
+      mkTick:        { shape: 'tick',     chan: 'count', lat: 'brick',   or: 'none',   L0: 1.02 },
       mkChevron:     { shape: 'chevron',  chan: 'size',  lat: 'row',     or: 'iso',    P0: 1.20 },
       mkComma:       { shape: 'comma',    chan: 'count', lat: 'blue',    or: 'along',  L0: 1.30 },
       mkSFlick:      { shape: 'sflick',   chan: 'elong', lat: 'errdiff', or: 'along',  P0: 0.95 },
@@ -5826,7 +5838,9 @@
         } else {
           polys = mkShape(shapeFor(), sv.L, sv.R, w);
         }
-        place(fr, polys, a - arcMM[k], thetaAt(k, fr));
+        if (place(fr, polys, a - arcMM[k], thetaAt(k, fr))) {
+          mkStat.byThird[Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3))] += 1;
+        }
       };
 
       // ── THE SPANS ───────────────────────────────────────────────────────────
@@ -10547,7 +10561,13 @@
           + `regionArea ${lastRibbonStats.regionArea}). The variable-width feature is INERT.`);
       }
     };
-    if (!runMapper(N, false)) { flushDeferredRibbons(); publishRibbonStats(); return null; } // front surface (unchanged when no x-ray)
+    // F-05 / W-05 — see `lastMarkStats` above. `null` for every non-mark law,
+    // so a caller can tell "not a mark law" apart from "a mark law that
+    // placed nothing" (samples === 0).
+    const publishMarkStats = () => {
+      lastMarkStats = mkStat.samples ? { algo: TONE_ALGO, ...mkStat, byThird: mkStat.byThird.slice() } : null;
+    };
+    if (!runMapper(N, false)) { flushDeferredRibbons(); publishRibbonStats(); publishMarkStats(); return null; } // front surface (unchanged when no x-ray)
     // X-ray back surface: sparser (count × backDensity) far-side family, tagged.
     if (xray) runMapper(Math.max(2, Math.round(N * backDensity)), true);
     // Every chain is closed by now, so the deferred ribbons can be built — and
@@ -10555,6 +10575,7 @@
     // has not happened yet.
     flushDeferredRibbons();
     publishRibbonStats();
+    publishMarkStats();
     // WHERE THE PLOT FLOOR BOUND, published for the comparison harness. Written
     // only in uncapped mode, so the committed build never allocates or exposes
     // it — `lastFloorStats` stays null and nothing downstream can read a number
@@ -10779,6 +10800,7 @@
         // silent degrade to centrelines, all three of which look alike from
         // outside. Read by the T2/T4 tests.
         get lastRibbonStats() { return lastRibbonStats; },
+        get lastMarkStats() { return lastMarkStats; },
         get lastMasterGridStats() { return lastMasterGridStats; },
         // Unchanged reading: the committed default, byte-identical to the
         // pre-refactor module constant. `scene3d-tone-algo-default.test.js`
