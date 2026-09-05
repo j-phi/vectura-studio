@@ -464,6 +464,109 @@ describe('Fill Style — the shared mark-class config', () => {
         expect(F.facetedNote('pyramid', undefined, mapper)).toBe('');
       });
     });
+
+    // ── W-02 / F-02 — none/wireframe/contourSlice never dispatch through the
+    // tone-law machinery AT ALL (scene3d.js's SURFACE_FILL only covers hatch/
+    // crosshatch/contour/spiral/stipple), so EVERY id — including None and
+    // the shipped default — must be unreachable there, on EVERY primitive
+    // shape (faceted or chart-wrapped). Before this fix `isReachableOn`
+    // returned true for all 48 laws on a curved primitive (sphere/torus/cone)
+    // under these three Types; the audit measured 1,152 wasted shots.
+    describe('none/wireframe/contourSlice are inert everywhere (W-02, F-02)', () => {
+      const NO_FILL_MAPPERS = ['none', 'wireframe', 'contourSlice'];
+
+      test('curved primitives (sphere, torus, cone): every id, including none/ladder, is unreachable', () => {
+        ['sphere', 'torus', 'cone'].forEach((mode) => {
+          NO_FILL_MAPPERS.forEach((mapper) => {
+            ALL_IDS().forEach((id) => {
+              expect(F.isReachableOn(id, mode, undefined, mapper)).toBe(false);
+            });
+          });
+        });
+      });
+
+      test('faceted primitives (box, solid): every id, including none/ladder, is unreachable', () => {
+        ['box', 'solid'].forEach((mode) => {
+          NO_FILL_MAPPERS.forEach((mapper) => {
+            ALL_IDS().forEach((id) => {
+              expect(F.isReachableOn(id, mode, undefined, mapper)).toBe(false);
+            });
+          });
+        });
+      });
+
+      test('groups(mode, solidType, mapper) marks every option disabled, with the no-effect suffix, for a curved primitive', () => {
+        NO_FILL_MAPPERS.forEach((mapper) => {
+          const g = F.groups('sphere', null, mapper);
+          const opts = g.reduce((a, x) => a.concat(x.options), []);
+          expect(opts.length).toBeGreaterThan(0);
+          opts.forEach((o) => {
+            expect(o.disabled).toBe(true);
+            expect(o.label).toContain(F.NO_EFFECT_SUFFIX);
+          });
+        });
+      });
+
+      // ── Regression guard — the fill mappers this fix must NOT touch ────────
+      // The five surface-fill mappers are never caught by the new clause
+      // (they ARE members of SURFACE_FILL_MAPPERS), so the new clause itself
+      // never zeroes out a shape's reachable set under any of them. Curved
+      // (chart-wrapped) primitives keep something reachable under all 5;
+      // faceted primitives (box) already lose everything under contour/
+      // spiral/stipple for an UNRELATED, pre-existing reason (the faceted
+      // branch's own hatch/crosshatch-only rule — see "faceted (box) +
+      // Contour/Spiral/Stipple disables every option" above), so that
+      // combination is excluded here rather than misread as a new regression.
+      // The per-mapper/per-shape special cases (pyramid+fineLadder+hatch,
+      // spiral/stipple's 9-law inert list, the faceted mono set, …) are each
+      // pinned by their own dedicated test elsewhere in this file, which
+      // exercises this same (already-patched) isReachableOn and would go red
+      // on its own if this change disturbed any of them.
+      test('at least one law stays reachable on a curved shape under every fill mapper (no over-gating)', () => {
+        ['sphere', 'torus', 'cone', 'pyramid'].forEach((mode) => {
+          ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'].forEach((mapper) => {
+            const reachable = ALL_IDS().some((id) => F.isReachableOn(id, mode, undefined, mapper));
+            expect(reachable).toBe(true);
+          });
+        });
+      });
+
+      test('at least one law stays reachable on a faceted shape (box) under hatch/crosshatch (no over-gating)', () => {
+        ['hatch', 'crosshatch'].forEach((mapper) => {
+          const reachable = ALL_IDS().some((id) => F.isReachableOn(id, 'box', undefined, mapper));
+          expect(reachable).toBe(true);
+        });
+      });
+
+      test('an absent mapper is not gated by the new clause (fail-open, unchanged)', () => {
+        ['sphere', 'box', 'solid'].forEach((mode) => {
+          R.IDS.concat(['ladder']).forEach((id) => {
+            // No 4th argument at all — omitted, not just falsy — matches every
+            // pre-existing 3-arg call site in this file and in production code.
+            expect(F.isReachableOn(id, mode)).toBe(F.isReachableOn(id, mode, undefined, undefined));
+          });
+        });
+      });
+
+      // ── The anti-rot proof — this must read a live source, not a baked list.
+      test('the verdict is DERIVED from Vectura.Scene3D.Params.SURFACE_FILL_MAPPERS — swapping it flips the result', () => {
+        const Scene3D = window.Vectura.Scene3D;
+        const realParams = Scene3D.Params;
+        try {
+          // Fake: 'wireframe' is now (incorrectly) a surface-fill mapper.
+          Scene3D.Params = { ...realParams, SURFACE_FILL_MAPPERS: new Set(['wireframe']) };
+          expect(F.isReachableOn('ladder', 'sphere', undefined, 'wireframe')).toBe(true);
+          // And 'hatch' — a REAL fill mapper — is now reported unreachable,
+          // proof this reads the Set live rather than a literal string check.
+          expect(F.isReachableOn('mkTick', 'sphere', undefined, 'hatch')).toBe(false);
+        } finally {
+          Scene3D.Params = realParams;
+        }
+        // Restored: back to the real, measured verdict.
+        expect(F.isReachableOn('ladder', 'sphere', undefined, 'wireframe')).toBe(false);
+        expect(F.isReachableOn('mkTick', 'sphere', undefined, 'hatch')).toBe(true);
+      });
+    });
   });
 
   // ── The Fill Style picker no longer has a library/experimental tier gate ──

@@ -622,6 +622,27 @@
     return HIGHLIGHT_TREATMENTS.includes(aliased) ? aliased : 'blank';
   };
   const ALT_FILL_MAPPERS = ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'];
+  // fs-e2 (W-02, F-02) — the SAME five mappers as `ALT_FILL_MAPPERS` above,
+  // exposed as a Set under its own name because the two lists answer
+  // different questions that happen to share a value: `ALT_FILL_MAPPERS`
+  // clamps the Alt Fill feature's own `altFillMapper` param, while this Set
+  // is the general "does this Type dispatch through the tone-law/surface-
+  // fill machinery at all?" predicate — read by
+  // `SCENE_FILL_STYLES.isReachableOn` (src/config/context-bar.js) so the Fill
+  // Style picker's reachability oracle (and the audit capture script that
+  // calls it directly, scripts/audit/scene3d-capture.js) is DERIVED rather
+  // than a sixth hand-copied literal.
+  //
+  // `scene3d.js` independently defines the identical five-value set TWICE
+  // (module-scope `SURFACE_FILL` at scene3d.js:195, and a second local
+  // `ALT_FILL_MAPPERS` Set inside the style-normalizer at scene3d.js:2495) —
+  // that is the engine's own dispatch gate and the true source of truth this
+  // mirrors. scene3d.js is out of scope for this work item (fill-audit W-02
+  // owns src/config/context-bar.js and this file only), so this Set is a
+  // second, independently-exported copy of the same five ids rather than a
+  // live read of the engine's private const — if scene3d.js's SURFACE_FILL
+  // ever grows or shrinks, this must be updated to match by hand.
+  const SURFACE_FILL_MAPPERS = new Set(ALT_FILL_MAPPERS);
   const BURST_CENTERS = ['specular', 'centroid'];
   // CtS I5 — depth-slice ('contourSlice') controls. All inert on any other
   // mapper (no existing scene sets this mapper), so every default is a no-op.
@@ -1577,6 +1598,9 @@
     hasRoundedContour,
     LINE_FINISH_CREATE_DEFAULTS,
     MAPPERS,
+    // fs-e2 (W-02) — the Types that dispatch through the surface-fill/
+    // tone-law machinery at all (see the constant's own comment above).
+    SURFACE_FILL_MAPPERS,
     GROUP_OPS,
     PRIMITIVE_PARAM_DEFAULTS,
     PRIMITIVE_CREATE_DEFAULTS,

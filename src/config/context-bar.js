@@ -395,6 +395,30 @@
   // no differently. This check runs before the default/none early-out so
   // those two are not silently exempted.
   SCENE_FILL_STYLES.isReachableOn = (id, primitiveMode, solidType, mapper) => {
+    // fs-e2 (W-02, F-02) — `none`/`wireframe`/`contourSlice` never reach the
+    // tone-law machinery AT ALL, on ANY primitive, faceted or chart-wrapped:
+    // scene3d.js's SURFACE_FILL only dispatches for hatch/crosshatch/contour/
+    // spiral/stipple (`none` draws bare outlines, `wireframe` draws edges,
+    // `contourSlice` cuts the mesh with parallel planes — none of the three
+    // is a surface fill). Measured: all 48 laws were byte-identical to each
+    // other on sphere/torus/cone/box under these three Types — 1,152 of
+    // 7,440 audit shots spent on one picture. So every id, INCLUDING `none`
+    // and the shipped default, is unreachable here — this runs FIRST so
+    // neither is silently exempted, mirroring the faceted off-axis rule
+    // below but generalized to every primitive shape and keyed off the
+    // mapper alone. Reads `Vectura.Scene3D.Params.SURFACE_FILL_MAPPERS`
+    // (mirrors scene3d.js's own SURFACE_FILL Set — see that constant's own
+    // comment in params.js for why this is a second copy, not a live read of
+    // the engine's private const) rather than a restated literal, so a real
+    // membership swap flips the verdict — see "the reachable set is DERIVED"
+    // test. An ABSENT mapper is not gated by this clause, matching the
+    // fail-open convention documented above `isReachableOn`.
+    const P0 = Vectura.Scene3D && Vectura.Scene3D.Params;
+    const surfaceFillMappers = P0 && P0.SURFACE_FILL_MAPPERS;
+    if (mapper && surfaceFillMappers && typeof surfaceFillMappers.has === 'function'
+      && !surfaceFillMappers.has(mapper)) {
+      return false;
+    }
     const faceted = SCENE_FILL_STYLES.isFaceted(primitiveMode);
     if (faceted) {
       if (mapper && mapper !== 'hatch' && mapper !== 'crosshatch') return false;
