@@ -2666,23 +2666,35 @@
         // does not reintroduce a legibility floor `pitchFor` deliberately
         // does not have -- the law still reaches genuine black.
         //
-        // THE PLOT FLOOR (F-10). `pitchFor` is entitled to flood past the
-        // FULL plot floor at its dark end -- deliberate, everywhere in this
-        // file (areaFor's own A_DARK comment) -- and the tonal-range test's
-        // 1.5x shadow/lit contrast depends on that headroom, so this does
-        // NOT switch to `pitchLegible`. What is not deliberate is `wrapPitch`
-        // COMPOUNDING an already sub-floor `p0` with the limb fold on a body
-        // whose foreshortened band is wide rather than a thin rim (a cone's
-        // whole lateral face, a torus's inner rim): pre-fix, measured 12.2%
-        // (torus) / 6.9% (cone) of on-surface ring-to-ring gaps under HALF a
-        // pen width -- turns crossing under the pen, moire/solid banding --
-        // against 2.6% on the sphere, where the same math never compounds
-        // that hard. `HALF_PEN` is a hard floor under the fold ONLY, well
-        // below the plot floor itself, so it clips exclusively the samples
-        // already past the point of visibly crossing and leaves every other
-        // sample -- sphere's included -- exactly as `wrapPitch` computed it.
-        const HALF_PEN = 0.5 * C.PEN;
-        const p = Math.max(HALF_PEN, wrapPitch(p0, s ? s.nz : 1));
+        // THE PLOT FLOOR (F-10, reworked after review). `pitchFor` is
+        // entitled to flood past the FULL plot floor (`C.FLOOR`, 2.2x pen --
+        // this repo's own PLOT_FLOOR_PEN, `surface-fill.js:244`) at its dark
+        // end -- deliberate, everywhere in this file (areaFor's own A_DARK
+        // comment) -- and the tonal-range test's 1.5x shadow/lit contrast
+        // depends on that headroom, so this does NOT switch to
+        // `pitchLegible` (tried: collapsed the ratio to 1.05, below the 1.2
+        // bar). But a 0.5x-pen floor -- the first attempt here -- was
+        // cosmetic: half a pen's own width is still visually solid (a
+        // torus/hatch re-shoot at 0.5x was pixel-indistinguishable from
+        // pre-fix at normal viewing size) and 92-100% of samples were STILL
+        // under the full plot floor, i.e. still an unplottable blob by this
+        // file's own definition. `PLOT_MIN_PEN` is now 0.8x pen -- close to
+        // genuinely plot-safe while still passing the tonal-range (bar 1.2)
+        // and wrap-foreshorten rim/core (bar 1.05) tests with margin; 1.0x
+        // pen was tried too and clears tonal-range but fails rim/core
+        // (1.03 vs 1.05) -- the wrap term has less room than tone does.
+        // `wrapPitch` still COMPOUNDS an already sub-floor `p0` with the limb
+        // fold on a body whose foreshortened band is wide rather than a thin
+        // rim (a cone's whole lateral face, a torus's inner rim): pre-fix,
+        // measured 12.2% (torus) / 6.9% (cone) of on-surface ring-to-ring
+        // gaps under 0.8x pen width, against 6.5% on the sphere -- still
+        // real headroom over the sphere, unlike the old 0.5x floor where
+        // gaps under it were already 0% everywhere including sphere (the
+        // metric could not tell the fix from a no-op). `PLOT_MIN_PEN` is a
+        // hard floor under the fold ONLY, well below the FULL plot floor,
+        // so it clips exclusively the samples already crowding hardest.
+        const PLOT_MIN_PEN = 0.8 * C.PEN;
+        const p = Math.max(PLOT_MIN_PEN, wrapPitch(p0, s ? s.nz : 1));
         // TEST-ONLY (opt-in via the same `__MONO_TRACE` flag `emit()` already
         // gates `__MONO_CTX` behind): the per-angle, ring-to-ring radial gap
         // in screen mm, on-surface only. This is exactly "the spacing between
