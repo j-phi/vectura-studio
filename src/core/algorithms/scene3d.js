@@ -32,38 +32,30 @@
   // Emission floor (document mm): visibility crumbs shorter than this draw as
   // dots at best on a plotter and are usually corner-transition artifacts.
   const MIN_RUN_MM = 0.6;
-  // F7 — analytic self-occlusion Z margin (document mm), torus only. The
-  // occluder here is `Scene3D.TorusOcclusion`'s exact closed-form surface
-  // (zero tessellation error), so this is NOT absorbing occluder noise the
-  // way `hlr.js`'s mesh-based `SELF_OCCLUDE_BIAS` (6mm) has to — it exists
-  // to reject a SHALLOW false positive: a self-crossing decorative law
-  // ('onePenDown') chains one long ribbon across most of the visible
-  // surface, and even a couple of millimetres of dilation-found "nearer"
-  // surface at ONE sample along that chain is enough to fragment its single
-  // CLS_WALLS-classified stretch into pieces too short to classify at all
-  // (`stats.wallRings` measured 0, "ribbons degenerated to bare
-  // centrelines" — a FAILURE dressed as a pass). Every GENUINE self-
-  // occlusion crossing measured on this fixture (the torus's near tube wall
-  // hiding its own far wall through the inner hole) has a real depth gap of
-  // 20mm or more — nowhere close to this margin — so raising it clears the
-  // shallow false positive without weakening real detection at all.
-  // Measured: `onePenDown` recovers `wallRings > 0` at margin >= ~10mm and
-  // stays recovered through 15; margins tried below that (0.5-6mm, matching
-  // `dilateRadiusMm` below) all measured `wallRings === 0` for `onePenDown`
-  // regardless of radius — see `scene3d-ribbon-wall-coverage.test.js`'s own
-  // header for the full margin/radius/survivors/coverage/wallRings curve.
-  const TORUS_SELF_OCCLUDE_ANALYTIC_MARGIN_MM = 15;
-  // 2D (screen mm) dilation radius for the SAME analytic test — see
-  // `Scene3D.TorusOcclusion.buildSelfOcclusionTest`'s own header for why a Z
-  // margin alone is not enough near the inner-hole cusp (steep local
-  // foreshortening there means a fraction-of-a-mm lateral shift can put a
-  // ray from "misses the near sheet entirely" to "30+ mm behind it"). This
-  // is the knob that actually governs F7 survivor detection (the margin
-  // above is deliberately decoupled and much larger); measured smallest
-  // value that still reaches 0/0 survivors on
-  // `scene3d-ribbon-f7-self-occlusion.test.js` — 1-2mm miss real survivors,
-  // 3mm is the first value that catches all of them.
-  const TORUS_SELF_OCCLUDE_DILATE_RADIUS_MM = 3;
+  // F7/A2 — analytic self-occlusion test tuning (document mm), torus only.
+  // `Scene3D.TorusOcclusion.buildSelfOcclusionTest` (unit A2 rewrite — see
+  // that module's own header) classifies a sample against a dense analytic
+  // near/far FIELD instead of casting dilated rays: a screen cell only
+  // counts as genuine self-occlusion territory when its own near/far sheets
+  // differ by more than `TORUS_SELF_OCCLUDE_GAP_MM` (filtering ordinary
+  // local-curvature depth variation), and a sample is occluded only when its
+  // z reads below that cell's near/far MIDPOINT by at least
+  // `TORUS_SELF_OCCLUDE_MARGIN_MM` (absorbing a ribbon outline/wall/fill
+  // vertex's own legitimate drift off its originating centreline — up to
+  // roughly the ribbon's own half-width, measured up to 2.3mm; see
+  // `docs/stroke-fill-handoff.md` finding 1). Every GENUINE self-occlusion
+  // crossing measured on this fixture (the torus's near tube wall hiding its
+  // own far wall through the inner hole) has a real depth gap of 20mm or
+  // more, so the 8mm gap floor (identical to the F7 oracle's own
+  // `OVERLAP_GAP_MM` — `tests/helpers/scene3d-torus-hole-oracle.js`) clears
+  // it with margin to spare: any qualifying cell's midpoint sits at least
+  // 4mm below its near depth, comfortably above the largest measured
+  // ribbon-vertex drift (2.3mm), so real near-sheet ink never crosses it.
+  // See `Scene3D.TorusOcclusion`'s own `DEFAULT_GAP_MM`/`DEFAULT_MARGIN_MM`
+  // for the full reasoning; both are exposed here only so a future tuning
+  // pass has one place to look.
+  const TORUS_SELF_OCCLUDE_GAP_MM = 8;
+  const TORUS_SELF_OCCLUDE_MARGIN_MM = 1;
   // ── §0 — A FACET IS RULED, NOT MERELY MARKED ───────────────────────────────
   // The fewest rulings that read as a FILL rather than as bare paper with a line
   // on it. Two parallel lines are a stripe; the third is the first that gives
@@ -2798,7 +2790,7 @@
         const torusAnalyticHidden = (torusChartSizes && Vectura.Scene3D && Vectura.Scene3D.TorusOcclusion)
           ? Vectura.Scene3D.TorusOcclusion.buildSelfOcclusionTest(
             (emSrc || {}).transform, scene.camera, scene.projOpts, torusChartSizes,
-            { marginMm: TORUS_SELF_OCCLUDE_ANALYTIC_MARGIN_MM, dilateRadiusMm: TORUS_SELF_OCCLUDE_DILATE_RADIUS_MM })
+            { gapMm: TORUS_SELF_OCCLUDE_GAP_MM, marginMm: TORUS_SELF_OCCLUDE_MARGIN_MM })
           : null;
         // X-ray fold: x-ray's SEE-THROUGH FILLS stay coupled to visibility — the
         // occluded BASE-FILL / face-outline dash is a fills concern (the far

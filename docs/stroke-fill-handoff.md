@@ -159,6 +159,21 @@ torus first; RGR test red against `da683934`; the user confirms it by eye on the
 **Before you start:** re-read finding 2 at the top of this doc. If your fix removes geometry, the
 coverage helper may mis-score it exactly as it mis-scored self-occlusion.
 
+**Unit A (`3d-scene/handoff-b`) — STOPPED, reported.** Root cause narrowed to false-positive
+self-occlusion clips (`hlr.js` F7) on CROSS-run crossings (separate centreline runs crossing in
+screen space); the `zAlongRun` within-run fix (cut clip events 11→1 at two locations) did not move
+the five mm² totals. See `docs/3d-audit/handoff/unit-a-notes.md`.
+
+**Unit A2 (`3d-scene/handoff-c`) — STOPPED, reported.** Rewrote `Scene3D.TorusOcclusion`'s
+self-occlusion test from a per-sample dilated ray to a dense analytic near/far FIELD (the F7
+oracle's own method), made it AUTHORITATIVE over the coarse mesh test for same-object occlusion
+(F7 stays 0/0, convex/imported-mesh paths byte-identical). **Measured, not guessed: self-occlusion
+is not the cause of these five numbers** — a control with self-occlusion entirely absent
+(pre-`57e86f48`) measures the SAME `ringNotInkMm2` (within run-to-run noise) as both the pre-fix and
+post-fix trees. The real source is most likely `PenFill`/boolean erosion fragmenting `outlineMP`
+near the same self-crossing loop holes — not yet isolated. Two genuine approaches now closed
+without moving the metric. See `docs/3d-audit/handoff/unit-a2-notes.md`.
+
 ### B. Blunt band terminations at the clip boundary  (NEW, user-flagged)
 
 **Task.** Since self-occlusion landed, bands terminate where the near sheet cuts them with slightly

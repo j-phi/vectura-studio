@@ -243,13 +243,36 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   //     `tests/unit/scene3d-shadow-overlap.test.js` (single-caster and
   //     non-overlapping-pair fixtures) are still byte-identical, which is
   //     the control: the change is scoped to genuine multi-caster overlap.
+  // NOTE (A2, 2026-09-05): torus self-occlusion (`Scene3D.TorusOcclusion`)
+  // was rewritten from a per-sample dilated-ray test to a dense analytic
+  // near/far FIELD, and `hlr.js`'s `hiddenAt` now treats that field as
+  // AUTHORITATIVE for same-object occlusion (skipping the coarse mesh-
+  // chording fallback) wherever it exists — see
+  // `docs/3d-audit/handoff/unit-a2-notes.md`. Exactly two rows moved, both
+  // torus-carrying, neither the ones the shadow-overlap note above already
+  // covers:
+  //   curvedOverlap-perspective-mixed-xray|settled — hash only (pathCount
+  //     341, pointCount 1099 UNCHANGED): the same points, a handful at
+  //     slightly different (x, y) where the new field classifies a
+  //     boundary crossing a few hundredths of a mm from the old ray test.
+  //   denseMixed-8obj-shadows|draft — 463 -> 466 paths, 926 -> 932 points.
+  //     This is DRAFT specifically (coarser SAMPLE_STEP, not the flat
+  //     single-hatch shadow path the note above describes — self-occlusion
+  //     is unrelated to `cfg.overlapDepth`): fewer, coarser hiddenAt samples
+  //     along the torus's ribbons meant the OLD dilated-ray test's spurious
+  //     same-surface misfires more often kept a short stretch clipped that
+  //     the new field correctly keeps visible; every other draft row (and
+  //     both settled rows besides the one above) is untouched. Not
+  //     independently re-verified against the oracle at this scenario's
+  //     camera/objects (only the default 3/4 torus view is — see F7's own
+  //     0/0-survivor test); flagged here rather than silently re-pinned.
   const EXPECTED = {
     'facetedOverlap-orthographic-hatch|settled': { hash: 'edb852cb0986dcbb6a12958f2a539b67f558948fa6dd5428b5cc0548ececc829', pathCount: 129, pointCount: 258 },
     'facetedOverlap-orthographic-hatch|draft': { hash: 'c89e3d735e2b53f3c1d154e7f3567d53a1e6053159b9ffa25a5853f7973d6a76', pathCount: 200, pointCount: 400 },
-    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'b47a8383997457c45e0c95a323a09481a362997812958cf4094a427e2c99728f', pathCount: 341, pointCount: 1099 },
+    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'f5294199c25a798bf4cc3c8ecdb981998a3776278ad0626730531feb4697bd89', pathCount: 341, pointCount: 1099 },
     'curvedOverlap-perspective-mixed-xray|draft': { hash: '83aebf997a1e39aed36e2893fb18e7e7ea386755a9493e4868c53c51c80ee2f9', pathCount: 302, pointCount: 604 },
     'denseMixed-8obj-shadows|settled': { hash: '47a37463e73f66365ccc570268da3f0f655bedcb8b1f79ecca810c544e60ec95', pathCount: 560, pointCount: 2303 },
-    'denseMixed-8obj-shadows|draft': { hash: 'fdf84edf779e274c8334aff74707d5702e57bc9e73faee8bc1500ae6061aa360', pathCount: 463, pointCount: 926 },
+    'denseMixed-8obj-shadows|draft': { hash: '9c3de29b1f268348208ebe1395268ad1f099ffdfc1b58d5759e3dc7eba7f4486', pathCount: 466, pointCount: 932 },
   };
 
   scenarios.forEach(({ name, objects, extra }) => {
