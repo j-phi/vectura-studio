@@ -373,6 +373,29 @@
     // that redundantly evaluated F at the untouched input point first.
     let fg = sliceSurfaceFG(mode, sizes, cur);
     if (!fg) return null;
+    // W-27c review (reviewer-required divergence guard): `k = F / denom`
+    // explodes as `denom` (the SQUARED in-plane gradient magnitude) shrinks
+    // toward the old bare `1e-12` bail-out floor — a real, non-contrived
+    // configuration: it happens whenever the cutting plane is near-TANGENT
+    // to the surface at a ring point, i.e. whenever the local surface
+    // normal nearly aligns with the plane normal (exactly the neighbourhood
+    // where refinement matters most, at a ring's own turning/extremal
+    // points). Verified against this exact function pre-guard: denom just
+    // above the old floor let a step move the point 100s-10000s of mm away
+    // with a WORSE residual than it started with — silently, no NaN, no
+    // crash, straight into the rendered ring.
+    //
+    // Fix: track the best (smallest |F|) point seen, seeded with the
+    // UNTOUCHED input `p` itself (always a safe fallback — it is where the
+    // ring already sat before this function ran). A candidate step is only
+    // ever accepted when it is (1) finite, (2) does not move farther than a
+    // sane bound relative to the primitive's own scale (rules out the
+    // 100+mm/10000+mm teleports directly), and (3) STRICTLY reduces |F|
+    // versus the best point so far. The very first rejection stops the
+    // loop and returns the best point found — never worse, never wilder,
+    // than the point this function was handed.
+    const scaleBound = Math.max(sizes.sx || 0, sizes.sy || 0, sizes.sz || 0, 1) * 4;
+    let best = cur; let bestAbsF = Math.abs(fg.F);
     for (let i = 0; i < SLICE_NEWTON_ITERS && Math.abs(fg.F) >= SLICE_NEWTON_F_EPS; i++) {
       let gx = fg.gx; let gy = fg.gy; let gz = fg.gz;
       if (n) {
@@ -382,14 +405,22 @@
       const denom = gx * gx + gy * gy + gz * gz;
       if (denom < 1e-12) break; // gradient purely normal to the plane: no in-plane move can fix F
       const k = fg.F / denom;
-      cur = { x: cur.x - k * gx, y: cur.y - k * gy, z: cur.z - k * gz };
+      let next = { x: cur.x - k * gx, y: cur.y - k * gy, z: cur.z - k * gz };
       if (n) {
-        const off = n.x * cur.x + n.y * cur.y + n.z * cur.z - d;
-        cur = { x: cur.x - off * n.x, y: cur.y - off * n.y, z: cur.z - off * n.z };
+        const off = n.x * next.x + n.y * next.y + n.z * next.z - d;
+        next = { x: next.x - off * n.x, y: next.y - off * n.y, z: next.z - off * n.z };
       }
-      fg = sliceSurfaceFG(mode, sizes, cur);
+      const stepLen = Math.hypot(next.x - cur.x, next.y - cur.y, next.z - cur.z);
+      const finitePt = Number.isFinite(next.x) && Number.isFinite(next.y) && Number.isFinite(next.z);
+      const nextFg = finitePt ? sliceSurfaceFG(mode, sizes, next) : null;
+      const nextAbsF = nextFg ? Math.abs(nextFg.F) : Infinity;
+      if (!finitePt || !nextFg || !Number.isFinite(nextAbsF)
+        || stepLen > scaleBound || nextAbsF >= bestAbsF) {
+        break; // divergent or non-improving step: stop, keep the best point found
+      }
+      cur = next; fg = nextFg; best = cur; bestAbsF = nextAbsF;
     }
-    return cur;
+    return best;
   };
   // Deliberately NOT Params.CURVED_FILL_PRIMITIVES — see the pass's own comment
   // at its use site. `pyramid` is chart-wrapped but flat-faced (a real polygon

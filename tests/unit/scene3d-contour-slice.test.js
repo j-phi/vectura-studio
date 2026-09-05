@@ -717,4 +717,299 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
       expect(refinedMax).toBeLessThanOrEqual(rawMax + 1e-6); // refining never makes it LESS accurate
     });
   });
+
+  // ── W-27c review iteration 2 — blocking fixes ───────────────────────────────
+  // docs/3d-audit/lane-reports/W-27c-review.md REJECTED 2dc7b3aa: (5) an
+  // unguarded catastrophic-divergence failure mode in the Newton loop, and
+  // (4, mutation B/C) item (c)'s guards never actually exercise the
+  // plane-constraint mechanism (they still pass with it fully removed).
+  describe('W-27c review — divergence guard (blocking #1)', () => {
+    // Reviewer's construction: a cutting plane whose normal is ALMOST exactly
+    // the surface normal at the ring point (near-TANGENT — a real, non-
+    // contrived configuration: it occurs at a ring's own turning/extremal
+    // points whenever the local surface normal nearly aligns with the plane
+    // normal). As the misalignment `eps` shrinks toward (but stays above) the
+    // `denom < 1e-12` bail-out floor, the pre-guard Newton step's magnitude
+    // (`k = F / denom`) explodes. Reproduced directly against the real wired
+    // `Slices.analyticProjectLocal` (sphere r20, p starting at (20.5,0,0),
+    // F0=0.1025 -- not yet on the surface, like a raw mesh-chord crossing).
+    const sizes = { sx: 20, sy: 20, sz: 20 };
+    const p = { x: 20.5, y: 0, z: 0 };
+    const startAbsF = (p.x / sizes.sx) ** 2 - 1; // 0.1025, F already >=0 here
+
+    test('a near-tangent cutting plane never teleports the corrected point, and never makes |F| worse than the untouched input', () => {
+      [1e-3, 1e-4, 1e-5].forEach((eps) => {
+        const raw = { x: 1, y: eps, z: 0 };
+        const len = Math.hypot(raw.x, raw.y, raw.z);
+        const n = { x: raw.x / len, y: raw.y / len, z: raw.z / len };
+        const out = V.Scene3D.Slices.analyticProjectLocal('sphere', sizes, p, n);
+        expect(Number.isFinite(out.x) && Number.isFinite(out.y) && Number.isFinite(out.z)).toBe(true);
+        const dist = Math.hypot(out.x - p.x, out.y - p.y, out.z - p.z);
+        const F = (out.x / sizes.sx) ** 2 + (out.y / sizes.sy) ** 2 + (out.z / sizes.sz) ** 2 - 1;
+        // Pre-guard (2dc7b3aa/29203162) this was 61.6mm / 617mm / 6174mm and
+        // F 9.5 / 953 / 95289 respectively (independently reproduced from the
+        // review's exact construction against a git-archived 29203162 scratch
+        // tree) -- i.e. it FAILS both of these on the pre-fix tree.
+        expect(dist).toBeLessThan(5); // bounded: was 61-6174mm pre-guard
+        expect(Math.abs(F)).toBeLessThanOrEqual(Math.abs(startAbsF) + 1e-9); // never worse than untouched input
+      });
+    });
+
+    test('bounded-iteration contract: a fully NaN-producing scenario (zero-length plane normal) never propagates NaN', () => {
+      const degenerateN = { x: 0, y: 0, z: 0 }; // malformed caller input (should never happen, but must not crash)
+      const out = V.Scene3D.Slices.analyticProjectLocal('sphere', sizes, p, degenerateN);
+      expect(Number.isFinite(out.x) && Number.isFinite(out.y) && Number.isFinite(out.z)).toBe(true);
+    });
+  });
+
+  // ── W-27c review — non-circular plane-membership + surface-residual oracle ─
+  // Review mutation testing (section 4): the item (a)/(c) tests' |F|/|∇F|
+  // oracle is real (mutation A/C correctly fail it for a fully- or mostly-
+  // disabled projector) but NEVER independently checks that the corrected
+  // point stays ON THE CUTTING PLANE -- of the two things
+  // `sliceAnalyticProjectLocal` claims to guarantee (surface residence AND
+  // plane membership), only the first was ever verified in isolation.
+  // Mutation B (delete the in-loop gradient-onto-plane projection, the
+  // fix's headline mechanism) slipped through unnoticed on an
+  // axis-perpendicular cutting plane (an earlier draft of this block used
+  // one, to get a clean "circle" oracle) because the in-loop RECLAMP alone
+  // gets most of the way there when the plane already happens to align with
+  // the primitive's own symmetry axis.
+  //
+  // Fix: a GENERIC plane orientation that is NOT aligned to any primitive's
+  // own axis (so the gradient actually has a component along the plane
+  // normal to project out, for every primitive), combined with REAL object
+  // rotation (yaw25/pitch15/roll10) -- addresses review blocking #2
+  // (cone/cylinder/torus previously had identity-only, axis-aligned rigs).
+  // Two INDEPENDENT checks, neither reusing the other: (i) plane membership
+  // -- the corrected point's own offset along the plane normal must match
+  // the RAW point's offset (pure dot-product geometry, no F/gradient at
+  // all); (ii) surface residual -- |F|/|grad F| via a per-primitive F
+  // independently re-derived from sliceSurfaceFG's own comments (as items
+  // a/c already do), applied here under a plane orientation where it is
+  // actually discriminating (see cylinder caveat below).
+  describe('W-27c review — non-circular plane-membership + surface-residual oracle under real rotation+tilt (blocking #2)', () => {
+    const T = { x: 5, y: -3, z: 8, yaw: 25, pitch: 15, roll: 10, scale: 1 };
+    // A LOCAL direction with all three components non-zero and not aligned
+    // to any coordinate axis, forward-rotated by T to get the WORLD normal
+    // -- `Slices.localPlaneNormal` must invert T's real rotation to recover
+    // it, proving the round-trip is correct AND guaranteeing the resulting
+    // plane is not accidentally perpendicular/parallel to any primitive's
+    // own symmetry axis (which is what let mutation B hide before).
+    const localDirRaw = { x: 0.35, y: 0.82, z: 0.45 };
+    const dl = Math.hypot(localDirRaw.x, localDirRaw.y, localDirRaw.z);
+    const localDir = { x: localDirRaw.x / dl, y: localDirRaw.y / dl, z: localDirRaw.z / dl };
+    const worldNormalForLocalDir = () => {
+      const T0 = { ...T, x: 0, y: 0, z: 0, scale: 1, sx: 1, sy: 1, sz: 1 };
+      return V.Scene3D.Scene.applyObjectTransform(localDir, T0);
+    };
+    let localPlaneNormal;
+    beforeAll(() => { localPlaneNormal = V.Scene3D.Slices.localPlaneNormal(worldNormalForLocalDir(), T); });
+
+    // F(local) and |grad F| per primitive, independently re-derived from
+    // sliceSurfaceFG's own comments (same as items a/c) -- not a re-export.
+    const surfaceDeviationMm = (mode, sizes, local) => {
+      const sx = sizes.sx || 1; const sy = sizes.sy || 1; const sz = sizes.sz || 1;
+      let F; let gx; let gy; let gz;
+      if (mode === 'sphere') {
+        F = (local.x / sx) ** 2 + (local.y / sy) ** 2 + (local.z / sz) ** 2 - 1;
+        gx = (2 * local.x) / (sx * sx); gy = (2 * local.y) / (sy * sy); gz = (2 * local.z) / (sz * sz);
+      } else if (mode === 'cylinder') {
+        F = (local.x / sx) ** 2 + (local.z / sz) ** 2 - 1;
+        gx = (2 * local.x) / (sx * sx); gy = 0; gz = (2 * local.z) / (sz * sz);
+      } else if (mode === 'cone') {
+        const r = Math.max(0, sx * (0.5 - local.y / (2 * sy)));
+        F = local.x * local.x + local.z * local.z - r * r;
+        gx = 2 * local.x; gy = (r * sx) / sy; gz = 2 * local.z;
+      } else if (mode === 'torus') {
+        const major = Math.max(2, sx * 0.75);
+        const minor = Math.max(1, Math.min(sy, sz) * 0.28);
+        const pr = Math.hypot(local.x, local.z) || 1e-9;
+        const dr = pr - major;
+        F = dr * dr + local.y * local.y - minor * minor;
+        gx = (2 * dr * local.x) / pr; gy = 2 * local.y; gz = (2 * dr * local.z) / pr;
+      } else {
+        throw new Error(`unhandled mode ${mode}`);
+      }
+      const gradLen = Math.hypot(gx, gy, gz) || 1e-9;
+      return Math.abs(F) / gradLen;
+    };
+
+    // Samples `count` points already ON the true surface (own parametric
+    // formula per primitive), offsets each OUTWARD by `offsetMm` along that
+    // point's own surface-gradient direction (simulating a raw/interpolated
+    // point not yet on the true surface -- exactly what a Catmull-Rom
+    // midpoint is), runs it through the REAL `Slices.analyticProjectLocal`
+    // directly (no external reclamp wrapper -- isolates the function the
+    // mutations target), and checks (i) plane membership and (ii) surface
+    // residual, independently.
+    const gradientAt = (mode, sizes, p) => {
+      const sx = sizes.sx || 1; const sy = sizes.sy || 1; const sz = sizes.sz || 1;
+      if (mode === 'sphere') return { gx: (2 * p.x) / (sx * sx), gy: (2 * p.y) / (sy * sy), gz: (2 * p.z) / (sz * sz) };
+      if (mode === 'cylinder') return { gx: (2 * p.x) / (sx * sx), gy: 0, gz: (2 * p.z) / (sz * sz) };
+      if (mode === 'cone') {
+        const r = Math.max(0, sx * (0.5 - p.y / (2 * sy)));
+        return { gx: 2 * p.x, gy: (r * sx) / sy, gz: 2 * p.z };
+      }
+      const major = Math.max(2, sx * 0.75); const minor = Math.max(1, Math.min(sy, sz) * 0.28);
+      const pr = Math.hypot(p.x, p.z) || 1e-9; const dr = pr - major;
+      return { gx: (2 * dr * p.x) / pr, gy: 2 * p.y, gz: (2 * dr * p.z) / pr };
+    };
+    const offSurfacePoint = (mode, sizes, onSurfacePt, offsetMm) => {
+      const g = gradientAt(mode, sizes, onSurfacePt);
+      const gl = Math.hypot(g.gx, g.gy, g.gz) || 1e-9;
+      return {
+        x: onSurfacePt.x + (g.gx / gl) * offsetMm,
+        y: onSurfacePt.y + (g.gy / gl) * offsetMm,
+        z: onSurfacePt.z + (g.gz / gl) * offsetMm,
+      };
+    };
+    const OFFSET_MM = 1; // see rig comment below for why this exact value
+    const checkPrimitive = (mode, sizes, onSurfacePtFn, count = 8) => {
+      let maxPlaneErr = 0; let maxSurfErr = 0;
+      for (let i = 0; i < count; i += 1) {
+        const onSurface = onSurfacePtFn(i);
+        const raw = offSurfacePoint(mode, sizes, onSurface, OFFSET_MM);
+        const d = localPlaneNormal.x * raw.x + localPlaneNormal.y * raw.y + localPlaneNormal.z * raw.z;
+        const corrected = V.Scene3D.Slices.analyticProjectLocal(mode, sizes, raw, localPlaneNormal);
+        const dc = localPlaneNormal.x * corrected.x + localPlaneNormal.y * corrected.y + localPlaneNormal.z * corrected.z;
+        maxPlaneErr = Math.max(maxPlaneErr, Math.abs(dc - d));
+        maxSurfErr = Math.max(maxSurfErr, surfaceDeviationMm(mode, sizes, corrected));
+      }
+      return { maxPlaneErr, maxSurfErr };
+    };
+
+    test('localPlaneNormal correctly inverts a REAL (non-identity, non-axis-aligned) object rotation', () => {
+      expect(localPlaneNormal.x).toBeCloseTo(localDir.x, 6);
+      expect(localPlaneNormal.y).toBeCloseTo(localDir.y, 6);
+      expect(localPlaneNormal.z).toBeCloseTo(localDir.z, 6);
+    });
+
+    // OFFSET_MM=1 is tuned, not arbitrary: at this value every primitive's
+    // CORRECT projector converges to machine precision (independently
+    // verified: 1e-8mm-1e-15mm across all four), while the review's mutation
+    // B (in-loop gradient-onto-plane projection removed) drives sphere/cone/
+    // torus to 0.24/0.24/0.62mm -- both comfortably clear of the 0.15mm bar
+    // in the correct direction. cylinder is the one EXCEPTION, documented in
+    // its own test below rather than silently omitted.
+    test.each([
+      ['sphere', { sx: 20, sy: 20, sz: 20 }, (i) => { const th = (i / 8) * Math.PI * 2; return { x: 16 * Math.cos(th), y: 6, z: 16 * Math.sin(th) }; }],
+      ['cone', { sx: 20, sy: 24, sz: 20 }, (i) => { const th = (i / 8) * Math.PI * 2; const y = -3; const r = 20 * (0.5 - y / 48); return { x: r * Math.cos(th), y, z: r * Math.sin(th) }; }],
+      ['torus', { sx: 24, sy: 20, sz: 20 }, (i) => { const psi = (i / 8) * Math.PI * 2; const major = 18; const minor = 5.6; const pr = major + minor * Math.cos(psi); const y = minor * Math.sin(psi); const th = 0.4; return { x: pr * Math.cos(th), y, z: pr * Math.sin(th) }; }],
+    ])('%s under real object rotation + a non-axis-aligned plane: plane membership + surface residual both hold at a 1mm raw offset', (mode, sizes, onSurfacePtFn) => {
+      const { maxPlaneErr, maxSurfErr } = checkPrimitive(mode, sizes, onSurfacePtFn, 8);
+      expect(maxPlaneErr).toBeLessThan(1e-6); // independent plane-membership check (never reuses F/gradient)
+      expect(maxSurfErr).toBeLessThan(0.15); // independent surface-residual check (plan's bar)
+    });
+
+    // Cylinder: F = (x/sx)^2+(z/sz)^2-1 does not depend on y AT ALL, so its
+    // gradient's y-component is identically zero at every point, for every
+    // plane orientation -- meaning the in-loop reclamp (which is NOT part
+    // of mutation B; it stays present either way) is, for this one
+    // primitive, PROVABLY sufficient on its own to keep the corrected point
+    // exactly on the plane, and the surface residual can never distinguish
+    // "the right y" from "any other y" since the surface doesn't care.
+    // Verified directly: removing the in-loop gradient-onto-plane
+    // projection changes NEITHER the plane-membership error NOR the surface
+    // residual for cylinder, at any offset tried (1mm through 100mm). This
+    // is a real, primitive-specific mathematical property, not a test gap
+    // -- documented here rather than silently dropped, per review blocking
+    // #2's instruction to add a cylinder fixture (this IS one: it still
+    // exercises real rotation + a non-axis-aligned plane end-to-end and
+    // would fail if the ROTATION/plane-membership machinery regressed).
+    test('cylinder under real object rotation + a non-axis-aligned plane: plane membership + surface residual both hold (mutation B is a mathematical no-op for this primitive -- see comment)', () => {
+      const { maxPlaneErr, maxSurfErr } = checkPrimitive(
+        'cylinder',
+        { sx: 18, sy: 24, sz: 18 },
+        (i) => { const th = (i / 8) * Math.PI * 2; return { x: 18 * Math.cos(th), y: 5, z: 18 * Math.sin(th) }; },
+        8,
+      );
+      expect(maxPlaneErr).toBeLessThan(1e-6);
+      expect(maxSurfErr).toBeLessThan(0.15);
+    });
+  });
+
+  // ── W-27c review section 6 — item (b) metric bug ────────────────────────────
+  // The reviewer found the implementer's (and this file's own, transitively)
+  // `maxTurnDeg` wraps around with `% n` as if every ring were closed. The
+  // cone's near-apex-adjacent rings from `buildSliceSegments` are OPEN arcs
+  // (first and last points do not coincide), so that wraparound invents a
+  // phantom "turn" across an edge that is never drawn on screen. This block
+  // provides an open-polyline-aware replacement and records what it measures
+  // -- honestly, without asserting a pass/fail verdict against the plan's
+  // <=8deg bar, because this implementer's own re-measurement (7.09deg,
+  // detailed below) did NOT reproduce the review's cited 39.8deg despite
+  // matching every stated rig parameter and trying several wiring variants
+  // (with/without the analyticProject option, with/without the pass's own
+  // final external plane reclamp). See the lane report for the full
+  // reconciliation note -- flagged for the next review pass, not resolved.
+  describe('W-27c review section 6 — item (b) open-polyline-aware turn metric', () => {
+    const maxTurnDegOpen = (pts) => {
+      let max = 0;
+      for (let i = 1; i < pts.length - 1; i += 1) {
+        const a = pts[i - 1]; const b = pts[i]; const c = pts[i + 1];
+        const v1x = b.x - a.x; const v1y = b.y - a.y; const v1z = b.z - a.z;
+        const v2x = c.x - b.x; const v2y = c.y - b.y; const v2z = c.z - b.z;
+        const l1 = Math.hypot(v1x, v1y, v1z); const l2 = Math.hypot(v2x, v2y, v2z);
+        if (l1 < 1e-9 || l2 < 1e-9) continue;
+        let cosA = (v1x * v2x + v1y * v2y + v1z * v2z) / (l1 * l2);
+        cosA = Math.max(-1, Math.min(1, cosA));
+        const deg = (Math.acos(cosA) * 180) / Math.PI;
+        if (deg > max) max = deg;
+      }
+      return max;
+    };
+
+    test('the cone near-apex-adjacent ring is genuinely OPEN (first/last points do not coincide) -- the old wraparound metric was invalid on it', () => {
+      const sizes = { sx: 20, sy: 24, sz: 20 };
+      const mesh = V.Scene3D.Mesh.createTopoformMesh('cone', sizes, 18);
+      const sliced = V.Scene3D.Slices.buildSliceSegments({ world: mesh.vertices, faces: mesh.faces, sliceCount: 22 });
+      const segsByPlane = new Map();
+      sliced.segments.forEach((s) => {
+        if (!segsByPlane.has(s.plane)) segsByPlane.set(s.plane, []);
+        segsByPlane.get(s.plane).push([s.a, s.b]);
+      });
+      const ring = V.Geometry3D.linkSegments(segsByPlane.get(1))[0];
+      const closureGap = Math.hypot(ring[0].x - ring[ring.length - 1].x, ring[0].y - ring[ring.length - 1].y, ring[0].z - ring[ring.length - 1].z);
+      expect(closureGap).toBeGreaterThan(1); // genuinely open, not a closed loop -- confirms the wraparound bug's premise
+    });
+
+    test('honest measurement: open-aware max turn across every ring in the exact reviewer rig (sx20/sy24/sz20, detail18, sliceCount22, identity transform)', () => {
+      const sizes = { sx: 20, sy: 24, sz: 20 };
+      const IDT = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
+      const WORLD_Z = { x: 0, y: 0, z: 1 };
+      const mesh = V.Scene3D.Mesh.createTopoformMesh('cone', sizes, 18);
+      const localPlaneNormal = V.Scene3D.Slices.localPlaneNormal(WORLD_Z, IDT);
+      const sliced = V.Scene3D.Slices.buildSliceSegments({ world: mesh.vertices, faces: mesh.faces, sliceCount: 22 });
+      const segsByPlane = new Map();
+      sliced.segments.forEach((s) => {
+        if (!segsByPlane.has(s.plane)) segsByPlane.set(s.plane, []);
+        segsByPlane.get(s.plane).push([s.a, s.b]);
+      });
+      const analyticProject = (worldPt) => {
+        const local = V.Scene3D.Slices.inverseObjectTransform(worldPt, IDT);
+        const corrected = V.Scene3D.Slices.analyticProjectLocal('cone', sizes, local, localPlaneNormal);
+        return V.Scene3D.Scene.applyObjectTransform(corrected, IDT);
+      };
+      let worst = 0; let ringsChecked = 0;
+      segsByPlane.forEach((segs) => {
+        V.Geometry3D.linkSegments(segs).forEach((ring) => {
+          if (ring.length < 3) return;
+          ringsChecked += 1;
+          const refined = V.Scene3D.Slices.refineRing(ring, { analyticProject, maxAngleDeg: 8 });
+          const t = maxTurnDegOpen(refined);
+          if (t > worst) worst = t;
+        });
+      });
+      expect(ringsChecked).toBeGreaterThan(15); // the sweep actually ran
+      // RECORDED, not gated: this implementer measures 7.09deg here (under
+      // the plan's <=8deg bar) using the exact rig and an open-polyline-aware
+      // metric; the review cites 39.8deg for "that same ring" and this
+      // implementer could not reproduce that specific figure (see the lane
+      // report). The bound below is intentionally loose (documents the
+      // measurement without taking a side in the unreconciled discrepancy).
+      expect(worst).toBeGreaterThan(0);
+      expect(worst).toBeLessThan(45);
+    });
+  });
 });
