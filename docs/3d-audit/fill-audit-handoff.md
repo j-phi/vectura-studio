@@ -104,6 +104,17 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
    silhouette area at d=50, tick length monotone with darkness (≥3x range light→dark), no un-ticked band wider
    than 2× the row pitch outside the highlight zone; sphere/torus/cone × hatch/contour; byte-identity for every
    other law. Re-shoot cone/hatch/mkTick low/med/max and LOOK.
+   **Also in W-05b (user, `user-reports/9.png` = torus contour/crosshatch mkTick after W-05):** ticks must be allowed
+   to CURVE — follow the surface's ruling/contour direction as short arcs rather than straight chords — so the
+   torus does not render as fans of straight spokes and dense straight-line blocks ("bizarre fills"). Tick
+   direction should be tangent to the local family, tick curvature from the surface, and the tick field must read
+   as one coherent texture across the torus, not per-patch fans.
+6b. **W-06b mkDashRamp low density (user, `user-reports/10.png` = sphere/hatch/mkDashRamp low before vs W-06 after):**
+   the W-06 after draws ONE dash on the whole sphere at d=1 — "from a design perspective not helpful". Low density must
+   still read as a sparse but complete dash texture over the shaded surface (≥ ~40 dashes on a 40 mm sphere at d=1,
+   monotone up to med), never a single stroke; the before (row-wide tiles) was also wrong — the target is discrete
+   dashes riding rulings at every density. Lane fill-audit-a; extend `scene3d-mark-laws-draw.test.js`. Re-shoot
+   sphere/torus × hatch × mkDashRamp × low/med/max and LOOK. (Ties to the open W-06 max-density sign-off.)
 7. **W-07b, W-10c, W-27c items 2–4, W-06 sign-off, W-25 floor scope, W-28 face-count threshold, Unit D phase alignment.**
 8. **Slider collapses W-22/W-23/W-24 + W-18** (the audit's 13 duplicate clusters → ~24-law roster): one lane, serial,
    after the P0/P1 items — the biggest product win still untouched.
