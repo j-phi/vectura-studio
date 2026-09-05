@@ -235,3 +235,191 @@ describe('Scene3D mono substrate — the superellipsoid and torusKnot charts', (
     expect(offenders, `these mono paths carry a weight scale: ${offenders.slice(0, 8).join(', ')}`).toEqual([]);
   }, SLOW);
 });
+
+/*
+ * FLOW-FIELD SINGULARITY CONTROL FOR etfKang / defectSplit ON TORUS AND CONE
+ * (F-18). The `__MONO_TRACE` / `SF.buildObject` technique above, extended:
+ * `lawEtf` and `lawDefect` now publish their own `dirAt` on the trace context
+ * (`C.__dirAt`), so a harness can measure the LINE FIELD's winding number
+ * directly instead of reconstructing it from output geometry, whose seam and
+ * silhouette clipping would make that reconstruction unreliable.
+ *
+ * `defectSplit` (FIXED). `lawDefect` placed its two "on the silhouette"
+ * defects at `cx + nx * C.R * 0.99` -- correct only if `C.R` is close to the
+ * body's own screen footprint, true for a sphere/ellipsoid (where this law
+ * was designed) but not for a torus, where `C.R` is `attachFields`'s AO/
+ * horizon marching radius (9.1) against a true footprint half-extent of 28.
+ * The two "silhouette" defects landed 9 units out on a body extending to 28
+ * -- deep inside the visible tube, not at its edge -- which is exactly F-18's
+ * "singularities land mid-form". Measured (winding number over a 2 mm grid,
+ * |index| > 0.3, "central" = within a third of the true footprint of the
+ * body's own screen-bbox centre): torus 2 singularities, 1 central, pre-fix;
+ * 0 and 0 post-fix. THE FIX marches the chart inverse (`C.inv`) outward from
+ * centre to the TRUE edge in the defect's own direction instead of assuming
+ * a spherical radius -- no per-primitive scale assumed, so it holds for the
+ * cone and any other body too.
+ *
+ * `etfKang` (INVESTIGATED, NOT FIXED -- see `surface-fill-mono.js`'s own
+ * comment on the Kang loop for the full account). Pre-fix torus measured 6
+ * winding-number singularities (0 central); the finding's own bar is <= 2.
+ * Two attempts: (1) more Kang smoothing passes (4 -> 12) measured a real
+ * count drop (6 -> 4), but a re-shoot at 12 passes still plainly shows the
+ * whorl/saddle pair -- 158719 of 320000 px changed for no visible fix, an
+ * unjustified blast radius (and 3x this law's cost) for zero read
+ * improvement. (2) seeding from the chart's own tangent instead of the
+ * screen depth gradient measured WORSE (still 6, some now central) and
+ * silently dropped the sphere's two genuine pole singularities to zero.
+ * Both reverted; `lawEtf` ships byte-identical to before this pass except
+ * for the trace hook above. A SEPARATE cone defect this finding reports --
+ * a screen-depth ridge down the visible axis, 46.9 degrees of cross-axis
+ * direction change against a 15 degree bar -- is open for the same reason.
+ * Recommending a follow-up finding for a from-scratch redesign of this
+ * law's seed signal on non-simply-connected silhouettes (the torus) and
+ * uniformly-foreshortened ones (the cone); no regression test is added for
+ * it here since nothing shipped changes its behaviour.
+ */
+describe('Scene3D flow-field singularity control — etfKang / defectSplit on torus / cone (F-18)', () => {
+  let runtime; let win; let V; let algo2; let defaults2; let SF;
+  const optsFor = {};
+
+  const SIZES = {
+    sphere: { sx: 30, sy: 30, sz: 30, detail: 24 },
+    torus: { sx: 34, sy: 9, sz: 9, detail: 24 },
+    cone: { sx: 20, sy: 22, sz: 20, detail: 24 },
+  };
+  const SUN2 = { id: 'sun', type: 'directional', azimuth: 200, elevation: 55, castShadows: false };
+  const BOUNDS2 = { width: 320, height: 220, m: 20, dW: 280, dH: 180, penWidth: 0.3 };
+
+  const captureOpts = (primitive) => {
+    const p = clone(defaults2);
+    p.objects = [{
+      id: 'o1',
+      name: 's',
+      primitive,
+      params: clone(SIZES[primitive]),
+      transform: {
+        x: 0, y: 50, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1,
+      },
+      visibility: 'solid',
+    }];
+    p.ground = { enabled: false };
+    p.camera = {
+      projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
+    };
+    p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: 60 } }, byObject: {}, byFace: {} };
+    p.tone = { ...clone(defaults2).tone, enabled: true };
+    p.lights = [SUN2];
+    const calls = [];
+    const orig = SF.buildObject;
+    SF.buildObject = function wrapped(o) {
+      const result = orig.call(this, o);
+      calls.push({ opts: o, result });
+      return result;
+    };
+    try { algo2.generate(p, null, null, BOUNDS2); } finally { SF.buildObject = orig; }
+    let best = calls[0];
+    calls.forEach((c) => { if ((c.result || []).length > (best.result || []).length) best = c; });
+    return best && best.opts;
+  };
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    win = runtime.window;
+    V = win.Vectura;
+    algo2 = V.AlgorithmRegistry.scene3d;
+    defaults2 = V.ALGO_DEFAULTS.scene3d;
+    SF = V.Scene3D.SurfaceFill;
+    Object.keys(SIZES).forEach((k) => { optsFor[k] = captureOpts(k); });
+  }, SLOW);
+  afterAll(() => runtime.cleanup());
+
+  const angleOf = (v) => Math.atan2(v.y, v.x);
+  // Winding index of an UNSIGNED (line) field around one closed square loop,
+  // in full turns. A line field's angle is defined only mod PI, so each
+  // step is folded into (-PI/2, PI/2] before summing — the standard way to
+  // read a director field's index without a spurious sign ambiguity.
+  const windingIndex = (dirAt, corners) => {
+    const angs = [];
+    for (let i = 0; i < corners.length; i++) {
+      const d = dirAt(corners[i].x, corners[i].y);
+      if (!d) return null;
+      angs.push(angleOf(d));
+    }
+    let total = 0;
+    for (let i = 0; i < angs.length; i++) {
+      const a0 = angs[i]; const a1 = angs[(i + 1) % angs.length];
+      let d = a1 - a0;
+      while (d > Math.PI / 2) d -= Math.PI;
+      while (d <= -Math.PI / 2) d += Math.PI;
+      total += d;
+    }
+    return total / (2 * Math.PI);
+  };
+
+  // Interior singularities of `law`'s field on `primitive`, on a 2 mm grid
+  // (this finding's own oracle), and how many sit within a third of the
+  // body's TRUE screen footprint of its own bbox centre ("central").
+  const singularities = (primitive, law) => {
+    win.__MONO_TRACE = 1;
+    win.__MONO_CTX = null;
+    SF.buildObject({ ...optsFor[primitive], toneLaw: law });
+    const C = win.__MONO_CTX;
+    expect(C, `no mono context published for ${primitive}/${law}`).toBeTruthy();
+    expect(C.__dirAt, `${primitive}/${law} did not publish its field`).toBeTruthy();
+    const dirAt = (x, y) => {
+      const s = C.inv(x, y);
+      if (!s) return null;
+      return C.__dirAt(s);
+    };
+    const STEP = 2.0; // mm, this finding's own grid
+    const cx = (C.minX + C.maxX) / 2; const cy = (C.minY + C.maxY) / 2;
+    const R = Math.max(C.W, C.H) / 2; // TRUE footprint half-extent, not C.R
+    let sing = 0; let central = 0; let total = 0;
+    for (let y = C.minY; y < C.maxY - STEP; y += STEP) {
+      for (let x = C.minX; x < C.maxX - STEP; x += STEP) {
+        const corners = [
+          { x, y }, { x: x + STEP, y }, { x: x + STEP, y: y + STEP }, { x, y: y + STEP },
+        ];
+        const idx = windingIndex(dirAt, corners);
+        if (idx == null) continue;
+        total += 1;
+        if (Math.abs(idx) > 0.3) {
+          sing += 1;
+          if (Math.hypot(x + STEP / 2 - cx, y + STEP / 2 - cy) / R < 1 / 3) central += 1;
+        }
+      }
+    }
+    expect(total, `${primitive}/${law}: no interior cells sampled`).toBeGreaterThan(20);
+    return { sing, central, total };
+  };
+
+  test('defectSplit: torus singularities do not land inside the tube\'s central third', () => {
+    const r = singularities('torus', 'defectSplit');
+    // Pre-fix (`C.R`-scaled placement) measured 2 singularities, 1 central.
+    // Post-fix (true-edge placement) measured 0 and 0.
+    expect(r.sing, `${r.sing}/${r.total} singularities`).toBeLessThanOrEqual(2);
+    expect(r.central, `${r.central} singularities landed in the central third`).toBe(0);
+  }, SLOW);
+
+  test('defectSplit: cone singularities stay out of the interior too', () => {
+    const r = singularities('cone', 'defectSplit');
+    expect(r.central, `${r.central} singularities landed in the central third`).toBe(0);
+  }, SLOW);
+
+  test('defectSplit: sphere is unaffected (still reads correctly)', () => {
+    const r = singularities('sphere', 'defectSplit');
+    expect(r.central).toBe(0);
+  }, SLOW);
+
+  // etfKang is UNCHANGED by this pass (see this file's header comment and
+  // `surface-fill-mono.js`'s Kang-loop comment: two tuning attempts were
+  // tried and rejected, so `lawEtf` ships identical to before except for
+  // the `C.__dirAt` trace hook `singularities()` above reads). This is a
+  // baseline measurement, not a regression guard for a fix — it documents
+  // the known-open count so a future attempt has a number to beat, and so
+  // this number moving is a deliberate signal, not silent drift.
+  test('etfKang: torus baseline singularity count (KNOWN OPEN — not fixed by this pass)', () => {
+    const r = singularities('torus', 'etfKang');
+    expect(r.sing, `${r.sing}/${r.total} singularities`).toBe(6);
+  }, SLOW);
+});

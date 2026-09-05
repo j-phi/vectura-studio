@@ -785,7 +785,31 @@
     let mx = 0;
     for (let k = 0; k < CF.length; k++) if (CF[k] > mx) mx = CF[k];
     for (let k = 0; k < CF.length; k++) CF[k] = mx > 0 ? CF[k] / mx : 0;
-    // Kang's iteration.
+    // Kang's iteration. F-18 INVESTIGATED, NOT FIXED HERE: on a torus the raw
+    // screen-depth field (the signal this whole grid is built from)
+    // genuinely has several critical points near the tube's crown -- a
+    // camera depth extremum where the tube is nearest/farthest, roughly
+    // where a sphere has just one. Two tuning attempts were tried and
+    // REJECTED: (1) more passes (4 -> 12, then 24 with a wider +/-4 kernel)
+    // measured a real drop in winding-number singularity COUNT on the torus
+    // (6 -> 4, winding number of the field over a 2 mm grid, |index| > 0.3),
+    // but re-shot the torus at 12 passes and the whorl/saddle pair is still
+    // plainly visible -- 158719 of 320000 px changed for no visible fix, an
+    // unjustified blast radius (and 3x this law's cost) for zero read
+    // improvement, so this stays at the original 4. (2) seeding from the
+    // chart's own tangent (`C.frame`'s periodic `b` axis) instead of the
+    // screen depth gradient, on the theory that a torus's own parameterisation
+    // admits a globally smooth line field: measured WORSE (still 6
+    // singularities, some now landing centrally, and it silently dropped the
+    // sphere's two genuine pole singularities to zero) -- likely because
+    // `C.inv`'s Newton solve can answer a different (a, b) branch for two
+    // screen points a lattice step apart wherever the visible front surface
+    // is not simply connected (the torus's own case), and `frame`'s finite
+    // difference across that branch jump is not a real derivative. Both
+    // reverted. Recommending a follow-up finding for a from-scratch redesign
+    // of this law's seed signal on non-simply-connected silhouettes; the cone
+    // has its own instance of the same root cause (a 46.9 degree cross-axis
+    // direction jump down its visible ridge, bar 15 degrees).
     for (let it = 0; it < 4; it++) {
       const NX = new Float32Array(TX.length);
       const NY = new Float32Array(TY.length);
@@ -820,6 +844,10 @@
       if (!MK[k]) return null;
       return { x: TX[k], y: TY[k] };
     };
+    // TEST-ONLY (opt-in via the same `__MONO_TRACE` flag `emit()` gates
+    // `__MONO_CTX` behind): publish the field itself so a harness can measure
+    // its winding number directly rather than reconstructing this grid.
+    if (globalScope.__MONO_TRACE) C.__dirAt = dirAt;
     streamFamily(C, dirAt, (s) => C.pitchFor(finite(s.I, 0)));
   };
 
@@ -850,13 +878,45 @@
     const ux = dk.x - cx; const uy = dk.y - cy;
     const uL = Math.hypot(ux, uy) || 1;
     const nx = -uy / uL; const ny = ux / uL;
+    // F-18. `C.R` is this file's AO/horizon marching radius (`attachFields`'s
+    // `AOR = max(2, C.R*0.30)`), not the body's screen footprint -- the two
+    // are the same only for a sphere/ellipsoid, where this law was designed
+    // and reads correctly. On a torus C.R measured 9.1 against a true
+    // footprint half-extent of 28 (a tube-scale reference, not the ring's own
+    // radius): "on the silhouette, perpendicular to the light's axis" landed
+    // 9 units out on a body that extends to 28, deep INSIDE the visible tube
+    // instead of at its edge -- a target whorl / X-saddle "mid-form" instead
+    // of driven out to the rim, exactly what F-18 reports. `edgeAt` marches
+    // the SAME chart inverse (`C.inv`) this file already reads everywhere
+    // else outward from centre until it leaves the visible surface, so the
+    // two on-silhouette defects land on the TRUE edge regardless of how
+    // anisotropic or non-convex the silhouette is (the torus's hole and the
+    // cone's apex included) -- no per-primitive scale assumed.
+    const DIAG = Math.hypot(C.W, C.H);
+    const edgeAt = (dx, dy) => {
+      if (!C.inv(cx, cy)) return 0;
+      let lo = 0; let hi = DIAG;
+      if (C.inv(cx + dx * hi, cy + dy * hi)) return hi;
+      for (let i = 0; i < 20; i++) {
+        const mid = (lo + hi) / 2;
+        if (C.inv(cx + dx * mid, cy + dy * mid)) lo = mid; else hi = mid;
+      }
+      return lo;
+    };
+    // The deep-shadow pair's own separation scale: half the body's true
+    // footprint, not `C.R` (same mismatch as above, milder here since the
+    // pair only needs to sit apart from each other inside the shadow, not
+    // land exactly on an edge).
+    const RR = Math.max(C.W, C.H) / 2;
+    const edgeFwd = edgeAt(nx, ny) * 0.99;
+    const edgeBack = edgeAt(-nx, -ny) * 0.99;
     const defects = [
       // Two on the silhouette, perpendicular to the light's axis.
-      { x: cx + nx * C.R * 0.99, y: cy + ny * C.R * 0.99, k: 0.5 },
-      { x: cx - nx * C.R * 0.99, y: cy - ny * C.R * 0.99, k: 0.5 },
+      { x: cx + nx * edgeFwd, y: cy + ny * edgeFwd, k: 0.5 },
+      { x: cx - nx * edgeBack, y: cy - ny * edgeBack, k: 0.5 },
       // Two buried in the deep shadow, a third of a radius apart.
-      { x: dk.x + nx * C.R * 0.16, y: dk.y + ny * C.R * 0.16, k: 0.5 },
-      { x: dk.x - nx * C.R * 0.16, y: dk.y - ny * C.R * 0.16, k: 0.5 },
+      { x: dk.x + nx * RR * 0.16, y: dk.y + ny * RR * 0.16, k: 0.5 },
+      { x: dk.x - nx * RR * 0.16, y: dk.y - ny * RR * 0.16, k: 0.5 },
     ];
     const dirAt = (s) => {
       let th = 0;
@@ -866,6 +926,7 @@
       }
       return { x: Math.cos(th), y: Math.sin(th) };
     };
+    if (globalScope.__MONO_TRACE) C.__dirAt = dirAt;
     streamFamily(C, dirAt, (s) => C.pitchFor(finite(s.I, 0)));
   };
 
