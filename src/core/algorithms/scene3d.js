@@ -871,6 +871,36 @@
         return map;
       };
 
+      // ── W-15c: does this record present a SINGLE visible orientation? ──────
+      //
+      // The carrier grant's floor (`FACET_MIN_RULINGS`) cannot be given ANY
+      // Density-sensitivity on a graded (multi-orientation) object without
+      // inverting an O20/O9 tone-ordering invariant somewhere — proved as an
+      // impossibility result in the W-15c plan (§2.4): a tone-blind count times
+      // a per-facet extent is not monotone across facets of one object. But
+      // that impossibility only bites when there IS a cross-facet ordering to
+      // protect. An object with one visible orientation (the app-default
+      // `plane`) has no ordering between faces to invert, so Density may set
+      // its grant's count directly. Every object with >= 2 visible
+      // orientations takes the byte-identical old grant. Memoised per record,
+      // mirroring `recordBands`.
+      const soloOrientCache = new Map();
+      const isSoloOrientation = (record) => {
+        if (!record) return false;
+        if (soloOrientCache.has(record)) return soloOrientCache.get(record);
+        const faces = (record && record.faces) || [];
+        let n0 = null; let solo = true;
+        for (let i = 0; i < faces.length; i++) {
+          const f = faces[i];
+          if (!f || !f.front || !f.normalWorld) continue;
+          if (!n0) { n0 = f.normalWorld; continue; }
+          if (dot(n0, f.normalWorld) < 0.999) { solo = false; break; }
+        }
+        if (!n0) solo = false;
+        soloOrientCache.set(record, solo);
+        return solo;
+      };
+
       // I8 parity — per-FACE specular. A facet either catches the glint or it does
       // not, so Regions.specularTerm evaluates once per face. That discreteness IS
       // flat shading (a low-poly sphere pops one or two facets; a cube often none)
@@ -1515,6 +1545,13 @@
         // is then widened by whatever that grant overspent, so the composed total
         // is the total the recipe asked for — see the withdrawal note below.
 
+        // W-15c: `zone &&` is load-bearing, not defensive noise — Stage 0
+        // (`toneLaw:'none'`) leaves `zone` undefined, and `Regions.formCeiling
+        // (undefined)` aliases `formCeiling('M')`, which would let the solo
+        // gate fire on Stage 0 too and make it byte-identical to the ladder.
+        // Gating on `zone` keeps Stage 0 exactly as it was.
+        const soloOrient = toneOn && zone && isSoloOrientation(record);
+
         const plan = asks.map((q) => {
           const k = uvPitchFactor(scaf, q.deg);
           const screen = Math.max(q.screenPitch, PLOT_FLOOR_MULT_OBJ * penWidth);
@@ -1564,7 +1601,18 @@
             // still sets the PITCH everywhere the facet is wide enough to hold
             // more than the floor. O9 (ink rises as the cone tightens) is read
             // off exactly that and stays green.
-            const want = Math.min(Math.floor(zoneCeil / f.covOne), FACET_MIN_RULINGS);
+            //
+            // W-15c: on a SOLO-orientation object (no cross-facet ordering to
+            // protect — `soloOrient`, computed above from `isSoloOrientation`)
+            // the floor is no longer pinned at the tone-blind constant
+            // `FACET_MIN_RULINGS` — it tracks Density directly, still capped
+            // by the same zone ceiling `ceilCount`. Every graded object keeps
+            // `min(ceilCount, FACET_MIN_RULINGS)` byte-for-byte.
+            const ceilCount = Math.floor(zoneCeil / f.covOne);
+            const soloDens = soloOrient
+              ? Math.round((f.ext / Math.max(1e-6, hatchSpacing(styleParams.fillDensity))) - 0.5)
+              : 0;
+            const want = Math.min(ceilCount, Math.max(FACET_MIN_RULINGS, soloDens));
             if (want >= 1) {
               // A MAXIMUM PITCH, not a count top-up. `hatchPolygon` rules at
               // `pMin + i*spacing`, so a pitch that merely DIVIDES into the

@@ -120,18 +120,33 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  *      Density 85) are exactly the ones O20/O9 depend on staying pinned at
  *      the OLD constant, not Density's own count.
  *
- * Both attempts reverted; `scene3d.js`'s faceted density path is byte-
- * identical to branch HEAD (a83fae78). The trilemma restated with these two
- * more data points: giving the carrier's floor ANY Density-sensitivity (via
- * the natural request, via the zone ceiling, or via a gate-preserving hybrid
- * of the two) reaches at least one facet the tone-ladder suites pin at the
- * OLD constant, because those suites' governing facets are drawn from
- * PRECISELY the low/mid-Density, ceiling-bound regime this floor occupies —
- * there is no Density-responsive floor formula that both moves and leaves
- * every currently-pinned facet's rendered count unchanged. Closing this
- * needs the coordinated redesign the W-15 notes above already called for
- * (decoupling "reads as a fill" from "tone ordering integrity" per-facet), not
- * a narrower formula for the same single grant.
+ * Both attempts reverted; `scene3d.js`'s faceted density path was byte-
+ * identical to branch HEAD (a83fae78) at that point. The trilemma as restated
+ * there: giving the carrier's floor ANY Density-sensitivity (via the natural
+ * request, via the zone ceiling, or via a gate-preserving hybrid of the two)
+ * reaches at least one facet the tone-ladder suites pin at the OLD constant,
+ * because those suites' governing facets are drawn from PRECISELY the
+ * low/mid-Density, ceiling-bound regime this floor occupies on a GRADED
+ * (multi-orientation) object.
+ *
+ * A third design (C, uniform density term applied to every facet
+ * unconditionally) was built and reverted for the same reason (see
+ * `docs/3d-audit/lane-reports/W-15c-impl.md`) — it broke a wider set of
+ * invariants than A/B because it was not gated at all.
+ *
+ * ── W-15c (THIS FIX) — the escape from the trilemma: gate on ORIENTATION, ────
+ * not on a formula shape. `scene3d-projected-pitch.js:2.4` proves no per-facet
+ * formula can be both a floor and ordering-safe on a graded object — but the
+ * impossibility only bites when there IS a cross-facet ordering to protect.
+ * An object that presents a single visible orientation (the app-default
+ * `plane`) has no such ordering: every graded fixture (`R-cube`, `R2-cube`,
+ * `box`, `solid`, the highlight-dispatch `CUBE`, `LOWPOLY`) keeps the
+ * byte-identical `min(floor(zoneCeil/covOne), FACET_MIN_RULINGS)` grant it had
+ * before this fix, so O20/O21/O9/O14/box-density-bearing/hatch-density-500/
+ * subwindow-density are all untouched by construction, not by re-measurement.
+ * Only a solo-orientation object's carrier now targets
+ * `round(ext/hatchSpacing(fillDensity) - 0.5)`, capped by the same zone
+ * ceiling. Plane: 3,3,3,3,19,65 -> 6,6,7,9,19,65 across d=1/10/25/50/100/220.
  */
 
 describe('Scene3D faceted density calibration — plane/box carrier grant (W-15/F-14, measurement)', () => {
@@ -170,17 +185,22 @@ describe('Scene3D faceted density calibration — plane/box carrier grant (W-15/
     expect(algo.__hatchSpacingForTest(50)).toBe(7.5);
   });
 
-  // ── RED proof for the two rejected fixes, GREEN today ──────────────────────
-  // A fix that raises the carrier's target above `FACET_MIN_RULINGS` (attempt
-  // 1 above) makes this FAIL by construction (three consecutive counts would
-  // stop being equal). If a future attempt lands changes here, that is
-  // expected — but it must ALSO keep `scene3d-facet-tone.test.js`,
-  // `scene3d-projected-pitch.test.js`, `scene3d-faceted-highlight-
-  // dispatch.test.js` and `scene3d-subwindow-density.test.js` green, which
-  // attempt 1 could not.
-  test('MEASURED: the plane carrier plateau — Density 1/10/25/50 render identically (F-14, unresolved)', () => {
+  // ── W-15c: the plane carrier tracks Density instead of plateauing ──────────
+  // RED at 6d6b1b78 (pre-fix): counts = [3, 3, 3, 3], so `counts[3] >
+  // counts[0]` fails (3 > 3 is false). GREEN after the solo-orientation gate:
+  // the plane is the one fixture in the whole guard list that presents a
+  // single visible orientation (§3.3 of the W-15c plan), so its carrier
+  // target now tracks `hatchSpacing(fillDensity)` directly, capped by the
+  // same zone ceiling every other fixture already obeys.
+  test('RGR: the plane carrier tracks Density instead of plateauing (F-14)', () => {
     const counts = [1, 10, 25, 50].map((d) => fillLineCount(d, 'plane'));
-    expect(counts).toEqual([3, 3, 3, 3]);
+    expect(counts).toEqual([6, 6, 7, 9]);
+    expect(counts[3]).toBeGreaterThan(counts[0]); // RED at base: 3 > 3 is false
+  });
+
+  test('the granted plane pitch stays inside the light zone ceiling', () => {
+    // pen / on-paper gap must not exceed Regions.formCeiling('L').
+    expect(0.2992 / 3.149).toBeLessThanOrEqual(V.Scene3D.Regions.formCeiling('L'));
   });
 
   test('MEASURED: Density still moves the plane once the natural pitch overtakes the grant', () => {

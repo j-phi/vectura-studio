@@ -206,7 +206,11 @@ describe('Scene3D — how a BOX\'s rendered fill bearing responds to Density', (
     expect(fingerprint(150)).toBe('4cbf9fd8:9878');
     expect(fingerprint(50, 'solid')).toBe('5d8296ce:4060');
     expect(fingerprint(150, 'solid')).toBe('650b0061:11134');
-    expect(fingerprint(50, 'plane')).toBe('44270f5b:3738');
+    // W-15c re-pin (plan §5.3): the plane presents a single visible
+    // orientation, so its carrier grant now tracks Density (3 -> 9 rulings at
+    // d=50) instead of the tone-blind FACET_MIN_RULINGS constant. Every other
+    // fingerprint in this guard is unchanged — see W-15c-impl-2.md.
+    expect(fingerprint(50, 'plane')).toBe('10a710a6:3909');
     expect(fingerprint(50, 'sphere')).toBe('2f4dae00:15919');
     expect(fingerprint(150, 'sphere')).toBe('bd627a15:35285');
   });

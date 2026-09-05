@@ -243,12 +243,20 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   //     `tests/unit/scene3d-shadow-overlap.test.js` (single-caster and
   //     non-overlapping-pair fixtures) are still byte-identical, which is
   //     the control: the change is scoped to genuine multi-caster overlap.
+  // W-15c re-pin (plan §5.3): the GROUND plane in these three scenarios
+  // carries `styleTable.scene.mapper = 'hatch'` with no ground override, so
+  // it is a faceted, single-orientation object and the solo-orientation
+  // carrier gate (scene3d.js) now opens on it — this is the single largest
+  // visible consequence of W-15c and is consistent (a ground IS a plane).
+  // Only the SETTLED row moves in all three scenarios; DRAFT
+  // (bounds.fastPreview) is unaffected and stays byte-identical to the
+  // pre-index baseline in every row. See W-15c-impl-2.md for the numbers.
   const EXPECTED = {
-    'facetedOverlap-orthographic-hatch|settled': { hash: 'edb852cb0986dcbb6a12958f2a539b67f558948fa6dd5428b5cc0548ececc829', pathCount: 129, pointCount: 258 },
+    'facetedOverlap-orthographic-hatch|settled': { hash: '0517b318738d3fd4dc7d31be0698487d85f4e96e31d6e9e8d300b9d2fa2e6875', pathCount: 208, pointCount: 416 },
     'facetedOverlap-orthographic-hatch|draft': { hash: 'c89e3d735e2b53f3c1d154e7f3567d53a1e6053159b9ffa25a5853f7973d6a76', pathCount: 200, pointCount: 400 },
-    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'b47a8383997457c45e0c95a323a09481a362997812958cf4094a427e2c99728f', pathCount: 341, pointCount: 1099 },
+    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'ecbcb9d941a2e397a7856f3de00e2618bd762ba5dddd809d2bbbcc76f87598c7', pathCount: 404, pointCount: 1225 },
     'curvedOverlap-perspective-mixed-xray|draft': { hash: '83aebf997a1e39aed36e2893fb18e7e7ea386755a9493e4868c53c51c80ee2f9', pathCount: 302, pointCount: 604 },
-    'denseMixed-8obj-shadows|settled': { hash: '47a37463e73f66365ccc570268da3f0f655bedcb8b1f79ecca810c544e60ec95', pathCount: 560, pointCount: 2303 },
+    'denseMixed-8obj-shadows|settled': { hash: '18588b303aa3f605bae7247b2979b1c13c63fb842376085dd0930dfc3d46c875', pathCount: 651, pointCount: 2485 },
     'denseMixed-8obj-shadows|draft': { hash: 'fdf84edf779e274c8334aff74707d5702e57bc9e73faee8bc1500ae6061aa360', pathCount: 463, pointCount: 926 },
   };
 
