@@ -270,7 +270,7 @@ degenerations (measured: `erodeEmpty` 0 on both fixtures); expand evidence asser
 `after.children > 0` AND that before/after images are NOT byte-identical — done via
 `docs/3d-audit/handoff/unit-e/` (real screenshots) plus the new tests' JSON-inequality guard.
 
-### F. Imported OBJ/STL meshes vs the red-line rule  (UNTESTED)
+### F. Imported OBJ/STL meshes vs the red-line rule  (MEASURED)
 
 **Task.** Self-occlusion for imported meshes keeps the older mesh-face path with its 6 mm bias,
 because they have no analytic silhouette to clip against. Whether they satisfy the user's rule is
@@ -278,6 +278,33 @@ because they have no analytic silhouette to clip against. Whether they satisfy t
 
 **Done when.** The F7-style test runs against an imported non-convex mesh and either passes or the
 gap is quantified and recorded here.
+
+**Update (branch `3d-scene/handoff-b`, unit F session, `66b05aa3`): MEASURED, mostly PASSES, one
+small gap recorded — two premises in the task above were wrong.** An imported mesh (1) never
+reaches the ribbon/variable-width law engine at all (`curvedChartParams` returns `null` for any
+`primitive` not in `TOPOFORM_MODES`, and an imported mesh's primitive is always `'solid'` — there
+is no "law" concept for this object class), and (2) never reaches F7's `selfOcclude`/
+`SELF_OCCLUDE_BIAS` "6 mm bias" machinery either — `scene3d.js`'s own `faceted` flag is true for
+`primitive === 'solid'`, routing it through the PER-FACE hatch path instead, whose segCtx never
+sets `selfObject`/`selfOcclude` at all, so every other face of the object is tested as a live
+occluder at the ORDINARY (non-inflated) bias — genuine, unbiased flat-face HLR, `hlr.js`'s original
+purpose. There is no 6 mm bias on this path; `git diff 57e86f48 HEAD --
+src/core/algorithms/scene3d.js` confirms F7 never touched it.
+
+Measured on a 24x12 torus tessellation (OBJ text, imported via `engine.importMeshAsScene`, the real
+upload path) at the default 3/4 view, independent ray/triangle oracle
+(`tests/helpers/scene3d-mesh-occlusion-oracle.js`): `hatch` mapper 0/4 survivors (PASSES), `contour`
+mapper 0/12 (PASSES), `spiral` mapper **1/29 survivors, gap ≈ 9.3 mm** (a real, reproducible, tiny
+gap). Root cause traced to `Mappers.regionFill`'s polygon-union failing on degenerate geometry for
+this fixture (visible in-console: `[FillBoolean] polygon union failed on degenerate geometry`), NOT
+the occlusion mechanism — a fix would touch `mappers.js`/`fill-boolean.js`/`geometry-utils.js`, none
+of which are "the bias/isConvexObject gate" this unit was pre-approved to touch, so it is recorded,
+not fixed. `tests/unit/scene3d-mesh-self-occlusion.test.js` is intentionally RED on `spiral`.
+A denser (48x24) mesh was tried first and abandoned — the flat-fill boundary/region-fill machinery
+became impractically slow on that many small, silhouette-grazing faces for a unit test; whether a
+denser imported mesh's self-occlusion holds at the same rate is a distinct, unmeasured performance
+question. Full trail: `docs/3d-audit/handoff/unit-f-notes.md`; evidence:
+`docs/3d-audit/handoff/unit-f/`.
 
 ---
 
