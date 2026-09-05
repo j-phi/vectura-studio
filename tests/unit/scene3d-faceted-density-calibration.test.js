@@ -178,9 +178,19 @@ describe('Scene3D faceted density calibration — plane/box carrier grant (W-15/
   // `scene3d-projected-pitch.test.js`, `scene3d-faceted-highlight-
   // dispatch.test.js` and `scene3d-subwindow-density.test.js` green, which
   // attempt 1 could not.
-  test('MEASURED: the plane carrier plateau — Density 1/10/25/50 render identically (F-14, unresolved)', () => {
+  // W-15c (Design C): the plateau is CLOSED. The carrier grant's target now
+  // scales with `facetExtent / hatchSpacing(density)` (a uniform density
+  // term, the same one the curved path's `tonePitch` uses), floored at
+  // FACET_MIN_RULINGS rather than capped by it, so Density 1/10/25/50 must
+  // no longer render identically. This is the RGR flip of the plateau test
+  // W-15/W-15b pinned as "unresolved" — it is RED on the byte-identical
+  // source those two commits left behind, and GREEN once Design C lands.
+  test('FIXED (W-15c): the plane carrier is Density-responsive from d=1, not a plateau', () => {
     const counts = [1, 10, 25, 50].map((d) => fillLineCount(d, 'plane'));
-    expect(counts).toEqual([3, 3, 3, 3]);
+    // Strictly increasing, not flat — the exact opposite of the withdrawn
+    // designs' [3, 3, 3, 3].
+    for (let i = 1; i < counts.length; i++) expect(counts[i]).toBeGreaterThan(counts[i - 1]);
+    expect(counts[0]).toBeGreaterThanOrEqual(3); // still reads as a fill at d=1
   });
 
   test('MEASURED: Density still moves the plane once the natural pitch overtakes the grant', () => {
