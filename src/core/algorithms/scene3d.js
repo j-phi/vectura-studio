@@ -1558,53 +1558,27 @@
           // untoned golden is byte-identical.
           if (i > 0) return; // carrier only — the §5.3 withdrawal below stands
           if (f.ext > 0 && zoneCeil > 0 && f.covOne > 0 && f.covOne <= zoneCeil) {
-            // ── W-15c (Design C) — THE GRANT'S COUNT COMES FROM DENSITY, ──────
-            // UNIFORMLY, NOT FROM THE ZONE'S OWN INK CEILING.
-            //
-            // W-15 and W-15b (four rejected designs, `scene3d-faceted-density-
-            // calibration.test.js`'s header) all tied the grant's target count
-            // to `zoneCeil / f.covOne` — the number of rulings THIS FACET's own
-            // zone-ink-budget can afford. That quantity is asymmetric across two
-            // facets of the SAME zone (`covOne` depends on each facet's own
-            // extent and foreshortening), so making it Density-sensitive always
-            // reached a facet whose sibling was left alone, inverting the O20 /
-            // projected-pitch tone-ordering invariants those facets pin.
-            //
-            // Design C never asks the zone ceiling how many rulings to grant.
-            // It asks Density, the SAME way the curved path's `tonePitch` does
-            // (`facetExtent / hatchSpacing(d)`) — a term that is IDENTICAL for
-            // every facet at a given Density (only `f.ext`, a legitimate
-            // per-facet geometric quantity, varies it). `FACET_MIN_RULINGS`
-            // becomes a FLOOR on that count (never a cap), so Density is free
-            // to keep counting past it instead of plateauing.
-            const s0 = hatchSpacing(styleParams.fillDensity);
-            const densityCount = (s0 > 1e-6) ? (f.ext / s0) : 0;
-            const want = Math.max(FACET_MIN_RULINGS, Math.floor(densityCount));
-            // Tone still modulates the result — MULTIPLICATIVELY, by the exact
-            // ratio (`spacing / s0`) the natural ask itself is already scaled
-            // by (`spacingBand`'s `s0 / gain`, before the plot-floor clamp).
-            // That is what keeps a dark zone's floor denser than a light
-            // zone's floor in the SAME proportion the natural, ungranted ask
-            // already holds them in — instead of the old `zoneCeil/covOne`
-            // cap, which held them in a DIFFERENT (and facet-asymmetric)
-            // proportion and is what four designs' inversions trace back to.
-            const toneRatio = (s0 > 1e-6) ? (spacing / s0) : 1;
-            // A MAXIMUM PITCH, not a count top-up. `hatchPolygon` rules at
-            // `pMin + i*spacing`, so a pitch that merely DIVIDES into the
-            // extent puts its last ruling on the facet's own edge, where it
-            // has almost no length. Stating the floor as a pitch — ext/(n+0.5),
-            // which yields exactly n rulings, inset off both boundaries —
-            // makes the granted and ungranted cases agree at equal n. Stating
-            // it as "top up the count when it falls short" did not: a facet
-            // granted 3 well-placed rulings out-inked the same facet drawing 3
-            // of its own with the last one hugging the edge, and the object's
-            // total ink then fell as `highlightSensitivity` rose (O9, -0.16 %).
-            const rawTarget = (f.ext / (want + 0.5)) * toneRatio;
-            // Never below the plot floor, in the SAME plane units as `f.plane`
-            // (the paper floor `PLOT_FLOOR_MULT_OBJ * penWidth`, converted
-            // through this family's own `k` exactly as `screen` is above).
-            const target = Math.max(rawTarget, (PLOT_FLOOR_MULT_OBJ * penWidth) / f.k);
-            if (target < f.plane) { f.plane = target; f.fits = true; return; }
+            // A GLINT facet gets the SAME floor. §5.5.2 states the cap as
+            // "capped, not emptied" — a single ruling across a whole facet is
+            // the hole it forbids — and the cap survives the floor because it
+            // still sets the PITCH everywhere the facet is wide enough to hold
+            // more than the floor. O9 (ink rises as the cone tightens) is read
+            // off exactly that and stays green.
+            const want = Math.min(Math.floor(zoneCeil / f.covOne), FACET_MIN_RULINGS);
+            if (want >= 1) {
+              // A MAXIMUM PITCH, not a count top-up. `hatchPolygon` rules at
+              // `pMin + i*spacing`, so a pitch that merely DIVIDES into the
+              // extent puts its last ruling on the facet's own edge, where it
+              // has almost no length. Stating the floor as a pitch — ext/(n+0.5),
+              // which yields exactly n rulings, inset off both boundaries —
+              // makes the granted and ungranted cases agree at equal n. Stating
+              // it as "top up the count when it falls short" did not: a facet
+              // granted 3 well-placed rulings out-inked the same facet drawing 3
+              // of its own with the last one hugging the edge, and the object's
+              // total ink then fell as `highlightSensitivity` rose (O9, -0.16 %).
+              const target = f.ext / (want + 0.5);
+              if (target < f.plane) { f.plane = target; f.fits = true; return; }
+            }
           }
           if (f.fits) return;
           // ── §5.3's SECOND DIRECTION IS MEASURED AND NOT LANDED (Round 10) ────
