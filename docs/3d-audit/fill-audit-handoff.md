@@ -101,6 +101,15 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
    after the clip, and whether the analytic projection moves a point across the occluder boundary so a visible run is
    split. Acceptance: no visible gap under 1 pen in any ring outside genuine occlusion, and no corner sharper than 8°
    anywhere on the torus rings, verified on the re-shot image.
+   **W-29 (user, `user-reports/12.png`, solid/buckyball contourSlice, present before AND after — byte-identical, so
+   pre-existing):** one slice ring near the top has an OPEN END — a line that stops mid-face instead of closing or
+   meeting the silhouette. A slice ring on a closed faceted solid must always be a closed loop or terminate exactly on
+   an occlusion/silhouette edge. Likely cause: `buildSliceSegments` linking (scene3d.js ~135–168/3395–3402) dropping a
+   segment when the plane passes through a mesh vertex/edge (degenerate crossing counted once), or the HLR clip
+   consuming the closing segment. RGR: on the default buckyball at sliceCount 26, every emitted ring is either closed
+   (first≈last within 0.01 mm) or both endpoints lie on a silhouette/occluder boundary; RED on the ring in the
+   screenshot. Lane fill-audit-d (slices code), independent of the analytic-projection work (faceted solids are excluded
+   from refinement).
 3. **W-26 (user rule, P0)**: continuous ladder placement so gaps carry tone only — plan in `plan-W26-W27.md`; lane
    fill-audit-a after W-01 M1. Touches `surface-fill.js` dispatch/emitContFamily only; never the master grid.
 4. **A3** (user's "not close to zero yet"): PenFill/boolean-erosion dropped geometry — brief in STILL-OPEN; lane handoff-c.
