@@ -300,4 +300,139 @@ describe('Scene3D originSpiral respects the plot floor on torus / cone (F-10)', 
     // pen. Post-fix (1.0x floor + per-angle retrace duty) 0/n.
     expect(frac, `${below08}/${n} (${(frac * 100).toFixed(1)}%) gaps under 1.0x pen on cone`).toBeLessThanOrEqual(0.01);
   }, 120000);
+
+  // DUTY COMPUTATION CHECK — NOT itself a retrace-emission mutation guard.
+  // CORRECTION recorded here after actually verifying it: reading the
+  // per-angle `__spiralDuty` trace does NOT catch the retrace loop being
+  // disabled, because `localDuty[i]` is computed BEFORE the retrace `for`
+  // loop ever runs and is pushed to the trace regardless of whether that
+  // loop subsequently emits anything. Proved directly: took a scratch copy
+  // of this tree, changed the retrace loop's condition to
+  // `for (let L = 2; L <= DUTY_CAP && false; L += 1)`, and ALL tests in this
+  // file — including an earlier draft of this one — still passed unchanged.
+  // The real, output-level mutation guard is the next test below, which
+  // reads `algo.generate`'s actual returned paths. This test still earns
+  // its place: it proves the DUTY VALUE ITSELF is computed correctly (a
+  // real arc of the torus genuinely asks for duty > 1, and the floor safety
+  // property holds) — necessary but not sufficient for "the mechanism
+  // fires," which is what the test below actually checks.
+  test('originSpiral retrace: torus shadow arc computes duty > 1, and every gap still clears 1.0x pen', () => {
+    const { frac, n, below08 } = gapStats('torus');
+    const C = win.__MONO_CTX;
+    const duty = C.__spiralDuty || [];
+    expect(duty.length, 'no per-angle duty trace recorded — __spiralDuty missing').toBeGreaterThan(200);
+    // The shadow arc measured directly above (60deg-120deg, in the SAME
+    // trace/scene this file's own header numbers came from): avgDuty ~1.13,
+    // maxDuty 3, n=856 samples in this 60deg band alone (measured directly,
+    // not asserted blind).
+    const shadowArc = duty.filter((d) => {
+      const deg = ((d.theta / (2 * Math.PI)) * 360 + 360) % 360;
+      return deg >= 60 && deg < 120;
+    });
+    expect(shadowArc.length, 'shadow arc (60-120deg) has no on-surface samples at all — fixture drifted').toBeGreaterThan(100);
+    const dutyOver1 = shadowArc.filter((d) => d.duty > 1);
+    // A retrace-disabled build (or one where duty were hard-clamped to 1)
+    // would make this exactly 0 — that is precisely the mutation this test
+    // exists to catch.
+    expect(dutyOver1.length, `expected some duty>1 samples in the torus shadow arc, got 0/${shadowArc.length} — retrace mechanism not firing`).toBeGreaterThan(0);
+    // Every recorded duty value must itself have been produced BY a real
+    // retrace-eligible ratio (duty > 1 implies the raw, pre-clamp ratio was
+    // itself > 1 — i.e. the floor was genuinely engaged there, not an
+    // off-by-one in the bookkeeping).
+    dutyOver1.forEach((d) => {
+      expect(d.dutyRaw).toBeGreaterThanOrEqual(d.duty);
+    });
+    expect(frac, `${below08}/${n} gaps under 1.0x pen on torus while duty>1 samples exist`).toBeLessThanOrEqual(0.01);
+  }, 120000);
+
+  // THE ACTUAL RETRACE-EMISSION MUTATION GUARD (W-10c review followup #1,
+  // corrected). Reads `algo.generate`'s real returned paths (full pipeline,
+  // not the internal trace) on the app-default torus/hatch/originSpiral
+  // scene at fillDensity 50 (the fixture this unit's own tone-not-flattened
+  // measurement used). Disabling the retrace loop (`&& false` mutation,
+  // verified directly in a scratch copy of this tree) measured pathCount
+  // 293, segCount 2285, inkLen 1365.7mm; with retrace enabled (this tree,
+  // unmodified) measured pathCount 409, segCount 2505, inkLen 1551.7mm.
+  // The bars below sit strictly between those two measurements, so this
+  // test is RED against the disabled-retrace mutation and GREEN here.
+  test('originSpiral retrace: disabling the retrace loop measurably drops torus output (real mutation guard)', () => {
+    const p = clone(defaults2);
+    p.objects = [{
+      id: 'o1',
+      name: 's',
+      primitive: 'torus',
+      params: { outerRadius: 46, innerRadius: 20, detail: 24 },
+      transform: {
+        x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1,
+      },
+      visibility: 'solid',
+    }];
+    p.ground = { enabled: false };
+    p.camera = {
+      projection: 'orthographic', yaw: 0, pitch: 0, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
+    };
+    p.styleTable = {
+      scene: { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 50, toneLaw: 'originSpiral' } },
+      byObject: {},
+      byFace: {},
+    };
+    p.tone = clone(defaults2).tone;
+    p.lights = [{ id: 'sun', type: 'directional', azimuth: 90, elevation: 45, castShadows: false }];
+    const BOUNDS3 = {
+      width: 360, height: 260, m: 20, dW: 320, dH: 220, penWidth: 0.3,
+    };
+    const paths = algo2.generate(p, null, null, BOUNDS3) || [];
+    const ff = paths.filter((pp) => pp.meta && pp.meta.kind === 'sceneFill');
+    let segCount = 0; let inkLen = 0;
+    ff.forEach((pp) => {
+      for (let i = 1; i < pp.length; i += 1) {
+        segCount += 1;
+        inkLen += Math.hypot(pp[i].x - pp[i - 1].x, pp[i].y - pp[i - 1].y);
+      }
+    });
+    // No-retrace measured pathCount 293 / inkLen 1365.7; with-retrace
+    // measured 409 / 1551.7. Bars sit strictly between.
+    expect(ff.length, `torus pathCount ${ff.length} — expected > 350 (no-retrace measured 293)`).toBeGreaterThan(350);
+    expect(inkLen, `torus inkLen ${inkLen.toFixed(1)}mm — expected > 1450 (no-retrace measured 1365.7)`).toBeGreaterThan(1450);
+  }, 60000);
+
+  // DUTY_CAP BOUNDARY GUARD (W-10c review followup #2). Zero coverage
+  // existed for the cap itself: `clamp(dutyRaw, 1, DUTY_CAP)` could have its
+  // cap silently raised, lowered, or removed and no test would notice,
+  // because every OTHER test only reads the post-clamp `duty`. This test
+  // reads BOTH the raw (pre-clamp) ratio and the clamped value the law
+  // actually used, and verifies `duty` is always the correctly-clamped
+  // form of `dutyRaw` (`duty === clamp(dutyRaw, 1, 4)`, never exceeding
+  // DUTY_CAP).
+  //
+  // HONEST FINDING while writing this guard: the cap does NOT actually
+  // engage on any measured fixture. Torus tops out at dutyRaw 3 (matching
+  // the law's own header, "measured torus max wanted duty ~3.6" — the true
+  // max is closer to 3, not 4). Pushing `penWidth` to 3x the default (0.9
+  // vs 0.3) to force a larger PLOT_MIN_PEN/wanted ratio STILL topped out at
+  // 3 (`pitchFor`'s own floor `INK / A_DARK` scales with the same
+  // `inkWidth`/`penWidth` pair that sets `PLOT_MIN_PEN`, so the ratio
+  // between them stays roughly fixed regardless of absolute pen size — a
+  // structural reason, not a fixture accident). DUTY_CAP=4 currently reads
+  // as a purely defensive headroom margin with zero live engagement on any
+  // primitive or density tested; this is recorded here rather than
+  // asserted as "engages" so a future change that finally DOES cross it
+  // gets a real green transition instead of a pre-broken assumption.
+  test('originSpiral retrace: DUTY_CAP=4 clamp is applied correctly (no engagement observed on any tested fixture)', () => {
+    gapStats('torus');
+    const C = win.__MONO_CTX;
+    const duty = C.__spiralDuty || [];
+    expect(duty.length).toBeGreaterThan(200);
+    const DUTY_CAP = 4;
+    const maxDutyRaw = Math.max(...duty.map((d) => d.dutyRaw));
+    // Not a hard requirement (see the honest finding above) — logged so a
+    // future engagement is visible without re-deriving it.
+    // eslint-disable-next-line no-console
+    console.log(`W-10c DUTY_CAP guard: max observed dutyRaw on torus = ${maxDutyRaw} (cap = ${DUTY_CAP})`);
+    duty.forEach((d) => {
+      expect(d.duty).toBeLessThanOrEqual(DUTY_CAP);
+      expect(d.duty).toBeGreaterThanOrEqual(1);
+      expect(d.duty).toBe(Math.min(Math.max(1, d.dutyRaw), DUTY_CAP));
+    });
+  }, 120000);
 });

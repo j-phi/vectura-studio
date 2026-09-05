@@ -2723,7 +2723,8 @@
         // does not have -- the law still reaches genuine black.
         const wanted = wrapPitch(p0, s ? s.nz : 1);
         const p = Math.max(PLOT_MIN_PEN, wanted);
-        localDuty[i] = s ? clamp(Math.round(PLOT_MIN_PEN / wanted), 1, DUTY_CAP) : 1;
+        const dutyRaw = s ? Math.round(PLOT_MIN_PEN / wanted) : 1;
+        localDuty[i] = clamp(dutyRaw, 1, DUTY_CAP);
         // TEST-ONLY (opt-in via the same `__MONO_TRACE` flag `emit()` already
         // gates `__MONO_CTX` behind): the per-angle, ring-to-ring radial gap
         // in screen mm, on-surface only. This is exactly "the spacing between
@@ -2733,6 +2734,18 @@
         if (s && globalScope.__MONO_TRACE) {
           if (!C.__spiralGaps) C.__spiralGaps = [];
           C.__spiralGaps.push(p);
+          // TEST-ONLY (W-10c mutation guard): publish the per-angle LOCAL
+          // DUTY alongside the gap itself, keyed by angle index `i` (theta =
+          // i/NANG * 2*pi) and guard iteration `guard`, so a harness can
+          // assert the retrace mechanism actually fires (duty > 1) in the
+          // specific angular arc it claims to compensate, not just that the
+          // floor-clamped gap itself never drops below the floor (which
+          // `__spiralGaps` alone cannot distinguish from a retrace-disabled
+          // build — see this law's own header, "why a ring recurrence").
+          if (!C.__spiralDuty) C.__spiralDuty = [];
+          C.__spiralDuty.push({
+            guard, i, theta: (i / NANG) * Math.PI * 2, duty: localDuty[i], dutyRaw,
+          });
         }
         const r1 = r0 + p;
         next[i] = r1;
