@@ -1,0 +1,53 @@
+{
+  "id": "W-21",
+  "title": "Type=Contour on faceted bodies is inert \u2014 implement per-face contours (F-20)",
+  "branch": "3d-scene/fill-audit",
+  "commit": "c69384001d19d0caafa2c219ce9e59ef33af9084",
+  "before": [
+    "shots/A/solid__contour__ladder__med__a.webp",
+    "shots/A/solid__contour__ladder__low__a.webp",
+    "shots/A/solid__contour__ladder__max__a.webp",
+    "shots/A/box__contour__ladder__med__a.webp",
+    "shots/A/box__contour__ladder__low__a.webp",
+    "shots/A/box__contour__ladder__max__a.webp",
+    "shots/A/plane__contour__ladder__med__a.webp",
+    "shots/A/plane__contour__ladder__low__a.webp",
+    "shots/A/plane__contour__ladder__max__a.webp",
+    "shots/A/pyramid__contour__ladder__med__a.webp",
+    "shots/A/pyramid__contour__ladder__low__a.webp",
+    "shots/A/pyramid__contour__ladder__max__a.webp",
+    "shots/A/sphere__contour__ladder__med__a.webp",
+    "shots/A/sphere__contour__ladder__low__a.webp",
+    "shots/A/sphere__contour__ladder__max__a.webp"
+  ],
+  "after": [
+    "shots/A/solid__contour__ladder__med__a.webp",
+    "shots/A/solid__contour__ladder__low__a.webp",
+    "shots/A/solid__contour__ladder__max__a.webp",
+    "shots/A/box__contour__ladder__med__a.webp",
+    "shots/A/box__contour__ladder__low__a.webp",
+    "shots/A/box__contour__ladder__max__a.webp",
+    "shots/A/plane__contour__ladder__med__a.webp",
+    "shots/A/plane__contour__ladder__low__a.webp",
+    "shots/A/plane__contour__ladder__max__a.webp",
+    "shots/A/pyramid__contour__ladder__med__a.webp",
+    "shots/A/pyramid__contour__ladder__low__a.webp",
+    "shots/A/pyramid__contour__ladder__max__a.webp",
+    "shots/A/sphere__contour__ladder__med__a.webp",
+    "shots/A/sphere__contour__ladder__low__a.webp",
+    "shots/A/sphere__contour__ladder__max__a.webp"
+  ],
+  "notes": "Root cause: Scene3D.Mappers.regionFill('contour', ...) builds concentric insets via insetPasses(loops, spacing), and `spacing` came straight from Density (hatchSpacing/contourStep) with no regard for the face's own size. On a default buckyball's small pentagon/hexagon faces (~12-15mm) at 'med' density (spacing 7.5mm), the very first inward inset already consumed the whole face, so insetPasses returned only the original boundary ring \u2014 1 fill path per face, shape-identical to the plain outline 'none' already draws (measured: 16/16 visible faces, 1 ring each, edge geometry byte-identical to Type=none). Fix: contourPassesAdaptive (mappers.js) retries insetPasses at half the spacing, up to 6 times down to a 0.3mm floor, ONLY when the first attempt yields fewer than 2 passes; an already-adequate face (box/plane/pyramid at their real sizes) succeeds on attempt 1 and the retry never runs. Visually: solid+contour now shows a genuine inset ring inside every visible face at 'med' (16/16 faces, up from 1 ring to 2+ rings each) and 'low' density (partial: 6/16 faces rescued to 2 rings; the remaining 10 stay boundary-only at that very sparse setting \u2014 a real numerical-robustness limit of the real mesh's hexagon faces at extreme spacing, outside this item's 'med'-only scope, and strictly no worse than before). box/plane/pyramid/sphere are unaffected at low/med/max (byte-identical, confirmed both by cmp and by a direct insetPasses-vs-regionFill equality unit test).",
+  "tests": {
+    "red": "tests/unit/scene3d-mappers.test.js > ... > W-21 (F-20) > a small face gets at least 2 rings ... \u2014 expect(received).toBeGreaterThanOrEqual(expected): Expected >= 2, Received 1",
+    "green": "npx vitest run tests/unit/scene3d-mappers.test.js -t W-21 -> Tests 4 passed | 23 skipped (27)",
+    "suites": "tests/unit/scene3d-mappers.test.js 27/27, tests/unit/scene3d-mapper-audit.test.js 70/70, tests/unit/scene3d-mapper-controls.test.js 15/15, tests/unit/scene3d-hlr-spatial-index-identity.test.js 6/6 (byte-identity guard untouched), tests/unit/scene3d-solid-cap-reachability.test.js 6/6, tests/integration/scene3d-fill-style-picker.test.js 127/127; npm run test:unit (full suite) 4677/4721 passed, 44 skipped, 0 failed; npm run test:integration (full suite) 1928/1928 passed, 0 failed"
+  },
+  "byte_identical_pairs": [
+    "box__contour__ladder__{low,med,max}__a \u2014 unaffected: box faces are large enough that the first insetPasses attempt already succeeds, so the adaptive retry never engages",
+    "plane__contour__ladder__{low,med,max}__a \u2014 same reason as box",
+    "pyramid__contour__ladder__{low,med,max}__a \u2014 same reason as box",
+    "sphere__contour__ladder__{low,med,max}__a \u2014 unaffected: default contourStyle='surface' routes a curved primitive's contour through the parametric SurfaceFill wrap, never through Scene3D.Mappers.regionFill at all, so this code path is not even reached",
+    "solid__contour__ladder__max__a \u2014 unaffected: at 'max' density (fillDensity 220) the first attempt already produces 11-14 rings/face, so the retry never engages"
+  ]
+}
