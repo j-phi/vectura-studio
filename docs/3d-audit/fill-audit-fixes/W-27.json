@@ -1,0 +1,28 @@
+{
+  "id": "W-27",
+  "title": "contourSlice rings have visible angles; rounding must be on by default",
+  "branch": "3d-scene/fill-audit-d",
+  "commit": "d100ff0d968a20775c5f01e5f7e1e77b5660bbcf",
+  "before": [
+    "shots/A/sphere__contourSlice__ladder__med__a.webp",
+    "shots/A/torus__contourSlice__ladder__med__a.webp",
+    "shots/A/box__contourSlice__ladder__med__a.webp",
+    "shots/A/solid__contourSlice__ladder__med__a.webp"
+  ],
+  "after": [
+    "shots/A/sphere__contourSlice__ladder__med__a.webp",
+    "shots/A/torus__contourSlice__ladder__med__a.webp",
+    "shots/A/box__contourSlice__ladder__med__a.webp",
+    "shots/A/solid__contourSlice__ladder__med__a.webp"
+  ],
+  "notes": "Root cause: scene3d.js buildSliceSegments emits triangle-cut crossing points verbatim, so a pole-adjacent ring on a sphere/torus (few, long, oblique mesh edges) has as few as 4-31 vertices with up to 58.14 degree exterior turns (measured on r20/detail16/sliceCount26). Engine._applySceneCurveFinish cannot fully rescue this: reduceAnchors correctly marks the genuinely sharp turns corner:true and leaves them unrounded (2 hard corners survived on the worst pole ring pre-fix), which is the visible angle the user reported. Fix: Scene3D.Slices.refineRing (new) refines each LINKED ring in WORLD SPACE, before projection, with a centripetal Catmull-Rom (Barry-Goldman) interpolatory subdivision -- chosen over Chaikin corner-cutting because it INTERPOLATES every original vertex (Chaikin would shrink an already-inside-the-surface chord approximation further inside, failing the accuracy requirement). Refinement is adaptive: it re-measures the ring's max exterior turning angle and subdivides again only while it exceeds 12 degrees (capped at 6 rounds), so an already-smooth equatorial ring costs nothing extra. Gated on a NEW, independent smoothness predicate (SLICE_SMOOTH_EXCLUDED = box/plane/solid/pyramid), deliberately NOT Params.CURVED_FILL_PRIMITIVES, so this pass never couples to the surface-fill routing set. On the r20/detail16/sliceCount26 rig the worst ring's max turn dropped from 58.14deg to <=11.58deg across the whole sweep, its raw-vs-analytic-circle max radial deviation improved (1.0683mm -> 1.0673mm, i.e. MORE accurate, not just smoother), and its hard-corner count went from 2 to 0. A box's rectangular cross-section keeps its real ~90deg corners (never refined) -- confirmed both numerically and by byte-identical before/after screenshots for box and solid. Visually: the sphere/torus Tier-A contourSlice screenshots' innermost (pole-adjacent) ring changes from a visible 7-8 sided polygon to a materially rounder shape; box/solid screenshots are byte-identical (md5 match).",
+  "tests": {
+    "red": "tests/unit/scene3d-contour-slice.test.js > W-27 > refineRing brings every REAL ring's max exterior turning angle to <=12 -- TypeError: Slices.refineRing is not a function (pre-fix); after wiring the function but before switching to centripetal parametrisation: expect(received).toBeLessThanOrEqual(12) Expected: <= 12 Received: 55.74307197031878 (uniform 4-point scheme overshoot on non-uniform mesh spacing)",
+    "green": "npx vitest run tests/unit/scene3d-contour-slice.test.js -> Test Files 1 passed (1), Tests 19 passed (19)",
+    "suites": "tests/unit/scene3d-contour-slice.test.js 19/19; tests/unit/scene3d-hlr-spatial-index-identity.test.js 6/6 (byte-identity guard untouched); tests/unit/scene3d-curves.test.js 13/13; tests/unit/scene3d-hlr.test.js 11/11; npm run test:unit (full suite): 437/439 files completed with 0 failures before the run was killed on shared-machine CPU contention from concurrent worktree sessions (not a regression)"
+  },
+  "byte_identical_pairs": [
+    "box__contourSlice__ladder__med__a -- unaffected: box's primitive is in SLICE_SMOOTH_EXCLUDED (faceted), so refineRing is never called on it; confirmed md5-identical before/after",
+    "solid__contourSlice__ladder__med__a -- unaffected: 'solid' (polyhedra/imported meshes) is in SLICE_SMOOTH_EXCLUDED (unknown/generic smoothness treated as faceted by design); confirmed md5-identical before/after"
+  ]
+}

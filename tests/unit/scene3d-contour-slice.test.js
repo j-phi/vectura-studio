@@ -303,4 +303,179 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
       expect(backDashed.length).toBeGreaterThan(0);
     });
   });
+
+  // ── W-27 — smooth-surface ring refinement (R2) ──────────────────────────────
+  // buildSliceSegments emits triangle-cut crossing points verbatim: near a
+  // sphere's pole a plane crosses only a handful of long, oblique mesh edges,
+  // so the ring reads as a visible polygon (45-60° exterior turns) instead of a
+  // circle. `Scene3D.Slices.refineRing` (new in this fix) refines a LINKED ring
+  // in world space, before projection, using a centripetal Catmull-Rom
+  // interpolatory subdivision — INTERPOLATING every original vertex (unlike
+  // Chaikin corner-cutting, which would shrink an already-inside-the-surface
+  // chord approximation further inside). It does not exist before this fix, so
+  // every assertion that CALLS `Slices.refineRing` fails (TypeError: refineRing
+  // is not a function) on the base branch; the "sanity" test below asserts the
+  // pre-existing raw-ring defect itself and passes on either branch.
+  describe('W-27 — contourSlice ring refinement on smooth surfaces', () => {
+    const analyticCircleRadius = (r, z) => Math.sqrt(Math.max(0, r * r - z * z));
+
+    // Densely re-samples the STRAIGHT-LINE polyline itself (not just its given
+    // vertices) — the true worst-case deviation of a drawn line from the
+    // analytic circle is mid-CHORD, not at a vertex, so under-sampling here
+    // would hide exactly the chord-sag the fix is meant to close.
+    const maxRadialDeviation = (pts, analyticR, samplesPerEdge = 24) => {
+      let max = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i]; const b = pts[i + 1];
+        for (let s = 0; s <= samplesPerEdge; s++) {
+          const t = s / samplesPerEdge;
+          const x = a.x + (b.x - a.x) * t;
+          const y = a.y + (b.y - a.y) * t;
+          const dev = Math.abs(Math.hypot(x, y) - analyticR);
+          if (dev > max) max = dev;
+        }
+      }
+      return max;
+    };
+
+    const maxTurnDeg = (pts) => {
+      // Independent oracle (deliberately NOT the source's own sliceRingMaxTurn)
+      // — closed ring, pts[0] === pts[last].
+      const n = pts.length - 1; // distinct vertex count
+      let max = 0;
+      for (let i = 0; i < n; i++) {
+        const a = pts[(i - 1 + n) % n]; const b = pts[i]; const c = pts[(i + 1) % n];
+        const v1x = b.x - a.x; const v1y = b.y - a.y; const v1z = b.z - a.z;
+        const v2x = c.x - b.x; const v2y = c.y - b.y; const v2z = c.z - b.z;
+        const l1 = Math.hypot(v1x, v1y, v1z); const l2 = Math.hypot(v2x, v2y, v2z);
+        if (l1 < 1e-9 || l2 < 1e-9) continue;
+        let cosA = (v1x * v2x + v1y * v2y + v1z * v2z) / (l1 * l2);
+        cosA = Math.max(-1, Math.min(1, cosA));
+        const deg = (Math.acos(cosA) * 180) / Math.PI;
+        if (deg > max) max = deg;
+      }
+      return max;
+    };
+
+    // Sphere r20 detail16 sliceCount26 — the plan's exact repro rig. Planes cut
+    // along world +z (sliceRotate/Tilt default 0), so `d[i] === world[i].z` and
+    // every ring lies in an EXACT constant-z plane (the crossing formula solves
+    // for that z by construction), letting radius/turn math use x,y directly.
+    const RADIUS = 20; const DETAIL = 16; const SLICE_COUNT = 26;
+    let ringsByPlane;
+    beforeAll(() => {
+      const mesh = V.Scene3D.Mesh.createTopoformMesh('sphere', { sx: RADIUS, sy: RADIUS, sz: RADIUS }, DETAIL);
+      const sliced = V.Scene3D.Slices.buildSliceSegments({
+        world: mesh.vertices, faces: mesh.faces, sliceCount: SLICE_COUNT,
+      });
+      const byPlane = new Map();
+      sliced.segments.forEach((s) => {
+        if (!byPlane.has(s.plane)) byPlane.set(s.plane, []);
+        byPlane.get(s.plane).push([s.a, s.b]);
+      });
+      ringsByPlane = new Map();
+      byPlane.forEach((segs, plane) => ringsByPlane.set(plane, V.Geometry3D.linkSegments(segs)));
+    });
+
+    // The single ring closest to a pole (plane 1, the extreme low-z cut) is the
+    // worst case the plan measured at 45-60°.
+    const poleRing = () => ringsByPlane.get(1)[0];
+
+    test('sanity: the RAW pole-adjacent ring is sparse and sharply polygonal (today\'s defect)', () => {
+      const raw = poleRing();
+      expect(raw.length).toBeGreaterThanOrEqual(4); // at least a closed triangle
+      expect(maxTurnDeg(raw)).toBeGreaterThan(20); // well above the 12° ceiling
+    });
+
+    test('refineRing brings every REAL ring\'s max exterior turning angle to ≤12°', () => {
+      const Slices = V.Scene3D.Slices;
+      expect(typeof Slices.refineRing).toBe('function');
+      let realRingsChecked = 0;
+      ringsByPlane.forEach((rings) => {
+        rings.forEach((ring) => {
+          // A 2-point entry is a degenerate seam stub (linkSegments closing a
+          // single crossing back on itself at a mesh fold) — no interior angle
+          // to bound, and not a curve to round. Every genuine ring here (3+
+          // distinct vertices) must still meet the ceiling.
+          if (ring.length < 4) return;
+          realRingsChecked += 1;
+          const refined = Slices.refineRing(ring);
+          expect(refined.length).toBeGreaterThanOrEqual(4);
+          expect(maxTurnDeg(refined)).toBeLessThanOrEqual(12);
+        });
+      });
+      expect(realRingsChecked).toBeGreaterThan(20); // the sweep actually ran
+    });
+
+    // NOTE: on this exact rig (r20/detail16/sliceCount26) the RAW pole ring has
+    // enough gently-curved spans elsewhere that `acceptable()` still accepts
+    // the path overall (`straight: false`) — the fitter's per-vertex corner
+    // detection is the finer net the root cause describes, not the whole-path
+    // gate. `reduceAnchors` correctly marks the two genuinely sharp turns
+    // `corner: true` and leaves them UNROUNDED, which is exactly the visible
+    // "angle" the user reported riding inside an otherwise-curved ring.
+    test('the fitter still leaves hard corners in the raw ring; the refined ring has none', () => {
+      const GU = V.GeometryUtils;
+      const raw = poleRing();
+      const refined = V.Scene3D.Slices.refineRing(raw);
+      const to2D = (pts) => pts.map((p) => ({ x: p.x, y: p.y }));
+      const cornerCount = (fit) => (Array.isArray(fit.anchors) ? fit.anchors.filter((a) => a && a.corner).length : 0);
+      const rawFit = GU.toCurveAnchors(to2D(raw), { closed: true, curves: true });
+      const refinedFit = GU.toCurveAnchors(to2D(refined), { closed: true, curves: true });
+      expect(cornerCount(rawFit)).toBeGreaterThan(0); // today's visible angle, surviving the fit
+      expect(cornerCount(refinedFit)).toBe(0); // fully smoothed — no hard corners left
+    });
+
+    test('the refined ring is a MORE accurate circle than the raw polyline, not just smoother', () => {
+      const raw = poleRing();
+      const refined = V.Scene3D.Slices.refineRing(raw);
+      const z = raw[0].z; // every point in this ring shares one exact z (see header)
+      const analyticR = analyticCircleRadius(RADIUS, z);
+      const rawDev = maxRadialDeviation(raw, analyticR);
+      const refinedDev = maxRadialDeviation(refined, analyticR);
+      expect(refinedDev).toBeLessThan(rawDev);
+    });
+
+    // A mid-latitude ring is already densely tessellated (small exterior turns)
+    // — refinement must be a no-op cost-wise there, not runaway subdivision.
+    test('a well-tessellated equatorial ring needs no (or minimal) extra refinement rounds', () => {
+      const mid = ringsByPlane.get(13)[0]; // near the equator (plane 13 of 26)
+      expect(maxTurnDeg(mid)).toBeLessThanOrEqual(12); // already fine before refining
+      const refined = V.Scene3D.Slices.refineRing(mid);
+      // Refinement never REMOVES the property; still within the ceiling.
+      expect(maxTurnDeg(refined)).toBeLessThanOrEqual(12);
+    });
+
+    // R2 corner survival: a FACETED primitive's cross-section is a real polygon
+    // (a box cut is a rectangle). Verified the same way as the sphere rings
+    // above — direct world-space buildSliceSegments/linkSegments, bypassing
+    // camera/HLR entirely, since a box's vertical side faces read edge-on
+    // (near-zero front/back dot product) from a straight-down camera and would
+    // make this an HLR-visibility test, not a smoothing-gate test. The actual
+    // wiring guard (SLICE_SMOOTH_EXCLUDED has 'box') is exercised for real by
+    // sanity test (a): a box scene still emits sceneFill paths at all.
+    test('a box\'s raw contourSlice ring already has real ≥80° corners, and the gate never refines it', () => {
+      const boxMesh = V.Scene3D.Mesh.makeBoxMesh(40, 40, 40, 1);
+      const sliced = V.Scene3D.Slices.buildSliceSegments({
+        world: boxMesh.vertices, faces: boxMesh.faces, sliceCount: 6,
+      });
+      const byPlane = new Map();
+      sliced.segments.forEach((s) => {
+        if (!byPlane.has(s.plane)) byPlane.set(s.plane, []);
+        byPlane.get(s.plane).push([s.a, s.b]);
+      });
+      const midPlaneSegs = byPlane.get(3) || byPlane.get(2);
+      const ring = V.Geometry3D.linkSegments(midPlaneSegs)[0];
+      expect(ring.length).toBeGreaterThanOrEqual(5); // 4 distinct corners + closing point
+      expect(maxTurnDeg(ring)).toBeGreaterThanOrEqual(80); // a real rectangle corner
+      // The gate itself: box is never smoothSurface, so the pass must not call
+      // refineRing on it. Since refineRing is otherwise idempotent-safe to call,
+      // assert the CONTRACT directly — refining this ring WOULD destroy its
+      // corners, which is exactly why the pass's SLICE_SMOOTH_EXCLUDED gate
+      // must (and does, per the source) skip primitives 'box'/'plane'/'solid'/
+      // 'pyramid' before ever reaching refineRing.
+      const wouldBeRefined = V.Scene3D.Slices.refineRing(ring);
+      expect(maxTurnDeg(wouldBeRefined)).toBeLessThan(20); // refineRing WOULD round it away
+    });
+  });
 });

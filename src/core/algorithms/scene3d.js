@@ -183,8 +183,165 @@
   const SLICE_SAMPLE_STEP = 2.5; // mirrors HLR SAMPLE_STEP (hlr.js)
   const SLICE_CLIP_WORK = 35000000;
 
+  // ── W-27 — polygonal contourSlice rings on smooth surfaces ──────────────────
+  // buildSliceSegments emits the RAW triangle-cut crossing points verbatim: a
+  // ring's vertex count is however many mesh edges the plane happens to cross,
+  // which near a pole (few, long, oblique edges) can be as few as 4-7 points
+  // with 45-60° exterior turns — a visibly polygonal "ring" on what is, in the
+  // source surface, a perfect circle. `Engine._applySceneCurveFinish` cannot
+  // reliably rescue this after the fact: `reduceAnchors` (geometry-utils.js)
+  // marks each genuinely sharp turn `corner: true` and leaves it UNROUNDED —
+  // correct behaviour for a real corner, but exactly wrong for a mesh-crossing
+  // artefact that should have been a smooth arc. A sparse-enough ring (few
+  // points, every span a "corner") can even fail the fitter's whole-path
+  // `acceptable()` gate and decline entirely (`{ straight: true }`).
+  //
+  // The fix works in WORLD SPACE, before projection: refine the LINKED ring
+  // with a centripetal Catmull-Rom (Barry-Goldman) interpolatory subdivision,
+  // which — unlike Chaikin corner-cutting — INTERPOLATES every original vertex
+  // rather than cutting toward their centroid. That distinction matters here:
+  // the raw ring vertices are
+  // exact edge-crossings on a chord-faceted mesh, so they already sit strictly
+  // INSIDE the true analytic surface; a shrinking scheme (Chaikin) would only
+  // pull the ring further inside, making the fit LESS accurate while looking
+  // smoother. The interpolatory scheme keeps every original point fixed and
+  // only adds new, curvature-aware samples between them, so the refined ring
+  // is provably at least as accurate (usually more, since the inserted points
+  // bulge toward the true surface rather than cutting a straight chord).
+  //
+  // Refinement is ADAPTIVE, not a fixed round count: each round the max
+  // exterior turning angle across the ring is re-measured, and another round
+  // of subdivision runs only if it still exceeds R2's 12° ceiling — so a
+  // finely-tessellated equator ring (already smooth) does zero extra work and
+  // a sparse pole ring gets exactly as many rounds as it needs, capped so a
+  // pathological input can't hang.
+  const SLICE_REFINE_MAX_ANGLE_DEG = 12;
+  const SLICE_REFINE_MAX_ROUNDS = 6;
+  // Deliberately NOT Params.CURVED_FILL_PRIMITIVES — see the pass's own comment
+  // at its use site. `pyramid` is chart-wrapped but flat-faced (a real polygon
+  // cross-section), so it stays excluded here exactly as it is excluded from
+  // `hasRoundedContour`, without importing that set and its fill-routing
+  // coupling into this independent slicing pass.
+  const SLICE_SMOOTH_EXCLUDED = new Set(['box', 'plane', 'solid', 'pyramid']);
+
+  const sliceRingTurnDeg = (a, b, c) => {
+    const v1x = b.x - a.x; const v1y = b.y - a.y; const v1z = b.z - a.z;
+    const v2x = c.x - b.x; const v2y = c.y - b.y; const v2z = c.z - b.z;
+    const l1 = Math.hypot(v1x, v1y, v1z);
+    const l2 = Math.hypot(v2x, v2y, v2z);
+    if (l1 < 1e-9 || l2 < 1e-9) return 0;
+    let cosA = (v1x * v2x + v1y * v2y + v1z * v2z) / (l1 * l2);
+    if (cosA > 1) cosA = 1; else if (cosA < -1) cosA = -1;
+    return (Math.acos(cosA) * 180) / Math.PI;
+  };
+
+  // Max exterior turning angle across every INTERIOR vertex (closed: every
+  // vertex; open: every vertex but the two endpoints, which have no turn).
+  const sliceRingMaxTurn = (pts, closed) => {
+    const n = pts.length;
+    if (n < 3) return 0;
+    let max = 0;
+    const lo = closed ? 0 : 1;
+    const hi = closed ? n - 1 : n - 2;
+    for (let i = lo; i <= hi; i++) {
+      const a = pts[(i - 1 + n) % n];
+      const b = pts[i];
+      const c = pts[(i + 1) % n];
+      const t = sliceRingTurnDeg(a, b, c);
+      if (t > max) max = t;
+    }
+    return max;
+  };
+
+  // One round of interpolatory midpoint insertion between every pair of
+  // adjacent points (doubling the count), using a CENTRIPETAL Catmull-Rom
+  // (Barry-Goldman) evaluation rather than the textbook uniform-parameter
+  // 4-point scheme. A raw contourSlice ring's edge lengths are wildly
+  // non-uniform (many short chords fanning off a mesh vertex sit next to one
+  // long chord spanning a sparse stretch), and the UNIFORM scheme's fixed
+  // (9,9,-1,-1)/16 weights assume roughly-equal spacing — fed unequal spacing
+  // they extrapolate the short-edge tangent onto the long edge and overshoot,
+  // measured as a 160-180° reversal spike that gets WORSE each round instead
+  // of converging. Centripetal parametrisation (knot spacing proportional to
+  // sqrt(chord length)) is the
+  // standard fix (Yuksel et al.) — it stays well-behaved for exactly this kind
+  // of irregular input. Open-ring boundaries clamp to the end points.
+  const sliceRingSubdivideOnce = (pts, closed) => {
+    const n = pts.length;
+    const at = (i) => (closed ? pts[((i % n) + n) % n] : pts[Math.max(0, Math.min(n - 1, i))]);
+    const dist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    const lerp3 = (a, b, t) => ({
+      x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t,
+    });
+    // Barry-Goldman evaluation of the centripetal Catmull-Rom segment between
+    // p1,p2 (neighbours p0,p3) at its own midpoint knot. Degenerate (zero-
+    // length) spans fall back to the plain lerp for that blend.
+    const centripetalMid = (p0, p1, p2, p3) => {
+      const d0 = Math.sqrt(dist(p0, p1)); const d1 = Math.sqrt(dist(p1, p2)); const d2 = Math.sqrt(dist(p2, p3));
+      const t0 = 0; const t1 = t0 + (d0 || 1e-9); const t2 = t1 + (d1 || 1e-9); const t3 = t2 + (d2 || 1e-9);
+      const t = (t1 + t2) / 2;
+      const blend = (a, b, ta, tb, at_) => (tb - ta > 1e-12 ? lerp3(a, b, (at_ - ta) / (tb - ta)) : a);
+      const A1 = blend(p0, p1, t0, t1, t);
+      const A2 = blend(p1, p2, t1, t2, t);
+      const A3 = blend(p2, p3, t2, t3, t);
+      const B1 = blend(A1, A2, t0, t2, t);
+      const B2 = blend(A2, A3, t1, t3, t);
+      return blend(B1, B2, t1, t2, t);
+    };
+    const edgeCount = closed ? n : n - 1;
+    const out = [];
+    for (let i = 0; i < edgeCount; i++) {
+      const p1 = at(i); const p2 = at(i + 1);
+      out.push(p1);
+      out.push(centripetalMid(at(i - 1), p1, p2, at(i + 2)));
+    }
+    if (!closed) out.push(at(edgeCount));
+    return out;
+  };
+
+  // refineSliceRing(worldPts) — public, pure, deterministic. `worldPts` is a
+  // linkSegments() ring (closed rings repeat their first point as the last).
+  // Returns a NEW array; the input is never mutated. Gated by the caller on
+  // surface smoothness — this function itself has no opinion about that.
+  const refineSliceRing = (worldPts, opts = {}) => {
+    if (!Array.isArray(worldPts) || worldPts.length < 4) return worldPts;
+    const maxAngle = Number.isFinite(opts.maxAngleDeg) ? opts.maxAngleDeg : SLICE_REFINE_MAX_ANGLE_DEG;
+    const maxRounds = Number.isFinite(opts.maxRounds) ? opts.maxRounds : SLICE_REFINE_MAX_ROUNDS;
+    const first = worldPts[0];
+    const last = worldPts[worldPts.length - 1];
+    const closed = Math.hypot(first.x - last.x, first.y - last.y, first.z - last.z) < 1e-6;
+    let base = closed ? worldPts.slice(0, -1) : worldPts.slice();
+    // A mesh seam (e.g. a sphere's u=0/u=1 longitude fold) can hand linkSegments
+    // two crossing points a fraction of a micron apart. The 4-point scheme is
+    // an INDEX-parametrised (not arc-length) subdivision, so a near-zero-length
+    // edge sitting next to a long one makes its weights extrapolate wildly —
+    // measured as a runaway 180° spike after repeated rounds instead of
+    // convergence. Collapsing true duplicates first (not real geometry, just a
+    // seam artefact) is the correct fix for any resampling scheme, not a
+    // workaround for this one.
+    const DUP_EPS = 1e-4;
+    const deduped = [];
+    for (let i = 0; i < base.length; i++) {
+      const p = base[i];
+      const prev = deduped[deduped.length - 1];
+      if (!prev || Math.hypot(p.x - prev.x, p.y - prev.y, p.z - prev.z) > DUP_EPS) deduped.push(p);
+    }
+    if (closed && deduped.length > 1) {
+      const p0 = deduped[0]; const pl = deduped[deduped.length - 1];
+      if (Math.hypot(p0.x - pl.x, p0.y - pl.y, p0.z - pl.z) <= DUP_EPS) deduped.pop();
+    }
+    base = deduped;
+    if (base.length < 3) return worldPts;
+    let round = 0;
+    while (round < maxRounds && sliceRingMaxTurn(base, closed) > maxAngle) {
+      base = sliceRingSubdivideOnce(base, closed);
+      round += 1;
+    }
+    return closed ? [...base, { ...base[0] }] : base;
+  };
+
   const Scene3DNS = (Vectura.Scene3D = Vectura.Scene3D || {});
-  Scene3DNS.Slices = { buildSliceSegments };
+  Scene3DNS.Slices = { buildSliceSegments, refineRing: refineSliceRing };
 
   const FALLBACK_STYLE = { penId: null, mapper: 'none', params: {} };
 
@@ -3389,8 +3546,14 @@
               if (!g) { g = { front: [], back: [] }; byPlane.set(s.plane, g); }
               (s.front ? g.front : g.back).push([s.a, s.b]);
             });
-            const linkPlane = (segs) => (linkSegments ? linkSegments(segs)
-              : segs.map((e) => [e[0], e[1]]));
+            // W-27: is this object's SURFACE actually round? See
+            // SLICE_SMOOTH_EXCLUDED above the pass for why this is deliberately
+            // a separate predicate from Params.CURVED_FILL_PRIMITIVES.
+            const smoothSurface = !SLICE_SMOOTH_EXCLUDED.has(record.primitive) && record.id !== 'ground';
+            const linkPlane = (segs) => {
+              const rings = linkSegments ? linkSegments(segs) : segs.map((e) => [e[0], e[1]]);
+              return smoothSurface ? rings.map((ring) => refineSliceRing(ring)) : rings;
+            };
             const projectPath = (worldPts) => {
               const proj = [];
               for (let i = 0; i < worldPts.length; i++) {
