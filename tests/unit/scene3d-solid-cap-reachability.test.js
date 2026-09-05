@@ -103,6 +103,61 @@ describe('solid front-face cap — the U12 correction', () => {
     expect(maze.md5).not.toBe(base.md5);
   }, 60000);
 
+  // ── W-28: an IMPORTED MESH is capped by the SAME running-engine mechanism ─
+  // `faceMonoLines`'s `MONO_MAX_FRONT_FACES` check reads `record.faces[i]
+  // .front` uniformly off whatever mesh the object3d compositor built — it
+  // has no `solidType` branch at all. An imported mesh with a real front-
+  // face count over the cap therefore falls back exactly like the default
+  // buckyball, even though (before this fix) the picker's own
+  // `isCapLimited('solid', 'importedMesh')` said otherwise (see
+  // `scene3d-fill-style-picker.test.js` "an imported mesh is UNCONDITIONALLY
+  // cap-limited" for the picker-side proof). Fixture: a frequency-2 geodesic
+  // sphere (80 triangular faces, well over the 12-face cap at this view),
+  // built with the SAME unit-vertex/import-mesh param shape
+  // `engine.importMeshAsScene` produces (`createSolidMesh`'s `importedMesh`
+  // branch multiplies unit verts by `radius` — see engine.js).
+  it('an IMPORTED MESH with a real front-face count over the cap also falls back — same mechanism as the default solid (W-28)', () => {
+    const Mesh = V.Scene3D.Mesh;
+    const geo = Mesh.createGeodesicMesh(1, 2); // unit vectors, 80 faces
+    const importedBody = {
+      id: 'solid',
+      name: 'Solid',
+      primitive: 'solid',
+      params: {
+        solidType: 'importedMesh',
+        importedMesh: { vertices: geo.vertices, faces: geo.faces },
+        radius: 46,
+      },
+      transform: {
+        x: 0, y: 48, z: 0, yaw: 12, pitch: 0, roll: 0, scale: 1,
+      },
+      visibility: 'solid',
+    };
+    const renderMesh = (law) => {
+      const Params = V.Scene3D.Params;
+      const p = clone(V.ALGO_DEFAULTS.scene3d);
+      p.seed = SEED;
+      p.camera = clone(CAMERA);
+      p.ground = { enabled: false };
+      p.backdrop = { enabled: false };
+      p.objects = [clone(importedBody)];
+      p.lights = [clone(SUN)];
+      p.tone = clone(toneBands(4));
+      p.styleTable = styleTable(p.objects, law === null ? {} : { toneLaw: law });
+      const np = Params.normalizeParams(p);
+      const paths = V.AlgorithmRegistry.scene3d.generate(
+        Params.collectSceneParams(np, []), new V.SeededRNG(SEED), new V.SimpleNoise(SEED), BOUNDS,
+      ) || [];
+      const fills = paths.filter((q) => q.meta && q.meta.kind === 'sceneFill');
+      const geom = fills.map((q) => q.map((pt) => `${pt.x.toFixed(4)},${pt.y.toFixed(4)}`).join(';')).join('|');
+      return { md5: crypto.createHash('md5').update(geom).digest('hex'), paths: fills.length };
+    };
+    const base = renderMesh(null);
+    const maze = renderMesh('mazeFill');
+    expect(base.paths).toBeGreaterThan(0);
+    expect(maze.md5).toBe(base.md5);
+  }, 60000);
+
   // ── THE UI MODEL AGREES WITH WHAT WAS JUST MEASURED ──────────────────────
   it("SCENE_FILL_STYLES models exactly this: capped solid ⇒ only none/ladder; low-poly ⇒ like box", () => {
     const FS = V.SCENE_FILL_STYLES;
@@ -114,5 +169,13 @@ describe('solid front-face cap — the U12 correction', () => {
 
     expect(FS.isCapLimited('solid', 'dodecahedron')).toBe(false);
     expect(FS.isReachableOn('mazeFill', 'solid', 'dodecahedron')).toBe(true);
+
+    // W-28 — imported meshes have no advance knowledge of their real
+    // front-face count at picker time, so the model treats them the same
+    // as the capped default, not the same as a low-poly named solid.
+    expect(FS.isCapLimited('solid', 'importedMesh')).toBe(true);
+    expect(FS.isReachableOn('mazeFill', 'solid', 'importedMesh')).toBe(false);
+    expect(FS.isReachableOn('none', 'solid', 'importedMesh')).toBe(true);
+    expect(FS.isReachableOn('ladder', 'solid', 'importedMesh')).toBe(true);
   });
 });

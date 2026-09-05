@@ -242,6 +242,28 @@ describe('Fill Style — the shared mark-class config', () => {
       });
     });
 
+    // ── W-28: imported meshes (Unit F sibling finding) ──────────────────────
+    // `solidType: 'importedMesh'` carries no advance knowledge of the real
+    // mesh's front-face count — that number only exists mid-render, off a
+    // live camera-facing mesh record (`record.faces[i].front`, scene3d.js's
+    // `faceMonoLines`) which this config has no channel to (see
+    // `isCapLimited`'s own comment). Before this fix, an absent/unrecognised
+    // `solidType` fell through to "not the default" and was treated as
+    // reachable — so the picker offered mazeFill/voronoiWeb/turingStripe on
+    // every real import, yet `MONO_MAX_FRONT_FACES = 12` (scene3d.js) makes
+    // any real import (any mesh over 12 faces — virtually all of them)
+    // silently fall back to Ladder the moment one is picked. See
+    // `scene3d-solid-cap-reachability.test.js` for the running-engine proof
+    // that an imported mesh over the cap really does fall back this way.
+    test('solid: an imported mesh is UNCONDITIONALLY cap-limited — its real front-face count is unknown at picker time (W-28)', () => {
+      expect(F.isCapLimited('solid', 'importedMesh')).toBe(true);
+      R.IDS.forEach((id) => {
+        const expected = id === 'none';
+        expect(F.isReachableOn(id, 'solid', 'importedMesh')).toBe(expected);
+      });
+      expect(F.isReachableOn('ladder', 'solid', 'importedMesh')).toBe(true);
+    });
+
     test('an absent/unknown primitiveMode fails OPEN — never disables a law it cannot verify', () => {
       expect(F.isFaceted(undefined)).toBe(false);
       expect(F.isFaceted(null)).toBe(false);
