@@ -1,0 +1,19 @@
+{
+  "id": "W-28",
+  "title": "Picker gap on imported meshes: mono laws offered but MONO_MAX_FRONT_FACES always trips",
+  "branch": "3d-scene/fill-audit-d",
+  "commit": "3d-scene/fill-audit-d — fix(scene3d): imported meshes are unconditionally cap-limited in the fill-style picker (W-28)",
+  "before": [
+    "after/W-28/picker-before.json"
+  ],
+  "after": [
+    "after/W-28/picker-after.json"
+  ],
+  "notes": "Root cause: SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType) in src/config/context-bar.js only recognized 'buckyball' (the shipped default solid) as cap-limited; any other solidType, including 'importedMesh', fell through to 'assumed under the cap'. But scene3d.js's faceMonoLines caps at MONO_MAX_FRONT_FACES=12 regardless of solidType, reading the live camera-facing mesh record's real front-face count mid-render -- a number the picker has no channel to at pick time, and any real .obj/.stl import is essentially always over 12 faces. Fix: isCapLimited now unconditionally returns true when solidType==='importedMesh' (picker-time face count is never available, so this fails toward hiding rather than falsely offering). Before: isCapLimited('solid','importedMesh')=false, 11 of 49 fill-style options live (including mazeFill/voronoiWeb/turingStripe, which the engine would have silently rendered as Ladder). After: isCapLimited=true, only 'none' and 'ladder' (2 of 49) are live, and the picker shows the FACETED_CAP_NOTE explaining why, matching the default-buckyball capped-solid experience. Captured via SCENE_FILL_STYLES.groups('solid','importedMesh','hatch') in the real running app (localhost:8481), not a static read.",
+  "tests": {
+    "red": "AssertionError: expected false to be true — FS.isCapLimited('solid', 'importedMesh') (tests/integration/scene3d-fill-style-picker.test.js + tests/unit/scene3d-solid-cap-reachability.test.js, both new assertions)",
+    "green": "126/126 (scene3d-fill-style-picker.test.js + scene3d-solid-cap-reachability.test.js), plus stroke-fill-style-control.test.js 30/30, scene3d-shadow-tone-law-uniqueness.test.js 3/3, scene3d-hlr-spatial-index-identity.test.js 6/6 all green",
+    "suites": "unit 4680+/4724 passed (1 pre-existing infra worker-timeout, no content failures, unrelated to this change) + integration full suite in progress at report time; targeted suites (fill-style-picker, solid-cap-reachability, stroke-fill-style-control, shadow-tone-law-uniqueness, hlr-spatial-index-identity) all green (170 tests)"
+  },
+  "byte_identical_pairs": []
+}

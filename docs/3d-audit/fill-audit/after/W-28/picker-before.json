@@ -1,0 +1,324 @@
+{
+  "isCapLimited": false,
+  "isFaceted": true,
+  "facetedNote": "This shape is faceted: fill styles greyed out above draw exactly like Ladder here, whichever one is picked.",
+  "totalOptions": 49,
+  "liveCount": 11,
+  "disabledCount": 38,
+  "monoLawsLive": [
+    {
+      "group": "Networks & space-filling",
+      "value": "turingStripe",
+      "label": "Turing Stripe",
+      "disabled": false
+    },
+    {
+      "group": "Networks & space-filling",
+      "value": "voronoiWeb",
+      "label": "Voronoi Web",
+      "disabled": false
+    },
+    {
+      "group": "Networks & space-filling",
+      "value": "mazeFill",
+      "label": "Maze Fill",
+      "disabled": false
+    }
+  ],
+  "options": [
+    {
+      "group": "No tone",
+      "value": "none",
+      "label": "No Tone",
+      "disabled": false
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "ladder",
+      "label": "Ladder (default)",
+      "disabled": false
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "nibAngle",
+      "label": "Nib Angle — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "taperedEnds",
+      "label": "Tapered Ends — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "weightModulated",
+      "label": "Weight Modulated — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "isophoteWidth",
+      "label": "Isophote Width — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "whiteBand",
+      "label": "White Band — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "weightSmoothstep",
+      "label": "Weight Smoothstep — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "fineLadder",
+      "label": "Fine Ladder — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "phaseFineLadder",
+      "label": "Phase Fine Ladder — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "perceptualRamp",
+      "label": "Perceptual Ramp — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "bundleCount",
+      "label": "Bundle · Count — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "bundleSubNib",
+      "label": "Bundle · Sub-Nib — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "bundleEased",
+      "label": "Bundle · Eased — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "bundleDither",
+      "label": "Bundle · Dither — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "bundleLozenge",
+      "label": "Bundle · Lozenge — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "bundleHandoff",
+      "label": "Bundle · Handoff — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "contFieldSigmoid",
+      "label": "Continuous Field · Sigmoid — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "contFieldTouch",
+      "label": "Continuous Field · Touch — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "contFieldFore",
+      "label": "Continuous Field · Foreshortened — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "contFieldSurface",
+      "label": "Continuous Field · Surface — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "contFieldQuant",
+      "label": "Continuous Field · Quantised — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "penInterleave",
+      "label": "Pen · Interleave — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "penPitchMatch",
+      "label": "Pen · Pitch Match — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "penFacing",
+      "label": "Pen · Facing — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Parallel hatching",
+      "value": "endShorten",
+      "label": "End Shorten",
+      "disabled": false
+    },
+    {
+      "group": "Crosshatch & multi-angle",
+      "value": "penReserve",
+      "label": "Pen · Reserve — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Crosshatch & multi-angle",
+      "value": "penCross",
+      "label": "Pen · Cross — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Crosshatch & multi-angle",
+      "value": "mezzoRegion",
+      "label": "Mezzotint Region",
+      "disabled": false
+    },
+    {
+      "group": "Flow lines",
+      "value": "etfKang",
+      "label": "ETF Direction Field (Kang)",
+      "disabled": false
+    },
+    {
+      "group": "Flow lines",
+      "value": "defectSplit",
+      "label": "Defect Split",
+      "disabled": false
+    },
+    {
+      "group": "Wavy lines & scribble",
+      "value": "mkScribble",
+      "label": "Mark · Scribble — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Wavy lines & scribble",
+      "value": "ampSpacing",
+      "label": "Amplitude Spacing — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Wavy lines & scribble",
+      "value": "weaveDepth",
+      "label": "Weave Depth — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Wavy lines & scribble",
+      "value": "interlockWeave",
+      "label": "Interlock Weave — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Wavy lines & scribble",
+      "value": "trochoidLoop",
+      "label": "Trochoid Loop — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Wavy lines & scribble",
+      "value": "amplitudeOnly",
+      "label": "Amplitude Only — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Wavy lines & scribble",
+      "value": "onePenDown",
+      "label": "One Pen Down — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Dashes & ticks",
+      "value": "mkTick",
+      "label": "Mark · Tick — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Dashes & ticks",
+      "value": "mkDashRamp",
+      "label": "Mark · Dash Ramp — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Dashes & ticks",
+      "value": "dutyConst",
+      "label": "Duty Cycle · Constant",
+      "disabled": false
+    },
+    {
+      "group": "Dots & stipple",
+      "value": "lozengeStipple",
+      "label": "Lozenge Stipple — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Dots & stipple",
+      "value": "penStipple",
+      "label": "Pen · Stipple — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Dots & stipple",
+      "value": "mkDotScreen",
+      "label": "Mark · Dot Screen — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Networks & space-filling",
+      "value": "deepFillTSP",
+      "label": "Deep Fill TSP — no effect here",
+      "disabled": true
+    },
+    {
+      "group": "Networks & space-filling",
+      "value": "originSpiral",
+      "label": "Origin Spiral",
+      "disabled": false
+    },
+    {
+      "group": "Networks & space-filling",
+      "value": "turingStripe",
+      "label": "Turing Stripe",
+      "disabled": false
+    },
+    {
+      "group": "Networks & space-filling",
+      "value": "voronoiWeb",
+      "label": "Voronoi Web",
+      "disabled": false
+    },
+    {
+      "group": "Networks & space-filling",
+      "value": "mazeFill",
+      "label": "Maze Fill",
+      "disabled": false
+    }
+  ]
+}

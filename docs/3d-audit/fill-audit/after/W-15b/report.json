@@ -1,0 +1,50 @@
+{
+  "id": "W-15b",
+  "title": "Faceted density: make the facet carrier respond to Density while keeping tone-ordering invariants (F-14 follow-up to W-15)",
+  "branch": "3d-scene/fill-audit",
+  "commit": "PENDING-FILLED-AT-COMMIT",
+  "status": "NO SOURCE FIX SHIPS — two more designs built and measured, both invert real tone-ordering invariants; see notes",
+  "before": [
+    "shots/A/box__hatch__ladder__low__a.webp",
+    "shots/A/box__hatch__ladder__med__a.webp",
+    "shots/A/box__hatch__ladder__max__a.webp",
+    "shots/A/plane__hatch__ladder__low__a.webp",
+    "shots/A/plane__hatch__ladder__med__a.webp",
+    "shots/A/plane__hatch__ladder__max__a.webp",
+    "shots/A/pyramid__hatch__ladder__low__a.webp",
+    "shots/A/pyramid__hatch__ladder__med__a.webp",
+    "shots/A/pyramid__hatch__ladder__max__a.webp",
+    "shots/A/solid__hatch__ladder__low__a.webp",
+    "shots/A/solid__hatch__ladder__med__a.webp",
+    "shots/A/solid__hatch__ladder__max__a.webp",
+    "shots/A/sphere__hatch__ladder__low__a.webp",
+    "shots/A/sphere__hatch__ladder__med__a.webp",
+    "shots/A/sphere__hatch__ladder__max__a.webp"
+  ],
+  "after": [
+    "after/W-15b/shots/A/box__hatch__ladder__low__a.webp",
+    "after/W-15b/shots/A/box__hatch__ladder__med__a.webp",
+    "after/W-15b/shots/A/box__hatch__ladder__max__a.webp",
+    "after/W-15b/shots/A/plane__hatch__ladder__low__a.webp",
+    "after/W-15b/shots/A/plane__hatch__ladder__med__a.webp",
+    "after/W-15b/shots/A/plane__hatch__ladder__max__a.webp",
+    "after/W-15b/shots/A/pyramid__hatch__ladder__low__a.webp",
+    "after/W-15b/shots/A/pyramid__hatch__ladder__med__a.webp",
+    "after/W-15b/shots/A/pyramid__hatch__ladder__max__a.webp",
+    "after/W-15b/shots/A/solid__hatch__ladder__low__a.webp",
+    "after/W-15b/shots/A/solid__hatch__ladder__med__a.webp",
+    "after/W-15b/shots/A/solid__hatch__ladder__max__a.webp",
+    "after/W-15b/shots/A/sphere__hatch__ladder__low__a.webp",
+    "after/W-15b/shots/A/sphere__hatch__ladder__med__a.webp",
+    "after/W-15b/shots/A/sphere__hatch__ladder__max__a.webp"
+  ],
+  "notes": "W-15 (f37dcfdf) already root-caused the plateau exactly (faceHatchLines's carrier grant targets a FIXED pitch capped at FACET_MIN_RULINGS=3, no Density term) and rejected two fixes. This unit's brief was to split the grant into a FLOOR (~3, 'reads as a fill') and a Density-driven TARGET (hatchSpacing(d) scaled by the facet's own extent), with the existing zoneCeil/covOne kept as the ceiling so tone ordering holds 'by construction'. Two designs on exactly that shape were built and measured: (A) want = min(max(floor(ext/hatchSpacing(d)), FACET_MIN_RULINGS), floor(zoneCeil/covOne)) -- fixes the plateau (plane 6,6,7,9,19,65 across d=1/10/25/50/100/220, Density-responsive from d=1) but makes the grant fire for facets it used to leave alone: at Density 85 R2-cube's face:+X (edge-on, k=0.165) gets a denser target than its own already-adequate natural pitch, overriding a facet the OLD code never touched at all -- scene3d-facet-tone.test.js O20 bands 2-4 invert (0.579/0.484/0.484, was <0.551/0.469/0.469), scene3d-projected-pitch.test.js O20 breaks on R-cube/R2-cube bands 2-4 (e.g. face:+X 0.235 vs face:+Z falling to 0.170, was tied), scene3d-faceted-highlight-dispatch.test.js loses an O14 treatment (5 of 6) and collapses two O9 highlightSensitivity steps into one. (B) preserve the OLD firing GATE byte-for-byte (oldTarget = ext/(min(ceilCount,FACET_MIN_RULINGS)+0.5)) and only widen the target once that gate already fires, using the same Density-driven want capped so it never exceeds the old pitch's density -- this DOES leave R2-cube's face:+X/face:+Z decision untouched, but the SAME suites still break on a DIFFERENT pair: R-cube's face:+Y (which the OLD grant DOES govern at Density 85, zone-ceiling-bound) drops from parity with face:+X (0.097) to 0.056 once it is allowed to grow past the old fixed 3 -- O20 bands 2-4 invert again (0.323/0.484/0.484) and O9 (ink(3) > ink(1)) breaks outright (1220.7 vs 1382.8). Both designs reverted; scene3d.js is byte-identical to branch HEAD (a83fae78). The pattern across all 3 attempts now (W-15's 2 + this unit's 2, though A and B here are the 3rd/4th distinct designs): giving the carrier's floor ANY Density-sensitivity reaches a facet the tone-ladder suites pin at the OLD CONSTANT, because those suites' governing facets (R-cube/R2-cube at Density 85) are drawn from precisely the low/mid-Density, ceiling-bound regime the floor occupies. Closing this needs the coordinated redesign W-15 already called for (decoupling 'reads as a fill' from 'tone ordering integrity' per-facet, e.g. by giving the O20/O9 fixtures their own dedicated low-Density expectation instead of sharing the app-default plane/box facets' floor), not a narrower formula for the same single grant.",
+  "tests": {
+    "red": "Both rejected designs turned real suites red, not just the new measurement file: design A -- scene3d-facet-tone.test.js O20 bands2 'strictly decreasing in N.L' 0.579 not < 0.551; design B -- same test, bands2 0.323 not < 0.166, and scene3d-faceted-highlight-dispatch.test.js O9 'ink(3) > ink(1)' 1220.69 not > 1382.80. Both reverted; source is byte-identical to HEAD.",
+    "green": "tests/unit/scene3d-faceted-density-calibration.test.js: 6/6 passed (measurement-only, extended with a new comment section documenting designs A and B, their exact numbers, and why both were withdrawn). scene3d-box-density-bearing.test.js NOT inverted -- its header's inversion is conditioned on the carrier floor actually becoming proportional, which did not ship.",
+    "suites": "Targeted scene3d suites (facet-tone, projected-pitch, faceted-highlight-dispatch, subwindow-density, faceted-tone-law, hatch-density-floor/rescale/500, box-density-bearing, hlr-spatial-index-identity, faceted-density-calibration): all green with source reverted. Full npm run test:unit / test:integration run before commit."
+  },
+  "byte_identical_pairs": [
+    "ALL 15 before/after pairs (box/plane/pyramid/solid/sphere x low/med/max, default hatch+ladder) are byte-identical -- expected: no source behavior changed. Same 'fix did nothing visually' disclosure as W-15's own report."
+  ]
+}

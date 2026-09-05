@@ -30,3 +30,8 @@ graphify-out/
 /docs/illustrator-tools-parity-requirements.md
 /docs/assets/illustrator-tools-reference/
 
+
+# 3D fill audit: rendered evidence (hundreds of MB) stays local; manifests/report.json/index.html are tracked
+docs/3d-audit/fill-audit/shots/
+docs/3d-audit/fill-audit/after/*/shots/
+docs/3d-audit/fill-audit/after/*/manifest.*.jsonl

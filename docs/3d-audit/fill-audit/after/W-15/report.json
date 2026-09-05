@@ -1,0 +1,40 @@
+{
+  "id": "W-15",
+  "title": "Calibrate the faceted density range (plane 4 lines at d=50) (F-14)",
+  "branch": "3d-scene/fill-audit",
+  "commit": "f37dcfdf (measurement) + a83fae78 (W-21 mutation-safety follow-up, separate commit)",
+  "status": "NO SOURCE FIX SHIPS — root-caused and measured; two fixes built and rejected; see notes",
+  "before": [
+    "shots/A/plane__hatch__ladder__low__a.webp",
+    "shots/A/plane__hatch__ladder__med__a.webp",
+    "shots/A/plane__hatch__ladder__max__a.webp",
+    "shots/A/box__hatch__ladder__med__a.webp",
+    "shots/A/box__hatch__ladder__max__a.webp"
+  ],
+  "after": [
+    "after/W-15/shots/A/plane__hatch__ladder__low__a.webp",
+    "after/W-15/shots/A/plane__hatch__ladder__med__a.webp",
+    "after/W-15/shots/A/plane__hatch__ladder__max__a.webp",
+    "after/W-15/shots/A/box__hatch__ladder__low__a.webp",
+    "after/W-15/shots/A/box__hatch__ladder__med__a.webp",
+    "after/W-15/shots/A/box__hatch__ladder__max__a.webp",
+    "after/W-15/shots/A/pyramid__hatch__ladder__low__a.webp",
+    "after/W-15/shots/A/pyramid__hatch__ladder__med__a.webp",
+    "after/W-15/shots/A/pyramid__hatch__ladder__max__a.webp",
+    "after/W-15/shots/A/solid__hatch__ladder__low__a.webp",
+    "after/W-15/shots/A/solid__hatch__ladder__med__a.webp",
+    "after/W-15/shots/A/solid__hatch__ladder__max__a.webp",
+    "after/W-15/shots/A/sphere__hatch__ladder__low__a.webp",
+    "after/W-15/shots/A/sphere__hatch__ladder__med__a.webp",
+    "after/W-15/shots/A/sphere__hatch__ladder__max__a.webp"
+  ],
+  "notes": "Root cause found and measured exactly: the faceted carrier's 'at least N rulings' grant in faceHatchLines targets a FIXED pitch (facetExtent/(want+0.5), want = min(floor(zoneCeil/covOne), FACET_MIN_RULINGS=3)) with no Density term, since zoneCeil/covOne are purely geometric/tonal. On the app-default plane (60mm face, zone L, k~0.35 foreshortening) Density 1 through 50 all rendered identically 3 rulings -- F-14's defect exactly. Two fixes were built: (1) ramp the grant's CEILING up to the full zone-affordable count as Density rises -- this DOES fix the plateau (plane: 3,3,5,9,19,65 across d=1/10/25/50/100/220) but broke 15 tests across 6 files (scene3d-facet-tone O20 cube ordering, scene3d-projected-pitch O20 'two lit faces differ', scene3d-faceted-highlight-dispatch O9/O14, scene3d-subwindow-density) because the SAME grant, at the SAME knee, governs the R-cube/R2-cube/LOWPOLY fixtures those suites use at Density 50/85 -- raising the ceiling collapses distinct facets in one zone onto the same zone-derived pitch, destroying tone-ordering those tests correctly guard. (2) ramp only from 1 up to the UNCHANGED ceiling (FACET_MIN_RULINGS) below a low knee -- provably safe (byte-identical at/above the knee) but cannot move Density 50's rendered count at all if the knee is <=50, so it does not close the finding. This is the exact trilemma scene3d-box-density-bearing.test.js already documented and the owner ruled ACCEPTED for box ('a product decision about the tone ladder, not a bug fix') -- confirmed here, empirically, to extend beyond box to the shared cube/lowpoly fixtures at Density 50 and 85. Reverted both attempts; scene3d.js's faceted density code is byte-identical to branch HEAD (d8066b3f). No visual change shipped for this item; a new measurement test pins the current (unfixed) numbers and the two rejected approaches so a future attempt starts from evidence.",
+  "tests": {
+    "red": "N/A for a source fix (none ships). RGR proof for the two REJECTED attempts: attempt 1 turned scene3d-facet-tone.test.js 'bands 3/4: strictly decreasing in N.L' RED (0.484 not < 0.469) and scene3d-projected-pitch.test.js 'the two LIT faces differ' RED (0.0016 not >= 0.015), among 15 total failures across 6 files -- both reverted.",
+    "green": "tests/unit/scene3d-faceted-density-calibration.test.js (new, measurement-only): 6/6 passed. tests/unit/scene3d-box-density-bearing.test.js, scene3d-facet-tone.test.js, scene3d-projected-pitch.test.js, scene3d-faceted-highlight-dispatch.test.js, scene3d-subwindow-density.test.js, scene3d-faceted-tone-law.test.js, scene3d-hatch-density-floor/rescale/500.test.js: all green after revert (99 passed | 2 pre-existing skipped across those 9 files). tests/unit/scene3d-hlr-spatial-index-identity.test.js: 6/6 green, no fingerprint change needed (no behavior changed).",
+    "suites": "Targeted scene3d unit suites: 9 files, 99 passed + 2 skipped, 0 failed. Full npm run test:unit run separately for pre-commit confidence (see final report)."
+  },
+  "byte_identical_pairs": [
+    "ALL before/after pairs listed above are byte-identical (plane/box/pyramid/solid/sphere x low/med/max) -- expected and disclosed: no source behavior changed for the faceted density path, so the rendered output cannot differ. This IS the 'fix did nothing visually' case the report format anticipates; see notes for why."
+  ]
+}

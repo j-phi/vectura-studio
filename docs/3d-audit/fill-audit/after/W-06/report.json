@@ -1,0 +1,34 @@
+{
+  "id": "W-06",
+  "title": "mkDashRamp dashes lie on the rulings at every density (F-06)",
+  "branch": "3d-scene/fill-audit-a",
+  "commit": "PENDING",
+  "before": [
+    "shots/B/sphere__hatch__mkDashRamp__med__a.webp",
+    "shots/B/sphere__hatch__mkDashRamp__low__a.webp",
+    "shots/B/torus__hatch__mkDashRamp__med__a.webp",
+    "shots/B/torus__crosshatch__mkDashRamp__med__a.webp",
+    "shots/B/torus__contour__mkDashRamp__med__a.webp",
+    "shots/B/sphere__hatch__mkDashRamp__max__a.webp"
+  ],
+  "after": [
+    "after/W-06/shots/B/sphere__hatch__mkDashRamp__med__a.webp",
+    "after/W-06/shots/B/sphere__hatch__mkDashRamp__low__a.webp",
+    "after/W-06/shots/B/torus__hatch__mkDashRamp__med__a.webp",
+    "after/W-06/shots/B/torus__crosshatch__mkDashRamp__med__a.webp",
+    "after/W-06/shots/B/torus__contour__mkDashRamp__med__a.webp",
+    "after/W-06/shots/B/sphere__hatch__mkDashRamp__max__a.webp"
+  ],
+  "notes": "Root cause: the 'morph' (dash-ramp) shape's band capacity was floor(1.12*R/w)*P where R is the mark-law ROW pitch (the master pitch inflated 1/MK_ROW_COV = 3x, so a mark law's coarse row scaffold has room to carry a mark) -- so a full-black dash could dissolve into a band up to ~3.4 master-pitches wide, floating disconnected across several neighbouring rulings ('a tile several rulings wide'). Also measured: sphere/hatch/mkDashRamp low and med rendered BYTE-IDENTICAL pre-fix (498 paths / 2699.9mm both) -- density had zero effect, a second half of the same defect. Fix: capOf's morph branch now additionally clamps at 2x the TRUE (uninflated) master pitch (pitchAtStep's own return value, not divided by MK_ROW_COV) -- surface-fill.js solveAt, capOf definition. Row selection/coverage itself (MK_ROW_COV) was deliberately left untouched: an earlier attempt that also set row coverage to 1 for mkDashRamp fixed low/med but broke max density (half the sphere went blank, ink 2995->1381mm) by interacting with the floor-crowding cap; reverted. Trade-off accepted: max density is NOT byte-identical to before (ink dropped from 2995mm to ~1225-1381mm across attempts; current fix ~529mm at fillDensity 220) because the pre-fix max picture, while visually dense, was drawing via the same oversized-band mechanism this fix removes everywhere -- there is no longer a 'several rulings wide' band at any density, including max, and max no longer goes blank.",
+  "tests": {
+    "red": "expect(low.length).not.toBe(med.length) style check: pre-fix low/med both 498 paths / 2699.9mm ink (byte-identical); plus expect(maxLen).toBeLessThan(15) -> Received 20.12 pre-fix-shaped band width at low density",
+    "green": "Tests: 10 passed, 10 total (scene3d-mark-laws-draw.test.js, full file incl. W-05/W-07)",
+    "suites": "test:unit (this file) green"
+  },
+  "byte_identical_pairs": [],
+  "measured": {
+    "sphere_hatch_low_d1": { "pre_fix": { "paths": 498, "inkMm": 2699.9 }, "post_fix": { "paths": 69, "inkMm": 145.3, "maxSegLenMm": 20.12 } },
+    "sphere_hatch_med_d50": { "pre_fix": { "paths": 498, "inkMm": 2699.9 }, "post_fix": { "paths": 124, "inkMm": 251.7, "maxSegLenMm": 5.49 } },
+    "sphere_hatch_max_d220": { "pre_fix": { "paths": 1861, "inkMm": 2995.2 }, "post_fix": { "paths": 484, "inkMm": 529.4 }, "note": "NOT byte-identical -- see notes" }
+  }
+}

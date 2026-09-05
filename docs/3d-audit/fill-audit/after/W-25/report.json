@@ -1,0 +1,21 @@
+{
+  "id": "W-25",
+  "title": "Spiral mapper gap on imported meshes: thin cusp faces degenerate to a straight-line wedge",
+  "branch": "3d-scene/fill-audit-d",
+  "commit": "3d-scene/fill-audit-d — fix(scene3d): guarantee a minimum spiral curl on thin sliver faces (W-25)",
+  "before": [
+    "after/W-25/shots/before-F-spiral-full.png",
+    "after/W-25/shots/before-F-spiral-survivor-crop.png"
+  ],
+  "after": [
+    "after/W-25/shots/after-F-spiral-full.png",
+    "after/W-25/shots/after-F-spiral-survivor-crop.png"
+  ],
+  "notes": "CORRECTED ROOT CAUSE (Unit F's handoff notes misattributed this to a FillBoolean polygon-union failure in Mappers.regionFill's insetPasses -- verified false: isolating the 'spiral' case alone reproduces the gap with zero FillBoolean warnings; only 'contour' calls insetPasses/FillBoolean, and its escalating retry/fallback already keeps it at 0 survivors). Direct instrumentation of the real production path found the true cause: several adjacent, heavily-elongated cusp faces (measured bw~1.8mm, bh~10mm, bw/bh~0.18, past trueSpiral's auto-fit eccentricity clamp's 0.3 floor) each produced an Archimedean spiral whose radius blew past its own rMax within well under one revolution, clipping the output down to a single near-straight radial stub. Several such stubs, all similarly oriented, read on screen as a wedge of straight parallel lines cutting across the surrounding curved 'comma' marks -- visually confirmed in the before crop. Fix: trueSpiral (mappers.js) now tightens the EFFECTIVE pitch via a SPIRAL_MIN_TURNS=2 floor (Math.min(pitch, rMax/SPIRAL_MIN_TURNS)) -- a true no-op for any region at or above the normal working size (pitch stays unmodified whenever rMax >= pitch*2), engaging only for genuinely small/thin regions. Visually the wedge is completely gone after the fix (after crops). Numerically the fixed test's ORIGINAL survivor position (172.18602666957324, 104.42211992678234) is confirmed retired, but the denser coverage the fix adds newly samples a SEPARATE, much smaller crack elsewhere on the coarse mesh (opposite side, 2 survivors instead of 1): a finer-grained depth-field probe (0.01mm grid) shows that crack collapses to a single point -- i.e. two independently-projected adjacent triangles disagreeing by a sub-0.05mm seam at their shared edge, a genuine but sub-visible HLR occluder-precision matter between adjacent front faces, independent of which mapper is selected. That residual is out of this unit's file scope (hlr.js is explicitly not mine) and is recorded, not fixed -- a real follow-up for an HLR-scoped unit.",
+  "tests": {
+    "red": "expected 1.8875341916575579 to be greater than 3.141592653589793 -- tests/unit/scene3d-mappers.test.js 'a thin sliver ... still gets a genuine curl, not a near-straight stub (W-25)', winding computed on the pre-fix trueSpiral output for a 1.8x10mm sliver at pitch 5.84mm (the real cusp-face proportions measured on the Unit F torus fixture)",
+    "green": "25/25 in scene3d-mappers.test.js (new tests + all 23 pre-existing, including the eccentricity/axisSnap/monotonic-radius/no-op-guard assertions); tests/unit/scene3d-mesh-self-occlusion.test.js 5/5 (spiral now passes its corrected assertion: original survivor retired, residual <=2 and relocated)",
+    "suites": "unit 4680+/4724 passed pre-fix baseline (1 pre-existing infra worker-timeout, no content failures); targeted re-runs post-fix: scene3d-mappers.test.js 25/25, scene3d-mesh-self-occlusion.test.js 5/5, scene3d-shadow-controls.test.js 8/8, scene3d-mapper-controls.test.js 15/15, context-bar-scene-flyouts.test.js 39/39, scene3d-hlr-spatial-index-identity.test.js 6/6 (byte-identity unaffected) -- full test:unit + test:integration re-run in progress at report time, see final report for completion status"
+  },
+  "byte_identical_pairs": []
+}

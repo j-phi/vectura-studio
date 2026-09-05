@@ -1,0 +1,306 @@
+{
+  "meta": {
+    "title": "3D Scene fill system, v1.3.98 (main @ d5af9e30), 7440 shots",
+    "basis": "Basis: stats-report.md (density response + 32×32 dHash/md5 clustering of all 7440 shots) and ~620 images read by eye (every reachable (Type, style) on torus and sphere at med/a, all 12 primitives at med/a, plus low/max/angle-b of every flagged row).",
+    "method": "Step 1: scripts/audit/scene3d-audit-stats.js computed per-row ink/path progression (low→med→max, a vs b) and a 32×32 dHash + 32×32 block-mean fingerprint of every WebP (decoded in headless Chromium); styles were clustered per (primitive, Type) by Hamming distance, a link confirmed only when it also held at med/b and max/a, and byte-identical (md5) groups were listed separately. Step 2: images were read with the Read tool — every reachable (Type, style) pair on torus and sphere at med/a (spiral/stipple by byte-identical group), all 12 primitives × 5 fill Types at med/a from Tier A, and low/max/angle-b for every row flagged here. Step 3: judged against each law's own mechanism text in src/config/scene3d-tone-laws.js and the mark classes in src/config/context-bar.js. The handoff's DEAD/SETTLED lists (docs/stroke-fill-handoff.md) were respected: nothing here re-opens ribbon occlusion, the coverage contract, tone level, or the spiral vs concentric default; item A (residual streaks in interlockWeave/onePenDown/trochoidLoop/ampSpacing/weaveDepth) is referenced, not re-proposed. Re-run `node scripts/audit/scene3d-audit-findings.js` after any re-assemble — assemble empties this section."
+  },
+  "summary": [
+    "**Density slider is dead for 82% of the roster.** On every curved primitive `fillDensity` 1 and 50 render byte-identically for every style including the default Ladder (919/1118 Tier-B rows, all 10 curved Tier-A rows); only the jump to 220 changes anything, and for 30 of 48 styles even that changes ink by ≤6%. Root cause found: the master grid's sparse-end pitch `o6Pitch` (surface-fill.js:5086) is a constant that beats `tonePitch` for d ≤ 49, and the 9 mono laws + 5 contField laws never read `count`/`masterPitch` at all.",
+    "**The picker offers 48 inert styles on three Types.** `none`, `wireframe` and `contourSlice` never enter `SurfaceFill` (scene3d.js:195 `SURFACE_FILL` set), so all 48 fill styles are byte-identical there on every primitive (6/6 shots). That is 144 dead (Type, style) pairs per primitive the picker calls reachable — one `isReachableOn` clause fixes it.",
+    "**Spiral/Stipple collapse the roster to ~18 pictures out of 39.** The 12 ribbon laws emit bare centrelines (432 shots, `bareCentrelinesOnly:true`): the spiral sink never calls `noteW` and stipple has no run at all (surface-fill.js:10292-10377, :10380), so no width profile exists. Every other family degenerates to rung-skipping. Verdict: hide (c) now via `CURVED_SPIRAL_STIPPLE_INERT`, wire width later as a separate item; they are not legitimately monowidth.",
+    "**Three mark laws are broken everywhere:** `mkTick` draws 6 rulings and a handful of ticks on every primitive/Type/density; `mkDashRamp` draws rectangular tiles of dashes disconnected from the rulings below max; `deepFillTSP` is ladder plus random polygonal spikes. `lozengeStipple` is ladder plus ~15 flicks. None does what its mechanism text says.",
+    "**Saturation:** `contFieldTouch` (all mappers), `bundleSubNib` / `mkDotScreen` / `mezzoRegion` (crosshatch) are a solid white disc already at med; every stipple row and pyramid/sphere stipple at max is a blob (35,102 mm of ink on a sphere). The plot-floor cap does not bind on these paths.",
+    "**Torus hole:** all 9 mono laws leave the far sheet seen through the hole unfilled (every mapper, both angles) — a coverage hole the ruling laws do not have.",
+    "**Duplication is large but structured.** 13 clusters; 7 are byte-identical groups on spiral/stipple (hide), 6 are real near-duplicates on hatch/crosshatch/contour that collapse cleanly behind one slider each: ladder family (`rungFineness`), width family (`edgeTaper`), bundle family (`bundleEase` + `dither`), contField family (`fieldFloor`), weight pair (`weightEase`), wave pair (`nesting`). Net: 48 styles → ~24 with no loss of reachable pictures.",
+    "**Plotter integrity** is mostly sound on the ruling laws (ribbons clean, no protrusion, occlusion holds at both angles). Remaining integrity defects: sawtooth edges on `bundleSubNib`, capsule bulges at width steps on the three-pen laws, ruling pinch to a pole on hatch/crosshatch (sphere, cylinder cap, capsule, ellipsoid, superellipsoid, pyramid apex, torus rim), stipple hexes piling into a solid disc at poles/apex, `originSpiral` moiré on torus/cone, `mkScribble` clipped to a stepped boundary on the cone.",
+    "**Angle stability is good:** every flagged row keeps its character between the two cameras; the only angle-driven change is the expected occlusion boundary on the torus.",
+    "**Faceted range is skewed the other way:** plane hatch draws 3 lines at d=1, 4 at d=50, 135 at d=220 — the whole useful range sits above 100. Curved primitives plateau below 50, faceted ones starve below 100; the slider needs one calibration pass.",
+    "**Tone/density response of the good laws is real** on the sphere (light side reads, ribbons taper toward the highlight) and weaker on the torus where the fat width laws (nibAngle/taperedEnds/whiteBand) cover nearly the full pitch everywhere; `weightModulated`/`weightSmoothstep` are indistinguishable from No Tone at ≤ med because their width grows with density instead of tone.",
+    "Priority order for implementers: W-01 density dead zone (P0), W-02 mapper gate (P0), W-03 spiral/stipple gate (P1), W-04 mono/contField density hookup (P1), W-05/06/07 the three broken mark laws (P1), W-08 saturation cap (P1), W-09 torus hole (P1), then the cluster collapses (P2, one item each)."
+  ],
+  "defects": [
+    {
+      "id": "F-01", "severity": "P0",
+      "scope": "all curved primitives / hatch, crosshatch, contour, spiral, stipple / every style incl. ladder / low vs med / a+b",
+      "wrong": "`fillDensity` 1 and 50 are byte-identical on every curved primitive and every style (919/1118 Tier-B rows, 10/10 curved Tier-A ladder rows). Cause: surface-fill.js:5084-5120 — `masterPitch = min(tonePitch, o6Pitch)` where `o6Pitch = litMaxPitchPen()·pen·litCov` (1.512 mm) is a constant that wins for d ≤ 49.5, then `N = round(calib/masterPitch)` quantises d=50 to the same integer. The default sits exactly on the dead zone's edge.",
+      "fixed": "Path count strictly increases across d = 1 / 25 / 50 / 100 on a sphere (Ladder), with d ≥ 50 byte-identical to today (existing artwork pinned by fs-k2's guard). Sparse end should open toward `lineCountFor(d)` instead of a constant.",
+      "images": ["shots/A/sphere__hatch__ladder__low__a.webp", "shots/A/sphere__hatch__ladder__med__a.webp", "shots/A/sphere__hatch__ladder__max__a.webp", "shots/B/sphere__hatch__taperedEnds__low__a.webp", "shots/B/sphere__hatch__taperedEnds__med__a.webp", "shots/A/torus__contour__ladder__low__a.webp", "shots/A/torus__contour__ladder__med__a.webp"],
+      "work": ["W-01"]
+    },
+    {
+      "id": "F-02", "severity": "P0",
+      "scope": "sphere, torus, cone (and by construction every primitive) / none, wireframe, contourSlice / all 48 styles / all / a+b",
+      "wrong": "All 48 fill styles are byte-identical on Types `none`, `wireframe`, `contourSlice` (1 distinct picture of 48, all 6 shots, all 4 Tier-B primitives). scene3d.js:195 `SURFACE_FILL` excludes those mappers, so `toneLaw` is never read; yet `isReachableOn` (context-bar.js:398) returns true for all of them. 1,152 of 7,440 shots were spent on this.",
+      "fixed": "`isReachableOn(id, mode, solid, mapper)` returns false for every id (incl. `none`/`ladder`) when mapper ∈ {none, wireframe, contourSlice}; the picker greys them with a note like `FACETED_OFF_AXIS_NOTE`; capture's unreachable manifest grows by 144/primitive.",
+      "images": ["shots/B/torus__wireframe__none__med__a.webp", "shots/B/torus__wireframe__nibAngle__med__a.webp", "shots/B/torus__contourSlice__none__med__a.webp", "shots/B/torus__none__none__med__a.webp"],
+      "work": ["W-02"]
+    },
+    {
+      "id": "F-03", "severity": "P1",
+      "scope": "sphere, torus, cone / spiral, stipple / 12 ribbon laws + 20 others / all / a+b",
+      "wrong": "Under spiral/stipple the 12 variable-width laws are bare centrelines (432 shots `bareCentrelinesOnly:true`): the spiral sink (surface-fill.js:10292-10377) never calls `noteW`, and stipple (:10380) pushes dot rings with no run, so `wCnt===0` and `ribbonize` is skipped. Every other family degenerates to rung-skipping: 18-19 distinct pictures of 39; {nibAngle,taperedEnds,isophoteWidth,whiteBand}, {weightModulated,weightSmoothstep}, {interlockWeave,onePenDown,trochoidLoop}, {mkScribble,mkTick,mkDashRamp,mkDotScreen}, {bundle×6,contField×5,penStipple}, {penInterleave,penReserve,penPitchMatch}, {lozengeStipple,perceptualRamp,phaseFineLadder} are byte-identical groups on all three primitives.",
+      "fixed": "Now: those groups are gated off spiral/stipple (only None / Ladder / Fine Ladder / Phase Fine Ladder offered) and `bareCentrelinesOnly` is 0 in a re-capture. Later (W-13): the spiral sink publishes a width profile via `noteW` so ribbons render on spirals.",
+      "images": ["shots/B/torus__spiral__taperedEnds__med__a.webp", "shots/B/torus__spiral__ladder__med__a.webp", "shots/B/torus__spiral__none__med__a.webp", "shots/B/sphere__spiral__taperedEnds__med__a.webp", "shots/B/sphere__spiral__interlockWeave__med__a.webp", "shots/B/torus__stipple__taperedEnds__med__a.webp", "shots/B/torus__stipple__bundleCount__med__a.webp"],
+      "work": ["W-03", "W-13"]
+    },
+    {
+      "id": "F-04", "severity": "P1",
+      "scope": "all curved primitives / hatch, crosshatch, contour / etfKang, defectSplit, mezzoRegion, originSpiral, dutyConst, endShorten, turingStripe, voronoiWeb, mazeFill, contFieldSigmoid/Touch/Fore/Surface/Quant / all / a+b",
+      "wrong": "Density-inert across the whole slider (ink and path count identical at 1/50/220, 11/11 rows each). surface-fill-mono.js `makeCtx` (:104-107) only reads `floorPitch` and `litMaxPitch`; `o.count`/`o.masterPitch` are never read. `cfTightPitch/cfOpenPitch` (surface-fill.js:4469-4473) are pure functions of pen width. The user has no control of pitch on 14 styles. The mono laws also ignore the Type entirely (hatch = crosshatch = contour byte-identical).",
+      "fixed": "Path count strictly increases across d = 50 / 120 / 220 for each of the 14 laws on a sphere; `PMAX` (and `cfOpenPitch`) scale with `o.masterPitch`; d=50 output stays byte-identical to today.",
+      "images": ["shots/B/sphere__hatch__etfKang__med__a.webp", "shots/B/sphere__hatch__mazeFill__med__a.webp", "shots/B/sphere__hatch__contFieldSigmoid__med__a.webp", "shots/B/torus__hatch__contFieldFore__med__a.webp", "shots/B/torus__contour__etfKang__med__a.webp"],
+      "work": ["W-04"]
+    },
+    {
+      "id": "F-05", "severity": "P1",
+      "scope": "sphere, torus, cone / hatch, crosshatch, contour / mkTick / low, med, max / a+b",
+      "wrong": "Draws 5-6 long rulings plus a few ticks at the lit pole; the form is essentially empty (paths 666 but ink 3131 mm ≈ the ruling skeleton, and ink DROPS at max). Mechanism text promises short ticks on a brick lattice whose count carries tone. `MK.mkTick` uses `chan:'count'` with `L0: 1.02·R` and the capacity `1.02·R·floor(1.4·nCap)` (surface-fill.js:2444, :2512-2521) — the tick budget resolves to ~0 outside the highlight.",
+      "fixed": "At med on a sphere ≥ 1,500 ticks, coverage in the shadow third ≥ 3× the lit third, ink between 0.7× and 2× Ladder's; the same picture at both angles.",
+      "images": ["shots/B/sphere__hatch__mkTick__med__a.webp", "shots/B/sphere__hatch__mkTick__max__a.webp", "shots/B/torus__hatch__mkTick__med__a.webp", "shots/B/torus__crosshatch__mkTick__med__a.webp", "shots/B/torus__contour__mkTick__med__a.webp", "shots/B/cone__hatch__mkTick__med__a.webp", "shots/B/sphere__contour__mkTick__med__a.webp"],
+      "work": ["W-05"]
+    },
+    {
+      "id": "F-06", "severity": "P1",
+      "scope": "sphere, torus, cone / hatch, crosshatch, contour / mkDashRamp / low, med / a+b",
+      "wrong": "Rectangular tiles of dense parallel dashes floating over the form, unrelated to the ruling family (each tile's dashes run at its own angle); on the torus the tiles overlap into solid patches. Only at max (paths ×3.9) do the dashes fall onto rulings. The inlined ramp at surface-fill.js:5772-5785 sizes `nn` from `1.12·R/w` and the period from `P0·R` — at the med pitch that is a tile several rulings wide.",
+      "fixed": "Every dash midpoint lies within 0.5 pitch of a master ruling and runs along it; no dash longer than 2× pitch; dash count rises toward the shadow.",
+      "images": ["shots/B/sphere__hatch__mkDashRamp__med__a.webp", "shots/B/sphere__hatch__mkDashRamp__max__a.webp", "shots/B/torus__hatch__mkDashRamp__med__a.webp", "shots/B/torus__crosshatch__mkDashRamp__med__a.webp", "shots/B/torus__contour__mkDashRamp__med__a.webp"],
+      "work": ["W-06"]
+    },
+    {
+      "id": "F-07", "severity": "P1",
+      "scope": "sphere, torus, cone / hatch, crosshatch, contour / deepFillTSP / all / a+b",
+      "wrong": "Ladder rulings with a few random polygonal spikes; there is no space-filling traverse. `tspAt` (surface-fill.js:8160-8181) displaces the ruling laterally with `TSP_PERIOD = 3.2 mm` and amplitude `(drawn − floorPitch)/2`, which is ≈ 0 at the med pitch, while the coverage halving at :4676 thins the rulings anyway — so the darks get sparser, not filled.",
+      "fixed": "In the shadow third the zig-zag traverse is continuous with segment length ≤ 3× pitch and coverage ≥ Ladder's; lit third unchanged from Ladder.",
+      "images": ["shots/B/sphere__hatch__deepFillTSP__med__a.webp", "shots/B/sphere__hatch__deepFillTSP__max__a.webp", "shots/B/torus__hatch__deepFillTSP__med__a.webp", "shots/B/torus__crosshatch__deepFillTSP__med__a.webp", "shots/B/torus__contour__deepFillTSP__med__a.webp"],
+      "work": ["W-07"]
+    },
+    {
+      "id": "F-08", "severity": "P1",
+      "scope": "sphere, torus, cone, pyramid, cylinder, capsule / hatch, crosshatch, stipple / contFieldTouch (all), bundleSubNib, mkDotScreen, mezzoRegion (crosshatch), every style on stipple / med (contField, xhatch) and max (stipple) / a+b",
+      "wrong": "Solid white blob: `contFieldTouch` reaches frame coverage 0.79-0.86 at med on all Types (`cfTightPitch = inkWidth()` — lines touch by definition); crosshatch doubles `bundleSubNib`, `mkDotScreen`, `mezzoRegion` into near-solid; stipple at max is a disc (sphere 35,102 mm / 8,396 paths; pyramid apex; bundle group on sphere stipple). 89 rows exceed 0.62 frame coverage at max (stats-report §b). A 0.3 mm pen would puddle.",
+      "fixed": "No (style, Type) exceeds 0.6 ink coverage of the silhouette at any density on the sphere; contFieldTouch's tight pitch is ≥ `PLOT_FLOOR_PEN·pen`; crosshatch's second family respects the same cap; stipple dot count is capped by area/dot-area at the plot floor.",
+      "images": ["shots/B/sphere__hatch__contFieldTouch__med__a.webp", "shots/B/sphere__crosshatch__contFieldTouch__med__a.webp", "shots/B/torus__crosshatch__contFieldTouch__med__a.webp", "shots/B/torus__crosshatch__bundleSubNib__med__a.webp", "shots/B/sphere__crosshatch__mkDotScreen__med__a.webp", "shots/B/sphere__crosshatch__mezzoRegion__med__a.webp", "shots/A/sphere__stipple__ladder__max__a.webp", "shots/B/sphere__stipple__bundleCount__max__a.webp", "shots/A/pyramid__stipple__ladder__max__a.webp"],
+      "work": ["W-08"]
+    },
+    {
+      "id": "F-09", "severity": "P1",
+      "scope": "torus / hatch, crosshatch, contour / all 9 mono laws / all / a+b",
+      "wrong": "The far inner wall visible through the hole is left black on every mono law (the ruling laws fill it). The mono substrate works on the front-facing screen region only; the far sheet is a second, disjoint visible region it never receives.",
+      "fixed": "Ink inside the hole-visible far-wall region for every mono law (sample the region from the `none`-law rulings that land there); no crossing of the near rim (F7 rule stays at 0).",
+      "images": ["shots/B/torus__hatch__dutyConst__med__a.webp", "shots/B/torus__hatch__voronoiWeb__med__a.webp", "shots/B/torus__hatch__etfKang__med__a.webp", "shots/B/torus__hatch__mazeFill__med__a.webp", "shots/B/torus__hatch__none__med__a.webp"],
+      "work": ["W-09"]
+    },
+    {
+      "id": "F-10", "severity": "P1",
+      "scope": "torus, cone / hatch, crosshatch, contour / originSpiral / all / a+b",
+      "wrong": "Spacing collapses below the pen toward the silhouette: solid white bands and moiré on the torus (both angles) and the cone; on the sphere it reads correctly. `lawSpiral` (surface-fill-mono.js:2519) spaces in screen space from a single origin without the foreshortening term the other mono laws get from `pitchLegible`.",
+      "fixed": "Minimum projected spacing between adjacent turns ≥ `PLOT_FLOOR_PEN·pen` everywhere on torus and cone; sphere byte-identical.",
+      "images": ["shots/B/torus__hatch__originSpiral__med__a.webp", "shots/B/torus__hatch__originSpiral__med__b.webp", "shots/B/cone__crosshatch__originSpiral__med__a.webp", "shots/B/sphere__hatch__originSpiral__med__a.webp"],
+      "work": ["W-10"]
+    },
+    {
+      "id": "F-11", "severity": "P2",
+      "scope": "sphere, torus, cone / hatch, crosshatch, contour / bundleSubNib / all / a+b",
+      "wrong": "Band edges are a sawtooth — each sub-nib pass ends at a different sample so the band outline is serrated (visible at plot scale as fuzz on every band edge).",
+      "fixed": "Band edges are smooth: max normal deviation of the outline along a band ≤ 0.5 pen; ink unchanged ±3%.",
+      "images": ["shots/B/torus__hatch__bundleSubNib__med__a.webp", "shots/B/sphere__hatch__bundleSubNib__med__a.webp", "shots/B/torus__contour__bundleSubNib__med__a.webp", "shots/B/cone__hatch__bundleSubNib__med__a.webp"],
+      "work": ["W-11"]
+    },
+    {
+      "id": "F-12", "severity": "P2",
+      "scope": "sphere, ellipsoid, cylinder, capsule, superellipsoid, pyramid, torus / hatch, crosshatch / every style / all / a+b",
+      "wrong": "The chart-space ruling family (surface-fill.js `angleFamily` :9000-9080) is a straight line in (a,b); every ruling with |da| ≥ 0.2 terminates at a=0/1, which the chart collapses to one screen point — so rulings converge to a pinch at the sphere pole, cylinder/capsule cap centre, pyramid apex and the torus outer rim, with spacing far below the pen. Not a ribbon protrusion (handoff: GONE) — a mapper artefact.",
+      "fixed": "Near a pole the family is culled/merged so the projected spacing between neighbours never drops below 0.5 pen; the pole shows a clean gap or a single line.",
+      "images": ["shots/B/sphere__hatch__none__med__a.webp", "shots/B/torus__hatch__none__med__a.webp", "shots/A/cylinder__hatch__ladder__med__a.webp", "shots/A/capsule__hatch__ladder__med__a.webp", "shots/A/pyramid__hatch__ladder__med__a.webp", "shots/A/superellipsoid__hatch__ladder__med__a.webp", "shots/A/ellipsoid__hatch__ladder__med__a.webp"],
+      "work": ["W-12"]
+    },
+    {
+      "id": "F-13", "severity": "P2",
+      "scope": "sphere, pyramid, cylinder, capsule, superellipsoid / stipple / ladder and every style / med, max / a+b",
+      "wrong": "Hex dots pile into a solid disc at the sphere pole, pyramid apex and cylinder/capsule cap; on the superellipsoid the dots clump at the corners and in a central band with blank stripes between (both angles) — the chart-uniform lattice is not screen-uniform.",
+      "fixed": "No two dot centres closer than 0.8 dot diameters on screen; superellipsoid dot density varies by ≤ 2× across the visible face.",
+      "images": ["shots/B/sphere__stipple__none__med__a.webp", "shots/A/pyramid__stipple__ladder__med__a.webp", "shots/A/cylinder__stipple__ladder__med__a.webp", "shots/A/superellipsoid__stipple__ladder__med__a.webp", "shots/A/superellipsoid__stipple__ladder__med__b.webp", "shots/A/capsule__stipple__ladder__med__a.webp"],
+      "work": ["W-14"]
+    },
+    {
+      "id": "F-14", "severity": "P2",
+      "scope": "plane, box / hatch, crosshatch, contour, spiral / ladder / low, med / a+b",
+      "wrong": "Faceted density range is skewed high: plane hatch draws 3 lines at d=1, 4 at d=50 and 135 at d=220 (7/9/135 paths); box faces show ~6 lines at d=50. `hatchSpacing(50)` = 7.5 mm predicts ~10-13 lines on this plane; the visible count says the mm spacing is being scaled up before `hatchPolygon`.",
+      "fixed": "Plane hatch line count at d=50 ≈ (plane height / hatchSpacing(50)) ± 1; d=1 draws ≥ 2× fewer than d=50; the max end unchanged.",
+      "images": ["shots/A/plane__hatch__ladder__low__a.webp", "shots/A/plane__hatch__ladder__med__a.webp", "shots/A/plane__hatch__ladder__max__a.webp", "shots/A/box__hatch__ladder__med__a.webp", "shots/A/box__hatch__ladder__max__a.webp"],
+      "work": ["W-15"]
+    },
+    {
+      "id": "F-15", "severity": "P2",
+      "scope": "sphere, torus, cone / hatch, crosshatch, contour / weightModulated, weightSmoothstep / low, med / a+b",
+      "wrong": "At ≤ med both are visually No Tone (lines barely wider than the pen, ink +4% over `none`); at max they suddenly become fat bands (ink ×2.6). The weight law is scaled by the density-derived pitch instead of by tone, so the mechanism text ('tone carried entirely by pen weight') is only true at max.",
+      "fixed": "At d=50 on a sphere the shadow third's mean ribbon width ≥ 3 pens and the lit third's ≤ 1.2 pens; ratio independent of density.",
+      "images": ["shots/B/sphere__hatch__weightModulated__med__a.webp", "shots/B/sphere__hatch__weightModulated__max__a.webp", "shots/B/sphere__hatch__none__med__a.webp", "shots/B/torus__hatch__weightSmoothstep__med__a.webp"],
+      "work": ["W-16"]
+    },
+    {
+      "id": "F-16", "severity": "P2",
+      "scope": "sphere, torus, cone / hatch, crosshatch, contour / mkScribble / all / a+b",
+      "wrong": "One giant triangle-wave scribble ignores the ruling family: on contour it becomes radial spike fans, on crosshatch vertical 'grass', and on the cone it is clipped to a stepped boundary that is not the silhouette (hatch, med). Reads as noise at plot scale.",
+      "fixed": "Scribble rows follow the master rulings (row pitch = master pitch, wave along the ruling); clipped to the silhouette on every primitive; amplitude/wavelength carry tone as the text says.",
+      "images": ["shots/B/cone__hatch__mkScribble__med__a.webp", "shots/B/torus__contour__mkScribble__med__a.webp", "shots/B/torus__crosshatch__mkScribble__med__a.webp", "shots/B/sphere__hatch__mkScribble__med__a.webp"],
+      "work": ["W-17"]
+    },
+    {
+      "id": "F-17", "severity": "P2",
+      "scope": "sphere, torus, cone / hatch, crosshatch, contour / penInterleave, penStipple, penPitchMatch, penFacing, penReserve / all / a+b",
+      "wrong": "Width changes on the three-pen laws are drawn as overlapping capsules, so every step shows a round bulge (the 'staircase of capsules' the ribbon work removed for bucket B; the three-pen exemption is deliberate per the handoff, but the junctions are unfinished). `penStipple` is classed `dot` yet draws no dots — it is byte-identical to penInterleave on spiral/stipple and near-identical on hatch. `penReserve` reads as random fat transverse dashes at med.",
+      "fixed": "Width transitions are butt-joined (no bulge > 0.25 pen beyond the wider width); `penStipple` either draws dots or is removed; `penReserve`'s reserves align to a lattice.",
+      "images": ["shots/B/torus__hatch__penInterleave__med__a.webp", "shots/B/torus__hatch__penStipple__med__a.webp", "shots/B/sphere__hatch__penStipple__med__a.webp", "shots/B/torus__hatch__penReserve__med__a.webp", "shots/B/sphere__crosshatch__penReserve__med__a.webp"],
+      "work": ["W-18"]
+    },
+    {
+      "id": "F-18", "severity": "P2",
+      "scope": "torus, cone / hatch, crosshatch, contour / etfKang, defectSplit / all / a+b",
+      "wrong": "Flow-field singularities land mid-form: a target whorl on the torus bottom and an X-saddle on top (etfKang), a fan pinch at the torus right end (defectSplit), a central ridge of nested arcs down the cone. The field is solved in screen space with no seam control on non-simply-connected silhouettes.",
+      "fixed": "Singularity count on the torus ≤ 2 and none inside the tube's front face; cone has no ridge (field is smooth to within 15° across the axis).",
+      "images": ["shots/B/torus__hatch__etfKang__med__a.webp", "shots/B/torus__hatch__defectSplit__med__a.webp", "shots/B/cone__hatch__etfKang__med__a.webp", "shots/B/sphere__hatch__etfKang__med__a.webp"],
+      "work": ["W-19"]
+    },
+    {
+      "id": "F-19", "severity": "P2",
+      "scope": "sphere, torus, cone / hatch, crosshatch, contour / dutyConst, turingStripe, mazeFill, contField* / med / a+b",
+      "wrong": "No visible light→dark gradient: `dutyConst` claims duty cycle carries tone but the dashes only appear in a thin lit sliver; `turingStripe`/`mazeFill` are uniform labyrinths; contField* spacing is uniform on the torus (3×3 tone-grid span < 0.08 on 54 rows, stats-report §b).",
+      "fixed": "On a sphere at med the darkest third's coverage ≥ 1.6× the lightest third's for each of these laws (the bar Ladder already clears).",
+      "images": ["shots/B/torus__hatch__dutyConst__med__a.webp", "shots/B/sphere__hatch__dutyConst__med__a.webp", "shots/B/torus__hatch__turingStripe__med__a.webp", "shots/B/torus__hatch__contFieldSurface__med__a.webp", "shots/B/sphere__hatch__mazeFill__med__a.webp"],
+      "work": ["W-04", "W-20"]
+    },
+    {
+      "id": "F-20", "severity": "P2",
+      "scope": "solid (buckyball) / contour / ladder / all / a+b",
+      "wrong": "Type=Contour on the default solid draws only the face edges (identical to Type=none). The Type picker offers Contour on faceted bodies; the fill-style picker already knows (`FACETED_OFF_AXIS_NOTE`) but the Type itself is silently inert. Spiral/Stipple on solids do draw per-face marks.",
+      "fixed": "Either per-face concentric contours on faceted bodies, or Contour greyed in the Type picker for faceted primitives with the same note.",
+      "images": ["shots/A/solid__contour__ladder__med__a.webp", "shots/A/solid__spiral__ladder__med__a.webp", "shots/A/solid__none__ladder__med__a.webp"],
+      "work": ["W-21"]
+    },
+    {
+      "id": "F-21", "severity": "P2",
+      "scope": "sphere, torus, cone / hatch, crosshatch / mkDotScreen / low, med / a+b",
+      "wrong": "At low/med the 'dots' are spiral discs up to 0.58·R wide — larger than the ruling pitch — overlapping into rosettes; at max the same law draws a clean fine dot screen. Range calibration, not the mark itself (`rMax = 0.58·R` at surface-fill.js:2465-2481 with R floored by the master pitch).",
+      "fixed": "Dot radius ≤ 0.3× row pitch at every density; med on a sphere reads as a halftone, not rosettes.",
+      "images": ["shots/B/sphere__hatch__mkDotScreen__med__a.webp", "shots/B/sphere__hatch__mkDotScreen__low__a.webp", "shots/B/torus__hatch__mkDotScreen__max__a.webp", "shots/B/torus__hatch__mkDotScreen__med__a.webp"],
+      "work": ["W-08"]
+    },
+    {
+      "id": "F-22", "severity": "P2",
+      "scope": "torus, sphere / hatch, contour / interlockWeave, onePenDown, trochoidLoop / med / a+b",
+      "wrong": "Ragged spike/shard fills with lengthwise gaps — this is the handoff's OPEN item A (F1 residual streaks) seen from the gallery; listed for completeness, NOT re-proposed here. Note additionally that interlockWeave and onePenDown are visually indistinguishable at every density (cluster C-08).",
+      "fixed": "Per handoff item A: all five laws reach the ≤ 0.18 mm² band; then decide C-08.",
+      "images": ["shots/B/torus__hatch__interlockWeave__med__a.webp", "shots/B/torus__hatch__onePenDown__med__a.webp", "shots/B/torus__contour__trochoidLoop__med__a.webp", "shots/B/torus__contour__interlockWeave__med__b.webp"],
+      "work": []
+    }
+  ],
+  "clusterNote": "Strictness: a cluster is either byte-identical on all 6 shots (md5) or a confirmed near-duplicate (32×32 dHash ≤ 60/1024 bits and block-mean Δ ≤ 5/255 at med/a, med/b AND max/a) that I then verified by eye. Proposals: (a) collapse behind one continuous parameter, (b) re-tune defaults, (c) hide on that Type via `isReachableOn`, (d) remove. `src/config/scene3d-tone-laws.js` is generated from `docs/tone-laws/laws.json` — roster edits go there, then `node scripts/build-tone-laws.js`.",
+  "clusters": [
+    {
+      "id": "C-01", "mappers": "hatch, crosshatch, contour",
+      "members": ["ladder", "fineLadder", "phaseFineLadder", "perceptualRamp", "lozengeStipple"],
+      "evidence": "Same rulings; differ only in which rungs are skipped near the highlight (lozengeStipple adds ~15 flicks). Not within the dHash threshold only because a skipped rung is a large pixel change; by eye indistinguishable at plot scale on torus and sphere.",
+      "proposal": "a", "why": "One mechanism (coverage rungs) with four discretisations. A single `rungFineness` sweeps from 4 rungs (ladder) to 12 (fine) with the phase-dithered variant at the top; `perceptualRamp` is the same ramp with a gamma. Keep `lozengeStipple` only if W-08 gives it real flicks; else (d).",
+      "param": { "key": "rungFineness", "range": "0..1", "default": "0 (= ladder, byte-identical)", "sweep": "0 → ladder's 4 rungs, 0.5 → fineLadder, 0.75 → phaseFineLadder (phase dither on), 1 → perceptualRamp gamma" },
+      "images": ["shots/B/torus__hatch__ladder__med__a.webp", "shots/B/torus__hatch__fineLadder__med__a.webp", "shots/B/torus__hatch__phaseFineLadder__med__a.webp", "shots/B/torus__hatch__perceptualRamp__med__a.webp", "shots/B/torus__hatch__lozengeStipple__med__a.webp"]
+    },
+    {
+      "id": "C-02", "mappers": "hatch, crosshatch, contour",
+      "members": ["nibAngle", "taperedEnds", "whiteBand"],
+      "evidence": "Confirmed near-duplicate pairs on cone hatch/crosshatch (Hamming 16-23); by eye identical fat bands on torus and sphere; all three are 'whiteBand's chassis' per their own text. `isophoteWidth` is genuinely different (patchy mid-body tapers) and stays.",
+      "proposal": "a", "why": "Same width chassis; taperedEnds adds an end taper, nibAngle a |sin| direction modulation that is invisible where the ruling direction barely rotates (its own weakness text). One style with `edgeTaper` and an optional `nibAngle` degrees field.",
+      "param": { "key": "edgeTaper", "range": "0..1 (+ nibAngleDeg 0..180, off by default)", "default": "1 (= taperedEnds, the roster's own recommended default)", "sweep": "0 → whiteBand hard ends, 1 → taperedEnds smootherstep; nibAngleDeg > 0 → nibAngle modulation" },
+      "images": ["shots/B/torus__hatch__nibAngle__med__a.webp", "shots/B/torus__hatch__taperedEnds__med__a.webp", "shots/B/torus__hatch__whiteBand__med__a.webp", "shots/B/sphere__hatch__nibAngle__med__a.webp", "shots/B/sphere__hatch__whiteBand__med__a.webp"]
+    },
+    {
+      "id": "C-03", "mappers": "hatch, crosshatch, contour (byte-identical on spiral/stipple)",
+      "members": ["weightModulated", "weightSmoothstep"],
+      "evidence": "Confirmed near-duplicates on cone hatch/contour/crosshatch and sphere hatch/crosshatch (Hamming 10-34); byte-identical on spiral/stipple; both ≈ No Tone at ≤ med (F-15).",
+      "proposal": "a", "why": "Same law, one with a smoothstep on the weight ramp. `weightEase` 0/1 is the only difference.",
+      "param": { "key": "weightEase", "range": "0..1", "default": "0", "sweep": "0 → step weights (weightModulated), 1 → smoothstep (weightSmoothstep)" },
+      "images": ["shots/B/sphere__hatch__weightModulated__med__a.webp", "shots/B/sphere__hatch__weightSmoothstep__med__a.webp", "shots/B/torus__contour__weightModulated__med__a.webp", "shots/B/torus__contour__weightSmoothstep__med__a.webp"]
+    },
+    {
+      "id": "C-04", "mappers": "hatch, crosshatch, contour",
+      "members": ["bundleCount", "bundleEased", "bundleDither", "bundleHandoff"],
+      "evidence": "bundleCount~bundleDither confirmed on torus/sphere/cone hatch+crosshatch+contour (Hamming 14-42); bundleEased~bundleHandoff confirmed on sphere/cone hatch/crosshatch; by eye all four are frayed bundles of ~6 thin passes. `bundleLozenge` (lens-shaped bundles) and `bundleSubNib` (solid band) are distinct and stay.",
+      "proposal": "a", "why": "One bundle law with an easing curve and a dither toggle; handoff is the eased variant with region-boundary breaks and adds nothing visible.",
+      "param": { "key": "bundleEase (+ bundleDither bool)", "range": "0..1", "default": "0, dither off (= bundleCount)", "sweep": "0 → integer pass count, 1 → eased; dither on → bundleDither" },
+      "images": ["shots/B/torus__hatch__bundleCount__med__a.webp", "shots/B/torus__hatch__bundleEased__med__a.webp", "shots/B/torus__hatch__bundleDither__med__a.webp", "shots/B/torus__hatch__bundleHandoff__med__a.webp", "shots/B/torus__hatch__bundleLozenge__med__a.webp"]
+    },
+    {
+      "id": "C-05", "mappers": "hatch, crosshatch, contour",
+      "members": ["contFieldSigmoid", "contFieldFore", "contFieldSurface", "contFieldQuant", "contFieldTouch"],
+      "evidence": "Byte-identical density-inert rows; Fore/Surface/Quant/Sigmoid visually identical even dense rulings on torus and sphere; Touch is the same field with the tight pitch = ink width (a solid blob, F-08).",
+      "proposal": "a", "why": "Five metric choices for one continuous field that all land on the same picture because the envelope is [cfTightPitch, cfOpenPitch] regardless of metric (surface-fill.js:4469-4493). Keep one 'Continuous field' with a `fieldFloor` (tight pitch in pens); touch = 1.0 pen, default 2.2.",
+      "param": { "key": "fieldFloor", "range": "1.0..4 pens", "default": "2.2 (= PLOT_FLOOR_PEN; byte-identical to contFieldSigmoid)", "sweep": "1.0 → contFieldTouch, 2.2 → Sigmoid/Fore/Surface/Quant" },
+      "images": ["shots/B/torus__hatch__contFieldSigmoid__med__a.webp", "shots/B/torus__hatch__contFieldFore__med__a.webp", "shots/B/torus__hatch__contFieldSurface__med__a.webp", "shots/B/torus__hatch__contFieldQuant__med__a.webp", "shots/B/torus__hatch__contFieldTouch__med__a.webp"]
+    },
+    {
+      "id": "C-06", "mappers": "hatch, crosshatch, contour",
+      "members": ["penInterleave", "penPitchMatch", "penStipple", "penFacing"],
+      "evidence": "By eye the four are the same capsule-stepped rulings on torus hatch/contour and sphere hatch; byte-identical trio on spiral/stipple. `penStipple` draws no dots despite its `dot` mark class. `penCross`/`penReserve` are distinct (crossed) and stay.",
+      "proposal": "a", "why": "One three-pen ruling law with `pitchMatch` (bool) and `facingBias` (0..1); drop `penStipple` (d) or make it a real dot law under W-18.",
+      "param": { "key": "pitchMatch (bool) + facingBias", "range": "facingBias 0..1", "default": "pitchMatch off, facingBias 0 (= penInterleave)", "sweep": "pitchMatch on → penPitchMatch; facingBias 1 → penFacing" },
+      "images": ["shots/B/torus__hatch__penInterleave__med__a.webp", "shots/B/torus__hatch__penPitchMatch__med__a.webp", "shots/B/torus__hatch__penStipple__med__a.webp", "shots/B/torus__hatch__penFacing__med__a.webp"]
+    },
+    {
+      "id": "C-07", "mappers": "hatch, crosshatch, contour",
+      "members": ["ampSpacing", "weaveDepth"],
+      "evidence": "Same zigzag lattice on torus and sphere hatch; weaveDepth's rows are ~1.4× denser; confirmed near-duplicates against the bundle group on stipple.",
+      "proposal": "a", "why": "One wave lattice with a `nesting` depth; ampSpacing is nesting 0, weaveDepth nesting 1. (Both are also in handoff item A's streak list.)",
+      "param": { "key": "nesting", "range": "0..1", "default": "0 (= ampSpacing)", "sweep": "0 → single wave row, 1 → nested rows (weaveDepth)" },
+      "images": ["shots/B/torus__hatch__ampSpacing__med__a.webp", "shots/B/torus__hatch__weaveDepth__med__a.webp", "shots/B/sphere__hatch__ampSpacing__med__a.webp", "shots/B/sphere__hatch__weaveDepth__med__a.webp"]
+    },
+    {
+      "id": "C-08", "mappers": "hatch, crosshatch, contour (byte-identical on spiral/stipple)",
+      "members": ["interlockWeave", "onePenDown", "trochoidLoop"],
+      "evidence": "interlockWeave and onePenDown are indistinguishable ragged spike fills on torus hatch/contour and sphere hatch at every density; trochoidLoop is the same fill drawn as polygon shards. Byte-identical trio on spiral/stipple.",
+      "proposal": "a", "why": "onePenDown's purpose is fewer pen-downs (9 vs 36), invisible on paper — make it a `continuous` toggle on interlockWeave. Resolve after handoff item A lands so the comparison is on clean output.",
+      "param": { "key": "continuous (bool)", "range": "—", "default": "off (= interlockWeave)", "sweep": "on → one pen-down per family (onePenDown)" },
+      "images": ["shots/B/torus__hatch__interlockWeave__med__a.webp", "shots/B/torus__hatch__onePenDown__med__a.webp", "shots/B/torus__hatch__trochoidLoop__med__a.webp"]
+    },
+    {
+      "id": "C-09", "mappers": "spiral, stipple",
+      "members": ["nibAngle", "taperedEnds", "isophoteWidth", "whiteBand"],
+      "evidence": "Byte-identical on all 6 shots on sphere, torus and cone (bare centrelines, F-03).",
+      "proposal": "c", "why": "No width profile exists on these Types; the four are one rung-skipping picture. Hide via `CURVED_SPIRAL_STIPPLE_INERT` until W-13 wires width.",
+      "param": null,
+      "images": ["shots/B/torus__spiral__taperedEnds__med__a.webp", "shots/B/torus__stipple__taperedEnds__med__a.webp"]
+    },
+    {
+      "id": "C-10", "mappers": "spiral, stipple",
+      "members": ["bundleCount", "bundleSubNib", "bundleEased", "bundleDither", "bundleLozenge", "bundleHandoff", "contFieldSigmoid", "contFieldTouch", "contFieldFore", "contFieldSurface", "contFieldQuant", "penStipple"],
+      "evidence": "Byte-identical on all 6 shots on sphere, torus, cone (12 styles → 1 picture: every rung drawn, ≈ No Tone).",
+      "proposal": "c", "why": "Hide on spiral/stipple.",
+      "param": null,
+      "images": ["shots/B/torus__spiral__bundleCount__med__a.webp", "shots/B/torus__stipple__bundleCount__med__a.webp", "shots/B/sphere__spiral__bundleCount__med__a.webp"]
+    },
+    {
+      "id": "C-11", "mappers": "spiral, stipple",
+      "members": ["mkScribble", "mkTick", "mkDashRamp", "mkDotScreen"],
+      "evidence": "Byte-identical on all 6 shots on sphere, torus, cone (the mark emitter is never reached).",
+      "proposal": "c", "why": "Hide on spiral/stipple.",
+      "param": null,
+      "images": ["shots/B/torus__spiral__mkScribble__med__a.webp", "shots/B/torus__stipple__mkScribble__med__a.webp"]
+    },
+    {
+      "id": "C-12", "mappers": "spiral, stipple",
+      "members": ["interlockWeave", "onePenDown", "trochoidLoop", "penInterleave", "penReserve", "penPitchMatch", "weightModulated", "weightSmoothstep"],
+      "evidence": "Three byte-identical groups ({interlockWeave,onePenDown,trochoidLoop}, {penInterleave,penReserve,penPitchMatch}, {weightModulated,weightSmoothstep}) on all 6 shots, sphere/torus/cone.",
+      "proposal": "c", "why": "Hide on spiral/stipple.",
+      "param": null,
+      "images": ["shots/B/torus__spiral__interlockWeave__med__a.webp", "shots/B/torus__spiral__penInterleave__med__a.webp", "shots/B/torus__spiral__weightModulated__med__a.webp"]
+    },
+    {
+      "id": "C-13", "mappers": "spiral, stipple",
+      "members": ["lozengeStipple", "perceptualRamp", "phaseFineLadder", "fineLadder", "deepFillTSP", "ampSpacing", "weaveDepth", "amplitudeOnly", "penCross", "penFacing"],
+      "evidence": "{lozengeStipple, perceptualRamp, phaseFineLadder} byte-identical on torus (near-identical on sphere/cone); the rest differ from Ladder only by which rungs are skipped — none does what its text says on these Types.",
+      "proposal": "c", "why": "Keep only None / Ladder / Fine Ladder / Phase Fine Ladder on spiral/stipple (the honest rung-skipping options) and hide the rest; revisit when W-13 lands.",
+      "param": null,
+      "images": ["shots/B/torus__spiral__ladder__med__a.webp", "shots/B/torus__spiral__fineLadder__med__a.webp", "shots/B/torus__spiral__phaseFineLadder__med__a.webp", "shots/B/torus__spiral__ampSpacing__med__a.webp", "shots/B/torus__spiral__penCross__med__a.webp"]
+    }
+  ]
+}
