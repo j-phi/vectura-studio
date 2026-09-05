@@ -503,4 +503,218 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
       expect(maxTurnDeg(wouldBeRefined)).toBeLessThan(20); // refineRing WOULD round it away
     });
   });
+
+  // ── W-27c item (a) — rotated-object / tilted-plane analytic accuracy ───────
+  // W-27b's sphere/ellipsoid `sliceAnalyticProjectLocal` held LOCAL z fixed and
+  // solved x,y exactly on the ellipsoid at that z. That is only an exact
+  // plane∩surface solution when local z happens to BE the cutting coordinate
+  // — true only for an UNROTATED object cut by the DEFAULT (untilted) world-Z
+  // plane. Any object yaw/pitch/roll, or any sliceRotate/sliceTilt, breaks
+  // that coincidence: the W-27c reviewer measured 0.309mm worst-case surface
+  // deviation on a rotated ellipsoid / tilted plane (bar 0.15mm, todo per
+  // STILL-OPEN.md item (a)). `Scene3D.Slices.localPlaneNormal` /
+  // `.inverseObjectTransform` / the 4-arg `.analyticProjectLocal` (Newton,
+  // constrained to move only WITHIN the cutting plane) do not exist before
+  // this fix — every test below fails (TypeError in beforeAll/the assertion
+  // itself) on the pre-fix tree and passes after.
+  describe('W-27c — rotated-object / tilted-plane analytic accuracy (item a)', () => {
+    // Reproduces the PRE-fix (W-27b, commit 18e5a097-55ddb720) sphere/ellipsoid
+    // closed-form projector VERBATIM, as the old-method comparison baseline —
+    // not re-exported, so this suite can measure exactly what the reviewer
+    // measured rather than re-deriving it.
+    const oldEllipsoidProjectLocal = (sizes, p) => {
+      const sx = sizes.sx || 1; const sy = sizes.sy || 1; const sz = sizes.sz || 1;
+      const rem = Math.max(0, 1 - (p.z / sz) ** 2);
+      const qx = p.x / sx; const qy = p.y / sy;
+      const cur = Math.hypot(qx, qy) || 1e-9;
+      const k = Math.sqrt(rem) / cur;
+      return { x: p.x * k, y: p.y * k, z: p.z };
+    };
+
+    const ELL = { sx: 20, sy: 12, sz: 16 };
+    const ELL_DETAIL = 16;
+    // A meaningfully rotated object AND a tilted cutting plane — the exact
+    // combination the plan says breaks the z-fixed shortcut.
+    const T = { x: 0, y: 0, z: 0, yaw: 35, pitch: 20, roll: 10, scale: 1 };
+    const SLICE_ROTATE = 15; const SLICE_TILT = 10;
+
+    let worldMesh; let planeNormalWorld; let localPlaneNormal;
+    beforeAll(() => {
+      const local = V.Scene3D.Mesh.createTopoformMesh('sphere', ELL, ELL_DETAIL);
+      const applyT = V.Scene3D.Scene.applyObjectTransform;
+      worldMesh = { vertices: local.vertices.map((pt) => applyT(pt, T)), faces: local.faces };
+      const yr = (SLICE_ROTATE * Math.PI) / 180; const pr = (SLICE_TILT * Math.PI) / 180;
+      const cy = Math.cos(yr); const sy = Math.sin(yr); const cp = Math.cos(pr); const sp = Math.sin(pr);
+      planeNormalWorld = { x: -sy * cp, y: sp, z: cy * cp };
+      // Throws (TypeError) before this fix — localPlaneNormal does not exist.
+      localPlaneNormal = V.Scene3D.Slices.localPlaneNormal(planeNormalWorld, T);
+    });
+
+    // Re-clamps a corrected world point exactly back onto the cutting plane
+    // along the plane's own normal, mirroring the pass's own re-clamp step.
+    const reclampToPlane = (worldPt, correctedWorldPt, n) => {
+      const d0 = worldPt.x * n.x + worldPt.y * n.y + worldPt.z * n.z;
+      const dc = correctedWorldPt.x * n.x + correctedWorldPt.y * n.y + correctedWorldPt.z * n.z;
+      const diff = dc - d0;
+      return {
+        x: correctedWorldPt.x - diff * n.x,
+        y: correctedWorldPt.y - diff * n.y,
+        z: correctedWorldPt.z - diff * n.z,
+      };
+    };
+
+    // Runs every raw ring crossing point through `project`, then measures how
+    // far the corrected LOCAL point sits from the true implicit ellipsoid
+    // equation F(local)=0 — |F|/|∇F| is the first-order distance to the true
+    // surface in mm, the same unit both the 0.309mm and 0.15mm bars quote.
+    const worstSurfaceDeviationMm = (project) => {
+      const sliced = V.Scene3D.Slices.buildSliceSegments({
+        world: worldMesh.vertices, faces: worldMesh.faces, sliceCount: 20,
+        sliceRotate: SLICE_ROTATE, sliceTilt: SLICE_TILT,
+      });
+      const byPlane = new Map();
+      sliced.segments.forEach((s) => {
+        if (!byPlane.has(s.plane)) byPlane.set(s.plane, []);
+        byPlane.get(s.plane).push([s.a, s.b]);
+      });
+      let maxDev = 0; let sampleCount = 0;
+      byPlane.forEach((segs) => {
+        V.Geometry3D.linkSegments(segs).forEach((ring) => {
+          ring.forEach((worldPt) => {
+            const correctedWorld = project(worldPt);
+            const local = V.Scene3D.Slices.inverseObjectTransform(correctedWorld, T);
+            const F = (local.x / ELL.sx) ** 2 + (local.y / ELL.sy) ** 2 + (local.z / ELL.sz) ** 2 - 1;
+            const gx = (2 * local.x) / (ELL.sx * ELL.sx);
+            const gy = (2 * local.y) / (ELL.sy * ELL.sy);
+            const gz = (2 * local.z) / (ELL.sz * ELL.sz);
+            const gradLen = Math.hypot(gx, gy, gz) || 1e-9;
+            const dev = Math.abs(F) / gradLen;
+            if (dev > maxDev) maxDev = dev;
+            sampleCount += 1;
+          });
+        });
+      });
+      return { maxDev, sampleCount };
+    };
+
+    test('Slices exposes the W-27c local-plane-normal + inverse-transform + 4-arg analytic projector API', () => {
+      expect(typeof V.Scene3D.Slices.localPlaneNormal).toBe('function');
+      expect(typeof V.Scene3D.Slices.inverseObjectTransform).toBe('function');
+      expect(typeof V.Scene3D.Slices.analyticProjectLocal).toBe('function');
+    });
+
+    test('bar: the new plane-constrained Newton projector is within 0.15mm of the true surface on a rotated ellipsoid + tilted plane, and strictly beats the old z-fixed shortcut', () => {
+      const oldMethod = worstSurfaceDeviationMm((worldPt) => {
+        const local = V.Scene3D.Slices.inverseObjectTransform(worldPt, T);
+        const corrected = oldEllipsoidProjectLocal(ELL, local);
+        const cw = V.Scene3D.Scene.applyObjectTransform(corrected, T);
+        return reclampToPlane(worldPt, cw, planeNormalWorld);
+      });
+      const newMethod = worstSurfaceDeviationMm((worldPt) => {
+        const local = V.Scene3D.Slices.inverseObjectTransform(worldPt, T);
+        const corrected = V.Scene3D.Slices.analyticProjectLocal('sphere', ELL, local, localPlaneNormal);
+        const cw = V.Scene3D.Scene.applyObjectTransform(corrected, T);
+        return reclampToPlane(worldPt, cw, planeNormalWorld);
+      });
+      expect(oldMethod.sampleCount).toBeGreaterThan(20); // the sweep actually ran
+      expect(oldMethod.maxDev).toBeGreaterThan(0.15); // reproduces the reviewer's measured overshoot
+      expect(newMethod.maxDev).toBeLessThan(0.15); // meets the plan's bar
+      expect(newMethod.maxDev).toBeLessThan(oldMethod.maxDev); // strictly more accurate, not just different
+    });
+  });
+
+  // ── W-27c item (c) — ring-quality regression guard for cone/cylinder/torus ─
+  // STILL-OPEN.md item (c): "add RGR ring-quality assertions for cone/cylinder/
+  // torus (only sphere has one)". Independent of item (a)'s rotation defect,
+  // this WIP's own refactor (sliceSurfaceFG) replaced cone/cylinder/torus's
+  // DIRECT closed-form solve (exact by construction, no iteration) with the
+  // same Newton loop used for the sphere/ellipsoid — a real regression risk
+  // that had NO test coverage at all before this block (grep confirms no
+  // existing test exercises the cone/cylinder/torus analytic projector).
+  // Oracle: the general implicit-surface deviation used above (|F|/|∇F|, the
+  // first-order distance to the TRUE surface in mm) — not a "reads as a
+  // circle" check, since the default (untilted, unrotated) cutting plane is
+  // NOT perpendicular to any of these primitives' own axis, so their
+  // cross-sections are not literal circles; the F/∇F distance is a correct
+  // accuracy oracle regardless of cross-section shape. `Slices.
+  // analyticProjectLocal`'s 4th arg and `Slices.localPlaneNormal` do not exist
+  // before this fix, so every test here fails (TypeError) on the pre-fix tree.
+  describe('W-27c — cone/cylinder/torus analytic-projector regression guard (item c)', () => {
+    const IDT = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
+    const WORLD_Z = { x: 0, y: 0, z: 1 };
+
+    // F(local) and |∇F| per primitive, copied verbatim from sliceSurfaceFG's
+    // own comments (independent re-derivation, not a re-export) so this is a
+    // real oracle and not a tautological check of the source's own math.
+    const surfaceDeviationMm = (mode, sizes, local) => {
+      const sx = sizes.sx || 1; const sy = sizes.sy || 1; const sz = sizes.sz || 1;
+      let F; let gx; let gy; let gz;
+      if (mode === 'cylinder') {
+        F = (local.x / sx) ** 2 + (local.z / sz) ** 2 - 1;
+        gx = (2 * local.x) / (sx * sx); gy = 0; gz = (2 * local.z) / (sz * sz);
+      } else if (mode === 'cone') {
+        const r = Math.max(0, sx * (0.5 - local.y / (2 * sy)));
+        F = local.x * local.x + local.z * local.z - r * r;
+        gx = 2 * local.x; gy = (r * sx) / sy; gz = 2 * local.z;
+      } else if (mode === 'torus') {
+        const major = Math.max(2, sx * 0.75);
+        const minor = Math.max(1, Math.min(sy, sz) * 0.28);
+        const pr = Math.hypot(local.x, local.z) || 1e-9;
+        const dr = pr - major;
+        F = dr * dr + local.y * local.y - minor * minor;
+        gx = (2 * dr * local.x) / pr; gy = 2 * local.y; gz = (2 * dr * local.z) / pr;
+      } else {
+        throw new Error(`unhandled mode ${mode}`);
+      }
+      const gradLen = Math.hypot(gx, gy, gz) || 1e-9;
+      return Math.abs(F) / gradLen;
+    };
+
+    // Runs every raw ring crossing point (identity transform, default
+    // untilted world-Z cutting plane — the same rig the sphere pole test
+    // above uses) through the REAL wired analytic projector and measures the
+    // worst-case deviation from the true implicit surface.
+    const worstDeviationFor = (mode, sizes, detail, sliceCount) => {
+      const mesh = V.Scene3D.Mesh.createTopoformMesh(mode, sizes, detail);
+      const localPlaneNormal = V.Scene3D.Slices.localPlaneNormal(WORLD_Z, IDT);
+      const sliced = V.Scene3D.Slices.buildSliceSegments({
+        world: mesh.vertices, faces: mesh.faces, sliceCount,
+      });
+      const byPlane = new Map();
+      sliced.segments.forEach((s) => {
+        if (!byPlane.has(s.plane)) byPlane.set(s.plane, []);
+        byPlane.get(s.plane).push([s.a, s.b]);
+      });
+      let rawMax = 0; let refinedMax = 0; let ringsChecked = 0;
+      byPlane.forEach((segs) => {
+        V.Geometry3D.linkSegments(segs).forEach((ring) => {
+          if (ring.length < 3) return;
+          ringsChecked += 1;
+          ring.forEach((pt) => { rawMax = Math.max(rawMax, surfaceDeviationMm(mode, sizes, pt)); });
+          const analyticProject = (worldPt) => {
+            const local = V.Scene3D.Slices.inverseObjectTransform(worldPt, IDT);
+            const corrected = V.Scene3D.Slices.analyticProjectLocal(mode, sizes, local, localPlaneNormal);
+            return V.Scene3D.Scene.applyObjectTransform(corrected, IDT);
+          };
+          const refined = V.Scene3D.Slices.refineRing(ring, { analyticProject, maxAngleDeg: 8 });
+          refined.forEach((worldPt) => {
+            const local = V.Scene3D.Slices.inverseObjectTransform(worldPt, IDT);
+            refinedMax = Math.max(refinedMax, surfaceDeviationMm(mode, sizes, local));
+          });
+        });
+      });
+      return { rawMax, refinedMax, ringsChecked };
+    };
+
+    test.each([
+      ['cone', { sx: 20, sy: 24, sz: 20 }, 18, 22],
+      ['cylinder', { sx: 20, sy: 24, sz: 20 }, 16, 20],
+      ['torus', { sx: 24, sy: 20, sz: 20 }, 18, 22],
+    ])('%s: the Newton-refactored projector lands within 0.1mm of the true surface, no worse than the raw ring', (mode, sizes, detail, sliceCount) => {
+      const { rawMax, refinedMax, ringsChecked } = worstDeviationFor(mode, sizes, detail, sliceCount);
+      expect(ringsChecked).toBeGreaterThan(5); // the sweep actually ran
+      expect(refinedMax).toBeLessThan(0.1); // matches the sphere bar already accepted for W-27b
+      expect(refinedMax).toBeLessThanOrEqual(rawMax + 1e-6); // refining never makes it LESS accurate
+    });
+  });
 });
