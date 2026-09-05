@@ -159,3 +159,132 @@ describe('Scene3D originSpiral tonal spacing + wrap', () => {
     expect([...weights][0]).toBe(1);
   }, 60000);
 });
+
+/*
+ * originSpiral RESPECTS THE PLOT FLOOR ON TORUS AND CONE (F-10).
+ *
+ * `lawSpiral` walks a ring radius outward by a screen-space pitch,
+ * `wrapPitch(pitchFor(I), nz)`, which folds the pitch tighter as the walk
+ * rides the limb (`nz` -> 0). On a sphere that foreshortened band is a thin
+ * rim; on a torus (the whole inner rim) and a cone (the entire lateral face
+ * rides a low, near-uniform `nz`) the SAME fold compounds with an
+ * already-sub-floor `pitchFor` dark-tone pitch — deliberate everywhere in
+ * this file, see `areaFor`'s own A_DARK comment, and the source of this
+ * file's tonal contrast — and drives the realised ring-to-ring gap under
+ * HALF a pen width: turns crossing under the pen, which reads as solid
+ * white banding and moire. Measured pre-fix (this test's own harness, the
+ * `__MONO_TRACE` / `SF.buildObject` technique `scene3d-mono-substrate.test.js`
+ * uses to read the law's own published context): torus 518/4246 (12.2%) of
+ * on-surface ring-to-ring gaps under 0.5 pen, cone 439/6344 (6.9%), against
+ * sphere's 815/31257 (2.6%) under the same scene.
+ *
+ * THE FIX floors the FOLDED pitch at half a pen width — well below the full
+ * plot floor (`C.FLOOR`, 2.2 pen) so it clips only the samples already past
+ * the point of visibly crossing, not `pitchFor`'s own deliberate sub-floor
+ * dark end. Switching the law's base pitch to `pitchLegible` (the full
+ * floor) instead was tried first and REJECTED: it collapsed the shadow/lit
+ * density ratio from ~1.5 to 1.05 (below the 1.2 bar above) and the
+ * rim/core wrap ratio from 1.26 to 1.01 (below `scene3d-mono-wrap-
+ * foreshorten.test.js`'s 1.05 bar) — the deliberate tonal contrast IS the
+ * sub-floor headroom, and a blanket floor spends it everywhere, not just
+ * where it is actually crossing.
+ *
+ * NOT byte-identical on the sphere: the sphere already crossed the same
+ * half-pen line in 2.6% of samples (above), so the same clamp touches those
+ * too — but only those, and both existing tonal/wrap tests above still pass
+ * with their original margins (verified), so the sphere's tonal read is
+ * unaffected in the sense this file's other tests exist to catch.
+ */
+describe('Scene3D originSpiral respects the plot floor on torus / cone (F-10)', () => {
+  let runtime; let win; let V; let algo2; let defaults2; let SF;
+  const optsFor = {};
+
+  const SIZES = {
+    sphere: { sx: 30, sy: 30, sz: 30, detail: 24 },
+    torus: { sx: 34, sy: 9, sz: 9, detail: 24 },
+    cone: { sx: 20, sy: 22, sz: 20, detail: 24 },
+  };
+  const SUN2 = { id: 'sun', type: 'directional', azimuth: 200, elevation: 55, castShadows: false };
+  const BOUNDS2 = { width: 320, height: 220, m: 20, dW: 280, dH: 180, penWidth: 0.3 };
+
+  // Identical technique to `scene3d-mono-substrate.test.js`'s `captureOpts`:
+  // wrap `SF.buildObject` during one real `algo.generate` pass to recover the
+  // REAL opts bag `scene3d.js` builds for this primitive, so the fold/pitch
+  // math runs on the exact same substrate the app itself feeds it.
+  const captureOpts = (primitive) => {
+    const p = clone(defaults2);
+    p.objects = [{
+      id: 'o1',
+      name: 's',
+      primitive,
+      params: clone(SIZES[primitive]),
+      transform: {
+        x: 0, y: 50, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1,
+      },
+      visibility: 'solid',
+    }];
+    p.ground = { enabled: false };
+    p.camera = {
+      projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
+    };
+    p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: 60 } }, byObject: {}, byFace: {} };
+    p.tone = { ...clone(defaults2).tone, enabled: true };
+    p.lights = [SUN2];
+
+    const calls = [];
+    const orig = SF.buildObject;
+    SF.buildObject = function wrapped(o) {
+      const result = orig.call(this, o);
+      calls.push({ opts: o, result });
+      return result;
+    };
+    try { algo2.generate(p, null, null, BOUNDS2); } finally { SF.buildObject = orig; }
+    let best = calls[0];
+    calls.forEach((c) => { if ((c.result || []).length > (best.result || []).length) best = c; });
+    return best && best.opts;
+  };
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    win = runtime.window;
+    V = win.Vectura;
+    algo2 = V.AlgorithmRegistry.scene3d;
+    defaults2 = V.ALGO_DEFAULTS.scene3d;
+    SF = V.Scene3D.SurfaceFill;
+    Object.keys(SIZES).forEach((k) => { optsFor[k] = captureOpts(k); });
+  }, 120000);
+  afterAll(() => runtime.cleanup());
+
+  // The ground truth: `lawSpiral`'s own per-angle, ring-to-ring radial gap in
+  // screen mm (on-surface only), published on the law's own context exactly
+  // as "the spacing between turn K and turn K+1 AT A FIXED ANGLE theta" this
+  // file's header derives it — not a black-box reconstruction from output
+  // geometry, which the seam/silhouette clipping would make unreliable.
+  const gapStats = (primitive) => {
+    win.__MONO_TRACE = 1;
+    win.__MONO_CTX = null;
+    SF.buildObject({ ...optsFor[primitive], toneLaw: 'originSpiral' });
+    const C = win.__MONO_CTX;
+    expect(C, `no mono context published for ${primitive} — the law did not dispatch`).toBeTruthy();
+    const gaps = C.__spiralGaps || [];
+    expect(gaps.length, `${primitive}: no ring-to-ring gaps recorded`).toBeGreaterThan(200);
+    const pen = C.PEN;
+    let below05 = 0;
+    gaps.forEach((g) => { if (g < 0.5 * pen) below05 += 1; });
+    return {
+      n: gaps.length, below05, frac: below05 / gaps.length,
+    };
+  };
+
+  test('torus: ring-to-ring gap never crosses under half a pen width', () => {
+    const { frac, n, below05 } = gapStats('torus');
+    // Pre-fix measured 518/4246 = 12.2%. Post-fix 0/n.
+    expect(frac, `${below05}/${n} (${(frac * 100).toFixed(1)}%) gaps under 0.5x pen on torus`).toBeLessThanOrEqual(0.01);
+  }, 120000);
+
+  test('cone: ring-to-ring gap never crosses under half a pen width', () => {
+    const { frac, n, below05 } = gapStats('cone');
+    // Pre-fix measured 439/6344 = 6.9%. Post-fix 0/n.
+    expect(frac, `${below05}/${n} (${(frac * 100).toFixed(1)}%) gaps under 0.5x pen on cone`).toBeLessThanOrEqual(0.01);
+  }, 120000);
+});

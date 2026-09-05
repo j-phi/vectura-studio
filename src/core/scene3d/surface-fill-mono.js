@@ -2558,7 +2558,34 @@
         // bounded fraction of `p0` (never below `p0 * WRAP_FLOOR`), so this
         // does not reintroduce a legibility floor `pitchFor` deliberately
         // does not have -- the law still reaches genuine black.
-        const p = wrapPitch(p0, s ? s.nz : 1);
+        //
+        // THE PLOT FLOOR (F-10). `pitchFor` is entitled to flood past the
+        // FULL plot floor at its dark end -- deliberate, everywhere in this
+        // file (areaFor's own A_DARK comment) -- and the tonal-range test's
+        // 1.5x shadow/lit contrast depends on that headroom, so this does
+        // NOT switch to `pitchLegible`. What is not deliberate is `wrapPitch`
+        // COMPOUNDING an already sub-floor `p0` with the limb fold on a body
+        // whose foreshortened band is wide rather than a thin rim (a cone's
+        // whole lateral face, a torus's inner rim): pre-fix, measured 12.2%
+        // (torus) / 6.9% (cone) of on-surface ring-to-ring gaps under HALF a
+        // pen width -- turns crossing under the pen, moire/solid banding --
+        // against 2.6% on the sphere, where the same math never compounds
+        // that hard. `HALF_PEN` is a hard floor under the fold ONLY, well
+        // below the plot floor itself, so it clips exclusively the samples
+        // already past the point of visibly crossing and leaves every other
+        // sample -- sphere's included -- exactly as `wrapPitch` computed it.
+        const HALF_PEN = 0.5 * C.PEN;
+        const p = Math.max(HALF_PEN, wrapPitch(p0, s ? s.nz : 1));
+        // TEST-ONLY (opt-in via the same `__MONO_TRACE` flag `emit()` already
+        // gates `__MONO_CTX` behind): the per-angle, ring-to-ring radial gap
+        // in screen mm, on-surface only. This is exactly "the spacing between
+        // turn K and turn K+1 AT A FIXED ANGLE theta" this law's own header
+        // derives — the ground truth a harness needs to catch it collapsing
+        // below the plot floor without reimplementing this loop.
+        if (s && globalScope.__MONO_TRACE) {
+          if (!C.__spiralGaps) C.__spiralGaps = [];
+          C.__spiralGaps.push(p);
+        }
         const r1 = r0 + p;
         next[i] = r1;
         if (r1 < rMax) anyGrowing = true;
