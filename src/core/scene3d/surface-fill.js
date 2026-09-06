@@ -4616,6 +4616,54 @@
     // unrelated fix this lane must not touch.
     const ladderWantedPitch = (I) => masterPitch / clamp(ladderCov(I), LADDER_COV_MIN, 1);
 
+    // ── W-26b-1 — THE CROSSING FAMILY'S OWN SHARE ────────────────────────────
+    // `crosshatch`'s second family used to call `ladderWantedPitch` on the
+    // SAME `I`, i.e. independently chase the FULL `ladderCov(I)` target a
+    // lone family (hatch/contour) chases — two crossed families each at
+    // coverage c combine (they cross, so their clear areas multiply) to
+    // `1-(1-c)^2`, which MEASURED saturated a cylinder at Density 220 to
+    // 0.906 silhouette ink coverage (a solid block: +89.9% ink over the
+    // pre-W-26 tree, where the ladder's own alternation defect had been
+    // accidentally thinning the compounding) while the single-family
+    // controls (contour, hatch) only rose 17-19%. Family A
+    // (`ladderWantedPitch` above) is UNTOUCHED by this — the fix lives
+    // entirely in what the SECOND family asks for.
+    //
+    // `share` is the crossing family's fraction of family A's own coverage,
+    // scaled by `crossDensityRatio` (`crossRatio`, already clamped 0.25-2 by
+    // the caller) SQUARED, so the dial keeps its documented sense (ratio 2,
+    // "family B crossDensityRatio SPACING wider", roughly quarters the
+    // share; ratio 0.25 roughly hexadecuples it, i.e. saturates to full
+    // family-A coverage) while the BASE at the shipped default (ratio 1) is
+    // deliberately well under an even 50/50 split — MEASURED: at 50/50 the
+    // crossing family's own step ceiling (`dfMax`, widened below) still could
+    // not separate it enough from family A to restore the pre-W-26
+    // `crossDensityRatio` count spread (2.2x); only a base this far under
+    // 50/50 gets a genuinely sparser second family AND keeps combined
+    // coverage off the saturation this fix exists to remove. This is the
+    // same shape `scene3d-plot-safety.test.js`'s own `composed()` spec
+    // states for N crossed families sharing one plot-safety budget — clear
+    // fractions multiply, so a SHARE, not a second full target, is what
+    // keeps the combined result from compounding past `ladderCov(I)`. It is
+    // also self-limiting exactly where the compounding used to blow up: as
+    // `cA -> 1` (family A already at full darkness) `cB`'s CONTRIBUTION to
+    // the combined coverage vanishes on its own (there is no headroom left
+    // to add to), so this needs no separate clamp for the darkest band.
+    const CROSS_SHARE_BASE = 0.1;
+    // `crossRatio` -> the crossing family's fixed SHARE multiplier (not a
+    // function of `I`; used both to scale coverage below AND, in the walk,
+    // to widen the step ceiling that shared coverage target needs to reach
+    // — see `dfMax`'s own W-26b-1 note).
+    const crossShareOf = (crossRatio) => {
+      const r = clamp(finite(crossRatio, 1), 0.25, 2);
+      return CROSS_SHARE_BASE / (r * r);
+    };
+    const ladderCrossWantedPitch = (I, crossRatio) => {
+      const cA = ladderCov(I);
+      const cB = clamp(cA * crossShareOf(crossRatio), LADDER_COV_MIN, 1);
+      return masterPitch / cB;
+    };
+
     // 'contFieldQuant' — the control. The SAME field, with the gap allowed only
     // CF_LEVELS distinct values. Quantised in pitch (which is what the eye
     // measures), not in coverage.
@@ -9468,7 +9516,11 @@
     // dropped ruling. Nothing is placed outside the parameter domain and every
     // sample is still back-face culled and HLR-clipped by `emitLine`, so nothing
     // can land outside the silhouette either.
-    const emitContFamily = (kind, angleDeg, count, back) => {
+    // `crossShare` (W-26b-1): non-null only for the crosshatch second-family
+    // call — the `crossDensityRatio` value to derive `ladderCrossWantedPitch`
+    // from. Every other caller (contour, hatch, crosshatch's OWN family A,
+    // every `contField*` law) omits it and is byte-identical to before.
+    const emitContFamily = (kind, angleDeg, count, back, crossShare) => {
       const wantFront = !back;
       const fam = (kind === 'angle') ? angleFamily(angleDeg) : null;
       const span = fam ? fam.span : 1;
@@ -9651,7 +9703,23 @@
       // bottom of the object. Six nominal spacings is wide enough for the
       // sparse end (6 x the master pitch is past the O6 bar) and far too narrow
       // to swallow a form.
-      const dfMax = 6 / Math.max(6, count);
+      //
+      // W-26b-1: the crosshatch SECOND family asks `ladderCrossWantedPitch`
+      // for a SHARE of family A's coverage (wider `want`, on purpose — see
+      // that function). Left alone, this ceiling — built from the SAME
+      // `count` family A's own call sees — clamped the wider `want` right
+      // back down to family A's own step size, so the coverage-share fix
+      // had NO effect at `crossDensityRatio` 1 (measured: the ratio-0.25-
+      // vs-ratio-1 fill-count spread stayed 1.6x, not the required ~2x, no
+      // matter how far the share was cut). `dfMaxMul` widens the ceiling by
+      // the SAME reciprocal share, capped so a genuinely sparse crossing
+      // family still cannot swallow the whole form the way an unbounded
+      // widening could.
+      const CROSS_DFMAX_BOOST_CAP = 20;
+      const dfMaxMul = (crossShare != null && isEvenLadder())
+        ? clamp(1 / Math.max(1e-6, crossShareOf(crossShare)), 1, CROSS_DFMAX_BOOST_CAP)
+        : 1;
+      const dfMax = (6 * dfMaxMul) / Math.max(6, count);
       const creep = 1 / Math.max(8, count * 3);
       const walk = (fld) => {
         const placed = [];
@@ -9667,8 +9735,14 @@
           // `ladderWantedPitch` (the master-grid pitch each law always
           // computed, asked for directly) rather than `cfWantedPitch`'s own
           // area-based field — the tone stays each law's own, only the
-          // placement is shared.
-          let want = isEvenLadder() ? ladderWantedPitch(pb.I) : cfWantedPitch(pb.I);
+          // placement is shared. W-26b-1: the crosshatch SECOND family
+          // (`crossShare` non-null) reads its own `ladderCrossWantedPitch`
+          // instead — see that function's comment for why.
+          let want = isEvenLadder()
+            ? (crossShare != null
+              ? ladderCrossWantedPitch(pb.I, crossShare)
+              : ladderWantedPitch(pb.I))
+            : cfWantedPitch(pb.I);
           // 'contFieldMeasured' — the global response inversion, from pass 1.
           if (TONE_ALGO === 'contFieldMeasured' && cfLut) {
             want = clamp(inkWidth() / Math.max(1e-6,
@@ -10668,9 +10742,12 @@
         if (mapper === 'crosshatch') {
           const aB = hatchAngle + crossDelta;
           const a180 = (((aB % 180) + 180) % 180);
-          if (onMeridianAxis && a180 === 0) emitContFamily('b', 0, Math.max(2, Math.round(count / crossRatio)), back);
-          else if (onMeridianAxis && a180 === 90) emitContFamily('a', 0, Math.max(2, Math.round(count / crossRatio)), back);
-          else emitContFamily('angle', aB, Math.max(2, Math.round(count / crossRatio)), back);
+          // W-26b-1: the crossing family passes `crossRatio` through as its
+          // `crossShare` so the walk derives its OWN (reduced) coverage
+          // target from family A's — see `ladderCrossWantedPitch`.
+          if (onMeridianAxis && a180 === 0) emitContFamily('b', 0, Math.max(2, Math.round(count / crossRatio)), back, crossRatio);
+          else if (onMeridianAxis && a180 === 90) emitContFamily('a', 0, Math.max(2, Math.round(count / crossRatio)), back, crossRatio);
+          else emitContFamily('angle', aB, Math.max(2, Math.round(count / crossRatio)), back, crossRatio);
         }
       } else if (flowMapper) {
         const fBase = finite(opts.fillAngle, 0);
