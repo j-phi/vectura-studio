@@ -880,10 +880,6 @@
   "bundleSubNib",
   "bundleLozenge",
   "contFieldSigmoid",
-  "contFieldTouch",
-  "contFieldFore",
-  "contFieldSurface",
-  "contFieldQuant",
   "penInterleave",
   "penStipple",
   "penReserve",
@@ -963,6 +959,30 @@
     "into": "bundleCount",
     "params": {
       "bundleMode": "handoff"
+    }
+  },
+  "contFieldFore": {
+    "into": "contFieldSigmoid",
+    "params": {
+      "fieldMetric": "foreshortened"
+    }
+  },
+  "contFieldSurface": {
+    "into": "contFieldSigmoid",
+    "params": {
+      "fieldMetric": "surface"
+    }
+  },
+  "contFieldQuant": {
+    "into": "contFieldSigmoid",
+    "params": {
+      "fieldMetric": "quantised"
+    }
+  },
+  "contFieldTouch": {
+    "into": "contFieldSigmoid",
+    "params": {
+      "fieldFloor": "touch"
     }
   }
 };
@@ -1064,6 +1084,52 @@
           "value": "handoff",
           "label": "Region handoff",
           "law": "bundleHandoff"
+        }
+      ]
+    }
+  ],
+  "contFieldSigmoid": [
+    {
+      "key": "fieldMetric",
+      "label": "Field metric",
+      "default": "screen",
+      "options": [
+        {
+          "value": "screen",
+          "label": "Screen metric",
+          "law": "contFieldSigmoid"
+        },
+        {
+          "value": "foreshortened",
+          "label": "Foreshortening-corrected",
+          "law": "contFieldFore"
+        },
+        {
+          "value": "surface",
+          "label": "Surface metric",
+          "law": "contFieldSurface"
+        },
+        {
+          "value": "quantised",
+          "label": "Quantised gaps",
+          "law": "contFieldQuant"
+        }
+      ]
+    },
+    {
+      "key": "fieldFloor",
+      "label": "Field floor",
+      "default": "plot",
+      "options": [
+        {
+          "value": "plot",
+          "label": "Plot floor",
+          "law": "contFieldSigmoid"
+        },
+        {
+          "value": "touch",
+          "label": "Ink-width floor",
+          "law": "contFieldTouch"
         }
       ]
     }

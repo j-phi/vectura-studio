@@ -701,3 +701,229 @@ describe('Scene3D tone-law collapse — U4 caveat-visibility gap (bundleDither, 
     expect(survivorNote.caveat).toBe(''); // bundleCount's OWN caveat is null/empty
   });
 });
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════
+ * U5 — C-05 · survivor `contFieldSigmoid` · params `fieldMetric` + `fieldFloor`
+ * (the ONE two-descriptor survivor — plan §1 C-05 / §2.2 rule 4.)
+ *
+ * Folded: contFieldFore (fieldMetric:'foreshortened'), contFieldSurface
+ * ('surface'), contFieldQuant ('quantised') — all with fieldFloor at its
+ * own default ('plot'); contFieldTouch (fieldFloor:'touch', fieldMetric at
+ * its own default 'screen'). Bare option: fieldMetric:'screen' AND
+ * fieldFloor:'plot' -> contFieldSigmoid.
+ *
+ * HONESTY CORRECTION (mandatory per this unit's brief): the audit's own
+ * "byte-identical density-inert rows; Fore/Surface/Quant/Sigmoid visually
+ * identical" wording (findings.json C-05) is FALSE at the render level.
+ * *Density*-inert is correct (low=med=max reads the same at every density);
+ * *law*-identical is NOT — measured ink on torus+hatch+med runs 1459.0 mm
+ * (contFieldSigmoid) to 2202.0 mm (contFieldSurface), a 51% spread on the
+ * SAME cell. The dHash-based audit tooling agrees they READ ALIKE at plot
+ * scale (a picker-level near-duplicate, which is what justifies the
+ * collapse), but "byte-identical" specifically overstates that as pixel/
+ * path identity, which this unit's own byte-identity test below disproves
+ * for the RAW ids (SF.buildObject('contFieldSigmoid') !== SF.buildObject
+ * ('contFieldSurface')) even while proving the COLLAPSE mechanism itself is
+ * lossless (survivor+params reaches the exact same output AS THE FOLDED ID
+ * ALWAYS PRODUCED, ink and all — the collapse does not average or
+ * normalize the four pictures, it just changes how a user reaches each
+ * one). worklist.json/findings.json's wording fix is owned by U8 per the
+ * plan's docs contract (§6); flagged here, not fixed in this file.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+describe('Scene3D tone-law collapse — U5 (C-05, contFieldSigmoid/fieldMetric+fieldFloor)', () => {
+  let runtime; let V; let algo; let defaults; let SF; let Params; let hatchOpts;
+  const SURVIVOR = 'contFieldSigmoid';
+  // { id, params } — the exact bag that reaches each folded id.
+  const FOLDED = [
+    { id: 'contFieldFore', params: { fieldMetric: 'foreshortened' } },
+    { id: 'contFieldSurface', params: { fieldMetric: 'surface' } },
+    { id: 'contFieldQuant', params: { fieldMetric: 'quantised' } },
+    { id: 'contFieldTouch', params: { fieldFloor: 'touch' } },
+  ];
+
+  const captureOpts = (mapper) => {
+    const p = clone(defaults);
+    p.objects = [{
+      id: 'o1', name: 's', primitive: 'sphere', params: { radius: 40, detail: 20 },
+      transform: { x: 0, y: 50, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+    }];
+    p.ground = { enabled: false };
+    p.camera = {
+      projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
+    };
+    p.styleTable = { scene: { penId: null, mapper, params: { fillAngle: 45, fillDensity: 60 } }, byObject: {}, byFace: {} };
+    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.lights = [SUN];
+    const calls = [];
+    const orig = SF.buildObject;
+    SF.buildObject = function wrapped(opts) {
+      const result = orig.call(this, opts);
+      calls.push({ opts, result });
+      return result;
+    };
+    try {
+      algo.generate(p, null, null, BOUNDS);
+    } finally {
+      SF.buildObject = orig;
+    }
+    let best = calls[0];
+    for (const c of calls) {
+      if ((c.result || []).length > (best.result || []).length) best = c;
+    }
+    return best.opts;
+  };
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    algo = V.AlgorithmRegistry.scene3d;
+    defaults = V.ALGO_DEFAULTS.scene3d;
+    SF = V.Scene3D.SurfaceFill;
+    Params = V.Scene3D.Params;
+    hatchOpts = captureOpts('hatch');
+  }, SLOW);
+  afterAll(() => runtime.cleanup());
+
+  const roster = () => runtime.window.Vectura.SCENE3D_TONE_LAWS;
+
+  test('the 4 folded ids leave PICKER_IDS but stay in IDS; the survivor stays offered', () => {
+    const R = roster();
+    expect(R.IDS.length).toBe(48);
+    FOLDED.forEach(({ id }) => {
+      expect(R.IDS.indexOf(id)).not.toBe(-1);
+      expect(R.PICKER_IDS.indexOf(id)).toBe(-1);
+    });
+    expect(R.ALIASES[SURVIVOR]).toBeUndefined();
+    expect(R.PICKER_IDS.indexOf(SURVIVOR)).not.toBe(-1);
+  });
+
+  test('ALIASES: every folded id maps into the survivor with EXACTLY the one param that differs from default', () => {
+    const R = roster();
+    FOLDED.forEach(({ id, params }) => {
+      expect(R.ALIASES[id]).toEqual({ into: SURVIVOR, params });
+    });
+    // Exactly 2 descriptors, as the plan specifies (fieldMetric, fieldFloor).
+    expect(R.STYLE_PARAMS[SURVIVOR].length).toBe(2);
+  });
+
+  test('byte-identity: survivor+params renders identically to the legacy folded id, for all 4', () => {
+    FOLDED.forEach(({ id, params }) => {
+      const resolved = Params.resolveToneLaw({ toneLaw: SURVIVOR, ...params });
+      expect(resolved).toBe(id);
+      const viaSurvivor = SF.buildObject({ ...hatchOpts, toneLaw: resolved });
+      const viaLegacy = SF.buildObject({ ...hatchOpts, toneLaw: id });
+      expect(JSON.stringify(viaSurvivor)).toBe(JSON.stringify(viaLegacy));
+    });
+    // The bare survivor (both descriptors at default) is untouched.
+    expect(Params.resolveToneLaw({ toneLaw: SURVIVOR })).toBe(SURVIVOR);
+    expect(Params.resolveToneLaw({ toneLaw: SURVIVOR, fieldMetric: 'screen', fieldFloor: 'plot' })).toBe(SURVIVOR);
+  });
+
+  test('HONESTY CHECK: the 4 folded ids genuinely differ from the survivor and from each other at the render level (not byte-identical, despite reading alike)', () => {
+    const outs = [SURVIVOR, ...FOLDED.map((f) => f.id)].map(
+      (id) => JSON.stringify(SF.buildObject({ ...hatchOpts, toneLaw: id })),
+    );
+    const unique = new Set(outs);
+    expect(unique.size).toBe(outs.length); // all 5 are distinct renders
+  });
+
+  test('rule 4 — an UNREPRESENTABLE combination (both descriptors non-default at once) deterministically falls back to the bare survivor, never a throw, and is genuinely a THIRD picture (not silently equal to either single-param alias)', () => {
+    const resolved = Params.resolveToneLaw({ toneLaw: SURVIVOR, fieldMetric: 'foreshortened', fieldFloor: 'touch' });
+    expect(resolved).toBe(SURVIVOR); // falls back to the survivor's own bare id
+    const fallbackOut = JSON.stringify(SF.buildObject({ ...hatchOpts, toneLaw: resolved }));
+    const bareOut = JSON.stringify(SF.buildObject({ ...hatchOpts, toneLaw: SURVIVOR }));
+    expect(fallbackOut).toBe(bareOut); // identical to the bare survivor, exactly as rule 4 specifies
+    // Also try the general case: 3+ arbitrary non-default pairs, never throws.
+    expect(() => Params.resolveToneLaw({ toneLaw: SURVIVOR, fieldMetric: 'surface', fieldFloor: 'touch' })).not.toThrow();
+    expect(Params.resolveToneLaw({ toneLaw: SURVIVOR, fieldMetric: 'surface', fieldFloor: 'touch' })).toBe(SURVIVOR);
+  });
+
+  test('mark class and Stroke Fill eligibility are constant across the cluster (§2.4 invariant)', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const SFS = runtime.window.Vectura.STROKE_FILL_STYLES;
+    FOLDED.forEach(({ id }) => {
+      expect(FS.markClass(id)).toBe(FS.markClass(SURVIVOR));
+      expect(SFS.RIBBON_LAWS.indexOf(id) !== -1).toBe(SFS.RIBBON_LAWS.indexOf(SURVIVOR) !== -1);
+      expect(SFS.PEN_LAWS.indexOf(id) !== -1).toBe(SFS.PEN_LAWS.indexOf(SURVIVOR) !== -1);
+    });
+  });
+
+  test('migration: a style bag naming a folded id normalizes to survivor + the ONE right param, byte-identical, never clobbering an explicit sibling', () => {
+    FOLDED.forEach(({ id, params }) => {
+      const out = Params.normalizeStyle({ mapper: 'hatch', params: { toneLaw: id } });
+      expect(out.params.toneLaw).toBe(SURVIVOR);
+      Object.keys(params).forEach((k) => expect(out.params[k]).toBe(params[k]));
+      const viaMigrated = SF.buildObject({
+        ...hatchOpts,
+        toneLaw: Params.resolveToneLaw({ toneLaw: out.params.toneLaw, fieldMetric: out.params.fieldMetric, fieldFloor: out.params.fieldFloor }),
+      });
+      const viaLegacy = SF.buildObject({ ...hatchOpts, toneLaw: id });
+      expect(JSON.stringify(viaMigrated)).toBe(JSON.stringify(viaLegacy));
+    });
+    // An explicit sibling is never overwritten — pick contFieldFore's own
+    // migration but assert an explicitly-set fieldMetric:'screen' survives.
+    const out2 = Params.normalizeStyle({
+      mapper: 'hatch', params: { toneLaw: 'contFieldFore', fieldMetric: 'screen' },
+    });
+    expect(out2.params.toneLaw).toBe(SURVIVOR);
+    expect(out2.params.fieldMetric).toBe('screen');
+  });
+
+  test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id maps to the survivor, never warns', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      FOLDED.forEach(({ id }) => {
+        const shadow = Params.normalizeShadow({ shadowToneLaw: id });
+        expect(shadow.shadowToneLaw).toBe(SURVIVOR);
+      });
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test('picker round-trip: resolve()/entry() still answer for a folded id', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    FOLDED.forEach(({ id }) => {
+      expect(FS.resolve(id)).toBe(SURVIVOR);
+      expect(FS.entry(id)).toBeTruthy();
+    });
+  });
+
+  test('a saved .vectura naming a folded toneLaw resolves through the real engine (sanitizeSceneParams) unchanged in effect', () => {
+    const sanitized = Params.sanitizeSceneParams({
+      objects: [{ id: 'obj-1', primitive: 'sphere', params: { radius: 30 } }],
+      styleTable: {
+        scene: { mapper: 'hatch', params: {} },
+        byObject: { 'obj-1': { mapper: 'hatch', params: { toneLaw: 'contFieldTouch' } } },
+        byFace: {},
+      },
+    });
+    expect(sanitized.sceneVersion).toBe(4);
+    const migrated = sanitized.styleTable.byObject['obj-1'].params;
+    expect(migrated.toneLaw).toBe(SURVIVOR);
+    expect(migrated.fieldFloor).toBe('touch');
+  });
+});
+
+describe('Scene3D tone-law collapse — U5 caveat-visibility gap (contFieldTouch, LIBRARY-tier, has a real caveat)', () => {
+  let runtime;
+  beforeAll(async () => { runtime = await loadVecturaRuntime(); });
+  afterAll(() => runtime.cleanup());
+
+  test('BY_ID-direct lookups still show the caveat — the roster corpus is untouched', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const note = FS.note('contFieldTouch');
+    expect(note.caveat.length).toBeGreaterThan(0);
+    expect(note.caveat).toMatch(/floods/);
+  });
+
+  test('KNOWN GAP: the resolved-survivor id has no caveat of its own — same shape of gap as U4/bundleDither', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(FS.resolve('contFieldTouch')).toBe('contFieldSigmoid');
+    const survivorNote = FS.note('contFieldSigmoid');
+    expect(survivorNote.caveat).toBe('');
+  });
+});

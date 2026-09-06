@@ -365,14 +365,15 @@ describe('Fill Style — the shared mark-class config', () => {
       // The measured U12 audit baseline was 38 of 49 (onePenDown is a wave
       // law, dead on faceted); none/ladder/the 9 mono laws are the 11 that
       // remain reachable. ALIVE is unaffected by the fill-roster collapse
-      // (none of C-01..C-04's 9 folded ids so far is a mono law). DEAD
+      // (none of C-01..C-05's 13 folded ids so far is a mono law). DEAD
       // moves as the picker's flat list shrinks (W-22-24-W-18-plan.md §5
       // "…:267-270" — re-measure and re-paste this number, do not assume,
       // at every unit that folds another id): U1 46 total - 11 alive = 35;
-      // U2 44 total - 11 = 33; U3 43 total - 11 = 32; U4 (C-04,
-      // bundleCount/bundleMode, 3 more folded) 40 total - 11 = 29.
+      // U2 44 total - 11 = 33; U3 43 total - 11 = 32; U4 40 total - 11 = 29;
+      // U5 (C-05, contFieldSigmoid/fieldMetric+fieldFloor, 4 more folded)
+      // 36 total - 11 = 25.
       expect(alive.length).toBe(11);
-      expect(dead.length).toBe(29);
+      expect(dead.length).toBe(25);
       // Group STRUCTURE (count, membership) is unaffected — only reachability.
       expect(g.length).toBe(F.groups('sphere').length);
     });

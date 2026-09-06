@@ -267,6 +267,37 @@ const COLLAPSE = {
       { value: 'handoff', label: 'Region handoff', law: 'bundleHandoff' },
     ],
   }],
+  // C-05 (U5, W-24) — the one TWO-descriptor survivor (plan §1 C-05 / §2.2
+  // rule 4). `fieldMetric` selects among screen/foreshortened/surface/
+  // quantised; `fieldFloor` selects the ink-width floor. Only ONE
+  // (fieldMetric:'screen', fieldFloor:'touch') combination has a real
+  // internal law (contFieldTouch); every other non-default pairing of the
+  // two is UNREPRESENTABLE and `resolveToneLaw` falls back to the bare
+  // survivor for it (rule 4 — "more than one active descriptor" — deterministic,
+  // never a throw). The plan's own honesty flag: the audit calls these five
+  // "byte-identical", which is FALSE — ink runs 1459.0 (contFieldSigmoid) to
+  // 2202.0 (contFieldSurface) mm on torus+hatch+med, a 51% spread; they are
+  // a picker-level near-duplicate (dHash-close at plot scale), not a
+  // rendering-level duplicate — corrected in the docs contract (U8's job,
+  // flagged here too).
+  contFieldSigmoid: [
+    {
+      key: 'fieldMetric', label: 'Field metric', default: 'screen',
+      options: [
+        { value: 'screen', label: 'Screen metric', law: 'contFieldSigmoid' },
+        { value: 'foreshortened', label: 'Foreshortening-corrected', law: 'contFieldFore' },
+        { value: 'surface', label: 'Surface metric', law: 'contFieldSurface' },
+        { value: 'quantised', label: 'Quantised gaps', law: 'contFieldQuant' },
+      ],
+    },
+    {
+      key: 'fieldFloor', label: 'Field floor', default: 'plot',
+      options: [
+        { value: 'plot', label: 'Plot floor', law: 'contFieldSigmoid' },
+        { value: 'touch', label: 'Ink-width floor', law: 'contFieldTouch' },
+      ],
+    },
+  ],
 };
 
 // ── 5c. Derive ALIASES + PICKER_IDS + STYLE_PARAMS from COLLAPSE ───────────

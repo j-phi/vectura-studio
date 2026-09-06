@@ -108,14 +108,17 @@ describe('Vectura.SCENE3D_TONE_LAWS — the generated tone-law config module', (
   // above stay untouched forever — this is a picker-tier cut, not an
   // engine-vocabulary change.
   test('PICKER_IDS/ALIASES: cumulative collapse state (bumped by every unit, U1 through U8) — every alias resolvable', () => {
-    // Current state after U4 (C-04, bundleCount/bundleMode): 39 survivors,
-    // 9 aliases (U1's 3 + U2's 2 + U3's 1 + U4's 3). Bump this pair (and
-    // the id list below) at U5-U8; paste the before/after in the unit's
-    // commit body.
-    const EXPECTED_PICKER_IDS_LENGTH = 39;
+    // Current state after U5 (C-05, contFieldSigmoid/fieldMetric+fieldFloor,
+    // the one two-descriptor survivor): 35 survivors, 13 aliases (U1's 3 +
+    // U2's 2 + U3's 1 + U4's 3 + U5's 4). This is the end of the U1-U5
+    // chain (Phase 1 continues with U6-U8 in a later session). Bump this
+    // pair (and the id list below) at U6-U8; paste the before/after in the
+    // unit's commit body.
+    const EXPECTED_PICKER_IDS_LENGTH = 35;
     const EXPECTED_ALIAS_IDS = [
       'fineLadder', 'phaseFineLadder', 'perceptualRamp', 'whiteBand', 'nibAngle', 'weightSmoothstep',
-      'bundleEased', 'bundleDither', 'bundleHandoff',
+      'bundleEased', 'bundleDither', 'bundleHandoff', 'contFieldFore', 'contFieldSurface',
+      'contFieldQuant', 'contFieldTouch',
     ];
 
     expect(Array.isArray(LAWS.PICKER_IDS)).toBe(true);
