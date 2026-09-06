@@ -9332,7 +9332,37 @@
       const probe = (frac) => {
         const at = lineAt(clamp(frac, 0, 1));
         if (!at) return null;
-        const st = Math.max(8, Math.round(at.steps || steps));
+        // W-26 FOLLOW-UP FIX (found by this unit's own guard sweep, not named in
+        // the brief): the probe's OWN numerical resolution — how finely it
+        // integrates `I` and `mmPerFrac` to DECIDE where a ruling lands — used to
+        // read the render-time `steps` (Style-tab Fidelity's target), even
+        // though this file's own contract for `fillFidelity` (see its
+        // declaration above) is "POINTS, not facets... They are orthogonal and
+        // neither reads the other." That was already true for the FINAL emitted
+        // line (`emitLineOnce`'s `nSteps` is independent), but not for THIS
+        // walk's placement math on an axis-aligned family (`at.steps` unset,
+        // so the fallback was bare `steps`). Invisible before W-26 because no
+        // `contField*` law was ever tested against `fillFidelity`; visible now
+        // because `ladder` — the committed DEFAULT tone law, now routed through
+        // this same engine — is. MEASURED on the failing guard (sphere+hatch+
+        // ladder+Density 50, this file's own default 'a' axis family):
+        // `at.steps` fallback of `steps` (fillFidelity-coupled) put the WALK's
+        // own `I`/`mmPerFrac` integration through as few as 6 samples at
+        // fillFidelity 0.3, coarse enough to occasionally place one extra/one
+        // fewer ruling than the identical-tone fillFidelity 2.5 run — flipping
+        // `scene3d-style-fill-lines.test.js`'s "Fidelity re-samples the chart"
+        // chord-length ordering (5064.5 vs 5134.1, fillFidelity has NO business
+        // moving which lines draw). Fallback changed to `baseSteps` — the
+        // fillFidelity-INDEPENDENT mesh-detail constant — so the walk's own
+        // placement math is now byte-identical across every `fillFidelity`
+        // value on an axis-aligned family; `emitLineOnce`'s own `nSteps` still
+        // reads live `steps`, so the FINAL rendered line's point density is
+        // untouched (the two tests that pin exactly that, "Fidelity changes
+        // POINTS per fill line" and the border-untouched pair, still pass).
+        // Angled/wrapped families (`angleFamily`'s `at.steps = steps * len`)
+        // keep their existing coupling — out of scope: no test exercises it and
+        // this fix does not touch that line.
+        const st = Math.max(8, Math.round(at.steps || baseSteps));
         const pts = [];
         let iSum = 0; let wSum = 0;
         let mmSum = 0; let mmW = 0;
