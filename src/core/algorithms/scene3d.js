@@ -343,24 +343,65 @@
     const key = (cx, cy) => `${cx},${cy}`;
     const buckets = new Map();
     return {
-      insert(x, y) {
+      // W-27c-0a iteration 4 — `level` (the slice PLANE INDEX this ink came
+      // from, 1..sliceCount) rides along with each inserted point. See
+      // `isNear`'s own comment for why.
+      insert(x, y, level) {
         const k = key(Math.floor(x / cell), Math.floor(y / cell));
         let arr = buckets.get(k);
         if (!arr) { arr = []; buckets.set(k, arr); }
-        arr.push({ x, y });
+        arr.push({ x, y, level });
       },
-      isNear(x, y) {
+      // W-27c-0a iteration 4 — re-scoping the crowding cull to genuine
+      // saddle/pole convergence (review-3 §6, STILL-OPEN.md line 169).
+      //
+      // Iteration 3's test ("is there ANY already-kept point within
+      // `radius`, from any earlier plane") fires just as readily on a
+      // single anomalous adjacent-level coincidence (two consecutive rings
+      // that merely happen to sit close in projection somewhere ordinary —
+      // exactly what stripped whole rings from the torus's flat, uncrowded
+      // lower band) as on a genuine pileup. The two are NOT told apart by
+      // "how far apart in level are the two closest rings" (a torus saddle
+      // and a sphere pole turn out to differ on that axis — see below) but
+      // by MULTIPLICITY: near a genuine critical point of the slicing
+      // height function (a saddle or a pole), ds/dh collapses toward zero,
+      // so a WHOLE RUN of consecutive levels — not just one pair — all sit
+      // within `radius` of each other at once, at the SAME screen location.
+      // An ordinary adjacent-level coincidence never gathers more than a
+      // couple of levels at one spot.
+      //
+      // `queryLevel`/`minDistinctLevels`: count the DISTINCT plane levels
+      // (excluding `queryLevel` itself — same-plane ink, e.g. a torus's
+      // inner+outer ring at one level, is a different phenomenon) already
+      // inked within `radius` of (x,y); "near" only when that count reaches
+      // `minDistinctLevels`. This is why a raw level-GAP test (matched point
+      // must be >= N levels away) does not serve both primitives: a torus
+      // saddle's two branches come from levels far apart in index (the
+      // classic figure-8 self-crossing), so a gap test catches it, but a
+      // sphere's pole crowding is the OPPOSITE signature — many
+      // IMMEDIATELY-adjacent levels bunching together as the latitude
+      // circle's radius shrinks toward zero (adjacent Δlevel spacing
+      // collapsing, not a jump to a distant level) — a gap test structurally
+      // excludes it (measured: sphere O2 was untouched at every gap value
+      // from 2 to 10). Counting DISTINCT levels within radius catches both:
+      // a torus saddle gathers many far-apart levels, a sphere pole gathers
+      // many near-together ones, but either way MANY distinct levels pile
+      // into one spot only near an actual critical point.
+      isNear(x, y, queryLevel, minDistinctLevels) {
         const cx = Math.floor(x / cell); const cy = Math.floor(y / cell);
+        const levels = new Set();
         for (let dx = -1; dx <= 1; dx++) {
           for (let dy = -1; dy <= 1; dy++) {
             const arr = buckets.get(key(cx + dx, cy + dy));
             if (!arr) continue;
             for (let i = 0; i < arr.length; i++) {
-              if (Math.hypot(arr[i].x - x, arr[i].y - y) < radius) return true;
+              const e = arr[i];
+              if (e.level === queryLevel) continue;
+              if (Math.hypot(e.x - x, e.y - y) < radius) levels.add(e.level);
             }
           }
         }
-        return false;
+        return levels.size >= minDistinctLevels;
       },
     };
   };
@@ -373,18 +414,32 @@
   // miss, not a reason to keep tuning past the point of diminishing, and
   // increasingly costly, returns.
   const CROWD_MIN_ARC_MULT = 3;
+  // W-27c-0a iteration 4 — the saddle/pole re-scope, keyed on how many
+  // DISTINCT slice levels pile ink into the same spot, rather than a
+  // per-point surface-tangency threshold (tried first this iteration — see
+  // docs/3d-audit/lane-reports/W-27c-0a-impl-4.md §1 for why it could not be
+  // tuned to separate the two on this rig) or a raw level-gap test (tried
+  // second — structurally excludes the sphere, whose pole crowding is
+  // adjacent-level, not far-level; see `makeCrowdGrid.isNear`'s own
+  // comment). Measured on the default torus/sphere rig: this is the value
+  // that cleanly separates "many levels piling up" (a saddle or a pole) from
+  // "one adjacent pair happens to be close" (the ordinary, everywhere-else
+  // case that must be left alone).
+  const CROWD_MIN_DISTINCT_LEVELS = 2;
   // Whole-ring decision: crowded if it contains a CONTIGUOUS stretch (index-
-  // adjacent points, each within `radius` of already-KEPT ink from an
-  // earlier plane) whose arc length reaches `minArc`. A single isolated
-  // near-sample contributes ~0 arc length (no adjacent near-sample to sum a
-  // segment against), so it never reaches `minArc` — only a SUSTAINED
-  // stretch does. No partial result — the caller either keeps every point
-  // of the ring (and lets clipping proceed normally) or drops every point
-  // (and skips clipping entirely); this function only decides which.
-  const isRunCrowded = (pts, grid, minArc) => {
+  // adjacent points, each within `radius` of already-KEPT ink from at least
+  // `CROWD_MIN_DISTINCT_LEVELS` DIFFERENT planes — see
+  // `makeCrowdGrid.isNear`) whose arc length reaches `minArc`. A single
+  // isolated near-sample contributes ~0 arc length (no adjacent near-sample
+  // to sum a segment against), so it never reaches `minArc` — only a
+  // SUSTAINED stretch does. No partial result — the caller either keeps
+  // every point of the ring (and lets clipping proceed normally) or drops
+  // every point (and skips clipping entirely); this function only decides
+  // which.
+  const isRunCrowded = (pts, grid, minArc, level, minDistinctLevels) => {
     let curLen = 0; let maxLen = 0; let prevNear = false;
     for (let i = 0; i < pts.length; i++) {
-      const near = grid.isNear(pts[i].x, pts[i].y);
+      const near = grid.isNear(pts[i].x, pts[i].y, level, minDistinctLevels);
       if (near) {
         if (prevNear) curLen += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
         if (curLen > maxLen) maxLen = curLen;
@@ -4431,7 +4486,7 @@
             const crowdMinArc = CROWD_MIN_ARC_MULT * penWidth;
             const crowdGrid = (smoothSurface && analyticProject)
               ? makeCrowdGrid(crowdRadius) : null;
-            byPlane.forEach((g) => {
+            byPlane.forEach((g, level) => {
               // Front rings: HLR-clipped (occluded/self-occluded) until the fixed
               // budget is spent, then raw — never dropped.
               linkPlane(g.front).forEach((worldPts) => {
@@ -4452,8 +4507,11 @@
                 // so any full-vs-draft difference is once again ONLY real
                 // HLR occlusion — 0(b)'s own invariant, untouched by this
                 // fix's mechanism.
-                if (crowdGrid && isRunCrowded(proj, crowdGrid, crowdMinArc)) return;
-                if (crowdGrid) proj.forEach((pt) => crowdGrid.insert(pt.x, pt.y));
+                // W-27c-0a iteration 4 — `level` (this ring's own slice
+                // plane index) re-scopes "crowded" to the saddle/pole zone
+                // only: see `makeCrowdGrid.isNear`'s own comment.
+                if (crowdGrid && isRunCrowded(proj, crowdGrid, crowdMinArc, level, CROWD_MIN_DISTINCT_LEVELS)) return;
+                if (crowdGrid) proj.forEach((pt) => crowdGrid.insert(pt.x, pt.y, level));
                 const meta = metaFor(proj);
                 if (draft || workUsed >= SLICE_CLIP_WORK) {
                   emitRuns([{ visible: true, pts: proj }], meta, hiddenTreatment, null, sliceTreat);
