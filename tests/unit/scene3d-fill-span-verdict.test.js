@@ -319,10 +319,36 @@ describe('Scene3D.SurfaceFill — one draw/skip verdict per continuous span', ()
     // ceiling) would likely close this without the `hatch` side effect; out
     // of scope for this unit (touches `emitContFamily`'s walk beyond pitch
     // source, per this lane's touch list).
-    [['hatch', 1.2], ['contour', 1.3]].forEach(([mapper, bar]) => {
+    //
+    // W-26b-3 (judge C3, BLOCKING) — both bars above are COINS, not floors.
+    // A drift sweep over 11 trivially-different scenes (detail/density/
+    // radius +-2, sun elevation +-2 deg, camera pitch +-2 deg), same fixture
+    // family, same rig: contour's 1.354 measured sits in a 1.282-1.518
+    // envelope that CROSSES the 1.3 bar at sun elevation 33 deg (2 degrees
+    // off this fixture's own 35); hatch's UNTOUCHED 1.2 bar sits inside its
+    // own 1.216-1.417 envelope too (1.3% headroom at camera pitch 28 deg).
+    // Neither bar could tell a real flattening from ordinary measurement
+    // noise. Judge's preferred alternative (a minimum sampling resolution
+    // near a chart pole in `emitContFamily`'s own walk, recovering contour
+    // above 1.8 and fixing hatch's loss too) is out of scope for this pass —
+    // it touches the walk's placement math beyond the pitch source this
+    // lane's touch list allows changing safely alongside W-26b-1/-2 in the
+    // same commit. Taking the judge's OTHER acceptable form instead: the
+    // FLOOR moves below the WHOLE measured drift envelope (still refusing
+    // the measured 1.04x "draw everything" variant the file names above),
+    // and the measured value is pinned separately with an explicit +-10%
+    // fingerprint band, so a drift-driven flip can no longer pass by
+    // accident while a real flattening still fails both halves.
+    [
+      ['hatch', 1.05, 1.11, 1.35],
+      ['contour', 1.15, 1.22, 1.49],
+    ].forEach(([mapper, floor, bandLo, bandHi]) => {
       const prof = inkRamp(emittedRuns(mapper), 5);
       prof.forEach((v) => expect(v).toBeGreaterThan(0));      // no bare band
-      expect(prof[prof.length - 1] / prof[0]).toBeGreaterThan(bar);
+      const ramp = prof[prof.length - 1] / prof[0];
+      expect(ramp).toBeGreaterThan(floor);
+      expect(ramp).toBeGreaterThanOrEqual(bandLo);
+      expect(ramp).toBeLessThanOrEqual(bandHi);
       // ...and it must be a RAMP, not a step: every bin at least as dense as the
       // one before it, within the rasterizer's own noise.
       for (let i = 1; i < prof.length; i++) expect(prof[i]).toBeGreaterThan(prof[i - 1] * 0.9);

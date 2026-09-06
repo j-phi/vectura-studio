@@ -332,5 +332,39 @@ describe('Scene3D.SurfaceFill — the ladder keeps EVENLY SPACED rulings', () =>
       expect(all.length).toBeGreaterThan(6);
       expect(Math.max(...all)).toBeGreaterThanOrEqual(Math.min(...all) * 2);
     });
+
+    // W-26b-4(a) (judge C4, non-blocking, record). The test.each block above
+    // stacks THREE softenings before its neighbour-ratio check ever runs: a
+    // 30% end-trim per side, a 1.6 ratio bar (argued for genuinely graded
+    // fields), and a 3-point MEDIAN FILTER — which, by construction, cannot
+    // fail on a single isolated doubled gap (it is outvoted by its two
+    // neighbours), even though "a gap sitting beside one twice its size on
+    // open surface... reads as an unexpected white band" is this file's own
+    // stated reason for existing. `hatch` on a `cylinder` is the row already
+    // in that list the uniform-field lemma
+    // (`scene3d-ladder-uniform-field-spacing.test.js`) proves is near-flat
+    // along its own axis, so there is no genuine gradient here to excuse a
+    // doubled gap. Add the one thing the stacked softenings above cannot
+    // catch: an UNFILTERED check, straight off the raw (trimmed only, no
+    // median smoothing) drawn gaps, that no gap sits beside a neighbour more
+    // than 2x its size.
+    it('cylinder+hatch, UNFILTERED: no single drawn gap sits beside a neighbour more than 2x its size', () => {
+      const fams = repsByFamily(emittedRuns('hatch', 'cylinder'));
+      expect(fams.length).toBeGreaterThan(0);
+      const offenders = [];
+      fams.forEach((f) => {
+        const trim = Math.max(2, Math.round(f.reps.length * 0.3));
+        const trimmed = f.reps.slice(trim, f.reps.length - trim);
+        const g = drawnGapsOf(trimmed);
+        if (g.length < 3) return;
+        for (let i = 1; i < g.length; i += 1) {
+          const r = g[i] / g[i - 1];
+          if (r > 2 || r < 0.5) {
+            offenders.push(`${f.fam} gap[${i - 1}]=${g[i - 1].toFixed(2)} gap[${i}]=${g[i].toFixed(2)} ratio=${r.toFixed(2)}`);
+          }
+        }
+      });
+      expect(offenders).toEqual([]);
+    });
   });
 });

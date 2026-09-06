@@ -247,7 +247,18 @@ describe('C15 on the OBJECT — the same rule, the half it was never measured on
     // flood ceiling this describe block's (dormant, `whenCoverageCap`-gated)
     // sibling test checks, so this is a genuine, disclosed shift in WHERE
     // the median sits, not a flattening.
-    expect(q(0.5)).toBeLessThan(0.35);        // the mid is nowhere near the cap
-    expect(q(0.98)).toBeGreaterThan(0.35);    // and the dark end still reaches
+    //
+    // RE-PINNED AGAIN (W-26b-3, judge C3, BLOCKING). `0.35` was a COIN, not a
+    // floor: measured 0.3425 leaves only 2.2% headroom — loosened in the
+    // very same commit that took crosshatch coverage to 0.906 (W-26b-1's own
+    // fix). The FLOOR moves to 0.40 (still well clear of the 0.56 flood
+    // ceiling above, and still refuses a real flattening toward that
+    // ceiling), and the measured value is pinned separately with an
+    // explicit +-10% fingerprint band so drift alone cannot flip either
+    // half.
+    expect(q(0.5)).toBeLessThan(0.40);        // the mid is nowhere near the cap
+    expect(q(0.5)).toBeGreaterThanOrEqual(0.308);
+    expect(q(0.5)).toBeLessThanOrEqual(0.377);
+    expect(q(0.98)).toBeGreaterThan(0.40);    // and the dark end still reaches
   });
 });
