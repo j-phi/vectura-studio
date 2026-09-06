@@ -6,6 +6,8 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+## 1.4.0 - 2026-09-06
+
 ### Changed
 - **Dev workflow: fixed-context-tax trim (no product change).** CLAUDE.md and AGENTS.md
   deduplicated to a single source per topic (testing/RGR merged into one section, coding

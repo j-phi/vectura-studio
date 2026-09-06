@@ -3,6 +3,7 @@
 .Rhistory
 node_modules
 playwright-report
+.playwright-mcp/
 test-results
 coverage
 vite.log

@@ -597,6 +597,37 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.4.0
+- **3D Scene Studio — the headline feature.** 3D Scene grew from a single mesh into a full
+  scene-tree editor: objects, the ground, and lights are independent tree children you can
+  click-select, transform with a unified move/rotate/scale gizmo, and re-style individually. A
+  scene can hold multiple solids (box, sphere, cylinder, cone, torus, capsule, polyhedron,
+  buckyball, or a converted Topoform/Polyhedron layer) plus imported OBJ/STL meshes, which are
+  welded, budgeted, and rested on the ground automatically. Boolean groups (union / intersect /
+  subtract, curved and faceted) carve real CSG holes with per-fragment styling, and six light
+  types — directional, ambient, point, spot, area, and emissive — drive shading, reflected light,
+  a terminator dip, and controllable cast shadows with real anatomy (contact collar, umbra wedge,
+  penumbra), including shadows landing on other objects in the receiver's own fill style.
+- **3D Scene fill styles, unified and audited.** Roughly 35 tone/fill laws — ladder, crosshatch,
+  spiral, contourSlice, voronoi web, and the twelve pen-width RIBBON laws among them — were
+  fixed to shade correctly on curved surfaces, including a torus-wide inverted-normal bug that had
+  silently deleted 40-58% of several laws' output. The Fill Style picker also collapsed 13
+  near-duplicate options into 5 canonical entries (48 → 35 total); saved documents resolve to the
+  canonical option automatically with no change to any drawing.
+- **Pen-width stroke fill.** Variable-width tone laws now build a true pen-width outline, clipped
+  exactly to the visible silhouette, instead of asking the renderer for an unplottable fatter
+  line. A new `strokeFillStyle` control (spiral / concentric / serpentine / contourParallel)
+  chooses how the interior fills.
+- **Draw Order and a plot-physics readout.** The on-canvas colour preview, playback, and exported
+  SVG now agree on pen order, and the Document Overview shows a per-pen ink/time breakdown of the
+  plot.
+- **Stroke Divisions editor**, with a pen-assignment mode (Cycle / Random / …) for multi-pen
+  divided strokes.
+- **Industry-parity Live Corner styles** — Round, Inverted Round, and Chamfer — with live
+  freeform corner dragging.
+- Also: paint-bucket venn faces for overlapping shapes, `.vectura` schema versioning, and a
+  coverage-threshold ratchet in CI.
+
 ### 1.3.99
 - **3D Scene — the ladder-family fill styles no longer skip alternate rulings on flat-toned
   surfaces.** Ladder, Fine Ladder and Phase Fine Ladder used to select a subset of a fixed grid on
@@ -638,6 +669,9 @@ CI lives in `.github/workflows/test.yml`:
   are visible the instant the object appears. Box and wireframe are unchanged and stay one click
   away — the Add Objects shelf and the object Style flyout. The scene-scope fallback deliberately
   stays wireframe: it is what the ground fixture resolves to, and hatching it floods the ground quad.
+
+<details>
+<summary>Older releases (1.3.84 and earlier)</summary>
 
 ### 1.3.84
 - **Draw Order: the colours, the playback and the exported SVG finally agree.** The on-canvas
@@ -721,9 +755,6 @@ CI lives in `.github/workflows/test.yml`:
   vanishing points to the canvas edges, which flattened two-point mode into a rectangle with no
   perspective at all. The curated vanishing points are back, and a new guard stops any preset from
   pinning a value for a control it does not even show.
-
-<details>
-<summary>Older releases (1.2.68 and earlier)</summary>
 
 ### 1.2.68
 - **Raster-Plane: See-Through makes the planes see-through instead of deleting them.** With **Lines

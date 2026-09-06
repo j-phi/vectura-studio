@@ -1,0 +1,1778 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vectura 3D Scene Studio — Product Proposal</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d0f12;
+      --panel: #14171c;
+      --panel-2: #191d23;
+      --line: #2a3039;
+      --line-strong: #3b4552;
+      --text: #f4f6f8;
+      --muted: #9da7b3;
+      --quiet: #697583;
+      --blue: #52b7ff;
+      --cyan: #41d8cf;
+      --violet: #a88bff;
+      --amber: #ffbe5c;
+      --rose: #ff7f9f;
+      --green: #7fe4a7;
+      --purple-ink: #8a5cff;
+      --orange-ink: #ff8a4c;
+      --cream-ink: #ffe6a8;
+      --cyan-ink: #27c8d7;
+      --paper: #eff0e8;
+      --ink: #1b2229;
+      --max: 1240px;
+      --radius: 18px;
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.25);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 18% 0%, rgba(82, 183, 255, 0.08), transparent 28rem),
+        radial-gradient(circle at 88% 15%, rgba(168, 139, 255, 0.07), transparent 32rem),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    button, input, select { font: inherit; }
+    a { color: inherit; }
+    code {
+      padding: 0.15rem 0.38rem;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.035);
+      color: #dce8f3;
+      font-size: 0.9em;
+    }
+
+    .site-nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(13, 15, 18, 0.88);
+      backdrop-filter: blur(18px);
+    }
+    .nav-inner {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 0.8rem 1.4rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+    .brand-mark {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 20px rgba(82, 183, 255, 0.7);
+    }
+    .nav-links {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 0.35rem;
+    }
+    .nav-links a {
+      padding: 0.42rem 0.68rem;
+      border-radius: 999px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.78rem;
+    }
+    .nav-links a:hover,
+    .nav-links a:focus-visible {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.07);
+    }
+
+    main { overflow: hidden; }
+    .wrap {
+      width: min(calc(100% - 2.4rem), var(--max));
+      margin: 0 auto;
+    }
+    .section {
+      padding: 6rem 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.065);
+    }
+    .section:first-of-type { border-top: 0; }
+    .eyebrow {
+      margin: 0 0 1rem;
+      color: var(--blue);
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, h4 {
+      margin-top: 0;
+      line-height: 1.08;
+      letter-spacing: -0.035em;
+    }
+    h1 {
+      max-width: 920px;
+      margin-bottom: 1.3rem;
+      font-size: clamp(3rem, 8vw, 7.2rem);
+      font-weight: 720;
+    }
+    h2 {
+      margin-bottom: 1rem;
+      font-size: clamp(2.1rem, 4vw, 3.8rem);
+      font-weight: 680;
+    }
+    h3 {
+      margin-bottom: 0.75rem;
+      font-size: clamp(1.35rem, 2vw, 1.8rem);
+      font-weight: 650;
+    }
+    h4 {
+      margin-bottom: 0.55rem;
+      font-size: 1rem;
+      letter-spacing: -0.015em;
+    }
+    p { margin: 0 0 1rem; }
+    .lede {
+      max-width: 780px;
+      color: #c7cfd8;
+      font-size: clamp(1.08rem, 2.1vw, 1.36rem);
+      line-height: 1.55;
+    }
+    .muted { color: var(--muted); }
+    .quiet { color: var(--quiet); }
+    .small { font-size: 0.84rem; }
+
+    .hero {
+      min-height: 760px;
+      padding: 9rem 0 6rem;
+      display: grid;
+      align-items: center;
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.55fr);
+      gap: 4rem;
+      align-items: end;
+    }
+    .hero h1 span {
+      color: transparent;
+      -webkit-text-stroke: 1px rgba(244, 246, 248, 0.56);
+    }
+    .hero-side {
+      padding: 1.4rem 0 0 1.4rem;
+      border-left: 1px solid var(--line-strong);
+    }
+    .hero-side strong {
+      display: block;
+      margin-bottom: 0.7rem;
+      font-size: 1.1rem;
+    }
+    .hero-actions {
+      margin-top: 2rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.7rem;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0.65rem 1rem;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: var(--panel-2);
+      color: var(--text);
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .button.primary {
+      border-color: var(--blue);
+      background: var(--blue);
+      color: #06131c;
+      font-weight: 700;
+    }
+    .button:hover { transform: translateY(-1px); }
+
+    .summary-grid,
+    .principles-grid,
+    .risk-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+    }
+    .card {
+      padding: 1.3rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(150deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012));
+    }
+    .card-number {
+      display: block;
+      margin-bottom: 2.1rem;
+      color: var(--quiet);
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .card p:last-child { margin-bottom: 0; }
+
+    .thesis {
+      margin: 2rem 0;
+      padding: 2.2rem;
+      border-left: 4px solid var(--blue);
+      background: linear-gradient(90deg, rgba(82, 183, 255, 0.11), rgba(82, 183, 255, 0.015));
+      font-size: clamp(1.35rem, 2.8vw, 2.15rem);
+      line-height: 1.35;
+      letter-spacing: -0.025em;
+    }
+
+    .reality-grid {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+    .audit-list {
+      display: grid;
+      gap: 0.85rem;
+    }
+    .audit-item {
+      padding: 1rem 0;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: 8rem minmax(0, 1fr);
+      gap: 1rem;
+    }
+    .audit-item strong { color: var(--text); }
+    .audit-item p { margin: 0; color: var(--muted); }
+    .callout {
+      padding: 1.25rem;
+      border: 1px solid rgba(255, 190, 92, 0.35);
+      border-radius: 14px;
+      background: rgba(255, 190, 92, 0.06);
+      color: #eadcc3;
+    }
+
+    .inspiration-strip {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      grid-auto-rows: 95px;
+      gap: 0.72rem;
+      margin-top: 2rem;
+    }
+    .inspiration-strip figure {
+      position: relative;
+      overflow: hidden;
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel);
+    }
+    .inspiration-strip figure:nth-child(1) { grid-column: span 5; grid-row: span 3; }
+    .inspiration-strip figure:nth-child(2) { grid-column: span 3; grid-row: span 3; }
+    .inspiration-strip figure:nth-child(3) { grid-column: span 4; grid-row: span 3; }
+    .inspiration-strip figure:nth-child(4) { grid-column: span 3; grid-row: span 3; }
+    .inspiration-strip figure:nth-child(5) { grid-column: span 5; grid-row: span 3; }
+    .inspiration-strip figure:nth-child(6) { grid-column: span 4; grid-row: span 3; }
+    .inspiration-strip img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: saturate(0.9) contrast(1.02);
+    }
+    .inspiration-strip figcaption {
+      position: absolute;
+      left: 0.7rem;
+      right: 0.7rem;
+      bottom: 0.7rem;
+      padding: 0.38rem 0.52rem;
+      border-radius: 8px;
+      background: rgba(10, 12, 15, 0.78);
+      color: #e5e8eb;
+      font-size: 0.72rem;
+      backdrop-filter: blur(8px);
+    }
+
+    .model-flow {
+      margin: 2rem 0;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.7rem;
+    }
+    .flow-node {
+      position: relative;
+      min-height: 132px;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel);
+    }
+    .flow-node:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      top: 50%;
+      right: -0.72rem;
+      z-index: 2;
+      width: 0.75rem;
+      color: var(--quiet);
+      text-align: center;
+      transform: translateY(-50%);
+    }
+    .flow-node b {
+      display: block;
+      margin-bottom: 0.55rem;
+      color: var(--blue);
+      font-size: 0.74rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .flow-node p { margin: 0; color: var(--muted); font-size: 0.87rem; }
+
+    .journeys {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+    .journey {
+      padding: 1.35rem;
+      border-top: 1px solid var(--line-strong);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent);
+    }
+    .journey ol {
+      margin: 0;
+      padding-left: 1.2rem;
+      color: var(--muted);
+    }
+    .journey li + li { margin-top: 0.45rem; }
+
+    .requirements-intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+      gap: 2rem;
+      align-items: start;
+    }
+    .requirement-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.58rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 0.73rem;
+      white-space: nowrap;
+    }
+    .badge::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--quiet);
+    }
+    .badge.mvp::before { background: var(--green); }
+    .badge.beta::before { background: var(--amber); }
+    .badge.later::before { background: var(--violet); }
+
+    details.req-group {
+      margin-top: 0.85rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.018);
+    }
+    details.req-group > summary {
+      padding: 1rem 1.15rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      cursor: pointer;
+      list-style: none;
+      font-weight: 700;
+    }
+    details.req-group > summary::-webkit-details-marker { display: none; }
+    details.req-group > summary::after {
+      content: "+";
+      color: var(--quiet);
+      font-size: 1.4rem;
+      font-weight: 400;
+    }
+    details.req-group[open] > summary::after { content: "–"; }
+    .req-table-wrap { overflow-x: auto; border-top: 1px solid var(--line); }
+    .req-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+      font-size: 0.86rem;
+    }
+    .req-table th,
+    .req-table td {
+      padding: 0.88rem 1rem;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    .req-table th {
+      color: var(--quiet);
+      font-size: 0.69rem;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+    .req-table tr:last-child td { border-bottom: 0; }
+    .req-id { color: var(--blue); font-weight: 700; white-space: nowrap; }
+    .req-stage { white-space: nowrap; }
+
+    .architecture-grid {
+      display: grid;
+      grid-template-columns: 0.8fr 1.2fr;
+      gap: 2rem;
+      align-items: start;
+    }
+    .scene-tree {
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #101318;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.82rem;
+      line-height: 1.8;
+    }
+    .scene-tree .dim { color: var(--quiet); }
+    .scene-tree .node { color: #dce7f0; }
+    .scene-tree .light { color: var(--amber); }
+    .scene-tree .style { color: var(--violet); }
+    .architecture-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.8rem;
+    }
+    .architecture-list div {
+      padding: 1rem;
+      border-top: 1px solid var(--line-strong);
+    }
+    .architecture-list p { color: var(--muted); font-size: 0.87rem; margin: 0; }
+
+    .pass-stack {
+      display: grid;
+      gap: 0.65rem;
+      margin-top: 1.4rem;
+    }
+    .pass {
+      padding: 0.9rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      display: grid;
+      grid-template-columns: 1.1fr 1fr 1.4fr 0.8fr;
+      gap: 1rem;
+      align-items: center;
+      background: var(--panel);
+      font-size: 0.83rem;
+    }
+    .pass span { color: var(--muted); }
+    .pass strong { color: var(--text); }
+    .pass .semantic { color: var(--blue); font-weight: 700; }
+
+    .timeline {
+      margin-top: 2.2rem;
+      display: grid;
+      gap: 0.7rem;
+    }
+    .timeline-head,
+    .timeline-lane {
+      display: grid;
+      grid-template-columns: 10rem repeat(5, minmax(110px, 1fr));
+      gap: 0.45rem;
+      align-items: stretch;
+    }
+    .timeline-head div {
+      padding: 0.55rem;
+      color: var(--quiet);
+      font-size: 0.72rem;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .timeline-head div:first-child { text-align: left; }
+    .lane-label {
+      padding: 0.8rem 0.4rem;
+      color: #dbe2e8;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+    .phase-cell {
+      min-height: 72px;
+      padding: 0.72rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--muted);
+      font-size: 0.76rem;
+    }
+    .phase-cell.active {
+      border-color: rgba(82, 183, 255, 0.4);
+      background: rgba(82, 183, 255, 0.07);
+      color: #cedce6;
+    }
+    .phase-cell.later {
+      border-color: rgba(168, 139, 255, 0.28);
+      background: rgba(168, 139, 255, 0.045);
+    }
+    .phase-detail-grid {
+      margin-top: 2rem;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.8rem;
+    }
+    .phase-detail {
+      padding: 1.2rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+    .phase-detail ul { margin: 0.7rem 0 0; padding-left: 1.15rem; color: var(--muted); }
+    .phase-detail li + li { margin-top: 0.35rem; }
+
+    .gate-list {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.8rem;
+      margin-top: 1.5rem;
+    }
+    .gate {
+      padding: 1rem;
+      border-left: 3px solid var(--green);
+      background: rgba(127, 228, 167, 0.05);
+    }
+
+    .demo-intro {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      align-items: end;
+    }
+    .demo-grid {
+      margin-top: 2rem;
+      display: grid;
+      gap: 1.2rem;
+    }
+    .demo-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .demo-head {
+      padding: 1.05rem 1.15rem;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .demo-head h3 { margin: 0; font-size: 1.1rem; letter-spacing: -0.02em; }
+    .demo-head p { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.82rem; }
+    .demo-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.55rem;
+    }
+    .demo-controls button,
+    .segmented button {
+      padding: 0.46rem 0.7rem;
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
+      background: #101318;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.78rem;
+    }
+    .demo-controls button[aria-pressed="true"],
+    .segmented button[aria-pressed="true"] {
+      border-color: var(--blue);
+      background: rgba(82, 183, 255, 0.14);
+      color: var(--text);
+    }
+    .demo-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      min-height: 430px;
+    }
+    .demo-canvas {
+      min-height: 430px;
+      padding: 1rem;
+      display: grid;
+      place-items: center;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        #0c0f13;
+      background-size: 24px 24px;
+    }
+    .demo-canvas svg {
+      width: 100%;
+      height: auto;
+      max-height: 500px;
+    }
+    .demo-side {
+      padding: 1rem;
+      border-left: 1px solid var(--line);
+      background: #111419;
+    }
+    .demo-side label {
+      display: block;
+      margin: 0 0 0.35rem;
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .demo-side select,
+    .demo-side input[type="range"] {
+      width: 100%;
+      margin: 0 0 1rem;
+    }
+    .demo-side select {
+      padding: 0.56rem;
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
+      background: #0b0e12;
+      color: var(--text);
+    }
+    .range-value {
+      float: right;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .mini-stack {
+      display: grid;
+      gap: 0.5rem;
+      margin-top: 0.4rem;
+    }
+    .mini-pass {
+      padding: 0.66rem;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--muted);
+      font-size: 0.76rem;
+    }
+    .mini-pass strong { display: block; color: var(--text); }
+    .demo-caption {
+      padding: 0.8rem 1.1rem;
+      border-top: 1px solid var(--line);
+      color: var(--quiet);
+      font-size: 0.76rem;
+    }
+
+    .decision {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+    .decision-box {
+      padding: 1.4rem;
+      border: 1px solid rgba(82, 183, 255, 0.4);
+      border-radius: var(--radius);
+      background: rgba(82, 183, 255, 0.06);
+    }
+    .decision-box ul { margin-bottom: 0; padding-left: 1.15rem; color: #c8d3dc; }
+
+    footer {
+      padding: 3rem 0;
+      border-top: 1px solid var(--line);
+      color: var(--quiet);
+      font-size: 0.8rem;
+    }
+
+    @media (max-width: 940px) {
+      .hero-grid,
+      .reality-grid,
+      .requirements-intro,
+      .architecture-grid,
+      .demo-intro,
+      .decision { grid-template-columns: 1fr; }
+      .summary-grid,
+      .principles-grid,
+      .risk-grid,
+      .gate-list { grid-template-columns: 1fr 1fr; }
+      .model-flow { grid-template-columns: 1fr; }
+      .flow-node { min-height: 0; }
+      .flow-node:not(:last-child)::after {
+        content: "↓";
+        top: auto;
+        right: 50%;
+        bottom: -0.92rem;
+        transform: translateX(50%);
+      }
+      .timeline { overflow-x: auto; padding-bottom: 0.5rem; }
+      .timeline-head,
+      .timeline-lane { min-width: 920px; }
+      .demo-body { grid-template-columns: 1fr; }
+      .demo-side { border-top: 1px solid var(--line); border-left: 0; }
+    }
+
+    @media (max-width: 680px) {
+      .nav-inner { align-items: flex-start; }
+      .nav-links { display: none; }
+      .wrap { width: min(calc(100% - 1.4rem), var(--max)); }
+      .section { padding: 4rem 0; }
+      .hero { min-height: 0; padding: 6rem 0 4rem; }
+      .hero-grid { gap: 2rem; }
+      .summary-grid,
+      .principles-grid,
+      .risk-grid,
+      .gate-list,
+      .journeys,
+      .architecture-list,
+      .phase-detail-grid { grid-template-columns: 1fr; }
+      .inspiration-strip {
+        grid-template-columns: 1fr 1fr;
+        grid-auto-rows: 180px;
+      }
+      .inspiration-strip figure:nth-child(n) { grid-column: span 1; grid-row: span 1; }
+      .audit-item { grid-template-columns: 1fr; gap: 0.3rem; }
+      .pass { grid-template-columns: 1fr 1fr; }
+      .demo-head { align-items: flex-start; }
+      .demo-controls { justify-content: flex-start; }
+      .demo-canvas { min-height: 320px; padding: 0.35rem; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="site-nav" aria-label="Proposal sections">
+    <div class="nav-inner">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span> Vectura · 3D Scene Studio</div>
+      <div class="nav-links">
+        <a href="#pitch">Pitch</a>
+        <a href="#requirements">Requirements</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#plan">Plan</a>
+        <a href="#sketches">Sketches</a>
+        <a href="#decision">Decision</a>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <p class="eyebrow">Product proposal · July 2026</p>
+          <h1>Model once.<br><span>Plot every interpretation.</span></h1>
+          <p class="lede">Build or import a 3D scene, then turn surfaces, light, shadow, depth, reflection, gaps, and pens into editable line systems—without rebuilding the geometry for every idea.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="#pitch">Read the proposal</a>
+            <a class="button" href="#sketches">See three small concept sketches</a>
+          </div>
+        </div>
+        <aside class="hero-side">
+          <strong>Recommendation</strong>
+          <p class="muted">Create a new <b>3D Scene</b> layer that opens an internal scene workspace. It should compile the scene as one coordinated plotter drawing while preserving selectable objects, faces, edges, lights, styles, and saved looks.</p>
+          <p class="small quiet">This is a product and architecture proposal, not an implementation.</p>
+        </aside>
+      </div>
+    </header>
+
+    <section class="section" id="pitch">
+      <div class="wrap">
+        <p class="eyebrow">Executive summary</p>
+        <h2>3D becomes a creative medium, not a render mode.</h2>
+        <p class="lede">Vectura already contains valuable 3D pieces, but they are divided across single-object algorithms. The opportunity is to separate what the object <em>is</em> from how its surfaces, lighting fields, and strokes become ink.</p>
+
+        <div class="thesis">
+          The core product model should be:
+          <strong>Geometry → selection sets → light fields → ordered ink passes → physical pen strokes.</strong>
+        </div>
+
+        <div class="summary-grid">
+          <article class="card">
+            <span class="card-number">01 · Create</span>
+            <h3>One scene, many objects</h3>
+            <p class="muted">Add primitives, duplicate instances, import STL first, and later preserve OBJ/glTF groups, cameras, and lights. Objects share one camera and one cross-object visibility model.</p>
+          </article>
+          <article class="card">
+            <span class="card-number">02 · Interpret</span>
+            <h3>Styles are stacks, not modes</h3>
+            <p class="muted">A torus can combine contours, a thick silhouette, a purple shadow hatch, ring highlights, dashed hidden lines, and four alternating pens—each as an ordered, reusable Ink Pass.</p>
+          </article>
+          <article class="card">
+            <span class="card-number">03 · Target</span>
+            <h3>Objects, faces, edges, fields</h3>
+            <p class="muted">Apply a style to an object, selected faces, all upward faces across several objects, every cast shadow, or the glint band of one light. The target is always explicit.</p>
+          </article>
+        </div>
+
+        <h3 style="margin-top:3rem">The strategic bet</h3>
+        <p class="lede">Do not attempt a full 3D modeler or physically based renderer. Build a <strong>plotter-native scene compiler</strong>: enough geometry, topology, lighting, and visibility to generate expressive vectors with provenance. “If they can think it, they can plot it” comes from composable targeting and line treatment—not from recreating Blender in a browser.</p>
+
+        <div class="principles-grid" style="margin-top:1.5rem">
+          <article class="card">
+            <h4>Geometry and look are independent</h4>
+            <p class="muted small">Changing Spiral → Facets → Contours must not discard the object, camera, light, or selection sets.</p>
+          </article>
+          <article class="card">
+            <h4>Lighting produces fields, not pixels</h4>
+            <p class="muted small">Shadow, highlight, glint, diffuse tone, depth, and reflection become inputs that line systems can add, remove, spread, break, or recolor.</p>
+          </article>
+          <article class="card">
+            <h4>Every gap is real</h4>
+            <p class="muted small">Plotter gaps and pen alternation must create actual path fragments in millimeters, not merely CSS-like dash decoration.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="evidence">
+      <div class="wrap">
+        <p class="eyebrow">Grounded in the current product</p>
+        <h2>Reuse the machinery. Re-audit the promises.</h2>
+        <div class="reality-grid">
+          <div>
+            <p class="lede">The live app and source review confirm that this is not greenfield. They also confirm that visible controls cannot be assumed to equal dependable capability.</p>
+            <div class="callout">
+              <strong>Proposal rule:</strong> every reused 3D feature enters through a visual and export-parity gate. Existing labels such as “lighting,” “hidden lines,” or “see-through” are starting points—not acceptance evidence.
+            </div>
+          </div>
+          <div class="audit-list">
+            <div class="audit-item">
+              <strong>Topoform</strong>
+              <p>Contours are a strong reusable strategy. In the live default, switching to wireframe produced roughly <b>30,000 paths / 57 m</b> of plotting and visually saturated the sphere; Lambert hatching became difficult to read over the dense base.</p>
+            </div>
+            <div class="audit-item">
+              <strong>Polyhedron</strong>
+              <p>Face bands, edges, vertices, hidden-face treatment, creases, and hatching already express the right vocabulary. The limitation is scope: the whole algorithm layer owns the mesh and the style.</p>
+            </div>
+            <div class="audit-item">
+              <strong>Spiralizer</strong>
+              <p>The curated helix is compelling. An ad-hoc switch from Helix to Torus retained the wrap parameters and yielded a sparse, unexpected result—evidence that a source swap is not yet a coherent “look swap.”</p>
+            </div>
+            <div class="audit-item">
+              <strong>Audit history</strong>
+              <p>The June 3D audit documented silent no-ops and inconsistent applicability. Several controls were subsequently gated or repaired. The lesson is architectural: capability metadata and visual regression checks must remain first-class.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="inspiration-strip" aria-label="Visual inspiration translated into capabilities">
+          <figure>
+            <img src="3d-scene-assets/monumental-shadow.webp" alt="Plotter drawing of a monumental isometric structure with a long cast shadow">
+            <figcaption>Cross-object occlusion + cast-shadow regions</figcaption>
+          </figure>
+          <figure>
+            <img src="3d-scene-assets/wood-topology.webp" alt="Wooden blocks with per-face and continuous wood-grain line patterns">
+            <figcaption>Per-face vs across-selection continuity</figcaption>
+          </figure>
+          <figure>
+            <img src="3d-scene-assets/multi-pen-orbits-detail.webp" alt="Multicolor segmented line art covering several three-dimensional forms">
+            <figcaption>Lighting-driven marks + pen segmentation</figcaption>
+          </figure>
+          <figure>
+            <img src="3d-scene-assets/trisected-isometric.webp" alt="Red pen plot of an isometric structure with face-dependent hatch">
+            <figcaption>Face-oriented hatching + negative space</figcaption>
+          </figure>
+          <figure>
+            <img src="3d-scene-assets/isometric-shadow.webp" alt="Dense green line plot of a stacked structure and long shadow">
+            <figcaption>Designed shadow density in physical spacing</figcaption>
+          </figure>
+          <figure>
+            <img src="3d-scene-assets/segmented-faceted-field.webp" alt="Faceted forms built from short multicolor line segments">
+            <figcaption>Field-aligned fragments + global pen phase</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="experience">
+      <div class="wrap">
+        <p class="eyebrow">Experience model</p>
+        <h2>A scene layer outside. A focused studio inside.</h2>
+        <p class="lede">The document Layers panel should contain one manageable <b>3D Scene</b> layer. Double-clicking it enters an internal subdocument with its own compact outliner for cameras, lights, objects, selection sets, Plot Styles, and Looks. The compiler still renders the entire scene together so shadows and occlusion cross object boundaries.</p>
+
+        <div class="model-flow" aria-label="Core creative model">
+          <div class="flow-node">
+            <b>Geometry</b>
+            <p>Primitive, imported mesh, procedural surface, instances, transforms.</p>
+          </div>
+          <div class="flow-node">
+            <b>Target</b>
+            <p>Object, face set, edge set, semantic query, lighting region.</p>
+          </div>
+          <div class="flow-node">
+            <b>Driver</b>
+            <p>Always, shadow, highlight, facing, depth, curvature, Noise Rack field.</p>
+          </div>
+          <div class="flow-node">
+            <b>Action</b>
+            <p>Add hatch/rings/contours or modify spacing, gaps, weight, pen.</p>
+          </div>
+          <div class="flow-node">
+            <b>Plot</b>
+            <p>Physical fragments, pen order, travel, minimum marks, SVG.</p>
+          </div>
+        </div>
+
+        <div class="journeys">
+          <article class="journey">
+            <h3>One torus, six looks</h3>
+            <ol>
+              <li>Add a Torus once.</li>
+              <li>Switch among Spiral, Faceted, Contour, Wireframe, Topo, or Pattern Looks.</li>
+              <li>Toggle a shared thick silhouette.</li>
+              <li>Capture two Looks and compare A/B without duplicating geometry.</li>
+            </ol>
+          </article>
+          <article class="journey">
+            <h3>All top faces, one field</h3>
+            <ol>
+              <li>Select several blocks with <code>V</code>.</li>
+              <li>Use <code>A</code> then <code>3</code> for faces.</li>
+              <li>Choose <b>Similar → Facing Up</b> and save <b>Top Faces</b>.</li>
+              <li>Apply Topographic Map with <b>Continuity: Across Selection</b>.</li>
+            </ol>
+          </article>
+          <article class="journey">
+            <h3>Architectural shadow as ink</h3>
+            <ol>
+              <li>Add a Directional Light and ground receiver.</li>
+              <li>Drag the light gizmo; the cast-shadow field updates.</li>
+              <li>Map Shadow → Hatch → Purple → 45° → 2 mm gap.</li>
+              <li>Map Highlight → Modify Existing → Increase spacing.</li>
+            </ol>
+          </article>
+          <article class="journey">
+            <h3>Multicolor segmented glint</h3>
+            <ol>
+              <li>Target the Highlight/Glint band.</li>
+              <li>Break existing strokes into physical spans.</li>
+              <li>Cycle cyan, orange, cream, violet by 8 mm segments.</li>
+              <li>Preview pen order and reject fragments below the plotter-safe minimum.</li>
+            </ol>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="requirements">
+      <div class="wrap">
+        <p class="eyebrow">Detailed requirements</p>
+        <div class="requirements-intro">
+          <div>
+            <h2>The requirements spine</h2>
+            <p class="lede">The beta is successful when users can compose a modest multi-object scene, target meaningful surfaces, map lighting to line behavior, alternate pens with real gaps, and export deterministic plotter-ready SVG.</p>
+          </div>
+          <aside class="card">
+            <h3>Requirements executive summary</h3>
+            <p class="muted small">A Scene contains objects, lights, a camera, semantic selection sets, Plot Styles, and saved Looks. Plot Styles contain ordered Ink Passes. Every pass declares <b>Target → Driver → Action → Pen</b>. Existing algorithms become source or style adapters only after parity.</p>
+            <div class="requirement-legend">
+              <span class="badge mvp">Developer alpha</span>
+              <span class="badge beta">Creative beta</span>
+              <span class="badge later">Later</span>
+            </div>
+          </aside>
+        </div>
+
+        <details class="req-group" open>
+          <summary>Scene, geometry, and import <span class="small muted">SCE-01…08</span></summary>
+          <div class="req-table-wrap">
+            <table class="req-table">
+              <thead><tr><th>ID</th><th>Requirement</th><th>Acceptance signal</th><th>Stage</th></tr></thead>
+              <tbody>
+                <tr><td class="req-id">SCE-01</td><td>A document may contain a <b>3D Scene</b> layer whose internal subdocument owns multiple mesh objects, lights, one active camera, selection sets, Plot Styles, and Looks.</td><td>The outer document stays manageable; entering/exiting the Scene is explicit and undoable.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SCE-02</td><td>The scene compiler must evaluate all visible objects together before flattening to 2D paths.</td><td>Object A can occlude, shadow, or project a styled reflection field onto Object B.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SCE-03</td><td>Primitive sources: sphere, torus, box, cone, cylinder, capsule, ellipsoid, pyramid, superellipsoid, torus knot, and Polyhedron solids.</td><td>Sources reuse extracted Topoform/Polyhedron builders with visual parity tests.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SCE-04</td><td>Import STL in alpha. Add OBJ next. Evaluate glTF/GLB only with an explicit dependency, hierarchy, and load-size decision.</td><td>Import sheet exposes units, up axis, centering, normals, weld, and preview simplification.</td><td class="req-stage">Alpha → Later</td></tr>
+                <tr><td class="req-id">SCE-05</td><td>Meshes live in an immutable scene asset table; object nodes reference <code>assetId</code> and may instance shared geometry.</td><td>Duplicating ten objects does not clone the mesh ten times through undo snapshots.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SCE-06</td><td>Object transforms, visibility, lock, duplicate, group, cast/receive shadow, and cast/receive reflected-light flags are independent.</td><td>Changing a transform invalidates only affected projection, lighting, and visibility caches.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SCE-07</td><td>Camera supports orthographic and perspective projection plus existing X/Y/Z rotation-gizmo behavior.</td><td>Existing 3D camera vocabulary is normalized internally without breaking old preset adapters.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SCE-08</td><td>All stochastic sampling, light samples, selection queries, and pen sequences are deterministic.</td><td>Same scene, seed, and version produce the same path signatures and SVG.</td><td class="req-stage">Alpha</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <details class="req-group" open>
+          <summary>Selection and surface targeting <span class="small muted">SEL-01…07</span></summary>
+          <div class="req-table-wrap">
+            <table class="req-table">
+              <thead><tr><th>ID</th><th>Requirement</th><th>Acceptance signal</th><th>Stage</th></tr></thead>
+              <tbody>
+                <tr><td class="req-id">SEL-01</td><td><code>V</code> selects objects, groups, and lights inside Scene edit mode while preserving ordinary Vectura selection outside it.</td><td>Selection is available both in the viewport and internal outliner.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SEL-02</td><td><code>A</code> enters Scene Component Select; pressing it again cycles Vertex → Edge → Face. Direct shortcuts: <code>1</code> vertex, <code>2</code> edge, <code>3</code> face.</td><td>The toolbar and status bar always show the active submode, e.g. <b>A · Face</b>.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SEL-03</td><td>Shift adds/toggles; Alt/Option subtracts; double-click selects a connected island; X-Ray temporarily permits hidden-component selection.</td><td>Component hit testing uses stable 3D IDs, not flattened 2D path anchors.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SEL-04</td><td>Users can save exact Static Sets and live Smart Sets.</td><td>Smart predicates include Facing Up, Facing Camera, Same Normal, Coplanar, Connected, Same Source Material, Same Light Band, and Shadowed By.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">SEL-05</td><td>Selection sets may span objects.</td><td>“All upward faces of all blocks” behaves as one reusable target.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">SEL-06</td><td>The editor overlays plot lines on a faint, non-exporting work mesh.</td><td>Preview modes: Ink, Mesh + Ink, Lighting Masks, and Pen Order.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SEL-07</td><td>Topology changes must preserve semantic sets, remap explicit IDs when possible, and surface unresolved assignments.</td><td>No silent style loss when an import is repaired or a source-detail parameter changes.</td><td class="req-stage">Beta</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <details class="req-group" open>
+          <summary>Plot Styles and Ink Passes <span class="small muted">STY-01…09</span></summary>
+          <div class="req-table-wrap">
+            <table class="req-table">
+              <thead><tr><th>ID</th><th>Requirement</th><th>Acceptance signal</th><th>Stage</th></tr></thead>
+              <tbody>
+                <tr><td class="req-id">STY-01</td><td>A reusable <b>Plot Style</b> is an ordered stack of <b>Ink Passes</b>, not a single render-mode enum.</td><td>Passes can be reordered, hidden, duplicated, copied, linked, or made unique.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">STY-02</td><td>Every pass exposes the same sentence: <b>Target → Driver → Action → Pen</b>.</td><td>A collapsed card reads like “Shadow · Hatch 45° · 2 mm · Purple.”</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">STY-03</td><td>Actions divide into <b>Add strokes</b> and <b>Modify existing strokes</b>.</td><td>Highlights can add rings or open gaps/increase spacing in the base surface lines.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">STY-04</td><td>Add-stroke strategies include wireframe, silhouette, crease, contour, face band, hatch, crosshatch, spiral wrap, concentric rings, radial, stipple, Pattern, Topo, and Wavetable adapters.</td><td>Alpha ships the first six; later strategies use capability metadata and shared samplers.</td><td class="req-stage">Alpha → Later</td></tr>
+                <tr><td class="req-id">STY-05</td><td>Modify-existing actions include increase/reduce spacing, break/open gaps, shorten, suppress, thicken, thin, swap pen, jitter, and warp.</td><td>Modifiers operate on stroke samples before final 2D export.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">STY-06</td><td>Mapping continuity options: Per Face, Connected Island, Across Selection, and World.</td><td>Wood-block top fields can restart per block or continue across all selected tops.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">STY-07</td><td>Style precedence is explicit: Scene default → object → selection set → exact component → lighting-state override.</td><td>The Inspector distinguishes inherited, linked, and overridden values.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">STY-08</td><td>Pass combination modes: Add, Knockout, Interleave, Replace.</td><td>Conflicts are visible and deterministic; no implicit raster-style blending.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">STY-09</td><td>All noise modulation uses the shared Noise Rack evaluator.</td><td>No algorithm-specific or Scene-specific noise stack is introduced.</td><td class="req-stage">Later</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <details class="req-group">
+          <summary>Lights, shadows, highlights, and reflections <span class="small muted">LGT-01…08</span></summary>
+          <div class="req-table-wrap">
+            <table class="req-table">
+              <thead><tr><th>ID</th><th>Requirement</th><th>Acceptance signal</th><th>Stage</th></tr></thead>
+              <tbody>
+                <tr><td class="req-id">LGT-01</td><td>Lights are selectable scene objects. Alpha supports Directional, Point, and Spot.</td><td>Each has intensity, position/direction, range/cone, cast shadows, affect/exclude sets, and viewport gizmos.</td><td class="req-stage">Alpha → Beta</td></tr>
+                <tr><td class="req-id">LGT-02</td><td>Lighting evaluation produces named scalar fields: diffuse, shadow, specular, facing/rim, depth, and optional reflected light.</td><td>Line recipes consume fields without depending on a raster material preview.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">LGT-03</td><td>Users can edit five tonal bands: Deep Shadow, Shadow, Midtone, Highlight, Glint.</td><td>Each band can target an Ink Pass with adjustable threshold and feather.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">LGT-04</td><td>Hard cast shadows must clip to receiver objects and remain independently styleable.</td><td>A shadow can render as purple 45° hatch with a true 2 mm gap.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">LGT-05</td><td>Highlights and glints can add strokes or modify the base surface system.</td><td>Ring highlight and “increase base spacing by 35%” both work.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">LGT-06</td><td>Objects expose Matte, Satin, Gloss, and Mirror response presets that tune field generation—not raster color.</td><td>The mapping remains understandable as plotter behavior.</td><td class="req-stage">Later</td></tr>
+                <tr><td class="req-id">LGT-07</td><td>Reflected light onto surrounding objects begins as a clearly labeled, stylized one-bounce projected field.</td><td>The product does not imply full caustics/global illumination in beta.</td><td class="req-stage">Later</td></tr>
+                <tr><td class="req-id">LGT-08</td><td>Area/environment lights and soft shadows are deferred until hard-shadow performance and semantics are stable.</td><td>Softness uses deterministic bounded samples and quality scaling.</td><td class="req-stage">Later</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <details class="req-group">
+          <summary>Pens, gaps, plotting, and export <span class="small muted">PEN-01…08</span></summary>
+          <div class="req-table-wrap">
+            <table class="req-table">
+              <thead><tr><th>ID</th><th>Requirement</th><th>Acceptance signal</th><th>Stage</th></tr></thead>
+              <tbody>
+                <tr><td class="req-id">PEN-01</td><td>Stroke segmentation works by physical arc length and emits real pen-up gaps.</td><td>SVG contains separate path fragments; gap size is stable in document millimeters.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">PEN-02</td><td>Pen Cycle supports assignment by Stroke, Segment, Face, Light Band, and seeded Random.</td><td>Ordered pen chips support Forward, Ping-Pong, and Shuffle sequences.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">PEN-03</td><td>Phase scope supports Per Stroke, Per Object, Across Selection, and Global.</td><td>Color rhythms can align continuously across many objects.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">PEN-04</td><td>Minimum segment, minimum gap, join-across-corners, and preserve-continuous-path controls prevent unplottable fragments.</td><td>Warnings explain how many fragments violate the active machine profile.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">PEN-05</td><td>One canonical effective-pen resolver must serve renderer, stats, line sort, optimization, dedupe, plot preview, and SVG grouping.</td><td>Paths with <code>meta.penId</code> are never deduped or sorted across pen boundaries.</td><td class="req-stage">Alpha gate</td></tr>
+                <tr><td class="req-id">PEN-06</td><td>Path provenance survives through visibility, segmentation, optimization, and export.</td><td>Every output fragment can be traced to scene/object/face/style/pass/pen.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">PEN-07</td><td>The Plot view reports paths, pen changes, distance, estimated time, tiny fragments, and travel.</td><td>The user can preview Pen Order before export.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">PEN-08</td><td>Scene output is ordinary Vectura paths and remains compatible with document masks, margin clipping, and SVG export.</td><td>External Mirror/Mask semantics are documented; Scene children are not exported twice.</td><td class="req-stage">Alpha</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <details class="req-group">
+          <summary>Quality, persistence, accessibility, and legacy <span class="small muted">SYS-01…09</span></summary>
+          <div class="req-table-wrap">
+            <table class="req-table">
+              <thead><tr><th>ID</th><th>Requirement</th><th>Acceptance signal</th><th>Stage</th></tr></thead>
+              <tbody>
+                <tr><td class="req-id">SYS-01</td><td>Draft, Balanced, and High reuse Vectura’s existing 3D preview-quality preference.</td><td>Quality lowers preview detail/samples only; committed export always honors final settings.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SYS-02</td><td>Recommended beta budget: 5 objects, ~25k triangles, 1 shadow light, and 10k emitted paths.</td><td>Balanced interaction p95 &lt;150 ms; full generation &lt;1.5 s; export &lt;3 s on reference hardware.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">SYS-03</td><td>Complexity is never silently dropped.</td><td>The UI warns, offers preview LOD, and reports expected path growth before a 30k-path wireframe surprise.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SYS-04</td><td>Scene persistence uses an explicit schema version and engine-state migration.</td><td><code>VECTURA_FORMAT_VERSION</code> and <code>docs/vectura-format.md</code> update together.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SYS-05</td><td>Undo uses structural sharing for immutable assets and bounded cache state.</td><td>Large imports do not multiply memory at every edit.</td><td class="req-stage">Alpha</td></tr>
+                <tr><td class="req-id">SYS-06</td><td>Every visible control must be applicable and visually verified.</td><td>Inapplicable controls are hidden; no control ships merely because a legacy algorithm exposed it.</td><td class="req-stage">All</td></tr>
+                <tr><td class="req-id">SYS-07</td><td>Keyboard, pointer, and touch flows have equivalent access. Radial controls are accelerators, never the only route.</td><td>Native focus, labels, mixed-selection states, and non-color selection cues are tested.</td><td class="req-stage">Beta</td></tr>
+                <tr><td class="req-id">SYS-08</td><td>Spiralizer, Polyhedron, Topoform, and Raster-Plane remain loadable as compatibility algorithms.</td><td>No automatic rewrite on file open; conversion is explicit and undoable.</td><td class="req-stage">Later</td></tr>
+                <tr><td class="req-id">SYS-09</td><td>A legacy algorithm leaves the Add menu only after factory state, curated presets, visual output, export, help, and file migration reach parity.</td><td>Loading support remains for at least two release cycles after de-emphasis.</td><td class="req-stage">Later</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section class="section" id="architecture">
+      <div class="wrap">
+        <p class="eyebrow">Recommended system shape</p>
+        <h2>Compile one coordinated scene into ordinary Vectura paths.</h2>
+        <div class="architecture-grid">
+          <div>
+            <div class="scene-tree" aria-label="Proposed scene hierarchy">
+              <div class="dim">DOCUMENT LAYERS</div>
+              <div class="node">▾ 3D Scene · Monument Study</div>
+              <div class="dim">&nbsp;&nbsp;INTERNAL SCENE</div>
+              <div class="node">&nbsp;&nbsp;├─ Camera 01</div>
+              <div class="light">&nbsp;&nbsp;├─ Sun</div>
+              <div class="light">&nbsp;&nbsp;├─ Rim Light</div>
+              <div class="node">&nbsp;&nbsp;├─ Torus 01</div>
+              <div class="node">&nbsp;&nbsp;│&nbsp;&nbsp;├─ Top-facing faces</div>
+              <div class="node">&nbsp;&nbsp;│&nbsp;&nbsp;└─ Rim edges</div>
+              <div class="node">&nbsp;&nbsp;├─ Ground</div>
+              <div class="style">&nbsp;&nbsp;├─ Plot Style · Copper Study</div>
+              <div class="style">&nbsp;&nbsp;└─ Look · Long Shadow</div>
+            </div>
+            <p class="small muted" style="margin-top:1rem">The outer layer is one drawable. Internal nodes remain selectable/editable, but the compiler owns cross-object occlusion, lighting, and plot order.</p>
+          </div>
+          <div class="architecture-list">
+            <div><h4>Asset table</h4><p>Immutable meshes, topology, groups, bounds, import provenance, preview/final LODs.</p></div>
+            <div><h4>Scene nodes</h4><p>Object/light/camera transforms and visibility; instances reference assets.</p></div>
+            <div><h4>Topology + selection</h4><p>Stable face/edge IDs, adjacency, semantic queries, ray picking, connected islands.</p></div>
+            <div><h4>Lighting fields</h4><p>Diffuse, shadow, specular, facing, depth, and later stylized reflected light.</p></div>
+            <div><h4>Strategy registry</h4><p>Wireframe, contour, hatch, spiral-wrap, Pattern, Topo, Wavetable, and modifiers.</p></div>
+            <div><h4>Stroke program</h4><p>Physical segmentation, gaps, minimum marks, deterministic pen assignment.</p></div>
+            <div><h4>Visibility compiler</h4><p>Global opaque/ghost/x-ray rules and scene-wide hidden-line clipping.</p></div>
+            <div><h4>Path provenance</h4><p>Scene, object, face, edge, semantic, style, pass, pen, source-stroke IDs.</p></div>
+          </div>
+        </div>
+
+        <h3 style="margin-top:3rem">The Ink Pass contract</h3>
+        <div class="pass-stack" aria-label="Example ordered ink pass stack">
+          <div class="pass"><span class="semantic">Base Surface</span><span><strong>Target</strong> Torus</span><span><strong>Action</strong> Surface contours · 1.4 mm</span><span><strong>Pen</strong> Black</span></div>
+          <div class="pass"><span class="semantic">Shadow</span><span><strong>Driver</strong> Sun / Cast shadow</span><span><strong>Action</strong> Hatch · 45° · 2 mm</span><span><strong>Pen</strong> Purple</span></div>
+          <div class="pass"><span class="semantic">Highlight</span><span><strong>Driver</strong> Highlight band</span><span><strong>Action</strong> Modify base · Open spacing 35%</span><span><strong>Pen</strong> Inherit</span></div>
+          <div class="pass"><span class="semantic">Silhouette</span><span><strong>Target</strong> Visible boundary</span><span><strong>Action</strong> Outline · 2.5× weight</span><span><strong>Pen</strong> Black</span></div>
+          <div class="pass"><span class="semantic">Pen Cycle</span><span><strong>Target</strong> Highlight strokes</span><span><strong>Action</strong> 8 mm spans · 1 mm gaps</span><span><strong>Pen</strong> 4-color loop</span></div>
+        </div>
+
+        <h3 style="margin-top:3rem">Reuse map</h3>
+        <div class="summary-grid">
+          <article class="card"><h4>Reuse directly</h4><p class="small muted"><code>Geometry3D</code> math/projection, silhouettes, creases, depth-buffer occlusion, Lambert hatch, preview-quality scaling, STL parsing, 3D gizmo, path metadata, pattern-fill clipping, Noise Rack.</p></article>
+          <article class="card"><h4>Extract behind adapters</h4><p class="small muted">Topoform primitive builders and contours; Polyhedron solids, face bands, edges, and effects; Spiralizer analytic surfaces and wraps; Raster-Plane/Terrain heightfields.</p></article>
+          <article class="card"><h4>Build new</h4><p class="small muted">Scene schema/assets, topology IDs, internal outliner, component picking, selection queries, cross-object light fields, style cascade, stroke segmentation, canonical effective-pen routing.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="plan">
+      <div class="wrap">
+        <p class="eyebrow">Parallel implementation plan</p>
+        <h2>De-risk the contracts before building the studio.</h2>
+        <p class="lede">Four workstreams can proceed in parallel after Phase 0 freezes the shared contracts. The estimates are planning ranges, not release commitments.</p>
+
+        <div class="timeline" aria-label="Parallel workstream timeline">
+          <div class="timeline-head"><div>Workstream</div><div>0 · Contracts</div><div>1 · Alpha</div><div>2 · Beta</div><div>3 · Adapters</div><div>4 · Converge</div></div>
+          <div class="timeline-lane"><div class="lane-label">A · Data / Geometry</div><div class="phase-cell active">Schema, asset table, source extraction, stable IDs</div><div class="phase-cell active">Scene nodes, primitives, STL, topology, caches</div><div class="phase-cell active">Semantic sets, BVH, light acceleration</div><div class="phase-cell later">OBJ, mapping modes, heightfields</div><div class="phase-cell later">Migration + adapters</div></div>
+          <div class="timeline-lane"><div class="lane-label">B · Compiler / Style</div><div class="phase-cell active">Compile contract, provenance, parity fixtures</div><div class="phase-cell active">Visibility, wire, contour, band, hatch, outline</div><div class="phase-cell active">Light fields, pass stack, modify-existing actions</div><div class="phase-cell later">Pattern/Topo/Wavetable/Noise adapters</div><div class="phase-cell later">Legacy recipe parity</div></div>
+          <div class="timeline-lane"><div class="lane-label">C · Product / UI</div><div class="phase-cell active">Workflows, hierarchy, selection spec, mock data</div><div class="phase-cell active">Scene studio, outliner, V/A, work mesh, gizmos</div><div class="phase-cell active">Sets, Inspector, Looks, light controls</div><div class="phase-cell later">Recipe gallery, style wheel accelerator</div><div class="phase-cell later">Convert commands</div></div>
+          <div class="timeline-lane"><div class="lane-label">D · Plot / Quality</div><div class="phase-cell active">Effective pen resolver, baselines, budgets</div><div class="phase-cell active">Persistence, SVG, stats, optimization, warnings</div><div class="phase-cell active">Segmentation, pen cycle, plot hygiene</div><div class="phase-cell later">Perf ratchets, broader import tests</div><div class="phase-cell later">Two-cycle compatibility</div></div>
+        </div>
+
+        <div class="phase-detail-grid">
+          <article class="phase-detail">
+            <h3>Phase 0 · Contracts + parity</h3>
+            <p class="small quiet">2–3 weeks · blocks implementation</p>
+            <ul>
+              <li>Define MeshAsset, SceneNode, stable component IDs, SelectionSet, PlotStyle, InkPass, LightField, PathRecord.</li>
+              <li>Extract pure source helpers without changing existing 3D output.</li>
+              <li>Freeze SVG/visual baselines and document known current limitations.</li>
+              <li>Unify effective path-pen resolution before multi-pen scenes exist.</li>
+            </ul>
+          </article>
+          <article class="phase-detail">
+            <h3>Phase 1 · Developer alpha</h3>
+            <p class="small quiet">4–6 weeks · vertical slice</p>
+            <ul>
+              <li>Multiple primitives/STL objects, one camera, transforms, instancing, save/open.</li>
+              <li>Wireframe, contour, face bands, hatch, silhouette, opaque/x-ray/hidden lines.</li>
+              <li>Object + component selection and a neutral non-exporting work mesh.</li>
+              <li>Experimental capability flag; no marketing as complete.</li>
+            </ul>
+          </article>
+          <article class="phase-detail">
+            <h3>Phase 2 · Creative beta</h3>
+            <p class="small quiet">5–7 weeks · core product value</p>
+            <ul>
+              <li>Directional/point/spot lights, hard shadows, diffuse/specular fields.</li>
+              <li>Semantic sets across objects and ordered Plot Style passes.</li>
+              <li>Add-strokes + modify-existing actions, physical gaps, alternating pens.</li>
+              <li>Looks, plot warnings, inspiration presets, full export/undo validation.</li>
+            </ul>
+          </article>
+          <article class="phase-detail">
+            <h3>Phase 3–4 · Breadth + convergence</h3>
+            <p class="small quiet">4–8+ weeks · gated by evidence</p>
+            <ul>
+              <li>Pattern/Topo/Wavetable/Noise surface adapters, mapping continuity, OBJ.</li>
+              <li>Area lights, soft shadows, stylized reflected light only after profiling.</li>
+              <li>Explicit Convert to 3D Scene commands in Topoform → Polyhedron → Spiralizer order.</li>
+              <li>No legacy removal without preset, visual, export, help, and file-format parity.</li>
+            </ul>
+          </article>
+        </div>
+
+        <h3 style="margin-top:3rem">Release gates</h3>
+        <div class="gate-list">
+          <div class="gate"><h4>Visual truth</h4><p class="small muted">Every surfaced control changes a reviewed output under a representative scene. Dense output cannot conceal a nominal effect.</p></div>
+          <div class="gate"><h4>Plot truth</h4><p class="small muted">Pen groups, physical gaps, stats, optimization, reveal order, and SVG agree on the same effective path pen.</p></div>
+          <div class="gate"><h4>Compatibility truth</h4><p class="small muted">Historical layers and presets remain loadable; conversion is explicit; schema migrations are versioned and tested.</p></div>
+        </div>
+
+        <div class="risk-grid" style="margin-top:2rem">
+          <article class="card"><h4>Risk · topology breaks selections</h4><p class="small muted">Prefer semantic Smart Sets; preserve provenance; warn on orphaned exact IDs.</p></article>
+          <article class="card"><h4>Risk · arbitrary imports</h4><p class="small muted">Repair sheet, preview/final LODs, planar/triplanar fallbacks, complexity warnings.</p></article>
+          <article class="card"><h4>Risk · renderer complexity</h4><p class="small muted">Keep Scene selection/overlays in dedicated controllers instead of growing <code>renderer.js</code>.</p></article>
+          <article class="card"><h4>Risk · undo memory</h4><p class="small muted">Immutable asset references and structural sharing; do not embed repeated meshes in object params.</p></article>
+          <article class="card"><h4>Risk · reflection overpromise</h4><p class="small muted">Separate on-object specular from a clearly labeled stylized projected reflection field.</p></article>
+          <article class="card"><h4>Risk · hidden performance cliffs</h4><p class="small muted">Targeted dependency caches, visible path estimates, recommended-scene budgets, no silent dropping.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="sketches">
+      <div class="wrap">
+        <div class="demo-intro">
+          <div>
+            <p class="eyebrow">Small interactive sketches</p>
+            <h2>Three ideas worth testing—not a built solution.</h2>
+          </div>
+          <p class="muted">These sketches pitch the mental model: geometry/look independence, surface continuity, and lighting-as-ink. They intentionally avoid simulating the full editor.</p>
+        </div>
+
+        <div class="demo-grid">
+          <article class="demo-card">
+            <div class="demo-head">
+              <div><h3>Sketch 01 · One torus, several Looks</h3><p>Same geometry and view; only the strategy changes.</p></div>
+              <div class="demo-controls" role="group" aria-label="Torus look">
+                <button type="button" data-look="spiral" aria-pressed="true">Spiral</button>
+                <button type="button" data-look="wireframe" aria-pressed="false">Wireframe</button>
+                <button type="button" data-look="faceted" aria-pressed="false">Faceted</button>
+                <button type="button" data-look="contour" aria-pressed="false">Contour</button>
+              </div>
+            </div>
+            <div class="demo-body">
+              <div class="demo-canvas">
+                <svg id="torus-demo" viewBox="0 0 720 440" role="img" aria-label="Torus rendered using the selected line strategy"></svg>
+              </div>
+              <aside class="demo-side">
+                <label for="torus-outline">Silhouette weight <span id="torus-outline-value" class="range-value">2.2×</span></label>
+                <input id="torus-outline" type="range" min="0" max="4" step="0.1" value="2.2">
+                <label for="torus-density">Density <span id="torus-density-value" class="range-value">12</span></label>
+                <input id="torus-density" type="range" min="5" max="24" step="1" value="12">
+                <div class="mini-stack">
+                  <div class="mini-pass"><strong>Base Surface</strong><span id="torus-style-label">Spiral wrap</span></div>
+                  <div class="mini-pass"><strong>Silhouette</strong>Visible boundary · Black</div>
+                  <div class="mini-pass"><strong>Camera + geometry</strong>Unchanged across Looks</div>
+                </div>
+              </aside>
+            </div>
+            <div class="demo-caption">Product question: does “Look” feel meaningfully faster and safer than changing algorithm/source controls?</div>
+          </article>
+
+          <article class="demo-card">
+            <div class="demo-head">
+              <div><h3>Sketch 02 · All tops, one field</h3><p>Toggle how one surface strategy maps across a selection set.</p></div>
+              <div class="demo-controls" role="group" aria-label="Surface continuity">
+                <button type="button" data-continuity="per-face" aria-pressed="true">Per Face</button>
+                <button type="button" data-continuity="across" aria-pressed="false">Across Selection</button>
+              </div>
+            </div>
+            <div class="demo-body">
+              <div class="demo-canvas">
+                <svg id="blocks-demo" viewBox="0 0 720 460" role="img" aria-label="Selected block tops with per-face or across-selection topology"></svg>
+              </div>
+              <aside class="demo-side">
+                <label>Selection set</label>
+                <select aria-label="Selection set">
+                  <option>Top Faces · Smart Set</option>
+                  <option>Vertical Faces · Smart Set</option>
+                </select>
+                <label>Surface strategy</label>
+                <select aria-label="Surface strategy">
+                  <option>Topographic Map</option>
+                  <option>Woodgrain</option>
+                  <option>Concentric Rings</option>
+                </select>
+                <div class="mini-stack">
+                  <div class="mini-pass"><strong>Target</strong>9 faces across 9 objects</div>
+                  <div class="mini-pass"><strong>Rule</strong>Normal within 12° of Up</div>
+                  <div class="mini-pass"><strong>Mapping</strong><span id="continuity-label">Restart on each face</span></div>
+                </div>
+              </aside>
+            </div>
+            <div class="demo-caption">Product question: are Smart Sets and continuity options sufficient for the wood-block workflow without exposing UV jargon?</div>
+          </article>
+
+          <article class="demo-card">
+            <div class="demo-head">
+              <div><h3>Sketch 03 · Light becomes plot language</h3><p>Move a light, then decide how its shadow and highlight become strokes.</p></div>
+              <div class="demo-controls">
+                <span class="badge beta">Interactive field-to-ink mapping</span>
+              </div>
+            </div>
+            <div class="demo-body">
+              <div class="demo-canvas">
+                <svg id="light-demo" viewBox="0 0 720 470" role="img" aria-label="Isometric objects with a dynamically oriented styled cast shadow"></svg>
+              </div>
+              <aside class="demo-side">
+                <label for="light-angle">Light azimuth <span id="light-angle-value" class="range-value">135°</span></label>
+                <input id="light-angle" type="range" min="20" max="250" step="1" value="135">
+                <label for="shadow-mark">Shadow action</label>
+                <select id="shadow-mark">
+                  <option value="hatch">Add hatch</option>
+                  <option value="rings">Add rings</option>
+                  <option value="broken">Broken lines</option>
+                </select>
+                <label for="shadow-gap">Gap <span id="shadow-gap-value" class="range-value">2.0 mm</span></label>
+                <input id="shadow-gap" type="range" min="1" max="8" step="0.5" value="2">
+                <label for="shadow-pen">Pen</label>
+                <select id="shadow-pen">
+                  <option value="#8a5cff">Purple</option>
+                  <option value="#ff8a4c">Orange</option>
+                  <option value="#27c8d7">Cyan</option>
+                </select>
+                <label for="highlight-action">Highlight</label>
+                <select id="highlight-action">
+                  <option value="space">Modify base · Open spacing</option>
+                  <option value="rings">Add concentric rings</option>
+                  <option value="gaps">Open radial gaps</option>
+                </select>
+                <div class="mini-stack">
+                  <div class="mini-pass"><strong>Shadow</strong><span id="shadow-summary">Hatch · 45° · 2 mm · Purple</span></div>
+                  <div class="mini-pass"><strong>Highlight</strong><span id="highlight-summary">Open base spacing</span></div>
+                </div>
+              </aside>
+            </div>
+            <div class="demo-caption">Product question: can a user understand light as a selectable source of regions, then style those regions with the same Ink Pass grammar?</div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="decision">
+      <div class="wrap decision">
+        <div>
+          <p class="eyebrow">Decision requested</p>
+          <h2>Approve the direction, then fund Phase 0.</h2>
+          <p class="lede">The right next step is not a feature sprint. It is a short contract-and-parity phase that proves the data model, effective-pen pipeline, visual truth of reusable 3D capabilities, and the Scene Studio interaction model.</p>
+        </div>
+        <div class="decision-box">
+          <h3>Approve these product decisions</h3>
+          <ul>
+            <li><b>3D Scene</b> is one document layer with an internal scene workspace.</li>
+            <li>Styles are ordered <b>Ink Pass</b> stacks, not a growing render-mode dropdown.</li>
+            <li>Selection sets and lighting fields are first-class targets.</li>
+            <li>Physical gaps and effective path pens are core architecture, not export polish.</li>
+            <li>Hard shadows and stylized reflection fields come before physically correct light transport.</li>
+            <li>Legacy algorithms remain available until measured parity—not aspiration—supports convergence.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      Vectura 3D Scene Studio proposal · grounded in repository inspection, live visual review, prior 3D audit findings, and parallel product / UX / graphics / delivery analysis.
+    </div>
+  </footer>
+
+  <script>
+    (() => {
+      const NS = "http://www.w3.org/2000/svg";
+      const svgEl = (name, attrs = {}) => {
+        const el = document.createElementNS(NS, name);
+        Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+        return el;
+      };
+      const pathD = (points, close = false) => {
+        if (!points.length) return "";
+        return `M ${points.map((p) => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" L ")}${close ? " Z" : ""}`;
+      };
+
+      // Sketch 01: one parametric torus, interchangeable line strategies.
+      const torusSvg = document.getElementById("torus-demo");
+      const lookButtons = Array.from(document.querySelectorAll("[data-look]"));
+      const outlineInput = document.getElementById("torus-outline");
+      const densityInput = document.getElementById("torus-density");
+      const outlineValue = document.getElementById("torus-outline-value");
+      const densityValue = document.getElementById("torus-density-value");
+      const styleLabel = document.getElementById("torus-style-label");
+      let torusLook = "spiral";
+
+      const torusPoint = (u, v) => {
+        const R = 122;
+        const r = 48;
+        let x = (R + r * Math.cos(v)) * Math.cos(u);
+        let y = r * Math.sin(v);
+        let z = (R + r * Math.cos(v)) * Math.sin(u);
+        const yaw = -0.58;
+        const pitch = 0.66;
+        const x1 = x * Math.cos(yaw) + z * Math.sin(yaw);
+        const z1 = -x * Math.sin(yaw) + z * Math.cos(yaw);
+        const y2 = y * Math.cos(pitch) - z1 * Math.sin(pitch);
+        const z2 = y * Math.sin(pitch) + z1 * Math.cos(pitch);
+        const scale = 1 + z2 / 1200;
+        return { x: 360 + x1 * scale, y: 220 - y2 * scale, z: z2 };
+      };
+
+      const addTorusPath = (points, attrs = {}) => {
+        const path = svgEl("path", {
+          d: pathD(points),
+          fill: "none",
+          stroke: attrs.stroke || "#e9edf1",
+          "stroke-width": attrs.width || "1.05",
+          "stroke-linecap": "round",
+          "stroke-linejoin": "round",
+          opacity: attrs.opacity || "0.9"
+        });
+        if (attrs.dash) path.setAttribute("stroke-dasharray", attrs.dash);
+        torusSvg.appendChild(path);
+      };
+
+      const drawTorus = () => {
+        torusSvg.replaceChildren();
+        const density = Number(densityInput.value);
+        const guide = svgEl("ellipse", {
+          cx: 360, cy: 220, rx: 220, ry: 145,
+          fill: "none", stroke: "#34404b", "stroke-width": "1", "stroke-dasharray": "3 7"
+        });
+        torusSvg.appendChild(guide);
+
+        if (torusLook === "spiral") {
+          const turns = Math.max(6, density);
+          const points = [];
+          const samples = 820;
+          for (let i = 0; i <= samples; i++) {
+            const t = i / samples;
+            points.push(torusPoint(t * Math.PI * 2, t * Math.PI * 2 * turns));
+          }
+          addTorusPath(points, { width: 1.45 });
+          styleLabel.textContent = "Spiral wrap";
+        } else if (torusLook === "wireframe") {
+          const lines = Math.max(6, Math.round(density * 0.75));
+          for (let j = 0; j < lines; j++) {
+            const v = (j / lines) * Math.PI * 2;
+            const points = [];
+            for (let i = 0; i <= 150; i++) points.push(torusPoint((i / 150) * Math.PI * 2, v));
+            addTorusPath(points, { opacity: 0.72 });
+          }
+          for (let j = 0; j < Math.max(5, Math.round(lines * 0.6)); j++) {
+            const u = (j / Math.max(5, Math.round(lines * 0.6))) * Math.PI * 2;
+            const points = [];
+            for (let i = 0; i <= 70; i++) points.push(torusPoint(u, (i / 70) * Math.PI * 2));
+            addTorusPath(points, { opacity: 0.5, dash: "2 3" });
+          }
+          styleLabel.textContent = "Surface wireframe";
+        } else if (torusLook === "faceted") {
+          const sides = Math.max(5, Math.round(density * 0.62));
+          for (let j = 0; j < sides; j++) {
+            const v = (j / sides) * Math.PI * 2;
+            const points = [];
+            for (let i = 0; i <= sides; i++) points.push(torusPoint((i / sides) * Math.PI * 2, v));
+            addTorusPath(points, { opacity: 0.82 });
+          }
+          for (let j = 0; j < sides; j++) {
+            const u = (j / sides) * Math.PI * 2;
+            const points = [];
+            for (let i = 0; i <= sides; i++) points.push(torusPoint(u, (i / sides) * Math.PI * 2));
+            addTorusPath(points, { opacity: 0.56 });
+          }
+          styleLabel.textContent = "Faceted bands";
+        } else {
+          const count = Math.max(5, Math.round(density * 0.85));
+          for (let j = 0; j < count; j++) {
+            const phase = ((j + 0.5) / count) * Math.PI * 2;
+            const points = [];
+            for (let i = 0; i <= 180; i++) {
+              const u = (i / 180) * Math.PI * 2;
+              points.push(torusPoint(u, phase + Math.sin(u * 2) * 0.15));
+            }
+            addTorusPath(points, { opacity: 0.76 });
+          }
+          styleLabel.textContent = "Surface contours";
+        }
+
+        const outlineWidth = Number(outlineInput.value);
+        if (outlineWidth > 0) {
+          const outer = [];
+          const inner = [];
+          for (let i = 0; i <= 240; i++) {
+            const u = (i / 240) * Math.PI * 2;
+            outer.push(torusPoint(u, 0));
+            inner.push(torusPoint(u, Math.PI));
+          }
+          addTorusPath(outer, { width: outlineWidth, opacity: 1 });
+          addTorusPath(inner, { width: outlineWidth * 0.78, opacity: 0.85 });
+        }
+      };
+
+      lookButtons.forEach((button) => button.addEventListener("click", () => {
+        torusLook = button.dataset.look;
+        lookButtons.forEach((peer) => peer.setAttribute("aria-pressed", String(peer === button)));
+        drawTorus();
+      }));
+      outlineInput.addEventListener("input", () => {
+        outlineValue.textContent = `${Number(outlineInput.value).toFixed(1)}×`;
+        drawTorus();
+      });
+      densityInput.addEventListener("input", () => {
+        densityValue.textContent = densityInput.value;
+        drawTorus();
+      });
+
+      // Sketch 02: isometric blocks with per-face vs shared selection mapping.
+      const blocksSvg = document.getElementById("blocks-demo");
+      const continuityButtons = Array.from(document.querySelectorAll("[data-continuity]"));
+      const continuityLabel = document.getElementById("continuity-label");
+      let continuity = "per-face";
+      const iso = (x, y, z) => ({
+        x: 350 + (x - y) * 58,
+        y: 105 + (x + y) * 29 - z * 44
+      });
+      const blockData = [
+        [0, 0, 1.6], [1, 0, 1.05], [2, 0, 1.35],
+        [0, 1, 0.9], [1, 1, 1.5], [2, 1, 0.85],
+        [0, 2, 1.3], [1, 2, 0.75], [2, 2, 1.1]
+      ];
+
+      const drawBlocks = () => {
+        blocksSvg.replaceChildren();
+        const defs = svgEl("defs");
+        const topClip = svgEl("clipPath", { id: "all-top-clips" });
+        defs.appendChild(topClip);
+        blocksSvg.appendChild(defs);
+        const topPolys = [];
+
+        blockData.slice().sort((a, b) => (a[0] + a[1]) - (b[0] + b[1])).forEach(([x, y, h], index) => {
+          const p0 = iso(x, y, h);
+          const p1 = iso(x + 0.82, y, h);
+          const p2 = iso(x + 0.82, y + 0.82, h);
+          const p3 = iso(x, y + 0.82, h);
+          const b1 = iso(x + 0.82, y, 0);
+          const b2 = iso(x + 0.82, y + 0.82, 0);
+          const b3 = iso(x, y + 0.82, 0);
+          const top = [p0, p1, p2, p3];
+          topPolys.push(top);
+          topClip.appendChild(svgEl("path", { d: pathD(top, true) }));
+
+          blocksSvg.appendChild(svgEl("path", {
+            d: pathD([p1, b1, b2, p2], true),
+            fill: "#171c22", stroke: "#5b6773", "stroke-width": "1"
+          }));
+          blocksSvg.appendChild(svgEl("path", {
+            d: pathD([p2, b2, b3, p3], true),
+            fill: "#12171c", stroke: "#4f5a64", "stroke-width": "1"
+          }));
+          blocksSvg.appendChild(svgEl("path", {
+            d: pathD(top, true),
+            fill: "#202832", stroke: "#52b7ff", "stroke-width": "1.5"
+          }));
+
+          if (continuity === "per-face") {
+            const center = {
+              x: top.reduce((sum, p) => sum + p.x, 0) / 4,
+              y: top.reduce((sum, p) => sum + p.y, 0) / 4
+            };
+            for (let ring = 0; ring < 5; ring++) {
+              const factor = 0.12 + ring * 0.16;
+              const inset = top.map((p) => ({
+                x: center.x + (p.x - center.x) * factor,
+                y: center.y + (p.y - center.y) * factor
+              }));
+              blocksSvg.appendChild(svgEl("path", {
+                d: pathD(inset, true), fill: "none",
+                stroke: index % 2 ? "#a88bff" : "#7dd7ff",
+                "stroke-width": "1.05", opacity: "0.8"
+              }));
+            }
+          }
+        });
+
+        if (continuity === "across") {
+          const group = svgEl("g", { "clip-path": "url(#all-top-clips)" });
+          for (let r = 18; r < 310; r += 16) {
+            group.appendChild(svgEl("ellipse", {
+              cx: 350, cy: 178, rx: r * 1.35, ry: r * 0.5,
+              fill: "none", stroke: "#a88bff", "stroke-width": "1.15", opacity: "0.86",
+              transform: "rotate(-2 350 178)"
+            }));
+          }
+          blocksSvg.appendChild(group);
+        }
+
+        const setLabel = svgEl("text", {
+          x: 28, y: 425, fill: "#9da7b3", "font-size": "15",
+          "font-family": "ui-monospace, monospace"
+        });
+        setLabel.textContent = "TOP FACES · SMART SET · 9 MATCHES";
+        blocksSvg.appendChild(setLabel);
+      };
+
+      continuityButtons.forEach((button) => button.addEventListener("click", () => {
+        continuity = button.dataset.continuity;
+        continuityButtons.forEach((peer) => peer.setAttribute("aria-pressed", String(peer === button)));
+        continuityLabel.textContent = continuity === "per-face" ? "Restart on each face" : "One field across the set";
+        drawBlocks();
+      }));
+
+      // Sketch 03: dynamic light angle with styleable cast-shadow field.
+      const lightSvg = document.getElementById("light-demo");
+      const lightAngle = document.getElementById("light-angle");
+      const lightAngleValue = document.getElementById("light-angle-value");
+      const shadowMark = document.getElementById("shadow-mark");
+      const shadowGap = document.getElementById("shadow-gap");
+      const shadowGapValue = document.getElementById("shadow-gap-value");
+      const shadowPen = document.getElementById("shadow-pen");
+      const highlightAction = document.getElementById("highlight-action");
+      const shadowSummary = document.getElementById("shadow-summary");
+      const highlightSummary = document.getElementById("highlight-summary");
+
+      const penName = (value) => ({
+        "#8a5cff": "Purple",
+        "#ff8a4c": "Orange",
+        "#27c8d7": "Cyan"
+      }[value] || "Pen");
+
+      const drawIsoBox = (svg, x, y, w, h, z, highlightMode) => {
+        const a = { x, y };
+        const b = { x: x + w, y: y - w * 0.45 };
+        const c = { x: x + w + h, y: y - w * 0.45 + h * 0.45 };
+        const d = { x: x + h, y: y + h * 0.45 };
+        const za = { x: a.x, y: a.y - z };
+        const zb = { x: b.x, y: b.y - z };
+        const zc = { x: c.x, y: c.y - z };
+        const zd = { x: d.x, y: d.y - z };
+        svg.appendChild(svgEl("path", { d: pathD([a, b, zb, za], true), fill: "#11161b", stroke: "#85919c", "stroke-width": "1.1" }));
+        svg.appendChild(svgEl("path", { d: pathD([b, c, zc, zb], true), fill: "#171d23", stroke: "#66727e", "stroke-width": "1.1" }));
+        svg.appendChild(svgEl("path", { d: pathD([za, zb, zc, zd], true), fill: "#202a33", stroke: "#dce4ea", "stroke-width": "1.2" }));
+        for (let i = 0; i < 5; i++) {
+          const t = (i + 1) / 6;
+          const p1 = { x: za.x + (zd.x - za.x) * t, y: za.y + (zd.y - za.y) * t };
+          const p2 = { x: zb.x + (zc.x - zb.x) * t, y: zb.y + (zc.y - zb.y) * t };
+          const line = svgEl("line", {
+            x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
+            stroke: highlightMode === "space" && i < 2 ? "#48545f" : "#d7e0e7",
+            "stroke-width": highlightMode === "rings" ? "1.45" : "0.9",
+            opacity: highlightMode === "gaps" && i % 2 === 0 ? "0.25" : "0.8"
+          });
+          if (highlightMode === "gaps") line.setAttribute("stroke-dasharray", "8 6");
+          svg.appendChild(line);
+        }
+        return { footprint: [a, b, c, d], top: [za, zb, zc, zd] };
+      };
+
+      const drawLightScene = () => {
+        lightSvg.replaceChildren();
+        const defs = svgEl("defs");
+        const pattern = svgEl("pattern", {
+          id: "shadow-pattern", patternUnits: "userSpaceOnUse",
+          width: Math.max(5, Number(shadowGap.value) * 5),
+          height: Math.max(5, Number(shadowGap.value) * 5),
+          patternTransform: shadowMark.value === "hatch" ? "rotate(45)" : "rotate(0)"
+        });
+        const color = shadowPen.value;
+        if (shadowMark.value === "hatch") {
+          pattern.appendChild(svgEl("line", {
+            x1: 0, y1: 0, x2: 0, y2: 20,
+            stroke: color, "stroke-width": "2"
+          }));
+        } else if (shadowMark.value === "rings") {
+          pattern.appendChild(svgEl("circle", {
+            cx: 5, cy: 5, r: 3.6,
+            fill: "none", stroke: color, "stroke-width": "1.2"
+          }));
+        } else {
+          pattern.appendChild(svgEl("line", {
+            x1: 0, y1: 4, x2: 7, y2: 4,
+            stroke: color, "stroke-width": "2.2", "stroke-linecap": "round"
+          }));
+        }
+        defs.appendChild(pattern);
+        lightSvg.appendChild(defs);
+
+        const ground = svgEl("path", {
+          d: "M 80 330 L 360 198 L 660 342 L 380 452 Z",
+          fill: "#0f1419", stroke: "#35404a", "stroke-width": "1.2"
+        });
+        lightSvg.appendChild(ground);
+
+        const boxes = [
+          { x: 210, y: 335, w: 72, h: 48, z: 138 },
+          { x: 350, y: 355, w: 64, h: 54, z: 82 },
+          { x: 420, y: 270, w: 54, h: 46, z: 116 }
+        ];
+        const angle = Number(lightAngle.value) * Math.PI / 180;
+        const dx = Math.cos(angle) * 150;
+        const dy = Math.sin(angle) * 82;
+        const rendered = [];
+        boxes.forEach((box) => {
+          const a = { x: box.x, y: box.y };
+          const b = { x: box.x + box.w, y: box.y - box.w * 0.45 };
+          const c = { x: box.x + box.w + box.h, y: box.y - box.w * 0.45 + box.h * 0.45 };
+          const d = { x: box.x + box.h, y: box.y + box.h * 0.45 };
+          const farB = { x: b.x + dx, y: b.y + dy };
+          const farC = { x: c.x + dx, y: c.y + dy };
+          lightSvg.appendChild(svgEl("path", {
+            d: pathD([a, b, farB, farC, c, d], true),
+            fill: "url(#shadow-pattern)", stroke: color, "stroke-width": "0.8", opacity: "0.88"
+          }));
+          rendered.push(box);
+        });
+        rendered.forEach((box) => drawIsoBox(lightSvg, box.x, box.y, box.w, box.h, box.z, highlightAction.value));
+
+        const lx = 115 + Math.cos(angle + Math.PI) * 62;
+        const ly = 95 + Math.sin(angle + Math.PI) * 42;
+        lightSvg.appendChild(svgEl("line", {
+          x1: lx, y1: ly, x2: lx - Math.cos(angle) * 58, y2: ly - Math.sin(angle) * 58,
+          stroke: "#ffbe5c", "stroke-width": "2.2", "stroke-linecap": "round"
+        }));
+        lightSvg.appendChild(svgEl("circle", {
+          cx: lx, cy: ly, r: 12, fill: "none", stroke: "#ffbe5c", "stroke-width": "2"
+        }));
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          lightSvg.appendChild(svgEl("line", {
+            x1: lx + Math.cos(a) * 17, y1: ly + Math.sin(a) * 17,
+            x2: lx + Math.cos(a) * 24, y2: ly + Math.sin(a) * 24,
+            stroke: "#ffbe5c", "stroke-width": "1.3"
+          }));
+        }
+
+        lightAngleValue.textContent = `${lightAngle.value}°`;
+        shadowGapValue.textContent = `${Number(shadowGap.value).toFixed(1)} mm`;
+        const markLabel = shadowMark.options[shadowMark.selectedIndex].text.replace("Add ", "");
+        shadowSummary.textContent = `${markLabel} · 45° · ${Number(shadowGap.value).toFixed(1)} mm · ${penName(color)}`;
+        highlightSummary.textContent = {
+          space: "Open base spacing",
+          rings: "Add concentric rings",
+          gaps: "Open radial gaps"
+        }[highlightAction.value];
+      };
+
+      [lightAngle, shadowGap].forEach((input) => input.addEventListener("input", drawLightScene));
+      [shadowMark, shadowPen, highlightAction].forEach((input) => input.addEventListener("change", drawLightScene));
+
+      drawTorus();
+      drawBlocks();
+      drawLightScene();
+    })();
+  </script>
+</body>
+</html>
