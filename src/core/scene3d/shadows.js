@@ -359,6 +359,63 @@
     return { x, y, z };
   };
 
+  // W-30 — PERSPECTIVE analog of `projectAlongDirToPlane` for a POSITIONAL
+  // light (point/spot/area with a real world position): the ray from the
+  // light position Lp THROUGH the world vertex P, continued to the plane.
+  // Mirrors `projectShadowVertexPositional` below (Lp.y/(Lp.y−P.y) on the
+  // y=0 ground) generalized to an arbitrary plane, exactly the same way
+  // `projectAlongDirToPlane` generalizes the parallel `projectShadowVertex`.
+  // Parametrized as Lp + t·(P−Lp): t=1 IS P itself, so a valid shadow point
+  // (beyond the caster, away from the light) requires t > 1 (small epsilon
+  // slack for a caster resting exactly on the receiver). Returns a WORLD
+  // point (no camera projection — same "caller does that" contract as
+  // `projectAlongDirToPlane`).
+  const projectFromPositionToPlane = (P, Lp, planeAnchor, planeNormal) => {
+    if (!P || !Number.isFinite(P.x) || !Number.isFinite(P.y) || !Number.isFinite(P.z)) return null;
+    if (!Lp || !Number.isFinite(Lp.x) || !Number.isFinite(Lp.y) || !Number.isFinite(Lp.z)) return null;
+    if (!planeAnchor || !planeNormal) return null;
+    const dx = P.x - Lp.x; const dy = P.y - Lp.y; const dz = P.z - Lp.z;
+    const denom = planeNormal.x * dx + planeNormal.y * dy + planeNormal.z * dz;
+    if (Math.abs(denom) < 1e-9) return null;
+    const relx = planeAnchor.x - Lp.x; const rely = planeAnchor.y - Lp.y; const relz = planeAnchor.z - Lp.z;
+    const t = (planeNormal.x * relx + planeNormal.y * rely + planeNormal.z * relz) / denom;
+    if (!(t > 1 - 1e-3) || !Number.isFinite(t)) return null; // must land at/beyond P, away from the light
+    const x = Lp.x + t * dx; const y = Lp.y + t * dy; const z = Lp.z + t * dz;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+    return { x, y, z };
+  };
+
+  // W-30 — light-type-aware plane-projector DISPATCH for the flat-face
+  // shadow-RECEIVE path (`scene3d.js`'s `buildFaceFootprint`), mirroring the
+  // `positional` detection `build()` already applies to the ground-shadow
+  // path below (grep this file for `positional`): a point/spot/area light
+  // with a real world `position` casts a PERSPECTIVE footprint from that
+  // position; a directional (or any other/absent-position) light keeps the
+  // PARALLEL travel-direction footprint via `fallbackDir` (e.g.
+  // `Regions.Lighting.lightWorldDir(light)`), byte-identical to before this
+  // fix for every scene that only ever used a directional sun.
+  //
+  // Finding this generalizes (STILL-OPEN.md W-30 / docs/3d-audit/lane-
+  // reports/UnitD-phase-review.md §4): before this export existed, the ONLY
+  // primitive available to the receive path was the parallel projector, so
+  // an area/point/spot light with no azimuth/elevation fields silently fell
+  // back to `Regions.Lighting.lightWorldDir`'s own default (135°/45°) —
+  // the receive-shadow direction had NO relationship to where the light
+  // actually was. This function is the fix's reusable primitive; wiring
+  // `scene3d.js`'s `buildFaceFootprint` call site to actually call it
+  // (instead of always calling `projectAlongDirToPlane` with `lightDir`) is
+  // a follow-up out of this lane's scope (`scene3d.js` is owned elsewhere —
+  // see AGENT-PROTOCOL.md's serialization table).
+  const projectLightToPlane = (P, light, planeAnchor, planeNormal, fallbackDir) => {
+    const pos = light && light.position;
+    const type = light && light.type;
+    const positional = Boolean(pos && Number.isFinite(pos.x) && Number.isFinite(pos.y) && Number.isFinite(pos.z)
+      && (type === 'point' || type === 'spot' || type === 'area'));
+    if (positional) return projectFromPositionToPlane(P, pos, planeAnchor, planeNormal);
+    if (!fallbackDir) return null;
+    return projectAlongDirToPlane(P, fallbackDir, planeAnchor, planeNormal);
+  };
+
   // Project a world vertex onto the y = 0 ground along the light travel dir,
   // then camera-project. Returns a screen {x,y,z} or null when non-finite.
   const projectShadowVertex = (P, d, camAngles, projOpts) => {
@@ -3221,6 +3278,14 @@
       // the same 2D hull the ground caster silhouette already reduces to
       // for its draft footprint.
       projectAlongDirToPlane,
+      // W-30 — light-type-aware perspective projector for the flat-face
+      // shadow-RECEIVE path (see the comment above `projectLightToPlane`):
+      // `projectFromPositionToPlane` is the raw perspective primitive,
+      // `projectLightToPlane` dispatches on `light.type`/`light.position`
+      // vs the parallel `projectAlongDirToPlane` fallback, mirroring the
+      // ground-shadow path's own `positional` detection below.
+      projectFromPositionToPlane,
+      projectLightToPlane,
       convexHull,
       // Fill Style (tone-law) on shadow hatch: `toneLawApplies(lawId)` is the
       // predicate a UI picker should gate on (hide ids whose mark class does
