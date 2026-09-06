@@ -596,6 +596,85 @@ describe('Scene3D.ShadowReceive — shadows landing on other objects (Unit D)', 
       expect(outsideD).toBeGreaterThan(0); // anti-vacuity
       expect(insideD / outsideD).toBeGreaterThanOrEqual(2);
     });
+
+    // ── Unit D polish — phase-align the inside-footprint family ────────────
+    //
+    // The judge's follow-up (docs/3d-audit/STILL-OPEN.md "Unit D polish")
+    // found the footprint-clipped inside hatch genuinely denser (1.45x, real)
+    // but reading as a patch of BROKEN DASHES rather than one continuous
+    // texture, because the inside family's marching scan starts from its OWN
+    // (small) bounding box while the outside family starts from a completely
+    // different one — same angle, unrelated phase. This test instruments the
+    // public `Shadows.hatchRingsEvenOdd` entry point (already exported for
+    // this exact feature) to capture BOTH families' raw per-ruling
+    // perpendicular offsets in the face's own UV space, then checks: (1)
+    // angle — both families are cut at the same angle; (2) density — the
+    // inside family is still genuinely denser; (3) phase — every ACTUAL
+    // outside ruling that falls within the inside family's own scanned
+    // range must have an inside ruling within 0.05x the outside pitch of
+    // it, i.e. the inside family is the outside family's own rulings
+    // continued at a denser pitch (extra midlines), not an independently
+    // phased grid that merely happens to be denser.
+    const diffsOf = (arr) => { const d = []; for (let i = 1; i < arr.length; i++) d.push(arr[i] - arr[i - 1]); return d; };
+    const median = (arr) => { const s = arr.slice().sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+
+    test('Unit D polish — inside-footprint rulings are phase-locked to the outside family (same angle, same phase, >=1.4x denser)', () => {
+      const Shadows = V.Scene3D.Shadows;
+      const origHatch = Shadows.hatchRingsEvenOdd;
+      const calls = [];
+      Shadows.hatchRingsEvenOdd = function patched(rings, angleDeg, spacing) {
+        const result = origHatch.apply(this, arguments);
+        if (typeof spacing !== 'function' && Array.isArray(result) && result.length) {
+          const ang = angleDeg * Math.PI / 180;
+          const perpX = -Math.sin(ang); const perpY = Math.cos(ang);
+          const offsets = result.map((seg) => {
+            const mx = (seg[0].x + seg[1].x) / 2; const my = (seg[0].y + seg[1].y) / 2;
+            return mx * perpX + my * perpY;
+          }).sort((a, b) => a - b);
+          calls.push({ ringsLen: rings.length, angleDeg, offsets });
+        }
+        return result;
+      };
+      let paths;
+      try {
+        paths = render(true);
+      } finally {
+        Shadows.hatchRingsEvenOdd = origHatch;
+      }
+      expect(receiverFills(paths).length).toBeGreaterThan(0); // anti-vacuity
+
+      const outer = calls.find((c) => c.ringsLen > 1);
+      const inner = calls.filter((c) => c.ringsLen === 1 && c.offsets.length > 1);
+      expect(outer).toBeTruthy();
+      expect(inner.length).toBeGreaterThan(0);
+
+      const outerStep = median(diffsOf(outer.offsets));
+      expect(outerStep).toBeGreaterThan(0);
+
+      inner.forEach((innerCall) => {
+        // (1) angle
+        expect(Math.abs(innerCall.angleDeg - outer.angleDeg)).toBeLessThanOrEqual(1);
+
+        // (2) density
+        const innerStep = median(diffsOf(innerCall.offsets));
+        expect(outerStep / innerStep).toBeGreaterThanOrEqual(1.4);
+
+        // (3) phase — every REAL outside ruling that falls strictly inside
+        // the inside family's own ACTUALLY SCANNED range (no margin — a
+        // position past where the inside family stops scanning has no
+        // inside ruling near it for a structural reason, not a phase bug,
+        // and must not be counted here) must be matched by a real inside
+        // ruling within 0.05x the outside pitch.
+        const lo = innerCall.offsets[0]; const hi = innerCall.offsets[innerCall.offsets.length - 1];
+        const outerInRange = outer.offsets.filter((pos) => pos >= lo && pos <= hi);
+        expect(outerInRange.length).toBeGreaterThan(1); // anti-vacuity — the check has real positions to test
+
+        const worstPhase = Math.max(...outerInRange.map((pos) => Math.min(
+          ...innerCall.offsets.map((o) => Math.abs(o - pos)),
+        )));
+        expect(worstPhase / outerStep).toBeLessThanOrEqual(0.05);
+      });
+    });
   });
 });
 
@@ -613,6 +692,21 @@ const preFacetGradeRuntimeOptions = makeMultiFilePreShaRuntimeOptions(
   '2893d842',
   'VECTURA_PRE_FACETGRADE',
   ['src/core/algorithms/scene3d.js', 'src/core/scene3d/shadows.js'],
+);
+
+// ── RED-proof for the Unit D polish fix (phase-alignment of the
+// inside-footprint family with the outside family). `d86cbf8d` is the last
+// commit on this branch before the fix — `shadows.js`'s `hatchRingsEvenOdd`
+// there computes each call's scan origin from that call's OWN ring bounding
+// box with no cross-call phase memo, so the inside-footprint family (a
+// different, smaller ring) starts from an unrelated origin than the outside
+// family even though both share the same angle.
+//
+//   VECTURA_PRE_UNITD_PHASE=1 npx vitest run tests/unit/scene3d-shadow-receive.test.js
+const preUnitDPhaseRuntimeOptions = makeMultiFilePreShaRuntimeOptions(
+  'd86cbf8d',
+  'VECTURA_PRE_UNITD_PHASE',
+  ['src/core/scene3d/shadows.js'],
 );
 
 describe('Unit D judge follow-up — RED-proof pin (2893d842)', () => {
@@ -745,5 +839,96 @@ describe('Unit D judge follow-up — RED-proof pin (2893d842)', () => {
     const insideD = inkInWindow(receiverFills, toScreen(insideCenter), HALFEDGE) / ((HALFEDGE * 2) ** 2);
     const outsideD = inkInWindow(receiverFills, toScreen(outsideCenter), HALFEDGE) / ((HALFEDGE * 2) ** 2);
     expect(insideD / (outsideD || 1e-9)).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('Unit D polish — RED-proof pin (d86cbf8d)', () => {
+  let runtime3;
+  let V3;
+
+  beforeAll(async () => { runtime3 = await loadVecturaRuntime(preUnitDPhaseRuntimeOptions()); V3 = runtime3.window.Vectura; });
+  afterAll(() => runtime3.cleanup());
+
+  const SUN = { id: 'sun', type: 'directional', azimuth: 90, elevation: 25, intensity: 1 };
+  const CAMERA = { projection: 'orthographic', yaw: 20, pitch: 45, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
+  const BOUNDS = { width: 420, height: 420, m: 10, dW: 400, dH: 400, penWidth: 0.3, truncate: 4 };
+  const receiver = {
+    id: 'receiver', name: 'receiver', primitive: 'plane', params: { sx: 320, sz: 320 },
+    transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+  };
+  const caster = {
+    id: 'caster', name: 'caster', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 },
+    transform: { x: 60, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+  };
+  const styleTable = () => ({
+    scene: { penId: null, mapper: 'hatch', params: { fillAngle: 20, fillDensity: 80, toneLaw: 'ladder' } },
+    byObject: {
+      receiver: { penId: null, mapper: 'hatch', params: { fillAngle: 20, fillDensity: 80, toneLaw: 'ladder' } },
+      caster: { penId: null, mapper: 'hatch', params: { fillAngle: 20, fillDensity: 80, toneLaw: 'ladder' } },
+    },
+    byFace: {},
+  });
+  const diffsOf = (arr) => { const d = []; for (let i = 1; i < arr.length; i++) d.push(arr[i] - arr[i - 1]); return d; };
+  const median = (arr) => { const s = arr.slice().sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+
+  test('same assertion as the GREEN test above must FAIL here (RED) — phase offset exceeds 0.05x pitch on the unpatched hatchRingsEvenOdd', () => {
+    const Params = V3.Scene3D.Params;
+    const p = JSON.parse(JSON.stringify(V3.ALGO_DEFAULTS.scene3d));
+    p.seed = 1;
+    p.camera = CAMERA;
+    p.ground = { enabled: false };
+    p.backdrop = { enabled: false };
+    p.objects = [caster, receiver];
+    p.lights = [SUN];
+    p.tone = { enabled: true, bands: 2, thresholds: [0.3], ladder: [0.1, 0.95] };
+    p.styleTable = styleTable();
+    p.shadow = { ...p.shadow, shadowReceiveOnObjects: true };
+    const np = Params.normalizeParams(p);
+
+    const Shadows = V3.Scene3D.Shadows;
+    const origHatch = Shadows.hatchRingsEvenOdd;
+    const calls = [];
+    Shadows.hatchRingsEvenOdd = function patched(rings, angleDeg, spacing) {
+      const result = origHatch.apply(this, arguments);
+      if (typeof spacing !== 'function' && Array.isArray(result) && result.length) {
+        const ang = angleDeg * Math.PI / 180;
+        const perpX = -Math.sin(ang); const perpY = Math.cos(ang);
+        const offsets = result.map((seg) => {
+          const mx = (seg[0].x + seg[1].x) / 2; const my = (seg[0].y + seg[1].y) / 2;
+          return mx * perpX + my * perpY;
+        }).sort((a, b) => a - b);
+        calls.push({ ringsLen: rings.length, angleDeg, offsets });
+      }
+      return result;
+    };
+    try {
+      V3.AlgorithmRegistry.scene3d.generate(
+        Params.collectSceneParams(np, []), new V3.SeededRNG(1), new V3.SimpleNoise(1), BOUNDS,
+      );
+    } finally {
+      Shadows.hatchRingsEvenOdd = origHatch;
+    }
+
+    const outer = calls.find((c) => c.ringsLen > 1);
+    const inner = calls.filter((c) => c.ringsLen === 1 && c.offsets.length > 1);
+    expect(outer).toBeTruthy();
+    expect(inner.length).toBeGreaterThan(0);
+    const outerStep = median(diffsOf(outer.offsets));
+
+    const worstRatios = inner.map((innerCall) => {
+      const lo = innerCall.offsets[0]; const hi = innerCall.offsets[innerCall.offsets.length - 1];
+      const outerInRange = outer.offsets.filter((pos) => pos >= lo && pos <= hi);
+      const worstPhase = Math.max(...outerInRange.map((pos) => Math.min(
+        ...innerCall.offsets.map((o) => Math.abs(o - pos)),
+      )));
+      return worstPhase / outerStep;
+    });
+    // Same bar the GREEN test above enforces. Run normally (no env var)
+    // this loads CURRENT/fixed code and passes trivially; run with
+    // VECTURA_PRE_UNITD_PHASE=1 it loads the pinned pre-fix `shadows.js`
+    // and this assertion FAILS — on the pinned pre-fix code the inside
+    // family's scan origin is unrelated to the outside family's, proving
+    // the bug was real.
+    expect(Math.max(...worstRatios)).toBeLessThanOrEqual(0.05);
   });
 });
