@@ -1595,7 +1595,15 @@
         { text: entry.strengths ? `Strengths: ${entry.strengths}` : '' },
         { text: entry.weaknesses ? `Weaknesses: ${entry.weaknesses}` : '' },
       ], `About ${entry.label || FSC.label}`);
-      if (note.caveat) flyNote(fly, note.caveat).classList.add('is-caveat');
+      // U5b (BLOCKING BEFORE MERGE, ruled 2026-09-06) — the caveat must
+      // reflect the law the collapse sub-control(s) ACTUALLY select
+      // (`effectiveLaw`, off the live `params` bag), not the resolved
+      // survivor `law` `note`/`entry` above are keyed to — see the identical
+      // fix + rationale on the docked panel's `fillStyleControls`
+      // (scene3d-panel.js). The (i) popover above stays on the survivor.
+      const effectiveLaw = FS.effectiveLaw ? FS.effectiveLaw(law, params) : law;
+      const caveatNote = FS.note(effectiveLaw);
+      if (caveatNote.caveat) flyNote(fly, caveatNote.caveat).classList.add('is-caveat');
 
       // Fill-collapse U0 — one Select per collapse sub-control the CURRENT
       // (resolved) law declares (FS.styleParams(law), the SAME data the

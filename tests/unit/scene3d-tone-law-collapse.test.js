@@ -700,6 +700,31 @@ describe('Scene3D tone-law collapse — U4 caveat-visibility gap (bundleDither, 
     const survivorNote = FS.note('bundleCount');
     expect(survivorNote.caveat).toBe(''); // bundleCount's OWN caveat is null/empty
   });
+
+  // U5b (BLOCKING BEFORE MERGE, ruled 2026-09-06) — the fix. Folding a law
+  // must NOT hide its measured caveat: `SCENE_FILL_STYLES.effectiveLaw`
+  // resolves (survivor id, current collapse sub-control values) back to the
+  // SPECIFIC internal id those values select — mirroring
+  // `Scene3D.Params.resolveToneLaw`'s own survivor+params rule (rules 3/4)
+  // without this config file depending on the core engine module. The two
+  // UI surfaces (scene3d-panel.js, context-bar.js) read the CAVEAT off this
+  // effective id while still reading the (i) popover's blurb off the plain
+  // survivor `entry`/`note` — the two are deliberately NOT the same lookup.
+  test('U5b FIX: effectiveLaw resolves the "Dithered" sub-control choice back to bundleDither, surfacing its own caveat', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(typeof FS.effectiveLaw).toBe('function');
+    expect(FS.effectiveLaw('bundleCount', { bundleMode: 'dither' })).toBe('bundleDither');
+    const caveat = FS.note(FS.effectiveLaw('bundleCount', { bundleMode: 'dither' })).caveat;
+    expect(caveat.length).toBeGreaterThan(0);
+    expect(caveat).toMatch(/moire/);
+    // The bare survivor (sub-control at its own default, or the bag empty)
+    // still shows no caveat — this must not manufacture one out of nothing.
+    expect(FS.effectiveLaw('bundleCount', { bundleMode: 'count' })).toBe('bundleCount');
+    expect(FS.note(FS.effectiveLaw('bundleCount', {})).caveat).toBe('');
+    // A survivor with no collapse descriptors at all (no STYLE_PARAMS entry)
+    // passes through unchanged, regardless of the bag it is handed.
+    expect(FS.effectiveLaw('etfKang', { bundleMode: 'dither' })).toBe('etfKang');
+  });
 });
 
 /*
@@ -925,5 +950,24 @@ describe('Scene3D tone-law collapse — U5 caveat-visibility gap (contFieldTouch
     expect(FS.resolve('contFieldTouch')).toBe('contFieldSigmoid');
     const survivorNote = FS.note('contFieldSigmoid');
     expect(survivorNote.caveat).toBe('');
+  });
+
+  // U5b FIX — the two-descriptor survivor (contFieldSigmoid has BOTH
+  // fieldMetric and fieldFloor), exercising resolveToneLaw's rule 4 case
+  // (exactly one descriptor active -> that descriptor's law; more than one
+  // active at once -> deterministic fallback to the bare survivor, never a
+  // throw) through effectiveLaw as well.
+  test('U5b FIX: effectiveLaw resolves the "Ink-width floor" sub-control choice back to contFieldTouch, surfacing its own caveat', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(FS.effectiveLaw('contFieldSigmoid', { fieldFloor: 'touch' })).toBe('contFieldTouch');
+    const caveat = FS.note(FS.effectiveLaw('contFieldSigmoid', { fieldFloor: 'touch' })).caveat;
+    expect(caveat.length).toBeGreaterThan(0);
+    expect(caveat).toMatch(/floods/);
+    // Both descriptors at default -> the bare survivor, no caveat.
+    expect(FS.effectiveLaw('contFieldSigmoid', {})).toBe('contFieldSigmoid');
+    expect(FS.note(FS.effectiveLaw('contFieldSigmoid', {})).caveat).toBe('');
+    // Unrepresentable combination (both non-default at once) falls back to
+    // the bare survivor deterministically, matching resolveToneLaw rule 4.
+    expect(FS.effectiveLaw('contFieldSigmoid', { fieldMetric: 'surface', fieldFloor: 'touch' })).toBe('contFieldSigmoid');
   });
 });

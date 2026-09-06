@@ -1,0 +1,28 @@
+{
+  "appVersion": "1.3.99",
+  "bundleDither": {
+    "before": null,
+    "after": {
+      "text": "A negative result, kept as one: waving the pass-count boundary made long-wave moire worse, not better, than the plain bundleCount baseline (3.43 vs 2.90 RMS on sphere·hatch), and R2 also dropped.",
+      "rect": {
+        "x": 12,
+        "y": 569.796875,
+        "width": 266,
+        "height": 54
+      }
+    }
+  },
+  "contFieldTouch": {
+    "before": null,
+    "after": {
+      "text": "It is a hatch-only law: on sphere·crosshatch it floods completely — R2, L* span, moire and highlight falloff all come back 0 because both families flood and the cell renders as a solid black disc with no tone left in it at all.",
+      "rect": {
+        "x": 12,
+        "y": 611.796875,
+        "width": 266,
+        "height": 67.5
+      }
+    }
+  },
+  "pageErrors": []
+}

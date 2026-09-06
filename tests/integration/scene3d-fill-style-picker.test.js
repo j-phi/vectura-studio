@@ -1026,6 +1026,35 @@ describe('Fill Style — context-bar Style flyout', () => {
     });
   });
 
+  // U5b (BLOCKING BEFORE MERGE, ruled 2026-09-06) — same fix, ctxbar Style
+  // flyout surface. See the docked-panel version of this test below for the
+  // full rationale.
+  test('U5b — picking a folded sub-control value (Bundle mode: Dithered) surfaces bundleDither\'s own caveat in the ctxbar flyout', () => {
+    const { fly } = openStyle({
+      styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'bundleCount' } } }),
+    });
+    expect(openFly().querySelector('.ctxbar-fly-note.is-caveat')).toBeNull();
+    const bundleModeSel = rowCtl(fly, 'Bundle mode').querySelector('select');
+    bundleModeSel.value = 'dither';
+    fire(bundleModeSel, 'change');
+    const caveat = openFly().querySelector('.ctxbar-fly-note.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toMatch(/moire/);
+  });
+
+  test('U5b — picking a folded sub-control value (Field floor: Ink-width floor) surfaces contFieldTouch\'s own caveat in the ctxbar flyout', () => {
+    const { fly } = openStyle({
+      styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'contFieldSigmoid' } } }),
+    });
+    expect(openFly().querySelector('.ctxbar-fly-note.is-caveat')).toBeNull();
+    const fieldFloorSel = rowCtl(fly, 'Field floor').querySelector('select');
+    fieldFloorSel.value = 'touch';
+    fire(fieldFloorSel, 'change');
+    const caveat = openFly().querySelector('.ctxbar-fly-note.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toMatch(/floods/);
+  });
+
   // The owner's decision retired the Off/On "Experimental" toggle: every law
   // is offered all the time, on both surfaces, with no per-option suffix and
   // no view-state to persist. This test used to prove the toggle grew the
@@ -1360,6 +1389,40 @@ describe('Fill Style — docked 3D Scene panel', () => {
     const caveat = stylePage(lib.container).querySelector('.vs3-lawnote.is-caveat');
     expect(caveat).toBeTruthy();
     expect(caveat.textContent.length).toBeGreaterThan(10);
+  });
+
+  // U5b (BLOCKING BEFORE MERGE, ruled 2026-09-06) — a folded law reached via
+  // its own collapse sub-control must still show ITS OWN measured caveat,
+  // not the survivor's (which has none). Fixes the gap the U4/U5 units
+  // documented and deliberately left open (see
+  // "Scene3D tone-law collapse — U4/U5 caveat-visibility gap" in
+  // scene3d-tone-law-collapse.test.js).
+  test('U5b — picking a folded sub-control value (Bundle mode: Dithered) surfaces bundleDither\'s own caveat, not the survivor\'s (none)', () => {
+    const { container } = openStyle(hatchOn({ toneLaw: 'bundleCount' }));
+    // Baseline: the bare survivor shows no caveat.
+    expect(stylePage(container).querySelector('.vs3-lawnote.is-caveat')).toBeNull();
+    const bundleModeSel = styleRow(container, 'Bundle mode').querySelector('select');
+    bundleModeSel.value = 'dither';
+    fire(bundleModeSel, 'change');
+    const caveat = stylePage(container).querySelector('.vs3-lawnote.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toMatch(/moire/);
+    // The (i) popover's blurb stays on the SURVIVOR, per the ruling — it must
+    // not switch to bundleDither's own mechanism text. The popover content is
+    // always in the DOM (only visibility is gated on open/closed).
+    expect(stylePage(container).querySelector('.vs3-lawinfo-pop').textContent)
+      .toContain(F.entry('bundleCount').mechanism);
+  });
+
+  test('U5b — picking a folded sub-control value (Field floor: Ink-width floor) surfaces contFieldTouch\'s own caveat, not the survivor\'s (none)', () => {
+    const { container } = openStyle(hatchOn({ toneLaw: 'contFieldSigmoid' }));
+    expect(stylePage(container).querySelector('.vs3-lawnote.is-caveat')).toBeNull();
+    const fieldFloorSel = styleRow(container, 'Field floor').querySelector('select');
+    fieldFloorSel.value = 'touch';
+    fire(fieldFloorSel, 'change');
+    const caveat = stylePage(container).querySelector('.vs3-lawnote.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toMatch(/floods/);
   });
 
   // fs-m2 Job 2 — the mechanism/strengths/weaknesses paragraph dominated the

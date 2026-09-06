@@ -695,10 +695,21 @@
     // must not have to hover to discover. Every law is offered now (no
     // Off/On disclosure), but the caveat still prints only for the SELECTED
     // one.
-    if (note.caveat) {
+    //
+    // U5b (BLOCKING BEFORE MERGE, ruled 2026-09-06) — read the caveat off
+    // the law the collapse sub-control(s) ACTUALLY select (`effectiveLaw`),
+    // not off the resolved survivor `law`/`note` above. Folding e.g.
+    // `bundleDither` into `bundleCount` must not hide bundleDither's own
+    // measured caveat just because the picker now stores the survivor id
+    // plus a `bundleMode` sub-param — `note`/`entry` above (the (i)
+    // popover's blurb) deliberately stay on the plain survivor per the
+    // ruling; only the caveat line switches.
+    const effectiveLaw = FS.effectiveLaw ? FS.effectiveLaw(law, styleParamBag) : law;
+    const caveatNote = FS.note(effectiveLaw);
+    if (caveatNote.caveat) {
       const caveatLine = document.createElement('p');
       caveatLine.className = 'vs3-lawnote is-caveat';
-      caveatLine.textContent = note.caveat;
+      caveatLine.textContent = caveatNote.caveat;
       host.appendChild(caveatLine);
     }
 
