@@ -475,6 +475,22 @@
     // Measured: `fineLadder` is inert on pyramid+hatch only — it is live on
     // pyramid crosshatch AND contour (over-gating guard: do not gate those).
     if (primitiveMode === 'pyramid' && mapper === 'hatch' && id === 'fineLadder') return false;
+    // W-10d (STILL-OPEN.md W-10/W-10b/W-10c) — `originSpiral` cannot be made
+    // plottable on the torus: after W-10c's plot-floor raise the mono law's
+    // lower-left radial fan renders as solid ink wedges (measured 87.8% of
+    // interior pixels in a blank-paper run longer than two pen widths, worse
+    // than W-10b's 73.9%), and no primitive id reaches `surface-fill-mono.js`
+    // to gate it there (FU-1 — a different lane's file, not attempted here).
+    // Hidden in the picker instead, unconditionally of mapper (the defect is
+    // in the mono law itself, not in which Type dispatches it) — the same
+    // "hide it here" mechanism W-03 used for the spiral/stipple gate above.
+    // This does NOT reach saved documents: a torus layer already carrying
+    // toneLaw 'originSpiral' still normalizes and renders unchanged (see
+    // `clampStyleParam`'s 'toneLaw' case, params.js — it only rejects ids the
+    // roster does not recognize at all, with no primitiveMode of its own to
+    // know this one is unreachable on THIS shape); the torus wedge is hidden
+    // from new picks, not repaired.
+    if (primitiveMode === 'torus' && id === 'originSpiral') return false;
     return true;
   };
   SCENE_FILL_STYLES.NO_EFFECT_SUFFIX = ' — no effect here';

@@ -190,12 +190,96 @@ describe('Fill Style — the shared mark-class config', () => {
     beforeAll(() => { M = window.Vectura.Scene3D.SurfaceFillMono; });
 
     test('a curved (chart-wrapped) primitive reaches every law — sphere and pyramid', () => {
-      ['sphere', 'pyramid', 'torus', 'cylinder'].forEach((mode) => {
+      ['sphere', 'pyramid', 'cylinder'].forEach((mode) => {
         expect(F.isFaceted(mode)).toBe(false);
         R.IDS.concat(['ladder', 'none']).forEach((id) => {
           expect(F.isReachableOn(id, mode)).toBe(true);
         });
       });
+    });
+
+    // ── W-10d — STALE ASSERTION UPDATE, not a widened gate: the test above
+    // used to include 'torus' and asserted every law reachable there too.
+    // W-10c measured that `originSpiral` cannot be made plottable on the torus
+    // (the lower-left radial fan renders as solid ink wedges — 87.8% of
+    // interior pixels sit in a blank-paper run longer than two pen widths,
+    // WORSE than the pre-W-10c 73.9% — STILL-OPEN.md W-10c/W-10d) and no
+    // primitive id reaches `surface-fill-mono.js` to gate it there (FU-1,
+    // its own follow-up, a different lane's file). The user-facing fix is
+    // this picker gate: torus is curved exactly like sphere/cone/cylinder —
+    // isFaceted stays false, every OTHER law stays reachable — but
+    // `originSpiral` alone is hidden there, unconditionally of mapper (the
+    // defect lives in the mono law itself, not in which Type dispatches it).
+    test('torus is curved like any other chart-wrapped primitive, EXCEPT originSpiral is hidden there (W-10d)', () => {
+      expect(F.isFaceted('torus')).toBe(false);
+      R.IDS.concat(['ladder', 'none']).forEach((id) => {
+        const expected = id !== 'originSpiral';
+        expect(F.isReachableOn(id, 'torus')).toBe(expected);
+      });
+      // Unconditional of mapper — hatch/crosshatch/contour all reach the same
+      // mono law, and the wedge defect is in the law, not the Type.
+      ['hatch', 'crosshatch', 'contour'].forEach((mapper) => {
+        expect(F.isReachableOn('originSpiral', 'torus', undefined, mapper)).toBe(false);
+      });
+      // cone and sphere are unaffected — the gate names 'torus' specifically.
+      ['cone', 'sphere'].forEach((mode) => {
+        expect(F.isReachableOn('originSpiral', mode)).toBe(true);
+        ['hatch', 'crosshatch', 'contour'].forEach((mapper) => {
+          expect(F.isReachableOn('originSpiral', mode, undefined, mapper)).toBe(true);
+        });
+      });
+    });
+
+    // ── W-10d picker surface — groups() disables + suffixes the row exactly
+    // the way W-03's spiral/stipple gate does (this repo's "hide" convention:
+    // the option stays in the <select>, greyed and suffixed, never removed —
+    // see the "groups(mode) disables the dead options" test above and
+    // fill-audit-handoff's W-02 note on the same convention).
+    test('groups("torus") marks originSpiral disabled + suffixed; groups("cone"/"sphere") leaves it live (W-10d)', () => {
+      const optionsFor = (mode) => F.groups(mode).reduce((a, g) => a.concat(g.options), []);
+      const torusEntry = optionsFor('torus').find((o) => o.value === 'originSpiral');
+      expect(torusEntry).toBeTruthy();
+      expect(torusEntry.disabled).toBe(true);
+      expect(torusEntry.label).toContain(F.NO_EFFECT_SUFFIX);
+
+      ['cone', 'sphere'].forEach((mode) => {
+        const entry = optionsFor(mode).find((o) => o.value === 'originSpiral');
+        expect(entry).toBeTruthy();
+        expect(entry.disabled).toBeFalsy();
+        expect(entry.label).not.toContain(F.NO_EFFECT_SUFFIX);
+      });
+    });
+
+    // ── W-10d deserialization — the gate is picker-presentation ONLY. A
+    // document saved before this fix (or hand-edited) that names a torus
+    // object with toneLaw 'originSpiral' must load without throwing and must
+    // NOT be silently rewritten: `clampStyleParam`'s 'toneLaw' case (params.js)
+    // only rejects ids the roster does not recognize at all — it has no
+    // primitiveMode argument and cannot know the value is unreachable on THIS
+    // shape. So the saved id survives normalization unchanged, `resolve()`
+    // (which only checks roster membership, same reason) still returns it,
+    // and the render keeps producing the known wedge defect — `isReachableOn`
+    // is the only place that knows better, and it only shapes the dropdown.
+    // This is the documented fallback (STILL-OPEN.md W-10d/FU-1): hidden in
+    // the picker, not repaired, and not engine-gated.
+    test('a torus layer saved with toneLaw "originSpiral" deserializes unchanged — no throw, no silent rewrite (W-10d)', () => {
+      const P = window.Vectura.Scene3D.Params;
+      const style = P.normalizeStyle({ mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
+      expect(style.params.toneLaw).toBe('originSpiral');
+      expect(F.resolve('originSpiral')).toBe('originSpiral');
+      expect(F.isReachableOn(F.resolve(style.params.toneLaw), 'torus')).toBe(false);
+      // Round-trip through the full scene sanitizer too — a torus object
+      // carrying this style in styleTable.byObject must not throw or mutate
+      // the id either.
+      const sanitized = P.sanitizeSceneParams({
+        objects: [{ id: 'obj-1', primitive: 'torus', params: { sx: 30, sy: 22, sz: 22 } }],
+        styleTable: {
+          scene: { mapper: 'hatch', params: {} },
+          byObject: { 'obj-1': { mapper: 'hatch', params: { toneLaw: 'originSpiral' } } },
+          byFace: {},
+        },
+      });
+      expect(sanitized.styleTable.byObject['obj-1'].params.toneLaw).toBe('originSpiral');
     });
 
     test('box/plane are faceted, and only none/ladder/mono laws reach them', () => {
