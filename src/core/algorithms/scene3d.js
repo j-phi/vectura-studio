@@ -256,6 +256,125 @@
   const SLICE_REFINE_MAX_ANGLE_DEG = 8;
   const SLICE_REFINE_MAX_ROUNDS = 8;
 
+  // ── W-27c-0a — pen-aware crowding cull at the torus/sphere saddles/poles ───
+  // (docs/3d-audit/lane-reports/W-27c-0a-plan.md, user-reports/11.png). O1
+  // (the 8° turning-angle bar above) is already met and is the WRONG
+  // instrument: the user's "angled points" are not a corner on any ring —
+  // they are the tapering apex of a solid wedge of ink where several
+  // DIFFERENT contour levels crowd to less than one pen width at a torus's
+  // two saddles (a sphere's poles have the same defect). Uniform-in-`d`
+  // slicing always crowds near a critical point of the height function,
+  // because the surface gradient of `d` restricted to the surface vanishes
+  // there — refinement, clipping and density are all innocent (measured).
+  //
+  // The fix is a per-record occupancy grid at pen resolution, filled
+  // progressively (plane-ascending, so it is a pure function of plane
+  // order) by the samples of already-emitted VISIBLE slice ink for that
+  // record. A new run's samples are suppressed wherever the nearest
+  // already-inked sample — on a DIFFERENT emitted run, or the SAME run at
+  // least `CROWD_SELF_WINDOW` vertices away — is closer than
+  // `CROWD_CULL_K * penWidth`; the run is split at each suppression
+  // boundary (never merged back), and the ordinary `MIN_RUN_MM` floor is
+  // applied to each fragment by the caller's `emitRuns`. `CROWD_CULL_K`
+  // (0.6-0.7 measured effective band) intentionally stays BELOW 1.0: at 1.0
+  // the cull starts eating genuinely-readable close-but-distinct crowding,
+  // not just the fused wedge.
+  //
+  // "Never cull a whole level": if suppression would remove every sample of
+  // one linked ring, `wCrowdCullRun` (the caller) keeps that ring's single
+  // longest pre-cull run unculled instead — the plane-count / ring-count
+  // invariant (buildSliceSegments, linkSegments, refineSliceRing — all
+  // untouched by this fix) must never be defeated by this cull.
+  const CROWD_CULL_K = 0.7;
+  const CROWD_SELF_WINDOW = 6;
+  // Uniform grid over device-mm points at cell size == the query radius, so
+  // any two points within `radius` of each other are guaranteed to fall in
+  // the same or a directly-adjacent cell (3x3 neighbourhood is exhaustive —
+  // see the lane report for the borderline-distance proof). One grid is
+  // shared across every plane/ring of ONE record; `pathId` distinguishes
+  // rings/runs from each other (a clip-split fragment of one ring is its
+  // own pathId — exactly "a different path" per the O2(a) definition) and
+  // `idx` is the sample's own position along its path, used only for the
+  // same-path self-window exclusion.
+  const makeCrowdGrid = (radius) => {
+    const cell = Math.max(radius, 1e-6);
+    const key = (cx, cy) => `${cx},${cy}`;
+    const buckets = new Map();
+    let nextPathId = 0;
+    return {
+      nextPathId: () => nextPathId++,
+      insert(x, y, pathId, idx) {
+        const k = key(Math.floor(x / cell), Math.floor(y / cell));
+        let arr = buckets.get(k);
+        if (!arr) { arr = []; buckets.set(k, arr); }
+        arr.push({ x, y, pathId, idx });
+      },
+      isCrowded(x, y, pathId, idx) {
+        const cx = Math.floor(x / cell); const cy = Math.floor(y / cell);
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            const arr = buckets.get(key(cx + dx, cy + dy));
+            if (!arr) continue;
+            for (let i = 0; i < arr.length; i++) {
+              const o = arr[i];
+              if (o.pathId === pathId && Math.abs(o.idx - idx) < CROWD_SELF_WINDOW) continue;
+              if (Math.hypot(o.x - x, o.y - y) < radius) return true;
+            }
+          }
+        }
+        return false;
+      },
+    };
+  };
+  // Walk one emitted run's points; suppress a point whose nearest
+  // already-inked neighbour (excluding this run's own near-window) is
+  // closer than `radius`, splitting into fragments at each suppression.
+  // Kept points are inked into `grid` as they are accepted, so later
+  // fragments of the SAME run (and every later plane/ring) see them.
+  const crowdCullRun = (pts, grid) => {
+    const pathId = grid.nextPathId();
+    const segments = [];
+    let cur = [];
+    for (let i = 0; i < pts.length; i++) {
+      const pt = pts[i];
+      if (grid.isCrowded(pt.x, pt.y, pathId, i)) {
+        if (cur.length >= 2) segments.push(cur);
+        cur = [];
+        continue;
+      }
+      cur.push(pt);
+      grid.insert(pt.x, pt.y, pathId, i);
+    }
+    if (cur.length >= 2) segments.push(cur);
+    return segments;
+  };
+  // Apply the cull to one clipper's worth of runs (visible + hidden mixed).
+  // Hidden/dashed runs pass through untouched — the defect is fused SOLID
+  // ink, and this stays local to the visible-ink emission it was measured
+  // against. "Never cull a whole level": if every visible run is fully
+  // suppressed, the ring's single longest pre-cull run survives unculled
+  // (and is still inked, so later rings still see it as real ink).
+  const wCrowdCullRuns = (runs, grid) => {
+    const survivors = [];
+    let longest = null; let longestLen = -1;
+    let anyVisibleSurvived = false;
+    runs.forEach((run) => {
+      if (!run || !run.visible) { survivors.push(run); return; }
+      const len = runLength(run.pts);
+      if (len > longestLen) { longestLen = len; longest = run; }
+      crowdCullRun(run.pts, grid).forEach((seg) => {
+        anyVisibleSurvived = true;
+        survivors.push({ visible: true, pts: seg });
+      });
+    });
+    if (!anyVisibleSurvived && longest) {
+      const pathId = grid.nextPathId();
+      longest.pts.forEach((pt, idx) => grid.insert(pt.x, pt.y, pathId, idx));
+      survivors.push(longest);
+    }
+    return survivors;
+  };
+
   // Undo just the rotation leg of Scene.applyObjectTransform's
   // scale → rotate(yaw,pitch,roll) → translate composition: reverse order,
   // negated angles. Shared by the point-space inverse below and by
@@ -3910,6 +4029,14 @@
             // Bounding sampled-length × occluders keeps the work fixed regardless
             // of detail / camera / occluder count; overflow front rings emit raw.
             let workUsed = 0;
+            // W-27c-0a — one occupancy grid per RECORD, shared across every
+            // plane (crowding is between DIFFERENT levels, not within one),
+            // scoped to smoothSurface && analyticProject (see the fix's own
+            // header comment above): a faceted/raw ring sits exactly on mesh
+            // edges, never strays into the tessellation-noise band, and never
+            // had this defect, so it stays byte-identical to any pen width.
+            const crowdGrid = (smoothSurface && analyticProject)
+              ? makeCrowdGrid(CROWD_CULL_K * penWidth) : null;
             byPlane.forEach((g) => {
               // Front rings: HLR-clipped (occluded/self-occluded) until the fixed
               // budget is spent, then raw — never dropped.
@@ -3918,7 +4045,10 @@
                 if (proj.length < 2) return;
                 const meta = metaFor(proj);
                 if (draft || workUsed >= SLICE_CLIP_WORK) {
-                  emitRuns([{ visible: true, pts: proj }], meta, hiddenTreatment, null, sliceTreat);
+                  const runs = crowdGrid
+                    ? wCrowdCullRuns([{ visible: true, pts: proj }], crowdGrid)
+                    : [{ visible: true, pts: proj }];
+                  emitRuns(runs, meta, hiddenTreatment, null, sliceTreat);
                   return;
                 }
                 let len = 0;
@@ -3927,7 +4057,8 @@
                 }
                 workUsed += Math.max(2, Math.ceil(len / SLICE_SAMPLE_STEP)) * (occluderCount + 1);
                 const clip = clipper.clipPath(proj, segCtx);
-                emitRuns(clip.runs, meta, hiddenTreatment, null, sliceTreat);
+                const runs = crowdGrid ? wCrowdCullRuns(clip.runs, crowdGrid) : clip.runs;
+                emitRuns(runs, meta, hiddenTreatment, null, sliceTreat);
               });
               // Far-side rings (fullContour only): raw see-through DASHES —
               // forceHidden routes them through the occluded/dashed branch even
