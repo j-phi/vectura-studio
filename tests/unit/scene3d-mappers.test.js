@@ -28,6 +28,7 @@ describe('3D Scene Studio Phase 3 — surface-fill mappers', () => {
   let algo;
   let defaults;
   let realCascade;
+  let P;
 
   beforeAll(async () => {
     runtime = await loadVecturaRuntime();
@@ -35,11 +36,25 @@ describe('3D Scene Studio Phase 3 — surface-fill mappers', () => {
     algo = V.AlgorithmRegistry && V.AlgorithmRegistry.scene3d;
     defaults = V.ALGO_DEFAULTS && V.ALGO_DEFAULTS.scene3d;
     realCascade = V.Scene3D.StyleCascade; // the genuine module (a stub replaces it per-test)
+    P = V.Scene3D.Params;
   });
   afterAll(() => runtime.cleanup());
   afterEach(() => { if (V.Scene3D) V.Scene3D.StyleCascade = realCascade; });
 
   const clone = (o) => JSON.parse(JSON.stringify(o));
+  // The shipped default 'solid' primitive — a buckyball — used by the W-25b
+  // fingerprint test below. `solidType` defaults to 'buckyball' the same way
+  // scripts/audit/scene3d-capture.js resolves it for the gallery's "solid"
+  // cell (P.PRIMITIVE_PARAM_DEFAULTS.solid.solidType).
+  const solidBuckyball = (id, extra = {}) => ({
+    id,
+    name: id,
+    primitive: 'solid',
+    params: { ...(P.PRIMITIVE_PARAM_DEFAULTS.solid || {}), solidType: 'buckyball' },
+    transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 },
+    visibility: 'solid',
+    ...extra,
+  });
   const sceneParams = (mapper, objects) => {
     const p = clone(defaults);
     p.seed = 1;
@@ -290,6 +305,58 @@ describe('3D Scene Studio Phase 3 — surface-fill mappers', () => {
       expect(Math.abs(winding(main, CX, CY))).toBeGreaterThan(3 * 2 * Math.PI);
     });
 
+    // ── W-25b (fill-audit-d) ─────────────────────────────────────────────
+    // W-25's original gate was SIZE-only (`rMax < pitch * SPIRAL_MIN_TURNS`)
+    // and never checked SHAPE — so it also fires on a small-but-REGULAR
+    // (near-square) face, not just a thin sliver. A reviewer measured this
+    // directly on the shipped default: at density 50 (pitch 7.2mm, so the
+    // W-25 size threshold is 14.4mm) every face of the default buckyball has
+    // rMax 7.0-8.4mm — under the threshold — even though its faces are
+    // near-regular pentagons/hexagons (aspect 0.87-1.15), nothing like Unit
+    // F's torus cusp faces (aspect ~0.18). FACE below reproduces those exact
+    // proportions (bw=16mm, bh=15mm, aspect 1.067 — well inside the
+    // eccentricity clamp's [0.3, 3] range, i.e. NOT a thin cusp) at the real
+    // pitch (7.2mm = density 50's derived pitch, measured via the fingerprint
+    // test below). RED at 44797f53 (W-25, unconditional floor): winding ≈
+    // 9.192 rad (1.463 turns), mainLen 95 — the floor fires anyway. GREEN
+    // after W-25b's aspect-ratio gate: winding ≈ 7.404 rad (1.178 turns),
+    // mainLen 77 — exactly the UNMODIFIED-pitch output (byte-identical to
+    // 55ddb720, pre-W-25 entirely), because a near-square face is never a
+    // thin cusp regardless of size.
+    test('a small NEAR-SQUARE region (not a thin cusp) is unaffected by the W-25 min-turns floor even though it sits below the size threshold (W-25b)', () => {
+      const FACE = [{ x: 0, y: 0 }, { x: 16, y: 0 }, { x: 16, y: 15 }, { x: 0, y: 15 }]; // aspect 16/15 = 1.0667
+      const runs = V.Scene3D.Mappers.regionFill('spiral', [FACE], { pitch: 7.2 });
+      const main = longest(runs);
+      const cx = 8; const cy = 7.5; // region centroid
+      expect(main.length).toBe(77);
+      expect(winding(main, cx, cy)).toBeCloseTo(7.403973145757696, 9);
+      // Explicitly rule out the OLD (size-only) behavior's signature: that
+      // gate would have shortened the effective pitch, pushing well past 2
+      // full turns' worth of winding (measured 9.192 rad at 44797f53).
+      expect(Math.abs(winding(main, cx, cy))).toBeLessThan(2 * Math.PI * 1.3);
+    });
+
+    // A genuinely thin AND small region must still hit the floor (the W-25b
+    // gate is AND, not a replacement) — sanity-check with the eccentricity
+    // clamp's own boundary value (aspect exactly 0.3, the edge of "thin").
+    test('a region right at the eccentricity clamp boundary (aspect 0.3) still counts as thin-cusp (W-25b boundary)', () => {
+      // bw/bh = 3/10 = 0.3 exactly — AT the clamp boundary, which the
+      // `rawAspect < ECC_MIN || rawAspect > ECC_MAX` gate (strict inequality)
+      // treats as NOT thin (matches the clamp's own inclusive range), so this
+      // pins the boundary is INSIDE (unfloored) rather than silently flipping
+      // sign on a `<=`/`<` typo in a future edit.
+      const AT_BOUNDARY = [{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 3, y: 10 }, { x: 0, y: 10 }];
+      const JUST_THIN = [{ x: 0, y: 0 }, { x: 2.9, y: 0 }, { x: 2.9, y: 10 }, { x: 0, y: 10 }];
+      const boundaryRuns = V.Scene3D.Mappers.regionFill('spiral', [AT_BOUNDARY], { pitch: 5 });
+      const thinRuns = V.Scene3D.Mappers.regionFill('spiral', [JUST_THIN], { pitch: 5 });
+      const boundaryMain = longest(boundaryRuns);
+      const thinMain = longest(thinRuns);
+      // Same pitch, same rMax to a hair — a floored run must have MORE
+      // points than an unfloored one (smaller effPitch ⇒ smaller dr ⇒ more
+      // steps to reach the same rEnd).
+      expect(thinMain.length).toBeGreaterThan(boundaryMain.length);
+    });
+
     test('deterministic — identical output for identical params', () => {
       const a = V.Scene3D.Mappers.regionFill('spiral', [BIG], { spacing: 7, axisSnap: false });
       const b = V.Scene3D.Mappers.regionFill('spiral', [BIG], { spacing: 7, axisSnap: false });
@@ -336,6 +403,32 @@ describe('3D Scene Studio Phase 3 — surface-fill mappers', () => {
         expect(fills(paths).length).toBeGreaterThan(0);
       });
     });
+  });
+
+  // ── W-25b (fill-audit-d) — full-pipeline fingerprint ────────────────────────
+  // The pure-module tests above pin the SHAPE of the fix; this pins the actual
+  // shipped default end to end (real StyleCascade, real algorithm dispatch,
+  // real solid/buckyball geometry — no stub). RED at 44797f53 (W-25's
+  // unconditional size-only floor): fillCount 31, totalPoints 1826, inkMm
+  // 486.527 — every one of the buckyball's 16 visible faces (measured rMax
+  // 7.0-8.4mm at density 50's pitch 7.2mm) got floored despite being
+  // near-regular, not thin. GREEN after W-25b (this fix): byte-identical to
+  // 55ddb720 (the commit immediately BEFORE W-25 existed at all) — the
+  // buckyball's spiral fill is untouched by either W-25 or W-25b, exactly as
+  // W-25's own commit message claimed but did not verify.
+  test('the default buckyball is byte-identical to the pre-W-25 fingerprint at density 50 (W-25b)', () => {
+    const params = sceneParams('spiral', [solidBuckyball('obj-1')]);
+    const paths = algo.generate(params, null, null, BOUNDS) || [];
+    const fillPaths = fills(paths);
+    let totalPoints = 0;
+    let inkMm = 0;
+    fillPaths.forEach((p) => {
+      totalPoints += p.length;
+      for (let i = 1; i < p.length; i += 1) inkMm += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y);
+    });
+    expect(fillPaths.length).toBe(21);
+    expect(totalPoints).toBe(1006);
+    expect(Math.round(inkMm * 1000) / 1000).toBeCloseTo(284.148, 2);
   });
 
   // ── Params whitelist (real path, no stub) ───────────────────────────────────

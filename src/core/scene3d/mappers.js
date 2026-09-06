@@ -255,6 +255,12 @@
   // down to a single near-straight radial stub instead of a genuine curl —
   // see `spiralMinTurnPitch` below.
   const SPIRAL_MIN_TURNS = 2;
+  // Eccentricity auto-fit clamp bounds (also reused by W-25b's thin-cusp gate
+  // immediately below — a region whose raw, pre-clamp aspect ratio already
+  // falls outside this range is exactly the kind of sliver the auto-fit can
+  // no longer stretch to compensate for).
+  const ECC_MIN = 0.3;
+  const ECC_MAX = 3;
 
   // Even-odd point-in-region across all (closed) rings.
   const insideComposite = (rings, x, y) => {
@@ -352,8 +358,8 @@
     // Eccentricity: explicit value, else auto-fit the region's aspect ratio so a
     // wide/tall face fills edge-to-edge instead of an inscribed circle.
     const ecc = Number.isFinite(opts.eccentricity)
-      ? clamp(opts.eccentricity, 0.3, 3)
-      : clamp(bw / bh, 0.3, 3);
+      ? clamp(opts.eccentricity, ECC_MIN, ECC_MAX)
+      : clamp(bw / bh, ECC_MIN, ECC_MAX);
     const sx = Math.sqrt(ecc);
     const sy = 1 / Math.sqrt(ecc);
     // Largest UN-stretched radius needed to reach every region vertex.
@@ -366,18 +372,28 @@
     // Floor at 0.2mm (below a typical 0.3mm pen) so the Density-100 full-overlap
     // pitch reaches the paper; SPIRAL_MAX_STEPS still guards the sample count.
     const pitch = clamp(finite(opts.pitch, finite(opts.spacing, 3)), 0.2, 40);
-    // W-25 — tighten the EFFECTIVE pitch when the region is small enough that
-    // the requested pitch would not even complete SPIRAL_MIN_TURNS turns
-    // before r reaches rMax (an Archimedean spiral grows by exactly `pitch`
-    // per revolution, so `rMax / SPIRAL_MIN_TURNS` is the largest pitch that
-    // still guarantees that many turns). A region at or above the normal
-    // working size (rMax >= pitch * SPIRAL_MIN_TURNS) is completely
-    // unaffected — Math.min picks the unmodified pitch — so this only
-    // engages for genuinely small regions (a thin cusp face on a low-poly
-    // imported mesh; measured 0 change on every existing primitive fixture,
-    // whose faces sit far above this floor). Never widens the pitch, only
-    // narrows it, so it can only add curvature, never remove it.
-    const effPitch = Math.min(pitch, rMax / SPIRAL_MIN_TURNS);
+    // W-25b — SCOPE the floor to THIN-CUSP faces only. W-25's original gate
+    // was "region small enough that pitch wouldn't complete SPIRAL_MIN_TURNS
+    // turns" (rMax < pitch*SPIRAL_MIN_TURNS) alone, which is a SIZE condition,
+    // not a SHAPE one — it does not actually distinguish an elongated sliver
+    // from an ordinary small-but-regular face. Measured: at density 50
+    // (pitch 7.2mm, so the size threshold is 14.4mm) every one of the default
+    // buckyball's faces has rMax 7.0-8.4mm — comfortably under that threshold
+    // — so the size-only gate fired on ALL of them despite their aspect ratio
+    // sitting at 0.87-1.15 (near-regular pentagons/hexagons, nothing like a
+    // sliver), changing the shipped default's spiral output (21->31 fill
+    // paths, 284.2->486.0mm ink measured at d=50) without anyone deciding
+    // that on purpose. `rawAspect` outside [ECC_MIN, ECC_MAX] is exactly
+    // "outside the eccentricity clamp" — the auto-fit can no longer stretch
+    // the spiral to reach the region's corners, which is the actual thin-cusp
+    // condition the original W-25 fix meant to describe (Unit F's torus cusp
+    // faces measured bw/bh ~ 0.18, well past the 0.3 floor). Requiring BOTH
+    // conditions (thin-cusp AND small) keeps the Unit F fix — its faces are
+    // both thin and small — while leaving the buckyball's small-but-regular
+    // faces byte-identical to before W-25.
+    const rawAspect = bw / bh;
+    const isThinCuspFace = rawAspect < ECC_MIN || rawAspect > ECC_MAX;
+    const effPitch = isThinCuspFace ? Math.min(pitch, rMax / SPIRAL_MIN_TURNS) : pitch;
     const axisSnap = Boolean(opts.axisSnap);
     // axisSnap: one straight segment per quadrant (a squared spiral). Offsetting
     // the start by 45° makes those segments axis-aligned (horizontal/vertical)

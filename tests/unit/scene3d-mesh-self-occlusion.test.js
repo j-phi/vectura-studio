@@ -5,7 +5,21 @@
  * full numbers/mechanism in docs/3d-audit/handoff/unit-f-notes.md):
  *   hatch mapper:   0 survivors / 4 candidate far positions  — PASSES
  *   contour mapper: 0 survivors / 12 candidate far positions — PASSES
- *   spiral mapper:  1 survivor  / 29 candidate far positions — GAP (real,
+ *   spiral mapper:  STALE AS ORIGINALLY WRITTEN — see the "W-25 CORRECTION"
+ *     comment inline below (the `mapper === 'spiral'` branch) for the
+ *     current, corrected verdict and numbers. Short version: the root cause
+ *     below (`Mappers.regionFill`'s polygon-union failing on degenerate
+ *     geometry) was DISPROVEN — isolating `-t "spiral"` alone reproduces the
+ *     gap with ZERO FillBoolean warnings. The real cause was thin-cusp faces
+ *     degenerating `trueSpiral` to a near-straight stub, fixed in
+ *     `mappers.js` (W-25, scoped to genuinely thin-cusp faces by W-25b) —
+ *     the ORIGINAL 1-survivor gap this paragraph describes is retired; a
+ *     smaller, independent HLR-precision residual remains (recorded, not
+ *     fixed here). The paragraph immediately below is preserved verbatim as
+ *     the historical (pre-W-25) analysis; do not treat it as the current
+ *     state.
+ *   spiral mapper (ORIGINAL, PRE-W-25 TEXT):
+ *     1 survivor / 29 candidate far positions — GAP (real,
  *     reproducible, isolated to the REGION-mapper family; root cause traced
  *     to `Mappers.regionFill`'s polygon-union failing on degenerate geometry
  *     for this fixture (console: "[FillBoolean] polygon union failed on
