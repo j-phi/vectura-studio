@@ -243,6 +243,14 @@ const COLLAPSE = {
       { value: 'perceptual', label: 'Perceptual ramp', law: 'perceptualRamp' },
     ],
   }],
+  taperedEnds: [{                                                    // C-02 (U2, W-23)
+    key: 'bandProfile', label: 'Band profile', default: 'taper',
+    options: [
+      { value: 'taper', label: 'Tapered ends', law: 'taperedEnds' },
+      { value: 'hard', label: 'Hard ends (white band)', law: 'whiteBand' },
+      { value: 'nib', label: 'Calligraphic nib', law: 'nibAngle' },
+    ],
+  }],
 };
 
 // ── 5c. Derive ALIASES + PICKER_IDS + STYLE_PARAMS from COLLAPSE ───────────

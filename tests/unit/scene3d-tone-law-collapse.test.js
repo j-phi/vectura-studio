@@ -318,10 +318,17 @@ describe('Scene3D tone-law collapse — U1 (C-01, ladder/rungMode)', () => {
 
   const roster = () => runtime.window.Vectura.SCENE3D_TONE_LAWS;
 
-  test('PICKER_IDS shrinks 48 -> 45; the 3 folded ids leave PICKER_IDS but stay in IDS', () => {
+  // STALE ASSERTION UPDATE (U2): PICKER_IDS.length is one global counter,
+  // not a per-cluster delta — hardcoding the CUMULATIVE total (45) here
+  // stopped being true the moment U2 folded 2 more ids (-> 43). The single
+  // authoritative "bump this number every unit" total now lives ONLY in
+  // tests/unit/scene3d-tone-laws-config.test.js's cumulative test (per the
+  // plan's own §5 instruction); this test keeps its RELATIVE claim — these
+  // 3 specific ids left PICKER_IDS and IDS is unaffected — which stays true
+  // forever regardless of how many OTHER clusters later units fold.
+  test('the 3 folded ids leave PICKER_IDS but stay in IDS (48, unaffected forever)', () => {
     const R = roster();
     expect(R.IDS.length).toBe(48);
-    expect(R.PICKER_IDS.length).toBe(45);
     FOLDED.forEach(({ id }) => {
       expect(R.IDS.indexOf(id)).not.toBe(-1);
       expect(R.PICKER_IDS.indexOf(id)).toBe(-1);
@@ -410,4 +417,206 @@ describe('Scene3D tone-law collapse — U1 (C-01, ladder/rungMode)', () => {
     expect(migrated.toneLaw).toBe('ladder');
     expect(migrated.rungMode).toBe('fine');
   });
+});
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════
+ * Shared RGR template — U2/U3/U4 (ORDINARY single-descriptor clusters: the
+ * survivor IS a roster id, exactly one collapse param, no LIBRARY-tier or
+ * caveat-bearing member). Factored out because U1 (survivor is the shipped
+ * default, not a roster id — see its own block above) and U5 (two
+ * descriptors — contFieldSigmoid) each break one of those assumptions and
+ * are written out by hand below instead of forced through this template.
+ * Runs the exact same assertion set U1 hand-wrote: PICKER_IDS count,
+ * ALIASES shape, byte-identity via resolveToneLaw, mark-class/ribbon/pen
+ * invariants, normalizeStyle migration (incl. explicit-sibling-preserved),
+ * clampStyleParam/normalizeShadow belt-and-brace, resolve()/entry()
+ * round-trip, and a real sanitizeSceneParams end-to-end pass.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+function describeSingleParamCluster(label, { survivor, key, pickerIdsLength, folded }) {
+  describe(label, () => {
+    let runtime; let V; let algo; let defaults; let SF; let Params; let hatchOpts;
+
+    const captureOpts = (mapper) => {
+      const p = clone(defaults);
+      p.objects = [{
+        id: 'o1', name: 's', primitive: 'sphere', params: { radius: 40, detail: 20 },
+        transform: { x: 0, y: 50, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+      }];
+      p.ground = { enabled: false };
+      p.camera = {
+        projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
+      };
+      p.styleTable = { scene: { penId: null, mapper, params: { fillAngle: 45, fillDensity: 60 } }, byObject: {}, byFace: {} };
+      p.tone = { ...clone(defaults).tone, enabled: true };
+      p.lights = [SUN];
+      const calls = [];
+      const orig = SF.buildObject;
+      SF.buildObject = function wrapped(opts) {
+        const result = orig.call(this, opts);
+        calls.push({ opts, result });
+        return result;
+      };
+      try {
+        algo.generate(p, null, null, BOUNDS);
+      } finally {
+        SF.buildObject = orig;
+      }
+      let best = calls[0];
+      for (const c of calls) {
+        if ((c.result || []).length > (best.result || []).length) best = c;
+      }
+      return best.opts;
+    };
+
+    beforeAll(async () => {
+      runtime = await loadVecturaRuntime();
+      V = runtime.window.Vectura;
+      algo = V.AlgorithmRegistry.scene3d;
+      defaults = V.ALGO_DEFAULTS.scene3d;
+      SF = V.Scene3D.SurfaceFill;
+      Params = V.Scene3D.Params;
+      hatchOpts = captureOpts('hatch');
+    }, SLOW);
+    afterAll(() => runtime.cleanup());
+
+    const roster = () => runtime.window.Vectura.SCENE3D_TONE_LAWS;
+
+    // RELATIVE claims only — PICKER_IDS.length is one global counter shared
+    // across every cluster, not a per-unit delta; the single authoritative
+    // "bump this number every unit" cumulative total lives in
+    // tests/unit/scene3d-tone-laws-config.test.js (per the plan's own §5
+    // instruction), not repeated per cluster here where it would go stale
+    // the moment a LATER unit folds more ids (as U1's own hand-written
+    // version of this test did at U2 — see that test's own stale-update
+    // comment). `pickerIdsLength` is accepted for documentation/commit-body
+    // purposes only and is not itself asserted.
+    test(`every folded id leaves PICKER_IDS but stays in IDS (48, unaffected forever) — survivor "${survivor}" stays offered`, () => {
+      const R = roster();
+      expect(R.IDS.length).toBe(48);
+      folded.forEach(({ id }) => {
+        expect(R.IDS.indexOf(id)).not.toBe(-1);
+        expect(R.PICKER_IDS.indexOf(id)).toBe(-1);
+      });
+      // The survivor itself is never its own alias, and stays offered.
+      expect(R.ALIASES[survivor]).toBeUndefined();
+      expect(R.PICKER_IDS.indexOf(survivor)).not.toBe(-1);
+    });
+
+    test(`ALIASES: every folded id maps into survivor "${survivor}" with the exact ${key} patch`, () => {
+      const R = roster();
+      folded.forEach(({ id, value }) => {
+        expect(R.ALIASES[id]).toEqual({ into: survivor, params: { [key]: value } });
+      });
+    });
+
+    test('byte-identity: survivor+param renders identically to the legacy folded id, for every option', () => {
+      folded.forEach(({ id, value }) => {
+        const resolved = Params.resolveToneLaw({ toneLaw: survivor, [key]: value });
+        expect(resolved).toBe(id);
+        const viaSurvivor = SF.buildObject({ ...hatchOpts, toneLaw: resolved });
+        const viaLegacy = SF.buildObject({ ...hatchOpts, toneLaw: id });
+        expect(JSON.stringify(viaSurvivor)).toBe(JSON.stringify(viaLegacy));
+      });
+      // The survivor's own bare (default) option is untouched — never an alias.
+      expect(Params.resolveToneLaw({ toneLaw: survivor })).toBe(survivor);
+    });
+
+    test('mark class and Stroke Fill eligibility are constant across the cluster (§2.4 invariant)', () => {
+      const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+      const SFS = runtime.window.Vectura.STROKE_FILL_STYLES;
+      folded.forEach(({ id }) => {
+        expect(FS.markClass(id)).toBe(FS.markClass(survivor));
+        expect(SFS.RIBBON_LAWS.indexOf(id) !== -1).toBe(SFS.RIBBON_LAWS.indexOf(survivor) !== -1);
+        expect(SFS.PEN_LAWS.indexOf(id) !== -1).toBe(SFS.PEN_LAWS.indexOf(survivor) !== -1);
+      });
+    });
+
+    test('migration: a style bag naming the folded id normalizes to survivor + param, byte-identical, never clobbering an explicit sibling', () => {
+      folded.forEach(({ id, value }) => {
+        const out = Params.normalizeStyle({ mapper: 'hatch', params: { toneLaw: id } });
+        expect(out.params.toneLaw).toBe(survivor);
+        expect(out.params[key]).toBe(value);
+        const viaMigrated = SF.buildObject({
+          ...hatchOpts,
+          toneLaw: Params.resolveToneLaw({ toneLaw: out.params.toneLaw, [key]: out.params[key] }),
+        });
+        const viaLegacy = SF.buildObject({ ...hatchOpts, toneLaw: id });
+        expect(JSON.stringify(viaMigrated)).toBe(JSON.stringify(viaLegacy));
+      });
+      // An explicit sibling already in the bag is never overwritten. Uses the
+      // SURVIVOR's own default value as the "explicit" stand-in — guaranteed
+      // to differ from whatever the shim would auto-fill for ANY folded id
+      // (the default option is, by construction, never one of the folded
+      // ones), so this is a real test regardless of how many options a
+      // cluster has (works even for a single-folded-id cluster like U3).
+      const R = roster();
+      const defaultValue = R.STYLE_PARAMS[survivor][0].default;
+      const out2 = Params.normalizeStyle({
+        mapper: 'hatch', params: { toneLaw: folded[0].id, [key]: defaultValue },
+      });
+      expect(out2.params.toneLaw).toBe(survivor);
+      expect(out2.params[key]).toBe(defaultValue);
+    });
+
+    test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id maps to the survivor, never warns', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        folded.forEach(({ id }) => {
+          const shadow = Params.normalizeShadow({ shadowToneLaw: id });
+          expect(shadow.shadowToneLaw).toBe(survivor);
+        });
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    test('picker round-trip: resolve()/entry() still answer for a folded id', () => {
+      const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+      folded.forEach(({ id }) => {
+        expect(FS.resolve(id)).toBe(survivor);
+        expect(FS.entry(id)).toBeTruthy();
+      });
+    });
+
+    test('a saved .vectura naming a folded toneLaw resolves through the real engine (sanitizeSceneParams) unchanged in effect', () => {
+      const first = folded[0];
+      const sanitized = Params.sanitizeSceneParams({
+        objects: [{ id: 'obj-1', primitive: 'sphere', params: { radius: 30 } }],
+        styleTable: {
+          scene: { mapper: 'hatch', params: {} },
+          byObject: { 'obj-1': { mapper: 'hatch', params: { toneLaw: first.id } } },
+          byFace: {},
+        },
+      });
+      expect(sanitized.sceneVersion).toBe(4);
+      const migrated = sanitized.styleTable.byObject['obj-1'].params;
+      expect(migrated.toneLaw).toBe(survivor);
+      expect(migrated[key]).toBe(first.value);
+    });
+  });
+}
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════
+ * U2 — C-02 · survivor `taperedEnds` · param `bandProfile`
+ * Folded: whiteBand ('hard'), nibAngle ('nib'). Bare option: taper->taperedEnds.
+ * RED (pre-U2): resolveToneLaw({toneLaw:'taperedEnds', bandProfile:'hard'})
+ * returned 'taperedEnds' unchanged (no STYLE_PARAMS.taperedEnds descriptor)
+ * — rendering diverged from whiteBand's own picture (2862.5 vs 2919.7 mm ink
+ * on torus+hatch+med). GREEN below closes it by construction.
+ * `isophoteWidth` (2320.0 mm) is a genuinely different picture and is NOT
+ * folded — the plan says so explicitly; not touched by this unit.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+describeSingleParamCluster('Scene3D tone-law collapse — U2 (C-02, taperedEnds/bandProfile)', {
+  survivor: 'taperedEnds',
+  key: 'bandProfile',
+  pickerIdsLength: 43,
+  folded: [
+    { id: 'whiteBand', value: 'hard' },
+    { id: 'nibAngle', value: 'nib' },
+  ],
 });

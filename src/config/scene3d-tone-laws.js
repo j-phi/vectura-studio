@@ -871,11 +871,9 @@
   // yet): PICKER_IDS.length === IDS.length, ALIASES === {}.
   const PICKER_IDS = [
   "none",
-  "nibAngle",
   "taperedEnds",
   "weightModulated",
   "isophoteWidth",
-  "whiteBand",
   "weightSmoothstep",
   "lozengeStipple",
   "deepFillTSP",
@@ -934,6 +932,18 @@
     "params": {
       "rungMode": "perceptual"
     }
+  },
+  "whiteBand": {
+    "into": "taperedEnds",
+    "params": {
+      "bandProfile": "hard"
+    }
+  },
+  "nibAngle": {
+    "into": "taperedEnds",
+    "params": {
+      "bandProfile": "nib"
+    }
   }
 };
   const STYLE_PARAMS = {
@@ -962,6 +972,30 @@
           "value": "perceptual",
           "label": "Perceptual ramp",
           "law": "perceptualRamp"
+        }
+      ]
+    }
+  ],
+  "taperedEnds": [
+    {
+      "key": "bandProfile",
+      "label": "Band profile",
+      "default": "taper",
+      "options": [
+        {
+          "value": "taper",
+          "label": "Tapered ends",
+          "law": "taperedEnds"
+        },
+        {
+          "value": "hard",
+          "label": "Hard ends (white band)",
+          "law": "whiteBand"
+        },
+        {
+          "value": "nib",
+          "label": "Calligraphic nib",
+          "law": "nibAngle"
         }
       ]
     }
