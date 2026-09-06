@@ -1796,10 +1796,13 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
       // (d)/(e) — PRIMARY. RED largest blob 3.35mm / 27 blobs. Real, measured
       // improvement on BOTH — but neither clears the plan's <=0.9mm/<=5-blob
       // acceptance (Rank 1 alone cannot; Rank 3, level warping, is required
-      // and is its own deferred W-id). Bars below assert the real, measured
-      // improvement only — not the plan's stricter target.
-      expect(m.largestW).toBeLessThan(3.35); // real shrink from RED 3.35mm (still misses plan's <=0.9mm)
-      expect(m.blobCount).toBeLessThan(27); // real drop from RED 27 (still misses plan's <=5)
+      // and is its own deferred W-id). FLOORS at this iteration's own
+      // measured GREEN values (2.10mm / 12 blobs) with a +10% drift band —
+      // not self-referential RED pins (adversarial review 2 §3: a bound at
+      // the RED value would pass silently on a regression most of the way
+      // back toward RED; this bound trips well before that).
+      expect(m.largestW).toBeLessThan(2.10 * 1.10); // floor: GREEN 2.10mm +10% (RED was 3.35mm)
+      expect(m.blobCount).toBeLessThanOrEqual(Math.ceil(12 * 1.10)); // floor: GREEN 12 +10% (RED was 27)
       // eslint-disable-next-line no-console
       console.log(`W-27c-0a torus MISSES plan's (d)/(e) closure bars: largestW=${m.largestW.toFixed(2)}mm (plan bar <=0.9mm), blobCount=${m.blobCount} (plan bar <=5)`);
     });
@@ -1812,8 +1815,10 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
       expect(m.pct1).toBeLessThanOrEqual(5); // RED 13.906%; plan's own bar
       expect(m.waist).toBeGreaterThanOrEqual(0.8 * m.penWidth); // RED 0.082mm (0.27w)
       // (d) — real, measured improvement (RED 34.50mm), still far from the
-      // plan's <=0.9mm bar.
-      expect(m.largestW).toBeLessThan(34.5);
+      // plan's <=0.9mm bar. Floor at this iteration's own measured GREEN
+      // value (14.85mm) with a +10% drift band — not a self-referential RED
+      // pin (adversarial review 2 §3).
+      expect(m.largestW).toBeLessThan(14.85 * 1.10); // floor: GREEN 14.85mm +10% (RED was 34.50mm)
       // (e) — HONEST REGRESSION, not asserted as an improvement: blob count
       // measured WORSE after this fix (RED 47 -> GREEN 54). Documented, not
       // hidden — see the block header comment and the impl report. Sanity
