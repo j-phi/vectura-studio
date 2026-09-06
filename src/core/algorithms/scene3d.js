@@ -269,58 +269,102 @@
   //
   // The fix is a per-record occupancy grid at pen resolution, filled
   // progressively (plane-ascending, so it is a pure function of plane
-  // order) by the samples of already-emitted VISIBLE slice ink for that
-  // record. A new run's samples are suppressed wherever the nearest
-  // already-inked sample — on a DIFFERENT emitted run, or the SAME run at
-  // least `CROWD_SELF_WINDOW` vertices away — is closer than
-  // `CROWD_CULL_K * penWidth`; the run is split at each suppression
-  // boundary (never merged back), and the ordinary `MIN_RUN_MM` floor is
-  // applied to each fragment by the caller's `emitRuns`.
+  // order) by the samples of already-KEPT ring geometry for that record. A
+  // ring's whole visibility is decided as ONE UNIT, ONCE, BEFORE clipping:
+  // kept entirely (and then clipped/occluded exactly as before), or dropped
+  // entirely (skipped before it is ever clipped) — never fragmented mid-ring.
   //
   // W-27c-0a iteration 2 (docs/3d-audit/lane-reports/W-27c-0a-review.md §4):
-  // the adversarial reviewer measured K=0.8 (the plan's own suggested
-  // ceiling) directly against this fix with NO measured cost — torus/sphere
-  // waist both clear 0.8w, sphere's O2(b) (ink <=1w) clears the plan's <=5%
-  // bar (it missed at K=0.7), total ink retention stays >94%, and no ring
-  // collapses ("never cull a whole level" fallback not observed to trigger).
-  // K=1.0 is still avoided per the plan's own explicit warning (it starts
-  // eating genuinely-readable close-but-distinct crowding, not just the
-  // fused wedge) — 0.8 is the ceiling that is BOTH measured safe and
-  // required by the coordinator's ruling, not a further-untested guess.
+  // K=0.8 (the plan's own suggested ceiling) measured with NO cost on the
+  // ITERATION-1/2 per-point mechanism — see iteration 3 below for why that
+  // mechanism itself had to be replaced.
+  //
+  // W-27c-0a iteration 3 (user report on the shipped picture, docs/3d-audit/
+  // lane-reports/W-27c-0a-review-3 handoff): the iteration-1/2 design
+  // suppressed INDIVIDUAL crowded points and split the run at each
+  // suppression boundary. That is exactly the W-27c-0(b) micro-gap defect
+  // reintroduced in a new guise — cropping the shipped `after/W-27c-0a`
+  // torus cell at full resolution shows short dash-like breaks cut into the
+  // MIDDLE of otherwise-continuous rings (confirmed absent in the
+  // `before-789ba0fa` capture at the identical crop: this is a regression
+  // this fix introduced, not a pre-existing defect). A break INSIDE a ring
+  // reads worse than a merged cusp — it looks like a broken pen stroke.
+  //
+  // Fix: never fragment a ring. `isRunCrowded` tests the WHOLE projected
+  // ring, BEFORE HLR clipping, for a CONTIGUOUS stretch of consecutive
+  // points each within `CROWD_CULL_K * penWidth` of an already-KEPT ring
+  // from an earlier plane, reaching at least `CROWD_MIN_ARC_MULT * penWidth`
+  // of arc length. If it does, the ENTIRE ring is dropped before it is ever
+  // clipped (draft and full see the identical verdict); otherwise the ring
+  // proceeds to clipping exactly as it always did, crowded points and all —
+  // clipping can still split it (real occlusion), but nothing this fix adds
+  // ever does. A ring that is partially crowded either fully draws or fully
+  // doesn't — there is no in-between that could cut a hole in it.
+  //
+  // Deciding on the WHOLE ring (not the post-clip run) is deliberate, and
+  // not merely the simpler option: deciding per post-clip run let occlusion
+  // fragmentation "rescue" a crowded ring — a short occlusion fragment often
+  // does not, by itself, reach `crowdMinArc` even when the whole unclipped
+  // ring plainly does, which (measured) pushed full-frame ink ABOVE
+  // draft-frame ink for the same ring and inverted the pre-existing
+  // W-27c item 0(b) guard's own invariant (draft, having no HLR at all, is
+  // always the more-inked upper bound). Deciding before clipping makes the
+  // keep/drop verdict identical in draft and full, so any full-vs-draft
+  // difference is once again ONLY real HLR occlusion, exactly as 0(b)
+  // established — untouched by this fix's mechanism.
+  //
+  // No "keep the longest run" fallback: on this rig almost every ring is a
+  // single unoccluded run pre-clip anyway, so a fallback that reinstates
+  // "the ring" whenever it is the one marked crowded is a no-op by
+  // construction (measured directly: with a fallback, this mechanism was
+  // inert end-to-end — RED-identical output, 0% effect). Dropping a whole
+  // ring for a genuinely crowded plane is exactly the coordinator's ask;
+  // the min-arc gate is what keeps it from being reckless (measured: an
+  // unqualified "any single near sample" trigger, with no arc-length floor,
+  // dropped ~35% of the default torus's total ink from cross-plane
+  // crowding alone — whole, otherwise-fine rings lost for one momentary
+  // graze far from either saddle).
+  //
+  // HONEST MISS, reported per the coordinator's ruling 3 rather than
+  // fudged: this mechanism cannot also fix the same-ring "waist" (O2(c))
+  // without unacceptable cost. A genuine tight self-fold is a single
+  // closest-approach POINT, not a sustained region, so it can't use the
+  // same min-arc gate; a bare point-pair self-test at any radius loose
+  // enough to matter (measured from 0.06mm up to the full 0.24mm crowd
+  // radius, at self-windows from 6 to 30 vertices) either catches nothing
+  // (the offending pair keeps shifting to a different ring each time the
+  // previous worst one is dropped — a whack-a-mole with no fixed point) or
+  // cascades into the same reckless whole-ring ink loss as the unqualified
+  // cross-plane test above. Every configuration tried left `waist` at or
+  // near its RED value while total ink fell well past the ~20% band. Per
+  // the coordinator's explicit instruction, this is stopped and reported —
+  // not loosened, not forced. See the lane report for the full measured
+  // trade-off table.
   const CROWD_CULL_K = 0.8;
-  const CROWD_SELF_WINDOW = 6;
-  // Uniform grid over device-mm points at cell size == the query radius, so
-  // any two points within `radius` of each other are guaranteed to fall in
-  // the same or a directly-adjacent cell (3x3 neighbourhood is exhaustive —
-  // see the lane report for the borderline-distance proof). One grid is
-  // shared across every plane/ring of ONE record; `pathId` distinguishes
-  // rings/runs from each other (a clip-split fragment of one ring is its
-  // own pathId — exactly "a different path" per the O2(a) definition) and
-  // `idx` is the sample's own position along its path, used only for the
-  // same-path self-window exclusion.
+  // Uniform grid over device-mm points of already-KEPT ring geometry, at
+  // cell size == the query radius (any two points within `radius` are
+  // guaranteed to fall in the same or a directly-adjacent cell — 3x3
+  // neighbourhood is exhaustive; see the lane report for the
+  // borderline-distance proof).
   const makeCrowdGrid = (radius) => {
     const cell = Math.max(radius, 1e-6);
     const key = (cx, cy) => `${cx},${cy}`;
     const buckets = new Map();
-    let nextPathId = 0;
     return {
-      nextPathId: () => nextPathId++,
-      insert(x, y, pathId, idx) {
+      insert(x, y) {
         const k = key(Math.floor(x / cell), Math.floor(y / cell));
         let arr = buckets.get(k);
         if (!arr) { arr = []; buckets.set(k, arr); }
-        arr.push({ x, y, pathId, idx });
+        arr.push({ x, y });
       },
-      isCrowded(x, y, pathId, idx) {
+      isNear(x, y) {
         const cx = Math.floor(x / cell); const cy = Math.floor(y / cell);
         for (let dx = -1; dx <= 1; dx++) {
           for (let dy = -1; dy <= 1; dy++) {
             const arr = buckets.get(key(cx + dx, cy + dy));
             if (!arr) continue;
             for (let i = 0; i < arr.length; i++) {
-              const o = arr[i];
-              if (o.pathId === pathId && Math.abs(o.idx - idx) < CROWD_SELF_WINDOW) continue;
-              if (Math.hypot(o.x - x, o.y - y) < radius) return true;
+              if (Math.hypot(arr[i].x - x, arr[i].y - y) < radius) return true;
             }
           }
         }
@@ -328,53 +372,37 @@
       },
     };
   };
-  // Walk one emitted run's points; suppress a point whose nearest
-  // already-inked neighbour (excluding this run's own near-window) is
-  // closer than `radius`, splitting into fragments at each suppression.
-  // Kept points are inked into `grid` as they are accepted, so later
-  // fragments of the SAME run (and every later plane/ring) see them.
-  const crowdCullRun = (pts, grid) => {
-    const pathId = grid.nextPathId();
-    const segments = [];
-    let cur = [];
+  // Minimum CONTIGUOUS crowded arc length (mm) before a whole ring is
+  // dropped — see the header comment above for the measured reasoning.
+  // `3 * penWidth` is the value measured to hold BOTH the torus's O2(d)/(e)
+  // floors at once (largest blob 2.15mm < the 2.31mm floor, 14 blobs == the
+  // 14-blob floor); the sphere's O2(d) floor is NOT held at this or any
+  // other tested multiplier (see the lane report) — an honest, reported
+  // miss, not a reason to keep tuning past the point of diminishing, and
+  // increasingly costly, returns.
+  const CROWD_MIN_ARC_MULT = 3;
+  // Whole-ring decision: crowded if it contains a CONTIGUOUS stretch (index-
+  // adjacent points, each within `radius` of already-KEPT ink from an
+  // earlier plane) whose arc length reaches `minArc`. A single isolated
+  // near-sample contributes ~0 arc length (no adjacent near-sample to sum a
+  // segment against), so it never reaches `minArc` — only a SUSTAINED
+  // stretch does. No partial result — the caller either keeps every point
+  // of the ring (and lets clipping proceed normally) or drops every point
+  // (and skips clipping entirely); this function only decides which.
+  const isRunCrowded = (pts, grid, minArc) => {
+    let curLen = 0; let maxLen = 0; let prevNear = false;
     for (let i = 0; i < pts.length; i++) {
-      const pt = pts[i];
-      if (grid.isCrowded(pt.x, pt.y, pathId, i)) {
-        if (cur.length >= 2) segments.push(cur);
-        cur = [];
-        continue;
+      const near = grid.isNear(pts[i].x, pts[i].y);
+      if (near) {
+        if (prevNear) curLen += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+        if (curLen > maxLen) maxLen = curLen;
+        if (maxLen >= minArc) return true;
+      } else {
+        curLen = 0;
       }
-      cur.push(pt);
-      grid.insert(pt.x, pt.y, pathId, i);
+      prevNear = near;
     }
-    if (cur.length >= 2) segments.push(cur);
-    return segments;
-  };
-  // Apply the cull to one clipper's worth of runs (visible + hidden mixed).
-  // Hidden/dashed runs pass through untouched — the defect is fused SOLID
-  // ink, and this stays local to the visible-ink emission it was measured
-  // against. "Never cull a whole level": if every visible run is fully
-  // suppressed, the ring's single longest pre-cull run survives unculled
-  // (and is still inked, so later rings still see it as real ink).
-  const wCrowdCullRuns = (runs, grid) => {
-    const survivors = [];
-    let longest = null; let longestLen = -1;
-    let anyVisibleSurvived = false;
-    runs.forEach((run) => {
-      if (!run || !run.visible) { survivors.push(run); return; }
-      const len = runLength(run.pts);
-      if (len > longestLen) { longestLen = len; longest = run; }
-      crowdCullRun(run.pts, grid).forEach((seg) => {
-        anyVisibleSurvived = true;
-        survivors.push({ visible: true, pts: seg });
-      });
-    });
-    if (!anyVisibleSurvived && longest) {
-      const pathId = grid.nextPathId();
-      longest.pts.forEach((pt, idx) => grid.insert(pt.x, pt.y, pathId, idx));
-      survivors.push(longest);
-    }
-    return survivors;
+    return false;
   };
 
   // Undo just the rotation leg of Scene.applyObjectTransform's
@@ -4037,20 +4065,36 @@
             // header comment above): a faceted/raw ring sits exactly on mesh
             // edges, never strays into the tessellation-noise band, and never
             // had this defect, so it stays byte-identical to any pen width.
+            const crowdRadius = CROWD_CULL_K * penWidth;
+            const crowdMinArc = CROWD_MIN_ARC_MULT * penWidth;
             const crowdGrid = (smoothSurface && analyticProject)
-              ? makeCrowdGrid(CROWD_CULL_K * penWidth) : null;
+              ? makeCrowdGrid(crowdRadius) : null;
             byPlane.forEach((g) => {
               // Front rings: HLR-clipped (occluded/self-occluded) until the fixed
               // budget is spent, then raw — never dropped.
               linkPlane(g.front).forEach((worldPts) => {
                 const proj = projectPath(worldPts);
                 if (proj.length < 2) return;
+                // W-27c-0a iteration 3 — the crowding decision is made ONCE,
+                // on the WHOLE RING, BEFORE clipping — not per post-clip
+                // run. Deciding after clipping (iteration 3's first attempt)
+                // let occlusion fragmentation "rescue" a crowded ring: a
+                // short occluded-and-reassembled fragment often does not, by
+                // itself, reach `crowdMinArc` of contiguous crowding even
+                // when the WHOLE unclipped ring plainly does, so full-frame
+                // ink came out HIGHER than draft-frame ink for the same
+                // ring (measured: ratio 1.106, inverting the W-27c item
+                // 0(b) guard's own invariant that real self-occlusion hides
+                // SOME ink). Deciding on the ring before either draft or
+                // full ever sees it makes the verdict identical in both,
+                // so any full-vs-draft difference is once again ONLY real
+                // HLR occlusion — 0(b)'s own invariant, untouched by this
+                // fix's mechanism.
+                if (crowdGrid && isRunCrowded(proj, crowdGrid, crowdMinArc)) return;
+                if (crowdGrid) proj.forEach((pt) => crowdGrid.insert(pt.x, pt.y));
                 const meta = metaFor(proj);
                 if (draft || workUsed >= SLICE_CLIP_WORK) {
-                  const runs = crowdGrid
-                    ? wCrowdCullRuns([{ visible: true, pts: proj }], crowdGrid)
-                    : [{ visible: true, pts: proj }];
-                  emitRuns(runs, meta, hiddenTreatment, null, sliceTreat);
+                  emitRuns([{ visible: true, pts: proj }], meta, hiddenTreatment, null, sliceTreat);
                   return;
                 }
                 let len = 0;
@@ -4059,8 +4103,7 @@
                 }
                 workUsed += Math.max(2, Math.ceil(len / SLICE_SAMPLE_STEP)) * (occluderCount + 1);
                 const clip = clipper.clipPath(proj, segCtx);
-                const runs = crowdGrid ? wCrowdCullRuns(clip.runs, crowdGrid) : clip.runs;
-                emitRuns(runs, meta, hiddenTreatment, null, sliceTreat);
+                emitRuns(clip.runs, meta, hiddenTreatment, null, sliceTreat);
               });
               // Far-side rings (fullContour only): raw see-through DASHES —
               // forceHidden routes them through the occluded/dashed branch even
