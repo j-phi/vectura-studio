@@ -10396,8 +10396,19 @@
       // `buildObject` caller that sets `toneOn` without a valid `tone` (the
       // production caller in scene3d.js never does; `useLadder` is already
       // false whenever `tone` is) falls through to the OLD dispatch below,
-      // exactly as it did before this unit.
-      const contMapper = (isContField() || (isEvenLadder() && useLadder)) && toneOn
+      // exactly as it did before this unit. `&& STAGE.masterGrid` matters
+      // because `askedLaw === 'none'` (Stage 0) still resolves TONE_ALGO to
+      // the committed default ('ladder') — `isEvenLadder()` reads TONE_ALGO
+      // alone and cannot see `stage0` — but `masterPitch` is NEVER computed
+      // when `STAGE.masterGrid` is false (it stays its initial 0), so
+      // `ladderWantedPitch` would divide by the wrong thing and the walk
+      // would take the SMALLEST allowed step forever: MEASURED, this
+      // produced 637 paths / 23347mm of ink for 'none' against 'ladder''s
+      // legitimate 67 / 3957mm on the tone-law-dispatch fixture — a runaway,
+      // not a Stage-0 flat grid. `STAGE.masterGrid` false now falls through
+      // to the OLD `emitFamily`/`emitAngledFamily` dispatch, byte-identical
+      // to Stage 0's pre-W-26 behaviour.
+      const contMapper = (isContField() || (isEvenLadder() && useLadder && STAGE.masterGrid)) && toneOn
         && (mapper === 'hatch' || mapper === 'crosshatch' || mapper === 'contour');
       if (monoMapper) {
         MonoFill().emit({
@@ -10509,7 +10520,7 @@
         // three laws, for the same reason `continuousPitch` supersedes the
         // discrete rungs: once the tone states the spacing directly there is
         // nothing left for a second, manual density dial to adjust.
-        if (isEvenLadder() && !symmetric && useLadder) {
+        if (isEvenLadder() && !symmetric && useLadder && STAGE.masterGrid) {
           const NPROBE = 160;
           const subW = Math.max(12, Math.round(steps / 2));
           const EPS_F = 1 / (NPROBE * 8);
