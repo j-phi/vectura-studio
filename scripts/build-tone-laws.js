@@ -258,6 +258,15 @@ const COLLAPSE = {
       { value: 'smooth', label: 'Smoothed weights', law: 'weightSmoothstep' },
     ],
   }],
+  bundleCount: [{                                                      // C-04 (U4, W-24)
+    key: 'bundleMode', label: 'Bundle mode', default: 'count',
+    options: [
+      { value: 'count', label: 'Integer pass count', law: 'bundleCount' },
+      { value: 'eased', label: 'Eased pass count', law: 'bundleEased' },
+      { value: 'dither', label: 'Dithered', law: 'bundleDither' },
+      { value: 'handoff', label: 'Region handoff', law: 'bundleHandoff' },
+    ],
+  }],
 };
 
 // ── 5c. Derive ALIASES + PICKER_IDS + STYLE_PARAMS from COLLAPSE ───────────

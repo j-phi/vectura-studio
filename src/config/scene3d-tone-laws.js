@@ -878,10 +878,7 @@
   "deepFillTSP",
   "bundleCount",
   "bundleSubNib",
-  "bundleEased",
-  "bundleDither",
   "bundleLozenge",
-  "bundleHandoff",
   "contFieldSigmoid",
   "contFieldTouch",
   "contFieldFore",
@@ -948,6 +945,24 @@
     "into": "weightModulated",
     "params": {
       "weightEase": "smooth"
+    }
+  },
+  "bundleEased": {
+    "into": "bundleCount",
+    "params": {
+      "bundleMode": "eased"
+    }
+  },
+  "bundleDither": {
+    "into": "bundleCount",
+    "params": {
+      "bundleMode": "dither"
+    }
+  },
+  "bundleHandoff": {
+    "into": "bundleCount",
+    "params": {
+      "bundleMode": "handoff"
     }
   }
 };
@@ -1020,6 +1035,35 @@
           "value": "smooth",
           "label": "Smoothed weights",
           "law": "weightSmoothstep"
+        }
+      ]
+    }
+  ],
+  "bundleCount": [
+    {
+      "key": "bundleMode",
+      "label": "Bundle mode",
+      "default": "count",
+      "options": [
+        {
+          "value": "count",
+          "label": "Integer pass count",
+          "law": "bundleCount"
+        },
+        {
+          "value": "eased",
+          "label": "Eased pass count",
+          "law": "bundleEased"
+        },
+        {
+          "value": "dither",
+          "label": "Dithered",
+          "law": "bundleDither"
+        },
+        {
+          "value": "handoff",
+          "label": "Region handoff",
+          "law": "bundleHandoff"
         }
       ]
     }

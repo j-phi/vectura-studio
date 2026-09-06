@@ -365,14 +365,14 @@ describe('Fill Style — the shared mark-class config', () => {
       // The measured U12 audit baseline was 38 of 49 (onePenDown is a wave
       // law, dead on faceted); none/ladder/the 9 mono laws are the 11 that
       // remain reachable. ALIVE is unaffected by the fill-roster collapse
-      // (none of C-01/C-02/C-03's 6 folded ids so far is a mono law). DEAD
+      // (none of C-01..C-04's 9 folded ids so far is a mono law). DEAD
       // moves as the picker's flat list shrinks (W-22-24-W-18-plan.md §5
       // "…:267-270" — re-measure and re-paste this number, do not assume,
       // at every unit that folds another id): U1 46 total - 11 alive = 35;
-      // U2 44 total - 11 = 33; U3 (C-03/W-22b, weightModulated/weightEase,
-      // 1 more folded) 43 total - 11 = 32.
+      // U2 44 total - 11 = 33; U3 43 total - 11 = 32; U4 (C-04,
+      // bundleCount/bundleMode, 3 more folded) 40 total - 11 = 29.
       expect(alive.length).toBe(11);
-      expect(dead.length).toBe(32);
+      expect(dead.length).toBe(29);
       // Group STRUCTURE (count, membership) is unaffected — only reachability.
       expect(g.length).toBe(F.groups('sphere').length);
     });
@@ -976,9 +976,26 @@ describe('Fill Style — context-bar Style flyout', () => {
       expect(box.classList.contains('vs3-lawinfo-pop')).toBe(false);
     });
 
+    // STALE FIXTURE UPDATE (U4, fill-roster collapse) — 'bundleDither' is now
+    // an ALIAS folded into survivor 'bundleCount'. The docked/ctxbar caveat
+    // line is rendered from the RESOLVED SURVIVOR id (fillStyleControls'
+    // documented design: the (i) popover shows the survivor's own blurb),
+    // and bundleCount itself has no caveat — so bundleDither's real,
+    // measured caveat ("waving the pass-count boundary made long-wave moire
+    // worse") is genuinely no longer reachable through this UI path once
+    // folded. That gap is real, plan-anticipated (§2.4), and requires a
+    // UI-file change (scene3d-panel.js/context-bar.js) to fix — out of scope
+    // for this data-only unit; see the dedicated "U4 caveat-visibility gap"
+    // describe block in scene3d-tone-law-collapse.test.js and this unit's
+    // report for the honest record. This test's actual PURPOSE is to prove
+    // the GENERAL mechanism (a library law's caveat renders without opening
+    // the (i)), so it now uses 'bundleSubNib' — a LIBRARY-tier, caveat-
+    // bearing law that no cluster in this plan ever folds (§1 explicitly
+    // keeps it a distinct row forever) — instead of a law this very unit
+    // just made unreachable via this exact UI path.
     test('the caveat and mark-class note stay reachable without opening the (i)', () => {
       const { fly } = openStyle({
-        styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'bundleDither' } } }),
+        styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'bundleSubNib' } } }),
       });
       const notes = Array.from(openFly().querySelectorAll('.ctxbar-fly-note')).map((n) => n.textContent);
       expect(notes.some((t) => t.startsWith('Parallel hatching —') || t.startsWith('Crosshatch'))).toBe(true);
@@ -1312,7 +1329,11 @@ describe('Fill Style — docked 3D Scene panel', () => {
     expect(notes.join(' ')).toContain('Voronoi');
     expect(stylePage(container).querySelector('.vs3-lawnote.is-caveat')).toBeNull();
 
-    const lib = openStyle(hatchOn({ toneLaw: 'bundleDither' }));
+    // STALE FIXTURE UPDATE (U4) — 'bundleDither' folded into 'bundleCount';
+    // see the identical note on the ctxbar-flyout version of this fixture
+    // above. 'bundleSubNib' is LIBRARY-tier, has a real caveat, and is never
+    // folded by any cluster in this plan.
+    const lib = openStyle(hatchOn({ toneLaw: 'bundleSubNib' }));
     const caveat = stylePage(lib.container).querySelector('.vs3-lawnote.is-caveat');
     expect(caveat).toBeTruthy();
     expect(caveat.textContent.length).toBeGreaterThan(10);
@@ -1354,8 +1375,10 @@ describe('Fill Style — docked 3D Scene panel', () => {
       expect(btn.getAttribute('aria-expanded')).toBe('false');
     });
 
+    // STALE FIXTURE UPDATE (U4) — 'bundleDither' folded into 'bundleCount';
+    // see the identical note earlier in this file (ctxbar-flyout fixture).
     test('the caveat stays OUTSIDE the popover — reachable without opening the (i)', () => {
-      const { container } = openStyle(hatchOn({ toneLaw: 'bundleDither' }));
+      const { container } = openStyle(hatchOn({ toneLaw: 'bundleSubNib' }));
       const page = stylePage(container);
       const caveat = page.querySelector('.vs3-lawnote.is-caveat');
       expect(caveat).toBeTruthy();

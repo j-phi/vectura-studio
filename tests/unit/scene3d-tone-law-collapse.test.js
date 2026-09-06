@@ -642,3 +642,62 @@ describeSingleParamCluster('Scene3D tone-law collapse — U3 (C-03/W-22b, weight
     { id: 'weightSmoothstep', value: 'smooth' },
   ],
 });
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════
+ * U4 — C-04 · survivor `bundleCount` · param `bundleMode`
+ * Folded: bundleEased ('eased'), bundleDither ('dither'), bundleHandoff
+ * ('handoff'). Bare option: count->bundleCount.
+ * RED (pre-U4): resolveToneLaw({toneLaw:'bundleCount', bundleMode:'dither'})
+ * returned 'bundleCount' unchanged — rendering diverged from bundleDither's
+ * own picture (2461.4 vs 2468.3 mm ink on torus+hatch+med). GREEN below.
+ * `bundleLozenge` (2193.3, lens bundles) and `bundleSubNib` (4030.9, solid
+ * band) are distinct and NOT folded — per the plan, not touched here.
+ *
+ * TRAP (plan §2.4 / U0-review follow-up): `bundleDither` is one of the 11
+ * LIBRARY-tier laws AND carries a real measured caveat ("waving the
+ * pass-count boundary made long-wave moire worse... 3.43 vs 2.90 RMS").
+ * `SCENE_FILL_STYLES.entry()`/`note()` read `R.BY_ID[id]` directly (NOT
+ * resolved through an alias), so calling them with the raw id
+ * 'bundleDither' still returns its own caveat correctly forever — verified
+ * below, not assumed. What is genuinely lost: `fillStyleControls`
+ * (scene3d-panel.js) computes its popover/caveat from the RESOLVED
+ * SURVIVOR id ('bundleCount', which has no caveat of its own), not from
+ * the specific internal law the bundleMode sub-control currently selects
+ * — so a user who picks "Dithered" no longer sees bundleDither's caveat
+ * warning in the UI. Fixing that needs a UI-file change (scene3d-panel.js
+ * /context-bar.js), out of scope for this data-only unit per the plan's own
+ * stop condition ("touch a UI file -> stop and report"); flagged as a
+ * named follow-up in this unit's report rather than worked around here.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+describeSingleParamCluster('Scene3D tone-law collapse — U4 (C-04, bundleCount/bundleMode)', {
+  survivor: 'bundleCount',
+  key: 'bundleMode',
+  pickerIdsLength: 39,
+  folded: [
+    { id: 'bundleEased', value: 'eased' },
+    { id: 'bundleDither', value: 'dither' },
+    { id: 'bundleHandoff', value: 'handoff' },
+  ],
+});
+
+describe('Scene3D tone-law collapse — U4 caveat-visibility gap (bundleDither, LIBRARY-tier, has a real caveat)', () => {
+  let runtime;
+  beforeAll(async () => { runtime = await loadVecturaRuntime(); });
+  afterAll(() => runtime.cleanup());
+
+  test('BY_ID-direct lookups (entry/note by raw id) still show the caveat — the roster corpus is untouched', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const note = FS.note('bundleDither');
+    expect(note.caveat.length).toBeGreaterThan(0);
+    expect(note.caveat).toMatch(/moire/);
+  });
+
+  test('KNOWN GAP: the resolved-survivor id (what the UI popover actually reads) has no caveat of its own', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(FS.resolve('bundleDither')).toBe('bundleCount');
+    const survivorNote = FS.note('bundleCount');
+    expect(survivorNote.caveat).toBe(''); // bundleCount's OWN caveat is null/empty
+  });
+});
