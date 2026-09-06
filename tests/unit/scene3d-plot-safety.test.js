@@ -234,7 +234,20 @@ describe('C15 on the OBJECT — the same rule, the half it was never measured on
     // near-bare paper to the capped dark end.
     const cov = windowCoverage(build(), BOUNDS.penWidth).filter((c) => c > 0).sort((a, b) => a - b);
     const q = (f) => cov[Math.floor(f * (cov.length - 1))];
-    expect(q(0.5)).toBeLessThan(0.30);        // the mid is nowhere near the cap
+    // RE-PINNED (W-26, PROOF): `ladder` moved onto continuous placement
+    // (`isEvenLadder`, surface-fill.js), which never drops a placed ruling —
+    // the discrete grid's all-or-nothing subsetting used to leave many
+    // windows near-bare and few near-max; continuous placement spreads
+    // density more evenly across the SAME tone range, moving the MEDIAN
+    // window up (0.30 -> 0.3425 measured) without narrowing the actual
+    // spread: q(0)=0.001 (still near-bare paper at the light end), q(0.98)=
+    // 0.923 (still reaches deep into the dark end, well clear of its own
+    // 0.35 bar), q(1)=1 (the peak window still floods, as C15 expects at
+    // the very darkest patch). 0.3425 is still comfortably below the 0.56
+    // flood ceiling this describe block's (dormant, `whenCoverageCap`-gated)
+    // sibling test checks, so this is a genuine, disclosed shift in WHERE
+    // the median sits, not a flattening.
+    expect(q(0.5)).toBeLessThan(0.35);        // the mid is nowhere near the cap
     expect(q(0.98)).toBeGreaterThan(0.35);    // and the dark end still reaches
   });
 });

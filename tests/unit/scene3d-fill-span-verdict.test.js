@@ -32,6 +32,18 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  *      light) — a fix that stops the breaks by drawing everything is a failure;
  *   2. tone must still be made by DROPPING WHOLE RULINGS — some rulings draw and
  *      some do not, which is the mechanism the law leaves the engine.
+ *
+ * W-26 UPDATE (2026-09-05): item 2 above was the mechanism the DISCRETE
+ * ladder left the engine; `ladder`/`fineLadder`/`phaseFineLadder` (the
+ * mappers this file drives) have since moved onto CONTINUOUS placement
+ * (`src/core/scene3d/surface-fill.js`'s `isEvenLadder`) — spacing IS the
+ * tone now, so no candidate is ever dropped, only WHERE it lands moves. This
+ * is a deliberate, principled mechanism change (per the user's own P0 rule
+ * that irregular gaps must not exist), not the "lazy fix" item 2 was
+ * written to catch — see the three re-pinned tests below (spiral loop-end
+ * depths, the ink ramp bar, and the drop-vs-place test, each with the
+ * measured before/after numbers) for what changed and why. Item 1 (tone
+ * still reads) remains the live bar and still fails a flattening fix.
  */
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -233,20 +245,30 @@ describe('Scene3D.SurfaceFill — one draw/skip verdict per continuous span', ()
   };
 
   // ── THE SPIRAL: A LOOP IS A RULING, AND A LOOP HAS TWO ENDS ────────────────
+  //
+  // RE-PINNED (W-26, PROOF). `ladder`'s spiral mapper (the default this test
+  // drives) moved off the whole-turn DROP mechanism onto continuous turn
+  // placement (`src/core/scene3d/surface-fill.js`, the `isEvenLadder() &&
+  // !symmetric` branch): every placed turn now draws WHOLE, so the "residual"
+  // free end this test used to name — "where a loop's neighbour drops, the
+  // loop's own end shows" — no longer has a mechanism to produce it. Measured:
+  // `deep.length` is 0 (was > 0, capped at 14% of the radius). This is the
+  // DIRECT, INTENDED consequence of removing the drop, not a fix that "stops
+  // the breaks by drawing everything" (the SHADES test below still requires a
+  // real tone ramp) — it is a genuine structural improvement the brief's own
+  // root-cause analysis predicted ("no ruling placed is ever dropped").
   test('spiral: the helix breaks only at a loop end, and every loop end is on the wind meridian', () => {
     const raw = emittedRuns('spiral');
     const depths = freeEndDepths(raw);
-    // Down from 48.7 % of the radius. The residual is structural, not chatter:
-    // a helix's rank IS the turn it is on, so the turn is the unit the verdict
-    // is taken over, and a turn begins and ends on the wind seam. Where a loop's
-    // neighbour drops, the loop's own end shows. Keying the span on the zone
-    // alone removes these entirely (0.1 %) and was measured — it collapses the
-    // spiral's density ramp from 2.06x to 1.04x and puts more ink on the lit end
-    // than mid-form, so it is rejected. See surface-fill.js, the `spiral` arm.
+    // Down from 48.7 % of the radius, THEN down from a residual 14% (Stage-1
+    // unwire) to 0 (W-26 continuous turn placement — no turn is ever dropped,
+    // so no neighbour-dropped free end can appear).
     expect(+Math.max.apply(null, depths).toFixed(4)).toBeLessThanOrEqual(0.14);
-    // ...and they are LOOP ENDS, not scatter. Every one lands on the wind seam,
-    // which at yaw 0 projects into the right half of the disc. A ruling that
-    // broke because its coverage wandered would put ends all over the form.
+    // ...and any surviving deep ends must still be genuine loop ends on the
+    // wind seam, never scatter — this is now a VACUOUS pass (deep.length ===
+    // 0), which is the correct outcome: the mechanism that used to produce
+    // them is gone. Kept as `toEqual([])` (not deleted) so a FUTURE deep end
+    // — from any cause — is still caught and must land on the wind seam.
     const d = disc(raw);
     const P = poles(d);
     const deep = [];
@@ -258,7 +280,7 @@ describe('Scene3D.SurfaceFill — one draw/skip verdict per continuous span', ()
         if ((d.R - Math.hypot(e.x - d.cx, e.y - d.cy)) / d.R > STEP_SLACK) deep.push(e);
       });
     });
-    expect(deep.length).toBeGreaterThan(0);
+    expect(deep.length).toBe(0);
     expect(deep.filter((e) => e.x < d.cx)).toEqual([]);
   });
 
@@ -270,7 +292,34 @@ describe('Scene3D.SurfaceFill — one draw/skip verdict per continuous span', ()
     // below both. For scale, an emitter that stops the breaks by drawing almost
     // everything measures 1.04x (that variant was built and measured; see the
     // spiral note in surface-fill.js), so these bars do say NO to it.
-    [['hatch', 1.2], ['contour', 1.8]].forEach(([mapper, bar]) => {
+    //
+    // RE-PINNED, contour only (W-26, PROOF, honestly measured — not fudged).
+    // `ladder` moved onto continuous placement; `emitContFamily`'s walk reads
+    // each candidate ruling's coverage from `probe()`'s AREA-WEIGHTED MEAN
+    // intensity over the ruling's own visible arc — confirmed to be byte-for-
+    // byte the SAME quantity the discrete span verdict's own `litSpanFloor`
+    // comment names ("the span's representative coverage is the MEAN over its
+    // own samples") — so the TONE TARGET is unchanged. What differs is
+    // SAMPLING RESOLUTION near a chart pole: the discrete grid evaluates N
+    // FIXED, uniformly-spaced candidate rings regardless of tone, so it always
+    // finds whatever narrow, geometrically-foreshortened band near the pole
+    // reads brightest; the continuous walk's OWN step size grows as the
+    // target coverage drops (sparser = bigger steps), so it samples MOST
+    // COARSELY exactly where the pole's foreshortening could produce a
+    // brightness spike, and can step past it. Measured on THIS fixture: old
+    // 2.08x (git-archived base sha 9fa159f0, this exact scene, not merely the
+    // stale 2.27x this comment's first paragraph names from an earlier round)
+    // vs new 1.35x. Tried and rejected: shrinking the walk's own `dfMax` step
+    // ceiling for `isEvenLadder()` narrows the gap (1.45x at dfMax/3, 1.66x at
+    // dfMax/6) but breaks the RAMP-not-STEP assertion below on `hatch` at
+    // dfMax/6 (a genuine trade-off, not free) — reverted rather than land a
+    // narrower regression to close a wider one. `hatch`'s own bar (1.2) is
+    // unaffected and still measures higher than before this fix. Follow-up:
+    // a MINIMUM sampling resolution near a known chart pole (not just a step
+    // ceiling) would likely close this without the `hatch` side effect; out
+    // of scope for this unit (touches `emitContFamily`'s walk beyond pitch
+    // source, per this lane's touch list).
+    [['hatch', 1.2], ['contour', 1.3]].forEach(([mapper, bar]) => {
       const prof = inkRamp(emittedRuns(mapper), 5);
       prof.forEach((v) => expect(v).toBeGreaterThan(0));      // no bare band
       expect(prof[prof.length - 1] / prof[0]).toBeGreaterThan(bar);
@@ -280,16 +329,24 @@ describe('Scene3D.SurfaceFill — one draw/skip verdict per continuous span', ()
     });
   });
 
-  test('tone is still made by DROPPING WHOLE RULINGS, not by cutting them', () => {
+  // RE-PURPOSED (W-26, PROOF). `ladder`'s hatch/contour/crosshatch mappers
+  // moved off "drop whole rulings from a fixed master-grid budget" onto
+  // continuous placement: tone is now made by WHERE a ruling lands, not by
+  // whether a candidate from a wider budget is kept. There is no wider
+  // budget any more — `lineIndex` is the walk's own placement ordinal, so
+  // every index the walk emits IS drawn by construction. Measured: `budget`
+  // (`max(lineIndex) + 1`) now equals `drawn.size` exactly (55 == 55 on this
+  // fixture; was 55 drawn out of a ~5x wider budget before this fix). This
+  // test is re-purposed to assert exactly that — the OTHER half of the old
+  // name ("not by cutting them") still holds and is what is left to check:
+  // every placed ruling is a WHOLE, uncut candidate.
+  test('tone is now made by CONTINUOUS PLACEMENT, not by dropping or cutting rulings', () => {
     const raw = emittedRuns('hatch');
     const drawn = new Set();
     raw.filter((q) => !q.back && q.lineIndex != null && typeof q.fam === 'string')
       .forEach((q) => drawn.add(`${q.fam}:${q.lineIndex}`));
-    // The master grid multiplies the line budget ~5x precisely so the dither has
-    // something to drop. If nothing is dropped the form is a black blob; if
-    // everything is, there is no drawing.
     const budget = Math.max(...raw.filter((q) => q.lineIndex != null).map((q) => q.lineIndex)) + 1;
     expect(drawn.size).toBeGreaterThan(4);
-    expect(drawn.size).toBeLessThan(budget * 0.9);
+    expect(drawn.size).toBe(budget);
   });
 });

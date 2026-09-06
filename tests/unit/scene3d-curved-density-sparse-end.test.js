@@ -180,21 +180,34 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     // fix all three rows read [22, 22, 23, 50] (sphere), [flat, flat, 64, 146]
     // (torus contour) and [flat, flat, 62, 62] (cone spiral) at Density
     // 1/25/50/100 — Density 1 and 25 were byte-identical to each other.
+    //
+    // RE-PINNED (W-26, PROOF): `ladder` moved from a discrete grid-subset to
+    // continuous placement (`isEvenLadder`/`ladderWantedPitch`,
+    // surface-fill.js). d=50 and d=100 (already inside this fix's own
+    // scope) also move: continuous placement changes the ladder family at
+    // EVERY density, not only d<50. Verified during implementation that a
+    // BLANKET upper-pitch clamp at the O6 bar (`litMaxPitchPen()*pen`,
+    // applied to every band) reproduces the exact byte-for-byte F-01
+    // flatness this suite guards against (measured: sphere/torus/cone all
+    // drew identically at d=1/10/25) — the shipped fix instead raises
+    // COVERAGE only for the lit band (`ladderCov`), so every darker band
+    // keeps `curvedSparseTonePitch`'s density response; see the "literal
+    // checkpoints" describe below for the full sweep this was caught on.
     test('sphere + hatch + ladder', () => {
       const counts = [1, 25, 50, 100].map((d) => runCount(d, 'hatch', 'ladder', defaults.objects[0]));
-      expect(counts).toEqual([4, 13, 23, 50]);
+      expect(counts).toEqual([8, 15, 25, 53]);
       for (let i = 1; i < counts.length; i++) expect(counts[i]).toBeGreaterThan(counts[i - 1]);
     });
 
     test('torus + contour + ladder', () => {
       const counts = [1, 25, 50, 100].map((d) => runCount(d, 'contour', 'ladder', torusObj));
-      expect(counts).toEqual([19, 35, 64, 146]);
+      expect(counts).toEqual([24, 46, 94, 211]);
       for (let i = 1; i < counts.length; i++) expect(counts[i]).toBeGreaterThan(counts[i - 1]);
     });
 
     test('cone + spiral + ladder (strictly increasing across the fix\'s own scope, 1/25/50)', () => {
       const counts = [1, 25, 50].map((d) => runCount(d, 'spiral', 'ladder', coneObj));
-      expect(counts).toEqual([18, 35, 62]);
+      expect(counts).toEqual([8, 15, 29]);
       for (let i = 1; i < counts.length; i++) expect(counts[i]).toBeGreaterThan(counts[i - 1]);
     });
 
@@ -220,6 +233,22 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     // all six — including torus + hatch + fineLadder, whose path COUNT ties
     // at d=10/d=25 (6 == 6) but whose ink does not (different ruling counts,
     // 7 vs 10, coincidentally close in segment count after ladder banding).
+    //
+    // RE-PINNED (W-26, PROOF): `ladder`/`fineLadder` moved onto continuous
+    // placement. Closes W-01 M1's OWN disclosed follow-up (a) — "decide
+    // which is the contract, non-decreasing or strictly increasing" — in
+    // favour of the STRONGER bar: all six rows below are now STRICTLY
+    // increasing in COUNT too (not merely non-decreasing), including the
+    // torus + fineLadder row that used to tie at d=10/25 (6 == 6). The
+    // oracle is tightened to `expectStrictlyIncreasing` for both counts and
+    // ink, verified to hold before being asserted (see this unit's
+    // `docs/3d-audit/lane-reports/W-26-impl.md` for the numbers this
+    // replaced). This was caught DURING implementation: a first cut of
+    // `ladderWantedPitch` clamped every band's pitch at the O6 bar
+    // (`litMaxPitchPen()*pen`) and flattened all six rows to identical
+    // counts at d=1/10/25 — the literal F-01 defect, moved rather than
+    // fixed. The shipped fix scopes that bar to the lit band's own
+    // COVERAGE (`ladderCov`), not every band's pitch.
     const pathLen = (p) => {
       const pts = Object.keys(p).filter((k) => k !== 'meta').sort((a, b) => Number(a) - Number(b)).map((k) => p[k]);
       let total = 0;
@@ -231,38 +260,48 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     const runInk = (...args) => Math.round(run(...args).reduce((s, p) => s + pathLen(p), 0) * 100) / 100;
 
     const CHECKPOINTS = [1, 10, 25, 50];
-    const expectNonDecreasing = (arr) => {
-      for (let i = 1; i < arr.length; i++) expect(arr[i]).toBeGreaterThanOrEqual(arr[i - 1]);
-    };
     const expectStrictlyIncreasing = (arr) => {
       for (let i = 1; i < arr.length; i++) expect(arr[i]).toBeGreaterThan(arr[i - 1]);
     };
 
     test.each([
-      ['sphere + hatch + ladder', 'hatch', 'ladder', () => defaults.objects[0], [4, 7, 13, 23], [135.47, 192.84, 306.26, 626.36]],
-      ['torus + hatch + ladder', 'hatch', 'ladder', () => torusObj, [3, 5, 7, 10], [258.87, 488.75, 699.49, 1052.68]],
-      ['cone + hatch + ladder', 'hatch', 'ladder', () => coneObj, [8, 12, 17, 37], [431.95, 549, 851.77, 1748.73]],
-      ['sphere + hatch + fineLadder', 'hatch', 'fineLadder', () => defaults.objects[0], [6, 9, 13, 23], [139.94, 213.73, 364.75, 620.11]],
-      ['torus + hatch + fineLadder', 'hatch', 'fineLadder', () => torusObj, [4, 6, 6, 9], [430.8, 523.85, 648.2, 1033.21]],
-      ['cone + hatch + fineLadder', 'hatch', 'fineLadder', () => coneObj, [11, 14, 21, 37], [527.4, 670.66, 1025.79, 1821.11]],
-    ])('%s: count non-decreasing, ink strictly increasing', (label, mapper, style, obj, expectCounts, expectInk) => {
+      ['sphere + hatch + ladder', 'hatch', 'ladder', () => defaults.objects[0], [8, 9, 15, 25], [222.11, 266.46, 425.78, 768.56]],
+      ['torus + hatch + ladder', 'hatch', 'ladder', () => torusObj, [5, 6, 7, 12], [419.1, 474.98, 645.22, 1255.48]],
+      ['cone + hatch + ladder', 'hatch', 'ladder', () => coneObj, [11, 15, 22, 42], [544.27, 703.38, 1099.1, 2338.95]],
+      ['sphere + hatch + fineLadder', 'hatch', 'fineLadder', () => defaults.objects[0], [8, 10, 14, 25], [222.11, 309.04, 426.96, 769.44]],
+      ['torus + hatch + fineLadder', 'hatch', 'fineLadder', () => torusObj, [5, 6, 9, 12], [470.87, 547.36, 772.68, 1253.08]],
+      ['cone + hatch + fineLadder', 'hatch', 'fineLadder', () => coneObj, [13, 16, 23, 42], [621.49, 777.78, 1263.12, 2311.12]],
+    ])('%s: count strictly increasing, ink strictly increasing', (label, mapper, style, obj, expectCounts, expectInk) => {
       const counts = CHECKPOINTS.map((d) => runCount(d, mapper, style, obj()));
       const ink = CHECKPOINTS.map((d) => runInk(d, mapper, style, obj()));
       expect(counts).toEqual(expectCounts);
       expect(ink).toEqual(expectInk);
-      expectNonDecreasing(counts);
+      expectStrictlyIncreasing(counts);
       expectStrictlyIncreasing(ink);
     });
   });
 
-  describe('BYTE-IDENTITY GUARD — Density >= 50 (the "med" audit tier) is untouched', () => {
+  describe('BYTE-IDENTITY GUARD — Density >= 50 (the "med" audit tier)', () => {
     // Pinned md5 of the full drawn sceneFill path set (not just a count), so
     // a future change that moves geometry while keeping the SAME count fails
     // loudly here. Verified via `git stash` (this fix's two files stashed
     // out, fixtures re-run, restored) to match the pre-fix tree exactly.
+    //
+    // RE-PINNED (W-26, PROOF): the three `ladder` rows below are NO LONGER
+    // untouched at d>=50 — continuous placement changes the ladder family at
+    // every density, per this file's other re-pins above. The non-ladder
+    // rows (`taperedEnds`, `bundleCount`) ARE still byte-identical — W-26 is
+    // scoped to `ladder`/`fineLadder`/`phaseFineLadder` only, confirmed by
+    // these two rows staying green with no edit.
     test('sphere + hatch + ladder at d=50 and d=220', () => {
-      expect(runMd5(50, 'hatch', 'ladder', defaults.objects[0])).toBe('e5bae292e9657e61651e474c7f987169');
-      expect(runMd5(220, 'hatch', 'ladder', defaults.objects[0])).toBe('d98091f28d0c73afe1cca9cbf785f992');
+      expect(runMd5(50, 'hatch', 'ladder', defaults.objects[0])).toBe('0bc7a99f7c82fc74f5613a705af2315f');
+      // RE-PINNED AGAIN (W-26, same commit): d=220 sits past 200, inside
+      // fs-m1's relaxed `masterFloorPen` taper — the redundant `floorPitch`
+      // re-clamp `ladderWantedPitch` briefly carried (see
+      // `scene3d-curved-density-floor.test.js`'s matching re-pin) bound
+      // there too; removing it moves this hash. d=50 (well under the
+      // taper's own range) is unaffected, confirmed unchanged above.
+      expect(runMd5(220, 'hatch', 'ladder', defaults.objects[0])).toBe('088525db6b00c9d7234549cee42fc9a3');
     });
 
     test('sphere + hatch + taperedEnds at d=50', () => {
@@ -274,11 +313,11 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     });
 
     test('torus + contour + ladder at d=50', () => {
-      expect(runMd5(50, 'contour', 'ladder', torusObj)).toBe('8ea7fd337d21fcf9f2ef2c54a97e2283');
+      expect(runMd5(50, 'contour', 'ladder', torusObj)).toBe('f818c08a98d883bb5e566617834f984e');
     });
 
     test('cone + spiral + ladder at d=50', () => {
-      expect(runMd5(50, 'spiral', 'ladder', coneObj)).toBe('a43797e79c3d4f7e69e0b08b61cac298');
+      expect(runMd5(50, 'spiral', 'ladder', coneObj)).toBe('707cd281e20019df95abe61b09b38055');
     });
   });
 });

@@ -243,12 +243,27 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   //     `tests/unit/scene3d-shadow-overlap.test.js` (single-caster and
   //     non-overlapping-pair fixtures) are still byte-identical, which is
   //     the control: the change is scoped to genuine multi-caster overlap.
+  // W-26 RE-PIN (2026-09-05, PROOF): `curvedOverlap-…` and `denseMixed-…`
+  // both carry curved primitives (sphere/cylinder/torus/cone) under the
+  // scene's own `mapper: 'hatch'` at the SHIPPED default tone algo
+  // (`ladder`) — moving that law onto continuous placement (see
+  // `src/core/scene3d/surface-fill.js`'s `isEvenLadder`) is an intentional
+  // geometry change, not a regression. Both `|draft` variants (fastPreview
+  // — routes through the flat legacy path, `STAGE.dither`/`masterGrid`
+  // never engage) are UNCHANGED, confirmed byte-identical to the pre-fix
+  // baseline; `facetedOverlap-orthographic-hatch` (no curved primitive) is
+  // also unchanged. Before → after (settled only):
+  //   curvedOverlap-perspective-mixed-xray: pathCount 341→368 (+27), pointCount 1099→1432 (+333)
+  //   denseMixed-8obj-shadows:              pathCount 560→571 (+11), pointCount 2303→2530 (+227)
+  // Both counts rose — continuous placement never drops a ruling, so a
+  // family that used to lose some to the discrete ladder's per-ruling
+  // verdict now draws every one it places.
   const EXPECTED = {
     'facetedOverlap-orthographic-hatch|settled': { hash: 'edb852cb0986dcbb6a12958f2a539b67f558948fa6dd5428b5cc0548ececc829', pathCount: 129, pointCount: 258 },
     'facetedOverlap-orthographic-hatch|draft': { hash: 'c89e3d735e2b53f3c1d154e7f3567d53a1e6053159b9ffa25a5853f7973d6a76', pathCount: 200, pointCount: 400 },
-    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'b47a8383997457c45e0c95a323a09481a362997812958cf4094a427e2c99728f', pathCount: 341, pointCount: 1099 },
+    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'b3a4b264d53443d665af053a6db997f1525c87874c48e2592a92a09e80dee674', pathCount: 368, pointCount: 1432 },
     'curvedOverlap-perspective-mixed-xray|draft': { hash: '83aebf997a1e39aed36e2893fb18e7e7ea386755a9493e4868c53c51c80ee2f9', pathCount: 302, pointCount: 604 },
-    'denseMixed-8obj-shadows|settled': { hash: '47a37463e73f66365ccc570268da3f0f655bedcb8b1f79ecca810c544e60ec95', pathCount: 560, pointCount: 2303 },
+    'denseMixed-8obj-shadows|settled': { hash: '92cd0cace8bf8a9d7cf07db5f7f2ae85b213e6e4eb805788ee7a76ed7730fb27', pathCount: 571, pointCount: 2530 },
     'denseMixed-8obj-shadows|draft': { hash: 'fdf84edf779e274c8334aff74707d5702e57bc9e73faee8bc1500ae6061aa360', pathCount: 463, pointCount: 926 },
   };
 

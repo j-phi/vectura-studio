@@ -179,7 +179,18 @@ describe('scene3d fillDensity ceiling 200→500 (fs-m1)', () => {
       for (let i = 1; i < results.length; i++) {
         expect(results[i].count).toBeGreaterThan(results[i - 1].count);
       }
-      expect(results.map((r) => r.count)).toEqual([95, 109, 129, 161]);
+      // RE-PINNED (W-26, PROOF): `ladder` (the committed default) moved from
+      // a discrete grid-subset to continuous placement — still STRICTLY
+      // increasing across 200/300/400/500 (asserted above), higher than
+      // before at every checkpoint (continuous placement never drops a
+      // placed ruling). A first cut of `ladderWantedPitch` clamped the
+      // result to the module-scope (UNRELAXED) `floorPitch`, which
+      // overrode fs-m1's own Density 200-500 taper of the RELAXED
+      // `masterFloorPen` and flattened this row to [97, 112, 131, 163] ->
+      // [37, 38, 39, 40] (barely moving) — caught here, before landing, and
+      // fixed by removing that redundant clamp (`masterPitch` is already
+      // floored correctly; see `ladderWantedPitch`'s own comment).
+      expect(results.map((r) => r.count)).toEqual([97, 112, 131, 163]);
     });
 
     test('curved torus (SurfaceFill masterGrid path, different mesh)', () => {
@@ -201,7 +212,12 @@ describe('scene3d fillDensity ceiling 200→500 (fs-m1)', () => {
       // fewer, longer, unbroken paths. The PROPERTY under test — density buys
       // strictly more paths — is asserted above and is unchanged; these absolute
       // counts are the fixture's fingerprint, not its contract.
-      expect(results.map((r) => r.count)).toEqual([41, 48, 55, 70]);
+      //
+      // RE-PINNED (W-26, PROOF): same mechanism change and same caught-before-
+      // landing bug as the sphere row above — see its comment. Was [41, 48,
+      // 55, 70]; the first (buggy) `ladderWantedPitch` clamp flattened this
+      // to [37, 38, 39, 40], caught here.
+      expect(results.map((r) => r.count)).toEqual([47, 56, 65, 81]);
     });
   });
 

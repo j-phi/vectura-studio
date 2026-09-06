@@ -207,7 +207,18 @@ describe('Scene3D — how a BOX\'s rendered fill bearing responds to Density', (
     expect(fingerprint(50, 'solid')).toBe('5d8296ce:4060');
     expect(fingerprint(150, 'solid')).toBe('650b0061:11134');
     expect(fingerprint(50, 'plane')).toBe('44270f5b:3738');
-    expect(fingerprint(50, 'sphere')).toBe('2f4dae00:15919');
-    expect(fingerprint(150, 'sphere')).toBe('bd627a15:35285');
+    // RE-PINNED (W-26, PROOF): `sphere` is the one curved primitive in this
+    // set — its default fill (`ladder`) moved from a discrete grid-subset to
+    // continuous placement (`isEvenLadder`, surface-fill.js), so its own
+    // fingerprint moves; `box`/`solid`/`plane` (faceted, untouched by W-26)
+    // keep their prior pins unedited above, confirming the change is scoped
+    // to the ladder family on curved primitives only.
+    expect(fingerprint(50, 'sphere')).toBe('6c237f90:23012');
+    // RE-PINNED AGAIN (W-26, same commit): d=150 sits inside fs-m1's relaxed
+    // `masterFloorPen` taper (100-200) — a redundant `floorPitch` re-clamp
+    // `ladderWantedPitch` briefly carried bound there (see
+    // `scene3d-hatch-density-500.test.js`'s matching re-pin) and was removed;
+    // d=50 (outside that taper's range) is unaffected, confirmed unchanged.
+    expect(fingerprint(150, 'sphere')).toBe('3dc1b467:55668');
   });
 });
