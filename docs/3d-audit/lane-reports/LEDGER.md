@@ -56,7 +56,20 @@ this ledger as `<W-id>-<role>.md`.
 | W-10d hide originSpiral on torus via `isReachableOn` | fill-audit (:8476) | **DONE/FU** — CLOSED, verified live by both implementer and reviewer | 142afe58 (on 8bd1581b) | **ACCEPT-WITH-FOLLOWUPS** — the greyed+suffixed mechanism is confirmed the codebase's **only** live convention (read from source, matching W-03's `CURVED_SPIRAL_STIPPLE_INERT` gate in the same file), not a second one; RED/GREEN reproduced in a scratch export of 8bd1581b | — | (1) **Label accuracy:** `NO_EFFECT_SUFFIX = ' — no effect here'` is literally true for the faceted and spiral/stipple gates (byte-identical to Ladder, measured) but **false for torus/originSpiral**, where the defect is "effect, but unplottable ink wedges" — a user could infer the render is safe-but-unchanged. Low priority, for whoever revisits picker copy. (2) → **W-10d-2** | none (picker-presentation; live screenshots) |
 | GH-1 gallery integrity (**runs on MAIN, not a lane**) | main checkout, `scripts/audit/` + `docs/3d-audit/fill-audit/` | **DONE** — uncommitted on main until wrap-up (secretary-verified: tracked changes on main are exactly `scripts/audit/scene3d-before-after.js`, `after/W-01/report.json`, `after/W-03/report.json`, `index.html` — **no `src/`, no `tests/`, no lane worktree**) | uncommitted (base 236e2581) | — | — | Shipped: (1) hard REFUSAL when any `after` entry does not start with `after/<dirName>/` — exit 1, names card+cell, `index.html` NOT written (verified on a scratch gallery: index byte-identical after the refusal); (2) non-fatal WARN + `byte-identical — UNEXPLAINED` badge unless `report.json` declares an `identical_exceptions` entry with a reason. Fixed 2 live pointer bugs the rule caught: **W-01**'s `after` array repeated the `before` `shots/` paths (repointed at the real `after/W-01/shots/`, 9 genuine identical pairs annotated), **W-03** pointed into W-02's directory (file copied local). `after/W-10/shots/B` re-shot from **e757db68** — clinched by the corrupted manifest holding **42 lines = three stacked 14-line generations**, with the fresh capture matching generation 1 exactly; all 5 basenames shared with W-10c now differ, so the Before/After tab shows a real W-10→W-10c delta for the first time. No `after/W-10b/` card exists (nothing to restore). **Open follow-ups:** 47 pre-existing unexplained byte-identical pairs are now surfaced across W-01-M1, W-15, W-15b, W-19, W-20, W-21, W-27 — each needs an `identical_exceptions` reason or a re-shoot; and `after/W-10/report.json`'s `commit` field still reads `78bbf3e8` while the pixels are now `e757db68`. **Note for the orchestrator: GH-1 already ran the full 3-script rebuild** (18 items, 0 malformed, 119 pairs), so `index.html` is current as of now and goes stale the moment another lane captures | `docs/3d-audit/fill-audit/after/W-10/` (restored, 14 cells) |
 
-## Verified tree state (secretary, `git worktree list` + per-worktree status, 2026-09-05)
+## MERGED (2026-09-06) — lanes are now historical
+
+**Local `main` is `817424dc`**, the merge commit of `3d-scene/integrate @ecaf1e17`, **v1.3.99** (bumped once
+at merge, as the hook cannot fire in a worktree). Main's docs wrap-up is `6ad1d93e`. **NOT pushed.**
+The seven `3d-scene/*` lanes below are **historical — the next session branches off `main`**, and every
+lane/sha in the rows above should be read as provenance, not as a place to work.
+- The **superseded CHANGELOG draft was discarded on main**; the integration carries the **judge's canonical
+  wording** with the crosshatch caveat lifted.
+- **The merge agent found and fixed a real X-ray back-density regression** (`MERGE-impl.md`) — a defect the
+  merge surfaced that no individual lane did.
+- Carried as documented open items rather than blockers: **U5b**, **W-30b**, and the five USER items
+  **W-31…W-35**.
+
+## Verified tree state (secretary, `git worktree list` + per-worktree status, 2026-09-05 — historical)
 
 - main = `236e2581` (was 722ba84c; +W-01-M1 evidence commit. Handoff doc still says `d5af9e30`.)
 - Lane HEADs now: `fill-audit` **6d6b1b78** (W-15c reverted), `fill-audit-a` **9fa159f0** (W-01 M1

@@ -1,8 +1,8 @@
 # 3D fill audit — SESSION SUMMARY (2026-09-05 → 06)
 
-**FINAL.** All units landed and reviewed; nothing in flight.
+**FINAL — MERGED.** All units landed, reviewed, and merged into **local `main` at `817424dc`** (v1.3.99). **NOT pushed.**
 Detail: `LEDGER.md` (per-unit rows, secretary flags, standing rulings, incidents) · `STILL-OPEN.md` (full findings).
-**Nothing pushed. Nothing merged.** Main is `236e2581` (docs/evidence only).
+**Nothing pushed.** Main is `817424dc` — the merge of `3d-scene/integrate @ecaf1e17`; docs wrap-up committed as `6ad1d93e`. **The seven `3d-scene/*` lanes are now historical; the next session branches off `main`.**
 
 > **P0 (W-26, the user's ladder-gap rule) is CLOSED — the judge's three blocking conditions are met and independently verified.**
 
@@ -73,28 +73,28 @@ Detail: `LEDGER.md` (per-unit rows, secretary flags, standing rulings, incidents
 | 15 | *"angles in this curved shape that should not be there"* + *"stairstepping where line segments end"* | **OPEN → W-34** (extends W-27c item (b), bar ≤ 8°, open-polyline-aware metric mandatory) and **W-35** (product request: a user-controllable end-overlap / edge-fidelity param). |
 | "not close to zero yet" (F1) | torus ribbon streaks | **OPEN, mechanism found** — 62.63 mm² bare strip, 30× A3's whole residue; Prototype B ruled, deep blank 11.89 → **0.28 mm²**. |
 
-## 6. MERGE PLAN
+## 6. MERGE — DONE (local only)
 
-| branch | HEAD | contents |
-|---|---|---|
-| `main` | `236e2581` | docs/evidence only; GH-1's fixes + all `after/<id>/` still **uncommitted**. |
-| `3d-scene/handoff-b` | `9b2a33bb` | Unit A/E/F. Carries the intentionally-red tests. |
-| `3d-scene/handoff-c` | `0d405577` | Unit C/D, A2, A3, Unit D phase-align, W-30. |
-| `3d-scene/fill-audit` | `142afe58` | W-02/03/21/15c/10d. |
-| `3d-scene/fill-audit-a` | `0930cb2d` | W-01/05/06/07, W-26, T1, W-26b. |
-| `3d-scene/fill-audit-c` | `e6b85de4` | W-10/10b/19/20/10c. |
-| `3d-scene/fill-audit-d` | `ec79e2b9` | W-27/27b/25/28/27c, W-29, W-25b, W-27c-0a. |
-| `3d-scene/fill-collapse` | `8610fd66` | off `fill-audit@142afe58`; U0–U5. |
+**Merged into local `main` at `817424dc`** — the merge commit of `3d-scene/integrate @ecaf1e17`, **v1.3.99**
+(the version hook could not fire in a worktree; bumped once at merge as planned). Main's docs wrap-up is
+`6ad1d93e`. **NOT pushed**, per standing practice — pushing remains Jay's call.
 
-- **⚑ MERGE ORDERED BY JAY, NOW — local only, NO PUSH.** It runs in a **new integration worktree**, with three documented open items carried rather than blocking: **U5b** (caveat visibility), **W-30b** (the wiring that makes W-30 reach a user), and the **CHANGELOG draft** (replace the superseded "a LITTLE more ink" entry with the judge's canonical wording).
-- **Five new USER items (2026-09-06) land after the merge, not in it:** W-31/W-32/W-33 on fill-audit-a, W-34/W-35 on fill-audit-d. Verbatim quotes and image mapping in `docs/3d-audit/fill-audit/user-reports/README.md` (images 13/14/15).
-- **Intentionally-red tests:** handoff-b carries Unit A's 5 (`scene3d-ribbon-f1b-streaks`) and Unit F's 1. **A3 retired the 5 on handoff-c** — the branches disagree about that file; resolve in A3's favour, re-check Unit F's survivor.
-- **Overlap files:** `surface-fill.js` (fill-audit-a ↔ U10–U12), `scene3d.js` (fill-audit faceted ↔ fill-audit-d slices ↔ fill-collapse), `context-bar.js`, `params.js`.
-- **Version:** every branch is v1.3.98 — the hook cannot fire in a worktree. **Bump once at merge**, then `version:sync`.
-- **⚠️ CHANGELOG on main carries an UNCOMMITTED 8-line W-26 entry in the SUPERSEDED wording** ("a LITTLE more ink" — the claim C1 disproved), written by W-26 implementer 2. Left untouched deliberately: no reverts on a dirty tree without Jay. **Wrap-up: replace it with the judge's canonical wording.**
-- **Docs owed:** CHANGELOG + for-Jay text — use the **judge's** wording, **with the crosshatch caveat lifted** (C1 landed); README (W-10d greyed-out note); `worklist.json`/`findings.json` — C-01…C-08 resolved, **correct C-05's "byte-identical" claim (orchestrator owns this regardless of U8:** five distinct outputs, `contFieldTouch` 2.7× ink**)**, and correct `after/W-25/report.json`'s "engaging only for small/thin regions".
-- **W-26 hygiene before telling Jay** (none block the close): patch the false hatch-bar line in `W-26-impl-2.md`; disclose the `plot-safety` `q(0.98)` bar move; record that `CROSS_SHARE_BASE`/`CROSS_DFMAX_BOOST_CAP` are empirically tuned.
-- **Gallery:** rebuild is the orchestrator's; 47 unexplained byte-identical pairs now WARN.
+- The seven `3d-scene/*` lanes (`handoff-b`, `handoff-c`, `fill-audit`, `fill-audit-a`, `fill-audit-c`,
+  `fill-audit-d`, `fill-collapse`) are **historical**. **The next session branches off `main`.**
+- **The superseded CHANGELOG draft was discarded on main** — the integration carries the **judge's canonical
+  wording**, with the crosshatch caveat lifted (C1 landed).
+- **The merge agent found and fixed a real X-ray back-density regression** — see `MERGE-impl.md`. Worth noting
+  that the merge itself surfaced a defect no lane did.
+- **Carried as documented open items, not blockers:** **U5b** (caveat visibility for folded laws — a product
+  regression), **W-30b** (the one-line wiring without which W-30 reaches no user), and the five new **USER**
+  items W-31…W-35.
+- **Still owed against the merged tree:** reconcile the intentionally-red tests (handoff-b's Unit A 5 +
+  Unit F 1 versus A3's retirement of the 5 — resolve in A3's favour); the `worklist.json`/`findings.json`
+  corrections (C-01…C-08 resolved; **C-05's "byte-identical" claim** — five distinct outputs, `contFieldTouch`
+  2.7× ink); `after/W-25/report.json`'s "engaging only for small/thin regions"; the W-26 hygiene trio
+  (false hatch-bar line in `W-26-impl-2.md`, the `plot-safety` `q(0.98)` disclosure, `CROSS_SHARE_BASE`/
+  `CROSS_DFMAX_BOOST_CAP` noted as empirically tuned); and the gallery rebuild (47 unexplained
+  byte-identical pairs now WARN).
 
 ## 7. PROCESS — lessons & incidents
 
