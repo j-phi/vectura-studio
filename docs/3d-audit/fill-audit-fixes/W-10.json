@@ -1,0 +1,47 @@
+{
+  "id": "W-10",
+  "title": "originSpiral respects the plot floor on torus and cone (F-10)",
+  "branch": "3d-scene/fill-audit-c",
+  "commit": "78bbf3e8",
+  "before": [
+    "shots/B/torus__hatch__originSpiral__med__a.webp",
+    "shots/B/torus__hatch__originSpiral__med__b.webp",
+    "shots/B/torus__crosshatch__originSpiral__low__a.webp",
+    "shots/B/torus__crosshatch__originSpiral__med__a.webp",
+    "shots/B/torus__crosshatch__originSpiral__max__a.webp",
+    "shots/B/torus__hatch__originSpiral__low__a.webp",
+    "shots/B/torus__hatch__originSpiral__max__a.webp",
+    "shots/B/cone__crosshatch__originSpiral__med__a.webp",
+    "shots/B/cone__crosshatch__originSpiral__low__a.webp",
+    "shots/B/cone__crosshatch__originSpiral__max__a.webp",
+    "shots/B/cone__hatch__originSpiral__low__a.webp",
+    "shots/B/cone__hatch__originSpiral__med__a.webp",
+    "shots/B/cone__hatch__originSpiral__max__a.webp",
+    "shots/B/sphere__hatch__originSpiral__med__a.webp"
+  ],
+  "after": [
+    "after/W-10/shots/B/torus__hatch__originSpiral__med__a.webp",
+    "after/W-10/shots/B/torus__hatch__originSpiral__med__b.webp",
+    "after/W-10/shots/B/torus__crosshatch__originSpiral__low__a.webp",
+    "after/W-10/shots/B/torus__crosshatch__originSpiral__med__a.webp",
+    "after/W-10/shots/B/torus__crosshatch__originSpiral__max__a.webp",
+    "after/W-10/shots/B/torus__hatch__originSpiral__low__a.webp",
+    "after/W-10/shots/B/torus__hatch__originSpiral__max__a.webp",
+    "after/W-10/shots/B/cone__crosshatch__originSpiral__med__a.webp",
+    "after/W-10/shots/B/cone__crosshatch__originSpiral__low__a.webp",
+    "after/W-10/shots/B/cone__crosshatch__originSpiral__max__a.webp",
+    "after/W-10/shots/B/cone__hatch__originSpiral__low__a.webp",
+    "after/W-10/shots/B/cone__hatch__originSpiral__med__a.webp",
+    "after/W-10/shots/B/cone__hatch__originSpiral__max__a.webp",
+    "after/W-10/shots/B/sphere__hatch__originSpiral__med__a.webp"
+  ],
+  "notes": "REWORKED after review (must-fix): the 0.5x-pen floor from the first pass was cosmetic -- a torus/hatch re-shoot at 0.5x was pixel-indistinguishable from pre-fix at normal viewing size, and 92-100% of samples were STILL under this repo's own plot-safe pitch (PLOT_FLOOR_PEN = 2.2x pen, surface-fill.js:244) -- still an unplottable blob. Tried (a) first: raised the folded-pitch floor and retuned. 1.0x pen clears the tonal-range test (bar 1.2) but fails the wrap-foreshorten rim/core test (1.03 vs bar 1.05). 0.8x pen clears BOTH with margin, so this ships 0.8x; approach (b) (ring omission/duty) was not needed. Gap-test bar TIGHTENED from 0.5x to 0.8x pen (<=1% under it). Fraction of on-surface ring-to-ring gaps under 1.0x pen, before any floor existed vs after the 0.8x floor: torus 15.3% -> 10.0%, cone 13.4% -> 10.4%, sphere 8.8% -> 6.5% (under the tightened 0.8x-pen bar itself: torus 12.0% -> 0%, cone 10.1% -> 0%). Re-shot torus+cone x hatch/crosshatch x originSpiral x low/med/max and LOOKED: at 0.8x the torus/hatch chevron interference in the foreshortened lower band visibly separates into distinct, evenly-gapped marks with real white space between the radiating limb lines (60680/320000 px changed vs the true pre-fix baseline, ~50% more change than the rejected 0.5x floor produced, concentrated in exactly that band). Cone's crosshatch/hatch views were already reasonably separated pre-fix at the sampled camera angle; the fix's visible impact there is smaller but the gap metric still improves the same way.",
+  "tests": {
+    "red": "torus: ring-to-ring gap stays at or above 0.8x pen width -- (bar tightened from 0.5x) pre-fix measured 12.0% of gaps under 0.8x pen: expected 0.1200 to be less than or equal to 0.01; cone: 10.1% under 0.8x pen: expected 0.1013 to be less than or equal to 0.01",
+    "green": "tests/unit/scene3d-origin-spiral-tonal-range.test.js: Test Files 1 passed (1), Tests 6 passed (6) -- both gap tests re-verified RED->GREEN at the new 0.8x threshold, plus the 4 pre-existing tonal/segment/weightScale tests",
+    "suites": "scene3d-origin-spiral-tonal-range.test.js 6/6; scene3d-mono-wrap-foreshorten.test.js 3/3; scene3d-hlr-spatial-index-identity.test.js 6/6 (byte-identity guard untouched); full test:unit 4679/4723 passed (44 pre-existing skips), 0 failed; full test:integration 1918/1919 (the 1 failure is a 60s timeout on context-bar.test.js, an unrelated file, confirmed environmental -- passes 61/61 clean in isolation)."
+  },
+  "byte_identical_pairs": [
+    "None. Sphere is NOT byte-identical: sphere already crossed the same half-pen line in 2.6% of on-surface gaps under the current test scene (deliberate sub-floor dark-end behaviour, shared by every primitive using pitchFor), so the same targeted clamp touches those samples too -- but ONLY those (0% below 0.5x pen post-fix, same as torus/cone), and both the pre-existing tonal-range test (1.5x contrast, bar 1.2) and wrap-foreshorten test (1.26x rim/core, bar 1.05) still pass with their original margins, which is this repo's own definition of 'the sphere reads correctly' for this law."
+  ]
+}

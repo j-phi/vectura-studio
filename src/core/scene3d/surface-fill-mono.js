@@ -785,7 +785,31 @@
     let mx = 0;
     for (let k = 0; k < CF.length; k++) if (CF[k] > mx) mx = CF[k];
     for (let k = 0; k < CF.length; k++) CF[k] = mx > 0 ? CF[k] / mx : 0;
-    // Kang's iteration.
+    // Kang's iteration. F-18 INVESTIGATED, NOT FIXED HERE: on a torus the raw
+    // screen-depth field (the signal this whole grid is built from)
+    // genuinely has several critical points near the tube's crown -- a
+    // camera depth extremum where the tube is nearest/farthest, roughly
+    // where a sphere has just one. Two tuning attempts were tried and
+    // REJECTED: (1) more passes (4 -> 12, then 24 with a wider +/-4 kernel)
+    // measured a real drop in winding-number singularity COUNT on the torus
+    // (6 -> 4, winding number of the field over a 2 mm grid, |index| > 0.3),
+    // but re-shot the torus at 12 passes and the whorl/saddle pair is still
+    // plainly visible -- 158719 of 320000 px changed for no visible fix, an
+    // unjustified blast radius (and 3x this law's cost) for zero read
+    // improvement, so this stays at the original 4. (2) seeding from the
+    // chart's own tangent (`C.frame`'s periodic `b` axis) instead of the
+    // screen depth gradient, on the theory that a torus's own parameterisation
+    // admits a globally smooth line field: measured WORSE (still 6
+    // singularities, some now landing centrally, and it silently dropped the
+    // sphere's two genuine pole singularities to zero) -- likely because
+    // `C.inv`'s Newton solve can answer a different (a, b) branch for two
+    // screen points a lattice step apart wherever the visible front surface
+    // is not simply connected (the torus's own case), and `frame`'s finite
+    // difference across that branch jump is not a real derivative. Both
+    // reverted. Recommending a follow-up finding for a from-scratch redesign
+    // of this law's seed signal on non-simply-connected silhouettes; the cone
+    // has its own instance of the same root cause (a 46.9 degree cross-axis
+    // direction jump down its visible ridge, bar 15 degrees).
     for (let it = 0; it < 4; it++) {
       const NX = new Float32Array(TX.length);
       const NY = new Float32Array(TY.length);
@@ -820,6 +844,10 @@
       if (!MK[k]) return null;
       return { x: TX[k], y: TY[k] };
     };
+    // TEST-ONLY (opt-in via the same `__MONO_TRACE` flag `emit()` gates
+    // `__MONO_CTX` behind): publish the field itself so a harness can measure
+    // its winding number directly rather than reconstructing this grid.
+    if (globalScope.__MONO_TRACE) C.__dirAt = dirAt;
     streamFamily(C, dirAt, (s) => C.pitchFor(finite(s.I, 0)));
   };
 
@@ -850,13 +878,60 @@
     const ux = dk.x - cx; const uy = dk.y - cy;
     const uL = Math.hypot(ux, uy) || 1;
     const nx = -uy / uL; const ny = ux / uL;
+    // F-18. `C.R` is this file's AO/horizon marching radius (`attachFields`'s
+    // `AOR = max(2, C.R*0.30)`), not the body's screen footprint -- the two
+    // are the same only for a sphere/ellipsoid, where this law was designed
+    // and reads correctly. On a torus C.R measured 9.1 against a true
+    // footprint half-extent of 28 (a tube-scale reference, not the ring's own
+    // radius): "on the silhouette, perpendicular to the light's axis" landed
+    // 9 units out on a body that extends to 28, deep INSIDE the visible tube
+    // instead of at its edge -- a target whorl / X-saddle "mid-form" instead
+    // of driven out to the rim, exactly what F-18 reports. `edgeAt` marches
+    // the SAME chart inverse (`C.inv`) this file already reads everywhere
+    // else outward from centre until it leaves the visible surface, so the
+    // two on-silhouette defects land on the TRUE edge regardless of how
+    // anisotropic or non-convex the silhouette is (the torus's hole and the
+    // cone's apex included) -- no per-primitive scale assumed.
+    // BUG, CAUGHT BY REVIEW: the first version of `edgeAt` bisected between
+    // `(cx, cy)` (assumed on-surface) and the far point, but `(cx, cy)` is
+    // the BOUNDING-BOX centre, not a guaranteed on-surface point -- on a
+    // torus it sits in the hole, off-surface, so `C.inv(cx, cy)` failed and
+    // `edgeAt` degenerated to 0 for EVERY direction: both "on the
+    // silhouette" defects collapsed onto the centre itself, worse than the
+    // bug this was meant to fix. `edgeAt` now marches in from the FAR point
+    // instead, coarse step first, and returns the FARTHEST on-surface hit --
+    // the true outer silhouette in that direction -- with no assumption
+    // about what lies at the centre.
+    const DIAG = Math.hypot(C.W, C.H);
+    const EDGE_STEPS = 40;
+    const edgeAt = (dx, dy) => {
+      let best = 0;
+      for (let i = EDGE_STEPS; i >= 0; i -= 1) {
+        const t = (i / EDGE_STEPS) * DIAG;
+        if (C.inv(cx + dx * t, cy + dy * t)) { best = t; break; }
+      }
+      if (best <= 0) return 0; // this ray never touches the visible surface
+      let lo = best; let hi = Math.min(DIAG, best + DIAG / EDGE_STEPS);
+      for (let i = 0; i < 20; i += 1) {
+        const mid = (lo + hi) / 2;
+        if (C.inv(cx + dx * mid, cy + dy * mid)) lo = mid; else hi = mid;
+      }
+      return lo;
+    };
+    // The deep-shadow pair's own separation scale: half the body's true
+    // footprint, not `C.R` (same mismatch as above, milder here since the
+    // pair only needs to sit apart from each other inside the shadow, not
+    // land exactly on an edge).
+    const RR = Math.max(C.W, C.H) / 2;
+    const edgeFwd = edgeAt(nx, ny) * 0.99;
+    const edgeBack = edgeAt(-nx, -ny) * 0.99;
     const defects = [
       // Two on the silhouette, perpendicular to the light's axis.
-      { x: cx + nx * C.R * 0.99, y: cy + ny * C.R * 0.99, k: 0.5 },
-      { x: cx - nx * C.R * 0.99, y: cy - ny * C.R * 0.99, k: 0.5 },
+      { x: cx + nx * edgeFwd, y: cy + ny * edgeFwd, k: 0.5 },
+      { x: cx - nx * edgeBack, y: cy - ny * edgeBack, k: 0.5 },
       // Two buried in the deep shadow, a third of a radius apart.
-      { x: dk.x + nx * C.R * 0.16, y: dk.y + ny * C.R * 0.16, k: 0.5 },
-      { x: dk.x - nx * C.R * 0.16, y: dk.y - ny * C.R * 0.16, k: 0.5 },
+      { x: dk.x + nx * RR * 0.16, y: dk.y + ny * RR * 0.16, k: 0.5 },
+      { x: dk.x - nx * RR * 0.16, y: dk.y - ny * RR * 0.16, k: 0.5 },
     ];
     const dirAt = (s) => {
       let th = 0;
@@ -866,6 +941,17 @@
       }
       return { x: Math.cos(th), y: Math.sin(th) };
     };
+    if (globalScope.__MONO_TRACE) {
+      C.__dirAt = dirAt;
+      // TEST-ONLY: the ACTUAL placed defects and the centre they are placed
+      // relative to, so a harness can assert the "on the silhouette" pair
+      // landed near the true edge directly, rather than inferring it from a
+      // winding-number scan (which a grid-alignment accident can miss on a
+      // primitive where the mis-scaled placement was a smaller fraction
+      // short of the edge, e.g. the cone).
+      C.__defects = defects;
+      C.__defectCentre = { x: cx, y: cy };
+    }
     streamFamily(C, dirAt, (s) => C.pitchFor(finite(s.I, 0)));
   };
 
@@ -1361,6 +1447,22 @@
     const PERIOD = C.FLOOR * 2.0;         // ONE fixed mark period
     const nLines = Math.ceil((2 * half) / P);
     const NS = Math.max(70, Math.round((2 * half) / 0.24));
+    // DUTY, NORMALIZED OVER THE FILE'S OWN L*-LINEAR RANGE (F-19/W-20). The
+    // duty used to be `want / (INK / P)` — a comparison against a FIXED
+    // reference area that has nothing to do with this law's own dark/light
+    // ends. With P pinned near FLOOR, that reference sits well inside
+    // `areaFor`'s true span (`areaFor(0)` down at the lightest end already
+    // exceeds it), so duty saturated to 1 for the whole shadow half of the
+    // form and floored at 0.18 for most of the lit half — only a narrow
+    // sliver of radiance in between ever moved the duty cycle at all
+    // (measured: sphere/hatch tonal-gradient ratio ~1.2, i.e. flat). Mapping
+    // `want` onto duty by where it falls between the law's own measured
+    // `areaFor(1)` (lightest) and `areaFor(0)` (darkest) — exactly how
+    // `voronoiWeb` drives its cell size off `pitchFor`'s own span — uses the
+    // WHOLE requested tone range instead of an arbitrary slice of it.
+    const aLight = C.areaFor(1);
+    const aDark = C.areaFor(0);
+    const DUTY_MIN = 0.18;
     for (let li = 0; li <= nLines; li++) {
       const off = -half + li * P;
       let pts = [];
@@ -1374,8 +1476,8 @@
         const s = C.inv(x, y);
         if (!s) { if (pts.length) { C.emitScr(pts); pts = []; } continue; }
         const want = C.areaFor(clamp(finite(s.I, 0), 0, 1));
-        const full = C.INK / P;
-        const duty = clamp(want / Math.max(1e-6, full), 0.18, 1);
+        const span = (want - aLight) / Math.max(1e-6, aDark - aLight);
+        const duty = clamp(DUTY_MIN + (1 - DUTY_MIN) * span, DUTY_MIN, 1);
         const ph = (((t + half) / PERIOD) + ph0) % 1;
         if (duty < 0.999 && Math.abs(ph - 0.5) > duty / 2) {
           if (pts.length) { C.emitScr(pts); pts = []; }
@@ -2347,12 +2449,42 @@
     const gy = new Float32Array(NX * NY);
     const px = (i) => C.minX + (i - 2) * dx;
     const py = (j) => C.minY + (j - 2) * dy;
+    // RANK-NORMALIZE THE INPUT RADIANCE (F-19/W-20), same technique `lawMaze`
+    // already uses for the identical reason: on a typical lit sphere the RAW
+    // `s.I` this raster samples is not evenly spread over 0..1 — it is
+    // concentrated near the shadow end, so feeding it straight into
+    // `pitchLegible` left most cells requesting nearly the same wavelength
+    // and only the brightest sliver ever reached toward `PMAX` (measured:
+    // sphere/hatch tonal-gradient ratio ~1.1-1.3, essentially flat). Mapping
+    // each cell's raw `I` to its PERCENTILE within this object's own visible
+    // samples spreads the requested wavelength evenly across the law's full
+    // `pitchLegible` range regardless of how skewed the underlying radiance
+    // curve is, before the (already-correct) reflected dispersion relation
+    // below turns that requested wavelength into a settled RD pattern.
+    const rawI = new Float32Array(NX * NY);
+    const sample = [];
     for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
       const s = C.inv(px(i), py(j));
       const k = j * NX + i;
-      if (!s) { lam[k] = C.PMAX * 2; continue; }
+      if (!s) { rawI[k] = -1; continue; }
       mask[k] = 1;
-      lam[k] = C.pitchLegible(finite(s.I, 0)) * 2;   // full wavelength = 2 x clearance
+      const val = clamp(finite(s.I, 0), 0, 1);
+      rawI[k] = val;
+      sample.push(val);
+    }
+    sample.sort((a, b) => a - b);
+    const rankOf = (v) => {
+      if (!sample.length) return 0.5;
+      let lo = 0; let hi = sample.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (sample[mid] < v) lo = mid + 1; else hi = mid;
+      }
+      return sample.length > 1 ? lo / (sample.length - 1) : 0.5;
+    };
+    for (let k = 0; k < mask.length; k++) {
+      if (!mask[k]) { lam[k] = C.PMAX * 2; continue; }
+      lam[k] = C.pitchLegible(rankOf(rawI[k])) * 2;   // full wavelength = 2 x clearance
     }
     // The direction the stripes should run: perpendicular to the tone gradient.
     for (let j = 1; j < NY - 1; j++) for (let i = 1; i < NX - 1; i++) {
@@ -2541,13 +2673,44 @@
     // direction on every primitive measured: reaching `rMax` at the plot
     // floor pitch (~2 ink widths) takes on the order of rMax / floor rings,
     // and floor is never smaller than a fraction of a millimetre.
+    // THE PLOT FLOOR (F-10, W-10c: tone-by-omission). Two prior passes tried
+    // to buy back tone headroom by lowering the floor itself (0.5x pen: still
+    // an unplottable blob, torus/hatch pixel-indistinguishable from pre-fix;
+    // 0.8x pen: 10-12% of gaps still under 1.0x pen, and the orchestrator's
+    // own eye still read the torus lower-left fan as solid white wedges).
+    // The floor is now the FULL 1.0x pen (drawn rings never sit closer than
+    // one pen width, period) and the tone this costs is bought back a
+    // DIFFERENT way: `wrapPitch(pitchFor(I), nz)` still asks for whatever
+    // pitch tone wants (down to genuinely sub-floor, exactly as everywhere
+    // else in this file -- see areaFor's own A_DARK comment), but where that
+    // ask falls under the floor, the RING IS RETRACED -- at the SAME floor-
+    // safe radius, over just the ANGULAR ARC that asked for it -- instead of
+    // moved closer: `LOCAL_DUTY = floor / wanted` virtual close-packed turns
+    // would have fit in one floor-width band AT THAT ANGLE, so that arc is
+    // additionally emitted `round(LOCAL_DUTY) - 1` more times (a real,
+    // separate pass each time -- this file's own "no meta.weightScale"
+    // invariant is a PER-PATH constant-width contract, not a "trace it once"
+    // one; `onePenDown` elsewhere in this file already gets solid black the
+    // same way, real passes of one real pen). PER-ANGLE, not per-ring: a
+    // whole-ring retrace count (the first version of this fix) diluted the
+    // rim/core wrap contrast -- a small near-limb arc's high local duty
+    // dragged the WHOLE ring's single retrace count up, over-inking the
+    // bright core too, which measured 0.99 against the 1.05 bar. Restricting
+    // each retrace pass to just the flagged arc (its own `emitScr` call, not
+    // folded into the seam-joined `pts`) adds ink exactly where tone asked
+    // for it and nowhere else. Capped at DUTY_CAP so the guard/segment
+    // budget stays bounded; measured torus max wanted duty ~3.6, so a cap of
+    // 4 loses no observed case.
+    const PLOT_MIN_PEN = 1.0 * C.PEN;
+    const DUTY_CAP = 4;
     while (anyGrowing && guard < 400) {
       guard += 1;
       anyGrowing = false;
       const next = new Float64Array(NANG);
+      const localDuty = new Uint8Array(NANG);
       for (let i = 0; i < NANG; i += 1) {
         const r0 = ring[i];
-        if (r0 >= rMax) { next[i] = r0; continue; }
+        if (r0 >= rMax) { next[i] = r0; localDuty[i] = 1; continue; }
         const th = (i / NANG) * Math.PI * 2;
         const x = ox + r0 * Math.cos(th); const y = oy + r0 * Math.sin(th);
         const s = C.inv(x, y);
@@ -2558,13 +2721,64 @@
         // bounded fraction of `p0` (never below `p0 * WRAP_FLOOR`), so this
         // does not reintroduce a legibility floor `pitchFor` deliberately
         // does not have -- the law still reaches genuine black.
-        const p = wrapPitch(p0, s ? s.nz : 1);
+        const wanted = wrapPitch(p0, s ? s.nz : 1);
+        const p = Math.max(PLOT_MIN_PEN, wanted);
+        const dutyRaw = s ? Math.round(PLOT_MIN_PEN / wanted) : 1;
+        localDuty[i] = clamp(dutyRaw, 1, DUTY_CAP);
+        // TEST-ONLY (opt-in via the same `__MONO_TRACE` flag `emit()` already
+        // gates `__MONO_CTX` behind): the per-angle, ring-to-ring radial gap
+        // in screen mm, on-surface only. This is exactly "the spacing between
+        // turn K and turn K+1 AT A FIXED ANGLE theta" this law's own header
+        // derives — the ground truth a harness needs to catch it collapsing
+        // below the plot floor without reimplementing this loop.
+        if (s && globalScope.__MONO_TRACE) {
+          if (!C.__spiralGaps) C.__spiralGaps = [];
+          C.__spiralGaps.push(p);
+          // TEST-ONLY (W-10c mutation guard): publish the per-angle LOCAL
+          // DUTY alongside the gap itself, keyed by angle index `i` (theta =
+          // i/NANG * 2*pi) and guard iteration `guard`, so a harness can
+          // assert the retrace mechanism actually fires (duty > 1) in the
+          // specific angular arc it claims to compensate, not just that the
+          // floor-clamped gap itself never drops below the floor (which
+          // `__spiralGaps` alone cannot distinguish from a retrace-disabled
+          // build — see this law's own header, "why a ring recurrence").
+          if (!C.__spiralDuty) C.__spiralDuty = [];
+          C.__spiralDuty.push({
+            guard, i, theta: (i / NANG) * Math.PI * 2, duty: localDuty[i], dutyRaw,
+          });
+        }
         const r1 = r0 + p;
         next[i] = r1;
         if (r1 < rMax) anyGrowing = true;
       }
       ring = next;
       pushRing(ring);
+      // Extra retrace passes, restricted to the flagged arc(s) only. A run
+      // is a maximal contiguous stretch of angles whose `localDuty >= L`;
+      // each run is pushed as its OWN small polyline through `C.emitScr`
+      // (not folded into the shared seam-joined `pts`), one ring-radius
+      // point of context on either end so it reads as riding the same
+      // curve rather than a bare disconnected dash.
+      for (let L = 2; L <= DUTY_CAP; L += 1) {
+        let runStart = -1;
+        for (let i = 0; i <= NANG; i += 1) {
+          const flagged = i < NANG && localDuty[i] >= L;
+          if (flagged && runStart < 0) runStart = i;
+          if (!flagged && runStart >= 0) {
+            const a = Math.max(0, runStart - 1);
+            const b = Math.min(NANG, i);
+            const runPts = [];
+            for (let k = a; k <= b; k += 1) {
+              const idx = k % NANG;
+              const th = (idx / NANG) * Math.PI * 2;
+              const r = ring[idx];
+              runPts.push({ x: ox + r * Math.cos(th), y: oy + r * Math.sin(th) });
+            }
+            C.emitScr(runPts);
+            runStart = -1;
+          }
+        }
+      }
     }
     C.emitScr(pts);
   };
