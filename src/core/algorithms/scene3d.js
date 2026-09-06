@@ -275,17 +275,19 @@
   // least `CROWD_SELF_WINDOW` vertices away — is closer than
   // `CROWD_CULL_K * penWidth`; the run is split at each suppression
   // boundary (never merged back), and the ordinary `MIN_RUN_MM` floor is
-  // applied to each fragment by the caller's `emitRuns`. `CROWD_CULL_K`
-  // (0.6-0.7 measured effective band) intentionally stays BELOW 1.0: at 1.0
-  // the cull starts eating genuinely-readable close-but-distinct crowding,
-  // not just the fused wedge.
+  // applied to each fragment by the caller's `emitRuns`.
   //
-  // "Never cull a whole level": if suppression would remove every sample of
-  // one linked ring, `wCrowdCullRun` (the caller) keeps that ring's single
-  // longest pre-cull run unculled instead — the plane-count / ring-count
-  // invariant (buildSliceSegments, linkSegments, refineSliceRing — all
-  // untouched by this fix) must never be defeated by this cull.
-  const CROWD_CULL_K = 0.7;
+  // W-27c-0a iteration 2 (docs/3d-audit/lane-reports/W-27c-0a-review.md §4):
+  // the adversarial reviewer measured K=0.8 (the plan's own suggested
+  // ceiling) directly against this fix with NO measured cost — torus/sphere
+  // waist both clear 0.8w, sphere's O2(b) (ink <=1w) clears the plan's <=5%
+  // bar (it missed at K=0.7), total ink retention stays >94%, and no ring
+  // collapses ("never cull a whole level" fallback not observed to trigger).
+  // K=1.0 is still avoided per the plan's own explicit warning (it starts
+  // eating genuinely-readable close-but-distinct crowding, not just the
+  // fused wedge) — 0.8 is the ceiling that is BOTH measured safe and
+  // required by the coordinator's ruling, not a further-untested guess.
+  const CROWD_CULL_K = 0.8;
   const CROWD_SELF_WINDOW = 6;
   // Uniform grid over device-mm points at cell size == the query radius, so
   // any two points within `radius` of each other are guaranteed to fall in
