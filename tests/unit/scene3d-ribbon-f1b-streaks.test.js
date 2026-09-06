@@ -1,13 +1,35 @@
 /*
  * RGR — F1B: RESIDUAL LENGTHWISE STREAKS IN THE FIVE SELF-CROSSING LAWS.
  *
- * STATUS: UNRESOLVED. This file is a REPRODUCTION + DIAGNOSTIC record, not a
- * fix. It reproduces the defect precisely, quantifies it, and stays RED —
- * see `docs/3d-audit/handoff/unit-a-notes.md` for the full investigation and
- * why it stops here. Per the unit brief's own "stop and report if" clause
- * ("cannot get all five laws under the 0.18 mm² band after a genuine
- * attempt" / "the fix would need to touch hlr.js, scene.js or
- * algorithms/scene3d.js"), this is reported rather than forced green.
+ * STATUS (2026-09-05, A3 amended): MEASURED, F1 STAYS OPEN. Two prior
+ * hypotheses are now dead: self-occlusion false positives (A2,
+ * `torus-occlusion.js`/`hlr.js`, KEPT) and PenFill/boolean-erosion DROPPING
+ * geometry (A3 — `docs/3d-audit/lane-reports/A3-plan.md`): across a whole
+ * torus render there are 0-1 boolean failures per law and 0.000 mm² of the
+ * 0.89-2.06 mm² `ringNotInkMm2` is dropped geometry. What the metric mostly
+ * counts instead is PEN-UNREACHABLE area: 89-98% of every law's number sits
+ * in cells no 0.3 mm pen can ink while its centre stays inside the *clipped*
+ * ribbon (convex corners + sub-2-pen necks) — a correct, derivable
+ * predicate, not a fill defect (see `tests/helpers/scene3d-ring-coverage.js`'s
+ * own header and `scene3d-ring-coverage-reachability.test.js`'s synthetic
+ * proofs).
+ *
+ * `docs/3d-audit/lane-reports/A3-judge.md` (the binding amended brief)
+ * REJECTED closing F1 on that split anyway: the plan's own numbers show the
+ * ENTIRE residue — reachable and unreachable together — is a scatter of
+ * ~150 sub-mm clusters per law, none longer than ~1 mm and none wider than
+ * one pen over any real length. There is no band anywhere in `ringNotInkMm2`;
+ * it was never the user's streak. `docs/stroke-fill-handoff.md` §A's *done
+ * when* requires the user confirming it by eye on the bench, not a metric
+ * clearing a bar — so the assertions below are RE-PINNED to what this metric
+ * can HONESTLY prove (an anti-explosion guard, a non-gating reachable-area
+ * diagnostic, a lattice-resolution sanity guard, and a cluster-SHAPE oracle
+ * that models what a human calls a streak) and F1 STAYS OPEN — see
+ * `docs/3d-audit/STILL-OPEN.md`'s A3 bullet for the exact wording. A green
+ * run of this file is NOT evidence F1 is fixed; it is evidence this metric
+ * cannot see F1's actual defect (a placement question, likely W-26
+ * territory, plus one law-independent ink pinhole — both out of this file's
+ * scope; see the judge doc §5 items A3/A4).
  *
  * `docs/stroke-fill-handoff.md`, open item A ("F1 — residual streaks in the
  * self-crossing laws", REOPENED). F1 was believed closed by `2c9f37d6`
@@ -113,21 +135,26 @@
  * law below, from `d5af9e30`) — this file makes no source change, so this is
  * an invariant check on the fixture, not evidence of anything fixed.
  *
- * RED against `d5af9e30` (current HEAD of `3d-scene/handoff-b` at the time
- * this file was written, itself a descendant of the `da683934` baseline the
- * handoff doc names — both predate any fix and are equally valid red
- * anchors; `d5af9e30` is used because it is the exact SHA
- * `makeMultiFilePreShaRuntimeOptions` can `git show` against from this
- * worktree). Since no fix landed in this commit, this test is EQUALLY red
- * with or without `VECTURA_PRE_F1B=1` — there is no green state to contrast
- * it against yet:
+ * NO SOURCE FIX LANDS IN THIS COMMIT (A3, amended). `d5af9e30` remains the
+ * historical red anchor for the *narrative* above (the three reverted
+ * hypotheses were measured against it), but the assertions below are an
+ * ORACLE-SIDE re-pin, not a source fix — `VECTURA_PRE_F1B=1` therefore
+ * produces the SAME numbers as the current tree for every law (no
+ * `F1B_FILES` content changed), and every assertion below is written to be
+ * equally true under both. The real RED/GREEN pivot for the oracle split
+ * itself lives in `scene3d-ring-coverage-reachability.test.js`'s
+ * synthetic-dropped-ruling test — that is what proves the reachability
+ * classifier does not quietly excuse a genuine defect; this file only
+ * consumes the (already-proven) split honestly.
  *
- *   npx vitest run tests/unit/scene3d-ribbon-f1b-streaks.test.js            # RED (current tree)
- *   VECTURA_PRE_F1B=1 npx vitest run tests/unit/scene3d-ribbon-f1b-streaks.test.js   # RED (baseline — same numbers, by construction)
+ *   npx vitest run tests/unit/scene3d-ribbon-f1b-streaks.test.js                     # 26/26
+ *   VECTURA_PRE_F1B=1 npx vitest run tests/unit/scene3d-ribbon-f1b-streaks.test.js   # 26/26 (same numbers, by construction — no src/ change)
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { makeMultiFilePreShaRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
-const { captureClipGroups, captureSelfOcclusionFootprint, measureRingFillRate } = require('../helpers/scene3d-ring-coverage');
+const {
+  captureClipGroups, captureSelfOcclusionFootprint, measureRingFillRate, classifyReachabilityAtDivisor,
+} = require('../helpers/scene3d-ring-coverage');
 
 const F1B_BASELINE_SHA = 'd5af9e30';
 const F1B_FILES = [
@@ -145,7 +172,33 @@ const LAWS = ['interlockWeave', 'onePenDown', 'trochoidLoop', 'ampSpacing', 'wea
 // "fixing" the five above has moved the defect, not removed it.
 const CONTROL_LAWS = ['taperedEnds', 'weightSmoothstep'];
 const PEN_WIDTH = 0.3; // BOUNDS default (tests/fixtures/scene3d-shadow-anatomy.js)
+// RETIRED as a pass/fail bar (A3-judge.md §5 item A1): a finer reachability
+// lattice alone moves trochoidLoop from 0.1800 to 0.1856, i.e. across this
+// exact line — a "pass" that depends on how hard you search is not a pass.
+// Kept only as the historical value the honest diagnostic below is measured
+// against.
 const STREAK_BAND_MM2 = 0.18;
+// Anti-explosion guard on the RAW (uncorrected) number — A3-judge.md §5 A1.
+const RAW_EXPLOSION_GUARD_MM2 = 3;
+// Non-gating ceiling on the reachable-area diagnostic: comfortably above the
+// measured range (0.017-0.1856 mm² across five laws + two controls at
+// divisor 12/24) and comfortably below the raw explosion guard — a sanity
+// bound, not a pass bar.
+const REACHABLE_DIAGNOSTIC_CEILING_MM2 = 1.0;
+// A2 (amended) cluster-SHAPE oracle — what a human calls a streak, checked
+// against the actual bounding box of every connected uncovered run (A3-judge.md
+// §5 item A2). Today's worst is 0.90 x 0.30 mm (trochoidLoop, corner-class)
+// and 0.45 x 0.30 mm (a law-independent ink pinhole, carried forward as its
+// own follow-up lead) — both comfortably inside both bars below.
+const CLUSTER_MAX_EXTENT_MM = 1.2;
+const CLUSTER_STREAK_WIDTH_MM = 0.30; // one pen
+const CLUSTER_STREAK_LENGTH_MM = 1.0;
+// Lattice-sensitivity guard (A3-judge.md §5 item A1): doubling the divisor
+// (halving the search step) may reclassify at most 1 cell per law — more
+// than that means the reachable-area number is resolution-bought.
+const REACHABILITY_DIVISOR_A = 12;
+const REACHABILITY_DIVISOR_B = 24;
+const LATTICE_SENSITIVITY_MAX_CELL_DELTA = 1;
 
 // Baseline `degenerate` ceilings, recorded from THIS test's own first run
 // against the untouched `d5af9e30` tree (see header). A fix may bring these
@@ -214,9 +267,59 @@ describe('SurfaceFill — F1B residual streaks in the self-crossing laws, torus'
     expect(coverage.ringFillRate).toBeGreaterThanOrEqual(0.995);
   });
 
-  test.each(LAWS)('%s — uncovered ring interior is inside the <= 0.18 mm² band', (law) => {
+  // RETIRED (A3-judge.md §5 A1): `ringNotInkMm2 <= 0.18` moved from a real
+  // coverage assertion to an unfalsifiable one once 89-98% of that number
+  // was shown to be pen-unreachable-by-construction. Replaced by four
+  // honest checks below: an anti-explosion guard on the raw number, a
+  // non-gating diagnostic of the reachable residue, a lattice-resolution
+  // sanity guard, and a cluster-SHAPE oracle that actually models a streak.
+
+  test.each(LAWS)('%s — raw ringNotInkMm2 stays inside a sane anti-explosion guard (< 3 mm²)', (law) => {
     const { coverage } = results[law];
-    expect(coverage.ringNotInkMm2).toBeLessThanOrEqual(STREAK_BAND_MM2);
+    expect(coverage.ringNotInkMm2, `${law}: raw ringNotInkMm2=${coverage.ringNotInkMm2.toFixed(4)}`)
+      .toBeLessThan(RAW_EXPLOSION_GUARD_MM2);
+  });
+
+  test.each(LAWS)('%s — pen-unreachable-corrected residue is a recorded diagnostic, not the pass bar', (law) => {
+    const { coverage } = results[law];
+    const msg = `${law}: ringNotInkReachableMm2=${coverage.ringNotInkReachableMm2.toFixed(4)} `
+      + `ringUnreachableMm2=${coverage.ringUnreachableMm2.toFixed(4)} `
+      + `(raw ringNotInkMm2=${coverage.ringNotInkMm2.toFixed(4)}, `
+      + `historical band was <= ${STREAK_BAND_MM2})`;
+    expect(coverage.ringNotInkReachableMm2, msg).toBeGreaterThanOrEqual(0);
+    expect(coverage.ringNotInkReachableMm2, msg).toBeLessThan(REACHABLE_DIAGNOSTIC_CEILING_MM2);
+  });
+
+  test.each(LAWS)('%s — anti-vacuity: the reachable/unreachable split actually excludes something', (law) => {
+    const { coverage } = results[law];
+    expect(coverage.ringUnreachableMm2, `${law}: ringUnreachableMm2=${coverage.ringUnreachableMm2}`)
+      .toBeGreaterThan(0);
+  });
+
+  test.each(LAWS)('%s — lattice sensitivity: doubling the divisor moves the reachable-cell count by <= 1 cell', (law) => {
+    const { coverage } = results[law];
+    const at12 = classifyReachabilityAtDivisor(coverage.grid, PEN_WIDTH, REACHABILITY_DIVISOR_A);
+    const at24 = classifyReachabilityAtDivisor(coverage.grid, PEN_WIDTH, REACHABILITY_DIVISOR_B);
+    const delta = Math.abs(at24.reachableCount - at12.reachableCount);
+    const msg = `${law}: reachable @divisor${REACHABILITY_DIVISOR_A}=${at12.reachableCount} `
+      + `@divisor${REACHABILITY_DIVISOR_B}=${at24.reachableCount}`;
+    expect(delta, msg).toBeLessThanOrEqual(LATTICE_SENSITIVITY_MAX_CELL_DELTA);
+  });
+
+  // A2 (amended) — the actual "does a human see a streak" oracle, on all
+  // five reopened laws AND both controls (A3-judge.md §5 item A2 explicitly
+  // asks for both). A genuine streak must be BOTH wider than one pen AND run
+  // longer than one pen's worth of length; a corner wedge or a rasterization
+  // speck fails at least one of the two.
+  test.each([...LAWS, ...CONTROL_LAWS])('%s — no uncovered cluster reads as a lengthwise streak', (law) => {
+    const { coverage } = results[law];
+    coverage.uncoveredClusters.forEach((c) => {
+      const msg = `${law}: cluster ${c.cells} cells, ${c.areaMm2.toFixed(4)} mm², `
+        + `${c.lengthMm.toFixed(3)} x ${c.crossWidthMm.toFixed(3)} mm (length x cross-width)`;
+      expect(c.lengthMm, msg).toBeLessThanOrEqual(CLUSTER_MAX_EXTENT_MM);
+      const isStreak = c.crossWidthMm > CLUSTER_STREAK_WIDTH_MM && c.lengthMm > CLUSTER_STREAK_LENGTH_MM;
+      expect(isStreak, msg).toBe(false);
+    });
   });
 
   test.each(LAWS)('%s — anti-vacuity: no coverage bought with centrelines', (law) => {
