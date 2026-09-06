@@ -147,8 +147,33 @@
         pts.push({ x: va.x + (vb.x - va.x) * t, y: va.y + (vb.y - va.y) * t, z: va.z + (vb.z - va.z) * t });
       }
     };
+    // W-29 — a plane level that lands EXACTLY on a mesh vertex (e.g. a
+    // z-symmetric faceted solid whose vertex ring sits at exactly
+    // ±maxD/3 with sliceCount 26, hitting levels 9 and 18) makes
+    // edgeCross's on-plane branch (`Math.abs(ea) < 1e-6`) push that vertex
+    // once per incident fan triangle, producing zero-length segments and
+    // odd-degree/high-degree nodes at that vertex. `linkSegments`'s greedy
+    // walk then abandons the extra incident edges, leaving an OPEN ring
+    // that dangles mid-facet — the user-reported open end on the buckyball
+    // (docs/3d-audit/lane-reports/W-27c-0-W-29-plan.md §2). Nudging the
+    // level a few nanometres off any coincident vertex makes the cut
+    // strictly transversal there (every fan triangle now contributes a
+    // normal two-point crossing), restoring degree-2 nodes and closed
+    // rings, without moving the plane count or any other plane's position.
+    // Bounded to 8 tries (matches the plan's measured worst case of 1) so a
+    // pathological mesh can't loop; if 8 nudges still land on a vertex the
+    // level is used as-is (the on-plane branch stays as a safety net).
+    const VEPS = Math.max(1e-9, span * 1e-7);
     for (let level = 1; level <= count; level++) {
-      const z = minD + (level / (count + 1)) * span;
+      let z = minD + (level / (count + 1)) * span;
+      for (let nudgeTries = 0; nudgeTries < 8; nudgeTries++) {
+        let onVertex = false;
+        for (let i = 0; i < d.length; i++) {
+          if (Math.abs(d[i] - z) < VEPS) { onVertex = true; break; }
+        }
+        if (!onVertex) break;
+        z += 2 * VEPS;
+      }
       for (let f = 0; f < faces.length; f++) {
         const face = faces[f];
         const isFront = front ? front[f] !== false : true;

@@ -1012,4 +1012,158 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
       expect(worst).toBeLessThan(45);
     });
   });
+
+  // ── W-29 — faceted-solid contourSlice must always emit closed rings ────────
+  // (user-reports/12.png: the default buckyball has a ring with an OPEN END
+  // dangling mid-facet.) Root cause
+  // (docs/3d-audit/lane-reports/W-27c-0-W-29-plan.md §2): the buckyball's
+  // z-symmetric vertex ring sits EXACTLY on plane levels 9 and 18 at
+  // sliceCount 26. `edgeCross`'s on-plane branch (`Math.abs(ea) < 1e-6`)
+  // then pushes that vertex once per incident fan triangle, producing
+  // zero-length segments and odd-degree nodes; `linkSegments`'s greedy walk
+  // consumes one continuation per node and abandons the rest, leaving an
+  // OPEN ring. Fix: `buildSliceSegments` nudges a plane level a few
+  // nanometres off any coincident mesh vertex before cutting, restoring
+  // degree-2 topology everywhere the level would otherwise land on a vertex.
+  //
+  // Oracle (per plane, over the FULL front+back segment set — a plane
+  // cutting a CLOSED manifold is always a set of closed loops; the
+  // front/back split legitimately produces open arcs on an OPEN-boundary
+  // mesh and is therefore not a valid oracle by itself): every cut point
+  // has even degree, no zero-length segments, and `linkSegments` yields
+  // only CLOSED rings (first≈last within 0.01mm). These fail at this
+  // lane's base (073202a4): 6 open rings / 12 odd-degree nodes / 22
+  // zero-length segments across 2 bad planes (9, 18) on the default
+  // buckyball, measured directly against `Scene3D.Slices.buildSliceSegments`
+  // (independently reproduced by this implementer; the plan's own numbers
+  // at an earlier commit were 6/12/22/2, matching to the digit).
+  describe('W-29 — faceted-solid contourSlice ring topology (closed meshes only)', () => {
+    const SLICE_COUNT = 26;
+    const key3 = (pt) => `${pt.x.toFixed(6)},${pt.y.toFixed(6)},${pt.z.toFixed(6)}`;
+    // Degree/closure computed on a 3-D key (not `linkSegments`' own 2-D key)
+    // so the oracle is independent of the production linking code's own
+    // possible blind spots — see the plan §2.2 note that the 2-D key is NOT
+    // the cause of this defect (0 collisions at sliceRotate 0).
+    const topologyOf = (world, faces, sliceCount) => {
+      const sliced = V.Scene3D.Slices.buildSliceSegments({ world, faces, sliceCount });
+      const byPlane = new Map();
+      sliced.segments.forEach((s) => {
+        if (!byPlane.has(s.plane)) byPlane.set(s.plane, []);
+        byPlane.get(s.plane).push(s);
+      });
+      let zeroLenSegs = 0; let oddDegreeNodes = 0; let maxDegree = 0;
+      let totalRings = 0; let openRings = 0; let worstEndGap = 0; let badPlanes = 0;
+      byPlane.forEach((segs) => {
+        let planeBad = false;
+        segs.forEach((s) => {
+          if (Math.hypot(s.a.x - s.b.x, s.a.y - s.b.y, s.a.z - s.b.z) < 1e-6) zeroLenSegs++;
+        });
+        const deg = new Map();
+        segs.forEach((s) => {
+          [s.a, s.b].forEach((pt) => {
+            const k = key3(pt);
+            deg.set(k, (deg.get(k) || 0) + 1);
+          });
+        });
+        deg.forEach((n) => {
+          if (n > maxDegree) maxDegree = n;
+          if (n % 2 !== 0) { oddDegreeNodes++; planeBad = true; }
+        });
+        const rings = V.Geometry3D.linkSegments(segs.map((s) => [s.a, s.b]));
+        rings.forEach((ring) => {
+          totalRings++;
+          const gap = Math.hypot(
+            ring[0].x - ring[ring.length - 1].x,
+            ring[0].y - ring[ring.length - 1].y,
+            ring[0].z - ring[ring.length - 1].z,
+          );
+          if (gap > 0.01) { openRings++; planeBad = true; if (gap > worstEndGap) worstEndGap = gap; }
+        });
+        if (planeBad) badPlanes++;
+      });
+      return {
+        planes: sliced.planes, segCount: sliced.segments.length, zeroLenSegs,
+        oddDegreeNodes, maxDegree, totalRings, openRings, worstEndGap, badPlanes,
+      };
+    };
+
+    const buckyballMesh = () => {
+      const Prm = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS.solid;
+      const mesh = V.Scene3D.Mesh.createSolidMesh({ ...Prm, applyDeformers: true });
+      return { world: mesh.vertices, faces: mesh.faces };
+    };
+    const sphereMesh = () => {
+      const Prm = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS.sphere;
+      const mesh = V.Scene3D.Mesh.createTopoformMesh('sphere', { sx: Prm.radius, sy: Prm.radius, sz: Prm.radius }, Prm.detail);
+      return { world: mesh.vertices, faces: mesh.faces };
+    };
+    const torusMesh = () => {
+      const Prm = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS.torus;
+      const mesh = V.Scene3D.Mesh.createTopoformMesh('torus', Prm, Prm.detail);
+      return { world: mesh.vertices, faces: mesh.faces };
+    };
+    const boxMesh = () => {
+      const Prm = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS.box;
+      const mesh = V.Scene3D.Mesh.makeBoxMesh(Prm.sx, Prm.sy, Prm.sz, 1);
+      return { world: mesh.vertices, faces: mesh.faces };
+    };
+
+    test.each([
+      ['solid (buckyball)', buckyballMesh],
+      ['sphere', sphereMesh],
+      ['torus', torusMesh],
+      ['box', boxMesh],
+    ])('%s: every plane cuts the CLOSED mesh into closed rings only, no zero-length segments, no odd-degree nodes — RED at 073202a4 for the buckyball (6/12/22/2)', (name, meshFn) => {
+      const { world, faces } = meshFn();
+      const t = topologyOf(world, faces, SLICE_COUNT);
+      expect(t.zeroLenSegs).toBe(0);
+      expect(t.oddDegreeNodes).toBe(0);
+      expect(t.openRings).toBe(0);
+      expect(t.badPlanes).toBe(0);
+      expect(t.maxDegree).toBe(2);
+    });
+
+    // Purity guard reasserted locally (mirrors :204-306): the nudge only
+    // perturbs a level's position by a few nanometres and must never move
+    // the plane count.
+    test('plane count stays a pure function of sliceCount with the vertex-coincidence nudge active', () => {
+      const { world, faces } = buckyballMesh();
+      [2, 12, 26, 120].forEach((sc) => {
+        expect(V.Scene3D.Slices.buildSliceSegments({ world, faces, sliceCount: sc }).planes).toBe(sc);
+      });
+    });
+
+    // Documented exclusion (plan §2.4): cylinder/cone/pyramid meshes have NO
+    // cap faces, so a z-const cut through them is genuinely a set of open
+    // arcs terminating on the mesh's own open boundary — this is normal
+    // geometry, not the degeneracy the nudge targets, and the nudge does
+    // not (and must not be expected to) close these. Measured here so the
+    // exclusion is documented, not silently widened into the guard above.
+    test('cylinder/cone/pyramid are OPEN-BOUNDARY meshes — their contourSlice rings are legitimately open regardless of the nudge', () => {
+      const cyl = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS.cylinder;
+      const cylTopo = topologyOf(
+        V.Scene3D.Mesh.createTopoformMesh('cylinder', cyl, cyl.detail).vertices,
+        V.Scene3D.Mesh.createTopoformMesh('cylinder', cyl, cyl.detail).faces,
+        SLICE_COUNT,
+      );
+      expect(cylTopo.openRings).toBeGreaterThan(0);
+
+      const cone = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS.cone;
+      const coneTopo = topologyOf(
+        V.Scene3D.Mesh.createTopoformMesh('cone', cone, cone.detail).vertices,
+        V.Scene3D.Mesh.createTopoformMesh('cone', cone, cone.detail).faces,
+        SLICE_COUNT,
+      );
+      expect(coneTopo.openRings).toBeGreaterThan(0);
+
+      const pyr = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS.pyramid;
+      const pyrTopo = topologyOf(
+        V.Scene3D.Mesh.createTopoformMesh('pyramid', pyr, pyr.detail).vertices,
+        V.Scene3D.Mesh.createTopoformMesh('pyramid', pyr, pyr.detail).faces,
+        SLICE_COUNT,
+      );
+      expect(pyrTopo.openRings).toBeGreaterThan(0);
+    });
+  });
+
 });
