@@ -436,3 +436,153 @@ describe('Scene3D originSpiral respects the plot floor on torus / cone (F-10)', 
     });
   }, 120000);
 });
+
+/*
+ * W-10c ITERATION 3 — WHY A CODE-LEVEL "GATE TORUS TO 78bbf3e8" FIX IS NOT
+ * SHIPPED HERE (investigation, recorded so the next session does not
+ * re-spend the budget rediscovering it).
+ *
+ * The orchestrator's iteration-3 ruling asked for the floor-raise+retrace
+ * mechanism to be gated OFF specifically for torus (byte-identical to
+ * 78bbf3e8/W-10b) while cone/sphere keep iteration 2. `lawSpiral` cannot do
+ * this by reading a primitive/shape identifier: the opts bag
+ * `MonoFill().emit()` receives (`surface-fill.js` ~10202) carries no
+ * `mode`/`primitive`/`shape` field at all — this file is deliberately
+ * primitive-agnostic everywhere, working only through `C.inv`. Confirmed by
+ * reading the call site directly; `chartFor(opts.mode, opts.sizes)`
+ * (`surface-fill.js` ~176) resolves `opts.mode` to a bare parametrisation
+ * FUNCTION before this file ever sees it — no type tag survives.
+ *
+ * The only in-file alternative is GEOMETRIC inference: does the silhouette,
+ * sampled through `C.inv` alone, show a genuine enclosed hole (the
+ * topological property that actually distinguishes a torus from a cone or
+ * sphere)? Tried a flood-fill hole detector (bucket the bounding box into a
+ * GRID x GRID grid, flood off-surface cells in from the border, and check
+ * for any off-surface cell NOT reached — an enclosed hole). It works
+ * PERFECTLY on the F-10 describe block's own off-axis test camera: torus
+ * shows a robust ~40% enclosed-area fraction at every grid size from 24 to
+ * 64 (141/343, 248/606, 560/1370, 980/2448 — stable ratio ~0.40-0.41);
+ * cone and sphere show exactly 0 at every size, every time.
+ *
+ * It FAILS on the actual default app camera the gallery evidence uses (the
+ * same torus/hatch/originSpiral/fillDensity-50 scene the mutation guard
+ * above measures): the enclosed-area fraction is 0 at grid sizes 24, 32,
+ * 48, 64, 128 and 160, and a single spurious "hole" of exactly 2 cells out
+ * of 8898 on-surface cells (a 0.02% fraction — indistinguishable from grid-
+ * alignment aliasing, not a real hole) appears ONLY at grid size 96. A
+ * signal that flickers on at one arbitrary resolution and off at every
+ * neighbouring resolution, on the exact scene the fix needs to protect, is
+ * not a basis for a correctness-critical byte-identity gate. This is
+ * recorded here as the reason a source-level gate was NOT shipped this
+ * iteration — see docs/3d-audit/lane-reports/W-10c-impl-3.md for the full
+ * writeup and the exact cross-lane patch (in `surface-fill.js`, outside
+ * this lane's files) that WOULD make a reliable gate possible: thread a
+ * primitive identifier through the `MonoFill().emit({...})` call site into
+ * this file's `C` context.
+ */
+describe('W-10c iteration 3 — hole-detection reliability (investigation, not a shipped gate)', () => {
+  let runtime; let win; let V; let algo2; let defaults2; let SF;
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    win = runtime.window; V = win.Vectura;
+    algo2 = V.AlgorithmRegistry.scene3d; defaults2 = V.ALGO_DEFAULTS.scene3d;
+    SF = V.Scene3D.SurfaceFill;
+  }, 60000);
+  afterAll(() => runtime.cleanup());
+
+  const floodHoleFraction = (C, GRID) => {
+    const gw = (C.maxX - C.minX) / GRID;
+    const gh = (C.maxY - C.minY) / GRID;
+    if (!(gw > 0) || !(gh > 0)) return 0;
+    const on = new Uint8Array(GRID * GRID);
+    for (let gy = 0; gy < GRID; gy += 1) {
+      for (let gx = 0; gx < GRID; gx += 1) {
+        const x = C.minX + (gx + 0.5) * gw;
+        const y = C.minY + (gy + 0.5) * gh;
+        on[gy * GRID + gx] = C.inv(x, y) ? 1 : 0;
+      }
+    }
+    const reached = new Uint8Array(GRID * GRID);
+    const stack = [];
+    for (let gx = 0; gx < GRID; gx += 1) {
+      [0, GRID - 1].forEach((gy) => {
+        const idx = gy * GRID + gx;
+        if (!on[idx] && !reached[idx]) { reached[idx] = 1; stack.push(idx); }
+      });
+    }
+    for (let gy = 0; gy < GRID; gy += 1) {
+      [0, GRID - 1].forEach((gx) => {
+        const idx = gy * GRID + gx;
+        if (!on[idx] && !reached[idx]) { reached[idx] = 1; stack.push(idx); }
+      });
+    }
+    while (stack.length) {
+      const idx = stack.pop();
+      const gx = idx % GRID; const gy = (idx / GRID) | 0;
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => {
+        const nx = gx + dx; const ny = gy + dy;
+        if (nx < 0 || nx >= GRID || ny < 0 || ny >= GRID) return;
+        const nidx = ny * GRID + nx;
+        if (!on[nidx] && !reached[nidx]) { reached[nidx] = 1; stack.push(nidx); }
+      });
+    }
+    let enclosed = 0; let onCount = 0;
+    for (let idx = 0; idx < GRID * GRID; idx += 1) {
+      if (on[idx]) onCount += 1;
+      if (!on[idx] && !reached[idx]) enclosed += 1;
+    }
+    return enclosed / Math.max(1, onCount);
+  };
+
+  const captureOptsDefaultCam = (primitive, extraParams) => {
+    const p = clone(defaults2);
+    p.objects = [{
+      id: 'o1',
+      name: 's',
+      primitive,
+      params: primitive === 'sphere' ? { radius: 46, detail: 24 } : (extraParams || {}),
+      transform: {
+        x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1,
+      },
+      visibility: 'solid',
+    }];
+    p.ground = { enabled: false };
+    p.camera = {
+      projection: 'orthographic', yaw: 0, pitch: 0, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
+    };
+    p.styleTable = {
+      scene: { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 50, toneLaw: 'originSpiral' } },
+      byObject: {},
+      byFace: {},
+    };
+    p.tone = clone(defaults2).tone;
+    p.lights = [{ id: 'sun', type: 'directional', azimuth: 90, elevation: 45, castShadows: false }];
+    const calls = [];
+    const orig = SF.buildObject;
+    SF.buildObject = function wrapped(o) { const result = orig.call(this, o); calls.push({ opts: o, result }); return result; };
+    try {
+      algo2.generate(p, null, null, {
+        width: 360, height: 260, m: 20, dW: 320, dH: 220, penWidth: 0.3,
+      });
+    } finally { SF.buildObject = orig; }
+    let best = calls[0];
+    calls.forEach((c) => { if ((c.result || []).length > (best.result || []).length) best = c; });
+    return best && best.opts;
+  };
+
+  test('hole-detection is reliable on an off-axis test camera but NOT on the default gallery camera (recorded finding, not asserted as fixable here)', () => {
+    const opts = captureOptsDefaultCam('torus', { outerRadius: 46, innerRadius: 20, detail: 24 });
+    win.__MONO_TRACE = 1; win.__MONO_CTX = null;
+    SF.buildObject({ ...opts, toneLaw: 'originSpiral' });
+    const C = win.__MONO_CTX;
+    const frac64 = floodHoleFraction(C, 64);
+    const frac128 = floodHoleFraction(C, 128);
+    // On the exact scene the gallery evidence and the mutation guard above
+    // use: no reliable enclosed area at either resolution. If this ever
+    // measures differently, a code-level gate keyed on this signal becomes
+    // viable for THIS scene and should be revisited — until then it is
+    // proven unreliable here, not merely untried.
+    expect(frac64, 'default-camera torus hole fraction at GRID=64').toBeLessThan(0.01);
+    expect(frac128, 'default-camera torus hole fraction at GRID=128').toBeLessThan(0.01);
+  }, 60000);
+});
