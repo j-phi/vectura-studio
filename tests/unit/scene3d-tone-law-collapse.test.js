@@ -620,3 +620,25 @@ describeSingleParamCluster('Scene3D tone-law collapse — U2 (C-02, taperedEnds/
     { id: 'nibAngle', value: 'nib' },
   ],
 });
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════
+ * U3 — C-03 · survivor `weightModulated` · param `weightEase`
+ * Folded: weightSmoothstep ('smooth'). Bare option: step->weightModulated.
+ * Not named by W-22/W-23/W-24 — filed as W-22b per the plan (§4 U1-U8
+ * table). Only ONE folded id — exercises the shared template's single-
+ * option path.
+ * RED (pre-U3): resolveToneLaw({toneLaw:'weightModulated',
+ * weightEase:'smooth'}) returned 'weightModulated' unchanged — rendering
+ * diverged from weightSmoothstep's own picture (992.0 vs 995.8 mm ink,
+ * 810 vs 540 points, on torus+hatch+med). GREEN below closes it.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+describeSingleParamCluster('Scene3D tone-law collapse — U3 (C-03/W-22b, weightModulated/weightEase)', {
+  survivor: 'weightModulated',
+  key: 'weightEase',
+  pickerIdsLength: 42,
+  folded: [
+    { id: 'weightSmoothstep', value: 'smooth' },
+  ],
+});

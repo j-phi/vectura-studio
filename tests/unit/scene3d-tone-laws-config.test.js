@@ -108,11 +108,14 @@ describe('Vectura.SCENE3D_TONE_LAWS — the generated tone-law config module', (
   // above stay untouched forever — this is a picker-tier cut, not an
   // engine-vocabulary change.
   test('PICKER_IDS/ALIASES: cumulative collapse state (bumped by every unit, U1 through U8) — every alias resolvable', () => {
-    // Current state after U2 (C-02, taperedEnds/bandProfile): 43 survivors,
-    // 5 aliases (U1's 3 + U2's 2). Bump this pair (and the id list below) at
-    // U3-U8; paste the before/after in the unit's commit body.
-    const EXPECTED_PICKER_IDS_LENGTH = 43;
-    const EXPECTED_ALIAS_IDS = ['fineLadder', 'phaseFineLadder', 'perceptualRamp', 'whiteBand', 'nibAngle'];
+    // Current state after U3 (C-03/W-22b, weightModulated/weightEase): 42
+    // survivors, 6 aliases (U1's 3 + U2's 2 + U3's 1). Bump this pair (and
+    // the id list below) at U4-U8; paste the before/after in the unit's
+    // commit body.
+    const EXPECTED_PICKER_IDS_LENGTH = 42;
+    const EXPECTED_ALIAS_IDS = [
+      'fineLadder', 'phaseFineLadder', 'perceptualRamp', 'whiteBand', 'nibAngle', 'weightSmoothstep',
+    ];
 
     expect(Array.isArray(LAWS.PICKER_IDS)).toBe(true);
     expect(LAWS.PICKER_IDS.length).toBe(EXPECTED_PICKER_IDS_LENGTH);

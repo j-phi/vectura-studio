@@ -251,6 +251,13 @@ const COLLAPSE = {
       { value: 'nib', label: 'Calligraphic nib', law: 'nibAngle' },
     ],
   }],
+  weightModulated: [{                                                 // C-03 (U3, W-22b)
+    key: 'weightEase', label: 'Weight easing', default: 'step',
+    options: [
+      { value: 'step', label: 'Stepped weights', law: 'weightModulated' },
+      { value: 'smooth', label: 'Smoothed weights', law: 'weightSmoothstep' },
+    ],
+  }],
 };
 
 // ── 5c. Derive ALIASES + PICKER_IDS + STYLE_PARAMS from COLLAPSE ───────────

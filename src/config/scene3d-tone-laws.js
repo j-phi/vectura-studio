@@ -874,7 +874,6 @@
   "taperedEnds",
   "weightModulated",
   "isophoteWidth",
-  "weightSmoothstep",
   "lozengeStipple",
   "deepFillTSP",
   "bundleCount",
@@ -944,6 +943,12 @@
     "params": {
       "bandProfile": "nib"
     }
+  },
+  "weightSmoothstep": {
+    "into": "weightModulated",
+    "params": {
+      "weightEase": "smooth"
+    }
   }
 };
   const STYLE_PARAMS = {
@@ -996,6 +1001,25 @@
           "value": "nib",
           "label": "Calligraphic nib",
           "law": "nibAngle"
+        }
+      ]
+    }
+  ],
+  "weightModulated": [
+    {
+      "key": "weightEase",
+      "label": "Weight easing",
+      "default": "step",
+      "options": [
+        {
+          "value": "step",
+          "label": "Stepped weights",
+          "law": "weightModulated"
+        },
+        {
+          "value": "smooth",
+          "label": "Smoothed weights",
+          "law": "weightSmoothstep"
         }
       ]
     }
