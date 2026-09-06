@@ -22,6 +22,27 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
+- **3D fill audit — per-lane resume order (2026-09-06, after the local merge into
+  `3d-scene/integrate`).** No item below is auto-started; each needs a fresh worktree off the
+  merged integration branch (or main, once fast-forwarded). Per lane:
+  - **fill-audit-a:** T1b (plot safety) → **W-31 → W-32 → W-33** (user-reported, outrank T2) →
+    F1-placement (Prototype B, ruled) → T2 → T3 → T4 (needs Jay's W-06 call, see Blocked on Jay).
+  - **fill-collapse:** **U5b** (fold-caveat visibility, was carried past the merge rather than
+    blocking it) → W-30b (wires W-30's shadow-footprint projector to a real call site — until this
+    lands, W-30 changes nothing a user can see) → U6 (needs Jay's penStipple call, see Blocked on
+    Jay) → U7 → U8 → U9.
+  - **fill-audit-d:** W-27c-0a iter-4 (re-scope the crowding cull to saddle/pole, land the four
+    disclosed floors) → **W-34 → W-35** (user-reported; W-35 is cross-lane, touches params.js +
+    context-bar.js) → W-27c-0a-2 (the residual blob-width defect needs a different mechanism than
+    the crowding cull).
+  - **fill-audit:** W-15c design D (the graded/gradient case is still Density-blind).
+  - **handoff-c:** U9 (rebases onto W-30, gated on the U1→U8 collapse chain) → W-30-adjacent
+    follow-ups.
+  - **unscheduled:** F1-amp, W-07b, W-10d-2/-3, W-28 threshold, W-25 hlr seam,
+    `insetMultiPolygon` ladder, U10–U12 (blocked on W-26, lossy).
+  Five new user-reported defects land after the merge, not in it — see the report images and
+  verbatim quotes in `docs/3d-audit/fill-audit/user-reports/README.md`. Full state:
+  `docs/3d-audit/lane-reports/SESSION-SUMMARY.md`, `STILL-OPEN.md`.
 - **DONE — 3D Scene pen-width stroke fill: judge A's F2 (torus collapse) is fixed.** Branch
   `sf/integration`. Evidence and reproduction commands in `docs/torus-fix-evidence/TABLE.md`.
   Changing nothing but `params.primitive` to `torus` made all twelve variable-width laws refuse
@@ -382,6 +403,23 @@ or completes.
 ## Blocked on Jay
 Seven audit decisions (full options in `docs/audit-remediation-todo.md`) plus two design
 questions. Do not start these without a decision:
+- **3D fill audit — W-06 max density (2995 → 529 mm ink).** Accept the lighter mkDashRamp max as
+  final, or restore the band in a follow-up unit (T4)? *Recommended: CONDITIONAL — sign off the
+  lost byte-identity (the old max was the slab defect at higher density), but not the ink
+  collapse; T4 should bring the max back to >= 1500 mm.* If the lighter look wins, mkDashRamp
+  becomes the lightest of 12 mark laws and its roster text drops to "dot → dash".
+- **3D fill audit — U6 `penStipple` mark class.** Recategorize `'dot'` → `'hatch'` (a visible
+  picker re-categorisation), or keep `'dot'` and record the known mismatch? U6 cannot proceed
+  until decided.
+- **3D fill audit — ground-plane density after W-15c.** Confirm the ~2.5× denser ground hatch at
+  defaults (ink 12164 → 30215 mm) as intended, or exclude the ground from the solo-orientation
+  carrier gate? The app's own default scene is unaffected (its ground carries a style override).
+- **3D fill audit — F1 "which white did you mean?"** No F1 screenshot exists in the repo; the
+  current working theory is a 41.7 × 6.6 mm bare strip on the lower front torus. A bench look
+  would confirm before F1-placement's evidence is judged.
+- **3D fill audit — W-27c-0a: accept "improved, not fixed"?** contourSlice blob width dropped
+  3.35 → 2.10 mm (torus) and 34.5 → 14.85 mm (sphere) against a 0.9 mm target. Iter-4 (re-scoped
+  crowding cull) goes first regardless; the residual is routed to W-27c-0a-2 either way.
 - **`torus/crosshatch` needs the boundary-ends exception the sibling cell already has**
   (`3d-scene/unwire-highlight`). With the phase-stepped tone ladder, `scene3d-fill-boundary-ends`
   reports one free end of 1.48 mm on `torus · crosshatch`. That end is at x 122.6 — the exact
@@ -421,6 +459,29 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **2026-09-06 — 3D fill audit merge: seven lanes, ~35 W-ids landed, roster collapsed 48 → 35
+  (local integration branch `3d-scene/integrate`, NOT pushed).** Merged `3d-scene/handoff-c` →
+  `3d-scene/handoff-b` → `3d-scene/fill-audit` → `3d-scene/fill-audit-a` → `3d-scene/fill-audit-c`
+  → `3d-scene/fill-audit-d` → `3d-scene/fill-collapse` in that order. **P0 closed:** the user's
+  ladder-gap rule (W-26) — Ladder/Fine Ladder/Phase Fine Ladder no longer skip alternate rulings on
+  a flat-toned surface (adjacent-gap jump 2.00× → 1.03–1.17×), with a crosshatch over-ink
+  regression found and fixed in the same unit (W-26b). Also landed: the curved master grid's
+  sparse (low-Density) end (W-01); chart-walked tick/dash marks that bend with the surface (T1);
+  originSpiral's plot floor on torus/cone plus its Fill Style picker greyout on torus (W-10/10b/10c/10d);
+  a Density-tracking carrier grant on solo-orientation faceted objects (W-15c); a spiral-curl floor
+  on thin sliver faces (W-25/W-25b); contourSlice analytic-surface snapping, rounding, and fragment
+  fixes (W-27/27b/27c/27c-0(b)/W-29); shadows landing on other 3D objects in the receiver's own fill
+  style plus tighter-pitch overlap darkening (Unit C, Unit D, Unit D phase-align); a per-light-type
+  shadow-footprint projector, correct and tested but not yet wired to a call site (W-30 — see Next);
+  an honest split of the ring-fill coverage oracle into pen-unreachable vs. genuine streak defects,
+  retiring 5 stale red-pinned assertions without hiding the underlying F1 defect (A3); and the
+  Fill Style roster collapse (U0–U5, 48 ids → 35, byte-identical rendering for every folded id).
+  Two branch-merge conflicts required re-measuring combined effects rather than picking either
+  side's pin (torus self-occlusion × W-15c/W-26 on `scene3d-hlr-spatial-index-identity.test.js` and
+  `scene3d-curved-density-sparse-end.test.js`; a pre-existing shadow-tone-law-uniqueness test's
+  premise went stale against the new `PICKER_IDS`/`IDS` split and was updated, not widened). Full
+  details: `docs/3d-audit/lane-reports/MERGE-impl.md`, `SESSION-SUMMARY.md`. **Not pushed to
+  origin; main not fast-forwarded** — both are follow-up actions for the orchestrator/Jay.
 - **2026-08-30 — Fixed-context-tax trim (dev workflow, no product change).** Deduped
   CLAUDE.md↔AGENTS.md (single source per topic with cross-pointers; all rules preserved);
   session-awareness hook now skips re-injection on `/clear`/compact restarts, ignores foreign

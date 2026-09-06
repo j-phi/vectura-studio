@@ -264,12 +264,29 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
       for (let i = 1; i < arr.length; i++) expect(arr[i]).toBeGreaterThan(arr[i - 1]);
     };
 
+    // MERGE NOTE (integration, 2026-09-06) / BAR CHANGE: the two `torus`
+    // rows' ink values moved at d=1/25/50 (d=10 unaffected on both) —
+    // `torus + hatch + ladder` 419.1/645.22/1255.48 -> 420.39/646.51/1257.41;
+    // `torus + hatch + fineLadder` 470.87/772.68/1253.08 ->
+    // 471.15/773.24/1254.94. Path COUNTS are unchanged (still
+    // [5,6,7,12]/[5,6,9,12]). Cause: `3d-scene/handoff-c`'s A2 torus
+    // self-occlusion rewrite (`Scene3D.TorusOcclusion`, a dense analytic
+    // near/far field replacing a per-sample dilated ray — see
+    // `docs/3d-audit/handoff/unit-a2-notes.md`) never landed on
+    // `3d-scene/fill-audit-a` (where this file's W-01/W-26 pins were made),
+    // so this is the first time these two effects combine; `sphere`/`cone`
+    // rows (no self-occlusion — convex, single-sheet) are untouched,
+    // confirming the shift is scoped to the torus. Deltas are all under
+    // 0.3% of the pinned value — re-measured against the actual merged
+    // source, not copied from either branch's pin, and still strictly
+    // increasing at every checkpoint (the property this block exists to
+    // guard).
     test.each([
       ['sphere + hatch + ladder', 'hatch', 'ladder', () => defaults.objects[0], [8, 9, 15, 25], [222.11, 266.46, 425.78, 768.56]],
-      ['torus + hatch + ladder', 'hatch', 'ladder', () => torusObj, [5, 6, 7, 12], [419.1, 474.98, 645.22, 1255.48]],
+      ['torus + hatch + ladder', 'hatch', 'ladder', () => torusObj, [5, 6, 7, 12], [420.39, 474.98, 646.51, 1257.41]],
       ['cone + hatch + ladder', 'hatch', 'ladder', () => coneObj, [11, 15, 22, 42], [544.27, 703.38, 1099.1, 2338.95]],
       ['sphere + hatch + fineLadder', 'hatch', 'fineLadder', () => defaults.objects[0], [8, 10, 14, 25], [222.11, 309.04, 426.96, 769.44]],
-      ['torus + hatch + fineLadder', 'hatch', 'fineLadder', () => torusObj, [5, 6, 9, 12], [470.87, 547.36, 772.68, 1253.08]],
+      ['torus + hatch + fineLadder', 'hatch', 'fineLadder', () => torusObj, [5, 6, 9, 12], [471.15, 547.36, 773.24, 1254.94]],
       ['cone + hatch + fineLadder', 'hatch', 'fineLadder', () => coneObj, [13, 16, 23, 42], [621.49, 777.78, 1263.12, 2311.12]],
     ])('%s: count strictly increasing, ink strictly increasing', (label, mapper, style, obj, expectCounts, expectInk) => {
       const counts = CHECKPOINTS.map((d) => runCount(d, mapper, style, obj()));
@@ -308,12 +325,20 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
       expect(runMd5(50, 'hatch', 'taperedEnds', defaults.objects[0])).toBe('28dacc0dbf75cf4324d8ec93a56e0138');
     });
 
+    // MERGE NOTE (integration, 2026-09-06) / BAR CHANGE: both hashes below
+    // moved. Cause is the same A2 torus self-occlusion rewrite disclosed on
+    // the "literal checkpoints" block above — `bundleCount` and `contour`
+    // are non-ladder families, so W-26 (scoped to ladder/fineLadder/
+    // phaseFineLadder) does not touch them; A2 does, because it changes
+    // same-object occlusion on every torus render regardless of mapper/law.
+    // Neither branch alone produced these two hashes; re-measured against
+    // the actual merged source via this file's own `runMd5` helper.
     test('torus + hatch + bundleCount at d=50', () => {
-      expect(runMd5(50, 'hatch', 'bundleCount', torusObj)).toBe('dabbb9ea359870db78300f31ae930040');
+      expect(runMd5(50, 'hatch', 'bundleCount', torusObj)).toBe('d0a5adb813252ff51639f5b1d593a50d');
     });
 
     test('torus + contour + ladder at d=50', () => {
-      expect(runMd5(50, 'contour', 'ladder', torusObj)).toBe('f818c08a98d883bb5e566617834f984e');
+      expect(runMd5(50, 'contour', 'ladder', torusObj)).toBe('c4af8b99aee05127ac916103b1281ed5');
     });
 
     test('cone + spiral + ladder at d=50', () => {

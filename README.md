@@ -597,6 +597,37 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.3.99
+- **3D Scene — the ladder-family fill styles no longer skip alternate rulings on flat-toned
+  surfaces.** Ladder, Fine Ladder and Phase Fine Ladder used to select a subset of a fixed grid on
+  a cone, cylinder, capsule barrel or any evenly lit region, drawing doubled-width white gaps with
+  no shading behind them. Rulings now place continuously, and the spiral no longer drops whole
+  turns. A related over-inking regression in crosshatch's second family, found while closing this,
+  is also fixed.
+- **3D Scene — several curved-surface and contourSlice fill defects fixed:** the master grid's
+  sparse (low-Density) end on curved primitives now actually opens up instead of drawing the same
+  ruling count from Density 1 to 49; chart-walked tick and dash marks bend with the local surface
+  instead of drawing a straight chord (torus ticks no longer read as straight spoke fans);
+  originSpiral respects the plot floor on torus and cone; a ground plane (or any single-orientation
+  faceted object) now tracks Density properly instead of a fixed ruling count; thin sliver faces on
+  curved primitives get a genuine spiral curl instead of a near-straight stub; and contourSlice
+  rings snap onto the true analytic surface, fixing torus ring fragmentation and open buckyball
+  rings. **Origin Spiral now greys out with a "no effect here" note on a torus** in the Fill Style
+  picker, instead of silently producing a defective plot — saved documents that already picked it
+  are unaffected.
+- **3D Scene — cast shadows can land on other 3D objects, in the receiver's own fill style**, and
+  overlapping shadows from multiple casters darken through a genuinely tighter ruling pitch instead
+  of drawing invisible duplicate lines. Off by default (`shadow.shadowReceiveOnObjects`).
+- **3D Scene — the Fill Style picker roster collapses 13 near-duplicate options into 5 canonical
+  entries plus a sub-parameter, 48 options down to 35, with no change to any option's rendered
+  output.** A saved document that named one of the folded options resolves it to its canonical
+  survivor plus the matching parameter on load — the drawing is unchanged either way.
+- **Known open:** a residual streak defect on five self-crossing ribbon fill laws
+  (`interlockWeave`/`onePenDown`/`trochoidLoop`/`ampSpacing`/`weaveDepth`) is measured but not yet
+  fixed; contourSlice's ink-merging at a torus/sphere's saddle and pole points is improved, not
+  eliminated; and the shadow-receive footprint projector above is tested but not yet reachable from
+  any real scene.
+
 ### 1.3.85
 - **3D Scene: a new scene arrives with ink on it.** Inserting a 3D Scene seeded a **box** under the
   **wireframe** mapper, and that pair puts no ink on the object at all — wireframe never reaches the

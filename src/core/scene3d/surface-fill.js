@@ -9757,6 +9757,26 @@
             if (cn) want = clamp(want / clamp(cs / cn, 0.6, 1.7), cfTightPitch(), cfOpenPitch());
           }
           if (TONE_ALGO === 'contFieldQuant') want = cfQuantise(want);
+          // MERGE FIX (integration, 2026-09-06): the X-ray back-face pass used
+          // to ask this engine for a REDUCED `count` to simulate a sparser far
+          // surface (`Math.round(N * backDensity)`, scene3d.js's xray config).
+          // W-26 moved ladder/fineLadder/phaseFineLadder onto this continuous
+          // walk, whose actual ruling density comes from `want` (the wanted
+          // PITCH, density-driven) — `count` now only shapes the walk's own
+          // step-size bounds (`dfMin`/`dfMax`/`creep`), not how many rulings
+          // get placed. That silently broke X-ray's back-density control: a
+          // capsule under Type=Hatch, Fill Style=Ladder (the shipped default)
+          // drew the SAME back-face ink at Back Density 0.2 and 1.0 (measured:
+          // 32 paths either way — RGR proof in
+          // tests/integration/scene-xray-needs-fill.test.js "Back density
+          // changes how much far-surface ink is drawn"). Widening `want`
+          // (dividing the pitch, i.e. spacing OUT) for the back pass alone
+          // restores the control the same way the pre-W-26 discrete dispatch
+          // achieved it with a smaller count — sparser back density asks for a
+          // wider gap between rulings. `back` is false on every front-face
+          // call, so `want` (and therefore every front-face render) is
+          // untouched — this is scoped strictly to the X-ray back pass.
+          if (back) want /= backDensity;
           let df = clamp(want / Math.max(1e-6, pb.mmPerFrac), dfMin, dfMax);
           if (TONE_ALGO === 'contFieldAniso' && prevPts) {
             // Two corrections, never more: this is a fixed-point step, not a

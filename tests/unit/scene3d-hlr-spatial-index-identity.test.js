@@ -317,10 +317,30 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   // within 1 point of a pure sum — real interaction, not a copy error);
   // denseMixed|settled 662/2712, which IS the exact sum of the A2+W-15c
   // 651/2485 figure plus W-26's own +11/+227 delta.
+  //
+  // BAR CHANGE (integration, 2026-09-06, third pass — real merge-regression
+  // fix, not a re-measurement): `curvedOverlap-perspective-mixed-xray`
+  // carries an `xray`-visibility cone (`n0`), so it is the one scenario in
+  // this file that exercises the X-ray back-face pass. That pass was found
+  // to be BROKEN by W-26 (RGR proof: `tests/integration/scene-xray-needs-
+  // fill.test.js` "Back density changes how much far-surface ink is drawn" —
+  // a capsule drew the identical 32 back-face paths at Back Density 0.2 and
+  // 1.0) — W-26 moved the ladder family onto a continuous-placement walk
+  // whose actual ruling density comes from a density-driven wanted PITCH,
+  // not from the reduced `count` X-ray's back pass asks for, so back-face
+  // density silently stopped doing anything. Fixed in `surface-fill.js`'s
+  // `emitContFamily` walk: `if (back) want /= backDensity;` (front-face
+  // rendering is provably untouched — `back` is always false there). This
+  // scenario's default `xrayBackDensity` (0.4, `xrayCfg`'s own default)
+  // now legitimately draws a SPARSER back family than before the fix, so
+  // `curvedOverlap|settled` moves again, DOWN this time (431/1559 ->
+  // 424/1500) — the opposite direction from every other re-pin in this file,
+  // which is the expected signature of "back density now actually works"
+  // rather than another interaction/re-measurement artifact.
   const EXPECTED = {
     'facetedOverlap-orthographic-hatch|settled': { hash: '0517b318738d3fd4dc7d31be0698487d85f4e96e31d6e9e8d300b9d2fa2e6875', pathCount: 208, pointCount: 416 },
     'facetedOverlap-orthographic-hatch|draft': { hash: 'c89e3d735e2b53f3c1d154e7f3567d53a1e6053159b9ffa25a5853f7973d6a76', pathCount: 200, pointCount: 400 },
-    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'bfb2b907ee0fae1fa6d70ee1ce0406e6db50bb01a20b815d2278be1b5cada03c', pathCount: 431, pointCount: 1559 },
+    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'd5628693528fd8022c5fdf001c39537ce7b703a8e5543f3dd97f4d0e585dd5de', pathCount: 424, pointCount: 1500 },
     'curvedOverlap-perspective-mixed-xray|draft': { hash: '83aebf997a1e39aed36e2893fb18e7e7ea386755a9493e4868c53c51c80ee2f9', pathCount: 302, pointCount: 604 },
     'denseMixed-8obj-shadows|settled': { hash: '9593e988430bc16534b9394f68152e8f8568b45c58b412bb476204695dd97562', pathCount: 662, pointCount: 2712 },
     'denseMixed-8obj-shadows|draft': { hash: '9c3de29b1f268348208ebe1395268ad1f099ffdfc1b58d5759e3dc7eba7f4486', pathCount: 466, pointCount: 932 },
