@@ -204,14 +204,26 @@ describe('Scene3D tone-law collapse — U0 foundation', () => {
     }
   });
 
-  test('7. clampStyleParam belt-and-brace: the single-key shadowToneLaw path maps an alias to its survivor without warning', () => {
+  // STALE ASSERTION UPDATE (U9, resolve half — docs/3d-audit/lane-reports/
+  // W-22-24-W-18-plan.md §U9): this test originally pinned "the shadow bag
+  // collapses a folded id to its survivor, same as style.params.toneLaw" as
+  // the belt-and-brace behaviour. That was the U9 bug, not a feature: the
+  // shadow bag has no sibling sub-control field to carry the collapsed
+  // param (unlike `style.params`, which gets one from `normalizeStyle`'s
+  // migration shim), so collapsing here silently loses which
+  // `shadows.js` HATCH_LAW_RECIPES entry to draw — every scene saved with a
+  // pre-collapse `shadowToneLaw` would render the wrong shadow texture. U9
+  // fixed `normalizeShadow` to pass a folded id straight through instead
+  // (still never warning — it is a KNOWN, valid id, not an unrecognized
+  // one) — updated here with the same test number/scope rather than deleted.
+  test('7. clampStyleParam belt-and-brace: the single-key shadowToneLaw path passes a folded id through UNCHANGED, without warning (U9)', () => {
     const R = roster();
     const savedAliases = R.ALIASES;
     R.ALIASES = { syntheticFolded: { into: 'ladder', params: { rungMode: 'fine' } } };
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const shadow = Params.normalizeShadow({ shadowToneLaw: 'syntheticFolded' });
-      expect(shadow.shadowToneLaw).toBe('ladder');
+      expect(shadow.shadowToneLaw).toBe('syntheticFolded');
       expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       R.ALIASES = savedAliases;
@@ -382,12 +394,17 @@ describe('Scene3D tone-law collapse — U1 (C-01, ladder/rungMode)', () => {
     });
   });
 
-  test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id maps to the survivor, never warns', () => {
+  // STALE ASSERTION UPDATE (U9, resolve half) — see the U0 test 7 comment
+  // above for the full reasoning: the shadow bag has no sibling sub-control
+  // field, so collapsing a folded `shadowToneLaw` to its survivor silently
+  // loses which shadows.js HATCH_LAW_RECIPES entry to draw. U9 fixed
+  // `normalizeShadow` to pass a folded id through unchanged instead.
+  test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id passes through UNCHANGED, never warns (U9)', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       FOLDED.forEach(({ id }) => {
         const shadow = Params.normalizeShadow({ shadowToneLaw: id });
-        expect(shadow.shadowToneLaw).toBe('ladder');
+        expect(shadow.shadowToneLaw).toBe(id);
       });
       expect(warnSpy).not.toHaveBeenCalled();
     } finally {
@@ -560,12 +577,17 @@ function describeSingleParamCluster(label, { survivor, key, pickerIdsLength, fol
       expect(out2.params[key]).toBe(defaultValue);
     });
 
-    test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id maps to the survivor, never warns', () => {
+    // STALE ASSERTION UPDATE (U9, resolve half) — see the U0 test 7 comment
+    // for the full reasoning: the shadow bag has no sibling sub-control
+    // field, so collapsing a folded `shadowToneLaw` to its survivor silently
+    // loses which shadows.js HATCH_LAW_RECIPES entry to draw. U9 fixed
+    // `normalizeShadow` to pass a folded id through unchanged instead.
+    test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id passes through UNCHANGED, never warns (U9)', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       try {
         folded.forEach(({ id }) => {
           const shadow = Params.normalizeShadow({ shadowToneLaw: id });
-          expect(shadow.shadowToneLaw).toBe(survivor);
+          expect(shadow.shadowToneLaw).toBe(id);
         });
         expect(warnSpy).not.toHaveBeenCalled();
       } finally {
@@ -871,12 +893,17 @@ describe('Scene3D tone-law collapse — U5 (C-05, contFieldSigmoid/fieldMetric+f
     expect(out2.params.fieldMetric).toBe('screen');
   });
 
-  test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id maps to the survivor, never warns', () => {
+  // STALE ASSERTION UPDATE (U9, resolve half) — see the U0 test 7 comment
+  // for the full reasoning: the shadow bag has no sibling sub-control field,
+  // so collapsing a folded `shadowToneLaw` to its survivor silently loses
+  // which shadows.js HATCH_LAW_RECIPES entry to draw. U9 fixed
+  // `normalizeShadow` to pass a folded id through unchanged instead.
+  test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id passes through UNCHANGED, never warns (U9)', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       FOLDED.forEach(({ id }) => {
         const shadow = Params.normalizeShadow({ shadowToneLaw: id });
-        expect(shadow.shadowToneLaw).toBe(SURVIVOR);
+        expect(shadow.shadowToneLaw).toBe(id);
       });
       expect(warnSpy).not.toHaveBeenCalled();
     } finally {

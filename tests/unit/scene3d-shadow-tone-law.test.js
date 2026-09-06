@@ -121,6 +121,25 @@ describe('Scene3D.Shadows — shadowToneLaw (Fill Style on shadow hatch)', () =>
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 
+  // U9 (resolve half, docs/3d-audit/lane-reports/W-22-24-W-18-plan.md §U9).
+  // `fineLadder` is a FOLDED id (src/config/scene3d-tone-laws.js ALIASES ->
+  // survivor 'ladder'), but it is still a full member of the 48-id engine
+  // vocabulary (IDS) and `HATCH_LAW_RECIPES.fineLadder` (shadows.js) has its
+  // OWN recipe (spacing x0.97) distinct from the plain 'ladder' fallback
+  // (hatchRingsEvenOdd, no recipe). A saved scene that still carries the raw
+  // pre-collapse value 'fineLadder' in `shadow.shadowToneLaw` must keep
+  // rendering fineLadder's own recipe — not fall through to plain hatch just
+  // because the picker-tier collapse folded it under 'ladder' for the UI.
+  // RED at 8610fd66+ (post-U1): the ALIASES shim rewrites 'fineLadder' to
+  // 'ladder' before shadows.js ever sees it, so this collapses to the plain
+  // fallback and the two signatures are IDENTICAL.
+  test('HEADLINE (U9) — shadowToneLaw:"fineLadder" (a folded id) still renders its OWN recipe, not the plain-hatch fallback', () => {
+    const plainLadder = buildShadows({ shadowToneLaw: 'ladder' });
+    const fineLadder = buildShadows({ shadowToneLaw: 'fineLadder' });
+    expect(sPaths(fineLadder).length).toBeGreaterThan(0);
+    expect(geomSignature(fineLadder)).not.toBe(geomSignature(plainLadder));
+  });
+
   test('REGRESSION — the default shadowToneLaw reproduces the pre-toneLaw shadow output byte-identical', () => {
     const withDefault = buildShadows({});
     const explicitLadder = buildShadows({ shadowToneLaw: 'ladder' });
@@ -198,6 +217,39 @@ describe('Scene3D.Params — shadowToneLaw whitelist', () => {
   test('a plausible law id survives normalization unchanged', () => {
     expect(shadowOf({ shadowToneLaw: 'penCross' }).shadowToneLaw).toBe('penCross');
     expect(shadowOf({ shadowToneLaw: 'mkDotScreen' }).shadowToneLaw).toBe('mkDotScreen');
+  });
+
+  // U9 (resolve half) — a FOLDED id (a key of ALIASES) is already the correct
+  // INTERNAL id for the shadow recipe dispatch (shadows.js HATCH_LAW_RECIPES
+  // is keyed by it directly); the shadow bag has no sibling sub-control field
+  // to carry the collapse param separately (unlike style.params, which gets
+  // one from normalizeStyle's migration shim), so collapsing it to the
+  // survivor here — as the shared clampStyleParam('toneLaw') ALIASES branch
+  // used to for every caller — silently loses which recipe to draw. Must
+  // survive normalization unchanged, exactly like any other real roster id.
+  // Needs the roster loaded WITH `ALIASES` (unlike the plain-id test above,
+  // which is roster-agnostic) — a bare `IDS`-only roster (as the sibling
+  // "roster IS loaded" test below uses) can't reproduce this: the collapse
+  // only fires when `ALIASES[value]` resolves.
+  test('U9 — a FOLDED id (e.g. "fineLadder") survives normalization unchanged, not collapsed to its survivor', () => {
+    const globalScope = typeof window !== 'undefined' ? window : globalThis;
+    const prior = globalScope.Vectura.SCENE3D_TONE_LAWS;
+    globalScope.Vectura.SCENE3D_TONE_LAWS = {
+      IDS: ['ladder', 'fineLadder', 'phaseFineLadder', 'bundleCount', 'bundleDither', 'penCross', 'none'],
+      DEFAULT: 'ladder',
+      ALIASES: {
+        fineLadder: { into: 'ladder', params: { rungMode: 'fine' } },
+        phaseFineLadder: { into: 'ladder', params: { rungMode: 'finePhase' } },
+        bundleDither: { into: 'bundleCount', params: { bundleMode: 'dither' } },
+      },
+    };
+    try {
+      expect(shadowOf({ shadowToneLaw: 'fineLadder' }).shadowToneLaw).toBe('fineLadder');
+      expect(shadowOf({ shadowToneLaw: 'phaseFineLadder' }).shadowToneLaw).toBe('phaseFineLadder');
+      expect(shadowOf({ shadowToneLaw: 'bundleDither' }).shadowToneLaw).toBe('bundleDither');
+    } finally {
+      globalScope.Vectura.SCENE3D_TONE_LAWS = prior;
+    }
   });
 
   // Non-string junk fails the `typeof value === 'string'` check regardless of
