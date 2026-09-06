@@ -243,13 +243,107 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   //     `tests/unit/scene3d-shadow-overlap.test.js` (single-caster and
   //     non-overlapping-pair fixtures) are still byte-identical, which is
   //     the control: the change is scoped to genuine multi-caster overlap.
+  // NOTE (A2, 2026-09-05): torus self-occlusion (`Scene3D.TorusOcclusion`)
+  // was rewritten from a per-sample dilated-ray test to a dense analytic
+  // near/far FIELD, and `hlr.js`'s `hiddenAt` now treats that field as
+  // AUTHORITATIVE for same-object occlusion (skipping the coarse mesh-
+  // chording fallback) wherever it exists — see
+  // `docs/3d-audit/handoff/unit-a2-notes.md`. Exactly two rows moved, both
+  // torus-carrying, neither the ones the shadow-overlap note above already
+  // covers:
+  //   curvedOverlap-perspective-mixed-xray|settled — hash only (pathCount
+  //     341, pointCount 1099 UNCHANGED): the same points, a handful at
+  //     slightly different (x, y) where the new field classifies a
+  //     boundary crossing a few hundredths of a mm from the old ray test.
+  //   denseMixed-8obj-shadows|draft — 463 -> 466 paths, 926 -> 932 points.
+  //     This is DRAFT specifically (coarser SAMPLE_STEP, not the flat
+  //     single-hatch shadow path the note above describes — self-occlusion
+  //     is unrelated to `cfg.overlapDepth`): fewer, coarser hiddenAt samples
+  //     along the torus's ribbons meant the OLD dilated-ray test's spurious
+  //     same-surface misfires more often kept a short stretch clipped that
+  //     the new field correctly keeps visible; every other draft row (and
+  //     both settled rows besides the one above) is untouched. Not
+  //     independently re-verified against the oracle at this scenario's
+  //     camera/objects (only the default 3/4 torus view is — see F7's own
+  //     0/0-survivor test); flagged here rather than silently re-pinned.
+  //
+  // MERGE NOTE (integration, 2026-09-06): `3d-scene/fill-audit`'s W-15c
+  // re-pin (plan §5.3) independently moves the SETTLED row of these same
+  // three scenarios: the GROUND plane carries `styleTable.scene.mapper =
+  // 'hatch'` with no ground override, so it is a faceted, single-orientation
+  // object and the solo-orientation carrier gate (scene3d.js) now opens on
+  // it — the single largest visible consequence of W-15c, and consistent (a
+  // ground IS a plane). DRAFT (bounds.fastPreview) is unaffected by W-15c in
+  // every row. Both effects (A2 torus self-occlusion AND W-15c solo-
+  // orientation carrier gate) are present in the merged tree, so the
+  // EXPECTED values below were re-measured against the actual merged source
+  // (not either side's pre-merge pin) via this file's own capture-mode
+  // error path. See W-15c-impl-2.md for the W-15c numbers and
+  // `docs/3d-audit/handoff/unit-a2-notes.md` for the A2 numbers — neither
+  // alone accounts for the merged hash/pathCount/pointCount below. Measured
+  // result: curvedOverlap|settled keeps W-15c's pathCount/pointCount (404/
+  // 1225) with a DIFFERENT hash (A2's occlusion field also active);
+  // denseMixed|settled matches W-15c's pin exactly (A2 does not move this
+  // row); denseMixed|draft matches A2's pin exactly (W-15c does not move
+  // draft rows) — each row shows exactly the union of the two independent
+  // effects, nothing dropped from either side.
+  //
+  // W-26 RE-PIN (2026-09-05, PROOF, `3d-scene/fill-audit-a`): `curvedOverlap-…`
+  // and `denseMixed-…` both carry curved primitives (sphere/cylinder/torus/
+  // cone) under the scene's own `mapper: 'hatch'` at the SHIPPED default
+  // tone algo (`ladder`) — moving that law onto continuous placement (see
+  // `src/core/scene3d/surface-fill.js`'s `isEvenLadder`) is an intentional
+  // geometry change, not a regression. Both `|draft` variants (fastPreview
+  // — routes through the flat legacy path, `STAGE.dither`/`masterGrid`
+  // never engage) are UNCHANGED, confirmed byte-identical to the pre-fix
+  // baseline; `facetedOverlap-orthographic-hatch` (no curved primitive) is
+  // also unchanged. Before → after (settled only, this branch alone):
+  //   curvedOverlap-perspective-mixed-xray: pathCount 341→368 (+27), pointCount 1099→1432 (+333)
+  //   denseMixed-8obj-shadows:              pathCount 560→571 (+11), pointCount 2303→2530 (+227)
+  // Both counts rose — continuous placement never drops a ruling, so a
+  // family that used to lose some to the discrete ladder's per-ruling
+  // verdict now draws every one it places.
+  //
+  // MERGE NOTE (integration, 2026-09-06, second pass): the merged tree now
+  // carries THREE independent effects on these same rows — A2 torus
+  // self-occlusion, W-15c solo-orientation carrier gate, AND W-26 continuous
+  // ladder placement. `|draft` rows are untouched by W-15c and W-26 alike
+  // (both route through the flat/legacy draft path); only A2 can move a
+  // draft row (denseMixed|draft only, per the A2 note above). `|settled`
+  // rows below were re-measured against the actual merged source via this
+  // file's own capture-mode error path — not copied from any single
+  // branch's pin. Measured: curvedOverlap|settled 431/1559 (roughly additive
+  // on top of the A2+W-15c 404/1225 figure plus W-26's own +27/+333 delta,
+  // within 1 point of a pure sum — real interaction, not a copy error);
+  // denseMixed|settled 662/2712, which IS the exact sum of the A2+W-15c
+  // 651/2485 figure plus W-26's own +11/+227 delta.
+  //
+  // BAR CHANGE (integration, 2026-09-06, third pass — real merge-regression
+  // fix, not a re-measurement): `curvedOverlap-perspective-mixed-xray`
+  // carries an `xray`-visibility cone (`n0`), so it is the one scenario in
+  // this file that exercises the X-ray back-face pass. That pass was found
+  // to be BROKEN by W-26 (RGR proof: `tests/integration/scene-xray-needs-
+  // fill.test.js` "Back density changes how much far-surface ink is drawn" —
+  // a capsule drew the identical 32 back-face paths at Back Density 0.2 and
+  // 1.0) — W-26 moved the ladder family onto a continuous-placement walk
+  // whose actual ruling density comes from a density-driven wanted PITCH,
+  // not from the reduced `count` X-ray's back pass asks for, so back-face
+  // density silently stopped doing anything. Fixed in `surface-fill.js`'s
+  // `emitContFamily` walk: `if (back) want /= backDensity;` (front-face
+  // rendering is provably untouched — `back` is always false there). This
+  // scenario's default `xrayBackDensity` (0.4, `xrayCfg`'s own default)
+  // now legitimately draws a SPARSER back family than before the fix, so
+  // `curvedOverlap|settled` moves again, DOWN this time (431/1559 ->
+  // 424/1500) — the opposite direction from every other re-pin in this file,
+  // which is the expected signature of "back density now actually works"
+  // rather than another interaction/re-measurement artifact.
   const EXPECTED = {
-    'facetedOverlap-orthographic-hatch|settled': { hash: 'edb852cb0986dcbb6a12958f2a539b67f558948fa6dd5428b5cc0548ececc829', pathCount: 129, pointCount: 258 },
+    'facetedOverlap-orthographic-hatch|settled': { hash: '0517b318738d3fd4dc7d31be0698487d85f4e96e31d6e9e8d300b9d2fa2e6875', pathCount: 208, pointCount: 416 },
     'facetedOverlap-orthographic-hatch|draft': { hash: 'c89e3d735e2b53f3c1d154e7f3567d53a1e6053159b9ffa25a5853f7973d6a76', pathCount: 200, pointCount: 400 },
-    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'b47a8383997457c45e0c95a323a09481a362997812958cf4094a427e2c99728f', pathCount: 341, pointCount: 1099 },
+    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'd5628693528fd8022c5fdf001c39537ce7b703a8e5543f3dd97f4d0e585dd5de', pathCount: 424, pointCount: 1500 },
     'curvedOverlap-perspective-mixed-xray|draft': { hash: '83aebf997a1e39aed36e2893fb18e7e7ea386755a9493e4868c53c51c80ee2f9', pathCount: 302, pointCount: 604 },
-    'denseMixed-8obj-shadows|settled': { hash: '47a37463e73f66365ccc570268da3f0f655bedcb8b1f79ecca810c544e60ec95', pathCount: 560, pointCount: 2303 },
-    'denseMixed-8obj-shadows|draft': { hash: 'fdf84edf779e274c8334aff74707d5702e57bc9e73faee8bc1500ae6061aa360', pathCount: 463, pointCount: 926 },
+    'denseMixed-8obj-shadows|settled': { hash: '9593e988430bc16534b9394f68152e8f8568b45c58b412bb476204695dd97562', pathCount: 662, pointCount: 2712 },
+    'denseMixed-8obj-shadows|draft': { hash: '9c3de29b1f268348208ebe1395268ad1f099ffdfc1b58d5759e3dc7eba7f4486', pathCount: 466, pointCount: 932 },
   };
 
   scenarios.forEach(({ name, objects, extra }) => {

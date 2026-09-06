@@ -1,0 +1,23 @@
+{
+  "ver": "1.3.98",
+  "survivor": {
+    "x": 172.18602666957324,
+    "y": 104.42211992678234
+  },
+  "stats": {
+    "hatch": {
+      "groupId": "7a52feb5-b01e-4b7c-ad18-9673ad93b80c",
+      "childId": "e66cfb91-112c-4181-9c8c-a8475272b6a4",
+      "total": 530,
+      "computeMs": 16.09999990463257,
+      "lastRibbonStats": null
+    },
+    "spiral": {
+      "groupId": "bd324a9b-ec09-4766-85cc-22f28f28afe2",
+      "childId": "e9b495ff-63ff-4d21-9756-f62307d5ea49",
+      "total": 609,
+      "computeMs": 25.90000009536743,
+      "lastRibbonStats": null
+    }
+  }
+}

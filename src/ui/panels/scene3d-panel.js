@@ -456,7 +456,28 @@
   // Carried unconditionally (present in `cur` or not) so any number of
   // detours round-trips the user's value; harmless on a mapper that doesn't
   // read the key (wireframe never consumes fillDensity).
-  const PERSISTENT_STYLE_KEYS = ['fillDensity', 'fillAngle', 'toneLaw'];
+  // Fill-collapse U0 — every survivor's collapse sub-control key (rungMode,
+  // bandProfile, weightEase, …) is ALSO a value that must survive a mapper
+  // detour, for the exact reason `toneLaw` itself is above: without it, a
+  // hatch → wireframe → hatch round trip would silently reset a picked
+  // sub-control option back to its default. DERIVED from
+  // Vectura.SCENE3D_TONE_LAWS.STYLE_PARAMS (not restated as a hand-list) so
+  // U1-U8 — each of which adds exactly one COLLAPSE row — extend this set
+  // with ZERO edits to this file. A function, not a frozen array, because
+  // config loads before this module but the roster can still be absent in a
+  // bare test process; an absent/empty STYLE_PARAMS ({} in U0) yields exactly
+  // the static 3-key list this replaces — a provable no-op today.
+  const persistentStyleKeys = () => {
+    const base = ['fillDensity', 'fillAngle', 'toneLaw'];
+    const R = Vectura.SCENE3D_TONE_LAWS;
+    const SP = R && R.STYLE_PARAMS;
+    if (!SP) return base;
+    const extra = [];
+    Object.keys(SP).forEach((survivor) => {
+      (SP[survivor] || []).forEach((d) => { if (extra.indexOf(d.key) === -1) extra.push(d.key); });
+    });
+    return base.concat(extra);
+  };
   // Params a mapper is seeded with when selected. Every descriptor default is
   // seeded (carrying the user's current value where present) so switching
   // hatch→contour→stipple keeps the shared Density/Angle/line tuning; `seed:false`
@@ -468,9 +489,23 @@
     if (!descs) return {};
     const out = {};
     descs.forEach((d) => { if (d.seed !== false) out[d.key] = carry(cur, d.key, cloneDefault(d.default)); });
-    PERSISTENT_STYLE_KEYS.forEach((k) => {
+    persistentStyleKeys().forEach((k) => {
       if (out[k] === undefined && cur[k] !== undefined && cur[k] !== null) out[k] = cur[k];
     });
+    // Fill-collapse U0 — seed the CURRENT tone law's own collapse sub-control
+    // default(s), the same way D_TONELAW seeds `toneLaw` above, so a fresh
+    // style carries a real value instead of an absent key a downstream reader
+    // would have to default-fill itself. Only reachable on a fill mapper
+    // (the `lawpick` row only exists there); STYLE_PARAMS is `{}` until
+    // U1-U8 land, so `descriptors` is always undefined today — a no-op.
+    if (FILL_MAPPERS.has(mapper)) {
+      const R = Vectura.SCENE3D_TONE_LAWS;
+      const SP = R && R.STYLE_PARAMS;
+      const descriptors = SP && SP[out.toneLaw];
+      if (descriptors) {
+        descriptors.forEach((d) => { out[d.key] = carry(cur, d.key, d.default); });
+      }
+    }
     if (FILL_MAPPERS.has(mapper)) {
       Object.keys(STROKE_DEFAULTS).forEach((k) => { out[k] = carry(cur, k, STROKE_DEFAULTS[k]); });
     }
@@ -629,6 +664,30 @@
       { text: entry.strengths ? `Strengths: ${entry.strengths}` : '' },
       { text: entry.weaknesses ? `Weaknesses: ${entry.weaknesses}` : '' },
     ], `About ${entry.label || FS.LABEL}`);
+
+    // Fill-collapse U0 — one Select per collapse sub-control the CURRENT
+    // (resolved) law declares (Vectura.SCENE3D_TONE_LAWS.STYLE_PARAMS[law],
+    // read through FS.styleParams so this file never restates the table),
+    // directly under the Fill Style row and above the caveat/Stroke Fill
+    // rows. Data-driven so U1-U8 (each adding one COLLAPSE row) need ZERO new
+    // UI code — that is the point of this foundation unit. Empty in U0
+    // (COLLAPSE === {}), so this loop runs zero times today — a provable
+    // no-op. `o.paramsBag` is the SAME live params object `o.write` commits
+    // into; `o.writeStyleParams` is that call site's whole-bag-aware sibling
+    // of `o.write` (patches one or more keys at once instead of just toneLaw).
+    const styleParamBag = o.paramsBag || {};
+    FS.styleParams(law).forEach((d) => {
+      const has = styleParamBag[d.key] !== undefined && styleParamBag[d.key] !== null;
+      const dv = has ? styleParamBag[d.key] : d.default;
+      const subSelect = UI.Select(o.row(d.label), {
+        options: d.options.map((opt) => ({ value: opt.value, label: opt.label })),
+        value: dv,
+        ariaLabel: d.label,
+        onChange: (v) => { if (typeof o.writeStyleParams === 'function') o.writeStyleParams({ [d.key]: v }); },
+      });
+      comps.push(subSelect);
+      attachSelectArrowStep(selectElOf(subSelect));
+    });
 
     // The measured caveat of a demoted law stays OUTSIDE the hover popover,
     // in the warning colour, directly under the row — relocated out of the
@@ -1244,6 +1303,8 @@
           row: (lbl) => labeledRow(host, lbl),
           value: style.params.toneLaw,
           write: (v) => { commit(() => { style.params.toneLaw = v; }); renderStyle(); },
+          writeStyleParams: (patch) => { commit(() => { Object.assign(style.params, patch); }); renderStyle(); },
+          paramsBag: style.params,
           rerender: renderStyle,
           layerParams: params,
           commit,
@@ -1619,6 +1680,8 @@
           row: (lbl) => labeledRow(sHost, lbl),
           value: style.params.toneLaw,
           write: (v) => { commit(() => { style.params.toneLaw = v; }); renderBoolStyle(); },
+          writeStyleParams: (patch) => { commit(() => { Object.assign(style.params, patch); }); renderBoolStyle(); },
+          paramsBag: style.params,
           rerender: renderBoolStyle,
           layerParams: params,
           commit,
@@ -1943,6 +2006,10 @@
       // DEFAULT / shadows.js SHADOW_TONE_DEPTH_DEFAULT so a scene backfilled
       // through the panel agrees with a scene normalized through params.js.
       shadowToneDepth: 0.75,
+      // Unit D — mirrors params.js normalizeShadow's shadowReceiveOnObjects
+      // default (OFF) so a scene backfilled through the panel agrees with one
+      // normalized through params.js.
+      shadowReceiveOnObjects: false,
     });
     const ensureShadow = () => {
       if (!params.shadow || typeof params.shadow !== 'object') params.shadow = shadowDefault();
@@ -1964,6 +2031,7 @@
       // silently rewritten, so a round-tripped unknown id is still visible to
       // debugging rather than quietly laundered into 'ladder'.
       if (typeof s.shadowToneLaw !== 'string' || !s.shadowToneLaw) s.shadowToneLaw = d.shadowToneLaw;
+      if (typeof s.shadowReceiveOnObjects !== 'boolean') s.shadowReceiveOnObjects = d.shadowReceiveOnObjects;
       return s;
     };
 
@@ -3158,6 +3226,33 @@
         host.appendChild(note);
       }
 
+      // Unit D (stroke-fill handoff item D) — shadows falling on OTHER
+      // objects' own surfaces (per-sample Regions.combinedIntensity shadow
+      // term, Scene3D.ShadowReceive). Off by default (params.js DEFAULT_
+      // SHADOW.shadowReceiveOnObjects) — it is O(objects^2) per frame (every
+      // object tests every other as a candidate occluder), so the (i) note
+      // below warns about render cost before a user opts in. Same click-
+      // driven (i) affordance as the Fill Style row above.
+      const recvRow = document.createElement('div');
+      recvRow.className = 'vs3-row';
+      const recvLbl = document.createElement('label');
+      recvLbl.className = 'vs3-lbl';
+      recvLbl.textContent = 'Shadows land on objects';
+      recvRow.appendChild(recvLbl);
+      const recvHost = document.createElement('div');
+      recvHost.className = 'vs3-ctl';
+      recvRow.appendChild(recvHost);
+      host.appendChild(recvRow);
+      comps.push(UI.SegCtrl(recvHost, {
+        options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+        value: s.shadowReceiveOnObjects ? 'on' : 'off',
+        ariaLabel: 'Shadows land on other 3D objects',
+        onChange: (v) => { commit(() => { ensureShadow().shadowReceiveOnObjects = v === 'on'; }); },
+      }));
+      buildLawInfoAffordance(recvRow, [
+        { text: 'Shadows attenuate light on other objects too, drawn in each object’s own fill style. Adds render cost, especially with many objects in the scene.' },
+      ], 'About Shadows land on objects');
+
       // Follow light — shadows.js derives the hatch bearing from the light travel
       // direction when this is on, which makes the manual Angle below INERT. Show
       // the toggle FIRST and replace Angle with a note while it is on, so the
@@ -4015,6 +4110,8 @@
             row: labeledHost,
             value: typeof raw === 'string' ? raw : d.default,
             write: (v) => write(v),
+            writeStyleParams: (patch) => commitStyle({ params: { ...clone(resolved.params || {}), ...patch } }),
+            paramsBag: resolved.params || {},
             rerender: renderStyle,
             layerParams: params,
             commit,

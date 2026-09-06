@@ -328,6 +328,23 @@
   // silent degrade to centrelines because a module was missing. Cheap — one
   // small object per build — and read by the T2/T4 tests.
   let lastRibbonStats = null;
+  // F-05 / W-05 test seam. `lastFloorStats.mark` (below) carries the same
+  // counters but is gated behind `TONE_UNCAPPED` (a hardcoded `false`), so it
+  // never reaches a caller in the committed build. `lastMarkStats` is the
+  // unconditional twin — written for every mark-law build, `null` otherwise —
+  // so a test can see mark placement quality (count, rejections, and the
+  // dark/mid/light-third histogram the tone-carrying channel is supposed to
+  // move) without threading a debug flag through the closure.
+  let lastMarkStats = null;
+  // F-01 / W-01 test seam. The master grid's ruling count (`N`) is the
+  // quantity the sparse-end density defect actually lived in — the drawn
+  // path count downstream of it is diluted by the ladder's own per-band
+  // rounding (adjacent ruling counts can rank a shade out of the density
+  // order they came from once a ladder is stacked on very few rulings; see
+  // `scene3d-curved-density-sparse-end.test.js`'s own comment). `null` until
+  // the first `STAGE.masterGrid && useLadder` build; always overwritten
+  // (never reset) after, mirroring `lastRibbonStats`.
+  let lastMasterGridStats = null;
   // RULING CONTINUITY (see emitLine). The scale at which a break stops reading
   // as a break and starts reading as a wobble in one line, and at which a mark
   // stops reading as a stroke and starts reading as a speck. Stated in pen
@@ -2377,9 +2394,42 @@
     const MK_MAX_PENS = 26000;          // pathological-input guard, reported
     const MK_CELL = 1.0;                // mm — the screen grid both lattices use
     const MK_ED_BETA = 0.4;             // share of the ink residual pushed sideways
+    // W-05b — THE CHART-WALKED MARK's own step. A 'tick'/'morph' edge is no
+    // longer pushed through the ruling's frame in one linearised jump (that
+    // is D1: a tick is a straight 2-point screen chord across a curved
+    // surface, sagitta 0.000 mm at every density). It is walked in
+    // increments of at most `MK_ARC_MM`, re-deriving the frame from each
+    // newly accepted sample's own `dA`/`dB` — the identical mechanism
+    // Round 5's wave already uses (`:7606`, displacement applied to the
+    // CHART COORDINATE, so the walk cannot leave the surface). Stated in
+    // pen widths like every other bar in this file: 1.2 pens is 0.36 mm at
+    // the shipped 0.3 mm pen, comfortably under the linearised solve's own
+    // error budget over that distance and below `PLOT_FLOOR_PEN` so the
+    // walked polyline cannot itself read as a filled polygon.
+    const MK_ARC_PEN = 1.2;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
+      // F-05 / W-05 — placed marks by radiance third (dark/mid/light), so a
+      // caller can check the tone-carrying channel actually moves count
+      // rather than asserting on the picture.
+      byThird: [0, 0, 0],
+      // W-05b — the chart walk's own accounting. `trunc` counts marks that
+      // hit a limb mid-walk and were kept SHORT instead of refused
+      // wholesale (the D2 fix, replacing the old `offSurface` wholesale
+      // refusal for a 'tick'/'morph' mark specifically); `askSum`/
+      // `drawnSum` are the shape's own designed ink length vs. what the
+      // walk actually delivered onto the curved surface, summed over every
+      // walked mark, so a caller can read the aggregate under-delivery the
+      // old single-shot chord left uncounted (D1's "length ratio").
+      // `dirOver10` counts marks whose DRAWN direction (actual walked
+      // endpoints) departs more than 10 deg from the REQUESTED direction
+      // (the shape's own asked offset, projected through the ruling's own
+      // flat frame — exactly what the pre-fix single-shot chord would have
+      // drawn). `dirOver10 / marks <= 0.01` is p99 <= 10 deg restated as a
+      // fraction, which is exact (not an approximation) and needs no
+      // external ground truth or per-mark array.
+      trunc: 0, askSum: 0, drawnSum: 0, dirOver10: 0,
     };
     const mkSites = new Map();          // blue-noise / Poisson occupancy
     const mkED = new Map();             // error-diffusion sideways carry
@@ -2399,7 +2449,7 @@
       mkDotScreen:   { shape: 'disc',     chan: 'size',  lat: 'hex',     or: 'none',   P0: 1.00 },
       mkLozenge:     { shape: 'lozenge',  chan: 'size',  lat: 'brick',   or: 'along',  P0: 1.15 },
       mkDashRamp:    { shape: 'morph',    chan: 'elong', lat: 'row',     or: 'along',  P0: 1.25 },
-      mkTick:        { shape: 'tick',     chan: 'count', lat: 'brick',   or: 'across', L0: 1.02 },
+      mkTick:        { shape: 'tick',     chan: 'count', lat: 'brick',   or: 'none',   L0: 1.02 },
       mkChevron:     { shape: 'chevron',  chan: 'size',  lat: 'row',     or: 'iso',    P0: 1.20 },
       mkComma:       { shape: 'comma',    chan: 'count', lat: 'blue',    or: 'along',  L0: 1.30 },
       mkSFlick:      { shape: 'sflick',   chan: 'elong', lat: 'errdiff', or: 'along',  P0: 0.95 },
@@ -4491,6 +4541,129 @@
       const a = cfAreaForTone(x, inkWidth() / pMin, inkWidth() / pMax);
       return clamp(inkWidth() / Math.max(1e-6, a), pMin, pMax);
     };
+
+    // ── W-26 — THE LADDER FAMILY, PLACED CONTINUOUSLY ─────────────────────────
+    // The user's rule, verbatim: "ladder, fine ladder, and contour must not
+    // have irregular gaps unless they're required to create a perceptual
+    // gradient of light and shadow." Root cause, measured (F-23): the ladder
+    // SUBSETS a fixed master grid, so on anything close to a uniform field (a
+    // cone or cylinder contour ring, a capsule barrel) the kept-index gap
+    // alternates 1-and-2 pitches — a real, DRAWN ~2x spacing jump with no tone
+    // behind it (measured ratio 2.02 against this file's own 1.15 bar).
+    // `ladder`, `fineLadder` and `phaseFineLadder` move onto the SAME
+    // continuous-placement engine `contField*` already uses (`emitContFamily`
+    // below): the spacing IS the tone, so `algoCoverage` hands the
+    // span-verdict a flat 1 for these three (see below) and nothing
+    // downstream ever drops a ruling again — only WHERE the next one lands
+    // moves.
+    const isEvenLadder = () => TONE_ALGO === 'ladder' || TONE_ALGO === 'fineLadder'
+      || TONE_ALGO === 'phaseFineLadder';
+    // The tone TARGET is exactly what each law computed before this round —
+    // ONLY the placement changes. `phaseFineLadder`'s `nestedCov` wants the
+    // per-sample DRAWN pitch as its second argument, so a family already
+    // subset by an outer law can restate its own pitch; before placement
+    // exists there is no such pitch yet, so it reads `masterPitch` — the
+    // family's own nominal (coverage-1) spacing, exactly what `pitchAtStep`
+    // reads for an unsubset line on this master grid. The `zone ? zoneCoverage
+    // : coverageForSample` branch literal 'ladder' used to take is DORMANT
+    // (`HL_STAGE.toneZones: false`, the same flag `scene3d-form-ladder.test.js`
+    // gates its zone assertions on) — `zone` is always null today, so
+    // `coverageForSample` is the only reachable branch and this is byte-for-
+    // byte what literal 'ladder' already computed.
+    const ladderCov = (I) => {
+      const x = clamp(finite(I, 0), 0, 1);
+      let cov;
+      if (TONE_ALGO === 'fineLadder') cov = fineLadderCov(x);
+      else if (TONE_ALGO === 'phaseFineLadder') cov = nestedCov(x, masterPitch);
+      else cov = coverageForSample(x);
+      // THE SAME O6 SPARSE-END BAR the discrete ladder's own per-span
+      // verdict charges (`litSpanFloor`, in `emitLineOnce`), applied to the
+      // SAME band only: raise COVERAGE (not clamp pitch) for a sample in
+      // the TOP tone band, so only the near-highlight's own spacing is
+      // bounded at `litMaxPitchPen() x pen` and every darker band keeps
+      // whatever `curvedSparseTonePitch`'s density-aware `masterPitch`
+      // already gives it. MEASURED, why this has to be a coverage floor and
+      // not a pitch clamp: a pitch clamp of `litMaxPitchPen()*penWidth`
+      // applied to every band flattened sphere/torus/cone + hatch + ladder
+      // to the SAME drawn count at Density 1/10/25 (14/14/14, then 25 at
+      // d=50) — the exact F-01 symptom this file's own W-01 fix exists to
+      // remove, reintroduced by a blanket clamp instead of a scoped one.
+      if (nB > 0 && Regions && typeof Regions.band === 'function' && tone
+        && Regions.band(x, tone) === nB - 1) {
+        cov = Math.max(cov, litFloorCov);
+      }
+      return cov;
+    };
+    const LADDER_COV_MIN = 0.02;
+    // mm of clearance the tone wants HERE, off the master grid the ladder has
+    // always subset — `masterPitch / cov`, exactly the pitch a KEPT ruling
+    // would have drawn at under the discrete ladder, just asked for directly
+    // instead of approximated by dropping whole lines of a fixed grid. Only
+    // a LOWER (plot-safety) bound: the O6 sparse-end bar is already spent
+    // inside `ladderCov` (coverage, scoped to the lit band only), so an
+    // outer pitch clamp here would double-charge it — and would charge it
+    // on every band, not just the lit one (see `ladderCov`'s comment).
+    // No extra plot-floor clamp here: `masterPitch` is ALREADY floored (see
+    // the master-grid block above — `masterFloorPen`-aware, matching
+    // fs-m1's Density 200-500 taper) and `ladderCov(I) <= 1` always, so
+    // `masterPitch / cov >= masterPitch` unconditionally — the darkest band
+    // (cov -> 1) reduces to `masterPitch` itself and can never be tighter
+    // than whatever floor it was already built to respect. Re-clamping to
+    // the UNRELAXED module-scope `floorPitch` (always `PLOT_FLOOR_PEN x
+    // pen`, per its own comment "unrelaxed") was measured to silently
+    // override fs-m1's relaxed 1.2x-pen ceiling at Density 200-500 — the
+    // torus fill count flattened at 37-40 instead of climbing 41->70 — an
+    // unrelated fix this lane must not touch.
+    const ladderWantedPitch = (I) => masterPitch / clamp(ladderCov(I), LADDER_COV_MIN, 1);
+
+    // ── W-26b-1 — THE CROSSING FAMILY'S OWN SHARE ────────────────────────────
+    // `crosshatch`'s second family used to call `ladderWantedPitch` on the
+    // SAME `I`, i.e. independently chase the FULL `ladderCov(I)` target a
+    // lone family (hatch/contour) chases — two crossed families each at
+    // coverage c combine (they cross, so their clear areas multiply) to
+    // `1-(1-c)^2`, which MEASURED saturated a cylinder at Density 220 to
+    // 0.906 silhouette ink coverage (a solid block: +89.9% ink over the
+    // pre-W-26 tree, where the ladder's own alternation defect had been
+    // accidentally thinning the compounding) while the single-family
+    // controls (contour, hatch) only rose 17-19%. Family A
+    // (`ladderWantedPitch` above) is UNTOUCHED by this — the fix lives
+    // entirely in what the SECOND family asks for.
+    //
+    // `share` is the crossing family's fraction of family A's own coverage,
+    // scaled by `crossDensityRatio` (`crossRatio`, already clamped 0.25-2 by
+    // the caller) SQUARED, so the dial keeps its documented sense (ratio 2,
+    // "family B crossDensityRatio SPACING wider", roughly quarters the
+    // share; ratio 0.25 roughly hexadecuples it, i.e. saturates to full
+    // family-A coverage) while the BASE at the shipped default (ratio 1) is
+    // deliberately well under an even 50/50 split — MEASURED: at 50/50 the
+    // crossing family's own step ceiling (`dfMax`, widened below) still could
+    // not separate it enough from family A to restore the pre-W-26
+    // `crossDensityRatio` count spread (2.2x); only a base this far under
+    // 50/50 gets a genuinely sparser second family AND keeps combined
+    // coverage off the saturation this fix exists to remove. This is the
+    // same shape `scene3d-plot-safety.test.js`'s own `composed()` spec
+    // states for N crossed families sharing one plot-safety budget — clear
+    // fractions multiply, so a SHARE, not a second full target, is what
+    // keeps the combined result from compounding past `ladderCov(I)`. It is
+    // also self-limiting exactly where the compounding used to blow up: as
+    // `cA -> 1` (family A already at full darkness) `cB`'s CONTRIBUTION to
+    // the combined coverage vanishes on its own (there is no headroom left
+    // to add to), so this needs no separate clamp for the darkest band.
+    const CROSS_SHARE_BASE = 0.1;
+    // `crossRatio` -> the crossing family's fixed SHARE multiplier (not a
+    // function of `I`; used both to scale coverage below AND, in the walk,
+    // to widen the step ceiling that shared coverage target needs to reach
+    // — see `dfMax`'s own W-26b-1 note).
+    const crossShareOf = (crossRatio) => {
+      const r = clamp(finite(crossRatio, 1), 0.25, 2);
+      return CROSS_SHARE_BASE / (r * r);
+    };
+    const ladderCrossWantedPitch = (I, crossRatio) => {
+      const cA = ladderCov(I);
+      const cB = clamp(cA * crossShareOf(crossRatio), LADDER_COV_MIN, 1);
+      return masterPitch / cB;
+    };
+
     // 'contFieldQuant' — the control. The SAME field, with the gap allowed only
     // CF_LEVELS distinct values. Quantised in pitch (which is what the eye
     // measures), not in coverage.
@@ -4639,8 +4812,16 @@
       // drop a row. The whole tone ramp is carried by the marks strung on it, so
       // the coverage they hand back is a constant.
       if (isMarkLaw()) return MK_ROW_COV;
+      // W-26 — 'ladder' (this law's OWN default), 'fineLadder' and
+      // 'phaseFineLadder' are now placed continuously (see `emitContFamily`'s
+      // dispatch and `ladderWantedPitch` above): the spacing off the master
+      // grid already IS the tone, so every ruling of the family draws WHOLE,
+      // same shape as `isContField()` below. `fineLadderCov`/`nestedCov` still
+      // exist and still compute the family's tone TARGET — `ladderCov` calls
+      // them — but the emitter's own coverage-verdict channel is spent, not
+      // re-charged here.
+      if (isEvenLadder()) return 1;
       if (TONE_ALGO === 'continuousPitch') return contPitchCov(I);
-      if (TONE_ALGO === 'fineLadder') return fineLadderCov(I);
       if (TONE_ALGO === 'layeredCross') return isCross ? 1 : flatCov();
       if (TONE_ALGO === 'weightModulated') return flatCov();
       // 6, 8 and 9 share ONE tone target and differ only in placement —
@@ -4673,8 +4854,24 @@
       // it. So the darkest zone rules at HALF the density and the traverse
       // spends the freed gap, which lands the same ink through one continuous
       // aperiodic path instead of two straight ones.
+      //
+      // F-07 / W-07 — the SECOND way this thinned-for-nothing: at the med
+      // master pitch the gap `(1 + tspRamp)` opens is itself only a fraction
+      // of a millimetre, well under half a pen — too little for a zig-zag to
+      // read as anything but noise on top of an already-thinner ruling. Gate
+      // the halving itself on that gap actually clearing the floor, computed
+      // LOCALLY (`localPitch / base` before any global cap), not against
+      // `floorPitch`, which is why the first fix (see comment above) still
+      // measured a no-op: at the pitch this bug actually fires at, drawn and
+      // floorPitch were already the same number.
       if (TONE_ALGO === 'deepFillTSP') {
-        return clamp(perceptualCov(I, localPitch) / (1 + tspRamp(I)), 0.005, 1);
+        const base = clamp(perceptualCov(I, localPitch), 0.005, 1);
+        const ramp = tspRamp(I);
+        if (!(ramp > 0) || !(localPitch > 1e-6)) return base;
+        const drawnBase = localPitch / base;
+        const amp = (drawnBase * ramp) / 2;
+        if (!(amp > 0.5 * inkWidth())) return base; // not enough room to zig-zag — don't thin for nothing
+        return clamp(base / (1 + ramp), 0.005, 1);
       }
       // 'forcedContrast' — the same target, on a tone field the draughtsman has
       // deliberately pushed apart (see `fcIntensity`).
@@ -5083,7 +5280,36 @@
         //   do with it and what keeps Density live at the top of its range.
         const tonePitch = Math.max(0.05, finite(opts.tonePitch, 3) / TONE_SUBDIV);
         const litCov = clamp(Regions.formInk('L').coverage, 0.05, 1);
-        const o6Pitch = litMaxPitchPen() * penWidth * litCov;
+        const o6Pitch0 = litMaxPitchPen() * penWidth * litCov;
+        // F-01 / W-01 — THE SPARSE END WAS DEAD FROM D=1 TO D~49.5.
+        //
+        // `o6Pitch0` is a density-FREE constant (the O6 "the centre light must
+        // still carry ink" bound). Below this fix, `masterPitch =
+        // min(tonePitch, o6Pitch0)` picked the constant for EVERY Density
+        // where `tonePitch` (which IS density-derived, via `hatchSpacing`)
+        // happened to be coarser than it — and on a default sphere/pen that is
+        // every Density from 1 up to ~49.5. The master grid — and therefore
+        // `N`, the ruling count — sat pinned at one value across that whole
+        // range: Density 1 and Density 49 rendered byte-identically (measured
+        // sphere+hatch+ladder: fill count 22 at every d in [1,49]).
+        //
+        // The bound's own job — never let the grid go SPARSER than the lit
+        // zone can carry — only needs to bind once tonePitch actually crosses
+        // it; it was never meant to flatten the whole approach to that
+        // crossing into one value. So scale it BY how much sparser tonePitch
+        // is asking to be past it: past the crossover the bound rises with
+        // tonePitch instead of clamping flat, and `masterPitch =
+        // min(tonePitch, o6Pitch)` degenerates to `tonePitch` itself — Density
+        // drives the grid continuously across the sparse end instead of
+        // pinning to the O6 floor for 49 values in a row.
+        //
+        // At and above the crossover (d >= ~49.5, unchanged today) `tonePitch
+        // <= o6Pitch0` already, so the multiplier is exactly 1 and `o6Pitch ==
+        // o6Pitch0` — `masterPitch = min(tonePitch, o6Pitch0)` is untouched,
+        // byte-identical from Density 50 up (and therefore at 220 too, whose
+        // own regime this never reaches). Verified: sphere+hatch+ladder fill
+        // count at d=50 is 23 before and after this change.
+        const o6Pitch = o6Pitch0 * Math.max(1, tonePitch / o6Pitch0);
         // `opts.masterFloorPen` (opt-in, pen-multiple) lets the ONE direct
         // density→line-count caller relax this master-grid floor below the
         // conservative PLOT_FLOOR_PEN default (scene3d.js's
@@ -5116,6 +5342,9 @@
         }
         N = clamp(Math.max(4, Math.round(calib / masterPitch)), 4, maxLines());
         masterPitch = calib / N; // what the family ACTUALLY rules at, typically
+        lastMasterGridStats = {
+          density: opts.fillDensity, calib, tonePitch, o6Pitch0, o6Pitch, N, masterPitch, floorPen,
+        };
       }
     }
     // Coverage at which family A's spacing is exactly LIT_MAX_PITCH_PEN × pen —
@@ -5581,13 +5810,14 @@
       const gold = ((li * GOLDEN_STEP) % 1 + 1) % 1;
       const parity = ((li % 2) + 2) % 2;
 
-      const frameAt = (s) => {
-        const smp = smps[s];
-        if (!smp || !smp.dA || !smp.dB) return null;
-        const tt = s / nSteps;
-        const ld = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
-        const st = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
-        if (!ld || !st) return null;
+      // W-05b — split into a pure function of (sample, along-dir, step-dir,
+      // param position) so the chart walk (`walkPoly`, below) can re-derive
+      // the identical frame from a sample it just reached mid-walk, not only
+      // from a ruling's own indexed sample. `frameAt(s)` is now a one-line
+      // caller and its own null-return conditions are unchanged — this half
+      // is the refactor, no behaviour change.
+      const frameFrom = (smp, ld, st, pr) => {
+        if (!smp || !smp.dA || !smp.dB || !ld || !st) return null;
         const ux = smp.dA.x * ld.a + smp.dB.x * ld.b;
         const uy = smp.dA.y * ld.a + smp.dB.y * ld.b;
         const ul = Math.hypot(ux, uy);
@@ -5602,7 +5832,6 @@
         const v = { x: vx / vl, y: vy / vl };
         const det = smp.dA.x * smp.dB.y - smp.dA.y * smp.dB.x;
         if (!(Math.abs(det) > 1e-12)) return null;
-        const pr = paramAt(tt);
         // Screen millimetres → parameter delta, by the exact 2×2 solve on the
         // chart's own screen derivatives. No finite differences, no extra chart
         // evaluations: `dA`/`dB` are already carried by every sample.
@@ -5614,15 +5843,173 @@
             b: pr.b + (smp.dA.x * ty - tx * smp.dA.y) / det,
           };
         };
-        return { u, v, toParam, smp };
+        return { u, v, toParam, smp, ld, st, pr };
+      };
+      const frameAt = (s) => {
+        const smp = smps[s];
+        if (!smp) return null;
+        const tt = s / nSteps;
+        const ld = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
+        const st = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
+        if (!ld || !st) return null;
+        return frameFrom(smp, ld, st, paramAt(tt));
+      };
+      // W-05b — the walk step, in screen millimetres (see `MK_ARC_PEN` above).
+      const MK_ARC_MM = MK_ARC_PEN * penWidth;
+      // THE CHART-WALKED EDGE. `poly` is a 2-vertex segment (every 'tick'/
+      // 'morph' pass built by `mkShape`/`layMark` is exactly that) whose
+      // MIDPOINT is the ruling's own sample `fr0` — the one point on the
+      // mark that is exactly on the surface with zero linearisation error.
+      // Rather than placing one tip with a single big jump and walking only
+      // to the other (which would leave one tip's own position uncorrected,
+      // and measurably reduces the mark's curvature — tried first, reverted:
+      // torus/contour d=50 sagitta only reached 0.08 mm median against the
+      // ≥0.15 mm bar), BOTH tips are walked OUTWARD from that shared, exact
+      // anchor in steps of at most `MK_ARC_MM`, each re-deriving the frame
+      // from its own newly accepted sample's `dA`/`dB`. The two walks are
+      // then joined at the anchor into one continuous polyline. On the first
+      // step of either walk that comes back out-of-domain or back-facing,
+      // that walk STOPS — `truncated: true` — and whatever it already
+      // accepted is kept (the D2 fix: a mark is shortened at a limb, never
+      // refused wholesale). `askLen` is the shape's own designed length (the
+      // walked edges' length in the flat local frame, ≈ `sv.L` by
+      // construction — exact when the pass sits on the ruling itself);
+      // `drawnLen` is what actually landed on the curved surface.
+      const walkPoly = (fr0, uOff, theta, poly) => {
+        const c = Math.cos(theta || 0); const sn = Math.sin(theta || 0);
+        const toUV = (pt) => ({
+          u: (uOff || 0) + pt[0] * c - pt[1] * sn,
+          v: pt[0] * sn + pt[1] * c,
+        });
+        const mapOne = (fr, uv) => {
+          const pp = fr.toParam(uv.u, uv.v);
+          if (!(pp.a >= 0 && pp.a <= 1)) return null;
+          let bb = pp.b;
+          if (bb < 0 || bb > 1) {
+            if (bb < -0.25 || bb > 1.25) return null;
+            bb = ((bb % 1) + 1) % 1;
+          }
+          const sm = sampleAt(pp.a, bb);
+          if (!sm || sm.front !== wantFront) return null;
+          return { sm, pr: { a: pp.a, b: bb } };
+        };
+        // Walk from a seed (frame, point, local uv) toward a local (u,v)
+        // target expressed in that SAME seed frame's coordinates, in steps
+        // of at most `MK_ARC_MM`, re-deriving the frame at every accepted
+        // sample. Returns the accepted points IN ORDER AWAY FROM THE SEED
+        // (the seed point itself excluded) plus the frame/point the walk
+        // actually ended at, so the caller can chain a further walk from
+        // there.
+        const walkFrom = (seedFr, seedPt, seedUV, target) => {
+          const edgeLen = Math.hypot(target.u - seedUV.u, target.v - seedUV.v);
+          if (!(edgeLen > 1e-9)) return { pts: [], askLen: 0, truncated: false, endFr: seedFr, endPt: seedPt };
+          let fr = seedFr;
+          let curUV = seedUV;
+          let curPt = seedPt;
+          const pts = [];
+          let truncated = false;
+          const steps = Math.max(1, Math.ceil(edgeLen / MK_ARC_MM));
+          for (let s = 1; s <= steps; s += 1) {
+            const f = s / steps;
+            const stepU = seedUV.u + (target.u - seedUV.u) * f;
+            const stepV = seedUV.v + (target.v - seedUV.v) * f;
+            const du = stepU - curUV.u; const dv = stepV - curUV.v;
+            const hit = mapOne(fr, { u: du, v: dv });
+            if (!hit) { truncated = true; break; }
+            curPt = { x: hit.sm.x, y: hit.sm.y, z: hit.sm.z };
+            pts.push(curPt);
+            curUV = { u: stepU, v: stepV };
+            const nfr = frameFrom(hit.sm, fr0.ld, fr0.st, hit.pr);
+            if (nfr) fr = nfr;
+          }
+          return { pts, askLen: edgeLen, truncated, endFr: fr, endPt: curPt };
+        };
+        // THE TRUE HUB. A walked pass's two ends always share exactly one
+        // local axis (a tick's tips share their `u`; a dash/band's tips
+        // share their `v`) — that shared component, not the ruling's own
+        // (0,0) origin, is the pass's own centre. Walking each arm straight
+        // from (0,0) instead (tried first, reverted) makes the two arms
+        // depart in MIRRORED, not opposite, screen directions whenever
+        // `uOff` (the mark's own along-ruling phase) is non-zero — a real,
+        // visible corner at the join (measured: cone/hatch/mkTick/med read
+        // as a herringbone of chevrons on that attempt, not a tick
+        // texture). So the hub is reached with its own short walk from
+        // `fr0` first, and each arm then walks OUTWARD from THAT accurate
+        // seed, in exactly opposite local directions.
+        const t0 = toUV(poly[0]);
+        const t1 = toUV(poly[poly.length - 1]);
+        const hubUV = { u: (t0.u + t1.u) / 2, v: (t0.v + t1.v) / 2 };
+        const fr0Pt = { x: fr0.smp.x, y: fr0.smp.y, z: fr0.smp.z };
+        const toHub = walkFrom(fr0, fr0Pt, { u: 0, v: 0 }, hubUV);
+        const hubFr = toHub.endFr; const hubPt = toHub.endPt;
+        const w0 = walkFrom(hubFr, hubPt, hubUV, { u: t0.u, v: t0.v });
+        const pts = w0.pts.slice().reverse();
+        pts.push(hubPt);
+        let askLen = w0.askLen; let truncated = toHub.truncated || w0.truncated;
+        if (poly.length > 1) {
+          const w1 = walkFrom(hubFr, hubPt, hubUV, { u: t1.u, v: t1.v });
+          pts.push(...w1.pts);
+          askLen += w1.askLen;
+          truncated = truncated || w1.truncated;
+        }
+        let drawnLen = 0;
+        for (let i = 1; i < pts.length; i += 1) drawnLen += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+        if (pts.length < 2) return { pts: null, askLen: 0, drawnLen: 0, truncated: false };
+        return { pts, askLen, drawnLen, truncated };
       };
 
+      // W-05b — 'tick' and 'morph' are the two shapes a mark law can build
+      // whose own geometry is longer than the linearised solve's accurate
+      // radius (D1). Every other shape's `place` path is byte-for-byte
+      // unchanged below; only these two route through `walkPoly`.
+      const isWalkedShape = law.shape === 'tick' || law.shape === 'morph';
+      // W-05b — O2's own ground truth. The REQUESTED direction is the
+      // shape's own asked offset (its first-to-last vertex, in the mark's
+      // local frame) projected through the ruling's FLAT frame (`fr.u`/
+      // `fr.v`) — i.e. exactly the screen direction the pre-fix single-shot
+      // chord would have drawn, before the surface's own curvature is taken
+      // into account. Computed once per mark (from its first pass — every
+      // nested pass shares the same direction to within an ink width) so
+      // `dirOver10` (above) can compare it to what the walk actually drew.
+      const requestedDir = (fr, uOff, theta, poly) => {
+        const c2 = Math.cos(theta || 0); const sn2 = Math.sin(theta || 0);
+        const p0 = poly[0]; const p1 = poly[poly.length - 1];
+        const du0 = (uOff || 0) + p0[0] * c2 - p0[1] * sn2;
+        const dv0 = p0[0] * sn2 + p0[1] * c2;
+        const du1 = (uOff || 0) + p1[0] * c2 - p1[1] * sn2;
+        const dv1 = p1[0] * sn2 + p1[1] * c2;
+        const ddu = du1 - du0; const ddv = dv1 - dv0;
+        const rx = fr.u.x * ddu + fr.v.x * ddv;
+        const ry = fr.u.y * ddu + fr.v.y * ddv;
+        const rl = Math.hypot(rx, ry);
+        return rl > 1e-9 ? { x: rx / rl, y: ry / rl } : null;
+      };
       const place = (fr, polys, uOff, theta) => {
         if (mkStat.pens >= MK_MAX_PENS) { mkStat.budget += 1; return false; }
         const c = Math.cos(theta || 0); const sn = Math.sin(theta || 0);
         const runs = [];
+        let askTot = 0; let sawTrunc = false; let sawDirBad = false;
         for (let i = 0; i < polys.length; i++) {
           const poly = polys[i];
+          if (isWalkedShape) {
+            const wk = walkPoly(fr, uOff, theta, poly);
+            if (!wk.pts) { mkStat.offSurface += 1; return false; }
+            askTot += wk.askLen;
+            if (wk.truncated) sawTrunc = true;
+            if (i === 0 && wk.pts.length >= 2) {
+              const reqDir = requestedDir(fr, uOff, theta, poly);
+              const a = wk.pts[0]; const b = wk.pts[wk.pts.length - 1];
+              const ddx = b.x - a.x; const ddy = b.y - a.y;
+              const dl = Math.hypot(ddx, ddy);
+              if (reqDir && dl > 1e-9) {
+                const drawnDir = { x: ddx / dl, y: ddy / dl };
+                const cosv = Math.min(1, Math.abs(drawnDir.x * reqDir.x + drawnDir.y * reqDir.y));
+                if (Math.acos(cosv) * (180 / Math.PI) > 10) sawDirBad = true;
+              }
+            }
+            runs.push(wk.pts);
+            continue;
+          }
           const pts = [];
           for (let j = 0; j < poly.length; j++) {
             const uu = (uOff || 0) + poly[j][0] * c - poly[j][1] * sn;
@@ -5650,7 +6037,10 @@
         });
         // A mark under two pen widths is a pen-down dot, not a mark. Dropping it
         // — rather than shortening it — is exactly how the ramp reaches BARE
-        // PAPER at the light end instead of degenerating into speckle.
+        // PAPER at the light end instead of degenerating into speckle. For a
+        // walked shape this is also where a limb-truncated walk that came back
+        // too short to read as a mark gets dropped (D2: shortened first, and
+        // only dropped if the shortening left nothing worth a pen-down).
         if (tot < MIN_MARK_MM) { mkStat.tooShort += 1; return false; }
         runs.forEach((r) => {
           if (r.length < 2) return;
@@ -5659,6 +6049,12 @@
           mkStat.pens += 1;
         });
         mkStat.marks += 1; mkStat.ink += tot;
+        if (isWalkedShape) {
+          mkStat.askSum += askTot;
+          mkStat.drawnSum += tot;
+          if (sawTrunc) mkStat.trunc += 1;
+          if (sawDirBad) mkStat.dirOver10 += 1;
+        }
         return true;
       };
 
@@ -5706,10 +6102,18 @@
         const g = clamp((mkAsk(I) * R) / w, 0, 26);
         let P; let L;
         const countChan = law.chan === 'count' || (law.chan === 'alt' && parity === 1);
-        // The dash BAND's capacity is a function of the period, so it is stated
-        // here; every other shape's is a function of the cell alone.
+        // F-06 / W-06 — the dash BAND's capacity is a function of the period,
+        // so it is stated here; every other shape's is a function of the cell
+        // alone. `R` is the ROW pitch (the master pitch inflated by
+        // `1/MK_ROW_COV` so a mark law's row has room to carry a mark) — the
+        // finding's "several rulings wide" is this band sized off the ROW
+        // pitch, three master rulings' worth. Capped instead at 2x the TRUE
+        // master pitch (`lp`, uninflated), so a full-black dash dissolves into
+        // a band no wider than its own ruling's immediate neighbourhood, not
+        // the row scaffold's.
+        const truePitch = (Number.isFinite(lp) && lp > 1e-6) ? lp : masterPitch;
         const capOf = (per) => (law.shape === 'morph'
-          ? Math.max(1, Math.floor((1.12 * R) / w)) * per
+          ? Math.min(Math.max(1, Math.floor((1.12 * R) / w)) * per, 2 * truePitch)
           : mkCap(shapeFor(), R, w));
         if (countChan) {
           const L0 = law.chan === 'alt' ? 1.60 : law.L0;
@@ -5785,7 +6189,9 @@
         } else {
           polys = mkShape(shapeFor(), sv.L, sv.R, w);
         }
-        place(fr, polys, a - arcMM[k], thetaAt(k, fr));
+        if (place(fr, polys, a - arcMM[k], thetaAt(k, fr))) {
+          mkStat.byThird[Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3))] += 1;
+        }
       };
 
       // ── THE SPANS ───────────────────────────────────────────────────────────
@@ -7730,12 +8136,15 @@
         // The four alternatives own the coverage outright. They never route
         // through `zoneCoverage`: under 'layeredCross' the zone label is a gate
         // name ('X1,X2'), not a FORM_INK row, and asking Regions for its ink
-        // would be a category error. `ladder` takes the branch it always took.
-        let cov = (TONE_ALGO !== 'ladder')
-          ? algoCoverage(smp.I, Boolean(zoneGate), smp, localPitch)
-          : (zone
-            ? zoneCoverage(zone, Boolean(zoneGate), densityCross === true, smp)
-            : coverageForSample(smp.I));
+        // would be a category error. `ladder` used to take its own direct
+        // branch here (`zone ? zoneCoverage : coverageForSample`) — W-26 moved
+        // it onto `algoCoverage` (which now hands it a flat 1, see there):
+        // placement, not this per-sample verdict, carries `ladder`'s tone, so
+        // the direct branch is retired for it. `zone` is always null while
+        // `HL_STAGE.toneZones` stays false, so this is a no-op for every
+        // reachable case; re-arming zones would need `algoCoverage` extended
+        // with a zone argument for `ladder`/`fineLadder`/`phaseFineLadder`.
+        let cov = algoCoverage(smp.I, Boolean(zoneGate), smp, localPitch);
         // 'forcedContrast' — THE UNDERCUT. Hertzmann & Zorin §6.3: the strip on
         // the far side of an overlap gets EXTRA-dense cross-hatching. Here the
         // overlap is the silhouette itself and "far side" is the dark limb, so
@@ -7763,7 +8172,13 @@
         // which is precisely the quantised step those laws exist to remove. They
         // enforce their own floor where it belongs — at PLACEMENT, on the gap
         // itself — and `cfStat` counts every ruling that landed on it.
-        if (TONE_UNCAPPED && TONE_ALGO !== 'evenStreamlines' && !isContField()
+        // `isEvenLadder()` joins the exemption for the identical reason (W-26):
+        // `ladderWantedPitch` already clamps to `floorPitch` before a ruling is
+        // ever placed, so re-capping the flat `cov = 1` this function now hands
+        // it would let this dead-by-default branch (`TONE_UNCAPPED` is a
+        // hardcoded module `false`) drop an already-placed whole ruling if it
+        // were ever turned on.
+        if (TONE_UNCAPPED && TONE_ALGO !== 'evenStreamlines' && !isContField() && !isEvenLadder()
           && localPitch != null && localPitch > 1e-6 && floorPitch > 1e-6) {
           // The adjacent-pass family draws every STRIDE-th ruling of the master
           // grid, so the gap between two rulings it actually plots is
@@ -8162,12 +8577,24 @@
         if (!(k > 0)) return null;
         const p = pitchAtStep(smp, s);
         if (!(Number.isFinite(p) && p > 1e-6)) return null;
-        // The gap the thinned family left. Half of it either side of the ruling
-        // is exactly the excursion that restores the ink the thinning removed,
-        // and it is bounded below by the plot floor at the turns.
+        // F-07 / W-07 — THE LOCAL GAP THE HALVING OPENED, not the distance to
+        // the (global) plot floor. `algoCoverage`'s deepFillTSP branch draws
+        // at `base / (1 + k)`; every other cap it and `covAtSample` apply
+        // (the composed budget, the floor-crowding multiply) is the SAME
+        // factor with or without the ramp, so it cancels in the ratio:
+        // `drawn = drawnBase * (1 + k)` exactly, and `drawnBase` is what this
+        // ruling would have drawn WITHOUT deepFillTSP. Half that gap, split
+        // either side of the ruling, is exactly the excursion that spends the
+        // ink the thinning freed — this is the same quantity the coverage
+        // gate above already cleared, computed here against the pitch this
+        // sample actually drew at.
         const drawn = p / Math.max(1e-6, covAtSample(smp, s, zones[s]));
-        let amp = Math.max(0, (drawn - floorPitch) / 2);
-        amp = Math.min(amp, endMM[s] / 2);
+        const drawnBase = drawn / (1 + k);
+        let amp = Math.max(0, (drawn - drawnBase) / 2);
+        // Bounded by the ruling's own distance-to-its-end (unchanged) and by
+        // 1.5x the local pitch, so the full zig-zag excursion (2x amplitude)
+        // can never read as more than 3 pitches wide.
+        amp = Math.min(amp, endMM[s] / 2, 1.5 * p);
         if (!(amp > 1e-3)) return null;
         const a = smps[Math.max(0, s - 1)] || smp;
         const b = smps[Math.min(nSteps, s + 1)] || smp;
@@ -9089,7 +9516,11 @@
     // dropped ruling. Nothing is placed outside the parameter domain and every
     // sample is still back-face culled and HLR-clipped by `emitLine`, so nothing
     // can land outside the silhouette either.
-    const emitContFamily = (kind, angleDeg, count, back) => {
+    // `crossShare` (W-26b-1): non-null only for the crosshatch second-family
+    // call — the `crossDensityRatio` value to derive `ladderCrossWantedPitch`
+    // from. Every other caller (contour, hatch, crosshatch's OWN family A,
+    // every `contField*` law) omits it and is byte-identical to before.
+    const emitContFamily = (kind, angleDeg, count, back, crossShare) => {
       const wantFront = !back;
       const fam = (kind === 'angle') ? angleFamily(angleDeg) : null;
       const span = fam ? fam.span : 1;
@@ -9149,7 +9580,37 @@
       const probe = (frac) => {
         const at = lineAt(clamp(frac, 0, 1));
         if (!at) return null;
-        const st = Math.max(8, Math.round(at.steps || steps));
+        // W-26 FOLLOW-UP FIX (found by this unit's own guard sweep, not named in
+        // the brief): the probe's OWN numerical resolution — how finely it
+        // integrates `I` and `mmPerFrac` to DECIDE where a ruling lands — used to
+        // read the render-time `steps` (Style-tab Fidelity's target), even
+        // though this file's own contract for `fillFidelity` (see its
+        // declaration above) is "POINTS, not facets... They are orthogonal and
+        // neither reads the other." That was already true for the FINAL emitted
+        // line (`emitLineOnce`'s `nSteps` is independent), but not for THIS
+        // walk's placement math on an axis-aligned family (`at.steps` unset,
+        // so the fallback was bare `steps`). Invisible before W-26 because no
+        // `contField*` law was ever tested against `fillFidelity`; visible now
+        // because `ladder` — the committed DEFAULT tone law, now routed through
+        // this same engine — is. MEASURED on the failing guard (sphere+hatch+
+        // ladder+Density 50, this file's own default 'a' axis family):
+        // `at.steps` fallback of `steps` (fillFidelity-coupled) put the WALK's
+        // own `I`/`mmPerFrac` integration through as few as 6 samples at
+        // fillFidelity 0.3, coarse enough to occasionally place one extra/one
+        // fewer ruling than the identical-tone fillFidelity 2.5 run — flipping
+        // `scene3d-style-fill-lines.test.js`'s "Fidelity re-samples the chart"
+        // chord-length ordering (5064.5 vs 5134.1, fillFidelity has NO business
+        // moving which lines draw). Fallback changed to `baseSteps` — the
+        // fillFidelity-INDEPENDENT mesh-detail constant — so the walk's own
+        // placement math is now byte-identical across every `fillFidelity`
+        // value on an axis-aligned family; `emitLineOnce`'s own `nSteps` still
+        // reads live `steps`, so the FINAL rendered line's point density is
+        // untouched (the two tests that pin exactly that, "Fidelity changes
+        // POINTS per fill line" and the border-untouched pair, still pass).
+        // Angled/wrapped families (`angleFamily`'s `at.steps = steps * len`)
+        // keep their existing coupling — out of scope: no test exercises it and
+        // this fix does not touch that line.
+        const st = Math.max(8, Math.round(at.steps || baseSteps));
         const pts = [];
         let iSum = 0; let wSum = 0;
         let mmSum = 0; let mmW = 0;
@@ -9242,7 +9703,23 @@
       // bottom of the object. Six nominal spacings is wide enough for the
       // sparse end (6 x the master pitch is past the O6 bar) and far too narrow
       // to swallow a form.
-      const dfMax = 6 / Math.max(6, count);
+      //
+      // W-26b-1: the crosshatch SECOND family asks `ladderCrossWantedPitch`
+      // for a SHARE of family A's coverage (wider `want`, on purpose — see
+      // that function). Left alone, this ceiling — built from the SAME
+      // `count` family A's own call sees — clamped the wider `want` right
+      // back down to family A's own step size, so the coverage-share fix
+      // had NO effect at `crossDensityRatio` 1 (measured: the ratio-0.25-
+      // vs-ratio-1 fill-count spread stayed 1.6x, not the required ~2x, no
+      // matter how far the share was cut). `dfMaxMul` widens the ceiling by
+      // the SAME reciprocal share, capped so a genuinely sparse crossing
+      // family still cannot swallow the whole form the way an unbounded
+      // widening could.
+      const CROSS_DFMAX_BOOST_CAP = 20;
+      const dfMaxMul = (crossShare != null && isEvenLadder())
+        ? clamp(1 / Math.max(1e-6, crossShareOf(crossShare)), 1, CROSS_DFMAX_BOOST_CAP)
+        : 1;
+      const dfMax = (6 * dfMaxMul) / Math.max(6, count);
       const creep = 1 / Math.max(8, count * 3);
       const walk = (fld) => {
         const placed = [];
@@ -9253,7 +9730,19 @@
           guard += 1;
           const pb = probe(f);
           if (!pb || !pb.on) { f += creep; continue; }
-          let want = cfWantedPitch(pb.I);
+          // W-26: `ladder`/`fineLadder`/`phaseFineLadder` walk this SAME
+          // continuous engine but state their tone target through
+          // `ladderWantedPitch` (the master-grid pitch each law always
+          // computed, asked for directly) rather than `cfWantedPitch`'s own
+          // area-based field — the tone stays each law's own, only the
+          // placement is shared. W-26b-1: the crosshatch SECOND family
+          // (`crossShare` non-null) reads its own `ladderCrossWantedPitch`
+          // instead — see that function's comment for why.
+          let want = isEvenLadder()
+            ? (crossShare != null
+              ? ladderCrossWantedPitch(pb.I, crossShare)
+              : ladderWantedPitch(pb.I))
+            : cfWantedPitch(pb.I);
           // 'contFieldMeasured' — the global response inversion, from pass 1.
           if (TONE_ALGO === 'contFieldMeasured' && cfLut) {
             want = clamp(inkWidth() / Math.max(1e-6,
@@ -9268,6 +9757,26 @@
             if (cn) want = clamp(want / clamp(cs / cn, 0.6, 1.7), cfTightPitch(), cfOpenPitch());
           }
           if (TONE_ALGO === 'contFieldQuant') want = cfQuantise(want);
+          // MERGE FIX (integration, 2026-09-06): the X-ray back-face pass used
+          // to ask this engine for a REDUCED `count` to simulate a sparser far
+          // surface (`Math.round(N * backDensity)`, scene3d.js's xray config).
+          // W-26 moved ladder/fineLadder/phaseFineLadder onto this continuous
+          // walk, whose actual ruling density comes from `want` (the wanted
+          // PITCH, density-driven) — `count` now only shapes the walk's own
+          // step-size bounds (`dfMin`/`dfMax`/`creep`), not how many rulings
+          // get placed. That silently broke X-ray's back-density control: a
+          // capsule under Type=Hatch, Fill Style=Ladder (the shipped default)
+          // drew the SAME back-face ink at Back Density 0.2 and 1.0 (measured:
+          // 32 paths either way — RGR proof in
+          // tests/integration/scene-xray-needs-fill.test.js "Back density
+          // changes how much far-surface ink is drawn"). Widening `want`
+          // (dividing the pitch, i.e. spacing OUT) for the back pass alone
+          // restores the control the same way the pre-W-26 discrete dispatch
+          // achieved it with a smaller count — sparser back density asks for a
+          // wider gap between rulings. `back` is false on every front-face
+          // call, so `want` (and therefore every front-face render) is
+          // untouched — this is scoped strictly to the X-ray back pass.
+          if (back) want /= backDensity;
           let df = clamp(want / Math.max(1e-6, pb.mmPerFrac), dfMin, dfMax);
           if (TONE_ALGO === 'contFieldAniso' && prevPts) {
             // Two corrections, never more: this is a fixed-point step, not a
@@ -10196,7 +10705,30 @@
       // at a clearance the law did not choose.
       const monoMapper = isMonoLaw() && toneOn
         && (mapper === 'hatch' || mapper === 'crosshatch' || mapper === 'contour');
-      const contMapper = isContField() && toneOn
+      // W-26: `ladder`/`fineLadder`/`phaseFineLadder` join `contField*` on the
+      // SAME continuous engine — `algoCoverage` now hands every one of them a
+      // flat 1 (placement carries the tone), so routing them here is the
+      // other half of that change. Untoned (`toneOn` false) still falls
+      // through to the plain `emitFamily`/`emitAngledFamily` branches below,
+      // byte-identical to before. `&& useLadder` guards the one input this
+      // path reads that `contField*` never did (`ladderWantedPitch` reads
+      // `tone` through `coverageForSample`/`Regions.band`) — a direct
+      // `buildObject` caller that sets `toneOn` without a valid `tone` (the
+      // production caller in scene3d.js never does; `useLadder` is already
+      // false whenever `tone` is) falls through to the OLD dispatch below,
+      // exactly as it did before this unit. `&& STAGE.masterGrid` matters
+      // because `askedLaw === 'none'` (Stage 0) still resolves TONE_ALGO to
+      // the committed default ('ladder') — `isEvenLadder()` reads TONE_ALGO
+      // alone and cannot see `stage0` — but `masterPitch` is NEVER computed
+      // when `STAGE.masterGrid` is false (it stays its initial 0), so
+      // `ladderWantedPitch` would divide by the wrong thing and the walk
+      // would take the SMALLEST allowed step forever: MEASURED, this
+      // produced 637 paths / 23347mm of ink for 'none' against 'ladder''s
+      // legitimate 67 / 3957mm on the tone-law-dispatch fixture — a runaway,
+      // not a Stage-0 flat grid. `STAGE.masterGrid` false now falls through
+      // to the OLD `emitFamily`/`emitAngledFamily` dispatch, byte-identical
+      // to Stage 0's pre-W-26 behaviour.
+      const contMapper = (isContField() || (isEvenLadder() && useLadder && STAGE.masterGrid)) && toneOn
         && (mapper === 'hatch' || mapper === 'crosshatch' || mapper === 'contour');
       if (monoMapper) {
         MonoFill().emit({
@@ -10230,9 +10762,12 @@
         if (mapper === 'crosshatch') {
           const aB = hatchAngle + crossDelta;
           const a180 = (((aB % 180) + 180) % 180);
-          if (onMeridianAxis && a180 === 0) emitContFamily('b', 0, Math.max(2, Math.round(count / crossRatio)), back);
-          else if (onMeridianAxis && a180 === 90) emitContFamily('a', 0, Math.max(2, Math.round(count / crossRatio)), back);
-          else emitContFamily('angle', aB, Math.max(2, Math.round(count / crossRatio)), back);
+          // W-26b-1: the crossing family passes `crossRatio` through as its
+          // `crossShare` so the walk derives its OWN (reduced) coverage
+          // target from family A's — see `ladderCrossWantedPitch`.
+          if (onMeridianAxis && a180 === 0) emitContFamily('b', 0, Math.max(2, Math.round(count / crossRatio)), back, crossRatio);
+          else if (onMeridianAxis && a180 === 90) emitContFamily('a', 0, Math.max(2, Math.round(count / crossRatio)), back, crossRatio);
+          else emitContFamily('angle', aB, Math.max(2, Math.round(count / crossRatio)), back, crossRatio);
         }
       } else if (flowMapper) {
         const fBase = finite(opts.fillAngle, 0);
@@ -10284,99 +10819,207 @@
         const gamma = clamp(finite(sp.eccentricity, 1), 0.3, 3); // sweep easing (1 = even)
         const symmetric = sp.center === 'bboxCenter';          // double helix from the middle
         const snap = sp.axisSnap === true;                     // wind the OTHER parametric axis
-        const turns = Math.max(4, Math.min(SPIRAL_MAX_TURNS, Math.round(count * SPIRAL_TURN_GAIN)));
-        // Same run sink as emitLine: a helix loop is a ruling too, and its
-        // selection (by the turn it is on) is taken against a coverage that
-        // varies along the loop, so it chattered in exactly the same way — just
-        // less often, because a whole turn takes one verdict.
-        const spiralFam = nextFam('spiral');
-        const sink = makeSink(back, null, spiralFam);
-        const flush = sink.flush;
-        const total = steps * turns;
-        // Sample the whole helix first, exactly as emitLine does, so the same
-        // whole-span verdict can be taken here. A helix has no family index, so
-        // its rank is the TURN it is on — and a turn's rank is as constant along
-        // that turn as a ruling's is along itself, so comparing it against a
-        // per-SAMPLE coverage cut turns in half in open surface for the very
-        // same reason. Spans are delimited by the TURN as well as by the
-        // surface: consecutive turns are different rulings and must be free to
-        // take different verdicts.
-        const sSmps = new Array(total + 1);
-        const sZones = new Array(total + 1);
-        const sTurn = new Array(total + 1);
-        const sweepAt = (f) => {
-          let sweep = symmetric ? (f < 0.5 ? f * 2 : (1 - f) * 2) : f;
-          if (gamma !== 1) sweep = Math.pow(sweep, gamma);
-          return sweep;
-        };
-        for (let s = 0; s <= total; s++) {
-          const f = s / total;
-          const sweep = sweepAt(f);
-          const wind = (f * turns + phase) % 1;
-          const smp = snap ? sampleAt(wind, sweep) : sampleAt(sweep, wind);
-          const on = Boolean(smp && smp.front === wantFront);
-          sSmps[s] = on ? smp : null;
-          // 'layeredCross' has no gated family on the helix, so its intensity
-          // zones would only cut the spiral into per-zone spans for nothing.
-          sZones[s] = (on && toneOn && TONE_ALGO !== 'layeredCross') ? zoneOf(smp) : null;
-          sTurn[s] = Math.floor(f * turns);
-        }
-        // Span key = (turn, zone). THE TURN HAS TO BE IN THE KEY, and this was
-        // measured both ways. A helix's rank IS the turn it is on, so the turn is
-        // the unit the verdict is taken over — the same relationship a ruling has
-        // to its own rank. Keying the span on the ZONE ALONE (so a span is the
-        // visible arc, and the arc's rank is the turn it is mostly on) does take
-        // the helix's deepest free end from 13.3 % of the radius to 0.1 %, but a
-        // sphere's helix stays front-facing straight across the wind seam, so the
-        // whole visible face came back as ONE span with ONE verdict: ink rose
-        // from 8190 mm to 9281 mm, the density ramp across the form collapsed
-        // from 2.06x to 1.04x, and the lit end came back DENSER than mid-form.
-        // That is a drawing that no longer shades, which is a worse defect than
-        // the one being fixed. So the turn stays, and the residual free ends —
-        // the ends of a loop whose neighbour dropped — stay with it. See the
-        // report note: they land on the wind meridian, not scattered over the
-        // form, because that is where every loop begins and ends.
-        const sKeys = sZones.map((z, i) => `${sTurn[i]}|${z}`);
-        let spTurn = -1;
-        let spArc = 0;
-        let sDrop = null;
-        if (STAGE.dither && toneOn) {
-          sDrop = useLadder
-            ? spanDrops(sSmps, sKeys,
-              (smp, k) => (TONE_ALGO !== 'ladder'
-                ? algoCoverage(smp.I, false, smp, null)
-                : (sZones[k] ? zoneCoverage(sZones[k], false) : coverageForSample(smp.I))),
-              // The helix's ruling index is the TURN, so the phase advances once
-              // per turn (see ladderStep) and consecutive loops end up evenly
-              // spaced instead of dropping in the power-of-two pattern a
-              // bit-reversed rank on the turn number produced. `spanDrops`
-              // numbers spans over the WHOLE helix, so the track key cannot be
-              // that ordinal — it is the arc's ordinal WITHIN its turn, which is
-              // what makes the k-th arc of each turn a track of neighbours.
-              (cov, mid) => {
-                const turn = sTurn[mid];
-                if (turn !== spTurn) { spTurn = turn; spArc = 0; } else spArc += 1;
-                return !ladderKeeps(`${spiralFam}|${spArc}`, clamp(cov, 0, 1));
-              })
-            : spanDrops(sSmps, sKeys, (smp) => clamp(1 - smp.I, 0, 1), (shade) => shade < 0.12);
-        }
-        for (let s = 0; s <= total; s++) {
-          const smp = sSmps[s];
-          if (!smp) { flush(); continue; }
-          // Same hoist as emitLine's `sampleZone`: the sink's L-zone speck
-          // exemption has to hold on EVERY path that feeds it, or the law is
-          // enforced on the line families and not on the helix.
-          // O18 — the spiral used to gate on a hardcoded `shade < 0.12` and
-          // ignored `ladder[]` outright, so `bands` did nothing at all on a
-          // spiral-filled object.
-          const sampleZone = sZones[s];
-          if (sDrop && sDrop[s]) {
-            if (useLadder) { sink.softDrop({ x: smp.x, y: smp.y }); } else { flush(); }
-            continue;
+        // ── W-26 — CONTINUOUS TURN PLACEMENT ────────────────────────────────
+        // The whole-turn ladder verdict in the `else` branch below produces
+        // the exact defect named on the capsule barrel (8.5, 8.5, 8.5, 17.0
+        // mm of drawn gap): a FIXED turn count at UNIFORM axial spacing, then
+        // a per-turn keep/drop verdict, alternates a kept turn's neighbour
+        // gap between one and two turn pitches wherever the field is close
+        // to uniform — the same mechanism as the line-family ladder, one
+        // dimension down. No turn is ever dropped here: the AXIAL spacing
+        // between consecutive turns is walked exactly as `emitContFamily`'s
+        // family walk is (turn density = local screen mm-per-unit ÷
+        // `ladderWantedPitch`, integrated by the axial coordinate then
+        // inverted), so density comes from WHERE a turn lands, never from
+        // whether it draws.
+        //
+        // Scope: `symmetric` (the double helix built from the bbox centre)
+        // keeps the mechanism in the `else` branch — independently
+        // reparametrizing two mirrored, differently-scaled half-domains is a
+        // real problem this unit did not take on, and it is disclosed as a
+        // follow-up rather than silently skipped. `snap` is still honoured
+        // (it only swaps which parametric axis is "sweep", orthogonal to
+        // this change). `gamma`'s manual easing is SUPERSEDED for these
+        // three laws, for the same reason `continuousPitch` supersedes the
+        // discrete rungs: once the tone states the spacing directly there is
+        // nothing left for a second, manual density dial to adjust.
+        if (isEvenLadder() && !symmetric && useLadder && STAGE.masterGrid) {
+          const NPROBE = 160;
+          const subW = Math.max(12, Math.round(steps / 2));
+          const EPS_F = 1 / (NPROBE * 8);
+          const suArr = new Array(NPROBE + 1);
+          const IArr = new Array(NPROBE + 1);
+          const mmArr = new Array(NPROBE + 1);
+          for (let i = 0; i <= NPROBE; i++) {
+            const su = i / NPROBE;
+            let iSum = 0; let iN = 0; let mmSum = 0; let mmN = 0;
+            for (let k = 0; k <= subW; k++) {
+              const w = (k / subW + phase) % 1;
+              const a0 = snap ? w : su;
+              const b0 = snap ? su : w;
+              const smp = sampleAt(a0, b0);
+              if (!smp || smp.front !== wantFront) continue;
+              iSum += clamp(finite(smp.I, 0), 0, 1); iN += 1;
+              const su2 = Math.min(1, su + EPS_F);
+              const a1 = snap ? w : su2;
+              const b1 = snap ? su2 : w;
+              const smp2 = sampleAt(a1, b1);
+              if (smp2 && smp2.front === wantFront) {
+                const dEps = Math.max(1e-9, su2 - su);
+                const mm = Math.hypot(smp2.x - smp.x, smp2.y - smp.y) / dEps;
+                if (mm > 1e-6) { mmSum += mm; mmN += 1; }
+              }
+            }
+            suArr[i] = su;
+            IArr[i] = iN ? iSum / iN : null;
+            mmArr[i] = mmN ? mmSum / mmN : 0;
           }
-          sink.addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone);
+          // Turn DENSITY (turns per unit of the axial coordinate), integrated
+          // by trapezoid rule into an accumulated-turns function, then
+          // inverted: T equal steps of ACCUMULATED TURNS — not of the axial
+          // coordinate — is what makes the gap between consecutive turns
+          // equal `ladderWantedPitch` everywhere, the same statement
+          // `emitContFamily`'s walk makes for a straight family.
+          const accum = new Array(NPROBE + 1);
+          accum[0] = 0;
+          for (let i = 1; i <= NPROBE; i++) {
+            const wantPrev = IArr[i - 1] == null ? 0 : ladderWantedPitch(IArr[i - 1]);
+            const wantCur = IArr[i] == null ? 0 : ladderWantedPitch(IArr[i]);
+            const densPrev = wantPrev > 1e-6 ? mmArr[i - 1] / wantPrev : 0;
+            const densCur = wantCur > 1e-6 ? mmArr[i] / wantCur : 0;
+            accum[i] = accum[i - 1] + ((densPrev + densCur) / 2) * (suArr[i] - suArr[i - 1]);
+          }
+          const Traw = accum[NPROBE];
+          const turnsN = clamp(Math.round(Traw || 0), 4, SPIRAL_MAX_TURNS);
+          const suAtAccum = (target) => {
+            if (!(Traw > 1e-6)) return target; // no front-facing samples anywhere — identity fallback
+            const t = clamp(target, 0, Traw);
+            let lo = 0; let hi = NPROBE;
+            while (hi - lo > 1) {
+              const mid = (lo + hi) >> 1;
+              if (accum[mid] <= t) lo = mid; else hi = mid;
+            }
+            const a0 = accum[lo]; const a1 = accum[hi];
+            const u = a1 > a0 + 1e-9 ? (t - a0) / (a1 - a0) : 0;
+            return suArr[lo] + (suArr[hi] - suArr[lo]) * u;
+          };
+          const sweepAtCont = (f) => suAtAccum(f * Traw);
+          const spiralFam = nextFam('spiral');
+          const sink = makeSink(back, null, spiralFam);
+          const flush = sink.flush;
+          const total = Math.max(steps, steps * turnsN);
+          for (let s = 0; s <= total; s++) {
+            const f = s / total;
+            const sweep = sweepAtCont(f);
+            const wind = (f * turnsN + phase) % 1;
+            const smp = snap ? sampleAt(wind, sweep) : sampleAt(sweep, wind);
+            if (!smp || smp.front !== wantFront) { flush(); continue; }
+            sink.addPt({ x: smp.x, y: smp.y, z: smp.z }, null);
+          }
+          flush();
+        } else {
+          const turns = Math.max(4, Math.min(SPIRAL_MAX_TURNS, Math.round(count * SPIRAL_TURN_GAIN)));
+          // Same run sink as emitLine: a helix loop is a ruling too, and its
+          // selection (by the turn it is on) is taken against a coverage that
+          // varies along the loop, so it chattered in exactly the same way — just
+          // less often, because a whole turn takes one verdict.
+          const spiralFam = nextFam('spiral');
+          const sink = makeSink(back, null, spiralFam);
+          const flush = sink.flush;
+          const total = steps * turns;
+          // Sample the whole helix first, exactly as emitLine does, so the same
+          // whole-span verdict can be taken here. A helix has no family index, so
+          // its rank is the TURN it is on — and a turn's rank is as constant along
+          // that turn as a ruling's is along itself, so comparing it against a
+          // per-SAMPLE coverage cut turns in half in open surface for the very
+          // same reason. Spans are delimited by the TURN as well as by the
+          // surface: consecutive turns are different rulings and must be free to
+          // take different verdicts.
+          const sSmps = new Array(total + 1);
+          const sZones = new Array(total + 1);
+          const sTurn = new Array(total + 1);
+          const sweepAt = (f) => {
+            let sweep = symmetric ? (f < 0.5 ? f * 2 : (1 - f) * 2) : f;
+            if (gamma !== 1) sweep = Math.pow(sweep, gamma);
+            return sweep;
+          };
+          for (let s = 0; s <= total; s++) {
+            const f = s / total;
+            const sweep = sweepAt(f);
+            const wind = (f * turns + phase) % 1;
+            const smp = snap ? sampleAt(wind, sweep) : sampleAt(sweep, wind);
+            const on = Boolean(smp && smp.front === wantFront);
+            sSmps[s] = on ? smp : null;
+            // 'layeredCross' has no gated family on the helix, so its intensity
+            // zones would only cut the spiral into per-zone spans for nothing.
+            sZones[s] = (on && toneOn && TONE_ALGO !== 'layeredCross') ? zoneOf(smp) : null;
+            sTurn[s] = Math.floor(f * turns);
+          }
+          // Span key = (turn, zone). THE TURN HAS TO BE IN THE KEY, and this was
+          // measured both ways. A helix's rank IS the turn it is on, so the turn is
+          // the unit the verdict is taken over — the same relationship a ruling has
+          // to its own rank. Keying the span on the ZONE ALONE (so a span is the
+          // visible arc, and the arc's rank is the turn it is mostly on) does take
+          // the helix's deepest free end from 13.3 % of the radius to 0.1 %, but a
+          // sphere's helix stays front-facing straight across the wind seam, so the
+          // whole visible face came back as ONE span with ONE verdict: ink rose
+          // from 8190 mm to 9281 mm, the density ramp across the form collapsed
+          // from 2.06x to 1.04x, and the lit end came back DENSER than mid-form.
+          // That is a drawing that no longer shades, which is a worse defect than
+          // the one being fixed. So the turn stays, and the residual free ends —
+          // the ends of a loop whose neighbour dropped — stay with it. See the
+          // report note: they land on the wind meridian, not scattered over the
+          // form, because that is where every loop begins and ends.
+          const sKeys = sZones.map((z, i) => `${sTurn[i]}|${z}`);
+          let spTurn = -1;
+          let spArc = 0;
+          let sDrop = null;
+          if (STAGE.dither && toneOn) {
+            sDrop = useLadder
+              ? spanDrops(sSmps, sKeys,
+                // `isEvenLadder()` reads its OWN tone target here, bypassing
+                // `algoCoverage`'s flat 1 (which is for the continuous path
+                // above, not this `symmetric` fallback): a symmetric spiral
+                // keeps the whole-turn verdict mechanism — and the gap
+                // irregularity that comes with it, disclosed as a follow-up
+                // — but must not lose its tone altogether.
+                (smp, k) => (isEvenLadder()
+                  ? ladderCov(smp.I)
+                  : (TONE_ALGO !== 'ladder'
+                    ? algoCoverage(smp.I, false, smp, null)
+                    : (sZones[k] ? zoneCoverage(sZones[k], false) : coverageForSample(smp.I)))),
+                // The helix's ruling index is the TURN, so the phase advances once
+                // per turn (see ladderStep) and consecutive loops end up evenly
+                // spaced instead of dropping in the power-of-two pattern a
+                // bit-reversed rank on the turn number produced. `spanDrops`
+                // numbers spans over the WHOLE helix, so the track key cannot be
+                // that ordinal — it is the arc's ordinal WITHIN its turn, which is
+                // what makes the k-th arc of each turn a track of neighbours.
+                (cov, mid) => {
+                  const turn = sTurn[mid];
+                  if (turn !== spTurn) { spTurn = turn; spArc = 0; } else spArc += 1;
+                  return !ladderKeeps(`${spiralFam}|${spArc}`, clamp(cov, 0, 1));
+                })
+              : spanDrops(sSmps, sKeys, (smp) => clamp(1 - smp.I, 0, 1), (shade) => shade < 0.12);
+          }
+          for (let s = 0; s <= total; s++) {
+            const smp = sSmps[s];
+            if (!smp) { flush(); continue; }
+            // Same hoist as emitLine's `sampleZone`: the sink's L-zone speck
+            // exemption has to hold on EVERY path that feeds it, or the law is
+            // enforced on the line families and not on the helix.
+            // O18 — the spiral used to gate on a hardcoded `shade < 0.12` and
+            // ignored `ladder[]` outright, so `bands` did nothing at all on a
+            // spiral-filled object.
+            const sampleZone = sZones[s];
+            if (sDrop && sDrop[s]) {
+              if (useLadder) { sink.softDrop({ x: smp.x, y: smp.y }); } else { flush(); }
+              continue;
+            }
+            sink.addPt({ x: smp.x, y: smp.y, z: smp.z }, sampleZone);
+          }
+          flush();
         }
-        flush();
       } else if (mapper === 'stipple') {
         // Dot lattice on the surface; a dot survives where local shade meets its
         // ordered-dither threshold (fewer dots toward the highlight). Each dot is a
@@ -10414,9 +11057,18 @@
               // is the cheapest way to stop the rows lining up into columns.
               if (STAGE.dither && useLadder) {
                 const zone = TONE_ALGO === 'layeredCross' ? null : zoneOf(smp);
-                const cov = TONE_ALGO !== 'ladder'
-                  ? algoCoverage(smp.I, false, smp, null)
-                  : (zone ? zoneCoverage(zone, false) : coverageForSample(smp.I));
+                // W-26 only moves `hatch`/`crosshatch`/`contour`/`spiral`
+                // placement onto the continuous engine; `stipple` keeps its
+                // per-dot dither for all three ladder laws, so it reads its
+                // OWN tone target (`ladderCov`) rather than `algoCoverage`'s
+                // now-flat 1 for `fineLadder`/`phaseFineLadder` — otherwise a
+                // stippled fineLadder/phaseFineLadder object would lose its
+                // tone outright (every dot kept, never thinning).
+                const cov = isEvenLadder()
+                  ? ladderCov(smp.I)
+                  : (TONE_ALGO !== 'ladder'
+                    ? algoCoverage(smp.I, false, smp, null)
+                    : (zone ? zoneCoverage(zone, false) : coverageForSample(smp.I)));
                 if (!ladderKeeps(`stipple|${back ? 'B' : 'F'}|${r}`, clamp(cov, 0, 1),
                   (r * GOLDEN_STEP) % 1)) continue;
               } else if (STAGE.dither) {
@@ -10506,7 +11158,13 @@
           + `regionArea ${lastRibbonStats.regionArea}). The variable-width feature is INERT.`);
       }
     };
-    if (!runMapper(N, false)) { flushDeferredRibbons(); publishRibbonStats(); return null; } // front surface (unchanged when no x-ray)
+    // F-05 / W-05 — see `lastMarkStats` above. `null` for every non-mark law,
+    // so a caller can tell "not a mark law" apart from "a mark law that
+    // placed nothing" (samples === 0).
+    const publishMarkStats = () => {
+      lastMarkStats = mkStat.samples ? { algo: TONE_ALGO, ...mkStat, byThird: mkStat.byThird.slice() } : null;
+    };
+    if (!runMapper(N, false)) { flushDeferredRibbons(); publishRibbonStats(); publishMarkStats(); return null; } // front surface (unchanged when no x-ray)
     // X-ray back surface: sparser (count × backDensity) far-side family, tagged.
     if (xray) runMapper(Math.max(2, Math.round(N * backDensity)), true);
     // Every chain is closed by now, so the deferred ribbons can be built — and
@@ -10514,6 +11172,7 @@
     // has not happened yet.
     flushDeferredRibbons();
     publishRibbonStats();
+    publishMarkStats();
     // WHERE THE PLOT FLOOR BOUND, published for the comparison harness. Written
     // only in uncapped mode, so the committed build never allocates or exposes
     // it — `lastFloorStats` stays null and nothing downstream can read a number
@@ -10738,6 +11397,8 @@
         // silent degrade to centrelines, all three of which look alike from
         // outside. Read by the T2/T4 tests.
         get lastRibbonStats() { return lastRibbonStats; },
+        get lastMarkStats() { return lastMarkStats; },
+        get lastMasterGridStats() { return lastMasterGridStats; },
         // Unchanged reading: the committed default, byte-identical to the
         // pre-refactor module constant. `scene3d-tone-algo-default.test.js`
         // pins this and must stay green unmodified.

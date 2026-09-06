@@ -1248,6 +1248,87 @@ the ink-budget fix and has not been re-tuned.
   first pass. **"No Tone" now actually turns the gradient off** — previously it stayed on
   regardless of the selected Fill Style.
 
+### Fixed
+- **3D Scene — Ladder, Fine Ladder and Phase Fine Ladder no longer skip alternate rulings on a
+  flat-toned surface.** On a cone, a cylinder, a capsule barrel or any evenly lit region, these
+  fills used to select a subset of a fixed grid. Every second ruling was dropped, so the drawing
+  showed doubled-width white gaps with no shading behind them. Contour, hatch and spiral fills
+  now place each ruling continuously: the spacing itself carries the tone, and no ruling is
+  dropped. Measured adjacent-gap jump falls from 2.00× to 1.03–1.17×, while the light-to-shadow
+  spacing range is preserved. The spiral no longer drops whole turns (turn-advance ratio 77× →
+  1.05×). Where a wrongly dropped ruling is restored, a drawing carries more ink at the same
+  Density. That increase is the gap being filled in, not new darkness. (W-26)
+- **3D Scene — crosshatch's second family asks for a SHARE of coverage, not the full target,
+  fixing an over-inked regression introduced while closing W-26.** Coverage 9326.7 → 5153.7 mm
+  (+4.9% vs. the pre-W-26 baseline, not the intermediate over-ink), `crossDensityRatio` response
+  restored from a near-dead 1.12× to 2.3×. (W-26b)
+- **3D Scene — the curved master grid's sparse end (low Density) actually opens up.** Density 1
+  through 49 on a curved primitive used to draw the same ruling count as Density 50, because a
+  density-free floor constant clamped the grid the whole way there. Boosted from 6× to 4.1× the
+  taper so the checkpoint set (1/10/25/50) is strictly increasing in both ruling count and drawn
+  ink on every curved primitive tested. (W-01)
+- **3D Scene — chart-walked tick and dash marks follow the local surface family instead of
+  drawing a straight two-point chord.** `mkTick` and `mkDashRamp` used to refuse a mark outright
+  when it would have crossed a limb or a torus's inner hole rather than bending with the ruling,
+  so torus ticks read as straight spoke fans. Refusal rate dropped from 0.20–0.61 to 0.005–0.007.
+  (T1)
+- **3D Scene — originSpiral respects the plot floor on torus and cone.** Rings that fell below one
+  full pen width apart are now floored at 0.8× (then 1.0×) pen width; the torus's own under-bar
+  gap dropped from 10.0–10.4% to 0%. (W-10, W-10b, W-10c)
+- **3D Scene — the Fill Style picker no longer offers originSpiral on a torus, where it collapses
+  to a wedge the pen cannot resolve.** The option greys out with a "no effect here" note instead
+  of silently producing a defective plot. Saved documents that already picked it are unaffected.
+  (W-10d)
+- **3D Scene — the faceted carrier grant now tracks Density on solo-orientation objects** (a
+  ground plane, or any faceted object presenting a single visible face orientation), instead of a
+  tone-blind constant ruling count. A default ground plane's rulings now scale `3,3,3,3` →
+  `6,6,7,9` across its Density range. (W-15c)
+- **3D Scene — thin, sliver-shaped faces on curved primitives now get a genuine spiral curl
+  instead of degenerating to a near-straight stub**, with the fix scoped to genuinely thin-cusp
+  faces (by aspect ratio) rather than every small face. (W-25, W-25b)
+- **3D Scene — contourSlice rings snap onto the true analytic surface and round on smooth bodies
+  by default**, closing a Newton-projector divergence that could send a ring 61.65 mm off the
+  surface. Torus false-fragment rings dropped from 107 to 46 paths; open buckyball rings dropped
+  from 6 to 0. A self-occlusion bias is now scoped onto the analytic contourSlice ring specifically
+  (item 0(b)), and `buildSliceSegments` nudges a plane level off a coincident mesh vertex rather
+  than producing a degenerate slice (W-29). On the torus and sphere, contourSlice's saddle/pole
+  ink-merging ("angled points") is measurably IMPROVED, not fully fixed — blob width dropped
+  3.35 → 2.10 mm on the torus and 34.5 → 14.85 mm on the sphere, against a 0.9 mm target; the
+  residual is tracked as W-27c-0a-2. (W-27, W-27b, W-27c, W-27c-0(b), W-29, W-27c-0a)
+- **3D Scene — cast shadows land on other 3D objects, in the receiver's own fill style.** A new
+  `shadow.shadowReceiveOnObjects` flag (default OFF) tests each surface sample against every other
+  object's own world-space faces and feeds the result into the same tone-law intensity pipeline
+  every other shading path already uses, so the shadow reads through whatever fill style the
+  receiver is set to — including a curved receiver. Overlapping shadows from multiple casters now
+  darken through a genuinely tighter ruling pitch (measured ~3× denser) rather than drawing
+  coincident, invisible duplicate lines. A light-position-aware footprint projector replaces the
+  ground-only direction assumption for point, spot and area lights (W-30) — correct and tested,
+  but not yet wired to any call site a user can reach; see "Known open" below. (Unit C, Unit D,
+  Unit D phase-align, W-30)
+- **3D Scene — the ring-fill coverage oracle used by several regression guards now separates
+  geometry a pen genuinely cannot reach from a real drawing defect.** The prior oracle's
+  denominator predated self-occlusion, so correctly hidden geometry scored as a coverage failure
+  by construction; five previously red-pinned assertions on the self-crossing ribbon laws
+  (`interlockWeave`, `onePenDown`, `trochoidLoop`, `ampSpacing`, `weaveDepth`) are retired in favour
+  of the split oracle. This is a measurement correction, not a claim that the underlying streak
+  defect (F1) is fixed — see "Known open" below. (A3)
+- **3D Scene — the Fill Style roster collapses 13 near-duplicate variant ids into 5 canonical ids
+  plus a sub-parameter** (`rungMode`, `bandProfile`, `weightEase`, `bundleMode`,
+  `fieldMetric`/`fieldFloor`), cutting the picker from 48 options to 35 with no change to any
+  option's rendered geometry (18/18 legacy ids verified byte-identical through the new
+  `resolveToneLaw` path) and no change to any saved document (a folded id normalizes to its
+  canonical survivor + parameter on load). (U0–U5)
+
+**Known open, carried past this merge rather than fixed:** the folded Fill Style ids above lose
+their distinguishing sub-parameter if driven directly by their old name rather than through a
+picker (U5b — caveat visibility, not reachable through either real UI surface); W-30's shadow
+footprint projector has no call site wiring it into a user-visible scene yet (W-30b); the F1
+self-crossing-ribbon streak defect on five bucket-B laws remains open, mechanism not yet isolated
+(A3 measured it honestly, did not fix it); mkDashRamp's low-Density dash count and
+mkTick/mkDashRamp's variable mark length remain open (T2, T3); and contourSlice's saddle/pole
+ink-merging on torus/sphere is improved, not eliminated (W-27c-0a residual, tracked as
+W-27c-0a-2).
+
 ## 1.3.0 - 2026-07-18
 
 ### Added

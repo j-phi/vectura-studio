@@ -1,0 +1,30 @@
+{
+  "id": "W-02",
+  "title": "Gate Fill Style off Types none / wireframe / contourSlice in isReachableOn (F-02)",
+  "branch": "3d-scene/fill-audit",
+  "commit": "5d32e12e91d664a510723e0c32db93eb8a30f183",
+  "before": [
+    "shots/B/torus__wireframe__none__med__a.webp",
+    "shots/B/torus__wireframe__nibAngle__med__a.webp",
+    "shots/B/torus__contourSlice__none__med__a.webp",
+    "shots/B/torus__none__none__med__a.webp",
+    "shots/B/sphere__wireframe__ladder__med__a.webp"
+  ],
+  "after": [
+    "after/W-02/shots/live-01-hatch-default.png",
+    "after/W-02/shots/live-02-hatch-fillstyle-row.png",
+    "after/W-02/shots/live-03-wireframe-no-fillstyle-row.png",
+    "after/W-02/shots/live-04-contourslice-no-fillstyle-row.png",
+    "after/W-02/shots/live-05-spiral-fillstyle-row-9-disabled-pre-w03.png",
+    "after/W-02/manifest.B.unreachable.jsonl"
+  ],
+  "notes": "scene3d.js's SURFACE_FILL Set dispatches the tone-law machinery only for hatch/crosshatch/contour/spiral/stipple; none/wireframe/contourSlice never reach it on any primitive. isReachableOn had no gate for those three mappers on a CURVED primitive, so it reported all 49 Fill Style options reachable there, and the audit capture script (which calls isReachableOn directly) wasted 1,152 of 7,440 shots on one byte-identical picture. Fixed by adding a first clause to isReachableOn that returns false for every id when mapper is outside a newly-exported Vectura.Scene3D.Params.SURFACE_FILL_MAPPERS Set, run before the faceted/default early-outs. The Fill Style row was already unconditionally hidden in both UI surfaces for these three Types (MAPPER_CONTROLS/fillMappers never declare a lawpick row for them) — verified live on port 8476: Type=Wireframe and Type=Slices (contourSlice) both show no Fill Style row, byte-identical to the pre-fix UI. The only measured change is the reachability oracle: manifest.B.unreachable.jsonl grew from 424 to 865 entries (+441 = 3 curved primitives x 3 newly-gated mappers x 49 ids), and 0 shots were taken for the 5 --only-filtered before_images (all now correctly classified unreachable, so the capture script skips rendering them entirely rather than reproducing the byte-identical picture).",
+  "tests": {
+    "red": "FAIL none/wireframe/contourSlice are inert everywhere (W-02, F-02) > curved primitives (sphere, torus, cone): every id, including none/ladder, is unreachable -- Expected: false, Received: true (+ 2 more RED assertions: groups() marks every option disabled, and the anti-rot SURFACE_FILL_MAPPERS-swap proof)",
+    "green": "tests/integration/scene3d-fill-style-picker.test.js: Test Files 1 passed (1), Tests 125 passed (125)",
+    "suites": "picker integration 125/125; scene3d-solid-cap-reachability.test.js 6/6; scene3d-hlr-spatial-index-identity.test.js 6/6 (byte-identity guard untouched); npm run test:unit (full suite) 4673/4717 passed, 44 skipped, 0 failed"
+  },
+  "byte_identical_pairs": [
+    "live-03-wireframe-no-fillstyle-row.png and the pre-fix docked-panel UI for the same Type are byte-identical: the fix only changes the reachability ORACLE (isReachableOn), not any rendered UI — the Fill Style row was already unconditionally absent for wireframe/none/contourSlice before this change (tests/integration/scene3d-fill-style-picker.test.js: 'the row is absent on wireframe and on none' / 'no Fill Style row on wireframe', both pre-existing and still green)."
+  ]
+}

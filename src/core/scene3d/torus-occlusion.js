@@ -1,7 +1,6 @@
 /**
- * Scene3D.TorusOcclusion — analytic (closed-form) self-occlusion depth source
- * for a torus, built on `Scene3D.RayTorus` (kept from an earlier, reverted
- * attempt — see that module's own header).
+ * Scene3D.TorusOcclusion — analytic (closed-form) self-occlusion source for a
+ * torus.
  *
  * WHY THIS EXISTS (F7). `hlr.js`'s mesh-based self-occlusion test
  * (`SELF_OCCLUDE_BIAS`, 6mm) compares a sample's depth against the
@@ -15,31 +14,46 @@
  * the conflict by testing against the EXACT analytic torus surface (zero
  * chording error), so a much smaller margin is safe.
  *
- * A margin is still required on THIS side too, because the geometry being
- * TESTED (a ribbon's widened outline/fill/wall boundary) is not itself
- * sampled exactly on the analytic surface — it can sit up to roughly one
- * ribbon half-width off it. Too small a margin here reintroduces false
- * positives on ordinary near-sheet ink (a previous attempt applying this test
- * broadly with too tight a margin measured mass misfires on ~1/3 of sampled
- * surface points). `DEFAULT_MARGIN_MM` below is picked to sit above that
- * drift and is still exposed as a parameter so callers (and the RGR test) can
- * tune it down to the smallest value that still clears every real crossing.
+ * TWO GENERATIONS. The original approach (`buildDepthSource`, kept below,
+ * built on `Scene3D.RayTorus`'s closed-form ray/torus intersection — see that
+ * module's own header) cast a single exact ray per sample plus several more
+ * dilated a few mm away in screen space, and flagged occlusion when ANY ray
+ * found a nearer surface point. That dilation is exactly what let the F1B
+ * cross-run streaks (`interlockWeave`/`onePenDown`/`trochoidLoop`/
+ * `ampSpacing`/`weaveDepth` — see `docs/3d-audit/handoff/unit-a2-notes.md`)
+ * through: right at the torus's near-tangent inner-hole cusp, a lateral
+ * shift of a fraction of a millimetre can jump which (u, v) patch a ray
+ * grazes, so a dilated ray from a genuinely near-sheet sample could land on
+ * an unrelated, much-nearer patch and manufacture a false "self-occlusion" —
+ * independent of which centreline RUN produced the sample, which is why
+ * tuning the margin/radius knobs (see `scene3d.js`'s
+ * `TORUS_SELF_OCCLUDE_ANALYTIC_MARGIN_MM`/`_DILATE_RADIUS_MM`, both now
+ * retired) could shrink but never eliminate it.
  *
- * COORDINATE FRAMES. Three, exactly matching the forward pipeline built by
- * `scene.js` (`applyObjectTransform`) and `geometry3d.js` (`rotatePoint`,
- * `projectPoint`) — this module only walks that SAME chain in reverse:
+ * `buildSelfOcclusionTest` (current) instead builds a dense analytic FIELD —
+ * a screen-cell bucketed near/far depth map from a fresh (u, v) sampling of
+ * the torus's own exact surface, exactly `tests/helpers/
+ * scene3d-torus-hole-oracle.js`'s independent F7 ground truth method — ONCE
+ * per object per frame, and classifies each sample against its OWN cell's
+ * near/far midpoint. No per-sample ray, so no per-sample lateral jump: a
+ * cell's near/far depths come from whichever surface actually projects
+ * there, never from a neighbour a perturbed ray happened to wander into.
  *
- *   screen (x, y) + camera-space z  →  CAMERA frame ray
- *     → invert `camAngles` rotation → WORLD frame ray
- *     → invert `transform` (translate, rotate, non-uniform scale) → OBJECT
- *       (chart) frame ray, i.e. the frame `charts.js`'s `topoTorus` builds in
- *     → axis permutation (the chart's hole axis is +y; `RayTorus` assumes
- *       +z) → RAY-TORUS frame, fed to `RayTorus.intersect`.
+ * COORDINATE FRAMES. Both generations share `buildProjector`'s forward
+ * chain, exactly matching `scene.js` (`applyObjectTransform`) and
+ * `geometry3d.js` (`rotatePoint`, `projectPoint`) — duplicated, not
+ * imported, so this module has zero load-order dependency on either:
  *
- * Every real root is walked back through the SAME chain (forward this time)
- * to recover its camera-space z, in the same "larger z = nearer" convention
- * every emitted `sceneFill` path already uses, so it can be compared directly
- * against the sample's own z.
+ *   OBJECT (chart) frame, i.e. the frame `charts.js`'s `topoTorus` builds in
+ *     → apply `transform` (non-uniform scale, rotate, translate) → WORLD
+ *     → apply `camAngles` rotation → CAMERA frame
+ *     → forward-project (orthographic or pinhole-perspective) → SCREEN (x, y)
+ *       + camera-space z.
+ *
+ * `buildDepthSource` additionally walks the chain in REVERSE (screen point +
+ * z → a camera-frame ray → world → object/chart frame → axis-permuted into
+ * `RayTorus`'s +z-hole-axis convention) to hand `RayTorus.intersect` a ray to
+ * solve; `buildOverlapField` only ever needs the forward direction.
  */
 (() => {
   const globalScope = typeof window !== 'undefined' ? window : globalThis;
@@ -158,7 +172,15 @@
    * torus's own `{sx,sy,sz}` SIZE params (distinct from `transform.sx/sy/sz`
    * — the chart's shape inputs, not the object's scale).
    */
-  const buildDepthSource = (transform, camera, projOpts, sizes) => {
+  // Shared setup for every analytic torus projection below (the ray-based
+  // `buildDepthSource` AND the field-based `buildOverlapField`): resolves
+  // the object's per-axis scale/translate/rotation and the camera's
+  // rotation + (orthographic|perspective) projection parameters ONCE, and
+  // returns the forward chart(object)-frame -> screen/camera-space
+  // projections both callers need. Kept as one function so the two
+  // occlusion strategies can never silently drift onto different
+  // transform/camera math.
+  const buildProjector = (transform, camera, projOpts) => {
     const t = transform || {};
     const s = finite(t.scale, 1);
     const scaleX = finite(t.sx, s);
@@ -167,10 +189,9 @@
     const objAngles = { yaw: finite(t.yaw, 0), pitch: finite(t.pitch, 0), roll: finite(t.roll, 0) };
     const translate = { x: finite(t.x, 0), y: finite(t.y, 0), z: finite(t.z, 0) };
     const camAngles = { yaw: finite(camera && camera.yaw, 0), pitch: finite(camera && camera.pitch, 0), roll: finite(camera && camera.roll, 0) };
-    // Precomputed ONCE per built depth source — see `makeRotator`'s header.
+    // Precomputed ONCE per built projector — see `makeRotator`'s header.
     const objRot = makeRotator(objAngles);
     const camRot = makeRotator(camAngles);
-    const { major, minor } = torusMajorMinor(sizes);
     const perspective = camera && camera.projection === 'perspective';
     const focal = perspective ? Math.max(1, finite(camera.focalLength, 520)) : null;
     const camDist = perspective ? Math.max(0, finite(camera.cameraDistance, 620)) : null;
@@ -193,10 +214,6 @@
       const scaled = objRot.invRotate(w);
       return { x: scaled.x / scaleX, y: scaled.y / scaleY, z: scaled.z / scaleZ };
     };
-    // chart(object) → ray-torus frame: hole axis is chart's +y; RayTorus
-    // expects +z. (x, y, z)_chart -> (x, z, y)_rayTorus.
-    const chartToRT = (c) => ({ x: c.x, y: c.z, z: c.y });
-    const rtToChart = (c) => ({ x: c.x, y: c.z, z: c.y });
 
     // chart(object) → world → camera, POINT variant, for walking a candidate
     // root back to a comparable camera-space z.
@@ -210,6 +227,61 @@
       };
       return camRot.rotate(world).z;
     };
+
+    // chart(object) → world → camera → SCREEN, full forward projection —
+    // byte-identical arithmetic to `Geometry3D.projectPoint` (duplicated,
+    // not imported — see this module's header), fed the camera-space point
+    // this same chain produces. Returns `null` for a point at/behind the
+    // near plane (nothing useful to project). `front`: true when the
+    // chart-frame NORMAL (rotated the same way, translate excluded) faces
+    // the camera — the same plain-rotation approximation
+    // `scene3d-torus-hole-oracle.js`'s independent ground truth uses, so
+    // this field and that oracle classify "front-facing" identically.
+    const chartToScreen = (pos, normal) => {
+      const scaled = { x: pos.x * scaleX, y: pos.y * scaleY, z: pos.z * scaleZ };
+      const rotated = objRot.rotate(scaled);
+      const world = {
+        x: translate.x + rotated.x, y: translate.y + rotated.y, z: translate.z + rotated.z,
+      };
+      const camPt = camRot.rotate(world);
+      const camNormal = camRot.rotate(objRot.rotate(normal));
+      if (camNormal.z <= 0) return null; // back-facing — never occludes
+      let sx;
+      let sy;
+      if (perspective) {
+        const denom = (focal + camDist) - camPt.z;
+        if (!(denom > focal * 0.05)) return null;
+        const sp = (focal / denom) * projScale;
+        sx = centerX + (camPt.x * sp);
+        sy = centerY - (camPt.y * sp);
+      } else {
+        sx = centerX + (camPt.x * projScale);
+        sy = centerY - (camPt.y * projScale);
+      }
+      if (!Number.isFinite(sx) || !Number.isFinite(sy)) return null;
+      return { x: sx, y: sy, z: camPt.z };
+    };
+
+    return {
+      worldToChartPoint, worldToChartVector, chartToCameraZ, chartToScreen,
+      perspective, focal, camDist, eyeCam, objRot, camRot,
+    };
+  };
+
+  const buildDepthSource = (transform, camera, projOpts, sizes) => {
+    const {
+      worldToChartPoint, worldToChartVector, chartToCameraZ, perspective, focal, camDist, eyeCam, camRot,
+    } = buildProjector(transform, camera, projOpts);
+    const { major, minor } = torusMajorMinor(sizes);
+    const po = projOpts || {};
+    const centerX = finite(po.centerX, 0);
+    const centerY = finite(po.centerY, 0);
+    const projScale = Math.max(1e-6, finite(po.scale, 1));
+
+    // chart(object) → ray-torus frame: hole axis is chart's +y; RayTorus
+    // expects +z. (x, y, z)_chart -> (x, z, y)_rayTorus.
+    const chartToRT = (c) => ({ x: c.x, y: c.z, z: c.y });
+    const rtToChart = (c) => ({ x: c.x, y: c.z, z: c.y });
 
     return (x, y, z) => {
       if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
@@ -266,61 +338,138 @@
   };
 
   const TAU = Math.PI * 2;
-  // Defaults for `buildSelfOcclusionTest` below — see its own header for why
-  // both a Z margin AND an (x, y) dilation radius are needed, and
-  // `TORUS_SELF_OCCLUDE_ANALYTIC_MARGIN_MM` in `scene3d.js` for the measured
-  // margin/survivors/coverage curve this was tuned against.
-  const DEFAULT_MARGIN_MM = 4;
-  const DEFAULT_DILATE_RADIUS_MM = 4;
-  const DEFAULT_DILATE_DIRECTIONS = 8;
+
+  // Analytic torus surface point + outward unit normal at (u, v) in [0, 1),
+  // CHART frame. Same geometric definition `torusMajorMinor` (above) and
+  // `charts.js`'s `topoTorus` both build from, and — deliberately —
+  // byte-identical to `tests/helpers/scene3d-torus-hole-oracle.js`'s own
+  // `torusSurface`: this field and that test's independent ground truth
+  // must classify "front-facing" and "near/far" the same way, or a real fix
+  // here could never actually clear the F7 0-survivors bar.
+  const torusChartPoint = (major, minor, u, vv) => {
+    const a = u * TAU;
+    const b = vv * TAU;
+    const ringR = major + (Math.cos(b) * minor);
+    return {
+      pos: { x: Math.cos(a) * ringR, y: Math.sin(b) * minor, z: Math.sin(a) * ringR },
+      normal: { x: Math.cos(a) * Math.cos(b), y: Math.sin(b), z: Math.sin(a) * Math.cos(b) },
+    };
+  };
+
+  // Genuine near/far SHEET gap (mm) a screen cell must show before it counts
+  // as real self-occlusion territory at all — see `buildSelfOcclusionTest`'s
+  // header. Identical to the F7 oracle's own `OVERLAP_GAP_MM`.
+  const DEFAULT_GAP_MM = 8;
+  // 2D screen cell width (mm) the field buckets samples into, and the dense
+  // (u, v) sampling density — identical to the F7 oracle's own defaults, so
+  // production classifies every screen position exactly as that independent
+  // ground truth does.
+  const DEFAULT_CELL_MM = 0.5;
+  const DEFAULT_STEPS_U = 480;
+  const DEFAULT_STEPS_V = 240;
+  // Safety margin (mm) subtracted below a genuine cell's midpoint before a
+  // sample counts as "on the far side" — absorbs a ribbon outline/wall/fill
+  // vertex's own legitimate depth drift off its originating centreline (up
+  // to roughly the ribbon's own half-width; see `docs/stroke-fill-handoff.md`
+  // finding 1). `DEFAULT_GAP_MM`'s own floor already keeps a genuine cell's
+  // half-gap (>= 4mm) comfortably above the largest such drift measured
+  // (2.3mm), so this is deliberately small — insurance, not the main defence.
+  const DEFAULT_MARGIN_MM = 1;
 
   /**
-   * Self-occlusion test wrapping `buildDepthSource` with a 2D (x, y)
-   * dilation — the "2D silhouette-footprint exclusion" this module's header
-   * promises.
+   * Dense-samples the torus's own EXACT analytic surface (zero tessellation
+   * error, zero per-ray steep-foreshortening jump) and buckets every
+   * front-facing sample by screen cell. Returns `{ cells, cellMm }` — one
+   * entry per cell a front-facing sample landed in, `{ near: {x,y,z}, far:
+   * {x,y,z} }` (coincide unless the cell genuinely received two depths).
    *
-   * WHY A SINGLE EXACT RAY IS NOT ENOUGH. Right at the torus's inner-hole
-   * cusp the near and far sheets are almost tangent, so the surface is
-   * steeply foreshortened THERE: a lateral shift of a fraction of a
-   * millimetre in screen space can correspond to a large jump in which
-   * (u, v) chart coordinate a ray actually grazes. Measured on this fixture:
-   * a real far-sheet survivor's OWN exact ray misses the near sheet
-   * entirely (the closed-form solver correctly reports "nothing nearer" for
-   * THAT precise pixel), while a ray cast from a point 1-2mm away, along
-   * the exact same local patch of surface, finds it 30+ mm nearer. The
-   * single-ray depth source is CORRECT for the ray it is asked about; the
-   * bug is upstream, in treating "occludes at this exact pixel" as the same
-   * question as "occludes this general screen AREA" when the geometry being
-   * tested (a ribbon's widened outline/fill/wall boundary, sampled at
-   * SAMPLE_STEP along its own path, never exactly on the analytic surface)
-   * only approximately lands in that area to begin with.
-   *
-   * The fix: cast several rays in a small ring around (x, y) (radius
-   * `dilateRadiusMm`) IN ADDITION to the exact one, and call the point
-   * self-occluded if ANY of them finds a nearer surface point by more than
-   * `marginMm`. This is a real 2D footprint dilation, not merely a looser Z
-   * margin — the two are independent knobs for two independent slop
-   * sources (surface foreshortening in (x, y); ribbon-width drift in z).
+   * WHY A FIELD, NOT A PER-SAMPLE RAY (the prior approach). A single ray
+   * cast through (x, y) is exact FOR THAT RAY, but right at the torus's
+   * inner-hole cusp the near/far sheets are almost tangent: a lateral shift
+   * of a fraction of a millimetre in screen space can jump which (u, v)
+   * patch a ray grazes, so nudging the test point by 1-2mm (the previous
+   * fix's own dilation) can land on an unrelated, much-nearer patch of
+   * surface and manufacture a spurious "occlusion" — this is exactly the
+   * false-positive class the cross-run F1B streaks (`interlockWeave`,
+   * `onePenDown`, `trochoidLoop`, `ampSpacing`, `weaveDepth` — see
+   * `docs/3d-audit/handoff/unit-a2-notes.md`) turned out to be: two SEPARATE
+   * centreline runs crossing in screen space near a foreshortened patch,
+   * both genuinely on the NEAR sheet, one wrongly clipped because a
+   * dilated ray from its own sample happened to graze a nearer patch a
+   * couple of millimetres away. A dense FIELD sidesteps this: every cell's
+   * near/far depth comes from the surface that ACTUALLY projects there
+   * (built once, independent of any particular ribbon sample or run), so
+   * classifying a sample against its own cell never depends on where a
+   * perturbed ray happens to wander.
    */
-  const buildSelfOcclusionTest = (transform, camera, projOpts, sizes, opts = {}) => {
-    const margin = Number.isFinite(opts.marginMm) ? opts.marginMm : DEFAULT_MARGIN_MM;
-    const radius = Number.isFinite(opts.dilateRadiusMm) ? opts.dilateRadiusMm : DEFAULT_DILATE_RADIUS_MM;
-    const dirs = Math.max(1, Math.round(opts.dilateDirections || DEFAULT_DILATE_DIRECTIONS));
-    const depthSource = buildDepthSource(transform, camera, projOpts, sizes);
-    const offsets = [{ dx: 0, dy: 0 }];
-    if (radius > 0) {
-      for (let i = 0; i < dirs; i++) {
-        const a = (i / dirs) * TAU;
-        offsets.push({ dx: Math.cos(a) * radius, dy: Math.sin(a) * radius });
+  const buildOverlapField = (transform, camera, projOpts, sizes, opts = {}) => {
+    const { chartToScreen } = buildProjector(transform, camera, projOpts);
+    const { major, minor } = torusMajorMinor(sizes);
+    const stepsU = opts.stepsU || DEFAULT_STEPS_U;
+    const stepsV = opts.stepsV || DEFAULT_STEPS_V;
+    const cellMm = opts.cellMm || DEFAULT_CELL_MM;
+    const cells = new Map();
+    for (let iu = 0; iu < stepsU; iu++) {
+      const u = iu / stepsU;
+      for (let iv = 0; iv < stepsV; iv++) {
+        const vv = iv / stepsV;
+        const { pos, normal } = torusChartPoint(major, minor, u, vv);
+        const p = chartToScreen(pos, normal);
+        if (!p) continue; // back-facing or behind the near plane
+        const cx = Math.round(p.x / cellMm);
+        const cy = Math.round(p.y / cellMm);
+        const key = `${cx},${cy}`;
+        const cell = cells.get(key);
+        if (!cell) { cells.set(key, { near: p, far: p }); continue; }
+        if (p.z > cell.near.z) cell.near = p;
+        if (p.z < cell.far.z) cell.far = p;
       }
     }
+    return { cells, cellMm };
+  };
+
+  // Look up the field cell nearest (x, y) that carries a GENUINE near/far
+  // sheet overlap (gap > gapMm) — a 3x3 neighbour search absorbs the field's
+  // own quantisation, exactly like the F7 oracle's `overlapCellAt`. Returns
+  // `null` when no such cell exists (nothing to occlude with here at all).
+  const overlapCellAt = (field, x, y, gapMm) => {
+    const cx = Math.round(x / field.cellMm);
+    const cy = Math.round(y / field.cellMm);
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const cell = field.cells.get(`${cx + dx},${cy + dy}`);
+        if (cell && (cell.near.z - cell.far.z) > gapMm) return cell;
+      }
+    }
+    return null;
+  };
+
+  /**
+   * Self-occlusion test built on the dense analytic field above, replacing
+   * the earlier per-sample-ray + 2D-dilation approach (kept as
+   * `buildDepthSource`/the old `buildSelfOcclusionTest` shape only in spirit
+   * — this is a full rewrite, not a tuning pass).
+   *
+   * A sample is self-occluded when (a) its screen position falls in a cell
+   * that genuinely shows two separated sheets (`gapMm`, default matching
+   * the F7 oracle's own `OVERLAP_GAP_MM`) — filtering ordinary local-
+   * curvature depth variation and near-tangent cusp noise, which never
+   * exceeds a few mm — AND (b) the sample's own z reads below that cell's
+   * NEAR/FAR midpoint by at least `marginMm`. This is a BOUNDARY/sheet
+   * classification (which side of the two real sheets does this sample sit
+   * on), not a depth epsilon compared against a perturbed neighbour — see
+   * `docs/stroke-fill-handoff.md` finding 1.
+   */
+  const buildSelfOcclusionTest = (transform, camera, projOpts, sizes, opts = {}) => {
+    const gapMm = Number.isFinite(opts.gapMm) ? opts.gapMm : DEFAULT_GAP_MM;
+    const marginMm = Number.isFinite(opts.marginMm) ? opts.marginMm : DEFAULT_MARGIN_MM;
+    const field = buildOverlapField(transform, camera, projOpts, sizes, opts);
     return (x, y, z) => {
       if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return false;
-      for (let i = 0; i < offsets.length; i++) {
-        const d = depthSource(x + offsets[i].dx, y + offsets[i].dy, z);
-        if (d !== null && (d - z) > margin) return true;
-      }
-      return false;
+      const cell = overlapCellAt(field, x, y, gapMm);
+      if (!cell) return false;
+      const mid = (cell.near.z + cell.far.z) / 2;
+      return z < (mid - marginMm);
     };
   };
 
@@ -329,6 +478,8 @@
     invRotatePoint,
     torusMajorMinor,
     buildDepthSource,
+    buildOverlapField,
+    overlapCellAt,
     buildSelfOcclusionTest,
   };
 

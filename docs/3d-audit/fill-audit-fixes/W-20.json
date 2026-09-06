@@ -1,0 +1,32 @@
+{
+  "id": "W-20",
+  "title": "dutyConst / turingStripe / mazeFill / voronoiWeb read a light\u2192dark gradient (F-19)",
+  "branch": "3d-scene/fill-audit-c",
+  "commit": "7d69292c",
+  "before": [
+    "shots/B/sphere__hatch__dutyConst__med__a.webp",
+    "shots/B/torus__hatch__dutyConst__med__a.webp",
+    "shots/B/torus__hatch__turingStripe__med__a.webp",
+    "shots/B/sphere__hatch__mazeFill__med__a.webp",
+    "shots/B/sphere__hatch__voronoiWeb__med__a.webp"
+  ],
+  "after": [
+    "after/W-20/shots/B/sphere__hatch__dutyConst__med__a.webp",
+    "after/W-20/shots/B/torus__hatch__dutyConst__med__a.webp",
+    "after/W-20/shots/B/torus__hatch__turingStripe__med__a.webp",
+    "after/W-20/shots/B/sphere__hatch__mazeFill__med__a.webp",
+    "after/W-20/shots/B/sphere__hatch__voronoiWeb__med__a.webp"
+  ],
+  "notes": "dutyConst (lawDuty) compared its requested ink area against a FIXED reference (INK/P) instead of its own areaFor(1)..areaFor(0) span, so duty saturated to 1 (solid) across the whole shadow half and floored at 0.18 across most of the lit half - only a narrow radiance sliver ever moved it, matching the before-image's thin dashed corner. Fix normalizes duty over the law's own measured light/dark ends, the same idea voronoiWeb already uses for cell size off pitchFor. Sphere/hatch/med screen-third ratio: 1.19 -> 1.93 (bar 1.5, cleared). turingStripe's raw radiance was rank-normalized to percentile before feeding pitchLegible (same technique already used by lawMaze), which measurably widened its response (1.06 -> 1.25) but did not clear the 1.5 bar - a reaction-diffusion field diffuses its coefficients across neighbouring cells, structurally damping local tone control relative to a discrete per-mark law; disclosed as a partial fix per the shared brief's stop condition after two genuine attempts. mazeFill and voronoiWeb are unchanged guards (already fixed / owner-confirmed correct); their before/after shots are byte-identical. KNOWN OPEN (F-19 partial): turingStripe's shadow/lit ratio measures 1.25 against the file's own 1.5 bar -- a real, measured improvement over the 1.06 baseline, but not visible by eye at normal viewing size (a reaction-diffusion field structurally damps local tone control relative to a discrete per-mark law). Left open for a follow-up finding rather than shipped as resolved.",
+  "tests": {
+    "red": "Expected: > 1.5 / Received: 1.1898531093569351 (dutyConst); Expected: > 1.15 / Received: 1.0599923039054766 (turingStripe) -- tests/unit/scene3d-mono-tone-gradient.test.js",
+    "green": "Test Suites: 1 passed, 1 total / Tests: 5 passed, 5 total -- tests/unit/scene3d-mono-tone-gradient.test.js",
+    "suites": "New file 5/5 green. Cross-check suites (faceted-tone-law, one-pen-down-reachability, shadow-tone-law, turing-polarity, maze-tonal-range, hlr-spatial-index-identity): 6 suites / 58 tests all green. scene3d-mono-substrate.test.js and scene3d-tone-law-dispatch.test.js were reported to fail with 'Expect takes at most one argument' under Jest 30 -- this was wrong: this repo has no Jest, and both files run 24/24 green under the project's own vitest runner (node scripts/run-vitest.js) against 6642c4f4. Corrected after review."
+  },
+  "byte_identical_pairs": [
+    "shots/B/sphere__hatch__mazeFill__med__a.webp == after/W-20/shots/B/sphere__hatch__mazeFill__med__a.webp (mazeFill untouched, guard)",
+    "shots/B/sphere__hatch__voronoiWeb__med__a.webp == after/W-20/shots/B/sphere__hatch__voronoiWeb__med__a.webp (voronoiWeb untouched, guard)",
+    "shots/B/torus__hatch__mazeFill__med__a.webp == after/W-20/shots/B/torus__hatch__mazeFill__med__a.webp (mazeFill untouched, guard)",
+    "shots/B/torus__hatch__voronoiWeb__med__a.webp == after/W-20/shots/B/torus__hatch__voronoiWeb__med__a.webp (voronoiWeb untouched, guard)"
+  ]
+}

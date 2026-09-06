@@ -72,19 +72,48 @@ describe('Scene3D.Shadows — offered Fill Style options render distinct geometr
     Math.round(pt.x * 1000) / 1000, Math.round(pt.y * 1000) / 1000,
   ])));
 
-  // The exact set a Fill Style picker would show: the roster's ids plus the
-  // shipped default entry ('ladder' itself, which is NOT one of the 47
+  // The exact set a Fill Style picker would show: the roster's PICKER ids
+  // (context-bar.js's `SCENE_FILL_STYLES.groups` builds every real Fill
+  // Style picker — including this shadow row, via `FS.groups(...)` — from
+  // `R.PICKER_IDS || R.IDS`, never the raw 48-id `IDS` engine vocabulary)
+  // plus the shipped default entry ('ladder' itself, which is NOT one of the
   // roster ids — see SCENE_FILL_STYLES.DEFAULT), filtered through the one
   // predicate both real UI surfaces (ctxbar + docked panel) gate on.
+  //
+  // MERGE NOTE (integration, 2026-09-06, fill-collapse U0-U5): the roster
+  // split `IDS` (the full 48-id engine vocabulary, needed to load an
+  // old saved document — never shrinks) from `PICKER_IDS` (the 35-id
+  // collapsed list a picker actually offers today; folded ids like
+  // `fineLadder`/`phaseFineLadder`/`perceptualRamp` now live only as
+  // `ALIASES` resolving to a canonical id + a sub-param). Driving `IDS`
+  // directly, as this test used to, bypasses that alias resolution and
+  // asks e.g. `shadowToneLaw: 'fineLadder'` to render with no `rungMode`
+  // override — which collides with plain `ladder`. That is a REAL, known
+  // gap (SESSION-SUMMARY.md's open item U5b: a folded id driven directly by
+  // its old name, rather than through the picker's law+param combo, loses
+  // its distinguishing sub-param) but it is not reachable through either
+  // real UI surface, which both build from `PICKER_IDS` and never offer a
+  // folded id as a standalone option. This guard's job — "no two OFFERED
+  // picker options render the same picture" — is honestly measured only
+  // against what a picker offers.
   const offeredLawIds = () => {
     const roster = V.SCENE3D_TONE_LAWS;
-    const ids = ['ladder'].concat(roster ? roster.IDS : []);
+    const pickerIds = roster ? (roster.PICKER_IDS || roster.IDS) : [];
+    const ids = ['ladder'].concat(pickerIds);
     return ids.filter((id) => Shadows.toneLawApplies(id));
   };
 
   test('sanity — the roster and the toneLawApplies predicate are wired up', () => {
     const offered = offeredLawIds();
-    expect(offered.length).toBeGreaterThan(30);
+    // BAR CHANGE (integration merge, 2026-09-06): 30 -> 20. Was measured
+    // against the raw 48-id `IDS` engine vocabulary (41 offered before this
+    // file's own class/id narrowing); now measured against the real picker's
+    // `PICKER_IDS` (35, after fill-collapse U0-U5 folded 13 variant ids into
+    // 5 canonical ids + a sub-param), so the offered count is legitimately
+    // lower (currently 27) — not a widened tolerance hiding a regression,
+    // the underlying roster itself shrank by design. See the MERGE NOTE on
+    // `offeredLawIds` above.
+    expect(offered.length).toBeGreaterThan(20);
     expect(offered).toContain('ladder');
     expect(offered).toContain('none');
     expect(offered).not.toContain('etfKang'); // flow, excluded by mark class

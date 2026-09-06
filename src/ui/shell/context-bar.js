@@ -1596,6 +1596,29 @@
         { text: entry.weaknesses ? `Weaknesses: ${entry.weaknesses}` : '' },
       ], `About ${entry.label || FSC.label}`);
       if (note.caveat) flyNote(fly, note.caveat).classList.add('is-caveat');
+
+      // Fill-collapse U0 — one Select per collapse sub-control the CURRENT
+      // (resolved) law declares (FS.styleParams(law), the SAME data the
+      // docked panel's fillStyleControls reads — the two surfaces must not
+      // drift, the stated contract of SCENE_FILL_STYLES). Empty in U0
+      // (COLLAPSE === {}), so this loop runs zero times today — a provable
+      // no-op. The write carries the FULL params bag, matching the Fill
+      // Style row's own write above.
+      FS.styleParams(law).forEach((d) => {
+        const has = params[d.key] !== undefined && params[d.key] !== null;
+        const dv = has ? params[d.key] : d.default;
+        const subHost = flyRow(fly, d.label);
+        attachSelectArrowStep(selectElOf(flyMixedSelect(subHost, {
+          options: d.options.map((opt) => ({ value: opt.value, label: opt.label })),
+          value: dv,
+          ariaLabel: d.label,
+          mixed: sceneAgree(sc, (id) => {
+            const p = rs(id).params || {};
+            return (p[d.key] !== undefined && p[d.key] !== null) ? p[d.key] : d.default;
+          }).mixed,
+          onChange: (v) => { write({ params: { ...params, [d.key]: v } }); rebuild(); },
+        })));
+      });
     }
     // ── Stroke Fill (sf-w4) — directly beneath Fill Style ───────────────────
     // A VARIABLE-WIDTH Fill Style no longer draws a fat pen: it builds the true
@@ -1866,6 +1889,22 @@
         if (C.toneLawNote) flyNote(fly, C.toneLawNote);
       } else if (FS && Shadows && !isLive && C.toneLawInertNote) {
         flyNote(fly, C.toneLawInertNote);
+      }
+    }
+    // Unit D — shadows falling on OTHER objects' own surfaces. Scene-wide,
+    // like every other row here (shadow.* lives on the LAYER). Off by
+    // default; the (i) note carries the render-cost warning, same click-
+    // driven copy pattern as the Fill Style (i) above.
+    if (C.receiveOnObjects) {
+      const recvHost = flyRow(fly, C.receiveOnObjects.label);
+      UI.SegCtrl(recvHost, {
+        options: C.onOff || [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+        value: bag.shadowReceiveOnObjects === true ? 'on' : 'off',
+        ariaLabel: C.receiveOnObjects.aria,
+        onChange: (v) => setScene('shadow.shadowReceiveOnObjects', v === 'on'),
+      });
+      if (C.receiveOnObjectsNote) {
+        flyLawInfo(fly, recvHost, [{ text: C.receiveOnObjectsNote }], `About ${C.receiveOnObjects.label}`);
       }
     }
     // Follow light — shadows.js derives the hatch bearing from the light travel

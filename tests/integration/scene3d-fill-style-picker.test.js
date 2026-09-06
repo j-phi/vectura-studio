@@ -107,10 +107,24 @@ describe('Fill Style — the shared mark-class config', () => {
   test('groups() returns every roster law plus the shipped default, grouped by mark class — no tier gate', () => {
     const g = F.groups();
     const opts = g.reduce((a, x) => a.concat(x.options), []);
-    expect(opts.length).toBe(R.IDS.length + 1);
+    // Fill-roster collapse (W-22-24-W-18-plan.md) — `groups()` offers
+    // PICKER_IDS (the picker-tier cut), not the full engine vocabulary
+    // `IDS` (unaffected by the collapse, still 48). `PICKER_IDS === IDS`
+    // until U1 lands; from U1 on this is the count that actually shrinks.
+    expect(opts.length).toBe(R.PICKER_IDS.length + 1);
     expect(opts.map((o) => o.value)).toContain('ladder');
-    // Every one of the 11 previously-demoted laws is present, unconditionally.
-    R.LIBRARY.forEach((id) => expect(opts.map((o) => o.value)).toContain(id));
+    // Every one of the 11 previously-demoted laws is STILL PRESENT — unless
+    // it has been folded into a survivor (U1-U8): a folded id is reachable
+    // through its survivor's own sub-control, not as its own flat option, by
+    // design (§0 "nothing is ever removed from the engine, only the
+    // picker's flat option list shrinks"). None of C-01's three folded ids
+    // (fineLadder/phaseFineLadder/perceptualRamp) is LIBRARY-tier, so this
+    // loop is unaffected by U1 — it starts skipping entries once U4/U5 fold
+    // a LIBRARY law (bundleDither/contFieldTouch).
+    R.LIBRARY.forEach((id) => {
+      if (R.ALIASES[id]) return;
+      expect(opts.map((o) => o.value)).toContain(id);
+    });
     // No headed-but-empty group is ever rendered.
     g.forEach((grp) => expect(grp.options.length).toBeGreaterThan(0));
     // Groups are mark classes, not tone-mechanism families.
@@ -190,12 +204,96 @@ describe('Fill Style — the shared mark-class config', () => {
     beforeAll(() => { M = window.Vectura.Scene3D.SurfaceFillMono; });
 
     test('a curved (chart-wrapped) primitive reaches every law — sphere and pyramid', () => {
-      ['sphere', 'pyramid', 'torus', 'cylinder'].forEach((mode) => {
+      ['sphere', 'pyramid', 'cylinder'].forEach((mode) => {
         expect(F.isFaceted(mode)).toBe(false);
         R.IDS.concat(['ladder', 'none']).forEach((id) => {
           expect(F.isReachableOn(id, mode)).toBe(true);
         });
       });
+    });
+
+    // ── W-10d — STALE ASSERTION UPDATE, not a widened gate: the test above
+    // used to include 'torus' and asserted every law reachable there too.
+    // W-10c measured that `originSpiral` cannot be made plottable on the torus
+    // (the lower-left radial fan renders as solid ink wedges — 87.8% of
+    // interior pixels sit in a blank-paper run longer than two pen widths,
+    // WORSE than the pre-W-10c 73.9% — STILL-OPEN.md W-10c/W-10d) and no
+    // primitive id reaches `surface-fill-mono.js` to gate it there (FU-1,
+    // its own follow-up, a different lane's file). The user-facing fix is
+    // this picker gate: torus is curved exactly like sphere/cone/cylinder —
+    // isFaceted stays false, every OTHER law stays reachable — but
+    // `originSpiral` alone is hidden there, unconditionally of mapper (the
+    // defect lives in the mono law itself, not in which Type dispatches it).
+    test('torus is curved like any other chart-wrapped primitive, EXCEPT originSpiral is hidden there (W-10d)', () => {
+      expect(F.isFaceted('torus')).toBe(false);
+      R.IDS.concat(['ladder', 'none']).forEach((id) => {
+        const expected = id !== 'originSpiral';
+        expect(F.isReachableOn(id, 'torus')).toBe(expected);
+      });
+      // Unconditional of mapper — hatch/crosshatch/contour all reach the same
+      // mono law, and the wedge defect is in the law, not the Type.
+      ['hatch', 'crosshatch', 'contour'].forEach((mapper) => {
+        expect(F.isReachableOn('originSpiral', 'torus', undefined, mapper)).toBe(false);
+      });
+      // cone and sphere are unaffected — the gate names 'torus' specifically.
+      ['cone', 'sphere'].forEach((mode) => {
+        expect(F.isReachableOn('originSpiral', mode)).toBe(true);
+        ['hatch', 'crosshatch', 'contour'].forEach((mapper) => {
+          expect(F.isReachableOn('originSpiral', mode, undefined, mapper)).toBe(true);
+        });
+      });
+    });
+
+    // ── W-10d picker surface — groups() disables + suffixes the row exactly
+    // the way W-03's spiral/stipple gate does (this repo's "hide" convention:
+    // the option stays in the <select>, greyed and suffixed, never removed —
+    // see the "groups(mode) disables the dead options" test above and
+    // fill-audit-handoff's W-02 note on the same convention).
+    test('groups("torus") marks originSpiral disabled + suffixed; groups("cone"/"sphere") leaves it live (W-10d)', () => {
+      const optionsFor = (mode) => F.groups(mode).reduce((a, g) => a.concat(g.options), []);
+      const torusEntry = optionsFor('torus').find((o) => o.value === 'originSpiral');
+      expect(torusEntry).toBeTruthy();
+      expect(torusEntry.disabled).toBe(true);
+      expect(torusEntry.label).toContain(F.NO_EFFECT_SUFFIX);
+
+      ['cone', 'sphere'].forEach((mode) => {
+        const entry = optionsFor(mode).find((o) => o.value === 'originSpiral');
+        expect(entry).toBeTruthy();
+        expect(entry.disabled).toBeFalsy();
+        expect(entry.label).not.toContain(F.NO_EFFECT_SUFFIX);
+      });
+    });
+
+    // ── W-10d deserialization — the gate is picker-presentation ONLY. A
+    // document saved before this fix (or hand-edited) that names a torus
+    // object with toneLaw 'originSpiral' must load without throwing and must
+    // NOT be silently rewritten: `clampStyleParam`'s 'toneLaw' case (params.js)
+    // only rejects ids the roster does not recognize at all — it has no
+    // primitiveMode argument and cannot know the value is unreachable on THIS
+    // shape. So the saved id survives normalization unchanged, `resolve()`
+    // (which only checks roster membership, same reason) still returns it,
+    // and the render keeps producing the known wedge defect — `isReachableOn`
+    // is the only place that knows better, and it only shapes the dropdown.
+    // This is the documented fallback (STILL-OPEN.md W-10d/FU-1): hidden in
+    // the picker, not repaired, and not engine-gated.
+    test('a torus layer saved with toneLaw "originSpiral" deserializes unchanged — no throw, no silent rewrite (W-10d)', () => {
+      const P = window.Vectura.Scene3D.Params;
+      const style = P.normalizeStyle({ mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
+      expect(style.params.toneLaw).toBe('originSpiral');
+      expect(F.resolve('originSpiral')).toBe('originSpiral');
+      expect(F.isReachableOn(F.resolve(style.params.toneLaw), 'torus')).toBe(false);
+      // Round-trip through the full scene sanitizer too — a torus object
+      // carrying this style in styleTable.byObject must not throw or mutate
+      // the id either.
+      const sanitized = P.sanitizeSceneParams({
+        objects: [{ id: 'obj-1', primitive: 'torus', params: { sx: 30, sy: 22, sz: 22 } }],
+        styleTable: {
+          scene: { mapper: 'hatch', params: {} },
+          byObject: { 'obj-1': { mapper: 'hatch', params: { toneLaw: 'originSpiral' } } },
+          byFace: {},
+        },
+      });
+      expect(sanitized.styleTable.byObject['obj-1'].params.toneLaw).toBe('originSpiral');
     });
 
     test('box/plane are faceted, and only none/ladder/mono laws reach them', () => {
@@ -242,6 +340,28 @@ describe('Fill Style — the shared mark-class config', () => {
       });
     });
 
+    // ── W-28: imported meshes (Unit F sibling finding) ──────────────────────
+    // `solidType: 'importedMesh'` carries no advance knowledge of the real
+    // mesh's front-face count — that number only exists mid-render, off a
+    // live camera-facing mesh record (`record.faces[i].front`, scene3d.js's
+    // `faceMonoLines`) which this config has no channel to (see
+    // `isCapLimited`'s own comment). Before this fix, an absent/unrecognised
+    // `solidType` fell through to "not the default" and was treated as
+    // reachable — so the picker offered mazeFill/voronoiWeb/turingStripe on
+    // every real import, yet `MONO_MAX_FRONT_FACES = 12` (scene3d.js) makes
+    // any real import (any mesh over 12 faces — virtually all of them)
+    // silently fall back to Ladder the moment one is picked. See
+    // `scene3d-solid-cap-reachability.test.js` for the running-engine proof
+    // that an imported mesh over the cap really does fall back this way.
+    test('solid: an imported mesh is UNCONDITIONALLY cap-limited — its real front-face count is unknown at picker time (W-28)', () => {
+      expect(F.isCapLimited('solid', 'importedMesh')).toBe(true);
+      R.IDS.forEach((id) => {
+        const expected = id === 'none';
+        expect(F.isReachableOn(id, 'solid', 'importedMesh')).toBe(expected);
+      });
+      expect(F.isReachableOn('ladder', 'solid', 'importedMesh')).toBe(true);
+    });
+
     test('an absent/unknown primitiveMode fails OPEN — never disables a law it cannot verify', () => {
       expect(F.isFaceted(undefined)).toBe(false);
       expect(F.isFaceted(null)).toBe(false);
@@ -264,10 +384,18 @@ describe('Fill Style — the shared mark-class config', () => {
         expect(o.disabled).toBeFalsy();
         expect(o.label).not.toContain(F.NO_EFFECT_SUFFIX);
       });
-      // The measured count from the U12 audit: 38 of 49 do nothing on box (onePenDown is a wave law, dead on faceted)
-      // (none/ladder/the 9 mono laws are the 11 that remain reachable).
+      // The measured U12 audit baseline was 38 of 49 (onePenDown is a wave
+      // law, dead on faceted); none/ladder/the 9 mono laws are the 11 that
+      // remain reachable. ALIVE is unaffected by the fill-roster collapse
+      // (none of C-01..C-05's 13 folded ids so far is a mono law). DEAD
+      // moves as the picker's flat list shrinks (W-22-24-W-18-plan.md §5
+      // "…:267-270" — re-measure and re-paste this number, do not assume,
+      // at every unit that folds another id): U1 46 total - 11 alive = 35;
+      // U2 44 total - 11 = 33; U3 43 total - 11 = 32; U4 40 total - 11 = 29;
+      // U5 (C-05, contFieldSigmoid/fieldMetric+fieldFloor, 4 more folded)
+      // 36 total - 11 = 25.
       expect(alive.length).toBe(11);
-      expect(dead.length).toBe(38);
+      expect(dead.length).toBe(25);
       // Group STRUCTURE (count, membership) is unaffected — only reachability.
       expect(g.length).toBe(F.groups('sphere').length);
     });
@@ -323,14 +451,26 @@ describe('Fill Style — the shared mark-class config', () => {
   // Judge's ruling, items 1/5/3/6: `isReachableOn` was mapper-blind, so a
   // faceted primitive under Type=Contour/Spiral/Stipple showed eleven "live"
   // options that are all provably inert (faceMonoLines only dispatches for
-  // hatch/crosshatch — scene3d.js:1533). And on a CURVED primitive, nine mono
-  // laws are byte-identical to Ladder under Type=Spiral/Stipple.
-  describe('mapper-aware reachability (fs-e1 gating: item 1 / item 5)', () => {
+  // hatch/crosshatch — scene3d.js:1533). And on a CURVED primitive, W-03
+  // (F-03, C-09..C-13) measured that 45 of 48 roster laws collapse to a
+  // handful of rung-skipping pictures under Type=Spiral/Stipple — the
+  // original 9 mono laws (true no-ops) PLUS 36 more that "run" but fall back
+  // to bare centrelines or indistinguishable rung-skipping because the
+  // spiral/stipple sinks never publish a width profile. Only `none` /
+  // `ladder` / `fineLadder` / `phaseFineLadder` are the "honest" rung-
+  // skipping options left reachable.
+  describe('mapper-aware reachability (fs-e1 gating: item 1 / item 5; W-03 extends item 5)', () => {
     const ALL_IDS = () => R.IDS.concat(['ladder']);
-    const CURVED_SPIRAL_STIPPLE_INERT = [
-      'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
-      'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
-    ];
+    // The full W-03 inert-or-bare-centreline set — mirrors
+    // src/config/context-bar.js's CURVED_SPIRAL_STIPPLE_INERT exactly.
+    // Computed as "every roster law except the 3 honest rung-skippers"
+    // rather than retyped by hand, so a roster change cannot silently
+    // desync this test from the source it is pinning. A FUNCTION, not a
+    // top-level const: `R` is populated by the outer `beforeAll`, which has
+    // not run yet when this describe body itself executes at collection
+    // time (same reason `ALL_IDS` above is a function, not a value).
+    const CURVED_SPIRAL_STIPPLE_LIVE = new Set(['none', 'fineLadder', 'phaseFineLadder']);
+    const curvedSpiralStippleInert = () => R.IDS.filter((id) => !CURVED_SPIRAL_STIPPLE_LIVE.has(id));
 
     // ── Item 1 — faceted + non-hatch/crosshatch disables EVERYTHING ─────────
     test('faceted (box) + Contour/Spiral/Stipple disables every option, including None and Ladder', () => {
@@ -382,28 +522,69 @@ describe('Fill Style — the shared mark-class config', () => {
       expect(F.groups('box', undefined, 'hatch')).toEqual(F.groups('box'));
     });
 
-    // ── Item 5 — curved primitive + spiral/stipple: exactly 9 mono laws ─────
-    test('curved (sphere) + spiral disables exactly the 9 measured mono laws, and nothing else', () => {
+    // ── Item 5, extended by W-03 — curved primitive + spiral/stipple: only
+    // none/ladder/fineLadder/phaseFineLadder survive; everything else (the
+    // original 9 true no-ops PLUS 36 bare-centreline/rung-skipping laws,
+    // F-03 / C-09..C-13) is disabled — STALE ASSERTION UPDATE: this used to
+    // pin exactly the 9 mono laws; W-03 deliberately widened the gate.
+    test('curved (sphere) + spiral disables all but none/ladder/fineLadder/phaseFineLadder (W-03)', () => {
+      const inert = curvedSpiralStippleInert();
       R.IDS.forEach((id) => {
-        const expected = CURVED_SPIRAL_STIPPLE_INERT.indexOf(id) === -1;
+        const expected = inert.indexOf(id) === -1;
         expect(F.isReachableOn(id, 'sphere', undefined, 'spiral')).toBe(expected);
       });
       expect(F.isReachableOn('ladder', 'sphere', undefined, 'spiral')).toBe(true);
       expect(F.isReachableOn('none', 'sphere', undefined, 'spiral')).toBe(true);
+      expect(F.isReachableOn('fineLadder', 'sphere', undefined, 'spiral')).toBe(true);
+      expect(F.isReachableOn('phaseFineLadder', 'sphere', undefined, 'spiral')).toBe(true);
+      // The exact count W-03 measured: 45 of 48 roster laws gated (+ the 3
+      // kept: none/fineLadder/phaseFineLadder = 48; 'ladder' is the 49th
+      // total option and is not part of the roster's 48).
+      expect(inert.length).toBe(45);
     });
 
-    test('curved (sphere) + stipple disables the SAME 9 laws as spiral', () => {
+    test('curved (sphere) + stipple disables the SAME set as spiral (W-03)', () => {
+      const inert = curvedSpiralStippleInert();
       R.IDS.forEach((id) => {
-        const expected = CURVED_SPIRAL_STIPPLE_INERT.indexOf(id) === -1;
+        const expected = inert.indexOf(id) === -1;
         expect(F.isReachableOn(id, 'sphere', undefined, 'stipple')).toBe(expected);
       });
+      expect(F.isReachableOn('fineLadder', 'sphere', undefined, 'stipple')).toBe(true);
+      expect(F.isReachableOn('phaseFineLadder', 'sphere', undefined, 'stipple')).toBe(true);
+    });
+
+    // ── W-03 justification — the hide is not a guess. A sphere+spiral build
+    // with a ribbon law (taperedEnds) that this list now gates measurably
+    // ships ZERO ribbon rings: `ribbonLaw` is true (taperedEnds IS a
+    // variable-width law) but `wallRings` is 0 (nothing analytically walled
+    // either), proving every stretch fell back to its bare centreline — F-03's
+    // root cause (the spiral sink never calls `noteW`). This is a
+    // CHARACTERIZATION test, not a red→green proof of this commit's own
+    // change (it does not touch surface-fill.js): it stays true today and is
+    // EXPECTED to flip once W-13 (future work) wires a width profile into the
+    // spiral sink — at which point taperedEnds moves back out of
+    // CURVED_SPIRAL_STIPPLE_INERT and this assertion becomes W-13's own RED.
+    test('W-03 justification — sphere+spiral+taperedEnds ships zero ribbons (proves the hide, becomes the W-13 RED)', () => {
+      const V = window.Vectura;
+      const engine = new V.VectorEngine();
+      const groupId = engine.addLayer('scene3d');
+      const obj = engine.getLayerDescendants(groupId).find((l) => l && l.type === 'object3d');
+      obj.params.primitive = 'sphere';
+      obj.params.style = obj.params.style || { penId: null, mapper: 'spiral', params: {} };
+      obj.params.style.mapper = 'spiral';
+      obj.params.style.params = { ...(obj.params.style.params || {}), toneLaw: 'taperedEnds' };
+      engine.computeAllDisplayGeometry();
+      const stats = V.Scene3D.SurfaceFill.lastRibbonStats;
+      expect(stats).toBeTruthy();
+      expect(stats.ribbonLaw).toBe(true);
+      expect(stats.wallRings).toBe(0);
     });
 
     // ── Paired negative — a curved primitive under hatch/crosshatch is
     // untouched by the new spiral/stipple rule (over-gating guard).
     test('curved (sphere) + hatch/crosshatch is unaffected by the spiral/stipple gate', () => {
       ['hatch', 'crosshatch'].forEach((mapper) => {
-        CURVED_SPIRAL_STIPPLE_INERT.forEach((id) => {
+        curvedSpiralStippleInert().forEach((id) => {
           expect(F.isReachableOn(id, 'sphere', undefined, mapper)).toBe(true);
         });
       });
@@ -462,6 +643,151 @@ describe('Fill Style — the shared mark-class config', () => {
       ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'].forEach((mapper) => {
         expect(F.facetedNote('sphere', undefined, mapper)).toBe('');
         expect(F.facetedNote('pyramid', undefined, mapper)).toBe('');
+      });
+    });
+
+    // ── W-02 / F-02 — none/wireframe/contourSlice never dispatch through the
+    // tone-law machinery AT ALL (scene3d.js's SURFACE_FILL only covers hatch/
+    // crosshatch/contour/spiral/stipple), so EVERY id — including None and
+    // the shipped default — must be unreachable there, on EVERY primitive
+    // shape (faceted or chart-wrapped). Before this fix `isReachableOn`
+    // returned true for all 48 laws on a curved primitive (sphere/torus/cone)
+    // under these three Types; the audit measured 1,152 wasted shots.
+    describe('none/wireframe/contourSlice are inert everywhere (W-02, F-02)', () => {
+      const NO_FILL_MAPPERS = ['none', 'wireframe', 'contourSlice'];
+
+      test('curved primitives (sphere, torus, cone): every id, including none/ladder, is unreachable', () => {
+        ['sphere', 'torus', 'cone'].forEach((mode) => {
+          NO_FILL_MAPPERS.forEach((mapper) => {
+            ALL_IDS().forEach((id) => {
+              expect(F.isReachableOn(id, mode, undefined, mapper)).toBe(false);
+            });
+          });
+        });
+      });
+
+      test('faceted primitives (box, solid): every id, including none/ladder, is unreachable', () => {
+        ['box', 'solid'].forEach((mode) => {
+          NO_FILL_MAPPERS.forEach((mapper) => {
+            ALL_IDS().forEach((id) => {
+              expect(F.isReachableOn(id, mode, undefined, mapper)).toBe(false);
+            });
+          });
+        });
+      });
+
+      test('groups(mode, solidType, mapper) marks every option disabled, with the no-effect suffix, for a curved primitive', () => {
+        NO_FILL_MAPPERS.forEach((mapper) => {
+          const g = F.groups('sphere', null, mapper);
+          const opts = g.reduce((a, x) => a.concat(x.options), []);
+          expect(opts.length).toBeGreaterThan(0);
+          opts.forEach((o) => {
+            expect(o.disabled).toBe(true);
+            expect(o.label).toContain(F.NO_EFFECT_SUFFIX);
+          });
+        });
+      });
+
+      // ── Regression guard — the fill mappers this fix must NOT touch ────────
+      // The five surface-fill mappers are never caught by the new clause
+      // (they ARE members of SURFACE_FILL_MAPPERS), so the new clause itself
+      // never zeroes out a shape's reachable set under any of them. Curved
+      // (chart-wrapped) primitives keep something reachable under all 5;
+      // faceted primitives (box) already lose everything under contour/
+      // spiral/stipple for an UNRELATED, pre-existing reason (the faceted
+      // branch's own hatch/crosshatch-only rule — see "faceted (box) +
+      // Contour/Spiral/Stipple disables every option" above), so that
+      // combination is excluded here rather than misread as a new regression.
+      // The per-mapper/per-shape special cases (pyramid+fineLadder+hatch,
+      // spiral/stipple's 9-law inert list, the faceted mono set, …) are each
+      // pinned by their own dedicated test elsewhere in this file, which
+      // exercises this same (already-patched) isReachableOn and would go red
+      // on its own if this change disturbed any of them.
+      test('at least one law stays reachable on a curved shape under every fill mapper (no over-gating)', () => {
+        ['sphere', 'torus', 'cone', 'pyramid'].forEach((mode) => {
+          ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'].forEach((mapper) => {
+            const reachable = ALL_IDS().some((id) => F.isReachableOn(id, mode, undefined, mapper));
+            expect(reachable).toBe(true);
+          });
+        });
+      });
+
+      test('at least one law stays reachable on a faceted shape (box) under hatch/crosshatch (no over-gating)', () => {
+        ['hatch', 'crosshatch'].forEach((mapper) => {
+          const reachable = ALL_IDS().some((id) => F.isReachableOn(id, 'box', undefined, mapper));
+          expect(reachable).toBe(true);
+        });
+      });
+
+      test('an absent mapper is not gated by the new clause (fail-open, unchanged)', () => {
+        ['sphere', 'box', 'solid'].forEach((mode) => {
+          R.IDS.concat(['ladder']).forEach((id) => {
+            // No 4th argument at all — omitted, not just falsy — matches every
+            // pre-existing 3-arg call site in this file and in production code.
+            expect(F.isReachableOn(id, mode)).toBe(F.isReachableOn(id, mode, undefined, undefined));
+          });
+        });
+      });
+
+      // ── The anti-rot proof — this must read a live source, not a baked list.
+      test('the verdict is DERIVED from Vectura.Scene3D.Params.SURFACE_FILL_MAPPERS — swapping it flips the result', () => {
+        const Scene3D = window.Vectura.Scene3D;
+        const realParams = Scene3D.Params;
+        try {
+          // Fake: 'wireframe' is now (incorrectly) a surface-fill mapper.
+          Scene3D.Params = { ...realParams, SURFACE_FILL_MAPPERS: new Set(['wireframe']) };
+          expect(F.isReachableOn('ladder', 'sphere', undefined, 'wireframe')).toBe(true);
+          // And 'hatch' — a REAL fill mapper — is now reported unreachable,
+          // proof this reads the Set live rather than a literal string check.
+          expect(F.isReachableOn('mkTick', 'sphere', undefined, 'hatch')).toBe(false);
+        } finally {
+          Scene3D.Params = realParams;
+        }
+        // Restored: back to the real, measured verdict.
+        expect(F.isReachableOn('ladder', 'sphere', undefined, 'wireframe')).toBe(false);
+        expect(F.isReachableOn('mkTick', 'sphere', undefined, 'hatch')).toBe(true);
+      });
+
+      // ── Drift guard (W-02 reviewer follow-up) — params.js's
+      // SURFACE_FILL_MAPPERS (read by isReachableOn, proven live above) used to
+      // be an independently hand-copied literal with nothing pinning it equal
+      // to scene3d.js's own dispatch gate. scene3d.js now exposes that gate
+      // read-only as `Vectura.Scene3D.SURFACE_FILL_MAPPERS` (built from its
+      // single internal SURFACE_FILL const — the file's second, closure-local
+      // copy was deleted in favor of reading this same Set). This test is what
+      // actually catches a future drift: it fails the moment either list gains
+      // or loses a mapper without the other following.
+      test('scene3d.js\'s SURFACE_FILL_MAPPERS and params.js\'s SURFACE_FILL_MAPPERS name the same mappers', () => {
+        const engineGate = window.Vectura.Scene3D.SURFACE_FILL_MAPPERS;
+        const paramsGate = window.Vectura.Scene3D.Params.SURFACE_FILL_MAPPERS;
+        // Duck-typed, not `toBeInstanceOf(Set)` — the runtime is loaded into a
+        // jsdom window (a separate realm from this test file's own `Set`), so
+        // a same-shape Set built inside that window fails a bare `instanceof`
+        // check even though it is a genuine Set there.
+        expect(typeof engineGate.has).toBe('function');
+        expect(typeof paramsGate.has).toBe('function');
+        expect(engineGate.size).toBeGreaterThan(0);
+        expect([...engineGate].sort()).toEqual([...paramsGate].sort());
+      });
+
+      // ── W-21 reviewer follow-up — the export used to be the LIVE `SURFACE_FILL`
+      // Set, "read-only by convention" only: `Object.freeze` on a Set does not
+      // intercept `.add`/`.delete` (they mutate an internal slot, not an own
+      // property), so an external `.add`/`.delete` on the export silently
+      // corrupted the same Set every one of scene3d.js's five dispatch sites
+      // reads via `SURFACE_FILL.has(...)`. The export is now a read-only VIEW —
+      // `.add`/`.delete` do not exist on it at all, so calling either throws
+      // instead of mutating dispatch, and a genuine mutation attempt cannot
+      // silently change what `isReachableOn` (or any dispatch site) sees.
+      test('the export cannot be mutated into corrupting dispatch (W-21 follow-up)', () => {
+        const engineGate = window.Vectura.Scene3D.SURFACE_FILL_MAPPERS;
+        const before = [...engineGate].sort();
+        expect(typeof engineGate.add).not.toBe('function');
+        expect(typeof engineGate.delete).not.toBe('function');
+        expect(() => { engineGate.add('wireframe'); }).toThrow();
+        expect(() => { engineGate.delete('hatch'); }).toThrow();
+        expect([...engineGate].sort()).toEqual(before);
+        expect(F.isReachableOn('mkTick', 'sphere', undefined, 'hatch')).toBe(true);
       });
     });
   });
@@ -673,9 +999,26 @@ describe('Fill Style — context-bar Style flyout', () => {
       expect(box.classList.contains('vs3-lawinfo-pop')).toBe(false);
     });
 
+    // STALE FIXTURE UPDATE (U4, fill-roster collapse) — 'bundleDither' is now
+    // an ALIAS folded into survivor 'bundleCount'. The docked/ctxbar caveat
+    // line is rendered from the RESOLVED SURVIVOR id (fillStyleControls'
+    // documented design: the (i) popover shows the survivor's own blurb),
+    // and bundleCount itself has no caveat — so bundleDither's real,
+    // measured caveat ("waving the pass-count boundary made long-wave moire
+    // worse") is genuinely no longer reachable through this UI path once
+    // folded. That gap is real, plan-anticipated (§2.4), and requires a
+    // UI-file change (scene3d-panel.js/context-bar.js) to fix — out of scope
+    // for this data-only unit; see the dedicated "U4 caveat-visibility gap"
+    // describe block in scene3d-tone-law-collapse.test.js and this unit's
+    // report for the honest record. This test's actual PURPOSE is to prove
+    // the GENERAL mechanism (a library law's caveat renders without opening
+    // the (i)), so it now uses 'bundleSubNib' — a LIBRARY-tier, caveat-
+    // bearing law that no cluster in this plan ever folds (§1 explicitly
+    // keeps it a distinct row forever) — instead of a law this very unit
+    // just made unreachable via this exact UI path.
     test('the caveat and mark-class note stay reachable without opening the (i)', () => {
       const { fly } = openStyle({
-        styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'bundleDither' } } }),
+        styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'bundleSubNib' } } }),
       });
       const notes = Array.from(openFly().querySelectorAll('.ctxbar-fly-note')).map((n) => n.textContent);
       expect(notes.some((t) => t.startsWith('Parallel hatching —') || t.startsWith('Crosshatch'))).toBe(true);
@@ -693,7 +1036,14 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(rowCtl(fly, 'Experimental')).toBeNull();
     expect(rowCtl(fly, 'Library')).toBeNull();
     const values = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option')).map((o) => o.value);
-    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => expect(values).toContain(id));
+    // Fill-collapse (W-22-24-W-18-plan.md) — a LIBRARY id folded into a
+    // survivor (U1-U8) is reachable through that survivor's own sub-control,
+    // not as its own flat <option>; see the identical note on "groups()
+    // returns every roster law..." above.
+    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => {
+      if (window.Vectura.SCENE3D_TONE_LAWS.ALIASES[id]) return;
+      expect(values).toContain(id);
+    });
     // Still never written to layer params — there is no toggle state to leak.
     const p = scene.params.styleTable.byObject['obj-1'].params;
     expect(Object.keys(p).some((k) => /library/i.test(k))).toBe(false);
@@ -801,18 +1151,46 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(alive.length).toBeGreaterThan(2);
   });
 
-  test('item 5 — a sphere selection with Type=Spiral disables exactly the 9 curved mono laws', () => {
+  // STALE ASSERTION UPDATE (W-03) — used to pin exactly the 9 mono laws;
+  // W-03 widened the spiral/stipple gate to inert-OR-bare-centreline (F-03).
+  // STALE ASSERTION UPDATE (U1) — fineLadder/phaseFineLadder are folded into
+  // ladder's rungMode sub-control and no longer appear as their own row; see
+  // the in-test comment below.
+  test('item 5 — a sphere selection with Type=Spiral disables all but none/ladder (still reachable through ladder\'s own sub-control) (W-03)', () => {
     const SPHERE = { id: 'obj-1', name: 'Sphere', primitive: 'sphere', params: { sx: 40, sy: 40, sz: 40, detail: 16 }, transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
     const { fly } = openStyle({ objects: [SPHERE], styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'spiral', params: {} } }) });
-    const CURVED_SPIRAL_STIPPLE_INERT = [
-      'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
-      'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
-    ];
+    const R = window.Vectura.SCENE3D_TONE_LAWS;
+    const roster = R.IDS;
+    const CURVED_SPIRAL_STIPPLE_LIVE = new Set(['none', 'fineLadder', 'phaseFineLadder']);
+    const CURVED_SPIRAL_STIPPLE_INERT = roster
+      .filter((id) => !CURVED_SPIRAL_STIPPLE_LIVE.has(id))
+      // Fill-roster collapse — a folded id (e.g. perceptualRamp, U1) is no
+      // longer its OWN <option> at all (it is reachable only through its
+      // survivor's sub-control), so it cannot appear in the rendered
+      // select's disabled list either way. Filter the reference set down
+      // to ids the picker still offers as their own row before comparing.
+      .filter((id) => !R.ALIASES[id]);
     const options = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option'));
     const dead = options.filter((o) => o.disabled).map((o) => o.value);
     expect(dead.sort()).toEqual([...CURVED_SPIRAL_STIPPLE_INERT].sort());
     const laddOpt = options.find((o) => o.value === 'ladder');
     expect(laddOpt.disabled).toBe(false);
+    // STALE ASSERTION UPDATE (U1, fill-roster collapse) — fineLadder and
+    // phaseFineLadder are no longer their own flat <option>s (folded into
+    // ladder's rungMode sub-control, ALIASES filter above already proves
+    // it), so there is no <option value="fineLadder"> to assert disabled on
+    // any more. They are still genuinely LIVE/distinguishable here — a user
+    // reaches them via ladder + rungMode:'fine'/'finePhase', and
+    // Params.resolveToneLaw still returns the exact legacy internal id for
+    // that pair (proved byte-identical in
+    // tests/unit/scene3d-tone-law-collapse.test.js's U1 describe block) —
+    // this test only pins the FLAT PICKER row, which the fold correctly
+    // shrank to one ('ladder'). The rungMode sub-control does not yet carry
+    // its own per-option reachability annotation on spiral/stipple (it
+    // would need a UI-file change, out of scope for this data-only unit —
+    // flagged in docs/3d-audit/lane-reports/U1-U5-impl.md).
+    expect(options.find((o) => o.value === 'fineLadder')).toBeUndefined();
+    expect(options.find((o) => o.value === 'phaseFineLadder')).toBeUndefined();
   });
 
   // ── Item 4 — multi-select must not read only the FIRST object's primitive ─
@@ -974,7 +1352,11 @@ describe('Fill Style — docked 3D Scene panel', () => {
     expect(notes.join(' ')).toContain('Voronoi');
     expect(stylePage(container).querySelector('.vs3-lawnote.is-caveat')).toBeNull();
 
-    const lib = openStyle(hatchOn({ toneLaw: 'bundleDither' }));
+    // STALE FIXTURE UPDATE (U4) — 'bundleDither' folded into 'bundleCount';
+    // see the identical note on the ctxbar-flyout version of this fixture
+    // above. 'bundleSubNib' is LIBRARY-tier, has a real caveat, and is never
+    // folded by any cluster in this plan.
+    const lib = openStyle(hatchOn({ toneLaw: 'bundleSubNib' }));
     const caveat = stylePage(lib.container).querySelector('.vs3-lawnote.is-caveat');
     expect(caveat).toBeTruthy();
     expect(caveat.textContent.length).toBeGreaterThan(10);
@@ -1016,8 +1398,10 @@ describe('Fill Style — docked 3D Scene panel', () => {
       expect(btn.getAttribute('aria-expanded')).toBe('false');
     });
 
+    // STALE FIXTURE UPDATE (U4) — 'bundleDither' folded into 'bundleCount';
+    // see the identical note earlier in this file (ctxbar-flyout fixture).
     test('the caveat stays OUTSIDE the popover — reachable without opening the (i)', () => {
-      const { container } = openStyle(hatchOn({ toneLaw: 'bundleDither' }));
+      const { container } = openStyle(hatchOn({ toneLaw: 'bundleSubNib' }));
       const page = stylePage(container);
       const caveat = page.querySelector('.vs3-lawnote.is-caveat');
       expect(caveat).toBeTruthy();
@@ -1281,7 +1665,11 @@ describe('Fill Style — docked 3D Scene panel', () => {
     expect(styleRow(container, 'Experimental')).toBeUndefined();
     expect(styleRow(container, 'Library')).toBeUndefined();
     const values = Array.from(styleRow(container, 'Fill Style').querySelector('select').querySelectorAll('option')).map((o) => o.value);
-    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => expect(values).toContain(id));
+    // Fill-collapse (W-22-24-W-18-plan.md) — see the identical note above.
+    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => {
+      if (window.Vectura.SCENE3D_TONE_LAWS.ALIASES[id]) return;
+      expect(values).toContain(id);
+    });
     expect(layer.params.styleTable.byObject['obj-1'].params.library).toBeUndefined();
   });
 
@@ -1418,7 +1806,14 @@ describe('Shadow Fill Style — the shared toneLawApplies filter', () => {
   // predicate/mark-class sources instead of restating a number.
   test('the offered count is the full roster + default, minus the flow/web mark-class laws and any per-id narrowing', () => {
     const full = F.groups(null, null, null).reduce((a, g) => a + g.options.length, 0);
-    expect(full).toBe(49); // default (ladder) + 48 roster laws
+    // Fill-roster collapse (W-22-24-W-18-plan.md) — the picker's flat list is
+    // PICKER_IDS + the shipped default, not the full 48-id engine vocabulary
+    // (unaffected by the collapse). PICKER_IDS === IDS until U1; from U1 on
+    // this derived count is the one that actually shrinks, so it is read
+    // live rather than restated as "49" (the same self-describing rationale
+    // this test's own comment above already applies to the flow/web count).
+    const R = window.Vectura.SCENE3D_TONE_LAWS;
+    expect(full).toBe(R.PICKER_IDS.length + 1);
     const allIds = F.groups(null, null, null).reduce((acc, g) => acc.concat(g.options.map((o) => o.value)), []);
     // Flow/web is a fact about the roster's own mark-class assignment
     // (independent of shadows.js) — fixed today at 7 ids, verified against
@@ -1950,6 +2345,201 @@ describe('Shadow Fill Style — hidden whenever inert (docked 3D Scene panel)', 
     host2 = shadowHost(container);
     expect(labelExists(host2, 'Fill Style')).toBe(true);
     expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('mkScribble');
+    expect(layer.params.shadow.shadowToneLaw).toBe('mkScribble');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// 5. Unit D (stroke-fill handoff item D) — "Shadows land on objects"
+//    (shadow.shadowReceiveOnObjects). Same WHOLE-STYLE-WINS concern as the
+//    Fill Style picker above, applied to the shadow bag: `shadow.*` is a
+//    plain scene-wide params object (no cascade merge), but a hand-written
+//    onChange handler can still silently clobber sibling keys if it ever
+//    replaces the bag instead of mutating one field. These tests pin that it
+//    does not, on BOTH surfaces, and that the write lands in the correct
+//    scope (the scene layer's own `shadow` bag, not a per-object field).
+// ══════════════════════════════════════════════════════════════════════════
+
+describe('Shadow — "Shadows land on objects" (context-bar Shadow flyout)', () => {
+  let runtime, window, document, app, CB;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    ({ window, document } = runtime);
+    window.app = new window.Vectura.App();
+    app = window.app;
+    app.maxHistory = 100000;
+    CB = window.Vectura.UI.ContextBar;
+    await nextFrames();
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  const host = () => CB.getContentHost();
+  const addSelectScene = (objectIds, overrides = {}) => {
+    app.engine.layers = app.engine.layers.filter((l) => l.type !== 'scene3d');
+    const scene = new window.Vectura.Layer(`scene-shro-${app.engine.layers.length}`, 'scene3d', 'Scene');
+    scene.params = { ...scene.params, ...fixtureParams(overrides) };
+    app.engine.layers.push(scene);
+    app.engine.activeLayerId = scene.id;
+    app.engine.generate(scene.id);
+    app.renderer.setSelection([scene.id], scene.id);
+    app.renderer.setSceneSelection({ layerId: scene.id, mode: 'object', objectIds, faceKeys: [], edgeKeys: [] });
+    CB.restoreState();
+    return scene;
+  };
+  const pills = () => Array.from(host().querySelectorAll('.ctxbar-scene-field'));
+  const pillByLabel = (t) => pills().find((f) => f.getAttribute('aria-label') === t);
+  const openFly = () => document.querySelector('.ctxbar-scene-flyout.is-open');
+  const rowCtl = (fly, label) => {
+    const row = Array.from(fly.querySelectorAll('.ctxbar-fly-row'))
+      .find((r) => (r.querySelector('.ctxbar-fly-label') || {}).textContent === label);
+    return row ? row.querySelector('.ctxbar-fly-ctl') : null;
+  };
+  const openShadow = (objectIds = ['obj-1'], overrides) => {
+    const scene = addSelectScene(objectIds, overrides);
+    pillByLabel('Shadow').click();
+    return { scene, fly: openFly() };
+  };
+  const onOffBtn = (ctl, word) => Array.from(ctl.querySelectorAll('button'))
+    .find((b) => new RegExp(`^${word}$`, 'i').test((b.textContent || '').trim()));
+  const fire = (el, type) => el.dispatchEvent(new window.Event(type, { bubbles: true }));
+
+  test('row exists, labelled "Shadows land on objects", defaults Off', () => {
+    const { fly } = openShadow();
+    const ctl = rowCtl(fly, 'Shadows land on objects');
+    expect(ctl).toBeTruthy();
+    expect(onOffBtn(ctl, 'off')).toBeTruthy();
+    expect(onOffBtn(ctl, 'on')).toBeTruthy();
+  });
+
+  test('carries the same click-driven inline (i) as the Fill Style row, with the render-cost blurb', () => {
+    const { fly } = openShadow();
+    const row = rowCtl(fly, 'Shadows land on objects').parentNode;
+    const btn = row.querySelector('.vs3-lawinfo-btn');
+    expect(btn).toBeTruthy();
+    const box = fly.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+    expect(box.classList.contains('is-open')).toBe(false);
+    fire(btn, 'click');
+    expect(box.classList.contains('is-open')).toBe(true);
+    expect(box.textContent).toMatch(/render cost/i);
+  });
+
+  test('WHOLE-STYLE-WINS — toggling On writes the correct scope and keeps every sibling shadow key', () => {
+    const { scene, fly } = openShadow(['obj-1'], {
+      shadow: {
+        shadowToneLaw: 'penCross', shadowDensity: 77, shadowMode: 'inverse',
+        shadowLineType: 'dashed', shadowAngle: 200,
+      },
+    });
+    const ctl = rowCtl(fly, 'Shadows land on objects');
+    fire(onOffBtn(ctl, 'on'), 'click');
+    // Correct scope: the scene LAYER's shadow bag (scene-wide), not a
+    // per-object field — this is a `shadow.*` write like every sibling row.
+    expect(scene.params.shadow.shadowReceiveOnObjects).toBe(true);
+    // Every sibling key set up above survives — a whole-bag replace would
+    // have reset these to their defaults.
+    expect(scene.params.shadow.shadowToneLaw).toBe('penCross');
+    expect(scene.params.shadow.shadowDensity).toBe(77);
+    expect(scene.params.shadow.shadowMode).toBe('inverse');
+    expect(scene.params.shadow.shadowLineType).toBe('dashed');
+    expect(scene.params.shadow.shadowAngle).toBe(200);
+  });
+
+  test('ROUND TRIP — toggling On then Off again leaves shadowToneLaw untouched throughout', () => {
+    const { scene, fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'mkTick', shadowReceiveOnObjects: false } });
+    let ctl = rowCtl(fly, 'Shadows land on objects');
+    fire(onOffBtn(ctl, 'on'), 'click');
+    expect(scene.params.shadow.shadowReceiveOnObjects).toBe(true);
+    expect(scene.params.shadow.shadowToneLaw).toBe('mkTick');
+    ctl = rowCtl(openFly(), 'Shadows land on objects');
+    fire(onOffBtn(ctl, 'off'), 'click');
+    expect(scene.params.shadow.shadowReceiveOnObjects).toBe(false);
+    expect(scene.params.shadow.shadowToneLaw).toBe('mkTick');
+  });
+});
+
+describe('Shadow — "Shadows land on objects" (docked 3D Scene panel)', () => {
+  let runtime, window, document;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    ({ window, document } = runtime);
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  const mount = (overrides = {}) => {
+    const { UI } = window.Vectura;
+    const layer = { id: 's3d-shro', type: 'scene3d', name: 'Scene 1', visible: true, penId: 'pen-1', params: fixtureParams(overrides) };
+    const ui = { app: { pushHistory: () => {}, regen: () => {} }, storeLayerParams: () => {} };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    UI.Scene3DPanel.build(ui, layer, container);
+    return { ui, layer, container };
+  };
+  const scenePage = (c) => c.querySelector('.vs3-page[data-page="scene"]');
+  const sectionByTitle = (c, title) => Array.from(scenePage(c).querySelectorAll('.sect'))
+    .find((s) => (s.querySelector('.sect-hdr-title') || {}).textContent === title) || null;
+  const shadowHost = (c) => {
+    const s = sectionByTitle(c, 'Shadow');
+    return s ? s.querySelector('.vs3-shadow') : null;
+  };
+  const rowCtl = (host2, label) => {
+    const row = Array.from(host2.querySelectorAll('.vs3-row'))
+      .find((r) => (r.querySelector('.vs3-lbl') || {}).textContent === label);
+    return row ? row.querySelector('.vs3-ctl') : null;
+  };
+  const onOffBtn = (ctl, word) => Array.from(ctl.querySelectorAll('button'))
+    .find((b) => new RegExp(`^${word}$`, 'i').test((b.textContent || '').trim()));
+  const fire = (el, type) => el.dispatchEvent(new window.Event(type, { bubbles: true }));
+
+  test('row exists, labelled "Shadows land on objects", defaults Off', () => {
+    const { container } = mount();
+    const host2 = shadowHost(container);
+    const ctl = rowCtl(host2, 'Shadows land on objects');
+    expect(ctl).toBeTruthy();
+    expect(onOffBtn(ctl, 'off')).toBeTruthy();
+    expect(onOffBtn(ctl, 'on')).toBeTruthy();
+  });
+
+  test('carries the same click-driven inline (i) as the Fill Style row, with the render-cost blurb', () => {
+    const { container } = mount();
+    const host2 = shadowHost(container);
+    const row = rowCtl(host2, 'Shadows land on objects').parentNode;
+    const btn = row.querySelector('.vs3-lawinfo-btn');
+    expect(btn).toBeTruthy();
+    fire(btn, 'click');
+    const pop = row.querySelector('.vs3-lawinfo-pop.is-open');
+    expect(pop).toBeTruthy();
+    expect(pop.textContent).toMatch(/render cost/i);
+  });
+
+  test('WHOLE-STYLE-WINS — toggling On writes the correct scope (layer.params.shadow) and keeps every sibling key', () => {
+    const { container, layer } = mount({
+      shadow: {
+        shadowToneLaw: 'mkDotScreen', shadowDensity: 63, shadowMode: 'inverse',
+        shadowLineType: 'dotted', shadowAngle: 88,
+      },
+    });
+    const host2 = shadowHost(container);
+    const ctl = rowCtl(host2, 'Shadows land on objects');
+    fire(onOffBtn(ctl, 'on'), 'click');
+    expect(layer.params.shadow.shadowReceiveOnObjects).toBe(true);
+    expect(layer.params.shadow.shadowToneLaw).toBe('mkDotScreen');
+    expect(layer.params.shadow.shadowDensity).toBe(63);
+    expect(layer.params.shadow.shadowMode).toBe('inverse');
+    expect(layer.params.shadow.shadowLineType).toBe('dotted');
+    expect(layer.params.shadow.shadowAngle).toBe(88);
+  });
+
+  test('ROUND TRIP — toggling On then Off again leaves shadowToneLaw untouched throughout', () => {
+    const { container, layer } = mount({ shadow: { shadowToneLaw: 'mkScribble', shadowReceiveOnObjects: false } });
+    let host2 = shadowHost(container);
+    fire(onOffBtn(rowCtl(host2, 'Shadows land on objects'), 'on'), 'click');
+    expect(layer.params.shadow.shadowReceiveOnObjects).toBe(true);
+    expect(layer.params.shadow.shadowToneLaw).toBe('mkScribble');
+    host2 = shadowHost(container);
+    fire(onOffBtn(rowCtl(host2, 'Shadows land on objects'), 'off'), 'click');
+    expect(layer.params.shadow.shadowReceiveOnObjects).toBe(false);
     expect(layer.params.shadow.shadowToneLaw).toBe('mkScribble');
   });
 });

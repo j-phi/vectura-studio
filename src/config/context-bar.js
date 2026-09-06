@@ -233,9 +233,28 @@
   };
   // Map a stored value onto an option this picker actually offers. Anything
   // unknown collapses onto the default, matching the engine's own clamp.
+  // Fill-collapse U0 — a FOLDED id (an old document/preset carrying e.g.
+  // `fineLadder`) maps to its SURVIVOR first, so the select highlights the
+  // row that is actually still offered instead of falling back to Ladder.
+  // `ALIASES` is `{}` until U1-U8 land, so this is a no-op today.
   SCENE_FILL_STYLES.resolve = (value) => {
     if (typeof value !== 'string' || !value) return FILL_STYLE_DEFAULT;
-    return SCENE_FILL_STYLES.entry(value) ? value : FILL_STYLE_DEFAULT;
+    const R = fillStyleRoster();
+    const alias = R && R.ALIASES && R.ALIASES[value];
+    const aliased = alias ? alias.into : value;
+    return SCENE_FILL_STYLES.entry(aliased) ? aliased : FILL_STYLE_DEFAULT;
+  };
+  // The collapse sub-control descriptor(s) the given (already-resolved,
+  // survivor) law id declares — `[]` for a law with no collapse (every law
+  // until U1-U8 land). One entry per descriptor:
+  // `{ key, label, default, options: [{ value, label, law }] }`. Read by both
+  // UI surfaces (scene3d-panel.js `fillStyleControls`, the ctxbar Style
+  // flyout) so the generic sub-control row cannot drift between them — they
+  // render off the SAME data, not a restated copy.
+  SCENE_FILL_STYLES.styleParams = (id) => {
+    const R = fillStyleRoster();
+    const sp = R && R.STYLE_PARAMS && R.STYLE_PARAMS[id];
+    return Array.isArray(sp) ? sp : [];
   };
   // [{ group, options: [{ value, label, disabled? }] }] for UI.Select, grouped
   // by MARK CLASS. Every law the roster knows is always offered — all 47 plus
@@ -258,7 +277,13 @@
   // `isReachableOn` below.
   SCENE_FILL_STYLES.groups = (primitiveMode, solidType, mapper) => {
     const R = fillStyleRoster();
-    const ids = R ? R.IDS : [];
+    // Fill-collapse U0 — the flat list this picker offers is `PICKER_IDS`
+    // (roster minus every folded id), NOT the full 48-id `IDS` (the engine
+    // vocabulary, unaffected by the collapse). Falls back to `IDS` when
+    // `PICKER_IDS` is absent (a stale/pre-collapse config) so the picker
+    // never renders empty. `PICKER_IDS === IDS` until U1-U8 land, so this is
+    // a no-op today.
+    const ids = R ? (R.PICKER_IDS || R.IDS) : [];
     const out = [];
     FILL_STYLE_MARK_CLASSES.forEach((cls) => {
       const options = [];
@@ -362,22 +387,69 @@
   // itself uses). Any OTHER named solid is assumed under the cap — matching
   // the one low-poly solid this repo has actually measured (a dodecahedron) —
   // rather than guessed at without evidence.
+  //
+  // `importedMesh` is the one exception to that "assumed under the cap"
+  // default, and it is unconditional (W-28). `faceMonoLines`'s
+  // `MONO_MAX_FRONT_FACES` check (scene3d.js) reads a live camera-facing
+  // mesh record's real front-face count mid-render — this config has no
+  // channel to that number at picker time, for ANY imported mesh, so unlike
+  // a named platonic/geodesic solid (whose face count is a fixed, known
+  // constant this file could in principle special-case) there is no safe
+  // "assume it's fine" default here: a real .obj/.stl import is essentially
+  // always well over 12 faces. Treating it as cap-limited unconditionally
+  // means the picker under-promises (it hides mono laws that a rare
+  // sub-13-face import could actually reach) rather than over-promises (
+  // offering laws that silently render as Ladder) — the same fail-toward-
+  // fewer-live-options bias `isReachableOn`'s mapper gate already uses.
   SCENE_FILL_STYLES.isCapLimited = (primitiveMode, solidType) => {
     if (primitiveMode !== 'solid') return false;
+    if (solidType === 'importedMesh') return true;
     const P = Vectura.Scene3D && Vectura.Scene3D.Params;
     const dflt = (P && P.PRIMITIVE_PARAM_DEFAULTS && P.PRIMITIVE_PARAM_DEFAULTS.solid
       && P.PRIMITIVE_PARAM_DEFAULTS.solid.solidType) || 'buckyball';
     return (solidType || dflt) === dflt;
   };
-  // fs-e1 judge's ruling, item 5 — measured byte-identical to Ladder across
-  // three independent parameter points on a CURVED (chart-wrapped) primitive
-  // under Type=Spiral/Stipple. Nothing else in the curved arm is gated by
-  // this list — see the paired negative in
-  // `scene3d-fill-style-picker.test.js` "curved (sphere) + hatch/crosshatch
-  // is unaffected by the spiral/stipple gate".
+  // fs-e1 judge's ruling, item 5, EXTENDED by W-03 (F-03, clusters C-09..
+  // C-13) — this list is now INERT-OR-BARE-CENTRELINE, not just "byte-
+  // identical to Ladder". The original 9 (etfKang..mazeFill) are true
+  // no-ops: a mono law with no planar dispatch on the curved/spiral-stipple
+  // path at all. The other 36 are a DIFFERENT, later-measured failure: the
+  // spiral sink never calls `noteW` and stipple pushes dot rings with no
+  // run, so `wCnt === 0` and every width-modulated law's `ribbonize` step is
+  // skipped — the law still "runs", but every stretch degrades to its bare
+  // centreline (12 ribbon laws) or to plain rung-skipping indistinguishable
+  // from a handful of sibling laws (bundle x6, contField x5, pen x6, mk x4,
+  // and the remaining named laws below) — 18-19 distinct pictures across 39
+  // laws measured, 432 `bareCentrelinesOnly` shots. Keeping only `none` /
+  // `ladder` / `fineLadder` / `phaseFineLadder` reachable here is keeping
+  // exactly the "honest" rung-skipping options — the ones whose whole
+  // mechanism IS which rungs are drawn, so degrading to that is not a
+  // degradation at all. Nothing else in the curved arm is gated by this
+  // list — see the paired negative in `scene3d-fill-style-picker.test.js`
+  // "curved (sphere) + hatch/crosshatch is unaffected by the spiral/stipple
+  // gate". W-13 (future work) wires a real width profile into the spiral
+  // sink; when it lands, the 12 ribbon laws move back out of this list —
+  // see `SurfaceFill.lastRibbonStats` (ribbonLaw && wallRings === 0 on a
+  // sphere+spiral+taperedEnds build today) as the characterization proof
+  // that justifies the hide and the RED this list's shrink will satisfy.
   const CURVED_SPIRAL_STIPPLE_INERT = [
+    // The original 9 — true no-ops, no planar dispatch at all.
     'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
     'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
+    // C-09 — bare centrelines (ribbon laws with no width profile on this path).
+    'nibAngle', 'taperedEnds', 'isophoteWidth', 'whiteBand',
+    // C-12 — bare centrelines / rung-skipping (ribbon + wave laws).
+    'weightModulated', 'weightSmoothstep', 'interlockWeave', 'trochoidLoop',
+    'onePenDown', 'penInterleave', 'penReserve', 'penPitchMatch',
+    // C-13 — rung-skipping, indistinguishable from Ladder/Fine Ladder here.
+    'perceptualRamp', 'lozengeStipple', 'deepFillTSP', 'ampSpacing',
+    'weaveDepth', 'amplitudeOnly', 'penCross', 'penFacing',
+    // C-10 — bundle (6) + contField (5) + penStipple: every rung drawn, ~ No Tone.
+    'bundleCount', 'bundleSubNib', 'bundleEased', 'bundleDither',
+    'bundleLozenge', 'bundleHandoff', 'contFieldSigmoid', 'contFieldTouch',
+    'contFieldFore', 'contFieldSurface', 'contFieldQuant', 'penStipple',
+    // C-11 — the mark emitter is never reached.
+    'mkScribble', 'mkTick', 'mkDashRamp', 'mkDotScreen',
   ];
   SCENE_FILL_STYLES.CURVED_SPIRAL_STIPPLE_INERT = CURVED_SPIRAL_STIPPLE_INERT;
   // Never lies in either direction: with no shape context (mixed/scene-scope
@@ -395,6 +467,30 @@
   // no differently. This check runs before the default/none early-out so
   // those two are not silently exempted.
   SCENE_FILL_STYLES.isReachableOn = (id, primitiveMode, solidType, mapper) => {
+    // fs-e2 (W-02, F-02) — `none`/`wireframe`/`contourSlice` never reach the
+    // tone-law machinery AT ALL, on ANY primitive, faceted or chart-wrapped:
+    // scene3d.js's SURFACE_FILL only dispatches for hatch/crosshatch/contour/
+    // spiral/stipple (`none` draws bare outlines, `wireframe` draws edges,
+    // `contourSlice` cuts the mesh with parallel planes — none of the three
+    // is a surface fill). Measured: all 48 laws were byte-identical to each
+    // other on sphere/torus/cone/box under these three Types — 1,152 of
+    // 7,440 audit shots spent on one picture. So every id, INCLUDING `none`
+    // and the shipped default, is unreachable here — this runs FIRST so
+    // neither is silently exempted, mirroring the faceted off-axis rule
+    // below but generalized to every primitive shape and keyed off the
+    // mapper alone. Reads `Vectura.Scene3D.Params.SURFACE_FILL_MAPPERS`
+    // (mirrors scene3d.js's own SURFACE_FILL Set — see that constant's own
+    // comment in params.js for why this is a second copy, not a live read of
+    // the engine's private const) rather than a restated literal, so a real
+    // membership swap flips the verdict — see "the reachable set is DERIVED"
+    // test. An ABSENT mapper is not gated by this clause, matching the
+    // fail-open convention documented above `isReachableOn`.
+    const P0 = Vectura.Scene3D && Vectura.Scene3D.Params;
+    const surfaceFillMappers = P0 && P0.SURFACE_FILL_MAPPERS;
+    if (mapper && surfaceFillMappers && typeof surfaceFillMappers.has === 'function'
+      && !surfaceFillMappers.has(mapper)) {
+      return false;
+    }
     const faceted = SCENE_FILL_STYLES.isFaceted(primitiveMode);
     if (faceted) {
       if (mapper && mapper !== 'hatch' && mapper !== 'crosshatch') return false;
@@ -419,6 +515,22 @@
     // Measured: `fineLadder` is inert on pyramid+hatch only — it is live on
     // pyramid crosshatch AND contour (over-gating guard: do not gate those).
     if (primitiveMode === 'pyramid' && mapper === 'hatch' && id === 'fineLadder') return false;
+    // W-10d (STILL-OPEN.md W-10/W-10b/W-10c) — `originSpiral` cannot be made
+    // plottable on the torus: after W-10c's plot-floor raise the mono law's
+    // lower-left radial fan renders as solid ink wedges (measured 87.8% of
+    // interior pixels in a blank-paper run longer than two pen widths, worse
+    // than W-10b's 73.9%), and no primitive id reaches `surface-fill-mono.js`
+    // to gate it there (FU-1 — a different lane's file, not attempted here).
+    // Hidden in the picker instead, unconditionally of mapper (the defect is
+    // in the mono law itself, not in which Type dispatches it) — the same
+    // "hide it here" mechanism W-03 used for the spiral/stipple gate above.
+    // This does NOT reach saved documents: a torus layer already carrying
+    // toneLaw 'originSpiral' still normalizes and renders unchanged (see
+    // `clampStyleParam`'s 'toneLaw' case, params.js — it only rejects ids the
+    // roster does not recognize at all, with no primitiveMode of its own to
+    // know this one is unreachable on THIS shape); the torus wedge is hidden
+    // from new picks, not repaired.
+    if (primitiveMode === 'torus' && id === 'originSpiral') return false;
     return true;
   };
   SCENE_FILL_STYLES.NO_EFFECT_SUFFIX = ' — no effect here';
@@ -744,6 +856,14 @@
         // fs-q1 — replaces the toneLaw row entirely (see buildShadowBody) when
         // Shadows.shadowFillStyleApplies says the row would do nothing.
         toneLawInertNote: SCENE_FILL_STYLES.SHADOW_LAYERS_NOTE,
+        // Unit D (stroke-fill handoff item D) — shadows falling on OTHER
+        // objects' own surfaces (per-sample Regions.combinedIntensity shadow
+        // term, Scene3D.ShadowReceive). Off by default: it is O(objects^2)
+        // per frame (every object tests every other as a candidate
+        // occluder), so the (i) note below warns about render cost before a
+        // user opts in — same copy pattern as the Fill Style (i) above.
+        receiveOnObjects: { label: 'Shadows land on objects', aria: 'Shadows land on other 3D objects' },
+        receiveOnObjectsNote: 'Shadows attenuate light on other objects too, drawn in each object’s own fill style. Adds render cost, especially with many objects in the scene.',
       },
       highlight: {
         treatment: { label: 'Treatment', aria: 'Highlight treatment' },

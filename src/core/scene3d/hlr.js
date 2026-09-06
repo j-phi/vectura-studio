@@ -336,15 +336,26 @@
 
     // seg: { ownerKeys: [faceKey…], objectId } — context for owner exclusion.
     const hiddenAt = (x, y, z, seg) => {
-      // F7b — optional ANALYTIC self-occlusion source (Scene3D.TorusOcclusion,
-      // built from a closed-form ray/torus intersection — see that module's
-      // header for why the mesh-based test below needs a wide tessellation-
-      // noise margin that makes it blind to a shallow cusp crossing, while an
-      // exact analytic surface has no such noise and can use a tight one).
-      // Purely additive (OR'd in): it can only make a sample MORE hidden than
-      // the mesh test alone would, never less, and is a no-op (undefined)
-      // for every object that doesn't supply one.
-      if (seg && typeof seg.analyticOccluder === 'function' && seg.analyticOccluder(x, y, z)) return true;
+      // F7b — optional ANALYTIC self-occlusion source (Scene3D.TorusOcclusion;
+      // as of A2 this is a dense analytic near/far FIELD classification, not
+      // a per-sample ray — see that module's header). Checked FIRST and, for
+      // SAME-OBJECT occluders, AUTHORITATIVE where present (A2 change — see
+      // below): the mesh-based test's `SELF_OCCLUDE_BIAS` margin has to be
+      // wide enough to absorb the tessellated mesh's own chording error
+      // against the true surface, and that same width is exactly what let
+      // residual cross-run false positives through at self-crossing/fold
+      // locations (measured up to ~2mm² per law on `interlockWeave`/
+      // `onePenDown`/`trochoidLoop`/`ampSpacing`/`weaveDepth` — see
+      // `docs/3d-audit/handoff/unit-a2-notes.md`). The analytic field has no
+      // chording error, so it replaces the mesh test for same-object
+      // occlusion outright rather than merely OR-ing in extra detections.
+      // Cross-OBJECT occlusion (a different object's mesh, or ANY object
+      // when the segment has no analytic source — every non-torus
+      // primitive, torus-knot, and imported mesh) is completely unaffected —
+      // it still falls through to the mesh-based scan below exactly as
+      // before.
+      const analyticSelf = seg && typeof seg.analyticOccluder === 'function';
+      if (analyticSelf && seg.analyticOccluder(x, y, z)) return true;
       if (buffer) {
         // Owner-aware buffer lookup: exclude the segment's primary face. The
         // secondary adjacent face agrees with the sample along the shared
@@ -354,10 +365,13 @@
         // Continuous surface hatch lies ON the front surface, so in the rare
         // buffer-fallback path treat it as visible rather than self-occluding
         // — UNLESS this is a non-convex object opted into real self-occlusion
-        // (seg.selfOcclude), in which case the owner-aware buffer lookup below
-        // already excludes only the segment's own face, so the normal
-        // (larger, tessellation-noise-safe) margin is used instead.
-        if (seg.selfObject && !seg.selfOcclude) return false;
+        // (seg.selfOcclude) WITHOUT a more precise analytic source (A2: when
+        // one exists it was already tested above and is authoritative for
+        // self-occlusion, so the coarse buffer margin never re-decides it),
+        // in which case the owner-aware buffer lookup below already excludes
+        // only the segment's own face, so the normal (larger, tessellation-
+        // noise-safe) margin is used instead.
+        if (seg.selfObject && (!seg.selfOcclude || analyticSelf)) return false;
         const owner = seg.ownerKeys && seg.ownerKeys.length ? seg.ownerKeys[0] : undefined;
         const buf = seg.selfOcclude ? Math.max(bias, SELF_OCCLUDE_BIAS) : Math.max(bias, 0.5);
         return buffer.depthAt(x, y, owner) > z + buf;
@@ -380,8 +394,13 @@
         // (seg.selfOcclude, set only for the torus/imported-mesh self-
         // occlusion gate — see scene3d.js's segCtx construction) genuinely
         // can, so it falls through to the real depth test below instead of
-        // being skipped outright.
-        if (seg.selfObject && sameObject && !seg.selfOcclude) continue;
+        // being skipped outright — UNLESS (A2) a precise analytic source
+        // already decided self-occlusion above, in which case the coarse
+        // mesh-chording test is skipped for same-object occluders entirely
+        // (never re-adds a false positive the analytic field already
+        // rejected). Cross-object occluders are untouched by `analyticSelf`
+        // — only `sameObject` is gated.
+        if (seg.selfObject && sameObject && (!seg.selfOcclude || analyticSelf)) continue;
         if (occ.limitToObject && occ.objectId !== seg.objectId) continue; // x-ray occluder
         if (x < occ.bbox.minX || x > occ.bbox.maxX || y < occ.bbox.minY || y > occ.bbox.maxY) continue;
         // Self-occlusion needs a wider depth margin than cross-object

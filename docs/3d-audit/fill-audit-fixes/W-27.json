@@ -1,0 +1,28 @@
+{
+  "id": "W-27",
+  "title": "contourSlice rings have visible angles; rounding must be on by default",
+  "branch": "3d-scene/fill-audit-d",
+  "commit": "d100ff0d968a20775c5f01e5f7e1e77b5660bbcf",
+  "before": [
+    "shots/A/sphere__contourSlice__ladder__med__a.webp",
+    "shots/A/torus__contourSlice__ladder__med__a.webp",
+    "shots/A/box__contourSlice__ladder__med__a.webp",
+    "shots/A/solid__contourSlice__ladder__med__a.webp"
+  ],
+  "after": [
+    "shots/A/sphere__contourSlice__ladder__med__a.webp",
+    "shots/A/torus__contourSlice__ladder__med__a.webp",
+    "shots/A/box__contourSlice__ladder__med__a.webp",
+    "shots/A/solid__contourSlice__ladder__med__a.webp"
+  ],
+  "notes": "W-27b (superseding W-27's CR-only pass, rejected: inner rings still read as a rounded N-gon). Catmull-Rom through mesh-chord points caps circularity since those points sit strictly inside the true surface. New sliceAnalyticProjectLocal snaps every ring point -- original AND newly-subdivided -- onto the primitive's CLOSED-FORM implicit surface (sphere/ellipsoid: hold local z fixed, solve x,y exactly on the ellipsoid at that z; cylinder/cone: same pattern on their own axis; torus: nearest point on the tube cross-section circle), inverse/forward-transformed through the object's actual transform, then re-clamped onto the world cutting plane. Wired into refineSliceRing via a new analyticProject hook applied each subdivision round. Gate: 'solid' is no longer statically excluded -- solidType!=='importedMesh' (buckyball/star/named polyhedra) stays faceted+excluded; solidType==='importedMesh' is now eligible (falls back to CR-only, since no closed form exists for an arbitrary mesh). Ceiling tightened 12->8deg exterior turn; refineSliceRing's early-return raised from <4 to <3 points so a raw 3-point triangle (the sparsest real pole ring) is refined too, not skipped. Measured (r20/detail16/sliceCount26, identity transform): worst ring's max turn now <=7.8deg (was <=11.58deg under CR-only); pole ring: 121 points (>=48 required), max radial deviation from analytic circle 0.0151mm (raw 1.068mm, CR-only-refined 0.94mm) -- comfortably under the 0.1mm bar. Perf: single detail-50/sliceCount-40 sphere generate() median 622ms over 5 runs (not the reviewer's cited 8-object fixture -- could not reproduce that exact rig in budget); the existing perf GUARD test (detail-80/sliceCount-120, this file's test (d)) still passes at 2235ms against its 8000ms ceiling, and SLICE_CLIP_WORK/the plane-count tri-budget are untouched by this change (analytic correction runs on the already-linked ring, after clip-work accounting). Live-verified: sphere+contourSlice in the real app (port 8481, sphere added from shelf, mapper set to contourSlice) -- the two innermost pole-adjacent rings now read as clean circles with no visible facets (docs/3d-audit/fill-audit/after/W-27/inner-rings-circles-proof.png), a stark contrast to the earlier CR-only result's visible heptagon.",
+  "tests": {
+    "red": "W-27 (CR-only): expect(received).toBeLessThanOrEqual(12) Received 55.74 (uniform 4-point overshoot). W-27b: reviewer rejected the CR-only fix on visual grounds (inner rings still an N-gon) -- no new automated red, the bar moved to an accuracy assertion (<0.1mm, >=48pts) that a units-correct implementation must pass; first analyticProject draft (normalize full 3D vector) gave refinedDev=0.94mm, failing the <0.1mm bar until corrected to hold local z fixed and solve x,y (0.0151mm).",
+    "green": "npx vitest run tests/unit/scene3d-contour-slice.test.js -> Test Files 1 passed (1), Tests 19 passed (19)",
+    "suites": "tests/unit/scene3d-contour-slice.test.js 19/19 (incl. new >=48pt/<0.1mm sphere-circle assertion); tests/unit/scene3d-hlr-spatial-index-identity.test.js 6/6 (byte-identity guard untouched, re-run post-W-27b); tests/unit/scene3d-curves.test.js 13/13 (re-run at W-27, unaffected by W-27b -- no touch to geometry-utils.js/engine.js); tests/unit/scene3d-hlr.test.js 11/11; npm run test:unit (full suite, pre-W-27b): 437/439 files clean before killed by shared-machine contention"
+  },
+  "byte_identical_pairs": [
+    "box__contourSlice__ladder__med__a -- unaffected: box's primitive is in SLICE_SMOOTH_EXCLUDED (faceted), so refineRing is never called on it; confirmed md5-identical before/after",
+    "solid__contourSlice__ladder__med__a (this shot's solidType is the faceted default, not importedMesh) -- unaffected: still excluded per the new per-object solidType check; confirmed md5-identical before/after"
+  ]
+}
