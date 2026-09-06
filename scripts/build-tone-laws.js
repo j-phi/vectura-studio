@@ -198,6 +198,81 @@ if (PRODUCTION.length !== 37 || LIBRARY.length !== 11) {
   throw new Error(`[build-tone-laws] Expected 37 production / 11 library, got ${PRODUCTION.length}/${LIBRARY.length}.`);
 }
 
+// ── 5b. The fill-roster COLLAPSE table (U0 of the picker collapse — see
+// docs/3d-audit/lane-reports/W-22-24-W-18-plan.md). `IDS` above stays the
+// full 48-id ENGINE vocabulary forever — nothing is ever removed from it.
+// This table is a separate, curated PRESENTATION decision: a survivor id
+// (still a member of IDS) names the ONE sub-control that lets a user reach
+// every id it folds. Hand-curated here beside LABELS/LIBRARY_IDS above —
+// exactly the precedent those two set for presentation-tier decisions that
+// are not derivable from laws.json.
+//
+// Shape: `COLLAPSE[survivorId]` is an array of descriptors (almost always
+// length 1; `contFieldSigmoid`, U5, is the one two-descriptor survivor).
+// Each descriptor is `{ key, label, default, options }`; each option is
+// `{ value, label, law }` where `law` is the INTERNAL id
+// (`Vectura.Scene3D.Params.resolveToneLaw` returns) that option resolves to.
+// The option whose `value === default` names the survivor's OWN bare law
+// (never an alias — see the ALIASES derivation below, which skips it on
+// purpose); every OTHER option's `law` is a folded id that becomes an
+// ALIASES entry.
+//
+// EMPTY in U0 — the whole point of this foundation unit is that with no
+// rows here, PICKER_IDS === IDS and ALIASES === {}: a provable byte-identical
+// no-op. U1…U8 each add exactly one row (their own audit cluster, C-01…C-08).
+const COLLAPSE = {};
+
+// ── 5c. Derive ALIASES + PICKER_IDS + STYLE_PARAMS from COLLAPSE ───────────
+// ALIASES: folded id -> { into: survivor, params: { [descriptor.key]: value } }.
+// This is what `Params.resolveToneLaw` and `normalizeStyle`'s migration shim
+// both read to turn a legacy/alias id back into (survivor, params) or
+// straight into the internal id it already names.
+const ALIASES = {};
+Object.keys(COLLAPSE).forEach((survivor) => {
+  const descriptors = COLLAPSE[survivor];
+  descriptors.forEach((d) => {
+    d.options.forEach((opt) => {
+      if (opt.value === d.default) return; // the survivor's own bare id, not an alias
+      if (ALIASES[opt.law]) {
+        throw new Error(`[build-tone-laws] "${opt.law}" is aliased twice (descriptor "${d.key}" of survivor "${survivor}").`);
+      }
+      ALIASES[opt.law] = { into: survivor, params: { [d.key]: opt.value } };
+    });
+  });
+});
+// PICKER_IDS: the flat option list the UI actually offers — IDS minus every
+// folded id. The survivor itself STAYS (it is not its own alias).
+const PICKER_IDS = IDS.filter((id) => !ALIASES[id]);
+// STYLE_PARAMS: the COLLAPSE table verbatim — it drives the UI's generic
+// sub-control AND is read back by ALIASES above, so the two can never drift.
+const STYLE_PARAMS = COLLAPSE;
+
+// Integrity throws (§2.1 of the plan) — the collapse table can never
+// silently corrupt the engine vocabulary or name a law the roster forgot.
+Object.keys(ALIASES).forEach((aliasId) => {
+  if (IDS.indexOf(aliasId) === -1) {
+    throw new Error(`[build-tone-laws] ALIASES key "${aliasId}" is not a roster id.`);
+  }
+  if (PICKER_IDS.indexOf(ALIASES[aliasId].into) === -1) {
+    throw new Error(`[build-tone-laws] ALIASES["${aliasId}"].into ("${ALIASES[aliasId].into}") is not a PICKER_IDS survivor.`);
+  }
+});
+Object.keys(COLLAPSE).forEach((survivor) => {
+  COLLAPSE[survivor].forEach((d) => {
+    d.options.forEach((opt) => {
+      if (IDS.indexOf(opt.law) === -1) {
+        throw new Error(`[build-tone-laws] COLLAPSE["${survivor}"] descriptor "${d.key}" option "${opt.value}" law "${opt.law}" is not a roster id.`);
+      }
+    });
+  });
+});
+{
+  const union = new Set(PICKER_IDS.concat(Object.keys(ALIASES)));
+  if (union.size !== IDS.length || IDS.some((id) => !union.has(id))) {
+    throw new Error('[build-tone-laws] PICKER_IDS ∪ keys(ALIASES) must equal IDS exactly.');
+  }
+}
+
 // ── 6. VERSION — the git blob sha of laws.json at generation time, so a
 // drift between the doc and the snapshot is detectable. Falls back to a
 // content sha256 if git is unavailable (e.g. a clean checkout without .git).
@@ -216,6 +291,9 @@ const byIdJson = JSON.stringify(BY_ID, null, 2);
 const idsJson = JSON.stringify(IDS, null, 2);
 const productionJson = JSON.stringify(PRODUCTION, null, 2);
 const libraryJson = JSON.stringify(LIBRARY, null, 2);
+const pickerIdsJson = JSON.stringify(PICKER_IDS, null, 2);
+const aliasesJson = JSON.stringify(ALIASES, null, 2);
+const styleParamsJson = JSON.stringify(STYLE_PARAMS, null, 2);
 
 const output = `/**
  * Vectura Studio — Scene 3D tone-law catalog (generated).
@@ -240,6 +318,22 @@ const output = `/**
   const PRODUCTION = ${productionJson};
   const LIBRARY = ${libraryJson};
 
+  // Fill-roster collapse (see docs/3d-audit/lane-reports/W-22-24-W-18-plan.md).
+  // IDS above is the full 48-id ENGINE vocabulary and never shrinks; these
+  // three are the PICKER-tier presentation cut, derived from the hand-curated
+  // COLLAPSE table in scripts/build-tone-laws.js:
+  //   PICKER_IDS   — the flat option list the UI actually offers.
+  //   ALIASES      — folded id -> { into: survivor, params: {...} }, read by
+  //                   Vectura.Scene3D.Params.resolveToneLaw and by
+  //                   normalizeStyle's migration shim.
+  //   STYLE_PARAMS — survivor id -> its collapse sub-control descriptor(s),
+  //                   the COLLAPSE table verbatim; drives the UI directly.
+  // All three are empty/full-identity in U0 (no cluster has been folded
+  // yet): PICKER_IDS.length === IDS.length, ALIASES === {}.
+  const PICKER_IDS = ${pickerIdsJson};
+  const ALIASES = ${aliasesJson};
+  const STYLE_PARAMS = ${styleParamsJson};
+
   // [{ group, options: [{ value, label }] }] — for UI.Select. Every family
   // contributes a group (even if, after filtering, it has zero options) so
   // the group count is always 9 regardless of the includeLibrary flag.
@@ -258,6 +352,9 @@ const output = `/**
     IDS,
     PRODUCTION,
     LIBRARY,
+    PICKER_IDS,
+    ALIASES,
+    STYLE_PARAMS,
     FAMILIES,
     BY_ID,
     selectGroups,
@@ -267,4 +364,5 @@ const output = `/**
 
 fs.writeFileSync(OUTPUT_PATH, output, 'utf8');
 console.log(`[build-tone-laws] Wrote ${IDS.length} law(s) (${PRODUCTION.length} production / ${LIBRARY.length} library) to src/config/scene3d-tone-laws.js`);
+console.log(`[build-tone-laws] PICKER_IDS ${PICKER_IDS.length}, ALIASES ${Object.keys(ALIASES).length}`);
 console.log(`[build-tone-laws] VERSION = ${VERSION}`);

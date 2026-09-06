@@ -857,6 +857,71 @@
   "amplitudeOnly"
 ];
 
+  // Fill-roster collapse (see docs/3d-audit/lane-reports/W-22-24-W-18-plan.md).
+  // IDS above is the full 48-id ENGINE vocabulary and never shrinks; these
+  // three are the PICKER-tier presentation cut, derived from the hand-curated
+  // COLLAPSE table in scripts/build-tone-laws.js:
+  //   PICKER_IDS   — the flat option list the UI actually offers.
+  //   ALIASES      — folded id -> { into: survivor, params: {...} }, read by
+  //                   Vectura.Scene3D.Params.resolveToneLaw and by
+  //                   normalizeStyle's migration shim.
+  //   STYLE_PARAMS — survivor id -> its collapse sub-control descriptor(s),
+  //                   the COLLAPSE table verbatim; drives the UI directly.
+  // All three are empty/full-identity in U0 (no cluster has been folded
+  // yet): PICKER_IDS.length === IDS.length, ALIASES === {}.
+  const PICKER_IDS = [
+  "none",
+  "nibAngle",
+  "taperedEnds",
+  "weightModulated",
+  "isophoteWidth",
+  "whiteBand",
+  "weightSmoothstep",
+  "fineLadder",
+  "phaseFineLadder",
+  "perceptualRamp",
+  "lozengeStipple",
+  "deepFillTSP",
+  "bundleCount",
+  "bundleSubNib",
+  "bundleEased",
+  "bundleDither",
+  "bundleLozenge",
+  "bundleHandoff",
+  "contFieldSigmoid",
+  "contFieldTouch",
+  "contFieldFore",
+  "contFieldSurface",
+  "contFieldQuant",
+  "penInterleave",
+  "penStipple",
+  "penReserve",
+  "penCross",
+  "penPitchMatch",
+  "penFacing",
+  "mkScribble",
+  "mkTick",
+  "mkDashRamp",
+  "mkDotScreen",
+  "ampSpacing",
+  "weaveDepth",
+  "interlockWeave",
+  "trochoidLoop",
+  "amplitudeOnly",
+  "onePenDown",
+  "etfKang",
+  "defectSplit",
+  "mezzoRegion",
+  "originSpiral",
+  "dutyConst",
+  "endShorten",
+  "turingStripe",
+  "voronoiWeb",
+  "mazeFill"
+];
+  const ALIASES = {};
+  const STYLE_PARAMS = {};
+
   // [{ group, options: [{ value, label }] }] — for UI.Select. Every family
   // contributes a group (even if, after filtering, it has zero options) so
   // the group count is always 9 regardless of the includeLibrary flag.
@@ -875,6 +940,9 @@
     IDS,
     PRODUCTION,
     LIBRARY,
+    PICKER_IDS,
+    ALIASES,
+    STYLE_PARAMS,
     FAMILIES,
     BY_ID,
     selectGroups,

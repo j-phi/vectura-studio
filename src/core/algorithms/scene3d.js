@@ -1083,7 +1083,15 @@
       // an id the running build does not carry degrades to "no law asked" rather
       // than throwing or silently drawing nothing.
       const facetedToneLaw = (styleParams) => {
-        const asked = typeof (styleParams && styleParams.toneLaw) === 'string' ? styleParams.toneLaw : '';
+        // Fill-collapse U0 (docs/3d-audit/lane-reports/W-22-24-W-18-plan.md
+        // §2.2) — resolve (survivor + collapse params) or a raw alias id to
+        // the INTERNAL id BEFORE the IDS membership test below, so a folded
+        // id still validates against the roster it actually belongs to.
+        // `resolveToneLaw` is a pure pass-through when `styleParams` names no
+        // collapse (every id today, until U1-U8 land), so this is byte-
+        // identical to the previous `asked` value.
+        const resolved = Params.resolveToneLaw(styleParams);
+        const asked = typeof resolved === 'string' ? resolved : '';
         if (!asked) return '';
         const IDS = (Vectura.SCENE3D_TONE_LAWS && Vectura.SCENE3D_TONE_LAWS.IDS) || null;
         return (!IDS || IDS.indexOf(asked) !== -1) ? asked : '';
@@ -3174,7 +3182,11 @@
                 // buildObject on its committed default — see surface-fill.js's
                 // per-call TONE_ALGO resolution. Not clamped here on purpose:
                 // buildObject owns validation against Vectura.SCENE3D_TONE_LAWS.
-                toneLaw: sp.toneLaw,
+                // Fill-collapse U0 — resolve (survivor + collapse params) or a
+                // raw alias id to the internal id here, one chokepoint for
+                // every curved dispatch. Identity when `sp` names no collapse
+                // (every id today; see resolveToneLaw's own contract).
+                toneLaw: Params.resolveToneLaw(sp),
                 toneQuantLevels: sp.toneQuantLevels,
                 toneFlowMode: sp.toneFlowMode,
                 // C4 — how a RIBBON LAW fills its ribbon's interior once the
