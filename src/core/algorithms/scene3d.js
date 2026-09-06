@@ -3797,7 +3797,8 @@
             const sliceTreat = strokeTreatment(sp);
             // NOT selfObject: a through-body slice SHOULD self-occlude (the far
             // side hides behind the near surface) — only on-surface fills opt out.
-            const segCtx = { objectId: record.id };
+            // segCtx.selfOcclude is set below, once analyticProject is known —
+            // see the W-27c item 0(b) comment there.
             // Group the flat cut list by (plane, front|back). Insertion order is
             // plane-ascending (buildSliceSegments emits level 1..N), so Map order
             // is deterministic. The 2D link key is unique WITHIN a plane, so
@@ -3855,6 +3856,29 @@
                 return { x: cw.x - diff * anx, y: cw.y - diff * any, z: cw.z - diff * anz };
               };
             }
+            // W-27c item 0(b) — the ring is snapped onto the object's
+            // ANALYTIC surface (above) while the HLR occluder set stays the
+            // tessellated mesh; the two differ by the mesh's own inscribed
+            // sagitta (0.118mm on the default torus at detail 16), which the
+            // clipper's plain 0.05mm bias (HLR_BIAS) does not absorb. With no
+            // selfOcclude flag on this segCtx, hiddenAt tests the ring against
+            // its OWN facets at that same 0.05mm bias (hlr.js:389), so
+            // wherever the analytic ring runs near-tangentially to the view
+            // (the torus's hole and tube equator) it dips behind a chordal
+            // facet for a fraction of a millimetre and the clipper splits the
+            // run into micro-gaps — measured 63 internal gaps, 33 over one
+            // 0.3mm pen, max 1.34mm (docs/3d-audit/lane-reports/
+            // W-27c-0-W-29-plan.md §1.1). Raising the same-object bias to
+            // hlr.js's SELF_OCCLUDE_BIAS (6mm — comfortably above tessellation
+            // noise, comfortably below a real ≥10mm self-occlusion crossing,
+            // see hlr.js's own header) removes the false splits while leaving
+            // genuine self-occlusion (the torus's near tube wall hiding its
+            // far wall through the hole) intact. Scoped to records whose ring
+            // actually LEFT the mesh (smoothSurface && analyticProject) so a
+            // faceted/raw ring (whose points sit exactly on mesh edges, never
+            // straying into the tessellation-noise band) is byte-identical —
+            // it never had this defect and doesn't need the wider bias.
+            const segCtx = { objectId: record.id, selfOcclude: !!(smoothSurface && analyticProject) };
             const linkPlane = (segs) => {
               const rings = linkSegments ? linkSegments(segs) : segs.map((e) => [e[0], e[1]]);
               return smoothSurface

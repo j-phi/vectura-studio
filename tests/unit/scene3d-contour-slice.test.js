@@ -1166,4 +1166,123 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
     });
   });
 
+  // ── W-27c item 0(b) — torus contourSlice micro-gaps (user-reports/11.png) ──
+  // Root cause (docs/3d-audit/lane-reports/W-27c-0-W-29-plan.md §1.1): the
+  // ring is snapped onto the object's ANALYTIC surface (W-27b/c) while the
+  // HLR occluder set stays the tessellated MESH; the two differ by the
+  // mesh's own inscribed sagitta (~0.12mm on the default torus at detail
+  // 16), which the clipper's plain HLR_BIAS (0.05mm) does not absorb. With
+  // no selfOcclude flag on the contourSlice segCtx, the ring was tested
+  // against its own facets at that same 0.05mm bias, so wherever it runs
+  // near-tangentially to the view (the torus hole and tube equator) it dips
+  // behind a chordal facet for a fraction of a millimetre and the clipper
+  // splits the run into a micro-gap. Fix: scope `selfOcclude: true` onto the
+  // segCtx for records whose ring actually left the mesh (`smoothSurface &&
+  // analyticProject`), raising the same-object bias to hlr.js's
+  // SELF_OCCLUDE_BIAS (6mm) for those records only — a faceted/raw ring
+  // (whose points sit exactly on mesh edges) is untouched.
+  describe('W-27c item 0(b) — torus contourSlice gap continuity + occlusion retained (user report)', () => {
+    const sceneFor = () => {
+      const p = clone(defaults);
+      p.seed = 1;
+      const Prm = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS.torus;
+      p.objects = [{
+        id: 'obj-1', name: 'obj-1', primitive: 'torus', params: { ...Prm },
+        transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+      }];
+      p.ground = { enabled: false };
+      p.camera = { ...V.Scene3D.Params.DEFAULT_CAMERA };
+      p.styleTable = {
+        scene: { penId: null, mapper: 'contourSlice', params: { sliceCount: 26 } },
+        byObject: {}, byFace: {},
+      };
+      return p;
+    };
+    const pathLenOf = (pp) => {
+      let d = 0; for (let i = 1; i < pp.length; i++) d += Math.hypot(pp[i].x - pp[i - 1].x, pp[i].y - pp[i - 1].y);
+      return d;
+    };
+    const frontFillsOf = (out) => out.filter((q) => q.meta && q.meta.kind === 'sceneFill' && q.length >= 2
+      && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'obj-1' && !q.meta.sceneTarget.occluded);
+
+    // Each emitted sceneFill path is exactly one visible clip RUN — a ring
+    // fragmented by a false gap emits one extra path per gap, so the total
+    // front-path count is a direct, purely-public-API proxy for "how many
+    // internal gaps exist". RED at this lane's base (073202a4, independently
+    // reproduced via a scratch `git stash` of just this fix): 107 paths for
+    // 47 rings (63 internal gaps, 33 wider than one 0.3mm pen, max 1.34mm).
+    // GREEN: 46 paths for 47 rings (~1 visible run per ring, 0 internal gaps).
+    test('the default torus emits far fewer front-ring fragments than the pre-fix gap-fragmented count (bar set well between 46 and 107)', () => {
+      installStub();
+      const out = algo.generate(sceneFor(), null, null, BOUNDS) || [];
+      const fills = frontFillsOf(out);
+      expect(fills.length).toBeGreaterThan(30); // sanity: rings are still being emitted at all
+      expect(fills.length).toBeLessThanOrEqual(55); // RED (107) fails this; GREEN (46) passes
+    });
+
+    // Occlusion is NOT lost by the fix: compare the real (HLR-clipped)
+    // front-ring ink length against the SAME rings emitted raw via the
+    // draft path (`fastPreview`, which "differs from full ONLY by skipping
+    // HLR" per the pass's own header comment) — an already-established,
+    // purely-public mechanism (see the "draft/full parity" block above).
+    // A fix that eliminates self-occlusion entirely would push this ratio
+    // to ~1; a fix that over-hides would push it well below the measured
+    // band. RED ratio 0.936, GREEN ratio 0.965 — both inside the band below,
+    // so this is a leak-through/over-hiding guard, independent of the
+    // path-count oracle above which is what actually proves the gaps closed.
+    test('genuine self-occlusion survives the fix: clipped ink length sits in a band below the raw (draft) length, never at or above it', () => {
+      installStub();
+      const full = frontFillsOf(algo.generate(sceneFor(), null, null, BOUNDS) || []);
+      const draft = frontFillsOf(algo.generate(sceneFor(), null, null, { ...BOUNDS, fastPreview: true }) || []);
+      const fullLen = full.reduce((s, pp) => s + pathLenOf(pp), 0);
+      const draftLen = draft.reduce((s, pp) => s + pathLenOf(pp), 0);
+      expect(draftLen).toBeGreaterThan(0);
+      const ratio = fullLen / draftLen;
+      expect(ratio).toBeLessThan(0.999); // some real self-occlusion still hides ink
+      expect(ratio).toBeGreaterThan(0.85); // not over-hidden
+    });
+
+    // ── item 0(a) — the restated 8° corner bar ──────────────────────────────
+    // The ledger keeper's caveat (docs/3d-audit/STILL-OPEN.md, W-27c-0-W-29
+    // plan §1.2): the ORIGINAL "no corner sharper than 8° anywhere on the
+    // torus rings" bar, read literally per-vertex on the emitted geometry,
+    // is unattainable — the TRUE analytic plane∩torus curve itself turns
+    // 95-108° per mm of arc at the tube's inner/outer equator (a z-const
+    // plane is legitimately near-tangent to the surface there), so no
+    // drawn approximation can both track that curve AND stay under 8° per
+    // vertex at that arc length. Restated, honest oracle: max INTERIOR
+    // turning angle between consecutive points of one emitted ring,
+    // EXCLUDING the first/last point of each emitted path — those are
+    // exactly the points a genuine occluder/silhouette boundary put there
+    // (each emitted sceneFill path is one continuous VISIBLE clip run, so a
+    // path's own endpoints are where real occlusion cut it, not an
+    // interior artifact). Measured on the exact default rig: 7.58°, clearing
+    // the 8° bar — and unchanged before vs after this fix (both 7.579° to
+    // 3dp), because the false micro-gaps this fix removes do not, on this
+    // rig, coincide with the ring's sharpest interior turn. Reported
+    // honestly per the caveat, not manufactured: this is a permanent
+    // regression guard on the restated oracle, not an RGR proof for this
+    // diff (see the lane report for the full reconciliation).
+    test('restated oracle: max interior turning angle across all emitted torus rings, excluding each path\'s own occlusion-boundary endpoints, clears the 8° bar', () => {
+      installStub();
+      const out = algo.generate(sceneFor(), null, null, BOUNDS) || [];
+      const fills = frontFillsOf(out);
+      let maxTurn = 0;
+      fills.forEach((pp) => {
+        for (let i = 1; i < pp.length - 1; i++) {
+          const a = pp[i - 1]; const b = pp[i]; const c = pp[i + 1];
+          const v1x = b.x - a.x; const v1y = b.y - a.y;
+          const v2x = c.x - b.x; const v2y = c.y - b.y;
+          const l1 = Math.hypot(v1x, v1y); const l2 = Math.hypot(v2x, v2y);
+          if (l1 < 1e-9 || l2 < 1e-9) continue;
+          let cosA = (v1x * v2x + v1y * v2y) / (l1 * l2);
+          cosA = Math.max(-1, Math.min(1, cosA));
+          const deg = (Math.acos(cosA) * 180) / Math.PI;
+          if (deg > maxTurn) maxTurn = deg;
+        }
+      });
+      expect(fills.length).toBeGreaterThan(0);
+      expect(maxTurn).toBeLessThan(8);
+    });
+  });
 });
