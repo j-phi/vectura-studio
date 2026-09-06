@@ -2394,6 +2394,19 @@
     const MK_MAX_PENS = 26000;          // pathological-input guard, reported
     const MK_CELL = 1.0;                // mm — the screen grid both lattices use
     const MK_ED_BETA = 0.4;             // share of the ink residual pushed sideways
+    // W-05b — THE CHART-WALKED MARK's own step. A 'tick'/'morph' edge is no
+    // longer pushed through the ruling's frame in one linearised jump (that
+    // is D1: a tick is a straight 2-point screen chord across a curved
+    // surface, sagitta 0.000 mm at every density). It is walked in
+    // increments of at most `MK_ARC_MM`, re-deriving the frame from each
+    // newly accepted sample's own `dA`/`dB` — the identical mechanism
+    // Round 5's wave already uses (`:7606`, displacement applied to the
+    // CHART COORDINATE, so the walk cannot leave the surface). Stated in
+    // pen widths like every other bar in this file: 1.2 pens is 0.36 mm at
+    // the shipped 0.3 mm pen, comfortably under the linearised solve's own
+    // error budget over that distance and below `PLOT_FLOOR_PEN` so the
+    // walked polyline cannot itself read as a filled polygon.
+    const MK_ARC_PEN = 1.2;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -2401,6 +2414,22 @@
       // caller can check the tone-carrying channel actually moves count
       // rather than asserting on the picture.
       byThird: [0, 0, 0],
+      // W-05b — the chart walk's own accounting. `trunc` counts marks that
+      // hit a limb mid-walk and were kept SHORT instead of refused
+      // wholesale (the D2 fix, replacing the old `offSurface` wholesale
+      // refusal for a 'tick'/'morph' mark specifically); `askSum`/
+      // `drawnSum` are the shape's own designed ink length vs. what the
+      // walk actually delivered onto the curved surface, summed over every
+      // walked mark, so a caller can read the aggregate under-delivery the
+      // old single-shot chord left uncounted (D1's "length ratio").
+      // `dirOver10` counts marks whose DRAWN direction (actual walked
+      // endpoints) departs more than 10 deg from the REQUESTED direction
+      // (the shape's own asked offset, projected through the ruling's own
+      // flat frame — exactly what the pre-fix single-shot chord would have
+      // drawn). `dirOver10 / marks <= 0.01` is p99 <= 10 deg restated as a
+      // fraction, which is exact (not an approximation) and needs no
+      // external ground truth or per-mark array.
+      trunc: 0, askSum: 0, drawnSum: 0, dirOver10: 0,
     };
     const mkSites = new Map();          // blue-noise / Poisson occupancy
     const mkED = new Map();             // error-diffusion sideways carry
@@ -5733,13 +5762,14 @@
       const gold = ((li * GOLDEN_STEP) % 1 + 1) % 1;
       const parity = ((li % 2) + 2) % 2;
 
-      const frameAt = (s) => {
-        const smp = smps[s];
-        if (!smp || !smp.dA || !smp.dB) return null;
-        const tt = s / nSteps;
-        const ld = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
-        const st = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
-        if (!ld || !st) return null;
+      // W-05b — split into a pure function of (sample, along-dir, step-dir,
+      // param position) so the chart walk (`walkPoly`, below) can re-derive
+      // the identical frame from a sample it just reached mid-walk, not only
+      // from a ruling's own indexed sample. `frameAt(s)` is now a one-line
+      // caller and its own null-return conditions are unchanged — this half
+      // is the refactor, no behaviour change.
+      const frameFrom = (smp, ld, st, pr) => {
+        if (!smp || !smp.dA || !smp.dB || !ld || !st) return null;
         const ux = smp.dA.x * ld.a + smp.dB.x * ld.b;
         const uy = smp.dA.y * ld.a + smp.dB.y * ld.b;
         const ul = Math.hypot(ux, uy);
@@ -5754,7 +5784,6 @@
         const v = { x: vx / vl, y: vy / vl };
         const det = smp.dA.x * smp.dB.y - smp.dA.y * smp.dB.x;
         if (!(Math.abs(det) > 1e-12)) return null;
-        const pr = paramAt(tt);
         // Screen millimetres → parameter delta, by the exact 2×2 solve on the
         // chart's own screen derivatives. No finite differences, no extra chart
         // evaluations: `dA`/`dB` are already carried by every sample.
@@ -5766,15 +5795,173 @@
             b: pr.b + (smp.dA.x * ty - tx * smp.dA.y) / det,
           };
         };
-        return { u, v, toParam, smp };
+        return { u, v, toParam, smp, ld, st, pr };
+      };
+      const frameAt = (s) => {
+        const smp = smps[s];
+        if (!smp) return null;
+        const tt = s / nSteps;
+        const ld = typeof lineDir === 'function' ? lineDir(tt) : lineDir;
+        const st = typeof pitchStep === 'function' ? pitchStep(tt) : pitchStep;
+        if (!ld || !st) return null;
+        return frameFrom(smp, ld, st, paramAt(tt));
+      };
+      // W-05b — the walk step, in screen millimetres (see `MK_ARC_PEN` above).
+      const MK_ARC_MM = MK_ARC_PEN * penWidth;
+      // THE CHART-WALKED EDGE. `poly` is a 2-vertex segment (every 'tick'/
+      // 'morph' pass built by `mkShape`/`layMark` is exactly that) whose
+      // MIDPOINT is the ruling's own sample `fr0` — the one point on the
+      // mark that is exactly on the surface with zero linearisation error.
+      // Rather than placing one tip with a single big jump and walking only
+      // to the other (which would leave one tip's own position uncorrected,
+      // and measurably reduces the mark's curvature — tried first, reverted:
+      // torus/contour d=50 sagitta only reached 0.08 mm median against the
+      // ≥0.15 mm bar), BOTH tips are walked OUTWARD from that shared, exact
+      // anchor in steps of at most `MK_ARC_MM`, each re-deriving the frame
+      // from its own newly accepted sample's `dA`/`dB`. The two walks are
+      // then joined at the anchor into one continuous polyline. On the first
+      // step of either walk that comes back out-of-domain or back-facing,
+      // that walk STOPS — `truncated: true` — and whatever it already
+      // accepted is kept (the D2 fix: a mark is shortened at a limb, never
+      // refused wholesale). `askLen` is the shape's own designed length (the
+      // walked edges' length in the flat local frame, ≈ `sv.L` by
+      // construction — exact when the pass sits on the ruling itself);
+      // `drawnLen` is what actually landed on the curved surface.
+      const walkPoly = (fr0, uOff, theta, poly) => {
+        const c = Math.cos(theta || 0); const sn = Math.sin(theta || 0);
+        const toUV = (pt) => ({
+          u: (uOff || 0) + pt[0] * c - pt[1] * sn,
+          v: pt[0] * sn + pt[1] * c,
+        });
+        const mapOne = (fr, uv) => {
+          const pp = fr.toParam(uv.u, uv.v);
+          if (!(pp.a >= 0 && pp.a <= 1)) return null;
+          let bb = pp.b;
+          if (bb < 0 || bb > 1) {
+            if (bb < -0.25 || bb > 1.25) return null;
+            bb = ((bb % 1) + 1) % 1;
+          }
+          const sm = sampleAt(pp.a, bb);
+          if (!sm || sm.front !== wantFront) return null;
+          return { sm, pr: { a: pp.a, b: bb } };
+        };
+        // Walk from a seed (frame, point, local uv) toward a local (u,v)
+        // target expressed in that SAME seed frame's coordinates, in steps
+        // of at most `MK_ARC_MM`, re-deriving the frame at every accepted
+        // sample. Returns the accepted points IN ORDER AWAY FROM THE SEED
+        // (the seed point itself excluded) plus the frame/point the walk
+        // actually ended at, so the caller can chain a further walk from
+        // there.
+        const walkFrom = (seedFr, seedPt, seedUV, target) => {
+          const edgeLen = Math.hypot(target.u - seedUV.u, target.v - seedUV.v);
+          if (!(edgeLen > 1e-9)) return { pts: [], askLen: 0, truncated: false, endFr: seedFr, endPt: seedPt };
+          let fr = seedFr;
+          let curUV = seedUV;
+          let curPt = seedPt;
+          const pts = [];
+          let truncated = false;
+          const steps = Math.max(1, Math.ceil(edgeLen / MK_ARC_MM));
+          for (let s = 1; s <= steps; s += 1) {
+            const f = s / steps;
+            const stepU = seedUV.u + (target.u - seedUV.u) * f;
+            const stepV = seedUV.v + (target.v - seedUV.v) * f;
+            const du = stepU - curUV.u; const dv = stepV - curUV.v;
+            const hit = mapOne(fr, { u: du, v: dv });
+            if (!hit) { truncated = true; break; }
+            curPt = { x: hit.sm.x, y: hit.sm.y, z: hit.sm.z };
+            pts.push(curPt);
+            curUV = { u: stepU, v: stepV };
+            const nfr = frameFrom(hit.sm, fr0.ld, fr0.st, hit.pr);
+            if (nfr) fr = nfr;
+          }
+          return { pts, askLen: edgeLen, truncated, endFr: fr, endPt: curPt };
+        };
+        // THE TRUE HUB. A walked pass's two ends always share exactly one
+        // local axis (a tick's tips share their `u`; a dash/band's tips
+        // share their `v`) — that shared component, not the ruling's own
+        // (0,0) origin, is the pass's own centre. Walking each arm straight
+        // from (0,0) instead (tried first, reverted) makes the two arms
+        // depart in MIRRORED, not opposite, screen directions whenever
+        // `uOff` (the mark's own along-ruling phase) is non-zero — a real,
+        // visible corner at the join (measured: cone/hatch/mkTick/med read
+        // as a herringbone of chevrons on that attempt, not a tick
+        // texture). So the hub is reached with its own short walk from
+        // `fr0` first, and each arm then walks OUTWARD from THAT accurate
+        // seed, in exactly opposite local directions.
+        const t0 = toUV(poly[0]);
+        const t1 = toUV(poly[poly.length - 1]);
+        const hubUV = { u: (t0.u + t1.u) / 2, v: (t0.v + t1.v) / 2 };
+        const fr0Pt = { x: fr0.smp.x, y: fr0.smp.y, z: fr0.smp.z };
+        const toHub = walkFrom(fr0, fr0Pt, { u: 0, v: 0 }, hubUV);
+        const hubFr = toHub.endFr; const hubPt = toHub.endPt;
+        const w0 = walkFrom(hubFr, hubPt, hubUV, { u: t0.u, v: t0.v });
+        const pts = w0.pts.slice().reverse();
+        pts.push(hubPt);
+        let askLen = w0.askLen; let truncated = toHub.truncated || w0.truncated;
+        if (poly.length > 1) {
+          const w1 = walkFrom(hubFr, hubPt, hubUV, { u: t1.u, v: t1.v });
+          pts.push(...w1.pts);
+          askLen += w1.askLen;
+          truncated = truncated || w1.truncated;
+        }
+        let drawnLen = 0;
+        for (let i = 1; i < pts.length; i += 1) drawnLen += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+        if (pts.length < 2) return { pts: null, askLen: 0, drawnLen: 0, truncated: false };
+        return { pts, askLen, drawnLen, truncated };
       };
 
+      // W-05b — 'tick' and 'morph' are the two shapes a mark law can build
+      // whose own geometry is longer than the linearised solve's accurate
+      // radius (D1). Every other shape's `place` path is byte-for-byte
+      // unchanged below; only these two route through `walkPoly`.
+      const isWalkedShape = law.shape === 'tick' || law.shape === 'morph';
+      // W-05b — O2's own ground truth. The REQUESTED direction is the
+      // shape's own asked offset (its first-to-last vertex, in the mark's
+      // local frame) projected through the ruling's FLAT frame (`fr.u`/
+      // `fr.v`) — i.e. exactly the screen direction the pre-fix single-shot
+      // chord would have drawn, before the surface's own curvature is taken
+      // into account. Computed once per mark (from its first pass — every
+      // nested pass shares the same direction to within an ink width) so
+      // `dirOver10` (above) can compare it to what the walk actually drew.
+      const requestedDir = (fr, uOff, theta, poly) => {
+        const c2 = Math.cos(theta || 0); const sn2 = Math.sin(theta || 0);
+        const p0 = poly[0]; const p1 = poly[poly.length - 1];
+        const du0 = (uOff || 0) + p0[0] * c2 - p0[1] * sn2;
+        const dv0 = p0[0] * sn2 + p0[1] * c2;
+        const du1 = (uOff || 0) + p1[0] * c2 - p1[1] * sn2;
+        const dv1 = p1[0] * sn2 + p1[1] * c2;
+        const ddu = du1 - du0; const ddv = dv1 - dv0;
+        const rx = fr.u.x * ddu + fr.v.x * ddv;
+        const ry = fr.u.y * ddu + fr.v.y * ddv;
+        const rl = Math.hypot(rx, ry);
+        return rl > 1e-9 ? { x: rx / rl, y: ry / rl } : null;
+      };
       const place = (fr, polys, uOff, theta) => {
         if (mkStat.pens >= MK_MAX_PENS) { mkStat.budget += 1; return false; }
         const c = Math.cos(theta || 0); const sn = Math.sin(theta || 0);
         const runs = [];
+        let askTot = 0; let sawTrunc = false; let sawDirBad = false;
         for (let i = 0; i < polys.length; i++) {
           const poly = polys[i];
+          if (isWalkedShape) {
+            const wk = walkPoly(fr, uOff, theta, poly);
+            if (!wk.pts) { mkStat.offSurface += 1; return false; }
+            askTot += wk.askLen;
+            if (wk.truncated) sawTrunc = true;
+            if (i === 0 && wk.pts.length >= 2) {
+              const reqDir = requestedDir(fr, uOff, theta, poly);
+              const a = wk.pts[0]; const b = wk.pts[wk.pts.length - 1];
+              const ddx = b.x - a.x; const ddy = b.y - a.y;
+              const dl = Math.hypot(ddx, ddy);
+              if (reqDir && dl > 1e-9) {
+                const drawnDir = { x: ddx / dl, y: ddy / dl };
+                const cosv = Math.min(1, Math.abs(drawnDir.x * reqDir.x + drawnDir.y * reqDir.y));
+                if (Math.acos(cosv) * (180 / Math.PI) > 10) sawDirBad = true;
+              }
+            }
+            runs.push(wk.pts);
+            continue;
+          }
           const pts = [];
           for (let j = 0; j < poly.length; j++) {
             const uu = (uOff || 0) + poly[j][0] * c - poly[j][1] * sn;
@@ -5802,7 +5989,10 @@
         });
         // A mark under two pen widths is a pen-down dot, not a mark. Dropping it
         // — rather than shortening it — is exactly how the ramp reaches BARE
-        // PAPER at the light end instead of degenerating into speckle.
+        // PAPER at the light end instead of degenerating into speckle. For a
+        // walked shape this is also where a limb-truncated walk that came back
+        // too short to read as a mark gets dropped (D2: shortened first, and
+        // only dropped if the shortening left nothing worth a pen-down).
         if (tot < MIN_MARK_MM) { mkStat.tooShort += 1; return false; }
         runs.forEach((r) => {
           if (r.length < 2) return;
@@ -5811,6 +6001,12 @@
           mkStat.pens += 1;
         });
         mkStat.marks += 1; mkStat.ink += tot;
+        if (isWalkedShape) {
+          mkStat.askSum += askTot;
+          mkStat.drawnSum += tot;
+          if (sawTrunc) mkStat.trunc += 1;
+          if (sawDirBad) mkStat.dirOver10 += 1;
+        }
         return true;
       };
 
