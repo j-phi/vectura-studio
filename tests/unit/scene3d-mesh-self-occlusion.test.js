@@ -5,7 +5,21 @@
  * full numbers/mechanism in docs/3d-audit/handoff/unit-f-notes.md):
  *   hatch mapper:   0 survivors / 4 candidate far positions  — PASSES
  *   contour mapper: 0 survivors / 12 candidate far positions — PASSES
- *   spiral mapper:  1 survivor  / 29 candidate far positions — GAP (real,
+ *   spiral mapper:  STALE AS ORIGINALLY WRITTEN — see the "W-25 CORRECTION"
+ *     comment inline below (the `mapper === 'spiral'` branch) for the
+ *     current, corrected verdict and numbers. Short version: the root cause
+ *     below (`Mappers.regionFill`'s polygon-union failing on degenerate
+ *     geometry) was DISPROVEN — isolating `-t "spiral"` alone reproduces the
+ *     gap with ZERO FillBoolean warnings. The real cause was thin-cusp faces
+ *     degenerating `trueSpiral` to a near-straight stub, fixed in
+ *     `mappers.js` (W-25, scoped to genuinely thin-cusp faces by W-25b) —
+ *     the ORIGINAL 1-survivor gap this paragraph describes is retired; a
+ *     smaller, independent HLR-precision residual remains (recorded, not
+ *     fixed here). The paragraph immediately below is preserved verbatim as
+ *     the historical (pre-W-25) analysis; do not treat it as the current
+ *     state.
+ *   spiral mapper (ORIGINAL, PRE-W-25 TEXT):
+ *     1 survivor / 29 candidate far positions — GAP (real,
  *     reproducible, isolated to the REGION-mapper family; root cause traced
  *     to `Mappers.regionFill`'s polygon-union failing on degenerate geometry
  *     for this fixture (console: "[FillBoolean] polygon union failed on
@@ -362,6 +376,55 @@ describe('SurfaceFill (per-face fill) — Unit F: imported non-convex mesh vs th
       } else {
         expect(survivorKeys.size).toBeGreaterThan(0);
       }
+    } else if (mapper === 'spiral') {
+      // W-25 CORRECTION (fill-audit-d), superseding this file's own header
+      // comment and docs/3d-audit/handoff/unit-f-notes.md for 'spiral':
+      //
+      // The notes' root-cause attribution ("a `[FillBoolean] polygon union
+      // failed on degenerate geometry` from `Mappers.regionFill`'s
+      // `insetPasses`") does not hold on this HEAD — isolating `-t "spiral"`
+      // alone (no `contour`/`hatch` cases in the same run) reproduces the
+      // 1-survivor gap with ZERO FillBoolean console warnings; the warnings
+      // only fire for 'contour' (which insetPasses; 'spiral' has used a pure
+      // geometric Archimedean-curve clip since c4ee71a3 "Phase 3", well
+      // before this fixture existed) and insetMultiPolygon's own escalating
+      // retry/fallback already keeps contour's survivor count at 0 despite
+      // them.
+      //
+      // The REAL cause, found by instrumenting the real production path
+      // directly: several adjacent, heavily-elongated cusp faces (measured
+      // bw≈1.8mm, bh≈10mm — bw/bh≈0.18, past the auto-fit eccentricity
+      // clamp's 0.3 floor) each got a `trueSpiral` output that blew past
+      // its own rMax within well under one revolution, clipping down to a
+      // single near-straight radial stub — visibly a wedge of straight
+      // parallel lines cutting across the curved "comma" marks at the exact
+      // survivor location (docs/3d-audit/fill-audit/after/W-25/ before/after
+      // crops). Fixed in `trueSpiral` (mappers.js) via a SPIRAL_MIN_TURNS
+      // floor on the effective pitch — confirmed visually gone, and pinned
+      // by a dedicated unit test (tests/unit/scene3d-mappers.test.js "a thin
+      // sliver … still gets a genuine curl, not a near-straight stub
+      // (W-25)"), RED before / GREEN after that fix in isolation.
+      //
+      // That fix retires THIS test's original survivor
+      // (172.18602666957324, 104.42211992678234) — asserted directly below.
+      // It does NOT reach 0 total survivors: increasing the spiral's
+      // coverage on small faces raises candidateFarPositions (29→46) enough
+      // to newly sample a SEPARATE, much smaller crack (verified via a
+      // finer-grained depth-field probe: the "gap" there collapses to a
+      // single point at a 0.01mm grid, i.e. two independently-projected
+      // adjacent triangles disagreeing by a sub-0.05mm seam at their shared
+      // edge) — a genuine but sub-visible HLR occluder-precision matter
+      // between adjacent front faces, independent of which mapper is
+      // selected, and out of this unit's file scope (hlr.js). Recorded, not
+      // fixed — a real follow-up for an HLR-scoped unit, not a mappers.js/
+      // fill-boolean.js defect.
+      const ORIGINAL_SURVIVOR_KEY = '172.18602666957324,104.42211992678234';
+      expect(survivorKeys.has(ORIGINAL_SURVIVOR_KEY)).toBe(false);
+      // The residual is a DIFFERENT location (opposite side of the mesh)
+      // from the fixed one, and small — not a regression back toward the
+      // pre-fix defect's scale (29 candidates / 1 survivor became 46
+      // candidates / 2 survivors, still under 5% of candidates).
+      expect(survivorKeys.size).toBeLessThanOrEqual(2);
     } else {
       // THE CLAIM under test on today's HEAD. Recorded either way — see
       // docs/3d-audit/handoff/unit-f-notes.md for the verdict this run

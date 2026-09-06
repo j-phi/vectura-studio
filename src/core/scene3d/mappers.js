@@ -248,6 +248,19 @@
 
   const STEPS_PER_REV = 64; // smooth-spiral angular resolution
   const SPIRAL_MAX_STEPS = 24000; // pathological pitch/size guard (cannot hang)
+  // W-25 — the density-derived pitch is tuned for whole-primitive-sized
+  // regions; on a region far smaller than that (a thin sliver face from a
+  // low-poly imported mesh, e.g.) the raw parametric radius can blow past
+  // `rMax` within well under one revolution, so trueSpiral's output clips
+  // down to a single near-straight radial stub instead of a genuine curl —
+  // see `spiralMinTurnPitch` below.
+  const SPIRAL_MIN_TURNS = 2;
+  // Eccentricity auto-fit clamp bounds (also reused by W-25b's thin-cusp gate
+  // immediately below — a region whose raw, pre-clamp aspect ratio already
+  // falls outside this range is exactly the kind of sliver the auto-fit can
+  // no longer stretch to compensate for).
+  const ECC_MIN = 0.3;
+  const ECC_MAX = 3;
 
   // Even-odd point-in-region across all (closed) rings.
   const insideComposite = (rings, x, y) => {
@@ -345,8 +358,8 @@
     // Eccentricity: explicit value, else auto-fit the region's aspect ratio so a
     // wide/tall face fills edge-to-edge instead of an inscribed circle.
     const ecc = Number.isFinite(opts.eccentricity)
-      ? clamp(opts.eccentricity, 0.3, 3)
-      : clamp(bw / bh, 0.3, 3);
+      ? clamp(opts.eccentricity, ECC_MIN, ECC_MAX)
+      : clamp(bw / bh, ECC_MIN, ECC_MAX);
     const sx = Math.sqrt(ecc);
     const sy = 1 / Math.sqrt(ecc);
     // Largest UN-stretched radius needed to reach every region vertex.
@@ -359,15 +372,37 @@
     // Floor at 0.2mm (below a typical 0.3mm pen) so the Density-100 full-overlap
     // pitch reaches the paper; SPIRAL_MAX_STEPS still guards the sample count.
     const pitch = clamp(finite(opts.pitch, finite(opts.spacing, 3)), 0.2, 40);
+    // W-25b — SCOPE the floor to THIN-CUSP faces only. W-25's original gate
+    // was "region small enough that pitch wouldn't complete SPIRAL_MIN_TURNS
+    // turns" (rMax < pitch*SPIRAL_MIN_TURNS) alone, which is a SIZE condition,
+    // not a SHAPE one — it does not actually distinguish an elongated sliver
+    // from an ordinary small-but-regular face. Measured: at density 50
+    // (pitch 7.2mm, so the size threshold is 14.4mm) every one of the default
+    // buckyball's faces has rMax 7.0-8.4mm — comfortably under that threshold
+    // — so the size-only gate fired on ALL of them despite their aspect ratio
+    // sitting at 0.87-1.15 (near-regular pentagons/hexagons, nothing like a
+    // sliver), changing the shipped default's spiral output (21->31 fill
+    // paths, 284.2->486.0mm ink measured at d=50) without anyone deciding
+    // that on purpose. `rawAspect` outside [ECC_MIN, ECC_MAX] is exactly
+    // "outside the eccentricity clamp" — the auto-fit can no longer stretch
+    // the spiral to reach the region's corners, which is the actual thin-cusp
+    // condition the original W-25 fix meant to describe (Unit F's torus cusp
+    // faces measured bw/bh ~ 0.18, well past the 0.3 floor). Requiring BOTH
+    // conditions (thin-cusp AND small) keeps the Unit F fix — its faces are
+    // both thin and small — while leaving the buckyball's small-but-regular
+    // faces byte-identical to before W-25.
+    const rawAspect = bw / bh;
+    const isThinCuspFace = rawAspect < ECC_MIN || rawAspect > ECC_MAX;
+    const effPitch = isThinCuspFace ? Math.min(pitch, rMax / SPIRAL_MIN_TURNS) : pitch;
     const axisSnap = Boolean(opts.axisSnap);
     // axisSnap: one straight segment per quadrant (a squared spiral). Offsetting
     // the start by 45° makes those segments axis-aligned (horizontal/vertical)
     // for a rectilinear read on cubes.
     const baseOffset = (finite(opts.offset, 0) * Math.PI) / 180 + (axisSnap ? Math.PI / 4 : 0);
     const dTheta = axisSnap ? Math.PI / 2 : (Math.PI * 2) / STEPS_PER_REV;
-    const dr = (pitch * dTheta) / (Math.PI * 2); // Archimedean: +pitch per full turn
+    const dr = (effPitch * dTheta) / (Math.PI * 2); // Archimedean: +effPitch per full turn
     // Sweep a bit past rMax so the outermost loop fully covers the corners.
-    const rEnd = rMax + pitch;
+    const rEnd = rMax + effPitch;
     const totalSteps = Math.min(SPIRAL_MAX_STEPS, Math.max(4, Math.ceil(rEnd / Math.max(1e-6, dr))));
     const raw = [];
     let theta = baseOffset;

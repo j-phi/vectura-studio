@@ -139,8 +139,33 @@
         pts.push({ x: va.x + (vb.x - va.x) * t, y: va.y + (vb.y - va.y) * t, z: va.z + (vb.z - va.z) * t });
       }
     };
+    // W-29 — a plane level that lands EXACTLY on a mesh vertex (e.g. a
+    // z-symmetric faceted solid whose vertex ring sits at exactly
+    // ±maxD/3 with sliceCount 26, hitting levels 9 and 18) makes
+    // edgeCross's on-plane branch (`Math.abs(ea) < 1e-6`) push that vertex
+    // once per incident fan triangle, producing zero-length segments and
+    // odd-degree/high-degree nodes at that vertex. `linkSegments`'s greedy
+    // walk then abandons the extra incident edges, leaving an OPEN ring
+    // that dangles mid-facet — the user-reported open end on the buckyball
+    // (docs/3d-audit/lane-reports/W-27c-0-W-29-plan.md §2). Nudging the
+    // level a few nanometres off any coincident vertex makes the cut
+    // strictly transversal there (every fan triangle now contributes a
+    // normal two-point crossing), restoring degree-2 nodes and closed
+    // rings, without moving the plane count or any other plane's position.
+    // Bounded to 8 tries (matches the plan's measured worst case of 1) so a
+    // pathological mesh can't loop; if 8 nudges still land on a vertex the
+    // level is used as-is (the on-plane branch stays as a safety net).
+    const VEPS = Math.max(1e-9, span * 1e-7);
     for (let level = 1; level <= count; level++) {
-      const z = minD + (level / (count + 1)) * span;
+      let z = minD + (level / (count + 1)) * span;
+      for (let nudgeTries = 0; nudgeTries < 8; nudgeTries++) {
+        let onVertex = false;
+        for (let i = 0; i < d.length; i++) {
+          if (Math.abs(d[i] - z) < VEPS) { onVertex = true; break; }
+        }
+        if (!onVertex) break;
+        z += 2 * VEPS;
+      }
       for (let f = 0; f < faces.length; f++) {
         const face = faces[f];
         const isFront = front ? front[f] !== false : true;
@@ -175,8 +200,551 @@
   const SLICE_SAMPLE_STEP = 2.5; // mirrors HLR SAMPLE_STEP (hlr.js)
   const SLICE_CLIP_WORK = 35000000;
 
+  // ── W-27 — polygonal contourSlice rings on smooth surfaces ──────────────────
+  // buildSliceSegments emits the RAW triangle-cut crossing points verbatim: a
+  // ring's vertex count is however many mesh edges the plane happens to cross,
+  // which near a pole (few, long, oblique edges) can be as few as 4-7 points
+  // with 45-60° exterior turns — a visibly polygonal "ring" on what is, in the
+  // source surface, a perfect circle. `Engine._applySceneCurveFinish` cannot
+  // reliably rescue this after the fact: `reduceAnchors` (geometry-utils.js)
+  // marks each genuinely sharp turn `corner: true` and leaves it UNROUNDED —
+  // correct behaviour for a real corner, but exactly wrong for a mesh-crossing
+  // artefact that should have been a smooth arc. A sparse-enough ring (few
+  // points, every span a "corner") can even fail the fitter's whole-path
+  // `acceptable()` gate and decline entirely (`{ straight: true }`).
+  //
+  // The fix works in WORLD SPACE, before projection: refine the LINKED ring
+  // with a centripetal Catmull-Rom (Barry-Goldman) interpolatory subdivision,
+  // which — unlike Chaikin corner-cutting — INTERPOLATES every original vertex
+  // rather than cutting toward their centroid. That distinction matters here:
+  // the raw ring vertices are
+  // exact edge-crossings on a chord-faceted mesh, so they already sit strictly
+  // INSIDE the true analytic surface; a shrinking scheme (Chaikin) would only
+  // pull the ring further inside, making the fit LESS accurate while looking
+  // smoother. The interpolatory scheme keeps every original point fixed and
+  // only adds new, curvature-aware samples between them, so the refined ring
+  // is provably at least as accurate (usually more, since the inserted points
+  // bulge toward the true surface rather than cutting a straight chord).
+  //
+  // Refinement is ADAPTIVE, not a fixed round count: each round the max
+  // exterior turning angle across the ring is re-measured, and another round
+  // of subdivision runs only if it still exceeds R2's 8° ceiling — so a
+  // finely-tessellated equator ring (already smooth) does zero extra work and
+  // a sparse pole ring gets exactly as many rounds as it needs, capped so a
+  // pathological input can't hang.
+  //
+  // W-27b — Catmull-Rom alone still reads as a rounded N-gon (interpolating
+  // MESH-CHORD points, which are themselves strictly inside the true surface,
+  // caps how circular the result can look no matter how many samples are
+  // inserted). Where the object's primitive has a known closed-form implicit
+  // surface (sphere/ellipsoid/cylinder/cone/torus), every point — original AND
+  // newly-inserted — is snapped onto that TRUE surface each round, then
+  // projected back onto the cutting plane (which is fixed in world space), by
+  // `sliceAnalyticProjector`. This turns "smoother polygon" into "the true
+  // curve": see its own comment below for the per-primitive correction and
+  // `refineSliceRing`'s `opts.analyticProject` for how it is threaded through
+  // subdivision. Primitives without an implemented closed form (capsule,
+  // superellipsoid, torusKnot) keep the Catmull-Rom-only behaviour.
+  const SLICE_REFINE_MAX_ANGLE_DEG = 8;
+  const SLICE_REFINE_MAX_ROUNDS = 8;
+
+  // ── W-27c-0a — pen-aware crowding cull at the torus/sphere saddles/poles ───
+  // (docs/3d-audit/lane-reports/W-27c-0a-plan.md, user-reports/11.png). O1
+  // (the 8° turning-angle bar above) is already met and is the WRONG
+  // instrument: the user's "angled points" are not a corner on any ring —
+  // they are the tapering apex of a solid wedge of ink where several
+  // DIFFERENT contour levels crowd to less than one pen width at a torus's
+  // two saddles (a sphere's poles have the same defect). Uniform-in-`d`
+  // slicing always crowds near a critical point of the height function,
+  // because the surface gradient of `d` restricted to the surface vanishes
+  // there — refinement, clipping and density are all innocent (measured).
+  //
+  // The fix is a per-record occupancy grid at pen resolution, filled
+  // progressively (plane-ascending, so it is a pure function of plane
+  // order) by the samples of already-KEPT ring geometry for that record. A
+  // ring's whole visibility is decided as ONE UNIT, ONCE, BEFORE clipping:
+  // kept entirely (and then clipped/occluded exactly as before), or dropped
+  // entirely (skipped before it is ever clipped) — never fragmented mid-ring.
+  //
+  // W-27c-0a iteration 2 (docs/3d-audit/lane-reports/W-27c-0a-review.md §4):
+  // K=0.8 (the plan's own suggested ceiling) measured with NO cost on the
+  // ITERATION-1/2 per-point mechanism — see iteration 3 below for why that
+  // mechanism itself had to be replaced.
+  //
+  // W-27c-0a iteration 3 (user report on the shipped picture, docs/3d-audit/
+  // lane-reports/W-27c-0a-review-3 handoff): the iteration-1/2 design
+  // suppressed INDIVIDUAL crowded points and split the run at each
+  // suppression boundary. That is exactly the W-27c-0(b) micro-gap defect
+  // reintroduced in a new guise — cropping the shipped `after/W-27c-0a`
+  // torus cell at full resolution shows short dash-like breaks cut into the
+  // MIDDLE of otherwise-continuous rings (confirmed absent in the
+  // `before-789ba0fa` capture at the identical crop: this is a regression
+  // this fix introduced, not a pre-existing defect). A break INSIDE a ring
+  // reads worse than a merged cusp — it looks like a broken pen stroke.
+  //
+  // Fix: never fragment a ring. `isRunCrowded` tests the WHOLE projected
+  // ring, BEFORE HLR clipping, for a CONTIGUOUS stretch of consecutive
+  // points each within `CROWD_CULL_K * penWidth` of an already-KEPT ring
+  // from an earlier plane, reaching at least `CROWD_MIN_ARC_MULT * penWidth`
+  // of arc length. If it does, the ENTIRE ring is dropped before it is ever
+  // clipped (draft and full see the identical verdict); otherwise the ring
+  // proceeds to clipping exactly as it always did, crowded points and all —
+  // clipping can still split it (real occlusion), but nothing this fix adds
+  // ever does. A ring that is partially crowded either fully draws or fully
+  // doesn't — there is no in-between that could cut a hole in it.
+  //
+  // Deciding on the WHOLE ring (not the post-clip run) is deliberate, and
+  // not merely the simpler option: deciding per post-clip run let occlusion
+  // fragmentation "rescue" a crowded ring — a short occlusion fragment often
+  // does not, by itself, reach `crowdMinArc` even when the whole unclipped
+  // ring plainly does, which (measured) pushed full-frame ink ABOVE
+  // draft-frame ink for the same ring and inverted the pre-existing
+  // W-27c item 0(b) guard's own invariant (draft, having no HLR at all, is
+  // always the more-inked upper bound). Deciding before clipping makes the
+  // keep/drop verdict identical in draft and full, so any full-vs-draft
+  // difference is once again ONLY real HLR occlusion, exactly as 0(b)
+  // established — untouched by this fix's mechanism.
+  //
+  // No "keep the longest run" fallback: on this rig almost every ring is a
+  // single unoccluded run pre-clip anyway, so a fallback that reinstates
+  // "the ring" whenever it is the one marked crowded is a no-op by
+  // construction (measured directly: with a fallback, this mechanism was
+  // inert end-to-end — RED-identical output, 0% effect). Dropping a whole
+  // ring for a genuinely crowded plane is exactly the coordinator's ask;
+  // the min-arc gate is what keeps it from being reckless (measured: an
+  // unqualified "any single near sample" trigger, with no arc-length floor,
+  // dropped ~35% of the default torus's total ink from cross-plane
+  // crowding alone — whole, otherwise-fine rings lost for one momentary
+  // graze far from either saddle).
+  //
+  // HONEST MISS, reported per the coordinator's ruling 3 rather than
+  // fudged: this mechanism cannot also fix the same-ring "waist" (O2(c))
+  // without unacceptable cost. A genuine tight self-fold is a single
+  // closest-approach POINT, not a sustained region, so it can't use the
+  // same min-arc gate; a bare point-pair self-test at any radius loose
+  // enough to matter (measured from 0.06mm up to the full 0.24mm crowd
+  // radius, at self-windows from 6 to 30 vertices) either catches nothing
+  // (the offending pair keeps shifting to a different ring each time the
+  // previous worst one is dropped — a whack-a-mole with no fixed point) or
+  // cascades into the same reckless whole-ring ink loss as the unqualified
+  // cross-plane test above. Every configuration tried left `waist` at or
+  // near its RED value while total ink fell well past the ~20% band. Per
+  // the coordinator's explicit instruction, this is stopped and reported —
+  // not loosened, not forced. See the lane report for the full measured
+  // trade-off table.
+  const CROWD_CULL_K = 0.8;
+  // Uniform grid over device-mm points of already-KEPT ring geometry, at
+  // cell size == the query radius (any two points within `radius` are
+  // guaranteed to fall in the same or a directly-adjacent cell — 3x3
+  // neighbourhood is exhaustive; see the lane report for the
+  // borderline-distance proof).
+  const makeCrowdGrid = (radius) => {
+    const cell = Math.max(radius, 1e-6);
+    const key = (cx, cy) => `${cx},${cy}`;
+    const buckets = new Map();
+    return {
+      insert(x, y) {
+        const k = key(Math.floor(x / cell), Math.floor(y / cell));
+        let arr = buckets.get(k);
+        if (!arr) { arr = []; buckets.set(k, arr); }
+        arr.push({ x, y });
+      },
+      isNear(x, y) {
+        const cx = Math.floor(x / cell); const cy = Math.floor(y / cell);
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            const arr = buckets.get(key(cx + dx, cy + dy));
+            if (!arr) continue;
+            for (let i = 0; i < arr.length; i++) {
+              if (Math.hypot(arr[i].x - x, arr[i].y - y) < radius) return true;
+            }
+          }
+        }
+        return false;
+      },
+    };
+  };
+  // Minimum CONTIGUOUS crowded arc length (mm) before a whole ring is
+  // dropped — see the header comment above for the measured reasoning.
+  // `3 * penWidth` is the value measured to hold BOTH the torus's O2(d)/(e)
+  // floors at once (largest blob 2.15mm < the 2.31mm floor, 14 blobs == the
+  // 14-blob floor); the sphere's O2(d) floor is NOT held at this or any
+  // other tested multiplier (see the lane report) — an honest, reported
+  // miss, not a reason to keep tuning past the point of diminishing, and
+  // increasingly costly, returns.
+  const CROWD_MIN_ARC_MULT = 3;
+  // Whole-ring decision: crowded if it contains a CONTIGUOUS stretch (index-
+  // adjacent points, each within `radius` of already-KEPT ink from an
+  // earlier plane) whose arc length reaches `minArc`. A single isolated
+  // near-sample contributes ~0 arc length (no adjacent near-sample to sum a
+  // segment against), so it never reaches `minArc` — only a SUSTAINED
+  // stretch does. No partial result — the caller either keeps every point
+  // of the ring (and lets clipping proceed normally) or drops every point
+  // (and skips clipping entirely); this function only decides which.
+  const isRunCrowded = (pts, grid, minArc) => {
+    let curLen = 0; let maxLen = 0; let prevNear = false;
+    for (let i = 0; i < pts.length; i++) {
+      const near = grid.isNear(pts[i].x, pts[i].y);
+      if (near) {
+        if (prevNear) curLen += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+        if (curLen > maxLen) maxLen = curLen;
+        if (maxLen >= minArc) return true;
+      } else {
+        curLen = 0;
+      }
+      prevNear = near;
+    }
+    return false;
+  };
+
+  // Undo just the rotation leg of Scene.applyObjectTransform's
+  // scale → rotate(yaw,pitch,roll) → translate composition: reverse order,
+  // negated angles. Shared by the point-space inverse below and by
+  // `sliceLocalPlaneNormal` (a normal has no translation/scale component of
+  // its own — see that function's comment for why it still needs `sx/sy/sz`
+  // applied afterward).
+  const sliceInverseRotateOnly = (vec, t) => {
+    const yaw = ((finite(t.yaw, 0) * Math.PI) / 180);
+    const pitch = ((finite(t.pitch, 0) * Math.PI) / 180);
+    const roll = ((finite(t.roll, 0) * Math.PI) / 180);
+    let x = vec.x; let y = vec.y; let z = vec.z;
+    let c = Math.cos(-roll); let s2 = Math.sin(-roll);
+    [x, y] = [x * c - y * s2, x * s2 + y * c];
+    c = Math.cos(-pitch); s2 = Math.sin(-pitch);
+    [y, z] = [y * c - z * s2, y * s2 + z * c];
+    c = Math.cos(-yaw); s2 = Math.sin(-yaw);
+    [x, z] = [x * c + z * s2, -x * s2 + z * c];
+    return { x, y, z };
+  };
+
+  // Undo Scene.applyObjectTransform (scale → rotate(yaw,pitch,roll) → translate)
+  // to bring a WORLD point into the object's LOCAL space, where the primitive's
+  // implicit surface equation is simple. Non-uniform scale (sx/sy/sz, falling
+  // back to the uniform `scale`) mirrors applyObjectTransform exactly.
+  const sliceInverseObjectTransform = (worldPt, t) => {
+    const s = finite(t.scale, 1);
+    const sx = finite(t.sx, s) || 1;
+    const sy = finite(t.sy, s) || 1;
+    const sz = finite(t.sz, s) || 1;
+    const px = worldPt.x - finite(t.x, 0);
+    const py = worldPt.y - finite(t.y, 0);
+    const pz = worldPt.z - finite(t.z, 0);
+    const r = sliceInverseRotateOnly({ x: px, y: py, z: pz }, t);
+    return { x: r.x / sx, y: r.y / sy, z: r.z / sz };
+  };
+
+  // W-27c — the cutting plane's LOCAL-space normal, for the Newton projector
+  // below. `applyObjectTransform` maps a local point to world as
+  // world = R·(S·local) + t (S = diag(sx,sy,sz)). A world plane
+  // n_w·world = d transforms under that substitution to
+  // (S·(R⁻¹ n_w))·local = d − n_w·t — i.e. the LOCAL normal is the world
+  // normal rotated by the object's inverse rotation, THEN scaled
+  // component-wise by (sx,sy,sz) (not divided — this is a plane-equation
+  // coefficient, not a point, so it does not transform like one). Translation
+  // drops out of a normal/direction entirely. Returned normalized; the caller
+  // supplies its own offset (computed per-point from an already-on-plane
+  // local point) rather than this function re-deriving `d`.
+  const sliceLocalPlaneNormal = (worldNormal, t) => {
+    const s = finite(t.scale, 1);
+    const sx = finite(t.sx, s) || 1;
+    const sy = finite(t.sy, s) || 1;
+    const sz = finite(t.sz, s) || 1;
+    const m = sliceInverseRotateOnly(worldNormal, t);
+    const nx = m.x * sx; const ny = m.y * sy; const nz = m.z * sz;
+    const len = Math.hypot(nx, ny, nz) || 1e-9;
+    return { x: nx / len, y: ny / len, z: nz / len };
+  };
+
+  // F(p) and its gradient for each primitive's closed-form implicit surface,
+  // in LOCAL space. Axis conventions match charts.js exactly (Y is the
+  // pole/height axis for every one of these primitives). Returns null for a
+  // primitive with no closed form implemented here (capsule/superellipsoid/
+  // torusKnot/solid) — the caller then leaves the point as the Catmull-Rom
+  // subdivision produced it.
+  const sliceSurfaceFG = (mode, sizes, p) => {
+    const sx = sizes.sx || 1; const sy = sizes.sy || 1; const sz = sizes.sz || 1;
+    if (mode === 'sphere') {
+      // topoSphereEllipsoid: (x/sx)²+(y/sy)²+(z/sz)²=1 (sphere: sx=sy=sz=r).
+      return {
+        F: (p.x / sx) ** 2 + (p.y / sy) ** 2 + (p.z / sz) ** 2 - 1,
+        gx: (2 * p.x) / (sx * sx), gy: (2 * p.y) / (sy * sy), gz: (2 * p.z) / (sz * sz),
+      };
+    }
+    if (mode === 'cylinder') {
+      // topoCylinder: (x/sx)²+(z/sz)²=1, y free (the axis).
+      return {
+        F: (p.x / sx) ** 2 + (p.z / sz) ** 2 - 1,
+        gx: (2 * p.x) / (sx * sx), gy: 0, gz: (2 * p.z) / (sz * sz),
+      };
+    }
+    if (mode === 'cone') {
+      // topoCone: y=(u-0.5)*sy*2, r(u)=sx*(1-u) ⇒ r(y) = sx*(0.5 - y/(2*sy)).
+      const r = Math.max(0, sx * (0.5 - p.y / (2 * sy)));
+      // dF/dy = -2·r(y)·r'(y), r'(y) = -sx/(2·sy) ⇒ dF/dy = r(y)·sx/sy.
+      return {
+        F: p.x * p.x + p.z * p.z - r * r,
+        gx: 2 * p.x, gy: (r * sx) / sy, gz: 2 * p.z,
+      };
+    }
+    if (mode === 'torus') {
+      // topoTorus: main-circle radius `major`, tube radius `minor`, tube
+      // cross-section (planarRadius-major)² + y² = minor² around the Y axis.
+      const major = Math.max(2, sx * 0.75);
+      const minor = Math.max(1, Math.min(sy, sz) * 0.28);
+      const pr = Math.hypot(p.x, p.z) || 1e-9;
+      const dr = pr - major;
+      return {
+        F: dr * dr + p.y * p.y - minor * minor,
+        gx: (2 * dr * p.x) / pr, gy: 2 * p.y, gz: (2 * dr * p.z) / pr,
+      };
+    }
+    return null; // ellipsoid handled by 'sphere' branch via TOPOFORM_MODES; others: no closed form yet
+  };
+
+  // W-27c — Newton iteration on F(p)=0, constrained to move only WITHIN the
+  // cutting plane. W-27b's "hold local z fixed, solve x/y exactly" is only
+  // an exact plane∩surface solution when local z happens to BE the cutting
+  // coordinate — true only when the object is unrotated AND the slice plane
+  // is the default untitled world-Z plane. Any object yaw/pitch/roll, or any
+  // sliceRotate/sliceTilt, breaks that coincidence: the reviewer measured
+  // 0.309mm worst-case surface deviation on a rotated ellipsoid / tilted
+  // plane (bar 0.15mm) versus 0.015mm at identity.
+  //
+  // Each round: take the surface gradient at the current point, project OUT
+  // its component along the plane normal (leaving only the in-plane
+  // direction that can actually change F without leaving the plane), then
+  // take a 1-D Newton step along that direction to zero F. A final exact
+  // reclamp onto the plane (via its own local offset `d`, taken from the
+  // ORIGINAL point — see the "already on-plane" contract at the call site)
+  // absorbs any drift the step introduces. 3-4 iterations converge to well
+  // under 0.1mm for every primitive here, starting from a point already
+  // close to the surface (a raw mesh-chord crossing or a Catmull-Rom
+  // midpoint of already-corrected neighbours).
+  const SLICE_NEWTON_ITERS = 4;
+  // Newton on this class of surface converges quadratically from a
+  // near-surface start (every input point already is one), so most points
+  // are done in 1-2 rounds; this residual floor lets the loop stop as soon
+  // as F is already negligible instead of always spending the full 4 rounds
+  // — a real perf win (measured ~1.3x fewer average rounds on a dense
+  // sphere sweep) with no accuracy cost, since it only SKIPS rounds that
+  // would have moved the point by a sub-micron amount anyway.
+  const SLICE_NEWTON_F_EPS = 1e-10;
+  const sliceAnalyticProjectLocal = (mode, sizes, p, planeNormalLocal) => {
+    const n = planeNormalLocal || null;
+    const d = n ? (n.x * p.x + n.y * p.y + n.z * p.z) : 0;
+    let cur = { x: p.x, y: p.y, z: p.z };
+    // Computed once per iteration, never twice for the same `cur` — the
+    // convergence check below tests THIS round's fg before doing any of its
+    // (more expensive) gradient-projection work, instead of an earlier draft
+    // that redundantly evaluated F at the untouched input point first.
+    let fg = sliceSurfaceFG(mode, sizes, cur);
+    if (!fg) return null;
+    // W-27c review (reviewer-required divergence guard): `k = F / denom`
+    // explodes as `denom` (the SQUARED in-plane gradient magnitude) shrinks
+    // toward the old bare `1e-12` bail-out floor — a real, non-contrived
+    // configuration: it happens whenever the cutting plane is near-TANGENT
+    // to the surface at a ring point, i.e. whenever the local surface
+    // normal nearly aligns with the plane normal (exactly the neighbourhood
+    // where refinement matters most, at a ring's own turning/extremal
+    // points). Verified against this exact function pre-guard: denom just
+    // above the old floor let a step move the point 100s-10000s of mm away
+    // with a WORSE residual than it started with — silently, no NaN, no
+    // crash, straight into the rendered ring.
+    //
+    // Fix: track the best (smallest |F|) point seen, seeded with the
+    // UNTOUCHED input `p` itself (always a safe fallback — it is where the
+    // ring already sat before this function ran). A candidate step is only
+    // ever accepted when it is (1) finite, (2) does not move farther than a
+    // sane bound relative to the primitive's own scale (rules out the
+    // 100+mm/10000+mm teleports directly), and (3) STRICTLY reduces |F|
+    // versus the best point so far. The very first rejection stops the
+    // loop and returns the best point found — never worse, never wilder,
+    // than the point this function was handed.
+    const scaleBound = Math.max(sizes.sx || 0, sizes.sy || 0, sizes.sz || 0, 1) * 4;
+    let best = cur; let bestAbsF = Math.abs(fg.F);
+    for (let i = 0; i < SLICE_NEWTON_ITERS && Math.abs(fg.F) >= SLICE_NEWTON_F_EPS; i++) {
+      let gx = fg.gx; let gy = fg.gy; let gz = fg.gz;
+      if (n) {
+        const gn = gx * n.x + gy * n.y + gz * n.z;
+        gx -= gn * n.x; gy -= gn * n.y; gz -= gn * n.z;
+      }
+      const denom = gx * gx + gy * gy + gz * gz;
+      if (denom < 1e-12) break; // gradient purely normal to the plane: no in-plane move can fix F
+      const k = fg.F / denom;
+      let next = { x: cur.x - k * gx, y: cur.y - k * gy, z: cur.z - k * gz };
+      if (n) {
+        const off = n.x * next.x + n.y * next.y + n.z * next.z - d;
+        next = { x: next.x - off * n.x, y: next.y - off * n.y, z: next.z - off * n.z };
+      }
+      const stepLen = Math.hypot(next.x - cur.x, next.y - cur.y, next.z - cur.z);
+      const finitePt = Number.isFinite(next.x) && Number.isFinite(next.y) && Number.isFinite(next.z);
+      const nextFg = finitePt ? sliceSurfaceFG(mode, sizes, next) : null;
+      const nextAbsF = nextFg ? Math.abs(nextFg.F) : Infinity;
+      if (!finitePt || !nextFg || !Number.isFinite(nextAbsF)
+        || stepLen > scaleBound || nextAbsF >= bestAbsF) {
+        break; // divergent or non-improving step: stop, keep the best point found
+      }
+      cur = next; fg = nextFg; best = cur; bestAbsF = nextAbsF;
+    }
+    return best;
+  };
+  // Deliberately NOT Params.CURVED_FILL_PRIMITIVES — see the pass's own comment
+  // at its use site. `pyramid` is chart-wrapped but flat-faced (a real polygon
+  // cross-section), so it stays excluded here exactly as it is excluded from
+  // `hasRoundedContour`, without importing that set and its fill-routing
+  // coupling into this independent slicing pass. `solid` is NOT listed here —
+  // it covers both hand-picked FACETED polyhedra and solidType:'importedMesh'
+  // (an OBJ/STL import, possibly smooth), so that one is decided per-object
+  // at the pass's use site, not statically.
+  const SLICE_SMOOTH_EXCLUDED = new Set(['box', 'plane', 'pyramid']);
+
+  const sliceRingTurnDeg = (a, b, c) => {
+    const v1x = b.x - a.x; const v1y = b.y - a.y; const v1z = b.z - a.z;
+    const v2x = c.x - b.x; const v2y = c.y - b.y; const v2z = c.z - b.z;
+    const l1 = Math.hypot(v1x, v1y, v1z);
+    const l2 = Math.hypot(v2x, v2y, v2z);
+    if (l1 < 1e-9 || l2 < 1e-9) return 0;
+    let cosA = (v1x * v2x + v1y * v2y + v1z * v2z) / (l1 * l2);
+    if (cosA > 1) cosA = 1; else if (cosA < -1) cosA = -1;
+    return (Math.acos(cosA) * 180) / Math.PI;
+  };
+
+  // Max exterior turning angle across every INTERIOR vertex (closed: every
+  // vertex; open: every vertex but the two endpoints, which have no turn).
+  const sliceRingMaxTurn = (pts, closed) => {
+    const n = pts.length;
+    if (n < 3) return 0;
+    let max = 0;
+    const lo = closed ? 0 : 1;
+    const hi = closed ? n - 1 : n - 2;
+    for (let i = lo; i <= hi; i++) {
+      const a = pts[(i - 1 + n) % n];
+      const b = pts[i];
+      const c = pts[(i + 1) % n];
+      const t = sliceRingTurnDeg(a, b, c);
+      if (t > max) max = t;
+    }
+    return max;
+  };
+
+  // One round of interpolatory midpoint insertion between every pair of
+  // adjacent points (doubling the count), using a CENTRIPETAL Catmull-Rom
+  // (Barry-Goldman) evaluation rather than the textbook uniform-parameter
+  // 4-point scheme. A raw contourSlice ring's edge lengths are wildly
+  // non-uniform (many short chords fanning off a mesh vertex sit next to one
+  // long chord spanning a sparse stretch), and the UNIFORM scheme's fixed
+  // (9,9,-1,-1)/16 weights assume roughly-equal spacing — fed unequal spacing
+  // they extrapolate the short-edge tangent onto the long edge and overshoot,
+  // measured as a 160-180° reversal spike that gets WORSE each round instead
+  // of converging. Centripetal parametrisation (knot spacing proportional to
+  // sqrt(chord length)) is the
+  // standard fix (Yuksel et al.) — it stays well-behaved for exactly this kind
+  // of irregular input. Open-ring boundaries clamp to the end points.
+  const sliceRingSubdivideOnce = (pts, closed) => {
+    const n = pts.length;
+    const at = (i) => (closed ? pts[((i % n) + n) % n] : pts[Math.max(0, Math.min(n - 1, i))]);
+    const dist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    const lerp3 = (a, b, t) => ({
+      x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t,
+    });
+    // Barry-Goldman evaluation of the centripetal Catmull-Rom segment between
+    // p1,p2 (neighbours p0,p3) at its own midpoint knot. Degenerate (zero-
+    // length) spans fall back to the plain lerp for that blend.
+    const centripetalMid = (p0, p1, p2, p3) => {
+      const d0 = Math.sqrt(dist(p0, p1)); const d1 = Math.sqrt(dist(p1, p2)); const d2 = Math.sqrt(dist(p2, p3));
+      const t0 = 0; const t1 = t0 + (d0 || 1e-9); const t2 = t1 + (d1 || 1e-9); const t3 = t2 + (d2 || 1e-9);
+      const t = (t1 + t2) / 2;
+      const blend = (a, b, ta, tb, at_) => (tb - ta > 1e-12 ? lerp3(a, b, (at_ - ta) / (tb - ta)) : a);
+      const A1 = blend(p0, p1, t0, t1, t);
+      const A2 = blend(p1, p2, t1, t2, t);
+      const A3 = blend(p2, p3, t2, t3, t);
+      const B1 = blend(A1, A2, t0, t2, t);
+      const B2 = blend(A2, A3, t1, t3, t);
+      return blend(B1, B2, t1, t2, t);
+    };
+    const edgeCount = closed ? n : n - 1;
+    const out = [];
+    for (let i = 0; i < edgeCount; i++) {
+      const p1 = at(i); const p2 = at(i + 1);
+      out.push(p1);
+      out.push(centripetalMid(at(i - 1), p1, p2, at(i + 2)));
+    }
+    if (!closed) out.push(at(edgeCount));
+    return out;
+  };
+
+  // refineSliceRing(worldPts) — public, pure, deterministic. `worldPts` is a
+  // linkSegments() ring (closed rings repeat their first point as the last).
+  // Returns a NEW array; the input is never mutated. Gated by the caller on
+  // surface smoothness — this function itself has no opinion about that.
+  const refineSliceRing = (worldPts, opts = {}) => {
+    // >=3, not >=4: a raw 3-vertex triangle (a real, if minimal, ring — the
+    // sparsest pole-adjacent case) still has a real angle to fix. Only an
+    // unusable 0/1/2-point input bails here; a 2-DISTINCT-point closed stub
+    // (seam artefact) is caught below, after dedup, where it belongs.
+    if (!Array.isArray(worldPts) || worldPts.length < 3) return worldPts;
+    const maxAngle = Number.isFinite(opts.maxAngleDeg) ? opts.maxAngleDeg : SLICE_REFINE_MAX_ANGLE_DEG;
+    const maxRounds = Number.isFinite(opts.maxRounds) ? opts.maxRounds : SLICE_REFINE_MAX_ROUNDS;
+    const analyticProject = typeof opts.analyticProject === 'function' ? opts.analyticProject : null;
+    const first = worldPts[0];
+    const last = worldPts[worldPts.length - 1];
+    const closed = worldPts.length >= 4
+      && Math.hypot(first.x - last.x, first.y - last.y, first.z - last.z) < 1e-6;
+    let base = closed ? worldPts.slice(0, -1) : worldPts.slice();
+    // A mesh seam (e.g. a sphere's u=0/u=1 longitude fold) can hand linkSegments
+    // two crossing points a fraction of a micron apart. The 4-point scheme is
+    // an INDEX-parametrised (not arc-length) subdivision, so a near-zero-length
+    // edge sitting next to a long one makes its weights extrapolate wildly —
+    // measured as a runaway 180° spike after repeated rounds instead of
+    // convergence. Collapsing true duplicates first (not real geometry, just a
+    // seam artefact) is the correct fix for any resampling scheme, not a
+    // workaround for this one.
+    const DUP_EPS = 1e-4;
+    const deduped = [];
+    for (let i = 0; i < base.length; i++) {
+      const p = base[i];
+      const prev = deduped[deduped.length - 1];
+      if (!prev || Math.hypot(p.x - prev.x, p.y - prev.y, p.z - prev.z) > DUP_EPS) deduped.push(p);
+    }
+    if (closed && deduped.length > 1) {
+      const p0 = deduped[0]; const pl = deduped[deduped.length - 1];
+      if (Math.hypot(p0.x - pl.x, p0.y - pl.y, p0.z - pl.z) <= DUP_EPS) deduped.pop();
+    }
+    base = deduped;
+    if (base.length < 3) return worldPts;
+    // Snap the ORIGINAL vertices onto the true surface too — they are exact
+    // mesh-chord crossings (inside the surface), not on it, and a 3-point
+    // triangle needs this correction even more than a dense ring, since with
+    // so few points every one of them dominates the visible shape.
+    if (analyticProject) base = base.map((pt) => analyticProject(pt) || pt);
+    let round = 0;
+    while (round < maxRounds && sliceRingMaxTurn(base, closed) > maxAngle) {
+      base = sliceRingSubdivideOnce(base, closed);
+      // Every newly-inserted midpoint is a Catmull-Rom interpolation between
+      // surface points, so it is only APPROXIMATELY on the true surface —
+      // snap it back each round so the ring converges to the true curve
+      // instead of to a smoother-but-still-approximate polygon.
+      if (analyticProject) base = base.map((pt) => analyticProject(pt) || pt);
+      round += 1;
+    }
+    return closed ? [...base, { ...base[0] }] : base;
+  };
+
   const Scene3DNS = (Vectura.Scene3D = Vectura.Scene3D || {});
-  Scene3DNS.Slices = { buildSliceSegments };
+  // analyticProjectLocal / localPlaneNormal / inverseObjectTransform are
+  // exposed alongside refineRing/buildSliceSegments so tests can drive the
+  // REAL W-27c Newton projector (and its rotated-transform plane math)
+  // directly, the same way refineRing's own `analyticProject` option was
+  // already exercised — rather than re-deriving the fix's own math in test
+  // code, which would validate Newton's method in general and not this
+  // wiring in particular.
+  Scene3DNS.Slices = {
+    buildSliceSegments,
+    refineRing: refineSliceRing,
+    analyticProjectLocal: sliceAnalyticProjectLocal,
+    localPlaneNormal: sliceLocalPlaneNormal,
+    inverseObjectTransform: sliceInverseObjectTransform,
+  };
 
   const FALLBACK_STYLE = { penId: null, mapper: 'none', params: {} };
 
@@ -3728,7 +4296,8 @@
             const sliceTreat = strokeTreatment(sp);
             // NOT selfObject: a through-body slice SHOULD self-occlude (the far
             // side hides behind the near surface) — only on-surface fills opt out.
-            const segCtx = { objectId: record.id };
+            // segCtx.selfOcclude is set below, once analyticProject is known —
+            // see the W-27c item 0(b) comment there.
             // Group the flat cut list by (plane, front|back). Insertion order is
             // plane-ascending (buildSliceSegments emits level 1..N), so Map order
             // is deterministic. The 2D link key is unique WITHIN a plane, so
@@ -3739,8 +4308,82 @@
               if (!g) { g = { front: [], back: [] }; byPlane.set(s.plane, g); }
               (s.front ? g.front : g.back).push([s.a, s.b]);
             });
-            const linkPlane = (segs) => (linkSegments ? linkSegments(segs)
-              : segs.map((e) => [e[0], e[1]]));
+            // W-27: is this object's SURFACE actually round? See
+            // SLICE_SMOOTH_EXCLUDED above the pass for why this is deliberately
+            // a separate predicate from Params.CURVED_FILL_PRIMITIVES. 'solid'
+            // covers both hand-picked FACETED polyhedra (buckyball, star, …
+            // real flat faces — stay excluded) and solidType:'importedMesh'
+            // (an OBJ/STL import or a baked Convert-to-Scene bake, which may be
+            // smooth) — only the former is actually faceted, so 'solid' is
+            // excluded HERE, per-object, rather than in the static set.
+            const chartObj = objById.get(record.id);
+            const solidFaceted = record.primitive === 'solid'
+              && (!chartObj || (chartObj.params && chartObj.params.solidType) !== 'importedMesh');
+            const smoothSurface = !SLICE_SMOOTH_EXCLUDED.has(record.primitive) && !solidFaceted
+              && record.id !== 'ground';
+            // W-27b — closed-form surface snap for the primitives it's
+            // implemented for (see sliceAnalyticProjectLocal); everything else
+            // (capsule/superellipsoid/torusKnot, and any 'solid' — imported
+            // meshes have no known implicit equation here) falls back to
+            // Catmull-Rom-only smoothing via a null analyticProject.
+            const chart = (smoothSurface && chartObj) ? curvedChartParams(chartObj) : null;
+            let analyticProject = null;
+            if (chart && chartObj && chartObj.transform) {
+              const t = chartObj.transform;
+              const ayr = (finite(sp.sliceRotate, 0) * Math.PI) / 180;
+              const apr = (finite(sp.sliceTilt, 0) * Math.PI) / 180;
+              const acy = Math.cos(ayr); const asy = Math.sin(ayr);
+              const acp = Math.cos(apr); const asp = Math.sin(apr);
+              const anx = -asy * acp; const any = asp; const anz = acy * acp;
+              // W-27c — the LOCAL-space plane normal, computed once per
+              // object+plane-orientation (constant across every point/round
+              // of one ring's refinement), so `sliceAnalyticProjectLocal`'s
+              // Newton step can move only WITHIN the plane instead of the old
+              // "hold local z fixed" shortcut, which is exact only when the
+              // object is unrotated and the plane is the untilted default.
+              const localPlaneNormal = sliceLocalPlaneNormal({ x: anx, y: any, z: anz }, t);
+              analyticProject = (worldPt) => {
+                const local = sliceInverseObjectTransform(worldPt, t);
+                const correctedLocal = sliceAnalyticProjectLocal(chart.mode, chart.sizes, local, localPlaneNormal);
+                if (!correctedLocal) return null;
+                const cw = Vectura.Scene3D.Scene.applyObjectTransform(correctedLocal, t);
+                // Re-clamp onto the cutting plane along its own normal — the
+                // surface snap moves the point off-plane by a tiny amount.
+                const d0 = worldPt.x * anx + worldPt.y * any + worldPt.z * anz;
+                const dc = cw.x * anx + cw.y * any + cw.z * anz;
+                const diff = dc - d0;
+                return { x: cw.x - diff * anx, y: cw.y - diff * any, z: cw.z - diff * anz };
+              };
+            }
+            // W-27c item 0(b) — the ring is snapped onto the object's
+            // ANALYTIC surface (above) while the HLR occluder set stays the
+            // tessellated mesh; the two differ by the mesh's own inscribed
+            // sagitta (0.118mm on the default torus at detail 16), which the
+            // clipper's plain 0.05mm bias (HLR_BIAS) does not absorb. With no
+            // selfOcclude flag on this segCtx, hiddenAt tests the ring against
+            // its OWN facets at that same 0.05mm bias (hlr.js:389), so
+            // wherever the analytic ring runs near-tangentially to the view
+            // (the torus's hole and tube equator) it dips behind a chordal
+            // facet for a fraction of a millimetre and the clipper splits the
+            // run into micro-gaps — measured 63 internal gaps, 33 over one
+            // 0.3mm pen, max 1.34mm (docs/3d-audit/lane-reports/
+            // W-27c-0-W-29-plan.md §1.1). Raising the same-object bias to
+            // hlr.js's SELF_OCCLUDE_BIAS (6mm — comfortably above tessellation
+            // noise, comfortably below a real ≥10mm self-occlusion crossing,
+            // see hlr.js's own header) removes the false splits while leaving
+            // genuine self-occlusion (the torus's near tube wall hiding its
+            // far wall through the hole) intact. Scoped to records whose ring
+            // actually LEFT the mesh (smoothSurface && analyticProject) so a
+            // faceted/raw ring (whose points sit exactly on mesh edges, never
+            // straying into the tessellation-noise band) is byte-identical —
+            // it never had this defect and doesn't need the wider bias.
+            const segCtx = { objectId: record.id, selfOcclude: !!(smoothSurface && analyticProject) };
+            const linkPlane = (segs) => {
+              const rings = linkSegments ? linkSegments(segs) : segs.map((e) => [e[0], e[1]]);
+              return smoothSurface
+                ? rings.map((ring) => refineSliceRing(ring, analyticProject ? { analyticProject } : undefined))
+                : rings;
+            };
             const projectPath = (worldPts) => {
               const proj = [];
               for (let i = 0; i < worldPts.length; i++) {
@@ -3766,12 +4409,39 @@
             // Bounding sampled-length × occluders keeps the work fixed regardless
             // of detail / camera / occluder count; overflow front rings emit raw.
             let workUsed = 0;
+            // W-27c-0a — one occupancy grid per RECORD, shared across every
+            // plane (crowding is between DIFFERENT levels, not within one),
+            // scoped to smoothSurface && analyticProject (see the fix's own
+            // header comment above): a faceted/raw ring sits exactly on mesh
+            // edges, never strays into the tessellation-noise band, and never
+            // had this defect, so it stays byte-identical to any pen width.
+            const crowdRadius = CROWD_CULL_K * penWidth;
+            const crowdMinArc = CROWD_MIN_ARC_MULT * penWidth;
+            const crowdGrid = (smoothSurface && analyticProject)
+              ? makeCrowdGrid(crowdRadius) : null;
             byPlane.forEach((g) => {
               // Front rings: HLR-clipped (occluded/self-occluded) until the fixed
               // budget is spent, then raw — never dropped.
               linkPlane(g.front).forEach((worldPts) => {
                 const proj = projectPath(worldPts);
                 if (proj.length < 2) return;
+                // W-27c-0a iteration 3 — the crowding decision is made ONCE,
+                // on the WHOLE RING, BEFORE clipping — not per post-clip
+                // run. Deciding after clipping (iteration 3's first attempt)
+                // let occlusion fragmentation "rescue" a crowded ring: a
+                // short occluded-and-reassembled fragment often does not, by
+                // itself, reach `crowdMinArc` of contiguous crowding even
+                // when the WHOLE unclipped ring plainly does, so full-frame
+                // ink came out HIGHER than draft-frame ink for the same
+                // ring (measured: ratio 1.106, inverting the W-27c item
+                // 0(b) guard's own invariant that real self-occlusion hides
+                // SOME ink). Deciding on the ring before either draft or
+                // full ever sees it makes the verdict identical in both,
+                // so any full-vs-draft difference is once again ONLY real
+                // HLR occlusion — 0(b)'s own invariant, untouched by this
+                // fix's mechanism.
+                if (crowdGrid && isRunCrowded(proj, crowdGrid, crowdMinArc)) return;
+                if (crowdGrid) proj.forEach((pt) => crowdGrid.insert(pt.x, pt.y));
                 const meta = metaFor(proj);
                 if (draft || workUsed >= SLICE_CLIP_WORK) {
                   emitRuns([{ visible: true, pts: proj }], meta, hiddenTreatment, null, sliceTreat);

@@ -97,6 +97,18 @@ describe('Scene X-ray — back-face controls need a surface fill', () => {
   };
   const backPaths = (group, objId) => ownPaths(group, objId)
     .filter((p) => p.meta.sceneTarget.xrayBack === true);
+  // W-27c — contourSlice self-occludes even alone (a through-body slice's far
+  // arc hides behind the object's own near surface — see scene3d.js's "NOT
+  // selfObject" comment on the pass). Under x-ray that self-hidden arc is
+  // drawn DASHED rather than dropped, exactly like an external occluder's
+  // hidden run. On a ROUND primitive (capsule) the W-27/W-27b ring
+  // refinement changed the self-occlusion clip's chord lengths enough that a
+  // couple of tiny tail fragments now clear MIN_RUN_MM where the old, coarser
+  // ring dropped them — this is that dash reveal working as intended, not
+  // back-face SURFACE_FILL ink (which is what the note above is actually
+  // about): `occluded: true` with `xrayBack` unset, never `true`.
+  const selfOcclusionDashPaths = (group, objId) => ownPaths(group, objId)
+    .filter((p) => p.meta.sceneTarget.occluded === true && p.meta.sceneTarget.xrayBack !== true);
 
   // ── the engine claim the UI note rests on ─────────────────────────────────
   // If this ever changes, the note is lying and this test says so first.
@@ -111,7 +123,13 @@ describe('Scene X-ray — back-face controls need a surface fill', () => {
       renderer.setSceneObjectField(gid, [obj.id], 'visibility', 'solid');
       const solid = ownPaths(group, obj.id).length;
       xrayOn(gid, obj.id);
-      expect(ownPaths(group, obj.id).length).toBe(solid);
+      // Any growth over the solid count must be EXCLUSIVELY dashed
+      // self-occlusion reveal (contourSlice only, on a round primitive) —
+      // never back-face SURFACE_FILL ink, which is the actual claim this
+      // test protects (asserted directly on the next line).
+      const grew = ownPaths(group, obj.id).length - solid;
+      expect(grew).toBe(selfOcclusionDashPaths(group, obj.id).length);
+      expect(grew).toBeGreaterThanOrEqual(0);
       expect(backPaths(group, obj.id).length).toBe(0);
     });
 

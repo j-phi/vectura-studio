@@ -362,8 +362,23 @@
   // itself uses). Any OTHER named solid is assumed under the cap — matching
   // the one low-poly solid this repo has actually measured (a dodecahedron) —
   // rather than guessed at without evidence.
+  //
+  // `importedMesh` is the one exception to that "assumed under the cap"
+  // default, and it is unconditional (W-28). `faceMonoLines`'s
+  // `MONO_MAX_FRONT_FACES` check (scene3d.js) reads a live camera-facing
+  // mesh record's real front-face count mid-render — this config has no
+  // channel to that number at picker time, for ANY imported mesh, so unlike
+  // a named platonic/geodesic solid (whose face count is a fixed, known
+  // constant this file could in principle special-case) there is no safe
+  // "assume it's fine" default here: a real .obj/.stl import is essentially
+  // always well over 12 faces. Treating it as cap-limited unconditionally
+  // means the picker under-promises (it hides mono laws that a rare
+  // sub-13-face import could actually reach) rather than over-promises (
+  // offering laws that silently render as Ladder) — the same fail-toward-
+  // fewer-live-options bias `isReachableOn`'s mapper gate already uses.
   SCENE_FILL_STYLES.isCapLimited = (primitiveMode, solidType) => {
     if (primitiveMode !== 'solid') return false;
+    if (solidType === 'importedMesh') return true;
     const P = Vectura.Scene3D && Vectura.Scene3D.Params;
     const dflt = (P && P.PRIMITIVE_PARAM_DEFAULTS && P.PRIMITIVE_PARAM_DEFAULTS.solid
       && P.PRIMITIVE_PARAM_DEFAULTS.solid.solidType) || 'buckyball';
