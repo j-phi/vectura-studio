@@ -287,12 +287,42 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   // row); denseMixed|draft matches A2's pin exactly (W-15c does not move
   // draft rows) — each row shows exactly the union of the two independent
   // effects, nothing dropped from either side.
+  //
+  // W-26 RE-PIN (2026-09-05, PROOF, `3d-scene/fill-audit-a`): `curvedOverlap-…`
+  // and `denseMixed-…` both carry curved primitives (sphere/cylinder/torus/
+  // cone) under the scene's own `mapper: 'hatch'` at the SHIPPED default
+  // tone algo (`ladder`) — moving that law onto continuous placement (see
+  // `src/core/scene3d/surface-fill.js`'s `isEvenLadder`) is an intentional
+  // geometry change, not a regression. Both `|draft` variants (fastPreview
+  // — routes through the flat legacy path, `STAGE.dither`/`masterGrid`
+  // never engage) are UNCHANGED, confirmed byte-identical to the pre-fix
+  // baseline; `facetedOverlap-orthographic-hatch` (no curved primitive) is
+  // also unchanged. Before → after (settled only, this branch alone):
+  //   curvedOverlap-perspective-mixed-xray: pathCount 341→368 (+27), pointCount 1099→1432 (+333)
+  //   denseMixed-8obj-shadows:              pathCount 560→571 (+11), pointCount 2303→2530 (+227)
+  // Both counts rose — continuous placement never drops a ruling, so a
+  // family that used to lose some to the discrete ladder's per-ruling
+  // verdict now draws every one it places.
+  //
+  // MERGE NOTE (integration, 2026-09-06, second pass): the merged tree now
+  // carries THREE independent effects on these same rows — A2 torus
+  // self-occlusion, W-15c solo-orientation carrier gate, AND W-26 continuous
+  // ladder placement. `|draft` rows are untouched by W-15c and W-26 alike
+  // (both route through the flat/legacy draft path); only A2 can move a
+  // draft row (denseMixed|draft only, per the A2 note above). `|settled`
+  // rows below were re-measured against the actual merged source via this
+  // file's own capture-mode error path — not copied from any single
+  // branch's pin. Measured: curvedOverlap|settled 431/1559 (roughly additive
+  // on top of the A2+W-15c 404/1225 figure plus W-26's own +27/+333 delta,
+  // within 1 point of a pure sum — real interaction, not a copy error);
+  // denseMixed|settled 662/2712, which IS the exact sum of the A2+W-15c
+  // 651/2485 figure plus W-26's own +11/+227 delta.
   const EXPECTED = {
     'facetedOverlap-orthographic-hatch|settled': { hash: '0517b318738d3fd4dc7d31be0698487d85f4e96e31d6e9e8d300b9d2fa2e6875', pathCount: 208, pointCount: 416 },
     'facetedOverlap-orthographic-hatch|draft': { hash: 'c89e3d735e2b53f3c1d154e7f3567d53a1e6053159b9ffa25a5853f7973d6a76', pathCount: 200, pointCount: 400 },
-    'curvedOverlap-perspective-mixed-xray|settled': { hash: '2a3ed6487d1873d2e5bc2feedf8540d239c808314af3ef28e85410634b65be2f', pathCount: 404, pointCount: 1225 },
+    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'bfb2b907ee0fae1fa6d70ee1ce0406e6db50bb01a20b815d2278be1b5cada03c', pathCount: 431, pointCount: 1559 },
     'curvedOverlap-perspective-mixed-xray|draft': { hash: '83aebf997a1e39aed36e2893fb18e7e7ea386755a9493e4868c53c51c80ee2f9', pathCount: 302, pointCount: 604 },
-    'denseMixed-8obj-shadows|settled': { hash: '18588b303aa3f605bae7247b2979b1c13c63fb842376085dd0930dfc3d46c875', pathCount: 651, pointCount: 2485 },
+    'denseMixed-8obj-shadows|settled': { hash: '9593e988430bc16534b9394f68152e8f8568b45c58b412bb476204695dd97562', pathCount: 662, pointCount: 2712 },
     'denseMixed-8obj-shadows|draft': { hash: '9c3de29b1f268348208ebe1395268ad1f099ffdfc1b58d5759e3dc7eba7f4486', pathCount: 466, pointCount: 932 },
   };
 

@@ -1,0 +1,37 @@
+{
+  "id": "W-05",
+  "title": "mkTick draws its ticks (F-05)",
+  "branch": "3d-scene/fill-audit-a",
+  "commit": "PENDING",
+  "before": [
+    "shots/B/sphere__hatch__mkTick__med__a.webp",
+    "shots/B/sphere__hatch__mkTick__max__a.webp",
+    "shots/B/torus__hatch__mkTick__med__a.webp",
+    "shots/B/torus__crosshatch__mkTick__med__a.webp",
+    "shots/B/torus__contour__mkTick__med__a.webp",
+    "shots/B/cone__hatch__mkTick__med__a.webp",
+    "shots/B/sphere__contour__mkTick__med__a.webp"
+  ],
+  "after": [
+    "after/W-05/shots/B/sphere__hatch__mkTick__med__a.webp",
+    "after/W-05/shots/B/sphere__hatch__mkTick__max__a.webp",
+    "after/W-05/shots/B/torus__hatch__mkTick__med__a.webp",
+    "after/W-05/shots/B/torus__crosshatch__mkTick__med__a.webp",
+    "after/W-05/shots/B/torus__contour__mkTick__med__a.webp",
+    "after/W-05/shots/B/cone__hatch__mkTick__med__a.webp",
+    "after/W-05/shots/B/sphere__contour__mkTick__med__a.webp"
+  ],
+  "notes": "Root cause was NOT the count/capacity math (which already scales density-vs-tone correctly) but a double rotation: MK.mkTick declared or:'across', and thetaAt() then rotated the tick shape's own points a further 90 degrees — but mkShape('tick',...) already builds its raw points spanning the perpendicular (v) axis, so 'across' orientation needs theta=0 ('none'), not a second 90 degree twist. The double rotation made every tick run ALONG the ruling instead of across it, so densely-packed along-oriented ticks chained into what read as 5-6 smooth carrier rulings. Fix: MK.mkTick or:'across' -> or:'none' (surface-fill.js MK table, mkTick entry only; no other of the 12 mark laws uses 'across'). Also added SF.lastMarkStats (a permanent, unconditional mark-law stats surface mirroring the existing lastRibbonStats pattern; the pre-existing lastFloorStats.mark was dead code gated behind a hardcoded TONE_UNCAPPED=false). Visually confirmed on sphere/torus/cone across hatch, crosshatch and contour mappers: ticks now read as a genuine perpendicular tick texture, dark-side density clearly exceeds light-side, and rows still follow the ruling curvature.",
+  "tests": {
+    "red": "expect(median).toBeLessThan(0.5) -> Received: 0.9998389133076426 (median |cos(angle to nearest ruling tangent)| across sampled ticks -- near-parallel, i.e. running ALONG the ruling)",
+    "green": "Tests: 10 passed, 10 total (scene3d-mark-laws-draw.test.js, full file incl. W-06/W-07)",
+    "suites": "test:unit (this file) green; byte-identity spot-checked on ladder/nibAngle/mkDotScreen (unchanged laws) via direct SF.buildObject path-count comparison"
+  },
+  "byte_identical_pairs": [],
+  "measured": {
+    "sphere_hatch_med_d50": {
+      "pre_fix": { "paths": 666, "inkMm": 3131.3 },
+      "post_fix": { "paths": 597, "inkMm": 3016.6, "darkThird": 394, "midThird": 94, "lightThird": 41 }
+    }
+  }
+}

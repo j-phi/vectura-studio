@@ -429,6 +429,66 @@
     return CURVED_FLOOR_PEN_MIN - t * (CURVED_FLOOR_PEN_MIN - CURVED_FLOOR_PEN_EXT_MIN);
   };
 
+  // ── CURVED-PATH DENSITY, SPARSE END (F-01 / W-01) ───────────────────────────
+  // `curvedMasterFloorPen` above fixes the DENSE end (Density > 100) going
+  // flat on curved primitives. The SPARSE end had the mirror defect, and it
+  // was worse: `hatchSpacing` only tapers 14mm -> 7.5mm across Density 1-50
+  // (a shallow 1.85x), and surface-fill.js's master grid clamps to a
+  // DENSITY-FREE floor (`o6Pitch`, tuned to land in that same narrow
+  // neighbourhood — the "the centre light must still carry ink" O6 bound)
+  // whenever `tonePitch` is coarser than it. Since `tonePitch` never got
+  // finer than that floor before Density ~49.5, the floor — not Density —
+  // set the grid for every value from 1 to 49: measured, a default sphere's
+  // Ladder fill count was 22 at every one of Density 1 through 49, byte-
+  // identical, then jumped to 23 at 50 (findings.json F-01).
+  //
+  // `Vectura.Scene3D.SurfaceFill`'s own `o6Pitch` is fixed alongside this (it
+  // no longer clamps flat once `tonePitch` asks to be sparser than it — see
+  // its own comment) so the floor stops overriding Density outright. But
+  // `hatchSpacing`'s own 1.85x taper is too shallow on its own: once
+  // quantised to an integer ruling count it still only separates Density 1
+  // from 49 by a few rulings, and the master grid's LADDER banding rounds
+  // each tone band's line count independently, so ruling counts one or two
+  // apart can rank a shade out of the density order they came from (measured:
+  // N=17->18 as Density crosses ~7 nets fewer drawn segments, not more, from
+  // banding rounding alone — not a bug in this fix, a pre-existing property
+  // of quantizing a handful of rulings into a several-band ladder).
+  //
+  // So the sparse end doesn't just unclamp the existing taper, it widens it:
+  // below Density 50 (unaffected above -- `d(50) === hatchSpacing(50)`
+  // exactly, so every existing d>=50 document, including the O27 "same law"
+  // parity direction, is untouched) the taper becomes GEOMETRIC rather than
+  // `hatchSpacing`'s own linear shape, spanning `CURVED_SPARSE_PITCH_BOOST`x
+  // `hatchSpacing(50)` at Density 1 down to 1x at Density 50.
+  //
+  // FOLLOW-UP (W-01 adversarial review, M1): 6 was NOT wide enough at the
+  // audit's own literal checkpoints (1/10/25/50) on every primitive — the
+  // banding-rounding property above is not monotone in ruling count, so
+  // WIDENING the pitch curve does not uniformly help; it only moves WHICH
+  // checkpoint lands on an unlucky ruling count (measured: boost 6 dipped
+  // sphere at d=10 and tied+dipped torus at d=10; boost 8-18 fixed sphere/
+  // cone but left torus's d=1 and d=10 both pinned to the absolute plot-
+  // safety floor, N=4 -- a legitimate tie, not a defect, but still short of
+  // "strictly increasing"). `CURVED_SPARSE_PITCH_BOOST` (4.1) was re-picked
+  // by sweeping against sphere/torus/cone x hatch x {ladder, fineLadder}
+  // simultaneously: it is the value where all six combos' drawn path count
+  // is non-decreasing AND every one of the six has strictly increasing
+  // total ink (path length) across Density 1/10/25/50 -- see
+  // `tests/unit/scene3d-curved-density-sparse-end.test.js`'s "literal
+  // checkpoints" describe block for the exact pinned numbers.
+  //
+  // Only threaded into the ONE direct density->tonePitch SurfaceFill call
+  // (mirrors `curvedMasterFloorPen`'s own scope note) — no other caller reads
+  // this, so nothing else moves.
+  const CURVED_SPARSE_PITCH_BOOST = 4.1;
+  const curvedSparseTonePitch = (density) => {
+    const d = clamp(finite(density, 50), 0, 500);
+    if (d >= 50) return hatchSpacing(d); // byte-identical: untouched formula
+    const t = (clamp(d, 1, 50) - 1) / 49; // 0 at d=1 -> 1 at d=50
+    const boost = CURVED_SPARSE_PITCH_BOOST ** (1 - t);
+    return hatchSpacing(50) * boost;
+  };
+
   // Strip the geometry-mutating part of a treatment, keeping only the line-type
   // dash. Edges and per-face outlines are DOUBLE-DRAWN (the face outline loop and
   // the silhouette/crease/boundary edge pass both emit the same structural edge);
@@ -3447,9 +3507,12 @@
                 // to stand on (§5.4 #1); without a pen width it stays exactly
                 // `lineCountFor(density)`.
                 penWidth,
-                // Density, in the SAME law the faceted path uses, so the dial
-                // means the same thing on both (the O27 parity contract).
-                tonePitch: hatchSpacing(finite(sp.fillDensity, 50)),
+                // Density: `hatchSpacing` UNCHANGED at d>=50 (the O27 parity
+                // direction: same dial, same monotone sense as the faceted
+                // path). Below 50, `curvedSparseTonePitch` widens the same
+                // taper so the sparse end actually responds to Density — see
+                // its own comment (F-01 / W-01).
+                tonePitch: curvedSparseTonePitch(finite(sp.fillDensity, 50)),
                 // Density > 100 (I5 follow-up): relax SurfaceFill's own
                 // master-grid line-count floor in step, so the curved fill
                 // keeps getting denser past ~d=100 instead of going flat (the
@@ -4108,6 +4171,10 @@
     // floor mapping (`curvedMasterFloorPen`) that fixes SurfaceFill going
     // flat above ~Density 100 on curved primitives, mirroring the seam above.
     __curvedMasterFloorPenForTest: (density) => curvedMasterFloorPen(density),
+    // Test seam (F-01 / W-01). Publishes the density -> curved sparse-end
+    // tonePitch mapping (`curvedSparseTonePitch`) that opens up Density 1-49
+    // on curved primitives, mirroring the seam above.
+    __curvedSparseTonePitchForTest: (density) => curvedSparseTonePitch(density),
     // Test seam (fs-v2-facetedangle). Publishes the density -> automatic
     // tone-zone cross-family floor gate (`crossFloorFor`) that stops the
     // faceted hatch's aggregate bearing drifting with Density above 100,
