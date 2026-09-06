@@ -266,12 +266,33 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   //     independently re-verified against the oracle at this scenario's
   //     camera/objects (only the default 3/4 torus view is — see F7's own
   //     0/0-survivor test); flagged here rather than silently re-pinned.
+  //
+  // MERGE NOTE (integration, 2026-09-06): `3d-scene/fill-audit`'s W-15c
+  // re-pin (plan §5.3) independently moves the SETTLED row of these same
+  // three scenarios: the GROUND plane carries `styleTable.scene.mapper =
+  // 'hatch'` with no ground override, so it is a faceted, single-orientation
+  // object and the solo-orientation carrier gate (scene3d.js) now opens on
+  // it — the single largest visible consequence of W-15c, and consistent (a
+  // ground IS a plane). DRAFT (bounds.fastPreview) is unaffected by W-15c in
+  // every row. Both effects (A2 torus self-occlusion AND W-15c solo-
+  // orientation carrier gate) are present in the merged tree, so the
+  // EXPECTED values below were re-measured against the actual merged source
+  // (not either side's pre-merge pin) via this file's own capture-mode
+  // error path. See W-15c-impl-2.md for the W-15c numbers and
+  // `docs/3d-audit/handoff/unit-a2-notes.md` for the A2 numbers — neither
+  // alone accounts for the merged hash/pathCount/pointCount below. Measured
+  // result: curvedOverlap|settled keeps W-15c's pathCount/pointCount (404/
+  // 1225) with a DIFFERENT hash (A2's occlusion field also active);
+  // denseMixed|settled matches W-15c's pin exactly (A2 does not move this
+  // row); denseMixed|draft matches A2's pin exactly (W-15c does not move
+  // draft rows) — each row shows exactly the union of the two independent
+  // effects, nothing dropped from either side.
   const EXPECTED = {
-    'facetedOverlap-orthographic-hatch|settled': { hash: 'edb852cb0986dcbb6a12958f2a539b67f558948fa6dd5428b5cc0548ececc829', pathCount: 129, pointCount: 258 },
+    'facetedOverlap-orthographic-hatch|settled': { hash: '0517b318738d3fd4dc7d31be0698487d85f4e96e31d6e9e8d300b9d2fa2e6875', pathCount: 208, pointCount: 416 },
     'facetedOverlap-orthographic-hatch|draft': { hash: 'c89e3d735e2b53f3c1d154e7f3567d53a1e6053159b9ffa25a5853f7973d6a76', pathCount: 200, pointCount: 400 },
-    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'f5294199c25a798bf4cc3c8ecdb981998a3776278ad0626730531feb4697bd89', pathCount: 341, pointCount: 1099 },
+    'curvedOverlap-perspective-mixed-xray|settled': { hash: '2a3ed6487d1873d2e5bc2feedf8540d239c808314af3ef28e85410634b65be2f', pathCount: 404, pointCount: 1225 },
     'curvedOverlap-perspective-mixed-xray|draft': { hash: '83aebf997a1e39aed36e2893fb18e7e7ea386755a9493e4868c53c51c80ee2f9', pathCount: 302, pointCount: 604 },
-    'denseMixed-8obj-shadows|settled': { hash: '47a37463e73f66365ccc570268da3f0f655bedcb8b1f79ecca810c544e60ec95', pathCount: 560, pointCount: 2303 },
+    'denseMixed-8obj-shadows|settled': { hash: '18588b303aa3f605bae7247b2979b1c13c63fb842376085dd0930dfc3d46c875', pathCount: 651, pointCount: 2485 },
     'denseMixed-8obj-shadows|draft': { hash: '9c3de29b1f268348208ebe1395268ad1f099ffdfc1b58d5759e3dc7eba7f4486', pathCount: 466, pointCount: 932 },
   };
 

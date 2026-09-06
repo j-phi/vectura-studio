@@ -1,0 +1,28 @@
+{
+  "id": "W-03",
+  "title": "Hide the 35 styles that collapse to rung-skipping on Spiral/Stipple (F-03, C-09..C-13)",
+  "branch": "3d-scene/fill-audit",
+  "commit": "3ce569c4c20d04313b72d132dd1072e51208e5c1",
+  "before": [
+    "shots/B/torus__spiral__taperedEnds__med__a.webp",
+    "shots/B/torus__spiral__bundleCount__med__a.webp",
+    "shots/B/torus__spiral__mkScribble__med__a.webp",
+    "shots/B/torus__stipple__taperedEnds__med__a.webp",
+    "shots/B/sphere__spiral__interlockWeave__med__a.webp",
+    "shots/B/sphere__stipple__bundleCount__med__a.webp"
+  ],
+  "after": [
+    "after/W-03/shots/live-01-spiral-4-enabled-45-disabled.png",
+    "after/W-02/shots/live-05-spiral-fillstyle-row-9-disabled-pre-w03.png",
+    "after/W-03/manifest.B.unreachable.jsonl"
+  ],
+  "notes": "Neither the spiral nor the stipple mapper publishes a width profile in surface-fill.js (the spiral sink never calls noteW; stipple pushes dot rings with no run), so every variable-width law's ribbonize step is skipped and degrades to a bare centreline or to rung-skipping indistinguishable from siblings. F-03 measured 39 of 48 roster laws (everything not already in the 9-entry CURVED_SPIRAL_STIPPLE_INERT) collapsing to only 18-19 distinct pictures across sphere/torus/cone, 432 shots flagged bareCentrelinesOnly. Extended CURVED_SPIRAL_STIPPLE_INERT from 9 to 45 entries -- everything except the 3 honest rung-skippers (none, fineLadder, phaseFineLadder; ladder the shipped default was already always reachable) -- matching clusters C-09..C-13's combined membership (with fineLadder/phaseFineLadder pulled back out of C-13 per the change spec). The finding's title says 35 hidden styles; the clusters' own membership totals 36 newly-hidden ids (45 - 9 = 36) -- reported the measured number, not the title's, and noted the discrepancy in the commit message. Added a characterization test (SurfaceFill.lastRibbonStats on a sphere+spiral+taperedEnds build: ribbonLaw true, wallRings 0) proving every stretch really did fall back to bare centreline, justifying the hide; this assertion is expected to flip when future work (W-13) wires a real spiral width profile.",
+  "tests": {
+    "red": "curved (sphere) + spiral disables all but none/ladder/fineLadder/phaseFineLadder (W-03) -- expected true to be false (same for the stipple test and the ctxbar-flyout 'item 5' test: expected [...7 ids] to deeply equal [Array(45)])",
+    "green": "tests/integration/scene3d-fill-style-picker.test.js: Test Files 1 passed (1), Tests 126 passed (126)",
+    "suites": "picker integration 126/126; scene3d-hlr-spatial-index-identity.test.js 6/6 (byte-identity guard untouched); scene3d-solid-cap-reachability.test.js 6/6; scene3d-ribbon-primitives.test.js 14/14 (mapper 'hatch', unaffected by this change); npm run test:unit already run clean once for this branch under W-02 (4673/4717 passed, 44 skipped, 0 failed) -- this change touches only the same isReachableOn call path"
+  },
+  "byte_identical_pairs": [
+    "None claimed: the picker's rendered option list genuinely changes (9 disabled -> 45 disabled, verified live via Playwright: enabledIds shrank to exactly ['none','ladder','fineLadder','phaseFineLadder']). Reachability-oracle-only change; no render pipeline code (surface-fill.js) was touched, so any actual SVG/canvas output for a still-reachable law (none/ladder/fineLadder/phaseFineLadder) on spiral/stipple is unaffected."
+  ]
+}

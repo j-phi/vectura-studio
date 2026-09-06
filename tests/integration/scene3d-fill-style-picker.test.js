@@ -190,12 +190,96 @@ describe('Fill Style — the shared mark-class config', () => {
     beforeAll(() => { M = window.Vectura.Scene3D.SurfaceFillMono; });
 
     test('a curved (chart-wrapped) primitive reaches every law — sphere and pyramid', () => {
-      ['sphere', 'pyramid', 'torus', 'cylinder'].forEach((mode) => {
+      ['sphere', 'pyramid', 'cylinder'].forEach((mode) => {
         expect(F.isFaceted(mode)).toBe(false);
         R.IDS.concat(['ladder', 'none']).forEach((id) => {
           expect(F.isReachableOn(id, mode)).toBe(true);
         });
       });
+    });
+
+    // ── W-10d — STALE ASSERTION UPDATE, not a widened gate: the test above
+    // used to include 'torus' and asserted every law reachable there too.
+    // W-10c measured that `originSpiral` cannot be made plottable on the torus
+    // (the lower-left radial fan renders as solid ink wedges — 87.8% of
+    // interior pixels sit in a blank-paper run longer than two pen widths,
+    // WORSE than the pre-W-10c 73.9% — STILL-OPEN.md W-10c/W-10d) and no
+    // primitive id reaches `surface-fill-mono.js` to gate it there (FU-1,
+    // its own follow-up, a different lane's file). The user-facing fix is
+    // this picker gate: torus is curved exactly like sphere/cone/cylinder —
+    // isFaceted stays false, every OTHER law stays reachable — but
+    // `originSpiral` alone is hidden there, unconditionally of mapper (the
+    // defect lives in the mono law itself, not in which Type dispatches it).
+    test('torus is curved like any other chart-wrapped primitive, EXCEPT originSpiral is hidden there (W-10d)', () => {
+      expect(F.isFaceted('torus')).toBe(false);
+      R.IDS.concat(['ladder', 'none']).forEach((id) => {
+        const expected = id !== 'originSpiral';
+        expect(F.isReachableOn(id, 'torus')).toBe(expected);
+      });
+      // Unconditional of mapper — hatch/crosshatch/contour all reach the same
+      // mono law, and the wedge defect is in the law, not the Type.
+      ['hatch', 'crosshatch', 'contour'].forEach((mapper) => {
+        expect(F.isReachableOn('originSpiral', 'torus', undefined, mapper)).toBe(false);
+      });
+      // cone and sphere are unaffected — the gate names 'torus' specifically.
+      ['cone', 'sphere'].forEach((mode) => {
+        expect(F.isReachableOn('originSpiral', mode)).toBe(true);
+        ['hatch', 'crosshatch', 'contour'].forEach((mapper) => {
+          expect(F.isReachableOn('originSpiral', mode, undefined, mapper)).toBe(true);
+        });
+      });
+    });
+
+    // ── W-10d picker surface — groups() disables + suffixes the row exactly
+    // the way W-03's spiral/stipple gate does (this repo's "hide" convention:
+    // the option stays in the <select>, greyed and suffixed, never removed —
+    // see the "groups(mode) disables the dead options" test above and
+    // fill-audit-handoff's W-02 note on the same convention).
+    test('groups("torus") marks originSpiral disabled + suffixed; groups("cone"/"sphere") leaves it live (W-10d)', () => {
+      const optionsFor = (mode) => F.groups(mode).reduce((a, g) => a.concat(g.options), []);
+      const torusEntry = optionsFor('torus').find((o) => o.value === 'originSpiral');
+      expect(torusEntry).toBeTruthy();
+      expect(torusEntry.disabled).toBe(true);
+      expect(torusEntry.label).toContain(F.NO_EFFECT_SUFFIX);
+
+      ['cone', 'sphere'].forEach((mode) => {
+        const entry = optionsFor(mode).find((o) => o.value === 'originSpiral');
+        expect(entry).toBeTruthy();
+        expect(entry.disabled).toBeFalsy();
+        expect(entry.label).not.toContain(F.NO_EFFECT_SUFFIX);
+      });
+    });
+
+    // ── W-10d deserialization — the gate is picker-presentation ONLY. A
+    // document saved before this fix (or hand-edited) that names a torus
+    // object with toneLaw 'originSpiral' must load without throwing and must
+    // NOT be silently rewritten: `clampStyleParam`'s 'toneLaw' case (params.js)
+    // only rejects ids the roster does not recognize at all — it has no
+    // primitiveMode argument and cannot know the value is unreachable on THIS
+    // shape. So the saved id survives normalization unchanged, `resolve()`
+    // (which only checks roster membership, same reason) still returns it,
+    // and the render keeps producing the known wedge defect — `isReachableOn`
+    // is the only place that knows better, and it only shapes the dropdown.
+    // This is the documented fallback (STILL-OPEN.md W-10d/FU-1): hidden in
+    // the picker, not repaired, and not engine-gated.
+    test('a torus layer saved with toneLaw "originSpiral" deserializes unchanged — no throw, no silent rewrite (W-10d)', () => {
+      const P = window.Vectura.Scene3D.Params;
+      const style = P.normalizeStyle({ mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
+      expect(style.params.toneLaw).toBe('originSpiral');
+      expect(F.resolve('originSpiral')).toBe('originSpiral');
+      expect(F.isReachableOn(F.resolve(style.params.toneLaw), 'torus')).toBe(false);
+      // Round-trip through the full scene sanitizer too — a torus object
+      // carrying this style in styleTable.byObject must not throw or mutate
+      // the id either.
+      const sanitized = P.sanitizeSceneParams({
+        objects: [{ id: 'obj-1', primitive: 'torus', params: { sx: 30, sy: 22, sz: 22 } }],
+        styleTable: {
+          scene: { mapper: 'hatch', params: {} },
+          byObject: { 'obj-1': { mapper: 'hatch', params: { toneLaw: 'originSpiral' } } },
+          byFace: {},
+        },
+      });
+      expect(sanitized.styleTable.byObject['obj-1'].params.toneLaw).toBe('originSpiral');
     });
 
     test('box/plane are faceted, and only none/ladder/mono laws reach them', () => {
@@ -323,14 +407,26 @@ describe('Fill Style — the shared mark-class config', () => {
   // Judge's ruling, items 1/5/3/6: `isReachableOn` was mapper-blind, so a
   // faceted primitive under Type=Contour/Spiral/Stipple showed eleven "live"
   // options that are all provably inert (faceMonoLines only dispatches for
-  // hatch/crosshatch — scene3d.js:1533). And on a CURVED primitive, nine mono
-  // laws are byte-identical to Ladder under Type=Spiral/Stipple.
-  describe('mapper-aware reachability (fs-e1 gating: item 1 / item 5)', () => {
+  // hatch/crosshatch — scene3d.js:1533). And on a CURVED primitive, W-03
+  // (F-03, C-09..C-13) measured that 45 of 48 roster laws collapse to a
+  // handful of rung-skipping pictures under Type=Spiral/Stipple — the
+  // original 9 mono laws (true no-ops) PLUS 36 more that "run" but fall back
+  // to bare centrelines or indistinguishable rung-skipping because the
+  // spiral/stipple sinks never publish a width profile. Only `none` /
+  // `ladder` / `fineLadder` / `phaseFineLadder` are the "honest" rung-
+  // skipping options left reachable.
+  describe('mapper-aware reachability (fs-e1 gating: item 1 / item 5; W-03 extends item 5)', () => {
     const ALL_IDS = () => R.IDS.concat(['ladder']);
-    const CURVED_SPIRAL_STIPPLE_INERT = [
-      'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
-      'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
-    ];
+    // The full W-03 inert-or-bare-centreline set — mirrors
+    // src/config/context-bar.js's CURVED_SPIRAL_STIPPLE_INERT exactly.
+    // Computed as "every roster law except the 3 honest rung-skippers"
+    // rather than retyped by hand, so a roster change cannot silently
+    // desync this test from the source it is pinning. A FUNCTION, not a
+    // top-level const: `R` is populated by the outer `beforeAll`, which has
+    // not run yet when this describe body itself executes at collection
+    // time (same reason `ALL_IDS` above is a function, not a value).
+    const CURVED_SPIRAL_STIPPLE_LIVE = new Set(['none', 'fineLadder', 'phaseFineLadder']);
+    const curvedSpiralStippleInert = () => R.IDS.filter((id) => !CURVED_SPIRAL_STIPPLE_LIVE.has(id));
 
     // ── Item 1 — faceted + non-hatch/crosshatch disables EVERYTHING ─────────
     test('faceted (box) + Contour/Spiral/Stipple disables every option, including None and Ladder', () => {
@@ -382,28 +478,69 @@ describe('Fill Style — the shared mark-class config', () => {
       expect(F.groups('box', undefined, 'hatch')).toEqual(F.groups('box'));
     });
 
-    // ── Item 5 — curved primitive + spiral/stipple: exactly 9 mono laws ─────
-    test('curved (sphere) + spiral disables exactly the 9 measured mono laws, and nothing else', () => {
+    // ── Item 5, extended by W-03 — curved primitive + spiral/stipple: only
+    // none/ladder/fineLadder/phaseFineLadder survive; everything else (the
+    // original 9 true no-ops PLUS 36 bare-centreline/rung-skipping laws,
+    // F-03 / C-09..C-13) is disabled — STALE ASSERTION UPDATE: this used to
+    // pin exactly the 9 mono laws; W-03 deliberately widened the gate.
+    test('curved (sphere) + spiral disables all but none/ladder/fineLadder/phaseFineLadder (W-03)', () => {
+      const inert = curvedSpiralStippleInert();
       R.IDS.forEach((id) => {
-        const expected = CURVED_SPIRAL_STIPPLE_INERT.indexOf(id) === -1;
+        const expected = inert.indexOf(id) === -1;
         expect(F.isReachableOn(id, 'sphere', undefined, 'spiral')).toBe(expected);
       });
       expect(F.isReachableOn('ladder', 'sphere', undefined, 'spiral')).toBe(true);
       expect(F.isReachableOn('none', 'sphere', undefined, 'spiral')).toBe(true);
+      expect(F.isReachableOn('fineLadder', 'sphere', undefined, 'spiral')).toBe(true);
+      expect(F.isReachableOn('phaseFineLadder', 'sphere', undefined, 'spiral')).toBe(true);
+      // The exact count W-03 measured: 45 of 48 roster laws gated (+ the 3
+      // kept: none/fineLadder/phaseFineLadder = 48; 'ladder' is the 49th
+      // total option and is not part of the roster's 48).
+      expect(inert.length).toBe(45);
     });
 
-    test('curved (sphere) + stipple disables the SAME 9 laws as spiral', () => {
+    test('curved (sphere) + stipple disables the SAME set as spiral (W-03)', () => {
+      const inert = curvedSpiralStippleInert();
       R.IDS.forEach((id) => {
-        const expected = CURVED_SPIRAL_STIPPLE_INERT.indexOf(id) === -1;
+        const expected = inert.indexOf(id) === -1;
         expect(F.isReachableOn(id, 'sphere', undefined, 'stipple')).toBe(expected);
       });
+      expect(F.isReachableOn('fineLadder', 'sphere', undefined, 'stipple')).toBe(true);
+      expect(F.isReachableOn('phaseFineLadder', 'sphere', undefined, 'stipple')).toBe(true);
+    });
+
+    // ── W-03 justification — the hide is not a guess. A sphere+spiral build
+    // with a ribbon law (taperedEnds) that this list now gates measurably
+    // ships ZERO ribbon rings: `ribbonLaw` is true (taperedEnds IS a
+    // variable-width law) but `wallRings` is 0 (nothing analytically walled
+    // either), proving every stretch fell back to its bare centreline — F-03's
+    // root cause (the spiral sink never calls `noteW`). This is a
+    // CHARACTERIZATION test, not a red→green proof of this commit's own
+    // change (it does not touch surface-fill.js): it stays true today and is
+    // EXPECTED to flip once W-13 (future work) wires a width profile into the
+    // spiral sink — at which point taperedEnds moves back out of
+    // CURVED_SPIRAL_STIPPLE_INERT and this assertion becomes W-13's own RED.
+    test('W-03 justification — sphere+spiral+taperedEnds ships zero ribbons (proves the hide, becomes the W-13 RED)', () => {
+      const V = window.Vectura;
+      const engine = new V.VectorEngine();
+      const groupId = engine.addLayer('scene3d');
+      const obj = engine.getLayerDescendants(groupId).find((l) => l && l.type === 'object3d');
+      obj.params.primitive = 'sphere';
+      obj.params.style = obj.params.style || { penId: null, mapper: 'spiral', params: {} };
+      obj.params.style.mapper = 'spiral';
+      obj.params.style.params = { ...(obj.params.style.params || {}), toneLaw: 'taperedEnds' };
+      engine.computeAllDisplayGeometry();
+      const stats = V.Scene3D.SurfaceFill.lastRibbonStats;
+      expect(stats).toBeTruthy();
+      expect(stats.ribbonLaw).toBe(true);
+      expect(stats.wallRings).toBe(0);
     });
 
     // ── Paired negative — a curved primitive under hatch/crosshatch is
     // untouched by the new spiral/stipple rule (over-gating guard).
     test('curved (sphere) + hatch/crosshatch is unaffected by the spiral/stipple gate', () => {
       ['hatch', 'crosshatch'].forEach((mapper) => {
-        CURVED_SPIRAL_STIPPLE_INERT.forEach((id) => {
+        curvedSpiralStippleInert().forEach((id) => {
           expect(F.isReachableOn(id, 'sphere', undefined, mapper)).toBe(true);
         });
       });
@@ -462,6 +599,151 @@ describe('Fill Style — the shared mark-class config', () => {
       ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'].forEach((mapper) => {
         expect(F.facetedNote('sphere', undefined, mapper)).toBe('');
         expect(F.facetedNote('pyramid', undefined, mapper)).toBe('');
+      });
+    });
+
+    // ── W-02 / F-02 — none/wireframe/contourSlice never dispatch through the
+    // tone-law machinery AT ALL (scene3d.js's SURFACE_FILL only covers hatch/
+    // crosshatch/contour/spiral/stipple), so EVERY id — including None and
+    // the shipped default — must be unreachable there, on EVERY primitive
+    // shape (faceted or chart-wrapped). Before this fix `isReachableOn`
+    // returned true for all 48 laws on a curved primitive (sphere/torus/cone)
+    // under these three Types; the audit measured 1,152 wasted shots.
+    describe('none/wireframe/contourSlice are inert everywhere (W-02, F-02)', () => {
+      const NO_FILL_MAPPERS = ['none', 'wireframe', 'contourSlice'];
+
+      test('curved primitives (sphere, torus, cone): every id, including none/ladder, is unreachable', () => {
+        ['sphere', 'torus', 'cone'].forEach((mode) => {
+          NO_FILL_MAPPERS.forEach((mapper) => {
+            ALL_IDS().forEach((id) => {
+              expect(F.isReachableOn(id, mode, undefined, mapper)).toBe(false);
+            });
+          });
+        });
+      });
+
+      test('faceted primitives (box, solid): every id, including none/ladder, is unreachable', () => {
+        ['box', 'solid'].forEach((mode) => {
+          NO_FILL_MAPPERS.forEach((mapper) => {
+            ALL_IDS().forEach((id) => {
+              expect(F.isReachableOn(id, mode, undefined, mapper)).toBe(false);
+            });
+          });
+        });
+      });
+
+      test('groups(mode, solidType, mapper) marks every option disabled, with the no-effect suffix, for a curved primitive', () => {
+        NO_FILL_MAPPERS.forEach((mapper) => {
+          const g = F.groups('sphere', null, mapper);
+          const opts = g.reduce((a, x) => a.concat(x.options), []);
+          expect(opts.length).toBeGreaterThan(0);
+          opts.forEach((o) => {
+            expect(o.disabled).toBe(true);
+            expect(o.label).toContain(F.NO_EFFECT_SUFFIX);
+          });
+        });
+      });
+
+      // ── Regression guard — the fill mappers this fix must NOT touch ────────
+      // The five surface-fill mappers are never caught by the new clause
+      // (they ARE members of SURFACE_FILL_MAPPERS), so the new clause itself
+      // never zeroes out a shape's reachable set under any of them. Curved
+      // (chart-wrapped) primitives keep something reachable under all 5;
+      // faceted primitives (box) already lose everything under contour/
+      // spiral/stipple for an UNRELATED, pre-existing reason (the faceted
+      // branch's own hatch/crosshatch-only rule — see "faceted (box) +
+      // Contour/Spiral/Stipple disables every option" above), so that
+      // combination is excluded here rather than misread as a new regression.
+      // The per-mapper/per-shape special cases (pyramid+fineLadder+hatch,
+      // spiral/stipple's 9-law inert list, the faceted mono set, …) are each
+      // pinned by their own dedicated test elsewhere in this file, which
+      // exercises this same (already-patched) isReachableOn and would go red
+      // on its own if this change disturbed any of them.
+      test('at least one law stays reachable on a curved shape under every fill mapper (no over-gating)', () => {
+        ['sphere', 'torus', 'cone', 'pyramid'].forEach((mode) => {
+          ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'].forEach((mapper) => {
+            const reachable = ALL_IDS().some((id) => F.isReachableOn(id, mode, undefined, mapper));
+            expect(reachable).toBe(true);
+          });
+        });
+      });
+
+      test('at least one law stays reachable on a faceted shape (box) under hatch/crosshatch (no over-gating)', () => {
+        ['hatch', 'crosshatch'].forEach((mapper) => {
+          const reachable = ALL_IDS().some((id) => F.isReachableOn(id, 'box', undefined, mapper));
+          expect(reachable).toBe(true);
+        });
+      });
+
+      test('an absent mapper is not gated by the new clause (fail-open, unchanged)', () => {
+        ['sphere', 'box', 'solid'].forEach((mode) => {
+          R.IDS.concat(['ladder']).forEach((id) => {
+            // No 4th argument at all — omitted, not just falsy — matches every
+            // pre-existing 3-arg call site in this file and in production code.
+            expect(F.isReachableOn(id, mode)).toBe(F.isReachableOn(id, mode, undefined, undefined));
+          });
+        });
+      });
+
+      // ── The anti-rot proof — this must read a live source, not a baked list.
+      test('the verdict is DERIVED from Vectura.Scene3D.Params.SURFACE_FILL_MAPPERS — swapping it flips the result', () => {
+        const Scene3D = window.Vectura.Scene3D;
+        const realParams = Scene3D.Params;
+        try {
+          // Fake: 'wireframe' is now (incorrectly) a surface-fill mapper.
+          Scene3D.Params = { ...realParams, SURFACE_FILL_MAPPERS: new Set(['wireframe']) };
+          expect(F.isReachableOn('ladder', 'sphere', undefined, 'wireframe')).toBe(true);
+          // And 'hatch' — a REAL fill mapper — is now reported unreachable,
+          // proof this reads the Set live rather than a literal string check.
+          expect(F.isReachableOn('mkTick', 'sphere', undefined, 'hatch')).toBe(false);
+        } finally {
+          Scene3D.Params = realParams;
+        }
+        // Restored: back to the real, measured verdict.
+        expect(F.isReachableOn('ladder', 'sphere', undefined, 'wireframe')).toBe(false);
+        expect(F.isReachableOn('mkTick', 'sphere', undefined, 'hatch')).toBe(true);
+      });
+
+      // ── Drift guard (W-02 reviewer follow-up) — params.js's
+      // SURFACE_FILL_MAPPERS (read by isReachableOn, proven live above) used to
+      // be an independently hand-copied literal with nothing pinning it equal
+      // to scene3d.js's own dispatch gate. scene3d.js now exposes that gate
+      // read-only as `Vectura.Scene3D.SURFACE_FILL_MAPPERS` (built from its
+      // single internal SURFACE_FILL const — the file's second, closure-local
+      // copy was deleted in favor of reading this same Set). This test is what
+      // actually catches a future drift: it fails the moment either list gains
+      // or loses a mapper without the other following.
+      test('scene3d.js\'s SURFACE_FILL_MAPPERS and params.js\'s SURFACE_FILL_MAPPERS name the same mappers', () => {
+        const engineGate = window.Vectura.Scene3D.SURFACE_FILL_MAPPERS;
+        const paramsGate = window.Vectura.Scene3D.Params.SURFACE_FILL_MAPPERS;
+        // Duck-typed, not `toBeInstanceOf(Set)` — the runtime is loaded into a
+        // jsdom window (a separate realm from this test file's own `Set`), so
+        // a same-shape Set built inside that window fails a bare `instanceof`
+        // check even though it is a genuine Set there.
+        expect(typeof engineGate.has).toBe('function');
+        expect(typeof paramsGate.has).toBe('function');
+        expect(engineGate.size).toBeGreaterThan(0);
+        expect([...engineGate].sort()).toEqual([...paramsGate].sort());
+      });
+
+      // ── W-21 reviewer follow-up — the export used to be the LIVE `SURFACE_FILL`
+      // Set, "read-only by convention" only: `Object.freeze` on a Set does not
+      // intercept `.add`/`.delete` (they mutate an internal slot, not an own
+      // property), so an external `.add`/`.delete` on the export silently
+      // corrupted the same Set every one of scene3d.js's five dispatch sites
+      // reads via `SURFACE_FILL.has(...)`. The export is now a read-only VIEW —
+      // `.add`/`.delete` do not exist on it at all, so calling either throws
+      // instead of mutating dispatch, and a genuine mutation attempt cannot
+      // silently change what `isReachableOn` (or any dispatch site) sees.
+      test('the export cannot be mutated into corrupting dispatch (W-21 follow-up)', () => {
+        const engineGate = window.Vectura.Scene3D.SURFACE_FILL_MAPPERS;
+        const before = [...engineGate].sort();
+        expect(typeof engineGate.add).not.toBe('function');
+        expect(typeof engineGate.delete).not.toBe('function');
+        expect(() => { engineGate.add('wireframe'); }).toThrow();
+        expect(() => { engineGate.delete('hatch'); }).toThrow();
+        expect([...engineGate].sort()).toEqual(before);
+        expect(F.isReachableOn('mkTick', 'sphere', undefined, 'hatch')).toBe(true);
       });
     });
   });
@@ -801,18 +1083,23 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(alive.length).toBeGreaterThan(2);
   });
 
-  test('item 5 — a sphere selection with Type=Spiral disables exactly the 9 curved mono laws', () => {
+  // STALE ASSERTION UPDATE (W-03) — used to pin exactly the 9 mono laws;
+  // W-03 widened the spiral/stipple gate to inert-OR-bare-centreline (F-03).
+  test('item 5 — a sphere selection with Type=Spiral disables all but none/ladder/fineLadder/phaseFineLadder (W-03)', () => {
     const SPHERE = { id: 'obj-1', name: 'Sphere', primitive: 'sphere', params: { sx: 40, sy: 40, sz: 40, detail: 16 }, transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
     const { fly } = openStyle({ objects: [SPHERE], styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'spiral', params: {} } }) });
-    const CURVED_SPIRAL_STIPPLE_INERT = [
-      'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
-      'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
-    ];
+    const roster = window.Vectura.SCENE3D_TONE_LAWS.IDS;
+    const CURVED_SPIRAL_STIPPLE_LIVE = new Set(['none', 'fineLadder', 'phaseFineLadder']);
+    const CURVED_SPIRAL_STIPPLE_INERT = roster.filter((id) => !CURVED_SPIRAL_STIPPLE_LIVE.has(id));
     const options = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option'));
     const dead = options.filter((o) => o.disabled).map((o) => o.value);
     expect(dead.sort()).toEqual([...CURVED_SPIRAL_STIPPLE_INERT].sort());
     const laddOpt = options.find((o) => o.value === 'ladder');
     expect(laddOpt.disabled).toBe(false);
+    const fineOpt = options.find((o) => o.value === 'fineLadder');
+    expect(fineOpt.disabled).toBe(false);
+    const phaseOpt = options.find((o) => o.value === 'phaseFineLadder');
+    expect(phaseOpt.disabled).toBe(false);
   });
 
   // ── Item 4 — multi-select must not read only the FIRST object's primitive ─

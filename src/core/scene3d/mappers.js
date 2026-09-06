@@ -380,6 +380,44 @@
     return clipPolyline(rings, raw);
   };
 
+  // W-21 (F-20) — Contour's per-face rings collapsed to the lone boundary loop
+  // on a small facet (a buckyball pentagon/hexagon face, ~12-15mm across):
+  // regionSpacingFor's Density-derived spacing is tuned for hatch line pitch,
+  // not for a face's own local size, so at the default ("med") density a
+  // single inward inset already consumed the whole tiny face and insetPasses
+  // returned only the ORIGINAL boundary ring (rings0) — visually
+  // indistinguishable from the plain face outline "none" already draws (the
+  // reported defect: "Type=Contour is inert" — measured 1 fill path per face,
+  // byte-identical in shape to the edge outline). Retry at half the spacing,
+  // up to a few times, ONLY when the first attempt produced fewer than 2
+  // passes (boundary + at least one genuine inset) — an already-adequate
+  // spacing (a box/plane/pyramid face at typical sizes) succeeds on the FIRST
+  // attempt and this never runs, so nothing already working (box's concentric
+  // rectangles) changes. Density still sets the STARTING spacing — and so
+  // still drives ring count once an attempt succeeds — this only rescues the
+  // too-sparse case rather than replacing the Density formula.
+  const MIN_CONTOUR_PASSES = 2;
+  // W-21 reviewer follow-up — this used to read 0.3, but `insetPasses` (above)
+  // ALWAYS clamps its own `step` to `Math.max(0.5, spacing)`, so no value this
+  // retry loop ever passes it can go below 0.5mm regardless of what this
+  // constant says. Below 0.5 the loop was retrying at a spacing `insetPasses`
+  // silently rounded back up to 0.5 every time — dead iterations, not a finer
+  // retry. Set to the value that is actually live (0.5, `insetPasses`'s own
+  // floor) so the loop's exit condition (`sp > CONTOUR_RETRY_FLOOR_MM`) and
+  // its halving both mean what they say.
+  const CONTOUR_RETRY_FLOOR_MM = 0.5;
+  const contourPassesAdaptive = (loops, spacing) => {
+    let sp = spacing;
+    let passes = insetPasses(loops, sp);
+    let guard = 0;
+    while (passes.length < MIN_CONTOUR_PASSES && sp > CONTOUR_RETRY_FLOOR_MM && guard < 6) {
+      sp = Math.max(CONTOUR_RETRY_FLOOR_MM, sp / 2);
+      passes = insetPasses(loops, sp);
+      guard += 1;
+    }
+    return passes;
+  };
+
   // mapper: 'contour' | 'spiral' | 'stipple'. loops: closed screen polygons
   // (outer boundary + any holes). opts: { spacing, dotRadius }. Returns an array
   // of screen-space polylines. contour/spiral offset the WHOLE region together
@@ -388,7 +426,7 @@
     const spacing = Math.max(0.5, finite(opts.spacing, 3));
     if (!Array.isArray(loops) || !loops.length) return [];
     if (mapper === 'contour') {
-      return insetPasses(loops, spacing).flat().map(closeRing).filter((r) => r.length >= 4);
+      return contourPassesAdaptive(loops, spacing).flat().map(closeRing).filter((r) => r.length >= 4);
     }
     if (mapper === 'spiral') {
       // ONE continuous Archimedean spiral clipped to the region (Phase 3) — not

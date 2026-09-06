@@ -369,15 +369,47 @@
       && P.PRIMITIVE_PARAM_DEFAULTS.solid.solidType) || 'buckyball';
     return (solidType || dflt) === dflt;
   };
-  // fs-e1 judge's ruling, item 5 — measured byte-identical to Ladder across
-  // three independent parameter points on a CURVED (chart-wrapped) primitive
-  // under Type=Spiral/Stipple. Nothing else in the curved arm is gated by
-  // this list — see the paired negative in
-  // `scene3d-fill-style-picker.test.js` "curved (sphere) + hatch/crosshatch
-  // is unaffected by the spiral/stipple gate".
+  // fs-e1 judge's ruling, item 5, EXTENDED by W-03 (F-03, clusters C-09..
+  // C-13) — this list is now INERT-OR-BARE-CENTRELINE, not just "byte-
+  // identical to Ladder". The original 9 (etfKang..mazeFill) are true
+  // no-ops: a mono law with no planar dispatch on the curved/spiral-stipple
+  // path at all. The other 36 are a DIFFERENT, later-measured failure: the
+  // spiral sink never calls `noteW` and stipple pushes dot rings with no
+  // run, so `wCnt === 0` and every width-modulated law's `ribbonize` step is
+  // skipped — the law still "runs", but every stretch degrades to its bare
+  // centreline (12 ribbon laws) or to plain rung-skipping indistinguishable
+  // from a handful of sibling laws (bundle x6, contField x5, pen x6, mk x4,
+  // and the remaining named laws below) — 18-19 distinct pictures across 39
+  // laws measured, 432 `bareCentrelinesOnly` shots. Keeping only `none` /
+  // `ladder` / `fineLadder` / `phaseFineLadder` reachable here is keeping
+  // exactly the "honest" rung-skipping options — the ones whose whole
+  // mechanism IS which rungs are drawn, so degrading to that is not a
+  // degradation at all. Nothing else in the curved arm is gated by this
+  // list — see the paired negative in `scene3d-fill-style-picker.test.js`
+  // "curved (sphere) + hatch/crosshatch is unaffected by the spiral/stipple
+  // gate". W-13 (future work) wires a real width profile into the spiral
+  // sink; when it lands, the 12 ribbon laws move back out of this list —
+  // see `SurfaceFill.lastRibbonStats` (ribbonLaw && wallRings === 0 on a
+  // sphere+spiral+taperedEnds build today) as the characterization proof
+  // that justifies the hide and the RED this list's shrink will satisfy.
   const CURVED_SPIRAL_STIPPLE_INERT = [
+    // The original 9 — true no-ops, no planar dispatch at all.
     'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
     'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
+    // C-09 — bare centrelines (ribbon laws with no width profile on this path).
+    'nibAngle', 'taperedEnds', 'isophoteWidth', 'whiteBand',
+    // C-12 — bare centrelines / rung-skipping (ribbon + wave laws).
+    'weightModulated', 'weightSmoothstep', 'interlockWeave', 'trochoidLoop',
+    'onePenDown', 'penInterleave', 'penReserve', 'penPitchMatch',
+    // C-13 — rung-skipping, indistinguishable from Ladder/Fine Ladder here.
+    'perceptualRamp', 'lozengeStipple', 'deepFillTSP', 'ampSpacing',
+    'weaveDepth', 'amplitudeOnly', 'penCross', 'penFacing',
+    // C-10 — bundle (6) + contField (5) + penStipple: every rung drawn, ~ No Tone.
+    'bundleCount', 'bundleSubNib', 'bundleEased', 'bundleDither',
+    'bundleLozenge', 'bundleHandoff', 'contFieldSigmoid', 'contFieldTouch',
+    'contFieldFore', 'contFieldSurface', 'contFieldQuant', 'penStipple',
+    // C-11 — the mark emitter is never reached.
+    'mkScribble', 'mkTick', 'mkDashRamp', 'mkDotScreen',
   ];
   SCENE_FILL_STYLES.CURVED_SPIRAL_STIPPLE_INERT = CURVED_SPIRAL_STIPPLE_INERT;
   // Never lies in either direction: with no shape context (mixed/scene-scope
@@ -395,6 +427,30 @@
   // no differently. This check runs before the default/none early-out so
   // those two are not silently exempted.
   SCENE_FILL_STYLES.isReachableOn = (id, primitiveMode, solidType, mapper) => {
+    // fs-e2 (W-02, F-02) — `none`/`wireframe`/`contourSlice` never reach the
+    // tone-law machinery AT ALL, on ANY primitive, faceted or chart-wrapped:
+    // scene3d.js's SURFACE_FILL only dispatches for hatch/crosshatch/contour/
+    // spiral/stipple (`none` draws bare outlines, `wireframe` draws edges,
+    // `contourSlice` cuts the mesh with parallel planes — none of the three
+    // is a surface fill). Measured: all 48 laws were byte-identical to each
+    // other on sphere/torus/cone/box under these three Types — 1,152 of
+    // 7,440 audit shots spent on one picture. So every id, INCLUDING `none`
+    // and the shipped default, is unreachable here — this runs FIRST so
+    // neither is silently exempted, mirroring the faceted off-axis rule
+    // below but generalized to every primitive shape and keyed off the
+    // mapper alone. Reads `Vectura.Scene3D.Params.SURFACE_FILL_MAPPERS`
+    // (mirrors scene3d.js's own SURFACE_FILL Set — see that constant's own
+    // comment in params.js for why this is a second copy, not a live read of
+    // the engine's private const) rather than a restated literal, so a real
+    // membership swap flips the verdict — see "the reachable set is DERIVED"
+    // test. An ABSENT mapper is not gated by this clause, matching the
+    // fail-open convention documented above `isReachableOn`.
+    const P0 = Vectura.Scene3D && Vectura.Scene3D.Params;
+    const surfaceFillMappers = P0 && P0.SURFACE_FILL_MAPPERS;
+    if (mapper && surfaceFillMappers && typeof surfaceFillMappers.has === 'function'
+      && !surfaceFillMappers.has(mapper)) {
+      return false;
+    }
     const faceted = SCENE_FILL_STYLES.isFaceted(primitiveMode);
     if (faceted) {
       if (mapper && mapper !== 'hatch' && mapper !== 'crosshatch') return false;
@@ -419,6 +475,22 @@
     // Measured: `fineLadder` is inert on pyramid+hatch only — it is live on
     // pyramid crosshatch AND contour (over-gating guard: do not gate those).
     if (primitiveMode === 'pyramid' && mapper === 'hatch' && id === 'fineLadder') return false;
+    // W-10d (STILL-OPEN.md W-10/W-10b/W-10c) — `originSpiral` cannot be made
+    // plottable on the torus: after W-10c's plot-floor raise the mono law's
+    // lower-left radial fan renders as solid ink wedges (measured 87.8% of
+    // interior pixels in a blank-paper run longer than two pen widths, worse
+    // than W-10b's 73.9%), and no primitive id reaches `surface-fill-mono.js`
+    // to gate it there (FU-1 — a different lane's file, not attempted here).
+    // Hidden in the picker instead, unconditionally of mapper (the defect is
+    // in the mono law itself, not in which Type dispatches it) — the same
+    // "hide it here" mechanism W-03 used for the spiral/stipple gate above.
+    // This does NOT reach saved documents: a torus layer already carrying
+    // toneLaw 'originSpiral' still normalizes and renders unchanged (see
+    // `clampStyleParam`'s 'toneLaw' case, params.js — it only rejects ids the
+    // roster does not recognize at all, with no primitiveMode of its own to
+    // know this one is unreachable on THIS shape); the torus wedge is hidden
+    // from new picks, not repaired.
+    if (primitiveMode === 'torus' && id === 'originSpiral') return false;
     return true;
   };
   SCENE_FILL_STYLES.NO_EFFECT_SUFFIX = ' — no effect here';
