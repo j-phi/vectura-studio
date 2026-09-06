@@ -1,0 +1,42 @@
+{
+  "fixture": {
+    "route": "engine.addSceneTree() -> object3d child -> UI.LayersPanel.expandLayer(child)",
+    "primitive": "sphere (addSceneTree default)",
+    "penId": "pen-1",
+    "penWidth": 0.3,
+    "style": "child.params.style.params = { fillAngle: 0, fillDensity: 60, toneLaw }",
+    "tone": "group.params.tone.enabled = true"
+  },
+  "geometryOracle": {
+    "method": "in-process rasterized-ink pixel diff, 4 samples/pen-width, same construction as tests/integration/expand-render-fidelity.test.js diffInk()",
+    "note": "onlyPre/onlyPost counts of raster cells present in exactly one of pre/post; ratioPct = (onlyPre+onlyPost)/pre * 100",
+    "interlockWeave": { "prePaths": 170, "postPaths": 170, "pre": 245228, "onlyPre": 0, "onlyPost": 0, "ratioPct": 0 },
+    "amplitudeOnly": { "prePaths": 222, "postPaths": 222, "pre": 154995, "onlyPre": 0, "onlyPost": 0, "ratioPct": 0 },
+    "nibAngle_control": { "prePaths": 91, "postPaths": 91, "pre": 132361, "onlyPre": 0, "onlyPost": 0, "ratioPct": 0 },
+    "onePenDown_control": { "prePaths": 47, "postPaths": 47, "pre": 235264, "onlyPre": 0, "onlyPost": 0, "ratioPct": 0 }
+  },
+  "realRenderFullCanvasDiff": {
+    "method": "actual browser canvas (port 8471), same crop window (before bbox +6px margin) shot before and after expandLayer(), pixels counted as different when any RGB channel differs by more than 8/255",
+    "caveat": "diffPct is NOT law-specific: it is within ~2 points across all four laws tested (control laws included), so it measures a render-order/anti-aliasing floor common to any expand, not a per-law fidelity gap. bboxGrowth was NOT reliable in this harness (a script artifact unrelated to product geometry) and is omitted.",
+    "interlockWeave": { "diffPct": 9.046, "diffPixels": 94959, "totalPixels": 1049752, "expandedChildren": 170 },
+    "amplitudeOnly": { "diffPct": 9.797, "diffPixels": 102933, "totalPixels": 1050621, "expandedChildren": 222 },
+    "nibAngle_control": { "diffPct": 8.021, "diffPixels": 84274, "totalPixels": 1050621, "expandedChildren": 91 },
+    "onePenDown_control": { "diffPct": 9.404, "diffPixels": 98722, "totalPixels": 1049752, "expandedChildren": 47 }
+  },
+  "redProofAgainstD5af9e30": {
+    "check": "git diff d5af9e30 HEAD -- src/ui/panels/layers-panel.js src/core/scene3d/surface-fill.js",
+    "result": "empty diff -- HEAD (25e76b65) and d5af9e30 are byte-identical for both files touched by this unit, so a pre-sha runtime pin cannot differ from the current measurement",
+    "conclusion": "the ~6%/10% divergence plan-E expected does not reproduce against d5af9e30 either; see unit-e-notes.md"
+  },
+  "counterOnTorus": {
+    "method": "engine.addLayer('scene3d') (redirects to addSceneTree) with object3d.params.primitive='torus', same style/toneLaw construction as tests/unit/scene3d-ribbon-wall-coverage.test.js, ALL 12 bucket-B laws",
+    "erodeEmptyByLaw": {
+      "nibAngle": 0, "taperedEnds": 0, "weightModulated": 0, "isophoteWidth": 0, "whiteBand": 0,
+      "weightSmoothstep": 0, "ampSpacing": 0, "weaveDepth": 0, "interlockWeave": 0, "trochoidLoop": 0,
+      "amplitudeOnly": 0, "onePenDown": 0
+    },
+    "onePenDownSphere": { "erodeEmpty": 0, "wallCentres": 1, "narrow": 0, "wallEmpty": 0, "degenerate": 0 },
+    "onePenDownTorus": { "erodeEmpty": 0, "wallCentres": 1, "narrow": 0, "wallEmpty": 0, "degenerate": 0 },
+    "conclusion": "erodeEmpty is 0 for every bucket-B law on both fixtures on current HEAD; the mis-booking plan-E describes does not currently reproduce -- see unit-e-notes.md for the historical evidence (docs/torus-fix-evidence/stats-before.json) showing it WAS present before the CLS_WALLS/wallEmpty/wallCentres fix landed."
+  }
+}

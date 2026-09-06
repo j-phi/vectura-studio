@@ -174,6 +174,29 @@ post-fix trees. The real source is most likely `PenFill`/boolean erosion fragmen
 near the same self-crossing loop holes — not yet isolated. Two genuine approaches now closed
 without moving the metric. See `docs/3d-audit/handoff/unit-a2-notes.md`.
 
+**Update (branch `3d-scene/handoff-b`, unit A session, `d5af9e30`): STILL OPEN, NOT a fill defect.**
+Reproduced (2.01 / 2.00 / 1.49 / 1.24 / 0.87 mm² of the same five, torus, this session's own
+measurement — RGR test `tests/unit/scene3d-ribbon-f1b-streaks.test.js`). The loop-hole-erosion
+working hypothesis this doc names above was tested with three separate, code-grounded fixes (a
+hole-boundary companion stroke, a fill-erosion depth fallback ladder, `PenFill.MAX_REPAIR_ROUNDS`
+4→16) — none moved the numbers by more than ~1%, and all were reverted. **Located instead** (raw
+`SurfaceFill.buildObject` output is fully inked at every streak location; `hlr.js`'s self-occlusion
+clip removes it as a FALSE POSITIVE — confirmed against the F7 test's own independent oracle,
+`scene3d-torus-hole-oracle.js`, which finds no genuine near/far overlap at those exact locations).
+One real, in-scope contributor was found and fixed (`zAlongRun` in `surface-fill.js` picking the
+wrong pass of a self-crossing centreline for a ring vertex's z, verified via `HLR.createClipper`
+hooking: 11→1 false-positive clip events at the two locations checked) but reverted anyway — it
+only reaches WITHIN-run self-crossings, and most of these five laws' "wide" stretches are
+**separate runs crossing each other in screen space**, which a per-run z fix cannot touch. Closing
+that residual, larger class needs `hlr.js`/`scene3d.js` changes to how occlusion is decided between
+independently emitted paths of the same object — explicitly out of scope for a `surface-fill.js`-
+only unit. Full trail: `docs/3d-audit/handoff/unit-a-notes.md`.
+
+**Integration note (merge into `3d-scene/integrate`):** `tests/unit/scene3d-ribbon-f1b-streaks.test.js`
+now carries handoff-c's version (the A3 oracle split retired the five intentionally-red assertions
+this doc's handoff-b update measured against; see `tests/unit/scene3d-ring-coverage-reachability.test.js`
+and `d86cbf8d`). F1 itself remains OPEN per both write-ups above.
+
 ### B. Blunt band terminations at the clip boundary  (NEW, user-flagged)
 
 **Task.** Since self-occlusion landed, bands terminate where the near sheet cuts them with slightly
@@ -325,20 +348,41 @@ receivers (cone/sphere evidence) are byte-identical (md5) to before. Perf: box+p
 (1.5-2.3ms -> 3.5-4.4ms), dense scene ~4.3x (23-27ms -> 100-120ms) — flag stays OFF by default,
 not force-fixed further. Full writeup: `docs/3d-audit/handoff/unit-d-notes.md`.
 
-### E. Expand fidelity on two laws  (plan F5, plus the lying counter)
+### E. Expand fidelity on two laws  (plan F5, plus the lying counter) — CHECKED, does not reproduce
 
-**Task.** After "Expand into group", `interlockWeave` differs from the live render on 6% of the frame
-and `amplitudeOnly` on 10%; the other ten bucket-B laws are 0.2-1%. Bbox does NOT grow and no child
-escapes the silhouette, so this is a fidelity gap, not a protrusion regression. Separately,
+**Task (as written).** After "Expand into group", `interlockWeave` differs from the live render on 6%
+of the frame and `amplitudeOnly` on 10%; the other ten bucket-B laws are 0.2-1%. Separately,
 `onePenDown` books legitimate centreline degenerations as `erodeEmpty` — the counter lies.
 
-**Value.** Lowest severity. Expand-into-group is the plotter handoff path, so a 10% divergence means
-what you plot is not quite what you saw.
+**Measured against current HEAD (25e76b65) — neither reproduces.** `git diff d5af9e30 HEAD --
+src/ui/panels/layers-panel.js src/core/scene3d/surface-fill.js` is empty, so nothing on this branch
+could have changed either behavior; the state below is what this whole effort already merged.
 
-**Done when.** Both laws land in the 0.2-1% band; degenerations are counted as degenerations; expand
-evidence asserts `after.children > 0` AND that before/after images are NOT byte-identical.
+- Fidelity: the same in-process rasterized-ink oracle `expand-render-fidelity.test.js` uses reads
+  **0%** divergence for both `interlockWeave` and `amplitudeOnly` (and the `nibAngle`/`onePenDown`
+  controls) on the only route "Expand into group" is reachable from (`addSceneTree` object3d child) —
+  C3 rule 6's weightScale-1 guarantee makes expand a clone-and-strip no-op for every bucket-B path. A
+  real browser full-canvas diff shows ~8-10% for all four laws tested alike, not law-specific — a
+  render-order/AA floor common to any expand, not a per-law gap. Quantified, not chased.
+- Counter: `erodeEmpty` is 0 for all twelve bucket-B laws on both a sphere and a torus, `onePenDown`
+  included. `docs/torus-fix-evidence/stats-before.json` shows it WAS 10/19 pre-CLS_WALLS — the
+  mechanism the task describes was real, and is already fixed by that earlier, merged work
+  (`wallEmpty`/`wallCentres`).
 
-### F. Imported OBJ/STL meshes vs the red-line rule  (UNTESTED)
+New regression coverage locking in the above (both green, no source change):
+`tests/integration/expand-scene3d-fidelity-two-laws.test.js`,
+`tests/unit/scene3d-ribbon-degeneration-counter.test.js`. Full writeup: `docs/3d-audit/handoff/unit-e-notes.md`;
+evidence: `docs/3d-audit/handoff/unit-e/`.
+
+**Value.** Lowest severity. Expand-into-group is the plotter handoff path — this item confirms the
+divergence it worried about is not currently present.
+
+**Done when.** Both laws land in the 0.2-1% band (measured: 0%); degenerations are counted as
+degenerations (measured: `erodeEmpty` 0 on both fixtures); expand evidence asserts
+`after.children > 0` AND that before/after images are NOT byte-identical — done via
+`docs/3d-audit/handoff/unit-e/` (real screenshots) plus the new tests' JSON-inequality guard.
+
+### F. Imported OBJ/STL meshes vs the red-line rule  (MEASURED)
 
 **Task.** Self-occlusion for imported meshes keeps the older mesh-face path with its 6 mm bias,
 because they have no analytic silhouette to clip against. Whether they satisfy the user's rule is
@@ -346,6 +390,33 @@ because they have no analytic silhouette to clip against. Whether they satisfy t
 
 **Done when.** The F7-style test runs against an imported non-convex mesh and either passes or the
 gap is quantified and recorded here.
+
+**Update (branch `3d-scene/handoff-b`, unit F session, `66b05aa3`): MEASURED, mostly PASSES, one
+small gap recorded — two premises in the task above were wrong.** An imported mesh (1) never
+reaches the ribbon/variable-width law engine at all (`curvedChartParams` returns `null` for any
+`primitive` not in `TOPOFORM_MODES`, and an imported mesh's primitive is always `'solid'` — there
+is no "law" concept for this object class), and (2) never reaches F7's `selfOcclude`/
+`SELF_OCCLUDE_BIAS` "6 mm bias" machinery either — `scene3d.js`'s own `faceted` flag is true for
+`primitive === 'solid'`, routing it through the PER-FACE hatch path instead, whose segCtx never
+sets `selfObject`/`selfOcclude` at all, so every other face of the object is tested as a live
+occluder at the ORDINARY (non-inflated) bias — genuine, unbiased flat-face HLR, `hlr.js`'s original
+purpose. There is no 6 mm bias on this path; `git diff 57e86f48 HEAD --
+src/core/algorithms/scene3d.js` confirms F7 never touched it.
+
+Measured on a 24x12 torus tessellation (OBJ text, imported via `engine.importMeshAsScene`, the real
+upload path) at the default 3/4 view, independent ray/triangle oracle
+(`tests/helpers/scene3d-mesh-occlusion-oracle.js`): `hatch` mapper 0/4 survivors (PASSES), `contour`
+mapper 0/12 (PASSES), `spiral` mapper **1/29 survivors, gap ≈ 9.3 mm** (a real, reproducible, tiny
+gap). Root cause traced to `Mappers.regionFill`'s polygon-union failing on degenerate geometry for
+this fixture (visible in-console: `[FillBoolean] polygon union failed on degenerate geometry`), NOT
+the occlusion mechanism — a fix would touch `mappers.js`/`fill-boolean.js`/`geometry-utils.js`, none
+of which are "the bias/isConvexObject gate" this unit was pre-approved to touch, so it is recorded,
+not fixed. `tests/unit/scene3d-mesh-self-occlusion.test.js` is intentionally RED on `spiral`.
+A denser (48x24) mesh was tried first and abandoned — the flat-fill boundary/region-fill machinery
+became impractically slow on that many small, silhouette-grazing faces for a unit test; whether a
+denser imported mesh's self-occlusion holds at the same rate is a distinct, unmeasured performance
+question. Full trail: `docs/3d-audit/handoff/unit-f-notes.md`; evidence:
+`docs/3d-audit/handoff/unit-f/`.
 
 ---
 
