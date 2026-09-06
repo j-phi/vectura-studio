@@ -220,7 +220,30 @@ if (PRODUCTION.length !== 37 || LIBRARY.length !== 11) {
 // EMPTY in U0 — the whole point of this foundation unit is that with no
 // rows here, PICKER_IDS === IDS and ALIASES === {}: a provable byte-identical
 // no-op. U1…U8 each add exactly one row (their own audit cluster, C-01…C-08).
-const COLLAPSE = {};
+//
+// U1 (C-01, W-22-24-W-18-plan.md §1 "C-01 → U1") — the shipped default
+// `ladder` is the survivor. `ladder` is deliberately NOT a member of `IDS`
+// (it is the study's own baseline, not one of the 48 measured laws — see
+// `DEFAULT_LAW` below and scene3d-tone-laws.js's own `DEFAULT` field), so it
+// can never be `PICKER_IDS.filter`ed out or in; it is the picker's own
+// always-present 49th/31st row (`FILL_STYLE_DEFAULT_ENTRY`,
+// src/config/context-bar.js). Folding INTO it is still a normal collapse —
+// `resolveToneLaw`/`normalizeStyle` do not care whether `into` is a roster
+// id or the shipped default, and `STYLE_PARAMS`/`fillStyleControls` key off
+// the string `'ladder'` either way — but the §2.1 integrity throw that
+// checks `PICKER_IDS.indexOf(into)` needed one exception for exactly this
+// case (see below); ordinary survivors (U2-U8) never need it.
+const COLLAPSE = {
+  ladder: [{                                                        // C-01 (U1, W-22)
+    key: 'rungMode', label: 'Rung detail', default: 'coarse',
+    options: [
+      { value: 'coarse', label: 'Coarse — 4 rungs', law: 'ladder' },
+      { value: 'fine', label: 'Fine rungs', law: 'fineLadder' },
+      { value: 'finePhase', label: 'Fine + phase dither', law: 'phaseFineLadder' },
+      { value: 'perceptual', label: 'Perceptual ramp', law: 'perceptualRamp' },
+    ],
+  }],
+};
 
 // ── 5c. Derive ALIASES + PICKER_IDS + STYLE_PARAMS from COLLAPSE ───────────
 // ALIASES: folded id -> { into: survivor, params: { [descriptor.key]: value } }.
@@ -247,19 +270,34 @@ const PICKER_IDS = IDS.filter((id) => !ALIASES[id]);
 // sub-control AND is read back by ALIASES above, so the two can never drift.
 const STYLE_PARAMS = COLLAPSE;
 
+// The shipped default. Deliberately NOT a member of `IDS` (the roster is the
+// 48 laws the tone study measured AGAINST this baseline — see
+// scene3d-tone-laws.js's own `DEFAULT` field and context-bar.js's
+// `FILL_STYLE_DEFAULT_ENTRY` comment), so it can never appear in
+// `PICKER_IDS` either — `PICKER_IDS` is derived from `IDS` alone. U1 (C-01)
+// is the one cluster whose survivor IS the shipped default, so the `.into`
+// integrity check below must accept `DEFAULT_LAW` as a valid target even
+// though `PICKER_IDS.indexOf('ladder') === -1` by construction.
+const DEFAULT_LAW = 'ladder';
+
 // Integrity throws (§2.1 of the plan) — the collapse table can never
 // silently corrupt the engine vocabulary or name a law the roster forgot.
 Object.keys(ALIASES).forEach((aliasId) => {
   if (IDS.indexOf(aliasId) === -1) {
     throw new Error(`[build-tone-laws] ALIASES key "${aliasId}" is not a roster id.`);
   }
-  if (PICKER_IDS.indexOf(ALIASES[aliasId].into) === -1) {
+  if (ALIASES[aliasId].into !== DEFAULT_LAW && PICKER_IDS.indexOf(ALIASES[aliasId].into) === -1) {
     throw new Error(`[build-tone-laws] ALIASES["${aliasId}"].into ("${ALIASES[aliasId].into}") is not a PICKER_IDS survivor.`);
   }
 });
 Object.keys(COLLAPSE).forEach((survivor) => {
   COLLAPSE[survivor].forEach((d) => {
     d.options.forEach((opt) => {
+      // U1's default-option law is the shipped default itself ('ladder'),
+      // which is deliberately not a roster id (see DEFAULT_LAW above) — only
+      // reachable via the option whose value === the descriptor's own
+      // default, i.e. the survivor's own bare id, never a folded alias.
+      if (opt.law === DEFAULT_LAW && opt.value === d.default && survivor === DEFAULT_LAW) return;
       if (IDS.indexOf(opt.law) === -1) {
         throw new Error(`[build-tone-laws] COLLAPSE["${survivor}"] descriptor "${d.key}" option "${opt.value}" law "${opt.law}" is not a roster id.`);
       }

@@ -877,9 +877,6 @@
   "isophoteWidth",
   "whiteBand",
   "weightSmoothstep",
-  "fineLadder",
-  "phaseFineLadder",
-  "perceptualRamp",
   "lozengeStipple",
   "deepFillTSP",
   "bundleCount",
@@ -919,8 +916,57 @@
   "voronoiWeb",
   "mazeFill"
 ];
-  const ALIASES = {};
-  const STYLE_PARAMS = {};
+  const ALIASES = {
+  "fineLadder": {
+    "into": "ladder",
+    "params": {
+      "rungMode": "fine"
+    }
+  },
+  "phaseFineLadder": {
+    "into": "ladder",
+    "params": {
+      "rungMode": "finePhase"
+    }
+  },
+  "perceptualRamp": {
+    "into": "ladder",
+    "params": {
+      "rungMode": "perceptual"
+    }
+  }
+};
+  const STYLE_PARAMS = {
+  "ladder": [
+    {
+      "key": "rungMode",
+      "label": "Rung detail",
+      "default": "coarse",
+      "options": [
+        {
+          "value": "coarse",
+          "label": "Coarse — 4 rungs",
+          "law": "ladder"
+        },
+        {
+          "value": "fine",
+          "label": "Fine rungs",
+          "law": "fineLadder"
+        },
+        {
+          "value": "finePhase",
+          "label": "Fine + phase dither",
+          "law": "phaseFineLadder"
+        },
+        {
+          "value": "perceptual",
+          "label": "Perceptual ramp",
+          "law": "perceptualRamp"
+        }
+      ]
+    }
+  ]
+};
 
   // [{ group, options: [{ value, label }] }] — for UI.Select. Every family
   // contributes a group (even if, after filtering, it has zero options) so

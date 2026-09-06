@@ -107,10 +107,24 @@ describe('Fill Style — the shared mark-class config', () => {
   test('groups() returns every roster law plus the shipped default, grouped by mark class — no tier gate', () => {
     const g = F.groups();
     const opts = g.reduce((a, x) => a.concat(x.options), []);
-    expect(opts.length).toBe(R.IDS.length + 1);
+    // Fill-roster collapse (W-22-24-W-18-plan.md) — `groups()` offers
+    // PICKER_IDS (the picker-tier cut), not the full engine vocabulary
+    // `IDS` (unaffected by the collapse, still 48). `PICKER_IDS === IDS`
+    // until U1 lands; from U1 on this is the count that actually shrinks.
+    expect(opts.length).toBe(R.PICKER_IDS.length + 1);
     expect(opts.map((o) => o.value)).toContain('ladder');
-    // Every one of the 11 previously-demoted laws is present, unconditionally.
-    R.LIBRARY.forEach((id) => expect(opts.map((o) => o.value)).toContain(id));
+    // Every one of the 11 previously-demoted laws is STILL PRESENT — unless
+    // it has been folded into a survivor (U1-U8): a folded id is reachable
+    // through its survivor's own sub-control, not as its own flat option, by
+    // design (§0 "nothing is ever removed from the engine, only the
+    // picker's flat option list shrinks"). None of C-01's three folded ids
+    // (fineLadder/phaseFineLadder/perceptualRamp) is LIBRARY-tier, so this
+    // loop is unaffected by U1 — it starts skipping entries once U4/U5 fold
+    // a LIBRARY law (bundleDither/contFieldTouch).
+    R.LIBRARY.forEach((id) => {
+      if (R.ALIASES[id]) return;
+      expect(opts.map((o) => o.value)).toContain(id);
+    });
     // No headed-but-empty group is ever rendered.
     g.forEach((grp) => expect(grp.options.length).toBeGreaterThan(0));
     // Groups are mark classes, not tone-mechanism families.
@@ -348,10 +362,16 @@ describe('Fill Style — the shared mark-class config', () => {
         expect(o.disabled).toBeFalsy();
         expect(o.label).not.toContain(F.NO_EFFECT_SUFFIX);
       });
-      // The measured count from the U12 audit: 38 of 49 do nothing on box (onePenDown is a wave law, dead on faceted)
-      // (none/ladder/the 9 mono laws are the 11 that remain reachable).
+      // The measured U12 audit baseline was 38 of 49 (onePenDown is a wave
+      // law, dead on faceted); none/ladder/the 9 mono laws are the 11 that
+      // remain reachable. ALIVE is unaffected by the fill-roster collapse
+      // (none of C-01's 3 folded ids — fineLadder/phaseFineLadder/
+      // perceptualRamp — is a mono law). DEAD moves as the picker's flat
+      // list shrinks (W-22-24-W-18-plan.md §5 "…:267-270" — U1: 46 total
+      // options - 11 alive = 35 dead; re-measure and re-paste this number,
+      // do not assume, at every later unit that folds another id).
       expect(alive.length).toBe(11);
-      expect(dead.length).toBe(38);
+      expect(dead.length).toBe(35);
       // Group STRUCTURE (count, membership) is unaffected — only reachability.
       expect(g.length).toBe(F.groups('sphere').length);
     });
@@ -975,7 +995,14 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(rowCtl(fly, 'Experimental')).toBeNull();
     expect(rowCtl(fly, 'Library')).toBeNull();
     const values = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option')).map((o) => o.value);
-    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => expect(values).toContain(id));
+    // Fill-collapse (W-22-24-W-18-plan.md) — a LIBRARY id folded into a
+    // survivor (U1-U8) is reachable through that survivor's own sub-control,
+    // not as its own flat <option>; see the identical note on "groups()
+    // returns every roster law..." above.
+    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => {
+      if (window.Vectura.SCENE3D_TONE_LAWS.ALIASES[id]) return;
+      expect(values).toContain(id);
+    });
     // Still never written to layer params — there is no toggle state to leak.
     const p = scene.params.styleTable.byObject['obj-1'].params;
     expect(Object.keys(p).some((k) => /library/i.test(k))).toBe(false);
@@ -1085,21 +1112,44 @@ describe('Fill Style — context-bar Style flyout', () => {
 
   // STALE ASSERTION UPDATE (W-03) — used to pin exactly the 9 mono laws;
   // W-03 widened the spiral/stipple gate to inert-OR-bare-centreline (F-03).
-  test('item 5 — a sphere selection with Type=Spiral disables all but none/ladder/fineLadder/phaseFineLadder (W-03)', () => {
+  // STALE ASSERTION UPDATE (U1) — fineLadder/phaseFineLadder are folded into
+  // ladder's rungMode sub-control and no longer appear as their own row; see
+  // the in-test comment below.
+  test('item 5 — a sphere selection with Type=Spiral disables all but none/ladder (still reachable through ladder\'s own sub-control) (W-03)', () => {
     const SPHERE = { id: 'obj-1', name: 'Sphere', primitive: 'sphere', params: { sx: 40, sy: 40, sz: 40, detail: 16 }, transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
     const { fly } = openStyle({ objects: [SPHERE], styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'spiral', params: {} } }) });
-    const roster = window.Vectura.SCENE3D_TONE_LAWS.IDS;
+    const R = window.Vectura.SCENE3D_TONE_LAWS;
+    const roster = R.IDS;
     const CURVED_SPIRAL_STIPPLE_LIVE = new Set(['none', 'fineLadder', 'phaseFineLadder']);
-    const CURVED_SPIRAL_STIPPLE_INERT = roster.filter((id) => !CURVED_SPIRAL_STIPPLE_LIVE.has(id));
+    const CURVED_SPIRAL_STIPPLE_INERT = roster
+      .filter((id) => !CURVED_SPIRAL_STIPPLE_LIVE.has(id))
+      // Fill-roster collapse — a folded id (e.g. perceptualRamp, U1) is no
+      // longer its OWN <option> at all (it is reachable only through its
+      // survivor's sub-control), so it cannot appear in the rendered
+      // select's disabled list either way. Filter the reference set down
+      // to ids the picker still offers as their own row before comparing.
+      .filter((id) => !R.ALIASES[id]);
     const options = Array.from(rowCtl(fly, 'Fill Style').querySelector('select').querySelectorAll('option'));
     const dead = options.filter((o) => o.disabled).map((o) => o.value);
     expect(dead.sort()).toEqual([...CURVED_SPIRAL_STIPPLE_INERT].sort());
     const laddOpt = options.find((o) => o.value === 'ladder');
     expect(laddOpt.disabled).toBe(false);
-    const fineOpt = options.find((o) => o.value === 'fineLadder');
-    expect(fineOpt.disabled).toBe(false);
-    const phaseOpt = options.find((o) => o.value === 'phaseFineLadder');
-    expect(phaseOpt.disabled).toBe(false);
+    // STALE ASSERTION UPDATE (U1, fill-roster collapse) — fineLadder and
+    // phaseFineLadder are no longer their own flat <option>s (folded into
+    // ladder's rungMode sub-control, ALIASES filter above already proves
+    // it), so there is no <option value="fineLadder"> to assert disabled on
+    // any more. They are still genuinely LIVE/distinguishable here — a user
+    // reaches them via ladder + rungMode:'fine'/'finePhase', and
+    // Params.resolveToneLaw still returns the exact legacy internal id for
+    // that pair (proved byte-identical in
+    // tests/unit/scene3d-tone-law-collapse.test.js's U1 describe block) —
+    // this test only pins the FLAT PICKER row, which the fold correctly
+    // shrank to one ('ladder'). The rungMode sub-control does not yet carry
+    // its own per-option reachability annotation on spiral/stipple (it
+    // would need a UI-file change, out of scope for this data-only unit —
+    // flagged in docs/3d-audit/lane-reports/U1-U5-impl.md).
+    expect(options.find((o) => o.value === 'fineLadder')).toBeUndefined();
+    expect(options.find((o) => o.value === 'phaseFineLadder')).toBeUndefined();
   });
 
   // ── Item 4 — multi-select must not read only the FIRST object's primitive ─
@@ -1568,7 +1618,11 @@ describe('Fill Style — docked 3D Scene panel', () => {
     expect(styleRow(container, 'Experimental')).toBeUndefined();
     expect(styleRow(container, 'Library')).toBeUndefined();
     const values = Array.from(styleRow(container, 'Fill Style').querySelector('select').querySelectorAll('option')).map((o) => o.value);
-    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => expect(values).toContain(id));
+    // Fill-collapse (W-22-24-W-18-plan.md) — see the identical note above.
+    window.Vectura.SCENE3D_TONE_LAWS.LIBRARY.forEach((id) => {
+      if (window.Vectura.SCENE3D_TONE_LAWS.ALIASES[id]) return;
+      expect(values).toContain(id);
+    });
     expect(layer.params.styleTable.byObject['obj-1'].params.library).toBeUndefined();
   });
 
@@ -1705,7 +1759,14 @@ describe('Shadow Fill Style — the shared toneLawApplies filter', () => {
   // predicate/mark-class sources instead of restating a number.
   test('the offered count is the full roster + default, minus the flow/web mark-class laws and any per-id narrowing', () => {
     const full = F.groups(null, null, null).reduce((a, g) => a + g.options.length, 0);
-    expect(full).toBe(49); // default (ladder) + 48 roster laws
+    // Fill-roster collapse (W-22-24-W-18-plan.md) — the picker's flat list is
+    // PICKER_IDS + the shipped default, not the full 48-id engine vocabulary
+    // (unaffected by the collapse). PICKER_IDS === IDS until U1; from U1 on
+    // this derived count is the one that actually shrinks, so it is read
+    // live rather than restated as "49" (the same self-describing rationale
+    // this test's own comment above already applies to the flow/web count).
+    const R = window.Vectura.SCENE3D_TONE_LAWS;
+    expect(full).toBe(R.PICKER_IDS.length + 1);
     const allIds = F.groups(null, null, null).reduce((acc, g) => acc.concat(g.options.map((o) => o.value)), []);
     // Flow/web is a fact about the roster's own mark-class assignment
     // (independent of shadows.js) — fixed today at 7 ids, verified against

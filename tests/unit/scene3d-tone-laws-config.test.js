@@ -97,6 +97,44 @@ describe('Vectura.SCENE3D_TONE_LAWS — the generated tone-law config module', (
     expect(allCount).toBe(48);
   });
 
+  // Fill-roster collapse (docs/3d-audit/lane-reports/W-22-24-W-18-plan.md).
+  // PICKER_IDS/ALIASES/STYLE_PARAMS shrink one cluster at a time, U1…U8 —
+  // each unit bumps this test's expected counts (§5 of the plan: U1 45, U2
+  // 43, U3 42, U4 39, U5 35, U6 32, U7 31, U8 30) and pastes the before/after
+  // in its commit body. `IDS`/`PRODUCTION`/`LIBRARY` above stay untouched
+  // forever — this is a picker-tier cut, not an engine-vocabulary change.
+  test('PICKER_IDS/ALIASES: U1 (C-01, ladder/rungMode) — 45 survivors, 3 aliases, every alias resolvable', () => {
+    expect(Array.isArray(LAWS.PICKER_IDS)).toBe(true);
+    expect(LAWS.PICKER_IDS.length).toBe(45);
+    expect(new Set(LAWS.PICKER_IDS).size).toBe(45);
+    // 'ladder' (the survivor) is the shipped DEFAULT, deliberately not a
+    // roster id — it can never appear in PICKER_IDS (derived from IDS).
+    expect(LAWS.PICKER_IDS.indexOf('ladder')).toBe(-1);
+    expect(LAWS.PICKER_IDS.every((id) => LAWS.IDS.indexOf(id) !== -1)).toBe(true);
+
+    const aliasIds = Object.keys(LAWS.ALIASES);
+    expect(aliasIds.length).toBe(3);
+    expect(new Set(aliasIds)).toEqual(new Set(['fineLadder', 'phaseFineLadder', 'perceptualRamp']));
+    aliasIds.forEach((id) => {
+      // Every alias key is a real (still-measured) roster id, resolvable to
+      // a survivor + the collapse param(s) that reproduce it exactly.
+      expect(LAWS.IDS.indexOf(id)).not.toBe(-1);
+      const a = LAWS.ALIASES[id];
+      expect(a.into).toBe('ladder');
+      expect(typeof a.params).toBe('object');
+      const descriptor = LAWS.STYLE_PARAMS[a.into][0];
+      const opt = descriptor.options.find((o) => o.law === id);
+      expect(opt).toBeTruthy();
+      expect(a.params[descriptor.key]).toBe(opt.value);
+    });
+
+    // PICKER_IDS ∪ keys(ALIASES) === IDS exactly (the same invariant the
+    // build script's own throw enforces at generation time).
+    const union = new Set(LAWS.PICKER_IDS.concat(aliasIds));
+    expect(union.size).toBe(LAWS.IDS.length);
+    LAWS.IDS.forEach((id) => expect(union.has(id)).toBe(true));
+  });
+
   test('regenerating the module from docs/tone-laws/laws.json is a byte-identical no-op', () => {
     const repoRoot = path.resolve(__dirname, '../..');
     const committedPath = path.join(repoRoot, 'src/config/scene3d-tone-laws.js');

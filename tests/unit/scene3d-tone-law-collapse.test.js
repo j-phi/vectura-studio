@@ -90,13 +90,30 @@ describe('Scene3D tone-law collapse — U0 foundation', () => {
     expect(roster().IDS.length).toBe(48);
   });
 
-  test('2. PICKER_IDS === IDS and ALIASES/STYLE_PARAMS === {} — the no-op proof (COLLAPSE is empty in U0)', () => {
+  // STALE ASSERTION UPDATE (U1): this test originally pinned the U0 EMPTY
+  // table's literal state (PICKER_IDS === IDS, ALIASES === {}) as the no-op
+  // proof. From U1 on the table is no longer empty by design — the
+  // invariant that must hold FOREVER (empty or not) is
+  // "PICKER_IDS ⊎ keys(ALIASES) === IDS", the same one the build script's
+  // own throw enforces at generation time. Each unit's own describe block
+  // (below) pins its own exact PICKER_IDS/ALIASES count.
+  test('2. PICKER_IDS ∪ keys(ALIASES) === IDS exactly, disjoint — holds at every stage of the collapse, empty or not', () => {
     const R = roster();
     expect(Array.isArray(R.PICKER_IDS)).toBe(true);
-    expect(R.PICKER_IDS.length).toBe(48);
-    expect(R.PICKER_IDS.slice().sort()).toEqual(R.IDS.slice().sort());
-    expect(R.ALIASES).toEqual({});
-    expect(R.STYLE_PARAMS).toEqual({});
+    const aliasIds = Object.keys(R.ALIASES);
+    // Disjoint.
+    aliasIds.forEach((id) => expect(R.PICKER_IDS.indexOf(id)).toBe(-1));
+    const union = new Set(R.PICKER_IDS.concat(aliasIds));
+    expect(union.size).toBe(R.IDS.length);
+    R.IDS.forEach((id) => expect(union.has(id)).toBe(true));
+    // STYLE_PARAMS is the COLLAPSE table verbatim, keyed by survivor — every
+    // survivor named by an alias's `into` must have a non-empty descriptor
+    // list (§2.1's own throw enforces this at build time; re-verified live).
+    aliasIds.forEach((id) => {
+      const into = R.ALIASES[id].into;
+      expect(Array.isArray(R.STYLE_PARAMS[into])).toBe(true);
+      expect(R.STYLE_PARAMS[into].length).toBeGreaterThan(0);
+    });
   });
 
   test('3. Params.resolveToneLaw is a function and is the identity for every id + every edge case', () => {
@@ -202,12 +219,195 @@ describe('Scene3D tone-law collapse — U0 foundation', () => {
     }
   });
 
-  test('8. SCENE_FILL_STYLES.groups()/resolve() are unaffected by an (empty) PICKER_IDS/ALIASES table — 49 options (48 + shipped default)', () => {
+  // STALE ASSERTION UPDATE (U1): this test originally pinned the U0 EMPTY-
+  // table state ("fineLadder resolves to itself, ladder has no sub-control")
+  // as proof the mechanism was inert. U1 populates COLLAPSE.ladder, so both
+  // of those are now real, intended behaviour changes, not regressions —
+  // updated here with the same test number/scope rather than deleted.
+  test('8. SCENE_FILL_STYLES.groups()/resolve()/styleParams() track the CURRENT collapse table (updated by every unit, U0 through U8)', () => {
     const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const R = roster();
     const groups = FS.groups(null, null, null);
     const total = groups.reduce((acc, g) => acc + g.options.length, 0);
-    expect(total).toBe(roster().IDS.length + 1);
-    expect(FS.resolve('fineLadder')).toBe('fineLadder'); // no alias exists yet
-    expect(FS.styleParams('ladder')).toEqual([]); // no collapse for it yet
+    // Picker-tier count: PICKER_IDS + the shipped default. PICKER_IDS ===
+    // IDS until U1 folds its first 3 ids; from here it is the number that
+    // actually moves.
+    expect(total).toBe(R.PICKER_IDS.length + 1);
+    // U1 (C-01) — fineLadder is now an alias into its survivor ladder.
+    expect(FS.resolve('fineLadder')).toBe('ladder');
+    expect(FS.styleParams('ladder').length).toBeGreaterThan(0);
+  });
+});
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════
+ * U1 — C-01 · survivor `ladder` · param `rungMode`
+ * docs/3d-audit/lane-reports/W-22-24-W-18-plan.md §1 "C-01 → U1" / §4
+ * "U1-U8 — one cluster each (data-only)".
+ *
+ * Folded: fineLadder (rungMode:'fine'), phaseFineLadder ('finePhase'),
+ * perceptualRamp ('perceptual'). Survivor's own bare option: coarse->ladder.
+ *
+ * RED (pre-U1 tree, `COLLAPSE = {}`): resolveToneLaw({toneLaw:'ladder',
+ * rungMode:'fine'}) returned 'ladder' unchanged (STYLE_PARAMS.ladder was
+ * absent) — rendering that bag through SurfaceFill.buildObject produced
+ * ladder's OWN picture, not fineLadder's (705.1 vs 775.0 mm ink on
+ * torus+hatch+med per the plan's own measurement) — a real, non-vacuous
+ * divergence, not a typo. GREEN below (COLLAPSE.ladder now populated)
+ * closes that gap by construction: both paths run SurfaceFill.buildObject
+ * with the SAME resolved `toneLaw`, so equality is guaranteed, not merely
+ * observed.
+ *
+ * Monotonicity — NOT asserted. The plan's own measurement is non-monotone:
+ * ladder 705.1 -> fineLadder 775.0 -> phaseFineLadder 713.1 -> perceptualRamp
+ * 687.8 mm ink on torus+hatch+med. `rungMode` ships as a labelled ENUM for
+ * exactly this reason (Phase 2 / U10 is where a genuinely continuous
+ * `rungFineness` replaces it, blocked on W-26).
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+describe('Scene3D tone-law collapse — U1 (C-01, ladder/rungMode)', () => {
+  let runtime; let V; let algo; let defaults; let SF; let Params; let hatchOpts;
+  const FOLDED = [
+    { id: 'fineLadder', rungMode: 'fine' },
+    { id: 'phaseFineLadder', rungMode: 'finePhase' },
+    { id: 'perceptualRamp', rungMode: 'perceptual' },
+  ];
+
+  const captureOpts = (mapper) => {
+    const p = clone(runtime.window.Vectura.ALGO_DEFAULTS.scene3d);
+    p.objects = [{
+      id: 'o1', name: 's', primitive: 'sphere', params: { radius: 40, detail: 20 },
+      transform: { x: 0, y: 50, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+    }];
+    p.ground = { enabled: false };
+    p.camera = {
+      projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
+    };
+    p.styleTable = { scene: { penId: null, mapper, params: { fillAngle: 45, fillDensity: 60 } }, byObject: {}, byFace: {} };
+    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.lights = [SUN];
+    const calls = [];
+    const orig = SF.buildObject;
+    SF.buildObject = function wrapped(opts) {
+      const result = orig.call(this, opts);
+      calls.push({ opts, result });
+      return result;
+    };
+    try {
+      algo.generate(p, null, null, BOUNDS);
+    } finally {
+      SF.buildObject = orig;
+    }
+    let best = calls[0];
+    for (const c of calls) {
+      if ((c.result || []).length > (best.result || []).length) best = c;
+    }
+    return best.opts;
+  };
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    algo = V.AlgorithmRegistry.scene3d;
+    defaults = V.ALGO_DEFAULTS.scene3d;
+    SF = V.Scene3D.SurfaceFill;
+    Params = V.Scene3D.Params;
+    hatchOpts = captureOpts('hatch');
+  }, SLOW);
+  afterAll(() => runtime.cleanup());
+
+  const roster = () => runtime.window.Vectura.SCENE3D_TONE_LAWS;
+
+  test('PICKER_IDS shrinks 48 -> 45; the 3 folded ids leave PICKER_IDS but stay in IDS', () => {
+    const R = roster();
+    expect(R.IDS.length).toBe(48);
+    expect(R.PICKER_IDS.length).toBe(45);
+    FOLDED.forEach(({ id }) => {
+      expect(R.IDS.indexOf(id)).not.toBe(-1);
+      expect(R.PICKER_IDS.indexOf(id)).toBe(-1);
+    });
+  });
+
+  test('ALIASES: every folded id maps into survivor "ladder" with the exact rungMode patch', () => {
+    const R = roster();
+    FOLDED.forEach(({ id, rungMode }) => {
+      expect(R.ALIASES[id]).toEqual({ into: 'ladder', params: { rungMode } });
+    });
+  });
+
+  test('byte-identity: survivor+rungMode renders identically to the legacy folded id, for all 3', () => {
+    FOLDED.forEach(({ id, rungMode }) => {
+      const resolved = Params.resolveToneLaw({ toneLaw: 'ladder', rungMode });
+      expect(resolved).toBe(id); // the resolver reaches the exact legacy internal id
+      const viaSurvivor = SF.buildObject({ ...hatchOpts, toneLaw: resolved });
+      const viaLegacy = SF.buildObject({ ...hatchOpts, toneLaw: id });
+      expect(JSON.stringify(viaSurvivor)).toBe(JSON.stringify(viaLegacy));
+    });
+    // The bare survivor (coarse, the default) is untouched and still IS
+    // ladder's own law, not an alias.
+    expect(Params.resolveToneLaw({ toneLaw: 'ladder', rungMode: 'coarse' })).toBe('ladder');
+    expect(Params.resolveToneLaw({ toneLaw: 'ladder' })).toBe('ladder');
+  });
+
+  test('mark class and Stroke Fill eligibility are constant across the cluster (§2.4 invariant)', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const SFS = runtime.window.Vectura.STROKE_FILL_STYLES;
+    FOLDED.forEach(({ id }) => {
+      expect(FS.markClass(id)).toBe(FS.markClass('ladder'));
+      expect(SFS.RIBBON_LAWS.indexOf(id) !== -1).toBe(SFS.RIBBON_LAWS.indexOf('ladder') !== -1);
+      expect(SFS.PEN_LAWS.indexOf(id) !== -1).toBe(SFS.PEN_LAWS.indexOf('ladder') !== -1);
+    });
+  });
+
+  test('migration: a style bag naming the folded id normalizes to survivor + param, byte-identical, never clobbering an explicit sibling', () => {
+    FOLDED.forEach(({ id, rungMode }) => {
+      const out = Params.normalizeStyle({ mapper: 'hatch', params: { toneLaw: id } });
+      expect(out.params.toneLaw).toBe('ladder');
+      expect(out.params.rungMode).toBe(rungMode);
+      const viaMigrated = SF.buildObject({ ...hatchOpts, toneLaw: Params.resolveToneLaw({ toneLaw: out.params.toneLaw, rungMode: out.params.rungMode }) });
+      const viaLegacy = SF.buildObject({ ...hatchOpts, toneLaw: id });
+      expect(JSON.stringify(viaMigrated)).toBe(JSON.stringify(viaLegacy));
+
+      // An explicit sibling already in the bag is never overwritten.
+      const out2 = Params.normalizeStyle({ mapper: 'hatch', params: { toneLaw: id, rungMode: 'coarse' } });
+      expect(out2.params.toneLaw).toBe('ladder');
+      expect(out2.params.rungMode).toBe('coarse');
+    });
+  });
+
+  test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id maps to the survivor, never warns', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      FOLDED.forEach(({ id }) => {
+        const shadow = Params.normalizeShadow({ shadowToneLaw: id });
+        expect(shadow.shadowToneLaw).toBe('ladder');
+      });
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test('picker round-trip: resolve()/entry() still answer for a folded id', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    FOLDED.forEach(({ id }) => {
+      expect(FS.resolve(id)).toBe('ladder');
+      expect(FS.entry(id)).toBeTruthy(); // BY_ID still carries the folded id forever
+    });
+  });
+
+  test('a saved .vectura naming a folded toneLaw resolves through the real engine (sanitizeSceneParams) unchanged in effect', () => {
+    const sanitized = Params.sanitizeSceneParams({
+      objects: [{ id: 'obj-1', primitive: 'sphere', params: { radius: 30 } }],
+      styleTable: {
+        scene: { mapper: 'hatch', params: {} },
+        byObject: { 'obj-1': { mapper: 'hatch', params: { toneLaw: 'fineLadder' } } },
+        byFace: {},
+      },
+    });
+    expect(sanitized.sceneVersion).toBe(4); // no SCENE_VERSION bump — see plan §2.3
+    const migrated = sanitized.styleTable.byObject['obj-1'].params;
+    expect(migrated.toneLaw).toBe('ladder');
+    expect(migrated.rungMode).toBe('fine');
   });
 });
