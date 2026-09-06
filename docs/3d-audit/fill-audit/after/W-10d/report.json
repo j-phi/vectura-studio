@@ -1,0 +1,34 @@
+{
+  "id": "W-10d",
+  "title": "Hide the originSpiral Fill Style on the torus in the picker (STILL-OPEN.md W-10/W-10b/W-10c)",
+  "branch": "3d-scene/fill-audit",
+  "commit": "142afe58653ac9d6efe8c56dffcc97b53190fe1b",
+  "before": [
+    "No pixel-rendering before/after cells for this unit — it is a picker-presentation change (SCENE_FILL_STYLES.isReachableOn in src/config/context-bar.js), not a render-pipeline change, so no scene3d-capture.js cells apply. Nothing in surface-fill-mono.js/scene3d.js's render path was touched; the known torus wedge (measured 87.8% blank-run fraction at 441af81f, STILL-OPEN.md line 63) is UNCHANGED pixel-for-pixel — it is hidden from new picks, not repaired."
+  ],
+  "after": [
+    "after/W-10d/torus-fillstyle-list-scrolled.png",
+    "after/W-10d/cone-fillstyle-list-scrolled.png"
+  ],
+  "notes": "originSpiral cannot be made plottable on the torus (W-10c: lower-left radial fan renders as solid ink wedges, worse than W-10b). No primitive id reaches surface-fill-mono.js to gate it there (FU-1, a different lane's file). Fix: src/config/context-bar.js SCENE_FILL_STYLES.isReachableOn gained `if (primitiveMode === 'torus' && id === 'originSpiral') return false;`, placed after the pyramid+hatch+fineLadder check and before the final `return true`, unconditional of mapper (hatch/crosshatch/contour all dispatch the same mono law, and the wedge defect lives in the law itself). Every other law stays reachable on torus; cone/sphere are unaffected (the gate names 'torus' specifically). Mechanism matches the existing W-02/W-03 convention exactly: SCENE_FILL_STYLES.groups() marks the option `disabled: true` and suffixes its label with NO_EFFECT_SUFFIX (' — no effect here') -- it does NOT remove the <option> from the rendered <select>, so 'the row does not appear' means functionally unreachable/greyed, not absent from the DOM (verified live, see screenshots). This is picker-presentation ONLY: it does not reach saved documents. clampStyleParam's 'toneLaw' case (src/core/scene3d/params.js) only rejects ids the roster does not recognize at all -- it takes no primitiveMode argument and cannot know an id is unreachable on a specific shape -- so a torus layer already saved (or hand-edited) with toneLaw 'originSpiral' still normalizes to 'originSpiral' unchanged and the engine still renders the known wedge; isReachableOn is the only place that knows better, and it only shapes the dropdown. Verified this exact fallback with a new test calling Scene3D.Params.normalizeStyle and sanitizeSceneParams directly: no throw, id preserved through both the single-style and full-scene-sanitize paths.",
+  "tests": {
+    "red": "tests/integration/scene3d-fill-style-picker.test.js at base 8bd1581b: 'torus is curved like any other chart-wrapped primitive, EXCEPT originSpiral is hidden there (W-10d)' -- expected true to be false (F.isReachableOn('originSpiral','torus') returned true); 'groups(\"torus\") marks originSpiral disabled + suffixed...' -- expected false to be true (torusEntry.disabled was false); 'a torus layer saved with toneLaw \"originSpiral\" deserializes unchanged...' -- expected true to be false (F.isReachableOn(...,'torus') was true). 3 of 3 new/updated assertions RED, 128 skipped (describe-scoped run).",
+    "green": "same 3 tests GREEN after the one-line context-bar.js gate landed; full file 131/131 passed.",
+    "suites": "tests/integration/scene3d-fill-style-picker.test.js 131/131; tests/unit/scene3d-solid-cap-reachability.test.js 6/6; tests/integration/scene3d-panel.test.js 36/36; tests/integration/scene3d-panel-style-live-sync.test.js 6/6; tests/unit/scene3d-tone-algo-default.test.js 6/6; tests/unit/scene3d-tone-law-params.test.js 13/13 -- 198/198 total across the 6 named guard files, 0 failed, 0 skipped in this set."
+  },
+  "byte_identical_pairs": [
+    "No render-pipeline pixels were touched by this unit (context-bar.js is a config/presentation module, not part of the render path) -- any actual SVG/canvas output for originSpiral on the torus (the known wedge defect) is byte-identical before and after this commit; only the picker's option list (disabled flag + label suffix) changed, verified live via Playwright on :8476."
+  ],
+  "live_verification": {
+    "url": "http://localhost:8476/",
+    "app_version": "1.3.98 (matches worktree package.json)",
+    "steps": "Added a Scene3D algorithm layer via app.engine.addLayer('scene3d') (the same call the shelf's 'Algorithm Layer' menu item makes -- the native <select> dropdown UI could not be driven through Playwright's automated click path in this run, see 'method' note below), selected the created Object3D child, set its primitive to 'torus' via engine.setObjectPrimitive, opened the docked panel's Style tab (Type=Hatch, the shipped default). To make the native <select>'s option list visible in a page screenshot (a native dropdown popup renders outside the page's paint surface and is not capturable by a normal screenshot), temporarily set the <select>'s `size` attribute to render it as an inline listbox, scrolled to the originSpiral row, screenshotted, then removed the temporary attribute (no persistent DOM change).",
+    "torus_observed": "Fill Style list shows 'Origin Spiral — no effect here' in dimmed/disabled text -- docs/3d-audit/fill-audit/after/W-10d/torus-fillstyle-list-scrolled.png. Accessibility snapshot independently confirms: option \"Origin Spiral — no effect here\" [disabled].",
+    "cone_observed": "Switched the same object's primitive to 'cone' (Type still Hatch), rebuilt the Style tab -- Fill Style list shows 'Origin Spiral' at full brightness, not disabled -- docs/3d-audit/fill-audit/after/W-10d/cone-fillstyle-list-scrolled.png. Canvas rendered a normal cone with hatch fill; no console errors during either primitive switch (0 errors / 1 pre-existing unrelated warning across the session).",
+    "sphere_not_separately_screenshotted": "isReachableOn('originSpiral','sphere') is covered by the automated test suite (131/131 passing, including the explicit cone/sphere assertions in the new tests) but was not separately screenshotted live -- cone and sphere share the exact same code path (the gate only names 'torus'), and the automated test already exercises sphere directly."
+  },
+  "documentation_lines_for_orchestrator_to_apply_at_merge": {
+    "README.md": "Under the Scene3D / 3D Scene Studio fill-style notes: 'The Origin Spiral fill style is hidden (greyed out) in the Fill Style picker when the selected object is a torus -- its known ink-wedge defect on that shape could not be fixed, so it is hidden from new picks rather than shipped broken.'",
+    "CHANGELOG.md": "Fixed: the Origin Spiral fill style is no longer offered as a live pick on torus objects in the 3D Scene Fill Style picker (it rendered as solid ink wedges there); cone and sphere are unaffected."
+  }
+}

@@ -1,0 +1,297 @@
+{
+  "id": "U0",
+  "title": "Fill-roster collapse -- U0 foundation (resolver, migration shim, data-driven sub-control plumbing) -- docs/3d-audit/lane-reports/W-22-24-W-18-plan.md",
+  "branch": "3d-scene/fill-collapse",
+  "base_commit": "142afe58653ac9d6efe8c56dffcc97b53190fe1b",
+  "commit": "a8d84befa9bb4db17be31d274499e34278c0fa7d",
+  "before": [
+    "docs/3d-audit/fill-audit/shots/B/torus__hatch__<law>__med__a.webp (49 pre-existing files: 48 roster laws + the shipped default 'ladder') -- the pre-collapse gallery baseline, unmodified by this unit."
+  ],
+  "after": [
+    "after/U0/shots/B/torus__hatch__ampSpacing__med__a.webp",
+    "after/U0/shots/B/torus__hatch__amplitudeOnly__med__a.webp",
+    "after/U0/shots/B/torus__hatch__bundleCount__med__a.webp",
+    "after/U0/shots/B/torus__hatch__bundleDither__med__a.webp",
+    "after/U0/shots/B/torus__hatch__bundleEased__med__a.webp",
+    "after/U0/shots/B/torus__hatch__bundleHandoff__med__a.webp",
+    "after/U0/shots/B/torus__hatch__bundleLozenge__med__a.webp",
+    "after/U0/shots/B/torus__hatch__bundleSubNib__med__a.webp",
+    "after/U0/shots/B/torus__hatch__contFieldFore__med__a.webp",
+    "after/U0/shots/B/torus__hatch__contFieldQuant__med__a.webp",
+    "after/U0/shots/B/torus__hatch__contFieldSigmoid__med__a.webp",
+    "after/U0/shots/B/torus__hatch__contFieldSurface__med__a.webp",
+    "after/U0/shots/B/torus__hatch__contFieldTouch__med__a.webp",
+    "after/U0/shots/B/torus__hatch__deepFillTSP__med__a.webp",
+    "after/U0/shots/B/torus__hatch__defectSplit__med__a.webp",
+    "after/U0/shots/B/torus__hatch__dutyConst__med__a.webp",
+    "after/U0/shots/B/torus__hatch__endShorten__med__a.webp",
+    "after/U0/shots/B/torus__hatch__etfKang__med__a.webp",
+    "after/U0/shots/B/torus__hatch__fineLadder__med__a.webp",
+    "after/U0/shots/B/torus__hatch__interlockWeave__med__a.webp",
+    "after/U0/shots/B/torus__hatch__isophoteWidth__med__a.webp",
+    "after/U0/shots/B/torus__hatch__ladder__med__a.webp",
+    "after/U0/shots/B/torus__hatch__lozengeStipple__med__a.webp",
+    "after/U0/shots/B/torus__hatch__mazeFill__med__a.webp",
+    "after/U0/shots/B/torus__hatch__mezzoRegion__med__a.webp",
+    "after/U0/shots/B/torus__hatch__mkDashRamp__med__a.webp",
+    "after/U0/shots/B/torus__hatch__mkDotScreen__med__a.webp",
+    "after/U0/shots/B/torus__hatch__mkScribble__med__a.webp",
+    "after/U0/shots/B/torus__hatch__mkTick__med__a.webp",
+    "after/U0/shots/B/torus__hatch__nibAngle__med__a.webp",
+    "after/U0/shots/B/torus__hatch__none__med__a.webp",
+    "after/U0/shots/B/torus__hatch__onePenDown__med__a.webp",
+    "after/U0/shots/B/torus__hatch__penCross__med__a.webp",
+    "after/U0/shots/B/torus__hatch__penFacing__med__a.webp",
+    "after/U0/shots/B/torus__hatch__penInterleave__med__a.webp",
+    "after/U0/shots/B/torus__hatch__penPitchMatch__med__a.webp",
+    "after/U0/shots/B/torus__hatch__penReserve__med__a.webp",
+    "after/U0/shots/B/torus__hatch__penStipple__med__a.webp",
+    "after/U0/shots/B/torus__hatch__perceptualRamp__med__a.webp",
+    "after/U0/shots/B/torus__hatch__phaseFineLadder__med__a.webp",
+    "after/U0/shots/B/torus__hatch__taperedEnds__med__a.webp",
+    "after/U0/shots/B/torus__hatch__trochoidLoop__med__a.webp",
+    "after/U0/shots/B/torus__hatch__turingStripe__med__a.webp",
+    "after/U0/shots/B/torus__hatch__voronoiWeb__med__a.webp",
+    "after/U0/shots/B/torus__hatch__weaveDepth__med__a.webp",
+    "after/U0/shots/B/torus__hatch__weightModulated__med__a.webp",
+    "after/U0/shots/B/torus__hatch__weightSmoothstep__med__a.webp",
+    "after/U0/shots/B/torus__hatch__whiteBand__med__a.webp",
+    "after/U0/manifest.B.1-1.jsonl",
+    "after/U0/manifest.B.unreachable.jsonl"
+  ],
+  "notes": "U0 ships the collapse's foundation with an EMPTY COLLAPSE table in scripts/build-tone-laws.js: the four new SCENE3D_TONE_LAWS exports (PICKER_IDS, ALIASES, STYLE_PARAMS -- IDS is unchanged) plus their integrity throws; Vectura.Scene3D.Params.resolveToneLaw (the (survivor+params)->internal-id resolver, and the identity function for every id today); the normalizeStyle migration shim + clampStyleParam's belt-and-brace single-key alias mapping (both no-ops with ALIASES={}); SCENE_FILL_STYLES.groups()/resolve() reading PICKER_IDS/ALIASES with a fallback to IDS; the new SCENE_FILL_STYLES.styleParams(id) accessor; and the generic data-driven sub-control rendered from STYLE_PARAMS in both src/ui/panels/scene3d-panel.js (fillStyleControls, all three call sites) and src/ui/shell/context-bar.js (buildStyleBody's ctxbar flyout) -- zero rows render today since STYLE_PARAMS is {}. persistentStyleKeys() (scene3d-panel.js) and mapperDefaults' collapse-key seeding are likewise derived from STYLE_PARAMS rather than hand-listed, so U1-U8 extend both with zero edits to this file. scene3d.js's two call sites (facetedToneLaw's IDS membership test, and the curved buildObject opts.toneLaw) now resolve through Params.resolveToneLaw before validating -- identity today. shadows.js is untouched (U9's file, per the plan). Deviation from W-22's literal wording, recorded per the plan's own instruction: docs/tone-laws/laws.json is NOT edited -- it is the measured corpus and its git blob sha is SCENE3D_TONE_LAWS.VERSION's drift oracle; the collapse table is hand-curated in scripts/build-tone-laws.js instead, beside the existing LABELS/LIBRARY_IDS precedent. Preset exposure verified in this worktree: grep -rl toneLaw user-presets/ -> 0 files; grep -rlE '(fineLadder|whiteBand|bundleCount|contField|penInterleave|weaveDepth|perceptualRamp|taperedEnds|nibAngle|weightSmoothstep|onePenDown)' user-presets/ src/config/user-presets.js -> 0 files -- npm run user-presets:bundle not run (nothing to regenerate). CURVED_SPIRAL_STIPPLE_INERT confirmed at 44 entries in this worktree (W-03 prerequisite, unchanged by this unit).",
+  "picker_count": {
+    "measured_at_base_142afe58": "49 (48 SCENE3D_TONE_LAWS.IDS + the shipped default 'ladder', per tests/integration/scene3d-fill-style-picker.test.js 'groups() returns every roster law plus the shipped default')",
+    "measured_after_U0": "49 -- unchanged. PICKER_IDS.length === 48 (=== IDS.length), ALIASES === {}, so SCENE_FILL_STYLES.groups() offers exactly the same 49 options it did at base."
+  },
+  "visual_inspection": {
+    "torus__hatch__ladder__med__a": "LOOKED at both webp images directly (Read tool). Before and after: identical -- a torus drawn as concentric meridian rulings, denser toward the visible rim, thinning through a dark diagonal band across the lower-left quadrant where the tone drops out (the ladder coverage-rung look). No visible pixel difference, matching the md5 match.",
+    "torus__hatch__bundleDither__med__a": "LOOKED at directly as a sanity check that a DIFFERENT law genuinely diverges from ladder (it must, or the byte-identity sweep's mutation-proof would be vacuous): visibly a denser, dash-broken ruling texture across the whole form -- the bundle law's dithered short-dash pattern versus ladder's continuous rungs. Confirms the two are not accidentally the same picture."
+  },
+  "identical_exceptions": {
+    "torus__hatch__ampSpacing__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__amplitudeOnly__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__bundleCount__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__bundleDither__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__bundleEased__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__bundleHandoff__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__bundleLozenge__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__bundleSubNib__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__contFieldFore__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__contFieldQuant__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__contFieldSigmoid__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__contFieldSurface__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__contFieldTouch__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__deepFillTSP__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__defectSplit__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__dutyConst__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__endShorten__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__etfKang__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__fineLadder__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__interlockWeave__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__isophoteWidth__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__ladder__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__lozengeStipple__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__mazeFill__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__mezzoRegion__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__mkDashRamp__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__mkDotScreen__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__mkScribble__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__mkTick__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__nibAngle__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__none__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__onePenDown__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__penCross__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__penFacing__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__penInterleave__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__penPitchMatch__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__penReserve__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__penStipple__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__perceptualRamp__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__phaseFineLadder__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__taperedEnds__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__trochoidLoop__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__turingStripe__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__voronoiWeb__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__weaveDepth__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__weightModulated__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__weightSmoothstep__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    },
+    "torus__hatch__whiteBand__med__a.webp": {
+      "identical": true,
+      "reason": "U0 is plumbing only -- the resolver (Params.resolveToneLaw), the migration shim (normalizeStyle/clampStyleParam alias mapping), and the picker plumbing (SCENE_FILL_STYLES.groups/resolve/styleParams) all run with COLLAPSE = {} in scripts/build-tone-laws.js, so PICKER_IDS === IDS (48) and ALIASES === {}. Every call into the new resolver is a pure identity pass-through for every one of the 48 laws; the exact same surface-fill.js/scene3d.js code path renders as before this unit."
+    }
+  },
+  "tests": {
+    "red": "tests/unit/scene3d-tone-law-collapse.test.js (new file) at base 142afe58: every one of the 8 tests fails -- Vectura.SCENE3D_TONE_LAWS.PICKER_IDS/ALIASES/STYLE_PARAMS are undefined and Vectura.Scene3D.Params.resolveToneLaw is not a function (TypeError on the first assertion of each test that touches either). Verified by stashing this unit's seven implementation files (scripts/build-tone-laws.js, src/config/scene3d-tone-laws.js, src/core/scene3d/params.js, src/core/algorithms/scene3d.js, src/config/context-bar.js, src/ui/panels/scene3d-panel.js, src/ui/shell/context-bar.js) with `git stash push -- <those 7 paths>` (the new test file, being untracked, is unaffected by the stash) and re-running the suite -- all 8 fail; `git stash pop` restored the implementation and all 8 passed again.",
+    "green": "tests/unit/scene3d-tone-law-collapse.test.js: 8/8 passed (2 heavy tests -- the 48-law byte-identity sweep and the 48-law mutation-proof -- run ~255s/~129s each under a contended shared machine; both correctly measured, not a timeout). Test 5's mutation-proof measured 48 offenders (not 47): 'ladder' is the shipped default and is deliberately NOT one of the 48 roster IDS (FILL_STYLE_DEFAULT_ENTRY's own comment), so no id in the IDS loop is immune to the forced-'ladder' mutation -- corrected in the test and documented inline.",
+    "guards_run_individually_foreground_all_green": [
+      "tests/unit/scene3d-tone-law-collapse.test.js 8/8",
+      "tests/unit/scene3d-tone-laws-config.test.js 7/7",
+      "tests/unit/scene3d-tone-law-plumbing.test.js 5/5",
+      "tests/unit/scene3d-tone-law-params.test.js 13/13 (incl. sceneVersion===4 assertion, untouched)",
+      "tests/unit/scene3d-tone-law-dispatch.test.js 7/7",
+      "tests/unit/scene3d-faceted-tone-law.test.js 19/19",
+      "tests/unit/scene3d-solid-cap-reachability.test.js 6/6",
+      "tests/unit/scene3d-shadow-tone-law.test.js 20/20",
+      "tests/unit/scene3d-shadow-tone-law-uniqueness.test.js 3/3",
+      "tests/unit/scene3d-one-pen-down-reachability.test.js 5/5",
+      "tests/integration/scene3d-fill-style-picker.test.js 131/131",
+      "tests/integration/scene3d-panel.test.js 36/36",
+      "tests/integration/scene3d-panel-style-live-sync.test.js 6/6",
+      "tests/integration/context-bar-scene-flyouts.test.js 39/39",
+      "tests/integration/stroke-fill-style-control.test.js 30/30"
+    ],
+    "total": "342/342 across the 15 files above, 0 failed, 0 skipped, no .only left in the diff."
+  },
+  "gallery_hygiene_note": "48 of the 49 offered cells (torus+hatch+<law>+med+a) were re-shot from the fill-collapse worktree (port 8482) and md5-compared against docs/3d-audit/fill-audit/shots/B/<same name>.webp -- 48/48 IDENTICAL, 0 different, 0 missing. The 49th ('ladder') is included in that 48 (ladder is the shipped default, not a roster id, and IS one of the 48 files captured/compared here -- see the cell list in `after`). `originSpiral` is excluded from both sides of the comparison: it is already hidden from the Tier B picker enumeration on torus by W-10d (142afe58, this lane's own prior commit) as unreachable, unrelated to this unit -- torus+hatch+originSpiral+med+a is not captured by scene3d-capture.js's reachability-gated Tier B on this branch at all, before or after U0. One capture run against a just-spawned dev server on :8482 lost 1 of 48 cells ('none') to a cold-start race between ensureServer's readiness ping and full config-script execution -- re-running the identical command against the now-warm server produced the complete, correct 48/48 set used for the comparison above; the stale partial run's output directory was deleted before the final capture.",
+  "live_verification": {
+    "url": "http://127.0.0.1:8482/",
+    "app_version": "1.3.98 (matches worktree package.json; served version line printed by scene3d-capture.js confirms it)",
+    "method": "Live interactive click-through (docked panel + ctxbar flyout) was NOT captured with screenshots in this session -- time was spent instead on the full guard-test matrix (342 tests) and the 48-cell gallery byte-identity proof above, which is the load-bearing verification for a unit whose entire claim is 'no behavior changed'. The 342 passing tests include full integration coverage of both UI surfaces this unit touched (scene3d-panel.test.js, scene3d-panel-style-live-sync.test.js, context-bar-scene-flyouts.test.js, stroke-fill-style-control.test.js, scene3d-fill-style-picker.test.js) via jsdom-mounted real component trees, not isolated unit stubs -- they exercise the exact fillStyleControls/buildStyleBody code paths this unit edited, including the new (empty, so zero-row) sub-control loop. NOT independently visually verified in a real browser tab; flagging per CLAUDE.md's 'lead with NOT visually verified' rule rather than claiming a screenshot check that did not happen."
+  },
+  "documentation_lines_for_orchestrator_to_apply_at_merge": {
+    "note": "Per the plan \u00a76, the docs contract (CHANGELOG.md / plans.md / STILL-OPEN.md / worklist.json / README.md) is owned by U8 (roster+UI complete) and amended by U9 -- U0 is plumbing-only and intentionally does not touch any of them."
+  },
+  "docs_commit": "eab7d0b07a96a547b093fd12af44da7255e52f11"
+}

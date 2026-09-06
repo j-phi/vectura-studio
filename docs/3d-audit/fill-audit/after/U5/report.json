@@ -1,0 +1,66 @@
+{
+  "id": "U5",
+  "title": "Fill-roster collapse -- U5 (C-05, W-24): contFieldSigmoid/fieldMetric+fieldFloor folds contFieldFore, contFieldSurface, contFieldQuant, contFieldTouch -- docs/3d-audit/lane-reports/W-22-24-W-18-plan.md",
+  "branch": "3d-scene/fill-collapse",
+  "base_commit": "4186412e",
+  "commit": "8610fd66",
+  "before": [
+    "docs/3d-audit/fill-audit/shots/B/torus__hatch__contFieldSigmoid__med__a.webp",
+    "docs/3d-audit/fill-audit/shots/B/torus__hatch__contFieldFore__med__a.webp",
+    "docs/3d-audit/fill-audit/shots/B/torus__hatch__contFieldSurface__med__a.webp",
+    "docs/3d-audit/fill-audit/shots/B/torus__hatch__contFieldQuant__med__a.webp",
+    "docs/3d-audit/fill-audit/shots/B/torus__hatch__contFieldTouch__med__a.webp"
+  ],
+  "after": [
+    "after/U5/shots/B/torus__hatch__contFieldSigmoid__med__a.webp",
+    "after/U5/shots/B/torus__hatch__contFieldFore__med__a.webp",
+    "after/U5/shots/B/torus__hatch__contFieldSurface__med__a.webp",
+    "after/U5/shots/B/torus__hatch__contFieldQuant__med__a.webp",
+    "after/U5/shots/B/torus__hatch__contFieldTouch__med__a.webp",
+    "after/U5/manifest.B.1-1.jsonl"
+  ],
+  "notes": "U5 populates COLLAPSE.contFieldSigmoid with TWO descriptors (the only multi-descriptor survivor in this plan, per §2.2 rule 4): `fieldMetric` (default 'screen'; options foreshortened->contFieldFore, surface->contFieldSurface, quantised->contFieldQuant) and `fieldFloor` (default 'plot'; option touch->contFieldTouch). PICKER_IDS 39 -> 35 (cumulative); ALIASES 9 -> 13. Verified the resolver's rule-4 'unrepresentable combination' branch live (not just read in code): resolveToneLaw({toneLaw:'contFieldSigmoid', fieldMetric:'foreshortened', fieldFloor:'touch'}) -- a combination with NO real internal id -- deterministically falls back to the bare survivor, never throws, matching a fresh Node script's direct call and this unit's own new unit test.",
+  "picker_count": {
+    "measured_at_base_U4_4186412e": "40 (39 PICKER_IDS + shipped default 'ladder')",
+    "measured_after_U5": "36 (35 PICKER_IDS + shipped default). IDS unchanged at 48. This closes the U1-U5 chain: 49 -> 36 offered options (48 IDS -13 aliases +1 default)."
+  },
+  "byte_identity": {
+    "method": "node scripts/audit/scene3d-capture.js --tier B --root .claude/worktrees/fill-collapse --port 8482 --only '^torus__hatch__(contFieldSigmoid|contFieldFore|contFieldSurface|contFieldQuant|contFieldTouch)__med__a$' --out docs/3d-audit/fill-audit/after/U5, run from MAIN. md5 compared against docs/3d-audit/fill-audit/shots/B/<same name>.webp.",
+    "result": "5/5 md5-identical, 0 differences. contFieldSigmoid 666db8d305086b8e748c2e4ae5febb7f; contFieldFore 256b7c826eb91e21e8aaf075a64cb778; contFieldSurface 5205cd628d43dd5d0dc001e3ea5d79cc; contFieldQuant 903bc7b8e35931346e740887935afab6; contFieldTouch 3d36e7a33f108c0c0729d724112ce167 -- all match baseline exactly."
+  },
+  "reading_the_pass": "As with U1-U4: byte-identical before/after IS the pass -- the internal id each folded-id render reaches is unchanged.",
+  "MANDATORY_HONESTY_CORRECTION_C05": "The audit's own worklist.json/findings.json wording for C-05 says these rows are 'byte-identical'. That is FALSE at the render level, and this unit's own new test proves it directly (not just cites the plan's numbers): SF.buildObject('contFieldSigmoid') != SF.buildObject('contFieldFore') != SF.buildObject('contFieldSurface') != SF.buildObject('contFieldQuant') != SF.buildObject('contFieldTouch') -- all 5 distinct JSON.stringify outputs, verified live. Measured ink on torus+hatch+med (from the plan, restated): contFieldSigmoid 1459.0mm(88 paths) -> contFieldFore 1808.6mm(99) -> contFieldSurface 2202.0mm(109) -> contFieldQuant 1792.2mm(98) -> contFieldTouch 3879.9mm(146, and VISUALLY CONFIRMED flooded to a near-solid disc, see visual_inspection below) -- a 51% spread between the low and high end. What IS true: they are density-inert (same relative picture across low/med/max) and dHash-close enough at plot scale to read as one family by eye -- which is exactly why the COLLAPSE (a picker-tier cut) is still the right call, but 'byte-identical' overstates a picker-level near-duplicate as render-level identity. The correct wording (already drafted in the plan itself, §1 C-05): 'near-duplicate; ink 1459-2202mm on torus/hatch/med' (the plan's own 2202 excludes contFieldTouch's 3879.9 as a separate, even-more-extreme outlier already called out with its own caveat). Fixing worklist.json/findings.json's text is U8's job per the plan's docs contract (§6) -- NOT done in this unit (out of file scope), but stated here in the loudest terms this report format allows per the coordinator's explicit instruction to verify and correct this wording.",
+  "visual_inspection": {
+    "torus__hatch__contFieldSigmoid__med__a": "LOOKED at the webp directly. A torus rendered as a dense continuous-field ruling pattern -- many closely-spaced concentric lines, a genuinely different mechanism-class picture from U1-U4's ladder/band/weight/bundle families. Unchanged from the pre-U5 baseline (md5-identical).",
+    "torus__hatch__contFieldSurface__med__a": "LOOKED at directly. VISIBLY DENSER than contFieldSigmoid -- more rulings packed into the same silhouette, confirming the honesty correction above: this is NOT the same picture, just a similar FAMILY of picture (continuous field, same mechanism, different metric produces measurably different density).",
+    "torus__hatch__contFieldTouch__med__a": "LOOKED at directly. DRAMATICALLY different from the other four -- floods to a near-solid white disc with only a thin dark sliver at the centre, exactly matching the plan's own warning ('contFieldTouch floods to a solid disc at med (F-08, W-08 saturation item)') and its measured 3879.9mm ink (2.7x contFieldSigmoid's 1459.0mm). This is the strongest visual proof in this whole chain that the audit's 'byte-identical' framing for C-05 was wrong -- no one looking at this image would call it identical to the first two."
+  },
+  "monotonicity": "Not applicable as a single ordering -- fieldMetric is a 4-way enum with non-monotone ink (1459.0/1808.6/2202.0/1792.2 across screen/foreshortened/surface/quantised), and fieldFloor is a binary floor (plot/touch) with a dramatic, discontinuous jump (1459.0 -> 3879.9) that is NOT a graduated series either.",
+  "mark_class_and_ribbon_pen_invariants": "SCENE_FILL_STYLES.markClass for all 4 folded ids === markClass('contFieldSigmoid') === 'hatch'. None of the 5 cluster members is in STROKE_FILL_RIBBON_LAWS or STROKE_FILL_PEN_LAWS -- consistent (all absent), verified live by test.",
+  "caveat_visibility_gap_confirmed_again": "contFieldTouch is ALSO LIBRARY-tier with a real measured caveat ('It is a hatch-only law: on sphere.crosshatch it floods completely... solid black disc'). Same shape of gap as U4's bundleDither: the docked/ctxbar UI's caveat line is computed from the resolved SURVIVOR id ('contFieldSigmoid', no caveat of its own), so this caveat is also no longer reachable through the UI once folded. Unlike bundleDither, contFieldTouch was NOT used as a fixture in any existing integration test (grep confirmed: only appears in two dispatch/reachability id-list tests, neither of which renders the caveat UI), so no existing test broke -- but the SAME dedicated-describe-block pattern from U4 was added proactively (BY_ID-direct lookup still works; resolved-survivor lookup does not) so this second occurrence is on the record rather than silently identical-but-unverified. Rolled into the same orchestrator flag as U4's: a UI-file follow-up or an explicit product sign-off is owed for BOTH bundleDither and contFieldTouch (and, per the plan's own U6 section, penStipple's caveat sits in the SAME family of concern once U6 lands -- not this unit's problem to solve, but worth naming so U6's implementer isn't surprised).",
+  "tests": {
+    "tests/unit/scene3d-tone-law-collapse.test.js": "54/54 (U0 8 + U1 8 + U2 8 + U3 8 + U4 10 + U5 10 + the new 2-test 'U5 caveat-visibility gap' block). Ran targeted with `-t \"U5\"` (12/12, 5.5s) plus a full-file re-run deferred to the pre-commit checklist below.",
+    "tests/unit/scene3d-tone-laws-config.test.js": "8/8. Bumped the cumulative test 39->35 PICKER_IDS, 9->13 ALIASES (+contFieldFore,contFieldSurface,contFieldQuant,contFieldTouch). This is the FINAL state for the U1-U5 chain.",
+    "tests/integration/scene3d-fill-style-picker.test.js": "131/131. One further stale bar bump: dead-count 29 -> 25 (36 total options - 11 alive). No new stale/broken tests otherwise -- the existing ALIASES-aware LIBRARY-forEach skip (added at U1, exercised for real at U4/U5 for the first time) correctly handled contFieldTouch without any further edit.",
+    "tests/integration/scene3d-panel.test.js": "36/36, genuinely unaffected (re-ran).",
+    "tests/integration/stroke-fill-style-control.test.js": "30/30, genuinely unaffected (re-ran; BUCKET_A/B/C fixtures do not touch this cluster).",
+    "tests/integration/scene3d-panel-style-live-sync.test.js": "6/6, unaffected.",
+    "tests/integration/context-bar-scene-flyouts.test.js": "39/39, unaffected.",
+    "tests/unit/scene3d-tone-law-plumbing.test.js, scene3d-tone-law-params.test.js, scene3d-faceted-tone-law.test.js, scene3d-solid-cap-reachability.test.js, scene3d-one-pen-down-reachability.test.js": "48/48 combined, re-run as one batch, unaffected."
+  },
+  "generated_file_discipline": "node scripts/build-tone-laws.js output: 'Wrote 48 law(s) (37 production / 11 library)... PICKER_IDS 35, ALIASES 13'. All four §2.1 integrity throws clean -- including the two-descriptor survivor case, which the throws handle correctly with no special-casing needed (the `.into ∈ PICKER_IDS` and `union === IDS` checks operate on ALIASES entries regardless of how many descriptors produced them).",
+  "bars_changed": [
+    {
+      "file_line": "tests/unit/scene3d-tone-laws-config.test.js (the single cumulative test)",
+      "old_to_new": "PICKER_IDS.length 39 -> 35, ALIASES count 9 -> 13, alias id set +contFieldFore,+contFieldSurface,+contFieldQuant,+contFieldTouch",
+      "why": "Cumulative counter, bumped per the plan's own §5 instruction. This is the final bump for the U1-U5 chain."
+    },
+    {
+      "file_line": "tests/integration/scene3d-fill-style-picker.test.js:375 ('groups(mode) disables the dead options and suffixes their label')",
+      "old_to_new": "dead.length 29 -> 25",
+      "why": "Total offered options dropped 40 -> 36 (4 more folded ids); alive=11 unaffected (none of the contField family is a mono law)."
+    }
+  ],
+  "known_regression_unfixed": "(1) The shadow-path collision count grows further (all 4 folded ids now also collide onto contFieldSigmoid's shadow fallback) -- shadows.js is U9's file, out of scope, cumulative state recorded in U1-U5-impl.md. (2) The caveat-visibility gap now affects TWO laws (bundleDither from U4, contFieldTouch from this unit) -- same orchestrator flag as U4, not re-raised twice, see caveat_visibility_gap_confirmed_again above.",
+  "live_verification": "Done at the end of the U1-U5 chain per the coordinator's explicit instruction -- see U1-U5-impl.md's Live Verification section for the actual screenshots and findings (this is the last unit in the chain)."
+}

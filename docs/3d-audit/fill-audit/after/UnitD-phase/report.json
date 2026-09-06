@@ -1,0 +1,38 @@
+{
+  "id": "UnitD-phase",
+  "title": "Unit D polish -- phase-align the inside-footprint hatch family with the outside family",
+  "branch": "3d-scene/handoff-c",
+  "base_sha": "d86cbf8d",
+  "new_sha": "(uncommitted at report time -- see UnitD-phase-impl.md for the commit made after this report)",
+  "flag": "shadow.shadowReceiveOnObjects (default OFF)",
+  "before": [
+    "after/UnitD-phase/before-crop-mono.png",
+    "after/UnitD-phase/before-crop.png",
+    "after/UnitD-phase/before-full-mono.png"
+  ],
+  "after": [
+    "after/UnitD-phase/after-crop-mono.png",
+    "after/UnitD-phase/after-crop.png",
+    "after/UnitD-phase/after-full-mono.png"
+  ],
+  "notes": "No gallery cell exercises shadowReceiveOnObjects (it is a scene-level flag, not a per-object fill style, and is OFF in every gallery cell), so this is a bespoke two-object scene (40mm box casting onto a 320x320mm plane, directional sun az90/el25, hatch/ladder, the same stark 2-band ladder [0.1,0.95] the unit test uses for maximum footprint contrast) rendered through the REAL production `Vectura.AlgorithmRegistry.scene3d.generate` pipeline (loaded via tests/helpers/load-vectura-runtime -- the exact function engine.computeAllDisplayGeometry calls; a real-browser canvas screenshot was tried first and abandoned because crop-then-upscale aliases thin near-diagonal strokes into a false 'broken dash' look with no relationship to the geometry -- confirmed by dumping the real app's g.scenePaths: every receiver fill path is a single unbroken 2-point chord in both before and after). *-mono.png renders both hatch families in one ink color (what the user actually sees); *-crop.png (no -mono suffix) is a diagnostic recolor -- white=outside family, green=inside/footprint family -- produced by instrumenting the already-exported Shadows.hatchRingsEvenOdd to tag each emitted line by which call produced it, so the phase relationship is visible directly rather than inferred. LOOKED at all of them: in before-crop-mono.png the inside-footprint patch reads as a visibly UNEVEN, clumpy scatter of dashes -- some pairs of lines nearly touching, others with a much wider gap, no consistent rhythm -- clearly discontinuous from the surrounding outside rulings. In after-crop-mono.png the same patch reads as a perfectly even, comb-like denser texture, continuous with the outside family's own rhythm (every third fine line lands exactly on an outside line's own position; the other two are its own inserted midlines) -- exactly the 'continuous denser texture, not a patch of dashes' bar. The colored diagnostics confirm why: before-crop.png's green lines are spaced at the footprint's own independently-computed pitch anchored to the footprint polygon's own (unrelated) bounding box; after-crop.png's green lines are spaced at exactly 1/3 of the outside pitch, anchored to the SAME raw scan origin the outside call itself used.",
+  "measurements": {
+    "outer_pitch_mm": 8.7227916479208,
+    "inner_pitch_before_mm": 3.4439501004735846,
+    "inner_pitch_after_mm": 2.9075972159736,
+    "density_ratio_after": 3.0,
+    "worst_phase_ratio_before": 0.1928850290071577,
+    "worst_phase_ratio_after": 9.77e-15,
+    "phase_bar": "<= 0.05x outer pitch",
+    "angle_mismatch_deg": 0,
+    "receiver_fill_path_count_before": 77,
+    "receiver_fill_path_count_after": 81
+  },
+  "tests": {
+    "red": "expected 0.19288502900715768 to be less than or equal to 0.05 -- tests/unit/scene3d-shadow-receive.test.js describe('Unit D polish -- RED-proof pin (d86cbf8d)'), shadows.js pinned to d86cbf8d via VECTURA_PRE_UNITD_PHASE=1 npx vitest run tests/unit/scene3d-shadow-receive.test.js -t \"Unit D polish\"",
+    "green": "same test, unpinned (current fixed shadows.js): 17/17 in tests/unit/scene3d-shadow-receive.test.js, including the new 'Unit D polish -- inside-footprint rulings are phase-locked to the outside family' test (phase ratio 0, density ratio 3.0x, angle match exact) and the pinned RED-proof test passing trivially against current code",
+    "guards": "tests/unit/scene3d-shadow-overlap.test.js 4/4 (Unit C); tests/unit/scene3d-hlr-spatial-index-identity.test.js 6/6; tests/unit/scene3d-shadows.test.js 18/18; tests/integration/scene3d-fill-style-picker.test.js 126/126; plus 17 more shadow/tone-law unit files (scene3d-cast-shadow-zones, scene3d-faceted-tone-law, scene3d-form-shadow-limb, scene3d-inverse-shadow, scene3d-shadow-anatomy, scene3d-shadow-controls, scene3d-shadow-cross-wave-continuity, scene3d-shadow-light-silhouette, scene3d-shadow-orbit, scene3d-shadow-tone-gradient, scene3d-shadow-tone-law-uniqueness, scene3d-shadow-tone-law, scene3d-shadow-zone-fragmentation, scene3d-tone-law-dispatch, scene3d-tone-law-params, scene3d-tone-law-plumbing, scene3d-tone-laws-config): 190/192 passed, 2 pre-existing skips, 0 failures",
+    "flag_off_byte_identity": "not re-shot via the gallery pipeline (no cell exercises the flag, and implementers must not rebuild the gallery per the 2026-09-05 process ruling) -- argued instead from the code: buildFaceFootprint (scene3d.js) returns null whenever shadowReceiveOn is false, so footprintPolys is always null with the flag off, and the entire fix (the WeakMap memo + its consuming branch in hatchRingsEvenOdd) is reachable ONLY through a single-ring call whose ring object was previously seen inside a footprintPolys-bearing multi-ring call -- which never happens with the flag off. The fix's non-memo path is the pre-existing code, untouched byte-for-byte. Confirmed empirically too: the pre-existing scene3d-hlr-spatial-index-identity (flag-agnostic byte-identity guard) and the full 190/192-test shadow/tone-law sweep above are unchanged."
+  },
+  "byte_identical_pairs": []
+}

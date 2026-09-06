@@ -1,0 +1,20 @@
+{
+  "id": "W-25b",
+  "title": "Scope the SPIRAL_MIN_TURNS=2 floor to thin-cusp faces only (default buckyball was not a no-op)",
+  "branch": "3d-scene/fill-audit-d",
+  "commit": "3d-scene/fill-audit-d — fix(scene3d): scope the SPIRAL_MIN_TURNS floor to thin-cusp faces, not just small ones (W-25b)",
+  "before": [
+    "after/W-25b/before-767bed54/shots/A/solid__spiral__ladder__med__a.webp"
+  ],
+  "after": [
+    "after/W-25b/shots/A/solid__spiral__ladder__med__a.webp"
+  ],
+  "notes": "W-25's reviewer measured that SPIRAL_MIN_TURNS=2 (trueSpiral, mappers.js) is NOT a no-op on the default buckyball: at density 50 (pitch 7.2mm, so W-25's size-only gate threshold is pitch*SPIRAL_MIN_TURNS=14.4mm) every one of the buckyball's 16 visible faces measures rMax 7.04-8.40mm -- under the threshold -- so the floor fired on ALL of them despite their aspect ratio sitting at 0.87-1.15 (near-regular pentagons/hexagons, nothing like Unit F's torus cusp faces at bw/bh~0.18). Root cause: W-25's gate was SIZE-only (rMax < pitch*SPIRAL_MIN_TURNS); it never checked SHAPE. Option (A) chosen over (B): added a SHAPE gate -- `rawAspect = bw/bh` (the un-clamped, pre-auto-fit aspect ratio) outside [ECC_MIN=0.3, ECC_MAX=3] (the SAME bounds trueSpiral already uses to clamp the eccentricity auto-fit) now must ALSO hold before the min-turns floor engages. This is literally 'outside the eccentricity clamp', which is how the original W-25 RED test already described a thin cusp in its own test name. The Unit F fix is preserved (both conditions -- thin AND small -- hold for its torus cusp faces; tests/unit/scene3d-mesh-self-occlusion.test.js's 'spiral' assertions are unchanged and still pass 5/5, including the ORIGINAL_SURVIVOR_KEY retirement). The default buckyball's faces are small but NOT thin, so the gate now leaves them alone: measured byte-identical (fillCount 21, totalPoints 1006, inkMm 284.148, sha256 038f174b...) to 55ddb720 (the commit immediately BEFORE W-25 existed), where W-25 (44797f53, unconditional floor) measured fillCount 31 / totalPoints 1826 / inkMm 486.527 -- a real, undecided change to the shipped default that this fix retires. Also fixed the stale header VERDICT comment in tests/unit/scene3d-mesh-self-occlusion.test.js (reviewer note) -- it still described the DISPROVEN 'FillBoolean polygon-union failure' root cause as current; it now points to the file's own 'W-25 CORRECTION' inline comment and is labeled as preserved historical text, not current state.",
+  "tests": {
+    "red": "3 new tests, all RED at 44797f53 (W-25, unconditional size-only floor), reproduced by temporarily reverting the shape gate in the working tree and rerunning: (1) 'a small NEAR-SQUARE region... (W-25b)' -- expected mainLen 77, got 95 (winding 9.192 rad / 1.463 turns instead of 7.404 rad / 1.178 turns); (2) 'a region right at the eccentricity clamp boundary... (W-25b boundary)' -- expected thinMain.length > boundaryMain.length, got 94 vs 95 (both floored, no boundary distinction without the gate); (3) 'the default buckyball is byte-identical to the pre-W-25 fingerprint... (W-25b)' -- expected fillCount 21, got 31",
+    "green": "28/28 in scene3d-mappers.test.js (25 pre-existing + 3 new, including the pre-existing thin-sliver W-25 test and the no-op-guard test, both still passing unmodified); tests/unit/scene3d-mesh-self-occlusion.test.js 5/5 (Unit F spiral assertions unchanged: ORIGINAL_SURVIVOR_KEY retired, residual <=2)",
+    "suites": "targeted re-runs post-fix, one file at a time in the foreground: scene3d-mappers.test.js 28/28, scene3d-mesh-self-occlusion.test.js 5/5, scene3d-contour-slice.test.js 42/42, scene3d-hlr-spatial-index-identity.test.js 6/6, scene3d-mapper-controls.test.js 15/15, scene3d-shadow-controls.test.js 8/8 -- all guards named in the brief pass unmodified"
+  },
+  "byte_identical_pairs": [],
+  "identical_exceptions": []
+}

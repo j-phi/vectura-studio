@@ -1,0 +1,8 @@
+{
+  "detector": {
+    "ignoreFiles": [
+      "scripts/audit/**",
+      "docs/3d-audit/**"
+    ]
+  }
+}

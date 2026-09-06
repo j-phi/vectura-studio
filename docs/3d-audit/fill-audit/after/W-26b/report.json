@@ -1,0 +1,86 @@
+{
+  "id": "W-26b",
+  "title": "W-26 judge conditions C1-C3 closed: crosshatch second-family SHARE coverage (no more compounding blob), real anti-blob guard, three coin bars -> floor+band",
+  "branch": "3d-scene/fill-audit-a",
+  "commit": "0930cb2d",
+  "before": [
+    "shots/A/cylinder__crosshatch__ladder__med__a.webp",
+    "shots/A/cylinder__crosshatch__ladder__max__a.webp",
+    "shots/A/ellipsoid__crosshatch__ladder__med__a.webp",
+    "shots/A/ellipsoid__crosshatch__ladder__max__a.webp",
+    "after/W-26/shots/A/capsule__contour__ladder__low__a.webp",
+    "after/W-26/shots/A/capsule__contour__ladder__med__a.webp",
+    "after/W-26/shots/A/capsule__contour__ladder__max__a.webp",
+    "after/W-26/shots/A/cylinder__contour__ladder__med__a.webp",
+    "after/W-26/shots/B/cone__contour__ladder__med__a.webp",
+    "after/W-26/shots/B/cone__contour__ampSpacing__med__a.webp",
+    "after/W-26/shots/B/cone__contour__amplitudeOnly__med__a.webp"
+  ],
+  "after": [
+    "after/W-26b/shots/A/cylinder__crosshatch__ladder__med__a.webp",
+    "after/W-26b/shots/A/cylinder__crosshatch__ladder__max__a.webp",
+    "after/W-26b/shots/A/ellipsoid__crosshatch__ladder__med__a.webp",
+    "after/W-26b/shots/A/ellipsoid__crosshatch__ladder__max__a.webp",
+    "after/W-26b/shots/A/capsule__contour__ladder__low__a.webp",
+    "after/W-26b/shots/A/capsule__contour__ladder__med__a.webp",
+    "after/W-26b/shots/A/capsule__contour__ladder__max__a.webp",
+    "after/W-26b/shots/A/cylinder__contour__ladder__med__a.webp",
+    "after/W-26b/shots/B/cone__contour__ladder__med__a.webp",
+    "after/W-26b/shots/B/cone__contour__ampSpacing__med__a.webp",
+    "after/W-26b/shots/B/cone__contour__amplitudeOnly__med__a.webp"
+  ],
+  "notes": "Lane fill-audit-a, worktree .claude/worktrees/fill-audit-a, port 8475. Base 67c9752c (T1, HEAD at unit start) -> three commits: 7bc2b1a0 (W-26b-1, surface-fill.js + scene3d-curved-density-floor.test.js), 4a858445 (W-26b-2, scene3d-fill-span-verdict.test.js anti-blob guard replacement), 0930cb2d (W-26b-3 coin bars + W-26b-4a, scene3d-fill-span-verdict.test.js + scene3d-plot-safety.test.js + scene3d-fill-even-spacing.test.js). Closes the judge's three BLOCKING conditions on W-26 (W-26-judge.md C1-C3); W-26b-4(a) folded in as cheap, W-26b-4(b) recorded only (not fixed, per judge). W-26 itself stays ACCEPTED-WITH-CONDITIONS in the ledger until an orchestrator/reviewer confirms this unit; per LEDGER.md this unlifts the for-Jay crosshatch caveat only once confirmed.\n\nC1 (crosshatch over-inks): root cause was `ladderWantedPitch(I)` being called with the SAME `I` for BOTH crosshatch families -- each family independently chased the FULL `ladderCov(I)` target, and two crossed families each at coverage c combine (clear areas multiply, matching scene3d-plot-safety.test.js's own composed() spec) to `1-(1-c)^2`, which saturates. Fixed via `ladderCrossWantedPitch(I, crossRatio)`: the crossing family (emitContFamily's new optional 5th `crossShare` parameter, non-null ONLY for the crosshatch second-family call) derives a SHARE of family A's own `ladderCov(I)` instead, scaled by `crossDensityRatio` squared (`crossShareOf`). Family A's own call and the master grid (surface-fill.js:5084-5157) are untouched -- confirmed by re-shooting the W-26 capsule/cone/cylinder contour control cells and diffing md5: all 7 are byte-identical to after/W-26. The walk's own `dfMax` step ceiling (built from the SAME `count` family A's call sees) also had to widen for the crossing family (`dfMaxMul`, capped 20x) -- the coverage-share fix alone left the ratio-1-vs-ratio-0.25 count spread at ~1.6x (not the required ~2x) because the OLD ceiling clamped the wider share-driven pitch straight back down.\n\nC2 (tautological anti-blob guard): scene3d-fill-span-verdict.test.js's `expect(drawn.size).toBe(budget)` was a tautology under continuous placement (lineIndex is the walk's own placement ordinal, drawn BY CONSTRUCTION). Replaced with a rasterised drawn-ink-COVERAGE assertion (0.1mm absolute grid, matching scene3d-plot-safety.test.js's own windowCoverage instrument) for hatch/contour/crosshatch at Density 50 AND 220 on the file's own lit-sphere fixture. RED reproduced by temporarily reverting only the surface-fill.js source (git stash) back to 3c88605f and rerunning this file unmodified: crosshatch@220 measured 0.971 (fails the 0.85 ceiling); every other cell already passed pre-fix, isolating the defect to crosshatch@D220 specifically, matching W-26b-1's own report. GREEN post-fix: crosshatch@220 = 0.805, comparable to hatch@220 (0.780) / contour@220 (0.798).\n\nC3 (three coin bars): all three (contour ink-ramp 1.3, hatch ink-ramp 1.2 [untouched by W-26 itself], plot-safety q(0.5)<0.35) sat inside their own measured drift envelope (a sweep over 11 trivially-different scenes: detail/density/radius +-2, sun elevation +-2deg, camera pitch +-2deg), not below it. Took the judge's non-preferred (but explicitly acceptable) form: FLOOR moved below the whole measured envelope (contour 1.15, hatch 1.05, plot-safety 0.40) plus an explicit +-10% fingerprint band pinning the measured value (contour [1.22,1.49], hatch [1.11,1.35], plot-safety [0.308,0.377]). The judge's preferred alternative (a minimum pole-sampling resolution in emitContFamily's own walk) was not attempted in this unit -- it touches the walk's placement math beyond the pitch source, and a previous implementer already tried and reverted a narrower version of exactly this (see scene3d-fill-span-verdict.test.js's own prior 'Bars changed' comment) after it broke the hatch RAMP-not-STEP assertion; recorded as a follow-up.\n\nW-26b-4(a): one unfiltered assertion added to scene3d-fill-even-spacing.test.js (hatch+cylinder, a row the uniform-field lemma proves near-flat) -- no raw drawn gap sits beside a neighbour more than 2x its size, with none of that file's three stacked softenings (30% trim, 1.6 bar, 3-point median filter). Passes cleanly (no median-filter forgiveness needed). W-26b-4(b) (ellipsoid D1 sparse-outline cliff) is record-only per the judge, not touched.\n\nMeasured on the ACTUAL named primitives (own rig: V.AlgorithmRegistry.scene3d.generate against the live PRIMITIVE_PARAM_DEFAULTS/DEFAULT_CAMERA the audit capture script itself uses; inkMm reproduces the judge's own numbers to the mm): cylinder crosshatch D220 ink 9326.7 -> 5153.7mm (own rasterised silhouette coverage, same instrument as the C2 guard: 0.720 -> 0.635); against the TRUE pre-W-26 baseline (4912.6mm, shots/A gallery) that is +4.9%, well inside the judge's +15% cap. ellipsoid crosshatch D220 ink 7795.0 -> 4115.6mm; against the pre-W-26 baseline (4875.7mm) that is -15.6%, also inside the cap. crossDensityRatio count spread at d=100 (ratio 0.25 vs 1.0) restored 138 vs 60 = 2.3x (was 130 vs 116 = 1.12x on 3c88605f; pre-W-26 tree was 2.2x, 183 vs 83).",
+  "tests": {
+    "red": "scene3d-fill-span-verdict.test.js (crosshatch@Density220 anti-blob cell), reproduced by temporarily `git stash`-ing only surface-fill.js back to 3c88605f: crosshatch@220 coverage 0.971 (bar <0.85) FAILS; every other RULED x density cell passes pre-fix. scene3d-curved-density-floor.test.js's crossDensityRatio spread test (new): 130/116 = 1.12x on 3c88605f, FAILS the >=2.0x bar.",
+    "green": "All three commits' own targeted suites green (scene3d-curved-density-floor.test.js 13/13, scene3d-fill-span-verdict.test.js 11/11, scene3d-plot-safety.test.js 5/5 [+1 dormant skip], scene3d-fill-even-spacing.test.js 12/12) after each commit landed, plus the full guard sweep below.",
+    "suites": "Guards run individually, all green: scene3d-ladder-uniform-field-spacing (9/9, R1a still <=1.15), scene3d-hlr-spatial-index-identity (6/6), scene3d-mark-laws-draw (18/18, T1's byte-identical mark cells untouched), scene3d-curved-crosshatch-controls (18/18 -- mostly tone-off fixtures, structurally unaffected by this fix), scene3d-hatch-density-500 (14/14), scene3d-box-density-bearing (4/4), scene3d-curved-density-sparse-end (20/20), scene3d-tone-algo-default (6/6), scene3d-form-ladder (6/6 + 24 skipped, unchanged), scene3d-fill-boundary-ends (41/41), scene3d-fill-seam-continuity (5/5), scene3d-plot-floor-obj (12/12), scene3d-subwindow-density (3/3 + 2 skipped), scene3d-appdefault-lit-floor (4/4 + 1 skipped), scene3d-ribbon-f7-self-occlusion (2/2), scene3d-style-fill-lines (15/15, T1's fillFidelity/placement decoupling untouched)."
+  },
+  "byte_identical_pairs": [
+    "capsule__contour__ladder__low__a.webp",
+    "capsule__contour__ladder__med__a.webp",
+    "capsule__contour__ladder__max__a.webp",
+    "cylinder__contour__ladder__med__a.webp",
+    "cone__contour__ladder__med__a.webp",
+    "cone__contour__ampSpacing__med__a.webp",
+    "cone__contour__amplitudeOnly__med__a.webp"
+  ],
+  "gh1_identical_exceptions": {
+    "capsule__contour__ladder__low__a.webp": { "identical": true, "reason": "control cell, family A only -- this unit never touches family A's own emitContFamily call; md5 matches after/W-26 exactly" },
+    "capsule__contour__ladder__med__a.webp": { "identical": true, "reason": "same as above" },
+    "capsule__contour__ladder__max__a.webp": { "identical": true, "reason": "same as above" },
+    "cylinder__contour__ladder__med__a.webp": { "identical": true, "reason": "same as above -- the brief's own named control" },
+    "cone__contour__ladder__med__a.webp": { "identical": true, "reason": "same as above" },
+    "cone__contour__ampSpacing__med__a.webp": { "identical": true, "reason": "unrelated ribbon/wave tone law, untouched -- W-26's own control cell, re-verified" },
+    "cone__contour__amplitudeOnly__med__a.webp": { "identical": true, "reason": "unrelated tone law, untouched -- W-26's own control cell, re-verified" }
+  },
+  "measured": {
+    "crosshatch_silhouette_ink_coverage_D220": {
+      "cylinder": { "pre_W26_baseline_inkMm": 4912.6, "pre_b1_fix_inkMm_3c88605f": 9326.7, "after_b1_fix_inkMm": 5153.7, "delta_vs_pre_W26_baseline_pct": 4.9, "bar_pct": 15 },
+      "ellipsoid": { "pre_W26_baseline_inkMm": 4875.7, "pre_b1_fix_inkMm_3c88605f": 7795.0, "after_b1_fix_inkMm": 4115.6, "delta_vs_pre_W26_baseline_pct": -15.6, "bar_pct": 15 }
+    },
+    "span_verdict_anti_blob_sphere_fixture_coverage": {
+      "hatch_D50": 0.223, "hatch_D220": 0.780,
+      "contour_D50": 0.209, "contour_D220": 0.798,
+      "crosshatch_D50_pre_fix": 0.407, "crosshatch_D50_post_fix": 0.242,
+      "crosshatch_D220_pre_fix_3c88605f": 0.971, "crosshatch_D220_post_fix": 0.805,
+      "ceiling": 0.85
+    },
+    "crossDensityRatio_count_spread_d100": {
+      "pre_W26_tree": "183 vs 83 = 2.2x",
+      "post_W26_pre_b1_3c88605f": "130 vs 116 = 1.12x",
+      "post_b1_fix": "138 vs 60 = 2.3x",
+      "bar": ">=2.0x"
+    },
+    "coin_bars_drift_envelope": {
+      "contour_ink_ramp": { "old_bar": 1.3, "measured": 1.354, "envelope": [1.282, 1.518], "new_floor": 1.15, "new_band": [1.22, 1.49] },
+      "hatch_ink_ramp": { "old_bar": 1.2, "measured": 1.229, "envelope": [1.216, 1.417], "new_floor": 1.05, "new_band": [1.11, 1.35] },
+      "plot_safety_q50": { "old_bar": 0.35, "measured": 0.3425, "new_floor": 0.40, "new_band": [0.308, 0.377] }
+    }
+  },
+  "open_followups": [
+    "Judge's preferred C3 fix (minimum pole-sampling resolution in emitContFamily's own walk, recovering contour ink-ramp above 1.8 and fixing hatch too) not attempted -- out of scope for this unit's touch list; a previous implementer already tried and reverted a narrower version. The floor+band form is a real guard but not as strong a bar as a recovered ramp would be.",
+    "W-26b-4(b): ellipsoid__contour__ladder__low__a (Density 1) stays a bare-outline cliff (ink 319.2 -> 180.2mm, -43.5%) -- confirmed by the judge as NOT a rule violation (density response stays monotone, the slider minimum is meant to be sparse) and explicitly record-only, not fixed here.",
+    "CROSS_SHARE_BASE (0.1) and CROSS_DFMAX_BOOST_CAP (20) are empirically tuned constants (measured against the crossDensityRatio spread bar and the D220 ink-coverage cap), not derived from a closed-form inclusion-exclusion solve against family A's own local intensity -- if a future change moves family A's own coverage curve materially, these may need re-tuning against the same two bars.",
+    "The judge's own p75/p25 / agjMed gap-regularity instrument (image-space scanline gap analysis) was not reproduced for this unit -- verified instead via drawn ink coverage (the C2 guard's own instrument) and a native-resolution visual crop/look (cylinder crosshatch max: broken state is a near-solid white field with pinhole dots; fixed state is a legible crossed grid with real dark gaps)."
+  ]
+}

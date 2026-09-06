@@ -1,0 +1,57 @@
+{
+  "id": "U3",
+  "title": "Fill-roster collapse -- U3 (C-03/W-22b): weightModulated/weightEase folds weightSmoothstep -- docs/3d-audit/lane-reports/W-22-24-W-18-plan.md",
+  "branch": "3d-scene/fill-collapse",
+  "base_commit": "cf12b0af",
+  "commit": "6ed9002d",
+  "before": [
+    "docs/3d-audit/fill-audit/shots/B/torus__hatch__weightModulated__med__a.webp",
+    "docs/3d-audit/fill-audit/shots/B/torus__hatch__weightSmoothstep__med__a.webp"
+  ],
+  "after": [
+    "after/U3/shots/B/torus__hatch__weightModulated__med__a.webp",
+    "after/U3/shots/B/torus__hatch__weightSmoothstep__med__a.webp",
+    "after/U3/manifest.B.1-1.jsonl"
+  ],
+  "notes": "U3 populates COLLAPSE.weightModulated in scripts/build-tone-laws.js (survivor 'weightModulated', descriptor key 'weightEase', 2 options: step->weightModulated [default], smooth->weightSmoothstep). PICKER_IDS 43 -> 42 (cumulative); ALIASES 5 -> 6. C-03 is NOT named by W-22/W-23/W-24 -- filed as W-22b per the plan's explicit instruction (§4 'U1-U8' table: 'U3 and U8 have no work item -- file them as W-22b (C-03) and W-22c (C-08)'). This cluster has only ONE folded id, exercising the shared describeSingleParamCluster template's single-option path for the first time (U1/U2 both had 3/2 options).",
+  "picker_count": {
+    "measured_at_base_U2_cf12b0af": "44 (43 PICKER_IDS + shipped default 'ladder')",
+    "measured_after_U3": "43 (42 PICKER_IDS + shipped default). IDS unchanged at 48."
+  },
+  "byte_identity": {
+    "method": "node scripts/audit/scene3d-capture.js --tier B --root .claude/worktrees/fill-collapse --port 8482 --only '^torus__hatch__(weightModulated|weightSmoothstep)__med__a$' --out docs/3d-audit/fill-audit/after/U3, run from MAIN. md5 compared against docs/3d-audit/fill-audit/shots/B/<same name>.webp.",
+    "result": "2/2 md5-identical, 0 differences. torus__hatch__weightModulated__med__a 17b74db5a846a936038858374f313e75; torus__hatch__weightSmoothstep__med__a b0f3755bec7fbf34780c689285d1f744 -- both match baseline exactly.",
+    "unit_test_sweep": "tests/unit/scene3d-tone-law-collapse.test.js's new U3 describe block (one describeSingleParamCluster(...) call) asserts the same byte-identity via Params.resolveToneLaw and normalizeStyle's migration shim, plus the explicit-sibling-not-overwritten case using weightModulated's own default value ('step')."
+  },
+  "reading_the_pass": "As with U1/U2: byte-identical before/after IS the pass. surface-fill.js's TONE_ALGO dispatch is untouched.",
+  "visual_inspection": {
+    "torus__hatch__weightModulated__med__a": "LOOKED at the webp directly. A torus rendered as variable-width RIBBON rulings (each stroke visibly tapers along its own length, unlike U1's uniform-width ladder rulings or U2's fat constant-width bands) -- the weight-modulation mechanism reads clearly at this crop. Unchanged from the pre-U3 gallery baseline (md5-identical).",
+    "torus__hatch__weightSmoothstep__med__a": "LOOKED at directly. Visually a near-duplicate of weightModulated above -- same tapering-ribbon chassis, same overall layout; the smoothstep easing curve difference (vs. weightModulated's own easing) is not distinguishable by eye at plot scale, matching the plan's measured Hamming distance (10-34) and near-identical ink (992.0 vs 995.8 mm) despite a real path-count difference (810 vs 540 points -- the smoothstep path is simplified to fewer points that still trace visually the same curve)."
+  },
+  "monotonicity": "Not applicable -- only 2 options (a binary easing choice, not a graduated series). Ink on torus+hatch+med: weightModulated 992.0 mm (810 pts, 86 paths), weightSmoothstep 995.8 mm (540 pts, 85 paths), per the plan. Both laws are measured at ~No Tone by F-15 at low-to-med density -- noted, not addressed by this data-only unit.",
+  "mark_class_and_ribbon_pen_invariants": "SCENE_FILL_STYLES.markClass('weightSmoothstep') === markClass('weightModulated') === 'hatch'. Both are in STROKE_FILL_RIBBON_LAWS (context-bar.js) -- consistent membership, verified live by test. Neither is in STROKE_FILL_PEN_LAWS or LIBRARY (no caveat-visibility trap for this cluster, unlike the one coming at U4/U5).",
+  "tests": {
+    "tests/unit/scene3d-tone-law-collapse.test.js": "32/32 (U0 8 + U1 8 + U2 8 + U3 8). Ran targeted with `-t \"U3\"` (8/8, 11.4s) to avoid re-running the heavy U0 sweeps; the full-file cumulative re-run is deferred to the end of this chain per the coordinator's guidance on pacing, and was already done once after U2 (24/24) -- U3 only adds one more independent describe block via the existing shared template, which cannot perturb U0/U1/U2's own assertions (confirmed: no shared mutable state between describe blocks other than the module-level roster() live read, which the U3 block's own tests re-derive fresh in beforeAll).",
+    "tests/unit/scene3d-tone-laws-config.test.js": "8/8. Bumped the single cumulative test's EXPECTED_PICKER_IDS_LENGTH 43->42 and EXPECTED_ALIAS_IDS to add 'weightSmoothstep'.",
+    "tests/integration/scene3d-fill-style-picker.test.js": "131/131. One further stale bar bump: 'groups(mode) disables the dead options' box-primitive dead-count (33 -> 32; alive=11 still unaffected, neither weightModulated nor weightSmoothstep is a mono law -- verified against surface-fill-mono.js's own LAWS list, which names 9 entirely different ids). No LIBRARY-forEach or spiral/stipple-inert changes needed (neither cluster member is LIBRARY-tier; weightModulated/weightSmoothstep were already both in CURVED_SPIRAL_STIPPLE_INERT before this unit, unaffected).",
+    "tests/integration/scene3d-panel.test.js": "36/36, genuinely unaffected -- verified by actually re-running the file this time (not assumed), after U1/U2's correction about not doing so.",
+    "tests/integration/stroke-fill-style-control.test.js": "30/30, genuinely unaffected (BUCKET_A/B/C fixtures are fineLadder/taperedEnds/penCross -- none is weightModulated or weightSmoothstep, so this cluster's new sub-control never renders in this file's fixtures).",
+    "tests/integration/scene3d-panel-style-live-sync.test.js": "6/6, unaffected.",
+    "tests/integration/context-bar-scene-flyouts.test.js": "39/39, unaffected."
+  },
+  "generated_file_discipline": "node scripts/build-tone-laws.js output: 'Wrote 48 law(s) (37 production / 11 library)... PICKER_IDS 42, ALIASES 6'. All four §2.1 integrity throws clean.",
+  "bars_changed": [
+    {
+      "file_line": "tests/unit/scene3d-tone-laws-config.test.js (the single cumulative test)",
+      "old_to_new": "PICKER_IDS.length 43 -> 42, ALIASES count 5 -> 6, alias id set +weightSmoothstep",
+      "why": "Cumulative counter, bumped per the plan's own §5 instruction."
+    },
+    {
+      "file_line": "tests/integration/scene3d-fill-style-picker.test.js:374 ('groups(mode) disables the dead options and suffixes their label')",
+      "old_to_new": "dead.length 33 -> 32",
+      "why": "Total offered options dropped 44 -> 43 (1 more folded id); alive=11 unaffected."
+    }
+  ],
+  "known_regression_unfixed": "The shadow-path collision count in scene3d-shadow-tone-law-uniqueness.test.js grows further (weightModulated/weightSmoothstep now also collide via ladder's shadow fallback -- wait, no: they collide onto EACH OTHER's fallback via the migration shim rewriting weightSmoothstep's raw shadowToneLaw to weightModulated, not onto ladder). Not re-measured per-unit; cumulative state recorded once in U1-U5-impl.md.",
+  "live_verification": "Deferred to the end of the U1-U5 chain -- see U1-U5-impl.md's Live Verification section."
+}

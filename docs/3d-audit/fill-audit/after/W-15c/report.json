@@ -1,0 +1,106 @@
+{
+  "id": "W-15c",
+  "title": "The faceted carrier grant and the plane's ruling count (F-14) — the plane draws only 3 rulings at Density 50",
+  "branch": "3d-scene/fill-audit",
+  "commit": "8bd1581b",
+  "before": [
+    "shots/A/plane__hatch__ladder__low__a.webp",
+    "shots/A/plane__hatch__ladder__med__a.webp",
+    "shots/A/plane__hatch__ladder__max__a.webp",
+    "shots/A/plane__contour__ladder__low__a.webp",
+    "shots/A/plane__contour__ladder__med__a.webp",
+    "shots/A/plane__contour__ladder__max__a.webp",
+    "shots/A/box__hatch__ladder__med__a.webp",
+    "shots/A/solid__hatch__ladder__med__a.webp"
+  ],
+  "after": [
+    "after/W-15c/shots/A/plane__hatch__ladder__low__a.webp",
+    "after/W-15c/shots/A/plane__hatch__ladder__med__a.webp",
+    "after/W-15c/shots/A/plane__hatch__ladder__max__a.webp",
+    "after/W-15c/shots/A/plane__contour__ladder__low__a.webp",
+    "after/W-15c/shots/A/plane__contour__ladder__med__a.webp",
+    "after/W-15c/shots/A/plane__contour__ladder__max__a.webp",
+    "after/W-15c/shots/A/box__hatch__ladder__med__a.webp",
+    "after/W-15c/shots/A/solid__hatch__ladder__med__a.webp"
+  ],
+  "notes": "Root cause (full derivation in docs/3d-audit/lane-reports/W-15c-plan.md, verified in this unit): the faceted carrier grant's floor (FACET_MIN_RULINGS=3) is a Density-blind constant. The plane's carrier target `f.ext/(want+0.5)` therefore contains no Density term for any Density where the grant fires (d<65.3), so Density 1..50 all draw the identical 3 rulings on the app-default plane. Two prior designs (A: raise the ceiling; B: widen only where the old gate fires) and a third (C: uniform density term applied unconditionally) all inverted the O20/O9 tone-ordering invariants on the R-cube/R2-cube fixtures or broke box-density-bearing/facet-tone/hatch-density-500/subwindow-density, because the plan's §2.4 proves no per-facet formula can be both a Density-driven floor and ordering-safe on a graded (multi-orientation) object. This unit escapes the impossibility by gating on ORIENTATION instead of on a formula shape: a new isSoloOrientation(record) predicate (memoised per record, scene3d.js ~line 874) checks whether every front face of a record shares one normalWorld (dot >= 0.999). Only when an object presents a single visible orientation AND toneOn AND zone is defined (soloOrient = toneOn && zone && isSoloOrientation(record)) does the carrier's `want` track Density directly: `soloDens = round(f.ext/hatchSpacing(fillDensity) - 0.5)`, then `want = min(ceilCount, max(FACET_MIN_RULINGS, soloDens))` — still capped by the same zone ceiling every fixture already obeys. Every object with >= 2 visible orientations (R-cube, R2-cube, box, solid, the highlight-dispatch CUBE, LOWPOLY) takes the byte-identical old `min(ceilCount, FACET_MIN_RULINGS)` grant, so every cross-facet tone-ordering invariant is unchanged BY CONSTRUCTION, not by re-measurement. The app-default `plane` is the one fixture with exactly one visible orientation, so it is the only rendering this unit moves. The `zone &&` term is load-bearing: Stage 0 (toneLaw:'none') leaves zone undefined, and Regions.formCeiling(undefined) aliases formCeiling('M'), which without the guard would let the solo gate fire on Stage 0 too and collapse it onto the ladder's rendering — verified by the dedicated 'toneLaw none is Stage 0' test, which stays green (3 unaffected instances, box/plane/solid). Owner ruling (relayed mid-unit): ship N=9 (the face-plane/uncompensated reading), not the paper-space N=3 reading — the curved path already delivers ~9 rulings at a comparable extent at d=50 and the user experiences Density as one control across primitives; the paper reading's self-consistency (Stage 0 also draws exactly hatchSpacing(50)=7.5mm/3 rulings) is documented as a real, opposing fact in the plan's §4 but is not what shipped. Plane rulings: 3,3,3,3,19,65 -> 6,6,7,9,19,65 across Density 1/10/25/50/100/220; on-paper gap at d=50: 8.549mm -> 3.149mm, coverage 0.0950 against Regions.formCeiling('L')=0.0987 (ceiling-bound, plot-safe by construction, not by luck). Three pinned fixtures move as a DIRECT, PREDICTED consequence of the same mechanism: the GROUND plane in three scene3d-hlr-spatial-index-identity.test.js scenarios (facetedOverlap-orthographic-hatch, curvedOverlap-perspective-mixed-xray, denseMixed-8obj-shadows) and two scene3d-tone-baseline.test.js shadow goldens (shadow-additive-default, shadow-inverse) all set styleTable.scene.mapper='hatch' with no ground override — a ground is itself a single-orientation faceted object, so the solo gate opens on it too. This is consistent (a ground IS a plane) and is the single largest visible consequence of the change; the app-default scene's OWN ground carries its own style and is unaffected (ground fill path counts 96/119/57 across plane/box/solid app-default scenes, unchanged at every sampled density, per the plan's measurement, reconfirmed by the app-default suite staying green). Every DRAFT (bounds.fastPreview) row in the HLR guard is unaffected — only the SETTLED row moves in all three scenarios.",
+  "tests": {
+    "red": "tests/unit/scene3d-faceted-density-calibration.test.js > 'RGR: the plane carrier tracks Density instead of plateauing (F-14)' at base 6d6b1b78: [1,10,25,50].map(fillLineCount) === [3,3,3,3], expected [6,6,7,9] -- FAILS (counts[3]>counts[0] is 3>3, false).",
+    "green": "same test after the fix: [6,6,7,9] exact match; companion test 'the granted plane pitch stays inside the light zone ceiling' (0.2992/3.149 <= Regions.formCeiling('L')) passes. Full file 7/7.",
+    "suites": "targeted guard files run one at a time (protocol): scene3d-facet-tone.test.js 15/15; scene3d-projected-pitch.test.js 17/17; scene3d-faceted-highlight-dispatch.test.js 12/12; scene3d-box-density-bearing.test.js 4/4 (1 re-pin, see below); scene3d-hatch-density-500.test.js 14/14 (unchanged pinned box series [178,181,185,190]); scene3d-subwindow-density.test.js 3/3 (2 skipped, unrelated); scene3d-appdefault-facet-fill.test.js 7/7; scene3d-faceted-tone-law.test.js 19/19 (the 3 Stage-0 'toneLaw none is Stage 0' tests -t filtered and independently confirmed 3/3); scene3d-fixture-single-source.test.js 19/19; scene3d-hlr-spatial-index-identity.test.js 6/6 (3 re-pins, see below). Then the full targeted lane sweep tests/unit/scene3d (115 files): 114 passed | 1 skipped, 1356 passed | 43 skipped tests, 0 failed (2 unattributed '[vitest-worker] onTaskUpdate' timeout warnings under shared-machine load, matching the protocol's known non-regression; unrelated pre-existing '[FillBoolean] polygon union failed on degenerate geometry' console warnings from a torus self-crossing fixture, also not attributed to any failing test). Then the FULL tests/integration suite once, alone: 234/234 files, 1929/1929 tests passed, 0 failed (1 unattributed onTaskUpdate timeout, same non-regression). Then tests/visual: 6/6 files, 99 passed | 13 skipped (112) -- up from the pre-fix 97 passed because the 2 tone-baseline goldens re-pinned below now pass instead of failing. Additional off-guard-list spot-check (per plan §10 item 3, scratch test files, not committed): plane crosshatch mapper at d=1/10/25/50 draws [9,9,11,14] total with two distinct ruling angles present at d=50 (174.8 deg carrier, 51.9 deg cross family B) -- family B is NOT frozen by this fix (its own count grows independently, 3/3/4/5 across the same densities), confirming the grant is carrier-only as designed. Stage 0 (toneLaw:'none') plane counts independently re-measured at [3,3,3,29] for d=1/25/50/100, exactly unchanged."
+  },
+  "repins": [
+    {
+      "file": "tests/unit/scene3d-box-density-bearing.test.js",
+      "pin": "fingerprint(50,'plane')",
+      "before": "44270f5b:3738",
+      "after": "10a710a6:3909",
+      "reason": "the plane presents a single visible orientation; its carrier now tracks Density (3->9 rulings at d=50) instead of FACET_MIN_RULINGS. Every other fingerprint in the same guard (box, solid, sphere, at every sampled density) is unchanged."
+    },
+    {
+      "file": "tests/unit/scene3d-hlr-spatial-index-identity.test.js",
+      "pin": "facetedOverlap-orthographic-hatch|settled",
+      "before_hash": "edb852cb0986dcbb6a12958f2a539b67f558948fa6dd5428b5cc0548ececc829",
+      "before_counts": "129 paths / 258 points",
+      "after_hash": "0517b318738d3fd4dc7d31be0698487d85f4e96e31d6e9e8d300b9d2fa2e6875",
+      "after_counts": "208 paths / 416 points",
+      "reason": "scene's ground plane carries mapper:'hatch' with no ground override; a ground is a single-orientation faceted object, so the solo gate opens on it. |draft row for the same scenario is unchanged (byte-identical, bounds.fastPreview is unaffected)."
+    },
+    {
+      "file": "tests/unit/scene3d-hlr-spatial-index-identity.test.js",
+      "pin": "curvedOverlap-perspective-mixed-xray|settled",
+      "before_counts": "341 paths / 1099 points",
+      "after_hash": "ecbcb9d941a2e397a7856f3de00e2618bd762ba5dddd809d2bbbcc76f87598c7",
+      "after_counts": "404 paths / 1225 points",
+      "reason": "same ground-plane mechanism as above. |draft row unchanged."
+    },
+    {
+      "file": "tests/unit/scene3d-hlr-spatial-index-identity.test.js",
+      "pin": "denseMixed-8obj-shadows|settled",
+      "before_counts": "560 paths / 2303 points",
+      "after_hash": "18588b303aa3f605bae7247b2979b1c13c63fb842376085dd0930dfc3d46c875",
+      "after_counts": "651 paths / 2485 points",
+      "reason": "same ground-plane mechanism as above. |draft row unchanged."
+    },
+    {
+      "file": "tests/visual/scene3d-tone-baseline.test.js",
+      "pin": "shadow-additive-default (baseline JSON totals.paths)",
+      "before": 219,
+      "after": 284,
+      "reason": "same ground-plane mechanism: styleTable.scene.mapper='hatch' with no ground override in this golden's scenario."
+    },
+    {
+      "file": "tests/visual/scene3d-tone-baseline.test.js",
+      "pin": "shadow-inverse (baseline JSON totals.paths)",
+      "before": 58,
+      "after": 126,
+      "reason": "same ground-plane mechanism as above."
+    }
+  ],
+  "byte_identical_pairs": [
+    "shots/A/plane__hatch__ladder__max__a.webp (before == after, Density 220, expected -- the natural pitch has already overtaken the grant at d=220 on both sides, 65==65 rulings)",
+    "shots/A/plane__contour__ladder__low__a.webp (before == after, expected -- contour does not route through the faceted carrier grant)",
+    "shots/A/plane__contour__ladder__med__a.webp (before == after, expected -- same reason)",
+    "shots/A/plane__contour__ladder__max__a.webp (before == after, expected -- same reason)",
+    "shots/A/box__hatch__ladder__med__a.webp (before == after, expected -- box has 3 visible orientations, gate closed, byte-identical old grant)",
+    "shots/A/solid__hatch__ladder__med__a.webp (before == after, expected -- solid (buckyball) has 12 visible orientations, gate closed)"
+  ],
+  "identical_exceptions": {
+    "plane__hatch__ladder__max__a.webp": { "identical": true, "reason": "d=220 is above the plateau boundary (d<65.3) on both sides -- the grant never fires there before or after this fix; 65 rulings measured both sides" },
+    "plane__contour__ladder__low__a.webp": { "identical": true, "reason": "contour is a separate rendering path from hatch and never calls faceHatchLines's carrier-grant block" },
+    "plane__contour__ladder__med__a.webp": { "identical": true, "reason": "same as above" },
+    "plane__contour__ladder__max__a.webp": { "identical": true, "reason": "same as above" },
+    "box__hatch__ladder__med__a.webp": { "identical": true, "reason": "box presents 3 visible orientations -- isSoloOrientation(record) is false, so it takes the byte-identical min(ceilCount, FACET_MIN_RULINGS) grant it always had" },
+    "solid__hatch__ladder__med__a.webp": { "identical": true, "reason": "solid (buckyball) presents 12 visible orientations -- same as box" }
+  },
+  "images_looked_at": {
+    "plane__hatch__ladder__med__a.webp": "BEFORE: three long, widely-spaced straight rulings crossing an otherwise empty diamond outline -- the interior reads as bare paper with a stray mark on it, not a filled plane. AFTER: a dense, evenly-spaced hatched surface with roughly 9 parallel rulings spanning the full diamond, clearly reading as a filled plane at ~3.1mm on-paper spacing.",
+    "plane__hatch__ladder__low__a.webp": "BEFORE: 3 sparse rulings, visually near-identical to the med image (the plateau's signature). AFTER: 6 rulings -- visibly denser than the pre-fix image but still noticeably sparser than the after-med image (9 rulings), giving low/med a real visual distinction that did not exist before.",
+    "plane__hatch__ladder__max__a.webp": "not re-viewed pixel-by-pixel (md5 confirms byte-identical); at d=220 both before and after already show a dense ~65-ruling hatched plane."
+  },
+  "open_follow_ups": [
+    "The graded (multi-orientation) case remains Density-blind on its lit facets over most of its range -- scene3d-box-density-bearing.test.js's [86,86,86] pin stands; the plan's §2.4 proves no per-facet formula can close this without per-object ladder normalisation, which is a separate, larger unit.",
+    "toneOn-gated foreshortening compensation still means Density is face-plane mm untoned vs paper mm toned; this unit brings the toned SOLO facet into agreement with the untoned path, but the graded case stays divergent (plan §10 item 2).",
+    "Spiral mapper on the plane was spot-checked (7 paths at d=50, mapper does engage) but not swept across densities -- out of the plan's named cells."
+  ]
+}

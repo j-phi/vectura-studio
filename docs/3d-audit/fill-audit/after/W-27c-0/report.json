@@ -1,0 +1,50 @@
+{
+  "id": "W-27c-0",
+  "title": "W-27c item 0(b) — torus contourSlice micro-gaps closed by scoping self-occlusion bias onto the analytic ring; item 0(a) 8deg corner bar restated and measured",
+  "branch": "3d-scene/fill-audit-d",
+  "commit": "767bed54",
+  "base_commit": "073202a4",
+  "user_report": "docs/3d-audit/fill-audit/user-reports/11.png",
+  "plan": "docs/3d-audit/lane-reports/W-27c-0-W-29-plan.md",
+  "impl_report": "docs/3d-audit/lane-reports/W-27c-0-W-29-impl.md",
+  "before": [
+    "after/W-27c-0/before-073202a4/shots/A/torus__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0/before-073202a4/shots/A/torus__contourSlice__ladder__max__a.webp",
+    "after/W-27c-0/before-073202a4/shots/A/sphere__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0/before-073202a4/shots/A/box__contourSlice__ladder__med__a.webp"
+  ],
+  "after": [
+    "after/W-27c-0/shots/A/torus__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0/shots/A/torus__contourSlice__ladder__max__a.webp",
+    "after/W-27c-0/shots/A/sphere__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0/shots/A/box__contourSlice__ladder__med__a.webp"
+  ],
+  "gallery_hygiene_note": "The 'before' shots here were captured fresh from a disposable git-archive scratch export of this lane's own base commit (073202a4), NOT from the main gallery's top-level shots/A/ (which predate W-27 entirely) and NOT from after/W-27/ (which is the W-27b state, one fix-generation further back) — this is the true, apples-to-apples pre-item-0 baseline. Captured with the same script/tier/port convention as the 'after' shots, sequentially (server killed between runs) to avoid a stale-server cross-contamination bug this implementer hit and corrected before recording any number below.",
+  "notes": "Fix: src/core/algorithms/scene3d.js's contourSlice segCtx now sets `selfOcclude: true` when the ring left the mesh onto the analytic surface (`smoothSurface && analyticProject`), raising the same-object HLR bias from 0.05mm (HLR_BIAS) to 6mm (hlr.js's SELF_OCCLUDE_BIAS) for those records only. Root cause: the ring is snapped onto the object's true analytic surface while the HLR occluder set stays the tessellated mesh; the two differ by the mesh's own inscribed sagitta (0.118mm on the default torus, detail 16), which the plain 0.05mm bias does not absorb, so the ring dips behind its own chordal facets wherever it runs near-tangentially to the view (the hole, the tube equator) and the clipper splits the run into a micro-gap.\n\nMeasured on the default torus (Params.PRIMITIVE_PARAM_DEFAULTS.torus, Params.DEFAULT_CAMERA, sliceCount 26), public-API-only (algo.generate), independently re-derived at this lane's own base via a scratch `git stash` (not the plan's earlier commit): front-ring sceneFill path count 107 -> 46 for 47 rings (was ~2.3 fragments/ring, now ~1/ring); genuine self-occlusion retained, not eliminated: clipped/draft(raw) ink ratio 0.936 -> 0.965 (both comfortably below 1.0, i.e. something real is still hidden either way).\n\nItem 0(a) 'angled points': the ledger keeper's caveat required restating the 8deg bar as a measurable oracle before use. Restated as max INTERIOR turning angle between consecutive points of one emitted ring, EXCLUDING each emitted path's own first/last point (a genuine occluder/silhouette boundary put the break there, since one sceneFill path == one continuous visible clip run) -- measured 7.579deg, clearing the 8deg bar. This number is IDENTICAL before and after this fix (7.579deg both times, to 3dp): the false micro-gaps this fix removes do not, on this rig, coincide with the ring's own sharpest interior turn, so this is reported as a MEASURED, honest fact and a permanent regression guard, not claimed as something this diff caused.",
+  "visual_inspection": {
+    "torus__contourSlice__ladder__med__a": "LOOKED at both images directly (converted webp->png with dwebp). BEFORE: the ring bundle running across the upper-middle of the torus (between the two 'eye' cusps, over the hole) is visibly DASHED/broken into short tick marks along a long stretch. AFTER: that same stretch is a single CONTINUOUS smooth line, dashes gone. Pixel diff (threshold>30, RGB sum) is 0.79% of pixels across 827 small-to-medium connected components (sizes up to ~108px) scattered exactly along that dashed-to-solid region and nowhere else structurally meaningful -- matches the fix precisely. No leak-through: the torus's far side / hole occlusion silhouette is unchanged (same two 'eye' shapes, same hidden regions).",
+    "torus__contourSlice__ladder__max__a": "Same as med (contourSlice ignores the fillDensity axis entirely -- med and max are byte-identical to each other both before AND after, which is expected mapper behavior, not a bug). Same before/after difference as med.",
+    "sphere__contourSlice__ladder__med__a": "Byte-identical (md5 match). Expected: sphere IS smoothSurface+analyticProject (so selfOcclude is set true for it too), but the plan measured ZERO internal hidden runs for sphere at this camera (a convex sphere seen from outside never self-occludes its own ring at any bias), so raising the bias is a structural no-op here -- confirmed by direct capture, not merely assumed.",
+    "box__contourSlice__ladder__med__a": "Byte-identical (md5 match). Expected: box is faceted (not smoothSurface), so analyticProject is null and selfOcclude stays false -- segCtx is completely untouched for this primitive."
+  },
+  "identical_exceptions": {
+    "sphere__contourSlice__ladder__med__a.webp": {
+      "identical": true,
+      "reason": "sphere is smoothSurface+analyticProject (selfOcclude scoping applies) but has zero internal hidden runs at this camera at any bias -- the fix is a structural no-op here, verified by direct capture (see visual_inspection)."
+    },
+    "box__contourSlice__ladder__med__a.webp": {
+      "identical": true,
+      "reason": "box is faceted (not smoothSurface); analyticProject is null so selfOcclude stays false and segCtx is untouched for this primitive."
+    }
+  },
+  "tests": {
+    "red": "tests/unit/scene3d-contour-slice.test.js: 'the default torus emits far fewer front-ring fragments...' (bar <=55, RED 107); 'genuine self-occlusion survives the fix...' (ratio band); 'restated oracle: max interior turning angle...' (<8deg, always-true honest guard, not RGR for this diff).",
+    "green": "npx vitest run tests/unit/scene3d-contour-slice.test.js -> 42/42 (39 base+W-29 + 3 new for this fix).",
+    "suites": "scene3d-mesh-self-occlusion 5/5, scene3d-curves 13/13, scene3d-hlr-spatial-index-identity 6/6, scene3d-hlr 11/11, scene3d-hlr-draft-flag-wiring 2/2, scene3d-ribbon-f7-self-occlusion 2/2, integration scene-xray-needs-fill 17/17, scene3d-panel 36/36 -- all green."
+  },
+  "open_follow_ups": [
+    "Item 0(a)'s separate 'fan of spikes' degenerate-stub finding (a 0.004mm 3-point ring inflated to 513 points by refineSliceRing at plane 5) is NOT fixed here -- out of this unit's scope per the plan (a cheap fix exists but was not requested).",
+    "STILL-OPEN.md items (d) torus-hole dashed occlusion fragments (a DIFFERENT, not-yet-diagnosed defect from this one per the plan) and (e) perf re-measurement on the 8-dense-sphere fixture remain untouched.",
+    "The stale docs/3d-audit/fill-audit/shots/A/{ellipsoid,cylinder}__contourSlice__ladder__med__a.webp cells (predate W-27) are still owed a re-shoot; not touched by this unit."
+  ]
+}

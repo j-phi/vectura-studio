@@ -1,0 +1,47 @@
+{
+  "unit": "W-30",
+  "note": "buildFaceFootprint (scene3d.js) is NOT wired to the fix in this lane — production still uses OLD for every light type. This evidence shows the NEW primitive Shadows.projectLightToPlane is now available and measurably correct; wiring is a follow-up (see W-30-impl.md).",
+  "visualNote": "point.png/spot.png/area.png (LOOKED at, native-res crop taken): the GREEN (NEW) footprint dots land visibly ON the drawn receiver wall quad, right where the light-to-caster ray naturally continues. The RED (OLD/production) dots land well BELOW and OUTSIDE the wall's own Y-extent [0,90] entirely (e.g. point light: OLD world point (-100,-101.4,100) vs wall Y-range 0..90) — the bug is not just a wrong angle, it plots the footprint off the physical receiving surface. directional.png shows only green (red is drawn exactly underneath — byte-identical, confirmed both visually and via JSON.stringify equality).",
+  "results": {
+    "point": {
+      "lightType": "point",
+      "lightPosition": {
+        "x": 80,
+        "y": 100,
+        "z": 0
+      },
+      "oldAngleDegFromExpected": 34.48605003557483,
+      "newAngleDegFromExpected": 0.8834811301803891,
+      "byteIdenticalOldVsNew": null
+    },
+    "spot": {
+      "lightType": "spot",
+      "lightPosition": {
+        "x": 90,
+        "y": 70,
+        "z": -140
+      },
+      "oldAngleDegFromExpected": 36.3466928713997,
+      "newAngleDegFromExpected": 0.6825791710186789,
+      "byteIdenticalOldVsNew": null
+    },
+    "area": {
+      "lightType": "area",
+      "lightPosition": {
+        "x": 80,
+        "y": 100,
+        "z": 0
+      },
+      "oldAngleDegFromExpected": 34.48605003557483,
+      "newAngleDegFromExpected": 0.8834811301803891,
+      "byteIdenticalOldVsNew": null
+    },
+    "directional": {
+      "lightType": "directional",
+      "lightPosition": null,
+      "oldAngleDegFromExpected": null,
+      "newAngleDegFromExpected": null,
+      "byteIdenticalOldVsNew": true
+    }
+  }
+}

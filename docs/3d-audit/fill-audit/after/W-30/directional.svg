@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-141 -320 176 363.1184543084289" width="900" height="1857">
+  <style>
+    svg { background:#101114; font-family: monospace; }
+    .wall { stroke:#556; stroke-width:1.2; stroke-dasharray:3,2; }
+    .wall-quad { fill:#2a3040; fill-opacity:0.55; stroke:#556; stroke-width:0.8; }
+    .ray { stroke:#556; stroke-width:0.6; }
+    .ray-old { stroke:#ff5566; stroke-width:1; }
+    .ray-new { stroke:#33e07a; stroke-width:1; }
+    .rim { fill:#8892a0; }
+    .caster { fill:none; stroke:#e7ebee; stroke-width:1.2; }
+    .light { fill:#ffd166; }
+    .foot-old { fill:#ff5566; }
+    .foot-new { fill:#33e07a; }
+    text { fill:#c8ccd4; font-size:5px; }
+  </style>
+  <polygon points="-79,-102 -121,-78 -121,12 -79,-12" class="wall-quad"/>
+  
+  <circle cx="0" cy="-40" r="7.5" class="caster"/>
+  <circle cx="15" cy="-40" r="1.5" class="rim"/>
+<circle cx="7.500000000000002" cy="-52.99038105676658" r="1.5" class="rim"/>
+<circle cx="-7.4999999999999964" cy="-52.99038105676658" r="1.5" class="rim"/>
+<circle cx="-15" cy="-40" r="1.5" class="rim"/>
+<circle cx="-7.500000000000007" cy="-27.009618943233423" r="1.5" class="rim"/>
+<circle cx="7.500000000000002" cy="-27.00961894323342" r="1.5" class="rim"/>
+  
+  <circle cx="-100" cy="13.625380687824835" r="2" class="foot-old"/>
+<circle cx="-100" cy="-2.862307805104231" r="2" class="foot-old"/>
+<circle cx="-100" cy="-9.856922677429212" r="2" class="foot-old"/>
+<circle cx="-100" cy="-0.3638490568251182" r="2" class="foot-old"/>
+<circle cx="-100" cy="16.123839436103946" r="2" class="foot-old"/>
+<circle cx="-100" cy="23.11845430842893" r="2" class="foot-old"/>
+  <circle cx="-100" cy="13.625380687824835" r="2" class="foot-new"/>
+<circle cx="-100" cy="-2.862307805104231" r="2" class="foot-new"/>
+<circle cx="-100" cy="-9.856922677429212" r="2" class="foot-new"/>
+<circle cx="-100" cy="-0.3638490568251182" r="2" class="foot-new"/>
+<circle cx="-100" cy="16.123839436103946" r="2" class="foot-new"/>
+<circle cx="-100" cy="23.11845430842893" r="2" class="foot-new"/>
+  <text x="-137" y="-312">directional light — W-30</text>
+  <text x="-137" y="-306" fill="#ff5566">red = OLD (production, parallel/default-dir)</text>
+  <text x="-137" y="-300" fill="#33e07a">green = NEW (Shadows.projectLightToPlane)</text>
+</svg>

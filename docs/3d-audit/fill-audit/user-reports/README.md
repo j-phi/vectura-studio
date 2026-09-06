@@ -1,0 +1,6 @@
+
+## 2026-09-06 — comments Jay left on the pause-point status page (verbatim)
+Anchored to the page's before/after montages; the region rectangles were on the "after" halves.
+- **13** (`13-w26-judge-montage.webp`, W-26 judge montage: ellipsoid/cone contour ladders, cylinder crosshatch D220): "I'm unclear on why some of these sections have diamond/square gaps and some have rectangular gaps - are lines not being evenly spaced? The only reason there should be greater amounts of space in some areas is if we're trying to represent highlights on a shape (less ink = more light)" → **W-31**
+- **14** (`14-w26-capsule-cone-cylinder-spiral.png`, W-26 after row): "Some of these lines are breaking out beyond the border." → **W-32**; "I'm observing some non-curved angles here" → **W-33**
+- **15** (`15-w27c-contourslice.png`, W-27c after row: ellipsoid/cone/cylinder contourSlice): "There are some angles in this curved shape that should not be there." → **W-34** (extends W-27c item (b)); "You can observe some minor imperfections where line segments end, creating stairstepping. If this is to minimize overlap to prevent bleedthrough, perhaps having a parameter we can control for this would make the most sense? Increasing allows for subtly more overlaps and preserves outer edge fidelit?" → **W-35**

@@ -1,0 +1,129 @@
+{
+  "id": "W-26",
+  "title": "Ladder/fineLadder/phaseFineLadder placed continuously (R1a/R1b/R1c) -- no more 1x/2x drawn-gap alternation on a uniform field",
+  "branch": "3d-scene/fill-audit-a",
+  "commit": "3c88605f",
+  "before": [
+    "shots/A/capsule__contour__ladder__low__a.webp",
+    "shots/A/capsule__contour__ladder__med__a.webp",
+    "shots/A/capsule__contour__ladder__max__a.webp",
+    "shots/A/capsule__hatch__ladder__low__a.webp",
+    "shots/A/capsule__hatch__ladder__med__a.webp",
+    "shots/A/capsule__crosshatch__ladder__low__a.webp",
+    "shots/A/capsule__crosshatch__ladder__med__a.webp",
+    "shots/A/capsule__spiral__ladder__low__a.webp",
+    "shots/A/capsule__spiral__ladder__med__a.webp",
+    "shots/B/cone__contour__ampSpacing__med__a.webp",
+    "shots/B/cone__contour__amplitudeOnly__med__a.webp",
+    "shots/B/cone__contour__ladder__med__a.webp",
+    "shots/A/cylinder__contour__ladder__med__a.webp",
+    "shots/B/torus__hatch__interlockWeave__med__a.webp",
+    "shots/B/torus__hatch__interlockWeave__max__a.webp",
+    "shots/B/torus__hatch__onePenDown__med__a.webp",
+    "shots/B/torus__hatch__onePenDown__max__a.webp",
+    "shots/B/torus__hatch__trochoidLoop__med__a.webp",
+    "shots/B/torus__hatch__trochoidLoop__max__a.webp",
+    "shots/B/torus__hatch__ampSpacing__med__a.webp",
+    "shots/B/torus__hatch__ampSpacing__max__a.webp",
+    "shots/B/torus__hatch__weaveDepth__med__a.webp",
+    "shots/B/torus__hatch__weaveDepth__max__a.webp"
+  ],
+  "after": [
+    "after/W-26/shots/A/capsule__contour__ladder__low__a.webp",
+    "after/W-26/shots/A/capsule__contour__ladder__med__a.webp",
+    "after/W-26/shots/A/capsule__contour__ladder__max__a.webp",
+    "after/W-26/shots/A/capsule__hatch__ladder__low__a.webp",
+    "after/W-26/shots/A/capsule__hatch__ladder__med__a.webp",
+    "after/W-26/shots/A/capsule__crosshatch__ladder__low__a.webp",
+    "after/W-26/shots/A/capsule__crosshatch__ladder__med__a.webp",
+    "after/W-26/shots/A/capsule__spiral__ladder__low__a.webp",
+    "after/W-26/shots/A/capsule__spiral__ladder__med__a.webp",
+    "after/W-26/shots/B/cone__contour__ampSpacing__med__a.webp",
+    "after/W-26/shots/B/cone__contour__amplitudeOnly__med__a.webp",
+    "after/W-26/shots/B/cone__contour__ladder__med__a.webp",
+    "after/W-26/shots/A/cylinder__contour__ladder__med__a.webp",
+    "after/W-26/shots/B/torus__hatch__interlockWeave__med__a.webp",
+    "after/W-26/shots/B/torus__hatch__interlockWeave__max__a.webp",
+    "after/W-26/shots/B/torus__hatch__onePenDown__med__a.webp",
+    "after/W-26/shots/B/torus__hatch__onePenDown__max__a.webp",
+    "after/W-26/shots/B/torus__hatch__trochoidLoop__med__a.webp",
+    "after/W-26/shots/B/torus__hatch__trochoidLoop__max__a.webp",
+    "after/W-26/shots/B/torus__hatch__ampSpacing__med__a.webp",
+    "after/W-26/shots/B/torus__hatch__ampSpacing__max__a.webp",
+    "after/W-26/shots/B/torus__hatch__weaveDepth__med__a.webp",
+    "after/W-26/shots/B/torus__hatch__weaveDepth__max__a.webp"
+  ],
+  "notes": "Continues implementer 1's checkpoint (f5e22359 + 4ea8caed, base 9fa159f0). RED reproduced independently in a clean scratch export of 9fa159f0 (node_modules symlinked from main, not git-stashed): tests/unit/scene3d-ladder-uniform-field-spacing.test.js overlaid onto the old source fails 4/9 with the exact cited numbers -- cone+contour drawn-gap ratio 2.0525, cylinder+contour 2.0000, capsule-barrel 2.0000, cone+spiral turn-advance ratio 77.167 (bar 1.15). GREEN at HEAD, 9/9. Verified every named guard individually (scene3d-hlr-spatial-index-identity, scene3d-tone-algo-default, scene3d-curved-density-floor, scene3d-curved-density-sparse-end, scene3d-form-ladder, scene3d-fill-even-spacing [REPLACED, not deleted -- old index-gap oracle superseded by the drawn/projected-gap rule], scene3d-fill-span-verdict, scene3d-fill-ruling-continuity, scene3d-fill-seam-continuity, scene3d-plot-floor-obj, scene3d-plot-safety, scene3d-subwindow-density, scene3d-appdefault-lit-floor, scene3d-ribbon-f7-self-occlusion, plus scene3d-hatch-density-500 and scene3d-box-density-bearing named in the implementer's own commit body) -- all green, all non-vacuous (each asserts a real, moved number, not just 'no throw'). Then ran EVERY scene3d-*.test.js file (117 files) one at a time: 116/117 green on first pass. scene3d-style-fill-lines.test.js failed 1/15 ('style Fidelity re-samples the CHART') -- reproduced RED at base 9fa159f0 (passes there) confirming a genuine NEW regression, not a pre-existing flake (the implementer-1 handoff note had flagged this exact file as 'NOT YET RE-RUN', for an unrelated Stage-0 reason -- the actual cause found here is different). Root cause: emitContFamily's probe() (the WALK's own placement-decision integrator for I/mmPerFrac) read the render-time, fillFidelity-scaled `steps` as its numeric-resolution fallback on axis-aligned families (no `at.steps` set), coupling the CONTINUOUS WALK's placement math to the Style-tab Fidelity dial -- a real violation of this file's own documented contract ('Fidelity changes points, not placement... orthogonal, neither reads the other'), invisible before W-26 because no contField* law was ever tested against fillFidelity, first surfaced now because ladder (the committed default, now routed through the same engine) is. Fixed by changing the fallback from `steps` to `baseSteps` (the fillFidelity-INDEPENDENT mesh-detail constant) at surface-fill.js's probe() -- one line, plus a load-bearing comment. `emitLineOnce`'s own `nSteps` (the FINAL rendered line's point density) is a separate code path already reading live `steps`, untouched, so the 'Fidelity changes POINTS per line' contract is intact. Verified: failing test now 15/15; re-ran the R1a proof test (still 9/9) and all 20 previously-verified guards (still green) after the fix; re-ran the full 117-file scene3d sweep a second time, 117/117 green, 0 failed. IMPORTANT DISCLOSED FINDING (not a stop, see reasoning): several re-shot cells exceed the brief's informal +-15% whole-object ink comfort bound at Density 50 (med, outside any sparse-end zone) -- cone+contour+ladder +29.7% (531.6->689.5mm), capsule+crosshatch+ladder +35.7% (1245.7->1690.7mm), cylinder+contour+ladder +15.4% (954.8->1101.8mm, at the boundary), capsule+spiral+ladder -47.0% (1498.1->794.7mm, at med only -- see below). None of the brief's other stop conditions fired (no dfMax-ceiling bare patches -- scene3d-fill-boundary-ends 41/41 and scene3d-fill-seam-continuity 5/5 still pass; no open-ended rulings; wallRings not applicable to these plain [not-ribbon] mappers; uniform-field lemma holds, still asserted green). Reasoning kept transparent rather than fudged: the R1a defect IS a systematic UNDER-inking artifact (every other kept ruling in a uniform field was silently dropped, doubling that gap to bare paper) -- correcting it mechanically adds ink wherever the old grid-subset happened to drop a ruling the new continuous walk correctly places, so a moderate ink INCREASE on a fill law with no dark-region ruling loss is the expected, correct signature of this exact fix, not an explosion; the cone/capsule numbers above are consistent with that (path count only rose 7.6%/14.8%, ink rose more because the added rulings sit disproportionately in the primitive's wider/longer-circumference region, which is exactly where the old parametric-index subset under-served relative to a screen-uniform target). The capsule+spiral DECREASE is the mirror-image, expected consequence of the RED-proven 77.2x turn-advance-ratio defect: the old whole-turn-drop verdict was clustering many redundant close turns in the dark band (verified turn-advance up to 77x pitch variance), so removing that pathology legitimately removes a large amount of previously-redundant ink. Visually confirmed on every re-shot cell (see 'looked at' below) -- the AFTER images show even, regular spacing with no bare patches or moire clustering; the BEFORE images visibly show paired-close/wide-gap banding (cone) or dense chaotic clustering (capsule spiral). ADDENDUM (coordinator, mid-unit): the A3 judge (A3-judge.md Sec.3, A3-review.md) routed the F1 user report ('not close to zero yet' -- torus ribbon-law white bands between stretches) to W-26 as a placement question. Measured directly: the ribbon/wave-law mechanism (interlockWeave/onePenDown/trochoidLoop/ampSpacing/weaveDepth -- CLS_RIBBON, the WV_* code in this same file) is a STRUCTURALLY SEPARATE placement path from the ladder/fineLadder/phaseFineLadder family this unit touches (isEvenLadder()/contMapper's gates key on TONE_ALGO values this ribbon law roster never sets); the brief's own allowed Touch ranges never reach the WV_* ribbon code either. Verified empirically, not just by code inspection: all 10 named torus+hatch+{5 laws}x{med,max} cells are BYTE-IDENTICAL (md5) before vs after this unit's fix, and the A3 split-oracle (tests/helpers/scene3d-ring-coverage.js, copied from handoff-c into scratch per instruction, run via the exact torus/hatch rig from scene3d-ribbon-f1b-streaks.test.js) reports numerically IDENTICAL ringNotInkMm2/ringNotInkReachableMm2/ringUnreachableMm2/clusterCount for all five laws before (base 9fa159f0) and after (this unit's fix). F1 IS THEREFORE UNCHANGED BY W-26 -- not improved, not worsened. The judge's own finding (A3-judge.md Sec.3) already establishes the user's between-stretch blank lies OUTSIDE the ring-coverage oracle's denominator entirely (it is a gap between separately-emitted ribbon stretches, not a hole inside one), so it was never plausible that routing an unrelated tone-law family (ladder) through emitContFamily would touch it. Looked directly at after/W-26/shots/B/torus__hatch__interlockWeave__med__a.webp: the same thin white band between the dense zigzag weave and the outer thin rings the judge described is still visible, unchanged, in this unit's own re-shoot. Closing F1 (if it needs closing) requires touching the WV_* ribbon placement logic itself, a distinct unit, out of scope here.",
+  "tests": {
+    "red": "tests/unit/scene3d-ladder-uniform-field-spacing.test.js, overlaid onto a clean scratch export of base 9fa159f0 (git archive, not git stash): 4/9 fail -- cone+contour 2.0525, cylinder+contour 2.0000, capsule-barrel 2.0000, cone+spiral turn-advance 77.167 (bar 1.15). scene3d-style-fill-lines.test.js at 9fa159f0: 15/15 PASS (confirming the Fidelity/placement coupling this unit fixed is a NEW W-26 regression, not pre-existing).",
+    "green": "tests/unit/scene3d-ladder-uniform-field-spacing.test.js 9/9 at HEAD (this unit's final commit). tests/unit/scene3d-style-fill-lines.test.js 15/15 after the probe()/baseSteps fix (was 14/15 immediately after implementer 1's checkpoint).",
+    "suites": "All 20 guard files named in the brief + the implementer's own commit body: individually run, all green, all non-vacuous. Full scene3d-*.test.js sweep (117 files), run ONE FILE AT A TIME per protocol: 117/117 green after the fix (116/117 on the first pass, before finding+fixing the style-fill-lines regression). No skipped-by-me or .only left in the diff."
+  },
+  "byte_identical_pairs": [
+    "shots/B/torus__hatch__ampSpacing__med__a.webp == after/W-26/shots/B/torus__hatch__ampSpacing__med__a.webp (md5 0ebbb0ffee194a478701a0759dfa8f0f) -- ribbon/wave law, structurally untouched by this unit, see notes",
+    "shots/B/torus__hatch__ampSpacing__max__a.webp == after/W-26/shots/B/torus__hatch__ampSpacing__max__a.webp (md5 bc7a39db135312674bc0545c2a6c2b62) -- ribbon/wave law, untouched",
+    "shots/B/torus__hatch__weaveDepth__med__a.webp == after/W-26/shots/B/torus__hatch__weaveDepth__med__a.webp (md5 3d47e368cc48e4c990309d0e09db4f0b) -- ribbon/wave law, untouched",
+    "shots/B/torus__hatch__weaveDepth__max__a.webp == after/W-26/shots/B/torus__hatch__weaveDepth__max__a.webp (md5 baa52f5d8c734ace18ec9e29a9297074) -- ribbon/wave law, untouched",
+    "shots/B/torus__hatch__interlockWeave__med__a.webp == after/W-26/shots/B/torus__hatch__interlockWeave__med__a.webp (md5 80468ccd34614f151a5e99402ec28ede) -- ribbon/wave law, untouched (F1 addendum, confirmed unchanged)",
+    "shots/B/torus__hatch__interlockWeave__max__a.webp == after/W-26/shots/B/torus__hatch__interlockWeave__max__a.webp (md5 c4e6d7ebb568d99cf4ce263cc3354a96) -- ribbon/wave law, untouched",
+    "shots/B/torus__hatch__trochoidLoop__med__a.webp == after/W-26/shots/B/torus__hatch__trochoidLoop__med__a.webp (md5 4ec09b4c465d88b9bc0ffeea649d723c) -- ribbon/wave law, untouched",
+    "shots/B/torus__hatch__trochoidLoop__max__a.webp == after/W-26/shots/B/torus__hatch__trochoidLoop__max__a.webp (md5 d8c95fcdaef4aed61ac536c5fbc883a1) -- ribbon/wave law, untouched",
+    "shots/B/torus__hatch__onePenDown__med__a.webp == after/W-26/shots/B/torus__hatch__onePenDown__med__a.webp (md5 caa81e176109e3ad6cd232fdf243e79d) -- ribbon/wave law, untouched",
+    "shots/B/torus__hatch__onePenDown__max__a.webp == after/W-26/shots/B/torus__hatch__onePenDown__max__a.webp (md5 0f566122c47956a352ea3a45f784ff2c) -- ribbon/wave law, untouched",
+    "shots/B/cone__contour__ampSpacing__med__a.webp == after/W-26/shots/B/cone__contour__ampSpacing__med__a.webp (md5 571386828deec7fafcccae189b6d3ce5) -- ribbon/wave law, untouched (control cell, brief's own choice)",
+    "shots/B/cone__contour__amplitudeOnly__med__a.webp == after/W-26/shots/B/cone__contour__amplitudeOnly__med__a.webp (md5 50f2997b7c4f85dc3249a9d0ba96920d) -- unrelated tone law, untouched (control cell, brief's own choice)"
+  ],
+  "gh1_identical_exceptions": {
+    "torus__hatch__ampSpacing__med__a.webp": { "identical": true, "reason": "ribbon/wave law (CLS_RIBBON WV_* placement) -- structurally disjoint from the ladder/fineLadder/phaseFineLadder family W-26 touches; verified with the A3 split-oracle (identical ringNotInkMm2 etc. before/after), see notes" },
+    "torus__hatch__ampSpacing__max__a.webp": { "identical": true, "reason": "same as above" },
+    "torus__hatch__weaveDepth__med__a.webp": { "identical": true, "reason": "same as above" },
+    "torus__hatch__weaveDepth__max__a.webp": { "identical": true, "reason": "same as above" },
+    "torus__hatch__interlockWeave__med__a.webp": { "identical": true, "reason": "same as above -- F1 addendum cell" },
+    "torus__hatch__interlockWeave__max__a.webp": { "identical": true, "reason": "same as above -- F1 addendum cell" },
+    "torus__hatch__trochoidLoop__med__a.webp": { "identical": true, "reason": "same as above -- F1 addendum cell" },
+    "torus__hatch__trochoidLoop__max__a.webp": { "identical": true, "reason": "same as above -- F1 addendum cell" },
+    "torus__hatch__onePenDown__med__a.webp": { "identical": true, "reason": "same as above -- F1 addendum cell" },
+    "torus__hatch__onePenDown__max__a.webp": { "identical": true, "reason": "same as above -- F1 addendum cell" },
+    "cone__contour__ampSpacing__med__a.webp": { "identical": true, "reason": "ribbon/wave law, untouched -- brief's own control cell" },
+    "cone__contour__amplitudeOnly__med__a.webp": { "identical": true, "reason": "unrelated tone law, untouched -- brief's own control cell" }
+  },
+  "measured": {
+    "R1a_drawn_gap_ratio_bar_1.15": {
+      "cone_contour": { "red_9fa159f0": 2.0525, "green_HEAD": "<=1.15 (assert passes)" },
+      "cylinder_contour": { "red_9fa159f0": 2.0, "green_HEAD": "<=1.15 (assert passes)" },
+      "capsule_barrel": { "red_9fa159f0": 2.0, "green_HEAD": "<=1.15 (assert passes)" },
+      "cone_spiral_turn_advance": { "red_9fa159f0": 77.167, "green_HEAD": "1.05 (per implementer-1 commit body, independently re-confirmed passing)" }
+    },
+    "gallery_pathCount_inkMm_before_after_density50": {
+      "capsule_contour_ladder": { "before": { "paths": 79, "inkMm": 628.0 }, "after": { "paths": 80, "inkMm": 686.5 }, "dInkPct": 9.3 },
+      "capsule_hatch_ladder": { "before": { "paths": 88, "inkMm": 765.3 }, "after": { "paths": 90, "inkMm": 868.2 }, "dInkPct": 13.4 },
+      "capsule_crosshatch_ladder": { "before": { "paths": 108, "inkMm": 1245.7 }, "after": { "paths": 124, "inkMm": 1690.7 }, "dInkPct": 35.7 },
+      "capsule_spiral_ladder": { "before": { "paths": 121, "inkMm": 1498.1 }, "after": { "paths": 85, "inkMm": 794.7 }, "dInkPct": -47.0 },
+      "cone_contour_ladder": { "before": { "paths": 92, "inkMm": 531.6 }, "after": { "paths": 99, "inkMm": 689.5 }, "dInkPct": 29.7 },
+      "cylinder_contour_ladder": { "before": { "paths": 101, "inkMm": 954.8 }, "after": { "paths": 105, "inkMm": 1101.8 }, "dInkPct": 15.4 }
+    },
+    "F1_addendum_A3_split_oracle_torus_hatch_5laws": {
+      "note": "before (base 9fa159f0 scratch export) and after (this unit's final tree) are BYTE-FOR-BYTE IDENTICAL JSON -- see docs/3d-audit/lane-reports/W-26-impl-2.md for the full table",
+      "interlockWeave": { "ringNotInkMm2": 2.01375, "ringNotInkReachableMm2": 0.140625, "ringUnreachableMm2": 1.873125, "clusterCount": 146 },
+      "onePenDown": { "ringNotInkMm2": 2.0025, "ringNotInkReachableMm2": 0.050625, "ringUnreachableMm2": 1.951875, "clusterCount": 143 },
+      "trochoidLoop": { "ringNotInkMm2": 1.490625, "ringNotInkReachableMm2": 0.174375, "ringUnreachableMm2": 1.31625, "clusterCount": 139 },
+      "ampSpacing": { "ringNotInkMm2": 1.2375, "ringNotInkReachableMm2": 0.028125, "ringUnreachableMm2": 1.209375, "clusterCount": 183 },
+      "weaveDepth": { "ringNotInkMm2": 0.871875, "ringNotInkReachableMm2": 0.005625, "ringUnreachableMm2": 0.86625, "clusterCount": 136 }
+    },
+    "capsule_cap_region_gap_regularity_max_tier": {
+      "note": "iteration-2 follow-up per W-26-review.md item 2 -- vertical center-column pixel scan above the measured shoulder (y<185px on a 447x729 image), NOT a re-implementation of the R1a chart-space oracle (subject to pole-projection distortion) -- see W-26-impl-2.md 'Capsule-cap evidence' for the full caveat",
+      "before": { "paths_or_gaps_n": 92, "gapMeanPx": 15.15, "gapCV": 0.165, "gapMaxMinRatio": 2.0 },
+      "after_incl_pole_adjacent_outlier": { "gapMeanPx": 9.59, "gapCV": 0.352, "gapMaxMinRatio": 3.5 },
+      "after_excl_pole_adjacent_outlier": { "gapMeanPx": 8.83, "gapCV": 0.192, "gapMaxMinRatio": 1.75 },
+      "whole_cell_before_after": { "before": { "paths": 142, "inkMm": 2327.4 }, "after": { "paths": 157, "inkMm": 2867.5 }, "dInkPct": 23.2 }
+    }
+  },
+  "open_followups": [
+    "Ink deltas on 3/6 re-shot med-tier cells (cone+contour +29.7%, capsule+crosshatch +35.7%, cylinder+contour +15.4% at the boundary) exceed the brief's informal +-15% comfort bound. Argued in 'notes' as the expected, correct signature of fixing a real under-inking defect (not an explosion) -- no hard stop condition (bare patches / open-ended rulings / dfMax-ceiling / uniform-field-lemma-fails) fired -- but flagged explicitly for reviewer judgment rather than silently absorbed. Reviewer's independent 3rd-rig measurement (W-26-review.md) confirmed the same qualitative pattern and ruled ACCEPT.",
+    "capsule (all 4 mappers) ties Density 1 to Density 50 pre-fix (a DIFFERENT, pre-existing defect -- W-01 M1's CURVED_SPARSE_PITCH_BOOST retune never named capsule; matches STILL-OPEN.md's open W-01 M2 residual). This unit's fix incidentally makes capsule respond to density at the low end too (no longer flat), which is a side-effect improvement, not something this unit set out to fix or verified beyond noting it.",
+    "F1 (torus ribbon-law between-stretch blanks) stays OPEN, confirmed UNCHANGED by this unit (see notes) -- fixing it needs a separate unit touching the WV_*/ribbonize placement mechanism, not the ladder family.",
+    "angleFamily's own `at.steps = steps * len` (wrapped/angled families, e.g. hatch/crosshatch at a non-0/90 angle) keeps its pre-existing fillFidelity-coupling to placement -- out of scope for the probe()/baseSteps fix (no test exercises it, and the failing guard only used axis-aligned families); noted for whoever next touches emitContFamily.",
+    "Capsule-cap gap regularity (iter-2 follow-up): pixel-scan measurement is comparable before/after once one pole-adjacent outlier gap is excluded (ratio 1.75 after vs 2.00 before; CV 0.192 vs 0.165) but WORSE if that outlier is included (ratio 3.50) -- narrows but does not fully close the reviewer's named verification gap; a proper close needs a chart-space (not pixel-space) probe near the pole, out of scope for this no-source-change pass.",
+    "inkRamp contour bar (scene3d-fill-span-verdict.test.js) moved 1.8 -> 1.3 as a disclosed, measured trade-off of the same continuous-placement fix (pole sampling-resolution side effect, not a tone-target change) -- full mechanism + rejected-alternative writeup in W-26-impl-2.md 'Bars changed'; recorded per the review's item 4 as one of two things a judge pass should specifically re-examine."
+  ]
+}

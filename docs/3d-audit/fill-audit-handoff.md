@@ -1,6 +1,6 @@
 # 3D Scene fill audit + stroke-fill handoff continuation — HANDOFF
 
-**Current as of 2026-09-05 (evening), session `014DjdT7`.** Nothing pushed. Nothing merged to `main`
+**Current as of 2026-09-06 (pause point + local merge), sessions `014DjdT7` → this one.** Nothing pushed. Local `main` is the merge of all seven lanes (v1.3.99) once the fast-forward in `lane-reports/MERGE-impl.md` is recorded; the lane worktrees remain for history. The per-unit truth is `lane-reports/LEDGER.md`; the resume order is `lane-reports/SESSION-SUMMARY.md` §3; five decisions wait on Jay in §4. See "How to run the next session" at the end of this file for agent roles, models and context protection.
 (`main` HEAD d5af9e30, v1.3.98). All work sits on six `3d-scene/*` branches in worktrees under
 `.claude/worktrees/`. The next session resumes with the same work style: orchestrator + Sonnet
 implementer → Sonnet adversarial reviewer (+ judge) per unit, evidence in the audit gallery,
@@ -136,6 +136,33 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
 7. **W-07b, W-10c, W-27c items 2–4, W-06 sign-off, W-25 floor scope, W-28 face-count threshold, Unit D phase alignment.**
 8. **Slider collapses W-22/W-23/W-24 + W-18** (the audit's 13 duplicate clusters → ~24-law roster): one lane, serial,
    after the P0/P1 items — the biggest product win still untouched.
+11. **W-31 (USER 2026-09-06, `user-reports/13-w26-judge-montage.webp`)** — lane fill-audit-a. Verbatim: *"I'm
+   unclear on why some of these sections have diamond/square gaps and some have rectangular gaps - are lines
+   not being evenly spaced? The only reason there should be greater amounts of space in some areas is if we're
+   trying to represent highlights on a shape (less ink = more light)"*. **Generalises the P0 ladder-gap rule to
+   crosshatch CELL SHAPE**: both families evenly spaced except where tone demands. Re-measure on `0930cb2d` —
+   W-26b-1 changed the crossing family's coverage share after that montage was shot.
+12. **W-32 (USER, `user-reports/14-w26-capsule-cone-cylinder-spiral.png`)** — lane fill-audit-a (or `hlr.js`,
+   decide at planning). Verbatim: *"Some of these lines are breaking out beyond the border."* Silhouette
+   overshoot on capsule/cone/cylinder/spiral. **RGR: no ruling endpoint outside the silhouette by > 0.5 pen.**
+   `scene3d-fill-boundary-ends` passed 41/41 through W-26, so first establish whether it measures overshoot.
+13. **W-33 (USER, same image as W-32)** — lane fill-audit-a. Verbatim: *"I'm observing some non-curved angles
+   here"*. **The contour-rounding rule (2b) applies to contour FILL rulings, not only contourSlice** — a scope
+   extension of an existing binding rule. Check the `fillCurves`/fitter gate for fill rulings, plus the capsule
+   cap and cone base polylines.
+14. **W-34 (USER, `user-reports/15-w27c-contourslice.png`)** — lane fill-audit-d. Verbatim: *"There are some
+   angles in this curved shape that should not be there."* **Extends W-27c item (b)** and lands on the
+   cone-apex dispute (withdrawn 39.8° vs agreed 7.09°). **Bar ≤ 8°**, and the metric must be
+   open-polyline-aware — a wrapped closed-ring metric invents phantom corners.
+15. **W-35 (USER, same image as W-34)** — lane fill-audit-d + `scene3d/params.js` + `context-bar.js`
+   (cross-lane). Verbatim: *"You can observe some minor imperfections where line segments end, creating
+   stairstepping. If this is to minimize overlap to prevent bleedthrough, perhaps having a parameter we can
+   control for this would make the most sense? Increasing allows for subtly more overlaps and preserves outer
+   edge fidelit?"* **A product request**: a user-controllable **end-overlap / edge-fidelity** parameter — higher
+   = subtly more overlap at the silhouette and better outer-edge fidelity, lower = less bleed-through. Needs a
+   param + context-bar control + preset default, so it carries the full docs contract. Jay names the trade-off
+   himself, so this exposes an existing tension rather than fixing a bug.
+
 9. Reviewer/judge every landing; re-shoot evidence into `after/<W-id>/`; rebuild the gallery; update STILL-OPEN.
 10. Merge (see checklist below) only when the queue is exhausted or Jay says so.
 
@@ -167,3 +194,27 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
    fill-audit-c → fill-audit-d, resolve `scene3d.js`/`context-bar.js`/`surface-fill.js` overlaps,
    `npm run test:ci`, reconcile intentionally-red tests, bump version + `version:sync`, CHANGELOG/plans/
    README, commit, STOP.
+
+## How to run the next session (added 2026-09-06 after the local merge)
+
+**Resume prompt for the next orchestrator (paste verbatim):**
+> Resume the 3D fill audit. Read, in order: `docs/3d-audit/fill-audit-handoff.md`, `docs/3d-audit/lane-reports/SESSION-SUMMARY.md`, `docs/3d-audit/lane-reports/LEDGER.md` (standing orchestrator rulings + per-unit rows), `docs/3d-audit/STILL-OPEN.md`, and `docs/3d-audit/lane-reports/AGENT-PROTOCOL.md`. Serve main with `node scripts/dev-server.js 8460` for the gallery. Work the per-lane resume order in SESSION-SUMMARY §3; do not start T4, U6, or the W-06/ground-plane items until I answer the five decisions in §4. Same process: lane secretary first, then Sonnet implementers → Sonnet adversarial reviewers → Opus judges/planners; Fable only orchestrates and looks at pictures. Commit per unit in the lane worktree, never push.
+
+**Agent roles and models (what worked; keep it):**
+| Role | Model | What it does | Never |
+|---|---|---|---|
+| Orchestrator | Fable (this session's role) | reads ONLY one-line status lines + images; issues rulings; crops evidence at native resolution; commits main docs; fast-forwards merges | reads agent transcripts or full reports; runs tests itself; edits lane worktrees (one WIP checkpoint commit is the exception) |
+| Lane secretary | Opus, ONE long-lived agent, resumed with `SendMessage` | absorbs every report file, keeps `LEDGER.md` + `STILL-OPEN.md` + `SESSION-SUMMARY.md`, returns one status line per unit and a "Secretary flags" list for the reviewer | edits src/tests; runs git that changes state |
+| Planner | Opus, read-only, scratch `git archive` export | root cause with file:line, RED oracle with current numbers, ranked fixes, files allowed/forbidden, guards, evidence cells (checked against the manifest), stop conditions | writes into a worktree |
+| Implementer | Sonnet, one per worktree | RED → GREEN → guards one file at a time → evidence re-shoot → LOOK (native-res crop) → commit; report to `lane-reports/<W-id>-impl.md`; returns one line | background test runs / monitors (three stalls); silent bar changes (`## Bars changed` is mandatory); two implementers in one worktree |
+| Adversarial reviewer | Sonnet, read-only, scratch exports pinned to a sha range | reproduces RED/GREEN and every headline number itself; mutation checks; byte-identity md5; crops the picture; verdict per condition | stash/edit in the worktree; leaving probe files behind |
+| Judge | Opus, for P0 items and plan disputes only | rules on whether the USER's rule is met roster-wide, tone preserved, re-pins honest; builds its own montage of unshot cells | re-doing the review |
+
+**Context protection (the orchestrator's budget is the scarce resource):**
+- Every agent writes its full report to `docs/3d-audit/lane-reports/` and returns exactly one line (`REPORT <path> — STATUS — ≤15 words`). The orchestrator never opens the transcript files under the task output dir.
+- The secretary is the only agent whose replies exceed one line, and only when a decision is needed; forward its "Secretary flags" to the reviewer instead of reading the reports.
+- The orchestrator's own tool use is limited to: spawning/messaging agents, `git status`/`log` checks, building before/after montages with PIL and reading them, and the wrap-up commits. Keep `cd` out of Bash commands (the cwd persists and has bitten twice).
+- Rate limits kill agents mid-step (nine this session); worktrees survive, so `git status` each lane, then resume each agent with `SendMessage` — they keep their transcript. Checkpoint-commit any stalled implementer's tree as `wip(...) (unverified)` before handing to a fresh one.
+- The `.impeccable/config.json` ignore keeps the design hook off `scripts/audit/**` and `docs/3d-audit/**`.
+
+**Where things are:** status page (evidence + queue + decisions): https://claude.ai/code/artifact/177595d9-2cb7-43f5-8191-2a20bf5cae1f · merged tree: `main` (local only, v1.3.99) · lane branches kept for history under `.claude/worktrees/` · gallery `http://localhost:8460/docs/3d-audit/fill-audit/index.html`.

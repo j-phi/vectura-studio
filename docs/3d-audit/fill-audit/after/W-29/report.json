@@ -1,0 +1,38 @@
+{
+  "id": "W-29",
+  "title": "W-29 — buildSliceSegments nudges a plane level off a coincident mesh vertex, closing the buckyball's open contourSlice ring",
+  "branch": "3d-scene/fill-audit-d",
+  "commit": "74efa83a",
+  "base_commit": "073202a4",
+  "user_report": "docs/3d-audit/fill-audit/user-reports/12.png",
+  "plan": "docs/3d-audit/lane-reports/W-27c-0-W-29-plan.md",
+  "impl_report": "docs/3d-audit/lane-reports/W-27c-0-W-29-impl.md",
+  "before": [
+    "after/W-29/before-073202a4/shots/A/solid__contourSlice__ladder__low__a.webp",
+    "after/W-29/before-073202a4/shots/A/solid__contourSlice__ladder__med__a.webp",
+    "after/W-29/before-073202a4/shots/A/solid__contourSlice__ladder__max__a.webp"
+  ],
+  "after": [
+    "after/W-29/shots/A/solid__contourSlice__ladder__low__a.webp",
+    "after/W-29/shots/A/solid__contourSlice__ladder__med__a.webp",
+    "after/W-29/shots/A/solid__contourSlice__ladder__max__a.webp"
+  ],
+  "gallery_hygiene_note": "The 'before' shots here were captured fresh from a disposable git-archive scratch export of this lane's own base commit (073202a4), NOT from the stale main-gallery shots/A/ or after/W-27/ dirs -- true apples-to-apples pre-fix baseline. low/med/max are byte-identical to EACH OTHER both before and after (md5-confirmed): contourSlice ignores the fillDensity axis entirely (its ring count is set by sliceCount, not density), so this is expected mapper behavior, not a capture bug -- one real before/after delta covers all three density cells.",
+  "notes": "Fix: src/core/algorithms/scene3d.js's buildSliceSegments now nudges a plane level a few nanometres (VEPS = max(1e-9, span*1e-7), bounded to 8 tries) off any mesh vertex it would otherwise land exactly on, before cutting. Root cause: the default buckyball's z-symmetric vertex ring sits EXACTLY on plane levels 9 and 18 at sliceCount 26; edgeCross's on-plane branch then pushes that vertex once per incident fan triangle, producing zero-length segments and odd-degree (up to degree-9) nodes, and linkSegments' greedy walk abandons the extra incident edges -- leaving an open ring dangling mid-facet, exactly the stub the user circled.\n\nMeasured directly against Scene3D.Slices.buildSliceSegments on the default buckyball mesh (sliceCount 26): 6 open rings -> 0, 12 odd-degree nodes -> 0, 22 zero-length segments -> 0, max node degree 9 -> 2, across 2 bad planes (9, 18) -> 0. Plane count is unchanged (2/12/26/120 -> same, purity guard re-asserted). Total emitted rings for the buckyball drops 32 -> 31 (the duplicate degenerate ring that WAS the stub is gone, not replaced).",
+  "visual_inspection": {
+    "solid__contourSlice__ladder__low__a": "Byte-identical to med/max (see gallery_hygiene_note); same before/after delta as med below.",
+    "solid__contourSlice__ladder__med__a": "LOOKED at both images directly (converted webp->png with dwebp). Pixel diff (threshold>30, RGB sum) is 0.73% of pixels, but connected-component analysis (8-connectivity) finds ONE dominant component of 1103 pixels (everything else is <=29px WebP-compression noise scattered across otherwise-identical edges) sitting at image coords (145,71)-(353,115) -- cropped and inspected at 4x: BEFORE shows a short diagonal stub line jutting into open black space near the top-right facet boundary with nothing at its far end (a dangling open ring, exactly the defect the user circled in user-reports/12.png). AFTER: that same region is clean black -- the stub is gone, no new artifact appeared elsewhere. Every other visible ring/edge in the image is pixel-for-pixel the same (only sub-1px WebP dither differs, confirmed by the component-size histogram).",
+    "solid__contourSlice__ladder__max__a": "Byte-identical to med/low; same before/after delta as med."
+  },
+  "identical_exceptions": {},
+  "tests": {
+    "red": "tests/unit/scene3d-contour-slice.test.js, describe('W-29 — faceted-solid contourSlice ring topology (closed meshes only)'): test.each row 'solid (buckyball)' -- RED at 073202a4 (6 open rings, 12 odd-degree nodes, 22 zero-length segments, max degree 9).",
+    "green": "npx vitest run tests/unit/scene3d-contour-slice.test.js -> 39/39 with only the W-29 fix applied (33 base + 6 new); 42/42 with both fixes.",
+    "suites": "scene3d-mesh-self-occlusion 5/5, scene3d-curves 13/13, scene3d-hlr-spatial-index-identity 6/6, scene3d-hlr 11/11 -- all green with the nudge alone."
+  },
+  "open_follow_ups": [
+    "cylinder/cone/pyramid meshes have no cap faces, so their contourSlice rings are legitimately open regardless of the nudge -- measured and documented in a dedicated test, deliberately NOT folded into this unit's guard (plan sec 2.4).",
+    "sliceRotate=90deg breaks linkSegments' 2-D point-key outright (a latent, user-reachable, different defect per the plan) -- not touched here; needs its own W-id.",
+    "5 of 47 linked torus rings arrive with <=4 raw points (one 3-point ring at plane 5, 0.004mm) and refineSliceRing runs all 8 rounds on it, inflating it to 513 points with a 180deg fold -- the plan's cheap fix (skip/bail refinement on a sub-0.01mm ring) was NOT implemented in this unit (out of scope, item 0(a) follow-up, not requested)."
+  ]
+}

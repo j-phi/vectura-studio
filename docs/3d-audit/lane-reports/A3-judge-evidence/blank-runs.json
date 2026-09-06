@@ -1,0 +1,50 @@
+{
+ "interlockWeave": {
+  "regionAreaMm2": 1223.97,
+  "inkPaths": 256,
+  "scenePaths": 266,
+  "maxDistToInkMm": 2.783,
+  "maxAt": {
+   "x": 166.79,
+   "y": 89.2
+  },
+  "blankAreaMm2": {
+   ">0.3mm": 328.7,
+   ">0.5mm": 208.27,
+   ">0.8mm": 131.6,
+   ">1.2mm": 54.27,
+   ">2mm": 4.35
+  },
+  "blankPct": {
+   ">0.3mm": 26.86,
+   ">0.5mm": 17.02,
+   ">0.8mm": 10.75,
+   ">1.2mm": 4.43,
+   ">2mm": 0.36
+  }
+ },
+ "taperedEnds": {
+  "regionAreaMm2": 1223.97,
+  "inkPaths": 213,
+  "scenePaths": 223,
+  "maxDistToInkMm": 2.263,
+  "maxAt": {
+   "x": 122.39,
+   "y": 81.3
+  },
+  "blankAreaMm2": {
+   ">0.3mm": 467.41,
+   ">0.5mm": 314.85,
+   ">0.8mm": 188.93,
+   ">1.2mm": 53.31,
+   ">2mm": 0.62
+  },
+  "blankPct": {
+   ">0.3mm": 38.19,
+   ">0.5mm": 25.72,
+   ">0.8mm": 15.44,
+   ">1.2mm": 4.36,
+   ">2mm": 0.05
+  }
+ }
+}

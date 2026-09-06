@@ -1,0 +1,33 @@
+{
+  "id": "A3",
+  "title": "A3 (amended) — F1 torus-ribbon streaks: split the ring-coverage oracle into pen-unreachable vs true streak area; F1 stays OPEN",
+  "lane": "handoff-c",
+  "worktree": ".claude/worktrees/handoff-c",
+  "branch": "3d-scene/handoff-c",
+  "base_sha": "79c98ca87b4e44cba6876c8c008b5bbeac7af9b5",
+  "commit": "d86cbf8d8e7b67eed8f742d36c481571df3d3ec4 (3d-scene/handoff-c)",
+  "before": [
+    "after/A3/shots/A/torus__hatch__ladder__med__a.webp (captured at 79c98ca8 with this unit's changes stashed out -- the true pre-unit state)",
+    "after/A3/shots/A/torus__hatch__ladder__max__a.webp",
+    "after/A3/shots/A/torus__contour__ladder__med__a.webp",
+    "after/A3/shots/A/torus__contour__ladder__max__a.webp"
+  ],
+  "after": [
+    "after/A3/shots/A/torus__hatch__ladder__med__a.webp",
+    "after/A3/shots/A/torus__hatch__ladder__max__a.webp",
+    "after/A3/shots/A/torus__contour__ladder__med__a.webp",
+    "after/A3/shots/A/torus__contour__ladder__max__a.webp"
+  ],
+  "notes": "This unit changes NO src/ file — it is a test-only oracle split in tests/helpers/scene3d-ring-coverage.js plus a re-pin of tests/unit/scene3d-ribbon-f1b-streaks.test.js and a new tests/unit/scene3d-ring-coverage-reachability.test.js. So an identical render is the INTENDED result, not a null finding: 4 cells were re-shot (`^torus__(hatch|contour)__(ladder|none)__(med|max)__a$` only matched the ladder combinations; no 'none' style variant exists for this primitive/mapper pairing on the torus, matching the plan's own capture run) and every one is byte-identical to a TRUE before capture taken at this worktree's unmodified HEAD 79c98ca8 (this unit's changes were `git stash push -u` out, captured, then `git stash pop` back in — not compared against the pre-existing docs/3d-audit/fill-audit/shots/A/ cache, which is untracked/gitignored, was captured in an unrelated earlier session, and differs from BOTH the before and after captures here for reasons unconnected to this unit -- see docs/3d-audit/STILL-OPEN.md's pre-existing 'Gallery corruption' / stale-shots findings). CRITICAL CAVEAT (A3-judge.md item A4, mandatory): this evidence set proves nothing about F1 itself. All four re-shot cells are `ladder` mapper-style renders -- `lastRibbonStats.wide === 0` / `ribbonLaw: false` for every one (see manifest.A.1-1.jsonl) -- so they never reach the CLS_RIBBON pipeline this unit's oracle measures at all; visually they are pure single-centreline concentric rings, no ribbon fill anywhere in frame. The five F1 tone laws (interlockWeave/onePenDown/trochoidLoop/ampSpacing/weaveDepth) are NOT part of this capture regex and were not re-shot here. Separately (not part of this unit's own evidence, carried over from the judge's read-only review and independently re-viewed here): docs/3d-audit/lane-reports/A3-judge-evidence/interlockWeave-zoom.png shows the F1B oracle's own largest residual cluster on interlockWeave at 90 px/mm -- a single small red uncovered speck in the middle of an otherwise solidly-inked ~1.5mm band. Looked at directly: it reads as exactly what the judge and this unit's numbers say -- a corner/pinhole artefact, not a lengthwise streak, and far below the render's own visible resolution. F1 THEREFORE STAYS OPEN: this unit does not, and cannot, close it. See docs/3d-audit/STILL-OPEN.md's A3 bullet for the wording that must survive into any future handoff doc, and docs/3d-audit/lane-reports/A3-impl.md for the full implementation report.",
+  "tests": {
+    "changed_assertion": "tests/unit/scene3d-ribbon-f1b-streaks.test.js's `ringNotInkMm2 <= 0.18 mm²` band assertion (5 tests, formerly the file's own documented intentionally-RED set) was RETIRED as unfalsifiable-by-construction (a finer reachability lattice alone moves trochoidLoop across it: 0.1800 -> 0.1856) and replaced with: (1) a raw anti-explosion guard (< 3 mm², all pass at 0.89-2.06), (2) a non-gating reachable-area diagnostic (< 1.0 mm², all pass at 0.005-0.174), (3) an anti-vacuity check that the unreachable set is non-empty, (4) a lattice-sensitivity guard (doubling the search divisor may move the reachable-cell count by <= 1 cell -- all five laws pass at delta 0), and (5) a cluster-shape oracle on all five laws + both controls (no uncovered run > 1.2 mm long; none wider than one pen over > 1.0 mm long -- today's worst is 0.90 x 0.30 mm on trochoidLoop and a 0.45 x 0.30 mm pinhole shared by interlockWeave/trochoidLoop, both comfortably inside both bars).",
+    "counts": "scene3d-ribbon-f1b-streaks.test.js 44/44 (was 22 assertions across fewer test blocks before this unit); new tests/unit/scene3d-ring-coverage-reachability.test.js 7/7 (synthetic dropped-ruling honesty check, two closed-form corner-wedge derivations, one documented known-blind-spot case, three control-invariance checks). Guards re-run unchanged: scene3d-ribbon-c3-rule5 6/6, scene3d-ribbon-outline-fill-seam 4/4, scene3d-ribbon-wall-coverage 36/36, scene3d-hlr-spatial-index-identity 6/6, scene3d-ribbon-f7-self-occlusion 2/2, scene3d-hlr 11/11.",
+    "red_green_proof": "The synthetic dropped-ruling test in scene3d-ring-coverage-reachability.test.js is the file's real RED/GREEN pivot. RED: a temporary probe (VECTURA_A3_BROKEN_CLASSIFIER_PROBE=1, applied and reverted, never committed) made classifyReachabilityAtDivisor call every uncovered cell 'unreachable' regardless of geometry -- the honesty test failed with 'ringNotInkReachableMm2=0.0000 ... expected 0 to be greater than 1' even though 19 rulings were genuinely dropped. GREEN: with the real geometric predicate restored, the same dropped-ruling scene measures ringNotInkReachableMm2 far above 1.0 (baseline on this exact law/fixture, undropped, is ~0.15 mm²)."
+  },
+  "byte_identical_pairs": [
+    "shots/A/torus__hatch__ladder__med__a.webp (before == after, this unit's own true-before capture at 79c98ca8, expected -- no src/ file changed)",
+    "shots/A/torus__hatch__ladder__max__a.webp (before == after, same reason)",
+    "shots/A/torus__contour__ladder__med__a.webp (before == after, same reason)",
+    "shots/A/torus__contour__ladder__max__a.webp (before == after, same reason)"
+  ]
+}

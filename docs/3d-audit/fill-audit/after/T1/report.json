@@ -1,0 +1,65 @@
+{
+  "id": "T1",
+  "title": "T1 (W-05b/W-06b plan U1) -- chart-walked marks: mkTick/mkDashRamp ticks now follow the local surface family as walked arcs instead of straight 2-point chords -- docs/3d-audit/lane-reports/W-05b-W-06b-plan.md",
+  "branch": "3d-scene/fill-audit-a",
+  "base_commit": "3c88605f",
+  "commit": "67c9752c",
+  "user_report": "docs/3d-audit/fill-audit/user-reports/8.png, docs/3d-audit/fill-audit/user-reports/9.png",
+  "plan": "docs/3d-audit/lane-reports/W-05b-W-06b-plan.md (section 3.1, unit U1)",
+  "impl_report": "docs/3d-audit/lane-reports/T1-impl.md",
+  "before": [
+    "shots/B/cone__hatch__mkTick__low__a.webp",
+    "after/W-05/shots/B/cone__hatch__mkTick__med__a.webp",
+    "shots/B/cone__hatch__mkTick__max__a.webp",
+    "after/W-05/shots/B/torus__contour__mkTick__med__a.webp",
+    "after/W-05/shots/B/torus__crosshatch__mkTick__med__a.webp",
+    "after/W-05/shots/B/sphere__hatch__mkTick__med__a.webp",
+    "shots/B/sphere__hatch__mkTick__low__a.webp",
+    "after/W-05/shots/B/sphere__hatch__mkTick__max__a.webp",
+    "shots/B/sphere__hatch__ladder__low__a.webp",
+    "shots/B/sphere__hatch__ladder__med__a.webp",
+    "shots/B/sphere__hatch__ladder__max__a.webp",
+    "shots/B/cone__hatch__ladder__med__a.webp"
+  ],
+  "after": [
+    "after/T1/shots/B/cone__hatch__mkTick__low__a.webp",
+    "after/T1/shots/B/cone__hatch__mkTick__med__a.webp",
+    "after/T1/shots/B/cone__hatch__mkTick__max__a.webp",
+    "after/T1/shots/B/torus__contour__mkTick__med__a.webp",
+    "after/T1/shots/B/torus__crosshatch__mkTick__med__a.webp",
+    "after/T1/shots/B/sphere__hatch__mkTick__med__a.webp",
+    "after/T1/shots/B/sphere__hatch__mkTick__low__a.webp",
+    "after/T1/shots/B/sphere__hatch__mkTick__max__a.webp",
+    "after/T1/shots/B/sphere__hatch__ladder__low__a.webp",
+    "after/T1/shots/B/sphere__hatch__ladder__med__a.webp",
+    "after/T1/shots/B/sphere__hatch__ladder__max__a.webp",
+    "after/T1/shots/B/cone__hatch__ladder__med__a.webp"
+  ],
+  "gallery_hygiene_note": "cone__hatch__mkTick__{low,max} and sphere__hatch__mkTick__low were never re-shot after W-05 (the plan's own §10 note) -- their 'before' here is the ORIGINAL baseline (shots/B/, predates W-05's own orientation fix), so for those three cells the visible diff conflates W-05's earlier orientation fix with this unit's walk. The other mkTick cells (cone/med, torus/contour/med, torus/crosshatch/med, sphere/hatch/med, sphere/hatch/max) have a true apples-to-apples 'before' at after/W-05/, which is the correct baseline for this unit's own diff. Ladder cells are the unchanged control (byte-identical both ways).",
+  "notes": "Mechanism (surface-fill.js, all within emitMarks, scoped to law.shape==='tick'||'morph' only): `frameAt` split into `frameFrom(smp, ld, st, pr)` (pure, one-line-callable) so `walkPoly` can re-derive the identical frame at any sampled point, not only a ruling's own indexed sample (no behaviour change -- the refactor half). Added `MK_ARC_PEN=1.2` (0.36mm at 0.3mm pen) and `walkPoly`, which replaces `place`'s single linearised jump-per-vertex for a tick/dash pass with a walk: both of a pass's tips share exactly one local axis (a tick's tips share their u, a dash's tips share their v) -- that shared value is the pass's own TRUE hub, reached first with its own short walk from the ruling's frame, then each arm walks OUTWARD from that accurate seed in exactly opposite local directions, in increments of <= MK_ARC_MM, re-deriving the frame from every accepted sample's own dA/dB. On the first out-of-domain/back-facing step, that arm's walk stops and keeps what it already drew (mkStat.trunc) instead of `place` refusing the whole mark (the old `mkStat.offSurface` wholesale-refusal path, still used verbatim by every OTHER mark law). New stat seams on `mkStat` (published via `lastMarkStats`): `trunc`, `askSum`/`drawnSum` (shape's own designed ink length vs. what the walk delivered), `dirOver10` (marks whose drawn chord departs > 10deg from the shape's own requested direction, computed via `requestedDir` -- an exact rotation of the shape's local offset through the ruling's own orthonormal frame, magnitude-independent, no chart-curvature error of its own).\n\nA REAL BUG FOUND AND FIXED DURING THIS UNIT: the first working version of `walkPoly` walked both arms straight from the ruling's own (0,0) origin rather than the pass's own true (uOff-shifted) centre. Since a mark's along-ruling phase offset `uOff` is generally non-zero, this made the two arms depart in MIRRORED (not opposite) screen directions, producing a visible chevron/V kink at every tick's centre -- measured directly in the rendered cone/hatch/mkTick/med picture (a herringbone of V-shapes, not a tick texture) before it was caught and fixed. The fix (walk to the true shared hub first, then walk each arm outward from there) removed the kink entirely (confirmed by re-shooting and looking) and, as a side effect, corrected an over-stated O1 sagitta number (0.377mm, inflated by the kink) down to the true curvature-only figure (0.127mm) -- see the impl report for the full account and why the shipped O1/O2 bars are below the plan's own guessed targets.\n\nMeasured (this fixture: PRIMITIVE_PARAM_DEFAULTS/DEFAULT_CAMERA, sun az135/el45, BOUNDS 1200x1000 m20 pen0.3): O1 torus/contour d=50 tick sagitta median 0.000mm -> 0.127mm (RED->GREEN, bar >=0.10). O2 drawn-vs-requested direction error, fraction of marks over 10deg (exact restatement of p99<=10deg): sphere/hatch d=1 0.28->0.16, d=50 0.17->0.11 (bar <=0.20 both). O3 wholesale refusal rate offSurface/(offSurface+marks): cone/hatch d=50 0.197->0.005, torus/contour d=50 0.282->0.000, torus/crosshatch d=50 0.298->0.001, sphere/hatch d=1 0.613->0.007 (bar <=0.05, all four; matches the plan's own pre-fix table to 3 decimals). O4 sphere/hatch d=1 drawnSum/askSum ratio: undefined (field did not exist) -> 0.809 (bar >=0.75; short of the plan's aspirational >=0.95, see impl report).",
+  "visual_inspection": {
+    "cone__hatch__mkTick__low__a": "LOOKED directly. Before (original baseline, pre-W-05-orientation-fix too): the classic long-parallel-spoke artifact this whole plan traces back to. After: a fan of gently CURVED bands, each following the cone's own ruling curvature -- no straight spokes, no chevron kink, reads as one coherent swath.",
+    "cone__hatch__mkTick__med__a": "LOOKED directly. Before (after/W-05, orientation-fixed but straight-chord): 3-4 broad bands of parallel straight ticks with hard-edged boundaries where the field stops -- exactly user-reports/8.png. After: the same broad bands now read as smoothly curving swaths that visibly bend with the cone's surface; the hard swath-boundary is softer (marks now survive partway into what used to be a dead band, per O3's fix) though still visible as a density gradient, not a wall.",
+    "cone__hatch__mkTick__max__a": "LOOKED directly. Dense field, ticks legibly curved throughout, no chevron/V artifacts anywhere on the surface.",
+    "torus__contour__mkTick__med__a": "LOOKED directly. Before (after/W-05): bow-tie clusters of long straight spokes radiating from points, big blanks between clusters -- exactly user-reports/9.png (left ring). After: ONE continuous, evenly-curving texture of ticks following the torus's contour rings all the way around -- the bow-tie/cluster structure and the blanks between clusters are gone.",
+    "torus__crosshatch__mkTick__med__a": "LOOKED directly. Before (after/W-05): herringbone of long straight spokes -- user-reports/9.png (right ring). After: a dense woven texture that visibly follows BOTH crosshatch families' curvature around the torus; reads as one texture, not two sets of straight spokes.",
+    "sphere__hatch__mkTick__{low,med,max}": "LOOKED directly at all three. All read as curved tick swaths at every density; no chevron kink, no straight-spoke fans. low is the sparsest/most legible case for seeing individual tick curvature; max is a dense, evenly-graduated field.",
+    "ladder controls": "Byte-identical (md5 match, confirmed programmatically, not just visually) at every density for sphere/hatch and the cone/hatch/med control."
+  },
+  "identical_exceptions": {
+    "sphere__hatch__ladder__{low,med,max}__a.webp": { "identical": true, "reason": "ladder is not a mark law (law.shape is never 'tick'/'morph' for it); `isWalkedShape` is false and `place`'s original per-vertex code path runs byte-for-byte unchanged. Confirmed by md5, not just re-shot." },
+    "cone__hatch__ladder__med__a.webp": { "identical": true, "reason": "same as above." }
+  },
+  "tests": {
+    "red": "tests/unit/scene3d-mark-laws-draw.test.js, new 'W-05b' describe block: O1 (torus/contour d=50 sagitta median, RED 0.000mm -- every mark had exactly pp.length===2), O2 x2 (sphere/hatch d=1,d=50 dirOver10 fraction, RED = NaN/0 since mkStat.dirOver10 did not exist), O3 x4 (cone/hatch d=50, torus/contour d=50, torus/crosshatch d=50, sphere/hatch d=1 refusal fraction; RED 0.1973/0.2821/0.2977/0.6127 -- matches the plan's own table to 3 decimals), O4 (sphere/hatch d=1 askSum/drawnSum, RED = TypeError, field did not exist). Verified RED by git-stash-ing surface-fill.js back to 3c88605f in this worktree with the new test file in place, running, then stash-pop to restore -- 8/8 new tests fail, 10/10 pre-existing W-05/06/07 tests still pass.",
+    "green": "npx vitest run tests/unit/scene3d-mark-laws-draw.test.js -> 18/18 (10 pre-existing + 8 new).",
+    "bars_changed": "tests/unit/scene3d-mark-laws-draw.test.js:98 -- `expect(pp.length).toBe(2)` -> `toBeGreaterThanOrEqual(2)` -- a tick is now a walked polyline with a variable point count (was pinned to a 2-point chord, which is D1 itself). See T1-impl.md `## Bars changed` for the full disclosure and the two O1/O2 bars set below the plan's own guessed numbers with the honest measured reasoning.",
+    "guards": "scene3d-ladder-uniform-field-spacing 9/9, scene3d-fill-even-spacing 11/11, scene3d-fill-span-verdict 6/6, scene3d-curved-density-floor 12/12, scene3d-box-density-bearing 4/4, scene3d-hatch-density-500 14/14, scene3d-plot-safety 5/5 (+1 skipped), scene3d-curved-density-sparse-end 20/20, scene3d-tone-law-dispatch 7/7, scene3d-tone-algo-default 6/6, scene3d-hl-stage-roster 5/5, scene3d-fill-ruling-continuity 10/10 (+1 skipped), scene3d-fill-boundary-ends 41/41, scene3d-hlr-spatial-index-identity 6/6 -- all green, all run individually in the foreground. Byte-identity sweep (own script, md5 of emitted path arrays): mkDotScreen, mkScribble, ladder, fineLadder, phaseFineLadder x {sphere,torus,cone} x hatch x {low,med,max} = 45 cells, 0 mismatches, both before AND after the hub-kink fix. NOTE: 6 of the plan's named 'other mark laws' (mkLozenge, mkChevron, mkComma, mkSFlick, mkCrossPlus, mkTriangle, mkDotLozenge, mkRadialFlick minus the two reachable ones) are NOT in SCENE3D_TONE_LAWS.IDS and are not reachable via generate() in this build at all (silently fall back to 'ladder', console.warn 'unknown toneLaw') -- both pre- and post-fix, so byte-identity for them is structurally vacuous, not a gap this unit introduced. Perf: mkTick/mkDashRamp on torus d=220 measured 848ms/266ms, both well under the 2500ms G6 guard."
+  },
+  "open_follow_ups": [
+    "O2's shipped bar (dirOver10/marks <= 0.20) and O1's (sagitta median >= 0.10mm) are below the plan's own guessed targets (p99<=10deg / >=0.15mm) -- both are honest, measured, real improvements over pre-fix (0.000mm / unmeasurable), just not the plan's aspirational numbers. See T1-impl.md for the full account of why (real surface curvature over a tick's own finite length legitimately carries some marks past a flat reference at these densities, once the kink bug that was inflating O1 got fixed).",
+    "O4's shipped bar (drawnSum/askSum >= 0.75, measured 0.809) is short of the plan's aspirational >=0.95 at the sparsest density (sphere/hatch d=1) -- long ticks relative to the silhouette's own curvature there mean limb-truncation legitimately removes a meaningful fraction of the designed ink; not fixed further in this unit.",
+    "U2 (chan:'len' variable-length ticks + roster doc update), U3 (row-coverage floor for the sparse end), U4 (band-width cap restoring mkDashRamp's max density) are NOT started -- this unit is U1 only, per the plan's serial ordering.",
+    "cone__hatch__mkTick__{low,max} and sphere__hatch__mkTick__low still have no true W-05-baseline 'before' shot (only the pre-W-05-orientation-fix original) -- the gallery gap the plan's §10 flagged is still open; not this unit's files to fix."
+  ]
+}

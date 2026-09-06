@@ -1,0 +1,50 @@
+{
+  "before": {
+    "ver": "1.3.98",
+    "famByCount": [
+      {
+        "fam": "outer",
+        "count": 56
+      },
+      {
+        "fam": "inner",
+        "count": 23
+      }
+    ],
+    "receiverFillCount": 77,
+    "totalTagged": 79
+  },
+  "after": {
+    "ver": "1.3.98",
+    "famByCount": [
+      {
+        "fam": "outer",
+        "count": 56
+      },
+      {
+        "fam": "inner",
+        "count": 28
+      }
+    ],
+    "receiverFillCount": 81,
+    "totalTagged": 84
+  },
+  "restoredOk": true,
+  "cropBox": [
+    150,
+    150,
+    120,
+    120
+  ],
+  "fullBox": [
+    10,
+    10,
+    400,
+    400
+  ],
+  "centerPaper": {
+    "x": 210,
+    "y": 210,
+    "z": 0
+  }
+}

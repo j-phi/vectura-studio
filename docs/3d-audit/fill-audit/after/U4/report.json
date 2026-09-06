@@ -1,0 +1,67 @@
+{
+  "id": "U4",
+  "title": "Fill-roster collapse -- U4 (C-04, W-24): bundleCount/bundleMode folds bundleEased, bundleDither, bundleHandoff -- docs/3d-audit/lane-reports/W-22-24-W-18-plan.md",
+  "branch": "3d-scene/fill-collapse",
+  "base_commit": "6ed9002d",
+  "commit": "4186412e",
+  "before": [
+    "docs/3d-audit/fill-audit/shots/B/torus__hatch__bundleCount__med__a.webp",
+    "docs/3d-audit/fill-audit/shots/B/torus__hatch__bundleEased__med__a.webp",
+    "docs/3d-audit/fill-audit/shots/B/torus__hatch__bundleDither__med__a.webp",
+    "docs/3d-audit/fill-audit/shots/B/torus__hatch__bundleHandoff__med__a.webp"
+  ],
+  "after": [
+    "after/U4/shots/B/torus__hatch__bundleCount__med__a.webp",
+    "after/U4/shots/B/torus__hatch__bundleEased__med__a.webp",
+    "after/U4/shots/B/torus__hatch__bundleDither__med__a.webp",
+    "after/U4/shots/B/torus__hatch__bundleHandoff__med__a.webp",
+    "after/U4/manifest.B.1-1.jsonl"
+  ],
+  "notes": "U4 populates COLLAPSE.bundleCount in scripts/build-tone-laws.js (survivor 'bundleCount', descriptor key 'bundleMode', 4 options: count->bundleCount [default], eased->bundleEased, dither->bundleDither, handoff->bundleHandoff). PICKER_IDS 42 -> 39 (cumulative); ALIASES 6 -> 9. bundleLozenge (2193.3 mm, lens bundles) and bundleSubNib (4030.9 mm, solid band) are genuinely distinct and NOT folded -- confirmed unaffected by this unit.",
+  "picker_count": {
+    "measured_at_base_U3_6ed9002d": "43 (42 PICKER_IDS + shipped default 'ladder')",
+    "measured_after_U4": "40 (39 PICKER_IDS + shipped default). IDS unchanged at 48."
+  },
+  "byte_identity": {
+    "method": "node scripts/audit/scene3d-capture.js --tier B --root .claude/worktrees/fill-collapse --port 8482 --only '^torus__hatch__(bundleCount|bundleEased|bundleDither|bundleHandoff)__med__a$' --out docs/3d-audit/fill-audit/after/U4, run from MAIN. md5 compared against docs/3d-audit/fill-audit/shots/B/<same name>.webp.",
+    "result": "4/4 md5-identical, 0 differences. torus__hatch__bundleCount__med__a 2a06d8419a5b5e5369b64f8359051d0b; torus__hatch__bundleEased__med__a f3c356366afa6e734052da55bfb76a3a; torus__hatch__bundleDither__med__a aff915f56de134ee84da8332bf1408fd; torus__hatch__bundleHandoff__med__a 7142923ce111500f381442a27e5878de -- all match baseline exactly."
+  },
+  "reading_the_pass": "As with U1-U3: byte-identical before/after IS the pass. surface-fill.js's TONE_ALGO dispatch is untouched.",
+  "visual_inspection": {
+    "torus__hatch__bundleCount__med__a": "LOOKED at the webp directly. A torus rendered as multi-pass DASHED/BROKEN bundle rulings (visibly different from U1/U2/U3's continuous strokes -- each ruling reads as a run of short dash segments). Unchanged from the pre-U4 gallery baseline (md5-identical).",
+    "torus__hatch__bundleDither__med__a": "LOOKED at directly. By eye, essentially the same dashed-bundle chassis as bundleCount -- confirms the audit's cluster claim ('bundleCount~bundleDither confirmed on torus/sphere/cone x hatch+crosshatch+contour', ink 2461.4 vs 2468.3, 0.3%). The measured caveat (long-wave moire worse than baseline) is a subtle RMS-level statistical effect, not something visible in a single static crop at this resolution -- consistent with why the cluster reads as one picture by eye despite the real, measured downside.",
+    "torus__hatch__bundleEased__med__a": "LOOKED at directly. Also visually the same dashed-bundle family as bundleCount/bundleDither, matching the plan's second confirmed sub-pair (bundleEased~bundleHandoff)."
+  },
+  "monotonicity": "NOT asserted, per the plan's explicit instruction for C-04. Measured ink on torus+hatch+med (from the plan): bundleCount 2461.4 -> bundleEased 2156.5 -> bundleDither 2468.3 -> bundleHandoff 2082.9 mm. Non-monotone. bundleMode ships as a labelled enum for this reason.",
+  "mark_class_and_ribbon_pen_invariants": "SCENE_FILL_STYLES.markClass('bundleEased'|'bundleDither'|'bundleHandoff') === markClass('bundleCount') === 'hatch'. None of the 4 cluster members is in STROKE_FILL_RIBBON_LAWS or STROKE_FILL_PEN_LAWS -- consistent membership (all absent), verified live by test.",
+  "caveat_visibility_gap_confirmed_and_handled": "bundleDither is one of the 11 LIBRARY-tier laws AND carries a real measured caveat ('waving the pass-count boundary made long-wave moire worse... 3.43 vs 2.90 RMS'). Folding it exposed the exact gap flagged in the plan's §2.4 and in this unit's own test file comment BEFORE running the guard suite (not discovered after the fact): `fillStyleControls` (scene3d-panel.js) computes its caveat line from the RESOLVED SURVIVOR id ('bundleCount', which has no caveat of its own), not from the specific internal law the bundleMode sub-control currently selects -- so a user who picks 'Dithered' no longer sees bundleDither's caveat warning anywhere in the UI. This is REAL and OBSERVABLE, not theoretical: it broke 3 existing integration tests that used 'bundleDither' as a fixture to exercise the general 'a library law's caveat renders in the UI' mechanism (scene3d-fill-style-picker.test.js, ctxbar flyout + docked panel + (i)-popover variants). Fixing it needs a UI-file change (scene3d-panel.js/context-bar.js), which is an explicit STOP CONDITION for this data-only unit ('if you need to touch a UI file, the design is wrong -- stop and report'). Resolution taken: did NOT touch a UI file; did NOT revert the fold (the geometry/byte-identity oracle passes cleanly -- this is a UI-affordance loss, not a rendering regression, and the plan's own oracle for THIS unit is byte-identity, which holds). Instead: (1) added a dedicated 'U4 caveat-visibility gap' describe block to scene3d-tone-law-collapse.test.js that proves the gap exists and is bounded (BY_ID-direct lookups still show bundleDither's own caveat correctly forever -- the roster corpus is untouched; only the UI's resolved-survivor rendering path loses it); (2) re-fixtured the 3 broken UI tests onto 'bundleSubNib' (a LIBRARY-tier, caveat-bearing law the plan never folds in ANY cluster), since their actual purpose is to test the GENERAL mechanism, not bundleDither specifically. FLAGGING FOR THE ORCHESTRATOR: this is a genuine, user-visible product regression (a real warning a user could see before this unit is now invisible for anyone who picks 'Dithered' under 'Bundle mode') and needs either (a) a UI-file follow-up unit that resolves the caveat from the fully-resolved internal id rather than the survivor while keeping the (i) popover's blurb on the survivor (the plan's own two intents are NOT the same computation and the current code conflates them), or (b) an explicit product decision that this loss is acceptable. Not a blocker for continuing U5 (contFieldTouch has the exact same shape of gap, addressed the same way below).",
+  "tests": {
+    "tests/unit/scene3d-tone-law-collapse.test.js": "42/42 (U0 8 + U1 8 + U2 8 + U3 8 + U4 8 + the new 2-test 'U4 caveat-visibility gap' describe block). Ran targeted with `-t \"U4\"` (10/10, 2.8s).",
+    "tests/unit/scene3d-tone-laws-config.test.js": "8/8. Bumped the cumulative test 42->39 PICKER_IDS, 6->9 ALIASES (+bundleEased,bundleDither,bundleHandoff).",
+    "tests/integration/scene3d-fill-style-picker.test.js": "131/131 after fixing 3 REAL failures (not just a bar bump this time -- see caveat_visibility_gap_confirmed_and_handled above and bars_changed below) plus one more dead-count bump (32 -> 29).",
+    "tests/integration/scene3d-panel.test.js": "36/36, genuinely unaffected (re-ran, not assumed).",
+    "tests/integration/stroke-fill-style-control.test.js": "30/30, genuinely unaffected (BUCKET_A/B/C fixtures do not touch this cluster).",
+    "tests/integration/scene3d-panel-style-live-sync.test.js": "6/6, unaffected.",
+    "tests/integration/context-bar-scene-flyouts.test.js": "39/39, unaffected."
+  },
+  "generated_file_discipline": "node scripts/build-tone-laws.js output: 'Wrote 48 law(s) (37 production / 11 library)... PICKER_IDS 39, ALIASES 9'. All four §2.1 integrity throws clean.",
+  "bars_changed": [
+    {
+      "file_line": "tests/unit/scene3d-tone-laws-config.test.js (the single cumulative test)",
+      "old_to_new": "PICKER_IDS.length 42 -> 39, ALIASES count 6 -> 9, alias id set +bundleEased,+bundleDither,+bundleHandoff",
+      "why": "Cumulative counter, bumped per the plan's own §5 instruction."
+    },
+    {
+      "file_line": "tests/integration/scene3d-fill-style-picker.test.js:375 ('groups(mode) disables the dead options and suffixes their label')",
+      "old_to_new": "dead.length 32 -> 29",
+      "why": "Total offered options dropped 43 -> 40 (3 more folded ids); alive=11 unaffected."
+    },
+    {
+      "file_line": "tests/integration/scene3d-fill-style-picker.test.js: 3 tests ('the caveat and mark-class note stay reachable without opening the (i)' [ctxbar], 'the description block prints the mechanism; a library law adds its caveat' [docked], 'the caveat stays OUTSIDE the popover' [docked (i) block])",
+      "old_to_new": "fixture toneLaw 'bundleDither' -> 'bundleSubNib'",
+      "why": "REAL regression, not a stale-count bump: bundleDither's caveat is genuinely no longer rendered by the docked/ctxbar UI once folded (see caveat_visibility_gap_confirmed_and_handled). These 3 tests' actual purpose is the GENERAL caveat-rendering mechanism, so they now use a law this plan never folds (bundleSubNib) instead of asserting a UI behaviour this unit correctly, intentionally removed for the folded id."
+    }
+  ],
+  "known_regression_unfixed": "(1) The shadow-path collision count in scene3d-shadow-tone-law-uniqueness.test.js grows further (bundleEased/bundleDither/bundleHandoff now also collide via the migration shim's rewrite to bundleCount) -- shadows.js is U9's file, out of scope. (2) The UI caveat-visibility gap for bundleDither documented above -- flagged for the orchestrator's product decision or a UI-file follow-up unit, NOT silently worked around.",
+  "live_verification": "Deferred to the end of the U1-U5 chain -- see U1-U5-impl.md's Live Verification section."
+}

@@ -13,7 +13,7 @@
   ],
   "after": [
     "after/W-03/shots/live-01-spiral-4-enabled-45-disabled.png",
-    "after/W-02/shots/live-05-spiral-fillstyle-row-9-disabled-pre-w03.png",
+    "after/W-03/shots/live-05-spiral-fillstyle-row-9-disabled-pre-w03.png",
     "after/W-03/manifest.B.unreachable.jsonl"
   ],
   "notes": "Neither the spiral nor the stipple mapper publishes a width profile in surface-fill.js (the spiral sink never calls noteW; stipple pushes dot rings with no run), so every variable-width law's ribbonize step is skipped and degrades to a bare centreline or to rung-skipping indistinguishable from siblings. F-03 measured 39 of 48 roster laws (everything not already in the 9-entry CURVED_SPIRAL_STIPPLE_INERT) collapsing to only 18-19 distinct pictures across sphere/torus/cone, 432 shots flagged bareCentrelinesOnly. Extended CURVED_SPIRAL_STIPPLE_INERT from 9 to 45 entries -- everything except the 3 honest rung-skippers (none, fineLadder, phaseFineLadder; ladder the shipped default was already always reachable) -- matching clusters C-09..C-13's combined membership (with fineLadder/phaseFineLadder pulled back out of C-13 per the change spec). The finding's title says 35 hidden styles; the clusters' own membership totals 36 newly-hidden ids (45 - 9 = 36) -- reported the measured number, not the title's, and noted the discrepancy in the commit message. Added a characterization test (SurfaceFill.lastRibbonStats on a sphere+spiral+taperedEnds build: ribbonLaw true, wallRings 0) proving every stretch really did fall back to bare centreline, justifying the hide; this assertion is expected to flip when future work (W-13) wires a real spiral width profile.",

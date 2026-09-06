@@ -77,7 +77,7 @@ function basename(p) {
 // Evidence collection
 // ---------------------------------------------------------------------------
 
-function loadReports(outDir) {
+function loadReports(outDir, fatalErrors) {
   const afterDir = path.join(outDir, 'after');
   if (!fs.existsSync(afterDir)) return [];
   const entries = fs.readdirSync(afterDir).filter((f) => {
@@ -98,30 +98,46 @@ function loadReports(outDir) {
       reports.push({ malformed: true, id: dirName, dir: dirRel, error: 'invalid JSON: ' + e.message });
       return;
     }
-    reports.push(normalizeReport(data, dirName, dirRel, outDir));
+    reports.push(normalizeReport(data, dirName, dirRel, outDir, fatalErrors));
   });
   return reports;
 }
 
-function normalizeReport(data, dirName, dirRel, outDir) {
+// Hygiene guard (2026-09-05, hardened 2026-09-05 for GH-1): every "after" entry
+// MUST resolve under this card's own after/<W-id>/ directory. An entry pointing
+// anywhere else (shots/..., another card's after/ dir, a bare filename, etc.)
+// means the gallery is either comparing before-with-before or showing one
+// card's evidence under a different card's name — both are silent corruption,
+// so this is a hard refusal (non-zero exit), not a warning.
+function checkAfterPaths(id, dirName, afterRaw, fatalErrors) {
+  const prefix = `after/${dirName}/`;
+  afterRaw.forEach((p) => {
+    const ok = typeof p === 'string' && p.startsWith(prefix);
+    if (!ok) fatalErrors.push(`card "${id}" (after/${dirName}/report.json): after-cell "${p}" does not start with "${prefix}"`);
+  });
+}
+
+function normalizeReport(data, dirName, dirRel, outDir, fatalErrors) {
   const warnings = [];
   const id = data.id || dirName;
   if (!data.id) warnings.push(`report.json has no "id" field; used directory name "${dirName}"`);
   if (!data.title) warnings.push('report.json has no "title" field');
   const before = Array.isArray(data.before) ? data.before : [];
-  const afterRaw = Array.isArray(data.after) ? data.after : [];
-  // Hygiene guard (2026-09-05): an "after" entry that resolves into the BEFORE gallery
-  // (shots/...) would compare before with before and badge it byte-identical. Refuse it.
-  const after = afterRaw.filter((p) => {
-    const bad = typeof p === 'string' && /^shots\//.test(p);
-    if (bad) warnings.push(`after entry points at the before gallery, ignored: ${p}`);
-    return !bad;
-  });
+  const after = Array.isArray(data.after) ? data.after : [];
+  checkAfterPaths(id, dirName, after, fatalErrors);
   if (!Array.isArray(data.before)) warnings.push('report.json "before" is missing or not an array');
   if (!Array.isArray(data.after)) warnings.push('report.json "after" is missing or not an array');
   [...before, ...after].forEach((p) => {
     if (!fs.existsSync(path.join(outDir, p))) warnings.push(`referenced file does not exist: ${p}`);
   });
+  // Explicit byte-identity exemptions: report.json may declare, per after-cell
+  // basename, { "identical": true, "reason": "..." } to acknowledge a pair is
+  // expected to be byte-identical (e.g. a primitive/style combo the algorithm
+  // is documented not to affect). Anything identical WITHOUT such an entry is
+  // flagged, not silently passed — see renderPairsTable / checkIdentical.
+  const identicalExceptions = (data.identical_exceptions && typeof data.identical_exceptions === 'object')
+    ? data.identical_exceptions
+    : {};
   return {
     kind: 'report',
     id,
@@ -134,6 +150,7 @@ function normalizeReport(data, dirName, dirRel, outDir) {
     before,
     after,
     byte_identical_pairs: Array.isArray(data.byte_identical_pairs) ? data.byte_identical_pairs : [],
+    identicalExceptions,
     warnings,
     sourceDir: dirRel,
   };
@@ -279,6 +296,7 @@ const BA_STYLE = `<style>
   #before-after .pill.landed { color: #7bd88f; }
   #before-after .pill.pending { color: #ffb347; }
   #before-after .pill.identical { color: var(--accent); margin-top: 4px; display: inline-block; }
+  #before-after .pill.identical-unexplained { color: var(--warn); margin-top: 4px; display: inline-block; border: 1px solid var(--warn); }
   #before-after .pill.malformed { color: var(--warn); }
   #before-after .ba-notes { max-width: 110ch; }
   #before-after .ba-warn { color: var(--warn); font-size: 12px; margin: 4px 0; }
@@ -316,25 +334,53 @@ function imgCell(rel) {
   return `<a href="${esc(rel)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(rel)}" alt="${esc(basename(rel))}"></a>`;
 }
 
-function renderPairsTable(pairs, outDir, hashCache, onPairCounted) {
+// opts.identicalExceptions: map of cell basename -> { identical: true, reason: "..." },
+// declared in report.json to acknowledge an expected byte-identical pair.
+// opts.enforce: only report.json cards enforce the unexplained-identical flag/WARN;
+// handoff-unit cards (no report.json, no exceptions mechanism) keep the plain badge.
+// opts.onUnexplainedIdentical(basename) fires for every identical pair NOT covered
+// by a valid exception — the caller turns those into a printed WARN.
+function renderPairsTable(pairs, outDir, hashCache, onPairCounted, opts) {
   if (!pairs.length) return '<p class="ba-empty">No matched before/after pairs.</p>';
+  const o = opts || {};
+  const exceptions = o.identicalExceptions || {};
+  const enforce = !!o.enforce;
   const rows = pairs.map((pr) => {
     const bHash = fileMd5Cached(hashCache, path.join(outDir, pr.before));
     const aHash = fileMd5Cached(hashCache, path.join(outDir, pr.after));
     const identical = !!bHash && !!aHash && bHash === aHash;
     if (onPairCounted) onPairCounted(identical);
+    let badge = '';
+    if (identical) {
+      if (!enforce) {
+        badge = '<span class="pill identical">byte-identical</span>';
+      } else {
+        const exc = exceptions[pr.base];
+        const explained = exc && exc.identical === true && typeof exc.reason === 'string' && exc.reason.trim().length > 0;
+        if (explained) {
+          badge = `<span class="pill identical" title="${esc(exc.reason)}">byte-identical (explained)</span>`;
+        } else {
+          badge = '<span class="pill identical-unexplained">byte-identical — UNEXPLAINED</span>';
+          if (o.onUnexplainedIdentical) o.onUnexplainedIdentical(pr.base);
+        }
+      }
+    }
     return `<tr>
       <td>${imgCell(pr.before)}<div class="ba-cap">${esc(pr.before)}</div></td>
-      <td>${imgCell(pr.after)}<div class="ba-cap">${esc(pr.after)}</div>${identical ? '<span class="pill identical">byte-identical</span>' : ''}</td>
+      <td>${imgCell(pr.after)}<div class="ba-cap">${esc(pr.after)}</div>${badge}</td>
     </tr>`;
   });
   return `<table class="ba-pairs"><thead><tr><th>before</th><th>after</th></tr></thead><tbody>${rows.join('\n')}</tbody></table>`;
 }
 
-function renderReportCard(r, outDir, hashCache) {
+function renderReportCard(r, outDir, hashCache, onUnexplainedIdentical) {
   const { pairs, unmatchedBefore, unmatchedAfter } = pairByBasename(r.before, r.after);
   let identicalCount = 0;
-  const pairsHtml = renderPairsTable(pairs, outDir, hashCache, (identical) => { if (identical) identicalCount += 1; });
+  const pairsHtml = renderPairsTable(pairs, outDir, hashCache, (identical) => { if (identical) identicalCount += 1; }, {
+    identicalExceptions: r.identicalExceptions,
+    enforce: true,
+    onUnexplainedIdentical: (base) => { if (onUnexplainedIdentical) onUnexplainedIdentical(r.id, base); },
+  });
 
   const unmatchedHtml = (unmatchedBefore.length || unmatchedAfter.length)
     ? `<details class="ba-unmatched"><summary>Unmatched images (${unmatchedBefore.length} before-only, ${unmatchedAfter.length} after-only)</summary>
@@ -388,8 +434,8 @@ function renderHandoffCard(u, outDir, hashCache) {
   return { html, pairCount, identicalCount };
 }
 
-function renderBeforeAfter(outDir) {
-  const reports = loadReports(outDir);
+function renderBeforeAfter(outDir, fatalErrors) {
+  const reports = loadReports(outDir, fatalErrors);
   const handoffUnits = collectHandoffUnits(outDir);
   const hashCache = new Map();
 
@@ -398,6 +444,7 @@ function renderBeforeAfter(outDir) {
   let totalPairs = 0;
   let totalIdentical = 0;
   let itemCount = 0;
+  const unexplainedIdentical = []; // { card, cell } — printed as a WARN, never silently passed
   const cards = items.map((item) => {
     if (item.malformed) {
       return `<article class="ba-card ba-malformed" id="card-${esc(item.id)}">
@@ -406,7 +453,9 @@ function renderBeforeAfter(outDir) {
       </article>`;
     }
     itemCount += 1;
-    const built = item.kind === 'handoff' ? renderHandoffCard(item, outDir, hashCache) : renderReportCard(item, outDir, hashCache);
+    const built = item.kind === 'handoff'
+      ? renderHandoffCard(item, outDir, hashCache)
+      : renderReportCard(item, outDir, hashCache, (cardId, base) => unexplainedIdentical.push({ card: cardId, cell: base }));
     totalPairs += built.pairCount;
     totalIdentical += built.identicalCount;
     return built.html;
@@ -416,7 +465,10 @@ function renderBeforeAfter(outDir) {
   const handoffNote = handoffUnits.length === 0
     ? ' · handoff units: none found under docs/3d-audit/handoff/ in this worktree (evidence exists on unmerged 3d-scene/handoff-b / -c branches)'
     : '';
-  const summary = `<p class="ba-summary">${itemCount} item${itemCount === 1 ? '' : 's'} · ${totalPairs} image pair${totalPairs === 1 ? '' : 's'} · ${totalIdentical} byte-identical pair${totalIdentical === 1 ? '' : 's'}${malformedCount ? ` · ${malformedCount} malformed report${malformedCount === 1 ? '' : 's'}` : ''}${handoffNote}</p>`;
+  const unexplainedNote = unexplainedIdentical.length
+    ? ` · ${unexplainedIdentical.length} UNEXPLAINED byte-identical pair${unexplainedIdentical.length === 1 ? '' : 's'} (see WARN in console output)`
+    : '';
+  const summary = `<p class="ba-summary">${itemCount} item${itemCount === 1 ? '' : 's'} · ${totalPairs} image pair${totalPairs === 1 ? '' : 's'} · ${totalIdentical} byte-identical pair${totalIdentical === 1 ? '' : 's'}${malformedCount ? ` · ${malformedCount} malformed report${malformedCount === 1 ? '' : 's'}` : ''}${handoffNote}${unexplainedNote}</p>`;
 
   const body = cards.length ? cards.join('\n') : '<p class="ba-empty">No before/after evidence found.</p>';
   return {
@@ -426,6 +478,7 @@ function renderBeforeAfter(outDir) {
     totalIdentical,
     malformedCount,
     handoffCount: handoffUnits.length,
+    unexplainedIdentical,
   };
 }
 
@@ -546,7 +599,23 @@ function main() {
   const indexPath = path.join(outDir, 'index.html');
   const html = fs.readFileSync(indexPath, 'utf8');
 
-  const stats = renderBeforeAfter(outDir);
+  // GH-1 hardening: an "after" path that escapes its own card's after/<W-id>/
+  // directory means the gallery would render one card's evidence for another
+  // (or before-vs-before). Refuse the whole build rather than render it wrong.
+  const fatalErrors = [];
+  const stats = renderBeforeAfter(outDir, fatalErrors);
+  if (fatalErrors.length) {
+    console.error(`REFUSED: ${fatalErrors.length} report.json "after" path violation(s) — index.html was NOT written:`);
+    fatalErrors.forEach((e) => console.error('  ' + e));
+    process.exitCode = 1;
+    return;
+  }
+
+  if (stats.unexplainedIdentical.length) {
+    console.warn(`WARN: ${stats.unexplainedIdentical.length} byte-identical before/after pair(s) with no "identical: true" + "reason" exemption in report.json:`);
+    stats.unexplainedIdentical.forEach((u) => console.warn(`  card "${u.card}" cell "${u.cell}"`));
+  }
+
   const baSectionRe = /<section id="before-after">[\s\S]*?<\/section>/;
   if (!baSectionRe.test(html)) throw new Error('index.html has no <section id="before-after">');
   const withContent = html.replace(baSectionRe, () => `<section id="before-after">\n${stats.html}\n</section>`);

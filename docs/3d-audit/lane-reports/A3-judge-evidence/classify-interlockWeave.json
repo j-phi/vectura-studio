@@ -1,0 +1,177 @@
+{
+ "interlockWeave": {
+  "stats": {
+   "wide": 35,
+   "narrow": 18,
+   "ribbons": 35,
+   "walls": 36,
+   "outlineOnly": 1,
+   "erodeEmpty": 0
+  },
+  "ringAreaMm2": 660.785625,
+  "ringNotInkMm2": 2.05875,
+  "ringFillRate": 0.9968843904556792,
+  "selfOccludedAreaMm2": 2.503125,
+  "badCells": 366,
+  "reachableMm2": 0.1519,
+  "reachableCells": 27,
+  "unreachCornerMm2": 1.9012,
+  "unreachCornerCells": 338,
+  "unreachNeckMm2": 0.0056,
+  "unreachNeckCells": 1,
+  "clusterCount": 151,
+  "topClusters": [
+   {
+    "cells": 19,
+    "mm2": 0.1069,
+    "reach": 19,
+    "corner": 0,
+    "neck": 0,
+    "cx": 148.6,
+    "cy": 87.01,
+    "w": 0.45,
+    "h": 0.3,
+    "len": 0.541
+   },
+   {
+    "cells": 9,
+    "mm2": 0.0506,
+    "reach": 0,
+    "corner": 9,
+    "neck": 0,
+    "cx": 112.08,
+    "cy": 81.8,
+    "w": 0.3,
+    "h": 0.375,
+    "len": 0.48
+   },
+   {
+    "cells": 9,
+    "mm2": 0.0506,
+    "reach": 0,
+    "corner": 8,
+    "neck": 1,
+    "cx": 134.54,
+    "cy": 90.72,
+    "w": 0.225,
+    "h": 0.375,
+    "len": 0.437
+   },
+   {
+    "cells": 8,
+    "mm2": 0.045,
+    "reach": 0,
+    "corner": 8,
+    "neck": 0,
+    "cx": 121,
+    "cy": 89.71,
+    "w": 0.3,
+    "h": 0.3,
+    "len": 0.424
+   },
+   {
+    "cells": 7,
+    "mm2": 0.0394,
+    "reach": 0,
+    "corner": 7,
+    "neck": 0,
+    "cx": 135.89,
+    "cy": 77.45,
+    "w": 0.225,
+    "h": 0.375,
+    "len": 0.437
+   },
+   {
+    "cells": 7,
+    "mm2": 0.0394,
+    "reach": 0,
+    "corner": 7,
+    "neck": 0,
+    "cx": 116.99,
+    "cy": 89.64,
+    "w": 0.225,
+    "h": 0.3,
+    "len": 0.375
+   },
+   {
+    "cells": 7,
+    "mm2": 0.0394,
+    "reach": 0,
+    "corner": 7,
+    "neck": 0,
+    "cx": 122.76,
+    "cy": 90.5,
+    "w": 0.225,
+    "h": 0.375,
+    "len": 0.437
+   },
+   {
+    "cells": 7,
+    "mm2": 0.0394,
+    "reach": 0,
+    "corner": 7,
+    "neck": 0,
+    "cx": 133.11,
+    "cy": 92.41,
+    "w": 0.225,
+    "h": 0.3,
+    "len": 0.375
+   },
+   {
+    "cells": 6,
+    "mm2": 0.0337,
+    "reach": 0,
+    "corner": 6,
+    "neck": 0,
+    "cx": 145.41,
+    "cy": 77.07,
+    "w": 0.225,
+    "h": 0.225,
+    "len": 0.318
+   },
+   {
+    "cells": 6,
+    "mm2": 0.0337,
+    "reach": 0,
+    "corner": 6,
+    "neck": 0,
+    "cx": 143.65,
+    "cy": 79.06,
+    "w": 0.3,
+    "h": 0.3,
+    "len": 0.424
+   },
+   {
+    "cells": 6,
+    "mm2": 0.0337,
+    "reach": 0,
+    "corner": 6,
+    "neck": 0,
+    "cx": 136.56,
+    "cy": 79.89,
+    "w": 0.225,
+    "h": 0.3,
+    "len": 0.375
+   },
+   {
+    "cells": 6,
+    "mm2": 0.0337,
+    "reach": 0,
+    "corner": 6,
+    "neck": 0,
+    "cx": 139.86,
+    "cy": 88.32,
+    "w": 0.225,
+    "h": 0.375,
+    "len": 0.437
+   }
+  ],
+  "grid": {
+   "nx": 767,
+   "ny": 373,
+   "cs": 0.075,
+   "ox": 110.8002812220571,
+   "oy": 70.58729
+  }
+ }
+}

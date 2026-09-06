@@ -1,0 +1,103 @@
+{
+  "id": "W-27c-0a",
+  "iteration": 2,
+  "title": "W-27c item 0(a) — torus/sphere contourSlice pen-width ink merging at saddles/poles; pen-aware crowding cull (K=0.8) — real, measured, PARTIAL improvement, NOT closure. See STATUS in W-27c-0a-impl-2.md.",
+  "branch": "3d-scene/fill-audit-d",
+  "commit": "f268f21c",
+  "base_commit": "789ba0fa",
+  "prior_commit_iteration_1": "342d8601 (K=0.7 — superseded; adversarial review found the unit-test rig diverged from the real render and the sphere O2(b) bar was loosened undisclosed)",
+  "user_report": "docs/3d-audit/user-reports/11.png",
+  "plan": "docs/3d-audit/lane-reports/W-27c-0a-plan.md",
+  "review": "docs/3d-audit/lane-reports/W-27c-0a-review.md",
+  "impl_report": "docs/3d-audit/lane-reports/W-27c-0a-impl.md",
+  "impl_report_iteration_2": "docs/3d-audit/lane-reports/W-27c-0a-impl-2.md",
+  "before": [
+    "after/W-27c-0a/before-789ba0fa/shots/A/torus__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0a/before-789ba0fa/shots/A/torus__contourSlice__ladder__max__a.webp",
+    "after/W-27c-0a/before-789ba0fa/shots/A/sphere__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0a/before-789ba0fa/shots/A/sphere__contourSlice__ladder__max__a.webp",
+    "after/W-27c-0a/before-789ba0fa/shots/A/solid__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0a/before-789ba0fa/shots/A/solid__contourSlice__ladder__max__a.webp"
+  ],
+  "after": [
+    "after/W-27c-0a/shots/A/torus__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0a/shots/A/torus__contourSlice__ladder__max__a.webp",
+    "after/W-27c-0a/shots/A/sphere__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0a/shots/A/sphere__contourSlice__ladder__max__a.webp",
+    "after/W-27c-0a/shots/A/solid__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0a/shots/A/solid__contourSlice__ladder__max__a.webp"
+  ],
+  "gallery_hygiene_note": "Re-shot in iteration 2 (K=0.7 -> K=0.8): the stale K=0.7 'after' shots were deleted and recaptured from the live worktree (port 8481) so 'after' reflects the shipped code, not the superseded iteration-1 state. 'before' shots are unchanged from iteration 1 (still a disposable git-archive-789ba0fa scratch export) and remain byte-valid: 789ba0fa is upstream of both iterations. solid re-verified byte-identical (cmp) to before-789ba0fa at K=0.8 too.",
+  "notes": "Root cause (planner, W-27c-0a-plan.md): the ORIGINAL '8deg corner' bar (O1) is already met (7.579deg) and is the WRONG instrument. The user's 'angled points' are the tapering apex of a solid wedge of ink where several DIFFERENT contour levels crowd to less than one pen width at the torus's two saddles (a sphere's poles have the analogous defect) -- uniform-in-`d` slicing always crowds near a critical point of the height function. Fix (plan's ranked fix 1, unchanged in mechanism from iteration 1): a per-record occupancy grid at pen resolution (makeCrowdGrid/crowdCullRun/wCrowdCullRuns, scene3d.js), filled plane-ascending, suppressing samples within CROWD_CULL_K*penWidth of already-inked samples (different run, or the same run >=6 vertices away), splitting at each suppression boundary; 'never cull a whole level'. Scoped to smoothSurface && analyticProject. buildSliceSegments/linkSegments/refineSliceRing untouched.\n\nITERATION 2 changes only CROWD_CULL_K (0.7 -> 0.8, per the adversarial review's own direct measurement showing no cost) and the test suite (restored the sphere O2(b) bar to the plan's <=5% instead of an undisclosed <10%; added O2(d)/(e) merged-ink-blob width/count as PRIMARY assertions, measured via a NEW engine-pipeline rig that drives through engine.addLayer + computeAllDisplayGeometry rather than a hand-picked BOUNDS). See 'bars_changed' below and W-27c-0a-impl-2.md's '## Bars changed' section for the full disclosure.\n\nHONEST HEADLINE (do not skip): this fix is a real, measured, PARTIAL improvement. It is NOT the closure of the user's reported defect. On the REAL rendered audit cell (fresh playwright captures against 789ba0fa and this fix, both via the plan's own unmodified probes): merged-ink-blob count 45->33, dense-ink-pixel fraction 5.70%->3.46%, largest blob shrinks materially -- all real wins -- but nowhere near the plan's own <=5-blob/<=0.9mm acceptance, and the two 'eyes' the user circled in 11.png still read as solid wedges with a visible point at normal viewing scale (see visual_inspection). Closing the gap needs the plan's explicitly-deferred Rank 3 (level warping), its own W-id.",
+  "measurements": {
+    "rig_unit_test_direct_generate": "torus/sphere: Params.PRIMITIVE_PARAM_DEFAULTS[primitive], Params.DEFAULT_CAMERA, styleTable {mapper:'contourSlice', params:{sliceCount:26}}, BOUNDS.penWidth 0.3mm, algo.generate() called directly. Iteration-1's rig; kept as a fast regression guard, NOT claimed to represent the real render.",
+    "rig_unit_test_engine_pipeline": "NEW in iteration 2: engine.addLayer('scene3d') + engine.computeAllDisplayGeometry() (real SETTINGS defaults: paperSize 'letter', margin 20, pen 0.3mm), same torus/sphere/camera/ladder-style recipe as the plan's capture-audit-cell.js probe. MEASURED (not assumed) to reproduce the direct-generate rig's numbers EXACTLY -- i.e. computeAllDisplayGeometry alone is not the source of the review's real-browser divergence (see rig_real_browser below and W-27c-0a-impl-2.md).",
+    "rig_real_browser": "The plan's OWN capture-audit-cell.js + measure-crowded-ink.js + measure-merged-ink-blobs.js + measure-curvature-and-separation.js probes, run UNMODIFIED via playwright against a disposable dev-server on a from-scratch 789ba0fa export (port 8520) and against the live worktree at this fix's HEAD (port 8481), fresh in this iteration (not reused from the review's own run). This is the AUTHORITATIVE 'what the user sees' measurement.",
+    "O2_torus_engine_pipeline_rig": {
+      "pct_ink_within_0.5w_of_other_ink": { "red": "2.586%", "green": "0%" },
+      "pct_ink_within_1.0w_of_other_ink": { "red": "8.902%", "green": "2.760%" },
+      "tightest_same_ring_waist_mm": { "red": "0.039mm (0.13w)", "green": "0.249mm (0.83w)" },
+      "largest_merged_blob_width_mm": { "red": "3.35mm", "green": "2.10mm", "plan_bar": "<=0.9mm -- MISSED both before and after" },
+      "merged_blob_count": { "red": 27, "green": 12, "plan_bar": "<=5 -- MISSED both before and after" }
+    },
+    "O2_sphere_engine_pipeline_rig": {
+      "pct_ink_within_0.5w_of_other_ink": { "red": "4.078%", "green": "0.013%" },
+      "pct_ink_within_1.0w_of_other_ink": { "red": "13.906%", "green": "4.295%", "plan_bar": "<=5% -- CLEARED (iteration 1 at K=0.7 MISSED this at 6.475%, undisclosed)" },
+      "tightest_same_ring_waist_mm": { "red": "0.082mm (0.27w)", "green": "0.240mm (0.80w)" },
+      "largest_merged_blob_width_mm": { "red": "34.50mm", "green": "14.85mm", "plan_bar": "<=0.9mm -- MISSED both before and after, by a wide margin" },
+      "merged_blob_count": { "red": 47, "green": 54, "plan_bar": "<=5 -- MISSED, and REGRESSED (worse after the fix): the cull breaks one giant merged polar cap into MORE, individually smaller blobs; total merged area shrinks a lot but the blob COUNT this bar checks gets worse. Reported honestly, not hidden." }
+    },
+    "O2_torus_real_browser_audit_cell": {
+      "front_fill_path_count": { "red": 109, "green": 129 },
+      "total_ink_mm": { "red": 1123.2, "green": 1086.5, "retained_pct": "96.7%" },
+      "measure_crowded_ink_js_within_1_pen": { "red": "226.7mm (20.0%)", "green": "171.8mm (15.8%)", "caveat": "CORRECTED per adversarial review 2 (W-27c-0a-review-2.md §2): this iteration's original report wrote the RED row as 122.3mm/10.9%, which the reviewer traced to a units mismatch -- that figure is actually the 0.5-PEN (0.15mm) threshold for this same capture (which matches the plan's own §3.2 table, 124.8mm/11.0%, almost exactly), compared apples-to-oranges against the 1.0-pen (0.3mm) GREEN figure. At a CONSISTENT 0.3mm threshold on both captures the real numbers are 226.7mm/20.0% (RED) -> 171.8mm/15.8% (GREEN): an IMPROVEMENT, not a regression. The reviewer also built and ran a seam-aware version of this probe and got a statistically identical result (19.98% -> 15.82%) -- seam-awareness changes nothing; the previously-diagnosed 'seam artifact' mechanism does not hold up and is withdrawn. Both this row and the mechanism note below are corrected, not merely re-labeled." },
+      "measure_merged_ink_blobs_js_dense_ink_pct": { "red": "5.70% (4559/79923 px)", "green": "3.46% (2686/77559 px)" },
+      "measure_merged_ink_blobs_js_blob_count": { "red": 45, "green": 33 },
+      "measure_merged_ink_blobs_js_largest_blob": { "red": "1104px, 5.68x9.29mm", "green": "840px, 3.61x2.81mm" },
+      "measure_curvature_and_separation_js_inter_ring_within_0.1mm": { "red": "23.0% (143/623 vertices)", "green": "5.3% (177/3367 vertices)" },
+      "measure_curvature_and_separation_js_inter_ring_within_0.5mm": { "red": "40.0% (249/623 vertices)", "green": "23.3% (783/3367 vertices)" },
+      "measure_curvature_and_separation_js_min_inter_ring_distance_mm": { "red": 0, "green": 0, "note": "some pair of DIFFERENT rings still touches at zero separation somewhere in both states -- a genuine, unfixed residual, not an artifact." }
+    },
+    "O2_sphere_real_browser_audit_cell": {
+      "source": "Captured by the adversarial reviewer (W-27c-0a-review-2.md), NOT independently re-verified by this implementer -- closes iteration-2's own follow-up #5 (sphere real-browser cell not separately re-shot). Cited here for completeness, attributed.",
+      "largest_merged_blob": { "red": "15292px, 39.55x39.75mm (essentially the whole pole region as one blob)", "green": "4111px, 11.02x21.31mm", "note": "~46% smaller on the long axis -- a real, large improvement, same direction as the engine-pipeline rig's largestW row." },
+      "merged_blob_count": { "red": 60, "green": 64, "note": "flat-to-slightly-worse, same DIRECTION as the engine-pipeline rig's 47->54 (not the same magnitude -- different rig/capture -- but the same honest miss)." },
+      "dense_ink_px_pct": { "red": "17.22%", "green": "14.06%" },
+      "visual": "Reviewer looked at both images full-frame: before shows one continuous, gradually-crowding band on the near side; after shows the SAME rings broken by many small dash-like gaps spread across a wider arc, not confined to one pole -- real and visible, not a metric artifact. Whether that reads as an improvement is debatable (merged area much smaller; new 'dashed' texture); honestly reported as a miss, not a fix."
+    },
+    "honest_deviation_from_the_plans_suggested_acceptance": "K=1.0 is still avoided per the plan's explicit warning (starts eating genuinely-readable close-but-distinct crowding). K=0.8 (this iteration) is the plan's own suggested ceiling AND is directly measured by the adversarial review with no over-culling cost (no ring collapse, ink retention still >94% on the unit rigs). O2(d)/(e) on the REAL rendered cell are far from the plan's <=0.9mm/<=5-blob closure bars at K=0.8 -- this is expected and disclosed: Rank 1 (crowding cull) alone was never going to fully close (d)/(e); the plan itself named Rank 3 (level warping) as 'the textbook full cure' and deferred it to its own W-id."
+  },
+  "bars_changed": [
+    { "file_line": "src/core/algorithms/scene3d.js:290 (CROWD_CULL_K)", "old": "0.7", "new": "0.8", "why": "Coordinator ruling 1 + adversarial review §4: the plan's own suggested ceiling, measured by the review to have zero over-culling cost (no ring collapse, ink retention still >94%, no guard regression). Re-verified independently in this iteration." },
+    { "file_line": "tests/unit/scene3d-contour-slice.test.js (torus O2(a)/(b)/(c) test, waist assertion)", "old": "waist >= 0.65 * penWidth", "new": "waist >= 0.8 * penWidth (the plan's own bar)", "why": "K=0.8 clears the plan's original 0.8w suggestion with no measured cost; the 0.65w bar from iteration 1 is no longer needed and is tightened back to the plan's number." },
+    { "file_line": "tests/unit/scene3d-contour-slice.test.js (sphere control test, pct1 assertion)", "old": "pct1 < 10 (undisclosed loosening from the plan's <=5%)", "new": "pct1 <= 5 (the plan's own bar)", "why": "Adversarial review flag 2: iteration 1 quietly loosened this bar because sphere pct1 was 6.475% at K=0.7 (a real miss against the plan's <=5% target). K=0.8 makes sphere pct1 4.295%, which clears the ORIGINAL bar honestly -- restored, not further loosened." },
+    { "file_line": "tests/unit/scene3d-contour-slice.test.js (sphere control test, waist assertion)", "old": "waist >= 0.65 * penWidth", "new": "waist >= 0.8 * penWidth (the plan's own bar)", "why": "Same as the torus waist bar change above; K=0.8 clears it (0.240mm = 0.80w, right at the line, measured not assumed)." },
+    { "file_line": "tests/unit/scene3d-contour-slice.test.js (0(b) guard, front-fill-fragment-count ceiling)", "old": "55 (set in iteration 1)", "new": "80 (unchanged from iteration 1 -- re-verified, not re-widened, at the new K=0.8 count of 66)", "why": "No change this iteration; listed for completeness since it is a bar the review scrutinized. Still far below the 107 gap-fragmentation regression it guards against." }
+  ],
+  "visual_inspection": {
+    "torus__contourSlice__ladder__med__a": "LOOKED at both images (Pillow, webp->png), cropped both saddle 'eyes' at 4x zoom, K=0.8 (this iteration) vs the 789ba0fa 'before'. BEFORE: both apexes are solid, unbroken tapering wedges with a sharp point -- exactly 11.png's 'angled points'. AFTER (K=0.8): a small but visible dark notch appears right at each apex tip, marginally more pronounced than iteration 1's K=0.7 crop. HONEST assessment, matching the adversarial review's own finding on K=0.7 and unchanged in kind at K=0.8: this is a real, measured, PARTIAL win, not the separation the iteration-1 report's prose implied. The overall wedge SILHOUETTE -- the actual 'angled point' the user boxed -- is still clearly present at this zoom and would read the same way at normal viewing scale.",
+    "torus__contourSlice__ladder__max__a": "Byte-identical to med, both before and after (contourSlice never reads fillDensity).",
+    "sphere__contourSlice__ladder__med__a": "LOOKED directly. Same kind of small, real, partial improvement at the pole band as the torus saddles -- consistent with the measured pct1 drop (13.9%->4.3% on the engine rig) but the REAL-browser blob count for the sphere is WORSE after the fix (47->54, see measurements above) even though the largest blob shrinks a lot -- this specific primitive's ink redistributes into more, smaller merged regions rather than cleanly separating.",
+    "sphere__contourSlice__ladder__max__a": "Byte-identical to med, same structural reason.",
+    "solid__contourSlice__ladder__med__a": "Byte-identical (cmp) to before-789ba0fa at K=0.8 -- the cull is scoped to smoothSurface && analyticProject and never touches this faceted primitive, at any pen width.",
+    "solid__contourSlice__ladder__max__a": "Byte-identical, same reason."
+  },
+  "identical_exceptions": {
+    "solid__contourSlice__ladder__med__a.webp": { "identical": true, "reason": "faceted (not smoothSurface); analyticProject null; cull never constructed; re-verified at K=0.8." },
+    "solid__contourSlice__ladder__max__a.webp": { "identical": true, "reason": "same as med." },
+    "sphere__contourSlice__ladder__max__a.webp": { "identical": true, "reason": "contourSlice never reads fillDensity." },
+    "torus__contourSlice__ladder__max__a.webp": { "identical": true, "reason": "same as sphere max." }
+  },
+  "tests": {
+    "red_at_789ba0fa": "tests/unit/scene3d-contour-slice.test.js: both the direct-generate rig's O2(a)/(b)/(c) test AND the new engine-pipeline rig's torus/sphere O2(a-e) tests fail at a from-scratch 789ba0fa export with the exact numbers listed above (pct05/pct1/waist AND, new this iteration, largestW/blobCount) -- reproduced independently in this iteration, not merely cited from iteration 1.",
+    "green": "npx vitest run tests/unit/scene3d-contour-slice.test.js -> 49/49 (47 from iteration 1 + 2 new engine-pipeline O2(a-e) tests). All bar changes disclosed above; the sphere blob-count assertion is a sanity bound, NOT an improvement claim (see notes/measurements -- it is an honest, disclosed regression on that one specific sub-bar).",
+    "suites": "scene3d-mesh-self-occlusion 5/5, scene3d-curves 13/13, scene3d-hlr-spatial-index-identity 6/6, scene3d-hlr 11/11 -- all green, re-run individually in the foreground this iteration."
+  },
+  "open_follow_ups": [
+    "Rank 3 (level warping) remains the only path to closing O2(d)/(e) to the plan's <=0.9mm/<=5-blob bars -- explicitly out of this unit's scope, its own deferred W-id.",
+    "The sphere's O2(e) blob-count regression (47->54 on the real render) is a genuine, disclosed open finding: this K/scope combination is not uniformly beneficial across primitives on every sub-bar. Worth a closer look in whichever iteration attempts Rank 3, or a per-primitive K tuning pass.",
+    "WITHDRAWN (review 2): the 'measure-crowded-ink.js seam artifact' hypothesis above did not hold up -- the reviewer's seam-aware rerun gave a statistically identical result. The original 10.9%->15.8% 'regression' row was a units-mismatch reporting error (0.5-pen vs 1.0-pen), corrected in measurements.O2_torus_real_browser_audit_cell above to 20.0%->15.8%, an improvement. No probe bug to flag.",
+    "The 'fan of spikes' degenerate stub (carried forward from W-27c-0/W-29) is still unfixed -- unchanged from iteration 1, out of scope.",
+    "CLOSED (review 2): iteration 2's follow-up 'sphere real-browser blob capture not independently re-shot' is closed -- the reviewer captured it fresh (O2_sphere_real_browser_audit_cell above): largest blob 39.55x39.75mm -> 11.02x21.31mm, blob count 60 -> 64 (flat-to-worse, same direction as the engine-pipeline rig)."
+  ]
+}
