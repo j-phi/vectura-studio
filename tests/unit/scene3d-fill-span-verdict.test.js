@@ -79,7 +79,7 @@ describe('Scene3D.SurfaceFill — one draw/skip verdict per continuous span', ()
   });
   afterAll(() => runtime.cleanup());
 
-  const scene = (mapper) => {
+  const scene = (mapper, density = 50) => {
     const p = clone(defaults);
     p.seed = 0;
     p.camera = clone(CAMERA);
@@ -109,7 +109,7 @@ describe('Scene3D.SurfaceFill — one draw/skip verdict per continuous span', ()
     const style = {
       penId: null,
       mapper,
-      params: { fillDensity: 50, highlightTreatment: 'none' },
+      params: { fillDensity: density, highlightTreatment: 'none' },
     };
     p.styleTable = { scene: clone(style), byObject: { ball: clone(style) }, byFace: {} };
     return p;
@@ -117,7 +117,7 @@ describe('Scene3D.SurfaceFill — one draw/skip verdict per continuous span', ()
 
   // Read the runs as the fill emitter produced them, `fam` / `lineIndex` intact
   // (those tags do not survive the display pipeline).
-  const emittedRuns = (mapper) => {
+  const emittedRuns = (mapper, density = 50) => {
     const SF = V.Scene3D.SurfaceFill;
     const orig = SF.buildObject;
     const raw = [];
@@ -127,7 +127,7 @@ describe('Scene3D.SurfaceFill — one draw/skip verdict per continuous span', ()
       return r;
     };
     try {
-      algo.generate(scene(mapper), new V.SeededRNG(0), new V.SimpleNoise(0), BOUNDS);
+      algo.generate(scene(mapper, density), new V.SeededRNG(0), new V.SimpleNoise(0), BOUNDS);
     } finally {
       SF.buildObject = orig;
     }
@@ -334,19 +334,91 @@ describe('Scene3D.SurfaceFill — one draw/skip verdict per continuous span', ()
   // continuous placement: tone is now made by WHERE a ruling lands, not by
   // whether a candidate from a wider budget is kept. There is no wider
   // budget any more — `lineIndex` is the walk's own placement ordinal, so
-  // every index the walk emits IS drawn by construction. Measured: `budget`
-  // (`max(lineIndex) + 1`) now equals `drawn.size` exactly (55 == 55 on this
-  // fixture; was 55 drawn out of a ~5x wider budget before this fix). This
-  // test is re-purposed to assert exactly that — the OTHER half of the old
-  // name ("not by cutting them") still holds and is what is left to check:
-  // every placed ruling is a WHOLE, uncut candidate.
-  test('tone is now made by CONTINUOUS PLACEMENT, not by dropping or cutting rulings', () => {
-    const raw = emittedRuns('hatch');
-    const drawn = new Set();
-    raw.filter((q) => !q.back && q.lineIndex != null && typeof q.fam === 'string')
-      .forEach((q) => drawn.add(`${q.fam}:${q.lineIndex}`));
-    const budget = Math.max(...raw.filter((q) => q.lineIndex != null).map((q) => q.lineIndex)) + 1;
-    expect(drawn.size).toBeGreaterThan(4);
-    expect(drawn.size).toBe(budget);
+  // every index the walk emits IS drawn by construction.
+  //
+  // W-26b-2 (judge C2, BLOCKING). The OLD version of this test asserted
+  // exactly that fact — `drawn.size === budget` — as its OWN replacement for
+  // "tone is still made by DROPPING WHOLE RULINGS... a fix that stops the
+  // breaks by drawing everything is a failure" (this file's header, item 1).
+  // Under continuous placement `drawn.size === budget` is a TAUTOLOGY: per
+  // the implementer's own comment, `lineIndex` is the walk's own placement
+  // ordinal, so every index it emits IS drawn BY CONSTRUCTION — no fill
+  // behaviour, however broken, can make this assertion fail short of
+  // restructuring how `lineIndex` itself is assigned. It stopped being a
+  // guard the moment it stopped being able to fail, and it is exactly the
+  // commit that produced the crosshatch blob below (§C1, W-26b-1's own
+  // report) that this vacuous guard let through.
+  //
+  // Replaced with the thing the header actually cares about — drawn INK
+  // COVERAGE of the silhouette, rasterised (so overlap cannot inflate it,
+  // matching `scene3d-plot-safety.test.js`'s own composed-coverage
+  // reasoning). "If nothing is dropped the form is a black blob" is a
+  // statement about drawn coverage, not about `lineIndex` bookkeeping; this
+  // is the oracle that can actually catch it. Asserted for `hatch`,
+  // `contour` AND `crosshatch` (RULED) at Density 50 AND 220 — RED against
+  // `3c88605f` for crosshatch@220 (0.90+ measured, a solid block) is the
+  // proof this is a real guard, not a second fingerprint; GREEN once
+  // W-26b-1's crossing-family fix lands.
+  // Stamps the ACTUAL pen circle (radius penWidth/2, in mm) into a grid fine
+  // enough to resolve it — `scene3d-plot-safety.test.js`'s own `CELL = 0.1`
+  // instrument, reused rather than a disc-relative grid: a coarse grid
+  // (disc-R / N cells) forces `rad` up to a minimum of one cell so a thin
+  // pen does not vanish, which fattens the drawn stroke to several mm and
+  // saturates coverage to 1.0 for EVERY mapper regardless of the fix — this
+  // was caught red-handed (measured 1.0 across the board on the first cut of
+  // this test, including `hatch`, which is not broken).
+  const inkCoverage = (raw, penWidth) => {
+    const d = disc(raw);
+    if (!(d.R > 0)) return 0;
+    const CELL = 0.1;
+    const G = Math.max(4, Math.ceil((2 * d.R) / CELL));
+    const x0 = d.cx - d.R; const y0 = d.cy - d.R;
+    const r = penWidth / 2;
+    const rc = Math.max(1, Math.ceil(r / CELL));
+    const inked = new Uint8Array(G * G);
+    const stamp = (x, y) => {
+      const ci = Math.round((x - x0) / CELL); const cj = Math.round((y - y0) / CELL);
+      for (let j = cj - rc; j <= cj + rc; j++) {
+        if (j < 0 || j >= G) continue;
+        for (let i = ci - rc; i <= ci + rc; i++) {
+          if (i < 0 || i >= G) continue;
+          const dx = (i - ci) * CELL; const dy = (j - cj) * CELL;
+          if (dx * dx + dy * dy <= r * r) inked[j * G + i] = 1;
+        }
+      }
+    };
+    raw.filter((q) => !q.back).forEach((q) => {
+      for (let i = 1; i < q.length; i++) {
+        const a = q[i - 1]; const b = q[i];
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        if (!(len > 0)) continue;
+        const n = Math.max(1, Math.ceil(len / (CELL / 2)));
+        for (let k = 0; k <= n; k++) {
+          const t = k / n;
+          stamp(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+        }
+      }
+    });
+    let inkedN = 0; let totalN = 0;
+    for (let gy = 0; gy < G; gy++) {
+      for (let gx = 0; gx < G; gx++) {
+        const X = (x0 + (gx + 0.5) * CELL - d.cx) / d.R;
+        const Y = (y0 + (gy + 0.5) * CELL - d.cy) / d.R;
+        if (Math.hypot(X, Y) > 1) continue;
+        totalN += 1;
+        if (inked[gy * G + gx]) inkedN += 1;
+      }
+    }
+    return totalN ? inkedN / totalN : 0;
+  };
+
+  describe.each(RULED)('%s: drawn ink coverage never floods to a solid block', (mapper) => {
+    test.each([50, 220])('Density %i', (density) => {
+      const raw = emittedRuns(mapper, density);
+      expect(raw.length).toBeGreaterThan(4);
+      const cov = inkCoverage(raw, PEN_MM);
+      expect(cov).toBeGreaterThan(0);           // still a real drawing, not empty
+      expect(cov).toBeLessThan(0.85);            // never a solid block
+    });
   });
 });
