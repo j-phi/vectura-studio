@@ -857,6 +857,285 @@
   "amplitudeOnly"
 ];
 
+  // Fill-roster collapse (see docs/3d-audit/lane-reports/W-22-24-W-18-plan.md).
+  // IDS above is the full 48-id ENGINE vocabulary and never shrinks; these
+  // three are the PICKER-tier presentation cut, derived from the hand-curated
+  // COLLAPSE table in scripts/build-tone-laws.js:
+  //   PICKER_IDS   — the flat option list the UI actually offers.
+  //   ALIASES      — folded id -> { into: survivor, params: {...} }, read by
+  //                   Vectura.Scene3D.Params.resolveToneLaw and by
+  //                   normalizeStyle's migration shim.
+  //   STYLE_PARAMS — survivor id -> its collapse sub-control descriptor(s),
+  //                   the COLLAPSE table verbatim; drives the UI directly.
+  // All three are empty/full-identity in U0 (no cluster has been folded
+  // yet): PICKER_IDS.length === IDS.length, ALIASES === {}.
+  const PICKER_IDS = [
+  "none",
+  "taperedEnds",
+  "weightModulated",
+  "isophoteWidth",
+  "lozengeStipple",
+  "deepFillTSP",
+  "bundleCount",
+  "bundleSubNib",
+  "bundleLozenge",
+  "contFieldSigmoid",
+  "penInterleave",
+  "penStipple",
+  "penReserve",
+  "penCross",
+  "penPitchMatch",
+  "penFacing",
+  "mkScribble",
+  "mkTick",
+  "mkDashRamp",
+  "mkDotScreen",
+  "ampSpacing",
+  "weaveDepth",
+  "interlockWeave",
+  "trochoidLoop",
+  "amplitudeOnly",
+  "onePenDown",
+  "etfKang",
+  "defectSplit",
+  "mezzoRegion",
+  "originSpiral",
+  "dutyConst",
+  "endShorten",
+  "turingStripe",
+  "voronoiWeb",
+  "mazeFill"
+];
+  const ALIASES = {
+  "fineLadder": {
+    "into": "ladder",
+    "params": {
+      "rungMode": "fine"
+    }
+  },
+  "phaseFineLadder": {
+    "into": "ladder",
+    "params": {
+      "rungMode": "finePhase"
+    }
+  },
+  "perceptualRamp": {
+    "into": "ladder",
+    "params": {
+      "rungMode": "perceptual"
+    }
+  },
+  "whiteBand": {
+    "into": "taperedEnds",
+    "params": {
+      "bandProfile": "hard"
+    }
+  },
+  "nibAngle": {
+    "into": "taperedEnds",
+    "params": {
+      "bandProfile": "nib"
+    }
+  },
+  "weightSmoothstep": {
+    "into": "weightModulated",
+    "params": {
+      "weightEase": "smooth"
+    }
+  },
+  "bundleEased": {
+    "into": "bundleCount",
+    "params": {
+      "bundleMode": "eased"
+    }
+  },
+  "bundleDither": {
+    "into": "bundleCount",
+    "params": {
+      "bundleMode": "dither"
+    }
+  },
+  "bundleHandoff": {
+    "into": "bundleCount",
+    "params": {
+      "bundleMode": "handoff"
+    }
+  },
+  "contFieldFore": {
+    "into": "contFieldSigmoid",
+    "params": {
+      "fieldMetric": "foreshortened"
+    }
+  },
+  "contFieldSurface": {
+    "into": "contFieldSigmoid",
+    "params": {
+      "fieldMetric": "surface"
+    }
+  },
+  "contFieldQuant": {
+    "into": "contFieldSigmoid",
+    "params": {
+      "fieldMetric": "quantised"
+    }
+  },
+  "contFieldTouch": {
+    "into": "contFieldSigmoid",
+    "params": {
+      "fieldFloor": "touch"
+    }
+  }
+};
+  const STYLE_PARAMS = {
+  "ladder": [
+    {
+      "key": "rungMode",
+      "label": "Rung detail",
+      "default": "coarse",
+      "options": [
+        {
+          "value": "coarse",
+          "label": "Coarse — 4 rungs",
+          "law": "ladder"
+        },
+        {
+          "value": "fine",
+          "label": "Fine rungs",
+          "law": "fineLadder"
+        },
+        {
+          "value": "finePhase",
+          "label": "Fine + phase dither",
+          "law": "phaseFineLadder"
+        },
+        {
+          "value": "perceptual",
+          "label": "Perceptual ramp",
+          "law": "perceptualRamp"
+        }
+      ]
+    }
+  ],
+  "taperedEnds": [
+    {
+      "key": "bandProfile",
+      "label": "Band profile",
+      "default": "taper",
+      "options": [
+        {
+          "value": "taper",
+          "label": "Tapered ends",
+          "law": "taperedEnds"
+        },
+        {
+          "value": "hard",
+          "label": "Hard ends (white band)",
+          "law": "whiteBand"
+        },
+        {
+          "value": "nib",
+          "label": "Calligraphic nib",
+          "law": "nibAngle"
+        }
+      ]
+    }
+  ],
+  "weightModulated": [
+    {
+      "key": "weightEase",
+      "label": "Weight easing",
+      "default": "step",
+      "options": [
+        {
+          "value": "step",
+          "label": "Stepped weights",
+          "law": "weightModulated"
+        },
+        {
+          "value": "smooth",
+          "label": "Smoothed weights",
+          "law": "weightSmoothstep"
+        }
+      ]
+    }
+  ],
+  "bundleCount": [
+    {
+      "key": "bundleMode",
+      "label": "Bundle mode",
+      "default": "count",
+      "options": [
+        {
+          "value": "count",
+          "label": "Integer pass count",
+          "law": "bundleCount"
+        },
+        {
+          "value": "eased",
+          "label": "Eased pass count",
+          "law": "bundleEased"
+        },
+        {
+          "value": "dither",
+          "label": "Dithered",
+          "law": "bundleDither"
+        },
+        {
+          "value": "handoff",
+          "label": "Region handoff",
+          "law": "bundleHandoff"
+        }
+      ]
+    }
+  ],
+  "contFieldSigmoid": [
+    {
+      "key": "fieldMetric",
+      "label": "Field metric",
+      "default": "screen",
+      "options": [
+        {
+          "value": "screen",
+          "label": "Screen metric",
+          "law": "contFieldSigmoid"
+        },
+        {
+          "value": "foreshortened",
+          "label": "Foreshortening-corrected",
+          "law": "contFieldFore"
+        },
+        {
+          "value": "surface",
+          "label": "Surface metric",
+          "law": "contFieldSurface"
+        },
+        {
+          "value": "quantised",
+          "label": "Quantised gaps",
+          "law": "contFieldQuant"
+        }
+      ]
+    },
+    {
+      "key": "fieldFloor",
+      "label": "Field floor",
+      "default": "plot",
+      "options": [
+        {
+          "value": "plot",
+          "label": "Plot floor",
+          "law": "contFieldSigmoid"
+        },
+        {
+          "value": "touch",
+          "label": "Ink-width floor",
+          "law": "contFieldTouch"
+        }
+      ]
+    }
+  ]
+};
+
   // [{ group, options: [{ value, label }] }] — for UI.Select. Every family
   // contributes a group (even if, after filtering, it has zero options) so
   // the group count is always 9 regardless of the includeLibrary flag.
@@ -875,6 +1154,9 @@
     IDS,
     PRODUCTION,
     LIBRARY,
+    PICKER_IDS,
+    ALIASES,
+    STYLE_PARAMS,
     FAMILIES,
     BY_ID,
     selectGroups,

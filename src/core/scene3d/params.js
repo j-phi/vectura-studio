@@ -752,6 +752,17 @@
         // genuinely unknown id).
         const DEF = (roster && roster.DEFAULT) || 'ladder';
         if (typeof value === 'string' && value === DEF) return DEF;
+        // Fill-roster collapse (U0, docs/3d-audit/lane-reports/W-22-24-W-18-
+        // plan.md §2.3 "belt to that brace") — an ALIAS (folded) id maps to
+        // its survivor here, WITHOUT the sibling collapse param this single-
+        // key path cannot see (no bag to write a second key into — that is
+        // exactly why `normalizeStyle`'s shim exists for the whole-bag case;
+        // this clause is the fallback for the paths that only ever call this
+        // one key, e.g. `shadowToneLaw` below). Never warns: an alias is a
+        // known, valid id — the roster's own IDS still carries it — not an
+        // unrecognized one. Empty `ALIASES` in U0 makes this a no-op.
+        const ALIASES = (roster && roster.ALIASES) || null;
+        if (typeof value === 'string' && ALIASES && ALIASES[value]) return ALIASES[value].into;
         if (typeof value === 'string' && (!R || R.indexOf(value) !== -1)) return value;
         // Warn only for a genuinely unrecognized id — not for the common
         // "no toneLaw set at all" case (undefined/''), which is the ordinary
@@ -765,6 +776,58 @@
       case 'toneFlowMode': return value === 'grad' ? 'grad' : 'iso';
       default: return undefined;
     }
+  };
+
+  // Fill-roster collapse (U0) — the resolver. (survivor id + its collapse
+  // sub-control param(s)) -> the INTERNAL surface-fill.js law id.
+  // docs/3d-audit/lane-reports/W-22-24-W-18-plan.md §2.2 is the contract this
+  // implements verbatim; keep the two in sync if either changes.
+  //
+  // Rules (numbered to match the plan):
+  // 1. `styleParams.toneLaw` absent/unknown-empty ⇒ return it unchanged ('' /
+  //    undefined) — the caller's OWN existing degrade behaviour (IDS
+  //    membership test, TONE_ALGO fallback, …) is untouched by this function.
+  // 2. An id that is ITSELF a key of ALIASES (a raw legacy value that never
+  //    went through `normalizeStyle`'s migration shim, e.g. a face override
+  //    read straight off an unmigrated bag) is ALREADY the correct internal
+  //    id — return it as-is. Never warn; never look up STYLE_PARAMS for it
+  //    (it is not a survivor).
+  // 3. A survivor with ONE collapse descriptor: find the option whose `value`
+  //    matches `styleParams[descriptor.key]`; an unset/unrecognized value
+  //    falls back to the descriptor's own `default` option. Return that
+  //    option's `law`.
+  // 4. A survivor with SEVERAL collapse descriptors (only `contFieldSigmoid`,
+  //    U5) — a descriptor is "active" when the bag's value resolves to a
+  //    NON-default option. Zero active descriptors ⇒ the survivor's own bare
+  //    id (every descriptor at its default). Exactly one active descriptor ⇒
+  //    that descriptor's own matched option law (the single-descriptor case,
+  //    generalized). More than one active at once is an UNREPRESENTABLE
+  //    combination (the roster has no id for it — see the plan's `fieldFloor`
+  //    example) and falls back to the survivor id itself, deterministically,
+  //    never a throw.
+  // 5. Pure function: no DOM, no console. Safe when `SCENE3D_TONE_LAWS` is
+  //    absent (a bare test process) — then every input is returned unchanged.
+  const resolveToneLaw = (styleParams) => {
+    const bag = isObject(styleParams) ? styleParams : {};
+    const raw = typeof bag.toneLaw === 'string' ? bag.toneLaw : '';
+    if (!raw) return bag.toneLaw; // rule 1 — absent/non-string, unchanged
+    const R = Vectura.SCENE3D_TONE_LAWS;
+    if (!R) return raw; // rule 5 — bare test process, identity
+    const ALIASES = R.ALIASES || {};
+    if (Object.prototype.hasOwnProperty.call(ALIASES, raw)) return raw; // rule 2
+    const descriptors = (R.STYLE_PARAMS && R.STYLE_PARAMS[raw]) || null;
+    if (!descriptors || !descriptors.length) return raw; // no collapse for this id — pass through
+    let activeLaw = null;
+    let activeCount = 0;
+    descriptors.forEach((d) => {
+      const opts = Array.isArray(d.options) ? d.options : [];
+      const askedVal = bag[d.key];
+      const matched = opts.find((o) => o.value === askedVal) || opts.find((o) => o.value === d.default) || null;
+      if (!matched || matched.value === d.default) return;
+      activeCount += 1;
+      activeLaw = matched.law;
+    });
+    return activeCount === 1 ? activeLaw : raw; // rule 3 (activeCount<=... ) / rule 4
   };
 
   const normalizeStyle = (style) => {
@@ -781,6 +844,33 @@
           params[key] = value;
         }
       });
+    }
+    // Fill-roster collapse (U0) — migration shim. A folded id saved by an
+    // older build (or a hand-edited/preset file) is rewritten here to its
+    // survivor id + collapse param(s), the exact shape a fresh pick through
+    // the new sub-control produces — so the two render byte-identically and
+    // the picker can show the right row (SCENE_FILL_STYLES.resolve does the
+    // matching lookup on the UI side). Documented the same way, and for the
+    // same reason, as `HIGHLIGHT_TREATMENT_ALIASES` above: no SCENE_MIGRATIONS
+    // step and no SCENE_VERSION bump — nothing structural changed.
+    //
+    // Reads the RAW pre-clamp value (`src.params.toneLaw`), not `params.toneLaw`
+    // above: `clampStyleParam`'s own 'toneLaw' case (see its alias clause) may
+    // have already rewritten `params.toneLaw` to the same survivor by the time
+    // this runs, which would otherwise erase the one thing this shim needs —
+    // WHICH alias arrived — before it gets to look up which param to seed.
+    // Never overwrites a sibling key the bag already carries explicitly.
+    const rawToneLaw = isObject(src.params) ? src.params.toneLaw : undefined;
+    const R = Vectura.SCENE3D_TONE_LAWS;
+    const ALIASES = (R && R.ALIASES) || null;
+    if (ALIASES && ALIASES[rawToneLaw]) {
+      const a = ALIASES[rawToneLaw];
+      params.toneLaw = a.into;
+      if (isObject(a.params)) {
+        Object.keys(a.params).forEach((k) => {
+          if (params[k] === undefined) params[k] = a.params[k];
+        });
+      }
     }
     return {
       penId: typeof src.penId === 'string' && src.penId ? src.penId : null,
@@ -1633,6 +1723,7 @@
     normalizeShadow,
     normalizeStyle,
     normalizeStyleTable,
+    resolveToneLaw,
     normalizeObjectLayerParams,
     collectSceneParams,
     normalizeGroups,

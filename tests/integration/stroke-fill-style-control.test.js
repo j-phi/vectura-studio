@@ -269,10 +269,23 @@ describe('Stroke Fill Style — docked 3D Scene panel', () => {
   const rowLabels = (c) => rows(c).map((r) => (r.querySelector('.vs3-lbl') || {}).textContent);
   const row = (c, label) => rows(c).find((r) => r.querySelector('.vs3-lbl') && r.querySelector('.vs3-lbl').textContent === label);
 
-  test('a "Stroke Fill" row sits directly beneath "Fill Style"', () => {
+  // STALE ASSERTION UPDATE (U2, fill-roster collapse) — BUCKET_B
+  // ('taperedEnds') is now a survivor with its own collapse sub-control
+  // ("Band profile"), which by U0's own design (scene3d-panel.js
+  // fillStyleControls) renders directly under Fill Style and ABOVE Stroke
+  // Fill: "directly under the Fill Style row and above the Stroke Fill
+  // row". So Stroke Fill is no longer literally the very next row when the
+  // resolved law has one — it is the next row AFTER Fill Style's own
+  // sub-control rows, which are part of the same "how this fill is drawn"
+  // control group. Computed from the live styleParams count rather than a
+  // hardcoded offset, so this stays correct however many sub-controls a
+  // future survivor declares.
+  test('a "Stroke Fill" row sits directly beneath "Fill Style" (+ its own collapse sub-controls, if any)', () => {
     const { container } = openStyle(BUCKET_B);
     const labels = rowLabels(container);
-    expect(labels.indexOf('Stroke Fill')).toBe(labels.indexOf('Fill Style') + 1);
+    const FS = window.Vectura.SCENE_FILL_STYLES;
+    const subControlRows = FS.styleParams(FS.resolve(BUCKET_B)).length;
+    expect(labels.indexOf('Stroke Fill')).toBe(labels.indexOf('Fill Style') + 1 + subControlRows);
   });
 
   test('it offers the four options and shows the shipped default', () => {
@@ -425,10 +438,14 @@ describe('Stroke Fill Style — contextual bar Style flyout', () => {
     return { gid, child, fly: openFly() };
   };
 
-  test('a "Stroke Fill" row sits directly beneath "Fill Style"', () => {
+  // STALE ASSERTION UPDATE (U2) — see the identical note on the docked-panel
+  // version of this test above.
+  test('a "Stroke Fill" row sits directly beneath "Fill Style" (+ its own collapse sub-controls, if any)', () => {
     const { fly } = openStyleFlyout(BUCKET_B);
     const labels = rowLabels(fly);
-    expect(labels.indexOf('Stroke Fill')).toBe(labels.indexOf('Fill Style') + 1);
+    const FS = window.Vectura.SCENE_FILL_STYLES;
+    const subControlRows = FS.styleParams(FS.resolve(BUCKET_B)).length;
+    expect(labels.indexOf('Stroke Fill')).toBe(labels.indexOf('Fill Style') + 1 + subControlRows);
   });
 
   test('it offers the four options and shows the shipped default', () => {

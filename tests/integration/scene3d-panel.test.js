@@ -737,8 +737,12 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     // between fill mappers carries the line tuning.
     // U9 adds the Fill Style (tone law) to every fill mapper's seed set — that
     // is what carries the user's law across a hatch → crosshatch switch.
+    // STALE ASSERTION UPDATE (U1, fill-roster collapse) — `rungMode` is now
+    // seeded alongside `toneLaw:'ladder'` (mapperDefaults, scene3d-panel.js
+    // — this was already the mechanism's OWN documented behaviour in U0, a
+    // no-op until a real COLLAPSE row existed; U1 is the first row).
     expect(stored.params).toEqual({
-      fillAngle: 45, fillDensity: 50, toneLaw: 'ladder', angleRef: 'face', linkFill: false,
+      fillAngle: 45, fillDensity: 50, toneLaw: 'ladder', rungMode: 'coarse', angleRef: 'face', linkFill: false,
       lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false,
     });
 
@@ -765,8 +769,10 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     // Seeded with a density default (no fillAngle), its Phase-2 contour style,
     // + the shared stroke defaults.
     expect(layer.params.styleTable.byObject['obj-1'].mapper).toBe('contour');
+    // STALE ASSERTION UPDATE (U1, fill-roster collapse) — see the identical
+    // note on the hatch-mapper test above.
     expect(layer.params.styleTable.byObject['obj-1'].params).toEqual({
-      fillDensity: 50, toneLaw: 'ladder', contourStyle: 'surface',
+      fillDensity: 50, toneLaw: 'ladder', rungMode: 'coarse', contourStyle: 'surface',
       lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false,
     });
     // Density control present; Angle control absent for a region mapper.

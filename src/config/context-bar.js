@@ -233,9 +233,28 @@
   };
   // Map a stored value onto an option this picker actually offers. Anything
   // unknown collapses onto the default, matching the engine's own clamp.
+  // Fill-collapse U0 — a FOLDED id (an old document/preset carrying e.g.
+  // `fineLadder`) maps to its SURVIVOR first, so the select highlights the
+  // row that is actually still offered instead of falling back to Ladder.
+  // `ALIASES` is `{}` until U1-U8 land, so this is a no-op today.
   SCENE_FILL_STYLES.resolve = (value) => {
     if (typeof value !== 'string' || !value) return FILL_STYLE_DEFAULT;
-    return SCENE_FILL_STYLES.entry(value) ? value : FILL_STYLE_DEFAULT;
+    const R = fillStyleRoster();
+    const alias = R && R.ALIASES && R.ALIASES[value];
+    const aliased = alias ? alias.into : value;
+    return SCENE_FILL_STYLES.entry(aliased) ? aliased : FILL_STYLE_DEFAULT;
+  };
+  // The collapse sub-control descriptor(s) the given (already-resolved,
+  // survivor) law id declares — `[]` for a law with no collapse (every law
+  // until U1-U8 land). One entry per descriptor:
+  // `{ key, label, default, options: [{ value, label, law }] }`. Read by both
+  // UI surfaces (scene3d-panel.js `fillStyleControls`, the ctxbar Style
+  // flyout) so the generic sub-control row cannot drift between them — they
+  // render off the SAME data, not a restated copy.
+  SCENE_FILL_STYLES.styleParams = (id) => {
+    const R = fillStyleRoster();
+    const sp = R && R.STYLE_PARAMS && R.STYLE_PARAMS[id];
+    return Array.isArray(sp) ? sp : [];
   };
   // [{ group, options: [{ value, label, disabled? }] }] for UI.Select, grouped
   // by MARK CLASS. Every law the roster knows is always offered — all 47 plus
@@ -258,7 +277,13 @@
   // `isReachableOn` below.
   SCENE_FILL_STYLES.groups = (primitiveMode, solidType, mapper) => {
     const R = fillStyleRoster();
-    const ids = R ? R.IDS : [];
+    // Fill-collapse U0 — the flat list this picker offers is `PICKER_IDS`
+    // (roster minus every folded id), NOT the full 48-id `IDS` (the engine
+    // vocabulary, unaffected by the collapse). Falls back to `IDS` when
+    // `PICKER_IDS` is absent (a stale/pre-collapse config) so the picker
+    // never renders empty. `PICKER_IDS === IDS` until U1-U8 land, so this is
+    // a no-op today.
+    const ids = R ? (R.PICKER_IDS || R.IDS) : [];
     const out = [];
     FILL_STYLE_MARK_CLASSES.forEach((cls) => {
       const options = [];
