@@ -184,6 +184,34 @@
   // only the GAP between rulings changes. A function spacing may carry a
   // `.baseHint` (a representative numeric pitch) used only as a last-resort
   // fallback when a scanline misses the polygon entirely (nothing to sample).
+  //
+  // Unit D polish (phase-align inside-footprint vs outside family): a RING
+  // (a JS array, by object identity — never by value) that appears in a
+  // MULTI-ring call — scene3d.js faceHatchLines's `outsideRings =
+  // [face].concat(footprintPolys)`, hatched once as the OUTSIDE family — is
+  // remembered here (angle, numeric pitch, raw scan origin). Each element of
+  // `footprintPolys` is later passed AGAIN, alone, as `[fp]` for the INSIDE
+  // family at that footprint's own (denser, tone-driven) pitch. Without this,
+  // the inside call computes its OWN scan origin from its own (much smaller)
+  // bounding box, which has no relationship to the outside origin — measured
+  // on the two-object regression fixture below, the resulting phase drifts
+  // uniformly across 0-0.5x the outside pitch, reading as a patch of broken
+  // dashes rather than one continuous denser texture (Unit D judge follow-up,
+  // docs/3d-audit/STILL-OPEN.md "Unit D polish"). When a ring IS recognized
+  // (same object, same angle), the inside scan reuses the outside call's own
+  // raw origin and snaps its pitch to the nearest INTEGER submultiple of the
+  // outside pitch, so every Nth inside ruling lands exactly on an outside
+  // ruling's continuation and the rest are exact midlines — same phase, same
+  // angle, by construction, at whatever density (>=1x) that submultiple gives.
+  // Scoped to numeric spacing only (the function/graded path is a different,
+  // out-of-scope composition per the judge-follow-up comment on faceHatchLines).
+  // No OTHER caller in this module ever re-passes a ring that was part of a
+  // PRIOR multi-ring call by reference identity — `[fp]` is the only
+  // single-element literal ring array built anywhere against this export —
+  // so this cannot change behavior for any existing recipe or the ground/
+  // mark-law hatch passes; it activates ONLY for this exact call pattern.
+  const outerRingGridMemo = new WeakMap();
+
   const hatchRingsEvenOdd = (rings, angleDeg, spacing) => {
     const segs = [];
     rings.forEach((ring) => {
@@ -257,15 +285,135 @@
       return out;
     }
     const sp = Math.max(0.05, spacing);
-    const count = Math.min(4000, Math.floor((pMax - pMin) / sp));
-    for (let i = 1; i <= count; i++) {
-      const offset = pMin + i * sp;
-      const hits = scanAt(offset);
-      for (let k = 0; k + 1 < hits.length; k += 2) {
-        out.push([{ x: hits[k].x, y: hits[k].y }, { x: hits[k + 1].x, y: hits[k + 1].y }]);
+    // Unit D polish: continue a remembered OUTER grid's exact phase when this
+    // call's single ring was itself one of that outer call's rings (see the
+    // comment above `outerRingGridMemo`). Every other call — including this
+    // same numeric path for any ring never seen as part of a multi-ring
+    // call — falls through to the untouched original scan below, so this is
+    // byte-identical everywhere it does not apply.
+    const outerGrid = rings.length === 1 ? outerRingGridMemo.get(rings[0]) : null;
+    if (outerGrid && Math.abs(outerGrid.angleDeg - finite(angleDeg, 45)) < 1e-6) {
+      const n = Math.max(1, Math.round(outerGrid.spacing / sp));
+      const step = outerGrid.spacing / n;
+      let k = Math.ceil((pMin - outerGrid.anchor) / step - 1e-9);
+      let emitted = 0;
+      while (emitted < 4000) {
+        const offset = outerGrid.anchor + k * step;
+        if (offset > pMax) break;
+        const hits = scanAt(offset);
+        for (let m = 0; m + 1 < hits.length; m += 2) {
+          out.push([{ x: hits[m].x, y: hits[m].y }, { x: hits[m + 1].x, y: hits[m + 1].y }]);
+        }
+        emitted++;
+        k++;
+      }
+    } else {
+      const count = Math.min(4000, Math.floor((pMax - pMin) / sp));
+      for (let i = 1; i <= count; i++) {
+        const offset = pMin + i * sp;
+        const hits = scanAt(offset);
+        for (let k2 = 0; k2 + 1 < hits.length; k2 += 2) {
+          out.push([{ x: hits[k2].x, y: hits[k2].y }, { x: hits[k2 + 1].x, y: hits[k2 + 1].y }]);
+        }
       }
     }
+    // Remember THIS call's grid against every ring it scanned, keyed by
+    // object identity, so a later single-ring call reusing one of these
+    // exact ring objects can continue its phase (see comment above).
+    if (rings.length > 1) {
+      rings.forEach((ring) => {
+        if (Array.isArray(ring)) outerRingGridMemo.set(ring, { angleDeg: finite(angleDeg, 45), spacing: sp, anchor: pMin });
+      });
+    }
     return out;
+  };
+
+  // General ray/plane intersection along the light TRAVEL direction — the
+  // generalization of the y=0 ground projector below to an ARBITRARY plane
+  // (a point on it + its unit normal). Returns the WORLD-space point where
+  // the ray P + s*d crosses the plane, or null when the ray is parallel to
+  // it or the plane sits "behind" P relative to the light's own travel
+  // (s <= 0 — no physically valid shadow reaches there). Unlike
+  // `projectShadowVertex` below, this does NOT camera-project — callers
+  // that need the point in a receiver's own local frame (e.g. scene3d.js's
+  // faceted-shadow-footprint, Unit D judge follow-up v2: a box/plane/pyramid
+  // FACE is itself a plane, so its shadow can be built with the SAME
+  // parallel-projection model the ground shadow already uses) do that
+  // themselves. Sanity: with planeAnchor.y=0 and planeNormal=(0,1,0) this
+  // reduces to the exact same s = -P.y/d.y the ground projector solves.
+  const projectAlongDirToPlane = (P, d, planeAnchor, planeNormal) => {
+    if (!P || !Number.isFinite(P.x) || !Number.isFinite(P.y) || !Number.isFinite(P.z)) return null;
+    if (!planeAnchor || !planeNormal) return null;
+    const denom = planeNormal.x * d.x + planeNormal.y * d.y + planeNormal.z * d.z;
+    if (Math.abs(denom) < 1e-9) return null;
+    const relx = planeAnchor.x - P.x; const rely = planeAnchor.y - P.y; const relz = planeAnchor.z - P.z;
+    const s = (planeNormal.x * relx + planeNormal.y * rely + planeNormal.z * relz) / denom;
+    // A vertex already ON (or fractionally behind, fp noise) the plane is a
+    // legitimate contact point — the caster's own base sits exactly here for
+    // an object resting on its receiver, matching the ground projector below
+    // (`projectShadowVertex`), which has NO sign guard at all beyond the
+    // denom epsilon. Only reject a vertex clearly on the wrong side.
+    if (!(s > -1e-3) || !Number.isFinite(s)) return null;
+    const x = P.x + s * d.x; const y = P.y + s * d.y; const z = P.z + s * d.z;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+    return { x, y, z };
+  };
+
+  // W-30 — PERSPECTIVE analog of `projectAlongDirToPlane` for a POSITIONAL
+  // light (point/spot/area with a real world position): the ray from the
+  // light position Lp THROUGH the world vertex P, continued to the plane.
+  // Mirrors `projectShadowVertexPositional` below (Lp.y/(Lp.y−P.y) on the
+  // y=0 ground) generalized to an arbitrary plane, exactly the same way
+  // `projectAlongDirToPlane` generalizes the parallel `projectShadowVertex`.
+  // Parametrized as Lp + t·(P−Lp): t=1 IS P itself, so a valid shadow point
+  // (beyond the caster, away from the light) requires t > 1 (small epsilon
+  // slack for a caster resting exactly on the receiver). Returns a WORLD
+  // point (no camera projection — same "caller does that" contract as
+  // `projectAlongDirToPlane`).
+  const projectFromPositionToPlane = (P, Lp, planeAnchor, planeNormal) => {
+    if (!P || !Number.isFinite(P.x) || !Number.isFinite(P.y) || !Number.isFinite(P.z)) return null;
+    if (!Lp || !Number.isFinite(Lp.x) || !Number.isFinite(Lp.y) || !Number.isFinite(Lp.z)) return null;
+    if (!planeAnchor || !planeNormal) return null;
+    const dx = P.x - Lp.x; const dy = P.y - Lp.y; const dz = P.z - Lp.z;
+    const denom = planeNormal.x * dx + planeNormal.y * dy + planeNormal.z * dz;
+    if (Math.abs(denom) < 1e-9) return null;
+    const relx = planeAnchor.x - Lp.x; const rely = planeAnchor.y - Lp.y; const relz = planeAnchor.z - Lp.z;
+    const t = (planeNormal.x * relx + planeNormal.y * rely + planeNormal.z * relz) / denom;
+    if (!(t > 1 - 1e-3) || !Number.isFinite(t)) return null; // must land at/beyond P, away from the light
+    const x = Lp.x + t * dx; const y = Lp.y + t * dy; const z = Lp.z + t * dz;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+    return { x, y, z };
+  };
+
+  // W-30 — light-type-aware plane-projector DISPATCH for the flat-face
+  // shadow-RECEIVE path (`scene3d.js`'s `buildFaceFootprint`), mirroring the
+  // `positional` detection `build()` already applies to the ground-shadow
+  // path below (grep this file for `positional`): a point/spot/area light
+  // with a real world `position` casts a PERSPECTIVE footprint from that
+  // position; a directional (or any other/absent-position) light keeps the
+  // PARALLEL travel-direction footprint via `fallbackDir` (e.g.
+  // `Regions.Lighting.lightWorldDir(light)`), byte-identical to before this
+  // fix for every scene that only ever used a directional sun.
+  //
+  // Finding this generalizes (STILL-OPEN.md W-30 / docs/3d-audit/lane-
+  // reports/UnitD-phase-review.md §4): before this export existed, the ONLY
+  // primitive available to the receive path was the parallel projector, so
+  // an area/point/spot light with no azimuth/elevation fields silently fell
+  // back to `Regions.Lighting.lightWorldDir`'s own default (135°/45°) —
+  // the receive-shadow direction had NO relationship to where the light
+  // actually was. This function is the fix's reusable primitive; wiring
+  // `scene3d.js`'s `buildFaceFootprint` call site to actually call it
+  // (instead of always calling `projectAlongDirToPlane` with `lightDir`) is
+  // a follow-up out of this lane's scope (`scene3d.js` is owned elsewhere —
+  // see AGENT-PROTOCOL.md's serialization table).
+  const projectLightToPlane = (P, light, planeAnchor, planeNormal, fallbackDir) => {
+    const pos = light && light.position;
+    const type = light && light.type;
+    const positional = Boolean(pos && Number.isFinite(pos.x) && Number.isFinite(pos.y) && Number.isFinite(pos.z)
+      && (type === 'point' || type === 'spot' || type === 'area'));
+    if (positional) return projectFromPositionToPlane(P, pos, planeAnchor, planeNormal);
+    if (!fallbackDir) return null;
+    return projectAlongDirToPlane(P, fallbackDir, planeAnchor, planeNormal);
   };
 
   // Project a world vertex onto the y = 0 ground along the light travel dir,
@@ -3115,6 +3263,30 @@
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, {
     Shadows: {
       build,
+      // Unit D judge follow-up — exported so scene3d.js's FACETED hatch path
+      // (faceHatchLines) can spatially resolve the shadow-receive term on a
+      // face-region (a box/plane/pyramid face, or a big flat ground plane)
+      // instead of sampling intensity once at the region's centroid. Same
+      // even-odd marching-scan primitive the shadow's own tone gradient
+      // already uses (buildGradedSpacing); zero behavior change for every
+      // existing caller of this module — this is a pure additional export.
+      hatchRingsEvenOdd,
+      // Unit D judge follow-up v2 — the FLAT-face footprint-clip model
+      // (parametrize the plane rather than duplicate the ground-shadow
+      // projection): `projectAlongDirToPlane` generalizes the ground's
+      // y=0 ray/plane intersection to an arbitrary plane; `convexHull` is
+      // the same 2D hull the ground caster silhouette already reduces to
+      // for its draft footprint.
+      projectAlongDirToPlane,
+      // W-30 — light-type-aware perspective projector for the flat-face
+      // shadow-RECEIVE path (see the comment above `projectLightToPlane`):
+      // `projectFromPositionToPlane` is the raw perspective primitive,
+      // `projectLightToPlane` dispatches on `light.type`/`light.position`
+      // vs the parallel `projectAlongDirToPlane` fallback, mirroring the
+      // ground-shadow path's own `positional` detection below.
+      projectFromPositionToPlane,
+      projectLightToPlane,
+      convexHull,
       // Fill Style (tone-law) on shadow hatch: `toneLawApplies(lawId)` is the
       // predicate a UI picker should gate on (hide ids whose mark class does
       // not change shadow geometry); `toneLawMarkClass` is the underlying

@@ -1953,3 +1953,198 @@ describe('Shadow Fill Style — hidden whenever inert (docked 3D Scene panel)', 
     expect(layer.params.shadow.shadowToneLaw).toBe('mkScribble');
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════
+// 5. Unit D (stroke-fill handoff item D) — "Shadows land on objects"
+//    (shadow.shadowReceiveOnObjects). Same WHOLE-STYLE-WINS concern as the
+//    Fill Style picker above, applied to the shadow bag: `shadow.*` is a
+//    plain scene-wide params object (no cascade merge), but a hand-written
+//    onChange handler can still silently clobber sibling keys if it ever
+//    replaces the bag instead of mutating one field. These tests pin that it
+//    does not, on BOTH surfaces, and that the write lands in the correct
+//    scope (the scene layer's own `shadow` bag, not a per-object field).
+// ══════════════════════════════════════════════════════════════════════════
+
+describe('Shadow — "Shadows land on objects" (context-bar Shadow flyout)', () => {
+  let runtime, window, document, app, CB;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    ({ window, document } = runtime);
+    window.app = new window.Vectura.App();
+    app = window.app;
+    app.maxHistory = 100000;
+    CB = window.Vectura.UI.ContextBar;
+    await nextFrames();
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  const host = () => CB.getContentHost();
+  const addSelectScene = (objectIds, overrides = {}) => {
+    app.engine.layers = app.engine.layers.filter((l) => l.type !== 'scene3d');
+    const scene = new window.Vectura.Layer(`scene-shro-${app.engine.layers.length}`, 'scene3d', 'Scene');
+    scene.params = { ...scene.params, ...fixtureParams(overrides) };
+    app.engine.layers.push(scene);
+    app.engine.activeLayerId = scene.id;
+    app.engine.generate(scene.id);
+    app.renderer.setSelection([scene.id], scene.id);
+    app.renderer.setSceneSelection({ layerId: scene.id, mode: 'object', objectIds, faceKeys: [], edgeKeys: [] });
+    CB.restoreState();
+    return scene;
+  };
+  const pills = () => Array.from(host().querySelectorAll('.ctxbar-scene-field'));
+  const pillByLabel = (t) => pills().find((f) => f.getAttribute('aria-label') === t);
+  const openFly = () => document.querySelector('.ctxbar-scene-flyout.is-open');
+  const rowCtl = (fly, label) => {
+    const row = Array.from(fly.querySelectorAll('.ctxbar-fly-row'))
+      .find((r) => (r.querySelector('.ctxbar-fly-label') || {}).textContent === label);
+    return row ? row.querySelector('.ctxbar-fly-ctl') : null;
+  };
+  const openShadow = (objectIds = ['obj-1'], overrides) => {
+    const scene = addSelectScene(objectIds, overrides);
+    pillByLabel('Shadow').click();
+    return { scene, fly: openFly() };
+  };
+  const onOffBtn = (ctl, word) => Array.from(ctl.querySelectorAll('button'))
+    .find((b) => new RegExp(`^${word}$`, 'i').test((b.textContent || '').trim()));
+  const fire = (el, type) => el.dispatchEvent(new window.Event(type, { bubbles: true }));
+
+  test('row exists, labelled "Shadows land on objects", defaults Off', () => {
+    const { fly } = openShadow();
+    const ctl = rowCtl(fly, 'Shadows land on objects');
+    expect(ctl).toBeTruthy();
+    expect(onOffBtn(ctl, 'off')).toBeTruthy();
+    expect(onOffBtn(ctl, 'on')).toBeTruthy();
+  });
+
+  test('carries the same click-driven inline (i) as the Fill Style row, with the render-cost blurb', () => {
+    const { fly } = openShadow();
+    const row = rowCtl(fly, 'Shadows land on objects').parentNode;
+    const btn = row.querySelector('.vs3-lawinfo-btn');
+    expect(btn).toBeTruthy();
+    const box = fly.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+    expect(box.classList.contains('is-open')).toBe(false);
+    fire(btn, 'click');
+    expect(box.classList.contains('is-open')).toBe(true);
+    expect(box.textContent).toMatch(/render cost/i);
+  });
+
+  test('WHOLE-STYLE-WINS — toggling On writes the correct scope and keeps every sibling shadow key', () => {
+    const { scene, fly } = openShadow(['obj-1'], {
+      shadow: {
+        shadowToneLaw: 'penCross', shadowDensity: 77, shadowMode: 'inverse',
+        shadowLineType: 'dashed', shadowAngle: 200,
+      },
+    });
+    const ctl = rowCtl(fly, 'Shadows land on objects');
+    fire(onOffBtn(ctl, 'on'), 'click');
+    // Correct scope: the scene LAYER's shadow bag (scene-wide), not a
+    // per-object field — this is a `shadow.*` write like every sibling row.
+    expect(scene.params.shadow.shadowReceiveOnObjects).toBe(true);
+    // Every sibling key set up above survives — a whole-bag replace would
+    // have reset these to their defaults.
+    expect(scene.params.shadow.shadowToneLaw).toBe('penCross');
+    expect(scene.params.shadow.shadowDensity).toBe(77);
+    expect(scene.params.shadow.shadowMode).toBe('inverse');
+    expect(scene.params.shadow.shadowLineType).toBe('dashed');
+    expect(scene.params.shadow.shadowAngle).toBe(200);
+  });
+
+  test('ROUND TRIP — toggling On then Off again leaves shadowToneLaw untouched throughout', () => {
+    const { scene, fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'mkTick', shadowReceiveOnObjects: false } });
+    let ctl = rowCtl(fly, 'Shadows land on objects');
+    fire(onOffBtn(ctl, 'on'), 'click');
+    expect(scene.params.shadow.shadowReceiveOnObjects).toBe(true);
+    expect(scene.params.shadow.shadowToneLaw).toBe('mkTick');
+    ctl = rowCtl(openFly(), 'Shadows land on objects');
+    fire(onOffBtn(ctl, 'off'), 'click');
+    expect(scene.params.shadow.shadowReceiveOnObjects).toBe(false);
+    expect(scene.params.shadow.shadowToneLaw).toBe('mkTick');
+  });
+});
+
+describe('Shadow — "Shadows land on objects" (docked 3D Scene panel)', () => {
+  let runtime, window, document;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    ({ window, document } = runtime);
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  const mount = (overrides = {}) => {
+    const { UI } = window.Vectura;
+    const layer = { id: 's3d-shro', type: 'scene3d', name: 'Scene 1', visible: true, penId: 'pen-1', params: fixtureParams(overrides) };
+    const ui = { app: { pushHistory: () => {}, regen: () => {} }, storeLayerParams: () => {} };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    UI.Scene3DPanel.build(ui, layer, container);
+    return { ui, layer, container };
+  };
+  const scenePage = (c) => c.querySelector('.vs3-page[data-page="scene"]');
+  const sectionByTitle = (c, title) => Array.from(scenePage(c).querySelectorAll('.sect'))
+    .find((s) => (s.querySelector('.sect-hdr-title') || {}).textContent === title) || null;
+  const shadowHost = (c) => {
+    const s = sectionByTitle(c, 'Shadow');
+    return s ? s.querySelector('.vs3-shadow') : null;
+  };
+  const rowCtl = (host2, label) => {
+    const row = Array.from(host2.querySelectorAll('.vs3-row'))
+      .find((r) => (r.querySelector('.vs3-lbl') || {}).textContent === label);
+    return row ? row.querySelector('.vs3-ctl') : null;
+  };
+  const onOffBtn = (ctl, word) => Array.from(ctl.querySelectorAll('button'))
+    .find((b) => new RegExp(`^${word}$`, 'i').test((b.textContent || '').trim()));
+  const fire = (el, type) => el.dispatchEvent(new window.Event(type, { bubbles: true }));
+
+  test('row exists, labelled "Shadows land on objects", defaults Off', () => {
+    const { container } = mount();
+    const host2 = shadowHost(container);
+    const ctl = rowCtl(host2, 'Shadows land on objects');
+    expect(ctl).toBeTruthy();
+    expect(onOffBtn(ctl, 'off')).toBeTruthy();
+    expect(onOffBtn(ctl, 'on')).toBeTruthy();
+  });
+
+  test('carries the same click-driven inline (i) as the Fill Style row, with the render-cost blurb', () => {
+    const { container } = mount();
+    const host2 = shadowHost(container);
+    const row = rowCtl(host2, 'Shadows land on objects').parentNode;
+    const btn = row.querySelector('.vs3-lawinfo-btn');
+    expect(btn).toBeTruthy();
+    fire(btn, 'click');
+    const pop = row.querySelector('.vs3-lawinfo-pop.is-open');
+    expect(pop).toBeTruthy();
+    expect(pop.textContent).toMatch(/render cost/i);
+  });
+
+  test('WHOLE-STYLE-WINS — toggling On writes the correct scope (layer.params.shadow) and keeps every sibling key', () => {
+    const { container, layer } = mount({
+      shadow: {
+        shadowToneLaw: 'mkDotScreen', shadowDensity: 63, shadowMode: 'inverse',
+        shadowLineType: 'dotted', shadowAngle: 88,
+      },
+    });
+    const host2 = shadowHost(container);
+    const ctl = rowCtl(host2, 'Shadows land on objects');
+    fire(onOffBtn(ctl, 'on'), 'click');
+    expect(layer.params.shadow.shadowReceiveOnObjects).toBe(true);
+    expect(layer.params.shadow.shadowToneLaw).toBe('mkDotScreen');
+    expect(layer.params.shadow.shadowDensity).toBe(63);
+    expect(layer.params.shadow.shadowMode).toBe('inverse');
+    expect(layer.params.shadow.shadowLineType).toBe('dotted');
+    expect(layer.params.shadow.shadowAngle).toBe(88);
+  });
+
+  test('ROUND TRIP — toggling On then Off again leaves shadowToneLaw untouched throughout', () => {
+    const { container, layer } = mount({ shadow: { shadowToneLaw: 'mkScribble', shadowReceiveOnObjects: false } });
+    let host2 = shadowHost(container);
+    fire(onOffBtn(rowCtl(host2, 'Shadows land on objects'), 'on'), 'click');
+    expect(layer.params.shadow.shadowReceiveOnObjects).toBe(true);
+    expect(layer.params.shadow.shadowToneLaw).toBe('mkScribble');
+    host2 = shadowHost(container);
+    fire(onOffBtn(rowCtl(host2, 'Shadows land on objects'), 'off'), 'click');
+    expect(layer.params.shadow.shadowReceiveOnObjects).toBe(false);
+    expect(layer.params.shadow.shadowToneLaw).toBe('mkScribble');
+  });
+});

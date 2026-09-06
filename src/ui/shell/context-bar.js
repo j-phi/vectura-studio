@@ -1868,6 +1868,22 @@
         flyNote(fly, C.toneLawInertNote);
       }
     }
+    // Unit D — shadows falling on OTHER objects' own surfaces. Scene-wide,
+    // like every other row here (shadow.* lives on the LAYER). Off by
+    // default; the (i) note carries the render-cost warning, same click-
+    // driven copy pattern as the Fill Style (i) above.
+    if (C.receiveOnObjects) {
+      const recvHost = flyRow(fly, C.receiveOnObjects.label);
+      UI.SegCtrl(recvHost, {
+        options: C.onOff || [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+        value: bag.shadowReceiveOnObjects === true ? 'on' : 'off',
+        ariaLabel: C.receiveOnObjects.aria,
+        onChange: (v) => setScene('shadow.shadowReceiveOnObjects', v === 'on'),
+      });
+      if (C.receiveOnObjectsNote) {
+        flyLawInfo(fly, recvHost, [{ text: C.receiveOnObjectsNote }], `About ${C.receiveOnObjects.label}`);
+      }
+    }
     // Follow light — shadows.js derives the hatch bearing from the light travel
     // direction when this is on, so the manual Angle below is INERT then and is
     // replaced by a note rather than shown as a dial that does nothing.

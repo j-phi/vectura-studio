@@ -159,6 +159,21 @@ torus first; RGR test red against `da683934`; the user confirms it by eye on the
 **Before you start:** re-read finding 2 at the top of this doc. If your fix removes geometry, the
 coverage helper may mis-score it exactly as it mis-scored self-occlusion.
 
+**Unit A (`3d-scene/handoff-b`) — STOPPED, reported.** Root cause narrowed to false-positive
+self-occlusion clips (`hlr.js` F7) on CROSS-run crossings (separate centreline runs crossing in
+screen space); the `zAlongRun` within-run fix (cut clip events 11→1 at two locations) did not move
+the five mm² totals. See `docs/3d-audit/handoff/unit-a-notes.md`.
+
+**Unit A2 (`3d-scene/handoff-c`) — STOPPED, reported.** Rewrote `Scene3D.TorusOcclusion`'s
+self-occlusion test from a per-sample dilated ray to a dense analytic near/far FIELD (the F7
+oracle's own method), made it AUTHORITATIVE over the coarse mesh test for same-object occlusion
+(F7 stays 0/0, convex/imported-mesh paths byte-identical). **Measured, not guessed: self-occlusion
+is not the cause of these five numbers** — a control with self-occlusion entirely absent
+(pre-`57e86f48`) measures the SAME `ringNotInkMm2` (within run-to-run noise) as both the pre-fix and
+post-fix trees. The real source is most likely `PenFill`/boolean erosion fragmenting `outlineMP`
+near the same self-crossing loop holes — not yet isolated. Two genuine approaches now closed
+without moving the metric. See `docs/3d-audit/handoff/unit-a2-notes.md`.
+
 ### B. Blunt band terminations at the clip boundary  (NEW, user-flagged)
 
 **Task.** Since self-occlusion landed, bands terminate where the near sheet cuts them with slightly
@@ -171,22 +186,27 @@ whole effort reads. Awaiting the user's verdict on the bench before investing.
 **Done when.** The user says the terminations read acceptably, or they are softened without
 reintroducing any crossing of the red-line rule (F7 must stay at 0 survivors).
 
-### C. Shadow overlap darkening  (`sf/shadow-overlap`, merged into `sf/preview`)
+### C. Shadow overlap darkening  (`sf/shadow-overlap`, merged into `sf/preview`) — **CLOSED**
 
-**⚑ KNOWN RED ON THIS BRANCH.** Merging this WIP makes
-`tests/unit/scene3d-hlr-spatial-index-identity.test.js > denseMixed-8obj-shadows` fail — the
-byte-identity guard for a shadows scenario. Unit on `sf/preview` is 4672 pass / **1 fail**; the same
-suite on `sf/integration` (without this merge) is 4669 / 0.
+**Resolved on `3d-scene/handoff-c`.** The `scene3d-hlr-spatial-index-identity.test.js` fingerprint
+this item warned about is already GREEN on this branch (6/6, including `denseMixed-8obj-shadows`) —
+`6c17709d` had already justified and recorded that move before this unit started; no fingerprint was
+touched here. The implementation was reviewed as if written by someone else
+(`docs/3d-audit/handoff/unit-c-review.md`): no defect found requiring a source change, only a
+low-severity observation (`overlapCfg()`'s `maxDepth`/`maxCasters` have no upper clamp, safe today
+only because `algorithm-tuning.js` freezes them and neither is UI-exposed).
 
-Read that failure as EVIDENCE, not noise: it proves the shadow code is live and genuinely changes
-shadow output, and equally that the change has never been validated. **Do not update the fingerprint
-to get green** — that certifies rendering nobody has reviewed. Resolve it as part of this item: once
-the overlap behaviour is reviewed and seen in the app, either the new fingerprint is justified and
-recorded with that justification, or the implementation is wrong and the guard caught it.
+The density test's non-vacuity was proven by mutation: patching `overlapFactor` to `return 1`
+(coincident-line behaviour) turns the ladder-monotonicity assertion AND the density assertion RED
+(density ratio drops to 1.15x, under the 1.25x bar); reverted, confirmed byte-identical to
+`d5af9e30` via `git diff`. Measured live in the app (`scripts/shadow-overlap-evidence.js`, two
+30mm boxes matching the test fixture, `shadowLayers: true`): overlap scene depth-2/depth-1 density
+ratio **3.06x** (threshold 1.25x); the `apart` control shows **zero** depth-2 regions. Screenshots
+and `stats.json` at `docs/3d-audit/handoff/unit-c/`.
 
-**Task.** Where two shadows overlap the region must read darker. Chosen mechanism: **denser hatching
-at the same angle**. Implementation, a test and a fixture exist and now pass 22/22 — but the
-implementation has never been reviewed and the result has never been seen in the app.
+**Task (as originally written, for context).** Where two shadows overlap the region must read darker.
+Chosen mechanism: **denser hatching at the same angle**. Implementation, a test and a fixture exist
+and pass 22/22.
 
 **TRAP.** The zone path phase-anchors rulings to an **absolute origin**, so two overlapping shadows
 emitted independently draw **coincident lines** — pixel-identical to one shadow. Darkening MUST come
@@ -197,26 +217,113 @@ naive path-count assertion.
 density / ruling pitch**, not path count, and a coincident-line implementation FAILS it; measured
 darker in the app with two overlapping casters, screenshotted.
 
-### D. Shadows falling onto other 3D objects  (NOT STARTED)
+### D. Shadows falling onto other 3D objects  (`3d-scene/handoff-c`) — **CLOSED**
 
-**Task.** A shadow must land on another object's surface and render in **that receiver's own fill
-style**. Settled architecture: per surface sample, ask "is this point in shadow?" and feed the answer
-into the intensity the tone laws already consume. No new region geometry. This also dodges the fact
-that a projected silhouette is only valid on a **plane** — a curved receiver (the cone) would need
-per-line sampling under the projection approach.
+**Resolved on `3d-scene/handoff-c`.** New `src/core/scene3d/shadow-receive.js`
+(`Vectura.Scene3D.ShadowReceive`): `pointInShadow(worldPoint, light, occluderSet, opts)`
+(Moller-Trumbore ray/triangle, self-shadow exclusion via `opts.excludeObjectId`) +
+`buildOccluderSet(records)` (every object's own world-space faces, `scene.js` `faceRecord.world-
+Verts`, flattened to triangles grouped per object with a bounding sphere). `Regions.combined-
+Intensity` gained an optional 4th `shadowFn` arg — an occluded light's own contribution drops to 0,
+ambient untouched; omitted, it is a strict no-op (every pre-existing call site byte-identical).
+`scene3d.js` builds one occluder set per frame and closes `shadowFn` over `currentReceiverObjectId`
+(reassigned per record, the same trick the existing emissive-light `activeLights` plumbing already
+uses). New flag `shadow.shadowReceiveOnObjects`, default **OFF** — every existing scene, including
+the `scene3d-hlr-spatial-index-identity` byte-identity fixtures, stays untouched.
 
-**Known cost.** There was no ray/triangle intersection anywhere in scene3d. There is now
-`src/core/scene3d/ray-torus.js` (closed-form ray/torus, 12 tests) and the self-occlusion plumbing in
-`hlr.js` — **start from those**, they did not exist when this item was written. World-space face
-polygons are at `scene.js:197-201`.
+**Task (as originally written, for context).** A shadow must land on another object's surface and
+render in **that receiver's own fill style**. Settled architecture: per surface sample, ask "is this
+point in shadow?" and feed the answer into the intensity the tone laws already consume. No new
+region geometry — this also dodges the fact that a projected silhouette is only valid on a
+**plane**; a curved receiver (the cone) needed per-sample testing, not projection.
 
-**Value.** The largest remaining capability gap. Multi-object scenes read as objects floating
-independently.
+**Performance.** A naive per-sample linear triangle scan measured 101->3739ms (a simple caster+cone
+scene) and 89->3835ms (an 8-object dense scene, 43x) — profiling showed almost every sample is
+unshadowed, so every one still paid for a full scan just to conclude "no hit." A per-object
+bounding-sphere early-out (mirroring `hlr.js:buildOccluderIndex`'s spirit) brought this to
+92->388ms (4.2x) / 89->428ms (4.8x) — real, measured, but still over the ~1.5x guidance. Per this
+item's own stop condition ("exceeds ~1.5x and needs a real BVH — a second unit"), that residual gap
+is reported, not force-fixed: it is O(objects^2) by design (every object tests every other as a
+candidate occluder) and needs a shared cross-object index/shadow-map to close further. Details:
+`docs/3d-audit/handoff/unit-d-notes.md`.
 
 **Done when.** `pointInShadow(worldPoint, light, occluders)` with unit tests (hit, miss, grazing,
-self-shadow exclusion); the shadow term feeds per-sample intensity, verified by the receiver's fill
-style changing the shadow's appearance; works on a **curved** receiver; performance measured and
-stated; two-object screenshot.
+self-shadow exclusion) — DONE, 10/10 green in `tests/unit/scene3d-shadow-receive.test.js`; the
+shadow term feeds per-sample intensity, verified by the receiver's fill style changing the shadow's
+appearance — DONE (an independent ray/sphere oracle proves a real intensity margin, and two
+different `toneLaw`s on the receiver emit different geometry with the shadow on); works on a
+**curved** receiver — DONE (the same oracle, adjacent points straddling the exact shadow boundary
+on a cone); performance measured and stated — DONE, see above (not fully within budget, reported);
+two-object screenshot — DONE, `docs/3d-audit/handoff/unit-d/` (a sphere caster onto a cone receiver,
+control 1: caster moved aside, control 2: receiver's own toneLaw changed — both provably NOT
+byte-identical to the shadowed shot).
+
+**Adversarial review follow-up (same branch, second commit).** Accepted with follow-up; three items
+addressed: (1) `shadow.shadowReceiveOnObjects` is now exposed in the UI (docked panel + context-bar
+Shadow flyout), beside the Fill Style row, with the same click-driven (i) affordance and a render-
+cost blurb, plus 10 new integration tests (row presence, the (i) note, and WHOLE-STYLE-WINS — the
+toggle writes the correct scope and never drops a sibling `shadow.*` key); (2) evidence re-shot with
+`toneLaw:'ladder'` instead of `mazeFill` — the law-changed control is dramatically, visibly
+different (confirms "renders in the receiver's own style"), but **the shadow itself is not clearly
+visible by eye** in the `ladder` crops at this light angle/density (stated plainly, not tuned away —
+see `docs/3d-audit/handoff/unit-d-notes.md`); (3) `unit-d-notes.md` corrected: point/spot shadow-
+receive is genuinely UNTESTED at the intensity/pipeline level (only an incidental module-level call
+existed), and area lights lose their entire N-sample softening under occlusion (the shadow gate in
+`combinedIntensity` runs before the area-light averaging loop) — both now stated as known gaps, not
+implemented here.
+
+**Judge rejection + fix (third commit).** The judge REJECTED the above: a box caster over a big flat
+plane receiver (hatch/ladder, elevation 25) showed ink shifting UNIFORMLY across the whole plane,
+including far corners — no localized patch, ON/OFF visually indistinguishable. Root cause: the
+FACETED path's `spacingBand` (`scene3d.js`) samples `intensityFn` — and therefore `shadowFn` — ONCE
+at a face-region's centroid; a plane is one face, so its entire surface got one uniform shift. Fixed
+by feeding `Shadows.hatchRingsEvenOdd` (newly exported; the same marching-scan primitive
+`buildGradedSpacing` already uses) a per-point spacing function for the faceted hatch's carrier and
+automatic second family, bypassing the scalar `planeFor`/`plan` narrow-facet grant that cannot honor
+a per-point function. A SECOND, independent bug was found while verifying this: `recordBands`'s O20
+rank-grade cache also samples ONE band per face at its centroid and silently overrode any per-point
+value; fixed via a new `perPointGrade` flag on `spacingBand` that skips the cache (every existing
+call site is byte-identical). RGR: `tests/unit/scene3d-shadow-receive.test.js` gained a box+plane
+describe block — an independent ray/AABB oracle proves inside/outside density clears 1.5x with the
+flag ON (measured ~2.4x with a stark ladder) and stays uniform (0.7-1.3x) with it OFF; a second pin
+(`VECTURA_PRE_FACETGRADE=1` on `2893d842`) reproduces the judge's exact defect (ratio 0.84, RED).
+
+**Honest visual finding (not fully resolved).** Re-shot the judge's exact scene
+(`scripts/shadow-receive-plane-evidence.js`) and looked at the crops directly: with the SHIPPED
+DEFAULT tone ladder, **no visible dark patch, no visible straight edge** — the fix is numerically
+real (confirmed by the oracle and by a pixel count under a higher-contrast ladder, ~1.4x more ink in
+the same window) but reads as a diffuse density gradient along a band, not a crisp 2D footprint —
+`hatchRingsEvenOdd`'s marching scan varies spacing only along the perpendicular axis, uniformly
+across each ruling's full length, so a genuinely bounded patch would need the shadow's own silhouette
+clipped into the fill topology (a materially larger change, out of scope here). **The "visible dark
+patch with a straight-edged footprint" acceptance bar is therefore NOT met at default settings** —
+stated plainly rather than tuned away. See `docs/3d-audit/handoff/unit-d-notes.md` for the full
+writeup, pixel numbers, and re-measured performance (box+plane ~2.3x, dense scene ~3.3x, both still
+low-double-digit ms in absolute terms; flag stays OFF by default).
+
+**v2 — footprint-clip model (this commit), replacing per-point sampling on flat faces.** Per the
+coordinator: reuse the ground-shadow model instead. `shadows.js` gained
+`projectAlongDirToPlane` (the ground's own y=0 ray/plane intersection, generalized to an arbitrary
+plane) and exports `convexHull`; `scene3d.js`'s `buildFaceFootprint` projects every OTHER object's
+world vertices onto THIS face's plane along the light, hulls them, and clips to the face's own
+outline (Sutherland-Hodgman, every faceted primitive's face is convex). The clipped footprint
+hatches at one scalar "inside" pitch (a directional hard shadow is binary, so one sample suffices);
+the rest of the face hatches at the "outside" pitch with the footprint as an even-odd hole. The
+boundary is now a real polygon clip edge. Two bugs found live while wiring this up, both fixed:
+`planeFor`'s memoized narrow-facet grant ignores the screen-pitch it's called with (collapsed
+inside/outside to the same value) — fixed with a direct `uvPitchFactor` conversion for the split
+family only; and the "outside" pitch was sampled at the face's own centroid, which can itself sit
+inside a caster's footprint — fixed with `spacingBand(..., noShadowBaseline: true)`. A third bug
+(caught by the full `test:unit` run: 19 x-ray-suite failures, `record` undefined at one pre-existing
+call site that never needed it before) was fixed by guarding the footprint call. New RGR:
+a footprint-EDGE test (two 5mm windows straddling the exact projected edge, >=2x required) — RED
+against `2893d842` (0.96), GREEN now; the existing 1.5x density test still passes. Looked at the
+crops directly: a clear, straight-edged quadrilateral patch is now visible (denser-packed hatch
+lines, not a solid wash — expected for plotter-style line rendering), absent in both the aside and
+OFF controls; a second scene (tall box onto a neighbouring box's side face) also shows it. Curved
+receivers (cone/sphere evidence) are byte-identical (md5) to before. Perf: box+plane ~2.4x
+(1.5-2.3ms -> 3.5-4.4ms), dense scene ~4.3x (23-27ms -> 100-120ms) — flag stays OFF by default,
+not force-fixed further. Full writeup: `docs/3d-audit/handoff/unit-d-notes.md`.
 
 ### E. Expand fidelity on two laws  (plan F5, plus the lying counter)
 

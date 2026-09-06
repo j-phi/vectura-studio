@@ -32,38 +32,30 @@
   // Emission floor (document mm): visibility crumbs shorter than this draw as
   // dots at best on a plotter and are usually corner-transition artifacts.
   const MIN_RUN_MM = 0.6;
-  // F7 — analytic self-occlusion Z margin (document mm), torus only. The
-  // occluder here is `Scene3D.TorusOcclusion`'s exact closed-form surface
-  // (zero tessellation error), so this is NOT absorbing occluder noise the
-  // way `hlr.js`'s mesh-based `SELF_OCCLUDE_BIAS` (6mm) has to — it exists
-  // to reject a SHALLOW false positive: a self-crossing decorative law
-  // ('onePenDown') chains one long ribbon across most of the visible
-  // surface, and even a couple of millimetres of dilation-found "nearer"
-  // surface at ONE sample along that chain is enough to fragment its single
-  // CLS_WALLS-classified stretch into pieces too short to classify at all
-  // (`stats.wallRings` measured 0, "ribbons degenerated to bare
-  // centrelines" — a FAILURE dressed as a pass). Every GENUINE self-
-  // occlusion crossing measured on this fixture (the torus's near tube wall
-  // hiding its own far wall through the inner hole) has a real depth gap of
-  // 20mm or more — nowhere close to this margin — so raising it clears the
-  // shallow false positive without weakening real detection at all.
-  // Measured: `onePenDown` recovers `wallRings > 0` at margin >= ~10mm and
-  // stays recovered through 15; margins tried below that (0.5-6mm, matching
-  // `dilateRadiusMm` below) all measured `wallRings === 0` for `onePenDown`
-  // regardless of radius — see `scene3d-ribbon-wall-coverage.test.js`'s own
-  // header for the full margin/radius/survivors/coverage/wallRings curve.
-  const TORUS_SELF_OCCLUDE_ANALYTIC_MARGIN_MM = 15;
-  // 2D (screen mm) dilation radius for the SAME analytic test — see
-  // `Scene3D.TorusOcclusion.buildSelfOcclusionTest`'s own header for why a Z
-  // margin alone is not enough near the inner-hole cusp (steep local
-  // foreshortening there means a fraction-of-a-mm lateral shift can put a
-  // ray from "misses the near sheet entirely" to "30+ mm behind it"). This
-  // is the knob that actually governs F7 survivor detection (the margin
-  // above is deliberately decoupled and much larger); measured smallest
-  // value that still reaches 0/0 survivors on
-  // `scene3d-ribbon-f7-self-occlusion.test.js` — 1-2mm miss real survivors,
-  // 3mm is the first value that catches all of them.
-  const TORUS_SELF_OCCLUDE_DILATE_RADIUS_MM = 3;
+  // F7/A2 — analytic self-occlusion test tuning (document mm), torus only.
+  // `Scene3D.TorusOcclusion.buildSelfOcclusionTest` (unit A2 rewrite — see
+  // that module's own header) classifies a sample against a dense analytic
+  // near/far FIELD instead of casting dilated rays: a screen cell only
+  // counts as genuine self-occlusion territory when its own near/far sheets
+  // differ by more than `TORUS_SELF_OCCLUDE_GAP_MM` (filtering ordinary
+  // local-curvature depth variation), and a sample is occluded only when its
+  // z reads below that cell's near/far MIDPOINT by at least
+  // `TORUS_SELF_OCCLUDE_MARGIN_MM` (absorbing a ribbon outline/wall/fill
+  // vertex's own legitimate drift off its originating centreline — up to
+  // roughly the ribbon's own half-width, measured up to 2.3mm; see
+  // `docs/stroke-fill-handoff.md` finding 1). Every GENUINE self-occlusion
+  // crossing measured on this fixture (the torus's near tube wall hiding its
+  // own far wall through the inner hole) has a real depth gap of 20mm or
+  // more, so the 8mm gap floor (identical to the F7 oracle's own
+  // `OVERLAP_GAP_MM` — `tests/helpers/scene3d-torus-hole-oracle.js`) clears
+  // it with margin to spare: any qualifying cell's midpoint sits at least
+  // 4mm below its near depth, comfortably above the largest measured
+  // ribbon-vertex drift (2.3mm), so real near-sheet ink never crosses it.
+  // See `Scene3D.TorusOcclusion`'s own `DEFAULT_GAP_MM`/`DEFAULT_MARGIN_MM`
+  // for the full reasoning; both are exposed here only so a future tuning
+  // pass has one place to look.
+  const TORUS_SELF_OCCLUDE_GAP_MM = 8;
+  const TORUS_SELF_OCCLUDE_MARGIN_MM = 1;
   // ── §0 — A FACET IS RULED, NOT MERELY MARKED ───────────────────────────────
   // The fewest rulings that read as a FILL rather than as bare paper with a line
   // on it. Two parallel lines are a stripe; the third is the first that gives
@@ -683,7 +675,107 @@
       // live binding, so the per-record reassignment is picked up by every helper
       // (spacingBand, the curved pass, SurfaceFill) without re-plumbing them.
       let activeLights = p.lights;
-      const intensityFn = toneOn ? (nw, wp) => Regions.combinedIntensity(nw, wp, activeLights) : null;
+      // Unit D (stroke-fill handoff item D) — shadows falling on OTHER
+      // objects' own surfaces. `shadowReceiveOnObjects` (default OFF, see
+      // params.js DEFAULT_SHADOW) gates a per-frame occluder set built once
+      // from every object's own world-space faces (scene.js faceRecord).
+      // `currentReceiverObjectId` is REASSIGNED per record exactly like
+      // `activeLights` above (see the `records.forEach` below) so the SAME
+      // `shadowFn` closure excludes whichever object is CURRENTLY being
+      // shaded from its own occluder set (self-shadow exclusion) without
+      // rebuilding the function per object. Off by default ⇒ `shadowFn` stays
+      // null ⇒ `combinedIntensity`'s 4th arg is never passed ⇒ byte-identical
+      // to pre-Unit-D for every scene that doesn't opt in.
+      const ShadowReceive = Vectura.Scene3D.ShadowReceive;
+      let currentReceiverObjectId = null;
+      const shadowReceiveOn = Boolean(p.shadow && p.shadow.shadowReceiveOnObjects && ShadowReceive && lightDir);
+      const shadowOccluders = shadowReceiveOn ? ShadowReceive.buildOccluderSet(scene.objects) : null;
+      const shadowFn = shadowOccluders
+        ? (wp, lt) => ShadowReceive.pointInShadow(wp, lt, shadowOccluders, { excludeObjectId: currentReceiverObjectId })
+        : null;
+      const intensityFn = toneOn ? (nw, wp) => Regions.combinedIntensity(nw, wp, activeLights, shadowFn) : null;
+
+      // ── Unit D judge follow-up v2 — FLAT-face footprint clip ────────────────
+      // (faceHatchLines, below, is the consumer.) "Parametrize the plane rather
+      // than duplicate" the ground-shadow model: `Shadows.projectAlongDirToPlane`
+      // is the ground's own y=0 ray/plane intersection, generalized to this
+      // face's own plane; `Shadows.convexHull` is the same 2D hull the ground
+      // caster silhouette already reduces to for its footprint.
+      const worldToUV = (scafArg, pt) => {
+        const dx = pt.x - scafArg.origin.x; const dy = pt.y - scafArg.origin.y; const dz = pt.z - scafArg.origin.z;
+        return {
+          x: dx * scafArg.U.x + dy * scafArg.U.y + dz * scafArg.U.z,
+          y: dx * scafArg.V.x + dy * scafArg.V.y + dz * scafArg.V.z,
+        };
+      };
+      const ringArea2 = (ring) => {
+        let a2 = 0;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) a2 += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
+        return a2;
+      };
+      const asCCW = (ring) => (ringArea2(ring) < 0 ? ring.slice().reverse() : ring);
+      // Sutherland-Hodgman: clip `subject` (any simple polygon) against the
+      // CONVEX polygon `clipCCW` (wound CCW) — every faceted primitive's face
+      // (box/plane/pyramid) is convex by construction, so this always applies.
+      // Returns the clipped polygon (possibly empty).
+      const clipToConvexCCW = (subject, clipCCW) => {
+        let output = subject;
+        for (let i = 0; i < clipCCW.length && output.length; i++) {
+          const a = clipCCW[i]; const b = clipCCW[(i + 1) % clipCCW.length];
+          const ex = b.x - a.x; const ey = b.y - a.y;
+          const inside = (pt) => (ex * (pt.y - a.y) - ey * (pt.x - a.x)) >= 0;
+          const edgeT = (p0, p1) => {
+            const dxp = p1.x - p0.x; const dyp = p1.y - p0.y;
+            const denom = ex * dyp - ey * dxp;
+            const t = denom ? ((a.x - p0.x) * ey - (a.y - p0.y) * ex) / denom : 0;
+            return { x: p0.x + t * dxp, y: p0.y + t * dyp };
+          };
+          const input = output;
+          output = [];
+          for (let j = 0; j < input.length; j++) {
+            const cur = input[j]; const prev = input[(j + input.length - 1) % input.length];
+            const curIn = inside(cur); const prevIn = inside(prev);
+            if (curIn) {
+              if (!prevIn) output.push(edgeT(prev, cur));
+              output.push(cur);
+            } else if (prevIn) {
+              output.push(edgeT(prev, cur));
+            }
+          }
+        }
+        return output;
+      };
+      // One footprint set per face scaffold (faceHatchLines calls this once
+      // per face it hatches) — every OTHER object's world vertices projected
+      // onto THIS face's own plane along the light travel direction, hulled,
+      // then clipped to the face's own visible outline. null when the flag is
+      // off, the light is absent/draft, or nothing lands on this face.
+      const faceFootprintCache = new Map();
+      const buildFaceFootprint = (scaf, normalWorldArg, selfId) => {
+        if (!(shadowReceiveOn && toneOn && scaf && lightDir && Shadows
+          && typeof Shadows.projectAlongDirToPlane === 'function'
+          && typeof Shadows.convexHull === 'function')) return null;
+        if (faceFootprintCache.has(scaf.uv)) return faceFootprintCache.get(scaf.uv);
+        const faceCCW = asCCW(scaf.uv);
+        const anchor = scaf.origin;
+        const polys = [];
+        scene.objects.forEach((otherRec) => {
+          if (!otherRec || otherRec.id === selfId) return;
+          const world = otherRec.world || [];
+          const uvPts = [];
+          for (let i = 0; i < world.length; i++) {
+            const wp = Shadows.projectAlongDirToPlane(world[i], lightDir, anchor, normalWorldArg);
+            if (wp) uvPts.push(worldToUV(scaf, wp));
+          }
+          const hull = Shadows.convexHull(uvPts);
+          if (hull.length < 3) return;
+          const clipped = clipToConvexCCW(hull, faceCCW);
+          if (clipped.length >= 3 && Math.abs(ringArea2(clipped)) > 1e-6) polys.push(clipped);
+        });
+        const result = polys.length ? polys : null;
+        faceFootprintCache.set(scaf.uv, result);
+        return result;
+      };
       // I8 — per-sample specular term for light-driven highlight mode. Reads the
       // live `activeLights` binding (like intensityFn) so an emissive object's
       // co-located light is picked up. shininess derives from the tone Specular
@@ -1034,7 +1126,32 @@
         const IDS = (Vectura.SCENE3D_TONE_LAWS && Vectura.SCENE3D_TONE_LAWS.IDS) || null;
         return (!IDS || IDS.indexOf(asked) !== -1) ? asked : '';
       };
-      const spacingBand = (normalWorld, styleParams, worldPoint, face, record, opts) => {
+      // `perPointGrade` (Unit D judge follow-up, default false/undefined —
+      // every pre-existing call site is byte-identical): `recordBands` caches
+      // ONE band per face, sampled ONCE at that face's centroid, for the O20
+      // rank-spread mechanism (comparing a facet's intensity against its
+      // OBJECT'S OTHER FACETS — a discrete, per-facet concept that has no
+      // meaning for a continuous position WITHIN one face). Without this
+      // flag, that cache silently overrides whatever `worldPoint` this call
+      // passes — which is exactly why grading the shadow term by re-calling
+      // `spacingBand` at different points had NO effect until this was found:
+      // every call for a given face resolved to the SAME cached band no
+      // matter which point it asked about. `perPointGrade: true` skips the
+      // rank cache and always resolves the band from THIS point's own `I`
+      // via the plain threshold `Regions.band` — correct for a per-sample
+      // graded call, never for the ordinary one-sample-per-face path.
+      // `noShadowBaseline` (Unit D judge follow-up v2, default false — every
+      // pre-existing call site byte-identical): computes `I` via
+      // `Regions.combinedIntensity` WITHOUT the shadow term, i.e. the
+      // intensity this point would have with NOTHING occluding it. The
+      // footprint-split "outside" hatch needs this specifically — the face's
+      // own geometric CENTROID (what the ordinary unsplit call samples) can
+      // itself sit INSIDE a caster's footprint (found live: a 320x320 plane
+      // centred at the origin with a shadow footprint that happens to cover
+      // the origin), which would silently feed the "outside" pass an
+      // already-shadowed intensity and collapse it back onto the "inside"
+      // value — the exact confound this flag exists to rule out.
+      const spacingBand = (normalWorld, styleParams, worldPoint, face, record, opts, perPointGrade, noShadowBaseline) => {
         const s0 = hatchSpacing(styleParams.fillDensity);
         if (!toneOn) return { spacing: s0, bandIdx: -1, terminator: false };
         // `toneLaw: 'none'` is STAGE 0 — the tone apparatus switched off — and it
@@ -1050,11 +1167,15 @@
         // below may thin, re-space or re-tag this facet's ink on a highlight's
         // account, so the specular gain multiplier is skipped outright.
         const hlOff = styleParams.highlightTreatment === 'none' || styleParams.highlightTreatment === 'keep';
-        const I = intensityFn(normalWorld, worldPoint);
+        const I = noShadowBaseline
+          ? clamp(finite(Regions && typeof Regions.combinedIntensity === 'function'
+            ? Regions.combinedIntensity(normalWorld, worldPoint, activeLights) : 0, 0), 0, 1)
+          : intensityFn(normalWorld, worldPoint);
         // O20 — the object's own rank grade when the thresholds under-use the
         // ladder, the plain threshold band otherwise (and always, for a caller
-        // with no face/record to grade against).
-        const graded = (record && face) ? recordBands(record) : null;
+        // with no face/record to grade against). Skipped entirely under
+        // `perPointGrade` — see the comment on this function's signature.
+        const graded = (!perPointGrade && record && face) ? recordBands(record) : null;
         const bandIdx = (graded && graded.has(face)) ? graded.get(face) : Regions.band(I, p.tone);
         let gain = coverageGain(bandIdx);
         // shadowStage parity: the dark-side coverage boost was curved-path only, so
@@ -1598,9 +1719,94 @@
         // weight is the zone's own formInk.cross — a whole family for T, 0.40 of
         // one for F — so the dip between them is a property of the recipe, not
         // of how tightly the carrier happens to run at the limb.
-        crossFamilies(scaf.uv, baseAngle, spacing, styleParams, crossPass, crossW,
-          (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l)), planeFor,
-          hatchFloorFor(styleParams.fillDensity));
+        //
+        // ── UNIT D JUDGE FOLLOW-UP v2 — FOOTPRINT-CLIPPED shadow on a FLAT face ──
+        //
+        // v1 (per-point sampling, re-running spacingBand at each scanline
+        // crossing) fixed the uniform-shift defect but only ever produced a
+        // diffuse density GRADIENT: hatchRingsEvenOdd's marching scan can only
+        // vary spacing ALONG the perpendicular axis, uniformly across a
+        // ruling's whole length, so it can never draw a genuinely 2D-bounded
+        // patch. Per the coordinator: for a FLAT face, reuse the ground-shadow
+        // model instead (a face IS a plane, exactly what the handoff's own
+        // "projection is only valid on a plane" caveat allows) — project the
+        // OTHER objects' silhouettes onto THIS face's plane along the light,
+        // clip to the visible face region, and hatch inside/outside at two
+        // different SCALAR pitches, exactly like a ground shadow. The
+        // footprint boundary is then a real polygon clip edge, not a fade.
+        // Curved receivers are unaffected (still per-point, via SurfaceFill).
+        // `plane`/`push` mirror crossFamilies's own locals exactly (that
+        // function is bypassed here so family A can be footprint-split).
+        // `planeRaw` is the SAME foreshortening conversion (screenPitch /
+        // uvPitchFactor) WITHOUT `planeFor`'s memoized Round-10 narrow-facet
+        // grant: `planeFor` (built from a single dry-run "ask" per family)
+        // ignores whatever screenPitch it is handed once a plan entry exists
+        // — it always returns that one memoized `f.plane` regardless of the
+        // argument — so calling it with two DIFFERENT screen pitches
+        // (outside vs inside) would silently collapse back to ONE identical
+        // value (found live: both resolved to the exact same float). The
+        // footprint split needs two genuinely different in-plane pitches, so
+        // it computes the conversion directly instead.
+        const plane = (deg, screenPitch) => (planeFor ? planeFor(deg, screenPitch) : screenPitch);
+        const planeRaw = (deg, screenPitch) => screenPitch / uvPitchFactor(scaf, deg);
+        const push = (segs) => maybeLink(segs, styleParams).forEach((l) => uvLines.push(l));
+        // `record` is omitted at one pre-existing call site (the x-ray
+        // back-face fill pass, which never needed it before this fix either)
+        // — guard rather than assume every caller supplies it.
+        const footprintPolys = record ? buildFaceFootprint(scaf, normalWorld, record.id) : null;
+        if (footprintPolys && footprintPolys.length) {
+          // NOT the top-of-function `spacing` (sampled at this face's own
+          // geometric centroid): that centroid can itself sit INSIDE a
+          // caster's footprint (a plane centred at the origin with a shadow
+          // that happens to cover the origin, for one), which would silently
+          // feed the "outside" pass an already-shadowed value. `noShadow-
+          // Baseline` asks for the true unshadowed intensity instead — the
+          // physically correct meaning of "the face's normal pitch".
+          const outsideSpacing = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts, true, true).spacing;
+          const outsideScreen = Math.max(hatchFloorFor(styleParams.fillDensity), planeRaw(baseAngle, outsideSpacing));
+          const outsideRings = [asCCW(scaf.uv)].concat(footprintPolys);
+          maybeLink(Shadows.hatchRingsEvenOdd(outsideRings, baseAngle, outsideScreen), styleParams)
+            .forEach((l) => uvLines.push(l));
+          // A directional hard shadow is BINARY — every point inside it shares
+          // the same occluded intensity, so ONE sample (the footprint's own
+          // centroid, world-mapped via scaf.toWorld) gives the exact shadowed
+          // spacing; `perPointGrade` (true) bypasses recordBands' per-FACE rank
+          // cache, which would otherwise silently override this single sample
+          // with the unshadowed centroid value (see v1's second bug).
+          footprintPolys.forEach((fp) => {
+            let cx = 0; let cy = 0;
+            fp.forEach((pt) => { cx += pt.x; cy += pt.y; });
+            const centroidWorld = scaf.toWorld({ x: cx / fp.length, y: cy / fp.length });
+            const insideSpacing = spacingBand(normalWorld, styleParams, centroidWorld, face, record, hlOpts, true).spacing;
+            const insideScreen = Math.max(hatchFloorFor(styleParams.fillDensity), planeRaw(baseAngle, insideSpacing));
+            maybeLink(Shadows.hatchRingsEvenOdd([fp], baseAngle, insideScreen), styleParams)
+              .forEach((l) => uvLines.push(l));
+          });
+        } else {
+          push(hatchPolygon(scaf.uv, { angleDeg: baseAngle, spacing: plane(baseAngle, spacing), minSpacing: hatchFloorFor(styleParams.fillDensity) }));
+        }
+        // Family B (crosshatch's own cross-pass, or the auto tone-driven
+        // dark-zone second direction) is NOT footprint-split — out of scope
+        // for this fix, unchanged from before: one scalar pass over the WHOLE
+        // face, exactly what `crossFamilies` already did for this family.
+        const wCross = clamp(finite(crossW, 0), 0, 1);
+        if (crossPass) {
+          const delta = clamp(finite(styleParams.crossAngleDelta, 90), 10, 170);
+          const ratio = clamp(finite(styleParams.crossDensityRatio, 1), 0.25, 2);
+          push(hatchPolygon(scaf.uv, { angleDeg: baseAngle + delta, spacing: plane(baseAngle + delta, spacing * ratio) }));
+          if (styleParams.tripleHatch === true && wCross >= 1) {
+            push(hatchPolygon(scaf.uv, {
+              angleDeg: baseAngle + CROSS_OBJ_DEG_C,
+              spacing: plane(baseAngle + CROSS_OBJ_DEG_C, spacing * ratio),
+            }));
+          }
+        } else if (wCross > 0) {
+          push(hatchPolygon(scaf.uv, {
+            angleDeg: baseAngle + CROSS_OBJ_DEG_B,
+            spacing: plane(baseAngle + CROSS_OBJ_DEG_B, spacing / wCross),
+            minSpacing: crossFloorFor(styleParams.fillDensity),
+          }));
+        }
         return uvLines.map((line) => line.map(scaf.toScreen));
       };
 
@@ -2563,6 +2769,9 @@
         activeLights = emissiveLights.length
           ? p.lights.concat(emissiveLights.filter((e) => e._srcId !== record.id))
           : p.lights;
+        // Unit D — see shadowFn above: THIS record is the current receiver,
+        // so its own faces are excluded from its own occluder test.
+        currentReceiverObjectId = record.id;
         // Emissive self-render config for this object (never the ground).
         const emSrc = objById.get(record.id);
         const emCfg = (emSrc && emSrc.emissive && emSrc.emissive.enabled && record.id !== 'ground')
@@ -2581,7 +2790,7 @@
         const torusAnalyticHidden = (torusChartSizes && Vectura.Scene3D && Vectura.Scene3D.TorusOcclusion)
           ? Vectura.Scene3D.TorusOcclusion.buildSelfOcclusionTest(
             (emSrc || {}).transform, scene.camera, scene.projOpts, torusChartSizes,
-            { marginMm: TORUS_SELF_OCCLUDE_ANALYTIC_MARGIN_MM, dilateRadiusMm: TORUS_SELF_OCCLUDE_DILATE_RADIUS_MM })
+            { gapMm: TORUS_SELF_OCCLUDE_GAP_MM, marginMm: TORUS_SELF_OCCLUDE_MARGIN_MM })
           : null;
         // X-ray fold: x-ray's SEE-THROUGH FILLS stay coupled to visibility — the
         // occluded BASE-FILL / face-outline dash is a fills concern (the far
