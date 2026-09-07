@@ -127,39 +127,58 @@ describe('Scene3D tone-law collapse — U0 foundation', () => {
     expect(Params.resolveToneLaw({})).toBeUndefined();
   });
 
-  test('4. byte-identity sweep: all 48 laws render identically through the raw id and through resolveToneLaw', () => {
-    const offenders = [];
-    roster().IDS.forEach((law) => {
-      const rawOut = SF.buildObject({ ...hatchOpts, toneLaw: law });
-      const resolved = Params.resolveToneLaw({ toneLaw: law });
-      const resolvedOut = SF.buildObject({ ...hatchOpts, toneLaw: resolved });
-      if (JSON.stringify(resolvedOut) !== JSON.stringify(rawOut)) offenders.push(law);
-    });
-    expect(offenders, `these laws diverged through resolveToneLaw: ${offenders.join(', ')}`).toEqual([]);
-  }, SLOW);
+  // Split into quarters of the 48-id roster (not one 96-buildObject sweep):
+  // each `test()` carries its own SLOW budget, but CI's slower/shared
+  // runner can still blow a single test's wall-clock even inside 600000ms
+  // — chunking keeps every individual test call well under that ceiling
+  // without changing what is asserted (RGR-safe: same laws, same checks).
+  const chunk = (arr, n) => {
+    const out = [];
+    for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+    return out;
+  };
 
-  test('5. mutation-proof: forcing resolveToneLaw to always return "ladder" breaks all 48 laws', () => {
-    const orig = Params.resolveToneLaw;
-    let offenders = [];
-    Params.resolveToneLaw = () => 'ladder';
-    try {
-      roster().IDS.forEach((law) => {
+  chunk([...Array(48).keys()], 12).forEach((indexes, i) => {
+    test(`4.${i + 1}. byte-identity sweep: laws ${indexes[0]}-${indexes[indexes.length - 1]} render identically through the raw id and through resolveToneLaw`, () => {
+      const offenders = [];
+      const ids = roster().IDS;
+      indexes.forEach((idx) => {
+        const law = ids[idx];
         const rawOut = SF.buildObject({ ...hatchOpts, toneLaw: law });
-        const forcedOut = SF.buildObject({ ...hatchOpts, toneLaw: Params.resolveToneLaw({ toneLaw: law }) });
-        if (JSON.stringify(forcedOut) !== JSON.stringify(rawOut)) offenders.push(law);
+        const resolved = Params.resolveToneLaw({ toneLaw: law });
+        const resolvedOut = SF.buildObject({ ...hatchOpts, toneLaw: resolved });
+        if (JSON.stringify(resolvedOut) !== JSON.stringify(rawOut)) offenders.push(law);
       });
-    } finally {
-      Params.resolveToneLaw = orig;
-    }
-    // 48, not 47: the shipped default 'ladder' is deliberately NOT one of the
-    // roster's 48 ids (FILL_STYLE_DEFAULT_ENTRY's own comment, context-bar.js
-    // — it is the value every id in this roster was measured AGAINST), so
-    // there is no id in this loop whose own law IS 'ladder' for the mutation
-    // to leave alone. Every one of the 48 differs from a forced-'ladder'
-    // build (the same property scene3d-tone-law-dispatch.test.js's "every
-    // law differs from ladder" guard already establishes for its own list).
-    expect(offenders.length).toBe(48);
-  }, SLOW);
+      expect(offenders, `these laws diverged through resolveToneLaw: ${offenders.join(', ')}`).toEqual([]);
+    }, SLOW);
+  });
+
+  // 48, not 47: the shipped default 'ladder' is deliberately NOT one of the
+  // roster's 48 ids (FILL_STYLE_DEFAULT_ENTRY's own comment, context-bar.js
+  // — it is the value every id in this roster was measured AGAINST), so
+  // there is no id in this loop whose own law IS 'ladder' for the mutation
+  // to leave alone. Every one of the 48 differs from a forced-'ladder'
+  // build (the same property scene3d-tone-law-dispatch.test.js's "every
+  // law differs from ladder" guard already establishes for its own list).
+  chunk([...Array(48).keys()], 12).forEach((indexes, i) => {
+    test(`5.${i + 1}. mutation-proof: forcing resolveToneLaw to always return "ladder" breaks laws ${indexes[0]}-${indexes[indexes.length - 1]}`, () => {
+      const orig = Params.resolveToneLaw;
+      const offenders = [];
+      Params.resolveToneLaw = () => 'ladder';
+      try {
+        const ids = roster().IDS;
+        indexes.forEach((idx) => {
+          const law = ids[idx];
+          const rawOut = SF.buildObject({ ...hatchOpts, toneLaw: law });
+          const forcedOut = SF.buildObject({ ...hatchOpts, toneLaw: Params.resolveToneLaw({ toneLaw: law }) });
+          if (JSON.stringify(forcedOut) !== JSON.stringify(rawOut)) offenders.push(law);
+        });
+      } finally {
+        Params.resolveToneLaw = orig;
+      }
+      expect(offenders.length).toBe(indexes.length);
+    }, SLOW);
+  });
 
   // The real COLLAPSE table is empty in U0, so the shim/resolver mechanism
   // can only be proven with a SYNTHETIC alias — monkey-patching
