@@ -140,6 +140,48 @@ describe('Scene3D.Shadows — shadowToneLaw (Fill Style on shadow hatch)', () =>
     expect(geomSignature(fineLadder)).not.toBe(geomSignature(plainLadder));
   });
 
+  // U9-2 (docs/3d-audit/lane-reports/U9-review.md, follow-up 2; bar shape
+  // precedent: W-26b-3/C3, LEDGER.md 0930cb2d "floor+band shape adopted as
+  // prescribed"). The HEADLINE test above proves fineLadder's geomSignature
+  // DIFFERS from plain ladder's — an exact-coordinate inequality — but that
+  // check cannot fail "a little"; a future regression that quietly re-routes
+  // 'fineLadder' back through the plain hatch fallback while ALSO nudging one
+  // coordinate a hair (so the strings still differ) would slip past it. This
+  // guard pins the actual MAGNITUDE of the effect on shadowPathCount, so a
+  // silent re-collapse toward the plain fallback (which would shrink the
+  // delta toward 0) fails a committed bar, not just a hand-run script (the
+  // U9 review's own numeric delta — u9-shadow-resolve-evidence.js's 147->151,
+  // +2.72% — had no bar of its own; this closes that gap).
+  //
+  // FLOOR: an 11-point drift sweep around this exact fixture (box size +-2,
+  // sun azimuth/elevation +-2 deg, camera pitch +-2 deg — all unrelated to
+  // the fill recipe) measured 2026-09-08 gave shadowPathCount deltas of
+  // 2-4 paths (2.52%-3.64%) purely from those perturbations. The floor sits
+  // BELOW that whole envelope (at 1) so ordinary drift/noise never trips it,
+  // while a genuine re-collapse to the plain fallback (deltaAbs === 0, the
+  // mutation proven below) fails it every time.
+  //
+  // BAND: this fixture is deterministic (see the "determinism" test above),
+  // so the exact counts are pinned directly, and the delta is additionally
+  // checked against a +-10% fingerprint band around the measured baseline
+  // (4 paths) — a tighter, second independent check on the same quantity.
+  test('U9-2 — folded-id shadow recipe delta on shadowPathCount has a floor + fingerprint band (guards against silent re-collapse to the plain fallback)', () => {
+    const ladderCount = sPaths(buildShadows({ shadowToneLaw: 'ladder' })).length;
+    const fineCount = sPaths(buildShadows({ shadowToneLaw: 'fineLadder' })).length;
+    const deltaAbs = fineCount - ladderCount;
+
+    // Baseline pin — deterministic on this fixed fixture.
+    expect(ladderCount).toBe(116);
+    expect(fineCount).toBe(120);
+
+    // FLOOR — below the measured 2-4 drift envelope, above the mutation's 0.
+    expect(deltaAbs).toBeGreaterThan(1);
+
+    // BAND — +-10% around the measured baseline delta of 4 paths.
+    expect(deltaAbs).toBeGreaterThanOrEqual(4 * 0.9);
+    expect(deltaAbs).toBeLessThanOrEqual(4 * 1.1);
+  });
+
   test('REGRESSION — the default shadowToneLaw reproduces the pre-toneLaw shadow output byte-identical', () => {
     const withDefault = buildShadows({});
     const explicitLadder = buildShadows({ shadowToneLaw: 'ladder' });

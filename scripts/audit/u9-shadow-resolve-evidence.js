@@ -20,20 +20,26 @@
  * fineLadder's own, distinct recipe. Both shots are the SAME scene, SAME
  * camera/zoom/crop, SAME (fixed) app build — only shadowToneLaw differs.
  *
- *   node scripts/u9-shadow-resolve-evidence.js [baseUrl] [outDir]
+ *   node scripts/audit/u9-shadow-resolve-evidence.js [baseUrl] [outDir]
  *
  * Serve THIS worktree first: node scripts/dev-server.js 8470
  *
  * Captures CANVAS PIXELS, not the page (the floating tool bar overlaps the
  * form) — same shot/save/bbox helpers as shadow-receive-evidence.js /
  * shadow-overlap-evidence.js.
+ *
+ * U9-2 (docs/3d-audit/lane-reports/U9-review.md, follow-up 1): moved here
+ * from the scripts/ repo root, where it was left alongside U9's original
+ * commit — see the review's §(8) Hygiene item. Only the outDir default
+ * changed (one extra '..' to reach the repo root from scripts/audit/); the
+ * capture logic itself is untouched.
  */
 const path = require('path');
 const fs = require('fs');
 const { chromium } = require('@playwright/test');
 
 const baseUrl = process.argv[2] || 'http://localhost:8470';
-const outDir = process.argv[3] || path.resolve(__dirname, '..', 'docs', '3d-audit', 'fill-audit', 'after', 'U9');
+const outDir = process.argv[3] || path.resolve(__dirname, '..', '..', 'docs', '3d-audit', 'fill-audit', 'after', 'U9');
 
 // Sphere on a ground plane, directional light casting a shadow — the exact
 // shape the plan's "Live verification" bullet names.
