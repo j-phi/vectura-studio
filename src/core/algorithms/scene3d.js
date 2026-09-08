@@ -1411,12 +1411,24 @@
         const faceCCW = asCCW(scaf.uv);
         const anchor = scaf.origin;
         const polys = [];
+        // W-30b — light-type-aware projector. `Shadows.projectLightToPlane`
+        // (W-30) dispatches on `light.type`/`light.position`: a point/spot/
+        // area light with a real world position gets the true PERSPECTIVE
+        // footprint from that position; a directional (or any other) light
+        // falls straight through to the SAME parallel `projectAlongDirToPlane`
+        // call this used unconditionally before — byte-identical for every
+        // directional-light scene. Falls back to the old parallel call
+        // directly if `projectLightToPlane` isn't present for any reason
+        // (defensive; it always is on this tree).
+        const projectFootprintPoint = typeof Shadows.projectLightToPlane === 'function'
+          ? (P) => Shadows.projectLightToPlane(P, light, anchor, normalWorldArg, lightDir)
+          : (P) => Shadows.projectAlongDirToPlane(P, lightDir, anchor, normalWorldArg);
         scene.objects.forEach((otherRec) => {
           if (!otherRec || otherRec.id === selfId) return;
           const world = otherRec.world || [];
           const uvPts = [];
           for (let i = 0; i < world.length; i++) {
-            const wp = Shadows.projectAlongDirToPlane(world[i], lightDir, anchor, normalWorldArg);
+            const wp = projectFootprintPoint(world[i]);
             if (wp) uvPts.push(worldToUV(scaf, wp));
           }
           const hull = Shadows.convexHull(uvPts);
