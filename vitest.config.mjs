@@ -9,18 +9,23 @@ export default defineConfig({
     setupFiles: ['./tests/helpers/vitest.setup.js'],
     include: ['tests/**/*.test.js'],
     exclude: ['tests/e2e/**'],
-    // 60s, not 20s: the CI `test:coverage` job runs the full suite under v8
+    // 180s, not 20s: the CI `test:coverage` job runs the full suite under v8
     // instrumentation with fork contention (maxForks 4), which makes the heavy
     // full-stack jsdom mounts (e.g. preset-save-dev-mode) run ~5-8x slower than
     // an isolated local coverage run (~3.7s → >20s in CI). The plain test:ci job
-    // never hits this. A genuine hang still fails well within 60s.
-    testTimeout: 60000,
+    // never hits this. A genuine hang still fails well within 180s.
+    // Raised from 60s (v1.4.0): the release.yml CI runner hit `Test timed out
+    // in 60000ms` on ordinary integration tests (context-bar, expand-scene3d-
+    // child-fidelity) that run in well under a second locally — the 3D Scene
+    // Studio work landed a much heavier test suite this release, and CI's
+    // 2-core `maxForks` runner fell further behind than this margin assumed.
+    testTimeout: 180000,
     // Same reasoning, applied to hooks: `testTimeout` does NOT bound
     // beforeEach/beforeAll, which default to 10s. Many integration files do
     // their full-stack mount inside the hook, so under CI contention the mount
     // blew the default while the test body had 60s ("Hook timed out in
     // 10000ms" — raster-plane-source-widget). Keep the two in lockstep.
-    hookTimeout: 60000,
+    hookTimeout: 180000,
     // Stay on forks. The threads pool would avoid the process-IPC transport that
     // birpc's RPC times out on (and runs ~1.7x faster), but jsdom inside
     // worker_threads segfaults V8 partway through this suite — a native crash is
