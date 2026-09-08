@@ -362,6 +362,41 @@ describe('Fill Style — the shared mark-class config', () => {
       expect(F.isReachableOn('ladder', 'solid', 'importedMesh')).toBe(true);
     });
 
+    // ── W-28b: the face-count fast path ─────────────────────────────────────
+    // The blanket W-28 rule above was itself flagged (LEDGER row 20/28,
+    // STILL-OPEN.md) as offering imports only 2 of 49 styles even though
+    // `engine.importMeshAsScene` stores the mesh's real TOTAL face count at
+    // import time (`params.importedMesh.faces.length`, engine.js ~1244).
+    // front-facing count ⊆ total count, so a mesh whose TOTAL is at or under
+    // `MONO_MAX_FRONT_FACES` (scene3d.js:2634, ==12) can never present more
+    // than 12 camera-facing faces from ANY angle — a caller who can supply
+    // that number as a 4th `totalFaces` argument gets a real, non-blanket
+    // answer instead of the unconditional W-28 fallback.
+    test('solid: an imported mesh with totalFaces <= 12 is NOT cap-limited (W-28b fast path)', () => {
+      [0, 1, 4, 11, 12].forEach((totalFaces) => {
+        expect(F.isCapLimited('solid', 'importedMesh', totalFaces)).toBe(false);
+        R.IDS.forEach((id) => {
+          if (id === 'none') { expect(F.isReachableOn(id, 'solid', 'importedMesh', undefined, totalFaces)).toBe(true); return; }
+          expect(F.isReachableOn(id, 'solid', 'importedMesh', undefined, totalFaces)).toBe(M.isMono(id));
+        });
+        expect(F.isReachableOn('ladder', 'solid', 'importedMesh', undefined, totalFaces)).toBe(true);
+      });
+    });
+
+    test('solid: an imported mesh with totalFaces > 12, or an unknown/non-finite totalFaces, stays cap-limited (W-28b)', () => {
+      [13, 20, 80, NaN, Infinity, -Infinity, 'nope', null, undefined].forEach((totalFaces) => {
+        expect(F.isCapLimited('solid', 'importedMesh', totalFaces)).toBe(true);
+        expect(F.isReachableOn('mazeFill', 'solid', 'importedMesh', undefined, totalFaces)).toBe(false);
+        expect(F.isReachableOn('none', 'solid', 'importedMesh', undefined, totalFaces)).toBe(true);
+        expect(F.isReachableOn('ladder', 'solid', 'importedMesh', undefined, totalFaces)).toBe(true);
+      });
+      // Calling with no 4th argument at all (the pre-W-28b call shape) must
+      // keep behaving exactly like the unconditional W-28 test above — no
+      // caller that has not been updated to pass totalFaces silently changes
+      // behavior.
+      expect(F.isCapLimited('solid', 'importedMesh')).toBe(true);
+    });
+
     test('an absent/unknown primitiveMode fails OPEN — never disables a law it cannot verify', () => {
       expect(F.isFaceted(undefined)).toBe(false);
       expect(F.isFaceted(null)).toBe(false);

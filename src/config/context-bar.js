@@ -275,7 +275,7 @@
   // blind, so a faceted primitive under Type=Contour/Spiral/Stipple showed
   // eleven "live" options that are all silent no-ops there. See
   // `isReachableOn` below.
-  SCENE_FILL_STYLES.groups = (primitiveMode, solidType, mapper) => {
+  SCENE_FILL_STYLES.groups = (primitiveMode, solidType, mapper, totalFaces) => {
     const R = fillStyleRoster();
     // Fill-collapse U0 — the flat list this picker offers is `PICKER_IDS`
     // (roster minus every folded id), NOT the full 48-id `IDS` (the engine
@@ -294,7 +294,7 @@
       // through the tone-law machinery at all — so it must grey out and
       // suffix along with the rest, not stay silently exempt.
       if (cls.id === FILL_STYLE_DEFAULT_ENTRY.markClass) {
-        const defaultReachable = SCENE_FILL_STYLES.isReachableOn(FILL_STYLE_DEFAULT, primitiveMode, solidType, mapper);
+        const defaultReachable = SCENE_FILL_STYLES.isReachableOn(FILL_STYLE_DEFAULT, primitiveMode, solidType, mapper, totalFaces);
         options.push({
           value: FILL_STYLE_DEFAULT,
           label: FILL_STYLE_DEFAULT_ENTRY.label + (defaultReachable ? '' : SCENE_FILL_STYLES.NO_EFFECT_SUFFIX),
@@ -303,7 +303,7 @@
       }
       ids.forEach((id) => {
         if (SCENE_FILL_STYLES.markClass(id) !== cls.id) return;
-        const reachable = SCENE_FILL_STYLES.isReachableOn(id, primitiveMode, solidType, mapper);
+        const reachable = SCENE_FILL_STYLES.isReachableOn(id, primitiveMode, solidType, mapper, totalFaces);
         const label = R.BY_ID[id].label + (reachable ? '' : SCENE_FILL_STYLES.NO_EFFECT_SUFFIX);
         options.push({ value: id, label, disabled: !reachable });
       });
@@ -388,22 +388,28 @@
   // the one low-poly solid this repo has actually measured (a dodecahedron) —
   // rather than guessed at without evidence.
   //
-  // `importedMesh` is the one exception to that "assumed under the cap"
-  // default, and it is unconditional (W-28). `faceMonoLines`'s
-  // `MONO_MAX_FRONT_FACES` check (scene3d.js) reads a live camera-facing
-  // mesh record's real front-face count mid-render — this config has no
-  // channel to that number at picker time, for ANY imported mesh, so unlike
-  // a named platonic/geodesic solid (whose face count is a fixed, known
-  // constant this file could in principle special-case) there is no safe
-  // "assume it's fine" default here: a real .obj/.stl import is essentially
-  // always well over 12 faces. Treating it as cap-limited unconditionally
-  // means the picker under-promises (it hides mono laws that a rare
-  // sub-13-face import could actually reach) rather than over-promises (
-  // offering laws that silently render as Ladder) — the same fail-toward-
-  // fewer-live-options bias `isReachableOn`'s mapper gate already uses.
-  SCENE_FILL_STYLES.isCapLimited = (primitiveMode, solidType) => {
+  // `importedMesh` was, until W-28b, an UNCONDITIONAL exception to that
+  // "assumed under the cap" default (W-28). `faceMonoLines`'s
+  // `MONO_MAX_FRONT_FACES` check (scene3d.js:2634, ==12) reads a live
+  // camera-facing mesh record's real front-face count mid-render — this
+  // config has no channel to THAT number at picker time, for any imported
+  // mesh. But `engine.js`'s `importMeshAsScene` (via `buildImportedMeshParams`)
+  // DOES store the mesh's real TOTAL face count at import time, in
+  // `params.importedMesh.faces.length` (engine.js ~1244, ~593) — and a
+  // fourth argument, `totalFaces`, is how a caller who can reach that number
+  // hands it in. front-facing ⊆ total, so an import whose TOTAL face count is
+  // at or under the 12-face budget can NEVER present more than 12 camera-
+  // facing faces either, from any angle — a hard geometric guarantee, not a
+  // guess, unlike trying to predict `front` itself. When `totalFaces` is
+  // absent/non-finite (a caller with no channel to it) or above 12, this
+  // still fails toward the unconditional W-28 answer: the picker
+  // under-promises (hides mono laws a sub-13-face import could actually
+  // reach) rather than over-promises (offering laws that silently render as
+  // Ladder) — the same fail-toward-fewer-live-options bias `isReachableOn`'s
+  // mapper gate already uses.
+  SCENE_FILL_STYLES.isCapLimited = (primitiveMode, solidType, totalFaces) => {
     if (primitiveMode !== 'solid') return false;
-    if (solidType === 'importedMesh') return true;
+    if (solidType === 'importedMesh') return !(Number.isFinite(totalFaces) && totalFaces <= 12);
     const P = Vectura.Scene3D && Vectura.Scene3D.Params;
     const dflt = (P && P.PRIMITIVE_PARAM_DEFAULTS && P.PRIMITIVE_PARAM_DEFAULTS.solid
       && P.PRIMITIVE_PARAM_DEFAULTS.solid.solidType) || 'buckyball';
@@ -466,7 +472,7 @@
   // EVERY option — including `none` and the shipped default `ladder` — draws
   // no differently. This check runs before the default/none early-out so
   // those two are not silently exempted.
-  SCENE_FILL_STYLES.isReachableOn = (id, primitiveMode, solidType, mapper) => {
+  SCENE_FILL_STYLES.isReachableOn = (id, primitiveMode, solidType, mapper, totalFaces) => {
     // fs-e2 (W-02, F-02) — `none`/`wireframe`/`contourSlice` never reach the
     // tone-law machinery AT ALL, on ANY primitive, faceted or chart-wrapped:
     // scene3d.js's SURFACE_FILL only dispatches for hatch/crosshatch/contour/
@@ -500,7 +506,7 @@
       if (!M.isMono(id)) return false;
       // A mono law has a real planar implementation — reachable on box/plane,
       // and on a solid UNLESS that solid's own front-face budget is exceeded.
-      return !SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType);
+      return !SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType, totalFaces);
     }
     // Curved (chart-wrapped) primitive.
     if (mapper === 'spiral' || mapper === 'stipple') {
@@ -542,10 +548,10 @@
   // NOTHING differs there, not even No Tone. Judge measured 1 distinct
   // picture out of 48 on a default buckyball + Contour.
   SCENE_FILL_STYLES.FACETED_OFF_AXIS_NOTE = 'This shape is faceted, and its Type (Contour, Spiral or Stipple) has no planar fill support here: no fill style — not even No Tone — draws any differently. Switch Type to Hatch or Crosshatch to use Fill Style.';
-  SCENE_FILL_STYLES.facetedNote = (primitiveMode, solidType, mapper) => {
+  SCENE_FILL_STYLES.facetedNote = (primitiveMode, solidType, mapper, totalFaces) => {
     if (!SCENE_FILL_STYLES.isFaceted(primitiveMode)) return '';
     if (mapper && mapper !== 'hatch' && mapper !== 'crosshatch') return SCENE_FILL_STYLES.FACETED_OFF_AXIS_NOTE;
-    if (SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType)) return SCENE_FILL_STYLES.FACETED_CAP_NOTE;
+    if (SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType, totalFaces)) return SCENE_FILL_STYLES.FACETED_CAP_NOTE;
     return SCENE_FILL_STYLES.FACETED_NOTE;
   };
   Vectura.SCENE_FILL_STYLES = SCENE_FILL_STYLES;

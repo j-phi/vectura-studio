@@ -619,11 +619,27 @@
   // `o.solidType` (optional) — only meaningful when primitiveMode === 'solid';
   // see SCENE_FILL_STYLES.isCapLimited for why the SOLID primitive needs this
   // second signal that box/plane do not.
+  // `o.totalFaces` (optional, W-28b) — only meaningful when solidType ===
+  // 'importedMesh'; the real TOTAL face count `engine.importMeshAsScene`
+  // stored at import (`params.importedMesh.faces.length`). Lets
+  // isCapLimited's fast path recognise a small (<=12 total faces) import as
+  // NOT cap-limited instead of the W-28 unconditional fallback — see the
+  // helper below and isCapLimited's own comment (context-bar.js).
   // `o.mapper` (fs-e1 item 1) — the edited object's fill Type (hatch/contour/
   // spiral/…). SCENE_FILL_STYLES.isReachableOn is mapper-aware: a faceted
   // primitive under Contour/Spiral/Stipple never dispatches through the
   // tone-law machinery at all, so every option (including None/Ladder) is
   // inert there — see isReachableOn for the full rule.
+  //
+  // W-28b — the real stored face count for an `importedMesh` primitive param
+  // bag, or undefined for anything else (including a bag with no mesh, or a
+  // mesh with a malformed `faces` array — isCapLimited treats a non-finite
+  // totalFaces the same as "unknown", its pre-W-28b fallback).
+  const importedMeshTotalFaces = (primitiveParamsBag) => {
+    const mesh = primitiveParamsBag && primitiveParamsBag.solidType === 'importedMesh'
+      ? primitiveParamsBag.importedMesh : null;
+    return (mesh && Array.isArray(mesh.faces)) ? mesh.faces.length : undefined;
+  };
   const fillStyleControls = (host, comps, o) => {
     const UI = Vectura.UI;
     const FS = Vectura.SCENE_FILL_STYLES;
@@ -631,7 +647,7 @@
     const law = FS.resolve(o.value);
     const ctl = o.row(FS.LABEL);
     const lawSelect = UI.Select(ctl, {
-      options: FS.groups(o.primitiveMode, o.solidType, o.mapper),
+      options: FS.groups(o.primitiveMode, o.solidType, o.mapper, o.totalFaces),
       value: law,
       ariaLabel: FS.ARIA,
       onChange: (v) => o.write(v),
@@ -640,7 +656,7 @@
     attachSelectArrowStep(selectElOf(lawSelect));
     const entry = FS.entry(law) || {};
     const note = FS.note(law);
-    const facetedText = FS.facetedNote ? FS.facetedNote(o.primitiveMode, o.solidType, o.mapper) : '';
+    const facetedText = FS.facetedNote ? FS.facetedNote(o.primitiveMode, o.solidType, o.mapper, o.totalFaces) : '';
 
     // fs-m2 Job 2 — mechanism/strengths/weaknesses/mark-class blurb used to
     // print as an always-on paragraph block that dominated the panel (a user
@@ -1310,6 +1326,7 @@
           commit,
           primitiveMode: params.primitive,
           solidType: params.params && params.params.solidType,
+          totalFaces: importedMeshTotalFaces(params.params),
           mapper: style.mapper,
         });
       }
@@ -1687,6 +1704,7 @@
           commit,
           primitiveMode: primary && primary.params && primary.params.primitive,
           solidType: primary && primary.params && primary.params.params && primary.params.params.solidType,
+          totalFaces: importedMeshTotalFaces(primary && primary.params && primary.params.params),
           mapper: style.mapper,
         });
       }
@@ -3945,6 +3963,13 @@
       const obj = getObject(scope.target.objectId);
       return obj && obj.params ? obj.params.solidType : undefined;
     };
+    // Only meaningful when scopeSolidType(scope) === 'importedMesh' (W-28b) —
+    // see importedMeshTotalFaces above.
+    const scopeTotalFaces = (scope) => {
+      if (scope.scope === 'scene') return undefined;
+      const obj = getObject(scope.target.objectId);
+      return importedMeshTotalFaces(obj && obj.params);
+    };
 
     const scopeDisplayName = (scope) => {
       if (scope.scope === 'scene') return 'Scene';
@@ -4117,6 +4142,7 @@
             commit,
             primitiveMode: scopePrimitiveMode(scope),
             solidType: scopeSolidType(scope),
+            totalFaces: scopeTotalFaces(scope),
             mapper: resolved.mapper,
           });
         } else if (d.kind === 'seg') {
