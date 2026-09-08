@@ -2113,4 +2113,441 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
       console.log(`W-27c-0a sphere: (c) waist=${m.waist.toFixed(4)}mm (${(m.waist / m.penWidth).toFixed(2)}w, ==RED); (d) largestW=${m.largestW.toFixed(2)}mm (==RED) — both now floored/ceilinged, not just logged`);
     });
   });
+
+  // ── W-27c-0a-4b — cone/cylinder contourSlice under the re-scoped crowding
+  // cull (measured for the first time; review-4 §8 blocking follow-up 2) ────
+  // `SLICE_SMOOTH_EXCLUDED = new Set(['box','plane','pyramid'])`
+  // (scene3d.js) means `smoothSurface` — and therefore the crowding cull
+  // itself — is ALSO active for cone and cylinder, not just torus/sphere.
+  // Review-4 (docs/3d-audit/lane-reports/W-27c-0a-review-4.md §8) found the
+  // cull's own iteration-3->iteration-4 diff changes cone/cylinder
+  // contourSlice md5 output (more paths survive under the re-scope, the
+  // same "keeps more rings" direction seen on torus/sphere) and flagged
+  // that NEITHER primitive was ever measured, mentioned, or visually
+  // checked by any W-27c-0a report or test before this unit (W-27c-0a-4b).
+  //
+  // MEASURED (from-scratch `git archive` exports of 47a5a755 = "pre", i.e.
+  // iteration 3's shipped, unscoped whole-ring cull, and c6dd6130 = "post",
+  // this lane's HEAD, i.e. iteration 4's re-scoped `CROWD_MIN_DISTINCT_
+  // LEVELS = 2` cull — see docs/3d-audit/lane-reports/W-27c-0a-4b-impl.md
+  // for the full before/after table on both primitives):
+  //
+  //   cone (unit rig, sliceCount 26, BOUNDS.penWidth 0.3):
+  //     pre  (iter 3, unscoped): pathCount 17, totalInk 626.67mm (79.6% of
+  //       the 787.18mm cull-inert baseline), pct05 1.607%, pct1 7.427%.
+  //     post (iter 4, re-scoped): pathCount 22, totalInk 787.18mm — BYTE-
+  //       IDENTICAL to the cull-INERT baseline (99.9999...% retained, i.e.
+  //       the mechanism no longer drops a single ring on this primitive at
+  //       this configuration), pct05 5.357%, pct1 18.936%. waist 0.0372mm
+  //       (0.124w) — BYTE-IDENTICAL between pre and post, exactly like
+  //       torus/sphere: a cross-ring cull cannot touch a same-ring
+  //       self-approach at any scope.
+  //     engine pipeline (fillDensity 50 "med" AND 220 "max" — BYTE-
+  //       IDENTICAL to each other on both primitives, confirmed below:
+  //       contourSlice's plane count is a pure function of `sliceCount`,
+  //       which fillDensity never touches): blobCount 25->44, largestW
+  //       26.3mm->31.3mm (BOTH numbers move the same direction as
+  //       pathCount/totalInk — MORE ink survives, not less).
+  //     ring count in the flat BASE region (bottom third of the object's
+  //       device-Y extent, from the cull-inert ground truth's own bbox):
+  //       pre 8/10 rings survived (iteration 3 dropped 2 rings from a
+  //       region with no saddle/pole-style crowding at all — the SAME
+  //       over-cull defect review-3 caught on the torus's flat lower band,
+  //       just never disclosed for cone); post 10/10 — full restoration,
+  //       matching torus's own fix exactly.
+  //
+  //   cylinder (unit rig): pre (iter 3) pathCount 23, totalInk 950.97mm
+  //     (88.46% of the 1075.01mm inert baseline); post (iter 4) pathCount
+  //     26, totalInk 1075.01mm — BYTE-IDENTICAL to inert (100% retained).
+  //     pct05/pct1 are 0% on BOTH pre and post (a cylinder's wall has no
+  //     genuine multi-level convergence for this cull to ever find — no
+  //     saddle, no pole). waist: no same-path, circDist>=6 pair exists
+  //     close enough to register (a cylinder's rings are parallel, evenly
+  //     spaced circles with no self-approach) — not asserted here for that
+  //     reason. Engine pipeline: blobCount 3->2, largestW 40.9mm->41.7mm.
+  //     Ring count in the flat WALL region (this primitive's entire
+  //     surface — every ring falls in one device-Y band since the
+  //     cylinder's axis runs roughly along camera depth, not screen-Y):
+  //     pre 23/26 survived (iteration 3 dropped 3 rings from a surface
+  //     that is uniformly flat — ZERO genuine crowding anywhere on a
+  //     cylinder wall); post 26/26 — full restoration.
+  //
+  // CONCLUSION (not a regression — see W-27c-0a-4b-impl.md for the full
+  // reasoning): iteration 4's re-scope, whose whole point was to stop the
+  // whole-ring cull from firing in genuinely flat/uncrowded regions (the
+  // torus lower band, review-3's REJECT reason), turns out to ALSO fully
+  // restore cone's flat base region and cylinder's entire wall — for these
+  // two primitives the mechanism is now COMPLETELY INERT at this
+  // configuration (byte-identical to the cull-disabled ground truth),
+  // because neither primitive's geometry produces the >=2-distinct-levels
+  // pileup the re-scoped gate requires at 26 slice planes. This is the
+  // SAME direction and SAME class of fix iteration 4 already made for
+  // torus/sphere's own over-culled flat regions — not a new defect.
+  //
+  // DISCLOSURE PER REVIEW-4 §4 (blocking follow-up 3, applies here too):
+  // the four existing torus/sphere floor+10% bars (waist/largestW, engine
+  // pipeline, added in iteration 4) are pinned AT their RED values because
+  // — as review-4 §4 independently mutation-tested — under THIS
+  // mechanism's subtractive-only, whole-ring design, the pairwise-minimum
+  // self-approach ("waist") can only stay the same or increase, and the
+  // largest-merged-blob-width ("largestW") can only stay the same or
+  // shrink, as the cull is tuned MORE aggressive (CROWD_CULL_K up,
+  // CROWD_MIN_ARC_MULT down, or even removing the same-level exclusion) —
+  // RED is a structural ceiling/floor for those two quantities that NO
+  // tuning of this mechanism's own constants can ever cross. Those four
+  // bars therefore cannot fail from retuning this mechanism's own knobs;
+  // their only reachable failure mode is an UNRELATED future change to the
+  // shared projector/refinement/clipper code they also depend on. The same
+  // is true, by the identical argument, of the cone/cylinder guards below:
+  // because both primitives measure BYTE-IDENTICAL to their own cull-inert
+  // ground truth under iteration 4, no further tuning of CROWD_CULL_K /
+  // CROWD_MIN_ARC_MULT / CROWD_MIN_DISTINCT_LEVELS toward "more
+  // aggressive" can move these numbers at all (there is nothing left to
+  // cull), and tuning toward "less aggressive" is already a no-op here too
+  // — these bars guard against an unrelated future regression (e.g. a
+  // change to `smoothSurface`/`analyticProject` eligibility, or to the
+  // shared clipper/projector), not against this lane's own mechanism.
+  //
+  // GUARD SHAPE (W-26b-3: a floor/ceiling set below/above the whole
+  // envelope with real, generous margin, PLUS a separate tight +-10%
+  // fingerprint band pinned to the exact c6dd6130-measured value, so
+  // drift alone cannot silently flip either half) — applied here for the
+  // first time in this file for these two primitives.
+  describe('W-27c-0a-4b — cone/cylinder contourSlice under the re-scoped crowding cull (measured for the first time)', () => {
+    const sceneForPrimitive = (primitive, sliceCount = 26) => {
+      const p = clone(defaults);
+      p.seed = 1;
+      const Prm = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS[primitive];
+      p.objects = [{
+        id: 'obj-1', name: 'obj-1', primitive, params: { ...Prm },
+        transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+      }];
+      p.ground = { enabled: false };
+      p.camera = { ...V.Scene3D.Params.DEFAULT_CAMERA };
+      p.styleTable = {
+        scene: { penId: null, mapper: 'contourSlice', params: { sliceCount } },
+        byObject: {}, byFace: {},
+      };
+      return p;
+    };
+    const frontFillsOf = (out) => out.filter((q) => q.meta && q.meta.kind === 'sceneFill' && q.length >= 2
+      && q.meta.sceneTarget && q.meta.sceneTarget.objectId === 'obj-1' && !q.meta.sceneTarget.occluded);
+    const runLen = (pts) => {
+      let d = 0; for (let i = 1; i < pts.length; i++) d += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      return d;
+    };
+    const measureO2 = (primitive, penWidth, sliceCount, bounds) => {
+      const out = algo.generate(sceneForPrimitive(primitive, sliceCount), null, null, bounds || BOUNDS) || [];
+      const fillsArr = frontFillsOf(out);
+      const totalInk = fillsArr.reduce((s, pp) => s + runLen(pp), 0);
+      const spanOf = new Map();
+      fillsArr.forEach((pp, pathId) => {
+        const n = pp.length;
+        const closed = n > 1 && Math.hypot(pp[0].x - pp[n - 1].x, pp[0].y - pp[n - 1].y) < 1e-6;
+        spanOf.set(pathId, closed ? n - 1 : n);
+      });
+      const circDist = (pathId, i, j) => {
+        const lin = Math.abs(i - j);
+        const span = spanOf.get(pathId) || 0;
+        if (span <= 0) return lin;
+        const wrapped = lin % span;
+        return Math.min(wrapped, span - wrapped);
+      };
+      const samples = [];
+      fillsArr.forEach((pp, pathId) => pp.forEach((pt, idx) => samples.push({ x: pt.x, y: pt.y, pathId, idx })));
+      const cell = Math.max(penWidth, 1e-6);
+      const gkey = (cx, cy) => `${cx},${cy}`;
+      const grid = new Map();
+      samples.forEach((s) => {
+        const k = gkey(Math.floor(s.x / cell), Math.floor(s.y / cell));
+        let arr = grid.get(k); if (!arr) { arr = []; grid.set(k, arr); }
+        arr.push(s);
+      });
+      const nearestOtherDist = (s) => {
+        const cx = Math.floor(s.x / cell); const cy = Math.floor(s.y / cell);
+        let best = Infinity;
+        for (let dx = -2; dx <= 2; dx++) {
+          for (let dy = -2; dy <= 2; dy++) {
+            const arr = grid.get(gkey(cx + dx, cy + dy));
+            if (!arr) continue;
+            for (let i = 0; i < arr.length; i++) {
+              const o = arr[i];
+              if (o === s) continue;
+              if (o.pathId === s.pathId && circDist(s.pathId, o.idx, s.idx) < 6) continue;
+              const d = Math.hypot(o.x - s.x, o.y - s.y);
+              if (d < best) best = d;
+            }
+          }
+        }
+        return best;
+      };
+      const distOf = new Map();
+      samples.forEach((s) => distOf.set(`${s.pathId}|${s.idx}`, nearestOtherDist(s)));
+      let inkWithin05w = 0; let inkWithin1w = 0; let waist = Infinity;
+      fillsArr.forEach((pp, pathId) => {
+        for (let i = 1; i < pp.length; i++) {
+          const a = pp[i - 1]; const b = pp[i];
+          const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+          const da = distOf.get(`${pathId}|${i - 1}`); const db = distOf.get(`${pathId}|${i}`);
+          inkWithin05w += segLen * (((da < 0.5 * penWidth ? 1 : 0) + (db < 0.5 * penWidth ? 1 : 0)) / 2);
+          inkWithin1w += segLen * (((da < 1.0 * penWidth ? 1 : 0) + (db < 1.0 * penWidth ? 1 : 0)) / 2);
+        }
+        for (let i = 0; i < pp.length; i++) {
+          for (let j = i + 1; j < pp.length; j++) {
+            if (circDist(pathId, i, j) < 6) continue;
+            const d = Math.hypot(pp[i].x - pp[j].x, pp[i].y - pp[j].y);
+            if (d < waist) waist = d;
+          }
+        }
+      });
+      return {
+        pathCount: fillsArr.length, totalInk, waist,
+        pct05: totalInk > 0 ? (100 * inkWithin05w) / totalInk : 0,
+        pct1: totalInk > 0 ? (100 * inkWithin1w) / totalInk : 0,
+      };
+    };
+    const INERT_BOUNDS_4B = { ...BOUNDS, penWidth: 1e-6 };
+    // Ring count in the "flat" region: bucket every unit-rig front-fill
+    // ring's centroid Y into thirds of the object's own cull-inert Y-extent
+    // (so pre/post share one stable band definition), count rings per band
+    // for INERT (ground truth) vs ACTIVE (cull on). Cone base = the bottom
+    // third (widest, no-crowding rim); cylinder wall = whichever band holds
+    // (in practice) the whole object, since a cylinder's rings share one
+    // narrow device-Y range with this camera.
+    const ringBandCounts = (primitive) => {
+      const inertOut = frontFillsOf(algo.generate(sceneForPrimitive(primitive, 26), null, null, INERT_BOUNDS_4B) || []);
+      const activeOut = frontFillsOf(algo.generate(sceneForPrimitive(primitive, 26), null, null, BOUNDS) || []);
+      const ys = [];
+      inertOut.forEach((pp) => pp.forEach((pt) => ys.push(pt.y)));
+      ys.sort((a, b) => a - b);
+      const yMin = ys[0]; const yMax = ys[ys.length - 1];
+      const third = (yMax - yMin) / 3;
+      const bandOf = (y) => {
+        if (y < yMin + third) return 'top';
+        if (y < yMin + (2 * third)) return 'mid';
+        return 'bottom';
+      };
+      const centroidY = (pp) => pp.reduce((s, pt) => s + pt.y, 0) / pp.length;
+      const countBands = (fillsArr) => {
+        const c = { top: 0, mid: 0, bottom: 0 };
+        fillsArr.forEach((pp) => { c[bandOf(centroidY(pp))]++; });
+        return c;
+      };
+      return { inert: countBands(inertOut), active: countBands(activeOut) };
+    };
+    const buildRealEngineFills4b = (primitive, fillDensity) => {
+      const engine = new V.VectorEngine();
+      engine.layers = [];
+      const gid = engine.addLayer('scene3d');
+      engine.layers = engine.layers.filter((l) => l.parentId !== gid);
+      const g = engine.layers.find((l) => l.id === gid);
+      g.isGroup = true; g.containerRole = 'scene';
+      const q = g.params;
+      q.camera = { ...V.Scene3D.Params.DEFAULT_CAMERA };
+      q.ground = { enabled: false };
+      q.backdrop = { enabled: false };
+      const Prm = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS[primitive];
+      q.objects = [{
+        id: 'obj', name: 'Obj', primitive, params: { ...Prm },
+        transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+      }];
+      q.lights = [{ id: 'sun', type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: false }];
+      const st = { penId: null, mapper: 'contourSlice', params: { fillAngle: 45, fillDensity, toneLaw: 'ladder' } };
+      q.styleTable = { scene: JSON.parse(JSON.stringify(st)), byObject: { obj: JSON.parse(JSON.stringify(st)) }, byFace: {} };
+      engine.computeAllDisplayGeometry();
+      const paths = g.scenePaths || [];
+      return paths.filter((pp) => pp && pp.meta && pp.meta.kind === 'sceneFill' && pp.length >= 2
+        && pp.meta.sceneTarget && pp.meta.sceneTarget.objectId === 'obj' && !pp.meta.sceneTarget.occluded)
+        .map((pp) => pp.map((pt) => ({ x: pt.x, y: pt.y })));
+    };
+    const measureBlobs4b = (fillsArr, penWidth, scale = 20) => {
+      const S = scale;
+      const flat = [];
+      fillsArr.forEach((pp) => pp.forEach((q) => flat.push(q)));
+      if (!flat.length) return { blobCount: 0, blobs: [] };
+      let minx = Infinity; let miny = Infinity; let maxx = -Infinity; let maxy = -Infinity;
+      flat.forEach((f) => { minx = Math.min(minx, f.x); maxx = Math.max(maxx, f.x); miny = Math.min(miny, f.y); maxy = Math.max(maxy, f.y); });
+      const W = Math.ceil((maxx - minx + 2) * S); const H = Math.ceil((maxy - miny + 2) * S);
+      const img = new Uint8Array(W * H);
+      const R = (penWidth / 2) * S; const r = Math.ceil(R);
+      const disk = [];
+      for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) if (x * x + y * y <= R * R) disk.push([x, y]);
+      fillsArr.forEach((pp) => {
+        for (let i = 1; i < pp.length; i++) {
+          const a = pp[i - 1]; const b = pp[i];
+          const ax = (a.x - minx + 1) * S; const ay = (a.y - miny + 1) * S;
+          const bx = (b.x - minx + 1) * S; const by = (b.y - miny + 1) * S;
+          const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay)));
+          for (let t = 0; t <= n; t++) {
+            const cx = Math.round(ax + ((bx - ax) * t) / n); const cy = Math.round(ay + ((by - ay) * t) / n);
+            disk.forEach(([dx, dy]) => {
+              const px = cx + dx; const py = cy + dy;
+              if (px < 0 || py < 0 || px >= W || py >= H) return;
+              img[(py * W) + px] = 1;
+            });
+          }
+        }
+      });
+      const RW = Math.round(1.5 * penWidth * S);
+      const ii = new Int32Array((W + 1) * (H + 1));
+      for (let y = 0; y < H; y++) {
+        let row = 0;
+        for (let x = 0; x < W; x++) { row += img[(y * W) + x]; ii[((y + 1) * (W + 1)) + x + 1] = ii[(y * (W + 1)) + x + 1] + row; }
+      }
+      const sum = (x0, y0, x1, y1) => ii[((y1 + 1) * (W + 1)) + x1 + 1] - ii[(y0 * (W + 1)) + x1 + 1]
+        - ii[((y1 + 1) * (W + 1)) + x0] + ii[(y0 * (W + 1)) + x0];
+      const area = ((2 * RW) + 1) * ((2 * RW) + 1);
+      const solid = new Uint8Array(W * H);
+      for (let y = RW; y < H - RW; y++) {
+        for (let x = RW; x < W - RW; x++) {
+          const i = (y * W) + x;
+          if (!img[i]) continue;
+          const c = sum(x - RW, y - RW, x + RW, y + RW) / area;
+          if (c >= 0.75) solid[i] = 1;
+        }
+      }
+      const seen = new Uint8Array(W * H);
+      const comps = [];
+      for (let i = 0; i < solid.length; i++) {
+        if (!solid[i] || seen[i]) continue;
+        const stack = [i]; seen[i] = 1;
+        let x0 = Infinity; let x1 = -Infinity; let y0 = Infinity; let y1 = -Infinity; let n = 0;
+        while (stack.length) {
+          const j = stack.pop(); n++;
+          const jx = j % W; const jy = (j - jx) / W;
+          x0 = Math.min(x0, jx); x1 = Math.max(x1, jx); y0 = Math.min(y0, jy); y1 = Math.max(y1, jy);
+          [1, -1, W, -W, W + 1, W - 1, -W + 1, -W - 1].forEach((d) => {
+            const k = j + d;
+            if (k < 0 || k >= solid.length || seen[k] || !solid[k]) return;
+            seen[k] = 1; stack.push(k);
+          });
+        }
+        comps.push({ n, w: (x1 - x0 + 1) / S, h: (y1 - y0 + 1) / S });
+      }
+      comps.sort((a, b) => b.n - a.n);
+      return { blobCount: comps.length, largestW: comps[0] ? Math.max(comps[0].w, comps[0].h) : 0 };
+    };
+    const realPenWidth4b = () => {
+      const pens = Array.isArray(V.SETTINGS.pens) ? V.SETTINGS.pens : [];
+      const p = pens[0];
+      return Number.isFinite(p && p.width) && p.width > 0 ? p.width : 0.35;
+    };
+    const measureRealO2_4b = (primitive, fillDensity) => {
+      const fillsArr = buildRealEngineFills4b(primitive, fillDensity);
+      const penWidth = realPenWidth4b();
+      const blobs = measureBlobs4b(fillsArr, penWidth);
+      return { pathCount: fillsArr.length, ...blobs };
+    };
+
+    // MEASURED at c6dd6130 (this lane's HEAD): pathCount 22, totalInk
+    // 787.18mm — BYTE-IDENTICAL to the cull-inert baseline (787.18mm),
+    // pct05 5.357%, pct1 18.936%, waist 0.0372mm (0.124w, BYTE-IDENTICAL to
+    // pre — a cross-ring cull cannot touch a same-ring self-approach).
+    test('cone: contourSlice ink survives the re-scoped cull (was 79.6% retained under iteration 3\'s unscoped version, now byte-identical to cull-inert)', () => {
+      installStub();
+      const inert = measureO2('cone', 1e-6, 26, INERT_BOUNDS_4B);
+      const active = measureO2('cone', 0.3, 26, BOUNDS);
+      // eslint-disable-next-line no-console
+      console.log('W-27c-0a-4b O2 cone', JSON.stringify({ inert, active }));
+      // Envelope (generous, real margin below/above the measured value):
+      expect(active.pathCount).toBeGreaterThanOrEqual(16); // measured 22; iteration 3's pre-fix 17 already clears this loosely — real headroom is below THIS lane's own fix, not iteration 3's
+      expect(active.totalInk).toBeGreaterThan(0.85 * inert.totalInk); // measured ~100% retained; iteration 3 was 79.6%
+      expect(active.pct1).toBeLessThan(25); // measured 18.936%
+      // Fingerprint (+-10% band pinned to the exact c6dd6130-measured value):
+      expect(active.pathCount).toBeGreaterThanOrEqual(Math.floor(22 * 0.90));
+      expect(active.pathCount).toBeLessThanOrEqual(Math.ceil(22 * 1.10));
+      expect(active.totalInk).toBeGreaterThanOrEqual(787.18 * 0.90);
+      expect(active.totalInk).toBeLessThanOrEqual(787.18 * 1.10);
+      // waist: BYTE-IDENTICAL to iteration 3 (0.0372mm) — cross-ring cull
+      // structurally cannot move a same-ring self-approach. Floor, not a
+      // claim of improvement (STOP-REPORT convention, same as torus/sphere).
+      expect(active.waist).toBeGreaterThanOrEqual(0.0372 * 0.90);
+    });
+
+    // MEASURED: pathCount 26, totalInk 1075.01mm — BYTE-IDENTICAL to the
+    // cull-inert baseline (was 88.46% retained under iteration 3). pct05/
+    // pct1 are 0% on both pre and post (a cylinder wall has no genuine
+    // multi-level convergence for this cull to ever find).
+    test('cylinder: contourSlice ink survives the re-scoped cull (was 88.46% retained under iteration 3\'s unscoped version, now byte-identical to cull-inert)', () => {
+      installStub();
+      const inert = measureO2('cylinder', 1e-6, 26, INERT_BOUNDS_4B);
+      const active = measureO2('cylinder', 0.3, 26, BOUNDS);
+      // eslint-disable-next-line no-console
+      console.log('W-27c-0a-4b O2 cylinder', JSON.stringify({ inert, active }));
+      // Envelope:
+      expect(active.pathCount).toBeGreaterThanOrEqual(20); // measured 26; iteration 3's pre-fix 23 already clears this loosely
+      expect(active.totalInk).toBeGreaterThan(0.85 * inert.totalInk); // measured ~100% retained; iteration 3 was 88.46%
+      expect(active.pct1).toBeLessThan(5); // measured 0% — a cylinder wall has no genuine crowding at any iteration
+      // Fingerprint (+-10% band pinned to the exact c6dd6130-measured value):
+      expect(active.pathCount).toBeGreaterThanOrEqual(Math.floor(26 * 0.90));
+      expect(active.pathCount).toBeLessThanOrEqual(Math.ceil(26 * 1.10));
+      expect(active.totalInk).toBeGreaterThanOrEqual(1075.01 * 0.90);
+      expect(active.totalInk).toBeLessThanOrEqual(1075.01 * 1.10);
+    });
+
+    // Ring count in the flat region — cone's BASE (bottom third of the
+    // object's own device-Y extent) and cylinder's WALL (this camera's
+    // single occupied band). MEASURED: cone base 10/10 rings survive
+    // (was 8/10 under iteration 3's unscoped cull — a real over-cull on a
+    // region with no saddle/pole convergence, the same class of defect
+    // review-3 caught on the torus's flat lower band, just never disclosed
+    // for cone before this unit); cylinder wall 26/26 (was 23/26).
+    test('cone: ring count in the flat base region is not stripped by the re-scoped cull (was 8/10 under iteration 3)', () => {
+      installStub();
+      const bands = ringBandCounts('cone');
+      // eslint-disable-next-line no-console
+      console.log('W-27c-0a-4b ring bands cone', JSON.stringify(bands));
+      // Envelope: real margin below the inert ground truth's own count.
+      expect(bands.active.bottom).toBeGreaterThanOrEqual(Math.round(bands.inert.bottom * 0.7));
+      // Fingerprint: +-10% band pinned to c6dd6130's exact measured ratio
+      // (100% retained in the base band).
+      expect(bands.active.bottom).toBeGreaterThanOrEqual(Math.floor(bands.inert.bottom * 0.90));
+    });
+    test('cylinder: ring count in the flat wall region is not stripped by the re-scoped cull (was 23/26 under iteration 3)', () => {
+      installStub();
+      const bands = ringBandCounts('cylinder');
+      // eslint-disable-next-line no-console
+      console.log('W-27c-0a-4b ring bands cylinder', JSON.stringify(bands));
+      const wallBand = bands.inert.mid >= bands.inert.top + bands.inert.bottom ? 'mid' : 'top';
+      // Envelope:
+      expect(bands.active[wallBand]).toBeGreaterThanOrEqual(Math.round(bands.inert[wallBand] * 0.7));
+      // Fingerprint: tight (+-5%, since the measured value is EXACTLY the
+      // inert count — 100% retained) band pinned to c6dd6130's exact
+      // measured ratio; RED at 47a5a755 (23/26 = 88.46%) fails this.
+      expect(bands.active[wallBand]).toBeGreaterThanOrEqual(Math.floor(bands.inert[wallBand] * 0.95));
+    });
+
+    // Engine-pipeline blobCount/largestW — mirrors the torus/sphere block
+    // above, floor+10%/ceiling+10% pinned to c6dd6130's measured values.
+    // Per the disclosure above: BYTE-IDENTICAL between fillDensity 50
+    // ("med") and 220 ("max") on both primitives — contourSlice's plane
+    // count is a pure function of `sliceCount`, which fillDensity never
+    // touches (confirmed directly here, not assumed).
+    test('cone: engine-pipeline blobCount/largestW, med and max densities byte-identical', () => {
+      const med = measureRealO2_4b('cone', 50);
+      const max = measureRealO2_4b('cone', 220);
+      // eslint-disable-next-line no-console
+      console.log('W-27c-0a-4b ENGINE O2 cone', JSON.stringify({ med, max }));
+      expect(med).toEqual(max); // gallery "med" and "max" densities are byte-identical for this mapper
+      // Envelope:
+      expect(med.blobCount).toBeLessThan(60);
+      expect(med.largestW).toBeLessThan(40);
+      // Fingerprint (+-10% pinned to c6dd6130's measured 44 / 31.3mm):
+      expect(med.blobCount).toBeLessThanOrEqual(Math.ceil(44 * 1.10));
+      expect(med.largestW).toBeLessThan(31.3 * 1.10);
+    });
+    test('cylinder: engine-pipeline blobCount/largestW, med and max densities byte-identical', () => {
+      const med = measureRealO2_4b('cylinder', 50);
+      const max = measureRealO2_4b('cylinder', 220);
+      // eslint-disable-next-line no-console
+      console.log('W-27c-0a-4b ENGINE O2 cylinder', JSON.stringify({ med, max }));
+      expect(med).toEqual(max); // gallery "med" and "max" densities are byte-identical for this mapper
+      // Envelope:
+      expect(med.blobCount).toBeLessThan(10);
+      expect(med.largestW).toBeLessThan(50);
+      // Fingerprint (+-10% pinned to c6dd6130's measured 2 / 41.7mm):
+      expect(med.blobCount).toBeLessThanOrEqual(Math.ceil(2 * 1.10));
+      expect(med.largestW).toBeLessThan(41.7 * 1.10);
+    });
+  });
 });
