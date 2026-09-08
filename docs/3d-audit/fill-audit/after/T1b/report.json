@@ -1,0 +1,60 @@
+{
+  "id": "T1b",
+  "title": "T1b (STILL-OPEN.md 2026-09-06 ruling) -- mkTick plot-safety tail regressions T1 introduced: near-duplicate limb-truncated stub merge/drop, kink detector, pp.length upper bound",
+  "branch": "3d-scene/fill-audit-a2",
+  "base_commit": "47a5a755",
+  "commit": "PENDING (written before commit; see T1b-impl.md for final sha)",
+  "source_reports": [
+    "docs/3d-audit/lane-reports/T1-impl.md",
+    "docs/3d-audit/lane-reports/T1-review.md (secs 4, 6, 7, 8)",
+    "docs/3d-audit/STILL-OPEN.md (2026-09-06 ruling)"
+  ],
+  "what_this_answers": "T1-review.md found three gaps in T1's own guard net around the chart-walked mark (mkTick/mkDashRamp) fix: (1) D2's 'truncate, don't refuse' mechanism lets two INDEPENDENTLY placed marks (different rows) each cut short at the same limb land almost coincident there -- measured torus/contour worst pair 0.448->0.032 pens, torus/crosshatch 0.080->0.032 pens (0.0095mm gap, effectively overlapping ink) -- no oracle caught it (G5 only checks 'outside silhouette', never 'overlapping another mark'); (2) T1's own chevron-kink bug (both walk arms departing the pass's local origin in MIRRORED directions) passed all four of T1's oracles, with O1's sagitta even HIGHER on the kinked variant (the kink itself read as curvature) -- no kink-detector test existed; (3) `walkPoly`'s per-arm step count had no code-level ceiling (measured max 107 points in a single mark, p99 43, median 6) even though `MK_MAX_PENS` only budgets total marks, not points per mark.",
+  "mechanism": {
+    "min_adjacent_spacing_guard": "New `MK_MIN_ADJ_PEN = 0.5` bar (surface-fill.js, near MK_ARC_PEN) and a grid-bucketed spacing guard in `place()`: every walked mark's representative midpoint (first/last point of its walked polyline) is checked against a spatial hash (`mkMidBuckets`, cell size = 0.5 pen, 3x3-neighbour lookup -- O(1) average per mark, not O(n^2)) of every earlier walked mark's own midpoint THIS object's render has placed. A mark whose midpoint lands within 0.5 pen of an earlier one is dropped whole (`mkStat.dupStub` counts these) before it reaches the page; otherwise its midpoint is registered for later marks to check against. Checked against ALL walked marks, not only truncated ones -- restricting the check to truncated-vs-truncated pairs alone (the first attempt) left a residual, non-truncated-vs-non-truncated pair at 0.248 pens, still under the 0.5 bar (see 'False starts' below).",
+    "kink_detector_test": "New unit test (no source change needed -- T1's own hub-based walk already fixes the kink; this closes the GUARD gap, not a live defect) measuring median max-interior-turn-angle per multi-point tick on torus/contour d=50. Verified it actually discriminates by temporarily reconstructing T1's own described kink bug in-place (both `walkFrom` arms departing straight from `fr0`'s local (0,0) instead of the pass's true uOff-shifted hub), confirming the test goes RED on that reconstruction, then reverting to the committed fix before finalizing (never left uncommitted).",
+    "pp_length_cap": "New `MK_MAX_WALK_STEPS = 64` cap (per arm) in `walkFrom`'s step count: `Math.min(MK_MAX_WALK_STEPS, Math.max(1, Math.ceil(edgeLen / MK_ARC_MM)))`. Bounds a whole mark to `2*64+1 = 129` points, comfortably over the measured 107-point max on the audit fixture but no longer unbounded -- a future change to `MK_ARC_PEN` or tick length, or simply a finer pen (smaller `MK_ARC_MM`), can no longer explode a single mark's point count."
+  },
+  "false_starts_and_honesty": "The spacing guard's first version only tracked TRUNCATED marks' midpoints (matching the review's own stated mechanism: 'two independently limb-truncated stubs'). That fixed the exact 0.032-pen pair the review measured, but a second, unrelated near-duplicate pair remained at 0.248 pens on torus/contour -- diagnosed directly (temporary debug tag on pushed runs, then removed) as TWO NON-TRUNCATED marks sitting close by ordinary curvature, not a truncation artifact. Broadening the guard to check every walked mark (not only truncated ones) fixed this with no measured cost to bulk/dark-region packing (p5/median spacing stays far above the 0.5-pen floor by design). A second, separate finding during diagnosis: `algo.generate()`'s returned `paths` array does not reliably tag which entries are walked marks -- this fixture carries ~33 additional, unrelated ~21-point continuous-ruling paths (pre-existing, NOT from `place`/`emitMarks` -- no `fam`/`loz` tag, far longer than any tick) that a naive 'every path in the output' scan folds into the same population. This is a PRE-EXISTING, out-of-scope quirk (unrelated to T1/T1b's own mechanism, not investigated further per this unit's file scope) -- worked around, not fixed, by publishing the guard's own governed population directly (`SF.lastMarkStats.markMids`) rather than re-deriving it from the algorithm's return value.",
+  "measured": {
+    "min_adjacent_mark_spacing_pens": {
+      "torus_contour_d50": { "before": 0.0316, "after": 0.6998, "bar": ">= 0.5" },
+      "torus_crosshatch_d50": { "before": 0.0319, "after": 0.5002, "bar": ">= 0.5" }
+    },
+    "dupStub_dropped_marks": {
+      "torus_contour_d50_med": 4,
+      "torus_crosshatch_d50_med": 40,
+      "note": "pathCount deltas in the after/T1b manifest corroborate this independently: torus/contour low 160->160 (0 dropped, no crowding at this density), med 538->535 (-3), max 1749->1746 (-3); torus/crosshatch low 523->495 (-28), med 1505->1467 (-38), max 4161->3880 (-281, 6.8% of marks -- the effect scales with density/crowding as expected)."
+    },
+    "pp_length_fine_pen_0_02mm": { "before": 469, "after": 129, "bar": "<= 200" },
+    "kink_turn_angle_deg_torus_contour_d50": { "median": 2.79, "p90": 13.26, "n": 470, "bar_median": "<= 10" }
+  },
+  "before": [
+    "docs/3d-audit/fill-audit/after/T1/shots/B/torus__contour__mkTick__low__a.webp",
+    "docs/3d-audit/fill-audit/after/T1/shots/B/torus__contour__mkTick__med__a.webp",
+    "docs/3d-audit/fill-audit/after/T1/shots/B/torus__contour__mkTick__max__a.webp",
+    "docs/3d-audit/fill-audit/after/T1/shots/B/torus__crosshatch__mkTick__low__a.webp",
+    "docs/3d-audit/fill-audit/after/T1/shots/B/torus__crosshatch__mkTick__med__a.webp",
+    "docs/3d-audit/fill-audit/after/T1/shots/B/torus__crosshatch__mkTick__max__a.webp"
+  ],
+  "before_caveat": "after/T1/ was captured at v1.3.98, several lanes before T1b's own base (v1.3.99, main 47a5a755) -- W-26b, W-27, W-28, W-29, U0-U4 and others landed in between and moved pathCount/ink numbers for unrelated reasons (measured: after/T1's own torus/crosshatch/med pathCount=1461 vs this unit's freshly-measured pre-T1b-fix count of 1505 on the SAME 47a5a755 base -- a ~3% drift from those intervening lanes, not from T1b). The 'measured' block above therefore uses numbers captured FRESH at 47a5a755 with T1b's own fix git-stashed out (not the stale after/T1 numbers) as the true before/after pair; the image paths above are the closest available COMMITTED gallery baseline, kept for visual continuity, not for exact pathCount comparison.",
+  "after": [
+    "docs/3d-audit/fill-audit/after/T1b/shots/B/torus__contour__mkTick__low__a.webp",
+    "docs/3d-audit/fill-audit/after/T1b/shots/B/torus__contour__mkTick__med__a.webp",
+    "docs/3d-audit/fill-audit/after/T1b/shots/B/torus__contour__mkTick__max__a.webp",
+    "docs/3d-audit/fill-audit/after/T1b/shots/B/torus__crosshatch__mkTick__low__a.webp",
+    "docs/3d-audit/fill-audit/after/T1b/shots/B/torus__crosshatch__mkTick__med__a.webp",
+    "docs/3d-audit/fill-audit/after/T1b/shots/B/torus__crosshatch__mkTick__max__a.webp"
+  ],
+  "control_cells": [
+    "docs/3d-audit/fill-audit/after/T1b/shots/B/torus__contour__ladder__med__a.webp",
+    "docs/3d-audit/fill-audit/after/T1b/shots/B/sphere__contour__mkTick__med__a.webp"
+  ],
+  "visual_inspection": {
+    "method": "Cropped at native resolution (PIL, nearest-neighbour upscale for legibility only) at the pixel-diff hotspot between a fresh git-stashed-out 'before' render and the committed 'after' render, both captured at base 47a5a755 with identical BOUNDS/camera/params -- not a whole-frame eyeball pass.",
+    "torus__crosshatch__mkTick__max__a": "LOOKED directly at a 60x160px crop along the inner-hole silhouette edge (the densest pixel-diff window, 458/3600 px differing). Before: several ticks along the boundary band fuse into a continuous dark ridge -- ink reads as one solid mass with little to no white gap between adjacent strokes. After, the SAME location: the marks read as distinct, separated individual strokes with visible white gaps between them. This is the near-duplicate-stub merge/drop working exactly as intended -- confirmed visually, not just by the pathCount/dupStub numbers.",
+    "torus__contour__mkTick__med__a": "LOOKED directly at a tight 50x50px crop at the pixel-diff hotspot (155/2500 px differing -- the small dupStub=3-4 count for this cell). Difference is real but subtle: one tick's tail near the lower-left of the crop is shortened/repositioned by a few pixels relative to before. Consistent with dropping a single near-duplicate stub out of ~535 marks in this cell -- narrow, tail-only, exactly as the review characterized it.",
+    "torus__contour__mkTick__low__a": "Not separately cropped -- pathCount is byte-identical before/after (160/160, dupStub=0): no crowding at this density, nothing for the guard to catch. Expected, not a gap."
+  },
+  "bulk_texture_unaffected": "The pre-existing hard-edge row-coverage banding (MK_ROW_COV, out of scope, T3/U3's) and the pre-existing ~21-point non-mark continuous-ruling artifacts (see 'False starts' above, also out of scope) are visually identical before/after in every crop examined -- this unit's guard is narrow and tail-only as designed, not a bulk retexturing."
+}

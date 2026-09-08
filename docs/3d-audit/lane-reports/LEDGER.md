@@ -69,6 +69,79 @@ lane/sha in the rows above should be read as provenance, not as a place to work.
 - Carried as documented open items rather than blockers: **U5b**, **W-30b**, and the five USER items
   **W-31…W-35**.
 
+## Round 2 (2026-09-06 19:05 EDT) — lanes off main
+
+**Base for every lane: `main` 47a5a755 (v1.3.99), the merged tree. NOT pushed.** Gallery served from MAIN at
+`http://localhost:8460/docs/3d-audit/fill-audit/index.html`. Five NEW worktrees were created off main, all
+verified clean, `node_modules` symlinked, ports reserved. The seven round-1 `3d-scene/*` lanes above are
+**historical provenance only** — nobody works in them.
+
+First-unit briefs (files allowed/forbidden, RED oracle, cells to re-shoot) are in
+**`ROUND2-BRIEFS.md`**, one section per lane plus W-36.
+
+| worktree (`.claude/worktrees/`) | branch | port | file ownership | first unit |
+|---|---|---|---|---|
+| `fill-audit-a2` | `3d-scene/fill-audit-a2` | 8475 | `surface-fill.js` | **T1b** |
+| `fill-collapse-2` | `3d-scene/fill-collapse-2` | 8482 | `scene3d.js` collapse chain, `context-bar.js` / `scene3d-panel.js` | **U5b** |
+| `fill-audit-d2` | `3d-scene/fill-audit-d2` | 8481 | `mappers.js` + slices (`buildSliceSegments` / `contourSlice` pass) | **W-27c-0a iter-4** |
+| `fill-audit-2` | `3d-scene/fill-audit-2` | 8476 | `scene3d.js` faceted path + `context-bar.js` | **W-15c design D** |
+| `handoff-c2` | `3d-scene/handoff-c2` | 8470 | `hlr.js` / `shadows.js` / pen-fill | **U9** |
+
+**The standing orchestrator rulings below carry forward UNCHANGED into round 2**, including: gallery rebuild
+is the orchestrator's alone; W-15c ships N = 9; folding a law must not hide its caveat (U5b, and the same
+rule binds U6); F1-placement ships Prototype B with its five conditions; W-10d-2 resolves an unreachable
+`toneLaw` by write-back, once; W-26's ink deltas beyond ±15% are acceptable only under its two conditions;
+the judge's CHANGELOG/for-Jay wording is canonical. Two are re-scoped by the merge: **W-30b now runs on
+`fill-collapse-2`** (not `fill-collapse`), and the **fill-audit-a resume order** is restated below with W-36
+inserted.
+
+### Round-2 queue (SESSION-SUMMARY §3 resume order, + W-36)
+
+| # | unit | lane / worktree | status | notes |
+|---|---|---|---|---|
+| 1 | **T1b** near-duplicate stub merge + min-spacing guard | fill-audit-a2 (:8475) | **IN-FLIGHT** (resumed after a background-wait stall — deviation logged) | plot safety; MUST-DO BEFORE T2. Brief: `ROUND2-BRIEFS.md` §fill-audit-a2 |
+| 2 | **W-36** crosshatch draws ~1/10 the crossing lines (USER) | fill-audit-a2 (:8475) | **IN-FLIGHT — Opus planner running** | **P1, regression between v1.3.98 and the merge.** Runs BEFORE W-31; W-31 re-measures after |
+| 3 | **W-31** crosshatch cell shape (USER) | fill-audit-a2 (:8475) | **QUEUED** | re-measure on the post-W-36 tree — W-26b-1 and W-36 both move the crossing family |
+| 4 | **W-32** rulings break beyond the silhouette (USER) | fill-audit-a2 (:8475) | **QUEUED** | bar: no ruling endpoint outside the silhouette by > 0.5 pen |
+| 5 | **W-33** non-curved angles in contour FILL rulings (USER) | fill-audit-a2 (:8475) | **QUEUED** | scope extension of the binding contour-rounding rule 2(b) |
+| 6 | **F1-placement** (Prototype B, ruled) | fill-audit-a2 (:8475) | **QUEUED** | five conditions in the standing rulings; F1-amp is the follow-up, serialized after |
+| 7 | T2 / T3 (variable-length ticks · mkDashRamp low density) | fill-audit-a2 (:8475) | **QUEUED** | `W-05b-W-06b-plan.md` |
+| 8 | **T4** (W-06 max-density band) | fill-audit-a2 (:8475) | **FROZEN-ON-JAY** | §4 decision 1 — do not start |
+| 9 | **U5b** caveat visibility for folded laws | fill-collapse-2 (:8482) | **DONE/FU — CLOSED** | `49475ccd`. Reviewer **ACCEPT-WITH-FOLLOWUPS** (`U5b-review.md`, pinned `47a5a755..49475ccd`, read-only, both scratch exports deleted): RGR, mutation, completeness and byte-identity all reproduced clean, and the reviewer independently proved `effectiveLaw` and `Params.resolveToneLaw` agree on every input it could construct. New `SCENE_FILL_STYLES.effectiveLaw(survivorId, paramsBag)` in `src/config/context-bar.js`; both UI surfaces read the caveat off it, the (i) popover stays on the survivor; 6 new RGR tests, **no bars changed**. ⚠ report + evidence committed IN-WORKTREE (`.claude/worktrees/fill-collapse-2/docs/3d-audit/lane-reports/U5b-impl.md`, `…/fill-audit/after/U5b/`) — deviation logged, relocate at merge. Two follow-ups, neither blocking merge → **U5b-2/3** |
+| 9b | **U5b-2/3** plain-language caveat copy + `effectiveLaw` ↔ `resolveToneLaw` cross-check test | fill-collapse-2 (:8482) | **IN-FLIGHT** — ruled to run as **ONE unit**, same implementer, base **`49475ccd`**, **BEFORE W-30b** | **U5b-2:** the caveat strings are audit prose (RMS numbers, "negative result, kept as one") — rewrite as user-facing copy; the fix's own point was "show the warning at all", so this is additive polish, not a re-open. **U5b-3:** nothing pins the two resolvers together — `effectiveLaw` (config-tier, reads only `STYLE_PARAMS`, deliberately free of a load-order dependency on `src/core/scene3d/params.js`) reimplements `resolveToneLaw`'s rules 3/4 and can drift. Add the cross-check test the reviewer had to do by hand, including the UNREPRESENTABLE case (≥2 active descriptors → deterministic fallback to the bare survivor, never a throw) || 10 | **W-30b** wire `buildFaceFootprint` to the W-30 projector | fill-collapse-2 (:8482) | **QUEUED — behind U5b-2/3** | one-line call-site swap; W-30 reaches no user until it lands |
+| 11 | **U6** `penStipple` mark class | fill-collapse-2 (:8482) | **FROZEN-ON-JAY** | §4 decision 2 — do not start |
+| 12 | U7 / U8 collapse chain | fill-collapse-2 (:8482) | **QUEUED** | U8 owns the roster/UI completion; U9's re-pin depends on it |
+| 13 | **W-27c-0a iteration 4** | fill-audit-d2 (:8481) | **DONE/FU per implementer — adversarial review IN FLIGHT** (pinned `47a5a755..c6dd6130`) | `c6dd6130`, report `W-27c-0a-impl-4.md`, evidence correctly in **MAIN** at `after/W-27c-0a-4/` (6 cells, all confirmed in the manifests before capture). Cull re-scoped: `makeCrowdGrid.isNear` now fires only where **≥2 DISTINCT other levels'** points sit inside the radius (a Morse-style tangency design was measured and abandoned first). **Brief part 1 met — the flat lower band is intact and smooth on the orchestrator's crops; ink retention 70.8% → 96.2%**, and the retention floor was TIGHTENED 0.6 → 0.9. **Brief part 2 met in form only: the four floors are pinned BYTE-IDENTICAL to RED — defend-only, they buy no improvement.** ⚠ **six bars moved in `scene3d-contour-slice.test.js` and FOUR were WIDENED** — torus pct05/pct1 1.2/6 → 2.5/8.7, sphere 2/8 → 4/13.5, torus blobCount 14 → 24 (sphere < 27 → ≤ 49), micro-gap `toBe(0)` → `≤1` under a **rewritten** oracle (`hasInertContinuity` → `hasBridgingInertPath`); all disclosed under `## Bars changed`. Guards 51/51 + 5/5 + 13/13 + 6/6 + 11/11; `mappers.js` untouched. **New root-cause claim re-scoping W-27c-0a-2: the dominant saddle/pole blob is a SAME-RING self-crossing, so no cross-ring cull at any scope can reach it** — level warping (equal contour spacing ON THE SURFACE) is the only remaining lever |
+| 14 | **W-34** angles in a curved shape (USER) | fill-audit-d2 (:8481) | **QUEUED** | bar ≤ 8°, metric must be open-polyline-aware |
+| 15 | **W-35** end-overlap / edge-fidelity param (USER) | fill-audit-d2 (:8481) + `params.js` + `context-bar.js` | **QUEUED — cross-lane** | product request; carries the full docs contract |
+| 16 | **W-27c-0a-2** residual saddle/pole ink merging | fill-audit-d2 (:8481) | **PLANNING-DEFERRED — re-scoped by iter-4** | The dominant blob is a **same-ring self-crossing**, not a multi-ring pileup, so every cross-ring cull is ruled out by measurement. Remaining lever = the plan's Rank 3 **level warping** (equal contour spacing on the surface instead of equal `d`), aimed at a same-ring self-approach. §4 decision 5 still governs whether iter-4 closes the parent |
+| 17 | **W-15c design D** (F-14 graded case still Density-blind) | fill-audit-2 (:8476) | **MEASURED — no ship, no commit** | `W-15c-D-impl.md`. Per-object λ (Fix 1) regressed **O28 view-independence**, **O21** and the `scene3d-subwindow-density` probe; the worktree was reverted **byte-for-byte to `47a5a755`** (secretary-verified: clean tree, HEAD `47a5a755`). **New root cause, previously undocumented: any λ derived from camera-projected front-face quantities is per-view, so orbiting the camera re-grades the object — Fix 2 shares the mechanism and would reproduce it.** No reviewer (orchestrator ruling: a no-ship stop-report needs none). **F-14 now has FIVE measured designs (A, B, C, D and Fix 2 by analysis) and remains OPEN** |
+| 17b | **W-15c design E** | fill-audit-2 (:8476) | **PLANNING — Opus planner running, PROTOTYPE-VERIFIED bar** | PLAN-READY may be returned **only if** a **camera-invariant** design is prototyped in a scratch export and passes: the RED oracle, `scene3d-subwindow-density`, **O28**, O21, O20, O9, the faceted fingerprints and the ground-plane md5. Otherwise **PLAN-BLOCKED**, with a park-or-ask-Jay recommendation |
+| 18 | **U9** shadow path resolve (RESOLVE HALF ONLY, ruled) | handoff-c2 (:8470) | **DONE/FU per implementer — adversarial review IN FLIGHT** (pinned `47a5a755..fc8b0fba`) | `fc8b0fba`. New `clampShadowToneLaw()` in `params.js` shadow bag only (~:1002-1047); `clampStyleParam` untouched. **22/22 new tests.** ⚠ **REWROTE six assertions at four locations in the already-merged `tests/unit/scene3d-tone-law-collapse.test.js`** (shadow bag now keeps the raw folded id instead of collapsing to the survivor) — disclosed under `## Bars changed`, file re-run 54/54 (was 48/54 after the fix). ⚠ that file is **fill-collapse-2's territory** (U7/U8) and U5b touched it too. ⚠ evidence committed IN-WORKTREE at `.claude/worktrees/handoff-c2/docs/3d-audit/fill-audit/after/U9/`; report correctly on MAIN as `U9-impl.md`. ⚠ `scripts/u9-shadow-resolve-evidence.js` committed at the `scripts/` root (hygiene). Orchestrator on the crops: before/after **visually near-identical**, +2.7% line count claimed — honest but weak |
+| 18b | **U9b** uniqueness re-pin + `onePenDown` / `TONE_LAW_NOT_DISTINGUISHABLE` handling | handoff-c2 (:8470) | **QUEUED — behind U8** | Split out of U9 by the 19:20 ruling and confirmed untouched by `U9-impl.md` §"U9b handoff". Scope: (1) re-pin `scene3d-shadow-tone-law-uniqueness.test.js` from "one build per OFFERED law id" to **offered set × each survivor's collapse options**, no-collision bar kept, old/new offered counts + collision count (0) in the commit body; (2) the shadow Fill Style row excludes the `penDown` **combination**, not the bare id — do not render the sub-control and pin `penDown:'perRuling'`, stating it in the row's note; (3) the full survivor × sub-control live sweep. Ran unmodified and green (3/3) at `fc8b0fba` |
+| 19 | W-30-adjacent follow-ups | handoff-c2 (:8470) | **QUEUED** | after U9 |
+| 20 | **Ground-plane density after W-15c** (~2.5× denser) | — | **FROZEN-ON-JAY** | §4 decision 3 — confirm or exclude the ground from the solo-orientation gate |
+| 21 | **F1 "which white did you mean?"** | — | **FROZEN-ON-JAY** | §4 decision 4 — a bench look before F1-placement's evidence is judged |
+| — | unscheduled | — | QUEUED | F1-amp · W-07b · W-10d-2/-3 · W-28 threshold · W-25 hlr seam · `insetMultiPolygon` ladder · U10–U12 (W-26-blocked) |
+
+### W-36 — new USER item (2026-09-06 18:31 EDT), numbering confirmed
+
+`W-35` was the previous highest id, so **W-36 is correct**. Report:
+`fill-audit/user-reports/16-crosshatch-sphere-one-family.md`.
+Verbatim: *"make crosshatch have the same number of crosshatch lines as it has hatch lines unless there's a
+special algorithm that mandates this is not the case or variation is needed for highlight/shadow. This
+seems off."* Orchestrator montage: cylinder ≈ 30 primary vs ≈ 5 crossing; ellipsoid ≈ 25 vs ≈ 4; T1 sphere
+≈ 24 vs ≈ 8; pre-audit v1.3.98 cell ≈ 22 vs ≈ 20 — **a regression, not a long-standing gap**.
+Secretary's read of the code (read-only): **`CROSS_SHARE_BASE = 0.1` at
+`src/core/scene3d/surface-fill.js:4652`**, via `crossShareOf` (`:4657-4660`) and
+`ladderCrossWantedPitch` (`:4661-4665`), makes the crossing family's coverage 10% of family A's at the
+shipped default `crossDensityRatio = 1` — a ~10× wider pitch by construction, falling to zero drawn rulings
+where `LADDER_COV_MIN = 0.02` (`:4597`) or `CROSS_DFMAX_BOOST_CAP = 20` (`:9718-9720`) binds. **Not** the
+Fine-rungs cascade (`isEvenLadder()` `:4559` routes `fineLadder` down the same path; rungs are tone, not
+placement) and **not** a picker/param mismatch (the count is untouched at ratio 1, `:10771-10773`).
+The fix must keep W-26b-1's anti-saturation win (cylinder D220 must stay near 5153.7 mm, not return to
+9326.7).
+
 ## Verified tree state (secretary, `git worktree list` + per-worktree status, 2026-09-05 — historical)
 
 - main = `236e2581` (was 722ba84c; +W-01-M1 evidence commit. Handoff doc still says `d5af9e30`.)
@@ -506,6 +579,13 @@ Flags to forward:
 
 | when | who | deviation | ruling |
 |---|---|---|---|
+| 2026-09-06 | W-27c-0a iter-4 implementer (fill-audit-d2) | **None — evidence went to MAIN's `after/W-27c-0a-4/` and the report to MAIN's `lane-reports/`, as the protocol requires.** Recorded as the round-2 compliance baseline after U5b and U9 both deviated. | Noted, no action. |
+| 2026-09-06 | U9 implementer (handoff-c2) | Committed its **evidence inside the worktree** (`docs/3d-audit/fill-audit/after/U9/` on `3d-scene/handoff-c2`) although its **report correctly went to MAIN** (`U9-impl.md`). | **KEEP, relocate the `after/U9/` directory at merge.** Second occurrence in round 2 after U5b. |
+| 2026-09-06 | U9 implementer (handoff-c2) | Committed a bespoke evidence script **at the `scripts/` root** — `scripts/u9-shadow-resolve-evidence.js` — rather than under `scripts/audit/` or a scratch dir. | **Hygiene only.** Decide at merge: move under `scripts/audit/` or drop it; the capture it produced is the artefact that matters. |
+| 2026-09-06 | U9 implementer (handoff-c2) | Edited **`tests/unit/scene3d-tone-law-collapse.test.js`**, a file owned by the fill-collapse lane (U0-U8) and also touched by U5b this round, rewriting six assertions at four locations. | **Disclosed correctly** under `## Bars changed`, with inline `STALE ASSERTION UPDATE (U9)` blocks following the file's own pre-existing convention, and the smallest possible diff. **The reviewer decides STALE vs REGRESSION**; either way, flag to fill-collapse-2 before U7/U8 start. |
+| 2026-09-06 | U5b implementer (fill-collapse-2) | Committed its **report and its evidence inside the worktree** — `docs/3d-audit/lane-reports/U5b-impl.md` and `docs/3d-audit/fill-audit/after/U5b/` on branch `3d-scene/fill-collapse-2` — instead of writing them to MAIN as `AGENT-PROTOCOL.md` §Reporting/§Evidence require. Same class as U0 in round 1. | **KEEP, relocate at merge.** Content is correct and the paths are clean. Recorded here so the merge moves both into main and does not double-count them. Standing instruction re-issued to every implementer: reports to MAIN `lane-reports/`, evidence to MAIN `after/<W-id>/`. |
+| 2026-09-06 | T1b implementer (fill-audit-a2) | **Stalled waiting on a background run**, against the protocol's "foreground only, never arm a Monitor and end your turn" rule — the same failure mode that killed three implementers on 2026-09-05. | Stopped and **resumed by the orchestrator**; the unit keeps its status. Foreground-only is restated in every brief. |
+| 2026-09-06 | U5b implementer (fill-collapse-2) | Edited **`src/ui/shell/context-bar.js`**, a third UI surface not named in the U5b brief (which listed `src/config/context-bar.js` + `src/ui/panels/scene3d-panel.js`). | **Provisionally KEEP** — the ctxbar flyout renders the same caveat line, so leaving it out would have shipped half a fix. **Flagged to the reviewer**, and flagged as a possible collision with fill-audit-2, whose W-15c-D brief also allows a `context-bar.js`. |
 | 2026-09-05 | W-01 M1 implementer (fill-audit-a) | **Committed on MAIN** (`236e2581`, docs-only: `after/W-01-M1/` report + manifest) despite the protocol's no-main-commits rule — evidence is supposed to stay uncommitted in main until wrap-up. | **KEEP** (orchestrator). Harmless; content is correct and its `after/` paths are clean. Noted so the wrap-up commit does not double-count it. |
 | 2026-09-05 | W-01 M1 implementer (fill-audit-a) | RED proof taken via `git stash` in the shared worktree; the protocol mandates a scratch `git archive` export. | Tolerated — tree was clean afterwards and the reviewer re-derived the RED independently from a clean archive of 912f8471. |
 | 2026-09-05 | W-01 M1 / prior WIP author | Two guard pins re-pinned with the proof recorded only in `W-01.json`, not in either commit body. | Follow-up at merge (reviewer independently re-derived both as correct). |
@@ -525,6 +605,22 @@ Flags to forward:
 
 ## Standing orchestrator rulings
 
+- **U9 is scoped to its RESOLVE half** (2026-09-06 19:20) — the part RED on main today
+  (`ALIASES` populated at `src/config/scene3d-tone-laws.js:909`; `shadows.js:2713` clamps before
+  `HATCH_LAW_RECIPES`). The uniqueness re-pin to "offered x collapse options" and the `onePenDown` /
+  `TONE_LAW_NOT_DISTINGUISHABLE` handling are split out as **U9b, QUEUED behind U8**. U9 may edit
+  `params.js` only in the shadow bag (~:900); W-10d-2/-3 are the other claimants on that file.
+- **W-36 runs as its own unit on fill-audit-a2, after T1b and before W-31** (2026-09-06 19:20; the
+  secretary's recommendation adopted). It **supersedes W-26 hygiene item (c)** (`CROSS_SHARE_BASE` /
+  `CROSS_DFMAX_BOOST_CAP` "empirically tuned" note), since the fix rewrites that constant. **W-31's
+  "re-measure on `0930cb2d`" is re-pointed at `main` + W-36's landing sha.**
+- **W-15c design D gets a short Opus planner before an implementer** (2026-09-06 19:20) — the brief was
+  PLAN-READY-THIN. Delivered: `W-15c-D-plan.md` (per-object lambda normalisation; 44/44 ordering guards
+  predicted green).
+- **Reports go to MAIN, evidence goes to MAIN** (2026-09-06 19:40, standing) — every implementer writes
+  its report to MAIN's `docs/3d-audit/lane-reports/<W-id>-impl.md` and its evidence to MAIN's
+  `docs/3d-audit/fill-audit/after/<W-id>/`, exactly as `AGENT-PROTOCOL.md` says. Units that committed
+  either inside their worktree are listed in **Protocol deviations** so the merge can relocate them.
 - **Gallery rebuild is the orchestrator's alone.** Implementers must NOT run
   `scene3d-assemble.js` / `scene3d-audit-findings.js` / `scene3d-before-after.js`; the orchestrator rebuilds
   once GH-1 lands. Lanes still capture into `after/<W-id>/` as usual.

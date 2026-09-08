@@ -1,8 +1,11 @@
-# 3D fill audit — SESSION SUMMARY (2026-09-05 → 06)
+# 3D fill audit — SESSION SUMMARY (round 1: 2026-09-05 → 06 · round 2: 2026-09-06 19:05 EDT →)
 
-**FINAL — MERGED.** All units landed, reviewed, and merged into **local `main` at `817424dc`** (v1.3.99). **NOT pushed.**
+**ROUND 2 IN PROGRESS on `main` 47a5a755 (v1.3.99). NOT pushed.** Round 1 is closed: all units landed,
+reviewed, and merged into local `main` at `817424dc`, with the docs wrap-up at `6ad1d93e` and the ledger
+record at `47a5a755`. **The seven round-1 `3d-scene/*` lanes are historical**; round 2 runs in five NEW
+worktrees branched off `main` — map and first-unit briefs in `ROUND2-BRIEFS.md`, queue in `LEDGER.md`
+§"Round 2".
 Detail: `LEDGER.md` (per-unit rows, secretary flags, standing rulings, incidents) · `STILL-OPEN.md` (full findings).
-**Nothing pushed.** Main is `817424dc` — the merge of `3d-scene/integrate @ecaf1e17`; docs wrap-up committed as `6ad1d93e`. **The seven `3d-scene/*` lanes are now historical; the next session branches off `main`.**
 
 > **P0 (W-26, the user's ladder-gap rule) is CLOSED — the judge's three blocking conditions are met and independently verified.**
 
@@ -39,16 +42,24 @@ Detail: `LEDGER.md` (per-unit rows, secretary flags, standing rulings, incidents
 |---|---|---|---|
 | W-27c-0a iter-3 | fill-audit-d | `ec79e2b9` | **REJECTED / PARKED** — mid-ring fix is the keeper and stays on the branch; the cull is unscoped and thins the flat lower band. Iter-4 is the first resume item. |
 
-## 3. RESUME ORDER, PER LANE
+## 3. RESUME ORDER, PER LANE (round 2 — all lanes based on `main` 47a5a755)
 
-| lane | order |
+**Live at 2026-09-06 19:40:** IN-FLIGHT — T1b (fill-audit-a2), W-36 planner (Opus), W-27c-0a iter-4
+(fill-audit-d2), **W-15c design D came back MEASURED — no ship, no commit, worktree reverted to `47a5a755`**; per-object λ regressed O28/O21/subwindow-density, and the finding is that *any* camera-projected λ is per-view, so Fix 2 dies with it. **F-14 now has five measured designs.** A **design E** planner is running under a prototype-verified bar. **U9 resolve half is DONE/FU per its implementer (`fc8b0fba`), review in flight** — its rewrite of six assertions in the already-merged `scene3d-tone-law-collapse.test.js` is the open STALE-vs-REGRESSION question, and it collides textually with U5b's edits to the same file. **U5b is CLOSED DONE/FU** (`49475ccd`, reviewer ACCEPT-WITH-FOLLOWUPS); its two follow-ups run as one
+unit **U5b-2/3** (plain-language caveat copy + `effectiveLaw` ↔ `resolveToneLaw` cross-check), IN-FLIGHT on
+fill-collapse-2 ahead of W-30b. **U9b** (uniqueness re-pin + `onePenDown`) is split out and QUEUED behind U8.
+
+| lane / worktree (port) | order |
 |---|---|
-| **fill-audit-a** | **T1b** (plot safety) → **W-31 → W-32 → W-33** (USER, outrank T2) → **F1-placement** (Prototype B, ruled) → T2 → T3 → T4 (needs Jay's W-06 call) |
-| **fill-collapse** | **U5b** (BLOCKING before merge) → **W-30b** → U6 (needs Jay's penStipple call) → U7 → U8 → U9 |
-| **fill-audit-d** | **W-27c-0a iter-4** (re-scope cull to saddle/pole + land the four floors) → **W-34 → W-35** (USER; W-35 is cross-lane, needs params + context-bar) → W-27c-0a-2 (needs a different mechanism) |
-| **fill-audit** | W-15c design D (graded case still Density-blind) |
-| **handoff-c** | U9 (rebases onto W-30) → W-30-adjacent follow-ups |
+| **fill-audit-a2** (:8475) | **T1b** (plot safety) → **W-36** (USER, NEW — crosshatch has ~1/10 the crossing lines; runs BEFORE W-31) → **W-31 → W-32 → W-33** (USER, outrank T2) → **F1-placement** (Prototype B, ruled) → T2 → T3 → T4 (**FROZEN-ON-JAY**, W-06 call) |
+| **fill-collapse-2** (:8482) | **U5b CLOSED DONE/FU `49475ccd`** → **U5b-2/3** (copy + cross-check, in flight) → **W-30b** → U6 (**FROZEN-ON-JAY**, penStipple call) → U7 → U8 |
+| **fill-audit-d2** (:8481) | **W-27c-0a iter-4** (re-scope cull to saddle/pole + land the four floors) → **W-34 → W-35** (USER; W-35 is cross-lane, needs params + context-bar) → W-27c-0a-2 (needs a different mechanism) |
+| **fill-audit-2** (:8476) | W-15c design D **MEASURED — no ship** (O28 view-independence kills every camera-projected λ) → **W-15c design E, PLANNING** (Opus planner, PROTOTYPE-VERIFIED bar or PLAN-BLOCKED) |
+| **handoff-c2** (:8470) | U9 **resolve half DONE/FU `fc8b0fba`, review in flight** → U9b (uniqueness re-pin + `onePenDown`, QUEUED behind U8) → W-30-adjacent follow-ups |
+| **frozen on Jay** | T4 · U6 · W-06 sign-off · ground-plane density (§4 decisions 1, 2, 3) |
 | **unscheduled** | F1-amp · W-07b · W-10d-2/-3 · W-28 threshold · W-25 hlr seam · `insetMultiPolygon` ladder · U10–U12 (W-26-blocked, lossy) |
+
+First-unit briefs — files allowed/forbidden, RED oracle, cells to re-shoot — are in **`ROUND2-BRIEFS.md`**.
 
 ## 4. DECISIONS FOR JAY
 
@@ -71,6 +82,7 @@ Detail: `LEDGER.md` (per-unit rows, secretary flags, standing rulings, incidents
 | 13 (2026-09-06) | crosshatch cells uneven — *"diamond/square gaps vs rectangular gaps… are lines not being evenly spaced?"* | **OPEN → W-31.** Generalises the P0 rule to crosshatch **cell shape**: both families evenly spaced except where tone demands. Re-measure on `0930cb2d` — W-26b-1 changed the crossing family's share. |
 | 14 | *"Some of these lines are breaking out beyond the border."* + *"non-curved angles"* | **OPEN → W-32** (silhouette overshoot; RGR ≤ 0.5 pen — note `scene3d-fill-boundary-ends` passed 41/41, so establish whether it measures overshoot at all) and **W-33** (the contour-rounding rule extends to contour FILL rulings). |
 | 15 | *"angles in this curved shape that should not be there"* + *"stairstepping where line segments end"* | **OPEN → W-34** (extends W-27c item (b), bar ≤ 8°, open-polyline-aware metric mandatory) and **W-35** (product request: a user-controllable end-overlap / edge-fidelity param). |
+| 16 (2026-09-06 18:31) | crosshatch renders ONE family — *"make crosshatch have the same number of crosshatch lines as it has hatch lines unless … variation is needed for highlight/shadow. This seems off."* | **OPEN → W-36, P1.** Sphere/ladder/fine-rungs/d=50 shows ~22 bands and **no** crossing family; montage counts cylinder ≈ 30 vs ≈ 5, ellipsoid ≈ 25 vs ≈ 4, T1 sphere ≈ 24 vs ≈ 8, against v1.3.98's ≈ 22 vs ≈ 20 — **a regression between v1.3.98 and the merge**. Prime suspect `CROSS_SHARE_BASE = 0.1` (`surface-fill.js:4652`) → crossing coverage 10% of family A's at ratio 1. Lane fill-audit-a2, before W-31 |
 | "not close to zero yet" (F1) | torus ribbon streaks | **OPEN, mechanism found** — 62.63 mm² bare strip, 30× A3's whole residue; Prototype B ruled, deep blank 11.89 → **0.28 mm²**. |
 
 ## 6. MERGE — DONE (local only)
@@ -88,7 +100,22 @@ Detail: `LEDGER.md` (per-unit rows, secretary flags, standing rulings, incidents
 - **Carried as documented open items, not blockers:** **U5b** (caveat visibility for folded laws — a product
   regression), **W-30b** (the one-line wiring without which W-30 reaches no user), and the five new **USER**
   items W-31…W-35.
-- **Still owed against the merged tree:** reconcile the intentionally-red tests (handoff-b's Unit A 5 +
+### Still owed against the merged tree — secretary audit, 2026-09-06 19:05 EDT
+
+Verified read-only against `main` 47a5a755. **None of these blocks a lane from starting.**
+
+| item | verdict | file |
+|---|---|---|
+| Unit A's 5 intentionally-red tests, retired in A3's favour | **DONE-ON-MAIN** | `tests/unit/scene3d-ribbon-f1b-streaks.test.js:175` — "RETIRED as a pass/fail bar (A3-judge.md §5 item A1)"; no `intentionally RED` marker remains |
+| Unit F's 1 intentionally-red test | **STILL-OWED** (docs/test comment) | `tests/unit/scene3d-mesh-self-occlusion.test.js:29` still RED on `spiral` **and** still carries the root cause W-25 disproved (polygon-union) — reconcile the text and the bar together |
+| `findings.json` / `worklist.json` C-05 "byte-identical" claim | **STILL-OWED** | `docs/3d-audit/fill-audit/findings.json:236` still reads "Byte-identical density-inert rows … visually identical". Correct wording + numbers are in the standing ruling (5 distinct outputs, `contFieldTouch` 3879.9 vs `contFieldSigmoid` 1459.0 mm) |
+| `after/W-25/report.json` "engaging only for small/thin regions" | **STILL-OWED** | `docs/3d-audit/fill-audit/after/W-25/report.json:14` — W-25b measured 102/288 `trueSpiral` calls still floored at aspect 0.177 |
+| W-26 hygiene (a) false hatch-bar line | **STILL-OWED** | `docs/3d-audit/lane-reports/W-26-impl-2.md:424` still says hatch's 1.2 bar "still measures higher"; the ramp actually fell 1.369 → 1.229 (−10.2%) |
+| W-26 hygiene (b) `plot-safety` `q(0.98)` disclosure | **STILL-OWED** | `tests/unit/scene3d-plot-safety.test.js:243,262` — the bar is in place, the `## Bars changed` disclosure is not recorded anywhere |
+| W-26 hygiene (c) `CROSS_SHARE_BASE` / `CROSS_DFMAX_BOOST_CAP` noted as empirically tuned | **STILL-OWED** | `src/core/scene3d/surface-fill.js:4652`, `:9718` — the comments justify but never say "empirically tuned". **W-36 now depends on this constant**, so record it as part of W-36 rather than separately |
+| gallery rebuild (47 unexplained byte-identical pairs now WARN) | **STILL-OWED** | `docs/3d-audit/fill-audit/index.html` last built **Sep 5 20:11** — it predates T1, W-26b, U1–U5, W-30 and the merge. Orchestrator-only task |
+
+- **Original round-1 wording, kept for the record:** reconcile the intentionally-red tests (handoff-b's Unit A 5 +
   Unit F 1 versus A3's retirement of the 5 — resolve in A3's favour); the `worklist.json`/`findings.json`
   corrections (C-01…C-08 resolved; **C-05's "byte-identical" claim** — five distinct outputs, `contFieldTouch`
   2.7× ink); `after/W-25/report.json`'s "engaging only for small/thin regions"; the W-26 hygiene trio

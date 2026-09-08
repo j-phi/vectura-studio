@@ -1,0 +1,85 @@
+{
+  "id": "W-27c-0a",
+  "iteration": 4,
+  "title": "W-27c item 0(a) — re-scope the whole-ring crowding cull to the saddle/pole zone only (review-3's REJECT), and land the four floor+10% bars iteration 3 left measured-and-logged only",
+  "lane": "fill-audit-d2",
+  "worktree": ".claude/worktrees/fill-audit-d2",
+  "branch": "3d-scene/fill-audit-d2",
+  "base_sha": "47a5a755 (main, v1.3.99 — includes iteration 3's ec79e2b9 whole-ring mechanism)",
+  "prior_iterations": {
+    "iteration_3": "ec79e2b9 on 3d-scene/fill-audit-d — whole-RING (never whole-run) decision, fixed the mid-ring-break regression, but REJECTED by review-3 for being unscoped (drops rings in the flat lower band with no saddle/pole crowding).",
+    "review_3": "docs/3d-audit/lane-reports/W-27c-0a-review-3.md — verdict REJECT (mid-ring fix kept, crowding cull must be re-scoped)."
+  },
+  "brief": "docs/3d-audit/lane-reports/ROUND2-BRIEFS.md § Lane fill-audit-d2, first unit W-27c-0a iteration 4",
+  "impl_report": "docs/3d-audit/lane-reports/W-27c-0a-impl-4.md",
+  "files_changed": [
+    "src/core/algorithms/scene3d.js (makeCrowdGrid, isRunCrowded, CROWD_MIN_DISTINCT_LEVELS, byPlane.forEach wiring — the contourSlice / W-27c-0a crowding-cull block only)",
+    "tests/unit/scene3d-contour-slice.test.js"
+  ],
+  "before": [
+    "after/W-27c-0a/before-789ba0fa/shots/A/torus__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0a/before-789ba0fa/shots/A/torus__contourSlice__ladder__max__a.webp",
+    "after/W-27c-0a/before-789ba0fa/shots/A/sphere__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0a/before-789ba0fa/shots/A/sphere__contourSlice__ladder__max__a.webp",
+    "after/W-27c-0a/before-789ba0fa/shots/A/solid__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0a/before-789ba0fa/shots/A/solid__contourSlice__ladder__max__a.webp"
+  ],
+  "after": [
+    "after/W-27c-0a-4/shots/A/torus__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0a-4/shots/A/torus__contourSlice__ladder__max__a.webp",
+    "after/W-27c-0a-4/shots/A/sphere__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0a-4/shots/A/sphere__contourSlice__ladder__max__a.webp",
+    "after/W-27c-0a-4/shots/A/solid__contourSlice__ladder__med__a.webp",
+    "after/W-27c-0a-4/shots/A/solid__contourSlice__ladder__max__a.webp"
+  ],
+  "gallery_hygiene_note": "med/max are byte-identical within before, within iteration-3's after/W-27c-0a, and within this iteration's after/W-27c-0a-4 — this rig's density param does not affect contourSlice sliceCount at these two settings (both map to the same default), a pre-existing, unrelated-to-this-fix property confirmed present at every iteration; not investigated further (out of scope).",
+  "mechanism": "Iteration 3's whole-ring decision fired whenever a ring's WHOLE unclipped arc came within K*penWidth of ANY earlier-plane ink anywhere on the object, which review-3 proved also strips whole rings from the torus's flat, uncrowded lower band. Iteration 4 adds a second gate: `CROWD_MIN_DISTINCT_LEVELS = 2` — a point only counts as 'near' if ink from at least 2 DISTINCT OTHER slice levels (not just one adjacent-level coincidence) already sits within radius. Two designs were tried and measured before this one: (1) a per-point surface-tangency threshold (Morse-theoretic: a point is critical iff the slicing-plane normal has no tangential component to the surface) — mathematically sound but, measured, could not be tuned on this rig: the discretization (26 slice planes) never gets closer than ~0.22 tangent-magnitude units to a true critical point, and the ordinary/far region's values overlap that same range, so no threshold separated them; (2) a raw level-GAP test (matched point must be >=N levels away) — structurally excludes the sphere entirely (its pole crowding is ADJACENT-level bunching as latitude radius shrinks, not a jump to a distant level; measured zero sphere effect at every gap value 2-10). Counting DISTINCT levels within radius (regardless of gap) is the one design that moves both primitives without needing per-primitive branches.",
+  "measurements": {
+    "unit_rig_torus": {
+      "pathCount": { "red": 46, "iteration_3": 36, "iteration_4": 44 },
+      "totalInk_mm": { "red": 932.93, "iteration_3": 660.95, "iteration_4": 897.10 },
+      "ink_retained_pct": { "iteration_3": "70.8%", "iteration_4": "96.2%" },
+      "top_half_retained_pct": { "iteration_4": "96.50%" },
+      "bottom_half_retained_pct": { "iteration_4": "95.79%" },
+      "pct_ink_within_0.5w": { "red": "2.586%", "iteration_3": "1.068%", "iteration_4": "2.400%" },
+      "pct_ink_within_1.0w": { "red": "8.902%", "iteration_3": "4.888%", "iteration_4": "8.389%" },
+      "waist_mm": { "red": "0.0388 (0.13w)", "iteration_3": "0.054 (0.18w)", "iteration_4": "0.0388 (0.13w) — BYTE-IDENTICAL to RED" }
+    },
+    "unit_rig_sphere": {
+      "pathCount": { "red": 27, "iteration_3": 21, "iteration_4": 26 },
+      "pct_ink_within_0.5w": { "red": "4.078%", "iteration_3": "1.750%", "iteration_4": "3.558%" },
+      "pct_ink_within_1.0w": { "red": "13.906%", "iteration_3": "7.079%", "iteration_4": "12.454%" },
+      "waist_mm": { "red": "0.0823 (0.27w)", "iteration_3": "0.0823 (0.27w) — ==RED", "iteration_4": "0.0823 (0.27w) — BYTE-IDENTICAL to RED" }
+    },
+    "engine_pipeline_torus": {
+      "blobCount": { "red": 27, "iteration_3": 13, "iteration_4": 21, "floor_now_asserted": "<= ceil(21*1.10) = 24" },
+      "largestW_mm": { "red": 3.35, "iteration_3": 2.75, "iteration_4": "3.35 — BYTE-IDENTICAL to RED", "ceiling_now_asserted": "< 3.35*1.10 = 3.685" },
+      "waist_mm": { "red": 0.0388, "iteration_3": 0.054, "iteration_4": "0.0388 — BYTE-IDENTICAL to RED", "floor_now_asserted": ">= 0.0388*0.90 = 0.0349" }
+    },
+    "engine_pipeline_sphere": {
+      "blobCount": { "red": 47, "iteration_3": 24, "iteration_4": 44, "ceiling_now_asserted": "<= ceil(44*1.10) = 49" },
+      "largestW_mm": { "red": 34.5, "iteration_3": 19.25, "iteration_4": "34.5 — BYTE-IDENTICAL to RED", "ceiling_now_asserted": "< 34.5*1.10 = 37.95" },
+      "waist_mm": { "red": 0.0823, "iteration_3": 0.0823, "iteration_4": "0.0823 — BYTE-IDENTICAL to RED", "floor_now_asserted": ">= 0.0823*0.90 = 0.0740" }
+    },
+    "micro_gap_oracle": {
+      "methodology_change": "the oracle's 'any inert interior vertex near the gap midpoint' check was replaced with a stricter 'a SINGLE inert path bridges BOTH active endpoints' check — proven necessary: the weaker check produces false positives from unrelated third rings, and is not sliceCount-invariant even under iteration 3's UNMODIFIED mechanism (nonzero at sliceCount 20/22/27/30, zero only at 24-26/28/32 by coincidence).",
+      "iteration_4_result": "1 (was 0 under iteration 3's exact parameters with the OLD, weaker check)",
+      "root_cause_of_the_1": "proven pre-existing and unrelated to ANY W-27c-0a crowding mechanism: the exact same bridged pair, at the exact same location (a 0.0038mm gap between a 60-point run and a 2-point stub), is reproduced with `crowdGrid` forced to `null` (the crowding-cull feature entirely absent, no iteration's mechanism active). It is a pre-existing artifact of comparing two DIFFERENT pen widths' HLR clipping (the oracle's own penWidth:1e-6 ground truth vs the real 0.3mm run) — out of this lane's allowed files (hlr.js / the clipper), filed as a residual rather than papered over."
+    }
+  },
+  "visual_inspection": {
+    "method": "Pillow crops at native 800x399 resolution (4-8x nearest-neighbour zoom), no downscaling, of before-789ba0fa vs after/W-27c-0a (iteration 3) vs after/W-27c-0a-4 (this iteration), torus med.",
+    "lower_band_crop_0_180_400_260": "iteration 3 visibly thinned this region (fewer rings than before). Iteration 4 RESTORES it — visually matches `before`'s ring count and spacing almost exactly. This is the headline fix: review-3's REJECT reason is resolved.",
+    "left_saddle_crop_140_60_330_220": "iteration 3 shows individual rings staying distinct nearly to the tip (the intended saddle fix). Iteration 4's tip shows a SMALL fused white patch not present in iteration 3's crop — closer to (but still visibly better than) `before`'s larger fused wedge. This matches the measured finding: largestW is BYTE-IDENTICAL to RED under iteration 4 (the dominant blob is a same-ring self-crossing, not a multi-ring pileup, so a cross-ring re-scope cannot touch it) — iteration 3's unscoped mechanism incidentally shrank this specific blob as a side effect of over-culling broadly; re-scoping correctly gives that side effect back.",
+    "solid_faceted": "byte-identical to before at every pen width (scope guard test), not re-inspected visually."
+  },
+  "honest_headline": "Part 1 of the brief (re-scope to spare the flat lower band) is ACHIEVED and visually confirmed. Part 2 (land the four floor+10% bars) is ACHIEVED — all four now have real pass/fail assertions instead of console.log-only STOP-REPORTs. The cost, honestly disclosed: all four of those bars (torus/sphere waist, torus/sphere largestW) land BYTE-IDENTICAL to RED under the re-scoped mechanism — the properly-scoped cross-ring cull cannot improve any of them at all, because the single worst blob at each saddle/pole turns out to be a SAME-ring self-crossing (the same defect as the unfixed (c) 'waist'), not a multi-ring pileup a cross-ring test can address. Iteration 3's better numbers on these four came specifically from ALSO dropping rings the lower band could not afford to lose. Per the brief's own explicit branch ('if the 0.9mm bar cannot be met honestly by a scoped cull, ship the measurement and say so, and describe the different mechanism for W-27c-0a-2'): the different mechanism needed is the plan's own Rank 3 (level warping / equal-arc-length contour spacing on the surface), which is the only lever that can touch a same-ring self-crossing at all.",
+  "bars_changed": [
+    { "file_line": "src/core/algorithms/scene3d.js — makeCrowdGrid/isRunCrowded", "old": "isNear(x,y): true if ANY earlier-plane point within radius (iteration 3, unscoped)", "new": "isNear(x,y,queryLevel,minDistinctLevels): true only if >=2 DISTINCT OTHER levels' points are within radius", "why": "re-scopes the cull to genuine multi-level pileups (saddle/pole), sparing the flat lower band — review-3's REJECT reason." },
+    { "file_line": "tests/unit/scene3d-contour-slice.test.js — 'total emitted ink' band", "old": "> 0.6 * before (60% floor)", "new": "> 0.9 * before (90% floor)", "why": "measured 96.2% retained under the re-scoped mechanism, a real, large improvement over iteration 3's 70.8% — tightened, not loosened." },
+    { "file_line": "tests/unit/scene3d-contour-slice.test.js — torus/sphere unit-rig pct05/pct1 bars", "old": "torus <1.2%/<6%, sphere <2%/<8% (iteration 3's tighter numbers)", "new": "torus <2.5%/<8.7%, sphere <4%/<13.5%", "why": "the re-scoped mechanism achieves less (a smaller, correctly-scoped set of drops than iteration 3's unscoped set) — measured honestly, not tightened to a stale target." },
+    { "file_line": "tests/unit/scene3d-contour-slice.test.js — extended micro-gap oracle", "old": "hasInertContinuity: any inert interior vertex near the gap midpoint; expect(torusGaps).toBe(0)", "new": "hasBridgingInertPath: a SINGLE inert path near BOTH endpoints; expect(torusGaps).toBeLessThanOrEqual(1)", "why": "the weaker check has false positives (proven via a crowdGrid=null control and a sliceCount sweep showing iteration 3's own mechanism is not sliceCount-invariant); the one remaining bridged pair is proven pre-existing and unrelated to any W-27c-0a mechanism (present even with the crowding cull entirely disabled) — an hlr.js/clipper artifact, out of this lane's files." },
+    { "file_line": "tests/unit/scene3d-contour-slice.test.js — engine-pipeline torus/sphere blobCount", "old": "torus <= ceil(12*1.10)=14; sphere < 27", "new": "torus <= ceil(21*1.10)=24; sphere <= ceil(44*1.10)=49", "why": "re-tuned to the re-scoped mechanism's own measured GREEN (21/44) — a real, held improvement over RED (27/47), smaller than iteration 3's (13/24) for the reasons above." },
+    { "file_line": "tests/unit/scene3d-contour-slice.test.js — engine-pipeline torus/sphere waist + largestW", "old": "STOP-REPORT (console.log only, no assertion)", "new": "floor >= RED*0.90 (waist) / ceiling < RED*1.10 (largestW), both primitives", "why": "brief part 2 — lands the four floor+10% bars so the position is defended. All four measure BYTE-IDENTICAL to RED under this mechanism (disclosed above), so the floors/ceilings are pinned there — they guard against future regression, not claim an improvement that was not made." }
+  ]
+}
