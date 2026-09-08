@@ -1,5 +1,5 @@
-const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pathSignature } = require('../helpers/path-signature');
 
 /*
  * FS-F1: byte-identity guard for the HLR occluder spatial index (hlr.js) and
@@ -23,17 +23,16 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 // Full path signature: point coordinates + every meta field that could be
 // affected by an occluder-lookup change (occlusion, hidden-line dashing,
 // edge class, region carving). Order-sensitive (emission order is part of
-// the contract HLR consumers rely on).
+// the contract HLR consumers rely on). Coordinates/meta are rounded to 4
+// decimal places (pathSignature's default) before hashing — well beyond
+// plotter resolution, but enough to absorb the last-ULP arm64/x86_64
+// floating-point drift that otherwise makes this hash architecture-specific.
 const fingerprint = (paths) => {
-  const payload = (paths || []).map((p) => ({
-    pts: p.map((pt) => [pt.x, pt.y]),
-    meta: p.meta || null,
-  }));
-  const json = JSON.stringify(payload);
+  const list = paths || [];
   return {
-    hash: crypto.createHash('sha256').update(json).digest('hex'),
-    pathCount: payload.length,
-    pointCount: payload.reduce((n, p) => n + p.pts.length, 0),
+    hash: pathSignature(list),
+    pathCount: list.length,
+    pointCount: list.reduce((n, p) => n + p.length, 0),
   };
 };
 
@@ -338,12 +337,12 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   // which is the expected signature of "back density now actually works"
   // rather than another interaction/re-measurement artifact.
   const EXPECTED = {
-    'facetedOverlap-orthographic-hatch|settled': { hash: '0517b318738d3fd4dc7d31be0698487d85f4e96e31d6e9e8d300b9d2fa2e6875', pathCount: 208, pointCount: 416 },
-    'facetedOverlap-orthographic-hatch|draft': { hash: 'c89e3d735e2b53f3c1d154e7f3567d53a1e6053159b9ffa25a5853f7973d6a76', pathCount: 200, pointCount: 400 },
-    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'd5628693528fd8022c5fdf001c39537ce7b703a8e5543f3dd97f4d0e585dd5de', pathCount: 424, pointCount: 1500 },
-    'curvedOverlap-perspective-mixed-xray|draft': { hash: '83aebf997a1e39aed36e2893fb18e7e7ea386755a9493e4868c53c51c80ee2f9', pathCount: 302, pointCount: 604 },
-    'denseMixed-8obj-shadows|settled': { hash: '9593e988430bc16534b9394f68152e8f8568b45c58b412bb476204695dd97562', pathCount: 662, pointCount: 2712 },
-    'denseMixed-8obj-shadows|draft': { hash: '9c3de29b1f268348208ebe1395268ad1f099ffdfc1b58d5759e3dc7eba7f4486', pathCount: 466, pointCount: 932 },
+    'facetedOverlap-orthographic-hatch|settled': { hash: 'aa696fa2ebb27f1218aed6858298beb57b8cb7064c3e1e331f83fc80411ebbbd', pathCount: 208, pointCount: 416 },
+    'facetedOverlap-orthographic-hatch|draft': { hash: '82bacd44d6706bd4f484fa2c9b719bf119a7bd93b91a6b6cca798caed1634066', pathCount: 200, pointCount: 400 },
+    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'cf19f35d0f84caa430a0ea7c371f0572854272ae7535b8d22882e43bae230102', pathCount: 424, pointCount: 1500 },
+    'curvedOverlap-perspective-mixed-xray|draft': { hash: '82c40da7672e6b14cac48b460e03a66b8b07450e082297019de4ec668fdb1924', pathCount: 302, pointCount: 604 },
+    'denseMixed-8obj-shadows|settled': { hash: '38f2f85b73c6604d165d0008a808040a9cab9acb494177fedf5688c93bf6a34f', pathCount: 662, pointCount: 2712 },
+    'denseMixed-8obj-shadows|draft': { hash: '8f4025c44dd5eeda54570195f9a76335c6ce76947fc931cc6c032467e40cfc2f', pathCount: 466, pointCount: 932 },
   };
 
   scenarios.forEach(({ name, objects, extra }) => {

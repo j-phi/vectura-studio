@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { normalizePaths } = require('../helpers/path-signature');
 
 /*
  * F-01 / W-01 — the curved master grid's sparse end (fillDensity 1-49) was
@@ -124,7 +125,10 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
   };
 
   const runCount = (...args) => run(...args).length;
-  const runMd5 = (...args) => md5(JSON.stringify(run(...args)));
+  // Rounded to 4dp (normalizePaths' default) before hashing — plenty for a
+  // plotter, and enough to absorb last-ULP arm64/x86_64 float drift that
+  // otherwise made this hash architecture-specific (raw JSON.stringify).
+  const runMd5 = (...args) => md5(JSON.stringify(normalizePaths(run(...args))));
 
   test('test seam is published', () => {
     expect(typeof algo.__curvedSparseTonePitchForTest).toBe('function');
@@ -311,18 +315,18 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     // scoped to `ladder`/`fineLadder`/`phaseFineLadder` only, confirmed by
     // these two rows staying green with no edit.
     test('sphere + hatch + ladder at d=50 and d=220', () => {
-      expect(runMd5(50, 'hatch', 'ladder', defaults.objects[0])).toBe('0bc7a99f7c82fc74f5613a705af2315f');
+      expect(runMd5(50, 'hatch', 'ladder', defaults.objects[0])).toBe('0bf306c15bf1dd0ec0e6cb0adae5276e');
       // RE-PINNED AGAIN (W-26, same commit): d=220 sits past 200, inside
       // fs-m1's relaxed `masterFloorPen` taper — the redundant `floorPitch`
       // re-clamp `ladderWantedPitch` briefly carried (see
       // `scene3d-curved-density-floor.test.js`'s matching re-pin) bound
       // there too; removing it moves this hash. d=50 (well under the
       // taper's own range) is unaffected, confirmed unchanged above.
-      expect(runMd5(220, 'hatch', 'ladder', defaults.objects[0])).toBe('088525db6b00c9d7234549cee42fc9a3');
+      expect(runMd5(220, 'hatch', 'ladder', defaults.objects[0])).toBe('b22ef417149b144c61dedc3f8d6e5395');
     });
 
     test('sphere + hatch + taperedEnds at d=50', () => {
-      expect(runMd5(50, 'hatch', 'taperedEnds', defaults.objects[0])).toBe('28dacc0dbf75cf4324d8ec93a56e0138');
+      expect(runMd5(50, 'hatch', 'taperedEnds', defaults.objects[0])).toBe('4863491ddcae36305a5a897f70ce8091');
     });
 
     // MERGE NOTE (integration, 2026-09-06) / BAR CHANGE: both hashes below
@@ -334,15 +338,15 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     // Neither branch alone produced these two hashes; re-measured against
     // the actual merged source via this file's own `runMd5` helper.
     test('torus + hatch + bundleCount at d=50', () => {
-      expect(runMd5(50, 'hatch', 'bundleCount', torusObj)).toBe('d0a5adb813252ff51639f5b1d593a50d');
+      expect(runMd5(50, 'hatch', 'bundleCount', torusObj)).toBe('81cc7d53f6741b0199b8d07094093f38');
     });
 
     test('torus + contour + ladder at d=50', () => {
-      expect(runMd5(50, 'contour', 'ladder', torusObj)).toBe('c4af8b99aee05127ac916103b1281ed5');
+      expect(runMd5(50, 'contour', 'ladder', torusObj)).toBe('c049412aaed515dd6c82c91c53d0bd9f');
     });
 
     test('cone + spiral + ladder at d=50', () => {
-      expect(runMd5(50, 'spiral', 'ladder', coneObj)).toBe('707cd281e20019df95abe61b09b38055');
+      expect(runMd5(50, 'spiral', 'ladder', coneObj)).toBe('7a0ccbd034de2a6c285130ee0f4e702c');
     });
   });
 });

@@ -18,8 +18,14 @@ const readGolden = (name) =>
 
 // JSON serialization canonicalizes -0 to 0, so mirror that on the computed side
 // (Object.is-based toEqual would otherwise flag -0 vs 0 — a distinction the SVG
-// pipeline cannot observe). All other values must match bit-for-bit.
-const z0 = (n) => (n === 0 ? 0 : n);
+// pipeline cannot observe). All other values must match to 9dp — tight enough
+// to catch any real extraction bug, loose enough to absorb the last-ULP
+// arm64/x86_64 trig/matrix rounding drift the goldens (captured on arm64)
+// otherwise baked in as a platform-specific "bug".
+const R9 = 1e9;
+const round9 = (n) => Math.round(n * R9) / R9;
+const roundTriples = (triples) => triples.map((t) => t.map(round9));
+const z0 = (n) => (n === 0 ? 0 : round9(n));
 const toTriples = (vertices) => vertices.map((pt) => [z0(pt.x), z0(pt.y), z0(pt.z)]);
 
 describe('Scene3D.Mesh parity + invariants', () => {
@@ -52,10 +58,10 @@ describe('Scene3D.Mesh parity + invariants', () => {
     golden.cases.forEach(({ label, mode, detail, sizes, raw, welded }) => {
       it(`matches the pre-extraction mesh exactly — ${label}`, () => {
         const rawMesh = Mesh.buildTopoformPrimitive(mode, sizes, detail);
-        expect(toTriples(rawMesh.vertices)).toEqual(raw.vertices);
+        expect(toTriples(rawMesh.vertices)).toEqual(roundTriples(raw.vertices));
         expect(rawMesh.faces).toEqual(raw.faces);
         const weldedMesh = Mesh.createTopoformMesh(mode, sizes, detail);
-        expect(toTriples(weldedMesh.vertices)).toEqual(welded.vertices);
+        expect(toTriples(weldedMesh.vertices)).toEqual(roundTriples(welded.vertices));
         expect(weldedMesh.faces).toEqual(welded.faces);
       });
     });
@@ -114,7 +120,7 @@ describe('Scene3D.Mesh parity + invariants', () => {
           }
           return;
         }
-        expect(toTriples(built.vertices)).toEqual(mesh.vertices);
+        expect(toTriples(built.vertices)).toEqual(roundTriples(mesh.vertices));
         if (mesh.bounds) {
           expect(built.bounds.maxRadius).toBe(mesh.bounds.maxRadius);
           expect(built.bounds.maxDepth).toBe(mesh.bounds.maxDepth);

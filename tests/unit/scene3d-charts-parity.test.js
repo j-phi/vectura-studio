@@ -17,8 +17,13 @@ const readGolden = (name) =>
 
 // JSON serialization canonicalizes -0 to 0, so mirror that on the computed side
 // (Object.is-based toEqual would otherwise flag -0 vs 0 — a distinction the SVG
-// pipeline cannot observe). All other values must match bit-for-bit.
-const z0 = (n) => (n === 0 ? 0 : n);
+// pipeline cannot observe). All other values must match to 9dp — tight enough
+// to catch any real extraction bug, loose enough to absorb the last-ULP
+// arm64/x86_64 trig/matrix rounding drift the goldens (captured on arm64)
+// otherwise baked in as a platform-specific "bug".
+const R9 = 1e9;
+const round9 = (n) => Math.round(n * R9) / R9;
+const z0 = (n) => (n === 0 ? 0 : round9(n));
 const triple = (pt) => [z0(pt.x), z0(pt.y), z0(pt.z)];
 
 describe('Scene3D.Charts parity with pre-extraction goldens', () => {
@@ -39,8 +44,8 @@ describe('Scene3D.Charts parity with pre-extraction goldens', () => {
       it(`matches the golden sweep exactly — ${label}`, () => {
         samples.forEach(({ u, longitude, point, normal }) => {
           const s = Charts.spiralizerSurface(params, u, longitude);
-          expect(triple(s.point)).toEqual(point);
-          expect(triple(s.normal)).toEqual(normal);
+          expect(triple(s.point)).toEqual(point.map(round9));
+          expect(triple(s.normal)).toEqual(normal.map(round9));
         });
       });
     });
@@ -130,7 +135,7 @@ describe('Scene3D.Charts parity with pre-extraction goldens', () => {
           for (let y = 0; y <= rows; y++) {
             for (let x = 0; x <= cols; x++) {
               const pt = sampler(x / cols, y / rows);
-              expect(triple(pt)).toEqual(raw.vertices[y * (cols + 1) + x]);
+              expect(triple(pt)).toEqual(raw.vertices[y * (cols + 1) + x].map(round9));
             }
           }
         });
